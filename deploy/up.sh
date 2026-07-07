@@ -23,6 +23,7 @@ load_env() {
 load_env "$HOME/.config/root/openai.env"
 load_env "$HOME/.config/root/telegram.env"
 load_env "$HOME/.config/root/clickup.env"
+load_env "$HOME/.config/root/google.env"
 load_env apps/api/.env   # JWT_SECRET/AUTH_SECRET
 
 # vault Obsidian a montar no container (base de conhecimento)

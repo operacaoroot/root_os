@@ -21,7 +21,7 @@ export const NAV: NavItem[] = [
   { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', phase: 2 },
   { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', phase: 3 },
   { key: 'automacoes', label: 'Automações', href: '/automacoes', icon: 'Zap', permission: 'automacoes.ver', phase: 3 },
-  { key: 'gmail', label: 'Gmail', href: '/gmail', icon: 'Mail', permission: 'gmail.ver', phase: 5 },
+  { key: 'google', label: 'Google', href: '/google', icon: 'Mail', permission: 'dashboard.ver', phase: 2 },
   { key: 'whatsapp', label: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: 'whatsapp.enviar', phase: 6 },
   { key: 'documentos', label: 'Documentos', href: '/documentos', icon: 'FolderOpen', permission: 'drive.ver', phase: 5 },
   { key: 'obsidian', label: 'Obsidian', href: '/obsidian', icon: 'BookOpen', permission: 'obsidian.ver', phase: 2 },

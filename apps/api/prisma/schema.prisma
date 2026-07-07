@@ -32,6 +32,7 @@ model Org {
   reports      Report[]
   contentItems ContentItem[]
   knowledge    KnowledgeNote[]
+  google       GoogleAccount?
 }
 
 model User {
@@ -275,6 +276,22 @@ model Task {
   updatedAt   DateTime   @updatedAt
 
   @@index([orgId, status, dueDate])
+}
+
+// ---------- Google (OAuth: Gmail/Agenda/Docs/Drive) ----------
+// Uma conexão por org. Tokens PRÓPRIOS do root (isolado do escritório).
+model GoogleAccount {
+  id           String   @id @default(uuid())
+  orgId        String   @unique
+  org          Org      @relation(fields: [orgId], references: [id])
+  email        String?
+  accessToken  String
+  refreshToken String?
+  tokenType    String?
+  scope        String?
+  expiresAt    DateTime
+  connectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------

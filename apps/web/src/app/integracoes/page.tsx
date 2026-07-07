@@ -120,6 +120,10 @@ export default function IntegracoesPage() {
                 ) : (
                   <span className="text-[11px] text-muted">Gerência restrita a admin.</span>
                 )
+              ) : ['gmail', 'gcal', 'gdocs', 'drive'].includes(i.key) ? (
+                <a href="/google" className="inline-block rounded-lg border border-border px-3 py-1.5 text-[11px] text-brand hover:bg-surface-2">
+                  Conectar/gerenciar em Google →
+                </a>
               ) : (
                 <span className="inline-block rounded-lg border border-dashed border-border px-3 py-1.5 text-[11px] text-muted">
                   Requer OAuth + credencial (em breve)

@@ -17,6 +17,7 @@ import { AppConfigModule } from './config/config.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ContentModule } from './content/content.module';
 import { ObsidianModule } from './obsidian/obsidian.module';
+import { GoogleModule } from './google/google.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ObsidianModule } from './obsidian/obsidian.module';
     IntegrationsModule,
     ContentModule,
     ObsidianModule,
+    GoogleModule,
   ],
   controllers: [HealthController],
 })

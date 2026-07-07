@@ -254,6 +254,92 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'list_calendar_events',
+    {
+      description: 'Próximos eventos da Google Agenda (calendário primário): título, início/fim, local e participantes. [read_only]',
+      inputSchema: { max: z.number().int().min(1).max(50).optional().describe('Quantos eventos (default 10)') },
+      annotations: { title: 'Agenda (Google)', ...READ_ONLY },
+    },
+    async ({ max }) => {
+      try {
+        return ok(await apiGet(`/google/calendar${qs({ max })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'search_gmail',
+    {
+      description: 'Lista/busca e-mails recentes do Gmail (remetente, assunto, data, trecho, não-lido). `q` usa a sintaxe de busca do Gmail (ex.: "is:unread", "from:cliente"). [read_only]',
+      inputSchema: {
+        q: z.string().optional().describe('Busca estilo Gmail (opcional)'),
+        max: z.number().int().min(1).max(30).optional().describe('Quantos (default 10)'),
+      },
+      annotations: { title: 'Gmail', ...READ_ONLY },
+    },
+    async ({ q, max }) => {
+      try {
+        return ok(await apiGet(`/google/gmail${qs({ q, max })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_email',
+    {
+      description: 'Lê um e-mail completo do Gmail pelo id (corpo em texto). [read_only]',
+      inputSchema: { message_id: z.string().describe('ID da mensagem') },
+      annotations: { title: 'Ler e-mail', ...READ_ONLY },
+    },
+    async ({ message_id }) => {
+      try {
+        return ok(await apiGet(`/google/gmail/${encodeURIComponent(message_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_drive_files',
+    {
+      description: 'Lista/busca arquivos do Google Drive (nome, tipo, modificado, link). `q` filtra por nome. [read_only]',
+      inputSchema: {
+        q: z.string().optional().describe('Filtro por nome (opcional)'),
+        max: z.number().int().min(1).max(50).optional(),
+      },
+      annotations: { title: 'Google Drive', ...READ_ONLY },
+    },
+    async ({ q, max }) => {
+      try {
+        return ok(await apiGet(`/google/drive${qs({ q, max })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_doc',
+    {
+      description: 'Lê o conteúdo (texto) de um Google Doc pelo id (use o id vindo do list_drive_files). [read_only]',
+      inputSchema: { doc_id: z.string().describe('ID do documento') },
+      annotations: { title: 'Ler Google Doc', ...READ_ONLY },
+    },
+    async ({ doc_id }) => {
+      try {
+        return ok(await apiGet(`/google/docs/${encodeURIComponent(doc_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'list_recent_events',
     {
       description:
