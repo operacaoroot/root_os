@@ -77,6 +77,7 @@ services:
       PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
       PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
       PLUGGY_BASE_URL: ${PLUGGY_BASE_URL:-https://api.pluggy.ai}
+      PLUGGY_SYNC_INTERVAL_MIN: ${PLUGGY_SYNC_INTERVAL_MIN:-360}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
     volumes:
       # vault Obsidian do root montada READ-ONLY (base de conhecimento)

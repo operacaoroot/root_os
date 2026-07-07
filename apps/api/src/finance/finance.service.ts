@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { Prisma, FinanceTxType, FinanceTxStatus, FinanceAccountType } from '@prisma/client';
 import type {
   FinanceSummary,
@@ -39,12 +39,42 @@ function iso(d: Date | null): string | null {
 }
 
 @Injectable()
-export class FinanceService {
+export class FinanceService implements OnModuleInit {
+  private readonly log = new Logger('FinanceService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly pluggy: PluggyService,
   ) {}
+
+  // Sync AGENDADO das conexões Pluggy (in-process, como o ClickUp).
+  // PLUGGY_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga). Só roda se configurado.
+  onModuleInit(): void {
+    if (!this.pluggy.configured) return;
+    const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? 360);
+    if (!(min > 0)) return;
+    const run = async () => {
+      try {
+        const conns = await this.prisma.bankConnection.findMany({
+          where: { provider: 'pluggy', status: { in: ['connected', 'error'] }, externalId: { not: null } },
+        });
+        for (const c of conns) {
+          try {
+            const r = await this.syncBankConnection(c.orgId, c.id);
+            this.log.log(`Pluggy sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
+          } catch (e) {
+            this.log.warn(`Pluggy sync ${c.id} falhou: ${(e as Error).message}`);
+          }
+        }
+      } catch (e) {
+        this.log.warn(`Pluggy auto-sync falhou: ${(e as Error).message}`);
+      }
+    };
+    setTimeout(run, 30_000);
+    setInterval(run, min * 60_000);
+    this.log.log(`Pluggy sync agendado a cada ${min} min`);
+  }
 
   private meta() {
     return { tool: 'banco-interno', generatedAt: new Date().toISOString() };
