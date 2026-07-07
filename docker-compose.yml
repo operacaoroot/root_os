@@ -44,21 +44,71 @@ services:
       - mktos_minio_data:/data
     networks: [marketing-os-net]
 
-  # --- entram na Fase 1 ---
-  # api:
-  #   build: ./apps/api
-  #   container_name: mktos_api
-  #   env_file: .env
-  #   depends_on: [db, redis]
-  #   ports: ["${API_PORT:-4001}:4001"]
-  #   networks: [marketing-os-net]
-  # web:
-  #   build: ./apps/web
-  #   container_name: mktos_web
-  #   env_file: .env
-  #   depends_on: [api]
-  #   ports: ["${WEB_PORT:-4000}:3000"]
-  #   networks: [marketing-os-net]
+  # --- Aplicações (imagem ÚNICA do monorepo; ver Dockerfile na raiz) ---
+  # Segredos vêm do ambiente (deploy/up.sh injeta ~/.config/root/*.env + apps/api/.env).
+  api:
+    build: .
+    image: mktos-app
+    container_name: mktos_api
+    working_dir: /app/apps/api
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-mkt}:${DB_PASSWORD:-mkt}@db:5432/${DB_NAME:-marketing_os}
+      API_PORT: "4001"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    ports:
+      - "${API_PORT:-4001}:4001"
+    networks: [marketing-os-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  web:
+    image: mktos-app
+    container_name: mktos_web
+    working_dir: /app/apps/web
+    command: pnpm start
+    environment:
+      API_PROXY_TARGET: http://api:4001
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "${WEB_PORT:-4000}:4000"
+    networks: [marketing-os-net]
+    restart: unless-stopped
+
+  telegram:
+    image: mktos-app
+    container_name: mktos_telegram
+    working_dir: /app/apps/telegram
+    command: node dist/index.js
+    environment:
+      MCP_API_URL: http://api:4001/api
+      MCP_ENTRY: /app/packages/mcp/dist/index.js
+      MCP_SERVICE_EMAIL: ${MCP_SERVICE_EMAIL:-mcp@marketing-os.local}
+      MCP_SERVICE_PASSWORD: ${MCP_SERVICE_PASSWORD:-mcp-service-12345}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      DAILY_REPORT_TIME: ${DAILY_REPORT_TIME:-08:00}
+      DAILY_REPORT_TZ: ${DAILY_REPORT_TZ:-America/Sao_Paulo}
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [marketing-os-net]
+    restart: unless-stopped
 
 networks:
   marketing-os-net:
