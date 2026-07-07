@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import type { TaskList } from '@mktos/shared';
-import { apiGet } from '@/lib/api';
+import { TASK_STATUS, type TaskList } from '@mktos/shared';
+import { apiGet, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -15,19 +15,25 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function TasksInner() {
-  const { token, ready } = useAuth();
+  const { token, ready, can } = useAuth();
   const sp = useSearchParams();
   const overdue = sp.get('overdue') === '1';
   const [data, setData] = useState<TaskList | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bump, setBump] = useState(0);
+  const editable = can('tarefas.editar');
 
   useEffect(() => {
     if (!ready || !token) return;
-    setData(null);
     apiGet<TaskList>(`/tasks${overdue ? '?overdue=1' : ''}`, token)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [ready, token, overdue]);
+  }, [ready, token, overdue, bump]);
+
+  const setStatus = (id: string, status: string) =>
+    apiPatch(`/tasks/${id}`, { status }, token)
+      .then(() => setBump((b) => b + 1))
+      .catch((e) => setError(e.message));
 
   return (
     <div className="space-y-5">
@@ -71,7 +77,21 @@ function TasksInner() {
                       <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">alta</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted">{STATUS_LABEL[t.status] ?? t.status}</td>
+                  <td className="px-4 py-3 text-muted">
+                    {editable ? (
+                      <select
+                        value={t.status}
+                        onChange={(e) => setStatus(t.id, e.target.value)}
+                        className="rounded-lg border border-border bg-surface-2 px-2 py-1 text-sm outline-none focus:border-brand-dim"
+                      >
+                        {TASK_STATUS.map((s) => (
+                          <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      STATUS_LABEL[t.status] ?? t.status
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted">{t.assignee ?? '—'}</td>
                   <td className={`px-4 py-3 ${t.overdue ? 'font-medium text-bad' : 'text-muted'}`}>
                     {t.dueDate ? new Date(t.dueDate).toLocaleDateString('pt-BR') : '—'}

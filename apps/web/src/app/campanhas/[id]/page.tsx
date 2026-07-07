@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
-import type { CampaignDossier } from '@mktos/shared';
-import { apiGet } from '@/lib/api';
+import { CAMPAIGN_STATUS, type CampaignDossier } from '@mktos/shared';
+import { apiGet, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { StatusChip } from '@/components/StatusChip';
 
@@ -22,15 +22,24 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function CampaignDossierPage() {
-  const { token, ready } = useAuth();
+  const { token, ready, can } = useAuth();
   const params = useParams<{ id: string }>();
   const [d, setD] = useState<CampaignDossier | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const load = () => {
+    if (!token) return;
+    apiGet<CampaignDossier>(`/campaigns/${params.id}`, token).then(setD).catch((e) => setError(e.message));
+  };
+
   useEffect(() => {
     if (!ready || !token) return;
-    apiGet<CampaignDossier>(`/campaigns/${params.id}`, token).then(setD).catch((e) => setError(e.message));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, token, params.id]);
+
+  const setStatus = (status: string) =>
+    apiPatch(`/campaigns/${params.id}`, { status }, token).then(load).catch((e) => setError(e.message));
 
   return (
     <div className="space-y-5">
@@ -43,12 +52,28 @@ export default function CampaignDossierPage() {
 
       {d && (
         <>
-          <div>
-            <h1 className="text-xl font-semibold">{d.campaign.name}</h1>
-            <p className="text-sm text-muted">
-              {d.campaign.objective} · {d.campaign.channel} · status{' '}
-              <span className="capitalize">{d.campaign.status}</span>
-            </p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-semibold">{d.campaign.name}</h1>
+              <p className="text-sm text-muted">
+                {d.campaign.objective} · {d.campaign.channel} · status{' '}
+                <span className="capitalize">{d.campaign.status}</span>
+              </p>
+            </div>
+            {can('campanhas.editar') && (
+              <label className="flex items-center gap-2 text-sm text-muted">
+                Mudar status:
+                <select
+                  value={d.campaign.status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm capitalize text-text outline-none focus:border-brand-dim"
+                >
+                  {CAMPAIGN_STATUS.map((s) => (
+                    <option key={s} value={s} className="capitalize">{s}</option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

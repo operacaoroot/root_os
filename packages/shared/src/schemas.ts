@@ -254,3 +254,30 @@ export const ChangePasswordSchema = z.object({
   newPassword: z.string().min(8),
 });
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+// --- Ações (write) sobre entidades ---
+export const TASK_STATUS = ['aberta', 'em_andamento', 'concluida', 'bloqueada'] as const;
+export const TaskStatusSchema = z.enum(TASK_STATUS);
+export type TaskStatusValue = z.infer<typeof TaskStatusSchema>;
+
+export const CAMPAIGN_STATUS = [
+  'planejada', 'ativa', 'pausada', 'analise', 'encerrada', 'problema',
+] as const;
+export const CampaignStatusSchema = z.enum(CAMPAIGN_STATUS);
+export type CampaignStatusValue = z.infer<typeof CampaignStatusSchema>;
+
+export const UpdateLeadSchema = z
+  .object({
+    status: LeadStatusSchema.optional(),
+    nextAction: z.string().max(280).nullable().optional(),
+  })
+  .refine((v) => v.status !== undefined || v.nextAction !== undefined, {
+    message: 'Nada para atualizar',
+  });
+export type UpdateLeadInput = z.infer<typeof UpdateLeadSchema>;
+
+export const UpdateTaskSchema = z.object({ status: TaskStatusSchema });
+export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
+
+export const UpdateCampaignSchema = z.object({ status: CampaignStatusSchema });
+export type UpdateCampaignInput = z.infer<typeof UpdateCampaignSchema>;

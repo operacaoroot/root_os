@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { CampaignDossier, CampaignItem, CampaignList } from '@mktos/shared';
+import type { CampaignDossier, CampaignItem, CampaignList, UpdateCampaignInput } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 const WON = 'ganho';
 
 @Injectable()
 export class CampaignsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   private async toItem(c: {
     id: string;
@@ -87,5 +91,25 @@ export class CampaignsService {
       })),
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
+  }
+
+  async update(orgId: string, id: string, input: UpdateCampaignInput, actorId: string) {
+    const c = await this.prisma.campaign.findFirst({ where: { id, orgId } });
+    if (!c) throw new NotFoundException('Campanha não encontrada');
+
+    const updated = await this.prisma.campaign.update({
+      where: { id },
+      data: { status: input.status },
+    });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'campaign.update',
+      entityType: 'campaign',
+      entityId: id,
+      before: { status: c.status },
+      after: { status: updated.status },
+    });
+    return { ok: true, status: updated.status };
   }
 }

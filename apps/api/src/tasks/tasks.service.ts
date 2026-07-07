@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
-import type { TaskList } from '@mktos/shared';
-import { Prisma } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import type { TaskList, UpdateTaskInput } from '@mktos/shared';
+import { Prisma, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(
     orgId: string,
@@ -45,5 +49,25 @@ export class TasksService {
       overdue,
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
+  }
+
+  async update(orgId: string, id: string, input: UpdateTaskInput, actorId: string) {
+    const task = await this.prisma.task.findFirst({ where: { id, orgId } });
+    if (!task) throw new NotFoundException('Tarefa não encontrada');
+
+    const updated = await this.prisma.task.update({
+      where: { id },
+      data: { status: input.status as TaskStatus },
+    });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'task.update',
+      entityType: 'task',
+      entityId: id,
+      before: { status: task.status },
+      after: { status: updated.status },
+    });
+    return { ok: true, status: updated.status };
   }
 }

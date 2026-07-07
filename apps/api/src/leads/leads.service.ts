@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { LeadList } from '@mktos/shared';
-import { Prisma } from '@prisma/client';
+import type { LeadList, UpdateLeadInput } from '@mktos/shared';
+import { LeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class LeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(
     orgId: string,
@@ -63,5 +67,33 @@ export class LeadsService {
     });
     if (!lead) throw new NotFoundException('Lead não encontrado');
     return lead;
+  }
+
+  async update(orgId: string, id: string, input: UpdateLeadInput, actorId: string) {
+    const lead = await this.prisma.lead.findFirst({ where: { id, orgId } });
+    if (!lead) throw new NotFoundException('Lead não encontrado');
+
+    const data: Prisma.LeadUpdateInput = {};
+    if (input.status !== undefined) data.status = input.status as LeadStatus;
+    if (input.nextAction !== undefined) data.nextAction = input.nextAction;
+
+    // registra a mudança de etapa na timeline do lead
+    if (input.status !== undefined && input.status !== lead.status) {
+      await this.prisma.leadEvent.create({
+        data: { leadId: id, type: 'status_change', payload: { from: lead.status, to: input.status } },
+      });
+    }
+
+    const updated = await this.prisma.lead.update({ where: { id }, data });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'lead.update',
+      entityType: 'lead',
+      entityId: id,
+      before: { status: lead.status, nextAction: lead.nextAction },
+      after: { status: updated.status, nextAction: updated.nextAction },
+    });
+    return { ok: true, status: updated.status, nextAction: updated.nextAction };
   }
 }

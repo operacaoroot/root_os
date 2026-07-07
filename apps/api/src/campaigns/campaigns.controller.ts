@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { UpdateCampaignSchema } from '@mktos/shared';
 import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -20,5 +21,12 @@ export class CampaignsController {
   @RequirePermissions('campanhas.ver')
   dossier(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.svc.dossier(user.orgId, id);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('campanhas.editar')
+  update(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = UpdateCampaignSchema.parse(body);
+    return this.svc.update(user.orgId, id, input, user.sub);
   }
 }

@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { UpdateTaskSchema } from '@mktos/shared';
 import { TasksService } from './tasks.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -18,5 +19,12 @@ export class TasksController {
     @Query('overdue') overdue?: string,
   ) {
     return this.svc.list(user.orgId, { status, overdue: overdue === '1' || overdue === 'true' });
+  }
+
+  @Patch(':id')
+  @RequirePermissions('tarefas.editar')
+  update(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = UpdateTaskSchema.parse(body);
+    return this.svc.update(user.orgId, id, input, user.sub);
   }
 }
