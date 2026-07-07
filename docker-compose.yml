@@ -69,6 +69,14 @@ services:
       CLICKUP_CONTENT_LIST_IDS: ${CLICKUP_CONTENT_LIST_IDS:-}
       CLICKUP_CONTENT_LIST_NAMES: ${CLICKUP_CONTENT_LIST_NAMES:-Gestão de Temas}
       CLICKUP_SYNC_INTERVAL_MIN: ${CLICKUP_SYNC_INTERVAL_MIN:-60}
+      OBSIDIAN_VAULT_PATH: /vault
+      OBSIDIAN_REINDEX_MIN: ${OBSIDIAN_REINDEX_MIN:-30}
+    volumes:
+      # vault Obsidian do root montada READ-ONLY (base de conhecimento)
+      - type: bind
+        source: ${OBSIDIAN_VAULT_HOST:-/Users/rodrigosaggioro/Documents/Obsidian Vault}
+        target: /vault
+        read_only: true
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }

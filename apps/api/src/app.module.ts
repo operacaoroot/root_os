@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { AppConfigModule } from './config/config.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { ContentModule } from './content/content.module';
+import { ObsidianModule } from './obsidian/obsidian.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ContentModule } from './content/content.module';
     AppConfigModule,
     IntegrationsModule,
     ContentModule,
+    ObsidianModule,
   ],
   controllers: [HealthController],
 })

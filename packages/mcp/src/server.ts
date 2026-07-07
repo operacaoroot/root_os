@@ -218,6 +218,42 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'search_knowledge',
+    {
+      description:
+        'Busca SEMÂNTICA na base de conhecimento (vault Obsidian do root): retorna as notas mais relevantes p/ a pergunta, com título, trecho e caminho. Use para responder citando o conhecimento interno — sempre cite a nota (path). [read_only]',
+      inputSchema: {
+        query: z.string().describe('Pergunta ou tema a buscar'),
+        limit: z.number().int().min(1).max(20).optional().describe('Quantas notas (default 8)'),
+      },
+      annotations: { title: 'Buscar conhecimento (Obsidian)', ...READ_ONLY },
+    },
+    async ({ query, limit }) => {
+      try {
+        return ok(await apiGet(`/knowledge/search${qs({ q: query, limit })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_note',
+    {
+      description: 'Retorna o conteúdo completo de uma nota da base de conhecimento pelo id (use o id vindo do search_knowledge). [read_only]',
+      inputSchema: { note_id: z.string().describe('ID da nota') },
+      annotations: { title: 'Ler nota (Obsidian)', ...READ_ONLY },
+    },
+    async ({ note_id }) => {
+      try {
+        return ok(await apiGet(`/knowledge/${encodeURIComponent(note_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'list_recent_events',
     {
       description:

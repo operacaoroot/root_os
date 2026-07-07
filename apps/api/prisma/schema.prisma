@@ -2,12 +2,14 @@
 // Ver docs/DATA_MODEL.md. pgvector/embeddings entram na Fase 5.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector] // pgvector (busca semântica da base de conhecimento)
 }
 
 // ---------- Identidade, acesso, auditoria ----------
@@ -29,6 +31,7 @@ model Org {
   leadSources  LeadSource[]
   reports      Report[]
   contentItems ContentItem[]
+  knowledge    KnowledgeNote[]
 }
 
 model User {
@@ -272,6 +275,26 @@ model Task {
   updatedAt   DateTime   @updatedAt
 
   @@index([orgId, status, dueDate])
+}
+
+// ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------
+model KnowledgeNote {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  path      String // caminho relativo à vault
+  folder    String?
+  title     String
+  tags      String[]
+  content   String // markdown (sem o frontmatter)
+  links     String[] // wikilinks [[...]]
+  wordCount Int      @default(0)
+  fileTime  DateTime // mtime do arquivo
+  indexedAt DateTime @default(now())
+  embedding Unsupported("vector(1536)")? // OpenAI text-embedding-3-small
+
+  @@unique([orgId, path])
+  @@index([orgId])
 }
 
 // ---------- Conteúdo (pipeline sincronizado do ClickUp — Gestão de Temas) ----------

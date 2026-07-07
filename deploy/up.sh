@@ -25,6 +25,9 @@ load_env "$HOME/.config/root/telegram.env"
 load_env "$HOME/.config/root/clickup.env"
 load_env apps/api/.env   # JWT_SECRET/AUTH_SECRET
 
+# vault Obsidian a montar no container (base de conhecimento)
+export OBSIDIAN_VAULT_HOST="${OBSIDIAN_VAULT_HOST:-$HOME/Documents/Obsidian Vault}"
+
 # avisos úteis (não bloqueiam)
 [ -z "${OPENAI_API_KEY:-}" ]     && echo "[up] aviso: OPENAI_API_KEY vazio (IA/resumo não vão funcionar)."
 [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (bot não sobe)."

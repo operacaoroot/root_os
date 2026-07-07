@@ -79,7 +79,7 @@ export const ROLES = {
     name: 'IA / Serviço (read-only)',
     permissions: [
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'tarefas.ver',
-      'relatorios.ver', 'mcp.ver', 'mcp.executar',
+      'relatorios.ver', 'obsidian.ver', 'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },
   // Conta de AÇÃO da IA: escreve SÓ o que o humano aprovou (usada pelo bot após

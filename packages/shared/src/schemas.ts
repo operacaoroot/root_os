@@ -379,3 +379,42 @@ export const ContentStatsSchema = z.object({
   source: SourceMetaSchema,
 });
 export type ContentStats = z.infer<typeof ContentStatsSchema>;
+
+// --- Base de conhecimento (Obsidian) ---
+export const NoteRowSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  folder: z.string().nullable(),
+  title: z.string(),
+  tags: z.array(z.string()),
+  links: z.array(z.string()),
+  wordCount: z.number().int(),
+  fileTime: z.string(), // ISO
+});
+export type NoteRow = z.infer<typeof NoteRowSchema>;
+
+export const NoteDetailSchema = NoteRowSchema.extend({ content: z.string() });
+export type NoteDetail = z.infer<typeof NoteDetailSchema>;
+
+export const KnowledgeListSchema = z.object({
+  items: z.array(NoteRowSchema),
+  total: z.number().int(),
+  folders: z.array(z.string()),
+  indexedNotes: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type KnowledgeList = z.infer<typeof KnowledgeListSchema>;
+
+export const SearchHitSchema = NoteRowSchema.extend({
+  score: z.number(), // similaridade (0..1) na busca semântica; 0 no keyword
+  snippet: z.string(),
+});
+export type SearchHit = z.infer<typeof SearchHitSchema>;
+
+export const SearchResultSchema = z.object({
+  query: z.string(),
+  mode: z.enum(['semantic', 'keyword']),
+  items: z.array(SearchHitSchema),
+  source: SourceMetaSchema,
+});
+export type SearchResult = z.infer<typeof SearchResultSchema>;
