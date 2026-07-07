@@ -28,6 +28,7 @@ export const NAV: NavItem[] = [
   { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', phase: 2 },
   { key: 'ia', label: 'IA / Assistente', href: '/ia', icon: 'Bot', permission: 'mcp.ver', phase: 7 },
   { key: 'mcp', label: 'MCP / Ferramentas', href: '/mcp', icon: 'Plug', permission: 'mcp.ver', phase: 7 },
+  { key: 'integracoes', label: 'Integrações', href: '/integracoes', icon: 'Blocks', permission: 'dashboard.ver', phase: 2 },
   { key: 'config', label: 'Configurações', href: '/config', icon: 'Settings', permission: 'dashboard.ver', phase: 1 },
   { key: 'usuarios', label: 'Usuários e permissões', href: '/usuarios', icon: 'Shield', permission: 'admin.usuarios', phase: 1 },
   { key: 'auditoria', label: 'Auditoria', href: '/auditoria', icon: 'ScrollText', permission: 'auditoria.ver', phase: 1 },

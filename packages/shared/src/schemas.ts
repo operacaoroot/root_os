@@ -281,3 +281,59 @@ export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
 
 export const UpdateCampaignSchema = z.object({ status: CampaignStatusSchema });
 export type UpdateCampaignInput = z.infer<typeof UpdateCampaignSchema>;
+
+// --- Integrações / conectores (arcabouço Fase 3–7) ---
+export type ConnectorCategory =
+  | 'ai' | 'messaging' | 'tasks' | 'social' | 'email' | 'storage' | 'knowledge' | 'automation';
+
+export interface ConnectorInfo {
+  key: string;
+  label: string;
+  category: ConnectorCategory;
+  phase: number;
+  authType: 'api_key' | 'oauth2' | 'webhook' | 'builtin';
+  requires: string; // credencial/config necessária (para o painel deixar claro o que falta)
+}
+
+// Catálogo único dos conectores planejados. A ligação real de cada um entra na sua fase;
+// os OAuth (Instagram/Gmail/Drive) dependem de credencial PRÓPRIA do root.
+export const CONNECTORS: ConnectorInfo[] = [
+  { key: 'openai', label: 'OpenAI (IA)', category: 'ai', phase: 2, authType: 'api_key', requires: 'OPENAI_API_KEY (~/.config/root)' },
+  { key: 'telegram', label: 'Telegram', category: 'messaging', phase: 2, authType: 'api_key', requires: 'TELEGRAM_BOT_TOKEN (~/.config/root)' },
+  { key: 'clickup', label: 'ClickUp', category: 'tasks', phase: 2, authType: 'api_key', requires: 'API token do ClickUp' },
+  { key: 'asana', label: 'Asana', category: 'tasks', phase: 2, authType: 'oauth2', requires: 'OAuth/PAT do Asana' },
+  { key: 'zapier', label: 'Zapier', category: 'automation', phase: 3, authType: 'webhook', requires: 'webhook (suspenso por ora)' },
+  { key: 'apify', label: 'Apify', category: 'automation', phase: 3, authType: 'api_key', requires: 'API token (suspenso por ora)' },
+  { key: 'instagram', label: 'Instagram', category: 'social', phase: 4, authType: 'oauth2', requires: 'App Meta + OAuth (Graph API)' },
+  { key: 'gmail', label: 'Gmail', category: 'email', phase: 5, authType: 'oauth2', requires: 'OAuth Google (Gmail)' },
+  { key: 'drive', label: 'Google Drive', category: 'storage', phase: 5, authType: 'oauth2', requires: 'OAuth Google (Drive)' },
+  { key: 'obsidian', label: 'Obsidian', category: 'knowledge', phase: 5, authType: 'builtin', requires: 'pasta/sync do vault' },
+  { key: 'whatsapp', label: 'WhatsApp (Zapfy)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'canal próprio (app consolidado)' },
+];
+
+export const IntegrationCatalogRowSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  category: z.string(),
+  phase: z.number().int(),
+  authType: z.string(),
+  requires: z.string(),
+  status: z.enum(INTEGRATION_STATUS),
+  health: z.enum(HEALTH_STATUS).nullable(),
+  connectedAt: z.string().nullable(),
+  lastSyncAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  managed: z.boolean(), // true = dá p/ ligar/desligar manualmente (api_key/webhook/builtin)
+});
+export type IntegrationCatalogRow = z.infer<typeof IntegrationCatalogRowSchema>;
+
+export const IntegrationCatalogSchema = z.object({
+  items: z.array(IntegrationCatalogRowSchema),
+  source: SourceMetaSchema,
+});
+export type IntegrationCatalog = z.infer<typeof IntegrationCatalogSchema>;
+
+export const ToggleIntegrationSchema = z.object({
+  status: z.enum(INTEGRATION_STATUS),
+});
+export type ToggleIntegrationInput = z.infer<typeof ToggleIntegrationSchema>;
