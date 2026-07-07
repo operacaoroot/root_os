@@ -474,5 +474,24 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'list_payables',
+    {
+      description:
+        'Contas a pagar e a receber (lançamentos previstos): valor, fornecedor/cliente, vencimento, dias de atraso e status de aprovação. Totais de a pagar/receber, vencidos e itens aguardando aprovação. Filtre por tipo (pagar|receber). [read_only]',
+      inputSchema: {
+        tipo: z.enum(['pagar', 'receber']).optional().describe('pagar (saídas) ou receber (entradas)'),
+      },
+      annotations: { title: 'Contas a pagar/receber', ...READ_ONLY },
+    },
+    async ({ tipo }) => {
+      try {
+        return ok(await apiGet(`/finance/payables${qs({ tipo })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

@@ -8,9 +8,14 @@ import {
   RegisterPluggyItemSchema,
   PluggyConnectTokenSchema,
   CreateChartAccountSchema,
+  CreatePartnerSchema,
+  CreateDimensionSchema,
+  CreateContractSchema,
+  ApproveSchema,
 } from '@mktos/shared';
 import { FinanceService } from './finance.service';
 import { FinopsService } from './finops.service';
+import { AprService } from './apr.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -22,6 +27,7 @@ export class FinanceController {
   constructor(
     private readonly svc: FinanceService,
     private readonly finops: FinopsService,
+    private readonly apr: AprService,
   ) {}
 
   // --- FinOps: DRE + Plano de Contas ---
@@ -32,8 +38,77 @@ export class FinanceController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('month') month?: string,
+    @Query('departamentoId') departamentoId?: string,
   ) {
-    return this.finops.dre(user.orgId, { from, to, month });
+    return this.finops.dre(user.orgId, { from, to, month, departamentoId });
+  }
+
+  // --- AP/AR: parceiros, dimensões, contratos, contas a pagar/receber, aprovação ---
+  @Get('partners')
+  @RequirePermissions('financeiro.ver')
+  listPartners(@CurrentUser() user: JwtUser, @Query('papel') papel?: string) {
+    return this.apr.listPartners(user.orgId, papel);
+  }
+
+  @Post('partners')
+  @RequirePermissions('financeiro.editar')
+  createPartner(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.apr.createPartner(user.orgId, CreatePartnerSchema.parse(body), user.sub);
+  }
+
+  @Get('departamentos')
+  @RequirePermissions('financeiro.ver')
+  listDepartamentos(@CurrentUser() user: JwtUser) {
+    return this.apr.listDimensions(user.orgId, 'departamento');
+  }
+
+  @Post('departamentos')
+  @RequirePermissions('financeiro.editar')
+  createDepartamento(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.apr.createDimension(user.orgId, 'departamento', CreateDimensionSchema.parse(body), user.sub);
+  }
+
+  @Get('projetos')
+  @RequirePermissions('financeiro.ver')
+  listProjetos(@CurrentUser() user: JwtUser) {
+    return this.apr.listDimensions(user.orgId, 'projeto');
+  }
+
+  @Post('projetos')
+  @RequirePermissions('financeiro.editar')
+  createProjeto(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.apr.createDimension(user.orgId, 'projeto', CreateDimensionSchema.parse(body), user.sub);
+  }
+
+  @Get('contracts')
+  @RequirePermissions('financeiro.ver')
+  listContracts(@CurrentUser() user: JwtUser) {
+    return this.apr.listContracts(user.orgId);
+  }
+
+  @Post('contracts')
+  @RequirePermissions('financeiro.editar')
+  createContract(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.apr.createContract(user.orgId, CreateContractSchema.parse(body), user.sub);
+  }
+
+  @Post('contracts/:id/gerar')
+  @RequirePermissions('financeiro.editar')
+  gerarContrato(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.apr.gerarContrato(user.orgId, id, user.sub);
+  }
+
+  @Get('payables')
+  @RequirePermissions('financeiro.ver')
+  payables(@CurrentUser() user: JwtUser, @Query('tipo') tipo?: string) {
+    return this.apr.payables(user.orgId, tipo);
+  }
+
+  @Post('transactions/:id/approve')
+  @RequirePermissions('financeiro.editar')
+  approve(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = ApproveSchema.parse(body);
+    return this.apr.approve(user.orgId, id, input.aprovar, user.sub);
   }
 
   @Get('chart-accounts')

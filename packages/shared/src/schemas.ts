@@ -497,6 +497,10 @@ export const FinanceTransactionSchema = z.object({
   documentNumber: z.string().nullable(),
   chartAccountId: z.string().nullable(),
   chartCodigo: z.string().nullable(), // código do plano de contas (ex.: 3.1.01)
+  partnerId: z.string().nullable(),
+  partnerName: z.string().nullable(),
+  approvalStatus: z.string(), // nao_requer | aguardando | aprovado | rejeitado
+  temRateio: z.boolean(),
   source: z.string(),
   createdAt: z.string(),
 });
@@ -579,10 +583,23 @@ export const CreateFinanceCategorySchema = z.object({
 });
 export type CreateFinanceCategoryInput = z.infer<typeof CreateFinanceCategorySchema>;
 
+export const RateioSplitInputSchema = z.object({
+  chartAccountId: z.string().nullable().optional(),
+  departamentoId: z.string().nullable().optional(),
+  projetoId: z.string().nullable().optional(),
+  valor: z.number().positive(),
+});
+export type RateioSplitInput = z.infer<typeof RateioSplitInputSchema>;
+
 export const CreateFinanceTransactionSchema = z.object({
   accountId: z.string().min(1),
   categoryId: z.string().nullable().optional(),
   chartAccountId: z.string().nullable().optional(),
+  partnerId: z.string().nullable().optional(),
+  contractId: z.string().nullable().optional(),
+  departamentoId: z.string().nullable().optional(),
+  projetoId: z.string().nullable().optional(),
+  splits: z.array(RateioSplitInputSchema).optional(), // rateio (soma = amount)
   type: FinanceTxTypeSchema,
   status: FinanceTxStatusSchema.default('realizado'),
   description: z.string().min(1).max(280),
@@ -681,3 +698,117 @@ export const DreSchema = z.object({
   source: SourceMetaSchema,
 });
 export type Dre = z.infer<typeof DreSchema>;
+
+// --- FinOps AP/AR: fornecedores/clientes, dimensões, contratos, aprovação ---
+export const APPROVAL_STATUS = ['nao_requer', 'aguardando', 'aprovado', 'rejeitado'] as const;
+export const CONTRACT_STATUS = ['ativo', 'pausado', 'encerrado'] as const;
+export const PERIODICIDADES = ['mensal', 'bimestral', 'trimestral', 'semestral', 'anual'] as const;
+
+export const PartnerSchema = z.object({
+  id: z.string(),
+  isCliente: z.boolean(),
+  isFornecedor: z.boolean(),
+  razaoSocial: z.string(),
+  nomeFantasia: z.string().nullable(),
+  cnpjCpf: z.string().nullable(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  ativo: z.boolean(),
+});
+export type Partner = z.infer<typeof PartnerSchema>;
+
+export const PartnerListSchema = z.object({
+  items: z.array(PartnerSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type PartnerList = z.infer<typeof PartnerListSchema>;
+
+export const CreatePartnerSchema = z.object({
+  razaoSocial: z.string().min(2).max(160),
+  nomeFantasia: z.string().max(160).nullable().optional(),
+  cnpjCpf: z.string().max(20).nullable().optional(),
+  email: z.string().email().nullable().optional(),
+  phone: z.string().max(30).nullable().optional(),
+  isCliente: z.boolean().optional(),
+  isFornecedor: z.boolean().optional(),
+});
+export type CreatePartnerInput = z.infer<typeof CreatePartnerSchema>;
+
+export const DimensionSchema = z.object({ id: z.string(), nome: z.string(), ativo: z.boolean() });
+export type Dimension = z.infer<typeof DimensionSchema>;
+export const DimensionListSchema = z.object({
+  items: z.array(DimensionSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type DimensionList = z.infer<typeof DimensionListSchema>;
+export const CreateDimensionSchema = z.object({ nome: z.string().min(1).max(80) });
+export type CreateDimensionInput = z.infer<typeof CreateDimensionSchema>;
+
+export const ContractSchema = z.object({
+  id: z.string(),
+  tipo: FinanceTxTypeSchema,
+  partnerId: z.string().nullable(),
+  partnerName: z.string().nullable(),
+  descricao: z.string(),
+  valor: z.number(),
+  diaVencimento: z.number().int(),
+  periodicidade: z.string(),
+  chartAccountId: z.string().nullable(),
+  accountId: z.string().nullable(),
+  dataInicio: z.string(),
+  dataFim: z.string().nullable(),
+  proximoVencimento: z.string(),
+  status: z.enum(CONTRACT_STATUS),
+});
+export type Contract = z.infer<typeof ContractSchema>;
+
+export const ContractListSchema = z.object({
+  items: z.array(ContractSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type ContractList = z.infer<typeof ContractListSchema>;
+
+export const CreateContractSchema = z.object({
+  tipo: FinanceTxTypeSchema,
+  partnerId: z.string().nullable().optional(),
+  descricao: z.string().min(1).max(200),
+  valor: z.number().positive(),
+  diaVencimento: z.number().int().min(1).max(31),
+  periodicidade: z.enum(PERIODICIDADES).default('mensal'),
+  chartAccountId: z.string().nullable().optional(),
+  accountId: z.string().nullable().optional(),
+  dataInicio: z.string().min(1),
+  dataFim: z.string().nullable().optional(),
+});
+export type CreateContractInput = z.infer<typeof CreateContractSchema>;
+
+// Item de conta a pagar/receber (lançamento previsto, com vencido/dias)
+export const PayableRowSchema = z.object({
+  id: z.string(),
+  tipo: FinanceTxTypeSchema, // saida = pagar | entrada = receber
+  description: z.string(),
+  partnerName: z.string().nullable(),
+  chartCodigo: z.string().nullable(),
+  amount: z.number(),
+  dueDate: z.string().nullable(),
+  status: FinanceTxStatusSchema,
+  approvalStatus: z.string(),
+  vencido: z.boolean(),
+  diasAtraso: z.number().int(),
+});
+export type PayableRow = z.infer<typeof PayableRowSchema>;
+
+export const PayablesSchema = z.object({
+  items: z.array(PayableRowSchema),
+  total: z.number().int(),
+  totals: z.object({ aPagar: z.number(), aReceber: z.number(), vencidoPagar: z.number(), vencidoReceber: z.number(), aguardandoAprovacao: z.number().int() }),
+  approvalLimit: z.number(),
+  source: SourceMetaSchema,
+});
+export type Payables = z.infer<typeof PayablesSchema>;
+
+export const ApproveSchema = z.object({ aprovar: z.boolean() });
+export type ApproveInput = z.infer<typeof ApproveSchema>;

@@ -40,6 +40,11 @@ model Org {
   bankConnections     BankConnection[]
   chartAccounts       ChartAccount[]
   dreLines            DreLine[]
+  partners            Partner[]
+  departamentos       Departamento[]
+  projetos            Projeto[]
+  contracts           Contract[]
+  transactionSplits   TransactionSplit[]
 }
 
 model User {
@@ -445,6 +450,7 @@ model FinanceAccount {
   updatedAt      DateTime           @updatedAt
 
   transactions FinanceTransaction[]
+  contracts    Contract[]
 
   @@index([orgId])
   @@index([orgId, provider])
@@ -490,14 +496,142 @@ model FinanceTransaction {
   externalId     String? // id no extrato/provedor (dedup)
   chartAccountId String? // conta do plano de contas (p/ DRE)
   chartAccount   ChartAccount?    @relation(fields: [chartAccountId], references: [id])
+  // AP/AR (contas a pagar/receber): fornecedor/cliente, contrato, aprovação, rateio
+  partnerId      String?
+  partner        Partner?         @relation(fields: [partnerId], references: [id])
+  contractId     String?
+  contract       Contract?        @relation(fields: [contractId], references: [id])
+  approvalStatus ApprovalStatus   @default(nao_requer)
+  approvedById   String?
+  approvedAt     DateTime?
+  temRateio      Boolean          @default(false)
+  departamentoId String?
+  departamento   Departamento?    @relation(fields: [departamentoId], references: [id])
+  projetoId      String?
+  projeto        Projeto?         @relation(fields: [projetoId], references: [id])
+  splits         TransactionSplit[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
   @@unique([orgId, accountId, externalId])
   @@index([orgId, date])
   @@index([orgId, status])
+  @@index([orgId, approvalStatus])
   @@index([accountId])
   @@index([chartAccountId])
+  @@index([partnerId])
+}
+
+// ---------- FinOps AP/AR: fornecedores/clientes, rateio, contratos, aprovação ----------
+enum ApprovalStatus {
+  nao_requer
+  aguardando
+  aprovado
+  rejeitado
+}
+
+enum ContractStatus {
+  ativo
+  pausado
+  encerrado
+}
+
+// Fornecedor/cliente unificado (fornecedores_clientes do FinOps).
+model Partner {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  isCliente    Boolean  @default(false)
+  isFornecedor Boolean  @default(false)
+  razaoSocial  String
+  nomeFantasia String?
+  cnpjCpf      String?
+  email        String?
+  phone        String?
+  ativo        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  transactions FinanceTransaction[]
+  contracts    Contract[]
+
+  @@index([orgId])
+}
+
+// Dimensões de rateio / corte do DRE.
+model Departamento {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  nome      String
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  splits       TransactionSplit[]
+  transactions FinanceTransaction[]
+
+  @@unique([orgId, nome])
+}
+
+model Projeto {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  nome      String
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  splits       TransactionSplit[]
+  transactions FinanceTransaction[]
+
+  @@unique([orgId, nome])
+}
+
+// Contrato recorrente (pagar/receber) — gera lançamentos previstos.
+model Contract {
+  id                String         @id @default(uuid())
+  orgId             String
+  org               Org            @relation(fields: [orgId], references: [id])
+  tipo              FinanceTxType // entrada = receber | saida = pagar
+  partnerId         String?
+  partner           Partner?       @relation(fields: [partnerId], references: [id])
+  descricao         String
+  valor             Decimal        @db.Decimal(14, 2)
+  diaVencimento     Int            @default(1)
+  periodicidade     String         @default("mensal") // mensal|bimestral|trimestral|semestral|anual
+  chartAccountId    String?
+  chartAccount      ChartAccount?  @relation(fields: [chartAccountId], references: [id])
+  accountId         String?
+  account           FinanceAccount? @relation(fields: [accountId], references: [id])
+  dataInicio        DateTime
+  dataFim           DateTime?
+  proximoVencimento DateTime
+  status            ContractStatus @default(ativo)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  transactions FinanceTransaction[]
+
+  @@index([orgId, status])
+}
+
+// Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
+model TransactionSplit {
+  id             String        @id @default(uuid())
+  orgId          String
+  org            Org           @relation(fields: [orgId], references: [id])
+  transactionId  String
+  transaction    FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  chartAccountId String?
+  chartAccount   ChartAccount? @relation(fields: [chartAccountId], references: [id])
+  departamentoId String?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  projetoId      String?
+  projeto        Projeto?      @relation(fields: [projetoId], references: [id])
+  percentual     Decimal?      @db.Decimal(5, 2)
+  valor          Decimal       @db.Decimal(14, 2)
+
+  @@index([transactionId])
 }
 
 // ---------- FinOps: Plano de Contas + DRE (enxerto do FinOps5.0) ----------
@@ -523,6 +657,8 @@ model ChartAccount {
   updatedAt         DateTime @updatedAt
 
   transactions FinanceTransaction[]
+  contracts    Contract[]
+  splits       TransactionSplit[]
 
   @@unique([orgId, codigo])
   @@index([orgId, parentId])

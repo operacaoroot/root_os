@@ -3,10 +3,11 @@ import { FinanceController } from './finance.controller';
 import { FinanceService } from './finance.service';
 import { PluggyService } from './pluggy.service';
 import { FinopsService } from './finops.service';
+import { AprService } from './apr.service';
 
 @Module({
   controllers: [FinanceController],
-  providers: [FinanceService, PluggyService, FinopsService],
-  exports: [FinanceService, FinopsService],
+  providers: [FinanceService, PluggyService, FinopsService, AprService],
+  exports: [FinanceService, FinopsService, AprService],
 })
 export class FinanceModule {}

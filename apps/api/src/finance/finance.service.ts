@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PluggyService } from './pluggy.service';
 import { parseOfx } from './ofx';
+import { APPROVAL_LIMIT } from './apr.service';
 
 // status que efetivamente movem o caixa (contam no saldo)
 const EFFECTIVE: FinanceTxStatus[] = ['realizado', 'conciliado'];
@@ -158,6 +159,7 @@ export class FinanceService {
         account: { select: { name: true } },
         category: { select: { name: true } },
         chartAccount: { select: { codigo: true } },
+        partner: { select: { razaoSocial: true } },
       },
     });
     let entradas = 0;
@@ -185,6 +187,10 @@ export class FinanceService {
         documentNumber: r.documentNumber,
         chartAccountId: r.chartAccountId,
         chartCodigo: r.chartAccount?.codigo ?? null,
+        partnerId: r.partnerId,
+        partnerName: r.partner?.razaoSocial ?? null,
+        approvalStatus: r.approvalStatus,
+        temRateio: r.temRateio,
         source: r.source,
         createdAt: r.createdAt.toISOString(),
       })),
@@ -205,30 +211,61 @@ export class FinanceService {
       const ca = await this.prisma.chartAccount.findFirst({ where: { id: input.chartAccountId, orgId } });
       if (!ca) throw new NotFoundException('Conta do plano de contas não encontrada');
     }
+    if (input.partnerId) {
+      const p = await this.prisma.partner.findFirst({ where: { id: input.partnerId, orgId } });
+      if (!p) throw new NotFoundException('Parceiro (fornecedor/cliente) não encontrado');
+    }
+    const status = (input.status ?? 'realizado') as FinanceTxStatus;
+    // rateio: soma dos splits deve bater com o valor
+    const splits = input.splits ?? [];
+    if (splits.length) {
+      const sum = splits.reduce((s, x) => s + x.valor, 0);
+      if (Math.abs(sum - input.amount) > 0.01) {
+        throw new BadRequestException(`Soma do rateio (${sum.toFixed(2)}) diferente do valor (${input.amount.toFixed(2)})`);
+      }
+    }
+    // aprovação: saída prevista acima do limite exige aprovação humana
+    const requiresApproval = input.type === 'saida' && status === 'previsto' && input.amount > APPROVAL_LIMIT();
+
     const tx = await this.prisma.financeTransaction.create({
       data: {
         orgId,
         accountId: input.accountId,
         categoryId: input.categoryId ?? null,
         chartAccountId: input.chartAccountId ?? null,
+        partnerId: input.partnerId ?? null,
+        contractId: input.contractId ?? null,
+        departamentoId: input.departamentoId ?? null,
+        projetoId: input.projetoId ?? null,
         type: input.type as FinanceTxType,
-        status: (input.status ?? 'realizado') as FinanceTxStatus,
+        status,
         description: input.description,
         amount: new Prisma.Decimal(input.amount),
         date: parseDate(input.date),
         dueDate: input.dueDate ? parseDate(input.dueDate) : null,
-        paidAt: (input.status ?? 'realizado') === 'realizado' ? new Date() : null,
+        paidAt: status === 'realizado' ? new Date() : null,
         counterparty: input.counterparty ?? null,
         documentNumber: input.documentNumber ?? null,
         notes: input.notes ?? null,
         source: 'manual',
+        approvalStatus: requiresApproval ? 'aguardando' : 'nao_requer',
+        temRateio: splits.length > 0,
+        splits: splits.length
+          ? { create: splits.map((s) => ({
+              orgId,
+              chartAccountId: s.chartAccountId ?? null,
+              departamentoId: s.departamentoId ?? null,
+              projetoId: s.projetoId ?? null,
+              valor: new Prisma.Decimal(s.valor),
+            })) }
+          : undefined,
       },
     });
     await this.audit.log({
       orgId, actorId, action: 'finance.tx.create', entityType: 'finance_transaction', entityId: tx.id,
-      after: { type: tx.type, amount: num(tx.amount), status: tx.status },
+      after: { type: tx.type, amount: num(tx.amount), status: tx.status, approval: tx.approvalStatus },
     });
-    return { ok: true, id: tx.id };
+    return { ok: true, id: tx.id, approvalStatus: tx.approvalStatus };
   }
 
   async updateTransaction(orgId: string, id: string, input: UpdateFinanceTransactionInput, actorId: string) {
@@ -236,6 +273,10 @@ export class FinanceService {
     if (!tx) throw new NotFoundException('Lançamento não encontrado');
     const data: Prisma.FinanceTransactionUpdateInput = {};
     if (input.status !== undefined) {
+      // baixar (realizar/conciliar) exige aprovação quando pendente
+      if ((input.status === 'realizado' || input.status === 'conciliado') && tx.approvalStatus === 'aguardando') {
+        throw new BadRequestException('Lançamento aguardando aprovação — aprove antes de baixar.');
+      }
       data.status = input.status as FinanceTxStatus;
       if (input.status === 'realizado' && !tx.paidAt) data.paidAt = new Date();
     }

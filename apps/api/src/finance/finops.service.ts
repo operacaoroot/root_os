@@ -97,7 +97,7 @@ export class FinopsService {
   }
 
   // ---------- DRE (Motor Vortex) ----------
-  async dre(orgId: string, range: { from?: string; to?: string; month?: string }): Promise<Dre> {
+  async dre(orgId: string, range: { from?: string; to?: string; month?: string; departamentoId?: string }): Promise<Dre> {
     let from: Date;
     let to: Date;
     if (range.month && /^\d{4}-\d{2}$/.test(range.month)) {
@@ -115,17 +115,36 @@ export class FinopsService {
       return { period: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10), label: this.label(from) }, lines: [], source: this.meta() };
     }
 
-    // 1) soma com sinal por linha de origem (entrada +, saída −), via conta→dreLine
+    // 1) soma com sinal por linha de origem (entrada +, saída −), via conta→dreLine.
+    //    Rateio: quando há splits, usa cada split (COALESCE(valor_rateado, valor) do FinOps).
+    const dep = range.departamentoId;
     const txs = await this.prisma.financeTransaction.findMany({
-      where: { orgId, status: { in: EFFECTIVE }, date: { gte: from, lte: to }, chartAccountId: { not: null } },
-      select: { type: true, amount: true, chartAccount: { select: { dreLine: { select: { codigo: true } } } } },
+      where: {
+        orgId, status: { in: EFFECTIVE }, date: { gte: from, lte: to },
+        OR: [{ chartAccountId: { not: null } }, { temRateio: true }],
+      },
+      select: {
+        type: true, amount: true, temRateio: true, departamentoId: true,
+        chartAccount: { select: { dreLine: { select: { codigo: true } } } },
+        splits: { select: { valor: true, departamentoId: true, chartAccount: { select: { dreLine: { select: { codigo: true } } } } } },
+      },
     });
     const signed: Record<string, number> = {};
+    const add = (code: string | undefined | null, valor: number) => {
+      if (!code) return;
+      signed[code] = (signed[code] ?? 0) + valor;
+    };
     for (const t of txs) {
-      const code = t.chartAccount?.dreLine?.codigo;
-      if (!code) continue;
-      const v = num(t.amount) * (t.type === 'entrada' ? 1 : -1);
-      signed[code] = (signed[code] ?? 0) + v;
+      const sign = t.type === 'entrada' ? 1 : -1;
+      if (t.temRateio && t.splits.length) {
+        for (const s of t.splits) {
+          if (dep && s.departamentoId !== dep) continue;
+          add(s.chartAccount?.dreLine?.codigo, num(s.valor) * sign);
+        }
+      } else {
+        if (dep && t.departamentoId !== dep) continue;
+        add(t.chartAccount?.dreLine?.codigo, num(t.amount) * sign);
+      }
     }
 
     // 2) valores por código: origem = magnitude (natureza da linha); resto via fórmula

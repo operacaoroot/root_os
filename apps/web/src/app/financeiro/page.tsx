@@ -11,6 +11,9 @@ import type {
   FinanceTxStatusValue,
   ChartAccountList,
   Dre,
+  PartnerList,
+  ContractList,
+  Payables,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -36,6 +39,7 @@ const ACCOUNT_TYPES = [
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
   { key: 'dre', label: 'DRE' },
+  { key: 'apar', label: 'A Pagar/Receber' },
   { key: 'lancamentos', label: 'Lançamentos' },
   { key: 'plano', label: 'Plano de Contas' },
   { key: 'contas', label: 'Contas' },
@@ -63,6 +67,9 @@ export default function FinanceiroPage() {
   const [chart, setChart] = useState<ChartAccountList | null>(null);
   const [dre, setDre] = useState<Dre | null>(null);
   const [dreMonth, setDreMonth] = useState<string>(today().slice(0, 7));
+  const [partners, setPartners] = useState<PartnerList | null>(null);
+  const [contracts, setContracts] = useState<ContractList | null>(null);
+  const [payables, setPayables] = useState<Payables | null>(null);
 
   const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
 
@@ -74,6 +81,13 @@ export default function FinanceiroPage() {
     apiGet<FinanceCategoryList>('/finance/categories', token).then(setCategories).catch(() => {});
     apiGet<BankConnectionList>('/finance/bank/connections', token).then(setBanks).catch(() => {});
     apiGet<ChartAccountList>('/finance/chart-accounts', token).then(setChart).catch(() => {});
+    apiGet<PartnerList>('/finance/partners', token).then(setPartners).catch(() => {});
+  }, [token]);
+
+  const loadApar = useCallback(() => {
+    if (!token) return;
+    apiGet<Payables>('/finance/payables', token).then(setPayables).catch((e) => setError(e.message));
+    apiGet<ContractList>('/finance/contracts', token).then(setContracts).catch(() => {});
   }, [token]);
 
   const loadDre = useCallback(() => {
@@ -106,6 +120,11 @@ export default function FinanceiroPage() {
     if (!ready || !token) return;
     loadDre();
   }, [ready, token, loadDre]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    loadApar();
+  }, [ready, token, loadApar]);
 
   const flash = (m: string) => {
     setMsg(m);
@@ -151,6 +170,20 @@ export default function FinanceiroPage() {
 
       {tab === 'visao' && <Visao summary={summary} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
+      {tab === 'apar' && (
+        <ApAr
+          payables={payables}
+          contracts={contracts}
+          partners={partners}
+          accounts={accounts}
+          chart={chart}
+          canEdit={canEdit}
+          token={token}
+          onChange={() => { loadApar(); loadAll(); loadTxs(); }}
+          onError={setError}
+          onFlash={flash}
+        />
+      )}
       {tab === 'plano' && <PlanoContas chart={chart} />}
       {tab === 'lancamentos' && (
         <Lancamentos
@@ -158,11 +191,12 @@ export default function FinanceiroPage() {
           accounts={accounts}
           categories={categories}
           chart={chart}
+          partners={partners}
           canEdit={canEdit}
           token={token}
           filter={txFilter}
           setFilter={setTxFilter}
-          onChange={() => { loadTxs(); loadAll(); loadDre(); }}
+          onChange={() => { loadTxs(); loadAll(); loadDre(); loadApar(); }}
           onError={setError}
           onFlash={flash}
         />
@@ -338,12 +372,188 @@ function PlanoContas({ chart }: { chart: ChartAccountList | null }) {
   );
 }
 
+// ---------------- A Pagar / Receber (AP/AR) ----------------
+const APPROVAL_CLS: Record<string, string> = {
+  aguardando: 'bg-warn/15 text-warn',
+  aprovado: 'bg-good/15 text-good',
+  rejeitado: 'bg-bad/15 text-bad',
+  nao_requer: 'text-muted',
+};
+
+function ApAr(props: {
+  payables: Payables | null;
+  contracts: ContractList | null;
+  partners: PartnerList | null;
+  accounts: FinanceAccountList | null;
+  chart: ChartAccountList | null;
+  canEdit: boolean;
+  token: string | null;
+  onChange: () => void;
+  onError: (e: string) => void;
+  onFlash: (m: string) => void;
+}) {
+  const { payables, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
+  const [pForm, setPForm] = useState({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true });
+  const [cForm, setCForm] = useState({
+    tipo: 'saida', descricao: '', valor: '', diaVencimento: '5', periodicidade: 'mensal',
+    partnerId: '', accountId: '', chartAccountId: '', dataInicio: today(),
+  });
+  const lancaveis = (chart?.items ?? []).filter((c) => c.permiteLancamento && c.ativo);
+
+  const doApprove = (id: string, aprovar: boolean) =>
+    apiPost(`/finance/transactions/${id}/approve`, { aprovar }, token)
+      .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e.message));
+  const baixar = (id: string) =>
+    apiPatch(`/finance/transactions/${id}`, { status: 'realizado' }, token)
+      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e.message));
+  const gerar = (id: string) =>
+    apiPost(`/finance/contracts/${id}/gerar`, {}, token)
+      .then(() => { onFlash('Lançamento gerado a partir do contrato.'); onChange(); }).catch((e) => onError(e.message));
+  const addPartner = () => {
+    if (!pForm.razaoSocial) { onError('Informe a razão social.'); return; }
+    apiPost('/finance/partners', pForm, token)
+      .then(() => { onFlash('Parceiro criado.'); setPForm({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true }); onChange(); })
+      .catch((e) => onError(e.message));
+  };
+  const addContract = () => {
+    if (!cForm.descricao || !cForm.valor || !cForm.accountId) { onError('Contrato: descrição, valor e conta bancária.'); return; }
+    apiPost('/finance/contracts', {
+      tipo: cForm.tipo, descricao: cForm.descricao, valor: Number(cForm.valor),
+      diaVencimento: Number(cForm.diaVencimento), periodicidade: cForm.periodicidade,
+      partnerId: cForm.partnerId || undefined, accountId: cForm.accountId,
+      chartAccountId: cForm.chartAccountId || undefined, dataInicio: cForm.dataInicio,
+    }, token)
+      .then(() => { onFlash('Contrato criado.'); setCForm({ ...cForm, descricao: '', valor: '' }); onChange(); })
+      .catch((e) => onError(e.message));
+  };
+
+  const t = payables?.totals;
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" />
+        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" />
+        <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} />
+        <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} />
+        <Card label="Aguardando aprovação" value={String(t?.aguardandoAprovacao ?? 0)} tone={t && t.aguardandoAprovacao > 0 ? 'warn' : undefined} />
+      </div>
+      {payables && <p className="text-[11px] text-muted">Limite de aprovação: saídas acima de {brl(payables.approvalLimit)} exigem aprovação humana antes da baixa.</p>}
+
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wide text-muted">
+            <tr>
+              <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2">Descrição</th>
+              <th className="px-3 py-2">Parceiro</th>
+              <th className="px-3 py-2">Vencimento</th>
+              <th className="px-3 py-2 text-right">Valor</th>
+              <th className="px-3 py-2">Aprovação</th>
+              {canEdit && <th className="px-3 py-2" />}
+            </tr>
+          </thead>
+          <tbody>
+            {payables?.items.length === 0 && <tr><td colSpan={canEdit ? 7 : 6} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
+            {payables?.items.map((r) => (
+              <tr key={r.id} className="border-t border-border">
+                <td className="px-3 py-2"><span className={r.tipo === 'saida' ? 'text-bad' : 'text-good'}>{r.tipo === 'saida' ? 'pagar' : 'receber'}</span></td>
+                <td className="px-3 py-2">{r.description}{r.chartCodigo && <span className="ml-1 text-[10px] text-muted">[{r.chartCodigo}]</span>}</td>
+                <td className="px-3 py-2 text-muted">{r.partnerName ?? '—'}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {dateBR(r.dueDate)}{r.vencido && <span className="ml-1 text-[10px] text-warn">({r.diasAtraso}d atraso)</span>}
+                </td>
+                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{brl(r.amount)}</td>
+                <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${APPROVAL_CLS[r.approvalStatus] ?? ''}`}>{r.approvalStatus.replace('_', ' ')}</span></td>
+                {canEdit && (
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {r.approvalStatus === 'aguardando' ? (
+                      <>
+                        <button onClick={() => doApprove(r.id, true)} className="rounded border border-border px-2 py-0.5 text-[11px] text-good hover:bg-surface-2">Aprovar</button>
+                        <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
+                      </>
+                    ) : r.approvalStatus !== 'rejeitado' ? (
+                      <button onClick={() => baixar(r.id)} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Baixar</button>
+                    ) : null}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Contratos recorrentes */}
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h2 className="mb-2 text-sm font-medium">Contratos recorrentes</h2>
+        {canEdit && (
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <select className={inputCls} value={cForm.tipo} onChange={(e) => setCForm({ ...cForm, tipo: e.target.value })}>
+              <option value="saida">A pagar</option><option value="entrada">A receber</option>
+            </select>
+            <input className={inputCls} placeholder="Descrição" value={cForm.descricao} onChange={(e) => setCForm({ ...cForm, descricao: e.target.value })} />
+            <input className={inputCls} type="number" step="0.01" placeholder="Valor" value={cForm.valor} onChange={(e) => setCForm({ ...cForm, valor: e.target.value })} />
+            <input className={inputCls} type="number" min="1" max="31" placeholder="Dia venc." value={cForm.diaVencimento} onChange={(e) => setCForm({ ...cForm, diaVencimento: e.target.value })} />
+            <select className={inputCls} value={cForm.accountId} onChange={(e) => setCForm({ ...cForm, accountId: e.target.value })}>
+              <option value="">Conta bancária…</option>
+              {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <select className={inputCls} value={cForm.chartAccountId} onChange={(e) => setCForm({ ...cForm, chartAccountId: e.target.value })}>
+              <option value="">Conta contábil (DRE)…</option>
+              {lancaveis.map((c) => <option key={c.id} value={c.id}>{c.codigo} — {c.nome}</option>)}
+            </select>
+            <select className={inputCls} value={cForm.partnerId} onChange={(e) => setCForm({ ...cForm, partnerId: e.target.value })}>
+              <option value="">Parceiro…</option>
+              {partners?.items.map((p) => <option key={p.id} value={p.id}>{p.razaoSocial}</option>)}
+            </select>
+            <button onClick={addContract} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">+ Contrato</button>
+          </div>
+        )}
+        <ul className="space-y-1 text-sm">
+          {contracts?.items.length === 0 && <li className="text-muted">Nenhum contrato.</li>}
+          {contracts?.items.map((c) => (
+            <li key={c.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+              <span>
+                <span className={c.tipo === 'saida' ? 'text-bad' : 'text-good'}>{c.tipo === 'saida' ? 'pagar' : 'receber'}</span> · {c.descricao} · {brl(c.valor)} / {c.periodicidade}
+                <span className="ml-2 text-[11px] text-muted">próx.: {dateBR(c.proximoVencimento)}</span>
+              </span>
+              {canEdit && <button onClick={() => gerar(c.id)} className="rounded border border-border px-2 py-1 text-[11px] hover:bg-surface-2">Gerar lançamento</button>}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Parceiros */}
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h2 className="mb-2 text-sm font-medium">Fornecedores / clientes</h2>
+        {canEdit && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <input className={inputCls} placeholder="Razão social" value={pForm.razaoSocial} onChange={(e) => setPForm({ ...pForm, razaoSocial: e.target.value })} />
+            <input className={inputCls} placeholder="CNPJ/CPF" value={pForm.cnpjCpf} onChange={(e) => setPForm({ ...pForm, cnpjCpf: e.target.value })} />
+            <label className="flex items-center gap-1 text-sm text-muted"><input type="checkbox" checked={pForm.isFornecedor} onChange={(e) => setPForm({ ...pForm, isFornecedor: e.target.checked })} /> fornecedor</label>
+            <label className="flex items-center gap-1 text-sm text-muted"><input type="checkbox" checked={pForm.isCliente} onChange={(e) => setPForm({ ...pForm, isCliente: e.target.checked })} /> cliente</label>
+            <button onClick={addPartner} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">+ Parceiro</button>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {partners?.items.length === 0 && <span className="text-sm text-muted">Nenhum parceiro.</span>}
+          {partners?.items.map((p) => (
+            <span key={p.id} className="rounded-lg border border-border px-2 py-1 text-[12px]">
+              {p.razaoSocial} <span className="text-[10px] text-muted">{[p.isFornecedor && 'forn.', p.isCliente && 'cli.'].filter(Boolean).join('/')}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------- Lançamentos ----------------
 function Lancamentos(props: {
   txs: FinanceTransactionList | null;
   accounts: FinanceAccountList | null;
   categories: FinanceCategoryList | null;
   chart: ChartAccountList | null;
+  partners: PartnerList | null;
   canEdit: boolean;
   token: string | null;
   filter: { status?: string; type?: string; accountId?: string };
@@ -352,9 +562,9 @@ function Lancamentos(props: {
   onError: (e: string) => void;
   onFlash: (m: string) => void;
 }) {
-  const { txs, accounts, categories, chart, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
+  const { txs, accounts, categories, chart, partners, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
   const [form, setForm] = useState({
-    accountId: '', categoryId: '', chartAccountId: '', type: 'saida' as FinanceTxTypeValue,
+    accountId: '', categoryId: '', chartAccountId: '', partnerId: '', type: 'saida' as FinanceTxTypeValue,
     status: 'realizado' as FinanceTxStatusValue, description: '', amount: '', date: today(), dueDate: '',
   });
   const [open, setOpen] = useState(false);
@@ -369,6 +579,7 @@ function Lancamentos(props: {
       accountId: form.accountId,
       categoryId: form.categoryId || undefined,
       chartAccountId: form.chartAccountId || undefined,
+      partnerId: form.partnerId || undefined,
       type: form.type,
       status: form.status,
       description: form.description,
@@ -433,9 +644,13 @@ function Lancamentos(props: {
             <option value="">Sem categoria</option>
             {categories?.items.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
           </select>
-          <select className={`${inputCls} sm:col-span-2`} value={form.chartAccountId} onChange={(e) => setForm({ ...form, chartAccountId: e.target.value })}>
+          <select className={inputCls} value={form.chartAccountId} onChange={(e) => setForm({ ...form, chartAccountId: e.target.value })}>
             <option value="">Conta contábil / DRE (opcional)…</option>
             {lancaveis.map((c) => <option key={c.id} value={c.id}>{c.codigo} — {c.nome}{c.dreCodigo ? ` [${c.dreCodigo}]` : ''}</option>)}
+          </select>
+          <select className={inputCls} value={form.partnerId} onChange={(e) => setForm({ ...form, partnerId: e.target.value })}>
+            <option value="">Fornecedor / cliente (opcional)…</option>
+            {partners?.items.map((p) => <option key={p.id} value={p.id}>{p.razaoSocial}</option>)}
           </select>
           <input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           {form.status === 'previsto' && (
