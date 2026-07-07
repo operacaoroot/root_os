@@ -6,6 +6,8 @@ const prisma = new PrismaClient();
 
 const ADMIN_EMAIL = 'admin@marketing-os.local';
 const ADMIN_PASSWORD = 'admin12345'; // DEV — trocar em produção
+const MCP_EMAIL = 'mcp@marketing-os.local';
+const MCP_PASSWORD = 'mcp-service-12345'; // DEV — conta de serviço só-leitura p/ o MCP/IA
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -59,6 +61,23 @@ async function main() {
       email: ADMIN_EMAIL,
       passwordHash,
       roles: { connect: [{ id: adminRole.id }] },
+    },
+  });
+
+  // 4b) Usuário de serviço do MCP/IA (só leitura — menor privilégio)
+  const iaRole = await prisma.role.findUniqueOrThrow({
+    where: { orgId_key: { orgId: org.id, key: 'ia_servico' } },
+  });
+  const mcpHash = await bcrypt.hash(MCP_PASSWORD, 10);
+  await prisma.user.upsert({
+    where: { email: MCP_EMAIL },
+    update: { passwordHash: mcpHash, roles: { set: [{ id: iaRole.id }] } },
+    create: {
+      orgId: org.id,
+      name: 'MCP Service (IA)',
+      email: MCP_EMAIL,
+      passwordHash: mcpHash,
+      roles: { connect: [{ id: iaRole.id }] },
     },
   });
 
@@ -183,6 +202,7 @@ async function main() {
   console.log('✔ Seed concluído.');
   console.log(`  Org: ${org.name} (${org.slug})`);
   console.log(`  Login admin → ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
+  console.log(`  MCP serviço → ${MCP_EMAIL} / ${MCP_PASSWORD} (read-only)`);
 }
 
 main()

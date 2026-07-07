@@ -74,6 +74,14 @@ export const ROLES = {
     name: 'Consulta Limitada',
     permissions: ['dashboard.ver', 'leads.ver', 'campanhas.ver', 'relatorios.ver'] as Permission[],
   },
+  // Conta de serviço usada pelo MCP/IA. Só leitura (menor privilégio).
+  ia_servico: {
+    name: 'IA / Serviço (read-only)',
+    permissions: [
+      'dashboard.ver', 'leads.ver', 'campanhas.ver', 'tarefas.ver',
+      'relatorios.ver', 'mcp.ver', 'mcp.executar',
+    ] as Permission[],
+  },
 } as const;
 
 export type RoleKey = keyof typeof ROLES;
