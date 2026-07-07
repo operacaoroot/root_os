@@ -13,13 +13,15 @@ Monorepo pnpm+Turborepo · Postgres+Redis+MinIO isolados via docker-compose · s
 **Verificado:** API testada via curl (login/dashboard/leads/RBAC/pixel), web build + smoke test OK, stack Docker isolado no ar.
 **Próximo increment:** containerizar api/web (Dockerfiles rascunhados) e endpoints de funil/campanhas/tarefas.
 
-## Fase 2 — Eventos, leads e operação (o coração do MVP)
-- Endpoint `POST /api/events/track` + `pixel.js` + captura de UTM + consentimento.
-- Funil básico · módulo Leads (lista, ficha, drill-down) · conversões · dashboard da página de vendas.
-- ClickUp + Asana → módulo Tarefas unificado · alertas de atraso · dashboard operacional.
-- WhatsApp: **alerta** de lead quente / tarefa vencida (só saída).
-- Relatório diário (gerado) + IA para resumo diário (read-only) + **MCP básico read-only** (tools ★).
-**Entrega:** o "Sistema Operacional de Marketing" mínimo já responde "o que aconteceu hoje?".
+## Fase 2 — Eventos, leads e operação (o coração do MVP) ✅ (entregue)
+- Endpoint `POST /api/events/track` + `pixel.js` (SDK leve) + captura de UTM · painel `/pixels` + `/vendas` + demo.
+- Funil básico · módulo Leads (lista, ficha, drill-down) · Campanhas (+dossiê) · conversões.
+- Módulo Tarefas unificado (ClickUp/Asana — conector real na Fase 3) · alertas de atraso.
+- Relatório diário gerado por **IA** (`/relatorios`, `LlmProvider` → **OpenAI gpt-4o temporário**; meta = Claude) + **MCP read-only (10 tools)**.
+- **Mensageria/entrega + validação do MCP via Telegram** (bot `apps/telegram`): pergunta em linguagem natural → IA usa as tools do MCP → responde; `/resumo` + **resumo diário agendado (08:00 BRT)**. _WhatsApp adiado p/ o app consolidado._
+- **Tudo containerizado** (imagem única do monorepo + `docker-compose` isolado; `deploy/up.sh`).
+**Entrega:** o "Sistema Operacional de Marketing" mínimo já responde "o que aconteceu hoje?" — inclusive pelo Telegram.
+**Deploy atual:** roda 24/7 em containers no **OrbStack do Mac**. ⏳ _Roadmap: mover para uma **máquina dedicada do `root`** (a montar), isolada — nada do escritório C&S. Enquanto isso, fica no Mac._
 
 ## Fase 3 — Automações
 Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico por IA.
@@ -41,6 +43,10 @@ Recomendações · diagnósticos · priorização · memória estruturada (pgvec
 
 ## Fase 9 — Escalabilidade
 Cache · filas dimensionadas · monitoramento · backups · testes · multi-cliente ativado (popular `org_id`).
+
+## Infra & Deploy (transversal)
+- **Hoje:** containers no OrbStack do **Mac** (24/7 enquanto o Mac estiver ligado). Subir: `deploy/up.sh`.
+- **⏳ Próximo (roadmap):** **máquina dedicada do `root`** (a montar pelo Rodrigo), isolada — **nada do escritório C&S**. Mesmo `deploy/up.sh`; expor via Tailscale/funnel próprio. Enquanto a máquina não existe, fica no Mac.
 
 ---
 
