@@ -10,6 +10,8 @@ import { EventsModule } from './events/events.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
+import { LlmModule } from './llm/llm.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { TasksModule } from './tasks/tasks.module';
     FunnelModule,
     CampaignsModule,
     TasksModule,
+    LlmModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
 })

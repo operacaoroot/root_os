@@ -1,8 +1,19 @@
 import 'reflect-metadata';
 import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ZodExceptionFilter } from './common/zod-exception.filter';
+
+// Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
+// nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
+for (const name of ['openai.env', 'zapfy.env']) {
+  const p = join(homedir(), '.config', 'root', name);
+  if (existsSync(p)) loadEnv({ path: p, override: false });
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

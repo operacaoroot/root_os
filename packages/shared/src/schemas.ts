@@ -131,3 +131,24 @@ export const EventsRecentSchema = z.object({
   source: SourceMetaSchema,
 });
 export type EventsRecent = z.infer<typeof EventsRecentSchema>;
+
+// --- Relatórios gerados por IA (resumo diário) ---
+export const DailyReportSchema = z.object({
+  id: z.string(),
+  type: z.literal('daily'),
+  title: z.string(),
+  summary: z.string(), // markdown
+  provider: z.string(), // openai | anthropic
+  model: z.string(),
+  periodStart: z.string(), // ISO
+  periodEnd: z.string(),
+  createdAt: z.string(),
+});
+export type DailyReport = z.infer<typeof DailyReportSchema>;
+
+export const ReportListSchema = z.object({
+  items: z.array(DailyReportSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type ReportList = z.infer<typeof ReportListSchema>;

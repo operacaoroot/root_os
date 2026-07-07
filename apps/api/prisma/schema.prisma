@@ -27,6 +27,7 @@ model Org {
   auditLogs    AuditLog[]
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
+  reports      Report[]
 }
 
 model User {
@@ -270,4 +271,28 @@ model Task {
   updatedAt   DateTime   @updatedAt
 
   @@index([orgId, status, dueDate])
+}
+
+// ---------- Relatórios gerados por IA (resumo diário etc.) ----------
+enum ReportType {
+  daily
+}
+
+// Cada geração fica registrada (ponto zero: "não perder nada"): o texto do
+// resumo, o snapshot dos números usados e QUAL modelo/provedor gerou.
+model Report {
+  id          String     @id @default(uuid())
+  orgId       String
+  org         Org        @relation(fields: [orgId], references: [id])
+  type        ReportType @default(daily)
+  title       String
+  summary     String // texto gerado pela IA (markdown)
+  data        Json // snapshot das métricas usadas no prompt
+  provider    String // ex.: openai | anthropic
+  model       String // ex.: gpt-4o
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime   @default(now())
+
+  @@index([orgId, type, createdAt])
 }

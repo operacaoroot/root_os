@@ -25,7 +25,7 @@ export const NAV: NavItem[] = [
   { key: 'whatsapp', label: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: 'whatsapp.enviar', phase: 6 },
   { key: 'documentos', label: 'Documentos', href: '/documentos', icon: 'FolderOpen', permission: 'drive.ver', phase: 5 },
   { key: 'obsidian', label: 'Obsidian', href: '/obsidian', icon: 'BookOpen', permission: 'obsidian.ver', phase: 5 },
-  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', phase: 6 },
+  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', phase: 2 },
   { key: 'ia', label: 'IA / Assistente', href: '/ia', icon: 'Bot', permission: 'mcp.ver', phase: 7 },
   { key: 'mcp', label: 'MCP / Ferramentas', href: '/mcp', icon: 'Plug', permission: 'mcp.ver', phase: 7 },
   { key: 'config', label: 'Configurações', href: '/config', icon: 'Settings', permission: 'dashboard.ver', phase: 1 },
