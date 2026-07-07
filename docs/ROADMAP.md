@@ -32,6 +32,7 @@ Instagram Graph API · módulo Conteúdo · métricas · análise de performance
 
 ## Fase 5 — Gmail, Drive e Obsidian
 Gmail (classificação + resumo) · Drive (busca/anexos) · Obsidian (base de conhecimento + embeddings) · busca global completa.
+- ✅ **Obsidian** conectado de verdade: vault do root montada read-only, embeddings (pgvector/OpenAI), **busca semântica** + tools no MCP (a IA responde citando as notas). Falta: Gmail e Drive (OAuth Google).
 
 ## Fase 6 — Relatórios e WhatsApp completos
 Relatório diário/semanal/mensal · envio por WhatsApp (write_sensitive c/ confirmação) · alertas críticos em tempo real · **comandos** por WhatsApp autenticados.
