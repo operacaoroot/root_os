@@ -8,6 +8,8 @@ const ADMIN_EMAIL = 'admin@marketing-os.local';
 const ADMIN_PASSWORD = 'admin12345'; // DEV — trocar em produção
 const MCP_EMAIL = 'mcp@marketing-os.local';
 const MCP_PASSWORD = 'mcp-service-12345'; // DEV — conta de serviço só-leitura p/ o MCP/IA
+const IA_ACAO_EMAIL = 'ia-acao@marketing-os.local';
+const IA_ACAO_PASSWORD = 'ia-acao-12345'; // DEV — conta de AÇÃO (escreve só o aprovado)
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -78,6 +80,23 @@ async function main() {
       email: MCP_EMAIL,
       passwordHash: mcpHash,
       roles: { connect: [{ id: iaRole.id }] },
+    },
+  });
+
+  // 4c) Conta de AÇÃO da IA (escreve só o que o humano aprovou no Telegram)
+  const iaAcaoRole = await prisma.role.findUniqueOrThrow({
+    where: { orgId_key: { orgId: org.id, key: 'ia_acao' } },
+  });
+  const iaAcaoHash = await bcrypt.hash(IA_ACAO_PASSWORD, 10);
+  await prisma.user.upsert({
+    where: { email: IA_ACAO_EMAIL },
+    update: { passwordHash: iaAcaoHash, roles: { set: [{ id: iaAcaoRole.id }] } },
+    create: {
+      orgId: org.id,
+      name: 'IA Ação (aprovada)',
+      email: IA_ACAO_EMAIL,
+      passwordHash: iaAcaoHash,
+      roles: { connect: [{ id: iaAcaoRole.id }] },
     },
   });
 

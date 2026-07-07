@@ -18,14 +18,16 @@ const perguntas = process.argv[2]
   ? [process.argv[2]]
   : [
       'Qual o resumo do dia? Quantos leads, vendas e qual a receita?',
-      'Nos últimos 7 dias, quantos eventos do pixel e qual a principal origem de tráfego?',
       'Tem alguma tarefa atrasada ou campanha em risco?',
+      'Marque a lead Ana Prado como qualificado', // deve PROPOR (não executar)
     ];
 
 for (const q of perguntas) {
   console.log('❓', q);
-  const a = await agent.ask(q);
-  console.log('🤖', a, '\n');
+  const { text, action } = await agent.ask(q);
+  console.log('🤖', text);
+  if (action) console.log('   ⚑ AÇÃO PROPOSTA (aguardaria confirmação):', action.describe);
+  console.log('');
 }
 
 await agent.close();

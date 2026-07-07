@@ -2,17 +2,30 @@ import { config, assertConfigured } from './config.js';
 import { McpAgent } from './mcp-agent.js';
 import { DAILY_BRIEFING_PROMPT } from './prompts.js';
 import { scheduleDaily } from './scheduler.js';
-import { getMe, poll, sendChatAction, sendMessage, type TgMessage } from './telegram.js';
+import { executeAction, type ProposedAction } from './actions.js';
+import {
+  answerCallback,
+  getMe,
+  poll,
+  sendButtons,
+  sendChatAction,
+  sendMessage,
+  type TgCallback,
+  type TgMessage,
+} from './telegram.js';
 
 const HELP = `🤖 Assistente do Marketing OS
 Pergunte em linguagem natural que eu consulto o sistema pelas ferramentas do MCP.
 
-Exemplos:
+Exemplos (leitura):
 • Qual o resumo do dia?
 • Quantos eventos e qual a receita nos últimos 7 dias?
 • Como está o funil?
-• Tem tarefa atrasada?
-• Quais campanhas estão em risco?
+
+Exemplos (ação — eu proponho e você confirma no botão):
+• Marque o lead do Bruno como ganho
+• Conclua a tarefa "Revisar copy da página"
+• Pause a campanha Remarketing Q3
 
 Comandos: /resumo · /start · /help · /id`;
 
@@ -39,11 +52,15 @@ async function main() {
       console.warn('[daily] sem chat de destino (defina TELEGRAM_ALLOWED_CHAT_IDS).');
       return;
     }
-    const answer = await agent.ask(DAILY_BRIEFING_PROMPT);
+    const { text: answer } = await agent.ask(DAILY_BRIEFING_PROMPT);
     const text = `☀️ Resumo do dia (${reason})\n\n${answer}`;
     for (const c of chats) await sendMessage(Number(c), text);
     console.log(`[daily] enviado p/ ${chats.length} chat(s) — ${reason}`);
   };
+
+  // Ações propostas aguardando confirmação (id curto → ação). Contador determinístico.
+  const pending = new Map<string, ProposedAction>();
+  let seq = 0;
 
   const handle = async (m: TgMessage) => {
     const cmd = m.text.trim().toLowerCase();
@@ -66,11 +83,47 @@ async function main() {
     const question = cmd === '/resumo' ? DAILY_BRIEFING_PROMPT : m.text;
     await sendChatAction(m.chatId, 'typing');
     try {
-      const answer = await agent.ask(question);
-      await sendMessage(m.chatId, answer);
+      const { text, action } = await agent.ask(question);
+      await sendMessage(m.chatId, text);
+      if (action) {
+        const id = `a${++seq}`;
+        pending.set(id, action);
+        await sendButtons(m.chatId, `🔔 Confirmar ação?\n${action.describe}`, [
+          [{ text: '✅ Confirmar', data: `confirm:${id}` }, { text: '✖️ Cancelar', data: `cancel:${id}` }],
+        ]);
+      }
     } catch (e) {
       await sendMessage(m.chatId, `⚠️ Erro: ${(e as Error).message}`);
       console.error('[telegram] erro ao responder:', e);
+    }
+  };
+
+  const handleCallback = async (c: TgCallback) => {
+    if (!allowed(c.chatId)) {
+      await answerCallback(c.id, 'Sem permissão.');
+      return;
+    }
+    const [verb, id] = c.data.split(':');
+    const action = id ? pending.get(id) : undefined;
+    if (!action) {
+      await answerCallback(c.id, 'Ação expirada.');
+      return;
+    }
+    pending.delete(id);
+    if (verb === 'cancel') {
+      await answerCallback(c.id, 'Cancelado.');
+      await sendMessage(c.chatId, '✖️ Ação cancelada.');
+      return;
+    }
+    try {
+      const result = await executeAction(action);
+      await answerCallback(c.id, 'Feito ✓');
+      await sendMessage(c.chatId, result);
+      console.log(`[telegram] ${c.from} confirmou: ${action.describe}`);
+    } catch (e) {
+      await answerCallback(c.id, 'Falhou.');
+      await sendMessage(c.chatId, `⚠️ Não consegui executar: ${(e as Error).message}`);
+      console.error('[telegram] erro ao executar ação:', e);
     }
   };
 
@@ -99,7 +152,7 @@ async function main() {
     await sendDaily('teste manual');
   }
 
-  await poll(handle);
+  await poll({ onMessage: handle, onCallback: handleCallback });
 }
 
 main().catch((e) => {

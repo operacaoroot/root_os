@@ -82,6 +82,15 @@ export const ROLES = {
       'relatorios.ver', 'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },
+  // Conta de AÇÃO da IA: escreve SÓ o que o humano aprovou (usada pelo bot após
+  // confirmação). Least-privilege de escrita — sem admin, sem relatórios.
+  ia_acao: {
+    name: 'IA / Ação (aprovada)',
+    permissions: [
+      'dashboard.ver', 'leads.ver', 'leads.editar', 'campanhas.ver', 'campanhas.editar',
+      'tarefas.ver', 'tarefas.editar', 'mcp.ver', 'mcp.executar',
+    ] as Permission[],
+  },
 } as const;
 
 export type RoleKey = keyof typeof ROLES;

@@ -99,6 +99,8 @@ services:
       MCP_ENTRY: /app/packages/mcp/dist/index.js
       MCP_SERVICE_EMAIL: ${MCP_SERVICE_EMAIL:-mcp@marketing-os.local}
       MCP_SERVICE_PASSWORD: ${MCP_SERVICE_PASSWORD:-mcp-service-12345}
+      MCP_ACTION_EMAIL: ${MCP_ACTION_EMAIL:-ia-acao@marketing-os.local}
+      MCP_ACTION_PASSWORD: ${MCP_ACTION_PASSWORD:-ia-acao-12345}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

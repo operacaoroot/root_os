@@ -27,6 +27,33 @@ export async function sendMessage(chatId: number, text: string): Promise<void> {
   });
 }
 
+// Mensagem com botões inline (confirmação de ação). buttons: linhas de {text, data}.
+export async function sendButtons(
+  chatId: number,
+  text: string,
+  buttons: Array<Array<{ text: string; data: string }>>,
+): Promise<void> {
+  await fetch(`${API()}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text.slice(0, 4000),
+      reply_markup: {
+        inline_keyboard: buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))),
+      },
+    }),
+  });
+}
+
+export async function answerCallback(id: string, text?: string): Promise<void> {
+  await fetch(`${API()}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: id, text }),
+  }).catch(() => {});
+}
+
 export async function sendChatAction(chatId: number, action = 'typing'): Promise<void> {
   await fetch(`${API()}/sendChatAction`, {
     method: 'POST',
@@ -35,8 +62,18 @@ export async function sendChatAction(chatId: number, action = 'typing'): Promise
   }).catch(() => {});
 }
 
-// Long polling: chama onMessage para cada mensagem de texto nova.
-export async function poll(onMessage: (m: TgMessage) => Promise<void>): Promise<void> {
+export interface TgCallback {
+  id: string; // callback_query id
+  chatId: number;
+  data: string; // callback_data
+  from: string;
+}
+
+// Long polling: mensagens de texto e cliques em botões (callback_query).
+export async function poll(handlers: {
+  onMessage: (m: TgMessage) => Promise<void>;
+  onCallback?: (c: TgCallback) => Promise<void>;
+}): Promise<void> {
   let offset = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -51,15 +88,29 @@ export async function poll(onMessage: (m: TgMessage) => Promise<void>): Promise<
     }
     for (const u of updates) {
       offset = u.update_id + 1;
+      if (u.callback_query && handlers.onCallback) {
+        const cq = u.callback_query;
+        await handlers
+          .onCallback({
+            id: cq.id,
+            chatId: cq.message?.chat?.id,
+            data: cq.data ?? '',
+            from: cq.from?.first_name ?? cq.from?.username ?? 'usuário',
+          })
+          .catch((e) => console.error('[telegram] erro no callback:', e));
+        continue;
+      }
       const msg = u.message;
       const text: string | undefined = msg?.text;
       if (!msg || !text) continue;
-      await onMessage({
-        chatId: msg.chat.id,
-        text,
-        from: msg.from?.first_name ?? msg.from?.username ?? 'usuário',
-        messageId: msg.message_id,
-      }).catch((e) => console.error('[telegram] erro no handler:', e));
+      await handlers
+        .onMessage({
+          chatId: msg.chat.id,
+          text,
+          from: msg.from?.first_name ?? msg.from?.username ?? 'usuário',
+          messageId: msg.message_id,
+        })
+        .catch((e) => console.error('[telegram] erro no handler:', e));
     }
   }
 }

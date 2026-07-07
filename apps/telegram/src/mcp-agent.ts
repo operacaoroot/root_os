@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { config } from './config.js';
+import { ACTION_TOOLS, ACTION_TOOL_NAMES, parseAction, type ProposedAction } from './actions.js';
 
 // Ponte IA ↔ MCP: a IA (OpenAI) recebe as TOOLS do MCP como function-calling e
 // decide o que chamar; a execução passa pelo MCP → API (conta de serviço, RBAC).
@@ -8,11 +9,14 @@ import { config } from './config.js';
 
 const SYSTEM_PROMPT = `Você é o assistente do "Marketing OS" no Telegram.
 Responda em português do Brasil, de forma curta e direta (é chat de celular).
-Use SEMPRE as ferramentas disponíveis para buscar dados reais do sistema — nunca invente
-números, datas ou nomes. Se um dado não vier das ferramentas, diga que não tem a informação.
-Formate valores em reais como R$ e use no máximo alguns bullets quando fizer sentido.
-Se a pergunta não for sobre marketing/vendas/o sistema, responda brevemente que é o
-assistente do Marketing OS.`;
+Use SEMPRE as ferramentas de leitura para buscar dados reais — nunca invente números, datas
+ou nomes. Se um dado não vier das ferramentas, diga que não tem a informação.
+Para AÇÕES (mudar etapa de lead, concluir tarefa, pausar campanha), primeiro descubra o ID
+pela ferramenta de leitura e então chame a ferramenta "propose_*" correspondente. Essas
+ferramentas NÃO executam nada: elas registram uma proposta que o humano confirma no Telegram.
+Depois de propor, explique em 1 frase o que será feito e diga que aguarda a confirmação —
+NUNCA afirme que já foi feito.
+Formate valores em reais como R$. Se a pergunta não for sobre o sistema, responda brevemente.`;
 
 interface OpenAiTool {
   type: 'function';
@@ -53,6 +57,8 @@ export class McpAgent {
         parameters: normalizeSchema(t.inputSchema as Record<string, unknown> | undefined),
       },
     }));
+    // + tools de AÇÃO (propostas; não executam — o bot pede confirmação humana)
+    this.tools.push(...ACTION_TOOLS);
     return tools.map((t) => t.name);
   }
 
@@ -60,34 +66,42 @@ export class McpAgent {
     await this.client?.close();
   }
 
-  /** Recebe uma pergunta e devolve a resposta final (após rodar as tools que a IA pedir). */
-  async ask(question: string, maxSteps = 5): Promise<string> {
+  /** Pergunta → resposta final + (opcional) uma AÇÃO proposta aguardando confirmação. */
+  async ask(question: string, maxSteps = 5): Promise<{ text: string; action?: ProposedAction }> {
     const messages: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: question },
     ];
+    let pending: ProposedAction | undefined;
 
     for (let step = 0; step < maxSteps; step++) {
       const msg = await this.chat(messages);
       messages.push(msg);
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        return (msg.content ?? '').trim() || 'Não consegui gerar uma resposta.';
+        const text = (msg.content ?? '').trim() || (pending ? 'Confirma a ação abaixo?' : 'Não consegui gerar uma resposta.');
+        return { text, action: pending };
       }
 
       for (const tc of msg.tool_calls) {
         let resultText: string;
         try {
           const args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-          const res = await this.client.callTool({ name: tc.function.name, arguments: args });
-          resultText = extractText(res);
+          if (ACTION_TOOL_NAMES.has(tc.function.name)) {
+            // AÇÃO: não executa — registra a proposta (a 1ª) e pede confirmação.
+            if (!pending) pending = parseAction(tc.function.name, args);
+            resultText = 'Proposta registrada. Explique ao usuário e peça CONFIRMAÇÃO — não afirme que já foi feito.';
+          } else {
+            const res = await this.client.callTool({ name: tc.function.name, arguments: args });
+            resultText = extractText(res);
+          }
         } catch (e) {
-          resultText = `Erro ao executar ${tc.function.name}: ${(e as Error).message}`;
+          resultText = `Erro em ${tc.function.name}: ${(e as Error).message}`;
         }
         messages.push({ role: 'tool', tool_call_id: tc.id, content: resultText });
       }
     }
-    return 'Não consegui concluir (muitas etapas de ferramenta). Tente reformular.';
+    return { text: 'Não consegui concluir (muitas etapas). Tente reformular.', action: pending };
   }
 
   private async chat(messages: ChatMessage[]): Promise<ChatMessage> {
