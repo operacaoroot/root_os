@@ -15,6 +15,8 @@ import type {
   ContractList,
   Payables,
   Conciliacao,
+  Kpis,
+  Cashflow,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -74,6 +76,8 @@ export default function FinanceiroPage() {
   const [payables, setPayables] = useState<Payables | null>(null);
   const [concil, setConcil] = useState<Conciliacao | null>(null);
   const [concilAcc, setConcilAcc] = useState<string>('');
+  const [kpis, setKpis] = useState<Kpis | null>(null);
+  const [cashflow, setCashflow] = useState<Cashflow | null>(null);
 
   const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
 
@@ -86,6 +90,8 @@ export default function FinanceiroPage() {
     apiGet<BankConnectionList>('/finance/bank/connections', token).then(setBanks).catch(() => {});
     apiGet<ChartAccountList>('/finance/chart-accounts', token).then(setChart).catch(() => {});
     apiGet<PartnerList>('/finance/partners', token).then(setPartners).catch(() => {});
+    apiGet<Kpis>('/finance/kpis', token).then(setKpis).catch(() => {});
+    apiGet<Cashflow>('/finance/cashflow', token).then(setCashflow).catch(() => {});
   }, [token]);
 
   const loadApar = useCallback(() => {
@@ -183,7 +189,7 @@ export default function FinanceiroPage() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
-      {tab === 'visao' && <Visao summary={summary} />}
+      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
       {tab === 'apar' && (
         <ApAr
@@ -250,10 +256,64 @@ function Card({ label, value, tone }: { label: string; value: string; tone?: 'go
   );
 }
 
-function Visao({ summary }: { summary: FinanceSummary | null }) {
+function KpiCard({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: 'good' | 'bad' | 'warn' }) {
+  const cls = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-brand';
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
+      <div className={`mt-1 text-2xl font-semibold ${cls}`}>{value}</div>
+      {hint && <div className="text-[11px] text-muted">{hint}</div>}
+    </div>
+  );
+}
+
+function CashflowChart({ cashflow }: { cashflow: Cashflow | null }) {
+  if (!cashflow || cashflow.days.length === 0) return null;
+  const vals = cashflow.days.map((d) => d.acumulado);
+  const min = Math.min(0, ...vals);
+  const max = Math.max(0, ...vals);
+  const range = max - min || 1;
+  const W = 100, H = 34;
+  const pts = cashflow.days.map((d, i) => {
+    const x = (i / Math.max(cashflow.days.length - 1, 1)) * W;
+    const y = H - ((d.acumulado - min) / range) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const zeroY = H - ((0 - min) / range) * H;
+  const last = vals[vals.length - 1];
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="text-sm font-medium">Fluxo de caixa projetado (30 dias)</h2>
+        <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full">
+        <line x1="0" y1={zeroY} x2={W} y2={zeroY} stroke="currentColor" strokeWidth="0.3" className="text-border" />
+        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="0.8" className={last >= 0 ? 'text-good' : 'text-bad'} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-muted">
+        <span>{cashflow.window.from}</span><span>abertura {brl(cashflow.openingBalance)}</span><span>{cashflow.window.to}</span>
+      </div>
+    </div>
+  );
+}
+
+function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null }) {
   if (!summary) return <p className="text-sm text-muted">Carregando…</p>;
   return (
     <div className="space-y-6">
+      {kpis && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <KpiCard label="Margem bruta" value={`${kpis.margens.bruta.toFixed(1)}%`} hint="MC / Faturamento líq." tone={kpis.margens.bruta >= 0 ? 'good' : 'bad'} />
+            <KpiCard label="Margem EBITDA" value={`${kpis.margens.ebitda.toFixed(1)}%`} tone={kpis.margens.ebitda >= 0 ? 'good' : 'bad'} />
+            <KpiCard label="Margem líquida" value={`${kpis.margens.liquida.toFixed(1)}%`} hint={`LL ${brl(kpis.dre.ll)}`} tone={kpis.margens.liquida >= 0 ? 'good' : 'bad'} />
+            <KpiCard label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
+            <KpiCard label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
+          </div>
+          <CashflowChart cashflow={cashflow} />
+        </>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Resultado do mês" value={brl(summary.mes.resultado)} tone={summary.mes.resultado >= 0 ? 'good' : 'bad'} />
         <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" />

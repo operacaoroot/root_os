@@ -53,6 +53,13 @@ export class FinanceController {
     return this.concil.match(user.orgId, input.movimentoId, input.tituloId, user.sub);
   }
 
+  // --- FinOps: KPIs (painel) ---
+  @Get('kpis')
+  @RequirePermissions('financeiro.ver')
+  kpis(@CurrentUser() user: JwtUser) {
+    return this.finops.kpis(user.orgId);
+  }
+
   // --- FinOps: DRE + Plano de Contas ---
   @Get('dre')
   @RequirePermissions('financeiro.ver')

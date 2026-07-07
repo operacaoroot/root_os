@@ -494,6 +494,23 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'get_finance_kpis',
+    {
+      description:
+        'KPIs financeiros do mês: margens (bruta/EBITDA/líquida do DRE), inadimplência (% do a receber vencido), índice de acurácia (% de movimentos bancários conciliados) e os totais do DRE (FB, FL, MC, EBITDA, LL). [read_only]',
+      inputSchema: {},
+      annotations: { title: 'KPIs financeiros', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/finance/kpis'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'get_conciliacao',
     {
       description:

@@ -857,3 +857,17 @@ export const MatchConciliacaoSchema = z.object({
   tituloId: z.string().min(1),
 });
 export type MatchConciliacaoInput = z.infer<typeof MatchConciliacaoSchema>;
+
+// --- FinOps: KPIs (painel de indicadores) ---
+export const KpisSchema = z.object({
+  mes: z.string(),
+  dre: z.object({ fb: z.number(), fl: z.number(), mc: z.number(), ebitda: z.number(), ll: z.number() }),
+  margens: z.object({ bruta: z.number(), ebitda: z.number(), liquida: z.number() }),
+  inadimplencia: z.number(), // % do a receber que está vencido
+  aReceberVencido: z.number(),
+  acuracidade: z.number(), // % de movimentos bancários conciliados (índice de acurácia)
+  bankTotal: z.number().int(),
+  bankConciliado: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type Kpis = z.infer<typeof KpisSchema>;

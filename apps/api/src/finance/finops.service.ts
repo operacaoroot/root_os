@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, FinanceTxStatus } from '@prisma/client';
-import type { ChartAccountList, Dre, DreLineResult, CreateChartAccountInput } from '@mktos/shared';
+import type { ChartAccountList, Dre, DreLineResult, CreateChartAccountInput, Kpis } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -184,5 +184,35 @@ export class FinopsService {
 
   private label(d: Date): string {
     return `${MONTHS[d.getMonth()]}/${d.getFullYear()}`;
+  }
+
+  // ---------- KPIs (painel de indicadores) ----------
+  async kpis(orgId: string): Promise<Kpis> {
+    const now = new Date();
+    const dre = await this.dre(orgId, {}); // mês corrente
+    const v: Record<string, number> = {};
+    for (const l of dre.lines) v[l.codigo] = l.valor;
+
+    const [recAgg, recVencAgg, bankTotal, bankConc] = await Promise.all([
+      this.prisma.financeTransaction.aggregate({ where: { orgId, status: 'previsto', type: 'entrada' }, _sum: { amount: true } }),
+      this.prisma.financeTransaction.aggregate({ where: { orgId, status: 'previsto', type: 'entrada', dueDate: { lt: now } }, _sum: { amount: true } }),
+      this.prisma.financeTransaction.count({ where: { orgId, source: { in: ['ofx', 'pluggy'] } } }),
+      this.prisma.financeTransaction.count({ where: { orgId, source: { in: ['ofx', 'pluggy'] }, status: 'conciliado' } }),
+    ]);
+    const aReceber = num(recAgg._sum.amount);
+    const aReceberVencido = num(recVencAgg._sum.amount);
+    const round1 = (x: number) => Math.round(x * 10) / 10;
+
+    return {
+      mes: dre.period.label,
+      dre: { fb: v.FB ?? 0, fl: v.FL ?? 0, mc: v.MC ?? 0, ebitda: v.EBITDA ?? 0, ll: v.LL ?? 0 },
+      margens: { bruta: round1(v.MC_PCT ?? 0), ebitda: round1(v.EBITDA_PCT ?? 0), liquida: round1(v.LL_PCT ?? 0) },
+      inadimplencia: round1(aReceber > 0 ? (aReceberVencido / aReceber) * 100 : 0),
+      aReceberVencido,
+      acuracidade: round1(bankTotal > 0 ? (bankConc / bankTotal) * 100 : 100),
+      bankTotal,
+      bankConciliado: bankConc,
+      source: this.meta(),
+    };
   }
 }
