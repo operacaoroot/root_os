@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { ContentList } from '@mktos/shared';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 // Cor da coluna por tipo de etapa (open → custom → closed).
@@ -14,11 +14,13 @@ function colHead(status: string, type: string | null): string {
 }
 
 export default function ConteudoPage() {
-  const { token, ready } = useAuth();
+  const { token, ready, can } = useAuth();
   const [data, setData] = useState<ContentList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [eixo, setEixo] = useState('');
   const [formato, setFormato] = useState('');
+  const [bump, setBump] = useState(0);
+  const editable = can('tarefas.editar');
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -28,7 +30,10 @@ export default function ConteudoPage() {
     apiGet<ContentList>(`/content${p.toString() ? `?${p}` : ''}`, token)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [ready, token, eixo, formato]);
+  }, [ready, token, eixo, formato, bump]);
+
+  const move = (id: string, status: string) =>
+    apiPatch(`/content/${id}`, { status }, token).then(() => setBump((b) => b + 1)).catch((e) => setError(e.message));
 
   // meta de tipo por status (p/ cor do cabeçalho da coluna)
   const typeByStatus = new Map<string, string | null>();
@@ -83,6 +88,16 @@ export default function ConteudoPage() {
                         {c.fonte && <Chip>{c.fonte}</Chip>}
                       </div>
                       {c.assignee && <div className="mt-1.5 text-[11px] text-muted">{c.assignee}</div>}
+                      {editable && (
+                        <select
+                          value={c.status}
+                          onChange={(e) => move(c.id, e.target.value)}
+                          title="Mover etapa (grava no ClickUp)"
+                          className="mt-2 w-full rounded border border-border bg-surface-2 px-1.5 py-1 text-[11px] outline-none focus:border-brand-dim"
+                        >
+                          {data.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      )}
                     </div>
                   ))}
                   {items.length === 0 && <p className="px-1 text-xs text-muted">—</p>}

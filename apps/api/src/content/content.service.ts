@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import type { ContentList, ContentStats } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { ClickupService } from '../integrations/clickup.service';
 
 // Ordem das etapas no board: open (a fazer) → custom (em andamento) → closed (feito).
 function statusRank(type: string | null): number {
@@ -12,7 +14,34 @@ function statusRank(type: string | null): number {
 
 @Injectable()
 export class ContentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly clickup: ClickupService,
+  ) {}
+
+  /** Muda a etapa de um tema — write-back no ClickUp (fonte da verdade) + local. */
+  async setStatus(orgId: string, id: string, status: string, actorId: string) {
+    const item = await this.prisma.contentItem.findFirst({ where: { id, orgId } });
+    if (!item) throw new NotFoundException('Tema não encontrado');
+
+    // escreve no ClickUp primeiro; se falhar, não altera o local
+    const written = await this.clickup.writeTaskStatus(item.externalId, status);
+    const updated = await this.prisma.contentItem.update({
+      where: { id },
+      data: { status: written.status, statusType: written.type, updatedAt: new Date() },
+    });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'content.status_change',
+      entityType: 'content',
+      entityId: id,
+      before: { status: item.status },
+      after: { status: updated.status, clickupTaskId: item.externalId },
+    });
+    return { ok: true, status: updated.status };
+  }
 
   async list(orgId: string, filter: { status?: string; eixo?: string; formato?: string }): Promise<ContentList> {
     const where: Prisma.ContentItemWhereInput = { orgId };

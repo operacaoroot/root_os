@@ -368,6 +368,9 @@ export const ContentListSchema = z.object({
 });
 export type ContentList = z.infer<typeof ContentListSchema>;
 
+export const UpdateContentSchema = z.object({ status: z.string().min(1) });
+export type UpdateContentInput = z.infer<typeof UpdateContentSchema>;
+
 export const ContentStatsSchema = z.object({
   total: z.number().int(),
   byStatus: z.array(z.object({ key: z.string(), count: z.number().int() })),

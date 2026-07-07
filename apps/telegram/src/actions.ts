@@ -8,7 +8,8 @@ const CAMPAIGN_STATUS = ['planejada', 'ativa', 'pausada', 'analise', 'encerrada'
 export type ProposedAction =
   | { kind: 'lead'; id: string; status?: string; nextAction?: string; describe: string }
   | { kind: 'task'; id: string; status: string; describe: string }
-  | { kind: 'campaign'; id: string; status: string; describe: string };
+  | { kind: 'campaign'; id: string; status: string; describe: string }
+  | { kind: 'content'; id: string; status: string; describe: string };
 
 // Tools de AÇÃO expostas à IA — elas NÃO executam nada; apenas registram uma
 // PROPOSTA que o humano confirma no Telegram. A escrita real só ocorre após o "sim".
@@ -60,6 +61,22 @@ export const ACTION_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'propose_set_content_status',
+      description:
+        'PROPÕE mover um TEMA de conteúdo para outra etapa do pipeline (ex.: "validar ideia"→"escrever roteiro"→"complete"). Escreve de volta no ClickUp. Use o content_id do list_content e o NOME exato da etapa. NÃO executa — requer confirmação humana.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content_id: { type: 'string', description: 'ID do tema (list_content)' },
+          status: { type: 'string', description: 'Etapa alvo (nome exato do ClickUp)' },
+        },
+        required: ['content_id', 'status'],
+      },
+    },
+  },
 ];
 
 export const ACTION_TOOL_NAMES = new Set(ACTION_TOOLS.map((t) => t.function.name));
@@ -87,6 +104,12 @@ export function parseAction(name: string, args: Record<string, unknown>): Propos
     if (!id || !CAMPAIGN_STATUS.includes(status)) throw new Error('campaign_id/status inválidos');
     return { kind: 'campaign', id, status, describe: `Campanha ${id.slice(0, 8)}: status → ${status}` };
   }
+  if (name === 'propose_set_content_status') {
+    const id = String(args.content_id ?? '');
+    const status = String(args.status ?? '');
+    if (!id || !status) throw new Error('content_id/status inválidos');
+    return { kind: 'content', id, status, describe: `Tema ${id.slice(0, 8)}: etapa → ${status} (grava no ClickUp)` };
+  }
   throw new Error(`ação desconhecida: ${name}`);
 }
 
@@ -102,6 +125,10 @@ export async function executeAction(a: ProposedAction): Promise<string> {
   if (a.kind === 'task') {
     await writeClient.setTaskStatus(a.id, a.status);
     return `✅ Tarefa atualizada (status → ${a.status}).`;
+  }
+  if (a.kind === 'content') {
+    await writeClient.setContentStatus(a.id, a.status);
+    return `✅ Tema movido para "${a.status}" (gravado no ClickUp).`;
   }
   await writeClient.setCampaignStatus(a.id, a.status);
   return `✅ Campanha atualizada (status → ${a.status}).`;

@@ -45,4 +45,6 @@ export const writeClient = {
     patch(`/tasks/${encodeURIComponent(id)}`, { status }),
   setCampaignStatus: (id: string, status: string) =>
     patch(`/campaigns/${encodeURIComponent(id)}`, { status }),
+  setContentStatus: (id: string, status: string) =>
+    patch(`/content/${encodeURIComponent(id)}`, { status }),
 };

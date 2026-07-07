@@ -180,6 +180,44 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'get_content_stats',
+    {
+      description:
+        'Resumo do pipeline de conteúdo (temas do ClickUp): total e contagem por etapa (validar ideia/escrever roteiro/complete), por eixo e por formato. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Resumo de conteúdo', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/content/stats'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_content',
+    {
+      description:
+        'Lista temas de conteúdo (pipeline do ClickUp) com título, etapa (status), eixo, formato, tipo e link. Filtros opcionais por status, eixo e formato. Use para triar/priorizar temas e achar o id para propor mudança de etapa. [read_only]',
+      inputSchema: {
+        status: z.string().optional().describe('Etapa (ex.: "validar ideia", "escrever roteiro")'),
+        eixo: z.string().optional().describe('Eixo de conteúdo'),
+        formato: z.string().optional().describe('Formato (ex.: Reel, Carrossel)'),
+      },
+      annotations: { title: 'Listar conteúdo', ...READ_ONLY },
+    },
+    async ({ status, eixo, formato }) => {
+      try {
+        return ok(await apiGet(`/content${qs({ status, eixo, formato })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'list_recent_events',
     {
       description:

@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -30,7 +30,7 @@ interface CuTask {
 }
 
 @Injectable()
-export class ClickupService {
+export class ClickupService implements OnModuleInit {
   private readonly log = new Logger('ClickupService');
   private readonly token = process.env.CLICKUP_API_TOKEN ?? '';
   private readonly base = (process.env.CLICKUP_BASE_URL ?? 'https://api.clickup.com/api/v2').replace(/\/$/, '');
@@ -44,13 +44,47 @@ export class ClickupService {
     return this.token.length > 0;
   }
 
-  private async cu<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, { headers: { Authorization: this.token } });
+  // Sync AGENDADO (in-process): mantém o ClickUp em dia sozinho.
+  // CLICKUP_SYNC_INTERVAL_MIN (default 60; 0 desliga). Primeira ~20s após o boot.
+  onModuleInit(): void {
+    if (!this.configured) return;
+    const min = Number(process.env.CLICKUP_SYNC_INTERVAL_MIN ?? 60);
+    if (!(min > 0)) return;
+    const run = async () => {
+      try {
+        const org = await this.prisma.org.findUnique({ where: { slug: 'root' } });
+        if (!org) return;
+        const r = await this.sync(org.id);
+        this.log.log(`sync agendado: ${r.tasks} tarefa(s) + ${r.content} conteúdo(s)`);
+      } catch (e) {
+        this.log.warn(`sync agendado falhou: ${(e as Error).message}`);
+      }
+    };
+    setTimeout(run, 20_000);
+    setInterval(run, min * 60_000);
+    this.log.log(`ClickUp sync agendado a cada ${min} min`);
+  }
+
+  private async cu<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      ...init,
+      headers: { Authorization: this.token, 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`ClickUp ${path} → HTTP ${res.status} ${body.slice(0, 160)}`);
     }
     return res.json() as Promise<T>;
+  }
+
+  /** Write-back: muda o status de uma task no ClickUp (fonte da verdade). */
+  async writeTaskStatus(externalId: string, status: string): Promise<{ status: string; type: string | null }> {
+    if (!this.configured) throw new ServiceUnavailableException('ClickUp não configurado.');
+    const t = await this.cu<{ status?: { status: string; type: string } }>(
+      `/task/${encodeURIComponent(externalId)}`,
+      { method: 'PUT', body: JSON.stringify({ status }) },
+    );
+    return { status: t.status?.status ?? status, type: t.status?.type ?? null };
   }
 
   /**

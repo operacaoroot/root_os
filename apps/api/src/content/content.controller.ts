@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { UpdateContentSchema } from '@mktos/shared';
 import { ContentService } from './content.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -25,5 +26,13 @@ export class ContentController {
   @RequirePermissions('dashboard.ver')
   stats(@CurrentUser() user: JwtUser) {
     return this.svc.stats(user.orgId);
+  }
+
+  // Muda a etapa do tema (write-back no ClickUp). Reusa tarefas.editar (edição operacional).
+  @Patch(':id')
+  @RequirePermissions('tarefas.editar')
+  setStatus(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = UpdateContentSchema.parse(body);
+    return this.svc.setStatus(user.orgId, id, input.status, user.sub);
   }
 }

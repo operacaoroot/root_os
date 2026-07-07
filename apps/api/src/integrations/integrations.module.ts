@@ -6,5 +6,6 @@ import { ClickupService } from './clickup.service';
 @Module({
   controllers: [IntegrationsController],
   providers: [IntegrationsService, ClickupService],
+  exports: [ClickupService],
 })
 export class IntegrationsModule {}
