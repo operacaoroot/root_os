@@ -24,7 +24,8 @@ Monorepo pnpm+Turborepo · Postgres+Redis+MinIO isolados via docker-compose · s
 **Deploy atual:** roda 24/7 em containers no **OrbStack do Mac**. ⏳ _Roadmap: mover para uma **máquina dedicada do `root`** (a montar), isolada — nada do escritório C&S. Enquanto isso, fica no Mac._
 
 ## Fase 3 — Automações
-Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico por IA.
+Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico por IA. _(Zapier/Apify SUSPENSOS por ora — usando Telegram.)_
+- ✅ **ClickUp** conectado de verdade (API v2 token; sync das tarefas reais → módulo Tarefas). Falta: agendar o sync, e Asana.
 
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
