@@ -2,7 +2,7 @@ import { config, assertConfigured } from './config.js';
 import { McpAgent } from './mcp-agent.js';
 import { getMe, poll, sendChatAction, sendMessage, type TgMessage } from './telegram.js';
 
-const HELP = `🤖 *Assistente do Marketing OS*
+const HELP = `🤖 Assistente do Marketing OS
 Pergunte em linguagem natural que eu consulto o sistema pelas ferramentas do MCP.
 
 Exemplos:
@@ -12,7 +12,13 @@ Exemplos:
 • Tem tarefa atrasada?
 • Quais campanhas estão em risco?
 
-Comandos: /start · /help · /id`;
+Comandos: /resumo · /start · /help · /id`;
+
+// Briefing do dia sob demanda (mesmos dados do painel, via tools do MCP).
+const RESUMO_PROMPT = `Gere um BRIEFING EXECUTIVO do dia para o Telegram, curto e em bullets.
+Consulte as ferramentas e cubra: leads (hoje/mês) e vendas/receita; taxa de conversão e CPL;
+tráfego do pixel (eventos e principal origem nos últimos 7 dias); tarefas atrasadas; campanhas
+em risco. Não invente números — use só o que vier das ferramentas.`;
 
 function allowed(chatId: number): boolean {
   const list = config.telegram.allowedChatIds;
@@ -32,6 +38,7 @@ async function main() {
 
   const handle = async (m: TgMessage) => {
     const cmd = m.text.trim().toLowerCase();
+    console.log(`[telegram] ${m.from} (chat ${m.chatId}): ${m.text.slice(0, 80)}`);
 
     if (cmd === '/id') {
       await sendMessage(m.chatId, `Seu chat id: ${m.chatId}\nAdicione em TELEGRAM_ALLOWED_CHAT_IDS para restringir o bot a você.`);
@@ -47,9 +54,10 @@ async function main() {
       return;
     }
 
+    const question = cmd === '/resumo' ? RESUMO_PROMPT : m.text;
     await sendChatAction(m.chatId, 'typing');
     try {
-      const answer = await agent.ask(m.text);
+      const answer = await agent.ask(question);
       await sendMessage(m.chatId, answer);
     } catch (e) {
       await sendMessage(m.chatId, `⚠️ Erro: ${(e as Error).message}`);
