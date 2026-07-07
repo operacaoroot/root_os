@@ -152,3 +152,105 @@ export const ReportListSchema = z.object({
   source: SourceMetaSchema,
 });
 export type ReportList = z.infer<typeof ReportListSchema>;
+
+// --- Auditoria ---
+export const ACTOR_TYPES = ['user', 'ai', 'system'] as const;
+export const AuditLogRowSchema = z.object({
+  id: z.string(),
+  actorType: z.enum(ACTOR_TYPES),
+  actorName: z.string().nullable(), // nome resolvido (ou o id, ou null)
+  action: z.string(),
+  entityType: z.string().nullable(),
+  entityId: z.string().nullable(),
+  ip: z.string().nullable(),
+  createdAt: z.string(), // ISO
+});
+export type AuditLogRow = z.infer<typeof AuditLogRowSchema>;
+
+export const AuditListSchema = z.object({
+  items: z.array(AuditLogRowSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type AuditList = z.infer<typeof AuditListSchema>;
+
+// --- Usuários & permissões ---
+export const UserRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  isActive: z.boolean(),
+  lastLoginAt: z.string().nullable(),
+  createdAt: z.string(),
+  roles: z.array(z.string()), // keys dos perfis
+});
+export type UserRow = z.infer<typeof UserRowSchema>;
+
+export const UserListSchema = z.object({
+  items: z.array(UserRowSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type UserList = z.infer<typeof UserListSchema>;
+
+export const RoleInfoSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+  permissions: z.array(z.string()),
+  userCount: z.number().int(),
+});
+export type RoleInfo = z.infer<typeof RoleInfoSchema>;
+
+export const RoleListSchema = z.object({
+  items: z.array(RoleInfoSchema),
+  source: SourceMetaSchema,
+});
+export type RoleList = z.infer<typeof RoleListSchema>;
+
+export const CreateUserSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8),
+  roles: z.array(z.string()).min(1),
+});
+export type CreateUserInput = z.infer<typeof CreateUserSchema>;
+
+export const UpdateUserSchema = z
+  .object({
+    isActive: z.boolean().optional(),
+    roles: z.array(z.string()).min(1).optional(),
+    password: z.string().min(8).optional(),
+  })
+  .refine((v) => v.isActive !== undefined || v.roles !== undefined || v.password !== undefined, {
+    message: 'Nada para atualizar',
+  });
+export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
+
+// --- Configurações ---
+export const INTEGRATION_STATUS = ['disconnected', 'connected', 'error'] as const;
+export const HEALTH_STATUS = ['ok', 'degraded', 'down'] as const;
+
+export const IntegrationRowSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  status: z.enum(INTEGRATION_STATUS),
+  health: z.enum(HEALTH_STATUS).nullable(),
+  lastSyncAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+export type IntegrationRow = z.infer<typeof IntegrationRowSchema>;
+
+export const ConfigOverviewSchema = z.object({
+  org: z.object({ name: z.string(), slug: z.string() }),
+  appName: z.string(),
+  counts: z.object({ users: z.number().int(), roles: z.number().int() }),
+  integrations: z.array(IntegrationRowSchema),
+  source: SourceMetaSchema,
+});
+export type ConfigOverview = z.infer<typeof ConfigOverviewSchema>;
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;

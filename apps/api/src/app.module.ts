@@ -12,6 +12,8 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
 import { LlmModule } from './llm/llm.module';
 import { ReportsModule } from './reports/reports.module';
+import { UsersModule } from './users/users.module';
+import { AppConfigModule } from './config/config.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { ReportsModule } from './reports/reports.module';
     TasksModule,
     LlmModule,
     ReportsModule,
+    UsersModule,
+    AppConfigModule,
   ],
   controllers: [HealthController],
 })

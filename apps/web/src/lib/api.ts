@@ -31,3 +31,18 @@ export function apiPost<T>(
     body: JSON.stringify(body),
   }).then((r) => handle<T>(r));
 }
+
+export function apiPatch<T>(
+  path: string,
+  body: unknown,
+  token?: string | null,
+): Promise<T> {
+  return fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  }).then((r) => handle<T>(r));
+}
