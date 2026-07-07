@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
+import { SendEmailSchema, CreateEventSchema, CreateDocSchema, AppendDocSchema } from '@mktos/shared';
 import { GoogleService } from './google.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -79,5 +80,35 @@ export class GoogleController {
   @RequirePermissions('drive.ver')
   doc(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.svc.docGet(user.orgId, id);
+  }
+
+  // ---------- Escrita (com aprovação: só usuário/IA com permissão específica) ----------
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Post('gmail/send')
+  @RequirePermissions('gmail.responder')
+  gmailSend(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.svc.sendGmail(user.orgId, SendEmailSchema.parse(body), user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Post('calendar/event')
+  @RequirePermissions('agenda.editar')
+  createEvent(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.svc.createCalendarEvent(user.orgId, CreateEventSchema.parse(body), user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Post('docs')
+  @RequirePermissions('drive.editar')
+  createDoc(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.svc.createDoc(user.orgId, CreateDocSchema.parse(body), user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Post('docs/:id/append')
+  @RequirePermissions('drive.editar')
+  appendDoc(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = AppendDocSchema.parse(body);
+    return this.svc.appendDoc(user.orgId, id, input.text, user.sub);
   }
 }

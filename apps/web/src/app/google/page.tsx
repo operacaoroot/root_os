@@ -116,6 +116,81 @@ export default function GooglePage() {
           </Card>
         </div>
       )}
+
+      {st?.connected && <GoogleWrite />}
+    </div>
+  );
+}
+
+const gi = 'w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
+function GoogleWrite() {
+  const { token, can } = useAuth();
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const canMail = can('gmail.responder'), canCal = can('agenda.editar'), canDoc = can('drive.editar');
+  if (!canMail && !canCal && !canDoc) return null;
+
+  const [em, setEm] = useState({ to: '', subject: '', body: '' });
+  const [ev, setEv] = useState({ title: '', start: '', end: '' });
+  const [dc, setDc] = useState({ title: '', content: '' });
+  const flash = (m: string) => { setMsg(m); setErr(null); setTimeout(() => setMsg(null), 6000); };
+
+  const sendEmail = () => {
+    if (!em.to || !em.subject || !em.body) { setErr('Preencha destinatário, assunto e mensagem.'); return; }
+    if (!confirm(`Enviar e-mail para ${em.to}?`)) return;
+    apiPost<{ id: string }>('/google/gmail/send', em, token)
+      .then((r) => { flash(`✅ E-mail enviado (id ${r.id}).`); setEm({ to: '', subject: '', body: '' }); })
+      .catch((e) => setErr(e.message));
+  };
+  const createEvent = () => {
+    if (!ev.title || !ev.start || !ev.end) { setErr('Preencha título, início e fim.'); return; }
+    if (!confirm(`Criar evento "${ev.title}"?`)) return;
+    apiPost<{ link: string }>('/google/calendar/event', { title: ev.title, start: new Date(ev.start).toISOString(), end: new Date(ev.end).toISOString() }, token)
+      .then((r) => { flash(`✅ Evento criado. ${r.link}`); setEv({ title: '', start: '', end: '' }); })
+      .catch((e) => setErr(e.message));
+  };
+  const createDoc = () => {
+    if (!dc.title) { setErr('Informe o título do documento.'); return; }
+    if (!confirm(`Criar documento "${dc.title}"?`)) return;
+    apiPost<{ link: string }>('/google/docs', { title: dc.title, content: dc.content || undefined }, token)
+      .then((r) => { flash(`✅ Doc criado: ${r.link}`); setDc({ title: '', content: '' }); })
+      .catch((e) => setErr(e.message));
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-sm font-semibold">Ações · escrita com aprovação</h2>
+      <p className="text-[11px] text-muted">Cada ação exige permissão específica, pede confirmação e fica registrada na auditoria.</p>
+      {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
+      {err && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{err}</div>}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {canMail && (
+          <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+            <div className="flex items-center gap-2 text-sm font-medium"><Mail size={16} className="text-brand" /> Enviar e-mail</div>
+            <input className={gi} placeholder="Para (email)" value={em.to} onChange={(e) => setEm({ ...em, to: e.target.value })} />
+            <input className={gi} placeholder="Assunto" value={em.subject} onChange={(e) => setEm({ ...em, subject: e.target.value })} />
+            <textarea className={`${gi} min-h-[80px]`} placeholder="Mensagem" value={em.body} onChange={(e) => setEm({ ...em, body: e.target.value })} />
+            <button onClick={sendEmail} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Enviar</button>
+          </div>
+        )}
+        {canCal && (
+          <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+            <div className="flex items-center gap-2 text-sm font-medium"><Calendar size={16} className="text-brand" /> Criar evento</div>
+            <input className={gi} placeholder="Título" value={ev.title} onChange={(e) => setEv({ ...ev, title: e.target.value })} />
+            <label className="block text-[11px] text-muted">Início<input type="datetime-local" className={gi} value={ev.start} onChange={(e) => setEv({ ...ev, start: e.target.value })} /></label>
+            <label className="block text-[11px] text-muted">Fim<input type="datetime-local" className={gi} value={ev.end} onChange={(e) => setEv({ ...ev, end: e.target.value })} /></label>
+            <button onClick={createEvent} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar evento</button>
+          </div>
+        )}
+        {canDoc && (
+          <div className="space-y-2 rounded-xl border border-border bg-surface p-4">
+            <div className="flex items-center gap-2 text-sm font-medium"><HardDrive size={16} className="text-brand" /> Novo documento</div>
+            <input className={gi} placeholder="Título do Doc" value={dc.title} onChange={(e) => setDc({ ...dc, title: e.target.value })} />
+            <textarea className={`${gi} min-h-[80px]`} placeholder="Conteúdo (opcional)" value={dc.content} onChange={(e) => setDc({ ...dc, content: e.target.value })} />
+            <button onClick={createDoc} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar Doc</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   'financeiro.conciliar',
   'gmail.ver',
   'gmail.responder',
+  'agenda.editar',
   'whatsapp.enviar',
   'whatsapp.configurar',
   'drive.ver',
@@ -62,7 +63,8 @@ export const ROLES = {
     permissions: [
       'dashboard.ver', 'leads.ver', 'leads.editar', 'campanhas.ver',
       'campanhas.editar', 'instagram.ver', 'tarefas.ver', 'tarefas.editar',
-      'gmail.ver', 'drive.ver', 'obsidian.ver', 'relatorios.ver',
+      'gmail.ver', 'gmail.responder', 'agenda.editar', 'drive.ver', 'drive.editar',
+      'obsidian.ver', 'relatorios.ver',
       'relatorios.gerar', 'automacoes.ver', 'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },
@@ -100,7 +102,8 @@ export const ROLES = {
     name: 'IA / Ação (aprovada)',
     permissions: [
       'dashboard.ver', 'leads.ver', 'leads.editar', 'campanhas.ver', 'campanhas.editar',
-      'tarefas.ver', 'tarefas.editar', 'mcp.ver', 'mcp.executar',
+      'tarefas.ver', 'tarefas.editar', 'gmail.responder', 'agenda.editar', 'drive.editar',
+      'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },
 } as const;

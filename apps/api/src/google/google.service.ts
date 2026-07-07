@@ -226,6 +226,88 @@ export class GoogleService {
     const d = await this.api<any>(orgId, `https://docs.googleapis.com/v1/documents/${docId}`);
     return { id: docId, title: d.title ?? '(sem título)', content: extractDocText(d) };
   }
+
+  // ---------- Escrita (com aprovação humana: só executa por ação de usuário/IA aprovada) ----------
+  async sendGmail(orgId: string, input: { to: string; subject: string; body: string; cc?: string }, actorId?: string) {
+    const raw = buildRawEmail(input);
+    const r = await this.api<{ id: string; threadId: string }>(orgId,
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      { method: 'POST', body: JSON.stringify({ raw }) });
+    await this.audit.log({
+      orgId, actorId, action: 'google.gmail.send', entityType: 'gmail', entityId: r.id,
+      after: { to: input.to, cc: input.cc ?? null, subject: input.subject },
+    });
+    this.log.log(`Gmail enviado → ${input.to} (${input.subject})`);
+    return { ok: true, id: r.id, threadId: r.threadId };
+  }
+
+  async createCalendarEvent(
+    orgId: string,
+    input: { title: string; start: string; end: string; description?: string; location?: string; attendees?: string[] },
+    actorId?: string,
+  ) {
+    const body = {
+      summary: input.title,
+      description: input.description,
+      location: input.location,
+      start: { dateTime: new Date(input.start).toISOString() },
+      end: { dateTime: new Date(input.end).toISOString() },
+      attendees: (input.attendees ?? []).map((email) => ({ email })),
+    };
+    const e = await this.api<{ id: string; htmlLink: string }>(orgId,
+      'https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',
+      { method: 'POST', body: JSON.stringify(body) });
+    await this.audit.log({
+      orgId, actorId, action: 'google.calendar.create', entityType: 'calendar', entityId: e.id,
+      after: { title: input.title, start: input.start },
+    });
+    this.log.log(`Evento criado: ${input.title}`);
+    return { ok: true, id: e.id, link: e.htmlLink };
+  }
+
+  async createDoc(orgId: string, input: { title: string; content?: string }, actorId?: string) {
+    const doc = await this.api<{ documentId: string }>(orgId,
+      'https://docs.googleapis.com/v1/documents', { method: 'POST', body: JSON.stringify({ title: input.title }) });
+    if (input.content) {
+      await this.api(orgId, `https://docs.googleapis.com/v1/documents/${doc.documentId}:batchUpdate`,
+        { method: 'POST', body: JSON.stringify({ requests: [{ insertText: { location: { index: 1 }, text: input.content } }] }) });
+    }
+    await this.audit.log({
+      orgId, actorId, action: 'google.docs.create', entityType: 'docs', entityId: doc.documentId,
+      after: { title: input.title },
+    });
+    this.log.log(`Doc criado: ${input.title}`);
+    return { ok: true, id: doc.documentId, link: `https://docs.google.com/document/d/${doc.documentId}/edit` };
+  }
+
+  async appendDoc(orgId: string, docId: string, text: string, actorId?: string) {
+    await this.api(orgId, `https://docs.googleapis.com/v1/documents/${encodeURIComponent(docId)}:batchUpdate`,
+      { method: 'POST', body: JSON.stringify({ requests: [{ insertText: { endOfSegmentLocation: {}, text } }] }) });
+    await this.audit.log({
+      orgId, actorId, action: 'google.docs.append', entityType: 'docs', entityId: docId, after: { chars: text.length },
+    });
+    return { ok: true, id: docId };
+  }
+}
+
+// Monta um e-mail RFC 2822 e devolve em base64url (formato exigido pela API do Gmail).
+function buildRawEmail(input: { to: string; subject: string; body: string; cc?: string }): string {
+  const enc = (s: string) => `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
+  const lines = [`To: ${input.to}`];
+  if (input.cc) lines.push(`Cc: ${input.cc}`);
+  lines.push(
+    `Subject: ${enc(input.subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(input.body, 'utf8').toString('base64'),
+  );
+  return Buffer.from(lines.join('\r\n'), 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }
 
 // Decodifica base64url do corpo do Gmail (prioriza text/plain).

@@ -871,3 +871,31 @@ export const KpisSchema = z.object({
   source: SourceMetaSchema,
 });
 export type Kpis = z.infer<typeof KpisSchema>;
+
+// --- Google: escrita com aprovação (enviar email, criar evento, criar/editar doc) ---
+export const SendEmailSchema = z.object({
+  to: z.string().min(3).max(400),
+  subject: z.string().min(1).max(300),
+  body: z.string().min(1).max(20000),
+  cc: z.string().max(400).optional(),
+});
+export type SendEmailInput = z.infer<typeof SendEmailSchema>;
+
+export const CreateEventSchema = z.object({
+  title: z.string().min(1).max(300),
+  start: z.string().min(1), // ISO datetime
+  end: z.string().min(1),
+  description: z.string().max(5000).optional(),
+  location: z.string().max(300).optional(),
+  attendees: z.array(z.string().email()).max(50).optional(),
+});
+export type CreateEventInput = z.infer<typeof CreateEventSchema>;
+
+export const CreateDocSchema = z.object({
+  title: z.string().min(1).max(300),
+  content: z.string().max(50000).optional(),
+});
+export type CreateDocInput = z.infer<typeof CreateDocSchema>;
+
+export const AppendDocSchema = z.object({ text: z.string().min(1).max(50000) });
+export type AppendDocInput = z.infer<typeof AppendDocSchema>;
