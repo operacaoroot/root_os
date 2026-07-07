@@ -7,6 +7,9 @@ import { HealthController } from './health/health.controller';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { LeadsModule } from './leads/leads.module';
 import { EventsModule } from './events/events.module';
+import { FunnelModule } from './funnel/funnel.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -17,6 +20,9 @@ import { EventsModule } from './events/events.module';
     DashboardModule,
     LeadsModule,
     EventsModule,
+    FunnelModule,
+    CampaignsModule,
+    TasksModule,
   ],
   controllers: [HealthController],
 })
