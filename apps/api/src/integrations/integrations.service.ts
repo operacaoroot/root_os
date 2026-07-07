@@ -23,13 +23,24 @@ export class IntegrationsService {
       include: { health: true },
     });
     const byKey = new Map(accounts.map((a) => [a.key, a]));
-    const openaiOn = (process.env.OPENAI_API_KEY ?? '').length > 0;
+
+    // Status derivado da CONFIG real quando não há registro no banco: conectores por
+    // env/API-key ligam quando a credencial existe; builtin (OFX/Obsidian) já contam.
+    const env = process.env;
+    const derived: Record<string, boolean> = {
+      openai: !!env.OPENAI_API_KEY,
+      telegram: !!env.TELEGRAM_BOT_TOKEN,
+      clickup: !!env.CLICKUP_API_TOKEN,
+      pluggy: !!(env.PLUGGY_CLIENT_ID && env.PLUGGY_CLIENT_SECRET),
+      obsidian: !!env.OBSIDIAN_VAULT_PATH, // vault montada + indexada
+      ofx: true, // builtin — importação de extrato sempre disponível
+    };
 
     const items = CONNECTORS.map((c) => {
       const acc = byKey.get(c.key);
-      // status: registro do banco; openai é derivado do env da API (já plugado).
+      // status: registro do banco tem precedência (OAuth/toggle); senão, deriva da config.
       let status = acc?.status ?? 'disconnected';
-      if (c.key === 'openai' && !acc) status = openaiOn ? 'connected' : 'disconnected';
+      if (!acc && c.key in derived) status = derived[c.key] ? 'connected' : 'disconnected';
 
       return {
         key: c.key,
