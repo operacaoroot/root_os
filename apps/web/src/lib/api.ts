@@ -1,5 +1,6 @@
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api';
+// Default relativo (/api) → o Next faz proxy p/ a API (ver next.config.mjs).
+// Funciona em localhost, LAN e túnel, sem CORS nem URL fixa no build.
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
