@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo — Página de vendas (Marketing OS)</title>
+  <!-- Marketing OS pixel: servido da MESMA origem; endpoint default = /api/events/track -->
+  <script async src="/pixel.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0b0f17; color: #e6edf6;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+    .tag { display: inline-block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+      color: #7c9cf0; background: #7c9cf015; border: 1px solid #7c9cf033; padding: 4px 10px; border-radius: 999px; }
+    h1 { font-size: 34px; line-height: 1.15; margin: 18px 0 10px; }
+    p.lead { font-size: 18px; color: #aab6c8; }
+    .card { background: #121826; border: 1px solid #223; border-radius: 16px; padding: 24px; margin-top: 28px; }
+    .price { font-size: 40px; font-weight: 700; }
+    .price small { font-size: 16px; color: #8a97a8; font-weight: 400; }
+    button {
+      appearance: none; border: 0; cursor: pointer; font-weight: 600; font-size: 16px;
+      border-radius: 12px; padding: 14px 22px; margin-top: 8px; width: 100%;
+      background: linear-gradient(90deg, #4f6ff0, #7c9cf0); color: #fff;
+    }
+    button.secondary { background: #1b2436; color: #cdd8ea; border: 1px solid #2a3550; margin-top: 10px; }
+    .log { margin-top: 28px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #0a0e16; border: 1px solid #1c2740; border-radius: 12px; padding: 14px; min-height: 60px; white-space: pre-wrap; color: #8fe3b0; }
+    .muted { color: #6b7789; font-size: 13px; }
+    a { color: #7c9cf0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="tag">Demo · Marketing OS</span>
+    <h1>Método Foguete de Aquisição</h1>
+    <p class="lead">Página de vendas fictícia só para <strong>provar o loop do pixel</strong>: ela carrega
+      <code>/pixel.js</code>, que dispara <code>page_view</code> ao abrir e eventos custom nos botões.
+      Tudo aparece no painel <a href="/pixels">Pixels e eventos</a>.</p>
+
+    <div class="card">
+      <div class="price">R$ 497 <small>/ à vista</small></div>
+      <p class="muted">Abra esta página com UTMs para testar atribuição, ex.:
+        <code>?utm_source=instagram&amp;utm_medium=bio&amp;utm_campaign=lancamento</code></p>
+      <button id="buy">Comprar agora — dispara <code>purchase</code> (R$ 497)</button>
+      <button class="secondary" id="lead">Quero saber mais — dispara <code>lead</code></button>
+      <button class="secondary" id="cta">Assistir aula — dispara <code>cta_click</code></button>
+    </div>
+
+    <div class="log" id="log">carregando pixel…</div>
+    <p class="muted">Cada clique é enviado a <code id="ep">/api/events/track</code> com um <code>event_id</code> único
+      (idempotente). Recarregar a página gera novo <code>page_view</code>, mesma sessão por 30 min.</p>
+  </div>
+
+  <script>
+    (function () {
+      var log = document.getElementById('log');
+      function line(msg) {
+        var t = new Date().toLocaleTimeString('pt-BR');
+        log.textContent = '[' + t + '] ' + msg + '\n' + log.textContent;
+      }
+      function ready(cb) {
+        if (window.mktos && window.mktos.__loaded) return cb();
+        setTimeout(function () { ready(cb); }, 60);
+      }
+      ready(function () {
+        document.getElementById('ep').textContent = window.mktos.endpoint;
+        line('pixel carregado → page_view enviado. endpoint: ' + window.mktos.endpoint);
+      });
+      function fire(name, props, desc) {
+        window.mktos ? window.mktos.track(name, props) : 0;
+        line('track("' + name + '"' + (props ? ', ' + JSON.stringify(props) : '') + ') — ' + desc);
+      }
+      document.getElementById('buy').onclick = function () {
+        fire('purchase', { value: 497, produto: 'Método Foguete' }, 'venda registrada');
+      };
+      document.getElementById('lead').onclick = function () {
+        fire('lead', { origem: 'botao-saiba-mais' }, 'lead capturado');
+      };
+      document.getElementById('cta').onclick = function () {
+        fire('cta_click', { cta: 'assistir-aula' }, 'clique em CTA');
+      };
+    })();
+  </script>
+</body>
+</html>

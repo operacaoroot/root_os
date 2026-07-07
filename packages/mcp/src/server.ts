@@ -160,5 +160,43 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'get_events_summary',
+    {
+      description:
+        'Resumo do tráfego do pixel numa janela (default 7 dias): totais de eventos, sessões, visitantes, compras e receita; quebra por evento, por origem (UTM) e páginas mais vistas; série diária. [read_only]',
+      inputSchema: {
+        days: z.number().int().min(1).max(90).optional().describe('Janela em dias (1–90; default 7)'),
+      },
+      annotations: { title: 'Resumo de eventos/pixel', ...READ_ONLY },
+    },
+    async ({ days }) => {
+      try {
+        return ok(await apiGet(`/events/summary${qs({ days })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_recent_events',
+    {
+      description:
+        'Lista os eventos de pixel mais recentes (page_view, purchase, lead, etc.) com página, origem (UTM), dispositivo e valor. Útil para depurar rastreamento e ver conversões em tempo quase real. [read_only]',
+      inputSchema: {
+        limit: z.number().int().min(1).max(200).optional().describe('Quantos eventos (1–200; default 50)'),
+      },
+      annotations: { title: 'Eventos recentes do pixel', ...READ_ONLY },
+    },
+    async ({ limit }) => {
+      try {
+        return ok(await apiGet(`/events/recent${qs({ limit })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

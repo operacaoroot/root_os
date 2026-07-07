@@ -42,6 +42,14 @@ const leads = await client.callTool({ name: 'search_leads', arguments: { period:
 const l = JSON.parse((leads.content as Array<{ text: string }>)[0].text);
 console.log('search_leads(month) → total:', l.total);
 
+const ev = await client.callTool({ name: 'get_events_summary', arguments: { days: 7 } });
+const e = JSON.parse((ev.content as Array<{ text: string }>)[0].text);
+console.log(
+  'get_events_summary(7d) →',
+  { eventos: e.totals.events, sessoes: e.totals.sessions, compras: e.totals.purchases, receita: e.totals.revenue },
+  '· topEvento:', e.byEvent[0]?.name,
+);
+
 console.log('\n✔ MCP OK');
 await client.close();
 process.exit(0);

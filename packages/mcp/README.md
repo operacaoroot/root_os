@@ -21,6 +21,8 @@ Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas pa
 | `get_campaign` | Dossiê da campanha (CPL/CPA + leads) |
 | `list_tasks` | Tarefas (filtro overdue/status) |
 | `get_overdue_tasks` | Só tarefas atrasadas |
+| `get_events_summary` | Tráfego do pixel: totais, receita, quebra por evento/origem, série diária |
+| `list_recent_events` | Últimos eventos do pixel (page_view/purchase/lead…) |
 
 ## Rodar
 ```bash

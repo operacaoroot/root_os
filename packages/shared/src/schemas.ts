@@ -85,3 +85,49 @@ export const TrackEventSchema = z.object({
   ts: z.number().optional(),
 });
 export type TrackEventInput = z.infer<typeof TrackEventSchema>;
+
+// --- Pixel / eventos (painel — leitura autenticada) ---
+export const SourceMetaSchema = z.object({ tool: z.string(), generatedAt: z.string() });
+
+export const EventsSummarySchema = z.object({
+  window: z.object({ since: z.string(), until: z.string(), days: z.number().int() }),
+  totals: z.object({
+    events: z.number().int(),
+    sessions: z.number().int(),
+    visitors: z.number().int(), // anonymousId distintos
+    purchases: z.number().int(),
+    revenue: z.number(),
+  }),
+  lastEventAt: z.string().nullable(),
+  byEvent: z.array(z.object({ name: z.string(), count: z.number().int() })),
+  bySource: z.array(z.object({ source: z.string(), count: z.number().int() })),
+  topPages: z.array(z.object({ url: z.string(), count: z.number().int() })),
+  daily: z.array(
+    z.object({ date: z.string(), events: z.number().int(), sessions: z.number().int() }),
+  ),
+  source: SourceMetaSchema,
+});
+export type EventsSummary = z.infer<typeof EventsSummarySchema>;
+
+export const EventRowSchema = z.object({
+  id: z.string(),
+  eventName: z.string(),
+  url: z.string().nullable(),
+  referrer: z.string().nullable(),
+  utmSource: z.string().nullable(),
+  utmMedium: z.string().nullable(),
+  utmCampaign: z.string().nullable(),
+  device: z.string().nullable(),
+  value: z.number().nullable(),
+  sessionId: z.string(),
+  anonymousId: z.string(),
+  occurredAt: z.string(), // ISO
+});
+export type EventRow = z.infer<typeof EventRowSchema>;
+
+export const EventsRecentSchema = z.object({
+  items: z.array(EventRowSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type EventsRecent = z.infer<typeof EventsRecentSchema>;

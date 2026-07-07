@@ -3,7 +3,7 @@
 > O MCP **não é** um amontoado de automações soltas. É uma camada com **contratos, permissões e logs**.
 > Servidor: `packages/mcp` (`@modelcontextprotocol/sdk`, TS). Exposto p/ Claude Desktop, Claude Code e qualquer cliente MCP.
 
-> **Status (Fase 2):** ✅ implementado e testado — 8 tools **read_only** (`get_dashboard_summary`, `get_funnel_metrics`, `search_leads`, `get_lead`, `list_campaigns`, `get_campaign`, `list_tasks`, `get_overdue_tasks`). Todas chamam a API via conta de **serviço só-leitura** (`ia_servico`) → passam por RBAC + auditoria; a IA nunca toca o banco direto. Como plugar: `packages/mcp/README.md`. Tools `write_*` entram nas próximas fases com aprovação humana.
+> **Status (Fase 2):** ✅ implementado e testado — 10 tools **read_only** (`get_dashboard_summary`, `get_funnel_metrics`, `search_leads`, `get_lead`, `list_campaigns`, `get_campaign`, `list_tasks`, `get_overdue_tasks`, `get_events_summary`, `list_recent_events`). Todas chamam a API via conta de **serviço só-leitura** (`ia_servico`) → passam por RBAC + auditoria; a IA nunca toca o banco direto. Como plugar: `packages/mcp/README.md`. Tools `write_*` entram nas próximas fases com aprovação humana.
 
 ## Anatomia de toda tool
 
