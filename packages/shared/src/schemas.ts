@@ -284,7 +284,7 @@ export type UpdateCampaignInput = z.infer<typeof UpdateCampaignSchema>;
 
 // --- Integrações / conectores (arcabouço Fase 3–7) ---
 export type ConnectorCategory =
-  | 'ai' | 'messaging' | 'tasks' | 'social' | 'email' | 'storage' | 'knowledge' | 'automation' | 'calendar';
+  | 'ai' | 'messaging' | 'tasks' | 'social' | 'email' | 'storage' | 'knowledge' | 'automation' | 'calendar' | 'finance';
 
 export interface ConnectorInfo {
   key: string;
@@ -311,6 +311,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'drive', label: 'Google Drive', category: 'storage', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
   { key: 'obsidian', label: 'Obsidian', category: 'knowledge', phase: 5, authType: 'builtin', requires: 'pasta/sync do vault' },
   { key: 'whatsapp', label: 'WhatsApp (Zapfy)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'canal próprio (app consolidado)' },
+  { key: 'pluggy', label: 'Bancos (Open Finance/Pluggy)', category: 'finance', phase: 2, authType: 'api_key', requires: 'PLUGGY_CLIENT_ID/SECRET (~/.config/root/pluggy.env)' },
+  { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
 ];
 
 export const IntegrationCatalogRowSchema = z.object({
@@ -420,3 +422,206 @@ export const SearchResultSchema = z.object({
   source: SourceMetaSchema,
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+
+// --- Financeiro (FinOps: contas, lançamentos, categorias, bancos) ---
+export const FINANCE_ACCOUNT_TYPES = ['corrente', 'poupanca', 'caixa', 'cartao', 'investimento'] as const;
+export const FinanceAccountTypeSchema = z.enum(FINANCE_ACCOUNT_TYPES);
+export type FinanceAccountTypeValue = z.infer<typeof FinanceAccountTypeSchema>;
+
+export const FINANCE_TX_TYPES = ['entrada', 'saida'] as const;
+export const FinanceTxTypeSchema = z.enum(FINANCE_TX_TYPES);
+export type FinanceTxTypeValue = z.infer<typeof FinanceTxTypeSchema>;
+
+export const FINANCE_TX_STATUS = ['previsto', 'realizado', 'conciliado'] as const;
+export const FinanceTxStatusSchema = z.enum(FINANCE_TX_STATUS);
+export type FinanceTxStatusValue = z.infer<typeof FinanceTxStatusSchema>;
+
+export const FINANCE_CATEGORY_KINDS = ['receita', 'despesa'] as const;
+export const FinanceCategoryKindSchema = z.enum(FINANCE_CATEGORY_KINDS);
+export type FinanceCategoryKindValue = z.infer<typeof FinanceCategoryKindSchema>;
+
+export const BANK_CONNECTION_STATUS = ['pending', 'connected', 'error', 'disconnected'] as const;
+export const BankConnectionStatusSchema = z.enum(BANK_CONNECTION_STATUS);
+
+// Conta financeira (com saldo derivado dos lançamentos realizados)
+export const FinanceAccountSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: FinanceAccountTypeSchema,
+  institution: z.string().nullable(),
+  currency: z.string(),
+  provider: z.string(),
+  isActive: z.boolean(),
+  openingBalance: z.number(),
+  balance: z.number(), // openingBalance + entradas − saídas realizadas
+  createdAt: z.string(),
+});
+export type FinanceAccount = z.infer<typeof FinanceAccountSchema>;
+
+export const FinanceAccountListSchema = z.object({
+  items: z.array(FinanceAccountSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type FinanceAccountList = z.infer<typeof FinanceAccountListSchema>;
+
+export const FinanceCategorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: FinanceCategoryKindSchema,
+  color: z.string().nullable(),
+});
+export type FinanceCategory = z.infer<typeof FinanceCategorySchema>;
+
+export const FinanceCategoryListSchema = z.object({
+  items: z.array(FinanceCategorySchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type FinanceCategoryList = z.infer<typeof FinanceCategoryListSchema>;
+
+export const FinanceTransactionSchema = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  accountName: z.string().nullable(),
+  categoryId: z.string().nullable(),
+  categoryName: z.string().nullable(),
+  type: FinanceTxTypeSchema,
+  status: FinanceTxStatusSchema,
+  description: z.string(),
+  amount: z.number(),
+  date: z.string(), // ISO
+  dueDate: z.string().nullable(),
+  paidAt: z.string().nullable(),
+  counterparty: z.string().nullable(),
+  documentNumber: z.string().nullable(),
+  source: z.string(),
+  createdAt: z.string(),
+});
+export type FinanceTransaction = z.infer<typeof FinanceTransactionSchema>;
+
+export const FinanceTransactionListSchema = z.object({
+  items: z.array(FinanceTransactionSchema),
+  total: z.number().int(),
+  totals: z.object({ entradas: z.number(), saidas: z.number(), saldo: z.number() }),
+  source: SourceMetaSchema,
+});
+export type FinanceTransactionList = z.infer<typeof FinanceTransactionListSchema>;
+
+// Resumo do módulo (cards do dashboard financeiro)
+export const FinanceSummarySchema = z.object({
+  saldoTotal: z.number(),
+  contas: z.number().int(),
+  mes: z.object({ entradas: z.number(), saidas: z.number(), resultado: z.number() }),
+  aReceber: z.number(),
+  aPagar: z.number(),
+  aReceberVencido: z.number(),
+  aPagarVencido: z.number(),
+  byAccount: z.array(z.object({ id: z.string(), name: z.string(), balance: z.number() })),
+  topCategorias: z.array(z.object({ name: z.string(), kind: z.string(), total: z.number() })),
+  bancos: z.object({ conexoes: z.number().int(), conectados: z.number().int(), pluggyConfigurado: z.boolean() }),
+  source: SourceMetaSchema,
+});
+export type FinanceSummary = z.infer<typeof FinanceSummarySchema>;
+
+// Fluxo de caixa projetado (dia a dia, incluindo previstos)
+export const CashflowSchema = z.object({
+  window: z.object({ from: z.string(), to: z.string() }),
+  openingBalance: z.number(),
+  days: z.array(
+    z.object({
+      date: z.string(),
+      entradas: z.number(),
+      saidas: z.number(),
+      resultado: z.number(),
+      acumulado: z.number(),
+    }),
+  ),
+  source: SourceMetaSchema,
+});
+export type Cashflow = z.infer<typeof CashflowSchema>;
+
+export const BankConnectionSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  institutionName: z.string().nullable(),
+  status: BankConnectionStatusSchema,
+  lastSyncAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  accounts: z.number().int(),
+  createdAt: z.string(),
+});
+export type BankConnection = z.infer<typeof BankConnectionSchema>;
+
+export const BankConnectionListSchema = z.object({
+  items: z.array(BankConnectionSchema),
+  total: z.number().int(),
+  pluggyConfigurado: z.boolean(),
+  source: SourceMetaSchema,
+});
+export type BankConnectionList = z.infer<typeof BankConnectionListSchema>;
+
+// --- Financeiro: entradas de escrita (write) ---
+export const CreateFinanceAccountSchema = z.object({
+  name: z.string().min(2).max(120),
+  type: FinanceAccountTypeSchema.default('corrente'),
+  institution: z.string().max(120).nullable().optional(),
+  openingBalance: z.number().optional(),
+});
+export type CreateFinanceAccountInput = z.infer<typeof CreateFinanceAccountSchema>;
+
+export const CreateFinanceCategorySchema = z.object({
+  name: z.string().min(2).max(80),
+  kind: FinanceCategoryKindSchema,
+  color: z.string().max(20).nullable().optional(),
+});
+export type CreateFinanceCategoryInput = z.infer<typeof CreateFinanceCategorySchema>;
+
+export const CreateFinanceTransactionSchema = z.object({
+  accountId: z.string().min(1),
+  categoryId: z.string().nullable().optional(),
+  type: FinanceTxTypeSchema,
+  status: FinanceTxStatusSchema.default('realizado'),
+  description: z.string().min(1).max(280),
+  amount: z.number().positive(),
+  date: z.string().min(1), // ISO ou yyyy-mm-dd
+  dueDate: z.string().nullable().optional(),
+  counterparty: z.string().max(160).nullable().optional(),
+  documentNumber: z.string().max(80).nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+});
+export type CreateFinanceTransactionInput = z.infer<typeof CreateFinanceTransactionSchema>;
+
+export const UpdateFinanceTransactionSchema = z
+  .object({
+    status: FinanceTxStatusSchema.optional(),
+    categoryId: z.string().nullable().optional(),
+    description: z.string().min(1).max(280).optional(),
+    amount: z.number().positive().optional(),
+    date: z.string().optional(),
+    dueDate: z.string().nullable().optional(),
+    paidAt: z.string().nullable().optional(),
+    counterparty: z.string().max(160).nullable().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Nada para atualizar' });
+export type UpdateFinanceTransactionInput = z.infer<typeof UpdateFinanceTransactionSchema>;
+
+export const OfxImportResultSchema = z.object({
+  imported: z.number().int(),
+  skipped: z.number().int(),
+  accountId: z.string(),
+  source: SourceMetaSchema,
+});
+export type OfxImportResult = z.infer<typeof OfxImportResultSchema>;
+
+export const ImportOfxSchema = z.object({
+  accountId: z.string().min(1),
+  content: z.string().min(10), // conteúdo do arquivo .ofx
+});
+export type ImportOfxInput = z.infer<typeof ImportOfxSchema>;
+
+export const RegisterPluggyItemSchema = z.object({ itemId: z.string().min(1) });
+export type RegisterPluggyItemInput = z.infer<typeof RegisterPluggyItemSchema>;
+
+export const PluggyConnectTokenSchema = z.object({ itemId: z.string().optional() });
+export type PluggyConnectTokenInput = z.infer<typeof PluggyConnectTokenSchema>;

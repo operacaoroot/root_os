@@ -218,6 +218,32 @@ async function main() {
     create: { accountId: acc.id, status: 'ok', lastSyncAt: new Date(), latencyMs: 180 },
   });
 
+  // 5g) Financeiro: categorias padrão + conta Caixa (idempotente)
+  const financeCats: Array<{ name: string; kind: 'receita' | 'despesa' }> = [
+    { name: 'Vendas', kind: 'receita' },
+    { name: 'Serviços', kind: 'receita' },
+    { name: 'Outras receitas', kind: 'receita' },
+    { name: 'Salários e pró-labore', kind: 'despesa' },
+    { name: 'Fornecedores', kind: 'despesa' },
+    { name: 'Marketing', kind: 'despesa' },
+    { name: 'Impostos', kind: 'despesa' },
+    { name: 'Software e assinaturas', kind: 'despesa' },
+    { name: 'Infraestrutura', kind: 'despesa' },
+    { name: 'Outras despesas', kind: 'despesa' },
+  ];
+  for (const c of financeCats) {
+    await prisma.financeCategory.upsert({
+      where: { orgId_kind_name: { orgId: org.id, kind: c.kind, name: c.name } },
+      update: {},
+      create: { orgId: org.id, name: c.name, kind: c.kind },
+    });
+  }
+  if ((await prisma.financeAccount.count({ where: { orgId: org.id } })) === 0) {
+    await prisma.financeAccount.create({
+      data: { orgId: org.id, name: 'Caixa', type: 'caixa', provider: 'manual' },
+    });
+  }
+
   console.log('✔ Seed concluído.');
   console.log(`  Org: ${org.name} (${org.slug})`);
   console.log(`  Login admin → ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);

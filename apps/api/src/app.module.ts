@@ -18,6 +18,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { ContentModule } from './content/content.module';
 import { ObsidianModule } from './obsidian/obsidian.module';
 import { GoogleModule } from './google/google.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { GoogleModule } from './google/google.module';
     ContentModule,
     ObsidianModule,
     GoogleModule,
+    FinanceModule,
   ],
   controllers: [HealthController],
 })

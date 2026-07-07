@@ -20,6 +20,7 @@ export const NAV: NavItem[] = [
   { key: 'vendas', label: 'Página de vendas', href: '/vendas', icon: 'ShoppingCart', permission: 'dashboard.ver', phase: 2 },
   { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', phase: 2 },
   { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', phase: 3 },
+  { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', phase: 2 },
   { key: 'automacoes', label: 'Automações', href: '/automacoes', icon: 'Zap', permission: 'automacoes.ver', phase: 3 },
   { key: 'google', label: 'Google', href: '/google', icon: 'Mail', permission: 'dashboard.ver', phase: 2 },
   { key: 'whatsapp', label: 'WhatsApp', href: '/whatsapp', icon: 'MessageCircle', permission: 'whatsapp.enviar', phase: 6 },

@@ -358,5 +358,83 @@ export function buildServer(): McpServer {
     },
   );
 
+  // ---------- Financeiro (FinOps) ----------
+  server.registerTool(
+    'get_finance_summary',
+    {
+      description:
+        'Resumo financeiro: saldo total consolidado, resultado/entradas/saídas do mês, contas a pagar e a receber (inclusive vencidas), saldo por conta, top categorias do mês e status das conexões bancárias. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Resumo financeiro', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/finance/summary'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_finance_accounts',
+    {
+      description: 'Lista as contas financeiras (bancária, caixa, cartão) com saldo atual e saldo inicial. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Contas financeiras', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/finance/accounts'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_finance_transactions',
+    {
+      description:
+        'Lista lançamentos financeiros, filtrando por status (previsto|realizado|conciliado), tipo (entrada|saida), conta e período (from/to em YYYY-MM-DD). Retorna também os totais de entradas, saídas e saldo. [read_only]',
+      inputSchema: {
+        status: z.enum(['previsto', 'realizado', 'conciliado']).optional().describe('Status do lançamento'),
+        type: z.enum(['entrada', 'saida']).optional().describe('Tipo do lançamento'),
+        account_id: z.string().optional().describe('ID da conta'),
+        from: z.string().optional().describe('Data inicial (YYYY-MM-DD)'),
+        to: z.string().optional().describe('Data final (YYYY-MM-DD)'),
+        limit: z.number().int().min(1).max(1000).optional().describe('Quantos lançamentos (default 200)'),
+      },
+      annotations: { title: 'Lançamentos financeiros', ...READ_ONLY },
+    },
+    async ({ status, type, account_id, from, to, limit }) => {
+      try {
+        return ok(await apiGet(`/finance/transactions${qs({ status, type, accountId: account_id, from, to, limit })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'get_cashflow',
+    {
+      description:
+        'Fluxo de caixa projetado dia a dia (inclui previstos por vencimento): saldo de abertura, entradas/saídas/resultado por dia e saldo acumulado. Janela padrão: hoje até +30 dias. [read_only]',
+      inputSchema: {
+        from: z.string().optional().describe('Início da janela (YYYY-MM-DD)'),
+        to: z.string().optional().describe('Fim da janela (YYYY-MM-DD)'),
+      },
+      annotations: { title: 'Fluxo de caixa', ...READ_ONLY },
+    },
+    async ({ from, to }) => {
+      try {
+        return ok(await apiGet(`/finance/cashflow${qs({ from, to })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

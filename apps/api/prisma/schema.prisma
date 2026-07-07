@@ -33,6 +33,11 @@ model Org {
   contentItems ContentItem[]
   knowledge    KnowledgeNote[]
   google       GoogleAccount?
+
+  financeAccounts     FinanceAccount[]
+  financeCategories   FinanceCategory[]
+  financeTransactions FinanceTransaction[]
+  bankConnections     BankConnection[]
 }
 
 model User {
@@ -363,4 +368,129 @@ model Report {
   createdAt   DateTime   @default(now())
 
   @@index([orgId, type, createdAt])
+}
+
+// ---------- Financeiro (FinOps: contas, lançamentos, categorias, bancos) ----------
+// Módulo financeiro próprio do root. Integração bancária via Open Finance (Pluggy)
+// e importação de extrato OFX. Base pronta p/ receber o enxerto do FinOps5.0.
+enum FinanceAccountType {
+  corrente
+  poupanca
+  caixa
+  cartao
+  investimento
+}
+
+enum FinanceTxType {
+  entrada // receita / crédito
+  saida   // despesa / débito
+}
+
+enum FinanceTxStatus {
+  previsto   // conta a pagar/receber (ainda não realizada)
+  realizado  // efetivada (entrou/saiu do caixa)
+  conciliado // batida com o extrato bancário
+}
+
+enum FinanceCategoryKind {
+  receita
+  despesa
+}
+
+enum BankConnectionStatus {
+  pending
+  connected
+  error
+  disconnected
+}
+
+// Conexão com um banco/instituição via Open Finance (Pluggy) ou upload de OFX.
+model BankConnection {
+  id              String               @id @default(uuid())
+  orgId           String
+  org             Org                  @relation(fields: [orgId], references: [id])
+  provider        String               @default("pluggy") // pluggy | ofx
+  externalId      String? // itemId no provedor (Pluggy)
+  institutionName String?
+  status          BankConnectionStatus @default(pending)
+  lastSyncAt      DateTime?
+  lastError       String?
+  config          Json?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  accounts FinanceAccount[]
+
+  @@index([orgId])
+}
+
+// Conta financeira (bancária, caixa, cartão). Saldo derivado dos lançamentos.
+model FinanceAccount {
+  id             String             @id @default(uuid())
+  orgId          String
+  org            Org                @relation(fields: [orgId], references: [id])
+  name           String
+  type           FinanceAccountType @default(corrente)
+  institution    String?
+  currency       String             @default("BRL")
+  openingBalance Decimal            @default(0) @db.Decimal(14, 2)
+  provider       String             @default("manual") // manual | pluggy | ofx
+  externalId     String? // id da conta no provedor
+  connectionId   String?
+  connection     BankConnection?    @relation(fields: [connectionId], references: [id])
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  transactions FinanceTransaction[]
+
+  @@index([orgId])
+  @@index([orgId, provider])
+}
+
+// Categoria de receita/despesa (plano de contas simples).
+model FinanceCategory {
+  id        String              @id @default(uuid())
+  orgId     String
+  org       Org                 @relation(fields: [orgId], references: [id])
+  name      String
+  kind      FinanceCategoryKind @default(despesa)
+  color     String?
+  createdAt DateTime            @default(now())
+
+  transactions FinanceTransaction[]
+
+  @@unique([orgId, kind, name])
+  @@index([orgId])
+}
+
+// Lançamento financeiro. amount é SEMPRE positivo; o sinal vem de `type`.
+// externalId (extrato/Pluggy) é único por conta p/ evitar duplicidade no sync.
+model FinanceTransaction {
+  id             String           @id @default(uuid())
+  orgId          String
+  org            Org              @relation(fields: [orgId], references: [id])
+  accountId      String
+  account        FinanceAccount   @relation(fields: [accountId], references: [id])
+  categoryId     String?
+  category       FinanceCategory? @relation(fields: [categoryId], references: [id])
+  type           FinanceTxType
+  status         FinanceTxStatus  @default(realizado)
+  description    String
+  amount         Decimal          @db.Decimal(14, 2)
+  date           DateTime // competência / data do lançamento
+  dueDate        DateTime? // vencimento (contas a pagar/receber)
+  paidAt         DateTime?
+  counterparty   String? // favorecido / pagador
+  documentNumber String?
+  notes          String?
+  source         String           @default("manual") // manual | ofx | pluggy
+  externalId     String? // id no extrato/provedor (dedup)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([orgId, accountId, externalId])
+  @@index([orgId, date])
+  @@index([orgId, status])
+  @@index([accountId])
 }

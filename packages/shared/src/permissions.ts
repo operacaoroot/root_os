@@ -9,6 +9,9 @@ export const PERMISSIONS = [
   'instagram.ver',
   'tarefas.ver',
   'tarefas.editar',
+  'financeiro.ver',
+  'financeiro.editar',
+  'financeiro.conciliar',
   'gmail.ver',
   'gmail.responder',
   'whatsapp.enviar',
@@ -41,9 +44,17 @@ export const ROLES = {
     name: 'Diretor',
     permissions: [
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'instagram.ver',
-      'tarefas.ver', 'gmail.ver', 'drive.ver', 'obsidian.ver',
+      'tarefas.ver', 'financeiro.ver', 'gmail.ver', 'drive.ver', 'obsidian.ver',
       'relatorios.ver', 'relatorios.gerar', 'relatorios.enviar',
       'automacoes.ver', 'mcp.ver', 'auditoria.ver',
+    ] as Permission[],
+  },
+  // Perfil dedicado ao Financeiro (FinOps): opera contas, lançamentos e bancos.
+  financeiro: {
+    name: 'Financeiro',
+    permissions: [
+      'dashboard.ver', 'financeiro.ver', 'financeiro.editar', 'financeiro.conciliar',
+      'relatorios.ver', 'relatorios.gerar', 'mcp.ver',
     ] as Permission[],
   },
   gestor_marketing: {
@@ -79,7 +90,7 @@ export const ROLES = {
     name: 'IA / Serviço (read-only)',
     permissions: [
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'tarefas.ver',
-      'relatorios.ver', 'obsidian.ver', 'gmail.ver', 'drive.ver',
+      'financeiro.ver', 'relatorios.ver', 'obsidian.ver', 'gmail.ver', 'drive.ver',
       'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },

@@ -27,6 +27,18 @@ Monorepo pnpm+Turborepo · Postgres+Redis+MinIO isolados via docker-compose · s
 Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico por IA. _(Zapier/Apify SUSPENSOS por ora — usando Telegram.)_
 - ✅ **ClickUp** conectado de verdade (API v2 token; sync das tarefas reais → módulo Tarefas). Falta: agendar o sync, e Asana.
 
+## Módulo Financeiro (FinOps) ✅ (de pé)
+Área **exclusiva do financeiro**, isolada no mesmo stack. Base para incorporar o projeto **FinOps5.0**.
+- **Modelo:** `FinanceAccount` (contas: corrente/poupança/caixa/cartão/investimento, saldo derivado), `FinanceCategory` (plano de contas receita/despesa), `FinanceTransaction` (lançamentos: previsto→realizado→conciliado; `amount` positivo + `type`), `BankConnection` (Open Finance/OFX). Migration `add_finance`.
+- **API (`/api/finance/*`):** resumo (saldo total, resultado do mês, a pagar/receber inclusive vencidos), fluxo de caixa projetado dia a dia, CRUD de contas/categorias/lançamentos, tudo `orgId`-scoped + auditoria + envelope `source`.
+- **Permissões:** `financeiro.ver | editar | conciliar` + perfil dedicado **Financeiro**. `ia_servico` ganha leitura.
+- **Integração bancária:**
+  - ✅ **OFX** — importação de extrato (upload `.ofx`), dedup por FITID. **Funciona sem nenhuma credencial.**
+  - ✅ **Open Finance (Pluggy)** — conector pronto (auth clientId/secret → apiKey, connect-token p/ o widget, sync de contas + extrato, health no hub). Liga com `PLUGGY_CLIENT_ID/SECRET` em `~/.config/root/pluggy.env`.
+- **Web:** `/financeiro` com abas Visão geral · Lançamentos · Contas · Bancos (gating por permissão).
+- **MCP:** `get_finance_summary`, `list_finance_accounts`, `list_finance_transactions`, `get_cashflow` (read-only).
+- ⏳ **Enxerto FinOps5.0:** o repo é privado (`pedromagnago/FinOps5.0`); ao liberar acesso (ZIP em `_finops_import/` ou tornar público), grafamos as telas/regras específicas por cima desta base.
+
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
 
