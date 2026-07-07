@@ -154,7 +154,11 @@ export class FinanceService {
       where,
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
       take,
-      include: { account: { select: { name: true } }, category: { select: { name: true } } },
+      include: {
+        account: { select: { name: true } },
+        category: { select: { name: true } },
+        chartAccount: { select: { codigo: true } },
+      },
     });
     let entradas = 0;
     let saidas = 0;
@@ -179,6 +183,8 @@ export class FinanceService {
         paidAt: iso(r.paidAt),
         counterparty: r.counterparty,
         documentNumber: r.documentNumber,
+        chartAccountId: r.chartAccountId,
+        chartCodigo: r.chartAccount?.codigo ?? null,
         source: r.source,
         createdAt: r.createdAt.toISOString(),
       })),
@@ -195,11 +201,16 @@ export class FinanceService {
       const cat = await this.prisma.financeCategory.findFirst({ where: { id: input.categoryId, orgId } });
       if (!cat) throw new NotFoundException('Categoria não encontrada');
     }
+    if (input.chartAccountId) {
+      const ca = await this.prisma.chartAccount.findFirst({ where: { id: input.chartAccountId, orgId } });
+      if (!ca) throw new NotFoundException('Conta do plano de contas não encontrada');
+    }
     const tx = await this.prisma.financeTransaction.create({
       data: {
         orgId,
         accountId: input.accountId,
         categoryId: input.categoryId ?? null,
+        chartAccountId: input.chartAccountId ?? null,
         type: input.type as FinanceTxType,
         status: (input.status ?? 'realizado') as FinanceTxStatus,
         description: input.description,

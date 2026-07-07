@@ -38,6 +38,8 @@ model Org {
   financeCategories   FinanceCategory[]
   financeTransactions FinanceTransaction[]
   bankConnections     BankConnection[]
+  chartAccounts       ChartAccount[]
+  dreLines            DreLine[]
 }
 
 model User {
@@ -486,6 +488,8 @@ model FinanceTransaction {
   notes          String?
   source         String           @default("manual") // manual | ofx | pluggy
   externalId     String? // id no extrato/provedor (dedup)
+  chartAccountId String? // conta do plano de contas (p/ DRE)
+  chartAccount   ChartAccount?    @relation(fields: [chartAccountId], references: [id])
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -493,4 +497,55 @@ model FinanceTransaction {
   @@index([orgId, date])
   @@index([orgId, status])
   @@index([accountId])
+  @@index([chartAccountId])
+}
+
+// ---------- FinOps: Plano de Contas + DRE (enxerto do FinOps5.0) ----------
+// Plano de contas gerencial hierárquico (nível 1 grupo → 2 subgrupo → 3 folha).
+// Só folhas (permiteLancamento) recebem lançamento. Cada folha mapeia a uma linha
+// do DRE (dreLine) — é o que o motor DRE usa p/ classificar receita/despesa.
+model ChartAccount {
+  id                String   @id @default(uuid())
+  orgId             String
+  org               Org      @relation(fields: [orgId], references: [id])
+  parentId          String?
+  parent            ChartAccount?  @relation("ChartTree", fields: [parentId], references: [id])
+  children          ChartAccount[] @relation("ChartTree")
+  codigo            String // ex.: "3.1.01"
+  nome              String
+  tipo              String // receita | despesa
+  nivel             Int // 1 | 2 | 3
+  permiteLancamento Boolean  @default(false)
+  dreLineId         String?
+  dreLine           DreLine? @relation(fields: [dreLineId], references: [id])
+  ativo             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  transactions FinanceTransaction[]
+
+  @@unique([orgId, codigo])
+  @@index([orgId, parentId])
+}
+
+// Linha do DRE (template dirigido por fórmula — o "Motor Vortex").
+// tipo: origem (soma de lançamentos) | grupo/calculado (fórmula) | indicador (%).
+// formula referencia outros códigos de linha (ex.: "MC / FL * 100").
+model DreLine {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  codigo    String // FB, ISV, FL, CD, MC, EBITDA, RF, LL...
+  nome      String
+  operador  String   @default("( )") // (+) | (-) | (=) | (+/-) | ( )
+  tipo      String   @default("origem") // origem | grupo | calculado | indicador
+  formula   String?
+  ordem     Int
+  visivel   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  chartAccounts ChartAccount[]
+
+  @@unique([orgId, codigo])
+  @@index([orgId, ordem])
 }

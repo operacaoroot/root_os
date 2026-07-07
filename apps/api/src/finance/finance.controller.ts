@@ -7,8 +7,10 @@ import {
   ImportOfxSchema,
   RegisterPluggyItemSchema,
   PluggyConnectTokenSchema,
+  CreateChartAccountSchema,
 } from '@mktos/shared';
 import { FinanceService } from './finance.service';
+import { FinopsService } from './finops.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -17,7 +19,35 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('finance')
 export class FinanceController {
-  constructor(private readonly svc: FinanceService) {}
+  constructor(
+    private readonly svc: FinanceService,
+    private readonly finops: FinopsService,
+  ) {}
+
+  // --- FinOps: DRE + Plano de Contas ---
+  @Get('dre')
+  @RequirePermissions('financeiro.ver')
+  dre(
+    @CurrentUser() user: JwtUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('month') month?: string,
+  ) {
+    return this.finops.dre(user.orgId, { from, to, month });
+  }
+
+  @Get('chart-accounts')
+  @RequirePermissions('financeiro.ver')
+  listChartAccounts(@CurrentUser() user: JwtUser) {
+    return this.finops.listChartAccounts(user.orgId);
+  }
+
+  @Post('chart-accounts')
+  @RequirePermissions('financeiro.editar')
+  createChartAccount(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    const input = CreateChartAccountSchema.parse(body);
+    return this.finops.createChartAccount(user.orgId, input, user.sub);
+  }
 
   // --- Visão geral / fluxo de caixa ---
   @Get('summary')

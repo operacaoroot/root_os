@@ -436,5 +436,43 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'get_dre',
+    {
+      description:
+        'DRE (Demonstrativo de Resultado / income statement) do período: faturamento bruto/líquido, deduções, custos diretos, margem de contribuição, custo com pessoal, despesas operacionais, EBITDA, resultado financeiro, lucro líquido e as margens (%). Motor dirigido por plano de contas → linhas de DRE. [read_only]',
+      inputSchema: {
+        month: z.string().optional().describe('Mês YYYY-MM (default: mês atual)'),
+        from: z.string().optional().describe('Início YYYY-MM-DD (alternativa a month)'),
+        to: z.string().optional().describe('Fim YYYY-MM-DD'),
+      },
+      annotations: { title: 'DRE', ...READ_ONLY },
+    },
+    async ({ month, from, to }) => {
+      try {
+        return ok(await apiGet(`/finance/dre${qs({ month, from, to })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_chart_accounts',
+    {
+      description:
+        'Plano de contas gerencial (hierárquico: grupos → subgrupos → contas folha) com o mapeamento de cada conta para a linha do DRE. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Plano de contas', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/finance/chart-accounts'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

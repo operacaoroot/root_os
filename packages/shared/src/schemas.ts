@@ -495,6 +495,8 @@ export const FinanceTransactionSchema = z.object({
   paidAt: z.string().nullable(),
   counterparty: z.string().nullable(),
   documentNumber: z.string().nullable(),
+  chartAccountId: z.string().nullable(),
+  chartCodigo: z.string().nullable(), // código do plano de contas (ex.: 3.1.01)
   source: z.string(),
   createdAt: z.string(),
 });
@@ -580,6 +582,7 @@ export type CreateFinanceCategoryInput = z.infer<typeof CreateFinanceCategorySch
 export const CreateFinanceTransactionSchema = z.object({
   accountId: z.string().min(1),
   categoryId: z.string().nullable().optional(),
+  chartAccountId: z.string().nullable().optional(),
   type: FinanceTxTypeSchema,
   status: FinanceTxStatusSchema.default('realizado'),
   description: z.string().min(1).max(280),
@@ -625,3 +628,56 @@ export type RegisterPluggyItemInput = z.infer<typeof RegisterPluggyItemSchema>;
 
 export const PluggyConnectTokenSchema = z.object({ itemId: z.string().optional() });
 export type PluggyConnectTokenInput = z.infer<typeof PluggyConnectTokenSchema>;
+
+// --- FinOps: Plano de Contas (chart of accounts) ---
+export const ChartAccountSchema = z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  codigo: z.string(),
+  nome: z.string(),
+  tipo: z.string(), // receita | despesa
+  nivel: z.number().int(),
+  permiteLancamento: z.boolean(),
+  dreLineId: z.string().nullable(),
+  dreCodigo: z.string().nullable(),
+  ativo: z.boolean(),
+});
+export type ChartAccount = z.infer<typeof ChartAccountSchema>;
+
+export const ChartAccountListSchema = z.object({
+  items: z.array(ChartAccountSchema),
+  total: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type ChartAccountList = z.infer<typeof ChartAccountListSchema>;
+
+export const CreateChartAccountSchema = z.object({
+  codigo: z.string().min(1).max(20),
+  nome: z.string().min(2).max(120),
+  tipo: z.enum(['receita', 'despesa']),
+  nivel: z.number().int().min(1).max(3),
+  parentId: z.string().nullable().optional(),
+  permiteLancamento: z.boolean().optional(),
+  dreCodigo: z.string().nullable().optional(),
+});
+export type CreateChartAccountInput = z.infer<typeof CreateChartAccountSchema>;
+
+// --- FinOps: DRE (Demonstrativo de Resultado — "Motor Vortex") ---
+export const DreLineResultSchema = z.object({
+  codigo: z.string(),
+  nome: z.string(),
+  operador: z.string(),
+  tipo: z.string(), // origem | grupo | calculado | indicador
+  ordem: z.number().int(),
+  visivel: z.boolean(),
+  valor: z.number(),
+  isPercent: z.boolean(),
+});
+export type DreLineResult = z.infer<typeof DreLineResultSchema>;
+
+export const DreSchema = z.object({
+  period: z.object({ from: z.string(), to: z.string(), label: z.string() }),
+  lines: z.array(DreLineResultSchema),
+  source: SourceMetaSchema,
+});
+export type Dre = z.infer<typeof DreSchema>;

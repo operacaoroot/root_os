@@ -9,6 +9,8 @@ import type {
   BankConnectionList,
   FinanceTxTypeValue,
   FinanceTxStatusValue,
+  ChartAccountList,
+  Dre,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -33,7 +35,9 @@ const ACCOUNT_TYPES = [
 
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'dre', label: 'DRE' },
   { key: 'lancamentos', label: 'Lançamentos' },
+  { key: 'plano', label: 'Plano de Contas' },
   { key: 'contas', label: 'Contas' },
   { key: 'bancos', label: 'Bancos' },
 ] as const;
@@ -56,6 +60,9 @@ export default function FinanceiroPage() {
   const [categories, setCategories] = useState<FinanceCategoryList | null>(null);
   const [txs, setTxs] = useState<FinanceTransactionList | null>(null);
   const [banks, setBanks] = useState<BankConnectionList | null>(null);
+  const [chart, setChart] = useState<ChartAccountList | null>(null);
+  const [dre, setDre] = useState<Dre | null>(null);
+  const [dreMonth, setDreMonth] = useState<string>(today().slice(0, 7));
 
   const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
 
@@ -66,7 +73,13 @@ export default function FinanceiroPage() {
     apiGet<FinanceAccountList>('/finance/accounts', token).then(setAccounts).catch(() => {});
     apiGet<FinanceCategoryList>('/finance/categories', token).then(setCategories).catch(() => {});
     apiGet<BankConnectionList>('/finance/bank/connections', token).then(setBanks).catch(() => {});
+    apiGet<ChartAccountList>('/finance/chart-accounts', token).then(setChart).catch(() => {});
   }, [token]);
+
+  const loadDre = useCallback(() => {
+    if (!token) return;
+    apiGet<Dre>(`/finance/dre?month=${dreMonth}`, token).then(setDre).catch((e) => setError(e.message));
+  }, [token, dreMonth]);
 
   const loadTxs = useCallback(() => {
     if (!token) return;
@@ -88,6 +101,11 @@ export default function FinanceiroPage() {
     if (!ready || !token) return;
     loadTxs();
   }, [ready, token, loadTxs]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    loadDre();
+  }, [ready, token, loadDre]);
 
   const flash = (m: string) => {
     setMsg(m);
@@ -132,16 +150,19 @@ export default function FinanceiroPage() {
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
       {tab === 'visao' && <Visao summary={summary} />}
+      {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
+      {tab === 'plano' && <PlanoContas chart={chart} />}
       {tab === 'lancamentos' && (
         <Lancamentos
           txs={txs}
           accounts={accounts}
           categories={categories}
+          chart={chart}
           canEdit={canEdit}
           token={token}
           filter={txFilter}
           setFilter={setTxFilter}
-          onChange={() => { loadTxs(); loadAll(); }}
+          onChange={() => { loadTxs(); loadAll(); loadDre(); }}
           onError={setError}
           onFlash={flash}
         />
@@ -226,11 +247,103 @@ function Visao({ summary }: { summary: FinanceSummary | null }) {
   );
 }
 
+// ---------------- DRE (Motor Vortex) ----------------
+function DreView({ dre, month, setMonth }: { dre: Dre | null; month: string; setMonth: (m: string) => void }) {
+  const fmt = (l: { valor: number; isPercent: boolean }) =>
+    l.isPercent ? `${l.valor.toFixed(1)}%` : brl(l.valor);
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-muted">Competência (mês)</label>
+        <input type="month" className={inputCls} value={month} onChange={(e) => setMonth(e.target.value)} />
+        {dre && <span className="text-sm text-muted">{dre.period.label}</span>}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wide text-muted">
+            <tr>
+              <th className="px-3 py-2 w-16">Cód.</th>
+              <th className="px-3 py-2">Linha</th>
+              <th className="px-3 py-2 text-right">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!dre && <tr><td colSpan={3} className="px-3 py-6 text-center text-muted">Carregando…</td></tr>}
+            {dre?.lines.filter((l) => l.visivel).map((l) => {
+              const strong = l.tipo === 'calculado' || l.tipo === 'grupo';
+              const isResult = l.codigo === 'LL' || l.codigo === 'EBITDA' || l.codigo === 'FL' || l.codigo === 'MC';
+              return (
+                <tr key={l.codigo} className={`border-t border-border ${strong ? 'bg-surface-2/40 font-medium' : ''}`}>
+                  <td className="px-3 py-1.5 text-[11px] text-muted">{l.codigo}</td>
+                  <td className={`px-3 py-1.5 ${l.tipo === 'origem' ? 'pl-6 text-muted' : ''}`}>
+                    <span className="mr-1 text-[11px] text-muted">{l.operador !== '( )' ? l.operador : ''}</span>{l.nome}
+                  </td>
+                  <td className={`px-3 py-1.5 text-right tabular-nums ${
+                    l.isPercent ? 'text-muted' : isResult ? (l.valor >= 0 ? 'text-good' : 'text-bad') : ''
+                  }`}>
+                    {fmt(l)}
+                  </td>
+                </tr>
+              );
+            })}
+            {dre && dre.lines.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-6 text-center text-muted">Sem template de DRE. Rode o seed FinOps.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-muted">
+        O DRE soma os lançamentos <strong>realizados/conciliados</strong> do mês, classificados pela conta do
+        plano de contas. Categorize os lançamentos (aba Lançamentos) para as linhas se preencherem.
+      </p>
+    </div>
+  );
+}
+
+// ---------------- Plano de Contas ----------------
+function PlanoContas({ chart }: { chart: ChartAccountList | null }) {
+  if (!chart) return <p className="text-sm text-muted">Carregando…</p>;
+  if (chart.items.length === 0)
+    return <p className="text-sm text-muted">Plano de contas vazio. Rode o seed FinOps (<code>db:seed:finops</code>).</p>;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-muted">{chart.total} contas · plano de contas gerencial FullBPO (mapeado ao DRE).</p>
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wide text-muted">
+            <tr>
+              <th className="px-3 py-2 w-20">Código</th>
+              <th className="px-3 py-2">Conta</th>
+              <th className="px-3 py-2 w-24">Tipo</th>
+              <th className="px-3 py-2 w-24">DRE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chart.items.map((c) => (
+              <tr key={c.id} className={`border-t border-border ${c.nivel < 3 ? 'bg-surface-2/30 font-medium' : ''}`}>
+                <td className="px-3 py-1.5 text-[11px] text-muted tabular-nums">{c.codigo}</td>
+                <td className="px-3 py-1.5" style={{ paddingLeft: `${0.75 + (c.nivel - 1) * 1}rem` }}>
+                  {c.nome}{!c.ativo && <span className="ml-1 text-[10px] text-muted">(inativo)</span>}
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className={`text-[11px] ${c.tipo === 'receita' ? 'text-good' : 'text-muted'}`}>{c.tipo}</span>
+                </td>
+                <td className="px-3 py-1.5 text-[11px] text-muted">{c.dreCodigo ?? (c.permiteLancamento ? '—' : '')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ---------------- Lançamentos ----------------
 function Lancamentos(props: {
   txs: FinanceTransactionList | null;
   accounts: FinanceAccountList | null;
   categories: FinanceCategoryList | null;
+  chart: ChartAccountList | null;
   canEdit: boolean;
   token: string | null;
   filter: { status?: string; type?: string; accountId?: string };
@@ -239,12 +352,13 @@ function Lancamentos(props: {
   onError: (e: string) => void;
   onFlash: (m: string) => void;
 }) {
-  const { txs, accounts, categories, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
+  const { txs, accounts, categories, chart, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
   const [form, setForm] = useState({
-    accountId: '', categoryId: '', type: 'saida' as FinanceTxTypeValue,
+    accountId: '', categoryId: '', chartAccountId: '', type: 'saida' as FinanceTxTypeValue,
     status: 'realizado' as FinanceTxStatusValue, description: '', amount: '', date: today(), dueDate: '',
   });
   const [open, setOpen] = useState(false);
+  const lancaveis = (chart?.items ?? []).filter((c) => c.permiteLancamento && c.ativo);
 
   const submit = () => {
     if (!form.accountId || !form.description || !form.amount) {
@@ -254,6 +368,7 @@ function Lancamentos(props: {
     apiPost('/finance/transactions', {
       accountId: form.accountId,
       categoryId: form.categoryId || undefined,
+      chartAccountId: form.chartAccountId || undefined,
       type: form.type,
       status: form.status,
       description: form.description,
@@ -317,6 +432,10 @@ function Lancamentos(props: {
           <select className={inputCls} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
             <option value="">Sem categoria</option>
             {categories?.items.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
+          </select>
+          <select className={`${inputCls} sm:col-span-2`} value={form.chartAccountId} onChange={(e) => setForm({ ...form, chartAccountId: e.target.value })}>
+            <option value="">Conta contábil / DRE (opcional)…</option>
+            {lancaveis.map((c) => <option key={c.id} value={c.id}>{c.codigo} — {c.nome}{c.dreCodigo ? ` [${c.dreCodigo}]` : ''}</option>)}
           </select>
           <input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           {form.status === 'previsto' && (
