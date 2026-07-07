@@ -1,0 +1,21 @@
+{
+  "name": "@mktos/telegram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "ask": "tsx scripts/ask.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
