@@ -45,29 +45,42 @@ export class ClickupService {
     return res.json() as Promise<T>;
   }
 
-  /** Descobre as listas a sincronizar (env override ou varredura time→espaços→listas). */
-  private async resolveListIds(): Promise<string[]> {
+  /**
+   * PREMISSA: só o espaço "root" importa (default). Localiza-o por id
+   * (CLICKUP_SPACE_ID) ou por nome (CLICKUP_SPACE_NAME, default "root"),
+   * IGNORANDO o workspace do escritório (isolamento). Nunca varre outros espaços.
+   */
+  private async resolveSpace(): Promise<{ spaceId: string; spaceName: string }> {
+    const byId = (process.env.CLICKUP_SPACE_ID ?? '').trim();
+    const wantName = (process.env.CLICKUP_SPACE_NAME ?? 'root').trim();
+    if (byId) return { spaceId: byId, spaceName: wantName };
+
+    const ignore = (process.env.CLICKUP_IGNORE_TEAMS ?? 'Cardozo & Saggioro')
+      .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const { teams } = await this.cu<{ teams: Array<{ id: string; name: string }> }>('/team');
+    for (const t of teams) {
+      if (ignore.includes(t.name.trim().toLowerCase())) continue; // não toca o escritório
+      const { spaces } = await this.cu<{ spaces: Array<{ id: string; name: string }> }>(
+        `/team/${t.id}/space?archived=false`,
+      );
+      const found = spaces.find((s) => s.name.trim().toLowerCase() === wantName.toLowerCase());
+      if (found) return { spaceId: found.id, spaceName: found.name };
+    }
+    throw new Error(`Espaço "${wantName}" não encontrado (fora do escritório).`);
+  }
+
+  /** Listas do espaço root (override por CLICKUP_LIST_IDS). */
+  private async resolveListIds(spaceId: string): Promise<string[]> {
     const override = (process.env.CLICKUP_LIST_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     if (override.length) return override;
 
-    const { teams } = await this.cu<{ teams: Array<{ id: string }> }>('/team');
-    const teamId = process.env.CLICKUP_TEAM_ID || teams[0]?.id;
-    if (!teamId) throw new Error('Nenhum time (workspace) encontrado no ClickUp.');
-
-    const { spaces } = await this.cu<{ spaces: Array<{ id: string }> }>(`/team/${teamId}/space?archived=false`);
     const listIds: string[] = [];
-    for (const sp of spaces) {
-      try {
-        const { folders } = await this.cu<{ folders: Array<{ lists: Array<{ id: string }> }> }>(
-          `/space/${sp.id}/folder?archived=false`,
-        );
-        for (const f of folders) for (const l of f.lists ?? []) listIds.push(l.id);
-        const { lists } = await this.cu<{ lists: Array<{ id: string }> }>(`/space/${sp.id}/list?archived=false`);
-        for (const l of lists) listIds.push(l.id);
-      } catch (e) {
-        this.log.warn(`Espaço ${sp.id} ignorado: ${(e as Error).message}`);
-      }
-    }
+    const { folders } = await this.cu<{ folders: Array<{ lists: Array<{ id: string }> }> }>(
+      `/space/${spaceId}/folder?archived=false`,
+    );
+    for (const f of folders) for (const l of f.lists ?? []) listIds.push(l.id);
+    const { lists } = await this.cu<{ lists: Array<{ id: string }> }>(`/space/${spaceId}/list?archived=false`);
+    for (const l of lists) listIds.push(l.id);
     return [...new Set(listIds)];
   }
 
@@ -103,7 +116,9 @@ export class ClickupService {
     }
     const started = Date.now();
     try {
-      const listIds = await this.resolveListIds();
+      const { spaceId, spaceName } = await this.resolveSpace();
+      const listIds = await this.resolveListIds(spaceId);
+      this.log.log(`ClickUp: espaço "${spaceName}" (${spaceId}), ${listIds.length} lista(s)`);
       const all: CuTask[] = [];
       for (const id of listIds) all.push(...(await this.fetchTasks(id)));
 

@@ -62,7 +62,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
-      CLICKUP_TEAM_ID: ${CLICKUP_TEAM_ID:-}
+      CLICKUP_SPACE_ID: ${CLICKUP_SPACE_ID:-}
+      CLICKUP_SPACE_NAME: ${CLICKUP_SPACE_NAME:-root}
+      CLICKUP_IGNORE_TEAMS: ${CLICKUP_IGNORE_TEAMS:-Cardozo & Saggioro}
       CLICKUP_LIST_IDS: ${CLICKUP_LIST_IDS:-}
     depends_on:
       db: { condition: service_healthy }
