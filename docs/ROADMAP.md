@@ -37,7 +37,13 @@ Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico 
   - ✅ **Open Finance (Pluggy)** — conector pronto (auth clientId/secret → apiKey, connect-token p/ o widget, sync de contas + extrato, health no hub). Liga com `PLUGGY_CLIENT_ID/SECRET` em `~/.config/root/pluggy.env`.
 - **Web:** `/financeiro` com abas Visão geral · Lançamentos · Contas · Bancos (gating por permissão).
 - **MCP:** `get_finance_summary`, `list_finance_accounts`, `list_finance_transactions`, `get_cashflow` (read-only).
-- ⏳ **Enxerto FinOps5.0:** o repo é privado (`pedromagnago/FinOps5.0`); ao liberar acesso (ZIP em `_finops_import/` ou tornar público), grafamos as telas/regras específicas por cima desta base.
+- ✅ **Enxerto FinOps5.0 (Vite/React/Supabase → nosso stack), etapas entregues:**
+  - **Plano de Contas + DRE ("Motor Vortex")** — plano hierárquico FullBPO (105 contas) + linhas de DRE com fórmula; motor `calcular_dre` portado.
+  - **AP/AR completo** — fornecedores/clientes, contratos recorrentes, rateio (dep/projeto, refletido no DRE), aprovação por limite.
+  - **Conciliação bancária por score** — match extrato↔títulos (valor/data/tipo), auto ≥0.85 / sugestão, sem duplicar saldo.
+  - **Pluggy automático** — sync agendado (Open Finance) + importação OFX.
+  - **Dashboards/KPIs** — margens do DRE, inadimplência, índice de acurácia + fluxo de caixa. Ver `docs/FINANCE.md`.
+  - ⏳ **Falta (opcional):** multi-empresa (BPO multi-cliente) e conector Omie. Refs em `docs/finops-ref/`.
 
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.

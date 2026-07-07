@@ -53,6 +53,19 @@ A conta de serviço `ia_servico` tem `financeiro.ver`.
 
 ---
 
+## Enxerto FinOps5.0 — etapas entregues
+Domínio do FinOps5.0 (BPO FullBPO) portado do stack deles (Vite/React/Supabase) para o nosso (NestJS/Prisma/Next):
+
+- **Plano de Contas + DRE ("Motor Vortex")** — `ChartAccount` (hierárquico) + `DreLine` (fórmulas); `GET /finance/{dre,chart-accounts}`. Seed `db:seed:finops`.
+- **AP/AR** — `Partner`, `Departamento`, `Projeto`, `Contract` (recorrente), `TransactionSplit` (rateio). Aprovação por limite (`FINANCE_APPROVAL_LIMIT`, default 5000): saída prevista acima do limite exige aprovação antes da baixa. Rotas `/finance/{partners,departamentos,projetos,contracts,contracts/:id/gerar,payables,transactions/:id/approve}`. Rateio reflete no DRE (corte por departamento em `dre?departamentoId=`).
+- **Conciliação bancária por score** — `GET /finance/conciliacao`, `POST /finance/conciliacao/{auto,match}`. Score = valor(50%)+data(30%)+tipo(20%); ≥0.85 auto, 0.50–0.84 sugestão (`CONCIL_THRESHOLD_AUTO/SUGESTAO`, `CONCIL_JANELA_DIAS`). Movimentos OFX/Pluggy entram `realizado`; ao casar com um título previsto, o título é consumido e o movimento vira `conciliado` (sem duplicar saldo).
+- **Pluggy automático** — `FinanceService.onModuleInit` agenda o sync (`PLUGGY_SYNC_INTERVAL_MIN`, default 360 min; só com credencial).
+- **KPIs** — `GET /finance/kpis`: margens (bruta/EBITDA/líquida do DRE), inadimplência (% a receber vencido), índice de acurácia (% de movimentos conciliados). Visão geral mostra os KPIs + gráfico de fluxo de caixa.
+
+MCP financeiro: `get_finance_summary`, `list_finance_accounts`, `list_finance_transactions`, `get_cashflow`, `get_dre`, `list_chart_accounts`, `list_payables`, `get_conciliacao`, `get_finance_kpis`.
+
+Falta (opcional): multi-empresa (BPO multi-cliente) e conector Omie — refs em `docs/finops-ref/`.
+
 ## Incorporar o FinOps5.0 (quando houver acesso)
 O repo `pedromagnago/FinOps5.0` é privado. Para trazer a base:
 1. **ZIP:** baixe *Code → Download ZIP* e solte em `~/marketing-os/_finops_import/` (pasta ignorada no git).
