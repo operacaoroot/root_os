@@ -7,9 +7,11 @@ Requisitos mapeados · **isolamento definido** (`ISOLATION.md`) · stack definid
 
 > Todo o roadmap roda no **stack Docker isolado** do projeto `root`, sem qualquer contato com o escritório C&S.
 
-## Fase 1 — Base do sistema
-Monorepo · Postgres+Redis via docker-compose · schema Prisma + migrations · Auth.js + RBAC · layout principal (menu, tema escuro, busca global vazia) · dashboard com cards (dados mock/reais parciais) · auditoria básica · tela de Configurações→Integrações · `/health`.
-**Entrega:** logo, navego, vejo o esqueleto operacional.
+## Fase 1 — Base do sistema ✅ (entregue)
+Monorepo pnpm+Turborepo · Postgres+Redis+MinIO isolados via docker-compose · schema Prisma + migration `init` + seed · **auth JWT + RBAC** (26 permissões, 6 perfis) · layout principal (sidebar por permissão, tema escuro, busca global stub) · **dashboard com cards clicáveis (dados reais)** · **leads com drill-down** (lista → ficha) · ingestão de pixel `/api/events/track` (dedup) · auditoria de login · `/api/health`.
+**Entregue:** logo (`admin@marketing-os.local`), navego, vejo números reais e clico até o detalhe do lead.
+**Verificado:** API testada via curl (login/dashboard/leads/RBAC/pixel), web build + smoke test OK, stack Docker isolado no ar.
+**Próximo increment:** containerizar api/web (Dockerfiles rascunhados) e endpoints de funil/campanhas/tarefas.
 
 ## Fase 2 — Eventos, leads e operação (o coração do MVP)
 - Endpoint `POST /api/events/track` + `pixel.js` + captura de UTM + consentimento.

@@ -1,0 +1,273 @@
+// Marketing OS — schema Prisma (Fase 1). Multi-tenant-ready via orgId.
+// Ver docs/DATA_MODEL.md. pgvector/embeddings entram na Fase 5.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identidade, acesso, auditoria ----------
+model Org {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users        User[]
+  roles        Role[]
+  leads        Lead[]
+  campaigns    Campaign[]
+  tasks        Task[]
+  pixelEvents  PixelEvent[]
+  auditLogs    AuditLog[]
+  integrations IntegrationAccount[]
+  leadSources  LeadSource[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  name         String
+  email        String   @unique
+  phone        String?
+  passwordHash String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roles     Role[]     @relation("UserRoles")
+  ownedLeads Lead[]    @relation("LeadOwner")
+
+  @@index([orgId])
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  orgId       String
+  org         Org          @relation(fields: [orgId], references: [id])
+  key         String
+  name        String
+  users       User[]       @relation("UserRoles")
+  permissions Permission[] @relation("RolePermissions")
+
+  @@unique([orgId, key])
+}
+
+model Permission {
+  id    String @id @default(uuid())
+  key   String @unique
+  roles Role[] @relation("RolePermissions")
+}
+
+enum ActorType {
+  user
+  ai
+  system
+}
+
+model AuditLog {
+  id         String    @id @default(uuid())
+  orgId      String
+  org        Org       @relation(fields: [orgId], references: [id])
+  actorType  ActorType @default(user)
+  actorId    String?
+  action     String
+  entityType String?
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId, createdAt])
+}
+
+// ---------- Integrações ----------
+enum IntegrationStatus {
+  disconnected
+  connected
+  error
+}
+
+enum HealthStatus {
+  ok
+  degraded
+  down
+}
+
+model IntegrationAccount {
+  id         String            @id @default(uuid())
+  orgId      String
+  org        Org               @relation(fields: [orgId], references: [id])
+  key        String // clickup, gmail, instagram, whatsapp...
+  label      String
+  status     IntegrationStatus @default(disconnected)
+  config     Json?
+  connectedAt DateTime?
+  createdAt  DateTime          @default(now())
+
+  health IntegrationHealth?
+
+  @@index([orgId])
+}
+
+model IntegrationHealth {
+  id         String       @id @default(uuid())
+  accountId  String       @unique
+  account    IntegrationAccount @relation(fields: [accountId], references: [id])
+  status     HealthStatus @default(down)
+  lastSyncAt DateTime?
+  nextSyncAt DateTime?
+  lastError  String?
+  latencyMs  Int?
+  checkedAt  DateTime     @default(now())
+}
+
+// ---------- Leads ----------
+model LeadSource {
+  id      String @id @default(uuid())
+  orgId   String
+  org     Org    @relation(fields: [orgId], references: [id])
+  key     String
+  name    String
+  channel String?
+  leads   Lead[]
+
+  @@unique([orgId, key])
+}
+
+enum LeadStatus {
+  novo
+  qualificado
+  oportunidade
+  reuniao
+  proposta
+  ganho
+  perdido
+}
+
+model Lead {
+  id          String     @id @default(uuid())
+  orgId       String
+  org         Org        @relation(fields: [orgId], references: [id])
+  name        String
+  email       String?
+  phone       String?
+  sourceId    String?
+  source      LeadSource? @relation(fields: [sourceId], references: [id])
+  campaignId  String?
+  campaign    Campaign?  @relation(fields: [campaignId], references: [id])
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  landingPage String?
+  status      LeadStatus @default(novo)
+  ownerId     String?
+  owner       User?      @relation("LeadOwner", fields: [ownerId], references: [id])
+  nextAction  String?
+  score       Int?
+  anonymousId String?
+  enteredAt   DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  events LeadEvent[]
+
+  @@index([orgId, enteredAt])
+  @@index([orgId, campaignId])
+  @@index([anonymousId])
+}
+
+model LeadEvent {
+  id         String   @id @default(uuid())
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id])
+  type       String
+  payload    Json?
+  occurredAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+// ---------- Campanhas ----------
+model Campaign {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  name      String
+  objective String?
+  channel   String?
+  budget    Decimal? @db.Decimal(12, 2)
+  spend     Decimal? @db.Decimal(12, 2)
+  status    String   @default("ativa") // planejada|ativa|pausada|analise|encerrada|problema
+  startAt   DateTime?
+  endAt     DateTime?
+  createdAt DateTime @default(now())
+
+  leads Lead[]
+
+  @@index([orgId])
+}
+
+// ---------- Pixel / eventos ----------
+model PixelEvent {
+  id          String   @id @default(uuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id])
+  eventId     String   @unique
+  sessionId   String
+  anonymousId String
+  eventName   String
+  url         String?
+  referrer    String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  device      String?
+  value       Decimal? @db.Decimal(12, 2)
+  metadata    Json?
+  occurredAt  DateTime @default(now())
+
+  @@index([orgId, occurredAt])
+  @@index([sessionId])
+}
+
+// ---------- Tarefas (ClickUp/Asana unificadas) ----------
+enum TaskStatus {
+  aberta
+  em_andamento
+  concluida
+  bloqueada
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  orgId       String
+  org         Org        @relation(fields: [orgId], references: [id])
+  tool        String // clickup | asana | interno
+  externalId  String?
+  title       String
+  description String?
+  status      TaskStatus @default(aberta)
+  priority    String?
+  assignee    String?
+  dueDate     DateTime?
+  externalUrl String?
+  tags        String[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([orgId, status, dueDate])
+}
