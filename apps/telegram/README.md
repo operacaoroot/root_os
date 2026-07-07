@@ -37,8 +37,17 @@ pnpm --filter @mktos/telegram build && pnpm --filter @mktos/telegram start
 
 ## Comandos no chat
 - `/start` · `/help` — ajuda e exemplos.
+- `/resumo` — briefing executivo do dia (mesmo conteúdo do envio automático).
 - `/id` — mostra seu chat id (para a allowlist).
 - Qualquer texto — vira pergunta ao assistente (ex.: *"resumo do dia"*, *"tarefas atrasadas"*).
+
+## Resumo diário automático
+O bot empurra o briefing do dia para os chats da allowlist, 1x/dia.
+- `DAILY_REPORT_TIME` (default `08:00`) e `DAILY_REPORT_TZ` (default `America/Sao_Paulo`).
+- `DAILY_REPORT_ENABLED=0` desliga o agendamento.
+- `DAILY_REPORT_NOW=1` (só na subida) envia um resumo **agora**, para testar.
+- Agendador é **in-process**: só dispara enquanto o bot está rodando. Para 24/7 de verdade,
+  containerizar (ou usar cron do sistema chamando um one-shot). Sem allowlist não há destino.
 
 ## Segurança
 - **Allowlist**: com `TELEGRAM_ALLOWED_CHAT_IDS` preenchido, o bot ignora quem não estiver na lista.

@@ -35,6 +35,12 @@ export const config = {
       .map((s) => s.trim())
       .filter(Boolean),
   },
+  // Resumo diário automático (empurrado pelo bot para os chats da allowlist).
+  daily: {
+    enabled: (process.env.DAILY_REPORT_ENABLED ?? '1') !== '0',
+    time: process.env.DAILY_REPORT_TIME ?? '08:00', // HH:MM
+    tz: process.env.DAILY_REPORT_TZ ?? 'America/Sao_Paulo',
+  },
   // MCP: como spawnar o servidor (stdio). A conta de serviço é lida pelo próprio server.
   mcp: {
     entry:

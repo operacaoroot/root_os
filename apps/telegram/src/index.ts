@@ -1,5 +1,7 @@
 import { config, assertConfigured } from './config.js';
 import { McpAgent } from './mcp-agent.js';
+import { DAILY_BRIEFING_PROMPT } from './prompts.js';
+import { scheduleDaily } from './scheduler.js';
 import { getMe, poll, sendChatAction, sendMessage, type TgMessage } from './telegram.js';
 
 const HELP = `🤖 Assistente do Marketing OS
@@ -13,12 +15,6 @@ Exemplos:
 • Quais campanhas estão em risco?
 
 Comandos: /resumo · /start · /help · /id`;
-
-// Briefing do dia sob demanda (mesmos dados do painel, via tools do MCP).
-const RESUMO_PROMPT = `Gere um BRIEFING EXECUTIVO do dia para o Telegram, curto e em bullets.
-Consulte as ferramentas e cubra: leads (hoje/mês) e vendas/receita; taxa de conversão e CPL;
-tráfego do pixel (eventos e principal origem nos últimos 7 dias); tarefas atrasadas; campanhas
-em risco. Não invente números — use só o que vier das ferramentas.`;
 
 function allowed(chatId: number): boolean {
   const list = config.telegram.allowedChatIds;
@@ -35,6 +31,19 @@ async function main() {
   if (config.telegram.allowedChatIds.length === 0) {
     console.warn('[telegram] ATENÇÃO: sem allowlist (TELEGRAM_ALLOWED_CHAT_IDS) — responde a QUALQUER um. Use /id p/ pegar seu chat id e restringir.');
   }
+
+  // Empurra o briefing do dia para os chats da allowlist (destinatários = quem pode usar o bot).
+  const sendDaily = async (reason: string) => {
+    const chats = config.telegram.allowedChatIds;
+    if (chats.length === 0) {
+      console.warn('[daily] sem chat de destino (defina TELEGRAM_ALLOWED_CHAT_IDS).');
+      return;
+    }
+    const answer = await agent.ask(DAILY_BRIEFING_PROMPT);
+    const text = `☀️ Resumo do dia (${reason})\n\n${answer}`;
+    for (const c of chats) await sendMessage(Number(c), text);
+    console.log(`[daily] enviado p/ ${chats.length} chat(s) — ${reason}`);
+  };
 
   const handle = async (m: TgMessage) => {
     const cmd = m.text.trim().toLowerCase();
@@ -54,7 +63,7 @@ async function main() {
       return;
     }
 
-    const question = cmd === '/resumo' ? RESUMO_PROMPT : m.text;
+    const question = cmd === '/resumo' ? DAILY_BRIEFING_PROMPT : m.text;
     await sendChatAction(m.chatId, 'typing');
     try {
       const answer = await agent.ask(question);
@@ -72,6 +81,23 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // Agendamento do resumo diário (in-process).
+  if (config.daily.enabled && config.telegram.allowedChatIds.length > 0) {
+    scheduleDaily({
+      time: config.daily.time,
+      tz: config.daily.tz,
+      onFire: () => sendDaily('automático'),
+      log: (msg) => console.log('[scheduler]', msg),
+    });
+  } else if (config.daily.enabled) {
+    console.warn('[scheduler] resumo diário ligado, mas sem allowlist p/ destino — não agendado.');
+  }
+
+  // Gatilho de teste: DAILY_REPORT_NOW=1 envia um resumo agora (validação).
+  if (process.env.DAILY_REPORT_NOW === '1') {
+    await sendDaily('teste manual');
+  }
 
   await poll(handle);
 }
