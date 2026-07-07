@@ -1,0 +1,70 @@
+# Marketing OS — infra ISOLADA (stack próprio do projeto root)
+# ⚠️ Ver docs/ISOLATION.md. NADA aqui compartilha rede/volume/porta com o escritório C&S.
+name: marketing-os                     # isola containers, rede e volumes deste projeto
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: mktos_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-mkt}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mkt}
+      POSTGRES_DB: ${DB_NAME:-marketing_os}
+    ports:
+      - "${DB_PORT:-5442}:5432"        # faixa própria p/ não colidir com o escritório
+    volumes:
+      - mktos_db_data:/var/lib/postgresql/data
+    networks: [marketing-os-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mkt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mktos_redis
+    ports:
+      - "${REDIS_PORT:-6390}:6379"
+    volumes:
+      - mktos_redis_data:/data
+    networks: [marketing-os-net]
+
+  minio:
+    image: minio/minio
+    container_name: mktos_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9010}:9000"     # API S3
+      - "${MINIO_CONSOLE_PORT:-9011}:9001"  # console
+    volumes:
+      - mktos_minio_data:/data
+    networks: [marketing-os-net]
+
+  # --- entram na Fase 1 ---
+  # api:
+  #   build: ./apps/api
+  #   container_name: mktos_api
+  #   env_file: .env
+  #   depends_on: [db, redis]
+  #   ports: ["${API_PORT:-4001}:4001"]
+  #   networks: [marketing-os-net]
+  # web:
+  #   build: ./apps/web
+  #   container_name: mktos_web
+  #   env_file: .env
+  #   depends_on: [api]
+  #   ports: ["${WEB_PORT:-4000}:3000"]
+  #   networks: [marketing-os-net]
+
+networks:
+  marketing-os-net:
+    name: marketing-os-net             # rede dedicada e isolada
+
+volumes:
+  mktos_db_data:
+  mktos_redis_data:
+  mktos_minio_data:

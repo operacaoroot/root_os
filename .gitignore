@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+
+# segredos — NUNCA commitar
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# dados locais
+db_data/
+minio_data/
+redis_data/
+*.log
+
+# SO / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,61 @@
+# Marketing OS — Roadmap por Fases
+
+> Regra: **MVP funcional antes de avançar.** Cada fase entrega valor operacional real.
+
+## Fase 0 — Planejamento técnico ✅ (esta entrega)
+Requisitos mapeados · **isolamento definido** (`ISOLATION.md`) · stack definida · modelo de dados · conectores · escopo MVP · documentação (`docs/`).
+
+> Todo o roadmap roda no **stack Docker isolado** do projeto `root`, sem qualquer contato com o escritório C&S.
+
+## Fase 1 — Base do sistema
+Monorepo · Postgres+Redis via docker-compose · schema Prisma + migrations · Auth.js + RBAC · layout principal (menu, tema escuro, busca global vazia) · dashboard com cards (dados mock/reais parciais) · auditoria básica · tela de Configurações→Integrações · `/health`.
+**Entrega:** logo, navego, vejo o esqueleto operacional.
+
+## Fase 2 — Eventos, leads e operação (o coração do MVP)
+- Endpoint `POST /api/events/track` + `pixel.js` + captura de UTM + consentimento.
+- Funil básico · módulo Leads (lista, ficha, drill-down) · conversões · dashboard da página de vendas.
+- ClickUp + Asana → módulo Tarefas unificado · alertas de atraso · dashboard operacional.
+- WhatsApp: **alerta** de lead quente / tarefa vencida (só saída).
+- Relatório diário (gerado) + IA para resumo diário (read-only) + **MCP básico read-only** (tools ★).
+**Entrega:** o "Sistema Operacional de Marketing" mínimo já responde "o que aconteceu hoje?".
+
+## Fase 3 — Automações
+Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico por IA.
+
+## Fase 4 — Conteúdo e Instagram
+Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
+
+## Fase 5 — Gmail, Drive e Obsidian
+Gmail (classificação + resumo) · Drive (busca/anexos) · Obsidian (base de conhecimento + embeddings) · busca global completa.
+
+## Fase 6 — Relatórios e WhatsApp completos
+Relatório diário/semanal/mensal · envio por WhatsApp (write_sensitive c/ confirmação) · alertas críticos em tempo real · **comandos** por WhatsApp autenticados.
+
+## Fase 7 — MCP / Hub completo p/ IA
+Todas as tools · schemas · logs · permissões · fluxo de aprovação · integração testada com Claude.
+
+## Fase 8 — IA avançada
+Recomendações · diagnósticos · priorização · memória estruturada (pgvector) · agentes por módulo · relatórios inteligentes.
+
+## Fase 9 — Escalabilidade
+Cache · filas dimensionadas · monitoramento · backups · testes · multi-cliente ativado (popular `org_id`).
+
+---
+
+## MVP PRIORITÁRIO (Fases 1–2) — o corte que entrega valor rápido
+1. Login + layout + tema escuro
+2. Dashboard principal (cards clicáveis)
+3. Modelo de dados (Prisma + migrations)
+4. Pixel/eventos da página de vendas
+5. Leads (lista → ficha → ação)
+6. ClickUp/Asana (tarefas unificadas)
+7. Relatório diário
+8. WhatsApp de alerta (saída)
+9. IA para resumo diário (read-only)
+10. MCP básico com tools read-only
+
+**Depois:** Instagram, Gmail, Drive, Obsidian, automações avançadas, comandos WhatsApp.
+
+## Como cada fase reduz risco
+- Fase 1–2 valida a espinha (ingest→normaliza→painel→IA) com **poucos** conectores.
+- Só ampliamos conectores quando a espinha está sólida — evita "12 integrações meia-boca".
