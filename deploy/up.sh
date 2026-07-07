@@ -21,6 +21,7 @@ load_env() {
 }
 load_env "$HOME/.config/root/openai.env"
 load_env "$HOME/.config/root/telegram.env"
+load_env "$HOME/.config/root/clickup.env"
 load_env apps/api/.env   # JWT_SECRET/AUTH_SECRET
 
 # avisos úteis (não bloqueiam)

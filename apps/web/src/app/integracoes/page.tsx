@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { IntegrationCatalog, IntegrationCatalogRow } from '@mktos/shared';
-import { apiGet, apiPut } from '@/lib/api';
+import { apiGet, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const STATUS_CLS: Record<string, string> = {
@@ -38,6 +38,19 @@ export default function IntegracoesPage() {
     apiPut(`/integrations/${row.key}`, { status }, token).then(load).catch((e) => setError(e.message));
   };
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const canSync = can('tarefas.editar');
+  const syncClickup = () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    setError(null);
+    apiPost<{ lists: number; tasks: number }>('/integrations/clickup/sync', {}, token)
+      .then((r) => { setSyncMsg(`✅ ${r.tasks} tarefa(s) de ${r.lists} lista(s).`); load(); })
+      .catch((e) => setError(e.message))
+      .finally(() => setSyncing(false));
+  };
+
   const connected = data?.items.filter((i) => i.status === 'connected').length ?? 0;
 
   return (
@@ -71,9 +84,27 @@ export default function IntegracoesPage() {
             <p className="mt-2 flex-1 text-xs text-muted">
               {i.managed ? 'Requer: ' : '🔒 '}
               {i.requires}
+              {i.lastSyncAt && (
+                <span className="mt-1 block text-[10px]">
+                  último sync: {new Date(i.lastSyncAt).toLocaleString('pt-BR')}
+                </span>
+              )}
+              {i.lastError && <span className="mt-1 block text-[10px] text-bad">erro: {i.lastError}</span>}
             </p>
 
-            <div className="mt-3">
+            <div className="mt-3 space-y-2">
+              {i.key === 'clickup' && canSync && (
+                <>
+                  <button
+                    onClick={syncClickup}
+                    disabled={syncing}
+                    className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    {syncing ? 'Sincronizando…' : 'Sincronizar tarefas'}
+                  </button>
+                  {syncMsg && <p className="text-[11px] text-good">{syncMsg}</p>}
+                </>
+              )}
               {i.managed ? (
                 canManage ? (
                   <button
