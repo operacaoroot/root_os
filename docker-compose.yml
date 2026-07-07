@@ -66,6 +66,8 @@ services:
       CLICKUP_SPACE_NAME: ${CLICKUP_SPACE_NAME:-root}
       CLICKUP_IGNORE_TEAMS: ${CLICKUP_IGNORE_TEAMS:-Cardozo & Saggioro}
       CLICKUP_LIST_IDS: ${CLICKUP_LIST_IDS:-}
+      CLICKUP_CONTENT_LIST_IDS: ${CLICKUP_CONTENT_LIST_IDS:-}
+      CLICKUP_CONTENT_LIST_NAMES: ${CLICKUP_CONTENT_LIST_NAMES:-Gestão de Temas}
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }

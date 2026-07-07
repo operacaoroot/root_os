@@ -45,8 +45,8 @@ export default function IntegracoesPage() {
     setSyncing(true);
     setSyncMsg(null);
     setError(null);
-    apiPost<{ lists: number; tasks: number }>('/integrations/clickup/sync', {}, token)
-      .then((r) => { setSyncMsg(`✅ ${r.tasks} tarefa(s) de ${r.lists} lista(s).`); load(); })
+    apiPost<{ tasks: number; content: number; lists: number }>('/integrations/clickup/sync', {}, token)
+      .then((r) => { setSyncMsg(`✅ ${r.tasks} tarefa(s) + ${r.content} conteúdo(s).`); load(); })
       .catch((e) => setError(e.message))
       .finally(() => setSyncing(false));
   };

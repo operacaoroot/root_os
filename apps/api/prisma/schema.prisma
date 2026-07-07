@@ -28,6 +28,7 @@ model Org {
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
   reports      Report[]
+  contentItems ContentItem[]
 }
 
 model User {
@@ -271,6 +272,33 @@ model Task {
   updatedAt   DateTime   @updatedAt
 
   @@index([orgId, status, dueDate])
+}
+
+// ---------- Conteúdo (pipeline sincronizado do ClickUp — Gestão de Temas) ----------
+// Preserva o status CRU do ClickUp (validar ideia/escrever roteiro/complete) e os
+// campos personalizados (Formato/Eixo/Tipo/Fonte). ClickUp = fonte da verdade.
+model ContentItem {
+  id         String    @id @default(uuid())
+  orgId      String
+  org        Org       @relation(fields: [orgId], references: [id])
+  source     String    @default("clickup")
+  externalId String
+  listId     String?
+  listName   String?
+  title      String
+  status     String // status cru do ClickUp
+  statusType String? // open | custom | closed
+  formato    String?
+  eixo       String?
+  tipo       String?
+  fonte      String?
+  assignee   String?
+  url        String?
+  dueDate    DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @default(now())
+
+  @@index([orgId, status])
 }
 
 // ---------- Relatórios gerados por IA (resumo diário etc.) ----------

@@ -16,6 +16,7 @@ load_env() {
     case "$line" in ''|\#*) continue ;; esac
     [ "${line#*=}" = "$line" ] && continue   # sem '='
     key=${line%%=*}; val=${line#*=}
+    val="${val%% #*}"                        # tira comentário inline " #..." (estilo dotenv)
     export "$key=$val"
   done < "$1"
 }

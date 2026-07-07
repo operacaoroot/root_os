@@ -337,3 +337,42 @@ export const ToggleIntegrationSchema = z.object({
   status: z.enum(INTEGRATION_STATUS),
 });
 export type ToggleIntegrationInput = z.infer<typeof ToggleIntegrationSchema>;
+
+// --- Conteúdo (pipeline do ClickUp) ---
+export const ContentItemSchema = z.object({
+  id: z.string(),
+  externalId: z.string(),
+  listName: z.string().nullable(),
+  title: z.string(),
+  status: z.string(),
+  statusType: z.string().nullable(),
+  formato: z.string().nullable(),
+  eixo: z.string().nullable(),
+  tipo: z.string().nullable(),
+  fonte: z.string().nullable(),
+  assignee: z.string().nullable(),
+  url: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  updatedAt: z.string(),
+});
+export type ContentItem = z.infer<typeof ContentItemSchema>;
+
+export const ContentListSchema = z.object({
+  items: z.array(ContentItemSchema),
+  total: z.number().int(),
+  // ordem canônica das etapas (para o board) + facetas p/ filtro
+  statuses: z.array(z.string()),
+  eixos: z.array(z.string()),
+  formatos: z.array(z.string()),
+  source: SourceMetaSchema,
+});
+export type ContentList = z.infer<typeof ContentListSchema>;
+
+export const ContentStatsSchema = z.object({
+  total: z.number().int(),
+  byStatus: z.array(z.object({ key: z.string(), count: z.number().int() })),
+  byEixo: z.array(z.object({ key: z.string(), count: z.number().int() })),
+  byFormato: z.array(z.object({ key: z.string(), count: z.number().int() })),
+  source: SourceMetaSchema,
+});
+export type ContentStats = z.infer<typeof ContentStatsSchema>;

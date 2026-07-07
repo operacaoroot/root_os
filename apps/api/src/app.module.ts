@@ -15,6 +15,7 @@ import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { AppConfigModule } from './config/config.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { ContentModule } from './content/content.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
     UsersModule,
     AppConfigModule,
     IntegrationsModule,
+    ContentModule,
   ],
   controllers: [HealthController],
 })

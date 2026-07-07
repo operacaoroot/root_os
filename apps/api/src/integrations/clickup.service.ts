@@ -4,10 +4,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
 // Conector ClickUp (API v2, token pessoal). Credencial PRÓPRIA do root em
-// ~/.config/root/clickup.env (CLICKUP_API_TOKEN). Puxa tarefas reais → tabela Task
-// (tool='clickup'), de onde o dashboard/tarefas/MCP/bot já leem.
-// Escopo: CLICKUP_LIST_IDS (csv) OU auto-descoberta das listas do time.
+// ~/.config/root/clickup.env. PREMISSA: só o espaço "root". Listas de CONTEÚDO
+// (Gestão de Temas) → ContentItem (status cru + campos); demais → Task.
 
+interface CuOption { id: string; name: string; orderindex: number }
+interface CuField {
+  name: string;
+  type: string;
+  value?: unknown;
+  type_config?: { options?: CuOption[] };
+}
 interface CuStatus { status: string; type: string }
 interface CuTask {
   id: string;
@@ -19,6 +25,8 @@ interface CuTask {
   assignees?: Array<{ username?: string }>;
   url?: string;
   tags?: Array<{ name: string }>;
+  list?: { id?: string; name?: string };
+  custom_fields?: CuField[];
 }
 
 @Injectable()
@@ -46,9 +54,8 @@ export class ClickupService {
   }
 
   /**
-   * PREMISSA: só o espaço "root" importa (default). Localiza-o por id
-   * (CLICKUP_SPACE_ID) ou por nome (CLICKUP_SPACE_NAME, default "root"),
-   * IGNORANDO o workspace do escritório (isolamento). Nunca varre outros espaços.
+   * PREMISSA: só o espaço "root". Localiza por id (CLICKUP_SPACE_ID) ou nome
+   * (CLICKUP_SPACE_NAME, default "root"), IGNORANDO o workspace do escritório.
    */
   private async resolveSpace(): Promise<{ spaceId: string; spaceName: string }> {
     const byId = (process.env.CLICKUP_SPACE_ID ?? '').trim();
@@ -69,29 +76,39 @@ export class ClickupService {
     throw new Error(`Espaço "${wantName}" não encontrado (fora do escritório).`);
   }
 
-  /** Listas do espaço root (override por CLICKUP_LIST_IDS). */
-  private async resolveListIds(spaceId: string): Promise<string[]> {
-    const override = (process.env.CLICKUP_LIST_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-    if (override.length) return override;
-
-    const listIds: string[] = [];
-    const { folders } = await this.cu<{ folders: Array<{ lists: Array<{ id: string }> }> }>(
+  /** Todas as listas do espaço (com nome), pastas + sem pasta. */
+  private async spaceLists(spaceId: string): Promise<Array<{ id: string; name: string }>> {
+    const out: Array<{ id: string; name: string }> = [];
+    const { folders } = await this.cu<{ folders: Array<{ lists: Array<{ id: string; name: string }> }> }>(
       `/space/${spaceId}/folder?archived=false`,
     );
-    for (const f of folders) for (const l of f.lists ?? []) listIds.push(l.id);
-    const { lists } = await this.cu<{ lists: Array<{ id: string }> }>(`/space/${spaceId}/list?archived=false`);
-    for (const l of lists) listIds.push(l.id);
-    return [...new Set(listIds)];
+    for (const f of folders) for (const l of f.lists ?? []) out.push({ id: l.id, name: l.name });
+    const { lists } = await this.cu<{ lists: Array<{ id: string; name: string }> }>(
+      `/space/${spaceId}/list?archived=false`,
+    );
+    for (const l of lists) out.push({ id: l.id, name: l.name });
+    // dedup por id
+    return [...new Map(out.map((l) => [l.id, l])).values()];
   }
 
+  /** Quais listas são "de conteúdo" (env CLICKUP_CONTENT_LIST_IDS ou por nome). */
+  private contentListIds(lists: Array<{ id: string; name: string }>): Set<string> {
+    const byIds = (process.env.CLICKUP_CONTENT_LIST_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (byIds.length) return new Set(byIds);
+    const names = (process.env.CLICKUP_CONTENT_LIST_NAMES ?? 'Gestão de Temas')
+      .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    return new Set(lists.filter((l) => names.some((n) => l.name.trim().toLowerCase().includes(n))).map((l) => l.id));
+  }
+
+  // include_closed=true: senão o ClickUp esconde tarefas fechadas (ex.: "complete").
   private async fetchTasks(listId: string): Promise<CuTask[]> {
     const out: CuTask[] = [];
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < 30; page++) {
       const { tasks } = await this.cu<{ tasks: CuTask[] }>(
-        `/list/${listId}/task?archived=false&subtasks=true&page=${page}`,
+        `/list/${listId}/task?archived=false&include_closed=true&subtasks=true&page=${page}`,
       );
       out.push(...tasks);
-      if (tasks.length < 100) break; // ClickUp pagina de 100 em 100
+      if (tasks.length < 100) break;
     }
     return out;
   }
@@ -104,11 +121,23 @@ export class ClickupService {
   }
 
   private mapPriority(p?: { priority?: string } | null): string {
-    const v = p?.priority;
-    return v === 'urgent' || v === 'high' ? 'alta' : 'normal';
+    return p?.priority === 'urgent' || p?.priority === 'high' ? 'alta' : 'normal';
   }
 
-  async sync(orgId: string, actorId?: string): Promise<{ lists: number; tasks: number }> {
+  /** Resolve um custom field pelo nome (dropdown → nome da opção). */
+  private cf(task: CuTask, needle: string): string | null {
+    const f = (task.custom_fields ?? []).find((x) => x.name.trim().toLowerCase().includes(needle.toLowerCase()));
+    if (!f || f.value === null || f.value === undefined || f.value === '') return null;
+    if (f.type === 'drop_down') {
+      const opts = f.type_config?.options ?? [];
+      const opt = opts.find((o) => o.id === f.value || String(o.orderindex) === String(f.value));
+      return opt?.name ?? null;
+    }
+    if (Array.isArray(f.value)) return f.value.map(String).join(', ') || null;
+    return String(f.value);
+  }
+
+  async sync(orgId: string, actorId?: string): Promise<{ tasks: number; content: number; lists: number }> {
     if (!this.configured) {
       throw new ServiceUnavailableException(
         'ClickUp não configurado: defina CLICKUP_API_TOKEN em ~/.config/root/clickup.env e reinicie a API.',
@@ -117,28 +146,63 @@ export class ClickupService {
     const started = Date.now();
     try {
       const { spaceId, spaceName } = await this.resolveSpace();
-      const listIds = await this.resolveListIds(spaceId);
-      this.log.log(`ClickUp: espaço "${spaceName}" (${spaceId}), ${listIds.length} lista(s)`);
-      const all: CuTask[] = [];
-      for (const id of listIds) all.push(...(await this.fetchTasks(id)));
+      const lists = await this.spaceLists(spaceId);
+      const contentIds = this.contentListIds(lists);
+      const taskLists = lists.filter((l) => !contentIds.has(l.id));
+      const contentLists = lists.filter((l) => contentIds.has(l.id));
+      this.log.log(
+        `ClickUp: espaço "${spaceName}" — ${taskLists.length} lista(s) de tarefa, ${contentLists.length} de conteúdo`,
+      );
 
-      // ClickUp é a fonte da verdade das tarefas dele: substitui as tool='clickup'.
-      const rows = all.map((t) => ({
-        orgId,
-        tool: 'clickup',
-        externalId: t.id,
-        title: t.name,
-        description: t.description ?? null,
-        status: this.mapStatus(t.status),
-        priority: this.mapPriority(t.priority),
-        assignee: t.assignees?.[0]?.username ?? null,
-        dueDate: t.date_due ? new Date(Number(t.date_due)) : null,
-        externalUrl: t.url ?? null,
-        tags: (t.tags ?? []).map((tg) => tg.name),
-      }));
+      // --- Tarefas operacionais → Task ---
+      const taskRows: any[] = [];
+      for (const l of taskLists) {
+        for (const t of await this.fetchTasks(l.id)) {
+          taskRows.push({
+            orgId,
+            tool: 'clickup',
+            externalId: t.id,
+            title: t.name,
+            description: t.description ?? null,
+            status: this.mapStatus(t.status),
+            priority: this.mapPriority(t.priority),
+            assignee: t.assignees?.[0]?.username ?? null,
+            dueDate: t.date_due ? new Date(Number(t.date_due)) : null,
+            externalUrl: t.url ?? null,
+            tags: (t.tags ?? []).map((tg) => tg.name),
+          });
+        }
+      }
+
+      // --- Conteúdo (pipeline) → ContentItem (status cru + campos) ---
+      const contentRows: any[] = [];
+      for (const l of contentLists) {
+        for (const t of await this.fetchTasks(l.id)) {
+          contentRows.push({
+            orgId,
+            source: 'clickup',
+            externalId: t.id,
+            listId: l.id,
+            listName: l.name,
+            title: t.name,
+            status: t.status?.status ?? '—',
+            statusType: t.status?.type ?? null,
+            formato: this.cf(t, 'formato'),
+            eixo: this.cf(t, 'eixo'),
+            tipo: this.cf(t, 'tipo'),
+            fonte: this.cf(t, 'fonte'),
+            assignee: t.assignees?.[0]?.username ?? null,
+            url: t.url ?? null,
+            dueDate: t.date_due ? new Date(Number(t.date_due)) : null,
+          });
+        }
+      }
+
       await this.prisma.$transaction([
         this.prisma.task.deleteMany({ where: { orgId, tool: 'clickup' } }),
-        ...(rows.length ? [this.prisma.task.createMany({ data: rows })] : []),
+        ...(taskRows.length ? [this.prisma.task.createMany({ data: taskRows })] : []),
+        this.prisma.contentItem.deleteMany({ where: { orgId, source: 'clickup' } }),
+        ...(contentRows.length ? [this.prisma.contentItem.createMany({ data: contentRows })] : []),
       ]);
 
       const latencyMs = Date.now() - started;
@@ -150,10 +214,12 @@ export class ClickupService {
         action: 'integration.sync',
         entityType: 'integration',
         entityId: 'clickup',
-        after: { lists: listIds.length, tasks: rows.length },
+        after: { tasks: taskRows.length, content: contentRows.length },
       });
-      this.log.log(`ClickUp sync: ${rows.length} tarefas de ${listIds.length} lista(s) em ${latencyMs}ms`);
-      return { lists: listIds.length, tasks: rows.length };
+      this.log.log(
+        `ClickUp sync: ${taskRows.length} tarefa(s) + ${contentRows.length} conteúdo(s) em ${latencyMs}ms`,
+      );
+      return { tasks: taskRows.length, content: contentRows.length, lists: lists.length };
     } catch (e) {
       await this.markHealth(orgId, 'down', Date.now() - started, (e as Error).message).catch(() => {});
       throw e;
