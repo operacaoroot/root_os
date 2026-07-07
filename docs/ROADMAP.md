@@ -30,9 +30,12 @@ Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico 
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
 
-## Fase 5 — Gmail, Drive e Obsidian
-Gmail (classificação + resumo) · Drive (busca/anexos) · Obsidian (base de conhecimento + embeddings) · busca global completa.
-- ✅ **Obsidian** conectado de verdade: vault do root montada read-only, embeddings (pgvector/OpenAI), **busca semântica** + tools no MCP (a IA responde citando as notas). Falta: Gmail e Drive (OAuth Google).
+## Fase 5 — Gmail, Drive, Docs, Agenda e Obsidian
+Gmail (classificação + resumo) · Drive (busca/anexos) · Docs · Agenda · Obsidian (base de conhecimento + embeddings) · busca global completa.
+- ✅ **Obsidian** conectado de verdade: vault do root montada read-only, embeddings (pgvector/OpenAI), **busca semântica** + tools no MCP (a IA responde citando as notas).
+- ✅ **Google — fundação + LEITURA no ar** (`c9d9821`): OAuth próprio do root (Gmail/Agenda/Docs/Drive num consentimento só, refresh automático), reads dos 4 serviços + 5 tools no MCP, página `/google`. Escopos já pedem read+write.
+- ⏳ **Google — conectar (pendente):** a autorização OAuth foi **BLOQUEADA pelo Google** na 1ª tentativa (app em modo Teste / escopos sensíveis Gmail+Drive). **Resolver** (Rodrigo, quando voltar): tela de consentimento com a conta do root em *Usuários de teste* (e/ou publicar/verificar o app), confirmar redirect `http://localhost:4000/api/google/callback`, então **Conectar** em `/google`. Depois: verificar leitura real + habilitar **escrita com aprovação** (enviar email / criar evento / editar doc).
+- ⏳ **Google Maps** — adiado (API key, uso a definir).
 
 ## Fase 6 — Relatórios e WhatsApp completos
 Relatório diário/semanal/mensal · envio por WhatsApp (write_sensitive c/ confirmação) · alertas críticos em tempo real · **comandos** por WhatsApp autenticados.
