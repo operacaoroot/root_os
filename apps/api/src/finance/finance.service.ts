@@ -504,7 +504,7 @@ export class FinanceService {
             where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: t.id } },
             update: { amount: new Prisma.Decimal(Math.abs(t.amount)), description: t.description ?? 'Lançamento', date: new Date(t.date) },
             create: {
-              orgId, accountId: account.id, type, status: 'conciliado',
+              orgId, accountId: account.id, type, status: 'realizado',
               description: t.description ?? 'Lançamento', amount: new Prisma.Decimal(Math.abs(t.amount)),
               date: new Date(t.date), source: 'pluggy', externalId: t.id,
             },
@@ -585,7 +585,7 @@ export class FinanceService {
       if (dup) { skipped++; continue; }
       await this.prisma.financeTransaction.create({
         data: {
-          orgId, accountId, type: t.type as FinanceTxType, status: 'conciliado',
+          orgId, accountId, type: t.type as FinanceTxType, status: 'realizado',
           description: t.description, amount: new Prisma.Decimal(t.amount), date: t.date,
           source: 'ofx', externalId: t.externalId,
         },

@@ -12,10 +12,12 @@ import {
   CreateDimensionSchema,
   CreateContractSchema,
   ApproveSchema,
+  MatchConciliacaoSchema,
 } from '@mktos/shared';
 import { FinanceService } from './finance.service';
 import { FinopsService } from './finops.service';
 import { AprService } from './apr.service';
+import { ConciliacaoService } from './conciliacao.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -28,7 +30,28 @@ export class FinanceController {
     private readonly svc: FinanceService,
     private readonly finops: FinopsService,
     private readonly apr: AprService,
+    private readonly concil: ConciliacaoService,
   ) {}
+
+  // --- Conciliação bancária (score) ---
+  @Get('conciliacao')
+  @RequirePermissions('financeiro.ver')
+  conciliacao(@CurrentUser() user: JwtUser, @Query('accountId') accountId?: string) {
+    return this.concil.status(user.orgId, accountId);
+  }
+
+  @Post('conciliacao/auto')
+  @RequirePermissions('financeiro.conciliar')
+  conciliacaoAuto(@CurrentUser() user: JwtUser, @Query('accountId') accountId?: string) {
+    return this.concil.auto(user.orgId, accountId, user.sub);
+  }
+
+  @Post('conciliacao/match')
+  @RequirePermissions('financeiro.conciliar')
+  conciliacaoMatch(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    const input = MatchConciliacaoSchema.parse(body);
+    return this.concil.match(user.orgId, input.movimentoId, input.tituloId, user.sub);
+  }
 
   // --- FinOps: DRE + Plano de Contas ---
   @Get('dre')

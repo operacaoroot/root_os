@@ -493,5 +493,22 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'get_conciliacao',
+    {
+      description:
+        'Status da conciliação bancária: movimentos (OFX/Pluggy) ainda não conciliados, com a melhor sugestão de título e o score, e os títulos em aberto. [read_only]',
+      inputSchema: { account_id: z.string().optional().describe('ID da conta bancária') },
+      annotations: { title: 'Conciliação bancária', ...READ_ONLY },
+    },
+    async ({ account_id }) => {
+      try {
+        return ok(await apiGet(`/finance/conciliacao${qs({ accountId: account_id })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

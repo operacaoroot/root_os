@@ -812,3 +812,48 @@ export type Payables = z.infer<typeof PayablesSchema>;
 
 export const ApproveSchema = z.object({ aprovar: z.boolean() });
 export type ApproveInput = z.infer<typeof ApproveSchema>;
+
+// --- FinOps: Conciliação bancária (score) ---
+export const ConciliacaoMovimentoSchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  type: FinanceTxTypeSchema,
+  amount: z.number(),
+  description: z.string(),
+  sugestaoTituloId: z.string().nullable(),
+  sugestaoDescricao: z.string().nullable(),
+  sugestaoScore: z.number(),
+  sugestaoAuto: z.boolean(),
+});
+export type ConciliacaoMovimento = z.infer<typeof ConciliacaoMovimentoSchema>;
+
+export const ConciliacaoTituloSchema = z.object({
+  id: z.string(),
+  type: FinanceTxTypeSchema,
+  amount: z.number(),
+  dueDate: z.string().nullable(),
+  description: z.string(),
+  partnerName: z.string().nullable(),
+});
+export type ConciliacaoTitulo = z.infer<typeof ConciliacaoTituloSchema>;
+
+export const ConciliacaoSchema = z.object({
+  movimentos: z.array(ConciliacaoMovimentoSchema),
+  titulos: z.array(ConciliacaoTituloSchema),
+  stats: z.object({ movimentosAbertos: z.number().int(), titulosAbertos: z.number().int() }),
+  source: SourceMetaSchema,
+});
+export type Conciliacao = z.infer<typeof ConciliacaoSchema>;
+
+export const AutoConciliarResultSchema = z.object({
+  conciliados: z.number().int(),
+  sugestoes: z.number().int(),
+  source: SourceMetaSchema,
+});
+export type AutoConciliarResult = z.infer<typeof AutoConciliarResultSchema>;
+
+export const MatchConciliacaoSchema = z.object({
+  movimentoId: z.string().min(1),
+  tituloId: z.string().min(1),
+});
+export type MatchConciliacaoInput = z.infer<typeof MatchConciliacaoSchema>;

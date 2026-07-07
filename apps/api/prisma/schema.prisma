@@ -505,6 +505,10 @@ model FinanceTransaction {
   approvedById   String?
   approvedAt     DateTime?
   temRateio      Boolean          @default(false)
+  // conciliação bancária: quando um movimento (ofx/pluggy) casa com um título
+  matchScore     Float?
+  matchType      String? // automatico | sugestao | manual
+  reconciledAt   DateTime?
   departamentoId String?
   departamento   Departamento?    @relation(fields: [departamentoId], references: [id])
   projetoId      String?

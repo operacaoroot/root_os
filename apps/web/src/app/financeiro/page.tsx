@@ -14,6 +14,7 @@ import type {
   PartnerList,
   ContractList,
   Payables,
+  Conciliacao,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -40,6 +41,7 @@ const TABS = [
   { key: 'visao', label: 'Visão geral' },
   { key: 'dre', label: 'DRE' },
   { key: 'apar', label: 'A Pagar/Receber' },
+  { key: 'conciliacao', label: 'Conciliação' },
   { key: 'lancamentos', label: 'Lançamentos' },
   { key: 'plano', label: 'Plano de Contas' },
   { key: 'contas', label: 'Contas' },
@@ -70,6 +72,8 @@ export default function FinanceiroPage() {
   const [partners, setPartners] = useState<PartnerList | null>(null);
   const [contracts, setContracts] = useState<ContractList | null>(null);
   const [payables, setPayables] = useState<Payables | null>(null);
+  const [concil, setConcil] = useState<Conciliacao | null>(null);
+  const [concilAcc, setConcilAcc] = useState<string>('');
 
   const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
 
@@ -89,6 +93,12 @@ export default function FinanceiroPage() {
     apiGet<Payables>('/finance/payables', token).then(setPayables).catch((e) => setError(e.message));
     apiGet<ContractList>('/finance/contracts', token).then(setContracts).catch(() => {});
   }, [token]);
+
+  const loadConcil = useCallback(() => {
+    if (!token) return;
+    const q = concilAcc ? `?accountId=${concilAcc}` : '';
+    apiGet<Conciliacao>(`/finance/conciliacao${q}`, token).then(setConcil).catch((e) => setError(e.message));
+  }, [token, concilAcc]);
 
   const loadDre = useCallback(() => {
     if (!token) return;
@@ -125,6 +135,11 @@ export default function FinanceiroPage() {
     if (!ready || !token) return;
     loadApar();
   }, [ready, token, loadApar]);
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    loadConcil();
+  }, [ready, token, loadConcil]);
 
   const flash = (m: string) => {
     setMsg(m);
@@ -180,6 +195,19 @@ export default function FinanceiroPage() {
           canEdit={canEdit}
           token={token}
           onChange={() => { loadApar(); loadAll(); loadTxs(); }}
+          onError={setError}
+          onFlash={flash}
+        />
+      )}
+      {tab === 'conciliacao' && (
+        <ConciliacaoView
+          concil={concil}
+          accounts={accounts}
+          accountId={concilAcc}
+          setAccountId={setConcilAcc}
+          canBank={canBank}
+          token={token}
+          onChange={() => { loadConcil(); loadAll(); loadApar(); }}
           onError={setError}
           onFlash={flash}
         />
@@ -365,6 +393,103 @@ function PlanoContas({ chart }: { chart: ChartAccountList | null }) {
                 <td className="px-3 py-1.5 text-[11px] text-muted">{c.dreCodigo ?? (c.permiteLancamento ? '—' : '')}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Conciliação bancária (score) ----------------
+function ConciliacaoView(props: {
+  concil: Conciliacao | null;
+  accounts: FinanceAccountList | null;
+  accountId: string;
+  setAccountId: (a: string) => void;
+  canBank: boolean;
+  token: string | null;
+  onChange: () => void;
+  onError: (e: string) => void;
+  onFlash: (m: string) => void;
+}) {
+  const { concil, accounts, accountId, setAccountId, canBank, token, onChange, onError, onFlash } = props;
+  const [sel, setSel] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const auto = () => {
+    setBusy(true);
+    apiPost<{ conciliados: number; sugestoes: number }>(`/finance/conciliacao/auto${accountId ? `?accountId=${accountId}` : ''}`, {}, token)
+      .then((r) => { onFlash(`✅ ${r.conciliados} conciliado(s) automaticamente · ${r.sugestoes} sugestão(ões) restante(s).`); onChange(); })
+      .catch((e) => onError(e.message)).finally(() => setBusy(false));
+  };
+  const conciliar = (movimentoId: string, tituloId: string) => {
+    if (!tituloId) { onError('Escolha um título para conciliar.'); return; }
+    apiPost<{ score: number }>('/finance/conciliacao/match', { movimentoId, tituloId }, token)
+      .then((r) => { onFlash(`Conciliado (score ${r.score}).`); onChange(); }).catch((e) => onError(e.message));
+  };
+
+  const titulos = concil?.titulos ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <select className={inputCls} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+          <option value="">Todas as contas</option>
+          {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        {concil && <span className="text-sm text-muted">{concil.stats.movimentosAbertos} movimento(s) · {concil.stats.titulosAbertos} título(s) em aberto</span>}
+        {canBank && (
+          <button onClick={auto} disabled={busy} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+            {busy ? 'Conciliando…' : 'Auto-conciliar'}
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-muted">
+        Movimentos bancários (OFX/Pluggy) ainda não conciliados. O score combina valor (50%) + data (30%) + tipo (20%);
+        ≥0,85 concilia automático, 0,50–0,84 fica como sugestão para confirmar.
+      </p>
+
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full min-w-[820px] text-sm">
+          <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wide text-muted">
+            <tr>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Movimento</th>
+              <th className="px-3 py-2 text-right">Valor</th>
+              <th className="px-3 py-2">Sugestão</th>
+              <th className="px-3 py-2">Título</th>
+              {canBank && <th className="px-3 py-2" />}
+            </tr>
+          </thead>
+          <tbody>
+            {concil?.movimentos.length === 0 && <tr><td colSpan={canBank ? 6 : 5} className="px-3 py-6 text-center text-muted">Nenhum movimento a conciliar. Importe um OFX (aba Bancos) ou conecte o Pluggy.</td></tr>}
+            {concil?.movimentos.map((m) => {
+              const chosen = sel[m.id] ?? m.sugestaoTituloId ?? '';
+              return (
+                <tr key={m.id} className="border-t border-border">
+                  <td className="px-3 py-2 whitespace-nowrap">{dateBR(m.date)}</td>
+                  <td className="px-3 py-2">{m.description}</td>
+                  <td className={`px-3 py-2 text-right font-medium ${m.type === 'entrada' ? 'text-good' : 'text-bad'}`}>{brl(m.amount)}</td>
+                  <td className="px-3 py-2">
+                    {m.sugestaoTituloId
+                      ? <span className={`rounded px-1.5 py-0.5 text-[11px] ${m.sugestaoAuto ? 'bg-good/15 text-good' : 'bg-warn/15 text-warn'}`}>{Math.round(m.sugestaoScore * 100)}%{m.sugestaoAuto ? ' auto' : ''}</span>
+                      : <span className="text-[11px] text-muted">—</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <select className={`${inputCls} py-1 text-[12px]`} value={chosen} onChange={(e) => setSel({ ...sel, [m.id]: e.target.value })}>
+                      <option value="">Escolher título…</option>
+                      {titulos.filter((t) => t.type === m.type).map((t) => (
+                        <option key={t.id} value={t.id}>{t.description} · {brl(t.amount)} · {dateBR(t.dueDate)}</option>
+                      ))}
+                    </select>
+                  </td>
+                  {canBank && (
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => conciliar(m.id, chosen)} className="rounded border border-border px-2 py-0.5 text-[11px] hover:bg-surface-2">Conciliar</button>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
