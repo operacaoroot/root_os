@@ -92,7 +92,7 @@ export const ROLES = {
     name: 'IA / Serviço (read-only)',
     permissions: [
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'tarefas.ver',
-      'financeiro.ver', 'relatorios.ver', 'obsidian.ver', 'gmail.ver', 'drive.ver',
+      'financeiro.ver', 'instagram.ver', 'relatorios.ver', 'obsidian.ver', 'gmail.ver', 'drive.ver',
       'mcp.ver', 'mcp.executar',
     ] as Permission[],
   },

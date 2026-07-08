@@ -83,6 +83,9 @@ services:
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-}
       ASAAS_SYNC_INTERVAL_MIN: ${ASAAS_SYNC_INTERVAL_MIN:-360}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
     volumes:
       # vault Obsidian do root montada READ-ONLY (base de conhecimento)
       - type: bind

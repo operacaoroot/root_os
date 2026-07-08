@@ -33,6 +33,7 @@ model Org {
   contentItems ContentItem[]
   knowledge    KnowledgeNote[]
   google       GoogleAccount?
+  meta         MetaAccount?
 
   financeAccounts     FinanceAccount[]
   financeCategories   FinanceCategory[]
@@ -304,6 +305,25 @@ model GoogleAccount {
   expiresAt    DateTime
   connectedAt  DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// ---------- Meta / Instagram (OAuth: Facebook Login → Página → IG Business) ----------
+// Uma conexão por org. Guarda o token de longa duração + a Página e a conta
+// Instagram Business (métricas via Instagram Graph API). Isolado do escritório.
+model MetaAccount {
+  id          String   @id @default(uuid())
+  orgId       String   @unique
+  org         Org      @relation(fields: [orgId], references: [id])
+  userToken   String // user access token de longa duração (~60d)
+  pageId      String?
+  pageName    String?
+  pageToken   String? // page access token (consulta a Instagram Graph API)
+  igUserId    String? // Instagram Business Account id
+  igUsername  String?
+  scope       String?
+  expiresAt   DateTime
+  connectedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------

@@ -511,6 +511,40 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'get_instagram_overview',
+    {
+      description:
+        'Visão geral do Instagram Business: seguidores, seguindo, número de publicações e, quando disponível, alcance/impressões/visitas ao perfil dos últimos 28 dias. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Instagram — visão geral', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/meta/instagram/overview'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_instagram_media',
+    {
+      description:
+        'Últimos posts do Instagram com métricas por post: curtidas, comentários e (quando disponível) alcance, impressões e salvamentos. [read_only]',
+      inputSchema: { limit: z.number().int().min(1).max(30).optional().describe('Quantos posts (default 12)') },
+      annotations: { title: 'Instagram — posts', ...READ_ONLY },
+    },
+    async ({ limit }) => {
+      try {
+        return ok(await apiGet(`/meta/instagram/media${qs({ limit })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'get_conciliacao',
     {
       description:
