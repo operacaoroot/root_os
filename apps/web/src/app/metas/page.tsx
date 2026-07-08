@@ -42,8 +42,14 @@ export default function MetasPage() {
         )}
       </div>
 
-      {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
+      {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">Erro ao carregar o painel: {error}</div>}
       {form && token && <WeekForm token={token} onSaved={() => { setForm(false); load(); }} suggested={(p?.semanasRegistradas ?? 0) + 1} />}
+
+      {!p && !error && (
+        <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-sm text-muted">
+          Carregando painel de metas…
+        </div>
+      )}
 
       {/* Marcos + dia */}
       {p && (
