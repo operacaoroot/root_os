@@ -362,7 +362,8 @@ function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kp
 
       <p className="text-[11px] text-muted">
         Bancos: {summary.bancos.conectados}/{summary.bancos.conexoes} conexão(ões) ativa(s)
-        {summary.bancos.pluggyConfigurado ? ' · Open Finance (Pluggy) configurado' : ' · Pluggy não configurado (use OFX)'} ·
+        {summary.bancos.pluggyConfigurado ? ' · Pluggy ✓' : ''}
+        {summary.bancos.asaasConfigurado ? ' · Asaas ✓' : ''} ·
         fonte: {summary.source.tool} · {new Date(summary.source.generatedAt).toLocaleString('pt-BR')}
       </p>
     </div>
@@ -1036,6 +1037,14 @@ function Bancos(props: {
       .finally(() => setBusy(false));
   };
 
+  const connectAsaas = () => {
+    setBusy(true);
+    apiPost<{ transactions: number; receivables: number }>('/finance/bank/asaas/connect', {}, token)
+      .then((r) => { onFlash(`✅ Asaas conectado: ${r.transactions} lançamento(s), ${r.receivables} a receber.`); onChange(); })
+      .catch((e) => onError(e.message))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <div className="space-y-6">
       {/* OFX — funciona sem credencial */}
@@ -1080,6 +1089,31 @@ function Bancos(props: {
           <p className="mt-1 text-xs text-muted">
             🔒 Não configurado. Defina <code>PLUGGY_CLIENT_ID</code> e <code>PLUGGY_CLIENT_SECRET</code> em
             <code> ~/.config/root/pluggy.env</code> e reinicie a API. Enquanto isso, use a importação OFX acima.
+          </p>
+        )}
+      </div>
+
+      {/* Asaas — gateway de cobranças + conta digital */}
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h2 className="text-sm font-medium">Asaas (cobranças + conta digital)</h2>
+        {banks?.asaasConfigurado ? (
+          <>
+            <p className="mt-1 text-xs text-muted">
+              Puxa <strong>tudo</strong> da sua conta Asaas: extrato (caixa realizado), cobranças em aberto (contas a receber) e
+              saldo. Depois de conectar, sincroniza sozinho a cada 6h. Deduplica por id do Asaas.
+            </p>
+            {canBank && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button onClick={connectAsaas} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+                  {busy ? 'Aguarde…' : 'Conectar e sincronizar'}
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-muted">
+            🔒 Não configurado. Defina <code>ASAAS_API_KEY</code> em <code>~/.config/root/asaas.env</code> e reinicie a API.
+            A chave sai no painel do Asaas em <em>Configurações → Integrações → API</em>.
           </p>
         )}
       </div>

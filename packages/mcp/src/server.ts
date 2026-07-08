@@ -527,5 +527,22 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'list_bank_connections',
+    {
+      description:
+        'Conexões bancárias e de pagamento (Asaas, Open Finance/Pluggy): provedor, instituição, status, último sync, erro e nº de contas. Indica também se Asaas/Pluggy estão configurados. Asaas puxa extrato (caixa), cobranças a receber e saldo. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Conexões bancárias', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/finance/bank/connections'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

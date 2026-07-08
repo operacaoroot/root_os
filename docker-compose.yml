@@ -79,6 +79,9 @@ services:
       PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
       PLUGGY_BASE_URL: ${PLUGGY_BASE_URL:-https://api.pluggy.ai}
       PLUGGY_SYNC_INTERVAL_MIN: ${PLUGGY_SYNC_INTERVAL_MIN:-360}
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-}
+      ASAAS_BASE_URL: ${ASAAS_BASE_URL:-}
+      ASAAS_SYNC_INTERVAL_MIN: ${ASAAS_SYNC_INTERVAL_MIN:-360}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
     volumes:
       # vault Obsidian do root montada READ-ONLY (base de conhecimento)

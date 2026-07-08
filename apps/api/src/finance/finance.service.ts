@@ -16,6 +16,8 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PluggyService } from './pluggy.service';
+import { AsaasService } from './asaas.service';
+import type { BankConnection as BankConnectionRow } from '@prisma/client';
 import { parseOfx } from './ofx';
 import { APPROVAL_LIMIT } from './apr.service';
 
@@ -46,34 +48,36 @@ export class FinanceService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly pluggy: PluggyService,
+    private readonly asaas: AsaasService,
   ) {}
 
-  // Sync AGENDADO das conexões Pluggy (in-process, como o ClickUp).
-  // PLUGGY_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga). Só roda se configurado.
+  // Sync AGENDADO das conexões bancárias (Pluggy + Asaas), in-process como o ClickUp.
+  // PLUGGY_SYNC_INTERVAL_MIN / ASAAS_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga).
+  // Só roda se ao menos um provedor estiver configurado.
   onModuleInit(): void {
-    if (!this.pluggy.configured) return;
-    const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? 360);
+    if (!this.pluggy.configured && !this.asaas.configured) return;
+    const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
     if (!(min > 0)) return;
     const run = async () => {
       try {
         const conns = await this.prisma.bankConnection.findMany({
-          where: { provider: 'pluggy', status: { in: ['connected', 'error'] }, externalId: { not: null } },
+          where: { provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
         });
         for (const c of conns) {
           try {
             const r = await this.syncBankConnection(c.orgId, c.id);
-            this.log.log(`Pluggy sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
+            this.log.log(`${c.provider} sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
           } catch (e) {
-            this.log.warn(`Pluggy sync ${c.id} falhou: ${(e as Error).message}`);
+            this.log.warn(`${c.provider} sync ${c.id} falhou: ${(e as Error).message}`);
           }
         }
       } catch (e) {
-        this.log.warn(`Pluggy auto-sync falhou: ${(e as Error).message}`);
+        this.log.warn(`Auto-sync bancário falhou: ${(e as Error).message}`);
       }
     };
     setTimeout(run, 30_000);
     setInterval(run, min * 60_000);
-    this.log.log(`Pluggy sync agendado a cada ${min} min`);
+    this.log.log(`Sync bancário agendado a cada ${min} min (pluggy=${this.pluggy.configured} asaas=${this.asaas.configured})`);
   }
 
   private meta() {
@@ -407,6 +411,7 @@ export class FinanceService implements OnModuleInit {
         conexoes: connections.length,
         conectados: connections.filter((c) => c.status === 'connected').length,
         pluggyConfigurado: this.pluggy.configured,
+        asaasConfigurado: this.asaas.configured,
       },
       source: this.meta(),
     };
@@ -487,6 +492,7 @@ export class FinanceService implements OnModuleInit {
       })),
       total: rows.length,
       pluggyConfigurado: this.pluggy.configured,
+      asaasConfigurado: this.asaas.configured,
       source: this.meta(),
     };
   }
@@ -515,9 +521,140 @@ export class FinanceService implements OnModuleInit {
     return { ok: true, connectionId: conn.id, ...synced };
   }
 
-  async syncBankConnection(orgId: string, connectionId: string, actorId?: string): Promise<{ accounts: number; transactions: number }> {
+  // ---------- Asaas (gateway de cobranças + conta digital) ----------
+  /** Liga (ou revalida) a conexão Asaas e já puxa tudo: extrato, cobranças e saldo. */
+  async connectAsaas(orgId: string, actorId: string) {
+    if (!this.asaas.configured) {
+      throw new BadRequestException('Asaas não configurado: defina ASAAS_API_KEY em ~/.config/root/asaas.env e reinicie a API.');
+    }
+    const label = `Asaas (${this.asaas.environment})`;
+    const existing = await this.prisma.bankConnection.findFirst({ where: { orgId, provider: 'asaas' } });
+    const conn = existing
+      ? await this.prisma.bankConnection.update({ where: { id: existing.id }, data: { institutionName: label, status: 'connected' } })
+      : await this.prisma.bankConnection.create({
+          data: { orgId, provider: 'asaas', externalId: 'asaas', institutionName: label, status: 'connected' },
+        });
+    await this.audit.log({
+      orgId, actorId, action: 'finance.bank.connect', entityType: 'bank_connection', entityId: conn.id,
+      after: { provider: 'asaas', environment: this.asaas.environment },
+    });
+    const synced = await this.syncBankConnection(orgId, conn.id, actorId);
+    return { ok: true, connectionId: conn.id, ...synced };
+  }
+
+  /** Conta financeira única do Asaas (a conta digital). */
+  private async upsertAsaasAccount(orgId: string, connectionId: string) {
+    const existing = await this.prisma.financeAccount.findFirst({ where: { orgId, provider: 'asaas' } });
+    if (existing) return this.prisma.financeAccount.update({ where: { id: existing.id }, data: { connectionId } });
+    return this.prisma.financeAccount.create({
+      data: {
+        orgId, provider: 'asaas', externalId: 'asaas-main', connectionId,
+        name: 'Asaas', type: 'corrente', institution: 'Asaas', currency: 'BRL',
+      },
+    });
+  }
+
+  /** Puxa TUDO do Asaas: extrato → caixa realizado; cobranças em aberto → a receber; saldo → casa o saldo. */
+  private async syncAsaasConnection(
+    orgId: string,
+    conn: BankConnectionRow,
+    actorId?: string,
+  ): Promise<{ accounts: number; transactions: number; receivables: number }> {
+    try {
+      const account = await this.upsertAsaasAccount(orgId, conn.id);
+
+      // 1) Extrato financeiro (movimento de caixa real) → lançamentos realizados.
+      const since = new Date(Date.now() - 365 * 86400_000).toISOString();
+      const fin = await this.asaas.listFinancialTransactions(since);
+      let txCount = 0;
+      for (const t of fin) {
+        const type: FinanceTxType = t.value < 0 ? 'saida' : 'entrada';
+        const desc = t.description || t.type || 'Lançamento Asaas';
+        await this.prisma.financeTransaction.upsert({
+          where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: `fin_${t.id}` } },
+          update: { amount: new Prisma.Decimal(Math.abs(t.value)), description: desc, date: new Date(t.date) },
+          create: {
+            orgId, accountId: account.id, type, status: 'realizado',
+            description: desc, amount: new Prisma.Decimal(Math.abs(t.value)),
+            date: new Date(t.date), source: 'asaas', externalId: `fin_${t.id}`,
+          },
+        });
+        txCount++;
+      }
+
+      // 2) Cobranças em aberto → contas a receber (previsto entrada).
+      const custMap = await this.asaas.customerMap();
+      const open = await this.asaas.listOpenPayments();
+      const openIds: string[] = [];
+      let recvCount = 0;
+      for (const p of open) {
+        const extId = `pay_${p.id}`;
+        openIds.push(extId);
+        const when = new Date(p.dateCreated || p.dueDate || new Date().toISOString());
+        const desc = p.description || `Cobrança ${p.billingType ?? ''}`.trim();
+        await this.prisma.financeTransaction.upsert({
+          where: { orgId_accountId_externalId: { orgId, accountId: account.id, externalId: extId } },
+          update: {
+            amount: new Prisma.Decimal(p.value), description: desc,
+            dueDate: p.dueDate ? new Date(p.dueDate) : null,
+            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+          },
+          create: {
+            orgId, accountId: account.id, type: 'entrada', status: 'previsto',
+            description: desc, amount: new Prisma.Decimal(p.value), date: when,
+            dueDate: p.dueDate ? new Date(p.dueDate) : null,
+            counterparty: p.customer ? custMap.get(p.customer) ?? p.customer : null,
+            documentNumber: p.invoiceNumber ?? null,
+            source: 'asaas', externalId: extId,
+          },
+        });
+        recvCount++;
+      }
+
+      // 3) Reconcilia: cobranças que saíram do "aberto" já foram pagas (aparecem no
+      //    extrato como realizado) → removemos o previsto p/ não contar em dobro.
+      await this.prisma.financeTransaction.deleteMany({
+        where: {
+          orgId, accountId: account.id, source: 'asaas', status: 'previsto',
+          externalId: { startsWith: 'pay_', notIn: openIds.length ? openIds : ['__none__'] },
+        },
+      });
+
+      // 4) Casa o saldo exibido com o saldo real do Asaas (independe da janela do extrato).
+      const bal = await this.asaas.balance();
+      if (bal != null) {
+        const agg = await this.prisma.financeTransaction.groupBy({
+          by: ['type'], where: { orgId, accountId: account.id, status: { in: EFFECTIVE } }, _sum: { amount: true },
+        });
+        const ent = num(agg.find((x) => x.type === 'entrada')?._sum.amount);
+        const sai = num(agg.find((x) => x.type === 'saida')?._sum.amount);
+        await this.prisma.financeAccount.update({
+          where: { id: account.id }, data: { openingBalance: new Prisma.Decimal(bal - (ent - sai)) },
+        });
+      }
+
+      await this.prisma.bankConnection.update({
+        where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
+      });
+      await this.markHealth('asaas', 'Asaas', 'ok', null);
+      await this.audit.log({
+        orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
+        entityType: 'bank_connection', entityId: conn.id, after: { provider: 'asaas', transactions: txCount, receivables: recvCount },
+      });
+      return { accounts: 1, transactions: txCount, receivables: recvCount };
+    } catch (e) {
+      await this.prisma.bankConnection.update({
+        where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
+      }).catch(() => {});
+      await this.markHealth('asaas', 'Asaas', 'down', (e as Error).message).catch(() => {});
+      throw e;
+    }
+  }
+
+  async syncBankConnection(orgId: string, connectionId: string, actorId?: string): Promise<{ accounts: number; transactions: number; receivables?: number }> {
     const conn = await this.prisma.bankConnection.findFirst({ where: { id: connectionId, orgId } });
     if (!conn) throw new NotFoundException('Conexão bancária não encontrada');
+    if (conn.provider === 'asaas') return this.syncAsaasConnection(orgId, conn, actorId);
     if (conn.provider !== 'pluggy' || !conn.externalId) {
       throw new BadRequestException('Conexão sem item Pluggy para sincronizar.');
     }
@@ -545,7 +682,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
       });
-      await this.markHealth('ok', null);
+      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'ok', null);
       await this.audit.log({
         orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
         entityType: 'bank_connection', entityId: conn.id, after: { accounts: pgAccounts.length, transactions: txCount },
@@ -555,7 +692,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
       }).catch(() => {});
-      await this.markHealth('down', (e as Error).message).catch(() => {});
+      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'down', (e as Error).message).catch(() => {});
       throw e;
     }
   }
@@ -583,14 +720,14 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  private async markHealth(health: 'ok' | 'down', lastError: string | null) {
+  private async markHealth(key: string, label: string, health: 'ok' | 'down', lastError: string | null) {
     const org = await this.prisma.org.findFirst({ where: { slug: 'root' } });
     if (!org) return;
     const status = health === 'ok' ? 'connected' : 'error';
-    const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId: org.id, key: 'pluggy' } });
+    const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId: org.id, key } });
     const account = acc
       ? await this.prisma.integrationAccount.update({ where: { id: acc.id }, data: { status, connectedAt: health === 'ok' ? new Date() : acc.connectedAt } })
-      : await this.prisma.integrationAccount.create({ data: { orgId: org.id, key: 'pluggy', label: 'Bancos (Pluggy)', status, connectedAt: new Date() } });
+      : await this.prisma.integrationAccount.create({ data: { orgId: org.id, key, label, status, connectedAt: new Date() } });
     await this.prisma.integrationHealth.upsert({
       where: { accountId: account.id },
       update: { status: health, lastSyncAt: new Date(), lastError },

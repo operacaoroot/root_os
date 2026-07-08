@@ -312,6 +312,7 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'obsidian', label: 'Obsidian', category: 'knowledge', phase: 5, authType: 'builtin', requires: 'pasta/sync do vault' },
   { key: 'whatsapp', label: 'WhatsApp (Zapfy)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'canal próprio (app consolidado)' },
   { key: 'pluggy', label: 'Bancos (Open Finance/Pluggy)', category: 'finance', phase: 2, authType: 'api_key', requires: 'PLUGGY_CLIENT_ID/SECRET (~/.config/root/pluggy.env)' },
+  { key: 'asaas', label: 'Asaas (cobranças + conta digital)', category: 'finance', phase: 2, authType: 'api_key', requires: 'ASAAS_API_KEY (~/.config/root/asaas.env)' },
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
 ];
 
@@ -525,7 +526,7 @@ export const FinanceSummarySchema = z.object({
   aPagarVencido: z.number(),
   byAccount: z.array(z.object({ id: z.string(), name: z.string(), balance: z.number() })),
   topCategorias: z.array(z.object({ name: z.string(), kind: z.string(), total: z.number() })),
-  bancos: z.object({ conexoes: z.number().int(), conectados: z.number().int(), pluggyConfigurado: z.boolean() }),
+  bancos: z.object({ conexoes: z.number().int(), conectados: z.number().int(), pluggyConfigurado: z.boolean(), asaasConfigurado: z.boolean() }),
   source: SourceMetaSchema,
 });
 export type FinanceSummary = z.infer<typeof FinanceSummarySchema>;
@@ -563,6 +564,7 @@ export const BankConnectionListSchema = z.object({
   items: z.array(BankConnectionSchema),
   total: z.number().int(),
   pluggyConfigurado: z.boolean(),
+  asaasConfigurado: z.boolean(),
   source: SourceMetaSchema,
 });
 export type BankConnectionList = z.infer<typeof BankConnectionListSchema>;

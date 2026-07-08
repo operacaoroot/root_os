@@ -32,6 +32,7 @@ export class IntegrationsService {
       telegram: !!env.TELEGRAM_BOT_TOKEN,
       clickup: !!env.CLICKUP_API_TOKEN,
       pluggy: !!(env.PLUGGY_CLIENT_ID && env.PLUGGY_CLIENT_SECRET),
+      asaas: !!env.ASAAS_API_KEY,
       obsidian: !!env.OBSIDIAN_VAULT_PATH, // vault montada + indexada
       ofx: true, // builtin — importação de extrato sempre disponível
     };

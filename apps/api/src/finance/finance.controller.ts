@@ -262,6 +262,13 @@ export class FinanceController {
     return this.svc.syncBankConnection(user.orgId, id, user.sub);
   }
 
+  // --- Asaas (gateway de cobranças + conta digital) ---
+  @Post('bank/asaas/connect')
+  @RequirePermissions('financeiro.conciliar')
+  connectAsaas(@CurrentUser() user: JwtUser) {
+    return this.svc.connectAsaas(user.orgId, user.sub);
+  }
+
   // --- Importação de extrato OFX ---
   @Post('import/ofx')
   @RequirePermissions('financeiro.conciliar')
