@@ -47,6 +47,7 @@ Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico 
 
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
+- ✅ **Metas (LucasCreator)** — painel `/metas` do sistema de métricas: marcos (1000 posts/20M views/1000 vendas), 11 taxas do funil com farol (janela 4 sem, piso/meta), fases (aquecimento→baseline→regime), escada de views por faixa, projeções dia 365 (views×[50,110]/M). Entrada semanal + "Puxar do Instagram" (alinha ao Meta) + tool `get_goals_panel` no MCP. Ver memória `marketing-os-metas`.
 
 ## Fase 5 — Gmail, Drive, Docs, Agenda e Obsidian
 Gmail (classificação + resumo) · Drive (busca/anexos) · Docs · Agenda · Obsidian (base de conhecimento + embeddings) · busca global completa.
