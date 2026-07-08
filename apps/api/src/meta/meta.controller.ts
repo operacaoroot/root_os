@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Logger, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { MetaService } from './meta.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -9,6 +9,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
 @Controller('meta')
 export class MetaController {
+  private readonly log = new Logger('MetaController');
   constructor(
     private readonly svc: MetaService,
     private readonly prisma: PrismaService,
@@ -16,15 +17,27 @@ export class MetaController {
 
   // Callback do OAuth do Facebook — PÚBLICO (o browser é redirecionado pelo Meta).
   @Get('callback')
-  async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+  async callback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') error: string,
+    @Query('error_description') errorDesc: string,
+    @Res() res: Response,
+  ) {
     const web = process.env.WEB_ORIGIN?.split(',')[0] ?? 'http://localhost:4000';
-    const org = await this.prisma.org.findUnique({ where: { id: state } });
-    if (!org || !code) return res.redirect(`${web}/instagram?erro=1`);
+    if (error) {
+      this.log.warn(`OAuth negado/erro do Facebook: ${error} — ${errorDesc}`);
+      return res.redirect(`${web}/instagram?erro=${encodeURIComponent(errorDesc || error)}`);
+    }
+    const org = state ? await this.prisma.org.findUnique({ where: { id: state } }) : null;
+    if (!org || !code) return res.redirect(`${web}/instagram?erro=${encodeURIComponent('code/state ausente')}`);
     try {
       const to = await this.svc.handleCallback(org.id, code);
       return res.redirect(to);
-    } catch {
-      return res.redirect(`${web}/instagram?erro=2`);
+    } catch (e) {
+      const msg = (e as Error).message ?? 'falha na troca de token';
+      this.log.error(`handleCallback falhou: ${msg}`);
+      return res.redirect(`${web}/instagram?erro=${encodeURIComponent(msg.slice(0, 300))}`);
     }
   }
 

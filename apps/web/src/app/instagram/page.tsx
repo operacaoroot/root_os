@@ -33,6 +33,11 @@ export default function InstagramPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const erro = new URLSearchParams(window.location.search).get('erro');
+    if (erro) setError(`Falha ao conectar: ${erro}`);
+  }, []);
+
+  useEffect(() => {
     if (!ready || !token) return;
     apiGet<MStatus>('/meta/status', token).then((s) => {
       setSt(s);
