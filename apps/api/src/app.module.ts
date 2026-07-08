@@ -20,6 +20,7 @@ import { ObsidianModule } from './obsidian/obsidian.module';
 import { GoogleModule } from './google/google.module';
 import { FinanceModule } from './finance/finance.module';
 import { MetaModule } from './meta/meta.module';
+import { GoalsModule } from './goals/goals.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { MetaModule } from './meta/meta.module';
     GoogleModule,
     FinanceModule,
     MetaModule,
+    GoalsModule,
   ],
   controllers: [HealthController],
 })

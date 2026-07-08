@@ -34,6 +34,8 @@ model Org {
   knowledge    KnowledgeNote[]
   google       GoogleAccount?
   meta         MetaAccount?
+  goalWeeks    GoalWeek[]
+  goalConfig   GoalConfig?
 
   financeAccounts     FinanceAccount[]
   financeCategories   FinanceCategory[]
@@ -324,6 +326,50 @@ model MetaAccount {
   expiresAt   DateTime
   connectedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ---------- Metas do projeto (sistema de métricas do LucasCreator) ----------
+// Registrar SEMPRE o dado bruto; taxas são calculadas depois (histórico sobrevive
+// a mudança de fórmula). Fonte: Instagram (Meta) onde dá + entrada manual.
+model GoalConfig {
+  id             String   @id @default(uuid())
+  orgId          String   @unique
+  org            Org      @relation(fields: [orgId], references: [id])
+  challengeStart DateTime // dia 1 do desafio (365 dias)
+  targetPosts    Int      @default(1000)
+  targetViews    BigInt   @default(20000000)
+  targetList     Int      @default(30000)
+  targetSales    Int      @default(1000)
+  updatedAt      DateTime @updatedAt
+}
+
+model GoalWeek {
+  id             String   @id @default(uuid())
+  orgId          String
+  org            Org      @relation(fields: [orgId], references: [id])
+  weekNumber     Int
+  startDate      DateTime?
+  posts          Int      @default(0)
+  views          Int      @default(0)
+  shares         Int      @default(0)
+  saves          Int      @default(0)
+  comments       Int      @default(0)
+  profileVisits  Int      @default(0)
+  newFollowers   Int      @default(0)
+  totalFollowers Int      @default(0)
+  nonFollowerPct Float    @default(0)
+  storyViewers   Int      @default(0)
+  storyReplies   Int      @default(0)
+  listEntries    Int      @default(0)
+  bioClicks      Int      @default(0)
+  lives          Int      @default(0)
+  storyDays      Int      @default(0)
+  source         String   @default("manual") // manual | meta | mixed
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([orgId, weekNumber])
+  @@index([orgId, weekNumber])
 }
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------

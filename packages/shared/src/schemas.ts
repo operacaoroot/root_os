@@ -901,3 +901,122 @@ export type CreateDocInput = z.infer<typeof CreateDocSchema>;
 
 export const AppendDocSchema = z.object({ text: z.string().min(1).max(50000) });
 export type AppendDocInput = z.infer<typeof AppendDocSchema>;
+
+// ============================================================================
+// METAS DO PROJETO — sistema de métricas do LucasCreator (ver SISTEMA.md)
+// Desafio 365 dias: 1.000 posts · 20M views · 1.000 vendas (produto perpétuo R$300).
+// Três camadas: MARCOS (destinos), INPUTS (o que se controla), TAXAS (eficiência).
+// ============================================================================
+
+export const GOAL_MARCOS = {
+  posts: 1000,
+  views: 20_000_000,
+  lista: 30_000, // lista própria (e-mail/WhatsApp) — motor real da venda
+  vendas: 1000,
+  dias: 365,
+  produtoPreco: 300,
+} as const;
+
+// Inputs (controle total do criador) — julgados toda semana, em qualquer fase.
+export const GOAL_INPUTS = {
+  postsPorSemana: 35, // 5/dia → fecha 1.000 no dia ~200
+  recalibragemAbaixoDe: 25, // 2 semanas seguidas <25 obrigam recalibrar o ritmo
+} as const;
+
+// Escada de views: meta de média/post por FAIXA de posts (não por mês do calendário).
+export const GOAL_ESCADA = [
+  { de: 1, ate: 250, metaMediaPost: 2_000, viewsFaixa: 500_000 },
+  { de: 251, ate: 500, metaMediaPost: 10_000, viewsFaixa: 2_500_000 },
+  { de: 501, ate: 750, metaMediaPost: 24_000, viewsFaixa: 6_000_000 },
+  { de: 751, ate: 1000, metaMediaPost: 44_000, viewsFaixa: 11_000_000 },
+] as const;
+
+// Fases de leitura (transição por SINAL, não por calendário).
+// Fase 0 (aquecimento): só inputs julgados. Sai quando média 1.000+ views nos últimos
+//   ~20 posts E ≥50% das views de não-seguidores → "conta quente".
+// Fase 1 (baseline): 4 semanas após o gatilho; taxas visíveis, farol OFF.
+// Fase 2 (regime): farol + projeções ligados.
+export const GOAL_FASE = {
+  gatilhoMediaViews: 1000,
+  gatilhoNaoSeguidoresPct: 50,
+  baselineSemanas: 4,
+} as const;
+
+// Cenários de projeção de vendas (vendas por milhão de views).
+export const GOAL_CENARIOS = { pessimista: 50, mediano: 110 } as const;
+
+// As 11 taxas do funil (cada elo da jornada). unidade: como o número é lido.
+// fonteMeta: se o dado vem/pode vir do Instagram (Meta). ativa: trafego/captura só
+// ligam quando o canal existir (produto no link / canal de captura definido).
+export interface GoalTaxaDef {
+  id: string;
+  label: string;
+  descricao: string;
+  formula: string;
+  piso: number;
+  meta: number;
+  unidade: '/1000' | '%' | 'escada';
+  fonteMeta: boolean;
+  ativa: boolean;
+}
+
+export const GOAL_TAXAS: GoalTaxaDef[] = [
+  { id: 'distribuicao', label: 'Distribuição', descricao: 'Compartilhamentos por 1.000 views — o sinal que mais amplia alcance (leva pra fora da rede).', formula: 'shares ÷ views × 1000', piso: 3, meta: 5, unidade: '/1000', fonteMeta: false, ativa: true },
+  { id: 'interesse', label: 'Interesse', descricao: 'Salvamentos por 1.000 views — densidade do conteúdo (público analítico salva pra consultar).', formula: 'saves ÷ views × 1000', piso: 5, meta: 8, unidade: '/1000', fonteMeta: true, ativa: true },
+  { id: 'conversa', label: 'Conversa (ManyChat)', descricao: 'Comentários por 1.000 views — elo de venda: a automação responde e conduz pra lista.', formula: 'comments ÷ views × 1000', piso: 3, meta: 8, unidade: '/1000', fonteMeta: true, ativa: true },
+  { id: 'curiosidade', label: 'Curiosidade', descricao: 'Visitas ao perfil por 1.000 views — quem viu quis conhecer quem fez.', formula: 'profile_visits ÷ views × 1000', piso: 8, meta: 10, unidade: '/1000', fonteMeta: true, ativa: true },
+  { id: 'conversao_perfil', label: 'Conversão do perfil', descricao: '% de visitas que viram seguidor — testa a bio/destaques/grade (a "porta").', formula: 'novos_seguidores ÷ profile_visits × 100', piso: 5, meta: 10, unidade: '%', fonteMeta: true, ativa: true },
+  { id: 'crescimento', label: 'Crescimento', descricao: 'Seguidores novos por 1.000 views — taxa-síntese (Curiosidade × Conversão do perfil).', formula: 'novos_seguidores ÷ views × 1000', piso: 1, meta: 1.5, unidade: '/1000', fonteMeta: true, ativa: true },
+  { id: 'descoberta', label: 'Descoberta', descricao: '% de views de não-seguidores — termômetro de furar a bolha (compõe o gatilho da fase).', formula: '% views de não-seguidores', piso: 60, meta: 70, unidade: '%', fonteMeta: true, ativa: true },
+  { id: 'alcance', label: 'Alcance', descricao: 'Média de views por post vs a faixa da escada — o caminho aritmético dos 20M.', formula: 'views ÷ posts (vs escada)', piso: 0, meta: 0, unidade: 'escada', fonteMeta: true, ativa: true },
+  { id: 'vinculo', label: 'Vínculo', descricao: '% da base que vê stories — mede tribo (o "diário da expedição").', formula: 'story_viewers ÷ seguidores × 100', piso: 10, meta: 15, unidade: '%', fonteMeta: false, ativa: true },
+  { id: 'trafego_venda', label: 'Tráfego de venda', descricao: 'Cliques no link da bio por 1.000 views — rota passiva da venda perpétua.', formula: 'cliques_bio ÷ views × 1000', piso: 3, meta: 5, unidade: '/1000', fonteMeta: false, ativa: false },
+  { id: 'captura', label: 'Captura', descricao: 'Entradas na lista por 1.000 views — transforma view em patrimônio; carrega a meta de vendas.', formula: 'entradas_lista ÷ views × 1000', piso: 2, meta: 4, unidade: '/1000', fonteMeta: false, ativa: false },
+];
+
+// Entrada semanal (14 números crus — registrar SEMPRE o bruto e calcular a taxa depois).
+export const GoalWeekSchema = z.object({
+  weekNumber: z.number().int().min(1).max(60),
+  startDate: z.string().optional(), // ISO (início da semana)
+  posts: z.number().int().min(0).default(0),
+  views: z.number().int().min(0).default(0),
+  shares: z.number().int().min(0).default(0),
+  saves: z.number().int().min(0).default(0),
+  comments: z.number().int().min(0).default(0),
+  profileVisits: z.number().int().min(0).default(0),
+  newFollowers: z.number().int().min(0).default(0),
+  totalFollowers: z.number().int().min(0).default(0),
+  nonFollowerPct: z.number().min(0).max(100).default(0),
+  storyViewers: z.number().int().min(0).default(0),
+  storyReplies: z.number().int().min(0).default(0),
+  listEntries: z.number().int().min(0).default(0),
+  bioClicks: z.number().int().min(0).default(0),
+  lives: z.number().int().min(0).default(0),
+  storyDays: z.number().int().min(0).max(7).default(0),
+});
+export type GoalWeekInput = z.infer<typeof GoalWeekSchema>;
+
+// Tipos do painel (retorno de GET /goals/panel).
+export type Farol = 'verde' | 'amarelo' | 'vermelho' | 'off' | 'na';
+export interface GoalMarco { key: string; label: string; atual: number; meta: number; pct: number; hint?: string }
+export interface GoalTaxaLive {
+  id: string; label: string; descricao: string; formula: string;
+  valor: number | null; piso: number; meta: number; unidade: string;
+  absoluto: number; farol: Farol; ativa: boolean; refEscada?: number;
+}
+export interface GoalWeekPoint { weekNumber: number; posts: number; viewsPerPost: number; status: 'meta' | 'abaixo' | 'recalibrar' }
+export interface GoalPanel {
+  fase: 0 | 1 | 2;
+  faseLabel: string;
+  farolLigado: boolean;
+  diaDesafio: number;
+  semanasRegistradas: number;
+  marcos: GoalMarco[];
+  inputs: { postsUltimaSemana: number; metaPostsSemana: number; okUltimaSemana: boolean };
+  taxas: GoalTaxaLive[];
+  escada: { faixaDe: number; faixaAte: number; metaMediaPost: number; mediaAtual: number };
+  projecoes: { viewsDia365: number; pctMetaViews: number; diaPost1000: number | null; vendasMin: number; vendasMax: number };
+  semanas: GoalWeekPoint[];
+  janela: { semanas: number };
+  source: { tool: string; generatedAt: string };
+}

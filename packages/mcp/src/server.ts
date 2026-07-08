@@ -340,6 +340,23 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    'get_goals_panel',
+    {
+      description:
+        'Painel de METAS do projeto (desafio 1.000 posts / 20M views / 1.000 vendas): fase (aquecimento/baseline/regime), marcos acumulados, as 11 taxas do funil com farol (verde/amarelo/vermelho vs piso/meta, janela de 4 semanas), escada de views, projeções do dia 365 e série semanal. Use para diagnosticar o elo mais fraco e sugerir ação. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Painel de Metas', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/goals/panel'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     'list_recent_events',
     {
       description:
