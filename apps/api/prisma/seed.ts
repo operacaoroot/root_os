@@ -4,12 +4,12 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-const ADMIN_EMAIL = 'admin@marketing-os.local';
-const ADMIN_PASSWORD = 'admin12345'; // DEV — trocar em produção
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@marketing-os.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin12345'; // PROD: defina ADMIN_PASSWORD
 const MCP_EMAIL = 'mcp@marketing-os.local';
-const MCP_PASSWORD = 'mcp-service-12345'; // DEV — conta de serviço só-leitura p/ o MCP/IA
+const MCP_PASSWORD = process.env.MCP_SERVICE_PASSWORD ?? 'mcp-service-12345'; // conta de serviço só-leitura
 const IA_ACAO_EMAIL = 'ia-acao@marketing-os.local';
-const IA_ACAO_PASSWORD = 'ia-acao-12345'; // DEV — conta de AÇÃO (escreve só o aprovado)
+const IA_ACAO_PASSWORD = process.env.MCP_ACTION_PASSWORD ?? 'ia-acao-12345'; // conta de AÇÃO (escreve só o aprovado)
 
 function daysAgo(n: number): Date {
   const d = new Date();

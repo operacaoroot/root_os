@@ -1,0 +1,34 @@
+# Override de PRODUÇÃO — sobe junto do docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# (o deploy/prod.sh faz isso injetando os segredos). Ver DEPLOY.md.
+#
+# O que muda vs. dev: adiciona o Caddy (único serviço exposto à internet, 80/443,
+# HTTPS automático) e aponta CORS/redirects de OAuth para o domínio (PANEL_HOST).
+# db/redis/minio/api/web ficam em 127.0.0.1 (BIND_ADDR) — só a rede interna os vê.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: mktos_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PANEL_HOST: "${PANEL_HOST:?defina PANEL_HOST em prod.env, ex 1-2-3-4.sslip.io}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - mktos_caddy_data:/data
+      - mktos_caddy_config:/config
+    depends_on: [web]
+    networks: [marketing-os-net]
+
+  api:
+    environment:
+      # o app fala com o mundo pelo domínio → CORS e redirects de OAuth apontam pra ele
+      WEB_ORIGIN: https://${PANEL_HOST}
+      GOOGLE_REDIRECT_URI: https://${PANEL_HOST}/api/google/callback
+      META_REDIRECT_URI: https://${PANEL_HOST}/api/meta/callback
+
+volumes:
+  mktos_caddy_data:
+  mktos_caddy_config:

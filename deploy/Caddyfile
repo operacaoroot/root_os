@@ -1,0 +1,6 @@
+# Reverse proxy + HTTPS automático (Let's Encrypt) para o Marketing OS.
+# PANEL_HOST vem do ambiente (ex.: 203-0-113-5.sslip.io → resolve pro IP do servidor).
+{$PANEL_HOST} {
+	encode gzip
+	reverse_proxy web:4000
+}
