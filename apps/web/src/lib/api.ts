@@ -47,6 +47,13 @@ export function apiPatch<T>(
   }).then((r) => handle<T>(r));
 }
 
+export function apiDelete<T>(path: string, token?: string | null): Promise<T> {
+  return fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((r) => handle<T>(r));
+}
+
 export function apiPut<T>(
   path: string,
   body: unknown,
