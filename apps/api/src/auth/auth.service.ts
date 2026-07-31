@@ -4,6 +4,16 @@ import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
+/** Usuário com papéis e permissões carregados (o que a sessão precisa). */
+export interface UserWithRoles {
+  id: string;
+  orgId: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  roles: { key: string; permissions: { key: string }[] }[];
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -23,6 +33,11 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Credenciais inválidas');
 
+    return this.issueSession(user, ip);
+  }
+
+  /** Emite o JWT da sessão. Usado pelo login por senha e pelo login com Google. */
+  async issueSession(user: UserWithRoles, ip?: string, action = 'auth.login') {
     const permissions = Array.from(
       new Set(user.roles.flatMap((r) => r.permissions.map((p) => p.key))),
     );
@@ -45,7 +60,7 @@ export class AuthService {
       orgId: user.orgId,
       actorType: 'user',
       actorId: user.id,
-      action: 'auth.login',
+      action,
       ip,
     });
 

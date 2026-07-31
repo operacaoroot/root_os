@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { SendEmailSchema, CreateEventSchema, CreateDocSchema, AppendDocSchema } from '@mktos/shared';
 import { GoogleService } from './google.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { GoogleLoginService, LOGIN_STATE_PREFIX } from '../auth/google-login.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -13,12 +14,23 @@ export class GoogleController {
   constructor(
     private readonly svc: GoogleService,
     private readonly prisma: PrismaService,
+    private readonly login: GoogleLoginService,
   ) {}
 
   // Callback do OAuth — PÚBLICO (o browser é redirecionado pelo Google, sem token).
   // `state` carrega o orgId; validamos que é um org real.
   @Get('callback')
-  async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+  async callback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    // O login com o Gmail reaproveita ESTE redirect (o único autorizado no Google
+    // Cloud): `state` com prefixo de login é sessão de usuário, não conexão do conector.
+    if (state?.startsWith(LOGIN_STATE_PREFIX)) {
+      return res.redirect(await this.login.completeToRedirect(code, state, req.ip));
+    }
     const org = await this.prisma.org.findUnique({ where: { id: state } });
     if (!org || !code) return res.redirect(`${process.env.WEB_ORIGIN?.split(',')[0] ?? 'http://localhost:4000'}/google?erro=1`);
     const to = await this.svc.handleCallback(org.id, code);

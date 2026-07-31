@@ -21,6 +21,30 @@ admin.usuarios · admin.permissoes · auditoria.ver
 ```
 - **API keys de serviço** (clientes MCP) têm `scopes[]` — nunca herdam permissão de admin.
 
+### Login com o Google ("Entrar com o Gmail") — caminho padrão da pessoa
+**Gente entra pelo Google; senha é saída de emergência.** A tela de login mostra só o
+botão do Google — o formulário de e-mail+senha fica atrás do link "Entrar com e-mail e
+senha" (e aparece sozinho se o Google estiver fora do ar, pra ninguém ficar trancado).
+`POST /api/auth/login` continua ativo de propósito: as **contas de serviço** (`mcp@`,
+`ia-acao@`) são máquinas e entram por senha.
+
+Sai em `GET /api/auth/google/start`, volta no callback e a sessão é o **mesmo JWT** do
+login por senha (mesmos papéis e permissões).
+
+- **Credencial:** a MESMA do conector (`~/.config/root/google.env`), mas o login pede só
+  `openid email profile` — nenhum acesso a dados do usuário.
+- **Redirect:** reaproveita o do conector (`.../api/google/callback`, o único autorizado
+  no Google Cloud); o `state` com prefixo `login:` é o que separa login de conexão. Para
+  usar URI própria (depois de registrá-la no console), aponte `GOOGLE_LOGIN_REDIRECT_URI`.
+- **CSRF:** o `state` é um JWT assinado (10 min) com `purpose: google-login`.
+- **Quem entra:** quem **já é usuário** com aquele e-mail; e quem estiver em
+  `GOOGLE_LOGIN_ALLOWED_EMAILS` (vírgula), que ganha usuário `admin_master` no 1º acesso,
+  com senha inutilizável (bytes aleatórios) — ou seja, só entra por este fluxo. Lista
+  vazia = ninguém novo. E-mail não verificado no Google é recusado.
+- **Token na volta:** vai no **fragmento** (`/login#token=…`), que não é enviado ao
+  servidor nem cai em log de acesso; a tela troca por sessão e limpa a URL.
+- **Auditoria:** entra como `auth.login.google` (o por senha continua `auth.login`).
+
 ## 3. Ações sensíveis → confirmação humana obrigatória
 enviar e-mail · enviar WhatsApp · alterar campanha · excluir dados · atualizar nota Obsidian · criar/alterar tarefa crítica · reprocessar automação · enviar relatório p/ cliente · exportar dado pessoal · acessar e-mail sensível.
 → Fluxo: ação gera **draft + approval_token** → humano confirma na UI ou responde no WhatsApp → executa → `audit_logs`.
