@@ -6,17 +6,22 @@ import { useAuth } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
+// Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
+// público por natureza (página da bio e os textos legais que a Meta e o TikTok
+// exigem estar acessíveis para o App Review).
+const PUBLICAS = ['/login', '/b', '/termos', '/privacidade'];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const isLogin = pathname === '/login';
+  const publica = PUBLICAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   useEffect(() => {
-    if (ready && !user && !isLogin) router.replace('/login');
-  }, [ready, user, isLogin, router]);
+    if (ready && !user && !publica) router.replace('/login');
+  }, [ready, user, publica, router]);
 
-  if (isLogin) return <>{children}</>;
+  if (publica) return <>{children}</>;
 
   if (!ready || !user) {
     return (

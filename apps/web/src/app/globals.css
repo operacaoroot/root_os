@@ -16,6 +16,22 @@ body {
   font-feature-settings: 'cv11', 'ss01';
 }
 
+/* Textos legais da bio (públicos, identidade ROOT) */
+.bio-prose h2 {
+  @apply mb-[10px] mt-8 text-[17px] font-bold;
+  font-family: var(--fonte-mono), monospace;
+}
+.bio-prose p,
+.bio-prose ul {
+  @apply text-bio-soft;
+}
+.bio-prose ul {
+  @apply list-disc pl-5;
+}
+.bio-prose a {
+  @apply text-bio-primary;
+}
+
 /* scrollbar discreta */
 ::-webkit-scrollbar {
   width: 10px;
