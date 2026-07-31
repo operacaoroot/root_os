@@ -37,5 +37,8 @@ export OBSIDIAN_VAULT_HOST="${OBSIDIAN_VAULT_HOST:-$HOME/Documents/Obsidian Vaul
 [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (bot não sobe)."
 
 echo "[up] subindo containers (build + up -d)…"
-docker compose up -d --build "$@"
+# -f explícito: o docker-compose.override.yml do repo é o da VPS (easyPanel), que
+# binda as portas em 172.17.0.1 — endereço que só existe no bridge do Linux. Sem
+# isto o compose o carrega sozinho e o painel some do localhost no Mac.
+docker compose -f docker-compose.yml up -d --build "$@"
 echo "[up] pronto. Ver: docker compose ps · logs: docker compose logs -f telegram"
