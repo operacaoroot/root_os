@@ -32,6 +32,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleOn, setGoogleOn] = useState(false);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const voltaTratada = useRef(false);
 
   // Volta do Google: token no fragmento (#token=…) ou erro na query (?erro=…).
@@ -93,61 +94,70 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {/* Pessoa entra pelo Google. E-mail+senha fica como saída de emergência —
+            contas de serviço (mcp@, ia-acao@) seguem usando a API de senha. */}
         <div className="space-y-4 rounded-xl border border-border bg-surface p-6">
           {googleOn && (
-            <>
-              <a
-                href={`${API_BASE}/auth/google/start`}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg py-2 text-sm font-medium transition hover:border-brand"
-              >
-                <GoogleG />
-                Entrar com o Google
-              </a>
-              <div className="flex items-center gap-3 text-[11px] text-muted">
-                <div className="h-px flex-1 bg-border" />
-                ou com e-mail e senha
-                <div className="h-px flex-1 bg-border" />
-              </div>
-            </>
+            <a
+              href={`${API_BASE}/auth/google/start`}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-bg py-2.5 text-sm font-medium transition hover:border-brand"
+            >
+              <GoogleG />
+              Entrar com o Google
+            </a>
           )}
 
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs text-muted">E-mail</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-brand"
-                required
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs text-muted">Senha</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="admin12345 (dev)"
-                className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-brand"
-                required
-              />
-            </div>
+          {error && <div className="text-sm text-bad">{error}</div>}
 
-            {error && <div className="text-sm text-bad">{error}</div>}
-
+          {googleOn && !mostrarSenha && (
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-brand py-2 text-sm font-medium text-white transition hover:bg-brand/90 disabled:opacity-60"
+              type="button"
+              onClick={() => setMostrarSenha(true)}
+              className="w-full text-center text-[11px] text-muted underline-offset-2 hover:underline"
             >
-              {loading ? 'Entrando…' : 'Entrar'}
+              Entrar com e-mail e senha
             </button>
+          )}
 
-            <p className="text-center text-[11px] text-muted">
-              Dev: admin@marketing-os.local / admin12345
-            </p>
-          </form>
+          {(!googleOn || mostrarSenha) && (
+            <form onSubmit={submit} className="space-y-4">
+              {googleOn && (
+                <div className="flex items-center gap-3 text-[11px] text-muted">
+                  <div className="h-px flex-1 bg-border" />
+                  acesso de emergência
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-xs text-muted">E-mail</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-brand"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted">Senha</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-brand"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-lg bg-brand py-2 text-sm font-medium text-white transition hover:bg-brand/90 disabled:opacity-60"
+              >
+                {loading ? 'Entrando…' : 'Entrar'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

@@ -21,9 +21,15 @@ admin.usuarios · admin.permissoes · auditoria.ver
 ```
 - **API keys de serviço** (clientes MCP) têm `scopes[]` — nunca herdam permissão de admin.
 
-### Login com o Google ("Entrar com o Gmail")
-Alternativa ao e-mail+senha na tela de login. Sai em `GET /api/auth/google/start`, volta
-no callback e a sessão é o **mesmo JWT** do login por senha (mesmos papéis e permissões).
+### Login com o Google ("Entrar com o Gmail") — caminho padrão da pessoa
+**Gente entra pelo Google; senha é saída de emergência.** A tela de login mostra só o
+botão do Google — o formulário de e-mail+senha fica atrás do link "Entrar com e-mail e
+senha" (e aparece sozinho se o Google estiver fora do ar, pra ninguém ficar trancado).
+`POST /api/auth/login` continua ativo de propósito: as **contas de serviço** (`mcp@`,
+`ia-acao@`) são máquinas e entram por senha.
+
+Sai em `GET /api/auth/google/start`, volta no callback e a sessão é o **mesmo JWT** do
+login por senha (mesmos papéis e permissões).
 
 - **Credencial:** a MESMA do conector (`~/.config/root/google.env`), mas o login pede só
   `openid email profile` — nenhum acesso a dados do usuário.
