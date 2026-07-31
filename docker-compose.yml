@@ -86,6 +86,15 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
+      # Link na bio (absorvido do root-bio)
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      PUBLIC_BIO_ORIGIN: ${PUBLIC_BIO_ORIGIN:-https://bio.operacaoroot.com}
+      INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
+      INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      BIO_SYNC_INTERVAL_MIN: ${BIO_SYNC_INTERVAL_MIN:-360}
+      BIO_BRIDGE_INTERVAL_MIN: ${BIO_BRIDGE_INTERVAL_MIN:-720}
     volumes:
       # vault Obsidian do root montada READ-ONLY (base de conhecimento)
       - type: bind
@@ -113,6 +122,10 @@ services:
     command: pnpm start
     environment:
       API_PROXY_TARGET: http://api:4001
+      # A página pública da bio é RSC: fala com a API por dentro da rede, sem
+      # passar pelo rewrite /api (que existe para o browser).
+      API_INTERNAL_URL: http://api:4001
+      BIO_HOST: ${BIO_HOST:-bio.operacaoroot.com}
     depends_on:
       api: { condition: service_healthy }
     ports:
