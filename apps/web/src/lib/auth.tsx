@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { apiPost } from './api';
+import { apiGet, apiPost } from './api';
 
 export interface AuthUser {
   id: string;
@@ -16,6 +16,7 @@ interface AuthContextValue {
   token: string | null;
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
   can: (permission: string) => boolean;
 }
@@ -55,6 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
+  /** Sessão que já veio pronta de fora (login com Google): confirma no /auth/me. */
+  async function loginWithToken(t: string) {
+    const me = await apiGet<AuthUser>('/auth/me', t);
+    localStorage.setItem(TOKEN_KEY, t);
+    localStorage.setItem(USER_KEY, JSON.stringify(me));
+    setToken(t);
+    setUser(me);
+  }
+
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -65,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const can = (permission: string) => !!user?.permissions.includes(permission);
 
   return (
-    <AuthContext.Provider value={{ user, token, ready, login, logout, can }}>
+    <AuthContext.Provider value={{ user, token, ready, login, loginWithToken, logout, can }}>
       {children}
     </AuthContext.Provider>
   );
