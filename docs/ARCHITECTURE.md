@@ -2,8 +2,21 @@
 
 > **Produto do projeto `root`** (studio de IA/SaaS). **Não** pertence ao escritório Cardozo & Saggioro.
 > **Nome do produto:** configurável via `APP_NAME` (padrão: "Marketing OS").
-> **Status:** proposta arquitetural (Fase 0). Nenhum código de aplicação escrito ainda.
-> **Data:** 2026-07-06
+> **Status:** **as-built** — sistema no ar (Fases 1–5 entregues; ver `ROADMAP.md`). Este doc mistura princípios (ainda válidos) com o desenho atual.
+> **Data:** 2026-07-21 (revisão as-built) · proposta original: 2026-07-06
+
+> **Diagramas atualizados (archify, abrem no navegador, exportam PNG/SVG):**
+> [`diagrams/system.architecture.html`](diagrams/system.architecture.html) · [`diagrams/ai-mcp.sequence.html`](diagrams/ai-mcp.sequence.html) · [`diagrams/domains.architecture.html`](diagrams/domains.architecture.html)
+>
+> **O que mudou do desenho original para o código real:**
+> | Proposta 2026-07 | Implementação atual |
+> |---|---|
+> | WhatsApp como canal | **Telegram** (bot `apps/telegram`); WhatsApp adiado |
+> | `packages/connectors/*` | conectores **inline** nos módulos (`finance`, `google`, `meta`, `obsidian`, `integrations`) |
+> | Redis + **BullMQ** workers | **sem BullMQ**; sync inline nos services + cron in-process do bot |
+> | Auth.js (sessão) | **JWT** próprio + RBAC em tabela |
+> | Claude como padrão | **OpenAI gpt-4o** (bot chama direto; API tem `LlmProvider`, `AnthropicProvider` a implementar) |
+> | MCP = Hub p/ qualquer IA | MCP **stdio**, subprocesso do bot (transporte HTTP/SSE pendente — Fase 7) |
 
 ---
 
@@ -48,6 +61,8 @@ Toda decisão de arquitetura abaixo respeita isso.
 | **Empacotamento** | docker-compose **próprio** (`COMPOSE_PROJECT_NAME=marketing-os`, rede `marketing-os-net`, volumes e portas dedicados) | Rodar junto do stack do escritório | Isolamento físico. Ver `ISOLATION.md`. |
 
 ### Diagrama de alto nível
+
+> ⚠️ O diagrama textual abaixo é o **histórico** (proposta 2026-07): mostra WhatsApp/BullMQ que **não** são o desenho atual. O as-built é [`diagrams/system.architecture.html`](diagrams/system.architecture.html) (ver a tabela de divergências no topo). A regra de isolamento (sem contato com o MCP/infra do escritório C&S) permanece.
 
 ```
    ┌─────────────────────────  STACK ISOLADO  (marketing-os-net)  ────────────────────────┐
@@ -138,7 +153,8 @@ Ver `INTEGRATIONS.md §Pixel` e `DATA_MODEL.md`.
 - **A IA só toca dados via MCP tools próprias.** Nunca faz SQL direto, nunca fala com o MCP do escritório. Permissão, log e "não inventar" de graça.
 - **Prompts versionados** — `packages/shared/prompts/<nome>.<versão>.ts`. Toda chamada gera linha em `ai_runs` + `ai_tool_calls`.
 - **Memória estruturada** — decisões, aprendizados, campanhas vencedoras/ruins, personas, ofertas, copys (tabelas + embeddings pgvector). Consultável/atualizável **só com autorização**.
-- **Aprovação humana** — ações `write_sensitive` retornam "draft" + `approval_token`; nada executa sem confirmação (UI ou WhatsApp).
+- **Aprovação humana (enforced no backend)** — a IA **não** escreve pelo MCP (só-leitura). Ação sensível segue: (1) a IA chama `propose_*` (só registra a intenção); (2) o bot cria a aprovação em `POST /approvals` (status `pending`) e devolve um `approval_token`; (3) o humano confirma no Telegram → `POST /approvals/:id/confirm`; (4) a escrita real (`PATCH /leads|tasks|campaigns|content`) só passa carregando o header `x-approval-token` — o **`ApprovalGuard`** valida na API: confirmado, no prazo (TTL 10 min), **single-use** e casando o recurso + a mudança exata (hash canônico). Sem token válido → 403. Duas contas de serviço: `mcp@` (só-leitura) e `ia-acao@` (só `*.editar`). Todo o ciclo entra em `audit_logs` (`approval.propose|confirm|reject|consume`).
+  - **Resíduo conhecido:** o `/confirm` hoje é chamado pela conta de ação (mediado pelo bot), não por uma identidade humana autenticada na API. Fecha bugs do laço de IA, escrita acidental/duplicada e replay; **não** blinda 100% contra roubo da credencial de ação. Fechar de vez exige mapear o usuário do Telegram → identidade da API (futuro).
 
 ---
 

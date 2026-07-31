@@ -48,7 +48,13 @@ export const config = {
       join(homedir(), 'marketing-os', 'packages', 'mcp', 'dist', 'index.js'),
     apiUrl: process.env.MCP_API_URL ?? 'http://localhost:4001/api',
     serviceEmail: process.env.MCP_SERVICE_EMAIL ?? 'mcp@marketing-os.local',
-    servicePassword: process.env.MCP_SERVICE_PASSWORD ?? 'mcp-service-12345',
+    // Sem senha default (constituição): vazio → assertConfigured falha claro.
+    servicePassword: process.env.MCP_SERVICE_PASSWORD ?? '',
+  },
+  // Conta de AÇÃO (escrita aprovada). Sem default de senha.
+  action: {
+    email: process.env.MCP_ACTION_EMAIL ?? 'ia-acao@marketing-os.local',
+    password: process.env.MCP_ACTION_PASSWORD ?? '',
   },
 };
 
@@ -56,6 +62,8 @@ export function assertConfigured(): void {
   const missing: string[] = [];
   if (!config.openai.apiKey) missing.push('OPENAI_API_KEY (~/.config/root/openai.env)');
   if (!config.telegram.token) missing.push('TELEGRAM_BOT_TOKEN (~/.config/root/telegram.env)');
+  if (!config.mcp.servicePassword) missing.push('MCP_SERVICE_PASSWORD (conta de serviço do MCP — sem default)');
+  if (!config.action.password) missing.push('MCP_ACTION_PASSWORD (conta de ação — sem default)');
   if (missing.length) {
     throw new Error(`Configuração ausente:\n  - ${missing.join('\n  - ')}`);
   }

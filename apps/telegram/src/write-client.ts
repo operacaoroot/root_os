@@ -1,31 +1,56 @@
 import { config } from './config.js';
 
 // Cliente de ESCRITA do bot — autentica com a conta de AÇÃO (least-privilege:
-// só *.editar). Usado APENAS depois da confirmação humana no Telegram.
-// Separado do MCP (que é read-only): a IA nunca escreve direto.
-const EMAIL = process.env.MCP_ACTION_EMAIL ?? 'ia-acao@marketing-os.local';
-const PASSWORD = process.env.MCP_ACTION_PASSWORD ?? 'ia-acao-12345';
+// só *.editar) e SÓ escreve carregando um x-approval-token confirmado pelo humano.
+// A senha vem de env (sem default no código — ver config.action / assertConfigured).
+const API = config.mcp.apiUrl;
+
+export type ResourceType = 'lead' | 'task' | 'campaign' | 'content';
+const PATHS: Record<ResourceType, string> = {
+  lead: 'leads',
+  task: 'tasks',
+  campaign: 'campaigns',
+  content: 'content',
+};
+
+export interface ApprovalTicket {
+  approvalId: string;
+  token: string;
+  summary: string;
+  expiresAt: string;
+}
 
 let token: string | null = null;
 
 async function login(): Promise<void> {
-  const res = await fetch(`${config.mcp.apiUrl}/auth/login`, {
+  if (!config.action.password) throw new Error('MCP_ACTION_PASSWORD ausente (conta de ação).');
+  const res = await fetch(`${API}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+    body: JSON.stringify({ email: config.action.email, password: config.action.password }),
   });
   if (!res.ok) throw new Error(`Login da conta de ação falhou: HTTP ${res.status}`);
   token = ((await res.json()) as { token: string }).token;
 }
 
-async function patch(path: string, body: unknown): Promise<unknown> {
+async function req<T>(
+  method: string,
+  path: string,
+  opts: { body?: unknown; approvalToken?: string } = {},
+): Promise<T> {
   if (!token) await login();
-  const doReq = () =>
-    fetch(`${config.mcp.apiUrl}${path}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
+  const doReq = () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+    if (opts.approvalToken) headers['x-approval-token'] = opts.approvalToken;
+    return fetch(`${API}${path}`, {
+      method,
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
+  };
   let res = await doReq();
   if (res.status === 401) {
     await login();
@@ -35,16 +60,37 @@ async function patch(path: string, body: unknown): Promise<unknown> {
     const t = await res.text().catch(() => '');
     throw new Error(`API ${path} → HTTP ${res.status} ${t.slice(0, 200)}`);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
 
 export const writeClient = {
-  updateLead: (id: string, body: { status?: string; nextAction?: string | null }) =>
-    patch(`/leads/${encodeURIComponent(id)}`, body),
-  setTaskStatus: (id: string, status: string) =>
-    patch(`/tasks/${encodeURIComponent(id)}`, { status }),
-  setCampaignStatus: (id: string, status: string) =>
-    patch(`/campaigns/${encodeURIComponent(id)}`, { status }),
-  setContentStatus: (id: string, status: string) =>
-    patch(`/content/${encodeURIComponent(id)}`, { status }),
+  // 1) registra a proposta no backend (status=pending) e recebe o token da escrita
+  createApproval(payload: {
+    resourceType: ResourceType;
+    resourceId: string;
+    changes: Record<string, unknown>;
+    summary?: string;
+  }): Promise<ApprovalTicket> {
+    return req<ApprovalTicket>('POST', '/approvals', { body: payload });
+  },
+  // 2) humano confirmou no Telegram → marca confirmed (libera a escrita)
+  confirmApproval(id: string): Promise<unknown> {
+    return req('POST', `/approvals/${encodeURIComponent(id)}/confirm`, {});
+  },
+  // humano cancelou → rejeita (best-effort)
+  rejectApproval(id: string): Promise<unknown> {
+    return req('POST', `/approvals/${encodeURIComponent(id)}/reject`, {});
+  },
+  // 3) escrita real, carregando o token confirmado (o ApprovalGuard valida no backend)
+  writeResource(
+    resourceType: ResourceType,
+    id: string,
+    changes: Record<string, unknown>,
+    approvalToken: string,
+  ): Promise<unknown> {
+    return req('PATCH', `/${PATHS[resourceType]}/${encodeURIComponent(id)}`, {
+      body: changes,
+      approvalToken,
+    });
+  },
 };

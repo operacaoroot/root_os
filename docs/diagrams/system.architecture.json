@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Marketing OS — Arquitetura as-built",
+    "subtitle": "Estado real do código (jul/2026) · stack isolado marketing-os-net · zero contato com C&S",
+    "output": "system.architecture.html"
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "Time", "sublabel": "navegador", "pos": [40, 210], "size": [120, 58] },
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "Bot API", "pos": [40, 470], "size": [120, 58] },
+    { "id": "openai", "type": "external", "label": "OpenAI", "sublabel": "gpt-4o", "pos": [40, 620], "size": [120, 58], "tag": "temporário → Claude" },
+
+    { "id": "web", "type": "frontend", "label": "apps/web", "sublabel": "Next.js 15 :4000", "pos": [250, 210], "size": [140, 58] },
+    { "id": "bot", "type": "backend", "label": "apps/telegram", "sublabel": "bot + scheduler", "pos": [250, 470], "size": [140, 58] },
+    { "id": "mcp", "type": "messagebus", "label": "packages/mcp", "sublabel": "MCP stdio · 32 tools", "pos": [250, 620], "size": [140, 58], "tag": "read-only" },
+
+    { "id": "api", "type": "backend", "label": "apps/api — NestJS", "sublabel": "REST · webhooks · RBAC · 21 módulos", "pos": [470, 340], "size": [180, 78], "tag": ":4001" },
+
+    { "id": "db", "type": "database", "label": "PostgreSQL 16", "sublabel": "+ pgvector · 31 tabelas", "pos": [730, 210], "size": [150, 58], "tag": ":5442" },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "cache", "pos": [730, 340], "size": [150, 58], "tag": ":6390" },
+    { "id": "minio", "type": "cloud", "label": "MinIO (S3)", "sublabel": "relatórios/arquivos", "pos": [730, 470], "size": [150, 58], "tag": ":9010" },
+
+    { "id": "src_mkt", "type": "external", "label": "Marketing", "sublabel": "ClickUp · Meta/IG · Pixel", "pos": [470, 110], "size": [180, 58] },
+    { "id": "src_fin", "type": "external", "label": "Financeiro", "sublabel": "Pluggy · Asaas · OFX", "pos": [700, 620], "size": [180, 58] },
+    { "id": "src_know", "type": "external", "label": "Conhecimento", "sublabel": "Google Workspace · Obsidian", "pos": [470, 620], "size": [180, 58] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Stack isolado · marketing-os-net · OrbStack (Mac) · docker-compose", "wraps": ["web", "bot", "mcp", "api", "db", "redis", "minio"] }
+  ],
+  "connections": [
+    { "from": "browser", "to": "web", "label": "HTTPS", "variant": "emphasis" },
+    { "from": "web", "to": "api", "label": "REST / SSE", "variant": "emphasis" },
+    { "from": "telegram", "to": "bot" },
+    { "from": "bot", "to": "openai", "label": "function calling", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 34 },
+    { "from": "bot", "to": "mcp", "label": "stdio (spawn)", "fromSide": "bottom", "toSide": "top", "labelDy": 34 },
+    { "from": "mcp", "to": "api", "label": "GET · conta serviço", "variant": "security", "fromSide": "right", "toSide": "bottom" },
+    { "from": "bot", "to": "api", "label": "PATCH · conta ação (pós-confirmação)", "variant": "security", "fromSide": "right", "toSide": "left" },
+    { "from": "api", "to": "db", "label": "SQL", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "from": "api", "to": "redis", "fromSide": "right", "toSide": "left" },
+    { "from": "api", "to": "minio", "fromSide": "right", "toSide": "left" },
+    { "from": "api", "to": "src_mkt", "label": "sync / pull", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelAt": [560, 254] },
+    { "from": "api", "to": "src_know", "label": "read", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [560, 528] },
+    { "from": "api", "to": "src_fin", "label": "sync", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [700, 528] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Espinha", "items": ["Browser → web → api → Postgres é o caminho feliz", "API NestJS é o hub: toda leitura/escrita/auditoria passa por ela", "Um dado, uma verdade: fontes externas são fonte, o Postgres é o dono"] },
+    { "dot": "rose", "title": "IA com trilhas separadas", "items": ["Leitura: MCP (conta serviço, só-leitura) → 32 tools", "Escrita: conta de ação (*.editar) só após confirmação humana", "OpenAI gpt-4o hoje (bot ignora o LlmProvider da API)"] },
+    { "dot": "amber", "title": "Divergências vs docs", "items": ["ARCHITECTURE.md diz 'Fase 0, sem código' — já há 4 apps no ar", "Sem packages/connectors: conectores vivem inline nos módulos", "Sem BullMQ: agendamento é inline nos services + cron do bot", "WhatsApp virou Telegram; Auth.js virou JWT"] }
+  ]
+}

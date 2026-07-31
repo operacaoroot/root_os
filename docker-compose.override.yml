@@ -1,0 +1,21 @@
+# Override de PRODUÇÃO (VPS Hostinger) — não commitado no repo original.
+# Padrão de segurança da VPS: nenhuma porta pública direta; tudo bindado em
+# 172.17.0.1 e exposto só via Traefik do easyPanel
+# (/etc/easypanel/traefik/config/marketing-os.yaml → 172.17.0.1:4000).
+services:
+  db:
+    ports: !override
+      - "172.17.0.1:5442:5432"
+  redis:
+    ports: !override
+      - "172.17.0.1:6390:6379"
+  minio:
+    ports: !override
+      - "172.17.0.1:9010:9000"
+      - "172.17.0.1:9011:9001"
+  api:
+    ports: !override
+      - "172.17.0.1:4001:4001"
+  web:
+    ports: !override
+      - "172.17.0.1:4000:4000"

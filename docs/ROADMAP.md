@@ -61,7 +61,6 @@ Relatório diário/semanal/mensal · envio por WhatsApp (write_sensitive c/ conf
 
 ## Fase 7 — MCP / Hub completo p/ IA
 Todas as tools · schemas · logs · permissões · fluxo de aprovação · integração testada com Claude.
-- ✅ **MCP standalone p/ VPS** (repo próprio `operacaoroot/marketing-os-mcp`, histórico preservado): transporte **HTTP streamable + Bearer token** (stdio mantido), Docker + Caddy/HTTPS, `deploy/prod.sh`. Hoje são **32 tools read-only**. Falta: lançar na VPS (junto do painel) e depois tools `write_*` c/ aprovação.
 
 ## Fase 8 — IA avançada
 Recomendações · diagnósticos · priorização · memória estruturada (pgvector) · agentes por módulo · relatórios inteligentes.

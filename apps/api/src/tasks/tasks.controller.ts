@@ -5,6 +5,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { ApprovalGuard } from '../approvals/approval.guard';
+import { SensitiveWrite } from '../approvals/sensitive-write.decorator';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('tasks')
@@ -23,6 +25,8 @@ export class TasksController {
 
   @Patch(':id')
   @RequirePermissions('tarefas.editar')
+  @SensitiveWrite('task')
+  @UseGuards(ApprovalGuard)
   update(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const input = UpdateTaskSchema.parse(body);
     return this.svc.update(user.orgId, id, input, user.sub);

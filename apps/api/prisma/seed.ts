@@ -1,15 +1,43 @@
 import { PrismaClient, LeadStatus, TaskStatus } from '@prisma/client';
 import { PERMISSIONS, ROLES } from '@mktos/shared';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@marketing-os.local';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin12345'; // PROD: defina ADMIN_PASSWORD
+// Sem senhas fixas no repo (constituição): as contas de serviço leem a senha de
+// env. Se a env não vier: em CRIAÇÃO gera uma senha forte e imprime UMA vez; em
+// UPDATE mantém o hash atual (reseed não rotaciona sem env → não quebra o que roda).
+// Rotacionar = definir a env e rodar `pnpm db:seed` de novo.
+const ADMIN_EMAIL = 'admin@marketing-os.local';
 const MCP_EMAIL = 'mcp@marketing-os.local';
-const MCP_PASSWORD = process.env.MCP_SERVICE_PASSWORD ?? 'mcp-service-12345'; // conta de serviço só-leitura
 const IA_ACAO_EMAIL = 'ia-acao@marketing-os.local';
-const IA_ACAO_PASSWORD = process.env.MCP_ACTION_PASSWORD ?? 'ia-acao-12345'; // conta de AÇÃO (escreve só o aprovado)
+
+async function upsertServiceUser(args: {
+  orgId: string;
+  email: string;
+  name: string;
+  roleId: string;
+  envPassword: string | undefined;
+}): Promise<void> {
+  const { orgId, email, name, roleId, envPassword } = args;
+  const existing = await prisma.user.findUnique({ where: { email } });
+  let passwordHash: string | undefined;
+  if (envPassword && envPassword.length >= 8) {
+    passwordHash = await bcrypt.hash(envPassword, 10);
+  } else if (envPassword) {
+    throw new Error(`Senha de ${email} tem menos de 8 caracteres — use uma forte.`);
+  } else if (!existing) {
+    const gen = randomBytes(18).toString('base64url');
+    passwordHash = await bcrypt.hash(gen, 10);
+    console.log(`  [seed] ${email}: senha gerada → ${gen}\n         (defina em env p/ fixar/rotacionar; sem env o reseed não a altera)`);
+  }
+  await prisma.user.upsert({
+    where: { email },
+    update: { roles: { set: [{ id: roleId }] }, ...(passwordHash ? { passwordHash } : {}) },
+    create: { orgId, name, email, passwordHash: passwordHash!, roles: { connect: [{ id: roleId }] } },
+  });
+}
 
 function daysAgo(n: number): Date {
   const d = new Date();
@@ -52,52 +80,37 @@ async function main() {
     where: { orgId_key: { orgId: org.id, key: 'admin_master' } },
   });
 
-  // 4) Usuário admin
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  await prisma.user.upsert({
-    where: { email: ADMIN_EMAIL },
-    update: { passwordHash, roles: { set: [{ id: adminRole.id }] } },
-    create: {
-      orgId: org.id,
-      name: 'Admin Root',
-      email: ADMIN_EMAIL,
-      passwordHash,
-      roles: { connect: [{ id: adminRole.id }] },
-    },
+  // 4) Usuário admin (senha via ADMIN_PASSWORD)
+  await upsertServiceUser({
+    orgId: org.id,
+    email: ADMIN_EMAIL,
+    name: 'Admin Root',
+    roleId: adminRole.id,
+    envPassword: process.env.ADMIN_PASSWORD,
   });
 
   // 4b) Usuário de serviço do MCP/IA (só leitura — menor privilégio)
   const iaRole = await prisma.role.findUniqueOrThrow({
     where: { orgId_key: { orgId: org.id, key: 'ia_servico' } },
   });
-  const mcpHash = await bcrypt.hash(MCP_PASSWORD, 10);
-  await prisma.user.upsert({
-    where: { email: MCP_EMAIL },
-    update: { passwordHash: mcpHash, roles: { set: [{ id: iaRole.id }] } },
-    create: {
-      orgId: org.id,
-      name: 'MCP Service (IA)',
-      email: MCP_EMAIL,
-      passwordHash: mcpHash,
-      roles: { connect: [{ id: iaRole.id }] },
-    },
+  await upsertServiceUser({
+    orgId: org.id,
+    email: MCP_EMAIL,
+    name: 'MCP Service (IA)',
+    roleId: iaRole.id,
+    envPassword: process.env.MCP_SERVICE_PASSWORD,
   });
 
   // 4c) Conta de AÇÃO da IA (escreve só o que o humano aprovou no Telegram)
   const iaAcaoRole = await prisma.role.findUniqueOrThrow({
     where: { orgId_key: { orgId: org.id, key: 'ia_acao' } },
   });
-  const iaAcaoHash = await bcrypt.hash(IA_ACAO_PASSWORD, 10);
-  await prisma.user.upsert({
-    where: { email: IA_ACAO_EMAIL },
-    update: { passwordHash: iaAcaoHash, roles: { set: [{ id: iaAcaoRole.id }] } },
-    create: {
-      orgId: org.id,
-      name: 'IA Ação (aprovada)',
-      email: IA_ACAO_EMAIL,
-      passwordHash: iaAcaoHash,
-      roles: { connect: [{ id: iaAcaoRole.id }] },
-    },
+  await upsertServiceUser({
+    orgId: org.id,
+    email: IA_ACAO_EMAIL,
+    name: 'IA Ação (aprovada)',
+    roleId: iaAcaoRole.id,
+    envPassword: process.env.MCP_ACTION_PASSWORD,
   });
 
   // 5) Limpa dados de exemplo do org (idempotência) e recria
@@ -246,8 +259,8 @@ async function main() {
 
   console.log('✔ Seed concluído.');
   console.log(`  Org: ${org.name} (${org.slug})`);
-  console.log(`  Login admin → ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
-  console.log(`  MCP serviço → ${MCP_EMAIL} / ${MCP_PASSWORD} (read-only)`);
+  console.log(`  Contas: ${ADMIN_EMAIL} · ${MCP_EMAIL} (read-only) · ${IA_ACAO_EMAIL} (ação)`);
+  console.log('  Senhas: via env (ADMIN_PASSWORD / MCP_SERVICE_PASSWORD / MCP_ACTION_PASSWORD) ou geradas acima.');
 }
 
 main()

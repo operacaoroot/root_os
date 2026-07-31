@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "IA → MCP: leitura e ação com aprovação humana",
+    "subtitle": "Bot Telegram · duas trilhas de credencial: conta-serviço (só-leitura) e conta-ação (*.editar)",
+    "output": "ai-mcp.sequence.html",
+    "viewBox": [980, 1080]
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "Você", "sublabel": "Telegram" },
+    { "id": "bot", "type": "frontend", "label": "Bot", "sublabel": "apps/telegram" },
+    { "id": "ai", "type": "backend", "label": "OpenAI", "sublabel": "gpt-4o · tools" },
+    { "id": "mcp", "type": "messagebus", "label": "MCP", "sublabel": "stdio · só-leitura" },
+    { "id": "api", "type": "backend", "label": "API", "sublabel": "NestJS + RBAC" },
+    { "id": "db", "type": "database", "label": "Postgres", "sublabel": "fonte da verdade" }
+  ],
+  "segments": [
+    { "from": 160, "to": 650, "label": "Leitura via MCP (conta-serviço, read-only)" },
+    { "from": 665, "to": 1010, "label": "Ação sensível → aprovação humana (conta-ação)" }
+  ],
+  "messages": [
+    { "from": "user", "to": "bot", "y": 185, "label": "pergunta", "variant": "default" },
+    { "from": "bot", "to": "ai", "y": 228, "label": "prompt + 32 tools", "variant": "emphasis" },
+    { "from": "ai", "to": "bot", "y": 271, "label": "tool_call: get_*", "variant": "return" },
+    { "from": "bot", "to": "mcp", "y": 314, "label": "callTool (stdio)", "variant": "default" },
+    { "from": "mcp", "to": "api", "y": 357, "label": "GET · conta-serviço", "variant": "security" },
+    { "from": "api", "to": "db", "y": 400, "label": "SELECT (orgId)", "variant": "default" },
+    { "from": "db", "to": "api", "y": 440, "label": "rows", "variant": "return" },
+    { "from": "api", "to": "mcp", "y": 483, "label": "JSON { source }", "variant": "return" },
+    { "from": "mcp", "to": "bot", "y": 526, "label": "dados", "variant": "return" },
+    { "from": "bot", "to": "ai", "y": 566, "label": "tool result", "variant": "default" },
+    { "from": "ai", "to": "bot", "y": 606, "label": "resposta (cita fonte)", "variant": "return" },
+    { "from": "bot", "to": "user", "y": 646, "label": "responde", "variant": "return" },
+
+    { "from": "ai", "to": "bot", "y": 705, "label": "propose_* (NÃO executa)", "variant": "security" },
+    { "from": "bot", "to": "user", "y": 748, "label": "confirmar? [Sim / Não]", "variant": "security" },
+    { "from": "user", "to": "bot", "y": 791, "label": "Sim ✓", "variant": "emphasis" },
+    { "from": "bot", "to": "api", "y": 834, "label": "PATCH · conta-ação (*.editar)", "variant": "security" },
+    { "from": "api", "to": "db", "y": 877, "label": "UPDATE + audit_log", "variant": "default" },
+    { "from": "api", "to": "bot", "y": 920, "label": "ok", "variant": "return" },
+    { "from": "bot", "to": "user", "y": 960, "label": "feito ✓", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "bot", "from": 220, "to": 968, "type": "frontend" },
+    { "participant": "ai", "from": 224, "to": 712, "type": "backend" },
+    { "participant": "mcp", "from": 310, "to": 530, "type": "messagebus" },
+    { "participant": "api", "from": 353, "to": 924, "type": "backend" },
+    { "participant": "db", "from": 396, "to": 881, "type": "database" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Leitura", "items": ["A IA só toca dado via MCP (32 tools read-only)", "MCP autentica com conta-serviço sem permissão de escrita", "Tudo passa por RBAC + auditoria da API; nunca SQL direto", "Cada tool devolve { source } → a IA cita a fonte"] },
+    { "dot": "rose", "title": "Ação sensível", "items": ["propose_* apenas REGISTRA a proposta — não executa", "Humano confirma no Telegram antes de qualquer escrita", "Escrita usa conta-ação separada, só *.editar (least privilege)"] },
+    { "dot": "amber", "title": "Gap encontrado", "items": ["O gate 'confirmar' vive no BOT, não na API", "A conta-ação aceita PATCH sem approval_token", "Princípio diz 'enforced no MCP, não só na UI' — hoje é na UI", "Sugestão: token de aprovação exigido no endpoint de escrita"] }
+  ]
+}

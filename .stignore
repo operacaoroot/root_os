@@ -1,0 +1,15 @@
+// Syncthing ignore — não sincronizar entre VPS e Mac.
+// Dependências/builds são específicos de plataforma: reinstale no Mac com `pnpm install`.
+node_modules
+.next
+out
+dist
+build
+coverage
+*.tsbuildinfo
+.turbo
+
+// Backups de secrets e ruído
+.env.bak.*
+.DS_Store
+*.log

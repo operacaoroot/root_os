@@ -5,6 +5,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { ApprovalGuard } from '../approvals/approval.guard';
+import { SensitiveWrite } from '../approvals/sensitive-write.decorator';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('content')
@@ -31,6 +33,8 @@ export class ContentController {
   // Muda a etapa do tema (write-back no ClickUp). Reusa tarefas.editar (edição operacional).
   @Patch(':id')
   @RequirePermissions('tarefas.editar')
+  @SensitiveWrite('content')
+  @UseGuards(ApprovalGuard)
   setStatus(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const input = UpdateContentSchema.parse(body);
     return this.svc.setStatus(user.orgId, id, input.status, user.sub);

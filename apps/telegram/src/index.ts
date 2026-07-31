@@ -3,6 +3,7 @@ import { McpAgent } from './mcp-agent.js';
 import { DAILY_BRIEFING_PROMPT } from './prompts.js';
 import { scheduleDaily } from './scheduler.js';
 import { executeAction, type ProposedAction } from './actions.js';
+import { writeClient } from './write-client.js';
 import {
   answerCallback,
   getMe,
@@ -58,8 +59,8 @@ async function main() {
     console.log(`[daily] enviado p/ ${chats.length} chat(s) — ${reason}`);
   };
 
-  // Ações propostas aguardando confirmação (id curto → ação). Contador determinístico.
-  const pending = new Map<string, ProposedAction>();
+  // Ações propostas aguardando confirmação (id curto → proposta + ticket de aprovação).
+  const pending = new Map<string, { action: ProposedAction; approvalId: string; token: string }>();
   let seq = 0;
 
   const handle = async (m: TgMessage) => {
@@ -86,8 +87,16 @@ async function main() {
       const { text, action } = await agent.ask(question);
       await sendMessage(m.chatId, text);
       if (action) {
+        // registra a proposta no backend (pending) ANTES de oferecer o botão —
+        // a escrita real só sai com o token confirmado (enforced na API).
+        const ticket = await writeClient.createApproval({
+          resourceType: action.resourceType,
+          resourceId: action.resourceId,
+          changes: action.changes,
+          summary: action.describe,
+        });
         const id = `a${++seq}`;
-        pending.set(id, action);
+        pending.set(id, { action, approvalId: ticket.approvalId, token: ticket.token });
         await sendButtons(m.chatId, `🔔 Confirmar ação?\n${action.describe}`, [
           [{ text: '✅ Confirmar', data: `confirm:${id}` }, { text: '✖️ Cancelar', data: `cancel:${id}` }],
         ]);
@@ -104,22 +113,25 @@ async function main() {
       return;
     }
     const [verb, id] = c.data.split(':');
-    const action = id ? pending.get(id) : undefined;
-    if (!action) {
+    const entry = id ? pending.get(id) : undefined;
+    if (!entry) {
       await answerCallback(c.id, 'Ação expirada.');
       return;
     }
     pending.delete(id);
     if (verb === 'cancel') {
+      writeClient.rejectApproval(entry.approvalId).catch(() => {});
       await answerCallback(c.id, 'Cancelado.');
       await sendMessage(c.chatId, '✖️ Ação cancelada.');
       return;
     }
     try {
-      const result = await executeAction(action);
+      // confirma a aprovação (backend) e só então executa a escrita com o token
+      await writeClient.confirmApproval(entry.approvalId);
+      const result = await executeAction(entry.action, entry.token);
       await answerCallback(c.id, 'Feito ✓');
       await sendMessage(c.chatId, result);
-      console.log(`[telegram] ${c.from} confirmou: ${action.describe}`);
+      console.log(`[telegram] ${c.from} confirmou: ${entry.action.describe}`);
     } catch (e) {
       await answerCallback(c.id, 'Falhou.');
       await sendMessage(c.chatId, `⚠️ Não consegui executar: ${(e as Error).message}`);

@@ -4,7 +4,11 @@
 
 const API_URL = process.env.MCP_API_URL ?? 'http://localhost:4001/api';
 const EMAIL = process.env.MCP_SERVICE_EMAIL ?? 'mcp@marketing-os.local';
-const PASSWORD = process.env.MCP_SERVICE_PASSWORD ?? 'mcp-service-12345';
+// Sem senha default (constituição): falha claro se a env não vier.
+const PASSWORD = process.env.MCP_SERVICE_PASSWORD;
+if (!PASSWORD) {
+  throw new Error('MCP_SERVICE_PASSWORD ausente — defina a senha da conta de serviço do MCP (sem default no código).');
+}
 
 let token: string | null = null;
 

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Marketing OS — Organização por domínios",
+    "subtitle": "21 módulos NestJS agrupados em contextos · 31 tabelas Prisma · dependências reais",
+    "output": "domains.architecture.html"
+  },
+  "components": [
+    { "id": "ia", "type": "messagebus", "label": "IA / Hub", "sublabel": "MCP · bot · LlmProvider", "pos": [340, 90], "size": [200, 60], "tag": "read-only" },
+
+    { "id": "integ", "type": "external", "label": "Integrações", "sublabel": "fonte, nunca dona", "pos": [70, 300], "size": [190, 60] },
+    { "id": "mkt", "type": "backend", "label": "Marketing", "sublabel": "núcleo do produto", "pos": [340, 300], "size": [200, 60] },
+    { "id": "finops", "type": "backend", "label": "FinOps", "sublabel": "sub-produto financeiro", "pos": [620, 300], "size": [200, 60], "tag": "11/31 tabelas" },
+
+    { "id": "plat", "type": "security", "label": "Plataforma", "sublabel": "cross-cutting", "pos": [340, 520], "size": [200, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "apps/api — NestJS (21 módulos, 1 processo)", "wraps": ["integ", "mkt", "finops", "plat"] }
+  ],
+  "connections": [
+    { "from": "ia", "to": "mkt", "label": "lê via MCP", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [430, 228] },
+    { "from": "ia", "to": "finops", "label": "lê via MCP", "variant": "security", "fromSide": "right", "toSide": "top", "labelAt": [605, 210] },
+    { "from": "integ", "to": "mkt", "label": "alimenta", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "from": "integ", "to": "finops", "label": "Pluggy · Asaas · OFX", "variant": "dashed", "fromSide": "bottom", "toSide": "left", "labelAt": [430, 468] },
+    { "from": "mkt", "to": "plat", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "from": "finops", "to": "plat", "fromSide": "bottom", "toSide": "right" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Marketing (núcleo)", "items": ["leads · events (pixel) · funnel · campaigns", "tasks · content · goals · reports · dashboard"] },
+    { "dot": "violet", "title": "Integrações (conectores inline)", "items": ["integrations (ClickUp) · meta (Instagram)", "google (Gmail/Drive/Docs/Agenda) · obsidian (pgvector)"] },
+    { "dot": "emerald", "title": "FinOps — quase um 2º produto", "items": ["finance + asaas · pluggy · apr · conciliacao · finops (DRE)", "ChartAccount · DreLine · Contract · Partner · Split…", "Candidato a bounded context / package próprio"] },
+    { "dot": "rose", "title": "Plataforma (base)", "items": ["auth · users · RBAC (26 perms, 6 perfis) · audit", "config · health · prisma — todo módulo depende dela"] }
+  ]
+}
