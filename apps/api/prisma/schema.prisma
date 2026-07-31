@@ -48,23 +48,31 @@ model Org {
   projetos            Projeto[]
   contracts           Contract[]
   transactionSplits   TransactionSplit[]
+
+  bioPages       BioPage[]
+  bioChallenges  BioChallenge[]
+  bioConexoes    BioConexao[]
+  bioCredenciais BioCredencialApp[]
+  bioOauthStates BioOauthState[]
+  bioVisits      BioVisit[]
+  bioEvents      BioEvent[]
 }
 
 model User {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   orgId        String
-  org          Org      @relation(fields: [orgId], references: [id])
+  org          Org       @relation(fields: [orgId], references: [id])
   name         String
-  email        String   @unique
+  email        String    @unique
   phone        String?
   passwordHash String
-  isActive     Boolean  @default(true)
+  isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  roles     Role[]     @relation("UserRoles")
-  ownedLeads Lead[]    @relation("LeadOwner")
+  roles      Role[] @relation("UserRoles")
+  ownedLeads Lead[] @relation("LeadOwner")
 
   @@index([orgId])
 }
@@ -125,15 +133,15 @@ enum HealthStatus {
 }
 
 model IntegrationAccount {
-  id         String            @id @default(uuid())
-  orgId      String
-  org        Org               @relation(fields: [orgId], references: [id])
-  key        String // clickup, gmail, instagram, whatsapp...
-  label      String
-  status     IntegrationStatus @default(disconnected)
-  config     Json?
+  id          String            @id @default(uuid())
+  orgId       String
+  org         Org               @relation(fields: [orgId], references: [id])
+  key         String // clickup, gmail, instagram, whatsapp...
+  label       String
+  status      IntegrationStatus @default(disconnected)
+  config      Json?
   connectedAt DateTime?
-  createdAt  DateTime          @default(now())
+  createdAt   DateTime          @default(now())
 
   health IntegrationHealth?
 
@@ -141,22 +149,22 @@ model IntegrationAccount {
 }
 
 model IntegrationHealth {
-  id         String       @id @default(uuid())
-  accountId  String       @unique
+  id         String             @id @default(uuid())
+  accountId  String             @unique
   account    IntegrationAccount @relation(fields: [accountId], references: [id])
-  status     HealthStatus @default(down)
+  status     HealthStatus       @default(down)
   lastSyncAt DateTime?
   nextSyncAt DateTime?
   lastError  String?
   latencyMs  Int?
-  checkedAt  DateTime     @default(now())
+  checkedAt  DateTime           @default(now())
 }
 
 // ---------- Leads ----------
 model LeadSource {
-  id      String @id @default(uuid())
+  id      String  @id @default(uuid())
   orgId   String
-  org     Org    @relation(fields: [orgId], references: [id])
+  org     Org     @relation(fields: [orgId], references: [id])
   key     String
   name    String
   channel String?
@@ -176,31 +184,31 @@ enum LeadStatus {
 }
 
 model Lead {
-  id          String     @id @default(uuid())
+  id          String      @id @default(uuid())
   orgId       String
-  org         Org        @relation(fields: [orgId], references: [id])
+  org         Org         @relation(fields: [orgId], references: [id])
   name        String
   email       String?
   phone       String?
   sourceId    String?
   source      LeadSource? @relation(fields: [sourceId], references: [id])
   campaignId  String?
-  campaign    Campaign?  @relation(fields: [campaignId], references: [id])
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id])
   utmSource   String?
   utmMedium   String?
   utmCampaign String?
   utmContent  String?
   utmTerm     String?
   landingPage String?
-  status      LeadStatus @default(novo)
+  status      LeadStatus  @default(novo)
   ownerId     String?
-  owner       User?      @relation("LeadOwner", fields: [ownerId], references: [id])
+  owner       User?       @relation("LeadOwner", fields: [ownerId], references: [id])
   nextAction  String?
   score       Int?
   anonymousId String?
-  enteredAt   DateTime   @default(now())
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  enteredAt   DateTime    @default(now())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   events LeadEvent[]
 
@@ -222,18 +230,18 @@ model LeadEvent {
 
 // ---------- Campanhas ----------
 model Campaign {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   orgId     String
-  org       Org      @relation(fields: [orgId], references: [id])
+  org       Org       @relation(fields: [orgId], references: [id])
   name      String
   objective String?
   channel   String?
-  budget    Decimal? @db.Decimal(12, 2)
-  spend     Decimal? @db.Decimal(12, 2)
-  status    String   @default("ativa") // planejada|ativa|pausada|analise|encerrada|problema
+  budget    Decimal?  @db.Decimal(12, 2)
+  spend     Decimal?  @db.Decimal(12, 2)
+  status    String    @default("ativa") // planejada|ativa|pausada|analise|encerrada|problema
   startAt   DateTime?
   endAt     DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   leads Lead[]
 
@@ -344,29 +352,29 @@ model GoalConfig {
 }
 
 model GoalWeek {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   orgId          String
-  org            Org      @relation(fields: [orgId], references: [id])
+  org            Org       @relation(fields: [orgId], references: [id])
   weekNumber     Int
   startDate      DateTime?
-  posts          Int      @default(0)
-  views          Int      @default(0)
-  shares         Int      @default(0)
-  saves          Int      @default(0)
-  comments       Int      @default(0)
-  profileVisits  Int      @default(0)
-  newFollowers   Int      @default(0)
-  totalFollowers Int      @default(0)
-  nonFollowerPct Float    @default(0)
-  storyViewers   Int      @default(0)
-  storyReplies   Int      @default(0)
-  listEntries    Int      @default(0)
-  bioClicks      Int      @default(0)
-  lives          Int      @default(0)
-  storyDays      Int      @default(0)
-  source         String   @default("manual") // manual | meta | mixed
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  posts          Int       @default(0)
+  views          Int       @default(0)
+  shares         Int       @default(0)
+  saves          Int       @default(0)
+  comments       Int       @default(0)
+  profileVisits  Int       @default(0)
+  newFollowers   Int       @default(0)
+  totalFollowers Int       @default(0)
+  nonFollowerPct Float     @default(0)
+  storyViewers   Int       @default(0)
+  storyReplies   Int       @default(0)
+  listEntries    Int       @default(0)
+  bioClicks      Int       @default(0)
+  lives          Int       @default(0)
+  storyDays      Int       @default(0)
+  source         String    @default("manual") // manual | meta | mixed
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@unique([orgId, weekNumber])
   @@index([orgId, weekNumber])
@@ -374,18 +382,18 @@ model GoalWeek {
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------
 model KnowledgeNote {
-  id        String   @id @default(uuid())
+  id        String                       @id @default(uuid())
   orgId     String
-  org       Org      @relation(fields: [orgId], references: [id])
+  org       Org                          @relation(fields: [orgId], references: [id])
   path      String // caminho relativo à vault
   folder    String?
   title     String
   tags      String[]
   content   String // markdown (sem o frontmatter)
   links     String[] // wikilinks [[...]]
-  wordCount Int      @default(0)
+  wordCount Int                          @default(0)
   fileTime  DateTime // mtime do arquivo
-  indexedAt DateTime @default(now())
+  indexedAt DateTime                     @default(now())
   embedding Unsupported("vector(1536)")? // OpenAI text-embedding-3-small
 
   @@unique([orgId, path])
@@ -456,12 +464,12 @@ enum FinanceAccountType {
 
 enum FinanceTxType {
   entrada // receita / crédito
-  saida   // despesa / débito
+  saida // despesa / débito
 }
 
 enum FinanceTxStatus {
-  previsto   // conta a pagar/receber (ainda não realizada)
-  realizado  // efetivada (entrou/saiu do caixa)
+  previsto // conta a pagar/receber (ainda não realizada)
+  realizado // efetivada (entrou/saiu do caixa)
   conciliado // batida com o extrato bancário
 }
 
@@ -541,47 +549,47 @@ model FinanceCategory {
 // Lançamento financeiro. amount é SEMPRE positivo; o sinal vem de `type`.
 // externalId (extrato/Pluggy) é único por conta p/ evitar duplicidade no sync.
 model FinanceTransaction {
-  id             String           @id @default(uuid())
+  id             String             @id @default(uuid())
   orgId          String
-  org            Org              @relation(fields: [orgId], references: [id])
+  org            Org                @relation(fields: [orgId], references: [id])
   accountId      String
-  account        FinanceAccount   @relation(fields: [accountId], references: [id])
+  account        FinanceAccount     @relation(fields: [accountId], references: [id])
   categoryId     String?
-  category       FinanceCategory? @relation(fields: [categoryId], references: [id])
+  category       FinanceCategory?   @relation(fields: [categoryId], references: [id])
   type           FinanceTxType
-  status         FinanceTxStatus  @default(realizado)
+  status         FinanceTxStatus    @default(realizado)
   description    String
-  amount         Decimal          @db.Decimal(14, 2)
+  amount         Decimal            @db.Decimal(14, 2)
   date           DateTime // competência / data do lançamento
   dueDate        DateTime? // vencimento (contas a pagar/receber)
   paidAt         DateTime?
   counterparty   String? // favorecido / pagador
   documentNumber String?
   notes          String?
-  source         String           @default("manual") // manual | ofx | pluggy
+  source         String             @default("manual") // manual | ofx | pluggy
   externalId     String? // id no extrato/provedor (dedup)
   chartAccountId String? // conta do plano de contas (p/ DRE)
-  chartAccount   ChartAccount?    @relation(fields: [chartAccountId], references: [id])
+  chartAccount   ChartAccount?      @relation(fields: [chartAccountId], references: [id])
   // AP/AR (contas a pagar/receber): fornecedor/cliente, contrato, aprovação, rateio
   partnerId      String?
-  partner        Partner?         @relation(fields: [partnerId], references: [id])
+  partner        Partner?           @relation(fields: [partnerId], references: [id])
   contractId     String?
-  contract       Contract?        @relation(fields: [contractId], references: [id])
-  approvalStatus ApprovalStatus   @default(nao_requer)
+  contract       Contract?          @relation(fields: [contractId], references: [id])
+  approvalStatus ApprovalStatus     @default(nao_requer)
   approvedById   String?
   approvedAt     DateTime?
-  temRateio      Boolean          @default(false)
+  temRateio      Boolean            @default(false)
   // conciliação bancária: quando um movimento (ofx/pluggy) casa com um título
   matchScore     Float?
   matchType      String? // automatico | sugestao | manual
   reconciledAt   DateTime?
   departamentoId String?
-  departamento   Departamento?    @relation(fields: [departamentoId], references: [id])
+  departamento   Departamento?      @relation(fields: [departamentoId], references: [id])
   projetoId      String?
-  projeto        Projeto?         @relation(fields: [projetoId], references: [id])
+  projeto        Projeto?           @relation(fields: [projetoId], references: [id])
   splits         TransactionSplit[]
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   @@unique([orgId, accountId, externalId])
   @@index([orgId, date])
@@ -659,26 +667,26 @@ model Projeto {
 
 // Contrato recorrente (pagar/receber) — gera lançamentos previstos.
 model Contract {
-  id                String         @id @default(uuid())
+  id                String          @id @default(uuid())
   orgId             String
-  org               Org            @relation(fields: [orgId], references: [id])
+  org               Org             @relation(fields: [orgId], references: [id])
   tipo              FinanceTxType // entrada = receber | saida = pagar
   partnerId         String?
-  partner           Partner?       @relation(fields: [partnerId], references: [id])
+  partner           Partner?        @relation(fields: [partnerId], references: [id])
   descricao         String
-  valor             Decimal        @db.Decimal(14, 2)
-  diaVencimento     Int            @default(1)
-  periodicidade     String         @default("mensal") // mensal|bimestral|trimestral|semestral|anual
+  valor             Decimal         @db.Decimal(14, 2)
+  diaVencimento     Int             @default(1)
+  periodicidade     String          @default("mensal") // mensal|bimestral|trimestral|semestral|anual
   chartAccountId    String?
-  chartAccount      ChartAccount?  @relation(fields: [chartAccountId], references: [id])
+  chartAccount      ChartAccount?   @relation(fields: [chartAccountId], references: [id])
   accountId         String?
   account           FinanceAccount? @relation(fields: [accountId], references: [id])
   dataInicio        DateTime
   dataFim           DateTime?
   proximoVencimento DateTime
-  status            ContractStatus @default(ativo)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  status            ContractStatus  @default(ativo)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   transactions FinanceTransaction[]
 
@@ -687,19 +695,19 @@ model Contract {
 
 // Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
 model TransactionSplit {
-  id             String        @id @default(uuid())
+  id             String             @id @default(uuid())
   orgId          String
-  org            Org           @relation(fields: [orgId], references: [id])
+  org            Org                @relation(fields: [orgId], references: [id])
   transactionId  String
   transaction    FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   chartAccountId String?
-  chartAccount   ChartAccount? @relation(fields: [chartAccountId], references: [id])
+  chartAccount   ChartAccount?      @relation(fields: [chartAccountId], references: [id])
   departamentoId String?
-  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  departamento   Departamento?      @relation(fields: [departamentoId], references: [id])
   projetoId      String?
-  projeto        Projeto?      @relation(fields: [projetoId], references: [id])
-  percentual     Decimal?      @db.Decimal(5, 2)
-  valor          Decimal       @db.Decimal(14, 2)
+  projeto        Projeto?           @relation(fields: [projetoId], references: [id])
+  percentual     Decimal?           @db.Decimal(5, 2)
+  valor          Decimal            @db.Decimal(14, 2)
 
   @@index([transactionId])
 }
@@ -709,9 +717,9 @@ model TransactionSplit {
 // Só folhas (permiteLancamento) recebem lançamento. Cada folha mapeia a uma linha
 // do DRE (dreLine) — é o que o motor DRE usa p/ classificar receita/despesa.
 model ChartAccount {
-  id                String   @id @default(uuid())
+  id                String         @id @default(uuid())
   orgId             String
-  org               Org      @relation(fields: [orgId], references: [id])
+  org               Org            @relation(fields: [orgId], references: [id])
   parentId          String?
   parent            ChartAccount?  @relation("ChartTree", fields: [parentId], references: [id])
   children          ChartAccount[] @relation("ChartTree")
@@ -719,12 +727,12 @@ model ChartAccount {
   nome              String
   tipo              String // receita | despesa
   nivel             Int // 1 | 2 | 3
-  permiteLancamento Boolean  @default(false)
+  permiteLancamento Boolean        @default(false)
   dreLineId         String?
-  dreLine           DreLine? @relation(fields: [dreLineId], references: [id])
-  ativo             Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  dreLine           DreLine?       @relation(fields: [dreLineId], references: [id])
+  ativo             Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   transactions FinanceTransaction[]
   contracts    Contract[]
@@ -754,4 +762,266 @@ model DreLine {
 
   @@unique([orgId, codigo])
   @@index([orgId, ordem])
+}
+
+// ---------- Bio (link na bio + desafio + rastreio first-party) ----------
+// Absorvido do root-bio (app standalone aposentado). Rastreio próprio porque o
+// analytics da bio precisa de sessionização e device/os/browser que o PixelEvent
+// genérico não carrega; todo BioEvent também vira PixelEvent com o MESMO eventId
+// (o @unique de lá faz o dedup nativo).
+
+enum BioLinkTipo {
+  url
+  whatsapp
+  email
+}
+
+enum BioPlataforma {
+  instagram
+  tiktok
+}
+
+// Como os posts chegam. "descoberta" (business_discovery) só existe no Instagram:
+// o TikTok não tem equivalente — lá é conectado ou manual.
+enum BioModoColeta {
+  conectado
+  descoberta
+  manual
+}
+
+enum BioContaStatus {
+  ok
+  token_expirado
+  conta_pessoal
+  privada
+  erro
+}
+
+model BioPage {
+  id           String   @id @default(uuid())
+  orgId        String
+  org          Org      @relation(fields: [orgId], references: [id])
+  handle       String   @unique
+  titulo       String
+  subtitulo    String?
+  avatarUrl    String?
+  tema         Json     @default("{}")
+  publicada    Boolean  @default(false)
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  links      BioLink[]
+  challenges BioChallenge[]
+  visits     BioVisit[]
+  events     BioEvent[]
+
+  @@index([orgId])
+}
+
+model BioLink {
+  id       String      @id @default(uuid())
+  pageId   String
+  page     BioPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  ordem    Int
+  tipo     BioLinkTipo @default(url)
+  rotulo   String
+  destino  String
+  icone    String?
+  destaque Boolean     @default(false)
+  ativo    Boolean     @default(true)
+  criadoEm DateTime    @default(now())
+
+  @@index([pageId, ordem])
+}
+
+model BioChallenge {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  pageId    String
+  page      BioPage  @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  titulo    String
+  inicio    DateTime
+  fim       DateTime
+  metaPosts Int
+  exibir    Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  contas BioChallengeAccount[]
+
+  @@index([pageId])
+  @@index([orgId, inicio])
+}
+
+model BioChallengeAccount {
+  id            String         @id @default(uuid())
+  challengeId   String
+  challenge     BioChallenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  plataforma    BioPlataforma
+  handle        String
+  modo          BioModoColeta  @default(manual)
+  externalId    String?
+  conexaoId     String?
+  conexao       BioConexao?    @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
+  baselineCount Int            @default(0)
+  baselineEm    DateTime?
+  status        BioContaStatus @default(ok)
+  ultimaColeta  DateTime?
+  ultimoErro    String?
+
+  posts     BioChallengePost[]
+  snapshots BioChallengeSnapshot[]
+
+  @@unique([challengeId, plataforma, handle])
+  @@index([conexaoId])
+}
+
+// Uma linha por post. A contagem é COUNT nosso, não campo de terceiro:
+// post deletado não zera o histórico em silêncio e a bio sobrevive à API fora do ar.
+model BioChallengePost {
+  id          String              @id @default(uuid())
+  contaId     String
+  conta       BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  externalId  String
+  publicadoEm DateTime
+  permalink   String?
+  tipo        String?
+  vistoEm     DateTime            @default(now())
+  sumiuEm     DateTime?
+
+  @@unique([contaId, externalId])
+  @@index([contaId, publicadoEm])
+}
+
+// Append-only. Nunca sobrescrever: histórico tem que sobreviver a mudança de
+// fórmula ou de fonte de coleta.
+model BioChallengeSnapshot {
+  id            String              @id @default(uuid())
+  contaId       String
+  conta         BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  coletadoEm    DateTime            @default(now())
+  totalCount    Int?
+  countNaJanela Int?
+  ok            Boolean             @default(true)
+  erro          String?
+  bruto         Json?
+
+  @@index([contaId, coletadoEm])
+}
+
+// Conta de plataforma autorizada por OAuth. Vive na org, não no desafio: conecta
+// o Instagram uma vez e serve a qualquer desafio. Token cifrado (AES-256-GCM).
+model BioConexao {
+  id             String         @id @default(uuid())
+  orgId          String
+  org            Org            @relation(fields: [orgId], references: [id])
+  plataforma     BioPlataforma
+  externalId     String
+  handle         String
+  tokenCifrado   String
+  refreshCifrado String?
+  expiraEm       DateTime?
+  escopos        String?
+  status         BioContaStatus @default(ok)
+  ultimoErro     String?
+  conectadaEm    DateTime       @default(now())
+  atualizadaEm   DateTime       @updatedAt
+
+  contas BioChallengeAccount[]
+
+  @@unique([orgId, plataforma, externalId])
+  @@index([orgId])
+}
+
+// Credenciais do app de plataforma, preenchidas pela tela — não por arquivo na VPS.
+// orgId null = credencial GLOBAL (exceção consciente à convenção orgId-scoped).
+model BioCredencialApp {
+  id             String        @id @default(uuid())
+  plataforma     BioPlataforma
+  orgId          String?
+  org            Org?          @relation(fields: [orgId], references: [id])
+  appId          String
+  segredoCifrado String
+  atualizadaEm   DateTime      @updatedAt
+  atualizadaPor  String?
+
+  @@index([plataforma, orgId])
+}
+
+// Guarda o `state` do OAuth por alguns minutos: impede costurar a autorização de
+// uma conta na org de outra pessoa (CSRF). verifier = PKCE, exigido pelo TikTok.
+model BioOauthState {
+  id         String        @id @default(uuid())
+  estado     String        @unique
+  orgId      String
+  org        Org           @relation(fields: [orgId], references: [id])
+  plataforma BioPlataforma
+  verifier   String?
+  expiraEm   DateTime
+  criadoEm   DateTime      @default(now())
+
+  @@index([expiraEm])
+}
+
+// Identidade de cookie. Sem orgId de propósito: o mesmo browser pode visitar
+// páginas de orgs diferentes (mesmo racional do PixelEvent.anonymousId).
+model BioVisitor {
+  id            String   @id
+  primeiroVisto DateTime @default(now())
+  ultimoVisto   DateTime @default(now())
+
+  visits BioVisit[]
+  events BioEvent[]
+}
+
+model BioVisit {
+  id          String     @id @default(uuid())
+  orgId       String
+  org         Org        @relation(fields: [orgId], references: [id])
+  visitorId   String
+  visitor     BioVisitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  pageId      String
+  page        BioPage    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  iniciadaEm  DateTime   @default(now())
+  referrer    String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  fbclid      String?
+  ttclid      String?
+  gclid       String?
+  device      String?
+  os          String?
+  browser     String?
+  pais        String?
+  cidade      String?
+
+  events BioEvent[]
+
+  @@index([pageId, iniciadaEm])
+  @@index([visitorId])
+}
+
+model BioEvent {
+  id         String      @id @default(uuid())
+  eventId    String      @unique
+  orgId      String
+  org        Org         @relation(fields: [orgId], references: [id])
+  pageId     String
+  page       BioPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  visitId    String?
+  visit      BioVisit?   @relation(fields: [visitId], references: [id], onDelete: SetNull)
+  visitorId  String?
+  visitor    BioVisitor? @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  nome       String
+  linkId     String?
+  url        String?
+  metadata   Json?
+  ocorridoEm DateTime    @default(now())
+
+  @@index([orgId, ocorridoEm])
+  @@index([pageId, ocorridoEm])
+  @@index([nome, ocorridoEm])
 }

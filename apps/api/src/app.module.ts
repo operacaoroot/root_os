@@ -22,6 +22,7 @@ import { GoogleModule } from './google/google.module';
 import { FinanceModule } from './finance/finance.module';
 import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
+import { BioModule } from './bio/bio.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { GoalsModule } from './goals/goals.module';
     FinanceModule,
     MetaModule,
     GoalsModule,
+    BioModule,
   ],
   controllers: [HealthController],
 })

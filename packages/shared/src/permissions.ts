@@ -31,6 +31,8 @@ export const PERMISSIONS = [
   'admin.usuarios',
   'admin.permissoes',
   'auditoria.ver',
+  'bio.ver',
+  'bio.editar',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -47,7 +49,7 @@ export const ROLES = {
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'instagram.ver',
       'tarefas.ver', 'financeiro.ver', 'gmail.ver', 'drive.ver', 'obsidian.ver',
       'relatorios.ver', 'relatorios.gerar', 'relatorios.enviar',
-      'automacoes.ver', 'mcp.ver', 'auditoria.ver',
+      'automacoes.ver', 'mcp.ver', 'auditoria.ver', 'bio.ver',
     ] as Permission[],
   },
   // Perfil dedicado ao Financeiro (FinOps): opera contas, lançamentos e bancos.
@@ -66,6 +68,7 @@ export const ROLES = {
       'gmail.ver', 'gmail.responder', 'agenda.editar', 'drive.ver', 'drive.editar',
       'obsidian.ver', 'relatorios.ver',
       'relatorios.gerar', 'automacoes.ver', 'mcp.ver', 'mcp.executar',
+      'bio.ver', 'bio.editar',
     ] as Permission[],
   },
   analista: {
@@ -73,7 +76,7 @@ export const ROLES = {
     permissions: [
       'dashboard.ver', 'leads.ver', 'leads.editar', 'campanhas.ver',
       'instagram.ver', 'tarefas.ver', 'tarefas.editar', 'relatorios.ver',
-      'relatorios.gerar', 'automacoes.ver', 'mcp.ver',
+      'relatorios.gerar', 'automacoes.ver', 'mcp.ver', 'bio.ver',
     ] as Permission[],
   },
   social_media: {
@@ -81,6 +84,7 @@ export const ROLES = {
     permissions: [
       'dashboard.ver', 'instagram.ver', 'campanhas.ver', 'tarefas.ver',
       'tarefas.editar', 'drive.ver', 'obsidian.ver', 'relatorios.ver',
+      'bio.ver', 'bio.editar',
     ] as Permission[],
   },
   consulta_limitada: {
@@ -93,7 +97,7 @@ export const ROLES = {
     permissions: [
       'dashboard.ver', 'leads.ver', 'campanhas.ver', 'tarefas.ver',
       'financeiro.ver', 'instagram.ver', 'relatorios.ver', 'obsidian.ver', 'gmail.ver', 'drive.ver',
-      'mcp.ver', 'mcp.executar',
+      'mcp.ver', 'mcp.executar', 'bio.ver',
     ] as Permission[],
   },
   // Conta de AÇÃO da IA: escreve SÓ o que o humano aprovou (usada pelo bot após

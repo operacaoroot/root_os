@@ -18,6 +18,7 @@ export const NAV: NavItem[] = [
   { key: 'conteudo', label: 'Conteúdo', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', phase: 2 },
   { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', phase: 4 },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', phase: 4 },
+  { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', phase: 4 },
   { key: 'vendas', label: 'Página de vendas', href: '/vendas', icon: 'ShoppingCart', permission: 'dashboard.ver', phase: 2 },
   { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', phase: 2 },
   { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', phase: 3 },

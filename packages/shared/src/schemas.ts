@@ -1020,3 +1020,111 @@ export interface GoalPanel {
   janela: { semanas: number };
   source: { tool: string; generatedAt: string };
 }
+
+// ---------- Bio (link na bio) ----------
+// Handle é o caminho público (bio.operacaoroot.com/@handle): minúsculo, sem espaço.
+export const BIO_HANDLE_RE = /^[a-z0-9._-]{2,30}$/;
+
+export const BioPageSchema = z.object({
+  id: z.string().uuid().optional(),
+  handle: z.string().regex(BIO_HANDLE_RE, 'handle: 2-30 caracteres, a-z 0-9 . _ -'),
+  titulo: z.string().min(1).max(80),
+  subtitulo: z.string().max(200).optional().nullable(),
+  avatarUrl: z.string().url().max(500).optional().nullable(),
+});
+export type BioPageInput = z.infer<typeof BioPageSchema>;
+
+export const BIO_LINK_TIPOS = ['url', 'whatsapp', 'email'] as const;
+export type BioLinkTipo = (typeof BIO_LINK_TIPOS)[number];
+
+export const BioLinkSchema = z.object({
+  tipo: z.enum(BIO_LINK_TIPOS).default('url'),
+  rotulo: z.string().min(1).max(80),
+  // url: https://... | whatsapp: só dígitos (DDI+DDD+número) | email: endereço
+  destino: z.string().min(1).max(500),
+  icone: z.string().max(40).optional().nullable(),
+  destaque: z.boolean().default(false),
+  ativo: z.boolean().default(true),
+});
+export type BioLinkInput = z.infer<typeof BioLinkSchema>;
+
+export const BioLinkUpdateSchema = BioLinkSchema.partial();
+export type BioLinkUpdateInput = z.infer<typeof BioLinkUpdateSchema>;
+
+export const BioLinkMoveSchema = z.object({ direcao: z.enum(['cima', 'baixo']) });
+
+export const BIO_PLATAFORMAS = ['instagram', 'tiktok'] as const;
+export type BioPlataforma = (typeof BIO_PLATAFORMAS)[number];
+
+export const BioChallengeSchema = z.object({
+  id: z.string().uuid().optional(),
+  pageId: z.string().uuid(),
+  titulo: z.string().min(1).max(120),
+  inicio: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  fim: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  metaPosts: z.number().int().min(1).max(100000),
+  exibir: z.boolean().default(true),
+});
+export type BioChallengeInput = z.infer<typeof BioChallengeSchema>;
+
+export const BioChallengeAccountSchema = z.object({
+  challengeId: z.string().uuid(),
+  plataforma: z.enum(BIO_PLATAFORMAS),
+  handle: z.string().min(1).max(60),
+  modo: z.enum(['conectado', 'descoberta', 'manual']).default('manual'),
+  conexaoId: z.string().uuid().optional().nullable(),
+  baselineCount: z.number().int().min(0).default(0),
+});
+export type BioChallengeAccountInput = z.infer<typeof BioChallengeAccountSchema>;
+
+export const BioManualCountSchema = z.object({
+  contagem: z.number().int().min(0).max(1000000),
+});
+
+export const BioCredencialSchema = z.object({
+  appId: z.string().min(1).max(200),
+  segredo: z.string().min(1).max(500),
+  global: z.boolean().default(true),
+});
+export type BioCredencialInput = z.infer<typeof BioCredencialSchema>;
+
+// Ingestão do pageview vindo do RSC da página pública (server-to-server).
+export const BioTrackSchema = z.object({
+  handle: z.string().regex(BIO_HANDLE_RE),
+  rid: z.string().min(8).max(64),
+  url: z.string().max(1000).optional(),
+  referrer: z.string().max(1000).optional().nullable(),
+  userAgent: z.string().max(500).optional().nullable(),
+  params: z.record(z.string().max(300)).optional(),
+});
+export type BioTrackInput = z.infer<typeof BioTrackSchema>;
+
+// Payload público da página (o que o RSC renderiza).
+export interface BioPublicLink {
+  id: string;
+  tipo: BioLinkTipo;
+  rotulo: string;
+  icone: string | null;
+  destaque: boolean;
+}
+
+export interface BioPublicDesafio {
+  titulo: string;
+  feitos: number;
+  meta: number;
+  diaAtual: number;
+  totalDias: number;
+  pctFeito: number;
+  pctTempo: number;
+  ritmoNecessario: number;
+  saldo: number; // adiantado (+) / atrasado (−) vs ritmo linear
+}
+
+export interface BioPublicPage {
+  handle: string;
+  titulo: string;
+  subtitulo: string | null;
+  avatarUrl: string | null;
+  links: BioPublicLink[];
+  desafio: BioPublicDesafio | null;
+}
