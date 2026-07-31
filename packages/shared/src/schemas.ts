@@ -970,7 +970,8 @@ export const GOAL_TAXAS: GoalTaxaDef[] = [
   { id: 'descoberta', label: 'Descoberta', descricao: '% de views de não-seguidores — termômetro de furar a bolha (compõe o gatilho da fase).', formula: '% views de não-seguidores', piso: 60, meta: 70, unidade: '%', fonteMeta: true, ativa: true },
   { id: 'alcance', label: 'Alcance', descricao: 'Média de views por post vs a faixa da escada — o caminho aritmético dos 20M.', formula: 'views ÷ posts (vs escada)', piso: 0, meta: 0, unidade: 'escada', fonteMeta: true, ativa: true },
   { id: 'vinculo', label: 'Vínculo', descricao: '% da base que vê stories — mede tribo (o "diário da expedição").', formula: 'story_viewers ÷ seguidores × 100', piso: 10, meta: 15, unidade: '%', fonteMeta: false, ativa: true },
-  { id: 'trafego_venda', label: 'Tráfego de venda', descricao: 'Cliques no link da bio por 1.000 views — rota passiva da venda perpétua.', formula: 'cliques_bio ÷ views × 1000', piso: 3, meta: 5, unidade: '/1000', fonteMeta: false, ativa: false },
+  // Ativa desde que o módulo Link na bio passou a alimentar bioClicks sozinho.
+  { id: 'trafego_venda', label: 'Tráfego de venda', descricao: 'Cliques no link da bio por 1.000 views — rota passiva da venda perpétua.', formula: 'cliques_bio ÷ views × 1000', piso: 3, meta: 5, unidade: '/1000', fonteMeta: false, ativa: true },
   { id: 'captura', label: 'Captura', descricao: 'Entradas na lista por 1.000 views — transforma view em patrimônio; carrega a meta de vendas.', formula: 'entradas_lista ÷ views × 1000', piso: 2, meta: 4, unidade: '/1000', fonteMeta: false, ativa: false },
 ];
 

@@ -17,14 +17,44 @@ export class GoalsService {
     private readonly meta: MetaService,
   ) {}
 
+  /**
+   * O desafio da bio, quando existe, é a fonte da verdade do início e da meta —
+   * ele já era a mesma coisa que o GoalConfig, só que com contagem automática.
+   * O GoalConfig continua valendo como fallback (org sem página de bio).
+   */
+  private async challengeDoBio(orgId: string) {
+    return this.prisma.bioChallenge.findFirst({
+      where: { orgId },
+      orderBy: { inicio: 'desc' },
+      select: { inicio: true, metaPosts: true },
+    });
+  }
+
   private async ensureConfig(orgId: string) {
     const c = await this.prisma.goalConfig.findUnique({ where: { orgId } });
-    if (c) return c;
-    return this.prisma.goalConfig.create({ data: { orgId, challengeStart: new Date() } });
+    const bio = await this.challengeDoBio(orgId);
+    if (c) return bio ? { ...c, challengeStart: bio.inicio, targetPosts: bio.metaPosts } : c;
+    return this.prisma.goalConfig.create({
+      data: {
+        orgId,
+        challengeStart: bio?.inicio ?? new Date(),
+        ...(bio ? { targetPosts: bio.metaPosts } : {}),
+      },
+    });
   }
 
   async setConfig(orgId: string, challengeStart?: string) {
     await this.ensureConfig(orgId);
+    const bio = await this.challengeDoBio(orgId);
+    if (bio) {
+      // Quem manda no início do desafio é a tela do Link na bio; ignorar aqui
+      // evita duas datas divergentes para a mesma coisa.
+      return {
+        ok: true,
+        challengeStart: bio.inicio.toISOString(),
+        managedBy: 'bio' as const,
+      };
+    }
     const c = await this.prisma.goalConfig.update({
       where: { orgId },
       data: challengeStart ? { challengeStart: new Date(challengeStart) } : {},

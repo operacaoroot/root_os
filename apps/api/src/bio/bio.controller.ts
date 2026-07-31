@@ -15,6 +15,7 @@ import { BioChallengeService } from './bio-challenge.service';
 import { BioAnalyticsService } from './bio-analytics.service';
 import { BioCredenciaisService } from './bio-credenciais.service';
 import { BioSyncService } from './bio-sync.service';
+import { BioBridgeService } from './bio-bridge.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -29,6 +30,7 @@ export class BioController {
     private readonly analytics: BioAnalyticsService,
     private readonly credenciais: BioCredenciaisService,
     private readonly sync: BioSyncService,
+    private readonly bridge: BioBridgeService,
   ) {}
 
   // ---------- Páginas e botões ----------
@@ -131,6 +133,13 @@ export class BioController {
   async syncNow(@CurrentUser() user: JwtUser) {
     const items = await this.sync.sincronizarTudo(user.orgId);
     return { items, total: items.length, ok: items.filter((i) => i.ok).length };
+  }
+
+  /** Recalcula GoalWeek.bioClicks a partir dos cliques registrados. Idempotente. */
+  @Post('bridge/goals')
+  @RequirePermissions('bio.editar')
+  bridgeGoals(@CurrentUser() user: JwtUser) {
+    return this.bridge.backfill(user.orgId);
   }
 
   // ---------- Conexões e credenciais ----------

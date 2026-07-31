@@ -156,9 +156,11 @@ const FIELDS: Array<[keyof WeekState, string, boolean]> = [
   ['posts', 'Posts', false], ['views', 'Views', true], ['shares', 'Compart.', false], ['saves', 'Salvam.', true],
   ['comments', 'Comentários', true], ['profileVisits', 'Visitas perfil', true], ['newFollowers', 'Seg. novos', true],
   ['totalFollowers', 'Seg. total', true], ['nonFollowerPct', '% não-seg.', false], ['storyViewers', 'Views story', false],
-  ['storyReplies', 'Respostas story', false], ['listEntries', 'Entradas lista', false], ['bioClicks', 'Cliques bio', false],
+  ['storyReplies', 'Respostas story', false], ['listEntries', 'Entradas lista', false],
   ['lives', 'Lives', false], ['storyDays', 'Dias c/ story', false],
 ];
+// bioClicks saiu do formulário: quem preenche é o módulo Link na bio, contando
+// os cliques reais da semana. Digitar aqui só criaria divergência.
 type WeekState = Record<string, number>;
 
 function WeekForm({ token, onSaved, suggested }: { token: string; onSaved: () => void; suggested: number }) {
@@ -202,7 +204,11 @@ function WeekForm({ token, onSaved, suggested }: { token: string; onSaved: () =>
           {busy ? 'Salvando…' : 'Salvar semana'}
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-muted">Dica: "Puxar do Instagram" preenche views/seguidores/comentários/salvamentos/posts dos últimos 7 dias; o resto (shares, stories, lista, bio) é manual.</p>
+      <p className="mt-2 text-[11px] text-muted">
+        Dica: "Puxar do Instagram" preenche views/seguidores/comentários/salvamentos/posts dos últimos 7 dias;
+        shares, stories e lista são manuais. Cliques na bio vêm sozinhos do{' '}
+        <a href="/bio" className="text-brand hover:underline">Link na bio</a>.
+      </p>
     </div>
   );
 }
