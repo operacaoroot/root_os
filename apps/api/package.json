@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
     "db:seed:finops": "tsx prisma/seed-finops.ts"
   },
@@ -34,6 +35,8 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.20.2",
+    "pg": "^8.22.0",
     "prisma": "^6.1.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
