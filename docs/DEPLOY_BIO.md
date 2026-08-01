@@ -1,117 +1,114 @@
 # Virada do root-bio para dentro do marketing-os
 
-Runbook da migração do serviço `root_bio` (easyPanel, projeto `root`) para o
-módulo Link na bio da plataforma. Ver a skill `vps-fullbpo` para acesso à VPS.
+**Executada em 01/08/2026.** O serviço `root_bio` está parado (0/0) e
+`bio.operacaoroot.com` é servido pelo `mktos_web`. Este documento virou o
+registro do que foi feito — e do que ainda falta encerrar.
 
-O que muda no fim: `bio.operacaoroot.com` deixa de ser servido pelo container
-`root_bio` e passa a ser servido pelo `mktos_web`. As URLs públicas (`/@handle`,
-`/r/:id`, `/termos`, `/privacidade`) e a redirect URI do OAuth continuam
-idênticas — nada quebra para quem já tem o link, e não é preciso novo App Review.
+As URLs públicas continuam idênticas (`/@handle`, `/r/:id`, `/termos`,
+`/privacidade`) e a redirect URI do OAuth não mudou, então não houve novo
+App Review na Meta nem no TikTok.
 
-## Antes de começar
+## Pendências
 
-- [ ] `pg_dump` do `root_bio-db` guardado fora do container
-- [ ] Anotado o `ENCRYPTION_KEY` atual do serviço `root_bio`
+- [ ] **Remover o domínio `bio.operacaoroot.com` do serviço `root_bio` na UI do
+      easyPanel.** Hoje os routers dele ainda existem no `main.yaml` (gerado pelo
+      easyPanel) apontando para o backend morto; quem ganha é o router do
+      `marketing-os.yaml`, que tem `priority: 1000` de propósito. Funciona, mas é
+      duplicidade — depois de remover, a prioridade deixa de importar.
+- [ ] **Excluir `root_bio` e `root_bio-db` de vez** (a partir de ~08/08/2026, uma
+      semana de margem). O dump está em `/root/backups/root_bio_20260801_0012.sql.gz`.
 
-## 1. Backup do banco de origem
+## O que foi feito
 
+### 1. Backup
 ```bash
-ssh vps
-docker exec root_bio-db pg_dump -U postgres root_bio \
-  | gzip > /root/backups/root_bio_$(date +%Y%m%d_%H%M).sql.gz
-ls -lh /root/backups/root_bio_*.sql.gz
+docker exec $(docker ps --format '{{.Names}}' | grep '^root_bio-db') \
+  pg_dump -U bio -d rootbio | gzip > /root/backups/root_bio_$(date +%Y%m%d_%H%M).sql.gz
 ```
 
-Não apagar depois da virada. Manter pelo menos uma semana.
+### 2. Segredos no `.env` da plataforma
+A `ENCRYPTION_KEY` do marketing-os **não** foi trocada pela do root-bio: a
+plataforma já tinha a sua. A do root-bio entrou só como `BIO_OLD_ENCRYPTION_KEY`
+durante a migração, para re-cifrar. Adicionados via `merge-env.sh`:
 
-## 2. Levar os segredos para a plataforma
-
-A `ENCRYPTION_KEY` do root-bio deve ser **reusada** na plataforma. Assim os
-tokens OAuth migram sem re-cifragem e ninguém precisa reconectar Instagram/TikTok.
-
-> Se a plataforma já tiver uma `ENCRYPTION_KEY` diferente em uso por outro
-> módulo, mantenha a dela e passe a antiga como `BIO_OLD_ENCRYPTION_KEY` no
-> passo 4 — o script re-cifra. Tokens que não abrirem entram como
-> `token_expirado` e basta reconectar pela tela.
-
-```bash
-# ler os valores do serviço antigo
-cat /root/.config/root/bio-secrets.env   # ENCRYPTION_KEY
-cat /root/.config/root/bio-apps.env      # INSTAGRAM_*/TIKTOK_*
-
-cd /srv/marketing-os
-bash merge-env.sh
-# colar (Ctrl-D no fim):
-# ENCRYPTION_KEY=...
-# INSTAGRAM_APP_ID=...
-# INSTAGRAM_APP_SECRET=...
-# TIKTOK_CLIENT_KEY=...
-# TIKTOK_CLIENT_SECRET=...
-# BIO_HOST=bio.operacaoroot.com
-# PUBLIC_BIO_ORIGIN=https://bio.operacaoroot.com
+```
+BIO_HOST=bio.operacaoroot.com
+PUBLIC_BIO_ORIGIN=https://bio.operacaoroot.com
+BIO_SYNC_INTERVAL_MIN=360
+BIO_BRIDGE_INTERVAL_MIN=720
+MCP_SERVICE_PASSWORD=…      # o compose exige (`:?`) mesmo sem o telegram rodar
+MCP_ACTION_PASSWORD=…
 ```
 
-## 3. Subir a plataforma
+> Achado da virada: o `.env` tinha um bloco de dev duplicado (`JWT_SECRET`,
+> `AUTH_SECRET`, `ENCRYPTION_KEY` com valores de desenvolvimento) que teria
+> vencido as chaves boas no próximo deploy. Removido. Se aparecer de novo:
+> `grep -oE '^[A-Z_]+=' .env | sort | uniq -d` deve sair vazio.
 
+### 3. Deploy
 ```bash
-cd /srv/marketing-os
-# as duas MCP_* só existem para o compose interpolar o serviço telegram, que não
-# sobe na VPS; sem elas nenhum comando compose roda no servidor
-MCP_SERVICE_PASSWORD=nao-usado-na-vps MCP_ACTION_PASSWORD=nao-usado-na-vps \
-  deploy/up.sh --vps api web
-docker logs mktos_api --tail 30   # a migration add_bio roda no boot
-curl -s localhost:4001/api/health
+cd /srv/marketing-os && deploy/up.sh --vps api web
+```
+Só `api web`: o `telegram` não roda nesta VPS e subir a stack inteira o ligaria.
+
+A migration `add_bio` roda no boot da api. **Depois dela, rode o seed** — é ele
+que cria `bio.ver`/`bio.editar` e as vincula aos perfis; sem isso o menu "Link na
+bio" não aparece para ninguém:
+```bash
+docker exec mktos_api pnpm exec tsx prisma/seed.ts
 ```
 
-## 4. Migrar os dados
+### 4. Migração dos dados
+A api e o banco antigo estão em redes Docker diferentes. Em vez de reconectar
+containers, o dump foi restaurado num banco temporário dentro do próprio
+Postgres da plataforma — parte de um snapshot imutável e não toca no banco vivo:
 
 ```bash
-# IP do banco antigo na rede do easyPanel
-BIO_DB=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' root_bio-db)
+docker exec mktos_db psql -U mkt -d postgres -c "CREATE DATABASE bio_origem;"
+gunzip -c /root/backups/root_bio_*.sql.gz | docker exec -i mktos_db psql -U mkt -d bio_origem
+# (erros de OWNER "role bio does not exist" são esperados e inofensivos)
 
-docker exec -e BIO_DATABASE_URL="postgresql://postgres:SENHA@${BIO_DB}:5432/root_bio" \
-  mktos_api pnpm db:migrate-bio --dry     # ensaio: confere as contagens
+PW=$(grep -m1 -E '^DB_PASSWORD=' .env | cut -d= -f2- | tr -d '"')
+OLD=$(grep -m1 -E '^ENCRYPTION_KEY=' /root/.config/root/bio-secrets.env | cut -d= -f2-)
+docker exec -e BIO_DATABASE_URL="postgresql://mkt:${PW}@db:5432/bio_origem" \
+            -e BIO_OLD_ENCRYPTION_KEY="$OLD" \
+  mktos_api pnpm exec tsx prisma/migrate-bio.ts --dry   # ensaio
+# … e sem --dry para valer
 
-docker exec -e BIO_DATABASE_URL="postgresql://postgres:SENHA@${BIO_DB}:5432/root_bio" \
-  mktos_api pnpm db:migrate-bio           # pra valer
+docker exec mktos_db psql -U mkt -d postgres -c "DROP DATABASE bio_origem;"
 ```
 
-O script é idempotente — se algo falhar no meio, rodar de novo é seguro.
-Se aparecer aviso de token que não abriu, anotar para reconectar no passo 6.
+Migrado: 2 páginas, 3 botões, 2 desafios, 2 contas, 27 snapshots, 103 visitantes,
+126 visitas, 149 eventos (todos espelhados em `PixelEvent`) e 1 credencial de app
+re-cifrada. Não havia conexão OAuth ativa, então ninguém precisou reconectar.
 
-## 5. Apontar o domínio
+### 5. Domínio
+`/etc/easypanel/traefik/config/marketing-os.yaml` (arquivo nosso, não do
+easyPanel) ganhou os routers da bio com `priority: 1000`. O Traefik recarrega
+sozinho ao salvar.
 
-No easyPanel/Traefik, `bio.operacaoroot.com` passa a apontar para
-`172.17.0.1:4000` (mktos_web), como os outros domínios da plataforma.
-
-## 6. Conferir
-
+### 6. Conferência
 ```bash
-curl -sI https://bio.operacaoroot.com/@root | head -3      # 200 + Set-Cookie: rid
-curl -sI https://bio.operacaoroot.com/termos | head -1     # 200
-curl -sI https://bio.operacaoroot.com/privacidade | head -1
-curl -sI https://bio.operacaoroot.com/r/<linkId> | head -3 # 302 pro destino
+for p in /@pedromagnago /@lucasfernandes /termos /privacidade; do
+  curl -s -o /dev/null -w "$p → %{http_code}\n" "https://bio.operacaoroot.com$p"
+done
+curl -sI "https://bio.operacaoroot.com/r/<linkId>" | head -3   # 302 pro destino
 ```
 
-No painel (`/bio`):
-- [ ] Página, botões e contador do desafio conferem com o que estava no ar
-- [ ] Analytics mostra o histórico migrado (não só de hoje)
-- [ ] Conexões: Instagram/TikTok em `ok`; se em `reconectar`, refazer o OAuth
-- [ ] "Sincronizar agora" traz posts sem erro
-- [ ] Metas: `bioClicks` preenchido e a taxa "Tráfego de venda" com número
+## Comportamento conhecido
 
-Nos consoles da Meta e do TikTok — **conferir, não alterar**: as redirect URIs
-devem seguir `https://bio.operacaoroot.com/api/conectar/{plataforma}/callback` e
-as URLs de termos/privacidade devem responder.
+Handle inexistente responde **200** com o corpo de "não encontrado" (soft 404),
+porque página reescrita por middleware não consegue mudar o status no App Router
+do Next. A rota direta `/b/<handle>` devolve 404 correto. O root-bio antigo
+devolvia 404 nas duas — é uma regressão pequena, sem efeito funcional.
 
-## 7. Desativar o serviço antigo
+## Rollback
 
-Só depois de tudo conferido:
-
+A imagem anterior está marcada:
 ```bash
-docker service scale root_root_bio=0    # ou parar pelo easyPanel
-# root_bio-db: parar depois, e só excluir de vez após ~1 semana
+docker tag mktos-app:rollback mktos-app:latest
+cd /srv/marketing-os && docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --no-build api web
 ```
-
-O código do root-bio fica em `~/dev/root-bio` (commitado) como referência
-histórica. Não é mais deployado.
+Para devolver o domínio ao serviço antigo: restaurar
+`/root/backups/marketing-os.yaml.bak.*` sobre o config do Traefik e
+`docker service update --replicas 1 root_bio`.

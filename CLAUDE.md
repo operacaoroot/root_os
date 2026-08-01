@@ -6,7 +6,7 @@
 - O serviço `telegram` só roda no Mac. Na VPS ele não sobe, mas o compose exige `MCP_SERVICE_PASSWORD` e `MCP_ACTION_PASSWORD` (`:?`) para *interpolar o arquivo inteiro* — sem elas nenhum comando compose funciona no servidor. Hoje se passa as duas inline no deploy; não estão no `.env`.
 
 ## Link na bio (módulo `bio`)
-- Absorvido do root-bio (app standalone aposentado; código de referência em `~/dev/root-bio`, commitado, sem deploy).
+- Absorvido do root-bio em 01/08/26 (app standalone aposentado, serviço `root_bio` em 0/0; código de referência em `~/dev/root-bio`, commitado, sem deploy). Dados de produção migrados.
 - Superfície pública: `bio.operacaoroot.com` aponta para o `mktos_web`; o middleware reescreve `/@handle` → `/b/handle` e `/r/:id` → `/api/bio/r/:id`. Painel em `/bio`.
 - Callback OAuth em `/api/conectar/:plataforma/callback` — **path travado**: é a redirect URI registrada nos consoles da Meta e do TikTok. Mudar exige novo App Review.
 - `ENCRYPTION_KEY` cifra os tokens OAuth; trocar sem re-cifrar torna todos ilegíveis (ver `apps/api/prisma/migrate-bio.ts`).
