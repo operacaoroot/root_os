@@ -3,18 +3,27 @@
 # por lista, campos personalizados (definições com ids/opções/cores), tags do
 # espaço, membros, views, todas as tarefas (com valores dos campos) e comentários.
 # Uso: python3 tools/clickup-inventario.py [dir_saida]   (default: ./clickup-inventario)
-# Credencial: ~/.config/root/clickup.env (CLICKUP_API_TOKEN). Só LÊ o ClickUp.
+# Credencial: CLICKUP_API_TOKEN do ambiente, do .env do repo ou de
+# ~/.config/root/clickup.env — o que existir primeiro. Só LÊ o ClickUp.
 import json, os, sys, time, urllib.request, urllib.parse
 
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV = {}
-with open(os.path.expanduser("~/.config/root/clickup.env")) as f:
-    for line in f:
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, v = line.split("=", 1)
-            ENV[k.strip()] = v.strip()
+for caminho in (os.path.join(RAIZ, ".env"),
+                os.path.expanduser("~/.config/root/clickup.env")):
+    if not os.path.isfile(caminho):
+        continue
+    with open(caminho) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                ENV.setdefault(k.strip(), v.strip().strip("\"'"))
 
-TOKEN = ENV["CLICKUP_API_TOKEN"]
+ENV = {**ENV, **{k: v for k, v in os.environ.items() if k.startswith("CLICKUP_")}}
+TOKEN = ENV.get("CLICKUP_API_TOKEN")
+if not TOKEN:
+    sys.exit("CLICKUP_API_TOKEN não encontrado (ambiente, .env do repo ou ~/.config/root/clickup.env)")
 SPACE = ENV.get("CLICKUP_SPACE_ID", "901313864063")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "clickup-inventario"
 os.makedirs(OUT, exist_ok=True)

@@ -19,6 +19,15 @@ const BIO_HOST = process.env.BIO_HOST ?? 'bio.operacaoroot.com';
  *
  * O painel autenticado não passa por aqui: só age no host da bio ou em /b/*.
  */
+// No host da bio qualquer caminho é um @handle — MENOS estes, que são páginas
+// de verdade. Termos e privacidade precisam responder ali: a Meta e o TikTok
+// exigem essas URLs acessíveis no App Review dos apps que a bio usa.
+const NAO_SAO_HANDLE = ['/api', '/b', '/termos', '/privacidade', '/_next'];
+
+function ehRotaReal(pathname: string) {
+  return NAO_SAO_HANDLE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export function middleware(req: NextRequest) {
   const host = req.headers.get('host')?.split(':')[0] ?? '';
   const noHostDaBio = host === BIO_HOST;
@@ -27,14 +36,18 @@ export function middleware(req: NextRequest) {
   if (!noHostDaBio && !pathname.startsWith('/b')) return NextResponse.next();
 
   let destino: URL | null = null;
-  if (noHostDaBio && !pathname.startsWith('/b') && !pathname.startsWith('/api')) {
+  if (noHostDaBio && !ehRotaReal(pathname)) {
     const limpo = decodeURIComponent(pathname).replace(/^\/@?/, '').replace(/\/+$/, '');
+    // Handle inexistente responde 200 com o corpo de "não encontrado" (soft 404):
+    // página reescrita por middleware que chama notFound() não consegue mudar o
+    // status no App Router. A rota direta /b/<handle> devolve 404 certinho.
+    destino = req.nextUrl.clone();
     // /r/:id continua funcionando (URL antiga do root-bio, já circulando por aí).
-    destino = new URL(
-      pathname.startsWith('/r/') ? `/api/bio${pathname}` : limpo ? `/b/${limpo}` : '/b',
-      req.url,
-    );
-    destino.search = req.nextUrl.search;
+    destino.pathname = pathname.startsWith('/r/')
+      ? `/api/bio${pathname}`
+      : limpo
+        ? `/b/${limpo}`
+        : '/b';
   }
 
   const existente = req.cookies.get(COOKIE_VISITANTE)?.value;

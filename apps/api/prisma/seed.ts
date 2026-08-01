@@ -32,10 +32,19 @@ async function upsertServiceUser(args: {
     passwordHash = await bcrypt.hash(gen, 10);
     console.log(`  [seed] ${email}: senha gerada → ${gen}\n         (defina em env p/ fixar/rotacionar; sem env o reseed não a altera)`);
   }
-  await prisma.user.upsert({
-    where: { email },
-    update: { roles: { set: [{ id: roleId }] }, ...(passwordHash ? { passwordHash } : {}) },
-    create: { orgId, name, email, passwordHash: passwordHash!, roles: { connect: [{ id: roleId }] } },
+  // update/create separados, não upsert: o Prisma valida o bloco `create` mesmo
+  // quando vai atualizar, então `passwordHash: undefined` derrubava o seed toda
+  // vez que a conta já existia e a senha não vinha do env — ou seja, sempre que
+  // se tentava re-semear a produção.
+  if (existing) {
+    await prisma.user.update({
+      where: { email },
+      data: { roles: { set: [{ id: roleId }] }, ...(passwordHash ? { passwordHash } : {}) },
+    });
+    return;
+  }
+  await prisma.user.create({
+    data: { orgId, name, email, passwordHash: passwordHash!, roles: { connect: [{ id: roleId }] } },
   });
 }
 
