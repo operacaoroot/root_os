@@ -48,6 +48,9 @@ Zapier + Apify · card "Automações com falha" · retry seguro · diagnóstico 
 ## Fase 4 — Conteúdo e Instagram
 Instagram Graph API · módulo Conteúdo · métricas · análise de performance · sugestão de pauta.
 - ✅ **Metas (LucasCreator)** — painel `/metas` do sistema de métricas: marcos (1000 posts/20M views/1000 vendas), 11 taxas do funil com farol (janela 4 sem, piso/meta), fases (aquecimento→baseline→regime), escada de views por faixa, projeções dia 365 (views×[50,110]/M). Entrada semanal + "Puxar do Instagram" (alinha ao Meta) + tool `get_goals_panel` no MCP. Ver memória `marketing-os-metas`.
+- ✅ **Pauta — onda 1: acervo de referência** (`/referencias`). Traz para dentro do OS a coleta que rodava solta. Captura (link/print/texto) → fila → ficha de 14 campos montada por IA no schema do vault `Cerebro-Conteudo` (taxonomia 8 famílias × 7 objetivos) → acervo com busca semântica. Conector **Apify** sob demanda com teto de gasto por fonte; espelho `.md` opcional no vault (filesystem **ou Google Drive**). Importador do acervo existente: 432 fichas, 119 campeãs. Ver `docs/PAUTA.md`.
+- ⏳ **Pauta — onda 2 (rotina):** `AnthropicProvider` + cron `@nestjs/schedule` + `PautaRotina`/`PautaRodada` + Radar automático. Desliga a rotina do app do Claude.
+- ⏳ **Pauta — onda 3 (canais):** `PautaPeca` por canal + Evolution API (grupo do WhatsApp, com aprovação) + `BioLink` rastreado + export p/ máquina de carrossel.
 
 ## Fase 5 — Gmail, Drive, Docs, Agenda e Obsidian
 Gmail (classificação + resumo) · Drive (busca/anexos) · Docs · Agenda · Obsidian (base de conhecimento + embeddings) · busca global completa.

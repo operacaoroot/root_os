@@ -23,6 +23,7 @@ import { FinanceModule } from './finance/finance.module';
 import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
+import { PautaModule } from './pauta/pauta.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { BioModule } from './bio/bio.module';
     MetaModule,
     GoalsModule,
     BioModule,
+    PautaModule,
   ],
   controllers: [HealthController],
 })

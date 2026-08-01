@@ -56,6 +56,10 @@ model Org {
   bioOauthStates BioOauthState[]
   bioVisits      BioVisit[]
   bioEvents      BioEvent[]
+
+  pautaFontes      PautaFonte[]
+  pautaCapturas    PautaCaptura[]
+  pautaReferencias PautaReferencia[]
 }
 
 model User {
@@ -1024,4 +1028,158 @@ model BioEvent {
   @@index([orgId, ocorridoEm])
   @@index([pageId, ocorridoEm])
   @@index([nome, ocorridoEm])
+}
+
+// ---------- Pauta (acervo de referência, radar e rodadas) ----------
+// Ver docs/PAUTA.md. Onda 1: o ACERVO. Dois insumos com tempo de vida oposto —
+// referência (repertório: como escrever, dura anos) e pauta (o assunto da semana,
+// dura ~72h). A ficha abaixo é o schema de 14 campos já validado no vault
+// Cerebro-Conteudo (427 roteiros classificados) — por isso é coluna, não Json.
+
+enum PautaFonteTipo {
+  rss
+  perfil
+  busca
+  manual
+}
+
+enum PautaCapturaTipo {
+  link
+  print
+  texto
+}
+
+enum PautaCapturaStatus {
+  rascunho
+  processando
+  ficha
+  descartada
+  erro
+}
+
+// Taxonomia real do acervo (432 fichas classificadas em "9 - Engenharia Reversa
+// das Referências"). As 4 primeiras são as campeãs do estudo (_ESTRUTURAS-CAMPEAS.md);
+// as outras 4 existem no acervo e não podem ser perdidas na importação.
+enum PautaFamilia {
+  CUR // curiosidade / revelação
+  REA // react / análise de terceiro
+  STO // storytelling pessoal
+  DEM // demonstração prática
+  CON // contraste / comparação
+  INT // interação com a audiência
+  TRE // trend / meme
+  ENC // encenação / esquete
+  outra
+}
+
+enum PautaObjetivo {
+  ALC // alcance
+  AUT // autoridade
+  VIN // vínculo
+  VEN // venda
+  ENG // engajamento
+  PRO // prova social
+  LEA // leads
+}
+
+// Onde a fonte é lida/monitorada. Não confundir com o canal de publicação.
+model PautaFonte {
+  id            String         @id @default(uuid())
+  orgId         String
+  org           Org            @relation(fields: [orgId], references: [id])
+  tipo          PautaFonteTipo
+  nome          String
+  url           String? // feed RSS ou URL da busca
+  handle        String? // @perfil, quando tipo = perfil
+  plataforma    String? // instagram | tiktok | x | web
+  ativo         Boolean        @default(true)
+  intervaloMin  Int            @default(720)
+  // Teto de gasto do Apify: sem isso um perfil vigiado queima crédito em silêncio.
+  tetoRunsMes   Int            @default(30)
+  runsNoMes     Int            @default(0)
+  mesReferente  String? // "2026-08" — zera o contador na virada
+  ultimaLeitura DateTime?
+  ultimoErro    String?
+  criadaEm      DateTime       @default(now())
+
+  capturas PautaCaptura[]
+
+  @@index([orgId, ativo])
+}
+
+// Caixa de entrada: o item CRU, antes de virar ficha. Barato e instantâneo —
+// é o que resolve os prints que hoje morrem soltos numa pasta do Drive.
+model PautaCaptura {
+  id           String             @id @default(uuid())
+  orgId        String
+  org          Org                @relation(fields: [orgId], references: [id])
+  fonteId      String?
+  fonte        PautaFonte?        @relation(fields: [fonteId], references: [id], onDelete: SetNull)
+  tipo         PautaCapturaTipo
+  url          String?
+  // Dedup: sha256 da URL normalizada (ou do conteúdo, quando não há URL).
+  urlHash      String
+  titulo       String?
+  nota         String? // o que você quis guardar disso
+  bruto        Json? // payload do Apify / HTML extraído / texto colado
+  imagens      String[] // chaves no MinIO
+  status       PautaCapturaStatus @default(rascunho)
+  erro         String?
+  apifyRunId   String?
+  custoUsd     Decimal?           @db.Decimal(10, 4)
+  capturadoEm  DateTime           @default(now())
+  capturadoPor String?
+
+  referencia PautaReferencia?
+
+  @@unique([orgId, urlHash])
+  @@index([orgId, status, capturadoEm])
+}
+
+// A ficha — schema do Cerebro-Conteudo. É o que entra no prompt de geração.
+model PautaReferencia {
+  id        String        @id @default(uuid())
+  orgId     String
+  org       Org           @relation(fields: [orgId], references: [id])
+  capturaId String?       @unique
+  captura   PautaCaptura? @relation(fields: [capturaId], references: [id], onDelete: SetNull)
+
+  titulo      String
+  plataforma  String?
+  autor       String?
+  url         String?
+  publicadoEm DateTime?
+
+  familia  PautaFamilia
+  objetivo PautaObjetivo
+
+  // Os 14 campos da ficha (`9 - Engenharia Reversa das Referências/fichas/`).
+  materiaPrima     String
+  tensaoCentral    String
+  emocaoAlvo       String
+  motorPsicologico String
+  formulaHeadline  String
+  estruturaCorpo   String
+  prova            String
+  cta              String?
+  preRequisitos    String?
+  antiPadroes      String?
+  teoriaImplicita  String?
+
+  metricas  Json? // likes/comments/views — formato varia por plataforma
+  tags      String[]
+  // Marcada à mão: só o que é campeão entra no prompt de geração.
+  campea    Boolean  @default(false)
+  // Proveniência: de onde veio quando importada do acervo legado.
+  origem    String?  @default("manual")
+  // Caminho do espelho .md no vault (null = ainda não espelhada).
+  vaultPath String?
+
+  embedding Unsupported("vector(1536)")?
+
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  @@index([orgId, familia, objetivo])
+  @@index([orgId, campea])
 }

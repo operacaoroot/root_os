@@ -7,5 +7,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule], // login com Gmail volta pelo callback deste conector
   controllers: [GoogleController],
   providers: [GoogleService],
+  exports: [GoogleService], // o espelho .md do módulo Pauta grava no Drive por aqui
 })
 export class GoogleModule {}

@@ -1031,7 +1031,9 @@ export const BioPageSchema = z.object({
   handle: z.string().regex(BIO_HANDLE_RE, 'handle: 2-30 caracteres, a-z 0-9 . _ -'),
   titulo: z.string().min(1).max(80),
   subtitulo: z.string().max(200).optional().nullable(),
-  avatarUrl: z.string().url().max(500).optional().nullable(),
+  // 2048: URL de CDN (Instagram, Cloudinary) vem assinada e passa de 500 fácil.
+  // A coluna no Postgres é TEXT, então o limite aqui é o único que barra.
+  avatarUrl: z.string().url().max(2048).optional().nullable(),
 });
 export type BioPageInput = z.infer<typeof BioPageSchema>;
 
@@ -1128,4 +1130,204 @@ export interface BioPublicPage {
   avatarUrl: string | null;
   links: BioPublicLink[];
   desafio: BioPublicDesafio | null;
+}
+
+// ---------- Pauta (acervo de referência) ----------
+// Ver docs/PAUTA.md. A taxonomia vem do estudo do vault Cerebro-Conteudo
+// ("9 - Engenharia Reversa das Referências"): 8 famílias × 7 objetivos, das quais
+// 4 famílias são as campeãs do estudo _ESTRUTURAS-CAMPEAS.md.
+
+export const PAUTA_FAMILIAS = ['CUR', 'REA', 'STO', 'DEM', 'CON', 'INT', 'TRE', 'ENC', 'outra'] as const;
+export type PautaFamilia = (typeof PAUTA_FAMILIAS)[number];
+
+export const PAUTA_FAMILIA_LABEL: Record<PautaFamilia, string> = {
+  CUR: 'Curiosidade / Revelação',
+  REA: 'React / Análise de terceiro',
+  STO: 'Storytelling pessoal',
+  DEM: 'Demonstração prática',
+  CON: 'Contraste / Comparação',
+  INT: 'Interação com a audiência',
+  TRE: 'Trend / Meme',
+  ENC: 'Encenação / Esquete',
+  outra: 'Outra',
+};
+
+// As 4 que o estudo elegeu (_ESTRUTURAS-CAMPEAS.md): 83,3% do que é ensinado nos
+// bunkers maduros. As outras existem no acervo, mas não entram no prompt de geração.
+export const PAUTA_FAMILIAS_CAMPEAS: PautaFamilia[] = ['CUR', 'REA', 'STO', 'DEM'];
+
+export const PAUTA_OBJETIVOS = ['ALC', 'AUT', 'VIN', 'VEN', 'ENG', 'PRO', 'LEA'] as const;
+export type PautaObjetivo = (typeof PAUTA_OBJETIVOS)[number];
+
+export const PAUTA_OBJETIVO_LABEL: Record<PautaObjetivo, string> = {
+  ALC: 'Alcance',
+  AUT: 'Autoridade',
+  VIN: 'Vínculo',
+  VEN: 'Venda',
+  ENG: 'Engajamento',
+  PRO: 'Prova social',
+  LEA: 'Leads',
+};
+
+export const PAUTA_CAPTURA_TIPOS = ['link', 'print', 'texto'] as const;
+export type PautaCapturaTipo = (typeof PAUTA_CAPTURA_TIPOS)[number];
+
+export const PAUTA_CAPTURA_STATUS = ['rascunho', 'processando', 'ficha', 'descartada', 'erro'] as const;
+export type PautaCapturaStatus = (typeof PAUTA_CAPTURA_STATUS)[number];
+
+export const PAUTA_FONTE_TIPOS = ['rss', 'perfil', 'busca', 'manual'] as const;
+export type PautaFonteTipo = (typeof PAUTA_FONTE_TIPOS)[number];
+
+// --- Entradas (write) ---
+
+// Captura aceita link OU texto colado; o print sobe pelo endpoint de upload.
+export const PautaCapturaSchema = z
+  .object({
+    tipo: z.enum(PAUTA_CAPTURA_TIPOS).default('link'),
+    url: z.string().url().max(2048).optional().nullable(),
+    titulo: z.string().max(300).optional().nullable(),
+    nota: z.string().max(2000).optional().nullable(),
+    texto: z.string().max(20000).optional().nullable(),
+    fonteId: z.string().uuid().optional().nullable(),
+  })
+  .refine((v) => (v.tipo === 'link' ? !!v.url : true), {
+    message: 'captura do tipo link exige url',
+    path: ['url'],
+  })
+  .refine((v) => (v.tipo === 'texto' ? !!v.texto : true), {
+    message: 'captura do tipo texto exige o texto',
+    path: ['texto'],
+  });
+export type PautaCapturaInput = z.infer<typeof PautaCapturaSchema>;
+
+// Os 14 campos da ficha. Só os 7 primeiros são obrigatórios — o resto o método
+// admite "não consta" (ver as fichas do vault).
+export const PautaReferenciaSchema = z.object({
+  titulo: z.string().min(1).max(300),
+  plataforma: z.string().max(40).optional().nullable(),
+  autor: z.string().max(120).optional().nullable(),
+  url: z.string().url().max(2048).optional().nullable(),
+  publicadoEm: z.string().datetime().optional().nullable(),
+  familia: z.enum(PAUTA_FAMILIAS),
+  objetivo: z.enum(PAUTA_OBJETIVOS),
+  materiaPrima: z.string().min(1).max(4000),
+  tensaoCentral: z.string().min(1).max(4000),
+  emocaoAlvo: z.string().min(1).max(2000),
+  motorPsicologico: z.string().min(1).max(4000),
+  formulaHeadline: z.string().min(1).max(2000),
+  estruturaCorpo: z.string().min(1).max(6000),
+  prova: z.string().min(1).max(4000),
+  cta: z.string().max(2000).optional().nullable(),
+  preRequisitos: z.string().max(2000).optional().nullable(),
+  antiPadroes: z.string().max(4000).optional().nullable(),
+  teoriaImplicita: z.string().max(4000).optional().nullable(),
+  tags: z.array(z.string().max(40)).max(20).default([]),
+  campea: z.boolean().default(false),
+});
+export type PautaReferenciaInput = z.infer<typeof PautaReferenciaSchema>;
+
+export const PautaReferenciaUpdateSchema = PautaReferenciaSchema.partial();
+export type PautaReferenciaUpdateInput = z.infer<typeof PautaReferenciaUpdateSchema>;
+
+export const PautaFonteSchema = z.object({
+  tipo: z.enum(PAUTA_FONTE_TIPOS),
+  nome: z.string().min(1).max(120),
+  url: z.string().url().max(2048).optional().nullable(),
+  handle: z.string().max(60).optional().nullable(),
+  plataforma: z.string().max(40).optional().nullable(),
+  ativo: z.boolean().default(true),
+  intervaloMin: z.number().int().min(30).max(20160).default(720),
+  tetoRunsMes: z.number().int().min(0).max(10000).default(30),
+});
+export type PautaFonteInput = z.infer<typeof PautaFonteSchema>;
+
+export const PautaFonteUpdateSchema = PautaFonteSchema.partial();
+export type PautaFonteUpdateInput = z.infer<typeof PautaFonteUpdateSchema>;
+
+// --- Saídas (read) ---
+
+export interface PautaCapturaItem {
+  id: string;
+  tipo: PautaCapturaTipo;
+  url: string | null;
+  titulo: string | null;
+  nota: string | null;
+  status: PautaCapturaStatus;
+  erro: string | null;
+  imagens: string[];
+  temFicha: boolean;
+  referenciaId: string | null;
+  custoUsd: number | null;
+  fonte: { id: string; nome: string } | null;
+  capturadoEm: string;
+}
+
+export interface PautaCapturaList {
+  items: PautaCapturaItem[];
+  total: number;
+  porStatus: Array<{ status: PautaCapturaStatus; count: number }>;
+  source: { tool: string; generatedAt: string };
+}
+
+export interface PautaReferenciaItem {
+  id: string;
+  titulo: string;
+  plataforma: string | null;
+  autor: string | null;
+  url: string | null;
+  publicadoEm: string | null;
+  familia: PautaFamilia;
+  objetivo: PautaObjetivo;
+  materiaPrima: string;
+  tensaoCentral: string;
+  emocaoAlvo: string;
+  motorPsicologico: string;
+  formulaHeadline: string;
+  estruturaCorpo: string;
+  prova: string;
+  cta: string | null;
+  preRequisitos: string | null;
+  antiPadroes: string | null;
+  teoriaImplicita: string | null;
+  metricas: Record<string, unknown> | null;
+  tags: string[];
+  campea: boolean;
+  origem: string | null;
+  vaultPath: string | null;
+  criadaEm: string;
+  atualizadaEm: string;
+  // preenchido só na busca semântica
+  similaridade?: number;
+}
+
+export interface PautaReferenciaList {
+  items: PautaReferenciaItem[];
+  total: number;
+  porFamilia: Array<{ key: PautaFamilia; count: number }>;
+  porObjetivo: Array<{ key: PautaObjetivo; count: number }>;
+  campeas: number;
+  source: { tool: string; generatedAt: string };
+}
+
+export interface PautaFonteItem {
+  id: string;
+  tipo: PautaFonteTipo;
+  nome: string;
+  url: string | null;
+  handle: string | null;
+  plataforma: string | null;
+  ativo: boolean;
+  intervaloMin: number;
+  tetoRunsMes: number;
+  runsNoMes: number;
+  ultimaLeitura: string | null;
+  ultimoErro: string | null;
+  capturas: number;
+}
+
+export interface PautaFonteList {
+  items: PautaFonteItem[];
+  apifyConfigurado: boolean;
+  espelho: { destino: 'off' | 'local' | 'drive'; alvo: string | null; disponivel: boolean; motivo: string | null };
+  source: { tool: string; generatedAt: string };
 }

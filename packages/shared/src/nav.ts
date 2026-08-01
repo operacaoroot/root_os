@@ -16,6 +16,7 @@ export const NAV: NavItem[] = [
   { key: 'funil', label: 'Funil', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', phase: 2 },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', phase: 2 },
   { key: 'conteudo', label: 'Conteúdo', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', phase: 2 },
+  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', phase: 4 },
   { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', phase: 4 },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', phase: 4 },
   { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', phase: 4 },
