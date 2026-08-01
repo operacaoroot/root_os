@@ -54,7 +54,11 @@ bash merge-env.sh
 ## 3. Subir a plataforma
 
 ```bash
-cd /srv/marketing-os && git pull && deploy/up.sh --vps --build
+cd /srv/marketing-os
+# as duas MCP_* só existem para o compose interpolar o serviço telegram, que não
+# sobe na VPS; sem elas nenhum comando compose roda no servidor
+MCP_SERVICE_PASSWORD=nao-usado-na-vps MCP_ACTION_PASSWORD=nao-usado-na-vps \
+  deploy/up.sh --vps api web
 docker logs mktos_api --tail 30   # a migration add_bio roda no boot
 curl -s localhost:4001/api/health
 ```
