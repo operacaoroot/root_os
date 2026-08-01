@@ -7,9 +7,9 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
-// público por natureza (página da bio e os textos legais que a Meta e o TikTok
-// exigem estar acessíveis para o App Review).
-const PUBLICAS = ['/login', '/b', '/termos', '/privacidade'];
+// público por natureza (página da bio, a Central da comunidade e os textos
+// legais que a Meta e o TikTok exigem estar acessíveis para o App Review).
+const PUBLICAS = ['/login', '/b', '/central', '/termos', '/privacidade'];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();

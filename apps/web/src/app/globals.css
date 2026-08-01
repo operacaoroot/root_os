@@ -32,6 +32,125 @@ body {
   @apply text-bio-primary;
 }
 
+/* ============================================================
+   Central (/central/*) — identidade ROOT com tema claro/escuro.
+   Veio do root-central, que era Tailwind v4 e declarava isto em @theme
+   sobre :root. Aqui o painel divide o mesmo documento, então TUDO fica
+   escopado em .central-root — inclusive ::selection e :focus-visible,
+   que no original eram globais e vazariam para as telas autenticadas.
+   O <html> carrega data-theme (o script antiflash do layout escreve lá);
+   o container carrega .central-root.
+   ============================================================ */
+.central-root {
+  --central-lima: 155 219 31;
+  --central-lima-bright: 196 255 46;
+  --central-magenta: 255 31 107;
+  --central-ciano: 31 255 168;
+  --central-alerta: 232 185 15;
+
+  --central-bg: 7 10 8;
+  --central-painel: 12 18 13;
+  --central-painel2: 16 26 18;
+  --central-linha: 28 48 16;
+  --central-tinta: 223 255 232;
+  --central-tinta-suave: 159 191 167;
+  --central-tinta-fraca: 95 122 102;
+  --central-acento: 155 219 31;
+  --central-acento-soft: rgb(155 219 31 / 0.12);
+  --central-magenta-soft: rgb(255 31 107 / 0.14);
+
+  color-scheme: dark;
+  background: rgb(var(--central-bg));
+  color: rgb(var(--central-tinta));
+  font-family: var(--font-space), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* tema claro — versão "mono · fundo claro" do guia da marca */
+:root[data-theme='light'] .central-root {
+  --central-bg: 244 248 238;
+  --central-painel: 255 255 255;
+  --central-painel2: 238 244 228;
+  --central-linha: 207 223 186;
+  --central-tinta: 12 18 13;
+  --central-tinta-suave: 69 84 58;
+  --central-tinta-fraca: 116 131 106;
+  /* verde-limão puro não tem contraste sobre branco — escurece p/ texto */
+  --central-acento: 77 114 8;
+  --central-acento-soft: rgb(155 219 31 / 0.2);
+  --central-magenta-soft: rgb(255 31 107 / 0.1);
+  color-scheme: light;
+}
+
+/* scanlines sutis — assinatura "tela hackeada", só no escuro */
+:root:not([data-theme='light']) .central-root {
+  background-image:
+    radial-gradient(900px 420px at 85% -10%, rgb(155 219 31 / 0.07), transparent 60%),
+    radial-gradient(700px 380px at 0% 0%, rgb(255 31 107 / 0.05), transparent 55%),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgb(255 255 255 / 0.006) 3px,
+      rgb(255 255 255 / 0.006) 4px
+    );
+  background-attachment: fixed;
+}
+
+.central-root ::selection {
+  background: rgb(var(--central-lima));
+  color: #070a08;
+}
+
+.central-root :focus-visible {
+  outline: 2px solid rgb(var(--central-acento));
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* wordmark ROOT com glitch de canais (magenta + ciano por trás) */
+.central-root .glitch-root {
+  font-family: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: -0.04em;
+  display: inline-block;
+  transform: skewX(-10deg);
+  color: rgb(var(--central-lima));
+  text-shadow:
+    0.045em 0 0 rgb(255 31 107 / 0.9),
+    -0.045em 0 0 rgb(31 255 168 / 0.9);
+}
+
+:root[data-theme='light'] .central-root .glitch-root {
+  color: #3e6212;
+  text-shadow:
+    0.045em 0 0 rgb(255 31 107 / 0.55),
+    -0.045em 0 0 rgb(31 200 130 / 0.55);
+}
+
+/* prompt/comando: caixa de terminal */
+.central-root .caixa-terminal {
+  background: #05080699;
+  border: 1px solid rgb(var(--central-linha));
+  border-radius: 3px;
+}
+:root[data-theme='light'] .central-root .caixa-terminal {
+  background: #0c120d;
+  color: #dfffe8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .central-root *,
+  .central-root *::before,
+  .central-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* scrollbar discreta */
 ::-webkit-scrollbar {
   width: 10px;

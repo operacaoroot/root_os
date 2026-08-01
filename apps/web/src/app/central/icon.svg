@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#070A08"/>
+  <g transform="skewX(-10) translate(8,0)">
+    <text x="24" y="72" font-family="'JetBrains Mono',monospace" font-style="italic" font-weight="800" font-size="58" fill="#FF1F6B" opacity="0.9">R</text>
+    <text x="16" y="72" font-family="'JetBrains Mono',monospace" font-style="italic" font-weight="800" font-size="58" fill="#1FFFA8" opacity="0.9">R</text>
+    <text x="20" y="72" font-family="'JetBrains Mono',monospace" font-style="italic" font-weight="800" font-size="58" fill="#9BDB1F">R</text>
+  </g>
+</svg>
