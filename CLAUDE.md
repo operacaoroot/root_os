@@ -3,7 +3,8 @@
 ## Onde roda
 - VPS: stack compose `marketing-os` (`/srv/marketing-os/`), containers `mktos_api` e `mktos_web`. Ver skill `vps-fullbpo`.
 - Deploy na VPS: `deploy/up.sh --vps api web`. O `--vps` faz duas coisas: (1) soma o `docker-compose.vps.yml`, que binda as portas em `172.17.0.1` (só o Traefik alcança) — **sem ele o compose base publica em `0.0.0.0`** e expõe banco/redis/minio na internet, já que o ufw não governa porta publicada pelo Docker e o `DOCKER-USER` não cobre a faixa 4000-9011; (2) **não** injeta `~/.config/root/*.env`, porque no servidor os segredos vivem no `.env` (via `merge-env.sh`) e variável de ambiente vence o `.env` — o `bio-secrets.env` de lá guarda a `ENCRYPTION_KEY` **antiga** do root-bio e o default do vault aponta para caminho inexistente.
-- O serviço `telegram` só roda no Mac. Na VPS ele não sobe, mas o compose exige `MCP_SERVICE_PASSWORD` e `MCP_ACTION_PASSWORD` (`:?`) para *interpolar o arquivo inteiro* — sem elas nenhum comando compose funciona no servidor. Hoje se passa as duas inline no deploy; não estão no `.env`.
+- O serviço `telegram` só roda no Mac. Na VPS ele não sobe, mas o compose exige `MCP_SERVICE_PASSWORD` e `MCP_ACTION_PASSWORD` (`:?`) para *interpolar o arquivo inteiro* — sem elas nenhum comando compose funciona no servidor. As duas já estão no `.env` da VPS (conferido em 31/07/26), então não é mais preciso passá-las inline; se um dia sumirem de lá, todo comando compose volta a falhar de saída.
+- Para só reler o `.env` sem refazer imagem: `docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --no-build api`. O `deploy/up.sh` força `--build`, e `docker restart` **não** serve — variável de ambiente é fixada na criação do container.
 
 ## Link na bio (módulo `bio`)
 - Absorvido do root-bio em 01/08/26 (app standalone aposentado, serviço `root_bio` em 0/0; código de referência em `~/dev/root-bio`, commitado, sem deploy). Dados de produção migrados.

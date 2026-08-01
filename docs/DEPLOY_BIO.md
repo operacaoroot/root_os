@@ -1,8 +1,8 @@
 # Virada do root-bio para dentro do marketing-os
 
-**Executada em 01/08/2026.** O serviço `root_bio` está parado (0/0) e
-`bio.operacaoroot.com` é servido pelo `mktos_web`. Este documento virou o
-registro do que foi feito — e do que ainda falta encerrar.
+**Executada em 01/08/2026.** `root_bio` e `root_bio-db` estão parados (0/0) e
+`bio.operacaoroot.com` é servido inteiramente pelo `mktos_web`. Este documento
+virou o registro do que foi feito — e do que ainda falta encerrar.
 
 As URLs públicas continuam idênticas (`/@handle`, `/r/:id`, `/termos`,
 `/privacidade`) e a redirect URI do OAuth não mudou, então não houve novo
@@ -10,13 +10,14 @@ App Review na Meta nem no TikTok.
 
 ## Pendências
 
-- [ ] **Remover o domínio `bio.operacaoroot.com` do serviço `root_bio` na UI do
-      easyPanel.** Hoje os routers dele ainda existem no `main.yaml` (gerado pelo
-      easyPanel) apontando para o backend morto; quem ganha é o router do
-      `marketing-os.yaml`, que tem `priority: 1000` de propósito. Funciona, mas é
-      duplicidade — depois de remover, a prioridade deixa de importar.
-- [ ] **Excluir `root_bio` e `root_bio-db` de vez** (a partir de ~08/08/2026, uma
-      semana de margem). O dump está em `/root/backups/root_bio_20260801_0012.sql.gz`.
+Só falta **excluir os serviços `root_bio` e `root_bio-db` pela UI do easyPanel**
+(a partir de ~08/08/2026, uma semana de margem). O dump está em
+`/root/backups/root_bio_20260801_0012.sql.gz`.
+
+Isso resolve junto a única sobra: os routers do `root_bio` continuam no
+`main.yaml` (gerado pelo easyPanel) apontando para o backend morto. Não afetam
+nada — quem ganha é o router do `marketing-os.yaml`, com `priority: 1000` posta
+de propósito — e o easyPanel regenera o arquivo sem eles ao excluir o serviço.
 
 ## O que foi feito
 
