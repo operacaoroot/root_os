@@ -1,7 +1,8 @@
 # marketing-os — sistema de marketing FullBPO/ROOT
 
 ## Onde roda
-- VPS: stack compose `marketing-os` (`/srv/marketing-os/docker-compose.yml` + override), containers `mktos_api` e `mktos_web`. Ver skill `vps-fullbpo`.
+- VPS: stack compose `marketing-os` (`/srv/marketing-os/`), containers `mktos_api` e `mktos_web`. Ver skill `vps-fullbpo`.
+- Deploy na VPS: `deploy/up.sh --vps --build` — o `--vps` soma o `docker-compose.vps.yml`, que binda as portas em `172.17.0.1` (só o Traefik alcança). **Sem ele o compose base publica em `0.0.0.0`** e expõe banco/redis/minio na internet: o ufw não governa porta publicada pelo Docker e o `DOCKER-USER` não cobre a faixa 4000-9011.
 
 ## Link na bio (módulo `bio`)
 - Absorvido do root-bio (app standalone aposentado; código de referência em `~/dev/root-bio`, commitado, sem deploy).

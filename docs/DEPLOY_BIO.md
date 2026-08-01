@@ -54,7 +54,7 @@ bash merge-env.sh
 ## 3. Subir a plataforma
 
 ```bash
-cd /srv/marketing-os && git pull && deploy/up.sh --build
+cd /srv/marketing-os && git pull && deploy/up.sh --vps --build
 docker logs mktos_api --tail 30   # a migration add_bio roda no boot
 curl -s localhost:4001/api/health
 ```

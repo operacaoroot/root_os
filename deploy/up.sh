@@ -5,8 +5,19 @@
 #
 # Uso:  deploy/up.sh            (build + up -d de tudo)
 #       deploy/up.sh --build    (força rebuild da imagem)
+#       deploy/up.sh --vps      (na VPS: soma o docker-compose.vps.yml)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# Na VPS as portas ficam bindadas em 172.17.0.1 (só o Traefik alcança) — isso mora
+# no docker-compose.vps.yml, que NÃO é override automático de propósito: se fosse,
+# o Mac o carregaria sozinho e o painel sumiria do localhost. Sem --vps o compose
+# base publica em 0.0.0.0; no servidor isso exporia banco, redis e minio.
+COMPOSE_FILES=(-f docker-compose.yml)
+if [ "${1:-}" = "--vps" ]; then
+  shift
+  COMPOSE_FILES+=(-f docker-compose.vps.yml)
+fi
 
 # carrega credenciais no ambiente (KEY=VALUE) de forma SEGURA — sem executar o
 # conteúdo (valores com espaço, ex.: APP_NAME=Marketing OS, quebrariam `source`).
@@ -39,8 +50,5 @@ export OBSIDIAN_VAULT_HOST="${OBSIDIAN_VAULT_HOST:-$HOME/Documents/Obsidian Vaul
 [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (bot não sobe)."
 
 echo "[up] subindo containers (build + up -d)…"
-# -f explícito: o docker-compose.override.yml do repo é o da VPS (easyPanel), que
-# binda as portas em 172.17.0.1 — endereço que só existe no bridge do Linux. Sem
-# isto o compose o carrega sozinho e o painel some do localhost no Mac.
-docker compose -f docker-compose.yml up -d --build "$@"
+docker compose "${COMPOSE_FILES[@]}" up -d --build "$@"
 echo "[up] pronto. Ver: docker compose ps · logs: docker compose logs -f telegram"
