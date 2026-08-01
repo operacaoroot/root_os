@@ -72,7 +72,12 @@ export default function BioPage() {
             <select
               className={`${inputCls} w-auto`}
               value={pageId ?? ''}
-              onChange={(e) => setPageId(e.target.value)}
+              onChange={(e) => {
+                // Limpa o detalhe junto: sem isso a tela mostra os dados do perfil
+                // anterior até a nova busca responder.
+                setDetalhe(null);
+                setPageId(e.target.value);
+              }}
             >
               {pages.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -129,11 +134,29 @@ export default function BioPage() {
 
       {!detalhe && <p className="text-sm text-muted">Carregando…</p>}
 
+      {/* key = id da página: trocar de perfil no seletor precisa RECRIAR as abas
+          de formulário. Os campos nascem de useState(props), que só lê o valor na
+          primeira montagem — sem isto o formulário fica com os dados do perfil
+          anterior enquanto a prévia já mostra o novo. */}
       {detalhe && aba === 'Página' && (
-        <AbaPagina detalhe={detalhe} token={token} editavel={editavel} onMudou={recarregar} onErro={setErro} />
+        <AbaPagina
+          key={detalhe.page.id}
+          detalhe={detalhe}
+          token={token}
+          editavel={editavel}
+          onMudou={recarregar}
+          onErro={setErro}
+        />
       )}
       {detalhe && aba === 'Desafio' && (
-        <AbaDesafio detalhe={detalhe} token={token} editavel={editavel} onMudou={recarregar} onErro={setErro} />
+        <AbaDesafio
+          key={detalhe.page.id}
+          detalhe={detalhe}
+          token={token}
+          editavel={editavel}
+          onMudou={recarregar}
+          onErro={setErro}
+        />
       )}
       {detalhe && aba === 'Conexões' && (
         <AbaConexoes

@@ -8,15 +8,19 @@ import type { BioPublicPage } from '@mktos/shared';
 export function BioPageView({
   dados,
   previa = false,
+  rascunho = false,
 }: {
   dados: BioPublicPage;
+  /** Desliga os links (o painel renderiza um retrato, não uma página navegável). */
   previa?: boolean;
+  /** Só quando a página ainda NÃO está publicada — o aviso não vale para prévia de página no ar. */
+  rascunho?: boolean;
 }) {
   const { desafio } = dados;
 
   return (
     <main className="relative mx-auto max-w-[480px] px-6 pb-[12vh] pt-[10vh]">
-      {previa && (
+      {rascunho && (
         <div className="mb-7 border border-bio-line bg-bio-primary/5 px-4 py-3 text-[13px] text-bio-soft">
           Prévia — esta página ainda não está publicada. Só você a enxerga.
         </div>

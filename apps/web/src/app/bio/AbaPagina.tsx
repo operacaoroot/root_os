@@ -205,7 +205,7 @@ export function AbaPagina({
       <Card titulo="Prévia">
         <div className="overflow-hidden rounded-lg border border-border bg-bio-bg">
           <div className="origin-top scale-[0.88]">
-            <BioPageView dados={previa} previa />
+            <BioPageView dados={previa} previa rascunho={!page.publicada} />
           </div>
         </div>
       </Card>
