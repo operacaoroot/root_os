@@ -1,4 +1,8 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "prisma/seed.ts", "prisma/seed-finance.ts", "prisma/seed-finops.ts", "prisma/data", "**/*.spec.ts"]
+  // `prisma` inteira, não arquivo a arquivo: todo script de lá roda por tsx e
+  // nada em src/ importa da pasta. Um único .ts fora de src/ no build sobe a
+  // raiz comum do tsc e a saída vira dist/src/main.js — o CMD do Dockerfile e o
+  // `start` apontam para dist/main.js, e a API não sobe.
+  "exclude": ["node_modules", "dist", "prisma", "**/*.spec.ts"]
 }

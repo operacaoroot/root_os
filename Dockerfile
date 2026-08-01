@@ -29,7 +29,10 @@ RUN pnpm install --frozen-lockfile \
  && pnpm --filter @mktos/api build \
  && pnpm --filter @mktos/mcp build \
  && pnpm --filter @mktos/telegram build \
- && pnpm --filter @mktos/web build
+ && pnpm --filter @mktos/web build \
+ # falha aqui em vez de gerar imagem que sobe e morre: um .ts fora de src/ no
+ # build da api desloca a saída para dist/src/ e o CMD abaixo não acha o entry.
+ && test -f apps/api/dist/main.js
 
 ENV NODE_ENV=production
 EXPOSE 4000 4001
