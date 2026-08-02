@@ -13,7 +13,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
-    "db:seed:finops": "tsx prisma/seed-finops.ts"
+    "db:seed:finops": "tsx prisma/seed-finops.ts",
+    "db:seed:trabalho": "tsx prisma/seed-trabalho.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
