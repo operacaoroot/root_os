@@ -20,6 +20,9 @@
 - Importar o acervo do vault: `PAUTA_IMPORT_DIR="<.../Cerebro-Conteudo>" pnpm --filter @mktos/api import:pauta` (idempotente; 432 fichas, 119 campeãs).
 - Link do Instagram/TikTok exige `APIFY_TOKEN`; cada fonte tem teto de execuções/mês porque o Apify cobra por run.
 - Espelho `.md` no vault é opcional e escolhido na tela (Radar): `off` · `local` (filesystem) · `drive` (Google Drive). Na VPS o `OBSIDIAN_VAULT_HOST` aponta para `/srv/marketing-os/vault`, que **não** é o vault real do Mac — por isso o destino Drive existe.
+- Painel `/pauta`: a rotina (cron) coleta os feeds, cura a janela e deriva uma peça por canal. O gatilho é um tick de 1 min com matcher próprio (`pauta/cron.ts`), não `@nestjs/schedule` — rotina editada na tela vale no minuto seguinte, sem re-registro. `PAUTA_CRON=off` desliga.
+- **O LLM default agora é Claude** (`LLM_PROVIDER=anthropic`, SDK oficial). Nos modelos Opus atuais `temperature`/`top_p`/`budget_tokens` retornam **400** — não copie o formato do `OpenAiProvider`. O OpenAI segue necessário para embeddings (a Anthropic não tem esse endpoint).
+- WhatsApp em grupo é via **Evolution** com instância e número dedicados do root: a Cloud API da Meta não envia para grupo. Publicar é `@SensitiveWrite('content')` — passa por aprovação confirmada, e o link vai como `BioLink` rastreado.
 
 ## Root Central (módulo `central`)
 - Absorvido do repo `operacaoroot/root-central` em 01/08/26 (Next 15 SSG standalone; código de referência segue no GitHub). Detalhes: `docs/CENTRAL.md`.

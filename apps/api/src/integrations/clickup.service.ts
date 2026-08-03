@@ -88,6 +88,29 @@ export class ClickupService implements OnModuleInit {
   }
 
   /**
+   * Cria uma task na lista informada (ou na CLICKUP_LIST_PAUTA). Usado pelo
+   * módulo Pauta para transformar a peça de canal `clickup` em tema real.
+   */
+  async criarTarefa(args: {
+    nome: string;
+    descricao: string;
+    listId?: string | null;
+  }): Promise<{ id: string; url: string | null }> {
+    if (!this.configured) throw new ServiceUnavailableException('ClickUp não configurado.');
+    const listId = (args.listId || process.env.CLICKUP_LIST_PAUTA || '').trim();
+    if (!listId) {
+      throw new ServiceUnavailableException(
+        'Falta a lista de destino: defina CLICKUP_LIST_PAUTA no .env ou informe listId.',
+      );
+    }
+    const t = await this.cu<{ id: string; url?: string }>(`/list/${encodeURIComponent(listId)}/task`, {
+      method: 'POST',
+      body: JSON.stringify({ name: args.nome.slice(0, 250), description: args.descricao }),
+    });
+    return { id: t.id, url: t.url ?? null };
+  }
+
+  /**
    * PREMISSA: só o espaço "root". Localiza por id (CLICKUP_SPACE_ID) ou nome
    * (CLICKUP_SPACE_NAME, default "root"), IGNORANDO o workspace do escritório.
    */

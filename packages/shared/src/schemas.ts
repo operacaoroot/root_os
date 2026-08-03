@@ -1331,3 +1331,125 @@ export interface PautaFonteList {
   espelho: { destino: 'off' | 'local' | 'drive'; alvo: string | null; disponivel: boolean; motivo: string | null };
   source: { tool: string; generatedAt: string };
 }
+
+// ---------- Pauta: rotinas, rodadas e peças (ondas 2 e 3) ----------
+
+export const PAUTA_CANAIS = ['whatsapp', 'instagram', 'newsletter', 'clickup'] as const;
+export type PautaCanal = (typeof PAUTA_CANAIS)[number];
+
+export const PAUTA_CANAL_LABEL: Record<PautaCanal, string> = {
+  whatsapp: 'WhatsApp (grupo)',
+  instagram: 'Instagram',
+  newsletter: 'Newsletter',
+  clickup: 'ClickUp',
+};
+
+export const PAUTA_PECA_STATUS = ['rascunho', 'aprovada', 'publicada', 'descartada'] as const;
+export type PautaPecaStatus = (typeof PAUTA_PECA_STATUS)[number];
+
+export const PAUTA_RODADA_STATUS = ['coletando', 'curada', 'aprovada', 'publicada', 'falhou'] as const;
+export type PautaRodadaStatus = (typeof PAUTA_RODADA_STATUS)[number];
+
+// Cron de 5 campos. A validação forte é no servidor (parseCron); aqui só barra
+// o que é obviamente inválido antes da viagem.
+const CRON_RE = /^(\S+\s+){4}\S+$/;
+
+export const PautaRotinaSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]{2,40}$/, 'slug: 2-40 caracteres, a-z 0-9 -'),
+  nome: z.string().min(1).max(120),
+  cron: z.string().regex(CRON_RE, 'cron precisa de 5 campos (min hora dia mês diaDaSemana)'),
+  tz: z.string().max(60).default('America/Sao_Paulo'),
+  ativo: z.boolean().default(true),
+  // Janela de coleta do insumo. 72h é a validade prática de uma notícia.
+  horas: z.number().int().min(6).max(336).default(72),
+  coletarAntes: z.boolean().default(true),
+});
+export type PautaRotinaInput = z.infer<typeof PautaRotinaSchema>;
+
+export const PautaRotinaUpdateSchema = PautaRotinaSchema.partial();
+export type PautaRotinaUpdateInput = z.infer<typeof PautaRotinaUpdateSchema>;
+
+export interface PautaRotinaItem {
+  id: string;
+  slug: string;
+  nome: string;
+  cron: string;
+  tz: string;
+  ativo: boolean;
+  horas: number;
+  ultimoRun: string | null;
+  ultimoStatus: string | null;
+  proximoRun: string | null;
+  rodadas: number;
+}
+
+export interface PautaRotinaList {
+  items: PautaRotinaItem[];
+  cronAtivo: boolean;
+  source: { tool: string; generatedAt: string };
+}
+
+export interface PautaRodadaResumo {
+  id: string;
+  titulo: string;
+  status: PautaRodadaStatus;
+  rotina: string | null;
+  itens: number;
+  pecas: number;
+  provider: string | null;
+  model: string | null;
+  erro: string | null;
+  janelaIni: string;
+  janelaFim: string;
+  criadaEm: string;
+}
+
+export interface PautaRodadaList {
+  items: PautaRodadaResumo[];
+  source: { tool: string; generatedAt: string };
+}
+
+export interface PautaItemCurado {
+  titulo: string;
+  url: string;
+  porque?: string;
+  ganchoBr?: string;
+}
+
+export interface PautaPecaItem {
+  id: string;
+  canal: PautaCanal;
+  formato: string;
+  titulo: string;
+  corpo: string;
+  meta: Record<string, unknown>;
+  status: PautaPecaStatus;
+  externalId: string | null;
+  bioLinkId: string | null;
+  erro: string | null;
+  publicadaEm: string | null;
+}
+
+export interface PautaRodadaDetalhe {
+  id: string;
+  titulo: string;
+  status: PautaRodadaStatus;
+  rotina: string | null;
+  corpo: string;
+  itens: PautaItemCurado[];
+  fichasUsadas: number;
+  provider: string | null;
+  model: string | null;
+  erro: string | null;
+  janelaIni: string;
+  janelaFim: string;
+  criadaEm: string;
+  pecas: PautaPecaItem[];
+}
+
+export interface PautaCanalEstado {
+  configurada: boolean;
+  conectada: boolean;
+  motivo: string | null;
+  grupo: string | null;
+}

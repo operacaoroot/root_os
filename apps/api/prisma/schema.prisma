@@ -60,6 +60,9 @@ model Org {
   pautaFontes      PautaFonte[]
   pautaCapturas    PautaCaptura[]
   pautaReferencias PautaReferencia[]
+  pautaRotinas     PautaRotina[]
+  pautaRodadas     PautaRodada[]
+  pautaPecas       PautaPeca[]
 }
 
 model User {
@@ -1182,4 +1185,113 @@ model PautaReferencia {
 
   @@index([orgId, familia, objetivo])
   @@index([orgId, campea])
+}
+
+// ---------- Pauta: rotina, rodada e peças (ondas 2 e 3) ----------
+// A rotina é o gatilho (cron); a rodada é a peça-mãe (curadoria de uma janela);
+// as peças são os derivados por canal. Ver docs/PAUTA.md §4 e §7.
+
+enum PautaRodadaStatus {
+  coletando
+  curada
+  aprovada
+  publicada
+  falhou
+}
+
+enum PautaCanal {
+  whatsapp
+  instagram
+  newsletter
+  clickup
+}
+
+enum PautaPecaStatus {
+  rascunho
+  aprovada
+  publicada
+  descartada
+}
+
+model PautaRotina {
+  id     String  @id @default(uuid())
+  orgId  String
+  org    Org     @relation(fields: [orgId], references: [id])
+  slug   String
+  nome   String
+  // Cron de 5 campos (min hora dia mês diaDaSemana). Avaliado a cada minuto
+  // contra o fuso `tz` — ver pauta-scheduler.service.ts.
+  cron   String
+  tz     String  @default("America/Sao_Paulo")
+  ativo  Boolean @default(true)
+  // Janela de coleta e instruções de pauta (assunto, tom, quantos itens).
+  config Json    @default("{}")
+
+  ultimoRun    DateTime?
+  ultimoStatus String?
+  proximoRun   DateTime?
+  criadaEm     DateTime  @default(now())
+
+  rodadas PautaRodada[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, ativo])
+}
+
+// A peça-mãe: uma execução da rotina. Guarda o que entrou (itens), o que saiu
+// (corpo) e quem gerou (provider/model/custo) — mesmo contrato do Report.
+model PautaRodada {
+  id       String            @id @default(uuid())
+  orgId    String
+  org      Org               @relation(fields: [orgId], references: [id])
+  rotinaId String?
+  rotina   PautaRotina?      @relation(fields: [rotinaId], references: [id], onDelete: SetNull)
+  status   PautaRodadaStatus @default(coletando)
+  titulo   String
+
+  janelaIni    DateTime
+  janelaFim    DateTime
+  // O que a IA selecionou, com fonte e URL de cada item (procedência).
+  itens        Json     @default("[]")
+  // Quais fichas campeãs entraram no prompt (auditoria do repertório usado).
+  fichasUsadas String[]
+  corpo        String   @default("")
+
+  provider String?
+  model    String?
+  custoUsd Decimal? @db.Decimal(10, 4)
+  erro     String?
+
+  criadaEm DateTime @default(now())
+
+  pecas PautaPeca[]
+
+  @@index([orgId, status, criadaEm])
+}
+
+model PautaPeca {
+  id       String          @id @default(uuid())
+  orgId    String
+  org      Org             @relation(fields: [orgId], references: [id])
+  rodadaId String
+  rodada   PautaRodada     @relation(fields: [rodadaId], references: [id], onDelete: Cascade)
+  canal    PautaCanal
+  formato  String // texto | carrossel | reels | email | tema
+  titulo   String
+  corpo    String
+  // Slides do carrossel, JID do grupo, id do tema no ClickUp…
+  meta     Json            @default("{}")
+  status   PautaPecaStatus @default(rascunho)
+
+  // Link rastreado: o clique volta como BioEvent/PixelEvent e alimenta Metas.
+  bioLinkId    String?
+  externalId   String?
+  publicadaEm  DateTime?
+  publicadaPor String?
+  erro         String?
+
+  criadaEm DateTime @default(now())
+
+  @@index([orgId, status])
+  @@index([rodadaId])
 }

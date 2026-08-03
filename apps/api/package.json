@@ -20,6 +20,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@mktos/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",

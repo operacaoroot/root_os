@@ -85,8 +85,15 @@ existem em `@mktos/shared` sem implementação.
    auto, com aprovação    máquina de carrossel + legenda    write-back
 ```
 
-O gatilho é `@nestjs/schedule` **dentro da API** — o container `mktos_api` já roda 24/7 na VPS.
-Nada de infra nova, e a `PautaRotina` guarda cron/tz/ativo editáveis pelo painel.
+O gatilho roda **dentro da API** (o container `mktos_api` já fica 24/7 na VPS), num tick de
+1 minuto que pergunta "qual rotina bate agora?".
+
+> **Mudei de ideia sobre o `@nestjs/schedule` na implementação.** Como as rotinas são
+> editáveis pela tela, registrar/desregistrar um `CronJob` a cada edição vira contabilidade de
+> estado — e um cron salvo errado só apareceria no próximo boot. Com o tick, editar passa a
+> valer no minuto seguinte sem re-registro, e o matcher de cron (`pauta/cron.ts`, ~40 linhas,
+> com 16 testes cobrindo fuso, faixas, passos e domingo 0/7) fica sob nosso controle. Menos
+> dependência, menos estado.
 
 ## 5. Modelo de dados
 
@@ -174,6 +181,7 @@ anti-padrões, tirados do que o próprio estudo já provou.
 | Canal | Como sai | Trava |
 |---|---|---|
 | **WhatsApp (grupo)** | Evolution API, instância e número **dedicados do root** | `@SensitiveWrite('content')` — não sai sem token de aprovação confirmado |
+| **ClickUp** | cria o tema de verdade (`CLICKUP_LIST_PAUTA`) | — |
 | **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
 | **Newsletter** | corpo em markdown, link sempre como `BioLink` | — |
 | **ClickUp** | vira tema em Gestão de Temas (write-back que já existe) | — |
@@ -247,17 +255,35 @@ PAUTA_IMPORT_DIR="$HOME/Library/CloudStorage/GoogleDrive-pedro.magnago@fullbpo.c
 curl -XPOST localhost:4000/api/pauta/referencias/reindexar -H "Authorization: Bearer <token>"
 ```
 
-**Onda 2 — Rotina.** `AnthropicProvider` atrás do `LlmProvider` (env já declarado);
-`@nestjs/schedule` + `PautaRotina` + `PautaRodada`; aba Radar com feeds; tela de revisão da
-rodada. **Aqui a rotina do app do Claude é desligada.**
+**Onda 2 — Rotina. ✅ entregue (03/08/26)**
+- `AnthropicProvider` (SDK oficial) atrás do `LlmProvider` — **agora é o default** (`LLM_PROVIDER=anthropic`).
+- Agendador próprio (tick de 1 min + `pauta/cron.ts`) + `PautaRotina` + `PautaRodada`.
+- Coletor RSS sem dependência (`rss.service.ts`); painel `/pauta` com Rodadas e Rotinas.
+- **A rotina do app do Claude pode ser desligada.**
 
-**Onda 3 — Canais.** `PautaPeca` por canal; conector Evolution (instância própria) com
-`@SensitiveWrite`; `BioLink` automático; export pra máquina de carrossel; write-back no ClickUp.
+**Onda 3 — Canais. ✅ entregue (03/08/26)**
+- `PautaPeca` por canal; derivação numa chamada com o repertório campeão no prompt.
+- Evolution (instância própria) para o grupo, atrás de `@SensitiveWrite('content')`.
+- `BioLink` rastreado automático; export do carrossel; write-back no ClickUp.
+
+**Como rodar (continuando o de cima):**
+```bash
+pnpm --filter @mktos/api db:deploy   # aplica add_pauta_rotina
+# .env: ANTHROPIC_API_KEY (obrigatória p/ curar) e, para publicar no grupo,
+#       EVOLUTION_URL / EVOLUTION_API_KEY / EVOLUTION_INSTANCIA / EVOLUTION_GRUPO_JID
+```
+Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` crie a rotina
+`0 7 * * 1,3,5` (o preset "3x/semana · 07:00").
 
 ## 11. Riscos e o que dói na prática
 
-- **Cron com réplica única.** `@nestjs/schedule` dispara por processo. Hoje a API é 1 container —
-  ok. Se um dia escalar, a rodada duplica: precisa de lock (advisory lock no Postgres).
+- **Cron com réplica única.** O tick roda por processo. Hoje a API é 1 container — ok. Se um dia
+  escalar, a rodada duplica: precisa de lock (advisory lock no Postgres em volta do disparo).
+- **Feed que morre não derruba a coleta.** Cada fonte é lida em try/catch e o erro fica em
+  `PautaFonte.ultimoErro`, visível na tela. Um 404 num feed não impede os outros de entrarem.
+- **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
+  (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
+  pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.
 - **Custo do Apify.** Cobra por execução. Guardar custo por run e teto mensal na `PautaFonte`;
   sem teto, um perfil vigiado com intervalo curto queima crédito silenciosamente.
 - **Grupo do WhatsApp.** A Cloud API da Meta **não** envia para grupo — daí o Evolution. Exige
