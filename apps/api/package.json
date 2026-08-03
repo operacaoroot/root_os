@@ -14,7 +14,8 @@
     "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
     "db:seed:finops": "tsx prisma/seed-finops.ts",
-    "import:pauta": "tsx prisma/import-pauta.ts"
+    "import:pauta": "tsx prisma/import-pauta.ts",
+    "db:sync-permissions": "tsx prisma/sync-permissions.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
