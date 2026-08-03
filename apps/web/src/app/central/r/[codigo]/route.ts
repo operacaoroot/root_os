@@ -24,5 +24,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ codigo: str
   registrarResgate(limpo, m?.slug ?? null, req.cookies.get(COOKIE_VISITANTE)?.value);
 
   const destino = m ? `${rotas.material(m.slug)}?via=resgate` : rotas.busca(limpo);
-  return NextResponse.redirect(new URL(destino, req.url), 307);
+  // Location relativo, e NÃO NextResponse.redirect(new URL(destino, req.url)):
+  // atrás do Traefik o req.url carrega o host interno do container, e o absoluto
+  // saía como https://localhost:4000/... — quebrando o resgate em produção.
+  // Referência relativa é válida no HTTP (RFC 7231 §7.1.2) e o browser resolve
+  // contra o host que ele pediu, seja qual for o domínio da vez.
+  return new NextResponse(null, { status: 307, headers: { Location: destino } });
 }
