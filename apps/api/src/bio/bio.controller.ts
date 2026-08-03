@@ -1,4 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { createHash } from 'node:crypto';
 import { BioPlataforma } from '@prisma/client';
 import {
   BioChallengeAccountSchema,
@@ -16,6 +31,8 @@ import { BioAnalyticsService } from './bio-analytics.service';
 import { BioCredenciaisService } from './bio-credenciais.service';
 import { BioSyncService } from './bio-sync.service';
 import { BioBridgeService } from './bio-bridge.service';
+import { StorageService } from '../storage/storage.service';
+import { AVATAR_MAX_BYTES, AVATAR_PREFIXO, AVATAR_TIPOS } from './avatar';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -31,6 +48,7 @@ export class BioController {
     private readonly credenciais: BioCredenciaisService,
     private readonly sync: BioSyncService,
     private readonly bridge: BioBridgeService,
+    private readonly storage: StorageService,
   ) {}
 
   // ---------- Páginas e botões ----------
@@ -51,6 +69,43 @@ export class BioController {
   @RequirePermissions('bio.editar')
   savePage(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     return this.svc.salvarPage(user.orgId, BioPageSchema.parse(body), user.sub);
+  }
+
+  // Upload do avatar. Existe porque URL de CDN de rede social vem assinada e
+  // expira — o avatar sumia da página pública sozinho, sem erro nenhum.
+  @Post('pages/:id/avatar')
+  @RequirePermissions('bio.editar')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: AVATAR_MAX_BYTES } }))
+  async uploadAvatar(
+    @CurrentUser() user: JwtUser,
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file) throw new BadRequestException('nenhum arquivo enviado (campo "file")');
+    const ext = AVATAR_TIPOS[file.mimetype];
+    if (!ext) {
+      throw new BadRequestException(
+        `formato não aceito (${file.mimetype}); use ${Object.values(AVATAR_TIPOS).join(', ')}`,
+      );
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      throw new BadRequestException(`imagem acima de ${AVATAR_MAX_BYTES / 1024 / 1024} MB`);
+    }
+
+    // hash no nome = cache eterno sem risco de servir imagem velha, e trocar a
+    // foto gera chave nova em vez de sobrescrever a que o browser cacheou.
+    const hash = createHash('sha256').update(file.buffer).digest('hex').slice(0, 12);
+    const arquivo = `${id}-${hash}.${ext}`;
+    await this.storage.put(`${AVATAR_PREFIXO}${arquivo}`, file.buffer, file.mimetype);
+
+    const base = (process.env.PUBLIC_BASE_URL ?? process.env.WEB_ORIGIN ?? '').replace(/\/$/, '');
+    const page = await this.svc.definirAvatar(
+      user.orgId,
+      id,
+      `${base}/api/bio/avatar/${arquivo}`,
+      user.sub,
+    );
+    return { avatarUrl: page.avatarUrl };
   }
 
   @Post('pages/:id/publish')

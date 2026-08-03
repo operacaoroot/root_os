@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Star, Trash2 } from 'lucide-react';
-import { apiDelete, apiPatch, apiPost } from '@/lib/api';
+import { apiDelete, apiPatch, apiPost, apiUpload } from '@/lib/api';
 import { BioPageView } from '@/components/BioPageView';
 import type { BioPublicPage } from '@mktos/shared';
 import type { BioPageDetalhe, BioLinkRow } from './tipos';
@@ -33,6 +33,7 @@ export function AbaPagina({
   const [subtitulo, setSubtitulo] = useState(page.subtitulo ?? '');
   const [avatarUrl, setAvatarUrl] = useState(page.avatarUrl ?? '');
   const [salvando, setSalvando] = useState(false);
+  const [enviandoAvatar, setEnviandoAvatar] = useState(false);
 
   const [novoTipo, setNovoTipo] = useState<'url' | 'whatsapp' | 'email'>('url');
   const [novoRotulo, setNovoRotulo] = useState('');
@@ -56,6 +57,18 @@ export function AbaPagina({
       .then(onMudou)
       .catch((e: Error) => onErro(e.message))
       .finally(() => setSalvando(false));
+  };
+
+  // O upload já grava o avatar no banco — não depende do "Salvar" ao lado.
+  const enviarAvatar = (arquivo: File) => {
+    setEnviandoAvatar(true);
+    apiUpload<{ avatarUrl: string }>(`/bio/pages/${page.id}/avatar`, arquivo, token)
+      .then((r) => {
+        setAvatarUrl(r.avatarUrl);
+        onMudou();
+      })
+      .catch((e: Error) => onErro(e.message))
+      .finally(() => setEnviandoAvatar(false));
   };
 
   const criarLink = () => {
@@ -141,13 +154,38 @@ export function AbaPagina({
                 onChange={(e) => setSubtitulo(e.target.value)}
               />
             </Campo>
-            <Campo label="Avatar (URL)" hint="Imagem hospedada em https://">
-              <input
-                className={inputCls}
-                value={avatarUrl}
-                disabled={!editavel}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-              />
+            <Campo
+              label="Avatar"
+              hint="Envie a imagem (até 2 MB). Link de rede social expira e some da página."
+            >
+              <div className="flex gap-2">
+                <input
+                  className={inputCls}
+                  value={avatarUrl}
+                  disabled={!editavel}
+                  placeholder="https://… ou envie um arquivo"
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                />
+                <label
+                  className={`shrink-0 cursor-pointer rounded-md border border-white/15 px-3 py-2 text-sm ${
+                    editavel && !enviandoAvatar ? 'hover:bg-white/5' : 'cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  {enviandoAvatar ? 'Enviando…' : 'Enviar'}
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    disabled={!editavel || enviandoAvatar}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      // limpa o input pra permitir reenviar o MESMO arquivo depois
+                      e.target.value = '';
+                      if (f) enviarAvatar(f);
+                    }}
+                  />
+                </label>
+              </div>
             </Campo>
           </div>
         </Card>

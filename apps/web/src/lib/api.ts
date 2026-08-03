@@ -5,7 +5,18 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || `Erro ${res.status}`);
+    // O ZodExceptionFilter responde {error:'ValidationError', issues:[{path,message}]}
+    // e NÃO manda `message` — sem desdobrar o issues a tela mostrava só o rótulo
+    // genérico, escondendo qual campo reprovou.
+    const issues: string = Array.isArray(body.issues)
+      ? body.issues
+          .map((i: { path?: string; message?: string }) =>
+            [i.path, i.message].filter(Boolean).join(': '),
+          )
+          .filter(Boolean)
+          .join(' · ')
+      : '';
+    throw new Error(issues || body.message || body.error || `Erro ${res.status}`);
   }
   return res.json();
 }
@@ -29,6 +40,25 @@ export function apiPost<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
+  }).then((r) => handle<T>(r));
+}
+
+/**
+ * Upload de arquivo. Sem `Content-Type` de propósito: o browser precisa montar
+ * o boundary do multipart sozinho — definir o header à mão quebra o parse.
+ */
+export function apiUpload<T>(
+  path: string,
+  arquivo: File,
+  token?: string | null,
+  campo = 'file',
+): Promise<T> {
+  const form = new FormData();
+  form.append(campo, arquivo);
+  return fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
   }).then((r) => handle<T>(r));
 }
 

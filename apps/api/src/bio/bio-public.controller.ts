@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import { BioTrackSchema } from '@mktos/shared';
 import { BioService } from './bio.service';
 import { BioTrackingService } from './bio-tracking.service';
+import { StorageService } from '../storage/storage.service';
+import { AVATAR_ARQUIVO_RE, AVATAR_PREFIXO } from './avatar';
 
 const COOKIE_VISITANTE = 'rid';
 
@@ -25,7 +27,29 @@ export class BioPublicController {
   constructor(
     private readonly svc: BioService,
     private readonly tracking: BioTrackingService,
+    private readonly storage: StorageService,
   ) {}
+
+  /**
+   * Entrega o avatar. O bucket não é público (as portas do MinIO só respondem
+   * na rede do compose), então o arquivo sai por aqui — é isto que torna a URL
+   * do avatar estável, ao contrário do link assinado de CDN que expira.
+   */
+  @Get('avatar/:arquivo')
+  async avatar(@Param('arquivo') arquivo: string, @Res() res: Response) {
+    // o nome vem da URL: só aceita o formato que o upload gera (sem / nem ..)
+    if (!AVATAR_ARQUIVO_RE.test(arquivo)) throw new NotFoundException('avatar não encontrado');
+    try {
+      const { stream, contentType, size } = await this.storage.get(`${AVATAR_PREFIXO}${arquivo}`);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', size);
+      // a chave carrega o hash do conteúdo, então pode cachear pra sempre
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return stream.pipe(res);
+    } catch {
+      throw new NotFoundException('avatar não encontrado');
+    }
+  }
 
   @Get('public/page/:handle')
   async page(@Param('handle') handle: string) {

@@ -98,6 +98,16 @@ services:
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
       BIO_SYNC_INTERVAL_MIN: ${BIO_SYNC_INTERVAL_MIN:-360}
       BIO_BRIDGE_INTERVAL_MIN: ${BIO_BRIDGE_INTERVAL_MIN:-720}
+      # Storage do avatar. O endpoint é o nome do serviço na rede do compose —
+      # o MinIO não é público (na VPS as portas ficam em 172.17.0.1) e quem
+      # entrega a imagem ao browser é a própria API, em /api/bio/avatar/:arquivo.
+      S3_ENDPOINT: ${S3_ENDPOINT:-minio}
+      S3_PORT: ${S3_PORT:-9000}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-marketing-os}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:4000}
     volumes:
       # vault Obsidian do root montada READ-ONLY (base de conhecimento)
       - type: bind
@@ -107,6 +117,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
+      minio: { condition: service_started }
     ports:
       - "${API_PORT:-4001}:4001"
     networks: [marketing-os-net]

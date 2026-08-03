@@ -84,6 +84,24 @@ export class BioService {
     return page;
   }
 
+  /** Grava só o avatar — usado pelo upload, que não conhece o resto do formulário. */
+  async definirAvatar(orgId: string, pageId: string, avatarUrl: string, actorId: string) {
+    const atual = await this.prisma.bioPage.findFirst({ where: { id: pageId, orgId } });
+    if (!atual) throw new NotFoundException('página não encontrada');
+
+    const page = await this.prisma.bioPage.update({ where: { id: pageId }, data: { avatarUrl } });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'bio.page_avatar',
+      entityType: 'BioPage',
+      entityId: pageId,
+      before: { avatarUrl: atual.avatarUrl },
+      after: { avatarUrl },
+    });
+    return page;
+  }
+
   async publicar(orgId: string, pageId: string, publicada: boolean, actorId: string) {
     const page = await this.prisma.bioPage.findFirst({ where: { id: pageId, orgId } });
     if (!page) throw new NotFoundException('página não encontrada');
