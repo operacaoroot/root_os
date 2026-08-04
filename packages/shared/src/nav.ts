@@ -23,6 +23,7 @@ export const NAV: NavItem[] = [
   { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', phase: 4 },
   { key: 'vendas', label: 'Página de vendas', href: '/vendas', icon: 'ShoppingCart', permission: 'dashboard.ver', phase: 2 },
   { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', phase: 2 },
+  { key: 'trabalho', label: 'Trabalho', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', phase: 2 },
   { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', phase: 3 },
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', phase: 2 },
   { key: 'automacoes', label: 'Automações', href: '/automacoes', icon: 'Zap', permission: 'automacoes.ver', phase: 3 },

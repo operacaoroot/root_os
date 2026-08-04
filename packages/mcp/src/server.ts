@@ -595,5 +595,61 @@ export function buildServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'trabalho_estrutura',
+    {
+      description:
+        'Estrutura do módulo Trabalho (ClickUp-like nativo): pastas → listas com statuses (pipeline com cor e tipo open/custom/closed), campos personalizados com opções, etiquetas e responsáveis. Use para achar listId/statusId/fieldId antes de listar tarefas. [read_only]',
+      inputSchema: {},
+      annotations: { title: 'Trabalho: estrutura', ...READ_ONLY },
+    },
+    async () => {
+      try {
+        return ok(await apiGet('/trabalho/estrutura'));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'trabalho_tarefas',
+    {
+      description:
+        'Tarefas do módulo Trabalho com status real da lista, prioridade, responsável, prazo, etiquetas e valores dos campos personalizados (Formato/Eixo/Tipo/Fonte na Gestão de Temas). Filtros: list_id, status_id, assignee, busca por título. [read_only]',
+      inputSchema: {
+        list_id: z.string().optional().describe('ID da lista (ver trabalho_estrutura)'),
+        status_id: z.string().optional().describe('ID do status'),
+        assignee: z.string().optional().describe('Responsável (nome exato)'),
+        q: z.string().optional().describe('Busca no título'),
+      },
+      annotations: { title: 'Trabalho: tarefas', ...READ_ONLY },
+    },
+    async ({ list_id, status_id, assignee, q }) => {
+      try {
+        return ok(await apiGet(`/trabalho/tarefas${qs({ listId: list_id, statusId: status_id, assignee, q })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'trabalho_tarefa',
+    {
+      description:
+        'Detalhe completo de uma tarefa do módulo Trabalho: descrição, campos personalizados, etiquetas, subtarefas, COMENTÁRIOS (thread) e atividade (auditoria), além dos ids interno e do ClickUp de origem. [read_only]',
+      inputSchema: { task_id: z.string().describe('ID interno da tarefa') },
+      annotations: { title: 'Trabalho: detalhe da tarefa', ...READ_ONLY },
+    },
+    async ({ task_id }) => {
+      try {
+        return ok(await apiGet(`/trabalho/tarefas/${encodeURIComponent(task_id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   return server;
 }

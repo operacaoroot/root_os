@@ -11,6 +11,7 @@ import { EventsModule } from './events/events.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
+import { WorkModule } from './work/work.module';
 import { LlmModule } from './llm/llm.module';
 import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
@@ -38,6 +39,7 @@ import { PautaModule } from './pauta/pauta.module';
     FunnelModule,
     CampaignsModule,
     TasksModule,
+    WorkModule,
     LlmModule,
     ReportsModule,
     UsersModule,

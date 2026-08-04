@@ -49,6 +49,12 @@ model Org {
   contracts           Contract[]
   transactionSplits   TransactionSplit[]
 
+  workFolders WorkFolder[]
+  workLists   WorkList[]
+  workTags    WorkTag[]
+  workFields  WorkField[]
+  workTasks   WorkTask[]
+
   bioPages       BioPage[]
   bioChallenges  BioChallenge[]
   bioConexoes    BioConexao[]
@@ -1294,4 +1300,179 @@ model PautaPeca {
 
   @@index([orgId, status])
   @@index([rodadaId])
+}
+
+// ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------
+// Réplica de usabilidade do espaço `root` do ClickUp (fotografia 25/07/2026):
+// pastas → listas → tarefas; statuses configuráveis POR LISTA (pipeline com cor e
+// tipo open/custom/closed), campos personalizados com opções, etiquetas do espaço,
+// comentários e prioridade. externalId preserva o id do ClickUp p/ reconciliação.
+
+enum WorkStatusType {
+  open
+  custom
+  closed
+}
+
+enum WorkPriority {
+  urgente
+  alta
+  normal
+  baixa
+}
+
+enum WorkFieldType {
+  drop_down
+  texto
+  numero
+  data
+  checkbox
+  url
+}
+
+model WorkFolder {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id])
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lists WorkList[]
+
+  @@unique([orgId, name])
+}
+
+model WorkList {
+  id         String      @id @default(uuid())
+  orgId      String
+  org        Org         @relation(fields: [orgId], references: [id])
+  folderId   String?
+  folder     WorkFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  name       String
+  order      Int         @default(0)
+  externalId String? // id da lista no ClickUp (ex.: Gestão de Temas = 901327640001)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  statuses WorkStatus[]
+  fields   WorkField[]
+  tasks    WorkTask[]
+
+  @@index([orgId, folderId])
+}
+
+model WorkStatus {
+  id     String         @id @default(uuid())
+  listId String
+  list   WorkList       @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name   String
+  type   WorkStatusType @default(open)
+  color  String         @default("#87909e")
+  order  Int            @default(0)
+
+  tasks WorkTask[]
+
+  @@unique([listId, name])
+}
+
+model WorkTag {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+  name  String
+  color String @default("#5f55ee")
+
+  tasks WorkTask[] @relation("WorkTaskTags")
+
+  @@unique([orgId, name])
+}
+
+// Campo personalizado. listId nulo = vale para o espaço todo.
+model WorkField {
+  id     String        @id @default(uuid())
+  orgId  String
+  org    Org           @relation(fields: [orgId], references: [id])
+  listId String?
+  list   WorkList?     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name   String
+  type   WorkFieldType @default(drop_down)
+  order  Int           @default(0)
+
+  options WorkFieldOption[]
+  values  WorkFieldValue[]
+
+  @@index([orgId, listId])
+}
+
+model WorkFieldOption {
+  id      String    @id @default(uuid())
+  fieldId String
+  field   WorkField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  name    String
+  color   String    @default("#87909e")
+  order   Int       @default(0)
+
+  values WorkFieldValue[]
+
+  @@unique([fieldId, name])
+}
+
+model WorkTask {
+  id          String       @id @default(uuid())
+  orgId       String
+  org         Org          @relation(fields: [orgId], references: [id])
+  listId      String
+  list        WorkList     @relation(fields: [listId], references: [id])
+  statusId    String
+  status      WorkStatus   @relation(fields: [statusId], references: [id])
+  title       String
+  description String?
+  priority    WorkPriority @default(normal)
+  assignee    String?
+  dueDate     DateTime?
+  startDate   DateTime?
+  parentId    String?
+  parent      WorkTask?    @relation("WorkSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
+  subtasks    WorkTask[]   @relation("WorkSubtasks")
+  externalId  String? // id da task no ClickUp (fotografia); reconciliação futura
+  externalUrl String?
+  archived    Boolean      @default(false)
+  order       Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tags     WorkTag[]        @relation("WorkTaskTags")
+  values   WorkFieldValue[]
+  comments WorkComment[]
+
+  @@unique([orgId, externalId])
+  @@index([orgId, listId, statusId])
+  @@index([orgId, archived, dueDate])
+}
+
+model WorkFieldValue {
+  id       String           @id @default(uuid())
+  taskId   String
+  task     WorkTask         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fieldId  String
+  field    WorkField        @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  optionId String?
+  option   WorkFieldOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  value    String? // tipos não-dropdown (texto/número/data/checkbox/url)
+
+  @@unique([taskId, fieldId])
+}
+
+model WorkComment {
+  id         String   @id @default(uuid())
+  taskId     String
+  task       WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId   String?
+  authorName String
+  text       String
+  createdAt  DateTime @default(now())
+
+  @@index([taskId, createdAt])
 }

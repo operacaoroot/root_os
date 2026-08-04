@@ -1453,3 +1453,158 @@ export interface PautaCanalEstado {
   motivo: string | null;
   grupo: string | null;
 }
+// ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------
+// Contratos do módulo /trabalho: réplica de usabilidade do espaço `root` do
+// ClickUp (fotografia 25/07/2026). Todo campo visível é editável.
+
+export const WorkStatusTypeSchema = z.enum(['open', 'custom', 'closed']);
+export type WorkStatusTypeDto = z.infer<typeof WorkStatusTypeSchema>;
+
+export const WorkPrioritySchema = z.enum(['urgente', 'alta', 'normal', 'baixa']);
+export type WorkPriorityDto = z.infer<typeof WorkPrioritySchema>;
+
+export const WorkFieldTypeSchema = z.enum(['drop_down', 'texto', 'numero', 'data', 'checkbox', 'url']);
+export type WorkFieldTypeDto = z.infer<typeof WorkFieldTypeSchema>;
+
+const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'cor em hex, ex.: #6bc950');
+
+export const TrabPastaCreateSchema = z.object({ name: z.string().min(1).max(80) });
+export const TrabPastaUpdateSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+export const TrabListaCreateSchema = z.object({
+  folderId: z.string().uuid().nullish(),
+  name: z.string().min(1).max(80),
+});
+export const TrabListaUpdateSchema = z.object({
+  folderId: z.string().uuid().nullish().optional(),
+  name: z.string().min(1).max(80).optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+export const TrabStatusCreateSchema = z.object({
+  name: z.string().min(1).max(60),
+  type: WorkStatusTypeSchema.default('custom'),
+  color: corHex.optional(),
+});
+export const TrabStatusUpdateSchema = z.object({
+  name: z.string().min(1).max(60).optional(),
+  type: WorkStatusTypeSchema.optional(),
+  color: corHex.optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+export const TrabCampoCreateSchema = z.object({
+  listId: z.string().uuid().nullish(), // nulo = espaço todo
+  name: z.string().min(1).max(60),
+  type: WorkFieldTypeSchema.default('drop_down'),
+});
+export const TrabCampoUpdateSchema = z.object({
+  name: z.string().min(1).max(60).optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+export const TrabOpcaoCreateSchema = z.object({ name: z.string().min(1).max(60), color: corHex.optional() });
+export const TrabOpcaoUpdateSchema = z.object({
+  name: z.string().min(1).max(60).optional(),
+  color: corHex.optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+export const TrabTagCreateSchema = z.object({ name: z.string().min(1).max(40), color: corHex.optional() });
+export const TrabTagUpdateSchema = z.object({ name: z.string().min(1).max(40).optional(), color: corHex.optional() });
+
+// valor de campo por tarefa: dropdown usa optionId; demais tipos usam value
+export const TrabCampoValorSchema = z.object({
+  optionId: z.string().uuid().nullish(),
+  value: z.string().max(2000).nullish(),
+});
+
+export const TrabTarefaCreateSchema = z.object({
+  listId: z.string().uuid(),
+  title: z.string().min(1).max(300),
+  description: z.string().max(20000).nullish(),
+  statusId: z.string().uuid().optional(), // default: primeiro status da lista
+  priority: WorkPrioritySchema.optional(),
+  assignee: z.string().max(120).nullish(),
+  dueDate: z.string().datetime().nullish(),
+  startDate: z.string().datetime().nullish(),
+  parentId: z.string().uuid().nullish(),
+  tagIds: z.array(z.string().uuid()).optional(),
+  campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
+});
+
+export const TrabTarefaUpdateSchema = z.object({
+  listId: z.string().uuid().optional(), // mover de lista (re-status obrigatório via statusId)
+  title: z.string().min(1).max(300).optional(),
+  description: z.string().max(20000).nullish().optional(),
+  statusId: z.string().uuid().optional(),
+  priority: WorkPrioritySchema.optional(),
+  assignee: z.string().max(120).nullish().optional(),
+  dueDate: z.string().datetime().nullish().optional(),
+  startDate: z.string().datetime().nullish().optional(),
+  parentId: z.string().uuid().nullish().optional(),
+  archived: z.boolean().optional(),
+  order: z.number().int().min(0).optional(),
+  tagIds: z.array(z.string().uuid()).optional(),
+  campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
+});
+export type TrabTarefaCreateInput = z.infer<typeof TrabTarefaCreateSchema>;
+export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
+
+export const TrabComentarioSchema = z.object({ text: z.string().min(1).max(10000) });
+
+// ---- Formatos de resposta (GET) ----
+export interface TrabOpcaoDto { id: string; name: string; color: string; order: number }
+export interface TrabCampoDto {
+  id: string; listId: string | null; name: string; type: WorkFieldTypeDto; order: number;
+  options: TrabOpcaoDto[];
+}
+export interface TrabStatusDto { id: string; name: string; type: WorkStatusTypeDto; color: string; order: number; total: number }
+export interface TrabListaDto {
+  id: string; name: string; order: number; externalId: string | null; total: number;
+  statuses: TrabStatusDto[]; fields: TrabCampoDto[];
+}
+export interface TrabPastaDto { id: string; name: string; order: number; lists: TrabListaDto[] }
+export interface TrabTagDto { id: string; name: string; color: string }
+export interface TrabEstrutura {
+  folders: TrabPastaDto[];
+  listasSoltas: TrabListaDto[];
+  camposGlobais: TrabCampoDto[];
+  tags: TrabTagDto[];
+  responsaveis: string[];
+}
+
+export interface TrabValorDto {
+  fieldId: string; fieldName: string; type: WorkFieldTypeDto;
+  optionId: string | null; optionName: string | null; optionColor: string | null;
+  value: string | null;
+}
+export interface TrabTarefaResumo {
+  id: string; listId: string; title: string;
+  statusId: string; statusName: string; statusType: WorkStatusTypeDto; statusColor: string;
+  priority: WorkPriorityDto; assignee: string | null;
+  dueDate: string | null; startDate: string | null; overdue: boolean;
+  parentId: string | null; subtasks: number; comments: number;
+  externalId: string | null; externalUrl: string | null; archived: boolean; order: number;
+  tags: TrabTagDto[]; values: TrabValorDto[];
+}
+export interface TrabComentarioDto {
+  id: string; authorId: string | null; authorName: string; text: string; createdAt: string;
+}
+export interface TrabAtividadeDto {
+  id: string; actorType: string; actorName: string | null; action: string;
+  before: unknown; after: unknown; createdAt: string;
+}
+export interface TrabTarefaDetalhe extends TrabTarefaResumo {
+  description: string | null; listName: string;
+  createdAt: string; updatedAt: string;
+  comentarios: TrabComentarioDto[]; atividade: TrabAtividadeDto[];
+  filhos: Array<{ id: string; title: string; statusName: string; statusColor: string }>;
+}
+export interface TrabTarefaLista {
+  items: TrabTarefaResumo[]; total: number;
+  source: { tool: string; generatedAt: string };
+}
