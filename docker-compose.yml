@@ -58,9 +58,27 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       AUTH_SECRET: ${AUTH_SECRET:-dev-secret}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
-      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      # O container NÃO lê o .env: só chega o que estiver listado aqui. Variável
+      # preenchida no .env e ausente deste bloco simplesmente não existe lá dentro.
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
+      ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      # Pauta: acervo, rotina e canais (ver docs/PAUTA.md)
+      APIFY_TOKEN: ${APIFY_TOKEN:-}
+      APIFY_TIMEOUT_SEC: ${APIFY_TIMEOUT_SEC:-120}
+      PAUTA_CRON: ${PAUTA_CRON:-on}
+      PAUTA_ESPELHO: ${PAUTA_ESPELHO:-off}
+      PAUTA_ESPELHO_DIR: ${PAUTA_ESPELHO_DIR:-}
+      PAUTA_DRIVE_FOLDER_ID: ${PAUTA_DRIVE_FOLDER_ID:-}
+      EVOLUTION_URL: ${EVOLUTION_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
+      EVOLUTION_GRUPO_JID: ${EVOLUTION_GRUPO_JID:-}
+      CLICKUP_LIST_PAUTA: ${CLICKUP_LIST_PAUTA:-}
       CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
       CLICKUP_SPACE_ID: ${CLICKUP_SPACE_ID:-}
       CLICKUP_SPACE_NAME: ${CLICKUP_SPACE_NAME:-root}

@@ -36,5 +36,10 @@
 - Monorepo (`apps/` + `packages/`), Node. `npm run dev` / `build` / `typecheck` / `lint`; banco: `db:generate`, `db:migrate`, `db:seed`.
 - Testes: só o `apps/web` tem suíte hoje (58, vindos do root-central) — `pnpm --filter @mktos/web test`. O `next lint` do web nunca foi configurado: roda o assistente interativo e falha.
 - MCP server do projeto em repo separado: `~/Library/Projetos/marketin-os-mcp/` (grafia sem "g" mesmo).
-- `merge-env.sh` monta o `.env` — não editar `.env` final na mão.
+- **Onde cada `.env` é lido** (a pegadinha que mais custa tempo):
+  - **Container (VPS e Mac via compose):** o container **não lê arquivo `.env`**. Só chega o que estiver listado no bloco `environment:` do serviço em `docker-compose.yml`. Preencher no `.env` uma variável que não está nesse bloco **não faz nada** — foi o que segurou a `ANTHROPIC_API_KEY` por semanas.
+  - **`.env` da raiz:** serve ao compose para interpolar `${VAR}` naquele bloco. É o arquivo que o `merge-env.sh` edita (caminho fixo `/srv/marketing-os/.env` — o script só roda na VPS).
+  - **`pnpm --filter @mktos/api dev` (sem docker):** o Nest usa `ConfigModule.forRoot()` sem `envFilePath`, então lê o `.env` do cwd, que é **`apps/api/.env`**.
+  - `deploy/up.sh` (fora da VPS) injeta `~/.config/root/*.env` — mas essa pasta **não existe** nesta máquina.
+  - Regra prática: variável nova = adicionar em **dois** lugares, o bloco `environment:` do compose e o `.env`.
 - Existe um zip antigo `GD/FullBPO/marketing-os-main.zip` e uma cópia `GD/OPERACAO ROOT/marketing-os-main/` — são snapshots, não usar.
