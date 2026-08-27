@@ -11,7 +11,7 @@ export interface NavItem {
 }
 
 export const NAV: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard', href: '/', icon: 'LayoutDashboard', permission: 'dashboard.ver', phase: 1 },
+  { key: 'dashboard', label: 'Painel', href: '/painel', icon: 'LayoutDashboard', permission: 'dashboard.ver', phase: 1 },
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'Users', permission: 'leads.ver', phase: 2 },
   { key: 'funil', label: 'Funil', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', phase: 2 },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', phase: 2 },

@@ -45,7 +45,7 @@ export default function LoginPage() {
       window.history.replaceState(null, '', window.location.pathname);
       setLoading(true);
       loginWithToken(t)
-        .then(() => router.replace('/'))
+        .then(() => router.replace('/painel'))
         .catch((err) => setError((err as Error).message))
         .finally(() => setLoading(false));
       return;
@@ -64,7 +64,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && user) router.replace('/');
+    if (ready && user) router.replace('/painel');
   }, [ready, user, router]);
 
   async function submit(e: FormEvent) {
@@ -73,7 +73,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/');
+      router.replace('/painel');
     } catch (err) {
       setError((err as Error).message);
     } finally {

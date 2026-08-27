@@ -24,10 +24,10 @@ export default async function ModulePlaceholder({
         prontos — falta plugar os dados/conector.
       </p>
       <Link
-        href="/"
+        href="/painel"
         className="mt-6 inline-flex items-center gap-1 rounded-lg border border-border px-4 py-2 text-sm text-muted hover:bg-surface-2 hover:text-text"
       >
-        <ArrowLeft size={15} /> Voltar ao dashboard
+        <ArrowLeft size={15} /> Voltar ao painel
       </Link>
     </div>
   );
