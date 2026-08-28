@@ -50,16 +50,22 @@ export function Sidebar() {
    * aparece no fim do menu em vez de sumir calado. O tipo `secao` impede isso
    * em compilação, mas o NAV também é lido por JS não tipado (testes, scripts).
    */
-  const grupos: { chave: string; titulo: string; dica?: string; itens: typeof NAV }[] =
+  const grupos: { chave: string; titulo: string; dica?: string; tipo: string; itens: typeof NAV }[] =
     navPorSecao(perms).map((g) => ({
       chave: g.secao.key,
       titulo: g.secao.label,
       dica: g.secao.hint,
+      tipo: g.secao.tipo,
       itens: g.itens,
     }));
 
   const avulsos = NAV.filter((n) => perms.has(n.permission) && !CHAVES_DE_SECAO.has(n.secao));
-  if (avulsos.length > 0) grupos.push({ chave: '__avulsos', titulo: 'Outros', itens: avulsos });
+  if (avulsos.length > 0)
+    grupos.push({ chave: '__avulsos', titulo: 'Outros', tipo: 'modulo', itens: avulsos });
+
+  // A régua de 1px separa a espinha do OS dos módulos de domínio. É a única
+  // pista visual de que são dois eixos e não uma lista de 27 coisas.
+  const primeiroModulo = grupos.findIndex((g) => g.tipo === 'modulo');
 
   useEffect(() => {
     setTema(lerTema());
@@ -101,8 +107,11 @@ export function Sidebar() {
 
       {/* módulos, agrupados por seção — a lista já vem filtrada por permissão */}
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-[7px]">
-        {grupos.map((g) => (
+        {grupos.map((g, i) => (
           <section key={g.chave} aria-label={g.titulo}>
+            {i === primeiroModulo && i > 0 && (
+              <div aria-hidden className="mx-2 mb-1 mt-4 border-t border-border" />
+            )}
             <h2
               title={g.dica}
               className="hidden px-2 pb-[5px] pt-3 text-[9px] font-normal uppercase tracking-[0.2em] text-dim min-[820px]:block"
@@ -135,12 +144,12 @@ export function Sidebar() {
                   )}
                   <Icon size={13} className="shrink-0" />
                   <span className="hidden flex-1 truncate min-[820px]:block">{n.label}</span>
-                  {n.phase > 2 && (
+                  {n.estado === 'parcial' && (
                     <span
-                      title={`Fase ${n.phase} do roadmap`}
-                      className="ml-auto hidden bg-surface-3 px-[5px] py-px text-[9px] font-bold text-muted min-[820px]:block"
+                      title={n.parcial ?? 'esta tela ainda está incompleta'}
+                      className="ml-auto hidden bg-surface-3 px-[5px] py-px text-[9px] font-bold uppercase tracking-[0.08em] text-muted min-[820px]:block"
                     >
-                      F{n.phase}
+                      parcial
                     </span>
                   )}
                 </Link>

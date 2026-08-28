@@ -23,7 +23,7 @@ export default async function ModulePlaceholder({
       <div className="rounded-root border border-border bg-surface p-6 font-os-mono">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-muted">
           <Terminal size={13} className="text-brand" />
-          {secao?.label ?? 'módulo'} · fase {item?.phase ?? '—'}
+          {secao?.label ?? 'módulo'} · {item?.estado === 'parcial' ? 'parcial' : 'sem tela'}
         </div>
 
         <p className="mt-4 text-[13px] leading-[1.7] text-text">
@@ -32,7 +32,7 @@ export default async function ModulePlaceholder({
         </p>
 
         <p className="mt-3 text-[11px] leading-[1.7] text-muted">
-          Entra em operação na fase {item?.phase ?? '—'} do roteiro. Até lá esta tela responde,
+          {item?.parcial ?? 'A tela ainda não foi construída.'} Até lá esta rota responde,
           respeita a permissão e não inventa número.
         </p>
 

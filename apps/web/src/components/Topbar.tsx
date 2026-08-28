@@ -24,19 +24,27 @@ const BUSCA_ATIVA: boolean = false;
  * Módulo que entrar no NAV sem verbete aqui cai no hint da própria seção.
  */
 const SUBTITULOS: Record<string, string> = {
-  dashboard: 'o pulso da operação',
-  obsidian: 'o mapa do que a empresa sabe',
-  documentos: 'os arquivos da operação',
-  ia: 'as trocas, organizadas',
-  relatorios: 'o que dá para mandar pra fora',
+  // a espinha do OS
+  console: 'o pulso da operação',
+  contexto: 'o mapa do que a empresa sabe',
+  sessoes: 'as trocas, organizadas',
+  agentes: 'quem trabalha na central',
+  rotinas: 'o que roda sozinho',
+  fluxos: 'onde o trabalho vaza',
+  organograma: 'gente e agentes',
+  atendimento: 'o que precisa de gente',
+  regua: 'o que a IA pode fazer, e quem define',
+  rastro: 'tudo que aconteceu',
+  ferramentas: 'o que a central já sabe fazer',
+  conexoes: 'o que alimenta a central',
+  // os módulos de domínio
   trabalho: 'o quadro de quem faz',
   tarefas: 'o que está aberto',
-  automacoes: 'o que roda sozinho',
+  relatorios: 'o que dá para mandar pra fora',
   leads: 'quem chegou e em que pé está',
   funil: 'onde o lead trava',
   campanhas: 'o que está no ar e quanto custa',
   pixels: 'o que o site registra',
-  vendas: 'a página que fecha',
   conteudo: 'o que já foi publicado',
   pauta: 'o que entra na fila',
   referencias: 'o que serve de modelo',
@@ -44,12 +52,7 @@ const SUBTITULOS: Record<string, string> = {
   bio: 'a página que recebe o clique',
   metas: 'onde está a régua do mês',
   financeiro: 'entra, sai e o que sobra',
-  whatsapp: 'o que precisa de gente',
-  usuarios: 'quem pode o quê',
-  auditoria: 'tudo que aconteceu',
-  mcp: 'o que a central já sabe fazer',
-  integracoes: 'o que alimenta a central',
-  google: 'drive, gmail e agenda',
+  // a conta
   config: 'como o sistema se comporta',
 };
 

@@ -1,3 +1,5 @@
+import { ROTAS_ANTIGAS } from './rotas-antigas.mjs';
+
 /** @type {import('next').NextConfig} */
 const API_TARGET = process.env.API_PROXY_TARGET ?? 'http://localhost:4001';
 
@@ -14,6 +16,16 @@ const nextConfig = {
       // O painel autenticado que ficava aqui mudou para /painel.
       { source: '/', destination: '/root-os.html' },
     ];
+  },
+  // Nenhum link antigo quebra: a reorganização renomeou telas, e cada nome
+  // velho continua respondendo. 308 (permanente) porque a mudança é definitiva
+  // — 307 faria o browser voltar a bater na rota antiga para sempre.
+  async redirects() {
+    return ROTAS_ANTIGAS.map(({ de, para }) => ({
+      source: de,
+      destination: para,
+      permanent: true,
+    }));
   },
 };
 

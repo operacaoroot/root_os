@@ -46,7 +46,7 @@ export default function ConteudoPage() {
           <p className="text-sm text-muted">
             {data ? `${data.total} tema(s)` : 'Carregando…'} · pipeline sincronizado do ClickUp
             (Gestão de Temas). Sincronize em{' '}
-            <a href="/integracoes" className="text-brand hover:underline">Integrações</a>.
+            <a href="/conexoes" className="text-brand hover:underline">Integrações</a>.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
