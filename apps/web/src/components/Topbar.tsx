@@ -76,7 +76,7 @@ function rotuloDaRota(pathname: string): { titulo: string; subtitulo: string } {
 
   const seg = pathname.split('/').filter(Boolean)[0];
   return {
-    titulo: seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : 'Marketing OS',
+    titulo: seg ? seg.charAt(0).toUpperCase() + seg.slice(1) : 'ROOT OS',
     subtitulo: '',
   };
 }

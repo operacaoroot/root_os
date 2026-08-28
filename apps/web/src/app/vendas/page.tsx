@@ -13,7 +13,7 @@ export default function VendasPage() {
     <div className="space-y-6">
       <div>
         <p className="text-sm text-muted">
-          Cada página de vendas carrega o <code className="text-text">pixel.js</code> do Marketing OS.
+          Cada página de vendas carrega o <code className="text-text">pixel.js</code> do ROOT OS.
           Todo tráfego e conversão vira evento no painel{' '}
           <Link href="/pixels" className="text-brand hover:underline">Pixels e eventos</Link>.
         </p>
@@ -26,7 +26,7 @@ export default function VendasPage() {
             <Activity size={16} className="text-brand" /> Página de vendas demo
           </div>
           <p className="mt-2 text-sm text-muted">
-            Página fictícia servida pelo próprio Marketing OS para provar o loop: carrega o pixel,
+            Página fictícia servida pelo próprio ROOT OS para provar o loop: carrega o pixel,
             dispara <code>page_view</code> e tem botões que emitem <code>purchase</code>, <code>lead</code>{' '}
             e <code>cta_click</code>.
           </p>

@@ -91,10 +91,10 @@ export function Sidebar() {
         </span>
         <span className="hidden min-w-0 leading-[1.25] min-[820px]:block">
           <span className="block text-[12px] font-bold tracking-[-0.02em] text-text">
-            Marketing OS
+            ROOT OS
           </span>
-          <span className="block truncate text-[9px] uppercase tracking-[0.15em] text-dim">
-            projeto root
+          <span className="block truncate text-[9px] uppercase tracking-[0.15em] text-muted">
+            operação root
           </span>
         </span>
       </div>

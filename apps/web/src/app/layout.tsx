@@ -25,8 +25,8 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Marketing OS',
-  description: 'Sistema Operacional de Marketing — painel único + Hub/MCP.',
+  title: 'ROOT OS',
+  description: 'A central de contexto da operação — painel único, ferramentas e conexões.',
 };
 
 /*
