@@ -23,7 +23,6 @@ export default function PautaPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Pauta</h1>
         <p className="text-sm text-muted">
           A rotina coleta os feeds, cura a janela numa chamada só e deriva uma peça por canal —
           usando as fichas campeãs de{' '}

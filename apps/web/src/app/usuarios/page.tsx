@@ -43,12 +43,11 @@ export default function UsuariosPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Usuários e permissões</h1>
           <p className="text-sm text-muted">{users ? `${users.total} usuário(s)` : 'Carregando…'} · gerencie acessos e perfis.</p>
         </div>
         <button
           onClick={() => setShowNew((v) => !v)}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90"
         >
           <UserPlus size={15} /> Novo usuário
         </button>
@@ -187,7 +186,7 @@ function NewUserForm({
         <button
           onClick={() => onCreate({ name, email, password, roles: sel })}
           disabled={!valid}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
         >
           Criar
         </button>
@@ -218,7 +217,7 @@ function RoleEditor({
         <button
           onClick={() => onSave(sel)}
           disabled={sel.length < 1}
-          className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
         >
           Salvar perfis
         </button>

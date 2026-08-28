@@ -44,7 +44,6 @@ export default function GooglePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Google · Agenda · Gmail · Docs · Drive</h1>
           <p className="text-sm text-muted">Uma conexão OAuth do root para os quatro serviços.</p>
         </div>
         {st?.connected && can('admin.usuarios') && (
@@ -75,7 +74,7 @@ export default function GooglePage() {
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted">Ainda não conectado.</span>
             {can('admin.usuarios') ? (
-              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90">
                 <Plug size={15} /> Conectar Google
               </button>
             ) : <span className="text-xs text-muted">Só admin conecta.</span>}
@@ -159,7 +158,7 @@ function GoogleWrite() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold">Ações · escrita com aprovação</h2>
+      <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-semibold text-muted">Ações · escrita com aprovação</h2>
       <p className="text-[11px] text-muted">Cada ação exige permissão específica, pede confirmação e fica registrada na auditoria.</p>
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
       {err && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{err}</div>}
@@ -170,7 +169,7 @@ function GoogleWrite() {
             <input className={gi} placeholder="Para (email)" value={em.to} onChange={(e) => setEm({ ...em, to: e.target.value })} />
             <input className={gi} placeholder="Assunto" value={em.subject} onChange={(e) => setEm({ ...em, subject: e.target.value })} />
             <textarea className={`${gi} min-h-[80px]`} placeholder="Mensagem" value={em.body} onChange={(e) => setEm({ ...em, body: e.target.value })} />
-            <button onClick={sendEmail} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Enviar</button>
+            <button onClick={sendEmail} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Enviar</button>
           </div>
         )}
         {canCal && (
@@ -179,7 +178,7 @@ function GoogleWrite() {
             <input className={gi} placeholder="Título" value={ev.title} onChange={(e) => setEv({ ...ev, title: e.target.value })} />
             <label className="block text-[11px] text-muted">Início<input type="datetime-local" className={gi} value={ev.start} onChange={(e) => setEv({ ...ev, start: e.target.value })} /></label>
             <label className="block text-[11px] text-muted">Fim<input type="datetime-local" className={gi} value={ev.end} onChange={(e) => setEv({ ...ev, end: e.target.value })} /></label>
-            <button onClick={createEvent} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar evento</button>
+            <button onClick={createEvent} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar evento</button>
           </div>
         )}
         {canDoc && (
@@ -187,7 +186,7 @@ function GoogleWrite() {
             <div className="flex items-center gap-2 text-sm font-medium"><HardDrive size={16} className="text-brand" /> Novo documento</div>
             <input className={gi} placeholder="Título do Doc" value={dc.title} onChange={(e) => setDc({ ...dc, title: e.target.value })} />
             <textarea className={`${gi} min-h-[80px]`} placeholder="Conteúdo (opcional)" value={dc.content} onChange={(e) => setDc({ ...dc, content: e.target.value })} />
-            <button onClick={createDoc} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar Doc</button>
+            <button onClick={createDoc} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar Doc</button>
           </div>
         )}
       </div>

@@ -50,7 +50,7 @@ export default function DashboardPage() {
       {data && (
         <>
           <section>
-            <h2 className="mb-3 text-sm font-medium text-muted">Visão geral</h2>
+            <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Visão geral</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
               <KpiCard label="Leads hoje" value={data.leadsToday} href="/leads?period=today" tone="brand" icon="UserPlus" />
               <KpiCard label="Leads na semana" value={data.leadsWeek} href="/leads?period=week" icon="Users" />
@@ -64,7 +64,7 @@ export default function DashboardPage() {
           </section>
 
           <section>
-            <h2 className="mb-3 text-sm font-medium text-muted">Operação e alertas</h2>
+            <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Operação e alertas</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
               <KpiCard label="Tarefas atrasadas" value={data.overdueTasks} href="/tarefas" tone={data.overdueTasks > 0 ? 'warn' : 'default'} icon="Clock" />
               <KpiCard label="Campanhas ativas" value={data.activeCampaigns} href="/campanhas" icon="Megaphone" />

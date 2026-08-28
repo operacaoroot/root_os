@@ -12,7 +12,6 @@ export default function VendasPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Páginas de vendas</h1>
         <p className="text-sm text-muted">
           Cada página de vendas carrega o <code className="text-text">pixel.js</code> do Marketing OS.
           Todo tráfego e conversão vira evento no painel{' '}
@@ -35,7 +34,7 @@ export default function VendasPage() {
             <Link
               href="/demo-vendas.html"
               target="_blank"
-              className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              className="inline-flex items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90"
             >
               Abrir demo <ExternalLink size={14} />
             </Link>

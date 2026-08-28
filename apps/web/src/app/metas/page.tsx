@@ -32,11 +32,10 @@ export default function MetasPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Metas · Desafio 1.000 posts</h1>
           <p className="text-sm text-muted">20M views · 1.000 vendas (produto perpétuo R$300) · {p?.faseLabel ?? '…'}</p>
         </div>
         {editable && (
-          <button onClick={() => setForm((v) => !v)} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+          <button onClick={() => setForm((v) => !v)} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90">
             <Plus size={15} /> Registrar semana
           </button>
         )}
@@ -98,7 +97,7 @@ export default function MetasPage() {
 
           {/* Cadeia de conversão */}
           <div>
-            <h2 className="mb-2 text-sm font-medium text-muted">Cadeia de conversão {p.farolLigado ? '· farol ligado' : '· farol OFF até a fase 2'}</h2>
+            <h2 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Cadeia de conversão {p.farolLigado ? '· farol ligado' : '· farol OFF até a fase 2'}</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {p.taxas.map((t) => (
                 <div key={t.id} className={`rounded-xl border p-4 ${FAROL[t.farol]}`} title={t.descricao}>
@@ -200,7 +199,7 @@ function WeekForm({ token, onSaved, suggested }: { token: string; onSaved: () =>
       </div>
       {err && <p className="mt-2 text-xs text-bad">{err}</p>}
       <div className="mt-3 flex gap-2">
-        <button onClick={save} disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+        <button onClick={save} disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
           {busy ? 'Salvando…' : 'Salvar semana'}
         </button>
       </div>

@@ -20,7 +20,6 @@ export default function FunnelPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Funil de marketing</h1>
         <p className="text-sm text-muted">
           Do visitante à venda. Percentual = conversão em relação à etapa anterior.
         </p>
@@ -37,7 +36,7 @@ export default function FunnelPage() {
                 <div className="w-28 shrink-0 text-right text-sm text-muted">{s.label}</div>
                 <div className="relative h-11 flex-1 overflow-hidden rounded-lg bg-surface">
                   <div
-                    className="flex h-full items-center rounded-lg bg-gradient-to-r from-brand-dim to-brand px-3 text-sm font-semibold text-white transition-all"
+                    className="flex h-full items-center rounded-lg bg-gradient-to-r from-brand-dim to-brand px-3 text-sm font-semibold text-ink transition-all"
                     style={{ width: `${pct}%` }}
                   >
                     {s.count}

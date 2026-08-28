@@ -24,7 +24,6 @@ export default function ReferenciasPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Referências</h1>
         <p className="text-sm text-muted">
           O repertório que ensina <em>como</em> escrever — cada peça capturada vira ficha no
           formato do Cérebro de Conteúdo (família × objetivo). É daqui que a geração de

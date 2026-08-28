@@ -56,7 +56,6 @@ export default function IntegracoesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Integrações</h1>
         <p className="text-sm text-muted">
           {data ? `${connected}/${data.items.length} conectada(s)` : 'Carregando…'} · o hub de
           conectores. Os de <strong>OAuth</strong> (Instagram, Gmail, Drive) precisam de credencial
@@ -98,7 +97,7 @@ export default function IntegracoesPage() {
                   <button
                     onClick={syncClickup}
                     disabled={syncing}
-                    className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                    className="w-full rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60"
                   >
                     {syncing ? 'Sincronizando…' : 'Sincronizar tarefas'}
                   </button>
@@ -112,7 +111,7 @@ export default function IntegracoesPage() {
                     className={`w-full rounded-lg px-3 py-1.5 text-sm font-medium ${
                       i.status === 'connected'
                         ? 'border border-border text-muted hover:bg-surface-2 hover:text-text'
-                        : 'bg-brand text-white hover:opacity-90'
+                        : 'bg-brand text-ink hover:opacity-90'
                     }`}
                   >
                     {i.status === 'connected' ? 'Desconectar' : 'Conectar'}

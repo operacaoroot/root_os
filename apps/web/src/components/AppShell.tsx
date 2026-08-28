@@ -23,16 +23,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (publica) return <>{children}</>;
 
+  // O data-os-app já vale aqui: é ele que traz a fonte de corpo, a seleção e
+  // o anel de foco do ROOT OS (globals.css). Sem isso o "Carregando…" pisca
+  // com a tipografia do sistema antes da casca montar.
   if (!ready || !user) {
     return (
-      <div className="grid min-h-screen place-items-center text-muted">
-        Carregando…
+      <div data-os-app className="grid min-h-screen place-items-center font-os-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+        carregando…
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div data-os-app className="flex min-h-screen">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />

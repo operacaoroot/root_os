@@ -20,6 +20,9 @@ import type {
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+// O cartão local que existia aqui sombreava o compartilhado e deixava a tela
+// financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
+import { KpiCard } from '@/components/KpiCard';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -157,7 +160,6 @@ export default function FinanceiroPage() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Financeiro</h1>
           <p className="text-sm text-muted">
             Contas, lançamentos, fluxo de caixa e integração bancária (Open Finance / OFX).
           </p>
@@ -256,17 +258,6 @@ function Card({ label, value, tone }: { label: string; value: string; tone?: 'go
   );
 }
 
-function KpiCard({ label, value, hint, tone }: { label: string; value: string; hint?: string; tone?: 'good' | 'bad' | 'warn' }) {
-  const cls = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-brand';
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold ${cls}`}>{value}</div>
-      {hint && <div className="text-[11px] text-muted">{hint}</div>}
-    </div>
-  );
-}
-
 function CashflowChart({ cashflow }: { cashflow: Cashflow | null }) {
   if (!cashflow || cashflow.days.length === 0) return null;
   const vals = cashflow.days.map((d) => d.acumulado);
@@ -284,7 +275,7 @@ function CashflowChart({ cashflow }: { cashflow: Cashflow | null }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       <div className="mb-1 flex items-center justify-between">
-        <h2 className="text-sm font-medium">Fluxo de caixa projetado (30 dias)</h2>
+        <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fluxo de caixa projetado (30 dias)</h2>
         <span className={`text-sm font-semibold ${last >= 0 ? 'text-good' : 'text-bad'}`}>{brl(last)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full">
@@ -327,7 +318,7 @@ function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kp
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-medium">Saldo por conta</h2>
+          <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Saldo por conta</h2>
           {summary.byAccount.length === 0 ? (
             <p className="text-sm text-muted">Nenhuma conta ainda. Crie uma na aba “Contas”.</p>
           ) : (
@@ -342,7 +333,7 @@ function Visao({ summary, kpis, cashflow }: { summary: FinanceSummary | null; kp
           )}
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-medium">Top categorias do mês</h2>
+          <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Top categorias do mês</h2>
           {summary.topCategorias.length === 0 ? (
             <p className="text-sm text-muted">Sem lançamentos categorizados este mês.</p>
           ) : (
@@ -499,7 +490,7 @@ function ConciliacaoView(props: {
         </select>
         {concil && <span className="text-sm text-muted">{concil.stats.movimentosAbertos} movimento(s) · {concil.stats.titulosAbertos} título(s) em aberto</span>}
         {canBank && (
-          <button onClick={auto} disabled={busy} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+          <button onClick={auto} disabled={busy} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
             {busy ? 'Conciliando…' : 'Auto-conciliar'}
           </button>
         )}
@@ -670,7 +661,7 @@ function ApAr(props: {
 
       {/* Contratos recorrentes */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="mb-2 text-sm font-medium">Contratos recorrentes</h2>
+        <h2 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Contratos recorrentes</h2>
         {canEdit && (
           <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <select className={inputCls} value={cForm.tipo} onChange={(e) => setCForm({ ...cForm, tipo: e.target.value })}>
@@ -691,7 +682,7 @@ function ApAr(props: {
               <option value="">Parceiro…</option>
               {partners?.items.map((p) => <option key={p.id} value={p.id}>{p.razaoSocial}</option>)}
             </select>
-            <button onClick={addContract} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">+ Contrato</button>
+            <button onClick={addContract} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">+ Contrato</button>
           </div>
         )}
         <ul className="space-y-1 text-sm">
@@ -710,14 +701,14 @@ function ApAr(props: {
 
       {/* Parceiros */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="mb-2 text-sm font-medium">Fornecedores / clientes</h2>
+        <h2 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Fornecedores / clientes</h2>
         {canEdit && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <input className={inputCls} placeholder="Razão social" value={pForm.razaoSocial} onChange={(e) => setPForm({ ...pForm, razaoSocial: e.target.value })} />
             <input className={inputCls} placeholder="CNPJ/CPF" value={pForm.cnpjCpf} onChange={(e) => setPForm({ ...pForm, cnpjCpf: e.target.value })} />
             <label className="flex items-center gap-1 text-sm text-muted"><input type="checkbox" checked={pForm.isFornecedor} onChange={(e) => setPForm({ ...pForm, isFornecedor: e.target.checked })} /> fornecedor</label>
             <label className="flex items-center gap-1 text-sm text-muted"><input type="checkbox" checked={pForm.isCliente} onChange={(e) => setPForm({ ...pForm, isCliente: e.target.checked })} /> cliente</label>
-            <button onClick={addPartner} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">+ Parceiro</button>
+            <button onClick={addPartner} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">+ Parceiro</button>
           </div>
         )}
         <div className="flex flex-wrap gap-2">
@@ -804,7 +795,7 @@ function Lancamentos(props: {
           {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
         {canEdit && (
-          <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">
+          <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">
             {open ? 'Fechar' : '+ Novo lançamento'}
           </button>
         )}
@@ -842,7 +833,7 @@ function Lancamentos(props: {
           {form.status === 'previsto' && (
             <input className={inputCls} type="date" title="Vencimento" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
           )}
-          <button onClick={submit} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Salvar</button>
+          <button onClick={submit} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Salvar</button>
         </div>
       )}
 
@@ -933,7 +924,7 @@ function Contas(props: {
           </select>
           <input className={inputCls} placeholder="Instituição (opcional)" value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} />
           <input className={inputCls} type="number" step="0.01" placeholder="Saldo inicial" value={form.openingBalance} onChange={(e) => setForm({ ...form, openingBalance: e.target.value })} />
-          <button onClick={submit} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar conta</button>
+          <button onClick={submit} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar conta</button>
         </div>
       )}
 
@@ -1049,7 +1040,7 @@ function Bancos(props: {
     <div className="space-y-6">
       {/* OFX — funciona sem credencial */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="text-sm font-medium">Importar extrato OFX</h2>
+        <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Importar extrato OFX</h2>
         <p className="mt-1 text-xs text-muted">
           Exporte o extrato do seu banco em <strong>.ofx</strong> e importe aqui. Funciona sem nenhuma credencial.
           Lançamentos são deduplicados por FITID.
@@ -1062,7 +1053,7 @@ function Bancos(props: {
           <input
             type="file" accept=".ofx" disabled={!canBank || busy}
             onChange={(e) => { const f = e.target.files?.[0]; if (f) importOfx(f); e.currentTarget.value = ''; }}
-            className="text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-medium file:text-white"
+            className="text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-brand file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
           />
         </div>
         {!canBank && <p className="mt-2 text-[11px] text-muted">Requer permissão financeiro.conciliar.</p>}
@@ -1070,13 +1061,13 @@ function Bancos(props: {
 
       {/* Open Finance (Pluggy) */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="text-sm font-medium">Open Finance (Pluggy)</h2>
+        <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Open Finance (Pluggy)</h2>
         {banks?.pluggyConfigurado ? (
           <>
             <p className="mt-1 text-xs text-muted">Conecte a conta do banco via Open Finance para sincronizar contas e extrato automaticamente.</p>
             {canBank && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button onClick={connectPluggy} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+                <button onClick={connectPluggy} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
                   {busy ? 'Aguarde…' : 'Conectar banco'}
                 </button>
                 <span className="text-[11px] text-muted">ou cole um itemId:</span>
@@ -1095,7 +1086,7 @@ function Bancos(props: {
 
       {/* Asaas — gateway de cobranças + conta digital */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="text-sm font-medium">Asaas (cobranças + conta digital)</h2>
+        <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Asaas (cobranças + conta digital)</h2>
         {banks?.asaasConfigurado ? (
           <>
             <p className="mt-1 text-xs text-muted">
@@ -1104,7 +1095,7 @@ function Bancos(props: {
             </p>
             {canBank && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button onClick={connectAsaas} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+                <button onClick={connectAsaas} disabled={busy} className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
                   {busy ? 'Aguarde…' : 'Conectar e sincronizar'}
                 </button>
               </div>
@@ -1120,7 +1111,7 @@ function Bancos(props: {
 
       {/* Conexões existentes */}
       <div className="rounded-xl border border-border bg-surface p-4">
-        <h2 className="mb-2 text-sm font-medium">Conexões bancárias</h2>
+        <h2 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Conexões bancárias</h2>
         {banks?.items.length === 0 ? (
           <p className="text-sm text-muted">Nenhuma conexão. Conecte um banco acima.</p>
         ) : (

@@ -98,7 +98,7 @@ export default function LeadDetailPage() {
           )}
 
           <div className="rounded-xl border border-border bg-surface p-5">
-            <h2 className="mb-3 text-sm font-medium text-muted">Histórico de interações</h2>
+            <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Histórico de interações</h2>
             <ol className="space-y-2">
               {lead.events.map((ev) => (
                 <li key={ev.id} className="flex items-center gap-3 text-sm">
@@ -153,7 +153,7 @@ function LeadActions({
 
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
-      <h2 className="mb-3 text-sm font-medium text-muted">Ações</h2>
+      <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Ações</h2>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs text-muted">Etapa</label>
@@ -181,7 +181,7 @@ function LeadActions({
         <button
           onClick={save}
           disabled={busy || !dirty}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
         >
           {busy ? 'Salvando…' : 'Salvar'}
         </button>

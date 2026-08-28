@@ -62,7 +62,6 @@ export default function PixelsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Pixels e eventos</h1>
           <p className="text-sm text-muted">
             Tráfego capturado pelo <code className="text-text">pixel.js</code> nas páginas de vendas ·
             últimos {sum?.window.days ?? 7} dias.
@@ -174,7 +173,7 @@ export default function PixelsPage() {
 
       {/* Tabela de eventos recentes */}
       <div>
-        <h2 className="mb-2 text-sm font-medium text-muted">
+        <h2 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">
           Eventos recentes {recent ? `(${recent.total} no total)` : ''}
         </h2>
         <div className="overflow-hidden rounded-xl border border-border">

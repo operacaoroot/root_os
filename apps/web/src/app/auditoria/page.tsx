@@ -38,7 +38,6 @@ export default function AuditoriaPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Auditoria</h1>
           <p className="text-sm text-muted">
             {data ? `${data.total} registro(s)` : 'Carregando…'} · quem fez o quê (usuários, IA e sistema).
           </p>

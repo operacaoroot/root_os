@@ -62,7 +62,6 @@ export default function ObsidianPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Obsidian · Base de conhecimento</h1>
           <p className="text-sm text-muted">
             {list ? `${list.total} nota(s) · ${list.indexedNotes} com busca semântica` : 'Carregando…'} ·
             busca por significado (não só palavra).
@@ -89,7 +88,7 @@ export default function ObsidianPage() {
             className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-dim"
           />
         </div>
-        <button onClick={search} disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+        <button onClick={search} disabled={busy} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60">
           Buscar
         </button>
       </div>

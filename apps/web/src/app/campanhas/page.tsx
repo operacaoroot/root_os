@@ -34,7 +34,6 @@ function CampaignsInner() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Campanhas</h1>
         <p className="text-sm text-muted">
           {data ? `${data.items.length} campanha(s)` : 'Carregando…'}
           {status && ` — status "${status}"`} · clique para abrir o dossiê.

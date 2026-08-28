@@ -43,7 +43,6 @@ export default function ConteudoPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Conteúdo</h1>
           <p className="text-sm text-muted">
             {data ? `${data.total} tema(s)` : 'Carregando…'} · pipeline sincronizado do ClickUp
             (Gestão de Temas). Sincronize em{' '}
