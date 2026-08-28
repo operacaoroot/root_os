@@ -1,7 +1,13 @@
 import Link from 'next/link';
-import { Construction, ArrowLeft } from 'lucide-react';
-import { NAV } from '@mktos/shared';
+import { ArrowLeft, Terminal } from 'lucide-react';
+import { NAV, SECOES } from '@mktos/shared';
 
+/*
+ * Onde caem os módulos que estão no menu mas ainda não têm tela: /documentos,
+ * /ia, /automacoes, /whatsapp e /mcp. Não é erro nem 404 — a rota, a permissão
+ * e o lugar na navegação já existem; falta o conector. Diz isso na voz do
+ * protótipo: sem ícone de obra, sem "em breve", com a fase e o caminho.
+ */
 export default async function ModulePlaceholder({
   params,
 }: {
@@ -10,24 +16,41 @@ export default async function ModulePlaceholder({
   const { slug } = await params;
   const href = '/' + (slug?.[0] ?? '');
   const item = NAV.find((n) => n.href === href);
+  const secao = SECOES.find((s) => s.key === item?.secao);
 
   return (
-    <div className="mx-auto max-w-lg pt-10 text-center">
-      <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl bg-surface-2 text-warn">
-        <Construction size={26} />
+    <div className="mx-auto max-w-xl pt-6">
+      <div className="rounded-root border border-border bg-surface p-6 font-os-mono">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-muted">
+          <Terminal size={13} className="text-brand" />
+          {secao?.label ?? 'módulo'} · fase {item?.phase ?? '—'}
+        </div>
+
+        <p className="mt-4 text-[13px] leading-[1.7] text-text">
+          <span className="text-brand">{item?.label ?? href}</span> já existe como rota, como
+          permissão e como lugar no menu. O que falta é o conector que traz o dado.
+        </p>
+
+        <p className="mt-3 text-[11px] leading-[1.7] text-muted">
+          Entra em operação na fase {item?.phase ?? '—'} do roteiro. Até lá esta tela responde,
+          respeita a permissão e não inventa número.
+        </p>
+
+        <div className="mt-5 border-t border-border pt-4 text-[10px] uppercase tracking-[0.16em] text-muted">
+          rota <span className="text-text">{href}</span>
+          {item && (
+            <>
+              {' · '}exige <span className="text-text">{item.permission}</span>
+            </>
+          )}
+        </div>
       </div>
-      <h1 className="text-xl font-semibold">{item?.label ?? 'Módulo'}</h1>
-      <p className="mt-2 text-sm text-muted">
-        Este módulo entra em funcionamento na{' '}
-        <span className="text-text">Fase {item?.phase ?? '—'}</span> do roadmap. A
-        navegação, as permissões e o card do dashboard que apontam para cá já estão
-        prontos — falta plugar os dados/conector.
-      </p>
+
       <Link
         href="/painel"
-        className="mt-6 inline-flex items-center gap-1 rounded-lg border border-border px-4 py-2 text-sm text-muted hover:bg-surface-2 hover:text-text"
+        className="mt-4 inline-flex items-center gap-1 rounded-root border border-border px-4 py-2 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-text"
       >
-        <ArrowLeft size={15} /> Voltar ao painel
+        <ArrowLeft size={13} /> voltar ao console
       </Link>
     </div>
   );
