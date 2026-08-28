@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.9",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -11,7 +13,8 @@
     "typecheck": "turbo run typecheck",
     "db:generate": "pnpm --filter @mktos/api db:generate",
     "db:migrate": "pnpm --filter @mktos/api db:migrate",
-    "db:seed": "pnpm --filter @mktos/api db:seed"
+    "db:seed": "pnpm --filter @mktos/api db:seed",
+    "test": "turbo run test"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

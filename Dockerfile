@@ -25,6 +25,7 @@ COPY . .
 # Prisma no runtime para `migrate deploy`) e builda os pacotes na ordem certa.
 RUN pnpm install --frozen-lockfile \
  && pnpm --filter @mktos/shared build \
+ && pnpm --filter @mktos/policy build \
  && pnpm --filter @mktos/api db:generate \
  && pnpm --filter @mktos/api build \
  && pnpm --filter @mktos/mcp build \

@@ -1,0 +1,486 @@
+{
+  "$schema": "https://root.os/esquema/politica-1.json",
+  "versao": "1.0.0",
+  "atualizadoEm": "2026-08-15",
+  "origem": "Root/20-empresa/root-os/09 - Escada de risco R0-R5.md",
+  "descricao": "Escada de risco padrão ROOT. O cliente herda este arquivo e sobrescreve apenas o que a operação dele exigir.",
+  "niveis": {
+    "R0": {
+      "nome": "Consulta",
+      "escreve": false,
+      "bloqueado": false,
+      "aprovacao": {
+        "exigida": "nunca",
+        "vinculo": "nenhum",
+        "usoUnico": false,
+        "validadeSegundos": 0,
+        "reautenticacao": false,
+        "alcadaMinima": "operador"
+      },
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "fontes",
+        "custo"
+      ]
+    },
+    "R1": {
+      "nome": "Rascunho",
+      "escreve": false,
+      "bloqueado": false,
+      "aprovacao": {
+        "exigida": "nunca",
+        "vinculo": "nenhum",
+        "usoUnico": false,
+        "validadeSegundos": 0,
+        "reautenticacao": false,
+        "alcadaMinima": "operador"
+      },
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "fontes",
+        "artefato",
+        "versaoPrompt",
+        "custo"
+      ]
+    },
+    "R2": {
+      "nome": "Registro reversível",
+      "escreve": true,
+      "bloqueado": false,
+      "aprovacao": {
+        "exigida": "configuravel",
+        "vinculo": "conteudo",
+        "usoUnico": true,
+        "validadeSegundos": 900,
+        "reautenticacao": false,
+        "alcadaMinima": "operador"
+      },
+      "padraoPrimeiros30Dias": "sempre",
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "argumentos",
+        "fontes",
+        "resultado",
+        "desfazer",
+        "custo"
+      ]
+    },
+    "R3": {
+      "nome": "Saída externa",
+      "escreve": true,
+      "bloqueado": false,
+      "aprovacao": {
+        "exigida": "sempre",
+        "vinculo": "conteudo",
+        "usoUnico": true,
+        "validadeSegundos": 900,
+        "reautenticacao": false,
+        "alcadaMinima": "responsavel"
+      },
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "argumentos",
+        "fontes",
+        "hashConteudo",
+        "aprovador",
+        "aprovadoEm",
+        "canal",
+        "entrega",
+        "custo"
+      ]
+    },
+    "R4": {
+      "nome": "Valor e acesso",
+      "escreve": true,
+      "bloqueado": false,
+      "aprovacao": {
+        "exigida": "sempre",
+        "vinculo": "conteudo",
+        "usoUnico": true,
+        "validadeSegundos": 600,
+        "reautenticacao": true,
+        "alcadaMinima": "titular"
+      },
+      "exigeMotivo": true,
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "argumentos",
+        "fontes",
+        "hashConteudo",
+        "aprovador",
+        "aprovadoEm",
+        "motivo",
+        "estadoAnterior",
+        "estadoNovo",
+        "custo"
+      ]
+    },
+    "R5": {
+      "nome": "Irreversível",
+      "escreve": true,
+      "bloqueado": true,
+      "saida": "preparar-e-encaminhar",
+      "aprovacao": {
+        "exigida": "sempre",
+        "vinculo": "conteudo",
+        "usoUnico": true,
+        "validadeSegundos": 300,
+        "reautenticacao": true,
+        "alcadaMinima": "titular"
+      },
+      "rastro": [
+        "ator",
+        "agente",
+        "ferramenta",
+        "preparo",
+        "encaminhadoPara",
+        "encaminhadoEm",
+        "desfechoInformado"
+      ]
+    }
+  },
+  "gatilhos": {
+    "reversibilidade": {
+      "automatica": "R2",
+      "manual": "R3",
+      "nenhuma": "R3"
+    },
+    "exposicaoExterna": {
+      "false": null,
+      "true": "R3"
+    },
+    "impactoFinanceiro": {
+      "nenhum": null,
+      "obrigacao": "R4",
+      "movimento": "R5"
+    },
+    "sensibilidade": {
+      "publica": null,
+      "interna": null,
+      "confidencial": "R3",
+      "restrita": "R4"
+    },
+    "destruicao": {
+      "false": null,
+      "true": "R5"
+    },
+    "obrigacaoLegal": {
+      "false": null,
+      "true": "R5"
+    },
+    "alcance": {
+      "limite": 10,
+      "acimaDoLimite": "+1"
+    }
+  },
+  "escalonamento": {
+    "regra": "qualquer sinal aceso sobe exatamente um nível, com teto em R4; sinais não acumulam e não bloqueiam sozinhos",
+    "sinais": [
+      {
+        "id": "destinatario_novo",
+        "descricao": "destinatário sem histórico confirmado neste cliente"
+      },
+      {
+        "id": "fora_da_janela",
+        "descricao": "fora da janela de horário acordada com o cliente"
+      },
+      {
+        "id": "volume_atipico",
+        "descricao": "acima de 3x a média de 30 dias da mesma capacidade"
+      },
+      {
+        "id": "fonte_nao_confiavel",
+        "descricao": "contexto veio de mensagem, PDF, anexo ou página web"
+      },
+      {
+        "id": "erro_recente",
+        "descricao": "o mesmo agente teve ação revertida ou recusada nas últimas 24h"
+      },
+      {
+        "id": "valor_acima_do_limite",
+        "descricao": "valor envolvido acima do teto configurado para o cliente"
+      }
+    ],
+    "rebaixamento": "nunca automático; só por configuração escrita com data e responsável identificado"
+  },
+  "invariantes": [
+    "o nível é o gatilho mais alto acionado, nunca a média",
+    "capacidade sem classificação vale R5",
+    "conteúdo externo só eleva nível, jamais rebaixa",
+    "aprovação é de uso único, presa ao conteúdo exato e com prazo",
+    "sem evento gravado no RASTRO a execução não é liberada",
+    "de R2 para cima existe desligamento por conector e por cliente",
+    "aprovador é sempre pessoa: nunca o agente que propôs, nunca outro agente"
+  ],
+  "limitesPadrao": {
+    "porExecucao": 10,
+    "porHora": 30,
+    "porDia": 200,
+    "janelaHoraria": [
+      "08:00",
+      "20:00"
+    ],
+    "tetoCustoCentavosPorExecucao": 500
+  },
+  "retencao": {
+    "rastroDias": 1825,
+    "justificativa": "5 anos, alinhado ao prazo decadencial do CTN art. 173 para o que a operação contábil precisa provar",
+    "piiNoRastro": "mascarada",
+    "segredoNoRastro": "nunca"
+  },
+  "capacidades": [
+    {
+      "id": "espelho.consultar",
+      "descricao": "consulta a cópia só-leitura do ERP",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "memoria.buscar",
+      "descricao": "busca fato, SOP ou decisão na MEMÓRIA",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "email.rascunhar",
+      "descricao": "redige e-mail que fica guardado no OS",
+      "nivel": "R1",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "relatorio.gerar",
+      "descricao": "monta relatório mensal do cliente",
+      "nivel": "R1",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "clickup.tarefa.criar",
+      "descricao": "abre tarefa no ClickUp",
+      "nivel": "R2",
+      "desfazer": "clickup.tarefa.excluir",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "crm.lead.criar",
+      "descricao": "cria lead no CRM",
+      "nivel": "R2",
+      "desfazer": "crm.lead.arquivar",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.evento.criar",
+      "descricao": "marca evento na agenda",
+      "nivel": "R2",
+      "desfazer": "agenda.evento.excluir",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "whatsapp.mensagem.enviar",
+      "descricao": "envia mensagem pelo WhatsApp do cliente",
+      "nivel": "R3",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "email.enviar",
+      "descricao": "envia e-mail a destinatário externo",
+      "nivel": "R3",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "conteudo.publicar",
+      "descricao": "publica conteúdo em canal público",
+      "nivel": "R3",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "omie.titulo.alterar",
+      "descricao": "altera título a pagar ou a receber no Omie",
+      "nivel": "R4",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "obrigacao",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "usuario.permissao.alterar",
+      "descricao": "concede ou remove permissão de usuário",
+      "nivel": "R4",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "omie.pagamento.baixar",
+      "descricao": "baixa pagamento no financeiro",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "movimento",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": true
+      }
+    },
+    {
+      "id": "nfe.emitir",
+      "descricao": "emite nota fiscal eletrônica",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "obrigacao",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": true
+      }
+    },
+    {
+      "id": "registro.excluir",
+      "descricao": "exclui registro em qualquer sistema de origem",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": true,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "credencial.rotacionar",
+      "descricao": "troca credencial de integração",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": true,
+        "obrigacaoLegal": false
+      }
+    }
+  ]
+}
