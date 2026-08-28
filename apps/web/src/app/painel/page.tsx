@@ -23,12 +23,13 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Olá, {user?.name?.split(' ')[0]} 👋</h1>
-        <p className="text-sm text-muted">
-          Visão executiva de hoje. Cada card é clicável e leva ao detalhe.
-        </p>
-      </div>
+      {/* A Topbar já diz "Console · o pulso da operação" — aqui vai só o que
+          ela não tem: de quem é a sessão e o que a tela faz. Sem emoji e sem
+          segunda pessoa: a voz da ROOT é de terminal, não de assistente. */}
+      <p className="text-sm text-muted">
+        Sessão de <span className="text-text">{user?.name}</span> · o dia inteiro em
+        números. Cada cartão abre o detalhe.
+      </p>
 
       {error && (
         <div className="rounded-xl border border-bad/40 bg-bad/10 p-4 text-sm text-bad">
