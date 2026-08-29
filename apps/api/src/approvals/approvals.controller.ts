@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApprovalState } from '@prisma/client';
 import { z } from 'zod';
 import { ApprovalsService } from './approvals.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,6 +20,21 @@ const CreateApprovalSchema = z.object({
 @Controller('approvals')
 export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}
+
+  /*
+   * A FILA. Existia proposta, confirmação e consulta por id, mas não existia
+   * "o que está esperando" — e sem isso a fila não é superfície de trabalho,
+   * é uma caixa que só quem já sabe o id consegue abrir.
+   */
+  @Get()
+  @RequirePermissions('mcp.executar')
+  listar(@CurrentUser() user: JwtUser, @Query('status') status?: string) {
+    const valido = status && (Object.values(ApprovalState) as string[]).includes(status);
+    return this.approvals.listar(
+      user.orgId,
+      valido ? (status as ApprovalState) : ApprovalState.pendente,
+    );
+  }
 
   @Post()
   @RequirePermissions('mcp.executar')

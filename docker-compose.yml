@@ -60,6 +60,12 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
       # O container NÃO lê o .env: só chega o que estiver listado aqui. Variável
       # preenchida no .env e ausente deste bloco simplesmente não existe lá dentro.
+      # A PORTA. `observar` classifica, registra e DEIXA PASSAR, logando o que
+      # teria bloqueado. É assim que ela nasce: uma capacidade classificada
+      # errado com a porta impondo faria a rotina diária parar em silêncio às 8
+      # da manhã. Vira `impor` depois de ler uma semana de log.
+      GATEWAY_MODO: ${GATEWAY_MODO:-observar}
+      RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}

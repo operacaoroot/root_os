@@ -19,7 +19,9 @@
     "db:seed:trabalho": "tsx prisma/seed-trabalho.ts",
     "test": "vitest run",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "test:isolamento": "vitest run test/tenant-isolation.test.ts"
+    "test:isolamento": "vitest run test/tenant-isolation.test.ts",
+    "db:seed:politica": "tsx prisma/seed-politica.ts",
+    "test:porta": "vitest run test/porta.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -37,7 +39,8 @@
     "minio": "^8.0.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "@mktos/policy": "workspace:*"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

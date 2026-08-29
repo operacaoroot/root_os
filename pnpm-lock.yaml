@@ -20,6 +20,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.115.0
         version: 0.115.0(zod@3.25.76)
+      '@mktos/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
       '@mktos/shared':
         specifier: workspace:*
         version: link:../../packages/shared

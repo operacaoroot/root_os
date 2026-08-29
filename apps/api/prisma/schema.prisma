@@ -37,6 +37,13 @@ model Org {
   goalWeeks    GoalWeek[]
   goalConfig   GoalConfig?
 
+  // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
+  policyVersions  PolicyVersion[]
+  policyDecisions PolicyDecision[]
+  toolCalls       ToolCall[]
+  approvals       Approval[]
+  eventLogs       EventLog[]
+
   financeAccounts     FinanceAccount[]
   financeCategories   FinanceCategory[]
   financeTransactions FinanceTransaction[]
@@ -1475,4 +1482,233 @@ model WorkComment {
   createdAt  DateTime @default(now())
 
   @@index([taskId, createdAt])
+}
+
+// ============================================================================
+// Régua, porta e rastro — a escada R0-R5 saindo do papel.
+//
+// O motor de decisão é @mktos/policy, puro e sem I/O, cópia byte a byte do
+// anexo normativo. O que mora aqui é a CASCA: o catálogo como dado, a política
+// versionada por empresa, e o registro do que a porta decidiu e executou.
+// ============================================================================
+
+enum RiskLevel {
+  R0
+  R1
+  R2
+  R3
+  R4
+  R5
+}
+
+enum Alcada {
+  operador
+  responsavel
+  titular
+}
+
+/// Catálogo de capacidades. GLOBAL, sem orgId de propósito: a diferença entre
+/// empresas mora no PolicyVersion, não numa cópia do catálogo por tenant —
+/// duplicar 60 linhas por cliente é garantir que um dia divergem.
+model Capability {
+  id           String    @id // id pontuado do documento: "whatsapp.mensagem.enviar"
+  descricao    String
+  level        RiskLevel
+  /// Objeto Efeito de @mktos/policy. É ELE que a régua classifica — o `level`
+  /// acima é a declaração, e o teste reprova quando os dois divergem.
+  efeito       Json
+  /// Chaves que entram no canonicalHash da aprovação. Vazio = o corpo inteiro
+  /// entra (falha fechada: capacidade que esqueceu de declarar prende a
+  /// aprovação a tudo, o que é estrito, não frouxo).
+  hashKeys     String[]
+  /// JSON Schema dos argumentos, para o gateway validar antes de classificar.
+  argsSchema   Json?
+  /// Nome como o modelo enxerga. A API de tool-calling só aceita [A-Za-z0-9_-],
+  /// então nunca é o id pontuado. Nulo = nenhum agente alcança.
+  ferramenta   String?   @unique
+  /// `MÉTODO /caminho` que implementa. Nulo = declarada e não implementada.
+  rota         String?
+  desfazer     String?
+  /// Módulo que traz a capacidade — desligou o módulo, sai do alcance.
+  moduloKey    String?
+  isBuiltin    Boolean   @default(true)
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  decisoes  PolicyDecision[]
+  toolCalls ToolCall[]
+
+  @@index([moduloKey])
+  @@index([level])
+}
+
+/// Política em vigor. orgId NULO = a base ROOT que todas herdam.
+model PolicyVersion {
+  id        String    @id @default(uuid())
+  orgId     String?
+  org       Org?      @relation(fields: [orgId], references: [id])
+  versao    Int
+  /// Documento RESOLVIDO (base + delta aplicado) — é o que o serviço carrega.
+  documento Json
+  /// Só o que esta empresa sobrescreveu. Nulo na base.
+  delta     Json?
+  /// Obrigatório quando um nível DESCE ou a aprovação de R2 é desligada:
+  /// "descer nível nunca é automático" é invariante da escada.
+  motivo    String
+  autorId   String?
+  ativaDe   DateTime  @default(now())
+  ativaAte  DateTime?
+  criadoEm  DateTime  @default(now())
+
+  decisoes PolicyDecision[]
+
+  @@unique([orgId, versao])
+  @@index([orgId, ativaDe])
+}
+
+/// O que a régua decidiu, por chamada. Existe separado do ToolCall porque a
+/// RECUSA também é uma decisão registrada — e é o número que a tela da Régua
+/// mostra em "N em 30 dias".
+model PolicyDecision {
+  id              String         @id @default(uuid())
+  orgId           String
+  org             Org            @relation(fields: [orgId], references: [id])
+  capabilityId    String?
+  capability      Capability?    @relation(fields: [capabilityId], references: [id])
+  policyVersionId String?
+  policyVersion   PolicyVersion? @relation(fields: [policyVersionId], references: [id])
+
+  nivelBase      RiskLevel
+  nivel          RiskLevel
+  permitido      Boolean
+  exigeAprovacao Boolean
+  sinais         String[]
+  motivo         String
+  /// Em modo observação a porta NÃO impõe: classifica, registra e deixa passar.
+  /// Sem esta coluna não dá para separar o que teria sido bloqueado.
+  modo           String    @default("impor")
+  criadoEm       DateTime  @default(now())
+
+  @@index([orgId, criadoEm])
+  @@index([orgId, nivel])
+}
+
+enum ToolCallStatus {
+  executado
+  aguardando_aprovacao
+  recusado
+  erro
+}
+
+/// Uma passagem pela porta. É daqui que sai "usada por · agente · N chamadas".
+model ToolCall {
+  id            String         @id @default(uuid())
+  orgId         String
+  org           Org            @relation(fields: [orgId], references: [id])
+  capabilityId  String?
+  capability    Capability?    @relation(fields: [capabilityId], references: [id])
+  decisionId    String?
+  sessionId     String?
+  agentSlug     String?
+  actorType     ActorType      @default(ai)
+  actorId       String?
+  status        ToolCallStatus
+  /// Argumentos já validados e normalizados. Redigidos conforme a
+  /// sensibilidade da capacidade — segredo nunca entra cru.
+  args          Json?
+  resultado     Json?
+  erro          String?
+  nivel         RiskLevel?
+  approvalId    String?
+  duracaoMs     Int            @default(0)
+  correlationId String?
+  criadoEm      DateTime       @default(now())
+
+  @@index([orgId, criadoEm])
+  @@index([orgId, capabilityId, criadoEm])
+  @@index([correlationId])
+  @@index([agentSlug, criadoEm])
+}
+
+enum ApprovalState {
+  pendente
+  confirmada
+  consumida
+  rejeitada
+  expirada
+}
+
+/// A fila de aprovação. Saiu do Map em memória: no Map o uso único era seguro
+/// por acidente (um processo, JS single-threaded); em tabela, duas requisições
+/// simultâneas consumiriam o mesmo token e a mensagem sairia duas vezes. Quem
+/// impede é o updateMany condicional em ApprovalsService.consumeForWrite.
+model Approval {
+  id              String        @id @default(uuid())
+  orgId           String
+  org             Org           @relation(fields: [orgId], references: [id])
+  decisionId      String?
+  toolCallId      String?
+  capabilityId    String?
+  /// Invariante 7 da escada: quem aprova nunca é quem propôs.
+  propostoPorId   String
+  propostoPorTipo ActorType     @default(ai)
+  resourceType    String
+  resourceId      String
+  /// canonicalHash sobre as hashKeys da capacidade — o bind ao conteúdo exato.
+  contentHash     String
+  resumo          String
+  status          ApprovalState @default(pendente)
+  nivelExigido    RiskLevel     @default(R3)
+  alcadaMinima    Alcada        @default(operador)
+  exigeReauth     Boolean       @default(false)
+  motivo          String?
+  canal           String?
+  /// sha256 do token. O token cru é devolvido UMA vez e nunca persistido.
+  tokenHash       String        @unique
+  aprovadoPorId   String?
+  aprovadoEm      DateTime?
+  reautenticadoEm DateTime?
+  consumidoEm     DateTime?
+  expiraEm        DateTime
+  criadoEm        DateTime      @default(now())
+
+  @@index([orgId, status, expiraEm])
+  @@index([orgId, criadoEm])
+}
+
+/// RASTRO append-only e encadeado por hash.
+///
+/// O AuditLog continua existindo e continua sendo escrito — este modelo NÃO o
+/// substitui nesta rodada. A diferença é que aqui o registro é PRÉ-CONDIÇÃO de
+/// execução: a porta grava, faz commit, e só então executa o efeito.
+///
+/// Append-only de verdade só vale quando a aplicação parar de conectar como
+/// dona das tabelas. Até lá as RULEs da migration derrotam um update acidental,
+/// mas a garantia é convenção — e a tela do Rastro diz isso.
+model EventLog {
+  id            String     @id @default(uuid())
+  orgId         String
+  org           Org        @relation(fields: [orgId], references: [id])
+  /// Sequência por empresa, serializada por advisory lock.
+  seq           BigInt
+  tipo          String
+  actorType     ActorType  @default(ai)
+  actorId       String?
+  agentSlug     String?
+  capabilityId  String?
+  toolCallId    String?
+  decisionId    String?
+  nivel         RiskLevel?
+  correlationId String?
+  payload       Json?
+  contentHash   String?
+  prevHash      String?
+  hash          String
+  retencaoAte   DateTime
+  ocorreuEm     DateTime   @default(now())
+
+  @@unique([orgId, seq])
+  @@index([orgId, ocorreuEm])
+  @@index([orgId, tipo])
+  @@index([correlationId])
 }

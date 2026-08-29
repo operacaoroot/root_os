@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { PolicyModule } from './policy/policy.module';
+import { GatewayModule } from './gateway/gateway.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -31,7 +33,11 @@ import { PautaModule } from './pauta/pauta.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuditModule,
+    // A régua carrega antes da porta, e a porta antes de qualquer módulo de
+    // domínio: ADR-004 — nenhum agente alcança conector sem passar por ela.
+    PolicyModule,
     ApprovalsModule,
+    GatewayModule,
     AuthModule,
     DashboardModule,
     LeadsModule,
