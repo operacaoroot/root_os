@@ -8,12 +8,17 @@
  *
  * A troca vira uma Session de verdade, com custo e rastro — não é simulação.
  *
- *   docker compose exec api pnpm exec tsx scripts/perguntar.ts "quanto entrou hoje?"
+ *   docker compose exec api node dist/scripts/perguntar.js "quanto entrou hoje?"
+ *
+ * Mora em src/ e roda COMPILADO de propósito: `tsx` (como o vitest) usa esbuild,
+ * que não emite `emitDecoratorMetadata` — sem isso o Nest não resolve nada por
+ * tipo e tudo falha com "cannot read properties of undefined". Os seeds rodam
+ * em tsx porque falam com o PrismaClient direto, sem injeção.
  */
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module';
-import { AgentRuntime } from '../src/agents/agent-runtime.service';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { AppModule } from '../app.module';
+import { AgentRuntime } from '../agents/agent-runtime.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SessionCanal } from '@prisma/client';
 
 async function main() {

@@ -23,7 +23,8 @@
     "db:seed:politica": "tsx prisma/seed-politica.ts",
     "test:porta": "vitest run test/porta.test.ts",
     "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts",
-    "smoke": "node scripts/smoke-boot.mjs"
+    "smoke": "node scripts/smoke-boot.mjs",
+    "perguntar": "node dist/scripts/perguntar.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
