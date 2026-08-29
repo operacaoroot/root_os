@@ -76,7 +76,7 @@ export class ReportsService {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(
         `IA não configurada: falta a credencial do provider "${this.llm.name}". ` +
-          'Configure ~/.config/root/openai.env (OPENAI_API_KEY=...) e reinicie a API.',
+          `Configure ~/.config/root/${this.llm.name}.env e reinicie a API.`,
       );
     }
     const data = await this.gather(orgId);

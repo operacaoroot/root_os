@@ -1,6 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import type { LlmMessage, LlmProvider } from './llm.provider';
+import type {
+  LlmMessage,
+  LlmProvider,
+  LlmStepInput,
+  LlmStepOutput,
+  LlmStopReason,
+  LlmToolCall,
+  LlmTurn,
+  LlmUsage,
+} from './llm.provider';
+import { custoUsd } from './preco';
 
 // Provider Claude (SDK oficial @anthropic-ai/sdk). Credencial PRÓPRIA do root.
 //
@@ -15,6 +25,7 @@ import type { LlmMessage, LlmProvider } from './llm.provider';
 @Injectable()
 export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic';
+  readonly supportsTools = true;
   private readonly log = new Logger('AnthropicProvider');
   private readonly apiKey = process.env.ANTHROPIC_API_KEY ?? '';
   // O SDK também aceita ANTHROPIC_AUTH_TOKEN (perfil OAuth). Não dá para forçar
@@ -82,5 +93,157 @@ export class AnthropicProvider implements LlmProvider {
       );
     }
     return texto;
+  }
+
+  /*
+   * UM passo. Não é um laço: se o modelo pedir ferramenta, isto devolve o pedido
+   * e para. Quem executa é a porta, e quem decide continuar é o AgentRuntime.
+   *
+   * Diferença de comportamento em relação a complete(), e é de propósito:
+   * `refusal` aqui NÃO lança. Numa sessão, a recusa é um passo do traço — o
+   * usuário precisa ver que o modelo se recusou, com a categoria, e não um 500.
+   */
+  async step(input: LlmStepInput): Promise<LlmStepOutput> {
+    if (!this.configured) {
+      throw new Error(
+        'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API. ' +
+          'ANTHROPIC_AUTH_TOKEN (perfil OAuth) também serve.',
+      );
+    }
+
+    const modelo = input.model ?? this.model;
+    const pedido = {
+      model: modelo,
+      // Sem streaming o teto fica no valor seguro contra timeout de HTTP; com
+      // streaming dá para pedir muito mais, porque os pedaços chegam na hora.
+      max_tokens: input.maxTokens ?? (input.onTextDelta ? 64000 : this.maxTokens),
+      thinking: { type: 'adaptive' as const },
+      output_config: { effort: input.effort ?? this.effort },
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default' as const,
+      system: input.system,
+      messages: input.turns.map((t) => this.paraMensagem(t)),
+      // `tool_choice` fica de fora: `auto` é o default, e forçar escolha
+      // desliga o paralelismo de chamadas.
+      ...(input.tools?.length
+        ? {
+            tools: input.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.inputSchema as Anthropic.Beta.BetaTool['input_schema'],
+            })),
+          }
+        : {}),
+    };
+
+    const res = input.onTextDelta
+      ? await this.comStream(pedido, input.onTextDelta, input.signal)
+      : await this.client.beta.messages.create(pedido, { signal: input.signal });
+
+    const texto = res.content
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n')
+      .trim();
+
+    const toolCalls: LlmToolCall[] = res.content
+      .filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use')
+      .map((b) => ({
+        id: b.id,
+        name: b.name,
+        args: (b.input ?? {}) as Record<string, unknown>,
+      }));
+
+    if (res.stop_reason === 'refusal') {
+      this.log.warn(`Claude recusou (categoria: ${res.stop_details?.category ?? 'n/d'})`);
+    }
+
+    return {
+      text: texto,
+      toolCalls,
+      stopReason: this.paraStopReason(res.stop_reason),
+      refusalCategoria: res.stop_details?.category ?? undefined,
+      usage: this.paraUsage(res),
+      // Os blocos voltam INTACTOS na próxima volta. Remover ou reordenar bloco
+      // `thinking` quebra a assinatura e a API recusa o turno seguinte.
+      raw: res.content,
+    };
+  }
+
+  private async comStream(
+    pedido: Parameters<typeof this.client.beta.messages.create>[0],
+    onTextDelta: (d: string) => void,
+    signal?: AbortSignal,
+  ) {
+    const fluxo = this.client.beta.messages.stream(
+      pedido as Parameters<typeof this.client.beta.messages.stream>[0],
+      { signal },
+    );
+    fluxo.on('text', (d) => onTextDelta(d));
+    return fluxo.finalMessage();
+  }
+
+  private paraMensagem(t: LlmTurn): Anthropic.Beta.BetaMessageParam {
+    if (t.role === 'user') return { role: 'user', content: t.text };
+    if (t.role === 'assistant') {
+      // Preferir os blocos crus: é o que preserva thinking e assinatura.
+      if (t.raw) return { role: 'assistant', content: t.raw as Anthropic.Beta.BetaContentBlockParam[] };
+      const blocos: Anthropic.Beta.BetaContentBlockParam[] = [];
+      if (t.text) blocos.push({ type: 'text', text: t.text });
+      for (const c of t.toolCalls ?? []) {
+        blocos.push({ type: 'tool_use', id: c.id, name: c.name, input: c.args });
+      }
+      return { role: 'assistant', content: blocos };
+    }
+    // TODOS os resultados num único turno: dividir em turnos separados ensina o
+    // modelo a parar de pedir ferramentas em paralelo.
+    return {
+      role: 'user',
+      content: t.results.map((r) => ({
+        type: 'tool_result' as const,
+        tool_use_id: r.id,
+        content: r.content,
+        ...(r.isError ? { is_error: true } : {}),
+      })),
+    };
+  }
+
+  private paraStopReason(motivo: string | null | undefined): LlmStopReason {
+    switch (motivo) {
+      case 'end_turn':
+      case 'tool_use':
+      case 'max_tokens':
+      case 'refusal':
+      case 'pause_turn':
+        return motivo;
+      default:
+        return 'other';
+    }
+  }
+
+  private paraUsage(res: Anthropic.Beta.BetaMessage): LlmUsage {
+    const u = res.usage;
+    const entrada = u?.input_tokens ?? 0;
+    const saida = u?.output_tokens ?? 0;
+    const cacheLeitura = u?.cache_read_input_tokens ?? 0;
+    const cacheEscrita = u?.cache_creation_input_tokens ?? 0;
+    // Precifica pelo modelo que RESPONDEU: com `fallbacks: 'default'` ligado,
+    // ele diverge do pedido justamente nos casos que custam mais.
+    const modeloServido = res.model ?? this.model;
+    const { custoUsd: custo, custoEstimado } = custoUsd(modeloServido, {
+      entrada,
+      saida,
+      cacheLeitura,
+      cacheEscrita,
+    });
+    return {
+      inputTokens: entrada,
+      outputTokens: saida,
+      cacheReadTokens: cacheLeitura,
+      cacheWriteTokens: cacheEscrita,
+      custoUsd: custo,
+      custoEstimado,
+      modeloServido,
+    };
   }
 }
