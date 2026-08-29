@@ -98,3 +98,64 @@ export function apiPut<T>(
     body: JSON.stringify(body),
   }).then((r) => handle<T>(r));
 }
+
+/**
+ * POST que responde `text/event-stream`, lido pedaço a pedaço.
+ *
+ * `fetch` + ReadableStream, e não `EventSource`: o EventSource não manda
+ * header, e token em query string é dado sensível dentro de URL — que fica em
+ * log de proxy, em histórico e no Referer.
+ *
+ * Devolve uma função de cancelamento: sair da tela no meio de uma resposta
+ * precisa abortar a requisição, senão o laço do agente continua rodando (e
+ * gastando) para ninguém.
+ */
+export function apiStream<E>(
+  path: string,
+  body: unknown,
+  token: string | null | undefined,
+  onEvento: (e: E) => void,
+): { pronto: Promise<void>; cancelar: () => void } {
+  const ctrl = new AbortController();
+
+  const pronto = (async () => {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok || !res.body) {
+      const erro = await res.json().catch(() => ({}));
+      throw new Error(erro.message || erro.error || `Erro ${res.status}`);
+    }
+
+    const leitor = res.body.getReader();
+    const dec = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      buffer += dec.decode(value, { stream: true });
+      // Um evento SSE termina em linha em branco. Sem esperar por ela, um
+      // JSON partido no meio do chunk quebraria o parse.
+      const partes = buffer.split('\n\n');
+      buffer = partes.pop() ?? '';
+      for (const p of partes) {
+        const linha = p.split('\n').find((l) => l.startsWith('data: '));
+        if (!linha) continue;
+        try {
+          onEvento(JSON.parse(linha.slice(6)) as E);
+        } catch {
+          /* evento malformado não derruba o stream */
+        }
+      }
+    }
+  })();
+
+  return { pronto, cancelar: () => ctrl.abort() };
+}

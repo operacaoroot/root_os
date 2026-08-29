@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { SessionCanal } from '@prisma/client';
 import { z } from 'zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -62,6 +63,56 @@ export class AgentsController {
       solicitanteId: user.sub,
       solicitanteRotulo: user.name ?? user.sub,
     });
+  }
+
+  /*
+   * O mesmo pedido, respondendo em pedaços.
+   *
+   * SSE e não WebSocket: o tráfego é de mão única. E com effort alto o primeiro
+   * token demora dezenas de segundos — sem streaming a tela fica muda o tempo
+   * todo e parece travada.
+   *
+   * POST que responde text/event-stream porque EventSource não manda header, e
+   * token em query string é dado sensível em URL. O front lê com fetch +
+   * ReadableStream.
+   */
+  @Post('agents/:slug/stream')
+  @RequirePermissions('mcp.executar')
+  async stream(
+    @CurrentUser() user: JwtUser,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    const input = PedidoSchema.parse(body);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    // O proxy do Next bufferiza por padrão e o stream chegaria de uma vez só.
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const manda = (e: unknown) => {
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`);
+    };
+
+    try {
+      await this.runtime.executar({
+        orgId: user.orgId,
+        agentSlug: slug,
+        canal: input.canal,
+        canalRef: input.canalRef,
+        sessionId: input.sessionId,
+        pedido: input.pedido,
+        solicitanteId: user.sub,
+        solicitanteRotulo: user.name ?? user.sub,
+        onEvento: manda,
+      });
+    } catch (e) {
+      manda({ t: 'erro', mensagem: (e as Error).message });
+    } finally {
+      res.end();
+    }
   }
 
   @Get('sessions')

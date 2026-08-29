@@ -1,20 +1,19 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { NAV, SECOES } from '@mktos/shared';
 import { Search, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { Paleta } from './Paleta';
 
 /*
- * A busca global continua sendo o stub da Fase 5: o campo nasce desabilitado,
- * como antes. Virar `true` aqui liga junto o atalho ⌘K / Ctrl+K — enquanto
- * estiver desligado o listener nem é registrado, para não sequestrar o atalho
- * do navegador em cima de um campo que não responde.
- * Tipado como boolean (e não pelo literal) de propósito: sem isso o TS estreita
- * para `false` e marca o corpo do efeito como inalcançável.
+ * O ⌘K estava atrás deste booleano desde a Fase 5, com o campo desabilitado e
+ * o placeholder prometendo "buscar leads, campanhas, tarefas". Agora ele abre a
+ * paleta e NAVEGA — e o placeholder diz isso, porque prometer busca e entregar
+ * navegação é o tipo de mentira pequena que corrói a confiança no resto da tela.
  */
-const BUSCA_ATIVA: boolean = false;
+const BUSCA_ATIVA: boolean = true;
 
 /*
  * Subtítulo por módulo, na chave do NAV (packages/shared/src/nav.ts:43) — e não
@@ -88,6 +87,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const busca = useRef<HTMLInputElement>(null);
+  const [paleta, setPaleta] = useState(false);
 
   const rotulo = rotuloDaRota(pathname);
   const h1 = titulo ?? rotulo.titulo;
@@ -105,7 +105,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
     function atalho(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        busca.current?.focus();
+        setPaleta((v) => !v);
       }
     }
     window.addEventListener('keydown', atalho);
@@ -133,9 +133,11 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
         />
         <input
           ref={busca}
-          disabled={!BUSCA_ATIVA}
-          placeholder="Buscar leads, campanhas, tarefas… (Fase 5)"
-          title="Busca global chega na Fase 5"
+          readOnly
+          onFocus={() => setPaleta(true)}
+          onClick={() => setPaleta(true)}
+          placeholder="ir para…"
+          title="Atalho: ⌘K / Ctrl+K"
           className="w-full border border-border bg-surface py-[5px] pl-[28px] pr-[34px] font-os-mono text-[10.5px] text-muted outline-none transition-colors placeholder:text-dim hover:border-brand/40 focus:border-brand/40 disabled:cursor-not-allowed"
         />
         <kbd
@@ -171,6 +173,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
           <LogOut size={13} />
         </button>
       </div>
+      <Paleta aberto={paleta} fechar={() => setPaleta(false)} />
     </header>
   );
 }

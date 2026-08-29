@@ -78,10 +78,10 @@ export const NAV: NavItem[] = [
   // ── A central ────────────────────────────────────────────────────────────
   { key: 'console', label: 'Console', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'central' },
   { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa e as abas Marca e Identidade entram nas próximas fatias' },
-  { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central', estado: 'parcial', parcial: 'o traço completo entra com a porta' },
+  { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central' },
 
   // ── Quem trabalha ────────────────────────────────────────────────────────
-  { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha', estado: 'parcial', parcial: 'o roster entra quando o runtime nascer' },
+  { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },
   { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'as 8 rotinas passam a registrar execução' },
   { key: 'fluxos', label: 'Fluxos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'editor de processo, com o vazamento declarado' },
   { key: 'organograma', label: 'Organograma', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'trabalha', estado: 'parcial', parcial: 'depende do roster de agentes' },

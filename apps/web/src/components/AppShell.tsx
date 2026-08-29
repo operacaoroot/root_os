@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { ChatFlutuante } from './ChatFlutuante';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -41,6 +42,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Topbar />
         <main className="flex-1 p-6">{children}</main>
       </div>
+      {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
+          Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
+      <ChatFlutuante />
     </div>
   );
 }
