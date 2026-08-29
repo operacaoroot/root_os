@@ -44,6 +44,11 @@ model Org {
   approvals       Approval[]
   eventLogs       EventLog[]
 
+  // A tripulação (ver "Tripulação" no fim do arquivo)
+  agents      Agent[]
+  sessions    Session[]
+  identidades ChannelIdentity[]
+
   financeAccounts     FinanceAccount[]
   financeCategories   FinanceCategory[]
   financeTransactions FinanceTransaction[]
@@ -93,6 +98,9 @@ model User {
 
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
+
+  agentesQueDono Agent[]           @relation("AgentDono")
+  identidades    ChannelIdentity[]
 
   @@index([orgId])
 }
@@ -1711,4 +1719,259 @@ model EventLog {
   @@index([orgId, ocorreuEm])
   @@index([orgId, tipo])
   @@index([correlationId])
+}
+
+// ============================================================================
+// Tripulação — os agentes, os procedimentos e o traço de cada sessão.
+//
+// Um agente, um trabalho (RF-N-01). Começa SEM permissão nenhuma e recebe
+// capacidade nomeada: capacidade fora da declaração é recusada pela porta.
+// ============================================================================
+
+enum AgentEstado {
+  rodando
+  aprendendo
+  planejado
+  pausado
+}
+
+enum AgentTipo {
+  /// Chama modelo, propõe ferramenta, tem SOP. É agente no sentido do produto.
+  llm
+  /// Sincroniza um conector. Não chama modelo e não tem custo de token — mas
+  /// tem dono, missão e execução registrada, que é o que a tela precisa.
+  conector
+}
+
+model Agent {
+  id       String  @id @default(uuid())
+  orgId    String
+  org      Org     @relation(fields: [orgId], references: [id])
+  slug     String
+  nome     String
+  iniciais String  @default("")
+  missao   String
+  pilar    String?
+  donoId   String?
+  dono     User?   @relation("AgentDono", fields: [donoId], references: [id])
+
+  tipo   AgentTipo   @default(llm)
+  estado AgentEstado @default(planejado)
+
+  /// RF-N-03: as ferramentas que ele declarou. Fora desta lista, a porta recusa.
+  capacidades  String[]
+  /// Até onde ele vai sozinho. A porta é quem impõe; isto é o teto declarado.
+  autonomiaAte RiskLevel @default(R0)
+  /// RF-N-07: agente que erra tem a autonomia rebaixada por 24h.
+  rebaixadoAte DateTime?
+  rebaixadoPor String?
+
+  modelo       String?
+  effort       String   @default("high")
+  maxPassos    Int      @default(8)
+  tetoCustoUsd Decimal  @default(0.50) @db.Decimal(10, 4)
+  tetoSegundos Int      @default(180)
+  /// As regras da casa DESTE agente — o ContextItem do PRD em versão mínima.
+  contextoFixo String[]
+
+  cron  String?
+  tz    String  @default("America/Sao_Paulo")
+  ativo Boolean @default(true)
+
+  /// RF-N-05. É a linha de base DECLARADA por uma pessoa: quantos minutos
+  /// alguém gastava nisso por execução. Zero = ninguém informou ainda, e a
+  /// tela mostra "—", nunca um número inventado.
+  minutosPorExecucao Int       @default(0)
+  baselinePorId      String?
+  baselineEm         DateTime?
+  execucoes          Int       @default(0)
+  falhas             Int       @default(0)
+
+  ultimaExecucaoEm  DateTime?
+  ultimoStatus      String?
+  proximaExecucaoEm DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  sop      Sop?
+  sessions Session[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, estado])
+  @@index([ativo, cron])
+}
+
+/// RF-N-02: formato fixo. A ESCALAÇÃO e as regras da casa NÃO moram aqui —
+/// são constantes do código (src/agents/sop.ts). Guardar em banco seria
+/// convidar a editar, e o requisito diz que o texto não é editável.
+model Sop {
+  id      String @id @default(uuid())
+  orgId   String
+  agentId String @unique
+  agent   Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  proposito         String
+  gatilho           String
+  passos            String[]
+  definicaoDePronto String
+  observacoes       String?
+
+  versao        Int      @default(1)
+  atualizadoPor String?
+  atualizadoEm  DateTime @updatedAt
+  criadoEm      DateTime @default(now())
+}
+
+enum SessionCanal {
+  web
+  whatsapp
+  telegram
+  terminal
+  rotina
+  mcp
+}
+
+enum SessionStatus {
+  rodando
+  respondida
+  executada
+  retida
+  recusada
+  falhou
+}
+
+/// Uma troca com a central, do pedido ao registro. É o que a tela de Sessões
+/// mostra — e o que não existia: o sistema registrava decisões, não conversas.
+model Session {
+  id      String @id @default(uuid())
+  orgId   String
+  org     Org    @relation(fields: [orgId], references: [id])
+  agentId String
+  /// SEM onDelete: Cascade. Agente sai de circulação com estado 'pausado',
+  /// nunca com DELETE — apagar o agente apagaria o histórico dele.
+  agent   Agent  @relation(fields: [agentId], references: [id])
+
+  canal             SessionCanal
+  canalRef          String?
+  solicitanteId     String?
+  solicitanteRotulo String
+
+  pedido   String
+  resposta String @default("")
+
+  status   SessionStatus @default(rodando)
+  nivelMax RiskLevel?
+  motivo   String?
+
+  fontes         Json    @default("[]")
+  /// A resposta trouxe número sem citar fonte. Não bloqueia — sinaliza, e é
+  /// o KPI "sem procedência" da tela.
+  semProcedencia Boolean @default(false)
+
+  custoUsd      Decimal @default(0) @db.Decimal(10, 6)
+  /// false = o modelo servido está fora da tabela de preço. A tela mostra
+  /// "não medido", nunca R$ 0,00.
+  custoEstimado Boolean @default(true)
+  provider      String?
+  modelo        String?
+  tokensIn      Int     @default(0)
+  tokensOut     Int     @default(0)
+  passos        Int     @default(0)
+  duracaoMs     Int     @default(0)
+
+  ultimaAtividadeEm DateTime  @default(now())
+  encerradaEm       DateTime?
+  criadaEm          DateTime  @default(now())
+
+  steps SessionStep[]
+
+  @@index([orgId, criadaEm])
+  @@index([orgId, canal, criadaEm])
+  @@index([orgId, agentId, criadaEm])
+  @@index([orgId, status])
+  /// Retomada: a sessão viva daquele canal e daquele contato.
+  @@index([orgId, canal, canalRef, ultimaAtividadeEm])
+}
+
+enum SessionStepTipo {
+  pedido
+  contexto
+  modelo
+  ferramenta
+  aprovacao
+  resultado
+  erro
+}
+
+/// Os 6 blocos do traço saem daqui. Nenhum é campo: todos são reconstruídos
+/// dos passos, que é o que permite a tela mostrar a sessão como ela aconteceu.
+model SessionStep {
+  id        String          @id @default(uuid())
+  orgId     String
+  sessionId String
+  session   Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ordem     Int
+  tipo      SessionStepTipo
+
+  // bloco 03 — as ferramentas chamadas
+  capacidade      String?
+  /// "trimestre 3 · 2026" — é o que a tela mostra, não o JSON cru.
+  argsResumo      String?
+  args            Json?
+  resultadoResumo String?
+  toolCallId      String?
+
+  // bloco 04 — a régua decidiu. A porta preenche; o runtime só copia.
+  nivel      RiskLevel?
+  decisao    String?
+  motivo     String?
+  gatilhos   String[]
+  approvalId String?
+
+  // o custo mora no passo, e a sessão soma
+  provider         String?
+  modelo           String?
+  tokensIn         Int?
+  tokensOut        Int?
+  tokensCacheRead  Int?
+  tokensCacheWrite Int?
+  custoUsd         Decimal? @db.Decimal(10, 6)
+  custoEstimado    Boolean  @default(true)
+  stopReason       String?
+
+  fontes  Json    @default("[]")
+  /// Blocos crus do provider. Permite retomar sem perder o thinking — remover
+  /// ou reordenar quebra a assinatura e a API recusa o turno seguinte.
+  payload Json?
+  texto   String?
+  erro    String?
+
+  duracaoMs Int      @default(0)
+  criadoEm  DateTime @default(now())
+
+  @@unique([sessionId, ordem])
+  @@index([sessionId, ordem])
+  @@index([orgId, criadoEm])
+}
+
+/// Quem é a pessoa do outro lado do canal.
+///
+/// Sem isto o "quem aprova é gente" não existe de verdade: hoje quem clica no
+/// botão do Telegram é um chat_id anônimo, e a API grava a confirmação com o
+/// ator da CONTA DE SERVIÇO do bot. É correção de rastro, não enfeite.
+model ChannelIdentity {
+  id         String       @id @default(uuid())
+  orgId      String
+  org        Org          @relation(fields: [orgId], references: [id])
+  canal      SessionCanal
+  externalId String
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id])
+  rotulo     String
+  ativo      Boolean      @default(true)
+  criadoEm   DateTime     @default(now())
+
+  @@unique([orgId, canal, externalId])
+  @@index([orgId, canal])
 }

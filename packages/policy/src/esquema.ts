@@ -96,6 +96,14 @@ export const PoliticaSchema = z.object({
 export type Politica = z.infer<typeof PoliticaSchema>;
 
 /*
+ * A capacidade COMO ELA VIVE NO CATÁLOGO. `Capacidade`, em escada.ts, é o
+ * mínimo que o motor precisa para decidir — e escada.ts é cópia byte a byte do
+ * anexo, então não pode ganhar campo. O que o catálogo acrescenta (o nome da
+ * ferramenta, a rota, o schema dos argumentos) mora aqui.
+ */
+export type CapacidadeCatalogo = z.infer<typeof CapacidadeSchema>;
+
+/*
  * Um DELTA não repete a política inteira: declara só o que é dele e herda o
  * resto. É o mesmo mecanismo em dois lugares — o catálogo deste repositório
  * é um delta sobre a base ROOT, e a política de cada empresa será um delta

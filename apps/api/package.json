@@ -21,7 +21,8 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test:isolamento": "vitest run test/tenant-isolation.test.ts",
     "db:seed:politica": "tsx prisma/seed-politica.ts",
-    "test:porta": "vitest run test/porta.test.ts"
+    "test:porta": "vitest run test/porta.test.ts",
+    "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
