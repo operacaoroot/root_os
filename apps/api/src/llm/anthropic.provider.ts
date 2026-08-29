@@ -11,6 +11,7 @@ import type {
   LlmUsage,
 } from './llm.provider';
 import { custoUsd } from './preco';
+import { env, envNumero, envOpcional } from './env';
 
 // Provider Claude (SDK oficial @anthropic-ai/sdk). Credencial PRÓPRIA do root.
 //
@@ -27,18 +28,18 @@ export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic';
   readonly supportsTools = true;
   private readonly log = new Logger('AnthropicProvider');
-  private readonly apiKey = process.env.ANTHROPIC_API_KEY ?? '';
+  private readonly apiKey = envOpcional('ANTHROPIC_API_KEY');
   // O SDK também aceita ANTHROPIC_AUTH_TOKEN (perfil OAuth). Não dá para forçar
   // uma apiKey falsa no construtor: isso atropelaria a resolução do próprio SDK.
-  private readonly authToken = process.env.ANTHROPIC_AUTH_TOKEN ?? '';
-  readonly model = process.env.ANTHROPIC_MODEL ?? 'claude-opus-5';
-  private readonly effort = (process.env.ANTHROPIC_EFFORT ?? 'high') as
+  private readonly authToken = envOpcional('ANTHROPIC_AUTH_TOKEN');
+  readonly model = env('ANTHROPIC_MODEL', 'claude-opus-5');
+  private readonly effort = env('ANTHROPIC_EFFORT', 'high') as
     | 'low'
     | 'medium'
     | 'high'
     | 'xhigh'
     | 'max';
-  private readonly maxTokens = Number(process.env.ANTHROPIC_MAX_TOKENS ?? 16000);
+  private readonly maxTokens = envNumero('ANTHROPIC_MAX_TOKENS', 16000);
 
   // Sem credencial no env o cliente sobe assim mesmo (o SDK resolve sozinho se
   // houver perfil); quem barra a chamada é `configured`.

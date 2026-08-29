@@ -3,6 +3,7 @@ import { LLM_PROVIDER } from './llm.provider';
 import { OpenAiProvider } from './openai.provider';
 import { AnthropicProvider } from './anthropic.provider';
 import { OpenRouterProvider } from './openrouter.provider';
+import { env } from './env';
 
 // Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai.
 //
@@ -30,7 +31,7 @@ import { OpenRouterProvider } from './openrouter.provider';
         anthropic: AnthropicProvider,
         openrouter: OpenRouterProvider,
       ) => {
-        const escolhido = process.env.LLM_PROVIDER ?? 'anthropic';
+        const escolhido = env('LLM_PROVIDER', 'anthropic');
         switch (escolhido) {
           case 'openai':
             return openai;

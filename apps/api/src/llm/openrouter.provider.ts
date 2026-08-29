@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAiProvider } from './openai.provider';
+import { env, envOpcional } from './env';
 
 /*
  * OpenRouter — a mesma API de Chat Completions, com duas diferenças que valem
@@ -21,11 +22,11 @@ import { OpenAiProvider } from './openai.provider';
 export class OpenRouterProvider extends OpenAiProvider {
   readonly name = 'openrouter';
   protected readonly log = new Logger('OpenRouterProvider');
-  protected readonly apiKey = process.env.OPENROUTER_API_KEY ?? '';
+  protected readonly apiKey = envOpcional('OPENROUTER_API_KEY');
   protected readonly baseUrl = (
-    process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1'
+    env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
   ).replace(/\/$/, '');
-  readonly model = process.env.OPENROUTER_MODEL ?? 'anthropic/claude-sonnet-4.5';
+  readonly model = env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-4.5');
 
   protected get envDaChave(): string {
     return 'OPENROUTER_API_KEY';
@@ -34,8 +35,8 @@ export class OpenRouterProvider extends OpenAiProvider {
   // O OpenRouter usa estes headers para atribuir a chamada a uma aplicação.
   protected get headersExtras(): Record<string, string> {
     return {
-      'HTTP-Referer': process.env.OPENROUTER_REFERER ?? 'https://os.operacaoroot.com',
-      'X-Title': process.env.OPENROUTER_TITLE ?? 'ROOT OS',
+      'HTTP-Referer': env('OPENROUTER_REFERER', 'https://os.operacaoroot.com'),
+      'X-Title': env('OPENROUTER_TITLE', 'ROOT OS'),
     };
   }
 

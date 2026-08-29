@@ -10,6 +10,7 @@ import type {
   LlmUsage,
 } from './llm.provider';
 import { custoUsd } from './preco';
+import { env, envOpcional } from './env';
 
 /*
  * Provider de API compatível com Chat Completions, via fetch nativo — sem SDK.
@@ -25,11 +26,11 @@ export class OpenAiProvider implements LlmProvider {
   readonly name: string = 'openai';
   readonly supportsTools = true;
   protected readonly log = new Logger('OpenAiProvider');
-  protected readonly apiKey: string = process.env.OPENAI_API_KEY ?? '';
+  protected readonly apiKey: string = envOpcional('OPENAI_API_KEY');
   protected readonly baseUrl: string = (
-    process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+    env('OPENAI_BASE_URL', 'https://api.openai.com/v1')
   ).replace(/\/$/, '');
-  readonly model: string = process.env.OPENAI_MODEL ?? 'gpt-4o';
+  readonly model: string = env('OPENAI_MODEL', 'gpt-4o');
 
   /** Headers que o provedor recomenda — o OpenRouter pede identificação. */
   protected get headersExtras(): Record<string, string> {
