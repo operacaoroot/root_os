@@ -73,6 +73,12 @@ services:
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      # OpenRouter: mesma API de Chat Completions, com nome e custo próprios.
+      # O custo vem de `usage.cost` do próprio provedor — medição, não estimativa.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
       # Pauta: acervo, rotina e canais (ver docs/PAUTA.md)
       APIFY_TOKEN: ${APIFY_TOKEN:-}
       APIFY_TIMEOUT_SEC: ${APIFY_TIMEOUT_SEC:-120}

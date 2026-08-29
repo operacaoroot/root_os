@@ -30,6 +30,8 @@ import { PublicacaoService } from './publicacao.service';
     EvolutionService,
     PublicacaoService,
   ],
-  exports: [PautaService, RodadaService],
+  // EvolutionService sai daqui para o AgentsModule ligar a capacidade
+  // whatsapp.mensagem.enviar ao envio real.
+  exports: [PautaService, RodadaService, EvolutionService],
 })
 export class PautaModule {}

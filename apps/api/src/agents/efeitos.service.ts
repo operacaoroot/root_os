@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { AgentRuntime } from './agent-runtime.service';
+import { EfeitosRegistry } from '../gateway/efeitos.registry';
+import { EvolutionService } from '../pauta/evolution.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { FinanceService } from '../finance/finance.service';
 import { FinopsService } from '../finance/finops.service';
@@ -32,7 +33,7 @@ export class EfeitosService implements OnModuleInit {
   private readonly log = new Logger('Efeitos');
 
   constructor(
-    private readonly runtime: AgentRuntime,
+    private readonly registro: EfeitosRegistry,
     private readonly dashboard: DashboardService,
     private readonly finance: FinanceService,
     private readonly finops: FinopsService,
@@ -41,10 +42,11 @@ export class EfeitosService implements OnModuleInit {
     private readonly tasks: TasksService,
     private readonly campanhas: CampaignsService,
     private readonly obsidian: ObsidianService,
+    private readonly evolution: EvolutionService,
   ) {}
 
   onModuleInit(): void {
-    Object.assign(this.runtime.efeitos, {
+    this.registro.registrar({
       'numeros.painel.ler': (_a: Record<string, unknown>, org: string) => this.dashboard.summary(org),
       'financeiro.resumo.ler': (_a: Record<string, unknown>, org: string) => this.finance.summary(org),
       'financeiro.kpi.ler': (_a: Record<string, unknown>, org: string) => this.finops.kpis(org),
@@ -60,7 +62,25 @@ export class EfeitosService implements OnModuleInit {
         this.campanhas.list(org, a.status as string | undefined),
       'contexto.memoria.buscar': (a: Record<string, unknown>, org: string) =>
         this.obsidian.search(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5)),
+
+      /*
+       * A PRIMEIRA capacidade de escrita com efeito ligado. R3: ela só chega
+       * aqui depois que uma pessoa aprovou, e com os argumentos GRAVADOS na
+       * proposta — nunca com os que vieram na confirmação.
+       *
+       * O destino é SEMPRE o grupo configurado no ambiente. O modelo não
+       * escolhe para quem manda: um `destino` proposto por ele é ignorado de
+       * propósito, senão a régua controlaria o texto e não o destinatário.
+       */
+      'whatsapp.mensagem.enviar': async (a: Record<string, unknown>) => {
+        const titulo = String(a.titulo ?? '').trim();
+        const corpo = String(a.corpo ?? a.texto ?? a.mensagem ?? '').trim();
+        if (!corpo) throw new Error('mensagem vazia: nada foi enviado');
+        const texto = titulo ? `*${titulo}*\n\n${corpo}` : corpo;
+        const r = await this.evolution.enviarTexto(this.evolution.grupo, texto);
+        return { enviado: true, id: r.id, destino: this.evolution.grupo, caracteres: texto.length };
+      },
     });
-    this.log.log(`${Object.keys(this.runtime.efeitos).length} capacidades com efeito ligado`);
+    this.log.log(`${this.registro.tamanho} capacidades com efeito ligado`);
   }
 }

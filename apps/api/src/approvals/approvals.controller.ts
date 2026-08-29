@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { ApprovalState } from '@prisma/client';
 import { z } from 'zod';
 import { ApprovalsService } from './approvals.service';
+import { AcoesService } from '../gateway/acoes.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -19,7 +20,10 @@ const CreateApprovalSchema = z.object({
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('approvals')
 export class ApprovalsController {
-  constructor(private readonly approvals: ApprovalsService) {}
+  constructor(
+    private readonly approvals: ApprovalsService,
+    private readonly acoes: AcoesService,
+  ) {}
 
   /*
    * A FILA. Existia proposta, confirmação e consulta por id, mas não existia
@@ -43,10 +47,20 @@ export class ApprovalsController {
     return this.approvals.create({ orgId: user.orgId, actorId: user.sub, ...input });
   }
 
+  /*
+   * Confirmar EXECUTA. Sem isto a fila era um museu: a ação ficava retida,
+   * alguém confirmava, e nada saía.
+   *
+   * A execução usa os argumentos gravados na passagem pela porta, nunca os que
+   * chegam nesta requisição — é o que impede trocar o texto entre a aprovação
+   * e o envio.
+   */
   @Post(':id/confirm')
   @RequirePermissions('mcp.executar')
-  confirm(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.approvals.confirm(user.orgId, id, user.sub);
+  async confirm(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const confirmada = await this.approvals.confirm(user.orgId, id, user.sub);
+    const execucao = await this.acoes.executarAprovada(user.orgId, id, user.sub);
+    return { ...confirmada, execucao };
   }
 
   @Post(':id/reject')

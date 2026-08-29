@@ -5,6 +5,8 @@ import { SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { ToolGateway, type ExecCtx } from '../src/gateway/tool-gateway.service';
+import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
+import { AcoesService } from '../src/gateway/acoes.service';
 import { AuditService } from '../src/audit/audit.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
@@ -28,6 +30,9 @@ describe.skipIf(!URL)('a porta', () => {
   let gateway: ToolGateway;
   let approvals: ApprovalsService;
   let eventos: EventLogService;
+  let acoes: AcoesService;
+  let registro: EfeitosRegistry;
+  let enviados: string[];
 
   const ctx = (extra: Partial<ExecCtx> = {}): ExecCtx => ({
     orgId: ORG,
@@ -56,6 +61,16 @@ describe.skipIf(!URL)('a porta', () => {
     approvals = new ApprovalsService(p, audit);
     eventos = new EventLogService(p);
     gateway = new ToolGateway(p, policy, sinais, approvals, eventos);
+
+    enviados = [];
+    registro = new EfeitosRegistry();
+    registro.registrar({
+      'whatsapp.mensagem.enviar': async (a) => {
+        enviados.push(String(a.corpo));
+        return { enviado: true, id: 'msg-1' };
+      },
+    });
+    acoes = new AcoesService(p, registro, eventos);
   });
 
   afterAll(async () => {
@@ -302,6 +317,84 @@ describe.skipIf(!URL)('a porta', () => {
     await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete`);
     await prisma.$executeRawUnsafe(`DELETE FROM "EventLog" WHERE "orgId" = $1`, ORG);
     await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete`);
+  });
+
+  it('aprovar EXECUTA — e com o texto GRAVADO, não com o que vier depois', async () => {
+    const args = { titulo: 'Resumo', corpo: 'o texto exato que foi aprovado' };
+
+    // 1. o agente propõe: a porta retém e o efeito não roda
+    let rodouNaProposta = false;
+    const proposta = await gateway.executar(
+      {
+        capabilityId: 'whatsapp.mensagem.enviar',
+        args,
+        ctx: ctx(),
+        resource: { type: 'whatsapp.mensagem.enviar', id: 'grupo-1' },
+      },
+      async () => {
+        rodouNaProposta = true;
+        return {};
+      },
+    );
+    expect(proposta.status).toBe('aguardando_aprovacao');
+    expect(rodouNaProposta).toBe(false);
+    expect(enviados).toHaveLength(0);
+    if (proposta.status !== 'aguardando_aprovacao') return;
+
+    // 2. uma pessoa confirma
+    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+
+    // 3. e AGORA sai — com o texto da proposta
+    const r = await acoes.executarAprovada(ORG, proposta.approvalId, 'pedro');
+    expect(r.status).toBe('executado');
+    expect(enviados).toEqual(['o texto exato que foi aprovado']);
+
+    // 4. dois cliques no botão não mandam duas vezes
+    await expect(acoes.executarAprovada(ORG, proposta.approvalId, 'pedro')).rejects.toThrow(
+      /já foi executada \(uso único\)/,
+    );
+    expect(enviados).toHaveLength(1);
+
+    // 5. e ficou registrado que a EXECUÇÃO foi de gente, não da IA
+    const ev = await prisma.eventLog.findFirst({
+      where: { orgId: ORG, tipo: 'acao.executada' },
+      orderBy: { seq: 'desc' },
+    });
+    expect(ev?.actorType).toBe(ActorType.user);
+    expect(ev?.actorId).toBe('pedro');
+  });
+
+  it('capacidade aprovada mas sem efeito ligado NÃO finge que executou', async () => {
+    const vazio = new AcoesService(prisma as unknown as PrismaService, new EfeitosRegistry(), eventos);
+    const proposta = await gateway.executar(
+      {
+        capabilityId: 'whatsapp.mensagem.enviar',
+        args: { titulo: 'T', corpo: 'c' },
+        ctx: ctx(),
+        resource: { type: 'whatsapp.mensagem.enviar', id: 'grupo-1' },
+      },
+      async () => ({}),
+    );
+    if (proposta.status !== 'aguardando_aprovacao') throw new Error('deveria reter');
+    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+
+    const r = await vazio.executarAprovada(ORG, proposta.approvalId, 'pedro');
+    expect(r.status).toBe('sem_efeito');
+    if (r.status === 'sem_efeito') expect(r.motivo).toContain('efeito não está ligado');
+  });
+
+  it('aprovação da superfície antiga não tenta executar nada', async () => {
+    const a = await approvals.create({
+      orgId: ORG,
+      actorId: 'agente-teste',
+      resourceType: 'lead',
+      resourceId: 'lead-1',
+      changes: { status: 'ganho' },
+    });
+    await approvals.confirm(ORG, a.approvalId, 'pedro');
+    // ali quem executa é a própria rota, com o token — não a fila
+    const r = await acoes.executarAprovada(ORG, a.approvalId, 'pedro');
+    expect(r.status).toBe('nada_a_executar');
   });
 
   it('em MODO OBSERVAR a porta classifica, registra e deixa passar', async () => {

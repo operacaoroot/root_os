@@ -17,6 +17,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ToolGateway, type ExecCtx } from '../gateway/tool-gateway.service';
+import { EfeitosRegistry } from '../gateway/efeitos.registry';
 import { ContextBuilder, type FonteContexto } from './context-builder.service';
 import { SessionService } from './session.service';
 import type { CapacidadeCatalogo } from '@mktos/policy';
@@ -85,6 +86,7 @@ export class AgentRuntime {
     private readonly gateway: ToolGateway,
     private readonly contexto: ContextBuilder,
     private readonly sessoes: SessionService,
+    private readonly efeitos: EfeitosRegistry,
   ) {}
 
   async executar(p: ExecutarPedido): Promise<SessionResumo> {
@@ -359,17 +361,8 @@ export class AgentRuntime {
     args: Record<string, unknown>,
     orgId: string,
   ): Promise<unknown> {
-    const efeito = this.efeitos[capabilityId];
-    if (!efeito) {
-      throw new Error(
-        `capacidade "${capabilityId}" está classificada mas ainda não tem efeito ligado nesta versão`,
-      );
-    }
-    return efeito(args, orgId);
+    return this.efeitos.executar(capabilityId, args, orgId);
   }
-
-  /** Ligado pelo módulo no boot — evita dependência circular com os serviços. */
-  readonly efeitos: Record<string, (args: Record<string, unknown>, orgId: string) => Promise<unknown>> = {};
 
   private async atualizarAgente(agentId: string, status: SessionStatus, sessionId: string) {
     const falhou = status === SessionStatus.falhou;

@@ -19,6 +19,7 @@ import { SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { ToolGateway } from '../src/gateway/tool-gateway.service';
+import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { AuditService } from '../src/audit/audit.service';
 import { AgentRuntime } from '../src/agents/agent-runtime.service';
 import { SessionService } from '../src/agents/session.service';
@@ -88,12 +89,12 @@ describe.skipIf(!URL)('o laço do agente', () => {
 
   const montarRuntime = (modelo: LlmProvider) => {
     const p = prisma as unknown as PrismaService;
-    const r = new AgentRuntime(modelo, p, policy, gateway, contexto, sessoes);
-    Object.assign(r.efeitos, {
+    const registro = new EfeitosRegistry();
+    registro.registrar({
       'numeros.painel.ler': async () => ({ leadsHoje: 12, receita: 48000 }),
       'contexto.memoria.buscar': async () => ({ items: [] }),
     });
-    return r;
+    return new AgentRuntime(modelo, p, policy, gateway, contexto, sessoes, registro);
   };
 
   beforeAll(async () => {
@@ -305,7 +306,9 @@ describe.skipIf(!URL)('o laço do agente', () => {
       { text: 'Faturamos R$ 250.000 no mês.', stopReason: 'end_turn' },
     ]);
     const p = prisma as unknown as PrismaService;
-    const r = await new AgentRuntime(modelo, p, policy, gateway, semContexto, sessoes).executar(pedir());
+    const r = await new AgentRuntime(
+      modelo, p, policy, gateway, semContexto, sessoes, new EfeitosRegistry(),
+    ).executar(pedir());
 
     expect(r.status).toBe(SessionStatus.respondida); // responde
     const s = await prisma.session.findUnique({ where: { id: r.sessionId } });

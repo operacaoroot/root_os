@@ -11,6 +11,7 @@ import { FinanceModule } from '../finance/finance.module';
 import { LeadsModule } from '../leads/leads.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
+import { PautaModule } from '../pauta/pauta.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
     LeadsModule,
     TasksModule,
     CampaignsModule,
+    PautaModule,
   ],
   controllers: [AgentsController],
   providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, EfeitosService],

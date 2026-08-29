@@ -11,17 +11,35 @@ import type {
 } from './llm.provider';
 import { custoUsd } from './preco';
 
-// Provider OpenAI (Chat Completions) via fetch nativo — sem SDK/dep extra.
-// Credenciais PRÓPRIAS do root (openai.env em ~/.config/root/), nunca no repo.
-// Temporário: a meta do produto é Claude atrás desta MESMA interface.
+/*
+ * Provider de API compatível com Chat Completions, via fetch nativo — sem SDK.
+ *
+ * É a base de dois providers reais (OpenAI e OpenRouter), porque o formato do
+ * corpo e da resposta é o mesmo. O que muda é a URL, a credencial, os headers
+ * e COMO O CUSTO É APURADO — e é só isso que a subclasse toca.
+ *
+ * Credenciais PRÓPRIAS do root, nunca no repo.
+ */
 @Injectable()
 export class OpenAiProvider implements LlmProvider {
-  readonly name = 'openai';
+  readonly name: string = 'openai';
   readonly supportsTools = true;
-  private readonly log = new Logger('OpenAiProvider');
-  private readonly apiKey = process.env.OPENAI_API_KEY ?? '';
-  private readonly baseUrl = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
-  readonly model = process.env.OPENAI_MODEL ?? 'gpt-4o';
+  protected readonly log = new Logger('OpenAiProvider');
+  protected readonly apiKey: string = process.env.OPENAI_API_KEY ?? '';
+  protected readonly baseUrl: string = (
+    process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+  ).replace(/\/$/, '');
+  readonly model: string = process.env.OPENAI_MODEL ?? 'gpt-4o';
+
+  /** Headers que o provedor recomenda — o OpenRouter pede identificação. */
+  protected get headersExtras(): Record<string, string> {
+    return {};
+  }
+
+  /** Nome do env da credencial, só para o erro apontar o lugar certo. */
+  protected get envDaChave(): string {
+    return 'OPENAI_API_KEY';
+  }
 
   get configured(): boolean {
     return this.apiKey.length > 0;
@@ -30,7 +48,7 @@ export class OpenAiProvider implements LlmProvider {
   async complete({ system, user }: LlmMessage): Promise<string> {
     if (!this.configured) {
       throw new Error(
-        'OPENAI_API_KEY ausente. Configure ~/.config/root/openai.env (OPENAI_API_KEY=...) e reinicie a API.',
+        `${this.envDaChave} ausente. Configure a credencial no ambiente da API e reinicie.`,
       );
     }
 
@@ -39,6 +57,7 @@ export class OpenAiProvider implements LlmProvider {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
+        ...this.headersExtras,
       },
       body: JSON.stringify({
         model: this.model,
@@ -77,7 +96,7 @@ export class OpenAiProvider implements LlmProvider {
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     if (!this.configured) {
       throw new Error(
-        'OPENAI_API_KEY ausente. Configure ~/.config/root/openai.env (OPENAI_API_KEY=...) e reinicie a API.',
+        `${this.envDaChave} ausente. Configure a credencial no ambiente da API e reinicie.`,
       );
     }
 
@@ -100,8 +119,12 @@ export class OpenAiProvider implements LlmProvider {
 
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify(corpo),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+        ...this.headersExtras,
+      },
+      body: JSON.stringify(this.ajustarCorpo(corpo)),
       signal: input.signal,
     });
 
@@ -124,6 +147,8 @@ export class OpenAiProvider implements LlmProvider {
         prompt_tokens?: number;
         completion_tokens?: number;
         prompt_tokens_details?: { cached_tokens?: number };
+        /** O OpenRouter devolve o custo real da chamada aqui, em dólar. */
+        cost?: number;
       };
     };
 
@@ -143,7 +168,7 @@ export class OpenAiProvider implements LlmProvider {
     const entrada = json.usage?.prompt_tokens ?? 0;
     const saida = json.usage?.completion_tokens ?? 0;
     const cacheLeitura = json.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-    const { custoUsd: custo, custoEstimado } = custoUsd(modeloServido, {
+    const { custoUsd: custo, custoEstimado } = this.apurarCusto(modeloServido, json.usage, {
       entrada,
       saida,
       cacheLeitura,
@@ -165,6 +190,23 @@ export class OpenAiProvider implements LlmProvider {
       usage,
       raw: escolha?.message ?? null,
     };
+  }
+
+  /** Gancho: o OpenRouter acrescenta o pedido de contabilização de custo. */
+  protected ajustarCorpo(corpo: Record<string, unknown>): Record<string, unknown> {
+    return corpo;
+  }
+
+  /**
+   * Gancho de custo. Aqui vem da TABELA — modelo fora dela devolve
+   * `custoEstimado: false`, e a tela mostra "não medido" em vez de R$ 0,00.
+   */
+  protected apurarCusto(
+    modeloServido: string,
+    _usage: unknown,
+    tokens: { entrada: number; saida: number; cacheLeitura?: number },
+  ): { custoUsd: number; custoEstimado: boolean } {
+    return custoUsd(modeloServido, tokens);
   }
 
   private parseArgs(bruto: string, ferramenta: string): Record<string, unknown> {
