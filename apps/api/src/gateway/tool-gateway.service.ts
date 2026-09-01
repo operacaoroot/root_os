@@ -6,6 +6,7 @@ import { PolicyService } from '../policy/policy.service';
 import { SinaisService } from '../policy/sinais.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { EventLogService } from './event-log.service';
+import { mensagemDeErro, validarArgs } from './validacao';
 
 export interface ExecCtx {
   orgId: string;
@@ -94,6 +95,16 @@ export class ToolGateway {
       !ctx.capacidadesDeclaradas.includes(req.capabilityId)
     ) {
       return this.recusar(req, null, `"${req.capabilityId}" não está nas capacidades declaradas deste agente`, inicio);
+    }
+
+    // 1. Argumentos ANTES de classificar. Recusar aqui é o que permite ao
+    // modelo corrigir o nome do campo — recusar lá no efeito já custou uma
+    // aprovação queimada.
+    if (cap) {
+      const erros = validarArgs((cap as { argsSchema?: unknown }).argsSchema, req.args);
+      if (erros.length) {
+        return this.recusar(req, null, mensagemDeErro(erros), inicio);
+      }
     }
 
     // 3-4. Sinais do momento + decisão.

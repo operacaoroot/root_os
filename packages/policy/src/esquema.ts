@@ -48,6 +48,12 @@ export const CapacidadeSchema = z.object({
   ferramenta: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(),
   /** `MÉTODO /caminho` da rota que implementa. Ausente = declarada e não implementada. */
   rota: z.string().optional(),
+  /**
+   * JSON Schema dos argumentos. Vai para o modelo COMO ELE ESTÁ e é o que a
+   * porta valida no passo 1. Sem ele, o modelo não sabe o nome do campo e
+   * inventa — foi assim que uma aprovação foi queimada em 01/09/2026.
+   */
+  argsSchema: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const AprovacaoSchema = z.object({

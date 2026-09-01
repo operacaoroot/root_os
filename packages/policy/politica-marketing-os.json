@@ -11,6 +11,23 @@
       "rota": "GET /knowledge/search",
       "descricao": "Busca SEMÂNTICA na base de conhecimento (vault Obsidian do root): retorna as notas mais relevantes p/ a pergunta, com título, trecho e caminho. Use para responder citando o conhecimento interno — sempre cite a nota (path).",
       "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "q"
+        ],
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 2,
+            "description": "o que procurar na base"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,
@@ -266,6 +283,15 @@
       "rota": "GET /finance/payables",
       "descricao": "Contas a pagar e a receber (lançamentos previstos): valor, fornecedor/cliente, vencimento, dias de atraso e status de aprovação. Totais de a pagar/receber, vencidos e itens aguardando aprovação. Filtre por tipo (pagar|receber).",
       "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tipo": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,
@@ -385,6 +411,15 @@
       "rota": "GET /tasks",
       "descricao": "Lista tarefas (ClickUp/Asana unificados). Filtros: overdue (só atrasadas) e status.",
       "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,
@@ -470,6 +505,32 @@
       "rota": "GET /leads",
       "descricao": "Lista leads, opcionalmente filtrando por período (today|week|month) e/ou status (novo, qualificado, oportunidade, reuniao, proposta, ganho, perdido).",
       "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "novo",
+              "qualificado",
+              "oportunidade",
+              "reuniao",
+              "proposta",
+              "ganho",
+              "perdido"
+            ]
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "today",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,
@@ -504,6 +565,15 @@
       "rota": "GET /campaigns",
       "descricao": "Lista campanhas com leads, conversões e CPL. Filtro opcional por status (ativa, pausada, problema, encerrada).",
       "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": false,
@@ -605,6 +675,24 @@
       "ferramenta": "email_rascunhar",
       "descricao": "Escreve um rascunho de e-mail que fica dentro do OS. Ninguém de fora recebe nada.",
       "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assunto",
+          "corpo"
+        ],
+        "properties": {
+          "assunto": {
+            "type": "string",
+            "minLength": 1
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": false,
         "produzArtefato": true,
@@ -640,6 +728,34 @@
       "descricao": "Altera status e próxima ação de um lead.",
       "nivel": "R2",
       "desfazer": "crm.lead.alterar",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "novo",
+              "qualificado",
+              "oportunidade",
+              "reuniao",
+              "proposta",
+              "ganho",
+              "perdido"
+            ]
+          },
+          "nextAction": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -710,6 +826,31 @@
       "rota": "POST /google/calendar/event",
       "descricao": "Cria evento na Agenda do Google da conta conectada.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo",
+          "inicio"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inicio": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "fim": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "descricao": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -761,6 +902,29 @@
       "rota": "POST /google/gmail/send",
       "descricao": "Envia e-mail pela conta Google conectada. Não existe desenviar.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "para",
+          "assunto",
+          "corpo"
+        ],
+        "properties": {
+          "para": {
+            "type": "string",
+            "description": "destinatário"
+          },
+          "assunto": {
+            "type": "string",
+            "minLength": 1
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -778,6 +942,24 @@
       "rota": "POST /pauta/pecas/:id/publicar",
       "descricao": "Publica a peça no grupo de WhatsApp pela Evolution. Não existe desenviar.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "corpo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "description": "linha de título, vira negrito no topo"
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o texto que vai para o grupo"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -844,6 +1026,21 @@
       "ferramenta": "financeiro_pagamento_baixar",
       "descricao": "Dá baixa num título a pagar. Movimenta dinheiro: o OS prepara e devolve para a pessoa executar na origem.",
       "nivel": "R5",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string"
+          },
+          "valor": {
+            "type": "number"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,

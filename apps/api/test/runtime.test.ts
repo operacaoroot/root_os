@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import {
   PrismaClient,
   ActorType,
@@ -98,6 +98,13 @@ describe.skipIf(!URL)('o laço do agente', () => {
   };
 
   beforeAll(async () => {
+    /*
+     * Relógio preso às 14:00. Sem isto a suíte passa de dia e falha de noite:
+     * o sinal `fora_da_janela` (08:00–20:00) sobe TODO nível um degrau, e os
+     * testes de classificação viam R1 onde esperavam R0. Escalonamento tem
+     * teste próprio; aqui o que se mede é a classificação.
+     */
+    vi.setSystemTime(new Date('2026-09-01T14:00:00-03:00'));
     process.env.GATEWAY_MODO = 'impor';
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.$connect();
@@ -141,6 +148,7 @@ describe.skipIf(!URL)('o laço do agente', () => {
   });
 
   afterAll(async () => {
+    vi.useRealTimers();
     await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
     await prisma.eventLog.deleteMany({ where: { orgId: ORG } });
     await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');

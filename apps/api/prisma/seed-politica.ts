@@ -8,7 +8,7 @@
  *
  *   pnpm --filter @mktos/api db:seed:politica
  */
-import { PrismaClient, RiskLevel } from '@prisma/client';
+import { Prisma, PrismaClient, RiskLevel } from '@prisma/client';
 import {
   lerPolitica,
   lerDelta,
@@ -20,6 +20,25 @@ import politicaMktos from '@mktos/policy/politica-marketing-os.json';
 
 const prisma = new PrismaClient();
 const ORDEM = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5'];
+
+/*
+ * JSON com chaves ordenadas, recursivamente.
+ *
+ * Comparar `JSON.stringify(doDb) !== JSON.stringify(doArquivo)` NÃO funciona:
+ * o Postgres guarda Json como JSONB e devolve as chaves em outra ordem. A
+ * comparação dava sempre diferente e o seed abria uma versão nova a cada
+ * deploy — enchendo de ruído justamente a tabela que existe para responder
+ * "o que estava valendo naquele dia".
+ */
+function canonico(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return `[${v.map(canonico).join(',')}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonico(o[k])}`)
+    .join(',')}}`;
+}
 
 async function main() {
   const base = lerPolitica(politicaRoot, 'politica-root.json');
@@ -51,6 +70,8 @@ async function main() {
       level: c.nivel as RiskLevel,
       efeito: c.efeito as object,
       hashKeys: [] as string[],
+      // Prisma.DbNull e não `null`: coluna Json nulável exige o sentinela.
+      argsSchema: (c.argsSchema ?? Prisma.DbNull) as Prisma.InputJsonValue,
       ferramenta: c.ferramenta ?? null,
       rota: c.rota ?? null,
       desfazer: c.desfazer ?? null,
@@ -68,6 +89,7 @@ async function main() {
     where: { orgId: null, ativaAte: null },
     orderBy: { versao: 'desc' },
   });
+
   if (!ativa) {
     await prisma.policyVersion.create({
       data: {
@@ -78,8 +100,30 @@ async function main() {
       },
     });
     console.log('política base v1 criada');
+  } else if (canonico(ativa.documento) !== canonico(doc)) {
+    /*
+     * O documento mudou. NÃO se sobrescreve uma versão: fecha-se a atual e
+     * abre-se a seguinte, com motivo. É o que torna a política auditável — e
+     * o que permite responder "o que estava valendo naquele dia".
+     *
+     * Rebaixamento continua barrado no laço acima, capacidade a capacidade.
+     */
+    const agora = new Date();
+    await prisma.$transaction([
+      prisma.policyVersion.update({ where: { id: ativa.id }, data: { ativaAte: agora } }),
+      prisma.policyVersion.create({
+        data: {
+          orgId: null,
+          versao: ativa.versao + 1,
+          documento: doc as unknown as object,
+          motivo: 'catálogo do repositório atualizado (seed)',
+          ativaDe: agora,
+        },
+      }),
+    ]);
+    console.log(`política base v${ativa.versao} fechada; v${ativa.versao + 1} em vigor`);
   } else {
-    console.log(`política base já existe (v${ativa.versao}) — não sobrescrita`);
+    console.log(`política base v${ativa.versao} sem mudança`);
   }
 
   console.log(`capacidades: ${criadas} criadas, ${atualizadas} atualizadas, ${doc.capacidades.length} no total`);

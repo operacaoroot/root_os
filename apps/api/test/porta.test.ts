@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { PrismaClient, ActorType, ApprovalState } from '@prisma/client';
 import { PolicyService } from '../src/policy/policy.service';
 import { SinaisService } from '../src/policy/sinais.service';
@@ -44,6 +44,13 @@ describe.skipIf(!URL)('a porta', () => {
   });
 
   beforeAll(async () => {
+    /*
+     * Relógio preso às 14:00. Sem isto a suíte passa de dia e falha de noite:
+     * o sinal `fora_da_janela` (08:00–20:00) sobe TODO nível um degrau, e os
+     * testes de classificação viam R1 onde esperavam R0. Escalonamento tem
+     * teste próprio; aqui o que se mede é a classificação.
+     */
+    vi.setSystemTime(new Date('2026-09-01T14:00:00-03:00'));
     process.env.GATEWAY_MODO = 'impor';
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.$connect();
@@ -74,6 +81,7 @@ describe.skipIf(!URL)('a porta', () => {
   });
 
   afterAll(async () => {
+    vi.useRealTimers();
     // O EventLog é append-only de verdade: a RULE de DELETE também vale para o
     // teste. Desligar explicitamente aqui é o preço de a garantia ser real.
     await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
@@ -270,7 +278,9 @@ describe.skipIf(!URL)('a porta', () => {
   it('a recusa também fica registrada — é dela que sai a prova', async () => {
     const antes = await prisma.policyDecision.count({ where: { orgId: ORG, permitido: false } });
     await gateway.executar(
-      { capabilityId: 'financeiro.pagamento.baixar', args: {}, ctx: ctx() },
+      // argumento válido de propósito: o que está sob teste é o BLOQUEIO do
+      // R5, e sem isso a validação recusaria antes e o teste mediria outra coisa
+      { capabilityId: 'financeiro.pagamento.baixar', args: { titulo: 'T-9' }, ctx: ctx() },
       async () => ({}),
     );
     const depois = await prisma.policyDecision.count({ where: { orgId: ORG, permitido: false } });
@@ -397,6 +407,45 @@ describe.skipIf(!URL)('a porta', () => {
     expect(r.status).toBe('nada_a_executar');
   });
 
+  it('fora da janela de horário, a régua sobe o nível sozinha', async () => {
+    // 02:00 — o sinal fora_da_janela acende e R0 vira R1. Foi visto em produção
+    // antes de existir este teste, e é o que prova que os seis sinais estão
+    // ligados a dado real e não são enfeite de tela.
+    vi.setSystemTime(new Date('2026-09-01T02:00:00-03:00'));
+    const r = await gateway.executar(
+      { capabilityId: 'numeros.painel.ler', args: {}, ctx: ctx() },
+      async () => ({ ok: true }),
+    );
+    vi.setSystemTime(new Date('2026-09-01T14:00:00-03:00'));
+
+    expect(r.status).toBe('executado');
+    if (r.status === 'executado') {
+      expect(r.decisao.nivelBase).toBe('R0');
+      expect(r.decisao.nivel).toBe('R1');
+      expect(r.decisao.sinaisAcionados).toContain('fora_da_janela');
+      expect(r.decisao.motivo).toContain('elevado');
+    }
+  });
+
+  it('argumento com o nome errado é recusado NA PORTA, antes de reter nada', async () => {
+    // O caso de 01/09/2026: o modelo propôs {message}, a capacidade espera
+    // {corpo}. Antes, isso passava pela régua, virava item na fila, alguém
+    // aprovava — e só então o efeito morria, com a aprovação já queimada.
+    const antes = await prisma.approval.count({ where: { orgId: ORG } });
+    const r = await gateway.executar(
+      {
+        capabilityId: 'whatsapp.mensagem.enviar',
+        args: { message: 'texto no campo errado' },
+        ctx: ctx(),
+      },
+      async () => ({ nunca: true }),
+    );
+    expect(r.status).toBe('recusado');
+    if (r.status === 'recusado') expect(r.motivo).toContain('argumentos inválidos');
+    // e NÃO entrou na fila de ninguém
+    expect(await prisma.approval.count({ where: { orgId: ORG } })).toBe(antes);
+  });
+
   it('em MODO OBSERVAR a porta classifica, registra e deixa passar', async () => {
     process.env.GATEWAY_MODO = 'observar';
     const p = prisma as unknown as PrismaService;
@@ -414,7 +463,7 @@ describe.skipIf(!URL)('a porta', () => {
 
     let rodou = false;
     const r = await observador.executar(
-      { capabilityId: 'financeiro.pagamento.baixar', args: {}, ctx: ctx() },
+      { capabilityId: 'financeiro.pagamento.baixar', args: { titulo: 'T-9' }, ctx: ctx() },
       async () => {
         rodou = true;
         return { ok: true };
