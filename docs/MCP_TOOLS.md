@@ -1,87 +1,139 @@
-# Marketing OS — MCP / Hub de Ferramentas para IA
+# ROOT OS — servidor MCP (`packages/mcp`)
 
-> O MCP **não é** um amontoado de automações soltas. É uma camada com **contratos, permissões e logs**.
-> Servidor: `packages/mcp` (`@modelcontextprotocol/sdk`, TS). Exposto p/ Claude Desktop, Claude Code e qualquer cliente MCP.
+> Servidor **MCP (Model Context Protocol)** próprio, em TypeScript, com o `@modelcontextprotocol/sdk`.
+> Exposto para Claude Desktop, Claude Code e qualquer cliente MCP. Como plugar: `packages/mcp/README.md`.
 
-> **Status (Fase 2):** ✅ implementado e testado — 10 tools **read_only** (`get_dashboard_summary`, `get_funnel_metrics`, `search_leads`, `get_lead`, `list_campaigns`, `get_campaign`, `list_tasks`, `get_overdue_tasks`, `get_events_summary`, `list_recent_events`). Todas chamam a API via conta de **serviço só-leitura** (`ia_servico`) → passam por RBAC + auditoria; a IA nunca toca o banco direto. Como plugar: `packages/mcp/README.md`. Tools `write_*` entram nas próximas fases com aprovação humana.
+## Estado real (conferido em 10/09/2026, contra `packages/mcp/src/server.ts`)
 
-## Anatomia de toda tool
+**São 35 ferramentas, todas `read_only`.** Não existe nenhuma ferramenta de escrita no servidor MCP:
+`grep -c 'registerTool(' packages/mcp/src/server.ts` devolve 35, e todas passam por `apiGet` — o
+cliente (`packages/mcp/src/client.ts`) só sabe fazer `GET`.
 
-```ts
-defineTool({
-  name: 'get_lead',
-  description: 'Retorna a ficha completa de um lead pelo id.',
-  inputSchema: z.object({ lead_id: z.string().uuid() }),   // validação
-  outputSchema: LeadCardSchema,                             // contrato de saída
-  permission: 'leads.ver',                                  // exige permissão
-  class: 'read_only',                                       // classe de risco
-  rateLimit: { rpm: 60 },
-  handler: async (input, ctx) => { /* só via services, nunca SQL cru solto */ }
-})
-```
-Toda chamada → linha em `ai_tool_calls` (input, output, quem, classe, aprovação, erro).
+> Este documento já disse "10 tools". Era o número da Fase 2; o servidor cresceu e o texto não.
+> O número acima é contável a partir do código; se ele divergir de novo, o código é que manda.
 
-## Classes de risco e regra de execução
+## Como a segurança é aplicada de verdade
 
-| Classe | Regra | Exemplos |
-|---|---|---|
-| `read_only` | permissão normal, executa direto | `search_leads`, `get_funnel_metrics` |
-| `write_safe` | exige permissão específica do módulo | `create_task`, `score_lead` |
-| `write_sensitive` | **retorna draft + `approval_token`; só executa após confirmação humana** (UI ou WhatsApp) | `send_whatsapp_message`, `draft_email_response`→send, `update_campaign` |
-| `destructive` | **bloqueado por padrão**; exige dupla confirmação + permissão admin | exclusão/anonimização, `retry_automation` |
+O enforcement **não** está no servidor MCP, e sim na API:
 
-O cliente de IA nunca "pula" a classe: o enforcement está no servidor MCP, não no prompt.
+1. O servidor MCP autentica em `POST /api/auth/login` com a **conta de serviço só-leitura**
+   (`MCP_SERVICE_EMAIL`, default `mcp@marketing-os.local`). Sem `MCP_SERVICE_PASSWORD` o processo
+   nem sobe — não há senha default no código (`client.ts:8-11`).
+2. Cada tool chama um endpoint `GET` da API com esse token. O `RequirePermissions` do endpoint é
+   que decide: a conta de serviço só enxerga o que o papel dela permite.
+3. A IA **nunca** toca o banco. Não existe conexão direta de banco no `packages/mcp`.
+4. `stdout` é do protocolo; log vai para `stderr` (`index.ts:9`).
 
----
+Isso é o ADR-005 na prática (`docs/adr/ADR-005-dois-mcps.md`): leitura de banco e ação têm
+superfícies separadas, e nunca `@modelcontextprotocol/server-postgres`.
 
-## Catálogo de tools (MVP marcado com ★)
+### O que este documento afirmava e não é verdade hoje
 
-### Leads
-| Tool | Classe | Permissão |
-|---|---|---|
-| ★ `search_leads` | read_only | leads.ver |
-| ★ `get_lead` | read_only | leads.ver |
-| `update_lead_status` | write_safe | leads.editar |
-| `score_lead` | write_safe | leads.editar |
-| ★ `summarize_leads` | read_only | leads.ver |
+| Afirmação antiga | Realidade |
+|---|---|
+| `defineTool({ permission, class, rateLimit, outputSchema })` | A assinatura real é `server.registerTool(nome, { description, inputSchema, annotations }, handler)`. Não há campo de permissão, classe de risco nem rate limit no servidor MCP |
+| "Toda chamada → linha em `ai_tool_calls`" | A tabela **não existe** no `schema.prisma`. O registro que existe hoje é o `AuditLog` da API e o `EventLog` do gateway |
+| Tools `write_safe` / `write_sensitive` / `destructive` (`create_task`, `send_whatsapp_message`, `update_campaign`…) | **Nenhuma foi implementada.** A classificação de risco de ação vive em `packages/policy` (escada R0–R5) e é aplicada pelo Tool Gateway, não pelo MCP |
 
-### Campanhas
-`list_campaigns`·`get_campaign`·`get_campaign_metrics` (read_only) · `analyze_campaign`·`compare_campaigns` (read_only) · decisões/alterações → `update_campaign` (write_sensitive).
+As classes de risco continuam sendo o desenho alvo para quando a escrita entrar no MCP — mas o
+lugar onde elas já existem em runtime é a régua, não este pacote.
 
-### Funil
-★ `get_funnel_metrics` · `analyze_funnel` · `detect_funnel_bottlenecks` — todas read_only.
+## Catálogo — as 35 ferramentas
 
-### Instagram
-`get_instagram_overview` · `get_top_posts` · `analyze_content_performance` · `suggest_content_ideas` — read_only.
+Todas são `read_only` (`annotations: { readOnlyHint: true, openWorldHint: false }`). "Permissão" é
+a exigida pelo endpoint da API que a tool chama.
 
-### Página de vendas / Pixel
-★ `get_sales_page_metrics` · ★ `get_pixel_events` · `analyze_conversion_events` — read_only.
+### Painel e funil
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `get_dashboard_summary` | `GET /dashboard/summary` | `dashboard.ver` | — |
+| `get_funnel_metrics` | `GET /funnel/metrics` | `dashboard.ver` | — |
+| `get_goals_panel` | `GET /goals/panel` | `dashboard.ver` | — |
 
-### Tarefas
-★ `list_tasks` · ★ `get_overdue_tasks` · `summarize_tasks` (read_only) · `create_task` (write_safe) · `update_task_status` (write_safe).
+### Leads e campanhas
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `search_leads` | `GET /leads` | `leads.ver` | `period`, `status` |
+| `get_lead` | `GET /leads/:id` | `leads.ver` | `lead_id` |
+| `list_campaigns` | `GET /campaigns` | `campanhas.ver` | `status` |
+| `get_campaign` | `GET /campaigns/:id` | `campanhas.ver` | `campaign_id` |
 
-### Gmail
-`search_emails` · `summarize_email` · `classify_emails` (read_only) · `draft_email_response` (write_safe: gera rascunho) · **envio** = write_sensitive.
+### Pixel e eventos
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `get_events_summary` | `GET /events/summary` | `dashboard.ver` | `days` |
+| `list_recent_events` | `GET /events/recent` | `dashboard.ver` | `limit` |
 
-### Drive / Obsidian
-`search_drive_files`·`read_drive_file`·`summarize_drive_file` (read_only) · `search_notes`·`read_note`·`summarize_note` (read_only) · `create_note` (write_sensitive).
+### Tarefas (internas) e Trabalho (ClickUp)
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `list_tasks` | `GET /tasks` | `tarefas.ver` | `overdue`, `status` |
+| `get_overdue_tasks` | `GET /tasks?overdue=1` | `tarefas.ver` | — |
+| `trabalho_estrutura` | `GET /trabalho/estrutura` | `tarefas.ver` | — |
+| `trabalho_tarefas` | `GET /trabalho/tarefas` | `tarefas.ver` | `list_id`, `status_id`, `assignee`, `q` |
+| `trabalho_tarefa` | `GET /trabalho/tarefas/:id` | `tarefas.ver` | `task_id` |
 
-### Relatórios
-★ `generate_daily_report` · `generate_weekly_report` · `generate_campaign_report` (read_only, geram conteúdo) · `save_report_to_drive` (write_safe) · `send_report_to_whatsapp` (write_sensitive).
+### Conteúdo
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `get_content_stats` | `GET /content/stats` | `dashboard.ver` | — |
+| `list_content` | `GET /content` | `dashboard.ver` | `status`, `eixo`, `formato` |
 
-### WhatsApp
-`send_whatsapp_message`·`send_alert`·`send_report` (write_sensitive) · `process_whatsapp_command` (roteia p/ read_only ou pede confirmação).
+### Conhecimento (Obsidian, busca semântica)
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `search_knowledge` | `GET /knowledge/search` | `obsidian.ver` | `query`, `limit` |
+| `get_note` | `GET /knowledge/:id` | `obsidian.ver` | `note_id` |
 
-### Automações
-`list_automation_runs`·`get_failed_automations`·`summarize_automation_errors` (read_only) · `retry_automation` (destructive — bloqueado por padrão).
+### Google (Agenda, Gmail, Drive)
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `list_calendar_events` | `GET /google/calendar` | `dashboard.ver` | `max` |
+| `search_gmail` | `GET /google/gmail` | `gmail.ver` | `q`, `max` |
+| `get_email` | `GET /google/gmail/:id` | `gmail.ver` | `message_id` |
+| `list_drive_files` | `GET /google/drive` | `drive.ver` | `q`, `max` |
+| `get_doc` | `GET /google/docs/:id` | `drive.ver` | `doc_id` |
 
-### Auditoria
-`log_ai_action` (system) · `list_audit_events` (read_only, permissão auditoria.ver).
+### Instagram (Meta)
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `get_instagram_overview` | `GET /meta/instagram/overview` | `instagram.ver` | — |
+| `list_instagram_media` | `GET /meta/instagram/media` | `instagram.ver` | `limit` |
 
----
-
-## MVP do MCP = só read-only + create_task
-As tools ★ (todas read_only exceto `create_task`) são o **MCP básico da Fase 1/7**. A IA já consegue: responder "o que aconteceu hoje?", resumir leads, ver funil, listar tarefas atrasadas, gerar (não enviar) relatório diário. Envio e escrita sensível entram depois, com o fluxo de aprovação pronto.
+### Financeiro (FinOps)
+| Tool | Endpoint | Permissão | Argumentos |
+|---|---|---|---|
+| `get_finance_summary` | `GET /finance/summary` | `financeiro.ver` | — |
+| `get_finance_kpis` | `GET /finance/kpis` | `financeiro.ver` | — |
+| `list_finance_accounts` | `GET /finance/accounts` | `financeiro.ver` | — |
+| `list_finance_transactions` | `GET /finance/transactions` | `financeiro.ver` | `status`, `type`, `account_id`, `from`, `to`, `limit` |
+| `get_cashflow` | `GET /finance/cashflow` | `financeiro.ver` | `from`, `to` |
+| `get_dre` | `GET /finance/dre` | `financeiro.ver` | `month`, `from`, `to` |
+| `list_chart_accounts` | `GET /finance/chart-accounts` | `financeiro.ver` | — |
+| `list_payables` | `GET /finance/payables` | `financeiro.ver` | `tipo` |
+| `get_conciliacao` | `GET /finance/conciliacao` | `financeiro.ver` | `account_id` |
+| `list_bank_connections` | `GET /finance/bank/connections` | `financeiro.ver` | — |
 
 ## Como a IA "cita a fonte"
-Toda tool retorna, junto do dado, um campo `source` (`{tool, entity_ids, generated_at}`). O prompt do assistente exige citar. Se a tool retorna vazio → o assistente responde "não há dado suficiente" (regra no system prompt + validação).
+
+As respostas da API trazem, quando existe, o campo `source`. O `packages/mcp` devolve o JSON da API
+inteiro para o cliente, sem reescrever — o servidor não resume nem interpreta. Fazer o modelo citar
+é regra de prompt, não do transporte. A obrigação de recusar resposta sem procedência é da fatia
+4.3 do plano (`docs/PLANO-CONTINUIDADE.md`), e ainda não está implementada.
+
+## Quando a escrita entrar
+
+Não pelo MCP direto. O caminho decidido é o Tool Gateway (ADR-004): a capacidade é declarada em
+`packages/policy`, a régua R0–R5 classifica, o gateway registra no `EventLog` **antes** do efeito e
+decide entre executar, exigir aprovação ou recusar. Uma tool MCP de escrita seria só mais uma
+superfície chamando o gateway — nunca um caminho paralelo.
+
+## Rodar e plugar
+
+```bash
+pnpm --filter @mktos/mcp build     # tsc
+pnpm --filter @mktos/mcp smoke     # sobe o server, lista e chama tools (API precisa estar no ar)
+```
+
+Variáveis: `MCP_API_URL` (default `http://localhost:4001/api`), `MCP_SERVICE_EMAIL`,
+`MCP_SERVICE_PASSWORD` (obrigatória). Ver `.env.example`.

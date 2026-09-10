@@ -1,7 +1,7 @@
 {
   "$schema": "https://root.os/esquema/politica-1.json",
-  "versao": "1.0.0",
-  "atualizadoEm": "2026-08-15",
+  "versao": "1.1.0",
+  "atualizadoEm": "2026-09-10",
   "origem": "Root/20-empresa/root-os/09 - Escada de risco R0-R5.md",
   "descricao": "Escada de risco padrão ROOT. O cliente herda este arquivo e sobrescreve apenas o que a operação dele exigir.",
   "niveis": {
@@ -302,12 +302,11 @@
     {
       "id": "clickup.tarefa.criar",
       "descricao": "abre tarefa no ClickUp",
-      "nivel": "R2",
-      "desfazer": "clickup.tarefa.excluir",
+      "nivel": "R3",
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
-        "reversibilidade": "automatica",
+        "reversibilidade": "manual",
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
@@ -318,12 +317,11 @@
     {
       "id": "crm.lead.criar",
       "descricao": "cria lead no CRM",
-      "nivel": "R2",
-      "desfazer": "crm.lead.arquivar",
+      "nivel": "R3",
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
-        "reversibilidade": "automatica",
+        "reversibilidade": "manual",
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
@@ -334,12 +332,11 @@
     {
       "id": "agenda.evento.criar",
       "descricao": "marca evento na agenda",
-      "nivel": "R2",
-      "desfazer": "agenda.evento.excluir",
+      "nivel": "R3",
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
-        "reversibilidade": "automatica",
+        "reversibilidade": "manual",
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",

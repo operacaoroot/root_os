@@ -10,6 +10,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:diff": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --exit-code",
+    "db:diff:sql": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --script",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
@@ -19,12 +22,13 @@
     "db:seed:trabalho": "tsx prisma/seed-trabalho.ts",
     "test": "vitest run",
     "typecheck:test": "tsc -p tsconfig.test.json",
-    "test:isolamento": "vitest run test/tenant-isolation.test.ts",
+    "test:isolamento": "MKTOS_CONJUNTO_DE_TESTES=isolamento vitest run",
     "db:seed:politica": "tsx prisma/seed-politica.ts",
     "test:porta": "vitest run test/porta.test.ts",
     "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts",
     "smoke": "node scripts/smoke-boot.mjs",
-    "perguntar": "node dist/scripts/perguntar.js"
+    "perguntar": "node dist/scripts/perguntar.js",
+    "relatorio:observar": "node dist/scripts/relatorio-observar.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

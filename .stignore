@@ -9,7 +9,33 @@ coverage
 *.tsbuildinfo
 .turbo
 
-// Backups de secrets e ruído
+// Segredos: NUNCA sincronizar.
+// O .env da VPS é o de PRODUÇÃO. Sem estas linhas ele viaja para o Mac e o do
+// Mac sobrescreve o do servidor — os dois sentidos são ruins, e o segundo
+// derruba a API. Cada máquina mantém o seu.
+// A ordem importa: o Syncthing usa o PRIMEIRO padrão que casar, então a
+// exceção do .env.example precisa vir antes do curinga.
+!.env.example
+.env
+.env.*
 .env.bak.*
+
+// Ruído
 .DS_Store
 *.log
+
+// ────────────────────────────────────────────────────────────────────────
+// .git NÃO está ignorado aqui — de propósito, e isso é um problema aberto.
+//
+// Hoje o Syncthing sincroniza o repositório inteiro, inclusive o .git: trocar
+// de branch no Mac altera o working tree da VPS. Ignorar o .git conserta isso,
+// mas quebra o único caminho pelo qual o código chega no servidor hoje. Antes
+// de acrescentar a linha é preciso decidir o substituto (decisão N-9 do
+// docs/PLANO-CONTINUIDADE.md; opções e passo a passo em docs/DEPLOY.md):
+//
+//   a) `git pull` de origin/main direto na VPS; ou
+//   b) rsync explícito do código dentro do deploy/up.sh.
+//
+// Enquanto a decisão não sai: nenhum `git checkout` de branch no Mac com o
+// Syncthing ligado.
+// ────────────────────────────────────────────────────────────────────────

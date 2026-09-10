@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ActorType, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
-import type { Decisao } from '@mktos/policy';
+import type { Capacidade, Decisao } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { SinaisService } from '../policy/sinais.service';
@@ -46,6 +46,25 @@ export type ToolCallResult<R = unknown> =
   | { status: 'recusado'; motivo: string; preparo?: unknown; toolCallId: string; decisao: Decisao }
   | { status: 'erro'; mensagem: string; toolCallId: string };
 
+/**
+ * As duas recusas que a porta faz ANTES de classificar. São as mais frequentes
+ * de um agente novo, e o relatório de calibragem precisa distinguir uma da
+ * outra — e as duas de um bloqueio por R5, que é outra conversa.
+ */
+type CausaDeRecusa = 'fora_da_declaracao' | 'argumento_invalido';
+
+/*
+ * O que fica gravado em `PolicyDecision.motivo`. É texto ESTÁVEL de propósito:
+ * o relatório agrupa por essa string ("motivo mais frequente" por capacidade),
+ * e enfiar o nome do campo que faltou ali dentro espalharia a mesma recusa em
+ * dezenas de linhas de contagem 1. O detalhe — qual campo, qual capacidade —
+ * vai para `ToolCall.erro` e para o payload do evento.
+ */
+const ROTULO_DA_RECUSA: Record<CausaDeRecusa, string> = {
+  fora_da_declaracao: 'recusado na porta: capacidade fora da declaração do agente',
+  argumento_invalido: 'recusado na porta: argumentos inválidos',
+};
+
 /*
  * A PORTA. Nenhuma ação de agente chega num conector, numa API externa ou no
  * banco sem passar por aqui.
@@ -54,11 +73,35 @@ export type ToolCallResult<R = unknown> =
  * porta não sabe mandar e-mail nem escrever no ClickUp. Ela é o sanduíche
  * decidir → registrar → impor, e quem chama entrega o efeito.
  *
- * MODO OBSERVAR (GATEWAY_MODO=observar): classifica, registra e loga "teria
- * bloqueado", mas DEIXA PASSAR. É a trava operacional do primeiro deploy — se
- * uma capacidade for classificada errado e a rotina diária parar em silêncio
- * às 8 da manhã, o prejuízo é maior que o da porta ainda não impor. Vira
- * `impor` depois de ler uma semana de log.
+ * MODO OBSERVAR (GATEWAY_MODO=observar) — e o que ele NÃO afrouxa.
+ *
+ * Observar existe para calibrar o CATÁLOGO sem parar a operação: a porta
+ * classifica tudo, grava cada decisão com `modo=observar` e é dessa tabela que
+ * sai o relatório que diz se a régua está apertada ou frouxa demais antes de
+ * alguém virar a chave para `impor` (scripts/relatorio-observar.ts).
+ *
+ * O que observar afrouxa é o REGISTRO, não o EFEITO. Os dois freios da porta
+ * valem igual nos dois modos:
+ *
+ * - RETENÇÃO POR APROVAÇÃO (R3 para cima, e R2 enquanto a aprovação
+ *   configurável estiver ligada). Existe porque a ação sai da empresa — manda
+ *   mensagem, publica, assume obrigação — e o que a segura não é a régua estar
+ *   calibrada, é uma pessoa ter dito sim. Até 10/09/2026 esta porta criava a
+ *   aprovação, escrevia "TERIA RETIDO" e chamava o efeito assim mesmo: mandava
+ *   a mensagem no nome de alguém que nunca aprovou. Não é observação, é
+ *   publicação sem consentimento — contra RF-G-03 e RNF-08.
+ *
+ * - BLOQUEIO (R5, e capacidade sem classificação, que vale R5). R5 é o degrau
+ *   em que o OS PREPARA, REGISTRA E ENCAMINHA para uma pessoa executar na
+ *   origem — nunca executa. Até 10/09/2026 observar chamava o efeito de R5
+ *   depois de logar "TERIA BLOQUEADO": era a régua agindo no lugar de gente,
+ *   que é o que as constraints proíbem. Hoje nenhuma capacidade R5 tem efeito
+ *   ligado e a exposição prática era zero; o dia em que alguém ligasse um,
+ *   viraria incidente. Passou a falhar fechado — decisão desta fatia, anotada
+ *   em docs/AUDITORIA-SEGURANCA.md para revisão.
+ *
+ * Regra, então: observar afrouxa o que a porta REGISTRA, nunca o que ela DEIXA
+ * ACONTECER.
  */
 @Injectable()
 export class ToolGateway {
@@ -94,7 +137,13 @@ export class ToolGateway {
       req.capabilityId &&
       !ctx.capacidadesDeclaradas.includes(req.capabilityId)
     ) {
-      return this.recusar(req, null, `"${req.capabilityId}" não está nas capacidades declaradas deste agente`, inicio);
+      return this.recusar(
+        req,
+        cap,
+        'fora_da_declaracao',
+        `"${req.capabilityId}" não está nas capacidades declaradas deste agente`,
+        inicio,
+      );
     }
 
     // 1. Argumentos ANTES de classificar. Recusar aqui é o que permite ao
@@ -103,7 +152,7 @@ export class ToolGateway {
     if (cap) {
       const erros = validarArgs((cap as { argsSchema?: unknown }).argsSchema, req.args);
       if (erros.length) {
-        return this.recusar(req, null, mensagemDeErro(erros), inicio);
+        return this.recusar(req, cap, 'argumento_invalido', mensagemDeErro(erros), inicio);
       }
     }
 
@@ -162,19 +211,50 @@ export class ToolGateway {
       },
     });
 
-    // 7. Decide.
+    // 7. Decide. São DOIS caminhos, e confundi-los foi o furo: o BLOQUEIO diz
+    // o que o OS não faz de jeito nenhum; a RETENÇÃO diz o que ele só faz
+    // depois de uma pessoa assinar. Nenhum dos dois afrouxa em observar.
     const observando = this.modo === 'observar';
 
+    /*
+     * CAMINHO A — BLOQUEIO, e ele NÃO chama o efeito em modo nenhum.
+     *
+     * Hoje `permitido: false` é exatamente R5 (`permitido: nivel !== 'R5'` na
+     * escada), e R5 é o degrau em que o OS prepara, registra e encaminha para
+     * uma pessoa executar na origem. Executar em observar era a régua agindo
+     * no lugar de gente.
+     *
+     * A condição é `!decisao.permitido` e desemboca SEMPRE em recusa: se um
+     * dia `permitido` virar false por outro motivo — killswitch por empresa,
+     * agente rebaixado, catálogo bloqueado — ele cai aqui, em falha fechada.
+     * O atalho que existia (pular a retenção e seguir para o efeito) foi
+     * removido justamente para isso: NENHUM motivo novo de `permitido: false`
+     * pode herdar em silêncio um bypass de aprovação. O que é específico de R5
+     * — devolver o PREPARO — segue chaveado em `decisao.nivel === 'R5'`,
+     * dentro de `concluirRecusa`.
+     */
     if (!decisao.permitido) {
       if (observando) {
+        /*
+         * O propósito do modo continua atendido: o que a porta barrou fica
+         * registrado na PolicyDecision com `modo=observar` e no evento
+         * `tool.recusado` — é dali que sai o relatório de calibragem. O log
+         * diz BLOQUEADO e não "teria bloqueado" de propósito: ele bloqueou
+         * mesmo, e quem lê precisa saber que a ação não aconteceu.
+         */
         this.log.warn(
-          `[observar] TERIA BLOQUEADO ${req.capabilityId} (${decisao.nivel}): ${decisao.motivo}`,
+          `[observar] BLOQUEADO ${req.capabilityId} (${decisao.nivel}): ${decisao.motivo} — ` +
+            'em observar o bloqueio também vale; o efeito não foi chamado',
         );
-      } else {
-        return this.concluirRecusa(req, toolCall.id, decisao, decisionId, inicio);
       }
+      return this.concluirRecusa(req, toolCall.id, decisao, decisionId, inicio);
     }
 
+    /*
+     * CAMINHO B — retenção por aprovação. Vale nos DOIS modos. Sem token, a
+     * ação para aqui e vira item na fila; quem executa depois é
+     * AcoesService.executarAprovada, com os argumentos GRAVADOS na proposta.
+     */
     if (decisao.exigeAprovacao && !req.approvalToken) {
       const pendente = await this.approvals.propor({
         orgId: ctx.orgId,
@@ -191,27 +271,29 @@ export class ToolGateway {
       });
 
       if (observando) {
+        // Deixa rastro de que a porta reteve MESMO observando — quem lê o log
+        // para calibrar a régua precisa distinguir isto de um bloqueio.
         this.log.warn(
-          `[observar] TERIA RETIDO ${req.capabilityId} (${decisao.nivel}) — aprovação ${pendente.approvalId}`,
+          `[observar] RETIDO ${req.capabilityId} (${decisao.nivel}) — aprovação ${pendente.approvalId}; ` +
+            'observar não dispensa aprovação humana',
         );
-      } else {
-        await this.prisma.toolCall.update({
-          where: { id: toolCall.id },
-          data: {
-            status: ToolCallStatus.aguardando_aprovacao,
-            approvalId: pendente.approvalId,
-            duracaoMs: Date.now() - inicio,
-          },
-        });
-        return {
-          status: 'aguardando_aprovacao',
-          approvalId: pendente.approvalId,
-          resumo: pendente.resumo,
-          expiraEm: pendente.expiraEm,
-          toolCallId: toolCall.id,
-          decisao,
-        };
       }
+      await this.prisma.toolCall.update({
+        where: { id: toolCall.id },
+        data: {
+          status: ToolCallStatus.aguardando_aprovacao,
+          approvalId: pendente.approvalId,
+          duracaoMs: Date.now() - inicio,
+        },
+      });
+      return {
+        status: 'aguardando_aprovacao',
+        approvalId: pendente.approvalId,
+        resumo: pendente.resumo,
+        expiraEm: pendente.expiraEm,
+        toolCallId: toolCall.id,
+        decisao,
+      };
     }
 
     if (decisao.exigeAprovacao && req.approvalToken) {
@@ -323,7 +405,11 @@ export class ToolGateway {
       decisionId,
       nivel: decisao.nivel as RiskLevel,
       correlationId: req.ctx.correlationId,
-      payload: { motivo: decisao.motivo },
+      // `modo` no payload diz com que porta a linha foi escrita — observar ou
+      // impor. O bloqueio é o mesmo nos dois, mas quem lê para calibrar precisa
+      // saber qual estava valendo, e o log do processo não sobrevive ao
+      // container; o RASTRO sobrevive.
+      payload: { motivo: decisao.motivo, nivel: decisao.nivel, modo: this.modo },
     });
     return {
       status: 'recusado',
@@ -336,57 +422,97 @@ export class ToolGateway {
     };
   }
 
+  /**
+   * Recusa da PORTA, antes da régua decidir qualquer coisa: capacidade que o
+   * agente não declarou (RF-N-03) e argumento que não casa com o schema.
+   */
   private async recusar<A extends Record<string, unknown>, R>(
     req: ToolCallRequest<A>,
-    _cap: null,
+    cap: Capacidade | null,
+    causa: CausaDeRecusa,
     motivo: string,
     inicio: number,
   ): Promise<ToolCallResult<R>> {
+    const { ctx } = req;
+
+    /*
+     * A DECISÃO ENTRA NO RASTRO ANTES DA RECUSA (RF-P-03).
+     *
+     * Até 10/09/2026 este caminho criava ToolCall e evento e pulava
+     * `avaliarERegistrar`. Resultado: as duas recusas mais frequentes de um
+     * agente novo — capacidade não declarada e argumento com o nome errado —
+     * não existiam em `PolicyDecision`, e o relatório de calibragem, que lê
+     * exatamente essa tabela, não as enxergava. Quem fosse decidir a virada de
+     * `observar` para `impor` decidiria sem os dois números que mais importam.
+     */
+    const { decisao, decisionId } = await this.policy.avaliarERegistrar({
+      orgId: ctx.orgId,
+      capabilityId: req.capabilityId,
+      // Sem sinais, de propósito: a porta recusa ANTES de calculá-los (são
+      // quatro consultas ao banco), então o nível gravado aqui é o de base.
+      ctx: {},
+      modo: this.modo,
+    });
+
+    /*
+     * `avaliar()` só devolve `permitido: false` em R5 — para a régua, uma
+     * leitura R0 pedida por um agente que não a declarou continua permitida.
+     * Quem recusou foi a PORTA, e a linha precisa dizer isso, senão o
+     * relatório conta a recusa como decisão liberada. `exigeAprovacao` cai
+     * junto pelo mesmo motivo: nada foi retido, nada chegou à fila de ninguém.
+     *
+     * Isto é UMA ESCRITA A MAIS num caminho raro. O certo seria
+     * `avaliarERegistrar` aceitar a recusa da porta e o motivo dela —
+     * `apps/api/src/policy/policy.service.ts` é de outra fatia desta onda, e a
+     * mudança está anotada no relatório.
+     */
+    const rotulo = ROTULO_DA_RECUSA[causa];
+    await this.prisma.policyDecision.update({
+      where: { id: decisionId },
+      data: { permitido: false, exigeAprovacao: false, motivo: rotulo },
+    });
+
     const toolCall = await this.prisma.toolCall.create({
       data: {
-        orgId: req.ctx.orgId,
-        capabilityId: null,
-        agentSlug: req.ctx.agentSlug ?? null,
-        actorType: req.ctx.actorType,
-        actorId: req.ctx.actorId ?? null,
+        orgId: ctx.orgId,
+        capabilityId: cap?.id ?? null,
+        decisionId,
+        agentSlug: ctx.agentSlug ?? null,
+        actorType: ctx.actorType,
+        actorId: ctx.actorId ?? null,
         status: ToolCallStatus.recusado,
-        correlationId: req.ctx.correlationId,
+        args: this.redigir(req.args, cap?.efeito.sensibilidade),
+        nivel: decisao.nivel as RiskLevel,
+        // O detalhe fica aqui e no evento: qual campo faltou, qual capacidade
+        // o agente tentou. No `motivo` da decisão vai só o rótulo, que é o que
+        // o relatório agrupa.
+        erro: motivo.slice(0, 500),
+        correlationId: ctx.correlationId,
         duracaoMs: Date.now() - inicio,
       },
       select: { id: true },
     });
     await this.eventos.registrar({
-      orgId: req.ctx.orgId,
+      orgId: ctx.orgId,
       tipo: 'tool.recusado',
-      actorType: req.ctx.actorType,
-      actorId: req.ctx.actorId,
-      agentSlug: req.ctx.agentSlug,
+      actorType: ctx.actorType,
+      actorId: ctx.actorId,
+      agentSlug: ctx.agentSlug,
+      capabilityId: cap?.id ?? null,
       toolCallId: toolCall.id,
-      correlationId: req.ctx.correlationId,
-      payload: { motivo, capacidade: req.capabilityId },
+      decisionId,
+      nivel: decisao.nivel as RiskLevel,
+      correlationId: ctx.correlationId,
+      payload: { causa, motivo, capacidade: req.capabilityId, nivel: decisao.nivel },
     });
     return {
       status: 'recusado',
+      // Para o MODELO vai o detalhe — é com ele que ele corrige o nome do
+      // campo. Para o RASTRO vai o rótulo, no `decisao.motivo`, igualzinho ao
+      // que ficou gravado na linha da decisão.
       motivo,
       toolCallId: toolCall.id,
-      decisao: {
-        nivel: 'R5',
-        nivelBase: 'R5',
-        permitido: false,
-        exigeAprovacao: true,
-        exigeReautenticacao: true,
-        exigeMotivo: true,
-        aprovacao: {
-          exigida: 'sempre',
-          vinculo: 'conteudo',
-          usoUnico: true,
-          validadeSegundos: 300,
-          reautenticacao: true,
-          alcadaMinima: 'titular',
-        },
-        sinaisAcionados: [],
-        motivo,
-      },
+      decisao: { ...decisao, permitido: false, exigeAprovacao: false, motivo: rotulo },
     };
   }
 

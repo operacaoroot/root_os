@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { avaliar, classificar, APROVACAO_POR_NIVEL, type Capacidade } from '../src/escada.js';
-import { lerPolitica, lerDelta, resolverPolitica } from '../src/esquema.js';
-import { verificarCatalogo, casosDeDecisao } from '../src/verificacao.js';
+import { lerPolitica, lerDelta, resolverPolitica, type Politica } from '../src/esquema.js';
+import { verificarCatalogo, verificarReversibilidade, casosDeDecisao } from '../src/verificacao.js';
 
 const raiz = fileURLToPath(new URL('..', import.meta.url));
 const json = (nome: string) => JSON.parse(readFileSync(raiz + nome, 'utf8'));
@@ -19,10 +19,56 @@ const MKTOS = resolverPolitica(ROOT, DELTA);
  * o código é o espelho executável do texto, e o teste reprova quando divergem.
  */
 
-describe.each([
-  ['politica-root.json', ROOT, { externo: 'whatsapp.mensagem.enviar', interno: 'clickup.tarefa.criar' }],
+/*
+ * `interno` é o exemplo de R2 do catálogo. Vem nulo no politica-root.json desde
+ * 10/09/2026: os três "criar" que ocupavam o degrau subiram para R3 quando o
+ * desfazer pendurado foi fechado (fatia 2.2), e a base ROOT ficou sem nenhuma
+ * escrita que o próprio OS saiba desfazer. Ver o teste "o degrau R2..." abaixo.
+ */
+type Catalogo = [nome: string, pol: Politica, ids: { externo: string; interno: string | null }];
+
+type CapacidadeDoCatalogo = Politica['capacidades'][number];
+
+/** Escrita interna comum: é o efeito que a régua classifica como R2. */
+const EFEITO_INTERNO = {
+  escreveForaDoOS: true,
+  produzArtefato: false,
+  reversibilidade: 'automatica',
+  exposicaoExterna: false,
+  impactoFinanceiro: 'nenhum',
+  sensibilidade: 'interna',
+  destruicao: false,
+  obrigacaoLegal: false,
+} satisfies CapacidadeDoCatalogo['efeito'];
+
+const cap = (p: Partial<CapacidadeDoCatalogo> & { id: string }): CapacidadeDoCatalogo => ({
+  descricao: p.id,
+  nivel: 'R2',
+  ...p,
+  efeito: { ...EFEITO_INTERNO, ...(p.efeito ?? {}) },
+});
+
+/*
+ * O R2 que o politica-root.json não tem mais. Existe para que os dois casos de
+ * decisão de R2 do anexo continuem sendo exercidos contra a base ROOT — antes
+ * eles eram PULADOS (`it.skip`) quando o catálogo não tinha nenhum R2, e um
+ * teste pulado prova exatamente nada. A forma é a do R2 legítimo: alteração
+ * implementada que se desfaz com ela mesma.
+ */
+const R2_SINTETICO = cap({
+  id: 'sintetico.registro.alterar',
+  descricao: 'R2 construído no teste, para exercer os casos de decisão do degrau.',
+  ferramenta: 'sintetico_registro_alterar',
+  rota: 'PATCH /sintetico/:id',
+  desfazer: 'sintetico.registro.alterar',
+});
+
+const CATALOGOS: Catalogo[] = [
+  ['politica-root.json', ROOT, { externo: 'whatsapp.mensagem.enviar', interno: null }],
   ['politica-marketing-os.json', MKTOS, { externo: 'whatsapp.mensagem.enviar', interno: 'operacao.tarefa.alterar' }],
-])('%s', (_nome, pol, ids) => {
+];
+
+describe.each(CATALOGOS)('%s', (_nome, pol, ids) => {
   it('todo nível declarado é o que a régua calcula do efeito', () => {
     const linhas = verificarCatalogo(pol);
     const falhas = linhas.filter((l) => !l.ok);
@@ -38,33 +84,31 @@ describe.each([
   });
 
   /*
-   * ACHADO NO ANEXO NORMATIVO, 28/08/2026 — não é typo, é uma lacuna sistemática.
+   * ACHADO NO ANEXO NORMATIVO, 28/08/2026 — não era typo, era lacuna sistemática:
+   * as TRÊS capacidades R2 do politica-root.json nomeavam um desfazer
+   * (clickup.tarefa.excluir, crm.lead.arquivar, agenda.evento.excluir) que não
+   * existia no catálogo, e era essa promessa de volta que as segurava em R2.
    *
-   * O R2 se define como "cria ou altera um registro interno que o próprio OS
-   * consegue desfazer", e as TRÊS capacidades R2 do politica-root.json nomeiam
-   * o desfazer — clickup.tarefa.excluir, crm.lead.arquivar, agenda.evento.excluir.
-   * Nenhuma das três está declarada no catálogo. O nível que sustenta a promessa
-   * de reversibilidade aponta para capacidades que não existem.
-   *
-   * Não corrigi em silêncio: politica-root.json é cópia byte a byte de
-   * HANDOFF-DEV/anexos e mexer nele é mexer no documento normativo. Fica
-   * declarado aqui, com o motivo. Um desfazer pendurado NOVO reprova.
+   * FECHADO EM 10/09/2026 (fatia 2.2), pela regra do documento e falhando
+   * fechado: nenhuma das três ações de desfazer existe no produto — não há
+   * DELETE de tarefa no conector ClickUp, não há arquivamento de lead, não há
+   * exclusão de evento na Agenda — então a reversibilidade delas é manual e o
+   * gatilho as leva a R3. Não há mais exceção declarada aqui: o Set
+   * DESFAZER_PENDURADO deixou de existir, e qualquer desfazer pendurado novo,
+   * em qualquer dos dois catálogos, reprova na hora.
    */
-  const DESFAZER_PENDURADO = new Set([
-    'clickup.tarefa.criar',
-    'crm.lead.criar',
-    'agenda.evento.criar',
-  ]);
-
-  it('capacidade com desfazer aponta para capacidade que existe', () => {
-    const conhecidas = new Set(pol.capacidades.map((c) => c.id));
-    const pendurados = pol.capacidades
-      .filter((c) => c.desfazer && !conhecidas.has(c.desfazer))
-      .map((c) => c.id);
-    expect(pendurados.filter((id) => !DESFAZER_PENDURADO.has(id))).toEqual([]);
+  it('nenhuma capacidade promete uma volta que o catálogo não sabe dar', () => {
+    expect(
+      verificarReversibilidade(pol).map((l) => `${l.id} (${l.nivel}): ${l.motivo} ${l.desfazer ?? ''}`.trim()),
+    ).toEqual([]);
   });
 
-  it('a lacuna do anexo não cresce: o delta daqui não pendura desfazer novo', () => {
+  /*
+   * O delta é conferido SOZINHO, além de resolvido: uma capacidade daqui que
+   * apontasse o desfazer para a base passaria no teste acima e quebraria no dia
+   * em que um cliente sobrescrevesse aquela capacidade da base.
+   */
+  it('o delta daqui não pendura desfazer nem sobre a base', () => {
     const conhecidas = new Set(DELTA.capacidades.map((c) => c.id));
     const pendurados = DELTA.capacidades
       .filter((c) => c.desfazer && !conhecidas.has(c.desfazer))
@@ -72,7 +116,7 @@ describe.each([
     expect(pendurados).toEqual([]);
   });
 
-  it('os cinco casos de decisão do anexo se comportam como o documento manda', () => {
+  it('os casos de decisão do anexo se comportam como o documento manda', () => {
     const casos = casosDeDecisao(pol, ids);
     const porNome = Object.fromEntries(casos.map((c) => [c.nome, c.decisao]));
 
@@ -91,21 +135,197 @@ describe.each([
     expect(comSinal.exigeReautenticacao).toBe(true);
     expect(comSinal.sinaisAcionados).toEqual(['destinatario_novo']);
 
-    // R2 é o único nível em que o cliente decide
-    const semAprovacao = porNome['registro interno, aprovação desligada'];
-    expect(semAprovacao.nivel).toBe('R2');
-    expect(semAprovacao.exigeAprovacao).toBe(false);
-
-    // conteúdo externo só eleva
-    const suspeito = porNome['registro interno, fonte não confiável'];
-    expect(suspeito.nivel).toBe('R3');
-    expect(suspeito.exigeAprovacao).toBe(true);
-
     // fail closed
     const desconhecida = porNome['ferramenta desconhecida'];
     expect(desconhecida.nivel).toBe('R5');
     expect(desconhecida.permitido).toBe(false);
     expect(desconhecida.motivo).toBe('capacidade sem classificação vale R5');
+  });
+
+  /*
+   * Os dois casos de R2 do anexo rodam nos DOIS catálogos. Onde não há R2 —
+   * politica-root.json desde 10/09/2026 — o degrau entra por um R2 sintético
+   * declarado no topo deste arquivo, e não por um `it.skip`: o comportamento do
+   * degrau é do motor, não do catálogo, e não pode deixar de ser exercido só
+   * porque um catálogo esvaziou. Quantos R2 cada catálogo tem é assunto do
+   * teste "o degrau R2, depois da fatia 2.2", logo abaixo.
+   */
+  const comR2: Politica = ids.interno
+    ? pol
+    : { ...pol, capacidades: [...pol.capacidades, R2_SINTETICO] };
+  const idsComR2 = { externo: ids.externo, interno: ids.interno ?? R2_SINTETICO.id };
+
+  it('R2 é o único nível em que o cliente decide, e conteúdo externo só eleva', () => {
+    const porNome = Object.fromEntries(
+      casosDeDecisao(comR2, idsComR2).map((c) => [c.nome, c.decisao]),
+    );
+
+    const semAprovacao = porNome['registro interno, aprovação desligada'];
+    expect(semAprovacao.nivel).toBe('R2');
+    expect(semAprovacao.exigeAprovacao).toBe(false);
+
+    const suspeito = porNome['registro interno, fonte não confiável'];
+    expect(suspeito.nivel).toBe('R3');
+    expect(suspeito.exigeAprovacao).toBe(true);
+  });
+});
+
+describe('o degrau R2, depois da fatia 2.2', () => {
+  /*
+   * Consequência direta de fechar os três desfazer pendurados: a base ROOT
+   * ficou SEM nenhuma capacidade R2. Não é esquecimento — é o que o catálogo
+   * do vault diz hoje, lido com a regra aplicada: os três "criar" que moravam
+   * ali prometiam uma volta que ninguém sabe dar.
+   *
+   * O R2 de verdade vive no delta, e tem uma forma só: alteração que se desfaz
+   * com ela mesma (PATCH de status), ou criação cujo desfazer está declarado.
+   * Se um dia entrar um R2 legítimo na base ROOT, este teste fica vermelho e
+   * obriga a devolver o caso de decisão de R2 ao politica-root.json.
+   */
+  it('a base ROOT não tem R2, e o delta tem três — todas alterações', () => {
+    expect(ROOT.capacidades.filter((c) => c.nivel === 'R2').map((c) => c.id)).toEqual([]);
+    const r2 = MKTOS.capacidades.filter((c) => c.nivel === 'R2');
+    expect(r2.map((c) => c.id).sort()).toEqual([
+      'crm.lead.alterar',
+      'operacao.tarefa.alterar',
+      'pecas.campanha.alterar',
+    ]);
+    // A forma do R2 que sobrou: alteração implementada que se desfaz com ela mesma.
+    for (const c of r2) {
+      expect(c.desfazer, `${c.id} não se desfaz com ela mesma`).toBe(c.id);
+      expect(c.rota, `${c.id} sem rota`).toBeTruthy();
+    }
+  });
+
+  /*
+   * A quarta, que saiu do degrau em 10/09/2026. Era a única das quatro que
+   * apontava o desfazer para OUTRA capacidade em vez de se desfazer com ela
+   * mesma — e essa outra é financeiro.lancamento.excluir, que é R5. O OS nunca
+   * executa R5: prepara e entrega a uma pessoa. Mesma promessa vazia dos três
+   * "criar" da base ROOT, só que numa rota que existe (POST /finance/
+   * transactions) e com ferramenta MCP que um agente chama hoje.
+   */
+  it('financeiro.lancamento.criar não promete mais um desfazer que é R5', () => {
+    const criar = MKTOS.capacidades.find((c) => c.id === 'financeiro.lancamento.criar')!;
+    expect(criar.nivel).toBe('R3');
+    expect(criar.efeito.reversibilidade).toBe('manual');
+    expect(criar.desfazer).toBeUndefined();
+    // E o desfazer que ela apontava continua onde estava, em R5.
+    expect(MKTOS.capacidades.find((c) => c.id === 'financeiro.lancamento.excluir')!.nivel).toBe('R5');
+  });
+
+  it('os três "criar" da base ROOT estão em R3, com reversibilidade manual', () => {
+    for (const id of ['clickup.tarefa.criar', 'crm.lead.criar', 'agenda.evento.criar']) {
+      const c = ROOT.capacidades.find((x) => x.id === id)!;
+      expect(c, `${id} sumiu do catálogo`).toBeTruthy();
+      expect(c.nivel, `${id} deveria ser R3`).toBe('R3');
+      expect(c.efeito.reversibilidade, `${id} não é automaticamente reversível`).toBe('manual');
+      expect(c.desfazer, `${id} voltou a prometer desfazer`).toBeUndefined();
+    }
+  });
+});
+
+/*
+ * A trava de reversibilidade conferia uma coisa só: se o id do desfazer existe
+ * no catálogo. Existir é o mais barato dos requisitos — passavam quatro formas
+ * de prometer uma volta que ninguém dá, e uma delas era o próprio
+ * financeiro.lancamento.criar. Cada uma tem um teste aqui.
+ */
+describe('a trava de reversibilidade', () => {
+  const motivos = (capacidades: CapacidadeDoCatalogo[]) =>
+    verificarReversibilidade({ capacidades }).map((l) => `${l.id}: ${l.motivo}`);
+
+  it('recusa desfazer que aponta para R5 — o OS nunca executa R5', () => {
+    expect(
+      motivos([
+        cap({ id: 'x.criar', rota: 'POST /x', desfazer: 'x.excluir' }),
+        cap({
+          id: 'x.excluir',
+          nivel: 'R5',
+          rota: 'DELETE /x/:id',
+          efeito: { ...EFEITO_INTERNO, reversibilidade: 'nenhuma', destruicao: true, sensibilidade: 'restrita' },
+        }),
+      ]),
+    ).toEqual(['x.criar: desfazer-r5']);
+  });
+
+  it('recusa desfazer declarado e não implementado — sem rota e sem ferramenta', () => {
+    expect(
+      motivos([
+        cap({ id: 'x.criar', rota: 'POST /x', desfazer: 'x.arquivar' }),
+        // declarada no catálogo, inexistente no produto
+        cap({ id: 'x.arquivar', efeito: { ...EFEITO_INTERNO, reversibilidade: 'manual' }, nivel: 'R3' }),
+      ]),
+    ).toEqual(['x.criar: desfazer-nao-implementado']);
+  });
+
+  it('recusa autorreferência que não é alteração, e aceita a que é', () => {
+    // criar de novo não desfaz uma criação
+    expect(
+      motivos([cap({ id: 'x.criar', rota: 'POST /x', desfazer: 'x.criar' })]),
+    ).toEqual(['x.criar: autorreferencia-invalida']);
+
+    // alterar de novo, com o valor anterior, desfaz — é a forma dos três R2 do delta
+    expect(
+      motivos([
+        cap({ id: 'x.alterar', rota: 'PATCH /x/:id', desfazer: 'x.alterar' }),
+      ]),
+    ).toEqual([]);
+
+    // e nem a alteração escapa de ter que existir no produto
+    expect(motivos([cap({ id: 'x.alterar', desfazer: 'x.alterar' })])).toEqual([
+      'x.alterar: desfazer-nao-implementado',
+    ]);
+  });
+
+  it('recusa ciclo: duas promessas apoiadas uma na outra não aterrissam', () => {
+    expect(
+      motivos([
+        cap({ id: 'a.criar', rota: 'POST /a', desfazer: 'b.criar' }),
+        cap({ id: 'b.criar', rota: 'POST /b', desfazer: 'a.criar' }),
+      ]),
+    ).toEqual(['a.criar: ciclo', 'b.criar: ciclo']);
+  });
+
+  it('o caminho do ciclo entra no relatório inteiro, para dar o que consertar', () => {
+    const linha = verificarReversibilidade({
+      capacidades: [
+        cap({ id: 'a.criar', rota: 'POST /a', desfazer: 'b.criar' }),
+        cap({ id: 'b.criar', rota: 'POST /b', desfazer: 'c.criar' }),
+        cap({ id: 'c.criar', rota: 'POST /c', desfazer: 'a.criar' }),
+      ],
+    })[0];
+    expect(linha.motivo).toBe('ciclo');
+    expect(linha.desfazer).toBe('a.criar → b.criar → c.criar → a.criar');
+  });
+
+  it('continua pegando os dois formatos antigos', () => {
+    expect(motivos([cap({ id: 'x.criar', rota: 'POST /x' })])).toEqual(['x.criar: sem-desfazer']);
+    expect(
+      motivos([cap({ id: 'x.criar', rota: 'POST /x', desfazer: 'x.nao.existe' })]),
+    ).toEqual(['x.criar: desfazer-inexistente']);
+  });
+
+  it('não cobra desfazer de quem não escreve fora do OS', () => {
+    expect(
+      motivos([
+        cap({
+          id: 'relatorio.gerar',
+          nivel: 'R1',
+          rota: 'POST /reports',
+          efeito: { ...EFEITO_INTERNO, escreveForaDoOS: false, produzArtefato: true },
+        }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it('uma cadeia que aterrissa numa alteração é aceita', () => {
+    expect(
+      motivos([
+        cap({ id: 'x.criar', rota: 'POST /x', desfazer: 'x.alterar' }),
+        cap({ id: 'x.alterar', rota: 'PATCH /x/:id', desfazer: 'x.alterar' }),
+      ]),
+    ).toEqual([]);
   });
 });
 

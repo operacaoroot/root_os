@@ -17,6 +17,29 @@ const PedidoSchema = z.object({
   sessionId: z.string().uuid().optional(),
 });
 
+/*
+ * QUEM PODE FAZER UM AGENTE RODAR (RF-G-03 · LLM06 · fatia 0.3a).
+ *
+ * `mcp.executar` sozinho não serve de trava: ele está no perfil `ia_servico`,
+ * que o próprio catálogo descreve como "só leitura (menor privilégio)", e
+ * também no `ia_acao`. Ou seja, a conta de serviço da IA podia disparar um
+ * agente — e um agente alcança a porta, que alcança conector.
+ *
+ * Enquanto não existir uma permissão dedicada (`agentes.executar` em
+ * packages/shared/src/permissions.ts, que é decisão humana e mora fora desta
+ * fatia), a trava é a mesma que o resto do código já usa para superfície de
+ * administrador: `admin.usuarios` — hoje só o perfil `admin_master`. As rotas
+ * de LEITURA seguem em `mcp.ver`: elas não fazem nada acontecer, e fechá-las
+ * cegaria o painel sem fechar buraco nenhum.
+ *
+ * O guarda exige TODAS as permissões da lista (PermissionsGuard usa `every`),
+ * então isto é interseção, não alternativa.
+ */
+const EXECUTAR_AGENTE = ['mcp.executar', 'admin.usuarios'] as const;
+
+/** Declarar a linha de base é escrita na configuração do agente, não execução. */
+const CONFIGURAR_AGENTE = ['automacoes.executar', 'admin.usuarios'] as const;
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class AgentsController {
@@ -39,7 +62,7 @@ export class AgentsController {
   }
 
   @Post('agents/:slug/linha-de-base')
-  @RequirePermissions('automacoes.executar')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
   linhaDeBase(
     @CurrentUser() user: JwtUser,
     @Param('slug') slug: string,
@@ -50,7 +73,7 @@ export class AgentsController {
   }
 
   @Post('agents/:slug/executar')
-  @RequirePermissions('mcp.executar')
+  @RequirePermissions(...EXECUTAR_AGENTE)
   executar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
     const input = PedidoSchema.parse(body);
     return this.runtime.executar({
@@ -77,7 +100,7 @@ export class AgentsController {
    * ReadableStream.
    */
   @Post('agents/:slug/stream')
-  @RequirePermissions('mcp.executar')
+  @RequirePermissions(...EXECUTAR_AGENTE)
   async stream(
     @CurrentUser() user: JwtUser,
     @Param('slug') slug: string,

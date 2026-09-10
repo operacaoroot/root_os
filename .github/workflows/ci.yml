@@ -1,0 +1,585 @@
+# Integração contínua do ROOT OS (RF-T-05, RF-P-08).
+#
+# Três jobs, nesta ordem de importância:
+#   1. qualidade   — typecheck + suítes de policy, web e api, COM banco de verdade.
+#   2. isolamento  — a suíte de isolamento entre tenants, que mora fora do `pnpm test`.
+#   3. migrations  — o histórico aplica num banco vazio E corresponde ao schema.
+#
+# ---------------------------------------------------------------------------
+# ESTE ARQUIVO, SOZINHO, NÃO REPROVA MERGE NENHUM
+# ---------------------------------------------------------------------------
+# Workflow relata; quem barra um PR vermelho é a proteção de branch. Enquanto
+# os jobs não estiverem marcados como verificação obrigatória em
+# `Settings > Branches > branch protection rule` da `main`, um PR com a CI
+# inteira vermelha continua com o botão de merge liberado.
+#
+# Marcar como obrigatórios (os nomes exatos que aparecem na lista de checks do
+# PR, que são os `name:` dos jobs):
+#   - "Tipos e testes (policy, web, api)"
+#   - "Migrations aplicam do zero"
+#
+# NÃO marcar, por enquanto:
+#   - "Isolamento entre tenants" — o passo da suíte roda com `continue-on-error`,
+#     então o job termina VERDE mesmo quando a suíte falha. Marcá-lo hoje seria
+#     uma trava decorativa: obrigatória e sempre satisfeita. Ele entra na lista
+#     no mesmo commit que apagar o `continue-on-error`.
+# Isso é configuração no GitHub, fora do repositório, e só o dono do repo faz.
+#
+# ---------------------------------------------------------------------------
+# A ARMADILHA QUE ESTE ARQUIVO EXISTE PARA NÃO REPETIR
+# ---------------------------------------------------------------------------
+# `porta.test.ts` e `runtime.test.ts` usam `describe.skipIf(!process.env.TEST_DATABASE_URL)`.
+# Sem essa variável eles se pulam INTEIROS e a CI fica verde sem ter testado a
+# porta. Por isso o job 1 sobe um Postgres de serviço, aplica as migrations e só
+# então roda a suíte.
+#
+# A trava que confere isso (`$RUNNER_TEMP/conferir-suite.mjs`) é FAIL-CLOSED de
+# propósito: ela lê o resumo do vitest em JSON e afirma sobre números — zero
+# pulados, zero pendentes, e um PISO de quantidade de casos e de arquivos. Se o
+# resumo não existir, vier vazio, não for JSON ou tiver perdido um campo, ela
+# REPROVA em vez de supor que está tudo bem. A versão anterior fazia `grep` no
+# texto do log: bastava trocar o formato de saída, ou o log não existir, para o
+# grep não casar e a CI passar verde com dezenas de casos pulados.
+#
+# O piso importa mais do que parece: "ninguém marcou skip" não é o mesmo que "os
+# testes que importam rodaram". Arquivo que deixa de ser coletado — glob de
+# include alterado, `MKTOS_CONJUNTO_DE_TESTES` vazado no ambiente — não aparece
+# como pulado, some. Baixar um piso é uma decisão consciente, por escrito, aqui.
+#
+# O que NÃO está aqui, de propósito:
+#   - `pnpm lint`: `apps/web` declara `next lint`, que nunca foi configurado —
+#     ele abre o assistente interativo e falha. Entra quando alguém configurar
+#     o ESLint do web.
+#   - `tenant-isolation` no job 1: precisa de banco semeado com duas orgs e sai
+#     vermelha por desenho enquanto o RLS não estiver ligado. Job próprio, abaixo.
+
+name: CI
+
+on:
+  push:
+    branches: [main, 'root-os/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # O Dockerfile roda node:22-slim; CI em outra major não prova nada.
+  NODE_VERSION: '22'
+  #
+  # A versão do pnpm NÃO se declara aqui. `pnpm/action-setup` lê o campo
+  # `packageManager` do `package.json` da raiz, que é a fonte única — declarar
+  # de novo neste arquivo criaria dois lugares para atualizar, e no dia em que
+  # um mudasse sem o outro os três jobs morreriam no primeiro passo.
+  #
+  # Sobre o Postgres de serviço, repetido em cada job porque o contexto `env`
+  # NÃO é interpolado dentro de `services:` (o serviço sobe antes do job):
+  #   - usuário/senha `mkt`/`mkt` não são segredo — o container nasce e morre
+  #     dentro do runner e não é alcançável de fora dele;
+  #   - o NOME do banco precisa casar com /test|dev|local|staging|shadow/i.
+  #     É a trava de segurança de `tenant-isolation.test.ts`, que ESCREVE no
+  #     banco e se recusa a rodar num que não se anuncie como descartável.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Tipos e testes de policy, web e api — com banco, senão não testa nada.
+  # ---------------------------------------------------------------------------
+  qualidade:
+    name: Tipos e testes (policy, web, api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      TEST_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Fixado de propósito: se esta variável vazar com outro valor, o vitest da
+      # api troca o conjunto de arquivos e roda só o isolamento. Aqui ela é
+      # sempre `padrao`, e o piso de casos abaixo pega qualquer desvio.
+      MKTOS_CONJUNTO_DE_TESTES: padrao
+      #
+      # PISOS — o mínimo que precisa ter rodado para o verde valer alguma coisa.
+      # Entre parênteses, a contagem REAL medida na estabilização da onda 1
+      # (10/09/2026), rodando as três suítes no Mac contra o Postgres
+      # descartável. Os pisos ficam abaixo dela de propósito: piso é chão, não
+      # espelho — colar no número exato transforma qualquer teste a mais numa
+      # edição obrigatória deste arquivo. Ao remover teste de propósito, baixe o
+      # piso no mesmo commit e diga por quê na mensagem.
+      PISO_CASOS_POLICY: '20'   # (37) packages/policy/test/politica.test.ts
+      PISO_ARQUIVOS_POLICY: '1'
+      PISO_CASOS_WEB: '70'      # (76) apps/web/tests/{unit,component}, 8 arquivos
+      PISO_ARQUIVOS_WEB: '8'
+      # (76) em 6 arquivos com arquitetura.test.ts, que nasceu nesta mesma onda;
+      # sem ele seriam 55 em 5, que é exatamente o piso — escolhido assim para o
+      # job não depender da ordem em que as fatias entrassem.
+      PISO_CASOS_API: '55'
+      PISO_ARQUIVOS_API: '5'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sem `version:`: a versão sai do campo `packageManager` da raiz.
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Gerar o client do Prisma
+        run: pnpm --filter @mktos/api db:generate
+
+      # tsup rápido. `apps/api` e `apps/web` importam @mktos/policy e
+      # @mktos/shared pelo `exports` do package.json, que aponta para dist/ —
+      # sem este passo, chamar as suítes por filtro direto quebra no import.
+      - name: Compilar os pacotes internos
+        run: pnpm --filter @mktos/shared --filter @mktos/policy build
+
+      - name: A variável de banco de teste precisa existir
+        run: |
+          test -n "$TEST_DATABASE_URL" || {
+            echo "::error::TEST_DATABASE_URL vazia — porta.test e runtime.test se pulariam inteiros e a CI passaria sem testar a porta"
+            exit 1
+          }
+
+      - name: Aplicar as migrations no banco da CI
+        run: pnpm --filter @mktos/api db:deploy
+
+      # A régua como DADO. O seed é idempotente e recusa rebaixar nível; se o
+      # catálogo divergir do classificador ele sai com código 1 e reprova aqui,
+      # que é exatamente onde essa divergência tem que aparecer.
+      - name: Semear a política
+        run: pnpm --filter @mktos/api db:seed:politica
+
+      - name: Typecheck do monorepo
+        run: pnpm typecheck
+
+      # `apps/api/test/` mora FORA do tsconfig de build de propósito (um .ts
+      # fora de src/ desloca a saída para dist/src/ e o Dockerfile não acha
+      # dist/main.js). Este é o tsconfig que cobre os tipos dos testes.
+      - name: Typecheck das suítes da api
+        run: pnpm --filter @mktos/api typecheck:test
+
+      # A trava de cobertura, escrita fora do repositório: é infraestrutura de
+      # CI, não código de produto. Um único script serve as três suítes.
+      - name: Preparar a trava de cobertura
+        run: |
+          cat > "$RUNNER_TEMP/conferir-suite.mjs" <<'MJS'
+          // Lê o resumo em JSON de uma suíte do vitest e afirma sobre NÚMEROS.
+          // Fail-closed: qualquer dúvida — resumo ausente, vazio, ilegível,
+          // campo que sumiu — reprova. Esta trava existe justamente para impedir
+          // CI verde sem ter testado nada; falhar para verde seria a direção
+          // errada.
+          import { readFileSync } from 'node:fs';
+
+          const [caminho, pisoCasosArg, pisoArquivosArg, ...rotuloPartes] = process.argv.slice(2);
+          const rotulo = rotuloPartes.join(' ') || caminho || 'suíte';
+
+          function reprovar(mensagem, detalhe) {
+            console.log('::error title=Cobertura da suíte ' + rotulo + '::' + mensagem);
+            if (detalhe) console.log(detalhe);
+            process.exit(1);
+          }
+
+          if (!caminho || !pisoCasosArg || !pisoArquivosArg) {
+            reprovar('uso: conferir-suite.mjs <resumo.json> <piso de casos> <piso de arquivos> [rótulo]');
+          }
+
+          const pisoCasos = Number(pisoCasosArg);
+          const pisoArquivos = Number(pisoArquivosArg);
+          if (!Number.isInteger(pisoCasos) || !Number.isInteger(pisoArquivos)) {
+            reprovar('os pisos precisam ser inteiros; vieram "' + pisoCasosArg + '" e "' + pisoArquivosArg + '"');
+          }
+
+          let bruto = '';
+          try {
+            bruto = readFileSync(caminho, 'utf8');
+          } catch (erro) {
+            reprovar(
+              'o resumo ' + caminho + ' não foi escrito. Sem resumo não dá para afirmar que a suíte rodou, então a trava reprova em vez de supor. Confira se o comando de teste ainda passa --reporter=json e --outputFile.json.',
+              String(erro && erro.message),
+            );
+          }
+          if (!bruto.trim()) {
+            reprovar('o resumo ' + caminho + ' veio vazio — a suíte provavelmente nem chegou a rodar.');
+          }
+
+          let resumo;
+          try {
+            resumo = JSON.parse(bruto);
+          } catch (erro) {
+            reprovar(
+              'o resumo ' + caminho + ' não é JSON válido — o formato do relatório mudou e a trava não consegue mais afirmar nada.',
+              String(erro && erro.message),
+            );
+          }
+
+          function numero(campo) {
+            const valor = resumo[campo];
+            if (typeof valor !== 'number' || !Number.isFinite(valor)) {
+              reprovar('o resumo não traz o campo numérico "' + campo + '". O formato do relatório do vitest mudou: conserte esta trava antes de seguir, porque sem ela a CI volta a poder passar sem testar nada.');
+            }
+            return valor;
+          }
+
+          const total = numero('numTotalTests');
+          const passaram = numero('numPassedTests');
+          const falharam = numero('numFailedTests');
+          const pulados = numero('numPendingTests');
+          const aFazer = numero('numTodoTests');
+
+          if (!Array.isArray(resumo.testResults)) {
+            reprovar('o resumo não traz a lista de arquivos (testResults).');
+          }
+          const arquivos = resumo.testResults;
+
+          const porStatus = {};
+          for (const arquivo of arquivos) {
+            for (const caso of arquivo.assertionResults || []) {
+              porStatus[caso.status] = (porStatus[caso.status] || 0) + 1;
+            }
+          }
+          const naoPassaram = Object.entries(porStatus).filter(([nome]) => nome !== 'passed');
+
+          console.log(
+            'Suíte ' + rotulo + ': ' + total + ' casos em ' + arquivos.length +
+            ' arquivos (piso: ' + pisoCasos + ' casos, ' + pisoArquivos + ' arquivos).',
+          );
+          console.log('  passaram=' + passaram + ' falharam=' + falharam + ' pulados=' + pulados + ' a_fazer=' + aFazer);
+          for (const arquivo of arquivos) {
+            const casos = (arquivo.assertionResults || []).length;
+            console.log('  - ' + String(arquivo.name || '(sem nome)').split('/').slice(-2).join('/') + ' (' + casos + ')');
+          }
+
+          if (resumo.success !== true) {
+            reprovar('o vitest reportou a execução como malsucedida.');
+          }
+          if (falharam > 0) {
+            reprovar(falharam + ' caso(s) falharam.');
+          }
+          if (pulados > 0 || aFazer > 0) {
+            reprovar(
+              (pulados + aFazer) + ' caso(s) foram PULADOS. Quase sempre é TEST_DATABASE_URL não chegando em porta.test/runtime.test, que se pulam inteiros — a CI estaria verde sem ter testado a porta. Também pega it.skip esquecido num PR.',
+            );
+          }
+          if (naoPassaram.length > 0) {
+            reprovar('há casos com status diferente de "passed": ' + naoPassaram.map(([nome, n]) => nome + '=' + n).join(', '));
+          }
+          if (total < pisoCasos) {
+            reprovar(
+              'só ' + total + ' casos rodaram, abaixo do piso de ' + pisoCasos + '. "Ninguém marcou skip" não é o mesmo que "os testes que importam rodaram": arquivo que deixa de ser coletado não aparece como pulado, some. Se a queda for legítima, baixe o piso no próprio workflow, de propósito e por escrito.',
+            );
+          }
+          if (arquivos.length < pisoArquivos) {
+            reprovar('só ' + arquivos.length + ' arquivos de teste rodaram, abaixo do piso de ' + pisoArquivos + '.');
+          }
+
+          console.log('Suíte ' + rotulo + ': íntegra — nada pulado, nada pendente, acima do piso.');
+          MJS
+          # Fail-closed também aqui: heredoc mal recortado não pode virar uma
+          # trava que "passa" por não conseguir rodar.
+          test -s "$RUNNER_TEMP/conferir-suite.mjs" || {
+            echo "::error::a trava de cobertura não foi escrita"
+            exit 1
+          }
+          node --check "$RUNNER_TEMP/conferir-suite.mjs"
+
+      # Os três `--reporter=json --outputFile.json` existem para a trava. O
+      # `--reporter=default` continua imprimindo o log legível para gente.
+      - name: Testes de policy
+        run: |
+          pnpm --filter @mktos/policy test \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-policy.json"
+
+      - name: A suíte de policy rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-policy.json" \
+            "$PISO_CASOS_POLICY" "$PISO_ARQUIVOS_POLICY" policy
+
+      - name: Testes de web
+        run: |
+          pnpm --filter @mktos/web test \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-web.json"
+
+      - name: A suíte de web rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-web.json" \
+            "$PISO_CASOS_WEB" "$PISO_ARQUIVOS_WEB" web
+
+      - name: Testes de api
+        run: |
+          pnpm --filter @mktos/api test \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-api.json"
+
+      - name: A suíte de api rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-api.json" \
+            "$PISO_CASOS_API" "$PISO_ARQUIVOS_API" api
+
+  # ---------------------------------------------------------------------------
+  # 2. Isolamento entre tenants — job próprio, fora do `pnpm test`.
+  # ---------------------------------------------------------------------------
+  #
+  # `tenant-isolation.test.ts` LANÇA no import quando falta TEST_DATABASE_URL
+  # (não se pula sozinho), escreve nas duas orgs que semeia, e mede o
+  # isolamento NO BANCO — não na aplicação. Ela é o critério de aceite da
+  # ativação de RLS: enquanto nenhuma tabela tiver RLS ligado, ela sai VERMELHA
+  # de propósito.
+  #
+  # Por isso o passo roda com `continue-on-error: true`: o resultado aparece
+  # em todo PR, sem travar merge por uma dívida já conhecida.
+  # >>> QUANDO O RLS FOR LIGADO, APAGUE O `continue-on-error` ABAIXO <<<
+  # e, no mesmo commit, marque "Isolamento entre tenants" como verificação
+  # obrigatória na proteção de branch. Antes disso ele nunca reprova, e marcar
+  # um check que não reprova é pior do que não marcar: parece proteção.
+  isolamento:
+    name: Isolamento entre tenants
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Conexão ADMIN: semeia e limpa. O nome do banco precisa parecer de teste.
+      TEST_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Conexão da APLICAÇÃO: role restrita, sujeita a RLS. Sem ela a suíte cai
+      # na admin e avisa que o resultado não vale nada — dono de tabela ignora
+      # policy em silêncio, a menos que a tabela esteja com FORCE.
+      TENANT_DATABASE_URL: postgresql://mktos_app:ci@localhost:5432/marketing_os_test
+      TENANT_GUC: app.org_id
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Aplicar as migrations no banco da CI
+        run: pnpm --filter @mktos/api db:deploy
+
+      # O role de aplicação precisa EXISTIR e NÃO ser dono das tabelas: dono de
+      # tabela só obedece policy com FORCE ROW LEVEL SECURITY. Criar aqui é o
+      # que faz este job medir isolamento de verdade quando o RLS entrar.
+      # A senha é descartável e vale só dentro deste runner.
+      - name: Criar o role de aplicação (não-dono, sem BYPASSRLS)
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d marketing_os_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mktos_app') THEN
+              CREATE ROLE mktos_app LOGIN PASSWORD 'ci' NOBYPASSRLS;
+            END IF;
+          END
+          $$;
+          GRANT USAGE ON SCHEMA public TO mktos_app;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mktos_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO mktos_app;
+          SQL
+
+      - name: Suíte de isolamento
+        id: isolamento
+        continue-on-error: true
+        run: pnpm --filter @mktos/api test:isolamento
+
+      # `continue-on-error` deixa o check verde, e quem só olha a lista de
+      # checks do PR não vê nada. A anotação abaixo aparece no próprio PR.
+      - name: Registrar o veredito
+        run: |
+          if [ "${{ steps.isolamento.outcome }}" = "success" ]; then
+            echo "Isolamento entre tenants: VERDE." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "A suíte passou. Se o RLS já está ligado, remova o \`continue-on-error\` do passo \`Suíte de isolamento\` em \`.github/workflows/ci.yml\` e marque este job como verificação obrigatória — sem isso ele não reprova merge nenhum." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=Isolamento entre tenants não passou::A suíte de isolamento falhou. Este job roda com continue-on-error, então o check fica VERDE mesmo assim: abra o resumo desta execução antes de tratar o PR como seguro."
+            echo "Isolamento entre tenants: VERMELHA." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Enquanto nenhuma tabela tiver RLS ligado, este resultado é a linha de base de uma dívida conhecida, não um alarme novo. Depois que o RLS estiver ligado, o mesmo vermelho passa a significar vazamento real entre tenants — confira em qual dos dois mundos você está antes de ignorar." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 3. As migrations aplicam do zero E correspondem ao schema.
+  # ---------------------------------------------------------------------------
+  #
+  # Isto não é zelo: `prisma migrate deploy` roda no `command` do container da
+  # api em produção. Migration que falha não deixa a API subir. Este job é o
+  # ensaio dessa mesma sequência, do zero, antes do merge.
+  #
+  # LIMITE DESTE JOB, PARA NINGUÉM LER O VERDE COMO GARANTIA DE PRODUÇÃO:
+  # ele aplica num banco VAZIO, que é o caso fácil. Produção aplica sobre banco
+  # POVOADO, e é lá que a migration derruba a API — coluna NOT NULL sem default
+  # em tabela com linhas, UNIQUE sobre dado já duplicado, tipo que não converte,
+  # lock demorado em tabela grande. Verde aqui NÃO prova que aplica em produção;
+  # prova que o histórico é coerente e que o SQL cru foi junto. Ensaio contra
+  # cópia restaurada do banco de produção continua sendo trabalho manual.
+  migrations:
+    name: Migrations aplicam do zero
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Banco à parte, só para a comparação migrations x schema: o `migrate
+      # diff` RESETA o banco sombra a cada execução, então ele não pode ser o
+      # mesmo que acabou de provar que aplica do zero.
+      SHADOW_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_shadow
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: O banco precisa estar vazio antes de aplicar
+        env:
+          PGPASSWORD: mkt
+        run: |
+          n=$(psql -h localhost -U mkt -d marketing_os_test -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+          if [ "$n" != "0" ]; then
+            echo "::error::o banco da CI não está vazio ($n tabelas) — a prova de aplicar do zero não valeria"
+            exit 1
+          fi
+
+      - name: prisma migrate deploy
+        run: pnpm --filter @mktos/api db:deploy
+
+      - name: prisma migrate status
+        run: pnpm --filter @mktos/api db:status
+
+      # As migrations têm SQL cru que o Prisma não modela e que ninguém percebe
+      # faltando até produção: a extensão pgvector (busca semântica) e as RULEs
+      # que fazem do EventLog um registro append-only de verdade.
+      - name: O SQL cru das migrations também aplicou
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d marketing_os_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+              RAISE EXCEPTION 'extensão pgvector ausente — a busca semântica não subiria';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_rules WHERE tablename = 'EventLog' AND rulename = 'eventlog_sem_update') THEN
+              RAISE EXCEPTION 'RULE eventlog_sem_update ausente — o RASTRO deixaria de ser append-only';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_rules WHERE tablename = 'EventLog' AND rulename = 'eventlog_sem_delete') THEN
+              RAISE EXCEPTION 'RULE eventlog_sem_delete ausente — o RASTRO deixaria de ser append-only';
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Criar o banco sombra da comparação
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS marketing_os_shadow" \
+            -c "CREATE DATABASE marketing_os_shadow"
+
+      # Aplicar não é corresponder. Um model novo no schema.prisma sem a
+      # migration correspondente passa nos passos acima — o histórico continua
+      # aplicando — e só quebra em runtime, quando o client gerado pede uma
+      # coluna que não existe no banco. `migrate diff` replica o histórico no
+      # banco sombra e compara com o datamodel: divergência é erro aqui.
+      - name: As migrations correspondem ao schema
+        run: |
+          # `--exit-code` do prisma: 0 = idênticos, 2 = divergem, 1 = não deu
+          # para comparar. Os dois últimos reprovam — na dúvida, vermelho.
+          codigo=0
+          saida="$(pnpm --filter @mktos/api db:diff 2>&1)" || codigo=$?
+          echo "$saida"
+          if [ "$codigo" = "0" ]; then
+            echo "As migrations reproduzem o schema.prisma."
+            exit 0
+          fi
+          if [ "$codigo" = "2" ]; then
+            echo "::error title=Migrations divergem do schema::o histórico de migrations não reproduz o schema.prisma. Model alterado sem a migration correspondente aplica verde e quebra em runtime, quando o client gerado pedir a coluna que não existe. Gere a migration com 'pnpm --filter @mktos/api db:migrate --create-only' e confira o SQL antes de commitar."
+            echo "--- SQL que faltaria aplicar para o banco alcançar o schema:"
+            pnpm --filter @mktos/api db:diff:sql || true
+          else
+            echo "::error title=Comparação migrations x schema falhou::o prisma saiu com código $codigo e não chegou a comparar (banco sombra fora do ar, schema inválido, migrations ilegíveis). Sem a comparação não dá para afirmar que o histórico corresponde ao schema, então isto reprova em vez de passar."
+          fi
+          exit 1
