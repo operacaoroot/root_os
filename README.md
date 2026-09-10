@@ -1,57 +1,69 @@
-# Marketing OS
+# ROOT OS (repositório `marketing-os`)
 
-> **Sistema Operacional de Marketing** — painel único, clicável e acionável + Hub/MCP que conecta ferramentas e expõe capacidades para qualquer IA, com segurança, permissões e auditoria.
+> Plataforma multi-tenant de IA aplicada da ROOT. O painel, as superfícies públicas e o núcleo de governança (régua de risco, porta única, rastro) vivem neste monorepo.
 >
-> **Produto do projeto `root`** (studio de IA/SaaS). Nome configurável via `APP_NAME`.
+> **Produto do projeto `root`.** Nome da interface configurável via `APP_NAME`; a marca em produção é ROOT OS.
 
 ## ⚠️ Isolamento (leia antes de tudo)
-Este projeto é **completamente isolado** do escritório Cardozo & Saggioro: **Docker próprio, MCP próprio, credenciais próprias, dados próprios**. Zero contato com a infra, o MCP (`cardozo-saggioro`), a rede ou os containers do escritório. Nada é puxado de lá. → [docs/ISOLATION.md](docs/ISOLATION.md)
+Este projeto é **completamente isolado** do escritório Cardozo & Saggioro: Docker próprio, MCP próprio, credenciais próprias, dados próprios. → [docs/ISOLATION.md](docs/ISOLATION.md)
 
-## Status
-**Fase 0 — Planejamento concluído.** Sem código de aplicação ainda. Esta entrega é a fundação: arquitetura, isolamento, modelo de dados, integrações, MCP, segurança e roadmap.
+## Estado (10/09/2026)
 
-## Documentação (leia nesta ordem)
-1. [docs/ISOLATION.md](docs/ISOLATION.md) — **regra dura de isolamento do escritório**
-2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — princípios, stack, blocos, fluxo de dados
-3. [docs/DATA_MODEL.md](docs/DATA_MODEL.md) — tabelas, relacionamentos, índices, retenção
-4. [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — conectores: dados, ações, sensibilidade, fase
-5. [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) — ferramentas para IA, classes de risco, aprovação
-6. [docs/SECURITY.md](docs/SECURITY.md) — RBAC, ações sensíveis, LGPD, riscos
-7. [docs/KPIS.md](docs/KPIS.md) — indicadores por módulo
-8. [docs/ROADMAP.md](docs/ROADMAP.md) — fases e MVP
+Em produção (`os.operacaoroot.com`, `bio.operacaoroot.com`) roda um monorepo TypeScript com 25 módulos de API e ~40 telas: identidade e RBAC, auditoria, aprovações, dashboard, leads, funil, campanhas, pixel/eventos, tarefas e Trabalho (ClickUp interno), Conteúdo, Pauta e Referências, Metas, Link na bio, Financeiro (FinOps), Google, Meta/Instagram, Obsidian com busca semântica, integrações, relatórios e um servidor MCP com 35 ferramentas só-leitura.
 
-## Stack (resumo)
-TypeScript ponta-a-ponta · Next.js (web) · NestJS + BullMQ (api/workers) · PostgreSQL 16 + pgvector · Redis · MinIO (S3) · Prisma · Auth.js + RBAC · **MCP SDK próprio** (TS) · Anthropic/Claude atrás de `LLMProvider` · WhatsApp (conta própria) atrás de `WhatsappProvider`. Tudo em stack Docker dedicado (`marketing-os-net`).
+Desde 17–20/08 o produto virou **ROOT OS**: multi-tenant, com escada de risco R0–R5, porta única para toda ação de agente, cofre de segredos, rastro append-only e memória versionada. A branch `root-os/frente-0` já entrega a régua em runtime, o gateway em modo observar, o runtime de agentes e as primeiras 65 provas automatizadas da API — **e ainda não foi mergeada nem publicada**. Produção roda o código de 03/08.
+
+O caminho daqui até o V1 está em **[docs/PLANO-CONTINUIDADE.md](docs/PLANO-CONTINUIDADE.md)** — fatias em ordem de dependência, critério de pronto, plano de migração e as decisões que ainda precisam de gente. Esse documento substitui o `ROADMAP.md`, que fica como histórico.
+
+## Documentação
+
+Comece por [CLAUDE.md](CLAUDE.md) (as armadilhas que mais custam tempo) e pelo [plano de continuidade](docs/PLANO-CONTINUIDADE.md). Depois, por assunto:
+
+| Assunto | Arquivo |
+|---|---|
+| Regra dura de isolamento | [docs/ISOLATION.md](docs/ISOLATION.md) |
+| Arquitetura as-built | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Modelo de dados | [docs/DATA_MODEL.md](docs/DATA_MODEL.md) |
+| Conectores | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| Ferramentas MCP | [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) |
+| Segurança, RBAC, LGPD | [docs/SECURITY.md](docs/SECURITY.md), [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Módulo Pauta e Referências | [docs/PAUTA.md](docs/PAUTA.md) |
+| Módulo Link na bio | [docs/DEPLOY_BIO.md](docs/DEPLOY_BIO.md) |
+| Root Central | [docs/CENTRAL.md](docs/CENTRAL.md) |
+| Financeiro (FinOps) | [docs/FINANCE.md](docs/FINANCE.md), [docs/ASAAS.md](docs/ASAAS.md) |
+| KPIs | [docs/KPIS.md](docs/KPIS.md) |
+| Histórico de fases | [docs/ROADMAP.md](docs/ROADMAP.md) |
+
+## Stack
+
+TypeScript ponta a ponta · Next.js 15 (web) · NestJS 10 (api) · Prisma 6 · PostgreSQL 16 + pgvector · Redis · MinIO · Zod · Anthropic e OpenRouter atrás de `LlmProvider`, OpenAI só para embeddings · WhatsApp por Evolution · MCP SDK próprio. Docker Swarm e easyPanel com Traefik na VPS.
 
 ## Estrutura
+
 ```
 marketing-os/
   apps/
-    web/          # Next.js — dashboard clicável
-    api/          # NestJS — routes, webhooks, connectors, jobs, mcp, auth, audit
+    web/          Next.js — painel, /central, /b/:handle
+    api/          NestJS — módulos, gateway, política, agentes, webhooks
+    telegram/     bot (só roda no Mac)
   packages/
-    connectors/   # 1 plugin isolado por ferramenta
-    mcp/          # MCP server PRÓPRIO + tools + schemas
-    shared/       # types, schemas (zod), prompts, utils
-  data/           # migrations, seeds
-  docs/           # esta documentação
-  infra/          # scripts de deploy (stack isolado)
-  .env.example    # NUNCA commitar .env real; NUNCA apontar p/ o escritório
-  docker-compose.yml
+    policy/       escada R0–R5 e catálogo de capacidades
+    mcp/          servidor MCP (35 ferramentas só-leitura)
+    shared/       tipos, schemas Zod, navegação
+  deploy/         scripts de deploy
+  docs/           esta documentação
 ```
 
-## Rodar as dependências (Fase 1 em diante)
+## Rodar
+
 ```bash
-cp .env.example .env      # preencha os segredos (credenciais PRÓPRIAS)
-docker compose up -d      # Postgres + Redis + MinIO isolados (rede marketing-os-net)
-# portas host padrão: web 4000 · api 4001 · db 5442 · redis 6390 · minio 9010/9011
+cp .env.example .env      # segredos próprios; NUNCA commitar o .env real
+docker compose up -d      # Postgres + Redis + MinIO isolados
+# portas host: web 4000 · api 4001 · db 5442 · redis 6390 · minio 9010/9011
 ```
+
+Comandos: `npm run dev` / `build` / `typecheck`; banco: `db:generate`, `db:migrate`, `db:deploy`. Testes: `pnpm --filter @mktos/api test`, `pnpm --filter @mktos/policy test`, `pnpm --filter @mktos/web test`. Deploy na VPS: `deploy/up.sh --vps api web` (o `--vps` não é opcional — ver CLAUDE.md).
 
 ## Princípios inegociáveis
-Isolamento total do escritório · um dado uma verdade · tudo clicável e acionável · IA nunca inventa (cita fonte) · ação sensível exige humano · nada de token no frontend · nada de fornecedor único.
 
-## Memória do projeto
-Além do código, este projeto tem **memória própria no Obsidian** (vault `root`) e vive versionado no **GitHub** — o "ponto zero" para não perder nada.
-
-## Próximo passo
-Iniciar **Fase 1** (base do sistema, isolada). Ver [docs/ROADMAP.md](docs/ROADMAP.md).
+Isolamento total do escritório · um dado uma verdade · tudo clicável e acionável · a IA nunca inventa (cita fonte) · ação sensível exige gente · conteúdo externo é dado, nunca instrução · nada de token no frontend · nada de fornecedor único.

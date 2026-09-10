@@ -34,7 +34,7 @@
 
 ## Estrutura e comandos
 - Monorepo (`apps/` + `packages/`), Node. `npm run dev` / `build` / `typecheck` / `lint`; banco: `db:generate`, `db:migrate`, `db:seed`.
-- Testes: só o `apps/web` tem suíte hoje (58, vindos do root-central) — `pnpm --filter @mktos/web test`. O `next lint` do web nunca foi configurado: roda o assistente interativo e falha.
+- Testes: na `main`, só o `apps/web` tem suíte (58, vindos do root-central). Na branch `root-os/frente-0` existem mais 65 na API e 19 em `packages/policy` — mas `tenant-isolation` está fora do `pnpm test` e `porta`/`runtime` se pulam sem `TEST_DATABASE_URL`. Não há CI. O `next lint` do web nunca foi configurado: roda o assistente interativo e falha.
 - MCP server do projeto em repo separado: `~/Library/Projetos/marketin-os-mcp/` (grafia sem "g" mesmo).
 - **Onde cada `.env` é lido** (a pegadinha que mais custa tempo):
   - **Container (VPS e Mac via compose):** o container **não lê arquivo `.env`**. Só chega o que estiver listado no bloco `environment:` do serviço em `docker-compose.yml`. Preencher no `.env` uma variável que não está nesse bloco **não faz nada** — foi o que segurou a `ANTHROPIC_API_KEY` por semanas.
@@ -43,3 +43,14 @@
   - `deploy/up.sh` (fora da VPS) injeta `~/.config/root/*.env` — mas essa pasta **não existe** nesta máquina.
   - Regra prática: variável nova = adicionar em **dois** lugares, o bloco `environment:` do compose e o `.env`.
 - Existe um zip antigo `GD/FullBPO/marketing-os-main.zip` e uma cópia `GD/OPERACAO ROOT/marketing-os-main/` — são snapshots, não usar.
+
+## Plano de desenvolvimento e a branch que é a base
+- **O plano vigente é `docs/PLANO-CONTINUIDADE.md`** (10/09/2026). Ele substitui o `ROADMAP.md`, que virou histórico. Cópia espelhada no vault em `GD/Obsidian/Root/20-empresa/root-os/17 - Plano de continuidade (set-26).md` — a do repo é a canônica.
+- **A base do produto é a branch `root-os/frente-0`**, não a `main`. Ela traz a régua R0–R5 em runtime (`packages/policy`), a porta (`apps/api/src/gateway`), o runtime de agentes (`apps/api/src/agents`), as telas da espinha do OS e 65 testes de API. Enquanto o merge (fatia 0.1 do plano) não acontecer, `main` está 5 semanas atrás e é ela que roda em produção.
+- **Em `GATEWAY_MODO=observar` a porta EXECUTA escrita R3** — ela cria a aprovação, loga "TERIA RETIDO" e chama o efeito assim mesmo. Não subir a branch para produção antes da fatia 0.3a (fazer R3+ reter mesmo em observar). `GATEWAY_MODO` é lido no construtor: trocar exige `up -d --no-build api`, `docker restart` não serve.
+- **`.stignore` não ignora `.git` nem `.env`**: um `git checkout` no Mac altera o working tree da VPS, e o `.env` de produção viaja para cá. Fatia 0.0 do plano resolve; até lá, cuidado com troca de branch.
+- Nada que dependa de injeção do Nest roda sob `tsx` ou `vitest` (esbuild não emite `emitDecoratorMetadata`). Script que usa Nest mora em `src/scripts/` e roda compilado; o teste de boot que vale é `pnpm --filter @mktos/api smoke`.
+- `prisma migrate deploy` roda no `command` do container `api`: migration que falha derruba a API. Testar antes num Postgres descartável.
+
+## O grupo de estratégia no WhatsApp
+As decisões de produto e oferta da ROOT são tomadas no grupo **"ROOT | Estratégia e Produto"** (Pedro, Lucas Fernandes, Rodrigo Saggioro). Ele fica na instância `Pedro Magnago` da Evolution, no JID `120363407836726219@g.us` — o campo `Chat.name` do banco está desatualizado com um nome antigo, então busca por nome não acha. Leitura por SQL no Postgres da Evolution na VPS (`n8n_evolution-api-db`), tabela `Message` com `key->>'remoteJid'`. O `fetchAllGroups` da API HTTP estoura timeout nessa instância (277 grupos).

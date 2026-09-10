@@ -1,3 +1,8 @@
+> **Substituído em 10/09/2026.** O plano vigente é [PLANO-CONTINUIDADE.md](PLANO-CONTINUIDADE.md).
+> Este arquivo fica como histórico das fases 0–9 e está desatualizado em pelo menos três pontos:
+> a Pauta ondas 2 e 3 foram entregues em 03/08, o deploy saiu do Mac para a VPS, e o sistema
+> passou a se chamar ROOT OS. Não usar para decidir o que fazer a seguir.
+
 # Marketing OS — Roadmap por Fases
 
 > Regra: **MVP funcional antes de avançar.** Cada fase entrega valor operacional real.
