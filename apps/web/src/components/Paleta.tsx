@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { NAV, SECOES, navPorSecao } from '@mktos/shared';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useModulos } from './modulos';
 
 type IconName = keyof typeof Icons;
 
@@ -26,6 +27,7 @@ interface Comando {
  */
 export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void }) {
   const { user } = useAuth();
+  const { modulos } = useModulos();
   const router = useRouter();
   const [q, setQ] = useState('');
   const [i, setI] = useState(0);
@@ -34,7 +36,9 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
   const comandos = useMemo<Comando[]>(() => {
     const perms = new Set(user?.permissions ?? []);
     const dicaDaSecao = new Map(SECOES.map((s) => [s.key, s.hint]));
-    return navPorSecao(perms)
+    // Os mesmos dois filtros da sidebar — permissão e módulo contratado.
+    // A paleta navega, e não pode navegar para tela que a API vai recusar.
+    return navPorSecao(perms, modulos ?? undefined)
       .flatMap((g) => g.itens)
       .map((n) => ({
         chave: n.key,
@@ -43,7 +47,7 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
         icone: n.icon,
         ir: n.href,
       }));
-  }, [user]);
+  }, [user, modulos]);
 
   const filtrados = useMemo(() => {
     const termo = q.trim().toLowerCase();

@@ -53,28 +53,51 @@
  *        TENANT_GUC           nome do parâmetro de sessão. Default: app.org_id
  *        PERMITIR_BANCO_NAO_TESTE=1  destrava rodar fora de um banco de teste.
  *
- *   3) O role de aplicação precisa existir e NÃO ser dono das tabelas. Sem isso
- *      o Postgres ignora as policies em silêncio (dono só obedece com FORCE):
+ *   3) O papel de aplicação precisa existir, ter senha e NÃO ser dono das
+ *      tabelas. Sem isso o Postgres ignora as policies em silêncio (dono só
+ *      obedece com FORCE). São dois passos, e nenhum deles é um GRANT à mão:
  *
- *        CREATE ROLE mktos_app LOGIN PASSWORD '...' NOBYPASSRLS;
- *        GRANT USAGE ON SCHEMA public TO mktos_app;
- *        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mktos_app;
- *        -- e em cada tabela de tenant:
- *        ALTER TABLE "Lead" ENABLE ROW LEVEL SECURITY;
- *        ALTER TABLE "Lead" FORCE ROW LEVEL SECURITY;
+ *        # cria o papel com as permissões mínimas (e REVOGA o que ele não pode)
+ *        pnpm --filter @mktos/api db:deploy
+ *
+ *        # dá a senha — segredo de operação, por isso fica fora da migration
+ *        DB_APP_PASSWORD='...' deploy/papel-app.sh
+ *
+ *      NÃO repita aqui `GRANT ... ON ALL TABLES IN SCHEMA public`: esse atalho
+ *      inclui "EventLog" e "_prisma_migrations" e DESFAZ os dois REVOKE que a
+ *      migration 20260911020000_papel_de_aplicacao acabou de aplicar. O papel
+ *      volta a poder alterar e apagar o RASTRO, e dois casos desta suíte —
+ *      "não altera, não apaga e não trunca o RASTRO" e "não enxerga o histórico
+ *      de migration" — ficam vermelhos por causa da receita, não do produto.
+ *      (Foi exatamente o que a preparação da integração contínua fazia até
+ *      10/09/2026; ver o passo "Dar senha ao papel de aplicação" no ci.yml.)
+ *
+ *      Fora do compose (banco solto, como o descartável do host), o equivalente
+ *      do segundo passo é `ALTER ROLE mktos_app WITH LOGIN PASSWORD '...'`.
+ *
+ *      Ligar o isolamento em si é outra fatia, e é ela que traz o
+ *      `ALTER TABLE ... ENABLE/FORCE ROW LEVEL SECURITY` de cada tabela.
  *
  * AVISO: a suíte ESCREVE no banco. Nunca aponte para produção.
  */
 
+import { PrismaClient } from '@prisma/client';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { comContexto, novaCorrelacao } from '../src/common/contexto-execucao';
 import {
   FILHOS_COM_ORGID_REDUNDANTE,
   MODELOS_ESCOPO_OPCIONAL,
   MODELOS_GLOBAIS,
   paisDoFilho,
 } from '../src/common/modelos-globais';
+import {
+  GUC_TENANT,
+  PAPEL_DE_APLICACAO,
+  comTenantNaSessao,
+  esquecerAvisos,
+} from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
 // ---------------------------------------------------------------------------
@@ -694,6 +717,71 @@ let usuarioTenant = '';
 let tenantBypassaRls = false;
 const vazamentos: Array<{ tabela: string; direcao: string; linhas: number }> = [];
 
+/*
+ * O estado do PAPEL DE APLICAÇÃO (fatia 1.3).
+ *
+ * A pergunta que este bloco responde é anterior a qualquer policy: existe no
+ * banco um papel que NÃO seja dono das tabelas e que NÃO atravesse RLS? Sem ele,
+ * ligar isolamento por linha não muda nada — o Postgres só cobra policy do dono
+ * com FORCE ROW LEVEL SECURITY —, e esta suíte inteira mediria o vazio.
+ */
+interface EstadoDoPapel {
+  existe: boolean;
+  entra: boolean;
+  superusuario: boolean;
+  atravessaRls: boolean;
+  criaNoSchema: boolean;
+  veMigrations: boolean;
+  alteraRastro: boolean;
+  apagaRastro: boolean;
+  truncaRastro: boolean;
+  padraoParaTabelaNova: string;
+}
+let papel: EstadoDoPapel = {
+  existe: false, entra: false, superusuario: false, atravessaRls: false,
+  criaNoSchema: false, veMigrations: false, alteraRastro: false,
+  apagaRastro: false, truncaRastro: false, padraoParaTabelaNova: '',
+};
+
+async function carregarEstadoDoPapel(): Promise<void> {
+  const existe = await admin.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [PAPEL_DE_APLICACAO]);
+  if (!existe.rowCount) return;
+
+  // `has_*_privilege` responde pelo papel mesmo sem conectar com ele — é o que
+  // permite conferir permissão num banco onde ele ainda nem tem senha.
+  const r = await admin.query<EstadoDoPapel>(
+    `SELECT true                                                          AS existe,
+            r.rolcanlogin                                                 AS entra,
+            r.rolsuper                                                    AS superusuario,
+            r.rolbypassrls                                                AS "atravessaRls",
+            has_schema_privilege($1, 'public', 'CREATE')                  AS "criaNoSchema",
+            has_table_privilege($1, '_prisma_migrations', 'SELECT')       AS "veMigrations",
+            has_table_privilege($1, '"EventLog"', 'UPDATE')               AS "alteraRastro",
+            has_table_privilege($1, '"EventLog"', 'DELETE')               AS "apagaRastro",
+            has_table_privilege($1, '"EventLog"', 'TRUNCATE')             AS "truncaRastro",
+            -- ALTER DEFAULT PRIVILEGES é POR PAPEL CRIADOR: cada linha de
+            -- pg_default_acl diz "o que <defaclrole> criar nasce com esta ACL".
+            -- Sem o filtro abaixo (e com um LIMIT 1 no lugar dele) a consulta
+            -- pegava uma linha QUALQUER — medido num banco com dois papéis
+            -- tendo padrão em public, ela devolveu a do outro papel e o caso
+            -- reprovaria com o padrão do mktos_app intacto. O que interessa é
+            -- o padrão de quem RODA AS MIGRATIONS, que é esta conexão: é ela
+            -- que vai criar a tabela da próxima migration.
+            -- (defaclrole, defaclnamespace, defaclobjtype) é único, então a
+            -- subconsulta filtrada devolve no máximo uma linha — sem LIMIT.
+            COALESCE((SELECT array_to_string(d.defaclacl, ',')
+                        FROM pg_default_acl d
+                        JOIN pg_namespace n ON n.oid = d.defaclnamespace
+                       WHERE n.nspname = 'public'
+                         AND d.defaclobjtype = 'r'
+                         AND d.defaclrole = current_user::regrole), '')    AS "padraoParaTabelaNova"
+       FROM pg_roles r
+      WHERE r.rolname = $1`,
+    [PAPEL_DE_APLICACAO],
+  );
+  if (r.rows[0]) papel = r.rows[0];
+}
+
 async function carregarDiagnostico(): Promise<void> {
   const r = await admin.query<{ tabela: string; rls: boolean; force: boolean; dono: string }>(
     `SELECT c.relname AS tabela,
@@ -716,6 +804,8 @@ async function carregarDiagnostico(): Promise<void> {
   } finally {
     c.release();
   }
+
+  await carregarEstadoDoPapel();
 }
 
 /** Explica, em uma linha, por que aquela tabela não está protegida. */
@@ -1747,5 +1837,405 @@ describe('modelos globais por desenho (estado do banco)', () => {
       '\nO visitante compartilhado não apareceu nas duas empresas.\n' +
         '  Se BioVisitor ganhasse orgId, este cookie viraria dois visitantes e a sessionização da bio se partiria.\n',
     ).toEqual([sementes.A.orgId, sementes.B.orgId].sort());
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// 9. O papel de aplicação e a sessão com tenant — RF-T-02, RF-R-01 (fatia 1.3)
+//
+// Esta seção NÃO depende de RLS estar ligada: ela cobra o que precisa existir
+// ANTES. São três perguntas:
+//   (a) existe um papel que não é dono das tabelas e não atravessa policy?
+//   (b) a empresa da requisição chega até a CONEXÃO, e some quando a transação
+//       acaba (senão a fila de conexões vaza a empresa de um pedido no outro)?
+//   (c) uma consulta sem empresa resolvida FALHA — nunca devolve "todos"?
+//
+// Como a seção 7, ela deve estar VERDE desde a migration
+// 20260911020000_papel_de_aplicacao. Vermelho aqui não é "a RLS ainda não
+// chegou": é a infraestrutura dela faltando.
+// ---------------------------------------------------------------------------
+
+describe('papel de aplicação (RF-T-02)', () => {
+  it(`o papel "${PAPEL_DE_APLICACAO}" existe`, () => {
+    expect(
+      papel.existe,
+      `\nO papel "${PAPEL_DE_APLICACAO}" não existe neste banco.\n` +
+        '  Ele é criado pela migration 20260911020000_papel_de_aplicacao — que AVISA e segue\n' +
+        '  quando o usuário das migrations não tem SUPERUSER nem CREATEROLE, para não derrubar\n' +
+        '  o deploy. Confira o log da migration; sem este papel a aplicação continua conectando\n' +
+        '  como DONA das tabelas, e dono ignora policy de linha.\n',
+    ).toBe(true);
+  });
+
+  it('não é superusuário e não atravessa a RLS', () => {
+    expect(
+      papel.superusuario,
+      `"${PAPEL_DE_APLICACAO}" é SUPERUSER — nenhuma policy de linha vale para ele.`,
+    ).toBe(false);
+    expect(
+      papel.atravessaRls,
+      `\n"${PAPEL_DE_APLICACAO}" tem BYPASSRLS.\n` +
+        '  É o atributo que desfaz o isolamento inteiro sem erro, sem log e sem ninguém notar.\n' +
+        '  Conserto: ALTER ROLE ' + PAPEL_DE_APLICACAO + ' NOBYPASSRLS (exige superusuário).\n',
+    ).toBe(false);
+  });
+
+  it('não é dono de nenhuma tabela de tenant (dono ignora policy sem FORCE)', () => {
+    const dele = ALVOS.filter((a) => estadoRls.get(a.tabela)?.dono === PAPEL_DE_APLICACAO).map((a) => a.tabela);
+    expect(
+      dele,
+      `\nO papel de aplicação é DONO de ${dele.length} tabela(s): ${dele.join(', ')}.\n` +
+        '  Dono só obedece policy com FORCE ROW LEVEL SECURITY. Migration e seed é que rodam\n' +
+        '  com o papel dono; a aplicação, não.\n',
+    ).toEqual([]);
+  });
+
+  it('não cria estrutura no schema public', () => {
+    // NÃO é esta permissão que fecha o ataque de search_path da seção 7 — e
+    // dizer que era seria autorizar alguém a remover, um dia, a proteção que
+    // realmente fecha.
+    //
+    // Medido em Postgres limpo (10/09/2026), conectado como `mktos_app`:
+    //   has_schema_privilege('mktos_app','public','CREATE') = false
+    //   CREATE TEMP TABLE "Lead" (...)                      → CREATE TABLE (!)
+    //   to_regclass('"Lead"')                               → pg_temp_3."Lead"
+    //   SELECT "orgId" FROM "Lead"        (SQL ingênuo)     → a empresa do ATACANTE
+    //   SELECT "orgId" FROM public."Lead" (o que a função faz) → a empresa real
+    // Todo papel recebe TEMP no banco por padrão (é permissão de PUBLIC, não do
+    // schema), e o esquema temporário é pesquisado ANTES de `public`. Ou seja: o
+    // pai de mentira não precisa de CREATE em public nenhum.
+    //
+    // Quem fecha o ataque é `mktos_orgid_do_pai` (onda 2): ela declara
+    // `SET search_path TO pg_catalog, pg_temp` e monta o SELECT com
+    // `format('... FROM %I.%I ...', TG_TABLE_SCHEMA, tabela_pai)` — schema
+    // qualificado, vindo do gatilho e não do chamador. Medido acima: a linha
+    // gravada levou a empresa do pai REAL. Se alguém tirar o `SET search_path`
+    // ou a qualificação, o ataque volta mesmo com este caso aqui verde.
+    //
+    // Então por que manter a asserção? CREATE em public é permissão de
+    // ESTRUTURA num papel que só deveria mexer em DADO: com ela o papel cria
+    // índice, apaga tabela, instala extensão — e planta um pai de mentira
+    // PERMANENTE, que sobrevive à sessão e atinge os outros. É mínimo
+    // privilégio, não é a trava do search_path.
+    expect(
+      papel.criaNoSchema,
+      `\n"${PAPEL_DE_APLICACAO}" tem CREATE no schema public.\n` +
+        '  Ele passa a criar e apagar estrutura — um papel que deveria só ler e escrever dado.\n' +
+        '  (A proteção contra sequestro de search_path é outra: o SET search_path e o schema\n' +
+        '   qualificado dentro de mktos_orgid_do_pai. Ver o teste de sequestro na seção 7.)\n',
+    ).toBe(false);
+  });
+
+  it('não altera, não apaga e não trunca o RASTRO', () => {
+    // O REVOKE da migration 20260829161052_regua_porta_rastro estava dentro de um
+    // `IF EXISTS (role mktos_app)` — e em banco novo aquele bloco roda antes de o
+    // papel existir, sem efeito nenhum. A migration do papel repete o REVOKE; é
+    // este teste que prova que a repetição não foi esquecida.
+    const podeMexer = [
+      papel.alteraRastro && 'UPDATE',
+      papel.apagaRastro && 'DELETE',
+      papel.truncaRastro && 'TRUNCATE',
+    ].filter(Boolean);
+    expect(
+      podeMexer,
+      `\nO papel de aplicação pode ${podeMexer.join('/')} no EventLog.\n` +
+        '  O RASTRO é append-only (02-CONSTRAINTS: nunca apagar evento). As RULEs\n' +
+        '  eventlog_sem_update/eventlog_sem_delete são a segunda barreira; a primeira é este REVOKE.\n',
+    ).toEqual([]);
+    expect(papel.existe && !papel.alteraRastro, 'sanidade: o papel existe e o REVOKE valeu').toBe(true);
+  });
+
+  it('não enxerga o histórico de migration', () => {
+    expect(
+      papel.veMigrations,
+      '\nO papel de aplicação lê _prisma_migrations.\n' +
+        '  Quem alcança essa tabela faz uma migration já aplicada rodar de novo no próximo deploy.\n',
+    ).toBe(false);
+  });
+
+  it('tabela criada por migration futura já nasce com permissão', () => {
+    // Sem ALTER DEFAULT PRIVILEGES, a PRIMEIRA migration que criar tabela derruba
+    // a produção com "permission denied" — e o erro apareceria longe da causa.
+    expect(
+      papel.padraoParaTabelaNova,
+      '\nNão há ALTER DEFAULT PRIVILEGES para o papel de aplicação no schema public.\n' +
+        '  A próxima migration que criar tabela deixa a aplicação sem permissão nela.\n',
+    ).toContain(PAPEL_DE_APLICACAO);
+  });
+
+  it('a conexão de leitura desta suíte é o papel restrito (quando ele pode entrar)', () => {
+    // A versão anterior deste caso só conferia que `usuarioTenant` não era
+    // string vazia — o que passa lendo como DONA das tabelas. Medido: sem
+    // TENANT_DATABASE_URL, os 17 casos desta seção e das duas seguintes ficavam
+    // VERDES lendo como dona, inclusive os que dizem "sob o papel restrito".
+    // Verde frouxo exatamente na configuração em que ninguém configurou nada.
+    console.info(
+      `\n[isolamento] papel de aplicação: existe=${papel.existe} entra=${papel.entra} ` +
+        `bypassrls=${papel.atravessaRls} | conexão de leitura: "${usuarioTenant}"\n`,
+    );
+
+    // Quando o papel EXISTE e PODE ENTRAR, não há desculpa: ler como outro
+    // usuário é erro de configuração da rodada, e o resultado das seções de
+    // isolamento não vale nada. Vira catraca.
+    if (papel.existe && papel.entra) {
+      expect(
+        usuarioTenant,
+        `\nA suíte está lendo como "${usuarioTenant}", e o papel "${PAPEL_DE_APLICACAO}" existe e tem senha.\n` +
+          '  Dono de tabela ignora policy de linha sem FORCE: medido assim, o isolamento sai verde\n' +
+          '  sem existir. Aponte a leitura para o papel restrito:\n' +
+          `    TENANT_DATABASE_URL='postgresql://${PAPEL_DE_APLICACAO}:...@host:porta/banco'\n`,
+      ).toBe(PAPEL_DE_APLICACAO);
+      return;
+    }
+
+    // Papel sem senha (o estado logo depois da migration, e o padrão numa
+    // máquina de desenvolvimento): aqui continua sendo diagnóstico, porque não
+    // há como conectar com ele. O aviso diz o que fazer.
+    console.warn(
+      `[isolamento] lendo como "${usuarioTenant}" — NÃO é o papel restrito, e o resultado das\n` +
+        '  seções de isolamento por linha não vale como medição. Para medir de verdade:\n' +
+        `  DB_APP_PASSWORD='...' deploy/papel-app.sh   (ou ALTER ROLE ${PAPEL_DE_APLICACAO} WITH LOGIN PASSWORD '...')\n` +
+        `  TENANT_DATABASE_URL='postgresql://${PAPEL_DE_APLICACAO}:...@host:porta/banco'\n`,
+    );
+    expect(usuarioTenant).not.toBe('');
+  });
+});
+
+/**
+ * Guarda dos casos que AFIRMAM estar medindo sob o papel restrito.
+ *
+ * Sem ela o título mente na configuração padrão: a leitura cai na conexão
+ * ADMIN, o caso passa, e o que ficou provado foi o comportamento da DONA das
+ * tabelas — que é justamente o papel que ignora policy de linha.
+ */
+function exigirPapelRestrito(): void {
+  if (papel.existe && papel.entra && usuarioTenant !== PAPEL_DE_APLICACAO) {
+    throw new Error(
+      `\nEste caso afirma medir sob o papel restrito, mas a conexão de leitura é "${usuarioTenant}".\n` +
+        `  O papel "${PAPEL_DE_APLICACAO}" existe e tem senha — falta apontar TENANT_DATABASE_URL para ele.\n`,
+    );
+  }
+}
+
+describe('a empresa chega até a conexão (RF-T-02)', () => {
+  it(`${GUC_TENANT} vale dentro da transação e MORRE no fim dela`, async () => {
+    // É a razão de cada consulta virar uma transação. `SET` (sem LOCAL) fica na
+    // SESSÃO: a conexão volta para a fila carimbada com a empresa do último
+    // pedido, e a consulta seguinte — de outro usuário, de outra empresa —
+    // herdaria o carimbo. O isolamento viraria o vazamento.
+    const dentro = await comoTenant(sementes.A.orgId, async (c) => {
+      const r = await c.query<{ org: string }>(`SELECT current_setting($1, true) AS org`, [GUC_TENANT]);
+      return r.rows[0].org;
+    });
+    expect(dentro, 'o SET LOCAL não chegou à sessão').toBe(sementes.A.orgId);
+
+    const c = await tenant.connect();
+    try {
+      const r = await c.query<{ org: string | null }>(`SELECT current_setting($1, true) AS org`, [GUC_TENANT]);
+      expect(
+        r.rows[0].org ?? '',
+        `\n${GUC_TENANT} sobreviveu à transação.\n` +
+          '  Com fila de conexões isso vaza a empresa de um pedido para o seguinte.\n' +
+          '  Use set_config(..., true) — o terceiro argumento é o que faz o valor ser LOCAL.\n',
+      ).toBe('');
+    } finally {
+      c.release();
+    }
+  }, 30_000);
+
+  it('o gatilho de derivação continua funcionando na conexão da aplicação', async () => {
+    // O gatilho da onda 2 não é SECURITY DEFINER: ele roda com o papel de quem
+    // escreveu, e precisa LER o pai. Um papel restrito sem SELECT no pai
+    // transformaria toda escrita de filho num erro — em produção, na primeira
+    // gravação. E é ele que, depois da RLS, vira a única barreira contra
+    // empresa cruzada.
+    //
+    // O título diz "conexão da aplicação", e não "papel restrito", porque num
+    // banco onde o papel ainda não tem senha a leitura cai na conexão ADMIN —
+    // aí este caso mede a DONA das tabelas, não o papel. A guarda abaixo
+    // recusa a única variante que seria mentira: papel com senha e leitura
+    // apontada para outro usuário.
+    exigirPapelRestrito();
+    const derivado = await comoTenant(sementes.A.orgId, async (c) => {
+      const id = crypto.randomUUID();
+      await c.query(`INSERT INTO "LeadEvent" (id, "leadId", type) VALUES ($1, $2, 'gatilho_papel')`, [
+        id,
+        sementes.A.ref.leadId,
+      ]);
+      const r = await c.query<{ orgId: string }>('SELECT "orgId" FROM "LeadEvent" WHERE id = $1', [id]);
+      return r.rows[0]?.orgId;
+      // `comoTenant` desfaz tudo no ROLLBACK.
+    });
+    expect(
+      derivado,
+      `\nO gatilho mktos_orgid_do_pai não derivou a empresa com a conexão "${usuarioTenant}".\n` +
+        '  Falta SELECT no pai para o papel de aplicação, ou o gatilho sumiu.\n',
+    ).toBe(sementes.A.orgId);
+  }, 30_000);
+
+  it('o gatilho continua RECUSANDO empresa cruzada na conexão da aplicação', async () => {
+    exigirPapelRestrito();
+    const erro = await comoTenant(sementes.A.orgId, async (c) => {
+      try {
+        await c.query(
+          `INSERT INTO "LeadEvent" (id, "leadId", "orgId", type) VALUES ($1, $2, $3, 'cruzado_papel')`,
+          [crypto.randomUUID(), sementes.A.ref.leadId, sementes.B.orgId],
+        );
+        return '';
+      } catch (e) {
+        return (e as Error).message;
+      }
+    });
+    expect(
+      erro,
+      `\nFilho da empresa A aceitou ser carimbado com a empresa B na conexão "${usuarioTenant}".\n` +
+        '  Depois da RLS este gatilho é a ÚNICA barreira contra cruzamento na escrita.\n',
+    ).toContain('empresa cruzada');
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// 10. A extensão do Prisma: consulta sem tenant FALHA, nunca vaza
+//
+// As seções acima medem o BANCO. Esta mede o cliente: é ele quem declara a
+// empresa a cada transação (apps/api/src/prisma/sessao-de-banco.ts). Sem esta
+// camada o `app.org_id` nunca é preenchido e a policy, quando chegar, recusaria
+// 100% das consultas.
+// ---------------------------------------------------------------------------
+
+describe('a extensão do Prisma declara a empresa em toda transação', () => {
+  /** SQL que o cliente mandou ao banco na rodada — é assim que se conta BEGIN. */
+  let sql: string[] = [];
+  let cru: PrismaClient;
+  let comTenant: PrismaClient;
+  let rigoroso: PrismaClient;
+
+  const LER_GUC = `SELECT current_setting('${GUC_TENANT}', true) AS org`;
+
+  /** Roda dentro do contexto de execução — e ESPERA lá dentro. */
+  function comEmpresa<T>(orgId: string | null, fn: () => Promise<T>): Promise<T> {
+    // O `await` tem de acontecer DENTRO do escopo: a PrismaPromise é preguiçosa e
+    // o gancho só roda na espera. Devolver a promessa e esperar fora fecharia o
+    // contexto antes da hora — é exatamente o que o ContextoInterceptor evita ao
+    // assinar o observable dentro do `comContexto`.
+    return comContexto({ orgId, correlationId: novaCorrelacao('isolamento') }, async () => await fn());
+  }
+
+  beforeAll(() => {
+    cru = new PrismaClient({
+      datasourceUrl: URL_TENANT,
+      log: [{ emit: 'event', level: 'query' }],
+    });
+    (cru as unknown as { $on: (e: 'query', cb: (ev: { query: string }) => void) => void }).$on(
+      'query',
+      (ev) => sql.push(ev.query),
+    );
+    comTenant = comTenantNaSessao(cru, { modo: 'observar', avisar: () => undefined });
+    rigoroso = comTenantNaSessao(cru, { modo: 'impor', avisar: () => undefined });
+    esquecerAvisos();
+  });
+
+  afterAll(async () => {
+    await cru.$disconnect();
+  });
+
+  it('operação de modelo declara a empresa na mesma transação da consulta', async () => {
+    sql = [];
+    await comEmpresa(sementes.A.orgId, () => comTenant.lead.findMany({ select: { id: true }, take: 1 }));
+    expect(sql.filter((s) => s === 'BEGIN').length, `uma transação, não mais: ${sql.join(' | ')}`).toBe(1);
+    // A ORDEM importa: o SET LOCAL tem de ser a primeira coisa DEPOIS do BEGIN.
+    // Declarado depois da consulta, ele não valeria para ela.
+    expect(sql[0], `esperava BEGIN primeiro, veio: ${sql.join(' | ')}`).toBe('BEGIN');
+    expect(sql[1] ?? '', `esperava o SET LOCAL logo após o BEGIN, veio: ${sql.join(' | ')}`).toContain(
+      'set_config',
+    );
+  }, 30_000);
+
+  it('consulta crua também recebe a empresa (é assim que a busca vetorial roda)', async () => {
+    const r = await comEmpresa(sementes.B.orgId, () =>
+      comTenant.$queryRawUnsafe<Array<{ org: string }>>(LER_GUC),
+    );
+    expect(
+      r[0]?.org,
+      '\n$queryRawUnsafe saiu SEM empresa na sessão.\n' +
+        '  obsidian.service.ts e pauta.service.ts fazem busca vetorial só nessa forma — se ela\n' +
+        '  escapar do gancho, a policy recusa a busca inteira quando a RLS entrar.\n',
+    ).toBe(sementes.B.orgId);
+  }, 30_000);
+
+  it('$transaction interativa abre UMA transação e declara a empresa nela', async () => {
+    // É o caminho do RASTRO: `pg_advisory_xact_lock` + leitura da cauda + insert,
+    // tudo na MESMA transação. Se o gancho abrisse uma transação por operação, o
+    // lock soltaria no commit de dentro e a cadeia de hashes bifurcaria com dois
+    // escritores simultâneos — que é o único motivo daquele lock existir.
+    sql = [];
+    const dentro = await comEmpresa(sementes.A.orgId, () =>
+      comTenant.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${sementes.A.orgId}))`;
+        const r = await tx.$queryRawUnsafe<Array<{ org: string }>>(LER_GUC);
+        await tx.lead.findMany({ select: { id: true }, take: 1 });
+        return r[0]?.org;
+      }),
+    );
+    expect(dentro, 'a transação interativa correu sem empresa').toBe(sementes.A.orgId);
+    expect(
+      sql.filter((s) => s === 'BEGIN').length,
+      `\nTransações aninhadas: ${sql.filter((s) => s === 'BEGIN').length} BEGIN.\n` +
+        '  O `tx` entregue ao corpo precisa ser o do cliente CRU; o estendido faria cada\n' +
+        '  operação de dentro abrir transação própria, em outra conexão.\n',
+    ).toBe(1);
+    expect(sql.filter((s) => s.includes('set_config')).length, 'um SET LOCAL por transação').toBe(1);
+  }, 30_000);
+
+  it('$transaction em lote continua atômica e com a empresa declarada', async () => {
+    sql = [];
+    const r = await comEmpresa(sementes.A.orgId, () =>
+      comTenant.$transaction([
+        comTenant.lead.findMany({ select: { id: true }, take: 1 }),
+        comTenant.$queryRawUnsafe<Array<{ org: string }>>(LER_GUC),
+      ]),
+    );
+    expect(
+      sql.filter((s) => s === 'BEGIN').length,
+      '\nO lote se partiu em várias transações — a atomicidade que bio/clickup/conciliação\n' +
+        '  esperam dele desapareceu em silêncio.\n',
+    ).toBe(1);
+    expect(r, 'o lote devolveu itens a mais ou a menos que o chamador pediu').toHaveLength(2);
+    expect((r[1] as Array<{ org: string }>)[0]?.org).toBe(sementes.A.orgId);
+  }, 30_000);
+
+  it('sem empresa em modo impor: LANÇA e nenhuma consulta chega ao banco', async () => {
+    // O critério da fatia: consulta sem tenant resolvido FALHA — nunca devolve a
+    // linha de outra empresa, e nunca devolve "todos" (RF-T-04).
+    sql = [];
+    await expect(
+      comEmpresa(null, () => rigoroso.lead.findMany({ select: { id: true } })),
+    ).rejects.toThrow(/tenant não resolvido/);
+    expect(
+      sql,
+      `\nUma consulta sem empresa chegou ao banco: ${sql.join(' | ')}\n` +
+        '  A recusa tem de acontecer ANTES da viagem — senão a proteção depende de a policy\n' +
+        '  existir, e ela ainda não existe.\n',
+    ).toEqual([]);
+
+    await expect(comEmpresa(null, () => rigoroso.$transaction([rigoroso.lead.count()]))).rejects.toThrow(
+      /tenant não resolvido/,
+    );
+    await expect(comEmpresa(null, () => rigoroso.$transaction(async () => 1))).rejects.toThrow(
+      /tenant não resolvido/,
+    );
+    expect(sql, 'lote e transação interativa sem empresa também não podem viajar').toEqual([]);
+  }, 30_000);
+
+  it('sem empresa em modo observar: roda com a empresa VAZIA, nunca com "todos"', async () => {
+    // O modo de produção hoje. A consulta não quebra — e é de propósito, senão o
+    // deploy desta fatia derrubaria cron, rota pública e script de linha de
+    // comando de uma vez. O que ela NÃO faz é sair sem declarar nada: com a
+    // policy no lugar, `app.org_id` vazio não casa com linha nenhuma.
+    const r = await comEmpresa(null, () => comTenant.$queryRawUnsafe<Array<{ org: string }>>(LER_GUC));
+    expect(
+      r[0]?.org,
+      'consulta sem empresa saiu com app.org_id preenchido — de onde veio esse valor?',
+    ).toBe('');
   }, 30_000);
 });

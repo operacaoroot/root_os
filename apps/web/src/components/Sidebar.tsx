@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { NAV, SECOES, navPorSecao } from '@mktos/shared';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useModulos } from './modulos';
 
 type IconName = keyof typeof Icons;
 
@@ -33,6 +34,7 @@ export function lerTema(): TemaOs {
 
 export function Sidebar() {
   const { user } = useAuth();
+  const { modulos, ligado } = useModulos();
   const pathname = usePathname();
   const [tema, setTema] = useState<TemaOs>('dark');
   // O primeiro efeito de tema roda com o estado inicial 'dark', antes do
@@ -43,15 +45,23 @@ export function Sidebar() {
   const perms = new Set(user?.permissions ?? []);
 
   /*
-   * O agrupamento e o filtro por permissão vêm do pacote compartilhado
-   * (packages/shared/src/nav.ts) — a sidebar só desenha o que ele devolve, na
-   * ordem em que devolve. O "avulsos" abaixo é rede de segurança: se um módulo
-   * entrar no NAV apontando para uma seção que não existe em SECOES, ele
-   * aparece no fim do menu em vez de sumir calado. O tipo `secao` impede isso
-   * em compilação, mas o NAV também é lido por JS não tipado (testes, scripts).
+   * O agrupamento e os DOIS filtros — permissão e módulo contratado — vêm do
+   * pacote compartilhado (packages/shared/src/nav.ts): a sidebar só desenha o
+   * que ele devolve, na ordem em que devolve.
+   *
+   * `modulos ?? undefined` traduz o "ainda não sei" do provedor no "todos
+   * ligados" que o navPorSecao entende. Quem de fato recusa a rota é a API
+   * (apps/api/src/tenants/); esconder aqui é para não mostrar porta que não
+   * abre, e esconder por FALTA de resposta seria sumir com tela que a pessoa
+   * tem — ver o cabeçalho de `modulos.tsx`.
+   *
+   * O "avulsos" abaixo é rede de segurança: se um módulo entrar no NAV
+   * apontando para uma seção que não existe em SECOES, ele aparece no fim do
+   * menu em vez de sumir calado. O tipo `secao` impede isso em compilação, mas
+   * o NAV também é lido por JS não tipado (testes, scripts).
    */
   const grupos: { chave: string; titulo: string; dica?: string; tipo: string; itens: typeof NAV }[] =
-    navPorSecao(perms).map((g) => ({
+    navPorSecao(perms, modulos ?? undefined).map((g) => ({
       chave: g.secao.key,
       titulo: g.secao.label,
       dica: g.secao.hint,
@@ -59,7 +69,9 @@ export function Sidebar() {
       itens: g.itens,
     }));
 
-  const avulsos = NAV.filter((n) => perms.has(n.permission) && !CHAVES_DE_SECAO.has(n.secao));
+  const avulsos = NAV.filter(
+    (n) => perms.has(n.permission) && ligado(n.modulo) && !CHAVES_DE_SECAO.has(n.secao),
+  );
   if (avulsos.length > 0)
     grupos.push({ chave: '__avulsos', titulo: 'Outros', tipo: 'modulo', itens: avulsos });
 

@@ -53,7 +53,34 @@ services:
     working_dir: /app/apps/api
     command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
     environment:
+      # A conexão DONA das tabelas. É ela que o `prisma migrate deploy` do
+      # `command:` acima usa — migration cria tabela, e só o dono cria tabela.
       DATABASE_URL: postgresql://${DB_USER:-mkt}:${DB_PASSWORD:-mkt}@db:5432/${DB_NAME:-marketing_os}
+      # A conexão da APLICAÇÃO: o papel restrito `mktos_app` (NOBYPASSRLS), criado
+      # pela migration 20260911020000_papel_de_aplicacao. Dono ignora policy de
+      # isolamento por linha; papel restrito não.
+      #
+      # É o USUÁRIO que troca, não a URL inteira: a aplicação reescreve o usuário
+      # e a senha dentro da DATABASE_URL acima (ver urlDaAplicacao em
+      # apps/api/src/prisma/sessao-de-banco.ts). Duas URLs completas a manter em
+      # sincronia — uma falando com `db:5432`, outra com `localhost` — é o tipo de
+      # divergência que só aparece no deploy.
+      #
+      # VAZIO = segue conectando como DONA, exatamente como antes desta fatia. O
+      # boot anuncia no log qual dos dois está valendo. Para provisionar a senha:
+      # deploy/papel-app.sh.
+      DB_APP_USER: ${DB_APP_USER:-}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-}
+      # Escape para quando a aplicação falar com outro host (um pgbouncer, por
+      # exemplo). Preenchida, vence as duas de cima.
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-}
+      # `observar` (padrão): consulta sem empresa resolvida RODA, com app.org_id
+      # vazio, e o caminho é registrado UMA vez no log — é assim que se levanta o
+      # inventário de quem ainda não abre contexto (cron, rota pública, script).
+      # `impor`: consulta sem empresa LANÇA (RF-T-04). Virar para `impor` antes de
+      # o inventário estar zerado derruba a aplicação — é a fatia do RLS que faz
+      # essa virada, não esta.
+      TENANT_MODO: ${TENANT_MODO:-observar}
       API_PORT: "4001"
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       AUTH_SECRET: ${AUTH_SECRET:-dev-secret}

@@ -135,15 +135,22 @@ jobs:
       PISO_ARQUIVOS_POLICY: '1'
       PISO_CASOS_WEB: '70'      # (76) apps/web/tests/{unit,component}, 8 arquivos
       PISO_ARQUIVOS_WEB: '8'
-      # (146) em 9 arquivos: arquitetura 21, contexto-aprovacao 10,
-      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20, porta 20,
-      # runtime 9, validacao 9. A onda 2 levou a suíte de 76 para 146, e o piso
-      # de 55 que sobrou da onda 1 passou a caber com 91 casos de folga: deixaria
-      # sumir TRÊS arquivos sem reclamar. Sobe para 120 (18% de folga).
+      # (243) em 10 arquivos: arquitetura 21, contexto-aprovacao 10,
+      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
+      # modulos-por-tenant 97, porta 20, runtime 9, validacao 9. A onda 2 levou a
+      # suíte de 76 para 146, e a onda 3 de 146 para 243 com o arquivo novo dos
+      # módulos por empresa.
+      #
+      # Os dois pisos subiram JUNTO com ela, e é obrigatório que subam: o de
+      # ARQUIVOS é colado no número real (10) porque é ele quem pega arquivo que
+      # some da coleta — deixá-lo em 9 seria autorizar, por escrito, a perda
+      # silenciosa de um arquivo inteiro. O de CASOS vai para 200 (18% de folga
+      # sobre 243), a mesma proporção que a onda 2 escolheu; deixá-lo em 120
+      # deixaria a suíte de módulos inteira, 97 casos, sumir sem uma reclamação.
       # `tenant-isolation.test.ts` não entra nesta conta — conjunto `padrao`
       # o exclui, e ele tem job próprio abaixo.
-      PISO_CASOS_API: '120'
-      PISO_ARQUIVOS_API: '9'
+      PISO_CASOS_API: '200'
+      PISO_ARQUIVOS_API: '10'
 
     steps:
       - uses: actions/checkout@v4
@@ -428,11 +435,35 @@ jobs:
       - name: Aplicar as migrations no banco da CI
         run: pnpm --filter @mktos/api db:deploy
 
-      # O role de aplicação precisa EXISTIR e NÃO ser dono das tabelas: dono de
-      # tabela só obedece policy com FORCE ROW LEVEL SECURITY. Criar aqui é o
-      # que faz este job medir isolamento de verdade quando o RLS entrar.
-      # A senha é descartável e vale só dentro deste runner.
-      - name: Criar o role de aplicação (não-dono, sem BYPASSRLS)
+      # ---------------------------------------------------------------------
+      # O papel de aplicação é CRIADO PELA MIGRATION, não aqui.
+      #
+      # Aqui ele só ganha a senha descartável deste runner. A distinção não é
+      # estética — este passo já foi um `CREATE ROLE ... IF NOT EXISTS` seguido
+      # de GRANTs, e nessa forma quebrava a suíte de duas maneiras ao mesmo
+      # tempo, as duas em silêncio (medido em Postgres limpo, 10/09/2026):
+      #
+      #  1. A migration 20260911020000_papel_de_aplicacao cria o papel NOLOGIN
+      #     de propósito (senha é segredo de operação, não entra no repositório).
+      #     Com o papel já existindo, o `IF NOT EXISTS` não fazia nada e ele
+      #     seguia sem poder conectar: `TENANT_DATABASE_URL` dava "password
+      #     authentication failed", o `beforeAll` da suíte morria e o vitest
+      #     reportava 211 PULADOS e ZERO executados — contra 194 casos rodando
+      #     antes desta fatia. Como o passo da suíte tem `continue-on-error`, o
+      #     job terminava VERDE sem ter medido nada.
+      #
+      #  2. `GRANT ... ON ALL TABLES IN SCHEMA public` inclui "EventLog" e
+      #     "_prisma_migrations", e DESFAZIA os dois REVOKE que a migration tinha
+      #     acabado de aplicar. Medido depois do passo: o papel voltava a poder
+      #     UPDATE/DELETE no RASTRO e a ler o histórico de migration.
+      #
+      # Por isso não há GRANT nenhum abaixo: a migration já concede exatamente o
+      # necessário, e qualquer concessão repetida aqui só tem como divergir dela.
+      # O bloco de conferência é fail-closed — se um dia alguém reintroduzir um
+      # GRANT amplo, este passo (que NÃO tem continue-on-error) reprova o job,
+      # em vez de deixar a suíte medir um papel que já não é o de produção.
+      # ---------------------------------------------------------------------
+      - name: Dar senha ao papel de aplicação criado pela migration
         env:
           PGPASSWORD: mkt
         run: |
@@ -440,13 +471,35 @@ jobs:
           DO $$
           BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mktos_app') THEN
-              CREATE ROLE mktos_app LOGIN PASSWORD 'ci' NOBYPASSRLS;
+              RAISE EXCEPTION
+                'o papel mktos_app não existe depois de prisma migrate deploy. A migration 20260911020000_papel_de_aplicacao AVISA e segue quando o usuário não tem SUPERUSER nem CREATEROLE — leia o log do passo anterior. Sem este papel a suíte leria como DONA das tabelas, e dono ignora policy de linha: o resultado não valeria nada.';
             END IF;
           END
           $$;
-          GRANT USAGE ON SCHEMA public TO mktos_app;
-          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO mktos_app;
-          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO mktos_app;
+
+          -- Só a senha. Nem atributo de papel (a migration já fixou
+          -- NOBYPASSRLS/NOSUPERUSER), nem permissão.
+          ALTER ROLE mktos_app WITH LOGIN PASSWORD 'ci';
+
+          DO $$
+          DECLARE
+            estragos text[] := '{}';
+          BEGIN
+            IF has_table_privilege('mktos_app', '"EventLog"', 'UPDATE')   THEN estragos := array_append(estragos, 'UPDATE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '"EventLog"', 'DELETE')   THEN estragos := array_append(estragos, 'DELETE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '"EventLog"', 'TRUNCATE') THEN estragos := array_append(estragos, 'TRUNCATE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '_prisma_migrations', 'SELECT') THEN estragos := array_append(estragos, 'SELECT em _prisma_migrations'); END IF;
+            IF has_schema_privilege('mktos_app', 'public', 'CREATE')      THEN estragos := array_append(estragos, 'CREATE no schema public'); END IF;
+            IF array_length(estragos, 1) IS NOT NULL THEN
+              RAISE EXCEPTION
+                'o papel mktos_app tem permissão a mais depois da preparação: %. A migration revoga isso; alguma concessão manual (quase sempre um GRANT ... ON ALL TABLES) desfez o revoke, e a suíte passaria a medir um papel mais poderoso que o de produção.',
+                array_to_string(estragos, ', ');
+            END IF;
+          END
+          $$;
+
+          SELECT rolname, rolcanlogin AS entra, rolbypassrls AS atravessa_rls, rolsuper AS superusuario
+            FROM pg_roles WHERE rolname = 'mktos_app';
           SQL
 
       - name: Suíte de isolamento

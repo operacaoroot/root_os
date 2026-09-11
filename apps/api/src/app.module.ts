@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ContextoModule } from './common/contexto.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { TenantsModule } from './tenants/tenants.module';
 import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { PolicyModule } from './policy/policy.module';
@@ -38,6 +39,12 @@ import { PautaModule } from './pauta/pauta.module';
     // do que consulta o banco.
     ContextoModule,
     PrismaModule,
+    // O gate de módulos por empresa (RF-T-06). DEPOIS do ContextoModule de
+    // propósito: interceptor global registrado antes envolve o registrado
+    // depois, então o gate roda com o tenant já resolvido no contexto. E antes
+    // de todo módulo de domínio, porque é ele que decide se o domínio existe
+    // para esta empresa.
+    TenantsModule,
     AuditModule,
     // A régua carrega antes da porta, e a porta antes de qualquer módulo de
     // domínio: ADR-004 — nenhum agente alcança conector sem passar por ela.

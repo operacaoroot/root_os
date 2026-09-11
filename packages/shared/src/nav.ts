@@ -40,8 +40,10 @@ export type SecaoKey = Secao['key'];
 export type SecaoTipo = Secao['tipo'];
 
 // Módulos habilitáveis por empresa. A chave é o que a tela de Ferramentas
-// liga/desliga e o que o guard da API vai consultar — hoje o filtro é só
-// visual, e a tela precisa dizer isso enquanto o guard não existir.
+// liga/desliga, o que a coluna `Org.modulos` guarda e o que o gate da API
+// consulta a cada requisição (apps/api/src/tenants/). FONTE ÚNICA: quem
+// precisar da lista importa daqui. Uma segunda lista em outro arquivo é como a
+// contagem de ferramentas do MCP passou anos dizendo 10 quando eram 35.
 export const MODULOS = [
   'trabalho',
   'relatorios',
@@ -56,6 +58,31 @@ export const MODULOS = [
   'financeiro',
 ] as const;
 export type ModuloKey = (typeof MODULOS)[number];
+
+/**
+ * O módulo que governa uma rota do WEB, ou `null` quando a rota é espinha do OS
+ * (e portanto nunca desliga) ou desconhecida do menu.
+ *
+ * Casa por href do NAV — item exato ou prefixo de subrota (`/leads/abc` cai em
+ * `/leads`) — do href MAIS LONGO para o mais curto, porque um dia dois itens vão
+ * compartilhar prefixo com módulos diferentes e o mais específico é quem manda.
+ *
+ * `null` PARA ROTA DESCONHECIDA É DE PROPÓSITO. A alternativa (desconhecido =
+ * bloqueado) transformaria toda tela nova, e o placeholder de
+ * `app/[...slug]/page.tsx`, em tela morta até alguém lembrar de declarar o
+ * módulo — exatamente o "rota inalcançável por engano" que este mecanismo
+ * existe para evitar. O gate que REALMENTE decide é o da API, que trabalha com
+ * a lista fechada de prefixos de rota; aqui em cima o papel é não mostrar porta
+ * que não abre.
+ */
+export function moduloDaRotaDoWeb(pathname: string): ModuloKey | null {
+  const limpo = pathname.split(/[?#]/)[0].replace(/\/+$/, '') || '/';
+  const candidatos = [...NAV].sort((a, b) => b.href.length - a.href.length);
+  for (const item of candidatos) {
+    if (limpo === item.href || limpo.startsWith(`${item.href}/`)) return item.modulo ?? null;
+  }
+  return null;
+}
 
 export interface NavItem {
   key: string;
@@ -142,10 +169,15 @@ export const NAV_DETALHE: { href: string; parentKey: string; permission: Permiss
  * Agrupa o menu por seção já filtrado pelas permissões do usuário, descartando
  * seções vazias. A sidebar renderiza o retorno na ordem recebida.
  *
- * `modulosLigados` omitido = todos ligados (é o estado de hoje: o registro de
- * módulo por empresa ainda não existe). Quando existir, item com `modulo`
- * desligado sai do menu — e o guard da API precisa sair junto, senão a rota
- * continua respondendo e o esconderijo vira vazamento com fachada.
+ * `modulosLigados` omitido = todos ligados. Desde 11/09/2026 isso NÃO é mais o
+ * estado normal do sistema e sim o estado "ainda não sei": o registro por
+ * empresa existe (`Org.modulos`) e chega ao web por `GET /api/tenants/modulos`.
+ * Enquanto a resposta não chega — ou se ela falhar —, o menu aparece inteiro de
+ * propósito: esconder por falta de informação é sumir com tela que a pessoa tem
+ * direito de ver, e quem REALMENTE recusa é a API (apps/api/src/tenants/), que
+ * não depende desta chamada. Item com `modulo` desligado sai do menu, e a rota
+ * correspondente responde 404 — sem as duas metades, o esconderijo seria só
+ * fachada.
  */
 export function navPorSecao(
   permissoes: Iterable<string>,

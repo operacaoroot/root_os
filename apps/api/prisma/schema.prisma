@@ -52,6 +52,24 @@ model Org {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  /// Módulos de domínio contratados por esta empresa — RF-T-06.
+  ///
+  /// As chaves válidas são as de `MODULOS` em `packages/shared/src/nav.ts`, que
+  /// é a fonte única: o menu do web e o guard da API leem a MESMA lista. Nada
+  /// aqui é enum do Prisma de propósito — enum viraria uma segunda lista, e
+  /// acrescentar módulo passaria a exigir migration de tipo além da de dados.
+  ///
+  /// VAZIO SIGNIFICA "SÓ A ESPINHA DO OS", não "tudo": um tenant novo nasce sem
+  /// módulo nenhum e o que ele enxerga é só o que fala do sistema (central,
+  /// quem trabalha, controle, o que existe, a conta). Por isso o default é `[]`
+  /// e a migration `20260911013000_modulos_habilitados_por_org` PREENCHE as
+  /// empresas que já existiam com a lista inteira — quem já estava dentro não
+  /// pode perder tela por causa de uma coluna nova.
+  ///
+  /// Quem provisiona empresa (seed, script, tela futura) informa este campo
+  /// EXPLICITAMENTE. Confiar no default aqui é nascer com o painel vazio.
+  modulos String[] @default([])
+
   users        User[]
   roles        Role[]
   leads        Lead[]
