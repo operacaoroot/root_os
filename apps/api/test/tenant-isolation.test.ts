@@ -16,18 +16,34 @@
  * Esta suíte só fica verde quando o Postgres — e não o TypeScript — recusa a
  * leitura cruzada.
  *
+ * O QUE ELA TAMBÉM FAZ, DESDE A FATIA 1.1 (RF-T-01)
+ * Antes do isolamento por linha existe um pré-requisito: TODA tabela de tenant
+ * precisa ter em que coluna se apoiar. Dez tabelas filhas só alcançavam a
+ * empresa pelo pai; hoje carregam `orgId` redundante. As seções 7 e 8 deste
+ * arquivo cobrem essa camada NO BANCO — coluna, chave estrangeira, gatilho e o
+ * valor efetivamente gravado.
+ *
+ * O QUE **NÃO** MORA MAIS AQUI
+ * A catraca que só lê o `schema.prisma` ("todo modelo tem orgId ou está
+ * declarado global", "orgId anulável só onde foi declarado") mudou para
+ * `test/modelos-globais.test.ts`. Motivo: este arquivo fica fora do `pnpm test`
+ * padrão e roda com `continue-on-error` na integração contínua enquanto o
+ * isolamento por linha não estiver ligado — catraca ali acusa e o check fica
+ * verde, que é o mesmo que não ter catraca. Lá ela reprova de verdade.
+ * Aqui ficou só o que precisa de banco.
+ *
  * ESTADO ESPERADO HOJE: VERMELHA.
  * Zero tabelas com RLS no banco de produção. Rodar isto agora deve falhar em
  * praticamente todas as tabelas. É o esperado — a suíte é o critério de aceite
  * da ativação de RLS, e vai ficando verde tabela por tabela conforme as policies
  * entram. Não "conserte" a suíte relaxando asserção.
+ * As seções 7 e 8 são a exceção: elas não dependem de RLS e devem estar VERDES
+ * desde a migration `20260910120000_orgid_em_todo_filho`.
  *
  * COMO RODAR
- *   1) vitest ainda não existe em apps/api. Adicionar:
- *        pnpm --filter @mktos/api add -D vitest
- *      e em apps/api/package.json:
- *        "test:isolamento": "vitest run test/tenant-isolation.test.ts"
- *      (`pg` e `@types/pg` já são devDependencies de @mktos/api.)
+ *   1) `pnpm --filter @mktos/api test:isolamento`. Este arquivo fica FORA do
+ *      `pnpm test` padrão (ver apps/api/vitest.config.ts): ele lança no import
+ *      quando falta banco, então não daria para pular sozinho.
  *
  *   2) Variáveis de ambiente:
  *        TEST_DATABASE_URL    conexão ADMIN (dona das tabelas). Semeia e limpa.
@@ -53,6 +69,14 @@
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import {
+  FILHOS_COM_ORGID_REDUNDANTE,
+  MODELOS_ESCOPO_OPCIONAL,
+  MODELOS_GLOBAIS,
+  paisDoFilho,
+} from '../src/common/modelos-globais';
+import { exigirBancoDescartavel } from './banco-de-teste';
+
 // ---------------------------------------------------------------------------
 // Configuração e trava de segurança
 // ---------------------------------------------------------------------------
@@ -66,27 +90,19 @@ if (!URL_ADMIN) {
 }
 
 // A suíte cria e apaga linhas. Recusa rodar num banco que não se anuncia como
-// de teste, a menos que o operador destrave explicitamente.
-const NOME_BANCO = (() => {
-  try {
-    return new URL(URL_ADMIN).pathname.replace(/^\//, '');
-  } catch {
-    return '';
-  }
-})();
-const PARECE_TESTE = /test|dev|local|staging|shadow/i.test(NOME_BANCO);
-if (!PARECE_TESTE && process.env.PERMITIR_BANCO_NAO_TESTE !== '1') {
-  throw new Error(
-    `Banco "${NOME_BANCO}" não parece de teste e a suíte ESCREVE nele. ` +
-      'Aponte TEST_DATABASE_URL para um banco descartável ou defina PERMITIR_BANCO_NAO_TESTE=1 conscientemente.',
-  );
-}
+// de teste, a menos que o operador destrave explicitamente. A regra mora em
+// `banco-de-teste.ts` porque `contexto-aprovacao.test.ts` precisa da MESMA —
+// duas cópias de uma trava de segurança é uma trava que um dia diverge.
+exigirBancoDescartavel(URL_ADMIN, 'ESCREVE nele');
 
 const MESMA_CONEXAO = URL_TENANT === URL_ADMIN;
 
 // Marca única da rodada. Todo dado semeado carrega isto, e a limpeza no fim
 // remove exatamente estas linhas — nunca um DELETE amplo.
 const MARCA = `iso_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+/** Um único id de cookie, usado pelas DUAS orgs — a premissa de BioVisitor global. */
+const VISITANTE_COMPARTILHADO = `visitor_compartilhado_${MARCA}`;
 
 const admin = new Pool({ connectionString: URL_ADMIN, max: 4 });
 const tenant = new Pool({ connectionString: URL_TENANT, max: 4 });
@@ -156,10 +172,18 @@ interface Alvo {
 }
 
 /**
- * 46 tabelas TENANT (45 modelos com coluna orgId + a própria Org, que se escopa
- * pela PK), 10 modelos FILHO sem orgId e as 3 junções implícitas do Prisma.
- * Fora daqui, de propósito: Permission e BioVisitor (globais por design) e
- * _prisma_migrations (controle do Migrate — ligar RLS nela quebra o boot).
+ * Tabelas TENANT (modelos com coluna orgId + a própria Org, que se escopa pela
+ * PK), as 10 FILHAS e as 3 junções implícitas do Prisma.
+ *
+ * `escopo: 'filho'` não quer mais dizer "sem orgId": desde a fatia 1.1 as dez
+ * carregam a coluna. Quer dizer que a empresa delas é DERIVADA de um pai — e é
+ * por isso que continuam listadas em separado: nelas o isolamento tem duas
+ * perguntas, "a política filtra?" e "o orgId gravado é mesmo o do pai?".
+ *
+ * Fora daqui, de propósito: os modelos declarados em
+ * `src/common/modelos-globais.ts` (Org entra, por causa da PK; Permission,
+ * BioVisitor e Capability não) e _prisma_migrations (controle do Migrate —
+ * ligar RLS nela quebra o boot).
  */
 const ALVOS: Alvo[] = [
   // ---- raiz -------------------------------------------------------------
@@ -172,12 +196,12 @@ const ALVOS: Alvo[] = [
 
   // ---- integrações ------------------------------------------------------
   { tabela: 'IntegrationAccount', escopo: 'tenant', chaveSql: '"id"', nota: 'config Json carrega credencial de integração em claro.' },
-  { tabela: 'IntegrationHealth', escopo: 'filho', chaveSql: '"id"', nota: 'Filha 1:1 de IntegrationAccount, sem orgId.' },
+  { tabela: 'IntegrationHealth', escopo: 'filho', chaveSql: '"id"', nota: 'Filha 1:1 de IntegrationAccount; orgId derivado dela.' },
 
   // ---- leads e campanhas ------------------------------------------------
   { tabela: 'LeadSource', escopo: 'tenant', chaveSql: '"id"', nota: 'Catálogo de canais por org.' },
   { tabela: 'Lead', escopo: 'tenant', chaveSql: '"id"', nota: 'PII de terceiro (nome, e-mail, telefone).' },
-  { tabela: 'LeadEvent', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de Lead, sem orgId. payload Json guarda histórico de PII.' },
+  { tabela: 'LeadEvent', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de Lead; payload Json guarda histórico de PII.' },
   { tabela: 'Campaign', escopo: 'tenant', chaveSql: '"id"', nota: 'Orçamento e gasto por campanha.' },
   { tabela: 'PixelEvent', escopo: 'tenant', chaveSql: '"id"', nota: 'Ingestão pública resolve a org por slug root fixo em events.controller.ts:24.' },
   { tabela: 'Task', escopo: 'tenant', chaveSql: '"id"', nota: 'Tarefas espelhadas de ClickUp/Asana.' },
@@ -210,10 +234,10 @@ const ALVOS: Alvo[] = [
 
   // ---- bio --------------------------------------------------------------
   { tabela: 'BioPage', escopo: 'tenant', chaveSql: '"id"', nota: 'Lida sem auth em bio-public.controller.ts:54 — a policy precisa prever leitura pública de publicada=true.' },
-  { tabela: 'BioLink', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de BioPage, sem orgId. Resolve o redirect anônimo em bio-public.controller.ts:87.' },
+  { tabela: 'BioLink', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de BioPage. Resolve o redirect anônimo em bio-public.controller.ts:87.' },
   { tabela: 'BioChallenge', escopo: 'tenant', chaveSql: '"id"', nota: 'Tem orgId E pageId — duplo caminho até a org.' },
-  { tabela: 'BioChallengeAccount', escopo: 'filho', chaveSql: '"id"', nota: 'Sem orgId. Liga desafio a BioConexao — sem policy dá para amarrar OAuth de outra org.' },
-  { tabela: 'BioChallengePost', escopo: 'filho', chaveSql: '"id"', nota: 'Neta de BioChallenge: a org só é alcançável com 2 saltos.' },
+  { tabela: 'BioChallengeAccount', escopo: 'filho', chaveSql: '"id"', nota: 'Liga desafio a BioConexao — sem policy dá para amarrar OAuth de outra org.' },
+  { tabela: 'BioChallengePost', escopo: 'filho', chaveSql: '"id"', nota: 'Neta de BioChallenge: sem a coluna própria, a org custava 2 saltos de join.' },
   { tabela: 'BioChallengeSnapshot', escopo: 'filho', chaveSql: '"id"', nota: 'Append-only, mesma distância de 2 saltos até a org.' },
   { tabela: 'BioConexao', escopo: 'tenant', chaveSql: '"id"', nota: 'tokenCifrado/refreshCifrado (AES-256-GCM).' },
   { tabela: 'BioCredencialApp', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId NULLABLE: null = credencial global. Policy tem que ser orgId = atual OR orgId IS NULL.' },
@@ -232,13 +256,13 @@ const ALVOS: Alvo[] = [
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da hierarquia pastas → listas → tarefas.' },
   { tabela: 'WorkList', escopo: 'tenant', chaveSql: '"id"', nota: 'Pai de WorkStatus, que não tem orgId.' },
-  { tabela: 'WorkStatus', escopo: 'filho', chaveSql: '"id"', nota: 'Sem orgId, mas referenciada por WorkTask.statusId, que TEM orgId.' },
+  { tabela: 'WorkStatus', escopo: 'filho', chaveSql: '"id"', nota: 'Referenciada por WorkTask.statusId: as duas empresas têm de bater.' },
   { tabela: 'WorkTag', escopo: 'tenant', chaveSql: '"id"', nota: 'Etiquetas do espaço.' },
   { tabela: 'WorkField', escopo: 'tenant', chaveSql: '"id"', nota: 'Campo personalizado; listId nulo = vale para o espaço todo.' },
-  { tabela: 'WorkFieldOption', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de WorkField, sem orgId.' },
+  { tabela: 'WorkFieldOption', escopo: 'filho', chaveSql: '"id"', nota: 'Filha de WorkField; orgId derivado dele.' },
   { tabela: 'WorkTask', escopo: 'tenant', chaveSql: '"id"', nota: 'Auto-relação parentId para subtarefas dentro da org.' },
   { tabela: 'WorkFieldValue', escopo: 'filho', chaveSql: '"id"', nota: 'DOIS pais obrigatórios (WorkTask e WorkField) — os dois têm de ser da mesma org.' },
-  { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant sem barreira nenhuma hoje.' },
+  { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
@@ -246,11 +270,18 @@ const ALVOS: Alvo[] = [
   { tabela: '_WorkTaskTags', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=WorkTag.id, B=WorkTask.id. Os dois pais têm orgId.' },
 ];
 
-/** Tabelas GLOBAIS por design: ligar RLS nelas QUEBRA o sistema. */
-const GLOBAIS = [
-  { tabela: 'Permission', quebra: 'PermissionsGuard para de resolver permissão e todo tenant perde acesso.' },
-  { tabela: 'BioVisitor', quebra: 'o mesmo browser visita páginas de orgs diferentes; filtrar deixa o visitante órfão no join de BioVisit/BioEvent.' },
-];
+/**
+ * Tabelas GLOBAIS por design: ligar RLS nelas QUEBRA o sistema.
+ *
+ * A lista NÃO é escrita aqui: vem de `src/common/modelos-globais.ts`, que é o
+ * arquivo versionado onde ser global é declaração. Org fica de fora desta
+ * conferência porque ela é a raiz do tenant — legível pelos dois seria
+ * exatamente o vazamento, e o isolamento dela (por PK) já está em ALVOS.
+ */
+const GLOBAIS = MODELOS_GLOBAIS.filter((m) => m.modelo !== 'Org').map((m) => ({
+  tabela: m.modelo,
+  quebra: m.quebraSe,
+}));
 
 // ---------------------------------------------------------------------------
 // Semeadura
@@ -279,6 +310,8 @@ function registra(s: Semente, tabela: string, chave: string) {
 
 /** Permission é catálogo GLOBAL — uma só, compartilhada pelas duas orgs. */
 let permissaoCompartilhadaId = '';
+/** Capability idem: catálogo da escada, um para todas as empresas. */
+let capacidadeCompartilhadaId = '';
 
 async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<void> {
   const s = sementes[rotulo];
@@ -326,9 +359,14 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     status: 'connected', config: JSON.stringify({ token: `token-secreto-${suf}` }),
   });
   reg('IntegrationAccount', integId);
+  s.ref.integrationAccountId = integId;
 
+  // Os dez filhos abaixo informam orgId EXPLICITAMENTE. É o caminho que a
+  // aplicação deve seguir: o gatilho do banco vira conferência, não muleta.
+  // O outro caminho (omitir e deixar o gatilho derivar) tem teste próprio na
+  // seção 7.
   reg('IntegrationHealth', await ins(c, 'IntegrationHealth', {
-    id: crypto.randomUUID(), accountId: integId, status: 'ok', latencyMs: 120,
+    id: crypto.randomUUID(), orgId, accountId: integId, status: 'ok', latencyMs: 120,
   }));
 
   // --- leads e campanhas ---------------------------------------------------
@@ -350,7 +388,7 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   s.ref.leadId = leadId;
 
   reg('LeadEvent', await ins(c, 'LeadEvent', {
-    id: crypto.randomUUID(), leadId, type: 'formulario',
+    id: crypto.randomUUID(), orgId, leadId, type: 'formulario',
     payload: JSON.stringify({ cpf: `000.000.000-${rotulo === 'A' ? '01' : '02'}` }),
   }));
 
@@ -483,7 +521,7 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   s.ref.bioHandle = bioHandle;
 
   reg('BioLink', await ins(c, 'BioLink', {
-    id: crypto.randomUUID(), pageId, ordem: 1, tipo: 'url',
+    id: crypto.randomUUID(), orgId, pageId, ordem: 1, tipo: 'url',
     rotulo: `Link ${rotulo}`, destino: `https://${suf}.exemplo.com`, ativo: true,
   }));
 
@@ -499,19 +537,21 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     inicio: agora, fim: new Date(Date.now() + 86_400_000 * 30), metaPosts: 100,
   });
   reg('BioChallenge', desafioId);
+  s.ref.bioChallengeId = desafioId;
 
   const contaDesafioId = await ins(c, 'BioChallengeAccount', {
-    id: crypto.randomUUID(), challengeId: desafioId, plataforma: 'instagram',
+    id: crypto.randomUUID(), orgId, challengeId: desafioId, plataforma: 'instagram',
     handle: `@${suf}`, modo: 'conectado', conexaoId, status: 'ok',
   });
   reg('BioChallengeAccount', contaDesafioId);
+  s.ref.bioChallengeAccountId = contaDesafioId;
 
   reg('BioChallengePost', await ins(c, 'BioChallengePost', {
-    id: crypto.randomUUID(), contaId: contaDesafioId, externalId: `post_${suf}`, publicadoEm: agora,
+    id: crypto.randomUUID(), orgId, contaId: contaDesafioId, externalId: `post_${suf}`, publicadoEm: agora,
   }));
 
   reg('BioChallengeSnapshot', await ins(c, 'BioChallengeSnapshot', {
-    id: crypto.randomUUID(), contaId: contaDesafioId, totalCount: 42, ok: true,
+    id: crypto.randomUUID(), orgId, contaId: contaDesafioId, totalCount: 42, ok: true,
   }));
 
   reg('BioCredencialApp', await ins(c, 'BioCredencialApp', {
@@ -529,11 +569,24 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   await c.query('INSERT INTO "BioVisitor" ("id") VALUES ($1) ON CONFLICT DO NOTHING', [visitorId]);
   reg('BioVisitor', visitorId);
 
+  // E aqui a premissa em si, materializada: UM visitante, o MESMO id de cookie,
+  // com visita nas duas empresas. É o que a fatia 1.1 mandou conferir antes de
+  // declarar BioVisitor global — se um dia a tabela ganhar orgId, esta linha
+  // deixa de caber e a seção 8 explica por quê.
+  await c.query('INSERT INTO "BioVisitor" ("id") VALUES ($1) ON CONFLICT DO NOTHING', [VISITANTE_COMPARTILHADO]);
+  if (rotulo === 'A') reg('BioVisitor', VISITANTE_COMPARTILHADO);
+
   const visitId = await ins(c, 'BioVisit', {
     id: crypto.randomUUID(), orgId, visitorId, pageId, referrer: 'https://instagram.com',
     device: 'mobile', os: 'iOS', browser: 'Safari',
   });
   reg('BioVisit', visitId);
+
+  s.ref.visitaCompartilhadaId = await ins(c, 'BioVisit', {
+    id: crypto.randomUUID(), orgId, visitorId: VISITANTE_COMPARTILHADO, pageId,
+    referrer: 'https://tiktok.com', device: 'mobile',
+  });
+  reg('BioVisit', s.ref.visitaCompartilhadaId);
 
   reg('BioEvent', await ins(c, 'BioEvent', {
     id: crypto.randomUUID(), eventId: `bioevt_${suf}`, orgId, pageId, visitId,
@@ -590,8 +643,9 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, folderId: pastaId, name: `Lista ${rotulo} ${MARCA}`, updatedAt: agora,
   });
   reg('WorkList', listaId);
+  s.ref.workListId = listaId;
 
-  const statusId = await ins(c, 'WorkStatus', { id: crypto.randomUUID(), listId: listaId, name: 'aberto', type: 'open' });
+  const statusId = await ins(c, 'WorkStatus', { id: crypto.randomUUID(), orgId, listId: listaId, name: 'aberto', type: 'open' });
   reg('WorkStatus', statusId);
 
   const tagId = await ins(c, 'WorkTag', { id: crypto.randomUUID(), orgId, name: `etiqueta ${rotulo} ${MARCA}` });
@@ -599,9 +653,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
 
   const campoId = await ins(c, 'WorkField', { id: crypto.randomUUID(), orgId, listId: listaId, name: `Eixo ${rotulo}`, type: 'drop_down' });
   reg('WorkField', campoId);
+  s.ref.workFieldId = campoId;
 
-  const opcaoId = await ins(c, 'WorkFieldOption', { id: crypto.randomUUID(), fieldId: campoId, name: `Opção ${rotulo}` });
+  const opcaoId = await ins(c, 'WorkFieldOption', { id: crypto.randomUUID(), orgId, fieldId: campoId, name: `Opção ${rotulo}` });
   reg('WorkFieldOption', opcaoId);
+  s.ref.workFieldOptionId = opcaoId;
 
   const tarefaId = await ins(c, 'WorkTask', {
     id: crypto.randomUUID(), orgId, listId: listaId, statusId, title: `Tarefa ${rotulo} ${MARCA}`,
@@ -611,11 +667,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   s.ref.workTaskId = tarefaId;
 
   reg('WorkFieldValue', await ins(c, 'WorkFieldValue', {
-    id: crypto.randomUUID(), taskId: tarefaId, fieldId: campoId, optionId: opcaoId,
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, fieldId: campoId, optionId: opcaoId,
   }));
 
   reg('WorkComment', await ins(c, 'WorkComment', {
-    id: crypto.randomUUID(), taskId: tarefaId, authorId: userId,
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, authorId: userId,
     authorName: `Usuário ${rotulo}`, text: `Comentário privado da org ${rotulo}`,
   }));
 
@@ -717,6 +773,27 @@ beforeAll(async () => {
     permissaoCompartilhadaId = await ins(c, 'Permission', { id: crypto.randomUUID(), key: `iso.${MARCA}` });
     ORDEM_LIMPEZA.push('Permission');
 
+    // Capability é o outro catálogo GLOBAL (src/common/modelos-globais.ts). Sem
+    // uma linha semeada, o teste "continua legível pelos dois tenants" passaria
+    // à toa num banco de teste vazio — que é justamente o fracasso silencioso
+    // que esta suíte existe para não ter.
+    capacidadeCompartilhadaId = await ins(
+      c,
+      'Capability',
+      {
+        id: `iso.capacidade.${MARCA}`,
+        descricao: 'Capacidade de teste da suíte de isolamento.',
+        level: 'R0',
+        efeito: JSON.stringify({ tipo: 'leitura' }),
+        hashKeys: [],
+        atualizadoEm: new Date(),
+      },
+      // `level` é enum: sem cast, o Postgres deduz o tipo pela coluna de destino.
+      // Um `::RiskLevel` sem aspas viraria `risklevel` e o tipo não existe.
+      { hashKeys: 'text[]' },
+    );
+    ORDEM_LIMPEZA.push('Capability');
+
     await semear(c, 'A', VEC_A);
     await semear(c, 'B', VEC_B);
 
@@ -749,6 +826,10 @@ afterAll(async () => {
       const chaves = [...(sementes.A.chaves[tabela] ?? []), ...(sementes.B.chaves[tabela] ?? [])];
       if (tabela === 'Permission') {
         await c.query('DELETE FROM "Permission" WHERE "id" = $1', [permissaoCompartilhadaId]);
+        continue;
+      }
+      if (tabela === 'Capability') {
+        await c.query('DELETE FROM "Capability" WHERE "id" = $1', [capacidadeCompartilhadaId]);
         continue;
       }
       if (!chaves.length) continue;
@@ -1211,5 +1292,460 @@ describe('namespaces únicos compartilhados entre tenants (limitações conhecid
       `\n${_nome} deixou de ser único global.\n  ${obs}\n` +
         '  Se isso foi intencional, remova este teste. Se não, o schema mudou sem querer.\n',
     ).toBe(true);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// 7. orgId em todo filho de tenant — RF-T-01
+//
+// Esta seção NÃO depende de RLS: ela cobra a camada de baixo, sem a qual RLS
+// não tem em que se apoiar. São três perguntas por tabela filha:
+//   (a) a coluna existe, é obrigatória, aponta para Org e tem quem a derive?
+//   (b) o valor gravado é MESMO o do pai — na semente e no banco inteiro?
+//   (c) dá para pendurar filho de uma empresa em pai de outra?
+// A (c) é a que a chave estrangeira sozinha não responde: ela confere o id, não
+// a empresa.
+// ---------------------------------------------------------------------------
+
+/** Roda escritas como ADMIN e desfaz tudo. Aqui o alvo é o gatilho, não a RLS. */
+async function emTransacaoDesfeita<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  const c = await admin.connect();
+  try {
+    await c.query('BEGIN');
+    return await fn(c);
+  } finally {
+    await c.query('ROLLBACK').catch(() => undefined);
+    c.release();
+  }
+}
+
+/**
+ * Uma linha mínima e válida de cada filho, pendurada num pai da org A e SEM
+ * informar orgId. Algumas precisam de um pai novo (chave única do modelo não
+ * deixa repetir a linha semeada) — daí receberem o client: criam o pai dentro
+ * da mesma transação, que é desfeita no fim.
+ */
+const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, unknown>>> = {
+  IntegrationHealth: async (c) => {
+    // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
+    const conta = await ins(c, 'IntegrationAccount', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, key: `gatilho_${MARCA}`, label: 'Conta do teste de gatilho',
+    });
+    return { id: crypto.randomUUID(), accountId: conta, status: 'ok' };
+  },
+  LeadEvent: async () => ({ id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, type: 'gatilho' }),
+  BioLink: async () => ({
+    id: crypto.randomUUID(), pageId: sementes.A.ref.bioPageId, ordem: 99,
+    rotulo: 'Link do gatilho', destino: 'https://gatilho.exemplo.com',
+  }),
+  BioChallengeAccount: async () => ({
+    id: crypto.randomUUID(), challengeId: sementes.A.ref.bioChallengeId,
+    plataforma: 'tiktok', handle: `@gatilho_${MARCA}`,
+  }),
+  BioChallengePost: async () => ({
+    id: crypto.randomUUID(), contaId: sementes.A.ref.bioChallengeAccountId,
+    externalId: `post_gatilho_${MARCA}`, publicadoEm: new Date(),
+  }),
+  BioChallengeSnapshot: async () => ({
+    id: crypto.randomUUID(), contaId: sementes.A.ref.bioChallengeAccountId, totalCount: 7,
+  }),
+  WorkStatus: async () => ({
+    id: crypto.randomUUID(), listId: sementes.A.ref.workListId, name: `status_${MARCA}`, type: 'open',
+  }),
+  WorkFieldOption: async () => ({
+    id: crypto.randomUUID(), fieldId: sementes.A.ref.workFieldId, name: `opcao_${MARCA}`,
+  }),
+  WorkFieldValue: async (c) => {
+    // @@unique([taskId, fieldId]): um campo novo para não colidir com a semente.
+    const campo = await ins(c, 'WorkField', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, listId: sementes.A.ref.workListId,
+      name: `campo_gatilho_${MARCA}`, type: 'texto',
+    });
+    return { id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId, fieldId: campo, value: 'x' };
+  },
+  WorkComment: async () => ({
+    id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
+    authorName: 'Gatilho', text: 'comentário do teste de derivação',
+  }),
+};
+
+/**
+ * Modelo pai -> a chave dele em `sementes.<org>.ref`.
+ *
+ * É o que permite montar o cruzamento genericamente: pega a linha válida da org
+ * A e troca UM pai pelo equivalente da org B.
+ */
+const REF_DA_SEMENTE: Record<string, string> = {
+  WorkTask: 'workTaskId',
+  WorkField: 'workFieldId',
+  WorkFieldOption: 'workFieldOptionId',
+};
+
+describe('orgId em todo filho de tenant (RF-T-01)', () => {
+  it('a lista de filhos do código cobre exatamente os filhos com prova montada', () => {
+    // Guarda contra o pior fracasso desta seção: filho novo entra em
+    // modelos-globais.ts, ninguém escreve a linha de prova, e os it.each abaixo
+    // passam a rodar um caso a menos — em silêncio.
+    const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
+    const comProva = Object.keys(LINHA_DE_FILHO).sort();
+    expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
+    expect(declarados.length).toBe(10);
+  });
+
+  it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
+    '%s tem orgId obrigatório, apontando para Org e com gatilho de derivação',
+    async (_nome, filho) => {
+      const coluna = await admin.query<{ is_nullable: string; column_default: string | null }>(
+        `SELECT is_nullable, column_default
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'orgId'`,
+        [filho.modelo],
+      );
+      expect(
+        coluna.rows.length,
+        `\n"${filho.modelo}" não tem coluna orgId.\n` +
+          `  Ela deveria ser derivada de ${filho.pai} por ${filho.fk}.\n` +
+          '  Ver a migration 20260910120000_orgid_em_todo_filho.\n',
+      ).toBe(1);
+      expect(
+        coluna.rows[0].is_nullable,
+        `\n"${filho.modelo}"."orgId" é ANULÁVEL. Linha sem empresa é linha fora de qualquer política.\n`,
+      ).toBe('NO');
+
+      const fk = await admin.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS def
+           FROM pg_constraint c
+          WHERE c.conrelid = format('%I', $1::text)::regclass AND c.contype = 'f'`,
+        [filho.modelo],
+      );
+      expect(
+        fk.rows.some((r) => r.def.includes('("orgId")') && r.def.includes('REFERENCES "Org"')),
+        `\n"${filho.modelo}"."orgId" não tem chave estrangeira para Org.\n` +
+          '  Sem ela, a sentinela do default (string vazia) sobrevive a um gatilho removido e vira tenant fantasma.\n',
+      ).toBe(true);
+
+      const gatilhos = await admin.query<{ tgname: string; args: string }>(
+        `SELECT t.tgname, pg_get_triggerdef(t.oid) AS args
+           FROM pg_trigger t
+          WHERE t.tgrelid = format('%I', $1::text)::regclass AND NOT t.tgisinternal`,
+        [filho.modelo],
+      );
+      const deOrgId = gatilhos.rows.filter((r) => r.tgname.includes('orgId'));
+      expect(
+        deOrgId.map((r) => r.tgname),
+        `\n"${filho.modelo}" não tem gatilho de derivação de orgId.\n` +
+          `  Sem ele, uma escrita que não informe orgId grava a sentinela e a FK derruba a operação;\n` +
+          `  e pendurar filho de uma empresa num ${filho.pai} de outra volta a ser possível.\n`,
+      ).not.toEqual([]);
+
+      // UM GATILHO POR PAI CONFERIDO. WorkFieldValue tem três pais; um gatilho
+      // só derivaria da tarefa e deixaria campo e opção sem conferência nenhuma
+      // — foi assim que a opção de outra empresa entrava sem reclamação.
+      for (const pai of paisDoFilho(filho)) {
+        expect(
+          deOrgId.some((r) => r.args.includes(`'${pai.modelo}'`) && r.args.includes(`'${pai.fk}'`)),
+          `\n"${filho.modelo}" não tem gatilho conferindo o pai "${pai.modelo}" por "${pai.fk}".\n` +
+            `  Gatilhos de orgId encontrados: ${deOrgId.map((r) => r.tgname).join(', ') || '(nenhum)'}\n` +
+            '  Pai declarado em modelos-globais.ts sem gatilho no banco é conferência que só existe no papel.\n',
+        ).toBe(true);
+      }
+    },
+    30_000,
+  );
+
+  it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
+    'o orgId de %s bate com o do pai em TODAS as linhas da tabela',
+    async (_nome, filho) => {
+      // paisDoFilho e não `filho.pai` sozinho: WorkFieldValue tem TRÊS pais, e
+      // conferir só o derivante foi exatamente o que deixou a opção escolhida
+      // (optionId) sem cobertura nenhuma.
+      for (const pai of paisDoFilho(filho)) {
+        const r = await admin.query<{ n: string; exemplo: string | null }>(
+          `SELECT count(*)::text AS n, min(f."id") AS exemplo
+             FROM "${filho.modelo}" f
+             JOIN "${pai.modelo}" p ON p."id" = f."${pai.fk}"
+            WHERE f."orgId" <> p."orgId"`,
+        );
+        const divergentes = Number(r.rows[0].n);
+        expect(
+          divergentes,
+          `\n${divergentes} linha(s) de "${filho.modelo}" com orgId diferente do pai "${pai.modelo}".\n` +
+            `  Exemplo: ${r.rows[0].exemplo}\n` +
+            '  Ou o backfill da migration errou, ou alguém gravou orgId à mão sem conferir o pai.\n' +
+            '  Não é caso de borda: é filho de uma empresa pendurado em pai de outra.\n',
+        ).toBe(0);
+      }
+
+      // E o caso concreto da semente, que informou orgId explicitamente.
+      const semeadas = sementes.A.chaves[filho.modelo] ?? [];
+      expect(semeadas.length, `A semente da org A não criou linha em ${filho.modelo}.`).toBeGreaterThan(0);
+      const r = await admin.query<{ orgId: string }>(
+        `SELECT "orgId" FROM "${filho.modelo}" WHERE "id" = ANY($1::text[])`,
+        [semeadas],
+      );
+      for (const linha of r.rows) expect(linha.orgId).toBe(sementes.A.orgId);
+    },
+    30_000,
+  );
+
+  it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
+    '%s criado SEM informar orgId herda o da empresa do pai',
+    async (_nome, filho) => {
+      const gravado = await emTransacaoDesfeita(async (c) => {
+        const dados = await LINHA_DE_FILHO[filho.modelo](c);
+        const id = await ins(c, filho.modelo, dados);
+        const r = await c.query<{ orgId: string }>(`SELECT "orgId" FROM "${filho.modelo}" WHERE "id" = $1`, [id]);
+        return r.rows[0].orgId;
+      });
+      expect(
+        gravado,
+        `\nUm ${filho.modelo} criado sem orgId ficou com "${gravado}" em vez da empresa do pai.\n` +
+          '  É o caminho das ~20 chamadas que ainda não informam orgId: elas não podem gravar linha sem empresa.\n',
+      ).toBe(sementes.A.orgId);
+    },
+    30_000,
+  );
+
+  it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
+    '%s recusa nascer com o orgId de OUTRA empresa',
+    async (_nome, filho) => {
+      const { aceitou, erro } = await emTransacaoDesfeita(async (c) => {
+        const dados = await LINHA_DE_FILHO[filho.modelo](c);
+        try {
+          // Pai da org A, carimbo da org B: exatamente o que a FK não vê.
+          await ins(c, filho.modelo, { ...dados, orgId: sementes.B.orgId });
+          return { aceitou: true, erro: '' };
+        } catch (e) {
+          return { aceitou: false, erro: (e as Error).message };
+        }
+      });
+      expect(
+        aceitou,
+        `\nEMPRESA CRUZADA: um ${filho.modelo} da org B foi pendurado num ${filho.pai} da org A.\n` +
+          '  A FK confere o id do pai, nunca a empresa dele. Quem tem de recusar é o gatilho\n' +
+          `  "${filho.modelo}_orgId_do_pai" (migration 20260910120000_orgid_em_todo_filho).\n`,
+      ).toBe(false);
+      expect(erro, 'A recusa veio, mas por outro motivo — confira se não é violação de chave única.').toContain(
+        'empresa cruzada',
+      );
+    },
+    30_000,
+  );
+
+  // Cada pai CONFERIDO (o segundo em diante) precisa da sua própria prova. Sem
+  // isto o teste percorria só o pai derivante e o terceiro pai de WorkFieldValue
+  // — a opção escolhida — não era exercitado por caso nenhum.
+  const PARES_CONFERIDOS = FILHOS_COM_ORGID_REDUNDANTE.flatMap((filho) =>
+    (filho.paisConferidos ?? []).map((pai) => [`${filho.modelo} x ${pai.modelo}`, filho, pai] as const),
+  );
+
+  it.each(PARES_CONFERIDOS)(
+    '%s: recusa pai conferido de OUTRA empresa',
+    async (_nome, filho, pai) => {
+      const chaveDaSemente = REF_DA_SEMENTE[pai.modelo];
+      expect(
+        chaveDaSemente,
+        `Falta mapear "${pai.modelo}" em REF_DA_SEMENTE para provar o cruzamento de ${filho.modelo}.`,
+      ).toBeDefined();
+
+      const { aceitou, erro } = await emTransacaoDesfeita(async (c) => {
+        const dados = await LINHA_DE_FILHO[filho.modelo](c);
+        try {
+          // Tudo da org A, menos ESTE pai, que vem da org B. A FK fica satisfeita
+          // (o id existe), e é só o gatilho que pode perceber a empresa errada.
+          await ins(c, filho.modelo, { ...dados, [pai.fk]: sementes.B.ref[chaveDaSemente] });
+          return { aceitou: true, erro: '' };
+        } catch (e) {
+          return { aceitou: false, erro: (e as Error).message };
+        }
+      });
+
+      expect(
+        aceitou,
+        `\nEMPRESA CRUZADA: um ${filho.modelo} da org A apontou "${pai.fk}" para um ${pai.modelo} da org B.\n` +
+          '  A chave estrangeira confere o id do pai, nunca a empresa dele. Quem tem de recusar é o\n' +
+          `  gatilho que confere ${pai.modelo} (migration 20260910120000_orgid_em_todo_filho).\n` +
+          `  Concretamente em WorkFieldValue x WorkFieldOption: a consulta que junta valor e opção passa\n` +
+          '  a devolver o rótulo da OUTRA empresa.\n',
+      ).toBe(false);
+      expect(erro, 'A recusa veio, mas por outro motivo — confira se não é violação de chave única.').toContain(
+        'empresa cruzada',
+      );
+    },
+    30_000,
+  );
+
+  it('o gatilho não se deixa enganar por search_path (pai de mentira em schema paralelo)', async () => {
+    // O gatilho resolve o pai por um identificador que chega como TEXTO. Se esse
+    // identificador for interpolado sem schema e a função não fixar search_path,
+    // quem controla o search_path da sessão escolhe qual tabela vale como pai —
+    // e o filho nasce carimbado com a empresa que o atacante quiser.
+    //
+    // Hoje isso exige SQL arbitrário e a aplicação conecta como dona do banco,
+    // então já se perderia por outro caminho. Depois da fatia 1.3, com papel
+    // restrito e RLS, este gatilho é a ÚNICA barreira: aí vira escalada.
+    const schemaFalso = `falso_${MARCA}`;
+    const idDoEvento = crypto.randomUUID();
+
+    const gravado = await emTransacaoDesfeita(async (c) => {
+      await c.query(`CREATE SCHEMA "${schemaFalso}"`);
+      await c.query(`CREATE TABLE "${schemaFalso}"."Lead" (id text primary key, "orgId" text)`);
+      // id do lead REAL da org A; empresa declarada, a org B.
+      await c.query(`INSERT INTO "${schemaFalso}"."Lead" VALUES ($1, $2)`, [
+        sementes.A.ref.leadId,
+        sementes.B.orgId,
+      ]);
+
+      await c.query(`SET LOCAL search_path TO "${schemaFalso}", public`);
+      await c.query(
+        `INSERT INTO public."LeadEvent" (id, "leadId", type) VALUES ($1, $2, 'ataque_search_path')`,
+        [idDoEvento, sementes.A.ref.leadId],
+      );
+      await c.query('SET LOCAL search_path TO public');
+
+      const r = await c.query<{ orgId: string }>('SELECT "orgId" FROM public."LeadEvent" WHERE id = $1', [
+        idDoEvento,
+      ]);
+      return r.rows[0].orgId;
+    });
+
+    expect(
+      gravado,
+      '\nSEQUESTRO DE search_path: o gatilho leu o pai de um schema plantado pelo chamador.\n' +
+        `  O evento nasceu com a empresa "${gravado}" e o lead é da empresa "${sementes.A.orgId}".\n` +
+        '  Conserto: a função mktos_orgid_do_pai precisa de `SET search_path` e o pai precisa ir\n' +
+        '  qualificado por TG_TABLE_SCHEMA (migration 20260910120000_orgid_em_todo_filho).\n',
+    ).toBe(sementes.A.orgId);
+  }, 30_000);
+
+  it('nenhuma coluna com a sentinela do padrão ficou sem gatilho e sem entrada na lista', async () => {
+    // A catraca contra quem copia o padrão pela metade. `@default('')` no orgId é
+    // a marca da sentinela: sozinha, ela só garante que a escrita grave string
+    // vazia e a chave estrangeira contra Org derrube a operação — em produção, a
+    // cada escrita. A varredura vem do CATÁLOGO do banco, não do schema.prisma:
+    // é o estado real que importa aqui.
+    const comSentinela = await admin.query<{ tabela: string }>(
+      `SELECT table_name AS tabela
+         FROM information_schema.columns
+        WHERE table_schema = 'public' AND column_name = 'orgId' AND column_default = $1
+        ORDER BY 1`,
+      ["''::text"],
+    );
+    const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
+    const encontrados = comSentinela.rows.map((r) => r.tabela).sort();
+
+    expect(
+      encontrados,
+      '\nA sentinela de orgId no banco e a lista de filhos divergiram.\n' +
+        `  No banco: ${encontrados.join(', ') || '(nenhuma)'}\n` +
+        `  Na lista: ${declarados.join(', ')}\n` +
+        '  Tabela com a sentinela e sem entrada em FILHOS_COM_ORGID_REDUNDANTE não ganha gatilho, não\n' +
+        '  ganha teste e só dá as caras em produção. Entrada na lista sem tabela no banco é o inverso:\n' +
+        '  declaração que promete uma proteção que a migration não criou.\n',
+    ).toEqual(declarados);
+
+    const semGatilho: string[] = [];
+    for (const tabela of encontrados) {
+      const g = await admin.query<{ n: string }>(
+        `SELECT count(*)::text AS n
+           FROM pg_trigger t
+          WHERE t.tgrelid = format('%I', $1::text)::regclass
+            AND NOT t.tgisinternal AND t.tgname LIKE '%orgId%'`,
+        [tabela],
+      );
+      if (Number(g.rows[0].n) === 0) semGatilho.push(tabela);
+    }
+    expect(
+      semGatilho,
+      '\nSENTINELA SEM GATILHO: ' + semGatilho.join(', ') + '\n' +
+        '  A coluna tem DEFAULT \'\' e ninguém troca a sentinela pelo orgId do pai. Toda escrita que não\n' +
+        '  informar orgId explicitamente vai violar a chave estrangeira contra Org.\n',
+    ).toEqual([]);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// 8. A lista versionada de modelos globais — o lado BANCO
+//
+// "Global por desenho" e "nasceu sem orgId e ninguém viu" são indistinguíveis
+// olhando só o schema. O que separa os dois é a declaração em
+// src/common/modelos-globais.ts.
+//
+// A cobrança da declaração contra o `schema.prisma` mudou para
+// `test/modelos-globais.test.ts`, que entra no `pnpm test` padrão e reprova de
+// verdade — aqui ela acusaria com o check verde, porque este arquivo roda com
+// `continue-on-error` enquanto o isolamento por linha não estiver ligado.
+// O que sobrou é o que só o banco responde: a coluna existe mesmo? é anulável
+// mesmo? o visitante compartilhado existe de fato nas duas empresas?
+// ---------------------------------------------------------------------------
+
+describe('modelos globais por desenho (estado do banco)', () => {
+  it.each(MODELOS_GLOBAIS.map((g) => [g.modelo, g] as const))(
+    '%s: sem coluna orgId no banco',
+    async (_nome, global) => {
+      const r = await admin.query<{ n: string }>(
+        `SELECT count(*)::text AS n
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'orgId'`,
+        [global.modelo],
+      );
+      expect(
+        Number(r.rows[0].n),
+        `\n"${global.modelo}" está declarado GLOBAL mas TEM coluna orgId no banco.\n` +
+          `  Motivo declarado: ${global.porQue}\n` +
+          '  Schema e declaração precisam contar a mesma história.\n',
+      ).toBe(0);
+    },
+    30_000,
+  );
+
+  it.each(MODELOS_ESCOPO_OPCIONAL.map((m) => [m.modelo, m] as const))(
+    '%s tem orgId ANULÁVEL — escopo opcional, não global',
+    async (_nome, modelo) => {
+      const r = await admin.query<{ is_nullable: string }>(
+        `SELECT is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'orgId'`,
+        [modelo.modelo],
+      );
+      expect(r.rows.length, `"${modelo.modelo}" perdeu a coluna orgId.`).toBe(1);
+      expect(
+        r.rows[0].is_nullable,
+        `\n"${modelo.modelo}"."orgId" deixou de ser anulável.\n` +
+          `  O nulo ali significa: ${modelo.nuloSignifica}\n` +
+          '  Se a mudança foi de propósito, tire o modelo de MODELOS_ESCOPO_OPCIONAL e reveja a política de linha.\n',
+      ).toBe('YES');
+    },
+    30_000,
+  );
+
+  it('BioVisitor ser global NÃO deixa filho sem empresa', async () => {
+    // A ressalva da fatia 1.1: BioVisit e BioEvent penduram em BioVisitor, que é
+    // global. Se dependessem do pai para achar a empresa, ficariam órfãos — não
+    // dependem: carregam orgId próprio, vindo da BioPage.
+    for (const tabela of ['BioVisit', 'BioEvent']) {
+      const r = await admin.query<{ is_nullable: string }>(
+        `SELECT is_nullable FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'orgId'`,
+        [tabela],
+      );
+      expect(r.rows.length, `"${tabela}" pendura em BioVisitor (global) e não tem orgId próprio.`).toBe(1);
+      expect(r.rows[0].is_nullable, `"${tabela}"."orgId" é anulável — filho de global sem empresa.`).toBe('NO');
+    }
+  }, 30_000);
+
+  it('o MESMO visitante tem visita nas duas empresas (a premissa de BioVisitor global)', async () => {
+    // É a premissa que a fatia 1.1 mandou conferir antes de declarar a tabela
+    // global. Sem uma linha assim no banco, "o mesmo browser visita páginas de
+    // orgs diferentes" seria só uma frase no comentário do schema.
+    const r = await admin.query<{ orgId: string }>(
+      'SELECT DISTINCT "orgId" FROM "BioVisit" WHERE "visitorId" = $1',
+      [VISITANTE_COMPARTILHADO],
+    );
+    const orgs = r.rows.map((x) => x.orgId).sort();
+    expect(
+      orgs,
+      '\nO visitante compartilhado não apareceu nas duas empresas.\n' +
+        '  Se BioVisitor ganhasse orgId, este cookie viraria dois visitantes e a sessionização da bio se partiria.\n',
+    ).toEqual([sementes.A.orgId, sementes.B.orgId].sort());
   }, 30_000);
 });

@@ -126,8 +126,11 @@ docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --no-build 
 O `--no-build` é o que garante que sobe **a imagem que passou no smoke**, e não uma reconstruída na
 hora. O `command` do serviço `api` roda `prisma migrate deploy` antes do `node dist/main.js`.
 
-Equivalente pelo script: `deploy/up.sh --vps api web` — mas ele força `--build`, então serve para o
-caminho comum e **não** para o caso em que você quer subir exatamente a imagem testada.
+Equivalente pelo script: **`deploy/up.sh --vps --no-build api web`**. Sem `--no-build` o script
+constrói (é o padrão dele), e aí sobe uma imagem reconstruída na hora — não a que passou no smoke.
+As flags vêm antes dos nomes de serviço; flag depois de nome de serviço o script recusa, de
+propósito, para que um `--vps` fora de lugar não vire "nome de serviço" e publique o banco em
+`0.0.0.0`.
 
 ### 2.5 Conferir
 
@@ -196,23 +199,29 @@ dentro vira uma cópia do banco de produção viajando para todo mundo que sincr
 
 ## 4. Backup do banco
 
-> **Marcador — parágrafo definitivo pendente da fatia I.2** do
-> [PLANO-CONTINUIDADE.md](PLANO-CONTINUIDADE.md). O texto abaixo descreve o que o script
-> `deploy/backup-db.sh` documenta de si mesmo no cabeçalho, e deve ser conferido/substituído pelo
-> parágrafo que o autor daquela fatia entregar.
+**Backup do banco.** `deploy/backup-db.sh` tira o dump diário, promove o primeiro bom de cada
+semana ISO e mantém 7 diários mais 4 semanais em `BACKUP_DIR` (default `/root/backups/root-os`,
+fora de `/srv/marketing-os` porque o repositório é sincronizado por Syncthing). Senha nunca no
+arquivo: vem de `DATABASE_URL` ou das variáveis do libpq; na VPS use `BACKUP_DB_CONTAINER=mktos_db`
+com `PGUSER` e `PGDATABASE`, que conecta pelo socket de dentro do container e não expõe nada na
+lista de processos do host. Duas entradas no crontab do root: backup às 3h17 diário e
+`--restore-test` às 4h40 de segunda.
 
-O backup do Postgres do ROOT OS é o `deploy/backup-db.sh`: dump diário com retenção (7 diários, 4
-semanais por padrão), verificação de que o dump não saiu vazio, e um modo `--restore-test` que
-restaura o dump mais recente num banco descartável e confere que as tabelas principais têm linha.
-Nenhuma senha mora no script — a conexão vem do ambiente (`DATABASE_URL` ou as variáveis do libpq),
-e com `BACKUP_DB_CONTAINER=mktos_db` o `pg_dump` roda **dentro** do container do banco, pelo socket
-unix, sem senha atravessar a linha de comando do host.
+O `--restore-test` restaura o dump mais novo num banco **criado por ele** (nome gerado, marcado com
+um comentário no próprio banco), confere que as tabelas de `BACKUP_TABELAS_CHAVE` têm linha e
+derruba o banco no fim. **Ele só derruba banco que ele mesmo criou e marcou**, e recusa rodar
+contra host não-local ou sem espaço em disco medido com folga. Se sobrar banco de teste (falha com
+`BACKUP_MANTER_RESTORE=1`), toda execução seguinte avisa, e `--limpar-restos` derruba.
 
-O script não se agenda sozinho. O agendamento sugerido (crontab do root na VPS) está no cabeçalho
-do próprio arquivo: um backup diário de madrugada e um `--restore-test` semanal.
+O backup diário sai **vermelho** quando o dump não tem linha de dado ou encolheu mais de 50% contra
+o anterior — nesse caso o arquivo é mantido para inspeção, porque descartar transformaria um alarme
+em perda de backup. Monitore o código de saída: verde significa "restaurou e tinha dado dentro",
+não "o arquivo existe".
 
-`BACKUP_DIR` aponta por padrão para fora de `/srv/marketing-os`, pelo motivo da última armadilha
-da §3.
+**O cron da VPS não deve mais definir `BACKUP_RESTORE_DB`** — a variável virou motivo de erro
+explicativo, porque escolher o nome do banco de destino era a porta para apagar o banco errado.
+
+**O que ainda falta:** cópia off-site. Backup no mesmo disco do banco não sobrevive a perder a VPS.
 
 ---
 

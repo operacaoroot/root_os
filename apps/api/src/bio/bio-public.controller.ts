@@ -45,6 +45,12 @@ export class BioPublicController {
       res.setHeader('Content-Length', size);
       // a chave carrega o hash do conteúdo, então pode cachear pra sempre
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      // Cabeçalho de correlação é POR REQUISIÇÃO: o interceptor o põe em toda
+      // resposta, e esta fica um ano num cache. Guardado junto com a imagem,
+      // ele passa a servir a correlação de um visitante a todos os outros — e
+      // esta rota é pública e anônima, então o valor pode ter vindo do próprio
+      // chamador. Sai aqui, antes de o corpo começar a escrever.
+      res.removeHeader('x-correlation-id');
       return stream.pipe(res);
     } catch {
       throw new NotFoundException('avatar não encontrado');

@@ -1,12 +1,17 @@
 /*
- * O que a porta TERIA feito — a régua medida com dado real (RF-P-03).
+ * O que a porta FEZ em modo observar — a régua medida com dado real (RF-P-03).
+ *
+ * Não é um "e se": desde 10/09/2026 observar afrouxa o CARIMBO do registro,
+ * nunca o efeito — bloqueio de R5 e retenção por aprovação valem igual nos dois
+ * modos (ver o cabeçalho de `gateway/tool-gateway.service.ts`). O que cada linha
+ * deste relatório conta já aconteceu: a ação parou de verdade.
  *
  * Antes de virar `GATEWAY_MODO` de `observar` para `impor`, alguém precisa
  * olhar o que a classificação produziu na operação de verdade. Este relatório
  * lê a tabela de decisões de política (`PolicyDecision`, escrita por
  * `PolicyService.avaliarERegistrar` a cada passagem pela porta) e responde três
- * perguntas: em que nível as ações caem, quais capacidades concentram o que
- * seria retido ou recusado, e se a régua está apertada ou frouxa demais.
+ * perguntas: em que nível as ações caem, quais capacidades concentram o que foi
+ * retido ou recusado, e se a régua está apertada ou frouxa demais.
  *
  *   node dist/scripts/relatorio-observar.js --dias 7
  *   node dist/scripts/relatorio-observar.js --desde 2026-09-01 --ate 2026-09-07 --csv-em /tmp/regua.csv
@@ -85,7 +90,8 @@ interface Opcoes {
 }
 
 const AJUDA = `
-relatorio-observar — o que a porta teria retido ou recusado
+relatorio-observar — o que a porta reteve e recusou com o carimbo de observar
+                     (reteve mesmo: observar não afrouxa freio, só o registro)
 
   --dias N            janela dos últimos N dias (padrão: 7)
   --desde AAAA-MM-DD  início do período, 00:00 no fuso; ignora --dias
@@ -361,7 +367,7 @@ interface PorCapacidade extends Contagem {
   niveis: Map<RiskLevel, number>;
   /** Motivos SÓ das decisões retidas ou recusadas — é o que interessa calibrar. */
   motivos: Map<string, number>;
-  /** Só o que a porta classificou COM `GATEWAY_MODO=observar` — o "teria". */
+  /** Só o que a porta classificou COM `GATEWAY_MODO=observar` — o que já parou. */
   emObservar: Contagem & { motivos: Map<string, number> };
 }
 
@@ -762,8 +768,9 @@ async function main(): Promise<void> {
         ),
       );
       partes.push(
-        '  Cada linha é uma ação que, com GATEWAY_MODO=impor, teria parado para esperar gente\n' +
-          '  ou não teria acontecido. É esta lista que diz se virar a chave trava a operação.',
+        '  Cada linha é uma ação que JÁ parou para esperar gente ou que JÁ não aconteceu:\n' +
+          '  observar não dispensa aprovação nem deixa passar R5. É esta lista que diz se a\n' +
+          '  régua, do jeito que está hoje, trava a operação.',
       );
     }
 

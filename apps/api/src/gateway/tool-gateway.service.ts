@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ActorType, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
 import type { Capacidade, Decisao } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContexto } from '../common/contexto-execucao';
 import { PolicyService } from '../policy/policy.service';
 import { SinaisService } from '../policy/sinais.service';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -338,7 +339,14 @@ export class ToolGateway {
 
     // 8. Executa e registra o que saiu.
     try {
-      const resultado = await efeito(req.args, ctx);
+      /*
+       * O efeito roda DENTRO do contexto de execução (RF-T-04, RNF-09). O
+       * `ExecCtx` já carregava tenant, ator e correlação; o que faltava era
+       * eles alcançarem quem o efeito chama — o registro de efeitos, o
+       * conector, o log. Nenhum parâmetro novo atravessa a cadeia inteira:
+       * quem precisar lê de `contextoAtual()`.
+       */
+      const resultado = await comContexto({ ...ctx, origem: 'agente' }, () => efeito(req.args, ctx));
       await this.prisma.toolCall.update({
         where: { id: toolCall.id },
         data: {

@@ -126,7 +126,17 @@ report_runs(id, report_id, status, format[html|pdf|md], period_start, period_end
 report_recipients(id, report_id, channel[whatsapp|email|drive], destination, active)
 ```
 
-### IA
+### IA — **desenho alvo, ainda não construído**
+
+> ⚠️ **Nenhuma das quatro tabelas abaixo existe.** Confira: `grep -iE 'ai_runs|ai_tool_calls' apps/api/prisma/schema.prisma` não devolve nada. Elas ficam aqui como desenho, não como estado.
+>
+> **O que faz esse papel hoje**, e é o que se deve consultar:
+> - registro de chamada de ferramenta e de decisão da régua → `ToolCall`, `PolicyDecision` e `EventLog` (o RASTRO do Tool Gateway, com `correlationId`, encadeamento por `hash`/`prevHash` e `retencaoAte`);
+> - registro de acesso e de ação em geral → `AuditLog`;
+> - busca semântica → `KnowledgeNote.embedding` (`vector(1536)`, pgvector), filtrado por `orgId`.
+>
+> `ai_runs`/`ai_tool_calls` **não** estão no caminho: o RASTRO do gateway ocupou esse lugar, e nenhuma fatia do `PLANO-CONTINUIDADE.md` as prevê. Já `ai_recommendations`/`ai_memory` seguem como desenho em aberto.
+
 ```
 ai_runs(id, org_id, prompt_key, prompt_version, model, input jsonb,
         output jsonb, tokens_in, tokens_out, latency_ms, user_id, created_at)

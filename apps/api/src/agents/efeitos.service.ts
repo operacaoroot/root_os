@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { EfeitosRegistry } from '../gateway/efeitos.registry';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { EvolutionService } from '../pauta/evolution.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { FinanceService } from '../finance/finance.service';
@@ -71,14 +71,31 @@ export class EfeitosService implements OnModuleInit {
        * O destino é SEMPRE o grupo configurado no ambiente. O modelo não
        * escolhe para quem manda: um `destino` proposto por ele é ignorado de
        * propósito, senão a régua controlaria o texto e não o destinatário.
+       *
+       * O terceiro parâmetro é quem pediu (RF-T-04, RNF-09). A Evolution não
+       * tem campo para ator, então ele sai no RESULTADO — que é o que a porta
+       * grava em `ToolCall.resultado` e o que volta para quem confirmou. Sem
+       * isso, o registro do envio diz o que saiu e não diz por ordem de quem:
+       * nesta rota o proponente é a IA e o executor é gente, e a diferença é o
+       * ponto inteiro da aprovação.
        */
-      'whatsapp.mensagem.enviar': async (a: Record<string, unknown>) => {
+      'whatsapp.mensagem.enviar': async (
+        a: Record<string, unknown>,
+        _org: string,
+        ctx: ContextoDoEfeito,
+      ) => {
         const titulo = String(a.titulo ?? '').trim();
         const corpo = String(a.corpo ?? a.texto ?? a.mensagem ?? '').trim();
         if (!corpo) throw new Error('mensagem vazia: nada foi enviado');
         const texto = titulo ? `*${titulo}*\n\n${corpo}` : corpo;
         const r = await this.evolution.enviarTexto(this.evolution.grupo, texto);
-        return { enviado: true, id: r.id, destino: this.evolution.grupo, caracteres: texto.length };
+        return {
+          enviado: true,
+          id: r.id,
+          destino: this.evolution.grupo,
+          caracteres: texto.length,
+          porOrdemDe: ctx.actorId ?? null,
+        };
       },
     });
     this.log.log(`${this.registro.tamanho} capacidades com efeito ligado`);

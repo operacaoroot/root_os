@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ContextoModule } from './common/contexto.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
@@ -32,6 +33,10 @@ import { PautaModule } from './pauta/pauta.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Tenant, ator e correlação em toda requisição (RF-T-04, RNF-09). Antes do
+    // PrismaModule de propósito: o que abre o contexto tem de estar de pé antes
+    // do que consulta o banco.
+    ContextoModule,
     PrismaModule,
     AuditModule,
     // A régua carrega antes da porta, e a porta antes de qualquer módulo de

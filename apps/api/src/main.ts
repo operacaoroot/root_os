@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ZodExceptionFilter } from './common/zod-exception.filter';
+import { LoggerDeCorrelacao } from './common/logger-correlacao';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
@@ -17,10 +18,20 @@ for (const name of ['openai.env', 'zapfy.env', 'clickup.env', 'google.env', 'plu
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Toda linha de log passa a sair com a correlação da história em curso
+  // (RNF-09). É o ponto canônico da troca: instalar de dentro de um módulo usa
+  // o mesmo mecanismo e perde a disputa em silêncio para esta linha. Ver
+  // common/logger-correlacao.ts.
+  app.useLogger(new LoggerDeCorrelacao());
   app.setGlobalPrefix('api');
   app.enableCors({
     origin: (process.env.WEB_ORIGIN ?? 'http://localhost:4000').split(','),
     credentials: true,
+    // Sem isto o navegador ESCONDE o cabeçalho de resposta: o front recebe o
+    // erro na tela e não consegue dizer qual correlação procurar no log. Hoje a
+    // chamada é de mesma origem e passa sem; no dia em que a API atender em
+    // outro host, passa a ser a diferença entre ter e não ter o fio.
+    exposedHeaders: ['x-correlation-id'],
   });
   app.useGlobalFilters(new ZodExceptionFilter());
   const port = Number(process.env.API_PORT ?? 4001);

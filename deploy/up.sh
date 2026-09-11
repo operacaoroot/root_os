@@ -3,9 +3,20 @@
 # Injeta os segredos PRÓPRIOS do root (~/.config/root/*.env) + apps/api/.env no
 # ambiente para o compose interpolar — NADA de segredo fica no repo.
 #
-# Uso:  deploy/up.sh            (build + up -d de tudo)
-#       deploy/up.sh --build    (força rebuild da imagem)
-#       deploy/up.sh --vps      (na VPS: soma o docker-compose.vps.yml)
+# Uso:  deploy/up.sh                      (build + up -d de tudo)
+#       deploy/up.sh --build              (força rebuild da imagem — é o padrão)
+#       deploy/up.sh --no-build           (NÃO constrói: sobe a imagem que já está no host)
+#       deploy/up.sh --vps                (na VPS: soma o docker-compose.vps.yml)
+#       deploy/up.sh --vps --no-build api web
+#
+# As flags vêm ANTES dos nomes de serviço, em qualquer ordem entre si. O que
+# sobrar é repassado ao compose como lista de serviços — e uma flag desconhecida
+# ali é erro, não descuido silencioso: era assim que um `--vps` fora de lugar
+# viraria "nome de serviço" e publicaria o banco em 0.0.0.0.
+#
+# --no-build existe por causa do procedimento do docs/DEPLOY.md: constrói-se a
+# imagem, roda-se o smoke NELA, e sobe-se EXATAMENTE a imagem que passou. Com
+# build forçado no `up`, a imagem que sobe é outra construção — não a testada.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,11 +26,25 @@ cd "$(dirname "$0")/.."
 # base publica em 0.0.0.0; no servidor isso exporia banco, redis e minio.
 COMPOSE_FILES=(-f docker-compose.yml)
 NA_VPS=0
-if [ "${1:-}" = "--vps" ]; then
-  shift
-  NA_VPS=1
-  COMPOSE_FILES+=(-f docker-compose.vps.yml)
-fi
+CONSTRUIR=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    # `--vps` repetido não empilha o override duas vezes: o compose tolera, mas
+    # a lista de arquivos é o que se lê para conferir o que subiu.
+    --vps)      if [ "$NA_VPS" -eq 0 ]; then COMPOSE_FILES+=(-f docker-compose.vps.yml); fi; NA_VPS=1; shift ;;
+    --build)    CONSTRUIR=1; shift ;;
+    --no-build) CONSTRUIR=0; shift ;;
+    *) break ;;
+  esac
+done
+
+# Nada de flag no meio dos nomes de serviço: `--vps` que chega aqui não foi lido
+# acima, e subir sem ele na VPS expõe banco/redis/minio na internet.
+for arg in "$@"; do
+  case "$arg" in
+    -*) echo "[up] erro: '$arg' não é serviço nem flag conhecida. As flags (--vps, --build, --no-build) vêm antes dos nomes de serviço." >&2; exit 2 ;;
+  esac
+done
 
 # carrega credenciais no ambiente (KEY=VALUE) de forma SEGURA — sem executar o
 # conteúdo (valores com espaço, ex.: APP_NAME=Marketing OS, quebrariam `source`).
@@ -60,6 +85,11 @@ if [ "$NA_VPS" -eq 0 ]; then
   [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (bot não sobe)." || true
 fi
 
-echo "[up] subindo containers (build + up -d)…"
-docker compose "${COMPOSE_FILES[@]}" up -d --build "$@"
+if [ "$CONSTRUIR" -eq 1 ]; then
+  echo "[up] subindo containers (build + up -d)…"
+  docker compose "${COMPOSE_FILES[@]}" up -d --build "$@"
+else
+  echo "[up] subindo containers SEM construir (usa a imagem que já está no host)…"
+  docker compose "${COMPOSE_FILES[@]}" up -d --no-build "$@"
+fi
 echo "[up] pronto. Ver: docker compose ps · logs: docker compose logs -f telegram"

@@ -60,10 +60,24 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
       # O container NÃO lê o .env: só chega o que estiver listado aqui. Variável
       # preenchida no .env e ausente deste bloco simplesmente não existe lá dentro.
-      # A PORTA. `observar` classifica, registra e DEIXA PASSAR, logando o que
-      # teria bloqueado. É assim que ela nasce: uma capacidade classificada
-      # errado com a porta impondo faria a rotina diária parar em silêncio às 8
-      # da manhã. Vira `impor` depois de ler uma semana de log.
+      # A PORTA. `observar` NÃO deixa passar — ele afrouxa o REGISTRO, nunca o
+      # EFEITO. Os dois freios valem igual nos dois modos:
+      #   · bloqueio — `permitido: false`, que na escada é exatamente R5
+      #     (capacidade sem classificação vale R5): recusa e não chama o efeito;
+      #   · retenção por aprovação — R3 e R4 sempre, R2 enquanto a aprovação
+      #     configurável estiver ligada: cria a aprovação e não chama o efeito.
+      # Duas recusas acontecem ANTES de o modo ser consultado: argumento fora do
+      # `argsSchema` da capacidade e capacidade fora das declaradas do agente.
+      # O que `observar` muda, então, é só o carimbo `modo=observar` (mais duas
+      # linhas de log): na PolicyDecision, SEMPRE; no RASTRO, só no evento
+      # `tool.recusado` da recusa por classificação. `tool.proposta`,
+      # `tool.resultado` e `tool.erro` não carregam o modo — e o `tool.recusado`
+      # das duas recusas da porta (argumento inválido, capacidade não declarada)
+      # também não. É da PolicyDecision, por isso, que sai o relatório de
+      # calibragem que decide a virada para `impor`.
+      # Fonte: apps/api/src/gateway/tool-gateway.service.ts.
+      # Lida no CONSTRUTOR: `docker restart` não troca o valor — use
+      # `up -d --no-build api`.
       GATEWAY_MODO: ${GATEWAY_MODO:-observar}
       RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
@@ -139,9 +153,19 @@ services:
       S3_BUCKET: ${S3_BUCKET:-marketing-os}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:4000}
     volumes:
-      # vault Obsidian do root montada READ-ONLY (base de conhecimento)
+      # Vault Obsidian montada READ-ONLY (base de conhecimento).
+      #
+      # O default é `./vault` — relativo à pasta do projeto, resolvido pelo
+      # compose — e não o caminho da máquina de alguém. Um `/Users/<pessoa>/...`
+      # aqui não existe em nenhuma outra máquina, e na VPS ele nasceria como
+      # diretório vazio de dono root: a busca semântica subiria sem nada dentro
+      # e ninguém veria erro. Com `./vault`, o default já é o que a VPS usa de
+      # verdade (`/srv/marketing-os/vault`).
+      #
+      # Para apontar para a vault real no Mac, preencha OBSIDIAN_VAULT_HOST no
+      # `.env` com o caminho absoluto (ver `.env.example`).
       - type: bind
-        source: ${OBSIDIAN_VAULT_HOST:-/Users/rodrigosaggioro/Documents/Obsidian Vault}
+        source: ${OBSIDIAN_VAULT_HOST:-./vault}
         target: /vault
         read_only: true
     depends_on:

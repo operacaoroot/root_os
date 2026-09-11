@@ -12,6 +12,38 @@ datasource db {
   extensions = [vector] // pgvector (busca semântica da base de conhecimento)
 }
 
+// ============================================================================
+// orgId redundante em todo filho de tenant (RF-T-01)
+//
+// Dez modelos só alcançavam a empresa pelo pai (LeadEvent por Lead, BioLink por
+// BioPage, WorkComment por WorkTask...). Consulta que esquece o join sai sem
+// tenant, e isolamento por linha no Postgres não tem em que coluna se apoiar.
+// Desde `20260910120000_orgid_em_todo_filho` os dez carregam `orgId`.
+//
+// O `@default("")` NÃO é valor: é sentinela. Um gatilho BEFORE INSERT OR UPDATE
+// (`<Tabela>_orgId_do_pai`) troca a sentinela pelo orgId do pai e RECUSA a linha
+// cujo orgId não bate com o do pai — é o que impede, NA ESCRITA DO FILHO,
+// pendurar filho de uma empresa em pai de outra, coisa que a chave estrangeira
+// simples não enxerga. Se um dia o gatilho sumir, a sentinela vira violação de
+// FK contra Org: falha fechada e barulhenta, nunca linha órfã de tenant.
+//
+// Limitação conhecida: mudar o `orgId` do PAI depois deixa o filho na empresa
+// antiga — não há gatilho de propagação. O porquê está no cabeçalho da migration
+// e em `src/common/modelos-globais.ts`; quem detecta é o teste de isolamento.
+//
+// WorkFieldValue tem TRÊS pais (tarefa, campo e opção escolhida) e três
+// gatilhos: derivar de um só deixaria passar valor com opção de outra empresa.
+//
+// A sentinela existe para o campo continuar OPCIONAL no `create` do Prisma:
+// as ~20 chamadas que hoje criam esses filhos sem informar orgId seguem
+// compilando e passam a gravar o tenant certo. Informar orgId explicitamente
+// continua sendo o certo — aí o gatilho vira conferência, não mecanismo.
+//
+// Quem é GLOBAL por desenho (Org, Permission, BioVisitor, Capability) está
+// declarado em `src/common/modelos-globais.ts`. O teste de isolamento reprova
+// modelo novo sem orgId que não esteja naquela lista.
+// ============================================================================
+
 // ---------- Identidade, acesso, auditoria ----------
 model Org {
   id        String   @id @default(uuid())
@@ -81,6 +113,18 @@ model Org {
   pautaRotinas     PautaRotina[]
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
+
+  // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
+  leadEvents            LeadEvent[]
+  integrationHealths    IntegrationHealth[]
+  bioLinks              BioLink[]
+  bioChallengeAccounts  BioChallengeAccount[]
+  bioChallengePosts     BioChallengePost[]
+  bioChallengeSnapshots BioChallengeSnapshot[]
+  workStatuses          WorkStatus[]
+  workFieldOptions      WorkFieldOption[]
+  workFieldValues       WorkFieldValue[]
+  workComments          WorkComment[]
 }
 
 model User {
@@ -117,6 +161,9 @@ model Role {
   @@unique([orgId, key])
 }
 
+/// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em
+/// toda empresa e quem amarra permissão a empresa é o Role.
+/// Declarado em `src/common/modelos-globais.ts`.
 model Permission {
   id    String @id @default(uuid())
   key   String @unique
@@ -178,6 +225,9 @@ model IntegrationAccount {
 
 model IntegrationHealth {
   id         String             @id @default(uuid())
+  /// Sentinela + gatilho `IntegrationHealth_orgId_do_pai` (ver topo do arquivo).
+  orgId      String             @default("")
+  org        Org                @relation(fields: [orgId], references: [id])
   accountId  String             @unique
   account    IntegrationAccount @relation(fields: [accountId], references: [id])
   status     HealthStatus       @default(down)
@@ -186,6 +236,8 @@ model IntegrationHealth {
   lastError  String?
   latencyMs  Int?
   checkedAt  DateTime           @default(now())
+
+  @@index([orgId])
 }
 
 // ---------- Leads ----------
@@ -247,6 +299,9 @@ model Lead {
 
 model LeadEvent {
   id         String   @id @default(uuid())
+  /// Sentinela + gatilho `LeadEvent_orgId_do_pai` (ver topo do arquivo).
+  orgId      String   @default("")
+  org        Org      @relation(fields: [orgId], references: [id])
   leadId     String
   lead       Lead     @relation(fields: [leadId], references: [id])
   type       String
@@ -254,6 +309,7 @@ model LeadEvent {
   occurredAt DateTime @default(now())
 
   @@index([leadId])
+  @@index([orgId, occurredAt])
 }
 
 // ---------- Campanhas ----------
@@ -848,6 +904,9 @@ model BioPage {
 
 model BioLink {
   id       String      @id @default(uuid())
+  /// Sentinela + gatilho `BioLink_orgId_do_pai` (ver topo do arquivo).
+  orgId    String      @default("")
+  org      Org         @relation(fields: [orgId], references: [id])
   pageId   String
   page     BioPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   ordem    Int
@@ -860,6 +919,7 @@ model BioLink {
   criadoEm DateTime    @default(now())
 
   @@index([pageId, ordem])
+  @@index([orgId])
 }
 
 model BioChallenge {
@@ -883,6 +943,9 @@ model BioChallenge {
 
 model BioChallengeAccount {
   id            String         @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengeAccount_orgId_do_pai` (ver topo do arquivo).
+  orgId         String         @default("")
+  org           Org            @relation(fields: [orgId], references: [id])
   challengeId   String
   challenge     BioChallenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   plataforma    BioPlataforma
@@ -902,12 +965,16 @@ model BioChallengeAccount {
 
   @@unique([challengeId, plataforma, handle])
   @@index([conexaoId])
+  @@index([orgId])
 }
 
 // Uma linha por post. A contagem é COUNT nosso, não campo de terceiro:
 // post deletado não zera o histórico em silêncio e a bio sobrevive à API fora do ar.
 model BioChallengePost {
   id          String              @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengePost_orgId_do_pai` (ver topo do arquivo).
+  orgId       String              @default("")
+  org         Org                 @relation(fields: [orgId], references: [id])
   contaId     String
   conta       BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
   externalId  String
@@ -919,12 +986,16 @@ model BioChallengePost {
 
   @@unique([contaId, externalId])
   @@index([contaId, publicadoEm])
+  @@index([orgId, publicadoEm])
 }
 
 // Append-only. Nunca sobrescrever: histórico tem que sobreviver a mudança de
 // fórmula ou de fonte de coleta.
 model BioChallengeSnapshot {
   id            String              @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengeSnapshot_orgId_do_pai` (ver topo do arquivo).
+  orgId         String              @default("")
+  org           Org                 @relation(fields: [orgId], references: [id])
   contaId       String
   conta         BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
   coletadoEm    DateTime            @default(now())
@@ -935,6 +1006,7 @@ model BioChallengeSnapshot {
   bruto         Json?
 
   @@index([contaId, coletadoEm])
+  @@index([orgId, coletadoEm])
 }
 
 // Conta de plataforma autorizada por OAuth. Vive na org, não no desafio: conecta
@@ -993,6 +1065,9 @@ model BioOauthState {
 
 // Identidade de cookie. Sem orgId de propósito: o mesmo browser pode visitar
 // páginas de orgs diferentes (mesmo racional do PixelEvent.anonymousId).
+// GLOBAL declarado em `src/common/modelos-globais.ts`. Os filhos (BioVisit,
+// BioEvent) não dependem daqui para achar a empresa: carregam orgId próprio,
+// vindo da BioPage.
 model BioVisitor {
   id            String   @id
   primeiroVisto DateTime @default(now())
@@ -1380,6 +1455,9 @@ model WorkList {
 
 model WorkStatus {
   id     String         @id @default(uuid())
+  /// Sentinela + gatilho `WorkStatus_orgId_do_pai` (ver topo do arquivo).
+  orgId  String         @default("")
+  org    Org            @relation(fields: [orgId], references: [id])
   listId String
   list   WorkList       @relation(fields: [listId], references: [id], onDelete: Cascade)
   name   String
@@ -1390,6 +1468,7 @@ model WorkStatus {
   tasks WorkTask[]
 
   @@unique([listId, name])
+  @@index([orgId])
 }
 
 model WorkTag {
@@ -1423,6 +1502,9 @@ model WorkField {
 
 model WorkFieldOption {
   id      String    @id @default(uuid())
+  /// Sentinela + gatilho `WorkFieldOption_orgId_do_pai` (ver topo do arquivo).
+  orgId   String    @default("")
+  org     Org       @relation(fields: [orgId], references: [id])
   fieldId String
   field   WorkField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
   name    String
@@ -1432,6 +1514,7 @@ model WorkFieldOption {
   values WorkFieldValue[]
 
   @@unique([fieldId, name])
+  @@index([orgId])
 }
 
 model WorkTask {
@@ -1467,8 +1550,14 @@ model WorkTask {
   @@index([orgId, archived, dueDate])
 }
 
+/// Dois pais obrigatórios (WorkTask e WorkField). Aqui o gatilho é DOIS: o
+/// primeiro deriva o orgId da tarefa, o segundo confere contra o do campo — é
+/// assim que "os dois pais são da mesma empresa" vira garantia do banco.
 model WorkFieldValue {
   id       String           @id @default(uuid())
+  /// Sentinela + gatilhos `WorkFieldValue_orgId_*` (ver topo do arquivo).
+  orgId    String           @default("")
+  org      Org              @relation(fields: [orgId], references: [id])
   taskId   String
   task     WorkTask         @relation(fields: [taskId], references: [id], onDelete: Cascade)
   fieldId  String
@@ -1478,10 +1567,14 @@ model WorkFieldValue {
   value    String? // tipos não-dropdown (texto/número/data/checkbox/url)
 
   @@unique([taskId, fieldId])
+  @@index([orgId])
 }
 
 model WorkComment {
   id         String   @id @default(uuid())
+  /// Sentinela + gatilho `WorkComment_orgId_do_pai` (ver topo do arquivo).
+  orgId      String   @default("")
+  org        Org      @relation(fields: [orgId], references: [id])
   taskId     String
   task       WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId   String?
@@ -1490,6 +1583,7 @@ model WorkComment {
   createdAt  DateTime @default(now())
 
   @@index([taskId, createdAt])
+  @@index([orgId, createdAt])
 }
 
 // ============================================================================
@@ -1518,6 +1612,7 @@ enum Alcada {
 /// Catálogo de capacidades. GLOBAL, sem orgId de propósito: a diferença entre
 /// empresas mora no PolicyVersion, não numa cópia do catálogo por tenant —
 /// duplicar 60 linhas por cliente é garantir que um dia divergem.
+/// Declarado em `src/common/modelos-globais.ts`.
 model Capability {
   id           String    @id // id pontuado do documento: "whatsapp.mensagem.enviar"
   descricao    String
@@ -1592,8 +1687,12 @@ model PolicyDecision {
   exigeAprovacao Boolean
   sinais         String[]
   motivo         String
-  /// Em modo observação a porta NÃO impõe: classifica, registra e deixa passar.
-  /// Sem esta coluna não dá para separar o que teria sido bloqueado.
+  /// Com que porta esta linha foi escrita: `impor` ou `observar`. O modo NÃO
+  /// altera o fluxo — desde 10/09/2026 observar bloqueia R5 e retém o que exige
+  /// aprovação exatamente como impor (ver `gateway/tool-gateway.service.ts`).
+  /// O que observar afrouxa é o CARIMBO do registro, e é por esta coluna que o
+  /// relatório de calibragem separa as decisões tomadas em cada modo antes de
+  /// alguém virar a chave (`src/scripts/relatorio-observar.ts`).
   modo           String    @default("impor")
   criadoEm       DateTime  @default(now())
 

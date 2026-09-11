@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ToolGateway, type ExecCtx } from '../gateway/tool-gateway.service';
 import { EfeitosRegistry } from '../gateway/efeitos.registry';
+import { comContexto } from '../common/contexto-execucao';
 import { ContextBuilder, type FonteContexto } from './context-builder.service';
 import { SessionService } from './session.service';
 import type { CapacidadeCatalogo } from '@mktos/policy';
@@ -60,6 +61,9 @@ export interface SessionResumo {
   fontes: FonteContexto[];
   aprovacoes: { approvalId: string; resumo: string; nivel: string }[];
 }
+
+/** O agente como o laço precisa dele: com o SOP e o nome do dono carregados. */
+type AgenteEmSessao = Agent & { sop: Sop | null; dono: { name: string } | null };
 
 /** Teto duro do código, acima do que qualquer agente pode declarar. */
 const MAX_PASSOS_ABSOLUTO = 16;
@@ -124,6 +128,53 @@ export class AgentRuntime {
     emitir({ t: 'sessao', sessionId, agente: agent.nome });
     if (retomada) await this.sessoes.passo(p.orgId, sessionId, { tipo: 'pedido', texto: p.pedido });
 
+    /*
+     * O CONTEXTO DE EXECUÇÃO ABRE AQUI, onde o identificador da sessão nasce
+     * (RF-T-04, RNF-09).
+     *
+     * Antes o único escopo aberto no caminho do agente era o da porta, e ele
+     * envolvia só a chamada do efeito. O resultado era uma jornada partida:
+     * tudo que a porta loga saía com a correlação da REQUISIÇÃO, e só o que
+     * rodava dentro do efeito saía com a da SESSÃO — nenhuma linha carregava as
+     * duas, e ligar log de porta a log de efeito virava adivinhação.
+     *
+     * Abrindo aqui, a execução inteira — montagem de contexto, chamadas de
+     * modelo, passagens pela porta, efeitos — roda sob `cor:<sessão>`, e o
+     * `correlacaoPai` que `comContexto` deduz sozinho guarda de onde ela veio
+     * (`pai:http-…` quando o pedido chegou por requisição). As duas pontas
+     * aparecem na MESMA linha.
+     *
+     * O laço vai para um método próprio, e não para um bloco indentado aqui
+     * dentro, porque `comContexto` precisa de uma função: é `run()`, e só o que
+     * roda dentro dela enxerga o escopo.
+     */
+    const ctxExec: ExecCtx = {
+      orgId: p.orgId,
+      actorType: ActorType.ai,
+      actorId: p.solicitanteId ?? agent.slug,
+      agentSlug: agent.slug,
+      correlationId: sessionId,
+      procedenciaExterna: p.procedenciaExterna,
+      capacidadesDeclaradas: agent.capacidades,
+    };
+
+    return comContexto({ ...ctxExec, origem: 'agente' }, () =>
+      this.conduzir(p, agent, sessionId, ctxExec, emitir, inicio),
+    );
+  }
+
+  /**
+   * O laço em si, já dentro do contexto de execução da sessão. Separado de
+   * `executar` só por causa disso — ver o comentário lá.
+   */
+  private async conduzir(
+    p: ExecutarPedido,
+    agent: AgenteEmSessao,
+    sessionId: string,
+    ctxExec: ExecCtx,
+    emitir: (e: SessionEvent) => void,
+    inicio: number,
+  ): Promise<SessionResumo> {
     // 2. O contexto que entra junto — bloco 02 do traço.
     const { blocos, fontes } = await this.contexto.montar(p.orgId, p.pedido, agent);
     await this.sessoes.passo(p.orgId, sessionId, {
@@ -145,16 +196,6 @@ export class AgentRuntime {
     const turns: LlmTurn[] = [
       { role: 'user', text: blocos ? `${blocos}\n\n---\n\nPEDIDO: ${p.pedido}` : p.pedido },
     ];
-
-    const ctxExec: ExecCtx = {
-      orgId: p.orgId,
-      actorType: ActorType.ai,
-      actorId: p.solicitanteId ?? agent.slug,
-      agentSlug: agent.slug,
-      correlationId: sessionId,
-      procedenciaExterna: p.procedenciaExterna,
-      capacidadesDeclaradas: agent.capacidades,
-    };
 
     const maxPassos = Math.min(agent.maxPassos, MAX_PASSOS_ABSOLUTO);
     const tetoUsd = Number(agent.tetoCustoUsd);

@@ -822,11 +822,12 @@ const EXCECOES_EFEITO: Excecao[] = [
     conector: 'src/gateway/efeitos.registry.ts',
     motivo:
       'É o caminho de execução PÓS-APROVAÇÃO e não pode ser removido: sem ele, aprovar volta a ' +
-      'não executar nada. O RASTRO daqui não é pobre — o evento acao.executada já sai com ator, ' +
-      'correlationId e nível. O que falta é a assinatura do efeito, Efeito = (args, orgId), não ' +
-      'levar ator nem correlação adiante: o conector chamado no fim da linha não sabe por conta ' +
-      'de quem age. A fatia 3.3 UNIFICA a assinatura (ator e correlação viram parâmetro do ' +
-      'efeito) e roteia este disparo pela porta, em vez de chamar o registro direto.',
+      'não executar nada. O RASTRO daqui não é pobre — o evento acao.executada sai com ator, ' +
+      'correlationId e nível — e desde a fatia 1.2 o EFEITO também recebe os três: a assinatura ' +
+      'passou a ser (args, orgId, ContextoDoEfeito), com o ator sendo quem APROVOU e a ' +
+      'correlação sendo a da proposta. O que ainda falta é este disparo passar PELA PORTA em vez ' +
+      'de chamar o registro direto: aqui a decisão de política já aconteceu (na proposta), mas ' +
+      'quem confere isso é a leitura do código, não a catraca. É o que a fatia 3.3 fecha.',
     fatia: '3.3',
   },
 ];

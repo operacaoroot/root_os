@@ -2545,7 +2545,7 @@ function pintaRegua(){
    '<div class="hdr">Catálogo de capacidades · o nível de cada ação</div>'+
    '<div class="tbl"><table><thead><tr><th>Capacidade</th><th>Nível</th><th>Por quê</th><th></th></tr></thead><tbody>'+
    [['espelho.consultar','R0','lê a cópia só-leitura'],['memoria.buscar','R0','lê contexto interno'],
-    ['relatorio.gerar','R1','artefato interno até alguém enviar'],['clickup.tarefa.criar','R2','o OS desfaz'],
+    ['relatorio.gerar','R1','artefato interno até alguém enviar'],['clickup.tarefa.criar','R3','escreve fora do OS e o desfazer é manual'],
     ['whatsapp.mensagem.enviar','R3','alguém de fora recebe'],['preco.alterar','R4','cria obrigação futura'],
     ['pagamento.baixar','R5','movimenta dinheiro'],['nfe.emitir','R5','obrigação fiscal']].map(function(c){
       return '<tr><td class="k">'+c[0]+'</td><td><span class="lvl n'+c[1].replace('R','')+'">'+c[1]+'</span></td>'+

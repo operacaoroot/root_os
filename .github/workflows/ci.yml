@@ -118,21 +118,32 @@ jobs:
       MKTOS_CONJUNTO_DE_TESTES: padrao
       #
       # PISOS — o mínimo que precisa ter rodado para o verde valer alguma coisa.
-      # Entre parênteses, a contagem REAL medida na estabilização da onda 1
+      # Entre parênteses, a contagem REAL medida na estabilização da onda 2
       # (10/09/2026), rodando as três suítes no Mac contra o Postgres
       # descartável. Os pisos ficam abaixo dela de propósito: piso é chão, não
       # espelho — colar no número exato transforma qualquer teste a mais numa
       # edição obrigatória deste arquivo. Ao remover teste de propósito, baixe o
       # piso no mesmo commit e diga por quê na mensagem.
+      #
+      # A DIVISÃO DE TRABALHO ENTRE OS DOIS PISOS, que é o que faz a folga caber:
+      # quem pega ARQUIVO QUE SUMIU DA COLETA é o piso de ARQUIVOS, e ele é
+      # colado no número real. Perder um arquivo inteiro pode custar só 9 casos
+      # (é o tamanho do menor arquivo da api hoje), e nenhum piso de casos com
+      # folga útil pegaria isso — mas 8 < 9 reprova na hora. O piso de CASOS
+      # cuida do outro desvio: a suíte que encolhe por dentro sem perder arquivo.
       PISO_CASOS_POLICY: '20'   # (37) packages/policy/test/politica.test.ts
       PISO_ARQUIVOS_POLICY: '1'
       PISO_CASOS_WEB: '70'      # (76) apps/web/tests/{unit,component}, 8 arquivos
       PISO_ARQUIVOS_WEB: '8'
-      # (76) em 6 arquivos com arquitetura.test.ts, que nasceu nesta mesma onda;
-      # sem ele seriam 55 em 5, que é exatamente o piso — escolhido assim para o
-      # job não depender da ordem em que as fatias entrassem.
-      PISO_CASOS_API: '55'
-      PISO_ARQUIVOS_API: '5'
+      # (146) em 9 arquivos: arquitetura 21, contexto-aprovacao 10,
+      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20, porta 20,
+      # runtime 9, validacao 9. A onda 2 levou a suíte de 76 para 146, e o piso
+      # de 55 que sobrou da onda 1 passou a caber com 91 casos de folga: deixaria
+      # sumir TRÊS arquivos sem reclamar. Sobe para 120 (18% de folga).
+      # `tenant-isolation.test.ts` não entra nesta conta — conjunto `padrao`
+      # o exclui, e ele tem job próprio abaixo.
+      PISO_CASOS_API: '120'
+      PISO_ARQUIVOS_API: '9'
 
     steps:
       - uses: actions/checkout@v4
@@ -312,9 +323,15 @@ jobs:
 
       # Os três `--reporter=json --outputFile.json` existem para a trava. O
       # `--reporter=default` continua imprimindo o log legível para gente.
+      #
+      # O `--` ANTES dos argumentos não é enfeite: sem ele o pnpm 9 tenta ler
+      # `--outputFile.json` como opção SUA e morre com "Unknown option:
+      # 'outputFile.json'" antes de chamar o vitest. O passo falhava, a trava
+      # nunca era alcançada e os pisos abaixo não guardavam nada. Medido no
+      # pnpm 9.15.9, que é o do `packageManager` da raiz.
       - name: Testes de policy
         run: |
-          pnpm --filter @mktos/policy test \
+          pnpm --filter @mktos/policy test -- \
             --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/resumo-policy.json"
 
@@ -325,7 +342,7 @@ jobs:
 
       - name: Testes de web
         run: |
-          pnpm --filter @mktos/web test \
+          pnpm --filter @mktos/web test -- \
             --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/resumo-web.json"
 
@@ -336,7 +353,7 @@ jobs:
 
       - name: Testes de api
         run: |
-          pnpm --filter @mktos/api test \
+          pnpm --filter @mktos/api test -- \
             --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/resumo-api.json"
 
