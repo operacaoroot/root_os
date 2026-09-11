@@ -1090,12 +1090,19 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
     /*
      * O CONTROLADOR, e não só os serviços.
      *
-     * É ele que define a ORDEM entre perguntar ao interruptor e confirmar, e a
-     * ordem é o assunto de metade dos casos abaixo. Chamar os serviços na
-     * sequência "certa" dentro do teste provaria que o teste sabe a ordem, não
-     * que a rota sabe.
+     * É ele que define a ORDEM entre perguntar ao interruptor, conferir a régua
+     * de hoje e confirmar, e a ordem é o assunto de metade dos casos abaixo.
+     * Chamar os serviços na sequência "certa" dentro do teste provaria que o
+     * teste sabe a ordem, não que a rota sabe.
+     *
+     * OS QUATRO ARGUMENTOS SÃO OBRIGATÓRIOS, e os dois últimos entraram na fatia
+     * 3.10: o `PrismaService` monta a fila (`GET /approvals/fila`) e a PORTA
+     * responde a conferência só-leitura que `confirm` faz ANTES de mexer no
+     * estado da aprovação. Sem a porta aqui, `confirm` estoura com
+     * `TypeError: Cannot read properties of undefined` no primeiro caso que
+     * confirmar pela rota — e não com uma falha que explique o que falta.
      */
-    controlador = new ApprovalsController(approvals, acoes);
+    controlador = new ApprovalsController(approvals, acoes, p, gateway);
   });
 
   afterAll(async () => {

@@ -114,7 +114,22 @@ export const NAV: NavItem[] = [
   { key: 'organograma', label: 'Organograma', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'trabalha', estado: 'parcial', parcial: 'depende do roster de agentes' },
 
   // ── O controle ───────────────────────────────────────────────────────────
-  { key: 'atendimento', label: 'Atendimento', href: '/atendimento', icon: 'MessagesSquare', permission: 'whatsapp.enviar', secao: 'controle', estado: 'parcial', parcial: 'a fila de aprovação entra com a porta; a entrada por WhatsApp vem do FinOps depois' },
+  // A FILA DE APROVAÇÃO, e a permissão que ela passou a exigir (fatia 3.10).
+  //
+  // Era `whatsapp.enviar`, enquanto `approvals.controller.ts` exigia
+  // `mcp.executar`: o item aparecia para o Admin Master (o único perfil com
+  // `whatsapp.enviar`) e a API respondia a outro público. Agora os dois lados
+  // pedem `aprovacoes.ver` — chave própria, criada nesta fatia.
+  //
+  // NÃO É `mcp.executar` de propósito: ela mora nas duas contas de serviço da IA
+  // (`ia_servico`, read-only por desenho, e `ia_acao`), e esta tela mostra o
+  // CONTEÚDO EXATO de toda ação retida. E não é `whatsapp.enviar` porque a fila
+  // não é de um canal: ela retém qualquer capacidade R2+ do catálogo.
+  //
+  // O rótulo mudou junto. "Atendimento" prometia caixa de entrada; o que existe
+  // hoje é a fila de decisão. A entrada por WhatsApp continua declarada em
+  // `parcial`, e `/whatsapp` segue redirecionando para cá (rotas-antigas.mjs).
+  { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'controle', estado: 'parcial', parcial: 'a fila de aprovação está de pé; a caixa de entrada por WhatsApp vem do FinOps depois' },
   // A Régua pede `mcp.ver`, e não `admin.usuarios`, desde que a fatia 2.3
   // fechou. É painel de LEITURA — níveis, sinais, catálogo, sobrescritas e um
   // simulador que não executa nada —, e a convenção da casa para painel de

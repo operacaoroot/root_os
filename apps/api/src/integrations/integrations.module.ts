@@ -3,8 +3,14 @@ import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 import { ClickupService } from './clickup.service';
 import { ConectoresService } from './conectores.service';
+import { ContratoDeConectorModule } from './contrato.module';
 
 @Module({
+  // O registro do contrato de conector (fatia 5.4). É `@Global`, então basta
+  // ser importado UMA vez para que `google/`, `meta/`, `obsidian/` e `pauta/`
+  // consigam se inscrever sem aresta nova no grafo de módulos — ver
+  // `contrato.module.ts`.
+  imports: [ContratoDeConectorModule],
   controllers: [IntegrationsController],
   providers: [IntegrationsService, ClickupService, ConectoresService],
   // `ConectoresService` é exportado porque o desligamento não é assunto só da

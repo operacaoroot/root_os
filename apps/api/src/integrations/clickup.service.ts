@@ -5,6 +5,19 @@ import { AuditService } from '../audit/audit.service';
 import { ConectoresService } from './conectores.service';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import { EfeitosRegistry } from '../gateway/efeitos.registry';
+import { PRAZO_DA_CHAMADA_DE_SONDA_MS, RegistroDeConectores } from './conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ContextoDoVerbo,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  frasedoErro,
+  naoConfigurado,
+} from './contrato-de-conector';
 import {
   SemTenantError,
   comContexto,
@@ -61,7 +74,131 @@ export class ClickupService implements OnModuleInit {
      * ClickUp passam a existir de fato para a porta (ver `onModuleInit`).
      */
     private readonly efeitos: EfeitosRegistry,
+    /*
+     * O contrato único de conector (fatia 5.4). Vem de um módulo `@Global`, como
+     * os dois registros da porta: injetar aqui não acrescenta aresta nenhuma ao
+     * grafo de módulos.
+     */
+    private readonly contrato: RegistroDeConectores,
   ) {}
+
+  /**
+   * O CONTRATO ÚNICO — autorizar, sincronizar, saúde, revogar (RF-X-01).
+   *
+   * Mora dentro do conector, como a declaração de efeitos ao lado, pelo mesmo
+   * motivo: a catraca de arquitetura proíbe qualquer arquivo fora da porta de
+   * importar um serviço de conector, então um arquivo de fiação ao lado seria
+   * violação nova. O conector importar o REGISTRO é o inverso, e é permitido.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'clickup',
+      rotulo: 'ClickUp',
+      /*
+       * A rota própria deste conector (`POST integrations/clickup/sync`) sempre
+       * exigiu `tarefas.editar` — de quem OPERA as tarefas, não de quem
+       * administra usuários. Sem esta linha, o verbo genérico do contrato seria
+       * uma segunda porta para a mesma sincronização, com a permissão antiga
+       * intacta e inútil ao lado. Ver `permissaoParaSincronizar` no contrato.
+       */
+      permissaoParaSincronizar: 'tarefas.editar',
+      /*
+       * A CREDENCIAL É DO PROCESSO, e dizer isso é o que impede a tela de
+       * oferecer "revogar" numa credencial que não é desta empresa. O token do
+       * ClickUp é pessoal de um MEMBRO (formato `pk_<userId>_…`), definido no
+       * ambiente pelo operador, e vale para todas as empresas do OS. Quem quer
+       * parar o ClickUp de UMA empresa usa o desligamento, que é por empresa.
+       */
+      escopoDaCredencial: 'processo',
+
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'O ClickUp não tem fluxo de OAuth aqui: ele usa um token pessoal de membro ' +
+          '(formato "pk_<id>_…"), gerado em Settings → Apps no ClickUp e colocado na ' +
+          'variável de ambiente do conector pelo operador da VPS. O token morre quando a ' +
+          'pessoa dona dele sai do workspace — é por isso que a sonda de saúde existe.',
+      }),
+
+      sincronizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeSincronizacao> => {
+        const r = await this.sync(ctx.orgId, ctx.actorId ?? undefined);
+        return {
+          tipo: 'feito',
+          resumo:
+            `${r.tasks} tarefa(s) e ${r.content} conteúdo(s) trazidos de ${r.lists} lista(s) ` +
+            'do espaço da root.',
+          numeros: { tarefas: r.tasks, conteudos: r.content, listas: r.lists },
+        };
+      },
+
+      /**
+       * A sonda: pergunta ao ClickUp QUEM é o dono do token.
+       *
+       * `GET /user` é a chamada mais barata que prova as três coisas que
+       * importam de uma vez — o token existe, é aceito e ainda pertence a
+       * alguém. Um `configured` que só olha o comprimento da string diria "sim"
+       * para um token revogado meses atrás.
+       */
+      saude: async (): Promise<SaudeDeConector> => {
+        if (!this.configured) {
+          return naoConfigurado(
+            'Falta o token do ClickUp no ambiente da API (é o token pessoal de um membro, ' +
+              'gerado em Settings → Apps). Enquanto ele não existir, nenhuma empresa usa o ' +
+              'ClickUp — a credencial é do processo, não desta empresa.',
+          );
+        }
+        const comecou = Date.now();
+        try {
+          const r = await this.sondar<{ user?: { username?: string; email?: string } }>('/user');
+          const quem = r.user?.username ?? r.user?.email ?? 'usuário sem nome';
+          return conectado(Date.now() - comecou, `token pessoal de ${quem}.`);
+        } catch (e) {
+          return erroDeConector(frasedoErro(e), Date.now() - comecou);
+        }
+      },
+
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'O token do ClickUp é do PROCESSO e vale para todas as empresas: queimá-lo daqui ' +
+          'derrubaria o ClickUp de todo mundo, e não há como fazê-lo só para esta empresa. ' +
+          'Para esta empresa parar de usar o ClickUp agora, DESLIGUE o conector em Conexões — ' +
+          'é por empresa, tem efeito na próxima chamada e não toca credencial nenhuma. Para ' +
+          'queimar o token de verdade, revogue-o no ClickUp (Settings → Apps) e troque a ' +
+          'variável no ambiente da API.',
+      }),
+    };
+  }
+
+  /**
+   * Uma chamada de SONDA: a mesma API, com prazo e sem depender de `cu`.
+   *
+   * `cu` não tem prazo — é o cliente das rotinas, onde demorar é aceitável. Numa
+   * sonda, demorar é o defeito: a tela de Conexões sonda todo mundo de uma vez e
+   * quem a abre costuma estar atrás justamente do conector que está pendurado.
+   */
+  private async sondar<T>(path: string): Promise<T> {
+    const res = await fetch(`${this.base}${path}`, {
+      headers: { Authorization: this.token },
+      /*
+       * O prazo de DENTRO, menor que o relógio de fora do registro: é o que faz
+       * a frase deste conector ("token inválido ou revogado…") chegar à tela
+       * antes do "a sonda passou de 6000 ms", que não diz o que fazer.
+       */
+      signal: AbortSignal.timeout(PRAZO_DA_CHAMADA_DE_SONDA_MS),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(
+        `O ClickUp respondeu HTTP ${res.status} em ${path}` +
+          (body ? `: ${body.slice(0, 200)}` : '') +
+          (res.status === 401
+            ? ' — token inválido ou revogado (ele morre quando a pessoa dona sai do workspace).'
+            : ''),
+      );
+    }
+    return res.json() as Promise<T>;
+  }
 
   get configured(): boolean {
     return this.token.length > 0;
@@ -111,6 +248,15 @@ export class ClickupService implements OnModuleInit {
     // cedo deixaria a chave sem dono no registro — que a tela lê como "ninguém
     // respondeu", não como "desconectado".
     this.conectoresConfigurados.registrar('clickup', () => this.configured);
+
+    /*
+     * O CONTRATO ÚNICO (fatia 5.4). Vem ANTES do retorno antecipado pelo mesmo
+     * motivo da linha acima: sem token, a resposta certa é "não configurado, e
+     * aqui está o porquê" — que é uma RESPOSTA. Sair daqui cedo deixaria a chave
+     * sem dono, e o registro derruba o arranque quando um conector cobrado não
+     * se inscreve.
+     */
+    this.contrato.registrar(this.descritorDoContrato(), 'ClickupService');
 
     /*
      * AS DUAS ESCRITAS DO CLICKUP, DECLARADAS PELO CONECTOR — fatia 3.3.

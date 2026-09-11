@@ -3,11 +3,32 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
+import { CofreService, SegredoIndisponivelError } from '../cofre/cofre.service';
+import { NOMES_CONHECIDOS } from '../cofre/segredo';
+import { CONECTOR_DO_GOOGLE } from '../cofre/migrar-credenciais';
+import {
+  PRAZO_DA_CHAMADA_DE_SONDA_MS,
+  RegistroDeConectores,
+} from '../integrations/conectores.registry';
+import { revogacaoFoiSuperada } from '../integrations/revogacao-superada';
+import {
+  type ConectorDoContrato,
+  type ContextoDoVerbo,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  frasedoErro,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 
 // Conector Google (OAuth 2.0) — Gmail/Agenda/Docs/Drive. Credencial PRÓPRIA do root
 // (google.env), tokens guardados por org (isolado do escritório). Escopos read+write
@@ -34,6 +55,15 @@ export class GoogleService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly efeitos: EfeitosRegistry,
+    /** O contrato único de conector (fatia 5.4) — módulo `@Global`. */
+    private readonly contrato: RegistroDeConectores,
+    /**
+     * O COFRE (fatia 5.3). `@Optional()` pelos dois motivos que o consumidor da
+     * bio já documenta: a suíte constrói este serviço à mão, e cofre ausente tem
+     * de significar "use a coluna de origem" e não "o Google parou". Ver
+     * `credencialDoCofre`.
+     */
+    @Optional() private readonly cofre?: CofreService,
   ) {}
 
   get configured(): boolean {
@@ -98,6 +128,21 @@ export class GoogleService implements OnModuleInit {
      * `connected` em campos separados. O raciocínio completo está no cabeçalho
      * de `gateway/conectores-configurados.registry.ts`.
      */
+    /*
+     * ========================================================================
+     * O CONTRATO ÚNICO, ESSE SIM, ELE IMPLEMENTA — fatia 5.4
+     * ========================================================================
+     *
+     * E a diferença em relação ao registro de cima é exatamente o que fazia
+     * falta: `ConectoresConfiguradosRegistry` pergunta "o PROCESSO tem
+     * credencial?", uma propriedade do ambiente; o contrato pergunta "ESTA
+     * EMPRESA consegue usar isto AGORA?", que é a pergunta que a tela sempre
+     * precisou fazer. Por isso a inscrição LÁ continua ausente e a inscrição
+     * AQUI existe: a saúde do contrato recebe `orgId` e só responde verde depois
+     * de uma chamada de verdade com o token desta empresa.
+     */
+    this.contrato.registrar(this.descritorDoContrato(), 'GoogleService');
+
     const texto = (v: unknown): string => String(v ?? '').trim();
     const numero = (v: unknown, padrao: number): number => {
       const n = Number(v);
@@ -161,6 +206,346 @@ export class GoogleService implements OnModuleInit {
     }
   }
 
+  /*
+   * ==========================================================================
+   * O SEGUNDO CONSUMIDOR REAL DO COFRE — RF-C-01, RF-C-02 (fatia 5.4)
+   * ==========================================================================
+   *
+   * Até aqui os dois tokens do Google viviam em TEXTO PURO nas colunas de
+   * `GoogleAccount`. A migração (`cofre/migrar-credenciais.ts`) já os COPIAVA
+   * para o cofre — cifrados, com dado associado por empresa e rotacionáveis —
+   * mas ninguém os LIA de lá: o depósito era paralelo, e o valor em uso
+   * continuava sendo o da coluna. Migração que ninguém lê não migrou nada.
+   *
+   * A ORDEM, e o que cada degrau significa (é a mesma de `bio-credenciais`,
+   * deliberadamente — duas escadas diferentes para a mesma pergunta é como uma
+   * delas envelhece sem ninguém notar):
+   *
+   *   1. COFRE (`google/access_token` e `google/refresh_token` DESTA empresa) —
+   *      o que manda depois da migração. É a única fonte cifrada com o CHAVEIRO,
+   *      isto é, a única rotacionável;
+   *   2. COLUNA DE ORIGEM (`GoogleAccount.accessToken` / `.refreshToken`) — a
+   *      queda, e ela é indispensável: a migração COPIA e não apaga nada, então
+   *      até alguém rodar `cofre.cli.js migrar` esta é a única fonte que existe.
+   *      Remover a queda antes disso derrubaria o Google de todo mundo.
+   *
+   * A CHAVE DO COFRE É `google`, O GRUPO — e não `gmail`/`gcal`/`gdocs`/`drive`.
+   * O catálogo lista quatro porque são quatro telas; a credencial é UMA (uma
+   * linha de `GoogleAccount` por empresa). Guardar sob `gmail` faria o `gcal`
+   * procurar um segredo que não existe. A constante vem de
+   * `cofre/migrar-credenciais.ts`, que é quem a declarou ao gravar — copiá-la
+   * para cá criaria duas verdades sobre o mesmo nome.
+   *
+   * REVOGADO NÃO CAI PARA A COLUNA, e é a parte que mais importa. Uma queda
+   * escrita como "qualquer erro do cofre → usa a coluna" transformaria a
+   * REVOGAÇÃO numa sugestão: revogar no cofre e continuar lendo a coluna antiga é
+   * NÃO TER REVOGADO. Os dois desfechos ficam separados com todas as letras.
+   */
+
+  /**
+   * Pergunta ao cofre. Três desfechos, e eles NÃO se confundem:
+   *   · string     → o cofre tem, e é ele que vale;
+   *   · 'revogado' → há linha, e ela foi queimada. NÃO há queda;
+   *   · null       → não há linha, ou o cofre não pôde responder. Cai para a coluna.
+   *
+   * "Não pôde responder" é real e não é defeito: `CofreService` exige que a
+   * empresa do argumento seja a mesma do contexto de execução (ele falha fechado
+   * sob isolamento por linha), e há chamador legítimo fora de requisição HTTP.
+   * Falhar ali derrubaria o conector por causa de um depósito que ainda pode
+   * estar vazio.
+   */
+  private async credencialDoCofre(
+    orgId: string,
+    nome: string,
+  ): Promise<string | 'revogado' | null> {
+    if (!this.cofre) return null;
+    try {
+      return await this.cofre.envolver(
+        { orgId, conector: CONECTOR_DO_GOOGLE, nome },
+        (c) => c.usar((s) => s),
+      );
+    } catch (e) {
+      if (e instanceof SegredoIndisponivelError) {
+        // A distinção vem de um CAMPO, nunca da mensagem: comparar texto para
+        // decidir se uma revogação vale seria prender a trava a uma redação.
+        return e.revogado ? 'revogado' : null;
+      }
+      this.log.debug(
+        `cofre não respondeu por google/${nome} da empresa ${orgId} ` +
+          `(${(e as Error).message}); usando a coluna de origem.`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * O valor do cofre, ou o da coluna. Revogado lança — com UMA exceção medida.
+   *
+   * ------------------------------------------------------------------------
+   * A EXCEÇÃO: REVOGAÇÃO SUPERADA POR AUTORIZAÇÃO POSTERIOR
+   * ------------------------------------------------------------------------
+   * "Revogado é terminal" é a regra, e ela existe porque cair para a coluna
+   * antiga depois de uma revogação é não ter revogado. Só que, sozinha, ela
+   * fabricava um beco sem saída: desconectar revoga no cofre e apaga a linha;
+   * se a gravação do cofre falhar na REAUTORIZAÇÃO (ela é "tenta e segue"), a
+   * marca de revogação continua lá, a leitura lança "reautorize em Conexões" e
+   * reautorizar cai no mesmo lugar. O conector morreria para sempre, com a
+   * instrução que não resolve.
+   *
+   * `revogacaoFoiSuperada` responde a pergunta certa — a autorização local é
+   * POSTERIOR à revogação? — e, quando é, a credencial da coluna volta a valer,
+   * o cofre é RECONCILIADO na hora e o log grita. Na dúvida, terminal.
+   *
+   * `autorizadaEm` é o `connectedAt` da linha local. Ele serve porque
+   * desconectar APAGA a linha: uma linha posterior ao `revogadoEm` só pode ter
+   * nascido de alguém autorizando de novo.
+   */
+  private async credencial(
+    orgId: string,
+    nome: string,
+    daColuna: string | null,
+    contexto: { autorizadaEm?: Date | null; escopo?: string[]; expiraEm?: Date | null } = {},
+  ): Promise<string | null> {
+    const noCofre = await this.credencialDoCofre(orgId, nome);
+    if (noCofre === 'revogado') {
+      const veredito = await revogacaoFoiSuperada(this.cofre, {
+        orgId,
+        conector: CONECTOR_DO_GOOGLE,
+        nome: nome,
+        autorizadaEm: contexto.autorizadaEm ?? null,
+      });
+      if (!veredito.superada) {
+        throw new ServiceUnavailableException(
+          `A credencial "${nome}" do Google desta empresa foi REVOGADA e não existe mais ` +
+            `(${veredito.porque ?? 'revogação em vigor'}). Reautorize a conta em Conexões — ` +
+            'revogar não tem volta, e cair para a coluna antiga seria não ter revogado.',
+        );
+      }
+      this.log.error(
+        `empresa ${orgId}: o cofre ainda marca google/${nome} como revogado ` +
+          `(${veredito.revogadaEm?.toISOString() ?? 'sem data'}), mas há autorização POSTERIOR ` +
+          `(${contexto.autorizadaEm?.toISOString() ?? 'sem data'}). A gravação no cofre falhou ` +
+          'em algum retorno de OAuth. Usando a coluna e regravando no cofre agora.',
+      );
+      if (daColuna) {
+        await this.guardarNoCofre(orgId, nome, daColuna, {
+          escopo: contexto.escopo,
+          expiraEm: contexto.expiraEm ?? null,
+        });
+      }
+      return daColuna;
+    }
+    return noCofre ?? daColuna;
+  }
+
+  /**
+   * Guarda no cofre o que acabou de ser escrito na coluna.
+   *
+   * ESCREVE NOS DOIS LUGARES enquanto a coluna de origem existir, e é o mesmo
+   * raciocínio de `BioCredenciaisService.salvar`: gravar só no cofre deixaria a
+   * coluna com o valor VELHO — e ela ainda é a queda de leitura, então um
+   * rollback do código, ou um contexto em que o cofre não responde,
+   * ressuscitaria o token anterior sem aviso.
+   *
+   * BEST-EFFORT de propósito: falhar aqui não pode desfazer um OAuth que deu
+   * certo nem derrubar uma renovação de token que já foi aceita pelo Google. O
+   * que se perde sai no log, e a próxima passagem de `cofre.cli.js migrar
+   * --forcar` reconcilia.
+   */
+  private async guardarNoCofre(
+    orgId: string,
+    nome: string,
+    valor: string,
+    extra: { escopo?: string[]; expiraEm?: Date | null; actorId?: string | null } = {},
+  ): Promise<void> {
+    if (!this.cofre || !valor) return;
+    try {
+      await this.cofre.guardar({
+        orgId,
+        conector: CONECTOR_DO_GOOGLE,
+        nome,
+        valor,
+        escopo: extra.escopo ?? [],
+        origem: 'google-oauth',
+        expiraEm: extra.expiraEm ?? null,
+        actorId: extra.actorId ?? null,
+      });
+    } catch (e) {
+      this.log.error(
+        `token do Google gravado na coluna mas NÃO no cofre (empresa ${orgId}, ${nome}): ` +
+          `${(e as Error).message}. Reconcilie com \`cofre.cli.js migrar --forcar --empresa ${orgId}\`.`,
+      );
+    }
+  }
+
+  /**
+   * O CONTRATO ÚNICO — autorizar, sincronizar, saúde, revogar (RF-X-01).
+   *
+   * UMA chave para as QUATRO superfícies, porque a credencial é uma só. A sonda
+   * de saúde é feita uma vez e o resultado vale para gmail, gcal, gdocs e drive
+   * — quem monta o catálogo espalha (ver `integrations.service.ts`).
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: CONECTOR_DO_GOOGLE,
+      rotulo: 'Google (Gmail, Agenda, Docs, Drive)',
+      escopoDaCredencial: 'empresa',
+      linhasDoCatalogo: ['gmail', 'gcal', 'gdocs', 'drive'],
+
+      autorizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeAutorizacao> => {
+        if (!this.configured) {
+          return {
+            tipo: 'manual',
+            instrucao:
+              'O aplicativo do Google não tem credencial neste processo: o operador precisa ' +
+              'definir o par cliente/segredo no ambiente da API e reiniciá-la. Enquanto isso ' +
+              'não acontecer, nenhuma empresa consegue autorizar — não é uma pendência desta ' +
+              'empresa.',
+          };
+        }
+        // `state` carrega o orgId: é assim que o callback sabe de quem é a
+        // autorização que está voltando (ver `GoogleConexaoController`).
+        return { tipo: 'redirecionar', url: this.authUrl(ctx.orgId) };
+      },
+
+      /**
+       * SINCRONIZAR, aqui, é RENOVAR A LIGAÇÃO.
+       *
+       * O Google não tem espelho local — Gmail, Agenda, Docs e Drive são lidos
+       * sob demanda. O que se degrada com o tempo é a AUTORIZAÇÃO: o access
+       * token vence em uma hora e o refresh é o que a mantém viva. `token()`
+       * renova quando preciso, grava o valor novo nos dois lugares e deixa a
+       * conexão marcada como viva no hub.
+       */
+      sincronizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeSincronizacao> => {
+        const acc = await this.prisma.googleAccount.findUnique({ where: { orgId: ctx.orgId } });
+        if (!acc) {
+          return {
+            tipo: 'nao_se_aplica',
+            motivo:
+              'Esta empresa ainda não autorizou nenhuma conta Google — não há ligação a ' +
+              'renovar. Use "autorizar".',
+          };
+        }
+        const antes = acc.expiresAt;
+        await this.token(ctx.orgId);
+        const depois = await this.prisma.googleAccount.findUnique({
+          where: { orgId: ctx.orgId },
+          select: { expiresAt: true, email: true },
+        });
+        await this.upsertIntegration(ctx.orgId, 'connected');
+        const renovou = !!depois && depois.expiresAt.getTime() !== antes.getTime();
+        return {
+          tipo: 'feito',
+          resumo: renovou
+            ? `Autorização de ${depois?.email ?? 'conta sem e-mail'} renovada — o novo token ` +
+              `vale até ${depois?.expiresAt.toLocaleString('pt-BR')}.`
+            : `Autorização de ${depois?.email ?? 'conta sem e-mail'} continua válida até ` +
+              `${depois?.expiresAt.toLocaleString('pt-BR')} — nada precisou ser renovado.`,
+        };
+      },
+
+      /**
+       * A SONDA — e é AQUI que mora a armadilha desta fatia.
+       *
+       * A pergunta certa NÃO é "o aplicativo tem credencial": ela é verdadeira em
+       * produção para todo mundo, e foi respondê-la que fez a tela exibir o
+       * Google como CONECTADO em empresa que nunca autorizou nada. A pergunta é
+       * "ESTA EMPRESA autorizou, e a autorização ainda serve?" — e as duas
+       * metades são conferidas separadas, porque o conserto de cada uma é
+       * diferente: a primeira é do operador da VPS, a segunda é de quem clica em
+       * conectar.
+       *
+       * E o verde só nasce da TERCEIRA parte: uma chamada de verdade ao Google
+       * com o token desta empresa. Linha no banco não prova nada — um refresh
+       * token revogado do outro lado deixa a linha intacta.
+       */
+      saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
+        if (!this.configured) {
+          return naoConfigurado(
+            'O aplicativo do Google não tem credencial neste processo (o par cliente/segredo ' +
+              'do ambiente da API). Nenhuma empresa consegue autorizar enquanto isso não for ' +
+              'resolvido pelo operador.',
+          );
+        }
+        const acc = await this.prisma.googleAccount.findUnique({ where: { orgId: ctx.orgId } });
+        if (!acc) {
+          return naoConfigurado(
+            'Esta empresa ainda não autorizou nenhuma conta Google. O aplicativo está pronto; ' +
+              'falta alguém clicar em conectar e consentir na tela do Google.',
+          );
+        }
+        const comecou = Date.now();
+        const orcamento = PRAZO_DA_CHAMADA_DE_SONDA_MS;
+        try {
+          const at = await this.token(ctx.orgId, { prazoMs: orcamento });
+          const email = await this.sondarEmail(at, orcamento - (Date.now() - comecou));
+          return conectado(
+            Date.now() - comecou,
+            `conta ${email ?? acc.email ?? 'sem e-mail conhecido'} respondeu; token válido até ` +
+              `${acc.expiresAt.toLocaleString('pt-BR')}.`,
+          );
+        } catch (e) {
+          return erroDeConector(frasedoErro(e), Date.now() - comecou);
+        }
+      },
+
+      /**
+       * REVOGAR — QUEIMA a credencial desta empresa. Não é desligar.
+       *
+       * Faz as DUAS coisas, e as duas são necessárias: queima no cofre (de onde
+       * a leitura vem agora) e apaga a linha de `GoogleAccount` (que é a queda
+       * de leitura enquanto a migração das colunas não terminar). Queimar só no
+       * cofre deixaria o token em texto puro na coluna, lido pela própria queda —
+       * uma revogação que não revoga.
+       */
+      revogar: async (
+        ctx: ContextoDoVerbo & { motivo?: string | null },
+      ): Promise<ResultadoDeRevogacao> => {
+        const r = await this.disconnect(ctx.orgId, {
+          actorId: ctx.actorId ?? null,
+          motivo: ctx.motivo ?? null,
+        });
+        return {
+          tipo: 'revogado',
+          segredos: r.segredosRevogados,
+          resumo:
+            'A autorização do Google desta empresa foi apagada e as credenciais guardadas ' +
+            'foram queimadas. Isto NÃO tem volta: para voltar a usar Gmail, Agenda, Docs ou ' +
+            'Drive, alguém precisa autorizar de novo na tela do Google.',
+        };
+      },
+    };
+  }
+
+  /**
+   * Uma chamada de SONDA ao Google: com prazo, e sem passar pelo `api()`.
+   *
+   * O prazo é o que SOBRA do orçamento da sonda, não o orçamento inteiro: quando
+   * a autorização estava vencida, `token()` já gastou parte dele renovando. Dois
+   * prazos cheios em sequência somariam nove segundos dentro de um relógio de
+   * fora de seis — e aí quem responde é o relógio de fora, com a frase genérica,
+   * que é exatamente o que o corte de dentro existe para evitar.
+   */
+  private async sondarEmail(accessToken: string, prazoMs: number): Promise<string | null> {
+    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(Math.max(250, prazoMs)),
+    });
+    if (!r.ok) {
+      const corpo = await r.text().catch(() => '');
+      throw new Error(
+        `O Google respondeu HTTP ${r.status} ao conferir a conta` +
+          (corpo ? `: ${corpo.slice(0, 200)}` : '') +
+          (r.status === 401 || r.status === 403
+            ? ' — a autorização desta empresa foi revogada do lado do Google, ou os escopos ' +
+              'mudaram. É preciso conectar de novo.'
+            : ''),
+      );
+    }
+    return ((await r.json()) as { email?: string }).email ?? null;
+  }
+
   // ---------- OAuth ----------
   authUrl(state: string): string {
     this.assert();
@@ -209,6 +594,26 @@ export class GoogleService implements OnModuleInit {
         tokenType: t.token_type, scope: t.scope, expiresAt,
       },
     });
+    /*
+     * OS DOIS TOKENS VÃO PARA O COFRE na mesma passagem em que vão para a coluna
+     * (fatia 5.4). Esta é a primeira vez que eles ficam CIFRADOS EM REPOUSO no
+     * caminho normal — até aqui só a migração os copiava, e o que uma
+     * autorização nova escrevia continuava em texto puro.
+     *
+     * O refresh token vai SEM `expiraEm`, e a diferença não é cosmética: ele não
+     * vence junto com o access token, e gravar `expiresAt` nele faria a tela do
+     * cofre dizer que ele expirou em uma hora. É a mesma nota que a migração já
+     * carrega.
+     */
+    const escopo = (t.scope ?? '').split(/[\s,]+/).filter(Boolean);
+    await this.guardarNoCofre(orgId, NOMES_CONHECIDOS.acesso, t.access_token, {
+      escopo,
+      expiraEm: expiresAt,
+    });
+    if (t.refresh_token) {
+      await this.guardarNoCofre(orgId, NOMES_CONHECIDOS.renovacao, t.refresh_token, { escopo });
+    }
+
     await this.upsertIntegration(orgId, 'connected');
     await this.audit.log({ orgId, action: 'google.connect', entityType: 'integration', entityId: 'google', after: { email } });
     this.log.log(`Google conectado: ${email}`);
@@ -223,26 +628,69 @@ export class GoogleService implements OnModuleInit {
     return ((await r.json()) as { email?: string }).email ?? null;
   }
 
-  /** Access token válido (renova via refresh_token se expirou). */
-  private async token(orgId: string): Promise<string> {
+  /**
+   * Access token válido (renova via refresh_token se expirou).
+   *
+   * O VALOR VEM DO COFRE quando existe, e da coluna quando não — ver
+   * `credencialDoCofre`. A LINHA de `GoogleAccount` continua sendo lida: ela
+   * carrega os METADADOS (vencimento, e-mail, escopos), que não são segredo e
+   * não têm por que estar cifrados.
+   */
+  private async token(orgId: string, opcoes: { prazoMs?: number } = {}): Promise<string> {
     this.assert();
     const acc = await this.prisma.googleAccount.findUnique({ where: { orgId } });
     if (!acc) throw new ServiceUnavailableException('Google não conectado. Conecte em Integrações.');
-    if (acc.expiresAt > new Date()) return acc.accessToken;
-    if (!acc.refreshToken) throw new ServiceUnavailableException('Sessão Google expirada. Reconecte.');
+
+    const escopo = (acc.scope ?? '').split(/[\s,]+/).filter(Boolean);
+
+    if (acc.expiresAt > new Date()) {
+      const atual = await this.credencial(orgId, NOMES_CONHECIDOS.acesso, acc.accessToken, {
+        autorizadaEm: acc.connectedAt,
+        escopo,
+        expiraEm: acc.expiresAt,
+      });
+      if (atual) return atual;
+      // Sem valor em lugar nenhum e a linha dizendo que ainda vale: a única
+      // leitura honesta é que a credencial sumiu por baixo do metadado. Cair
+      // para o refresh é melhor do que devolver string vazia ao Google.
+      this.log.warn(
+        `empresa ${orgId}: o access token do Google não está nem no cofre nem na coluna, ` +
+          'apesar de a linha dizer que ainda vale. Tentando renovar pelo refresh.',
+      );
+    }
+
+    const refresh = await this.credencial(orgId, NOMES_CONHECIDOS.renovacao, acc.refreshToken, {
+      autorizadaEm: acc.connectedAt,
+      escopo,
+    });
+    if (!refresh) throw new ServiceUnavailableException('Sessão Google expirada. Reconecte.');
 
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: this.clientId, client_secret: this.clientSecret,
-        refresh_token: acc.refreshToken, grant_type: 'refresh_token',
+        refresh_token: refresh, grant_type: 'refresh_token',
       }),
+      /*
+       * PRAZO SÓ QUANDO QUEM CHAMA É A SONDA. As ações (enviar e-mail, criar
+       * evento) chamam isto sem prazo, como sempre chamaram — apertar o relógio
+       * delas por causa de uma tela de diagnóstico seria mudar o comportamento
+       * de um caminho que ninguém pediu para mudar. A sonda, essa, tem de caber
+       * no orçamento dela: ver `saude`.
+       */
+      signal: opcoes.prazoMs ? AbortSignal.timeout(opcoes.prazoMs) : undefined,
     });
-    if (!res.ok) throw new ServiceUnavailableException(`Refresh do Google falhou: HTTP ${res.status}`);
+    if (!res.ok) {
+      const corpo = await res.text().catch(() => '');
+      throw new ServiceUnavailableException(
+        `Refresh do Google falhou: HTTP ${res.status}${corpo ? ` — ${corpo.slice(0, 200)}` : ''}`,
+      );
+    }
     const t = (await res.json()) as { access_token: string; expires_in: number };
     const expiresAt = new Date(Date.now() + (t.expires_in - 60) * 1000);
     await this.prisma.googleAccount.update({ where: { orgId }, data: { accessToken: t.access_token, expiresAt } });
+    await this.guardarNoCofre(orgId, NOMES_CONHECIDOS.acesso, t.access_token, { escopo, expiraEm: expiresAt });
     return t.access_token;
   }
 
@@ -293,11 +741,51 @@ export class GoogleService implements OnModuleInit {
     };
   }
 
-  async disconnect(orgId: string) {
+  /**
+   * DESCONECTAR = REVOGAR. As duas fontes são queimadas, nesta ordem.
+   *
+   * Antes da fatia 5.4 isto apagava só a linha de `GoogleAccount`. Com o cofre
+   * lido na frente da coluna, apagar só a linha deixaria os tokens VIVOS no
+   * cofre — e a próxima autorização (ou um `migrar --forcar` distraído) os
+   * traria de volta. Uma desconexão que não desconecta é pior do que nenhuma,
+   * porque quem clicou vai embora achando que resolveu.
+   *
+   * A ORDEM IMPORTA: o cofre primeiro. Se a queima do cofre falhar, a linha
+   * continua lá e a próxima leitura ainda funciona — estado consistente, e o
+   * erro sobe para quem clicou. Ao contrário, apagar a linha e falhar no cofre
+   * deixaria a empresa sem metadado e COM segredo guardado, que é o pior dos
+   * dois mundos e ninguém teria como perceber.
+   *
+   * `nome` não é informado de propósito: queima o CONJUNTO de segredos do
+   * conector `google` desta empresa (access e refresh juntos) — deixar o refresh
+   * vivo seria deixar a porta destrancada com o aviso de fechada. O cofre
+   * preserva sozinho o segredo do aplicativo, que aqui nem existe.
+   */
+  async disconnect(
+    orgId: string,
+    opcoes: { actorId?: string | null; motivo?: string | null } = {},
+  ): Promise<{ ok: true; segredosRevogados: string[] }> {
+    let segredosRevogados: string[] = [];
+    if (this.cofre) {
+      const r = await this.cofre.revogar({
+        orgId,
+        conector: CONECTOR_DO_GOOGLE,
+        motivo: opcoes.motivo ?? 'conta Google desconectada',
+        por: opcoes.actorId ?? null,
+      });
+      segredosRevogados = r.revogados;
+    }
     await this.prisma.googleAccount.deleteMany({ where: { orgId } });
     await this.upsertIntegration(orgId, 'disconnected');
-    await this.audit.log({ orgId, action: 'google.disconnect', entityType: 'integration', entityId: 'google' });
-    return { ok: true };
+    await this.audit.log({
+      orgId,
+      actorId: opcoes.actorId ?? undefined,
+      action: 'google.disconnect',
+      entityType: 'integration',
+      entityId: 'google',
+      after: { segredosRevogados, motivo: opcoes.motivo ?? null },
+    });
+    return { ok: true, segredosRevogados };
   }
 
   private async upsertIntegration(orgId: string, status: 'connected' | 'disconnected') {

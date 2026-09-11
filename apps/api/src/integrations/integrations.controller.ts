@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { ToggleIntegrationSchema } from '@mktos/shared';
 import { IntegrationsService } from './integrations.service';
@@ -21,6 +21,15 @@ const DesligamentoSchema = z.object({
   motivo: z.string().trim().max(500).optional(),
 });
 
+/**
+ * O corpo da REVOGAÇÃO. Mesmo campo, propósito diferente — e a diferença é toda
+ * a distância entre pausar e queimar: aqui o motivo é o que vai explicar, no
+ * RASTRO, por que uma credencial deixou de existir e alguém teve de reautorizar.
+ */
+const RevogacaoSchema = z.object({
+  motivo: z.string().trim().max(500).optional(),
+});
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('integrations')
 export class IntegrationsController {
@@ -30,10 +39,99 @@ export class IntegrationsController {
     private readonly conectores: ConectoresService,
   ) {}
 
+  /**
+   * A tela de Conexões. `?sondar=0` devolve a lista sem sondar ninguém — ver
+   * `IntegrationsService.catalog`.
+   */
   @Get('catalog')
   @RequirePermissions('dashboard.ver')
-  catalog(@CurrentUser() user: JwtUser) {
-    return this.svc.catalog(user.orgId);
+  catalog(@CurrentUser() user: JwtUser, @Query('sondar') sondar?: string) {
+    return this.svc.catalog(user.orgId, { sondar: sondar !== '0' && sondar !== 'false' });
+  }
+
+  /*
+   * ==========================================================================
+   * OS QUATRO VERBOS DO CONTRATO — RF-X-01 (fatia 5.4)
+   * ==========================================================================
+   *
+   * Quatro rotas, uma por verbo, iguais para TODO conector. Antes desta fatia
+   * cada conector tinha a sua: `GET /google/connect`, `GET /meta/connect`,
+   * `POST /integrations/clickup/sync`, `POST /knowledge/reindex`,
+   * `POST /google/disconnect`. Quem escrevia a tela precisava saber o caminho de
+   * cada um, e conector novo significava tela nova.
+   *
+   * AS ROTAS ANTIGAS CONTINUAM DE PÉ, e isso é decisão, não descuido: elas estão
+   * em módulos de outras fatias (`google/`, `meta/`, `obsidian/`) e o callback
+   * de OAuth do Google e da Meta é endereço REGISTRADO NA CONSOLA DO
+   * FORNECEDOR — mudar exige App Review novo, cujo prazo não depende de nós.
+   * O contrato é o caminho ÚNICO para quem chega de fora; o caminho velho é a
+   * mesma implementação por outra porta.
+   *
+   * `:chave` é a chave do CONTRATO (a unidade de credencial): `google`, e não
+   * `gmail`. Chave que ninguém implementa devolve 400 com a lista do que existe.
+   */
+
+  /**
+   * AUTORIZAR. Devolve para onde mandar o navegador (OAuth) ou a instrução
+   * manual, quando o conector não tem fluxo automático.
+   */
+  @Post(':chave/autorizacao')
+  @RequirePermissions('admin.usuarios')
+  autorizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    return this.svc.autorizar(user.orgId, chave, user.sub);
+  }
+
+  /**
+   * SINCRONIZAR. Sai da casa, então passa pelo interruptor de conector antes.
+   *
+   * `admin.usuarios` NÃO É A ÚNICA EXIGÊNCIA: as permissões de quem pediu vão
+   * junto, e o serviço confere a que o conector declara a mais
+   * (`permissaoParaSincronizar`). Sincronizar o ClickUp sempre exigiu
+   * `tarefas.editar` e reindexar o Obsidian sempre exigiu `obsidian.editar` —
+   * sem essa conferência, este verbo seria uma segunda porta para as duas
+   * operações, contornando a permissão específica de cada uma.
+   */
+  @Post(':chave/sincronizacao')
+  @RequirePermissions('admin.usuarios')
+  sincronizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    return this.svc.sincronizar(user.orgId, chave, user.sub, user.permissions ?? []);
+  }
+
+  /**
+   * SAÚDE, sob demanda — o "verificar agora" da tela.
+   *
+   * `dashboard.ver` e não `admin.usuarios`: sondar não muda nada e não devolve
+   * segredo nenhum; quem vê a tela precisa poder atualizar a linha que está
+   * vermelha sem depender de um administrador.
+   */
+  @Get(':chave/saude')
+  @RequirePermissions('dashboard.ver')
+  saude(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    return this.svc.saude(user.orgId, chave);
+  }
+
+  /**
+   * REVOGAR — QUEIMA a credencial desta empresa no cofre e apaga a conexão.
+   *
+   * NÃO É O DESLIGAMENTO, e as rotas existem separadas justamente para que
+   * ninguém confunda no dia do incidente:
+   *
+   *   POST   :chave/desligamento  → PAUSA     (a credencial fica intacta)
+   *   DELETE :chave/desligamento  → RELIGA    (desfaz a pausa)
+   *   POST   :chave/revogacao     → QUEIMA    (não desfaz)
+   *
+   * É POST e não DELETE por um motivo prático além do semântico: corpo em
+   * requisição DELETE é território cinzento (nem todo cliente HTTP o envia, e o
+   * `express.json` só o interpreta com o cabeçalho certo), e o `motivo` desta
+   * rota é justamente o que vai explicar no RASTRO, seis meses depois, por que
+   * uma credencial deixou de existir. Perder o motivo por detalhe de transporte
+   * seria perder a única coisa que a auditoria não consegue reconstruir.
+   */
+  @Post(':chave/revogacao')
+  @RequirePermissions('admin.usuarios')
+  revogar(@CurrentUser() user: JwtUser, @Param('chave') chave: string, @Body() body: unknown) {
+    const input = RevogacaoSchema.parse(body ?? {});
+    return this.svc.revogar(user.orgId, chave, user.sub, input.motivo ?? null);
   }
 
   // Ligar/desligar manualmente um conector (só os com credencial via env/API key).
@@ -66,12 +164,21 @@ export class IntegrationsController {
    */
   @Post(':chave/desligamento')
   @RequirePermissions('admin.usuarios')
-  desligar(@CurrentUser() user: JwtUser, @Param('chave') chave: string, @Body() body: unknown) {
+  async desligar(
+    @CurrentUser() user: JwtUser,
+    @Param('chave') chave: string,
+    @Body() body: unknown,
+  ) {
     const input = DesligamentoSchema.parse(body ?? {});
-    return this.conectores.desligar(user.orgId, chave, {
+    const r = await this.conectores.desligar(user.orgId, chave, {
       motivo: input.motivo,
       actorId: user.sub,
     });
+    // A sonda guardada é de ANTES do clique: esquecer aqui é o que impede a tela
+    // de mostrar, por até trinta segundos, a saúde de um conector que acabou de
+    // ser desligado. Ver `VALIDADE_DA_SONDA_MS`.
+    this.svc.esquecerSonda(user.orgId, chave);
+    return r;
   }
 
   /**
@@ -82,11 +189,24 @@ export class IntegrationsController {
    */
   @Delete(':chave/desligamento')
   @RequirePermissions('admin.usuarios')
-  religar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
-    return this.conectores.religar(user.orgId, chave, { actorId: user.sub });
+  async religar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    const r = await this.conectores.religar(user.orgId, chave, { actorId: user.sub });
+    // Mesmo motivo do desligar: o estado mudou, a medição guardada envelheceu na
+    // hora — e aqui ela é `nao_verificado`, que é o que a tela mostraria no
+    // lugar do verde que volta a ser mensurável.
+    this.svc.esquecerSonda(user.orgId, chave);
+    return r;
   }
 
-  // Sincroniza as tarefas reais do ClickUp → módulo Tarefas.
+  /**
+   * Sincroniza as tarefas reais do ClickUp → módulo Tarefas.
+   *
+   * CONTINUA DE PÉ depois do contrato, e por dois motivos concretos: a permissão
+   * é outra (`tarefas.editar`, de quem opera as tarefas, e não `admin.usuarios`)
+   * e este é o botão que a tela já oferece a quem não é administrador. O verbo
+   * genérico (`POST :chave/sincronizacao`) faz a mesma coisa pelo contrato, para
+   * quem administra.
+   */
   @Post('clickup/sync')
   @RequirePermissions('tarefas.editar')
   syncClickup(@CurrentUser() user: JwtUser) {

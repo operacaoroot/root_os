@@ -16,7 +16,7 @@ import { SessionService } from '../src/agents/session.service';
 import { ContextBuilder } from '../src/agents/context-builder.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { PolicyService } from '../src/policy/policy.service';
-import { SinaisService } from '../src/policy/sinais.service';
+import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
 import { ToolGateway, type ExecCtx } from '../src/gateway/tool-gateway.service';
@@ -1239,8 +1239,13 @@ describe.skipIf(!URL)('o laço do agente, quando o teto estoura no meio', () => 
 
   const ORG = ORG_B;
 
+  /*
+   * `procedencia` FAZ PARTE DO CONTRATO de `montar` desde 11/09/2026: é a marca de
+   * mão única que o runtime passa ao `ExecCtx` e que acende `fonte_nao_confiavel`.
+   * Um duplo que a omita derruba o laço de propósito — ver `AgentRuntime.absorver`.
+   */
   const contexto = {
-    montar: async () => ({ blocos: '', fontes: [] }),
+    montar: async () => ({ blocos: '', fontes: [], procedencia: new ProcedenciaExterna() }),
   } as unknown as ContextBuilder;
 
   beforeAll(async () => {

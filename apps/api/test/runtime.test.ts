@@ -15,7 +15,7 @@ import type {
   LlmTurn,
 } from '../src/llm/llm.provider';
 import { PolicyService } from '../src/policy/policy.service';
-import { SinaisService } from '../src/policy/sinais.service';
+import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { ToolGateway } from '../src/gateway/tool-gateway.service';
@@ -89,10 +89,18 @@ describe.skipIf(!URL)('o laço do agente', () => {
   let policy: PolicyService;
   let sessoes: SessionService;
 
+  /*
+   * `procedencia` FAZ PARTE DO CONTRATO de `montar` desde 11/09/2026: é a marca
+   * de mão única que o runtime passa ao `ExecCtx` e que acende
+   * `fonte_nao_confiavel`. Aqui ela vai LIMPA — a regra da casa é regra, não
+   * conteúdo externo —, e é o que mantém os casos abaixo medindo a
+   * classificação em vez do escalonamento.
+   */
   const contexto = {
     montar: async () => ({
       blocos: 'O QUE VALE NESTA EMPRESA:\n- faturamento exclui a filial 3',
       fontes: [{ tipo: 'regra' as const, id: 'r1', titulo: 'faturamento exclui a filial 3' }],
+      procedencia: new ProcedenciaExterna(),
     }),
   } as unknown as ContextBuilder;
 
@@ -328,7 +336,7 @@ describe.skipIf(!URL)('o laço do agente', () => {
 
   it('resposta com número e sem fonte nenhuma é sinalizada, não bloqueada', async () => {
     const semContexto = {
-      montar: async () => ({ blocos: '', fontes: [] }),
+      montar: async () => ({ blocos: '', fontes: [], procedencia: new ProcedenciaExterna() }),
     } as unknown as ContextBuilder;
     const modelo = new ModeloRoteirizado([
       { text: 'Faturamos R$ 250.000 no mês.', stopReason: 'end_turn' },

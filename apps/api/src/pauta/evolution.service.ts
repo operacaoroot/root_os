@@ -1,6 +1,30 @@
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import {
+  PRAZO_DA_CHAMADA_DE_SONDA_MS,
+  RegistroDeConectores,
+} from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
+
+/**
+ * Quanto tempo a consulta de estado da instância pode demorar para QUEM NÃO É A
+ * SONDA — hoje, o portão da publicação no WhatsApp.
+ *
+ * Dez segundos: o valor que este caminho sempre teve. Está escrito como
+ * constante, e não solto no `fetch`, porque agora há dois prazos no arquivo e a
+ * diferença entre eles é uma decisão, não um descuido (ver `estado`).
+ */
+export const PRAZO_DA_CONSULTA_DE_INSTANCIA_MS = 10_000;
 
 // Conector WhatsApp via Evolution API. Instância e número DEDICADOS do root —
 // o ISOLATION.md proíbe reusar o canal do escritório, e um número compartilhado
@@ -21,10 +45,87 @@ export class EvolutionService implements OnModuleInit {
   constructor(
     private readonly efeitos: EfeitosRegistry,
     private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+    /** O contrato único de conector (fatia 5.4) — módulo `@Global`. */
+    private readonly contrato: RegistroDeConectores,
   ) {}
 
   get configured(): boolean {
     return this.base.length > 0 && this.apiKey.length > 0 && this.instancia.length > 0;
+  }
+
+  /**
+   * O CONTRATO ÚNICO — autorizar, sincronizar, saúde, revogar (RF-X-01).
+   *
+   * Este conector é o caso em que a honestidade da saúde mais importa: ele é a
+   * ÚNICA escrita externa de verdade ligada hoje (R3, `whatsapp.mensagem.enviar`),
+   * e uma instância despareada responde "credencial presente" para quem só olha
+   * variável de ambiente. A sonda pergunta à Evolution o estado da INSTÂNCIA,
+   * que é o que de fato decide se a mensagem vai sair.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'whatsapp',
+      rotulo: 'WhatsApp (Evolution)',
+      /*
+       * Instância e número DEDICADOS do root, definidos no ambiente — não há uma
+       * instância por empresa. O ISOLATION.md proíbe reusar o canal do
+       * escritório justamente porque o número é compartilhado entre tudo o que
+       * este processo manda.
+       */
+      escopoDaCredencial: 'processo',
+
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'A Evolution não tem OAuth: a instância é PAREADA por QR code no painel dela, fora ' +
+          'do OS, e as credenciais da API ficam no ambiente da API. Quando a sonda diz que a ' +
+          'instância não está aberta, o conserto é abrir o painel da Evolution e reconectar o ' +
+          'número — nenhuma tela daqui faz isso.',
+      }),
+
+      sincronizar: async (): Promise<ResultadoDeSincronizacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'Não há espelho local de WhatsApp para trazer: este conector só ENVIA, e enviar é ' +
+          'ação de nível R3 — passa pela porta, com aprovação de uma pessoa, nunca por um ' +
+          'botão de sincronizar. O histórico de grupo, quando é preciso, é lido direto no ' +
+          'banco da Evolution por consulta, fora do OS.',
+      }),
+
+      saude: async (): Promise<SaudeDeConector> => {
+        const comecou = Date.now();
+        // O prazo CURTO, só aqui: ver o cabeçalho de `estado`. O portão da
+        // publicação (que roda com ação já aprovada) fica com o prazo longo.
+        const e = await this.estado({ prazoMs: PRAZO_DA_CHAMADA_DE_SONDA_MS });
+        if (!e.configurada) {
+          return naoConfigurado(
+            `${e.motivo ?? 'Credenciais da Evolution ausentes no ambiente da API.'} ` +
+              'Sem elas nenhuma empresa envia WhatsApp — a instância é do processo, não desta ' +
+              'empresa.',
+          );
+        }
+        if (!e.conectada) {
+          return erroDeConector(
+            `${e.motivo ?? 'A instância não está aberta.'} Nenhuma mensagem sai enquanto isso.`,
+            Date.now() - comecou,
+          );
+        }
+        return conectado(
+          Date.now() - comecou,
+          `instância aberta${e.grupo ? ` · grupo de destino ${e.grupo}` : ' · sem grupo de destino definido'}.`,
+        );
+      },
+
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'A credencial da Evolution é do PROCESSO e o número é um só: queimá-la daqui pararia ' +
+          'o WhatsApp de todas as empresas, e não há como fazê-lo só para esta. Para esta ' +
+          'empresa parar de enviar AGORA, DESLIGUE o conector em Conexões — a porta recusa a ' +
+          'ferramenta na próxima chamada, com motivo e registro no rastro. Para queimar a ' +
+          'credencial de verdade, troque a chave no painel da Evolution e no ambiente da API.',
+      }),
+    };
   }
 
   /*
@@ -38,6 +139,10 @@ export class EvolutionService implements OnModuleInit {
    */
   onModuleInit(): void {
     this.conectoresConfigurados.registrar('whatsapp', () => this.configured);
+    // O contrato único (fatia 5.4). Antes de qualquer coisa, pelo mesmo motivo
+    // da linha acima: "sem credencial" é uma RESPOSTA, e o registro derruba o
+    // arranque quando um conector cobrado não se inscreve.
+    this.contrato.registrar(this.descritorDoContrato(), 'EvolutionService');
 
     this.efeitos.registrar({
       /*
@@ -104,15 +209,36 @@ export class EvolutionService implements OnModuleInit {
     return (await res.json()) as T;
   }
 
-  /** Estado da conexão — a tela usa para dizer se dá para publicar. */
-  async estado(): Promise<{ configurada: boolean; conectada: boolean; motivo: string | null; grupo: string | null }> {
+  /**
+   * Estado da conexão — a tela usa para dizer se dá para publicar.
+   *
+   * ==========================================================================
+   * DOIS CHAMADORES, DOIS PRAZOS — e a diferença é deliberada
+   * ==========================================================================
+   * Quem chama isto não é só a tela de diagnóstico:
+   *
+   *  · `PautaPublicacaoService.publicarWhatsapp` chama ANTES DE PUBLICAR. É o
+   *    portão da única escrita externa viva do produto (R3), e ela chega ali
+   *    JÁ APROVADA POR UMA PESSOA. Baixar o prazo desse portão faz uma Evolution
+   *    lenta REPROVAR uma publicação já assinada — a mesma mensagem, um efeito
+   *    completamente diferente. Por isso o padrão continua sendo
+   *    `PRAZO_DA_CONSULTA_DE_INSTANCIA_MS`, os 10 s que este caminho sempre
+   *    teve: esta fatia não muda o comportamento de quem já estava em produção;
+   *  · a SONDA do contrato passa o prazo curto de propósito (ver `saude`): a
+   *    tela de Conexões tem um relógio de fora de 6 s, e o corte de dentro
+   *    precisa vencê-lo para que a frase útil ("Instância em 'close' —
+   *    reconecte o número") chegue no lugar do "a sonda passou de 6000 ms".
+   */
+  async estado(
+    opcoes: { prazoMs?: number } = {},
+  ): Promise<{ configurada: boolean; conectada: boolean; motivo: string | null; grupo: string | null }> {
     if (!this.configured) {
       return { configurada: false, conectada: false, motivo: 'Credenciais ausentes no .env.', grupo: null };
     }
     try {
       const res = await fetch(`${this.base}/instance/connectionState/${this.instancia}`, {
         headers: { apikey: this.apiKey },
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(opcoes.prazoMs ?? PRAZO_DA_CONSULTA_DE_INSTANCIA_MS),
       });
       if (!res.ok) {
         return {

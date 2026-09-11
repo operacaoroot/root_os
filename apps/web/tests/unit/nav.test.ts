@@ -83,7 +83,16 @@ const DESTINO: Record<string, { paraKey: string; absorvido?: string }> = {
   bio: { paraKey: 'bio' },
   metas: { paraKey: 'metas' },
   financeiro: { paraKey: 'financeiro' },
-  whatsapp: { paraKey: 'atendimento' },
+  whatsapp: {
+    paraKey: 'atendimento',
+    absorvido:
+      'o /whatsapp de antes era uma tela sem conector (o placeholder de módulo). O que está de ' +
+      'pé em /atendimento é a FILA DE APROVAÇÃO, e ela não é de um canal: retém qualquer ' +
+      'capacidade R2+ do catálogo. Por isso a permissão deixou de ser whatsapp.enviar (que só o ' +
+      'Admin Master tem) e passou a ser aprovacoes.ver — a mesma que a API exige em ' +
+      'approvals.controller.ts, fatia 3.10. A caixa de entrada por WhatsApp continua declarada ' +
+      'em `parcial` e volta com o FinOps, com whatsapp.enviar na rota dela',
+  },
   usuarios: {
     paraKey: 'regua',
     absorvido:

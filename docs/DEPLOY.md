@@ -150,6 +150,69 @@ grafo de injeção do Nest que não resolve. Nenhum dos dois encosta no banco vi
 Medido em 11/09/2026, com o `dist/` de verdade: a aplicação sobe, e cada uma das três derruba o boot
 quando deve.
 
+**A onda 8 acrescentou mais três, todas do contrato de conector (fatia 5.4).** O
+`RegistroDeConectores` (`apps/api/src/integrations/conectores.registry.ts`) é o registro em que cada
+conector declara que implementa **autorizar, sincronizar, saúde, revogar**, e ele derruba o arranque
+em três situações:
+
+- **conector da lista cobrada que não se inscreveu.** Cinco chaves são obrigatórias — `google`,
+  `meta`, `obsidian`, `clickup`, `whatsapp` (são unidades de CREDENCIAL, não superfícies: `google`
+  cobre gmail/gcal/gdocs/drive e `meta` cobre instagram). Sem a inscrição, a tela de Conexões perde a
+  saúde POR EMPRESA daquele conector e volta a derivar estado de variável de ambiente — que em
+  produção é verdadeira para todo mundo e faria a tela dizer "conectado" para empresa que nunca
+  autorizou nada. Mensagem: `A aplicação subiu com conector(es) sem contrato no
+  RegistroDeConectores`. A conferência é em `onApplicationBootstrap` e não em `onModuleInit`, pelo
+  mesmo motivo dos dois registros da porta: o módulo do contrato é `@Global` e inicializa antes de
+  quem se inscreve;
+- **duas inscrições para a mesma chave.** Lança nomeando os dois donos. Com duas, a tela mostraria a
+  saúde de um e o botão de revogar queimaria a credencial do outro;
+- **duas chaves diferentes reivindicando a mesma LINHA do catálogo** (`linhasDoCatalogo`). É a
+  colisão que passa despercebida — ninguém erra a própria chave, mas `meta` declara `instagram` e um
+  conector novo declara `instagram` também. Mesmo estrago, chegando por outro caminho.
+
+**O conector fictício da suíte (`apps/api/test/conector-ficticio.ts`) NÃO está na lista cobrada, e
+isso é desenho.** Conector de teste na lista vira obrigatório em produção: no dia em que o artefato
+de teste não for empacotado (que é todo dia — `test/` fica fora do `tsconfig.json` de build), a API
+não sobe. A prova de que "conector novo entra sem tocar no núcleo" é ele se registrar em tempo de
+teste e aparecer no catálogo, não estar naquela lista.
+
+**Medido em 11/09/2026 (estabilização da onda 8), patchando o `dist` e rodando o smoke.** As sete
+travas foram exercitadas uma a uma e cada uma derrubou o boot com a própria mensagem: as três acima,
+o `ConectoresConfiguradosRegistry` sem o `whatsapp`, o `InterruptoresRegistry` sem inscrito, a porta
+sem o `TetoDeCustoIaService` e o `EfeitosRegistry` com efeito inscrito duas vezes. Com o `dist`
+intacto, `SMOKE OK` — e o log do arranque lista as cinco linhas
+`conector "<chave>" implementa o contrato (por <Servico>)`, que é o jeito rápido de conferir a
+primeira trava sem quebrar nada.
+
+### 2.3d Permissões novas: o roteiro é de TRÊS passos, nesta ordem
+
+Vale sempre que uma onda mexer em `packages/shared/src/permissions.ts` — a onda 8 acrescentou
+`aprovacoes.ver` e `aprovacoes.decidir`.
+
+```bash
+# 1) construir o pacote compartilhado
+pnpm --filter @mktos/shared build
+
+# 2) realinhar o catálogo do banco com a tabela do código
+pnpm --filter @mktos/api db:sync-permissions
+
+# 3) todo mundo sai e entra de novo
+```
+
+**Pular o passo 1** fazia o script do passo 2 sincronizar o catálogo ANTIGO com ar de sucesso: ele
+roda a partir de `apps/api` e importa `@mktos/shared` pelo `dist/`, que não é versionado e portanto
+nasce velho em qualquer árvore. Hoje ele **aborta** em vez de alinhar em silêncio — o que é melhor,
+mas o roteiro precisa estar escrito, porque a mensagem chega depois de alguém já ter perdido tempo.
+
+**Pular o passo 3** faz a permissão existir no banco e **não** no token. A lista de permissões viaja
+no JWT, montado no login, e o `PermissionsGuard` lê o TOKEN: quem foi promovido vê a tela que o banco
+libera e leva 403 na rota, por horas, até o token vencer. A fila de aprovação detecta essa divergência
+e diz "entre de novo" no lugar do botão — mas o conserto é o login, não a tela.
+
+**E o passo 2 NÃO é aditivo.** Ele REALINHA cada perfil com a tabela `ROLES` do código (`set:`), o
+que significa que **concessão feita à mão no banco e ausente do código é REVOGADA**. Se alguma
+empresa tem permissão fora do padrão, ela precisa estar no código antes de o comando rodar.
+
 ### 2.3b Semear a política — ANTES de subir, não depois
 
 ```bash

@@ -11,7 +11,11 @@ import type { Capacidade, Decisao } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto } from '../common/contexto-execucao';
 import { PolicyService } from '../policy/policy.service';
-import { SinaisService } from '../policy/sinais.service';
+import {
+  SinaisService,
+  type ProcedenciaExterna,
+  type ProcedenciaSerializada,
+} from '../policy/sinais.service';
 import {
   ApprovalsService,
   canonicalHash,
@@ -33,8 +37,27 @@ export interface ExecCtx {
   /**
    * Mão única: o runtime marca quando o pedido veio de mensagem, documento ou
    * página. Não existe desmarcar — conteúdo externo só ELEVA nível (RF-G-07).
+   *
+   * ATÉ 11/09/2026 ESTE CAMPO ERA SÓ `boolean`, E ERA ISSO QUE MANTINHA A
+   * TERCEIRA CAMADA DA DEFESA DESLIGADA. `ContextBuilder.montar` já devolvia a
+   * marca de mão única (`ProcedenciaExterna`), mas nenhum chamador conseguia
+   * passá-la adiante: o tipo aqui só aceitava o booleano, então o runtime
+   * descartava o campo e `SinaisService` nunca via `fonte_nao_confiavel`. A
+   * cerca e a neutralização funcionavam; o FREIO — a marca que eleva o nível da
+   * ação derivada — não acendia em caminho nenhum de produção.
+   *
+   * O TIPO É O DA MARCA, E O BOOLEANO CONTINUA ACEITO porque `SinaisService`
+   * já normaliza os três (`ProcedenciaExterna.de`). `false` aqui significa
+   * "ninguém marcou", jamais "desmarque".
+   *
+   * A MARCA É MUTÁVEL DE PROPÓSITO, e é disso que o runtime depende: o `ExecCtx`
+   * nasce no começo da sessão, antes de existir contexto e antes do primeiro
+   * resultado de ferramenta. Quem marca depois — o construtor de contexto, cada
+   * resultado que volta ao modelo — mexe no MESMO objeto, e a porta lê o estado
+   * de agora a cada passagem. Trocar o campo por um booleano recalculado
+   * perderia exatamente as marcas que aparecem no meio do laço.
    */
-  procedenciaExterna?: boolean;
+  procedenciaExterna?: boolean | ProcedenciaExterna | ProcedenciaSerializada;
   /** Capacidades que o agente DECLAROU. Fora desta lista, a porta recusa. */
   capacidadesDeclaradas?: string[];
 }
@@ -825,6 +848,48 @@ export class ToolGateway implements OnModuleInit {
       );
     }
 
+    /*
+     * A QUINTA ENTRADA PARA A GAVETA SEM SAÍDA — 11/09/2026.
+     *
+     * "Esta capacidade tem efeito ligado nesta versão?" era a única das cinco
+     * causas de recusa da execução que a conferência da fila NÃO antecipava,
+     * porque a pergunta não fazia parte dela: `AcoesService.executarAprovada`
+     * perguntava sozinho, mais adiante, e devolvia `sem_efeito`.
+     *
+     * O estado em que isso deixava a aprovação é o defeito, não a recusa. O
+     * roteiro do controlador é conferir (passo 2) → confirmar (passo 3) →
+     * executar (passo 4). Como a pergunta não estava no passo 2, ela só
+     * acontecia no 4 — com a aprovação já `confirmada`. E `confirmada`-e-não-
+     * consumida é a gaveta: some de `listar` (que devolve as pendentes),
+     * `confirm` recusa o que não está pendente, e não existe superfície na tela
+     * que chame `executarAprovada` de novo. A ação ficava lá até expirar.
+     *
+     * A ALTERNATIVA — "deixar o desfecho de ser terminal" — seria dar à tela um
+     * botão de reexecutar aprovação confirmada. Ela foi recusada por duas
+     * razões: (1) esse botão é uma SEGUNDA porta para executar uma aprovação,
+     * e o produto passou três ondas reduzindo o número de caminhos até o efeito;
+     * (2) ele não resolveria nada aqui — efeito não ligado não volta a ligar
+     * sozinho, é falta de CÓDIGO nesta versão, então reexecutar recusaria de
+     * novo, para sempre. As outras quatro causas são transitórias (religar o
+     * conector, mudar a régua, repropor com o formato de hoje); esta não é.
+     *
+     * Perguntando AQUI, a recusa custa zero: a aprovação continua PENDENTE, a
+     * fila continua mostrando o item, e `porQueNao` já traduz a frase para a
+     * tela — porque ela chama esta mesma conferência (`impedimentoDaPorta`).
+     *
+     * A pergunta de `executarAprovada` FICA onde está, como último portão: ela
+     * cobre quem chama sem ter perguntado antes (o script de terminal) e
+     * mantém o desfecho `sem_efeito`, que a tela de Atendimento já sabe ler.
+     */
+    if (!this.efeitos.tem(capabilityId)) {
+      throw new ForbiddenException(
+        `"${capabilityId}" está classificada no catálogo e aprovada, mas o efeito dela não está ` +
+          'ligado nesta versão do OS: não há o que executar. Nada foi enviado e a aprovação NÃO ' +
+          'foi consumida — ela continua pendente na fila. Diferente das outras recusas, esta não ' +
+          'se conserta religando nem repropondo: falta código, e o caminho é abrir a pendência.',
+      );
+    }
+
     const decisao = this.policy.simular(orgId, capabilityId);
     if (!decisao.permitido) {
       throw new ForbiddenException(
@@ -1219,9 +1284,43 @@ export class ToolGateway implements OnModuleInit {
 
   // O resultado inteiro pode ser enorme (uma listagem de 500 tarefas). O
   // registro guarda o suficiente para auditar, não uma segunda cópia do banco.
+  //
+  // ==========================================================================
+  // O CORTE NÃO PODE PARTIR UM PAR SUBSTITUTO — medido em 11/09/2026
+  // ==========================================================================
+  //
+  // `texto.slice(0, 4000)` corta em UNIDADES DE 16 BITS, não em caracteres. Um
+  // resultado com qualquer caractere fora do plano básico — emoji, etiqueta
+  // Unicode, ideograma raro — tem chance de cair com a fronteira dos 4000 no
+  // MEIO de um par substituto. O que sobra é meio caractere, e meio caractere
+  // não é texto válido: o Postgres recusa o `jsonb`, o `toolCall.update` falha,
+  // e a porta transforma uma execução BEM-SUCEDIDA em `erro` — a ferramenta já
+  // tinha rodado, o efeito já tinha acontecido, e o RASTRO registra o contrário.
+  //
+  // Foi descoberto pelo caminho de propósito: um documento envenenado controla
+  // o conteúdo que a busca de memória devolve, então quem escreve o documento
+  // escolhe onde cai o caractere 4000. Fazer o registro da própria ação falhar
+  // é um jeito barato de sumir do RASTRO.
+  //
+  // `Array.from` corta em PONTOS DE CÓDIGO: cada elemento é um caractere
+  // inteiro, e nenhum par nasce partido. O teto continua sendo 4000 unidades de
+  // 16 bits (o `while` desconta), então o tamanho gravado não cresce.
   private resumirResultado(r: unknown): Prisma.InputJsonValue {
     const texto = typeof r === 'string' ? r : JSON.stringify(r ?? null);
-    if (texto.length > 4000) return { resumo: texto.slice(0, 4000), truncado: true };
+    if (texto.length > 4000) return { resumo: cortarSemPartirCaractere(texto, 4000), truncado: true };
     return (r ?? {}) as Prisma.InputJsonValue;
   }
+}
+
+/** Corta em ponto de código, nunca no meio de um par substituto. Ver `resumirResultado`. */
+export function cortarSemPartirCaractere(texto: string, limite: number): string {
+  if (texto.length <= limite) return texto;
+  const pontos = Array.from(texto);
+  let usado = 0;
+  let i = 0;
+  while (i < pontos.length && usado + pontos[i].length <= limite) {
+    usado += pontos[i].length;
+    i++;
+  }
+  return pontos.slice(0, i).join('');
 }

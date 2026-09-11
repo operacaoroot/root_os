@@ -59,6 +59,7 @@ import {
   EmpresaDivergenteError,
 } from '../src/integrations/conectores.service';
 import { ClickupService } from '../src/integrations/clickup.service';
+import { RegistroDeConectores } from '../src/integrations/conectores.registry';
 import { ConectoresConfiguradosRegistry } from '../src/gateway/conectores-configurados.registry';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { AuditService } from '../src/audit/audit.service';
@@ -1005,6 +1006,10 @@ describe.skipIf(!URL)('desligar um conector, por empresa', () => {
         // Idem para o registro de efeitos: o conector declara nele as duas
         // escritas do ClickUp no arranque, que aqui não roda.
         new EfeitosRegistry(),
+        // E idem para o registro do CONTRATO de conector (fatia 5.4): é nele
+        // que o ClickUp declara autorizar/sincronizar/saúde/revogar, também no
+        // arranque. Descartável pelo mesmo motivo dos dois de cima.
+        new RegistroDeConectores(),
       );
 
       await naEmpresa(ORG_A, () => conectores.desligar(ORG_A, 'clickup', { motivo: 'conta suspensa', actorId: 'pedro' }));

@@ -1,11 +1,28 @@
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { join, relative, dirname } from 'node:path';
 import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import {
+  PRAZO_DA_CHAMADA_DE_SONDA_MS,
+  RegistroDeConectores,
+} from '../integrations/conectores.registry';
+import {
+  type ConectorDoContrato,
+  type ContextoDoVerbo,
+  type ResultadoDeAutorizacao,
+  type ResultadoDeRevogacao,
+  type ResultadoDeSincronizacao,
+  type SaudeDeConector,
+  conectado,
+  erroDeConector,
+  frasedoErro,
+  naoConfigurado,
+} from '../integrations/contrato-de-conector';
 
 /**
  * A empresa da casa, de onde o vault do Obsidian é indexado.
@@ -47,10 +64,184 @@ export class ObsidianService implements OnModuleInit {
      * linha. Ver o cabeçalho de `gateway/conectores-configurados.registry.ts`.
      */
     private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+    /**
+     * O contrato único de conector (fatia 5.4). Vem de um módulo `@Global`, como
+     * o registro acima: injetar aqui não acrescenta aresta de módulo nenhuma.
+     */
+    private readonly contrato: RegistroDeConectores,
   ) {}
 
   get configured(): boolean {
     return this.vault.length > 0 && existsSync(this.vault);
+  }
+
+  /**
+   * O CONTRATO ÚNICO — autorizar, sincronizar, saúde, revogar (RF-X-01).
+   *
+   * O Obsidian é o conector que mais exercita a parte "não se aplica" do
+   * contrato, e é bom que exercite: ele não tem OAuth, não tem token e não tem
+   * nada a revogar. O contrato não o esconde atrás de métodos ausentes — ele diz
+   * as três coisas com todas as letras, e é isso que a tela mostra em vez de um
+   * botão cinza sem explicação.
+   */
+  private descritorDoContrato(): ConectorDoContrato {
+    return {
+      chave: 'obsidian',
+      rotulo: 'Obsidian',
+      /*
+       * `POST knowledge/reindex` sempre exigiu `obsidian.editar`. O verbo do
+       * contrato faz a mesma coisa e por isso exige o mesmo — ver
+       * `permissaoParaSincronizar`.
+       */
+      permissaoParaSincronizar: 'obsidian.editar',
+      /*
+       * A vault é um CAMINHO NO DISCO da máquina que roda a API, montado pelo
+       * operador. Não é credencial desta empresa: todas as empresas do processo
+       * enxergam a mesma pasta. O que É por empresa são as notas indexadas — e é
+       * por isso que a sonda de saúde conta as notas DESTA empresa, não as da
+       * pasta.
+       */
+      escopoDaCredencial: 'processo',
+
+      autorizar: async (): Promise<ResultadoDeAutorizacao> => ({
+        tipo: 'manual',
+        instrucao:
+          'O Obsidian não tem autorização a pedir: a vault é uma pasta montada no disco da ' +
+          'máquina que roda a API (só leitura), apontada por variável de ambiente pelo ' +
+          'operador da VPS. Se a sonda diz que não está configurado, o conserto é montar a ' +
+          'pasta e reiniciar a API — não há tela em que alguém clique "permitir".',
+      }),
+
+      sincronizar: async (ctx: ContextoDoVerbo): Promise<ResultadoDeSincronizacao> => {
+        const n = await this.reindex(ctx.orgId);
+        return {
+          tipo: 'feito',
+          resumo: `${n} nota(s) relidas da vault e reindexadas para esta empresa.`,
+          numeros: { notas: n },
+        };
+      },
+
+      /**
+       * A sonda: LÊ a pasta de verdade, SEM BLOQUEAR O PROCESSO.
+       *
+       * `existsSync` responde à pergunta errada — uma vault desmontada no meio do
+       * dia continua com o caminho "existindo" em alguns arranjos de bind mount,
+       * e uma pasta sem permissão de leitura existe e não serve para nada. Abrir
+       * o diretório é a tentativa contra a dependência real, que é o que separa
+       * verde de verde inventado.
+       *
+       * ----------------------------------------------------------------------
+       * POR QUE `readdir` ASSÍNCRONO, E POR QUE ISSO NÃO É PREFERÊNCIA DE ESTILO
+       * ----------------------------------------------------------------------
+       * `readdirSync` num ponto de montagem PENDURADO (um NFS/sshfs cujo
+       * servidor sumiu — que é o modo normal de uma vault montada morrer)
+       * bloqueia a thread principal. E o relógio de fora do registro, que existe
+       * justamente para que um conector travado não segure a tela, NÃO PODE
+       * DISPARAR enquanto o laço de eventos está preso: ele é um `setTimeout`.
+       * O resultado seria a API inteira parada — não a linha do Obsidian em
+       * vermelho, que é o que esta fatia promete. A versão assíncrona faz a
+       * chamada de disco no pool de threads do libuv: o laço continua girando, o
+       * relógio dispara, e uma pasta travada derruba a LINHA dela.
+       *
+       * O prazo de dentro (`Promise.race`) existe pelo mesmo motivo dos outros
+       * conectores: vencer o relógio de fora para que a frase que chegue à tela
+       * seja esta, que diz o que fazer.
+       */
+      saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
+        if (!this.vault) {
+          return naoConfigurado(
+            'Nenhuma vault do Obsidian foi apontada no ambiente da API. Enquanto não houver ' +
+              'pasta montada, a base de conhecimento fica vazia para todas as empresas.',
+          );
+        }
+        const comecou = Date.now();
+        let arquivos: number;
+        try {
+          arquivos = (await this.lerRaizDaVault()).length;
+        } catch (e) {
+          return erroDeConector(
+            `Não consegui ler a vault em "${this.vault}": ${frasedoErro(e)}. ` +
+              'A pasta pode ter sido desmontada, estar pendurada, ou o processo da API pode ter ' +
+              'perdido permissão de leitura.',
+            Date.now() - comecou,
+          );
+        }
+        /*
+         * A PARTE POR EMPRESA. O disco é do processo; o índice é do cliente.
+         *
+         * ZERO NOTA NÃO É VERDE, e a primeira versão desta fatia dizia o
+         * contrário de si mesma aqui: escrevia que responder "a pasta abre" seria
+         * verde verdadeiro sobre a pergunta errada — o mesmo defeito do Google —
+         * e em seguida devolvia verde com zero nota indexada, mudando só a
+         * mensagem. A pergunta desta sonda é "ESTA EMPRESA consegue usar a base
+         * de conhecimento AGORA?", e com o índice vazio a resposta é não.
+         *
+         * `nao_configurado` e não `erro`: nada falhou. Falta rodar a indexação —
+         * e o botão que faz isso está na mesma linha da tela.
+         */
+        const notas = await this.prisma.knowledgeNote.count({ where: { orgId: ctx.orgId } });
+        if (notas === 0) {
+          return naoConfigurado(
+            `A vault abre (${arquivos} entrada(s) na raiz), mas NENHUMA nota está indexada para ` +
+              'esta empresa — a base de conhecimento responde vazia a qualquer busca. Rode ' +
+              '"sincronizar" nesta linha para indexar.',
+          );
+        }
+        return conectado(
+          Date.now() - comecou,
+          `vault legível (${arquivos} entrada(s) na raiz) · ${notas} nota(s) indexada(s) para ` +
+            'esta empresa.',
+        );
+      },
+
+      revogar: async (): Promise<ResultadoDeRevogacao> => ({
+        tipo: 'nao_se_aplica',
+        motivo:
+          'Não há credencial do Obsidian para queimar: a vault é uma pasta lida do disco, sem ' +
+          'token nem senha. Para esta empresa parar de usar a base de conhecimento agora, ' +
+          'DESLIGUE o conector em Conexões. Para apagar o que já foi indexado, rode ' +
+          '"sincronizar" com a vault vazia ou desmontada — o índice é substituído a cada ' +
+          'reindexação.',
+      }),
+    };
+  }
+
+  /**
+   * Lê a raiz da vault com prazo próprio, sem bloquear o laço de eventos.
+   *
+   * `readdir` do `fs/promises` roda no pool de threads do libuv — o laço
+   * continua girando, e por isso o relógio de fora do registro consegue
+   * disparar. O `race` daqui é o corte de DENTRO: ele vence o de fora e entrega
+   * à tela a frase deste conector em vez da genérica.
+   *
+   * O que o prazo NÃO faz é cancelar a chamada de disco: `readdir` não aceita
+   * `AbortSignal` em todas as versões suportadas, e uma thread do pool presa num
+   * ponto de montagem morto fica presa. São quatro threads por padrão, então o
+   * pior caso conhecido está escrito aqui: quatro sondas simultâneas contra uma
+   * vault pendurada esgotam o pool e outras operações de disco esperam. Não é o
+   * mesmo que travar a API — e é por isso que a resposta de erro sai na hora,
+   * com o nome do problema, em vez de a tela ficar girando.
+   */
+  private async lerRaizDaVault(prazoMs = PRAZO_DA_CHAMADA_DE_SONDA_MS): Promise<string[]> {
+    let relogio: ReturnType<typeof setTimeout> | null = null;
+    const estouro = new Promise<never>((_, rejeitar) => {
+      relogio = setTimeout(
+        () =>
+          rejeitar(
+            new Error(
+              `a pasta não respondeu em ${prazoMs} ms — provavelmente é um ponto de montagem ` +
+                'pendurado (o servidor do NFS/sshfs sumiu sem fechar a conexão)',
+            ),
+          ),
+        prazoMs,
+      );
+      relogio.unref?.();
+    });
+    try {
+      return await Promise.race([readdir(this.vault), estouro]);
+    } finally {
+      if (relogio) clearTimeout(relogio);
+    }
   }
 
   onModuleInit(): void {
@@ -72,6 +263,15 @@ export class ObsidianService implements OnModuleInit {
      * diferentes e a tela precisa das duas.
      */
     this.conectoresConfigurados.registrar('obsidian', () => this.configured);
+
+    /*
+     * O CONTRATO ÚNICO (fatia 5.4), pela mesma razão e com a mesma ordem: ANTES
+     * do retorno antecipado. Uma máquina sem vault precisa responder "não
+     * configurado, e aqui está o porquê" — e o registro do contrato derruba o
+     * arranque quando um conector cobrado não se inscreve, exatamente como o de
+     * cima.
+     */
+    this.contrato.registrar(this.descritorDoContrato(), 'ObsidianService');
 
     if (!this.configured) {
       if (this.vault) this.log.warn(`OBSIDIAN_VAULT_PATH="${this.vault}" não existe — base de conhecimento off.`);

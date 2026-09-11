@@ -161,8 +161,23 @@ jobs:
       # Os dois pisos sobem junto pelo motivo de sempre: em 9, sumirem os quatro
       # arquivos novos não reprovaria nada.
       # 116/142 = 18% de folga, a mesma proporção das ondas anteriores.
-      PISO_CASOS_WEB: '116'
-      PISO_ARQUIVOS_WEB: '13'
+      #
+      # ONDA 8, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 196 casos em 16 arquivos.
+      #   aprovacoes-permissao 16, atendimento 25, blocos 7, busca 15, card 4,
+      #   conexoes 13, cta 2, dados 13, erro-da-api 10, filtros 12, nav 19,
+      #   regua 14, regua-modulos 12, regua-simulador 24, resgate-central 5,
+      #   storage 5.
+      #
+      # +54 casos e +3 arquivos sobre a onda 6. Os três novos são das duas
+      # fatias desta onda: `atendimento` (25) e `aprovacoes-permissao` (16) da
+      # fila de aprovação (3.10), `conexoes` (13) do contrato de conector (5.4).
+      # Nenhum arquivo antigo encolheu.
+      #
+      # O piso de ARQUIVOS vai a 16, colado no real — `conexoes` tem 13 casos e
+      # `aprovacoes-permissao` 16: nenhum piso de CASOS com folga útil notaria a
+      # falta de um deles. O de CASOS vai a 161 (18% de folga sobre 196).
+      PISO_CASOS_WEB: '161'
+      PISO_ARQUIVOS_WEB: '16'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -306,8 +321,45 @@ jobs:
       #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97 (os 89 daqui mais
       #     os 8 da seção de isolamento);
       #   · `rastro-retencao` com papel restrito: 33 (os 31 daqui mais 2).
-      PISO_CASOS_API: '548'
-      PISO_ARQUIVOS_API: '21'
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 8, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 822 casos em 25 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime das anteriores: conjunto `padrao`, nenhum caso pulado, com
+      # `TEST_DATABASE_URL` no Postgres descartável. +154 casos e +4 arquivos
+      # sobre a onda 7, e TODOS os 154 vêm dos quatro arquivos novos — nenhum
+      # arquivo antigo encolheu nem cresceu:
+      #
+      #   adversarial 66            (fatia 3.8)
+      #   contrato-de-conector 71   (fatia 5.4)
+      #   fila-de-aprovacao 13      (fatia 3.10)
+      #   publicar-peca 4           (catraca de dívida declarada — ver abaixo)
+      #
+      # Os 21 de antes, iguais: alcada-reautenticacao 32, arquitetura 21,
+      # cofre 89, conector-desligado 37, contexto-aprovacao 10,
+      # contexto-execucao 40, env 7, escritas-pela-porta 37, llm-step 10,
+      # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      # porta 35, provisionamento 40, rastro-por-nivel 22, rastro-retencao 31,
+      # rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      # token-de-sessao 8, validacao 9.
+      #
+      # `publicar-peca.test.ts` NÃO prova que uma coisa funciona: ele MEDE uma
+      # regressão declarada (publicar peça pela tela não funciona para ninguém
+      # desde 29/08) e fica VERMELHO no dia do conserto, com a mensagem dizendo
+      # o que apagar. É o padrão de dívida declarada da casa. Ele conta para o
+      # piso como qualquer outro — o que não se quer é que ele suma da coleta.
+      #
+      # O piso de ARQUIVOS vai a 25, colado no real. O de CASOS vai a 674 —
+      # 18% de folga sobre 822, a mesma proporção de todas as ondas anteriores.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão (todos INALTERADOS em relação à
+      # onda 7 — nenhuma fatia desta onda mexeu nas suítes de isolamento):
+      #   · isolamento (`test:isolamento`, job próprio): 267 casos;
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
+      #   · `rastro-retencao` com papel restrito: 33.
+      PISO_CASOS_API: '674'
+      PISO_ARQUIVOS_API: '25'
 
     steps:
       - uses: actions/checkout@v4
