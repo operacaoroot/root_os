@@ -12,6 +12,22 @@ import { PREFIXO_EVENTO } from "./analytics";
  */
 const API = process.env.API_INTERNAL_URL ?? "http://localhost:4001";
 
+/**
+ * De QUEM é este resgate — RF-T-04.
+ *
+ * A API resolve a empresa do evento pela chave do pixel, que é o `id` da `Org`
+ * (`apps/api/src/events/pixel-tenant.service.ts`). Sem chave, o evento cai na
+ * empresa PADRÃO — que hoje é a ROOT, dona da Central, então funcionava por
+ * coincidência: no dia em que a Central mudar de tenant, o dono dos eventos de
+ * resgate muda em silêncio.
+ *
+ * Esta variável roda no SERVIDOR (Route Handler), então vale em tempo de
+ * execução: basta estar no bloco `environment:` do serviço `web` do compose.
+ * Vazia, o corpo sai sem `pixel_key` e o comportamento é o de sempre — a chave
+ * ausente é um caso previsto na API, não um erro.
+ */
+const CHAVE = (process.env.CENTRAL_PIXEL_KEY ?? "").trim();
+
 export function registrarResgate(codigo: string, slug: string | null, rid?: string): void {
   const anonimo = rid ?? `anon-${crypto.randomUUID()}`;
   void fetch(`${API}/api/events/track`, {
@@ -27,6 +43,9 @@ export function registrarResgate(codigo: string, slug: string | null, rid?: stri
       anonymous_id: anonimo,
       metadata: { codigo, slug: slug ?? "", encontrado: slug ? "sim" : "nao" },
       ts: Date.now(),
+      // Só quando existe: `pixel_key: ""` é RECUSA na API (chave presente e
+      // inutilizável), e recusar o resgate seria pior que contá-lo no padrão.
+      ...(CHAVE ? { pixel_key: CHAVE } : {}),
     }),
     cache: "no-store",
   }).catch(() => undefined);

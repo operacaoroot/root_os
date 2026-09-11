@@ -47,7 +47,18 @@ services:
   # --- Aplicações (imagem ÚNICA do monorepo; ver Dockerfile na raiz) ---
   # Segredos vêm do ambiente (deploy/up.sh injeta ~/.config/root/*.env + apps/api/.env).
   api:
-    build: .
+    # A imagem `mktos-app` é construída AQUI e usada pelos três serviços. Por
+    # isso o build arg do pacote de browser da web mora neste bloco, e não no
+    # serviço `web`: quando o Next compila, quem está rodando é este build.
+    build:
+      context: .
+      args:
+        # Ver o `ARG` homônimo no Dockerfile. `NEXT_PUBLIC_*` é trocada pelo
+        # VALOR no `next build`; posta só no `environment:` do serviço `web`,
+        # ela não chega ao navegador — o pacote já foi compilado sem ela.
+        # Trocar esta chave exige RECONSTRUIR a imagem (`--build`), não basta
+        # reiniciar o container.
+        NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
     image: mktos-app
     container_name: mktos_api
     working_dir: /app/apps/api
@@ -221,6 +232,23 @@ services:
       # passar pelo rewrite /api (que existe para o browser).
       API_INTERNAL_URL: http://api:4001
       BIO_HOST: ${BIO_HOST:-bio.operacaoroot.com}
+      # De quem são os eventos da Root Central (RF-T-04). É o `id` da Org dona
+      # da Central — uuid, não slug. Vazia, os eventos caem na empresa PADRÃO do
+      # pixel (hoje a ROOT), que é o comportamento de antes desta fatia.
+      #
+      # DUAS VARIÁVEIS PORQUE SÃO DOIS MOMENTOS, e confundi-los custa uma tarde:
+      #  · CENTRAL_PIXEL_KEY é lida NO SERVIDOR, em tempo de execução, pelo Route
+      #    Handler do resgate (/central/r/:codigo). Esta linha basta para ela.
+      #  · NEXT_PUBLIC_CENTRAL_PIXEL_KEY é lida NO BROWSER, e o Next a troca pelo
+      #    valor durante o `next build` — variável de ambiente do container NÃO
+      #    chega ao pacote já compilado. Quem a faz valer é o `args:` do bloco
+      #    `build:` do serviço `api` (é ele que constrói a imagem `mktos-app`
+      #    que este serviço usa); a linha abaixo existe só para as duas
+      #    aparecerem juntas e para o `env-status.sh` enxergá-la.
+      #    CONSEQUÊNCIA PRÁTICA: trocar esta chave exige reconstruir a imagem
+      #    (`deploy/up.sh` já força `--build`); `docker restart` não muda nada.
+      CENTRAL_PIXEL_KEY: ${CENTRAL_PIXEL_KEY:-}
+      NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
     depends_on:
       api: { condition: service_healthy }
     ports:

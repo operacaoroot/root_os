@@ -83,6 +83,25 @@ export const TrackEventSchema = z.object({
   value: z.number().optional(),
   metadata: z.record(z.unknown()).optional(),
   ts: z.number().optional(),
+  /*
+   * DE QUEM É ESTE EVENTO — RF-T-04. O `id` da empresa (uuid), publicado pelo
+   * pixel em `data-key` (ver `apps/web/public/pixel.js`).
+   *
+   * `z.unknown()` e não `z.string()`, de propósito. Este é um `z.object` sem
+   * `passthrough`: tipar como string faria o Zod REPROVAR o corpo inteiro
+   * quando a chave viesse como número, lista ou nulo — e a resposta viraria um
+   * 400, quando o desenho desta rota anônima é responder SEMPRE a mesma coisa
+   * (ver `apps/api/src/events/events.controller.ts`). Chave com lixo tem de
+   * cair no caminho de recusa contada, não no de erro de validação: o evento é
+   * descartado do mesmo jeito, mas quem chama não ganha um sinal para varrer.
+   *
+   * Quem classifica o valor é `chaveDoPixel` em `events/pixel-tenant.service.ts`,
+   * que separa AUSENTE (pixel antigo, cai na empresa padrão) de INUTILIZÁVEL
+   * (instalação errada ou sonda, recusa). Declarar o campo aqui é o que impede
+   * o schema de DESCARTÁ-LO em silêncio — foi por isso que o controller nasceu
+   * lendo o corpo cru.
+   */
+  pixel_key: z.unknown().optional(),
 });
 export type TrackEventInput = z.infer<typeof TrackEventSchema>;
 

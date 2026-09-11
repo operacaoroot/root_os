@@ -31,6 +31,45 @@
  * O nome `marketing_os` puro NÃO passa na trava — e é de propósito: um banco
  * chamado como o de produção não se anuncia como descartável.
  *
+ * ---------------------------------------------------------------------------
+ * OS BANCOS DO CONTAINER `mktos-shadow` — QUATRO, E SÓ ESTES QUATRO
+ * ---------------------------------------------------------------------------
+ * Inventariados e podados na estabilização da onda 4 (11/09/2026). Cada agente
+ * de fatia criava o seu (`..._modulos`, `..._provisionamento`, `..._ctx`,
+ * `..._politica`) e ia embora deixando-o para trás; um deles ficou com o
+ * CHECKSUM de uma migration que depois foi reescrita, e nesse estado
+ * `prisma migrate deploy` RECUSA rodar, com um erro que não tem nada a ver com
+ * o assunto. Banco descartável esquecido não é lixo inofensivo: é armadilha
+ * para o próximo que apontar uma suíte para ele.
+ *
+ *   marketing_os          — bancada de MIGRATION. É contra ele que se roda
+ *                           `db:deploy` (prova que o histórico aplica) e depois
+ *                           `prisma migrate dev --create-only`. Não roda suíte:
+ *                           o nome não passa na trava acima, de propósito.
+ *   marketing_os_shadow   — o banco sombra do PRÓPRIO Prisma, usado por
+ *                           `db:diff` (`SHADOW_DATABASE_URL`). O Prisma cria e
+ *                           apaga o conteúdo dele sozinho; não guarde nada ali.
+ *   marketing_os_test     — a suíte padrão da api inteira
+ *                           (`pnpm --filter @mktos/api test`). Um banco só para
+ *                           os 13 arquivos, que rodam em PARALELO nele — é por
+ *                           isso que teste nenhum pode contar linha sem `where`
+ *                           (a vizinha apaga as dela no meio) nem ligar RLS.
+ *   marketing_os_test_rls — o que NÃO cabe no de cima: `test:isolamento` e a
+ *                           seção de RLS de `rotas-publicas-tenant.test.ts`.
+ *                           As duas ligam `ROW LEVEL SECURITY`, que vale para o
+ *                           BANCO inteiro, e as duas precisam do papel restrito
+ *                           `mktos_app` com senha:
+ *                             docker exec mktos-shadow psql -U mkt -d marketing_os_test_rls \
+ *                               -c "ALTER ROLE mktos_app WITH LOGIN PASSWORD '<senha local>'"
+ *                             TENANT_DATABASE_URL='postgresql://mktos_app:<senha>@localhost:55432/marketing_os_test_rls'
+ *
+ * Precisou de um quinto por um dia? Use e APAGUE:
+ *   docker exec mktos-shadow psql -U mkt -d postgres -c 'DROP DATABASE <nome>'
+ *
+ * Depois de qualquer migration nova, os quatro ficam para trás ao mesmo tempo.
+ * Atualizar é `db:deploy` em cada um — e é mais barato do que descobrir, no meio
+ * de uma suíte vermelha, que o banco é que estava velho.
+ *
  * Este arquivo NÃO termina em `.test.ts`, então o glob do vitest em
  * `apps/api/vitest.config.ts` não o coleta como suíte. Se um dia alguém o
  * renomear para `.test.ts`, ele vira um arquivo de teste sem nenhum caso — e o

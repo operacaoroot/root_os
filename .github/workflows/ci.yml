@@ -2,7 +2,9 @@
 #
 # Três jobs, nesta ordem de importância:
 #   1. qualidade   — typecheck + suítes de policy, web e api, COM banco de verdade.
-#   2. isolamento  — a suíte de isolamento entre tenants, que mora fora do `pnpm test`.
+#   2. isolamento  — a suíte de isolamento entre tenants (fora do `pnpm test`) e a
+#                    seção de RLS das rotas públicas, que precisa do papel restrito
+#                    e de um banco só dela.
 #   3. migrations  — o histórico aplica num banco vazio E corresponde ao schema.
 #
 # ---------------------------------------------------------------------------
@@ -18,11 +20,16 @@
 #   - "Tipos e testes (policy, web, api)"
 #   - "Migrations aplicam do zero"
 #
-# NÃO marcar, por enquanto:
-#   - "Isolamento entre tenants" — o passo da suíte roda com `continue-on-error`,
-#     então o job termina VERDE mesmo quando a suíte falha. Marcá-lo hoje seria
-#     uma trava decorativa: obrigatória e sempre satisfeita. Ele entra na lista
-#     no mesmo commit que apagar o `continue-on-error`.
+# Sobre "Isolamento entre tenants": ele tem DOIS passos de teste, e só um deles
+# pode reprovar hoje.
+#   - "Suíte de isolamento" roda com `continue-on-error`: ela sai vermelha por
+#     desenho enquanto o RLS não estiver ligado, e o job termina verde mesmo
+#     assim. É dívida conhecida, não alarme.
+#   - "Rotas públicas com o isolamento por linha LIGADO" NÃO tem
+#     `continue-on-error`: ele passa hoje, e vermelho ali é regressão de verdade.
+# Ou seja: marcar este job como obrigatório JÁ protege alguma coisa (o segundo
+# passo), só não protege o isolamento em si. A trava deixa de ser parcial no
+# mesmo commit que apagar o `continue-on-error` do primeiro passo.
 # Isso é configuração no GitHub, fora do repositório, e só o dono do repo faz.
 #
 # ---------------------------------------------------------------------------
@@ -118,8 +125,8 @@ jobs:
       MKTOS_CONJUNTO_DE_TESTES: padrao
       #
       # PISOS — o mínimo que precisa ter rodado para o verde valer alguma coisa.
-      # Entre parênteses, a contagem REAL medida na estabilização da onda 2
-      # (10/09/2026), rodando as três suítes no Mac contra o Postgres
+      # Entre parênteses, a contagem REAL medida na estabilização da onda 4
+      # (11/09/2026), rodando as três suítes no Mac contra o Postgres
       # descartável. Os pisos ficam abaixo dela de propósito: piso é chão, não
       # espelho — colar no número exato transforma qualquer teste a mais numa
       # edição obrigatória deste arquivo. Ao remover teste de propósito, baixe o
@@ -127,30 +134,44 @@ jobs:
       #
       # A DIVISÃO DE TRABALHO ENTRE OS DOIS PISOS, que é o que faz a folga caber:
       # quem pega ARQUIVO QUE SUMIU DA COLETA é o piso de ARQUIVOS, e ele é
-      # colado no número real. Perder um arquivo inteiro pode custar só 9 casos
-      # (é o tamanho do menor arquivo da api hoje), e nenhum piso de casos com
+      # colado no número real. Perder um arquivo inteiro pode custar só 5 casos
+      # (é o tamanho do menor arquivo do web hoje), e nenhum piso de casos com
       # folga útil pegaria isso — mas 8 < 9 reprova na hora. O piso de CASOS
       # cuida do outro desvio: a suíte que encolhe por dentro sem perder arquivo.
-      PISO_CASOS_POLICY: '20'   # (37) packages/policy/test/politica.test.ts
-      PISO_ARQUIVOS_POLICY: '1'
-      PISO_CASOS_WEB: '70'      # (76) apps/web/tests/{unit,component}, 8 arquivos
-      PISO_ARQUIVOS_WEB: '8'
-      # (243) em 10 arquivos: arquitetura 21, contexto-aprovacao 10,
-      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
-      # modulos-por-tenant 97, porta 20, runtime 9, validacao 9. A onda 2 levou a
-      # suíte de 76 para 146, e a onda 3 de 146 para 243 com o arquivo novo dos
-      # módulos por empresa.
       #
-      # Os dois pisos subiram JUNTO com ela, e é obrigatório que subam: o de
-      # ARQUIVOS é colado no número real (10) porque é ele quem pega arquivo que
-      # some da coleta — deixá-lo em 9 seria autorizar, por escrito, a perda
-      # silenciosa de um arquivo inteiro. O de CASOS vai para 200 (18% de folga
-      # sobre 243), a mesma proporção que a onda 2 escolheu; deixá-lo em 120
-      # deixaria a suíte de módulos inteira, 97 casos, sumir sem uma reclamação.
-      # `tenant-isolation.test.ts` não entra nesta conta — conjunto `padrao`
-      # o exclui, e ele tem job próprio abaixo.
-      PISO_CASOS_API: '200'
-      PISO_ARQUIVOS_API: '10'
+      # (74) em 2 arquivos: politica 37, sobrescrita 37. A onda 4 DOBROU esta
+      # suíte com `test/sobrescrita.test.ts`; o piso de 20 deixaria o arquivo
+      # novo inteiro sumir sem uma reclamação.
+      PISO_CASOS_POLICY: '60'
+      PISO_ARQUIVOS_POLICY: '2'
+      # (81) em 9 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
+      # filtros 12, nav 18, resgate-central 5, storage 5. O arquivo novo da
+      # onda 4 (resgate-central) é o MENOR da suíte, com 5 casos — é exatamente
+      # o caso que só o piso de ARQUIVOS pega, por isso ele vai para 9.
+      PISO_CASOS_WEB: '70'
+      PISO_ARQUIVOS_WEB: '9'
+      # (348) em 13 arquivos: arquitetura 21, contexto-aprovacao 10,
+      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
+      # modulos-por-tenant 97, politica-por-tenant 27, porta 20,
+      # provisionamento 40, rotas-publicas-tenant 38, runtime 9, validacao 9.
+      # A onda 2 levou a suíte de 76 para 146, a onda 3 de 146 para 243 e a
+      # onda 4 de 243 para 348, com três arquivos novos.
+      #
+      # Os dois pisos sobem JUNTO com ela, e é obrigatório que subam: o de
+      # ARQUIVOS é colado no número real (13) porque é ele quem pega arquivo que
+      # some da coleta — deixá-lo em 10 seria autorizar, por escrito, a perda
+      # silenciosa dos três arquivos novos. O de CASOS vai para 285 (18% de
+      # folga sobre 348), a mesma proporção das ondas anteriores.
+      #
+      # Os 38 casos de `rotas-publicas-tenant` são os que rodam SEM `RLS_NO_TESTE`.
+      # A seção de RLS daquele arquivo (mais 15) não entra nesta conta: ela nem
+      # é registrada aqui, porque liga `ROW LEVEL SECURITY` no banco INTEIRO e
+      # derrubaria os outros arquivos, que rodam em paralelo contra o mesmo
+      # banco. Ela tem passo próprio no job `isolamento`, abaixo.
+      # `tenant-isolation.test.ts` também não entra — conjunto `padrao` o
+      # exclui, e ele tem job próprio.
+      PISO_CASOS_API: '285'
+      PISO_ARQUIVOS_API: '13'
 
     steps:
       - uses: actions/checkout@v4
@@ -521,6 +542,68 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "Enquanto nenhuma tabela tiver RLS ligado, este resultado é a linha de base de uma dívida conhecida, não um alarme novo. Depois que o RLS estiver ligado, o mesmo vermelho passa a significar vazamento real entre tenants — confira em qual dos dois mundos você está antes de ignorar." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # -----------------------------------------------------------------------
+      # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
+      #
+      # `test/rotas-publicas-tenant.test.ts` tem um bloco final que LIGA
+      # `ROW LEVEL SECURITY` de verdade nas tabelas que as rotas públicas tocam,
+      # cria as policies que a fatia 1.5 vai escrever, roda as rotas e confere
+      # que sob a sentinela da resolução pública NÃO SE ESCREVE. Ele é o único
+      # lugar onde esse furo (uma policy `FOR ALL` sem `WITH CHECK`) é medido em
+      # vez de descrito.
+      #
+      # Não pode rodar no job 1 por um motivo de banco, não de gosto: `ENABLE
+      # ROW LEVEL SECURITY` vale para o BANCO inteiro, e o vitest roda os
+      # arquivos em paralelo contra o mesmo Postgres — ligado lá, ele derrubaria
+      # `porta.test.ts` e `contexto-aprovacao.test.ts`. Por isso o arquivo só
+      # registra a seção quando `RLS_NO_TESTE=1`, e aqui ela roda SOZINHA, num
+      # processo do vitest só dela.
+      #
+      # Este job é o lugar certo porque só ele tem o papel restrito com senha
+      # (`TENANT_DATABASE_URL`): sem ele a seção mede o DONO das tabelas, e dono
+      # ignora policy de linha.
+      #
+      # SEM `continue-on-error`, de propósito: ao contrário da suíte de
+      # isolamento, esta passa HOJE (medido: 53 casos verdes). Vermelho aqui é
+      # regressão, não dívida conhecida — e o passo roda DEPOIS da suíte de
+      # isolamento para não deixar RLS ligado debaixo dela caso quebre no meio.
+      # -----------------------------------------------------------------------
+      - name: Rotas públicas com o isolamento por linha LIGADO
+        env:
+          RLS_NO_TESTE: '1'
+          RESUMO_RLS: ${{ runner.temp }}/resumo-rls.json
+          # 53 = 38 casos de sempre + 15 da seção de RLS. Piso, não espelho.
+          PISO_CASOS_RLS: '50'
+        run: |
+          pnpm --filter @mktos/api exec vitest run test/rotas-publicas-tenant.test.ts -- \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_RLS"
+          # Fail-closed: se a seção não for registrada (interruptor perdido,
+          # TENANT_DATABASE_URL vazia), o arquivo roda só os 38 casos de sempre
+          # e passaria VERDE sem ter medido RLS nenhum. O piso é o que impede.
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_RLS, "utf8")); }
+            catch (e) { console.log("::error::resumo da secao de RLS ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_RLS);
+            const total = r.numTotalTests;
+            console.log("rotas-publicas-tenant com RLS: " + total + " casos, " +
+              r.numPassedTests + " verdes, " + r.numFailedTests + " vermelhos, " +
+              r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a secao de RLS das rotas publicas nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                " (esperados 53: 38 sem RLS + 15 com). A secao de RLS nao foi registrada — quase sempre " +
+                "RLS_NO_TESTE ou TENANT_DATABASE_URL que nao chegou. Ela NAO aparece como pulada, porque o " +
+                "arquivo a registra por if e nao por describe.skipIf; este piso e o que a impede de sumir em silencio.");
+              process.exit(1);
+            }
+          '
 
   # ---------------------------------------------------------------------------
   # 3. As migrations aplicam do zero E correspondem ao schema.

@@ -30,16 +30,17 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  * Precisa de TEST_DATABASE_URL com as migrations aplicadas e a política
  * semeada. O container descartável é o mesmo do `porta.test.ts` (veja lá como
  * subi-lo); daqui em diante:
- *   docker exec mktos-shadow psql -U mkt -d postgres -c \
- *     'CREATE DATABASE marketing_os_test_ctx'
- *   DATABASE_URL=...marketing_os_test_ctx pnpm --filter @mktos/api db:deploy
- *   DATABASE_URL=...marketing_os_test_ctx pnpm --filter @mktos/api db:seed:politica
- *   TEST_DATABASE_URL=...marketing_os_test_ctx \
+ *   TEST_DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test' \
  *     npx vitest run test/contexto-aprovacao.test.ts
  *
- * Banco PRÓPRIO, e não o mesmo de `porta.test.ts`: as duas suítes limpam por
- * `orgId`, mas rodar em paralelo no mesmo banco embaralharia a cauda do
- * EventLog (que é serializada por empresa, não por suíte).
+ * O BANCO É O MESMO DAS OUTRAS — `marketing_os_test`, o único da suíte padrão
+ * (inventário em `test/banco-de-teste.ts`). Este comentário pedia um banco
+ * PRÓPRIO ("a cauda do EventLog embaralha"), e a recomendação era falsa desde
+ * sempre: `pnpm --filter @mktos/api test` e a CI rodam os 13 arquivos EM
+ * PARALELO contra um banco só. O que torna isso seguro não é separar banco — é
+ * cada suíte só afirmar sobre o que ela mesma criou: limpeza por `orgId`,
+ * contagem com `where`, marca própria por rodada. Banco separado só escondia
+ * quem não fazia isso (ver o conserto em `provisionamento.test.ts`).
  */
 const URL = process.env.TEST_DATABASE_URL;
 const ORG = 'org-teste-contexto';

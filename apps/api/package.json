@@ -28,6 +28,7 @@
     "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts",
     "smoke": "node scripts/smoke-boot.mjs",
     "perguntar": "node dist/scripts/perguntar.js",
+    "provisionar": "node dist/scripts/provisionar-tenant.js",
     "relatorio:observar": "node dist/scripts/relatorio-observar.js"
   },
   "prisma": {

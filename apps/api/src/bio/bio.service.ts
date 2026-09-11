@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BioPlataforma } from '@prisma/client';
 import type {
   BioLinkInput,
@@ -8,6 +8,12 @@ import type {
   BioPublicPage,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  MemoriaDeResolucao,
+  resolverTenantDaPage,
+  resolverTenantDoHandle,
+  resolverTenantDoLink,
+} from '../common/tenant-publico';
 import { AuditService } from '../audit/audit.service';
 import { BioChallengeService } from './bio-challenge.service';
 import { BioCredenciaisService } from './bio-credenciais.service';
@@ -16,8 +22,25 @@ import * as tiktok from './plataformas/tiktok';
 
 const STATE_VALIDO_MIN = 10;
 
+/*
+ * A memória curta da resolução de avatar. Validade curta porque o dado é o
+ * endereço da empresa de uma página, que muda quase nunca; o teto existe porque
+ * o nome do arquivo vem de fora (ver `tenantDaPage`).
+ */
+const AVATAR_VALIDADE_MS = 60_000;
+const AVATAR_VALIDADE_NEGATIVA_MS = 30_000;
+const AVATAR_TETO = 1_000;
+
 @Injectable()
 export class BioService {
+  private readonly log = new Logger('Bio');
+  /** pageId -> orgId (ou `null` para "essa página não existe"). */
+  private readonly avatares = new MemoriaDeResolucao<string>({
+    validadeMs: AVATAR_VALIDADE_MS,
+    validadeNegativaMs: AVATAR_VALIDADE_NEGATIVA_MS,
+    teto: AVATAR_TETO,
+  });
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -215,6 +238,79 @@ export class BioService {
 
   // ---------- Página pública ----------
 
+  /*
+   * DE QUEM É A REQUISIÇÃO — as três consultas de resolução (RF-T-04)
+   * ================================================================
+   *
+   * As rotas públicas da bio chegam sem token: o `ContextoInterceptor` abre o
+   * contexto com `orgId: null` de propósito. Mas a página `@fulano` é de UMA
+   * empresa, e o clique em `/r/:linkId` é de UMA empresa — o que falta é
+   * resolvê-la a partir do único dado que o visitante trouxe (o handle, o id do
+   * link, o nome do arquivo).
+   *
+   * A CONSULTA EM SI NÃO MORA AQUI: mora em `common/tenant-publico.ts`, junto da
+   * sentinela que ela abre. O invólucro da sentinela não é exportado, e é por
+   * isso que estas três são casca — se a consulta morasse neste arquivo, o
+   * invólucro teria de sair de lá, e qualquer código a um import de distância
+   * poderia rodar sob a sentinela. Os métodos continuam existindo porque o
+   * controller público injeta este serviço, não o módulo `common`.
+   *
+   * As três devolvem o ENDEREÇO da empresa e quase nada mais. Conteúdo de tenant
+   * é lido DEPOIS, já dentro de `comTenantPublico`, pelos métodos que já
+   * existiam.
+   *
+   * Sim, isso custa uma consulta a mais por requisição pública — indexada e por
+   * chave única. É o preço de a rota saber de quem ela é antes de ler qualquer
+   * coisa, em vez de descobrir junto com o conteúdo.
+   */
+
+  /** A empresa dona do handle. `publicada` vem junto porque decide o 404. */
+  async tenantDoHandle(
+    handle: string,
+  ): Promise<{ pageId: string; orgId: string; publicada: boolean } | null> {
+    return resolverTenantDoHandle(this.prisma, handle);
+  }
+
+  /** A empresa dona do link de saída. */
+  async tenantDoLink(linkId: string): Promise<{ orgId: string } | null> {
+    return resolverTenantDoLink(this.prisma, linkId);
+  }
+
+  /**
+   * A empresa dona da página cujo avatar está sendo pedido.
+   *
+   * Não exige `publicada`: a prévia do painel usa a MESMA URL pública de avatar,
+   * e exigir publicação aqui deixaria o rascunho sem foto na própria tela de
+   * quem o está escrevendo.
+   *
+   * COM MEMÓRIA CURTA, INCLUSIVE DA RESPOSTA NEGATIVA — e é conserto medido.
+   * Antes da fatia 1.4 a entrega de avatar não tocava no banco. Depois dela,
+   * qualquer pessoa na internet passava a disparar uma consulta por requisição
+   * só escrevendo um nome DENTRO da convenção (`<uuid>-<hex>.png`) que não
+   * resolve — e nenhum limite de taxa existe nesta API. Guardar o "não existe"
+   * fecha a torneira: a partir da primeira, a resposta sai da memória.
+   */
+  async tenantDaPage(pageId: string): Promise<{ orgId: string } | null> {
+    const agora = Date.now();
+    const lembrada = this.avatares.lembrar(pageId, agora);
+    if (lembrada.lembrada) {
+      return lembrada.valor === null ? null : { orgId: lembrada.valor };
+    }
+
+    const achado = await resolverTenantDaPage(this.prisma, pageId);
+    this.avatares.guardar(pageId, achado?.orgId ?? null, agora);
+    if (!achado) {
+      /*
+       * `debug`, não `warn`: a linha é disparável por qualquer um, de fora, sem
+       * credencial. Rebaixada, ela continua servindo para quem for procurar
+       * órfão no bucket e não serve mais para encher o disco de quem hospeda. A
+       * memória acima já limita a frequência ao intervalo de validade.
+       */
+      this.log.debug(`avatar de página inexistente (${pageId}) — servido sem empresa resolvida`);
+    }
+    return achado;
+  }
+
   /** Só página publicada. Rascunho é 404 público — a prévia vive no painel. */
   async paginaPublica(handle: string): Promise<BioPublicPage | null> {
     const page = await this.prisma.bioPage.findUnique({
@@ -239,13 +335,12 @@ export class BioService {
     };
   }
 
-  /** Resolve a página (com orgId) para o rastreio do pageview. */
-  async pageParaTrack(handle: string) {
-    return this.prisma.bioPage.findFirst({
-      where: { handle: handle.toLowerCase(), publicada: true },
-      select: { id: true, orgId: true },
-    });
-  }
+  /*
+   * `pageParaTrack` morava aqui e saiu na fatia 1.4: ela fazia exatamente a
+   * consulta de `tenantDoHandle`, só que sem a sentinela da resolução pública.
+   * Manter as duas seria manter dois caminhos para a mesma pergunta, e o
+   * segundo é o que quebra quando a RLS ligar.
+   */
 
   /** Link + destino final do redirect de saída. */
   async destinoDoLink(linkId: string) {

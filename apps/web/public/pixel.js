@@ -3,8 +3,20 @@
  * Produto do projeto `root`. Stack ISOLADO do escritório.
  *
  * Instalação (na página de vendas):
- *   <script async src="https://SEU-HOST/pixel.js" data-endpoint="https://SEU-HOST/api/events/track"></script>
+ *   <script async src="https://SEU-HOST/pixel.js"
+ *           data-key="ID-DA-SUA-EMPRESA"
+ *           data-endpoint="https://SEU-HOST/api/events/track"></script>
  * Se data-endpoint for omitido, usa a MESMA origem de onde o pixel foi servido.
+ *
+ * data-key É DE QUEM É O EVENTO (RF-T-04). Sem ela, a API grava na empresa
+ * PADRÃO — o comportamento herdado de quando havia uma empresa só, que existe
+ * para não apagar o painel de quem já está no ar e que vai embora quando o
+ * inventário zerar. Com mais de um cliente, pixel sem chave é evento no painel
+ * errado. A chave é o `id` da empresa (uuid), não o slug: slug é adivinhável, e
+ * quem adivinha grava evento — inclusive `value`, que vira receita no painel.
+ * Quem instala numa página pública publica a chave junto: é assim com qualquer
+ * pixel, e é por isso que a chave por SITE, com conferência de origem, é o
+ * desenho seguinte (ver apps/api/src/events/pixel-tenant.service.ts).
  *
  * API pública (window.mktos):
  *   mktos.page()                         → dispara um page_view
@@ -29,6 +41,14 @@
     (scriptEl && scriptEl.getAttribute('data-endpoint')) ||
     window.MKTOS_ENDPOINT ||
     scriptOrigin() + '/api/events/track';
+
+  // A empresa dona dos eventos desta página. String vazia = não vai no corpo:
+  // chave presente e vazia é RECUSA na API, e perder evento é pior que cair na
+  // empresa padrão (que é o que acontece quando a chave simplesmente falta).
+  var PIXEL_KEY = (function () {
+    var v = (scriptEl && scriptEl.getAttribute('data-key')) || window.MKTOS_PIXEL_KEY || '';
+    return typeof v === 'string' ? v.trim() : '';
+  })();
 
   // --- ids -----------------------------------------------------------------
   function uuid() {
@@ -119,6 +139,7 @@
       device: device(),
       ts: Date.now(),
     };
+    if (PIXEL_KEY) payload.pixel_key = PIXEL_KEY;
     if (userId) payload.user_id = userId;
     if (typeof props.value === 'number') payload.value = props.value;
     var u = utms();
@@ -135,7 +156,16 @@
 
   // --- API pública + fila pré-carregamento --------------------------------
   var queued = (window.mktos && window.mktos.q) || [];
-  var api = { __loaded: true, track: track, page: page, identify: identify, endpoint: ENDPOINT };
+  // `key` sai na API pública para a instalação ser conferível do console do
+  // navegador: "window.mktos.key" vazio é o diagnóstico de evento no painel errado.
+  var api = {
+    __loaded: true,
+    track: track,
+    page: page,
+    identify: identify,
+    endpoint: ENDPOINT,
+    key: PIXEL_KEY,
+  };
   window.mktos = api;
 
   // processa chamadas enfileiradas antes do load: ['track','name',{...}]

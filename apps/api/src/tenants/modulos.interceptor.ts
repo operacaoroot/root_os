@@ -96,9 +96,24 @@ function empresaDaRequisicao(req: { user?: { orgId?: unknown } } | undefined): s
  *
  * O QUE ISSO REALMENTE DEIXA ABERTO — medido, não estimado:
  *
- *   - `events/track` NÃO escreve em tenant cliente: ele resolve a empresa por
- *     `slug: 'root'` fixo (`events.controller.ts`), então desligar `pixels` de
- *     um cliente não deixa superfície dele no ar.
+ *   - `events/track` ESCREVE EM TENANT CLIENTE, e o gate não contém.
+ *     Isto MUDOU na fatia 1.4 e a frase anterior aqui ficou falsa: até ela, a
+ *     rota resolvia a empresa por `slug: 'root'` fixo, então desligar `pixels`
+ *     de um cliente de fato não deixava superfície dele no ar. Hoje a empresa
+ *     sai da CHAVE DO PIXEL (`events/pixel-tenant.service.ts`), que é o `id` da
+ *     `Org`: quem tem a chave grava `PixelEvent` NAQUELA empresa, sem
+ *     credencial nenhuma, **com o módulo `pixels` desligado inclusive** — a
+ *     resolução é do controller, não passa por aqui, e este gate libera rota
+ *     anônima de propósito. Sem chave, o evento continua caindo na empresa
+ *     PADRÃO (o resto da mesma dívida herdada).
+ *     O que limita o estrago não é este gate: é a chave ser uuid (não se
+ *     adivinha) e a rota devolver sempre a mesma resposta (não serve de oráculo
+ *     de "esta empresa existe"). Quem instala o pixel numa página pública
+ *     publica a chave para quem ler o HTML — e essa pessoa injeta evento
+ *     naquela empresa, `value` incluído. Fechar isso é a chave por SITE, com
+ *     domínio declarado e teto de taxa (`PixelSite`), descrita em
+ *     `pixel-tenant.service.ts`; enquanto ela não existir, **desligar o módulo
+ *     `pixels` de um cliente NÃO desliga a ingestão dele**.
  *   - `conectar/:plataforma/callback` NÃO é porta: exige um `BioOauthState`
  *     gravado, e quem grava é `BioService` a partir de rota autenticada do
  *     prefixo `bio` — que este gate recusa. Sem o estado, o callback devolve

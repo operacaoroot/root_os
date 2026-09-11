@@ -15,6 +15,21 @@ import { COOKIE_VISITANTE } from '@/middleware';
  * Aqui a resposta é um Location de verdade, sem renderizar nada.
  *
  * Código desconhecido cai na biblioteca com o termo preenchido.
+ *
+ * DE QUEM É ESTE RESGATE — RF-T-04
+ * O material vem de arquivo versionado (`src/central/data`), então nada aqui lê
+ * banco. O único dado que o resgate GRAVA é o evento, e quem o grava é a API:
+ * `registrarResgate` chama `POST /api/events/track`, e é lá que a empresa é
+ * resolvida, pela chave do pixel (`apps/api/src/events/`).
+ *
+ * A chamada leva a chave: `CENTRAL_PIXEL_KEY`, lida no servidor por
+ * `src/central/lib/resgate.ts` e declarada no bloco `environment:` do serviço
+ * `web` do compose. Sem ela o evento continua caindo na empresa PADRÃO do pixel
+ * — que hoje é a ROOT, dona da Central, e funcionaria por coincidência até
+ * alguém mudar a Central de tenant.
+ *
+ * O teste da rota está em `apps/web/tests/unit/resgate-central.test.ts`: ele
+ * confere o 307 e, no corpo do evento, a chave que foi junto.
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ codigo: string }> }) {
   const { codigo } = await ctx.params;

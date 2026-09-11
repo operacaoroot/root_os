@@ -27,15 +27,14 @@
  * que precisa de banco está na última seção daqui.
  *
  * COMO RODAR A PARTE DE BANCO (opcional; sem ela a seção se pula sozinha):
- *   docker exec mktos-shadow psql -U mkt -d postgres -c \
- *     'CREATE DATABASE marketing_os_test_modulos'
- *   DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test_modulos' \
- *     pnpm --filter @mktos/api db:deploy
- *   TEST_DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test_modulos' \
+ *   TEST_DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test' \
  *     npx vitest run test/modulos-por-tenant.test.ts
  *
- * Banco PRÓPRIO e não o de `porta.test.ts`: esta suíte cria e apaga empresas, e
- * as outras limpam por orgId — mesmo racional de `contexto-aprovacao.test.ts`.
+ * O BANCO É O MESMO DAS OUTRAS — `marketing_os_test` (inventário em
+ * `test/banco-de-teste.ts`). O pedido de banco PRÓPRIO que estava aqui não
+ * correspondia à realidade: a CI e o `pnpm test` rodam os 13 arquivos em
+ * paralelo num banco só. Esta suíte cria e apaga empresas, e é por isso que ela
+ * limpa pelos ids que criou — não por ter banco reservado.
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';

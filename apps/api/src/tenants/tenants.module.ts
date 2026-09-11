@@ -4,6 +4,8 @@ import { AuthModule } from '../auth/auth.module';
 import { ModulosController } from './modulos.controller';
 import { ModulosInterceptor } from './modulos.interceptor';
 import { ModulosService } from './modulos.service';
+import { ProvisionamentoController } from './provisionar.controller';
+import { ProvisionamentoService } from './provisionar.service';
 
 /*
  * O TENANT E O QUE ELE CONTRATOU — RF-T-06.
@@ -21,11 +23,23 @@ import { ModulosService } from './modulos.service';
  *
  * `AuthModule` entra por causa do `JwtAuthGuard` do controller — a rota "quais
  * módulos eu tenho" é autenticada como qualquer outra.
+ *
+ * O PROVISIONAMENTO (RF-T-07) mora aqui porque é a mesma pergunta vista do
+ * outro lado: `ModulosService` responde "o que esta empresa contratou" e
+ * `ProvisionamentoService` é quem faz a empresa existir com essa resposta
+ * preenchida. O `EventLogService` que ele usa vem do `GatewayModule` e o
+ * `AuditService` vem do `AuditModule`; os dois são `@Global` — nada a importar,
+ * e a ordem deles no `AppModule` não muda nada (módulo global entra no registro
+ * na varredura, antes de qualquer resolução de dependência).
  */
 @Module({
   imports: [AuthModule],
-  controllers: [ModulosController],
-  providers: [ModulosService, { provide: APP_INTERCEPTOR, useClass: ModulosInterceptor }],
-  exports: [ModulosService],
+  controllers: [ModulosController, ProvisionamentoController],
+  providers: [
+    ModulosService,
+    ProvisionamentoService,
+    { provide: APP_INTERCEPTOR, useClass: ModulosInterceptor },
+  ],
+  exports: [ModulosService, ProvisionamentoService],
 })
 export class TenantsModule {}

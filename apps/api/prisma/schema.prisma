@@ -1673,9 +1673,39 @@ model PolicyVersion {
   documento Json
   /// Só o que esta empresa sobrescreveu. Nulo na base.
   delta     Json?
+  /// DOIS diffs, com a REFERÊNCIA no nome — `DiffDePolitica` de @mktos/policy:
+  /// capacidade por capacidade (`de`, `para`, `direcao`, `campos`, `travas`),
+  /// limite por limite e seção por seção (RF-P-04, "com data e responsável").
+  ///
+  /// São dois porque são duas perguntas, e uma coluna só chamada `diff` fazia
+  /// três escritores gravarem referências diferentes nela: a sobrescrita
+  /// gravava contra a base, a reaplicação contra a versão anterior da empresa
+  /// e o seed da base contra a versão anterior da base. Quem lesse numa tela
+  /// compararia coisas diferentes sem saber.
+  ///
+  /// `diffDaBase` — o que ESTA EMPRESA tem de diferente da base herdada da
+  /// ROOT. Nulo na versão da própria base (orgId nulo), onde a pergunta não
+  /// existe.
+  diffDaBase Json?
+  /// `diffDaVersaoAnterior` — o que ESTA VERSÃO mudou em relação à anterior do
+  /// MESMO escopo (a base anterior, ou a versão anterior desta empresa). É o
+  /// diff honesto sobre a direção: uma queda de R4 para R3 aparece aqui como
+  /// `desce`, enquanto contra a base (que é R2) ela é `sobe`. Nulo na primeira
+  /// versão, que não tem anterior.
+  ///
+  /// Gravados, e não recalculados na leitura, de propósito: a base muda. Seis
+  /// meses depois, recalcular contra a base de hoje responderia outra pergunta
+  /// — e a que o histórico precisa responder é "o que esta pessoa mudou,
+  /// quando mudou".
+  diffDaVersaoAnterior Json?
   /// Obrigatório quando um nível DESCE ou a aprovação de R2 é desligada:
-  /// "descer nível nunca é automático" é invariante da escada.
+  /// "descer nível nunca é automático" é invariante da escada. Quem cobra é
+  /// `recusasDaSobrescrita()` em @mktos/policy, chamada pelo PolicyService.
   motivo    String
+  /// O responsável do RF-P-06. `String?` e não relação com User porque a base
+  /// ROOT (orgId nulo) é semeada por script, sem usuário nenhum logado — e uma
+  /// FK obrigatória ali tornaria o seed impossível. Sobrescrita de empresa SEM
+  /// este campo é recusada quando afrouxa alguma coisa; é a trava, não a coluna.
   autorId   String?
   ativaDe   DateTime  @default(now())
   ativaAte  DateTime?

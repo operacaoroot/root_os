@@ -8,6 +8,13 @@
  * em cada tabela. Se aparecer uma única linha da org B, a tabela vazou e o teste
  * falha dizendo qual é, quantas linhas e por quê.
  *
+ * DE ONDE VÊM AS DUAS ORGS (mudou na fatia 1.7)
+ * A org A é montada linha a linha aqui. A org B vem do PROVISIONAMENTO do
+ * produto (`provisionarTenant`, RF-T-07), pela ponte `test/tenant-provisionado.ts`
+ * — o enunciado da fatia mandou o segundo tenant virar a fixture desta suíte, e
+ * é isso que tira daqui o terceiro caminho de semeadura. Ver "A ORG B NASCE DO
+ * PROVISIONAMENTO" no `beforeAll` e o bloco no topo de `semear`.
+ *
  * O ponto é medir o isolamento NO BANCO, não na aplicação. Hoje o marketing-os
  * filtra por `where: { orgId }` escrito à mão em cada call site
  * (apps/api/src/prisma/prisma.service.ts é um PrismaClient pelado de 9 linhas,
@@ -99,6 +106,7 @@ import {
   esquecerAvisos,
 } from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { provisionarTenantDeTeste, type TenantDeTeste } from './tenant-provisionado';
 
 // ---------------------------------------------------------------------------
 // Configuração e trava de segurança
@@ -336,36 +344,81 @@ let permissaoCompartilhadaId = '';
 /** Capability idem: catálogo da escada, um para todas as empresas. */
 let capacidadeCompartilhadaId = '';
 
+/**
+ * A empresa B, já criada pelo PROVISIONAMENTO de verdade (RF-T-07).
+ *
+ * Preenchida no `beforeAll`, antes da transação de semeadura. Ver
+ * "A org B nasce do provisionamento" logo abaixo.
+ */
+let tenantProvisionado: TenantDeTeste | null = null;
+
 async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<void> {
   const s = sementes[rotulo];
   const suf = `${MARCA}_${rotulo}`;
   const agora = new Date();
   const reg = (t: string, k: string) => registra(s, t, k);
 
+  /*
+   * AS DUAS ORGS NASCEM DE JEITOS DIFERENTES, E ISSO É O DESENHO.
+   *
+   * A org A é montada linha a linha aqui: uma empresa mínima, com UM papel e UM
+   * usuário, moldada para o teste. A org B vem do `provisionarTenant` do
+   * produto — nove papéis, catálogo de permissões, papel inicial, administrador
+   * sem senha utilizável. Duas formas de empresa existir, o mesmo isolamento
+   * cobrado das duas: se a policy só funcionasse na empresa que o teste desenhou,
+   * a suíte estaria provando o próprio desenho.
+   *
+   * Era esse o buraco: a fatia 1.7 mandou o segundo tenant virar a fixture desta
+   * suíte, e por um tempo houve TRÊS caminhos de semeadura (o produto, o ajudante
+   * de teste e este arquivo). Agora são dois, e o ajudante é a ponte.
+   */
+  const doProvisionamento = rotulo === 'B' ? tenantProvisionado : null;
+
   // --- Org (a raiz: escopo pela própria PK) --------------------------------
-  const orgId = await ins(c, 'Org', { id: crypto.randomUUID(), name: `Org ${rotulo} ${MARCA}`, slug: `${suf}-org` });
+  const orgId =
+    doProvisionamento?.orgId ??
+    (await ins(c, 'Org', { id: crypto.randomUUID(), name: `Org ${rotulo} ${MARCA}`, slug: `${suf}-org` }));
   s.orgId = orgId;
-  s.slug = `${suf}-org`;
+  s.slug = doProvisionamento?.provisionamento.slug ?? `${suf}-org`;
   reg('Org', orgId);
 
   // --- identidade e acesso -------------------------------------------------
   // email é @unique GLOBAL (schema.prisma:79), não @@unique([orgId, email]):
   // por isso o sufixo por org. Ver o teste "namespaces globais" mais abaixo.
-  const userId = await ins(c, 'User', {
-    id: crypto.randomUUID(), orgId, name: `Usuário ${rotulo}`,
-    email: `${suf}@isolamento.local`, passwordHash: 'nao-e-hash-real', updatedAt: agora,
-  });
-  reg('User', userId);
+  const userId =
+    doProvisionamento?.adminUserId ??
+    (await ins(c, 'User', {
+      id: crypto.randomUUID(), orgId, name: `Usuário ${rotulo}`,
+      email: `${suf}@isolamento.local`, passwordHash: 'nao-e-hash-real', updatedAt: agora,
+    }));
   s.ref.userId = userId;
 
-  const roleId = await ins(c, 'Role', { id: crypto.randomUUID(), orgId, key: `papel_${suf}`, name: `Papel ${rotulo}` });
-  reg('Role', roleId);
+  const roleId =
+    doProvisionamento?.papelInicialId ??
+    (await ins(c, 'Role', { id: crypto.randomUUID(), orgId, key: `papel_${suf}`, name: `Papel ${rotulo}` }));
   s.ref.roleId = roleId;
 
-  await c.query('INSERT INTO "_UserRoles" ("A", "B") VALUES ($1, $2)', [roleId, userId]);
+  if (doProvisionamento) {
+    // Tudo que o provisionamento criou (os nove papéis e o administrador) entra
+    // na limpeza cirúrgica pelas chaves que ele devolveu. A Org já foi
+    // registrada acima; o vínculo usuário-papel também já existe no banco.
+    for (const [tabela, chavesDaTabela] of Object.entries(doProvisionamento.chaves)) {
+      for (const chave of chavesDaTabela) if (chave !== orgId) reg(tabela, chave);
+    }
+  } else {
+    reg('User', userId);
+    reg('Role', roleId);
+    await c.query('INSERT INTO "_UserRoles" ("A", "B") VALUES ($1, $2)', [roleId, userId]);
+  }
   reg('_UserRoles', `${roleId}|${userId}`);
 
-  await c.query('INSERT INTO "_RolePermissions" ("A", "B") VALUES ($1, $2)', [permissaoCompartilhadaId, roleId]);
+  // A permissão COMPARTILHADA é o que faz `_RolePermissions` ser testável pela
+  // coluna B (Role) e não pela A (Permission, global). Vale para as duas orgs,
+  // inclusive a que já veio com os vínculos do catálogo.
+  await c.query(
+    'INSERT INTO "_RolePermissions" ("A", "B") VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [permissaoCompartilhadaId, roleId],
+  );
   reg('_RolePermissions', `${permissaoCompartilhadaId}|${roleId}`);
 
   const auditId = await ins(c, 'AuditLog', {
@@ -853,6 +906,34 @@ beforeAll(async () => {
   }
   if (tenantBypassaRls) {
     console.warn(`\n[isolamento] O role "${usuarioTenant}" tem BYPASSRLS. Nenhuma policy se aplica a ele.\n`);
+  }
+
+  /*
+   * A ORG B NASCE DO PROVISIONAMENTO — RF-T-07, fatia 1.7.
+   *
+   * Fora da transação de semeadura de propósito: `provisionarTenant` abre e
+   * fecha a transação DELE (é o que garante que empresa nunca fique pela
+   * metade), e uma transação do Prisma não tem como correr por dentro de um
+   * `BEGIN` aberto noutra conexão. Quando esta chamada devolve, a empresa já
+   * está commitada — e é por isso que o `BEGIN` logo abaixo pode referenciá-la
+   * sem esperar por lock nenhum.
+   *
+   * A limpeza continua cirúrgica: as chaves vêm em `chaves` e entram no registro
+   * de limpeza dentro de `semear`, junto com o resto do dado da org B. Se esta
+   * chamada passar e a transação seguinte falhar, o `afterAll` ainda apaga o que
+   * ela criou (os hooks de fim rodam mesmo com `beforeAll` vermelho).
+   */
+  const prismaProvisionamento = new PrismaClient({ datasourceUrl: URL_ADMIN });
+  try {
+    tenantProvisionado = await provisionarTenantDeTeste(prismaProvisionamento, {
+      // Slug tem gramática própria (minúsculas, dígitos e hífen): a MARCA usa
+      // sublinhado e não serve. O par continua único por rodada.
+      slug: `iso-b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      nome: `Org B ${MARCA}`,
+      admin: { email: `${MARCA}_B@isolamento.local`, nome: 'Usuário B' },
+    });
+  } finally {
+    await prismaProvisionamento.$disconnect();
   }
 
   const c = await admin.connect();

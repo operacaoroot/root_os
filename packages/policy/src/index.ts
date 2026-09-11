@@ -16,7 +16,16 @@
  * O pacote é puro: sem I/O, sem Nest, sem Prisma. Quem carrega, cacheia e
  * persiste decisão é apps/api/src/policy — a casca. É isso que permite o
  * mesmo código decidir no painel, no MCP e no simulador da tela da Régua.
+ *
+ * ONDE A POLÍTICA DE VERDADE MORA, EM AMBIENTE JÁ SEMEADO
+ * Estes JSON são o CHÃO, não a palavra final. `PolicyService.recarregar()`
+ * prefere a `PolicyVersion` gravada no banco à base empacotada aqui — então
+ * mudar um nível neste arquivo NÃO muda o comportamento de uma instalação que
+ * já rodou o seed, até alguém rodar `pnpm --filter @mktos/api db:seed:politica`
+ * naquela instalação. É o único caminho de surpresa real desta área: o código
+ * dizendo R3 e a produção decidindo R2.
  */
 export * from './escada.js';
 export * from './esquema.js';
 export * from './verificacao.js';
+export * from './sobrescrita.js';
