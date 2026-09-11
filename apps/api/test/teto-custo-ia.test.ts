@@ -989,7 +989,19 @@ describe.skipIf(!URL)('a porta, depois do teto estourado', () => {
     await policy.onModuleInit();
     teto = new TetoDeCustoIaService(p, new EventLogService(p));
     approvals = new ApprovalsService(p, new AuditService(p));
-    porta = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, new EventLogService(p), teto);
+    // O oitavo argumento (o registro de efeitos) entrou na asserção de arranque
+    // na correção da fatia 3.3 — ver `onModuleInit`. Esta suíte não exercita
+    // efeito nenhum, mas a porta que ela monta tem de ser a que SOBE.
+    porta = new ToolGateway(
+      p,
+      policy,
+      new SinaisService(p, policy),
+      approvals,
+      new EventLogService(p),
+      teto,
+      undefined,
+      new EfeitosRegistry(),
+    );
   });
 
   afterAll(async () => {
@@ -1019,6 +1031,23 @@ describe.skipIf(!URL)('a porta, depois do teto estourado', () => {
     );
     expect(() => semTeto.onModuleInit()).toThrow(/TetoDeCustoIaService/);
     expect(() => porta.onModuleInit()).not.toThrow();
+
+    /*
+     * O SEGUNDO FREIO DA MESMA ASSERÇÃO (correção da fatia 3.3). Sem o registro
+     * de efeitos a porta não falha aberta — mas `temEfeito` responde `false`
+     * para tudo, e a fila de aprovação passa a afirmar que capacidades com
+     * efeito ligado "não têm efeito ligado nesta versão". Uma frase falsa numa
+     * tela manda quem opera procurar defeito onde não há.
+     */
+    const semEfeitos = new ToolGateway(
+      p,
+      policy,
+      new SinaisService(p, policy),
+      approvals,
+      new EventLogService(p),
+      teto,
+    );
+    expect(() => semEfeitos.onModuleInit()).toThrow(/EfeitosRegistry/);
   });
 
   it('recusa a próxima ação do agente com motivo legível, e o efeito não roda', async () => {

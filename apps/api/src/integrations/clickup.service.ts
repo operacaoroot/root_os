@@ -3,6 +3,8 @@ import { TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConectoresService } from './conectores.service';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import { EfeitosRegistry } from '../gateway/efeitos.registry';
 import {
   SemTenantError,
   comContexto,
@@ -46,6 +48,19 @@ export class ClickupService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly conectores: ConectoresService,
+    /*
+     * Quem pergunta se o ClickUp está configurado é a tela de Conexões, e até a
+     * fatia 3.3 ela descobria isso lendo `CLICKUP_API_TOKEN` do ambiente por
+     * conta própria. Renomear a variável aqui dentro fazia a tela mentir
+     * "desconectado" sem nenhum erro de compilação. Agora quem responde é o dono
+     * do segredo — ver `gateway/conectores-configurados.registry.ts`.
+     */
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+    /*
+     * O registro de efeitos: é aqui que as duas capacidades de escrita do
+     * ClickUp passam a existir de fato para a porta (ver `onModuleInit`).
+     */
+    private readonly efeitos: EfeitosRegistry,
   ) {}
 
   get configured(): boolean {
@@ -91,6 +106,61 @@ export class ClickupService implements OnModuleInit {
   // Sync AGENDADO (in-process): mantém o ClickUp em dia sozinho.
   // CLICKUP_SYNC_INTERVAL_MIN (default 60; 0 desliga). Primeira ~20s após o boot.
   onModuleInit(): void {
+    // A inscrição vem ANTES do `return` de conector não configurado: a tela
+    // precisa da resposta "não" tanto quanto da resposta "sim", e sair daqui
+    // cedo deixaria a chave sem dono no registro — que a tela lê como "ninguém
+    // respondeu", não como "desconectado".
+    this.conectoresConfigurados.registrar('clickup', () => this.configured);
+
+    /*
+     * AS DUAS ESCRITAS DO CLICKUP, DECLARADAS PELO CONECTOR — fatia 3.3.
+     *
+     * `clickup.tarefa.criar` e `clickup.tarefa.alterar` estavam no catálogo
+     * como R3 desde sempre e não tinham EFEITO ligado: um agente que as
+     * propusesse via porta chegava até a aprovação, uma pessoa confirmava, e a
+     * execução respondia "classificada e aprovada, mas o efeito não está ligado
+     * nesta versão". A régua funcionava e a ação não acontecia.
+     *
+     * Registradas aqui, dentro do conector, pelo mesmo motivo do Google e da
+     * Evolution: a catraca de arquitetura proíbe qualquer arquivo fora de
+     * `src/gateway/` de importar um serviço de conector, e um arquivo de fiação
+     * ao lado seria violação nova. O `EfeitosRegistry` é `@Global`, então isto
+     * não mexe no grafo de módulos.
+     *
+     * A LISTA DE DESTINO NÃO VEM DO MODELO. `criarTarefa` resolve `listId` do
+     * ambiente quando não é informado, e o efeito NÃO repassa `listId` de
+     * propósito: senão a régua controlaria o texto da tarefa e não onde ela cai.
+     * É a mesma decisão do destino fixo da mensagem de WhatsApp.
+     *
+     * AS DUAS GANHARAM `argsSchema` NO CATÁLOGO na correção da fatia 3.3, e sem
+     * ele a porta não validava nada: a aprovação assinava um corpo livre, e
+     * `titulo` vazio só virava erro lá no ClickUp, com a aprovação já queimada.
+     * `clickup.tarefa.criar` só existia em `politica-root.json` — cópia byte a
+     * byte do anexo normativo, que não se edita — então a entrada foi
+     * SOBRESCRITA no delta, com o mesmo nível e o mesmo efeito.
+     *
+     * OS APELIDOS ABAIXO (`nome`, `corpo`, `externalId`, `id`) ficaram para
+     * trás de propósito, e não são dívida: o schema é `additionalProperties:
+     * false`, então nada além de `titulo`/`descricao` e `tarefaId`/`status`
+     * atravessa a porta. Eles seguem aqui para as propostas GRAVADAS antes do
+     * schema existir, que a fila ainda pode conter — essas revalidam contra o
+     * schema de hoje em `conferirAprovado` e são recusadas sem custar a
+     * aprovação, o que é o comportamento certo, mas até lá o código não pode
+     * quebrar de outro jeito.
+     */
+    this.efeitos.registrar({
+      'clickup.tarefa.criar': (a: Record<string, unknown>) =>
+        this.criarTarefa({
+          nome: String(a.titulo ?? a.nome ?? '').trim(),
+          descricao: String(a.descricao ?? a.corpo ?? ''),
+        }),
+      'clickup.tarefa.alterar': (a: Record<string, unknown>) =>
+        this.writeTaskStatus(
+          String(a.tarefaId ?? a.externalId ?? a.id ?? '').trim(),
+          String(a.status ?? '').trim(),
+        ),
+    }, 'ClickupService');
+
     if (!this.configured) return;
     const min = Number(process.env.CLICKUP_SYNC_INTERVAL_MIN ?? 60);
     if (!(min > 0)) return;

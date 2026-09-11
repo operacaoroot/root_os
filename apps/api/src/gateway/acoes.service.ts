@@ -15,7 +15,8 @@ import {
   type RecusaDeConector,
 } from '../integrations/conectores';
 import { PolicyService } from '../policy/policy.service';
-import { ContextoDoEfeito, EfeitosRegistry } from './efeitos.registry';
+import { ContextoDoEfeito } from './efeitos.registry';
+import { ToolGateway } from './tool-gateway.service';
 import {
   EventLogService,
   type ConteudoDoEvento,
@@ -42,6 +43,31 @@ import { InterruptoresRegistry } from './interruptores.registry';
  * com o mundo. Agora ele recebe o contexto inteiro, e o ator dele é quem
  * APROVOU: nesta rota o proponente e o executor são pessoas diferentes por
  * desenho, e é o executor que responde pelo que saiu.
+ *
+ * O QUE MUDOU NA FATIA 3.3: quem DISPARA o efeito passou a ser a porta.
+ *
+ * Este serviço não conhece mais o `EfeitosRegistry`. Ele continua fazendo o que
+ * só ele sabe fazer — conferir o estado da aprovação, queimar o uso único,
+ * escrever `acao.executada`/`acao.falhou` — e pede à porta que confira e depois
+ * dispare. A diferença não é de estilo: enquanto este arquivo alcançava o
+ * registro sozinho, existiam DOIS pontos do programa capazes de chegar num
+ * conector, e só um deles era a porta. Agora a régua de HOJE é conferida de novo
+ * antes de a ação de ONTEM sair (RF-G-01).
+ *
+ * SÃO DUAS CHAMADAS À PORTA, E A ORDEM É O DESENHO INTEIRO:
+ *
+ *   1. `conferirAprovado` — ANTES de a aprovação virar `consumida`, ao lado da
+ *      pergunta do interruptor. Ela não toca em nada: reclassifica, confere se
+ *      a capacidade ainda está no catálogo e revalida os argumentos gravados.
+ *      Recusando, a aprovação continua `confirmada` e NÃO consumida.
+ *   2. `dispararAprovado` — depois do uso único queimado. É só o efeito.
+ *
+ * A primeira versão desta fatia tinha um método só, que conferia e disparava
+ * junto, e por isso era chamado DEPOIS de consumir. Uma reclassificação para
+ * bloqueio, uma capacidade que saísse do catálogo ou um `argsSchema` apertado
+ * deixavam a aprovação `consumida` sem nada ter saído — estado terminal que se
+ * lê como "executada", de onde não se reexecuta nem se repropõe. Foi o defeito
+ * que reprovou a fatia; a ordem acima é o conserto, e ela está travada por teste.
  */
 @Injectable()
 export class AcoesService {
@@ -49,7 +75,12 @@ export class AcoesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly efeitos: EfeitosRegistry,
+    /*
+     * A PORTA. Substituiu o `EfeitosRegistry` que morava aqui — ver o cabeçalho.
+     * É ela que resolve a capacidade, reclassifica, revalida os argumentos
+     * gravados e chama o efeito.
+     */
+    private readonly gateway: ToolGateway,
     private readonly eventos: EventLogService,
     /*
      * O INTERRUPTOR DE CONECTOR (RF-G-06) TAMBÉM VALE AQUI — e sem isto o
@@ -202,7 +233,7 @@ export class AcoesService {
     });
     if (!chamada) throw new NotFoundException('A ação retida não existe mais.');
 
-    if (!this.efeitos.tem(ap.capabilityId)) {
+    if (!this.gateway.temEfeito(ap.capabilityId)) {
       return {
         status: 'sem_efeito',
         motivo: `"${ap.capabilityId}" está classificada e aprovada, mas o efeito não está ligado nesta versão.`,
@@ -254,6 +285,31 @@ export class AcoesService {
       );
       throw new ForbiddenException(corpoDaRecusa(desligado));
     }
+
+    /*
+     * A RÉGUA DE HOJE, PERGUNTADA ANTES DE QUEIMAR A APROVAÇÃO — RF-G-01.
+     *
+     * Aqui, ao lado do interruptor, e pela MESMA razão que o interruptor está
+     * aqui: recusa não pode custar a aprovação. A porta reclassifica com o
+     * catálogo de hoje (a proposta pode ser de ontem e a capacidade pode ter
+     * subido para R5), trata capacidade fora do catálogo como bloqueio e
+     * revalida os argumentos GRAVADOS contra o `argsSchema` atual.
+     *
+     * Na primeira versão desta fatia as três conferências moravam dentro do
+     * disparo, que só era chamado DEPOIS do `updateMany` abaixo. Qualquer uma
+     * delas recusando deixava a aprovação `consumida` — estado terminal que se
+     * lê como "executada": some da fila, `confirm` recusa o que não está
+     * pendente, `executarAprovada` recusa o que não está `confirmada`. A ação
+     * não saía, ninguém reexecutava, ninguém repropunha, e a mensagem ainda
+     * dizia que a aprovação "continua registrada". Era o limbo da onda 6 de
+     * volta, invertido — ver o bloco de comentário em `tool-gateway.service.ts`
+     * sobre por que o método foi partido em dois.
+     *
+     * LANÇA, e quem chama é a rota de confirmação: vira 403/400 com o motivo em
+     * português, com a aprovação intacta.
+     */
+    const args = (chamada.args ?? {}) as Record<string, unknown>;
+    this.gateway.conferirAprovado({ capabilityId, args, orgId });
 
     // Uso único, mesmo aqui: dois cliques no botão de aprovar não podem
     // executar duas vezes. Quem garante é a escrita condicional, não um if.
@@ -308,10 +364,10 @@ export class AcoesService {
 
     const inicio = Date.now();
     try {
-      // Os argumentos vêm do REGISTRO da proposta, não da requisição.
-      const args = (chamada.args ?? {}) as Record<string, unknown>;
+      // Os argumentos são os do REGISTRO da proposta, não os da requisição — e
+      // são os MESMOS que `conferirAprovado` acabou de revalidar, lá em cima.
       const resultado = await comContexto({ ...ctxEfeito, origem: 'aprovacao' }, () =>
-        this.efeitos.executar(capabilityId, args, ctxEfeito),
+        this.gateway.dispararAprovado({ capabilityId, args, ctx: ctxEfeito }),
       );
 
       await this.prisma.toolCall.update({
@@ -384,7 +440,7 @@ export class AcoesService {
         // comentário acima: `entrega` aqui é o que o outro lado respondeu, e
         // "não deu" é uma resposta.
         conteudo: this.conteudoDaAcao(ap, capabilityId, cap, inicio, {
-          args: (chamada.args ?? {}) as Record<string, unknown>,
+          args,
           resultado: { ok: false, erro: erro.slice(0, 300) },
         }),
         sensibilidade,

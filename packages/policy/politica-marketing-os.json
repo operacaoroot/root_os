@@ -804,11 +804,63 @@
       }
     },
     {
+      "id": "clickup.tarefa.criar",
+      "rota": "POST /pauta/pecas/:id/publicar",
+      "descricao": "abre tarefa no ClickUp, na lista de destino definida pelo ambiente (o modelo não escolhe onde ela cai). SEM `ferramenta` de propósito: `tool-adapter.ts` filtra por esse campo, e dar nome aqui liberaria a capacidade para o laço do agente — afrouxamento que só entra por semente assinada.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "descricao": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
       "id": "clickup.tarefa.alterar",
       "ferramenta": "conteudo_mover_etapa",
       "rota": "PATCH /content/:id",
       "descricao": "Move a etapa de um conteúdo, com write-back do status no ClickUp.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tarefaId",
+          "status"
+        ],
+        "properties": {
+          "tarefaId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "id da tarefa no ClickUp"
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "description": "nome do status de destino, como o ClickUp o escreve"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -848,6 +900,16 @@
           },
           "descricao": {
             "type": "string"
+          },
+          "local": {
+            "type": "string"
+          },
+          "convidados": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e-mails convidados"
           }
         }
       },
@@ -868,6 +930,22 @@
       "rota": "POST /google/docs",
       "descricao": "Cria um Google Doc no Drive da conta conectada.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conteudo": {
+            "type": "string"
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -885,6 +963,24 @@
       "rota": "POST /google/docs/:id/append",
       "descricao": "Acrescenta conteúdo ao fim de um Google Doc existente.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "documentoId",
+          "texto"
+        ],
+        "properties": {
+          "documentoId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -922,6 +1018,10 @@
           "corpo": {
             "type": "string",
             "minLength": 1
+          },
+          "cc": {
+            "type": "string",
+            "description": "cópia, separada por vírgula"
           }
         }
       },

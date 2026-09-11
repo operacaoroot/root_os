@@ -319,12 +319,33 @@ describe.skipIf(!URL_DO_BANCO)('política por empresa, contra o banco', () => {
      * com o que voltava do banco: três chamadas idênticas abriam três versões,
      * e uma quarta depois do restart abria a quarta.
      */
+    /*
+     * POR QUE O `argsSchema` SAIU DAQUI (onda 7, 11/09/2026).
+     *
+     * Este caso declarava `argsSchema: undefined` em `clickup.tarefa.alterar`
+     * porque, na época, a base NÃO tinha esquema para essa capacidade — a chave
+     * indefinida era mesmo uma chave ausente, e a asserção media só a
+     * canonização. A fatia 3.3 deu esquema de argumentos àquela capacidade; com
+     * isso, `{ ...daBase(...), argsSchema: undefined }` deixou de ser "chave que
+     * a base não tem" e passou a ser **apagar o esquema da base** — que é
+     * afrouxamento de verdade (a porta para de validar argumento) e a trava do
+     * RF-P-06 passou a recusar, com razão.
+     *
+     * O conserto é do TESTE, não do código: a chave indefinida que ainda prova o
+     * que este caso quer provar é uma que a base realmente não tem. Ficam
+     * `desfazer` (a base não declara) e uma capacidade SEM esquema
+     * (`financeiro.lancamento.criar`), para que continuem sendo duas.
+     */
     it('delta com campo opcional ausente não abre versão nova a cada chamada', async () => {
       const comChaveIndefinida = delta([
         daBase('clickup.tarefa.alterar', {
           descricao: 'move etapa — texto próprio desta empresa',
-          // chaves que a base NÃO tem, declaradas com valor indefinido
+          // chave que a base NÃO tem, declarada com valor indefinido
           desfazer: undefined,
+        }),
+        daBase('financeiro.lancamento.criar', {
+          descricao: 'lançamento — texto próprio desta empresa',
+          // idem: a base não declara esquema para esta capacidade
           argsSchema: undefined,
         }),
       ]);

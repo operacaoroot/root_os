@@ -207,16 +207,42 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
     approvals = new ApprovalsService(p, audit, reauth);
     semVerificador = new ApprovalsService(p, audit);
     eventos = new EventLogService(p);
-    gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos);
-    acoes = new AcoesService(p, new EfeitosRegistry(), eventos);
+    /*
+     * Desde a fatia 3.3 quem dispara o efeito é a PORTA, nos dois caminhos de
+     * execução — inclusive no pós-aprovação, que é o desta suíte. O registro
+     * entra na construção dela; `AcoesService` recebe a porta.
+     */
+    const registro = new EfeitosRegistry();
+    gateway = new ToolGateway(
+      p,
+      policy,
+      new SinaisService(p, policy),
+      approvals,
+      eventos,
+      undefined,
+      undefined,
+      registro,
+    );
+    acoes = new AcoesService(p, gateway, eventos);
   });
 
   afterAll(async () => {
     vi.useRealTimers();
     // O EventLog é append-only por RULE do banco — vale para o teste também.
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.eventLog.deleteMany({ where: { orgId: ORG } });
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    /*
+     * NUMA TRANSAÇÃO SÓ. `EventLog` é do banco INTEIRO e os arquivos de teste
+     * rodam em PARALELO contra ele: em comandos soltos, a RULE de append-only
+     * fica desligada para TODO MUNDO na janela entre eles, e quem estiver
+     * medindo o append-only nesse instante sai vermelho por um defeito que não
+     * existe. Dentro de uma transação o ALTER TABLE segura ACCESS EXCLUSIVE até
+     * o commit, e worker morto no meio devolve a RULE ligada. Mesmo conserto da
+     * onda 6 em `rastro-retencao.test.ts`.
+     */
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.eventLog.deleteMany({ where: { orgId: ORG } }),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
     await prisma.approval.deleteMany({ where: { orgId: ORG } });
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });

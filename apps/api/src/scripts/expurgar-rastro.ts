@@ -30,11 +30,14 @@
  *    alcançável por requisição (ver `audit/audit.module.ts`). `app.get()` não o
  *    encontraria; construí-lo à mão é o caminho declarado.
  *
- * A CONEXÃO É A DONA DAS TABELAS, e isso não é detalhe: `app_rastro_expurgar`
- * começa com `ALTER TABLE ... DISABLE RULE`, que exige ser dono. Por isso lemos
- * `DATABASE_URL` e não a URL do papel restrito. Se alguém apontar este script
- * para a conexão da aplicação, `conferirQueEhDono()` recusa alto em vez de
- * apagar zero linha com ar de sucesso.
+ * A CONEXÃO É A DONA DAS TABELAS **E ATRAVESSA O ISOLAMENTO**, e isso não é
+ * detalhe: `app_rastro_expurgar` começa com `ALTER TABLE ... DISABLE RULE`, que
+ * exige ser dono; e a varredura que descobre as empresas roda sem empresa na
+ * sessão, contra uma tabela com FORCE ROW LEVEL SECURITY — que vale para o dono
+ * também. Por isso lemos `DATABASE_URL` e não a URL do papel restrito. Se
+ * alguém apontar este script para a conexão da aplicação — ou para um papel dono
+ * sem BYPASSRLS —, `conferirQuePodeExpurgar()` recusa alto em vez de apagar zero
+ * linha com ar de sucesso.
  *
  * Roda COMPILADO (`dist/`) porque é assim que ele existe dentro do container da
  * api, onde `src/` não está.
@@ -104,7 +107,7 @@ async function main() {
   const expurgo = new ExpurgoService(prisma as never, eventos, auditoria);
 
   try {
-    await expurgo.conferirQueEhDono();
+    await expurgo.conferirQuePodeExpurgar();
 
     const empresas = umaEmpresa
       ? [umaEmpresa]

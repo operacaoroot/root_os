@@ -173,6 +173,17 @@ services:
       META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
       # Link na bio (absorvido do root-bio)
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # O COFRE (RF-C-01..04). Vazias por padrão, e vazio É um estado válido:
+      # sem elas o chaveiro tem UMA chave — a `ENCRYPTION_KEY` acima, que entra
+      # com o id `env` — e tudo funciona como antes do cofre. O que NÃO funciona
+      # é rotacionar: rotacionar exige ter para onde ir.
+      #   COFRE_CHAVES="k1:<base64 32B>,k2:<base64 32B>"  (chaveiro; a velha FICA)
+      #   COFRE_CHAVE_ATUAL="k2"                          (com qual cifrar o que entra)
+      # Apontar COFRE_CHAVE_ATUAL para um id fora do chaveiro derruba o arranque
+      # de propósito: no lado silencioso, o erro de digitação faria o produto
+      # gravar tudo com a chave velha achando que rotacionou.
+      COFRE_CHAVES: ${COFRE_CHAVES:-}
+      COFRE_CHAVE_ATUAL: ${COFRE_CHAVE_ATUAL:-}
       PUBLIC_BIO_ORIGIN: ${PUBLIC_BIO_ORIGIN:-https://bio.operacaoroot.com}
       INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
       INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}

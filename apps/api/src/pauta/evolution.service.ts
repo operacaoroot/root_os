@@ -1,4 +1,6 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 
 // Conector WhatsApp via Evolution API. Instância e número DEDICADOS do root —
 // o ISOLATION.md proíbe reusar o canal do escritório, e um número compartilhado
@@ -8,7 +10,7 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 // grupo**, e grupo é o destino. O preço é usar uma conexão não-oficial — daí o
 // rate-limit conservador e o envio sempre atrás de aprovação humana.
 @Injectable()
-export class EvolutionService {
+export class EvolutionService implements OnModuleInit {
   private readonly log = new Logger('EvolutionService');
   private readonly base = (process.env.EVOLUTION_URL ?? '').replace(/\/$/, '');
   private readonly apiKey = process.env.EVOLUTION_API_KEY ?? '';
@@ -16,8 +18,62 @@ export class EvolutionService {
   /** JID do grupo (termina em @g.us) — não é o número de telefone. */
   private readonly grupoPadrao = process.env.EVOLUTION_GRUPO_JID ?? '';
 
+  constructor(
+    private readonly efeitos: EfeitosRegistry,
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+  ) {}
+
   get configured(): boolean {
     return this.base.length > 0 && this.apiKey.length > 0 && this.instancia.length > 0;
+  }
+
+  /*
+   * O CONECTOR DECLARA A CAPACIDADE QUE ELE REALIZA — fatia 3.3.
+   *
+   * Este efeito morava em `agents/efeitos.service.ts`, que para escrevê-lo tinha
+   * de IMPORTAR este serviço. Era a violação mais antiga da catraca de
+   * arquitetura: o runtime do agente alcançando um conector por fora da porta.
+   * O corpo do efeito não mudou — o que mudou foi de que lado da fronteira ele
+   * mora. Quem precisa dele agora é a porta, que o busca no registro.
+   */
+  onModuleInit(): void {
+    this.conectoresConfigurados.registrar('whatsapp', () => this.configured);
+
+    this.efeitos.registrar({
+      /*
+       * R3: só chega aqui depois que uma pessoa aprovou, e com os argumentos
+       * GRAVADOS na proposta — nunca com os que vieram na confirmação.
+       *
+       * O destino é SEMPRE o grupo configurado no ambiente. O modelo não escolhe
+       * para quem manda: um `destino` proposto por ele é ignorado de propósito,
+       * senão a régua controlaria o texto e não o destinatário.
+       *
+       * O terceiro parâmetro é quem pediu (RF-T-04, RNF-09). A Evolution não tem
+       * campo para ator, então ele sai no RESULTADO — que é o que a porta grava
+       * em `ToolCall.resultado` e o que volta para quem confirmou. Sem isso, o
+       * registro do envio diz o que saiu e não diz por ordem de quem: nesta rota
+       * o proponente é a IA e o executor é gente, e a diferença é o ponto inteiro
+       * da aprovação.
+       */
+      'whatsapp.mensagem.enviar': async (
+        a: Record<string, unknown>,
+        _org: string,
+        ctx: ContextoDoEfeito,
+      ) => {
+        const titulo = String(a.titulo ?? '').trim();
+        const corpo = String(a.corpo ?? a.texto ?? a.mensagem ?? '').trim();
+        if (!corpo) throw new Error('mensagem vazia: nada foi enviado');
+        const texto = titulo ? `*${titulo}*\n\n${corpo}` : corpo;
+        const r = await this.enviarTexto(this.grupo, texto);
+        return {
+          enviado: true,
+          id: r.id,
+          destino: this.grupo,
+          caracteres: texto.length,
+          porOrdemDe: ctx.actorId ?? null,
+        };
+      },
+    }, 'EvolutionService');
   }
 
   get grupo(): string {

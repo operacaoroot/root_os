@@ -673,11 +673,52 @@ describe('o caminho que apaga não está ao alcance da aplicação', () => {
     // Sem banco: um dobrê responde "não sou dono", e o serviço tem de recusar
     // alto em vez de seguir e apagar zero linha com ar de sucesso.
     const fingido = {
-      $queryRaw: async () => [{ dono: false, papel: 'mktos_app' }],
+      $queryRaw: async () => [
+        { dono: false, papel: 'mktos_app', ignora: false, ligado: true, forcado: true },
+      ],
     };
     const svc = new ExpurgoService(fingido as never, {} as never, {} as never);
     await expect(svc.varrer()).rejects.toBeInstanceOf(ExpurgoIndisponivelError);
     await expect(svc.varrer()).rejects.toThrow(/mktos_app/);
+  });
+
+  it('ser DONO não basta: sem atravessar o isolamento, o expurgo recusa', async () => {
+    /*
+     * O MESMO DEFEITO QUE A FATIA DO COFRE ACHOU, aqui. Até 11/09/2026 a
+     * conferência perguntava só "sou o dono da tabela" — e `EventLog` nasce com
+     * FORCE ROW LEVEL SECURITY, que **vale para o dono também**. Num banco em que
+     * o dono não seja superusuário nem tenha BYPASSRLS, a conferência passava, a
+     * varredura de descoberta rodava sem empresa na sessão, a policy recortava
+     * tudo, e o expurgo saía dizendo "nenhuma empresa com rastro vencido" com
+     * código 0. Obrigação de retenção descumprida em silêncio — exatamente o
+     * desfecho que o comentário do arquivo dizia estar evitando.
+     */
+    const dono_sem_bypass = {
+      $queryRaw: async () => [
+        { dono: true, papel: 'mktos_dono', ignora: false, ligado: true, forcado: true },
+      ],
+    };
+    const svc = new ExpurgoService(dono_sem_bypass as never, {} as never, {} as never);
+    await expect(svc.varrer()).rejects.toBeInstanceOf(ExpurgoIndisponivelError);
+    await expect(svc.varrer()).rejects.toThrow(/FORCE ROW LEVEL SECURITY/);
+    await expect(svc.varrer()).rejects.toThrow(/ar de sucesso/);
+  });
+
+  it('mas onde o isolamento não está forçado, dono sem bypass passa', async () => {
+    // Banco descartável em que `app_rls_ligar()` nunca rodou: qualquer papel
+    // enxerga tudo e a varredura é completa. Recusar ali seria alarme falso.
+    const fingido = {
+      $queryRaw: async (partes: TemplateStringsArray) => {
+        if (partes.join(' ').includes('pg_get_userbyid')) {
+          return [{ dono: true, papel: 'mkt', ignora: false, ligado: false, forcado: false }];
+        }
+        return [];
+      },
+    };
+    const svc = new ExpurgoService(fingido as never, {} as never, {} as never);
+    const resumo = await svc.varrer();
+    expect(resumo.empresas).toEqual([]);
+    expect(resumo.apagados).toBe(0);
   });
 
   it('uma empresa que falha não derruba a varredura das outras', async () => {
@@ -693,7 +734,8 @@ describe('o caminho que apaga não está ao alcance da aplicação', () => {
       rastroRetencao: { findUnique: async () => null },
       auditLog: { create: async () => undefined },
       $queryRaw: async (partes: TemplateStringsArray, ...valores: unknown[]) => {
-        if (partes.join(' ').includes('pg_get_userbyid')) return [{ dono: true, papel: 'mkt' }];
+        if (partes.join(' ').includes('pg_get_userbyid'))
+          return [{ dono: true, papel: 'mkt', ignora: true, ligado: true, forcado: true }];
         if (valores[0] === 'org-ruim') throw new Error('deadlock detected');
         return [{ apagados: 1n, seq_de: 5n, seq_ate: 5n, evento_id: 'evt-x' }];
       },
@@ -709,7 +751,11 @@ describe('o caminho que apaga não está ao alcance da aplicação', () => {
   });
 
   it('a varredura recusa corte no futuro antes de chegar ao banco', async () => {
-    const fingido = { $queryRaw: async () => [{ dono: true, papel: 'mkt' }] };
+    const fingido = {
+      $queryRaw: async () => [
+        { dono: true, papel: 'mkt', ignora: true, ligado: true, forcado: true },
+      ],
+    };
     const svc = new ExpurgoService(fingido as never, {} as never, {} as never);
     await expect(
       svc.varrer({ corte: new Date(Date.now() + 60_000), orgIds: ['org-a'] }),

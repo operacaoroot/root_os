@@ -2,9 +2,10 @@
 #
 # Três jobs, nesta ordem de importância:
 #   1. qualidade   — typecheck + suítes de policy, web e api, COM banco de verdade.
-#   2. isolamento  — a suíte de isolamento entre tenants (fora do `pnpm test`) e a
-#                    seção de RLS das rotas públicas, que precisa do papel restrito
-#                    e de um banco só dela.
+#   2. isolamento  — a suíte de isolamento entre tenants (fora do `pnpm test`), a
+#                    seção de RLS das rotas públicas e a seção de isolamento do
+#                    COFRE. As três precisam do papel restrito e de um banco só
+#                    delas, porque ligam RLS no banco inteiro.
 #   3. migrations  — o histórico aplica num banco vazio E corresponde ao schema.
 #
 # ---------------------------------------------------------------------------
@@ -267,13 +268,46 @@ jobs:
       # O piso de CASOS vai a 443 — 18% de folga sobre 540, a mesma proporção de
       # todas as ondas anteriores. O de ARQUIVOS continua em 19, colado no real.
       #
+      # ---------------------------------------------------------------------
+      # ONDA 7, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 668 casos em 21 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime: `TEST_DATABASE_URL` no Postgres descartável, conjunto
+      # `padrao`, nenhum caso pulado. +128 casos e +2 arquivos sobre a onda 6.
+      #
+      #   alcada-reautenticacao 32, arquitetura 21, cofre 89,
+      #   conector-desligado 37, contexto-aprovacao 10, contexto-execucao 40,
+      #   env 7, escritas-pela-porta 37, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, porta 35,
+      #   provisionamento 40, rastro-por-nivel 22, rastro-retencao 31,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # De onde vêm os 128: `cofre` (89) e `escritas-pela-porta` (37) são
+      # arquivos NOVOS das duas fatias da onda; `rastro-retencao` foi de 29 para
+      # 31 (os dois casos da conferência de conexão do expurgo, que passou a
+      # cobrar atravessar o isolamento e não só ser dono da tabela).
+      #
+      # Os 89 de `cofre` são os que rodam SEM `RLS_NO_TESTE`. A seção de
+      # isolamento daquele arquivo (mais 8) não entra nesta conta pelo mesmo
+      # motivo de `rotas-publicas-tenant`: ela liga RLS no banco INTEIRO e
+      # derrubaria os outros arquivos, que rodam em paralelo. Ela tem passo
+      # próprio no job `isolamento`, abaixo.
+      #
+      # O piso de CASOS vai a 548 — 18% de folga sobre 668, a mesma proporção de
+      # todas as ondas anteriores. O de ARQUIVOS vai a 21, colado no real: é ele
+      # quem pega arquivo que some da coleta.
+      #
       # FORA DESTE JOB, e medidos na mesma sessão para quem for conferir:
-      #   · isolamento (`test:isolamento`, job próprio): 265 casos;
+      #   · isolamento (`test:isolamento`, job próprio): 267 casos (265 da onda
+      #     6 mais os 2 que a tabela `SegredoDeConector` trouxe ao registro de
+      #     alvos);
       #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53
       #     (os 38 daqui mais os 15 da seção de RLS);
-      #   · `rastro-retencao` com papel restrito: 31 (os 29 daqui mais 2).
-      PISO_CASOS_API: '443'
-      PISO_ARQUIVOS_API: '19'
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97 (os 89 daqui mais
+      #     os 8 da seção de isolamento);
+      #   · `rastro-retencao` com papel restrito: 33 (os 31 daqui mais 2).
+      PISO_CASOS_API: '548'
+      PISO_ARQUIVOS_API: '21'
 
     steps:
       - uses: actions/checkout@v4
@@ -649,6 +683,12 @@ jobs:
       # real: piso é chão, não espelho. Ao remover caso de propósito, baixe o
       # piso no mesmo commit.
       #
+      # ONDA 7 (11/09/2026): **267 casos**, remedidos no mesmo regime. A tabela
+      # `SegredoDeConector` — a do COFRE, que nasce com RLS/FORCE e as duas
+      # policies na mesma migration que a cria — entrou no registro de alvos e
+      # trouxe os 2 casos de medição dela. O piso vai de 225 para 227, mantendo
+      # os ~15% de folga.
+      #
       # O piso SUBIU de 190 para 220 na correção da fatia 1.5, e o motivo é a
       # coisa que o piso existe para pegar. A contagem era 224 com o registro de
       # alvos escrito à mão em 59 entradas, para um banco com 69 tabelas de
@@ -675,7 +715,7 @@ jobs:
         env:
           MKTOS_CONJUNTO_DE_TESTES: isolamento
           RESUMO_ISOLAMENTO: ${{ runner.temp }}/resumo-isolamento.json
-          PISO_CASOS_ISOLAMENTO: '225'
+          PISO_CASOS_ISOLAMENTO: '227'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
@@ -778,6 +818,65 @@ jobs:
                 " (esperados 53: 38 sem RLS + 15 com). A secao de RLS nao foi registrada — quase sempre " +
                 "RLS_NO_TESTE ou TENANT_DATABASE_URL que nao chegou. Ela NAO aparece como pulada, porque o " +
                 "arquivo a registra por if e nao por describe.skipIf; este piso e o que a impede de sumir em silencio.");
+              process.exit(1);
+            }
+          '
+
+      # -----------------------------------------------------------------------
+      # A SEÇÃO DE ISOLAMENTO DO COFRE — onda 7, fatia 5.3.
+      #
+      # `test/cofre.test.ts` termina com um bloco que mede, com o PAPEL RESTRITO,
+      # se uma empresa alcança o segredo de outra em `SegredoDeConector`. É a
+      # tabela de CREDENCIAIS: se alguma coisa neste repositório precisa de prova
+      # de isolamento medida em vez de descrita, é ela.
+      #
+      # O gatilho é o MESMO de `rotas-publicas-tenant`, e de propósito:
+      # `RLS_NO_TESTE=1` mais `TENANT_DATABASE_URL`. A seção liga RLS no banco
+      # inteiro e por isso não pode rodar no job `qualidade`, onde os arquivos
+      # rodam em paralelo contra o mesmo Postgres — e é este job o único que tem
+      # o papel restrito com senha. Sem o passo abaixo ela NUNCA rodaria em lugar
+      # nenhum: o arquivo a registra por `if` e não por `describe.skipIf`, então
+      # ela não apareceria nem como pulada.
+      #
+      # Medido em 11/09/2026, contra o Postgres descartável com `mktos_app` de
+      # pé: **97 casos** (89 sem a seção + 8 dela).
+      # -----------------------------------------------------------------------
+      - name: Cofre com o isolamento por linha LIGADO
+        env:
+          RLS_NO_TESTE: '1'
+          RESUMO_COFRE: ${{ runner.temp }}/resumo-cofre.json
+          # 94 = acima dos 89 que o arquivo roda SEM a seção, e abaixo dos 97
+          # reais. A margem é estreita porque a seção é pequena (8 casos): o
+          # piso precisa caber entre os dois números para reprovar quando a
+          # seção não for registrada. Ao acrescentar caso fora da seção, suba
+          # este piso junto, senão ele para de distinguir as duas situações.
+          PISO_CASOS_COFRE: '94'
+        run: |
+          # SEM `--` antes das opções — mesma armadilha do passo acima: com ele o
+          # vitest trata `--reporter=...` como filtro de arquivo, a suíte sai
+          # verde e o resumo nunca é escrito.
+          pnpm --filter @mktos/api exec vitest run test/cofre.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_COFRE"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_COFRE, "utf8")); }
+            catch (e) { console.log("::error::resumo do cofre ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_COFRE);
+            const total = r.numTotalTests;
+            console.log("cofre com RLS: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a suite do cofre nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                " (esperados 97: 89 sem a secao de isolamento + 8 dela). A secao nao foi registrada — " +
+                "quase sempre RLS_NO_TESTE ou TENANT_DATABASE_URL que nao chegou. Ela NAO aparece como " +
+                "pulada, porque o arquivo a registra por if; este piso e o que a impede de sumir em silencio. " +
+                "Sem ela, NADA mede se uma empresa alcanca o segredo de outra.");
               process.exit(1);
             }
           '

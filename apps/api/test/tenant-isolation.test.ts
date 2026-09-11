@@ -320,6 +320,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'IntegrationAccount', escopo: 'tenant', chaveSql: '"id"', nota: 'config Json carrega credencial de integração em claro.' },
   { tabela: 'IntegrationHealth', escopo: 'filho', chaveSql: '"id"', nota: 'Filha 1:1 de IntegrationAccount; orgId derivado dela.' },
   { tabela: 'ConectorDesligado', escopo: 'tenant', chaveSql: '"id"', nota: 'Desligamento de conector por empresa (RF-G-06). Ler o da outra revela que ela suspendeu um conector e por quê; ESCREVER nele é pior — apagar a linha RELIGA o conector da outra empresa por fora do painel dela.' },
+  { tabela: 'SegredoDeConector', escopo: 'tenant', chaveSql: '"id"', nota: 'O COFRE (fatia 5.3, RF-C-01). É a pior linha do banco para vazar: cada uma é a credencial de uma empresa num fornecedor. O valor é cifrado E amarrado a (orgId, conector, nome) pelo dado associado do GCM, então copiar a linha não basta para abrir — mas ler já entrega o mapa de que conectores a outra empresa usa, com que escopo e desde quando, e APAGAR é revogar o acesso dela por fora do painel.' },
 
   // ---- leads e campanhas ------------------------------------------------
   { tabela: 'LeadSource', escopo: 'tenant', chaveSql: '"id"', nota: 'Catálogo de canais por org.' },
@@ -660,6 +661,18 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('ConectorDesligado', await ins(c, 'ConectorDesligado', {
     id: crypto.randomUUID(), orgId, conector: 'gmail',
     motivo: `Suspensão da org ${rotulo} (${MARCA})`, desligadoPor: userId,
+  }));
+
+  // Fatia 5.3 — o COFRE (RF-C-01). O `valorCifrado` aqui é texto de mentira com
+  // a MARCA dentro, e é de propósito: o que esta suíte mede é se a LINHA
+  // aparece para a outra empresa, e um criptograma de verdade tornaria a falha
+  // ilegível no diagnóstico. A prova de que o valor não abre na empresa errada
+  // (o dado associado do GCM) é outra, e mora em `test/cofre.test.ts`.
+  reg('SegredoDeConector', await ins(c, 'SegredoDeConector', {
+    id: crypto.randomUUID(), orgId, conector: 'google', nome: 'access_token',
+    valorCifrado: `c2.env.NAO-E-CRIPTOGRAMA.${rotulo}.${MARCA}`, chaveId: 'env',
+    escopo: ['gmail.send'], origem: 'teste-isolamento',
+    criadoEm: agora, atualizadoEm: agora,
   }));
 
   // --- leads e campanhas ---------------------------------------------------

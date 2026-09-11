@@ -151,8 +151,17 @@ describe.skipIf(!URL)('a porta', () => {
     const sinais = new SinaisService(p, policy);
     approvals = new ApprovalsService(p, audit);
     eventos = new EventLogService(p);
-    gateway = new ToolGateway(p, policy, sinais, approvals, eventos);
 
+    /*
+     * O REGISTRO DE EFEITOS NASCE ANTES DA PORTA — mudou na fatia 3.3.
+     *
+     * A porta passou a ser quem DISPARA o efeito nos dois caminhos de execução:
+     * no do agente ele chega por callback de `executar()`, e no pós-aprovação
+     * ela o busca no registro (`executarAprovado`). `AcoesService` não conhece
+     * mais o registro; ele pede à porta. Por isso o registro entra na
+     * construção da porta e a porta entra na construção de `AcoesService` — que
+     * é a ordem em que o Nest os monta.
+     */
     enviados = [];
     registro = new EfeitosRegistry();
     registro.registrar({
@@ -161,20 +170,33 @@ describe.skipIf(!URL)('a porta', () => {
         return { enviado: true, id: 'msg-1' };
       },
     });
+    gateway = new ToolGateway(p, policy, sinais, approvals, eventos, undefined, undefined, registro);
+
     // A POLÍTICA VAI JUNTO, como o Nest a injeta. Sem ela este serviço não
     // registra o conteúdo redigível (falha fechada — ver `conteudoDaAcao`), e
     // a suíte passaria a medir uma linha de desfecho mais pobre do que a que a
     // aplicação escreve. Medir o que roda em produção é o ponto.
-    acoes = new AcoesService(p, registro, eventos, undefined, policy);
+    acoes = new AcoesService(p, gateway, eventos, undefined, policy);
   });
 
   afterAll(async () => {
     vi.useRealTimers();
     // O EventLog é append-only de verdade: a RULE de DELETE também vale para o
     // teste. Desligar explicitamente aqui é o preço de a garantia ser real.
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.eventLog.deleteMany({ where: { orgId: ORG } });
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    /*
+     * NUMA TRANSAÇÃO SÓ. `EventLog` é do banco INTEIRO e os arquivos de teste
+     * rodam em PARALELO contra ele: em comandos soltos, a RULE de append-only
+     * fica desligada para TODO MUNDO na janela entre eles, e quem estiver
+     * medindo o append-only nesse instante sai vermelho por um defeito que não
+     * existe. Dentro de uma transação o ALTER TABLE segura ACCESS EXCLUSIVE até
+     * o commit, e worker morto no meio devolve a RULE ligada. Mesmo conserto da
+     * onda 6 em `rastro-retencao.test.ts`.
+     */
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.eventLog.deleteMany({ where: { orgId: ORG } }),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
     await prisma.approval.deleteMany({ where: { orgId: ORG } });
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
@@ -441,19 +463,25 @@ describe.skipIf(!URL)('a porta', () => {
     );
     const alvo = await prisma.eventLog.findFirst({ where: { orgId: ORG }, orderBy: { seq: 'desc' } });
     // As RULEs impedem UPDATE pelo caminho normal; aqui força por SQL cru,
-    // desligando a regra, para provar que a VERIFICAÇÃO pega.
-    await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_update`);
-    await prisma.$executeRawUnsafe(`UPDATE "EventLog" SET tipo = 'adulterado' WHERE id = $1`, alvo!.id);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_update`);
+    // desligando a regra, para provar que a VERIFICAÇÃO pega. Numa transação só,
+    // pelo mesmo motivo do afterAll: a RULE é do banco inteiro e os arquivos
+    // rodam em paralelo.
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_update`),
+      prisma.$executeRawUnsafe(`UPDATE "EventLog" SET tipo = 'adulterado' WHERE id = $1`, alvo!.id),
+      prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_update`),
+    ]);
 
     const v = await eventos.verificar(ORG);
     expect(v.ok).toBe(false);
     expect(v.quebrouEm?.motivo).toContain('não bate com o hash gravado');
 
-    // limpa para não contaminar os outros testes
-    await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete`);
-    await prisma.$executeRawUnsafe(`DELETE FROM "EventLog" WHERE "orgId" = $1`, ORG);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete`);
+    // limpa para não contaminar os outros testes — numa transação só
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete`),
+      prisma.$executeRawUnsafe(`DELETE FROM "EventLog" WHERE "orgId" = $1`, ORG),
+      prisma.$executeRawUnsafe(`ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete`),
+    ]);
   });
 
   it('aprovar EXECUTA — e com o texto GRAVADO, não com o que vier depois', async () => {
@@ -502,7 +530,22 @@ describe.skipIf(!URL)('a porta', () => {
   });
 
   it('capacidade aprovada mas sem efeito ligado NÃO finge que executou', async () => {
-    const vazio = new AcoesService(prisma as unknown as PrismaService, new EfeitosRegistry(), eventos);
+    /*
+     * A PORTA DESTE CASO TEM REGISTRO VAZIO — é o que faz `temEfeito` responder
+     * "não". Desde a fatia 3.3 quem sabe se a capacidade tem efeito ligado é a
+     * porta, não `AcoesService`: ele pergunta a ela.
+     */
+    const portaSemEfeito = new ToolGateway(
+      prisma as unknown as PrismaService,
+      policy,
+      new SinaisService(prisma as unknown as PrismaService, policy),
+      approvals,
+      eventos,
+      undefined,
+      undefined,
+      new EfeitosRegistry(),
+    );
+    const vazio = new AcoesService(prisma as unknown as PrismaService, portaSemEfeito, eventos);
     const proposta = await gateway.executar(
       {
         capabilityId: 'whatsapp.mensagem.enviar',
@@ -965,9 +1008,12 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
     );
 
   const limparRastro = async () => {
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.$executeRawUnsafe('DELETE FROM "EventLog" WHERE "orgId" = $1', ORG2);
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    // Transação só: ver a nota do afterAll acima.
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.$executeRawUnsafe('DELETE FROM "EventLog" WHERE "orgId" = $1', ORG2),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
   };
 
   beforeAll(async () => {
@@ -1017,16 +1063,6 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
     conectores.onModuleInit();
     expect(interruptores.ligado, 'o interruptor não se inscreveu na porta').toBe(true);
 
-    gateway = new ToolGateway(
-      p,
-      policy,
-      new SinaisService(p, policy),
-      approvals,
-      eventos,
-      undefined,
-      interruptores,
-    );
-
     enviados = [];
     registro = new EfeitosRegistry();
     registro.registrar({
@@ -1035,7 +1071,21 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
         return { enviado: true, id: 'msg-gancho', destino: '120363@g.us' };
       },
     });
-    acoes = new AcoesService(p, registro, eventos, interruptores, policy);
+
+    gateway = new ToolGateway(
+      p,
+      policy,
+      new SinaisService(p, policy),
+      approvals,
+      eventos,
+      undefined,
+      interruptores,
+      // O registro vai para a PORTA desde a fatia 3.3: é ela que dispara o
+      // efeito também no caminho pós-aprovação.
+      registro,
+    );
+
+    acoes = new AcoesService(p, gateway, eventos, interruptores, policy);
 
     /*
      * O CONTROLADOR, e não só os serviços.

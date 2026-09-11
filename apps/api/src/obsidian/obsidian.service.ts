@@ -5,6 +5,7 @@ import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 
 /**
  * A empresa da casa, de onde o vault do Obsidian é indexado.
@@ -38,13 +39,40 @@ export class ObsidianService implements OnModuleInit {
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
   private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /*
+     * Vem do `GatewayModule`, que é `@Global`: injetar aqui NÃO acrescenta
+     * dependência de módulo nenhuma, e é por isso que a inscrição cabe numa
+     * linha. Ver o cabeçalho de `gateway/conectores-configurados.registry.ts`.
+     */
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
+  ) {}
 
   get configured(): boolean {
     return this.vault.length > 0 && existsSync(this.vault);
   }
 
   onModuleInit(): void {
+    /*
+     * A INSCRIÇÃO VEM ANTES DE QUALQUER RETORNO ANTECIPADO — e a ordem é o
+     * ponto, não detalhe.
+     *
+     * A tela de Conexões lia `OBSIDIAN_VAULT_PATH` por conta própria para
+     * decidir o selo "conectado" (`integrations/integrations.service.ts`). O
+     * nome da variável virava um contrato duplicado entre a tela e este
+     * serviço: renomear aqui — ou passar a ler de outro lugar — faria a tela
+     * afirmar "desconectado" sobre uma vault montada, sem erro de compilação e
+     * sem nada no log. Agora ela PERGUNTA, e quem responde é quem sabe.
+     *
+     * Se esta linha ficasse depois do `return` abaixo, uma máquina sem vault
+     * não se inscreveria — e o `onApplicationBootstrap` do registro DERRUBA a
+     * aplicação quando um conector cobrado não responde. "Sem credencial" é
+     * uma RESPOSTA (`false`), não uma ausência de resposta: as duas coisas são
+     * diferentes e a tela precisa das duas.
+     */
+    this.conectoresConfigurados.registrar('obsidian', () => this.configured);
+
     if (!this.configured) {
       if (this.vault) this.log.warn(`OBSIDIAN_VAULT_PATH="${this.vault}" não existe — base de conhecimento off.`);
       return;

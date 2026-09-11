@@ -59,6 +59,8 @@ import {
   EmpresaDivergenteError,
 } from '../src/integrations/conectores.service';
 import { ClickupService } from '../src/integrations/clickup.service';
+import { ConectoresConfiguradosRegistry } from '../src/gateway/conectores-configurados.registry';
+import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { AuditService } from '../src/audit/audit.service';
 import { EventLogService } from '../src/gateway/event-log.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -98,9 +100,9 @@ function lerCatalogo(nome: string): CapacidadeDoCatalogo[] {
  *
  * `politica-marketing-os.json` é um DELTA sobre `politica-root.json`: quem
  * decide em execução é `resolverPolitica(base, delta)`, e o que ela devolve são
- * as 16 da base MAIS as 51 do delta, com os ids repetidos sobrescritos — 60.
+ * as 16 da base MAIS as do delta, com os ids repetidos sobrescritos — 62 hoje.
  *
- * A catraca lia só o delta. As nove que só existem na base ficavam sem decisão
+ * A catraca lia só o delta. As que só existem na base ficavam sem decisão
  * declarada e, como capacidade desconhecida devolve `null` (ver
  * `conectorDaCapacidade`), NUNCA seriam bloqueáveis — com a suíte verde. Entre
  * elas: emitir nota fiscal, baixar pagamento, excluir registro e criar tarefa no
@@ -125,30 +127,39 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 53 do delta, 7 repetidos', () => {
-    // Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
-    // número cai para o do delta e este caso avisa antes de as nove sumirem
-    // de novo.
+  it('a união do catálogo é o que a catraca mede — 16 da base + 54 do delta, 8 repetidos', () => {
+    /*
+     * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
+     * número cai para o do delta e este caso avisa antes de as oito sumirem
+     * de novo.
+     *
+     * O DELTA FOI DE 53 PARA 54 NA CORREÇÃO DA FATIA 3.3, e a união NÃO mudou.
+     * `clickup.tarefa.criar` existia só na base, sem `argsSchema`: a porta não
+     * validava nada e a aprovação assinava um corpo livre — enquanto a suíte
+     * das escritas migradas exigia schema fechado de todas as outras. A base é
+     * cópia byte a byte do anexo normativo do vault e não se edita aqui, e o
+     * delta sobrescreve a entrada inteira, então foi para lá que ela foi: mesmo
+     * nível, mesmo efeito, com o schema. Por isso o repetido subiu de 7 para 8 e
+     * o "só na base" caiu de 9 para 8.
+     */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(53);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(54);
     expect(capacidadesDoCatalogo()).toHaveLength(62);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
-    expect(soNaBase).toHaveLength(9);
-    // As quatro que o revisor nomeou: todas passaram a ter decisão declarada.
-    for (const id of [
-      'nfe.emitir',
-      'omie.pagamento.baixar',
-      'registro.excluir',
-      'clickup.tarefa.criar',
-    ]) {
+    expect(soNaBase).toHaveLength(8);
+    // As três do revisor que continuam vindo só da base: todas com decisão
+    // declarada. `clickup.tarefa.criar` saiu desta lista porque agora está nas
+    // duas — e continua conferida logo abaixo, pelo caso que varre a união.
+    for (const id of ['nfe.emitir', 'omie.pagamento.baixar', 'registro.excluir']) {
       expect(soNaBase, `${id} deveria vir só da base`).toContain(id);
       expect(
         id in CONECTOR_DA_CAPACIDADE || SEM_INTERRUPTOR.has(id),
         `${id} sem decisão declarada`,
       ).toBe(true);
     }
+    expect(CONECTOR_DA_CAPACIDADE['clickup.tarefa.criar']).toBe('clickup');
   });
 
   it('toda capacidade do catálogo tem entrada declarada, em exatamente uma lista', () => {
@@ -538,9 +549,20 @@ describe.skipIf(!URL)('desligar um conector, por empresa', () => {
   afterAll(async () => {
     // O RASTRO é append-only de verdade — a RULE de DELETE vale para o teste
     // também. Desligar explicitamente é o preço da garantia ser real.
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.eventLog.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    /*
+     * NUMA TRANSAÇÃO SÓ. `EventLog` é do banco INTEIRO e os arquivos de teste
+     * rodam em PARALELO contra ele: em comandos soltos, a RULE de append-only
+     * fica desligada para TODO MUNDO na janela entre eles, e quem estiver
+     * medindo o append-only nesse instante sai vermelho por um defeito que não
+     * existe. Dentro de uma transação o ALTER TABLE segura ACCESS EXCLUSIVE até
+     * o commit, e worker morto no meio devolve a RULE ligada. Mesmo conserto da
+     * onda 6 em `rastro-retencao.test.ts`.
+     */
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.eventLog.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } }),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
     await prisma.auditLog.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
     await limparDesligamentos();
     await prisma.googleAccount.deleteMany({ where: { orgId: { in: [ORG_A, ORG_B] } } });
@@ -971,7 +993,19 @@ describe.skipIf(!URL)('desligar um conector, por empresa', () => {
       const p = prisma as unknown as PrismaService;
       // Construído à mão: `onModuleInit` não roda, então nenhum timer de sync
       // agendado fica para trás.
-      const clickup = new ClickupService(p, new AuditService(p), conectores);
+      const clickup = new ClickupService(
+        p,
+        new AuditService(p),
+        conectores,
+        // O registro de "quem está configurado" (fatia 3.3): o conector se
+        // inscreve nele no arranque, para a tela de Conexões não precisar ler a
+        // credencial por conta própria. Aqui vai um descartável — `onModuleInit`
+        // não roda neste caso, então nada chega a se inscrever.
+        new ConectoresConfiguradosRegistry(),
+        // Idem para o registro de efeitos: o conector declara nele as duas
+        // escritas do ClickUp no arranque, que aqui não roda.
+        new EfeitosRegistry(),
+      );
 
       await naEmpresa(ORG_A, () => conectores.desligar(ORG_A, 'clickup', { motivo: 'conta suspensa', actorId: 'pedro' }));
       const syncA = () => naEmpresa(ORG_A, () => clickup.sync(ORG_A));

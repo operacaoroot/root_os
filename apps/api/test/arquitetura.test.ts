@@ -20,7 +20,9 @@ import path from 'node:path';
  *      (a base vem do ambiente) e não há efeito registrado.
  *
  * Este arquivo não refatora nada. Ele só congela o estado de hoje e impede que
- * ele piore. A remoção das violações listadas é a fatia 3.3 do plano.
+ * ele piore. A fatia 3.3 pagou parte das violações listadas; o resto está reapontado, linha a
+ * linha, para a onda que vai pagá-lo — e a catraca recusa exceção que aponte para fatia já
+ * executada.
  *
  * A lista de exceções é uma DÍVIDA declarada, não um perdão: o teste falha nos
  * dois sentidos — quando aparece violação nova fora da lista, e quando uma
@@ -422,58 +424,87 @@ interface Excecao {
 }
 
 /*
- * Violações que já existem. Cada linha é uma promessa: sai na fatia 3.3.
+ * Violações que já existem. Cada linha é uma promessa, e o campo `fatia` diz QUEM a paga.
  * Nada aqui é permissão permanente — a lista só encolhe.
+ *
+ * DEPOIS DA FATIA 3.3 (11/09/2026) as promessas foram REAPONTADAS. Elas diziam "sai na 3.3"
+ * e a 3.3 já rodou: promessa que aponta para o passado é dívida sem dono, que ninguém herda e
+ * ninguém cobra. Cada uma agora nomeia a onda seguinte, e o `motivo` diz o que impediu agora.
+ * A catraca `toda exceção diz qual fatia a remove` recusa fatia já executada.
  */
 const EXCECOES: Excecao[] = [
+  /*
+   * --------------------------------------------------------------------------
+   * O QUE A FATIA 3.3 PAGOU AQUI (11/09/2026) — está escrito para que ninguém
+   * reintroduza o caminho achando que era assim mesmo:
+   *
+   *   · `agents/efeitos.service.ts -> pauta/evolution.service.ts` — o efeito de
+   *     `whatsapp.mensagem.enviar` mudou de lado: quem o declara agora é o
+   *     PRÓPRIO conector, no `onModuleInit` dele. A regra que ficou é
+   *     "efeito que fala com sistema de terceiro é declarado pelo conector
+   *     daquele sistema"; o mapa de `agents/` só liga o que lê o banco do OS.
+   *   · `google/google.controller.ts -> google/google.service.ts` — as nove
+   *     ações do Google (cinco leituras e as QUATRO escritas externas) passaram
+   *     a ir pela porta (`gateway/porta-do-operador.service.ts`). O controlador
+   *     virou tradutor: valida o corpo, traduz para os argumentos do catálogo e
+   *     entrega. Não conhece mais o conector.
+   * --------------------------------------------------------------------------
+   */
+
   // --- superfície de agentes: o runtime alcança conector sem passar pela porta
   {
     arquivo: 'src/agents/efeitos.service.ts',
-    conector: 'src/pauta/evolution.service.ts',
-    motivo:
-      'whatsapp.mensagem.enviar (R3) tem o efeito ligado chamando EvolutionService direto. ' +
-      'O efeito precisa virar uma ação registrada no gateway, não um import do runtime.',
-    fatia: '3.3',
-  },
-  {
-    arquivo: 'src/agents/efeitos.service.ts',
     conector: 'src/obsidian/obsidian.service.ts',
-    motivo: 'contexto.memoria.buscar lê o vault direto do mapa de efeitos.',
-    fatia: '3.3',
+    motivo:
+      'contexto.memoria.buscar lê o vault direto do mapa de efeitos. É a última linha deste ' +
+      'mapa que importa conector, e o conserto é de UMA linha, igual ao que o EvolutionService ' +
+      'recebeu nesta fatia: o ObsidianService ganha um onModuleInit que registra o efeito em ' +
+      'EfeitosRegistry (que é @Global, então não mexe no grafo de módulos). Não foi feito aqui ' +
+      'porque src/obsidian/ é de outra fatia desta onda e a última escrita venceria.',
+    fatia: 'onda 8 — resto da 3.3: o conserto mora em src/obsidian/, que era de outra fatia da onda 7',
   },
   {
     arquivo: 'src/agents/context-builder.service.ts',
     conector: 'src/obsidian/obsidian.service.ts',
-    motivo: 'O montador de contexto do agente busca no vault sem passar pela porta.',
-    fatia: '3.3',
+    motivo:
+      'O montador de contexto do agente busca no vault sem passar pela porta. Mesmo conserto e ' +
+      'mesmo impedimento da linha acima: o efeito passa a ser declarado pelo ObsidianService e ' +
+      'o montador pede a capacidade `contexto.memoria.buscar` em vez do serviço.',
+    fatia: 'onda 8 — resto da 3.3: o conserto mora em src/obsidian/, que era de outra fatia da onda 7',
   },
 
   // --- controllers do próprio módulo do conector: HTTP direto no fornecedor
   {
-    arquivo: 'src/google/google.controller.ts',
+    arquivo: 'src/google/google-conexao.controller.ts',
     conector: 'src/google/google.service.ts',
     motivo:
-      'Publica POST gmail/send, POST calendar/event, POST docs e POST docs/:id/append: ' +
-      'escrita externa sem classificação de risco nem retenção.',
-    fatia: '3.3',
+      'O CICLO DE VIDA DA CREDENCIAL, e só ele: connect, callback do OAuth, status e ' +
+      'disconnect. As nove AÇÕES saíram deste arquivo na fatia 3.3 e hoje passam pela porta; ' +
+      'este controlador foi separado justamente para que a exceção fosse precisa em vez de ' +
+      'cobrir tudo. Conectar não é ação sobre o mundo — é o consentimento que TORNA a ação ' +
+      'possível, dado pela própria pessoa na tela do Google, e o callback é público por ' +
+      'construção (quem chega nele é o browser redirecionado, sem sessão). Não há o que reter ' +
+      'para aprovação depois. Guardar, ler, cifrar e revogar credencial é o COFRE (fatia 5.3): ' +
+      'quando ele existir, é o cofre que este controlador injeta e a linha sai daqui.',
+    fatia: '5.3 (COFRE) — permanente até lá',
   },
   {
     arquivo: 'src/meta/meta.controller.ts',
     conector: 'src/meta/meta.service.ts',
     motivo: 'Callback OAuth e leitura do Instagram fora da porta.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/obsidian/obsidian.controller.ts',
     conector: 'src/obsidian/obsidian.service.ts',
     motivo: 'Leitura e reindexação do vault protegidas só por permissão de papel, sem RASTRO da porta.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/integrations/integrations.controller.ts',
     conector: 'src/integrations/clickup.service.ts',
     motivo: 'POST clickup/sync dispara sincronização com o ClickUp fora da porta.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
 
   // --- serviços de domínio que falam com o fornecedor por conta própria
@@ -481,25 +512,25 @@ const EXCECOES: Excecao[] = [
     arquivo: 'src/content/content.service.ts',
     conector: 'src/integrations/clickup.service.ts',
     motivo: 'O módulo de conteúdo escreve tarefa no ClickUp direto.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/goals/goals.service.ts',
     conector: 'src/meta/meta.service.ts',
     motivo: 'Metas puxa número do Instagram/Meta direto para preencher a semana.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/finance/finance.service.ts',
     conector: 'src/finance/pluggy.service.ts',
     motivo: 'Financeiro consulta Open Finance direto (leitura, mas fora do RASTRO da porta).',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/finance/finance.service.ts',
     conector: 'src/finance/asaas.service.ts',
     motivo: 'Financeiro consulta o Asaas direto — e o Asaas também sabe cobrar, não só ler.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
 
   // --- pauta: o módulo mais furado, com quatro caminhos próprios
@@ -507,71 +538,127 @@ const EXCECOES: Excecao[] = [
     arquivo: 'src/pauta/pauta.service.ts',
     conector: 'src/pauta/apify.service.ts',
     motivo: 'Coleta de Instagram/TikTok via Apify direto, sem teto de execuções decidido pela porta.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/pauta/espelho.service.ts',
     conector: 'src/google/google.service.ts',
     motivo:
-      'Grava .md no Google Drive por google.api(), um passa-tudo genérico do conector: ' +
-      'a porta não vê nem o método HTTP nem o destino.',
-    fatia: '3.3',
+      'O PASSA-TUDO FOI FECHADO NA FATIA 3.3 e o que sobra aqui é outra coisa. `google.api()` ' +
+      'era público e aceitava URL e método arbitrários: o espelho montava os dois endereços do ' +
+      'Drive aqui dentro e entregava prontos, então mover o import não moveria fronteira ' +
+      'nenhuma. Hoje `api()` é privado e o espelho chama `gravarArquivoNoDrive(orgId, {folderId, ' +
+      'nome, conteudo})` — destino fixo, método fixo, decidido pelo conector. O import que resta ' +
+      'é de uma escrita do OS no Drive DELE, por rotina, e não de ação proposta por agente: para ' +
+      'virar capacidade ela precisaria de uma entrada nova no catálogo, e capacidade nova em ' +
+      'produção só entra por semente assinada.',
+    fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   {
     arquivo: 'src/pauta/publicacao.service.ts',
     conector: 'src/pauta/evolution.service.ts',
     motivo: 'Publicação manda WhatsApp em grupo direto pela Evolution.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/pauta/publicacao.service.ts',
     conector: 'src/integrations/clickup.service.ts',
     motivo: 'Publicação abre tarefa no ClickUp direto.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
   {
     arquivo: 'src/pauta/rodada.controller.ts',
     conector: 'src/pauta/evolution.service.ts',
     motivo: 'O controller da rodada consulta o estado da instância da Evolution direto.',
-    fatia: '3.3',
+    fatia: 'onda 8 — resto da 3.3',
   },
 
-  // --- bio: dois conectores inteiros fora da porta, herdados do root-bio
+  /*
+   * --------------------------------------------------------------------------
+   * BIO: dois conectores inteiros fora da porta, herdados do root-bio
+   * --------------------------------------------------------------------------
+   *
+   * A DECISÃO DA FATIA 3.3 SOBRE OS DOIS CLIENTES DE INSTAGRAM NO MESMO PROCESSO
+   * — a pergunta era se `bio/plataformas/instagram.ts` dobra dentro do
+   * `MetaService` ou permanece conector próprio. **Permanece separado**, e o
+   * argumento tem três partes:
+   *
+   *  1. NÃO SÃO O MESMO CLIENTE, SÃO DUAS AUTORIZAÇÕES DIFERENTES DA MESMA
+   *     PLATAFORMA. O da bio autoriza a conta PESSOAL do criador para listar as
+   *     mídias que alimentam a página de links; o `MetaService` fala com a conta
+   *     de negócio, pelo app da Meta, para ler métrica e alcance. Escopos
+   *     diferentes, telas de consentimento diferentes, ciclos de renovação
+   *     diferentes. Fundir os dois obrigaria uma das duas superfícies a pedir
+   *     escopo que ela não usa — o contrário do que a régua quer.
+   *  2. O ENDEREÇO DE RETORNO ESTÁ TRAVADO POR REVISÃO EXTERNA. O callback da
+   *     bio (`/api/conectar/:plataforma/callback`) é a redirect URI registrada
+   *     nos consoles da Meta e do TikTok. Trocá-la exige App Review novo, cujo
+   *     prazo não depende de nós. Pagar esse custo para ganhar um cliente HTTP a
+   *     menos é trocar risco de arquitetura por risco de operação.
+   *  3. O QUE PRECISA CONVERGIR NÃO É O CLIENTE, É O PORTÃO. Dois clientes são
+   *     aceitáveis; duas fronteiras, não. As três consequências concretas, que é
+   *     o que sobra de dívida aqui:
+   *       (a) as ações dos dois passam a ser capacidade declarada e a sair pela
+   *           porta, como as do Google passaram nesta fatia;
+   *       (b) os dois respondem pela MESMA chave de conector (`instagram`), para
+   *           que "desligar o Instagram" na tela de Conexões pare os dois — hoje
+   *           para só um;
+   *       (c) os dois se inscrevem em `ConectoresConfiguradosRegistry`.
+   *
+   * POR QUE NÃO FOI FEITO AQUI: `src/bio/` é editado ao mesmo tempo pela fatia
+   * 5.3 (COFRE), que move o armazenamento e a cifragem dos tokens destes dois
+   * conectores. Mexer nas mesmas linhas em paralelo destruiria um dos dois
+   * trabalhos — a divisão combinada é "3.3 mexe em rota e serviço de escrita,
+   * 5.3 mexe em credencial", e em `bio/` as duas coisas estão no mesmo método
+   * (trocar código por token É guardar credencial). Fica para a onda seguinte,
+   * com o desenho acima já decidido.
+   */
   {
     arquivo: 'src/bio/bio.service.ts',
     conector: 'src/bio/plataformas/instagram.ts',
-    motivo: 'Monta a URL de autorização OAuth do Instagram direto, sem a porta ver a concessão de escopo.',
-    fatia: '3.3',
+    motivo:
+      'Monta a URL de autorização OAuth do Instagram direto, sem a porta ver a concessão de ' +
+      'escopo. Ver a DECISÃO no bloco acima: os dois clientes permanecem separados; o que ' +
+      'converge é o portão (capacidade declarada, mesma chave de conector, inscrição no ' +
+      'registro de configurados).',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/, que era da 5.3 na onda 7',
   },
   {
     arquivo: 'src/bio/bio.service.ts',
     conector: 'src/bio/plataformas/tiktok.ts',
-    motivo: 'Idem para o TikTok, incluindo o verifier PKCE.',
-    fatia: '3.3',
+    motivo: 'Idem para o TikTok, incluindo o verifier PKCE. Ver a DECISÃO no bloco acima.',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/',
   },
   {
     arquivo: 'src/bio/bio-oauth.controller.ts',
     conector: 'src/bio/plataformas/instagram.ts',
-    motivo: 'Troca o código por token e lê o perfil no callback, fora da porta.',
-    fatia: '3.3',
+    motivo:
+      'Troca o código por token e lê o perfil no callback, fora da porta. Este método é o ' +
+      'ponto exato onde as duas fatias desta onda se encontram: trocar código por token É ' +
+      'guardar credencial (5.3) e é também rota de escrita (3.3). Ver a DECISÃO no bloco acima.',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/',
   },
   {
     arquivo: 'src/bio/bio-oauth.controller.ts',
     conector: 'src/bio/plataformas/tiktok.ts',
-    motivo: 'Idem para o TikTok.',
-    fatia: '3.3',
+    motivo: 'Idem para o TikTok. Ver a DECISÃO no bloco acima.',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/',
   },
   {
     arquivo: 'src/bio/bio-sync.service.ts',
     conector: 'src/bio/plataformas/instagram.ts',
-    motivo: 'Renova token e puxa mídias do Instagram por rotina, sem classificação nem RASTRO.',
-    fatia: '3.3',
+    motivo:
+      'Renova token e puxa mídias do Instagram por rotina, sem classificação nem RASTRO. ' +
+      'Renovar token é 5.3; puxar mídia é 3.3. Ver a DECISÃO no bloco acima.',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/',
   },
   {
     arquivo: 'src/bio/bio-sync.service.ts',
     conector: 'src/bio/plataformas/tiktok.ts',
-    motivo: 'Renova token e puxa vídeos do TikTok por rotina, sem classificação nem RASTRO.',
-    fatia: '3.3',
+    motivo:
+      'Renova token e puxa vídeos do TikTok por rotina, sem classificação nem RASTRO. ' +
+      'Ver a DECISÃO no bloco acima.',
+    fatia: 'onda 8 — desenho decidido na 3.3; a execução é em src/bio/',
   },
 ];
 
@@ -722,12 +809,45 @@ describe('catraca de arquitetura: conector só pela porta', () => {
     ).toEqual([]);
   });
 
-  it('toda exceção diz qual fatia a remove', () => {
+  it('toda exceção diz qual fatia a remove — e não uma que já rodou', () => {
     const todas = [...EXCECOES, ...EXCECOES_HOST, ...EXCECOES_EFEITO, ...EXCECOES_CREDENCIAL];
     const semDestino = todas
       .filter((e) => e.fatia.trim() === '' || e.motivo.trim() === '')
       .map((e) => chave(e.arquivo, e.conector));
     expect(semDestino, 'exceção sem motivo ou sem fatia de remoção').toEqual([]);
+
+    /*
+     * ------------------------------------------------------------------------
+     * DÍVIDA NÃO PODE APONTAR PARA UMA FATIA QUE JÁ ACONTECEU
+     * ------------------------------------------------------------------------
+     * A catraca conferia só que o campo não estava vazio. Resultado: 22 das 25
+     * exceções continuavam prometendo "sai na 3.3" DEPOIS de a 3.3 ter rodado,
+     * e uma promessa que aponta para o passado é dívida sem dono — ninguém a
+     * herda, ninguém a cobra, e a lista deixa de encolher sem que nada reprove.
+     *
+     * A lista abaixo é das fatias já executadas. Quem a atualiza é quem fecha a
+     * onda: ao terminar uma fatia, o que ela NÃO pagou tem de ser reapontado
+     * para a fatia (ou a onda) que vai pagar, com o impedimento por escrito.
+     */
+    const JA_RODARAM = ['3.2', '3.3'];
+    /*
+     * ANCORADO NO COMEÇO da string: o DESTINO é a primeira coisa que o campo
+     * diz. Citar a fatia antiga mais adiante continua valendo — "onda 8 — resto
+     * da 3.3" é exatamente a frase certa, porque diz quem paga e de onde a
+     * dívida veio. O que reprova é o campo ABRIR com uma fatia já executada.
+     */
+    const apontamParaOPassado = todas
+      .filter((e) => JA_RODARAM.some((f) => new RegExp(`^\\s*${f.replace('.', '\\.')}\\b`).test(e.fatia)))
+      .map((e) => `${chave(e.arquivo, e.conector)} → "${e.fatia}"`);
+    expect(
+      apontamParaOPassado,
+      '\nEXCEÇÃO APONTANDO PARA FATIA JÁ EXECUTADA:\n' +
+        apontamParaOPassado.map((c) => `  - ${c}`).join('\n') +
+        '\n\n  Uma dívida que promete sair numa fatia que já rodou não tem dono. Reaponte para\n' +
+        '  a onda/fatia que de fato vai pagá-la, dizendo no `motivo` o que impediu agora.\n' +
+        '  Mencionar a fatia antiga no MOTIVO continua permitido — é a procedência da dívida;\n' +
+        '  o que não vale é declará-la como DESTINO.\n',
+    ).toEqual([]);
   });
 });
 
@@ -757,23 +877,30 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   { padrao: /https?:\/\/(?:[\w-]+\.)*tiktokapis\.com/, conector: 'src/bio/plataformas/tiktok.ts' },
 ];
 
+/*
+ * DÍVIDA PAGA NA FATIA 3.3: `src/pauta/espelho.service.ts` não endereça mais a
+ * API do Drive. Ele montava a busca por nome e o upload multipart aqui dentro e
+ * entregava as duas URLs ao passa-tudo `google.api()`; hoje chama
+ * `GoogleService.gravarArquivoNoDrive`, que tem destino e método fixos. A linha
+ * saiu desta lista.
+ */
 const EXCECOES_HOST: Excecao[] = [
   {
     arquivo: 'src/auth/google-login.service.ts',
     conector: 'src/google/google.service.ts',
     motivo:
-      'Login com Google: fala com accounts.google.com e oauth2.googleapis.com sem o conector. ' +
-      'A fatia 3.3 decide se autenticação do operador conta como conector — se contar, o cliente ' +
-      'HTTP vai para o GoogleService; se não, esta linha vira regra e sai da lista.',
-    fatia: '3.3',
-  },
-  {
-    arquivo: 'src/pauta/espelho.service.ts',
-    conector: 'src/google/google.service.ts',
-    motivo:
-      'Monta a URL da API do Drive aqui e entrega ao passa-tudo google.api(). O endpoint ' +
-      'pertence ao conector; o espelho deveria pedir "grava este .md", não uma URL.',
-    fatia: '3.3',
+      'DECIDIDO NA FATIA 3.3: autenticação do OPERADOR **não** é conector, e por isso o cliente ' +
+      'HTTP não vai para o GoogleService. A régua R0–R5 classifica ação que a EMPRESA faz sobre ' +
+      'o mundo por meio de um terceiro; entrar no OS não é isso — é uma pessoa provando quem é, ' +
+      'sem efeito nenhum fora da casa, e não há o que reter para aprovação nem o que desligar ' +
+      'num incidente (desligar o Google não pode trancar o login). Mandar este fluxo pelo ' +
+      'conector acoplaria a porta de entrada do produto ao interruptor de um conector, o que é ' +
+      'o contrário do que se quer. A linha FICA, então, como regra e não como dívida de ' +
+      'arquitetura. O que continua sendo dívida REAL é outra coisa e é da fatia do COFRE: as ' +
+      'credenciais são as MESMAS do GoogleService, lidas em dois lugares — trocar num e esquecer ' +
+      'o outro quebra metade do produto sem erro de compilação. O conserto é as duas leituras ' +
+      'virem do cofre, não este arquivo virar conector.',
+    fatia: '5.3 (COFRE) — a leitura duplicada da credencial; o endereço fica aqui por decisão',
   },
 ];
 
@@ -816,21 +943,32 @@ describe('catraca de arquitetura: endereço de fornecedor só dentro do conector
  * um comentário bastaria para desarmar a frente. É a mesma técnica do registro —
  * extrair o nome da propriedade injetada e exigir a chamada de verdade.
  */
-const EXCECOES_EFEITO: Excecao[] = [
-  {
-    arquivo: 'src/gateway/acoes.service.ts',
-    conector: 'src/gateway/efeitos.registry.ts',
-    motivo:
-      'É o caminho de execução PÓS-APROVAÇÃO e não pode ser removido: sem ele, aprovar volta a ' +
-      'não executar nada. O RASTRO daqui não é pobre — o evento acao.executada sai com ator, ' +
-      'correlationId e nível — e desde a fatia 1.2 o EFEITO também recebe os três: a assinatura ' +
-      'passou a ser (args, orgId, ContextoDoEfeito), com o ator sendo quem APROVOU e a ' +
-      'correlação sendo a da proposta. O que ainda falta é este disparo passar PELA PORTA em vez ' +
-      'de chamar o registro direto: aqui a decisão de política já aconteceu (na proposta), mas ' +
-      'quem confere isso é a leitura do código, não a catraca. É o que a fatia 3.3 fecha.',
-    fatia: '3.3',
-  },
-];
+/*
+ * VAZIA DESDE A FATIA 3.3, e é o objetivo desta frente atingido.
+ *
+ * A única exceção que existia era `src/gateway/acoes.service.ts`, o caminho de
+ * execução PÓS-APROVAÇÃO. Ela nunca foi "apagar o arquivo": sem ele, aprovar
+ * volta a não executar nada. O que mudou foi o DONO DO DISPARO — `AcoesService`
+ * não conhece mais o `EfeitosRegistry`; ele continua conferindo o estado da
+ * aprovação, queimando o uso único e escrevendo `acao.executada`/`acao.falhou`,
+ * e pede à porta que dispare (`ToolGateway.executarAprovado`).
+ *
+ * O que a porta acrescentou nesse caminho não é cerimônia: ela RECLASSIFICA a
+ * capacidade com a régua de HOJE antes de soltar uma ação proposta ONTEM
+ * (sobrescrita por tenant pode ter subido a capacidade para R5, e R5 o OS nunca
+ * executa), trata capacidade que saiu do catálogo como bloqueio, e revalida os
+ * argumentos gravados contra o `argsSchema` atual.
+ *
+ * Quem dispara efeito hoje, e por que cada um é legítimo:
+ *   · `src/gateway/tool-gateway.service.ts` — é a porta;
+ *   · `src/gateway/porta-do-operador.service.ts` — injeta a porta e passa o
+ *     efeito como callback de `gateway.executar()`;
+ *   · `src/agents/agent-runtime.service.ts` — idem, pelo laço do agente.
+ *
+ * Se um dia esta lista voltar a ter linha, a pergunta a fazer é a mesma: quem
+ * está disparando efeito sem a decisão de política em volta?
+ */
+const EXCECOES_EFEITO: Excecao[] = [];
 
 describe('catraca de arquitetura: efeito só dispara pela porta', () => {
   const REGISTRO = 'src/gateway/efeitos.registry.ts';
@@ -929,16 +1067,58 @@ const CREDENCIAIS: Record<string, string> = {
   OBSIDIAN_VAULT_PATH: 'src/obsidian/obsidian.service.ts',
 };
 
+/*
+ * ============================================================================
+ * A DECISÃO DA FATIA 3.3: ler credencial só para testar presença NÃO é legítimo
+ * ============================================================================
+ *
+ * Seis das trinta e uma violações eram disso — a tela de Conexões e o espelho
+ * lendo `CLICKUP_API_TOKEN`, `PLUGGY_*`, `ASAAS_API_KEY`, `OBSIDIAN_VAULT_PATH`
+ * só para dizer "configurado"/"não configurado". A pergunta era se isso vira
+ * regra (e sai da lista) ou se vira conserto. Virou conserto, por três motivos:
+ *
+ *  1. MENTE SEM ERRO DE COMPILAÇÃO. O nome da variável passa a ser um contrato
+ *     duplicado entre a tela e o conector. Renomear do lado do conector — ou
+ *     passar a ler do cofre por tenant, que é a fatia 5.3 — faz a tela afirmar
+ *     "desconectado" sobre um conector que está funcionando. Nada quebra e nada
+ *     avisa; só a tela passa a mentir, e é por ela que se decide se religa, se
+ *     refaz OAuth ou se abre chamado.
+ *  2. "PRESENÇA" NÃO É A MESMA PERGUNTA EM DOIS CONECTORES. A Pluggy precisa de
+ *     duas variáveis; o Asaas tem uma, mas a lê com `.trim()`, então uma chave
+ *     só com espaços está presente para quem testa `!!process.env.X` e ausente
+ *     para o conector. O critério é de quem usa a credencial.
+ *  3. A CATRACA NÃO CONSEGUE DISTINGUIR TESTAR DE USAR. Abrir exceção para "só
+ *     testar presença" abriria também para `fetch(process.env.EVOLUTION_URL ?
+ *     ... : ...)`, que é uso. A frente 4 existe justamente porque esse caminho é
+ *     invisível às outras três.
+ *
+ * O CONSERTO, que era o que a própria lista apontava: cada conector responde se
+ * está configurado, e a tela pergunta por um registro
+ * (`src/gateway/conectores-configurados.registry.ts`) em vez de importar o
+ * conector — importar seria a frente 1 da mesma catraca. `ClickupService`,
+ * `PluggyService`, `AsaasService` e `EvolutionService` já se inscrevem no
+ * arranque; as três linhas de integrations.service.ts que correspondiam a eles
+ * saíram desta lista.
+ *
+ * O `GoogleService` NÃO se inscreve, e a ausência é decisão: as quatro chaves
+ * dele são de autorização POR EMPRESA, e o estado verdadeiro delas é a linha de
+ * `IntegrationAccount` que o retorno do OAuth cria — não a credencial do
+ * processo. Inscrevê-las com `() => this.configured` fez a tela exibir o Google
+ * como conectado para empresa que nunca autorizou nada, e foi desfeito. Ver o
+ * cabeçalho de `src/gateway/conectores-configurados.registry.ts`.
+ */
 const EXCECOES_CREDENCIAL: Excecao[] = [
   {
     arquivo: 'src/auth/google-login.service.ts',
     conector: 'src/google/google.service.ts',
     motivo:
       'Lê GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI para fazer o login do ' +
-      'operador — as MESMAS credenciais do GoogleService, duplicadas. A fatia 3.3 decide se ' +
-      'autenticação do operador é conector; enquanto for duplicata, trocar a credencial em um ' +
-      'lugar e esquecer o outro quebra metade do produto sem erro de compilação.',
-    fatia: '3.3',
+      'operador — as MESMAS credenciais do GoogleService, duplicadas. A fatia 3.3 decidiu que ' +
+      'autenticação do operador NÃO é conector (ver EXCECOES_HOST, mesma dupla arquivo/conector, ' +
+      'com o argumento inteiro), então o arquivo continua onde está. A duplicata, porém, segue ' +
+      'sendo dívida de verdade: trocar a credencial em um lugar e esquecer o outro quebra metade ' +
+      'do produto sem erro de compilação. O conserto é as duas leituras virem do COFRE.',
+    fatia: '5.3 (COFRE)',
   },
   {
     arquivo: 'src/pauta/espelho.service.ts',
@@ -946,43 +1126,22 @@ const EXCECOES_CREDENCIAL: Excecao[] = [
     motivo:
       'Lê OBSIDIAN_VAULT_PATH e escreve .md no filesystem da vault por conta própria, em ' +
       'paralelo ao ObsidianService, que é quem conhece esse caminho. Escrita em vault é efeito: ' +
-      'devia ser capacidade do conector, chamada pela porta.',
-    fatia: '3.3',
+      'devia ser capacidade do conector, chamada pela porta. O lado Drive deste mesmo serviço FOI ' +
+      'consertado nesta fatia (ver EXCECOES_HOST); o lado local não, porque o conserto mora em ' +
+      'src/obsidian/, que é de outra fatia desta onda.',
+    fatia: 'onda 8 — resto da 3.3: o conserto mora em src/obsidian/, que era de outra fatia da onda 7',
   },
   /*
-   * As quatro linhas abaixo são a MESMA dívida — o catálogo de integrações
-   * deriva o status "conectado" lendo a credencial de cada conector direto do
-   * ambiente, em vez de perguntar ao conector. Renomear a variável dentro do
-   * conector faz a tela mentir "desconectado" sem nenhum erro de compilação. A
-   * saída é cada conector responder se está configurado; o ObsidianService já
-   * tem esse campo. Ficam separadas por conector porque a catraca casa por par
-   * (arquivo, conector): assim pagar a dívida de um risca uma linha só.
+   * SAIU DAQUI NA ESTABILIZAÇÃO DA ONDA 7: `src/integrations/integrations.service.ts`
+   * lendo `OBSIDIAN_VAULT_PATH`. Era a última das quatro linhas de status
+   * derivado de credencial, e dependia de uma linha em `src/obsidian/`, que era
+   * de outra fatia da onda e não podia ser editado pela 3.3. A linha existe: o
+   * `ObsidianService` se inscreve em `ConectoresConfiguradosRegistry` no
+   * `onModuleInit`, antes do retorno antecipado, e `obsidian` entrou na lista
+   * cobrada no arranque.
    */
-  {
-    arquivo: 'src/integrations/integrations.service.ts',
-    conector: 'src/integrations/clickup.service.ts',
-    motivo: 'Lê CLICKUP_API_TOKEN para derivar o status do ClickUp na tela de integrações.',
-    fatia: '3.3',
-  },
-  {
-    arquivo: 'src/integrations/integrations.service.ts',
-    conector: 'src/finance/pluggy.service.ts',
-    motivo: 'Lê PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET para derivar o status da Pluggy.',
-    fatia: '3.3',
-  },
-  {
-    arquivo: 'src/integrations/integrations.service.ts',
-    conector: 'src/finance/asaas.service.ts',
-    motivo: 'Lê ASAAS_API_KEY para derivar o status do Asaas.',
-    fatia: '3.3',
-  },
-  {
-    arquivo: 'src/integrations/integrations.service.ts',
-    conector: 'src/obsidian/obsidian.service.ts',
-    motivo: 'Lê OBSIDIAN_VAULT_PATH para derivar o status da base de conhecimento.',
-    fatia: '3.3',
-  },
 ];
+
 
 describe('catraca de arquitetura: credencial de conector só dentro do conector', () => {
   const achados = FONTES.flatMap((fonte) => {

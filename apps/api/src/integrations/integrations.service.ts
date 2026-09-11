@@ -3,6 +3,7 @@ import { CONNECTORS, type IntegrationCatalog, type IntegrationCatalogRow } from 
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ConectoresService } from './conectores.service';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 import {
   type AplicacaoDoDesligamento,
   TEXTO_DA_APLICACAO,
@@ -68,6 +69,7 @@ export class IntegrationsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly conectores: ConectoresService,
+    private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
   ) {}
 
   async catalog(orgId: string): Promise<CatalogoDeConexoes> {
@@ -77,24 +79,74 @@ export class IntegrationsService {
     ]);
     const byKey = new Map(accounts.map((a) => [a.key, a]));
 
-    // Status derivado da CONFIG real quando não há registro no banco: conectores por
-    // env/API-key ligam quando a credencial existe; builtin (OFX/Obsidian) já contam.
+    /*
+     * O STATUS DERIVADO, quando não há registro no banco.
+     *
+     * ------------------------------------------------------------------------
+     * QUEM RESPONDE SE UM CONECTOR ESTÁ CONFIGURADO — fatia 3.3, frente 4
+     * ------------------------------------------------------------------------
+     * Até 11/09/2026 esta tela lia a CREDENCIAL de cada conector direto do
+     * ambiente (`CLICKUP_API_TOKEN`, `PLUGGY_CLIENT_ID`, `ASAAS_API_KEY`,
+     * `OBSIDIAN_VAULT_PATH`) para derivar o selo "conectado". O nome da variável
+     * virava um contrato duplicado entre a tela e o conector: renomear do lado
+     * de lá — ou passar a ler do cofre por tenant — fazia esta tela afirmar
+     * "desconectado" sobre um conector que estava funcionando, sem nenhum erro
+     * de compilação e sem nada no log.
+     *
+     * Agora ela PERGUNTA. Cada conector se inscreve no arranque e responde por
+     * si (`gateway/conectores-configurados.registry.ts`, que explica por que a
+     * resposta vem por registro e não por injeção — importar o conector aqui
+     * seria a frente 1 da mesma catraca).
+     *
+     * `null` do registro quer dizer "ninguém respondeu por esta chave", que é
+     * diferente de "não configurado": conector builtin, conector que ainda não
+     * se inscreveu, chave do catálogo sem serviço atrás. Por isso a derivação só
+     * acontece quando a resposta é booleana.
+     *
+     * O QUE CONTINUA AQUI, e é de propósito: `ofx` é builtin (importar extrato
+     * não depende de credencial nenhuma) e `openai`/`telegram` não têm serviço
+     * de conector neste repositório — não há a quem perguntar. As duas variáveis
+     * também não estão no catálogo de credenciais da catraca, justamente porque
+     * não há conector dono delas.
+     *
+     * O QUE NÃO ENTRA NEM AQUI NEM NO REGISTRO: as quatro chaves do Google
+     * (`gmail`, `gcal`, `gdocs`, `drive`) e o `instagram`. São de AUTORIZAÇÃO
+     * POR EMPRESA, e o estado verdadeiro delas é a linha de `IntegrationAccount`
+     * que o retorno do OAuth cria — que é justamente o `acc` lido acima, o
+     * caminho que tem precedência. Uma versão desta fatia chegou a inscrevê-las
+     * no registro respondendo `GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET`, que é
+     * verdadeiro em produção para todo mundo: empresa que nunca autorizou nada
+     * passou a ver o Google como conectado. Sem resposta em canto nenhum,
+     * `derivado` devolve `null`, o `status` fica com o do banco (`disconnected`
+     * quando não há linha) e a tela volta a dizer a verdade.
+     *
+     * `obsidian` SAIU DAQUI na estabilização da onda 7. Ele era a última das
+     * quatro linhas de status derivado de credencial: lia `OBSIDIAN_VAULT_PATH`
+     * porque faltava a linha de inscrição no `onModuleInit` do
+     * `ObsidianService`. Agora ela existe, e ele responde por si — inclusive
+     * melhor do que esta leitura respondia, porque `configured` do lado de lá
+     * também confere se o caminho EXISTE no disco, e não só se a variável está
+     * preenchida.
+     *
+     * O que sobrou em `semDono` não tem conector neste repositório (`openai`,
+     * `telegram`) ou não depende de credencial nenhuma (`ofx`, builtin).
+     */
     const env = process.env;
-    const derived: Record<string, boolean> = {
+    const semDono: Record<string, boolean> = {
       openai: !!env.OPENAI_API_KEY,
       telegram: !!env.TELEGRAM_BOT_TOKEN,
-      clickup: !!env.CLICKUP_API_TOKEN,
-      pluggy: !!(env.PLUGGY_CLIENT_ID && env.PLUGGY_CLIENT_SECRET),
-      asaas: !!env.ASAAS_API_KEY,
-      obsidian: !!env.OBSIDIAN_VAULT_PATH, // vault montada + indexada
       ofx: true, // builtin — importação de extrato sempre disponível
     };
+
+    const derivado = (chave: string): boolean | null =>
+      this.conectoresConfigurados.configurado(chave) ?? (chave in semDono ? semDono[chave] : null);
 
     const items: LinhaDoCatalogo[] = CONNECTORS.map((c) => {
       const acc = byKey.get(c.key);
       // status: registro do banco tem precedência (OAuth/toggle); senão, deriva da config.
       let status = acc?.status ?? 'disconnected';
-      if (!acc && c.key in derived) status = derived[c.key] ? 'connected' : 'disconnected';
+      const configurado = acc ? null : derivado(c.key);
+      if (configurado !== null) status = configurado ? 'connected' : 'disconnected';
 
       const off = desligados.get(c.key);
       return {

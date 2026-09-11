@@ -49,13 +49,64 @@ export type Efeito = (
 @Injectable()
 export class EfeitosRegistry {
   private readonly mapa = new Map<string, Efeito>();
+  /** Quem inscreveu cada capacidade. Só existe para a mensagem da catraca. */
+  private readonly dono = new Map<string, string>();
 
-  registrar(entradas: Record<string, Efeito>): void {
-    for (const [id, fn] of Object.entries(entradas)) this.mapa.set(id, fn);
+  /**
+   * Um serviço declara as capacidades que realiza.
+   *
+   * ------------------------------------------------------------------------
+   * A CATRACA DE DONO — reinscrição é ERRO, não "a última vence"
+   * ------------------------------------------------------------------------
+   * Até a correção da fatia 3.3 este método era `mapa.set()` seco: qualquer
+   * serviço podia registrar qualquer identificador, inclusive um já registrado
+   * por outro conector, e a segunda inscrição vencia EM SILÊNCIO. O registro
+   * irmão (`ConectoresConfiguradosRegistry`) ao menos avisava no log.
+   *
+   * O que isso valia, concretamente: um arquivo de um módulo qualquer inscreve
+   * `email.enviar` e passa a executar código dele com a CLASSIFICAÇÃO ALHEIA —
+   * a porta continua vendo um R3 do Google, continua retendo para aprovação,
+   * continua registrando no RASTRO "e-mail enviado", e quem sai é outro código.
+   * Nada no log, nada no rastro, nada na tela. Sequestro de efeito.
+   *
+   * O que a catraca NÃO precisa cobrir, e o revisor confirmou: registrar um
+   * identificador FORA do catálogo não abre caminho nenhum — a porta recusa
+   * capacidade sem classificação antes de qualquer efeito (vale R5, que é
+   * bloqueio). O furo era a colisão, e é ela que fecha aqui.
+   *
+   * LANÇA no arranque, e derrubar a API é o comportamento desejado: duas
+   * inscrições para a mesma capacidade é sempre erro de programação, e o lugar
+   * de descobrir isso é o boot, não o dia do incidente. `quem` entra na
+   * mensagem porque sem ele o erro diz que houve colisão e não onde.
+   */
+  registrar(entradas: Record<string, Efeito>, quem = 'serviço não identificado'): void {
+    for (const [id, fn] of Object.entries(entradas)) {
+      const anterior = this.dono.get(id);
+      if (anterior !== undefined) {
+        throw new Error(
+          `Efeito de "${id}" inscrito duas vezes: por "${anterior}" e agora por "${quem}". ` +
+            'Cada capacidade tem UM dono — quem fala com o sistema de terceiro é o conector ' +
+            'daquele sistema. A segunda inscrição executaria código de um módulo com a ' +
+            'classificação de risco do outro, sem nada no RASTRO denunciando a troca.',
+        );
+      }
+      this.mapa.set(id, fn);
+      this.dono.set(id, quem);
+    }
   }
 
   tem(capabilityId: string): boolean {
     return this.mapa.has(capabilityId);
+  }
+
+  /** As capacidades inscritas. Serve à suíte, que as cruza com o catálogo. */
+  get inscritas(): string[] {
+    return [...this.mapa.keys()].sort();
+  }
+
+  /** Quem inscreveu esta capacidade, ou `null`. Para diagnóstico e para a suíte. */
+  donoDe(capabilityId: string): string | null {
+    return this.dono.get(capabilityId) ?? null;
   }
 
   get tamanho(): number {

@@ -7,6 +7,7 @@ import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { PolicyModule } from './policy/policy.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { CofreModule } from './cofre/cofre.module';
 import { AgentsModule } from './agents/agents.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
@@ -51,6 +52,15 @@ import { PautaModule } from './pauta/pauta.module';
     PolicyModule,
     ApprovalsModule,
     GatewayModule,
+    // O COFRE (RF-C-01..RF-C-04). Aqui, e não mais tarde: `@Global()` só vale
+    // depois de o módulo ser IMPORTADO uma vez — sem esta linha o marcador não
+    // faz nada e nenhum módulo consegue injetar `CofreService`, nem hoje nem
+    // depois. Foi o que deixou o cofre inalcançável na primeira entrega desta
+    // fatia: código inteiro, correto e fora do alcance de qualquer chamador.
+    // Depois da porta porque quem empresta credencial é quem já passou por ela;
+    // antes de todo módulo de domínio porque `bio/`, `google/` e `integrations/`
+    // o injetam.
+    CofreModule,
     AgentsModule,
     AuthModule,
     DashboardModule,

@@ -243,42 +243,26 @@ export class EspelhoService {
       return join(cfg.dir, nome);
     }
 
-    // drive
+    /*
+     * Drive.
+     *
+     * O ENDEREÇO NÃO MORA MAIS AQUI (fatia 3.3). Até 11/09/2026 este serviço
+     * montava as duas URLs da API do Drive — a busca pelo nome e o upload
+     * multipart — e as entregava ao `google.api()`, um passa-tudo que aceitava
+     * URL e método arbitrários. A porta não via nem o método nem o destino, e a
+     * catraca de arquitetura contava isto como violação em duas frentes de uma
+     * vez: endereço de fornecedor fora do conector e uso do conector por um
+     * atalho genérico.
+     *
+     * Agora o espelho pede o que ele quer — "grava este texto com este nome
+     * nesta pasta" — e quem conhece o endpoint é o conector, que é quem também
+     * guarda a credencial.
+     */
     if (!cfg.folderId) throw new BadRequestException('Espelho no Drive sem pasta definida.');
-    return this.gravarNoDrive(orgId, cfg.folderId, nome, conteudo);
-  }
-
-  /** Cria ou atualiza o .md na pasta do Drive (nome estável = atualiza no lugar). */
-  private async gravarNoDrive(
-    orgId: string,
-    folderId: string,
-    nome: string,
-    conteudo: string,
-  ): Promise<string> {
-    const q = `name = '${nome.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed = false`;
-    const achados = await this.google.api<{ files?: Array<{ id: string }> }>(
-      orgId,
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,
-    );
-    const existenteId = achados.files?.[0]?.id ?? null;
-
-    const boundary = `mktos-${Math.random().toString(36).slice(2)}`;
-    const metadata = existenteId ? {} : { name: nome, parents: [folderId], mimeType: 'text/markdown' };
-    const body =
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-      `${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n` +
-      `${conteudo}\r\n` +
-      `--${boundary}--`;
-
-    const url = existenteId
-      ? `https://www.googleapis.com/upload/drive/v3/files/${existenteId}?uploadType=multipart&fields=id`
-      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
-
-    const r = await this.google.api<{ id: string }>(orgId, url, {
-      method: existenteId ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-      body,
+    const r = await this.google.gravarArquivoNoDrive(orgId, {
+      folderId: cfg.folderId,
+      nome,
+      conteudo,
     });
     return `drive:${r.id}`;
   }

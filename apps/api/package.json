@@ -30,7 +30,11 @@
     "perguntar": "node dist/scripts/perguntar.js",
     "provisionar": "node dist/scripts/provisionar-tenant.js",
     "relatorio:observar": "node dist/scripts/relatorio-observar.js",
-    "expurgo:rastro": "node dist/scripts/expurgar-rastro.js"
+    "expurgo:rastro": "node dist/scripts/expurgar-rastro.js",
+    "cofre:inventario": "node dist/cofre/cofre.cli.js inventario",
+    "cofre:rotacionar": "node dist/cofre/cofre.cli.js rotacionar",
+    "cofre:migrar": "node dist/cofre/cofre.cli.js migrar",
+    "cofre:desfazer-migracao": "node dist/cofre/cofre.cli.js desfazer-migracao"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

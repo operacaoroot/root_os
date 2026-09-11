@@ -1,6 +1,13 @@
-import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 
 // Conector Google (OAuth 2.0) — Gmail/Agenda/Docs/Drive. Credencial PRÓPRIA do root
 // (google.env), tokens guardados por org (isolado do escritório). Escopos read+write
@@ -16,7 +23,7 @@ const SCOPES = [
 ];
 
 @Injectable()
-export class GoogleService {
+export class GoogleService implements OnModuleInit {
   private readonly log = new Logger('GoogleService');
   private readonly clientId = process.env.GOOGLE_CLIENT_ID ?? '';
   private readonly clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? '';
@@ -26,10 +33,124 @@ export class GoogleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly efeitos: EfeitosRegistry,
   ) {}
 
   get configured(): boolean {
     return this.clientId.length > 0 && this.clientSecret.length > 0;
+  }
+
+  /*
+   * ==========================================================================
+   * O CONECTOR DECLARA AS CAPACIDADES QUE REALIZA — fatia 3.3
+   * ==========================================================================
+   *
+   * Até 11/09/2026 o `GoogleController` chamava estes nove métodos direto: o
+   * e-mail saía, o evento nascia e o documento era criado com a régua R0–R5 sem
+   * nunca ter visto a ação. Quatro escritas externas vivas em produção,
+   * autenticadas só por JWT e permissão de papel — sem classificação de risco,
+   * sem retenção por aprovação, sem RASTRO e fora do alcance do interruptor de
+   * conector. Era item de segurança, não de arquitetura.
+   *
+   * Agora a rota pede a capacidade à porta (`PortaDoOperador`), e quem a porta
+   * chama é a função registrada AQUI.
+   *
+   * POR QUE A INSCRIÇÃO MORA DENTRO DO CONECTOR, e não num arquivo de fiação:
+   * a catraca de arquitetura (`test/arquitetura.test.ts`) proíbe qualquer
+   * arquivo fora de `src/gateway/` de importar um serviço de conector — e
+   * proíbe também re-exportá-lo, justamente para que a proibição não tenha
+   * atalho. Um `google-efeitos.service.ts` ao lado seria uma violação nova. O
+   * conector importar o REGISTRO é o inverso, e é permitido: quem depende de
+   * quem continua certo, e o `GatewayModule` é `@Global`, então isto não mexe
+   * no grafo de módulos.
+   *
+   * OS ARGUMENTOS SÃO OS DO CATÁLOGO, em português, e não os do corpo HTTP. É o
+   * catálogo que a porta valida (`argsSchema`) e é ele que a aprovação assina
+   * pelo hash do conteúdo; o controlador traduz o corpo da requisição para cá.
+   * Traduzir no controlador e não aqui é o que mantém uma única forma de
+   * argumento entre o caminho do agente e o caminho da tela.
+   */
+  onModuleInit(): void {
+    /*
+     * ========================================================================
+     * ESTE CONECTOR NÃO SE INSCREVE EM `ConectoresConfiguradosRegistry`
+     * ========================================================================
+     *
+     * E a ausência é a decisão, não o esquecimento. A primeira versão desta
+     * fatia inscreveu as quatro chaves do Google (`gmail`, `gcal`, `gdocs`,
+     * `drive`) com `() => this.configured` — e `configured` aqui é
+     * `GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET`, uma propriedade do PROCESSO.
+     * Em produção ela é verdadeira para todo mundo.
+     *
+     * O efeito na tela de Conexões foi o oposto do pretendido: para uma empresa
+     * que NUNCA autorizou o Google não existe linha em `IntegrationAccount`,
+     * então a tela caía na derivação, recebia `true` e passava a exibir o Google
+     * como CONECTADO. A fatia existia para tornar a tela honesta e a deixou
+     * menos honesta do que antes.
+     *
+     * As quatro superfícies são de AUTORIZAÇÃO POR EMPRESA, e o estado
+     * verdadeiro delas é a linha que `handleCallback` escreve logo abaixo. Sem
+     * inscrição, o registro devolve `null` — "ninguém respondeu por esta chave"
+     * —, a tela usa o registro do banco e volta a dizer a verdade.
+     *
+     * Quem precisa distinguir "o app não tem credencial" de "esta empresa não
+     * autorizou" tem `GET /google/status`, que devolve `configured` e
+     * `connected` em campos separados. O raciocínio completo está no cabeçalho
+     * de `gateway/conectores-configurados.registry.ts`.
+     */
+    const texto = (v: unknown): string => String(v ?? '').trim();
+    const numero = (v: unknown, padrao: number): number => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.min(Math.trunc(n), 50) : padrao;
+    };
+
+    this.efeitos.registrar({
+      // ---------- leitura (R0) ----------
+      'comunicacao.email.buscar': (a, org) =>
+        this.gmailRecent(org, texto(a.q ?? a.busca), numero(a.limite, 10)),
+      'comunicacao.email.ler': (a, org) => this.gmailGet(org, texto(a.id)),
+      'comunicacao.agenda.listar': (a, org) => this.calendarUpcoming(org, numero(a.limite, 10)),
+      'contexto.arquivo.listar': (a, org) =>
+        this.driveList(org, texto(a.q ?? a.busca), numero(a.limite, 15)),
+      'contexto.documento.ler': (a, org) => this.docGet(org, texto(a.id)),
+
+      // ---------- escrita (R3: só sai depois que uma pessoa confirma) ----------
+      'email.enviar': (a, org, ctx: ContextoDoEfeito) =>
+        this.sendGmail(
+          org,
+          {
+            to: texto(a.para),
+            subject: texto(a.assunto),
+            body: String(a.corpo ?? ''),
+            ...(texto(a.cc) ? { cc: texto(a.cc) } : {}),
+          },
+          ctx.actorId ?? undefined,
+        ),
+      'agenda.evento.criar': (a, org, ctx: ContextoDoEfeito) =>
+        this.createCalendarEvent(
+          org,
+          {
+            title: texto(a.titulo),
+            start: texto(a.inicio),
+            // Sem fim declarado a Agenda recusa o evento. Uma hora é o default
+            // menos surpreendente, e fica dito aqui em vez de o modelo ter de
+            // adivinhar o formato do campo.
+            end: texto(a.fim) || new Date(new Date(texto(a.inicio)).getTime() + 3600_000).toISOString(),
+            description: texto(a.descricao) || undefined,
+            location: texto(a.local) || undefined,
+            attendees: Array.isArray(a.convidados) ? (a.convidados as string[]).map(texto) : [],
+          },
+          ctx.actorId ?? undefined,
+        ),
+      'documento.criar': (a, org, ctx: ContextoDoEfeito) =>
+        this.createDoc(
+          org,
+          { title: texto(a.titulo), content: a.conteudo ? String(a.conteudo) : undefined },
+          ctx.actorId ?? undefined,
+        ),
+      'documento.anexar': (a, org, ctx: ContextoDoEfeito) =>
+        this.appendDoc(org, texto(a.documentoId), String(a.texto ?? ''), ctx.actorId ?? undefined),
+    }, 'GoogleService');
   }
 
   private assert() {
@@ -125,8 +246,29 @@ export class GoogleService {
     return t.access_token;
   }
 
-  /** Chamada autenticada a uma API do Google. */
-  async api<T = any>(orgId: string, url: string, init?: RequestInit): Promise<T> {
+  /**
+   * Chamada autenticada a uma API do Google.
+   *
+   * ------------------------------------------------------------------------
+   * ERA PÚBLICA, E POR ISSO A FRONTEIRA NÃO EXISTIA — fatia 3.3
+   * ------------------------------------------------------------------------
+   * `api(orgId, url, init)` aceita URL ARBITRÁRIA e método arbitrário. Enquanto
+   * ela fosse pública, qualquer serviço do projeto podia montar
+   * `https://gmail.googleapis.com/.../messages/send` por fora e entregar pronto
+   * — e o pedido saía com o token do tenant sem que a porta visse o método, o
+   * destino ou a natureza da ação. É o caso real de `pauta/espelho.service.ts`,
+   * que montava os endereços do Drive aqui do lado.
+   *
+   * Fechá-la é o que faz mover o import mover a fronteira de verdade: agora o
+   * que sai daqui são MÉTODOS COM NOME, cada um com um destino fixo — e o que
+   * não tem método não tem como ser pedido.
+   *
+   * Quem precisar de uma superfície nova do Google acrescenta um método aqui,
+   * com nome, e — se ela agir sobre o mundo — uma capacidade no catálogo. É
+   * mais trabalho de propósito: é onde a decisão de expor uma API externa nova
+   * fica visível.
+   */
+  private async api<T = any>(orgId: string, url: string, init?: RequestInit): Promise<T> {
     const at = await this.token(orgId);
     const res = await fetch(url, {
       ...init,
@@ -278,6 +420,55 @@ export class GoogleService {
     });
     this.log.log(`Doc criado: ${input.title}`);
     return { ok: true, id: doc.documentId, link: `https://docs.google.com/document/d/${doc.documentId}/edit` };
+  }
+
+  /**
+   * Grava (ou atualiza) um arquivo de texto numa pasta do Drive.
+   *
+   * Existe porque o espelho .md da Pauta montava os DOIS endereços do Drive por
+   * conta própria — a busca e o upload multipart — e os entregava ao passa-tudo
+   * `api()`. O endpoint é do conector; quem espelha pede "grava este texto com
+   * este nome nesta pasta", e não uma URL.
+   *
+   * NOME ESTÁVEL ATUALIZA NO LUGAR: procura antes na pasta e faz PATCH quando
+   * acha, para o espelho de uma ficha editada não virar um segundo arquivo.
+   *
+   * Não é capacidade do catálogo e por isso não passa pela porta — é escrita do
+   * OS no próprio Drive dele, disparada por rotina, não ação proposta por
+   * agente. Está anotado no relatório da fatia como decisão consciente.
+   */
+  async gravarArquivoNoDrive(
+    orgId: string,
+    entrada: { folderId: string; nome: string; conteudo: string; mimeType?: string },
+  ): Promise<{ id: string; atualizado: boolean }> {
+    const mime = entrada.mimeType ?? 'text/markdown';
+    const nome = entrada.nome;
+    const q = `name = '${nome.replace(/'/g, "\\'")}' and '${entrada.folderId}' in parents and trashed = false`;
+    const achados = await this.api<{ files?: Array<{ id: string }> }>(
+      orgId,
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,
+    );
+    const existenteId = achados.files?.[0]?.id ?? null;
+
+    const boundary = `mktos-${Math.random().toString(36).slice(2)}`;
+    const metadata = existenteId ? {} : { name: nome, parents: [entrada.folderId], mimeType: mime };
+    const body =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\nContent-Type: ${mime}; charset=UTF-8\r\n\r\n` +
+      `${entrada.conteudo}\r\n` +
+      `--${boundary}--`;
+
+    const url = existenteId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existenteId}?uploadType=multipart&fields=id`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+
+    const r = await this.api<{ id: string }>(orgId, url, {
+      method: existenteId ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    });
+    return { id: r.id, atualizado: !!existenteId };
   }
 
   async appendDoc(orgId: string, docId: string, text: string, actorId?: string) {

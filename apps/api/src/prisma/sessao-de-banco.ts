@@ -517,14 +517,34 @@ export async function anunciarPapel(
 
     if (r) {
       const ehDono = r.papel === r.dono;
+      /*
+       * QUEM DE FATO IGNORA POLICY é só `rolsuper` ou `rolbypassrls`. Ser DONO
+       * NÃO basta: as tabelas nascem com FORCE ROW LEVEL SECURITY, e FORCE vale
+       * para o dono também — foi o defeito que a fatia do COFRE provou em
+       * `cofre/rotacao.service.ts` e que esta onda consertou também no expurgo
+       * do rastro (`audit/expurgo.service.ts`).
+       *
+       * `inerte` CONTINUA somando `ehDono` de propósito, e a decisão é de
+       * direção: `inerte` só afrouxa (`conferirCoberturaDePlataforma` deixa
+       * subir com caminho de plataforma em aberto). Tirar o dono daqui faria a
+       * API RECUSAR SUBIR em qualquer ambiente cujo dono não seja superusuário —
+       * troca de um risco anotado por uma queda presente, e num arquivo de outra
+       * onda. Fica anotado; a MENSAGEM é que não pode mentir sobre o motivo, e
+       * por isso o motivo real vem primeiro.
+       */
       inerte = ehDono || r.bypassa || r.superusuario;
+      const porque = r.superusuario
+        ? 'o papel é SUPERUSER'
+        : r.bypassa
+          ? 'o papel tem BYPASSRLS'
+          : 'o papel é DONO das tabelas — e ATENÇÃO: dono sozinho NÃO ignora policy sob ' +
+            'FORCE ROW LEVEL SECURITY; consulta de plataforma feita por este papel pode voltar vazia';
       registrar(
         `[tenant] conectado como "${r.papel}" (dono das tabelas: "${r.dono}") · modo=${modo} · ` +
           `GUC=${GUC_TENANT} · ` +
           (inerte
-            ? `ISOLAMENTO POR LINHA INERTE: ${
-                ehDono ? 'o papel é DONO das tabelas' : r.bypassa ? 'o papel tem BYPASSRLS' : 'o papel é SUPERUSER'
-              } e o Postgres ignora policy para ele. Provisione ${PAPEL_DE_APLICACAO} (DB_APP_USER/DB_APP_PASSWORD).`
+            ? `ISOLAMENTO POR LINHA INERTE: ${porque}. ` +
+              `Provisione ${PAPEL_DE_APLICACAO} (DB_APP_USER/DB_APP_PASSWORD).`
             : 'papel restrito — a policy de linha vale para esta conexão.'),
       );
     }

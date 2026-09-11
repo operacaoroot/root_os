@@ -48,7 +48,28 @@ Em qualquer das duas, o `.stignore` passa a ignorar `.git` — não antes, ou o 
 
 Tudo abaixo roda **na VPS**, em `/srv/marketing-os`.
 
-### 2.0 Antes de começar
+### 2.0 A ORDEM COMPLETA — e o que acontece se pular cada passo
+
+A ordem importa e **não é a mesma de sempre**: as ondas 6 e 7 acrescentaram passos, e dois deles são
+**anteriores** ao que antes era o começo. Pular não dá erro na hora — dá comportamento errado
+depois, que é a razão de a coluna da direita existir.
+
+| # | Passo | Quando | Se pular |
+|---|---|---|---|
+| 1 | `deploy/janela-horaria-ilegivel.sql` no banco de **produção** | **antes do merge** | A fatia 2.3 fez o sinal `fora_da_janela` **acender** quando a janela horária de uma política está ilegível, onde antes ele ficava calado. Acender sobe um degrau na régua em **toda** ação daquela empresa. Zero linha = mudança inócua; linha com `orgId` nulo = a política BASE, e afeta todas as empresas. Sem rodar, você descobre no dia seguinte, com a operação inteira um degrau acima. |
+| 2 | CI verde na revisão que vai subir | antes do merge | Typecheck, as suítes e a prova de que o histórico de migrations aplica do zero. Sem isso o ensaio do passo 6 vira a primeira execução de tudo. |
+| 3 | Backup do banco do dia (§4) | antes de tocar no servidor | Migration aditiva não desfaz. Sem backup, o rollback de estrutura não existe. |
+| 4 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | antes de construir | O container **não lê arquivo `.env`**: só chega o que está no bloco. Preencher só o `.env` não faz nada — foi o que segurou a `ANTHROPIC_API_KEY` por semanas. **Nesta onda são duas: `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL`** (§2.3c). |
+| 5 | `docker tag mktos-app:latest mktos-app:rollback` | antes de construir | A imagem anterior vira lixo na próxima poda, e o rollback deixa de existir. É o passo que mais dói ter pulado. |
+| 6 | `build` + ensaio da migration num banco descartável + **smoke** da imagem (§2.2, §2.3) | antes de subir | As duas formas de a subida morrer: migration que não aplica (e `migrate deploy` roda no `command` do container — falhar é a API não subir) e grafo de injeção do Nest que não resolve. O smoke pega o segundo, que o typecheck **não** enxerga. |
+| 7 | **`db:seed:politica` — E É ANTES DE SUBIR** (§2.3b) | depois do build, **antes** do `up` | Mudou nesta onda: na onda 6 o seed era cosmético (duas capacidades novas que só apareciam na tela da Régua) e podia vir depois. Agora **não pode**. A fatia 3.3 acrescentou **descrição de argumento** a capacidades que o código novo já usa (`cc` no e-mail, `local` e `convidados` no evento) e esquema a outras. O esquema do banco tem `additionalProperties: false`: **campo que o esquema antigo não conhece é recusado pela porta**. Subir a API antes de semear faz toda chamada com campo novo falhar com erro de argumento inválido — numa ação que o catálogo do repositório diz que é válida. |
+| 8 | `up -d --no-build api web` (§2.4) | — | Sem `--no-build` sobe uma imagem reconstruída na hora, não a que passou no smoke. Sem `--vps` o compose base publica em `0.0.0.0` e expõe banco, redis e MinIO na internet (§3). |
+| 9 | Conferir: `docker compose ps`, logs, as três superfícies públicas (§2.5) | depois | A linha de boot `política base vN carregada DO BANCO (62 capacidades)` é a prova de que o passo 7 pegou. |
+| 10 | Registrar o que subiu (commit/tag) | depois | Enquanto o Syncthing for o transporte, nada no servidor registra isso sozinho (§1). |
+
+Os passos 1 e 7 são os que mudaram de lugar. Os outros são os de sempre.
+
+### 2.0b Antes de começar (o mesmo, em caixinhas)
 
 - [ ] O que vai subir passou pela CI (`.github/workflows/ci.yml`) — typecheck, testes e a prova de
       que o histórico de migrations aplica do zero.
@@ -116,6 +137,71 @@ docker exec mktos_db psql -U mkt -d postgres -c 'DROP DATABASE smoke_test;'
 
 Os dois passos juntos cobrem as duas formas de a subida morrer: a migration que não aplica e o
 grafo de injeção do Nest que não resolve. Nenhum dos dois encosta no banco vivo.
+
+**O smoke desta onda cobre duas travas de arranque novas**, as duas propositais, as duas fatais:
+
+- o `ConectoresConfiguradosRegistry` **recusa subir** se um conector dono de credencial (ClickUp,
+  Pluggy, Asaas, Evolution) não se inscrever nele. Sem a trava, o conector voltaria a aparecer como
+  DESCONECTADO na tela de Conexões — com a credencial no lugar, funcionando — e sem nada no log;
+- a porta **recusa subir sem o `EfeitosRegistry`**, e o registro **recusa duas inscrições para a
+  mesma capacidade**. A segunda inscrição executaria código de um módulo com a classificação de
+  risco do outro, sem nada no RASTRO denunciando a troca.
+
+Medido em 11/09/2026, com o `dist/` de verdade: a aplicação sobe, e cada uma das três derruba o boot
+quando deve.
+
+### 2.3b Semear a política — ANTES de subir, não depois
+
+```bash
+docker run --rm --network marketing-os-net -w /app/apps/api \
+  -e DATABASE_URL='postgresql://<user>:<senha>@db:5432/<banco de produção>' \
+  -e POLITICA_REBAIXAMENTO_AUTOR='<quem responde>' \
+  -e POLITICA_REBAIXAMENTO_MOTIVO='<a decisão escrita, 10+ caracteres>' \
+  mktos-app pnpm db:seed:politica
+```
+
+Roda da **imagem nova** (o catálogo que ele semeia é o do repositório, que só existe lá dentro) e
+contra o banco **de produção**, antes do `up`. A ordem é essa por um motivo concreto e não por zelo
+— está na tabela do §2.0, passo 7.
+
+**O seed vai RECUSAR rodar sem assinatura, e isso está certo.** A fatia 3.3 acrescentou propriedade
+nova ao esquema de argumentos de duas capacidades, e aceitar mais entrada é **afrouxar** (RF-P-06):
+
+```
+  AFROUXA a política em vigor (nível, limite ou seção do documento) — 2 item(ns):
+    agenda.evento.criar: argsSchema — declara propriedade nova: local, convidados (nível segue R3)
+    email.enviar: argsSchema — declara propriedade nova: cc (nível segue R3)
+```
+
+A categoria é **`POLITICA_REBAIXAMENTO_*`**, não a `POLITICA_CAPACIDADE_NOVA_*` da onda 6: aqui
+nenhuma capacidade é nova, o que mudou foi o esquema. As duas variáveis ficam **gravadas na versão**.
+
+Ensaiado em 11/09/2026 contra o Postgres descartável: num banco novo, `62 criadas, 62 no total`; num
+banco já semeado com o catálogo da onda 6, `0 criadas, 62 atualizadas, 62 no total`, com o
+afrouxamento assinado impresso na saída. O total continua **62** — a capacidade `clickup.tarefa.criar`
+que a fatia declarou já existia na base ROOT; o delta passou a sobrescrevê-la.
+
+Como conferir depois do `up`: a linha de boot
+`política base vN carregada DO BANCO (N capacidades)` precisa dizer **62**.
+
+### 2.3c As duas variáveis do COFRE
+
+`COFRE_CHAVES` e `COFRE_CHAVE_ATUAL`, **as duas nos dois lugares** (bloco `environment:` do serviço
+`api` no `docker-compose.yml` **e** `.env`). Elas nascem **vazias**, e vazio é um estado válido: sem
+elas o chaveiro tem uma chave só — a `ENCRYPTION_KEY`, que entra com o id `env` — e o cofre funciona
+como antes. **O que não funciona é rotacionar**, porque rotacionar exige ter para onde ir.
+
+Se elas não entrarem no bloco `environment:`, preenchê-las no `.env` não faz nada: o container não
+lê arquivo `.env`. O sintoma é o pior possível — a rotação parece configurada e continua cifrando
+tudo com a chave velha.
+
+O roteiro completo de uma rotação está no cabeçalho de `apps/api/src/cofre/cofre.cli.ts`, e o passo
+zero dele é uma **trava nova**: `rotacionar` **recusa sair da chave de ambiente enquanto restar
+credencial herdada cifrada com ela** (as colunas de origem da bio e das contas do Google, que o
+inventário antigo não enxergava). A recusa existe porque a versão anterior do roteiro destruía toda
+credencial viva da bio de quem o seguisse até o fim: o inventário dizia zero, e tirar a chave tornava
+tudo ilegível, sem volta. O comando `cofre:inventario` tem hoje **duas** colunas de contagem — a do
+cofre e a de **herdadas** — e a coluna que responde "posso aposentar esta chave?" é o TOTAL.
 
 ### 2.4 Subir
 
@@ -227,35 +313,39 @@ abrindo o contexto de cada uma — para não precisar de exceção na lista de c
 — e **grava o evento `rastro.expurgo` dentro da mesma transação que apaga**, em SQL. Apagar por
 retenção também é evento.
 
-**Depois desta onda, rode `db:seed:politica` em produção — e ele vai PEDIR ASSINATURA.** O delta do
-catálogo subiu para `1.2.0` com **62 capacidades** (as duas novas são `conector.desligar` e
-`conector.religar`). A política que vale em runtime é a do BANCO: sem o seed, a `PolicyVersion` ativa
-continua no documento de 60 e as duas capacidades novas não aparecem na tela da Régua. As rotas de
-desligamento **não** param por isso — elas são guardadas por permissão (`admin.usuarios`), não pela
-porta —, mas o catálogo fica mentindo sobre o que o OS sabe fazer.
+**Rode `db:seed:politica` em produção — e desde a onda 7 ele é ANTERIOR à subida, não posterior.**
+A receita, a assinatura que ele pede e o porquê da ordem estão em **§2.3b**. O resumo: na onda 6 o
+seed era cosmético (duas capacidades novas, `conector.desligar` e `conector.religar`, que só
+apareciam na tela da Régua — as rotas de desligamento são guardadas por permissão, não pela porta);
+na onda 7 ele passou a ser pré-requisito, porque o catálogo ganhou **descrição de argumento** que o
+código novo já usa e o esquema antigo recusa. O que segue valendo dos dois lados: **a política que
+vale em runtime é a do BANCO**, e trocar o JSON do repositório sem semear não muda nada.
 
-O seed **recusa rodar sozinho** aqui, e está certo: capacidade não declarada valia R5, então
-acrescentá-la em R3/R4 é **afrouxar**, e afrouxar exige decisão de gente (RF-P-06). A recusa sai
-assim:
+**O seed recusa rodar sozinho sempre que a mudança AFROUXA**, e está certo: afrouxar exige decisão
+de gente (RF-P-06). O que ele considera afrouxamento depende do que mudou, e **a categoria da
+assinatura muda junto** — é o detalhe que faz alguém copiar o comando errado do histórico:
+
+| O que mudou no catálogo | Categoria | Variáveis a assinar |
+|---|---|---|
+| Capacidade **nova** (não declarada valia R5) | `ACRESCENTA` | `POLITICA_CAPACIDADE_NOVA_AUTOR` / `_MOTIVO` |
+| Nível, limite, seção ou **esquema de argumentos** que aceita mais | `AFROUXA` | `POLITICA_REBAIXAMENTO_AUTOR` / `_MOTIVO` |
+
+A onda 6 caiu na primeira linha (`conector.desligar` e `conector.religar`, capacidades novas). **A
+onda 7 cai na segunda** — nenhuma capacidade é nova, o que mudou foi o esquema. A recusa sai assim:
 
 ```
-ACRESCENTA capacidade que a base do banco ainda não classifica — 2 item(ns):
-  conector.desligar: capacidade nova em R3 (não declarada valia R5)
-  conector.religar:  capacidade nova em R4 (não declarada valia R5)
+  AFROUXA a política em vigor (nível, limite ou seção do documento) — 2 item(ns):
+    agenda.evento.criar: argsSchema — declara propriedade nova: local, convidados (nível segue R3)
+    email.enviar: argsSchema — declara propriedade nova: cc (nível segue R3)
 Nada foi semeado.
 ```
 
-Quem assina põe o próprio nome e o motivo, que ficam **gravados na versão**:
-
-```bash
-POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
-POLITICA_CAPACIDADE_NOVA_MOTIVO='<a decisão escrita>' \
-  pnpm --filter @mktos/api db:seed:politica
-```
+Quem assina põe o próprio nome e o motivo (10+ caracteres), que ficam **gravados na versão**. O
+comando completo está em **§2.3b**, com a ordem certa — o seed vem **antes** do `up`, não depois.
 
 Como conferir depois: a linha de boot `política base vN carregada DO BANCO (N capacidades)` precisa
-dizer **62**. Ensaiado em 11/09/2026 nos três bancos descartáveis — `2 criadas, 60 atualizadas, 62
-no total`.
+dizer **62**. Ensaiado em 11/09/2026 nos bancos descartáveis — banco novo: `62 criadas, 62 no
+total`; banco já semeado com o catálogo da onda 6: `0 criadas, 62 atualizadas, 62 no total`.
 
 **Antes do merge desta onda, rode `deploy/janela-horaria-ilegivel.sql` no banco de produção.**
 A fatia 2.3 mudou, de propósito, o que acontece quando `limitesPadrao.janelaHoraria` de uma política
@@ -358,16 +448,22 @@ explicativo, porque escolher o nome do banco de destino era a porta para apagar 
 
 ## 5. Checklist de uma subida
 
-1. [ ] CI verde na revisão que vai subir
-2. [ ] Migration nova aplicada antes num Postgres descartável — **do zero e sobre banco povoado**
-3. [ ] Variável nova no `environment:` do compose **e** no `.env`
-4. [ ] Backup do dia existe
-4b. [ ] `deploy/janela-horaria-ilegivel.sql` rodado em produção, com o resultado lido (onda 6)
-4c. [ ] `db:seed:politica` planejado para depois da subida, e a linha de boot conferida em 62
-5. [ ] `docker tag mktos-app:latest mktos-app:rollback`
-6. [ ] `docker compose -f docker-compose.yml -f docker-compose.vps.yml build api`
-7. [ ] Smoke na imagem, contra banco descartável, com os crons desligados
-8. [ ] `up -d --no-build api web`
-9. [ ] `docker compose ps` + logs + as três superfícies públicas respondendo
-10. [ ] Registrar o que subiu (commit/tag) — enquanto o Syncthing for o transporte, isso não fica
+A ordem completa, com a consequência de pular cada passo, está em **§2.0**. Aqui é só a lista.
+
+1. [ ] `deploy/janela-horaria-ilegivel.sql` rodado em **produção**, com o resultado lido — **antes
+   do merge** (onda 6)
+2. [ ] CI verde na revisão que vai subir
+3. [ ] Migration nova aplicada antes num Postgres descartável — **do zero e sobre banco povoado**
+4. [ ] Variável nova no `environment:` do compose **e** no `.env` — nesta onda, `COFRE_CHAVES` e
+   `COFRE_CHAVE_ATUAL` (§2.3c), as duas podendo ficar vazias
+5. [ ] Backup do dia existe
+6. [ ] `docker tag mktos-app:latest mktos-app:rollback`
+7. [ ] `docker compose -f docker-compose.yml -f docker-compose.vps.yml build api`
+8. [ ] Smoke na imagem, contra banco descartável, com os crons desligados
+9. [ ] **`db:seed:politica` rodado da imagem nova contra o banco de produção, ANTES do `up`** — com
+   `POLITICA_REBAIXAMENTO_AUTOR`/`_MOTIVO`, que o seed vai exigir (§2.3b)
+10. [ ] `up -d --no-build api web`
+11. [ ] `docker compose ps` + logs + as três superfícies públicas respondendo, e a linha de boot
+    dizendo **62 capacidades DO BANCO**
+12. [ ] Registrar o que subiu (commit/tag) — enquanto o Syncthing for o transporte, isso não fica
     registrado sozinho no servidor

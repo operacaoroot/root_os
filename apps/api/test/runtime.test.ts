@@ -158,9 +158,20 @@ describe.skipIf(!URL)('o laço do agente', () => {
 
   afterAll(async () => {
     vi.useRealTimers();
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.eventLog.deleteMany({ where: { orgId: ORG } });
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    /*
+     * NUMA TRANSAÇÃO SÓ. `EventLog` é do banco INTEIRO e os arquivos de teste
+     * rodam em PARALELO contra ele: em comandos soltos, a RULE de append-only
+     * fica desligada para TODO MUNDO na janela entre eles, e quem estiver
+     * medindo o append-only nesse instante sai vermelho por um defeito que não
+     * existe. Dentro de uma transação o ALTER TABLE segura ACCESS EXCLUSIVE até
+     * o commit, e worker morto no meio devolve a RULE ligada. Mesmo conserto da
+     * onda 6 em `rastro-retencao.test.ts`.
+     */
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.eventLog.deleteMany({ where: { orgId: ORG } }),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
     await prisma.sessionStep.deleteMany({ where: { orgId: ORG } });
     await prisma.session.deleteMany({ where: { orgId: ORG } });
     await prisma.sop.deleteMany({ where: { orgId: ORG } });

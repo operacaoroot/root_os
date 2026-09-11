@@ -152,6 +152,11 @@ model Org {
 
   // Fatia 3.7 — RF-G-06 (bloco no fim do arquivo).
   conectoresDesligados ConectorDesligado[]
+
+  // Fatia 5.3 — O COFRE, RF-C-01..04 (bloco no fim do arquivo). Mesma regra das
+  // duas de cima: só o outro lado da relação mora aqui, que é o que o Prisma
+  // exige, e nada além disso.
+  segredosDeConector SegredoDeConector[]
 }
 
 model User {
@@ -2326,4 +2331,136 @@ model GastoDeIaNoDia {
   atualizadoEm DateTime @updatedAt
 
   @@unique([orgId, dia])
+}
+
+// ===========================================================================
+// FATIA 5.3 — O COFRE: SEGREDO POR EMPRESA E POR CONECTOR (RF-C-01..RF-C-04)
+//
+// Acrescentado no FIM do arquivo de propósito, e SEM `prisma migrate dev`: duas
+// fatias desta onda mexem no mesmo schema, e tanto reescrever o arquivo quanto
+// gerar a migration automaticamente engoliria os modelos da outra (protocolo da
+// onda 7, seção 4). O SQL desta tabela foi escrito à mão, com carimbo próprio,
+// e provado no banco `prova_53`.
+//
+// O PROBLEMA QUE ESTA TABELA EXISTE PARA RESOLVER. Até 11/09/2026 havia UMA
+// chave de ambiente (`ENCRYPTION_KEY`) cifrando todo segredo do produto, e ela
+// nem sequer alcançava tudo: `BioConexao` e `BioCredencialApp` eram cifrados,
+// `GoogleAccount.accessToken`/`refreshToken` e `MetaAccount.userToken`/
+// `pageToken` estavam em TEXTO PURO no banco. Trocar aquela chave tornava
+// ilegível, de uma vez, tudo o que estava cifrado — está documentado no
+// CLAUDE.md do projeto como armadilha conhecida, e `prisma/migrate-bio.ts`
+// precisou de um `BIO_OLD_ENCRYPTION_KEY` para contornar a mesma coisa uma vez.
+//
+// O QUE MUDA AQUI: cada valor guarda O ID DA CHAVE QUE O CIFROU (`chaveId`), e
+// o cofre carrega um CHAVEIRO com várias chaves ao mesmo tempo
+// (`src/common/crypto.ts`). Rotacionar passa a ser re-cifrar linha a linha para
+// a chave nova — e, enquanto a chave velha continuar no chaveiro, a linha que a
+// rotação ainda NÃO tocou continua abrindo. É o que separa rotação de "perder
+// tudo de uma vez".
+// ===========================================================================
+
+/// Um segredo de UMA empresa para UM conector — o que o cofre guarda.
+///
+/// GRANULARIDADE: (empresa, conector, nome). O `nome` é qual segredo dentro do
+/// conector — `access_token`, `refresh_token`, `app_secret` — e existe porque
+/// revogar tem de poder alcançar UM deles: um refresh token queimado não
+/// obriga a apagar o app secret do mesmo conector.
+///
+/// POR QUE NÃO UMA COLUNA NOVA EM `GoogleAccount`/`BioConexao`. Porque a
+/// pergunta "quais segredos esta empresa tem, e com que chave cada um está
+/// cifrado?" é a pergunta da ROTAÇÃO, e ela não pode depender de varrer sete
+/// tabelas diferentes com sete formatos de coluna. Um lugar só, com índice por
+/// `chaveId`, responde "o que ainda falta rotacionar" numa consulta.
+///
+/// O QUE **NÃO** ESTÁ AQUI, e de propósito: segredo de PLATAFORMA — a
+/// `ENCRYPTION_KEY`, a chave da Anthropic, o app global da Root
+/// (`BioCredencialApp` com `orgId` nulo). Este cofre é por EMPRESA: a coluna
+/// `orgId` é obrigatória, o isolamento por linha recorta por ela, e uma linha
+/// sem empresa não teria como ser recortada. Segredo de plataforma continua em
+/// variável de ambiente, que é onde o operador o administra.
+model SegredoDeConector {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Chave do catálogo de conectores (`CONNECTORS`, em `packages/shared`) —
+  /// `gmail`, `clickup`, `instagram`… A MESMA chave que o interruptor de
+  /// desligamento usa (`integrations/conectores.ts`), para que desligar e
+  /// revogar falem do mesmo conector sem tradução no meio.
+  conector String
+
+  /// Qual segredo dentro do conector. Texto livre e não enum: o conjunto muda
+  /// com cada API externa (`access_token`, `refresh_token`, `app_secret`,
+  /// `acesso:<idDaConexao>`), e um enum viraria migration de tipo a cada
+  /// conector novo. Ver `NOMES_CONHECIDOS` em `src/cofre/segredo.ts`.
+  nome String
+
+  /// O valor, cifrado com AES-256-GCM. O formato carrega a versão e o ID DA
+  /// CHAVE (`c2.<chaveId>.<iv>.<tag>.<dados>`), e o GCM autentica com
+  /// `orgId|conector|nome` como dado associado — uma linha copiada para outra
+  /// empresa NÃO ABRE, mesmo com a chave certa. É a segunda tranca por cima do
+  /// isolamento por linha, e ela vale até contra quem tem acesso ao dump.
+  valorCifrado String
+
+  /// Qual chave do chaveiro cifrou ESTE valor. É a coluna que torna a rotação
+  /// possível sem parar o mundo: as linhas migram uma a uma, e as que ainda não
+  /// migraram continuam legíveis porque a chave antiga segue no chaveiro.
+  chaveId String
+
+  /// O que a credencial emprestada PERMITE. Vazio = sem restrição declarada
+  /// (o estado do que veio migrado de antes do cofre). Quem empresta pode
+  /// exigir um escopo, e o cofre recusa quando ele não está aqui — é o "capacidade
+  /// com escopo" do RF-C-02.
+  escopo String[] @default([])
+
+  /// De onde este segredo veio: `oauth`, `tela`, `migracao:bio`,
+  /// `migracao:google`, `migracao:meta`. É o que permite DESFAZER a migração
+  /// sem adivinhação (ver `src/cofre/migrar-credenciais.ts`).
+  origem String
+
+  /// Quando o segredo EM SI expira (o token OAuth), não o empréstimo. Nulo =
+  /// não expira ou não se sabe. O cofre não apaga o que expirou: quem renova é
+  /// o conector, e apagar tiraria dele o refresh token.
+  expiraEm DateTime?
+
+  /// Sobe a cada gravação de valor novo. Serve à auditoria ("este segredo já
+  /// foi trocado três vezes") e ao diagnóstico de conector que renova em laço.
+  versao Int @default(1)
+
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+  /// Última vez que a ROTAÇÃO re-cifrou esta linha. Diferente de
+  /// `atualizadoEm`: rotação não muda o segredo, só a chave que o embrulha.
+  rotacionadoEm DateTime?
+  /// Última vez que o cofre EMPRESTOU este segredo. Segredo que nunca foi
+  /// emprestado é candidato a revogação — e é a única coisa que o cofre sabe
+  /// sobre o uso, porque ele não vê a chamada externa.
+  usadoEm       DateTime?
+
+  /// REVOGAÇÃO (RF-C-03). A linha SOBREVIVE à revogação e o valor NÃO: ao
+  /// revogar, `valorCifrado` vira string vazia e estes três campos são
+  /// preenchidos. É de propósito nos dois sentidos —
+  ///
+  ///  · apagar o valor é o que faz a revogação ter EFEITO IMEDIATO de verdade.
+  ///    Uma revogação que fosse só uma flag dependeria de todo leitor lembrar
+  ///    de conferi-la; o leitor que esquecesse continuaria mandando mensagem
+  ///    com a credencial revogada. Sem valor não há o que ler.
+  ///  · manter a linha é o que deixa a auditoria responder "quem revogou, quando
+  ///    e por quê" — e é o que impede que o mesmo segredo seja regravado sem
+  ///    passar por cima de um registro visível.
+  ///
+  /// NÃO CONFUNDIR COM `ConectorDesligado` (fatia 3.7). Desligar é PAUSA e não
+  /// toca credencial nenhuma: religar devolve o conector ao ar sem novo OAuth.
+  /// Revogar é QUEIMAR: o segredo some, e voltar exige autorizar de novo. Os
+  /// dois existem porque as duas perguntas existem.
+  revogadoEm      DateTime?
+  revogadoPor     String?
+  motivoRevogacao String?
+
+  /// Um segredo por (empresa, conector, nome). Guardar dois seria guardar um
+  /// que ninguém sabe qual é — e a revogação deixaria o outro vivo.
+  @@unique([orgId, conector, nome])
+  /// A consulta da ROTAÇÃO: "o que ainda está na chave velha?". Sem ele, toda
+  /// rotação varre a tabela inteira para descobrir o que já migrou.
+  @@index([chaveId])
 }

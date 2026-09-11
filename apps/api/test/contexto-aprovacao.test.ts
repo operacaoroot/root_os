@@ -161,8 +161,6 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
     await policy.onModuleInit();
     approvals = new ApprovalsService(p, new AuditService(p));
     eventos = new EventLogService(p);
-    gateway = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, eventos);
-
     recebido = [];
     falhar = false;
     registro = new EfeitosRegistry();
@@ -179,19 +177,46 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
         return { leadsHoje: 12 };
       },
     });
+    /*
+     * O REGISTRO VAI PARA A PORTA, e a porta para o `AcoesService` — fatia 3.3.
+     * O disparo do efeito no caminho pós-aprovação deixou de ser feito por
+     * `AcoesService` e passou a ser `ToolGateway.executarAprovado`, que
+     * reclassifica com a régua de hoje antes de soltar a ação de ontem.
+     */
+    gateway = new ToolGateway(
+      p,
+      policy,
+      new SinaisService(p, policy),
+      approvals,
+      eventos,
+      undefined,
+      undefined,
+      registro,
+    );
     // A política vai junto, como o Nest a injeta: sem ela este serviço não
     // registra o conteúdo redigível, e a suíte mediria uma linha de desfecho
     // mais pobre do que a que a aplicação escreve.
-    acoes = new AcoesService(p, registro, eventos, undefined, policy);
+    acoes = new AcoesService(p, gateway, eventos, undefined, policy);
   });
 
   afterAll(async () => {
     vi.useRealTimers();
     // O EventLog é append-only de verdade: a RULE de DELETE também vale para o
     // teste. Desligar explicitamente aqui é o preço de a garantia ser real.
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-    await prisma.eventLog.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
-    await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+    /*
+     * NUMA TRANSAÇÃO SÓ. `EventLog` é do banco INTEIRO e os arquivos de teste
+     * rodam em PARALELO contra ele: em comandos soltos, a RULE de append-only
+     * fica desligada para TODO MUNDO na janela entre eles, e quem estiver
+     * medindo o append-only nesse instante sai vermelho por um defeito que não
+     * existe. Dentro de uma transação o ALTER TABLE segura ACCESS EXCLUSIVE até
+     * o commit, e worker morto no meio devolve a RULE ligada. Mesmo conserto da
+     * onda 6 em `rastro-retencao.test.ts`.
+     */
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.eventLog.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } }),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
     await prisma.approval.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
     await prisma.toolCall.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
     await prisma.policyDecision.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });

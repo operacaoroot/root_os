@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
-import { EvolutionService } from '../pauta/evolution.service';
+import { EfeitosRegistry } from '../gateway/efeitos.registry';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { FinanceService } from '../finance/finance.service';
 import { FinopsService } from '../finance/finops.service';
@@ -42,7 +41,6 @@ export class EfeitosService implements OnModuleInit {
     private readonly tasks: TasksService,
     private readonly campanhas: CampaignsService,
     private readonly obsidian: ObsidianService,
-    private readonly evolution: EvolutionService,
   ) {}
 
   onModuleInit(): void {
@@ -62,42 +60,34 @@ export class EfeitosService implements OnModuleInit {
         this.campanhas.list(org, a.status as string | undefined),
       'contexto.memoria.buscar': (a: Record<string, unknown>, org: string) =>
         this.obsidian.search(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5)),
-
-      /*
-       * A PRIMEIRA capacidade de escrita com efeito ligado. R3: ela só chega
-       * aqui depois que uma pessoa aprovou, e com os argumentos GRAVADOS na
-       * proposta — nunca com os que vieram na confirmação.
-       *
-       * O destino é SEMPRE o grupo configurado no ambiente. O modelo não
-       * escolhe para quem manda: um `destino` proposto por ele é ignorado de
-       * propósito, senão a régua controlaria o texto e não o destinatário.
-       *
-       * O terceiro parâmetro é quem pediu (RF-T-04, RNF-09). A Evolution não
-       * tem campo para ator, então ele sai no RESULTADO — que é o que a porta
-       * grava em `ToolCall.resultado` e o que volta para quem confirmou. Sem
-       * isso, o registro do envio diz o que saiu e não diz por ordem de quem:
-       * nesta rota o proponente é a IA e o executor é gente, e a diferença é o
-       * ponto inteiro da aprovação.
-       */
-      'whatsapp.mensagem.enviar': async (
-        a: Record<string, unknown>,
-        _org: string,
-        ctx: ContextoDoEfeito,
-      ) => {
-        const titulo = String(a.titulo ?? '').trim();
-        const corpo = String(a.corpo ?? a.texto ?? a.mensagem ?? '').trim();
-        if (!corpo) throw new Error('mensagem vazia: nada foi enviado');
-        const texto = titulo ? `*${titulo}*\n\n${corpo}` : corpo;
-        const r = await this.evolution.enviarTexto(this.evolution.grupo, texto);
-        return {
-          enviado: true,
-          id: r.id,
-          destino: this.evolution.grupo,
-          caracteres: texto.length,
-          porOrdemDe: ctx.actorId ?? null,
-        };
-      },
-    });
+    }, 'EfeitosService (capacidades do próprio OS)');
+    /*
+     * O QUE SAIU DAQUI NA FATIA 3.3, e por quê.
+     *
+     * `whatsapp.mensagem.enviar` morava neste mapa, e para escrevê-lo este
+     * arquivo importava o `EvolutionService` — o runtime do agente alcançando um
+     * conector por fora da porta, que era a violação mais antiga da catraca de
+     * arquitetura. O efeito não mudou de corpo, mudou de LADO: agora quem o
+     * declara é o próprio conector (`pauta/evolution.service.ts`), no
+     * `onModuleInit` dele. O mesmo vale para as nove capacidades do Google, que
+     * o `GoogleService` passou a declarar.
+     *
+     * A regra que ficou: **efeito que fala com sistema de terceiro é declarado
+     * pelo conector daquele sistema; este mapa só liga o que é do próprio OS** —
+     * painel, financeiro, leads, tarefas, campanhas, tudo lendo o banco daqui.
+     *
+     * A ÚNICA EXCEÇÃO que sobra é `contexto.memoria.buscar`, logo acima, que
+     * importa o `ObsidianService`. Ela fica declarada na catraca com o motivo:
+     * `src/obsidian/` é de outra fatia desta onda e não podia ser editado aqui.
+     * A mudança é de uma linha — o `ObsidianService` ganha um `onModuleInit` que
+     * registra o efeito, igual ao do `EvolutionService` — e está descrita no
+     * relatório.
+     *
+     * O NÚMERO NO LOG deixou de ser "as capacidades desta classe": ele conta o
+     * registro INTEIRO, que agora é preenchido por vários serviços em ordem de
+     * arranque. É o número certo para a pergunta que interessa — quantas
+     * capacidades o OS consegue executar — e é por isso que continua aqui.
+     */
     this.log.log(`${this.registro.tamanho} capacidades com efeito ligado`);
   }
 }

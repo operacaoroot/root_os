@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ActorType, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
 import type { Capacidade, Decisao } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +20,7 @@ import {
 import { TetoDeCustoIaService } from '../llm/teto-diario.service';
 import { ROTULO_CONECTOR_DESLIGADO, conectorDaCapacidade } from '../integrations/conectores';
 import { EventLogService, type ConteudoDoEvento } from './event-log.service';
+import { EfeitosRegistry, type ContextoDoEfeito } from './efeitos.registry';
 import { InterruptoresRegistry } from './interruptores.registry';
 import { mensagemDeErro, validarArgs } from './validacao';
 
@@ -166,6 +174,24 @@ export class ToolGateway implements OnModuleInit {
      * é a linha de log de `InterruptoresRegistry.registrar`.
      */
     @Optional() private readonly interruptores?: InterruptoresRegistry,
+    /*
+     * O REGISTRO DE EFEITOS — desde a fatia 3.3 a porta é quem o dispara, nos
+     * DOIS caminhos de execução.
+     *
+     * No caminho do agente o efeito continua chegando por callback (`executar`),
+     * porque quem chama sabe montar a chamada e o registro é só um dos destinos
+     * possíveis. No caminho PÓS-APROVAÇÃO (`executarAprovado`, chamado por
+     * `AcoesService`) não há callback nenhum: a ação foi proposta há minutos ou
+     * horas, ninguém segurou função na mão, e o que existe é o id da capacidade
+     * e os argumentos gravados. Até 11/09/2026 quem ia buscar a função nesse caso
+     * era a própria `AcoesService` — um SEGUNDO ponto do código disparando efeito
+     * sem passar pela porta. Agora ela pede à porta.
+     *
+     * `@Optional()` pelo mesmo motivo dos dois de cima: as suítes constroem esta
+     * classe à mão. Sem o registro, `executarAprovado` LANÇA com a frase inteira
+     * em vez de deixar a ação sumir — falha fechada.
+     */
+    @Optional() private readonly efeitos?: EfeitosRegistry,
   ) {
     this.log.log(`porta em modo ${this.modo.toUpperCase()}`);
   }
@@ -174,6 +200,15 @@ export class ToolGateway implements OnModuleInit {
    * A asserção de arranque. Sem o teto injetado, a porta deixaria passar toda
    * ação de agente de uma empresa com o orçamento de IA estourado — e o silêncio
    * disso é o problema: nada no log diria que o segundo cinto não está afivelado.
+   *
+   * O REGISTRO DE EFEITOS ENTROU AQUI NA CORREÇÃO DA FATIA 3.3, e o motivo é o
+   * mesmo silêncio. Ele é `@Optional()` no construtor por causa das suítes que
+   * montam esta classe à mão, e sem ele nada estoura: `temEfeito` responde
+   * `false` para TODA capacidade, e a fila de aprovação passa a devolver "o
+   * efeito não está ligado nesta versão" para ações que têm efeito ligado desde
+   * sempre. Não é falha aberta — nada sai indevidamente —, mas é uma frase
+   * FALSA numa tela, que manda quem opera procurar um defeito de catálogo que
+   * não existe. Falha fechada que mente é dívida igual.
    */
   onModuleInit(): void {
     if (!this.teto) {
@@ -181,6 +216,14 @@ export class ToolGateway implements OnModuleInit {
         'ToolGateway subiu sem TetoDeCustoIaService: o teto de custo de IA por empresa não seria ' +
           'imposto às ações de agente (RF-G-05). O serviço vem do LlmModule, que é global — se ele ' +
           'não estiver importado, a porta não pode subir.',
+      );
+    }
+    if (!this.efeitos) {
+      throw new Error(
+        'ToolGateway subiu sem EfeitosRegistry: a porta não conseguiria disparar efeito nenhum no ' +
+          'caminho pós-aprovação, e a fila responderia "o efeito não está ligado nesta versão" ' +
+          'sobre capacidades que TÊM efeito — uma frase falsa em vez de um erro. O registro vem do ' +
+          'próprio GatewayModule; se ele não estiver nos providers, a porta não pode subir.',
       );
     }
   }
@@ -673,6 +716,154 @@ export class ToolGateway implements OnModuleInit {
       });
       return { status: 'erro', mensagem, toolCallId: toolCall.id };
     }
+  }
+
+  // ==========================================================================
+  // O SEGUNDO CAMINHO DE EXECUÇÃO — a ação que uma pessoa já aprovou
+  // ==========================================================================
+  //
+  // Ele existe porque aprovar TEM de executar: sem ele a fila é um museu. O que
+  // mudou na fatia 3.3 é o DONO do disparo. Antes `AcoesService` ia buscar a
+  // função no `EfeitosRegistry` por conta própria — o código compilava, o RASTRO
+  // saía completo, e mesmo assim havia dois lugares no programa capazes de
+  // alcançar um conector. Um deles não era a porta.
+  //
+  // O que a porta acrescenta aqui, e que não é cerimônia:
+  //
+  //   · RECLASSIFICA. A decisão de política aconteceu na PROPOSTA, que pode ter
+  //     sido ontem. Entre uma coisa e outra o catálogo da empresa pode ter
+  //     subido a capacidade para R5 (sobrescrita por tenant é suportada), e R5 é
+  //     o degrau em que o OS nunca executa — prepara e encaminha. Sem esta
+  //     conferência, aprovar uma proposta velha furaria a régua nova.
+  //   · CAPACIDADE DESCONHECIDA VALE R5. Capacidade que saiu do catálogo (ou que
+  //     nunca esteve nele) não tem classificação, e sem classificação o nível é o
+  //     máximo, que é bloqueio. Falha fechada.
+  //   · REVALIDA OS ARGUMENTOS contra o `argsSchema` de HOJE. Os argumentos são
+  //     os gravados na proposta; o schema pode ter apertado desde então.
+  //
+  // O que ela NÃO faz aqui, e é de propósito: não abre `ToolCall` nem
+  // `PolicyDecision` novos, e não escreve evento. O par já existe desde a
+  // proposta, e `AcoesService` fecha os dois com `acao.executada`/`acao.falhou`.
+  // Abrir um segundo par faria o relatório de calibragem contar a mesma ação
+  // duas vezes.
+  //
+  // ==========================================================================
+  // POR QUE SÃO DOIS MÉTODOS, E NÃO UM — o limbo da onda 6, invertido
+  // ==========================================================================
+  //
+  // A primeira versão desta fatia tinha um método só, `executarAprovado`, que
+  // CONFERIA e DISPARAVA na mesma chamada. `AcoesService` marcava a aprovação
+  // como `consumida` e só então chamava — porque o efeito vinha junto, e não
+  // havia como perguntar antes sem disparar.
+  //
+  // O preço era exato, e é o mesmo limbo que a onda 6 pagou com o interruptor,
+  // só que de cabeça para baixo: se QUALQUER uma das três conferências abaixo
+  // recusasse — a régua de hoje reclassificou para bloqueio, a capacidade saiu
+  // do catálogo, o `argsSchema` apertou —, a ação não saía e a aprovação já
+  // estava `consumida`. `consumida` é estado TERMINAL e se lê como "executada":
+  // some da fila (`listar` devolve as pendentes), `confirm` recusa o que não
+  // está pendente, e `executarAprovada` recusa o que não está `confirmada`.
+  // Ninguém reexecuta, ninguém repropõe, e a mensagem de erro ainda afirmava
+  // que "a aprovação continua registrada" — verdade sobre a LINHA, falsa sobre
+  // o ESTADO em que ela ficou.
+  //
+  // Partido em dois, `AcoesService` pergunta ANTES de queimar o uso único, no
+  // mesmo lugar em que já pergunta pelo interruptor de conector e pela mesma
+  // razão: recusa não pode custar a aprovação. Depois de `conferirAprovado`
+  // passar, o que sobra em `dispararAprovado` é o efeito — e um efeito que
+  // estoura é falha de execução de verdade, que a aprovação consumida descreve
+  // corretamente.
+
+  /** A capacidade tem efeito ligado nesta versão? */
+  temEfeito(capabilityId: string): boolean {
+    return this.efeitos?.tem(capabilityId) ?? false;
+  }
+
+  /**
+   * A régua de HOJE ainda deixa esta ação sair? — a METADE QUE NÃO EXECUTA.
+   *
+   * NÃO TOCA EM NADA: não chama efeito, não escreve no banco, não registra
+   * evento. Existe para ser chamada ANTES de a aprovação virar `consumida` —
+   * ver o bloco acima. Lança quando a resposta é não, e lançar é o certo neste
+   * caminho (ao contrário de `executar`): quem chama é uma rota HTTP de
+   * confirmação, não o laço do agente, e a exceção vira resposta com motivo em
+   * vez de um "executado" mentiroso.
+   *
+   * As frases dizem, com todas as letras, que a aprovação NÃO foi consumida.
+   * Isso só é verdade porque quem chama respeita a ordem; se alguém inverter,
+   * a mensagem volta a mentir — e é por isso que a ordem está escrita aqui e
+   * travada por teste em `test/escritas-pela-porta.test.ts`.
+   */
+  conferirAprovado(entrada: {
+    capabilityId: string;
+    args: Record<string, unknown>;
+    orgId: string;
+  }): void {
+    const { capabilityId, args, orgId } = entrada;
+
+    /*
+     * Sem registro não há como disparar coisa nenhuma — e esta conferência
+     * mora AQUI, e não em `dispararAprovado`, justamente para que a ausência
+     * seja descoberta antes de a aprovação ser queimada. Em produção isto não
+     * acontece: `onModuleInit` recusa subir sem o registro.
+     */
+    if (!this.efeitos) {
+      throw new Error(
+        'ToolGateway sem EfeitosRegistry: a porta não tem como disparar o efeito de uma ação ' +
+          'aprovada. O registro vem do GatewayModule — se ele não estiver injetado, a fila de ' +
+          'aprovação não pode executar nada. A aprovação NÃO foi consumida.',
+      );
+    }
+
+    const cap = this.policy.resolverCapacidade(orgId, capabilityId);
+    if (!cap) {
+      throw new ForbiddenException(
+        `"${capabilityId}" não está no catálogo desta empresa. Capacidade sem classificação vale ` +
+          'o nível máximo (R5): o OS prepara e encaminha, nunca executa. A aprovação NÃO foi ' +
+          'consumida — ela continua confirmada, e volta a executar se a capacidade retornar ao ' +
+          'catálogo.',
+      );
+    }
+
+    const decisao = this.policy.simular(orgId, capabilityId);
+    if (!decisao.permitido) {
+      throw new ForbiddenException(
+        `A régua desta empresa hoje classifica "${capabilityId}" como ${decisao.nivel} e não ` +
+          `executa: ${decisao.motivo}. Nada foi enviado e a aprovação NÃO foi consumida: ela ` +
+          'continua confirmada, e sai assim que a classificação voltar a permitir.',
+      );
+    }
+
+    const erros = validarArgs((cap as { argsSchema?: unknown }).argsSchema, args);
+    if (erros.length) {
+      throw new BadRequestException(
+        `Os argumentos gravados na proposta não casam mais com o formato de "${capabilityId}": ` +
+          `${mensagemDeErro(erros)}. Nada foi enviado e a aprovação NÃO foi consumida — o caminho ` +
+          'é propor de novo com os argumentos no formato de hoje.',
+      );
+    }
+  }
+
+  /**
+   * Dispara o efeito de uma ação JÁ APROVADA E JÁ CONFERIDA — a METADE QUE AGE.
+   *
+   * Só chame depois de `conferirAprovado` ter passado. Ela repete a conferência
+   * de registro porque o tipo não consegue provar que a outra rodou, mas NÃO
+   * repete a de política: repetir faria a mesma decisão duas vezes e daria a
+   * falsa impressão de que a ordem entre as duas metades não importa.
+   */
+  async dispararAprovado(entrada: {
+    capabilityId: string;
+    args: Record<string, unknown>;
+    ctx: ContextoDoEfeito;
+  }): Promise<unknown> {
+    if (!this.efeitos) {
+      throw new Error(
+        'ToolGateway sem EfeitosRegistry: dispararAprovado foi chamado sem o registro. ' +
+          'Chame conferirAprovado antes — é ela que recusa sem custar a aprovação.',
+      );
+    }
+    return this.efeitos.executar(entrada.capabilityId, entrada.args, entrada.ctx);
   }
 
   private async concluirRecusa<A extends Record<string, unknown>, R>(

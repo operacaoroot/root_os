@@ -40,8 +40,11 @@ import { AuditService } from './audit.service';
  * virou ausência de registro no injetor, com catraca que varre TODOS os
  * controllers em `rastro-retencao.test.ts`.
  *
- * `conferirQueEhDono()` abaixo é o complemento: chamado da conexão errada, o
- * serviço RECUSA em vez de apagar zero linha em silêncio.
+ * `conferirQuePodeExpurgar()` abaixo é o complemento: chamado da conexão errada,
+ * o serviço RECUSA em vez de apagar zero linha em silêncio. Ela confere DUAS
+ * coisas — ser dono (o `ALTER TABLE` da função exige) e atravessar o isolamento
+ * (FORCE ROW LEVEL SECURITY vale para o dono também) —, e o porquê de a segunda
+ * não ser zelo está no cabeçalho da própria função.
  *
  * ----------------------------------------------------------------------------
  * POR QUE VARRE EMPRESA POR EMPRESA
@@ -59,9 +62,9 @@ import { AuditService } from './audit.service';
  * para "expurgar tudo" nem por engano.
  *
  * DUAS CONSULTAS AQUI RODAM SEM EMPRESA, e elas são legítimas: a conferência de
- * dono (que lê `pg_class`, não dado de ninguém) e a descoberta de quais empresas
- * têm linha vencida. As duas saem com `app.org_id` vazio e levantam o aviso de
- * inventário do gancho de sessão.
+ * conexão (que lê `pg_class` e `pg_roles`, não dado de ninguém) e a descoberta de
+ * quais empresas têm linha vencida. As duas saem com `app.org_id` vazio e
+ * levantam o aviso de inventário do gancho de sessão.
  *
  * ELAS NÃO PRECISAM DE ENTRADA NA LISTA DE CHAMADORES DE PLATAFORMA, e o
  * argumento é de impossibilidade, não de descuido: `TENANT_MODO=impor` EXIGE a
@@ -134,24 +137,78 @@ export class ExpurgoService {
   ) {}
 
   /**
-   * Recusa alto quando a conexão não é a dona das tabelas.
+   * Recusa alto quando a conexão não consegue expurgar — e são DUAS perguntas.
    *
-   * Sem isto o modo de falha seria o pior possível: `ALTER TABLE` estouraria
-   * dentro da função e o erro apareceria como "must be owner of table" no meio
-   * de um cron, ou — pior — a policy recortaria tudo e o expurgo reportaria
-   * "zero apagados" com ar de sucesso. Uma obrigação de retenção que falha em
-   * silêncio é uma obrigação descumprida sem ninguém saber.
+   * ------------------------------------------------------------------------
+   * POR QUE DUAS, e por que "sou o dono" sozinho era a pergunta errada
+   * ------------------------------------------------------------------------
+   * Até 11/09/2026 esta função perguntava só `pg_get_userbyid(relowner) =
+   * current_user`. Ser dono é necessário — `app_rastro_expurgar` começa com
+   * `ALTER TABLE "EventLog" DISABLE RULE`, e `ALTER TABLE` exige ser dono —,
+   * mas NÃO é suficiente, e o comentário logo abaixo (em
+   * `empresasComRastroVencido`) descrevia como "limite conhecido" exatamente o
+   * desfecho que este conserto tira do caminho:
+   *
+   *   `EventLog` nasce com FORCE ROW LEVEL SECURITY, e **FORCE vale para o dono
+   *   também**. Num banco em que o dono NÃO seja superusuário nem tenha
+   *   BYPASSRLS, a varredura de descoberta roda sem empresa na sessão, a policy
+   *   recorta tudo, `empresasComRastroVencido` devolve vazio, e o script
+   *   imprime "Nenhuma empresa com rastro vencido" e sai com código 0. Zero
+   *   apagado com ar de sucesso — obrigação de retenção descumprida sem ninguém
+   *   saber, que é precisamente o modo de falha que esta conferência existe
+   *   para impedir.
+   *
+   * O mesmo defeito foi encontrado e provado na fatia do COFRE
+   * (`cofre/rotacao.service.ts`, `conferirQueAtravessaOIsolamento`): com um
+   * papel dono e sem bypass, a rotação enxergava só a empresa da sessão — que
+   * num script não existe — e reportava "nada a rotacionar". Aqui é a mesma
+   * pergunta, sobre outra tabela.
+   *
+   * O atributo de papel NÃO é herdado por pertencimento a grupo em PostgreSQL,
+   * então perguntar por `current_user` em `pg_roles` é a pergunta exata.
+   *
+   * A conferência de bypass é condicionada a `ligado AND forcado` para não dar
+   * alarme falso onde o isolamento nunca foi ligado nesta tabela (um banco
+   * descartável em que `app_rls_ligar()` não rodou): ali qualquer papel enxerga
+   * tudo e a varredura é completa de qualquer jeito.
+   *
+   * Na implantação de hoje o dono (`mkt`) é superusuário e as duas passam. A
+   * conferência existe para o dia em que isso mudar — e para que, quando mudar,
+   * o expurgo PARE em vez de mentir.
    */
-  async conferirQueEhDono(): Promise<void> {
-    const r = await this.prisma.$queryRaw<{ dono: boolean; papel: string }[]>`
-      SELECT pg_get_userbyid(c.relowner) = current_user AS dono, current_user::text AS papel
+  async conferirQuePodeExpurgar(): Promise<void> {
+    const r = await this.prisma.$queryRaw<
+      { dono: boolean; papel: string; ignora: boolean; ligado: boolean; forcado: boolean }[]
+    >`
+      SELECT pg_get_userbyid(c.relowner) = current_user AS dono,
+             current_user::text AS papel,
+             COALESCE((SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user), false) AS ignora,
+             c.relrowsecurity AS ligado,
+             c.relforcerowsecurity AS forcado
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relname = 'EventLog'`;
     const linha = r[0];
     if (!linha) throw new ExpurgoIndisponivelError('a tabela EventLog não existe neste banco');
+
     if (!linha.dono) {
-      throw new ExpurgoIndisponivelError(`conectado como "${linha.papel}", que não é dono de EventLog`);
+      throw new ExpurgoIndisponivelError(
+        `conectado como "${linha.papel}", que não é dono de EventLog — ` +
+          '`app_rastro_expurgar` começa com `ALTER TABLE ... DISABLE RULE` e estouraria dentro ' +
+          'da função, no meio de um cron',
+      );
+    }
+
+    if (!linha.ignora && linha.ligado && linha.forcado) {
+      throw new ExpurgoIndisponivelError(
+        `conectado como "${linha.papel}", que é dono de EventLog mas NÃO ignora o isolamento por ` +
+          'linha (não é superusuário nem tem BYPASSRLS) numa tabela com FORCE ROW LEVEL SECURITY. ' +
+          'Ser dono não basta: FORCE vale para o dono também. Sob este papel a varredura de ' +
+          'descoberta enxergaria só a empresa da sessão — que num script não existe — e o expurgo ' +
+          'sairia dizendo "nenhuma empresa com rastro vencido" com ar de sucesso, deixando a ' +
+          'obrigação de retenção descumprida em silêncio. Use a MESMA conexão que roda migration ' +
+          '(DATABASE_URL), ou dê BYPASSRLS ao papel de manutenção.',
+      );
     }
   }
 
@@ -159,22 +216,21 @@ export class ExpurgoService {
    * As empresas que têm linha vencida esperando.
    *
    * RODA SEM EMPRESA NA SESSÃO, de propósito: é a pergunta que descobre quais
-   * empresas varrer. Só funciona na conexão dona — que é a única em que este
-   * serviço roda, e `conferirQueEhDono()` já garantiu isso antes.
+   * empresas varrer. Só funciona numa conexão que ATRAVESSE o isolamento, e
+   * `conferirQuePodeExpurgar()` já garantiu isso antes — ser dono não basta,
+   * porque `EventLog` tem FORCE ROW LEVEL SECURITY e FORCE vale para o dono.
    *
    * ESTE É O CAMINHO DE PRODUÇÃO. Até 11/09/2026 ele nunca era exercitado: a
    * única chamada de `varrer()` era do teste, sempre com a lista de empresas
    * explícita. Agora o script de manutenção chama sem lista, e há caso próprio
    * em `rastro-retencao.test.ts` que passa por aqui.
    *
-   * LIMITE CONHECIDO, dito em voz alta: num PostgreSQL em que o dono das tabelas
-   * NÃO seja superusuário, `FORCE ROW LEVEL SECURITY` vale também para ele e
-   * esta consulta devolve vazio — o expurgo passaria a não achar empresa
-   * nenhuma. Na implantação de hoje o dono (`mkt`) é superusuário, então
-   * funciona; o conserto, se o dia chegar, é uma entrada na lista de chamadores
-   * de plataforma (que é de outra fatia) ou um papel dedicado com BYPASSRLS.
-   * Está no relatório da fatia, em FORA DO ESCOPO. Por isso o aviso abaixo: zero
-   * empresa com rastro vencido é plausível, mas merece uma linha no log.
+   * O QUE ERA "LIMITE CONHECIDO" AQUI VIROU RECUSA. Num PostgreSQL em que o dono
+   * não ignore o isolamento, esta consulta devolveria vazio e o expurgo
+   * reportaria zero apagados com ar de sucesso. Hoje ele nem chega aqui: a
+   * conferência acima recusa alto. O aviso abaixo continua porque zero empresa
+   * com rastro vencido é plausível — mas agora é plausível de verdade, não
+   * mascarando policy.
    */
   async empresasComRastroVencido(corte: Date): Promise<string[]> {
     const linhas = await this.prisma.$queryRaw<{ orgId: string }[]>`
@@ -203,7 +259,7 @@ export class ExpurgoService {
    * registrar são a mesma transação no banco.
    */
   async varrer(opcoes: { corte?: Date; orgIds?: string[] } = {}): Promise<ResumoDoExpurgo> {
-    await this.conferirQueEhDono();
+    await this.conferirQuePodeExpurgar();
 
     const agora = new Date();
     /*
