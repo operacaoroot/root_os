@@ -6,8 +6,14 @@ import { defineConfig } from 'vitest/config';
 //
 // tenant-isolation.test.ts fica de fora do conjunto padrão de propósito: ele
 // LANÇA no import quando falta TEST_DATABASE_URL, então não dá para pular
-// sozinho. Roda por `pnpm test:isolamento` e, enquanto o isolamento por linha
-// não estiver ligado no banco, sai VERMELHA — ela é a linha de base dessa dívida.
+// sozinho. Roda por `pnpm test:isolamento`.
+//
+// ELA NÃO É MAIS LINHA DE BASE DE DÍVIDA (mudou na fatia 1.5, 11/09/2026): a
+// migration `20260911050000_isolamento_por_linha` ligou o isolamento no banco e
+// a suíte passa inteira. VERMELHO ALI AGORA SIGNIFICA VAZAMENTO ENTRE EMPRESAS.
+// Só que ela precisa de DUAS conexões para medir alguma coisa — a dona, que
+// semeia, e o papel restrito (`TENANT_DATABASE_URL`), que lê. Sem a segunda ela
+// lê como dona, que atravessa policy, e avisa alto que o verde não vale nada.
 //
 // porta.test.ts fica no conjunto padrão: ele se pula sozinho sem
 // TEST_DATABASE_URL, e deixá-lo dentro é o que garante que alguém com banco de

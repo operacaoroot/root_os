@@ -18,19 +18,20 @@
 # Marcar como obrigatórios (os nomes exatos que aparecem na lista de checks do
 # PR, que são os `name:` dos jobs):
 #   - "Tipos e testes (policy, web, api)"
+#   - "Isolamento entre tenants"
 #   - "Migrations aplicam do zero"
 #
-# Sobre "Isolamento entre tenants": ele tem DOIS passos de teste, e só um deles
-# pode reprovar hoje.
-#   - "Suíte de isolamento" roda com `continue-on-error`: ela sai vermelha por
-#     desenho enquanto o RLS não estiver ligado, e o job termina verde mesmo
-#     assim. É dívida conhecida, não alarme.
-#   - "Rotas públicas com o isolamento por linha LIGADO" NÃO tem
-#     `continue-on-error`: ele passa hoje, e vermelho ali é regressão de verdade.
-# Ou seja: marcar este job como obrigatório JÁ protege alguma coisa (o segundo
-# passo), só não protege o isolamento em si. A trava deixa de ser parcial no
-# mesmo commit que apagar o `continue-on-error` do primeiro passo.
-# Isso é configuração no GitHub, fora do repositório, e só o dono do repo faz.
+# "Isolamento entre tenants" ENTROU nesta lista na fatia 1.5 (11/09/2026), e a
+# entrada dele é a metade que falta de uma coisa só. O `continue-on-error` do
+# passo "Suíte de isolamento" foi apagado no mesmo commit que ligou o isolamento
+# por linha no banco (migration `20260911050000_isolamento_por_linha`): os dois
+# passos do job agora reprovam de verdade, e vermelho ali é vazamento entre
+# empresas, não dívida datada.
+#
+# Enquanto ele não estiver marcado na proteção de branch, o job reprova e o
+# botão de merge continua liberado — que é o pior dos dois mundos, porque a
+# prova existe e ninguém a obedece. Isso é configuração no GitHub, fora do
+# repositório, e só o dono do repo faz.
 #
 # ---------------------------------------------------------------------------
 # A ARMADILHA QUE ESTE ARQUIVO EXISTE PARA NÃO REPETIR
@@ -57,8 +58,9 @@
 #   - `pnpm lint`: `apps/web` declara `next lint`, que nunca foi configurado —
 #     ele abre o assistente interativo e falha. Entra quando alguém configurar
 #     o ESLint do web.
-#   - `tenant-isolation` no job 1: precisa de banco semeado com duas orgs e sai
-#     vermelha por desenho enquanto o RLS não estiver ligado. Job próprio, abaixo.
+#   - `tenant-isolation` no job 1: precisa de banco semeado com duas orgs E de um
+#     papel restrito com senha para medir alguma coisa (dono de tabela ignora
+#     policy). Job próprio, abaixo — e desde a fatia 1.5 ele reprova de verdade.
 
 name: CI
 
@@ -125,7 +127,7 @@ jobs:
       MKTOS_CONJUNTO_DE_TESTES: padrao
       #
       # PISOS — o mínimo que precisa ter rodado para o verde valer alguma coisa.
-      # Entre parênteses, a contagem REAL medida na estabilização da onda 4
+      # Entre parênteses, a contagem REAL medida na estabilização da onda 5
       # (11/09/2026), rodando as três suítes no Mac contra o Postgres
       # descartável. Os pisos ficam abaixo dela de propósito: piso é chão, não
       # espelho — colar no número exato transforma qualquer teste a mais numa
@@ -150,18 +152,22 @@ jobs:
       # o caso que só o piso de ARQUIVOS pega, por isso ele vai para 9.
       PISO_CASOS_WEB: '70'
       PISO_ARQUIVOS_WEB: '9'
-      # (348) em 13 arquivos: arquitetura 21, contexto-aprovacao 10,
-      # contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
-      # modulos-por-tenant 97, politica-por-tenant 27, porta 20,
-      # provisionamento 40, rotas-publicas-tenant 38, runtime 9, validacao 9.
-      # A onda 2 levou a suíte de 76 para 146, a onda 3 de 146 para 243 e a
-      # onda 4 de 243 para 348, com três arquivos novos.
+      # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
+      # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      # porta 20, provisionamento 40, rotas-publicas-tenant 38, runtime 9,
+      # token-de-sessao 8, validacao 9.
+      # A onda 2 levou a suíte de 76 para 146, a onda 3 de 146 para 243, a onda 4
+      # de 243 para 348 e a onda 5 de 348 para 388, com dois arquivos novos
+      # (`alcada-reautenticacao` e `token-de-sessao`, os dois da fatia 3.4).
       #
       # Os dois pisos sobem JUNTO com ela, e é obrigatório que subam: o de
-      # ARQUIVOS é colado no número real (13) porque é ele quem pega arquivo que
-      # some da coleta — deixá-lo em 10 seria autorizar, por escrito, a perda
-      # silenciosa dos três arquivos novos. O de CASOS vai para 285 (18% de
-      # folga sobre 348), a mesma proporção das ondas anteriores.
+      # ARQUIVOS é colado no número real (15) porque é ele quem pega arquivo que
+      # some da coleta — deixá-lo em 13 seria autorizar, por escrito, a perda
+      # silenciosa dos dois arquivos novos, e `token-de-sessao` tem 8 casos:
+      # nenhum piso de CASOS com folga útil notaria a falta dele. O de CASOS vai
+      # para 318 (18% de folga sobre 388), a mesma proporção das ondas
+      # anteriores.
       #
       # Os 38 casos de `rotas-publicas-tenant` são os que rodam SEM `RLS_NO_TESTE`.
       # A seção de RLS daquele arquivo (mais 15) não entra nesta conta: ela nem
@@ -170,8 +176,8 @@ jobs:
       # banco. Ela tem passo próprio no job `isolamento`, abaixo.
       # `tenant-isolation.test.ts` também não entra — conjunto `padrao` o
       # exclui, e ele tem job próprio.
-      PISO_CASOS_API: '285'
-      PISO_ARQUIVOS_API: '13'
+      PISO_CASOS_API: '318'
+      PISO_ARQUIVOS_API: '15'
 
     steps:
       - uses: actions/checkout@v4
@@ -396,16 +402,21 @@ jobs:
   #
   # `tenant-isolation.test.ts` LANÇA no import quando falta TEST_DATABASE_URL
   # (não se pula sozinho), escreve nas duas orgs que semeia, e mede o
-  # isolamento NO BANCO — não na aplicação. Ela é o critério de aceite da
-  # ativação de RLS: enquanto nenhuma tabela tiver RLS ligado, ela sai VERMELHA
-  # de propósito.
+  # isolamento NO BANCO — não na aplicação. Ela era o critério de aceite da
+  # ativação de RLS, e por isso saía VERMELHA de propósito enquanto nenhuma
+  # tabela tivesse policy.
   #
-  # Por isso o passo roda com `continue-on-error: true`: o resultado aparece
-  # em todo PR, sem travar merge por uma dívida já conhecida.
-  # >>> QUANDO O RLS FOR LIGADO, APAGUE O `continue-on-error` ABAIXO <<<
-  # e, no mesmo commit, marque "Isolamento entre tenants" como verificação
-  # obrigatória na proteção de branch. Antes disso ele nunca reprova, e marcar
-  # um check que não reprova é pior do que não marcar: parece proteção.
+  # ISSO ACABOU NA FATIA 1.5. A migration `20260911050000_isolamento_por_linha`
+  # liga `ROW LEVEL SECURITY` com `FORCE` nas 72 tabelas do schema e escreve as
+  # policies de cada uma; a suíte passa inteira (medido: 257 casos verdes contra
+  # o Postgres descartável, 11/09/2026, com o papel restrito fazendo as
+  # leituras). O `continue-on-error` que este passo carregava foi APAGADO no
+  # mesmo commit — enquanto ele existia, vazamento entre empresas rodava na CI e
+  # não reprovava nada, que é a aparência da prova sem a prova.
+  #
+  # Falta a metade que não mora neste arquivo: marcar "Isolamento entre tenants"
+  # como verificação obrigatória na proteção de branch da `main`. Sem isso o job
+  # reprova e o merge continua liberado (ver o cabeçalho).
   isolamento:
     name: Isolamento entre tenants
     runs-on: ubuntu-latest
@@ -470,8 +481,10 @@ jobs:
       #     seguia sem poder conectar: `TENANT_DATABASE_URL` dava "password
       #     authentication failed", o `beforeAll` da suíte morria e o vitest
       #     reportava 211 PULADOS e ZERO executados — contra 194 casos rodando
-      #     antes desta fatia. Como o passo da suíte tem `continue-on-error`, o
-      #     job terminava VERDE sem ter medido nada.
+      #     antes desta fatia. Naquela época o passo da suíte ainda tinha
+      #     `continue-on-error` e o job terminava VERDE sem ter medido nada; hoje
+      #     ele reprova, mas o piso de casos continua sendo o que separa "passou"
+      #     de "não rodou".
       #
       #  2. `GRANT ... ON ALL TABLES IN SCHEMA public` inclui "EventLog" e
       #     "_prisma_migrations", e DESFAZIA os dois REVOKE que a migration tinha
@@ -523,25 +536,75 @@ jobs:
             FROM pg_roles WHERE rolname = 'mktos_app';
           SQL
 
+      # SEM `continue-on-error`. Apagado na fatia 1.5, no commit que ligou o
+      # isolamento por linha. Vermelho aqui é vazamento entre empresas.
+      #
+      # O piso de casos existe pelo mesmo motivo do das outras suítes, e aqui ele
+      # é ainda mais necessário: este arquivo é o ÚNICO do conjunto `isolamento`
+      # do vitest, e uma troca de `MKTOS_CONJUNTO_DE_TESTES`, um glob que deixa
+      # de casar ou um `describe` que some fariam o vitest sair VERDE tendo
+      # coletado zero. "Nenhum teste falhou" é verdade sobre nenhum teste.
+      #
+      # 257 é a contagem real medida em 11/09/2026 (Postgres descartável, papel
+      # restrito nas leituras). O piso fica em 220, ~14% abaixo: piso é chão, não
+      # espelho. Ao remover caso de propósito, baixe o piso no mesmo commit.
+      #
+      # O piso SUBIU de 190 para 220 na correção da fatia 1.5, e o motivo é a
+      # coisa que o piso existe para pegar. A contagem era 224 com o registro de
+      # alvos escrito à mão em 59 entradas, para um banco com 69 tabelas de
+      # empresa: dez tabelas — agentes, aprovação, RASTRO, sessões, passos,
+      # procedimentos, decisões de política e identidade de canal — não tinham
+      # semente e por isso não tinham prova. Uma policy `USING (true)` em três
+      # delas manteve a suíte 224/224 VERDE. Agora o registro é cobrado contra o
+      # catálogo do banco e as dez entraram, o que soma ~30 casos de medição.
+      # Um piso de 190 continuaria absolvendo o retorno daquele estado.
+      #
+      # A FORMA DO COMANDO NÃO É INDIFERENTE — medido em 11/09/2026, pnpm 9.15.9.
+      # Duas variantes rodam a suíte, saem verdes e NÃO escrevem o resumo:
+      #   pnpm --filter @mktos/api test:isolamento -- --outputFile.json=X
+      #   pnpm --filter @mktos/api exec vitest run -- --outputFile.json=X
+      # A primeira porque o `--` de `pnpm run` não chega ao vitest quando o
+      # script tem prefixo de variável de ambiente (`VAR=x vitest run`); a
+      # segunda porque `pnpm exec` repassa o `--` literalmente e o vitest trata o
+      # que vem depois como FILTRO de arquivo, não como opção. Nos dois casos o
+      # arquivo não existe e a conferência abaixo reprova por "resumo ilegível" —
+      # ruidoso, mas pelo motivo errado.
+      # A forma abaixo (exec, sem `--`) escreve. O interruptor do conjunto vem
+      # pelo ambiente do passo, que é o mesmo que o script `test:isolamento` faz.
       - name: Suíte de isolamento
-        id: isolamento
-        continue-on-error: true
-        run: pnpm --filter @mktos/api test:isolamento
-
-      # `continue-on-error` deixa o check verde, e quem só olha a lista de
-      # checks do PR não vê nada. A anotação abaixo aparece no próprio PR.
-      - name: Registrar o veredito
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: isolamento
+          RESUMO_ISOLAMENTO: ${{ runner.temp }}/resumo-isolamento.json
+          PISO_CASOS_ISOLAMENTO: '220'
         run: |
-          if [ "${{ steps.isolamento.outcome }}" = "success" ]; then
-            echo "Isolamento entre tenants: VERDE." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "A suíte passou. Se o RLS já está ligado, remova o \`continue-on-error\` do passo \`Suíte de isolamento\` em \`.github/workflows/ci.yml\` e marque este job como verificação obrigatória — sem isso ele não reprova merge nenhum." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning title=Isolamento entre tenants não passou::A suíte de isolamento falhou. Este job roda com continue-on-error, então o check fica VERDE mesmo assim: abra o resumo desta execução antes de tratar o PR como seguro."
-            echo "Isolamento entre tenants: VERMELHA." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Enquanto nenhuma tabela tiver RLS ligado, este resultado é a linha de base de uma dívida conhecida, não um alarme novo. Depois que o RLS estiver ligado, o mesmo vermelho passa a significar vazamento real entre tenants — confira em qual dos dois mundos você está antes de ignorar." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          pnpm --filter @mktos/api exec vitest run \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_ISOLAMENTO"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_ISOLAMENTO, "utf8")); }
+            catch (e) { console.log("::error::resumo da suite de isolamento ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_ISOLAMENTO);
+            const total = r.numTotalTests;
+            console.log("tenant-isolation: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a suite de isolamento nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                ". O conjunto de arquivos do vitest nao e o de isolamento — confira MKTOS_CONJUNTO_DE_TESTES " +
+                "e o include de apps/api/vitest.config.ts.");
+              process.exit(1);
+            }
+          '
+          {
+            echo "Isolamento entre tenants: VERDE."
+            echo ""
+            echo "A suíte mede o isolamento NO BANCO, com o papel restrito \`mktos_app\` fazendo as leituras. Se este job não estiver marcado como verificação obrigatória na proteção de branch da \`main\`, ele reprova e o merge continua liberado."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # -----------------------------------------------------------------------
       # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
@@ -564,10 +627,18 @@ jobs:
       # (`TENANT_DATABASE_URL`): sem ele a seção mede o DONO das tabelas, e dono
       # ignora policy de linha.
       #
-      # SEM `continue-on-error`, de propósito: ao contrário da suíte de
-      # isolamento, esta passa HOJE (medido: 53 casos verdes). Vermelho aqui é
-      # regressão, não dívida conhecida — e o passo roda DEPOIS da suíte de
-      # isolamento para não deixar RLS ligado debaixo dela caso quebre no meio.
+      # Vermelho aqui é regressão, nunca dívida conhecida (medido: 53 casos
+      # verdes). O passo roda DEPOIS da suíte de isolamento, e a ordem continua
+      # sendo a barata: enquanto ele roda, o `desligar()` do `beforeAll` daquele
+      # arquivo DESLIGA a RLS das 11 tabelas que ele governa (ele cria policies
+      # próprias, com outro nome, para provar a fatia 1.4), e uma quebra no meio
+      # do arquivo deixa o banco assim.
+      #
+      # No caminho feliz isso deixou de vazar para as outras suítes: o `afterAll`
+      # daquele arquivo religa o isolamento da migration com `app_rls_ligar()`
+      # (11/09/2026). Antes disso ele terminava o banco em 61 de 72 tabelas, e
+      # quem consertava era a auto-cura da suíte de isolamento — que na CI
+      # funcionava e num banco de desenvolvimento não existia.
       # -----------------------------------------------------------------------
       - name: Rotas públicas com o isolamento por linha LIGADO
         env:
@@ -576,7 +647,13 @@ jobs:
           # 53 = 38 casos de sempre + 15 da seção de RLS. Piso, não espelho.
           PISO_CASOS_RLS: '50'
         run: |
-          pnpm --filter @mktos/api exec vitest run test/rotas-publicas-tenant.test.ts -- \
+          # SEM `--` antes das opções. Com ele, `pnpm exec` repassa o `--`
+          # literalmente e o vitest trata `--reporter=...` como FILTRO de
+          # arquivo: a suíte roda, sai verde, e o resumo NUNCA é escrito — a
+          # conferência logo abaixo então reprova com "resumo ilegível", que
+          # esconde a causa. Medido em 11/09/2026 (pnpm 9.15.9, vitest 3.2.7);
+          # o `--` estava aqui desde que este passo nasceu.
+          pnpm --filter @mktos/api exec vitest run test/rotas-publicas-tenant.test.ts \
             --reporter=default --reporter=json \
             --outputFile.json="$RESUMO_RLS"
           # Fail-closed: se a seção não for registrada (interruptor perdido,

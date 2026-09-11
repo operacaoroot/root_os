@@ -47,6 +47,20 @@ const ORG = 'org-teste-contexto';
 const OUTRA_ORG = 'org-teste-contexto-vizinha';
 
 /*
+ * QUEM APROVA, nesta suíte, É UMA PESSOA DE VERDADE, COM PAPEL NO BANCO.
+ *
+ * Desde a fatia 3.4 a confirmação compara a `alcadaMinima` gravada na aprovação
+ * com o PAPEL de quem aprova (`src/approvals/alcada.ts`), e esse papel é lido DO
+ * BANCO, em TODO nível — não do token de sessão, que vale oito horas. Um
+ * identificador solto não existe na tabela de usuários, e quem não existe não
+ * aprova nada; por isso o `beforeAll` semeia o papel e o usuário.
+ *
+ * Os papéis declarados aqui são os do token, e servem a uma trava só: a de "é
+ * gente". A autoridade vem do banco.
+ */
+const PEDRO = { id: 'pedro-do-contexto', papeis: ['admin_master'] };
+
+/*
  * O GUARDA DE BANCO — a mesma regra de `tenant-isolation.test.ts`, e agora
  * literalmente o mesmo código: mora em `banco-de-teste.ts`.
  *
@@ -121,6 +135,27 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
       });
     }
 
+    // O aprovador precisa EXISTIR e estar ativo: a confirmação relê o banco.
+    const papelDoPedro = await prisma.role.upsert({
+      where: { orgId_key: { orgId: ORG, key: 'admin_master' } },
+      create: { orgId: ORG, key: 'admin_master', name: 'Admin Master' },
+      update: {},
+      select: { id: true },
+    });
+    await prisma.user.upsert({
+      where: { id: PEDRO.id },
+      create: {
+        id: PEDRO.id,
+        orgId: ORG,
+        email: 'pedro@contexto.teste',
+        name: 'Pedro',
+        // Nada aqui é R4: ninguém reautentica, e o hash não precisa servir.
+        passwordHash: 'sem-senha-util',
+        roles: { connect: { id: papelDoPedro.id } },
+      },
+      update: { isActive: true, roles: { set: [{ id: papelDoPedro.id }] } },
+    });
+
     const p = prisma as unknown as PrismaService;
     policy = new PolicyService(p);
     await policy.onModuleInit();
@@ -158,6 +193,9 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
     await prisma.toolCall.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
     await prisma.policyDecision.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
     await prisma.auditLog.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
+    // Usuário e papel ANTES da empresa: as duas tabelas têm FK para Org.
+    await prisma.user.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
+    await prisma.role.deleteMany({ where: { orgId: { in: [ORG, OUTRA_ORG] } } });
     await prisma.org.deleteMany({ where: { id: { in: [ORG, OUTRA_ORG] } } });
     await prisma.$disconnect();
   });
@@ -171,7 +209,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
 
   it('o efeito aprovado sai no nome de QUEM APROVOU, não de quem propôs', async () => {
     const proposta = await propor({ titulo: 'Resumo', corpo: 'o texto aprovado' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     const r = await acoes.executarAprovada(ORG, proposta.approvalId, 'pedro');
     expect(r.status).toBe('executado');
@@ -189,7 +227,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
 
   it('a correlação do efeito é a da PROPOSTA — é o que amarra ao evento original', async () => {
     const proposta = await propor({ titulo: 'T', corpo: 'c' }, { correlationId: 'sessao-42' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
     await acoes.executarAprovada(ORG, proposta.approvalId, 'pedro');
 
     expect(recebido[0].ctx.correlationId).toBe('sessao-42');
@@ -221,7 +259,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
     // contexto de execução — e é isso que faz o identificador ATRAVESSAR, em
     // vez de parar no primeiro que se lembrou de repassá-lo.
     const proposta = await propor({ titulo: 'T', corpo: 'c' }, { correlationId: 'sessao-77' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
     await acoes.executarAprovada(ORG, proposta.approvalId, 'pedro');
 
     expect(recebido[0].noArmazem).toMatchObject({
@@ -238,7 +276,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
     // disparou não se encontram (RNF-09). `correlacaoPai` é deduzido pelo
     // próprio `comContexto`, sem ninguém repassá-lo.
     const proposta = await propor({ titulo: 'T', corpo: 'c' }, { correlationId: 'sessao-88' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     await comContexto({ orgId: ORG, correlationId: 'http-do-clique', origem: 'http' }, () =>
       acoes.executarAprovada(ORG, proposta.approvalId, 'pedro'),
@@ -258,7 +296,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
     // falso. O interceptor marca antes de adotar; aqui o que se prova é que a
     // marca chega inteira ao evento.
     const proposta = await propor({ titulo: 'T', corpo: 'c' }, { correlationId: 'sessao-99' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     const forjada = marcarCorrelacaoExterna('sessao-de-outra-acao');
     await comContexto({ orgId: ORG, correlationId: forjada, origem: 'http' }, () =>
@@ -310,7 +348,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
 
   it('chamada sem tenant resolvido FALHA e não executa nada (RF-T-04)', async () => {
     const proposta = await propor({ titulo: 'T', corpo: 'c' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     for (const vazio of ['', '   ']) {
       await expect(
@@ -330,7 +368,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
 
   it('aprovação de OUTRA empresa não é alcançada por esta — o tenant filtra de verdade', async () => {
     const proposta = await propor({ titulo: 'T', corpo: 'c' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     await expect(
       acoes.executarAprovada(OUTRA_ORG, proposta.approvalId, 'pedro'),
@@ -341,7 +379,7 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
   it('efeito que falha registra a falha COM ator, agente, nível e correlação', async () => {
     falhar = true;
     const proposta = await propor({ titulo: 'T', corpo: 'c' }, { correlationId: 'sessao-quebrada' });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     await expect(acoes.executarAprovada(ORG, proposta.approvalId, 'pedro')).rejects.toThrow(
       /conector fora do ar/,

@@ -183,6 +183,55 @@ só roda na VPS).
 uma API degradada: deixa a API **fora do ar**, em loop de restart. Toda migration passa antes por um
 Postgres descartável e pela CI.
 
+**Tabela criada à mão no servidor faz a migration do isolamento abortar — e a API não sobe.**
+A `20260911050000_isolamento_por_linha` termina com uma conferência que percorre o catálogo do banco
+e **recusa aplicar** se achar qualquer tabela de `public` sem `ROW LEVEL SECURITY`, sem `FORCE` ou
+sem policy. A conferência não distingue "tabela de empresa esquecida numa migration nova" (onde
+abortar é o comportamento certo, porque é vazamento) de "tabela auxiliar que alguém criou à mão para
+um conserto pontual" — uma `backup_leads_2026`, um `temp_conciliacao`. **Esta é a única falha desta
+migration que pode aparecer num banco de verdade sem ser vazamento.** A mensagem nomeia a tabela:
+
+```
+ERROR: isolamento por linha incompleto: 1 tabela(s) ficaram sem RLS/FORCE/policy (backup_leads_2026).
+```
+
+Conserto no calor do momento, nesta ordem:
+
+```sql
+-- se a tabela é lixo:
+DROP TABLE "backup_leads_2026";
+
+-- se ela precisa ficar e não tem orgId: negue tudo para a aplicação
+ALTER TABLE "backup_leads_2026" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "backup_leads_2026" FORCE  ROW LEVEL SECURITY;
+CREATE POLICY tenant_leitura ON "backup_leads_2026" FOR SELECT USING (false);
+```
+
+Depois suba de novo. Se a tabela ficou, acrescente-a a `SEM_ISOLAMENTO` em
+`apps/api/test/tenant-isolation.test.ts` **com o motivo escrito**, senão a suíte de isolamento
+reprova na CI. As duas receitas foram medidas em 11/09/2026 no Postgres descartável: a primeira
+libera a migration, a segunda também.
+
+**Preencher `DB_APP_USER`/`DB_APP_PASSWORD` hoje faz a API RECUSAR SUBIR — de propósito.**
+Existem sete caminhos que consultam o banco **antes** de haver empresa (login por senha, login com
+Google, provisionamento, ClickUp, financeiro, carga da política e a sonda de saúde) e que ainda não
+declaram o contexto de plataforma. Sob o papel restrito, cada um deles passa a devolver **zero
+linha, em silêncio** — o login inclusive, que vira "credenciais inválidas" para a empresa inteira
+sem nada no log. Por isso o arranque compara a lista e lança
+`CoberturaDePlataformaIncompletaError` quando a conexão é restrita e a cobertura está incompleta.
+
+Com a conexão **dona** (o estado de produção hoje) a API sobe normalmente e só grita: procure no log
+do boot a linha `[tenant] ATENÇÃO: N caminho(s) de plataforma ainda NÃO declaram contexto`. Enquanto
+ela existir, **não vire a chave**. Para voltar atrás depois de ter virado: tire as duas variáveis do
+`.env` e recrie o container (`up -d --no-build api`). Detalhes em `deploy/papel-app.sh` e em
+`apps/api/src/prisma/contexto-de-plataforma.ts`.
+
+**Rollback do isolamento é um comando, e não perde as policies.** Se algo der errado no dia da
+virada: `SELECT app_rls_desligar();` tira `ENABLE` e `FORCE` de todas as tabelas e deixa as policies
+paradas no catálogo; `SELECT app_rls_ligar();` religa. `SELECT * FROM app_rls_estado();` mostra
+tabela, `rls`, `force` e número de policies. Nenhuma das três pode ser chamada pelo papel restrito —
+ele recebe `permission denied`, e é assim que ele não desliga o próprio isolamento.
+
 **Na VPS, o `deploy/up.sh --vps` não injeta `~/.config/root/*.env` — e isso é proposital.** Variável
 de ambiente vence o `.env`: o `bio-secrets.env` do servidor guarda a `ENCRYPTION_KEY` **antiga** do
 root-bio (tokens cifrados parariam de abrir) e o default do vault aponta para um caminho que não

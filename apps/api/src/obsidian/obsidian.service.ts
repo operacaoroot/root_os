@@ -2,7 +2,18 @@ import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, dirname } from 'node:path';
 import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
+import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
+
+/**
+ * A empresa da casa, de onde o vault do Obsidian é indexado.
+ *
+ * Constante do código, nunca valor vindo de fora: era um `'root'` solto no meio
+ * da consulta, e slug é adivinhável — o mesmo motivo que tirou o slug da chave
+ * do pixel na fatia 1.4 (`src/events/pixel-tenant.service.ts`).
+ */
+const SLUG_DA_CASA = 'root';
 
 // Base de conhecimento a partir de uma vault Obsidian (montada read-only no container).
 // Ingesta .md → KnowledgeNote; embeddings OpenAI (text-embedding-3-small) → pgvector;
@@ -39,13 +50,49 @@ export class ObsidianService implements OnModuleInit {
       return;
     }
     const min = Number(process.env.OBSIDIAN_REINDEX_MIN ?? 30);
+    /*
+     * A REINDEXAÇÃO É UM CAMINHO DE PLATAFORMA — RF-T-02, RF-T-04.
+     *
+     * Ela roda 25s depois do arranque e de meia em meia hora, FORA de qualquer
+     * requisição: não há token, não há interceptor, não há empresa no contexto.
+     * E a primeira consulta é justamente a que DESCOBRE a empresa (a da casa,
+     * pelo slug fixo) — não dá para exigir empresa de quem está indo buscá-la.
+     *
+     * São duas metades, e elas são diferentes de propósito:
+     *
+     *  1. a busca da empresa roda sob a SENTINELA DE PLATAFORMA, que a política
+     *     de linha libera só para LER `Org` (ver `src/prisma/contexto-de-plataforma.ts`
+     *     e a migration `20260911050000_isolamento_por_linha`);
+     *  2. a indexação inteira — que ESCREVE em `KnowledgeNote` — roda dentro da
+     *     empresa encontrada. Daqui em diante este cron é indistinguível de uma
+     *     rota autenticada: `app.org_id` sai com a empresa certa e o banco contém
+     *     a escrita.
+     *
+     * Sem a metade 2, sob isolamento por linha a escrita seria recusada (a
+     * sentinela não escreve em lugar nenhum) e a base de conhecimento pararia de
+     * indexar — em silêncio, porque o `catch` abaixo só avisa.
+     */
     const run = async () => {
       try {
-        const org = await this.prisma.org.findUnique({ where: { slug: 'root' } });
-        if (org) {
-          const r = await this.reindex(org.id);
-          this.log.log(`Obsidian reindex: ${r} nota(s)`);
+        const org = await comContextoDePlataforma(() =>
+          this.prisma.org.findUnique({ where: { slug: SLUG_DA_CASA }, select: { id: true } }),
+        );
+        if (!org) {
+          this.log.warn(
+            `Obsidian reindex: empresa "${SLUG_DA_CASA}" não encontrada — nada a indexar.`,
+          );
+          return;
         }
+        const r = await comContexto(
+          {
+            orgId: org.id,
+            actorType: 'system',
+            correlationId: novaCorrelacao('obsidian'),
+            origem: 'cron',
+          },
+          () => this.reindex(org.id),
+        );
+        this.log.log(`Obsidian reindex: ${r} nota(s)`);
       } catch (e) {
         this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`);
       }

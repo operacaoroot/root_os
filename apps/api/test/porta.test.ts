@@ -25,6 +25,20 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 const URL = process.env.TEST_DATABASE_URL;
 const ORG = 'org-teste-porta';
 
+/*
+ * QUEM APROVA, nesta suíte, É UMA PESSOA DE VERDADE, COM PAPEL NO BANCO.
+ *
+ * Desde a fatia 3.4 a confirmação compara a `alcadaMinima` gravada na aprovação
+ * com o PAPEL de quem aprova (`src/approvals/alcada.ts`) — e esse papel é lido
+ * DO BANCO, em todo nível, não do token de sessão. Um identificador solto não
+ * existe na tabela de usuários, e quem não existe não aprova nada; por isso o
+ * `beforeAll` semeia o papel `admin_master` e o usuário `pedro`.
+ *
+ * Os papéis declarados aqui são só os do token, e servem a uma trava única: a de
+ * "é gente" (conta de serviço não confirma). A autoridade vem do banco.
+ */
+const PEDRO = { id: 'pedro', papeis: ['admin_master'] };
+
 describe.skipIf(!URL)('a porta', () => {
   let prisma: PrismaClient;
   let gateway: ToolGateway;
@@ -102,6 +116,28 @@ describe.skipIf(!URL)('a porta', () => {
       update: {},
     });
 
+    // O aprovador precisa EXISTIR e estar ativo: a confirmação relê o banco.
+    const papelDoPedro = await prisma.role.upsert({
+      where: { orgId_key: { orgId: ORG, key: 'admin_master' } },
+      create: { orgId: ORG, key: 'admin_master', name: 'Admin Master' },
+      update: {},
+      select: { id: true },
+    });
+    await prisma.user.upsert({
+      where: { id: PEDRO.id },
+      create: {
+        id: PEDRO.id,
+        orgId: ORG,
+        email: `pedro@porta.teste`,
+        name: 'Pedro',
+        // Hash inutilizável de propósito: nada nesta suíte é R4, então ninguém
+        // reautentica aqui. Senha de verdade só na suíte de alçada.
+        passwordHash: 'sem-senha-util',
+        roles: { connect: { id: papelDoPedro.id } },
+      },
+      update: { isActive: true, roles: { set: [{ id: papelDoPedro.id }] } },
+    });
+
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     policy = new PolicyService(p);
@@ -133,6 +169,9 @@ describe.skipIf(!URL)('a porta', () => {
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
     await prisma.policyDecision.deleteMany({ where: { orgId: ORG } });
     await prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    // Usuário e papel ANTES da empresa: as duas tabelas têm FK para Org.
+    await prisma.user.deleteMany({ where: { orgId: ORG } });
+    await prisma.role.deleteMany({ where: { orgId: ORG } });
     await prisma.org.deleteMany({ where: { id: ORG } });
     await prisma.$disconnect();
   });
@@ -292,10 +331,10 @@ describe.skipIf(!URL)('a porta', () => {
     });
 
     // quem aprova é gente, e nunca quem propôs
-    await expect(approvals.confirm(ORG, proposta.approvalId, 'agente-teste')).rejects.toThrow(
+    await expect(approvals.confirm(ORG, proposta.approvalId, { ...PEDRO, id: 'agente-teste' })).rejects.toThrow(
       /não pode aprová-la/,
     );
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     const executa = () =>
       gateway.executar(
@@ -338,7 +377,7 @@ describe.skipIf(!URL)('a porta', () => {
         sinaisAcionados: [], motivo: 'R3',
       },
     });
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     await expect(
       approvals.consumir({
@@ -430,7 +469,7 @@ describe.skipIf(!URL)('a porta', () => {
     if (proposta.status !== 'aguardando_aprovacao') return;
 
     // 2. uma pessoa confirma
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     // 3. e AGORA sai — com o texto da proposta
     const r = await acoes.executarAprovada(ORG, proposta.approvalId, 'pedro');
@@ -464,7 +503,7 @@ describe.skipIf(!URL)('a porta', () => {
       async () => ({}),
     );
     if (proposta.status !== 'aguardando_aprovacao') throw new Error('deveria reter');
-    await approvals.confirm(ORG, proposta.approvalId, 'pedro');
+    await approvals.confirm(ORG, proposta.approvalId, PEDRO);
 
     const r = await vazio.executarAprovada(ORG, proposta.approvalId, 'pedro');
     expect(r.status).toBe('sem_efeito');
@@ -479,7 +518,7 @@ describe.skipIf(!URL)('a porta', () => {
       resourceId: 'lead-1',
       changes: { status: 'ganho' },
     });
-    await approvals.confirm(ORG, a.approvalId, 'pedro');
+    await approvals.confirm(ORG, a.approvalId, PEDRO);
     // ali quem executa é a própria rota, com o token — não a fila
     const r = await acoes.executarAprovada(ORG, a.approvalId, 'pedro');
     expect(r.status).toBe('nada_a_executar');

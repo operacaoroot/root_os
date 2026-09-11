@@ -12,7 +12,25 @@
 #   DB_APP_PASSWORD="$(openssl rand -hex 32)" deploy/papel-app.sh
 #   DB_APP_PASSWORD='...'                     deploy/papel-app.sh --vps
 #
-# Depois de rodar, faltam DOIS passos — o script não os faz por você:
+# Depois de rodar, faltam TRÊS passos — o script não faz nenhum por você. E o
+# PRIMEIRO é ANTERIOR a este script, não posterior:
+#
+#   0. OS SETE CAMINHOS DE PLATAFORMA PRECISAM DECLARAR CONTEXTO.
+#      São as consultas que rodam ANTES de haver empresa porque é elas que
+#      descobrem a empresa — login por senha, login com Google, provisionamento,
+#      ClickUp, financeiro, carga da política e a sonda de saúde. A lista com
+#      motivo está em `CAMINHOS_DE_PLATAFORMA_EXIGIDOS`
+#      (`apps/api/src/prisma/contexto-de-plataforma.ts`).
+#
+#      ENQUANTO FALTAR UM DELES, recriar o container com DB_APP_USER e
+#      DB_APP_PASSWORD preenchidos faz a API **RECUSAR SUBIR**, de propósito
+#      (`CoberturaDePlataformaIncompletaError`, em `prisma/sessao-de-banco.ts`).
+#      A recusa é o comportamento certo: sob o papel restrito e sem a sentinela,
+#      o login não acha usuário nenhum e vira "credenciais inválidas" para toda a
+#      empresa, em silêncio — policy de linha não recusa, ela recorta.
+#      Para voltar ao estado anterior AGORA: tire as duas variáveis do `.env` e
+#      recrie o container. A aplicação volta a conectar como dona.
+#
 #   1. gravar DB_APP_USER=mktos_app e DB_APP_PASSWORD=<a mesma> no `.env`;
 #   2. recriar o container da api:
 #        docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --no-build api
@@ -20,7 +38,9 @@
 #      container.
 #
 # Rodar de novo é seguro: troca a senha do papel. O container em pé continua com
-# a antiga até ser recriado — troque a senha e recrie na mesma janela.
+# a antiga até ser recriado — troque a senha e recrie na mesma janela. Dar senha
+# ao papel, sozinho, não muda nada: enquanto o `.env` não apontar para ele, a
+# aplicação segue conectando como dona e o isolamento continua inerte.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -134,7 +154,14 @@ SENHA_SQL=$(printf '%s' "$DB_APP_PASSWORD" | sed "s/'/''/g")
 unset SENHA_SQL
 
 cat <<FIM
-[papel-app] senha definida.
+[papel-app] senha definida. Sozinho isso NÃO muda nada: a api só passa a usar o
+papel quando o .env apontar para ele.
+
+ANTES de seguir, confira o log do boot ATUAL. Se ele traz a linha
+"[tenant] ATENÇÃO: N caminho(s) de plataforma ainda NÃO declaram contexto",
+PARE: recriar a api com as variáveis abaixo vai fazê-la RECUSAR SUBIR, de
+propósito. Declare os caminhos que a mensagem nomeia antes
+(CAMINHOS_DE_PLATAFORMA_EXIGIDOS, em apps/api/src/prisma/contexto-de-plataforma.ts).
 
 Falta:
   1. no .env:  DB_APP_USER=${PAPEL}
@@ -144,4 +171,6 @@ Falta:
   3. conferir no log do boot a linha que começa com "[tenant] conectado como".
      Tem de dizer "papel restrito". Se disser "ISOLAMENTO POR LINHA INERTE", a
      api ainda está conectando como dona das tabelas.
+
+Para desfazer: tire DB_APP_USER e DB_APP_PASSWORD do .env e recrie a api.
 FIM

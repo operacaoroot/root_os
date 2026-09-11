@@ -936,6 +936,38 @@ descreverSeHouverRls('com isolamento por linha ligado no banco', () => {
   }
 
   /**
+   * DEVOLVE O BANCO AO ESTADO DA MIGRATION — e é isto que `desligar()` sozinho
+   * não fazia.
+   *
+   * Desde a fatia 1.5 o isolamento vem LIGADO do `prisma migrate deploy`, nas 72
+   * tabelas, com as policies `tenant_%`. Esta seção precisa desligar as 11
+   * tabelas dela para montar policies próprias (com outro nome), e o `desligar()`
+   * do `afterAll` as deixava DESLIGADAS: o banco terminava a rodada em 61 de 72.
+   *
+   * Na integração contínua isso é inofensivo — o passo roda por último e o banco
+   * é descartado. Num banco de desenvolvimento é perigoso pelo motivo exato que
+   * torna policy de linha difícil de auditar: nada quebra. As 11 tabelas ficam
+   * abertas, a suíte seguinte passa, e a próxima pessoa a medir isolamento
+   * naquele banco mede um banco meio desligado sem saber.
+   *
+   * `app_rls_ligar()` existe desde a migration e religa exatamente o que tem
+   * policy `tenant_%` — então ele nunca liga o que a migration não ligou, e
+   * tabela nova entra sozinha. Tolerante a banco antigo (sem a função) de
+   * propósito: limpeza que derruba o `afterAll` esconde o resultado da suíte.
+   */
+  async function religarOIsolamentoDaMigration() {
+    try {
+      await admin.$executeRawUnsafe(`SELECT app_rls_ligar()`);
+    } catch (e) {
+      console.warn(
+        '[rotas-publicas] não deu para religar o isolamento da migration ' +
+          `(app_rls_ligar): ${(e as Error).message}. ` +
+          'O banco pode ter ficado com as 11 tabelas desta seção SEM isolamento.',
+      );
+    }
+  }
+
+  /**
    * Roda `fn` no estado em que a sentinela vale — é o papel do adversário: o
    * código que, de um jeito ou de outro, consegue executar sob ela.
    *
@@ -1036,6 +1068,13 @@ descreverSeHouverRls('com isolamento por linha ligado no banco', () => {
     await admin.bioLink.deleteMany({ where: { orgId: { in: [ids.orgA, ids.orgB] } } });
     await admin.bioPage.deleteMany({ where: { orgId: { in: [ids.orgA, ids.orgB] } } });
     await admin.org.deleteMany({ where: { id: { in: [ids.orgA, ids.orgB] } } });
+
+    // DEPOIS da limpeza, nunca antes: esta conexão é a DONA das tabelas e não
+    // declara empresa nenhuma. Com FORCE religado, os `deleteMany` acima
+    // alcançariam ZERO linha — e a sujeira ficaria no banco em silêncio, que é
+    // o defeito de sempre da policy de linha.
+    await religarOIsolamentoDaMigration();
+
     await admin.$disconnect();
     await (prisma as PrismaClient).$disconnect();
   });

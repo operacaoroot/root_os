@@ -5,10 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ActorType, Alcada, ApprovalState, RiskLevel } from '@prisma/client';
-import type { Decisao } from '@mktos/policy';
+import { MINIMO_DO_MOTIVO, motivoEscrito, type Decisao } from '@mktos/policy';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { lerAprovador } from '../auth/aprovador';
+import { ReauthService, type ProvaDeReauth } from '../auth/reauth.service';
+import {
+  alcadaConhecida,
+  alcadaDe,
+  atendeAlcada,
+  descreverAlcada,
+  exigeMotivo,
+  temPapelDeMaquina,
+} from './alcada';
 
 // Recursos da superfície ANTIGA (as 5 rotas com @SensitiveWrite). A porta usa
 // o id da capacidade como resourceType, então esta lista não a limita.
@@ -52,6 +62,61 @@ export function canonicalHash(
 
 const hashDoToken = (t: string) => createHash('sha256').update(t).digest('hex');
 
+/**
+ * QUEM APROVA — e não é mais só um identificador solto.
+ *
+ * Até 11/09/2026 `confirm` recebia `actorId: string` e decidia com isso: dava
+ * para aprovar em nome de qualquer string. Agora o aprovador chega descrito —
+ * papéis (é o que vira alçada) e, quando o nível exige, a prova de que ele
+ * reautenticou.
+ */
+export interface QuemAprova {
+  /** O `sub` da sessão — o id do usuário, não o nome dele. */
+  id: string;
+  /** Papéis do token de sessão (mesmo RBAC do `PermissionsGuard`). */
+  papeis?: readonly string[];
+  /** Como a pessoa provou que é ela, quando o nível exige reautenticação. */
+  reauth?: ProvaDeReauth;
+  ip?: string;
+}
+
+/** As duas decisões de gente sobre um item da fila. Entra no nome do evento. */
+type Operacao = 'confirm' | 'reject';
+
+/** Os campos da linha de aprovação que as travas leem. */
+interface DecisaoEmCurso {
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  nivelExigido: RiskLevel;
+  alcadaMinima: Alcada;
+}
+
+/*
+ * APROVADOR NÃO É UM NOME — e por que a recusa é dupla, no tipo E em execução.
+ *
+ * Até 11/09/2026 `confirm` recebia `actorId: string` e gravava isso em
+ * `aprovadoPorId` e no RASTRO: dava para aprovar em nome de qualquer palavra, e
+ * nenhuma trava de alçada tinha em quem se apoiar. `src/scripts/aprovar.ts`
+ * mandava o `--como "Pedro"` do terminal, e era o caminho mais curto para uma
+ * ação de R4 sair carimbada por ninguém.
+ *
+ * O tipo agora recusa: `quem` é `QuemAprova`, e `confirm(org, id, 'Pedro')` NÃO
+ * COMPILA. O script foi corrigido na mesma onda — ele resolve o e-mail para um
+ * usuário do banco e, em R4/R5, pede a senha no terminal.
+ *
+ * A GUARDA DE EXECUÇÃO FICA MESMO ASSIM, e não é cinto e suspensório: este
+ * serviço é chamado de dentro de scripts e de testes, onde um `as never` ou um
+ * `any` atravessa o compilador sem barulho. Sem ela, um texto que chegasse aqui
+ * viraria `quem.id === undefined`, `lerAprovador` não acharia ninguém, e a
+ * recusa sairia como "usuário não existe" — verdadeira, e a três passos de
+ * distância da causa. A mensagem abaixo diz a causa.
+ */
+const COMO_CHAMAR_PELO_TERMINAL =
+  'Aprovar exige um USUÁRIO, não um nome: `confirm` recebe { id, papeis } — o `sub` e os ' +
+  'papéis de quem está na sessão. Pela linha de comando, `node dist/scripts/aprovar.js <id> ' +
+  '--como <e-mail>` resolve a pessoa no banco antes de chamar.';
+
 /*
  * A fila de aprovação, em TABELA.
  *
@@ -72,6 +137,14 @@ export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    /*
+     * Opcional no TypeScript, presente na aplicação: o `ApprovalsModule` importa
+     * o `AuthModule` e o Nest injeta. O opcional existe para as suítes que
+     * montam o serviço na mão sem precisar de todo o módulo de autenticação —
+     * e, quando ele falta, a reautenticação NÃO é pulada: ela falha fechada
+     * (ver `confirm`). Ausência de verificador nunca vira dispensa.
+     */
+    private readonly reauth?: ReauthService,
   ) {}
 
   // ---------------------------------------------------------------- proposta
@@ -191,11 +264,50 @@ export class ApprovalsService {
 
   // ------------------------------------------------------- decisão do humano
 
+  /**
+   * A CONFIRMAÇÃO — o único lugar por onde uma ação retida vira executável.
+   *
+   * São seis travas, nesta ordem, e todas falham fechadas:
+   *
+   *  1. ESTADO — existe, não expirou, ainda está pendente.
+   *  2. NUNCA QUEM PROPÔS — invariante 7 da escada.
+   *  3. É GENTE — `ia_servico` e `ia_acao` têm `mcp.executar`, a permissão que a
+   *     rota exige, então bastava um SEGUNDO token de serviço para um agente
+   *     aprovar o que outro agente propôs. Conferido no token E no banco.
+   *  4. EXISTE E ESTÁ ATIVO — releitura do banco, em TODO nível.
+   *  5. ALÇADA — `alcadaMinima` era gravada em cada aprovação e nunca comparada
+   *     com ninguém. Agora é comparada com o papel DO BANCO.
+   *  6. MOTIVO e REAUTENTICAÇÃO — em R4/R5 a decisão precisa de uma frase escrita
+   *     e a pessoa prova de novo que é ela. Antes o código só ESCREVIA
+   *     `reautenticadoEm`, sem pedir nada, e o motivo nunca saía de `null`.
+   *
+   * A RELEITURA VALE EM TODO NÍVEL, e é a correção que mais importa aqui.
+   * Na primeira versão desta fatia ela existia, mas presa ao caminho de
+   * reautenticação — quer dizer, só em R4/R5. Em R3, que é onde mora a única
+   * capacidade com efeito ligado de verdade (`whatsapp.mensagem.enviar`), a
+   * alçada saía do TOKEN: o revisor confirmou saída externa com usuário
+   * desativado, com usuário rebaixado no banco (token antigo dizendo o papel
+   * alto) e com um `sub` que não existe na tabela de usuários. Demitido,
+   * rebaixado ou apagado aprovava por até oito horas.
+   *
+   * E A ALÇADA DO BANCO MANDA SEMPRE. O token entra só na trava 3 — papel de
+   * máquina no token recusa mesmo que o banco diga outra coisa, porque um token
+   * de serviço nunca deveria estar nesta rota. Para autoridade, quem responde é
+   * a linha do banco, lida agora.
+   */
   async confirm(
     orgId: string,
     id: string,
-    actorId: string,
+    quem: QuemAprova,
+    motivo?: string,
   ): Promise<{ ok: true; resourceType: string; resourceId: string; summary: string }> {
+    // A guarda que o tipo já faz, repetida para quem chega por `any`/`as never`
+    // (script, teste, JavaScript). Ver `COMO_CHAMAR_PELO_TERMINAL`.
+    if (typeof (quem as unknown) === 'string' || !quem?.id) {
+      throw new BadRequestException(COMO_CHAMAR_PELO_TERMINAL);
+    }
+    const actorId = quem.id;
+
     const rec = await this.prisma.approval.findFirst({ where: { id, orgId } });
     if (!rec) throw new NotFoundException('Aprovação não encontrada');
     if (rec.expiraEm < new Date()) {
@@ -210,7 +322,46 @@ export class ApprovalsService {
     }
     // Invariante 7 da escada: quem aprova é gente, e nunca quem propôs.
     if (rec.propostoPorId === actorId) {
+      await this.recusarConfirmacao(orgId, rec, actorId, 'proponente', { ip: quem.ip });
       throw new ForbiddenException('Quem propôs a ação não pode aprová-la.');
+    }
+
+    await this.exigirGente(orgId, rec, actorId, quem.papeis ?? [], 'sessao', 'confirm', quem.ip);
+
+    // A releitura. Em todo nível, antes da alçada.
+    const doBanco = await this.exigirAprovadorAtivo(orgId, rec, actorId, quem.ip);
+    await this.exigirGente(orgId, rec, actorId, doBanco.papeis, 'banco', 'confirm', quem.ip);
+    await this.exigirAlcada(orgId, rec, actorId, alcadaDe(doBanco.papeis), quem.ip);
+
+    /*
+     * O motivo e a reautenticação acontecem ANTES da escrita condicional, e isso
+     * importa: se rodassem depois, a aprovação passaria a `confirmada` e só
+     * então seria recusada — e `confirmada` é o estado que `executarAprovada`
+     * aceita.
+     */
+    const motivoEscritoAgora = await this.exigirMotivo(orgId, rec, actorId, motivo, quem.ip);
+
+    let reautenticadoEm: Date | null = null;
+    if (rec.exigeReauth) {
+      if (!this.reauth) {
+        await this.recusarConfirmacao(orgId, rec, actorId, 'sem-verificador', { ip: quem.ip });
+        throw new ForbiddenException(
+          'Esta ação exige reautenticação e o verificador não está disponível nesta instância.',
+        );
+      }
+      const prova = await this.reauth.conferir({
+        userId: actorId,
+        orgId,
+        aprovacaoId: id,
+        prova: quem.reauth,
+        ip: quem.ip,
+      });
+      // A prova relê o usuário de novo — entre a trava 5 e aqui houve uma
+      // conferência de senha, que leva tempo. A alçada é reconferida com o que
+      // ela leu.
+      await this.exigirGente(orgId, rec, actorId, prova.papeis, 'banco', 'confirm', quem.ip);
+      await this.exigirAlcada(orgId, rec, actorId, alcadaDe(prova.papeis), quem.ip);
+      reautenticadoEm = prova.em;
     }
 
     const { count } = await this.prisma.approval.updateMany({
@@ -219,7 +370,10 @@ export class ApprovalsService {
         status: ApprovalState.confirmada,
         aprovadoPorId: actorId,
         aprovadoEm: new Date(),
-        ...(rec.exigeReauth ? { reautenticadoEm: new Date() } : {}),
+        // Só são escritos quando aconteceram de verdade. Os dois campos voltaram
+        // a ser afirmações verdadeiras sobre o mundo.
+        ...(reautenticadoEm ? { reautenticadoEm } : {}),
+        ...(motivoEscritoAgora ? { motivo: motivoEscritoAgora } : {}),
       },
     });
     if (count !== 1) throw new BadRequestException('Aprovação já decidida por outro caminho');
@@ -231,14 +385,184 @@ export class ApprovalsService {
       action: 'approval.confirm',
       entityType: rec.resourceType,
       entityId: rec.resourceId,
-      after: { approvalId: id, summary: rec.resumo },
+      ip: quem.ip,
+      after: {
+        approvalId: id,
+        summary: rec.resumo,
+        nivel: rec.nivelExigido,
+        alcadaMinima: rec.alcadaMinima,
+        reautenticado: reautenticadoEm ? reautenticadoEm.toISOString() : null,
+        motivo: motivoEscritoAgora,
+      },
     });
     return { ok: true, resourceType: rec.resourceType, resourceId: rec.resourceId, summary: rec.resumo };
   }
 
-  async reject(orgId: string, id: string, actorId: string): Promise<{ ok: true }> {
+  /** Quem decide é gente — conferido no token de sessão E nos papéis do banco. */
+  private async exigirGente(
+    orgId: string,
+    rec: DecisaoEmCurso,
+    actorId: string,
+    papeis: readonly string[],
+    fonte: 'sessao' | 'banco',
+    operacao: Operacao = 'confirm',
+    ip?: string,
+  ): Promise<void> {
+    if (!temPapelDeMaquina(papeis)) return;
+    await this.recusarConfirmacao(orgId, rec, actorId, `conta-de-maquina:${fonte}`, { ip }, operacao);
+    throw new ForbiddenException(
+      'Quem decide é gente: conta de serviço (IA) não confirma nem rejeita aprovação.',
+    );
+  }
+
+  /**
+   * A RELEITURA DO BANCO — a mesma consulta que o serviço de reautenticação faz,
+   * porque as duas chamam `lerAprovador` (`src/auth/aprovador.ts`).
+   *
+   * Ela não passa pelo `ReauthService` de propósito, por duas razões: o
+   * verificador é opcional no construtor (as suítes montam o serviço sem ele) e
+   * uma trava não pode depender de um serviço opcional; e a recusa aqui é de
+   * APROVAÇÃO, não de reautenticação — misturar as duas no RASTRO faria uma
+   * confirmação de R3 recusada contar no teto de tentativa de senha.
+   */
+  private async exigirAprovadorAtivo(
+    orgId: string,
+    rec: DecisaoEmCurso,
+    actorId: string,
+    ip?: string,
+    operacao: Operacao = 'confirm',
+  ): Promise<{ papeis: string[] }> {
+    const usuario = await lerAprovador(this.prisma, actorId, orgId);
+    if (!usuario || !usuario.ativo) {
+      await this.recusarConfirmacao(
+        orgId,
+        rec,
+        actorId,
+        usuario ? 'usuario-inativo' : 'usuario-inexistente',
+        { ip },
+        operacao,
+      );
+      throw new ForbiddenException('Quem decide precisa ser um usuário ativo desta empresa.');
+    }
+    return usuario;
+  }
+
+  /** Compara a alçada exigida com a que o aprovador tem; recusa e registra. */
+  private async exigirAlcada(
+    orgId: string,
+    rec: DecisaoEmCurso,
+    actorId: string,
+    tem: ReturnType<typeof alcadaDe>,
+    ip?: string,
+  ): Promise<void> {
+    const minima = rec.alcadaMinima;
+    if (atendeAlcada(minima, tem)) return;
+    /*
+     * Duas recusas diferentes com a mesma resposta. `alcada-desconhecida` é a
+     * que não pode acontecer: significa que a linha guarda um degrau que esta
+     * versão do código não conhece — e nesse caso ninguém aprova, em vez de
+     * todo mundo aprovar, que era o efeito do `indexOf` de antes.
+     */
+    const motivo = alcadaConhecida(minima) ? 'alcada-insuficiente' : 'alcada-desconhecida';
+    await this.recusarConfirmacao(orgId, rec, actorId, motivo, {
+      ip,
+      exigida: String(minima),
+      tem: descreverAlcada(tem),
+    });
+    throw new ForbiddenException(
+      `Alçada insuficiente para aprovar ${rec.nivelExigido}: esta ação exige "${minima}" e ` +
+        `quem aprova tem "${descreverAlcada(tem)}".`,
+    );
+  }
+
+  /**
+   * MOTIVO ESCRITO — a terceira perna de RF-A-03, que faltava inteira.
+   *
+   * O requisito pede reautenticação, motivo escrito e alçada. A coluna
+   * `Approval.motivo` existia e nunca saía de `null`: o cálculo que a régua já
+   * faz (`Decisao.exigeMotivo`) não era lido em lugar nenhum e o schema do corpo
+   * da confirmação RECUSAVA quem tentasse mandar um.
+   *
+   * O mínimo e o verificador são os do pacote de política (`MINIMO_DO_MOTIVO`,
+   * `motivoEscrito`) — os mesmos que já guardam a sobrescrita de política, para
+   * que "motivo escrito" queira dizer a mesma coisa nos dois lugares.
+   *
+   * Nos níveis que não exigem, um motivo mandado assim mesmo é GRAVADO: quem
+   * quis explicar por que aprovou não deve ter a frase descartada.
+   */
+  private async exigirMotivo(
+    orgId: string,
+    rec: DecisaoEmCurso,
+    actorId: string,
+    motivo: string | undefined,
+    ip?: string,
+  ): Promise<string | null> {
+    const texto = typeof motivo === 'string' ? motivo.trim() : '';
+    if (!exigeMotivo(rec.nivelExigido)) return texto === '' ? null : texto;
+
+    if (!motivoEscrito(texto)) {
+      await this.recusarConfirmacao(orgId, rec, actorId, 'motivo-ausente', {
+        ip,
+        minimo: MINIMO_DO_MOTIVO,
+      });
+      throw new BadRequestException(
+        `Aprovar ${rec.nivelExigido} exige motivo escrito: descreva em pelo menos ` +
+          `${MINIMO_DO_MOTIVO} caracteres por que esta ação deve sair.`,
+      );
+    }
+    return texto;
+  }
+
+  /** Recusa de decisão também é evento. Fila que só registra o "sim" mente. */
+  private async recusarConfirmacao(
+    orgId: string,
+    rec: DecisaoEmCurso,
+    actorId: string,
+    motivo: string,
+    extra?: Record<string, unknown>,
+    operacao: Operacao = 'confirm',
+  ): Promise<void> {
+    const { ip, ...resto } = extra ?? {};
+    try {
+      await this.audit.log({
+        orgId,
+        actorType: ActorType.user,
+        actorId,
+        action: `approval.${operacao}.recusada`,
+        entityType: rec.resourceType,
+        entityId: rec.resourceId,
+        ip: typeof ip === 'string' ? ip : undefined,
+        after: { approvalId: rec.id, nivel: rec.nivelExigido, motivo, ...resto },
+      });
+    } catch {
+      /* auditoria indisponível não vira permissão */
+    }
+  }
+
+  /**
+   * A REJEIÇÃO — e por que ela também tem trava.
+   *
+   * As travas da confirmação existiam só para o "sim". Rejeitar não executa
+   * nada, então a tentação é deixar passar; o revisor mostrou o que isso custa:
+   * uma conta de MÁQUINA rejeitou um item pendente proposto por uma pessoa. Não
+   * dispara efeito nenhum, mas apaga a proposta de um humano por decisão de
+   * máquina — e uma fila em que o robô pode descartar o que o robô não gostou é
+   * o mesmo problema da invariante 7, de trás para frente.
+   *
+   * Aqui vai o mínimo: é gente (no token e no banco) e é usuário ativo desta
+   * empresa. Não vai alçada — negar nunca é mais arriscado do que deixar como
+   * está, e exigir titular para rejeitar emperraria a fila. Está no relatório
+   * como pergunta, porque é decisão de produto.
+   */
+  async reject(orgId: string, id: string, quem: QuemAprova): Promise<{ ok: true }> {
+    const actorId = quem.id;
     const rec = await this.prisma.approval.findFirst({ where: { id, orgId } });
     if (!rec) throw new NotFoundException('Aprovação não encontrada');
+
+    await this.exigirGente(orgId, rec, actorId, quem.papeis ?? [], 'sessao', 'reject', quem.ip);
+    const doBanco = await this.exigirAprovadorAtivo(orgId, rec, actorId, quem.ip, 'reject');
+    await this.exigirGente(orgId, rec, actorId, doBanco.papeis, 'banco', 'reject', quem.ip);
+
     await this.prisma.approval.updateMany({
       where: { id, orgId, status: { in: [ApprovalState.pendente, ApprovalState.confirmada] } },
       data: { status: ApprovalState.rejeitada },
@@ -250,6 +574,7 @@ export class ApprovalsService {
       action: 'approval.reject',
       entityType: rec.resourceType,
       entityId: rec.resourceId,
+      ip: quem.ip,
       after: { approvalId: id },
     });
     return { ok: true };

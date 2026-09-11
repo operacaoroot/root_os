@@ -47,7 +47,18 @@ export async function criarPrismaService(): Promise<PrismaService> {
 
   const base = new PrismaService(url ? { datasourceUrl: url } : {});
   await base.$connect();
-  await anunciarPapel(base, modo, (m) => log.log(m));
+  // Os dois destinos são diferentes de propósito: o PRIMEIRO é a linha de
+  // diagnóstico do arranque (com que papel conectamos), que é informação; o
+  // SEGUNDO é o aviso de caminho de plataforma em aberto, que é dívida com
+  // efeito marcado — ele precisa sair como WARN para aparecer em quem filtra o
+  // log por nível. Sem passar o quarto argumento, `anunciarPapel` mandaria os
+  // dois para o mesmo lugar e a dívida sairia com cara de informação.
+  await anunciarPapel(
+    base,
+    modo,
+    (m) => log.log(m),
+    (m) => log.warn(m),
+  );
 
   return comTenantNaSessao(base, { modo, avisar: (m) => log.warn(m) });
 }

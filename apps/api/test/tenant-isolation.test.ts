@@ -33,19 +33,45 @@
  * O QUE **NÃO** MORA MAIS AQUI
  * A catraca que só lê o `schema.prisma` ("todo modelo tem orgId ou está
  * declarado global", "orgId anulável só onde foi declarado") mudou para
- * `test/modelos-globais.test.ts`. Motivo: este arquivo fica fora do `pnpm test`
- * padrão e roda com `continue-on-error` na integração contínua enquanto o
- * isolamento por linha não estiver ligado — catraca ali acusa e o check fica
- * verde, que é o mesmo que não ter catraca. Lá ela reprova de verdade.
- * Aqui ficou só o que precisa de banco.
+ * `test/modelos-globais.test.ts`. Motivo histórico: este arquivo fica fora do
+ * `pnpm test` padrão e rodava com `continue-on-error` na integração contínua
+ * enquanto o isolamento por linha não existia — catraca ali acusava e o check
+ * ficava verde, que é o mesmo que não ter catraca. Aqui ficou só o que precisa
+ * de banco.
  *
- * ESTADO ESPERADO HOJE: VERMELHA.
- * Zero tabelas com RLS no banco de produção. Rodar isto agora deve falhar em
- * praticamente todas as tabelas. É o esperado — a suíte é o critério de aceite
- * da ativação de RLS, e vai ficando verde tabela por tabela conforme as policies
- * entram. Não "conserte" a suíte relaxando asserção.
- * As seções 7 e 8 são a exceção: elas não dependem de RLS e devem estar VERDES
- * desde a migration `20260910120000_orgid_em_todo_filho`.
+ * ESTADO ESPERADO HOJE: VERDE. (mudou na fatia 1.5, 11/09/2026)
+ * A migration `20260911050000_isolamento_por_linha` liga `ROW LEVEL SECURITY`
+ * com `FORCE` nas 72 tabelas do schema e escreve as policies de cada uma. Esta
+ * suíte era o critério de aceite dessa ativação; agora é a prova dela, e o
+ * `continue-on-error` do passo correspondente em `.github/workflows/ci.yml` foi
+ * apagado no mesmo commit.
+ *
+ * VERMELHO AQUI PASSOU A SIGNIFICAR VAZAMENTO ENTRE EMPRESAS, não dívida
+ * datada. Antes de relaxar qualquer asserção, confira as duas causas que fazem a
+ * suíte medir o vazio em vez do produto, e que ela mesma denuncia:
+ *   · `TENANT_DATABASE_URL` ausente — a leitura cai na conexão ADMIN, que é DONA
+ *     das tabelas e, neste Postgres, SUPERUSUÁRIA: as duas atravessam policy;
+ *   · o papel restrito sem senha — mesmo efeito, pelo mesmo caminho.
+ *
+ * O QUE CONTINUA SEM DEPENDER DE RLS: as seções 7 e 8 (coluna, chave
+ * estrangeira e gatilho de derivação), verdes desde
+ * `20260910120000_orgid_em_todo_filho`, e a seção 10 (a extensão do Prisma).
+ *
+ * O QUE MUDOU NA CORREÇÃO DA FATIA 1.5 (11/09/2026) — e por quê
+ * A suíte estava VERDE medindo menos do que parecia. Duas correções, as duas na
+ * seção 1-bis:
+ *
+ *  1. O REGISTRO DE ALVOS AGORA É COBRADO PELO CATÁLOGO. Ele tinha 59 entradas
+ *     escritas à mão para um banco com 69 tabelas de empresa; as dez de fora
+ *     eram o núcleo do produto novo (Agent, Approval, ToolCall, Session,
+ *     SessionStep, Sop, PolicyDecision, PolicyVersion, ChannelIdentity,
+ *     EventLog). Elas não vazavam: NÃO ERAM MEDIDAS. Medido: uma policy
+ *     `USING (true)` em três delas manteve a suíte 224/224 verde; a mesma policy
+ *     numa tabela semeada reprovou quatro casos na hora.
+ *  2. AS POLÍTICAS DO BANCO SÃO CONFERIDAS UMA A UMA contra o conjunto
+ *     declarado. Policy de isolamento é PERMISSIVA e se soma: uma policy
+ *     acrescentada ao lado das certas abre a tabela sem apagar nada, e
+ *     "a tabela tem policy?" continuava respondendo que sim.
  *
  * COMO RODAR
  *   1) `pnpm --filter @mktos/api test:isolamento`. Este arquivo fica FORA do
@@ -82,13 +108,36 @@
  *      Fora do compose (banco solto, como o descartável do host), o equivalente
  *      do segundo passo é `ALTER ROLE mktos_app WITH LOGIN PASSWORD '...'`.
  *
- *      Ligar o isolamento em si é outra fatia, e é ela que traz o
- *      `ALTER TABLE ... ENABLE/FORCE ROW LEVEL SECURITY` de cada tabela.
+ *   4) O isolamento em si vem do `db:deploy` do passo 3: a migration
+ *      `20260911050000_isolamento_por_linha` já deixa RLS e FORCE ligados. O
+ *      `beforeAll` ainda chama `app_rls_ligar()` por auto-cura, agora só como
+ *      rede: a seção de RLS de `rotas-publicas-tenant.test.ts` DESLIGA as 11
+ *      tabelas dela para montar policies próprias, e passou a religar tudo no
+ *      `afterAll` (11/09/2026) — antes disso ela deixava o banco em 61 de 72 e
+ *      esta auto-cura era o que escondia o estrago.
+ *      Para inspecionar à mão:
+ *        SELECT * FROM app_rls_estado();   -- tabela, rls, force, nº de policies
+ *        SELECT app_rls_desligar();        -- rollback
+ *        SELECT app_rls_ligar();           -- de volta
+ *
+ *      A receita local completa, com o banco dedicado:
+ *        docker exec mktos-shadow psql -U mkt -d postgres -c 'CREATE DATABASE marketing_os_test_rls'
+ *        DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test_rls' \
+ *          pnpm --filter @mktos/api db:deploy
+ *        docker exec mktos-shadow psql -U mkt -d marketing_os_test_rls \
+ *          -c "ALTER ROLE mktos_app WITH LOGIN PASSWORD '<senha local>'"
+ *        TEST_DATABASE_URL='postgresql://mkt:shadow@localhost:55432/marketing_os_test_rls' \
+ *        TENANT_DATABASE_URL='postgresql://mktos_app:<senha local>@localhost:55432/marketing_os_test_rls' \
+ *          pnpm --filter @mktos/api test:isolamento
  *
  * AVISO: a suíte ESCREVE no banco. Nunca aponte para produção.
  */
 
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
+import { PERMISSIONS } from '@mktos/shared';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -99,10 +148,19 @@ import {
   MODELOS_GLOBAIS,
   paisDoFilho,
 } from '../src/common/modelos-globais';
+import { ORG_RESOLUCAO_PUBLICA } from '../src/common/tenant-publico';
 import {
+  CAMINHOS_DE_PLATAFORMA_EXIGIDOS,
+  CHAMADORES_DE_PLATAFORMA,
+  ORG_PLATAFORMA,
+  caminhosDePlataformaFaltando,
+} from '../src/prisma/contexto-de-plataforma';
+import {
+  CoberturaDePlataformaIncompletaError,
   GUC_TENANT,
   PAPEL_DE_APLICACAO,
   comTenantNaSessao,
+  conferirCoberturaDePlataforma,
   esquecerAvisos,
 } from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
@@ -215,6 +273,18 @@ interface Alvo {
  * `src/common/modelos-globais.ts` (Org entra, por causa da PK; Permission,
  * BioVisitor e Capability não) e _prisma_migrations (controle do Migrate —
  * ligar RLS nela quebra o boot).
+ *
+ * ESTA LISTA É ESCRITA À MÃO E COBRADA PELO CATÁLOGO (correção de 11/09/2026).
+ * Ela precisa ser à mão — cada entrada carrega uma `nota` que é o que torna a
+ * falha legível, e `chaveSql`, que junção não tem como adivinhar. O que não
+ * pode é ela ficar MENOR que o banco: por dez meses a suíte teve 59 entradas
+ * para 69 tabelas de empresa, e as dez que faltavam eram o núcleo do produto
+ * novo (agentes, aprovação, RASTRO, sessões). Elas não vazavam — não eram
+ * MEDIDAS, que é diferente e pior, porque parecia prova.
+ *
+ * Quem cobra agora é o caso "o registro da suíte cobre exatamente as tabelas de
+ * empresa do banco", que compara esta lista com `pg_class`. Tabela nova sem
+ * entrada aqui reprova a suíte no minuto seguinte ao `migrate deploy`.
  */
 const ALVOS: Alvo[] = [
   // ---- raiz -------------------------------------------------------------
@@ -224,6 +294,22 @@ const ALVOS: Alvo[] = [
   { tabela: 'User', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade e passwordHash.' },
   { tabela: 'Role', escopo: 'tenant', chaveSql: '"id"', nota: 'Papéis por org.' },
   { tabela: 'AuditLog', escopo: 'tenant', chaveSql: '"id"', nota: 'Concentra before/after das outras 57 tabelas. A mais sensível do banco.' },
+  { tabela: 'ChannelIdentity', escopo: 'tenant', chaveSql: '"id"', nota: 'Amarra um número de WhatsApp/Telegram a um usuário: é caminho de AUTENTICAÇÃO, não só de dado.' },
+
+  // ---- tripulação: agentes, sessões, rastro de ferramenta --------------
+  // Entraram no registro em 11/09/2026. Antes disso o núcleo do produto novo
+  // tinha policy no banco e NENHUMA medição na suíte.
+  { tabela: 'Agent', escopo: 'tenant', chaveSql: '"id"', nota: 'Missão, capacidades e autonomia do agente. Quem lê isto sabe o que o agente da outra empresa pode fazer.' },
+  { tabela: 'Sop', escopo: 'tenant', chaveSql: '"id"', nota: 'Procedimento do agente — o método de operação da outra empresa, em texto.' },
+  { tabela: 'Session', escopo: 'tenant', chaveSql: '"id"', nota: 'Pedido e resposta em texto livre. É a conversa inteira do cliente com o agente.' },
+  { tabela: 'SessionStep', escopo: 'tenant', chaveSql: '"id"', nota: 'Passo a passo da sessão: args da ferramenta, texto do modelo, erro. Vaza o conteúdo, não só o resumo.' },
+  { tabela: 'ToolCall', escopo: 'tenant', chaveSql: '"id"', nota: 'Rastro de ferramenta: args e resultado em Json. É o que a ação DE FATO fez.' },
+  { tabela: 'EventLog', escopo: 'tenant', chaveSql: '"id"', nota: 'O RASTRO (append-only). Encadeado por hash e por empresa; ler o da outra é ler a operação dela.' },
+
+  // ---- política e aprovação --------------------------------------------
+  { tabela: 'PolicyVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId NULLABLE: null = política base de todas. Leitura tem de ser orgId = atual OR IS NULL, e escrita só a própria.' },
+  { tabela: 'PolicyDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada decisão da escada R0–R5, com motivo e sinais. Diz o que a outra empresa deixa passar.' },
+  { tabela: 'Approval', escopo: 'tenant', chaveSql: '"id"', nota: 'Fila de aprovação: resumo do conteúdo a publicar e tokenHash. Ler é ver o que a outra empresa vai postar.' },
 
   // ---- integrações ------------------------------------------------------
   { tabela: 'IntegrationAccount', escopo: 'tenant', chaveSql: '"id"', nota: 'config Json carrega credencial de integração em claro.' },
@@ -339,6 +425,22 @@ function registra(s: Semente, tabela: string, chave: string) {
   if (!ORDEM_LIMPEZA.includes(tabela)) ORDEM_LIMPEZA.push(tabela);
 }
 
+/**
+ * Chaves que estão no registro de UMA org só para serem APAGADAS por ela, mas
+ * que não pertencem a ela — hoje, a credencial de app com `orgId` NULL.
+ *
+ * Sem esta lista, a linha global entra como "chave da org A" e o caso
+ * "B não lê linha de A em BioCredencialApp" acusa vazamento quando a policy está
+ * CERTA: a regra declarada em `src/common/modelos-globais.ts` é justamente
+ * `orgId = atual OR orgId IS NULL` na leitura, e a linha global TEM de aparecer
+ * para as duas. Descoberto ligando o isolamento (11/09/2026) — antes disso a
+ * tabela vazava por não ter policy nenhuma e o caso falhava pelo motivo certo.
+ *
+ * A assimetria que importa continua cobrada, e em caso próprio: "um tenant não
+ * sobrescreve a credencial GLOBAL de todos" (seção 5).
+ */
+const CHAVES_SEM_DONO = new Set<string>();
+
 /** Permission é catálogo GLOBAL — uma só, compartilhada pelas duas orgs. */
 let permissaoCompartilhadaId = '';
 /** Capability idem: catálogo da escada, um para todas as empresas. */
@@ -428,6 +530,98 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   });
   reg('AuditLog', auditId);
   s.ref.auditId = auditId;
+
+  reg('ChannelIdentity', await ins(c, 'ChannelIdentity', {
+    id: crypto.randomUUID(), orgId, canal: 'whatsapp',
+    externalId: `55119${rotulo === 'A' ? '1111111' : '2222222'}_${MARCA}`,
+    userId, rotulo: `WhatsApp ${rotulo}`,
+  }));
+
+  /*
+   * --- tripulação: agente, procedimento, sessão, passos e rastro ----------
+   *
+   * Entrou na semeadura em 11/09/2026, junto com as entradas correspondentes em
+   * ALVOS. Sem dado destas seis tabelas, os casos "A não lê linha de B" nelas
+   * passavam vazios: um `SELECT` sem WHERE em tabela vazia devolve zero linha
+   * com policy certa, com policy errada e sem policy nenhuma.
+   *
+   * O conteúdo é de propósito o que DÓI vazar: missão do agente, pedido e
+   * resposta da sessão, args da ferramenta, resumo do que está na fila de
+   * aprovação. Se a policy cair, a mensagem de falha mostra o que saiu.
+   */
+  const agentId = await ins(c, 'Agent', {
+    id: crypto.randomUUID(), orgId, slug: `agente_${suf}`, nome: `Agente ${rotulo}`,
+    missao: `Missão interna e confidencial da org ${rotulo} (${MARCA}).`,
+    capacidades: ['mcp.executar'], contextoFixo: [], atualizadoEm: agora,
+  }, { capacidades: 'text[]', contextoFixo: 'text[]' });
+  reg('Agent', agentId);
+  s.ref.agentId = agentId;
+
+  reg('Sop', await ins(c, 'Sop', {
+    id: crypto.randomUUID(), orgId, agentId,
+    proposito: `Procedimento operacional da org ${rotulo}`, gatilho: 'manual',
+    passos: [`passo exclusivo da org ${rotulo}`], definicaoDePronto: 'entregue ao cliente',
+    atualizadoEm: agora,
+  }, { passos: 'text[]' }));
+
+  const sessionId = await ins(c, 'Session', {
+    id: crypto.randomUUID(), orgId, agentId, canal: 'web',
+    solicitanteId: userId, solicitanteRotulo: `Usuário ${rotulo}`,
+    pedido: `Pergunta confidencial da org ${rotulo} (${MARCA}).`,
+    resposta: `Resposta com número interno da org ${rotulo}.`,
+  });
+  reg('Session', sessionId);
+  s.ref.sessionId = sessionId;
+
+  reg('SessionStep', await ins(c, 'SessionStep', {
+    id: crypto.randomUUID(), orgId, sessionId, ordem: 1, tipo: 'pedido',
+    texto: `Texto integral do passo da org ${rotulo}`,
+    args: JSON.stringify({ segredo: `args-${suf}` }),
+  }));
+
+  reg('ToolCall', await ins(c, 'ToolCall', {
+    id: crypto.randomUUID(), orgId, capabilityId: capacidadeCompartilhadaId, sessionId,
+    agentSlug: `agente_${suf}`, actorType: 'ai', actorId: agentId, status: 'executado',
+    args: JSON.stringify({ destino: `+5511${suf}` }),
+    resultado: JSON.stringify({ enviado: true }),
+  }));
+
+  // O RASTRO. `seq` é único POR EMPRESA (@@unique([orgId, seq])), então 1 serve
+  // às duas. A limpeza dele é o único lugar da suíte que suspende a RULE de
+  // append-only — ver o `afterAll`.
+  reg('EventLog', await ins(c, 'EventLog', {
+    id: crypto.randomUUID(), orgId, seq: 1, tipo: 'isolamento.semente',
+    actorType: 'system', agentSlug: `agente_${suf}`,
+    payload: JSON.stringify({ marca: MARCA, org: rotulo }),
+    hash: `hash_${suf}`, retencaoAte: new Date(Date.now() + 86_400_000),
+  }));
+
+  // --- política e aprovação -----------------------------------------------
+  // `PolicyVersion` tem orgId ANULÁVEL (nulo = a base de todas). Aqui vai a
+  // versão POR EMPRESA; a base não é semeada porque ela já existe em banco com
+  // `db:seed:politica` e não pertence a nenhuma das duas orgs.
+  const policyVersionId = await ins(c, 'PolicyVersion', {
+    id: crypto.randomUUID(), orgId, versao: 1,
+    documento: JSON.stringify({ empresa: rotulo, teto: rotulo === 'A' ? 'R2' : 'R4' }),
+    motivo: `Sobrescrita de política da org ${rotulo}`,
+  });
+  reg('PolicyVersion', policyVersionId);
+  s.ref.policyVersionId = policyVersionId;
+
+  reg('PolicyDecision', await ins(c, 'PolicyDecision', {
+    id: crypto.randomUUID(), orgId, capabilityId: capacidadeCompartilhadaId, policyVersionId,
+    nivelBase: 'R0', nivel: 'R0', permitido: true, exigeAprovacao: false,
+    sinais: [`sinal_${suf}`], motivo: `Decisão registrada da org ${rotulo}`,
+  }, { sinais: 'text[]' }));
+
+  reg('Approval', await ins(c, 'Approval', {
+    id: crypto.randomUUID(), orgId, capabilityId: capacidadeCompartilhadaId,
+    propostoPorId: agentId, propostoPorTipo: 'ai',
+    resourceType: 'pauta_peca', resourceId: crypto.randomUUID(),
+    contentHash: `conteudo_${suf}`,
+    resumo: `Texto que a org ${rotulo} vai publicar (${MARCA}).`,
+    tokenHash: `token_${suf}`, expiraEm: new Date(Date.now() + 3600_000),
+  }));
 
   // --- integrações ---------------------------------------------------------
   const integId = await ins(c, 'IntegrationAccount', {
@@ -894,7 +1088,37 @@ function mensagemDeVazamento(alvo: Alvo, direcao: string, invasoras: string[]): 
 // Ciclo de vida
 // ---------------------------------------------------------------------------
 
+/**
+ * Liga o isolamento antes de medir — e por que isso não é "o teste se dando o
+ * verde de presente".
+ *
+ * A migration `20260911050000_isolamento_por_linha` já deixa RLS e FORCE ligados
+ * em toda tabela. Esta chamada é AUTO-CURA: a seção de RLS de
+ * `rotas-publicas-tenant.test.ts` desliga as 11 tabelas dela no fim (ela cria
+ * policies próprias, com outro nome, para provar a fatia 1.4), e um banco local
+ * onde aquela suíte rodou por último chegaria aqui com parte do isolamento
+ * desligado. Vermelho por causa de um restinho de outra suíte é o pior tipo de
+ * vermelho: some quando você olha.
+ *
+ * O que ela NÃO faz é criar policy. `app_rls_ligar()` só ENABLE/FORCE nas
+ * tabelas que JÁ têm policy `tenant_%` — se a migration não tiver rodado, não há
+ * o que ligar e a suíte reprova como deve.
+ */
+async function ligarIsolamento(): Promise<void> {
+  try {
+    const r = await admin.query<{ n: number }>('SELECT app_rls_ligar() AS n');
+    console.info(`[isolamento] app_rls_ligar(): ${r.rows[0]?.n ?? 0} tabela(s) com RLS e FORCE.`);
+  } catch (e) {
+    console.error(
+      `\n[isolamento] não deu para ligar o isolamento: ${(e as Error).message}\n` +
+        '            A migration 20260911050000_isolamento_por_linha aplicou neste banco?\n' +
+        '            `pnpm --filter @mktos/api db:deploy` com a DATABASE_URL deste banco.\n',
+    );
+  }
+}
+
 beforeAll(async () => {
+  await ligarIsolamento();
   await carregarDiagnostico();
 
   if (MESMA_CONEXAO) {
@@ -976,7 +1200,10 @@ beforeAll(async () => {
     });
     sementes.A.ref.credencialGlobalId = credGlobalId;
     sementes.B.ref.credencialGlobalId = credGlobalId;
+    // Fica no registro da A só para a limpeza alcançá-la; não é dela (ver
+    // `CHAVES_SEM_DONO`).
     registra(sementes.A, 'BioCredencialApp', credGlobalId);
+    CHAVES_SEM_DONO.add(credGlobalId);
 
     await c.query('COMMIT');
   } catch (e) {
@@ -1004,6 +1231,31 @@ afterAll(async () => {
         continue;
       }
       if (!chaves.length) continue;
+      if (tabela === 'EventLog') {
+        /*
+         * O RASTRO não se apaga — nem pelo DONO. As RULEs `eventlog_sem_delete`
+         * e `eventlog_sem_update` são `DO INSTEAD NOTHING`, então um DELETE aqui
+         * não erraria: ele sairia com "DELETE 0" e a remoção da `Org` logo
+         * abaixo quebraria com violação de chave estrangeira, que é um jeito
+         * ruim de descobrir isso.
+         *
+         * Este é o ÚNICO lugar do repositório que suspende a RULE, e ele é
+         * limpeza de suíte num banco descartável. Suspender exige ser DONO da
+         * tabela (`ALTER TABLE` é DDL), que é exatamente o que a aplicação NUNCA
+         * é depois da virada — o caso "não altera, não apaga e não trunca o
+         * RASTRO" continua medindo isso pelo lado do papel restrito.
+         *
+         * Dentro da transação de limpeza de propósito: DDL é transacional no
+         * Postgres, então uma falha no meio devolve a RULE sozinha.
+         */
+        await c.query('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
+        try {
+          await c.query('DELETE FROM "EventLog" WHERE "id" = ANY($1::text[])', [chaves]);
+        } finally {
+          await c.query('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
+        }
+        continue;
+      }
       if (tabela.startsWith('_')) {
         for (const k of chaves) {
           const [a, b] = k.split('|');
@@ -1070,6 +1322,640 @@ describe('diagnóstico do banco', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 1-bis. A CATRACA DO CATÁLOGO — o que segura a TABELA DE AMANHÃ
+//
+// A seção 2 mede o isolamento com dado semeado, e por isso só alcança o que está
+// em ALVOS. Tabela nova entra no schema sem passar por lá, e passaria por aqui
+// sem policy, sem RLS e sem ninguém notar — até vazar.
+//
+// Esta seção não semeia nada: pergunta ao CATÁLOGO do Postgres se toda tabela do
+// banco está sob isolamento, e cobra que as exceções sejam DECLARADAS. É a única
+// parte da suíte que continua valendo quando alguém acrescentar a 74ª tabela.
+// ---------------------------------------------------------------------------
+
+/**
+ * As tabelas que NÃO recebem isolamento por linha, e por quê.
+ *
+ * "Lista de exceções com motivo, nunca silêncio" — é o enunciado da fatia. Hoje
+ * tem uma entrada só, e é bom que continue difícil acrescentar outra: cada linha
+ * daqui é uma tabela que o banco deixa de proteger.
+ */
+const SEM_ISOLAMENTO: ReadonlyArray<{ tabela: string; porQue: string }> = [
+  {
+    tabela: '_prisma_migrations',
+    porQue:
+      'controle do Prisma Migrate, não dado de aplicação. Ligar RLS nela quebra o arranque do ' +
+      'próprio Migrate, e o papel restrito já não tem permissão nenhuma ali (REVOKE ALL na ' +
+      'migration 20260911020000_papel_de_aplicacao).',
+  },
+];
+
+/**
+ * A raiz de `apps/api`, achada por um marco em vez de por caminho relativo.
+ *
+ * Mesma técnica de `test/arquitetura.test.ts`, e pelo mesmo motivo: o diretório
+ * de trabalho do vitest muda conforme de onde o comando foi disparado (da raiz
+ * do monorepo, do pacote, pelo turbo), e caminho relativo a `process.cwd()`
+ * acerta em uma dessas e erra nas outras.
+ */
+function acharRaizDaApi(): string {
+  const marco = path.join('src', 'prisma', 'sessao-de-banco.ts');
+  let dir = process.cwd();
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(path.join(dir, marco))) return dir;
+    if (existsSync(path.join(dir, 'apps', 'api', marco))) return path.join(dir, 'apps', 'api');
+    dir = path.dirname(dir);
+  }
+  throw new Error(`não achei a raiz de apps/api a partir de ${process.cwd()}`);
+}
+
+describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
+  it('toda tabela está sob isolamento por linha, ou está na lista de exceções', async () => {
+    const r = await admin.query<{ tabela: string; rls: boolean; force: boolean; policies: string }>(
+      'SELECT tabela, rls, force, policies::text FROM app_rls_estado()',
+    );
+    const declaradas = new Set(SEM_ISOLAMENTO.map((e) => e.tabela));
+
+    const desprotegidas = r.rows
+      .filter((t) => !declaradas.has(t.tabela))
+      .filter((t) => !t.rls || !t.force || Number(t.policies) === 0)
+      .map((t) => `${t.tabela} (rls=${t.rls} force=${t.force} policies=${t.policies})`);
+
+    expect(
+      desprotegidas,
+      '\nTABELA SEM ISOLAMENTO POR LINHA:\n' +
+        desprotegidas.map((t) => `  - ${t}`).join('\n') +
+        '\n\n  Tabela de empresa sem policy é vazamento esperando consulta distraída.\n' +
+        '  Conserto: uma migration nova chamando\n' +
+        "    SELECT app_rls_aplicar_policies('<Tabela>', '<leitura>', '<escrita>');\n" +
+        '  Se ela REALMENTE não pode receber, acrescente em `SEM_ISOLAMENTO` (neste arquivo)\n' +
+        '  com o motivo escrito — a lista é o contrato, o silêncio não é.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('a lista de exceções não tem entrada morta', async () => {
+    const r = await admin.query<{ tabela: string }>('SELECT tabela FROM app_rls_estado()');
+    const existentes = new Set(r.rows.map((x) => x.tabela));
+    const fantasmas = SEM_ISOLAMENTO.filter((e) => !existentes.has(e.tabela)).map((e) => e.tabela);
+    expect(
+      fantasmas,
+      `\nExceção declarada para tabela que não existe mais: ${fantasmas.join(', ')}.\n` +
+        '  Lista de exceções que envelhece vira permissão esquecida.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('o registro da suíte cobre exatamente as tabelas de empresa do banco', async () => {
+    /*
+     * A CATRACA QUE FALTAVA (11/09/2026).
+     *
+     * O caso acima pergunta ao catálogo se toda tabela TEM policy. Este pergunta
+     * se toda tabela de empresa está no REGISTRO da suíte — que é o que decide o
+     * que vai ser semeado e medido tabela a tabela.
+     *
+     * Sem ele, as duas perguntas ficavam em universos diferentes: o banco tinha
+     * 69 tabelas de empresa, `ALVOS` tinha 59, e as 10 de fora (Agent, Approval,
+     * ToolCall, Session, SessionStep, Sop, PolicyDecision, PolicyVersion,
+     * ChannelIdentity, EventLog) passavam pela suíte inteira sem uma linha
+     * semeada. Medido na revisão: uma policy `USING (true)` em três delas manteve
+     * a suíte 224/224 VERDE; a mesma policy numa tabela semeada reprovou quatro
+     * casos na hora. A proteção existia só onde havia dado.
+     *
+     * A fonte é o catálogo, não uma segunda lista à mão: tabela nova nasce aqui
+     * no primeiro `migrate deploy` e cobra a entrada correspondente.
+     */
+    const r = await admin.query<{ tabela: string; temOrgId: boolean }>(
+      `SELECT c.relname AS tabela,
+              EXISTS (SELECT 1 FROM pg_attribute a
+                       WHERE a.attrelid = c.oid AND a.attname = 'orgId'
+                         AND a.attnum > 0 AND NOT a.attisdropped) AS "temOrgId"
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relname <> '_prisma_migrations'
+        ORDER BY 1`,
+    );
+
+    // Global declarado em `src/common/modelos-globais.ts` fica fora — menos Org,
+    // que é raiz de tenant e se escopa pela PK. Junção implícita do Prisma não
+    // tem `orgId` e entra pelo nome (a empresa dela está nos pais).
+    const globais = new Set(MODELOS_GLOBAIS.filter((m) => m.modelo !== 'Org').map((m) => m.modelo));
+    const doBanco = r.rows.filter((t) => !globais.has(t.tabela));
+    const registrados = new Set(ALVOS.map((a) => a.tabela));
+
+    const semEntrada = doBanco.filter((t) => !registrados.has(t.tabela));
+    expect(
+      semEntrada.map((t) => `${t.tabela}${t.temOrgId ? ' (tem orgId)' : ' (junção)'}`),
+      '\nTABELA DE EMPRESA SEM ENTRADA NO REGISTRO DA SUÍTE.\n' +
+        '  Ela pode até ter policy: o que ela NÃO tem é semente, e sem semente o caso\n' +
+        '  "A não lê linha de B" roda contra tabela vazia e passa com qualquer policy —\n' +
+        '  inclusive com `USING (true)`. Foi assim que dez tabelas ficaram sem prova.\n\n' +
+        '  Conserto, nesta ordem:\n' +
+        '   1. acrescente a tabela em `ALVOS` (neste arquivo), com a `nota` dizendo o que\n' +
+        '      dói vazar nela — a nota é o que torna a falha legível;\n' +
+        '   2. semeie uma linha dela nas DUAS orgs, dentro de `semear`;\n' +
+        '   3. se ela for global por desenho, declare em `src/common/modelos-globais.ts`\n' +
+        '      e ela sai desta conferência pela porta da frente.\n',
+    ).toEqual([]);
+
+    const fantasmas = [...registrados].filter((t) => !doBanco.some((x) => x.tabela === t));
+    expect(
+      fantasmas,
+      `\nEntrada no registro para tabela que não existe mais no banco: ${fantasmas.join(', ')}.\n` +
+        '  Registro que envelhece mede o passado.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('toda policy de INSERT tem WITH CHECK — o furo que reprovou a fatia 1.4', async () => {
+    // Policy `FOR ALL` sem `WITH CHECK` faz o Postgres REUSAR a cláusula de
+    // leitura como verificação de escrita. Com uma sentinela na leitura, isso
+    // libera gravação em empresa alheia. Aqui a pergunta é direta ao catálogo:
+    // existe policy de inserção sem verificação?
+    const r = await admin.query<{ tabela: string; policy: string }>(
+      `SELECT c.relname AS tabela, p.polname AS policy
+         FROM pg_policy p
+         JOIN pg_class c ON c.oid = p.polrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND p.polcmd IN ('a', '*')      -- 'a' = INSERT, '*' = ALL
+          AND p.polwithcheck IS NULL
+        ORDER BY 1, 2`,
+    );
+    expect(
+      r.rows.map((x) => `${x.tabela}.${x.policy}`),
+      '\nPolicy que ESCREVE sem WITH CHECK.\n' +
+        '  Sem verificação explícita o Postgres reusa a cláusula de leitura — e leitura\n' +
+        '  carrega sentinela. Foi assim que a primeira versão da fatia 1.4 deixou escrever\n' +
+        '  em empresa alheia, `Org.modulos` inclusive.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  /*
+   * -------------------------------------------------------------------------
+   * AS EXPRESSÕES QUE PODEM EXISTIR — a catraca da POLICY ERRADA
+   *
+   * O que faltava: as conferências acima pegam tabela SEM policy. Nenhuma pegava
+   * tabela COM policy errada. E policy de isolamento é PERMISSIVA e SOMÁVEL —
+   * duas policies de SELECT na mesma tabela são um OR, então uma única
+   * `USING (true)` acrescentada ao lado das certas abre a tabela inteira sem
+   * apagar nada. Medido na revisão: `CREATE POLICY ... USING (true)` em três
+   * tabelas e a suíte seguiu 224/224 verde.
+   *
+   * Estas expressões são as MESMAS da migration
+   * `20260911050000_isolamento_por_linha`, na forma que o Postgres devolve em
+   * `pg_get_expr` (que normaliza parênteses e qualificação). Divergiu, reprova:
+   * ou a migration mudou de propósito — e aí esta lista muda no mesmo commit,
+   * em diff, sob revisão — ou alguém criou policy por fora.
+   *
+   * O `public.` some da forma devolvida porque `pg_get_expr` imprime com o
+   * `search_path` de quem pergunta, e `public` está nele. Não quer dizer que a
+   * referência guardada seja frouxa: ela é por OID (ver a correção no cabeçalho
+   * da migration).
+   * -------------------------------------------------------------------------
+   */
+  const um = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+  /** `orgId` da sessão, e nada mais. O grosso das 69 tabelas. */
+  const E_PADRAO = '(app_org_resolvida() AND ("orgId" = app_org_atual()))';
+  /** Org, que se escopa pela própria chave primária. */
+  const E_POR_PK = '(app_org_resolvida() AND (id = app_org_atual()))';
+  /** Linha global (orgId nulo) serve a todas — só na LEITURA. */
+  const E_GLOBAL_OPCIONAL =
+    '(app_org_resolvida() AND (("orgId" = app_org_atual()) OR ("orgId" IS NULL)))';
+  const E_USER_ROLES = um(`(app_org_resolvida()
+    AND (EXISTS ( SELECT 1 FROM "Role" r WHERE ((r.id = "_UserRoles"."A") AND (r."orgId" = app_org_atual()))))
+    AND (EXISTS ( SELECT 1 FROM "User" u WHERE ((u.id = "_UserRoles"."B") AND (u."orgId" = app_org_atual())))))`);
+  const E_ROLE_PERMISSIONS = um(`(app_org_resolvida()
+    AND (EXISTS ( SELECT 1 FROM "Role" r WHERE ((r.id = "_RolePermissions"."B") AND (r."orgId" = app_org_atual())))))`);
+  const E_WORKTASK_TAGS = um(`(app_org_resolvida()
+    AND (EXISTS ( SELECT 1 FROM "WorkTag" t WHERE ((t.id = "_WorkTaskTags"."A") AND (t."orgId" = app_org_atual()))))
+    AND (EXISTS ( SELECT 1 FROM "WorkTask" k WHERE ((k.id = "_WorkTaskTags"."B") AND (k."orgId" = app_org_atual())))))`);
+
+  /** Sufixos de sentinela. Só entram em LEITURA, nunca em WITH CHECK. */
+  const comPlataforma = (e: string) => `(${e} OR app_plataforma())`;
+  const comPublica = (e: string) => `(${e} OR app_resolucao_publica())`;
+
+  const EXPRESSOES_DECLARADAS: ReadonlyArray<{ expressao: string; onde: string }> = [
+    { expressao: E_PADRAO, onde: 'o padrão: leitura e escrita das tabelas de empresa' },
+    { expressao: E_POR_PK, onde: 'Org, escopada pela chave primária' },
+    {
+      expressao: `(${E_POR_PK} OR app_resolucao_publica() OR app_plataforma())`,
+      onde: 'Org, leitura, com as duas sentinelas (é ela que resolve a empresa do pedido)',
+    },
+    { expressao: comPlataforma(E_PADRAO), onde: 'User e Role — leitura sob a sentinela de plataforma (o login)' },
+    { expressao: comPublica(E_PADRAO), onde: 'BioPage e BioLink — leitura sob a sentinela pública (o contrato da fatia 1.4)' },
+    { expressao: E_GLOBAL_OPCIONAL, onde: 'BioCredencialApp — leitura, com a linha global' },
+    { expressao: comPlataforma(E_GLOBAL_OPCIONAL), onde: 'PolicyVersion — leitura, com a base no arranque' },
+    { expressao: E_USER_ROLES, onde: '_UserRoles — escrita (os dois pais na empresa)' },
+    { expressao: comPlataforma(E_USER_ROLES), onde: '_UserRoles — leitura (o login monta as permissões do token)' },
+    { expressao: E_ROLE_PERMISSIONS, onde: '_RolePermissions — escrita (o pai que importa é o Role)' },
+    { expressao: comPlataforma(E_ROLE_PERMISSIONS), onde: '_RolePermissions — leitura sob a sentinela' },
+    { expressao: E_WORKTASK_TAGS, onde: '_WorkTaskTags — os dois pais na empresa' },
+    { expressao: 'app_org_resolvida()', onde: 'BioVisitor e a inserção no catálogo: exige empresa, não escopa por ela' },
+    {
+      expressao: um(
+        `(app_org_resolvida() AND (key ~ '^[a-z][a-z0-9_]{0,39}\\.[a-z][a-z0-9_]{0,39}$'::text))`,
+      ),
+      onde: 'Permission — a inserção no catálogo global, presa ao formato de chave',
+    },
+    { expressao: 'true', onde: 'a LEITURA dos dois catálogos globais, e só deles (ver o caso abaixo)' },
+  ];
+
+  /** As únicas tabelas em que ler tudo é a regra, não o furo. */
+  const LEITURA_ESCANCARADA_DECLARADA = ['Capability', 'Permission'];
+
+  /** Os quatro nomes que `app_rls_aplicar_policies` cria. Não há um quinto. */
+  const NOMES_DE_POLICY = ['tenant_alteracao', 'tenant_exclusao', 'tenant_insercao', 'tenant_leitura'];
+
+  interface PolicyDoBanco {
+    tabela: string;
+    policy: string;
+    comando: string;
+    papeis: string;
+    usando: string | null;
+    verificando: string | null;
+  }
+
+  async function policiesDoBanco(): Promise<PolicyDoBanco[]> {
+    const r = await admin.query<PolicyDoBanco>(
+      `SELECT c.relname AS tabela,
+              p.polname AS policy,
+              p.polcmd::text AS comando,
+              p.polroles::text AS papeis,
+              pg_get_expr(p.polqual, p.polrelid)      AS usando,
+              pg_get_expr(p.polwithcheck, p.polrelid) AS verificando
+         FROM pg_policy p
+         JOIN pg_class c ON c.oid = p.polrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+        ORDER BY 1, 2`,
+    );
+    return r.rows;
+  }
+
+  it('nenhuma policy fora do prefixo `tenant_` — policy avulsa se SOMA às certas', async () => {
+    const intrusas = (await policiesDoBanco())
+      .filter((p) => !NOMES_DE_POLICY.includes(p.policy))
+      .map((p) => `${p.tabela}.${p.policy} [${p.comando}] USING ${p.usando ?? '(sem)'}`);
+
+    expect(
+      intrusas,
+      '\nPOLICY FORA DO CONJUNTO DA MIGRATION.\n' +
+        intrusas.map((t) => `  - ${t}\n`).join('') +
+        '\n  Policy de isolamento é PERMISSIVA: duas na mesma tabela viram um OR. Uma\n' +
+        '  `USING (true)` acrescentada ao lado das certas abre a tabela inteira sem apagar\n' +
+        '  nada, e nenhuma conferência de "tem policy?" percebe.\n' +
+        '  Toda policy deste banco tem de sair de `app_rls_aplicar_policies`, que cria\n' +
+        `  exatamente: ${NOMES_DE_POLICY.join(', ')}.\n` +
+        '  Se você criou a policy à mão numa migration, passe a criá-la por aquela função.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('toda expressão de policy está no conjunto declarado', async () => {
+    const declaradas = new Set(EXPRESSOES_DECLARADAS.map((e) => um(e.expressao)));
+    const desconhecidas: string[] = [];
+
+    for (const p of await policiesDoBanco()) {
+      for (const [lado, expressao] of [
+        ['USING', p.usando],
+        ['WITH CHECK', p.verificando],
+      ] as const) {
+        if (expressao === null) continue;
+        if (!declaradas.has(um(expressao))) {
+          desconhecidas.push(`${p.tabela}.${p.policy} ${lado}: ${um(expressao)}`);
+        }
+      }
+    }
+
+    expect(
+      desconhecidas,
+      '\nEXPRESSÃO DE POLICY QUE NINGUÉM DECLAROU.\n' +
+        desconhecidas.map((t) => `  - ${t}\n`).join('') +
+        '\n  O conjunto declarado está logo acima deste caso, e é o mesmo da migration\n' +
+        '  `20260911050000_isolamento_por_linha`. Duas leituras possíveis:\n' +
+        '   · a migration mudou de propósito → acrescente a expressão aqui, no mesmo\n' +
+        '     commit, com o `onde` dizendo que tabela ganha isso e por quê;\n' +
+        '   · alguém escreveu policy por fora → é isso que este caso existe para pegar.\n',
+    ).toEqual([]);
+
+    /*
+     * O QUE ESTE CASO **NÃO** PEGA, e quem pega no lugar dele.
+     *
+     * A lista é de expressões, não de pares tabela-expressão: uma expressão
+     * legítima aplicada à TABELA ERRADA passa por aqui. Medido: trocar a leitura
+     * de `Session` por `app_org_resolvida()` (a de `BioVisitor`, que é legítima
+     * lá) não acusa nada neste caso — e reprova na hora os dois casos "A não lê
+     * linha de B em Session", porque agora existe semente nas duas empresas.
+     *
+     * Declarar par a par seria reescrever a migration inteira em TypeScript, com
+     * duas fontes de verdade para a mesma coisa. A divisão é de propósito: a
+     * medição com dado semeado responde "esta policy isola?"; este caso responde
+     * "apareceu expressão que ninguém escreveu?", que é o que a medição não vê
+     * quando a tabela está vazia.
+     */
+  }, 30_000);
+
+  it('só os catálogos globais têm leitura escancarada', async () => {
+    // `true` está no conjunto declarado porque `Permission` e `Capability`
+    // realmente são lidos por qualquer sessão. Sem este segundo caso, a lista de
+    // expressões absolveria um `USING (true)` em QUALQUER tabela — que é
+    // exatamente o ataque. Aqui a pergunta é OUTRA: em que tabelas ele aparece.
+    const escancaradas = (await policiesDoBanco())
+      .filter((p) => p.usando !== null && um(p.usando) === 'true')
+      .map((p) => p.tabela)
+      .filter((t, i, todas) => todas.indexOf(t) === i)
+      .sort();
+
+    expect(
+      escancaradas,
+      '\nLEITURA ESCANCARADA (`USING (true)`) EM TABELA QUE NÃO É CATÁLOGO GLOBAL.\n' +
+        `  encontrado: ${escancaradas.join(', ') || '(nenhuma)'}\n` +
+        `  declarado .: ${LEITURA_ESCANCARADA_DECLARADA.join(', ')}\n\n` +
+        '  Ler tudo é a regra em `Permission` e `Capability` (catálogos que o guarda de\n' +
+        '  permissões e a porta precisam a todo momento) e é vazamento em qualquer outra.\n',
+    ).toEqual(LEITURA_ESCANCARADA_DECLARADA);
+  }, 30_000);
+
+  it('nenhuma policy é concedida a papel nominal — todas valem para PUBLIC', async () => {
+    // `CREATE POLICY ... TO mktos_app USING (true)` seria a mesma abertura com
+    // outra roupa, e passaria pelo caso do prefixo se o nome fosse `tenant_*`.
+    // `{0}` é o OID de PUBLIC.
+    const nominais = (await policiesDoBanco())
+      .filter((p) => p.papeis !== '{0}')
+      .map((p) => `${p.tabela}.${p.policy} TO ${p.papeis}`);
+    expect(
+      nominais,
+      '\nPOLICY PRESA A UM PAPEL ESPECÍFICO.\n' +
+        nominais.map((t) => `  - ${t}\n`).join('') +
+        '\n  Todas as policies desta migration valem para PUBLIC, e é o que faz a conferência\n' +
+        '  de expressão acima significar alguma coisa: uma policy `TO <papel>` cria uma\n' +
+        '  regra que só aparece para aquele papel — e some da leitura de quem audita.\n',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('o isolamento desliga e religa — o caminho de rollback existe de verdade', async () => {
+    // "A migration precisa ter caminho de rollback claro" é o enunciado da fatia.
+    // Caminho de rollback que ninguém executou é caminho que não existe: aqui ele
+    // é executado, medido e desfeito.
+    const ligadas = async () => {
+      const r = await admin.query<{ n: string }>(
+        'SELECT count(*)::text AS n FROM app_rls_estado() WHERE rls AND force',
+      );
+      return Number(r.rows[0].n);
+    };
+
+    const antes = await ligadas();
+    expect(antes, 'o isolamento precisa estar ligado antes de testar o desligamento').toBeGreaterThan(0);
+
+    await admin.query('SELECT app_rls_desligar()');
+    const depoisDeDesligar = await ligadas();
+
+    // Religa SEMPRE, mesmo se a asserção acima quebrar: deixar o banco desligado
+    // envenenaria todos os casos seguintes.
+    await admin.query('SELECT app_rls_ligar()');
+    const depoisDeReligar = await ligadas();
+
+    expect(depoisDeDesligar, 'app_rls_desligar() não desligou nada').toBe(0);
+    expect(
+      depoisDeReligar,
+      'app_rls_ligar() não devolveu o banco ao estado anterior — o rollback é de mão única.',
+    ).toBe(antes);
+  }, 60_000);
+
+  it('o papel restrito NÃO consegue desligar o próprio isolamento', async () => {
+    exigirPapelRestrito();
+    const c = await tenant.connect();
+    let erro = '';
+    try {
+      await c.query('SELECT app_rls_desligar()');
+    } catch (e) {
+      erro = (e as Error).message;
+    } finally {
+      c.release();
+    }
+    expect(
+      erro,
+      '\nO papel da aplicação desligou o isolamento por linha com uma chamada de função.\n' +
+        '  `app_rls_ligar`/`app_rls_desligar` NÃO podem ser SECURITY DEFINER, e o EXECUTE\n' +
+        '  precisa estar revogado do papel (a migration do papel deixa um ALTER DEFAULT\n' +
+        '  PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS, então função nova nasce executável).\n',
+    ).not.toBe('');
+  }, 30_000);
+
+  /*
+   * -------------------------------------------------------------------------
+   * A SENTINELA DE PLATAFORMA — quem pode abrir, cobrado pelo IMPORT
+   *
+   * A primeira versão desta catraca procurava o TEXTO `comContextoDePlataforma(`
+   * em cada arquivo. Três jeitos de escapar dela, todos legítimos em TypeScript
+   * e nenhum mal-intencionado por natureza — o que torna o buraco pior, porque
+   * ele fecha sozinho por acidente:
+   *
+   *   import { comContextoDePlataforma as plataforma } from '...';  // outro nome
+   *   import * as ctx from '...'; ctx.comContextoDePlataforma(...);  // namespace
+   *   export { comContextoDePlataforma } from '...';                 // reexporta
+   *
+   * O terceiro é o pior: um arquivo qualquer vira uma segunda porta para a
+   * sentinela, e a partir dali ninguém mais importa o módulo original.
+   *
+   * A pergunta mudou, então, de "quem escreve este nome?" para "quem IMPORTA
+   * este módulo?" — que é por CAMINHO, e caminho não se renomeia. É a mesma
+   * troca que a fatia 1.4 fez para a sentinela pública, com a diferença de que
+   * aquela não é exportada e esta precisa ser.
+   * -------------------------------------------------------------------------
+   */
+
+  /** Todo `.ts` de `src/`, com o caminho relativo à raiz da api. */
+  function arquivosDaApi(raizDaApi: string): string[] {
+    const arquivos: string[] = [];
+    const andar = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const caminho = path.join(dir, e.name);
+        if (e.isDirectory()) andar(caminho);
+        else if (e.name.endsWith('.ts')) arquivos.push(caminho);
+      }
+    };
+    andar(path.join(raizDaApi, 'src'));
+    return arquivos.map((f) => path.relative(raizDaApi, f).split(path.sep).join('/')).sort();
+  }
+
+  /** O próprio módulo da sentinela, e quem pode tocá-lo sem ser chamador. */
+  const MODULO_DA_SENTINELA = 'src/prisma/contexto-de-plataforma.ts';
+  const PODE_IMPORTAR_SEM_CHAMAR: ReadonlyArray<{ arquivo: string; porQue: string }> = [
+    {
+      arquivo: 'src/prisma/sessao-de-banco.ts',
+      porQue:
+        'importa `ORG_PLATAFORMA` (para reconhecer a sentinela no inventário) e ' +
+        '`caminhosDePlataformaFaltando` (para a trava do arranque). Não abre contexto nenhum.',
+    },
+  ];
+
+  /** Trecho de `import`/`export ... from '<módulo da sentinela>'` num arquivo. */
+  function referenciasAoModulo(fonte: string): Array<{ clausula: string; reexporta: boolean }> {
+    const achados: Array<{ clausula: string; reexporta: boolean }> = [];
+    // Casa `import … from '…contexto-de-plataforma'` e a forma `export … from`,
+    // com ou sem `type`, aspas simples ou duplas, em uma linha ou em várias. O
+    // caminho é relativo e muda de profundidade conforme o módulo (`./` dentro
+    // de `src/prisma/`, `../prisma/` fora dele); o que não muda é o fim dele.
+    //
+    // `^[ \t]*` com a flag `m` ancora no começo da instrução e `[^;]*?` a impede
+    // de atravessar para a instrução seguinte — sem isso um `import` anterior
+    // poderia ser confundido com o `export` que interessa, e a detecção de
+    // reexportação apontaria para a palavra errada.
+    const re = /^[ \t]*(import|export)\b([^;]*?)\bfrom\s*['"]([^'"]*contexto-de-plataforma)(?:\.[jt]s)?['"]/gm;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(fonte)) !== null) {
+      achados.push({ clausula: m[2], reexporta: m[1] === 'export' });
+    }
+    return achados;
+  }
+
+  it('ninguém REEXPORTA a sentinela de plataforma', () => {
+    const raizDaApi = acharRaizDaApi();
+    const reexportam = arquivosDaApi(raizDaApi)
+      .filter((f) => f !== MODULO_DA_SENTINELA)
+      .filter((f) =>
+        referenciasAoModulo(readFileSync(path.join(raizDaApi, f), 'utf8')).some((r) => r.reexporta),
+      );
+
+    expect(
+      reexportam,
+      '\nUM ARQUIVO REEXPORTA O MÓDULO DA SENTINELA DE PLATAFORMA.\n' +
+        reexportam.map((f) => `  - ${f}\n`).join('') +
+        '\n  Reexportar cria uma SEGUNDA porta para a sentinela: daí em diante o código novo\n' +
+        '  importa a porta nova, o módulo original deixa de aparecer nos imports, e a\n' +
+        '  conferência de quem pode abrir o contexto passa a medir o lugar errado.\n' +
+        '  Importe sempre de `src/prisma/contexto-de-plataforma.ts`.\n',
+    ).toEqual([]);
+  });
+
+  it('só os caminhos declarados abrem o contexto de plataforma', () => {
+    const raizDaApi = acharRaizDaApi();
+    const isentos = new Set(PODE_IMPORTAR_SEM_CHAMAR.map((e) => e.arquivo));
+
+    const chamam = arquivosDaApi(raizDaApi)
+      .filter((f) => f !== MODULO_DA_SENTINELA && !isentos.has(f))
+      .filter((f) => {
+        const fonte = readFileSync(path.join(raizDaApi, f), 'utf8');
+        const refs = referenciasAoModulo(fonte);
+        if (!refs.length) return false;
+        // Importou o módulo e não está na lista de isentos: é chamador. Importa
+        // pouco QUE nome local ele deu, ou se pegou o namespace inteiro — o
+        // alcance da sentinela aumentou do mesmo jeito e a decisão é de revisão.
+        return true;
+      })
+      .sort();
+
+    const declarados = [...CHAMADORES_DE_PLATAFORMA.map((c) => c.arquivo)].sort();
+
+    expect(
+      chamam,
+      '\nO conjunto de quem abre o contexto de PLATAFORMA mudou.\n' +
+        `  declarado em CHAMADORES_DE_PLATAFORMA: ${declarados.join(', ') || '(nenhum)'}\n` +
+        `  encontrado no código .............: ${chamam.join(', ') || '(nenhum)'}\n\n` +
+        '  A conferência é por IMPORT do módulo, não pelo nome da função: importar com\n' +
+        '  outro nome (`as plataforma`) ou pelo namespace (`import * as ctx`) conta igual,\n' +
+        '  porque o alcance da sentinela aumentou igual.\n\n' +
+        '  Ampliar esse alcance é decisão de revisão, não efeito colateral de um commit\n' +
+        '  sobre outro assunto. Se a chamada nova é legítima, declare-a em\n' +
+        '  `src/prisma/contexto-de-plataforma.ts` com o motivo — e lembre que lá só há\n' +
+        '  LEITURA, em cinco lugares: Org, User, Role, as duas junções e PolicyVersion.\n' +
+        '  Se o arquivo só importa a CONSTANTE (e não abre contexto), a isenção vai em\n' +
+        '  `PODE_IMPORTAR_SEM_CHAMAR`, neste arquivo, também com o motivo.\n',
+    ).toEqual(declarados);
+  });
+
+  it('a isenção de import não tem entrada morta', () => {
+    const raizDaApi = acharRaizDaApi();
+    const existentes = new Set(arquivosDaApi(raizDaApi));
+    const mortas = PODE_IMPORTAR_SEM_CHAMAR.filter(
+      (e) =>
+        !existentes.has(e.arquivo) ||
+        !referenciasAoModulo(readFileSync(path.join(raizDaApi, e.arquivo), 'utf8')).length,
+    ).map((e) => e.arquivo);
+    expect(
+      mortas,
+      `\nIsenção declarada para arquivo que não importa mais a sentinela: ${mortas.join(', ')}.\n` +
+        '  Isenção que envelhece vira permissão esquecida.\n',
+    ).toEqual([]);
+  });
+
+  /*
+   * -------------------------------------------------------------------------
+   * A TRAVA DA VIRADA — o arranque recusa subir com caminho em aberto
+   *
+   * A afirmação "ligar isto não derruba produção" continua certa: a aplicação
+   * conecta como DONA e o dono atravessa policy. A metade que FALTAVA é a
+   * seguinte: dos oito caminhos de plataforma, só um declara o contexto. Sob o
+   * papel restrito, os outros sete devolvem ZERO LINHA — e o primeiro deles é a
+   * busca de usuário por e-mail, ou seja, todo login vira "credenciais
+   * inválidas", sem erro no log.
+   *
+   * Medido na revisão, neste mesmo banco: `SELECT ... FROM "User" WHERE email=…`
+   * como `mktos_app` sem sentinela devolveu 0 linha; com `app.org_id` =
+   * `__plataforma__`, devolveu 1.
+   *
+   * A virada é DUAS VARIÁVEIS DE AMBIENTE. Quem as preenche está tentando fazer
+   * a coisa segura. Por isso a conferência é no ARRANQUE e é recusa, não aviso.
+   * -------------------------------------------------------------------------
+   */
+  describe('a trava do arranque (RF-T-02)', () => {
+    const exigidos = [...CAMINHOS_DE_PLATAFORMA_EXIGIDOS];
+    const declarados = [...CHAMADORES_DE_PLATAFORMA];
+
+    it('o que a lista EXIGE cobre os sete caminhos do cabeçalho da migration', () => {
+      // A lista de exigidos é o contrato. Encurtá-la é afrouxar a trava sem
+      // mexer em nenhuma policy — por isso ela é cobrada aqui, nominalmente.
+      expect(exigidos.map((c) => c.arquivo).sort()).toEqual(
+        [
+          'src/auth/auth.service.ts',
+          'src/auth/google-login.service.ts',
+          'src/finance/finance.service.ts',
+          'src/health/health.controller.ts',
+          'src/integrations/clickup.service.ts',
+          'src/obsidian/obsidian.service.ts',
+          'src/policy/policy.service.ts',
+          'src/tenants/provisionar.ts',
+        ].sort(),
+      );
+      // Motivo escrito em toda entrada: lista sem motivo envelhece sem ninguém
+      // conseguir revisar.
+      expect(exigidos.filter((c) => c.porQue.trim().length < 20)).toEqual([]);
+    });
+
+    it('conexão RESTRITA com caminho em aberto NÃO sobe', () => {
+      const { faltando, recusar } = conferirCoberturaDePlataforma(false);
+      // Enquanto os sete não estiverem ligados, isto é verdade — e é o ponto.
+      // Quando o último for ligado, este caso vira "não falta nada, não recusa",
+      // e a asserção de baixo continua valendo nos dois mundos.
+      expect(recusar).toBe(faltando.length > 0);
+      if (faltando.length > 0) {
+        const erro = new CoberturaDePlataformaIncompletaError(faltando);
+        expect(erro.message).toContain('a API não sobe');
+        // A mensagem nomeia o que falta: erro de arranque que não diz o que
+        // consertar é erro que vira "tenta de novo".
+        for (const c of faltando) expect(erro.message).toContain(c.arquivo);
+      }
+    });
+
+    it('conexão INERTE (dona das tabelas) sobe mesmo com caminho em aberto', () => {
+      // É o estado de produção HOJE. Derrubar a API por uma dívida que ainda não
+      // tem efeito seria trocar um risco futuro por uma queda presente.
+      expect(conferirCoberturaDePlataforma(true).recusar).toBe(false);
+    });
+
+    it('quem já declarou sai da lista do que falta', () => {
+      const faltando = caminhosDePlataformaFaltando(declarados, exigidos).map((c) => c.arquivo);
+      for (const d of declarados) expect(faltando).not.toContain(d.arquivo);
+      // E o inverso: declarar TUDO zera a pendência (é o estado que libera a
+      // virada). Sem este caso, um erro de comparação que devolvesse sempre a
+      // lista cheia passaria despercebido — a trava ficaria presa em fechado.
+      expect(caminhosDePlataformaFaltando(exigidos, exigidos)).toEqual([]);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 2. Isolamento tabela a tabela — o coração da suíte
 // ---------------------------------------------------------------------------
 
@@ -1077,7 +1963,9 @@ describe('isolamento de leitura por tabela', () => {
   it.each(ALVOS.map((a) => [a.tabela, a] as const))(
     'A não lê linha de B em %s',
     async (_nome, alvo) => {
-      const chavesDeB = new Set(sementes.B.chaves[alvo.tabela] ?? []);
+      const chavesDeB = new Set(
+        (sementes.B.chaves[alvo.tabela] ?? []).filter((k) => !CHAVES_SEM_DONO.has(k)),
+      );
       // SELECT deliberadamente SEM WHERE: quem tem de filtrar é o banco.
       const visiveis = await comoTenant(sementes.A.orgId, async (c) => {
         const r = await c.query<{ chave: string }>(`SELECT ${alvo.chaveSql} AS chave FROM "${alvo.tabela}"`);
@@ -1093,7 +1981,9 @@ describe('isolamento de leitura por tabela', () => {
   it.each(ALVOS.map((a) => [a.tabela, a] as const))(
     'B não lê linha de A em %s',
     async (_nome, alvo) => {
-      const chavesDeA = new Set(sementes.A.chaves[alvo.tabela] ?? []);
+      const chavesDeA = new Set(
+        (sementes.A.chaves[alvo.tabela] ?? []).filter((k) => !CHAVES_SEM_DONO.has(k)),
+      );
       const visiveis = await comoTenant(sementes.B.orgId, async (c) => {
         const r = await c.query<{ chave: string }>(`SELECT ${alvo.chaveSql} AS chave FROM "${alvo.tabela}"`);
         return r.rows.map((x) => x.chave);
@@ -1357,6 +2247,90 @@ describe('exceções que precisam continuar funcionando', () => {
     30_000,
   );
 
+  /*
+   * O CATÁLOGO DE PERMISSÕES É ESTADO GLOBAL DURÁVEL — e por isso a escrita nele
+   * tem formato.
+   *
+   * `Permission` é lida por `USING (true)`: uma linha plantada por uma empresa
+   * aparece na tela das OUTRAS e sob as duas sentinelas. E não há policy de
+   * UPDATE nem de DELETE — de propósito, porque apagar chave de catálogo
+   * cascateia em `_RolePermissions` e revogaria a permissão em TODAS as
+   * empresas. O efeito colateral é que a aplicação NÃO consegue limpar o que
+   * entrou: só o dono, à mão.
+   *
+   * Medido na revisão, antes da correção: um tenant inseriu a chave
+   * `<script>alert(1)</script>`, ela ficou legível para todos, e o `DELETE` do
+   * próprio autor não removeu nada.
+   *
+   * O `WITH CHECK` agora exige a gramática de `packages/shared/src/
+   * permissions.ts` (`area.acao`). Os dois casos abaixo prendem os dois lados:
+   * o formato não pode recusar chave de verdade (senão o provisionamento quebra
+   * depois da virada), e não pode aceitar texto arbitrário.
+   */
+  it('o catálogo de permissões aceita as chaves REAIS do produto', async () => {
+    // Sem este caso, apertar o formato quebraria `garantirPermissoes`
+    // (`src/tenants/provisionar.ts`) só no dia da virada, e só em produção.
+    const recusadas: string[] = [];
+    await comoTenant(sementes.A.orgId, async (c) => {
+      for (const key of PERMISSIONS) {
+        try {
+          await c.query('SAVEPOINT p');
+          await c.query('INSERT INTO "Permission" ("id", "key") VALUES ($1, $2)', [
+            `perm_${MARCA}_${key}`,
+            `${key}_${MARCA}`,
+          ]);
+        } catch {
+          recusadas.push(key);
+        } finally {
+          await c.query('ROLLBACK TO SAVEPOINT p');
+        }
+      }
+    });
+    expect(
+      recusadas,
+      '\nO formato de chave do catálogo recusou permissão REAL do produto:\n' +
+        recusadas.map((k) => `  - ${k}\n`).join('') +
+        '\n  A expressão está na migration do isolamento (seção 3.7) e a lista em\n' +
+        '  `packages/shared/src/permissions.ts`. Divergiram: o provisionamento de empresa\n' +
+        '  para de completar o catálogo depois da virada para o papel restrito.\n',
+    ).toEqual([]);
+  }, 60_000);
+
+  it('o catálogo de permissões RECUSA chave fora do formato', async () => {
+    const lixo = [
+      '<script>alert(1)</script>',
+      'Admin.Permissoes',
+      'sem_ponto',
+      'a.'.padEnd(120, 'x'),
+      '../../etc/passwd',
+    ];
+    const aceitas: string[] = [];
+    await comoTenant(sementes.A.orgId, async (c) => {
+      for (const key of lixo) {
+        try {
+          await c.query('SAVEPOINT p');
+          await c.query('INSERT INTO "Permission" ("id", "key") VALUES ($1, $2)', [
+            `perm_lixo_${MARCA}_${aceitas.length}_${key.length}`,
+            key,
+          ]);
+          aceitas.push(key);
+        } catch {
+          /* recusado: é o esperado */
+        } finally {
+          await c.query('ROLLBACK TO SAVEPOINT p');
+        }
+      }
+    });
+    expect(
+      aceitas,
+      '\nO catálogo GLOBAL de permissões aceitou chave fora do formato:\n' +
+        aceitas.map((k) => `  - ${JSON.stringify(k)}\n`).join('') +
+        '\n  Ele é lido por `USING (true)`: o que entra aqui aparece na tela de TODAS as\n' +
+        '  empresas e sob as duas sentinelas. E não há policy de UPDATE nem de DELETE — a\n' +
+        '  aplicação não consegue limpar; só o dono, à mão, no banco.\n',
+    ).toEqual([]);
+  }, 30_000);
+
   it('BioCredencialApp com orgId NULL (credencial global) fica visível para os dois', async () => {
     // schema.prisma:949-950 documenta a exceção. A policy correta é
     // `orgId = current_org OR orgId IS NULL` no SELECT — e só `orgId = current_org`
@@ -1391,37 +2365,204 @@ describe('exceções que precisam continuar funcionando', () => {
     ).toBe(0);
   }, 30_000);
 
-  it('a página pública da bio continua legível SEM contexto de org', async () => {
-    // bio-public.controller.ts:54 lê BioPage por handle sem auth nenhuma.
-    // Se a policy exigir app.org_id, a bio pública morre em produção.
+  /*
+   * A BIO PÚBLICA — o caso mudou de pergunta na fatia 1.5, e a mudança é o
+   * assunto, não um detalhe.
+   *
+   * A versão anterior cobrava que a `BioPage` publicada fosse legível com
+   * `app.org_id` VAZIO, e a saída sugerida era "policy própria para
+   * publicada=true, ou role com BYPASSRLS para a rota pública". A fatia 1.4
+   * recusou as duas, e com razão:
+   *
+   *   · abrir a policy para o VAZIO é abrir para o valor padrão de tudo que
+   *     ninguém resolveu no sistema inteiro — não para as quatro rotas públicas;
+   *   · um papel com BYPASSRLS atravessa TODAS as policies, não só a da bio.
+   *
+   * O que existe no lugar é a SENTINELA: "estou descobrindo de quem é este
+   * pedido" virou um estado declarado (`src/common/tenant-publico.ts`), e a rota
+   * pública resolve a empresa ANTES de responder qualquer coisa. Então a
+   * pergunta certa é esta, em três partes.
+   */
+  it('a bio pública resolve pela SENTINELA — e o vazio continua não vendo nada', async () => {
     const c = await tenant.connect();
     try {
+      // (a) SOB A SENTINELA a resolução enxerga: é o contrato com a fatia 1.4.
       await c.query('BEGIN');
-      await c.query('SELECT set_config($1, $2, true)', [GUC, '']); // sessão anônima
-      let achadas = -1;
-      let erro = '';
-      try {
-        const r = await c.query<{ id: string }>(
-          'SELECT id FROM "BioPage" WHERE "handle" = $1 AND "publicada" = true',
-          [sementes.A.ref.bioHandle],
-        );
-        achadas = r.rows.length;
-      } catch (e) {
-        // Caso clássico: a policy faz current_setting('app.org_id')::uuid e o
-        // cast de string vazia estoura. A rota pública vira erro 500, não 404.
-        erro = (e as Error).message;
-      }
+      await c.query('SELECT set_config($1, $2, true)', [GUC, ORG_RESOLUCAO_PUBLICA]);
+      const sobSentinela = await c.query<{ id: string; orgId: string }>(
+        'SELECT id, "orgId" FROM "BioPage" WHERE "handle" = $1 AND "publicada" = true',
+        [sementes.A.ref.bioHandle],
+      );
       expect(
-        erro === '' ? achadas : `ERRO: ${erro}`,
-        '\nA bio pública quebrou: sem app.org_id a policy escondeu a BioPage publicada.\n' +
-          '  Rotas afetadas: bio-public.controller.ts:54 (página), :62 (tracking), :87 (redirect).\n' +
-          '  Saída: policy própria para publicada=true, ou role dedicado com BYPASSRLS para a rota pública.\n',
+        sobSentinela.rows.length,
+        '\nA bio pública quebrou: sob a SENTINELA a policy escondeu a BioPage publicada.\n' +
+          '  Rotas afetadas: bio-public.controller.ts (página, avatar, redirect) e o pixel.\n' +
+          `  A policy de leitura de BioPage precisa aceitar ${GUC} = "${ORG_RESOLUCAO_PUBLICA}".\n`,
       ).toBe(1);
+      expect(sobSentinela.rows[0].orgId).toBe(sementes.A.orgId);
+      await c.query('ROLLBACK');
+
+      // (b) SEM EMPRESA não se enxerga nada. É o RF-T-04 no banco: ausência de
+      //     empresa é erro, nunca "todos". Se isto voltar a devolver linha, a
+      //     policy abriu para o vazio e o furo é do tamanho do sistema.
+      await c.query('BEGIN');
+      await c.query('SELECT set_config($1, $2, true)', [GUC, '']);
+      const semEmpresa = await c.query('SELECT id FROM "BioPage"');
+      expect(
+        semEmpresa.rows.length,
+        '\nA policy de BioPage abriu para a sessão SEM empresa.\n' +
+          '  Vazio é o valor padrão de toda consulta que ninguém resolveu: isto não libera\n' +
+          '  as quatro rotas públicas, libera o sistema inteiro.\n',
+      ).toBe(0);
+      await c.query('ROLLBACK');
+
+      // (c) SOB A SENTINELA NÃO SE ESCREVE. É o furo que reprovou a primeira
+      //     versão da 1.4: policy `FOR ALL` sem `WITH CHECK` reusa a cláusula de
+      //     leitura como verificação de escrita, e a sentinela virava chave de
+      //     gravação em empresa alheia — `Org.modulos` inclusive.
+      await c.query('BEGIN');
+      await c.query('SELECT set_config($1, $2, true)', [GUC, ORG_RESOLUCAO_PUBLICA]);
+      const publicou = await c.query('UPDATE "BioPage" SET "publicada" = true WHERE "orgId" = $1', [
+        sementes.B.orgId,
+      ]);
+      expect(
+        publicou.rowCount ?? 0,
+        '\nSob a sentinela deu para ESCREVER em BioPage de outra empresa.\n' +
+          '  A policy precisa ser DUAS: leitura com a sentinela, escrita com WITH CHECK\n' +
+          '  explícito e SEM sentinela nenhuma.\n',
+      ).toBe(0);
     } finally {
       await c.query('ROLLBACK').catch(() => undefined);
       c.release();
     }
   }, 30_000);
+
+  /*
+   * A SEGUNDA SENTINELA — os caminhos de PLATAFORMA (fatia 1.5).
+   *
+   * Login, provisionamento, conector do ClickUp, financeiro e o carregamento da
+   * política no arranque consultam antes de existir empresa, porque é a consulta
+   * deles que DESCOBRE a empresa. Sem um estado declarado para isso, ligar o
+   * isolamento derruba o login — que é o jeito mais fácil de derrubar produção
+   * inteira. Ver `src/prisma/contexto-de-plataforma.ts`.
+   *
+   * O contrato tem dois lados, e os dois estão cobrados aqui: o que ela ALCANÇA
+   * (cinco lugares, só leitura) e o que ela NÃO alcança (o resto do banco, e
+   * escrita em lugar nenhum).
+   */
+  describe('a sentinela de PLATAFORMA', () => {
+    async function comoPlataforma<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+      const c = await tenant.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query('SELECT set_config($1, $2, true)', [GUC, ORG_PLATAFORMA]);
+        return await fn(c);
+      } finally {
+        await c.query('ROLLBACK').catch(() => undefined);
+        c.release();
+      }
+    }
+
+    it('acha o usuário pelo e-mail e a empresa pelo slug — é o LOGIN', async () => {
+      const achado = await comoPlataforma(async (c) => {
+        const u = await c.query<{ orgId: string }>('SELECT "orgId" FROM "User" WHERE id = $1', [
+          sementes.A.ref.userId,
+        ]);
+        const o = await c.query<{ id: string }>('SELECT id FROM "Org" WHERE slug = $1', [
+          sementes.A.slug,
+        ]);
+        return { user: u.rows[0]?.orgId ?? '', org: o.rows[0]?.id ?? '' };
+      });
+      expect(
+        achado,
+        '\nO login não acha o usuário sob a sentinela de plataforma.\n' +
+          '  Sem isto, a virada para o papel restrito tira o login do ar: a consulta que\n' +
+          '  DESCOBRE a empresa não tem como ter empresa.\n',
+      ).toEqual({ user: sementes.A.orgId, org: sementes.A.orgId });
+    }, 30_000);
+
+    it('monta a lista de permissões do token (Role e as duas junções)', async () => {
+      const visto = await comoPlataforma(async (c) => {
+        const r = await c.query('SELECT id FROM "Role" WHERE id = $1', [sementes.A.ref.roleId]);
+        const ur = await c.query('SELECT "A" FROM "_UserRoles" WHERE "B" = $1', [
+          sementes.A.ref.userId,
+        ]);
+        const rp = await c.query('SELECT "A" FROM "_RolePermissions" WHERE "B" = $1', [
+          sementes.A.ref.roleId,
+        ]);
+        return { role: r.rows.length, userRoles: ur.rows.length, rolePerms: rp.rows.length };
+      });
+      expect(visto.role, 'Role invisível sob a sentinela: o token sairia sem papéis.').toBe(1);
+      expect(visto.userRoles, '_UserRoles invisível: o token sairia sem papéis.').toBeGreaterThan(0);
+      expect(
+        visto.rolePerms,
+        '_RolePermissions invisível: o token sairia sem permissão nenhuma e toda rota daria 403.',
+      ).toBeGreaterThan(0);
+    }, 30_000);
+
+    it('lê a PolicyVersion base — é o arranque do serviço de política', async () => {
+      // `PolicyService.onModuleInit` carrega a versão de `orgId` NULO antes de
+      // existir requisição. Sem isso ele cai na base EMPACOTADA e a política POR
+      // EMPRESA deixa de valer — em silêncio, porque ele trata a falha e segue.
+      const leu = await comoPlataforma(async (c) => {
+        const r = await c.query('SELECT 1 FROM "PolicyVersion" WHERE "orgId" IS NULL LIMIT 1');
+        return r.rows.length >= 0; // a consulta não pode ESTOURAR; vazio é legítimo
+      });
+      expect(leu).toBe(true);
+    }, 30_000);
+
+    it('NÃO alcança dado de tenant — nem lead, nem financeiro, nem RASTRO', async () => {
+      const vistas = await comoPlataforma(async (c) => {
+        const saida: Record<string, number> = {};
+        for (const t of ['Lead', 'FinanceTransaction', 'KnowledgeNote', 'EventLog', 'BioPage']) {
+          const r = await c.query<{ n: string }>(`SELECT count(*)::text AS n FROM "${t}"`);
+          saida[t] = Number(r.rows[0].n);
+        }
+        return saida;
+      });
+      expect(
+        vistas,
+        '\nA sentinela de PLATAFORMA enxergou dado de empresa.\n' +
+          '  Ela existe para DESCOBRIR a empresa, não para atravessá-las: o contrato são\n' +
+          '  cinco lugares (Org, User, Role, as duas junções e PolicyVersion), só leitura.\n' +
+          '  Se ela vê lead, ela é modo administrador — e aí não é sentinela, é buraco.\n',
+      ).toEqual({ Lead: 0, FinanceTransaction: 0, KnowledgeNote: 0, EventLog: 0, BioPage: 0 });
+    }, 30_000);
+
+    it('NÃO escreve em lugar nenhum — nem no que ela lê', async () => {
+      const escritas = await comoPlataforma(async (c) => {
+        const saida: Record<string, number | string> = {};
+        // desativar um usuário de outra empresa
+        const u = await c.query('UPDATE "User" SET "isActive" = false WHERE id = $1', [
+          sementes.B.ref.userId,
+        ]);
+        saida.user = u.rowCount ?? 0;
+        // mudar a lista de módulos — o gate de módulos inteiro (RF-T-06)
+        const o = await c.query(`UPDATE "Org" SET "modulos" = ARRAY['financeiro'] WHERE id = $1`, [
+          sementes.B.orgId,
+        ]);
+        saida.org = o.rowCount ?? 0;
+        // conceder a si mesmo um papel alheio
+        try {
+          await c.query('INSERT INTO "_UserRoles" ("A", "B") VALUES ($1, $2)', [
+            sementes.B.ref.roleId,
+            sementes.A.ref.userId,
+          ]);
+          saida.userRoles = 'ACEITOU';
+        } catch {
+          saida.userRoles = 0;
+        }
+        return saida;
+      });
+      expect(
+        escritas,
+        '\nA sentinela de PLATAFORMA ESCREVEU.\n' +
+          '  Ela é de leitura, e só. Escrita sob sentinela é o furo que reprovou a primeira\n' +
+          '  versão da fatia 1.4: policy FOR ALL sem WITH CHECK reusa a cláusula de leitura\n' +
+          '  como verificação de escrita.\n',
+      ).toEqual({ user: 0, org: 0, userRoles: 0 });
+    }, 30_000);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2318,5 +3459,86 @@ describe('a extensão do Prisma declara a empresa em toda transação', () => {
       r[0]?.org,
       'consulta sem empresa saiu com app.org_id preenchido — de onde veio esse valor?',
     ).toBe('');
+  }, 30_000);
+
+  it('o inventário também levanta FILTRO DE EMPRESA DIVERGENTE (o desvio que some em silêncio)', async () => {
+    /*
+     * O outro jeito de o isolamento quebrar, e o que a fatia 1.5 acrescentou ao
+     * inventário. Consulta COM empresa na sessão e um `where: { orgId }` escrito
+     * à mão apontando para OUTRA:
+     *
+     *   hoje  — devolve o dado da empresa do argumento (é só um filtro);
+     *   depois — devolve VAZIO, sem erro, porque a policy recorta pela empresa
+     *            da SESSÃO e o filtro nunca casa.
+     *
+     * "Tela que some, sem log, em produção" é o pior sintoma possível. Este
+     * aviso é o que permite levantar a lista ANTES da virada, com o sistema no
+     * ar, em vez de por leitura de código.
+     */
+    esquecerAvisos();
+    const avisos: string[] = [];
+    const inventariante = comTenantNaSessao(cru, {
+      modo: 'observar',
+      avisar: (m) => avisos.push(m),
+    });
+
+    // sessão na empresa A, filtro escrito à mão na empresa B
+    await comEmpresa(sementes.A.orgId, () =>
+      inventariante.lead.findMany({ where: { orgId: sementes.B.orgId }, select: { id: true }, take: 1 }),
+    );
+    expect(
+      avisos.filter((m) => m.includes('DIFERENTE da sessão')),
+      '\nConsulta filtrando por empresa diferente da sessão passou sem entrar no inventário.\n' +
+        '  É o desvio que, depois da virada, vira tela vazia sem erro e sem log.\n',
+    ).toHaveLength(1);
+
+    // e o caminho normal — filtro redundante, mas da MESMA empresa — não avisa
+    avisos.length = 0;
+    esquecerAvisos();
+    await comEmpresa(sementes.A.orgId, () =>
+      inventariante.lead.findMany({ where: { orgId: sementes.A.orgId }, select: { id: true }, take: 1 }),
+    );
+    expect(
+      avisos,
+      'filtro redundante pela PRÓPRIA empresa não é desvio: avisar aqui afogaria o inventário.',
+    ).toEqual([]);
+  }, 30_000);
+
+  it('os literais das sentinelas são os MESMOS no código e no banco', async () => {
+    /*
+     * Três lugares carregam os dois valores: `src/common/tenant-publico.ts`,
+     * `src/prisma/contexto-de-plataforma.ts` e as funções da migration do
+     * isolamento. Eles não podem ser importados um do outro (SQL não importa
+     * TypeScript, e importar `tenant-publico` de dentro de `sessao-de-banco`
+     * fecharia um ciclo), então o que os mantém juntos é este caso.
+     *
+     * Divergir aqui não quebra teste nenhum por si: o banco simplesmente deixa
+     * de reconhecer a sentinela, e as quatro rotas públicas viram 404 — ou o
+     * login para, se for a de plataforma.
+     */
+    const r = await admin.query<{ nome: string; corpo: string }>(
+      `SELECT p.proname AS nome, p.prosrc AS corpo
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND p.proname IN ('app_resolucao_publica', 'app_plataforma', 'app_org_resolvida')`,
+    );
+    const corpo = (nome: string) => r.rows.find((x) => x.nome === nome)?.corpo ?? '';
+
+    expect(
+      corpo('app_resolucao_publica'),
+      `a função do banco não conhece ORG_RESOLUCAO_PUBLICA ("${ORG_RESOLUCAO_PUBLICA}")`,
+    ).toContain(`'${ORG_RESOLUCAO_PUBLICA}'`);
+    expect(
+      corpo('app_plataforma'),
+      `a função do banco não conhece ORG_PLATAFORMA ("${ORG_PLATAFORMA}")`,
+    ).toContain(`'${ORG_PLATAFORMA}'`);
+    // "empresa resolvida" é o complemento das duas: se uma sentinela nova nascer
+    // e não entrar aqui, ela passa a contar como empresa de verdade e escreve.
+    for (const sentinela of [ORG_RESOLUCAO_PUBLICA, ORG_PLATAFORMA]) {
+      expect(
+        corpo('app_org_resolvida'),
+        `app_org_resolvida() não exclui "${sentinela}" — sob ela a escrita seria liberada.`,
+      ).toContain(`'${sentinela}'`);
+    }
   }, 30_000);
 });
