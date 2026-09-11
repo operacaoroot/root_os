@@ -112,12 +112,20 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
  * Cada um destes fala do SISTEMA, não do negócio do cliente: quem entra
  * (`auth`), se está de pé (`health`), o pulso (`dashboard`), o que aconteceu
  * (`audit`), o que precisa de gente (`approvals`), quem trabalha (`agents`,
- * `sessions`), o que está ligado (`integrations`, `google`), o que o sistema
- * sabe (`knowledge`), sob qual régua ele age (`policy`), quem autoriza
- * (`users`, `roles`), as preferências (`config`) e a própria resposta "quais
- * módulos eu tenho" (`tenants`) — que PRECISA continuar respondendo para um
- * tenant sem módulo nenhum, senão o web não consegue nem descobrir que não tem
- * nada.
+ * `organograma`, `sessions`), o que está ligado (`integrations`, `google`), o
+ * que o sistema sabe (`knowledge`, `memoria`), quando ele age sozinho
+ * (`rotinas`), sob qual régua ele age (`policy`), quem autoriza (`users`,
+ * `roles`), as preferências (`config`) e a própria resposta "quais módulos eu
+ * tenho" (`tenants`) — que PRECISA continuar respondendo para um tenant sem
+ * módulo nenhum, senão o web não consegue nem descobrir que não tem nada.
+ *
+ * `memoria`, `rotinas` e `organograma` entraram na onda 9, e os três são espinha
+ * pelo mesmo motivo: a memória é o que o sistema sabe sobre a empresa (o
+ * dicionário, as regras da casa, o histórico de decisões), a rotina é o relógio
+ * dele e o organograma é quem trabalha aqui. Nenhum é módulo de negócio que se
+ * contrata à parte. Enquanto `memoria` e `rotinas` não estavam declarados,
+ * `moduloDoCaminho` LANÇAVA para toda rota das duas famílias — o preço de a
+ * lista ser declarada em vez de deduzida, e o preço certo.
  *
  * `policy` É ESPINHA, e a decisão é esta: a régua R0–R5 não desliga para
  * empresa nenhuma. Ela é o que governa toda ação do OS — desligá-la por
@@ -137,8 +145,11 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'health',
   'integrations',
   'knowledge',
+  'memoria',
+  'organograma',
   'policy',
   'roles',
+  'rotinas',
   'sessions',
   'tenants',
   'users',

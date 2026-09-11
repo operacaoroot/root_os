@@ -34,7 +34,10 @@
     "cofre:inventario": "node dist/cofre/cofre.cli.js inventario",
     "cofre:rotacionar": "node dist/cofre/cofre.cli.js rotacionar",
     "cofre:migrar": "node dist/cofre/cofre.cli.js migrar",
-    "cofre:desfazer-migracao": "node dist/cofre/cofre.cli.js desfazer-migracao"
+    "cofre:desfazer-migracao": "node dist/cofre/cofre.cli.js desfazer-migracao",
+    "memoria:conferir": "node dist/memory/memoria.cli.js conferir",
+    "memoria:migrar": "node dist/memory/memoria.cli.js migrar",
+    "memoria:desfazer-migracao": "node dist/memory/memoria.cli.js desfazer-migracao"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

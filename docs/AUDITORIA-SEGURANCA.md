@@ -544,6 +544,29 @@ regra da casa mal escrita **feche o bloco de dado externo** que vem depois e fa�
 parecer prompt. É contenção de estrago, não validação — a validação pertence ao caminho de escrita,
 que não existe ainda.
 
+### REVISÃO 11/09/2026 (onda 9, fatia 5.2) — o caminho de escrita nasceu, com o recorte junto
+
+O parágrafo acima previa o dia: "no dia em que alguém ligar uma tela de agente nela, o item sai de
+'caminho não existe' para 'caminho aberto sem validação'". **A tela de Agentes foi ligada nesta
+onda, e o recorte entrou antes dela** — o item 18 da tabela de pendências está fechado com a data.
+O que mudou, e o que não mudou:
+
+- **`AgentsService.atualizar` deixou de receber `Prisma.AgentUpdateInput`.** Agora é
+  `AgenteIdentidadeSchema`: lista branca `.strict()` com `nome`, `missao`, `pilar` e `donoId`, e
+  mais nada. `capacidades`, `autonomiaAte` e `contextoFixo` **não entram** — nem por campo
+  desconhecido silenciosamente ignorado, porque `.strict()` recusa com o nome do campo. Medido por
+  tentativa contra banco, um caso por campo proibido;
+- **os campos livres que sobraram também são conteúdo.** `nome`, `missao` e `pilar` viram as três
+  primeiras linhas do prompt de sistema em `montarSop`, e a primeira versão da fatia não conferia o
+  que entrava neles: a mesma injeção de cabeçalho (`ESCALAÇÃO\n…`) era recusada num passo do
+  procedimento e **aceita na missão**. Os três passam agora pelo mesmo veto, e não por uma segunda
+  regra — é a função exportada de `sop.ts`. Lista branca fecha QUAIS campos entram; ela não fecha o
+  que entra neles, e essa distinção é o que essa passagem custou;
+- **`contextoFixo` continua sem validação de conteúdo**, e o veredito desta seção continua NÃO
+  ATENDE por causa dele. O campo segue preenchido só por semente e acesso direto ao banco, e a
+  contenção da fatia 3.8 (marcador de cerca escapado) continua sendo o que existe. Fechar isso é
+  outra fatia: precisa decidir o que uma "regra da casa" pode dizer, o que é decisão de produto.
+
 ---
 
 ## LLM05 — Tratamento inadequado de saída
@@ -976,7 +999,7 @@ está detalhado acima para o Pedro confirmar ou reverter.
 | 15 | **Não existe limite de taxa em lugar nenhum da API**, inclusive nas três rotas anônimas (pixel, avatar, página pública da bio) | LLM10 | toda a API — não é de nenhum módulo |
 | 16 | Não existe auditoria de vulnerabilidade de dependência: sem `pnpm audit`, sem Dependabot, sem passo na CI. E as 27 dependências da api usam `^`, não versão fixa — o que segura é o lockfile | LLM03 | `.github/workflows/ci.yml`, `apps/api/package.json` |
 | 17 | A conferência de que `@modelcontextprotocol/server-postgres` não entrou é **de momento, não catraca**: foi medida à mão em 11/09 (zero ocorrências no lockfile). Uma linha de `grep` no `ci.yml` a torna permanente | LLM03 | `.github/workflows/ci.yml` |
-| 18 | `AgentsService.atualizar` recebe `Prisma.AgentUpdateInput` cru, sem esquema nem recorte de campo — aceitaria `contextoFixo`, `capacidades` e `autonomiaAte`. Hoje é método morto; vira buraco no dia em que uma tela o chamar | LLM04, LLM06 | `apps/api/src/agents/agents.service.ts:84` |
+| 18 | ~~`AgentsService.atualizar` recebe `Prisma.AgentUpdateInput` cru, sem esquema nem recorte de campo — aceitaria `contextoFixo`, `capacidades` e `autonomiaAte`. Hoje é método morto; vira buraco no dia em que uma tela o chamar~~ **RESOLVIDO na onda 9 (11/09), fatia 5.2 — e o "dia" previsto foi este:** a tela `/agentes` passou a escrever, e o recorte veio antes dela. `AgenteIdentidadeSchema` é lista branca `.strict()` de QUATRO campos (`nome`, `missao`, `pilar`, `donoId`); `capacidades`, `autonomiaAte` e `contextoFixo` ficaram de fora, e a tentativa de mandar qualquer um dos três é recusada — provado por tentativa contra banco (`test/sop.test.ts`, *"a tela não escreve capacidade, autonomia nem contexto fixo"*). Na correção do dia seguinte à entrega fechou-se também o que a lista branca NÃO fecha: os três campos livres que sobraram viram prompt de sistema em `montarSop`, e agora passam pelo mesmo veto de cabeçalho do procedimento (`vetoDeCabecalhoFixo`) — antes a mesma injeção era recusada num passo e aceita na missão. **`contextoFixo` continua sem validação de conteúdo** e segue coberto pelo veredito de LLM04: o que caiu foi o caminho de escrita sem esquema, não a validação daquele campo | LLM04, LLM06 | `apps/api/src/agents/agents.service.ts` (`AgenteIdentidadeSchema`), `apps/api/src/agents/sop.ts` |
 | 19 | O job "Isolamento entre tenants" **não é verificação obrigatória** na proteção da branch. Ele reprova de verdade desde a onda 5, mas o merge segue liberado: a aparência da prova sem a prova. **Só o Pedro pode marcar isso no GitHub** | LLM08 | Settings → Branches, regra da `main` |
 | 20 | Não existe caminho para o usuário contestar uma saída. Antes de virar fatia, **é decisão de produto do Pedro** o que a contestação faz: corrige a nota, vira regra da casa, ou só registra | LLM09 | não existe |
 | 21 | Procedência é do CONTEXTO, não da AFIRMAÇÃO: nada liga o número que o modelo escreveu à nota de onde ele saiu. `semProcedencia` sinaliza e não impede | LLM09 | `agent-runtime.service.ts:381` |

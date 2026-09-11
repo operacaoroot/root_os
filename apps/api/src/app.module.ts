@@ -31,6 +31,8 @@ import { MetaModule } from './meta/meta.module';
 import { GoalsModule } from './goals/goals.module';
 import { BioModule } from './bio/bio.module';
 import { PautaModule } from './pauta/pauta.module';
+import { MemoryModule } from './memory/memoria.module';
+import { RoutinesModule } from './routines/routines.module';
 
 @Module({
   imports: [
@@ -61,6 +63,16 @@ import { PautaModule } from './pauta/pauta.module';
     // antes de todo módulo de domínio porque `bio/`, `google/` e `integrations/`
     // o injetam.
     CofreModule,
+    // A MEMÓRIA (RF-M-01, RF-M-06). Aqui, e não pendurada no conector da vault:
+    // o Obsidian é uma FONTE da memória, não o dono dela, e o dia em que uma
+    // segunda fonte existir (upload, resposta promovida a nota) a aresta
+    // invertida ficaria estranha de ler. Depois do GatewayModule porque
+    // `MemoriaService` injeta `EventLogService` — toda mudança da memória é um
+    // evento do RASTRO, e as projeções vêm dele (ver `docs/adr/ADR-011-memoria.md`).
+    // `ObsidianModule` continua importando este módulo, e precisa: `ObsidianService`
+    // injeta `MemoriaService` para projetar a vault, e em Nest quem injeta importa.
+    // As duas linhas não se duplicam — esta declara o DONO, a de lá declara USO.
+    MemoryModule,
     AgentsModule,
     AuthModule,
     DashboardModule,
@@ -83,6 +95,14 @@ import { PautaModule } from './pauta/pauta.module';
     GoalsModule,
     BioModule,
     PautaModule,
+    // O RELÓGIO DO PRODUTO (RF-N-04). Depois do PautaModule porque o executor da
+    // pauta precisa do `RodadaService` que aquele módulo exporta. Sem esta linha
+    // NENHUMA rotina dispara — nem a da pauta —, e a API RECUSA SUBIR: a
+    // sentinela em `pauta/scheduler.service.ts` lança no arranque, de propósito,
+    // porque mudança de dono que falha em silêncio só aparece dias depois como
+    // "a rodada parou sozinha". Para subir sem tique use `ROTINAS_CRON=off`, que
+    // mantém o módulo montado.
+    RoutinesModule,
   ],
   controllers: [HealthController],
 })

@@ -157,6 +157,17 @@ model Org {
   // duas de cima: só o outro lado da relação mora aqui, que é o que o Prisma
   // exige, e nada além disso.
   segredosDeConector SegredoDeConector[]
+
+  // Fatia 4.1+4.2 — A MEMÓRIA, RF-M-01/RF-M-06 (bloco no fim do arquivo, e
+  // ADR-011). Mesma regra das de cima: só o outro lado da relação mora aqui.
+  contextItems    ContextItem[]
+  contextVersions ContextItemVersion[]
+
+  // Fatia 5.1 — ROTINAS POR EMPRESA, RF-N-04 (bloco no fim do arquivo). Mesma
+  // regra das de cima: só o outro lado da relação mora aqui, porque é o que o
+  // Prisma exige, e nada além disso.
+  rotinas         Rotina[]
+  rotinaExecucoes RotinaExecucao[]
 }
 
 model User {
@@ -1876,6 +1887,11 @@ model EventLog {
   retencaoAte   DateTime
   ocorreuEm     DateTime   @default(now())
 
+  /// Fatia 4.1+4.2 — o outro lado do elo de `ContextItemVersion.eventoId`. Só
+  /// isto mora aqui, que é o mínimo que o Prisma exige para a chave estrangeira
+  /// existir; a regra (`SET NULL` no expurgo) está declarada do lado de lá.
+  versoesDeMemoria ContextItemVersion[] @relation("EventoDaVersaoDeMemoria")
+
   @@unique([orgId, seq])
   @@index([orgId, ocorreuEm])
   @@index([orgId, tipo])
@@ -2463,4 +2479,423 @@ model SegredoDeConector {
   /// A consulta da ROTAÇÃO: "o que ainda está na chave velha?". Sem ele, toda
   /// rotação varre a tabela inteira para descobrir o que já migrou.
   @@index([chaveId])
+}
+
+// ============================================================================
+// A MEMÓRIA — contexto do negócio, versionado, com procedência (fatia 4.1+4.2)
+//
+// RF-M-01: o contexto do negócio é versionado — as regras da casa, o dicionário
+// de dados, as definições que o cliente escolheu, o histórico de decisões.
+// RF-M-06: cada resposta pode virar nota permanente com um gesto.
+//
+// O DESENHO ESTÁ EM `docs/adr/ADR-011-memoria.md` e em uma frase é: a mudança é
+// um EVENTO no RASTRO que já existe (`EventLog`), e estas duas tabelas são
+// PROJEÇÃO dele — `ContextItem` é o estado corrente, `ContextItemVersion` é uma
+// linha por mudança. Não invente um terceiro lugar onde a memória muda.
+//
+// O NOME `ContextItem` VEM DO DOCUMENTO NORMATIVO (`HANDOFF-DEV/07-MODELO-DE-DADOS.md`,
+// seção "Contexto"), e é por isso que ele está em inglês no meio de vizinhos em
+// português: divergir do nome que o modelo de dados publicou custaria mais do
+// que a inconsistência de idioma — quem for conferir o modelo contra a base
+// procura por esta palavra.
+// ============================================================================
+
+/// A natureza da nota. As seis do modelo de dados normativo, sem invenção.
+enum ContextKind {
+  /// Regra da casa: o que vale nesta empresa ("não falamos de preço no primeiro
+  /// contato").
+  regra
+  /// Definição escolhida pelo cliente ("cliente ativo é quem comprou em 90 dias").
+  definicao
+  /// Dicionário de dados: o que cada campo/coluna/planilha quer dizer.
+  dicionario
+  /// Decisão tomada, com data e motivo. É o histórico que RF-M-01 pede.
+  decisao
+  /// Fato estável do negócio (mercado, praça, ticket médio declarado).
+  fato
+  /// O que não é nenhum dos cinco. É o padrão, e é o que a vault vira ao migrar.
+  nota
+}
+
+/// DE ONDE A NOTA VEIO. Procedência é obrigatória (ADR-011): não existe nota
+/// anônima na memória, porque RF-M-02 promete procedência em toda resposta e
+/// uma resposta não tem como carregar o que a nota não guardou.
+enum ContextSource {
+  /// Indexada da vault do Obsidian. `sourceRef` é o caminho relativo.
+  vault
+  /// Arquivo/texto enviado pelo cliente na tela. `sourceRef` é o nome do arquivo.
+  upload
+  /// RF-M-06: uma resposta do agente promovida a nota. `sourceRef` é a sessão.
+  promocao
+  /// Alguém digitou na tela. `sourceRef` é o que a pessoa declarou como fonte.
+  operador
+  /// Veio de um conector (ClickUp, Drive, financeiro). `sourceRef` é o id de lá.
+  conector
+}
+
+/// O que a mudança foi. É o vocabulário que liga a versão ao tipo do evento.
+enum ContextChange {
+  criacao
+  alteracao
+  arquivamento
+  restauracao
+}
+
+/// A unidade da MEMÓRIA — o estado CORRENTE de uma nota de contexto.
+///
+/// Projeção, não livro-caixa: quem manda é a sequência de eventos
+/// `memoria.item.*` no `EventLog`. Ver ADR-011.
+model ContextItem {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A CHAVE ESTÁVEL da nota dentro da empresa. É ela que faz a reindexação da
+  /// vault ser idempotente: `vault:<caminho relativo>` para o que vem do disco,
+  /// e um slug para o que nasce na tela. Sem chave estável, cada reindexação
+  /// criaria notas novas e a memória viraria um monte de duplicatas com
+  /// histórico de uma versão cada.
+  chave String
+
+  kind  ContextKind @default(nota)
+  title String
+  /// O corpo da nota, em markdown. É CONTEÚDO EXTERNO: quando for alimentar o
+  /// modelo, passa pela cerca e pela neutralização de
+  /// `src/agents/context-builder.service.ts`, como qualquer outro.
+  body  String
+  tags  String[]    @default([])
+
+  /// PROCEDÊNCIA (RF-M-02). Os dois juntos respondem "de onde isto veio?" sem
+  /// que ninguém precise adivinhar pelo formato do texto.
+  sourceType ContextSource
+  sourceRef  String?
+
+  /// Validade, porque regra de negócio muda. `validUntil` no passado é nota que
+  /// ainda explica uma decisão antiga mas não vale mais hoje — diferente de
+  /// arquivada, que é nota retirada.
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  /// RF-M-08, o gancho declarado: a nota que ESTA substitui. Preenchido quando a
+  /// detecção de contradição chegar — o campo nasce agora para que aquela fatia
+  /// não precise migrar dado sobre uma memória já cheia.
+  ///
+  /// MUITAS PARA UMA, e a decisão é desta fatia (ADR-011, "o gancho de RF-M-08 é
+  /// muitos-para-um"). A primeira versão tinha `@unique` no campo, o que fazia a
+  /// aresta nascer um-para-um: DUAS afirmações novas que contradizem a MESMA
+  /// regra antiga não caberiam, e a segunda seria recusada pelo banco no meio da
+  /// detecção — que é exatamente o caso comum (a regra de desconto contrariada
+  /// pela ata de abril e de novo pela de agosto). O que RF-M-08 promete é
+  /// APONTAR em vez de sobrescrever, e apontar é muitos-para-um.
+  ///
+  /// O que ESTA aresta NÃO resolve, e está escrito para ninguém supor que sim:
+  /// uma nota nova que contradiz DUAS regras antigas de uma vez continua sem
+  /// caber (o campo é um só). Quando aparecer, o desenho é uma tabela de
+  /// ligação — e a migração será barata porque esta coluna vira linha dela.
+  supersedesId String?
+  supersedes   ContextItem?  @relation("ContextSupersede", fields: [supersedesId], references: [id])
+  supersededBy ContextItem[] @relation("ContextSupersede")
+
+  /// Quanto o sistema confia nesta nota (0..1). O que vem do cliente vale mais
+  /// do que o que o sistema inferiu, e RF-M-08 precisa desse peso para decidir
+  /// qual lado da contradição apontar.
+  confidence Float @default(1)
+
+  /// O vetor da nota CORRENTE. Só o corrente: versão antiga não é encontrada por
+  /// similaridade, e guardar vetor por versão multiplicaria o custo mais caro do
+  /// sistema por nada.
+  ///
+  /// SEMPRE CONSULTADO COM FILTRO DE EMPRESA (`03-ARQUITETURA`, ADR-003). A
+  /// policy de linha é a segunda tranca, não a primeira.
+  embedding Unsupported("vector(1536)")?
+
+  /// sha256 do corpo. Serve a duas coisas: pular reescrita quando a vault não
+  /// mudou (e assim não gastar vetor à toa) e dar à detecção de contradição um
+  /// jeito barato de dizer "isto é literalmente a mesma afirmação".
+  contentHash String
+
+  /// A versão CORRENTE. É sempre igual ao maior `versao` de `ContextItemVersion`
+  /// deste item — cobrado por teste, porque projeção que diverge da fonte é o
+  /// modo de falha desta escolha de desenho.
+  versao Int @default(1)
+
+  /// ARQUIVAMENTO, não exclusão (ADR-011). Apagar contexto é apagar a explicação
+  /// de decisões passadas.
+  arquivadoEm  DateTime?
+  arquivadoPor String?
+
+  criadoEm     DateTime @default(now())
+  criadoPor    String?
+  atualizadoEm DateTime @updatedAt
+  atualizadoPor String?
+
+  versoes ContextItemVersion[]
+
+  /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
+  @@unique([orgId, chave])
+  @@index([orgId, kind])
+  @@index([orgId, arquivadoEm])
+  /// "quem substituiu esta regra?" — a consulta de RF-M-08. Índice comum desde
+  /// que a aresta virou muitos-para-um: sem `@unique` não sobra índice de graça.
+  @@index([supersedesId])
+}
+
+/// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
+///
+/// NÃO É "histórico de documento": ela guarda o corpo daquela versão E o
+/// ponteiro para o evento do RASTRO que a produziu. O evento é a verdade; esta
+/// tabela é o que sobrevive ao expurgo por retenção (ver ADR-011, "o que a
+/// decisão custa").
+model ContextItemVersion {
+  id     String      @id @default(uuid())
+  orgId  String
+  org    Org         @relation(fields: [orgId], references: [id])
+  itemId String
+  item   ContextItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /// 1, 2, 3… dentro do item. Sem buraco: quem grava serializa no advisory lock
+  /// da empresa, como o RASTRO.
+  versao   Int
+  mudanca  ContextChange
+
+  /// O ESTADO NAQUELA VERSÃO. Cópia, e de propósito: reconstruir o corpo
+  /// aplicando diferenças exigiria que toda linha anterior existisse para
+  /// sempre, e o expurgo do RASTRO já diz que isso não é verdade.
+  kind        ContextKind
+  title       String
+  body        String
+  sourceType  ContextSource
+  sourceRef   String?
+  contentHash String
+
+  /// Por que mudou. É o campo que separa esta decisão da alternativa recusada:
+  /// histórico de documento guarda o estado e perde a intenção.
+  motivo String?
+
+  autorTipo String  @default("user")
+  autorId   String?
+
+  /// O ELO COM O RASTRO — e ele é CHAVE ESTRANGEIRA de verdade, com
+  /// `onDelete: SetNull`.
+  ///
+  /// POR QUE NÃO BASTAVA GUARDAR O ID. `RastroRetencao` apaga evento vencido
+  /// (`app_rastro_expurgar`). Sem a chave estrangeira, o dia do primeiro expurgo
+  /// é o dia em que este campo vira PONTEIRO PENDURADO: a tela de histórico
+  /// exibe um identificador que não resolve, e quem audita não tem como separar
+  /// "o evento venceu" de "alguém apagou a prova". Prova aparente é pior do que
+  /// prova ausente.
+  ///
+  /// AS QUATRO SITUAÇÕES, E COMO SE LEEM (conferidas por `MemoriaService.conferirElos`):
+  ///   · `eventoId` preenchido ................. elo íntegro;
+  ///   · `eventoId` NULO e `eventoSeq` PRESENTE . o evento venceu e foi expurgado
+  ///     (o `SET NULL` limpou o id; a sequência fica, e é ela que diz que houve);
+  ///   · os dois nulos e `semEventoPorque` dito . nasceu assim, pelo motivo dito;
+  ///   · os dois nulos e `semEventoPorque` NULO . NINGUÉM ASSUMIU. É o único
+  ///     estado que a conferência acusa — e é o que sobra de uma linha inserida
+  ///     por fora.
+  eventoId  String?
+  evento    EventLog? @relation("EventoDaVersaoDeMemoria", fields: [eventoId], references: [id], onDelete: SetNull)
+  eventoSeq BigInt?
+
+  /// POR QUE esta versão nasceu sem evento. Preenchido só quando `eventoId` é
+  /// nulo desde o começo:
+  ///   · `migracao` .............. veio do comando de migração do acervo, que
+  ///     roda fora da aplicação e de propósito não escreve no RASTRO de ninguém;
+  ///   · `falha_ao_registrar` .... a escrita do evento falhou (o rastro nunca
+  ///     derruba a operação), e a versão ficou sem elo.
+  ///
+  /// SEM ESTE CAMPO OS DOIS ERAM O MESMO SINAL — e o acervo migrado enchia o
+  /// histórico de centenas de linhas com a cara de falha de rastro. Sinal com
+  /// dois significados não é sinal.
+  semEventoPorque String?
+
+  criadoEm DateTime @default(now())
+
+  @@unique([itemId, versao])
+  @@index([orgId, itemId])
+  @@index([orgId, criadoEm])
+  /// O `SET NULL` do expurgo procura por aqui. Sem índice, apagar uma faixa de
+  /// rastro varreria a tabela inteira de versões por linha apagada.
+  @@index([eventoId])
+}
+
+// ===========================================================================
+// ROTINAS POR EMPRESA — RF-N-04 (fatia 5.1)
+// ===========================================================================
+//
+// O QUE MUDA. Até aqui o agendamento vivia dentro do módulo de pauta: um tique
+// de um minuto (`pauta/scheduler.service.ts`) que lia `PautaRotina` e não sabia
+// falar de mais nada. `Rotina` é esse mesmo agendamento generalizado — trabalho
+// que acontece sozinho, POR EMPRESA, com estado declarado e histórico.
+//
+// O QUE NÃO É CRIADO AQUI, DE PROPÓSITO:
+//
+//  · CRON PRÓPRIO, NÃO FILA. Continua sendo o avaliador de `pauta/cron.ts` e um
+//    tique por minuto. Não entrou Redis, BullMQ nem `@nestjs/schedule`:
+//    dependência nova é decisão humana (02-CONSTRAINTS), e o motivo original do
+//    tique continua valendo — rotina editada na tela passa a valer no minuto
+//    seguinte, sem registrar/desregistrar nada.
+//  · ESTADO NOVO, NÃO. `estado` reusa `AgentEstado` (rodando · aprendendo ·
+//    planejado · pausado), que é exatamente o vocabulário que a fatia pede e que
+//    o roster de agentes já fala. Um enum paralelo seria uma segunda lista para
+//    dizer a mesma coisa, e as duas divergiriam na primeira tela nova.
+//  · CONTADORES NOVOS, NÃO. `execucoes`, `falhas`, `ultimaExecucaoEm`,
+//    `ultimoStatus`, `proximaExecucaoEm`, `minutosPorExecucao` e a linha de base
+//    têm os MESMOS nomes que os de `Agent` — é o mesmo conceito medido do mesmo
+//    jeito (RF-N-05), e a tela do organograma soma os dois lados sem tradutor.
+//
+// A RELAÇÃO COM `PautaRotina`. `PautaRotina` continua sendo a fonte da verdade
+// da CONFIGURAÇÃO da pauta (cron, janela, coletar antes) — é ela que a tela de
+// Pauta cria e edita. A `Rotina` correspondente é um ESPELHO, reconciliado a
+// cada tique (`origem = 'pauta'`, `refExterna` = id da `PautaRotina`): é aqui
+// que moram o estado declarado, os contadores e o histórico. Duas fontes para
+// duas perguntas diferentes, e não duas fontes para a mesma.
+model Rotina {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  slug String
+  nome String
+
+  /// A chave do EXECUTOR no registro (`src/routines/executores.registry.ts`).
+  /// Texto e não enum: executor novo é código novo, não migration de tipo — e o
+  /// registro RECUSA o arranque quando uma rotina aponta para executor que
+  /// ninguém inscreveu, que é a trava que o enum daria de graça.
+  tipo String
+
+  /// O que o executor precisa saber. Para `pauta.rodada`: `{ horas,
+  /// coletarAntes }`, espelhado de `PautaRotina.config`.
+  config Json @default("{}")
+
+  /// Cron de 5 campos, avaliado no fuso `tz` (ver `src/pauta/cron.ts`).
+  cron String
+  tz   String @default("America/Sao_Paulo")
+
+  /// O interruptor OPERACIONAL. Para rotina espelhada da pauta ele acompanha
+  /// `PautaRotina.ativo` — pausar na tela de Pauta continua pausando.
+  ativo Boolean @default(true)
+
+  /// O estado DECLARADO — a pergunta "isto está em produção, em observação ou
+  /// ainda no papel?", que `ativo` sozinho não responde. Só `rodando` e
+  /// `aprendendo` disparam; `planejado` e `pausado` aparecem na tela e não
+  /// executam. Nasce `planejado` de propósito: rotina nova não começa agindo.
+  estado AgentEstado @default(planejado)
+
+  /// De onde a rotina veio: `pauta` (espelhada de `PautaRotina`) ou `manual`.
+  origem String @default("manual")
+
+  /// O id da linha de origem quando `origem` não é `manual`. É a chave da
+  /// reconciliação, e o par (`origem`, `refExterna`) é único por empresa para
+  /// que um tique concorrente não crie duas rotinas para a mesma origem.
+  refExterna String?
+
+  /// O agente que representa esta rotina no organograma (RF-N-01). SLUG e não
+  /// relação: o roster é semeado por `prisma/seed-tripulacao.ts` e pode não
+  /// existir nesta empresa — uma chave estrangeira transformaria "o roster ainda
+  /// não foi semeado" em erro de gravação no meio de um tique.
+  agenteSlug String?
+
+  execucoes Int @default(0)
+  falhas    Int @default(0)
+
+  /// QUANDO A ROTINA REALMENTE EXECUTOU pela última vez — desfecho `ok` ou
+  /// `erro`, nunca `pulada`. Campo de LEITURA, e só: quem impede a execução em
+  /// dobro são as duas colunas de reserva abaixo. Enquanto a reserva morava
+  /// aqui, um executor que acordava e não tinha o que fazer (`pulada`) deixava
+  /// o carimbo para trás, e a tela dizia "última execução há um minuto, zero
+  /// execuções" para sempre.
+  ultimaExecucaoEm  DateTime?
+  ultimoStatus      String?
+  proximaExecucaoEm DateTime?
+
+  /// A RESERVA, EM DUAS COLUNAS (`src/routines/rotinas.service.ts`).
+  ///
+  /// `reservadoEm` é o MINUTO que o tique já tomou: impede que um tique atrasado
+  /// ou uma segunda réplica disparem a mesma ocorrência duas vezes. `reservadoAte`
+  /// é o PRAZO do arrendamento: enquanto está no futuro, a rotina está em curso e
+  /// ninguém mais a toma; quando vence sem ter sido devolvido, a execução morreu
+  /// no meio e o tique seguinte RETOMA a ocorrência — que é a diferença entre
+  /// perder uma rodada diária por um dia inteiro e perder por quinze minutos.
+  ///
+  /// NOT NULL com a ÉPOCA (1970-01-01) no lugar de nulo, de propósito: "livre"
+  /// vira uma comparação simples (`< agora`) em vez de `IS NULL OR <`, e condição
+  /// de reserva é exatamente o lugar onde a semântica de NULL em SQL faz um
+  /// `UPDATE` não casar linha nenhuma sem ninguém perceber.
+  reservadoEm  DateTime @default("1970-01-01T00:00:00Z")
+  reservadoAte DateTime @default("1970-01-01T00:00:00Z")
+
+  /// RF-N-05: quantos minutos uma pessoa gastava nisso por execução. Zero =
+  /// ninguém informou, e a tela mostra "—", nunca um número inventado.
+  minutosPorExecucao Int       @default(0)
+  baselinePorId      String?
+  baselineEm         DateTime?
+
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  execucoesLog RotinaExecucao[]
+
+  @@unique([orgId, slug])
+  @@unique([orgId, origem, refExterna])
+  /// A consulta do TIQUE dentro de uma empresa: "quem pode disparar agora?".
+  ///
+  /// A DESCOBERTA (a pergunta que roda ANTES, sem empresa na sessão, para saber
+  /// quais empresas varrer) é `SELECT DISTINCT "orgId"` sem mais nada, e quem a
+  /// serve é o índice único de `(orgId, slug)`. A fatia chegou a criar um
+  /// `(ativo, estado)` "para o tique" que não servia consulta nenhuma — nem a
+  /// descoberta, que não filtra, nem esta, que começa por `orgId`. Ele foi
+  /// derrubado em `20260911200000_reserva_de_rotina_com_prazo`.
+  @@index([orgId, estado])
+}
+
+/// Uma passagem da rotina. É o histórico que a tela `/rotinas` mostra, e é a
+/// única fonte de "o que aconteceu" — os contadores de `Rotina` são projeção
+/// destas linhas, não um registro paralelo.
+///
+/// NÃO É O RASTRO e não tenta ser: o RASTRO (`EventLog`) guarda ação com risco
+/// classificado, cadeia de hash e retenção; isto aqui é diário de bordo
+/// operacional, apagável com a rotina. O que a rodada da pauta FAZ (chamar
+/// modelo, propor ferramenta) continua indo para o RASTRO pelos caminhos de
+/// sempre, dentro do contexto da empresa que o agendador abre.
+model RotinaExecucao {
+  id       String @id @default(uuid())
+  orgId    String
+  org      Org    @relation(fields: [orgId], references: [id])
+  rotinaId String
+  rotina   Rotina @relation(fields: [rotinaId], references: [id], onDelete: Cascade)
+
+  /// `ok` ou `erro`. Texto e não enum pelo mesmo motivo de `tipo`.
+  ///
+  /// `pulada` é desfecho de execução e NÃO vira linha aqui: o executor acordou e
+  /// não havia o que fazer, e registrar isso de minuto em minuto afogaria o que
+  /// aconteceu de verdade. Ela também não mexe em contador nenhum, nem em
+  /// `Rotina.ultimaExecucaoEm`.
+  status String
+
+  /// `cron` (o tique) ou `manual` (alguém clicou em rodar agora).
+  origem String @default("cron")
+
+  inicioEm  DateTime  @default(now())
+  fimEm     DateTime?
+  duracaoMs Int?
+
+  /// Uma linha legível do que aconteceu. Nunca conteúdo de cliente: o que a
+  /// rodada produziu mora na rodada, e é lá que a sensibilidade é tratada.
+  resumo String?
+  erro   String?
+
+  /// A correlação da execução (RNF-09) — o fio que liga esta linha aos eventos
+  /// que a rodada gerou no RASTRO.
+  ///
+  /// PARA SER VERDADE, ela tem de ser a MESMA que o executor carrega no contexto:
+  /// `RotinasService.executar` abre um contexto aninhado com este identificador
+  /// antes de chamar o executor, e a correlação do tique fica como `correlacaoPai`.
+  /// Enquanto a linha guardava um identificador cunhado só para ela, esta coluna
+  /// não casava com evento nenhum — e a do tique era a mesma para todas as
+  /// rotinas daquela empresa naquele minuto, então nem por empresa separava.
+  correlationId String?
+
+  @@index([orgId, rotinaId, inicioEm])
+  @@index([rotinaId, inicioEm])
 }

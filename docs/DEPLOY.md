@@ -59,7 +59,7 @@ depois, que é a razão de a coluna da direita existir.
 | 1 | `deploy/janela-horaria-ilegivel.sql` no banco de **produção** | **antes do merge** | A fatia 2.3 fez o sinal `fora_da_janela` **acender** quando a janela horária de uma política está ilegível, onde antes ele ficava calado. Acender sobe um degrau na régua em **toda** ação daquela empresa. Zero linha = mudança inócua; linha com `orgId` nulo = a política BASE, e afeta todas as empresas. Sem rodar, você descobre no dia seguinte, com a operação inteira um degrau acima. |
 | 2 | CI verde na revisão que vai subir | antes do merge | Typecheck, as suítes e a prova de que o histórico de migrations aplica do zero. Sem isso o ensaio do passo 6 vira a primeira execução de tudo. |
 | 3 | Backup do banco do dia (§4) | antes de tocar no servidor | Migration aditiva não desfaz. Sem backup, o rollback de estrutura não existe. |
-| 4 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | antes de construir | O container **não lê arquivo `.env`**: só chega o que está no bloco. Preencher só o `.env` não faz nada — foi o que segurou a `ANTHROPIC_API_KEY` por semanas. **Nesta onda são duas: `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL`** (§2.3c). |
+| 4 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | antes de construir | O container **não lê arquivo `.env`**: só chega o que está no bloco. Preencher só o `.env` não faz nada — foi o que segurou a `ANTHROPIC_API_KEY` por semanas. **Nesta onda são três: `COFRE_CHAVES`, `COFRE_CHAVE_ATUAL` (§2.3c) e `ROTINAS_CRON`** — a última já está no bloco com padrão `on`, e é o único jeito de subir sem relógio (o smoke depende dela, §2.3). |
 | 5 | `docker tag mktos-app:latest mktos-app:rollback` | antes de construir | A imagem anterior vira lixo na próxima poda, e o rollback deixa de existir. É o passo que mais dói ter pulado. |
 | 6 | `build` + ensaio da migration num banco descartável + **smoke** da imagem (§2.2, §2.3) | antes de subir | As duas formas de a subida morrer: migration que não aplica (e `migrate deploy` roda no `command` do container — falhar é a API não subir) e grafo de injeção do Nest que não resolve. O smoke pega o segundo, que o typecheck **não** enxerga. |
 | 7 | **`db:seed:politica` — E É ANTES DE SUBIR** (§2.3b) | depois do build, **antes** do `up` | Mudou nesta onda: na onda 6 o seed era cosmético (duas capacidades novas que só apareciam na tela da Régua) e podia vir depois. Agora **não pode**. A fatia 3.3 acrescentou **descrição de argumento** a capacidades que o código novo já usa (`cc` no e-mail, `local` e `convidados` no evento) e esquema a outras. O esquema do banco tem `additionalProperties: false`: **campo que o esquema antigo não conhece é recusado pela porta**. Subir a API antes de semear faz toda chamada com campo novo falhar com erro de argumento inválido — numa ação que o catálogo do repositório diz que é válida. |
@@ -78,6 +78,12 @@ Os passos 1 e 7 são os que mudaram de lugar. Os outros são os de sempre.
 - [ ] Variável nova? Ela está em **dois** lugares: o bloco `environment:` do serviço em
       `docker-compose.yml` **e** o `.env`. Só o primeiro chega no container.
 - [ ] Backup do banco do dia existe (§4).
+- [ ] **Vai virar a chave do papel restrito nesta subida?** Então a decisão do AGENDAMENTO já foi
+      tomada e está implementada (§ "A virada para o papel restrito também precisa resolver o
+      AGENDAMENTO"): **BYPASSRLS** no papel da aplicação, ou a descoberta de rotinas movida para
+      comando de manutenção com a conexão dona. É **decisão humana** e não tem padrão seguro — com a
+      chave virada e sem uma das duas, **o produto fica sem relógio**: nenhuma rotina dispara, em
+      empresa nenhuma, e a causa é policy, não defeito.
 
 ### 2.1 Marcar a imagem atual como rollback
 
@@ -103,7 +109,7 @@ imagem que a `web` vai usar. O build falha de propósito se `apps/api/dist/main.
 ```bash
 docker run --rm --network marketing-os-net \
   -e DATABASE_URL='postgresql://<user>:<senha>@db:5432/<banco_descartavel>' \
-  -e PAUTA_CRON=off \
+  -e ROTINAS_CRON=off \
   -e BIO_SYNC_INTERVAL_MIN=0 -e BIO_BRIDGE_INTERVAL_MIN=0 \
   -e CLICKUP_SYNC_INTERVAL_MIN=0 -e ASAAS_SYNC_INTERVAL_MIN=0 \
   -e PLUGGY_SYNC_INTERVAL_MIN=0 -e OBSIDIAN_REINDEX_MIN=0 \
@@ -117,7 +123,20 @@ TypeScript, e o vitest não o cobre (o esbuild não emite `emitDecoratorMetadata
 
 **Aponte para um banco descartável, nunca para o de produção.** O boot liga os cronômetros de
 sincronização; uma segunda instância contra o banco vivo dispara coleta, espelho e escrita em
-conector. Daí o `PAUTA_CRON=off` e os intervalos em zero acima.
+conector. Daí o `ROTINAS_CRON=off` e os intervalos em zero acima.
+
+> **A variável mudou nesta onda, e a antiga deixou de servir para isto.** Até a fatia 5.1 o
+> cronômetro era `PAUTA_CRON=off`. O tique passou a ser do módulo de rotinas e vale para TODAS elas;
+> `PAUTA_CRON=off` virou apelido de compatibilidade e hoje só faz o agendador PULAR as rotinas de
+> pauta — as outras continuariam disparando contra o banco para onde o smoke estiver apontando.
+> Quem copiar a receita antiga não vê erro nenhum: vê rotina rodando onde não devia.
+
+**O smoke desta onda ganhou mais uma trava de arranque, e ela é de montagem.** Se o `RoutinesModule`
+não estiver na lista de `imports` do `app.module.ts`, `PautaSchedulerService` **lança** no
+`onApplicationBootstrap` e a API não sobe. O motivo é que o agendamento MUDOU DE DONO: sem o módulo,
+o dono antigo já não existe e o novo não entra — nenhuma rotina dispararia, nem a da pauta, e nada
+acusaria. `ROTINAS_CRON=off` **não** aciona essa trava: ele mantém o módulo montado e só cala o
+relógio, que é exatamente o que o smoke quer.
 
 Na VPS o descartável é um banco criado ao lado, no mesmo Postgres — o padrão já usado na virada da
 bio:
@@ -306,6 +325,50 @@ Rollback de imagem **não desfaz migration**. Se a versão nova migrou o banco, 
 conviver com o esquema novo — é por isso que toda migration é aditiva primeiro (coluna nullable →
 backfill → NOT NULL na migration seguinte).
 
+#### ERRATA — a receita de volta das rotinas cita o número errado
+
+O cabeçalho de `apps/api/prisma/migrations/20260911180000_rotinas_por_empresa/migration.sql` escreve,
+na última linha do caminho de volta, `migration_name = '20260911170000_rotinas_por_empresa'`. **Esse
+nome não existe**: `20260911170000` é a migration da memória. Migration aplicada é imutável — o banco
+guarda o resumo do arquivo —, então a errata mora aqui e no cabeçalho de
+`20260911200000_reserva_de_rotina_com_prazo`.
+
+**Seguir a receita errada derruba as tabelas e deixa o registro de aplicação para trás.** A aplicação
+seguinte considera tudo aplicado, não recria nada, e a API sobe **sem `Rotina` e sem
+`RotinaExecucao`** — toda a tela `/rotinas` e todo o agendamento em cima de tabela que não existe. O
+sintoma é erro de SQL em toda batida, e o conserto vira restaurar backup.
+
+A receita correta, das duas migrations, na ordem:
+
+```sql
+-- desfazer só a reserva com prazo
+ALTER TABLE "Rotina" DROP COLUMN "reservadoEm", DROP COLUMN "reservadoAte";
+CREATE INDEX "Rotina_ativo_estado_idx" ON "Rotina"("ativo", "estado");
+DELETE FROM "_prisma_migrations"
+ WHERE migration_name = '20260911200000_reserva_de_rotina_com_prazo';
+
+-- e, para desfazer também a criação das tabelas
+DROP TABLE "RotinaExecucao";
+DROP TABLE "Rotina";
+DELETE FROM "_prisma_migrations"
+ WHERE migration_name = '20260911180000_rotinas_por_empresa';
+```
+
+Confira sempre o `DELETE` contra `SELECT migration_name FROM "_prisma_migrations" ORDER BY 1 DESC
+LIMIT 5` antes de rodar: um `DELETE` que não casa linha nenhuma **não avisa**, e é justamente esse
+silêncio que transforma um rollback em API sem tabela.
+
+#### A semente da migration das rotinas pode não ver nada (e por que não é grave)
+
+O `INSERT ... SELECT FROM "PautaRotina"` daquela mesma migration roda **sem empresa na sessão**. Ele
+funciona hoje porque o usuário que aplica migration atravessa o isolamento por linha; num banco em
+que não atravessar, o SELECT volta vazio e o INSERT insere zero linhas, **sem erro** — zero linha não
+é falha.
+
+Consequência prática: `/rotinas` nasce vazia e enche sozinha no primeiro tique, porque a
+reconciliação de verdade é a do código (`RotinasService.reconciliarPauta`), que roda dentro do
+contexto de cada empresa. Nada para consertar; só não se assuste com a tela vazia por um minuto.
+
 ---
 
 ## 3. Armadilhas
@@ -460,6 +523,22 @@ do boot a linha `[tenant] ATENÇÃO: N caminho(s) de plataforma ainda NÃO decla
 ela existir, **não vire a chave**. Para voltar atrás depois de ter virado: tire as duas variáveis do
 `.env` e recrie o container (`up -d --no-build api`). Detalhes em `deploy/papel-app.sh` e em
 `apps/api/src/prisma/contexto-de-plataforma.ts`.
+
+**A virada para o papel restrito também precisa resolver o AGENDAMENTO.** O tique das rotinas roda
+fora de requisição: a pergunta que descobre **quais empresas varrer** é a única consulta do produto
+que não tem empresa na sessão. Sob o papel restrito ela volta **vazia e calada** — por policy, não
+por falta de rotina — e, enquanto isso valer, **nenhuma rotina dispara, em empresa nenhuma**.
+
+Não é regressão da fatia 5.1: o agendador anterior tinha a mesma limitação. O que mudou é o **raio**
+(antes parava só a pauta; agora para todo o trabalho agendado) e a **visibilidade** — hoje o
+agendador confere o catálogo, grita uma vez no arranque, e a tela `/rotinas` mostra tarja vermelha
+dizendo exatamente isso, em vez de ficar verde enquanto nada acontece.
+
+As duas saídas, e nenhuma é "afrouxar a policy": dar **BYPASSRLS** ao papel da aplicação (a
+descoberta volta a enxergar; o resto continua isolado porque cada varredura abre o contexto da
+empresa antes de tocar em qualquer linha), ou mover a descoberta para um **comando de manutenção com
+a conexão dona**, que é o desenho que o expurgo do rastro já usa. Decida antes de virar a chave: com
+a chave virada e sem uma das duas, o produto fica sem relógio.
 
 **Rollback do isolamento é um comando, e não perde as policies.** Se algo der errado no dia da
 virada: `SELECT app_rls_desligar();` tira `ENABLE` e `FORCE` de todas as tabelas e deixa as policies

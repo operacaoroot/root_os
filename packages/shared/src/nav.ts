@@ -109,9 +109,17 @@ export const NAV: NavItem[] = [
 
   // ── Quem trabalha ────────────────────────────────────────────────────────
   { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },
-  { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'as 8 rotinas passam a registrar execução' },
+  // A tela existe e lê dado real desde a fatia 5.1: estado declarado, histórico
+  // de cada passagem e tempo devolvido. O que falta é CRIAR rotina por aqui —
+  // hoje toda rotina nasce em outro lugar (a da pauta, na tela de Pauta), porque
+  // criar uma exige escolher o executor, e isso é decisão de produto.
+  { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'a tela não cria rotina: toda rotina nasce na tela de Pauta' },
   { key: 'fluxos', label: 'Fluxos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'editor de processo, com o vazamento declarado' },
-  { key: 'organograma', label: 'Organograma', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'trabalha', estado: 'parcial', parcial: 'depende do roster de agentes' },
+  // Deixou de ser parcial na onda 9: `GET /organograma` entrou no ar e a tela lê
+  // a fonte boa — toda a gente da empresa, com papel e estado, e não só quem é
+  // dono de agente. O desvio pelo roster continua no código como rede de
+  // segurança, e hoje só acorda se alguém tirar a rota outra vez.
+  { key: 'organograma', label: 'Organograma', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'trabalha' },
 
   // ── O controle ───────────────────────────────────────────────────────────
   // A FILA DE APROVAÇÃO, e a permissão que ela passou a exigir (fatia 3.10).

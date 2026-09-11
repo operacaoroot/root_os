@@ -6,6 +6,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { PEDIDO_DE_HERANCA, PEDIDO_DE_RETENCAO, RetencaoService } from './retencao.service';
+import { MemoriaService } from '../memory/memoria.service';
 
 /*
  * NENHUMA ROTA DE EXPURGO AQUI, E ISSO É A FATIA.
@@ -31,6 +32,7 @@ export class AuditController {
     private readonly svc: AuditService,
     private readonly eventos: EventLogService,
     private readonly retencao: RetencaoService,
+    private readonly memoria: MemoriaService,
   ) {}
 
   /*
@@ -45,10 +47,32 @@ export class AuditController {
    * lê o log antigo. `incompletosPorNivel` na resposta é o leitor — a contagem
    * de eventos que declararam lacuna, por degrau da régua.
    */
+  /*
+   * A MEMÓRIA ENTRA JUNTO, e é o ponto da ligação: um lugar só onde se pergunta
+   * se o rastro fecha.
+   *
+   * `MemoriaService.conferirElos` responde a outra metade da mesma pergunta —
+   * cada versão de nota aponta para o evento que a produziu, e o evento aponta de
+   * volta. Editar o corpo de uma versão direto no banco não quebra a cadeia de
+   * hash (o corpo não entra nela), mas quebra o elo; editar também o evento para
+   * esconder quebra a cadeia. Uma conferência fecha o que a outra deixa aberto, e
+   * duas rotas separadas seriam uma delas nunca aberta.
+   *
+   * `GET /memoria/integridade` continua existindo para quem quer só essa metade.
+   * Aqui ela é RODAPÉ: falha de leitura da memória não pode derrubar a resposta
+   * sobre a cadeia, que é a principal — o campo vem com o erro dito e `ok` não é
+   * afirmado por quem não conseguiu conferir.
+   */
   @Get('verificar')
   @RequirePermissions('auditoria.ver')
-  verificar(@CurrentUser() user: JwtUser) {
-    return this.eventos.verificar(user.orgId);
+  async verificar(@CurrentUser() user: JwtUser) {
+    const [cadeia, memoria] = await Promise.all([
+      this.eventos.verificar(user.orgId),
+      this.memoria
+        .conferirElos(user.orgId)
+        .catch((e: Error) => ({ ok: false as const, erro: e.message })),
+    ]);
+    return { ...cadeia, memoria };
   }
 
   /** Quanto tempo o rastro desta empresa fica (RF-R-06). */

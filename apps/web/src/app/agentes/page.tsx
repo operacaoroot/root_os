@@ -5,6 +5,21 @@ import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
+import { Procedimento } from './Procedimento';
+
+/*
+ * Rótulo em português dos sete campos do procedimento. O nome técnico vem da
+ * API (`faltando: ['proposito','dono',...]`); o que a pessoa lê é isto.
+ */
+const ROTULO: Record<string, string> = {
+  proposito: 'propósito',
+  dono: 'dono',
+  gatilho: 'gatilho',
+  passos: 'passos',
+  definicaoDePronto: 'definição de pronto',
+  escalacao: 'escalação',
+  pilar: 'pilar',
+};
 
 interface Agente {
   slug: string;
@@ -26,11 +41,19 @@ interface Agente {
   horasDevolvidas: number | null;
   linhaDeBase: { minutosPorExecucao: number; informadaEm: string | null } | null;
   temProcedimento: boolean;
+  procedimento: { versao: number; atualizadoEm: string } | null;
+  /** Dos SETE campos do formato fixo, quais faltam neste agente. */
+  faltando: string[];
 }
 
 interface Roster {
   items: Agente[];
-  kpis: { rodando: number; horasSemana: number | null; semLinhaDeBase: number };
+  kpis: {
+    rodando: number;
+    horasSemana: number | null;
+    semLinhaDeBase: number;
+    semProcedimento: number;
+  };
 }
 
 export default function AgentesPage() {
@@ -39,6 +62,7 @@ export default function AgentesPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   const [minutos, setMinutos] = useState('');
+  const [procedimentoDe, setProcedimentoDe] = useState<string | null>(null);
 
   const carregar = () => {
     if (!token) return;
@@ -66,7 +90,7 @@ export default function AgentesPage() {
 
       {erro && <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <KpiCard label="Rodando" value={data?.kpis.rodando ?? '—'} icon="Users" tone="brand" />
         <KpiCard
           label="Horas devolvidas"
@@ -84,6 +108,13 @@ export default function AgentesPage() {
           hint="não dá para medir hora devolvida sem ela"
           tone={data && data.kpis.semLinhaDeBase > 0 ? 'warn' : 'default'}
           icon="Gauge"
+        />
+        <KpiCard
+          label="Sem procedimento"
+          value={data?.kpis.semProcedimento ?? '—'}
+          hint="agente sem os sete campos não tem método escrito"
+          tone={data && data.kpis.semProcedimento > 0 ? 'warn' : 'default'}
+          icon="ScrollText"
         />
       </div>
 
@@ -145,6 +176,29 @@ export default function AgentesPage() {
               </p>
             )}
 
+            {/*
+              O PROCEDIMENTO (RF-N-02). A linha diz o estado real dos sete
+              campos: o que falta aparece com nome, porque "sem procedimento"
+              sozinho não diz o que fazer a respeito.
+            */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setProcedimentoDe(a.slug)}
+                className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-brand hover:underline"
+              >
+                {a.temProcedimento ? 'ver procedimento' : 'escrever procedimento'}
+              </button>
+              {a.procedimento && (
+                <span className="font-os-mono text-[9px] text-dim">v{a.procedimento.versao}</span>
+              )}
+              {a.faltando.length > 0 && (
+                <span className="font-os-mono text-[9px] leading-[1.6] text-warn">
+                  falta {a.faltando.map((c) => ROTULO[c] ?? c).join(', ')}
+                </span>
+              )}
+            </div>
+
             {a.rebaixadoAte && new Date(a.rebaixadoAte) > new Date() && (
               <p className="mt-2 font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-warn">
                 autonomia rebaixada até {new Date(a.rebaixadoAte).toLocaleString('pt-BR')}
@@ -205,6 +259,23 @@ export default function AgentesPage() {
           </div>
         ))}
       </div>
+
+      {procedimentoDe && (
+        <Procedimento
+          slug={procedimentoDe}
+          token={token}
+          /*
+           * A MESMA DUPLA QUE A API EXIGE PARA CONFIGURAR AGENTE
+           * (`CONFIGURAR_AGENTE` em agents.controller.ts, usada hoje pela linha
+           * de base). Isto aqui é cortesia de tela: quem recusa de verdade é a
+           * API. Sem as duas, o editor abre em leitura em vez de prometer um
+           * botão que a rota vai negar.
+           */
+          podeEditar={can('automacoes.executar') && can('admin.usuarios')}
+          aoFechar={() => setProcedimentoDe(null)}
+          aoSalvar={carregar}
+        />
+      )}
     </div>
   );
 }

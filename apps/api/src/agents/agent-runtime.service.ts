@@ -29,6 +29,7 @@ import {
   type FonteContexto,
 } from './context-builder.service';
 import { SessionService } from './session.service';
+import { nomeDoDonoDaCasa } from './donos-da-casa';
 import type { CapacidadeCatalogo } from '@mktos/policy';
 import { montarSop } from './sop';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
@@ -115,8 +116,16 @@ export interface SessionResumo {
   recusaDeTeto?: { motivo: string; causa: string; dia: string };
 }
 
-/** O agente como o laço precisa dele: com o SOP e o nome do dono carregados. */
-type AgenteEmSessao = Agent & { sop: Sop | null; dono: { name: string } | null };
+/**
+ * O agente como o laço precisa dele: com o SOP carregado.
+ *
+ * O DONO NÃO VEM MAIS JUNTO, e isso é a correção de um vazamento entre empresas
+ * (11/09/2026). `include: { dono: ... }` traz o nome de quem estiver do outro
+ * lado do ponteiro, de qualquer empresa — o Prisma não filtra relação para um —,
+ * e daqui o nome ia direto para o bloco de ESCALAÇÃO do prompt de sistema. Quem
+ * resolve agora é `AgentsService.nomeDoDono`, contra a gente DESTA empresa.
+ */
+type AgenteEmSessao = Agent & { sop: Sop | null };
 
 /** Teto duro do código, acima do que qualquer agente pode declarar. */
 const MAX_PASSOS_ABSOLUTO = 16;
@@ -152,7 +161,7 @@ export class AgentRuntime {
 
     const agent = await this.prisma.agent.findFirst({
       where: { orgId: p.orgId, slug: p.agentSlug },
-      include: { sop: true, dono: { select: { name: true } } },
+      include: { sop: true },
     });
     if (!agent) throw new Error(`agente "${p.agentSlug}" não existe nesta empresa`);
 
@@ -284,7 +293,20 @@ export class AgentRuntime {
     const ferramentas = paraFerramentas(declaradas as unknown as CapacidadeCatalogo[]);
     const capPorFerramenta = new Map(ferramentas.map((f) => [f.spec.name, f.capabilityId]));
 
-    const { system } = montarSop(agent as Agent & { sop: Sop | null }, agent.dono?.name);
+    /*
+     * O NOME DO DONO, RESOLVIDO CONTRA ESTA EMPRESA — e não pela relação.
+     *
+     * Ele vira a linha "DONO HUMANO" e o bloco de ESCALAÇÃO do prompt de
+     * sistema. Resolvido por `include`, um ponteiro atravessado (a coluna
+     * referencia `User` e mais nada, sem par de empresa) punha o nome de gente
+     * da empresa vizinha dentro do que o modelo lê. `montarSop` limpa o TEXTO —
+     * quebra de linha, cabeçalho disfarçado —, mas não tem como saber de que
+     * empresa é o nome. Era o QUARTO lugar com esse defeito, e o único no
+     * caminho real de execução. Ponteiro que não resolve aqui vira "o
+     * responsável pelo agente", que é a resposta verdadeira.
+     */
+    const nomeDoDono = await nomeDoDonoDaCasa(this.prisma, p.orgId, agent.donoId);
+    const { system } = montarSop(agent, nomeDoDono);
 
     /*
      * ========================================================================

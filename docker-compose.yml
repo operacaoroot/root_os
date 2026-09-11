@@ -131,9 +131,16 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      # O RELÓGIO DO PRODUTO (RF-N-04). `off` mantém o módulo de rotinas montado
+      # e só cala o tique — é o que a receita de smoke do docs/DEPLOY.md usa.
+      # Precisa estar NESTE bloco: o container não lê o `.env`, só chega o que
+      # está listado aqui (ver CLAUDE.md, "Onde cada `.env` é lido").
+      ROTINAS_CRON: ${ROTINAS_CRON:-on}
       # Pauta: acervo, rotina e canais (ver docs/PAUTA.md)
       APIFY_TOKEN: ${APIFY_TOKEN:-}
       APIFY_TIMEOUT_SEC: ${APIFY_TIMEOUT_SEC:-120}
+      # Virou apelido na fatia 5.1: só pula as rotinas de pauta. Quem quer o
+      # produto sem relógio usa `ROTINAS_CRON=off`, acima.
       PAUTA_CRON: ${PAUTA_CRON:-on}
       PAUTA_ESPELHO: ${PAUTA_ESPELHO:-off}
       PAUTA_ESPELHO_DIR: ${PAUTA_ESPELHO_DIR:-}

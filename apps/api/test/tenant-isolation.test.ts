@@ -340,6 +340,8 @@ const ALVOS: Alvo[] = [
 
   // ---- conhecimento e conteúdo -----------------------------------------
   { tabela: 'KnowledgeNote', escopo: 'tenant', chaveSql: '"id"', nota: 'Conteúdo do vault + embedding vector(1536). Vaza também por similaridade.' },
+  { tabela: 'ContextItem', escopo: 'tenant', chaveSql: '"id"', nota: 'A MEMÓRIA (fatia 4.1+4.2, RF-M-01): as regras da casa, o dicionário de dados e as decisões desta empresa, em texto, MAIS embedding vector(1536). Vaza pela leitura E por similaridade — um KNN sem filtro entrega o conteúdo do vizinho sem nem precisar ler a linha. Escrever nela é pior: é ditar a "verdade da casa" que o agente da outra empresa vai usar como contexto.' },
+  { tabela: 'ContextItemVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'O histórico da MEMÓRIA — a projeção de cada mudança, com o corpo daquela versão e o motivo. Tem orgId próprio (não deriva do pai) porque a consulta de histórico é quente. Ler o da outra empresa é ler o que ela DECIDIU e por quê, inclusive o que ela já revogou.' },
   { tabela: 'ContentItem', escopo: 'tenant', chaveSql: '"id"', nota: 'Espelho do ClickUp.' },
   { tabela: 'Report', escopo: 'tenant', chaveSql: '"id"', nota: 'data Json guarda snapshot das métricas do tenant.' },
 
@@ -376,6 +378,10 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaRotina', escopo: 'tenant', chaveSql: '"id"', nota: 'Cron rodado pelo scheduler FORA do request HTTP — não terá app.org_id setado.' },
   { tabela: 'PautaRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'Mesma ressalva de execução por scheduler.' },
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
+
+  // ---- rotinas (fatia 5.1) ----------------------------------------------
+  { tabela: 'Rotina', escopo: 'tenant', chaveSql: '"id"', nota: 'O trabalho que roda sozinho na empresa (RF-N-04). O agendador dispara FORA de requisição e por isso abre o contexto de CADA empresa antes de ler — ver src/routines/rotinas.scheduler.ts. Ler a da outra revela o que ela automatizou e quando; ESCREVER é pior: mudar `estado` para `rodando` liga trabalho na empresa alheia, e mudar o `cron` muda a hora em que o modelo dela é chamado.' },
+  { tabela: 'RotinaExecucao', escopo: 'tenant', chaveSql: '"id"', nota: 'O diário de bordo de cada passagem. Tem orgId PRÓPRIO (e não só o pai) porque a consulta da tela filtra por empresa direto, sem join — e porque uma policy que dependesse do pai deixaria a linha órfã de um DELETE em corrida sem dono por um instante.' },
 
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da hierarquia pastas → listas → tarefas.' },
@@ -740,6 +746,36 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('KnowledgeNote', notaId);
   s.ref.notaId = notaId;
 
+  // --- a MEMÓRIA (fatia 4.1+4.2): nota de contexto + o histórico dela --------
+  //
+  // A ORDEM IMPORTA: `ContextItem` antes de `ContextItemVersion`, porque a
+  // limpeza percorre `ORDEM_LIMPEZA` ao contrário e a filha tem de sair antes.
+  // (A cascata da chave estrangeira daria conta, mas a limpeza é cirúrgica por
+  // chave e não por tabela — depender da cascata deixaria linha para trás no dia
+  // em que alguém mudar o `onDelete`.)
+  //
+  // MESMO VETOR do `KnowledgeNote` desta org, de propósito: o caso de busca
+  // vetorial cruzada exige que a linha de B seja a vizinha MAIS PRÓXIMA da
+  // consulta, e é o que faz um vazamento ser determinístico em vez de sorte.
+  const contextoId = await ins(c, 'ContextItem', {
+    id: crypto.randomUUID(), orgId, chave: `vault:regras/${suf}.md`, kind: 'regra',
+    title: `Regra da casa ${rotulo}`,
+    body: `Regra secreta da org ${rotulo} (${MARCA}): desconto máximo, alçada e exceções.`,
+    tags: ['regra'], sourceType: 'vault', sourceRef: `regras/${suf}.md`,
+    confidence: 1, embedding: vec, contentHash: `hash_${suf}`, versao: 1,
+    criadoEm: agora, atualizadoEm: agora,
+  }, { tags: 'text[]', embedding: 'vector' });
+  reg('ContextItem', contextoId);
+  s.ref.contextoId = contextoId;
+
+  reg('ContextItemVersion', await ins(c, 'ContextItemVersion', {
+    id: crypto.randomUUID(), orgId, itemId: contextoId, versao: 1, mudanca: 'criacao',
+    kind: 'regra', title: `Regra da casa ${rotulo}`,
+    body: `Regra secreta da org ${rotulo} (${MARCA}): desconto máximo, alçada e exceções.`,
+    sourceType: 'vault', sourceRef: `regras/${suf}.md`, contentHash: `hash_${suf}`,
+    motivo: `semente de isolamento ${rotulo}`, autorTipo: 'user', autorId: userId,
+  }));
+
   reg('ContentItem', await ins(c, 'ContentItem', {
     id: crypto.randomUUID(), orgId, source: 'clickup', externalId: `ci_${suf}`,
     title: `Pauta ${rotulo} ${MARCA}`, status: 'escrever roteiro', statusType: 'custom',
@@ -939,6 +975,25 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('PautaPeca', await ins(c, 'PautaPeca', {
     id: crypto.randomUUID(), orgId, rodadaId, canal: 'whatsapp', formato: 'texto',
     titulo: `Peça ${rotulo}`, corpo: `Texto que vai para o grupo da org ${rotulo}`, status: 'rascunho',
+  }));
+
+  // --- rotinas (fatia 5.1) -------------------------------------------------
+  // A `Rotina` aqui é `manual` de propósito, e não o espelho da `PautaRotina`
+  // acima: o espelho é criado pela reconciliação, dentro do contexto da empresa,
+  // e semeá-lo à mão faria esta suíte depender de um detalhe do agendador para
+  // medir uma coisa que é do banco.
+  const rotinaOsId = await ins(c, 'Rotina', {
+    id: crypto.randomUUID(), orgId, slug: `rotina_os_${suf}`, nome: `Rotina do OS ${rotulo} ${MARCA}`,
+    tipo: 'pauta.rodada', cron: '0 9 * * *', tz: 'America/Sao_Paulo', ativo: true,
+    // `estado` é enum e vai SEM cast: o Postgres deduz o tipo pela coluna de
+    // destino, e um `::AgentEstado` sem aspas viraria `agentestado`.
+    estado: 'rodando', origem: 'manual', atualizadaEm: agora,
+  });
+  reg('Rotina', rotinaOsId);
+
+  reg('RotinaExecucao', await ins(c, 'RotinaExecucao', {
+    id: crypto.randomUUID(), orgId, rotinaId: rotinaOsId, status: 'ok', origem: 'cron',
+    inicioEm: agora, fimEm: agora, duracaoMs: 42, resumo: `Passagem da org ${rotulo} ${MARCA}`,
   }));
 
   // --- trabalho ------------------------------------------------------------
@@ -2108,11 +2163,13 @@ describe('isolamento de leitura por tabela', () => {
 // ---------------------------------------------------------------------------
 
 describe('busca vetorial cruzada (pgvector)', () => {
-  // As duas únicas colunas vector(1536) do sistema:
-  // KnowledgeNote.embedding (schema.prisma:410) e PautaReferencia.embedding (:1187).
+  // As TRÊS colunas vector(1536) do sistema. `ContextItem.embedding` entrou na
+  // fatia 4.1+4.2 (a MEMÓRIA) e é a mais sensível das três: o que ela indexa é o
+  // contexto do negócio — as regras da casa, o dicionário, as decisões.
   const TABELAS_VETORIAIS = [
     { tabela: 'KnowledgeNote', ref: 'notaId', origem: 'apps/api/src/obsidian/obsidian.service.ts:191-199' },
     { tabela: 'PautaReferencia', ref: 'referenciaId', origem: 'apps/api/src/pauta/pauta.service.ts:531-539' },
+    { tabela: 'ContextItem', ref: 'contextoId', origem: 'apps/api/src/memory/memoria.service.ts (MemoriaService.buscar)' },
   ] as const;
 
   it.each(TABELAS_VETORIAIS.map((v) => [v.tabela, v] as const))(

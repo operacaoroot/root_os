@@ -46,9 +46,18 @@ import type {
 } from '../src/llm/llm.provider';
 import { comContexto, contextoAtual } from '../src/common/contexto-execucao';
 import { LlmModule } from '../src/llm/llm.module';
-import { PautaSchedulerService } from '../src/pauta/scheduler.service';
+import { ExecutoresDeRotinaRegistry } from '../src/routines/executores.registry';
+import { ExecutorDePauta } from '../src/routines/executores/pauta.executor';
+import { RotinasScheduler } from '../src/routines/rotinas.scheduler';
+import { RotinasService } from '../src/routines/rotinas.service';
 import type { RodadaService } from '../src/pauta/rodada.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import {
+  auditoriaFalsa,
+  pautaRotinaFalsa,
+  prismaDeRotinas,
+  type EstadoDoBancoFalso,
+} from './prisma-de-rotinas';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
 /*
@@ -1401,24 +1410,23 @@ describe('o alcance do teto', () => {
      * madrugada, sem ninguém olhando. Sem empresa, nada era reservado, nada era
      * contado, e o aviso saía uma vez por processo.
      *
+     * O AGENDADOR MUDOU DE DONO NA FATIA 5.1 (rotinas por empresa), e este caso
+     * mudou com ele: quem abre o contexto agora é `RotinasScheduler`, e a rotina
+     * da pauta é uma rotina como as outras. A PROPRIEDADE SOB TESTE É A MESMA, e
+     * é por isso que o caso continua aqui em vez de virar só um caso da suíte de
+     * rotinas — é esta suíte que responde por "nada chama modelo sem empresa".
+     *
      * O teste olha o que o teto olha: o que `contextoAtual()` devolve lá dentro.
      */
     const vistos: Array<{ onde: string; orgId?: string | null; origem?: string }> = [];
-    const prismaFalso = {
-      pautaRotina: {
-        findMany: async () => [
-          {
-            id: 'r1',
-            slug: 'diaria',
-            orgId: ORG_A,
-            cron: '* * * * *',
-            tz: 'America/Sao_Paulo',
-            config: {},
-          },
-        ],
-        update: async () => ({}),
-      },
-    } as unknown as PrismaService;
+    const estado: EstadoDoBancoFalso = {
+      rotinas: [],
+      pautaRotinas: [
+        pautaRotinaFalsa({ id: 'r1', orgId: ORG_A, slug: 'diaria', nome: 'Diária' }),
+      ],
+      execucoes: [],
+    };
+    const prismaFalso = prismaDeRotinas(estado);
 
     const anotar = (onde: string) => {
       const c = contextoAtual();
@@ -1435,14 +1443,23 @@ describe('o alcance do teto', () => {
       },
     } as unknown as RodadaService;
 
-    const agendador = new PautaSchedulerService(prismaFalso, rodadas);
-    await (agendador as unknown as { tick(): Promise<void> }).tick();
+    const registro = new ExecutoresDeRotinaRegistry();
+    // O executor de VERDADE, e não um dublê: é ele quem chama `gerar()`, e o que
+    // está sob teste é o contexto em que essa chamada acontece.
+    new ExecutorDePauta(prismaFalso, rodadas, registro).onModuleInit();
+    const servico = new RotinasService(prismaFalso, auditoriaFalsa().servico, registro);
+    const agendador = new RotinasScheduler(prismaFalso, servico);
+
+    await agendador.tick();
 
     expect(vistos.map((v) => v.onde)).toEqual(['coletarFeeds', 'gerar']);
     for (const v of vistos) {
       expect(v.orgId).toBe(ORG_A);
       expect(v.origem).toBe('cron');
     }
+    // E a passagem virou histórico: sem isso, "rodou dentro do contexto" seria
+    // verdade sem ninguém conseguir conferir depois.
+    expect(estado.execucoes.map((e) => e.status)).toEqual(['ok']);
   });
 
   it('o LlmModule NÃO exporta mais o provider da OpenAI cru', () => {

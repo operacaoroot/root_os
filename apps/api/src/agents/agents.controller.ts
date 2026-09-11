@@ -5,7 +5,9 @@ import {
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Post,
+  Put,
   Query,
   Res,
   UseGuards,
@@ -81,6 +83,75 @@ export class AgentsController {
   ) {
     const { minutos } = z.object({ minutos: z.number().int().positive() }).parse(body);
     return this.agentes.declararLinhaDeBase(user.orgId, slug, minutos, user.sub);
+  }
+
+  /*
+   * O PROCEDIMENTO (RF-N-01, RF-N-02) — os sete campos, com formato fixo.
+   *
+   * A validação e a gravação existiam desde a fatia 5.2 e ficaram SEM ROTA: o
+   * arquivo era vetado para ela (alterado na onda 1, e a onda 10 volta aqui), e
+   * duas mãos no mesmo controller custam mais do que uma tela em desvio por uma
+   * onda. Consequência medida enquanto isso: o botão de salvar devolvia "não
+   * encontrado" e a tela precisou aprender a distinguir a frase do roteador do
+   * 404 legítimo (`apps/web/src/app/agentes/rota-ausente.ts`).
+   *
+   * PUT e não POST: o procedimento é UM por agente e a gravação o substitui
+   * inteiro — `salvarSop` faz `upsert` na chave `agentId`. Mandar o mesmo corpo
+   * duas vezes deixa o mesmo estado (a versão sobe, que é o registro de quem
+   * mexeu, não um segundo procedimento).
+   *
+   * PERMISSÃO: `CONFIGURAR_AGENTE`, a mesma da linha de base — escrever o método
+   * de operação da empresa é configuração do agente, não execução dele. Nenhuma
+   * chave nova entra: as duas já estão no catálogo, e por isso esta ligação NÃO
+   * pede o ritual de três passos (construir o pacote, sincronizar o catálogo,
+   * todo mundo sair e entrar).
+   *
+   * O corpo não é validado aqui de propósito: quem valida é `validarProcedimento`
+   * (`agents/sop.ts`), que devolve os sete campos faltantes de uma vez e recusa
+   * cabeçalho fixo contrabandeado em campo livre. Um Zod a mais nesta camada
+   * duplicaria a regra e um dia divergiria dela.
+   */
+  @Put('agents/:slug/sop')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  salvarSop(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.agentes.salvarSop(user.orgId, slug, body, user.sub);
+  }
+
+  /*
+   * A IDENTIFICAÇÃO do agente: nome, missão, pilar e dono — e SÓ.
+   *
+   * A lista branca mora no serviço (`AgenteIdentidadeSchema`), com o motivo de
+   * cada campo que ficou de fora: capacidade e autonomia são a declaração de
+   * menor privilégio, contexto fixo vira regra da casa no prompt, teto e modelo
+   * são da fatia do custo, e cron/estado são da tela de rotinas. Aqui só se liga
+   * o caminho; alargar o que entra é editar aquele schema, onde a decisão está
+   * escrita.
+   *
+   * PATCH e não PUT: o schema é `.partial()`, o corpo é um subconjunto dos
+   * campos e o que não vem não muda.
+   */
+  @Patch('agents/:slug')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  atualizar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.agentes.atualizar(user.orgId, slug, body, user.sub);
+  }
+
+  /*
+   * O ORGANOGRAMA (RF-N-06) — gente e agentes lado a lado, por pilar.
+   *
+   * `dashboard.ver`, e não `mcp.ver` nem `admin.usuarios`: esta é a tela mais
+   * aberta das três que mostram gente, e é o que o menu já declara para ela
+   * (`packages/shared/src/nav.ts`). Duas permissões diferentes para a mesma tela
+   * é o defeito que a fila de aprovação já pagou uma vez — item aparecendo para
+   * um público e API respondendo a outro.
+   *
+   * Fora de `agents/` no caminho porque a resposta não é sobre agentes: é sobre
+   * a organização. `/agents` continua sendo o roster.
+   */
+  @Get('organograma')
+  @RequirePermissions('dashboard.ver')
+  organograma(@CurrentUser() user: JwtUser) {
+    return this.agentes.organograma(user.orgId);
   }
 
   @Post('agents/:slug/executar')

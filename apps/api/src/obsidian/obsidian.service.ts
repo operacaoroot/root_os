@@ -11,6 +11,7 @@ import {
   PRAZO_DA_CHAMADA_DE_SONDA_MS,
   RegistroDeConectores,
 } from '../integrations/conectores.registry';
+import { MemoriaService } from '../memory/memoria.service';
 import {
   type ConectorDoContrato,
   type ContextoDoVerbo,
@@ -69,6 +70,16 @@ export class ObsidianService implements OnModuleInit {
      * o registro acima: injetar aqui não acrescenta aresta de módulo nenhuma.
      */
     private readonly contrato: RegistroDeConectores,
+    /**
+     * A MEMÓRIA (fatia 4.1+4.2). Esta É uma aresta nova de módulo:
+     * `ObsidianModule` passa a importar `MemoryModule`. A direção é essa — e não
+     * a contrária — porque quem fala com o fornecedor de embedding é este
+     * arquivo, e a catraca de arquitetura existe para que endereço e credencial
+     * de fornecedor não escapem do conector. Ver `memory/memoria.module.ts`
+     * sobre onde este módulo deveria entrar quando o `AppModule` puder ser
+     * editado.
+     */
+    private readonly memoria: MemoriaService,
   ) {}
 
   get configured(): boolean {
@@ -199,9 +210,10 @@ export class ObsidianService implements OnModuleInit {
         motivo:
           'Não há credencial do Obsidian para queimar: a vault é uma pasta lida do disco, sem ' +
           'token nem senha. Para esta empresa parar de usar a base de conhecimento agora, ' +
-          'DESLIGUE o conector em Conexões. Para apagar o que já foi indexado, rode ' +
-          '"sincronizar" com a vault vazia ou desmontada — o índice é substituído a cada ' +
-          'reindexação.',
+          'DESLIGUE o conector em Conexões. Esvaziar a base rodando "sincronizar" com a vault ' +
+          'vazia DEIXOU DE FUNCIONAR na fatia 4.1+4.2, de propósito: vault vazia passou a ser ' +
+          'recusada, porque hoje ela arquivaria também a MEMÓRIA versionada — e histórico não ' +
+          'vence. O índice continua sendo substituído a cada reindexação legítima.',
       }),
     };
   }
@@ -273,10 +285,26 @@ export class ObsidianService implements OnModuleInit {
      */
     this.contrato.registrar(this.descritorDoContrato(), 'ObsidianService');
 
-    if (!this.configured) {
-      if (this.vault) this.log.warn(`OBSIDIAN_VAULT_PATH="${this.vault}" não existe — base de conhecimento off.`);
-      return;
+    if (this.vault && !this.configured) {
+      this.log.warn(`OBSIDIAN_VAULT_PATH="${this.vault}" não existe — base de conhecimento off.`);
     }
+
+    /*
+     * O LAÇO SOBE COM VAULT **OU** COM CHAVE DE EMBEDDING — e a mudança é
+     * conserto de um defeito, não generosidade.
+     *
+     * Ele só subia com vault, e o único caminho que vetoriza nota da MEMÓRIA
+     * (`vetorizarPendentesDaMemoria`) morava dentro de `reindex`, que recusa sem
+     * vault. Resultado: empresa que não usa Obsidian — que é a maioria delas —
+     * NUNCA teria busca semântica na memória. Não "só na volta seguinte":
+     * nunca. Nota digitada na tela e resposta promovida (RF-M-06) ficariam para
+     * sempre encontráveis só por busca textual.
+     *
+     * São duas dependências independentes: a vault é uma pasta no disco do
+     * processo; a chave de embedding é uma credencial do processo. Sem nenhuma
+     * das duas não há o que fazer e o laço não sobe.
+     */
+    if (!this.configured && !this.openaiKey) return;
     const min = Number(process.env.OBSIDIAN_REINDEX_MIN ?? 30);
     /*
      * A REINDEXAÇÃO É UM CAMINHO DE PLATAFORMA — RF-T-02, RF-T-04.
@@ -300,34 +328,77 @@ export class ObsidianService implements OnModuleInit {
      * sentinela não escreve em lugar nenhum) e a base de conhecimento pararia de
      * indexar — em silêncio, porque o `catch` abaixo só avisa.
      */
+    /*
+     * DUAS METADES COM ALCANCES DIFERENTES, e a diferença é o conserto:
+     *
+     *  · REINDEXAR é só da CASA. A vault é uma pasta do processo, e indexá-la
+     *    para todas as empresas copiaria o contexto da ROOT para dentro de cada
+     *    cliente. Continua exatamente como era.
+     *  · VETORIZAR A MEMÓRIA é de TODA empresa. A memória de cada uma é dela —
+     *    nota digitada na tela, resposta promovida (RF-M-06) — e a chave de
+     *    embedding é do processo, não da vault. Antes, este laço só tocava a
+     *    casa e só dentro de `reindex`: toda empresa que não fosse a ROOT, e a
+     *    própria ROOT quando não houvesse vault, ficavam SEM busca semântica na
+     *    memória para sempre. Não "só na volta seguinte": nunca.
+     *
+     * Falha de uma empresa não derruba as outras: o `catch` é por empresa.
+     */
     const run = async () => {
       try {
-        const org = await comContextoDePlataforma(() =>
-          this.prisma.org.findUnique({ where: { slug: SLUG_DA_CASA }, select: { id: true } }),
+        const empresas = await comContextoDePlataforma(() =>
+          this.prisma.org.findMany({ select: { id: true, slug: true } }),
         );
-        if (!org) {
-          this.log.warn(
-            `Obsidian reindex: empresa "${SLUG_DA_CASA}" não encontrada — nada a indexar.`,
-          );
-          return;
+        const casa = empresas.find((o) => o.slug === SLUG_DA_CASA);
+
+        if (this.configured) {
+          if (!casa) {
+            this.log.warn(
+              `Obsidian reindex: empresa "${SLUG_DA_CASA}" não encontrada — nada a indexar.`,
+            );
+          } else {
+            await comContexto(
+              {
+                orgId: casa.id,
+                actorType: 'system',
+                correlationId: novaCorrelacao('obsidian'),
+                origem: 'cron',
+              },
+              async () => this.log.log(`Obsidian reindex: ${await this.reindex(casa.id)} nota(s)`),
+            );
+          }
         }
-        const r = await comContexto(
-          {
-            orgId: org.id,
-            actorType: 'system',
-            correlationId: novaCorrelacao('obsidian'),
-            origem: 'cron',
-          },
-          () => this.reindex(org.id),
-        );
-        this.log.log(`Obsidian reindex: ${r} nota(s)`);
+
+        for (const org of empresas) {
+          // A casa já vetorizou dentro do `reindex`, e refazer custaria dinheiro.
+          if (this.configured && org.id === casa?.id) continue;
+          try {
+            await comContexto(
+              {
+                orgId: org.id,
+                actorType: 'system',
+                correlationId: novaCorrelacao('obsidian'),
+                origem: 'cron',
+              },
+              () => this.vetorizarPendentesDaMemoria(org.id),
+            );
+          } catch (e) {
+            this.log.warn(
+              `memória da empresa ${org.id}: vetorização falhou (${(e as Error).message}). ` +
+                'As outras empresas seguiram.',
+            );
+          }
+        }
       } catch (e) {
         this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`);
       }
     };
     setTimeout(run, 25_000);
     if (min > 0) setInterval(run, min * 60_000);
-    this.log.log(`Obsidian vault "${this.vault}" — reindex a cada ${min} min`);
+    this.log.log(
+      this.configured
+        ? `Obsidian vault "${this.vault}" — reindex a cada ${min} min`
+        : `Sem vault do Obsidian: o laço de ${min} min roda só para vetorizar a MEMÓRIA.`,
+    );
   }
 
   // ---------- ingestão ----------
@@ -392,6 +463,35 @@ export class ObsidianService implements OnModuleInit {
   async reindex(orgId: string): Promise<number> {
     if (!this.configured) throw new ServiceUnavailableException('OBSIDIAN_VAULT_PATH não configurado.');
     const files = this.walk(this.vault);
+
+    /*
+     * VAULT QUE EXISTE E ESTÁ VAZIA NÃO É VAULT — É PONTO DE MONTAGEM CAÍDO.
+     *
+     * `configured` só pergunta se o caminho EXISTE, e um bind mount que morreu,
+     * uma variável apontando para a pasta errada ou um volume ainda não montado
+     * deixam para trás um diretório vazio que passa nessa pergunta. O que vinha
+     * depois era destrutivo em dois níveis: `deleteMany` zerava o índice desta
+     * empresa e, desde a fatia 4.1+4.2, a projeção arquivava a MEMÓRIA inteira
+     * daquela origem — uma versão e um evento por nota, e outro par quando a
+     * pasta voltasse. O índice é descartável; o histórico não vence nunca.
+     *
+     * NESTA INSTALAÇÃO ISSO NÃO É HIPÓTESE: o `OBSIDIAN_VAULT_HOST` da VPS
+     * aponta para `/srv/marketing-os/vault`, que a documentação do projeto diz
+     * não ser a vault real.
+     *
+     * A recusa vem ANTES de qualquer escrita, e diz o que fazer. Esvaziar a
+     * base de propósito continua possível: desligue o conector em Conexões.
+     */
+    if (files.length === 0) {
+      throw new ServiceUnavailableException(
+        `A vault "${this.vault}" existe mas não tem NENHUM arquivo .md. Isso é ponto de ` +
+          'montagem caído ou caminho errado muito mais vezes do que é vault vazia de propósito ' +
+          '— e reindexar apagaria o índice desta empresa e arquivaria a memória inteira que ' +
+          'veio dela. Nada foi tocado. Confira o caminho montado na API; para esvaziar a base ' +
+          'de propósito, DESLIGUE o conector em Conexões.',
+      );
+    }
+
     const notes = files.map((f) => this.parse(f));
 
     // substitui o índice do org (a vault é a fonte da verdade)
@@ -412,16 +512,128 @@ export class ObsidianService implements OnModuleInit {
       });
     }
 
+    /*
+     * O VETOR DE CADA NOTA, guardado pelo CAMINHO e não pela ordem do `findMany`.
+     *
+     * Ele é reaproveitado logo abaixo pela projeção na MEMÓRIA (fatia 4.1+4.2):
+     * é o mesmo texto, vetorizado uma vez só. Vetorizar de novo custaria dinheiro
+     * no fornecedor e produziria números diferentes para o mesmo conteúdo — o
+     * modelo de embedding muda de versão sem avisar.
+     */
+    const vetorPorCaminho = new Map<string, number[]>();
+
     // embeddings (se houver chave) — em lote
     if (this.openaiKey && notes.length) {
-      const rows = await this.prisma.knowledgeNote.findMany({ where: { orgId }, select: { id: true, title: true, content: true } });
+      const rows = await this.prisma.knowledgeNote.findMany({ where: { orgId }, select: { id: true, path: true, title: true, content: true } });
       const vectors = await this.embed(rows.map((r) => `${r.title}\n\n${r.content}`));
       for (let i = 0; i < rows.length; i++) {
         const vec = `[${vectors[i].join(',')}]`;
         await this.prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2', vec, rows[i].id);
+        vetorPorCaminho.set(rows[i].path, vectors[i]);
       }
     }
+
+    await this.projetarNaMemoria(orgId, notes, vetorPorCaminho);
     return notes.length;
+  }
+
+  /**
+   * A VAULT VIRA MEMÓRIA VERSIONADA — fatia 4.1+4.2, RF-M-01.
+   *
+   * `KnowledgeNote` é ÍNDICE: a reindexação apaga tudo e recria, porque a vault é
+   * a fonte da verdade dele. `ContextItem` é MEMÓRIA: ela versiona, guarda
+   * procedência e não perde histórico quando um arquivo some. As duas continuam
+   * vivas de propósito — o índice serve à busca de hoje e a memória serve ao
+   * "por que a gente decidiu isso". Ver `docs/adr/ADR-011-memoria.md`.
+   *
+   * POR QUE O CONECTOR CHAMA A MEMÓRIA, E NÃO O CONTRÁRIO. Quem fala com o
+   * fornecedor de embedding é este arquivo, e a catraca de arquitetura existe
+   * justamente para que endereço e credencial de fornecedor não escapem do
+   * conector. A memória recebe o vetor pronto e não conhece fornecedor nenhum.
+   *
+   * FALHA AQUI NÃO DERRUBA A REINDEXAÇÃO. O índice já foi gravado; perder a
+   * projeção é perder o versionamento desta volta, não a busca. Sai como aviso
+   * porque uma memória que para de acompanhar a vault em silêncio é pior do que
+   * uma que para com barulho no log.
+   */
+  private async projetarNaMemoria(
+    orgId: string,
+    notes: ParsedNote[],
+    vetorPorCaminho: Map<string, number[]>,
+  ): Promise<void> {
+    /*
+     * DOIS PASSOS, DOIS TRATAMENTOS. Um `try` só em volta dos dois fazia a
+     * mensagem culpar sempre a PROJEÇÃO — inclusive quando quem falhava era a
+     * vetorização (chave da OpenAI vencida, cota estourada, dimensão errada), e
+     * aí quem lê o log vai procurar defeito na memória em vez de no fornecedor.
+     */
+    try {
+      const resumo = await this.memoria.projetarDaVault(
+        orgId,
+        notes.map((n) => ({
+          caminho: n.path,
+          title: n.title,
+          body: n.content,
+          tags: n.tags,
+          embedding: vetorPorCaminho.get(n.path) ?? null,
+        })),
+      );
+      if (resumo.criadas || resumo.alteradas || resumo.arquivadas || resumo.falhas) {
+        this.log.log(
+          `memória da empresa ${orgId}: ${resumo.criadas} nota(s) nova(s), ` +
+            `${resumo.alteradas} alterada(s), ${resumo.arquivadas} arquivada(s), ` +
+            `${resumo.inalteradas} sem mudança, ${resumo.falhas} com falha.`,
+        );
+      }
+    } catch (e) {
+      this.log.warn(
+        `empresa ${orgId}: a vault foi indexada mas a PROJEÇÃO na MEMÓRIA falhou ` +
+          `(${(e as Error).message}). A busca continua funcionando pelo índice; o que esta ` +
+          'volta perdeu foi o versionamento.',
+      );
+    }
+
+    try {
+      await this.vetorizarPendentesDaMemoria(orgId);
+    } catch (e) {
+      this.log.warn(
+        `empresa ${orgId}: a memória está versionada, mas a VETORIZAÇÃO das notas pendentes ` +
+          `falhou (${(e as Error).message}) — isto é o fornecedor de embedding, não a memória. ` +
+          'As notas continuam encontráveis pela busca textual e entram na volta seguinte.',
+      );
+    }
+  }
+
+  /**
+   * Vetoriza as notas da memória que ainda não têm vetor.
+   *
+   * É a ponte para as notas que NÃO vieram da vault — a digitada na tela, a
+   * resposta promovida (RF-M-06). A memória não chama fornecedor; quem chama é
+   * este conector, que já tem a chave e já paga o custo. Enquanto a nota não é
+   * vetorizada, ela é encontrada pela busca TEXTUAL, que é o que RF-M-03 pede
+   * como piso ("menos inteligência, zero indisponibilidade").
+   *
+   * NÃO DEPENDE DA VAULT, e isso é conserto de defeito, não generalidade
+   * gratuita. Este método só era alcançado de DENTRO de `reindex`, que recusa
+   * sem vault — então empresa sem o conector do Obsidian NUNCA teria busca
+   * semântica na memória. Não "só na volta seguinte": nunca. A chave de
+   * embedding é do processo, a vault é uma pasta; são coisas independentes e
+   * agora o código diz isso. Público (não `private`) porque o laço do
+   * `onModuleInit` o chama direto quando não há vault a reindexar.
+   *
+   * O TETO DE 100 POR VOLTA é o freio: um envio grande não pode virar uma conta
+   * de embedding inesperada numa única passada do cron. O resto entra na volta
+   * seguinte, meia hora depois.
+   */
+  async vetorizarPendentesDaMemoria(orgId: string): Promise<void> {
+    if (!this.openaiKey) return;
+    const pendentes = await this.memoria.semVetor(orgId, 100);
+    if (!pendentes.length) return;
+    const vetores = await this.embed(pendentes.map((n) => `${n.title}\n\n${n.body}`));
+    for (let i = 0; i < pendentes.length; i++) {
+      await this.memoria.gravarVetor(orgId, pendentes[i].id, vetores[i]);
+    }
+    this.log.log(`memória da empresa ${orgId}: ${pendentes.length} nota(s) vetorizada(s).`);
   }
 
   // ---------- leitura ----------

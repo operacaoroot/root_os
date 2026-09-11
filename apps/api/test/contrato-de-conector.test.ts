@@ -1006,7 +1006,15 @@ function montarObsidian(vault: string | null, notas: number) {
   } as unknown as PrismaService;
 
   const contrato = new RegistroDeConectores();
-  const svc = new ObsidianService(prisma, new ConectoresConfiguradosRegistry(), contrato);
+  /*
+   * A MEMÓRIA entrou no construtor na fatia 4.1+4.2 (o conector projeta a vault
+   * nela a cada reindexação). Um DUBLÊ VAZIO basta e é o certo: o que esta seção
+   * mede é a SONDA — a pasta abre? esta empresa tem índice? — e a sonda não
+   * encosta na memória. Um dublê com métodos de verdade aqui estaria medindo
+   * outra fatia; a projeção tem suíte própria (`memoria.test.ts`).
+   */
+  const memoria = {} as unknown as ConstructorParameters<typeof ObsidianService>[3];
+  const svc = new ObsidianService(prisma, new ConectoresConfiguradosRegistry(), contrato, memoria);
   /*
    * O DESCRITOR É PEGO À MÃO, sem `onModuleInit`, e a razão é concreta: o
    * `onModuleInit` do Obsidian agenda a reindexação (um `setTimeout` de 25 s e

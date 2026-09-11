@@ -358,8 +358,52 @@ jobs:
       #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
       #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
       #   · `rastro-retencao` com papel restrito: 33.
-      PISO_CASOS_API: '674'
-      PISO_ARQUIVOS_API: '25'
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 9, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 1000 casos em 28 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime: conjunto `padrao`, nenhum caso pulado, `TEST_DATABASE_URL`
+      # no Postgres descartável. +178 casos e +3 arquivos sobre a onda 8.
+      #
+      # De onde vêm os 178:
+      #   memoria 40    (fatia 4.1+4.2 — arquivo novo)
+      #   rotinas 48    (fatia 5.1 — arquivo novo; 47 da fatia mais 1 que a
+      #                  estabilização acrescentou: a tela de Pauta anunciava
+      #                  "gatilho ativo" lendo só a variável ANTIGA, e passou a
+      #                  mentir quando a nova desliga o agendador)
+      #   sop 90        (fatia 5.2 — arquivo novo; 88 da fatia mais os 2 que a
+      #                  estabilização acrescentou pelo QUARTO lugar que
+      #                  resolvia dono por relação: o laço de execução, de onde
+      #                  o nome ia direto para o prompt de sistema)
+      #
+      # Os 25 de antes, iguais — nenhum arquivo antigo encolheu:
+      #   adversarial 66, alcada-reautenticacao 32, arquitetura 21, cofre 89,
+      #   conector-desligado 37, contexto-aprovacao 10, contexto-execucao 40,
+      #   contrato-de-conector 71, env 7, escritas-pela-porta 37,
+      #   fila-de-aprovacao 13, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, porta 35,
+      #   provisionamento 40, publicar-peca 4, rastro-por-nivel 22,
+      #   rastro-retencao 31, rotas-publicas-tenant 38, runtime 9,
+      #   teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # UM AVISO PARA QUEM FOR REMEDIR: antes da estabilização esta suíte tinha
+      # 25 VERMELHOS, todos da mesma causa — `memoria` e `rotinas` não estavam
+      # declarados em `PREFIXOS_DA_ESPINHA` (`src/tenants/modulos.ts`), e
+      # `moduloDoCaminho` LANÇA para prefixo não declarado. Não era teste frágil:
+      # era toda rota das duas famílias quebrada em tempo de execução.
+      #
+      # O piso de ARQUIVOS vai a 28, colado no real. O de CASOS vai a 820 —
+      # 18% de folga sobre 1000, a mesma proporção de todas as ondas anteriores.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão:
+      #   · isolamento (`test:isolamento`, job próprio): 277 casos (267 da onda 7
+      #     mais os 10 que as tabelas novas da memória e das rotinas trouxeram ao
+      #     registro de alvos — 78 tabelas de empresa, todas com RLS e FORCE);
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
+      #   · `rastro-retencao` com papel restrito: 33.
+      PISO_CASOS_API: '820'
+      PISO_ARQUIVOS_API: '28'
 
     steps:
       - uses: actions/checkout@v4
@@ -767,7 +811,14 @@ jobs:
         env:
           MKTOS_CONJUNTO_DE_TESTES: isolamento
           RESUMO_ISOLAMENTO: ${{ runner.temp }}/resumo-isolamento.json
-          PISO_CASOS_ISOLAMENTO: '227'
+          # ONDA 9 (11/09/2026): **277 casos**, remedidos no mesmo regime, com o
+          # papel restrito de pé e uma senha só para o cluster inteiro (ela foi
+          # trocada três vezes durante a onda, por três agentes diferentes — e
+          # papel é do cluster, então a última troca valia para todos e as outras
+          # duas suítes ficavam sem entrar). As cinco tabelas novas da memória e
+          # das rotinas entraram no registro de alvos: 78 tabelas de empresa,
+          # todas com RLS e FORCE. O piso vai de 227 para 235, mantendo os ~15%.
+          PISO_CASOS_ISOLAMENTO: '235'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
