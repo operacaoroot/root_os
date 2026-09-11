@@ -60,6 +60,55 @@ export interface ExecCtx {
   procedenciaExterna?: boolean | ProcedenciaExterna | ProcedenciaSerializada;
   /** Capacidades que o agente DECLAROU. Fora desta lista, a porta recusa. */
   capacidadesDeclaradas?: string[];
+  /**
+   * O TETO DE MOMENTO DESTE AGENTE — RF-N-07, e ele mudou de casa em 11/09/2026.
+   *
+   * Um agente que errou duas vezes seguidas fica 24 horas sem passar do primeiro
+   * degrau de escrita. Até aqui quem impunha isso era o LAÇO
+   * (`agents/agent-runtime.service.ts`), antes de chamar a porta, e aquilo tinha
+   * dois defeitos que só se fecham aqui dentro:
+   *
+   *  1. A RECUSA NÃO ENTRAVA NO RASTRO. Quem escreve `ToolCall`, `PolicyDecision`
+   *     e `tool.recusado` é esta porta; barrando antes dela, a recusa existia só
+   *     no traço da sessão. O relatório de calibragem, que lê `PolicyDecision`,
+   *     não enxergava nenhuma delas;
+   *  2. A COMPARAÇÃO USAVA O NÍVEL DE CATÁLOGO. O laço só conhece o nível base
+   *     da capacidade; o degrau EFETIVO é o que sai da régua depois dos sinais, e
+   *     qualquer sinal aceso sobe um. Comparar o de catálogo é estritamente MAIS
+   *     PERMISSIVO: uma capacidade R1 com um sinal aceso vale R2 e passava. Aqui
+   *     a comparação é contra `decisao.nivel`, que é o degrau de verdade.
+   *
+   * `null`/ausente quer dizer "sem teto de momento" — é o caso de toda ação
+   * humana e de todo agente que não está de castigo. `motivo` é o texto que vai
+   * ao modelo e ao `ToolCall.erro`; `nivel` é o degrau mais alto que ele alcança.
+   */
+  tetoDoAgente?: { nivel: RiskLevel; motivo: string } | null;
+}
+
+/** Posição do degrau na escada. Índice maior = degrau mais alto. */
+const ORDEM_DOS_DEGRAUS: readonly RiskLevel[] = [
+  RiskLevel.R0,
+  RiskLevel.R1,
+  RiskLevel.R2,
+  RiskLevel.R3,
+  RiskLevel.R4,
+  RiskLevel.R5,
+];
+
+/**
+ * O degrau EFETIVO passa do teto de momento do agente?
+ *
+ * FALHA FECHADA quando um dos dois não está na escada: degrau desconhecido é
+ * tratado como o mais alto, e teto desconhecido como o mais baixo. Nos dois
+ * casos a resposta é "passa", que é o lado seguro — um agente de castigo não
+ * ganha alcance por causa de uma string que ninguém reconhece.
+ */
+export function acimaDoTetoDoAgente(nivel: RiskLevel | string, teto: RiskLevel | string): boolean {
+  const doNivel = ORDEM_DOS_DEGRAUS.indexOf(nivel as RiskLevel);
+  const doTeto = ORDEM_DOS_DEGRAUS.indexOf(teto as RiskLevel);
+  if (doNivel < 0) return true;
+  if (doTeto < 0) return true;
+  return doNivel > doTeto;
 }
 
 export interface ToolCallRequest<A = Record<string, unknown>> {
@@ -94,7 +143,8 @@ type CausaDeRecusa =
   | 'fora_da_declaracao'
   | 'argumento_invalido'
   | 'teto_de_custo'
-  | 'conector_desligado';
+  | 'conector_desligado'
+  | 'agente_rebaixado';
 
 /*
  * O que fica gravado em `PolicyDecision.motivo`. É texto ESTÁVEL de propósito:
@@ -112,6 +162,7 @@ const ROTULO_DA_RECUSA: Record<CausaDeRecusa, string> = {
   // relatório de calibragem agrupa por esta string, e duas grafias da mesma
   // recusa virariam duas linhas de meia contagem.
   conector_desligado: ROTULO_CONECTOR_DESLIGADO,
+  agente_rebaixado: 'recusado na porta: autonomia do agente rebaixada por erro (RF-N-07)',
 };
 
 /*
@@ -461,6 +512,39 @@ export class ToolGateway implements OnModuleInit {
       sensibilidade: cap?.efeito.sensibilidade,
     });
 
+    /*
+     * 6-bis. O TETO DE MOMENTO DO AGENTE (RF-N-07) — depois da régua, e é por
+     * isso que ele mudou de casa.
+     *
+     * A pergunta é "o degrau EFETIVO desta ação passa do que este agente alcança
+     * enquanto está de castigo?", e o degrau efetivo só existe depois de
+     * `avaliarERegistrar`: é o de catálogo mais o que os sinais subiram. O laço
+     * do agente, que fazia isto antes, só conhecia o de catálogo — comparação
+     * mais permissiva, porque qualquer sinal aceso sobe um degrau.
+     *
+     * DEPOIS do `ToolCall` e do `tool.proposta`, e isso é o outro ganho da
+     * mudança: a recusa fecha o par que já existe e sai no RASTRO inteira, com
+     * causa própria. Antes ela existia só no traço da sessão, e o relatório de
+     * calibragem — que lê `PolicyDecision` — não a enxergava.
+     *
+     * NÃO É `permitido: false`. O bloqueio (caminho A) é do CATÁLOGO: "isto o OS
+     * não faz". Este é do AGENTE, e é temporário — a mesma capacidade, pedida
+     * por outro agente ou por este daqui a 24 horas, passa. Misturar os dois
+     * faria o preparo de R5 sair numa recusa que não é R5.
+     */
+    if (ctx.tetoDoAgente && acimaDoTetoDoAgente(decisao.nivel, ctx.tetoDoAgente.nivel)) {
+      return this.recusarDepoisDeRegistrar(
+        req,
+        toolCall.id,
+        decisao,
+        decisionId,
+        'agente_rebaixado',
+        `${ctx.tetoDoAgente.motivo} — "${req.capabilityId ?? 'ferramenta sem nome'}" vale ` +
+          `${decisao.nivel} depois da régua, e o teto desta janela é ${ctx.tetoDoAgente.nivel}.`,
+        inicio,
+      );
+    }
+
     // 7. Decide. São DOIS caminhos, e confundi-los foi o furo: o BLOQUEIO diz
     // o que o OS não faz de jeito nenhum; a RETENÇÃO diz o que ele só faz
     // depois de uma pessoa assinar. Nenhum dos dois afrouxa em observar.
@@ -476,12 +560,17 @@ export class ToolGateway implements OnModuleInit {
      *
      * A condição é `!decisao.permitido` e desemboca SEMPRE em recusa: se um
      * dia `permitido` virar false por outro motivo — killswitch por empresa,
-     * agente rebaixado, catálogo bloqueado — ele cai aqui, em falha fechada.
-     * O atalho que existia (pular a retenção e seguir para o efeito) foi
-     * removido justamente para isso: NENHUM motivo novo de `permitido: false`
-     * pode herdar em silêncio um bypass de aprovação. O que é específico de R5
-     * — devolver o PREPARO — segue chaveado em `decisao.nivel === 'R5'`,
-     * dentro de `concluirRecusa`.
+     * catálogo bloqueado — ele cai aqui, em falha fechada. O atalho que existia
+     * (pular a retenção e seguir para o efeito) foi removido justamente para
+     * isso: NENHUM motivo novo de `permitido: false` pode herdar em silêncio um
+     * bypass de aprovação. O que é específico de R5 — devolver o PREPARO —
+     * segue chaveado em `decisao.nivel === 'R5'`, dentro de `concluirRecusa`.
+     *
+     * O AGENTE REBAIXADO, que este comentário citava como motivo futuro, chegou
+     * em 11/09/2026 e NÃO entrou por aqui: ele é recusa por TETO DE MOMENTO
+     * (bloco 6-bis, acima), não bloqueio de catálogo. A diferença importa — este
+     * caminho diz "o OS não faz isto"; aquele diz "este agente não faz isto
+     * agora".
      */
     if (!decisao.permitido) {
       if (observando) {

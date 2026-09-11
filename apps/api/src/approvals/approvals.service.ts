@@ -2,13 +2,26 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ActorType, Alcada, ApprovalState, RiskLevel } from '@prisma/client';
 import { MINIMO_DO_MOTIVO, motivoEscrito, type Decisao } from '@mktos/policy';
 import { createHash, randomBytes } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { exigirTenant } from '../common/contexto-execucao';
+import { EnvioDeAprovacaoService } from '../gateway/canais/envio-de-aprovacao.service';
+/*
+ * `canonizar` vem do RASTRO, e vir de lá é o ponto: é a MESMA função que
+ * encadeia os eventos, já provada contra a serialização do banco
+ * (`test/rastro-retencao.test.ts` compara com o `jsonb` do Postgres). Duplicá-la
+ * aqui seria criar uma segunda fórmula para divergir da primeira — que é
+ * exatamente a classe de defeito que esta importação conserta. Não há ciclo:
+ * `event-log.service.ts` conhece Prisma e a política, e nunca aprovação.
+ */
+import { canonizar } from '../gateway/event-log.service';
 import { lerAprovador } from '../auth/aprovador';
 import { ReauthService, type ProvaDeReauth } from '../auth/reauth.service';
 import {
@@ -44,6 +57,44 @@ export function isResourceType(v: unknown): v is ResourceType {
  * `chaves` vazio significa O CORPO INTEIRO, e isso é falha fechada de propósito:
  * capacidade que esqueceu de declarar hashKeys prende a aprovação a tudo, o que
  * é estrito, não frouxo.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE MUDOU EM 11/09/2026, E POR QUE ERA GRAVE
+ * ---------------------------------------------------------------------------
+ * Esta função serializava com `JSON.stringify(norm, Object.keys(norm).sort())`.
+ * O segundo argumento de `JSON.stringify` na forma de ARRAY não é "a ordem das
+ * chaves": é um FILTRO, e ele se aplica em TODOS OS NÍVEIS. Consequência medida:
+ * um objeto ANINHADO serializava VAZIO, porque as chaves de dentro dele não
+ * estão na lista. Dois conjuntos de argumentos com miolo completamente diferente
+ * produziam o MESMO hash —
+ *
+ *     canonicalHash('x', { a: { corpo: 'pague a você' } },   ['a'])
+ *  === canonicalHash('x', { a: { corpo: 'pague ao golpista' } }, ['a'])
+ *
+ * — e este hash é justamente o que amarra a aprovação ao conteúdo exato
+ * (`vinculo-de-conteudo.ts`, `ApprovalsService.consumir`, o `hashConteudo` que a
+ * política cobra em R3/R4). A promessa "mudar o conteúdo derruba a assinatura"
+ * não valia para nada que estivesse um nível abaixo.
+ *
+ * ESTE REPOSITÓRIO JÁ TINHA DESCOBERTO E CONSERTADO ESSE DEFEITO, na onda 6, no
+ * encadeamento do RASTRO: `canonizar()` (em `gateway/event-log.service.ts`) é
+ * JSON estável de verdade — ordena em todos os níveis e o que está aninhado
+ * ENTRA. O caso `test/rastro-por-nivel.test.ts` diz, com todas as letras, que a
+ * fórmula antiga APAGAVA o que estava aninhado. Era a mesma fórmula aqui.
+ *
+ * POR QUE NADA EM VOO QUEBRA: para argumento PLANO — que é o que todas as
+ * capacidades vivas do catálogo usam hoje — as duas fórmulas produzem a MESMA
+ * string, então os hashes já gravados continuam batendo. O que muda é só o que
+ * antes não era contado.
+ *
+ * A VOLTA PELO JSON (`JSON.parse(JSON.stringify(...))`) não é enfeite: ela faz o
+ * valor em MEMÓRIA (o que a proposta tem em mãos) e o valor VINDO DO BANCO (o
+ * que a conferência lê de `ToolCall.args`, já serializado pelo Postgres) virarem
+ * a mesma coisa antes de canonizar — `Date` vira string dos dois lados, `undefined`
+ * some dos dois lados. Sem ela, um `Date` dentro dos argumentos daria hashes
+ * diferentes nos dois lados e acusaria adulteração onde não houve. Lança para
+ * `BigInt` e para referência circular, exatamente como a fórmula antiga lançava
+ * — e quem chama já trata (ver `vinculoDoConteudo`).
  */
 export function canonicalHash(
   escopo: string,
@@ -56,7 +107,7 @@ export function canonicalHash(
     const val = body?.[k];
     if (val !== undefined && val !== null) norm[k] = val;
   }
-  const stable = JSON.stringify(norm, Object.keys(norm).sort());
+  const stable = canonizar(JSON.parse(JSON.stringify(norm)) as unknown);
   return createHash('sha256').update(`${escopo}:${stable}`).digest('hex');
 }
 
@@ -159,6 +210,8 @@ export interface AprovacaoConsumida {
  */
 @Injectable()
 export class ApprovalsService {
+  private readonly log = new Logger('Approvals');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -170,6 +223,15 @@ export class ApprovalsService {
      * (ver `confirm`). Ausência de verificador nunca vira dispensa.
      */
     private readonly reauth?: ReauthService,
+    /*
+     * O CANAL EXTERNO (fatia 5.5, RF-A-06). `@Optional()` por dois motivos, e
+     * os dois são reais: as suítes montam este serviço à mão, e o canal é uma
+     * funcionalidade OPCIONAL — sem os dois segredos do canal e sem transporte
+     * inscrito ele não existe, e a fila na tela continua sendo a superfície de
+     * sempre. Ausência aqui nunca vira erro: vira "ninguém foi avisado por
+     * WhatsApp", que é o estado normal de quem não ligou o canal.
+     */
+    @Optional() private readonly canal?: EnvioDeAprovacaoService,
   ) {}
 
   // ---------------------------------------------------------------- proposta
@@ -227,6 +289,25 @@ export class ApprovalsService {
       entityId: input.resourceId,
       after: { approvalId: linha.id, resumo, nivel: input.decisao.nivel },
     });
+
+    /*
+     * O AVISO PELO CANAL EXTERNO — RF-A-06, e ele é SOLTO de propósito.
+     *
+     * `void` com `catch` em vez de `await`: reter a ação é a parte que protege;
+     * avisar é conforto. Uma Evolution fora do ar, uma consulta lenta ou um
+     * erro de montagem de texto não podem atrasar nem derrubar a RETENÇÃO de uma
+     * ação de R3 — quem chama aqui é a porta, no meio do caminho que impede a
+     * ação de sair.
+     *
+     * O serviço do canal já falha fechado por conta própria (`notificar` nunca
+     * lança e devolve 0 quando o canal está desligado); este `catch` é a segunda
+     * rede, para o caso de a promessa nem chegar a ser criada.
+     */
+    if (this.canal) {
+      void this.canal
+        .notificar(input.orgId, linha.id)
+        .catch((e) => this.log.warn(`aviso pelo canal falhou: ${(e as Error).message}`));
+    }
 
     return { approvalId: linha.id, token, resumo, expiraEm: expiraEm.toISOString() };
   }
@@ -603,6 +684,78 @@ export class ApprovalsService {
       after: { approvalId: id },
     });
     return { ok: true };
+  }
+
+  /**
+   * DERRUBA UMA APROVAÇÃO CUJO VÍNCULO AO CONTEÚDO QUEBROU — RF-A-06.
+   *
+   * Chamada de UM lugar só — `AcoesService.executarAprovada`, o estrangulamento
+   * por onde os três caminhos de decisão pela fila passam (a tela, o canal de
+   * WhatsApp e o script de terminal) — quando `vinculoDoConteudo` responde
+   * `'quebrado'`: os argumentos gravados em `ToolCall.args` não batem mais com o
+   * `contentHash` que a pessoa assinou. Ver `vinculo-de-conteudo.ts` para o
+   * buraco que isso fecha, e o cabeçalho de `acoes.service.ts` para por que a
+   * conferência saiu dos chamadores.
+   *
+   * POR QUE ELA É TERMINAL, se a casa passou três ondas evitando recusa terminal.
+   * As recusas que não podem custar a aprovação são as TRANSITÓRIAS — conector
+   * desligado religa, régua muda de novo, capacidade volta ao catálogo. A
+   * promessa que o operador lê nessas ("religar restabelece o uso sem nova
+   * autorização") só é verdadeira porque a aprovação continua pendente.
+   *
+   * Esta não é transitória: é a evidência de que o que está gravado para sair
+   * não é o que foi apresentado. Deixá-la pendente significaria que quem trocou
+   * o conteúdo pode trocá-lo de volta e conseguir a execução com a assinatura de
+   * antes. Uma aprovação assim não tem estado de onde voltar — e o caminho de
+   * conserto existe e é o certo: propor de novo, com o conteúdo de agora.
+   *
+   * A escrita é CONDICIONAL (`updateMany` com filtro de estado) pelo mesmo
+   * motivo de sempre: se outro caminho já decidiu a linha, este não a reescreve.
+   * `consumida` fica de fora de propósito — o que já saiu não se desfaz aqui.
+   */
+  async invalidarPorConteudo(
+    orgId: string,
+    id: string,
+    quem: { tipo: ActorType; id: string },
+    detalhe: { hashEsperado: string; hashAtual: string | null; origem: string },
+  ): Promise<void> {
+    exigirTenant(orgId, 'ApprovalsService.invalidarPorConteudo');
+    const rec = await this.prisma.approval.findFirst({
+      where: { id, orgId },
+      select: { resourceType: true, resourceId: true, nivelExigido: true },
+    });
+    if (!rec) return;
+
+    await this.prisma.approval.updateMany({
+      where: {
+        id,
+        orgId,
+        status: { in: [ApprovalState.pendente, ApprovalState.confirmada] },
+      },
+      data: { status: ApprovalState.rejeitada },
+    });
+
+    try {
+      await this.audit.log({
+        orgId,
+        actorType: quem.tipo,
+        actorId: quem.id,
+        action: 'approval.vinculo-quebrado',
+        entityType: rec.resourceType,
+        entityId: rec.resourceId,
+        after: {
+          approvalId: id,
+          nivel: rec.nivelExigido,
+          origem: detalhe.origem,
+          // Os DOIS hashes, nunca o conteúdo: quem audita precisa saber que
+          // divergiram e conseguir casar com a linha do RASTRO, não ler o texto.
+          hashAssinado: detalhe.hashEsperado.slice(0, 12),
+          hashAtual: detalhe.hashAtual?.slice(0, 12) ?? null,
+        },
+      });
+    } catch {
+      /* auditoria indisponível não impede a invalidação */
+    }
   }
 
   async get(orgId: string, id: string) {

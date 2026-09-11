@@ -1,6 +1,13 @@
-import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import { TransporteDeCanalRegistry } from '../gateway/canais/transporte.registry';
 import {
   PRAZO_DA_CHAMADA_DE_SONDA_MS,
   RegistroDeConectores,
@@ -47,6 +54,18 @@ export class EvolutionService implements OnModuleInit {
     private readonly conectoresConfigurados: ConectoresConfiguradosRegistry,
     /** O contrato único de conector (fatia 5.4) — módulo `@Global`. */
     private readonly contrato: RegistroDeConectores,
+    /*
+     * O TRANSPORTE DO CANAL DE APROVAÇÃO (fatia 5.5, RF-A-06) — módulo
+     * `@Global`, e `@Optional()` por um motivo concreto: as suítes constroem
+     * este serviço À MÃO, com três argumentos posicionais
+     * (`test/contrato-de-conector.test.ts`). Um quarto parâmetro obrigatório
+     * quebraria uma suíte que não é desta fatia; opcional, ele chega `undefined`
+     * ali e o conector se comporta exatamente como antes.
+     *
+     * Sem ele, o canal de aprovação simplesmente não existe — e não existir é o
+     * padrão, não uma falha.
+     */
+    @Optional() private readonly canais?: TransporteDeCanalRegistry,
   ) {}
 
   get configured(): boolean {
@@ -144,6 +163,33 @@ export class EvolutionService implements OnModuleInit {
     // arranque quando um conector cobrado não se inscreve.
     this.contrato.registrar(this.descritorDoContrato(), 'EvolutionService');
 
+    /*
+     * O TRANSPORTE DO CANAL DE APROVAÇÃO — fatia 5.5, RF-A-06.
+     *
+     * O que sai por aqui é mensagem de SERVIÇO para o operador: o pedido de
+     * decisão e a resposta a quem decidiu. NÃO é publicação — publicar continua
+     * sendo `whatsapp.mensagem.enviar`, que é R3, passa pela porta e só sai com
+     * assinatura de gente. O argumento inteiro está no cabeçalho de
+     * `gateway/canais/envio-de-aprovacao.service.ts`, no bloco "POR QUE ISTO NÃO
+     * É AÇÃO DO GATEWAY".
+     *
+     * DESTINO SEMPRE DIRETO, NUNCA O GRUPO. O parâmetro é a chave de identidade
+     * (o número cadastrado em `ChannelIdentity`), e aqui ela vira o JID de
+     * conversa individual. `this.grupo` não aparece nesta função de propósito:
+     * mandar pedido de aprovação para o grupo poria o conteúdo exato diante de
+     * quem não assina e transformaria uma conversa em superfície de decisão —
+     * que é exatamente o que a fatia 5.5 recusa.
+     */
+    if (this.canais) {
+      this.canais.registrar(
+        'whatsapp',
+        async (destino, texto) => {
+          await this.enviarTexto(this.jidDireto(destino), texto);
+        },
+        'EvolutionService',
+      );
+    }
+
     this.efeitos.registrar({
       /*
        * R3: só chega aqui depois que uma pessoa aprovou, e com os argumentos
@@ -183,6 +229,23 @@ export class EvolutionService implements OnModuleInit {
 
   get grupo(): string {
     return this.grupoPadrao;
+  }
+
+  /**
+   * A chave de identidade vira o JID de CONVERSA INDIVIDUAL.
+   *
+   * Aceita a chave na forma canônica (só os dígitos) e na forma de JID inteiro,
+   * que é como alguém pode tê-la cadastrado. O que ela nunca produz é um JID de
+   * grupo: um valor terminado em `@g.us` chega aqui só se alguém o tiver
+   * gravado como identidade de pessoa, e mandar o pedido de aprovação para lá
+   * seria publicar o conteúdo exato num grupo. Falha fechada — lança.
+   */
+  private jidDireto(chave: string): string {
+    const cru = chave.trim();
+    if (cru.endsWith('@g.us')) {
+      throw new Error('identidade de canal aponta para um GRUPO: pedido de aprovação não sai daqui');
+    }
+    return cru.includes('@') ? cru : `${cru}@s.whatsapp.net`;
   }
 
   private assert(): void {

@@ -315,6 +315,21 @@ describe.skipIf(!URL)('o laço do agente', () => {
       { toolCalls: [{ id: 'c1', name: 'get_dashboard_summary', args: {} }], stopReason: 'tool_use' },
     ]);
     const r = await montarRuntime(modelo).executar(pedir());
+
+    /*
+     * UMA FALHA NÃO REBAIXA — mudou na fatia 5.6. O RF-N-07 passou a exigir
+     * DUAS falhas seguidas: uma falha isolada é ruído de operação, e rebaixar
+     * na primeira fazia a autonomia do OS oscilar por acidente. As sessões
+     * anteriores deste agente nesta suíte responderam, então esta é a primeira
+     * da sequência.
+     */
+    const aposUmaFalha = await prisma.agent.findUnique({
+      where: { orgId_slug: { orgId: ORG, slug: 'assistente' } },
+    });
+    expect(aposUmaFalha?.rebaixadoAte).toBeNull();
+
+    await montarRuntime(modelo).executar(pedir());
+
     await prisma.agent.update({
       where: { orgId_slug: { orgId: ORG, slug: 'assistente' } },
       data: { tetoCustoUsd: 0.5 },
@@ -323,14 +338,21 @@ describe.skipIf(!URL)('o laço do agente', () => {
     expect(r.status).toBe(SessionStatus.falhou);
     const s = await prisma.session.findUnique({ where: { id: r.sessionId } });
     expect(s?.motivo).toContain('teto de custo');
-    // e o rebaixamento de 24h do RF-N-07 entra
+    // e o rebaixamento de 24h do RF-N-07 entra na SEGUNDA falha seguida
     const a = await prisma.agent.findUnique({
       where: { orgId_slug: { orgId: ORG, slug: 'assistente' } },
     });
     expect(a?.rebaixadoAte).not.toBeNull();
+    /*
+     * A LIMPEZA PRECISA DESFAZER O REBAIXAMENTO, e agora ela precisa mais do
+     * que antes: rebaixado, este agente não alcançaria R3 nem R5, e os casos
+     * seguintes que usam `whatsapp_enviar` mediriam o freio do RF-N-07 achando
+     * que medem a régua. `ultimoStatus` volta ao nulo pelo mesmo motivo — senão
+     * a próxima falha de qualquer caso seria "a segunda seguida".
+     */
     await prisma.agent.update({
       where: { orgId_slug: { orgId: ORG, slug: 'assistente' } },
-      data: { rebaixadoAte: null, falhas: 0 },
+      data: { rebaixadoAte: null, rebaixadoPor: null, falhas: 0, ultimoStatus: null },
     });
   });
 

@@ -3,6 +3,7 @@ import { ApprovalsService } from './approvals.service';
 import { ApprovalsController } from './approvals.controller';
 import { ApprovalGuard } from './approval.guard';
 import { AuthModule } from '../auth/auth.module';
+import { CanaisModule } from '../gateway/canais/canais.module';
 
 // @Global: o ApprovalGuard/ApprovalsService ficam disponíveis para qualquer
 // controller de escrita sensível sem precisar importar o módulo em cada um.
@@ -12,9 +13,22 @@ import { AuthModule } from '../auth/auth.module';
 // isso é o módulo de autenticação. Não há ciclo — o AuthModule não conhece
 // aprovação nenhuma —, e o `AppModule` continua carregando este módulo antes do
 // AuthModule sem problema: o Nest resolve o grafo, não a ordem da lista.
+/*
+ * `CanaisModule` entra no `imports` por uma razão de fiação, e ela está escrita
+ * no cabeçalho daquele módulo: ele é `@Global` e não importa NINGUÉM, então
+ * alguém precisa pô-lo no grafo para o controlador do webhook existir — e o
+ * `AppModule` não é arquivo desta fatia. A aresta é segura porque não volta:
+ * `CanaisModule` alcança `ApprovalsService` pelo escopo global, sem importar
+ * este módulo de volta.
+ *
+ * Estar no grafo NÃO liga o canal: sem os DOIS segredos do canal
+ * (`CANAL_APROVACAO_SEGREDO`, que autentica o webhook, e
+ * `CANAL_APROVACAO_CODIGO_SEGREDO`, que deriva o código) e sem transporte
+ * inscrito, o webhook responde 404 e nenhum pedido sai.
+ */
 @Global()
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, CanaisModule],
   controllers: [ApprovalsController],
   providers: [ApprovalsService, ApprovalGuard],
   exports: [ApprovalsService, ApprovalGuard],

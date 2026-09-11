@@ -260,6 +260,99 @@ export class SinaisService {
     if (mediaHora > 0 && naUltimaHora > mediaHora * 3) sinais.push('volume_atipico');
     if (errosRecentes > 0) sinais.push('erro_recente');
 
+    /*
+     * ========================================================================
+     * RESPOSTA SEM FONTE É DEFEITO — fatia 4.3 (RF-M-02, RNF-03)
+     * ========================================================================
+     *
+     * ACRESCENTADO, NÃO REESCRITO: nada acima desta linha mudou. O bloco vive no
+     * fim de propósito, porque a fatia 5.6 desta mesma onda mexe no mesmo método
+     * (ela acende sinal a partir de `Agent.rebaixadoAte`) e duas edições no mesmo
+     * `Promise.all` seriam um conflito garantido.
+     *
+     * O QUE ISTO LIGA. O laço do agente JÁ MARCA a sessão que respondeu sem
+     * procedência (`Session.semProcedencia`, gravado por
+     * `agent-runtime.service.ts` em `SessionService.encerrar`). Até aqui a marca
+     * só alimentava um KPI de tela: nada no sistema acontecia por causa dela.
+     * Agora acontece — a barra sobe um degrau nas ações seguintes DAQUELE
+     * agente, durante 24h.
+     *
+     * A CONSULTA RODA SEMPRE QUE HÁ AGENTE, e não só quando `erro_recente` ainda
+     * está apagado. A primeira versão curto-circuitava em
+     * `!sinais.includes('erro_recente')` para economizar uma ida ao banco, e o
+     * efeito colateral era pior do que a economia: num agente que TAMBÉM errou de
+     * verdade na janela, a consulta não rodava, o aviso não saía, e o operador
+     * ficava com o único rastro que nomeia a causa certa — o log — justamente no
+     * caso em que as duas coisas estão acontecendo. O sinal é empurrado uma vez
+     * só; o que deixou de ser condicional é a MEDIÇÃO.
+     *
+     * POR QUE `erro_recente`, E O QUE ISSO TEM DE ESTICADO. A escada tem seis
+     * sinais e nenhum se chama "respondeu sem fonte"; a lista é normativa
+     * (`packages/policy` espelha o documento do vault) e não é deste arquivo
+     * criar o sétimo. Dos seis, este é o único que fala do HISTÓRICO DO AGENTE, e
+     * é dele que a régua já se serve para o rebaixamento por erro do RF-N-07 —
+     * mesma natureza, mesma janela de 24h, mesmo efeito. O que NÃO serve é
+     * `fonte_nao_confiavel`: ele significa "o contexto veio de mensagem, PDF,
+     * anexo ou página" e acendê-lo aqui faria o RASTRO afirmar que entrou
+     * conteúdo externo onde não entrou nada.
+     *
+     * O PREÇO DISSO, declarado: o RASTRO grava `erro_recente` e o motivo da
+     * régua sai como "R0 elevado para R1 por: erro_recente". Quem ler o evento
+     * vai procurar uma ação revertida que não existe. Consertar de verdade é
+     * acrescentar o sétimo sinal (`resposta_sem_fonte`) em três lugares: a união
+     * `Sinal` de `packages/policy/src/escada.ts`, o `SinalSchema` de
+     * `esquema.ts` e `escalonamento.sinais` de `politica-root.json` — que é
+     * cópia byte a byte do anexo do vault, ou seja, decisão humana. Está em
+     * PERGUNTAS e em FORA DO ESCOPO no relatório da fatia, com os três arquivos.
+     * Até lá, quem nomeia a causa certa é o aviso de `avisarRespostaSemFonte`.
+     *
+     * A CONSULTA É POR EMPRESA E POR AGENTE, nas duas pontas. `Session` não tem
+     * `agentSlug` (só `agentId`), então o casamento é por relação — e relação é
+     * exatamente onde o vazamento entre empresas já aconteceu quatro vezes nesta
+     * base. Por isso o `orgId` é cobrado na sessão E no agente: um `agentId`
+     * atravessado não consegue trazer defeito de empresa vizinha para cá.
+     */
+    if (input.agentSlug) {
+      const semFonte = await this.respostasSemFonte(input.orgId, input.agentSlug, agora);
+      if (semFonte > 0) {
+        this.avisarRespostaSemFonte(input.orgId, input.agentSlug, semFonte, agora);
+        if (!sinais.includes('erro_recente')) sinais.push('erro_recente');
+      }
+
+      /*
+       * ======================================================================
+       * O REBAIXAMENTO TAMBÉM É SINAL — RF-N-07, a metade que faltava
+       * ======================================================================
+       *
+       * O RF-N-07 diz que o rebaixamento por erro é UM DOS SINAIS DE
+       * ESCALONAMENTO, e até 11/09/2026 ele não era: `Agent.rebaixadoAte` só era
+       * lido dentro do laço do agente, para impor o teto de degrau. Um agente de
+       * castigo tinha alcance cortado, mas as ações que ele AINDA podia fazer
+       * corriam na barra de sempre — e o comentário do bloco acima já afirmava
+       * que a régua se serve deste campo, o que era falso.
+       *
+       * As duas pontas se somam: o TETO (imposto na porta, ver
+       * `ExecCtx.tetoDoAgente`) diz até que degrau ele chega; o SINAL diz que o
+       * que sobrou sai um degrau acima. São coisas diferentes e as duas são o
+       * que o requisito pede.
+       *
+       * A EMPRESA É COBRADA NA CONSULTA, e não é zelo decorativo: resolver
+       * agente por `slug` sem `orgId` já vazou entre empresas quatro vezes nesta
+       * base. `contagem > 0` e não `findUnique` + comparação em memória porque o
+       * filtro de data tem que ir para o banco junto com a empresa — a volta é
+       * por relógio (`rebaixadoAte > agora`), sem rotina de limpeza.
+       *
+       * `erro_recente` de novo, pelo mesmo motivo do bloco acima e com o mesmo
+       * preço: a lista dos seis sinais é normativa e não é deste arquivo criar o
+       * sétimo. Aqui o empréstimo é ainda mais próximo do sentido literal — o
+       * rebaixamento nasce de duas falhas seguidas, que é erro recente.
+       */
+      const rebaixado = await this.prisma.agent.count({
+        where: { orgId: input.orgId, slug: input.agentSlug, rebaixadoAte: { gt: agora } },
+      });
+      if (rebaixado > 0 && !sinais.includes('erro_recente')) sinais.push('erro_recente');
+    }
+
     return sinais;
   }
 
@@ -270,5 +363,116 @@ export class SinaisService {
       where: { orgId, capabilityId, criadoEm: { gte: desde } },
     });
     return total / (30 * 24);
+  }
+
+  // ==========================================================================
+  // RESPOSTA SEM FONTE — fatia 4.3. Ver o bloco no fim de `calcular`.
+  // ==========================================================================
+
+  /** A janela do defeito é a mesma do erro recente: 24h. */
+  private static readonly JANELA_SEM_FONTE_MS = 86_400_000;
+
+  /**
+   * Quantas sessões DESTE agente, nesta empresa, fecharam nas últimas 24h tendo
+   * respondido sem procedência E SEM ter usado ferramenta com sucesso.
+   *
+   * `encerradaEm` e não `criadaEm`: sessão que ainda está rodando não respondeu
+   * nada, e o campo `semProcedencia` só ganha valor no encerramento. Contar pela
+   * abertura acenderia o sinal com base num campo que ainda é o `false` do
+   * `@default` — verde por padrão, que é o jeito mais silencioso de um controle
+   * não existir.
+   *
+   * --------------------------------------------------------------------------
+   * A GUARDA DA FERRAMENTA SAIU EM 11/09/2026 — e por que ela existiu
+   * --------------------------------------------------------------------------
+   *
+   * Esta contagem teve, por um dia, uma cláusula a mais: ignorava sessão com
+   * passo de ferramenta `executado`. Ela existiu porque `Session.fontes` não
+   * recebia resultado de ferramenta — o runtime só empurrava ali `nota` (dado
+   * do vault) e `regra` (o `contextoFixo` do agente). Então uma resposta
+   * legítima, com o número vindo de uma ferramenta que a PORTA deixou executar,
+   * fechava a sessão marcada como sem procedência, e a consequência era cara: o
+   * degrau sobe, a aprovação passa de configurável para SEMPRE e a alçada mínima
+   * sobe de operador para responsável. Numa empresa com um aprovador só, e com a
+   * regra de que quem propõe não aprova, isso travava o agente por 24 horas.
+   *
+   * O CONSERTO FOI FEITO NA ORIGEM, que é o runtime: chamada que a porta devolve
+   * como `executado` vira `FonteContexto` de tipo `ferramenta` em `fontesUsadas`
+   * (`agents/agent-runtime.service.ts`), e `ferramenta` conta como DADO em
+   * `TIPOS_DE_DADO` (`agents/context-builder.service.ts`). Com isso a sessão
+   * legítima nem fecha marcada, e filtrar aqui viraria remendo em cima de coisa
+   * consertada — além de um falso negativo: a sessão que usou ferramenta E
+   * inventou um número por cima dela voltaria a passar batida. Quem distingue os
+   * dois casos é `respostaSemProcedencia`, que sabe se a fonte existe; uma
+   * consulta a `SessionStep` não sabe.
+   *
+   * O que continua contando como sessão sem fonte: ferramenta recusada, com erro
+   * ou esperando aprovação. Nenhuma delas trouxe dado.
+   *
+   * --------------------------------------------------------------------------
+   * O ÍNDICE
+   * --------------------------------------------------------------------------
+   *
+   * Esta é a QUARTA contagem do caminho mais quente do sistema, e a única com
+   * junção (`agent`). `Session` tinha só `@@index([orgId, agentId, criadaEm])`,
+   * que não serve a um filtro por `semProcedencia` + `encerradaEm`. O índice
+   * `@@index([orgId, semProcedencia, encerradaEm])` entrou na migração
+   * `20260911210000_indice_sessao_e_motivo_sem_dado`, junto com a saída da guarda.
+   */
+  private async respostasSemFonte(
+    orgId: string,
+    agentSlug: string,
+    agora: Date,
+  ): Promise<number> {
+    const desde = new Date(agora.getTime() - SinaisService.JANELA_SEM_FONTE_MS);
+    return this.prisma.session.count({
+      where: {
+        orgId,
+        semProcedencia: true,
+        encerradaEm: { gte: desde },
+        // `is` explícito: filtro de relação com o orgId cobrado dos DOIS lados.
+        agent: { is: { orgId, slug: agentSlug } },
+      },
+    });
+  }
+
+  /**
+   * Avisa uma vez por empresa, por agente E POR JANELA — não a cada chamada, e
+   * não uma vez por processo.
+   *
+   * Um aviso por chamada afogaria o log deste caminho, que roda em toda passagem
+   * pela porta; é a mesma disciplina de `conferirJanela`. Só que a primeira
+   * versão usava um `Set` sem expiração, e aí o remédio virava a doença: o
+   * operador era avisado UMA vez enquanto o processo vivesse, e a reincidência de
+   * três dias depois — que é exatamente o que ele precisa ver — saía muda. O
+   * relógio é o mesmo `agora` do cálculo, então teste com tempo preso mede isto
+   * de verdade.
+   *
+   * O mapa cresce no máximo até (empresas × agentes), que é a mesma ordem de
+   * grandeza do catálogo de agentes — não é cache de chamada, e não precisa de
+   * expurgo.
+   */
+  private readonly semFonteAvisadoEm = new Map<string, number>();
+
+  private avisarRespostaSemFonte(
+    orgId: string,
+    agentSlug: string,
+    quantas: number,
+    agora: Date,
+  ): void {
+    const chave = `${orgId}|${agentSlug}`;
+    const ultimo = this.semFonteAvisadoEm.get(chave);
+    if (ultimo !== undefined && agora.getTime() - ultimo < SinaisService.JANELA_SEM_FONTE_MS) {
+      return;
+    }
+    this.semFonteAvisadoEm.set(chave, agora.getTime());
+    this.log.warn(
+      `o agente "${agentSlug}" da empresa ${orgId} fechou ${quantas} sessão(ões) nas últimas 24h ` +
+        'afirmando número sem citar fonte nenhuma (Session.semProcedencia). Resposta sem fonte é ' +
+        'defeito: as ações deste agente sobem um degrau na régua enquanto a janela durar. ' +
+        'No RASTRO isso aparece como `erro_recente`, que é o sinal mais próximo que a escada tem ' +
+        '— a causa certa é esta linha. Confira as sessões na tela de Sessões, filtrando por ' +
+        '"sem procedência".',
+    );
   }
 }

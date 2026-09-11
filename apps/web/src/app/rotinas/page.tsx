@@ -14,6 +14,14 @@ import {
   type RotinaResumo,
   type RotinasList,
 } from './tipos';
+import {
+  DIAS_DA_JANELA,
+  LIMITE_DO_HISTORICO,
+  horasDaRotina,
+  totalDaSemana,
+  type HorasDaRotina,
+  type TotalDaSemana,
+} from './horas';
 
 /*
  * A TELA DE ROTINAS — RF-N-04.
@@ -35,6 +43,15 @@ import {
  *    de base. Sem declaração a tela mostra travessão; número inventado aqui
  *    seria pior do que número nenhum.
  *
+ * O TEMPO DEVOLVIDO VIROU POR SEMANA (fatia 5.6), e mudou de fonte junto. Antes
+ * a tela somava `minutosDevolvidos`, que a API calcula como linha de base ×
+ * `Rotina.execucoes` — um acumulado de vida inteira que conta as passagens que
+ * DERAM ERRO como tempo devolvido. Agora a conta sai do log real de passagens
+ * (`/rotinas/:id/execucoes`), só com desfecho `ok`, na janela de sete dias: é o
+ * número que alguém pode conferir linha a linha, e é a forma em que ele serve
+ * para renovação ("esta rotina devolve X horas por semana"). A conta inteira,
+ * com o que entra e o que não entra, está em `horas.ts`.
+ *
  * A tela NÃO cria rotina. Hoje toda rotina nasce de outro lugar (a da pauta, da
  * tela de Pauta) e o criador genérico depende de escolher o executor — é
  * decisão de produto, não de tela, e está no relatório da fatia.
@@ -47,6 +64,17 @@ export default function RotinasPage() {
   const [aberta, setAberta] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Record<string, ExecucaoResumo[]>>({});
   const [minutos, setMinutos] = useState<Record<string, string>>({});
+  /*
+   * O HISTÓRICO QUE ALIMENTA A MEDIÇÃO — separado do que o botão "Histórico"
+   * abre, e de propósito.
+   *
+   * O de baixo é para LER (30 linhas, sob demanda, quando alguém expande). Este
+   * é para CONTAR: vai até o teto do endpoint e é buscado sozinho, para cada
+   * rotina que tem linha de base declarada. Reaproveitar um no outro faria a
+   * medição depender de alguém ter clicado, e o número da tela apareceria e
+   * sumiria conforme o que estivesse aberto.
+   */
+  const [passagens, setPassagens] = useState<Record<string, ExecucaoResumo[]>>({});
 
   const editavel = can('automacoes.executar');
 
@@ -60,6 +88,34 @@ export default function RotinasPage() {
   useEffect(() => {
     if (ready) carregar();
   }, [ready, carregar]);
+
+  /*
+   * Uma busca por rotina COM LINHA DE BASE — as outras não têm o que medir, e
+   * pedir o histórico delas seria consulta paga por nada. Falha de uma não
+   * derruba as outras nem vira tarja vermelha: a rotina fica sem medição, o
+   * total diz quantas ficaram de fora, e é isso que a tela mostra.
+   */
+  useEffect(() => {
+    if (!token || !data) return;
+    const alvos = data.items.filter((r) => r.minutosPorExecucao !== null);
+    if (alvos.length === 0) return;
+    let vivo = true;
+    Promise.all(
+      alvos.map((r) =>
+        apiGet<ExecucaoResumo[]>(`/rotinas/${r.id}/execucoes?limite=${LIMITE_DO_HISTORICO}`, token)
+          .then((linhas) => [r.id, linhas] as const)
+          .catch(() => [r.id, null] as const),
+      ),
+    ).then((pares) => {
+      if (!vivo) return;
+      const lidas: Record<string, ExecucaoResumo[]> = {};
+      for (const [id, linhas] of pares) if (linhas) lidas[id] = linhas;
+      setPassagens(lidas);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [token, data]);
 
   async function agir(id: string, fn: () => Promise<unknown>) {
     setErro(null);
@@ -91,9 +147,16 @@ export default function RotinasPage() {
 
   const rodando = data?.items.filter((r) => r.estado === 'rodando').length ?? 0;
   const emFalha = data?.items.filter((r) => r.ultimoStatus?.startsWith('erro')).length ?? 0;
-  const minutosTotais =
-    data?.items.reduce((s, r) => s + (r.minutosDevolvidos ?? 0), 0) ?? 0;
-  const semLinhaDeBase = data?.items.filter((r) => r.minutosPorExecucao === null).length ?? 0;
+
+  /*
+   * A MEDIÇÃO, uma por rotina, refeita a cada render. É aritmética sobre o que
+   * já está em memória — nenhuma busca acontece aqui. `agora` é lido uma vez
+   * por render para que todas as rotinas sejam medidas contra o MESMO instante.
+   */
+  const agora = Date.now();
+  const medidas: Record<string, HorasDaRotina> = {};
+  for (const r of data?.items ?? []) medidas[r.id] = horasDaRotina(r, passagens[r.id], agora);
+  const total = totalDaSemana(Object.values(medidas));
 
   return (
     <div className="space-y-5">
@@ -148,16 +211,32 @@ export default function RotinasPage() {
         <Numero label="Rodando" valor={rodando} />
         <Numero label="Com erro na última" valor={emFalha} tom={emFalha > 0 ? 'bad' : undefined} />
         <Numero
-          label="Tempo devolvido"
-          valor={minutosTotais > 0 ? emHoras(minutosTotais) : '—'}
-          nota={
-            semLinhaDeBase > 0
-              ? `${semLinhaDeBase} rotina(s) sem linha de base declarada`
-              : 'soma das linhas de base declaradas'
-          }
+          label="Horas devolvidas / semana"
+          valor={total.vazio ? '—' : `${emHoras(total.minutos)}${total.parciais > 0 ? '+' : ''}`}
+          // Enquanto a lista não chegou, a legenda NÃO pode dizer "nenhuma
+          // rotina para medir": é uma afirmação sobre a empresa, e ainda não se
+          // sabe nada sobre ela.
+          nota={data ? notaDoTotal(total) : 'carregando…'}
         />
         <Numero label="Rotinas" valor={data?.items.length ?? 0} />
       </div>
+
+      {/*
+        A PROCEDÊNCIA DO NÚMERO, na tela e não só no código.
+        Ele vai para conversa de renovação, e quem o apresenta precisa conseguir
+        responder "de onde saiu isso?" sem abrir o repositório.
+      */}
+      <p className="text-[11px] leading-[1.6] text-muted">
+        <span className="text-text">Como esta conta é feita:</span> passagens com desfecho{' '}
+        <code className="text-[10px]">ok</code> nos últimos {DIAS_DA_JANELA} dias, contadas uma a uma
+        no histórico de cada rotina, multiplicadas pelos minutos que alguém declarou aqui como linha
+        de base — o tempo que uma pessoa gastava por execução. Passagem que falhou não devolve tempo
+        e não entra. Rotina sem linha de base declarada fica <span className="text-text">fora</span>{' '}
+        da conta: não entra como zero nem com estimativa. O sinal{' '}
+        <span className="text-text">+</span> quer dizer que alguma rotina passou mais de{' '}
+        {LIMITE_DO_HISTORICO} vezes na semana e o histórico lido não cobre os {DIAS_DA_JANELA} dias
+        inteiros — ali o número é piso, não total.
+      </p>
 
       {data && data.items.length === 0 && (
         <Card>
@@ -173,6 +252,7 @@ export default function RotinasPage() {
           <Linha
             key={r.id}
             rotina={r}
+            medida={medidas[r.id]}
             editavel={editavel}
             ocupado={ocupado === r.id}
             aberta={aberta === r.id}
@@ -194,6 +274,43 @@ export default function RotinasPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * A legenda do total. Ela diz o que ficou DE FORA, porque é isso que decide se
+ * o número pode ser apresentado como "o tempo que o OS devolve nesta empresa"
+ * ou só como "o que deu para medir até agora".
+ */
+function notaDoTotal(t: TotalDaSemana): string {
+  const fora: string[] = [];
+  if (t.semLinhaDeBase > 0) fora.push(`${t.semLinhaDeBase} sem linha de base declarada`);
+  if (t.semHistorico > 0) fora.push(`${t.semHistorico} com o histórico ainda não lido`);
+
+  if (t.vazio) {
+    return fora.length
+      ? `nada medido — ${fora.join('; ')}`
+      : 'nenhuma rotina para medir nesta empresa';
+  }
+
+  const partes = [`${t.contadas} rotina(s) medida(s)`];
+  if (t.parciais > 0) partes.push(`${t.parciais} com a semana só parcialmente coberta`);
+  if (fora.length) partes.push(`fora da conta: ${fora.join('; ')}`);
+  return partes.join(' · ');
+}
+
+/**
+ * A linha de tempo devolvido de UMA rotina, em uma frase.
+ *
+ * Devolve `null` quando não há nada honesto a dizer — e nesse caso a tela não
+ * escreve nada, em vez de escrever um zero.
+ */
+function fraseDaMedida(m: HorasDaRotina | undefined): string | null {
+  if (!m) return null;
+  if (m.estado === 'sem-linha-de-base') return 'tempo devolvido: falta declarar a linha de base';
+  if (m.estado === 'sem-historico') return 'tempo devolvido: lendo o histórico…';
+  const conta = `${m.execucoesNaSemana} × ${m.minutosPorExecucao}min nos últimos ${DIAS_DA_JANELA} dias`;
+  const piso = m.janelaCoberta ? '' : ' · no mínimo: a semana não coube no histórico';
+  return `${emHoras(m.minutosNaSemana ?? 0)}/semana devolvidos (${conta})${piso}`;
 }
 
 function Numero({
@@ -218,6 +335,7 @@ function Numero({
 
 function Linha({
   rotina: r,
+  medida,
   editavel,
   ocupado,
   aberta,
@@ -231,6 +349,7 @@ function Linha({
   onLinhaDeBase,
 }: {
   rotina: RotinaResumo;
+  medida: HorasDaRotina | undefined;
   editavel: boolean;
   ocupado: boolean;
   aberta: boolean;
@@ -245,6 +364,7 @@ function Linha({
 }) {
   const n = Number(minutos);
   const minutosValidos = minutos !== '' && Number.isInteger(n) && n >= 0 && n <= 1440;
+  const frase = fraseDaMedida(medida);
 
   return (
     <div className="rounded-xl border border-border bg-surface">
@@ -272,8 +392,17 @@ function Linha({
             {' · '}última: {quando(r.ultimaExecucaoEm)}
             {' · '}
             {r.execucoes} execução(ões), {r.falhas} falha(s)
-            {r.minutosDevolvidos !== null && ` · ${emHoras(r.minutosDevolvidos)} devolvidos`}
           </p>
+
+          {frase && (
+            <p
+              className={`mt-0.5 text-[11px] ${
+                medida?.estado === 'medida' ? 'text-good' : 'text-muted'
+              }`}
+            >
+              {frase}
+            </p>
+          )}
 
           {r.ultimoStatus && (
             <p
@@ -346,6 +475,8 @@ function Linha({
             </Botao>
           </div>
 
+          <ContaDoTempo medida={medida} />
+
           {historico.length === 0 ? (
             <p className="text-xs text-muted">Nenhuma passagem registrada ainda.</p>
           ) : (
@@ -382,6 +513,73 @@ function Linha({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A conta aberta, dentro do histórico da rotina.
+ *
+ * Existe para que ninguém precise confiar no número da linha de cima: aqui
+ * estão as duas parcelas, de onde cada uma vem e até onde o histórico lido
+ * alcança. É o que separa "horas devolvidas" de um número inventado numa tela
+ * que o cliente vê.
+ */
+function ContaDoTempo({ medida }: { medida: HorasDaRotina | undefined }) {
+  if (!medida) return null;
+
+  if (medida.estado === 'sem-linha-de-base') {
+    return (
+      <div className="mb-3 rounded-lg border border-border/60 px-3 py-2 text-[11px] text-muted">
+        <p className="text-text">Tempo devolvido: não dá para calcular ainda.</p>
+        <p className="mt-1">
+          Falta a metade que ninguém mede sozinho — quantos minutos uma pessoa gastava por execução.
+          Declare acima, e a conta passa a sair do histórico real desta rotina. Enquanto isso a
+          rotina fica fora do total da empresa: entrar com zero ou com um chute seria pior do que
+          ficar de fora.
+        </p>
+      </div>
+    );
+  }
+
+  if (medida.estado === 'sem-historico') {
+    return (
+      <div className="mb-3 rounded-lg border border-border/60 px-3 py-2 text-[11px] text-muted">
+        Lendo as passagens desta rotina para calcular o tempo devolvido…
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 rounded-lg border border-border/60 px-3 py-2 text-[11px] leading-[1.6] text-muted">
+      <p className="text-text">
+        Tempo devolvido: {emHoras(medida.minutosNaSemana ?? 0)} por semana
+        {!medida.janelaCoberta && ' (no mínimo)'}
+      </p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        <li>
+          <span className="text-text">{medida.execucoesNaSemana}</span> passagem(ns) com desfecho{' '}
+          <code className="text-[10px]">ok</code> nos últimos {DIAS_DA_JANELA} dias — contadas no
+          histórico abaixo, uma a uma. Falhas não entram.
+        </li>
+        <li>
+          × <span className="text-text">{medida.minutosPorExecucao} min</span> por execução — a
+          linha de base declarada por uma pessoa nesta tela, não uma estimativa.
+        </li>
+        <li>
+          Acumulado desde sempre: {emHoras(medida.minutosAcumulados ?? 0)} em{' '}
+          {medida.execucoesBemSucedidas} passagem(ns) bem-sucedida(s) — o contador da rotina menos
+          as falhas.
+        </li>
+        {medida.cobreDesde && (
+          <li>
+            O histórico lido alcança até {quando(medida.cobreDesde)}
+            {medida.janelaCoberta
+              ? ' — cobre a semana inteira.'
+              : ` — NÃO cobre os ${DIAS_DA_JANELA} dias: a rotina passou mais de ${LIMITE_DO_HISTORICO} vezes, e o que está acima é piso.`}
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

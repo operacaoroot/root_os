@@ -145,6 +145,9 @@ jobs:
       # (74) em 2 arquivos: politica 37, sobrescrita 37. A onda 4 DOBROU esta
       # suíte com `test/sobrescrita.test.ts`; o piso de 20 deixaria o arquivo
       # novo inteiro sumir sem uma reclamação.
+      #
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): remedido, 74 em 2 — inalterado. A
+      # onda não tocou no motor puro. Os pisos ficam onde estão.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -176,8 +179,23 @@ jobs:
       # O piso de ARQUIVOS vai a 16, colado no real — `conexoes` tem 13 casos e
       # `aprovacoes-permissao` 16: nenhum piso de CASOS com folga útil notaria a
       # falta de um deles. O de CASOS vai a 161 (18% de folga sobre 196).
-      PISO_CASOS_WEB: '161'
-      PISO_ARQUIVOS_WEB: '16'
+      #
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 228 casos em 17 arquivos.
+      #   aprovacoes-permissao 16, atendimento 25, blocos 7, busca 15, card 4,
+      #   conexoes 13, contexto-mapa 32, cta 2, dados 13, erro-da-api 10,
+      #   filtros 12, nav 19, regua 14, regua-modulos 12, regua-simulador 24,
+      #   resgate-central 5, storage 5.
+      #
+      # +32 casos e +1 arquivo sobre a onda 8, todos da fatia 4.4:
+      # `contexto-mapa` mede o mapa que virou a tela principal — inclusive o
+      # clique de mouse de verdade, que o ambiente de teste não implementa e que
+      # a fatia emulou (captura de ponteiro e classe de evento) para conseguir
+      # reintroduzir o defeito e vê-lo vermelho.
+      #
+      # O piso de ARQUIVOS vai a 17, colado no real. O de CASOS vai a 187 (~18%
+      # de folga sobre 228), a mesma proporção de sempre.
+      PISO_CASOS_WEB: '187'
+      PISO_ARQUIVOS_WEB: '17'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -402,8 +420,60 @@ jobs:
       #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
       #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
       #   · `rastro-retencao` com papel restrito: 33.
-      PISO_CASOS_API: '820'
-      PISO_ARQUIVOS_API: '28'
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 10, FATIA 4.3 (11/09/2026): +29 casos em +1 arquivo
+      # ---------------------------------------------------------------------
+      # `resposta-sem-fonte.test.ts` (29 casos): a declaração de ausência no
+      # contexto, a regra do defeito, a catraca que cobra o NOME de
+      # `respostaSemProcedencia` no fonte do runtime, o sinal no RASTRO e a
+      # guarda que impede resposta apoiada em FERRAMENTA de travar o agente.
+      # 23 rodam sem banco; 6 exigem `TEST_DATABASE_URL` (que este job tem).
+      #
+      # A conta vai de 1000/28 para 1029/29. O piso de ARQUIVOS vai a 29, colado
+      # no real — é ele quem pega arquivo que some da coleta. O de CASOS vai a
+      # 843, ~18% de folga sobre 1029, a mesma proporção de todas as ondas.
+      #
+      # ESTES NÚMEROS SÃO SÓ DA FATIA 4.3, e é de propósito — mesma disciplina
+      # da fatia 3.5 na onda 6: o agente não afirma sobre suíte que não escreveu
+      # nem mediu. As outras fatias da onda 10 acrescentam arquivo de teste
+      # (`canal-de-aprovacao`, `documentacao`, `rebaixamento-por-erro`,
+      # `contexto-mapa` no web), e quem remede o conjunto é a estabilização.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 1199 casos em 32 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime deste job: `TEST_DATABASE_URL` no Postgres descartável,
+      # conjunto `padrao`, nenhum caso pulado.
+      #
+      #   adversarial 66, alcada-reautenticacao 32, arquitetura 40,
+      #   canal-de-aprovacao 76, cofre 89, conector-desligado 37,
+      #   contexto-aprovacao 10, contexto-execucao 40, contrato-de-conector 71,
+      #   documentacao 48, env 7, escritas-pela-porta 37, fila-de-aprovacao 13,
+      #   llm-step 10, memoria 40, modelos-globais 20, modulos-por-tenant 97,
+      #   politica-por-tenant 27, porta 39, provisionamento 40, publicar-peca 4,
+      #   rastro-por-nivel 22, rastro-retencao 31, rebaixamento-por-erro 20,
+      #   resposta-sem-fonte 32, rotas-publicas-tenant 38, rotinas 48, runtime 9,
+      #   sop 90, teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # A conta da fatia 4.3 (1029/29) contava só o arquivo dela por cima da
+      # medição da onda 9 — o que era a disciplina certa, e deixava folga maior
+      # do que a proporção da casa. Os três arquivos que faltavam são das outras
+      # fatias da onda: `canal-de-aprovacao` (76), `documentacao` (48) e
+      # `rebaixamento-por-erro` (20). `porta` foi de 35 para 39 (o teto de
+      # momento do agente, imposto agora na porta: a recusa com causa própria no
+      # rastro, R0 que passa, R3 que não, e o degrau EFETIVO em vez do de
+      # catálogo), `arquitetura` de 38 para 40 (a quinta frente, que varre o
+      # monorepo inteiro) e `resposta-sem-fonte` de 29 para 32 (a guarda
+      # provisória saiu com os dois casos que a mediam; entraram a ferramenta
+      # executada como fonte e os três casos do rebaixamento como sinal).
+      #
+      # O piso de ARQUIVOS vai a 32, colado no real — é ele quem pega arquivo que
+      # some da coleta, e `publicar-peca` (4 casos) prova que nenhum piso de
+      # CASOS com folga útil notaria a falta de um arquivo pequeno. O de CASOS
+      # vai a 983, ~18% de folga sobre 1199: a mesma proporção de todas as ondas.
+      PISO_CASOS_API: '983'
+      PISO_ARQUIVOS_API: '32'
 
     steps:
       - uses: actions/checkout@v4

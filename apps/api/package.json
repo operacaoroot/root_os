@@ -35,6 +35,7 @@
     "cofre:rotacionar": "node dist/cofre/cofre.cli.js rotacionar",
     "cofre:migrar": "node dist/cofre/cofre.cli.js migrar",
     "cofre:desfazer-migracao": "node dist/cofre/cofre.cli.js desfazer-migracao",
+    "docs:gerar": "node dist/scripts/gerar-documentacao.js",
     "memoria:conferir": "node dist/memory/memoria.cli.js conferir",
     "memoria:migrar": "node dist/memory/memoria.cli.js migrar",
     "memoria:desfazer-migracao": "node dist/memory/memoria.cli.js desfazer-migracao"

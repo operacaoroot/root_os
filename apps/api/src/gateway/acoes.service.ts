@@ -15,6 +15,11 @@ import {
   type RecusaDeConector,
 } from '../integrations/conectores';
 import { PolicyService } from '../policy/policy.service';
+import { ApprovalsService } from '../approvals/approvals.service';
+import {
+  RECUSA_POR_VINCULO,
+  vinculoDoConteudo,
+} from '../approvals/vinculo-de-conteudo';
 import { ContextoDoEfeito } from './efeitos.registry';
 import { ToolGateway } from './tool-gateway.service';
 import {
@@ -68,6 +73,48 @@ import { InterruptoresRegistry } from './interruptores.registry';
  * deixavam a aprovação `consumida` sem nada ter saído — estado terminal que se
  * lê como "executada", de onde não se reexecuta nem se repropõe. Foi o defeito
  * que reprovou a fatia; a ordem acima é o conserto, e ela está travada por teste.
+ *
+ * ============================================================================
+ * O VÍNCULO AO CONTEÚDO MORA AQUI — fatia 5.5, e é o estrangulamento
+ * ============================================================================
+ *
+ * A escada promete `vinculo: 'conteudo'` de R2 para cima: a assinatura vale para
+ * AQUELE conteúdo, e mudar o conteúdo derruba a assinatura. O repositório cumpria
+ * isso pelo TOKEN (`ApprovalsService.consumir` recalcula o hash e compara) e não
+ * cumpria pela FILA, que é este caminho.
+ *
+ * A primeira versão da fatia 5.5 conferiu nos CHAMADORES — no controlador da
+ * fila e no serviço do canal de WhatsApp. Foi reprovada, e por duas medidas:
+ *
+ *   1. O TERCEIRO CHAMADOR FICOU DE FORA. `src/scripts/aprovar.ts` confirma e
+ *      chama `executarAprovada` direto, sem passar por nenhuma das duas
+ *      superfícies: o caminho de terminal continuava executando conteúdo trocado.
+ *   2. JANELA DE TROCA NOS OUTROS DOIS. Conferir no chamador e LER os argumentos
+ *      aqui deixa milissegundos entre uma coisa e outra. Quem consegue escrever
+ *      em `ToolCall.args` — que é exatamente o modelo de ameaça que a conferência
+ *      declara — troca o conteúdo nessa janela, e a linha do RASTRO sai carimbada
+ *      com o `contentHash` ANTIGO, afirmando que o que saiu foi o que foi
+ *      assinado. O buraco original, deslocado alguns milissegundos.
+ *
+ * Então a conferência é UMA, e fica onde os argumentos são lidos e entregues ao
+ * efeito: IMEDIATAMENTE ANTES do `updateMany` que marca a aprovação como
+ * consumida, sobre a MESMA variável `args` que vai para `dispararAprovado`. Os
+ * três chamadores passam por aqui, e não há janela entre conferir e usar.
+ *
+ * TERMINAL, e a exceção é deliberada. As outras recusas deste método são
+ * transitórias (conector religa, régua muda, capacidade volta ao catálogo) e por
+ * isso não podem custar a aprovação. Vínculo quebrado não é transitório: é a
+ * evidência de que o que está gravado para sair não é o que foi apresentado.
+ * Deixar pendente significaria que quem trocou o conteúdo pode trocá-lo de volta
+ * e conseguir a execução com a assinatura de antes. Ver
+ * `ApprovalsService.invalidarPorConteudo`.
+ *
+ * SEM CATÁLOGO NÃO SE DECIDE — E NÃO SE DESTRÓI NADA. Sem `PolicyService` não há
+ * como saber as `hashKeys` que a proposta usou, e conferir com a lista errada
+ * acusaria adulteração onde não houve. A resposta é RECUSAR (a aprovação segue
+ * intacta e `confirmada`, e a mesma chamada executa quando a política voltar),
+ * nunca invalidar e nunca pular. Era a incoerência que a revisão apontou: o
+ * canal DERRUBAVA a aprovação nesse caso e o controlador PULAVA a conferência.
  */
 @Injectable()
 export class AcoesService {
@@ -115,6 +162,17 @@ export class AcoesService {
      * não conteúdo sensível gravado em claro.
      */
     @Optional() private readonly policy?: PolicyService,
+    /*
+     * A FILA, para UMA coisa só: DERRUBAR a aprovação cujo vínculo ao conteúdo
+     * quebrou (`invalidarPorConteudo`, que também grava a linha de auditoria).
+     *
+     * `ApprovalsModule` é `@Global`, então isto não acrescenta aresta nenhuma ao
+     * grafo de módulos — é o mesmo arranjo que `ToolGateway` já usa. `@Optional()`
+     * pelo motivo de sempre (as suítes constroem à mão) e, sem ele, o vínculo
+     * quebrado continua RECUSANDO a execução: o que se perde é a invalidação, não
+     * a trava.
+     */
+    @Optional() private readonly approvals?: ApprovalsService,
   ) {}
 
   /**
@@ -311,6 +369,15 @@ export class AcoesService {
     const args = (chamada.args ?? {}) as Record<string, unknown>;
     this.gateway.conferirAprovado({ capabilityId, args, orgId });
 
+    /*
+     * O VÍNCULO AO CONTEÚDO — o ESTRANGULAMENTO. Ver o cabeçalho do arquivo.
+     *
+     * Sobre `args`, a MESMA variável que desce para `dispararAprovado` algumas
+     * linhas abaixo, e IMEDIATAMENTE antes de a aprovação virar `consumida`: não
+     * há janela entre conferir e usar.
+     */
+    await this.exigirVinculoIntacto(orgId, approvalId, ap, cap, args, actorId, chamada.id);
+
     // Uso único, mesmo aqui: dois cliques no botão de aprovar não podem
     // executar duas vezes. Quem garante é a escrita condicional, não um if.
     const { count } = await this.prisma.approval.updateMany({
@@ -447,6 +514,117 @@ export class AcoesService {
       });
       throw e;
     }
+  }
+
+  /**
+   * O CONTEÚDO QUE VAI SAIR AINDA É O QUE FOI ASSINADO? — RF-A-06, RF-A-03.
+   *
+   * Lança quando não é, e DERRUBA a aprovação antes de lançar. Não devolve nada
+   * porque não há caminho de continuação: ou o vínculo está de pé, ou esta
+   * execução não acontece.
+   *
+   * `'redigido'` PASSA, e não é descuido: para capacidade de sensibilidade
+   * `restrita` a porta grava a REDAÇÃO em `ToolCall.args` e o `contentHash` é
+   * dos argumentos crus — os dois nunca casam, por construção, e comparar ali
+   * acusaria adulteração em toda aprovação restrita do sistema. Ver
+   * `vinculo-de-conteudo.ts`. (O canal de WhatsApp nunca chega a este caso:
+   * `restrita` é R4 na escada, e R4 ele recusa de dentro.)
+   */
+  private async exigirVinculoIntacto(
+    orgId: string,
+    approvalId: string,
+    ap: { resourceType: string; contentHash: string; nivelExigido: RiskLevel; capabilityId: string | null },
+    cap: { efeito?: { sensibilidade?: string } } | null,
+    args: Record<string, unknown>,
+    actorId: string,
+    toolCallId: string,
+  ): Promise<void> {
+    if (!this.policy || !cap) {
+      this.log.warn(
+        `aprovação ${approvalId} NÃO executada: sem catálogo para conferir o vínculo ao conteúdo. ` +
+          'A aprovação continua CONFIRMADA e NÃO foi consumida — nada foi derrubado.',
+      );
+      throw new ForbiddenException(
+        'Não consegui conferir se o conteúdo desta ação ainda é o que foi aprovado (o catálogo ' +
+          'de capacidades não respondeu). Nada saiu e a aprovação continua de pé: tente de novo.',
+      );
+    }
+
+    const vinculo = vinculoDoConteudo({
+      resourceType: ap.resourceType,
+      argsGravados: args,
+      // As mesmas chaves que a proposta usou. Vazio = o corpo inteiro, que é a
+      // falha FECHADA de `canonicalHash`.
+      hashKeys: (cap as unknown as { hashKeys?: string[] }).hashKeys ?? [],
+      contentHash: ap.contentHash,
+    });
+    if (vinculo.estado !== 'quebrado') return;
+
+    await this.approvals?.invalidarPorConteudo(
+      orgId,
+      approvalId,
+      { tipo: ActorType.user, id: actorId },
+      { hashEsperado: ap.contentHash, hashAtual: vinculo.hashAtual, origem: 'execucao' },
+    );
+
+    /*
+     * A LINHA DE DESFECHO NEGATIVO no RASTRO. `aprovacao.invalida` é o tipo que
+     * a casa já usa para "a aprovação não valia" (ver `ToolGateway`), e a
+     * conferência de nível já sabe lê-lo: recusa vinda ANTES de qualquer
+     * execução não tem `entrega`, e não tem `aprovador` nem `aprovadoEm`, porque
+     * o que estava sendo assinado deixou de existir.
+     *
+     * `argumentos` FICA DE FORA, e a ausência é a decisão. O que está gravado em
+     * `ToolCall.args` neste instante é o conteúdo TROCADO — a carga de quem
+     * mexeu. Pô-lo no RASTRO seria copiar o ataque para dentro de um log
+     * append-only de cinco anos, lido com uma permissão diferente da de quem lê a
+     * ação. O que quem audita precisa está no payload: que divergiram (os dois
+     * hashes), quando e por ordem de quem.
+     */
+    try {
+      await this.eventos.registrar({
+        orgId,
+        tipo: 'aprovacao.invalida',
+        actorType: ActorType.user,
+        actorId,
+        capabilityId: ap.capabilityId,
+        toolCallId,
+        nivel: ap.nivelExigido,
+        correlationId: correlacaoAtual() ?? null,
+        payload: {
+          approvalId,
+          // `porque` e não `motivo`: `motivo` é PALAVRA DA POLÍTICA e vive em
+          // `conteudo`, que é espalhado por cima do payload na montagem. Com o
+          // mesmo nome nos dois lados, o `EventLogService` avisa que descartou um.
+          porque: 'vinculo-quebrado',
+          hashAssinado: ap.contentHash.slice(0, 12),
+          hashAtual: vinculo.hashAtual?.slice(0, 12) ?? null,
+        },
+        contentHash: ap.contentHash,
+        conteudo: {
+          resumo: 'vínculo ao conteúdo quebrado',
+          // `canal` é de que porta de SAÍDA se fala — a linha continua sem
+          // `aprovador`, `aprovadoEm` e `entrega` de propósito: ninguém assinou
+          // e nada saiu, que é o ponto inteiro de um desfecho negativo.
+          canal: conectorDaCapacidade(ap.capabilityId),
+          motivo:
+            'o conteúdo gravado para sair não é mais o que foi apresentado para aprovação',
+          fontes: ap.capabilityId
+            ? [{ tipo: 'ferramenta', id: ap.capabilityId, origem: 'aprovacao' }]
+            : [],
+        },
+        sensibilidade: cap.efeito?.sensibilidade as SensibilidadeDoEvento | undefined,
+      });
+    } catch (e) {
+      // O registro nunca derruba a trava: perder a linha é ruim, executar é pior.
+      this.log.warn(`não deu para registrar "aprovacao.invalida": ${(e as Error).message}`);
+    }
+
+    this.log.warn(
+      `aprovação ${approvalId} DERRUBADA: vínculo ao conteúdo quebrado ` +
+        `(assinado ${ap.contentHash.slice(0, 12)}, atual ${vinculo.hashAtual?.slice(0, 12) ?? '—'})`,
+    );
+    throw new ForbiddenException(RECUSA_POR_VINCULO);
   }
 
   /**

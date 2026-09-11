@@ -30,6 +30,8 @@ export interface PassoInput {
   custoEstimado?: boolean;
   stopReason?: string | null;
   fontes?: Prisma.InputJsonValue;
+  /** Por que não havia dado — só no passo de contexto. Ver `SessionStep`. */
+  motivoSemDado?: string | null;
   payload?: Prisma.InputJsonValue;
   texto?: string | null;
   erro?: string | null;
@@ -114,6 +116,7 @@ export class SessionService {
         custoEstimado: p.custoEstimado ?? true,
         stopReason: p.stopReason ?? null,
         fontes: p.fontes ?? [],
+        motivoSemDado: p.motivoSemDado ?? null,
         payload: p.payload,
         texto: p.texto ?? null,
         erro: p.erro ?? null,

@@ -3,13 +3,13 @@
   "diagram_type": "sequence",
   "meta": {
     "title": "IA → MCP: leitura e ação com aprovação humana",
-    "subtitle": "Bot Telegram · duas trilhas de credencial: conta-serviço (só-leitura) e conta-ação (*.editar)",
+    "subtitle": "Bot Telegram · duas trilhas de credencial: conta-serviço (só-leitura) e conta-ação (*.editar) · DESENHO DE JUL/2026 — o bot do Telegram (apps/telegram) foi APOSENTADO em 11/09/2026 (fatia 5.8). A confirmação humana acontece na tela /aprovacoes e no canal de WhatsApp, não num botão de chat.",
     "output": "ai-mcp.sequence.html",
     "viewBox": [980, 1080]
   },
   "participants": [
     { "id": "user", "type": "external", "label": "Você", "sublabel": "Telegram" },
-    { "id": "bot", "type": "frontend", "label": "Bot", "sublabel": "apps/telegram" },
+    { "id": "bot", "type": "frontend", "label": "Bot", "sublabel": "apps/telegram", "tag": "APOSENTADO 11/09/2026" },
     { "id": "ai", "type": "backend", "label": "OpenAI", "sublabel": "gpt-4o · tools" },
     { "id": "mcp", "type": "messagebus", "label": "MCP", "sublabel": "stdio · só-leitura" },
     { "id": "api", "type": "backend", "label": "API", "sublabel": "NestJS + RBAC" },
@@ -50,7 +50,7 @@
   ],
   "cards": [
     { "dot": "emerald", "title": "Leitura", "items": ["A IA só toca dado via MCP (32 tools read-only)", "MCP autentica com conta-serviço sem permissão de escrita", "Tudo passa por RBAC + auditoria da API; nunca SQL direto", "Cada tool devolve { source } → a IA cita a fonte"] },
-    { "dot": "rose", "title": "Ação sensível", "items": ["propose_* apenas REGISTRA a proposta — não executa", "Humano confirma no Telegram antes de qualquer escrita", "Escrita usa conta-ação separada, só *.editar (least privilege)"] },
+    { "dot": "rose", "title": "Ação sensível", "items": ["propose_* apenas REGISTRA a proposta — não executa", "Humano confirma antes de qualquer escrita (era no Telegram; hoje é a tela /aprovacoes)", "Escrita usa conta-ação separada, só *.editar (least privilege)"] },
     { "dot": "amber", "title": "Gap encontrado", "items": ["O gate 'confirmar' vive no BOT, não na API", "A conta-ação aceita PATCH sem approval_token", "Princípio diz 'enforced no MCP, não só na UI' — hoje é na UI", "Sugestão: token de aprovação exigido no endpoint de escrita"] }
   ]
 }

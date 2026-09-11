@@ -149,6 +149,24 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
       EVOLUTION_GRUPO_JID: ${EVOLUTION_GRUPO_JID:-}
+      # APROVAR PELO WHATSAPP (fatia 5.5, RF-A-06). DESLIGADO É O PADRÃO: sem as
+      # duas variáveis abaixo o webhook responde 404, nenhum pedido de aprovação
+      # sai e nenhum código é gerado. Precisam estar NESTE bloco — o container não
+      # lê o `.env`, só chega o que está listado aqui (ver CLAUDE.md, "Onde cada
+      # `.env` é lido"). Sem esta linha o canal era INLIGÁVEL em produção: dava
+      # para preencher o `.env` e não acontecer nada.
+      #   · _SEGREDO autentica o webhook (viaja no cabeçalho x-canal-segredo);
+      #   · _CODIGO_SEGREDO deriva o código de cada aprovação e NUNCA sai do
+      #     processo. Os dois precisam ser DIFERENTES e ter 24+ caracteres — se
+      #     faltar um, ou se forem iguais, o arranque grita e o canal fica
+      #     desligado (EnvioDeAprovacaoService.onModuleInit).
+      CANAL_APROVACAO_SEGREDO: ${CANAL_APROVACAO_SEGREDO:-}
+      CANAL_APROVACAO_CODIGO_SEGREDO: ${CANAL_APROVACAO_CODIGO_SEGREDO:-}
+      # As capacidades que o canal aceita DECIDIR. Vazio = o padrão
+      # (`whatsapp.mensagem.enviar`), nunca "todas". Só mostra o conteúdo exato —
+      # e só decide — quando o efeito da capacidade é de sensibilidade `publica`;
+      # o resto recebe aviso sem código e decide no painel.
+      CANAL_APROVACAO_CAPACIDADES: ${CANAL_APROVACAO_CAPACIDADES:-}
       CLICKUP_LIST_PAUTA: ${CLICKUP_LIST_PAUTA:-}
       CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
       CLICKUP_SPACE_ID: ${CLICKUP_SPACE_ID:-}
@@ -158,6 +176,10 @@ services:
       CLICKUP_CONTENT_LIST_IDS: ${CLICKUP_CONTENT_LIST_IDS:-}
       CLICKUP_CONTENT_LIST_NAMES: ${CLICKUP_CONTENT_LIST_NAMES:-Gestão de Temas}
       CLICKUP_SYNC_INTERVAL_MIN: ${CLICKUP_SYNC_INTERVAL_MIN:-60}
+      # SOBREVIVEU À APOSENTADORIA DO BOT (fatia 5.8) e não é resíduo: quem lê
+      # esta variável aqui é `src/integrations/integrations.service.ts`, para a
+      # tela de Conexões dizer se o Telegram está configurado. O serviço
+      # `telegram` que saiu deste arquivo era outro leitor, num outro container.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       OBSIDIAN_VAULT_PATH: /vault
       OBSIDIAN_REINDEX_MIN: ${OBSIDIAN_REINDEX_MIN:-30}
@@ -274,28 +296,62 @@ services:
     networks: [marketing-os-net]
     restart: unless-stopped
 
-  telegram:
-    image: mktos-app
-    container_name: mktos_telegram
-    working_dir: /app/apps/telegram
-    command: node dist/index.js
-    environment:
-      MCP_API_URL: http://api:4001/api
-      MCP_ENTRY: /app/packages/mcp/dist/index.js
-      MCP_SERVICE_EMAIL: ${MCP_SERVICE_EMAIL:-mcp@marketing-os.local}
-      MCP_SERVICE_PASSWORD: ${MCP_SERVICE_PASSWORD:?defina no .env (sem default fraco) — rode db:seed p/ alinhar a conta}
-      MCP_ACTION_EMAIL: ${MCP_ACTION_EMAIL:-ia-acao@marketing-os.local}
-      MCP_ACTION_PASSWORD: ${MCP_ACTION_PASSWORD:?defina no .env (sem default fraco) — rode db:seed p/ alinhar a conta}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
-      DAILY_REPORT_TIME: ${DAILY_REPORT_TIME:-08:00}
-      DAILY_REPORT_TZ: ${DAILY_REPORT_TZ:-America/Sao_Paulo}
-    depends_on:
-      api: { condition: service_healthy }
-    networks: [marketing-os-net]
-    restart: unless-stopped
+  # ---------------------------------------------------------------------------
+  # O SERVIÇO `telegram` FOI APOSENTADO NA FATIA 5.8 (11/09/2026) — e a lápide
+  # fica aqui porque ressuscitá-lo por engano custa mais caro do que lê-la.
+  #
+  # O QUE ELE ERA: `apps/telegram`, um bot que falava com o modelo (OpenAI, com
+  # prompt de sistema próprio) e subia o servidor MCP como processo filho. Duas
+  # coisas que, nesta arquitetura, ninguém mais faz fora da API: o modelo mora
+  # atrás do `LlmProvider` (com teto de custo por empresa), e toda ação sobre o
+  # mundo passa pelo Tool Gateway (RF-G-01). O bot era um SEGUNDO cliente de
+  # modelo, um SEGUNDO cliente de MCP e um TERCEIRO caminho de escrita — ele
+  # autenticava como a conta de máquina `ia-acao@` e dava PATCH direto em
+  # /leads, /tasks, /campaigns e /content com um `x-approval-token`.
+  #
+  # POR QUE APOSENTAR E NÃO MIGRAR: o laço de ação dele JÁ ESTAVA MORTO nesta
+  # branch. Ele propunha a aprovação e em seguida chamava `/approvals/:id/confirm`
+  # com a própria conta de serviço — e a fatia 3.10 fechou os dois lados disso:
+  # `ia_acao` não tem `aprovacoes.decidir` (ver packages/shared/src/permissions.ts)
+  # e `ApprovalsService.confirm` recusa tanto conta de máquina quanto o próprio
+  # proponente (invariante 7 da escada). Todo botão "Confirmar" do bot terminava
+  # em HTTP 403. Migrá-lo seria reescrevê-lo do zero como canal do gateway, e o
+  # canal que a ROOT de fato usa é o WhatsApp pela Evolution.
+  #
+  # O QUE SE PERDE: o resumo diário agendado (08:00 BRT), que era um
+  # `setTimeout` in-process de um container que só rodava no Mac. O lugar dele
+  # agora é uma Rotina do módulo `routines` (RF-N-04) — agendador único, por
+  # empresa, com arrendamento, histórico e teto de custo de IA. Ver o relatório
+  # da fatia 5.8.
+  #
+  # DE QUEBRA, A ARMADILHA DAS DUAS SENHAS SUMIU: `MCP_SERVICE_PASSWORD` e
+  # `MCP_ACTION_PASSWORD` eram interpoladas aqui com `:?`, e como a interpolação
+  # é do ARQUIVO INTEIRO, faltar qualquer uma delas derrubava TODO comando de
+  # compose no servidor — inclusive `ps` e `config` — num serviço que a VPS nem
+  # subia. NENHUMA VARIÁVEL É MAIS EXIGIDA POR ESTE ARQUIVO: não sobrou nenhum
+  # `:?` nele.
+  #
+  # ONDE CADA UMA DAS DUAS FICOU (e a diferença importa, porque uma delas ainda
+  # tem leitor e a outra não):
+  #
+  #   · `MCP_SERVICE_PASSWORD` continua valendo FORA daqui — é a senha da conta
+  #     de serviço do servidor MCP avulso (`packages/mcp/src/client.ts`), que
+  #     roda por fora do compose (Claude Desktop, `docker run`) e NÃO SOBE sem
+  #     ela. Sem essa variável o compose vai bem e o MCP é que não funciona.
+  #   · `MCP_ACTION_PASSWORD` ainda é lida por `apps/api/prisma/seed.ts`, que
+  #     cria a conta de máquina `ia-acao@` e precisa da senha em claro uma vez
+  #     para guardar o hash. A catraca de arquitetura carrega essa linha como
+  #     EXCEÇÃO DECLARADA (`EXCECOES_CONTA_DE_ACAO`), não como esquecimento: a
+  #     conta ficou sem cliente quando o bot saiu, e apagá-la é decisão humana
+  #     pendente.
+  #   · `MCP_ACTION_EMAIL` é a única que ficou sem leitor nenhum — o e-mail da
+  #     conta está fixo no código da semente.
+  #
+  # A catraca de arquitetura (frente 5, `apps/api/test/arquitetura.test.ts`)
+  # vigia os dois sentidos: um leitor NOVO de `MCP_ACTION_*` é caminho de escrita
+  # novo fora da porta, e o dia em que a semente parar de ler a senha a exceção
+  # tem de sair da lista.
+  # ---------------------------------------------------------------------------
 
 networks:
   marketing-os-net:

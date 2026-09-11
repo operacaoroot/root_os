@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
-import { PrismaClient, ActorType, ApprovalState } from '@prisma/client';
+import { PrismaClient, ActorType, ApprovalState, RiskLevel, ToolCallStatus } from '@prisma/client';
 import { PolicyService } from '../src/policy/policy.service';
-import { SinaisService } from '../src/policy/sinais.service';
+import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { ApprovalsController } from '../src/approvals/approvals.controller';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -841,6 +841,133 @@ describe.skipIf(!URL)('a porta', () => {
     );
     expect(livre.status).toBe('executado');
     expect(rodou).toBe(true);
+  });
+
+  /*
+   * =========================================================================
+   * O TETO DE MOMENTO DO AGENTE — RF-N-07, imposto AQUI desde 11/09/2026
+   * =========================================================================
+   *
+   * O rebaixamento por erro era imposto no LAÇO (`agent-runtime.service.ts`),
+   * antes de a porta ser chamada. Duas coisas só se fecham aqui dentro: a recusa
+   * entrar no RASTRO — quem escreve `ToolCall`, `PolicyDecision` e
+   * `tool.recusado` é esta porta — e a comparação usar o degrau EFETIVO em vez
+   * do de catálogo, que é mais permissivo porque qualquer sinal aceso sobe um.
+   *
+   * A outra metade (o laço carrega o teto certo até aqui) é medida sem banco em
+   * `test/rebaixamento-por-erro.test.ts`.
+   */
+  describe('o teto de momento do agente', () => {
+    const rebaixado = { nivel: RiskLevel.R1, motivo: 'autonomia do agente rebaixada por erro' };
+
+    it('R3 com teto R1: recusa, efeito não roda, e a linha inteira entra no rastro', async () => {
+      let rodou = false;
+      const r = await gateway.executar(
+        {
+          capabilityId: 'whatsapp.mensagem.enviar',
+          args: { titulo: 'T', corpo: 'c' },
+          ctx: ctx({ tetoDoAgente: rebaixado }),
+          resource: { type: 'whatsapp.mensagem.enviar', id: 'grupo-1' },
+        },
+        async () => {
+          rodou = true;
+          return {};
+        },
+      );
+
+      expect(r.status).toBe('recusado');
+      expect(rodou, 'o efeito rodou mesmo com o agente de castigo').toBe(false);
+
+      // NADA FOI RETIDO: nenhuma aprovação nasce em nome de um agente rebaixado.
+      if (r.status !== 'recusado') throw new Error('deveria recusar');
+      expect(r.toolCallId).toBeTruthy();
+      const chamada = await prisma.toolCall.findUniqueOrThrow({ where: { id: r.toolCallId } });
+      expect(chamada.status).toBe(ToolCallStatus.recusado);
+      expect(chamada.approvalId).toBeNull();
+      expect(chamada.erro).toContain('rebaixada');
+
+      // A DECISÃO diz que quem recusou foi a PORTA, com rótulo estável — é por
+      // essa string que o relatório de calibragem agrupa.
+      const decisao = await prisma.policyDecision.findUniqueOrThrow({
+        where: { id: chamada.decisionId! },
+      });
+      expect(decisao.permitido).toBe(false);
+      expect(decisao.exigeAprovacao).toBe(false);
+      expect(decisao.motivo).toContain('autonomia do agente rebaixada por erro');
+
+      // E O RASTRO tem a recusa, com a causa própria no payload.
+      const evento = await prisma.eventLog.findFirst({
+        where: { orgId: ORG, tipo: 'tool.recusado', toolCallId: chamada.id },
+        orderBy: { seq: 'desc' },
+      });
+      expect((evento?.payload as { causa?: string })?.causa).toBe('agente_rebaixado');
+    });
+
+    it('R0 com teto R1 passa — rebaixado é menos alcance, não agente mudo', async () => {
+      const r = await gateway.executar(
+        { capabilityId: 'numeros.painel.ler', args: {}, ctx: ctx({ tetoDoAgente: rebaixado }) },
+        async () => ({ leadsHoje: 3 }),
+      );
+      expect(r.status).toBe('executado');
+    });
+
+    it('sem teto no contexto, a MESMA chamada R3 volta a ser retida', async () => {
+      const r = await gateway.executar(
+        {
+          capabilityId: 'whatsapp.mensagem.enviar',
+          args: { titulo: 'T', corpo: 'c' },
+          ctx: ctx(),
+          resource: { type: 'whatsapp.mensagem.enviar', id: 'grupo-2' },
+        },
+        async () => ({}),
+      );
+      expect(r.status).toBe('aguardando_aprovacao');
+    });
+
+    it('O DEGRAU COMPARADO É O EFETIVO, não o de catálogo', async () => {
+      /*
+       * O defeito que a mudança de casa fecha, e ele não é hipotético.
+       *
+       * `email.rascunhar` é R1 no catálogo — exatamente o teto de um agente
+       * rebaixado, portanto PASSARIA numa comparação por catálogo, que é o que o
+       * laço fazia. Com a marca de procedência externa acesa, a régua sobe um
+       * degrau e a ação vale R2: acima do teto. Aqui ela é recusada.
+       *
+       * Este é o caso que o laço deixava passar, e ele não é raro: procedência
+       * externa acende em toda sessão que veio de mensagem de WhatsApp, e
+       * acende também no resultado de QUALQUER ferramenta que volta ao modelo.
+       */
+      const externa = new ProcedenciaExterna().marcar('mensagem de WhatsApp');
+      const rascunho = { assunto: 'proposta', corpo: 'segue a proposta' };
+      const semMarca = await gateway.executar(
+        {
+          capabilityId: 'email.rascunhar',
+          args: rascunho,
+          ctx: ctx({ tetoDoAgente: rebaixado }),
+        },
+        async () => ({ rascunho: 'oi' }),
+      );
+      // Controle: no degrau de catálogo (R1) ela passa — o teto é R1.
+      expect(semMarca.status).toBe('executado');
+      expect(semMarca.status === 'executado' && semMarca.decisao.nivel).toBe('R1');
+
+      let rodou = false;
+      const r = await gateway.executar(
+        {
+          capabilityId: 'email.rascunhar',
+          args: rascunho,
+          ctx: ctx({ tetoDoAgente: rebaixado, procedenciaExterna: externa }),
+        },
+        async () => {
+          rodou = true;
+          return { rascunho: 'oi' };
+        },
+      );
+      expect(r.status, 'a comparação voltou a ser pelo nível de catálogo').toBe('recusado');
+      expect(rodou).toBe(false);
+      if (r.status !== 'recusado') throw new Error('deveria recusar');
+      expect(r.decisao.nivel).toBe('R2');
+    });
   });
 });
 

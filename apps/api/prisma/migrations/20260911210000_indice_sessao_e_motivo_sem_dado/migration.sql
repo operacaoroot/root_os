@@ -1,0 +1,48 @@
+-- ============================================================================
+-- O SINAL DE RESPOSTA SEM FONTE GANHA ÍNDICE, E O TRAÇO GANHA O MOTIVO DA
+-- AUSÊNCIA (RF-M-02) — a ligação da onda 10
+--
+-- Nenhuma tabela nasce aqui, então não há isolamento por linha a aplicar:
+-- `Session` e `SessionStep` já nasceram com ENABLE + FORCE e as policies na
+-- migration do isolamento, e nem coluna nova nem índice mudam policy.
+--
+-- ----------------------------------------------------------------------------
+-- 1. `SessionStep.motivoSemDado` — por que não havia dado
+-- ----------------------------------------------------------------------------
+-- `ContextBuilder.montar` distingue três ausências desde a onda 10:
+-- `nada_na_base`, `notas_sem_corpo` e `busca_indisponivel`. O modelo recebia a
+-- diferença por escrito no prompt; o traço, não — o passo de contexto saía com
+-- `fontes: []` nos três casos e a tela de Sessões mostrava lista vazia sem dizer
+-- de qual vazio se trata.
+--
+-- A diferença decide conversa com cliente: "a base desta empresa não tem esse
+-- registro" pede carga de contexto; "a base está indisponível agora" pede olhar
+-- o índice vetorial. Responder a primeira quando a verdade é a segunda é
+-- afirmar, sobre o negócio do cliente, uma coisa que ninguém verificou.
+--
+-- TEXT E NÃO ENUM, de propósito: o vocabulário dos três motivos mora no código
+-- (`MotivoDaAusencia`), e um enum de banco exigiria migration para cada motivo
+-- novo de ausência — que é justamente a lista que deve poder crescer. Nulo em
+-- todo passo que não é de contexto, e nulo no passo de contexto que teve dado.
+--
+-- ----------------------------------------------------------------------------
+-- 2. O ÍNDICE DE `Session`
+-- ----------------------------------------------------------------------------
+-- `SinaisService.respostasSemFonte` conta sessões marcadas como sem procedência
+-- nas últimas 24 horas, e essa contagem roda no caminho MAIS QUENTE do sistema:
+-- toda passagem pela porta, para todo agente. Os índices que `Session` tinha são
+-- por `criadaEm`; o filtro desta consulta é por `semProcedencia` + `encerradaEm`,
+-- e sem índice ela varre a tabela de sessões inteira.
+--
+-- NÃO É PARCIAL (`WHERE "semProcedencia"`), embora coubesse: o Prisma não
+-- declara índice parcial no schema, e um índice criado só em SQL sai do schema
+-- e some no `migrate diff` seguinte. Com `semProcedencia` como segunda coluna, o
+-- planejador usa o índice do mesmo jeito; o que se perde é tamanho em disco, e
+-- não plano de consulta.
+-- ============================================================================
+
+-- AlterTable
+ALTER TABLE "SessionStep" ADD COLUMN     "motivoSemDado" TEXT;
+
+-- CreateIndex
+CREATE INDEX "Session_orgId_semProcedencia_encerradaEm_idx" ON "Session"("orgId", "semProcedencia", "encerradaEm");

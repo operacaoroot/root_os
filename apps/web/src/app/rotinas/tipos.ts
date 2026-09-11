@@ -35,6 +35,17 @@ export interface RotinaResumo {
   ultimoStatus: string | null;
   proximaExecucaoEm: string | null;
   minutosPorExecucao: number | null;
+  /**
+   * NÃO USE ESTE CAMPO NA TELA — RF-N-05.
+   *
+   * Ele é `minutosPorExecucao × Rotina.execucoes`, e `execucoes` conta as
+   * passagens que deram ERRO junto com as que deram certo (só `pulada` fica de
+   * fora — ver `RotinasService.registrarDesfecho`). Como número de venda, isso
+   * é tempo devolvido inflado por retrabalho. Quem mede aqui é `horas.ts`, do
+   * log real de passagens; o conserto do campo na API está no relatório da
+   * fatia 5.6. O campo continua no contrato porque o contrato é espelho do que
+   * a API manda, não uma escolha desta tela.
+   */
   minutosDevolvidos: number | null;
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sobe a stack completa em containers (db/redis/minio + api/web/telegram), ISOLADA.
+# Sobe a stack completa em containers (db/redis/minio + api/web), ISOLADA.
 # Injeta os segredos PRÓPRIOS do root (~/.config/root/*.env) + apps/api/.env no
 # ambiente para o compose interpolar — NADA de segredo fica no repo.
 #
@@ -66,6 +66,9 @@ load_env() {
 # no servidor (o bind mount falha e a API não sobe).
 if [ "$NA_VPS" -eq 0 ]; then
   load_env "$HOME/.config/root/openai.env"
+  # Continua valendo mesmo sem o bot: o serviço `telegram` saiu do compose na
+  # fatia 5.8, mas TELEGRAM_BOT_TOKEN vai para o bloco `environment:` da API,
+  # que o lê para a tela de Conexões dizer se o Telegram está configurado.
   load_env "$HOME/.config/root/telegram.env"
   load_env "$HOME/.config/root/clickup.env"
   load_env "$HOME/.config/root/google.env"
@@ -82,7 +85,7 @@ if [ "$NA_VPS" -eq 0 ]; then
   # avisos úteis (não bloqueiam) — `|| true` porque são o último comando do bloco
   # e o set -e mataria o script justamente quando a variável ESTÁ preenchida.
   [ -z "${OPENAI_API_KEY:-}" ]     && echo "[up] aviso: OPENAI_API_KEY vazio (IA/resumo não vão funcionar)." || true
-  [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (bot não sobe)." || true
+  [ -z "${TELEGRAM_BOT_TOKEN:-}" ] && echo "[up] aviso: TELEGRAM_BOT_TOKEN vazio (Telegram aparece como não configurado em Conexões)." || true
 fi
 
 if [ "$CONSTRUIR" -eq 1 ]; then
@@ -92,4 +95,4 @@ else
   echo "[up] subindo containers SEM construir (usa a imagem que já está no host)…"
   docker compose "${COMPOSE_FILES[@]}" up -d --no-build "$@"
 fi
-echo "[up] pronto. Ver: docker compose ps · logs: docker compose logs -f telegram"
+echo "[up] pronto. Ver: docker compose ps · logs: docker compose logs -f api"

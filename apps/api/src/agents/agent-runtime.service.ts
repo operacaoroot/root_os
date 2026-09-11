@@ -26,11 +26,12 @@ import {
   ContextBuilder,
   blocoExterno,
   neutralizarEstrutura,
+  respostaSemProcedencia,
   type FonteContexto,
 } from './context-builder.service';
 import { SessionService } from './session.service';
 import { nomeDoDonoDaCasa } from './donos-da-casa';
-import type { CapacidadeCatalogo } from '@mktos/policy';
+import { ORDEM_DOS_NIVEIS, type CapacidadeCatalogo, type Nivel } from '@mktos/policy';
 import { montarSop } from './sop';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
 
@@ -129,6 +130,73 @@ type AgenteEmSessao = Agent & { sop: Sop | null };
 
 /** Teto duro do código, acima do que qualquer agente pode declarar. */
 const MAX_PASSOS_ABSOLUTO = 16;
+
+/* ==========================================================================
+ * O REBAIXAMENTO POR ERRO — RF-N-07
+ * ==========================================================================
+ *
+ * ATÉ 11/09/2026 ISTO NÃO EXISTIA DE VERDADE. `atualizarAgente` gravava
+ * `rebaixadoAte` a cada falha e um comentário prometia que "quem aplica o
+ * rebaixamento é a régua, via sinal erro_recente" — só que `erro_recente`
+ * (`policy/sinais.service.ts`) conta linha de `ToolCall` com desfecho `erro` ou
+ * `recusado`, e NUNCA lê `Agent.rebaixadoAte`. As duas pontas não se tocavam:
+ *
+ *   · uma sessão pode falhar sem produzir `ToolCall` nenhuma (teto de custo,
+ *     teto de tempo, modelo que não conclui em N passos) — então o agente era
+ *     "rebaixado" e o sinal nem acendia;
+ *   · e quando acendia, `erro_recente` sobe UM degrau na régua, que não é a
+ *     mesma coisa que um TETO. Um agente com autonomia até R3 seguia mandando
+ *     mensagem no dia seguinte a ter errado duas vezes seguidas.
+ *
+ * O QUE VALE AGORA, e é o que o teste cobra: rebaixado, o agente não passa do
+ * primeiro degrau de escrita. R0 e R1 (ler, resumir, rascunhar) continuam
+ * valendo — tirar isso transformaria "autonomia rebaixada" em "agente
+ * desligado", e um agente que erra é exatamente o que mais precisa continuar
+ * respondendo para alguém entender o que houve.
+ *
+ * QUEM IMPÕE É A PORTA, desde 11/09/2026. Este arquivo LÊ `rebaixadoAte`,
+ * calcula o teto da janela e o carrega em `ExecCtx.tetoDoAgente`; a recusa
+ * acontece em `gateway/tool-gateway.service.ts` (bloco 6-bis), com causa própria
+ * e RASTRO inteiro. Impor aqui — como a primeira versão fazia — deixava a recusa
+ * fora do rastro e comparava o nível de CATÁLOGO, que é mais permissivo do que o
+ * EFETIVO: qualquer sinal aceso sobe um degrau.
+ *
+ * E O REBAIXAMENTO TAMBÉM ACENDE SINAL, que é a outra metade do RF-N-07:
+ * `policy/sinais.service.ts` lê `rebaixadoAte` e acende `erro_recente`. São
+ * coisas diferentes — o teto diz até onde ele chega; o sinal faz o que sobrou
+ * sair um degrau acima.
+ *
+ * A VOLTA É SOZINHA, POR RELÓGIO. Não há tarefa de limpeza que "reative" nada:
+ * a conferência é `rebaixadoAte > agora`, avaliada a cada chamada de
+ * ferramenta. Passadas as 24h a comparação para de casar e o agente volta ao
+ * teto declarado dele. Sucesso no meio da janela NÃO encurta o prazo — o que
+ * se compra com 24h é observação, não uma segunda chance imediata.
+ */
+
+/** O degrau máximo que um agente rebaixado alcança. */
+const TETO_DO_REBAIXADO: RiskLevel = RiskLevel.R1;
+
+/** Quanto dura o rebaixamento. 24 horas, como o RF-N-07 pede. */
+const JANELA_DO_REBAIXAMENTO_MS = 86_400_000;
+
+/**
+ * DUAS FALHAS SEGUIDAS, e não uma.
+ *
+ * Uma falha isolada é ruído de operação (rede, teto de tempo apertado, um
+ * pedido impossível). Rebaixar na primeira faria a autonomia do OS oscilar por
+ * acidente, e o que oscila ninguém confia. Duas seguidas já é padrão: o agente
+ * tentou de novo e errou de novo.
+ *
+ * "SEGUIDAS" é lido de `Agent.ultimoStatus`, que guarda o desfecho da sessão
+ * ANTERIOR — qualquer desfecho que não seja `falhou` no meio zera a contagem.
+ * `Agent.falhas` não serve para isto: é acumulador de vida inteira.
+ */
+const FALHAS_SEGUIDAS_PARA_REBAIXAR = 2;
+
+/** Posição do degrau na escada. Índice maior = degrau mais alto. */
+function grau(n: RiskLevel | Nivel | string): number {
+  return ORDEM_DOS_NIVEIS.indexOf(n as Nivel);
+}
 
 /*
  * O LAÇO.
@@ -278,10 +346,31 @@ export class AgentRuntime {
      * "por que esta ação subiu de degrau" com o nome da nota, não com um "sim".
      */
     this.absorver(procedencia, montado.procedencia, 'conteúdo externo entrou no contexto');
+    /*
+     * POR QUE NÃO HAVIA DADO vai para o traço — e até 11/09/2026 ninguém lia
+     * este campo.
+     *
+     * `ContextBuilder.montar` distingue três ausências desde a onda 10 —
+     * `nada_na_base`, `notas_sem_corpo` e `busca_indisponivel` — e o modelo já
+     * recebia a diferença por escrito no prompt. O traço, não: o passo de
+     * contexto saía com `fontes: []` nos três casos, e a tela de Sessões mostrava
+     * lista vazia sem dizer de qual vazio se trata.
+     *
+     * A diferença decide conversa com cliente. "A base desta empresa não tem
+     * esse registro" pede carga de contexto; "a base está indisponível agora"
+     * pede olhar o índice vetorial, e responder a primeira coisa quando a
+     * verdade é a segunda é afirmar sobre o negócio do cliente uma coisa que
+     * ninguém verificou.
+     *
+     * `detalhe` NÃO é gravado: ele é linha de log, pode carregar mensagem de
+     * exceção do provedor de busca, e o traço é lido na tela. O motivo é
+     * vocabulário fechado de três valores.
+     */
     await this.sessoes.passo(p.orgId, sessionId, {
       tipo: 'contexto',
       texto: blocos || null,
       fontes: fontes as unknown as object[],
+      motivoSemDado: montado.ausencia?.motivo ?? null,
     });
     emitir({ t: 'contexto', fontes });
 
@@ -292,6 +381,58 @@ export class AgentRuntime {
       .filter((c): c is NonNullable<typeof c> => !!c);
     const ferramentas = paraFerramentas(declaradas as unknown as CapacidadeCatalogo[]);
     const capPorFerramenta = new Map(ferramentas.map((f) => [f.spec.name, f.capabilityId]));
+    /*
+     * O NÍVEL DE CATÁLOGO de cada capacidade declarada — o degrau ANTES dos
+     * sinais. É o que o rebaixamento compara, e é a comparação certa: os sinais
+     * só SOBEM nível, então o que passa neste teto passaria em qualquer
+     * escalonamento. Capacidade que a política desta empresa não resolve não
+     * entra no mapa, e cai no lado fechado da conferência abaixo.
+     */
+    const nivelPorCapacidade = new Map<string, RiskLevel>(
+      declaradas.map((c) => [c.id, c.nivel as RiskLevel]),
+    );
+
+    /*
+     * O REBAIXAMENTO, LIDO UMA VEZ POR SESSÃO — ver o bloco do RF-N-07 lá em
+     * cima. Uma vez, e não a cada chamada, porque `rebaixadoAte` não muda no
+     * meio da sessão (quem o grava é o encerramento DESTA sessão, depois do
+     * laço) e porque a anotação que vai na descrição das ferramentas precisa
+     * concordar com a recusa que acontece na chamada. Um agente que lê "esta
+     * ferramenta está indisponível" e mesmo assim a chama recebe a recusa; o
+     * contrário — descrição limpa e recusa surpresa — queima passo e dinheiro.
+     *
+     * QUEM IMPÕE O TETO É A PORTA, desde 11/09/2026. Este laço só o CARREGA, em
+     * `ExecCtx.tetoDoAgente`. Impor aqui tinha dois defeitos que só se fecham lá
+     * dentro: a recusa não entrava no RASTRO (quem escreve `ToolCall`,
+     * `PolicyDecision` e `tool.recusado` é a porta) e a comparação usava o nível
+     * de CATÁLOGO, que é mais permissivo do que o efetivo — qualquer sinal aceso
+     * sobe um degrau. Ver o bloco 6-bis de `gateway/tool-gateway.service.ts`.
+     *
+     * A ANOTAÇÃO NA DESCRIÇÃO CONTINUA POR CATÁLOGO, e é o certo: ela é um aviso
+     * ao modelo antes de ele tentar, não a trava. Por ser mais permissiva, ela
+     * erra só para o lado de anunciar menos indisponibilidade do que a porta vai
+     * impor — o modelo tenta, e recebe a recusa com o motivo.
+     */
+    const rebaixado = this.rebaixamento(agent, new Date());
+    if (rebaixado) {
+      this.log.warn(
+        `empresa ${p.orgId}, sessão ${sessionId}: o agente "${agent.slug}" está com a autonomia ` +
+          `rebaixada até ${rebaixado.ate.toISOString()} (RF-N-07). Nesta sessão ele não passa de ` +
+          `${rebaixado.teto}.`,
+      );
+      ctxExec.tetoDoAgente = {
+        nivel: rebaixado.teto,
+        motivo:
+          `autonomia do agente rebaixada até ${rebaixado.ate.toLocaleString('pt-BR')} ` +
+          `depois de ${FALHAS_SEGUIDAS_PARA_REBAIXAR} falhas seguidas (RF-N-07)`,
+      };
+      for (const f of ferramentas) {
+        if (!this.acimaDoTetoRebaixado(f.capabilityId, nivelPorCapacidade, rebaixado.teto)) continue;
+        f.spec.description +=
+          ` [INDISPONÍVEL até ${rebaixado.ate.toLocaleString('pt-BR')}: autonomia deste agente ` +
+          'rebaixada depois de duas falhas seguidas]';
+      }
+    }
 
     /*
      * O NOME DO DONO, RESOLVIDO CONTRA ESTA EMPRESA — e não pela relação.
@@ -466,6 +607,22 @@ export class AgentRuntime {
           args: resumirArgs(chamada.args),
         });
 
+        /*
+         * O FREIO DO REBAIXAMENTO NÃO MORA MAIS AQUI.
+         *
+         * Ele era imposto neste ponto, antes da porta, e saiu em 11/09/2026: o
+         * teto de momento do agente viaja em `ExecCtx.tetoDoAgente` e quem
+         * recusa é a porta, com causa própria (`agente_rebaixado`), `ToolCall`,
+         * `PolicyDecision` e evento `tool.recusado` inteiros. Barrar aqui
+         * deixava a recusa fora do RASTRO e comparava o nível de CATÁLOGO em
+         * vez do EFETIVO — comparação mais permissiva, porque qualquer sinal
+         * aceso sobe um degrau.
+         *
+         * O passo da sessão continua sendo escrito, logo abaixo, pelo caminho
+         * normal: a porta devolve `recusado` e o traço registra como registra
+         * qualquer outra recusa dela.
+         */
+
         const r = await this.gateway.executar(
           { capabilityId: capacidade, args: chamada.args, ctx: ctxExec },
           async (args) => this.executarCapacidade(capacidade!, args, p.orgId),
@@ -473,6 +630,40 @@ export class AgentRuntime {
 
         const nivel = r.status === 'erro' ? null : (r.decisao.nivel as RiskLevel);
         if (nivel && (!nivelMax || nivel > nivelMax)) nivelMax = nivel;
+
+        /*
+         * A FERRAMENTA QUE EXECUTOU É FONTE — RF-M-02.
+         *
+         * Até 11/09/2026 `fontesUsadas` recebia só `nota` (trecho do vault) e
+         * `regra` (o `contextoFixo` do agente). Resultado de ferramenta não
+         * entrava em momento nenhum, e a consequência apareceu no dia em que
+         * `respostaSemProcedencia` passou a marcar de verdade: um agente que lê
+         * o painel, pega o número e responde citando a origem fechava a sessão
+         * marcada como SEM PROCEDÊNCIA. O sinal acende, o degrau sobe, a
+         * aprovação passa de configurável para SEMPRE e a alçada mínima sobe de
+         * operador para responsável — numa empresa com um aprovador só e a regra
+         * de que quem propõe não aprova, 24 horas de agente travado por ter
+         * feito exatamente o que devia.
+         *
+         * SÓ `executado`. Recusa não trouxe dado, erro não trouxe dado, e
+         * `aguardando_aprovacao` ainda não trouxe: nesses três a resposta que
+         * afirmar um número continua sendo resposta sem fonte, que é o que ela é.
+         *
+         * O CONTEÚDO NÃO ENTRA AQUI, só a procedência (capacidade, id da
+         * chamada e nível). `Session.fontes` é lida pela tela de Sessões e pelo
+         * traço; copiar para dentro dela o corpo do que voltou do Omie ou do
+         * Drive seria espalhar conteúdo de cliente por mais uma coluna, sem a
+         * redação que a porta já aplica em `ToolCall.args`. Quem quiser o
+         * conteúdo segue o `toolCallId`.
+         */
+        if (r.status === 'executado') {
+          fontesUsadas.push({
+            tipo: 'ferramenta',
+            id: r.toolCallId,
+            titulo: capacidade ?? chamada.name,
+            ref: nivel ?? undefined,
+          });
+        }
 
         await this.sessoes.passo(p.orgId, sessionId, {
           tipo: 'ferramenta',
@@ -528,10 +719,24 @@ export class AgentRuntime {
       motivo = `não concluí em ${maxPassos} passos`;
     }
 
-    // Verificação barata de procedência: resposta com número e sem fonte
-    // nenhuma é sinalizada, não bloqueada — bloquear exigiria um verificador
-    // de citação, que é outra chamada de modelo por resposta.
-    const semProcedencia = /\d/.test(resposta) && fontesUsadas.length === 0;
+    /*
+     * Verificação barata de procedência: resposta com número e sem fonte de
+     * DADO é sinalizada, não bloqueada — bloquear exigiria um verificador de
+     * citação, que é outra chamada de modelo por resposta.
+     *
+     * A REGRA SAIU DAQUI E VIROU `respostaSemProcedencia` (fatia 4.3, desta
+     * mesma onda). A linha que estava aqui media `fontesUsadas.length === 0`, e
+     * `fontesUsadas` carrega DUAS naturezas: nota (dado) e regra (configuração,
+     * o `contextoFixo` do agente). Em qualquer agente com regra da casa
+     * configurada — o caso comum assim que alguém usa o produto — o comprimento
+     * nunca era zero, e `Session.semProcedencia` ficava permanentemente falso:
+     * o campo era gravado, o sinal existia e nada marcava nada.
+     *
+     * A troca é feita AQUI porque este arquivo é da fatia 5.6 e o outro agente
+     * não podia editá-lo — está registrado nos dois relatórios. A função é a
+     * mesma heurística, com a única correção de contar só fonte de dado.
+     */
+    const semProcedencia = respostaSemProcedencia(resposta, fontesUsadas);
 
     const duracaoMs = Date.now() - inicio;
     await this.sessoes.encerrar(sessionId, {
@@ -678,6 +883,18 @@ export class AgentRuntime {
     return cercado.texto;
   }
 
+  /**
+   * O que impede a sessão INTEIRA de acontecer.
+   *
+   * O REBAIXAMENTO NÃO ENTRA AQUI, e a ausência é decisão, não esquecimento: as
+   * quatro condições abaixo são "este agente não trabalha"; rebaixamento é
+   * "trabalha com menos alcance". Devolver impedimento aqui por causa de
+   * `rebaixadoAte` transformaria 24h de observação em 24h de agente mudo —
+   * inclusive para ler e responder, que é justamente o que alguém precisa dele
+   * depois de um erro. Quem lê `rebaixadoAte` é `rebaixamento()`, logo abaixo; o
+   * teto que ele devolve viaja em `ExecCtx.tetoDoAgente` e quem o IMPÕE, por
+   * chamada de ferramenta, é a porta.
+   */
   private impedimento(agent: Agent): string | null {
     if (agent.estado === 'planejado') {
       return 'Agente ainda não tem dono nem capacidade declarada — está planejado, não rodando.';
@@ -688,6 +905,42 @@ export class AgentRuntime {
       return 'Agente sem capacidade declarada: começa sem permissão nenhuma, por desenho.';
     }
     return null;
+  }
+
+  /**
+   * O rebaixamento VIGENTE — RF-N-07.
+   *
+   * `null` quer dizer "não está rebaixado agora", e cobre os dois casos em que
+   * isso é verdade: nunca foi, ou foi e o prazo passou. A volta é exatamente
+   * esta comparação — não existe rotina que limpe a coluna, e não deve existir:
+   * `rebaixadoAte` e `rebaixadoPor` são HISTÓRICO (a tela de Agentes mostra a
+   * tarja enquanto o prazo está no futuro), e apagá-los perderia a resposta
+   * para "por que este agente ficou de castigo ontem".
+   */
+  private rebaixamento(agent: Agent, agora: Date): { ate: Date; teto: RiskLevel } | null {
+    if (!agent.rebaixadoAte) return null;
+    if (agent.rebaixadoAte.getTime() <= agora.getTime()) return null;
+    return { ate: agent.rebaixadoAte, teto: TETO_DO_REBAIXADO };
+  }
+
+  /**
+   * A capacidade passa do teto do rebaixado?
+   *
+   * FALHA FECHADA em dois casos, e os dois são o mesmo caso: capacidade nula
+   * (o modelo inventou um nome de ferramenta) e capacidade que a política desta
+   * empresa não resolve. Nos dois a porta trataria como SEM CLASSIFICAÇÃO, que
+   * vale R5 — o degrau mais alto. Um agente rebaixado não alcança R5, então a
+   * resposta é sim.
+   */
+  private acimaDoTetoRebaixado(
+    capabilityId: string | null,
+    niveis: Map<string, RiskLevel>,
+    teto: RiskLevel,
+  ): boolean {
+    if (!capabilityId) return true;
+    const nivel = niveis.get(capabilityId);
+    if (!nivel) return true;
+    return grau(nivel) > grau(teto);
   }
 
   /**
@@ -706,24 +959,55 @@ export class AgentRuntime {
     return this.efeitos.executar(capabilityId, args, orgId);
   }
 
+  /**
+   * Fecha a conta do agente — e é aqui que o rebaixamento do RF-N-07 nasce.
+   *
+   * DUAS FALHAS SEGUIDAS, NUMA ESCRITA SÓ. A pergunta "a sessão anterior deste
+   * agente também falhou?" é respondida pelo PRÓPRIO `UPDATE`, com
+   * `ultimoStatus` na condição, e não por um `findUnique` seguido de um
+   * `update`. Não é elegância: duas sessões do mesmo agente rodam em paralelo
+   * (uma do painel, uma de rotina), e ler-para-depois-escrever deixa a janela
+   * em que as duas leem "respondida" e nenhuma rebaixa. Com a condição dentro
+   * do `UPDATE`, quem chegar depois vê `falhou` gravado por quem chegou antes.
+   *
+   * `updateMany` e não `update` porque só ele aceita condição além da chave —
+   * e `count` é a resposta: 1 quer dizer "casou, era a segunda seguida".
+   */
   private async atualizarAgente(agentId: string, status: SessionStatus, sessionId: string) {
-    const falhou = status === SessionStatus.falhou;
+    const agora = new Date();
+    const comum = {
+      execucoes: { increment: 1 },
+      ultimaExecucaoEm: agora,
+      ultimoStatus: status,
+    };
+
+    if (status !== SessionStatus.falhou) {
+      await this.prisma.agent.update({ where: { id: agentId }, data: comum });
+      return;
+    }
+
+    const seguida = await this.prisma.agent.updateMany({
+      where: { id: agentId, ultimoStatus: SessionStatus.falhou },
+      data: {
+        ...comum,
+        falhas: { increment: 1 },
+        rebaixadoAte: new Date(agora.getTime() + JANELA_DO_REBAIXAMENTO_MS),
+        rebaixadoPor: sessionId,
+      },
+    });
+    if (seguida.count > 0) {
+      this.log.warn(
+        `agente ${agentId}: ${FALHAS_SEGUIDAS_PARA_REBAIXAR} falhas seguidas — autonomia ` +
+          `rebaixada a ${TETO_DO_REBAIXADO} por 24h (RF-N-07), por causa da sessão ${sessionId}.`,
+      );
+      return;
+    }
+
+    // Primeira falha da sequência: conta como falha, não rebaixa. Se a próxima
+    // sessão também falhar, é o `updateMany` acima que casa.
     await this.prisma.agent.update({
       where: { id: agentId },
-      data: {
-        execucoes: { increment: 1 },
-        ultimaExecucaoEm: new Date(),
-        ultimoStatus: status,
-        ...(falhou
-          ? {
-              falhas: { increment: 1 },
-              // RF-N-07: agente que erra tem a autonomia rebaixada por 24h.
-              // Quem aplica o rebaixamento é a régua, via sinal erro_recente.
-              rebaixadoAte: new Date(Date.now() + 86_400_000),
-              rebaixadoPor: sessionId,
-            }
-          : {}),
-      },
+      data: { ...comum, falhas: { increment: 1 } },
     });
   }
 

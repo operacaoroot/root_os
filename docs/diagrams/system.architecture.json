@@ -3,16 +3,16 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Marketing OS — Arquitetura as-built",
-    "subtitle": "Estado real do código (jul/2026) · stack isolado marketing-os-net · zero contato com C&S",
+    "subtitle": "Estado real do código (jul/2026) · stack isolado marketing-os-net · zero contato com C&S · DESENHO DE JUL/2026 — o bot do Telegram (apps/telegram) foi APOSENTADO em 11/09/2026 (fatia 5.8) e saiu do compose; o laço de agente da API e a porta ocuparam o lugar dele.",
     "output": "system.architecture.html"
   },
   "components": [
     { "id": "browser", "type": "external", "label": "Time", "sublabel": "navegador", "pos": [40, 210], "size": [120, 58] },
-    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "Bot API", "pos": [40, 470], "size": [120, 58] },
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "Bot API", "pos": [40, 470], "size": [120, 58], "tag": "APOSENTADO 11/09/2026" },
     { "id": "openai", "type": "external", "label": "OpenAI", "sublabel": "gpt-4o", "pos": [40, 620], "size": [120, 58], "tag": "temporário → Claude" },
 
     { "id": "web", "type": "frontend", "label": "apps/web", "sublabel": "Next.js 15 :4000", "pos": [250, 210], "size": [140, 58] },
-    { "id": "bot", "type": "backend", "label": "apps/telegram", "sublabel": "bot + scheduler", "pos": [250, 470], "size": [140, 58] },
+    { "id": "bot", "type": "backend", "label": "apps/telegram", "sublabel": "bot + scheduler", "pos": [250, 470], "size": [140, 58], "tag": "APOSENTADO 11/09/2026" },
     { "id": "mcp", "type": "messagebus", "label": "packages/mcp", "sublabel": "MCP stdio · 32 tools", "pos": [250, 620], "size": [140, 58], "tag": "read-only" },
 
     { "id": "api", "type": "backend", "label": "apps/api — NestJS", "sublabel": "REST · webhooks · RBAC · 21 módulos", "pos": [470, 340], "size": [180, 78], "tag": ":4001" },
@@ -46,6 +46,6 @@
   "cards": [
     { "dot": "cyan", "title": "Espinha", "items": ["Browser → web → api → Postgres é o caminho feliz", "API NestJS é o hub: toda leitura/escrita/auditoria passa por ela", "Um dado, uma verdade: fontes externas são fonte, o Postgres é o dono"] },
     { "dot": "rose", "title": "IA com trilhas separadas", "items": ["Leitura: MCP (conta serviço, só-leitura) → 32 tools", "Escrita: conta de ação (*.editar) só após confirmação humana", "OpenAI gpt-4o hoje (bot ignora o LlmProvider da API)"] },
-    { "dot": "amber", "title": "Divergências vs docs", "items": ["ARCHITECTURE.md diz 'Fase 0, sem código' — já há 4 apps no ar", "Sem packages/connectors: conectores vivem inline nos módulos", "Sem BullMQ: agendamento é inline nos services + cron do bot", "WhatsApp virou Telegram; Auth.js virou JWT"] }
+    { "dot": "amber", "title": "Divergências vs docs", "items": ["ARCHITECTURE.md diz 'Fase 0, sem código' — já há 4 apps no ar", "Sem packages/connectors: conectores vivem inline nos módulos", "Sem BullMQ: agendamento é inline nos services + cron do bot", "WhatsApp virou Telegram (e o Telegram foi aposentado em 11/09/2026); Auth.js virou JWT"] }
   ]
 }

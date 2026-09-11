@@ -135,6 +135,15 @@ export class ApprovalsController {
      * `ApprovalsModule`.
      */
     private readonly gateway: ToolGateway,
+    /*
+     * NÃO HÁ `PolicyService` AQUI, e a ausência é a correção da fatia 5.5.
+     *
+     * A primeira versão injetava a política para UMA pergunta — quais chaves do
+     * catálogo entram no hash do conteúdo — porque este controlador conferia o
+     * vínculo ao conteúdo. Ele não confere mais: a conferência foi para o
+     * estrangulamento (`AcoesService.executarAprovada`), que é onde os argumentos
+     * são lidos e entregues ao efeito. Ver `impedimentoDeExecucao`.
+     */
   ) {}
 
   /*
@@ -552,12 +561,30 @@ export class ApprovalsController {
    * inexistente (quem reclama do id errado é `confirm`, para não dar duas
    * mensagens ao mesmo engano), aprovação da superfície antiga (sem ação retida)
    * ou chamada retida que sumiu (quem reclama é `executarAprovada`).
+   *
+   * ---------------------------------------------------------------------------
+   * O VÍNCULO AO CONTEÚDO **NÃO** ESTÁ AQUI — e isso é deliberado
+   * ---------------------------------------------------------------------------
+   * A primeira versão da fatia 5.5 conferia o vínculo NESTA função, e também no
+   * serviço do canal de WhatsApp. Duas superfícies, e o script de terminal
+   * (`src/scripts/aprovar.ts`) em nenhuma das duas. Pior: conferir aqui e LER os
+   * argumentos lá dentro (`AcoesService.executarAprovada`) deixa uma janela entre
+   * a conferência e o uso, e quem consegue escrever em `ToolCall.args` — o modelo
+   * de ameaça declarado — troca o conteúdo nessa janela.
+   *
+   * A conferência foi para o ESTRANGULAMENTO: `AcoesService.executarAprovada`,
+   * imediatamente antes de a aprovação virar `consumida`, sobre a mesma variável
+   * que desce para o efeito. Os três chamadores ficam cobertos por uma checagem
+   * só, e não há janela. Ver o cabeçalho de `gateway/acoes.service.ts`.
+   *
+   * O que continua aqui é o que sempre foi daqui: reclassificar com a régua de
+   * hoje e revalidar o FORMATO dos argumentos, sem tocar em nada.
    */
   private async impedimentoDeExecucao(orgId: string, approvalId: string): Promise<unknown | null> {
     exigirTenant(orgId, 'ApprovalsController.impedimentoDeExecucao');
     const ap = await this.prisma.approval.findFirst({
       where: { id: approvalId, orgId },
-      select: { capabilityId: true, toolCallId: true },
+      select: { capabilityId: true, toolCallId: true, resourceType: true, contentHash: true },
     });
     if (!ap?.capabilityId || !ap.toolCallId) return null;
 

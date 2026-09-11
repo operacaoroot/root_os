@@ -10,7 +10,8 @@ import path from 'node:path';
  * porta em silêncio: o código compila, o teste de unidade passa, e a escrita
  * externa sai sem decisão de política nenhuma.
  *
- * São QUATRO frentes, porque há quatro maneiras de chegar no fornecedor:
+ * São CINCO frentes. As quatro primeiras são as quatro maneiras de chegar no
+ * fornecedor de dentro de `apps/api`:
  *
  *   1. importar o serviço de conector (`import { EvolutionService }`);
  *   2. escrever a URL do fornecedor e chamar `fetch` — sem conector nenhum;
@@ -18,6 +19,19 @@ import path from 'node:path';
  *   4. ler a credencial ou a URL-base do conector e montar a chamada na mão —
  *      invisível às três primeiras, porque não há import, não há URL literal
  *      (a base vem do ambiente) e não há efeito registrado.
+ *
+ * A QUINTA É DE OUTRA NATUREZA E ENTROU NA FATIA 5.8: sair de `apps/api`.
+ *
+ * As quatro primeiras varrem `apps/api` e mais nada. Durante meses existiu um
+ * `apps/telegram` que não era coberto por nenhuma delas — um segundo cliente de
+ * modelo, um segundo cliente de MCP e um terceiro caminho de escrita, com
+ * credencial de conta de máquina no próprio processo. Não havia import de
+ * conector (frente 1 cega), o fornecedor dele não estava em `HOSTS` (frente 2
+ * cega), ele não registrava efeito (frente 3 cega) e as credenciais dele não
+ * estavam em `CREDENCIAIS` (frente 4 cega) — e, sobretudo, ele ficava fora da
+ * pasta que as quatro varrem. Uma catraca que não olha para onde o defeito está
+ * não é catraca. A frente 5 anda a partir da RAIZ do monorepo — com limites
+ * conhecidos, e eles estão escritos ao lado dela, não omitidos.
  *
  * Este arquivo não refatora nada. Ele só congela o estado de hoje e impede que
  * ele piore. A fatia 3.3 pagou parte das violações listadas; o resto está reapontado, linha a
@@ -810,7 +824,14 @@ describe('catraca de arquitetura: conector só pela porta', () => {
   });
 
   it('toda exceção diz qual fatia a remove — e não uma que já rodou', () => {
-    const todas = [...EXCECOES, ...EXCECOES_HOST, ...EXCECOES_EFEITO, ...EXCECOES_CREDENCIAL];
+    const todas = [
+      ...EXCECOES,
+      ...EXCECOES_HOST,
+      ...EXCECOES_EFEITO,
+      ...EXCECOES_CREDENCIAL,
+      ...EXCECOES_MODELO,
+      ...EXCECOES_CONTA_DE_ACAO,
+    ];
     const semDestino = todas
       .filter((e) => e.fatia.trim() === '' || e.motivo.trim() === '')
       .map((e) => chave(e.arquivo, e.conector));
@@ -1187,5 +1208,707 @@ describe('catraca de arquitetura: credencial de conector só dentro do conector'
   it('a lista de exceções de credencial não guarda dívida já paga', () => {
     const { podres } = conferir(achados, EXCECOES_CREDENCIAL);
     expect(podres, 'exceção de credencial sem violação correspondente: apague a linha').toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Frente 5: o que está FORA de apps/api
+// ---------------------------------------------------------------------------
+
+/*
+ * POR QUE ESTA FRENTE EXISTE — a lição do `apps/telegram`, aposentado na 5.8.
+ *
+ * As quatro frentes acima varrem `apps/api/{src,prisma}` e param ali. O
+ * monorepo, porém, tem outros lugares onde se pode escrever código que roda: um
+ * app novo em `apps/`, um pacote novo em `packages/`. Foi exatamente ali que o
+ * bot de Telegram viveu — ele chamava o modelo com prompt de sistema próprio,
+ * subia o servidor MCP como processo filho e escrevia na API com a senha da
+ * conta de máquina `ia-acao@`, e nenhuma das quatro frentes tinha como vê-lo,
+ * porque nenhuma delas saía de `apps/api`.
+ *
+ * A frente 5 não repete o trabalho das outras quatro: ela vigia as TRÊS coisas
+ * que transformam um processo qualquer em um caminho paralelo ao produto.
+ *
+ *   (a) FALAR COM O MODELO. O modelo mora atrás do `LlmProvider`
+ *       (`apps/api/src/llm/`), e é lá que estão o teto de custo por empresa e
+ *       por dia (RF-G-05), a medição, a marca de procedência e a régua que
+ *       decide o que a resposta pode acionar. Um segundo cliente de modelo é um
+ *       segundo produto, com política própria e sem RASTRO.
+ *   (b) SER CLIENTE DE MCP. `packages/mcp` é um SERVIDOR — ele importa
+ *       `@modelcontextprotocol/sdk/server/*`. Quem importa o lado `client/` está
+ *       montando um agente fora do runtime de agentes: escolhe as ferramentas,
+ *       escreve o prompt e decide sozinho o que chamar.
+ *   (c) CARREGAR CREDENCIAL DE CONTA DE MÁQUINA. Quem tem a senha de `mcp@` ou
+ *       de `ia-acao@` fala com a API como programa. `MCP_SERVICE_*` tem UMA casa
+ *       (o cliente HTTP do servidor MCP). `MCP_ACTION_*` não tem nenhuma: a
+ *       conta de ação era do bot, e a fatia 3.10 já havia tirado dela o direito
+ *       de assinar a própria proposta (`ia_acao` não tem `aprovacoes.decidir`, e
+ *       `ApprovalsService.confirm` recusa conta de máquina e recusa o
+ *       proponente). Um leitor novo dessas duas variáveis é um caminho de
+ *       escrita novo nascendo.
+ *
+ * ONDE ELA ANDA: a partir da RAIZ do monorepo, e não de uma lista de pastas.
+ * Varredura presa a `apps/` e `packages/` reproduz em miniatura o ponto cego que
+ * esta frente existe para fechar — bastaria pôr o arquivo em `deploy/`, em
+ * `tools/` ou na raiz para sumir dela. O teste do manifesto, mais abaixo neste
+ * mesmo arquivo, sempre andou a partir da raiz: a incoerência era interna.
+ *
+ * O QUE ELA ACEITA COMO CÓDIGO: `.ts`, `.tsx`, `.js`, `.jsx` e as formas `.mjs`,
+ * `.cjs`, `.mts`, `.cts`. Aceitar só `.ts`/`.tsx` deixava de fora cinco arquivos
+ * que rodam de verdade — o arranque compilado da API, duas configurações do
+ * Next, o mapa de rotas antigas e o `pixel.js` servido ao navegador — e fazia de
+ * "salvo como `.mjs`" uma burla de um caractere.
+ *
+ * ---------------------------------------------------------------------------
+ * O QUE ESTA FRENTE NÃO PEGA. Três limites, escritos porque catraca que promete
+ * mais do que entrega é pior do que catraca nenhuma: a primeira dá confiança
+ * falsa, a segunda ao menos não engana.
+ *
+ *   1. PASTA DE TESTE — deliberado, e com preço medido. `test/`, `tests/` e
+ *      `__tests__/` ficam fora: teste não é produção, e uma varredura que se
+ *      lesse a si mesma acusaria os próprios exemplos (este arquivo cita
+ *      `OPENAI_API_KEY` e `MCP_ACTION_PASSWORD` dezenas de vezes, e `leVariavel`
+ *      casaria com cada uma). São 57 arquivos hoje nesse ponto cego — quem
+ *      quiser esconder um cliente de modelo tem diretórios de nome reservado
+ *      para isso. Não há saída dentro deste desenho: ou a catraca ignora teste,
+ *      ou ela se acusa. As outras pastas ignoradas — `node_modules/`, `dist/`,
+ *      `.next/`, `.turbo/`, `coverage/`, `.git/` — guardam cópia gerada ou
+ *      instalada do que já foi varrido no original; ignorá-las não esconde
+ *      código-fonte novo.
+ *
+ *   2. NOME MONTADO EM PEDAÇOS. Esta frente reconhece por NOME: nome de variável
+ *      de ambiente, endereço literal do fornecedor, especificador de import.
+ *      Quem guarda o nome da credencial numa constante, monta a URL por
+ *      concatenação e importa o SDK com especificador concatenado atravessa as
+ *      três alíneas sem acender nada — e isso cabe em doze linhas. É o bot do
+ *      Telegram reescrito de outro jeito.
+ *
+ *   3. PROVEDOR DE MODELO FORA DO CATÁLOGO. `CREDENCIAIS_DO_MODELO` e
+ *      `HOSTS_DO_MODELO` são listas escritas à mão. Gemini, Mistral, Bedrock ou
+ *      um gateway interno são invisíveis enquanto ninguém acrescentar as linhas.
+ *
+ * Os limites 2 e 3 são INERENTES a reconhecer por nome, e nenhum ajuste deste
+ * arquivo os fecha — o que os pegaria é análise de fluxo, não de texto. O que
+ * esta catraca entrega, e é o que ela deve prometer: encarece o desvio
+ * ACIDENTAL (o app novo que chama a OpenAI "só pra testar", o `.mjs` de
+ * configuração que vira cliente de modelo) e obriga o desvio deliberado a se
+ * declarar — quem monta o nome em pedaços para fugir daqui deixa escrita, no
+ * próprio código, a prova de que conhecia a regra.
+ * ---------------------------------------------------------------------------
+ *
+ * SOBRE `.tsx` E `.jsx`: entram na varredura, senão quase todo o `apps/web`
+ * ficaria invisível — e app de front é justamente onde alguém tentaria "só
+ * chamar a OpenAI daqui". O separador de código/texto não entende JSX: em
+ * `<div/>` ele pode tomar a barra por início de expressão regular e seguir sem
+ * apagar o que vier até a próxima barra. O efeito disso é deixar texto de string
+ * INTACTO na visão `semTexto`, o que só gera alarme FALSO — nunca esconde
+ * violação. Erro nessa direção é o aceitável numa catraca.
+ */
+
+/** A raiz do monorepo é a pasta que tem o `pnpm-workspace.yaml`. */
+function acharRaizDoMonorepo(): string {
+  let dir = RAIZ;
+  for (let i = 0; i < 8; i++) {
+    if (existsSync(path.join(dir, 'pnpm-workspace.yaml'))) return dir;
+    const pai = path.dirname(dir);
+    if (pai === dir) break;
+    dir = pai;
+  }
+  throw new Error(
+    `Não encontrei o pnpm-workspace.yaml subindo de "${RAIZ}". ` +
+      'A frente 5 não pode rodar sem saber onde o monorepo começa.',
+  );
+}
+
+const RAIZ_MONO = acharRaizDoMonorepo();
+
+/*
+ * Cópia gerada/instalada do que já foi varrido (as seis primeiras) e teste, que
+ * não é produção. `migrations/` NÃO está aqui de propósito: ela guarda `.sql`, e
+ * ignorar por nome uma pasta que não esconde código só cria esconderijo.
+ * O preço da exclusão de teste está medido no comentário da frente: 57 arquivos.
+ */
+const PASTAS_IGNORADAS_MONO = new Set([
+  'node_modules',
+  'dist',
+  '.next',
+  '.turbo',
+  '.git',
+  'coverage',
+  'test',
+  'tests',
+  '__tests__',
+]);
+
+/**
+ * Extensões que a catraca trata como código que roda. Aceitar só `.ts`/`.tsx`
+ * fazia de "salvo como `.mjs`" uma burla de um caractere.
+ */
+const EXTENSOES_DE_CODIGO = /\.(?:[cm]?tsx?|[cm]?jsx?)$/;
+
+/** Declaração de tipo não é código que roda — e `.d.mts`/`.d.cts` existem. */
+const SO_DECLARACAO = /\.d\.[cm]?ts$/;
+
+/** Pastas de primeiro nível em que a varredura realmente entrou. Confere o CAMINHO, não o achado. */
+const PASTAS_VARRIDAS = new Set<string>();
+
+/** Todo arquivo de código do monorepo, a partir da RAIZ, em caminho relativo a ela. */
+function listarFontesDoMonorepo(): string[] {
+  const saida: string[] = [];
+
+  const andar = (dir: string) => {
+    for (const entrada of readdirSync(dir)) {
+      const completo = path.join(dir, entrada);
+      if (statSync(completo).isDirectory()) {
+        if (PASTAS_IGNORADAS_MONO.has(entrada)) continue;
+        if (dir === RAIZ_MONO) PASTAS_VARRIDAS.add(entrada);
+        andar(completo);
+        continue;
+      }
+      if (EXTENSOES_DE_CODIGO.test(entrada) && !SO_DECLARACAO.test(entrada)) {
+        saida.push(path.relative(RAIZ_MONO, completo).split(path.sep).join('/'));
+      }
+    }
+  };
+
+  andar(RAIZ_MONO);
+  return saida.sort();
+}
+
+const FONTES_MONO: Fonte[] = listarFontesDoMonorepo().map((arquivo) => ({
+  arquivo,
+  ...limpar(readFileSync(path.join(RAIZ_MONO, arquivo), 'utf8')),
+}));
+
+const CAMINHOS_MONO = FONTES_MONO.map((f) => f.arquivo);
+
+/*
+ * DUAS MANEIRAS DE LER UMA VARIÁVEL DE AMBIENTE, e a catraca precisa das duas.
+ *
+ *   · `process.env.OPENAI_API_KEY` — identificador. Aparece em `semTexto`.
+ *   · `envOpcional('ANTHROPIC_API_KEY')` — o nome vai como STRING, e é assim que
+ *     os provedores de `src/llm/` leem. Em `semTexto` some; em `codigo` fica.
+ *
+ * Olhar só `semTexto` deixaria passar a segunda forma. Olhar `codigo` inteiro
+ * acusaria qualquer frase que CITE o nome ("defina OPENAI_API_KEY no .env"), que
+ * é justamente o que a frente 4 decidiu não contar como uso. A saída é exigir,
+ * na visão `codigo`, que o nome seja a string INTEIRA e que ela esteja como
+ * argumento ou índice: `('X')`, `('X',` ou `['X']`. Frase que menciona o nome
+ * no meio de um texto maior não casa.
+ */
+function leVariavel(fonte: Fonte, variavel: string): number | null {
+  const comoIdentificador = new RegExp(`\\b${variavel}\\b`).exec(fonte.semTexto);
+  if (comoIdentificador) return linhaDe(fonte.semTexto, comoIdentificador.index);
+
+  const comoArgumento = new RegExp(`[(\\[]\\s*['"]${variavel}['"]\\s*[),\\]]`).exec(fonte.codigo);
+  return comoArgumento ? linhaDe(fonte.codigo, comoArgumento.index) : null;
+}
+
+// --- (a) o modelo ----------------------------------------------------------
+
+/** A única casa do cliente de modelo. Prefixo, não arquivo: são três provedores. */
+const CASA_DO_MODELO = 'apps/api/src/llm/';
+
+/** Credenciais e URLs-base de provedor de modelo. */
+const CREDENCIAIS_DO_MODELO = [
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'ANTHROPIC_API_KEY',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_BASE_URL',
+];
+
+/** Endereços de provedor de modelo. */
+const HOSTS_DO_MODELO = [
+  /https?:\/\/api\.openai\.com/,
+  /https?:\/\/api\.anthropic\.com/,
+  /https?:\/\/(?:[\w-]+\.)*openrouter\.ai/,
+];
+
+/*
+ * A DÍVIDA DE MODELO QUE JÁ EXISTE — toda ela dentro de `apps/api`, e nenhuma
+ * fora. A fatia 5.8 não a paga: ela a torna visível e contada, que é o que a
+ * catraca sabe fazer. As três linhas têm o mesmo conserto de fundo — o cliente
+ * de modelo é UM e mora em `src/llm/` — e o mesmo impedimento: `LlmProvider` só
+ * sabe conversar (`step()`), não sabe gerar embedding, e a fatia que cria essa
+ * segunda porta ainda não existe no plano. Ver o relatório da 5.8.
+ */
+const EXCECOES_MODELO: Excecao[] = [
+  {
+    arquivo: 'apps/api/src/obsidian/obsidian.service.ts',
+    conector: CASA_DO_MODELO,
+    motivo:
+      'Lê OPENAI_API_KEY/OPENAI_BASE_URL e chama api.openai.com direto para gerar EMBEDDING do ' +
+      'vault. Não é conversa com o modelo — é o endpoint de embeddings, que o LlmProvider não ' +
+      'expõe (e que a Anthropic não tem, por isso o OpenAI continua obrigatório). Enquanto essa ' +
+      'chamada ficar aqui, ela não entra no teto de custo de IA por empresa e por dia: o gasto ' +
+      'de reindexar um vault grande é invisível para quem lê o painel de custo. O conserto é um ' +
+      'provedor de embeddings em src/llm/, com a mesma medição do step().',
+    fatia: 'onda 11 — pede um provedor de embeddings em src/llm/ (item novo no plano; ver o relatório da 5.8)',
+  },
+  {
+    arquivo: 'apps/api/src/pauta/pauta.service.ts',
+    conector: CASA_DO_MODELO,
+    motivo:
+      'Mesma chamada de embeddings da linha acima, para a busca semântica do acervo de ' +
+      'referências. Mesmo conserto, mesmo impedimento.',
+    fatia: 'onda 11 — pede um provedor de embeddings em src/llm/ (item novo no plano; ver o relatório da 5.8)',
+  },
+  {
+    arquivo: 'apps/api/src/integrations/integrations.service.ts',
+    conector: CASA_DO_MODELO,
+    motivo:
+      'Lê OPENAI_API_KEY só para a tela de Conexões dizer "configurado". É o mesmo defeito que a ' +
+      'fatia 3.3 consertou para ClickUp, Pluggy, Asaas, Evolution e Obsidian, e pela mesma razão: ' +
+      'o nome da variável vira contrato duplicado entre a tela e quem usa a credencial, e ' +
+      'renomear de um lado faz a tela mentir sem erro de compilação. O conserto é o mesmo: quem ' +
+      'usa o modelo se inscreve em ConectoresConfiguradosRegistry e a tela pergunta ao registro. ' +
+      'Não foi feito aqui porque o registro é alimentado por serviço de conector, e o provedor de ' +
+      'modelo ainda não é tratado como conector em lugar nenhum.',
+    fatia: 'onda 11 — junto com o provedor de embeddings; ver o relatório da 5.8',
+  },
+];
+
+describe('catraca de arquitetura: o modelo tem uma casa só', () => {
+  const achados = FONTES_MONO.filter((f) => !f.arquivo.startsWith(CASA_DO_MODELO)).flatMap((fonte) => {
+    for (const variavel of CREDENCIAIS_DO_MODELO) {
+      const linha = leVariavel(fonte, variavel);
+      if (linha !== null) return [{ arquivo: fonte.arquivo, linha, conector: CASA_DO_MODELO }];
+    }
+    for (const padrao of HOSTS_DO_MODELO) {
+      const m = padrao.exec(fonte.codigo);
+      if (m) return [{ arquivo: fonte.arquivo, linha: linhaDe(fonte.codigo, m.index), conector: CASA_DO_MODELO }];
+    }
+    return [];
+  });
+
+  it('a varredura do monorepo acha código fora de apps/api', () => {
+    // Uma varredura que não sai de apps/api reproduziria o ponto cego que esta
+    // frente existe para fechar — e passaria em silêncio.
+    expect(CAMINHOS_MONO.length).toBeGreaterThan(150);
+    expect(CAMINHOS_MONO).toContain('packages/mcp/src/client.ts');
+    expect(CAMINHOS_MONO).toContain('packages/shared/src/nav.ts');
+    expect(CAMINHOS_MONO).toContain('apps/api/src/gateway/tool-gateway.service.ts');
+    expect(
+      CAMINHOS_MONO.some((c) => c.startsWith('apps/web/src/') && c.endsWith('.tsx')),
+      'nenhum .tsx de apps/web na varredura: o front inteiro estaria invisível',
+    ).toBe(true);
+  });
+
+  it('a varredura anda a partir da raiz, não de uma lista de pastas', () => {
+    /*
+     * Confere o CAMINHO PERCORRIDO, e não o achado — porque hoje não existe
+     * arquivo de código fora de `apps/` e `packages/`, e uma asserção sobre
+     * achados passaria igual com a varredura presa àquelas duas pastas. O que
+     * este teste barra é a volta da lista fixa: qualquer pasta de primeiro nível
+     * não ignorada (`deploy/`, `tools/`, `docs/`, `.github/`) é território da
+     * frente 5, e o dia em que alguém puser um `.mjs` ali ela já está olhando.
+     */
+    const deFora = readdirSync(RAIZ_MONO).filter(
+      (e) => !PASTAS_IGNORADAS_MONO.has(e) && statSync(path.join(RAIZ_MONO, e)).isDirectory(),
+    );
+    expect(deFora.length, 'nenhuma pasta de primeiro nível: a varredura não rodou').toBeGreaterThan(2);
+    expect(
+      deFora.filter((p) => !PASTAS_VARRIDAS.has(p)),
+      'pasta de primeiro nível fora da varredura da frente 5: ela voltou a andar por lista fixa',
+    ).toEqual([]);
+  });
+
+  it('a varredura aceita as outras extensões de código, não só .ts e .tsx', () => {
+    /*
+     * `.mjs`/`.cjs`/`.js` rodam igual — e trocar a extensão era uma burla de um
+     * caractere. Os dois exemplos abaixo são âncoras: se saírem do repositório,
+     * troque-os por outros em vez de apagar a asserção.
+     */
+    expect(CAMINHOS_MONO).toContain('apps/api/scripts/smoke-boot.mjs');
+    expect(CAMINHOS_MONO).toContain('apps/web/public/pixel.js');
+    expect(
+      CAMINHOS_MONO.filter((c) => !/\.tsx?$/.test(c)).length,
+      'só .ts/.tsx na varredura: as extensões voltaram a ficar de fora',
+    ).toBeGreaterThan(0);
+  });
+
+  it('a casa do modelo existe e é quem lê as credenciais dele', () => {
+    const daCasa = FONTES_MONO.filter((f) => f.arquivo.startsWith(CASA_DO_MODELO));
+    expect(daCasa.length, `nada em ${CASA_DO_MODELO}: o cliente de modelo mudou de lugar`).toBeGreaterThan(0);
+
+    // Variável do catálogo que ninguém lê nem na própria casa ou morreu ou
+    // mudou de nome — e a catraca estaria vigiando um segredo que não existe.
+    const mortas = CREDENCIAIS_DO_MODELO.filter(
+      (v) => !daCasa.some((f) => leVariavel(f, v) !== null),
+    );
+    expect(
+      mortas,
+      `credencial de modelo que ${CASA_DO_MODELO} não usa mais: atualize CREDENCIAIS_DO_MODELO.`,
+    ).toEqual([]);
+  });
+
+  it('ninguém fora de src/llm/ fala com um provedor de modelo', () => {
+    // `conferir` devolve só arquivo e conector; a linha vem de `achados`, para a
+    // mensagem apontar o lugar exato em vez de mandar procurar no arquivo.
+    const linhaDoAchado = new Map(achados.map((a) => [a.arquivo, a.linha]));
+    const { novas } = conferir(achados, EXCECOES_MODELO);
+    expect(
+      novas.map(
+        (a) =>
+          `${a.arquivo}:${linhaDoAchado.get(a.arquivo)} fala com provedor de modelo fora de ${CASA_DO_MODELO}`,
+      ),
+      'Cliente de modelo fora de src/llm/: a chamada sai sem teto de custo por empresa, sem ' +
+        'medição, sem marca de procedência e sem RASTRO — e com prompt de sistema próprio, que ' +
+        'é um segundo produto. Peça ao LlmProvider, ou declare em EXCECOES_MODELO com a fatia ' +
+        'que remove.',
+    ).toEqual([]);
+  });
+
+  it('a lista de exceções de modelo não guarda dívida já paga', () => {
+    const { podres } = conferir(achados, EXCECOES_MODELO);
+    expect(podres, 'exceção de modelo sem violação correspondente: apague a linha').toEqual([]);
+  });
+});
+
+// --- (b) o MCP -------------------------------------------------------------
+
+describe('catraca de arquitetura: ninguém é cliente de MCP', () => {
+  const SDK = '@modelcontextprotocol/sdk';
+  const CASA_DO_MCP = 'packages/mcp';
+
+  /*
+   * O LADO CLIENTE TEM UMA CASA, E ELA É O PRÓPRIO PACOTE DO MCP.
+   *
+   * `packages/mcp/scripts/smoke.ts` sobe o servidor por stdio e se conecta a ele
+   * como cliente para listar e chamar as ferramentas — é o servidor testando a
+   * si mesmo, ponta a ponta, e não um agente paralelo. Quem escreve o protocolo
+   * precisa poder falar dos dois lados dele. Fora daquele pacote, importar o
+   * lado cliente é montar um laço de ferramenta próprio.
+   */
+  const clientes = FONTES_MONO.filter(
+    (f) => f.codigo.includes(`${SDK}/client`) && !f.arquivo.startsWith(`${CASA_DO_MCP}/`),
+  ).map((f) => ({
+    arquivo: f.arquivo,
+    linha: linhaDe(f.codigo, f.codigo.indexOf(`${SDK}/client`)),
+  }));
+
+  it('o servidor MCP continua onde a catraca procura', () => {
+    // Sem este par, a frente passaria tanto se ninguém for cliente quanto se o
+    // pacote inteiro tiver sumido — e as duas coisas não são a mesma.
+    const servidores = FONTES_MONO.filter((f) => f.codigo.includes(`${SDK}/server`));
+    expect(
+      servidores.map((f) => f.arquivo),
+      'ninguém importa o lado servidor do SDK: packages/mcp mudou de lugar ou de forma',
+    ).not.toEqual([]);
+    expect(servidores.every((f) => f.arquivo.startsWith(`${CASA_DO_MCP}/`))).toBe(true);
+  });
+
+  it('ninguém importa o lado cliente do SDK do MCP', () => {
+    expect(
+      clientes.map((c) => `${c.arquivo}:${c.linha} importa ${SDK}/client`),
+      'Cliente de MCP fora do produto: quem monta a lista de ferramentas, escreve o prompt e ' +
+        'decide o que chamar está construindo um agente paralelo ao runtime de agentes — sem ' +
+        'capacidades declaradas, sem a régua R0–R5 e sem RASTRO. Foi o que `apps/telegram` fazia ' +
+        'até a fatia 5.8. O runtime de agentes é o único laço de ferramenta do produto.',
+    ).toEqual([]);
+  });
+
+  it('só packages/mcp declara o SDK do MCP como dependência', () => {
+    /*
+     * Varre os `package.json` além do código: um app novo que adiciona o SDK é
+     * pego antes de escrever a primeira linha que o usa — e dependência nova é
+     * decisão humana, então a linha do manifesto é o lugar certo de barrar.
+     */
+    const manifestos: string[] = [];
+    const andar = (dir: string) => {
+      for (const entrada of readdirSync(dir)) {
+        const completo = path.join(dir, entrada);
+        if (statSync(completo).isDirectory()) {
+          if (!PASTAS_IGNORADAS_MONO.has(entrada)) andar(completo);
+          continue;
+        }
+        if (entrada === 'package.json') {
+          manifestos.push(path.relative(RAIZ_MONO, completo).split(path.sep).join('/'));
+        }
+      }
+    };
+    andar(RAIZ_MONO);
+
+    expect(manifestos.length, 'nenhum package.json encontrado: a varredura não rodou').toBeGreaterThan(3);
+
+    const declaram = manifestos.filter((m) => {
+      if (m === `${CASA_DO_MCP}/package.json`) return false;
+      const json = JSON.parse(readFileSync(path.join(RAIZ_MONO, m), 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      return SDK in { ...json.dependencies, ...json.devDependencies };
+    });
+    expect(
+      declaram.map((m) => `${m} declara ${SDK}`),
+      `O SDK do MCP é dependência de ${CASA_DO_MCP} e de mais ninguém.`,
+    ).toEqual([]);
+  });
+});
+
+// --- (c) as contas de máquina ----------------------------------------------
+
+/*
+ * `MCP_API_URL` entra junto das senhas de propósito: é o endereço que o programa
+ * usa para falar com a API COMO PROGRAMA. Quem o lê está montando um cliente
+ * HTTP do produto fora do produto — que foi exatamente o `write-client.ts` do
+ * bot, com a conta `ia-acao@` e o `x-approval-token` na mão.
+ */
+const CONTA_DE_SERVICO = ['MCP_SERVICE_EMAIL', 'MCP_SERVICE_PASSWORD', 'MCP_API_URL'];
+
+/*
+ * DUAS CASAS, E SÃO PAPÉIS DIFERENTES:
+ *
+ *   · `packages/mcp/src/client.ts` — quem USA a credencial para entrar na API;
+ *   · `apps/api/prisma/seed.ts` — quem CRIA a conta, e para isso precisa da
+ *     senha em claro uma vez, para guardar o hash. É a certidão de nascimento da
+ *     conta, não um cliente dela. Deixar a semente de fora da regra obrigaria a
+ *     declará-la como dívida, e dívida que não tem conserto apodrece a lista.
+ */
+const CASAS_DA_CONTA_DE_SERVICO = ['packages/mcp/src/client.ts', 'apps/api/prisma/seed.ts'];
+
+/**
+ * A conta de AÇÃO não tem usuário: ela era do bot de Telegram e de mais ninguém.
+ * As variáveis existem aqui como lápide.
+ */
+const CONTA_DE_ACAO = ['MCP_ACTION_EMAIL', 'MCP_ACTION_PASSWORD'];
+
+/*
+ * A ÚNICA LINHA QUE AINDA CONHECE A CONTA DE AÇÃO, e é dívida de verdade.
+ *
+ * O bot morreu; a semente continua criando `ia-acao@` e continua exigindo a
+ * senha dela. Sobra uma conta de máquina com permissão de escrita (`leads.editar`,
+ * `campanhas.editar`, `tarefas.editar`, `gmail.responder`, `agenda.editar`,
+ * `drive.editar`) que ninguém usa — credencial viva sem dono é superfície de
+ * ataque, não resíduo cosmético.
+ *
+ * Não saiu na 5.8 porque `apps/api/prisma/seed.ts` e
+ * `packages/shared/src/permissions.ts` não eram daquela fatia, e porque APAGAR A
+ * CONTA É DECISÃO, não limpeza: se algum dia o produto voltar a ter um executor
+ * de máquina para ação aprovada, é este perfil que ele herda. O caminho curto,
+ * enquanto a decisão não vem, é a semente parar de exigir `MCP_ACTION_PASSWORD`
+ * (criar a conta sem senha utilizável) — aí esta linha sai daqui sozinha.
+ */
+const EXCECOES_CONTA_DE_ACAO: Excecao[] = [
+  {
+    arquivo: 'apps/api/prisma/seed.ts',
+    conector: 'conta de máquina ia-acao@',
+    motivo:
+      'A semente cria a conta de AÇÃO da IA e lê MCP_ACTION_PASSWORD para guardar o hash. O ' +
+      'único cliente dela era o bot de Telegram, aposentado na fatia 5.8 — e o laço dele já ' +
+      'estava morto antes disso, porque `ia_acao` não tem `aprovacoes.decidir` e ' +
+      'ApprovalsService.confirm recusa conta de máquina e recusa o proponente (fatia 3.10). ' +
+      'Sobra uma conta com seis permissões de escrita e nenhum usuário. Some quando alguém ' +
+      'decidir entre apagar a conta e guardá-la para um executor futuro.',
+    fatia: 'onda 11 — decisão humana sobre apagar a conta ia-acao@; ver o relatório da 5.8',
+  },
+];
+
+describe('catraca de arquitetura: credencial de conta de máquina tem dono', () => {
+  it('a conta de serviço do MCP é lida nas casas dela', () => {
+    const casas = CASAS_DA_CONTA_DE_SERVICO.map((c) => {
+      const fonte = FONTES_MONO.find((f) => f.arquivo === c);
+      expect(fonte, `${c} sumiu: a catraca perdeu a referência`).toBeDefined();
+      return fonte!;
+    });
+    const mortas = CONTA_DE_SERVICO.filter((v) => !casas.some((f) => leVariavel(f, v) !== null));
+    expect(
+      mortas,
+      'variável de conta de serviço que nenhuma das casas lê mais: atualize CONTA_DE_SERVICO.',
+    ).toEqual([]);
+  });
+
+  it('só quem usa e quem cria a conta de serviço carregam a credencial dela', () => {
+    const fora = FONTES_MONO.filter((f) => !CASAS_DA_CONTA_DE_SERVICO.includes(f.arquivo)).flatMap((f) => {
+      for (const v of CONTA_DE_SERVICO) {
+        const linha = leVariavel(f, v);
+        if (linha !== null) return [`${f.arquivo}:${linha} lê ${v}`];
+      }
+      return [];
+    });
+    expect(
+      fora,
+      'Credencial de conta de máquina fora das casas dela: quem a tem fala com a API como ' +
+        `programa, sem gente no meio. As casas são ${CASAS_DA_CONTA_DE_SERVICO.join(' e ')}.`,
+    ).toEqual([]);
+  });
+
+  it('a conta de ação só é conhecida por quem a cria', () => {
+    const { novas } = conferir(leitoresDaContaDeAcao(), EXCECOES_CONTA_DE_ACAO);
+    expect(
+      novas.map((l) => `${l.arquivo} lê a credencial da conta ia-acao@`),
+      'A conta `ia-acao@` era do bot de Telegram, aposentado na fatia 5.8, e não tem sucessor. ' +
+        'Ela propunha a aprovação e confirmava a própria proposta — que a fatia 3.10 já proibia ' +
+        'em dois lugares (`ia_acao` não tem `aprovacoes.decidir`, e ApprovalsService.confirm ' +
+        'recusa conta de máquina e recusa o proponente). Um leitor novo destas variáveis é um ' +
+        'caminho de escrita novo nascendo fora da porta: quem precisa executar o que foi ' +
+        'aprovado usa POST /approvals/:id/confirm com identidade de gente.',
+    ).toEqual([]);
+  });
+
+  it('a exceção da conta de ação não guarda dívida já paga', () => {
+    const { podres } = conferir(leitoresDaContaDeAcao(), EXCECOES_CONTA_DE_ACAO);
+    expect(
+      podres,
+      'A semente parou de conhecer a conta ia-acao@: apague a linha de EXCECOES_CONTA_DE_ACAO ' +
+        'para a catraca não afrouxar sozinha.',
+    ).toEqual([]);
+  });
+});
+
+/** Quem lê a credencial da conta de ação hoje. Usado nos dois sentidos da conferência. */
+function leitoresDaContaDeAcao(): Array<{ arquivo: string; conector: string }> {
+  return FONTES_MONO.flatMap((f) => {
+    for (const v of CONTA_DE_ACAO) {
+      if (leVariavel(f, v) !== null) {
+        return [{ arquivo: f.arquivo, conector: 'conta de máquina ia-acao@' }];
+      }
+    }
+    return [];
+  });
+}
+
+// --- (d) o canal de aprovação -----------------------------------------------
+
+/*
+ * ============================================================================
+ * A PROMESSA QUE ERA SÓ COMENTÁRIO — fatia 5.5, corrigida
+ * ============================================================================
+ *
+ * `src/gateway/canais/transporte.registry.ts` promete, por escrito, que o
+ * registro de transporte "não é um segundo caminho até o conector para uso
+ * geral". A promessa era verdadeira sobre o que o código FAZIA hoje e mentirosa
+ * sobre o que ele PERMITIA:
+ *
+ *   · `TransporteDeCanalRegistry` é provider de um módulo `@Global` e é
+ *     exportado (tem de ser: quem se inscreve mora fora, em
+ *     `pauta/evolution.service.ts`);
+ *   · `entregar(canal, destino, texto)` é público e aceita destino e texto
+ *     arbitrários;
+ *   · `EnvioDeAprovacaoService.responder(destino, texto)` idem.
+ *
+ * Ou seja: qualquer serviço novo do processo injetava um dos dois e mandava
+ * texto arbitrário para número arbitrário pela instância da ROOT — sem passar
+ * pela porta, sem classificação de risco, sem aprovação. E NENHUMA das quatro
+ * catracas anteriores via isso: não importa conector (frente 1 cega), não tem
+ * endereço de fornecedor (frente 2), não registra efeito (frente 3) e não lê
+ * credencial nenhuma (frente 4) — o conector é alcançado por uma indireção que
+ * as quatro foram desenhadas para não enxergar.
+ *
+ * Esta frente fecha isso: SÓ A PASTA DO CANAL entrega mensagem por ali.
+ * Inscrever-se continua livre (`registrar`), porque inscrever é a direção que o
+ * desenho quer — é o conector oferecendo o transporte, não alguém consumindo-o.
+ */
+const CASA_DO_CANAL = 'src/gateway/canais/';
+
+/**
+ * Nomes de propriedade injetada de um tipo: `private readonly x: Tipo`.
+ *
+ * O `\??` NÃO é enfeite: quem injeta um registro `@Global` quase sempre o injeta
+ * com `@Optional()`, e aí a propriedade se escreve `canais?: Tipo`. Sem o `??` a
+ * varredura não encontrava NENHUMA das duas que interessam aqui — a catraca
+ * passaria verde por cegueira, que é o pior jeito de uma catraca passar. O caso
+ * "o varredor enxerga a chamada de dentro do canal" existe para provar que não é
+ * isso que está acontecendo.
+ */
+const propriedadesDoTipoNoCanal = (fonte: Fonte, tipo: string): string[] =>
+  [...fonte.semTexto.matchAll(new RegExp(`(\\w+)\\s*\\??\\s*:\\s*${tipo}\\b`, 'g'))].map(
+    (m) => m[1],
+  );
+
+/** O arquivo chama `this.<prop>.<metodo>(` para alguma propriedade daquele tipo? */
+const chamaNoCanal = (fonte: Fonte, tipo: string, metodo: string): number | null => {
+  for (const nome of propriedadesDoTipoNoCanal(fonte, tipo)) {
+    const m = new RegExp(`this\\s*\\.\\s*${nome}\\s*\\??\\s*\\.\\s*${metodo}\\s*\\(`).exec(
+      fonte.semTexto,
+    );
+    if (m) return linhaDe(fonte.semTexto, m.index);
+  }
+  return null;
+};
+
+/** Quem, fora da pasta do canal, ENTREGA mensagem pelo transporte do canal. */
+function entregadoresForaDoCanal(): Array<{ arquivo: string; conector: string; linha: number }> {
+  const alvos: Array<[string, string, string]> = [
+    ['TransporteDeCanalRegistry', 'entregar', 'transporte do canal'],
+    ['EnvioDeAprovacaoService', 'responder', 'resposta do canal'],
+  ];
+  return FONTES.filter((f) => !f.arquivo.startsWith(CASA_DO_CANAL)).flatMap((fonte) => {
+    for (const [tipo, metodo, rotulo] of alvos) {
+      const linha = chamaNoCanal(fonte, tipo, metodo);
+      if (linha !== null) return [{ arquivo: fonte.arquivo, conector: rotulo, linha }];
+    }
+    return [];
+  });
+}
+
+/*
+ * VAZIA, e é o objetivo desta frente atingido. Uma linha aqui é um serviço que
+ * ganhou o direito de mandar WhatsApp pela instância da ROOT sem passar pela
+ * porta — e a pergunta a fazer é sempre a mesma: por que isto não é
+ * `whatsapp.mensagem.enviar`, que é R3 e pede assinatura de gente?
+ */
+const EXCECOES_CANAL: Excecao[] = [];
+
+describe('catraca de arquitetura: mensagem de serviço do canal só sai do canal', () => {
+  it('a pasta do canal existe onde a catraca procura', () => {
+    expect(CAMINHOS).toContain(`${CASA_DO_CANAL}transporte.registry.ts`);
+    expect(CAMINHOS).toContain(`${CASA_DO_CANAL}envio-de-aprovacao.service.ts`);
+  });
+
+  it('o varredor enxerga a chamada de dentro do canal — senão a catraca é cega', () => {
+    // Prova viva: quem DEVE chamar `entregar` chama, e o detector acha.
+    const envio = FONTES.find((f) => f.arquivo === `${CASA_DO_CANAL}envio-de-aprovacao.service.ts`)!;
+    expect(chamaNoCanal(envio, 'TransporteDeCanalRegistry', 'entregar')).not.toBeNull();
+  });
+
+  it('ninguém fora da pasta do canal entrega mensagem pelo transporte dele', () => {
+    const { novas } = conferir(entregadoresForaDoCanal(), EXCECOES_CANAL);
+    expect(
+      novas.map((v) => `${v.arquivo} usa ${v.conector} fora de ${CASA_DO_CANAL}`),
+      'Segundo caminho até o conector nascendo: com o registro de transporte injetado, um ' +
+        'serviço manda texto arbitrário para número arbitrário pela instância da ROOT, fora da ' +
+        'porta e sem classificação. Publicar é `whatsapp.mensagem.enviar` (R3, com aprovação de ' +
+        'gente); o que passa pelo canal é mensagem de SERVIÇO do próprio canal.',
+    ).toEqual([]);
+  });
+
+  it('a lista de exceções do canal não guarda dívida já paga', () => {
+    const { podres } = conferir(entregadoresForaDoCanal(), EXCECOES_CANAL);
+    expect(podres, 'exceção de canal sem violação correspondente: apague a linha').toEqual([]);
+  });
+
+  /*
+   * INSCREVER-SE continua livre, e o teste diz isso em voz alta para que ninguém
+   * "conserte" a catraca apertando o que ela não deve apertar: `EvolutionService`
+   * PRECISA chamar `registrar`, e é a direção certa da dependência (o conector
+   * oferece o transporte à porta, nunca o contrário).
+   */
+  it('inscrever transporte continua permitido, e é o conector que faz isso', () => {
+    const evolution = FONTES.find((f) => f.arquivo === 'src/pauta/evolution.service.ts');
+    expect(evolution, 'o conector de WhatsApp sumiu do lugar que a catraca conhece').toBeDefined();
+    expect(chamaNoCanal(evolution!, 'TransporteDeCanalRegistry', 'registrar')).not.toBeNull();
+    expect(chamaNoCanal(evolution!, 'TransporteDeCanalRegistry', 'entregar')).toBeNull();
+  });
+
+  /*
+   * E o serviço que DECIDE aprovação a partir de um corpo arbitrário não é
+   * oferecido a ninguém: `CanaisModule` parou de exportá-lo, e nenhum arquivo
+   * fora da pasta o importa.
+   */
+  it('ninguém fora do canal importa o serviço que decide aprovação por webhook', () => {
+    // Pelo grafo de referências já resolvido (`REFS`), e não por texto: o
+    // especificador de import é uma STRING, e a visão `semTexto` apaga strings.
+    const alvo = `${CASA_DO_CANAL}canal-de-aprovacao.service.ts`;
+    expect(CAMINHOS, 'o serviço do canal mudou de lugar').toContain(alvo);
+    const fora = REFS.filter(
+      (r) => r.alvo === alvo && !r.arquivo.startsWith(CASA_DO_CANAL),
+    ).map((r) => `${r.arquivo}:${r.linha}`);
+    expect(
+      fora,
+      '`CanalDeAprovacaoService.receber` transforma um corpo arbitrário em decisão de ' +
+        'aprovação. Quem o alcança contorna o webhook, o segredo e o teto de tentativas.',
+    ).toEqual([]);
   });
 });

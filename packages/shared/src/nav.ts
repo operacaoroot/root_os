@@ -104,16 +104,28 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   // ── A central ────────────────────────────────────────────────────────────
   { key: 'console', label: 'Console', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'central' },
-  { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa e as abas Marca e Identidade entram nas próximas fatias' },
+  // O MAPA CHEGOU na onda 10 (fatia 4.4): `/contexto` deixou de ser lista de
+  // notas e virou o contexto do negócio desenhado, com cada ponto abrindo o
+  // registro real. Enquanto ele não existia, este item anunciava ao cliente que
+  // a tela principal estava por vir — e continuou anunciando depois de ela
+  // existir, que é o defeito que a onda inteira tentou consertar.
+  // Segue `parcial` porque as abas Marca e Identidade não entraram; o texto
+  // agora diz o que FALTA, e não o que já chegou.
+  { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa está de pé; as abas Marca e Identidade entram nas próximas fatias' },
   { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central' },
 
   // ── Quem trabalha ────────────────────────────────────────────────────────
   { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },
-  // A tela existe e lê dado real desde a fatia 5.1: estado declarado, histórico
-  // de cada passagem e tempo devolvido. O que falta é CRIAR rotina por aqui —
-  // hoje toda rotina nasce em outro lugar (a da pauta, na tela de Pauta), porque
-  // criar uma exige escolher o executor, e isso é decisão de produto.
-  { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'a tela não cria rotina: toda rotina nasce na tela de Pauta' },
+  // DEIXOU DE SER PARCIAL NA ONDA 10 (fatia 5.6). A tela lê dado real desde a
+  // 5.1 — estado declarado, histórico de cada passagem — e agora mostra também
+  // as HORAS DEVOLVIDAS por semana, medidas do log de passagens contra a linha
+  // de base declarada. Era o último pedaço que faltava do que esta tela promete.
+  //
+  // CRIAR ROTINA continua nascendo na tela de Pauta, e isso NÃO é buraco desta
+  // tela: criar uma exige escolher o executor, que é decisão de produto ainda
+  // não tomada. Marcar a tela como parcial por causa de uma decisão que não é
+  // dela avisava ao cliente que algo aqui está pela metade quando não está.
+  { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha' },
   { key: 'fluxos', label: 'Fluxos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'editor de processo, com o vazamento declarado' },
   // Deixou de ser parcial na onda 9: `GET /organograma` entrou no ar e a tela lê
   // a fonte boa — toda a gente da empresa, com papel e estado, e não só quem é

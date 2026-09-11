@@ -59,7 +59,7 @@ depois, que é a razão de a coluna da direita existir.
 | 1 | `deploy/janela-horaria-ilegivel.sql` no banco de **produção** | **antes do merge** | A fatia 2.3 fez o sinal `fora_da_janela` **acender** quando a janela horária de uma política está ilegível, onde antes ele ficava calado. Acender sobe um degrau na régua em **toda** ação daquela empresa. Zero linha = mudança inócua; linha com `orgId` nulo = a política BASE, e afeta todas as empresas. Sem rodar, você descobre no dia seguinte, com a operação inteira um degrau acima. |
 | 2 | CI verde na revisão que vai subir | antes do merge | Typecheck, as suítes e a prova de que o histórico de migrations aplica do zero. Sem isso o ensaio do passo 6 vira a primeira execução de tudo. |
 | 3 | Backup do banco do dia (§4) | antes de tocar no servidor | Migration aditiva não desfaz. Sem backup, o rollback de estrutura não existe. |
-| 4 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | antes de construir | O container **não lê arquivo `.env`**: só chega o que está no bloco. Preencher só o `.env` não faz nada — foi o que segurou a `ANTHROPIC_API_KEY` por semanas. **Nesta onda são três: `COFRE_CHAVES`, `COFRE_CHAVE_ATUAL` (§2.3c) e `ROTINAS_CRON`** — a última já está no bloco com padrão `on`, e é o único jeito de subir sem relógio (o smoke depende dela, §2.3). |
+| 4 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | antes de construir | O container **não lê arquivo `.env`**: só chega o que está no bloco. Preencher só o `.env` não faz nada — foi o que segurou a `ANTHROPIC_API_KEY` por semanas. **Na onda 10 são três: `CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO` e `CANAL_APROVACAO_CAPACIDADES` (§2.3e)** — as três já estão no bloco do serviço `api`, e as três vazias significam canal desligado, que é o padrão. Das ondas anteriores continuam valendo `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL` (§2.3c) e `ROTINAS_CRON`, a última com padrão `on` e único jeito de subir sem relógio (o smoke depende dela, §2.3). |
 | 5 | `docker tag mktos-app:latest mktos-app:rollback` | antes de construir | A imagem anterior vira lixo na próxima poda, e o rollback deixa de existir. É o passo que mais dói ter pulado. |
 | 6 | `build` + ensaio da migration num banco descartável + **smoke** da imagem (§2.2, §2.3) | antes de subir | As duas formas de a subida morrer: migration que não aplica (e `migrate deploy` roda no `command` do container — falhar é a API não subir) e grafo de injeção do Nest que não resolve. O smoke pega o segundo, que o typecheck **não** enxerga. |
 | 7 | **`db:seed:politica` — E É ANTES DE SUBIR** (§2.3b) | depois do build, **antes** do `up` | Mudou nesta onda: na onda 6 o seed era cosmético (duas capacidades novas que só apareciam na tela da Régua) e podia vir depois. Agora **não pode**. A fatia 3.3 acrescentou **descrição de argumento** a capacidades que o código novo já usa (`cc` no e-mail, `local` e `convidados` no evento) e esquema a outras. O esquema do banco tem `additionalProperties: false`: **campo que o esquema antigo não conhece é recusado pela porta**. Subir a API antes de semear faz toda chamada com campo novo falhar com erro de argumento inválido — numa ação que o catálogo do repositório diz que é válida. |
@@ -101,8 +101,8 @@ cd /srv/marketing-os
 docker compose -f docker-compose.yml -f docker-compose.vps.yml build api
 ```
 
-A imagem é **única** para api, web, telegram e mcp (ver `Dockerfile`): construir `api` já produz a
-imagem que a `web` vai usar. O build falha de propósito se `apps/api/dist/main.js` não existir.
+A imagem é **única** para api, web e mcp (ver `Dockerfile`): construir `api` já produz a imagem que
+a `web` vai usar. O build falha de propósito se `apps/api/dist/main.js` não existir.
 
 ### 2.3 Smoke na imagem, antes de trocar o que está no ar
 
@@ -284,6 +284,41 @@ inventário antigo não enxergava). A recusa existe porque a versão anterior do
 credencial viva da bio de quem o seguisse até o fim: o inventário dizia zero, e tirar a chave tornava
 tudo ilegível, sem volta. O comando `cofre:inventario` tem hoje **duas** colunas de contagem — a do
 cofre e a de **herdadas** — e a coluna que responde "posso aposentar esta chave?" é o TOTAL.
+
+### 2.3e As três variáveis do CANAL DE APROVAÇÃO (onda 10)
+
+`CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO` e `CANAL_APROVACAO_CAPACIDADES`, **nos
+dois lugares** (bloco `environment:` do serviço `api` no `docker-compose.yml` — já estão lá — **e**
+`.env`). Elas ligam a aprovação por WhatsApp: o operador recebe o pedido no canal da ROOT e responde
+por ali.
+
+**As três vazias = canal desligado, e esse é o padrão.** Não há nada a fazer numa subida que não
+queira o canal.
+
+Para ligar:
+
+1. Gere **dois** segredos DIFERENTES, de 32 caracteres ou mais (`openssl rand -base64 32`). Um é o
+   cabeçalho do webhook (`x-canal-segredo`); o outro deriva o código de cada aprovação. Iguais, o
+   arranque recusa o canal e grita — um deles viaja no cabeçalho, então os dois viajariam.
+2. Preencher **só um** também não liga: meia configuração é pior do que nenhuma, porque abriria a
+   rota sem fechar o código. O log do arranque nomeia a queixa.
+3. Cadastre o webhook no painel do provedor (Evolution) apontando para
+   `POST https://<host da api>/api/approvals/canal/whatsapp/<orgId>`, com o cabeçalho
+   `x-canal-segredo` carregando o primeiro segredo.
+4. `CANAL_APROVACAO_CAPACIDADES` é **lista de permissão**, separada por vírgula. Vazia significa o
+   PADRÃO (`whatsapp.mensagem.enviar`), nunca "todas", e `*` não é curinga: quem escrever `*` fica
+   com lista vazia, que não decide nada.
+5. **Sem `ChannelIdentity` cadastrada, ninguém decide.** O vínculo entre número de telefone e usuário
+   só se cria hoje escrevendo no banco — não existe tela. Enquanto não houver, o canal é inutilizável
+   para quem não mexe em SQL, e identidade não cadastrada é **ignorada** (não é erro: é silêncio, de
+   propósito).
+
+**O que trava a virada, e é decisão do Pedro, não de deploy:** a régua não manda o conteúdo exato
+quando a sensibilidade não é a mais baixa, e a capacidade de mandar mensagem no WhatsApp é
+classificada como confidencial. Com a lista padrão, então, **o canal notifica e não decide**. As três
+saídas (aceitar que só notifica, abrir a régua para a sensibilidade intermediária, ou marcar aquela
+capacidade como exceção declarada) estão registradas para decisão. Não ligue o canal esperando que
+ele decida antes de essa escolha estar feita.
 
 ### 2.4 Subir
 
@@ -551,9 +586,12 @@ de ambiente vence o `.env`: o `bio-secrets.env` do servidor guarda a `ENCRYPTION
 root-bio (tokens cifrados parariam de abrir) e o default do vault aponta para um caminho que não
 existe no servidor (o bind mount falha e a API não sobe).
 
-**O compose exige `MCP_SERVICE_PASSWORD` e `MCP_ACTION_PASSWORD` (`:?`) mesmo sem o telegram.** A
-interpolação é do arquivo inteiro: sem elas, **nenhum** comando compose funciona no servidor. Já
-estão no `.env` da VPS; se sumirem, todo comando volta a falhar de saída.
+**O compose não exige mais variável nenhuma** (mudou em 11/09/2026). `MCP_SERVICE_PASSWORD` e
+`MCP_ACTION_PASSWORD` eram interpoladas com `:?` no serviço `telegram`, e como a interpolação é do
+arquivo inteiro, faltar uma derrubava **todo** comando compose no servidor — `up`, `config`, `ps`.
+Aquele serviço foi aposentado (fatia 5.8) e a exigência caiu junto: não sobrou nenhum `:?` no
+`docker-compose.yml`. As duas continuam valendo fora do compose — `MCP_SERVICE_PASSWORD` é a senha
+da conta de serviço do MCP avulso (`packages/mcp`) e `MCP_ACTION_PASSWORD` é lida pela semente.
 
 **Dump de banco fora de `/srv/marketing-os`.** O repositório inteiro é sincronizado; um dump lá
 dentro vira uma cópia do banco de produção viajando para todo mundo que sincroniza.

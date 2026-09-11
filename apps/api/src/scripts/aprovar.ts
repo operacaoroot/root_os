@@ -185,6 +185,22 @@ async function main() {
           );
         }
 
+        /*
+         * O VÍNCULO AO CONTEÚDO NÃO É CONFERIDO AQUI, e não precisa ser.
+         *
+         * Ele mora dentro de `executarAprovada`, imediatamente antes de a
+         * aprovação virar `consumida` — ver o cabeçalho de
+         * `gateway/acoes.service.ts`. Até a correção da fatia 5.5 a conferência
+         * morava nos CHAMADORES (a tela e o canal de WhatsApp), e este script
+         * era o terceiro chamador, coberto por nenhum dos dois: confirmar e
+         * executar pelo terminal executava conteúdo trocado. Acrescentar uma
+         * quarta cópia da conferência aqui seria repetir o erro; o conserto foi
+         * pôr UMA no estrangulamento, e é por isso que este bloco é só um
+         * comentário.
+         *
+         * Se o vínculo tiver quebrado, `executarAprovada` DERRUBA a aprovação e
+         * lança — e a frase que sobe é a mesma que a tela mostra.
+         */
         console.log(`\nconfirmando ${id} como ${usuario.name} <${usuario.email}>…`);
         const conf = await approvals.confirm(org.id, id, { id: usuario.id, papeis, reauth }, motivo);
         console.log(`  confirmada: ${conf.summary}`);

@@ -4,7 +4,14 @@ import { ObsidianService } from '../obsidian/obsidian.service';
 import { ProcedenciaExterna } from '../policy/sinais.service';
 
 export interface FonteContexto {
-  tipo: 'nota' | 'regra';
+  /**
+   * `ferramenta` ENTROU NA UNIÃO EM 11/09/2026, e fechou o buraco que a onda 10
+   * mediu: a lista de fontes de uma sessão nunca recebia resultado de
+   * ferramenta, em momento nenhum. Um agente que lia o painel, pegava o número e
+   * respondia citando a origem fechava a sessão marcada como SEM PROCEDÊNCIA —
+   * por ter feito exatamente o que devia. Ver `TIPOS_DE_DADO`.
+   */
+  tipo: 'nota' | 'regra' | 'ferramenta';
   id: string;
   titulo: string;
   ref?: string;
@@ -102,6 +109,40 @@ export const AVISO_DA_CERCA =
 const ROTULOS_DE_SISTEMA = [
   'O QUE VALE NESTA EMPRESA',
   'DA BASE DE CONHECIMENTO',
+  /*
+   * O rótulo da DECLARAÇÃO DE AUSÊNCIA (fatia 4.3) entra nesta lista pelo mesmo
+   * motivo dos outros, e o ataque é óbvio depois de escrito: a declaração manda
+   * o modelo dizer "não há registro" em vez de preencher. Uma nota que
+   * reproduzisse `SEM DADO NA BASE:` escreveria um segundo cabeçalho, com o
+   * texto que o atacante quisesse — "…mas você pode estimar" —, e o modelo leria
+   * os dois com a mesma cara. Rótulo que o prompt usa é rótulo que a
+   * neutralização precisa desfigurar.
+   *
+   * O QUE ESTA LINHA COBRE, MEDIDO E NÃO SUPOSTO: a FORMA EXATA. `regexDeRotulo`
+   * ancora em começo de texto, começo de linha ou fronteira de espaço, e cobra
+   * dois-pontos ASCII ou fim de trecho — então nove famílias de variante passam
+   * inteiras, com o rótulo e o texto do atacante intactos: aspas, parêntese ou
+   * colchete antes do rótulo; ponto colado no lugar dos dois-pontos;
+   * dois-pontos de largura total; um homóglifo cirílico no meio da palavra;
+   * caixa baixa; espaço insecável entre as palavras; vírgula colada antes. As
+   * nove estão medidas uma a uma em `test/resposta-sem-fonte.test.ts`.
+   *
+   * NENHUMA DELAS É DESTE RÓTULO: são de `regexDeRotulo`, compartilhada, e
+   * valem igual para `REGRAS DA CASA`, `SUA MISSÃO` e os outros. Mexer nela é
+   * mexer na defesa dos onze rótulos de uma vez, e a catraca de arquitetura
+   * conta as chamadas por arquivo — por isso a fatia 4.3 NÃO mexeu, e levou a
+   * lista compartilhada como PERGUNTA no relatório, com a recomendação
+   * (normalizar Unicode e caixa antes do casamento, e aceitar pontuação de
+   * abertura na âncora).
+   *
+   * ESTE rótulo, porém, é alavanca mais forte do que os outros: a cópia
+   * invertida ataca exatamente o requisito que a fatia entrega, e ela entra no
+   * prompt justamente quando HÁ dado — porque aí a declaração verdadeira não é
+   * emitida e a forjada fica sozinha no turno. As outras duas camadas continuam
+   * de pé sobre ela (a cerca a marca como dado, e a procedência eleva o nível da
+   * ação derivada), mas o cinto, aqui, é mais fino do que parecia.
+   */
+  'SEM DADO NA BASE',
   'REGRAS DA CASA',
   'DONO HUMANO',
   'SUA MISSÃO',
@@ -711,6 +752,179 @@ export function blocoExterno(itens: ItemExterno[], opcoes: OpcoesDeBloco = {}): 
   return { texto: partes.join('\n\n'), achadosPorItem };
 }
 
+/*
+ * ============================================================================
+ * A DECLARAÇÃO DE AUSÊNCIA — fatia 4.3 (RF-M-02, RNF-03)
+ * ============================================================================
+ *
+ * A metade do produto que a fatia 4.3 existe para resolver: QUANDO NÃO HÁ DADO,
+ * A RESPOSTA DECLARA A AUSÊNCIA — nunca preenche.
+ *
+ * O que acontecia sem isto: a busca não achava nada, `blocos` saía VAZIO, e o
+ * pedido chegava ao modelo sozinho, sem uma palavra sobre a base estar muda. Um
+ * modelo que recebe "quanto faturamos em agosto?" e nenhum dado responde com o
+ * que ele tem — que é a memória dele, não a desta empresa. O silêncio do
+ * contexto é indistinguível, para o modelo, de "não é preciso citar fonte".
+ *
+ * ISTO É CINTO, NÃO FREIO, e a distinção é a mesma das três camadas descritas lá
+ * em cima: a declaração é PROMPT, e prompt um modelo pode desobedecer. O freio da
+ * fatia é outro e está em dois lugares fora deste arquivo: o campo
+ * `Session.semProcedencia`, que marca a resposta sem fonte, e
+ * `SinaisService.calcular`, que faz dessa marca um SINAL de escalonamento nas
+ * ações seguintes daquele agente — a consequência que faltava.
+ *
+ * O TEXTO É FIXO, e nenhum pedaço dele é interpolado. `detalhe` existe para o
+ * traço e para o log, e fica FORA do prompt de propósito: a mensagem de um erro
+ * de busca pode carregar caminho de nota, trecho de consulta ou o que o
+ * indexador quiser dizer — conteúdo de fora entrando por uma porta sem cerca.
+ * A declaração que o modelo lê varia só pelo MOTIVO, que é um enum deste
+ * arquivo.
+ */
+export type MotivoDaAusencia = 'nada_na_base' | 'notas_sem_corpo' | 'busca_indisponivel';
+
+export interface AusenciaDeDado {
+  motivo: MotivoDaAusencia;
+  /** Uma linha em português, para o traço e para o log. NUNCA vai para o prompt. */
+  detalhe: string;
+}
+
+/** A regra comum às três variantes: declare o que falta, não invente o que falta. */
+const REGRA_DA_AUSENCIA =
+  '- Se a resposta depender de número, valor, data, prazo, nome de cliente ou de ' +
+  'qualquer outro fato desta empresa, e nenhuma ferramenta trouxer esse fato ' +
+  'nesta sessão, DECLARE A AUSÊNCIA: diga que não há registro disponível e diga ' +
+  'o que precisa acontecer para haver.\n' +
+  '- Não estime, não arredonde, não complete de memória e não use exemplo como ' +
+  'se fosse dado desta empresa.\n' +
+  '- Todo número que você escrever tem de vir de uma fonte citada nesta sessão.';
+
+const PRIMEIRA_LINHA: Record<MotivoDaAusencia, string> = {
+  nada_na_base:
+    'A busca na base de conhecimento desta empresa não trouxe NENHUM trecho sobre este pedido.',
+  notas_sem_corpo:
+    'A busca na base de conhecimento desta empresa achou títulos, mas nenhum deles ' +
+    'trouxe texto — na prática, nenhum trecho entrou nesta conversa.',
+  busca_indisponivel:
+    'A base de conhecimento desta empresa está INDISPONÍVEL agora e não pôde ser ' +
+    'consultada. Isto não é o mesmo que "não existe registro": é "não deu para ' +
+    'olhar" — e é assim que você deve dizer.',
+};
+
+/** O bloco que entra no turno quando nenhuma fonte de DADO entrou no contexto. */
+export function declaracaoDeAusencia(motivo: MotivoDaAusencia): string {
+  return `SEM DADO NA BASE:\n${PRIMEIRA_LINHA[motivo]}\n${REGRA_DA_AUSENCIA}`;
+}
+
+/**
+ * O tamanho do MAIOR bloco de ausência possível, descontado do orçamento ANTES
+ * do laço das notas.
+ *
+ * A primeira versão empurrava a declaração em `partes` depois da conta de
+ * orçamento, então ela não contava contra `MAX_CHARS`: o teto que existe para
+ * não queimar dinheiro a cada turno valia "quase sempre", que é o mesmo que não
+ * valer. Reserva-se o PIOR CASO e não o do momento porque qual motivo vale só se
+ * decide depois do laço — uma reserva que dependesse do futuro seria outra conta
+ * que não fecha.
+ *
+ * A reserva é gratuita na prática: a busca traz no máximo 5 trechos de
+ * `TRECHO` caracteres, muito abaixo do que sobra de `MAX_CHARS` depois dela. E
+ * continua correta se um dia os dois blocos passarem a coexistir.
+ */
+const RESERVA_DA_DECLARACAO = Math.max(
+  ...(Object.keys(PRIMEIRA_LINHA) as MotivoDaAusencia[]).map(
+    (m) => declaracaoDeAusencia(m).length,
+  ),
+);
+
+/*
+ * O QUE CONTA COMO FONTE, e por que a regra da casa NÃO conta.
+ *
+ * `fontes` carrega coisas de naturezas diferentes, e tratá-las como uma só é o
+ * buraco que esta fatia encontrou aberto:
+ *
+ *   · `nota`       — DADO. Um trecho da base de conhecimento desta empresa. É
+ *                    isto que dá procedência a um número;
+ *   · `ferramenta` — DADO. O resultado de uma chamada que a PORTA deixou
+ *                    executar: o painel, o Omie, a agenda. É o número vindo da
+ *                    origem, com `ToolCall` gravado e efeito rodado;
+ *   · `regra`      — CONFIGURAÇÃO. O `contextoFixo` do agente, as regras da
+ *                    casa. É o que vale nesta empresa, não o que aconteceu
+ *                    nela. Uma regra ("faturamento exclui a filial 3") não
+ *                    sustenta afirmação nenhuma sobre quanto foi o faturamento.
+ *
+ * POR QUE ISTO IMPORTA, em uma frase: `agent-runtime.service.ts` decidia
+ * "respondeu sem procedência" por `fontesUsadas.length === 0`, e a regra da casa
+ * está dentro de `fontesUsadas`. Num agente com regras configuradas — que é o
+ * caso comum assim que alguém usa o produto — o comprimento NUNCA era zero, e o
+ * campo `Session.semProcedencia` ficava permanentemente falso. O mecanismo
+ * existia, o campo era gravado, e mesmo assim não marcava nada.
+ *
+ * A SEGUNDA METADE, de 11/09/2026: com a regra certa valendo, faltava `fontes`
+ * receber o que a ferramenta trouxe. Sem isso o conserto de um lado virava
+ * defeito do outro — a resposta legítima apoiada em ferramenta passava a acender
+ * o sinal, subir o degrau e travar o agente por 24 horas. Quem empurra a fonte é
+ * o runtime, depois de a porta devolver `executado`; ver `respostaSemProcedencia`.
+ */
+const TIPOS_DE_DADO: ReadonlySet<FonteContexto['tipo']> = new Set(['nota', 'ferramenta']);
+
+/** Alguma fonte de DADO (não de configuração) entrou? */
+export function temFonteDeDado(fontes: readonly FonteContexto[]): boolean {
+  return fontes.some((f) => TIPOS_DE_DADO.has(f.tipo));
+}
+
+/**
+ * A REGRA DO DEFEITO: esta resposta afirma fato sem ter de onde.
+ *
+ * É a mesma heurística barata que o runtime já usava — resposta com algarismo é
+ * resposta que afirma número — com a ÚNICA correção que a fatia 4.3 acrescenta:
+ * só fonte de DADO conta. Barata de propósito: o alternativo é um verificador de
+ * citação, que é outra chamada de modelo por resposta.
+ *
+ * O RUNTIME JÁ CHAMA ESTA FUNÇÃO. A troca da linha `fontesUsadas.length === 0`
+ * por ela foi feita em `agent-runtime.service.ts` — arquivo da fatia 5.6 desta
+ * mesma onda, registrado nos dois relatórios. A catraca que impede a linha
+ * antiga de voltar em silêncio está em `test/resposta-sem-fonte.test.ts`, seção
+ * 2: ela cobra o NOME desta função no fonte do runtime e recusa a expressão
+ * antiga, porque uma catraca que só cobrasse "o campo continua sendo calculado"
+ * ficaria verde com a regra errada de volta no lugar.
+ *
+ * ----------------------------------------------------------------------------
+ * O QUE ELA MARCAVA A MAIS, e como isso foi fechado em 11/09/2026
+ * ----------------------------------------------------------------------------
+ *
+ * `fontes` NÃO recebia resultado de ferramenta — nem aqui, nem no runtime, em
+ * momento nenhum. Só entravam `nota` (dado do vault) e `regra` (configuração).
+ * Então uma resposta LEGÍTIMA, com o número vindo de uma ferramenta que a porta
+ * deixou executar, fechava a sessão marcada como sem procedência: `temFonteDeDado`
+ * dava falso porque a lista não tinha o que a ferramenta trouxe.
+ *
+ * Antes da troca da linha isso não tinha consequência nenhuma em agente com
+ * regras da casa — o comprimento nunca era zero e o campo ficava sempre falso.
+ * DEPOIS dela, todos ficariam expostos, e seria a primeira vez que essa marca
+ * vira ação: o degrau sobe, a aprovação passa de configurável para sempre e a
+ * alçada mínima sobe de operador para responsável. Numa empresa com um aprovador
+ * só e a regra de que quem propõe não aprova, isso travaria o agente por 24
+ * horas por ter feito exatamente o que devia.
+ *
+ * O CONSERTO FOI FEITO NO RUNTIME, que é onde ele pertence: toda chamada de
+ * ferramenta que a porta devolve como `executado` empurra uma `FonteContexto`
+ * de tipo `ferramenta` para `fontesUsadas` (`agent-runtime.service.ts`, dentro
+ * do laço de chamadas). Com isso a sessão legítima já nem fecha marcada, e esta
+ * função voltou a ser a ÚNICA regra — a guarda provisória que
+ * `SinaisService.respostasSemFonte` tinha (ignorar sessão com passo de
+ * ferramenta `executado`) saiu no mesmo commit, junto dos dois casos de teste
+ * que a mediam.
+ *
+ * O que continua marcando, e é o que se quer marcar: ferramenta RECUSADA, com
+ * ERRO ou ESPERANDO APROVAÇÃO não vira fonte, porque nenhuma delas trouxe dado.
+ */
+export function respostaSemProcedencia(
+  resposta: string,
+  fontes: readonly FonteContexto[],
+): boolean {
+  return /\d/.test(String(resposta ?? '')) && !temFonteDeDado(fontes);
+}
+
 export interface ContextoMontado {
   blocos: string;
   fontes: FonteContexto[];
@@ -720,6 +934,19 @@ export interface ContextoMontado {
    * daí para `SinaisService`, que acende `fonte_nao_confiavel`.
    */
   procedencia: ProcedenciaExterna;
+  /**
+   * Preenchido quando NENHUMA fonte de dado entrou no contexto; `null` quando
+   * entrou. É o mesmo fato que a declaração no prompt anuncia ao modelo, em
+   * forma que código consegue ler.
+   *
+   * QUEM LÊ ESTE CAMPO, desde 11/09/2026: `agent-runtime.service.ts` o leva ao
+   * passo `tipo: 'contexto'` da sessão (`SessionStep.motivoSemDado`), e é assim
+   * que o bloco 02 do traço diz POR QUE não havia dado — "a base não tem" é uma
+   * coisa, "não deu para olhar" é outra — em vez de aparecer vazio nos dois
+   * casos. Só o `motivo` viaja; `detalhe` fica no log, porque pode carregar
+   * mensagem de exceção do provedor de busca e o traço é lido na tela.
+   */
+  ausencia: AusenciaDeDado | null;
 }
 
 @Injectable()
@@ -749,6 +976,17 @@ export class ContextBuilder {
     const fontes: FonteContexto[] = [];
     const partes: string[] = [];
     const procedencia = new ProcedenciaExterna();
+    /*
+     * COMEÇA EM AUSENTE, e isto é a decisão de desenho da fatia 4.3: a ausência
+     * é o ESTADO PADRÃO, e só um trecho de dado que de fato entrou no bloco
+     * cercado a desliga. O contrário — começar em "tem dado" e tentar detectar a
+     * falta — erra fechado para o lado errado: todo caminho novo que esqueça de
+     * marcar passa a alegar procedência que não tem.
+     */
+    let ausencia: AusenciaDeDado | null = {
+      motivo: 'nada_na_base',
+      detalhe: 'a busca na base de conhecimento não devolveu nenhum trecho',
+    };
 
     if (opcoes.pedidoExterno) {
       procedencia.marcar(`pedido de origem externa (${opcoes.pedidoExterno.origem})`);
@@ -778,7 +1016,13 @@ export class ContextBuilder {
       if (notas.length) {
         const itens: ItemExterno[] = [];
         const pendentes: FonteContexto[] = [];
-        let orcamento = ContextBuilder.MAX_CHARS - partes.join('\n').length;
+        /*
+         * A DECLARAÇÃO DE AUSÊNCIA ENTRA NA CONTA AQUI, e não depois: ver
+         * `RESERVA_DA_DECLARACAO`. Sem o desconto, o único bloco deste arquivo
+         * que é acrescentado fora do laço escapava do teto.
+         */
+        let orcamento =
+          ContextBuilder.MAX_CHARS - partes.join('\n').length - RESERVA_DA_DECLARACAO;
         for (const n of notas) {
           const titulo = String(n.title ?? n.path ?? 'nota');
           /*
@@ -834,13 +1078,53 @@ export class ContextBuilder {
             `${itens.length} trecho(s) da base de conhecimento: ` +
               itens.map((i) => i.origem).join(', '),
           );
+          // Entrou DADO. É a única coisa que desliga a declaração de ausência.
+          ausencia = null;
+        } else {
+          /*
+           * Achou título e não achou texto. Parece detalhe e não é: até a fatia
+           * 3.8 o laço lia `n.content`, que a busca não devolve, e TODA nota caía
+           * aqui — o bloco 02 chegava ao modelo com títulos e mais nada. Se um
+           * dia o formato do trecho mudar de novo, o sintoma volta; e agora ele
+           * tem nome no traço em vez de virar um contexto vazio silencioso.
+           */
+          ausencia = {
+            motivo: 'notas_sem_corpo',
+            detalhe:
+              `${notas.length} nota(s) casaram a busca, mas nenhuma trouxe corpo — ` +
+              'só título entrou no contexto',
+          };
         }
       }
-    } catch {
+    } catch (e) {
       // Busca indisponível não pode derrubar a sessão: o agente responde com
       // as ferramentas e a resposta sai marcada como sem procedência.
+      //
+      // "NÃO DEU PARA OLHAR" NÃO É "NÃO EXISTE", e era assim que saía daqui: o
+      // `catch` vazio fazia a falha de infraestrutura ficar indistinguível de
+      // uma base que não tem o assunto. Quem lê a resposta merece saber a
+      // diferença, e o modelo também — ver `PRIMEIRA_LINHA.busca_indisponivel`.
+      ausencia = {
+        motivo: 'busca_indisponivel',
+        detalhe: `a busca na base falhou: ${(e as Error)?.message ?? 'erro sem mensagem'}`,
+      };
     }
 
-    return { blocos: partes.join('\n\n'), fontes, procedencia };
+    /*
+     * A DECLARAÇÃO ENTRA POR ÚLTIMO, depois das regras da casa e no lugar dos
+     * trechos que não vieram. Ela é a única coisa neste arquivo que fala com o
+     * modelo sobre o que NÃO está aqui.
+     */
+    if (ausencia) {
+      partes.push(declaracaoDeAusencia(ausencia.motivo));
+      this.log.warn(
+        `empresa ${orgId}, agente ${agent.slug}: nenhuma fonte de dado entrou no contexto ` +
+          `(${ausencia.detalhe}). O pedido segue com a declaração de ausência — resposta que ` +
+          'afirmar número sem citar fonte é defeito, e acende sinal nas ações seguintes ' +
+          'deste agente (ver SinaisService).',
+      );
+    }
+
+    return { blocos: partes.join('\n\n'), fontes, procedencia, ausencia };
   }
 }

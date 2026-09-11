@@ -1,7 +1,9 @@
 > **Substituído em 10/09/2026.** O plano vigente é [PLANO-CONTINUIDADE.md](PLANO-CONTINUIDADE.md).
-> Este arquivo fica como histórico das fases 0–9 e está desatualizado em pelo menos três pontos:
-> a Pauta ondas 2 e 3 foram entregues em 03/08, o deploy saiu do Mac para a VPS, e o sistema
-> passou a se chamar ROOT OS. Não usar para decidir o que fazer a seguir.
+> Este arquivo fica como histórico das fases 0–9 e está desatualizado em pelo menos quatro pontos:
+> a Pauta ondas 2 e 3 foram entregues em 03/08, o deploy saiu do Mac para a VPS, o sistema
+> passou a se chamar ROOT OS, e **o bot do Telegram (`apps/telegram`) foi APOSENTADO em 11/09/2026**
+> (fatia 5.8) — o que ele fazia, a Fase 2 abaixo ainda descreve no presente. Não usar para decidir o
+> que fazer a seguir.
 
 # Marketing OS — Roadmap por Fases
 

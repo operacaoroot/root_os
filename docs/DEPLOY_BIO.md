@@ -37,9 +37,14 @@ BIO_HOST=bio.operacaoroot.com
 PUBLIC_BIO_ORIGIN=https://bio.operacaoroot.com
 BIO_SYNC_INTERVAL_MIN=360
 BIO_BRIDGE_INTERVAL_MIN=720
-MCP_SERVICE_PASSWORD=…      # o compose exige (`:?`) mesmo sem o telegram rodar
-MCP_ACTION_PASSWORD=…
 ```
+
+> **Isto mudou em 11/09/2026.** Na época da virada o roteiro pedia também
+> `MCP_SERVICE_PASSWORD` e `MCP_ACTION_PASSWORD`, porque o serviço `telegram` as
+> interpolava com `:?` e a interpolação é do arquivo inteiro — sem elas nenhum
+> comando compose rodava. Aquele serviço foi aposentado e a exigência caiu com
+> ele. As duas continuam valendo fora do compose (MCP avulso e semente), mas não
+> são pré-requisito de deploy nenhum.
 
 > Achado da virada: o `.env` tinha um bloco de dev duplicado (`JWT_SECRET`,
 > `AUTH_SECRET`, `ENCRYPTION_KEY` com valores de desenvolvimento) que teria
@@ -50,7 +55,9 @@ MCP_ACTION_PASSWORD=…
 ```bash
 cd /srv/marketing-os && deploy/up.sh --vps api web
 ```
-Só `api web`: o `telegram` não roda nesta VPS e subir a stack inteira o ligaria.
+Só `api web`: são os dois únicos serviços de aplicação da stack (o `mcp` roda por fora). Até
+11/09/2026 havia um terceiro, o `telegram`, que não rodava nesta VPS — subir a stack inteira o
+ligaria. Ele foi aposentado; o `api web` continua sendo o comando certo.
 
 A migration `add_bio` roda no boot da api. **Depois dela, rode o seed** — é ele
 que cria `bio.ver`/`bio.editar` e as vincula aos perfis; sem isso o menu "Link na

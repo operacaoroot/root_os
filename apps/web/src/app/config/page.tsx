@@ -67,7 +67,7 @@ export default function ConfigPage() {
         {data && data.integrations.length === 0 ? (
           <p className="text-sm text-muted">
             Nenhuma integração conectada ainda. Os conectores (ClickUp/Asana, Instagram, Gmail, Drive…)
-            entram nas próximas fases; o Telegram já opera como canal do MCP.
+            entram nas próximas fases.
           </p>
         ) : (
           <ul className="divide-y divide-border">

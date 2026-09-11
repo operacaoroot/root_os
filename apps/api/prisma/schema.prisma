@@ -2069,6 +2069,12 @@ model Session {
   @@index([orgId, status])
   /// Retomada: a sessão viva daquele canal e daquele contato.
   @@index([orgId, canal, canalRef, ultimaAtividadeEm])
+  /// O sinal de "respondeu sem fonte" (RF-M-02) conta sessões marcadas na
+  /// janela de 24h, e essa contagem roda no caminho MAIS QUENTE do sistema —
+  /// toda passagem pela porta, em `SinaisService.respostasSemFonte`. Os índices
+  /// acima são por `criadaEm`; este filtro é por `semProcedencia` +
+  /// `encerradaEm`, e sem ele a consulta varre a tabela de sessões inteira.
+  @@index([orgId, semProcedencia, encerradaEm])
 }
 
 enum SessionStepTipo {
@@ -2118,6 +2124,16 @@ model SessionStep {
   stopReason       String?
 
   fontes  Json    @default("[]")
+  /// POR QUE não havia dado, no passo de contexto (RF-M-02).
+  ///
+  /// `nada_na_base`, `notas_sem_corpo` ou `busca_indisponivel` — os três motivos
+  /// de `ContextBuilder.montar`. Nulo quando entrou dado, e nulo em todo passo
+  /// que não é de contexto.
+  ///
+  /// Existe porque lista vazia não distingue "a base desta empresa não tem" de
+  /// "não deu para olhar", e as duas levam a conversas opostas com o cliente. O
+  /// construtor de contexto já sabia a diferença desde a onda 10; ninguém lia.
+  motivoSemDado String?
   /// Blocos crus do provider. Permite retomar sem perder o thinking — remover
   /// ou reordenar quebra a assinatura e a API recusa o turno seguinte.
   payload Json?

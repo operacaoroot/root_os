@@ -47,7 +47,6 @@ marketing-os/
   apps/
     web/          Next.js — painel, /central, /b/:handle
     api/          NestJS — módulos, gateway, política, agentes, webhooks
-    telegram/     bot (só roda no Mac)
   packages/
     policy/       escada R0–R5 e catálogo de capacidades
     mcp/          servidor MCP (35 ferramentas só-leitura)
@@ -60,17 +59,20 @@ marketing-os/
 
 ```bash
 cp .env.example .env      # segredos próprios; NUNCA commitar o .env real
-# ⚠️ ANTES do compose: preencha MCP_SERVICE_PASSWORD e MCP_ACTION_PASSWORD no .env
-#    (openssl rand -base64 24). O .env.example as entrega VAZIAS e o serviço
-#    `telegram` as interpola com `:?`, que falha com variável vazia — não só
-#    ausente. Como a interpolação é do ARQUIVO INTEIRO, sem elas nenhum comando
-#    de compose roda, nem `up api`, nem `config`, nem `ps`.
 docker compose up -d      # Postgres + Redis + MinIO isolados
 # portas host: web 4000 · api 4001 · db 5442 · redis 6390 · minio 9010/9011
 ```
 
-Depois de definir as duas senhas, rode `pnpm db:seed` para alinhar os hashes das contas de serviço —
-mas **nunca em produção**: o seed não é idempotente e apaga dados do org.
+**Nenhuma variável é exigida pelo compose.** Até 11/09/2026 `MCP_SERVICE_PASSWORD` e
+`MCP_ACTION_PASSWORD` precisavam estar preenchidas ANTES de qualquer comando: o serviço `telegram`
+as interpolava com `:?`, e como a interpolação é do arquivo inteiro, faltar uma derrubava `up`,
+`config` e até `ps`. Aquele serviço foi aposentado (fatia 5.8) e a exigência caiu com ele — não
+sobrou nenhum `:?` no `docker-compose.yml`.
+
+As duas continuam valendo fora do compose: `MCP_SERVICE_PASSWORD` é a senha da conta de serviço do
+servidor MCP avulso (`packages/mcp`) e `MCP_ACTION_PASSWORD` é lida por `apps/api/prisma/seed.ts`.
+Se for usar qualquer um dos dois, gere as senhas (`openssl rand -base64 24`) e rode `pnpm db:seed`
+para alinhar os hashes — mas **nunca em produção**: o seed não é idempotente e apaga dados do org.
 
 Comandos: `npm run dev` / `build` / `typecheck`; banco: `db:generate`, `db:migrate`, `db:deploy`. Testes: `pnpm --filter @mktos/api test`, `pnpm --filter @mktos/policy test`, `pnpm --filter @mktos/web test`. Deploy na VPS: `deploy/up.sh --vps api web` (o `--vps` não é opcional — ver CLAUDE.md).
 

@@ -141,7 +141,7 @@ Já existe: `Agent` (com `cron`, `tz`, `ativo`, `proximaExecucaoEm`, `execucoes`
 | 5.5 | Aprovação por WhatsApp (Evolution, instância da ROOT) presa ao conteúdo exato e à `ChannelIdentity` | RF-A-06 | 3.10, 5.4 | aprovar no grupo executa a mesma ação da tela; identidade não cadastrada é ignorada (teste) | `gateway/canais/whatsapp.ts` | M |
 | 5.6 | **Ligar** o rebaixamento: `impedimento()` (`agent-runtime.service.ts:339-349`) passa a ler `rebaixadoAte` (a escrita já existe em :378-381); horas devolvidas por rotina contra `baselinePorId` | RF-N-07, RF-N-05 | 5.1 | teste: agente rebaixado não executa R2+ por 24h; `/rotinas` mostra horas/semana | `agents/agent-runtime.service.ts`, `/rotinas` | P |
 | 5.7 | Os 2–3 agentes do degrau 1 (**D-A pendente**; candidatos com ativo pronto: Pauta/roteiro, Conteúdo/carrossel, Relatório diário) em rotina no tenant ROOT | RF-N | 5.1–5.4 | 7 dias medidos em `EventLog`: execuções sem intervenção, zero `erro` em cascata ao derrubar um conector (teste de caos manual registrado) | `agents/roster/` | G |
-| 5.8 | `apps/telegram` (chama LLM/MCP fora da porta): migrar para canal do gateway ou desligar (**N-8**) | RF-G-01 | 3.2 | teste de arquitetura cobre `apps/telegram` ou o app sai do compose | `apps/telegram/` | P |
+| 5.8 | ~~`apps/telegram` (chama LLM/MCP fora da porta): migrar para canal do gateway ou desligar (**N-8**)~~ **FEITO em 11/09/2026 — APOSENTADO.** O bot já estava morto nesta branch: o laço de ação dele propunha e confirmava com a própria conta de máquina, e a fila de aprovação fechou os dois lados (a rota exige permissão que aquela conta não tem; o serviço recusa conta de máquina e recusa o proponente). Migrar seria reescrever do zero. Saiu do workspace e do compose; a catraca de arquitetura ganhou uma quinta frente que varre o monorepo inteiro. Perde-se o resumo diário agendado, que cabe nas rotinas da 5.1 | RF-G-01 | 3.2 | ✅ o app saiu do compose e do workspace, sem referência quebrada | `apps/telegram/` (removido), `docker-compose.yml`, `test/arquitetura.test.ts` | P |
 
 ### Fase 5 · A PORTA DE ENTRADA — *o cliente entra sozinho* (RF-O, RF-B)
 
@@ -246,6 +246,6 @@ Novas:
 - **N-5** MEMÓRIA por evento (recomendado) ou documento com histórico. (4.1)
 - **N-6** Rotinas: generalizar o cron próprio (recomendado, constraint de stack) ou introduzir fila Redis/BullMQ (dependência nova = decisão humana). (5.1)
 - **N-7** ProMedical entra no OS quando? Proposta: primeiro tenant cliente após a Fase 2, carga do Protheus como primeiro conector de dados.
-- **N-8** `apps/telegram`: migrar para canal do gateway ou desligar. (5.8)
+- ~~**N-8** `apps/telegram`: migrar para canal do gateway ou desligar. (5.8)~~ **DECIDIDO: aposentado** (11/09/2026). Ficam duas decisões menores no lugar dele: o conector `telegram` do catálogo passa a anunciar "configurado" para um transporte que não existe mais (marcar como sem transporte, ou tirar a linha), e a conta de máquina `ia-acao@` ficou sem cliente nenhum com seis permissões de escrita (apagar, ou fazer a semente criá-la sem senha utilizável).
 - **N-9** Como o código chega na VPS depois de tirar `.git` do Syncthing: `git pull` ou rsync no `deploy/up.sh`. (0.0)
 
