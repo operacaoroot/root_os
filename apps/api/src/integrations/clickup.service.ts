@@ -2,6 +2,13 @@ import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@
 import { TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ConectoresService } from './conectores.service';
+import {
+  SemTenantError,
+  comContexto,
+  contextoAtual,
+  novaCorrelacao,
+} from '../common/contexto-execucao';
 
 // Conector ClickUp (API v2, token pessoal). Credencial PRÓPRIA do root em
 // ~/.config/root/clickup.env. PREMISSA: só o espaço "root". Listas de CONTEÚDO
@@ -38,10 +45,47 @@ export class ClickupService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly conectores: ConectoresService,
   ) {}
 
   get configured(): boolean {
     return this.token.length > 0;
+  }
+
+  /**
+   * O DESLIGAMENTO, ANTES DE SAIR DA CASA (RF-G-06).
+   *
+   * Lança `ConectorDesligadoError` (403 com a frase em português) quando o
+   * ClickUp está desligado para a empresa. Chamada no começo dos três métodos
+   * que falam com a API do ClickUp; a leitura do espelho no banco não passa por
+   * aqui, de propósito — desligar um conector para de MANDAR coisa para fora,
+   * não apaga o que já foi trazido.
+   *
+   * A EMPRESA VEM DO PARÂMETRO QUANDO EXISTE, e do contexto de execução quando
+   * não. `writeTaskStatus` e `criarTarefa` não recebem `orgId` e são chamados de
+   * `content.service.ts` e `pauta/publicacao.service.ts` — arquivos de outra
+   * fatia, cuja assinatura não dá para mudar aqui (está em FORA DO ESCOPO no
+   * relatório). Hoje os dois só são alcançados por rota HTTP, onde o
+   * `ContextoInterceptor` já abriu o contexto com a empresa do token.
+   *
+   * SEM EMPRESA RESOLVÍVEL, ELE RECUSA. A primeira versão avisava no log e
+   * deixava passar, e o preço dessa conveniência era exato: o primeiro trabalho
+   * agendado que chamasse um destes dois métodos atravessaria o interruptor sem
+   * nada vermelho em canto nenhum — desligar o ClickUp num incidente e o OS
+   * continuar escrevendo lá, em silêncio. "Não sei de quem é esta chamada" não
+   * é licença para sair da casa: é o motivo mais forte para não sair. Quem
+   * precisar chamar fora de requisição abre o contexto (`comContexto`), como o
+   * laço agendado logo abaixo passou a fazer.
+   */
+  private async exigirClickupLigado(orgExplicito?: string, onde = 'ClickUp'): Promise<void> {
+    const orgId = orgExplicito ?? contextoAtual()?.orgId ?? null;
+    if (!orgId) {
+      throw new SemTenantError(
+        `${onde} (desligamento de conector não avaliado, então nada sai da casa — RF-G-06; ` +
+          'abra o contexto com comContexto ou passe a empresa explicitamente)',
+      );
+    }
+    await this.conectores.exigirLigado({ orgId, conector: 'clickup' });
   }
 
   // Sync AGENDADO (in-process): mantém o ClickUp em dia sozinho.
@@ -54,7 +98,19 @@ export class ClickupService implements OnModuleInit {
       try {
         const org = await this.prisma.org.findUnique({ where: { slug: 'root' } });
         if (!org) return;
-        const r = await this.sync(org.id);
+        /*
+         * O CONTEXTO, que este laço não tinha. Sem requisição não há
+         * `ContextoInterceptor`, então a empresa nunca chegava à sessão do
+         * banco: sob isolamento por linha a primeira consulta já falharia, e
+         * `exigirClickupLigado` não teria como avaliar o desligamento. Abrir o
+         * escopo aqui é o que a onda 6 pede para toda rotina sem requisição
+         * (varrer empresa por empresa, dentro da sessão de cada uma) — aqui a
+         * varredura é de uma empresa só, a do slug `root`.
+         */
+        const r = await comContexto(
+          { orgId: org.id, correlationId: novaCorrelacao('cron'), origem: 'cron' },
+          () => this.sync(org.id),
+        );
         this.log.log(`sync agendado: ${r.tasks} tarefa(s) + ${r.content} conteúdo(s)`);
       } catch (e) {
         this.log.warn(`sync agendado falhou: ${(e as Error).message}`);
@@ -80,6 +136,7 @@ export class ClickupService implements OnModuleInit {
   /** Write-back: muda o status de uma task no ClickUp (fonte da verdade). */
   async writeTaskStatus(externalId: string, status: string): Promise<{ status: string; type: string | null }> {
     if (!this.configured) throw new ServiceUnavailableException('ClickUp não configurado.');
+    await this.exigirClickupLigado(undefined, 'ClickUp writeTaskStatus');
     const t = await this.cu<{ status?: { status: string; type: string } }>(
       `/task/${encodeURIComponent(externalId)}`,
       { method: 'PUT', body: JSON.stringify({ status }) },
@@ -97,6 +154,7 @@ export class ClickupService implements OnModuleInit {
     listId?: string | null;
   }): Promise<{ id: string; url: string | null }> {
     if (!this.configured) throw new ServiceUnavailableException('ClickUp não configurado.');
+    await this.exigirClickupLigado(undefined, 'ClickUp criarTarefa');
     const listId = (args.listId || process.env.CLICKUP_LIST_PAUTA || '').trim();
     if (!listId) {
       throw new ServiceUnavailableException(
@@ -200,6 +258,7 @@ export class ClickupService implements OnModuleInit {
         'ClickUp não configurado: defina CLICKUP_API_TOKEN em ~/.config/root/clickup.env e reinicie a API.',
       );
     }
+    await this.exigirClickupLigado(orgId, 'ClickUp sync');
     const started = Date.now();
     try {
       const { spaceId, spaceName } = await this.resolveSpace();

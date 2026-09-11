@@ -1,7 +1,59 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { CONNECTORS, type IntegrationCatalog } from '@mktos/shared';
+import { CONNECTORS, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { ConectoresService } from './conectores.service';
+import {
+  type AplicacaoDoDesligamento,
+  TEXTO_DA_APLICACAO,
+  aplicacaoDoDesligamento,
+  grupoDoConector,
+} from './conectores';
+
+/*
+ * O catálogo da tela de Conexões, com o DESLIGAMENTO por empresa junto (RF-G-06).
+ *
+ * O tipo é local e é um SUPERCONJUNTO do de `@mktos/shared`: `IntegrationCatalog`
+ * mora em `packages/shared`, que é de outra fatia, e acrescentar campo lá no meio
+ * de uma onda com quatro agentes escrevendo é colisão garantida. Supertipo
+ * resolve sem tocar em arquivo alheio — quem consome o tipo estreito continua
+ * válido, e a tela de Conexões (o único consumidor) lê o largo.
+ *
+ * `desligado` é DIFERENTE de `status: 'disconnected'`, e a tela precisa mostrar
+ * os dois:
+ *   · `status` responde "esta empresa tem a integração montada?";
+ *   · `desligado` responde "alguém mandou o OS parar de usar isto agora?".
+ * Um conector pode estar conectado E desligado — é o caso normal de uma
+ * suspensão de emergência, e é exatamente aí que juntar os dois campos num só
+ * faria a tela mentir.
+ */
+export interface LinhaDoCatalogo extends IntegrationCatalogRow {
+  /** Desligado para esta empresa (RF-G-06). A credencial continua guardada. */
+  desligado: boolean;
+  desligadoEm: string | null;
+  desligadoPor: string | null;
+  motivoDesligado: string | null;
+  /** `google` para gmail/gcal/gdocs/drive; `null` para os demais. */
+  grupo: string | null;
+  /*
+   * O QUE O INTERRUPTOR FAZ NESTA LINHA, HOJE — e por que a tela não decide isto
+   * sozinha.
+   *
+   * Oferecer o mesmo botão nas 16 linhas e afirmar, no aviso do topo, que toda
+   * ferramenta do conector é recusada com motivo era verdade para UM deles. A
+   * correção não foi esconder quinze: foi cada linha dizer qual das duas coisas
+   * o botão faz ali. E dizer com o dado vindo DAQUI, do mesmo lado que cumpre a
+   * promessa — texto no componente é a forma garantida de as duas voltarem a
+   * divergir na próxima fatia.
+   */
+  aplicacaoDoDesligamento: AplicacaoDoDesligamento;
+  /** A frase pronta, em português, do que o botão faz nesta linha. */
+  textoDoDesligamento: string;
+}
+
+export interface CatalogoDeConexoes extends IntegrationCatalog {
+  items: LinhaDoCatalogo[];
+}
 
 // Conectores que dá para ligar/desligar manualmente (têm credencial via env/API key).
 // Os OAuth (Instagram/Gmail/Drive) exigem o fluxo de OAuth + credencial própria do root
@@ -15,13 +67,14 @@ export class IntegrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly conectores: ConectoresService,
   ) {}
 
-  async catalog(orgId: string): Promise<IntegrationCatalog> {
-    const accounts = await this.prisma.integrationAccount.findMany({
-      where: { orgId },
-      include: { health: true },
-    });
+  async catalog(orgId: string): Promise<CatalogoDeConexoes> {
+    const [accounts, desligados] = await Promise.all([
+      this.prisma.integrationAccount.findMany({ where: { orgId }, include: { health: true } }),
+      this.conectores.desligados(orgId),
+    ]);
     const byKey = new Map(accounts.map((a) => [a.key, a]));
 
     // Status derivado da CONFIG real quando não há registro no banco: conectores por
@@ -37,12 +90,13 @@ export class IntegrationsService {
       ofx: true, // builtin — importação de extrato sempre disponível
     };
 
-    const items = CONNECTORS.map((c) => {
+    const items: LinhaDoCatalogo[] = CONNECTORS.map((c) => {
       const acc = byKey.get(c.key);
       // status: registro do banco tem precedência (OAuth/toggle); senão, deriva da config.
       let status = acc?.status ?? 'disconnected';
       if (!acc && c.key in derived) status = derived[c.key] ? 'connected' : 'disconnected';
 
+      const off = desligados.get(c.key);
       return {
         key: c.key,
         label: c.label,
@@ -56,6 +110,15 @@ export class IntegrationsService {
         lastSyncAt: acc?.health?.lastSyncAt?.toISOString() ?? null,
         lastError: acc?.health?.lastError ?? null,
         managed: isManaged(c.authType),
+        // RF-G-06 — o desligamento é uma CAMADA por cima do status, nunca o
+        // próprio status: o conector segue conectado e com credencial guardada.
+        desligado: !!off,
+        desligadoEm: off?.desligadoEm.toISOString() ?? null,
+        desligadoPor: off?.desligadoPor ?? null,
+        motivoDesligado: off?.motivo ?? null,
+        grupo: grupoDoConector(c.key),
+        aplicacaoDoDesligamento: aplicacaoDoDesligamento(c.key),
+        textoDoDesligamento: TEXTO_DA_APLICACAO[aplicacaoDoDesligamento(c.key)],
       };
     });
 

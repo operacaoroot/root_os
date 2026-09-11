@@ -17,6 +17,22 @@
 export interface LlmMessage {
   system: string;
   user: string;
+  /**
+   * A empresa que paga por esta chamada (RF-G-05).
+   *
+   * Existe porque o teto por empresa e por dia precisa saber de quem é o gasto
+   * ANTES de o modelo ser chamado. Quando vem preenchido, manda; quando não vem,
+   * o teto cai em `contextoAtual()`.
+   *
+   * ELE NÃO SUBSTITUI O CONTEXTO DE EXECUÇÃO, e essa é a parte que custou caro:
+   * a empresa que viaja para a SESSÃO do banco sai do contexto, não deste campo
+   * (`prisma/sessao-de-banco.ts`). Informar `orgId` sem abrir o contexto grava —
+   * ou deixa de gravar — na empresa errada assim que a aplicação conectar com o
+   * papel restrito. Todo chamador de fora de requisição abre o contexto (o
+   * agendador da pauta é o caso), e este campo é o cinto explícito por cima.
+   * Ver `teto-diario.service.ts`.
+   */
+  orgId?: string;
 }
 
 /** Ferramenta como o modelo a enxerga. O nome NÃO aceita ponto — só [A-Za-z0-9_-]. */
@@ -79,7 +95,20 @@ export interface LlmStepInput {
   /** Presente ⇒ o provider usa streaming e chama isto a cada pedaço de texto. */
   onTextDelta?: (delta: string) => void;
   signal?: AbortSignal;
+  /** A empresa que paga por este passo (RF-G-05). Ver `LlmMessage.orgId`. */
+  orgId?: string;
 }
+
+/**
+ * A chamada, do ponto de vista de quem só precisa saber quanto ela pode custar.
+ *
+ * `tetoDeSaida` existe para o teto de custo reservar o número REAL de
+ * `max_tokens` que o provider vai mandar, em vez de manter um palpite paralelo
+ * que envelhece em silêncio quando o default do provider muda.
+ */
+export type ChamadaParaTeto =
+  | { tipo: 'completa' }
+  | { tipo: 'passo'; maxTokens?: number; streaming: boolean };
 
 export interface LlmStepOutput {
   text: string;
@@ -103,6 +132,11 @@ export interface LlmProvider {
   readonly supportsTools: boolean;
   complete(input: LlmMessage): Promise<string>;
   step(input: LlmStepInput): Promise<LlmStepOutput>;
+  /**
+   * O `max_tokens` que ESTE provider vai enviar para esta chamada. É o limite
+   * superior da saída, e é com ele que o teto de custo reserva (RF-G-05).
+   */
+  tetoDeSaida(chamada: ChamadaParaTeto): number;
 }
 
 // Token de injeção do Nest (o módulo escolhe a implementação por env).

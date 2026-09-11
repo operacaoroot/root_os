@@ -113,10 +113,18 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
  * (`auth`), se está de pé (`health`), o pulso (`dashboard`), o que aconteceu
  * (`audit`), o que precisa de gente (`approvals`), quem trabalha (`agents`,
  * `sessions`), o que está ligado (`integrations`, `google`), o que o sistema
- * sabe (`knowledge`), quem autoriza (`users`, `roles`), as preferências
- * (`config`) e a própria resposta "quais módulos eu tenho" (`tenants`) — que
- * PRECISA continuar respondendo para um tenant sem módulo nenhum, senão o web
- * não consegue nem descobrir que não tem nada.
+ * sabe (`knowledge`), sob qual régua ele age (`policy`), quem autoriza
+ * (`users`, `roles`), as preferências (`config`) e a própria resposta "quais
+ * módulos eu tenho" (`tenants`) — que PRECISA continuar respondendo para um
+ * tenant sem módulo nenhum, senão o web não consegue nem descobrir que não tem
+ * nada.
+ *
+ * `policy` É ESPINHA, e a decisão é esta: a régua R0–R5 não desliga para
+ * empresa nenhuma. Ela é o que governa toda ação do OS — desligá-la por
+ * contrato seria vender um sistema que age sem régua. O que a tela `/regua`
+ * MOSTRA continua sendo filtrado pelos módulos da empresa (o catálogo de
+ * capacidades de um módulo não contratado não aparece; ver `ReguaService`), mas
+ * a rota em si responde sempre.
  */
 export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'agents',
@@ -129,6 +137,7 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'health',
   'integrations',
   'knowledge',
+  'policy',
   'roles',
   'sessions',
   'tenants',
@@ -217,4 +226,61 @@ export function caminhoLiberado(caminho: string, modulosLigados: Iterable<string
   if (!modulo) return true;
   const ligados = modulosLigados instanceof Set ? modulosLigados : new Set(modulosLigados);
   return ligados.has(modulo);
+}
+
+/* ------------------------------------------------- o catálogo de capacidades */
+
+/**
+ * O módulo que governa a ROTA declarada por uma capacidade do catálogo.
+ *
+ * A rota vem escrita como `"PATCH /leads/:id"` ou `"GET /tasks?overdue=1"` — o
+ * verbo na frente, a query no fim. Aqui só o caminho interessa, e ele passa
+ * pelo MESMO `moduloDoCaminho` que o gate de requisição usa: se um dia a rota
+ * mudar de módulo, a tela e a porta mudam juntas.
+ *
+ * Devolve `null` em dois casos que são o mesmo para quem pergunta ("aparece
+ * sempre"): capacidade sem rota declarada (a maior parte do catálogo herdado da
+ * ROOT, que fala de sistemas externos e não de rota HTTP nenhuma) e rota de
+ * espinha do OS. LANÇA `PrefixoNaoDeclaradoError` para prefixo desconhecido,
+ * como o resto deste arquivo.
+ */
+export function moduloDaCapacidade(rota: string | null | undefined): ModuloKey | null {
+  if (!rota) return null;
+  const caminho = rota.trim().split(/\s+/).pop();
+  if (!caminho || !caminho.startsWith('/')) return null;
+  return moduloDoCaminho(caminho);
+}
+
+/**
+ * O catálogo que esta empresa pode VER — RF-T-06.
+ *
+ * O gate de rota já recusa `/api/finance/*` para quem não contratou financeiro.
+ * Sem este filtro, porém, o painel da Régua entregava a MESMA empresa a lista
+ * completa de capacidades: identificador, descrição, rota e nome da ferramenta
+ * de todo módulo que ela não tem. É exatamente a superfície que a fatia de
+ * módulos por empresa existe para não mostrar.
+ *
+ * PREFIXO NÃO DECLARADO MANTÉM A CAPACIDADE VISÍVEL, e grita pelo `aoFalhar`.
+ * É a mesma escolha do `ModulosInterceptor`: sumir com metade do catálogo por
+ * causa de uma linha esquecida nesta tabela seria trocar um vazamento possível
+ * por uma tela quebrada certa — e o teste estático pega o prefixo faltando
+ * antes de qualquer deploy.
+ */
+export function catalogoVisivel<T extends { rota?: string | null }>(
+  capacidades: readonly T[],
+  modulosLigados: Iterable<string>,
+  aoFalhar?: (erro: PrefixoNaoDeclaradoError, item: T) => void,
+): T[] {
+  const ligados = modulosLigados instanceof Set ? modulosLigados : new Set(modulosLigados);
+  return capacidades.filter((c) => {
+    let modulo: ModuloKey | null;
+    try {
+      modulo = moduloDaCapacidade(c.rota);
+    } catch (e) {
+      if (!(e instanceof PrefixoNaoDeclaradoError)) throw e;
+      aoFalhar?.(e, c);
+      return true;
+    }
+    return modulo === null || ligados.has(modulo);
+  });
 }

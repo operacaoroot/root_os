@@ -52,6 +52,15 @@ class ModeloRoteirizado implements LlmProvider {
     return 'n/d';
   }
 
+  /**
+   * Exigido por `LlmProvider` desde a fatia 3.6: é o `max_tokens` que o provider
+   * mandaria, e é dele que o teto de custo por empresa tira o valor da reserva.
+   * Aqui não há pedido de verdade, então o número é o do roteiro: fixo.
+   */
+  tetoDeSaida(): number {
+    return 4000;
+  }
+
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     this.chamadas.push(input);
     const passo = this.roteiro[Math.min(this.i++, this.roteiro.length - 1)];

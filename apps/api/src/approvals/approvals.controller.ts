@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApprovalState } from '@prisma/client';
 import { z } from 'zod';
 import { ApprovalsService } from './approvals.service';
@@ -8,6 +18,7 @@ import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { enderecoDeOrigem } from '../auth/endereco-de-origem';
+import { corpoDaRecusa } from '../integrations/conectores';
 
 const CreateApprovalSchema = z.object({
   resourceType: z.enum(['lead', 'task', 'campaign', 'content']),
@@ -87,6 +98,23 @@ export class ApprovalsController {
    * A execução usa os argumentos gravados na passagem pela porta, nunca os que
    * chegam nesta requisição — é o que impede trocar o texto entre a aprovação
    * e o envio.
+   *
+   * SÃO TRÊS PASSOS, E A ORDEM É O DESENHO (RF-G-06, 11/09/2026):
+   *
+   *   1. o conector desta aprovação ainda está ligado?
+   *   2. confirmar (a aprovação vira `confirmada`, o token nasce);
+   *   3. executar.
+   *
+   * O passo 1 vem ANTES do 2 porque `confirm` é IRREVERSÍVEL para a fila: uma
+   * vez `confirmada`, a aprovação sai de `listar` (que devolve as pendentes) e
+   * `confirm` passa a recusá-la ("Aprovação já confirmada"). Perguntar depois de
+   * confirmar deixava a ação num limbo do qual nenhuma superfície a tirava — e
+   * desmentia a frase que o próprio operador lê na recusa, que promete que
+   * religar restabelece o uso sem nova autorização.
+   *
+   * Perguntando antes, a recusa é um 403 e NADA muda: a aprovação continua
+   * pendente, continua na fila, e este mesmo botão volta a funcionar assim que
+   * alguém religar o conector em Conexões.
    */
   @Post(':id/confirm')
   @RequirePermissions('mcp.executar')
@@ -103,6 +131,24 @@ export class ApprovalsController {
      * nunca o formato do corpo.
      */
     const { reauth, motivo } = ConfirmarSchema.parse(body ?? {});
+
+    /*
+     * PASSO 1 — o interruptor, antes de mexer no estado da aprovação.
+     *
+     * `ForbiddenException` e não uma exceção de `integrations/`: o controlador
+     * de aprovações não importa o módulo de integrações, pelo mesmo motivo que a
+     * porta não importa (ver `gateway/interruptores.registry.ts`) — o import
+     * aqui é do arquivo PURO de conectores, que não traz módulo nenhum junto. A
+     * frase e o corpo vêm prontos de `montarRecusa`/`corpoDaRecusa`.
+     *
+     * O corpo leva o código `conector_desligado` em `error`, e é por ele que a
+     * tela distingue esta recusa das outras para oferecer o caminho de conserto
+     * (Conexões) em vez de mais uma caixa vermelha. `message` continua a frase
+     * em português, então o `Error.message` não muda para quem já o conferia.
+     */
+    const desligado = await this.acoes.conectorDesligado(user.orgId, id, user.sub);
+    if (desligado) throw new ForbiddenException(corpoDaRecusa(desligado));
+
     const confirmada = await this.approvals.confirm(
       user.orgId,
       id,

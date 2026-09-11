@@ -15,8 +15,61 @@ import {
   SLUG_DA_PLATAFORMA,
   provisionarTenant,
   type EntradaDeProvisionamento,
+  type EventoDeProvisionamento,
   type Provisionamento,
 } from './provisionar';
+
+/**
+ * As palavras da POLÍTICA para as duas linhas do provisionamento (RF-R-03).
+ *
+ * Provisionar é mudança de estado de uma empresa, e o vocabulário do RASTRO tem
+ * nome para isso: `argumentos` (o que foi pedido), `estadoAnterior`/`estadoNovo`
+ * (o antes e o depois) e `motivo` (por quê). Os dois eventos contam metades
+ * diferentes da mesma história — o primeiro é a INTENÇÃO, escrito antes de
+ * qualquer escrita; o segundo é o que de fato ficou.
+ *
+ * NADA É DUPLICADO DO PAYLOAD. O retrato completo continua lá; aqui entram só as
+ * chaves com nome de política, para quem lê o RASTRO procurar sempre a mesma
+ * palavra. Copiar o payload inteiro para dentro de `conteudo` faria toda linha
+ * de provisionamento nascer com duas cópias de si mesma.
+ */
+function vocabularioDoProvisionamento(evento: EventoDeProvisionamento) {
+  const p = evento.payload;
+  const argumentos = { slug: p.slug, orgId: p.orgId ?? evento.orgId, modo: p.modo };
+  const fontes = [{ tipo: 'provisionamento', id: String(p.slug ?? evento.orgId) }];
+
+  if (evento.tipo === 'tenant.provisionamento.iniciado') {
+    return {
+      argumentos,
+      fontes,
+      motivo: 'provisionamento de empresa pedido',
+      // O "antes" é o PLANO: o que esta chamada pretende mexer. O "depois" é da
+      // linha de conclusão — escrevê-lo aqui seria afirmar um desfecho que ainda
+      // não aconteceu, numa linha gravada de propósito antes da escrita.
+      estadoAnterior: {
+        criaEmpresa: p.criaEmpresa,
+        mudaNome: p.mudaNome,
+        mudaModulos: p.mudaModulos,
+        reativa: p.reativa,
+        mexeNoAdmin: p.mexeNoAdmin,
+      },
+    };
+  }
+
+  return {
+    argumentos,
+    fontes,
+    motivo: p.criada ? 'empresa criada' : 'empresa reconfigurada',
+    estadoNovo: {
+      criada: p.criada,
+      ativa: p.ativa,
+      nome: p.nome,
+      modulos: p.modulos,
+      papelInicial: p.papelInicial,
+    },
+    resultado: { papeisCriados: p.papeisCriados, permissoesCriadas: p.permissoesCriadas },
+  };
+}
 
 /**
  * A casca injetável do provisionamento — RF-T-07.
@@ -88,6 +141,17 @@ export class ProvisionamentoService {
           this.eventos.registrar({
             ...evento,
             payload: evento.payload as Prisma.InputJsonValue,
+            conteudo: vocabularioDoProvisionamento(evento),
+            /*
+             * `interna`, e não `confidencial`, apesar de o payload da conclusão
+             * carregar o e-mail do administrador. Não é descuido: `confidencial`
+             * trocaria por resumo criptográfico a CÓPIA que está em `conteudo` e
+             * deixaria o original intacto em `payload` — proteção aparente, com o
+             * dado do lado. O e-mail é identificador de operação, o mesmo que já
+             * vai para a auditoria; senha e hash nunca entram (ver o comentário
+             * do payload em `provisionar.ts`).
+             */
+            sensibilidade: 'interna',
           }),
         ),
       /*

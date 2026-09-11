@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionCanal } from '@prisma/client';
 import { z } from 'zod';
@@ -74,9 +85,9 @@ export class AgentsController {
 
   @Post('agents/:slug/executar')
   @RequirePermissions(...EXECUTAR_AGENTE)
-  executar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+  async executar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
     const input = PedidoSchema.parse(body);
-    return this.runtime.executar({
+    const resumo = await this.runtime.executar({
       orgId: user.orgId,
       agentSlug: slug,
       canal: input.canal,
@@ -86,6 +97,39 @@ export class AgentsController {
       solicitanteId: user.sub,
       solicitanteRotulo: user.name ?? user.sub,
     });
+
+    /*
+     * TETO DE CUSTO DE IA DA EMPRESA ESTOURADO (RF-G-05): 429, e não 200 nem 500.
+     *
+     * Até 11/09/2026 a exceção do teto escapava do laço e chegava aqui crua: o
+     * operador via "erro interno do servidor", sem o motivo, e a sessão ficava
+     * pendurada. O laço passou a encerrar a sessão como `recusada` com o motivo;
+     * falta a rota DIZER o que aconteceu.
+     *
+     * 429 porque a semântica é essa: a cota do período acabou e volta sozinha na
+     * virada do dia — é a mesma família de "tente de novo mais tarde", e é o que
+     * o front precisa para mostrar o aviso certo em vez da tela de erro. 402
+     * (pagamento) diria que falta dinheiro no provedor, que é outra coisa; 403
+     * diria que falta permissão, que também é outra.
+     *
+     * O corpo leva a sessão: ela EXISTE, está gravada e é auditável — quem
+     * recebe o erro precisa conseguir abrir o traço do que já tinha rodado.
+     */
+    if (resumo.recusaDeTeto) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: 'teto_de_custo_de_ia',
+          message: resumo.recusaDeTeto.motivo,
+          sessionId: resumo.sessionId,
+          status: resumo.status,
+          dia: resumo.recusaDeTeto.dia,
+          causa: resumo.recusaDeTeto.causa,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return resumo;
   }
 
   /*

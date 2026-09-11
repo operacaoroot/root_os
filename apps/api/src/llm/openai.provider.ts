@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  ChamadaParaTeto,
   LlmMessage,
   LlmProvider,
   LlmStepInput,
@@ -21,6 +22,14 @@ import { env, envOpcional } from './env';
  *
  * Credenciais PRÓPRIAS do root, nunca no repo.
  */
+/*
+ * Os dois tetos de saída deste provider, nomeados porque agora TÊM um segundo
+ * leitor: `tetoDeSaida()` é quem o teto de custo por empresa consulta para
+ * reservar (RF-G-05). Número solto em dois lugares é número que diverge.
+ */
+const TETO_SAIDA_RESPOSTA = 900;
+const TETO_SAIDA_PASSO = 4000;
+
 @Injectable()
 export class OpenAiProvider implements LlmProvider {
   readonly name: string = 'openai';
@@ -63,7 +72,7 @@ export class OpenAiProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.model,
         temperature: 0.3,
-        max_tokens: 900,
+        max_tokens: TETO_SAIDA_RESPOSTA,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -85,6 +94,13 @@ export class OpenAiProvider implements LlmProvider {
     return text;
   }
 
+  /** Ver `LlmProvider.tetoDeSaida`. Usa as MESMAS constantes que `complete()` e
+   *  `step()` mandam em `max_tokens` — número solto em dois lugares diverge. */
+  tetoDeSaida(chamada: ChamadaParaTeto): number {
+    if (chamada.tipo === 'completa') return TETO_SAIDA_RESPOSTA;
+    return chamada.maxTokens ?? TETO_SAIDA_PASSO;
+  }
+
   /*
    * UM passo, com ferramentas. Mesma forma do provider Anthropic — o runtime
    * que roda o laço não sabe qual dos dois está atrás da interface, que é o
@@ -104,7 +120,7 @@ export class OpenAiProvider implements LlmProvider {
     const modelo = input.model ?? this.model;
     const corpo: Record<string, unknown> = {
       model: modelo,
-      max_tokens: input.maxTokens ?? 4000,
+      max_tokens: input.maxTokens ?? TETO_SAIDA_PASSO,
       messages: [
         { role: 'system', content: input.system },
         ...input.turns.flatMap((t) => this.paraMensagens(t)),

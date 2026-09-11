@@ -27,6 +27,7 @@ import politicaRoot from '@mktos/policy/politica-root.json';
 import politicaMktos from '@mktos/policy/politica-marketing-os.json';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirTenant } from '../common/contexto-execucao';
+import { problemasDeJanela } from './limites';
 
 /*
  * A CASCA do motor de política. A decisão em si continua sendo avaliar(), do
@@ -241,6 +242,20 @@ export class PolicyService implements OnModuleInit {
       throw new BadRequestException((e as Error).message);
     }
 
+    /*
+     * A JANELA HORÁRIA ENTRA NA MESMA PENEIRA, e essa é a diferença entre um
+     * defeito que se conserta uma vez e um que assombra para sempre.
+     *
+     * `LimitesSchema` garante que `janelaHoraria` é um par de STRINGS, não que
+     * elas sejam horários. Um `['8h', 'oito']` atravessa o esquema, fica
+     * gravado, e a partir daí `foraDaJanela` — que falha fechada, e está certa
+     * em falhar — acende `fora_da_janela` em TODA ação daquela empresa: o que
+     * era registro reversível vira saída externa com aprovação, e o que era
+     * saída externa passa a exigir reautenticação e motivo. Recusar aqui põe o
+     * erro na cara de quem ESCREVEU o documento, com o formato na mensagem.
+     * (Validar no `LimitesSchema` seria melhor ainda e está no relatório: o
+     * arquivo é de `packages/policy`, fora desta fatia.)
+     */
     const fora = [
       ...verificarCatalogo(resolvida)
         .filter((l) => !l.ok)
@@ -248,6 +263,7 @@ export class PolicyService implements OnModuleInit {
       ...verificarReversibilidade(resolvida).map(
         (l) => `${l.id} (${l.nivel}): ${l.motivo}${l.desfazer ? ` → ${l.desfazer}` : ''}`,
       ),
+      ...problemasDeJanela(resolvida.limitesPadrao.janelaHoraria),
     ];
     if (fora.length) {
       throw new BadRequestException(
@@ -352,7 +368,7 @@ export class PolicyService implements OnModuleInit {
       },
       /*
        * O padrão do Prisma para transação interativa é 5s, e aqui dentro há
-       * trabalho de CPU: ler o documento anterior (60 capacidades), validá-lo
+       * trabalho de CPU: ler o documento anterior (62 capacidades), validá-lo
        * pelo esquema e tirar dois diffs. Num banco carregado isso encosta no
        * teto, e estourar o tempo viraria erro interno numa operação que não é
        * de caminho quente — sobrescrever política é evento raro.
@@ -454,11 +470,31 @@ export class PolicyService implements OnModuleInit {
     return this.politica(orgId).capacidades as Capacidade[];
   }
 
+  /**
+   * O DOCUMENTO INTEIRO que vale para esta empresa — níveis, gatilhos,
+   * escalonamento, invariantes, limites, retenção e capacidades.
+   *
+   * Existe para a tela da Régua (RF-P-09), que precisa mostrar a régua como
+   * ela é aqui, com as sobrescritas desta empresa já aplicadas: `capacidades()`
+   * e `limites()` sozinhos deixariam de fora justamente o que cada nível exige.
+   * Empresa sem versão própria cai na base herdada, como em toda leitura.
+   */
+  documento(orgId: string): Politica {
+    return this.politica(orgId);
+  }
+
   limites(orgId: string) {
     return this.politica(orgId).limitesPadrao;
   }
 
-  /** Decide SEM persistir. É o simulador da tela da Régua (RF-P-09). */
+  /**
+   * Decide SEM persistir, para uma capacidade que já existe no catálogo.
+   *
+   * NÃO é o simulador da tela da Régua — aquele é `ReguaService.simular()`, que
+   * também aceita ação descrita à mão e devolve gatilhos, sinais e exigências.
+   * Este aqui é a decisão crua, e existe para quem precisa perguntar "o que
+   * daria?" sem abrir linha em `PolicyDecision`.
+   */
   simular(orgId: string, capabilityId: string, ctx: Contexto = {}): Decisao {
     return avaliar(this.resolverCapacidade(orgId, capabilityId), ctx);
   }

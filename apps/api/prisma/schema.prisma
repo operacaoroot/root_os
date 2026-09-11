@@ -93,6 +93,7 @@ model Org {
   toolCalls       ToolCall[]
   approvals       Approval[]
   eventLogs       EventLog[]
+  rastroRetencao  RastroRetencao?
 
   // A tripulação (ver "Tripulação" no fim do arquivo)
   agents      Agent[]
@@ -143,6 +144,14 @@ model Org {
   workFieldOptions      WorkFieldOption[]
   workFieldValues       WorkFieldValue[]
   workComments          WorkComment[]
+
+  // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
+  // mora aqui: é o que o Prisma exige, e nada além disso.
+  tetoDeCustoIa TetoDeCustoIa?
+  gastoDeIaDia  GastoDeIaNoDia[]
+
+  // Fatia 3.7 — RF-G-06 (bloco no fim do arquivo).
+  conectoresDesligados ConectorDesligado[]
 }
 
 model User {
@@ -2121,4 +2130,200 @@ model ChannelIdentity {
 
   @@unique([orgId, canal, externalId])
   @@index([orgId, canal])
+}
+
+// ===========================================================================
+// FATIA 3.7 — DESLIGAR UM CONECTOR, POR EMPRESA (RF-G-06)
+// ===========================================================================
+
+/// Um conector desligado para uma empresa. A LINHA EXISTIR **É** O
+/// DESLIGAMENTO — não há coluna de estado, e religar é apagar a linha.
+///
+/// POR QUE APAGAR EM VEZ DE MARCAR `religadoEm`. Um par (empresa, conector) pode
+/// ser desligado e religado muitas vezes; guardar o histórico aqui exigiria
+/// índice único parcial (`WHERE "religadoEm" IS NULL`), que o Prisma não sabe
+/// declarar — o schema passaria a mentir sobre o banco no primeiro `db:diff`. E
+/// o histórico não precisa morar aqui: cada desligamento e cada religamento
+/// grava evento no RASTRO, que é append-only e é onde "quem, quando e por quê"
+/// pertence.
+///
+/// O QUE ESTA TABELA **NÃO** GUARDA: credencial. Desligar não toca em
+/// `GoogleAccount`, `MetaAccount`, `IntegrationAccount.status` nem `config` —
+/// religar restabelece o uso sem nova autorização, e é isso que a suíte cobra.
+model ConectorDesligado {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Chave do conector em `CONNECTORS` (`packages/shared/src/schemas.ts`):
+  /// gmail, gcal, gdocs, drive, clickup, instagram, whatsapp, obsidian...
+  /// Grupo (`google`) é conveniência de ENTRADA e vira uma linha por chave —
+  /// ver `GRUPOS_DE_CONECTOR` em `src/integrations/conectores.ts`.
+  conector String
+
+  /// O que a pessoa escreveu ao desligar. Entra na frase da recusa.
+  motivo       String?
+  desligadoPor String?
+  desligadoEm  DateTime @default(now())
+
+  @@unique([orgId, conector])
+  @@index([orgId])
+}
+
+// ============================================================================
+// FATIA 3.5 — RETENÇÃO DO RASTRO POR EMPRESA (RF-R-06)
+//
+// Até aqui a retenção era UMA variável de ambiente (`RASTRO_RETENCAO_DIAS`,
+// fixa em 1825 no docker-compose), global para a instância inteira. Isso é
+// errado nos dois sentidos: o cliente que precisa guardar mais não consegue, e
+// o que precisa guardar menos (minimização, LGPD art. 16) também não.
+//
+// A ausência de linha aqui NÃO é "sem retenção": é "herda o padrão", que sai de
+// `retencao.rastroDias` da política (1825, justificado pelo prazo decadencial do
+// CTN art. 173) e cai na variável de ambiente só se a política não disser. Por
+// isso a tabela nasce VAZIA e continua vazia para quem não configurou nada —
+// materializar o padrão em linha congelaria o valor herdado no dia do
+// provisionamento, e a próxima mudança da política não alcançaria mais ninguém.
+//
+// `motivo` é obrigatório NA REGRA DE NEGÓCIO (não no banco) quando o prazo fica
+// ABAIXO do herdado: encurtar o rastro é a única direção que apaga prova, e
+// apagar prova sem motivo escrito é o que 02-CONSTRAINTS não admite. Quem cobra
+// é `RetencaoService.definir`.
+// ============================================================================
+
+model RastroRetencao {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Dias de guarda do RASTRO desta empresa. Vira `EventLog.retencaoAte` na
+  /// gravação de cada evento — não é aplicado retroativamente de propósito: o
+  /// prazo que vale para uma linha é o que valia quando ela foi escrita.
+  dias Int
+
+  /// Por que esta empresa difere do padrão herdado. Exigido ao encurtar.
+  motivo      String?
+  /// Quem decidiu. É pessoa, nunca agente (mesma regra do aprovador).
+  definidoPor String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+// ===========================================================================
+// FATIA 3.6 — TETO DE CUSTO DE IA POR EMPRESA E POR DIA (RF-G-05, RNF-05)
+//
+// Acrescentado no FIM do arquivo de propósito: três fatias da onda 6 criam
+// tabela ao mesmo tempo, e reescrever o arquivo apagaria o trabalho das outras
+// duas (protocolo da onda, seção 4).
+//
+// JÁ EXISTIA, E NÃO FOI REESCRITO: `Agent.tetoCustoUsd` (teto por AGENTE e por
+// EXECUÇÃO, imposto no laço de `agents/agent-runtime.service.ts`) e o custo
+// REAL de cada passo, que o provedor devolve e o `SessionStep` grava. Este é o
+// TERCEIRO nível: o da empresa, somado no dia, e ele vale para toda chamada de
+// modelo — inclusive as que não nascem de sessão de agente (relatório,
+// curadoria, pauta), que não têm passo em `SessionStep` nenhum.
+// ===========================================================================
+
+/// O teto que a EMPRESA declarou para gasto com modelo de IA em um dia.
+///
+/// Uma linha por empresa. Empresa sem linha aqui é empresa SEM TETO: nada é
+/// cortado e nada é contado. É o estado de quem nunca configurou, e é o único
+/// estado em que o corte não existe — por isso `ativo` é um campo separado do
+/// valor: desligar o teto é uma decisão que fica REGISTRADA (com quem e
+/// quando), enquanto apagar a linha não deixa rastro nenhum.
+///
+/// POR QUE O FUSO MORA AQUI, E NÃO NO AGENTE
+/// "Por dia" só quer dizer alguma coisa depois de escolher de quem é o dia. O
+/// agente já carrega `tz`, e usá-lo seria o erro: uma mesma empresa com dois
+/// agentes em fusos diferentes teria DOIS dias abertos ao mesmo tempo, e a
+/// soma do teto deixaria de ser uma soma — cada agente poderia gastar o teto
+/// inteiro dentro da sua própria virada. O fuso do SERVIDOR (UTC, no container)
+/// seria pior de outro jeito: viraria o dia às 21h de Brasília, no meio do
+/// expediente, e o cliente veria o corte chegar em hora que não é meia-noite
+/// nenhuma para ele. O teto é orçamento da EMPRESA, então o dia é o dela.
+model TetoDeCustoIa {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Em dólar, que é a moeda em que o provedor cobra e em que `preco.ts`
+  /// calcula. Converter para real aqui seria gravar uma cotação que envelhece.
+  tetoDiarioUsd Decimal @db.Decimal(12, 6)
+
+  /// Nome IANA (`America/Sao_Paulo`). Fuso inválido NÃO derruba a chamada de
+  /// modelo: o serviço cai no padrão e registra o aviso — cortar por causa de
+  /// uma string de configuração errada seria trocar um problema por outro.
+  fusoHorario String @default("America/Sao_Paulo")
+
+  /// Desligado, o teto não corta e o consumo do dia CONTINUA sendo somado. É o
+  /// modo de observação que permite calibrar o valor antes de impor.
+  ativo Boolean @default(true)
+
+  /// Quem decidiu o valor, e por quê. Teto de gasto é decisão de negócio: sem
+  /// isto, quem abrir a tela seis meses depois não tem a quem perguntar.
+  definidoPorId String?
+  definidoEm    DateTime @default(now())
+  motivo        String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+/// O consumo de IA de uma empresa em UM dia — o livro-caixa do teto.
+///
+/// Uma linha por (empresa, dia). É ela que responde "quanto já foi gasto hoje"
+/// sem varrer `SessionStep`, e é nela que a RESERVA acontece.
+///
+/// POR QUE RESERVA, E NÃO SÓ SOMA DO QUE JÁ FOI GASTO
+/// O custo de uma chamada só se conhece DEPOIS dela. Uma conferência que olhe
+/// apenas o já gasto corta tarde por construção: a chamada que estoura o teto é
+/// justamente a que ainda não foi contada. Então, antes de chamar o modelo, o
+/// serviço soma a ESTIMATIVA em `reservadoUsd` — e só soma se o total couber no
+/// teto. Depois da resposta, a reserva vira gasto pelo valor REAL. Chamada que
+/// falha devolve a reserva.
+///
+/// A reserva também é o que segura duas chamadas SIMULTÂNEAS: a soma acontece
+/// numa única instrução `INSERT ... ON CONFLICT DO UPDATE ... WHERE`, então a
+/// segunda enxerga a reserva da primeira mesmo que as duas tenham lido o mesmo
+/// saldo um instante antes.
+///
+/// POR QUE `dia` É TEXTO E NÃO `date`
+/// Porque não é um instante, é um RÓTULO DE CALENDÁRIO no fuso da empresa
+/// (`AAAA-MM-DD`). Gravado como `date`, o driver o devolve como `Date` no fuso
+/// do processo e a data volta trocada num container em UTC — o defeito exato
+/// que o campo existe para evitar.
+model GastoDeIaNoDia {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// `AAAA-MM-DD` no fuso de `TetoDeCustoIa.fusoHorario`.
+  dia String
+
+  /// Custo REAL, o que o provedor informou. Separado do estimado de propósito:
+  /// misturar os dois apagaria a procedência do número (09-PADRÕES).
+  gastoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  /// Estimativa das chamadas cujo custo real não volta para cá — hoje,
+  /// `complete()`, que devolve texto e não uso. A tela mostra os dois, e nunca
+  /// soma um R$ 0,00 inventado no lugar do que não foi medido.
+  gastoEstimadoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  /// Reservas ainda abertas (chamadas em voo). Volta a zero quando todas
+  /// liquidam. Valor teimosamente alto aqui é chamada que nunca liquidou —
+  /// processo morto no meio — e é por isso que ele é um campo, não uma conta.
+  reservadoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  chamadas Int @default(0)
+  /// Chamadas em modelo fora da tabela de preço: não dá para estimar nem
+  /// medir. Elas passam, e ficam contadas aqui para a tela dizer "não medido".
+  chamadasSemPreco Int @default(0)
+  /// Quantas vezes o teto recusou uma chamada neste dia.
+  cortes           Int @default(0)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, dia])
 }

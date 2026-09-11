@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Sinal } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from './policy.service';
+import { acimaDoTeto, conferirJanela, foraDaJanela } from './limites';
 
 /*
  * Os seis sinais de escalonamento. O motor puro RECEBE os sinais prontos — ele
@@ -12,9 +13,25 @@ import { PolicyService } from './policy.service';
  * documento ou página. É o RF-G-07 inteiro — conteúdo externo entra como dado,
  * jamais como instrução, e só pode ELEVAR o nível. Por isso a bandeira é de mão
  * única no contexto de execução: existe marcar, não existe desmarcar.
+ *
+ * A JANELA E O TETO SÃO CONTA EMPRESTADA, e não repetida: `foraDaJanela` e
+ * `acimaDoTeto` moram em `limites.ts`, que é puro, e o simulador da tela da
+ * Régua chama as MESMAS funções. Uma segunda cópia aqui faria a tela ensinar
+ * uma janela e a porta impor outra — que é o defeito que a fatia 2.3 existe
+ * para não criar. (Eles já moraram em `simulador.ts`: o caminho quente da porta
+ * não tem por que depender de um módulo com esse nome para comparar relógio.)
+ *
+ * JANELA ILEGÍVEL ACENDE O SINAL — E AGORA AVISA. `foraDaJanela` falha fechada:
+ * um `['8h', 'oito']` em `limitesPadrao.janelaHoraria` acende `fora_da_janela`
+ * em TODA ação desta empresa, e subir um degrau em tudo é mudança grande demais
+ * para acontecer calada. `conferirJanela` grita UMA vez por empresa — não a
+ * cada chamada, que afogaria o log —, e `problemasDeJanela` recusa o documento
+ * lá atrás, na sobrescrita, que é onde o defeito nasce.
  */
 @Injectable()
 export class SinaisService {
+  private readonly log = new Logger('SinaisService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
@@ -34,12 +51,11 @@ export class SinaisService {
 
     if (input.procedenciaExterna) sinais.push('fonte_nao_confiavel');
 
-    if (this.foraDaJanela(agora, limites.janelaHoraria)) sinais.push('fora_da_janela');
+    conferirJanela(input.orgId, limites.janelaHoraria, (m) => this.log.error(m));
+    const minutos = agora.getHours() * 60 + agora.getMinutes();
+    if (foraDaJanela(minutos, limites.janelaHoraria)) sinais.push('fora_da_janela');
 
-    if (
-      input.valorCentavos != null &&
-      input.valorCentavos > limites.tetoCustoCentavosPorExecucao
-    ) {
+    if (acimaDoTeto(input.valorCentavos, limites.tetoCustoCentavosPorExecucao)) {
       sinais.push('valor_acima_do_limite');
     }
 
@@ -79,14 +95,5 @@ export class SinaisService {
       where: { orgId, capabilityId, criadoEm: { gte: desde } },
     });
     return total / (30 * 24);
-  }
-
-  private foraDaJanela(agora: Date, janela: [string, string]): boolean {
-    const minutos = agora.getHours() * 60 + agora.getMinutes();
-    const [ini, fim] = janela.map((h) => {
-      const [hh, mm] = h.split(':').map(Number);
-      return hh * 60 + (mm || 0);
-    });
-    return minutos < ini || minutos >= fim;
   }
 }

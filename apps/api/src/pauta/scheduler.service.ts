@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ActorType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { RodadaService } from './rodada.service';
 import { combina, parseCron, proximaOcorrencia } from './cron';
 
@@ -64,16 +66,45 @@ export class PautaSchedulerService implements OnModuleInit {
       this.log.log(`disparando rotina "${r.slug}"`);
       try {
         const cfg = (r.config ?? {}) as { horas?: number; coletarAntes?: boolean };
-        // Coletar antes de curar é o default: sem insumo fresco a rodada não
-        // tem assunto, e o feed é barato (fetch, sem Apify).
-        if (cfg.coletarAntes !== false) {
-          const c = await this.rodadas.coletarFeeds(r.orgId, 'rotina');
-          this.log.log(`  feeds: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)`);
-        }
-        const rodada = await this.rodadas.gerar(r.orgId, 'rotina', {
-          rotinaId: r.id,
-          horas: cfg.horas ?? 72,
-        });
+        /*
+         * O CONTEXTO DE EXECUÇÃO DA EMPRESA ABRE AQUI (RF-T-04, RNF-09, RF-G-05).
+         *
+         * Esta é a ÚNICA chamada de modelo do produto que não nasce de uma
+         * requisição: as outras herdam a empresa do interceptor HTTP ou abrem o
+         * contexto por conta própria (o laço do agente). Sem ele, a rodada da
+         * madrugada chamava o modelo com a empresa em branco — o teto de custo
+         * por empresa e por dia não reservava nada, não contava nada e avisava
+         * uma vez por processo. Justamente o gasto que roda sem ninguém olhando
+         * era o que ficava de fora do teto que foi desenhado para ele.
+         *
+         * Vale também para o banco: a empresa do contexto é a que viaja como
+         * `app.org_id` (`prisma/sessao-de-banco.ts`), então depois da virada para
+         * o papel restrito é isto que faz a rotina enxergar as próprias linhas.
+         * E é por empresa, uma de cada vez — não é contexto de plataforma, que
+         * abriria o alcance inteiro para uma coisa que sabe de quem é.
+         */
+        const rodada = await comContexto(
+          {
+            orgId: r.orgId,
+            actorType: ActorType.system,
+            actorId: null,
+            agentSlug: null,
+            correlationId: novaCorrelacao('pauta'),
+            origem: 'cron',
+          },
+          async () => {
+            // Coletar antes de curar é o default: sem insumo fresco a rodada não
+            // tem assunto, e o feed é barato (fetch, sem Apify).
+            if (cfg.coletarAntes !== false) {
+              const c = await this.rodadas.coletarFeeds(r.orgId, 'rotina');
+              this.log.log(`  feeds: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)`);
+            }
+            return this.rodadas.gerar(r.orgId, 'rotina', {
+              rotinaId: r.id,
+              horas: cfg.horas ?? 72,
+            });
+          },
+        );
         await this.prisma.pautaRotina.update({
           where: { id: r.id },
           data: {

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
+  ChamadaParaTeto,
   LlmMessage,
   LlmProvider,
   LlmStepInput,
@@ -23,6 +24,17 @@ import { env, envNumero, envOpcional } from './env';
 //   teto abaixo é folgado.
 // - A resposta pode vir com `stop_reason: 'refusal'` (HTTP 200, conteúdo vazio) —
 //   ler `content[0]` direto quebraria. Ver o tratamento em complete().
+
+/*
+ * O teto de saída quando a chamada é em STREAMING. Nomeado porque ganhou um
+ * segundo leitor: `tetoDeSaida()`, que é de onde o teto de custo por empresa
+ * tira o número para reservar (RF-G-05). Vale muito mais do que o de uma
+ * chamada comum porque os pedaços chegam na hora e não há timeout de HTTP para
+ * respeitar — e é justamente por isso que uma chamada em streaming reserva
+ * bem mais do que uma comum.
+ */
+const TETO_SAIDA_STREAM = 64000;
+
 @Injectable()
 export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic';
@@ -49,6 +61,16 @@ export class AnthropicProvider implements LlmProvider {
 
   get configured(): boolean {
     return this.apiKey.length > 0 || this.authToken.length > 0;
+  }
+
+  /**
+   * Ver `LlmProvider.tetoDeSaida`. É a MESMA expressão que vai em `max_tokens`
+   * — `step()` chama este método em vez de repetir a conta, para que a reserva
+   * do teto de custo e o pedido de verdade nunca possam divergir.
+   */
+  tetoDeSaida(chamada: ChamadaParaTeto): number {
+    if (chamada.tipo === 'completa') return this.maxTokens;
+    return chamada.maxTokens ?? (chamada.streaming ? TETO_SAIDA_STREAM : this.maxTokens);
   }
 
   async complete({ system, user }: LlmMessage): Promise<string> {
@@ -117,7 +139,11 @@ export class AnthropicProvider implements LlmProvider {
       model: modelo,
       // Sem streaming o teto fica no valor seguro contra timeout de HTTP; com
       // streaming dá para pedir muito mais, porque os pedaços chegam na hora.
-      max_tokens: input.maxTokens ?? (input.onTextDelta ? 64000 : this.maxTokens),
+      max_tokens: this.tetoDeSaida({
+        tipo: 'passo',
+        maxTokens: input.maxTokens,
+        streaming: Boolean(input.onTextDelta),
+      }),
       thinking: { type: 'adaptive' as const },
       output_config: { effort: input.effort ?? this.effort },
       betas: ['server-side-fallback-2026-07-01'],

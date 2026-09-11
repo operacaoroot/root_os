@@ -31,10 +31,12 @@
  */
 import { createInterface } from 'node:readline';
 import { NestFactory } from '@nestjs/core';
+import { ActorType } from '@prisma/client';
 import { AppModule } from '../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AcoesService } from '../gateway/acoes.service';
+import { comContexto } from '../common/contexto-execucao';
 
 /** Valor de uma opção `--nome valor`, ou `undefined`. */
 function opcao(args: string[], nome: string): string | undefined {
@@ -143,18 +145,60 @@ async function main() {
       reauth = { senha };
     }
 
-    console.log(`\nconfirmando ${id} como ${usuario.name} <${usuario.email}>…`);
-    const conf = await approvals.confirm(org.id, id, { id: usuario.id, papeis, reauth }, motivo);
-    console.log(`  confirmada: ${conf.summary}`);
+    /*
+     * O ESCOPO DE EXECUÇÃO, EM VOLTA DE CONFIRMAR E EXECUTAR.
+     *
+     * Na tela quem o abre é o interceptor HTTP; aqui não há requisição, e sem
+     * ele NADA disto funciona depois do gancho do interruptor: `ConectoresService`
+     * exige que a empresa do argumento seja a da execução em curso e, sem
+     * contexto, RECUSA a responder (`EmpresaDivergenteError` — falha fechada,
+     * porque sob isolamento por linha uma leitura sem empresa não erra, devolve
+     * vazio, e vazio quer dizer "conector ligado"). Aprovar uma mensagem de
+     * WhatsApp pelo terminal morreria com um erro sobre empresa divergente.
+     *
+     * A correlação é derivada do id da aprovação, não sorteada: a linha do
+     * RASTRO desta execução aponta para a aprovação que a originou.
+     */
+    await comContexto(
+      {
+        orgId: org.id,
+        actorType: ActorType.user,
+        actorId: usuario.id,
+        correlationId: `terminal-aprovar-${id}`,
+        origem: 'aprovacao',
+      },
+      async () => {
+        /*
+         * A MESMA ORDEM DA ROTA: perguntar ao interruptor ANTES de confirmar.
+         *
+         * Não é simetria por gosto. `confirm` é irreversível para a fila — uma
+         * vez `confirmada`, a aprovação sai da listagem de pendentes e `confirm`
+         * passa a recusá-la. Perguntar depois deixaria a ação num limbo do qual
+         * nenhuma superfície a tira, e desmentiria a frase que o próprio
+         * operador acaba de ler.
+         */
+        const desligado = await acoes.conectorDesligado(org.id, id, usuario.id);
+        if (desligado) {
+          throw new Error(
+            `${desligado.motivo}\n\n  Nada foi confirmado: a aprovação continua PENDENTE e na ` +
+              'fila. Religue o conector em Conexões e rode este comando de novo.',
+          );
+        }
 
-    const exec = await acoes.executarAprovada(org.id, id, usuario.id);
-    if (exec.status === 'executado') {
-      console.log(`  EXECUTADA: ${JSON.stringify(exec.resultado)}\n`);
-    } else if (exec.status === 'sem_efeito') {
-      console.log(`  NÃO EXECUTADA: ${exec.motivo}\n`);
-    } else {
-      console.log('  nada a executar (aprovação da superfície antiga)\n');
-    }
+        console.log(`\nconfirmando ${id} como ${usuario.name} <${usuario.email}>…`);
+        const conf = await approvals.confirm(org.id, id, { id: usuario.id, papeis, reauth }, motivo);
+        console.log(`  confirmada: ${conf.summary}`);
+
+        const exec = await acoes.executarAprovada(org.id, id, usuario.id);
+        if (exec.status === 'executado') {
+          console.log(`  EXECUTADA: ${JSON.stringify(exec.resultado)}\n`);
+        } else if (exec.status === 'sem_efeito') {
+          console.log(`  NÃO EXECUTADA: ${exec.motivo}\n`);
+        } else {
+          console.log('  nada a executar (aprovação da superfície antiga)\n');
+        }
+      },
+    );
   } finally {
     await app.close();
   }

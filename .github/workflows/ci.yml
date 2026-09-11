@@ -146,12 +146,22 @@ jobs:
       # novo inteiro sumir sem uma reclamação.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
-      # (81) em 9 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
-      # filtros 12, nav 18, resgate-central 5, storage 5. O arquivo novo da
-      # onda 4 (resgate-central) é o MENOR da suíte, com 5 casos — é exatamente
-      # o caso que só o piso de ARQUIVOS pega, por isso ele vai para 9.
-      PISO_CASOS_WEB: '70'
-      PISO_ARQUIVOS_WEB: '9'
+      # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
+      # filtros 12, nav 19, regua 14, regua-modulos 12, regua-simulador 24,
+      # resgate-central 5, storage 5. O arquivo novo da onda 4
+      # (resgate-central) é o MENOR da suíte, com 5 casos — é exatamente o caso
+      # que só o piso de ARQUIVOS pega, e foi por ele que o piso foi a 9.
+      #
+      # ONDA 6, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 142 em 13. A fatia 2.3 trouxe
+      # as três telas da Régua (`regua` 14, `regua-modulos` 12, `regua-simulador`
+      # 24 = 50 casos), `nav` ganhou um caso (18 → 19), e a estabilização
+      # acrescentou `erro-da-api` (10): o código da recusa de conector desligado
+      # atravessando o cliente da API até a caixa de erro da tela (RF-G-06).
+      # Os dois pisos sobem junto pelo motivo de sempre: em 9, sumirem os quatro
+      # arquivos novos não reprovaria nada.
+      # 116/142 = 18% de folga, a mesma proporção das ondas anteriores.
+      PISO_CASOS_WEB: '116'
+      PISO_ARQUIVOS_WEB: '13'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -176,8 +186,94 @@ jobs:
       # banco. Ela tem passo próprio no job `isolamento`, abaixo.
       # `tenant-isolation.test.ts` também não entra — conjunto `padrao` o
       # exclui, e ele tem job próprio.
-      PISO_CASOS_API: '318'
-      PISO_ARQUIVOS_API: '15'
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, FATIA 3.5 (11/09/2026): +51 casos em +2 arquivos
+      # ---------------------------------------------------------------------
+      # `rastro-por-nivel` 22 (sem banco) e `rastro-retencao` 29 (com banco,
+      # medidos contra o Postgres descartável). A conta vai de 388/15 para
+      # 439/17, e o piso de CASOS para 360 — ~18% de folga, a mesma proporção
+      # das ondas anteriores.
+      #
+      # `rastro-retencao` tem uma terceira seção, a do PAPEL RESTRITO (2 casos),
+      # que este job não roda: ela entra por `if (URL_RESTRITA)` e não por
+      # `describe.skipIf`, justamente para não aparecer como PULADA aqui — a
+      # trava abaixo reprova a suíte com qualquer caso pulado, e
+      # `TENANT_DATABASE_URL` só existe no job `isolamento`. Mesma solução de
+      # `rotas-publicas-tenant`, mesmo motivo.
+      #
+      # O piso de ARQUIVOS ficou em 17 na fatia 3.5, e não em 19, porque o agente
+      # daquela fatia não podia afirmar sobre suíte que não escreveu nem mediu:
+      # as fatias 3.6 (`teto-custo-ia.test.ts`) e 3.7 (`conector-desligado.test.ts`)
+      # acrescentam um arquivo cada, e ele não as tinha em mãos.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 533 casos em 19 arquivos
+      # ---------------------------------------------------------------------
+      # Contagem real, com `TEST_DATABASE_URL` apontando para o Postgres
+      # descartável e nenhum caso pulado — que é o mesmo regime deste job:
+      #   alcada-reautenticacao 32, arquitetura 21, conector-desligado 35,
+      #   contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      #   modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      #   porta 30, provisionamento 40, rastro-por-nivel 22, rastro-retencao 29,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # A conta de 439/17 da fatia 3.5 não contava os dois arquivos das fatias
+      # vizinhas (49 + 35 = 84 casos) nem os 10 casos do gancho da porta, que a
+      # estabilização acrescentou a `porta.test.ts` (20 → 30).
+      #
+      # O de ARQUIVOS vai a 19, colado no número real: é ele quem pega arquivo
+      # que some da coleta, e `token-de-sessao` (8 casos) prova que nenhum piso
+      # de CASOS com folga útil notaria a falta de um arquivo pequeno.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, CORREÇÃO DO GANCHO DA PORTA (11/09/2026): 539 casos, 19 arquivos
+      # ---------------------------------------------------------------------
+      # Remedida no mesmo regime (banco descartável, nenhum caso pulado) depois
+      # da correção do gancho: +6 casos, nenhum arquivo novo.
+      #   porta 30 → 35   (o registro de interruptores sem Nest, a sequência da
+      #                    ROTA de confirmação, a linha de desfecho da porta com
+      #                    aprovador, a fronteira intenção × desfecho e a
+      #                    colisão payload × conteudo — dois casos antigos foram
+      #                    reescritos, não somados)
+      #   conector-desligado 35 → 36  (o alcance medido do interruptor: 17
+      #                    capacidades com conector, de 62 no catálogo)
+      #
+      # Os demais 17 arquivos ficam como estavam:
+      #   alcada-reautenticacao 32, arquitetura 21, contexto-aprovacao 10,
+      #   contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, provisionamento 40,
+      #   rastro-por-nivel 22, rastro-retencao 29, rotas-publicas-tenant 38,
+      #   runtime 9, teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, ESTABILIZAÇÃO FINAL (11/09/2026): 540 casos, 19 arquivos
+      # ---------------------------------------------------------------------
+      # Remedida uma última vez, no mesmo regime (banco descartável, nenhum caso
+      # pulado), depois de a estabilização acrescentar UM caso a
+      # `conector-desligado` (36 → 37): o corpo do 403 leva o código estável
+      # `conector_desligado`, que é o que a tela lê para oferecer Conexões em vez
+      # de mais uma caixa vermelha genérica.
+      #
+      # A contagem final, arquivo a arquivo:
+      #   alcada-reautenticacao 32, arquitetura 21, conector-desligado 37,
+      #   contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      #   modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      #   porta 35, provisionamento 40, rastro-por-nivel 22, rastro-retencao 29,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # O piso de CASOS vai a 443 — 18% de folga sobre 540, a mesma proporção de
+      # todas as ondas anteriores. O de ARQUIVOS continua em 19, colado no real.
+      #
+      # FORA DESTE JOB, e medidos na mesma sessão para quem for conferir:
+      #   · isolamento (`test:isolamento`, job próprio): 265 casos;
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53
+      #     (os 38 daqui mais os 15 da seção de RLS);
+      #   · `rastro-retencao` com papel restrito: 31 (os 29 daqui mais 2).
+      PISO_CASOS_API: '443'
+      PISO_ARQUIVOS_API: '19'
 
     steps:
       - uses: actions/checkout@v4
@@ -545,9 +641,13 @@ jobs:
       # de casar ou um `describe` que some fariam o vitest sair VERDE tendo
       # coletado zero. "Nenhum teste falhou" é verdade sobre nenhum teste.
       #
-      # 257 é a contagem real medida em 11/09/2026 (Postgres descartável, papel
-      # restrito nas leituras). O piso fica em 220, ~14% abaixo: piso é chão, não
-      # espelho. Ao remover caso de propósito, baixe o piso no mesmo commit.
+      # 257 era a contagem da fatia 1.5. A ESTABILIZAÇÃO DA ONDA 6 remediu em
+      # 11/09/2026, com o papel restrito de pé: **265 casos** — as três tabelas
+      # novas da onda (`RastroRetencao`, `TetoDeCustoIa`/`GastoDeIaNoDia`,
+      # `ConectorDesligado`) entraram no registro de alvos e cada uma trouxe a
+      # sua medição. O piso sobe de 220 para 225, que continua ~15% abaixo do
+      # real: piso é chão, não espelho. Ao remover caso de propósito, baixe o
+      # piso no mesmo commit.
       #
       # O piso SUBIU de 190 para 220 na correção da fatia 1.5, e o motivo é a
       # coisa que o piso existe para pegar. A contagem era 224 com o registro de
@@ -575,7 +675,7 @@ jobs:
         env:
           MKTOS_CONJUNTO_DE_TESTES: isolamento
           RESUMO_ISOLAMENTO: ${{ runner.temp }}/resumo-isolamento.json
-          PISO_CASOS_ISOLAMENTO: '220'
+          PISO_CASOS_ISOLAMENTO: '225'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

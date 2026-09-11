@@ -375,10 +375,20 @@ describe('a trava mede contra o que estava valendo para a empresa, não só cont
  */
 describe('ferramenta e esquema de argumentos têm direção própria', () => {
   it('capacidade que ganha ferramenta afrouxa: nenhum agente a alcançava', () => {
-    // Doze capacidades da base estão hoje sem ferramenta — declaradas na
+    // QUATORZE capacidades da base estão hoje sem ferramenta — declaradas na
     // política e fora do alcance de qualquer agente, porque `tool-adapter.ts`
     // filtra por `ferramenta`. Acrescentar o nome é liberar execução.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(12);
+    //
+    // Eram doze até a fatia 3.7 (RF-G-06) declarar `conector.desligar` e
+    // `conector.religar`, as DUAS que subiram o número. As duas nascem sem
+    // ferramenta de propósito, e essa ausência é a regra: nenhum agente pode
+    // religar um conector que uma pessoa desligou. Se alguém acrescentar
+    // `ferramenta` a qualquer uma delas, o desligamento de emergência vira algo
+    // que o próprio OS desfaz — e é este caso que reprova primeiro.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(14);
+    for (const id of ['conector.desligar', 'conector.religar']) {
+      expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
+    }
     expect(BASE.capacidades.find((c) => c.id === 'espelho.consultar')?.ferramenta).toBeUndefined();
 
     const diff = diffDoDelta(BASE, [comoNaBase('espelho.consultar', { ferramenta: 'espelho_ler' })]);

@@ -29,7 +29,8 @@
     "smoke": "node scripts/smoke-boot.mjs",
     "perguntar": "node dist/scripts/perguntar.js",
     "provisionar": "node dist/scripts/provisionar-tenant.js",
-    "relatorio:observar": "node dist/scripts/relatorio-observar.js"
+    "relatorio:observar": "node dist/scripts/relatorio-observar.js",
+    "expurgo:rastro": "node dist/scripts/expurgar-rastro.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

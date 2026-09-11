@@ -1,9 +1,27 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ActorType, ApprovalState, RiskLevel, ToolCallStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto, correlacaoAtual, exigirTenant } from '../common/contexto-execucao';
+import {
+  conectorDaCapacidade,
+  corpoDaRecusa,
+  type RecusaDeConector,
+} from '../integrations/conectores';
+import { PolicyService } from '../policy/policy.service';
 import { ContextoDoEfeito, EfeitosRegistry } from './efeitos.registry';
-import { EventLogService } from './event-log.service';
+import {
+  EventLogService,
+  type ConteudoDoEvento,
+  type SensibilidadeDoEvento,
+} from './event-log.service';
+import { InterruptoresRegistry } from './interruptores.registry';
 
 /*
  * O que acontece DEPOIS de a pessoa aprovar.
@@ -33,7 +51,102 @@ export class AcoesService {
     private readonly prisma: PrismaService,
     private readonly efeitos: EfeitosRegistry,
     private readonly eventos: EventLogService,
+    /*
+     * O INTERRUPTOR DE CONECTOR (RF-G-06) TAMBÉM VALE AQUI — e sem isto o
+     * desligamento tem um buraco do tamanho da fila de aprovação: uma ação
+     * proposta ANTES de alguém desligar o conector continuaria saindo DEPOIS,
+     * que é exatamente o caso de emergência para o qual o botão existe.
+     *
+     * SÃO DUAS PERGUNTAS, e a ordem entre elas é o desenho inteiro:
+     *   · `conectorDesligado()` — a que o controlador faz ANTES de confirmar. É
+     *     a que o operador encontra, e é a que mantém a aprovação PENDENTE e na
+     *     fila quando a resposta é "desligado";
+     *   · a de dentro de `executarAprovada` — último portão antes do efeito,
+     *     para a janela entre uma e outra e para quem não perguntou.
+     *
+     * `@Optional()` porque as suítes constroem este serviço à mão; o registro
+     * devolve `null` quando ninguém se inscreveu (ver `interruptores.registry.ts`).
+     */
+    @Optional() private readonly interruptores?: InterruptoresRegistry,
+    /*
+     * A POLÍTICA, só para duas perguntas sobre a capacidade: qual a
+     * SENSIBILIDADE do efeito e COMO SE DESFAZ.
+     *
+     * A primeira não é conforto: sem ela, o conteúdo que este serviço passou a
+     * registrar (argumentos, resultado, entrega) iria CRU para o RASTRO, e o
+     * único efeito de escrita ligado hoje — a mensagem de WhatsApp — é
+     * `confidencial`. É o `EventLogService` que troca conteúdo sensível por
+     * resumo criptográfico, mas só quando alguém diz a ele que é sensível
+     * (RF-R-04). A segunda é o campo `desfazer`, que a política cobra em R2.
+     *
+     * `@Optional()` pelo mesmo motivo dos outros: as suítes constroem à mão.
+     * Sem ela, este serviço volta a NÃO registrar conteúdo — falha fechada, e
+     * não conteúdo sensível gravado em claro.
+     */
+    @Optional() private readonly policy?: PolicyService,
   ) {}
+
+  /**
+   * O CONECTOR DESTA APROVAÇÃO ESTÁ DESLIGADO? — a pergunta que vem ANTES de
+   * confirmar (RF-G-06).
+   *
+   * ------------------------------------------------------------------------
+   * POR QUE NO CONTROLADOR, E NÃO SÓ ANTES DO EFEITO
+   * ------------------------------------------------------------------------
+   * A primeira versão do gancho perguntava só dentro de `executarAprovada`, que
+   * o controlador chama DEPOIS de `approvals.confirm`. O roteiro era:
+   * confirmar (a aprovação vira `confirmada`) → perguntar → recusar. Resultado:
+   * a aprovação ficava `confirmada` e NÃO consumida, e nesse estado ela some da
+   * fila — `listar` devolve as pendentes — enquanto `confirm` recusa tudo o que
+   * não está pendente. A ação parava até expirar, e ninguém ficava sabendo.
+   *
+   * Pior: a frase que o operador lê ao ser recusado diz que "religar em Conexões
+   * restabelece o uso sem nova autorização". Com a pergunta depois do confirm,
+   * não restabelecia — não havia superfície que executasse uma aprovação já
+   * confirmada.
+   *
+   * Perguntando AQUI, antes de confirmar, a promessa volta a ser verdadeira: a
+   * aprovação continua PENDENTE, continua na fila, e o mesmo botão funciona de
+   * novo assim que o conector voltar. Nada foi gasto — nem o estado da
+   * aprovação, nem o token.
+   *
+   * ------------------------------------------------------------------------
+   * O QUE ELA CUSTA
+   * ------------------------------------------------------------------------
+   * Uma leitura da aprovação (por id + empresa, índice primário) e uma do
+   * desligamento (menos de 1 ms — ver o cabeçalho de `ConectoresService`) por
+   * clique em "confirmar". Confirmar já faz meia dúzia de idas ao banco.
+   *
+   * Devolve a recusa em vez de lançar: é o CONTROLADOR quem decide o transporte
+   * (403 com a frase), e assim este método serve também ao script de terminal,
+   * que imprime em vez de responder HTTP.
+   */
+  async conectorDesligado(
+    orgId: string,
+    approvalId: string,
+    actorId: string,
+  ): Promise<RecusaDeConector | null> {
+    exigirTenant(orgId, 'AcoesService.conectorDesligado');
+    if (!this.interruptores) return null;
+
+    const ap = await this.prisma.approval.findFirst({
+      where: { id: approvalId, orgId },
+      select: { capabilityId: true, toolCallId: true },
+    });
+    // Aprovação inexistente, ou da superfície antiga (sem ação retida): não há
+    // capacidade para consultar. Quem reclama do id errado é `confirm`, logo
+    // adiante — antecipar o erro aqui seria dar duas mensagens para o mesmo
+    // engano.
+    if (!ap?.capabilityId || !ap.toolCallId) return null;
+
+    return this.interruptores.consultar({
+      orgId,
+      capabilityId: ap.capabilityId,
+      correlationId: correlacaoAtual() ?? null,
+      actorType: ActorType.user,
+      actorId,
+    });
+  }
 
   async executarAprovada(
     orgId: string,
@@ -60,6 +173,18 @@ export class AcoesService {
     // TypeScript esquece o estreitamento de propriedade ao entrar numa função.
     const capabilityId = ap.capabilityId;
 
+    /*
+     * A capacidade, só pelos dois campos que o RASTRO precisa dela
+     * (`efeito.sensibilidade` e `desfazer`). Leitura em memória — o catálogo já
+     * está resolvido pelo `PolicyService`, não há ida ao banco aqui.
+     *
+     * `null` quando a política não foi injetada (suíte construindo à mão) ou
+     * quando a capacidade não está no catálogo daquela empresa. Nos dois casos o
+     * conteúdo REDIGÍVEL fica de fora da linha — ver `conteudoDaAcao`.
+     */
+    const cap = this.policy?.resolverCapacidade(orgId, capabilityId) ?? null;
+    const sensibilidade = cap?.efeito.sensibilidade as SensibilidadeDoEvento | undefined;
+
     // Dois cliques no botão de aprovar é o caso REAL, não a exceção. Quem cai
     // aqui precisa entender que já saiu — "está consumida, não confirmada"
     // manda a pessoa procurar um problema que não existe.
@@ -82,6 +207,52 @@ export class AcoesService {
         status: 'sem_efeito',
         motivo: `"${ap.capabilityId}" está classificada e aprovada, mas o efeito não está ligado nesta versão.`,
       };
+    }
+
+    /*
+     * O CONECTOR AINDA ESTÁ LIGADO? — RF-G-06, o segundo ponto do gancho, ÚLTIMO
+     * PORTÃO antes do efeito.
+     *
+     * Esta NÃO é a conferência que o operador encontra. Quem a encontra é a de
+     * `conectorDesligado()`, chamada pelo controlador ANTES de `confirm` — ver
+     * o cabeçalho daquele método para o porquê. Esta aqui cobre dois casos que
+     * aquela não cobre:
+     *
+     *   · o desligamento que acontece na janela entre a pergunta do controlador
+     *     e esta linha (milissegundos, mas existe);
+     *   · qualquer chamador de `executarAprovada` que não tenha perguntado antes.
+     *
+     * ANTES DE CONSUMIR A APROVAÇÃO, de propósito: o token é de uso único, e
+     * queimá-lo numa recusa obrigaria a pessoa a refazer todo o ciclo depois de
+     * religar. Recusada aqui, a aprovação continua `confirmada` e NÃO foi
+     * consumida — `executarAprovada` aceita exatamente esse estado, então chamar
+     * de novo depois de religar executa. O que o operador não tem é um botão que
+     * faça isso pela tela: quem chega aqui vindo do `confirm` já passou por uma
+     * confirmação que o deixou `confirmada`, e `confirm` recusa o que não está
+     * pendente. É dívida declarada, e está no relatório da estabilização; o
+     * caminho normal não passa por ela porque a pergunta do controlador vem antes.
+     *
+     * LANÇA em vez de devolver, ao contrário da porta: quem chama aqui é uma
+     * rota HTTP, e a recusa vira 403 com a frase em português. O
+     * `ForbiddenException` é levantado daqui, e não importado de
+     * `integrations/`, para não fechar o ciclo de módulo que o registro de
+     * interruptores existe para evitar.
+     */
+    const desligado = await this.interruptores?.consultar({
+      orgId,
+      capabilityId,
+      correlationId: correlacaoAtual() ?? null,
+      actorType: ActorType.user,
+      actorId,
+      agentSlug: chamada.agentSlug,
+    });
+    if (desligado) {
+      this.log.warn(
+        `aprovação ${approvalId} NÃO executada: ${desligado.conector} está desligado para a ` +
+          `empresa ${orgId}. A aprovação está CONFIRMADA e NÃO foi consumida — religar o ` +
+          'conector e chamar executarAprovada de novo executa, sem nova autorização.',
+      );
+      throw new ForbiddenException(corpoDaRecusa(desligado));
     }
 
     // Uso único, mesmo aqui: dois cliques no botão de aprovar não podem
@@ -157,12 +328,30 @@ export class AcoesService {
         toolCallId: chamada.id,
         nivel: ap.nivelExigido as RiskLevel,
         correlationId,
+        /*
+         * `approvalId` e `duracaoMs` continuam AQUI: são metadado da operação,
+         * não palavra da política. O que era `aprovadoPor` mudou de lugar e de
+         * nome — ver o `conteudo` abaixo.
+         */
         payload: {
           approvalId,
-          aprovadoPor: ap.aprovadoPorId,
           duracaoMs: Date.now() - inicio,
           ...(correlacaoDaConfirmacao ? { correlacaoDaConfirmacao } : {}),
         },
+        // O hash que amarrou a aprovação ao conteúdo exato é o `hashConteudo`
+        // que a política cobra em R3 e R4. Ele já está na linha da aprovação.
+        contentHash: ap.contentHash,
+        /*
+         * A ARMADILHA, resolvida por RENOMEAR e não por registrar de novo.
+         *
+         * Até aqui o aprovador ia em `payload.aprovadoPor`. A conferência de
+         * nível procura a palavra da POLÍTICA (`aprovador`), então ela acusava
+         * "aprovador faltando" numa linha que o continha — dívida contada duas
+         * vezes e nenhuma delas verdadeira. O conserto é este: a mesma
+         * informação, com o nome que o documento normativo usa.
+         */
+        conteudo: this.conteudoDaAcao(ap, capabilityId, cap, inicio, { args, resultado }),
+        sensibilidade,
       });
       this.log.log(`${ap.capabilityId} executada após aprovação de ${ap.aprovadoPorId}`);
       return { status: 'executado', resultado };
@@ -190,8 +379,67 @@ export class AcoesService {
           erro: erro.slice(0, 300),
           ...(correlacaoDaConfirmacao ? { correlacaoDaConfirmacao } : {}),
         },
+        contentHash: ap.contentHash,
+        // A falha carrega o MESMO vocabulário do sucesso, pelo mesmo motivo do
+        // comentário acima: `entrega` aqui é o que o outro lado respondeu, e
+        // "não deu" é uma resposta.
+        conteudo: this.conteudoDaAcao(ap, capabilityId, cap, inicio, {
+          args: (chamada.args ?? {}) as Record<string, unknown>,
+          resultado: { ok: false, erro: erro.slice(0, 300) },
+        }),
+        sensibilidade,
       });
       throw e;
     }
+  }
+
+  /**
+   * O vocabulário do RASTRO para as duas linhas que este serviço escreve.
+   *
+   * UMA função para `acao.executada` e `acao.falhou` de propósito: os dois
+   * eventos descrevem a MESMA ação e a política cobra deles os mesmos campos.
+   * Duas listas seriam duas listas para divergir.
+   *
+   * O QUE DEPENDE DA POLÍTICA ESTAR INJETADA: só o conteúdo REDIGÍVEL
+   * (`argumentos`, `resultado`, `entrega`). Sem a capacidade resolvida não há
+   * como saber a sensibilidade do efeito, e gravar o texto de uma mensagem
+   * `confidencial` em claro seria trocar um campo faltando por um vazamento
+   * (RF-R-04). O resto — aprovador, canal, custo — é metadado: nunca é
+   * redigido, então entra sempre.
+   */
+  private conteudoDaAcao(
+    ap: {
+      aprovadoPorId: string | null;
+      aprovadoEm: Date | null;
+      canal: string | null;
+      capabilityId: string | null;
+      resumo: string;
+      motivo: string | null;
+    },
+    capabilityId: string,
+    cap: { desfazer?: string } | null,
+    inicio: number,
+    conteudo: { args: Record<string, unknown>; resultado: unknown },
+  ): ConteudoDoEvento {
+    const redigivel: ConteudoDoEvento = cap
+      ? { argumentos: conteudo.args, resultado: conteudo.resultado, entrega: conteudo.resultado }
+      : {};
+    return {
+      aprovador: ap.aprovadoPorId,
+      aprovadoEm: ap.aprovadoEm,
+      // O canal veio gravado na aprovação (a porta o escreve ao propor). A volta
+      // pelo mapa cobre as aprovações criadas antes de a porta passar a gravá-lo.
+      canal: ap.canal ?? conectorDaCapacidade(ap.capabilityId),
+      resumo: ap.resumo,
+      motivo: ap.motivo,
+      desfazer: cap?.desfazer,
+      // A fonte desta linha é a ferramenta, e o caminho é a fila de aprovação —
+      // não o laço do agente. Quem lê a auditoria precisa distinguir os dois.
+      fontes: [{ tipo: 'ferramenta', id: capabilityId, origem: 'aprovacao' }],
+      // Tempo, não dinheiro: o gasto com modelo é apurado em `GastoDeIaNoDia`, e
+      // esta execução não chama modelo nenhum.
+      custo: { duracaoMs: Date.now() - inicio, apuracaoDeGasto: 'GastoDeIaNoDia' },
+      ...redigivel,
+    };
   }
 }

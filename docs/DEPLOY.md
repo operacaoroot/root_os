@@ -183,6 +183,88 @@ só roda na VPS).
 uma API degradada: deixa a API **fora do ar**, em loop de restart. Toda migration passa antes por um
 Postgres descartável e pela CI.
 
+**Duas travas de arranque novas (onda 6) derrubam a API se um módulo sumir do `AppModule`.** As duas
+são deliberadas, e as duas foram provadas em 11/09/2026 patchando o `dist` e rodando o smoke:
+
+- `ToolGateway.onModuleInit` **recusa subir sem o `TetoDeCustoIaService`**, que vem do `LlmModule`
+  (global). Sem ele, o teto de custo de IA por empresa (RF-G-05) simplesmente não seria imposto —
+  e em silêncio, que é o problema. Mensagem: `ToolGateway subiu sem TetoDeCustoIaService`.
+- `InterruptoresRegistry.onApplicationBootstrap` **recusa subir se ninguém se inscreveu** no
+  registro de interruptores. Quem se inscreve é `ConectoresService.onModuleInit`, do
+  `IntegrationsModule`. Sem a inscrição, desligar um conector voltaria a apenas REGISTRAR a
+  decisão, sem barrar chamada nenhuma — com a tela de Conexões dizendo que recusa. Mensagem:
+  `A aplicação subiu sem ninguém inscrito no InterruptoresRegistry`. A conferência é em
+  `onApplicationBootstrap` e não em `onModuleInit` porque o módulo da porta é `@Global` e
+  inicializa antes do de integrações.
+
+Nos dois casos o conserto é o mesmo: o módulo dono voltou a ser importado no `AppModule`? O smoke
+compilado (`pnpm --filter @mktos/api smoke`) pega as duas antes do deploy — o typecheck não, porque
+TypeScript não enxerga o grafo de injeção do Nest.
+
+**Desligar um conector passou a BARRAR de verdade (RF-G-06, onda 6).** Até esta onda, desligar
+gravava a decisão e só o ClickUp era efetivamente recusado. Agora a porta pergunta ao interruptor
+logo depois de conferir o escopo do agente, e `AcoesService.executarAprovada` pergunta de novo antes
+de soltar uma ação já aprovada — sem o segundo, uma aprovação criada **antes** do desligamento ainda
+sairia depois dele. A recusa é 403 com frase em português e código `conector_desligado`, e a tela da
+pauta oferece o caminho para `/conexoes`. **O que continua aberto**: o caminho HTTP direto (pessoa
+clicando na tela, fora do laço do agente) para Google, Meta e WhatsApp — o ClickUp já pergunta. É
+fatia própria, e a tela não promete o que não cumpre.
+
+**O teto de custo recusa modelo fora da tabela de preço — mudança de comportamento visível.** Com
+`TetoDeCustoIa.ativo` ligado para uma empresa, uma chamada cujo modelo não esteja em
+`apps/api/src/llm/preco.ts` é **recusada**, não estimada em zero. Isso atinge em cheio o provider
+`openrouter`, cujo modelo padrão (`anthropic/claude-sonnet-4.5`) não casa com a tabela. Empresa
+**sem** linha de teto e empresa com o teto **desligado** seguem passando: o regime novo é o preço de
+ter ligado o teto, não um padrão imposto a todo mundo. Conserto: cadastre o preço do modelo, ou
+desligue o teto daquela empresa.
+
+**A retenção do RASTRO passou a ser por empresa.** `RASTRO_RETENCAO_DIAS` deixou de ser a palavra
+final e virou **o chão**: vale quando a política não disser nada e a empresa não tiver linha em
+`RastroRetencao`. A ordem é `RastroRetencao.dias` → `politica.retencao.rastroDias` →
+`RASTRO_RETENCAO_DIAS` → 1825. O expurgo é um comando próprio
+(`pnpm --filter @mktos/api expurgo:rastro`, que roda **compilado**), varre empresa por empresa
+abrindo o contexto de cada uma — para não precisar de exceção na lista de chamadores de plataforma
+— e **grava o evento `rastro.expurgo` dentro da mesma transação que apaga**, em SQL. Apagar por
+retenção também é evento.
+
+**Depois desta onda, rode `db:seed:politica` em produção — e ele vai PEDIR ASSINATURA.** O delta do
+catálogo subiu para `1.2.0` com **62 capacidades** (as duas novas são `conector.desligar` e
+`conector.religar`). A política que vale em runtime é a do BANCO: sem o seed, a `PolicyVersion` ativa
+continua no documento de 60 e as duas capacidades novas não aparecem na tela da Régua. As rotas de
+desligamento **não** param por isso — elas são guardadas por permissão (`admin.usuarios`), não pela
+porta —, mas o catálogo fica mentindo sobre o que o OS sabe fazer.
+
+O seed **recusa rodar sozinho** aqui, e está certo: capacidade não declarada valia R5, então
+acrescentá-la em R3/R4 é **afrouxar**, e afrouxar exige decisão de gente (RF-P-06). A recusa sai
+assim:
+
+```
+ACRESCENTA capacidade que a base do banco ainda não classifica — 2 item(ns):
+  conector.desligar: capacidade nova em R3 (não declarada valia R5)
+  conector.religar:  capacidade nova em R4 (não declarada valia R5)
+Nada foi semeado.
+```
+
+Quem assina põe o próprio nome e o motivo, que ficam **gravados na versão**:
+
+```bash
+POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+POLITICA_CAPACIDADE_NOVA_MOTIVO='<a decisão escrita>' \
+  pnpm --filter @mktos/api db:seed:politica
+```
+
+Como conferir depois: a linha de boot `política base vN carregada DO BANCO (N capacidades)` precisa
+dizer **62**. Ensaiado em 11/09/2026 nos três bancos descartáveis — `2 criadas, 60 atualizadas, 62
+no total`.
+
+**Antes do merge desta onda, rode `deploy/janela-horaria-ilegivel.sql` no banco de produção.**
+A fatia 2.3 mudou, de propósito, o que acontece quando `limitesPadrao.janelaHoraria` de uma política
+está ilegível: antes o sinal `fora_da_janela` ficava calado, agora ele **acende**. Acender sobe um
+degrau na régua e nunca bloqueia sozinho — mas sobe em **toda ação** daquela empresa. A consulta
+lista as políticas ativas com janela ilegível. Zero linha significa que a mudança é inócua; uma
+linha com `orgId` nulo é a política BASE, e afeta todas as empresas. Se aparecer alguma, a escolha é
+humana: consertar o documento ou segurar a mudança.
+
 **Tabela criada à mão no servidor faz a migration do isolamento abortar — e a API não sobe.**
 A `20260911050000_isolamento_por_linha` termina com uma conferência que percorre o catálogo do banco
 e **recusa aplicar** se achar qualquer tabela de `public` sem `ROW LEVEL SECURITY`, sem `FORCE` ou
@@ -277,9 +359,11 @@ explicativo, porque escolher o nome do banco de destino era a porta para apagar 
 ## 5. Checklist de uma subida
 
 1. [ ] CI verde na revisão que vai subir
-2. [ ] Migration nova aplicada antes num Postgres descartável
+2. [ ] Migration nova aplicada antes num Postgres descartável — **do zero e sobre banco povoado**
 3. [ ] Variável nova no `environment:` do compose **e** no `.env`
 4. [ ] Backup do dia existe
+4b. [ ] `deploy/janela-horaria-ilegivel.sql` rodado em produção, com o resultado lido (onda 6)
+4c. [ ] `db:seed:politica` planejado para depois da subida, e a linha de boot conferida em 62
 5. [ ] `docker tag mktos-app:latest mktos-app:rollback`
 6. [ ] `docker compose -f docker-compose.yml -f docker-compose.vps.yml build api`
 7. [ ] Smoke na imagem, contra banco descartável, com os crons desligados

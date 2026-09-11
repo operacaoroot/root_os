@@ -115,7 +115,17 @@ export const NAV: NavItem[] = [
 
   // ── O controle ───────────────────────────────────────────────────────────
   { key: 'atendimento', label: 'Atendimento', href: '/atendimento', icon: 'MessagesSquare', permission: 'whatsapp.enviar', secao: 'controle', estado: 'parcial', parcial: 'a fila de aprovação entra com a porta; a entrada por WhatsApp vem do FinOps depois' },
-  { key: 'regua', label: 'Régua', href: '/regua', icon: 'Shield', permission: 'admin.usuarios', secao: 'controle', estado: 'parcial', parcial: 'níveis, sinais e capacidades entram com o motor de política' },
+  // A Régua pede `mcp.ver`, e não `admin.usuarios`, desde que a fatia 2.3
+  // fechou. É painel de LEITURA — níveis, sinais, catálogo, sobrescritas e um
+  // simulador que não executa nada —, e a convenção da casa para painel de
+  // leitura é a permissão de ver do assunto dele: `mcp.ver` é a mesma de
+  // Agentes, Sessões e Ferramentas, que é o eixo que a régua governa.
+  // `admin.usuarios` só existe no Admin Master (nem o Diretor tem), e o
+  // critério da fatia fala em "um operador submete uma ação hipotética".
+  // A aba "Quem autoriza" (a antiga tela de usuários) continua exigindo
+  // `admin.usuarios`, pelas rotas dela: users.controller.ts pede isso nas
+  // quatro, e a tela esconde a aba de quem não tem.
+  { key: 'regua', label: 'Régua', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
   { key: 'rastro', label: 'Rastro', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'controle' },
 
   // ── O que existe ─────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { LLM_PROVIDER } from './llm.provider';
 import { OpenAiProvider } from './openai.provider';
 import { AnthropicProvider } from './anthropic.provider';
 import { OpenRouterProvider } from './openrouter.provider';
+import { TetoDeCustoIaService } from './teto-diario.service';
+import { ProviderComTeto } from './provider-com-teto';
 import { env } from './env';
 
 // Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai.
@@ -18,33 +20,47 @@ import { env } from './env';
 // falso e a chamada falha com mensagem clara, na hora do uso. Derrubar a API
 // inteira por falta de chave de IA deixaria o painel fora do ar por causa de
 // um recurso opcional.
+//
+// O QUE O TOKEN `LLM_PROVIDER` ENTREGA MUDOU NA FATIA 3.6: não é mais o provider
+// escolhido, é ele DENTRO do envelope do teto de custo por empresa e por dia
+// (`ProviderComTeto`, RF-G-05). A superfície é a mesma — quem injeta não muda
+// uma linha —, e é essa a razão de o teto morar num envelope e não espalhado
+// pelos três providers: regra de negócio repetida três vezes é regra que diverge
+// na terceira.
+//
+// O QUE SAIU DAQUI NA CORREÇÃO DA 3.6: `OpenAiProvider` era exportado CRU, com a
+// justificativa de que quem o injetasse estaria gerando EMBEDDING. A
+// justificativa não conferia — NINGUÉM o injeta, e os dois pontos de vetorização
+// (`obsidian/obsidian.service.ts` e `pauta/pauta.service.ts`) falam com
+// `/embeddings` por `fetch` próprio. O que a exportação de fato oferecia, num
+// módulo GLOBAL, era um caminho até `complete()` e `step()` POR FORA do envelope
+// do teto, disponível a qualquer serviço da aplicação. Ele continua registrado
+// como provider (a fábrica abaixo precisa dele); o que não existe mais é a porta
+// lateral. Embedding segue não medido por este teto — é cobrado à parte pela
+// OpenAI e está no relatório da fatia.
 @Global()
 @Module({
   providers: [
     OpenAiProvider,
     AnthropicProvider,
     OpenRouterProvider,
+    TetoDeCustoIaService,
     {
       provide: LLM_PROVIDER,
       useFactory: (
         openai: OpenAiProvider,
         anthropic: AnthropicProvider,
         openrouter: OpenRouterProvider,
+        teto: TetoDeCustoIaService,
       ) => {
         const escolhido = env('LLM_PROVIDER', 'anthropic');
-        switch (escolhido) {
-          case 'openai':
-            return openai;
-          case 'openrouter':
-            return openrouter;
-          case 'anthropic':
-          default:
-            return anthropic;
-        }
+        const provider =
+          escolhido === 'openai' ? openai : escolhido === 'openrouter' ? openrouter : anthropic;
+        return new ProviderComTeto(provider, teto);
       },
-      inject: [OpenAiProvider, AnthropicProvider, OpenRouterProvider],
+      inject: [OpenAiProvider, AnthropicProvider, OpenRouterProvider, TetoDeCustoIaService],
     },
   ],
-  exports: [LLM_PROVIDER, OpenAiProvider],
+  exports: [LLM_PROVIDER, TetoDeCustoIaService],
 })
 export class LlmModule {}

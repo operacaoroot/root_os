@@ -8,7 +8,7 @@ import {
   type PautaRodadaDetalhe,
   type PautaRodadaList,
 } from '@mktos/shared';
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
+import { ErroDaApi, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { publicarComAprovacao } from './aprovacao';
 
@@ -16,7 +16,8 @@ interface Props {
   token: string | null;
   editavel: boolean;
   podePublicar: boolean;
-  onErro: (m: string | null) => void;
+  /** `codigo` é o da API (ver `ErroDaApi`); a caixa de erro decide por ele. */
+  onErro: (m: string | null, codigo?: string | null) => void;
   bump: number;
   onMudou: () => void;
 }
@@ -67,7 +68,10 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
       await fn();
       onMudou();
     } catch (e) {
-      onErro((e as Error).message);
+      // O código sobe junto com a frase: publicar passa pela fila de aprovação,
+      // e a recusa de conector desligado (RF-G-06) precisa chegar à caixa de
+      // erro reconhecível, para a tela poder apontar o caminho de conserto.
+      onErro((e as Error).message, e instanceof ErroDaApi ? e.codigo : null);
     } finally {
       setOcupado(null);
     }

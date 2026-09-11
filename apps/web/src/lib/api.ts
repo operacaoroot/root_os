@@ -2,21 +2,77 @@
 // Funciona em localhost, LAN e túnel, sem CORS nem URL fixa no build.
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 
+/**
+ * O CÓDIGO da recusa de conector desligado (RF-G-06).
+ *
+ * Cópia do valor que a API declara em `apps/api/src/integrations/conectores.ts`.
+ * Não é importável: o pacote compartilhado não expõe nada da porta, e criar essa
+ * dependência só por uma string custaria mais do que a duplicação. O que amarra
+ * os dois lados é um caso de teste em cada suíte, e o valor é uma constante
+ * congelada — se um dia mudar, é mudança de contrato e merece as duas edições.
+ */
+export const CODIGO_CONECTOR_DESLIGADO = 'conector_desligado';
+
+/**
+ * Erro de API que PRESERVA o código e o status, além da frase.
+ *
+ * Um `Error` cru só levava a mensagem, e a tela ficava com duas opções ruins:
+ * mostrar mais uma caixa vermelha genérica, ou reconhecer a recusa por
+ * substring da frase em português — que quebra em silêncio na primeira
+ * reescrita do texto. Com o código, a tela decide pelo contrato.
+ */
+export class ErroDaApi extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly codigo: string | null = null,
+  ) {
+    super(message);
+    this.name = 'ErroDaApi';
+  }
+}
+
+/** É a recusa de conector desligado? A pergunta que a tela faz. */
+export function ehConectorDesligado(e: unknown): e is ErroDaApi {
+  return e instanceof ErroDaApi && e.codigo === CODIGO_CONECTOR_DESLIGADO;
+}
+
+/**
+ * Traduz o corpo de uma resposta de erro no `ErroDaApi` que a tela recebe.
+ *
+ * Separado de `handle` para poder ser testado sem `fetch`: é aqui que mora a
+ * ordem de precedência entre `issues`, `message` e `error`, e essa ordem já
+ * escondeu qual campo reprovou uma vez.
+ */
+export function erroDaResposta(body: Record<string, unknown>, status: number): ErroDaApi {
+  // O ZodExceptionFilter responde {error:'ValidationError', issues:[{path,message}]}
+  // e NÃO manda `message` — sem desdobrar o issues a tela mostrava só o rótulo
+  // genérico, escondendo qual campo reprovou.
+  const issues: string = Array.isArray(body.issues)
+    ? body.issues
+        .map((i: { path?: string; message?: string }) =>
+          [i.path, i.message].filter(Boolean).join(': '),
+        )
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+  // `message` pode vir como lista (ValidationPipe do Nest manda um array de
+  // frases). Juntar é o que o `new Error(array)` antigo fazia por acidente, via
+  // coerção — aqui é explícito, e com separador legível.
+  const mensagem = Array.isArray(body.message)
+    ? body.message.filter((m) => typeof m === 'string').join(' · ')
+    : typeof body.message === 'string'
+      ? body.message
+      : '';
+  const texto =
+    issues || mensagem || (typeof body.error === 'string' ? body.error : '') || `Erro ${status}`;
+  return new ErroDaApi(texto, status, typeof body.error === 'string' ? body.error : null);
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    // O ZodExceptionFilter responde {error:'ValidationError', issues:[{path,message}]}
-    // e NÃO manda `message` — sem desdobrar o issues a tela mostrava só o rótulo
-    // genérico, escondendo qual campo reprovou.
-    const issues: string = Array.isArray(body.issues)
-      ? body.issues
-          .map((i: { path?: string; message?: string }) =>
-            [i.path, i.message].filter(Boolean).join(': '),
-          )
-          .filter(Boolean)
-          .join(' · ')
-      : '';
-    throw new Error(issues || body.message || body.error || `Erro ${res.status}`);
+    throw erroDaResposta(body as Record<string, unknown>, res.status);
   }
   return res.json();
 }

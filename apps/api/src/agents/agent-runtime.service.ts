@@ -11,9 +11,11 @@ import {
 import {
   LLM_PROVIDER,
   type LlmProvider,
+  type LlmStepOutput,
   type LlmToolResult,
   type LlmTurn,
 } from '../llm/llm.provider';
+import { TetoDiarioEstouradoError } from '../llm/teto-diario.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ToolGateway, type ExecCtx } from '../gateway/tool-gateway.service';
@@ -53,6 +55,8 @@ export interface SessionResumo {
   sessionId: string;
   status: SessionStatus;
   resposta: string;
+  /** Por que a execução parou, quando não foi por ter respondido. */
+  motivo?: string | null;
   custoUsd: number;
   custoEstimado: boolean;
   passos: number;
@@ -60,6 +64,12 @@ export interface SessionResumo {
   nivelMax: RiskLevel | null;
   fontes: FonteContexto[];
   aprovacoes: { approvalId: string; resumo: string; nivel: string }[];
+  /**
+   * Preenchido quando o teto de custo de IA da EMPRESA interrompeu a execução
+   * (RF-G-05). A sessão fica `recusada` com este motivo, e a rota responde com
+   * código próprio — ver `agents.controller.ts`.
+   */
+  recusaDeTeto?: { motivo: string; causa: string; dia: string };
 }
 
 /** O agente como o laço precisa dele: com o SOP e o nome do dono carregados. */
@@ -211,6 +221,8 @@ export class AgentRuntime {
     let status: SessionStatus = SessionStatus.falhou;
     let motivo: string | null = null;
     let passos = 0;
+    /** Preenchido quando o teto de custo da EMPRESA parou a execução. */
+    let recusaDeTeto: TetoDiarioEstouradoError | null = null;
 
     for (passos = 0; passos < maxPassos; passos++) {
       if (custo > tetoUsd) {
@@ -223,14 +235,40 @@ export class AgentRuntime {
       }
 
       const t0 = Date.now();
-      const saida = await this.llm.step({
-        system,
-        turns,
-        tools: ferramentas.map((f) => f.spec),
-        model: agent.modelo ?? undefined,
-        effort: agent.effort as never,
-        onTextDelta: p.onEvento ? (d) => emitir({ t: 'texto', delta: d }) : undefined,
-      });
+      let saida: LlmStepOutput;
+      try {
+        saida = await this.llm.step({
+          system,
+          turns,
+          tools: ferramentas.map((f) => f.spec),
+          model: agent.modelo ?? undefined,
+          effort: agent.effort as never,
+          onTextDelta: p.onEvento ? (d) => emitir({ t: 'texto', delta: d }) : undefined,
+          orgId: p.orgId,
+        });
+      } catch (e) {
+        /*
+         * O TETO DE CUSTO DE IA DA EMPRESA ESTOUROU NO MEIO DO LAÇO (RF-G-05).
+         *
+         * Ele precisa ser tratado AQUI, e não escapar. A sessão já foi aberta e o
+         * pedido já foi gravado: deixar a exceção subir deixava a linha sem
+         * situação e sem motivo — uma execução pendurada para sempre, que nem a
+         * tela nem o RASTRO conseguiam explicar. E o critério da fatia é
+         * explícito: estourar o teto "interrompe a execução e registra o motivo".
+         *
+         * Interromper é `break`: o encerramento lá embaixo é o mesmo de qualquer
+         * outra parada, com `recusada` e o motivo em português. O que o modelo já
+         * tinha gasto nos passos anteriores continua gravado.
+         */
+        if (!(e instanceof TetoDiarioEstouradoError)) throw e;
+        recusaDeTeto = e;
+        motivo = e.motivo;
+        resposta = e.motivo;
+        status = SessionStatus.recusada;
+        await this.sessoes.passo(p.orgId, sessionId, { tipo: 'erro', erro: e.motivo });
+        emitir({ t: 'erro', mensagem: e.motivo });
+        break;
+      }
 
       // O passo do modelo é gravado SEMPRE, inclusive quando ele recusa: o
       // custo aconteceu, e a sessão precisa mostrar onde parou.
@@ -367,6 +405,7 @@ export class AgentRuntime {
       sessionId,
       status,
       resposta,
+      motivo,
       custoUsd: custo,
       custoEstimado,
       passos,
@@ -374,6 +413,11 @@ export class AgentRuntime {
       nivelMax,
       fontes: fontesUsadas,
       aprovacoes,
+      // A rota precisa distinguir ISTO de "o agente respondeu": é um limite de
+      // orçamento, e o código de resposta tem de dizer isso (ver o controlador).
+      recusaDeTeto: recusaDeTeto
+        ? { motivo: recusaDeTeto.motivo, causa: recusaDeTeto.detalhe.causa, dia: recusaDeTeto.detalhe.dia }
+        : undefined,
     };
   }
 

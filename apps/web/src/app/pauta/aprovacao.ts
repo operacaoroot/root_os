@@ -1,4 +1,4 @@
-import { API_BASE, apiPost } from '@/lib/api';
+import { API_BASE, apiPost, erroDaResposta } from '@/lib/api';
 
 // Publicar uma peça é escrita sensível: o backend exige um x-approval-token
 // confirmado e casado com a mudança exata (ver ApprovalGuard). O fluxo é
@@ -37,7 +37,10 @@ export async function publicarComAprovacao(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || `Erro ${res.status}`);
+    // Mesmo tradutor do cliente genérico: este `fetch` é feito à mão só por
+    // causa do header `x-approval-token`, e não pode perder o código da recusa
+    // no caminho — é ele que faz a tela oferecer Conexões (RF-G-06).
+    throw erroDaResposta(body, res.status);
   }
   return res.json();
 }

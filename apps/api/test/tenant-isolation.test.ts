@@ -305,15 +305,21 @@ const ALVOS: Alvo[] = [
   { tabela: 'SessionStep', escopo: 'tenant', chaveSql: '"id"', nota: 'Passo a passo da sessão: args da ferramenta, texto do modelo, erro. Vaza o conteúdo, não só o resumo.' },
   { tabela: 'ToolCall', escopo: 'tenant', chaveSql: '"id"', nota: 'Rastro de ferramenta: args e resultado em Json. É o que a ação DE FATO fez.' },
   { tabela: 'EventLog', escopo: 'tenant', chaveSql: '"id"', nota: 'O RASTRO (append-only). Encadeado por hash e por empresa; ler o da outra é ler a operação dela.' },
+  { tabela: 'RastroRetencao', escopo: 'tenant', chaveSql: '"id"', nota: 'Por quantos dias o rastro da empresa fica (fatia 3.5). Escrever na da outra decide quando a PROVA dela some.' },
 
   // ---- política e aprovação --------------------------------------------
   { tabela: 'PolicyVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId NULLABLE: null = política base de todas. Leitura tem de ser orgId = atual OR IS NULL, e escrita só a própria.' },
   { tabela: 'PolicyDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada decisão da escada R0–R5, com motivo e sinais. Diz o que a outra empresa deixa passar.' },
   { tabela: 'Approval', escopo: 'tenant', chaveSql: '"id"', nota: 'Fila de aprovação: resumo do conteúdo a publicar e tokenHash. Ler é ver o que a outra empresa vai postar.' },
 
+  // ---- teto de custo de IA (fatia 3.6) ----------------------------------
+  { tabela: 'TetoDeCustoIa', escopo: 'tenant', chaveSql: '"id"', nota: 'Quanto a empresa pode gastar com modelo por dia. Ler é saber o orçamento dela; escrever é desligar o freio de gasto da outra.' },
+  { tabela: 'GastoDeIaNoDia', escopo: 'tenant', chaveSql: '"id"', nota: 'O livro-caixa do dia. Ler é saber quanto a outra empresa opera; escrever é gastar o teto dela até o corte.' },
+
   // ---- integrações ------------------------------------------------------
   { tabela: 'IntegrationAccount', escopo: 'tenant', chaveSql: '"id"', nota: 'config Json carrega credencial de integração em claro.' },
   { tabela: 'IntegrationHealth', escopo: 'filho', chaveSql: '"id"', nota: 'Filha 1:1 de IntegrationAccount; orgId derivado dela.' },
+  { tabela: 'ConectorDesligado', escopo: 'tenant', chaveSql: '"id"', nota: 'Desligamento de conector por empresa (RF-G-06). Ler o da outra revela que ela suspendeu um conector e por quê; ESCREVER nele é pior — apagar a linha RELIGA o conector da outra empresa por fora do painel dela.' },
 
   // ---- leads e campanhas ------------------------------------------------
   { tabela: 'LeadSource', escopo: 'tenant', chaveSql: '"id"', nota: 'Catálogo de canais por org.' },
@@ -596,6 +602,17 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     hash: `hash_${suf}`, retencaoAte: new Date(Date.now() + 86_400_000),
   }));
 
+  // Quanto tempo o rastro desta empresa fica (fatia 3.5). Diferente nas duas de
+  // propósito: se a policy falhar, a linha que aparece é a da vizinha e o valor
+  // denuncia de quem ela é.
+  reg('RastroRetencao', await ins(c, 'RastroRetencao', {
+    id: crypto.randomUUID(), orgId,
+    dias: rotulo === 'A' ? 90 : 3650,
+    motivo: `retenção combinada com o cliente da org ${rotulo}`,
+    definidoPor: `pessoa_${suf}`,
+    atualizadoEm: new Date(),
+  }));
+
   // --- política e aprovação -----------------------------------------------
   // `PolicyVersion` tem orgId ANULÁVEL (nulo = a base de todas). Aqui vai a
   // versão POR EMPRESA; a base não é semeada porque ela já existe em banco com
@@ -637,6 +654,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   // seção 7.
   reg('IntegrationHealth', await ins(c, 'IntegrationHealth', {
     id: crypto.randomUUID(), orgId, accountId: integId, status: 'ok', latencyMs: 120,
+  }));
+
+  // Fatia 3.7 — o desligamento de conector por empresa (RF-G-06).
+  reg('ConectorDesligado', await ins(c, 'ConectorDesligado', {
+    id: crypto.randomUUID(), orgId, conector: 'gmail',
+    motivo: `Suspensão da org ${rotulo} (${MARCA})`, desligadoPor: userId,
   }));
 
   // --- leads e campanhas ---------------------------------------------------
@@ -947,6 +970,26 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
   reg('_WorkTaskTags', `${tagId}|${tarefaId}`);
+
+  // --- teto de custo de IA (fatia 3.6) -------------------------------------
+  // Duas linhas por empresa, com valores DIFERENTES entre A e B: o caso "A não
+  // lê linha de B" precisa que a linha vizinha exista, e o teto é justamente o
+  // tipo de número que uma empresa não pode ver nem mexer na outra.
+  reg('TetoDeCustoIa', await ins(c, 'TetoDeCustoIa', {
+    id: crypto.randomUUID(), orgId,
+    tetoDiarioUsd: rotulo === 'A' ? 12.5 : 99.75,
+    fusoHorario: 'America/Sao_Paulo', ativo: true,
+    motivo: `Teto combinado com a org ${rotulo}`,
+    definidoEm: agora, criadoEm: agora, atualizadoEm: agora,
+  }));
+
+  reg('GastoDeIaNoDia', await ins(c, 'GastoDeIaNoDia', {
+    id: crypto.randomUUID(), orgId, dia: '2026-09-11',
+    gastoUsd: rotulo === 'A' ? 1.25 : 7.5,
+    gastoEstimadoUsd: 0, reservadoUsd: 0,
+    chamadas: rotulo === 'A' ? 3 : 40, chamadasSemPreco: 0, cortes: 0,
+    criadoEm: agora, atualizadoEm: agora,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1559,13 +1602,44 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
       onde: 'Permission — a inserção no catálogo global, presa ao formato de chave',
     },
     { expressao: 'true', onde: 'a LEITURA dos dois catálogos globais, e só deles (ver o caso abaixo)' },
+    {
+      expressao: um(
+        `(app_org_resolvida() AND ("orgId" = app_org_atual()) AND ("retencaoAte" < now())
+          AND (tipo <> 'rastro.expurgo'::text))`,
+      ),
+      onde:
+        'EventLog — o DELETE do expurgo por retenção (fatia 3.5). É a retenção virada regra do ' +
+        'banco: linha VENCIDA, da própria empresa, e nunca o evento que registra um expurgo — ' +
+        'senão o rastro perderia a memória de ter esquecido.',
+    },
   ];
 
   /** As únicas tabelas em que ler tudo é a regra, não o furo. */
   const LEITURA_ESCANCARADA_DECLARADA = ['Capability', 'Permission'];
 
-  /** Os quatro nomes que `app_rls_aplicar_policies` cria. Não há um quinto. */
-  const NOMES_DE_POLICY = ['tenant_alteracao', 'tenant_exclusao', 'tenant_insercao', 'tenant_leitura'];
+  /**
+   * Os quatro nomes que `app_rls_aplicar_policies` cria — mais UM, escrito à mão
+   * e com nome próprio.
+   *
+   * `tenant_expurgo_retencao` (migration `20260911060000_rastro_retencao_e_expurgo`)
+   * é a policy de DELETE do `EventLog`, e ela existe para que o expurgo por
+   * retenção se comporte igual num Postgres cujo dono NÃO seja superusuário —
+   * sem ela, o DELETE do expurgo devolve zero linha em SILÊNCIO nesse ambiente
+   * (medido). Ela não afrouxa o append-only: alcança só linha VENCIDA, da
+   * própria empresa, que não seja o registro de um expurgo, e o papel da
+   * aplicação esbarra antes no REVOKE de privilégio.
+   *
+   * Nome PRÓPRIO e não `tenant_exclusao` de propósito: `app_rls_aplicar_policies`
+   * derruba os quatro nomes dela antes de criar, e `EventLog` entra lá com
+   * `p_apaga => false` — a policy sumiria em silêncio numa reaplicação.
+   */
+  const NOMES_DE_POLICY = [
+    'tenant_alteracao',
+    'tenant_exclusao',
+    'tenant_insercao',
+    'tenant_leitura',
+    'tenant_expurgo_retencao',
+  ];
 
   interface PolicyDoBanco {
     tabela: string;

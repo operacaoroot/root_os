@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.0",
-  "atualizadoEm": "2026-09-10",
+  "versao": "1.2.0",
+  "atualizadoEm": "2026-09-11",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1064,6 +1064,39 @@
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "restrita",
         "destruicao": true,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "conector.desligar",
+      "rota": "POST /integrations/:chave/desligamento",
+      "descricao": "Desliga um conector para esta empresa (RF-G-06): o OS para de usá-lo. NÃO apaga credencial nem revoga token — religar restabelece sem nova autorização. Aceita a chave de um conector (gmail) ou de um grupo (google = as quatro superfícies).",
+      "nivel": "R3",
+      "desfazer": "conector.religar",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "conector.religar",
+      "rota": "DELETE /integrations/:chave/desligamento",
+      "descricao": "Religa um conector desligado para esta empresa (RF-G-06): devolve ao OS a permissão de usá-lo, desfazendo a decisão de quem mandou parar. Nenhuma credencial é tocada.",
+      "nivel": "R4",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": false,
         "obrigacaoLegal": false
       }
     }

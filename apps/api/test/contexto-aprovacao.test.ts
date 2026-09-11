@@ -179,7 +179,10 @@ describe.skipIf(!URL)('contexto de execução na aprovação', () => {
         return { leadsHoje: 12 };
       },
     });
-    acoes = new AcoesService(p, registro, eventos);
+    // A política vai junto, como o Nest a injeta: sem ela este serviço não
+    // registra o conteúdo redigível, e a suíte mediria uma linha de desfecho
+    // mais pobre do que a que a aplicação escreve.
+    acoes = new AcoesService(p, registro, eventos, undefined, policy);
   });
 
   afterAll(async () => {

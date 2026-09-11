@@ -117,6 +117,31 @@ const COMO_CHAMAR_PELO_TERMINAL =
   'papéis de quem está na sessão. Pela linha de comando, `node dist/scripts/aprovar.js <id> ' +
   '--como <e-mail>` resolve a pessoa no banco antes de chamar.';
 
+/**
+ * O que `consumir` devolve à porta — a aprovação que acabou de ser queimada.
+ *
+ * Só os campos que alguém do outro lado precisa: os três primeiros para conferir
+ * o casamento com a ação, os três últimos porque são PALAVRAS DA POLÍTICA que a
+ * linha de desfecho do RASTRO tem de carregar (`aprovador`, `aprovadoEm`,
+ * `motivo` — ver `niveis.R3.rastro` e `niveis.R4.rastro`).
+ */
+export interface AprovacaoConsumida {
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  contentHash: string;
+  resumo: string;
+  propostoPorId: string;
+  /** Quem assinou. É pessoa — `exigirGente` recusa conta de máquina. */
+  aprovadoPorId: string | null;
+  /** Quando assinou. */
+  aprovadoEm: Date | null;
+  /** O que a pessoa escreveu ao aprovar. R4 e R5 exigem; R2/R3 não. */
+  motivo: string | null;
+  /** Por qual canal a ação sai, gravado pela porta ao propor. */
+  canal: string | null;
+}
+
 /*
  * A fila de aprovação, em TABELA.
  *
@@ -623,15 +648,7 @@ export class ApprovalsService {
    * O uso único de verdade. `updateMany` condicional em vez de ler-e-escrever:
    * duas requisições simultâneas com o mesmo token dão exatamente UM sucesso.
    */
-  private async consumirToken(orgId: string, token: string): Promise<{
-    id: string;
-    resourceType: string;
-    resourceId: string;
-    contentHash: string;
-    resumo: string;
-    aprovadoPorId: string | null;
-    propostoPorId: string;
-  }> {
+  private async consumirToken(orgId: string, token: string): Promise<AprovacaoConsumida> {
     const rec = await this.prisma.approval.findUnique({
       where: { tokenHash: hashDoToken(token) },
     });
@@ -649,10 +666,42 @@ export class ApprovalsService {
       data: { status: ApprovalState.consumida, consumidoEm: new Date() },
     });
     if (count !== 1) throw new ForbiddenException('Aprovação já utilizada (uso único).');
-    return rec;
+
+    /*
+     * A LINHA É RECORTADA, e não devolvida inteira. `rec` é o registro cru do
+     * Prisma e carrega `tokenHash` — o sha256 do token de uso único. Devolvê-lo
+     * daqui o põe ao alcance de quem for montar um payload de RASTRO com um
+     * espalhamento distraído, e o RASTRO é append-only por cinco anos. O tipo já
+     * esconderia o campo do compilador; o recorte o tira do objeto.
+     */
+    return {
+      id: rec.id,
+      resourceType: rec.resourceType,
+      resourceId: rec.resourceId,
+      contentHash: rec.contentHash,
+      resumo: rec.resumo,
+      propostoPorId: rec.propostoPorId,
+      aprovadoPorId: rec.aprovadoPorId,
+      aprovadoEm: rec.aprovadoEm,
+      motivo: rec.motivo,
+      canal: rec.canal,
+    };
   }
 
-  /** Usada pela porta. */
+  /**
+   * Usada pela porta. DEVOLVE A APROVAÇÃO CONSUMIDA — e isso não é conveniência.
+   *
+   * A política cobra da linha de DESFECHO de um R3 `aprovador` e `aprovadoEm`, e
+   * de um R4 também `motivo` (`niveis.<R>.rastro`). Até 11/09/2026 este método
+   * devolvia `void`: os três eram lidos aqui, conferidos aqui, e jogados fora —
+   * então `tool.resultado` saía SEM eles, declarando lacuna em
+   * `payload.rastro.faltando` numa ação que teve gente no caminho. Era dívida
+   * contada onde não havia dívida nenhuma.
+   *
+   * Devolver em vez de a porta reler é o que garante que a linha do RASTRO fale
+   * da MESMA aprovação que foi queimada: uma segunda leitura por id poderia, em
+   * teoria, pegar outro estado.
+   */
   async consumir(input: {
     orgId: string;
     token: string;
@@ -661,7 +710,7 @@ export class ApprovalsService {
     args: Record<string, unknown>;
     hashKeys: string[];
     actorId: string;
-  }): Promise<void> {
+  }): Promise<AprovacaoConsumida> {
     const rec = await this.consumirToken(input.orgId, input.token);
     if (rec.resourceType !== input.resourceType || rec.resourceId !== input.resourceId) {
       throw new ForbiddenException('Aprovação não corresponde ao recurso desta ação.');
@@ -678,6 +727,7 @@ export class ApprovalsService {
       entityId: rec.resourceId,
       after: { approvalId: rec.id, resumo: rec.resumo },
     });
+    return rec;
   }
 
   /** Gate da escrita nas 5 rotas antigas. Comportamento idêntico ao de antes. */

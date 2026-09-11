@@ -3,9 +3,11 @@ import {
   NAV,
   NAV_DETALHE,
   ROTAS_ABSORVIDAS,
+  ROLES,
   SECOES,
   MODULOS,
   navPorSecao,
+  type RoleKey,
 } from '@mktos/shared';
 import { ROTAS_ANTIGAS } from '../../rotas-antigas.mjs';
 
@@ -82,7 +84,15 @@ const DESTINO: Record<string, { paraKey: string; absorvido?: string }> = {
   metas: { paraKey: 'metas' },
   financeiro: { paraKey: 'financeiro' },
   whatsapp: { paraKey: 'atendimento' },
-  usuarios: { paraKey: 'regua' },
+  usuarios: {
+    paraKey: 'regua',
+    absorvido:
+      'vira a aba "Quem autoriza" da Régua, e a aba é que exige admin.usuarios — ' +
+      'users.controller.ts pede a permissão nas quatro rotas dela, e a tela esconde o botão ' +
+      'de quem não tem. A Régua em si é painel de leitura e pede mcp.ver, como Agentes e ' +
+      'Ferramentas: com admin.usuarios nenhum operador abriria o simulador, que é o critério ' +
+      'da fatia 2.3',
+  },
   auditoria: { paraKey: 'rastro' },
   mcp: { paraKey: 'ferramentas' },
   integracoes: { paraKey: 'conexoes' },
@@ -251,8 +261,25 @@ describe('navPorSecao', () => {
   });
 
   it('aceita array, e não só Set', () => {
-    expect(navPorSecao(['admin.usuarios']).flatMap((g) => g.itens.map((i) => i.key))).toEqual([
-      'regua',
+    expect(navPorSecao(['auditoria.ver']).flatMap((g) => g.itens.map((i) => i.key))).toEqual([
+      'rastro',
     ]);
+  });
+
+  /*
+   * O CRITÉRIO DA FATIA 2.3 EM FORMA DE TESTE: "um operador submete uma ação
+   * hipotética". Enquanto a Régua exigia `admin.usuarios`, ela aparecia para um
+   * perfil só — o Admin Master. Nem o Diretor tinha. Este caso reprova se
+   * alguém devolver a tela para uma permissão que operador nenhum carrega.
+   */
+  it('a Régua chega a quem opera, e não só ao Admin Master', () => {
+    const regua = NAV.find((n) => n.key === 'regua')!;
+    const veem = (Object.keys(ROLES) as RoleKey[]).filter((papel) =>
+      (ROLES[papel].permissions as readonly string[]).includes(regua.permission),
+    );
+    expect(veem).toContain('gestor_marketing');
+    expect(veem).toContain('analista');
+    expect(veem).toContain('admin_master');
+    expect(veem.length).toBeGreaterThan(3);
   });
 });
