@@ -260,7 +260,7 @@ rastro-retenção 33. Pisos da CI: api 983/32, web 187/17.
 público para fora do sistema e a capacidade de WhatsApp classificada como confidencial, **de fábrica
 o canal notifica e não decide** (§4). E a tela de Agentes continua inflando as horas devolvidas (§5).
 
-### Onda 11 — plataforma e porta de entrada · `PENDENTE-HASH` (12/09/2026)
+### Onda 11 — plataforma e porta de entrada · `45d081e` (12/09/2026)
 
 Cinco fatias: onboarding autônomo + carga guiada (6.1+4.5), assinatura e cobrança (6.2), console da
 plataforma (6.3), painel de custo de IA (6.4) e a isca com o mapa da ROOT ao vivo (6.5).
