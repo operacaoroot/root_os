@@ -2,8 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ============================================================
+   ROOT OS — camada de tokens do painel (/painel e os 24 módulos).
+   Portada de apps/web/public/root-os.html:21-62.
+
+   Os valores são TRIPLET RGB, e não hex, porque tailwind.config.ts os
+   consome como `rgb(var(--os-x) / <alpha-value>)`. É isso que mantém os
+   110 usos com modificador de opacidade (bg-bad/10, bg-brand/15,
+   border-bad/40…) funcionando — `var()` puro mata o <alpha-value>. Mesmo
+   padrão que os --central-* já usavam.
+
+   Vivem aqui, e não numa <style> da Sidebar, porque os 11 tokens legados
+   do painel (surface, border, muted, text, brand, good/warn/bad…) agora
+   RESOLVEM daqui: trocar de tema repinta as 37 telas sem editar nenhuma.
+
+   O atributo é data-os-theme, e não data-theme, porque a Central usa
+   `:root[data-theme='light'] .central-root` — se o painel escrevesse
+   data-theme, trocar o tema aqui re-tematizaria a Central junto.
+   As superfícies públicas (/central, /b) não usam nenhum destes tokens
+   (verificado: zero ocorrências), então o atributo pode ficar no <html>
+   o tempo todo, e é o que permite o antiflash em layout.tsx.
+
+   ESCALA DE ESTADO: o acento (limão) é a cor da INTERFACE — seleção,
+   foco, botão primário — e nunca significa estado. Estado tem quatro
+   valores e só quatro: ok (menta), atenção (âmbar), erro (magenta),
+   neutro (--os-tx3).
+   ============================================================ */
+:root,
+:root[data-os-theme='dark'] {
   color-scheme: dark;
+  --os-bg: 5 8 7;
+  --os-bg2: 7 11 9;
+  --os-s1: 10 15 12;
+  --os-s2: 15 21 17;
+  --os-s3: 20 28 23;
+  --os-line: 24 33 27;
+  --os-line-strong: 36 48 41;
+  --os-tx: 228 239 230;
+  --os-tx2: 143 162 149;
+  --os-tx3: 107 127 114;
+  --os-ac: 155 219 31;
+  --os-ac2: 196 255 46;
+  --os-ac-dim: 78 110 16;
+  --os-ac-ink: 5 8 7;
+  --os-mag: 255 31 107;
+  --os-cy: 31 255 168;
+  --os-ok: 31 255 168;
+  --os-warn: 232 185 15;
+  --os-err: 255 31 107;
+  --os-grid: rgb(228 239 230 / 0.016);
+  --os-logo-shadow: 1.5px 0 #ff1f6b, -1px 0 #1fffa8;
+}
+
+:root[data-os-theme='light'] {
+  color-scheme: light;
+  --os-bg: 236 231 216;
+  --os-bg2: 242 238 226;
+  --os-s1: 247 244 234;
+  --os-s2: 239 235 222;
+  --os-s3: 230 225 209;
+  --os-line: 217 211 193;
+  --os-line-strong: 195 187 164;
+  --os-tx: 34 38 28;
+  --os-tx2: 95 102 83;
+  --os-tx3: 101 107 89;
+  --os-ac: 66 98 6;
+  --os-ac2: 50 74 5;
+  --os-ac-dim: 143 173 96;
+  --os-ac-ink: 255 255 255;
+  --os-mag: 173 16 78;
+  --os-cy: 0 100 82;
+  --os-ok: 0 100 82;
+  --os-warn: 122 84 0;
+  --os-err: 173 16 78;
+  --os-grid: rgb(34 38 28 / 0.035);
+  --os-logo-shadow: none;
+}
+
+:root[data-os-theme='mono'] {
+  color-scheme: dark;
+  --os-bg: 0 0 0;
+  --os-bg2: 0 0 0;
+  --os-s1: 10 10 10;
+  --os-s2: 16 16 16;
+  --os-s3: 22 22 22;
+  --os-line: 30 30 30;
+  --os-line-strong: 46 46 46;
+  --os-tx: 242 242 242;
+  --os-tx2: 154 154 154;
+  --os-tx3: 124 124 124;
+  --os-ac: 255 255 255;
+  --os-ac2: 255 255 255;
+  --os-ac-dim: 90 90 90;
+  --os-ac-ink: 0 0 0;
+  --os-mag: 255 59 48;
+  --os-cy: 255 255 255;
+  --os-ok: 48 209 88;
+  --os-warn: 255 214 10;
+  --os-err: 255 59 48;
+  --os-grid: transparent;
+  --os-logo-shadow: none;
+}
+
+/* O fallback interno do var() é obrigatório: sem ele, se --font-jetbrains
+   não estiver definida a declaração font-family inteira é descartada em
+   tempo de valor computado — e não cai na próxima da lista. */
+:root {
+  --os-mono: var(--font-jetbrains, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --os-sans: var(--font-space, 'Space Grotesk'), ui-sans-serif, system-ui, sans-serif;
 }
 
 html,
@@ -11,9 +117,34 @@ body {
   height: 100%;
 }
 
+/* A grade de 48px é a assinatura do protótipo (root-os.html). Fica no body
+   porque o --os-grid some (transparent) no tema mono e clareia no papel. */
 body {
   @apply bg-bg text-text antialiased;
+  background-image:
+    repeating-linear-gradient(0deg, var(--os-grid) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, var(--os-grid) 0 1px, transparent 1px 48px);
   font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Casca autenticada: corpo em Space Grotesk (a fonte de corpo da marca),
+   com o cromo e os números em mono. Escopado em [data-os-app] para não
+   tocar /central e /b, que carregam as próprias fontes. */
+[data-os-app] {
+  font-family: var(--os-sans);
+}
+[data-os-app] ::selection {
+  background: rgb(var(--os-ac));
+  color: rgb(var(--os-ac-ink));
+}
+[data-os-app] :focus-visible {
+  outline: 1px solid rgb(var(--os-ac));
+  outline-offset: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-os-app] * {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Textos legais da bio (públicos, identidade ROOT) */
@@ -157,7 +288,7 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a3446;
+  background: rgb(var(--os-line-strong));
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {

@@ -28,6 +28,30 @@ export type EventoAnalytics =
 /** Prefixo no nome do evento: no painel a Central não se mistura com a landing. */
 export const PREFIXO_EVENTO = "central_";
 
+/**
+ * De QUEM são estes eventos — RF-T-04.
+ *
+ * A API resolve a empresa pela chave do pixel (o `id` da `Org`); sem chave, o
+ * evento cai na empresa padrão. Aqui a chave viaja porque estes eventos são da
+ * Central, e a Central tem dono — não é "de quem estiver configurado como
+ * padrão".
+ *
+ * DUAS COISAS QUE ESTA LINHA NÃO RESOLVE, e é melhor lê-las do que descobri-las:
+ *
+ *  1. `NEXT_PUBLIC_*` é trocada pelo valor no BUILD, não em tempo de execução.
+ *     Pôr a variável só no bloco `environment:` do compose NÃO a faz chegar ao
+ *     pacote do browser: ela precisa ir também como build arg da imagem (o
+ *     `build:` fica no serviço `api`, que não é arquivo desta fatia — está no
+ *     relatório). Sem isso o valor sai vazio, a chave não vai, e o evento cai na
+ *     empresa padrão — que é o comportamento de hoje, não uma quebra.
+ *  2. Chave em código de browser é PÚBLICA por natureza: quem abrir o pacote a
+ *     lê. Isso vale para qualquer pixel — é o motivo de a chave por site, com
+ *     conferência de origem e teto de taxa, estar declarada como o desenho
+ *     seguinte em `apps/api/src/events/pixel-tenant.service.ts`. O que a chave
+ *     resolve aqui é o dono do evento, não o controle de quem escreve.
+ */
+const CHAVE_DO_PIXEL = (process.env.NEXT_PUBLIC_CENTRAL_PIXEL_KEY ?? "").trim();
+
 const SESSION_TTL = 30 * 60 * 1000; // 30 min de inatividade encerram a sessão
 
 function uuid(): string {
@@ -76,6 +100,9 @@ function despacharParaOS(nome: string, payload: Record<string, string | number>)
     referrer: document.referrer || undefined,
     device: /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop",
     ts: Date.now(),
+    // Vazia não vai: chave presente e vazia é RECUSA na API, e perder o evento
+    // é pior do que contá-lo na empresa padrão (ver `CHAVE_DO_PIXEL`).
+    ...(CHAVE_DO_PIXEL ? { pixel_key: CHAVE_DO_PIXEL } : {}),
     ...(Object.keys(payload).length ? { metadata: payload } : {}),
   });
 

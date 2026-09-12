@@ -243,6 +243,10 @@ export class RodadaService {
       const saida = await this.llm.complete({
         system: SYSTEM_CURADORIA,
         user: `Janela: ${janelaIni.toISOString()} até ${janelaFim.toISOString()}\n\nItens coletados:\n\n${lista}`,
+        // De quem é o gasto (RF-G-05). A curadoria roda pela tela E pela rotina
+        // da madrugada; dizer a empresa aqui não depende de quem chamou ter
+        // aberto o contexto — e o agendador abre, desde a correção da 3.6.
+        orgId,
       });
       const cur = parseJsonDaIa<Curadoria>(saida);
 
@@ -332,6 +336,8 @@ export class RodadaService {
         `Edição: ${rodada.titulo}\n\nMiolo curado:\n${rodada.corpo}\n\n` +
         `Itens (com URL):\n${itens.map((i) => `- ${i.titulo} — ${i.url}${i.ganchoBr ? ` (gancho BR: ${i.ganchoBr})` : ''}`).join('\n')}\n\n` +
         `Repertório de estruturas campeãs:\n${repertorio}`,
+      // De quem é o gasto (RF-G-05). Ver o comentário em `gerar`.
+      orgId,
     });
     const p = parseJsonDaIa<PecasGeradas>(saida);
 

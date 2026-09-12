@@ -8,10 +8,16 @@
 > **Diagramas atualizados (archify, abrem no navegador, exportam PNG/SVG):**
 > [`diagrams/system.architecture.html`](diagrams/system.architecture.html) · [`diagrams/ai-mcp.sequence.html`](diagrams/ai-mcp.sequence.html) · [`diagrams/domains.architecture.html`](diagrams/domains.architecture.html)
 >
+> **ATUALIZAÇÃO DE 11/09/2026 — o bot do Telegram foi APOSENTADO** (fatia 5.8). `apps/telegram` saiu
+> do workspace e do compose; a lápide, com o porquê, está no próprio `docker-compose.yml`. Onde este
+> documento diz "o bot" abaixo, leia "o que o bot fazia até 11/09/2026". O laço de agente da API
+> (`apps/api/src/agents`) e a porta (`apps/api/src/gateway`) ocupam aquele lugar, e a aprovação
+> humana acontece na tela `/aprovacoes` e no canal de WhatsApp — não mais num botão de chat.
+>
 > **O que mudou do desenho original para o código real:**
 > | Proposta 2026-07 | Implementação atual |
 > |---|---|
-> | WhatsApp como canal | **Telegram** (bot `apps/telegram`); WhatsApp adiado |
+> | WhatsApp como canal | **WhatsApp**, por Evolution. O Telegram (bot `apps/telegram`) fez esse papel até 11/09/2026 e foi aposentado |
 > | `packages/connectors/*` | conectores **inline** nos módulos (`finance`, `google`, `meta`, `obsidian`, `integrations`) |
 > | Redis + **BullMQ** workers | **sem BullMQ**; sync inline nos services + cron in-process do bot |
 > | Auth.js (sessão) | **JWT** próprio + RBAC em tabela |
@@ -151,10 +157,11 @@ Ver `INTEGRATIONS.md §Pixel` e `DATA_MODEL.md`.
 
 - **`LLMProvider`** — interface única (`complete`, `stream`, `tool_use`). Implementações: `AnthropicProvider` (padrão, Claude), `OpenAIProvider`, `LocalProvider`. Modelo/temperatura por prompt.
 - **A IA só toca dados via MCP tools próprias.** Nunca faz SQL direto, nunca fala com o MCP do escritório. Permissão, log e "não inventar" de graça.
-- **Prompts versionados** — `packages/shared/prompts/<nome>.<versão>.ts`. Toda chamada gera linha em `ai_runs` + `ai_tool_calls`.
-- **Memória estruturada** — decisões, aprendizados, campanhas vencedoras/ruins, personas, ofertas, copys (tabelas + embeddings pgvector). Consultável/atualizável **só com autorização**.
-- **Aprovação humana (enforced no backend)** — a IA **não** escreve pelo MCP (só-leitura). Ação sensível segue: (1) a IA chama `propose_*` (só registra a intenção); (2) o bot cria a aprovação em `POST /approvals` (status `pending`) e devolve um `approval_token`; (3) o humano confirma no Telegram → `POST /approvals/:id/confirm`; (4) a escrita real (`PATCH /leads|tasks|campaigns|content`) só passa carregando o header `x-approval-token` — o **`ApprovalGuard`** valida na API: confirmado, no prazo (TTL 10 min), **single-use** e casando o recurso + a mudança exata (hash canônico). Sem token válido → 403. Duas contas de serviço: `mcp@` (só-leitura) e `ia-acao@` (só `*.editar`). Todo o ciclo entra em `audit_logs` (`approval.propose|confirm|reject|consume`).
-  - **Resíduo conhecido:** o `/confirm` hoje é chamado pela conta de ação (mediado pelo bot), não por uma identidade humana autenticada na API. Fecha bugs do laço de IA, escrita acidental/duplicada e replay; **não** blinda 100% contra roubo da credencial de ação. Fechar de vez exige mapear o usuário do Telegram → identidade da API (futuro).
+- **O que registra a chamada de IA hoje** — o **`EventLog`** do Tool Gateway, junto com `ToolCall` e `PolicyDecision` (`schema.prisma`), mais o `AuditLog` da API. As tabelas `ai_runs` e `ai_tool_calls`, que este documento já prometeu, **não existem** e não aparecem em nenhuma fatia do `PLANO-CONTINUIDADE.md`: quem ocupou esse papel foi o RASTRO do gateway. Ver `MCP_TOOLS.md §Como a segurança é aplicada de verdade`.
+- **Prompts versionados** — *desenho alvo, ainda não construído*. Não existe `packages/shared/prompts/`. O prompt de sistema de cada agente é montado em runtime a partir do `Sop` (`montarSop`, em `apps/api/src/agents/sop.ts`) — que é versionado por agente (campo `versao`), mas não é arquivo versionado no git.
+- **Memória estruturada** — *desenho alvo, ainda não construído* no formato descrito (`ai_memory`, `ai_recommendations`). O que existe de busca semântica hoje é o índice de conhecimento: `KnowledgeNote` com `embedding vector(1536)` (pgvector), consultável **só com autorização** e sempre filtrado por `orgId`.
+- **Aprovação humana (enforced no backend)** — a IA **não** escreve pelo MCP (só-leitura). Ação sensível segue: (1) a IA chama `propose_*` (só registra a intenção); (2) o bot cria a aprovação em `POST /approvals` (status `pending`) e devolve um `approval_token`; (3) o humano confirma na tela `/aprovacoes` — até 11/09/2026 era um botão no Telegram → `POST /approvals/:id/confirm`; (4) a escrita real (`PATCH /leads|tasks|campaigns|content`) só passa carregando o header `x-approval-token` — o **`ApprovalGuard`** valida na API: confirmado, no prazo (TTL 10 min), **single-use** e casando o recurso + a mudança exata (hash canônico). Sem token válido → 403. Duas contas de serviço: `mcp@` (só-leitura) e `ia-acao@` (só `*.editar`). Todo o ciclo entra em `audit_logs` (`approval.propose|confirm|reject|consume`).
+  - **Resíduo FECHADO (onda 10, 11/09/2026):** este item dizia que o `/confirm` era chamado pela conta de ação mediada pelo bot, e não por uma identidade humana autenticada. Foi fechado pelos dois lados: a rota passou a exigir permissão que a conta de máquina não tem, o serviço recusa conta de máquina e recusa o proponente, e o bot que fazia a mediação foi aposentado. Quem confirma é gente autenticada, na tela ou por identidade de canal cadastrada (`ChannelIdentity`).
 
 ---
 

@@ -56,7 +56,6 @@ export default function InstagramPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Instagram · métricas</h1>
           <p className="text-sm text-muted">Conta Business via Login do Facebook (Instagram Graph API).</p>
         </div>
         {st?.connected && can('admin.usuarios') && (
@@ -84,7 +83,7 @@ export default function InstagramPage() {
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted">Ainda não conectado.</span>
             {can('admin.usuarios') ? (
-              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90">
                 <Plug size={15} /> Conectar Instagram
               </button>
             ) : <span className="text-xs text-muted">Só admin conecta.</span>}
@@ -114,7 +113,7 @@ export default function InstagramPage() {
 
       {media && media.length > 0 && (
         <div>
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-medium"><Instagram size={16} className="text-brand" /> Últimos posts</h2>
+          <h2 className="mb-2 flex items-center gap-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted"><Instagram size={16} className="text-brand" /> Últimos posts</h2>
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[720px] text-sm">
               <thead className="bg-surface-2 text-left text-[11px] uppercase tracking-wide text-muted">

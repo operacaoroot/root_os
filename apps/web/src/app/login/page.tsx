@@ -2,12 +2,11 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Rocket } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { API_BASE, apiGet } from '@/lib/api';
 
 const ERROS: Record<string, string> = {
-  'nao-autorizado': 'Esta conta Google não tem acesso ao Marketing OS.',
+  'nao-autorizado': 'Esta conta Google não tem acesso ao ROOT OS.',
   'estado-invalido': 'O pedido de login expirou. Clique em entrar de novo.',
   falhou: 'Não deu para entrar com o Google. Tente de novo.',
 };
@@ -45,7 +44,7 @@ export default function LoginPage() {
       window.history.replaceState(null, '', window.location.pathname);
       setLoading(true);
       loginWithToken(t)
-        .then(() => router.replace('/'))
+        .then(() => router.replace('/painel'))
         .catch((err) => setError((err as Error).message))
         .finally(() => setLoading(false));
       return;
@@ -64,7 +63,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && user) router.replace('/');
+    if (ready && user) router.replace('/painel');
   }, [ready, user, router]);
 
   async function submit(e: FormEvent) {
@@ -73,7 +72,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/');
+      router.replace('/painel');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -82,15 +81,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-bg p-6">
+    // data-os-app aqui também: o login é superfície do painel, não é
+    // pública como /central ou /b. Sem isso a tela ficava na fonte do
+    // sistema enquanto o resto do painel já estava em Space Grotesk.
+    <div data-os-app className="grid min-h-screen place-items-center bg-bg p-6">
       <div className="w-full max-w-sm">
+        {/* Mesma marca do protótipo (root-os.html): o "R" com o glitch de canais
+            e o nome do sistema. O ícone de foguete saiu junto com o nome antigo. */}
         <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand/20 text-brand">
-            <Rocket size={22} />
-          </div>
-          <div>
-            <div className="text-lg font-semibold">Marketing OS</div>
-            <div className="text-xs text-muted">Sistema Operacional de Marketing · root</div>
+          <span
+            aria-hidden
+            className="grid h-11 w-11 place-items-center rounded-root border border-brand/30 bg-brand/10 text-[22px] font-extrabold italic leading-none tracking-[-0.05em] text-brand"
+            style={{ transform: 'skewX(-10deg)', textShadow: 'var(--os-logo-shadow, none)' }}
+          >
+            R
+          </span>
+          <div className="font-os-mono">
+            <div className="text-[15px] font-bold tracking-[-0.02em]">ROOT OS</div>
+            <div className="text-[10px] uppercase tracking-[0.16em] text-muted">
+              a central de contexto
+            </div>
           </div>
         </div>
 
@@ -152,7 +162,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-brand py-2 text-sm font-medium text-white transition hover:bg-brand/90 disabled:opacity-60"
+                className="w-full rounded-lg bg-brand py-2 text-sm font-medium text-ink transition hover:bg-brand/90 disabled:opacity-60"
               >
                 {loading ? 'Entrando…' : 'Entrar'}
               </button>

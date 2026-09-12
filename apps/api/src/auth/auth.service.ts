@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { TIPO_DA_SESSAO } from './jwt-auth.guard';
 
 /** Usuário com papéis e permissões carregados (o que a sessão precisa). */
 export interface UserWithRoles {
@@ -43,6 +44,11 @@ export class AuthService {
     );
     const roles = user.roles.map((r) => r.key);
     const payload = {
+      // Todo token deste sistema declara PARA QUE serve. Sem isto, qualquer
+      // token assinado com a mesma chave passava pelo `JwtAuthGuard` — inclusive
+      // o `state` de 10 minutos que o login com Google publica numa rota
+      // anônima, que não tem `sub` nem `orgId` (ver `jwt-auth.guard.ts`).
+      typ: TIPO_DA_SESSAO,
       sub: user.id,
       orgId: user.orgId,
       email: user.email,

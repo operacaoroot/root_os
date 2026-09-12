@@ -12,6 +12,38 @@ datasource db {
   extensions = [vector] // pgvector (busca semântica da base de conhecimento)
 }
 
+// ============================================================================
+// orgId redundante em todo filho de tenant (RF-T-01)
+//
+// Dez modelos só alcançavam a empresa pelo pai (LeadEvent por Lead, BioLink por
+// BioPage, WorkComment por WorkTask...). Consulta que esquece o join sai sem
+// tenant, e isolamento por linha no Postgres não tem em que coluna se apoiar.
+// Desde `20260910120000_orgid_em_todo_filho` os dez carregam `orgId`.
+//
+// O `@default("")` NÃO é valor: é sentinela. Um gatilho BEFORE INSERT OR UPDATE
+// (`<Tabela>_orgId_do_pai`) troca a sentinela pelo orgId do pai e RECUSA a linha
+// cujo orgId não bate com o do pai — é o que impede, NA ESCRITA DO FILHO,
+// pendurar filho de uma empresa em pai de outra, coisa que a chave estrangeira
+// simples não enxerga. Se um dia o gatilho sumir, a sentinela vira violação de
+// FK contra Org: falha fechada e barulhenta, nunca linha órfã de tenant.
+//
+// Limitação conhecida: mudar o `orgId` do PAI depois deixa o filho na empresa
+// antiga — não há gatilho de propagação. O porquê está no cabeçalho da migration
+// e em `src/common/modelos-globais.ts`; quem detecta é o teste de isolamento.
+//
+// WorkFieldValue tem TRÊS pais (tarefa, campo e opção escolhida) e três
+// gatilhos: derivar de um só deixaria passar valor com opção de outra empresa.
+//
+// A sentinela existe para o campo continuar OPCIONAL no `create` do Prisma:
+// as ~20 chamadas que hoje criam esses filhos sem informar orgId seguem
+// compilando e passam a gravar o tenant certo. Informar orgId explicitamente
+// continua sendo o certo — aí o gatilho vira conferência, não mecanismo.
+//
+// Quem é GLOBAL por desenho (Org, Permission, BioVisitor, Capability) está
+// declarado em `src/common/modelos-globais.ts`. O teste de isolamento reprova
+// modelo novo sem orgId que não esteja naquela lista.
+// ============================================================================
+
 // ---------- Identidade, acesso, auditoria ----------
 model Org {
   id        String   @id @default(uuid())
@@ -19,6 +51,24 @@ model Org {
   slug      String   @unique
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  /// Módulos de domínio contratados por esta empresa — RF-T-06.
+  ///
+  /// As chaves válidas são as de `MODULOS` em `packages/shared/src/nav.ts`, que
+  /// é a fonte única: o menu do web e o guard da API leem a MESMA lista. Nada
+  /// aqui é enum do Prisma de propósito — enum viraria uma segunda lista, e
+  /// acrescentar módulo passaria a exigir migration de tipo além da de dados.
+  ///
+  /// VAZIO SIGNIFICA "SÓ A ESPINHA DO OS", não "tudo": um tenant novo nasce sem
+  /// módulo nenhum e o que ele enxerga é só o que fala do sistema (central,
+  /// quem trabalha, controle, o que existe, a conta). Por isso o default é `[]`
+  /// e a migration `20260911013000_modulos_habilitados_por_org` PREENCHE as
+  /// empresas que já existiam com a lista inteira — quem já estava dentro não
+  /// pode perder tela por causa de uma coluna nova.
+  ///
+  /// Quem provisiona empresa (seed, script, tela futura) informa este campo
+  /// EXPLICITAMENTE. Confiar no default aqui é nascer com o painel vazio.
+  modulos String[] @default([])
 
   users        User[]
   roles        Role[]
@@ -36,6 +86,19 @@ model Org {
   meta         MetaAccount?
   goalWeeks    GoalWeek[]
   goalConfig   GoalConfig?
+
+  // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
+  policyVersions  PolicyVersion[]
+  policyDecisions PolicyDecision[]
+  toolCalls       ToolCall[]
+  approvals       Approval[]
+  eventLogs       EventLog[]
+  rastroRetencao  RastroRetencao?
+
+  // A tripulação (ver "Tripulação" no fim do arquivo)
+  agents      Agent[]
+  sessions    Session[]
+  identidades ChannelIdentity[]
 
   financeAccounts     FinanceAccount[]
   financeCategories   FinanceCategory[]
@@ -69,6 +132,68 @@ model Org {
   pautaRotinas     PautaRotina[]
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
+
+  // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
+  leadEvents            LeadEvent[]
+  integrationHealths    IntegrationHealth[]
+  bioLinks              BioLink[]
+  bioChallengeAccounts  BioChallengeAccount[]
+  bioChallengePosts     BioChallengePost[]
+  bioChallengeSnapshots BioChallengeSnapshot[]
+  workStatuses          WorkStatus[]
+  workFieldOptions      WorkFieldOption[]
+  workFieldValues       WorkFieldValue[]
+  workComments          WorkComment[]
+
+  // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
+  // mora aqui: é o que o Prisma exige, e nada além disso.
+  tetoDeCustoIa TetoDeCustoIa?
+  gastoDeIaDia  GastoDeIaNoDia[]
+
+  // Fatia 3.7 — RF-G-06 (bloco no fim do arquivo).
+  conectoresDesligados ConectorDesligado[]
+
+  // Fatia 5.3 — O COFRE, RF-C-01..04 (bloco no fim do arquivo). Mesma regra das
+  // duas de cima: só o outro lado da relação mora aqui, que é o que o Prisma
+  // exige, e nada além disso.
+  segredosDeConector SegredoDeConector[]
+
+  // Fatia 4.1+4.2 — A MEMÓRIA, RF-M-01/RF-M-06 (bloco no fim do arquivo, e
+  // ADR-011). Mesma regra das de cima: só o outro lado da relação mora aqui.
+  contextItems    ContextItem[]
+  contextVersions ContextItemVersion[]
+
+  // Fatia 5.1 — ROTINAS POR EMPRESA, RF-N-04 (bloco no fim do arquivo). Mesma
+  // regra das de cima: só o outro lado da relação mora aqui, porque é o que o
+  // Prisma exige, e nada além disso.
+  rotinas         Rotina[]
+  rotinaExecucoes RotinaExecucao[]
+
+  // Fatia 6.5 — O MAPA PÚBLICO (bloco no fim do arquivo). Mesma regra das de
+  // cima: só o outro lado da relação mora aqui, porque é o que o Prisma exige.
+  mapaPublico MapaPublicoItem[]
+
+  // Fatia 6.2 — ASSINATURA E COBRANÇA, RF-O-03 (bloco no fim do arquivo). Mesma
+  // regra das de cima: só o outro lado da relação mora aqui.
+  //
+  // A ASSINATURA NÃO ENTRA COMO CAMPO DA `Org`, e é decisão. Um `Org.suspensa`
+  // booleano seria mais curto e destruiria o que a fatia promete: suspender
+  // precisa guardar POR QUE, DESDE QUANDO e COM BASE EM QUAL COBRANÇA, para que
+  // reativar devolva exatamente o estado anterior. Um booleano não tem onde
+  // guardar nada disso — e um booleano que alguém "limpa" na reativação apaga a
+  // própria prova de que houve suspensão.
+  assinatura         Assinatura?
+  cobrancasAssinatura CobrancaDeAssinatura[]
+
+  // Fatia 6.3 — O CONSOLE DA PLATAFORMA, RF-B-02 (bloco no fim do arquivo).
+  // Mesma regra das de cima: só o outro lado da relação mora aqui.
+  //
+  // As duas apontam para empresas de PAPÉIS diferentes, e é o desenho da fatia:
+  // `empresasNaPlataforma` só tem linha quando ESTA Org é a plataforma (é o
+  // registro dela sobre os clientes); `acessosDeSuporte` só tem linha quando
+  // ESTA Org é um CLIENTE que autorizou suporte a entrar.
+  empresasNaPlataforma EmpresaNaPlataforma[]
+  acessosDeSuporte     AcessoDeSuporte[]
 }
 
 model User {
@@ -87,6 +212,9 @@ model User {
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
 
+  agentesQueDono Agent[]           @relation("AgentDono")
+  identidades    ChannelIdentity[]
+
   @@index([orgId])
 }
 
@@ -102,6 +230,9 @@ model Role {
   @@unique([orgId, key])
 }
 
+/// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em
+/// toda empresa e quem amarra permissão a empresa é o Role.
+/// Declarado em `src/common/modelos-globais.ts`.
 model Permission {
   id    String @id @default(uuid())
   key   String @unique
@@ -163,6 +294,9 @@ model IntegrationAccount {
 
 model IntegrationHealth {
   id         String             @id @default(uuid())
+  /// Sentinela + gatilho `IntegrationHealth_orgId_do_pai` (ver topo do arquivo).
+  orgId      String             @default("")
+  org        Org                @relation(fields: [orgId], references: [id])
   accountId  String             @unique
   account    IntegrationAccount @relation(fields: [accountId], references: [id])
   status     HealthStatus       @default(down)
@@ -171,6 +305,8 @@ model IntegrationHealth {
   lastError  String?
   latencyMs  Int?
   checkedAt  DateTime           @default(now())
+
+  @@index([orgId])
 }
 
 // ---------- Leads ----------
@@ -232,6 +368,9 @@ model Lead {
 
 model LeadEvent {
   id         String   @id @default(uuid())
+  /// Sentinela + gatilho `LeadEvent_orgId_do_pai` (ver topo do arquivo).
+  orgId      String   @default("")
+  org        Org      @relation(fields: [orgId], references: [id])
   leadId     String
   lead       Lead     @relation(fields: [leadId], references: [id])
   type       String
@@ -239,6 +378,7 @@ model LeadEvent {
   occurredAt DateTime @default(now())
 
   @@index([leadId])
+  @@index([orgId, occurredAt])
 }
 
 // ---------- Campanhas ----------
@@ -833,6 +973,9 @@ model BioPage {
 
 model BioLink {
   id       String      @id @default(uuid())
+  /// Sentinela + gatilho `BioLink_orgId_do_pai` (ver topo do arquivo).
+  orgId    String      @default("")
+  org      Org         @relation(fields: [orgId], references: [id])
   pageId   String
   page     BioPage     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   ordem    Int
@@ -845,6 +988,7 @@ model BioLink {
   criadoEm DateTime    @default(now())
 
   @@index([pageId, ordem])
+  @@index([orgId])
 }
 
 model BioChallenge {
@@ -868,6 +1012,9 @@ model BioChallenge {
 
 model BioChallengeAccount {
   id            String         @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengeAccount_orgId_do_pai` (ver topo do arquivo).
+  orgId         String         @default("")
+  org           Org            @relation(fields: [orgId], references: [id])
   challengeId   String
   challenge     BioChallenge   @relation(fields: [challengeId], references: [id], onDelete: Cascade)
   plataforma    BioPlataforma
@@ -887,12 +1034,16 @@ model BioChallengeAccount {
 
   @@unique([challengeId, plataforma, handle])
   @@index([conexaoId])
+  @@index([orgId])
 }
 
 // Uma linha por post. A contagem é COUNT nosso, não campo de terceiro:
 // post deletado não zera o histórico em silêncio e a bio sobrevive à API fora do ar.
 model BioChallengePost {
   id          String              @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengePost_orgId_do_pai` (ver topo do arquivo).
+  orgId       String              @default("")
+  org         Org                 @relation(fields: [orgId], references: [id])
   contaId     String
   conta       BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
   externalId  String
@@ -904,12 +1055,16 @@ model BioChallengePost {
 
   @@unique([contaId, externalId])
   @@index([contaId, publicadoEm])
+  @@index([orgId, publicadoEm])
 }
 
 // Append-only. Nunca sobrescrever: histórico tem que sobreviver a mudança de
 // fórmula ou de fonte de coleta.
 model BioChallengeSnapshot {
   id            String              @id @default(uuid())
+  /// Sentinela + gatilho `BioChallengeSnapshot_orgId_do_pai` (ver topo do arquivo).
+  orgId         String              @default("")
+  org           Org                 @relation(fields: [orgId], references: [id])
   contaId       String
   conta         BioChallengeAccount @relation(fields: [contaId], references: [id], onDelete: Cascade)
   coletadoEm    DateTime            @default(now())
@@ -920,6 +1075,7 @@ model BioChallengeSnapshot {
   bruto         Json?
 
   @@index([contaId, coletadoEm])
+  @@index([orgId, coletadoEm])
 }
 
 // Conta de plataforma autorizada por OAuth. Vive na org, não no desafio: conecta
@@ -978,6 +1134,9 @@ model BioOauthState {
 
 // Identidade de cookie. Sem orgId de propósito: o mesmo browser pode visitar
 // páginas de orgs diferentes (mesmo racional do PixelEvent.anonymousId).
+// GLOBAL declarado em `src/common/modelos-globais.ts`. Os filhos (BioVisit,
+// BioEvent) não dependem daqui para achar a empresa: carregam orgId próprio,
+// vindo da BioPage.
 model BioVisitor {
   id            String   @id
   primeiroVisto DateTime @default(now())
@@ -1365,6 +1524,9 @@ model WorkList {
 
 model WorkStatus {
   id     String         @id @default(uuid())
+  /// Sentinela + gatilho `WorkStatus_orgId_do_pai` (ver topo do arquivo).
+  orgId  String         @default("")
+  org    Org            @relation(fields: [orgId], references: [id])
   listId String
   list   WorkList       @relation(fields: [listId], references: [id], onDelete: Cascade)
   name   String
@@ -1375,6 +1537,7 @@ model WorkStatus {
   tasks WorkTask[]
 
   @@unique([listId, name])
+  @@index([orgId])
 }
 
 model WorkTag {
@@ -1408,6 +1571,9 @@ model WorkField {
 
 model WorkFieldOption {
   id      String    @id @default(uuid())
+  /// Sentinela + gatilho `WorkFieldOption_orgId_do_pai` (ver topo do arquivo).
+  orgId   String    @default("")
+  org     Org       @relation(fields: [orgId], references: [id])
   fieldId String
   field   WorkField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
   name    String
@@ -1417,6 +1583,7 @@ model WorkFieldOption {
   values WorkFieldValue[]
 
   @@unique([fieldId, name])
+  @@index([orgId])
 }
 
 model WorkTask {
@@ -1452,8 +1619,14 @@ model WorkTask {
   @@index([orgId, archived, dueDate])
 }
 
+/// Dois pais obrigatórios (WorkTask e WorkField). Aqui o gatilho é DOIS: o
+/// primeiro deriva o orgId da tarefa, o segundo confere contra o do campo — é
+/// assim que "os dois pais são da mesma empresa" vira garantia do banco.
 model WorkFieldValue {
   id       String           @id @default(uuid())
+  /// Sentinela + gatilhos `WorkFieldValue_orgId_*` (ver topo do arquivo).
+  orgId    String           @default("")
+  org      Org              @relation(fields: [orgId], references: [id])
   taskId   String
   task     WorkTask         @relation(fields: [taskId], references: [id], onDelete: Cascade)
   fieldId  String
@@ -1463,10 +1636,14 @@ model WorkFieldValue {
   value    String? // tipos não-dropdown (texto/número/data/checkbox/url)
 
   @@unique([taskId, fieldId])
+  @@index([orgId])
 }
 
 model WorkComment {
   id         String   @id @default(uuid())
+  /// Sentinela + gatilho `WorkComment_orgId_do_pai` (ver topo do arquivo).
+  orgId      String   @default("")
+  org        Org      @relation(fields: [orgId], references: [id])
   taskId     String
   task       WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   authorId   String?
@@ -1475,4 +1652,1746 @@ model WorkComment {
   createdAt  DateTime @default(now())
 
   @@index([taskId, createdAt])
+  @@index([orgId, createdAt])
+}
+
+// ============================================================================
+// Régua, porta e rastro — a escada R0-R5 saindo do papel.
+//
+// O motor de decisão é @mktos/policy, puro e sem I/O, cópia byte a byte do
+// anexo normativo. O que mora aqui é a CASCA: o catálogo como dado, a política
+// versionada por empresa, e o registro do que a porta decidiu e executou.
+// ============================================================================
+
+enum RiskLevel {
+  R0
+  R1
+  R2
+  R3
+  R4
+  R5
+}
+
+enum Alcada {
+  operador
+  responsavel
+  titular
+}
+
+/// Catálogo de capacidades. GLOBAL, sem orgId de propósito: a diferença entre
+/// empresas mora no PolicyVersion, não numa cópia do catálogo por tenant —
+/// duplicar 60 linhas por cliente é garantir que um dia divergem.
+/// Declarado em `src/common/modelos-globais.ts`.
+model Capability {
+  id           String    @id // id pontuado do documento: "whatsapp.mensagem.enviar"
+  descricao    String
+  level        RiskLevel
+  /// Objeto Efeito de @mktos/policy. É ELE que a régua classifica — o `level`
+  /// acima é a declaração, e o teste reprova quando os dois divergem.
+  efeito       Json
+  /// Chaves que entram no canonicalHash da aprovação. Vazio = o corpo inteiro
+  /// entra (falha fechada: capacidade que esqueceu de declarar prende a
+  /// aprovação a tudo, o que é estrito, não frouxo).
+  hashKeys     String[]
+  /// JSON Schema dos argumentos, para o gateway validar antes de classificar.
+  argsSchema   Json?
+  /// Nome como o modelo enxerga. A API de tool-calling só aceita [A-Za-z0-9_-],
+  /// então nunca é o id pontuado. Nulo = nenhum agente alcança.
+  ferramenta   String?   @unique
+  /// `MÉTODO /caminho` que implementa. Nulo = declarada e não implementada.
+  rota         String?
+  desfazer     String?
+  /// Módulo que traz a capacidade — desligou o módulo, sai do alcance.
+  moduloKey    String?
+  isBuiltin    Boolean   @default(true)
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  decisoes  PolicyDecision[]
+  toolCalls ToolCall[]
+
+  @@index([moduloKey])
+  @@index([level])
+}
+
+/// Política em vigor. orgId NULO = a base ROOT que todas herdam.
+model PolicyVersion {
+  id        String    @id @default(uuid())
+  orgId     String?
+  org       Org?      @relation(fields: [orgId], references: [id])
+  versao    Int
+  /// Documento RESOLVIDO (base + delta aplicado) — é o que o serviço carrega.
+  documento Json
+  /// Só o que esta empresa sobrescreveu. Nulo na base.
+  delta     Json?
+  /// DOIS diffs, com a REFERÊNCIA no nome — `DiffDePolitica` de @mktos/policy:
+  /// capacidade por capacidade (`de`, `para`, `direcao`, `campos`, `travas`),
+  /// limite por limite e seção por seção (RF-P-04, "com data e responsável").
+  ///
+  /// São dois porque são duas perguntas, e uma coluna só chamada `diff` fazia
+  /// três escritores gravarem referências diferentes nela: a sobrescrita
+  /// gravava contra a base, a reaplicação contra a versão anterior da empresa
+  /// e o seed da base contra a versão anterior da base. Quem lesse numa tela
+  /// compararia coisas diferentes sem saber.
+  ///
+  /// `diffDaBase` — o que ESTA EMPRESA tem de diferente da base herdada da
+  /// ROOT. Nulo na versão da própria base (orgId nulo), onde a pergunta não
+  /// existe.
+  diffDaBase Json?
+  /// `diffDaVersaoAnterior` — o que ESTA VERSÃO mudou em relação à anterior do
+  /// MESMO escopo (a base anterior, ou a versão anterior desta empresa). É o
+  /// diff honesto sobre a direção: uma queda de R4 para R3 aparece aqui como
+  /// `desce`, enquanto contra a base (que é R2) ela é `sobe`. Nulo na primeira
+  /// versão, que não tem anterior.
+  ///
+  /// Gravados, e não recalculados na leitura, de propósito: a base muda. Seis
+  /// meses depois, recalcular contra a base de hoje responderia outra pergunta
+  /// — e a que o histórico precisa responder é "o que esta pessoa mudou,
+  /// quando mudou".
+  diffDaVersaoAnterior Json?
+  /// Obrigatório quando um nível DESCE ou a aprovação de R2 é desligada:
+  /// "descer nível nunca é automático" é invariante da escada. Quem cobra é
+  /// `recusasDaSobrescrita()` em @mktos/policy, chamada pelo PolicyService.
+  motivo    String
+  /// O responsável do RF-P-06. `String?` e não relação com User porque a base
+  /// ROOT (orgId nulo) é semeada por script, sem usuário nenhum logado — e uma
+  /// FK obrigatória ali tornaria o seed impossível. Sobrescrita de empresa SEM
+  /// este campo é recusada quando afrouxa alguma coisa; é a trava, não a coluna.
+  autorId   String?
+  ativaDe   DateTime  @default(now())
+  ativaAte  DateTime?
+  criadoEm  DateTime  @default(now())
+
+  decisoes PolicyDecision[]
+
+  @@unique([orgId, versao])
+  @@index([orgId, ativaDe])
+}
+
+/// O que a régua decidiu, por chamada. Existe separado do ToolCall porque a
+/// RECUSA também é uma decisão registrada — e é o número que a tela da Régua
+/// mostra em "N em 30 dias".
+model PolicyDecision {
+  id              String         @id @default(uuid())
+  orgId           String
+  org             Org            @relation(fields: [orgId], references: [id])
+  capabilityId    String?
+  capability      Capability?    @relation(fields: [capabilityId], references: [id])
+  policyVersionId String?
+  policyVersion   PolicyVersion? @relation(fields: [policyVersionId], references: [id])
+
+  nivelBase      RiskLevel
+  nivel          RiskLevel
+  permitido      Boolean
+  exigeAprovacao Boolean
+  sinais         String[]
+  motivo         String
+  /// Com que porta esta linha foi escrita: `impor` ou `observar`. O modo NÃO
+  /// altera o fluxo — desde 10/09/2026 observar bloqueia R5 e retém o que exige
+  /// aprovação exatamente como impor (ver `gateway/tool-gateway.service.ts`).
+  /// O que observar afrouxa é o CARIMBO do registro, e é por esta coluna que o
+  /// relatório de calibragem separa as decisões tomadas em cada modo antes de
+  /// alguém virar a chave (`src/scripts/relatorio-observar.ts`).
+  modo           String    @default("impor")
+  criadoEm       DateTime  @default(now())
+
+  @@index([orgId, criadoEm])
+  @@index([orgId, nivel])
+}
+
+enum ToolCallStatus {
+  executado
+  aguardando_aprovacao
+  recusado
+  erro
+}
+
+/// Uma passagem pela porta. É daqui que sai "usada por · agente · N chamadas".
+model ToolCall {
+  id            String         @id @default(uuid())
+  orgId         String
+  org           Org            @relation(fields: [orgId], references: [id])
+  capabilityId  String?
+  capability    Capability?    @relation(fields: [capabilityId], references: [id])
+  decisionId    String?
+  sessionId     String?
+  agentSlug     String?
+  actorType     ActorType      @default(ai)
+  actorId       String?
+  status        ToolCallStatus
+  /// Argumentos já validados e normalizados. Redigidos conforme a
+  /// sensibilidade da capacidade — segredo nunca entra cru.
+  args          Json?
+  resultado     Json?
+  erro          String?
+  nivel         RiskLevel?
+  approvalId    String?
+  duracaoMs     Int            @default(0)
+  correlationId String?
+  criadoEm      DateTime       @default(now())
+
+  @@index([orgId, criadoEm])
+  @@index([orgId, capabilityId, criadoEm])
+  @@index([correlationId])
+  @@index([agentSlug, criadoEm])
+}
+
+enum ApprovalState {
+  pendente
+  confirmada
+  consumida
+  rejeitada
+  expirada
+}
+
+/// A fila de aprovação. Saiu do Map em memória: no Map o uso único era seguro
+/// por acidente (um processo, JS single-threaded); em tabela, duas requisições
+/// simultâneas consumiriam o mesmo token e a mensagem sairia duas vezes. Quem
+/// impede é o updateMany condicional em ApprovalsService.consumeForWrite.
+model Approval {
+  id              String        @id @default(uuid())
+  orgId           String
+  org             Org           @relation(fields: [orgId], references: [id])
+  decisionId      String?
+  toolCallId      String?
+  capabilityId    String?
+  /// Invariante 7 da escada: quem aprova nunca é quem propôs.
+  propostoPorId   String
+  propostoPorTipo ActorType     @default(ai)
+  resourceType    String
+  resourceId      String
+  /// canonicalHash sobre as hashKeys da capacidade — o bind ao conteúdo exato.
+  contentHash     String
+  resumo          String
+  status          ApprovalState @default(pendente)
+  nivelExigido    RiskLevel     @default(R3)
+  alcadaMinima    Alcada        @default(operador)
+  exigeReauth     Boolean       @default(false)
+  motivo          String?
+  canal           String?
+  /// sha256 do token. O token cru é devolvido UMA vez e nunca persistido.
+  tokenHash       String        @unique
+  aprovadoPorId   String?
+  aprovadoEm      DateTime?
+  reautenticadoEm DateTime?
+  consumidoEm     DateTime?
+  expiraEm        DateTime
+  criadoEm        DateTime      @default(now())
+
+  @@index([orgId, status, expiraEm])
+  @@index([orgId, criadoEm])
+}
+
+/// RASTRO append-only e encadeado por hash.
+///
+/// O AuditLog continua existindo e continua sendo escrito — este modelo NÃO o
+/// substitui nesta rodada. A diferença é que aqui o registro é PRÉ-CONDIÇÃO de
+/// execução: a porta grava, faz commit, e só então executa o efeito.
+///
+/// Append-only de verdade só vale quando a aplicação parar de conectar como
+/// dona das tabelas. Até lá as RULEs da migration derrotam um update acidental,
+/// mas a garantia é convenção — e a tela do Rastro diz isso.
+model EventLog {
+  id            String     @id @default(uuid())
+  orgId         String
+  org           Org        @relation(fields: [orgId], references: [id])
+  /// Sequência por empresa, serializada por advisory lock.
+  seq           BigInt
+  tipo          String
+  actorType     ActorType  @default(ai)
+  actorId       String?
+  agentSlug     String?
+  capabilityId  String?
+  toolCallId    String?
+  decisionId    String?
+  nivel         RiskLevel?
+  correlationId String?
+  payload       Json?
+  contentHash   String?
+  prevHash      String?
+  hash          String
+  retencaoAte   DateTime
+  ocorreuEm     DateTime   @default(now())
+
+  /// Fatia 4.1+4.2 — o outro lado do elo de `ContextItemVersion.eventoId`. Só
+  /// isto mora aqui, que é o mínimo que o Prisma exige para a chave estrangeira
+  /// existir; a regra (`SET NULL` no expurgo) está declarada do lado de lá.
+  versoesDeMemoria ContextItemVersion[] @relation("EventoDaVersaoDeMemoria")
+
+  @@unique([orgId, seq])
+  @@index([orgId, ocorreuEm])
+  @@index([orgId, tipo])
+  @@index([correlationId])
+}
+
+// ============================================================================
+// Tripulação — os agentes, os procedimentos e o traço de cada sessão.
+//
+// Um agente, um trabalho (RF-N-01). Começa SEM permissão nenhuma e recebe
+// capacidade nomeada: capacidade fora da declaração é recusada pela porta.
+// ============================================================================
+
+enum AgentEstado {
+  rodando
+  aprendendo
+  planejado
+  pausado
+}
+
+enum AgentTipo {
+  /// Chama modelo, propõe ferramenta, tem SOP. É agente no sentido do produto.
+  llm
+  /// Sincroniza um conector. Não chama modelo e não tem custo de token — mas
+  /// tem dono, missão e execução registrada, que é o que a tela precisa.
+  conector
+}
+
+model Agent {
+  id       String  @id @default(uuid())
+  orgId    String
+  org      Org     @relation(fields: [orgId], references: [id])
+  slug     String
+  nome     String
+  iniciais String  @default("")
+  missao   String
+  pilar    String?
+  donoId   String?
+  dono     User?   @relation("AgentDono", fields: [donoId], references: [id])
+
+  tipo   AgentTipo   @default(llm)
+  estado AgentEstado @default(planejado)
+
+  /// RF-N-03: as ferramentas que ele declarou. Fora desta lista, a porta recusa.
+  capacidades  String[]
+  /// Até onde ele vai sozinho. A porta é quem impõe; isto é o teto declarado.
+  autonomiaAte RiskLevel @default(R0)
+  /// RF-N-07: agente que erra tem a autonomia rebaixada por 24h.
+  rebaixadoAte DateTime?
+  rebaixadoPor String?
+
+  modelo       String?
+  effort       String   @default("high")
+  maxPassos    Int      @default(8)
+  tetoCustoUsd Decimal  @default(0.50) @db.Decimal(10, 4)
+  tetoSegundos Int      @default(180)
+  /// As regras da casa DESTE agente — o ContextItem do PRD em versão mínima.
+  contextoFixo String[]
+
+  cron  String?
+  tz    String  @default("America/Sao_Paulo")
+  ativo Boolean @default(true)
+
+  /// RF-N-05. É a linha de base DECLARADA por uma pessoa: quantos minutos
+  /// alguém gastava nisso por execução. Zero = ninguém informou ainda, e a
+  /// tela mostra "—", nunca um número inventado.
+  minutosPorExecucao Int       @default(0)
+  baselinePorId      String?
+  baselineEm         DateTime?
+  execucoes          Int       @default(0)
+  falhas             Int       @default(0)
+
+  ultimaExecucaoEm  DateTime?
+  ultimoStatus      String?
+  proximaExecucaoEm DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  sop      Sop?
+  sessions Session[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, estado])
+  @@index([ativo, cron])
+}
+
+/// RF-N-02: formato fixo. A ESCALAÇÃO e as regras da casa NÃO moram aqui —
+/// são constantes do código (src/agents/sop.ts). Guardar em banco seria
+/// convidar a editar, e o requisito diz que o texto não é editável.
+model Sop {
+  id      String @id @default(uuid())
+  orgId   String
+  agentId String @unique
+  agent   Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  proposito         String
+  gatilho           String
+  passos            String[]
+  definicaoDePronto String
+  observacoes       String?
+
+  versao        Int      @default(1)
+  atualizadoPor String?
+  atualizadoEm  DateTime @updatedAt
+  criadoEm      DateTime @default(now())
+}
+
+enum SessionCanal {
+  web
+  whatsapp
+  telegram
+  terminal
+  rotina
+  mcp
+}
+
+enum SessionStatus {
+  rodando
+  respondida
+  executada
+  retida
+  recusada
+  falhou
+}
+
+/// Uma troca com a central, do pedido ao registro. É o que a tela de Sessões
+/// mostra — e o que não existia: o sistema registrava decisões, não conversas.
+model Session {
+  id      String @id @default(uuid())
+  orgId   String
+  org     Org    @relation(fields: [orgId], references: [id])
+  agentId String
+  /// SEM onDelete: Cascade. Agente sai de circulação com estado 'pausado',
+  /// nunca com DELETE — apagar o agente apagaria o histórico dele.
+  agent   Agent  @relation(fields: [agentId], references: [id])
+
+  canal             SessionCanal
+  canalRef          String?
+  solicitanteId     String?
+  solicitanteRotulo String
+
+  pedido   String
+  resposta String @default("")
+
+  status   SessionStatus @default(rodando)
+  nivelMax RiskLevel?
+  motivo   String?
+
+  fontes         Json    @default("[]")
+  /// A resposta trouxe número sem citar fonte. Não bloqueia — sinaliza, e é
+  /// o KPI "sem procedência" da tela.
+  semProcedencia Boolean @default(false)
+
+  custoUsd      Decimal @default(0) @db.Decimal(10, 6)
+  /// false = o modelo servido está fora da tabela de preço. A tela mostra
+  /// "não medido", nunca R$ 0,00.
+  custoEstimado Boolean @default(true)
+  provider      String?
+  modelo        String?
+  tokensIn      Int     @default(0)
+  tokensOut     Int     @default(0)
+  passos        Int     @default(0)
+  duracaoMs     Int     @default(0)
+
+  ultimaAtividadeEm DateTime  @default(now())
+  encerradaEm       DateTime?
+  criadaEm          DateTime  @default(now())
+
+  steps SessionStep[]
+
+  @@index([orgId, criadaEm])
+  @@index([orgId, canal, criadaEm])
+  @@index([orgId, agentId, criadaEm])
+  @@index([orgId, status])
+  /// Retomada: a sessão viva daquele canal e daquele contato.
+  @@index([orgId, canal, canalRef, ultimaAtividadeEm])
+  /// O sinal de "respondeu sem fonte" (RF-M-02) conta sessões marcadas na
+  /// janela de 24h, e essa contagem roda no caminho MAIS QUENTE do sistema —
+  /// toda passagem pela porta, em `SinaisService.respostasSemFonte`. Os índices
+  /// acima são por `criadaEm`; este filtro é por `semProcedencia` +
+  /// `encerradaEm`, e sem ele a consulta varre a tabela de sessões inteira.
+  @@index([orgId, semProcedencia, encerradaEm])
+}
+
+enum SessionStepTipo {
+  pedido
+  contexto
+  modelo
+  ferramenta
+  aprovacao
+  resultado
+  erro
+}
+
+/// Os 6 blocos do traço saem daqui. Nenhum é campo: todos são reconstruídos
+/// dos passos, que é o que permite a tela mostrar a sessão como ela aconteceu.
+model SessionStep {
+  id        String          @id @default(uuid())
+  orgId     String
+  sessionId String
+  session   Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ordem     Int
+  tipo      SessionStepTipo
+
+  // bloco 03 — as ferramentas chamadas
+  capacidade      String?
+  /// "trimestre 3 · 2026" — é o que a tela mostra, não o JSON cru.
+  argsResumo      String?
+  args            Json?
+  resultadoResumo String?
+  toolCallId      String?
+
+  // bloco 04 — a régua decidiu. A porta preenche; o runtime só copia.
+  nivel      RiskLevel?
+  decisao    String?
+  motivo     String?
+  gatilhos   String[]
+  approvalId String?
+
+  // o custo mora no passo, e a sessão soma
+  provider         String?
+  modelo           String?
+  tokensIn         Int?
+  tokensOut        Int?
+  tokensCacheRead  Int?
+  tokensCacheWrite Int?
+  custoUsd         Decimal? @db.Decimal(10, 6)
+  custoEstimado    Boolean  @default(true)
+  stopReason       String?
+
+  fontes  Json    @default("[]")
+  /// POR QUE não havia dado, no passo de contexto (RF-M-02).
+  ///
+  /// `nada_na_base`, `notas_sem_corpo` ou `busca_indisponivel` — os três motivos
+  /// de `ContextBuilder.montar`. Nulo quando entrou dado, e nulo em todo passo
+  /// que não é de contexto.
+  ///
+  /// Existe porque lista vazia não distingue "a base desta empresa não tem" de
+  /// "não deu para olhar", e as duas levam a conversas opostas com o cliente. O
+  /// construtor de contexto já sabia a diferença desde a onda 10; ninguém lia.
+  motivoSemDado String?
+  /// Blocos crus do provider. Permite retomar sem perder o thinking — remover
+  /// ou reordenar quebra a assinatura e a API recusa o turno seguinte.
+  payload Json?
+  texto   String?
+  erro    String?
+
+  duracaoMs Int      @default(0)
+  criadoEm  DateTime @default(now())
+
+  @@unique([sessionId, ordem])
+  @@index([sessionId, ordem])
+  @@index([orgId, criadoEm])
+}
+
+/// Quem é a pessoa do outro lado do canal.
+///
+/// Sem isto o "quem aprova é gente" não existe de verdade: hoje quem clica no
+/// botão do Telegram é um chat_id anônimo, e a API grava a confirmação com o
+/// ator da CONTA DE SERVIÇO do bot. É correção de rastro, não enfeite.
+model ChannelIdentity {
+  id         String       @id @default(uuid())
+  orgId      String
+  org        Org          @relation(fields: [orgId], references: [id])
+  canal      SessionCanal
+  externalId String
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id])
+  rotulo     String
+  ativo      Boolean      @default(true)
+  criadoEm   DateTime     @default(now())
+
+  @@unique([orgId, canal, externalId])
+  @@index([orgId, canal])
+}
+
+// ===========================================================================
+// FATIA 3.7 — DESLIGAR UM CONECTOR, POR EMPRESA (RF-G-06)
+// ===========================================================================
+
+/// Um conector desligado para uma empresa. A LINHA EXISTIR **É** O
+/// DESLIGAMENTO — não há coluna de estado, e religar é apagar a linha.
+///
+/// POR QUE APAGAR EM VEZ DE MARCAR `religadoEm`. Um par (empresa, conector) pode
+/// ser desligado e religado muitas vezes; guardar o histórico aqui exigiria
+/// índice único parcial (`WHERE "religadoEm" IS NULL`), que o Prisma não sabe
+/// declarar — o schema passaria a mentir sobre o banco no primeiro `db:diff`. E
+/// o histórico não precisa morar aqui: cada desligamento e cada religamento
+/// grava evento no RASTRO, que é append-only e é onde "quem, quando e por quê"
+/// pertence.
+///
+/// O QUE ESTA TABELA **NÃO** GUARDA: credencial. Desligar não toca em
+/// `GoogleAccount`, `MetaAccount`, `IntegrationAccount.status` nem `config` —
+/// religar restabelece o uso sem nova autorização, e é isso que a suíte cobra.
+model ConectorDesligado {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Chave do conector em `CONNECTORS` (`packages/shared/src/schemas.ts`):
+  /// gmail, gcal, gdocs, drive, clickup, instagram, whatsapp, obsidian...
+  /// Grupo (`google`) é conveniência de ENTRADA e vira uma linha por chave —
+  /// ver `GRUPOS_DE_CONECTOR` em `src/integrations/conectores.ts`.
+  conector String
+
+  /// O que a pessoa escreveu ao desligar. Entra na frase da recusa.
+  motivo       String?
+  desligadoPor String?
+  desligadoEm  DateTime @default(now())
+
+  @@unique([orgId, conector])
+  @@index([orgId])
+}
+
+// ============================================================================
+// FATIA 3.5 — RETENÇÃO DO RASTRO POR EMPRESA (RF-R-06)
+//
+// Até aqui a retenção era UMA variável de ambiente (`RASTRO_RETENCAO_DIAS`,
+// fixa em 1825 no docker-compose), global para a instância inteira. Isso é
+// errado nos dois sentidos: o cliente que precisa guardar mais não consegue, e
+// o que precisa guardar menos (minimização, LGPD art. 16) também não.
+//
+// A ausência de linha aqui NÃO é "sem retenção": é "herda o padrão", que sai de
+// `retencao.rastroDias` da política (1825, justificado pelo prazo decadencial do
+// CTN art. 173) e cai na variável de ambiente só se a política não disser. Por
+// isso a tabela nasce VAZIA e continua vazia para quem não configurou nada —
+// materializar o padrão em linha congelaria o valor herdado no dia do
+// provisionamento, e a próxima mudança da política não alcançaria mais ninguém.
+//
+// `motivo` é obrigatório NA REGRA DE NEGÓCIO (não no banco) quando o prazo fica
+// ABAIXO do herdado: encurtar o rastro é a única direção que apaga prova, e
+// apagar prova sem motivo escrito é o que 02-CONSTRAINTS não admite. Quem cobra
+// é `RetencaoService.definir`.
+// ============================================================================
+
+model RastroRetencao {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Dias de guarda do RASTRO desta empresa. Vira `EventLog.retencaoAte` na
+  /// gravação de cada evento — não é aplicado retroativamente de propósito: o
+  /// prazo que vale para uma linha é o que valia quando ela foi escrita.
+  dias Int
+
+  /// Por que esta empresa difere do padrão herdado. Exigido ao encurtar.
+  motivo      String?
+  /// Quem decidiu. É pessoa, nunca agente (mesma regra do aprovador).
+  definidoPor String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+// ===========================================================================
+// FATIA 3.6 — TETO DE CUSTO DE IA POR EMPRESA E POR DIA (RF-G-05, RNF-05)
+//
+// Acrescentado no FIM do arquivo de propósito: três fatias da onda 6 criam
+// tabela ao mesmo tempo, e reescrever o arquivo apagaria o trabalho das outras
+// duas (protocolo da onda, seção 4).
+//
+// JÁ EXISTIA, E NÃO FOI REESCRITO: `Agent.tetoCustoUsd` (teto por AGENTE e por
+// EXECUÇÃO, imposto no laço de `agents/agent-runtime.service.ts`) e o custo
+// REAL de cada passo, que o provedor devolve e o `SessionStep` grava. Este é o
+// TERCEIRO nível: o da empresa, somado no dia, e ele vale para toda chamada de
+// modelo — inclusive as que não nascem de sessão de agente (relatório,
+// curadoria, pauta), que não têm passo em `SessionStep` nenhum.
+// ===========================================================================
+
+/// O teto que a EMPRESA declarou para gasto com modelo de IA em um dia.
+///
+/// Uma linha por empresa. Empresa sem linha aqui é empresa SEM TETO: nada é
+/// cortado e nada é contado. É o estado de quem nunca configurou, e é o único
+/// estado em que o corte não existe — por isso `ativo` é um campo separado do
+/// valor: desligar o teto é uma decisão que fica REGISTRADA (com quem e
+/// quando), enquanto apagar a linha não deixa rastro nenhum.
+///
+/// POR QUE O FUSO MORA AQUI, E NÃO NO AGENTE
+/// "Por dia" só quer dizer alguma coisa depois de escolher de quem é o dia. O
+/// agente já carrega `tz`, e usá-lo seria o erro: uma mesma empresa com dois
+/// agentes em fusos diferentes teria DOIS dias abertos ao mesmo tempo, e a
+/// soma do teto deixaria de ser uma soma — cada agente poderia gastar o teto
+/// inteiro dentro da sua própria virada. O fuso do SERVIDOR (UTC, no container)
+/// seria pior de outro jeito: viraria o dia às 21h de Brasília, no meio do
+/// expediente, e o cliente veria o corte chegar em hora que não é meia-noite
+/// nenhuma para ele. O teto é orçamento da EMPRESA, então o dia é o dela.
+model TetoDeCustoIa {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Em dólar, que é a moeda em que o provedor cobra e em que `preco.ts`
+  /// calcula. Converter para real aqui seria gravar uma cotação que envelhece.
+  tetoDiarioUsd Decimal @db.Decimal(12, 6)
+
+  /// Nome IANA (`America/Sao_Paulo`). Fuso inválido NÃO derruba a chamada de
+  /// modelo: o serviço cai no padrão e registra o aviso — cortar por causa de
+  /// uma string de configuração errada seria trocar um problema por outro.
+  fusoHorario String @default("America/Sao_Paulo")
+
+  /// Desligado, o teto não corta e o consumo do dia CONTINUA sendo somado. É o
+  /// modo de observação que permite calibrar o valor antes de impor.
+  ativo Boolean @default(true)
+
+  /// Quem decidiu o valor, e por quê. Teto de gasto é decisão de negócio: sem
+  /// isto, quem abrir a tela seis meses depois não tem a quem perguntar.
+  definidoPorId String?
+  definidoEm    DateTime @default(now())
+  motivo        String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+/// O consumo de IA de uma empresa em UM dia — o livro-caixa do teto.
+///
+/// Uma linha por (empresa, dia). É ela que responde "quanto já foi gasto hoje"
+/// sem varrer `SessionStep`, e é nela que a RESERVA acontece.
+///
+/// POR QUE RESERVA, E NÃO SÓ SOMA DO QUE JÁ FOI GASTO
+/// O custo de uma chamada só se conhece DEPOIS dela. Uma conferência que olhe
+/// apenas o já gasto corta tarde por construção: a chamada que estoura o teto é
+/// justamente a que ainda não foi contada. Então, antes de chamar o modelo, o
+/// serviço soma a ESTIMATIVA em `reservadoUsd` — e só soma se o total couber no
+/// teto. Depois da resposta, a reserva vira gasto pelo valor REAL. Chamada que
+/// falha devolve a reserva.
+///
+/// A reserva também é o que segura duas chamadas SIMULTÂNEAS: a soma acontece
+/// numa única instrução `INSERT ... ON CONFLICT DO UPDATE ... WHERE`, então a
+/// segunda enxerga a reserva da primeira mesmo que as duas tenham lido o mesmo
+/// saldo um instante antes.
+///
+/// POR QUE `dia` É TEXTO E NÃO `date`
+/// Porque não é um instante, é um RÓTULO DE CALENDÁRIO no fuso da empresa
+/// (`AAAA-MM-DD`). Gravado como `date`, o driver o devolve como `Date` no fuso
+/// do processo e a data volta trocada num container em UTC — o defeito exato
+/// que o campo existe para evitar.
+model GastoDeIaNoDia {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// `AAAA-MM-DD` no fuso de `TetoDeCustoIa.fusoHorario`.
+  dia String
+
+  /// Custo REAL, o que o provedor informou. Separado do estimado de propósito:
+  /// misturar os dois apagaria a procedência do número (09-PADRÕES).
+  gastoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  /// Estimativa das chamadas cujo custo real não volta para cá — hoje,
+  /// `complete()`, que devolve texto e não uso. A tela mostra os dois, e nunca
+  /// soma um R$ 0,00 inventado no lugar do que não foi medido.
+  gastoEstimadoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  /// Reservas ainda abertas (chamadas em voo). Volta a zero quando todas
+  /// liquidam. Valor teimosamente alto aqui é chamada que nunca liquidou —
+  /// processo morto no meio — e é por isso que ele é um campo, não uma conta.
+  reservadoUsd Decimal @default(0) @db.Decimal(12, 6)
+
+  chamadas Int @default(0)
+  /// Chamadas em modelo fora da tabela de preço: não dá para estimar nem
+  /// medir. Elas passam, e ficam contadas aqui para a tela dizer "não medido".
+  chamadasSemPreco Int @default(0)
+  /// Quantas vezes o teto recusou uma chamada neste dia.
+  cortes           Int @default(0)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, dia])
+}
+
+// ===========================================================================
+// FATIA 5.3 — O COFRE: SEGREDO POR EMPRESA E POR CONECTOR (RF-C-01..RF-C-04)
+//
+// Acrescentado no FIM do arquivo de propósito, e SEM `prisma migrate dev`: duas
+// fatias desta onda mexem no mesmo schema, e tanto reescrever o arquivo quanto
+// gerar a migration automaticamente engoliria os modelos da outra (protocolo da
+// onda 7, seção 4). O SQL desta tabela foi escrito à mão, com carimbo próprio,
+// e provado no banco `prova_53`.
+//
+// O PROBLEMA QUE ESTA TABELA EXISTE PARA RESOLVER. Até 11/09/2026 havia UMA
+// chave de ambiente (`ENCRYPTION_KEY`) cifrando todo segredo do produto, e ela
+// nem sequer alcançava tudo: `BioConexao` e `BioCredencialApp` eram cifrados,
+// `GoogleAccount.accessToken`/`refreshToken` e `MetaAccount.userToken`/
+// `pageToken` estavam em TEXTO PURO no banco. Trocar aquela chave tornava
+// ilegível, de uma vez, tudo o que estava cifrado — está documentado no
+// CLAUDE.md do projeto como armadilha conhecida, e `prisma/migrate-bio.ts`
+// precisou de um `BIO_OLD_ENCRYPTION_KEY` para contornar a mesma coisa uma vez.
+//
+// O QUE MUDA AQUI: cada valor guarda O ID DA CHAVE QUE O CIFROU (`chaveId`), e
+// o cofre carrega um CHAVEIRO com várias chaves ao mesmo tempo
+// (`src/common/crypto.ts`). Rotacionar passa a ser re-cifrar linha a linha para
+// a chave nova — e, enquanto a chave velha continuar no chaveiro, a linha que a
+// rotação ainda NÃO tocou continua abrindo. É o que separa rotação de "perder
+// tudo de uma vez".
+// ===========================================================================
+
+/// Um segredo de UMA empresa para UM conector — o que o cofre guarda.
+///
+/// GRANULARIDADE: (empresa, conector, nome). O `nome` é qual segredo dentro do
+/// conector — `access_token`, `refresh_token`, `app_secret` — e existe porque
+/// revogar tem de poder alcançar UM deles: um refresh token queimado não
+/// obriga a apagar o app secret do mesmo conector.
+///
+/// POR QUE NÃO UMA COLUNA NOVA EM `GoogleAccount`/`BioConexao`. Porque a
+/// pergunta "quais segredos esta empresa tem, e com que chave cada um está
+/// cifrado?" é a pergunta da ROTAÇÃO, e ela não pode depender de varrer sete
+/// tabelas diferentes com sete formatos de coluna. Um lugar só, com índice por
+/// `chaveId`, responde "o que ainda falta rotacionar" numa consulta.
+///
+/// O QUE **NÃO** ESTÁ AQUI, e de propósito: segredo de PLATAFORMA — a
+/// `ENCRYPTION_KEY`, a chave da Anthropic, o app global da Root
+/// (`BioCredencialApp` com `orgId` nulo). Este cofre é por EMPRESA: a coluna
+/// `orgId` é obrigatória, o isolamento por linha recorta por ela, e uma linha
+/// sem empresa não teria como ser recortada. Segredo de plataforma continua em
+/// variável de ambiente, que é onde o operador o administra.
+model SegredoDeConector {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Chave do catálogo de conectores (`CONNECTORS`, em `packages/shared`) —
+  /// `gmail`, `clickup`, `instagram`… A MESMA chave que o interruptor de
+  /// desligamento usa (`integrations/conectores.ts`), para que desligar e
+  /// revogar falem do mesmo conector sem tradução no meio.
+  conector String
+
+  /// Qual segredo dentro do conector. Texto livre e não enum: o conjunto muda
+  /// com cada API externa (`access_token`, `refresh_token`, `app_secret`,
+  /// `acesso:<idDaConexao>`), e um enum viraria migration de tipo a cada
+  /// conector novo. Ver `NOMES_CONHECIDOS` em `src/cofre/segredo.ts`.
+  nome String
+
+  /// O valor, cifrado com AES-256-GCM. O formato carrega a versão e o ID DA
+  /// CHAVE (`c2.<chaveId>.<iv>.<tag>.<dados>`), e o GCM autentica com
+  /// `orgId|conector|nome` como dado associado — uma linha copiada para outra
+  /// empresa NÃO ABRE, mesmo com a chave certa. É a segunda tranca por cima do
+  /// isolamento por linha, e ela vale até contra quem tem acesso ao dump.
+  valorCifrado String
+
+  /// Qual chave do chaveiro cifrou ESTE valor. É a coluna que torna a rotação
+  /// possível sem parar o mundo: as linhas migram uma a uma, e as que ainda não
+  /// migraram continuam legíveis porque a chave antiga segue no chaveiro.
+  chaveId String
+
+  /// O que a credencial emprestada PERMITE. Vazio = sem restrição declarada
+  /// (o estado do que veio migrado de antes do cofre). Quem empresta pode
+  /// exigir um escopo, e o cofre recusa quando ele não está aqui — é o "capacidade
+  /// com escopo" do RF-C-02.
+  escopo String[] @default([])
+
+  /// De onde este segredo veio: `oauth`, `tela`, `migracao:bio`,
+  /// `migracao:google`, `migracao:meta`. É o que permite DESFAZER a migração
+  /// sem adivinhação (ver `src/cofre/migrar-credenciais.ts`).
+  origem String
+
+  /// Quando o segredo EM SI expira (o token OAuth), não o empréstimo. Nulo =
+  /// não expira ou não se sabe. O cofre não apaga o que expirou: quem renova é
+  /// o conector, e apagar tiraria dele o refresh token.
+  expiraEm DateTime?
+
+  /// Sobe a cada gravação de valor novo. Serve à auditoria ("este segredo já
+  /// foi trocado três vezes") e ao diagnóstico de conector que renova em laço.
+  versao Int @default(1)
+
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+  /// Última vez que a ROTAÇÃO re-cifrou esta linha. Diferente de
+  /// `atualizadoEm`: rotação não muda o segredo, só a chave que o embrulha.
+  rotacionadoEm DateTime?
+  /// Última vez que o cofre EMPRESTOU este segredo. Segredo que nunca foi
+  /// emprestado é candidato a revogação — e é a única coisa que o cofre sabe
+  /// sobre o uso, porque ele não vê a chamada externa.
+  usadoEm       DateTime?
+
+  /// REVOGAÇÃO (RF-C-03). A linha SOBREVIVE à revogação e o valor NÃO: ao
+  /// revogar, `valorCifrado` vira string vazia e estes três campos são
+  /// preenchidos. É de propósito nos dois sentidos —
+  ///
+  ///  · apagar o valor é o que faz a revogação ter EFEITO IMEDIATO de verdade.
+  ///    Uma revogação que fosse só uma flag dependeria de todo leitor lembrar
+  ///    de conferi-la; o leitor que esquecesse continuaria mandando mensagem
+  ///    com a credencial revogada. Sem valor não há o que ler.
+  ///  · manter a linha é o que deixa a auditoria responder "quem revogou, quando
+  ///    e por quê" — e é o que impede que o mesmo segredo seja regravado sem
+  ///    passar por cima de um registro visível.
+  ///
+  /// NÃO CONFUNDIR COM `ConectorDesligado` (fatia 3.7). Desligar é PAUSA e não
+  /// toca credencial nenhuma: religar devolve o conector ao ar sem novo OAuth.
+  /// Revogar é QUEIMAR: o segredo some, e voltar exige autorizar de novo. Os
+  /// dois existem porque as duas perguntas existem.
+  revogadoEm      DateTime?
+  revogadoPor     String?
+  motivoRevogacao String?
+
+  /// Um segredo por (empresa, conector, nome). Guardar dois seria guardar um
+  /// que ninguém sabe qual é — e a revogação deixaria o outro vivo.
+  @@unique([orgId, conector, nome])
+  /// A consulta da ROTAÇÃO: "o que ainda está na chave velha?". Sem ele, toda
+  /// rotação varre a tabela inteira para descobrir o que já migrou.
+  @@index([chaveId])
+}
+
+// ============================================================================
+// A MEMÓRIA — contexto do negócio, versionado, com procedência (fatia 4.1+4.2)
+//
+// RF-M-01: o contexto do negócio é versionado — as regras da casa, o dicionário
+// de dados, as definições que o cliente escolheu, o histórico de decisões.
+// RF-M-06: cada resposta pode virar nota permanente com um gesto.
+//
+// O DESENHO ESTÁ EM `docs/adr/ADR-011-memoria.md` e em uma frase é: a mudança é
+// um EVENTO no RASTRO que já existe (`EventLog`), e estas duas tabelas são
+// PROJEÇÃO dele — `ContextItem` é o estado corrente, `ContextItemVersion` é uma
+// linha por mudança. Não invente um terceiro lugar onde a memória muda.
+//
+// O NOME `ContextItem` VEM DO DOCUMENTO NORMATIVO (`HANDOFF-DEV/07-MODELO-DE-DADOS.md`,
+// seção "Contexto"), e é por isso que ele está em inglês no meio de vizinhos em
+// português: divergir do nome que o modelo de dados publicou custaria mais do
+// que a inconsistência de idioma — quem for conferir o modelo contra a base
+// procura por esta palavra.
+// ============================================================================
+
+/// A natureza da nota. As seis do modelo de dados normativo, sem invenção.
+enum ContextKind {
+  /// Regra da casa: o que vale nesta empresa ("não falamos de preço no primeiro
+  /// contato").
+  regra
+  /// Definição escolhida pelo cliente ("cliente ativo é quem comprou em 90 dias").
+  definicao
+  /// Dicionário de dados: o que cada campo/coluna/planilha quer dizer.
+  dicionario
+  /// Decisão tomada, com data e motivo. É o histórico que RF-M-01 pede.
+  decisao
+  /// Fato estável do negócio (mercado, praça, ticket médio declarado).
+  fato
+  /// O que não é nenhum dos cinco. É o padrão, e é o que a vault vira ao migrar.
+  nota
+}
+
+/// DE ONDE A NOTA VEIO. Procedência é obrigatória (ADR-011): não existe nota
+/// anônima na memória, porque RF-M-02 promete procedência em toda resposta e
+/// uma resposta não tem como carregar o que a nota não guardou.
+enum ContextSource {
+  /// Indexada da vault do Obsidian. `sourceRef` é o caminho relativo.
+  vault
+  /// Arquivo/texto enviado pelo cliente na tela. `sourceRef` é o nome do arquivo.
+  upload
+  /// RF-M-06: uma resposta do agente promovida a nota. `sourceRef` é a sessão.
+  promocao
+  /// Alguém digitou na tela. `sourceRef` é o que a pessoa declarou como fonte.
+  operador
+  /// Veio de um conector (ClickUp, Drive, financeiro). `sourceRef` é o id de lá.
+  conector
+}
+
+/// O que a mudança foi. É o vocabulário que liga a versão ao tipo do evento.
+enum ContextChange {
+  criacao
+  alteracao
+  arquivamento
+  restauracao
+}
+
+/// A unidade da MEMÓRIA — o estado CORRENTE de uma nota de contexto.
+///
+/// Projeção, não livro-caixa: quem manda é a sequência de eventos
+/// `memoria.item.*` no `EventLog`. Ver ADR-011.
+model ContextItem {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A CHAVE ESTÁVEL da nota dentro da empresa. É ela que faz a reindexação da
+  /// vault ser idempotente: `vault:<caminho relativo>` para o que vem do disco,
+  /// e um slug para o que nasce na tela. Sem chave estável, cada reindexação
+  /// criaria notas novas e a memória viraria um monte de duplicatas com
+  /// histórico de uma versão cada.
+  chave String
+
+  kind  ContextKind @default(nota)
+  title String
+  /// O corpo da nota, em markdown. É CONTEÚDO EXTERNO: quando for alimentar o
+  /// modelo, passa pela cerca e pela neutralização de
+  /// `src/agents/context-builder.service.ts`, como qualquer outro.
+  body  String
+  tags  String[]    @default([])
+
+  /// PROCEDÊNCIA (RF-M-02). Os dois juntos respondem "de onde isto veio?" sem
+  /// que ninguém precise adivinhar pelo formato do texto.
+  sourceType ContextSource
+  sourceRef  String?
+
+  /// Validade, porque regra de negócio muda. `validUntil` no passado é nota que
+  /// ainda explica uma decisão antiga mas não vale mais hoje — diferente de
+  /// arquivada, que é nota retirada.
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  /// RF-M-08, o gancho declarado: a nota que ESTA substitui. Preenchido quando a
+  /// detecção de contradição chegar — o campo nasce agora para que aquela fatia
+  /// não precise migrar dado sobre uma memória já cheia.
+  ///
+  /// MUITAS PARA UMA, e a decisão é desta fatia (ADR-011, "o gancho de RF-M-08 é
+  /// muitos-para-um"). A primeira versão tinha `@unique` no campo, o que fazia a
+  /// aresta nascer um-para-um: DUAS afirmações novas que contradizem a MESMA
+  /// regra antiga não caberiam, e a segunda seria recusada pelo banco no meio da
+  /// detecção — que é exatamente o caso comum (a regra de desconto contrariada
+  /// pela ata de abril e de novo pela de agosto). O que RF-M-08 promete é
+  /// APONTAR em vez de sobrescrever, e apontar é muitos-para-um.
+  ///
+  /// O que ESTA aresta NÃO resolve, e está escrito para ninguém supor que sim:
+  /// uma nota nova que contradiz DUAS regras antigas de uma vez continua sem
+  /// caber (o campo é um só). Quando aparecer, o desenho é uma tabela de
+  /// ligação — e a migração será barata porque esta coluna vira linha dela.
+  supersedesId String?
+  supersedes   ContextItem?  @relation("ContextSupersede", fields: [supersedesId], references: [id])
+  supersededBy ContextItem[] @relation("ContextSupersede")
+
+  /// Quanto o sistema confia nesta nota (0..1). O que vem do cliente vale mais
+  /// do que o que o sistema inferiu, e RF-M-08 precisa desse peso para decidir
+  /// qual lado da contradição apontar.
+  confidence Float @default(1)
+
+  /// O vetor da nota CORRENTE. Só o corrente: versão antiga não é encontrada por
+  /// similaridade, e guardar vetor por versão multiplicaria o custo mais caro do
+  /// sistema por nada.
+  ///
+  /// SEMPRE CONSULTADO COM FILTRO DE EMPRESA (`03-ARQUITETURA`, ADR-003). A
+  /// policy de linha é a segunda tranca, não a primeira.
+  embedding Unsupported("vector(1536)")?
+
+  /// sha256 do corpo. Serve a duas coisas: pular reescrita quando a vault não
+  /// mudou (e assim não gastar vetor à toa) e dar à detecção de contradição um
+  /// jeito barato de dizer "isto é literalmente a mesma afirmação".
+  contentHash String
+
+  /// A versão CORRENTE. É sempre igual ao maior `versao` de `ContextItemVersion`
+  /// deste item — cobrado por teste, porque projeção que diverge da fonte é o
+  /// modo de falha desta escolha de desenho.
+  versao Int @default(1)
+
+  /// ARQUIVAMENTO, não exclusão (ADR-011). Apagar contexto é apagar a explicação
+  /// de decisões passadas.
+  arquivadoEm  DateTime?
+  arquivadoPor String?
+
+  criadoEm     DateTime @default(now())
+  criadoPor    String?
+  atualizadoEm DateTime @updatedAt
+  atualizadoPor String?
+
+  versoes ContextItemVersion[]
+
+  /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
+  @@unique([orgId, chave])
+  @@index([orgId, kind])
+  @@index([orgId, arquivadoEm])
+  /// "quem substituiu esta regra?" — a consulta de RF-M-08. Índice comum desde
+  /// que a aresta virou muitos-para-um: sem `@unique` não sobra índice de graça.
+  @@index([supersedesId])
+}
+
+/// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
+///
+/// NÃO É "histórico de documento": ela guarda o corpo daquela versão E o
+/// ponteiro para o evento do RASTRO que a produziu. O evento é a verdade; esta
+/// tabela é o que sobrevive ao expurgo por retenção (ver ADR-011, "o que a
+/// decisão custa").
+model ContextItemVersion {
+  id     String      @id @default(uuid())
+  orgId  String
+  org    Org         @relation(fields: [orgId], references: [id])
+  itemId String
+  item   ContextItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /// 1, 2, 3… dentro do item. Sem buraco: quem grava serializa no advisory lock
+  /// da empresa, como o RASTRO.
+  versao   Int
+  mudanca  ContextChange
+
+  /// O ESTADO NAQUELA VERSÃO. Cópia, e de propósito: reconstruir o corpo
+  /// aplicando diferenças exigiria que toda linha anterior existisse para
+  /// sempre, e o expurgo do RASTRO já diz que isso não é verdade.
+  kind        ContextKind
+  title       String
+  body        String
+  sourceType  ContextSource
+  sourceRef   String?
+  contentHash String
+
+  /// Por que mudou. É o campo que separa esta decisão da alternativa recusada:
+  /// histórico de documento guarda o estado e perde a intenção.
+  motivo String?
+
+  autorTipo String  @default("user")
+  autorId   String?
+
+  /// O ELO COM O RASTRO — e ele é CHAVE ESTRANGEIRA de verdade, com
+  /// `onDelete: SetNull`.
+  ///
+  /// POR QUE NÃO BASTAVA GUARDAR O ID. `RastroRetencao` apaga evento vencido
+  /// (`app_rastro_expurgar`). Sem a chave estrangeira, o dia do primeiro expurgo
+  /// é o dia em que este campo vira PONTEIRO PENDURADO: a tela de histórico
+  /// exibe um identificador que não resolve, e quem audita não tem como separar
+  /// "o evento venceu" de "alguém apagou a prova". Prova aparente é pior do que
+  /// prova ausente.
+  ///
+  /// AS QUATRO SITUAÇÕES, E COMO SE LEEM (conferidas por `MemoriaService.conferirElos`):
+  ///   · `eventoId` preenchido ................. elo íntegro;
+  ///   · `eventoId` NULO e `eventoSeq` PRESENTE . o evento venceu e foi expurgado
+  ///     (o `SET NULL` limpou o id; a sequência fica, e é ela que diz que houve);
+  ///   · os dois nulos e `semEventoPorque` dito . nasceu assim, pelo motivo dito;
+  ///   · os dois nulos e `semEventoPorque` NULO . NINGUÉM ASSUMIU. É o único
+  ///     estado que a conferência acusa — e é o que sobra de uma linha inserida
+  ///     por fora.
+  eventoId  String?
+  evento    EventLog? @relation("EventoDaVersaoDeMemoria", fields: [eventoId], references: [id], onDelete: SetNull)
+  eventoSeq BigInt?
+
+  /// POR QUE esta versão nasceu sem evento. Preenchido só quando `eventoId` é
+  /// nulo desde o começo:
+  ///   · `migracao` .............. veio do comando de migração do acervo, que
+  ///     roda fora da aplicação e de propósito não escreve no RASTRO de ninguém;
+  ///   · `falha_ao_registrar` .... a escrita do evento falhou (o rastro nunca
+  ///     derruba a operação), e a versão ficou sem elo.
+  ///
+  /// SEM ESTE CAMPO OS DOIS ERAM O MESMO SINAL — e o acervo migrado enchia o
+  /// histórico de centenas de linhas com a cara de falha de rastro. Sinal com
+  /// dois significados não é sinal.
+  semEventoPorque String?
+
+  criadoEm DateTime @default(now())
+
+  @@unique([itemId, versao])
+  @@index([orgId, itemId])
+  @@index([orgId, criadoEm])
+  /// O `SET NULL` do expurgo procura por aqui. Sem índice, apagar uma faixa de
+  /// rastro varreria a tabela inteira de versões por linha apagada.
+  @@index([eventoId])
+}
+
+// ===========================================================================
+// ROTINAS POR EMPRESA — RF-N-04 (fatia 5.1)
+// ===========================================================================
+//
+// O QUE MUDA. Até aqui o agendamento vivia dentro do módulo de pauta: um tique
+// de um minuto (`pauta/scheduler.service.ts`) que lia `PautaRotina` e não sabia
+// falar de mais nada. `Rotina` é esse mesmo agendamento generalizado — trabalho
+// que acontece sozinho, POR EMPRESA, com estado declarado e histórico.
+//
+// O QUE NÃO É CRIADO AQUI, DE PROPÓSITO:
+//
+//  · CRON PRÓPRIO, NÃO FILA. Continua sendo o avaliador de `pauta/cron.ts` e um
+//    tique por minuto. Não entrou Redis, BullMQ nem `@nestjs/schedule`:
+//    dependência nova é decisão humana (02-CONSTRAINTS), e o motivo original do
+//    tique continua valendo — rotina editada na tela passa a valer no minuto
+//    seguinte, sem registrar/desregistrar nada.
+//  · ESTADO NOVO, NÃO. `estado` reusa `AgentEstado` (rodando · aprendendo ·
+//    planejado · pausado), que é exatamente o vocabulário que a fatia pede e que
+//    o roster de agentes já fala. Um enum paralelo seria uma segunda lista para
+//    dizer a mesma coisa, e as duas divergiriam na primeira tela nova.
+//  · CONTADORES NOVOS, NÃO. `execucoes`, `falhas`, `ultimaExecucaoEm`,
+//    `ultimoStatus`, `proximaExecucaoEm`, `minutosPorExecucao` e a linha de base
+//    têm os MESMOS nomes que os de `Agent` — é o mesmo conceito medido do mesmo
+//    jeito (RF-N-05), e a tela do organograma soma os dois lados sem tradutor.
+//
+// A RELAÇÃO COM `PautaRotina`. `PautaRotina` continua sendo a fonte da verdade
+// da CONFIGURAÇÃO da pauta (cron, janela, coletar antes) — é ela que a tela de
+// Pauta cria e edita. A `Rotina` correspondente é um ESPELHO, reconciliado a
+// cada tique (`origem = 'pauta'`, `refExterna` = id da `PautaRotina`): é aqui
+// que moram o estado declarado, os contadores e o histórico. Duas fontes para
+// duas perguntas diferentes, e não duas fontes para a mesma.
+model Rotina {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  slug String
+  nome String
+
+  /// A chave do EXECUTOR no registro (`src/routines/executores.registry.ts`).
+  /// Texto e não enum: executor novo é código novo, não migration de tipo — e o
+  /// registro RECUSA o arranque quando uma rotina aponta para executor que
+  /// ninguém inscreveu, que é a trava que o enum daria de graça.
+  tipo String
+
+  /// O que o executor precisa saber. Para `pauta.rodada`: `{ horas,
+  /// coletarAntes }`, espelhado de `PautaRotina.config`.
+  config Json @default("{}")
+
+  /// Cron de 5 campos, avaliado no fuso `tz` (ver `src/pauta/cron.ts`).
+  cron String
+  tz   String @default("America/Sao_Paulo")
+
+  /// O interruptor OPERACIONAL. Para rotina espelhada da pauta ele acompanha
+  /// `PautaRotina.ativo` — pausar na tela de Pauta continua pausando.
+  ativo Boolean @default(true)
+
+  /// O estado DECLARADO — a pergunta "isto está em produção, em observação ou
+  /// ainda no papel?", que `ativo` sozinho não responde. Só `rodando` e
+  /// `aprendendo` disparam; `planejado` e `pausado` aparecem na tela e não
+  /// executam. Nasce `planejado` de propósito: rotina nova não começa agindo.
+  estado AgentEstado @default(planejado)
+
+  /// De onde a rotina veio: `pauta` (espelhada de `PautaRotina`) ou `manual`.
+  origem String @default("manual")
+
+  /// O id da linha de origem quando `origem` não é `manual`. É a chave da
+  /// reconciliação, e o par (`origem`, `refExterna`) é único por empresa para
+  /// que um tique concorrente não crie duas rotinas para a mesma origem.
+  refExterna String?
+
+  /// O agente que representa esta rotina no organograma (RF-N-01). SLUG e não
+  /// relação: o roster é semeado por `prisma/seed-tripulacao.ts` e pode não
+  /// existir nesta empresa — uma chave estrangeira transformaria "o roster ainda
+  /// não foi semeado" em erro de gravação no meio de um tique.
+  agenteSlug String?
+
+  execucoes Int @default(0)
+  falhas    Int @default(0)
+
+  /// QUANDO A ROTINA REALMENTE EXECUTOU pela última vez — desfecho `ok` ou
+  /// `erro`, nunca `pulada`. Campo de LEITURA, e só: quem impede a execução em
+  /// dobro são as duas colunas de reserva abaixo. Enquanto a reserva morava
+  /// aqui, um executor que acordava e não tinha o que fazer (`pulada`) deixava
+  /// o carimbo para trás, e a tela dizia "última execução há um minuto, zero
+  /// execuções" para sempre.
+  ultimaExecucaoEm  DateTime?
+  ultimoStatus      String?
+  proximaExecucaoEm DateTime?
+
+  /// A RESERVA, EM DUAS COLUNAS (`src/routines/rotinas.service.ts`).
+  ///
+  /// `reservadoEm` é o MINUTO que o tique já tomou: impede que um tique atrasado
+  /// ou uma segunda réplica disparem a mesma ocorrência duas vezes. `reservadoAte`
+  /// é o PRAZO do arrendamento: enquanto está no futuro, a rotina está em curso e
+  /// ninguém mais a toma; quando vence sem ter sido devolvido, a execução morreu
+  /// no meio e o tique seguinte RETOMA a ocorrência — que é a diferença entre
+  /// perder uma rodada diária por um dia inteiro e perder por quinze minutos.
+  ///
+  /// NOT NULL com a ÉPOCA (1970-01-01) no lugar de nulo, de propósito: "livre"
+  /// vira uma comparação simples (`< agora`) em vez de `IS NULL OR <`, e condição
+  /// de reserva é exatamente o lugar onde a semântica de NULL em SQL faz um
+  /// `UPDATE` não casar linha nenhuma sem ninguém perceber.
+  reservadoEm  DateTime @default("1970-01-01T00:00:00Z")
+  reservadoAte DateTime @default("1970-01-01T00:00:00Z")
+
+  /// RF-N-05: quantos minutos uma pessoa gastava nisso por execução. Zero =
+  /// ninguém informou, e a tela mostra "—", nunca um número inventado.
+  minutosPorExecucao Int       @default(0)
+  baselinePorId      String?
+  baselineEm         DateTime?
+
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+
+  execucoesLog RotinaExecucao[]
+
+  @@unique([orgId, slug])
+  @@unique([orgId, origem, refExterna])
+  /// A consulta do TIQUE dentro de uma empresa: "quem pode disparar agora?".
+  ///
+  /// A DESCOBERTA (a pergunta que roda ANTES, sem empresa na sessão, para saber
+  /// quais empresas varrer) é `SELECT DISTINCT "orgId"` sem mais nada, e quem a
+  /// serve é o índice único de `(orgId, slug)`. A fatia chegou a criar um
+  /// `(ativo, estado)` "para o tique" que não servia consulta nenhuma — nem a
+  /// descoberta, que não filtra, nem esta, que começa por `orgId`. Ele foi
+  /// derrubado em `20260911200000_reserva_de_rotina_com_prazo`.
+  @@index([orgId, estado])
+}
+
+/// Uma passagem da rotina. É o histórico que a tela `/rotinas` mostra, e é a
+/// única fonte de "o que aconteceu" — os contadores de `Rotina` são projeção
+/// destas linhas, não um registro paralelo.
+///
+/// NÃO É O RASTRO e não tenta ser: o RASTRO (`EventLog`) guarda ação com risco
+/// classificado, cadeia de hash e retenção; isto aqui é diário de bordo
+/// operacional, apagável com a rotina. O que a rodada da pauta FAZ (chamar
+/// modelo, propor ferramenta) continua indo para o RASTRO pelos caminhos de
+/// sempre, dentro do contexto da empresa que o agendador abre.
+model RotinaExecucao {
+  id       String @id @default(uuid())
+  orgId    String
+  org      Org    @relation(fields: [orgId], references: [id])
+  rotinaId String
+  rotina   Rotina @relation(fields: [rotinaId], references: [id], onDelete: Cascade)
+
+  /// `ok` ou `erro`. Texto e não enum pelo mesmo motivo de `tipo`.
+  ///
+  /// `pulada` é desfecho de execução e NÃO vira linha aqui: o executor acordou e
+  /// não havia o que fazer, e registrar isso de minuto em minuto afogaria o que
+  /// aconteceu de verdade. Ela também não mexe em contador nenhum, nem em
+  /// `Rotina.ultimaExecucaoEm`.
+  status String
+
+  /// `cron` (o tique) ou `manual` (alguém clicou em rodar agora).
+  origem String @default("cron")
+
+  inicioEm  DateTime  @default(now())
+  fimEm     DateTime?
+  duracaoMs Int?
+
+  /// Uma linha legível do que aconteceu. Nunca conteúdo de cliente: o que a
+  /// rodada produziu mora na rodada, e é lá que a sensibilidade é tratada.
+  resumo String?
+  erro   String?
+
+  /// A correlação da execução (RNF-09) — o fio que liga esta linha aos eventos
+  /// que a rodada gerou no RASTRO.
+  ///
+  /// PARA SER VERDADE, ela tem de ser a MESMA que o executor carrega no contexto:
+  /// `RotinasService.executar` abre um contexto aninhado com este identificador
+  /// antes de chamar o executor, e a correlação do tique fica como `correlacaoPai`.
+  /// Enquanto a linha guardava um identificador cunhado só para ela, esta coluna
+  /// não casava com evento nenhum — e a do tique era a mesma para todas as
+  /// rotinas daquela empresa naquele minuto, então nem por empresa separava.
+  correlationId String?
+
+  @@index([orgId, rotinaId, inicioEm])
+  @@index([rotinaId, inicioEm])
+}
+
+// ===========================================================================
+// ASSINATURA E COBRANÇA — RF-O-03 (fatia 6.2)
+// ===========================================================================
+//
+// O QUE ESTAS DUAS TABELAS EXISTEM PARA SUSTENTAR, em uma frase: suspender uma
+// empresa inadimplente sem apagar NADA dela, e devolver o acesso inteiro quando
+// ela voltar a pagar.
+//
+// ---------------------------------------------------------------------------
+// A DECISÃO QUE GOVERNA TODO O RESTO: SUSPENDER É UMA COLUNA, NUNCA UM DELETE
+// ---------------------------------------------------------------------------
+// Não existe, em lugar nenhum deste módulo, `delete`, `deleteMany`, `TRUNCATE`,
+// `CASCADE` de limpeza ou desligamento de módulo contratado. Suspensão é uma
+// transição de `Assinatura.status`, e só. As três formas de suspensão
+// destrutiva que foram consideradas e RECUSADAS, com o motivo de cada uma:
+//
+//  1. ESVAZIAR `Org.modulos`. Seria a suspensão mais eficaz (o gate de módulos
+//     já existe e recusaria tudo) e é IRREVERSÍVEL na prática: a lista do que a
+//     empresa contratou some, e reativar teria de adivinhá-la. Perda de dado
+//     disfarçada de mudança de estado.
+//  2. `Org.isActive = false`. Parece inofensivo, mas aquela coluna governa o
+//     LOGIN; um suspenso que não consegue entrar também não consegue ver a tela
+//     de suspensão nem pagar, e a suspensão vira desligamento.
+//  3. REVOGAR AS CREDENCIAIS DO COFRE da empresa. Revogação apaga o valor por
+//     desenho (RF-C-03) e reconectar cada fonte é trabalho do cliente, não
+//     nosso. Suspender não pode custar ao cliente refazer o onboarding.
+//
+// ---------------------------------------------------------------------------
+// POR QUE A COBRANÇA É UMA TABELA, E NÃO UM CAMPO `vencidoAte`
+// ---------------------------------------------------------------------------
+// Porque a decisão de suspender precisa ser AUDITÁVEL e REPRODUZÍVEL: qual
+// cobrança, vencida quando, de que valor. Um campo derivado responde "está
+// vencido" e não responde "por quê" — e no dia em que o provedor responder
+// errado (ver `CobrancaAsaasService`), a diferença entre as duas é a diferença
+// entre reverter uma linha e não saber o que reverter.
+//
+// A TABELA É ESPELHO, NÃO FONTE. A fonte da verdade da cobrança é o provedor;
+// aqui fica a última leitura bem-sucedida, com a hora em que ela aconteceu.
+// `sincronizadaEm` existe para que ninguém confunda "pago" com "estava pago da
+// última vez que conseguimos perguntar".
+
+/// A assinatura de UMA empresa. Uma por empresa (`orgId` é único).
+///
+/// NENHUMA CREDENCIAL MORA AQUI. O que esta tabela guarda do provedor são
+/// ENDEREÇOS (`provedorClienteId`, `provedorAssinaturaId`) — identificadores
+/// opacos que não abrem porta nenhuma sozinhos. A chave de API do provedor mora
+/// no COFRE, por empresa (`SegredoDeConector`, conector `asaas`), e sai de lá
+/// por empréstimo com prazo (RF-C-02). Uma coluna de credencial aqui seria a
+/// mesma variável global que a fatia existe para não ter, só que no banco.
+model Assinatura {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// O nome do plano como o cliente o vê. Texto e não enum: catálogo de plano
+  /// muda em escala de campanha, e enum viraria migration de tipo a cada preço
+  /// novo.
+  plano String
+
+  /// Em CENTAVOS, inteiro. Dinheiro em ponto flutuante é como R$ 0,01 vira R$
+  /// 0,009999 e a conferência contra o provedor passa a falhar por arredondamento.
+  valorCentavos Int
+
+  /// `mensal` ou `anual`. Só influencia o texto da tela: quem gera a cobrança
+  /// recorrente é o provedor, não este sistema.
+  ciclo String @default("mensal")
+
+  /// `ativa` · `inadimplente` · `suspensa` · `cancelada`.
+  ///
+  /// Texto com CHECK no banco, e não enum do Prisma. O CHECK dá a mesma garantia
+  /// (estado fora do vocabulário não entra) sem criar um tipo do Postgres que
+  /// toda migration futura teria de alterar com `ALTER TYPE ... ADD VALUE`, que
+  /// não roda dentro de transação e portanto não roda numa migration do Prisma.
+  ///
+  /// `inadimplente` é um degrau de verdade, não enfeite: é a empresa com
+  /// cobrança vencida DENTRO da carência. Ela ainda tem acesso inteiro, e é a
+  /// única janela em que o aviso na tela pode evitar a suspensão.
+  status String @default("ativa")
+
+  /// Dias depois do vencimento antes de a suspensão valer. Zero é aceito e
+  /// significa "suspende no dia seguinte ao vencimento"; negativo é recusado
+  /// pelo CHECK, porque suspender ANTES de vencer não é carência, é defeito.
+  diasDeCarencia Int @default(7)
+
+  /// Qual provedor cobra esta empresa. Hoje só `asaas`. Existe para que trocar
+  /// de provedor seja uma linha de dado e não uma migration.
+  provedor String @default("asaas")
+
+  /// Endereços no provedor. Nulos até alguém ligar a assinatura lá.
+  provedorClienteId    String?
+  provedorAssinaturaId String?
+
+  /// A última vez que a conferência contra o provedor TERMINOU BEM.
+  ///
+  /// Nula significa "nunca conseguimos perguntar", e é por isso que ela não pode
+  /// ser `@default(now())`: uma assinatura recém-criada com esta coluna
+  /// preenchida mentiria que já foi conferida, e a decisão de suspender leria
+  /// essa mentira como silêncio do provedor.
+  conferidaEm DateTime?
+
+  /// Quando a suspensão passou a valer, e sobre qual cobrança ela se apoia.
+  ///
+  /// `suspensaEm` NÃO É LIMPA NA REATIVAÇÃO: ela é a prova de que houve
+  /// suspensão, e o par (`suspensaEm`, `reativadaEm`) é o que permite responder
+  /// "por quanto tempo esta empresa ficou fora" sem depender do RASTRO. Quem
+  /// diz se ela está suspensa AGORA é `status`, e só ele.
+  suspensaEm            DateTime?
+  suspensaPorCobrancaId String?
+  motivoDaSuspensao     String?
+  reativadaEm           DateTime?
+
+  /// A MARCA DA REATIVAÇÃO EXPLÍCITA — cobranças vencidas até aqui não decidem
+  /// mais acesso nenhum. Entrou depois da revisão adversarial da fatia 6.2
+  /// (migration `20260912010000_reativacao_deixa_marca`), e o motivo é um defeito
+  /// reproduzido contra o banco: `reativar` é a saída declarada para pagamento
+  /// por fora, acordo comercial e suspensão indevida — e nos três casos o
+  /// PROVEDOR CONTINUA DIZENDO VENCIDO, porque o dinheiro não passou por ele. Sem
+  /// esta coluna, a conferência seguinte relia a mesma cobrança e suspendia de
+  /// novo: medido, a reativação do administrador durava um segundo.
+  ///
+  /// É um INSTANTE e não uma bandeira, e a diferença é o que impede o perdão de
+  /// virar isenção vitalícia: perdoa-se o que já estava vencido quando alguém
+  /// decidiu reativar. A fatura do mês seguinte vence DEPOIS desta marca, não é
+  /// perdoada, e suspende normalmente.
+  ///
+  /// Escrita SÓ na reativação MANUAL que sai de um bloqueio. Na automática não há
+  /// nada a perdoar (ela só acontece sem cobrança vencida na leitura), e escrever
+  /// ali perdoaria de lambuja toda cobrança com vencimento no passado que o
+  /// provedor ainda não marcou como vencida — uma isenção silenciosa.
+  ///
+  /// NUNCA É LIMPA, pelo mesmo motivo de `suspensaEm`: ela é a prova de que
+  /// alguém decidiu, e apagar prova é o que esta fatia existe para não fazer.
+  perdoadasAte          DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cobrancas CobrancaDeAssinatura[]
+
+  @@index([orgId, status])
+}
+
+/// Uma cobrança da assinatura, espelhada do provedor.
+///
+/// FILHA COM `orgId` PRÓPRIO, como todo filho neste schema (RF-T-01): o
+/// isolamento por linha precisa de uma coluna em que se apoiar, e uma consulta
+/// que esqueça o `join` com `Assinatura` não pode sair sem empresa.
+model CobrancaDeAssinatura {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  assinaturaId String
+  assinatura   Assinatura @relation(fields: [assinaturaId], references: [id])
+
+  /// O identificador da cobrança NO PROVEDOR. Único por empresa, e é ele que
+  /// torna a sincronização IDEMPOTENTE: conferir duas vezes atualiza a mesma
+  /// linha em vez de criar duas.
+  ///
+  /// Único por (orgId, referencia) e não global: dois provedores diferentes — ou
+  /// o mesmo provedor em duas contas — podem repetir identificador, e um único
+  /// global faria a cobrança de uma empresa recusar a entrada da outra.
+  referencia String
+
+  valorCentavos Int
+  vencimento    DateTime
+
+  /// `aberta` · `paga` · `vencida` · `cancelada`. CHECK no banco, mesmo motivo
+  /// de `Assinatura.status`.
+  ///
+  /// `vencida` é DERIVADA da leitura do provedor, nunca do relógio local: uma
+  /// cobrança que o provedor ainda chama de aberta não vira vencida aqui só
+  /// porque a data passou. Quem decide sobre pagamento é quem recebe o dinheiro.
+  status String
+
+  pagoEm DateTime?
+
+  /// Quando esta linha foi lida do provedor pela última vez. Ver a nota de
+  /// "espelho, não fonte" no cabeçalho do bloco.
+  sincronizadaEm DateTime @default(now())
+
+  criadoEm DateTime @default(now())
+
+  @@unique([orgId, referencia])
+  /// A consulta da decisão: "esta empresa tem cobrança em aberto vencida?".
+  @@index([orgId, status, vencimento])
+  @@index([assinaturaId, vencimento])
+}
+
+// ============================================================================
+// O MAPA PÚBLICO — fatia 6.5 (degrau 0 da esteira)
+// ============================================================================
+//
+// A raiz de `os.operacaoroot.com` mostra o mapa da ROOT ao vivo, antes de
+// qualquer cadastro. É a isca: quem chega vê o sistema funcionando numa empresa
+// de verdade — a nossa — e só depois decide se quer conta.
+//
+// A REGRA QUE ESTA TABELA EXISTE PARA CUMPRIR
+// Nada aparece na página pública que não tenha sido marcado como público de
+// forma explícita, POR REGISTRO. Não há — e não pode haver — regra do tipo
+// "toda nota do tipo X é pública": essa é a forma que vaza no dia em que
+// alguém criar uma nota daquele tipo sem pensar nesta tela.
+//
+// Daí o desenho: a página pública lê UMA tabela, esta, e mais nada do domínio.
+// Cada linha aqui é um nó do mapa que alguém escreveu de próprio punho. Um
+// registro do sistema (uma nota do contexto, um agente, uma rotina) não tem
+// como aparecer aqui por tabela nenhuma de tipos — alguém precisa ter criado a
+// linha correspondente e a PUBLICADO.
+//
+// E a linha existir não basta: a linha pode existir e não estar publicada
+// (`publicadoEm` nulo). É esse o rascunho — e é ele que o teste usa como
+// controle negativo, porque um rascunho com texto reconhecível que NÃO aparece
+// na resposta é a única prova de que o filtro é o que segura, e não a sorte.
+//
+// POR QUE O TEXTO É COPIADO E NÃO LIDO DO REGISTRO DE ORIGEM
+// A alternativa — a linha apontar para o `ContextItem`/`Agent` e a página ler o
+// rótulo ao vivo dele — parecia mais "ao vivo" e é mais frouxa: renomear o
+// registro interno passaria a mudar a página pública sem ninguém marcar nada.
+// Quem colasse o nome de um cliente na descrição de um agente publicaria aquilo
+// na hora. Aqui o texto que aparece é o texto que alguém escreveu PARA
+// aparecer.
+//
+// O QUE ENTÃO É "AO VIVO": `fonte`. A linha pode nomear uma LEITURA AGREGADA do
+// registro em código (`src/public-map/fontes.ts`) — e só um NÚMERO volta de lá,
+// nunca texto de registro nenhum. O número muda conforme a ROOT opera; o texto
+// em volta dele continua sendo o que foi escrito. Chave que não está no
+// registro não mostra número e não derruba a página.
+//
+// NÃO HÁ ROTA DE ESCRITA. O módulo `public-map` expõe só leitura: publicar é
+// operação de dono (SQL/semente hoje, tela autenticada depois). Uma superfície
+// pública que também publica seria a porta que esta tabela existe para fechar.
+model MapaPublicoItem {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A que eixo do mapa este nó pertence. Texto livre e não enum de propósito:
+  /// eixo novo é decisão editorial, não migration de tipo. O desenho ordena os
+  /// eixos de forma determinística (ver `page.tsx` do web) — numa tela de venda
+  /// o ponto não pode mudar de lugar a cada carregamento.
+  ///
+  /// O eixo reservado `nucleo` é o centro do mapa: o nó da própria empresa.
+  eixo String
+
+  /// Identificador estável do nó dentro da empresa. É por ele que se republica
+  /// ou se despublica sem criar linha nova.
+  chave String
+
+  /// Posição dentro do eixo. Empate desempata pela chave, para o desenho não
+  /// depender da ordem em que o banco devolveu.
+  ordem Int @default(0)
+
+  /// O que aparece embaixo do ponto, e a segunda linha da gaveta. Escritos à
+  /// mão por quem publica — ver o cabeçalho.
+  rotulo  String
+  detalhe String?
+
+  /// A cor, no vocabulário de estado do painel (`brand`, `good`, `warn`,
+  /// `bad`, `info`, `muted`). Valor desconhecido cai em `muted` no desenho, em
+  /// vez de pintar de nada.
+  tom String @default("muted")
+
+  /// A chave da LEITURA AGREGADA que dá o número deste nó, ou nulo para nó sem
+  /// número. O registro fechado está em `src/public-map/fontes.ts` e cada
+  /// entrada devolve um inteiro — nunca conteúdo de registro.
+  fonte String?
+
+  /// A MARCA. Nulo = rascunho: existe, e não aparece em lugar nenhum público.
+  /// Data e autor em vez de um booleano porque publicar é ato, e ato tem quem e
+  /// quando — um booleano não guarda nem um nem outro.
+  publicadoEm  DateTime?
+  publicadoPor String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, chave])
+  /// A consulta da página, inteira: empresa, publicados, na ordem do desenho.
+  @@index([orgId, publicadoEm, eixo, ordem])
+}
+
+// ===========================================================================
+// FATIA 6.3 — O CONSOLE DA PLATAFORMA (RF-B-02)
+//
+// Acrescentado no FIM do arquivo, à mão e SEM `prisma migrate dev`: outras
+// fatias desta onda mexem no mesmo schema, e tanto reescrever o arquivo quanto
+// gerar a migration automaticamente engoliria os modelos delas (protocolo da
+// onda). A migration é `20260911235500_console_da_plataforma`, escrita à mão e
+// provada no banco `prova_63`.
+//
+// AS DUAS TABELAS SÃO DE EMPRESAS DIFERENTES, e isso é o desenho:
+//
+//   `EmpresaNaPlataforma` pertence à empresa DA PLATAFORMA (`orgId` = a Org de
+//   slug `plataforma`) e FALA de um cliente (`empresaId`). É o registro que a
+//   plataforma mantém — plano, estado, saúde, uso e cobrança. Nenhuma coluna
+//   aqui guarda dado de operação do cliente.
+//
+//   `AcessoDeSuporte` pertence à empresa DO CLIENTE (`orgId` = o cliente). É o
+//   cliente quem autoriza, quem revoga e quem vê a lista — então a linha é
+//   dele, e a policy de linha comum já a protege sem exceção nenhuma.
+//
+// Por que isso importa: assim o console NÃO precisa da sentinela de plataforma
+// para listar clientes (ele lê linhas da PRÓPRIA empresa), e o cliente não
+// precisa de rota nova para ver quem tem acesso aos dados dele. Ver o cabeçalho
+// de `src/platform/plataforma.ts`.
+// ===========================================================================
+
+/// O que a PLATAFORMA registra sobre um cliente — RF-B-02.
+///
+/// A lista do console sai daqui, e não de uma varredura de `Org`. A diferença é
+/// deliberada: varrer `Org` exigiria a sentinela de plataforma, que libera
+/// leitura de `Org`, `User` e `Role` de todas as empresas — a lista de quem
+/// trabalha em cada cliente, com e-mail e papel. O console não vê isso.
+///
+/// A consequência, dita em voz alta: empresa que existe em `Org` e não tem linha
+/// aqui NÃO aparece no console. A migration semeia as que já existem e
+/// `PUT /tenants/plataforma/empresas/:empresaId` (re)registra as novas.
+model EmpresaNaPlataforma {
+  id String @id @default(uuid())
+
+  /// A empresa DONA do registro: a plataforma. É por ela que a policy de linha
+  /// recorta, e é por isso que o console enxerga todas as linhas sem exceção.
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A empresa DESCRITA — `Org.id` do cliente.
+  ///
+  /// SEM relação do Prisma e SEM chave estrangeira, e os dois por escolha.
+  /// Uma FK daqui para `Org` seria um ponteiro de uma empresa para OUTRA, que é
+  /// exatamente a forma que o gatilho `mktos_orgid_do_pai` existe para recusar
+  /// no resto do schema — um leitor futuro (ou uma catraca futura) leria isto
+  /// como o cruzamento que o sistema proíbe, quando aqui ele é o assunto da
+  /// tabela. O preço é que apagar uma `Org` deixa a linha órfã; ela vira uma
+  /// empresa "não encontrada" no console, que é informação, não vazamento.
+  empresaId String
+
+  /// Nome e slug COPIADOS no momento do registro.
+  ///
+  /// Cópia e não join: o console não alcança `Org` de outra empresa (é essa a
+  /// fatia). Copiar significa que renomear a empresa no painel dela não muda o
+  /// console até alguém re-registrar — limitação conhecida, e o preço de não
+  /// abrir a leitura cruzada.
+  nome String
+  slug String
+
+  /// Comercial. Texto e não enum pelo mesmo motivo de `Org.modulos`: plano novo
+  /// é decisão de negócio, não migration de tipo.
+  plano String @default("piloto")
+
+  /// `ativa` · `suspensa` · `encerrada`. Suspensa NÃO apaga nada: é a fatia 6.2
+  /// que define o que a suspensão faz: aqui ela só aparece.
+  estado String @default("ativa")
+
+  /// `ok` · `atencao` · `incidente`. Quem escreve é a plataforma.
+  saude String @default("ok")
+
+  /// Contadores de USO. São números MEDIDOS e carimbados (`medidoEm`), nunca
+  /// calculados na hora de mostrar: calcular na hora exigiria varrer tabela de
+  /// cliente, que é o que este console não faz.
+  usuarios       Int     @default(0)
+  agentesAtivos  Int     @default(0)
+  gastoIaUsdMes  Decimal @default(0) @db.Decimal(12, 6)
+
+  /// COBRANÇA. Em real, que é a moeda do contrato — ao contrário do gasto de
+  /// IA, que é medido em dólar pelo provedor.
+  mensalidadeBrl Decimal  @default(0) @db.Decimal(12, 2)
+  cobrancaEmDia  Boolean  @default(true)
+  proximaCobranca DateTime?
+
+  /// Quando os contadores acima foram medidos. Sem isto a tela mostraria número
+  /// velho com cara de número de agora.
+  medidoEm DateTime?
+
+  /// Última vez que a plataforma viu sinal de vida desta empresa.
+  ultimaAtividadeEm DateTime?
+
+  /// Uma linha de observação da operação. NUNCA dado de cliente — é campo de
+  /// quem opera a plataforma, e a revisão do que entra aqui é humana.
+  observacao String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  /// Uma linha por (plataforma, empresa descrita). O registro é único.
+  @@unique([orgId, empresaId])
+  @@index([orgId, estado])
+}
+
+/// O acesso de suporte que o CLIENTE autorizou — RF-B-02, e o que a LGPD pede.
+///
+/// Autorizar acesso de suporte é MUDANÇA DE ACESSO: R4 na escada ("Valor e
+/// acesso"), com motivo obrigatório e alçada `titular`. Quem autoriza é gente da
+/// empresa cliente; o operador da plataforma nunca cria a própria autorização —
+/// a conferência está em `src/platform/acesso-de-suporte.service.ts` e o evento
+/// vai para o RASTRO da empresa que autorizou.
+///
+/// A LINHA É DO CLIENTE (`orgId` = cliente), e por isso a policy de linha comum
+/// já basta: o cliente lê, cria e revoga o que é dele; a empresa da plataforma
+/// não alcança esta tabela pela policy. O operador só a encontra quando o
+/// serviço abre o contexto DAQUELA empresa para conferir a autorização — que é
+/// o único momento em que a plataforma entra na casa do cliente, e ele fica
+/// registrado.
+model AcessoDeSuporte {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Quem recebe o acesso, por e-mail e em minúsculas.
+  ///
+  /// E-mail e não `userId`: o operador da plataforma é usuário de OUTRA empresa
+  /// (a da plataforma), e uma chave estrangeira daqui para `User` seria o mesmo
+  /// ponteiro cruzado que `EmpresaNaPlataforma.empresaId` recusa — com o
+  /// agravante de a policy de `User` recortar por empresa, tornando o join
+  /// inútil justamente no contexto do cliente.
+  operadorEmail String
+  operadorNome  String?
+
+  /// O que a autorização cobre. Valores em `ESCOPOS_DE_SUPORTE`
+  /// (`src/platform/plataforma.ts`); lista fechada, conferida na escrita.
+  escopo String
+
+  /// Por que foi autorizado. Campo de R4 (`exigeMotivo`) — sem ele a concessão
+  /// não se explica depois.
+  motivo String
+
+  /// Quem autorizou, do lado do CLIENTE. Guardado por id e por nome: o id liga
+  /// ao usuário, o nome sobrevive a ele ser desativado.
+  autorizadoPorId   String
+  autorizadoPorNome String
+  autorizadoEm      DateTime @default(now())
+
+  /// A hora em que o acesso acaba SOZINHO. Quem lê é `estadoDoAcesso`, a cada
+  /// tentativa de uso — não há tarefa que "expire" nada, de propósito: prazo que
+  /// depende de um varredor rodando é prazo que não vale quando ele para.
+  expiraEm DateTime
+
+  revogadoEm   DateTime?
+  revogadoPorId String?
+
+  /// Quantas vezes o acesso foi efetivamente usado, e quando foi a última.
+  usos        Int       @default(0)
+  ultimoUsoEm DateTime?
+
+  /// O evento do RASTRO que registrou a autorização. É o fio entre a linha e a
+  /// prova encadeada — a linha pode ser alterada, o evento não.
+  eventoId String?
+
+  criadoEm DateTime @default(now())
+
+  /// O caminho quente: "esta empresa autorizou este operador, e ainda vale?".
+  @@index([orgId, operadorEmail, expiraEm])
+  @@index([orgId, expiraEm])
 }

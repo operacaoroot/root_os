@@ -44,7 +44,6 @@ export default function GooglePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Google · Agenda · Gmail · Docs · Drive</h1>
           <p className="text-sm text-muted">Uma conexão OAuth do root para os quatro serviços.</p>
         </div>
         {st?.connected && can('admin.usuarios') && (
@@ -75,7 +74,7 @@ export default function GooglePage() {
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted">Ainda não conectado.</span>
             {can('admin.usuarios') ? (
-              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+              <button onClick={connect} className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90">
                 <Plug size={15} /> Conectar Google
               </button>
             ) : <span className="text-xs text-muted">Só admin conecta.</span>}
@@ -123,9 +122,52 @@ export default function GooglePage() {
 }
 
 const gi = 'w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
+
+/*
+ * O SUCESSO FALSO QUE ESTA TELA MOSTRAVA — fatia 3.3.
+ *
+ * As quatro escritas do Google passaram a ir pela porta, e a porta as classifica
+ * como R3: elas NÃO saem no clique. A rota responde 200 com
+ * `{status:'aguardando_aprovacao', approvalId, ...}` — a ação foi aceita e está
+ * retida, que é o comportamento correto e não um erro.
+ *
+ * Só que os três tratadores abaixo tratavam qualquer 200 como envio feito e
+ * escreviam "✅ E-mail enviado", "✅ Evento criado", "✅ Doc criado". A pessoa
+ * fechava a tela achando que o e-mail tinha saído, e ele estava numa fila
+ * esperando outra pessoa. É a pior das duas mentiras possíveis aqui: a outra
+ * (uma caixa vermelha) ao menos faria alguém investigar.
+ *
+ * E o "outra pessoa" é literal: quem propôs não pode aprovar (invariante 7 da
+ * escada), e neste caminho o proponente é quem clicou. Por isso a frase diz isso
+ * com todas as letras, e não só "está na fila".
+ */
+interface RespostaDeEscrita {
+  status?: string;
+  approvalId?: string;
+  mensagem?: string;
+  fila?: string;
+  precisaDeOutraPessoa?: boolean;
+}
+
+/** A ação foi retida para aprovação? */
+const foiRetida = (r: RespostaDeEscrita): boolean => r?.status === 'aguardando_aprovacao';
+
+/**
+ * O aviso de retenção. Usa a frase que a API mandou — ela é a que sabe o nível e
+ * a regra — e só acrescenta o endereço da fila quando a API o informou.
+ */
+function avisoDeFila(r: RespostaDeEscrita): string {
+  const base =
+    r.mensagem ??
+    'A ação foi para a fila de aprovações e precisa da confirmação de outra pessoa. Nada foi enviado.';
+  const onde = r.fila ? ` Fila: ${r.fila}.` : '';
+  return `⏳ ${base}${onde}${r.approvalId ? ` (aprovação ${r.approvalId})` : ''}`;
+}
+
 function GoogleWrite() {
   const { token, can } = useAuth();
   const [msg, setMsg] = useState<string | null>(null);
+  const [fila, setFila] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const canMail = can('gmail.responder'), canCal = can('agenda.editar'), canDoc = can('drive.editar');
   if (!canMail && !canCal && !canDoc) return null;
@@ -133,35 +175,63 @@ function GoogleWrite() {
   const [em, setEm] = useState({ to: '', subject: '', body: '' });
   const [ev, setEv] = useState({ title: '', start: '', end: '' });
   const [dc, setDc] = useState({ title: '', content: '' });
-  const flash = (m: string) => { setMsg(m); setErr(null); setTimeout(() => setMsg(null), 6000); };
+  const flash = (m: string) => { setMsg(m); setFila(null); setErr(null); setTimeout(() => setMsg(null), 6000); };
+  /*
+   * O aviso de fila NÃO some sozinho, ao contrário do de sucesso: ele é uma
+   * pendência, não uma confirmação, e quem precisa lê o número da aprovação
+   * para procurá-la.
+   */
+  const naFila = (r: RespostaDeEscrita) => { setFila(avisoDeFila(r)); setMsg(null); setErr(null); };
 
   const sendEmail = () => {
     if (!em.to || !em.subject || !em.body) { setErr('Preencha destinatário, assunto e mensagem.'); return; }
     if (!confirm(`Enviar e-mail para ${em.to}?`)) return;
-    apiPost<{ id: string }>('/google/gmail/send', em, token)
-      .then((r) => { flash(`✅ E-mail enviado (id ${r.id}).`); setEm({ to: '', subject: '', body: '' }); })
+    apiPost<RespostaDeEscrita & { id?: string }>('/google/gmail/send', em, token)
+      .then((r) => {
+        setEm({ to: '', subject: '', body: '' });
+        if (foiRetida(r)) return naFila(r);
+        flash(`✅ E-mail enviado (id ${r.id}).`);
+      })
       .catch((e) => setErr(e.message));
   };
   const createEvent = () => {
     if (!ev.title || !ev.start || !ev.end) { setErr('Preencha título, início e fim.'); return; }
     if (!confirm(`Criar evento "${ev.title}"?`)) return;
-    apiPost<{ link: string }>('/google/calendar/event', { title: ev.title, start: new Date(ev.start).toISOString(), end: new Date(ev.end).toISOString() }, token)
-      .then((r) => { flash(`✅ Evento criado. ${r.link}`); setEv({ title: '', start: '', end: '' }); })
+    apiPost<RespostaDeEscrita & { link?: string }>('/google/calendar/event', { title: ev.title, start: new Date(ev.start).toISOString(), end: new Date(ev.end).toISOString() }, token)
+      .then((r) => {
+        setEv({ title: '', start: '', end: '' });
+        if (foiRetida(r)) return naFila(r);
+        flash(`✅ Evento criado. ${r.link}`);
+      })
       .catch((e) => setErr(e.message));
   };
   const createDoc = () => {
     if (!dc.title) { setErr('Informe o título do documento.'); return; }
     if (!confirm(`Criar documento "${dc.title}"?`)) return;
-    apiPost<{ link: string }>('/google/docs', { title: dc.title, content: dc.content || undefined }, token)
-      .then((r) => { flash(`✅ Doc criado: ${r.link}`); setDc({ title: '', content: '' }); })
+    apiPost<RespostaDeEscrita & { link?: string }>('/google/docs', { title: dc.title, content: dc.content || undefined }, token)
+      .then((r) => {
+        setDc({ title: '', content: '' });
+        if (foiRetida(r)) return naFila(r);
+        flash(`✅ Doc criado: ${r.link}`);
+      })
       .catch((e) => setErr(e.message));
   };
 
   return (
     <div className="space-y-4">
-      <h2 className="text-sm font-semibold">Ações · escrita com aprovação</h2>
-      <p className="text-[11px] text-muted">Cada ação exige permissão específica, pede confirmação e fica registrada na auditoria.</p>
+      <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-semibold text-muted">Ações · escrita com aprovação</h2>
+      <p className="text-[11px] text-muted">
+        Estas três ações são R3: elas não saem no clique. Vão para a fila de aprovações e só
+        acontecem depois que <strong>outra pessoa</strong> com alçada confirmar — quem propõe não
+        pode aprovar. Tudo fica registrado no rastro.
+      </p>
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
+      {fila && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-4 py-2 text-sm text-warn">
+          <span>{fila}</span>
+          <a href="/atendimento" className="underline underline-offset-2 hover:opacity-80">Ir para a fila</a>
+        </div>
+      )}
       {err && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{err}</div>}
       <div className="grid gap-4 lg:grid-cols-3">
         {canMail && (
@@ -170,7 +240,7 @@ function GoogleWrite() {
             <input className={gi} placeholder="Para (email)" value={em.to} onChange={(e) => setEm({ ...em, to: e.target.value })} />
             <input className={gi} placeholder="Assunto" value={em.subject} onChange={(e) => setEm({ ...em, subject: e.target.value })} />
             <textarea className={`${gi} min-h-[80px]`} placeholder="Mensagem" value={em.body} onChange={(e) => setEm({ ...em, body: e.target.value })} />
-            <button onClick={sendEmail} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Enviar</button>
+            <button onClick={sendEmail} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Enviar</button>
           </div>
         )}
         {canCal && (
@@ -179,7 +249,7 @@ function GoogleWrite() {
             <input className={gi} placeholder="Título" value={ev.title} onChange={(e) => setEv({ ...ev, title: e.target.value })} />
             <label className="block text-[11px] text-muted">Início<input type="datetime-local" className={gi} value={ev.start} onChange={(e) => setEv({ ...ev, start: e.target.value })} /></label>
             <label className="block text-[11px] text-muted">Fim<input type="datetime-local" className={gi} value={ev.end} onChange={(e) => setEv({ ...ev, end: e.target.value })} /></label>
-            <button onClick={createEvent} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar evento</button>
+            <button onClick={createEvent} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar evento</button>
           </div>
         )}
         {canDoc && (
@@ -187,7 +257,7 @@ function GoogleWrite() {
             <div className="flex items-center gap-2 text-sm font-medium"><HardDrive size={16} className="text-brand" /> Novo documento</div>
             <input className={gi} placeholder="Título do Doc" value={dc.title} onChange={(e) => setDc({ ...dc, title: e.target.value })} />
             <textarea className={`${gi} min-h-[80px]`} placeholder="Conteúdo (opcional)" value={dc.content} onChange={(e) => setDc({ ...dc, content: e.target.value })} />
-            <button onClick={createDoc} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:opacity-90">Criar Doc</button>
+            <button onClick={createDoc} className="w-full rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">Criar Doc</button>
           </div>
         )}
       </div>

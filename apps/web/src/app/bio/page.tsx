@@ -60,7 +60,6 @@ export default function BioPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Link na bio</h1>
           <p className="text-sm text-muted">
             Página pública, contador do desafio e o rastreio de quem clica — os cliques alimentam
             sozinhos a métrica de bio em <a href="/metas" className="text-brand hover:underline">Metas</a>.
@@ -194,7 +193,6 @@ function PrimeiraPagina({
   return (
     <div className="max-w-lg space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Link na bio</h1>
         <p className="text-sm text-muted">Crie a primeira página para começar.</p>
       </div>
       {erro && (

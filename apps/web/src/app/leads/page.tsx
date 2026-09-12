@@ -43,7 +43,6 @@ function LeadsInner() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Leads</h1>
         <p className="text-sm text-muted">
           {data ? `${data.total} lead(s)` : 'Carregando…'} {subtitle && `— ${subtitle}`}
         </p>

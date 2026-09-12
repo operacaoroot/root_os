@@ -10,9 +10,36 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
 import { proximaOcorrencia, validarCron } from './cron';
+import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
+
+/*
+ * "O GATILHO ESTÁ MESMO DE PÉ?" — a resposta que a tela de Pauta mostra.
+ *
+ * Ela lia só `PAUTA_CRON`, e isso PASSOU A MENTIR na fatia 5.1: o relógio mudou
+ * de dono, e quem desliga o agendador inteiro agora é `ROTINAS_CRON=off`. Com a
+ * nova desligada e a antiga no padrão, a tela dizia "ativo" e nada disparava —
+ * a pior forma de mentir, porque manda quem lê procurar o defeito em outro
+ * lugar.
+ *
+ * São TRÊS condições, e a terceira não é variável nenhuma: o módulo de rotinas
+ * precisa estar montado neste processo. Hoje a API nem sobe sem ele (a sentinela
+ * em `scheduler.service.ts` lança), mas perguntar aqui custa uma linha e é o que
+ * mantém esta resposta verdadeira se a trava um dia mudar.
+ *
+ * O sinal é um módulo simples, e não um provider, de propósito: `RoutinesModule`
+ * importa `PautaModule` para alcançar o `RodadaService`, então injetar o
+ * agendador aqui fecharia um ciclo de módulos por causa de um booleano. Ver
+ * `routines/sinal-do-agendador.ts`.
+ */
+export function gatilhoDaPautaDePe(): boolean {
+  if (!agendadorDeRotinasDePe()) return false;
+  if ((process.env.ROTINAS_CRON ?? 'on') === 'off') return false;
+  return (process.env.PAUTA_CRON ?? 'on') !== 'off';
+}
 
 // CRUD das rotinas e leitura das rodadas/peças. O disparo automático mora no
-// PautaSchedulerService; aqui fica o que a tela usa.
+// agendador de rotinas (`src/routines/rotinas.scheduler.ts`); aqui fica o que a
+// tela usa.
 @Injectable()
 export class RotinaService {
   constructor(
@@ -51,8 +78,9 @@ export class RotinaService {
         proximoRun: r.proximoRun?.toISOString() ?? null,
         rodadas: r._count.rodadas,
       })),
-      // A tela mostra se o gatilho está mesmo de pé no processo.
-      cronAtivo: (process.env.PAUTA_CRON ?? 'on') !== 'off',
+      // A tela mostra se o gatilho está mesmo de pé no processo — as três
+      // condições, não só a variável antiga. Ver `gatilhoDaPautaDePe` acima.
+      cronAtivo: gatilhoDaPautaDePe(),
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
   }

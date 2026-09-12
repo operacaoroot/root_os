@@ -27,7 +27,13 @@ pnpm --filter @mktos/web dev
 
 ## 4. Entrar
 - Web: http://localhost:4000
-- Login dev: **admin@marketing-os.local** / **admin12345**
+- Usuário dev: **admin@marketing-os.local**
+- Senha: **não existe senha padrão, e nenhuma entra em arquivo versionado.** Gere a sua
+  (`openssl rand -base64 24`), ponha em `ADMIN_PASSWORD` no `.env` **antes** do `db:seed` do passo 2
+  e o seed usa essa. Sem a variável, o seed gera uma senha forte e a imprime **uma única vez** na
+  saída — copie dali. Reseed sem `ADMIN_PASSWORD` **não** troca a senha de quem já existe: para
+  rotacionar, defina a variável e rode o seed de novo. Ver `.env.example`.
+- **Só em desenvolvimento.** `db:seed` não é idempotente e apaga dados da org — nunca em produção.
 
 ## O que já funciona (Fase 1)
 - Login JWT + RBAC (26 permissões, 6 perfis); sidebar filtra módulos por permissão.

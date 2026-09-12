@@ -108,6 +108,31 @@ export class UsersService {
       throw new ForbiddenException('Você não pode desativar a própria conta.');
     }
 
+    /*
+     * NÃO SE TROCA A PRÓPRIA SENHA POR AQUI — e esta linha é o que faz a
+     * reautenticação de R4/R5 valer alguma coisa.
+     *
+     * O revisor mediu, na API compilada: com APENAS um token de sessão de
+     * `admin_master`, esta rota trocou a senha do PRÓPRIO dono do token — sem
+     * pedir a senha atual, sem reautenticação — e a confirmação de R4 passou em
+     * seguida com a senha recém-definida. Como `admin_master` é o ÚNICO papel
+     * que junta a permissão desta rota (`admin.usuarios`) com a alçada de
+     * titular, a prova de identidade não acrescentava nada contra sessão roubada
+     * justamente no perfil que aprova R4 — que é o cenário inteiro que a fatia
+     * 3.4 existe para fechar.
+     *
+     * Trocar a própria senha já tem caminho próprio e ele pede a senha atual:
+     * `POST /config/password` (`config.service.ts`). Esta rota continua servindo
+     * para RESETAR a senha de outra pessoa — o que também deveria ser ação
+     * sensível com aprovação, e está no relatório como pergunta de produto.
+     */
+    if (id === actorId && input.password) {
+      throw new ForbiddenException(
+        'Troque a própria senha em POST /config/password, que exige a senha atual. ' +
+          'Esta rota não redefine a senha de quem está usando a sessão.',
+      );
+    }
+
     const data: Record<string, unknown> = {};
     if (input.isActive !== undefined) data.isActive = input.isActive;
     if (input.password) data.passwordHash = await bcrypt.hash(input.password, 10);

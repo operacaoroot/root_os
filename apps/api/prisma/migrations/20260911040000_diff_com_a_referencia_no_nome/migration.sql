@@ -1,0 +1,35 @@
+-- A COLUNA DO DIFF PASSA A DIZER CONTRA O QUE ELA FOI TIRADA.
+--
+-- A migration anterior criou uma coluna só, `diff`. Ela tinha TRÊS escritores
+-- com três referências diferentes: a sobrescrita por empresa gravava contra a
+-- base herdada da ROOT, a reaplicação do seed gravava contra a versão anterior
+-- daquela empresa, e o seed da base gravava contra a versão anterior da base.
+-- Quem lesse as três linhas numa tela compararia coisas diferentes sem saber —
+-- e a diferença muda o SENTIDO do dado: uma queda de R4 para R3 é `desce`
+-- contra o que estava valendo e `sobe` contra uma base que é R2.
+--
+-- Agora são duas colunas, e a referência está no nome:
+--
+--   diffDaBase           — o que ESTA EMPRESA tem de diferente da base da ROOT.
+--                          Nulo na versão da própria base (orgId nulo), onde a
+--                          pergunta não existe.
+--   diffDaVersaoAnterior — o que ESTA VERSÃO mudou em relação à anterior do
+--                          mesmo escopo. Nulo na primeira versão.
+--
+-- Conteúdo de cada uma: `DiffDePolitica` de @mktos/policy —
+--   { capacidades: [{ id, de, para, direcao, campos, travas }],
+--     limites:     [{ campo, de, para, direcao }],
+--     secoes:      [{ secao, direcao, itens }] }
+--
+-- POR QUE UMA MIGRATION NOVA E NÃO A EDIÇÃO DA ANTERIOR
+-- A anterior já foi aplicada em bancos de teste desta mesma onda, e o Prisma
+-- guarda o checksum do arquivo: editá-lo faria `migrate deploy` recusar a rodar
+-- naqueles bancos, com um erro que não tem nada a ver com o assunto. Em
+-- ambiente novo as duas aplicam em sequência e o resultado é o mesmo.
+--
+-- RENAME e não DROP/ADD: o conteúdo da coluna antiga É o diff contra a versão
+-- anterior em dois dos três escritores, e perder o que já foi gravado seria
+-- apagar histórico — que é justamente o que esta tabela existe para não fazer.
+ALTER TABLE "PolicyVersion" RENAME COLUMN "diff" TO "diffDaVersaoAnterior";
+
+ALTER TABLE "PolicyVersion" ADD COLUMN     "diffDaBase" JSONB;

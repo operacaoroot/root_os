@@ -45,7 +45,6 @@ export default function RelatoriosPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Relatórios · Resumo diário (IA)</h1>
           <p className="text-sm text-muted">
             Briefing executivo gerado por IA a partir dos números do dashboard, funil, tráfego,
             tarefas e campanhas.
@@ -55,7 +54,7 @@ export default function RelatoriosPage() {
           <button
             onClick={generate}
             disabled={generating}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-60"
           >
             {generating ? <RefreshCw size={15} className="animate-spin" /> : <Sparkles size={15} />}
             {generating ? 'Gerando…' : 'Gerar agora'}
@@ -88,7 +87,7 @@ export default function RelatoriosPage() {
 
       {history && history.items.length > 1 && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-muted">Histórico ({history.total})</h3>
+          <h3 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Histórico ({history.total})</h3>
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">
             {history.items.slice(1).map((r) => (
               <li key={r.id} className="flex items-center justify-between px-4 py-3 text-sm hover:bg-surface-2">

@@ -15,7 +15,7 @@ export function Card({
     <section className="rounded-xl border border-border bg-surface p-5">
       {(titulo || acao) && (
         <div className="mb-4 flex items-center justify-between gap-3">
-          {titulo && <h2 className="text-sm font-semibold">{titulo}</h2>}
+          {titulo && <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-semibold text-muted">{titulo}</h2>}
           {acao}
         </div>
       )}

@@ -1,0 +1,1204 @@
+{
+  "versao": "1.2.0",
+  "atualizadoEm": "2026-09-11",
+  "origem": "o código real deste repositório",
+  "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
+  "estende": "politica-root.json",
+  "capacidades": [
+    {
+      "id": "contexto.memoria.buscar",
+      "ferramenta": "search_knowledge",
+      "rota": "GET /knowledge/search",
+      "descricao": "Busca SEMÂNTICA na base de conhecimento (vault Obsidian do root): retorna as notas mais relevantes p/ a pergunta, com título, trecho e caminho. Use para responder citando o conhecimento interno — sempre cite a nota (path).",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "q"
+        ],
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 2,
+            "description": "o que procurar na base"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "contexto.nota.ler",
+      "ferramenta": "get_note",
+      "rota": "GET /knowledge/:id",
+      "descricao": "Retorna o conteúdo completo de uma nota da base de conhecimento pelo id (use o id vindo do search_knowledge).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "contexto.arquivo.listar",
+      "ferramenta": "list_drive_files",
+      "rota": "GET /google/drive",
+      "descricao": "Lista/busca arquivos do Google Drive (nome, tipo, modificado, link). `q` filtra por nome.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "contexto.documento.ler",
+      "ferramenta": "get_doc",
+      "rota": "GET /google/docs/:id",
+      "descricao": "Lê o conteúdo (texto) de um Google Doc pelo id (use o id vindo do list_drive_files).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "numeros.painel.ler",
+      "ferramenta": "get_dashboard_summary",
+      "rota": "GET /dashboard/summary",
+      "descricao": "Resumo executivo do dia: leads (hoje/semana/mês), conversões, vendas, receita, taxa de conversão, CPL, tarefas atrasadas, campanhas ativas/em risco e alertas.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "numeros.funil.ler",
+      "ferramenta": "get_funnel_metrics",
+      "rota": "GET /funnel/metrics",
+      "descricao": "Métricas do funil de marketing: contagem por etapa (visitante→lead→qualificado→...→ganho) e conversão entre etapas.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "numeros.meta.ler",
+      "ferramenta": "get_goals_panel",
+      "rota": "GET /goals/panel",
+      "descricao": "Painel de METAS do projeto (desafio 1.000 posts / 20M views / 1.000 vendas): fase (aquecimento/baseline/regime), marcos acumulados, as 11 taxas do funil com farol (verde/amarelo/vermelho vs piso/meta, janela de 4 semanas), escada de views, projeções do dia 365 e série semanal. Use para diagnosticar o elo mais fraco e sugerir ação.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "numeros.evento.resumo",
+      "ferramenta": "get_events_summary",
+      "rota": "GET /events/summary",
+      "descricao": "Resumo do tráfego do pixel numa janela (default 7 dias): totais de eventos, sessões, visitantes, compras e receita; quebra por evento, por origem (UTM) e páginas mais vistas; série diária.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "numeros.evento.listar",
+      "ferramenta": "list_recent_events",
+      "rota": "GET /events/recent",
+      "descricao": "Lista os eventos de pixel mais recentes (page_view, purchase, lead, etc.) com página, origem (UTM), dispositivo e valor. Útil para depurar rastreamento e ver conversões em tempo quase real.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.resumo.ler",
+      "ferramenta": "get_finance_summary",
+      "rota": "GET /finance/summary",
+      "descricao": "Resumo financeiro: saldo total consolidado, resultado/entradas/saídas do mês, contas a pagar e a receber (inclusive vencidas), saldo por conta, top categorias do mês e status das conexões bancárias.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.conta.listar",
+      "ferramenta": "list_finance_accounts",
+      "rota": "GET /finance/accounts",
+      "descricao": "Lista as contas financeiras (bancária, caixa, cartão) com saldo atual e saldo inicial.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.lancamento.listar",
+      "ferramenta": "list_finance_transactions",
+      "rota": "GET /finance/transactions",
+      "descricao": "Lista lançamentos financeiros, filtrando por status (previsto|realizado|conciliado), tipo (entrada|saida), conta e período (from/to em YYYY-MM-DD). Retorna também os totais de entradas, saídas e saldo.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.fluxo.ler",
+      "ferramenta": "get_cashflow",
+      "rota": "GET /finance/cashflow",
+      "descricao": "Fluxo de caixa projetado dia a dia (inclui previstos por vencimento): saldo de abertura, entradas/saídas/resultado por dia e saldo acumulado. Janela padrão: hoje até +30 dias.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.dre.ler",
+      "ferramenta": "get_dre",
+      "rota": "GET /finance/dre",
+      "descricao": "DRE (Demonstrativo de Resultado / income statement) do período: faturamento bruto/líquido, deduções, custos diretos, margem de contribuição, custo com pessoal, despesas operacionais, EBITDA, resultado financeiro, lucro líquido e as margens (%). Motor dirigido por plano de contas → linhas de DRE.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.plano.listar",
+      "ferramenta": "list_chart_accounts",
+      "rota": "GET /finance/chart-accounts",
+      "descricao": "Plano de contas gerencial (hierárquico: grupos → subgrupos → contas folha) com o mapeamento de cada conta para a linha do DRE.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.pagavel.listar",
+      "ferramenta": "list_payables",
+      "rota": "GET /finance/payables",
+      "descricao": "Contas a pagar e a receber (lançamentos previstos): valor, fornecedor/cliente, vencimento, dias de atraso e status de aprovação. Totais de a pagar/receber, vencidos e itens aguardando aprovação. Filtre por tipo (pagar|receber).",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tipo": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.kpi.ler",
+      "ferramenta": "get_finance_kpis",
+      "rota": "GET /finance/kpis",
+      "descricao": "KPIs financeiros do mês: margens (bruta/EBITDA/líquida do DRE), inadimplência (% do a receber vencido), índice de acurácia (% de movimentos bancários conciliados) e os totais do DRE (FB, FL, MC, EBITDA, LL).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.conciliacao.ler",
+      "ferramenta": "get_conciliacao",
+      "rota": "GET /finance/conciliacao",
+      "descricao": "Status da conciliação bancária: movimentos (OFX/Pluggy) ainda não conciliados, com a melhor sugestão de título e o score, e os títulos em aberto.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.banco.listar",
+      "ferramenta": "list_bank_connections",
+      "rota": "GET /finance/bank/connections",
+      "descricao": "Conexões bancárias e de pagamento (Asaas, Open Finance/Pluggy): provedor, instituição, status, último sync, erro e nº de contas. Indica também se Asaas/Pluggy estão configurados. Asaas puxa extrato (caixa), cobranças a receber e saldo.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comunicacao.email.buscar",
+      "ferramenta": "search_gmail",
+      "rota": "GET /google/gmail",
+      "descricao": "Lista/busca e-mails recentes do Gmail (remetente, assunto, data, trecho, não-lido). `q` usa a sintaxe de busca do Gmail (ex.: \"is:unread\", \"from:cliente\").",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comunicacao.email.ler",
+      "ferramenta": "get_email",
+      "rota": "GET /google/gmail/:id",
+      "descricao": "Lê um e-mail completo do Gmail pelo id (corpo em texto).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comunicacao.agenda.listar",
+      "ferramenta": "list_calendar_events",
+      "rota": "GET /google/calendar",
+      "descricao": "Próximos eventos da Google Agenda (calendário primário): título, início/fim, local e participantes.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.tarefa.listar",
+      "ferramenta": "list_tasks",
+      "rota": "GET /tasks",
+      "descricao": "Lista tarefas (ClickUp/Asana unificados). Filtros: overdue (só atrasadas) e status.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.tarefa.atrasada",
+      "ferramenta": "get_overdue_tasks",
+      "rota": "GET /tasks?overdue=1",
+      "descricao": "Atalho: retorna apenas as tarefas atrasadas (due < agora e não concluídas).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.trabalho.estrutura",
+      "ferramenta": "trabalho_estrutura",
+      "rota": "GET /trabalho/estrutura",
+      "descricao": "Estrutura do módulo Trabalho (ClickUp-like nativo): pastas → listas com statuses (pipeline com cor e tipo open/custom/closed), campos personalizados com opções, etiquetas e responsáveis. Use para achar listId/statusId/fieldId antes de listar tarefas.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.trabalho.listar",
+      "ferramenta": "trabalho_tarefas",
+      "rota": "GET /trabalho/tarefas",
+      "descricao": "Tarefas do módulo Trabalho com status real da lista, prioridade, responsável, prazo, etiquetas e valores dos campos personalizados (Formato/Eixo/Tipo/Fonte na Gestão de Temas). Filtros: list_id, status_id, assignee, busca por título.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.trabalho.ler",
+      "ferramenta": "trabalho_tarefa",
+      "rota": "GET /trabalho/tarefas/:id",
+      "descricao": "Detalhe completo de uma tarefa do módulo Trabalho: descrição, campos personalizados, etiquetas, subtarefas, COMENTÁRIOS (thread) e atividade (auditoria), além dos ids interno e do ClickUp de origem.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "crm.lead.buscar",
+      "ferramenta": "search_leads",
+      "rota": "GET /leads",
+      "descricao": "Lista leads, opcionalmente filtrando por período (today|week|month) e/ou status (novo, qualificado, oportunidade, reuniao, proposta, ganho, perdido).",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "novo",
+              "qualificado",
+              "oportunidade",
+              "reuniao",
+              "proposta",
+              "ganho",
+              "perdido"
+            ]
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "today",
+              "week",
+              "month"
+            ]
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "crm.lead.ler",
+      "ferramenta": "get_lead",
+      "rota": "GET /leads/:id",
+      "descricao": "Retorna a ficha completa de um lead pelo id (dados, UTMs, campanha e histórico).",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pecas.campanha.listar",
+      "ferramenta": "list_campaigns",
+      "rota": "GET /campaigns",
+      "descricao": "Lista campanhas com leads, conversões e CPL. Filtro opcional por status (ativa, pausada, problema, encerrada).",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pecas.campanha.ler",
+      "ferramenta": "get_campaign",
+      "rota": "GET /campaigns/:id",
+      "descricao": "Dossiê de uma campanha: métricas (CPL/CPA), orçamento/investido e leads da campanha.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pecas.conteudo.estatistica",
+      "ferramenta": "get_content_stats",
+      "rota": "GET /content/stats",
+      "descricao": "Resumo do pipeline de conteúdo (temas do ClickUp): total e contagem por etapa (validar ideia/escrever roteiro/complete), por eixo e por formato.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pecas.conteudo.listar",
+      "ferramenta": "list_content",
+      "rota": "GET /content",
+      "descricao": "Lista temas de conteúdo (pipeline do ClickUp) com título, etapa (status), eixo, formato, tipo e link. Filtros opcionais por status, eixo e formato. Use para triar/priorizar temas e achar o id para propor mudança de etapa.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "social.instagram.resumo",
+      "ferramenta": "get_instagram_overview",
+      "rota": "GET /meta/instagram/overview",
+      "descricao": "Visão geral do Instagram Business: seguidores, seguindo, número de publicações e, quando disponível, alcance/impressões/visitas ao perfil dos últimos 28 dias.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "social.instagram.midia",
+      "ferramenta": "list_instagram_media",
+      "rota": "GET /meta/instagram/media",
+      "descricao": "Últimos posts do Instagram com métricas por post: curtidas, comentários e (quando disponível) alcance, impressões e salvamentos.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "email.rascunhar",
+      "ferramenta": "email_rascunhar",
+      "descricao": "Escreve um rascunho de e-mail que fica dentro do OS. Ninguém de fora recebe nada.",
+      "nivel": "R1",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assunto",
+          "corpo"
+        ],
+        "properties": {
+          "assunto": {
+            "type": "string",
+            "minLength": 1
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "relatorio.gerar",
+      "ferramenta": "relatorio_gerar",
+      "rota": "POST /reports/daily/generate",
+      "descricao": "Gera o briefing executivo do dia a partir dos números do painel. Fica dentro do OS.",
+      "nivel": "R1",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": true,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "crm.lead.alterar",
+      "ferramenta": "lead_atualizar_status",
+      "rota": "PATCH /leads/:id",
+      "descricao": "Altera status e próxima ação de um lead.",
+      "nivel": "R2",
+      "desfazer": "crm.lead.alterar",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "novo",
+              "qualificado",
+              "oportunidade",
+              "reuniao",
+              "proposta",
+              "ganho",
+              "perdido"
+            ]
+          },
+          "nextAction": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "operacao.tarefa.alterar",
+      "ferramenta": "tarefa_atualizar_status",
+      "rota": "PATCH /tasks/:id",
+      "descricao": "Altera o status de uma tarefa.",
+      "nivel": "R2",
+      "desfazer": "operacao.tarefa.alterar",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pecas.campanha.alterar",
+      "ferramenta": "campanha_atualizar_status",
+      "rota": "PATCH /campaigns/:id",
+      "descricao": "Altera o status de uma campanha.",
+      "nivel": "R2",
+      "desfazer": "pecas.campanha.alterar",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "clickup.tarefa.criar",
+      "rota": "POST /pauta/pecas/:id/publicar",
+      "descricao": "abre tarefa no ClickUp, na lista de destino definida pelo ambiente (o modelo não escolhe onde ela cai). SEM `ferramenta` de propósito: `tool-adapter.ts` filtra por esse campo, e dar nome aqui liberaria a capacidade para o laço do agente — afrouxamento que só entra por semente assinada.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "descricao": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "clickup.tarefa.alterar",
+      "ferramenta": "conteudo_mover_etapa",
+      "rota": "PATCH /content/:id",
+      "descricao": "Move a etapa de um conteúdo, com write-back do status no ClickUp.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tarefaId",
+          "status"
+        ],
+        "properties": {
+          "tarefaId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "id da tarefa no ClickUp"
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "description": "nome do status de destino, como o ClickUp o escreve"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.evento.criar",
+      "ferramenta": "agenda_evento_criar",
+      "rota": "POST /google/calendar/event",
+      "descricao": "Cria evento na Agenda do Google da conta conectada.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo",
+          "inicio"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inicio": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "fim": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "descricao": {
+            "type": "string"
+          },
+          "local": {
+            "type": "string"
+          },
+          "convidados": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e-mails convidados"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "documento.criar",
+      "ferramenta": "documento_criar",
+      "rota": "POST /google/docs",
+      "descricao": "Cria um Google Doc no Drive da conta conectada.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conteudo": {
+            "type": "string"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "documento.anexar",
+      "ferramenta": "documento_anexar",
+      "rota": "POST /google/docs/:id/append",
+      "descricao": "Acrescenta conteúdo ao fim de um Google Doc existente.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "documentoId",
+          "texto"
+        ],
+        "properties": {
+          "documentoId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "email.enviar",
+      "ferramenta": "email_enviar",
+      "rota": "POST /google/gmail/send",
+      "descricao": "Envia e-mail pela conta Google conectada. Não existe desenviar.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "para",
+          "assunto",
+          "corpo"
+        ],
+        "properties": {
+          "para": {
+            "type": "string",
+            "description": "destinatário"
+          },
+          "assunto": {
+            "type": "string",
+            "minLength": 1
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cc": {
+            "type": "string",
+            "description": "cópia, separada por vírgula"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "whatsapp.mensagem.enviar",
+      "ferramenta": "whatsapp_enviar",
+      "rota": "POST /pauta/pecas/:id/publicar",
+      "descricao": "Publica a peça no grupo de WhatsApp pela Evolution. Não existe desenviar.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "corpo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string",
+            "description": "linha de título, vira negrito no topo"
+          },
+          "corpo": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o texto que vai para o grupo"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.lancamento.criar",
+      "ferramenta": "financeiro_lancamento_criar",
+      "rota": "POST /finance/transactions",
+      "descricao": "Cria um lançamento financeiro. O único desfazer possível é apagar o lançamento (financeiro.lancamento.excluir, R5), que o OS nunca executa — prepara e entrega a uma pessoa. A volta, portanto, é manual.",
+      "nivel": "R3",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "usuario.permissao.alterar",
+      "rota": "PATCH /users/:id",
+      "descricao": "Muda o papel de uma pessoa — quem pode o quê.",
+      "nivel": "R4",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.lancamento.excluir",
+      "rota": "DELETE /finance/transactions/:id",
+      "descricao": "Apaga um lançamento financeiro.",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": true,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "financeiro.pagamento.baixar",
+      "ferramenta": "financeiro_pagamento_baixar",
+      "descricao": "Dá baixa num título a pagar. Movimenta dinheiro: o OS prepara e devolve para a pessoa executar na origem.",
+      "nivel": "R5",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "titulo"
+        ],
+        "properties": {
+          "titulo": {
+            "type": "string"
+          },
+          "valor": {
+            "type": "number"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "movimento",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "credencial.rotacionar",
+      "rota": "PUT /integrations/:key",
+      "descricao": "Troca a credencial de um conector. Derruba o acesso anterior.",
+      "nivel": "R5",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": true,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "conector.desligar",
+      "rota": "POST /integrations/:chave/desligamento",
+      "descricao": "Desliga um conector para esta empresa (RF-G-06): o OS para de usá-lo. NÃO apaga credencial nem revoga token — religar restabelece sem nova autorização. Aceita a chave de um conector (gmail) ou de um grupo (google = as quatro superfícies).",
+      "nivel": "R3",
+      "desfazer": "conector.religar",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "conector.religar",
+      "rota": "DELETE /integrations/:chave/desligamento",
+      "descricao": "Religa um conector desligado para esta empresa (RF-G-06): devolve ao OS a permissão de usá-lo, desfazendo a decisão de quem mandou parar. Nenhuma credencial é tocada.",
+      "nivel": "R4",
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "restrita",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    }
+  ]
+}

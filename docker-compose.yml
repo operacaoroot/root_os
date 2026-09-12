@@ -47,29 +47,116 @@ services:
   # --- Aplicações (imagem ÚNICA do monorepo; ver Dockerfile na raiz) ---
   # Segredos vêm do ambiente (deploy/up.sh injeta ~/.config/root/*.env + apps/api/.env).
   api:
-    build: .
+    # A imagem `mktos-app` é construída AQUI e usada pelos três serviços. Por
+    # isso o build arg do pacote de browser da web mora neste bloco, e não no
+    # serviço `web`: quando o Next compila, quem está rodando é este build.
+    build:
+      context: .
+      args:
+        # Ver o `ARG` homônimo no Dockerfile. `NEXT_PUBLIC_*` é trocada pelo
+        # VALOR no `next build`; posta só no `environment:` do serviço `web`,
+        # ela não chega ao navegador — o pacote já foi compilado sem ela.
+        # Trocar esta chave exige RECONSTRUIR a imagem (`--build`), não basta
+        # reiniciar o container.
+        NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
     image: mktos-app
     container_name: mktos_api
     working_dir: /app/apps/api
     command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
     environment:
+      # A conexão DONA das tabelas. É ela que o `prisma migrate deploy` do
+      # `command:` acima usa — migration cria tabela, e só o dono cria tabela.
       DATABASE_URL: postgresql://${DB_USER:-mkt}:${DB_PASSWORD:-mkt}@db:5432/${DB_NAME:-marketing_os}
+      # A conexão da APLICAÇÃO: o papel restrito `mktos_app` (NOBYPASSRLS), criado
+      # pela migration 20260911020000_papel_de_aplicacao. Dono ignora policy de
+      # isolamento por linha; papel restrito não.
+      #
+      # É o USUÁRIO que troca, não a URL inteira: a aplicação reescreve o usuário
+      # e a senha dentro da DATABASE_URL acima (ver urlDaAplicacao em
+      # apps/api/src/prisma/sessao-de-banco.ts). Duas URLs completas a manter em
+      # sincronia — uma falando com `db:5432`, outra com `localhost` — é o tipo de
+      # divergência que só aparece no deploy.
+      #
+      # VAZIO = segue conectando como DONA, exatamente como antes desta fatia. O
+      # boot anuncia no log qual dos dois está valendo. Para provisionar a senha:
+      # deploy/papel-app.sh.
+      DB_APP_USER: ${DB_APP_USER:-}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-}
+      # Escape para quando a aplicação falar com outro host (um pgbouncer, por
+      # exemplo). Preenchida, vence as duas de cima.
+      APP_DATABASE_URL: ${APP_DATABASE_URL:-}
+      # `observar` (padrão): consulta sem empresa resolvida RODA, com app.org_id
+      # vazio, e o caminho é registrado UMA vez no log — é assim que se levanta o
+      # inventário de quem ainda não abre contexto (cron, rota pública, script).
+      # `impor`: consulta sem empresa LANÇA (RF-T-04). Virar para `impor` antes de
+      # o inventário estar zerado derruba a aplicação — é a fatia do RLS que faz
+      # essa virada, não esta.
+      TENANT_MODO: ${TENANT_MODO:-observar}
       API_PORT: "4001"
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       AUTH_SECRET: ${AUTH_SECRET:-dev-secret}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:4000}
       # O container NÃO lê o .env: só chega o que estiver listado aqui. Variável
       # preenchida no .env e ausente deste bloco simplesmente não existe lá dentro.
+      # A PORTA. `observar` NÃO deixa passar — ele afrouxa o REGISTRO, nunca o
+      # EFEITO. Os dois freios valem igual nos dois modos:
+      #   · bloqueio — `permitido: false`, que na escada é exatamente R5
+      #     (capacidade sem classificação vale R5): recusa e não chama o efeito;
+      #   · retenção por aprovação — R3 e R4 sempre, R2 enquanto a aprovação
+      #     configurável estiver ligada: cria a aprovação e não chama o efeito.
+      # Duas recusas acontecem ANTES de o modo ser consultado: argumento fora do
+      # `argsSchema` da capacidade e capacidade fora das declaradas do agente.
+      # O que `observar` muda, então, é só o carimbo `modo=observar` (mais duas
+      # linhas de log): na PolicyDecision, SEMPRE; no RASTRO, só no evento
+      # `tool.recusado` da recusa por classificação. `tool.proposta`,
+      # `tool.resultado` e `tool.erro` não carregam o modo — e o `tool.recusado`
+      # das duas recusas da porta (argumento inválido, capacidade não declarada)
+      # também não. É da PolicyDecision, por isso, que sai o relatório de
+      # calibragem que decide a virada para `impor`.
+      # Fonte: apps/api/src/gateway/tool-gateway.service.ts.
+      # Lida no CONSTRUTOR: `docker restart` não troca o valor — use
+      # `up -d --no-build api`.
+      GATEWAY_MODO: ${GATEWAY_MODO:-observar}
+      RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      # Percentual do teto diário de IA em que o painel alerta (RF-B-03). Lido em
+      # `apps/api/src/llm/relatorio-custo.service.ts` e devolvido no payload, para
+      # a tela nunca ter um segundo número escrito nela. Sem esta linha o valor
+      # simplesmente não chega ao container — e o percentual "configurado" seria
+      # a constante 80, com a tela afirmando que veio da configuração.
+      TETO_IA_ALERTA_PERCENT: ${TETO_IA_ALERTA_PERCENT:-80}
+      # A porta da rua do produto (fatia 6.1). `sim` abre `POST onboarding/cadastro`,
+      # que é ANÔNIMA por desenho — qualquer pessoa cria a própria empresa, entra
+      # pelo login com Google (que a rota provisiona, então a allowlist de e-mail
+      # não a alcança) e passa a gastar modelo. Fechada, a rota responde 404 e não
+      # confirma que existe.
+      #
+      # O DEFAULT É FECHADO porque esta instalação é a da CASA: `os.operacaoroot.com`
+      # atende a ROOT, e abrir cadastro aqui é decisão comercial, não consequência
+      # de um deploy. Lida no construtor: trocar exige `up -d --no-build api`.
+      ONBOARDING_ABERTO: ${ONBOARDING_ABERTO:-nao}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      # OpenRouter: mesma API de Chat Completions, com nome e custo próprios.
+      # O custo vem de `usage.cost` do próprio provedor — medição, não estimativa.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      # O RELÓGIO DO PRODUTO (RF-N-04). `off` mantém o módulo de rotinas montado
+      # e só cala o tique — é o que a receita de smoke do docs/DEPLOY.md usa.
+      # Precisa estar NESTE bloco: o container não lê o `.env`, só chega o que
+      # está listado aqui (ver CLAUDE.md, "Onde cada `.env` é lido").
+      ROTINAS_CRON: ${ROTINAS_CRON:-on}
       # Pauta: acervo, rotina e canais (ver docs/PAUTA.md)
       APIFY_TOKEN: ${APIFY_TOKEN:-}
       APIFY_TIMEOUT_SEC: ${APIFY_TIMEOUT_SEC:-120}
+      # Virou apelido na fatia 5.1: só pula as rotinas de pauta. Quem quer o
+      # produto sem relógio usa `ROTINAS_CRON=off`, acima.
       PAUTA_CRON: ${PAUTA_CRON:-on}
       PAUTA_ESPELHO: ${PAUTA_ESPELHO:-off}
       PAUTA_ESPELHO_DIR: ${PAUTA_ESPELHO_DIR:-}
@@ -78,6 +165,24 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
       EVOLUTION_GRUPO_JID: ${EVOLUTION_GRUPO_JID:-}
+      # APROVAR PELO WHATSAPP (fatia 5.5, RF-A-06). DESLIGADO É O PADRÃO: sem as
+      # duas variáveis abaixo o webhook responde 404, nenhum pedido de aprovação
+      # sai e nenhum código é gerado. Precisam estar NESTE bloco — o container não
+      # lê o `.env`, só chega o que está listado aqui (ver CLAUDE.md, "Onde cada
+      # `.env` é lido"). Sem esta linha o canal era INLIGÁVEL em produção: dava
+      # para preencher o `.env` e não acontecer nada.
+      #   · _SEGREDO autentica o webhook (viaja no cabeçalho x-canal-segredo);
+      #   · _CODIGO_SEGREDO deriva o código de cada aprovação e NUNCA sai do
+      #     processo. Os dois precisam ser DIFERENTES e ter 24+ caracteres — se
+      #     faltar um, ou se forem iguais, o arranque grita e o canal fica
+      #     desligado (EnvioDeAprovacaoService.onModuleInit).
+      CANAL_APROVACAO_SEGREDO: ${CANAL_APROVACAO_SEGREDO:-}
+      CANAL_APROVACAO_CODIGO_SEGREDO: ${CANAL_APROVACAO_CODIGO_SEGREDO:-}
+      # As capacidades que o canal aceita DECIDIR. Vazio = o padrão
+      # (`whatsapp.mensagem.enviar`), nunca "todas". Só mostra o conteúdo exato —
+      # e só decide — quando o efeito da capacidade é de sensibilidade `publica`;
+      # o resto recebe aviso sem código e decide no painel.
+      CANAL_APROVACAO_CAPACIDADES: ${CANAL_APROVACAO_CAPACIDADES:-}
       CLICKUP_LIST_PAUTA: ${CLICKUP_LIST_PAUTA:-}
       CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
       CLICKUP_SPACE_ID: ${CLICKUP_SPACE_ID:-}
@@ -87,6 +192,10 @@ services:
       CLICKUP_CONTENT_LIST_IDS: ${CLICKUP_CONTENT_LIST_IDS:-}
       CLICKUP_CONTENT_LIST_NAMES: ${CLICKUP_CONTENT_LIST_NAMES:-Gestão de Temas}
       CLICKUP_SYNC_INTERVAL_MIN: ${CLICKUP_SYNC_INTERVAL_MIN:-60}
+      # SOBREVIVEU À APOSENTADORIA DO BOT (fatia 5.8) e não é resíduo: quem lê
+      # esta variável aqui é `src/integrations/integrations.service.ts`, para a
+      # tela de Conexões dizer se o Telegram está configurado. O serviço
+      # `telegram` que saiu deste arquivo era outro leitor, num outro container.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       OBSIDIAN_VAULT_PATH: /vault
       OBSIDIAN_REINDEX_MIN: ${OBSIDIAN_REINDEX_MIN:-30}
@@ -109,6 +218,17 @@ services:
       META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
       # Link na bio (absorvido do root-bio)
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # O COFRE (RF-C-01..04). Vazias por padrão, e vazio É um estado válido:
+      # sem elas o chaveiro tem UMA chave — a `ENCRYPTION_KEY` acima, que entra
+      # com o id `env` — e tudo funciona como antes do cofre. O que NÃO funciona
+      # é rotacionar: rotacionar exige ter para onde ir.
+      #   COFRE_CHAVES="k1:<base64 32B>,k2:<base64 32B>"  (chaveiro; a velha FICA)
+      #   COFRE_CHAVE_ATUAL="k2"                          (com qual cifrar o que entra)
+      # Apontar COFRE_CHAVE_ATUAL para um id fora do chaveiro derruba o arranque
+      # de propósito: no lado silencioso, o erro de digitação faria o produto
+      # gravar tudo com a chave velha achando que rotacionou.
+      COFRE_CHAVES: ${COFRE_CHAVES:-}
+      COFRE_CHAVE_ATUAL: ${COFRE_CHAVE_ATUAL:-}
       PUBLIC_BIO_ORIGIN: ${PUBLIC_BIO_ORIGIN:-https://bio.operacaoroot.com}
       INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
       INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
@@ -127,9 +247,19 @@ services:
       S3_BUCKET: ${S3_BUCKET:-marketing-os}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:4000}
     volumes:
-      # vault Obsidian do root montada READ-ONLY (base de conhecimento)
+      # Vault Obsidian montada READ-ONLY (base de conhecimento).
+      #
+      # O default é `./vault` — relativo à pasta do projeto, resolvido pelo
+      # compose — e não o caminho da máquina de alguém. Um `/Users/<pessoa>/...`
+      # aqui não existe em nenhuma outra máquina, e na VPS ele nasceria como
+      # diretório vazio de dono root: a busca semântica subiria sem nada dentro
+      # e ninguém veria erro. Com `./vault`, o default já é o que a VPS usa de
+      # verdade (`/srv/marketing-os/vault`).
+      #
+      # Para apontar para a vault real no Mac, preencha OBSIDIAN_VAULT_HOST no
+      # `.env` com o caminho absoluto (ver `.env.example`).
       - type: bind
-        source: ${OBSIDIAN_VAULT_HOST:-/Users/rodrigosaggioro/Documents/Obsidian Vault}
+        source: ${OBSIDIAN_VAULT_HOST:-./vault}
         target: /vault
         read_only: true
     depends_on:
@@ -158,6 +288,23 @@ services:
       # passar pelo rewrite /api (que existe para o browser).
       API_INTERNAL_URL: http://api:4001
       BIO_HOST: ${BIO_HOST:-bio.operacaoroot.com}
+      # De quem são os eventos da Root Central (RF-T-04). É o `id` da Org dona
+      # da Central — uuid, não slug. Vazia, os eventos caem na empresa PADRÃO do
+      # pixel (hoje a ROOT), que é o comportamento de antes desta fatia.
+      #
+      # DUAS VARIÁVEIS PORQUE SÃO DOIS MOMENTOS, e confundi-los custa uma tarde:
+      #  · CENTRAL_PIXEL_KEY é lida NO SERVIDOR, em tempo de execução, pelo Route
+      #    Handler do resgate (/central/r/:codigo). Esta linha basta para ela.
+      #  · NEXT_PUBLIC_CENTRAL_PIXEL_KEY é lida NO BROWSER, e o Next a troca pelo
+      #    valor durante o `next build` — variável de ambiente do container NÃO
+      #    chega ao pacote já compilado. Quem a faz valer é o `args:` do bloco
+      #    `build:` do serviço `api` (é ele que constrói a imagem `mktos-app`
+      #    que este serviço usa); a linha abaixo existe só para as duas
+      #    aparecerem juntas e para o `env-status.sh` enxergá-la.
+      #    CONSEQUÊNCIA PRÁTICA: trocar esta chave exige reconstruir a imagem
+      #    (`deploy/up.sh` já força `--build`); `docker restart` não muda nada.
+      CENTRAL_PIXEL_KEY: ${CENTRAL_PIXEL_KEY:-}
+      NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
     depends_on:
       api: { condition: service_healthy }
     ports:
@@ -165,28 +312,62 @@ services:
     networks: [marketing-os-net]
     restart: unless-stopped
 
-  telegram:
-    image: mktos-app
-    container_name: mktos_telegram
-    working_dir: /app/apps/telegram
-    command: node dist/index.js
-    environment:
-      MCP_API_URL: http://api:4001/api
-      MCP_ENTRY: /app/packages/mcp/dist/index.js
-      MCP_SERVICE_EMAIL: ${MCP_SERVICE_EMAIL:-mcp@marketing-os.local}
-      MCP_SERVICE_PASSWORD: ${MCP_SERVICE_PASSWORD:?defina no .env (sem default fraco) — rode db:seed p/ alinhar a conta}
-      MCP_ACTION_EMAIL: ${MCP_ACTION_EMAIL:-ia-acao@marketing-os.local}
-      MCP_ACTION_PASSWORD: ${MCP_ACTION_PASSWORD:?defina no .env (sem default fraco) — rode db:seed p/ alinhar a conta}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
-      DAILY_REPORT_TIME: ${DAILY_REPORT_TIME:-08:00}
-      DAILY_REPORT_TZ: ${DAILY_REPORT_TZ:-America/Sao_Paulo}
-    depends_on:
-      api: { condition: service_healthy }
-    networks: [marketing-os-net]
-    restart: unless-stopped
+  # ---------------------------------------------------------------------------
+  # O SERVIÇO `telegram` FOI APOSENTADO NA FATIA 5.8 (11/09/2026) — e a lápide
+  # fica aqui porque ressuscitá-lo por engano custa mais caro do que lê-la.
+  #
+  # O QUE ELE ERA: `apps/telegram`, um bot que falava com o modelo (OpenAI, com
+  # prompt de sistema próprio) e subia o servidor MCP como processo filho. Duas
+  # coisas que, nesta arquitetura, ninguém mais faz fora da API: o modelo mora
+  # atrás do `LlmProvider` (com teto de custo por empresa), e toda ação sobre o
+  # mundo passa pelo Tool Gateway (RF-G-01). O bot era um SEGUNDO cliente de
+  # modelo, um SEGUNDO cliente de MCP e um TERCEIRO caminho de escrita — ele
+  # autenticava como a conta de máquina `ia-acao@` e dava PATCH direto em
+  # /leads, /tasks, /campaigns e /content com um `x-approval-token`.
+  #
+  # POR QUE APOSENTAR E NÃO MIGRAR: o laço de ação dele JÁ ESTAVA MORTO nesta
+  # branch. Ele propunha a aprovação e em seguida chamava `/approvals/:id/confirm`
+  # com a própria conta de serviço — e a fatia 3.10 fechou os dois lados disso:
+  # `ia_acao` não tem `aprovacoes.decidir` (ver packages/shared/src/permissions.ts)
+  # e `ApprovalsService.confirm` recusa tanto conta de máquina quanto o próprio
+  # proponente (invariante 7 da escada). Todo botão "Confirmar" do bot terminava
+  # em HTTP 403. Migrá-lo seria reescrevê-lo do zero como canal do gateway, e o
+  # canal que a ROOT de fato usa é o WhatsApp pela Evolution.
+  #
+  # O QUE SE PERDE: o resumo diário agendado (08:00 BRT), que era um
+  # `setTimeout` in-process de um container que só rodava no Mac. O lugar dele
+  # agora é uma Rotina do módulo `routines` (RF-N-04) — agendador único, por
+  # empresa, com arrendamento, histórico e teto de custo de IA. Ver o relatório
+  # da fatia 5.8.
+  #
+  # DE QUEBRA, A ARMADILHA DAS DUAS SENHAS SUMIU: `MCP_SERVICE_PASSWORD` e
+  # `MCP_ACTION_PASSWORD` eram interpoladas aqui com `:?`, e como a interpolação
+  # é do ARQUIVO INTEIRO, faltar qualquer uma delas derrubava TODO comando de
+  # compose no servidor — inclusive `ps` e `config` — num serviço que a VPS nem
+  # subia. NENHUMA VARIÁVEL É MAIS EXIGIDA POR ESTE ARQUIVO: não sobrou nenhum
+  # `:?` nele.
+  #
+  # ONDE CADA UMA DAS DUAS FICOU (e a diferença importa, porque uma delas ainda
+  # tem leitor e a outra não):
+  #
+  #   · `MCP_SERVICE_PASSWORD` continua valendo FORA daqui — é a senha da conta
+  #     de serviço do servidor MCP avulso (`packages/mcp/src/client.ts`), que
+  #     roda por fora do compose (Claude Desktop, `docker run`) e NÃO SOBE sem
+  #     ela. Sem essa variável o compose vai bem e o MCP é que não funciona.
+  #   · `MCP_ACTION_PASSWORD` ainda é lida por `apps/api/prisma/seed.ts`, que
+  #     cria a conta de máquina `ia-acao@` e precisa da senha em claro uma vez
+  #     para guardar o hash. A catraca de arquitetura carrega essa linha como
+  #     EXCEÇÃO DECLARADA (`EXCECOES_CONTA_DE_ACAO`), não como esquecimento: a
+  #     conta ficou sem cliente quando o bot saiu, e apagá-la é decisão humana
+  #     pendente.
+  #   · `MCP_ACTION_EMAIL` é a única que ficou sem leitor nenhum — o e-mail da
+  #     conta está fixo no código da semente.
+  #
+  # A catraca de arquitetura (frente 5, `apps/api/test/arquitetura.test.ts`)
+  # vigia os dois sentidos: um leitor NOVO de `MCP_ACTION_*` é caminho de escrita
+  # novo fora da porta, e o dia em que a semente parar de ler a senha a exceção
+  # tem de sair da lista.
+  # ---------------------------------------------------------------------------
 
 networks:
   marketing-os-net:

@@ -1,0 +1,1254 @@
+# Integração contínua do ROOT OS (RF-T-05, RF-P-08).
+#
+# Três jobs, nesta ordem de importância:
+#   1. qualidade   — typecheck + suítes de policy, web e api, COM banco de verdade.
+#   2. isolamento  — a suíte de isolamento entre tenants (fora do `pnpm test`), a
+#                    seção de RLS das rotas públicas e a seção de isolamento do
+#                    COFRE. As três precisam do papel restrito e de um banco só
+#                    delas, porque ligam RLS no banco inteiro.
+#   3. migrations  — o histórico aplica num banco vazio E corresponde ao schema.
+#
+# ---------------------------------------------------------------------------
+# ESTE ARQUIVO, SOZINHO, NÃO REPROVA MERGE NENHUM
+# ---------------------------------------------------------------------------
+# Workflow relata; quem barra um PR vermelho é a proteção de branch. Enquanto
+# os jobs não estiverem marcados como verificação obrigatória em
+# `Settings > Branches > branch protection rule` da `main`, um PR com a CI
+# inteira vermelha continua com o botão de merge liberado.
+#
+# Marcar como obrigatórios (os nomes exatos que aparecem na lista de checks do
+# PR, que são os `name:` dos jobs):
+#   - "Tipos e testes (policy, web, api)"
+#   - "Isolamento entre tenants"
+#   - "Migrations aplicam do zero"
+#
+# "Isolamento entre tenants" ENTROU nesta lista na fatia 1.5 (11/09/2026), e a
+# entrada dele é a metade que falta de uma coisa só. O `continue-on-error` do
+# passo "Suíte de isolamento" foi apagado no mesmo commit que ligou o isolamento
+# por linha no banco (migration `20260911050000_isolamento_por_linha`): os dois
+# passos do job agora reprovam de verdade, e vermelho ali é vazamento entre
+# empresas, não dívida datada.
+#
+# Enquanto ele não estiver marcado na proteção de branch, o job reprova e o
+# botão de merge continua liberado — que é o pior dos dois mundos, porque a
+# prova existe e ninguém a obedece. Isso é configuração no GitHub, fora do
+# repositório, e só o dono do repo faz.
+#
+# ---------------------------------------------------------------------------
+# A ARMADILHA QUE ESTE ARQUIVO EXISTE PARA NÃO REPETIR
+# ---------------------------------------------------------------------------
+# `porta.test.ts` e `runtime.test.ts` usam `describe.skipIf(!process.env.TEST_DATABASE_URL)`.
+# Sem essa variável eles se pulam INTEIROS e a CI fica verde sem ter testado a
+# porta. Por isso o job 1 sobe um Postgres de serviço, aplica as migrations e só
+# então roda a suíte.
+#
+# A trava que confere isso (`$RUNNER_TEMP/conferir-suite.mjs`) é FAIL-CLOSED de
+# propósito: ela lê o resumo do vitest em JSON e afirma sobre números — zero
+# pulados, zero pendentes, e um PISO de quantidade de casos e de arquivos. Se o
+# resumo não existir, vier vazio, não for JSON ou tiver perdido um campo, ela
+# REPROVA em vez de supor que está tudo bem. A versão anterior fazia `grep` no
+# texto do log: bastava trocar o formato de saída, ou o log não existir, para o
+# grep não casar e a CI passar verde com dezenas de casos pulados.
+#
+# O piso importa mais do que parece: "ninguém marcou skip" não é o mesmo que "os
+# testes que importam rodaram". Arquivo que deixa de ser coletado — glob de
+# include alterado, `MKTOS_CONJUNTO_DE_TESTES` vazado no ambiente — não aparece
+# como pulado, some. Baixar um piso é uma decisão consciente, por escrito, aqui.
+#
+# O que NÃO está aqui, de propósito:
+#   - `pnpm lint`: `apps/web` declara `next lint`, que nunca foi configurado —
+#     ele abre o assistente interativo e falha. Entra quando alguém configurar
+#     o ESLint do web.
+#   - `tenant-isolation` no job 1: precisa de banco semeado com duas orgs E de um
+#     papel restrito com senha para medir alguma coisa (dono de tabela ignora
+#     policy). Job próprio, abaixo — e desde a fatia 1.5 ele reprova de verdade.
+
+name: CI
+
+on:
+  push:
+    branches: [main, 'root-os/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # O Dockerfile roda node:22-slim; CI em outra major não prova nada.
+  NODE_VERSION: '22'
+  #
+  # A versão do pnpm NÃO se declara aqui. `pnpm/action-setup` lê o campo
+  # `packageManager` do `package.json` da raiz, que é a fonte única — declarar
+  # de novo neste arquivo criaria dois lugares para atualizar, e no dia em que
+  # um mudasse sem o outro os três jobs morreriam no primeiro passo.
+  #
+  # Sobre o Postgres de serviço, repetido em cada job porque o contexto `env`
+  # NÃO é interpolado dentro de `services:` (o serviço sobe antes do job):
+  #   - usuário/senha `mkt`/`mkt` não são segredo — o container nasce e morre
+  #     dentro do runner e não é alcançável de fora dele;
+  #   - o NOME do banco precisa casar com /test|dev|local|staging|shadow/i.
+  #     É a trava de segurança de `tenant-isolation.test.ts`, que ESCREVE no
+  #     banco e se recusa a rodar num que não se anuncie como descartável.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Tipos e testes de policy, web e api — com banco, senão não testa nada.
+  # ---------------------------------------------------------------------------
+  qualidade:
+    name: Tipos e testes (policy, web, api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      TEST_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Fixado de propósito: se esta variável vazar com outro valor, o vitest da
+      # api troca o conjunto de arquivos e roda só o isolamento. Aqui ela é
+      # sempre `padrao`, e o piso de casos abaixo pega qualquer desvio.
+      MKTOS_CONJUNTO_DE_TESTES: padrao
+      #
+      # PISOS — o mínimo que precisa ter rodado para o verde valer alguma coisa.
+      # Entre parênteses, a contagem REAL medida na estabilização da onda 5
+      # (11/09/2026), rodando as três suítes no Mac contra o Postgres
+      # descartável. Os pisos ficam abaixo dela de propósito: piso é chão, não
+      # espelho — colar no número exato transforma qualquer teste a mais numa
+      # edição obrigatória deste arquivo. Ao remover teste de propósito, baixe o
+      # piso no mesmo commit e diga por quê na mensagem.
+      #
+      # A DIVISÃO DE TRABALHO ENTRE OS DOIS PISOS, que é o que faz a folga caber:
+      # quem pega ARQUIVO QUE SUMIU DA COLETA é o piso de ARQUIVOS, e ele é
+      # colado no número real. Perder um arquivo inteiro pode custar só 5 casos
+      # (é o tamanho do menor arquivo do web hoje), e nenhum piso de casos com
+      # folga útil pegaria isso — mas 8 < 9 reprova na hora. O piso de CASOS
+      # cuida do outro desvio: a suíte que encolhe por dentro sem perder arquivo.
+      #
+      # (74) em 2 arquivos: politica 37, sobrescrita 37. A onda 4 DOBROU esta
+      # suíte com `test/sobrescrita.test.ts`; o piso de 20 deixaria o arquivo
+      # novo inteiro sumir sem uma reclamação.
+      #
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): remedido, 74 em 2 — inalterado. A
+      # onda não tocou no motor puro. Os pisos ficam onde estão.
+      PISO_CASOS_POLICY: '60'
+      PISO_ARQUIVOS_POLICY: '2'
+      # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
+      # filtros 12, nav 19, regua 14, regua-modulos 12, regua-simulador 24,
+      # resgate-central 5, storage 5. O arquivo novo da onda 4
+      # (resgate-central) é o MENOR da suíte, com 5 casos — é exatamente o caso
+      # que só o piso de ARQUIVOS pega, e foi por ele que o piso foi a 9.
+      #
+      # ONDA 6, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 142 em 13. A fatia 2.3 trouxe
+      # as três telas da Régua (`regua` 14, `regua-modulos` 12, `regua-simulador`
+      # 24 = 50 casos), `nav` ganhou um caso (18 → 19), e a estabilização
+      # acrescentou `erro-da-api` (10): o código da recusa de conector desligado
+      # atravessando o cliente da API até a caixa de erro da tela (RF-G-06).
+      # Os dois pisos sobem junto pelo motivo de sempre: em 9, sumirem os quatro
+      # arquivos novos não reprovaria nada.
+      # 116/142 = 18% de folga, a mesma proporção das ondas anteriores.
+      #
+      # ONDA 8, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 196 casos em 16 arquivos.
+      #   aprovacoes-permissao 16, atendimento 25, blocos 7, busca 15, card 4,
+      #   conexoes 13, cta 2, dados 13, erro-da-api 10, filtros 12, nav 19,
+      #   regua 14, regua-modulos 12, regua-simulador 24, resgate-central 5,
+      #   storage 5.
+      #
+      # +54 casos e +3 arquivos sobre a onda 6. Os três novos são das duas
+      # fatias desta onda: `atendimento` (25) e `aprovacoes-permissao` (16) da
+      # fila de aprovação (3.10), `conexoes` (13) do contrato de conector (5.4).
+      # Nenhum arquivo antigo encolheu.
+      #
+      # O piso de ARQUIVOS vai a 16, colado no real — `conexoes` tem 13 casos e
+      # `aprovacoes-permissao` 16: nenhum piso de CASOS com folga útil notaria a
+      # falta de um deles. O de CASOS vai a 161 (18% de folga sobre 196).
+      #
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 228 casos em 17 arquivos.
+      #   aprovacoes-permissao 16, atendimento 25, blocos 7, busca 15, card 4,
+      #   conexoes 13, contexto-mapa 32, cta 2, dados 13, erro-da-api 10,
+      #   filtros 12, nav 19, regua 14, regua-modulos 12, regua-simulador 24,
+      #   resgate-central 5, storage 5.
+      #
+      # +32 casos e +1 arquivo sobre a onda 8, todos da fatia 4.4:
+      # `contexto-mapa` mede o mapa que virou a tela principal — inclusive o
+      # clique de mouse de verdade, que o ambiente de teste não implementa e que
+      # a fatia emulou (captura de ponteiro e classe de evento) para conseguir
+      # reintroduzir o defeito e vê-lo vermelho.
+      #
+      # O piso de ARQUIVOS vai a 17, colado no real. O de CASOS vai a 187 (~18%
+      # de folga sobre 228), a mesma proporção de sempre.
+      #
+      # ONDA 11 (12/09/2026): MEDIDO, 278 casos em 19 arquivos. Os dois arquivos
+      # novos são da tela de custo de IA (fatia 6.4): `unit/custo-ia` (36) e
+      # `component/custo-ia` (14). O piso de ARQUIVOS vai a 19, colado no real;
+      # o de CASOS vai a 227, ~18% de folga sobre 278.
+      PISO_CASOS_WEB: '227'
+      PISO_ARQUIVOS_WEB: '19'
+      # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
+      # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      # porta 20, provisionamento 40, rotas-publicas-tenant 38, runtime 9,
+      # token-de-sessao 8, validacao 9.
+      # A onda 2 levou a suíte de 76 para 146, a onda 3 de 146 para 243, a onda 4
+      # de 243 para 348 e a onda 5 de 348 para 388, com dois arquivos novos
+      # (`alcada-reautenticacao` e `token-de-sessao`, os dois da fatia 3.4).
+      #
+      # Os dois pisos sobem JUNTO com ela, e é obrigatório que subam: o de
+      # ARQUIVOS é colado no número real (15) porque é ele quem pega arquivo que
+      # some da coleta — deixá-lo em 13 seria autorizar, por escrito, a perda
+      # silenciosa dos dois arquivos novos, e `token-de-sessao` tem 8 casos:
+      # nenhum piso de CASOS com folga útil notaria a falta dele. O de CASOS vai
+      # para 318 (18% de folga sobre 388), a mesma proporção das ondas
+      # anteriores.
+      #
+      # Os 38 casos de `rotas-publicas-tenant` são os que rodam SEM `RLS_NO_TESTE`.
+      # A seção de RLS daquele arquivo (mais 15) não entra nesta conta: ela nem
+      # é registrada aqui, porque liga `ROW LEVEL SECURITY` no banco INTEIRO e
+      # derrubaria os outros arquivos, que rodam em paralelo contra o mesmo
+      # banco. Ela tem passo próprio no job `isolamento`, abaixo.
+      # `tenant-isolation.test.ts` também não entra — conjunto `padrao` o
+      # exclui, e ele tem job próprio.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, FATIA 3.5 (11/09/2026): +51 casos em +2 arquivos
+      # ---------------------------------------------------------------------
+      # `rastro-por-nivel` 22 (sem banco) e `rastro-retencao` 29 (com banco,
+      # medidos contra o Postgres descartável). A conta vai de 388/15 para
+      # 439/17, e o piso de CASOS para 360 — ~18% de folga, a mesma proporção
+      # das ondas anteriores.
+      #
+      # `rastro-retencao` tem uma terceira seção, a do PAPEL RESTRITO (2 casos),
+      # que este job não roda: ela entra por `if (URL_RESTRITA)` e não por
+      # `describe.skipIf`, justamente para não aparecer como PULADA aqui — a
+      # trava abaixo reprova a suíte com qualquer caso pulado, e
+      # `TENANT_DATABASE_URL` só existe no job `isolamento`. Mesma solução de
+      # `rotas-publicas-tenant`, mesmo motivo.
+      #
+      # O piso de ARQUIVOS ficou em 17 na fatia 3.5, e não em 19, porque o agente
+      # daquela fatia não podia afirmar sobre suíte que não escreveu nem mediu:
+      # as fatias 3.6 (`teto-custo-ia.test.ts`) e 3.7 (`conector-desligado.test.ts`)
+      # acrescentam um arquivo cada, e ele não as tinha em mãos.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 533 casos em 19 arquivos
+      # ---------------------------------------------------------------------
+      # Contagem real, com `TEST_DATABASE_URL` apontando para o Postgres
+      # descartável e nenhum caso pulado — que é o mesmo regime deste job:
+      #   alcada-reautenticacao 32, arquitetura 21, conector-desligado 35,
+      #   contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      #   modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      #   porta 30, provisionamento 40, rastro-por-nivel 22, rastro-retencao 29,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # A conta de 439/17 da fatia 3.5 não contava os dois arquivos das fatias
+      # vizinhas (49 + 35 = 84 casos) nem os 10 casos do gancho da porta, que a
+      # estabilização acrescentou a `porta.test.ts` (20 → 30).
+      #
+      # O de ARQUIVOS vai a 19, colado no número real: é ele quem pega arquivo
+      # que some da coleta, e `token-de-sessao` (8 casos) prova que nenhum piso
+      # de CASOS com folga útil notaria a falta de um arquivo pequeno.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, CORREÇÃO DO GANCHO DA PORTA (11/09/2026): 539 casos, 19 arquivos
+      # ---------------------------------------------------------------------
+      # Remedida no mesmo regime (banco descartável, nenhum caso pulado) depois
+      # da correção do gancho: +6 casos, nenhum arquivo novo.
+      #   porta 30 → 35   (o registro de interruptores sem Nest, a sequência da
+      #                    ROTA de confirmação, a linha de desfecho da porta com
+      #                    aprovador, a fronteira intenção × desfecho e a
+      #                    colisão payload × conteudo — dois casos antigos foram
+      #                    reescritos, não somados)
+      #   conector-desligado 35 → 36  (o alcance medido do interruptor: 17
+      #                    capacidades com conector, de 62 no catálogo)
+      #
+      # Os demais 17 arquivos ficam como estavam:
+      #   alcada-reautenticacao 32, arquitetura 21, contexto-aprovacao 10,
+      #   contexto-execucao 40, env 7, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, provisionamento 40,
+      #   rastro-por-nivel 22, rastro-retencao 29, rotas-publicas-tenant 38,
+      #   runtime 9, teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 6, ESTABILIZAÇÃO FINAL (11/09/2026): 540 casos, 19 arquivos
+      # ---------------------------------------------------------------------
+      # Remedida uma última vez, no mesmo regime (banco descartável, nenhum caso
+      # pulado), depois de a estabilização acrescentar UM caso a
+      # `conector-desligado` (36 → 37): o corpo do 403 leva o código estável
+      # `conector_desligado`, que é o que a tela lê para oferecer Conexões em vez
+      # de mais uma caixa vermelha genérica.
+      #
+      # A contagem final, arquivo a arquivo:
+      #   alcada-reautenticacao 32, arquitetura 21, conector-desligado 37,
+      #   contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
+      #   modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      #   porta 35, provisionamento 40, rastro-por-nivel 22, rastro-retencao 29,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # O piso de CASOS vai a 443 — 18% de folga sobre 540, a mesma proporção de
+      # todas as ondas anteriores. O de ARQUIVOS continua em 19, colado no real.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 7, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 668 casos em 21 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime: `TEST_DATABASE_URL` no Postgres descartável, conjunto
+      # `padrao`, nenhum caso pulado. +128 casos e +2 arquivos sobre a onda 6.
+      #
+      #   alcada-reautenticacao 32, arquitetura 21, cofre 89,
+      #   conector-desligado 37, contexto-aprovacao 10, contexto-execucao 40,
+      #   env 7, escritas-pela-porta 37, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, porta 35,
+      #   provisionamento 40, rastro-por-nivel 22, rastro-retencao 31,
+      #   rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      #   token-de-sessao 8, validacao 9.
+      #
+      # De onde vêm os 128: `cofre` (89) e `escritas-pela-porta` (37) são
+      # arquivos NOVOS das duas fatias da onda; `rastro-retencao` foi de 29 para
+      # 31 (os dois casos da conferência de conexão do expurgo, que passou a
+      # cobrar atravessar o isolamento e não só ser dono da tabela).
+      #
+      # Os 89 de `cofre` são os que rodam SEM `RLS_NO_TESTE`. A seção de
+      # isolamento daquele arquivo (mais 8) não entra nesta conta pelo mesmo
+      # motivo de `rotas-publicas-tenant`: ela liga RLS no banco INTEIRO e
+      # derrubaria os outros arquivos, que rodam em paralelo. Ela tem passo
+      # próprio no job `isolamento`, abaixo.
+      #
+      # O piso de CASOS vai a 548 — 18% de folga sobre 668, a mesma proporção de
+      # todas as ondas anteriores. O de ARQUIVOS vai a 21, colado no real: é ele
+      # quem pega arquivo que some da coleta.
+      #
+      # FORA DESTE JOB, e medidos na mesma sessão para quem for conferir:
+      #   · isolamento (`test:isolamento`, job próprio): 267 casos (265 da onda
+      #     6 mais os 2 que a tabela `SegredoDeConector` trouxe ao registro de
+      #     alvos);
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53
+      #     (os 38 daqui mais os 15 da seção de RLS);
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97 (os 89 daqui mais
+      #     os 8 da seção de isolamento);
+      #   · `rastro-retencao` com papel restrito: 33 (os 31 daqui mais 2).
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 8, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 822 casos em 25 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime das anteriores: conjunto `padrao`, nenhum caso pulado, com
+      # `TEST_DATABASE_URL` no Postgres descartável. +154 casos e +4 arquivos
+      # sobre a onda 7, e TODOS os 154 vêm dos quatro arquivos novos — nenhum
+      # arquivo antigo encolheu nem cresceu:
+      #
+      #   adversarial 66            (fatia 3.8)
+      #   contrato-de-conector 71   (fatia 5.4)
+      #   fila-de-aprovacao 13      (fatia 3.10)
+      #   publicar-peca 4           (catraca de dívida declarada — ver abaixo)
+      #
+      # Os 21 de antes, iguais: alcada-reautenticacao 32, arquitetura 21,
+      # cofre 89, conector-desligado 37, contexto-aprovacao 10,
+      # contexto-execucao 40, env 7, escritas-pela-porta 37, llm-step 10,
+      # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
+      # porta 35, provisionamento 40, rastro-por-nivel 22, rastro-retencao 31,
+      # rotas-publicas-tenant 38, runtime 9, teto-custo-ia 49,
+      # token-de-sessao 8, validacao 9.
+      #
+      # `publicar-peca.test.ts` NÃO prova que uma coisa funciona: ele MEDE uma
+      # regressão declarada (publicar peça pela tela não funciona para ninguém
+      # desde 29/08) e fica VERMELHO no dia do conserto, com a mensagem dizendo
+      # o que apagar. É o padrão de dívida declarada da casa. Ele conta para o
+      # piso como qualquer outro — o que não se quer é que ele suma da coleta.
+      #
+      # O piso de ARQUIVOS vai a 25, colado no real. O de CASOS vai a 674 —
+      # 18% de folga sobre 822, a mesma proporção de todas as ondas anteriores.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão (todos INALTERADOS em relação à
+      # onda 7 — nenhuma fatia desta onda mexeu nas suítes de isolamento):
+      #   · isolamento (`test:isolamento`, job próprio): 267 casos;
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
+      #   · `rastro-retencao` com papel restrito: 33.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 9, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 1000 casos em 28 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime: conjunto `padrao`, nenhum caso pulado, `TEST_DATABASE_URL`
+      # no Postgres descartável. +178 casos e +3 arquivos sobre a onda 8.
+      #
+      # De onde vêm os 178:
+      #   memoria 40    (fatia 4.1+4.2 — arquivo novo)
+      #   rotinas 48    (fatia 5.1 — arquivo novo; 47 da fatia mais 1 que a
+      #                  estabilização acrescentou: a tela de Pauta anunciava
+      #                  "gatilho ativo" lendo só a variável ANTIGA, e passou a
+      #                  mentir quando a nova desliga o agendador)
+      #   sop 90        (fatia 5.2 — arquivo novo; 88 da fatia mais os 2 que a
+      #                  estabilização acrescentou pelo QUARTO lugar que
+      #                  resolvia dono por relação: o laço de execução, de onde
+      #                  o nome ia direto para o prompt de sistema)
+      #
+      # Os 25 de antes, iguais — nenhum arquivo antigo encolheu:
+      #   adversarial 66, alcada-reautenticacao 32, arquitetura 21, cofre 89,
+      #   conector-desligado 37, contexto-aprovacao 10, contexto-execucao 40,
+      #   contrato-de-conector 71, env 7, escritas-pela-porta 37,
+      #   fila-de-aprovacao 13, llm-step 10, modelos-globais 20,
+      #   modulos-por-tenant 97, politica-por-tenant 27, porta 35,
+      #   provisionamento 40, publicar-peca 4, rastro-por-nivel 22,
+      #   rastro-retencao 31, rotas-publicas-tenant 38, runtime 9,
+      #   teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # UM AVISO PARA QUEM FOR REMEDIR: antes da estabilização esta suíte tinha
+      # 25 VERMELHOS, todos da mesma causa — `memoria` e `rotinas` não estavam
+      # declarados em `PREFIXOS_DA_ESPINHA` (`src/tenants/modulos.ts`), e
+      # `moduloDoCaminho` LANÇA para prefixo não declarado. Não era teste frágil:
+      # era toda rota das duas famílias quebrada em tempo de execução.
+      #
+      # O piso de ARQUIVOS vai a 28, colado no real. O de CASOS vai a 820 —
+      # 18% de folga sobre 1000, a mesma proporção de todas as ondas anteriores.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão:
+      #   · isolamento (`test:isolamento`, job próprio): 277 casos (267 da onda 7
+      #     mais os 10 que as tabelas novas da memória e das rotinas trouxeram ao
+      #     registro de alvos — 78 tabelas de empresa, todas com RLS e FORCE);
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97;
+      #   · `rastro-retencao` com papel restrito: 33.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 10, FATIA 4.3 (11/09/2026): +29 casos em +1 arquivo
+      # ---------------------------------------------------------------------
+      # `resposta-sem-fonte.test.ts` (29 casos): a declaração de ausência no
+      # contexto, a regra do defeito, a catraca que cobra o NOME de
+      # `respostaSemProcedencia` no fonte do runtime, o sinal no RASTRO e a
+      # guarda que impede resposta apoiada em FERRAMENTA de travar o agente.
+      # 23 rodam sem banco; 6 exigem `TEST_DATABASE_URL` (que este job tem).
+      #
+      # A conta vai de 1000/28 para 1029/29. O piso de ARQUIVOS vai a 29, colado
+      # no real — é ele quem pega arquivo que some da coleta. O de CASOS vai a
+      # 843, ~18% de folga sobre 1029, a mesma proporção de todas as ondas.
+      #
+      # ESTES NÚMEROS SÃO SÓ DA FATIA 4.3, e é de propósito — mesma disciplina
+      # da fatia 3.5 na onda 6: o agente não afirma sobre suíte que não escreveu
+      # nem mediu. As outras fatias da onda 10 acrescentam arquivo de teste
+      # (`canal-de-aprovacao`, `documentacao`, `rebaixamento-por-erro`,
+      # `contexto-mapa` no web), e quem remede o conjunto é a estabilização.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 10, ESTABILIZAÇÃO (11/09/2026): MEDIDO, 1199 casos em 32 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime deste job: `TEST_DATABASE_URL` no Postgres descartável,
+      # conjunto `padrao`, nenhum caso pulado.
+      #
+      #   adversarial 66, alcada-reautenticacao 32, arquitetura 40,
+      #   canal-de-aprovacao 76, cofre 89, conector-desligado 37,
+      #   contexto-aprovacao 10, contexto-execucao 40, contrato-de-conector 71,
+      #   documentacao 48, env 7, escritas-pela-porta 37, fila-de-aprovacao 13,
+      #   llm-step 10, memoria 40, modelos-globais 20, modulos-por-tenant 97,
+      #   politica-por-tenant 27, porta 39, provisionamento 40, publicar-peca 4,
+      #   rastro-por-nivel 22, rastro-retencao 31, rebaixamento-por-erro 20,
+      #   resposta-sem-fonte 32, rotas-publicas-tenant 38, rotinas 48, runtime 9,
+      #   sop 90, teto-custo-ia 49, token-de-sessao 8, validacao 9.
+      #
+      # A conta da fatia 4.3 (1029/29) contava só o arquivo dela por cima da
+      # medição da onda 9 — o que era a disciplina certa, e deixava folga maior
+      # do que a proporção da casa. Os três arquivos que faltavam são das outras
+      # fatias da onda: `canal-de-aprovacao` (76), `documentacao` (48) e
+      # `rebaixamento-por-erro` (20). `porta` foi de 35 para 39 (o teto de
+      # momento do agente, imposto agora na porta: a recusa com causa própria no
+      # rastro, R0 que passa, R3 que não, e o degrau EFETIVO em vez do de
+      # catálogo), `arquitetura` de 38 para 40 (a quinta frente, que varre o
+      # monorepo inteiro) e `resposta-sem-fonte` de 29 para 32 (a guarda
+      # provisória saiu com os dois casos que a mediam; entraram a ferramenta
+      # executada como fonte e os três casos do rebaixamento como sinal).
+      #
+      # O piso de ARQUIVOS vai a 32, colado no real — é ele quem pega arquivo que
+      # some da coleta, e `publicar-peca` (4 casos) prova que nenhum piso de
+      # CASOS com folga útil notaria a falta de um arquivo pequeno. O de CASOS
+      # vai a 983, ~18% de folga sobre 1199: a mesma proporção de todas as ondas.
+      #
+      # ---------------------------------------------------------------------
+      # ONDA 11, ESTABILIZAÇÃO (12/09/2026): MEDIDO, 1488 casos em 37 arquivos
+      # ---------------------------------------------------------------------
+      # Mesmo regime deste job. Cinco arquivos novos, 273 casos:
+      #
+      #   assinatura 73, console-da-plataforma 83, mapa-publico 36,
+      #   onboarding 78, relatorio-custo 17.
+      #
+      # E `rastro-retencao` foi de 31 para 33 (a retenção passou a valer também
+      # para os eventos que a assinatura escreve).
+      #
+      # O 73º de `assinatura` é da estabilização: a DÉCIMA TRAVA de arranque
+      # (o agendador que recusa subir sem `AssinaturaService`) estava escrita no
+      # código desde a fatia 6.2 e NENHUM caso a exercia. As outras nove travas
+      # têm caso; esta era um `throw` dentro de um comentário. Trava que nunca
+      # foi vista disparar é trava que ninguém sabe se está armada.
+      #
+      # E DOIS CASOS SÓ CONTINUAM EXISTINDO PORQUE A ESTABILIZAÇÃO OS
+      # CONSERTOU — os dois da mesma família, prova que não prova:
+      #   · `token-de-sessao` media a FORMA do token sem fixar o relógio, e a
+      #     tolerância a token sem `typ` vence às 12:00 UTC de 12/09/2026. O
+      #     caso ficou vermelho sozinho, no dia, sem uma linha de código ter
+      #     mudado. Agora ele fixa o instante; quem mede o prazo é o caso ao
+      #     lado, que já fixava.
+      #   · o controle negativo do teto de taxa do cadastro parava uma tentativa
+      #     antes da que distingue "recusa conta" de "recusa não conta" — ele
+      #     afirmava o contrário do que o teto faz e teria passado igual nos
+      #     dois mundos.
+      #
+      # E +13 na estabilização: a TRANCA DA PORTA DA RUA. `POST onboarding/cadastro`
+      # é anônima por desenho (é o degrau 0 do produto) e subiu sem interruptor —
+      # no dia do deploy ela passaria a existir na internet, e qualquer pessoa que
+      # achasse a URL criaria empresa no banco de produção, entraria por Google (que
+      # a rota provisiona, então a allowlist de e-mail não a alcança) e gastaria
+      # modelo na conta da casa. O teto de taxa limita a VAZÃO, não o DIREITO.
+      # `ONBOARDING_ABERTO` nasce fechado; a rota fechada responde 404 e não
+      # confirma que existe. Os 13 casos medem as duas posições, a normalização do
+      # valor, e que a tranca vem ANTES do teto (porta fechada não gasta balde).
+      #
+      # O piso de ARQUIVOS vai a 37, colado no real. O de CASOS vai a 1220,
+      # ~18% de folga sobre 1488: a mesma proporção de todas as ondas.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão:
+      #   · isolamento (`test:isolamento`, job próprio): 287 casos — 83 tabelas
+      #     de empresa no registro, 86 com RLS e FORCE no banco;
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1` e papel restrito: 53;
+      #   · `cofre` com `RLS_NO_TESTE=1` e papel restrito: 97.
+      #
+      # AS SEÇÕES COM `RLS_NO_TESTE=1` RODAM UMA POR PASSO, e é assim de
+      # propósito: elas LIGAM o isolamento no banco compartilhado da CI. Rodar o
+      # conjunto inteiro com a variável de pé faz os arquivos interferirem uns
+      # nos outros e derruba cinco deles por motivo nenhum — medido em
+      # 12/09/2026 nesta mesma sessão, ao tentar o atalho.
+      PISO_CASOS_API: '1220'
+      PISO_ARQUIVOS_API: '37'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sem `version:`: a versão sai do campo `packageManager` da raiz.
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Gerar o client do Prisma
+        run: pnpm --filter @mktos/api db:generate
+
+      # tsup rápido. `apps/api` e `apps/web` importam @mktos/policy e
+      # @mktos/shared pelo `exports` do package.json, que aponta para dist/ —
+      # sem este passo, chamar as suítes por filtro direto quebra no import.
+      - name: Compilar os pacotes internos
+        run: pnpm --filter @mktos/shared --filter @mktos/policy build
+
+      - name: A variável de banco de teste precisa existir
+        run: |
+          test -n "$TEST_DATABASE_URL" || {
+            echo "::error::TEST_DATABASE_URL vazia — porta.test e runtime.test se pulariam inteiros e a CI passaria sem testar a porta"
+            exit 1
+          }
+
+      - name: Aplicar as migrations no banco da CI
+        run: pnpm --filter @mktos/api db:deploy
+
+      # A régua como DADO. O seed é idempotente e recusa rebaixar nível; se o
+      # catálogo divergir do classificador ele sai com código 1 e reprova aqui,
+      # que é exatamente onde essa divergência tem que aparecer.
+      - name: Semear a política
+        run: pnpm --filter @mktos/api db:seed:politica
+
+      - name: Typecheck do monorepo
+        run: pnpm typecheck
+
+      # `apps/api/test/` mora FORA do tsconfig de build de propósito (um .ts
+      # fora de src/ desloca a saída para dist/src/ e o Dockerfile não acha
+      # dist/main.js). Este é o tsconfig que cobre os tipos dos testes.
+      - name: Typecheck das suítes da api
+        run: pnpm --filter @mktos/api typecheck:test
+
+      # A trava de cobertura, escrita fora do repositório: é infraestrutura de
+      # CI, não código de produto. Um único script serve as três suítes.
+      - name: Preparar a trava de cobertura
+        run: |
+          cat > "$RUNNER_TEMP/conferir-suite.mjs" <<'MJS'
+          // Lê o resumo em JSON de uma suíte do vitest e afirma sobre NÚMEROS.
+          // Fail-closed: qualquer dúvida — resumo ausente, vazio, ilegível,
+          // campo que sumiu — reprova. Esta trava existe justamente para impedir
+          // CI verde sem ter testado nada; falhar para verde seria a direção
+          // errada.
+          import { readFileSync } from 'node:fs';
+
+          const [caminho, pisoCasosArg, pisoArquivosArg, ...rotuloPartes] = process.argv.slice(2);
+          const rotulo = rotuloPartes.join(' ') || caminho || 'suíte';
+
+          function reprovar(mensagem, detalhe) {
+            console.log('::error title=Cobertura da suíte ' + rotulo + '::' + mensagem);
+            if (detalhe) console.log(detalhe);
+            process.exit(1);
+          }
+
+          if (!caminho || !pisoCasosArg || !pisoArquivosArg) {
+            reprovar('uso: conferir-suite.mjs <resumo.json> <piso de casos> <piso de arquivos> [rótulo]');
+          }
+
+          const pisoCasos = Number(pisoCasosArg);
+          const pisoArquivos = Number(pisoArquivosArg);
+          if (!Number.isInteger(pisoCasos) || !Number.isInteger(pisoArquivos)) {
+            reprovar('os pisos precisam ser inteiros; vieram "' + pisoCasosArg + '" e "' + pisoArquivosArg + '"');
+          }
+
+          let bruto = '';
+          try {
+            bruto = readFileSync(caminho, 'utf8');
+          } catch (erro) {
+            reprovar(
+              'o resumo ' + caminho + ' não foi escrito. Sem resumo não dá para afirmar que a suíte rodou, então a trava reprova em vez de supor. Confira se o comando de teste ainda passa --reporter=json e --outputFile.json.',
+              String(erro && erro.message),
+            );
+          }
+          if (!bruto.trim()) {
+            reprovar('o resumo ' + caminho + ' veio vazio — a suíte provavelmente nem chegou a rodar.');
+          }
+
+          let resumo;
+          try {
+            resumo = JSON.parse(bruto);
+          } catch (erro) {
+            reprovar(
+              'o resumo ' + caminho + ' não é JSON válido — o formato do relatório mudou e a trava não consegue mais afirmar nada.',
+              String(erro && erro.message),
+            );
+          }
+
+          function numero(campo) {
+            const valor = resumo[campo];
+            if (typeof valor !== 'number' || !Number.isFinite(valor)) {
+              reprovar('o resumo não traz o campo numérico "' + campo + '". O formato do relatório do vitest mudou: conserte esta trava antes de seguir, porque sem ela a CI volta a poder passar sem testar nada.');
+            }
+            return valor;
+          }
+
+          const total = numero('numTotalTests');
+          const passaram = numero('numPassedTests');
+          const falharam = numero('numFailedTests');
+          const pulados = numero('numPendingTests');
+          const aFazer = numero('numTodoTests');
+
+          if (!Array.isArray(resumo.testResults)) {
+            reprovar('o resumo não traz a lista de arquivos (testResults).');
+          }
+          const arquivos = resumo.testResults;
+
+          const porStatus = {};
+          for (const arquivo of arquivos) {
+            for (const caso of arquivo.assertionResults || []) {
+              porStatus[caso.status] = (porStatus[caso.status] || 0) + 1;
+            }
+          }
+          const naoPassaram = Object.entries(porStatus).filter(([nome]) => nome !== 'passed');
+
+          console.log(
+            'Suíte ' + rotulo + ': ' + total + ' casos em ' + arquivos.length +
+            ' arquivos (piso: ' + pisoCasos + ' casos, ' + pisoArquivos + ' arquivos).',
+          );
+          console.log('  passaram=' + passaram + ' falharam=' + falharam + ' pulados=' + pulados + ' a_fazer=' + aFazer);
+          for (const arquivo of arquivos) {
+            const casos = (arquivo.assertionResults || []).length;
+            console.log('  - ' + String(arquivo.name || '(sem nome)').split('/').slice(-2).join('/') + ' (' + casos + ')');
+          }
+
+          if (resumo.success !== true) {
+            reprovar('o vitest reportou a execução como malsucedida.');
+          }
+          if (falharam > 0) {
+            reprovar(falharam + ' caso(s) falharam.');
+          }
+          if (pulados > 0 || aFazer > 0) {
+            reprovar(
+              (pulados + aFazer) + ' caso(s) foram PULADOS. Quase sempre é TEST_DATABASE_URL não chegando em porta.test/runtime.test, que se pulam inteiros — a CI estaria verde sem ter testado a porta. Também pega it.skip esquecido num PR.',
+            );
+          }
+          if (naoPassaram.length > 0) {
+            reprovar('há casos com status diferente de "passed": ' + naoPassaram.map(([nome, n]) => nome + '=' + n).join(', '));
+          }
+          if (total < pisoCasos) {
+            reprovar(
+              'só ' + total + ' casos rodaram, abaixo do piso de ' + pisoCasos + '. "Ninguém marcou skip" não é o mesmo que "os testes que importam rodaram": arquivo que deixa de ser coletado não aparece como pulado, some. Se a queda for legítima, baixe o piso no próprio workflow, de propósito e por escrito.',
+            );
+          }
+          if (arquivos.length < pisoArquivos) {
+            reprovar('só ' + arquivos.length + ' arquivos de teste rodaram, abaixo do piso de ' + pisoArquivos + '.');
+          }
+
+          console.log('Suíte ' + rotulo + ': íntegra — nada pulado, nada pendente, acima do piso.');
+          MJS
+          # Fail-closed também aqui: heredoc mal recortado não pode virar uma
+          # trava que "passa" por não conseguir rodar.
+          test -s "$RUNNER_TEMP/conferir-suite.mjs" || {
+            echo "::error::a trava de cobertura não foi escrita"
+            exit 1
+          }
+          node --check "$RUNNER_TEMP/conferir-suite.mjs"
+
+      # Os três `--reporter=json --outputFile.json` existem para a trava. O
+      # `--reporter=default` continua imprimindo o log legível para gente.
+      #
+      # O `--` ANTES dos argumentos não é enfeite: sem ele o pnpm 9 tenta ler
+      # `--outputFile.json` como opção SUA e morre com "Unknown option:
+      # 'outputFile.json'" antes de chamar o vitest. O passo falhava, a trava
+      # nunca era alcançada e os pisos abaixo não guardavam nada. Medido no
+      # pnpm 9.15.9, que é o do `packageManager` da raiz.
+      - name: Testes de policy
+        run: |
+          pnpm --filter @mktos/policy test -- \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-policy.json"
+
+      - name: A suíte de policy rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-policy.json" \
+            "$PISO_CASOS_POLICY" "$PISO_ARQUIVOS_POLICY" policy
+
+      - name: Testes de web
+        run: |
+          pnpm --filter @mktos/web test -- \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-web.json"
+
+      - name: A suíte de web rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-web.json" \
+            "$PISO_CASOS_WEB" "$PISO_ARQUIVOS_WEB" web
+
+      - name: Testes de api
+        run: |
+          pnpm --filter @mktos/api test -- \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/resumo-api.json"
+
+      - name: A suíte de api rodou inteira
+        run: |
+          node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-api.json" \
+            "$PISO_CASOS_API" "$PISO_ARQUIVOS_API" api
+
+  # ---------------------------------------------------------------------------
+  # 2. Isolamento entre tenants — job próprio, fora do `pnpm test`.
+  # ---------------------------------------------------------------------------
+  #
+  # `tenant-isolation.test.ts` LANÇA no import quando falta TEST_DATABASE_URL
+  # (não se pula sozinho), escreve nas duas orgs que semeia, e mede o
+  # isolamento NO BANCO — não na aplicação. Ela era o critério de aceite da
+  # ativação de RLS, e por isso saía VERMELHA de propósito enquanto nenhuma
+  # tabela tivesse policy.
+  #
+  # ISSO ACABOU NA FATIA 1.5. A migration `20260911050000_isolamento_por_linha`
+  # liga `ROW LEVEL SECURITY` com `FORCE` nas 72 tabelas do schema e escreve as
+  # policies de cada uma; a suíte passa inteira (medido: 257 casos verdes contra
+  # o Postgres descartável, 11/09/2026, com o papel restrito fazendo as
+  # leituras). O `continue-on-error` que este passo carregava foi APAGADO no
+  # mesmo commit — enquanto ele existia, vazamento entre empresas rodava na CI e
+  # não reprovava nada, que é a aparência da prova sem a prova.
+  #
+  # Falta a metade que não mora neste arquivo: marcar "Isolamento entre tenants"
+  # como verificação obrigatória na proteção de branch da `main`. Sem isso o job
+  # reprova e o merge continua liberado (ver o cabeçalho).
+  isolamento:
+    name: Isolamento entre tenants
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Conexão ADMIN: semeia e limpa. O nome do banco precisa parecer de teste.
+      TEST_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Conexão da APLICAÇÃO: role restrita, sujeita a RLS. Sem ela a suíte cai
+      # na admin e avisa que o resultado não vale nada — dono de tabela ignora
+      # policy em silêncio, a menos que a tabela esteja com FORCE.
+      TENANT_DATABASE_URL: postgresql://mktos_app:ci@localhost:5432/marketing_os_test
+      TENANT_GUC: app.org_id
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Aplicar as migrations no banco da CI
+        run: pnpm --filter @mktos/api db:deploy
+
+      # ---------------------------------------------------------------------
+      # O papel de aplicação é CRIADO PELA MIGRATION, não aqui.
+      #
+      # Aqui ele só ganha a senha descartável deste runner. A distinção não é
+      # estética — este passo já foi um `CREATE ROLE ... IF NOT EXISTS` seguido
+      # de GRANTs, e nessa forma quebrava a suíte de duas maneiras ao mesmo
+      # tempo, as duas em silêncio (medido em Postgres limpo, 10/09/2026):
+      #
+      #  1. A migration 20260911020000_papel_de_aplicacao cria o papel NOLOGIN
+      #     de propósito (senha é segredo de operação, não entra no repositório).
+      #     Com o papel já existindo, o `IF NOT EXISTS` não fazia nada e ele
+      #     seguia sem poder conectar: `TENANT_DATABASE_URL` dava "password
+      #     authentication failed", o `beforeAll` da suíte morria e o vitest
+      #     reportava 211 PULADOS e ZERO executados — contra 194 casos rodando
+      #     antes desta fatia. Naquela época o passo da suíte ainda tinha
+      #     `continue-on-error` e o job terminava VERDE sem ter medido nada; hoje
+      #     ele reprova, mas o piso de casos continua sendo o que separa "passou"
+      #     de "não rodou".
+      #
+      #  2. `GRANT ... ON ALL TABLES IN SCHEMA public` inclui "EventLog" e
+      #     "_prisma_migrations", e DESFAZIA os dois REVOKE que a migration tinha
+      #     acabado de aplicar. Medido depois do passo: o papel voltava a poder
+      #     UPDATE/DELETE no RASTRO e a ler o histórico de migration.
+      #
+      # Por isso não há GRANT nenhum abaixo: a migration já concede exatamente o
+      # necessário, e qualquer concessão repetida aqui só tem como divergir dela.
+      # O bloco de conferência é fail-closed — se um dia alguém reintroduzir um
+      # GRANT amplo, este passo (que NÃO tem continue-on-error) reprova o job,
+      # em vez de deixar a suíte medir um papel que já não é o de produção.
+      # ---------------------------------------------------------------------
+      - name: Dar senha ao papel de aplicação criado pela migration
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d marketing_os_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mktos_app') THEN
+              RAISE EXCEPTION
+                'o papel mktos_app não existe depois de prisma migrate deploy. A migration 20260911020000_papel_de_aplicacao AVISA e segue quando o usuário não tem SUPERUSER nem CREATEROLE — leia o log do passo anterior. Sem este papel a suíte leria como DONA das tabelas, e dono ignora policy de linha: o resultado não valeria nada.';
+            END IF;
+          END
+          $$;
+
+          -- Só a senha. Nem atributo de papel (a migration já fixou
+          -- NOBYPASSRLS/NOSUPERUSER), nem permissão.
+          ALTER ROLE mktos_app WITH LOGIN PASSWORD 'ci';
+
+          DO $$
+          DECLARE
+            estragos text[] := '{}';
+          BEGIN
+            IF has_table_privilege('mktos_app', '"EventLog"', 'UPDATE')   THEN estragos := array_append(estragos, 'UPDATE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '"EventLog"', 'DELETE')   THEN estragos := array_append(estragos, 'DELETE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '"EventLog"', 'TRUNCATE') THEN estragos := array_append(estragos, 'TRUNCATE no EventLog'); END IF;
+            IF has_table_privilege('mktos_app', '_prisma_migrations', 'SELECT') THEN estragos := array_append(estragos, 'SELECT em _prisma_migrations'); END IF;
+            IF has_schema_privilege('mktos_app', 'public', 'CREATE')      THEN estragos := array_append(estragos, 'CREATE no schema public'); END IF;
+            IF array_length(estragos, 1) IS NOT NULL THEN
+              RAISE EXCEPTION
+                'o papel mktos_app tem permissão a mais depois da preparação: %. A migration revoga isso; alguma concessão manual (quase sempre um GRANT ... ON ALL TABLES) desfez o revoke, e a suíte passaria a medir um papel mais poderoso que o de produção.',
+                array_to_string(estragos, ', ');
+            END IF;
+          END
+          $$;
+
+          SELECT rolname, rolcanlogin AS entra, rolbypassrls AS atravessa_rls, rolsuper AS superusuario
+            FROM pg_roles WHERE rolname = 'mktos_app';
+          SQL
+
+      # SEM `continue-on-error`. Apagado na fatia 1.5, no commit que ligou o
+      # isolamento por linha. Vermelho aqui é vazamento entre empresas.
+      #
+      # O piso de casos existe pelo mesmo motivo do das outras suítes, e aqui ele
+      # é ainda mais necessário: este arquivo é o ÚNICO do conjunto `isolamento`
+      # do vitest, e uma troca de `MKTOS_CONJUNTO_DE_TESTES`, um glob que deixa
+      # de casar ou um `describe` que some fariam o vitest sair VERDE tendo
+      # coletado zero. "Nenhum teste falhou" é verdade sobre nenhum teste.
+      #
+      # 257 era a contagem da fatia 1.5. A ESTABILIZAÇÃO DA ONDA 6 remediu em
+      # 11/09/2026, com o papel restrito de pé: **265 casos** — as três tabelas
+      # novas da onda (`RastroRetencao`, `TetoDeCustoIa`/`GastoDeIaNoDia`,
+      # `ConectorDesligado`) entraram no registro de alvos e cada uma trouxe a
+      # sua medição. O piso sobe de 220 para 225, que continua ~15% abaixo do
+      # real: piso é chão, não espelho. Ao remover caso de propósito, baixe o
+      # piso no mesmo commit.
+      #
+      # ONDA 7 (11/09/2026): **267 casos**, remedidos no mesmo regime. A tabela
+      # `SegredoDeConector` — a do COFRE, que nasce com RLS/FORCE e as duas
+      # policies na mesma migration que a cria — entrou no registro de alvos e
+      # trouxe os 2 casos de medição dela. O piso vai de 225 para 227, mantendo
+      # os ~15% de folga.
+      #
+      # O piso SUBIU de 190 para 220 na correção da fatia 1.5, e o motivo é a
+      # coisa que o piso existe para pegar. A contagem era 224 com o registro de
+      # alvos escrito à mão em 59 entradas, para um banco com 69 tabelas de
+      # empresa: dez tabelas — agentes, aprovação, RASTRO, sessões, passos,
+      # procedimentos, decisões de política e identidade de canal — não tinham
+      # semente e por isso não tinham prova. Uma policy `USING (true)` em três
+      # delas manteve a suíte 224/224 VERDE. Agora o registro é cobrado contra o
+      # catálogo do banco e as dez entraram, o que soma ~30 casos de medição.
+      # Um piso de 190 continuaria absolvendo o retorno daquele estado.
+      #
+      # A FORMA DO COMANDO NÃO É INDIFERENTE — medido em 11/09/2026, pnpm 9.15.9.
+      # Duas variantes rodam a suíte, saem verdes e NÃO escrevem o resumo:
+      #   pnpm --filter @mktos/api test:isolamento -- --outputFile.json=X
+      #   pnpm --filter @mktos/api exec vitest run -- --outputFile.json=X
+      # A primeira porque o `--` de `pnpm run` não chega ao vitest quando o
+      # script tem prefixo de variável de ambiente (`VAR=x vitest run`); a
+      # segunda porque `pnpm exec` repassa o `--` literalmente e o vitest trata o
+      # que vem depois como FILTRO de arquivo, não como opção. Nos dois casos o
+      # arquivo não existe e a conferência abaixo reprova por "resumo ilegível" —
+      # ruidoso, mas pelo motivo errado.
+      # A forma abaixo (exec, sem `--`) escreve. O interruptor do conjunto vem
+      # pelo ambiente do passo, que é o mesmo que o script `test:isolamento` faz.
+      - name: Suíte de isolamento
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: isolamento
+          RESUMO_ISOLAMENTO: ${{ runner.temp }}/resumo-isolamento.json
+          # ONDA 9 (11/09/2026): **277 casos**, remedidos no mesmo regime, com o
+          # papel restrito de pé e uma senha só para o cluster inteiro (ela foi
+          # trocada três vezes durante a onda, por três agentes diferentes — e
+          # papel é do cluster, então a última troca valia para todos e as outras
+          # duas suítes ficavam sem entrar). As cinco tabelas novas da memória e
+          # das rotinas entraram no registro de alvos: 78 tabelas de empresa,
+          # todas com RLS e FORCE. O piso vai de 227 para 235, mantendo os ~15%.
+          #
+          # ONDA 11 (12/09/2026): **287 casos**, mesmo regime. `Assinatura` e
+          # `CobrancaDeAssinatura` entraram no registro de alvos — e entraram
+          # porque a catraca do catálogo as PEGOU: a fatia 6.2 criou as duas
+          # tabelas com policy e sem semente, e sem semente o caso "A não lê
+          # linha de B" roda contra tabela vazia e passa com qualquer policy.
+          # São 83 tabelas de empresa no registro e 86 com RLS e FORCE no
+          # banco. O piso vai de 235 para 243, mantendo os ~15%.
+          PISO_CASOS_ISOLAMENTO: '243'
+        run: |
+          pnpm --filter @mktos/api exec vitest run \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_ISOLAMENTO"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_ISOLAMENTO, "utf8")); }
+            catch (e) { console.log("::error::resumo da suite de isolamento ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_ISOLAMENTO);
+            const total = r.numTotalTests;
+            console.log("tenant-isolation: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a suite de isolamento nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                ". O conjunto de arquivos do vitest nao e o de isolamento — confira MKTOS_CONJUNTO_DE_TESTES " +
+                "e o include de apps/api/vitest.config.ts.");
+              process.exit(1);
+            }
+          '
+          {
+            echo "Isolamento entre tenants: VERDE."
+            echo ""
+            echo "A suíte mede o isolamento NO BANCO, com o papel restrito \`mktos_app\` fazendo as leituras. Se este job não estiver marcado como verificação obrigatória na proteção de branch da \`main\`, ele reprova e o merge continua liberado."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # -----------------------------------------------------------------------
+      # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
+      #
+      # `test/rotas-publicas-tenant.test.ts` tem um bloco final que LIGA
+      # `ROW LEVEL SECURITY` de verdade nas tabelas que as rotas públicas tocam,
+      # cria as policies que a fatia 1.5 vai escrever, roda as rotas e confere
+      # que sob a sentinela da resolução pública NÃO SE ESCREVE. Ele é o único
+      # lugar onde esse furo (uma policy `FOR ALL` sem `WITH CHECK`) é medido em
+      # vez de descrito.
+      #
+      # Não pode rodar no job 1 por um motivo de banco, não de gosto: `ENABLE
+      # ROW LEVEL SECURITY` vale para o BANCO inteiro, e o vitest roda os
+      # arquivos em paralelo contra o mesmo Postgres — ligado lá, ele derrubaria
+      # `porta.test.ts` e `contexto-aprovacao.test.ts`. Por isso o arquivo só
+      # registra a seção quando `RLS_NO_TESTE=1`, e aqui ela roda SOZINHA, num
+      # processo do vitest só dela.
+      #
+      # Este job é o lugar certo porque só ele tem o papel restrito com senha
+      # (`TENANT_DATABASE_URL`): sem ele a seção mede o DONO das tabelas, e dono
+      # ignora policy de linha.
+      #
+      # Vermelho aqui é regressão, nunca dívida conhecida (medido: 53 casos
+      # verdes). O passo roda DEPOIS da suíte de isolamento, e a ordem continua
+      # sendo a barata: enquanto ele roda, o `desligar()` do `beforeAll` daquele
+      # arquivo DESLIGA a RLS das 11 tabelas que ele governa (ele cria policies
+      # próprias, com outro nome, para provar a fatia 1.4), e uma quebra no meio
+      # do arquivo deixa o banco assim.
+      #
+      # No caminho feliz isso deixou de vazar para as outras suítes: o `afterAll`
+      # daquele arquivo religa o isolamento da migration com `app_rls_ligar()`
+      # (11/09/2026). Antes disso ele terminava o banco em 61 de 72 tabelas, e
+      # quem consertava era a auto-cura da suíte de isolamento — que na CI
+      # funcionava e num banco de desenvolvimento não existia.
+      # -----------------------------------------------------------------------
+      - name: Rotas públicas com o isolamento por linha LIGADO
+        env:
+          RLS_NO_TESTE: '1'
+          RESUMO_RLS: ${{ runner.temp }}/resumo-rls.json
+          # 53 = 38 casos de sempre + 15 da seção de RLS. Piso, não espelho.
+          PISO_CASOS_RLS: '50'
+        run: |
+          # SEM `--` antes das opções. Com ele, `pnpm exec` repassa o `--`
+          # literalmente e o vitest trata `--reporter=...` como FILTRO de
+          # arquivo: a suíte roda, sai verde, e o resumo NUNCA é escrito — a
+          # conferência logo abaixo então reprova com "resumo ilegível", que
+          # esconde a causa. Medido em 11/09/2026 (pnpm 9.15.9, vitest 3.2.7);
+          # o `--` estava aqui desde que este passo nasceu.
+          pnpm --filter @mktos/api exec vitest run test/rotas-publicas-tenant.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_RLS"
+          # Fail-closed: se a seção não for registrada (interruptor perdido,
+          # TENANT_DATABASE_URL vazia), o arquivo roda só os 38 casos de sempre
+          # e passaria VERDE sem ter medido RLS nenhum. O piso é o que impede.
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_RLS, "utf8")); }
+            catch (e) { console.log("::error::resumo da secao de RLS ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_RLS);
+            const total = r.numTotalTests;
+            console.log("rotas-publicas-tenant com RLS: " + total + " casos, " +
+              r.numPassedTests + " verdes, " + r.numFailedTests + " vermelhos, " +
+              r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a secao de RLS das rotas publicas nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                " (esperados 53: 38 sem RLS + 15 com). A secao de RLS nao foi registrada — quase sempre " +
+                "RLS_NO_TESTE ou TENANT_DATABASE_URL que nao chegou. Ela NAO aparece como pulada, porque o " +
+                "arquivo a registra por if e nao por describe.skipIf; este piso e o que a impede de sumir em silencio.");
+              process.exit(1);
+            }
+          '
+
+      # -----------------------------------------------------------------------
+      # A SEÇÃO DE ISOLAMENTO DO COFRE — onda 7, fatia 5.3.
+      #
+      # `test/cofre.test.ts` termina com um bloco que mede, com o PAPEL RESTRITO,
+      # se uma empresa alcança o segredo de outra em `SegredoDeConector`. É a
+      # tabela de CREDENCIAIS: se alguma coisa neste repositório precisa de prova
+      # de isolamento medida em vez de descrita, é ela.
+      #
+      # O gatilho é o MESMO de `rotas-publicas-tenant`, e de propósito:
+      # `RLS_NO_TESTE=1` mais `TENANT_DATABASE_URL`. A seção liga RLS no banco
+      # inteiro e por isso não pode rodar no job `qualidade`, onde os arquivos
+      # rodam em paralelo contra o mesmo Postgres — e é este job o único que tem
+      # o papel restrito com senha. Sem o passo abaixo ela NUNCA rodaria em lugar
+      # nenhum: o arquivo a registra por `if` e não por `describe.skipIf`, então
+      # ela não apareceria nem como pulada.
+      #
+      # Medido em 11/09/2026, contra o Postgres descartável com `mktos_app` de
+      # pé: **97 casos** (89 sem a seção + 8 dela).
+      # -----------------------------------------------------------------------
+      - name: Cofre com o isolamento por linha LIGADO
+        env:
+          RLS_NO_TESTE: '1'
+          RESUMO_COFRE: ${{ runner.temp }}/resumo-cofre.json
+          # 94 = acima dos 89 que o arquivo roda SEM a seção, e abaixo dos 97
+          # reais. A margem é estreita porque a seção é pequena (8 casos): o
+          # piso precisa caber entre os dois números para reprovar quando a
+          # seção não for registrada. Ao acrescentar caso fora da seção, suba
+          # este piso junto, senão ele para de distinguir as duas situações.
+          PISO_CASOS_COFRE: '94'
+        run: |
+          # SEM `--` antes das opções — mesma armadilha do passo acima: com ele o
+          # vitest trata `--reporter=...` como filtro de arquivo, a suíte sai
+          # verde e o resumo nunca é escrito.
+          pnpm --filter @mktos/api exec vitest run test/cofre.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_COFRE"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_COFRE, "utf8")); }
+            catch (e) { console.log("::error::resumo do cofre ilegivel: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_COFRE);
+            const total = r.numTotalTests;
+            console.log("cofre com RLS: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests > 0 || r.numPendingTests > 0) {
+              console.log("::error::a suite do cofre nao passou inteira.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::so " + total + " casos rodaram, abaixo do piso de " + piso +
+                " (esperados 97: 89 sem a secao de isolamento + 8 dela). A secao nao foi registrada — " +
+                "quase sempre RLS_NO_TESTE ou TENANT_DATABASE_URL que nao chegou. Ela NAO aparece como " +
+                "pulada, porque o arquivo a registra por if; este piso e o que a impede de sumir em silencio. " +
+                "Sem ela, NADA mede se uma empresa alcanca o segredo de outra.");
+              process.exit(1);
+            }
+          '
+
+  # ---------------------------------------------------------------------------
+  # 3. As migrations aplicam do zero E correspondem ao schema.
+  # ---------------------------------------------------------------------------
+  #
+  # Isto não é zelo: `prisma migrate deploy` roda no `command` do container da
+  # api em produção. Migration que falha não deixa a API subir. Este job é o
+  # ensaio dessa mesma sequência, do zero, antes do merge.
+  #
+  # LIMITE DESTE JOB, PARA NINGUÉM LER O VERDE COMO GARANTIA DE PRODUÇÃO:
+  # ele aplica num banco VAZIO, que é o caso fácil. Produção aplica sobre banco
+  # POVOADO, e é lá que a migration derruba a API — coluna NOT NULL sem default
+  # em tabela com linhas, UNIQUE sobre dado já duplicado, tipo que não converte,
+  # lock demorado em tabela grande. Verde aqui NÃO prova que aplica em produção;
+  # prova que o histórico é coerente e que o SQL cru foi junto. Ensaio contra
+  # cópia restaurada do banco de produção continua sendo trabalho manual.
+  migrations:
+    name: Migrations aplicam do zero
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: mkt
+          POSTGRES_PASSWORD: mkt
+          POSTGRES_DB: marketing_os_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mkt -d marketing_os_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Banco à parte, só para a comparação migrations x schema: o `migrate
+      # diff` RESETA o banco sombra a cada execução, então ele não pode ser o
+      # mesmo que acabou de provar que aplica do zero.
+      SHADOW_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_shadow
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: O banco precisa estar vazio antes de aplicar
+        env:
+          PGPASSWORD: mkt
+        run: |
+          n=$(psql -h localhost -U mkt -d marketing_os_test -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+          if [ "$n" != "0" ]; then
+            echo "::error::o banco da CI não está vazio ($n tabelas) — a prova de aplicar do zero não valeria"
+            exit 1
+          fi
+
+      - name: prisma migrate deploy
+        run: pnpm --filter @mktos/api db:deploy
+
+      - name: prisma migrate status
+        run: pnpm --filter @mktos/api db:status
+
+      # As migrations têm SQL cru que o Prisma não modela e que ninguém percebe
+      # faltando até produção: a extensão pgvector (busca semântica) e as RULEs
+      # que fazem do EventLog um registro append-only de verdade.
+      - name: O SQL cru das migrations também aplicou
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d marketing_os_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+              RAISE EXCEPTION 'extensão pgvector ausente — a busca semântica não subiria';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_rules WHERE tablename = 'EventLog' AND rulename = 'eventlog_sem_update') THEN
+              RAISE EXCEPTION 'RULE eventlog_sem_update ausente — o RASTRO deixaria de ser append-only';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_rules WHERE tablename = 'EventLog' AND rulename = 'eventlog_sem_delete') THEN
+              RAISE EXCEPTION 'RULE eventlog_sem_delete ausente — o RASTRO deixaria de ser append-only';
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Criar o banco sombra da comparação
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h localhost -U mkt -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS marketing_os_shadow" \
+            -c "CREATE DATABASE marketing_os_shadow"
+
+      # Aplicar não é corresponder. Um model novo no schema.prisma sem a
+      # migration correspondente passa nos passos acima — o histórico continua
+      # aplicando — e só quebra em runtime, quando o client gerado pede uma
+      # coluna que não existe no banco. `migrate diff` replica o histórico no
+      # banco sombra e compara com o datamodel: divergência é erro aqui.
+      - name: As migrations correspondem ao schema
+        run: |
+          # `--exit-code` do prisma: 0 = idênticos, 2 = divergem, 1 = não deu
+          # para comparar. Os dois últimos reprovam — na dúvida, vermelho.
+          codigo=0
+          saida="$(pnpm --filter @mktos/api db:diff 2>&1)" || codigo=$?
+          echo "$saida"
+          if [ "$codigo" = "0" ]; then
+            echo "As migrations reproduzem o schema.prisma."
+            exit 0
+          fi
+          if [ "$codigo" = "2" ]; then
+            echo "::error title=Migrations divergem do schema::o histórico de migrations não reproduz o schema.prisma. Model alterado sem a migration correspondente aplica verde e quebra em runtime, quando o client gerado pedir a coluna que não existe. Gere a migration com 'pnpm --filter @mktos/api db:migrate --create-only' e confira o SQL antes de commitar."
+            echo "--- SQL que faltaria aplicar para o banco alcançar o schema:"
+            pnpm --filter @mktos/api db:diff:sql || true
+          else
+            echo "::error title=Comparação migrations x schema falhou::o prisma saiu com código $codigo e não chegou a comparar (banco sombra fora do ar, schema inválido, migrations ilegíveis). Sem a comparação não dá para afirmar que o histórico corresponde ao schema, então isto reprova em vez de passar."
+          fi
+          exit 1

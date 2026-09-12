@@ -10,19 +10,42 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:diff": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --exit-code",
+    "db:diff:sql": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --script",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
     "db:seed:finops": "tsx prisma/seed-finops.ts",
     "import:pauta": "tsx prisma/import-pauta.ts",
     "db:sync-permissions": "tsx prisma/sync-permissions.ts",
-    "db:seed:trabalho": "tsx prisma/seed-trabalho.ts"
+    "db:seed:trabalho": "tsx prisma/seed-trabalho.ts",
+    "test": "vitest run",
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "test:isolamento": "MKTOS_CONJUNTO_DE_TESTES=isolamento vitest run",
+    "db:seed:politica": "tsx prisma/seed-politica.ts",
+    "test:porta": "vitest run test/porta.test.ts",
+    "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts",
+    "smoke": "node scripts/smoke-boot.mjs",
+    "perguntar": "node dist/scripts/perguntar.js",
+    "provisionar": "node dist/scripts/provisionar-tenant.js",
+    "relatorio:observar": "node dist/scripts/relatorio-observar.js",
+    "expurgo:rastro": "node dist/scripts/expurgar-rastro.js",
+    "cofre:inventario": "node dist/cofre/cofre.cli.js inventario",
+    "cofre:rotacionar": "node dist/cofre/cofre.cli.js rotacionar",
+    "cofre:migrar": "node dist/cofre/cofre.cli.js migrar",
+    "cofre:desfazer-migracao": "node dist/cofre/cofre.cli.js desfazer-migracao",
+    "docs:gerar": "node dist/scripts/gerar-documentacao.js",
+    "memoria:conferir": "node dist/memory/memoria.cli.js conferir",
+    "memoria:migrar": "node dist/memory/memoria.cli.js migrar",
+    "memoria:desfazer-migracao": "node dist/memory/memoria.cli.js desfazer-migracao"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@mktos/policy": "workspace:*",
     "@mktos/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
@@ -37,6 +60,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@nestjs/testing": "^10.4.22",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/multer": "^2.2.0",
@@ -47,6 +71,7 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.4"
   }
 }

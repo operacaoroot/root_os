@@ -39,7 +39,6 @@ function TasksInner() {
     <div className="space-y-5">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Tarefas</h1>
           <p className="text-sm text-muted">
             {data ? `${data.total} tarefa(s)` : 'Carregando…'} · {data?.overdue ?? 0} atrasada(s) · ClickUp/Asana unificados (conector na Fase 3).
           </p>

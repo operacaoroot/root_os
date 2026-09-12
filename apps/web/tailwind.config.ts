@@ -5,17 +5,33 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: '#0b0e14',
-        surface: '#131823',
-        'surface-2': '#1a2130',
-        border: '#232c3d',
-        muted: '#8a96ab',
-        text: '#e6ebf4',
-        brand: '#5b8cff',
-        'brand-dim': '#3a5bb0',
-        good: '#33d69f',
-        warn: '#f5a623',
-        bad: '#ff5c6c',
+        // Painel — ROOT OS. Os valores moram em globals.css como triplet RGB
+        // e trocam com data-os-theme, então as 37 telas seguem o tema sem
+        // que nenhuma precise ser editada. Triplet (e não hex ou var() puro)
+        // porque é o que preserva `bg-bad/10`, `bg-brand/15`, `border-bad/40`.
+        bg: 'rgb(var(--os-bg) / <alpha-value>)',
+        bg2: 'rgb(var(--os-bg2) / <alpha-value>)',
+        surface: 'rgb(var(--os-s1) / <alpha-value>)',
+        'surface-2': 'rgb(var(--os-s2) / <alpha-value>)',
+        'surface-3': 'rgb(var(--os-s3) / <alpha-value>)',
+        border: 'rgb(var(--os-line) / <alpha-value>)',
+        'border-strong': 'rgb(var(--os-line-strong) / <alpha-value>)',
+        text: 'rgb(var(--os-tx) / <alpha-value>)',
+        muted: 'rgb(var(--os-tx2) / <alpha-value>)',
+        // Decorativo: rótulo, hint, moldura. Nunca dado.
+        dim: 'rgb(var(--os-tx3) / <alpha-value>)',
+        brand: 'rgb(var(--os-ac) / <alpha-value>)',
+        'brand-2': 'rgb(var(--os-ac2) / <alpha-value>)',
+        'brand-dim': 'rgb(var(--os-ac-dim) / <alpha-value>)',
+        // Tinta que fica POR CIMA do acento. No mono o acento é branco, então
+        // `text-white` sobre `bg-brand` some — é para isso que este token existe.
+        ink: 'rgb(var(--os-ac-ink) / <alpha-value>)',
+        // Escala de estado — quatro valores. O acento não entra aqui.
+        good: 'rgb(var(--os-ok) / <alpha-value>)',
+        warn: 'rgb(var(--os-warn) / <alpha-value>)',
+        bad: 'rgb(var(--os-err) / <alpha-value>)',
+        info: 'rgb(var(--os-cy) / <alpha-value>)',
+        mag: 'rgb(var(--os-mag) / <alpha-value>)',
         // Identidade ROOT — usada só na superfície pública da bio (/b/*).
         // Espelha ~/.maquina-carrossel/marcas/root/brand.json (fonte canônica).
         'bio-bg': '#070a08',
@@ -50,10 +66,16 @@ const config: Config = {
         'central-magenta-soft': 'var(--central-magenta-soft)',
       },
       fontFamily: {
-        'central-mono': ['var(--font-jetbrains)', 'JetBrains Mono', 'ui-monospace', 'monospace'],
-        'central-sans': ['var(--font-space)', 'Space Grotesk', 'ui-sans-serif', 'system-ui'],
+        'os-mono': ['var(--os-mono)'],
+        'os-sans': ['var(--os-sans)'],
+        'central-mono': ['var(--font-jetbrains, "JetBrains Mono")', 'JetBrains Mono', 'ui-monospace', 'monospace'],
+        'central-sans': ['var(--font-space, "Space Grotesk")', 'Space Grotesk', 'ui-sans-serif', 'system-ui'],
       },
-      borderRadius: { xl: '14px', root: '3px' },
+      // O protótipo não tem canto redondo: 3px em tudo. Achatar a escala aqui
+      // aplica a moldura ROOT nas 37 telas sem tocar em nenhuma das 211
+      // ocorrências de rounded-lg/rounded-xl. `rounded-full` (avatar) não é
+      // afetado — é chave própria. /central e /b não usam nenhuma delas.
+      borderRadius: { DEFAULT: '3px', sm: '2px', md: '3px', lg: '3px', xl: '3px', '2xl': '4px', root: '3px' },
     },
   },
   plugins: [],

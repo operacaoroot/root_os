@@ -76,7 +76,7 @@ export class ReportsService {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(
         `IA não configurada: falta a credencial do provider "${this.llm.name}". ` +
-          'Configure ~/.config/root/openai.env (OPENAI_API_KEY=...) e reinicie a API.',
+          `Configure ~/.config/root/${this.llm.name}.env e reinicie a API.`,
       );
     }
     const data = await this.gather(orgId);
@@ -88,7 +88,11 @@ Dados (JSON):
 ${JSON.stringify(data)}`;
 
     this.log.log(`Gerando resumo diário via ${this.llm.name}/${this.llm.model} (org ${orgId})`);
-    const summary = await this.llm.complete({ system: SYSTEM_PROMPT, user });
+    // `orgId` explícito diz de quem é o gasto para o teto de custo de IA por
+    // empresa e por dia (RF-G-05). Hoje esta rota só chega por requisição, e o
+    // contexto já traria a empresa; declarar aqui é o que mantém o gasto
+    // rastreado se um dia ela virar rotina agendada.
+    const summary = await this.llm.complete({ system: SYSTEM_PROMPT, user, orgId });
 
     const row = await this.prisma.report.create({
       data: {

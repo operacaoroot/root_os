@@ -56,8 +56,10 @@ enviar e-mail · enviar WhatsApp · alterar campanha · excluir dados · atualiz
 - Rate-limit por número. Comando desconhecido → não faz nada (não vaza dado).
 
 ## 5. Auditoria
-- `audit_logs` registra **quem** (user/ai/system), **o quê**, **antes/depois**, IP, quando.
-- Toda ação de IA também em `ai_runs`/`ai_tool_calls`.
+- `audit_logs` (`AuditLog`) registra **quem** (user/ai/system), **o quê**, **antes/depois**, IP, quando.
+- Ação de IA que passa pelo **Tool Gateway** entra no RASTRO: `ToolCall` (a chamada), `PolicyDecision` (a classificação R0–R5 e o veredito) e `EventLog` (o evento encadeado por `hash`/`prevHash`, com `correlationId` e `retencaoAte`). É esse trio que responde "quem mandou, o que a régua decidiu, o que aconteceu".
+  - As tabelas `ai_runs` e `ai_tool_calls` — que este documento afirmava — **não existem** e não aparecem em nenhuma fatia do `PLANO-CONTINUIDADE.md`; o RASTRO do gateway ocupou esse lugar. Não conte com elas em auditoria nem em resposta a incidente.
+  - **Limite conhecido, e é o que importa aqui:** só o que atravessa o gateway entra no RASTRO. As escritas externas que ainda não passam por ele (`google`, `work`, `pauta`, `bio`, `finance` — as mesmas cinco que a fatia 3.3 migra) gravam no `AuditLog` e mais nada — sem classificação de risco, sem retenção e sem aprovação. Fechar isso é a fatia 3.3 do `PLANO-CONTINUIDADE.md`.
 - Tela "Auditoria" filtrável; export só com `auditoria.ver`.
 
 ## 6. LGPD — decisões desde o dia 1

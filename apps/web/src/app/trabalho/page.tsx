@@ -669,7 +669,7 @@ function ConfigLista({ lista, token, onFechar, onErro }: {
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onFechar}>
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-surface p-4" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Configurar “{lista.name}”</h2>
+          <h2 className="font-os-mono text-[10px] uppercase tracking-[0.16em] font-semibold text-muted">Configurar “{lista.name}”</h2>
           <button onClick={onFechar} className="text-muted hover:text-text"><X size={16} /></button>
         </div>
 

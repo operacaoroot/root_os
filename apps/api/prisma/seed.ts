@@ -1,5 +1,5 @@
 import { PrismaClient, LeadStatus, TaskStatus } from '@prisma/client';
-import { PERMISSIONS, ROLES } from '@mktos/shared';
+import { MODULOS, PERMISSIONS, ROLES } from '@mktos/shared';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 
@@ -56,10 +56,25 @@ function daysAgo(n: number): Date {
 
 async function main() {
   // 1) Org
+  //
+  // A empresa da ROOT nasce com TODOS os módulos ligados (RF-T-06). Sem esta
+  // linha o campo grava vazio e, num banco NOVO, a migration de backfill não
+  // socorre ninguém — ela roda com a tabela ainda sem linha alguma. O resultado
+  // seria uma instalação em que todo prefixo de módulo devolve 404 e todo
+  // item de domínio some do menu, com a suíte verde (nenhum teste exercita a
+  // empresa semeada por requisição). Enquanto não houver tela de provisionamento
+  // é aqui que o escopo de produto da ROOT é decidido.
+  //
+  // `update` também, e não só `create`: reseed contra banco existente é o único
+  // caminho de conserto que hoje existe para uma empresa que ficou sem módulo.
+  // `MODULOS` vem de @mktos/shared, a mesma fonte única do menu e do gate — e
+  // é escrito por extenso, não por spread de um conjunto derivado, porque o
+  // Prisma quer `string[]` mutável.
+  const modulos = [...MODULOS];
   const org = await prisma.org.upsert({
     where: { slug: 'root' },
-    update: {},
-    create: { name: 'Marketing OS (root)', slug: 'root' },
+    update: { modulos },
+    create: { name: 'Marketing OS (root)', slug: 'root', modulos },
   });
 
   // 2) Permissions (fonte única em @mktos/shared)

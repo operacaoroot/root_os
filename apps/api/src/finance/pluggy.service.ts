@@ -1,4 +1,5 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 
 // Conector de bancos via Open Finance (Pluggy — https://pluggy.ai).
 // Credencial PRÓPRIA do root em ~/.config/root/pluggy.env (isolado do escritório).
@@ -26,13 +27,27 @@ export interface PluggyTransaction {
 }
 
 @Injectable()
-export class PluggyService {
+export class PluggyService implements OnModuleInit {
   private readonly log = new Logger('PluggyService');
   private readonly clientId = process.env.PLUGGY_CLIENT_ID ?? '';
   private readonly clientSecret = process.env.PLUGGY_CLIENT_SECRET ?? '';
   private readonly base = (process.env.PLUGGY_BASE_URL ?? 'https://api.pluggy.ai').replace(/\/$/, '');
   private apiKey: string | null = null;
   private apiKeyAt = 0;
+
+  constructor(private readonly conectoresConfigurados: ConectoresConfiguradosRegistry) {}
+
+  /*
+   * A Pluggy precisa de DUAS variáveis para estar configurada, e é por isso que
+   * ela ilustra bem o motivo da mudança da fatia 3.3: a tela de Conexões
+   * reproduzia essa conjunção por fora (`!!(PLUGGY_CLIENT_ID &&
+   * PLUGGY_CLIENT_SECRET)`), e qualquer mudança no critério aqui dentro deixava
+   * as duas leituras em desacordo sem nada quebrar. O critério é de quem usa a
+   * credencial.
+   */
+  onModuleInit(): void {
+    this.conectoresConfigurados.registrar('pluggy', () => this.configured);
+  }
 
   get configured(): boolean {
     return this.clientId.length > 0 && this.clientSecret.length > 0;

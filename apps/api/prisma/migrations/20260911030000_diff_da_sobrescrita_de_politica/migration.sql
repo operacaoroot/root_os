@@ -1,0 +1,16 @@
+-- RF-P-04: a sobrescrita de política por empresa é versionada "com data e
+-- responsável" — e com O DIFF DO QUE MUDOU.
+--
+-- `PolicyVersion` já guardava o documento resolvido, o delta da empresa, o
+-- motivo, o autor e a janela de vigência. Faltava a resposta direta a "o que
+-- esta pessoa mudou": hoje ela só sai comparando o documento com a base, e a
+-- base de hoje não é a base daquele dia. Guardado, o histórico responde sozinho.
+--
+-- Conteúdo: `DiffDePolitica` de @mktos/policy —
+--   { capacidades: [{ id, de, para, direcao, campos }], limites: [{ campo, de, para, direcao }] }
+--
+-- Nulável e sem backfill de propósito: as versões anteriores a esta migration
+-- nasceram sem o campo, e inventar um diff para elas seria escrever no histórico
+-- um dado que ninguém apurou. Nulo aqui significa "versão anterior ao registro
+-- do diff", e é isso que a tela tem de mostrar.
+ALTER TABLE "PolicyVersion" ADD COLUMN     "diff" JSONB;

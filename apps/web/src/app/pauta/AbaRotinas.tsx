@@ -81,8 +81,11 @@ export function AbaRotinas({ token, editavel, onErro, bump, onMudou }: Props) {
     <div className="space-y-4">
       {data && !data.cronAtivo && (
         <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-          <code className="text-xs">PAUTA_CRON=off</code> — as rotinas não disparam sozinhas nesta
-          instância. Dá para rodar na mão pelo botão abaixo.
+          As rotinas de pauta não disparam sozinhas nesta instância — pode ser{' '}
+          <code className="text-xs">ROTINAS_CRON=off</code> (o agendador inteiro),{' '}
+          <code className="text-xs">PAUTA_CRON=off</code> (só as de pauta) ou o módulo de rotinas
+          fora do ar. A tela <a className="underline" href="/rotinas">Rotinas</a> diz qual dos três.
+          Dá para rodar na mão pelo botão abaixo.
         </div>
       )}
 

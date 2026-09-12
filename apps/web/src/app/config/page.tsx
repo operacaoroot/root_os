@@ -25,7 +25,6 @@ export default function ConfigPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Configurações</h1>
         <p className="text-sm text-muted">Organização, seu perfil e o estado das integrações.</p>
       </div>
 
@@ -68,7 +67,7 @@ export default function ConfigPage() {
         {data && data.integrations.length === 0 ? (
           <p className="text-sm text-muted">
             Nenhuma integração conectada ainda. Os conectores (ClickUp/Asana, Instagram, Gmail, Drive…)
-            entram nas próximas fases; o Telegram já opera como canal do MCP.
+            entram nas próximas fases.
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -150,7 +149,7 @@ function ChangePassword({ token }: { token: string | null }) {
             <button
               onClick={submit}
               disabled={busy || current.length < 1 || next.length < 8}
-              className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
             >
               {busy ? 'Salvando…' : 'Salvar'}
             </button>

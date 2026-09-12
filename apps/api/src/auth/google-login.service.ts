@@ -18,6 +18,22 @@ import { AuthService } from './auth.service';
 const SCOPES = ['openid', 'email', 'profile'];
 export const LOGIN_STATE_PREFIX = 'login:';
 
+/*
+ * O `typ` do `state`.
+ *
+ * Este token é assinado com o MESMO assinador da sessão e sai numa rota anônima
+ * — `GET /auth/google/start` devolve um redirect com ele na URL, e qualquer um
+ * lê. Enquanto o `JwtAuthGuard` conferia só a assinatura, mandá-lo de volta como
+ * `Bearer` fazia dele um token de sessão sem empresa. Agora ele se declara, e o
+ * guarda de sessão recusa o que não for `sessao` (ver `jwt-auth.guard.ts`).
+ *
+ * Do lado de cá a checagem também apertou: `purpose` continua sendo conferido
+ * (compatibilidade com um `state` emitido minutos antes do deploy) e `typ` passa
+ * a ser exigido de tudo que não traga `purpose` — o efeito prático é que um
+ * token de SESSÃO apresentado como `state` deixa de passar por aqui.
+ */
+export const TIPO_DO_ESTADO = 'estado-login';
+
 /** Recusa esperada — o `slug` vira a mensagem certa na tela de login. */
 class LoginRecusado extends UnauthorizedException {
   constructor(
@@ -75,7 +91,7 @@ export class GoogleLoginService {
     }
     const state =
       LOGIN_STATE_PREFIX +
-      this.jwt.sign({ purpose: 'google-login' }, { expiresIn: '10m' });
+      this.jwt.sign({ typ: TIPO_DO_ESTADO, purpose: 'google-login' }, { expiresIn: '10m' });
     const p = new URLSearchParams({
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
@@ -141,10 +157,15 @@ export class GoogleLoginService {
       throw new LoginRecusado('estado-invalido', 'Estado de login ausente.');
     }
     try {
-      const claims = this.jwt.verify<{ purpose?: string }>(
+      const claims = this.jwt.verify<{ typ?: string; purpose?: string }>(
         state.slice(LOGIN_STATE_PREFIX.length),
       );
-      if (claims.purpose !== 'google-login') throw new Error('propósito inválido');
+      // `purpose` é o campo antigo e continua valendo por uma janela de 10 min
+      // (o tempo de vida do próprio `state`); `typ` é o novo e é o que recusa um
+      // token de sessão apresentado aqui.
+      const ehEstadoDeLogin =
+        claims.typ === TIPO_DO_ESTADO || (!claims.typ && claims.purpose === 'google-login');
+      if (!ehEstadoDeLogin) throw new Error('propósito inválido');
     } catch {
       throw new LoginRecusado('estado-invalido', 'Estado de login inválido ou expirado.');
     }

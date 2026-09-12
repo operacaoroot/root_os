@@ -1,4 +1,5 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
 
 // Conector do Asaas (gateway de cobranças + conta digital — https://asaas.com).
 // Credencial PRÓPRIA do root em ~/.config/root/asaas.env (isolado do escritório).
@@ -56,10 +57,22 @@ interface AsaasList<T> {
 export const OPEN_PAYMENT_STATUS = ['PENDING', 'OVERDUE', 'CONFIRMED', 'AWAITING_RISK_ANALYSIS'] as const;
 
 @Injectable()
-export class AsaasService {
+export class AsaasService implements OnModuleInit {
   private readonly log = new Logger('AsaasService');
   private readonly apiKey = (process.env.ASAAS_API_KEY ?? '').trim();
   private readonly base = this.resolveBase();
+
+  constructor(private readonly conectoresConfigurados: ConectoresConfiguradosRegistry) {}
+
+  /*
+   * `configured` aqui lê a chave com `.trim()` aplicado na leitura da variável —
+   * uma chave só com espaços é "presente" para quem testa `!!process.env.X` e
+   * AUSENTE para este conector. Era exatamente o tipo de divergência que fazia a
+   * tela de Conexões afirmar uma coisa e o conector fazer outra (fatia 3.3).
+   */
+  onModuleInit(): void {
+    this.conectoresConfigurados.registrar('asaas', () => this.configured);
+  }
 
   get configured(): boolean {
     return this.apiKey.length > 0;
