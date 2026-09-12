@@ -106,18 +106,30 @@ describe('o guarda de sessão só aceita token de sessão', () => {
   });
 
   it('a tolerância a token SEM `typ` só cobre o que tem cara de sessão', () => {
-    // A regra dupla existe por uma janela de 8h após o deploy: sessão emitida
-    // antes desta mudança não declara `typ`. Ela passa por ter `sub` e `orgId`
-    // — e é isso que nenhum token de propósito tem.
-    expect(ehTokenDeSessao({ sub: 'u-1', orgId: 'org-1' })).toBe(true);
-    expect(ehTokenDeSessao({ sub: 'u-1' })).toBe(false);
-    expect(ehTokenDeSessao({ orgId: 'org-1' })).toBe(false);
-    expect(ehTokenDeSessao({})).toBe(false);
-    expect(ehTokenDeSessao(null)).toBe(false);
+    /*
+     * A regra dupla existe por uma janela de 8h após o deploy: sessão emitida
+     * antes desta mudança não declara `typ`. Ela passa por ter `sub` e `orgId`
+     * — e é isso que nenhum token de propósito tem.
+     *
+     * O RELÓGIO É FIXADO AQUI, e não herdado de quem roda a suíte. Este caso
+     * mede FORMA (o que tem cara de sessão), não PRAZO — quem mede prazo é o
+     * caso seguinte. Sem fixar, ele virava um teste com data de validade: ficou
+     * vermelho sozinho às 12:00 UTC de 12/09/2026, quando a janela fechou, sem
+     * que uma linha de código tivesse mudado. Teste que muda de cor pelo
+     * calendário não mede o código, mede o dia.
+     */
+    const dentroDaJanela = new Date(FIM_DA_TOLERANCIA_SEM_TYP.getTime() - 60 * 1000);
+    expect(ehTokenDeSessao({ sub: 'u-1', orgId: 'org-1' }, dentroDaJanela)).toBe(true);
+    expect(ehTokenDeSessao({ sub: 'u-1' }, dentroDaJanela)).toBe(false);
+    expect(ehTokenDeSessao({ orgId: 'org-1' }, dentroDaJanela)).toBe(false);
+    expect(ehTokenDeSessao({}, dentroDaJanela)).toBe(false);
+    expect(ehTokenDeSessao(null, dentroDaJanela)).toBe(false);
     // `typ` declarado manda sozinho: um token que diz o que é não ganha a
     // tolerância de volta por acaso.
-    expect(ehTokenDeSessao({ typ: TIPO_DA_PROVA, sub: 'u-1', orgId: 'org-1' })).toBe(false);
-    expect(ehTokenDeSessao({ typ: TIPO_DA_SESSAO })).toBe(true);
+    expect(
+      ehTokenDeSessao({ typ: TIPO_DA_PROVA, sub: 'u-1', orgId: 'org-1' }, dentroDaJanela),
+    ).toBe(false);
+    expect(ehTokenDeSessao({ typ: TIPO_DA_SESSAO }, dentroDaJanela)).toBe(true);
   });
 
   it('a tolerância tem PRAZO, e ela se fecha sozinha', () => {

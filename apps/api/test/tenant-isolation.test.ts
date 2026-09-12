@@ -383,6 +383,17 @@ const ALVOS: Alvo[] = [
   { tabela: 'Rotina', escopo: 'tenant', chaveSql: '"id"', nota: 'O trabalho que roda sozinho na empresa (RF-N-04). O agendador dispara FORA de requisição e por isso abre o contexto de CADA empresa antes de ler — ver src/routines/rotinas.scheduler.ts. Ler a da outra revela o que ela automatizou e quando; ESCREVER é pior: mudar `estado` para `rodando` liga trabalho na empresa alheia, e mudar o `cron` muda a hora em que o modelo dela é chamado.' },
   { tabela: 'RotinaExecucao', escopo: 'tenant', chaveSql: '"id"', nota: 'O diário de bordo de cada passagem. Tem orgId PRÓPRIO (e não só o pai) porque a consulta da tela filtra por empresa direto, sem join — e porque uma policy que dependesse do pai deixaria a linha órfã de um DELETE em corrida sem dono por um instante.' },
 
+  // ---- mapa público (fatia 6.5) -----------------------------------------
+  { tabela: 'MapaPublicoItem', escopo: 'tenant', chaveSql: '"id"', nota: 'O que a empresa escolheu MOSTRAR na entrada pública do domínio (fatia 6.5). Ler a linha da outra é ler a vitrine dela antes de ela publicar — inclusive os RASCUNHOS, que é o caso que mais dói, porque rascunho é texto escrito para sair um dia e ainda não revisado. ESCREVER é pior por dois lados: preencher `publicadoEm` numa linha alheia PUBLICA na internet o rascunho da outra empresa, e apagar a linha derruba o que ela já publicou. A policy é a padrão, SEM cláusula de sentinela: a rota pública resolve a empresa por `Org.slug` (sob a sentinela, que só alcança `Org`) e lê esta tabela já DENTRO do contexto daquela empresa.' },
+
+  // ---- assinatura e cobrança (fatia 6.2) --------------------------------
+  { tabela: 'Assinatura', escopo: 'tenant', chaveSql: '"id"', nota: 'O contrato da empresa com a ROOT: plano, preço, ciclo, estado e — o que mais dói — `suspensaEm`, `perdoadasAte` e os identificadores no provedor de cobrança. LER a da outra é ler quanto o vizinho paga e em que condições, que é o dado que nenhuma carteira de clientes pode vazar. ESCREVER é pior de três jeitos, e todos são ação de negócio disfarçada de linha de banco: mudar `status` para `suspensa` DESLIGA a empresa alheia (o agendador de rotinas confere suspensão antes de disparar); mexer em `perdoadasAte` dá crédito de graça; e trocar `provedorAssinaturaId` aponta a cobrança de uma empresa para a conta de outra no provedor.' },
+  { tabela: 'CobrancaDeAssinatura', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada fatura, com vencimento, valor e `pagoEm`. Tem `orgId` PRÓPRIO e não só a assinatura-mãe, porque a tela e a conferência com o provedor filtram por empresa direto. LER a da outra é o extrato de pagamento dela; ESCREVER `pagoEm` numa linha alheia faz o sistema tratar como quitada uma fatura que ninguém pagou — e como é essa coluna que a reativação lê, é o caminho mais curto para ressuscitar uma empresa suspensa sem passar por dinheiro nenhum.' },
+
+  // ---- console da plataforma (fatia 6.3) --------------------------------
+  { tabela: 'EmpresaNaPlataforma', escopo: 'tenant', chaveSql: '"id"', nota: 'O registro COMERCIAL que a plataforma mantém sobre cada cliente (fatia 6.3): plano, estado, saúde, número de usuários, gasto de IA e mensalidade. A linha FALA de um cliente (`empresaId`) mas PERTENCE à empresa da plataforma (`orgId`) — e é por isso que ela entra aqui como qualquer outra: se a policy falhar, uma empresa cliente lê a carteira inteira da ROOT, com o que cada concorrente dela paga. ESCREVER é o outro lado: mudar `estado` para `encerrada` ou `cobrancaEmDia` para falso no registro alheio é mexer na relação comercial de outra pessoa.' },
+  { tabela: 'AcessoDeSuporte', escopo: 'tenant', chaveSql: '"id"', nota: 'A autorização de suporte (fatia 6.3): a linha é da empresa CLIENTE, que é quem autoriza, vê e revoga. É a tabela que decide se um operador da plataforma entra na casa de alguém — ler a da outra empresa revela quem a ROOT está atendendo e por quê (o `motivo` é texto escrito pelo cliente); ESCREVER é conceder a si mesmo acesso à casa alheia, que é a fatia inteira ao contrário. Sem semente, o caso "A não lê linha de B" rodaria contra tabela vazia e passaria com qualquer policy — foi exatamente por não estar aqui que a primeira versão da fatia deixou a catraca VERMELHA.' },
+
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da hierarquia pastas → listas → tarefas.' },
   { tabela: 'WorkList', escopo: 'tenant', chaveSql: '"id"', nota: 'Pai de WorkStatus, que não tem orgId.' },
@@ -994,6 +1005,79 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('RotinaExecucao', await ins(c, 'RotinaExecucao', {
     id: crypto.randomUUID(), orgId, rotinaId: rotinaOsId, status: 'ok', origem: 'cron',
     inicioEm: agora, fimEm: agora, duracaoMs: 42, resumo: `Passagem da org ${rotulo} ${MARCA}`,
+  }));
+
+  // --- mapa público (fatia 6.5) --------------------------------------------
+  // PUBLICADA de propósito: o que esta suíte mede é o isolamento POR EMPRESA, e
+  // linha não publicada seria indistinguível de linha ausente para metade dos
+  // casos. Quem mede a marca de publicação é `test/mapa-publico.test.ts`, que
+  // semeia as duas formas na mesma empresa.
+  reg('MapaPublicoItem', await ins(c, 'MapaPublicoItem', {
+    id: crypto.randomUUID(), orgId, eixo: 'nucleo', chave: 'nucleo', ordem: 0,
+    rotulo: `Vitrine ${rotulo} ${MARCA}`, detalhe: `Texto público da org ${rotulo}`,
+    tom: 'brand', publicadoEm: agora, publicadoPor: 'suite', atualizadoEm: agora,
+  }));
+
+  // --- console da plataforma (fatia 6.3) -----------------------------------
+  /*
+   * As duas tabelas do console entram na semente porque o isolamento delas só é
+   * MEDIDO se houver linha. A primeira versão da fatia 6.3 as deixou fora do
+   * registro: a catraca "o registro da suíte cobre exatamente as tabelas de
+   * empresa do banco" ficou vermelha, e — pior — o isolamento das duas nunca era
+   * medido pela suíte permanente, só pela seção condicional da própria fatia,
+   * que exige duas variáveis de ambiente para existir.
+   *
+   * `EmpresaNaPlataforma` é semeada com `orgId` = a PRÓPRIA org e `empresaId`
+   * apontando para a outra. É o desenho de produção invertido de propósito: as
+   * duas orgs viram "plataforma" uma da outra, e aí o caso "A não lê linha de B"
+   * mede exatamente o que interessa — que o registro comercial de uma não
+   * aparece para a outra. Semear as duas linhas na mesma org faria a metade do
+   * par ficar sem dono e o caso passaria por ausência.
+   */
+  reg('EmpresaNaPlataforma', await ins(c, 'EmpresaNaPlataforma', {
+    id: crypto.randomUUID(), orgId, empresaId: `cliente_de_${suf}`,
+    nome: `Cliente de ${rotulo} ${MARCA}`, slug: `cliente-de-${rotulo.toLowerCase()}`,
+    plano: 'piloto', estado: 'ativa', saude: 'ok',
+    usuarios: rotulo === 'A' ? 3 : 9, mensalidadeBrl: rotulo === 'A' ? 1500 : 9900,
+    atualizadoEm: agora,
+  }));
+
+  reg('AcessoDeSuporte', await ins(c, 'AcessoDeSuporte', {
+    id: crypto.randomUUID(), orgId, operadorEmail: `op.${rotulo.toLowerCase()}@operacaoroot.com`,
+    escopo: 'diagnostico', motivo: `motivo escrito pela org ${rotulo} ${MARCA}`,
+    autorizadoPorId: userId, autorizadoPorNome: `Titular ${rotulo}`,
+    autorizadoEm: agora, expiraEm: new Date(agora.getTime() + 3_600_000),
+  }));
+
+  // --- assinatura e cobrança (fatia 6.2) -----------------------------------
+  /*
+   * A assinatura nasce ATIVA nas duas orgs, e não uma ativa e outra suspensa.
+   * Tentador fazer diferente — pareceria medir mais —, e seria um erro: o
+   * agendador de rotinas RECUSA disparar empresa suspensa, e metade dos casos
+   * desta suíte roda dentro do contexto de uma empresa e da outra. Uma semente
+   * suspensa apagaria comportamento que nada aqui pretende medir, e a queda
+   * apareceria longe daqui, como "a rotina da org B não roda", sem pista.
+   *
+   * Quem mede suspensão, carência e reativação é `test/assinatura.test.ts`, na
+   * mesma empresa. Aqui a pergunta é só uma: a linha de A aparece para B?
+   */
+  const assinaturaId = await ins(c, 'Assinatura', {
+    id: crypto.randomUUID(), orgId, plano: `plano-${rotulo.toLowerCase()} ${MARCA}`,
+    valorCentavos: rotulo === 'A' ? 150_000 : 990_000, ciclo: 'mensal', status: 'ativa',
+    provedor: 'asaas', provedorClienteId: `cus_${suf}`, provedorAssinaturaId: `sub_${suf}`,
+    atualizadoEm: agora,
+  });
+  reg('Assinatura', assinaturaId);
+
+  reg('CobrancaDeAssinatura', await ins(c, 'CobrancaDeAssinatura', {
+    id: crypto.randomUUID(), orgId, assinaturaId,
+    // `referencia` é única POR EMPRESA (@@unique([orgId, referencia])): o mesmo
+    // texto nas duas orgs é de propósito — se a policy falhar no INSERT, a
+    // colisão aparece como erro de chave em vez de passar despercebida.
+    referencia: '2026-09', valorCentavos: rotulo === 'A' ? 150_000 : 990_000,
+    // `aberta` — o vocabulário é fechado por CHECK no banco ('aberta' | 'paga' |
+    // 'vencida' | 'cancelada'). "pendente" parece o mesmo e é recusado no INSERT.
+    vencimento: new Date(agora.getTime() + 5 * 86_400_000), status: 'aberta',
   }));
 
   // --- trabalho ------------------------------------------------------------

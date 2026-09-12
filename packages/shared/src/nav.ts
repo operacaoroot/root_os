@@ -190,6 +190,22 @@ export const NAV: NavItem[] = [
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'dinheiro', modulo: 'financeiro' },
 
   // ── A conta ──────────────────────────────────────────────────────────────
+  // A ASSINATURA ENTROU NA ONDA 11 (fatia 6.2, RF-O-03), e o item existe por um
+  // motivo prático antes de qualquer outro: sem ele, a tela que explica a
+  // suspensão só era alcançada digitando o endereço. Quem entrava suspenso caía
+  // no console, levava recusa em tudo e não tinha como descobrir por quê.
+  //
+  // `dashboard.ver` e não `admin.usuarios`: TODO usuário precisa poder chegar à
+  // tela que diz por que o produto parou de responder — inclusive quem não
+  // administra a conta, que é justamente quem não tem como adivinhar. O que a
+  // tela deixa MUDAR (registrar plano, guardar credencial, conferir, reativar)
+  // exige `admin.usuarios` na API e some da tela de quem não tem.
+  //
+  // ESPINHA, sem `modulo`: é o contrato que sustenta todos os módulos, e um
+  // módulo "cobrança" que a empresa pudesse não contratar seria um contrato
+  // opcional sobre o próprio contrato. (Mesma decisão do lado da API, em
+  // `apps/api/src/tenants/modulos.ts`.)
+  { key: 'assinatura', label: 'Assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'conta' },
   { key: 'config', label: 'Configurações', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'conta' },
 ];
 

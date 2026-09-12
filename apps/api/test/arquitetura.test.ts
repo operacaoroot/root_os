@@ -328,6 +328,20 @@ const CONECTORES: Record<string, string> = {
   'src/pauta/apify.service.ts': 'Apify',
   'src/finance/pluggy.service.ts': 'Pluggy',
   'src/finance/asaas.service.ts': 'Asaas',
+  /*
+   * DOIS CLIENTES DE ASAAS NO MESMO PROCESSO, e é declarado em vez de escondido
+   * (fatia 6.2, RF-O-03). O de `finance/` fala com a conta da própria ROOT, com
+   * a chave de ambiente, e serve ao painel de finanças. Este fala com a conta que
+   * COBRA CADA EMPRESA, com a chave que mora no cofre por empresa, e serve à
+   * assinatura do produto — relação diferente, credencial diferente, e num mundo
+   * com revenda não existe "a chave", existe a de cada operador.
+   *
+   * O mesmo raciocínio dos dois clientes de Instagram (ver o bloco da bio, mais
+   * abaixo): duas autorizações diferentes da mesma plataforma não são o mesmo
+   * cliente. Declarar aqui é o que põe este arquivo sob as quatro frentes — sem
+   * a linha, ele endereçaria `asaas.com` sem ninguém vigiar.
+   */
+  'src/billing/cobranca-asaas.service.ts': 'Asaas (cobrança da assinatura)',
   'src/bio/plataformas/instagram.ts': 'Instagram (bio)',
   'src/bio/plataformas/tiktok.ts': 'TikTok (bio)',
 };
@@ -545,6 +559,22 @@ const EXCECOES: Excecao[] = [
     conector: 'src/finance/asaas.service.ts',
     motivo: 'Financeiro consulta o Asaas direto — e o Asaas também sabe cobrar, não só ler.',
     fatia: 'onda 8 — resto da 3.3',
+  },
+  {
+    arquivo: 'src/billing/assinatura.service.ts',
+    conector: 'src/billing/cobranca-asaas.service.ts',
+    motivo:
+      'A ASSINATURA CONSULTA O PROVEDOR DE COBRANÇA DIRETO, e a leitura é SÓ LEITURA: `GET ' +
+      '/payments?subscription=…`, com a chave saindo do cofre por empréstimo com prazo. ' +
+      'Nenhuma escrita externa passa por aqui — criar cobrança, cancelar e alterar valor ' +
+      'continuam sendo feitos no painel do provedor, justamente porque escrita externa é R3 e ' +
+      'não sai fora da porta. O que impede a leitura de ir pela porta HOJE é que ela precisaria ' +
+      'de uma capacidade NOVA no catálogo (`assinatura.cobrancas.listar`), e capacidade nova em ' +
+      'produção só entra por semente assinada, que é ritual de três passos fora do alcance de ' +
+      'uma fatia. O que a exceção custa está medido: esta chamada não gera linha de RASTRO da ' +
+      'porta — mas a DECISÃO que ela alimenta gera (`assinatura.suspensa`/`assinatura.ativa`, ' +
+      'R4, com motivo e estado anterior), então o que mudou acesso fica registrado.',
+    fatia: 'onda 12 — capacidade `assinatura.cobrancas.listar` no catálogo + semente assinada',
   },
 
   // --- pauta: o módulo mais furado, com quatro caminhos próprios

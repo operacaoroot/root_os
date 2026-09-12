@@ -4,6 +4,7 @@ import { OpenAiProvider } from './openai.provider';
 import { AnthropicProvider } from './anthropic.provider';
 import { OpenRouterProvider } from './openrouter.provider';
 import { TetoDeCustoIaService } from './teto-diario.service';
+import { RelatorioDeCustoIaService } from './relatorio-custo.service';
 import { ProviderComTeto } from './provider-com-teto';
 import { env } from './env';
 
@@ -38,6 +39,14 @@ import { env } from './env';
 // como provider (a fábrica abaixo precisa dele); o que não existe mais é a porta
 // lateral. Embedding segue não medido por este teto — é cobrado à parte pela
 // OpenAI e está no relatório da fatia.
+//
+// O QUE ENTROU NA FATIA 6.4: `RelatorioDeCustoIaService` (RF-B-03). Ele só LÊ —
+// não reserva, não liquida, não corta —, e por isso divide o módulo com quem
+// escreve em vez de morar em `dashboard/`: as duas classes falam das MESMAS duas
+// tabelas, e o dia em que a leitura mudar de casa é o dia em que ela começa a
+// refazer por fora a conta que o teto já faz. Precisa estar declarado aqui: até
+// a fatia 6.4 ele era classe sem módulo — código morto que nenhuma rota
+// alcançava e que consulta bruta nenhuma chegou a executar.
 @Global()
 @Module({
   providers: [
@@ -45,6 +54,7 @@ import { env } from './env';
     AnthropicProvider,
     OpenRouterProvider,
     TetoDeCustoIaService,
+    RelatorioDeCustoIaService,
     {
       provide: LLM_PROVIDER,
       useFactory: (
@@ -61,6 +71,9 @@ import { env } from './env';
       inject: [OpenAiProvider, AnthropicProvider, OpenRouterProvider, TetoDeCustoIaService],
     },
   ],
-  exports: [LLM_PROVIDER, TetoDeCustoIaService],
+  // Exportar continua sendo obrigatório mesmo num módulo `@Global()`: sem a
+  // linha abaixo o Nest recusa subir com "can't resolve dependencies of
+  // DashboardController", e a recusa é no arranque, não em tempo de teste.
+  exports: [LLM_PROVIDER, TetoDeCustoIaService, RelatorioDeCustoIaService],
 })
 export class LlmModule {}

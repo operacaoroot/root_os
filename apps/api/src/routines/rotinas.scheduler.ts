@@ -1,8 +1,10 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ActorType, AgentEstado, type Rotina } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { combina, parseCron } from '../pauta/cron';
+import { AssinaturaService } from '../billing/assinatura.service';
+import { acessoBloqueado } from '../billing/assinatura';
 import { RotinasService } from './rotinas.service';
 import { ESTADOS_QUE_DISPARAM, LIVRE, TIPO_PAUTA_RODADA, type EstadoDoAgendador } from './rotina.tipos';
 import { anunciarAgendadorDeRotinas } from './sinal-do-agendador';
@@ -94,13 +96,51 @@ export class RotinasScheduler implements OnModuleInit {
   /** O último diagnóstico da descoberta, e quando ele foi tirado. */
   private cega = false;
   private cegaConferidaEm = 0;
+  /**
+   * As empresas cujo bloqueio por assinatura já foi anunciado.
+   *
+   * O tique bate a cada minuto; sem esta memória, uma empresa suspensa encheria
+   * o log com a mesma linha 1.440 vezes por dia e o aviso viraria ruído. Sair do
+   * conjunto quando a empresa volta a ter acesso é o que faz a próxima suspensão
+   * ser anunciada de novo — o que interessa é a TRANSIÇÃO, como no aviso da
+   * descoberta vazia.
+   */
+  private readonly jaAnunciouBloqueio = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly rotinas: RotinasService,
+    /*
+     * `@Optional()` PELO MESMO MOTIVO DO `ToolGateway`, e com a mesma
+     * contrapartida: há suítes que montam esta classe à mão, e um parâmetro
+     * obrigatório as quebraria em compilação sem nenhum ganho de segurança. O que
+     * garante a presença dele em produção é a asserção de arranque abaixo, que
+     * DERRUBA A API — não a assinatura do construtor.
+     */
+    @Optional() private readonly assinaturas?: AssinaturaService,
   ) {}
 
   onModuleInit(): void {
+    /*
+     * A ASSERÇÃO DE ARRANQUE, antes de qualquer outra coisa — inclusive antes do
+     * interruptor `ROTINAS_CRON`.
+     *
+     * Sem `AssinaturaService`, o tique dispararia as rotinas de TODA empresa,
+     * inclusive as que a plataforma acabou de suspender por falta de pagamento:
+     * gastando o teto de modelo da ROOT e publicando para fora em nome delas. O
+     * silêncio é o problema — nada no log diria que o gate de suspensão não
+     * alcança o relógio. O serviço vem do `BillingModule`, importado pelo
+     * `RoutinesModule`; se aquela linha sumir, esta API não sobe.
+     */
+    if (!this.assinaturas) {
+      throw new Error(
+        'RotinasScheduler subiu sem AssinaturaService: as rotinas de uma empresa SUSPENSA ' +
+          'continuariam disparando, gastando o teto de IA da ROOT e publicando para fora em nome ' +
+          'dela (RF-O-03). O serviço vem do BillingModule — se ele não estiver nos imports do ' +
+          'RoutinesModule, o agendador não pode subir.',
+      );
+    }
+
     // O sinal é anunciado mesmo com o tique desligado: o agendador EXISTE neste
     // processo, e é isso que o que sobrou do agendador antigo precisa saber.
     // Desligado por variável é decisão de quem opera; ausente é defeito de
@@ -270,6 +310,31 @@ export class RotinasScheduler implements OnModuleInit {
         },
         async () => {
           await this.rotinas.reconciliarPauta(orgId);
+
+          /*
+           * EMPRESA SUSPENSA NÃO DISPARA ROTINA — RF-O-03.
+           *
+           * O gate de suspensão (`billing/suspensao.interceptor.ts`) é um
+           * interceptor de REQUISIÇÃO, e o tique não é requisição. Sem esta
+           * pergunta, uma empresa que a plataforma acabou de cortar por
+           * inadimplência continuava com os agentes dela rodando de hora em hora:
+           * gastando o teto de modelo da ROOT (que é quem paga o provedor de IA)
+           * e PUBLICANDO PARA FORA em nome dela — mensagem de WhatsApp, peça no
+           * Instagram, arquivo no Drive do cliente. Cobrar o acesso e continuar
+           * agindo é o pior dos dois lados.
+           *
+           * A RECONCILIAÇÃO CONTINUA ACONTECENDO, e é de propósito: ela não gasta
+           * nada, não sai para fora e é o que mantém o espelho das rotinas da
+           * pauta honesto. Uma empresa que volta a pagar encontra a lista dela em
+           * ordem, em vez de um mês de deriva para consertar.
+           *
+           * FALHA ABERTA, como o gate: se a leitura do estado falhar (banco ruim,
+           * timeout), a rotina RODA e o log grita. A escolha oposta pararia o
+           * relógio de toda a carteira por causa de um soluço — e o relógio
+           * parado não se anuncia, só deixa de acontecer.
+           */
+          if (await this.bloqueadaPorAssinatura(orgId)) return;
+
           const candidatas = await this.prisma.rotina.findMany({
             where: { orgId, ativo: true, estado: { in: [...ESTADOS_QUE_DISPARAM] as AgentEstado[] } },
           });
@@ -298,6 +363,60 @@ export class RotinasScheduler implements OnModuleInit {
         `[rotinas] empresa ${orgId}: a varredura falhou (${(e as Error).message}). As outras seguem.`,
       );
     }
+  }
+
+  /**
+   * O acesso desta empresa está bloqueado pela assinatura?
+   *
+   * Roda DENTRO do contexto da empresa (quem chama é `varrerEmpresa`), porque
+   * `AssinaturaService.estadoDeAcesso` exige empresa resolvida e porque o
+   * isolamento por linha está em modo forçado: sem o contexto, a consulta volta
+   * vazia e calada, e "vazio" aqui significaria "não está suspensa" — o pior
+   * desfecho possível para esta pergunta.
+   *
+   * `null` (empresa sem linha de assinatura) NÃO bloqueia, pela mesma razão
+   * escrita em `acessoBloqueado`: hoje nenhuma empresa tem linha, e bloquear por
+   * ausência pararia o relógio da carteira inteira no minuto em que isto subisse.
+   */
+  private async bloqueadaPorAssinatura(orgId: string): Promise<boolean> {
+    /*
+     * Só acontece em instância montada à mão por suíte: em produção o arranque
+     * RECUSA subir sem o serviço (ver `onModuleInit`). Devolver `false` aqui é
+     * deixar a rotina rodar, que é o comportamento de antes desta fatia.
+     */
+    if (!this.assinaturas) {
+      this.log.error(
+        `[rotinas] instância sem AssinaturaService: as rotinas da empresa ${orgId} RODAM sem ` +
+          'conferir suspensão. Em produção isto não acontece — o arranque recusa subir assim.',
+      );
+      return false;
+    }
+
+    let estado: Awaited<ReturnType<AssinaturaService['estadoDeAcesso']>>;
+    try {
+      estado = await this.assinaturas.estadoDeAcesso(orgId);
+    } catch (e) {
+      this.log.error(
+        `[rotinas] não consegui ler o estado da assinatura da empresa ${orgId} — as rotinas dela ` +
+          `RODAM assim mesmo: ${(e as Error).message}`,
+      );
+      return false;
+    }
+
+    if (!acessoBloqueado(estado)) {
+      this.jaAnunciouBloqueio.delete(orgId);
+      return false;
+    }
+
+    if (!this.jaAnunciouBloqueio.has(orgId)) {
+      this.jaAnunciouBloqueio.add(orgId);
+      this.log.warn(
+        `[rotinas] empresa ${orgId} com assinatura "${estado}": nenhuma rotina dela dispara ` +
+          'enquanto o acesso estiver bloqueado. Nada foi apagado, nada foi desativado — as ' +
+          'rotinas continuam como estão e voltam a disparar sozinhas quando o acesso voltar.',
+      );
+    }
+    return true;
   }
 
   /**

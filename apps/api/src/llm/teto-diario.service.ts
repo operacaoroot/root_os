@@ -499,12 +499,32 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
    * em FORA DO ESCOPO no relatório.
    */
   async liberarReservasPresas(motivo: 'arranque' | 'varredura'): Promise<number> {
-    const corte = motivo === 'arranque' ? new Date() : new Date(Date.now() - RESERVA_EXPIRA_MS);
+    /*
+     * ARRANQUE NÃO PERGUNTA IDADE — e esta consulta precisa dizer isso do mesmo
+     * jeito que `liberarPresasDaLinha` já dizia.
+     *
+     * A versão anterior escrevia o arranque como "corte = agora" e mantinha
+     * `"atualizadoEm" < corte` nos dois modos. Parece a mesma coisa e não é:
+     * `<` é estrito, então a reserva carimbada NO MESMO INSTANTE do corte não
+     * entra. No processo de verdade isso quase nunca aparece (a linha é de
+     * antes do boot), o que é exatamente o que torna o defeito perigoso — ele
+     * só se mostra quando os dois carimbos coincidem: relógio parado em teste,
+     * relógio do banco um fio à frente do relógio do processo, dois arranques
+     * no mesmo milissegundo.
+     *
+     * E o efeito é o pior possível para o arranque: a reserva de uma chamada
+     * cujo processo morreu fica de pé, ocupando o teto da empresa até a virada
+     * do dia. Era justamente disso que o coletor de arranque existia para
+     * salvar. A regra agora é uma só, escrita igual nas duas consultas.
+     */
+    const paradaDesde = new Date(Date.now() - RESERVA_EXPIRA_MS);
+    const semIdade = motivo === 'arranque';
     const linhas = await this.prisma
       .$queryRaw<{ orgId: string; dia: string }[]>`
       SELECT "orgId", "dia"
         FROM "GastoDeIaNoDia"
-       WHERE "reservadoUsd" > 0 AND "atualizadoEm" < ${corte}
+       WHERE "reservadoUsd" > 0
+         AND ( ${semIdade}::boolean OR "atualizadoEm" < ${paradaDesde} )
        ORDER BY "orgId", "dia"`
       .catch((e: unknown) => {
         // Sob `TENANT_MODO=impor` esta consulta LANÇA (é o guarda de "consulta

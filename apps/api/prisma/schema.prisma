@@ -168,6 +168,32 @@ model Org {
   // Prisma exige, e nada além disso.
   rotinas         Rotina[]
   rotinaExecucoes RotinaExecucao[]
+
+  // Fatia 6.5 — O MAPA PÚBLICO (bloco no fim do arquivo). Mesma regra das de
+  // cima: só o outro lado da relação mora aqui, porque é o que o Prisma exige.
+  mapaPublico MapaPublicoItem[]
+
+  // Fatia 6.2 — ASSINATURA E COBRANÇA, RF-O-03 (bloco no fim do arquivo). Mesma
+  // regra das de cima: só o outro lado da relação mora aqui.
+  //
+  // A ASSINATURA NÃO ENTRA COMO CAMPO DA `Org`, e é decisão. Um `Org.suspensa`
+  // booleano seria mais curto e destruiria o que a fatia promete: suspender
+  // precisa guardar POR QUE, DESDE QUANDO e COM BASE EM QUAL COBRANÇA, para que
+  // reativar devolva exatamente o estado anterior. Um booleano não tem onde
+  // guardar nada disso — e um booleano que alguém "limpa" na reativação apaga a
+  // própria prova de que houve suspensão.
+  assinatura         Assinatura?
+  cobrancasAssinatura CobrancaDeAssinatura[]
+
+  // Fatia 6.3 — O CONSOLE DA PLATAFORMA, RF-B-02 (bloco no fim do arquivo).
+  // Mesma regra das de cima: só o outro lado da relação mora aqui.
+  //
+  // As duas apontam para empresas de PAPÉIS diferentes, e é o desenho da fatia:
+  // `empresasNaPlataforma` só tem linha quando ESTA Org é a plataforma (é o
+  // registro dela sobre os clientes); `acessosDeSuporte` só tem linha quando
+  // ESTA Org é um CLIENTE que autorizou suporte a entrar.
+  empresasNaPlataforma EmpresaNaPlataforma[]
+  acessosDeSuporte     AcessoDeSuporte[]
 }
 
 model User {
@@ -2914,4 +2940,458 @@ model RotinaExecucao {
 
   @@index([orgId, rotinaId, inicioEm])
   @@index([rotinaId, inicioEm])
+}
+
+// ===========================================================================
+// ASSINATURA E COBRANÇA — RF-O-03 (fatia 6.2)
+// ===========================================================================
+//
+// O QUE ESTAS DUAS TABELAS EXISTEM PARA SUSTENTAR, em uma frase: suspender uma
+// empresa inadimplente sem apagar NADA dela, e devolver o acesso inteiro quando
+// ela voltar a pagar.
+//
+// ---------------------------------------------------------------------------
+// A DECISÃO QUE GOVERNA TODO O RESTO: SUSPENDER É UMA COLUNA, NUNCA UM DELETE
+// ---------------------------------------------------------------------------
+// Não existe, em lugar nenhum deste módulo, `delete`, `deleteMany`, `TRUNCATE`,
+// `CASCADE` de limpeza ou desligamento de módulo contratado. Suspensão é uma
+// transição de `Assinatura.status`, e só. As três formas de suspensão
+// destrutiva que foram consideradas e RECUSADAS, com o motivo de cada uma:
+//
+//  1. ESVAZIAR `Org.modulos`. Seria a suspensão mais eficaz (o gate de módulos
+//     já existe e recusaria tudo) e é IRREVERSÍVEL na prática: a lista do que a
+//     empresa contratou some, e reativar teria de adivinhá-la. Perda de dado
+//     disfarçada de mudança de estado.
+//  2. `Org.isActive = false`. Parece inofensivo, mas aquela coluna governa o
+//     LOGIN; um suspenso que não consegue entrar também não consegue ver a tela
+//     de suspensão nem pagar, e a suspensão vira desligamento.
+//  3. REVOGAR AS CREDENCIAIS DO COFRE da empresa. Revogação apaga o valor por
+//     desenho (RF-C-03) e reconectar cada fonte é trabalho do cliente, não
+//     nosso. Suspender não pode custar ao cliente refazer o onboarding.
+//
+// ---------------------------------------------------------------------------
+// POR QUE A COBRANÇA É UMA TABELA, E NÃO UM CAMPO `vencidoAte`
+// ---------------------------------------------------------------------------
+// Porque a decisão de suspender precisa ser AUDITÁVEL e REPRODUZÍVEL: qual
+// cobrança, vencida quando, de que valor. Um campo derivado responde "está
+// vencido" e não responde "por quê" — e no dia em que o provedor responder
+// errado (ver `CobrancaAsaasService`), a diferença entre as duas é a diferença
+// entre reverter uma linha e não saber o que reverter.
+//
+// A TABELA É ESPELHO, NÃO FONTE. A fonte da verdade da cobrança é o provedor;
+// aqui fica a última leitura bem-sucedida, com a hora em que ela aconteceu.
+// `sincronizadaEm` existe para que ninguém confunda "pago" com "estava pago da
+// última vez que conseguimos perguntar".
+
+/// A assinatura de UMA empresa. Uma por empresa (`orgId` é único).
+///
+/// NENHUMA CREDENCIAL MORA AQUI. O que esta tabela guarda do provedor são
+/// ENDEREÇOS (`provedorClienteId`, `provedorAssinaturaId`) — identificadores
+/// opacos que não abrem porta nenhuma sozinhos. A chave de API do provedor mora
+/// no COFRE, por empresa (`SegredoDeConector`, conector `asaas`), e sai de lá
+/// por empréstimo com prazo (RF-C-02). Uma coluna de credencial aqui seria a
+/// mesma variável global que a fatia existe para não ter, só que no banco.
+model Assinatura {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// O nome do plano como o cliente o vê. Texto e não enum: catálogo de plano
+  /// muda em escala de campanha, e enum viraria migration de tipo a cada preço
+  /// novo.
+  plano String
+
+  /// Em CENTAVOS, inteiro. Dinheiro em ponto flutuante é como R$ 0,01 vira R$
+  /// 0,009999 e a conferência contra o provedor passa a falhar por arredondamento.
+  valorCentavos Int
+
+  /// `mensal` ou `anual`. Só influencia o texto da tela: quem gera a cobrança
+  /// recorrente é o provedor, não este sistema.
+  ciclo String @default("mensal")
+
+  /// `ativa` · `inadimplente` · `suspensa` · `cancelada`.
+  ///
+  /// Texto com CHECK no banco, e não enum do Prisma. O CHECK dá a mesma garantia
+  /// (estado fora do vocabulário não entra) sem criar um tipo do Postgres que
+  /// toda migration futura teria de alterar com `ALTER TYPE ... ADD VALUE`, que
+  /// não roda dentro de transação e portanto não roda numa migration do Prisma.
+  ///
+  /// `inadimplente` é um degrau de verdade, não enfeite: é a empresa com
+  /// cobrança vencida DENTRO da carência. Ela ainda tem acesso inteiro, e é a
+  /// única janela em que o aviso na tela pode evitar a suspensão.
+  status String @default("ativa")
+
+  /// Dias depois do vencimento antes de a suspensão valer. Zero é aceito e
+  /// significa "suspende no dia seguinte ao vencimento"; negativo é recusado
+  /// pelo CHECK, porque suspender ANTES de vencer não é carência, é defeito.
+  diasDeCarencia Int @default(7)
+
+  /// Qual provedor cobra esta empresa. Hoje só `asaas`. Existe para que trocar
+  /// de provedor seja uma linha de dado e não uma migration.
+  provedor String @default("asaas")
+
+  /// Endereços no provedor. Nulos até alguém ligar a assinatura lá.
+  provedorClienteId    String?
+  provedorAssinaturaId String?
+
+  /// A última vez que a conferência contra o provedor TERMINOU BEM.
+  ///
+  /// Nula significa "nunca conseguimos perguntar", e é por isso que ela não pode
+  /// ser `@default(now())`: uma assinatura recém-criada com esta coluna
+  /// preenchida mentiria que já foi conferida, e a decisão de suspender leria
+  /// essa mentira como silêncio do provedor.
+  conferidaEm DateTime?
+
+  /// Quando a suspensão passou a valer, e sobre qual cobrança ela se apoia.
+  ///
+  /// `suspensaEm` NÃO É LIMPA NA REATIVAÇÃO: ela é a prova de que houve
+  /// suspensão, e o par (`suspensaEm`, `reativadaEm`) é o que permite responder
+  /// "por quanto tempo esta empresa ficou fora" sem depender do RASTRO. Quem
+  /// diz se ela está suspensa AGORA é `status`, e só ele.
+  suspensaEm            DateTime?
+  suspensaPorCobrancaId String?
+  motivoDaSuspensao     String?
+  reativadaEm           DateTime?
+
+  /// A MARCA DA REATIVAÇÃO EXPLÍCITA — cobranças vencidas até aqui não decidem
+  /// mais acesso nenhum. Entrou depois da revisão adversarial da fatia 6.2
+  /// (migration `20260912010000_reativacao_deixa_marca`), e o motivo é um defeito
+  /// reproduzido contra o banco: `reativar` é a saída declarada para pagamento
+  /// por fora, acordo comercial e suspensão indevida — e nos três casos o
+  /// PROVEDOR CONTINUA DIZENDO VENCIDO, porque o dinheiro não passou por ele. Sem
+  /// esta coluna, a conferência seguinte relia a mesma cobrança e suspendia de
+  /// novo: medido, a reativação do administrador durava um segundo.
+  ///
+  /// É um INSTANTE e não uma bandeira, e a diferença é o que impede o perdão de
+  /// virar isenção vitalícia: perdoa-se o que já estava vencido quando alguém
+  /// decidiu reativar. A fatura do mês seguinte vence DEPOIS desta marca, não é
+  /// perdoada, e suspende normalmente.
+  ///
+  /// Escrita SÓ na reativação MANUAL que sai de um bloqueio. Na automática não há
+  /// nada a perdoar (ela só acontece sem cobrança vencida na leitura), e escrever
+  /// ali perdoaria de lambuja toda cobrança com vencimento no passado que o
+  /// provedor ainda não marcou como vencida — uma isenção silenciosa.
+  ///
+  /// NUNCA É LIMPA, pelo mesmo motivo de `suspensaEm`: ela é a prova de que
+  /// alguém decidiu, e apagar prova é o que esta fatia existe para não fazer.
+  perdoadasAte          DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cobrancas CobrancaDeAssinatura[]
+
+  @@index([orgId, status])
+}
+
+/// Uma cobrança da assinatura, espelhada do provedor.
+///
+/// FILHA COM `orgId` PRÓPRIO, como todo filho neste schema (RF-T-01): o
+/// isolamento por linha precisa de uma coluna em que se apoiar, e uma consulta
+/// que esqueça o `join` com `Assinatura` não pode sair sem empresa.
+model CobrancaDeAssinatura {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  assinaturaId String
+  assinatura   Assinatura @relation(fields: [assinaturaId], references: [id])
+
+  /// O identificador da cobrança NO PROVEDOR. Único por empresa, e é ele que
+  /// torna a sincronização IDEMPOTENTE: conferir duas vezes atualiza a mesma
+  /// linha em vez de criar duas.
+  ///
+  /// Único por (orgId, referencia) e não global: dois provedores diferentes — ou
+  /// o mesmo provedor em duas contas — podem repetir identificador, e um único
+  /// global faria a cobrança de uma empresa recusar a entrada da outra.
+  referencia String
+
+  valorCentavos Int
+  vencimento    DateTime
+
+  /// `aberta` · `paga` · `vencida` · `cancelada`. CHECK no banco, mesmo motivo
+  /// de `Assinatura.status`.
+  ///
+  /// `vencida` é DERIVADA da leitura do provedor, nunca do relógio local: uma
+  /// cobrança que o provedor ainda chama de aberta não vira vencida aqui só
+  /// porque a data passou. Quem decide sobre pagamento é quem recebe o dinheiro.
+  status String
+
+  pagoEm DateTime?
+
+  /// Quando esta linha foi lida do provedor pela última vez. Ver a nota de
+  /// "espelho, não fonte" no cabeçalho do bloco.
+  sincronizadaEm DateTime @default(now())
+
+  criadoEm DateTime @default(now())
+
+  @@unique([orgId, referencia])
+  /// A consulta da decisão: "esta empresa tem cobrança em aberto vencida?".
+  @@index([orgId, status, vencimento])
+  @@index([assinaturaId, vencimento])
+}
+
+// ============================================================================
+// O MAPA PÚBLICO — fatia 6.5 (degrau 0 da esteira)
+// ============================================================================
+//
+// A raiz de `os.operacaoroot.com` mostra o mapa da ROOT ao vivo, antes de
+// qualquer cadastro. É a isca: quem chega vê o sistema funcionando numa empresa
+// de verdade — a nossa — e só depois decide se quer conta.
+//
+// A REGRA QUE ESTA TABELA EXISTE PARA CUMPRIR
+// Nada aparece na página pública que não tenha sido marcado como público de
+// forma explícita, POR REGISTRO. Não há — e não pode haver — regra do tipo
+// "toda nota do tipo X é pública": essa é a forma que vaza no dia em que
+// alguém criar uma nota daquele tipo sem pensar nesta tela.
+//
+// Daí o desenho: a página pública lê UMA tabela, esta, e mais nada do domínio.
+// Cada linha aqui é um nó do mapa que alguém escreveu de próprio punho. Um
+// registro do sistema (uma nota do contexto, um agente, uma rotina) não tem
+// como aparecer aqui por tabela nenhuma de tipos — alguém precisa ter criado a
+// linha correspondente e a PUBLICADO.
+//
+// E a linha existir não basta: a linha pode existir e não estar publicada
+// (`publicadoEm` nulo). É esse o rascunho — e é ele que o teste usa como
+// controle negativo, porque um rascunho com texto reconhecível que NÃO aparece
+// na resposta é a única prova de que o filtro é o que segura, e não a sorte.
+//
+// POR QUE O TEXTO É COPIADO E NÃO LIDO DO REGISTRO DE ORIGEM
+// A alternativa — a linha apontar para o `ContextItem`/`Agent` e a página ler o
+// rótulo ao vivo dele — parecia mais "ao vivo" e é mais frouxa: renomear o
+// registro interno passaria a mudar a página pública sem ninguém marcar nada.
+// Quem colasse o nome de um cliente na descrição de um agente publicaria aquilo
+// na hora. Aqui o texto que aparece é o texto que alguém escreveu PARA
+// aparecer.
+//
+// O QUE ENTÃO É "AO VIVO": `fonte`. A linha pode nomear uma LEITURA AGREGADA do
+// registro em código (`src/public-map/fontes.ts`) — e só um NÚMERO volta de lá,
+// nunca texto de registro nenhum. O número muda conforme a ROOT opera; o texto
+// em volta dele continua sendo o que foi escrito. Chave que não está no
+// registro não mostra número e não derruba a página.
+//
+// NÃO HÁ ROTA DE ESCRITA. O módulo `public-map` expõe só leitura: publicar é
+// operação de dono (SQL/semente hoje, tela autenticada depois). Uma superfície
+// pública que também publica seria a porta que esta tabela existe para fechar.
+model MapaPublicoItem {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A que eixo do mapa este nó pertence. Texto livre e não enum de propósito:
+  /// eixo novo é decisão editorial, não migration de tipo. O desenho ordena os
+  /// eixos de forma determinística (ver `page.tsx` do web) — numa tela de venda
+  /// o ponto não pode mudar de lugar a cada carregamento.
+  ///
+  /// O eixo reservado `nucleo` é o centro do mapa: o nó da própria empresa.
+  eixo String
+
+  /// Identificador estável do nó dentro da empresa. É por ele que se republica
+  /// ou se despublica sem criar linha nova.
+  chave String
+
+  /// Posição dentro do eixo. Empate desempata pela chave, para o desenho não
+  /// depender da ordem em que o banco devolveu.
+  ordem Int @default(0)
+
+  /// O que aparece embaixo do ponto, e a segunda linha da gaveta. Escritos à
+  /// mão por quem publica — ver o cabeçalho.
+  rotulo  String
+  detalhe String?
+
+  /// A cor, no vocabulário de estado do painel (`brand`, `good`, `warn`,
+  /// `bad`, `info`, `muted`). Valor desconhecido cai em `muted` no desenho, em
+  /// vez de pintar de nada.
+  tom String @default("muted")
+
+  /// A chave da LEITURA AGREGADA que dá o número deste nó, ou nulo para nó sem
+  /// número. O registro fechado está em `src/public-map/fontes.ts` e cada
+  /// entrada devolve um inteiro — nunca conteúdo de registro.
+  fonte String?
+
+  /// A MARCA. Nulo = rascunho: existe, e não aparece em lugar nenhum público.
+  /// Data e autor em vez de um booleano porque publicar é ato, e ato tem quem e
+  /// quando — um booleano não guarda nem um nem outro.
+  publicadoEm  DateTime?
+  publicadoPor String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, chave])
+  /// A consulta da página, inteira: empresa, publicados, na ordem do desenho.
+  @@index([orgId, publicadoEm, eixo, ordem])
+}
+
+// ===========================================================================
+// FATIA 6.3 — O CONSOLE DA PLATAFORMA (RF-B-02)
+//
+// Acrescentado no FIM do arquivo, à mão e SEM `prisma migrate dev`: outras
+// fatias desta onda mexem no mesmo schema, e tanto reescrever o arquivo quanto
+// gerar a migration automaticamente engoliria os modelos delas (protocolo da
+// onda). A migration é `20260911235500_console_da_plataforma`, escrita à mão e
+// provada no banco `prova_63`.
+//
+// AS DUAS TABELAS SÃO DE EMPRESAS DIFERENTES, e isso é o desenho:
+//
+//   `EmpresaNaPlataforma` pertence à empresa DA PLATAFORMA (`orgId` = a Org de
+//   slug `plataforma`) e FALA de um cliente (`empresaId`). É o registro que a
+//   plataforma mantém — plano, estado, saúde, uso e cobrança. Nenhuma coluna
+//   aqui guarda dado de operação do cliente.
+//
+//   `AcessoDeSuporte` pertence à empresa DO CLIENTE (`orgId` = o cliente). É o
+//   cliente quem autoriza, quem revoga e quem vê a lista — então a linha é
+//   dele, e a policy de linha comum já a protege sem exceção nenhuma.
+//
+// Por que isso importa: assim o console NÃO precisa da sentinela de plataforma
+// para listar clientes (ele lê linhas da PRÓPRIA empresa), e o cliente não
+// precisa de rota nova para ver quem tem acesso aos dados dele. Ver o cabeçalho
+// de `src/platform/plataforma.ts`.
+// ===========================================================================
+
+/// O que a PLATAFORMA registra sobre um cliente — RF-B-02.
+///
+/// A lista do console sai daqui, e não de uma varredura de `Org`. A diferença é
+/// deliberada: varrer `Org` exigiria a sentinela de plataforma, que libera
+/// leitura de `Org`, `User` e `Role` de todas as empresas — a lista de quem
+/// trabalha em cada cliente, com e-mail e papel. O console não vê isso.
+///
+/// A consequência, dita em voz alta: empresa que existe em `Org` e não tem linha
+/// aqui NÃO aparece no console. A migration semeia as que já existem e
+/// `PUT /tenants/plataforma/empresas/:empresaId` (re)registra as novas.
+model EmpresaNaPlataforma {
+  id String @id @default(uuid())
+
+  /// A empresa DONA do registro: a plataforma. É por ela que a policy de linha
+  /// recorta, e é por isso que o console enxerga todas as linhas sem exceção.
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A empresa DESCRITA — `Org.id` do cliente.
+  ///
+  /// SEM relação do Prisma e SEM chave estrangeira, e os dois por escolha.
+  /// Uma FK daqui para `Org` seria um ponteiro de uma empresa para OUTRA, que é
+  /// exatamente a forma que o gatilho `mktos_orgid_do_pai` existe para recusar
+  /// no resto do schema — um leitor futuro (ou uma catraca futura) leria isto
+  /// como o cruzamento que o sistema proíbe, quando aqui ele é o assunto da
+  /// tabela. O preço é que apagar uma `Org` deixa a linha órfã; ela vira uma
+  /// empresa "não encontrada" no console, que é informação, não vazamento.
+  empresaId String
+
+  /// Nome e slug COPIADOS no momento do registro.
+  ///
+  /// Cópia e não join: o console não alcança `Org` de outra empresa (é essa a
+  /// fatia). Copiar significa que renomear a empresa no painel dela não muda o
+  /// console até alguém re-registrar — limitação conhecida, e o preço de não
+  /// abrir a leitura cruzada.
+  nome String
+  slug String
+
+  /// Comercial. Texto e não enum pelo mesmo motivo de `Org.modulos`: plano novo
+  /// é decisão de negócio, não migration de tipo.
+  plano String @default("piloto")
+
+  /// `ativa` · `suspensa` · `encerrada`. Suspensa NÃO apaga nada: é a fatia 6.2
+  /// que define o que a suspensão faz: aqui ela só aparece.
+  estado String @default("ativa")
+
+  /// `ok` · `atencao` · `incidente`. Quem escreve é a plataforma.
+  saude String @default("ok")
+
+  /// Contadores de USO. São números MEDIDOS e carimbados (`medidoEm`), nunca
+  /// calculados na hora de mostrar: calcular na hora exigiria varrer tabela de
+  /// cliente, que é o que este console não faz.
+  usuarios       Int     @default(0)
+  agentesAtivos  Int     @default(0)
+  gastoIaUsdMes  Decimal @default(0) @db.Decimal(12, 6)
+
+  /// COBRANÇA. Em real, que é a moeda do contrato — ao contrário do gasto de
+  /// IA, que é medido em dólar pelo provedor.
+  mensalidadeBrl Decimal  @default(0) @db.Decimal(12, 2)
+  cobrancaEmDia  Boolean  @default(true)
+  proximaCobranca DateTime?
+
+  /// Quando os contadores acima foram medidos. Sem isto a tela mostraria número
+  /// velho com cara de número de agora.
+  medidoEm DateTime?
+
+  /// Última vez que a plataforma viu sinal de vida desta empresa.
+  ultimaAtividadeEm DateTime?
+
+  /// Uma linha de observação da operação. NUNCA dado de cliente — é campo de
+  /// quem opera a plataforma, e a revisão do que entra aqui é humana.
+  observacao String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  /// Uma linha por (plataforma, empresa descrita). O registro é único.
+  @@unique([orgId, empresaId])
+  @@index([orgId, estado])
+}
+
+/// O acesso de suporte que o CLIENTE autorizou — RF-B-02, e o que a LGPD pede.
+///
+/// Autorizar acesso de suporte é MUDANÇA DE ACESSO: R4 na escada ("Valor e
+/// acesso"), com motivo obrigatório e alçada `titular`. Quem autoriza é gente da
+/// empresa cliente; o operador da plataforma nunca cria a própria autorização —
+/// a conferência está em `src/platform/acesso-de-suporte.service.ts` e o evento
+/// vai para o RASTRO da empresa que autorizou.
+///
+/// A LINHA É DO CLIENTE (`orgId` = cliente), e por isso a policy de linha comum
+/// já basta: o cliente lê, cria e revoga o que é dele; a empresa da plataforma
+/// não alcança esta tabela pela policy. O operador só a encontra quando o
+/// serviço abre o contexto DAQUELA empresa para conferir a autorização — que é
+/// o único momento em que a plataforma entra na casa do cliente, e ele fica
+/// registrado.
+model AcessoDeSuporte {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Quem recebe o acesso, por e-mail e em minúsculas.
+  ///
+  /// E-mail e não `userId`: o operador da plataforma é usuário de OUTRA empresa
+  /// (a da plataforma), e uma chave estrangeira daqui para `User` seria o mesmo
+  /// ponteiro cruzado que `EmpresaNaPlataforma.empresaId` recusa — com o
+  /// agravante de a policy de `User` recortar por empresa, tornando o join
+  /// inútil justamente no contexto do cliente.
+  operadorEmail String
+  operadorNome  String?
+
+  /// O que a autorização cobre. Valores em `ESCOPOS_DE_SUPORTE`
+  /// (`src/platform/plataforma.ts`); lista fechada, conferida na escrita.
+  escopo String
+
+  /// Por que foi autorizado. Campo de R4 (`exigeMotivo`) — sem ele a concessão
+  /// não se explica depois.
+  motivo String
+
+  /// Quem autorizou, do lado do CLIENTE. Guardado por id e por nome: o id liga
+  /// ao usuário, o nome sobrevive a ele ser desativado.
+  autorizadoPorId   String
+  autorizadoPorNome String
+  autorizadoEm      DateTime @default(now())
+
+  /// A hora em que o acesso acaba SOZINHO. Quem lê é `estadoDoAcesso`, a cada
+  /// tentativa de uso — não há tarefa que "expire" nada, de propósito: prazo que
+  /// depende de um varredor rodando é prazo que não vale quando ele para.
+  expiraEm DateTime
+
+  revogadoEm   DateTime?
+  revogadoPorId String?
+
+  /// Quantas vezes o acesso foi efetivamente usado, e quando foi a última.
+  usos        Int       @default(0)
+  ultimoUsoEm DateTime?
+
+  /// O evento do RASTRO que registrou a autorização. É o fio entre a linha e a
+  /// prova encadeada — a linha pode ser alterada, o evento não.
+  eventoId String?
+
+  criadoEm DateTime @default(now())
+
+  /// O caminho quente: "esta empresa autorizou este operador, e ainda vale?".
+  @@index([orgId, operadorEmail, expiraEm])
+  @@index([orgId, expiraEm])
 }

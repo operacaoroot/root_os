@@ -133,10 +133,33 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
  * MOSTRA continua sendo filtrado pelos módulos da empresa (o catálogo de
  * capacidades de um módulo não contratado não aparece; ver `ReguaService`), mas
  * a rota em si responde sempre.
+ *
+ * `assinatura` ENTROU NA ONDA 11 (fatia 6.2, RF-O-03) e é espinha por duas
+ * razões, a segunda decisiva. A primeira: a assinatura é o contrato que sustenta
+ * TODOS os módulos; um módulo "cobrança" que a empresa pudesse não contratar
+ * seria um contrato opcional sobre o próprio contrato. A segunda: se fosse
+ * módulo, a fatia não funcionaria — empresa nova nasce com `modulos = []` e
+ * receberia 404 na própria tela de assinatura, e empresa SUSPENSA não teria como
+ * ver por que está fora nem avisar que pagou. O bloqueio ficaria correto e o
+ * cliente, sem saída. (Este prefixo também está em
+ * `PREFIXOS_LIBERADOS_NA_SUSPENSAO`, em `billing/assinatura.ts`: são duas
+ * perguntas diferentes — "desliga por contrato?" e "responde para quem está
+ * suspenso?" — e responder uma não responde a outra.)
+ *
+ * `mapa-publico` ENTROU NA ONDA 11 (fatia 6.5) e é espinha porque não é
+ * superfície de empresa nenhuma: é a ENTRADA do domínio, anônima, servindo a
+ * vitrine da própria ROOT (`GET /api/mapa-publico`, sem guard). Um "módulo
+ * vitrine" que uma empresa pudesse contratar não faria sentido — não há tenant
+ * para contratá-lo, porque quem chega ali ainda não tem conta. O gate deixa
+ * requisição anônima passar de propósito, então a declaração aqui não muda o
+ * comportamento em execução; o que ela muda é a suíte estática parar de reprovar
+ * e o `ModulosInterceptor` parar de gritar "prefixo não declarado" a cada visita
+ * à home.
  */
 export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'agents',
   'approvals',
+  'assinatura',
   'audit',
   'auth',
   'config',
@@ -145,6 +168,7 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'health',
   'integrations',
   'knowledge',
+  'mapa-publico',
   'memoria',
   'organograma',
   'policy',

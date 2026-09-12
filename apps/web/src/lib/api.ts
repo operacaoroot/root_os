@@ -14,6 +14,23 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 export const CODIGO_CONECTOR_DESLIGADO = 'conector_desligado';
 
 /**
+ * O CÓDIGO da recusa por assinatura suspensa (RF-O-03).
+ *
+ * Mesma decisão de duplicação da linha acima: cópia do valor que a API declara
+ * em `apps/api/src/billing/assinatura.ts` (`CODIGO_ASSINATURA_SUSPENSA`), com um
+ * caso de teste em cada suíte amarrando os dois lados.
+ *
+ * ELE EXISTE PORQUE O SUSPENSO NÃO CHEGAVA NA TELA DE SUSPENSÃO. A API devolvia
+ * 403 com este código em toda rota do produto, e o web não sabia lê-lo: quem
+ * entrava suspenso caía no painel, via caixa vermelha em cada bloco, e só achava
+ * `/assinatura` digitando o endereço. O precedente de como resolver já estava
+ * aqui ao lado, no conector desligado: a API diz o código, o web reconhece pelo
+ * CONTRATO e não por substring de frase em português — que quebra em silêncio na
+ * primeira reescrita do texto.
+ */
+export const CODIGO_ASSINATURA_SUSPENSA = 'assinatura_suspensa';
+
+/**
  * Erro de API que PRESERVA o código e o status, além da frase.
  *
  * Um `Error` cru só levava a mensagem, e a tela ficava com duas opções ruins:
@@ -35,6 +52,16 @@ export class ErroDaApi extends Error {
 /** É a recusa de conector desligado? A pergunta que a tela faz. */
 export function ehConectorDesligado(e: unknown): e is ErroDaApi {
   return e instanceof ErroDaApi && e.codigo === CODIGO_CONECTOR_DESLIGADO;
+}
+
+/**
+ * É a recusa por assinatura suspensa? A pergunta que a casca faz.
+ *
+ * Quem a usa é o `AppShell`, para mandar o suspenso à tela que explica o
+ * bloqueio em vez de deixá-lo numa tela cheia de erro sem causa aparente.
+ */
+export function ehAssinaturaSuspensa(e: unknown): e is ErroDaApi {
+  return e instanceof ErroDaApi && e.codigo === CODIGO_ASSINATURA_SUSPENSA;
 }
 
 /**

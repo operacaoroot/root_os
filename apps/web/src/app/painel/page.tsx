@@ -5,6 +5,7 @@ import type { DashboardSummary } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
+import { PilulaCustoIa } from './custo-ia/Pilula';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -26,10 +27,16 @@ export default function DashboardPage() {
       {/* A Topbar já diz "Console · o pulso da operação" — aqui vai só o que
           ela não tem: de quem é a sessão e o que a tela faz. Sem emoji e sem
           segunda pessoa: a voz da ROOT é de terminal, não de assistente. */}
-      <p className="text-sm text-muted">
-        Sessão de <span className="text-text">{user?.name}</span> · o dia inteiro em
-        números. Cada cartão abre o detalhe.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm text-muted">
+          Sessão de <span className="text-text">{user?.name}</span> · o dia inteiro em
+          números. Cada cartão abre o detalhe.
+        </p>
+        {/* A pílula "custo hoje · teto" da casca (RF-B-03). Ela se vira sozinha:
+            busca, erra e degrada por conta própria, para que uma falha no
+            relatório de custo não leve o Console junto. */}
+        <PilulaCustoIa />
+      </div>
 
       {error && (
         <div className="rounded-xl border border-bad/40 bg-bad/10 p-4 text-sm text-bad">
