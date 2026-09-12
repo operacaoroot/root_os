@@ -126,6 +126,33 @@ export class OnboardingController {
    */
   private readonly teto = new TetoDeCadastro();
 
+  /*
+   * A PORTA DA RUA TEM TRANCA, E ELA NASCE FECHADA.
+   *
+   * `POST onboarding/cadastro` é anônima por desenho: é o degrau 0 do produto,
+   * em que a pessoa entra sozinha, sem convite e sem ninguém da ROOT no
+   * caminho. Isso é a fatia funcionando.
+   *
+   * Só que a rota vive no MESMO processo que atende `os.operacaoroot.com`, e no
+   * dia em que este código subir ela passa a existir na internet. Sem tranca,
+   * qualquer pessoa que ache a URL cria uma empresa no banco de produção, entra
+   * nela pelo login com Google — que a rota provisiona, e por isso a allowlist
+   * de e-mail não a alcança — e gasta modelo na conta da casa. O teto de taxa
+   * acima limita a VAZÃO (cinco por hora por origem), não o DIREITO: cinco
+   * empresas por hora continuam sendo cadastro público aberto.
+   *
+   * Então a abertura é uma DECISÃO, tomada uma vez, por quem responde pela
+   * conta — e não um efeito colateral de um deploy. `ONBOARDING_ABERTO=sim`
+   * abre; qualquer outro valor, e a ausência, mantém fechada.
+   *
+   * LIDA NO CONSTRUTOR, de propósito, igual a `GATEWAY_MODO`: assim o estado da
+   * porta aparece no log de arranque e não muda no meio da vida do processo.
+   * Trocar exige recriar o container (`up -d --no-build api`); `docker restart`
+   * não serve, porque variável de ambiente é fixada na criação.
+   */
+  private readonly aberto = (process.env.ONBOARDING_ABERTO ?? '').trim().toLowerCase() === 'sim';
+
+
   constructor(private readonly svc: OnboardingService) {}
 
   // ------------------------------------------------------------------ público
@@ -140,6 +167,31 @@ export class OnboardingController {
    */
   @Post('cadastro')
   async cadastro(@Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    /*
+     * A TRANCA VEM ANTES DO TETO, e antes do Zod. Porta fechada não gasta o
+     * balde de ninguém e não conta como tentativa: quem tenta cadastrar numa
+     * instalação fechada não está atacando o teto, está batendo numa porta que
+     * não abre.
+     *
+     * 404 e não 403: a rota FECHADA não confirma que existe. Um 403 diria "há
+     * cadastro aqui, só não para você", que é exatamente a informação que não
+     * interessa dar de graça a quem varre a internet por endpoint de cadastro.
+     */
+    if (!this.aberto) {
+      this.log.warn(
+        `cadastro RECUSADO: a instalação está FECHADA para cadastro (origem=${enderecoDeOrigem(req) ?? '?'}). ` +
+          'Para abrir, ONBOARDING_ABERTO=sim no bloco environment do serviço api e recriar o container ' +
+          '(up -d --no-build api). Nada foi criado.',
+      );
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.NOT_FOUND,
+          message: 'Não encontrado.',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
     /*
      * O TETO VEM ANTES DO ZOD, e a ordem importa: corpo inválido também é
      * tentativa. Um contador que só medisse pedido bem formado seria contornado

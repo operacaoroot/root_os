@@ -125,6 +125,16 @@ services:
       # simplesmente não chega ao container — e o percentual "configurado" seria
       # a constante 80, com a tela afirmando que veio da configuração.
       TETO_IA_ALERTA_PERCENT: ${TETO_IA_ALERTA_PERCENT:-80}
+      # A porta da rua do produto (fatia 6.1). `sim` abre `POST onboarding/cadastro`,
+      # que é ANÔNIMA por desenho — qualquer pessoa cria a própria empresa, entra
+      # pelo login com Google (que a rota provisiona, então a allowlist de e-mail
+      # não a alcança) e passa a gastar modelo. Fechada, a rota responde 404 e não
+      # confirma que existe.
+      #
+      # O DEFAULT É FECHADO porque esta instalação é a da CASA: `os.operacaoroot.com`
+      # atende a ROOT, e abrir cadastro aqui é decisão comercial, não consequência
+      # de um deploy. Lida no construtor: trocar exige `up -d --no-build api`.
+      ONBOARDING_ABERTO: ${ONBOARDING_ABERTO:-nao}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}

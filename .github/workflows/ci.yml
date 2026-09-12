@@ -479,12 +479,12 @@ jobs:
       # vai a 983, ~18% de folga sobre 1199: a mesma proporção de todas as ondas.
       #
       # ---------------------------------------------------------------------
-      # ONDA 11, ESTABILIZAÇÃO (12/09/2026): MEDIDO, 1475 casos em 37 arquivos
+      # ONDA 11, ESTABILIZAÇÃO (12/09/2026): MEDIDO, 1488 casos em 37 arquivos
       # ---------------------------------------------------------------------
       # Mesmo regime deste job. Cinco arquivos novos, 273 casos:
       #
       #   assinatura 73, console-da-plataforma 83, mapa-publico 36,
-      #   onboarding 65, relatorio-custo 17.
+      #   onboarding 78, relatorio-custo 17.
       #
       # E `rastro-retencao` foi de 31 para 33 (a retenção passou a valer também
       # para os eventos que a assinatura escreve).
@@ -507,8 +507,18 @@ jobs:
       #     afirmava o contrário do que o teto faz e teria passado igual nos
       #     dois mundos.
       #
-      # O piso de ARQUIVOS vai a 37, colado no real. O de CASOS vai a 1208,
-      # ~18% de folga sobre 1474: a mesma proporção de todas as ondas.
+      # E +13 na estabilização: a TRANCA DA PORTA DA RUA. `POST onboarding/cadastro`
+      # é anônima por desenho (é o degrau 0 do produto) e subiu sem interruptor —
+      # no dia do deploy ela passaria a existir na internet, e qualquer pessoa que
+      # achasse a URL criaria empresa no banco de produção, entraria por Google (que
+      # a rota provisiona, então a allowlist de e-mail não a alcança) e gastaria
+      # modelo na conta da casa. O teto de taxa limita a VAZÃO, não o DIREITO.
+      # `ONBOARDING_ABERTO` nasce fechado; a rota fechada responde 404 e não
+      # confirma que existe. Os 13 casos medem as duas posições, a normalização do
+      # valor, e que a tranca vem ANTES do teto (porta fechada não gasta balde).
+      #
+      # O piso de ARQUIVOS vai a 37, colado no real. O de CASOS vai a 1220,
+      # ~18% de folga sobre 1488: a mesma proporção de todas as ondas.
       #
       # FORA DESTE JOB, medidos na mesma sessão:
       #   · isolamento (`test:isolamento`, job próprio): 287 casos — 83 tabelas
@@ -521,7 +531,7 @@ jobs:
       # conjunto inteiro com a variável de pé faz os arquivos interferirem uns
       # nos outros e derruba cinco deles por motivo nenhum — medido em
       # 12/09/2026 nesta mesma sessão, ao tentar o atalho.
-      PISO_CASOS_API: '1208'
+      PISO_CASOS_API: '1220'
       PISO_ARQUIVOS_API: '37'
 
     steps:

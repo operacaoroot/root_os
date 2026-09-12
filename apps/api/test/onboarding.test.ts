@@ -792,6 +792,19 @@ describe('a rota anônima de cadastro tem teto de taxa', () => {
   });
 });
 
+/*
+ * A PORTA DA RUA, e por que este arquivo a declara ABERTA no escopo do módulo.
+ *
+ * `OnboardingController` lê `ONBOARDING_ABERTO` NO CONSTRUTOR (igual a
+ * `GATEWAY_MODO`), então quem monta o controlador decide o estado da porta. As
+ * suítes abaixo medem o teto de taxa, o Zod e o caminho até o serviço — todas
+ * pressupõem porta aberta, e sem esta linha passariam a medir 404.
+ *
+ * Quem mede a porta em si é o `describe` do fim do arquivo, que constrói o
+ * controlador com a variável nas DUAS posições.
+ */
+process.env.ONBOARDING_ABERTO = 'sim';
+
 describe('o CONTROLADOR aplica o teto antes de chegar ao serviço', () => {
   /** O serviço de mentira: conta quantas vezes o cadastro de verdade foi chamado. */
   const montar = () => {
@@ -1448,5 +1461,133 @@ describe.skipIf(!URL)('o caminho de entrada, de ponta a ponta, pelo serviço de 
       where: { orgId: usuario!.orgId, action: 'onboarding.cadastro.criado' },
     });
     expect(auditadas).toBe(1);
+  });
+});
+
+// ===========================================================================
+// A PORTA DA RUA — o cadastro anônimo nasce FECHADO
+// ===========================================================================
+
+describe('a porta da rua tem tranca, e ela nasce fechada', () => {
+  /*
+   * POR QUE ESTA TRANCA EXISTE.
+   *
+   * `POST onboarding/cadastro` é anônima de propósito: é o degrau 0 do produto.
+   * Só que ela vive no mesmo processo que atende o domínio da CASA, e no dia em
+   * que este código subir ela passa a existir na internet. Sem tranca, qualquer
+   * pessoa que ache a URL cria uma empresa no banco de produção, entra nela
+   * pelo login com Google — que a própria rota provisiona, e por isso a
+   * allowlist de e-mail não a alcança — e gasta modelo na conta da casa.
+   *
+   * O teto de taxa NÃO cobre isto: ele limita a VAZÃO, não o DIREITO. Cinco
+   * empresas por hora por origem continuam sendo cadastro público aberto.
+   */
+  const svcQueNaoDeveriaSerChamado = () => {
+    const chamadas: unknown[] = [];
+    return {
+      chamadas,
+      svc: {
+        cadastrar: async (e: unknown) => {
+          chamadas.push(e);
+          return { orgId: 'o', slug: 's', nome: 'n', criada: true, colisoes: 0, roster: null, avisos: [] };
+        },
+        auditarCadastro: async () => undefined,
+      },
+    };
+  };
+
+  const corpo = { empresa: 'Empresa da Rua', nome: 'Alguém', email: 'alguem@exemplo.com' };
+  const req = { ip: '203.0.113.200', ips: [] };
+
+  /** Constrói o controlador com a variável na posição pedida. */
+  function comPorta(valor: string | undefined) {
+    const antes = process.env.ONBOARDING_ABERTO;
+    if (valor === undefined) delete process.env.ONBOARDING_ABERTO;
+    else process.env.ONBOARDING_ABERTO = valor;
+    const { svc, chamadas } = svcQueNaoDeveriaSerChamado();
+    const ctrl = new OnboardingController(svc as never);
+    if (antes === undefined) delete process.env.ONBOARDING_ABERTO;
+    else process.env.ONBOARDING_ABERTO = antes;
+    return { ctrl, chamadas };
+  }
+
+  it('AUSENTE: a variável não declarada mantém a porta fechada', async () => {
+    const { ctrl, chamadas } = comPorta(undefined);
+    const erro = await ctrl.cadastro(corpo, req).then(() => null).catch((e: unknown) => e);
+    expect(erro, 'a porta ABRIU sem ninguém pedir').toBeInstanceOf(HttpException);
+    // 404 e não 403: a rota fechada não confirma que existe.
+    expect((erro as HttpException).getStatus()).toBe(404);
+    // E o mais importante: o serviço não foi chamado. Nada foi criado.
+    expect(chamadas).toHaveLength(0);
+  });
+
+  /*
+   * `'SIM '` NÃO entra nesta lista, e a primeira versão deste caso a colocou
+   * aqui — contradizendo o caso seguinte, que prova que espaço e caixa não
+   * importam. A regra é: a leitura normaliza (tira espaço, baixa a caixa) e
+   * compara com `sim`. Tudo que normaliza para outra coisa mantém a porta
+   * fechada; tudo que normaliza para `sim` abre.
+   */
+  it.each(['nao', 'no', 'false', '0', 'talvez', 'sim,', 'simm', ''])(
+    'valor %j NÃO abre a porta — só a palavra exata abre',
+    async (valor) => {
+      const { ctrl, chamadas } = comPorta(valor);
+      const erro = await ctrl.cadastro(corpo, req).then(() => null).catch((e: unknown) => e);
+      expect(erro, `"${valor}" abriu a porta`).toBeInstanceOf(HttpException);
+      expect((erro as HttpException).getStatus()).toBe(404);
+      expect(chamadas).toHaveLength(0);
+    },
+  );
+
+  it('CONTROLE NEGATIVO: com `sim`, a porta abre e o cadastro acontece', async () => {
+    /*
+     * Sem este caso, "recusou" seria indistinguível de "o controlador está
+     * quebrado e recusa sempre" — e a tranca passaria no teste sendo, na
+     * verdade, uma rota morta.
+     */
+    const { ctrl, chamadas } = comPorta('sim');
+    await expect(ctrl.cadastro(corpo, req)).resolves.toMatchObject({ ok: true });
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it('`SIM` e ` sim ` abrem: a leitura tira espaço e não olha caixa', async () => {
+    for (const valor of ['SIM', ' sim ', 'Sim']) {
+      const { ctrl, chamadas } = comPorta(valor);
+      await expect(ctrl.cadastro(corpo, { ip: `198.51.100.${valor.length}`, ips: [] }))
+        .resolves.toMatchObject({ ok: true });
+      expect(chamadas).toHaveLength(1);
+    }
+  });
+
+  it('a tranca vem ANTES do teto de taxa: porta fechada não gasta o balde', async () => {
+    /*
+     * A ordem tem consequência prática. Se a tranca viesse depois, uma varredura
+     * na internet encheria o balde da instalação inteira (cem por hora) e o
+     * cadastro legítimo, no dia em que a porta abrisse, já nasceria recusado por
+     * teto — com a mensagem errada.
+     */
+    const { ctrl } = comPorta(undefined);
+    for (let i = 0; i < 12; i++) {
+      const e = await ctrl.cadastro(corpo, req).then(() => null).catch((x: unknown) => x);
+      // Sempre 404, NUNCA 429: o balde não está sendo consumido.
+      expect((e as HttpException).getStatus(), `na tentativa ${i + 1} o teto entrou na frente`).toBe(404);
+    }
+  });
+
+  it('a tranca NÃO alcança as rotas autenticadas da carga guiada', async () => {
+    /*
+     * Fechar o cadastro não pode congelar a empresa que JÁ existe: a carga
+     * guiada é de quem já entrou, e é ela que enche a memória. Aqui a pergunta
+     * é de forma — as rotas de carga declaram guarda de sessão, e a tranca do
+     * cadastro não aparece nelas.
+     */
+    const fonte = readFileSync(
+      path.join(RAIZ_DA_API, 'src', 'onboarding', 'onboarding.controller.ts'),
+      'utf8',
+    );
+    // A tranca é consultada uma vez só, e é no cadastro.
+    expect(fonte.match(/this\.aberto/g) ?? []).toHaveLength(1);
+    const depoisDoCadastro = fonte.slice(fonte.indexOf("@Post('cadastro')"));
+    expect(depoisDoCadastro).toContain('@UseGuards(JwtAuthGuard, PermissionsGuard)');
   });
 });
