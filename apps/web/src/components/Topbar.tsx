@@ -27,6 +27,7 @@ const SUBTITULOS: Record<string, string> = {
   console: 'o pulso da operação',
   contexto: 'o mapa do que a empresa sabe',
   sessoes: 'as trocas, organizadas',
+  caixa: 'o que precisa de você',
   agentes: 'quem trabalha na central',
   rotinas: 'o que roda sozinho',
   fluxos: 'onde o trabalho vaza',
@@ -34,6 +35,7 @@ const SUBTITULOS: Record<string, string> = {
   atendimento: 'o que precisa de gente',
   regua: 'o que a IA pode fazer, e quem define',
   rastro: 'tudo que aconteceu',
+  'linha-do-tempo': 'a mesma história, em ordem',
   ferramentas: 'o que a central já sabe fazer',
   conexoes: 'o que alimenta a central',
   // os módulos de domínio

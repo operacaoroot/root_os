@@ -146,6 +146,23 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
  * perguntas diferentes — "desliga por contrato?" e "responde para quem está
  * suspenso?" — e responder uma não responde a outra.)
  *
+ * `linha-do-tempo` ENTROU NA FATIA A9 e é espinha pela mesma decisão de
+ * `audit`, de quem ela é a outra leitura: o RASTRO não desliga por contrato. As
+ * duas telas leem o MESMO `EventLog` — `/rastro` como prova (evento cru, cadeia,
+ * verificação) e `/linha-do-tempo` como história (por dia, com ator e objeto
+ * legíveis). Uma empresa que pudesse desligar a segunda ficaria com agentes
+ * agindo e sem a tela que conta o que eles fizeram, que é exatamente o que a
+ * frente do controle de agentes existe para dar.
+ *
+ * `caixa` ENTROU NA FATIA A7 e é espinha porque é a caixa PESSOAL de quem entra
+ * no OS — "o que precisa de mim". Uma empresa que pudesse desligá-la ficaria com
+ * aprovações esperando assinatura e tarefas paradas sem nenhuma tela dizendo que
+ * esperam. Ela AGREGA dado de módulo (`trabalho`), e por isso o serviço pergunta
+ * ao `ModulosService` antes de ler `WorkTask`: rota que nunca desliga servindo
+ * dado de módulo não contratado é exatamente o vazamento silencioso que este
+ * arquivo existe para impedir — espinha diz "a rota responde", não "o dado é
+ * livre".
+ *
  * `mapa-publico` ENTROU NA ONDA 11 (fatia 6.5) e é espinha porque não é
  * superfície de empresa nenhuma: é a ENTRADA do domínio, anônima, servindo a
  * vitrine da própria ROOT (`GET /api/mapa-publico`, sem guard). Um "módulo
@@ -162,12 +179,14 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'assinatura',
   'audit',
   'auth',
+  'caixa',
   'config',
   'dashboard',
   'google',
   'health',
   'integrations',
   'knowledge',
+  'linha-do-tempo',
   'mapa-publico',
   'memoria',
   'organograma',

@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, ExternalLink, Flag, MessageSquare, Plus, Settings2, X } from 'lucide-react';
+import { Archive, Bot, ExternalLink, Flag, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
 import type {
-  TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo, TrabTarefaDetalhe,
+  TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
+  TrabTarefaDetalhe,
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -23,6 +24,26 @@ const PRIORIDADES = [
 const INP = 'w-full rounded-lg border border-border bg-surface-2 px-2 py-1 text-[13px] outline-none focus:border-brand-dim disabled:opacity-60';
 
 const dataBR = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '—');
+const dataHoraBR = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+/**
+ * O NOME DO AGENTE QUE ESTÁ COM A TAREFA (fatia A4).
+ *
+ * Três estados, e a tela diz os três — nenhum deles é "vazio":
+ *   · livre: ninguém travou, e é o normal;
+ *   · nome: o agente desta empresa que assumiu;
+ *   · "outro agente": o ponteiro não resolve nesta empresa (a API manda
+ *     `agenteId` com `agenteNome` nulo). Inventar um nome aqui seria pior do que
+ *     admitir que não sabemos de quem é — ver `work/agentes-da-casa.ts`.
+ */
+function nomeDoAgente(t: {
+  agenteId: string | null;
+  agenteNome: string | null;
+}): string | null {
+  if (!t.agenteId) return null;
+  return t.agenteNome ?? 'outro agente';
+}
 const paraInputDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 const deInputDate = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
@@ -37,6 +58,7 @@ export default function TrabalhoPage() {
   const [painelId, setPainelId] = useState<string | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
   const [fAssignee, setFAssignee] = useState('');
+  const [fAgente, setFAgente] = useState('');
   const [fBusca, setFBusca] = useState('');
   const [fOpcao, setFOpcao] = useState('');
   const [bump, setBump] = useState(0);
@@ -79,6 +101,20 @@ export default function TrabalhoPage() {
     () => [...(lista?.fields ?? []), ...(estrutura?.camposGlobais ?? [])],
     [lista, estrutura],
   );
+
+  /*
+   * O FILTRO POR AGENTE É NO CLIENTE, e isso é escolha consciente: a rota de
+   * tarefas já devolve o agente de cada uma, então filtrar aqui não esconde
+   * nada nem gasta uma ida a mais. Quando o teto de 500 tarefas da rota começar
+   * a doer, ele vira parâmetro — e aí a tela passa a dizer "500 primeiras",
+   * porque hoje ela não diz e o teto é do servidor.
+   */
+  const visiveis = useMemo(() => {
+    const itens = tarefas?.items ?? [];
+    if (!fAgente) return itens;
+    if (fAgente === 'livres') return itens.filter((t) => !t.agenteId);
+    return itens.filter((t) => t.agenteSlug === fAgente);
+  }, [tarefas, fAgente]);
 
   return (
     <div className="flex h-full gap-4">
@@ -128,6 +164,21 @@ export default function TrabalhoPage() {
               <option value="">Todos os responsáveis</option>
               {estrutura?.responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
+            {/*
+              O AGENTE É OUTRO EIXO, não o mesmo do responsável (fatia A4). O
+              seletor acima filtra por quem RESPONDE pela tarefa; este, por quem
+              a tem NA MÃO. Um seletor só faria as duas perguntas parecerem a
+              mesma — e é a confusão que a fatia existe para desfazer.
+            */}
+            <select value={fAgente} onChange={(e) => setFAgente(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+              <option value="">Todos os agentes</option>
+              <option value="livres">Sem agente (livres)</option>
+              {estrutura?.agentes.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.nome}{a.tarefas > 0 ? ` (${a.tarefas})` : ''}
+                </option>
+              ))}
+            </select>
             {camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
               <select
                 key={c.id}
@@ -171,12 +222,13 @@ export default function TrabalhoPage() {
 
         {lista && tarefas && visao === 'board' && (
           <Board
-            lista={lista} tarefas={tarefas.items} editable={editable} token={token}
+            lista={lista} tarefas={visiveis} editable={editable} token={token}
+            agentes={estrutura?.agentes ?? []}
             onAbrir={setPainelId} onMudou={refresh} onErro={setErro}
           />
         )}
         {lista && tarefas && visao === 'tabela' && (
-          <Tabela lista={lista} tarefas={tarefas.items} campos={camposDaLista.map((c) => c.name)} onAbrir={setPainelId} />
+          <Tabela lista={lista} tarefas={visiveis} campos={camposDaLista.map((c) => c.name)} onAbrir={setPainelId} />
         )}
       </div>
 
@@ -195,8 +247,9 @@ export default function TrabalhoPage() {
 
 // ---------- board por status (colunas coloridas, quick-add por coluna) ----------
 
-function Board({ lista, tarefas, editable, token, onAbrir, onMudou, onErro }: {
+function Board({ lista, tarefas, editable, token, agentes, onAbrir, onMudou, onErro }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; token: string | null;
+  agentes: TrabAgenteDto[];
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   return (
@@ -214,7 +267,7 @@ function Board({ lista, tarefas, editable, token, onAbrir, onMudou, onErro }: {
             </div>
             <div className="space-y-2">
               {itens.map((t) => (
-                <Cartao key={t.id} t={t} lista={lista} editable={editable} token={token} onAbrir={onAbrir} onMudou={onMudou} onErro={onErro} />
+                <Cartao key={t.id} t={t} lista={lista} editable={editable} token={token} agentes={agentes} onAbrir={onAbrir} onMudou={onMudou} onErro={onErro} />
               ))}
               {editable && <QuickAdd listaId={lista.id} statusId={st.id} token={token} onDone={onMudou} onErro={onErro} />}
               {itens.length === 0 && !editable && <p className="px-1 text-xs text-muted">—</p>}
@@ -226,11 +279,13 @@ function Board({ lista, tarefas, editable, token, onAbrir, onMudou, onErro }: {
   );
 }
 
-function Cartao({ t, lista, editable, token, onAbrir, onMudou, onErro }: {
+function Cartao({ t, lista, editable, token, agentes, onAbrir, onMudou, onErro }: {
   t: TrabTarefaResumo; lista: TrabListaDto; editable: boolean; token: string | null;
+  agentes: TrabAgenteDto[];
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
+  const agente = nomeDoAgente(t);
   return (
     <div className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-start justify-between gap-2">
@@ -260,6 +315,24 @@ function Cartao({ t, lista, editable, token, onAbrir, onMudou, onErro }: {
         {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
         {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
       </div>
+      {/*
+        QUEM ESTÁ COM A TAREFA, no cartão (fatia A4).
+        O selo aparece só quando há agente: uma linha "sem agente" em toda
+        tarefa livre seria ruído em cima do caso normal. O `title` diz desde
+        quando — é o que responde "isto está parado?" sem abrir a gaveta.
+      */}
+      {agente && (
+        <div
+          className="mt-1.5 flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand"
+          title={`Assumida por ${agente} em ${dataHoraBR(t.agenteEm)}`}
+        >
+          <Bot size={11} className="shrink-0" />
+          <span className="truncate">{agente}</span>
+        </div>
+      )}
+      {editable && (
+        <ControleDoAgente t={t} agentes={agentes} token={token} onMudou={onMudou} onErro={onErro} />
+      )}
       {editable && (
         <select
           value={t.statusId}
@@ -271,6 +344,98 @@ function Cartao({ t, lista, editable, token, onAbrir, onMudou, onErro }: {
         >
           {lista.statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ASSUMIR E SOLTAR, na tela (fatia A4).
+ *
+ * Duas coisas que esta peça faz de propósito:
+ *
+ *  1. AGENTE QUE NÃO TRABALHA APARECE DESABILITADO, não escondido. `podeAssumir`
+ *     vem da API (quem sabe quais estados trabalham é `estado-do-agente.ts`) e a
+ *     opção diz o estado ao lado do nome. Esconder faria a pessoa procurar um
+ *     agente que existe; oferecer sem marcar faria ela descobrir a regra pelo
+ *     409.
+ *  2. O ERRO DA API APARECE COMO VEIO. A frase do 409 nomeia quem ficou com a
+ *     tarefa, e reescrevê-la aqui ("não foi possível assumir") trocaria a única
+ *     informação útil por educação. O quadro recarrega junto, então a pessoa vê
+ *     o dono novo no mesmo instante em que lê o motivo.
+ */
+function ControleDoAgente({ t, agentes, token, onMudou, onErro }: {
+  t: TrabTarefaResumo; agentes: TrabAgenteDto[]; token: string | null;
+  onMudou: () => void; onErro: (m: string) => void;
+}) {
+  const [ocupado, setOcupado] = useState(false);
+
+  const chamar = (caminho: string, corpo: Record<string, unknown>) => {
+    setOcupado(true);
+    apiPost(`/trabalho/tarefas/${t.id}/${caminho}`, corpo, token)
+      .then(onMudou)
+      .catch((e) => onErro(e.message))
+      .finally(() => setOcupado(false));
+  };
+
+  if (t.agenteId) {
+    return (
+      <button
+        disabled={ocupado}
+        onClick={() => chamar('soltar', {})}
+        title="Devolver a tarefa para a fila. Qualquer pessoa pode soltar — inclusive quando o agente travou e falhou."
+        className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-border bg-surface-2 px-1.5 py-1 text-[11px] text-muted transition hover:text-text disabled:opacity-50"
+      >
+        <Unlock size={10} /> Soltar
+      </button>
+    );
+  }
+
+  return (
+    <select
+      value=""
+      disabled={ocupado || agentes.length === 0}
+      onChange={(e) => e.target.value && chamar('assumir', { agente: e.target.value })}
+      title="Entregar a um agente. Só um agente é dono da tarefa por vez."
+      className="mt-2 w-full rounded border border-dashed border-border bg-surface-2 px-1.5 py-1 text-[11px] text-muted outline-none focus:border-brand-dim disabled:opacity-50"
+    >
+      <option value="">{agentes.length === 0 ? 'Nenhum agente nesta empresa' : 'Entregar a um agente…'}</option>
+      {agentes.map((a) => (
+        <option key={a.slug} value={a.slug} disabled={!a.podeAssumir}>
+          {a.nome}{a.podeAssumir ? '' : ` — ${a.estado}, não assume`}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * O mesmo checkout, na gaveta da tarefa — com o que o cartão não tem espaço
+ * para dizer: o nome de quem está com ela e DESDE QUANDO, em texto, não em
+ * `title`. É a gaveta que alguém abre para decidir se solta.
+ */
+function ControleDoAgenteNaGaveta({ t, agentes, editable, token, onMudou, onErro }: {
+  t: TrabTarefaDetalhe; agentes: TrabAgenteDto[]; editable: boolean; token: string | null;
+  onMudou: () => void; onErro: (m: string) => void;
+}) {
+  const agente = nomeDoAgente(t);
+  return (
+    <div className="space-y-1">
+      <div className="text-[13px]">
+        {agente ? (
+          <span className="flex items-center gap-1 text-brand">
+            <Bot size={12} className="shrink-0" />
+            {agente}
+          </span>
+        ) : (
+          <span className="text-muted">Livre — nenhum agente assumiu</span>
+        )}
+      </div>
+      {agente && (
+        <div className="text-[11px] text-muted">desde {dataHoraBR(t.agenteEm)}</div>
+      )}
+      {editable && (
+        <ControleDoAgente t={t} agentes={agentes} token={token} onMudou={onMudou} onErro={onErro} />
       )}
     </div>
   );
@@ -314,6 +479,8 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
             <th className="px-3 py-2">Status</th>
             <th className="px-3 py-2">Prioridade</th>
             <th className="px-3 py-2">Responsável</th>
+            {/* Duas colunas, porque são dois eixos: quem responde e quem executa. */}
+            <th className="px-3 py-2">Agente</th>
             <th className="px-3 py-2">Prazo</th>
             {campos.map((c) => <th key={c} className="px-3 py-2">{c}</th>)}
           </tr>
@@ -329,6 +496,9 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
               </td>
               <td className="px-3 py-2 capitalize">{t.priority}</td>
               <td className="px-3 py-2">{t.assignee ?? '—'}</td>
+              <td className="px-3 py-2" title={t.agenteId ? `Assumida em ${dataHoraBR(t.agenteEm)}` : undefined}>
+                {nomeDoAgente(t) ?? '—'}
+              </td>
               <td className={`px-3 py-2 ${t.overdue ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
               {campos.map((c) => {
                 const v = t.values.find((x) => x.fieldName === c);
@@ -337,7 +507,7 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
             </tr>
           ))}
           {tarefas.length === 0 && (
-            <tr><td colSpan={5 + campos.length} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr>
+            <tr><td colSpan={6 + campos.length} className="px-3 py-6 text-center text-muted">Nada por aqui.</td></tr>
           )}
         </tbody>
       </table>
@@ -430,7 +600,13 @@ function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErr
               {PRIORIDADES.map((p) => <option key={p.key} value={p.key}>{p.key}</option>)}
             </select>
           </Campo>
-          <Campo rotulo="Responsável">
+          {/*
+            DOIS CAMPOS, DOIS EIXOS (fatia A4). "Responsável (pessoa)" é quem
+            responde pela tarefa; "Agente executor" é quem a tem na mão agora.
+            O rótulo diz "(pessoa)" porque sem isso os dois campos lado a lado
+            pareciam a mesma pergunta feita duas vezes.
+          */}
+          <Campo rotulo="Responsável (pessoa)">
             <input
               list="trab-responsaveis" disabled={ro} defaultValue={t.assignee ?? ''}
               onBlur={(e) => (e.target.value || null) !== t.assignee && salvar({ assignee: e.target.value || null })}
@@ -439,6 +615,18 @@ function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErr
             <datalist id="trab-responsaveis">
               {estrutura.responsaveis.map((r) => <option key={r} value={r} />)}
             </datalist>
+          </Campo>
+          <Campo rotulo="Agente executor">
+            {/*
+              NÃO é `salvar({...})`: entregar a tarefa a um agente passa pelo
+              CHECKOUT (`/assumir`), não pelo PATCH que edita campo. Um `PATCH
+              agenteId` seria a escrita sem corrida que a fatia veio proibir —
+              ela sobrescreveria o dono atual e devolveria sucesso.
+            */}
+            <ControleDoAgenteNaGaveta
+              t={t} agentes={estrutura.agentes} editable={editable} token={token}
+              onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
+            />
           </Campo>
           <Campo rotulo="Início">
             <input type="date" disabled={ro} defaultValue={paraInputDate(t.startDate)} onBlur={(e) => salvar({ startDate: deInputDate(e.target.value) })} className={INP} />

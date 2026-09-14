@@ -123,6 +123,9 @@ function relatorio(p: Partial<RelatorioDeCustoIa> = {}): RelatorioDeCustoIa {
       linhas: porDia.length,
     },
     atribuidoAAgenteUsd: 0,
+    // fatia A3: o panorama de orçamento por agente. Vazio por padrão — quem
+    // quiser medir o alerta de orçamento põe agente com valor de propósito.
+    orcamentoDeAgentes: [],
     naoCoberto: NAO_COBERTO,
     geradoEm: '2026-09-03T18:00:00.000Z',
   };

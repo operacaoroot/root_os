@@ -57,7 +57,9 @@ import ConexoesPage from '@/app/conexoes/page';
 
 /* ------------------------------------------------------------- o catálogo -- */
 
-const AGORA = new Date('2026-09-11T12:00:00.000Z').toISOString();
+// A sonda deste cenário acabou de responder. Uma data fixa transforma este
+// teste em bomba-relógio: depois de 48h a tela mostra a data absoluta, como deve.
+const AGORA = new Date().toISOString();
 
 function linha(over: Record<string, unknown>) {
   return {

@@ -1,4 +1,4 @@
-import { AgentEstado, AgentTipo, RiskLevel } from '@prisma/client';
+import { AgentTipo, EstadoDeAgente, RiskLevel } from '@prisma/client';
 
 import {
   PROCEDIMENTO_DO_CARREGADOR,
@@ -46,7 +46,7 @@ export interface AgenteDoRoster {
   missao: string;
   pilar: string;
   tipo: AgentTipo;
-  estado: AgentEstado;
+  estado: EstadoDeAgente;
   autonomiaAte: RiskLevel;
   /** Só identificadores que EXISTEM no catálogo da política. Ver o cabeçalho. */
   capacidades: readonly string[];
@@ -70,7 +70,7 @@ export const ROSTER_DE_ENTRADA: readonly AgenteDoRoster[] = [
       'nota da memória com procedência',
     pilar: 'Contexto',
     tipo: AgentTipo.llm,
-    estado: AgentEstado.rodando,
+    estado: EstadoDeAgente.ativo,
     /*
      * R1: ele RASCUNHA (a nota, o retrato) e não age sobre nada de fora. R0
      * seria mentira — escrever nota é mais do que ler —, e R2 abriria a porta
@@ -87,7 +87,7 @@ export const ROSTER_DE_ENTRADA: readonly AgenteDoRoster[] = [
     missao: 'responder perguntas sobre o negócio em português, sempre com a fonte do número',
     pilar: 'Contexto',
     tipo: AgentTipo.llm,
-    estado: AgentEstado.rodando,
+    estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R1,
     /*
      * SÓ LEITURA, e só o que uma empresa sem módulo contratado alcança. As

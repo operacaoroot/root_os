@@ -1575,6 +1575,28 @@ export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
 
 export const TrabComentarioSchema = z.object({ text: z.string().min(1).max(10000) });
 
+/* ----------------------------------------------------------------------------
+ * O CHECKOUT ATÔMICO — assumir e soltar tarefa (fatia A4)
+ *
+ * `agente` é o SLUG, não o id: é o que a tela mostra, é estável por empresa
+ * (`@@unique([orgId, slug])`) e não deixa o cliente adivinhar uuid de agente de
+ * outra empresa. Quem traduz slug para id é o serviço, com consulta escopada.
+ *
+ * `statusId` é opcional e move a tarefa NA MESMA instrução do checkout — é o
+ * "transição para em andamento exige checkout atômico" do plano. Nulo/ausente =
+ * assume sem mover de etapa.
+ * -------------------------------------------------------------------------- */
+export const TrabAssumirSchema = z.object({
+  agente: z.string().min(1).max(64),
+  statusId: z.string().uuid().nullish(),
+});
+export const TrabSoltarSchema = z.object({
+  /** Por que está devolvendo. Opcional: soltar é freio, e freio não pede redação. */
+  motivo: z.string().max(500).nullish(),
+});
+export type TrabAssumirInput = z.infer<typeof TrabAssumirSchema>;
+export type TrabSoltarInput = z.infer<typeof TrabSoltarSchema>;
+
 // ---- Formatos de resposta (GET) ----
 export interface TrabOpcaoDto { id: string; name: string; color: string; order: number }
 export interface TrabCampoDto {
@@ -1588,12 +1610,33 @@ export interface TrabListaDto {
 }
 export interface TrabPastaDto { id: string; name: string; order: number; lists: TrabListaDto[] }
 export interface TrabTagDto { id: string; name: string; color: string }
+/**
+ * Um agente, como o quadro de Trabalho precisa vê-lo (fatia A4).
+ *
+ * `podeAssumir` vem DA API e não é recalculado na tela: quem sabe quais estados
+ * trabalham é `agents/estado-do-agente.ts`, e repetir a regra no componente é
+ * como as duas telas passaram a publicar horas contraditórias. `tarefas` é a
+ * carga atual — quantas tarefas não arquivadas ele tem travadas.
+ */
+export interface TrabAgenteDto {
+  id: string;
+  slug: string;
+  nome: string;
+  iniciais: string;
+  estado: string;
+  podeAssumir: boolean;
+  tarefas: number;
+}
+
 export interface TrabEstrutura {
   folders: TrabPastaDto[];
   listasSoltas: TrabListaDto[];
   camposGlobais: TrabCampoDto[];
   tags: TrabTagDto[];
+  /** Os responsáveis HUMANOS que aparecem nas tarefas (texto livre). */
   responsaveis: string[];
+  /** Os agentes desta empresa — a quem a tarefa pode ser entregue. */
+  agentes: TrabAgenteDto[];
 }
 
 export interface TrabValorDto {
@@ -1604,7 +1647,21 @@ export interface TrabValorDto {
 export interface TrabTarefaResumo {
   id: string; listId: string; title: string;
   statusId: string; statusName: string; statusType: WorkStatusTypeDto; statusColor: string;
-  priority: WorkPriorityDto; assignee: string | null;
+  priority: WorkPriorityDto;
+  /** O responsável HUMANO (texto livre). Não é quem executa. */
+  assignee: string | null;
+  /**
+   * O AGENTE EXECUTOR que tem a tarefa na mão, ou nulo quando ela está livre
+   * (fatia A4).
+   *
+   * `agenteId` preenchido com `agenteSlug` e `agenteNome` NULOS é o terceiro
+   * caso, e ele quer dizer uma coisa só: o ponteiro não resolve em agente desta
+   * empresa. A tarefa está travada e a tela diz "outro agente" em vez de
+   * inventar nome — ver `work/agentes-da-casa.ts`.
+   */
+  agenteId: string | null; agenteSlug: string | null; agenteNome: string | null;
+  /** Desde quando está travada. É o que responde "isto está parado?". */
+  agenteEm: string | null;
   dueDate: string | null; startDate: string | null; overdue: boolean;
   parentId: string | null; subtasks: number; comments: number;
   externalId: string | null; externalUrl: string | null; archived: boolean; order: number;
@@ -1626,4 +1683,240 @@ export interface TrabTarefaDetalhe extends TrabTarefaResumo {
 export interface TrabTarefaLista {
   items: TrabTarefaResumo[]; total: number;
   source: { tool: string; generatedAt: string };
+}
+
+/* ==========================================================================
+ * A LINHA DO TEMPO — fatia A9
+ * ==========================================================================
+ *
+ * O contrato da leitura narrativa do RASTRO. `interface` e não schema Zod pela
+ * mesma razão dos tipos de Trabalho logo acima: o web consome, não valida — e a
+ * validação que importa é a da ENTRADA, que mora na API (`narrativa.ts`).
+ *
+ * NENHUM CAMPO DE CONTEÚDO AQUI, e isso é o desenho: `temConteudo` diz que o
+ * evento carrega conteúdo, e `/atendimento` é onde ele se lê, com permissão
+ * própria. Ver o cabeçalho de `apps/api/src/linha-do-tempo/narrativa.ts`.
+ */
+export interface LinhaDoTempoItem {
+  id: string;
+  /** `EventLog.seq` como texto: BigInt não viaja em JSON. Ordem da cadeia. */
+  seq: string;
+  /** O tipo CRU do evento. Sempre presente, inclusive quando é o rótulo. */
+  tipo: string;
+  /** O que a pessoa lê. Igual a `tipo` quando `conhecido` é falso. */
+  rotulo: string;
+  familia: string;
+  /** Falso = a tela não sabe nomear este evento, e diz isso. */
+  conhecido: boolean;
+  ocorreuEm: string;
+  atorTipo: 'user' | 'ai' | 'system';
+  atorId: string | null;
+  /**
+   * O nome de quem fez, resolvido DENTRO da empresa.
+   *
+   * `atorTipo: 'user'` com `atorId` preenchido e `ator` nulo é o terceiro caso, e
+   * quer dizer uma coisa só: o ponteiro não resolve em gente desta empresa. A
+   * tela diz "fora desta empresa" em vez de inventar nome — mesma regra de
+   * `agents/donos-da-casa.ts`.
+   */
+  ator: string | null;
+  agenteSlug: string | null;
+  /** Nulo com `agenteSlug` preenchido = agente que não é mais desta casa. */
+  agenteNome: string | null;
+  capacidade: string | null;
+  nivel: string | null;
+  correlacao: string | null;
+  /** Identificadores legíveis do objeto do evento. Nunca conteúdo. */
+  objeto: { chave: string; valor: string }[];
+  sensibilidade: string | null;
+  /** `payload.rastro.completo` — a linha saiu com tudo o que o nível exige? */
+  registroCompleto: boolean | null;
+  /** O evento carrega conteúdo que esta rota não devolve. */
+  temConteudo: boolean;
+}
+
+export interface LinhaDoTempoFiltros {
+  agentes: { slug: string; nome: string | null; eventos: number }[];
+  familias: { chave: string; rotulo: string; eventos: number }[];
+  tipos: { tipo: string; rotulo: string; conhecido: boolean; eventos: number }[];
+  /** Quantos tipos distintos a tela não sabe nomear, na janela contada. */
+  desconhecidos: number;
+  /** Quantos eventos a contagem varreu. Diz que ela é PARCIAL quando é. */
+  janela: number;
+  parcial: boolean;
+}
+
+export interface LinhaDoTempoResposta {
+  itens: LinhaDoTempoItem[];
+  /** Nulo = fim da linha. Opaco: devolva-o como veio. */
+  proximoCursor: string | null;
+  /**
+   * Só vem na PRIMEIRA página (sem cursor). Paginar não recalcula as contagens:
+   * elas não mudam enquanto se rola, e recalculá-las a cada página pagaria duas
+   * varreduras por rolagem para mostrar o mesmo número.
+   */
+  filtros: LinhaDoTempoFiltros | null;
+  /** O prazo de guarda desta empresa. É o horizonte real da tela. */
+  retencaoDias: number;
+  source: { tool: string; generatedAt: string };
+}
+
+/* ==========================================================================
+ * A CAIXA PESSOAL — "o que precisa de mim", fatia A7
+ * ==========================================================================
+ *
+ * `GET /api/caixa` e `GET /api/caixa/contador`. A caixa AGREGA o que já existe
+ * (aprovações, tarefas, comentários do quadro) e não tem fonte própria — nem
+ * tabela, nem coluna, nem caminho de escrita. As regras estão em
+ * `apps/api/src/caixa/o-que-espera.ts`.
+ *
+ * O QUE ELA NÃO DEVOLVE, de propósito: o conteúdo exato de uma ação retida. Esse
+ * corpo tem UMA superfície neste repositório (`GET /approvals/fila`, e só para
+ * quem tem `aprovacoes.decidir`), e uma segunda ampliaria aquela exposição de
+ * fininho. A caixa mostra o resumo e leva para `/atendimento`.
+ */
+
+/** Por que um eixo da caixa veio vazio. Vazio por motivo ≠ vazio por vitória. */
+export type CaixaEstadoDoEixo =
+  | 'ok'
+  | 'sem_permissao'
+  /** Acompanha a fila e não decide nela — permissão não é alçada. */
+  | 'nao_decide'
+  | 'modulo_desligado'
+  /** Não há por qual nome procurar a pessoa no campo de responsável. */
+  | 'sem_identidade'
+  /** O token não corresponde a usuário ativo desta empresa. */
+  | 'fora_da_casa';
+
+/** Por que uma tarefa está parada. Rótulos estáveis; a frase é da tela. */
+export type CaixaMotivoDaParada = 'prazo_vencido' | 'sem_movimento' | 'presa_com_agente';
+
+export interface CaixaAprovacao {
+  id: string;
+  /** O resumo assinado na proposta. NÃO é o conteúdo exato da ação. */
+  resumo: string;
+  nivel: string;
+  capacidade: string | null;
+  canal: string | null;
+  alcadaMinima: string;
+  /** R4/R5 pedem motivo escrito — e a tela diz isso ANTES do clique. */
+  exigeMotivo: boolean;
+  exigeReauth: boolean;
+  /** Nome de quem propôs, ou 'agente' quando foi máquina. */
+  proponente: string;
+  proponenteTipo: 'user' | 'ai' | 'system';
+  propostaEm: string;
+  expiraEm: string;
+  esperandoMs: number;
+  /** Quanto falta para vencer. Vencida não chega aqui. */
+  venceEmMs: number;
+}
+
+export interface CaixaEixoAprovacoes {
+  estado: CaixaEstadoDoEixo;
+  itens: CaixaAprovacao[];
+  /**
+   * Alcançam a sua alçada e a porta recusaria HOJE (capacidade fora do catálogo,
+   * régua mudada, argumento fora do formato). Não estão na lista nem na conta:
+   * não esperam por você, esperam por um conserto. Quem explica é `/atendimento`.
+   */
+  retidasPorImpedimento: number;
+  truncado: boolean;
+  teto: number;
+}
+
+export interface CaixaTarefa {
+  id: string;
+  titulo: string;
+  lista: string | null;
+  status: string;
+  statusCor: string;
+  prioridade: string;
+  /** O texto gravado em `assignee` — o nome que casou com você. */
+  responsavel: string | null;
+  prazo: string | null;
+  atualizadaEm: string;
+  agenteSlug: string | null;
+  /** Nulo com slug preenchido = agente que não é desta empresa. */
+  agenteNome: string | null;
+  agenteDesde: string | null;
+  motivos: CaixaMotivoDaParada[];
+}
+
+export interface CaixaEixoTarefas {
+  estado: CaixaEstadoDoEixo;
+  itens: CaixaTarefa[];
+  truncado: boolean;
+  teto: number;
+  /**
+   * Por quais nomes a caixa procurou você. `WorkTask.assignee` é TEXTO LIVRE
+   * herdado do ClickUp, não ponteiro para `User`: o casamento é por nome e a
+   * tela publica o critério, porque casamento por nome erra nas duas direções.
+   */
+  identidades: string[];
+  diasSemMovimento: number;
+  horasPresa: number;
+}
+
+export interface CaixaConversa {
+  id: string;
+  tarefaId: string;
+  tarefaTitulo: string;
+  autor: string;
+  /** Trecho. O corpo inteiro se lê no quadro, onde ele nasceu. */
+  trecho: string;
+  trechoCortado: boolean;
+  criadaEm: string;
+}
+
+export interface CaixaEixoConversa {
+  /**
+   * NÃO É MENÇÃO, e a tela diz isso: menção não existe como dado neste produto
+   * (`WorkComment` tem autor e texto, e nada mais — sem tabela de menção, sem
+   * convenção de `@nome`, sem estado de lido). O que existe é comentário de
+   * OUTRA pessoa numa tarefa em que você é o responsável, na última semana.
+   */
+  estado: CaixaEstadoDoEixo;
+  itens: CaixaConversa[];
+  truncado: boolean;
+  dias: number;
+  teto: number;
+}
+
+export interface CaixaResposta {
+  agora: string;
+  eu: {
+    id: string;
+    nome: string | null;
+    /** 'nenhuma' quando o papel não concede alçada alguma. */
+    alcada: string;
+    /** Decide segundo o BANCO. */
+    decide: boolean;
+    /** Decide segundo o banco E segundo o token desta sessão. */
+    decideNestaSessao: boolean;
+    /** O token corresponde a usuário ativo desta empresa? */
+    ativo: boolean;
+  };
+  aprovacoes: CaixaEixoAprovacoes;
+  tarefas: CaixaEixoTarefas;
+  conversa: CaixaEixoConversa;
+  /**
+   * O que espera AÇÃO SUA: aprovações que você assina + tarefas paradas. A
+   * conversa fica fora — sem estado de lido, ela nunca sairia da conta, e
+   * contador que não zera é número que a pessoa aprende a ignorar.
+   */
+  total: number;
+  /** Algum eixo bateu no teto: o total é PISO, não o número exato. */
+  totalParcial: boolean;
+  source: { tool: string; generatedAt: string };
+}
+
+export interface CaixaContador {
+  quantos: number;
+  /** Verdadeiro = "N+", nunca "N". */
+  parcial: boolean;
+  aprovacoes: number;
+  tarefas: number;
+  /** Quando esta contagem foi medida. O selo da casca não mente sobre isso. */
+  medidoEm: string;
 }

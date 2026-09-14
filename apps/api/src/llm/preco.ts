@@ -13,6 +13,11 @@ export interface PrecoModelo {
 }
 
 export const PRECO_USD_MTOK: Record<string, PrecoModelo> = {
+  // OpenRouter, conferido em 14/09/2026:
+  // https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-4.5/endpoints
+  // Tarifa base; contexto longo e roteamento regional podem custar mais.
+  // OpenRouterProvider prioriza usage.cost (valor real) sobre esta estimativa.
+  'anthropic/claude-sonnet-4.5': { entrada: 3, saida: 15, cacheLeitura: 0.3, cacheEscrita: 3.75 },
   'claude-opus-5': { entrada: 5, saida: 25, cacheLeitura: 0.5, cacheEscrita: 6.25 },
   'claude-sonnet-5': { entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5 },
   'claude-haiku-4-5': { entrada: 1, saida: 5, cacheLeitura: 0.1, cacheEscrita: 1.25 },

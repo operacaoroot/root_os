@@ -91,6 +91,21 @@ export interface NavItem {
   icon: string; // nome do ícone (lucide)
   permission: Permission;
   secao: SecaoKey;
+  /**
+   * A `key` do item que abriga este no menu. Ausente = item de primeiro nível.
+   *
+   * O SUBMENU É FORMA, NÃO PERMISSÃO. Pai e filho continuam sendo itens do NAV
+   * como qualquer outro: cada um com a sua permissão e o seu módulo, cada um
+   * filtrado por conta própria. Aninhar não dá nem tira acesso a nada — e é por
+   * isso que `navEmArvore` PROMOVE o filho cujo pai foi filtrado em vez de
+   * deixá-lo cair junto (ver o cabeçalho de lá). O caso não é hipotético:
+   * `funil` pede `dashboard.ver` e o pai dele, `leads`, pede `leads.ver`.
+   *
+   * Pai em OUTRA seção não existe: o filho é desenhado dentro da seção do pai,
+   * então um pai de outra seção o faria aparecer fora do lugar. Quem cobra isso
+   * é `navEmArvore`, que trata esse filho como órfão.
+   */
+  pai?: string;
   /** Ausente = espinha do OS, não desliga. Presente = gate do módulo. */
   modulo?: ModuloKey;
   /**
@@ -113,9 +128,53 @@ export const NAV: NavItem[] = [
   // agora diz o que FALTA, e não o que já chegou.
   { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa está de pé; as abas Marca e Identidade entram nas próximas fatias' },
   { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central' },
+  /*
+   * A CAIXA PESSOAL (fatia A7) — "o que precisa de mim".
+   *
+   * Item de PRIMEIRO NÍVEL em "A central", como o plano pede: ela não é
+   * sub-item de nada porque não é a outra leitura de uma tela existente (o caso
+   * da Linha do tempo sob o Rastro) — é a única tela do OS que responde por
+   * PESSOA e não por empresa.
+   *
+   * `dashboard.ver` e não `aprovacoes.ver`: toda pessoa que entra tem uma caixa,
+   * inclusive quem não acompanha a fila de aprovação — pedir a chave da fila
+   * tiraria dela também as tarefas paradas, que são o outro eixo. É a mesma
+   * permissão da rota (`GET /api/caixa`), e item de menu pedindo uma permissão
+   * com a API respondendo a outra é o 403 que a fila já pagou uma vez. Cada eixo
+   * tem a permissão dele DENTRO da tela, e eixo sem permissão diz "sem acesso"
+   * em vez de sumir com a tela inteira.
+   *
+   * Sem `estado: 'parcial'`: os dois eixos que contam (aprovação e tarefa) estão
+   * de pé. O terceiro — conversa no quadro — é entregue dizendo na tela o que
+   * ele é e o que ele NÃO é (menção não existe como dado neste produto), e
+   * marcar a tela como parcial por causa de um dado que o sistema não tem
+   * avisaria ao cliente que algo aqui está pela metade quando está inteiro.
+   */
+  { key: 'caixa', label: 'Caixa', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'central' },
 
   // ── Quem trabalha ────────────────────────────────────────────────────────
   { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },
+  /*
+   * CUSTOS ENTRA COMO SUB-ITEM DE AGENTES (fatia A3), e APONTA PARA A TELA QUE
+   * JÁ EXISTE — `/painel/custo-ia`, no ar desde a fatia 6.4.
+   *
+   * Não há tela nova, e a decisão é essa: uma segunda tela de custo de IA seria
+   * uma segunda versão dos mesmos números, e é exatamente o defeito que a outra
+   * metade desta fatia foi consertar nas horas devolvidas. O que a A3 fez foi
+   * acrescentar àquela tela o eixo que faltava (orçamento mensal por agente) e
+   * trazer a porta dela para onde a pergunta nasce: o menu de quem trabalha.
+   *
+   * `secao: 'trabalha'` e não `'central'` porque o pai precisa estar NA MESMA
+   * SEÇÃO — `navEmArvore` trata filho de outra seção como órfão e o promove a
+   * primeiro nível, o que o faria aparecer fora do lugar. O href continua sob
+   * `/painel/` e isso é de propósito: mover a rota quebraria o link que a pílula
+   * do Console já publica.
+   *
+   * `dashboard.ver` é a mesma permissão da rota (`GET /dashboard/custo-ia`) e a
+   * mesma do Console. Item de menu pedindo uma permissão e API respondendo a
+   * outra é o 403 que a fila de aprovação já pagou uma vez.
+   */
+  { key: 'custo-ia', label: 'Custos', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'trabalha', pai: 'agentes' },
   // DEIXOU DE SER PARCIAL NA ONDA 10 (fatia 5.6). A tela lê dado real desde a
   // 5.1 — estado declarado, histórico de cada passagem — e agora mostra também
   // as HORAS DEVOLVIDAS por semana, medidas do log de passagens contra a linha
@@ -162,6 +221,22 @@ export const NAV: NavItem[] = [
   // quatro, e a tela esconde a aba de quem não tem.
   { key: 'regua', label: 'Régua', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
   { key: 'rastro', label: 'Rastro', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'controle' },
+  /*
+   * A LINHA DO TEMPO (fatia A9) — sub-item do Rastro, e é a mesma fonte.
+   *
+   * As duas telas leem o MESMO `EventLog`. O que muda é a pergunta: o Rastro é
+   * PROVA (evento cru, cadeia de hash, verificação) e a Linha do tempo é
+   * HISTÓRIA (por dia, com ator e objeto legíveis, filtrável por agente e por
+   * tipo). Aninhar diz isso na forma do menu: não é um segundo registro, é a
+   * outra leitura do primeiro.
+   *
+   * `auditoria.ver`, a MESMA do pai e a mesma da rota — item de menu pedindo uma
+   * permissão e API respondendo a outra é o 403 que a fila de aprovação já pagou
+   * uma vez. E ser a mesma do pai tem consequência benigna aqui: quem não a tem
+   * perde as duas, que é o certo, porque quem não pode ver a prova não tem por
+   * que ver a narrativa dela.
+   */
+  { key: 'linha-do-tempo', label: 'Linha do tempo', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'controle', pai: 'rastro' },
 
   // ── O que existe ─────────────────────────────────────────────────────────
   { key: 'ferramentas', label: 'Ferramentas', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'existe', estado: 'parcial', parcial: 'o catálogo das 35 ferramentas entra na fatia 7' },
@@ -169,19 +244,19 @@ export const NAV: NavItem[] = [
 
   // ── A execução ───────────────────────────────────────────────────────────
   { key: 'trabalho', label: 'Trabalho', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho' },
-  { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho' },
+  { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'execucao', modulo: 'relatorios' },
 
   // ── O que entra ──────────────────────────────────────────────────────────
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'entra', modulo: 'leads' },
-  { key: 'funil', label: 'Funil', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'entra', modulo: 'leads' },
+  { key: 'funil', label: 'Funil', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'entra', modulo: 'leads', pai: 'leads' },
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'entra', modulo: 'campanhas' },
   { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'entra', modulo: 'pixels' },
 
   // ── O que sai ────────────────────────────────────────────────────────────
   { key: 'conteudo', label: 'Conteúdo', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'sai', modulo: 'conteudo' },
   { key: 'pauta', label: 'Pauta', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
-  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
+  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'pauta' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'sai', modulo: 'instagram' },
   { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'sai', modulo: 'bio' },
   { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'sai', modulo: 'metas' },
@@ -260,4 +335,70 @@ export function navPorSecao(
         (!mods || !n.modulo || mods.has(n.modulo)),
     ),
   })).filter((g) => g.itens.length > 0);
+}
+
+/** Um item do menu com o que ele abriga. `filhos` vazio = item sem submenu. */
+export interface NoDeNav {
+  item: NavItem;
+  filhos: NavItem[];
+}
+
+/*
+ * O MENU EM DOIS NÍVEIS — a forma do painel do Paperclip trazida para cá
+ * (docs/PLANO-CONTROLE-DE-AGENTES.md, fatia A1).
+ *
+ * ----------------------------------------------------------------------------
+ * POR QUE É UMA FUNÇÃO NOVA, E NÃO O `navPorSecao` COM OUTRO FORMATO
+ * ----------------------------------------------------------------------------
+ * O `navPorSecao` devolve a lista PLANA e tem três consumidores que dependem
+ * disso: a paleta de comandos (que quer tudo alcançável por busca, sem
+ * hierarquia), a suíte `nav.test.ts` e a trava de módulos por tenant na API
+ * (`apps/api/test/modulos-por-tenant.test.ts`). Trocar o formato dele para
+ * ganhar o submenu quebraria os três para servir a um. Aqui em cima o que muda
+ * é só o DESENHO, então o desenho é que ganha função própria.
+ *
+ * ----------------------------------------------------------------------------
+ * O ÓRFÃO SOBE — e este é o ponto que custa acesso se for esquecido
+ * ----------------------------------------------------------------------------
+ * Filho cujo pai não passou pelo filtro (permissão que a pessoa não tem, módulo
+ * que a empresa não contratou) ou cujo pai vive em outra seção NÃO desaparece:
+ * ele vira item de primeiro nível, no lugar em que o NAV o põe. A alternativa
+ * — sumir junto com o pai — tiraria da pessoa uma tela que ela tem, calada, e é
+ * caso real e não hipótese: `funil` pede `dashboard.ver` e `leads` pede
+ * `leads.ver`, então quem opera sem `leads.ver` continua vendo o Funil.
+ *
+ * A soma dos itens da árvore é sempre igual à da lista plana. A suíte cobra.
+ */
+export function navEmArvore(
+  permissoes: Iterable<string>,
+  modulosLigados?: Iterable<string>,
+): { secao: Secao; itens: NoDeNav[] }[] {
+  return navPorSecao(permissoes, modulosLigados)
+    .map(({ secao, itens }) => {
+      const presentes = new Map(itens.map((n) => [n.key, n]));
+      const nos: NoDeNav[] = [];
+      const porChave = new Map<string, NoDeNav>();
+
+      // Primeira passada: quem é de primeiro nível. Inclui o órfão — filho cujo
+      // pai não está NESTA seção, seja porque foi filtrado, seja porque o pai
+      // mora em outra.
+      for (const item of itens) {
+        if (item.pai && presentes.has(item.pai)) continue;
+        const no = { item, filhos: [] as NavItem[] };
+        nos.push(no);
+        porChave.set(item.key, no);
+      }
+
+      // Segunda passada: pendura cada filho no pai, na ordem do NAV. Só há um
+      // nível — filho de filho pendura no avô, porque menu de três níveis não
+      // cabe numa barra de 216px e ninguém pediu isso.
+      for (const item of itens) {
+        if (!item.pai) continue;
+        const pai = porChave.get(item.pai) ?? porChave.get(presentes.get(item.pai)?.pai ?? '');
+        if (pai) pai.filhos.push(item);
+      }
+
+      return { secao, itens: nos };
+    })
+    .filter((g) => g.itens.length > 0);
 }

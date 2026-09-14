@@ -4,6 +4,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { contextoAtual } from '../common/contexto-execucao';
 import { envNumero } from './env';
 import { TetoDeCustoIaService, type ConsumoDoDia } from './teto-diario.service';
+import {
+  OrcamentoDeAgenteService,
+  type ConsumoDoMesDoAgente,
+} from './orcamento-de-agente.service';
 
 /*
  * O RELATÓRIO DE CUSTO DE IA — por empresa, por agente e por dia (RF-B-03).
@@ -293,6 +297,20 @@ export interface RelatorioDeCustoIa {
   };
   /** Soma dos passos atribuídos a agente, para a tela comparar com o livro-caixa. */
   atribuidoAAgenteUsd: number;
+  /**
+   * O ORÇAMENTO MENSAL DE CADA AGENTE, com o gasto do MÊS ao lado (fatia A3).
+   *
+   * NÃO É A JANELA. O resto deste relatório fala dos últimos `dias` dias; isto
+   * fala do mês corrente no fuso de cada agente, porque é esse o recorte do
+   * orçamento e é ele que corta. Somar os dois números como se fossem do mesmo
+   * período seria inventar um total — a tela mostra os dois com o rótulo do
+   * período em cada um.
+   *
+   * Lista TODOS os agentes, inclusive quem não tem orçamento definido
+   * (`configurado: false`): agente que gasta e não tem limite é exatamente o
+   * que alguém precisa ver para decidir um valor.
+   */
+  orcamentoDeAgentes: ConsumoDoMesDoAgente[];
   naoCoberto: readonly ForaDoRelatorio[];
   geradoEm: string;
 }
@@ -336,6 +354,13 @@ export class RelatorioDeCustoIaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly teto: TetoDeCustoIaService,
+    /*
+     * O eixo do ORÇAMENTO POR AGENTE (fatia A3) vem de quem o IMPÕE, nunca
+     * recalculado aqui. Mesma razão de `hoje` sair de `TetoDeCustoIa.consumo`:
+     * um número no painel que discordasse do número que recusa a chamada seria
+     * pior que nenhum número.
+     */
+    private readonly orcamentos: OrcamentoDeAgenteService,
   ) {}
 
   /**
@@ -479,6 +504,14 @@ export class RelatorioDeCustoIaService {
         linhas: janela.soma._count._all,
       },
       atribuidoAAgenteUsd: atribuido,
+      /*
+       * FORA da transação de propósito. Ela existe para a CONFERÊNCIA — o
+       * `SUM()` contra a lista, no mesmo instantâneo — e o orçamento não entra
+       * naquela comparação: é outro recorte (mês, não janela) e outra pergunta.
+       * Arrastá-lo para dentro prenderia o instantâneo por mais tempo sem
+       * provar nada a mais.
+       */
+      orcamentoDeAgentes: await this.orcamentos.panorama(orgId),
       naoCoberto: NAO_COBERTO,
       geradoEm: agora.toISOString(),
     };

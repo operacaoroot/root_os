@@ -385,10 +385,22 @@ function tomDaNota(n: NotaDeContexto): Tom {
   return 'info';
 }
 
+/**
+ * O tom de um estado DECLARADO — e esta função atende DOIS vocabulários.
+ *
+ * Desde a fatia A2 o agente tem enum próprio (`planejado`, `ativo`, `pausado`,
+ * `encerrado`) e a rotina ficou com o antigo (`rodando`, `aprendendo`,
+ * `planejado`, `pausado`). As duas famílias passam por aqui, e é de propósito
+ * que a mesma ideia tenha a mesma cor nas duas: `ativo` e `rodando` querem dizer
+ * "está em produção", com nomes diferentes porque as duas famílias divergiram.
+ */
 function tomDoEstado(estado: string): Tom {
-  if (estado === 'rodando') return 'good';
+  if (estado === 'ativo' || estado === 'rodando') return 'good';
   if (estado === 'aprendendo') return 'brand';
   if (estado === 'pausado') return 'warn';
+  // `encerrado`, `planejado` e o que ninguém previu: apagado. Estado
+  // desconhecido NUNCA sai verde — cor de "está funcionando" é a única que não
+  // se pode dar por omissão.
   return 'muted';
 }
 

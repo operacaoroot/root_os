@@ -7,6 +7,7 @@ import { apiGet, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import {
   alertaDoTeto,
+  alertasDeOrcamento,
   atribuicaoPorAgente,
   diaCurto,
   fraseDoExcedente,
@@ -17,6 +18,7 @@ import {
   totalDaJanela,
   tudoSemPreco,
   usd,
+  type AlertaDoOrcamento,
   type RelatorioDeCustoIa,
 } from './calculo';
 
@@ -43,6 +45,21 @@ import {
  */
 
 const JANELAS = [7, 30, 90] as const;
+
+/**
+ * O tom de cada estado de orçamento (fatia A3).
+ *
+ * `sem-orcamento` é NEUTRO, não aviso: a esmagadora maioria dos agentes está
+ * nesse estado hoje e pintar a tela inteira de amarelo transformaria o alerta
+ * em papel de parede. Quem precisa de destaque é quem está perto de parar.
+ */
+const TOM_DO_ORCAMENTO: Record<AlertaDoOrcamento['estado'], 'default' | 'good' | 'warn' | 'bad'> = {
+  'sem-orcamento': 'default',
+  zerado: 'bad',
+  ok: 'good',
+  atencao: 'warn',
+  estourado: 'bad',
+};
 
 const TOM_DA_BORDA: Record<'default' | 'good' | 'warn' | 'bad', string> = {
   default: 'border-border',
@@ -94,6 +111,7 @@ export default function CustoDeIaPage() {
             alerta: alertaDoTeto(r),
             total: totalDaJanela(r),
             atribuicao: atribuicaoPorAgente(r),
+            orcamentos: alertasDeOrcamento(r),
           }
         : null,
     [r],
@@ -458,6 +476,97 @@ export default function CustoDeIaPage() {
                 {fraseDoExcedente(calculado.atribuicao)}
               </p>
             )}
+          </section>
+
+          {/* ---------------------------------------------------------------
+              ORÇAMENTO MENSAL POR AGENTE — fatia A3
+              ---------------------------------------------------------------
+              O PERÍODO É OUTRO, E A TELA DIZ ISSO NO TÍTULO. Tudo acima fala da
+              janela escolhida (7, 30 ou 90 dias); esta seção fala do MÊS
+              CORRENTE, no fuso de cada agente, porque é esse o recorte do
+              orçamento e é ele que corta. Sem o rótulo do período, alguém
+              somaria os dois e o total não existiria.
+
+              A tabela lista TODOS os agentes, com ou sem orçamento: agente que
+              gasta e não tem limite é justamente o que se precisa ver para
+              decidir um valor. Quem define é a tela de Agentes — aqui só se lê.
+              --------------------------------------------------------------- */}
+          <section>
+            <h2 className="mb-1 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">
+              Orçamento por agente · mês corrente
+            </h2>
+            <p className="mb-3 text-[10.5px] text-dim">
+              Período diferente do resto desta tela: é o mês, não a janela de {r.dias} dias. O
+              orçamento é definido em <Link href="/agentes" className="text-brand hover:underline">Agentes</Link>,
+              no cartão de cada um, e o alerta acende em {r.teto.percentualAlerta}% — o mesmo
+              limiar do teto da empresa.
+            </p>
+            {calculado.orcamentos.length === 0 ? (
+              <p className="rounded-root border border-border bg-surface p-4 text-[11px] text-dim">
+                Nenhum agente nesta empresa.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-root border border-border bg-surface">
+                <table className="w-full min-w-[680px] font-os-mono text-[11px]">
+                  <thead>
+                    <tr className="border-b border-border text-[9.5px] uppercase tracking-[0.12em] text-muted">
+                      <Th className="text-left">Agente</Th>
+                      <Th>Gasto no mês</Th>
+                      <Th>Orçamento</Th>
+                      <Th>%</Th>
+                      <Th>Restante</Th>
+                      <Th>Corta?</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calculado.orcamentos.map((o) => (
+                      <tr key={o.agentSlug} className="border-b border-border/60">
+                        <td className="px-3 py-[7px]">
+                          <span className="text-text">{o.nome}</span>{' '}
+                          <span className="text-dim">{o.agentSlug}</span>
+                          {o.passosNaoMedidos > 0 && (
+                            <span className="text-warn">
+                              {' '}
+                              · {o.passosNaoMedidos} passo(s) sem preço: o orçamento não os vê
+                            </span>
+                          )}
+                        </td>
+                        <Td className={TOM_DO_TEXTO[TOM_DO_ORCAMENTO[o.estado]]}>
+                          {usd(o.gastoUsd)}
+                        </Td>
+                        <Td>{o.orcamentoUsd === null ? NAO_MEDIDO : usd(o.orcamentoUsd)}</Td>
+                        <Td className={TOM_DO_TEXTO[TOM_DO_ORCAMENTO[o.estado]]}>
+                          {o.percentual === null ? NAO_MEDIDO : `${o.percentual}%`}
+                        </Td>
+                        <Td>{o.restanteUsd === null ? NAO_MEDIDO : usd(o.restanteUsd)}</Td>
+                        {/*
+                          "Corta?" é a pergunta que importa, e ela não é a mesma
+                          que "tem orçamento?": orçamento em observação soma,
+                          aparece na tela e não recusa nada. Um selo só para as
+                          duas coisas treinaria a pessoa a achar que está
+                          protegida quando não está.
+                        */}
+                        <Td className={o.impoe ? 'text-text' : 'text-warn'}>
+                          {o.orcamentoUsd === null ? '—' : o.impoe ? 'sim' : 'só observa'}
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <ul className="mt-2 space-y-1">
+              {calculado.orcamentos
+                .filter((o) => o.disparou)
+                .map((o) => (
+                  <li
+                    key={o.agentSlug}
+                    className={`text-[10.5px] ${o.impoe ? 'text-bad' : 'text-warn'}`}
+                  >
+                    <span className="font-medium">{o.nome}</span>: {o.frase}
+                  </li>
+                ))}
+            </ul>
           </section>
 
           {/* ---------------------------------------------------------------

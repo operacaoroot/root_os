@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import { HttpException } from '@nestjs/common';
 import {
   ActorType,
-  AgentEstado,
+  EstadoDeAgente,
   AgentTipo,
   PrismaClient,
   RiskLevel,
@@ -1276,11 +1276,11 @@ describe.skipIf(!URL)('o laço do agente, quando o teto estoura no meio', () => 
         iniciais: 'AT',
         missao: 'responder com fonte',
         tipo: AgentTipo.llm,
-        estado: AgentEstado.rodando,
+        estado: EstadoDeAgente.ativo,
         autonomiaAte: RiskLevel.R1,
         capacidades: ['numeros.painel.ler'],
       },
-      update: { estado: AgentEstado.rodando, ativo: true },
+      update: { estado: EstadoDeAgente.ativo, ativo: true },
     });
 
     const p = prisma as unknown as PrismaService;

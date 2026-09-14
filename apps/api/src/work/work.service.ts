@@ -6,12 +6,25 @@ import type {
 import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
+import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Hierarquia pastas → listas → tarefas; statuses POR LISTA; campos personalizados
 // com opções; etiquetas; comentários. Semente = fotografia do espaço `root`
 // (25/07/2026); externalId preserva o id ClickUp p/ reconciliação futura.
 
+/*
+ * `agente` NÃO ENTRA NESTE `include`, e é decisão, não esquecimento.
+ *
+ * `include: { agente: true }` resolveria o nome do agente numa consulta só — e
+ * traria o agente que estiver do outro lado do ponteiro, de QUALQUER empresa: o
+ * Prisma não filtra relação para um dentro do include. É a mesma armadilha que
+ * `agents/donos-da-casa.ts` documenta para o dono humano, e o quadro de Trabalho
+ * é lido pelo cliente. Quem resolve é `agentes-da-casa.ts`, com consulta
+ * escopada por empresa; ponteiro atravessado devolve nulo e a tela diz "outro
+ * agente".
+ */
 const TASK_INCLUDE = {
   status: true,
   tags: true,
@@ -26,6 +39,7 @@ export class WorkService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly checkout: CheckoutDeTarefaService,
   ) {}
 
   // ---------- estrutura (árvore + catálogos) ----------
@@ -40,7 +54,7 @@ export class WorkService {
   }
 
   async estrutura(orgId: string): Promise<TrabEstrutura> {
-    const [folders, lists, fields, tags, counts, byStatus, users] = await Promise.all([
+    const [folders, lists, fields, tags, counts, byStatus, users, agentes] = await Promise.all([
       this.prisma.workFolder.findMany({ where: { orgId }, orderBy: { order: 'asc' } }),
       this.prisma.workList.findMany({
         where: { orgId },
@@ -55,6 +69,16 @@ export class WorkService {
         where: { orgId, assignee: { not: null } },
         distinct: ['assignee'], select: { assignee: true },
       }),
+      /*
+       * OS AGENTES VÊM DA MESMA CHAMADA QUE A ÁRVORE (fatia A4).
+       *
+       * A tela precisa deles para oferecer a quem entregar a tarefa e para dizer
+       * ANTES DO CLIQUE quem pode receber (`podeAssumir`) — mesma disciplina de
+       * `/atendimento`, que mostra a alçada antes de alguém tentar assinar. Numa
+       * rota separada, a lista chegaria depois do quadro e o seletor apareceria
+       * vazio no primeiro instante.
+       */
+      this.checkout.agentesParaEscolher(orgId),
     ]);
     const porLista = new Map(counts.map((c) => [c.listId, c._count]));
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
@@ -78,6 +102,7 @@ export class WorkService {
       camposGlobais: fields.map((f) => this.mapField(f)),
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
+      agentes,
     };
   }
 
@@ -242,11 +267,25 @@ export class WorkService {
 
   // ---------- tarefas ----------
 
-  private mapTask(t: TaskRow, now: Date): TrabTarefaResumo {
+  /**
+   * `agentes` é o mapa de `agentes-da-casa.ts` — id -> agente DESTA empresa.
+   * Obrigatório de propósito: parâmetro opcional faria o chamador que esquecesse
+   * de carregá-lo publicar toda tarefa como "sem agente", que é uma tela
+   * mentindo em silêncio. Mapa vazio é resposta válida (nenhuma tarefa travada);
+   * mapa ausente, não.
+   */
+  private mapTask(
+    t: TaskRow,
+    now: Date,
+    agentes: Map<string, AgenteDaCasa>,
+  ): TrabTarefaResumo {
+    const agente = t.agenteId ? agentes.get(t.agenteId) ?? null : null;
     return {
       id: t.id, listId: t.listId, title: t.title,
       statusId: t.statusId, statusName: t.status.name, statusType: t.status.type, statusColor: t.status.color,
       priority: t.priority, assignee: t.assignee,
+      agenteId: t.agenteId, agenteSlug: agente?.slug ?? null, agenteNome: agente?.nome ?? null,
+      agenteEm: t.agenteEm?.toISOString() ?? null,
       dueDate: t.dueDate?.toISOString() ?? null, startDate: t.startDate?.toISOString() ?? null,
       overdue: !!t.dueDate && t.dueDate < now && t.status.type !== 'closed',
       parentId: t.parentId, subtasks: t._count.subtasks, comments: t._count.comments,
@@ -278,8 +317,14 @@ export class WorkService {
       take: 500,
     });
     const now = new Date();
+    /*
+     * UMA consulta para todos os donos, depois da lista — não uma por tarefa.
+     * `agentesDaCasa` já deduplica os ids, então o custo é fixo no número de
+     * agentes travando trabalho, não no de tarefas.
+     */
+    const agentes = await agentesDaCasa(this.prisma, orgId, rows.map((t) => t.agenteId));
     return {
-      items: rows.map((t) => this.mapTask(t, now)),
+      items: rows.map((t) => this.mapTask(t, now, agentes)),
       total: rows.length,
       source: { tool: 'trabalho-interno', generatedAt: now.toISOString() },
     };
@@ -308,8 +353,9 @@ export class WorkService {
       : [];
     const nomePorAtor = new Map(atores.map((u) => [u.id, u.name]));
     const now = new Date();
+    const agentes = await agentesDaCasa(this.prisma, orgId, [t.agenteId]);
     return {
-      ...this.mapTask(t, now),
+      ...this.mapTask(t, now, agentes),
       description: t.description, listName: t.list.name,
       createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(),
       comentarios: t.comments.map((c) => ({

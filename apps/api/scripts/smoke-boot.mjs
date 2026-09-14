@@ -58,7 +58,16 @@ const ESPERA_QUEBRA = process.env.SMOKE_ESPERA_QUEBRA ?? '';
  * grafo. Todas são GET sem parâmetro e todas exigem autenticação — nenhuma
  * executa nada. `SMOKE_ROTAS` substitui a lista (separada por vírgula).
  */
-const ROTAS = (process.env.SMOKE_ROTAS ?? '/api/memoria,/api/rotinas,/api/organograma')
+const ROTAS = (
+  process.env.SMOKE_ROTAS ??
+  // `linha-do-tempo` entrou na fatia A9 e `caixa` na A7. As duas são o caso
+  // puro do que este trecho existe para pegar: módulo de leitura, sem sentinela
+  // de arranque, que se cai dos `imports` do `AppModule` compila, sobe e devolve
+  // 404 na tela — sem nada acusar, porque nenhum outro componente o espera. Na
+  // caixa o silêncio é ainda mais fácil de não notar: o selo da barra lateral
+  // simplesmente não aparece, e barra sem selo é indistinguível de caixa vazia.
+  '/api/memoria,/api/rotinas,/api/organograma,/api/linha-do-tempo,/api/caixa'
+)
   .split(',')
   .map((r) => r.trim())
   .filter(Boolean);

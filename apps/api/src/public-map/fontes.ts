@@ -53,9 +53,20 @@ function diasAtras(agora: Date, dias: number): Date {
 }
 
 export const FONTES_DO_MAPA: Readonly<Record<string, FonteDeNumero>> = {
+  /*
+   * A CHAVE CONTINUA SENDO `agentes.rodando` e o valor consultado virou `ativo`
+   * (fatia A2, quando o agente ganhou enum próprio e `rodando` deixou de ser
+   * estado declarado).
+   *
+   * A chave NÃO é renomeada de propósito: ela é DADO, gravada em
+   * `MapaPublicoItem.fonte` pelas linhas que uma empresa já publicou. Trocar o
+   * nome aqui faria cada uma dessas linhas pedir uma fonte que não existe mais —
+   * e a regra 3 do cabeçalho é que chave desconhecida não derruba e não inventa,
+   * ou seja, o número simplesmente desapareceria da página pública, em silêncio.
+   */
   'agentes.rodando': {
-    descricao: 'agentes da empresa com estado "rodando"',
-    ler: (prisma, orgId) => prisma.agent.count({ where: { orgId, estado: 'rodando' } }),
+    descricao: 'agentes da empresa em operação (estado declarado "ativo")',
+    ler: (prisma, orgId) => prisma.agent.count({ where: { orgId, estado: 'ativo' } }),
   },
 
   'rotinas.rodando': {

@@ -218,7 +218,17 @@ function agente(over: Record<string, unknown> = {}) {
     ultimoStatus: 'ok',
     execucoes: 12,
     falhas: 0,
-    horasDevolvidas: 3,
+    /* fatia A3: semanal medido e acumulado, separados e com nome. */
+    horas: {
+      estado: 'medida',
+      naSemana: 1,
+      passagensNaSemana: 3,
+      diasDaJanela: 7,
+      janelaCoberta: true,
+      cobreDesde: null,
+    },
+    horasAcumuladas: 3,
+    passagensBemSucedidas: 9,
     temProcedimento: true,
     faltando: [],
     ...over,

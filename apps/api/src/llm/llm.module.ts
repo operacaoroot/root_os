@@ -5,6 +5,7 @@ import { AnthropicProvider } from './anthropic.provider';
 import { OpenRouterProvider } from './openrouter.provider';
 import { TetoDeCustoIaService } from './teto-diario.service';
 import { RelatorioDeCustoIaService } from './relatorio-custo.service';
+import { OrcamentoDeAgenteService } from './orcamento-de-agente.service';
 import { ProviderComTeto } from './provider-com-teto';
 import { env } from './env';
 
@@ -40,6 +41,14 @@ import { env } from './env';
 // lateral. Embedding segue não medido por este teto — é cobrado à parte pela
 // OpenAI e está no relatório da fatia.
 //
+// O QUE ENTROU NA FATIA A3: `OrcamentoDeAgenteService` — o orçamento MENSAL por
+// agente, o quarto eixo de contenção de gasto. Ele entra no envelope ANTES do
+// teto da empresa (ver `provider-com-teto.ts`), e mora aqui pelo mesmo motivo
+// que o relatório: fala do mesmo dinheiro que o teto, e leitura de dinheiro que
+// muda de casa é leitura que um dia refaz por fora a conta que o controle já
+// faz. Ele não tem tabela própria — o livro-caixa por agente é o log de passos
+// (`SessionStep`), e o cabeçalho do serviço explica por que.
+//
 // O QUE ENTROU NA FATIA 6.4: `RelatorioDeCustoIaService` (RF-B-03). Ele só LÊ —
 // não reserva, não liquida, não corta —, e por isso divide o módulo com quem
 // escreve em vez de morar em `dashboard/`: as duas classes falam das MESMAS duas
@@ -55,6 +64,7 @@ import { env } from './env';
     OpenRouterProvider,
     TetoDeCustoIaService,
     RelatorioDeCustoIaService,
+    OrcamentoDeAgenteService,
     {
       provide: LLM_PROVIDER,
       useFactory: (
@@ -62,18 +72,30 @@ import { env } from './env';
         anthropic: AnthropicProvider,
         openrouter: OpenRouterProvider,
         teto: TetoDeCustoIaService,
+        orcamentoDoAgente: OrcamentoDeAgenteService,
       ) => {
         const escolhido = env('LLM_PROVIDER', 'anthropic');
         const provider =
           escolhido === 'openai' ? openai : escolhido === 'openrouter' ? openrouter : anthropic;
-        return new ProviderComTeto(provider, teto);
+        return new ProviderComTeto(provider, teto, orcamentoDoAgente);
       },
-      inject: [OpenAiProvider, AnthropicProvider, OpenRouterProvider, TetoDeCustoIaService],
+      inject: [
+        OpenAiProvider,
+        AnthropicProvider,
+        OpenRouterProvider,
+        TetoDeCustoIaService,
+        OrcamentoDeAgenteService,
+      ],
     },
   ],
   // Exportar continua sendo obrigatório mesmo num módulo `@Global()`: sem a
   // linha abaixo o Nest recusa subir com "can't resolve dependencies of
   // DashboardController", e a recusa é no arranque, não em tempo de teste.
-  exports: [LLM_PROVIDER, TetoDeCustoIaService, RelatorioDeCustoIaService],
+  exports: [
+    LLM_PROVIDER,
+    TetoDeCustoIaService,
+    RelatorioDeCustoIaService,
+    OrcamentoDeAgenteService,
+  ],
 })
 export class LlmModule {}

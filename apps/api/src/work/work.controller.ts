@@ -4,8 +4,10 @@ import {
   TrabStatusCreateSchema, TrabStatusUpdateSchema, TrabCampoCreateSchema, TrabCampoUpdateSchema,
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
   TrabTarefaCreateSchema, TrabTarefaUpdateSchema, TrabComentarioSchema,
+  TrabAssumirSchema, TrabSoltarSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
+import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -17,7 +19,10 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('trabalho')
 export class WorkController {
-  constructor(private readonly svc: WorkService) {}
+  constructor(
+    private readonly svc: WorkService,
+    private readonly checkout: CheckoutDeTarefaService,
+  ) {}
 
   // ---- estrutura ----
   @Get('estrutura')
@@ -181,6 +186,35 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   arquivarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
     return this.svc.editarTarefa(u.orgId, u.sub, id, { archived: true });
+  }
+
+  /* ---- o dono único: assumir e soltar (fatia A4) ----
+   *
+   * `tarefas.editar` nas duas, e não uma permissão nova. A pergunta que decide
+   * isso é "quem pode mexer no quadro desta empresa?", e ela já tem resposta —
+   * criar `tarefas.assumir` obrigaria os três passos de permissão
+   * (`shared build` → `db:sync-permissions` → todo mundo sai e entra) para
+   * separar um subconjunto de gente que ninguém pediu para separar.
+   *
+   * NÃO PASSA PELA PORTA, e o porquê está inteiro no cabeçalho de
+   * `checkout-de-tarefa.service.ts`: é escrita interna, sem efeito externo, e
+   * retenção por aprovação faria todo checkout esperar uma segunda pessoa.
+   *
+   * O 409 é o contrato: quem perde a corrida recebe `ConflictException` com a
+   * frase dizendo quem ficou com a tarefa. A tela mostra a frase como veio.
+   */
+  @Post('tarefas/:id/assumir')
+  @RequirePermissions('tarefas.editar')
+  assumir(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const entrada = TrabAssumirSchema.parse(body);
+    return this.checkout.assumir(u.orgId, id, entrada.agente, { actorId: u.sub }, entrada.statusId);
+  }
+
+  @Post('tarefas/:id/soltar')
+  @RequirePermissions('tarefas.editar')
+  soltar(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const entrada = TrabSoltarSchema.parse(body ?? {});
+    return this.checkout.soltar(u.orgId, id, { actorId: u.sub }, entrada.motivo);
   }
 
   @Post('tarefas/:id/comentarios')

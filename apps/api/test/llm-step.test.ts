@@ -4,6 +4,12 @@ import { OpenAiProvider } from '../src/llm/openai.provider';
 import type { LlmTurn } from '../src/llm/llm.provider';
 
 describe('preço', () => {
+  it('mede o modelo OpenRouter usado em produção quando o provedor não informa custo', () => {
+    expect(custoUsd('anthropic/claude-sonnet-4.5', {
+      entrada: 1000, saida: 200, cacheLeitura: 500, cacheEscrita: 100,
+    })).toEqual({ custoUsd: 0.006525, custoEstimado: true });
+  });
+
   it('casa o modelo com data no nome com a entrada da tabela', () => {
     expect(precoDe('claude-opus-5')).toBe(PRECO_USD_MTOK['claude-opus-5']);
     expect(precoDe('claude-opus-5-20260101')).toBe(PRECO_USD_MTOK['claude-opus-5']);

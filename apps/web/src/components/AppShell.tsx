@@ -9,6 +9,7 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ChatFlutuante } from './ChatFlutuante';
 import { ModulosProvider, useModulos } from './modulos';
+import { CaixaProvider } from './caixa';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -51,22 +52,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // O provedor de módulos mora AQUI dentro, e não em volta do AppShell: ele
   // depende do token, e nas superfícies públicas (onde não há sessão) não há
   // nada a perguntar. Ver `modulos.tsx`.
+  // O provedor da CAIXA (fatia A7) mora DENTRO do de módulos e pelo mesmo
+  // motivo: ele depende do token, e nas superfícies públicas não há sessão nem
+  // caixa pessoal para medir. Ele alimenta o selo da barra lateral e a própria
+  // tela `/caixa` — as duas lendo o mesmo número, medido uma vez por navegação.
   return (
     <ModulosProvider>
-      <div data-os-app className="flex min-h-screen">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 p-6">
-            <PortaDaAssinatura>
-              <PortaDoModulo>{children}</PortaDoModulo>
-            </PortaDaAssinatura>
-          </main>
+      <CaixaProvider>
+        <div data-os-app className="flex min-h-screen">
+          <Sidebar />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Topbar />
+            <main className="flex-1 p-6">
+              <PortaDaAssinatura>
+                <PortaDoModulo>{children}</PortaDoModulo>
+              </PortaDaAssinatura>
+            </main>
+          </div>
+          {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
+              Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
+          <ChatFlutuante />
         </div>
-        {/* Conversar acontece aqui; o REGISTRO do que foi conversado é /sessoes.
-            Nunca nas superfícies públicas — o AppShell devolve os filhos crus lá. */}
-        <ChatFlutuante />
-      </div>
+      </CaixaProvider>
     </ModulosProvider>
   );
 }

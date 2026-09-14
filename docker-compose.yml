@@ -6,6 +6,7 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: mktos_db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-mkt}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-mkt}
@@ -24,6 +25,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mktos_redis
+    restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6390}:6379"
     volumes:
@@ -33,6 +35,7 @@ services:
   minio:
     image: minio/minio
     container_name: mktos_minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}

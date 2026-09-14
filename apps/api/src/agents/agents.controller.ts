@@ -13,14 +13,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { SessionCanal } from '@prisma/client';
+import { EstadoDeAgente, SessionCanal } from '@prisma/client';
 import { z } from 'zod';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { AgentsService } from './agents.service';
-import { AgentRuntime } from './agent-runtime.service';
+import { AgentRuntime, type SessionResumo } from './agent-runtime.service';
 import { SessionService } from './session.service';
 
 const PedidoSchema = z.object({
@@ -53,6 +53,64 @@ const EXECUTAR_AGENTE = ['mcp.executar', 'admin.usuarios'] as const;
 /** Declarar a linha de base é escrita na configuração do agente, não execução. */
 const CONFIGURAR_AGENTE = ['automacoes.executar', 'admin.usuarios'] as const;
 
+/*
+ * PAUSAR, RETOMAR E ENCERRAR — fatia A2.
+ *
+ * `admin.usuarios` SOZINHA, e não a interseção de `CONFIGURAR_AGENTE`. O
+ * precedente é o interruptor de conector (`POST /integrations/:chave/desligamento`,
+ * RF-G-06), que é o freio de emergência mais próximo que existe aqui: ele pede
+ * exatamente esta chave e nada mais. Somar `automacoes.executar` faria PARAR um
+ * agente exigir mais permissão do que parar um conector inteiro — e freio que
+ * pede mais do que o freio vizinho é freio que alguém não vai alcançar na hora.
+ *
+ * NENHUMA CHAVE NOVA ENTRA no catálogo de permissões, e é de propósito: chave
+ * nova custa o ritual de três passos (construir o pacote, `db:sync-permissions`
+ * — que não é aditivo — e todo mundo sair e entrar, porque a permissão viaja no
+ * JWT). Uma `agentes.comandar` dedicada é o desenho certo no médio prazo e é
+ * DECISÃO DO PEDRO; está no relatório da fatia, não decidida aqui.
+ *
+ * Hoje `admin.usuarios` só existe no perfil `admin_master`.
+ */
+const COMANDAR_AGENTE = ['admin.usuarios'] as const;
+
+/** Pausar não pede motivo (freio tem de ser rápido); encerrar pede — e a API cobra. */
+const MudancaDeEstadoSchema = z.object({
+  motivo: z.string().trim().max(500).optional(),
+});
+
+/*
+ * O "Invocar" — o pedido é MONTADO pelo servidor, não digitado.
+ *
+ * A `nota` é um recado curto do dono ("olhe o cliente X"), e não um pedido: quem
+ * escreve o pedido de uma passagem de heartbeat é `agents/heartbeat.ts`. Se a
+ * nota pudesse ter 4.000 caracteres como o `pedido` de `/executar`, esta rota
+ * seria uma segunda `/executar` com outro nome — e a fatia A6 herdaria duas
+ * formas de acordar um agente.
+ */
+const InvocarSchema = z.object({
+  nota: z.string().trim().max(300).optional(),
+});
+
+/*
+ * O ORÇAMENTO MENSAL DE IA DO AGENTE — fatia A3.
+ *
+ * O TETO DE MIL DÓLARES não é timidez: é a diferença entre errar uma casa
+ * decimal e dar a um agente um orçamento de carro popular por mês. Quem
+ * realmente precisar de mais que isso está numa conversa de contrato, não numa
+ * caixa de texto — e o erro de digitação é o caso comum, não o excepcional.
+ *
+ * Zero é VÁLIDO: com `ativo: true`, é a decisão "este agente não chama modelo",
+ * e o serviço cobra motivo escrito para ela (ver `definirOrcamento`).
+ */
+const OrcamentoSchema = z.object({
+  mensalUsd: z
+    .number()
+    .min(0, 'o orçamento mensal não pode ser negativo')
+    .max(1000, 'orçamento acima de US$ 1.000 por mês: fale com quem administra o OS'),
+  ativo: z.boolean(),
+  motivo: z.string().trim().max(500).optional(),
+});
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class AgentsController {
@@ -83,6 +141,31 @@ export class AgentsController {
   ) {
     const { minutos } = z.object({ minutos: z.number().int().positive() }).parse(body);
     return this.agentes.declararLinhaDeBase(user.orgId, slug, minutos, user.sub);
+  }
+
+  /**
+   * O ORÇAMENTO MENSAL DE IA DO AGENTE (fatia A3).
+   *
+   * PERMISSÃO: `CONFIGURAR_AGENTE`, a mesma da linha de base e do procedimento.
+   * Nenhuma chave nova entra no catálogo, e é de propósito — chave nova custa o
+   * ritual de três passos (construir o pacote, `db:sync-permissions`, que não é
+   * aditivo, e todo mundo sair e entrar, porque a permissão viaja no JWT). A
+   * interseção já inclui `admin.usuarios`, que hoje só o `admin_master` tem, e
+   * definir orçamento é decisão de quem administra a conta.
+   *
+   * POST e não PATCH: cada gravação é uma DECISÃO nova, com autor, data e
+   * motivo. `PATCH /agents/:slug` é a identificação do agente e a lista branca
+   * de lá exclui os campos de gasto de propósito — ver `AgenteIdentidadeSchema`.
+   */
+  @Post('agents/:slug/orcamento')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  definirOrcamento(
+    @CurrentUser() user: JwtUser,
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+  ) {
+    const input = OrcamentoSchema.parse(body ?? {});
+    return this.agentes.definirOrcamento(user.orgId, slug, input, user.sub);
   }
 
   /*
@@ -154,6 +237,95 @@ export class AgentsController {
     return this.agentes.organograma(user.orgId);
   }
 
+  /* ======================================================================== *
+   * O ESTADO NA MÃO DO DONO — pausar, retomar, encerrar (fatia A2)
+   * ======================================================================== *
+   *
+   * TRÊS ROTAS, e não um `PATCH { estado }`. Pelo mesmo motivo que desligar e
+   * religar conector são duas rotas: são três DECISÕES diferentes, com preços
+   * diferentes (encerrar não volta e exige motivo escrito), e um campo de enum
+   * num corpo só as esconderia atrás de uma permissão só e de um nome só no
+   * rastro. O recurso é a decisão; o verbo é POST porque cada clique CRIA uma
+   * decisão nova, com autor, data e motivo.
+   *
+   * Por que não passam pela porta: o bloco de `AgentsService.definirEstado`
+   * responde isso inteiro. Em uma linha — freio que precisa de segunda
+   * assinatura não é freio.
+   */
+  @Post('agents/:slug/pausar')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  pausar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.pausado, {
+      userId: user.sub,
+      motivo,
+    });
+  }
+
+  @Post('agents/:slug/retomar')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  retomar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.ativo, {
+      userId: user.sub,
+      motivo,
+    });
+  }
+
+  /**
+   * ENCERRAR É DIFERENTE DE APAGAR, e esta rota é a prova.
+   *
+   * Não existe `DELETE /agents/:slug`, e não deve existir: `Session` aponta para
+   * `Agent` sem `onDelete: Cascade` de propósito (ver o schema), então apagar o
+   * agente apagaria — ou recusaria apagar — o histórico de tudo o que ele fez.
+   * Encerrar tira de circulação e deixa o histórico de pé, que é o que uma
+   * empresa precisa quando demite um agente.
+   *
+   * Exige MOTIVO. A API recusa sem ele, com 400 e a frase pronta; a tela pede
+   * antes do clique.
+   */
+  @Post('agents/:slug/encerrar')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  encerrar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.encerrado, {
+      userId: user.sub,
+      motivo,
+    });
+  }
+
+  /**
+   * INVOCAR — uma passagem manual, disparada pelo dono na tela (fatia A2).
+   *
+   * É o primeiro dos quatro gatilhos de heartbeat do plano; os outros três
+   * (atribuição, menção, aprovação resolvida) chegam na A6 e entram pelo MESMO
+   * método do laço, trocando só o motivo.
+   *
+   * PERMISSÃO: a mesma de `/executar` (`EXECUTAR_AGENTE`), porque a consequência
+   * é a mesma — o agente roda, alcança a porta e a porta alcança conector.
+   * Afrouxar aqui daria a quem não pode executar um jeito de executar sem
+   * escrever o pedido, que é a mesma coisa com um botão mais bonito.
+   *
+   * A RESPOSTA É A DE `/executar`, inclusive o 429 do teto de custo: quem chama
+   * precisa tratar os mesmos desfechos, e duas formas para a mesma coisa é o que
+   * faz uma tela mostrar "✅ enviado" em cima de uma retenção.
+   */
+  @Post('agents/:slug/invocar')
+  @RequirePermissions(...EXECUTAR_AGENTE)
+  async invocar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    const { nota } = InvocarSchema.parse(body ?? {});
+    const resumo = await this.runtime.invocar({
+      orgId: user.orgId,
+      agentSlug: slug,
+      canal: SessionCanal.web,
+      motivo: 'manual',
+      nota,
+      solicitanteId: user.sub,
+      solicitanteRotulo: user.name ?? user.sub,
+    });
+    return this.traduzirRecusaDeTeto(resumo);
+  }
+
   @Post('agents/:slug/executar')
   @RequirePermissions(...EXECUTAR_AGENTE)
   async executar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
@@ -186,11 +358,33 @@ export class AgentsController {
      * O corpo leva a sessão: ela EXISTE, está gravada e é auditável — quem
      * recebe o erro precisa conseguir abrir o traço do que já tinha rodado.
      */
+    return this.traduzirRecusaDeTeto(resumo);
+  }
+
+  /**
+   * O 429 do teto, num lugar só.
+   *
+   * Era corpo do `executar` e virou método na fatia A2, quando `invocar` passou
+   * a produzir o mesmo desfecho: duas cópias deste `if` seriam dois caminhos
+   * respondendo códigos diferentes para o mesmo teto estourado — e um deles
+   * envelheceria. Os dois blocos de comentário sobre POR QUE é 429 (e não 402
+   * nem 403) estão no cabeçalho de `executar`.
+   */
+  private traduzirRecusaDeTeto(resumo: SessionResumo): SessionResumo {
     if (resumo.recusaDeTeto) {
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          error: 'teto_de_custo_de_ia',
+          /*
+           * DOIS CONTROLES, DOIS RÓTULOS (fatia A3). O 429 é o mesmo — a cota do
+           * período acabou e volta sozinha —, mas o período é diferente: o teto
+           * da empresa volta na virada do DIA, o orçamento do agente na virada do
+           * MÊS. Um rótulo só faria a tela oferecer "tente amanhã" a quem tem de
+           * esperar três semanas.
+           */
+          error: resumo.recusaDeTeto.causa.startsWith('agente_')
+            ? 'orcamento_de_ia_do_agente'
+            : 'teto_de_custo_de_ia',
           message: resumo.recusaDeTeto.motivo,
           sessionId: resumo.sessionId,
           status: resumo.status,

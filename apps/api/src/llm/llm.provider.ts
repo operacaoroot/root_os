@@ -97,6 +97,19 @@ export interface LlmStepInput {
   signal?: AbortSignal;
   /** A empresa que paga por este passo (RF-G-05). Ver `LlmMessage.orgId`. */
   orgId?: string;
+  /**
+   * O AGENTE em nome de quem este passo acontece (fatia A3).
+   *
+   * Existe porque o orçamento MENSAL por agente precisa saber de quem é o gasto
+   * antes de o modelo ser chamado. Quando vem preenchido, manda; quando não vem,
+   * o envelope cai em `contextoAtual()?.agentSlug`.
+   *
+   * VAZIO NÃO É ERRO: `complete()` e os chamadores que não são agente (relatório,
+   * curadoria, ficha) gastam em nome da EMPRESA, e atribuir esse gasto a um
+   * agente qualquer seria inventar procedência. Sem agente, só o teto por
+   * empresa e por dia se aplica.
+   */
+  agentSlug?: string;
 }
 
 /**

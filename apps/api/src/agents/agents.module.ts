@@ -12,6 +12,7 @@ import { LeadsModule } from '../leads/leads.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 import { PautaModule } from '../pauta/pauta.module';
+import { WorkModule } from '../work/work.module';
 
 @Module({
   imports: [
@@ -22,6 +23,13 @@ import { PautaModule } from '../pauta/pauta.module';
     TasksModule,
     CampaignsModule,
     PautaModule,
+    /*
+     * O CHECKOUT DE TAREFA (fatia A4): pausar ou encerrar um agente solta as
+     * tarefas que ele tem na mão. A direção é agents → work porque quem conhece
+     * `WorkTask` é o módulo de trabalho, e `WorkModule` não importa este — sem
+     * ciclo. Ver o cabeçalho de `work/work.module.ts`.
+     */
+    WorkModule,
   ],
   controllers: [AgentsController],
   providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, EfeitosService],
