@@ -121,6 +121,39 @@ export interface ConsumoDeHoje {
   cortes: number;
 }
 
+/**
+ * O ORÇAMENTO MENSAL DE UM AGENTE, com o gasto do MÊS (fatia A3).
+ *
+ * ATENÇÃO AO PERÍODO: todo o resto deste relatório fala da janela de `dias`
+ * dias; isto fala do MÊS CORRENTE no fuso de cada agente, porque é esse o
+ * recorte do orçamento e é ele que corta. Somar um com o outro produz um número
+ * que não existe — a tela mostra os dois com o período escrito em cada um.
+ */
+export interface OrcamentoDeAgente {
+  agentSlug: string;
+  nome: string;
+  iniciais: string;
+  /** `AAAA-MM` no fuso do agente. */
+  mes: string;
+  fusoHorario: string;
+  /** `false` = ninguém definiu orçamento para este agente. Não é zero. */
+  configurado: boolean;
+  /** `false` = em observação: soma, mostra e NÃO corta. */
+  ativo: boolean;
+  orcamentoUsd: number;
+  gastoUsd: number;
+  passos: number;
+  /** Passos cujo modelo não tem preço: não medidos, e o orçamento não os vê. */
+  passosNaoMedidos: number;
+  sessoes: number;
+  restanteUsd: number | null;
+  percentual: number | null;
+  ultimoEm: string | null;
+  definidoEm: string | null;
+  definidoPor: string | null;
+  motivo: string | null;
+}
+
 export interface ForaDoRelatorio {
   oQue: string;
   onde: string;
@@ -159,6 +192,8 @@ export interface RelatorioDeCustoIa {
   livroCaixa: LivroCaixa;
   conferencia: { medidoUsd: number; estimadoUsd: number; chamadas: number; linhas: number };
   atribuidoAAgenteUsd: number;
+  /** Mês corrente por agente — período DIFERENTE do resto. Ver o tipo. */
+  orcamentoDeAgentes: OrcamentoDeAgente[];
   naoCoberto: ForaDoRelatorio[];
   geradoEm: string;
 }
@@ -572,4 +607,136 @@ export const TOM_DO_TETO: Record<EstadoDoTeto, 'default' | 'good' | 'warn' | 'ba
 export function diaCurto(dia: string): string {
   const [, mes, d] = dia.split('-');
   return mes && d ? `${d}/${mes}` : dia;
+}
+
+/* --------------------------------------------------------------------------
+ * O ORÇAMENTO MENSAL POR AGENTE — fatia A3
+ * ------------------------------------------------------------------------ */
+
+export type EstadoDoOrcamento =
+  /** Ninguém definiu orçamento para este agente. Não é orçamento zero. */
+  | 'sem-orcamento'
+  /** Definido como zero E valendo: este agente está desligado para IA. */
+  | 'zerado'
+  | 'ok'
+  /** Cruzou o percentual configurado do orçamento. */
+  | 'atencao'
+  /** Encostou ou passou: a próxima chamada dele é recusada. */
+  | 'estourado';
+
+export interface AlertaDoOrcamento {
+  agentSlug: string;
+  nome: string;
+  estado: EstadoDoOrcamento;
+  /** Recusa a chamada, ou só observa e soma? (`Agent.orcamentoAtivo`) */
+  impoe: boolean;
+  percentual: number | null;
+  limiar: number;
+  orcamentoUsd: number | null;
+  gastoUsd: number;
+  restanteUsd: number | null;
+  /** Passos do mês cujo modelo não tem preço — invisíveis ao orçamento. */
+  passosNaoMedidos: number;
+  disparou: boolean;
+  frase: string;
+}
+
+/**
+ * O alerta de UM agente no mês corrente.
+ *
+ * `limiar` é o MESMO percentual do teto da empresa (`TETO_IA_ALERTA_PERCENT`),
+ * e de propósito: dois limiares diferentes para a mesma pergunta ("estou perto
+ * do limite?") fariam a tela acender em momentos distintos sem que ninguém
+ * soubesse explicar por quê. Um por agente exigiria coluna nova, e ela não
+ * entrou nesta fatia.
+ *
+ * ESTADO NÃO É ALARME QUANDO NÃO IMPÕE: um orçamento em observação que estourou
+ * continua estourado (o número é verdade), mas a frase diz que nada foi
+ * recusado. Pintar de vermelho e não cortar treina a pessoa a ignorar vermelho.
+ */
+export function alertaDoOrcamento(o: OrcamentoDeAgente, limiar: number): AlertaDoOrcamento {
+  const base = {
+    agentSlug: o.agentSlug,
+    nome: o.nome,
+    impoe: o.ativo,
+    limiar,
+    gastoUsd: o.gastoUsd,
+    passosNaoMedidos: o.passosNaoMedidos,
+  };
+
+  if (!o.configurado) {
+    return {
+      ...base,
+      estado: 'sem-orcamento' as const,
+      percentual: null,
+      orcamentoUsd: null,
+      restanteUsd: null,
+      disparou: false,
+      frase:
+        `sem orçamento mensal — gastou ${usd(o.gastoUsd)} em ${o.mes} e só o teto da empresa o ` +
+        'segura',
+    };
+  }
+
+  if (o.orcamentoUsd <= 0) {
+    return {
+      ...base,
+      estado: 'zerado' as const,
+      percentual: null,
+      orcamentoUsd: 0,
+      restanteUsd: 0,
+      disparou: o.ativo,
+      frase: o.ativo
+        ? 'orçamento em US$ 0,00 valendo: nenhuma chamada de modelo deste agente é permitida'
+        : 'orçamento em US$ 0,00 e DESLIGADO: nada corta — é o mesmo que não ter orçamento',
+    };
+  }
+
+  const pct = o.percentual ?? 0;
+  const restante = o.restanteUsd ?? 0;
+  const sufixo = o.ativo
+    ? ''
+    : ' (em observação: soma e NÃO corta — nenhuma chamada foi recusada)';
+
+  if (pct >= 100) {
+    return {
+      ...base,
+      estado: 'estourado' as const,
+      percentual: pct,
+      orcamentoUsd: o.orcamentoUsd,
+      restanteUsd: restante,
+      disparou: true,
+      frase:
+        `${usd(o.gastoUsd)} de ${usd(o.orcamentoUsd)} no mês (${pct}%)` +
+        (o.ativo ? ' — a próxima chamada deste agente é recusada' : '') +
+        sufixo,
+    };
+  }
+
+  if (pct >= limiar) {
+    return {
+      ...base,
+      estado: 'atencao' as const,
+      percentual: pct,
+      orcamentoUsd: o.orcamentoUsd,
+      restanteUsd: restante,
+      disparou: true,
+      frase: `${usd(o.gastoUsd)} de ${usd(o.orcamentoUsd)} no mês (${pct}%) — restam ${usd(restante)}${sufixo}`,
+    };
+  }
+
+  return {
+    ...base,
+    estado: 'ok' as const,
+    percentual: pct,
+    orcamentoUsd: o.orcamentoUsd,
+    restanteUsd: restante,
+    disparou: false,
+    frase: `${usd(o.gastoUsd)} de ${usd(o.orcamentoUsd)} no mês (${pct}%)${sufixo}`,
+  };
+}
+
+/** O panorama inteiro, na ordem em que a API o mandou. */
+export function alertasDeOrcamento(r: RelatorioDeCustoIa): AlertaDoOrcamento[] {
+  return (r.orcamentoDeAgentes ?? []).map((o) => alertaDoOrcamento(o, r.teto.percentualAlerta));
 }

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ActorType,
   Prisma,
@@ -16,6 +16,7 @@ import {
   type LlmTurn,
 } from '../llm/llm.provider';
 import { TetoDiarioEstouradoError } from '../llm/teto-diario.service';
+import { RecusaDeCustoDeIaError } from '../llm/recusa-de-custo';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ToolGateway, type ExecCtx, type ToolCallResult } from '../gateway/tool-gateway.service';
@@ -31,6 +32,9 @@ import {
 } from './context-builder.service';
 import { SessionService } from './session.service';
 import { nomeDoDonoDaCasa } from './donos-da-casa';
+import { recusaPorEstado } from './estado-do-agente';
+import { EventLogService } from '../gateway/event-log.service';
+import { type MotivoDeHeartbeat, heartbeatLigado, pedidoDoHeartbeat } from './heartbeat';
 import { ORDEM_DOS_NIVEIS, type CapacidadeCatalogo, type Nivel } from '@mktos/policy';
 import { montarSop } from './sop';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
@@ -52,6 +56,15 @@ export interface ExecutarPedido {
    * responde é o CANAL (ver `CANAIS_EXTERNOS`).
    */
   procedenciaExterna?: boolean;
+  /**
+   * Qual gatilho acordou o agente, quando não foi alguém escrevendo um pedido.
+   *
+   * Viaja junto para aparecer no RASTRO e no traço da sessão: "esta passagem
+   * aconteceu porque o dono clicou Invocar" é uma resposta diferente de "esta
+   * passagem aconteceu porque o cron bateu", e quem audita precisa das duas.
+   * Ver `heartbeat.ts` — hoje só `manual` está ligado.
+   */
+  heartbeat?: MotivoDeHeartbeat;
   onEvento?: (e: SessionEvent) => void;
 }
 
@@ -110,11 +123,17 @@ export interface SessionResumo {
   fontes: FonteContexto[];
   aprovacoes: { approvalId: string; resumo: string; nivel: string }[];
   /**
-   * Preenchido quando o teto de custo de IA da EMPRESA interrompeu a execução
-   * (RF-G-05). A sessão fica `recusada` com este motivo, e a rota responde com
-   * código próprio — ver `agents.controller.ts`.
+   * Preenchido quando um CONTROLE DE CUSTO DE IA interrompeu a execução — o teto
+   * por empresa e por dia (RF-G-05) ou, desde a fatia A3, o orçamento mensal
+   * deste agente. A sessão fica `recusada` com este motivo, e a rota responde
+   * com código próprio — ver `agents.controller.ts`.
+   *
+   * `dia` é do teto da empresa e vem VAZIO na recusa por orçamento do agente,
+   * que é mensal: escrever o dia de hoje ali faria a resposta afirmar um recorte
+   * que não foi o que cortou. `causa` distingue os dois (`teto_dia_…` contra
+   * `agente_…`), e é por ela que quem lê o RASTRO agrupa.
    */
-  recusaDeTeto?: { motivo: string; causa: string; dia: string };
+  recusaDeTeto?: { motivo: string; causa: string; dia: string | null };
 }
 
 /**
@@ -221,7 +240,126 @@ export class AgentRuntime {
     private readonly contexto: ContextBuilder,
     private readonly sessoes: SessionService,
     private readonly efeitos: EfeitosRegistry,
+    /*
+     * O RASTRO, para a recusa por ESTADO do agente (fatia A2).
+     *
+     * `@Optional()` porque sete suítes constroem este laço à mão, com
+     * argumentos posicionais, e nenhuma delas mede o rastro — quem mede é
+     * `test/estado-do-agente.test.ts`, que passa um dublê. Sem o serviço a
+     * recusa continua acontecendo e o log grita; o que se perde é o registro,
+     * nunca a decisão. É a mesma escolha de `ConectoresService`.
+     */
+    @Optional() private readonly eventos?: EventLogService,
   ) {}
+
+  /**
+   * UMA PASSAGEM DISPARADA POR GATILHO, não por pedido escrito — fatia A2.
+   *
+   * É o "Invocar" da tela, e é o primeiro dos quatro heartbeats que o plano
+   * pede (`docs/PLANO-CONTROLE-DE-AGENTES.md`, item 6). Os outros três chegam na
+   * A6 e entram por AQUI, trocando só o motivo: o que muda entre eles é a frase
+   * de abertura, e ela mora em `heartbeat.ts`.
+   *
+   * NÃO É UM SEGUNDO CAMINHO DE EXECUÇÃO. Ele monta o pedido e cai em
+   * `executar` — a mesma porta, o mesmo teto, o mesmo rastro, a mesma recusa
+   * por estado. Um laço próprio para o botão seria a segunda verdade sobre
+   * "como um agente roda", e é exatamente o defeito que este repositório já
+   * pagou em outras famílias.
+   */
+  async invocar(
+    p: Omit<ExecutarPedido, 'pedido' | 'heartbeat'> & {
+      motivo?: MotivoDeHeartbeat;
+      nota?: string | null;
+    },
+  ): Promise<SessionResumo> {
+    const motivo = p.motivo ?? 'manual';
+    if (!heartbeatLigado(motivo)) {
+      // Falha fechada e barulhenta: gatilho declarado em `MOTIVOS_DE_HEARTBEAT`
+      // mas ainda sem dono (A6) não pode acordar agente por acidente.
+      throw new Error(
+        `gatilho de heartbeat "${motivo}" existe no vocabulário mas não está ligado nesta ` +
+          'versão (ver MOTIVOS_LIGADOS em agents/heartbeat.ts — fatia A6).',
+      );
+    }
+    /*
+     * O AGENTE É RESOLVIDO ANTES DE QUALQUER REGISTRO — e a ordem é o conserto.
+     *
+     * `agentSlug` chega cru do `@Param('slug')` da rota. Enquanto o registro
+     * vinha primeiro, `POST /api/agents/qualquer-coisa/invocar` gravava
+     * `agente.invocado` no RASTRO com o slug inventado, e só DEPOIS `executar`
+     * descobria que o agente não existe: a cadeia de hash ficava com uma linha
+     * sobre um agente que nunca houve, com texto escolhido por quem chamou.
+     * Rastro que aceita fato inventado deixa de ser prova.
+     *
+     * A conferência é a MESMA de `executar` (empresa + slug), e continua lá:
+     * duas guardas para a mesma pergunta é o preço de não ter um segundo
+     * caminho de execução. Esta aqui existe para o registro, não para a
+     * decisão — quem recusa de verdade é `executar`.
+     */
+    const existe = await this.prisma.agent.findFirst({
+      where: { orgId: p.orgId, slug: p.agentSlug },
+      select: { id: true },
+    });
+    if (!existe) throw new Error(`agente "${p.agentSlug}" não existe nesta empresa`);
+
+    /*
+     * O BOTÃO NO RASTRO, antes da passagem.
+     *
+     * A sessão já guarda quem pediu — mas sessão não é a cadeia de hash, e a
+     * pergunta "quem acordou este agente às 3h da manhã?" é de auditoria, não
+     * de operação. Por isso o evento é gravado antes de o modelo ser chamado.
+     *
+     * MAS FALHAR AO REGISTRAR NÃO IMPEDE A PASSAGEM, e isto não é descuido:
+     * `eventos` é `@Optional()` (sete suítes montam este laço sem ele), então
+     * "sem registro, nada roda" bloquearia o botão em todo ambiente que não
+     * tem o serviço montado. A alternativa — recusar a passagem quando o
+     * rastro recusa a escrita — é mudança de comportamento, e está anotada
+     * como decisão em docs/PLANO-CONTROLE-DE-AGENTES.md.
+     */
+    await this.registrarInvocacao(p.orgId, p.agentSlug, motivo, p.solicitanteId ?? null, p.nota);
+
+    return this.executar({
+      ...p,
+      heartbeat: motivo,
+      pedido: pedidoDoHeartbeat(motivo, { nota: p.nota }),
+    });
+  }
+
+  /**
+   * O evento do gatilho. Falhar aqui NÃO impede a passagem — ver
+   * `registrarRecusaDePassagem`, que faz a mesma escolha, e o comentário do
+   * ponto de uso em `invocar`, que diz por quê. Só é chamado depois de o agente
+   * ter sido encontrado NESTA empresa: slug que não existe não vira linha no
+   * rastro.
+   */
+  private async registrarInvocacao(
+    orgId: string,
+    agentSlug: string,
+    motivo: MotivoDeHeartbeat,
+    actorId: string | null,
+    nota?: string | null,
+  ): Promise<void> {
+    try {
+      await this.eventos?.registrar({
+        orgId,
+        tipo: 'agente.invocado',
+        actorType: actorId ? ActorType.user : ActorType.system,
+        actorId,
+        agentSlug,
+        payload: { gatilho: motivo, temNota: !!nota?.trim() },
+        conteudo: {
+          pergunta: `invocar o agente ${agentSlug} (gatilho ${motivo})`,
+          motivo: nota?.trim() || null,
+        },
+        sensibilidade: 'interna',
+      });
+    } catch (e) {
+      this.log.error(
+        `empresa ${orgId}: a invocação do agente "${agentSlug}" não foi registrada no rastro: ` +
+          `${(e as Error).message} — a passagem segue.`,
+      );
+    }
+  }
 
   async executar(p: ExecutarPedido): Promise<SessionResumo> {
     const inicio = Date.now();
@@ -234,13 +372,19 @@ export class AgentRuntime {
     if (!agent) throw new Error(`agente "${p.agentSlug}" não existe nesta empresa`);
 
     // 0. Um agente sem dono e sem capacidade declarada não trabalha. É a
-    // recusa do RF-N-01, e ela vem antes de qualquer chamada de modelo.
+    // recusa do RF-N-01, e ela vem antes de qualquer chamada de modelo. Desde a
+    // fatia A2 ela também cobre o ESTADO DECLARADO — pausado e encerrado — e
+    // cada recusa tem causa própria no rastro.
     const impedimento = this.impedimento(agent);
     if (impedimento) {
       const s = await this.sessoes.abrir({ ...p, agentId: agent.id, canalRef: p.canalRef });
-      await this.sessoes.passo(p.orgId, s.id, { tipo: 'erro', erro: impedimento });
-      await this.sessoes.encerrar(s.id, { status: SessionStatus.recusada, motivo: impedimento });
-      return this.resumoVazio(s.id, SessionStatus.recusada, impedimento, inicio);
+      await this.sessoes.passo(p.orgId, s.id, { tipo: 'erro', erro: impedimento.motivo });
+      await this.sessoes.encerrar(s.id, {
+        status: SessionStatus.recusada,
+        motivo: impedimento.motivo,
+      });
+      await this.registrarRecusaDePassagem(p, agent, s.id, impedimento);
+      return this.resumoVazio(s.id, SessionStatus.recusada, impedimento.motivo, inicio);
     }
 
     if (!this.llm.configured) throw new Error(`IA não configurada: falta credencial de ${this.llm.name}`);
@@ -507,8 +651,8 @@ export class AgentRuntime {
     let status: SessionStatus = SessionStatus.falhou;
     let motivo: string | null = null;
     let passos = 0;
-    /** Preenchido quando o teto de custo da EMPRESA parou a execução. */
-    let recusaDeTeto: TetoDiarioEstouradoError | null = null;
+    /** Preenchido quando um controle de custo de IA parou a execução. */
+    let recusaDeTeto: RecusaDeCustoDeIaError | null = null;
 
     for (passos = 0; passos < maxPassos; passos++) {
       if (custo > tetoUsd) {
@@ -531,6 +675,15 @@ export class AgentRuntime {
           effort: agent.effort as never,
           onTextDelta: p.onEvento ? (d) => emitir({ t: 'texto', delta: d }) : undefined,
           orgId: p.orgId,
+          /*
+           * DE QUEM É O GASTO (fatia A3). O envelope também leria isso do
+           * contexto de execução — a sessão inteira roda sob `agentSlug` —, e
+           * este campo é o cinto explícito por cima, pelo mesmo argumento do
+           * `orgId`: dado explícito é melhor que dado ambiente, e o dia em que
+           * alguém chamar o laço de fora do contexto o orçamento continua
+           * sabendo a quem cobrar.
+           */
+          agentSlug: agent.slug,
         });
       } catch (e) {
         /*
@@ -546,7 +699,19 @@ export class AgentRuntime {
          * outra parada, com `recusada` e o motivo em português. O que o modelo já
          * tinha gasto nos passos anteriores continua gravado.
          */
-        if (!(e instanceof TetoDiarioEstouradoError)) throw e;
+        /*
+         * A FAMÍLIA INTEIRA, e não só o teto do dia (fatia A3).
+         *
+         * Era `e instanceof TetoDiarioEstouradoError`. Quando o orçamento mensal
+         * por agente entrou, a recusa dele viria por aqui e ESCAPARIA — e
+         * escapar é o defeito que este `catch` existe para impedir: a sessão já
+         * está aberta e o pedido já está gravado, então a exceção que sobe deixa
+         * a linha sem situação e sem motivo, pendurada para sempre. Agora quem
+         * se trata é `RecusaDeCustoDeIaError`, a base das duas — e da terceira,
+         * que não vai precisar lembrar de vir editar esta linha
+         * (`llm/recusa-de-custo.ts`).
+         */
+        if (!(e instanceof RecusaDeCustoDeIaError)) throw e;
         recusaDeTeto = e;
         motivo = e.motivo;
         resposta = e.motivo;
@@ -774,7 +939,15 @@ export class AgentRuntime {
       // A rota precisa distinguir ISTO de "o agente respondeu": é um limite de
       // orçamento, e o código de resposta tem de dizer isso (ver o controlador).
       recusaDeTeto: recusaDeTeto
-        ? { motivo: recusaDeTeto.motivo, causa: recusaDeTeto.detalhe.causa, dia: recusaDeTeto.detalhe.dia }
+        ? {
+            motivo: recusaDeTeto.motivo,
+            causa: recusaDeTeto.causa,
+            // Só o teto do dia tem dia. Ver o comentário do campo em `SessionResumo`.
+            dia:
+              recusaDeTeto instanceof TetoDiarioEstouradoError
+                ? recusaDeTeto.detalhe.dia
+                : null,
+          }
         : undefined,
     };
   }
@@ -884,10 +1057,15 @@ export class AgentRuntime {
   }
 
   /**
-   * O que impede a sessão INTEIRA de acontecer.
+   * O que impede a sessão INTEIRA de acontecer — e com que NOME.
+   *
+   * Devolve `{ causa, motivo }` desde a fatia A2, e não só a frase: a `causa` é
+   * o rótulo estável que vai para o rastro (`agente.passagem_recusada`), do
+   * mesmo jeito que a porta usa `agente_rebaixado`. Sem ela, "quantas vezes
+   * chamaram este agente enquanto ele estava pausado?" não tinha resposta.
    *
    * O REBAIXAMENTO NÃO ENTRA AQUI, e a ausência é decisão, não esquecimento: as
-   * quatro condições abaixo são "este agente não trabalha"; rebaixamento é
+   * condições abaixo são "este agente não trabalha"; rebaixamento é
    * "trabalha com menos alcance". Devolver impedimento aqui por causa de
    * `rebaixadoAte` transformaria 24h de observação em 24h de agente mudo —
    * inclusive para ler e responder, que é justamente o que alguém precisa dele
@@ -895,16 +1073,106 @@ export class AgentRuntime {
    * teto que ele devolve viaja em `ExecCtx.tetoDoAgente` e quem o IMPÕE, por
    * chamada de ferramenta, é a porta.
    */
-  private impedimento(agent: Agent): string | null {
-    if (agent.estado === 'planejado') {
-      return 'Agente ainda não tem dono nem capacidade declarada — está planejado, não rodando.';
-    }
-    if (agent.estado === 'pausado') return 'Agente pausado.';
-    if (!agent.ativo) return 'Agente desativado.';
+  private impedimento(agent: Agent): { causa: string; motivo: string } | null {
+    /*
+     * O ESTADO DECLARADO VEM PRIMEIRO — fatia A2.
+     *
+     * Antes desta fatia havia duas comparações soltas de string aqui
+     * (`'planejado'` e `'pausado'`), com a frase escrita no lugar e sem nome
+     * estável para agrupar no rastro. Agora quem responde é
+     * `recusaPorEstado` (`estado-do-agente.ts`), que é o mesmo código que diz à
+     * TELA por que o botão está desabilitado. Duas cópias da regra é como as
+     * duas telas de horas passaram a se contradizer.
+     *
+     * Ordem: estado antes do interruptor `ativo` e antes da capacidade, porque
+     * "o dono mandou parar" é a resposta mais específica que existe — dizer
+     * "sem capacidade declarada" para um agente encerrado mandaria a pessoa
+     * declarar capacidade para um agente que nunca mais vai rodar.
+     */
+    const porEstado = recusaPorEstado(agent.estado);
+    if (porEstado) return porEstado;
+
+    /*
+     * `ativo` é o interruptor OPERACIONAL antigo, e ele sobrevive à fatia A2 de
+     * propósito: é o que o índice `(ativo, cron)` usa, e o que uma semente ou
+     * um script desligam sem tomar decisão de dono. Pausar e encerrar mexem nos
+     * DOIS (ver `AgentsService.definirEstado`), então esta linha só é alcançada
+     * por quem desligou o interruptor sem declarar estado.
+     */
+    if (!agent.ativo) return { causa: 'agente_desativado', motivo: 'Agente desativado.' };
     if (agent.capacidades.length === 0) {
-      return 'Agente sem capacidade declarada: começa sem permissão nenhuma, por desenho.';
+      return {
+        causa: 'agente_sem_capacidade',
+        motivo: 'Agente sem capacidade declarada: começa sem permissão nenhuma, por desenho.',
+      };
     }
     return null;
+  }
+
+  /**
+   * A RECUSA DE PASSAGEM NO RASTRO — fatia A2.
+   *
+   * Era o buraco que esta fatia fechou: a recusa por estado existia (o laço já
+   * barrava `pausado`), acontecia na sessão, e NÃO ENTRAVA NO RASTRO. Quem
+   * auditasse um mês de operação não conseguia responder "quantas vezes este
+   * agente foi chamado enquanto estava parado?" — e é justamente essa contagem
+   * que diz se alguém pausou o agente errado.
+   *
+   * O modelo é o `tool.recusado` da porta, que é quem já faz isso por chamada de
+   * ferramenta: tipo próprio, causa estável em `payload`, e o conteúdo nas
+   * palavras da política (`motivo`, `estadoAnterior`/`estadoNovo`).
+   *
+   * `nivel` fica NULO de propósito: não houve capacidade, não houve
+   * classificação e escrever um degrau aqui faria a conferência de completude do
+   * `/audit/verificar` cobrar campos de um nível que ninguém atribuiu.
+   *
+   * FALHA DO REGISTRO NÃO VIRA LIBERAÇÃO: a recusa já aconteceu quando esta
+   * função é chamada. O `catch` só grita.
+   */
+  private async registrarRecusaDePassagem(
+    p: ExecutarPedido,
+    agent: AgenteEmSessao,
+    sessionId: string,
+    impedimento: { causa: string; motivo: string },
+  ): Promise<void> {
+    if (!this.eventos) {
+      this.log.warn(
+        `empresa ${p.orgId}: passagem do agente "${agent.slug}" recusada ` +
+          `(${impedimento.causa}) SEM registro no rastro — o laço subiu sem EventLogService.`,
+      );
+      return;
+    }
+    try {
+      await this.eventos.registrar({
+        orgId: p.orgId,
+        tipo: 'agente.passagem_recusada',
+        actorType: p.solicitanteId ? ActorType.user : ActorType.system,
+        actorId: p.solicitanteId ?? null,
+        agentSlug: agent.slug,
+        payload: {
+          causa: impedimento.causa,
+          sessionId,
+          estado: agent.estado,
+          canal: p.canal,
+          heartbeat: p.heartbeat ?? null,
+        },
+        conteudo: {
+          // A pergunta que NÃO foi respondida. O pedido inteiro não entra: em
+          // canal externo ele é texto de terceiro, e o rastro desta linha não
+          // precisa dele para contar o que contou.
+          pergunta: `passagem do agente ${agent.slug} por ${p.canal}`,
+          motivo: impedimento.motivo,
+          resultado: { executou: false, causa: impedimento.causa },
+        },
+        sensibilidade: 'interna',
+      });
+    } catch (e) {
+      this.log.error(
+        `empresa ${p.orgId}: a recusa de passagem do agente "${agent.slug}" ` +
+          `(${impedimento.causa}) NÃO foi registrada no rastro: ${(e as Error).message} — ` +
+          'a recusa VALEU, nada foi executado.',
+      );
+    }
   }
 
   /**

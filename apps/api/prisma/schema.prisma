@@ -1597,7 +1597,42 @@ model WorkTask {
   title       String
   description String?
   priority    WorkPriority @default(normal)
+  /// RESPONSÁVEL HUMANO — texto livre, herdado da fotografia do ClickUp.
+  ///
+  /// NÃO é o executor, e a diferença é a fatia A4 inteira: `assignee` diz de
+  /// quem é a tarefa no organograma (e é texto, não ponteiro para `User` —
+  /// veio de fora assim), enquanto `agenteId` diz quem está COM ELA NA MÃO
+  /// agora. Uma tarefa pode ter responsável humano e nenhum agente (o normal),
+  /// agente e nenhum responsável (trabalho que nasceu da máquina), ou os dois
+  /// (a pessoa responde, o agente executa). Colapsar os dois num campo só
+  /// faria "atribuir a alguém" e "travar para execução" virarem a mesma
+  /// escrita — e é justamente essa segunda que precisa ser atômica.
   assignee    String?
+  /// AGENTE EXECUTOR — o DONO ÚNICO da tarefa, conquistado por checkout
+  /// atômico (fatia A4, `src/work/checkout-de-tarefa.service.ts`).
+  ///
+  /// Nulo = livre. Preenchido = travada, e só um agente por vez: quem assume
+  /// vence uma única instrução condicional (`UPDATE ... WHERE "agenteId" IS
+  /// NULL`), e quem perde a corrida recebe 409. Ler para depois escrever
+  /// deixaria dois agentes fazendo o mesmo trabalho sem ninguém perceber, que
+  /// é o defeito que esta coluna existe para tornar impossível.
+  ///
+  /// `onDelete: SetNull` de propósito: agente apagado à mão SOLTA a tarefa, em
+  /// vez de deixá-la presa a um dono que não existe mais. Ponteiro órfão aqui
+  /// seria exatamente o travamento eterno que a fatia previne — e a história de
+  /// quem teve a tarefa fica no RASTRO, não nesta coluna.
+  ///
+  /// A EMPRESA É CONFERIDA NO BANCO: o gatilho `WorkTask_orgId_confere_agente`
+  /// (migration `20260913030000_tarefa_com_dono_unico`) recusa pendurar agente
+  /// de uma empresa em tarefa de outra — a chave estrangeira simples não vê
+  /// isso, e `include: { agente: ... }` traria o nome de quem estiver do outro
+  /// lado (mesma armadilha de `donos-da-casa.ts`, ver `agentes-da-casa.ts`).
+  agenteId    String?
+  agente      Agent?       @relation("TarefasDoAgente", fields: [agenteId], references: [id], onDelete: SetNull)
+  /// QUANDO o checkout aconteceu. Responde "desde quando esta tarefa está
+  /// travada?", que é a pergunta de quem procura trabalho parado; nulo sempre
+  /// que `agenteId` é nulo, e os dois são escritos e apagados juntos.
+  agenteEm    DateTime?
   dueDate     DateTime?
   startDate   DateTime?
   parentId    String?
@@ -1617,6 +1652,10 @@ model WorkTask {
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
   @@index([orgId, archived, dueDate])
+  /// "O que este agente tem na mão" e "o que está travado desde quando" — as
+  /// duas perguntas da tela de A4, e a de soltar tudo quando o agente é pausado
+  /// ou encerrado. `orgId` à frente porque é tabela de tenant.
+  @@index([orgId, agenteId, agenteEm])
 }
 
 /// Dois pais obrigatórios (WorkTask e WorkField). Aqui o gatilho é DOIS: o
@@ -1931,11 +1970,41 @@ model EventLog {
 // capacidade nomeada: capacidade fora da declaração é recusada pela porta.
 // ============================================================================
 
+/// O estado DECLARADO de uma ROTINA (`Rotina.estado`) — e só dela, desde a
+/// fatia A2. O agente tem enum próprio (`EstadoDeAgente`) porque o vocabulário
+/// dele passou a ter `encerrado`, que para rotina não quer dizer nada, e porque
+/// `/rotinas` oferece na tela TODOS os valores deste enum: um valor a mais aqui
+/// aparecia como opção de rotina sem semântica nenhuma do outro lado.
 enum AgentEstado {
   rodando
   aprendendo
   planejado
   pausado
+}
+
+/// O ESTADO DECLARADO DE UM AGENTE — fatia A2.
+///
+/// São QUATRO, e é o eixo da DECISÃO do dono: o que ele mandou acontecer com
+/// este agente. O que o agente está FAZENDO agora (rodando, ocioso, erro na
+/// última passagem) não mora aqui: é derivado de `Session` e de `ultimoStatus`
+/// por `agents/estado-do-agente.ts`, e a tela mostra os dois selos lado a lado.
+///
+/// Guardar os dois eixos na mesma coluna era a alternativa óbvia e está
+/// recusada por escrito: pausar um agente no meio de uma passagem apagaria o
+/// "rodando", e um `erro` gravado apagaria o `pausado` que uma pessoa declarou
+/// — o banco passaria a ter uma verdade que ninguém pediu, escrita pelo laço
+/// por cima da decisão do dono.
+enum EstadoDeAgente {
+  /// Nasceu e ninguém ligou: sem dono, sem capacidade, sem passar pela porta.
+  planejado
+  /// Em operação. É o único estado em que o laço aceita rodar.
+  ativo
+  /// Freio do dono. Não roda, e VOLTA quando alguém retomar.
+  pausado
+  /// Fora de circulação para sempre. Não roda e NÃO VOLTA — o histórico dele
+  /// continua no rastro e nas sessões, que é a diferença entre encerrar e
+  /// apagar. Nenhuma transição sai daqui (ver `TRANSICOES` no mesmo arquivo).
+  encerrado
 }
 
 enum AgentTipo {
@@ -1958,8 +2027,17 @@ model Agent {
   donoId   String?
   dono     User?   @relation("AgentDono", fields: [donoId], references: [id])
 
-  tipo   AgentTipo   @default(llm)
-  estado AgentEstado @default(planejado)
+  tipo AgentTipo @default(llm)
+  /// O estado DECLARADO — a decisão do dono. Ver `EstadoDeAgente`.
+  estado EstadoDeAgente @default(planejado)
+  /// Quem declarou o estado atual, quando, e POR QUÊ. Os três juntos, porque
+  /// separados não respondem nada: "pausado" sem autor e sem motivo é um
+  /// agente parado que ninguém sabe se pode religar. O histórico completo está
+  /// no rastro (`agente.pausado`/`retomado`/`encerrado`); estas três colunas
+  /// são a projeção que a tela lê sem varrer o rastro.
+  estadoPorId  String?
+  estadoEm     DateTime?
+  estadoMotivo String?
 
   /// RF-N-03: as ferramentas que ele declarou. Fora desta lista, a porta recusa.
   capacidades  String[]
@@ -1974,6 +2052,34 @@ model Agent {
   maxPassos    Int      @default(8)
   tetoCustoUsd Decimal  @default(0.50) @db.Decimal(10, 4)
   tetoSegundos Int      @default(180)
+
+  /// ORÇAMENTO MENSAL DE IA DESTE AGENTE, em dólar (fatia A3).
+  ///
+  /// É o TERCEIRO eixo de contenção de gasto, e os outros dois continuam:
+  /// `tetoCustoUsd` corta uma EXECUÇÃO (imposto pelo laço, passo a passo) e
+  /// `TetoDeCustoIa` corta a EMPRESA no DIA. Faltava a pergunta que um dono de
+  /// negócio faz: "quanto este agente me custa por mês?".
+  ///
+  /// Em dólar porque é a moeda em que o provedor cobra e em que `preco.ts`
+  /// calcula. Converter para real aqui seria gravar uma cotação que envelhece.
+  ///
+  /// Zero com `orcamentoAtivo = false` é o estado de todo agente antes de
+  /// alguém decidir: não há orçamento, nada é cortado. Zero com
+  /// `orcamentoAtivo = true` é decisão — "este agente não chama modelo" —, e a
+  /// recusa tem causa própria (`agente_orcamento_zerado`).
+  orcamentoMensalUsd Decimal @default(0) @db.Decimal(10, 4)
+
+  /// Desligado, o orçamento NÃO corta e o gasto continua sendo somado e
+  /// mostrado. É o modo de observação que permite calibrar o valor antes de
+  /// impor — a mesma decisão de `TetoDeCustoIa.ativo`.
+  orcamentoAtivo Boolean @default(false)
+
+  /// Quem definiu o orçamento, quando, e por quê. Orçamento é decisão de
+  /// negócio: sem isto, quem abrir a tela seis meses depois não tem a quem
+  /// perguntar. Mesmo trio de `estadoPorId`/`estadoEm`/`estadoMotivo`.
+  orcamentoPorId  String?
+  orcamentoEm     DateTime?
+  orcamentoMotivo String?
   /// As regras da casa DESTE agente — o ContextItem do PRD em versão mínima.
   contextoFixo String[]
 
@@ -1999,6 +2105,10 @@ model Agent {
 
   sop      Sop?
   sessions Session[]
+  /// As tarefas do quadro que este agente tem NA MÃO agora (fatia A4). Só as
+  /// travadas: soltar a tarefa apaga o ponteiro, e o histórico de quem a teve
+  /// mora no RASTRO. Lado inverso de `WorkTask.agente`.
+  tarefas  WorkTask[] @relation("TarefasDoAgente")
 
   @@unique([orgId, slug])
   @@index([orgId, estado])
@@ -2051,8 +2161,10 @@ model Session {
   orgId   String
   org     Org    @relation(fields: [orgId], references: [id])
   agentId String
-  /// SEM onDelete: Cascade. Agente sai de circulação com estado 'pausado',
-  /// nunca com DELETE — apagar o agente apagaria o histórico dele.
+  /// SEM onDelete: Cascade. Agente sai de circulação com estado 'encerrado'
+  /// (fatia A2 — antes era 'pausado', que voltava), nunca com DELETE: apagar o
+  /// agente apagaria o histórico dele, e é justamente esse histórico que faz
+  /// encerrar ser diferente de apagar.
   agent   Agent  @relation(fields: [agentId], references: [id])
 
   canal             SessionCanal

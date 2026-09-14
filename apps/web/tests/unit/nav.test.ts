@@ -7,6 +7,7 @@ import {
   SECOES,
   MODULOS,
   navPorSecao,
+  navEmArvore,
   type RoleKey,
 } from '@mktos/shared';
 import { ROTAS_ANTIGAS } from '../../rotas-antigas.mjs';
@@ -270,8 +271,11 @@ describe('navPorSecao', () => {
   });
 
   it('aceita array, e não só Set', () => {
+    // `auditoria.ver` abre as DUAS leituras do rastro desde a fatia A9: a prova
+    // (`/rastro`) e a história (`/linha-do-tempo`). Na ordem do NAV.
     expect(navPorSecao(['auditoria.ver']).flatMap((g) => g.itens.map((i) => i.key))).toEqual([
       'rastro',
+      'linha-do-tempo',
     ]);
   });
 
@@ -290,5 +294,78 @@ describe('navPorSecao', () => {
     expect(veem).toContain('analista');
     expect(veem).toContain('admin_master');
     expect(veem.length).toBeGreaterThan(3);
+  });
+});
+
+/*
+ * O SUBMENU (fatia A1 do docs/PLANO-CONTROLE-DE-AGENTES.md).
+ *
+ * Aninhar item de menu é mexer em ACESSO por acidente: o filho tem permissão e
+ * módulo próprios, e a tentação é fazê-lo depender do pai. Estes casos travam
+ * as duas coisas que não podem quebrar — nada desaparece, e o desenho não
+ * inventa hierarquia onde o NAV não declarou.
+ */
+describe('navEmArvore', () => {
+  const todas = new Set(NAV.map((n) => n.permission));
+  const planos = (ps: Iterable<string>, mods?: Iterable<string>) =>
+    navEmArvore(ps, mods).flatMap((g) => g.itens.flatMap((no) => [no.item, ...no.filhos]));
+
+  it('não perde nem repete item nenhum em relação à lista plana', () => {
+    const arvore = planos(todas).map((i) => i.key);
+    const plana = navPorSecao(todas)
+      .flatMap((g) => g.itens)
+      .map((i) => i.key);
+    expect(new Set(arvore)).toEqual(new Set(plana));
+    expect(arvore).toHaveLength(plana.length);
+  });
+
+  it('o filho vem dentro do pai, e não no topo da seção', () => {
+    const execucao = navEmArvore(todas).find((g) => g.secao.key === 'execucao')!;
+    expect(execucao.itens.map((no) => no.item.key)).not.toContain('tarefas');
+    const trabalho = execucao.itens.find((no) => no.item.key === 'trabalho')!;
+    expect(trabalho.filhos.map((f) => f.key)).toEqual(['tarefas']);
+  });
+
+  /*
+   * O CASO QUE CUSTA ACESSO SE FOR ESQUECIDO, e que é real: `funil` pede
+   * `dashboard.ver` e o pai dele, `leads`, pede `leads.ver`. Quem opera sem
+   * `leads.ver` TEM o Funil — se o filho caísse com o pai, a tela sumiria do
+   * menu sem nada acusar.
+   */
+  it('filho cujo pai foi filtrado sobe para o primeiro nível, e não desaparece', () => {
+    const grupos = navEmArvore(new Set(['dashboard.ver']));
+    const entra = grupos.find((g) => g.secao.key === 'entra')!;
+    expect(entra.itens.map((no) => no.item.key)).toContain('funil');
+    expect(entra.itens.every((no) => no.filhos.length === 0)).toBe(true);
+  });
+
+  it('módulo desligado tira pai e filho juntos', () => {
+    const chaves = planos(todas, ['financeiro']).map((i) => i.key);
+    expect(chaves).not.toContain('trabalho');
+    expect(chaves).not.toContain('tarefas');
+    expect(chaves).toContain('financeiro');
+  });
+
+  it('preserva a ordem do NAV dentro de cada seção', () => {
+    const sai = navEmArvore(todas).find((g) => g.secao.key === 'sai')!;
+    const pauta = sai.itens.find((no) => no.item.key === 'pauta')!;
+    expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
+    expect(sai.itens.map((no) => no.item.key)).toEqual(
+      NAV.filter((n) => n.secao === 'sai' && !n.pai).map((n) => n.key),
+    );
+  });
+
+  /*
+   * Trava de DADO, não de desenho: pai que não existe, ou que mora em outra
+   * seção, faz o filho ser tratado como órfão — ele aparece, mas fora do lugar
+   * pretendido, e ninguém descobre olhando a tela. Aqui descobre.
+   */
+  it('todo pai declarado existe e vive na mesma seção do filho', () => {
+    for (const n of NAV.filter((i) => i.pai)) {
+      const pai = NAV.find((i) => i.key === n.pai);
+      expect(pai, `pai '${n.pai}' de '${n.key}' não existe no NAV`).toBeDefined();
+      expect(pai!.secao, `'${n.key}' e o pai dele estão em seções diferentes`).toBe(n.secao);
+      expect(pai!.pai, `menu é de dois níveis: '${n.pai}' não pode ser filho`).toBeUndefined();
+    }
   });
 });

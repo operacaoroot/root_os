@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EventLogService } from '../gateway/event-log.service';
 import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { estimarCustoUsd, type EstimativaDeCusto, type TamanhoDaEntrada } from './estimativa';
+import { RecusaDeCustoDeIaError } from './recusa-de-custo';
 
 /*
  * TETO DE CUSTO DE IA POR EMPRESA E POR DIA (RF-G-05, RNF-05) — o terceiro nível.
@@ -101,10 +102,17 @@ export type CausaDoCorte = 'zerado' | 'chamada_maior_que_o_teto' | 'dia_no_teto'
  * falha de rede sem ler o texto da mensagem — e para que a mensagem seja escrita
  * uma vez só, em português, para quem opera.
  */
-export class TetoDiarioEstouradoError extends Error {
+export class TetoDiarioEstouradoError extends RecusaDeCustoDeIaError {
   readonly nome = 'TetoDiarioEstouradoError';
+  /**
+   * O rótulo estável, exigido pela família (`recusa-de-custo.ts`). Prefixado
+   * com `teto_dia_` para não colidir com a causa homônima do orçamento do
+   * agente — `dia_no_teto` e `mes_no_teto` são cortes diferentes, e quem
+   * agrupar o RASTRO precisa saber qual dos dois barrou.
+   */
+  readonly causa: string;
   constructor(
-    readonly motivo: string,
+    motivo: string,
     readonly detalhe: {
       orgId: string;
       dia: string;
@@ -117,8 +125,9 @@ export class TetoDiarioEstouradoError extends Error {
       modelo: string;
     },
   ) {
-    super(motivo);
+    super(detalhe.orgId, motivo);
     this.name = 'TetoDiarioEstouradoError';
+    this.causa = `teto_dia_${detalhe.causa}`;
   }
 }
 

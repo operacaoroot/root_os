@@ -6,6 +6,9 @@ import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
 import { Procedimento } from './Procedimento';
+import { ControleDoAgente } from './ControleDoAgente';
+import { Orcamento } from './Orcamento';
+import type { EstadoDeAgente, SituacaoDeAgente } from './estado';
 
 /*
  * Rótulo em português dos sete campos do procedimento. O nome técnico vem da
@@ -29,7 +32,14 @@ interface Agente {
   pilar: string | null;
   dono: { id: string; nome: string } | null;
   tipo: 'llm' | 'conector';
-  estado: string;
+  /* A DECISÃO do dono (coluna). Ver `estado.ts`. */
+  estado: EstadoDeAgente;
+  /* O que ESTÁ ACONTECENDO — derivado no servidor, nunca calculado aqui. */
+  situacao: SituacaoDeAgente;
+  estadoPor: string | null;
+  estadoEm: string | null;
+  estadoMotivo: string | null;
+  transicoes: string[];
   autonomiaAte: string;
   rebaixadoAte: string | null;
   capacidades: string[];
@@ -38,8 +48,32 @@ interface Agente {
   ultimoStatus: string | null;
   execucoes: number;
   falhas: number;
-  horasDevolvidas: number | null;
+  /*
+   * AS HORAS, COM A PROCEDÊNCIA (fatia A3). `naSemana` é MEDIDO do log de
+   * passagens — sessões com bom desfecho nos últimos sete dias —, e é o mesmo
+   * cálculo que `/rotinas` faz. O campo `horasDevolvidas` de antes SAIU: ele era
+   * acumulado de vida inteira com as passagens que falharam dentro, publicado
+   * como se fosse semanal.
+   */
+  horas: {
+    estado: 'sem-linha-de-base' | 'sem-historico' | 'medida';
+    naSemana: number | null;
+    passagensNaSemana: number;
+    diasDaJanela: number;
+    janelaCoberta: boolean;
+    cobreDesde: string | null;
+  };
+  /** Vida inteira, e a tela diz isso. Nunca no lugar do semanal. */
+  horasAcumuladas: number | null;
+  passagensBemSucedidas: number;
   linhaDeBase: { minutosPorExecucao: number; informadaEm: string | null } | null;
+  orcamento: {
+    mensalUsd: number;
+    ativo: boolean;
+    definidoEm: string | null;
+    definidoPor: string | null;
+    motivo: string | null;
+  } | null;
   temProcedimento: boolean;
   procedimento: { versao: number; atualizadoEm: string } | null;
   /** Dos SETE campos do formato fixo, quais faltam neste agente. */
@@ -49,9 +83,26 @@ interface Agente {
 interface Roster {
   items: Agente[];
   kpis: {
-    rodando: number;
+    /* Quantos o dono deixou em operação (decisão) … */
+    ativos: number;
+    /* … e quantos têm sessão viva NESTE momento (medição). Ver o bloco de
+       `kpis` em `agents.service.ts`: eram um número só, chamado "Rodando",
+       que contava o estado declarado. */
+    rodandoAgora: number;
+    comErro: number;
+    pausados: number;
+    encerrados: number;
     horasSemana: number | null;
+    /* O que a soma NÃO cobre — a tela publica isso junto com o número. */
+    horasSemanaDe: {
+      agentesContados: number;
+      semLinhaDeBase: number;
+      semHistorico: number;
+      parciais: number;
+      diasDaJanela: number;
+    };
     semLinhaDeBase: number;
+    comOrcamento: number;
     semProcedimento: number;
   };
 }
@@ -91,14 +142,53 @@ export default function AgentesPage() {
       {erro && <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <KpiCard label="Rodando" value={data?.kpis.rodando ?? '—'} icon="Users" tone="brand" />
+        {/*
+          DOIS CARTÕES ONDE HAVIA UM, e é conserto de mentira: o cartão
+          "Rodando" contava `estado === 'rodando'`, o estado DECLARADO — ou seja,
+          dava o mesmo número para um agente trabalhando agora e para um parado
+          há três semanas. Agora um diz a DECISÃO e o outro a MEDIÇÃO.
+        */}
         <KpiCard
-          label="Horas devolvidas"
+          label="Em operação"
+          value={data?.kpis.ativos ?? '—'}
+          hint="estado declarado pelo dono — não quer dizer que estão rodando agora"
+          icon="Users"
+          tone="brand"
+        />
+        <KpiCard
+          label="Rodando agora"
+          value={data?.kpis.rodandoAgora ?? '—'}
+          hint={
+            data && data.kpis.comErro > 0
+              ? `sessão viva neste momento · ${data.kpis.comErro} com erro na última passagem`
+              : 'sessão viva neste momento'
+          }
+          icon="Activity"
+          tone={data && data.kpis.comErro > 0 ? 'warn' : 'default'}
+        />
+        {/*
+          O CARTÃO DEIXOU DE MENTIR (fatia A3). Ele publicava a soma de
+          `linha de base × execuções de vida inteira`, com as passagens que
+          falharam dentro, embaixo do rótulo "Horas devolvidas" — ao lado do
+          cartão de `/rotinas`, que diz "por semana". Agora é a medição da
+          semana, do log real de passagens, e o `hint` diz a janela e quantos
+          agentes ficaram fora da soma.
+        */}
+        <KpiCard
+          label={`Horas devolvidas · ${data?.kpis.horasSemanaDe.diasDaJanela ?? 7} dias`}
           value={data?.kpis.horasSemana ?? '—'}
           hint={
-            data?.kpis.horasSemana == null
-              ? 'ninguém informou a linha de base ainda'
-              : 'soma das linhas de base declaradas'
+            data == null
+              ? 'medindo…'
+              : data.kpis.horasSemana == null
+                ? 'ninguém informou a linha de base ainda — sem ela não há o que contar'
+                : `medido de ${data.kpis.horasSemanaDe.agentesContados} agente(s)` +
+                  (data.kpis.horasSemanaDe.semLinhaDeBase > 0
+                    ? ` · ${data.kpis.horasSemanaDe.semLinhaDeBase} fora por falta de linha de base`
+                    : '') +
+                  (data.kpis.horasSemanaDe.semHistorico > 0
+                    ? ` · ${data.kpis.horasSemanaDe.semHistorico} sem histórico`
+                    : '')
           }
           icon="Clock"
         />
@@ -206,13 +296,31 @@ export default function AgentesPage() {
             )}
 
             <div className="mt-3 flex flex-wrap items-baseline gap-2 border-t border-border pt-3">
-              {a.horasDevolvidas != null ? (
+              {a.horas.naSemana != null ? (
+                /*
+                  A FÓRMULA CONTINUA NA TELA, e agora ela é a verdadeira: a
+                  linha de base declarada × as passagens com bom desfecho DA
+                  SEMANA. Antes era × `execucoes`, o contador de vida inteira
+                  com as falhas dentro — mesma tela, mesma fórmula visível,
+                  número que nunca aconteceu.
+
+                  O acumulado não desapareceu: ele aparece ao lado, com o nome
+                  "acumulado", que é o que ele é.
+                */
                 <p className="font-os-mono text-[10px] text-muted">
-                  <span className="text-text">{a.horasDevolvidas} h</span> devolvidas
+                  <span className="text-text">{a.horas.naSemana} h</span> devolvidas em{' '}
+                  {a.horas.diasDaJanela} dias
                   <span className="text-dim">
                     {' '}
-                    = {a.linhaDeBase!.minutosPorExecucao} min × {a.execucoes} execuções
+                    = {a.linhaDeBase!.minutosPorExecucao} min × {a.horas.passagensNaSemana} passagem(ns)
                   </span>
+                  {a.horasAcumuladas != null && (
+                    <span className="text-dim"> · {a.horasAcumuladas} h acumuladas na vida inteira</span>
+                  )}
+                </p>
+              ) : a.horas.estado === 'sem-historico' ? (
+                <p className="font-os-mono text-[10px] text-warn">
+                  não deu para contar as passagens da semana — horas não medidas
                 </p>
               ) : editando === a.slug ? (
                 <div className="flex items-center gap-2">
@@ -256,6 +364,34 @@ export default function AgentesPage() {
                 sessões
               </Link>
             </div>
+
+            {/*
+              O ORÇAMENTO MENSAL DE IA — fatia A3. `podeDefinir` é a MESMA dupla
+              que a API exige em `CONFIGURAR_AGENTE`; cortesia de tela, quem
+              recusa de verdade é a rota.
+            */}
+            <Orcamento
+              slug={a.slug}
+              orcamento={a.orcamento}
+              token={token}
+              podeDefinir={can('automacoes.executar') && can('admin.usuarios')}
+              aoMudar={carregar}
+            />
+
+            {/*
+              O ESTADO E OS BOTÕES — fatia A2.
+              `podeComandar` é `admin.usuarios`, a MESMA chave do interruptor de
+              conector; `podeInvocar` é a dupla que a API exige para fazer um
+              agente rodar (`EXECUTAR_AGENTE` no controlador). As duas aqui são
+              cortesia de tela: quem recusa de verdade é a API.
+            */}
+            <ControleDoAgente
+              agente={a}
+              token={token}
+              podeComandar={can('admin.usuarios')}
+              podeInvocar={can('mcp.executar') && can('admin.usuarios')}
+              aoMudar={carregar}
+            />
           </div>
         ))}
       </div>

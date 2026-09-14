@@ -5,7 +5,7 @@
  *
  *   pnpm --filter @mktos/api db:seed:tripulacao
  */
-import { AgentEstado, AgentTipo, PrismaClient, RiskLevel } from '@prisma/client';
+import { AgentTipo, EstadoDeAgente, PrismaClient, RiskLevel } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -16,7 +16,7 @@ interface Semente {
   missao: string;
   pilar: string;
   tipo: AgentTipo;
-  estado: AgentEstado;
+  estado: EstadoDeAgente;
   autonomiaAte: RiskLevel;
   capacidades: string[];
   cron?: string;
@@ -30,43 +30,43 @@ const ROSTER: Semente[] = [
   {
     slug: 'sincronizador-clickup', nome: 'Sincronizador do ClickUp', iniciais: 'SC',
     missao: 'trazer tarefas e conteúdos do ClickUp para dentro da central, de hora em hora',
-    pilar: 'Operação', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Operação', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R0, capacidades: [], cron: '0 * * * *',
   },
   {
     slug: 'indexador-vault', nome: 'Indexador do vault', iniciais: 'IV',
     missao: 'manter a base de conhecimento buscável — varre o vault e gera os embeddings',
-    pilar: 'Contexto', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Contexto', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R0, capacidades: [], cron: '*/30 * * * *',
   },
   {
     slug: 'conciliador-bancario', nome: 'Conciliador bancário', iniciais: 'CB',
     missao: 'puxar extrato e saldo dos bancos conectados e manter o caixa em dia',
-    pilar: 'Financeiro', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Financeiro', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R0, capacidades: [], cron: '0 */6 * * *',
   },
   {
     slug: 'coletor-bio', nome: 'Coletor da bio', iniciais: 'CO',
     missao: 'coletar as métricas de Instagram e TikTok do desafio e renovar os tokens antes de vencerem',
-    pilar: 'Presença', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Presença', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R0, capacidades: [], cron: '0 */6 * * *',
   },
   {
     slug: 'ponte-metas', nome: 'Ponte das metas', iniciais: 'PM',
     missao: 'recalcular os cliques da bio dentro da meta da semana',
-    pilar: 'Presença', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Presença', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R0, capacidades: [], cron: '0 */12 * * *',
   },
   {
     slug: 'editor-de-pauta', nome: 'Editor de pauta', iniciais: 'EP',
     missao: 'coletar os feeds, curar a janela e derivar as peças de cada canal',
-    pilar: 'Conteúdo', tipo: AgentTipo.conector, estado: AgentEstado.rodando,
+    pilar: 'Conteúdo', tipo: AgentTipo.conector, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R1, capacidades: [], cron: '* * * * *',
   },
   {
     slug: 'briefing-diario', nome: 'Briefing diário', iniciais: 'BD',
     missao: 'contar em uma página o que aconteceu ontem e o que precisa de atenção hoje',
-    pilar: 'Operação', tipo: AgentTipo.llm, estado: AgentEstado.rodando,
+    pilar: 'Operação', tipo: AgentTipo.llm, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R1, cron: '0 8 * * *',
     capacidades: [
       'numeros.painel.ler', 'numeros.funil.ler', 'operacao.tarefa.atrasada',
@@ -87,7 +87,7 @@ const ROSTER: Semente[] = [
   {
     slug: 'assistente', nome: 'Assistente da central', iniciais: 'AC',
     missao: 'responder perguntas sobre o negócio em português, sempre com a fonte do número',
-    pilar: 'Contexto', tipo: AgentTipo.llm, estado: AgentEstado.rodando,
+    pilar: 'Contexto', tipo: AgentTipo.llm, estado: EstadoDeAgente.ativo,
     autonomiaAte: RiskLevel.R1,
     capacidades: [
       'contexto.memoria.buscar', 'numeros.painel.ler', 'numeros.funil.ler',

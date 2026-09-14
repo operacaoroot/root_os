@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PrismaClient, AgentEstado, AgentTipo, RiskLevel } from '@prisma/client';
+import { PrismaClient, AgentTipo, EstadoDeAgente, RiskLevel } from '@prisma/client';
 import type { Agent, Sop } from '@prisma/client';
 import * as sopModulo from '../src/agents/sop';
 import {
@@ -18,6 +18,7 @@ import type { LadoDoAgente } from '../src/agents/sop';
 import { AgenteIdentidadeSchema, AgentsService } from '../src/agents/agents.service';
 import { nomeDoDonoDaCasa } from '../src/agents/donos-da-casa';
 import { AuditService } from '../src/audit/audit.service';
+import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -502,7 +503,7 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
 
     const base = {
       tipo: AgentTipo.llm,
-      estado: AgentEstado.rodando,
+      estado: EstadoDeAgente.ativo,
       autonomiaAte: RiskLevel.R1,
       capacidades: ['numeros.painel.ler'],
       contextoFixo: [],
@@ -562,7 +563,13 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
     });
 
     const p = prisma as unknown as PrismaService;
-    servico = new AgentsService(p, new AuditService(p));
+    servico = new AgentsService(
+      p,
+      new AuditService(p),
+      // Ver a nota igual em `horas-do-agente.test.ts`: `definirEstado` solta as
+      // tarefas do agente, então o serviço exige o checkout (fatia A4).
+      new CheckoutDeTarefaService(p, new AuditService(p)),
+    );
   });
 
   afterAll(async () => {

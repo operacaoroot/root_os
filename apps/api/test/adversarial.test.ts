@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import {
   ActorType,
-  AgentEstado,
+  EstadoDeAgente,
   AgentTipo,
   PrismaClient,
   RiskLevel,
@@ -1840,7 +1840,7 @@ describe.skipIf(!URL)('as três portas de conteúdo externo, no laço de verdade
         iniciais: 'AL',
         missao: 'responder com fonte',
         tipo: AgentTipo.llm,
-        estado: AgentEstado.rodando,
+        estado: EstadoDeAgente.ativo,
         autonomiaAte: RiskLevel.R1,
         capacidades: ['contexto.memoria.buscar', 'email.rascunhar'],
       },

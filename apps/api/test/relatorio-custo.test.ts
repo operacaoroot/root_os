@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   ActorType,
-  AgentEstado,
+  EstadoDeAgente,
   AgentTipo,
   PrismaClient,
   SessionCanal,
@@ -11,6 +11,7 @@ import {
 
 import { EventLogService } from '../src/gateway/event-log.service';
 import { TetoDeCustoIaService } from '../src/llm/teto-diario.service';
+import { OrcamentoDeAgenteService } from '../src/llm/orcamento-de-agente.service';
 import {
   DIAS_MAXIMO,
   DIAS_PADRAO,
@@ -179,7 +180,7 @@ describe.skipIf(!URL)('o relatório de custo de IA, contra um Postgres de verdad
         iniciais: 'AN',
         missao: 'medir custo',
         tipo: AgentTipo.llm,
-        estado: AgentEstado.rodando,
+        estado: EstadoDeAgente.ativo,
         capacidades: [],
       },
       update: {},
@@ -242,7 +243,18 @@ describe.skipIf(!URL)('o relatório de custo de IA, contra um Postgres de verdad
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.$connect();
     p = prisma as unknown as PrismaService;
-    svc = new RelatorioDeCustoIaService(p, new TetoDeCustoIaService(p, new EventLogService(p)));
+    /*
+     * O TERCEIRO ARGUMENTO É A FATIA A3: o panorama de orçamento por agente. É o
+     * serviço DE VERDADE, e não um dublê — ele lê as mesmas tabelas contra o
+     * mesmo Postgres, e é justamente a leitura dele que precisa continuar
+     * enxergando só a empresa do contexto (o caso "uma empresa não enxerga o
+     * gasto da outra" passa por aqui agora).
+     */
+    svc = new RelatorioDeCustoIaService(
+      p,
+      new TetoDeCustoIaService(p, new EventLogService(p)),
+      new OrcamentoDeAgenteService(p, new EventLogService(p)),
+    );
     await limpar();
     await semear(ORG_COM_LIVRO, true);
     await semear(ORG_SEM_LIVRO, false);

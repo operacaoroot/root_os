@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { Client } from 'pg';
 import {
   ActorType,
-  AgentEstado,
+  EstadoDeAgente,
   AgentTipo,
   BioPlataforma,
   PrismaClient,
@@ -1648,11 +1648,11 @@ describe.skipIf(!URL)('o contexto entregue ao modelo nunca contém credencial', 
         iniciais: 'AC',
         missao: 'responder com fonte',
         tipo: AgentTipo.llm,
-        estado: AgentEstado.rodando,
+        estado: EstadoDeAgente.ativo,
         autonomiaAte: RiskLevel.R1,
         capacidades: ['numeros.painel.ler'],
       },
-      update: { estado: AgentEstado.rodando, ativo: true, capacidades: ['numeros.painel.ler'] },
+      update: { estado: EstadoDeAgente.ativo, ativo: true, capacidades: ['numeros.painel.ler'] },
     });
 
     const p = prisma as unknown as PrismaService;

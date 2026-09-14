@@ -111,7 +111,15 @@ export interface ResultadoDeBusca {
 
 /* --------------------------------------------------------------- agentes -- */
 
-export type EstadoDeTripulante = 'rodando' | 'aprendendo' | 'planejado' | 'pausado';
+/**
+ * O estado DECLARADO de um agente — o enum `EstadoDeAgente` do banco.
+ *
+ * Mudou na fatia A2: era o vocabulário compartilhado com as rotinas
+ * (`rodando`/`aprendendo`) e passou a ser o do agente. `ativo` é o que
+ * `rodando` queria dizer; `rodando` agora é SITUAÇÃO (derivada de sessão viva)
+ * e não estado. Ver `apps/api/src/agents/estado-do-agente.ts`.
+ */
+export type EstadoDeTripulante = 'planejado' | 'ativo' | 'pausado' | 'encerrado';
 
 export interface AgenteDoMapa {
   slug: string;
@@ -130,7 +138,25 @@ export interface AgenteDoMapa {
   ultimoStatus: string | null;
   execucoes: number;
   falhas: number;
-  horasDevolvidas: number | null;
+  /*
+   * AS HORAS, COMO O ROSTER PASSOU A DEVOLVÊ-LAS (fatia A3).
+   *
+   * O campo `horasDevolvidas: number | null` de antes era ACUMULADO de vida
+   * inteira com as passagens que falharam dentro — e a gaveta do mapa o
+   * publicava sob o rótulo "horas devolvidas", virando o TERCEIRO lugar a
+   * afirmar o mesmo número errado (a tela de Agentes e o cartão dela eram os
+   * outros dois). Agora o semanal e o acumulado viajam separados, com nome.
+   */
+  horas: {
+    estado: 'sem-linha-de-base' | 'sem-historico' | 'medida';
+    naSemana: number | null;
+    passagensNaSemana: number;
+    diasDaJanela: number;
+    janelaCoberta: boolean;
+    cobreDesde: string | null;
+  };
+  horasAcumuladas: number | null;
+  passagensBemSucedidas: number;
   temProcedimento: boolean;
   faltando: string[];
 }
@@ -189,6 +215,24 @@ export interface RotinaDoMapa {
   ultimaExecucaoEm: string | null;
   ultimoStatus: string | null;
   proximaExecucaoEm: string | null;
+  /*
+   * A LINHA DE BASE, e o produto dela que NÃO se publica (a dívida gêmea da
+   * fatia A3).
+   *
+   * `minutosDevolvidos` é `minutosPorExecucao × Rotina.execucoes`, e `execucoes`
+   * soma as passagens que deram ERRO. A gaveta o publicava como "tempo
+   * devolvido", sem período, ao lado de uma tela (`/rotinas`) que publica o
+   * mesmo fato como "por semana" e de outra (`/agentes`) que a fatia A3 acabou
+   * de consertar: três números para um fato.
+   *
+   * O semanal exige o LOG de passagens, e o mapa não o busca (seria uma
+   * requisição por rotina para desenhar dezenove pontos). Então aqui fica o que
+   * dá para afirmar com honestidade: o acumulado DESCONTANDO as falhas, que sai
+   * de `minutosPorExecucao × (execucoes - falhas)` — os três já na resposta.
+   * O número por semana continua sendo assunto de `/rotinas`, e a gaveta leva
+   * até lá.
+   */
+  minutosPorExecucao: number | null;
   minutosDevolvidos: number | null;
 }
 

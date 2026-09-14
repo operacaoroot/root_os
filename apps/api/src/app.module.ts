@@ -37,6 +37,8 @@ import { MemoryModule } from './memory/memoria.module';
 import { RoutinesModule } from './routines/routines.module';
 import { PublicMapModule } from './public-map/public-map.module';
 import { PlataformaModule } from './platform/plataforma.module';
+import { LinhaDoTempoModule } from './linha-do-tempo/linha-do-tempo.module';
+import { CaixaModule } from './caixa/caixa.module';
 
 @Module({
   imports: [
@@ -145,6 +147,22 @@ import { PlataformaModule } from './platform/plataforma.module';
     // `/api/tenants/suporte` respondem 404 — o console abre e não carrega, e o
     // cliente não tem onde autorizar nem onde revogar acesso de suporte.
     PlataformaModule,
+    // A LINHA DO TEMPO (fatia A9): a leitura narrativa do RASTRO — o mesmo fato
+    // que `/rastro` prova, contado em ordem, com ator e objeto legíveis. Última
+    // porque só lê e não injeta módulo nenhum (`PrismaService` e
+    // `EventLogService` são globais). Sem esta linha `GET /api/linha-do-tempo`
+    // responde 404 e nada acusa — o módulo fica no repositório e fora do alcance
+    // de qualquer requisição, como o cofre nasceu na primeira entrega.
+    LinhaDoTempoModule,
+    // A CAIXA PESSOAL (fatia A7): "o que precisa de mim" — as aprovações que
+    // ESTA pessoa pode assinar, as tarefas dela que pararam e a conversa recente
+    // no quadro dela, num lugar. Depois do `TenantsModule`, que ela importa para
+    // uma pergunta só ("a empresa contratou o módulo `trabalho`?"), e depois do
+    // `GatewayModule`, de onde vem a metade só-leitura da porta. Sem esta linha
+    // `GET /api/caixa` responde 404, o selo da barra lateral fica em branco e
+    // NADA ACUSA — mesmo silêncio da linha do tempo, e é por isso que a rota
+    // está na lista padrão do smoke.
+    CaixaModule,
   ],
   controllers: [HealthController],
 })

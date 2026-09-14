@@ -320,6 +320,274 @@ saídas (aceitar que só notifica, abrir a régua para a sensibilidade intermedi
 capacidade como exceção declarada) estão registradas para decisão. Não ligue o canal esperando que
 ele decida antes de essa escolha estar feita.
 
+### 2.3f O ESTADO DECLARADO DO AGENTE (fatia A2) — migração que CONVERTE dado
+
+**Nada a configurar: zero variável nova, zero permissão nova, zero capacidade nova.** Pausar, retomar
+e encerrar usam `admin.usuarios`, a mesma chave do interruptor de conector; invocar usa a dupla que
+`POST /agents/:slug/executar` já exigia. Então **não há ritual de três passos** e **não há
+`db:seed:politica`** por causa desta fatia.
+
+O que ela tem é uma **migração que converte dado**:
+`20260913010000_estado_declarado_do_agente`. Ela cria o enum `EstadoDeAgente`, troca o TIPO de
+`Agent.estado` e acrescenta `estadoPorId`, `estadoEm` e `estadoMotivo`.
+
+O mapa da conversão, para você conferir depois de subir:
+
+| antes (`AgentEstado`) | depois (`EstadoDeAgente`) |
+|---|---|
+| `rodando` | `ativo` |
+| `aprendendo` | `ativo` |
+| `planejado` | `planejado` |
+| `pausado` | `pausado` |
+
+`Rotina.estado` **não é tocada** — ela fica com o `AgentEstado` antigo, que continua existindo. A
+migração emite um `NOTICE` dizendo quantos agentes ficaram em estado que não roda; é aviso, não erro.
+
+Conferência depois da subida (`2.5`):
+
+```bash
+docker exec mktos_db psql -U mkt -d marketing_os -c \
+  'select estado, count(*) from "Agent" group by estado order by 1'
+```
+
+Esperado: nenhum agente em `planejado` que antes estava em `rodando`. Se aparecer `planejado` onde
+você esperava `ativo`, o `ELSE` do `CASE` engoliu um valor que ninguém mapeou — leia o cabeçalho da
+migração e me chame antes de mexer à mão.
+
+**Rollback**: o caminho de volta está escrito no cabeçalho da própria migração, e ele **perde
+informação de propósito**: agente `encerrado` volta como `pausado`, e pausado pode ser retomado. Quem
+reverter está reabrindo agentes que alguém tirou de circulação para sempre.
+
+**Uma mudança de comportamento para avisar ao Pedro:** a tela `/agentes` tinha um cartão "Rodando"
+que contava o estado DECLARADO. Agora são dois — "Em operação" (decisão) e "Rodando agora" (sessão
+viva medida). O número de antes correspondia ao primeiro.
+
+### 2.3g ORÇAMENTO POR AGENTE E O CONSERTO DAS HORAS (fatia A3)
+
+**Nada a configurar: zero variável nova, zero permissão nova, zero capacidade nova.** Definir
+orçamento usa `CONFIGURAR_AGENTE` (`automacoes.executar` + `admin.usuarios`), a mesma dupla da linha
+de base e do procedimento — as duas chaves já estão no catálogo. Então **não há ritual de três
+passos** e **não há `db:seed:politica`** por causa desta fatia.
+
+O que ela tem é uma **migração aditiva**: `20260913020000_orcamento_mensal_do_agente`. Cinco colunas
+em `Agent` (`orcamentoMensalUsd`, `orcamentoAtivo`, `orcamentoPorId`, `orcamentoEm`,
+`orcamentoMotivo`), nenhuma tabela nova, nada a ligar de isolamento por linha (`Agent` já tem RLS
+forçado com as quatro policies desde `20260911050000_isolamento_por_linha`; a migração **confere**
+isso e aborta se alguém tiver desfeito).
+
+**Ela não muda o comportamento de ninguém ao subir**: o default é `0` com `orcamentoAtivo = false`,
+que o serviço lê como "ninguém definiu" — a chamada passa como sempre passou. A migração tem uma
+conferência que **aborta** se algum agente sair dela com orçamento valendo, porque isso seria o
+produto parando sozinho, por migração.
+
+Conferência depois da subida (`2.5`):
+
+```bash
+docker exec mktos_db psql -U mkt -d marketing_os -c \
+  'select count(*) filter (where "orcamentoAtivo") as valendo,
+          count(*) filter (where "orcamentoMensalUsd" > 0) as com_valor
+     from "Agent"'
+```
+
+Esperado logo depois do deploy: **0 e 0**. Orçamento nasce de alguém clicando em `/agentes`.
+
+**Onde se define, e o que cada escolha faz** (a tela diz isso antes do clique):
+
+| valor | "cortar quando estourar" | efeito |
+|---|---|---|
+| vazio | — | sem orçamento: só o teto da empresa/dia segura o agente |
+| > 0 | desligado | **observação**: soma, aparece na tela de Custos, NÃO recusa nada |
+| > 0 | ligado | recusa a chamada do agente quando o mês estoura (429, volta na virada do mês) |
+| 0 | ligado | **PARA o agente na hora** — toda chamada de modelo dele é recusada. A API exige motivo escrito |
+
+**O gasto do mês sai do log de passos (`SessionStep`), não de tabela nova.** É a mesma leitura que a
+tela de Custos já usa desde a fatia 6.4 — um segundo livro-caixa daria duas respostas para o mesmo
+dinheiro. Consequência operacional: **não há reserva**, então o corte é "o mês já estourou (ou
+estoura com esta chamada)" e duas chamadas simultâneas podem passar juntas. Contra um orçamento
+mensal isso é ruído; o teto por empresa e por dia, que TEM reserva, continua valendo por cima.
+
+**Com o orçamento valendo, modelo fora de `apps/api/src/llm/preco.ts` é RECUSADO** — a mesma trava
+do teto da empresa: controle que não sabe medir não é controle. Isso atinge o provider `openrouter`,
+cujo modelo padrão não está na tabela. Se você ligar orçamento num agente que roda por `openrouter`,
+ele para.
+
+**Vetorização (embeddings) continua fora de todo número desta fatia.** Ela passa por `fetch` próprio
+em `obsidian.service.ts` e `pauta.service.ts`, fora do `LlmProvider`, e a tela de Custos já declara
+isso em `naoCoberto` — nada aqui passou a medi-la.
+
+**A MUDANÇA DE COMPORTAMENTO QUE PRECISA SER AVISADA AO CLIENTE: o número de horas devolvidas em
+`/agentes` VAI DIMINUIR.** A tela publicava `linha de base × execuções de vida inteira`, com as
+passagens que FALHARAM dentro, sob o rótulo "Horas devolvidas" — contradizendo `/rotinas`, que já
+media a semana do log real. Agora as duas telas usam a MESMA conta (`packages/shared/src/horas-devolvidas.ts`)
+e `/agentes` lê o log de passagens dele (`Session`, só `respondida` e `executada`, últimos 7 dias).
+
+Um agente com 100 passagens na vida, 50 com erro, 20 min de linha de base e 2 passagens boas na
+semana publicava **33,3 h**; agora publica **0,7 h na semana** e **16,7 h acumuladas na vida
+inteira**, com os dois rótulos escritos. O mesmo conserto vale para a gaveta do agente em
+`/contexto`, que era o terceiro lugar a afirmar o número velho.
+
+Nada disso muda dado no banco: `Agent.execucoes` e `Agent.falhas` continuam como estão. O que mudou
+é a conta que a tela publica.
+
+### 2.3h TAREFA COM DONO ÚNICO E CHECKOUT ATÔMICO (fatia A4)
+
+**Nada a configurar: zero variável nova, zero permissão nova, zero capacidade nova.** Assumir e
+soltar tarefa usam `tarefas.editar`, a mesma chave que já governa o quadro — então **não há ritual de
+três passos** e **não há `db:seed:politica`** por causa desta fatia. As duas rotas novas
+(`POST /api/trabalho/tarefas/:id/assumir` e `.../soltar`) vivem no prefixo `trabalho`, que já está
+declarado em `apps/api/src/tenants/modulos.ts`; **nenhum prefixo novo** para declarar.
+
+**Por que estas escritas não passam pela porta**: é a decisão que o módulo de trabalho já tinha
+tomado — escrita de quadro é interna ao OS, sem efeito em sistema de terceiro, guardada por RBAC.
+Retenção por aprovação (R3+) exigiria uma **segunda pessoa** (invariante 7) para um agente começar a
+trabalhar; numa empresa de operador único, todo checkout ficaria na fila para sempre. O porquê
+completo está no cabeçalho de `apps/api/src/work/checkout-de-tarefa.service.ts`.
+
+**A migração é aditiva**: `20260913030000_tarefa_com_dono_unico`. Duas colunas em `WorkTask`
+(`agenteId`, `agenteEm`), uma chave estrangeira para `Agent` com `ON DELETE SET NULL`, um índice
+`(orgId, agenteId, agenteEm)` e **um gatilho** — `WorkTask_orgId_confere_agente`, que reusa a função
+`mktos_orgid_do_pai` de `20260910120000_orgid_em_todo_filho` para recusar tarefa de uma empresa
+travada por agente de outra (a chave estrangeira simples aceitaria isso sem reclamar). Nenhuma tabela
+nova, nada a ligar de isolamento por linha — `WorkTask` e `Agent` já têm RLS forçado com as quatro
+policies, e a migração **confere as duas** e aborta se alguém tiver desfeito.
+
+**Ela não trava tarefa de ninguém ao subir**: `ADD COLUMN` não preenche nada, e há uma conferência
+que **aborta** se alguma tarefa sair da migração com `agenteId` — tarefa travada por um agente que
+ninguém escolheu ficaria invisível para todos os outros.
+
+Conferência depois da subida (`2.5`):
+
+```bash
+docker exec mktos_db psql -U mkt -d marketing_os -c \
+  'select count(*) filter (where "agenteId" is not null) as travadas,
+          count(*) as total from "WorkTask" where not "archived"'
+docker exec mktos_db psql -U mkt -d marketing_os -c \
+  "select tgname from pg_trigger where tgname = 'WorkTask_orgId_confere_agente'"
+```
+
+Esperado logo depois do deploy: **0 travadas** e **o gatilho listado**. Tarefa travada nasce de
+alguém entregando em `/trabalho`.
+
+**A MUDANÇA DE COMPORTAMENTO QUE PRECISA SER AVISADA: pausar ou encerrar um agente agora SOLTA as
+tarefas que ele tem na mão.** As duas escritas acontecem na mesma transação, então não existe
+instante com o agente pausado e a tarefa presa; a resposta de
+`POST /agents/:slug/pausar|encerrar` passou a trazer `tarefasSoltas`, e cada tarefa solta vira um
+evento `tarefa.soltada` no RASTRO com a causa (`agente_pausado` / `agente_encerrado`). **Retomar não
+devolve nada** — as tarefas foram para a fila e podem estar com outro agente; quem retoma escolhe de
+novo na tela.
+
+Antes desta fatia o problema era o oposto e pior: com `encerrado` (que não tem volta), a tarefa
+ficava travada para sempre por um dono que nunca mais ia trabalhar, e só saía de lá por escrita na
+mão no banco.
+
+**O que NÃO está nesta fatia, e é decisão do Pedro**: o próprio agente pedir "assumo esta tarefa" de
+dentro do laço. Hoje quem chama o checkout é **gente, pela tela** — o agente é o destino do trabalho,
+não o requerente. No dia em que ele puder pedir, isso vira capacidade de catálogo e passa pela porta
+como tudo o mais (e aí o roteiro de `2.3b` volta a valer).
+
+### 2.3i A LINHA DO TEMPO (fatia A9) — a leitura mais barata desta frente
+
+**Nada a configurar, e nada a migrar: zero variável nova, zero permissão nova, zero capacidade nova,
+zero migração.** A tela `/linha-do-tempo` pede `auditoria.ver`, a MESMA chave do Rastro — quem pode
+ver a prova pode ver a história dela. Então **não há ritual de três passos**, **não há
+`db:seed:politica`** e **não há `migrate deploy`** por causa desta fatia. Ela sobe no `2.4` e ponto.
+
+O que ela acrescenta é uma rota de leitura (`GET /api/linha-do-tempo`) e um item de menu (sub-item de
+Rastro, em "O controle"). **A fonte é o `EventLog` e nada mais** — nenhuma tabela nova, nenhum segundo
+caminho de escrita: `/rastro` é prova (evento cru, cadeia de hash, verificação) e `/linha-do-tempo` é
+história (por dia, com ator e objeto legíveis, filtrável por agente e por tipo).
+
+**O prefixo `linha-do-tempo` é ESPINHA** (`PREFIXOS_DA_ESPINHA` em `src/tenants/modulos.ts`): não
+desliga por contrato, pela mesma decisão de `audit`, `rotinas` e `organograma`. Prefixo não declarado
+lança em tempo de execução — é como as famílias `memoria` e `rotinas` nasceram quebradas inteiras.
+
+Conferência depois da subida (`2.5`) — a rota tem de responder 401 sem token, nunca 404:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://os.operacaoroot.com/api/linha-do-tempo
+```
+
+404 aqui quer dizer que o `LinhaDoTempoModule` caiu dos `imports` do `AppModule`: o módulo compila,
+sobe e a tela devolve nada, sem nenhum aviso no log — não há sentinela de arranque porque nenhum
+outro componente o espera. Quem cobra isso antes do deploy é o smoke (`2.3`), cuja lista padrão de
+rotas passou a incluir `/api/linha-do-tempo`.
+
+**Duas coisas a saber sobre o que a tela NÃO mostra**, porque um dia alguém vai pedir:
+
+1. **Conteúdo não sai por esta rota.** A resposta devolve identificador (capacidade, conector, agente,
+   id de tarefa, chave de nota) e nunca os campos que a política nomeia — `argumentos`, `resumo`,
+   `motivo`, `estadoAnterior`, `referencia`. A régua é uma **lista de permissão**
+   (`IDENTIFICADORES_DO_OBJETO` em `src/linha-do-tempo/narrativa.ts`): chave de payload que ninguém
+   declarou não sai, então uma chamada nova a `registrar` não abre vazamento em silêncio. Onde o
+   conteúdo exato se lê é `/atendimento`, com `aprovacoes.ver`. Cada linha com conteúdo diz isso e
+   aponta para lá.
+2. **As contagens dos filtros são medidas nos 5.000 eventos mais recentes**, e o rodapé diz quando
+   foram cortadas. Não é preguiça: a alternativa é uma varredura completa do RASTRO — a tabela que
+   mais cresce do sistema — a cada abertura de tela, para preencher um `<select>`. A LISTA em si não
+   tem esse teto: ela pagina por cursor (`seq`), sem limite de quanto se pode descer.
+
+**O horizonte é a retenção desta empresa** (`RastroRetencao.dias` → política → `RASTRO_RETENCAO_DIAS`
+→ 1825). A tela publica esse número e diz que o que venceu foi expurgado. Empresa com prazo curto tem
+linha do tempo curta, e isso é o produto funcionando, não defeito.
+
+### 2.3j A CAIXA PESSOAL (fatia A7) — "o que precisa de mim"
+
+**Nada a configurar e nada a migrar: zero variável nova, zero permissão nova, zero capacidade nova,
+zero migração.** A tela `/caixa` e as duas rotas dela (`GET /api/caixa` e `GET /api/caixa/contador`)
+pedem `dashboard.ver`, a chave que **todo perfil de gente já tem**. Então **não há ritual de três
+passos** (nada em `permissions.ts`, nada de `db:sync-permissions`, ninguém precisa sair e entrar),
+**não há `db:seed:politica`** e **não há `migrate deploy`** por causa desta fatia.
+
+A permissão é essa por decisão, não por economia: a caixa é PESSOAL, e pedir `aprovacoes.ver` tiraria
+de quem não acompanha a fila também as tarefas paradas dele. Cada eixo tem a permissão dele **dentro**
+da resposta — `aprovacoes.ver` (mais `aprovacoes.decidir`, porque permissão não é alçada) para as
+aprovações e `tarefas.ver`, com o módulo `trabalho` contratado, para o quadro. Eixo sem permissão
+volta dizendo "sem acesso", e a tela escreve isso: é o desenho de `/contexto`, onde 403 nunca vira
+caixa de erro.
+
+**Zero fonte nova.** A caixa lê `Approval`, `ToolCall`, `User`, `WorkTask`, `WorkComment` e `Agent`
+(este pelo caminho de `work/agentes-da-casa.ts`), não tem tabela nem coluna própria e **não tem um
+único verbo de escrita** — a suíte reprova se ganhar um. Ela também **não confirma aprovação**: leva
+para `/atendimento`, que é onde `confirm` relê o aprovador no banco, cobra motivo escrito em R4/R5 e
+reautenticação de verdade.
+
+**O prefixo `caixa` é ESPINHA** (`PREFIXOS_DA_ESPINHA` em `src/tenants/modulos.ts`): não desliga por
+contrato, pela mesma decisão de `rotinas`, `organograma` e `linha-do-tempo`. Prefixo não declarado
+lança em tempo de execução. **Espinha diz "a rota responde", não "o dado é livre"**: como a caixa
+agrega dado do módulo `trabalho`, o serviço pergunta ao `ModulosService` ANTES de tocar em `WorkTask`
+e `WorkComment` — sem essa pergunta uma rota que nunca desliga serviria o quadro de quem não o
+contratou.
+
+Conferência depois da subida (`2.5`) — as duas rotas têm de responder 401 sem token, nunca 404:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://os.operacaoroot.com/api/caixa
+curl -s -o /dev/null -w '%{http_code}\n' https://os.operacaoroot.com/api/caixa/contador
+```
+
+404 aqui quer dizer que o `CaixaModule` caiu dos `imports` do `AppModule`. **Aqui o silêncio é ainda
+mais fácil de não notar que na linha do tempo**: o selo da barra lateral simplesmente não aparece, e
+barra sem selo é indistinguível de caixa vazia. Quem cobra isso antes do deploy é o smoke (`2.3`),
+cuja lista padrão passou a incluir `/api/caixa`.
+
+**Três coisas a saber antes de alguém reclamar**, porque as três são decisão e não defeito:
+
+1. **"Minhas tarefas" é casamento por NOME.** `WorkTask.assignee` é texto livre herdado da fotografia
+   do ClickUp, não ponteiro para `User`. A caixa procura a pessoa pelo nome, pelo e-mail e pela parte
+   antes do `@`, sem diferenciar maiúscula — e **publica na tela por quais nomes procurou**. Quem tem
+   outro nome no quadro vê caixa vazia, e a tela avisa disso em vez de deixar a pessoa confiar no
+   vazio. O conserto de verdade (`assignee` virar ponteiro) é migração de dado com decisão de produto.
+2. **A conversa do quadro NÃO é menção, e não entra no contador.** Menção não existe como dado neste
+   produto: `WorkComment` guarda autor e texto, e nada mais — sem tabela de menção, sem convenção de
+   `@nome` e **sem estado de lido**. O que a caixa mostra é comentário de outra pessoa em tarefa em que
+   você é o responsável, nos últimos 7 dias, e a tela diz exatamente isso. Fica fora da conta porque,
+   sem estado de lido, um comentário nunca sairia dela — e contador que não zera por ação nenhuma é um
+   número que a pessoa aprende a ignorar.
+3. **O selo da barra lateral não mente sobre a hora.** Ele é medido na montagem e a cada navegação (é
+   o `GET /api/caixa/contador`, derivado da MESMA montagem da tela — um `count` próprio diria outro
+   número, porque o impedimento da porta não cabe em SQL). O `title` carrega a hora da medição; medição
+   que falhou desenha `?` e **nunca 0**; e teto de consulta batido vira `N+`, porque aí o total é piso.
+
 ### 2.4 Subir
 
 ```bash
@@ -647,3 +915,7 @@ A ordem completa, com a consequência de pular cada passo, está em **§2.0**. A
     dizendo **62 capacidades DO BANCO**
 12. [ ] Registrar o que subiu (commit/tag) — enquanto o Syncthing for o transporte, isso não fica
     registrado sozinho no servidor
+13. [ ] **Onda do controle de agentes (A2–A4): conferir o que as migrações NÃO deviam ter mexido** —
+    `0` agente com orçamento valendo (§2.3g), `0` tarefa travada e o gatilho
+    `WorkTask_orgId_confere_agente` listado (§2.3h). Nenhuma das três fatias pede variável,
+    permissão ou capacidade nova; se alguém disser que pede, leia a seção antes de criar.

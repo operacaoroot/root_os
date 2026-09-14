@@ -13,6 +13,7 @@ import {
   type TamanhoDaEntrada,
 } from './estimativa';
 import type { ReservaDeCusto, TetoDeCustoIaService } from './teto-diario.service';
+import type { OrcamentoDeAgenteService } from './orcamento-de-agente.service';
 import { contextoAtual } from '../common/contexto-execucao';
 
 /*
@@ -30,12 +31,16 @@ import { contextoAtual } from '../common/contexto-execucao';
  * ida à rede: cortar aqui é cortar ANTES, no sentido literal.
  *
  * A ORDEM É INEGOCIÁVEL, e é o que o teste da fatia mede:
+ *   0. conferir o ORÇAMENTO MENSAL DO AGENTE, quando há agente (fatia A3) —
+ *      leitura pura, recusa ou volta calada
  *   1. reservar   (pode recusar — e aí nada mais acontece)
  *   2. chamar o modelo
  *   3. liquidar com o custo real, ou soltar a reserva se a chamada falhou
  *
  * Inverter 1 e 2 seria exatamente "cortar depois", que é o defeito que esta
- * fatia existe para consertar.
+ * fatia existe para consertar. Inverter 0 e 1 deixaria reserva pendurada
+ * segurando o teto da empresa por uma chamada que o orçamento do agente já
+ * havia barrado — o porquê está no bloco de `step()`.
  *
  * EMPRESA SEM TETO CONFIGURADO passa direto: `reservar()` devolve `null`,
  * nenhuma linha é escrita e nada muda para quem nunca configurou. Ligar o teto é
@@ -68,6 +73,13 @@ export class ProviderComTeto implements LlmProvider {
   constructor(
     private readonly interno: LlmProvider,
     private readonly teto: TetoDeCustoIaService,
+    /*
+     * O ORÇAMENTO MENSAL POR AGENTE (fatia A3). `@Optional` na prática: há suíte
+     * que constrói este envelope com dois argumentos, e o que se perde sem ele é
+     * o eixo do agente — o teto da empresa continua valendo igual. Em produção
+     * quem o injeta é a fábrica de `llm.module.ts`, sempre.
+     */
+    private readonly orcamentoDoAgente?: OrcamentoDeAgenteService,
   ) {}
 
   get name(): string {
@@ -130,19 +142,43 @@ export class ProviderComTeto implements LlmProvider {
   async step(input: LlmStepInput): Promise<LlmStepOutput> {
     const orgId = this.empresaDe(input.orgId, 'step');
     const modelo = input.model ?? this.interno.model;
+    // Os esquemas das ferramentas entram: eles sobem INTEIROS a cada passo e num
+    // agente com catálogo grande são o maior bloco fixo da chamada.
+    const entrada = caracteresDaConversa(input.system, input.turns, input.tools);
+    const tokensSaida = this.interno.tetoDeSaida({
+      tipo: 'passo',
+      maxTokens: input.maxTokens,
+      streaming: Boolean(input.onTextDelta),
+    });
+
+    /*
+     * O ORÇAMENTO MENSAL DO AGENTE VEM ANTES DA RESERVA DO DIA (fatia A3), e a
+     * ordem não é estética.
+     *
+     * `conferir()` é leitura PURA: ela recusa ou volta calada, sem escrever
+     * linha nenhuma. `reservar()` ESCREVE — ela soma a estimativa em
+     * `reservadoUsd`. Se a reserva viesse primeiro e o orçamento do agente
+     * recusasse depois, a reserva ficaria pendurada segurando teto da empresa
+     * até o coletor de reserva presa passar (até 30 min), por uma chamada que
+     * nunca aconteceu. Invertendo, a recusa por orçamento não deixa resíduo.
+     *
+     * SÓ VALE PARA PASSO DE AGENTE. `complete()` não tem agente: relatório,
+     * curadoria e ficha chamam o modelo em nome da empresa, não de ninguém — e
+     * atribuir esse gasto a um agente qualquer seria inventar procedência.
+     */
+    const agentSlug = input.agentSlug?.trim() || contextoAtual()?.agentSlug?.trim() || '';
+    if (orgId && agentSlug && this.orcamentoDoAgente) {
+      await this.orcamentoDoAgente.conferir({
+        orgId,
+        agentSlug,
+        modelo,
+        entrada,
+        tokensSaida,
+      });
+    }
+
     const reserva = orgId
-      ? await this.teto.reservar({
-          orgId,
-          modelo,
-          // Os esquemas das ferramentas entram: eles sobem INTEIROS a cada passo
-          // e num agente com catálogo grande são o maior bloco fixo da chamada.
-          entrada: caracteresDaConversa(input.system, input.turns, input.tools),
-          tokensSaida: this.interno.tetoDeSaida({
-            tipo: 'passo',
-            maxTokens: input.maxTokens,
-            streaming: Boolean(input.onTextDelta),
-          }),
-        })
+      ? await this.teto.reservar({ orgId, modelo, entrada, tokensSaida })
       : null;
 
     let usoReal: { custoUsd: number; custoEstimado: boolean } | null = null;

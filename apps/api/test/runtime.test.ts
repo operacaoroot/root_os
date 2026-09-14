@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import {
   PrismaClient,
   ActorType,
-  AgentEstado,
+  EstadoDeAgente,
   AgentTipo,
   RiskLevel,
   SessionCanal,
@@ -148,7 +148,7 @@ describe.skipIf(!URL)('o laço do agente', () => {
       where: { orgId_slug: { orgId: ORG, slug: 'assistente' } },
       create: {
         orgId: ORG, slug: 'assistente', nome: 'Assistente', iniciais: 'AS',
-        missao: 'responder com fonte', tipo: AgentTipo.llm, estado: AgentEstado.rodando,
+        missao: 'responder com fonte', tipo: AgentTipo.llm, estado: EstadoDeAgente.ativo,
         autonomiaAte: RiskLevel.R1,
         capacidades: ['numeros.painel.ler', 'whatsapp.mensagem.enviar', 'financeiro.pagamento.baixar'],
       },
@@ -158,7 +158,7 @@ describe.skipIf(!URL)('o laço do agente', () => {
       where: { orgId_slug: { orgId: ORG, slug: 'nao-nasceu' } },
       create: {
         orgId: ORG, slug: 'nao-nasceu', nome: 'Ainda não', iniciais: 'AN',
-        missao: 'nada por enquanto', estado: AgentEstado.planejado, capacidades: [],
+        missao: 'nada por enquanto', estado: EstadoDeAgente.planejado, capacidades: [],
       },
       update: {},
     });

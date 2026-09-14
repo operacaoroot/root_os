@@ -176,9 +176,18 @@ function Registro({ item }: { item: ItemDoEixo }) {
           ['passagens', `${t.execucoes} · ${t.falhas} falha(s)`],
           ['agente', t.agenteSlug ?? 'sem agente'],
           ['origem', t.origem],
+          /*
+           * ACUMULADO, COM ESSE NOME, E SÓ AS PASSAGENS BOAS — ver o comentário
+           * de `minutosPorExecucao` em `tipos.ts`. O rótulo diz o período
+           * porque "tempo devolvido" sem período, ao lado de um cartão que diz
+           * "por semana" em `/rotinas`, é o mesmo defeito que a fatia A3
+           * consertou na tela de Agentes.
+           */
           [
-            'tempo devolvido',
-            t.minutosDevolvidos === null ? 'sem linha de base informada' : emHoras(t.minutosDevolvidos),
+            'horas acumuladas',
+            t.minutosPorExecucao === null
+              ? 'sem linha de base informada'
+              : `${emHoras(t.minutosPorExecucao * Math.max(t.execucoes - t.falhas, 0))} · só as passagens boas`,
           ],
         ]}
       />
@@ -311,11 +320,26 @@ function AgenteAberto({ agente }: { agente: AgenteDoMapa }) {
           'última passagem',
           `${quando(agente.ultimaExecucaoEm)}${agente.ultimoStatus ? ` · ${agente.ultimoStatus}` : ''}`,
         ],
+        /*
+         * O PERÍODO ENTRA NO RÓTULO (fatia A3). Este campo dizia "horas
+         * devolvidas" e mostrava o acumulado de vida inteira com as falhas
+         * dentro — o mesmo número que a tela de Agentes publicava como
+         * semanal. Agora são duas linhas, cada uma com o período dela, e
+         * "não medido" tem texto próprio em vez de virar zero.
+         */
         [
-          'horas devolvidas',
-          agente.horasDevolvidas === null
+          `horas devolvidas · ${agente.horas.diasDaJanela} dias`,
+          agente.horas.naSemana === null
+            ? agente.horas.estado === 'sem-linha-de-base'
+              ? 'sem linha de base informada'
+              : 'não deu para contar as passagens'
+            : `${agente.horas.naSemana}h · ${agente.horas.passagensNaSemana} passagem(ns)`,
+        ],
+        [
+          'horas acumuladas',
+          agente.horasAcumuladas === null
             ? 'sem linha de base informada'
-            : `${agente.horasDevolvidas}h`,
+            : `${agente.horasAcumuladas}h · vida inteira`,
         ],
         ['procedimento', resumoDoProcedimento],
       ]}

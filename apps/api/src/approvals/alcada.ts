@@ -148,6 +148,30 @@ export function descreverAlcada(a: Alcada | null): string {
   return a ?? 'nenhuma';
 }
 
+/**
+ * TODAS as exigências que esta alçada alcança — para quem precisa PERGUNTAR AO
+ * BANCO, e não conferir linha por linha.
+ *
+ * Nasceu na fatia A7 (a caixa pessoal): a caixa quer só as aprovações que a
+ * pessoa pode assinar, e isso é um `WHERE alcadaMinima IN (...)`, não uma
+ * varredura da fila inteira seguida de filtro em memória. Sem esta função a
+ * caixa escreveria a ordem dos degraus por conta própria — a QUINTA cópia dos
+ * mesmos três valores, exatamente a que o cabeçalho deste arquivo conta ter
+ * apagado.
+ *
+ * DERIVA DE `atendeAlcada`, não de uma lista escrita à mão: o conjunto devolvido
+ * é, por construção, o conjunto dos degraus que `atendeAlcada` aprova. É isso
+ * que impede a consulta de trazer uma linha que a confirmação depois recusa — ou
+ * de esconder uma que ela aceitaria. Sem alçada devolve vazio, e `IN ()` não
+ * casa com nada, que é a recusa certa.
+ */
+export function alcadasAtendidasPor(tem: Alcada | null): Alcada[] {
+  if (!tem) return [];
+  return (Object.keys(FORCA_DA_ALCADA) as Alcada[]).filter((minima) =>
+    atendeAlcada(minima, tem),
+  );
+}
+
 /*
  * MOTIVO ESCRITO — a terceira perna de RF-A-03, ao lado da reautenticação e da
  * alçada. `avaliar()` já decide isto (`Decisao.exigeMotivo`), mas a decisão não
