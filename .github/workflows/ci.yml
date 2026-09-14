@@ -531,8 +531,25 @@ jobs:
       # conjunto inteiro com a variável de pé faz os arquivos interferirem uns
       # nos outros e derruba cinco deles por motivo nenhum — medido em
       # 12/09/2026 nesta mesma sessão, ao tentar o atalho.
-      PISO_CASOS_API: '1220'
-      PISO_ARQUIVOS_API: '37'
+      #
+      # ---------------------------------------------------------------------
+      # A VAULT PASSA A PODER MORAR NO DRIVE (13/09/2026): +18 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `vault-no-drive` (18): a varredura da pasta do Drive, os dois tetos, o
+      # download cru e a fiação do conector. Sem banco e sem rede — o Drive é um
+      # dublê que CONTA as chamadas, porque metade do que interessa aqui é
+      # quantas chamadas a varredura faz, não só o que ela devolve.
+      #
+      # POR QUE A FATIA EXISTE: a vault nunca esteve montada nesta instalação.
+      # `OBSIDIAN_VAULT_PATH=/vault` aponta para `/srv/marketing-os/vault`,
+      # VAZIA desde 13/07/2026 — medido em produção —, e a vault real sempre
+      # morou no Google Drive. O espelho da pauta já escrevia lá desde a onda 8;
+      # esta é a metade da leitura.
+      #
+      # A conta vai de 1488/37 para 1506/38. O piso de ARQUIVOS vai a 38, colado
+      # no real; o de CASOS vai a 1235, ~18% de folga sobre 1506.
+      PISO_CASOS_API: '1235'
+      PISO_ARQUIVOS_API: '38'
 
     steps:
       - uses: actions/checkout@v4

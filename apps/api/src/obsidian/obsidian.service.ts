@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { join, relative, dirname } from 'node:path';
+import { join, relative, dirname, sep } from 'node:path';
+import { GoogleService } from '../google/google.service';
 import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
@@ -50,12 +51,58 @@ interface ParsedNote {
   fileTime: Date;
 }
 
+/**
+ * Um arquivo da vault, do jeito que a reindexação precisa dele — e igual nas
+ * duas fontes.
+ *
+ * `ler` é função e não campo porque no Drive cada leitura é uma chamada de
+ * rede: quem decide se vale a pena buscar é `reindex`, depois de comparar
+ * `modificadoEm` com o que já está indexado.
+ */
+interface ArquivoDaVault {
+  caminho: string;
+  modificadoEm: Date;
+  ler: () => Promise<string>;
+}
+
 @Injectable()
 export class ObsidianService implements OnModuleInit {
   private readonly log = new Logger('ObsidianService');
   private readonly vault = process.env.OBSIDIAN_VAULT_PATH ?? '';
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
   private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+
+  /*
+   * DE ONDE VEM A VAULT — pasta montada ou Google Drive.
+   *
+   * `pasta` é o desenho original: um caminho no sistema de arquivos do
+   * container. Ele pressupõe que a vault esteja montada ali, e nesta instalação
+   * isso nunca foi verdade: `OBSIDIAN_VAULT_PATH=/vault` aponta para
+   * `/srv/marketing-os/vault`, uma pasta VAZIA desde 13/07/2026. A vault real
+   * vive no Google Drive, que é onde ela sempre esteve.
+   *
+   * `drive` lê a vault direto do Drive, pela pasta que `OBSIDIAN_DRIVE_FOLDER_ID`
+   * apontar — do mesmo jeito que o Obsidian pede uma pasta para ser a vault. O
+   * espelho da pauta já ESCREVE no Drive desde a onda 8; isto é a metade que
+   * faltava, a da leitura.
+   *
+   * LIDO NO CONSTRUTOR, como `GATEWAY_MODO`: a fonte aparece no log de arranque
+   * e não muda no meio da vida do processo. Trocar exige recriar o container.
+   *
+   * Valor desconhecido LANÇA em vez de cair no padrão. Uma vault que se acha
+   * configurada e lê da pasta errada é pior que uma que recusa subir: a primeira
+   * indexa o vazio e some com o índice de quem confiou nela.
+   */
+  private readonly fonte: 'pasta' | 'drive' = (() => {
+    const bruto = (process.env.OBSIDIAN_FONTE ?? 'pasta').trim().toLowerCase();
+    if (bruto === 'pasta' || bruto === 'drive') return bruto;
+    throw new Error(
+      `OBSIDIAN_FONTE="${process.env.OBSIDIAN_FONTE}" não existe. Valores: pasta | drive ` +
+        '(vazio = pasta). Preferimos derrubar aqui a indexar a fonte errada em silêncio.',
+    );
+  })();
+
+  private readonly pastaNoDrive = (process.env.OBSIDIAN_DRIVE_FOLDER_ID ?? '').trim();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -80,10 +127,41 @@ export class ObsidianService implements OnModuleInit {
      * editado.
      */
     private readonly memoria: MemoriaService,
+    /**
+     * O Google, para a fonte `drive` — e este import é EXCEÇÃO DECLARADA na
+     * catraca de arquitetura, pelo mesmo motivo que o do espelho da pauta.
+     *
+     * A regra proíbe um arquivo fora de `src/gateway/` importar conector, e ela
+     * está certa: é o que impede endereço e credencial de fornecedor de vazarem
+     * para fora da porta. A exceção do espelho foi aceita porque ele chama um
+     * método de DESTINO FIXO (`gravarArquivoNoDrive`), por rotina, no Drive da
+     * própria casa — não ação proposta por agente, e sem URL arbitrária, já que
+     * o passa-tudo `api()` é privado desde a fatia 3.3.
+     *
+     * Aqui é a mesma coisa ao contrário: `listarVaultNoDrive` e
+     * `baixarTextoDoDrive` recebem pasta e arquivo, nunca URL, e são a LEITURA
+     * do Drive da casa pela rotina de reindexação. Virar capacidade do catálogo
+     * exigiria entrada nova, e capacidade nova em produção só entra por semente
+     * assinada.
+     *
+     * `@Optional()` porque quatro suítes montam este serviço à mão e nenhuma
+     * delas usa Drive. A ausência não é silenciosa: com `OBSIDIAN_FONTE=drive`
+     * e sem ele, `listarArquivos` recusa em vez de devolver vazio — vault vazia
+     * é o estado que apaga índice.
+     */
+    @Optional() private readonly google?: GoogleService,
   ) {}
 
   get configured(): boolean {
+    if (this.fonte === 'drive') return this.pastaNoDrive.length > 0;
     return this.vault.length > 0 && existsSync(this.vault);
+  }
+
+  /** Uma frase curta dizendo de onde esta instalação lê a vault. Vai para o log e para a tela. */
+  private get origemLegivel(): string {
+    return this.fonte === 'drive'
+      ? `Google Drive, pasta ${this.pastaNoDrive || '(não apontada)'}`
+      : `pasta ${this.vault || '(não apontada)'}`;
   }
 
   /**
@@ -159,21 +237,54 @@ export class ObsidianService implements OnModuleInit {
        * seja esta, que diz o que fazer.
        */
       saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
-        if (!this.vault) {
+        /*
+         * "NINGUÉM APONTOU NADA" — e SÓ isso.
+         *
+         * Não use `configured` aqui: no caminho da pasta ele também responde
+         * `existsSync`, e uma vault apontada que sumiu do disco cairia como
+         * "não configurado". São dois estados diferentes e o operador faz coisas
+         * diferentes com cada um: um pede configuração, o outro pede conserto —
+         * e o segundo precisa chegar à tela com a CAUSA REAL, que só o `readdir`
+         * lá embaixo conhece. Foi exatamente isso que a suíte do contrato pegou
+         * quando a fonte Drive entrou.
+         */
+        const nadaApontado = this.fonte === 'drive' ? !this.pastaNoDrive : !this.vault;
+        if (nadaApontado) {
           return naoConfigurado(
-            'Nenhuma vault do Obsidian foi apontada no ambiente da API. Enquanto não houver ' +
-              'pasta montada, a base de conhecimento fica vazia para todas as empresas.',
+            this.fonte === 'drive'
+              ? 'A fonte da vault é o Google Drive, mas nenhuma pasta foi apontada ' +
+                '(OBSIDIAN_DRIVE_FOLDER_ID vazio). Enquanto não houver pasta, a base de ' +
+                'conhecimento fica vazia para todas as empresas.'
+              : 'Nenhuma vault do Obsidian foi apontada no ambiente da API. Enquanto não houver ' +
+                'pasta montada, a base de conhecimento fica vazia para todas as empresas.',
           );
         }
         const comecou = Date.now();
         let arquivos: number;
         try {
-          arquivos = (await this.lerRaizDaVault()).length;
+          /*
+           * A RAIZ, E SÓ A RAIZ — nas duas fontes.
+           *
+           * A pergunta da sonda é "consigo alcançar e ler esta vault AGORA?", e
+           * para isso a raiz basta. Percorrer a vault inteira aqui seria uma
+           * chamada de rede por subpasta contra o prazo de 4,5 s da sonda: a
+           * linha ficaria vermelha por lentidão, não por defeito — e o operador
+           * iria procurar um problema que não existe.
+           */
+          arquivos =
+            this.fonte === 'drive'
+              ? (await this.lerRaizDaVaultNoDrive(ctx.orgId)).length
+              : (await this.lerRaizDaVault()).length;
         } catch (e) {
           return erroDeConector(
-            `Não consegui ler a vault em "${this.vault}": ${frasedoErro(e)}. ` +
-              'A pasta pode ter sido desmontada, estar pendurada, ou o processo da API pode ter ' +
-              'perdido permissão de leitura.',
+            this.fonte === 'drive'
+              ? `Não consegui ler a pasta ${this.pastaNoDrive} no Drive: ${frasedoErro(e)}. ` +
+                'As causas comuns, nesta ordem: a pasta não está compartilhada com a conta do ' +
+                'Google ligada ao OS; o identificador da pasta está errado; ou a autorização do ' +
+                'Google expirou. Confira em Conexões qual conta está ligada.'
+              : `Não consegui ler a vault em "${this.vault}": ${frasedoErro(e)}. ` +
+                'A pasta pode ter sido desmontada, estar pendurada, ou o processo da API pode ter ' +
+                'perdido permissão de leitura.',
             Date.now() - comecou,
           );
         }
@@ -234,6 +345,21 @@ export class ObsidianService implements OnModuleInit {
    * mesmo que travar a API — e é por isso que a resposta de erro sai na hora,
    * com o nome do problema, em vez de a tela ficar girando.
    */
+  /*
+   * A raiz da vault quando ela mora no Drive — UM nível, uma chamada.
+   *
+   * Não reusa `listarVaultNoDrive` de propósito: aquela desce nas subpastas, e
+   * a sonda tem 4,5 s. Aqui a pergunta é só "a pasta responde e eu a enxergo?".
+   *
+   * A ausência do conector do Google LANÇA em vez de devolver vazio: vazio
+   * viraria "a pasta abriu e não tem nada", que manda o operador procurar o
+   * problema na vault em vez de na fiação.
+   */
+  private async lerRaizDaVaultNoDrive(orgId: string): Promise<unknown[]> {
+    if (!this.google) throw new Error('o conector do Google não está montado neste processo');
+    return this.google.listarVaultNoDrive(orgId, this.pastaNoDrive, { apenasRaiz: true });
+  }
+
   private async lerRaizDaVault(prazoMs = PRAZO_DA_CHAMADA_DE_SONDA_MS): Promise<string[]> {
     let relogio: ReturnType<typeof setTimeout> | null = null;
     const estouro = new Promise<never>((_, rejeitar) => {
@@ -412,11 +538,76 @@ export class ObsidianService implements OnModuleInit {
     return acc;
   }
 
+  /*
+   * A VAULT, VISTA IGUAL PELAS DUAS FONTES.
+   *
+   * Cada arquivo chega como caminho, data de modificação e uma função que
+   * BUSCA o conteúdo — e a função é preguiçosa de propósito. No filesystem ler
+   * é barato; no Drive é uma chamada de rede por arquivo. Devolver o conteúdo
+   * junto obrigaria a baixar 152 notas a cada meia hora para descobrir que
+   * nenhuma mudou.
+   *
+   * `modificadoEm` vem de graça na listagem do Drive, e é isso que deixa a
+   * reindexação pular o que não mudou — ver `reindex`.
+   */
+  private async listarArquivos(orgId: string): Promise<ArquivoDaVault[]> {
+    if (this.fonte === 'pasta') {
+      return this.walk(this.vault).map((full) => ({
+        caminho: relative(this.vault, full).split(sep).join('/'),
+        modificadoEm: statSync(full).mtime,
+        ler: async () => readFileSync(full, 'utf8'),
+      }));
+    }
+
+    /*
+     * As duas recusas abaixo existem porque o retorno delas seria uma lista
+     * VAZIA, e lista vazia é o estado que apaga índice e arquiva memória. A
+     * guarda de `reindex` pegaria isso adiante, mas com a frase errada — diria
+     * "a vault está vazia" quando o problema é que ninguém a apontou.
+     */
+    if (!this.pastaNoDrive) {
+      throw new ServiceUnavailableException(
+        'OBSIDIAN_FONTE=drive, mas OBSIDIAN_DRIVE_FOLDER_ID está vazio: nenhuma pasta do Drive ' +
+          'foi apontada como vault. Nada foi lido.',
+      );
+    }
+    if (!this.google) {
+      throw new ServiceUnavailableException(
+        'OBSIDIAN_FONTE=drive, mas o conector do Google não está montado neste processo. Sem ele ' +
+          'não há como ler a pasta. Nada foi lido.',
+      );
+    }
+
+    const arquivos = await this.google.listarVaultNoDrive(orgId, this.pastaNoDrive);
+    return arquivos.map((a) => ({
+      caminho: a.caminho,
+      modificadoEm: a.modificadoEm,
+      ler: async () => this.google!.baixarTextoDoDrive(orgId, a.id),
+    }));
+  }
+
+  /** A leitura do filesystem. O que interpreta é `parseConteudo`, que as duas fontes dividem. */
   private parse(full: string): ParsedNote {
-    const raw = readFileSync(full, 'utf8');
-    const rel = relative(this.vault, full);
+    return this.parseConteudo(relative(this.vault, full), readFileSync(full, 'utf8'), statSync(full).mtime);
+  }
+
+  /*
+   * A INTERPRETAÇÃO, e ela não sabe de onde o texto veio.
+   *
+   * Separada de `parse` quando a fonte Drive entrou: sem isso, ler do Drive
+   * significaria uma segunda implementação de frontmatter, tags e wikilinks —
+   * e duas implementações da mesma leitura divergem na primeira nota estranha,
+   * com a busca semântica achando a nota por uma fonte e não pela outra.
+   *
+   * `caminhoRelativo` usa `/` e é relativo à raiz da vault, nas DUAS fontes: é
+   * a chave da nota no índice e na memória. Trocar de fonte com a mesma vault
+   * precisa gerar as mesmas chaves, senão a reindexação lê tudo como nota nova
+   * e arquiva a memória da origem anterior inteira.
+   */
+  private parseConteudo(caminhoRelativo: string, raw: string, modificadoEm: Date): ParsedNote {
+    const rel = caminhoRelativo;
     const folderRel = dirname(rel);
-    const st = statSync(full);
+    const st = { mtime: modificadoEm };
 
     let body = raw;
     const tags = new Set<string>();
@@ -460,9 +651,22 @@ export class ObsidianService implements OnModuleInit {
     return json.data.map((d) => d.embedding);
   }
 
-  async reindex(orgId: string): Promise<number> {
-    if (!this.configured) throw new ServiceUnavailableException('OBSIDIAN_VAULT_PATH não configurado.');
-    const files = this.walk(this.vault);
+  /**
+   * @param completo Refaz a leitura e a vetorização de TODA nota, mesmo as que
+   *   não mudaram. É o que se usa quando a INTERPRETAÇÃO muda — `parseConteudo`
+   *   ganhando um jeito novo de achar tags, por exemplo. O reaproveitamento
+   *   abaixo é por data de modificação do arquivo, e um arquivo que não mudou
+   *   continua com a leitura antiga até alguém pedir o contrário.
+   */
+  async reindex(orgId: string, completo = false): Promise<number> {
+    if (!this.configured) {
+      throw new ServiceUnavailableException(
+        this.fonte === 'drive'
+          ? 'OBSIDIAN_DRIVE_FOLDER_ID não configurado.'
+          : 'OBSIDIAN_VAULT_PATH não configurado.',
+      );
+    }
+    const files = await this.listarArquivos(orgId);
 
     /*
      * VAULT QUE EXISTE E ESTÁ VAZIA NÃO É VAULT — É PONTO DE MONTAGEM CAÍDO.
@@ -484,15 +688,74 @@ export class ObsidianService implements OnModuleInit {
      */
     if (files.length === 0) {
       throw new ServiceUnavailableException(
-        `A vault "${this.vault}" existe mas não tem NENHUM arquivo .md. Isso é ponto de ` +
-          'montagem caído ou caminho errado muito mais vezes do que é vault vazia de propósito ' +
-          '— e reindexar apagaria o índice desta empresa e arquivaria a memória inteira que ' +
-          'veio dela. Nada foi tocado. Confira o caminho montado na API; para esvaziar a base ' +
-          'de propósito, DESLIGUE o conector em Conexões.',
+        `A vault (${this.origemLegivel}) existe mas não tem NENHUM arquivo .md. Isso é ponto de ` +
+          'montagem caído, pasta errada ou pasta não compartilhada muito mais vezes do que é ' +
+          'vault vazia de propósito — e reindexar apagaria o índice desta empresa e arquivaria ' +
+          'a memória inteira que veio dela. Nada foi tocado. Confira a origem na API; para ' +
+          'esvaziar a base de propósito, DESLIGUE o conector em Conexões.',
       );
     }
 
-    const notes = files.map((f) => this.parse(f));
+    /*
+     * O QUE JÁ ESTÁ INDEXADO — e por que ele é lido ANTES de apagar.
+     *
+     * Sem isto, toda passada relê a vault inteira e vetoriza a vault inteira.
+     * No filesystem isso é lento; no Drive é uma chamada de rede por arquivo, a
+     * cada meia hora, para descobrir que nada mudou. E a vetorização é dinheiro
+     * de verdade: a vault real tem ~1.500 notas, o relógio bate 48 vezes por
+     * dia, e esse gasto NÃO passa pelo teto de IA por empresa — quem chama o
+     * fornecedor de embedding é este arquivo, direto.
+     *
+     * A semântica não muda: o índice continua sendo SUBSTITUÍDO, porque a vault
+     * é a fonte da verdade dele. O que muda é que uma nota intocada volta com o
+     * texto e o vetor que já tinha, em vez de ser baixada e vetorizada de novo.
+     *
+     * A comparação é por SEGUNDO, não por milissegundo: `modifiedTime` do Drive
+     * e `mtime` do filesystem não têm a mesma precisão, e uma diferença de
+     * microssegundos na ida e volta do banco marcaria toda nota como mudada —
+     * que é exatamente o custo que este bloco existe para evitar.
+     */
+    const emSegundos = (d: Date): number => Math.floor(d.getTime() / 1000);
+    const anteriores = completo
+      ? []
+      : await this.prisma.knowledgeNote.findMany({
+          where: { orgId },
+          select: {
+            path: true, folder: true, title: true, tags: true,
+            content: true, links: true, wordCount: true, fileTime: true,
+          },
+        });
+    const jaIndexado = new Map(anteriores.map((n) => [n.path, n]));
+
+    const vetoresAnteriores = new Map<string, number[]>();
+    if (!completo && anteriores.length) {
+      const linhas = await this.prisma.$queryRaw<Array<{ path: string; vetor: string | null }>>`
+        SELECT "path", embedding::text AS vetor
+          FROM "KnowledgeNote"
+         WHERE "orgId" = ${orgId} AND embedding IS NOT NULL`;
+      for (const l of linhas) {
+        if (!l.vetor) continue;
+        vetoresAnteriores.set(l.path, l.vetor.replace(/^\[|\]$/g, '').split(',').map(Number));
+      }
+    }
+
+    const notes: ParsedNote[] = [];
+    const reaproveitadas: string[] = [];
+    for (const f of files) {
+      const antiga = jaIndexado.get(f.caminho);
+      if (antiga && emSegundos(antiga.fileTime) === emSegundos(f.modificadoEm)) {
+        notes.push({ ...antiga, folder: antiga.folder ?? null });
+        reaproveitadas.push(f.caminho);
+        continue;
+      }
+      notes.push(this.parseConteudo(f.caminho, await f.ler(), f.modificadoEm));
+    }
+    if (reaproveitadas.length) {
+      this.log.log(
+        `Obsidian reindex: ${reaproveitadas.length} de ${files.length} nota(s) intocadas — ` +
+          'não foram relidas nem vetorizadas de novo.',
+      );
+    }
 
     // substitui o índice do org (a vault é a fonte da verdade)
     await this.prisma.knowledgeNote.deleteMany({ where: { orgId } });
@@ -522,14 +785,41 @@ export class ObsidianService implements OnModuleInit {
      */
     const vetorPorCaminho = new Map<string, number[]>();
 
-    // embeddings (se houver chave) — em lote
+    // embeddings (se houver chave) — em lote, e SÓ do que não tem vetor guardado
     if (this.openaiKey && notes.length) {
       const rows = await this.prisma.knowledgeNote.findMany({ where: { orgId }, select: { id: true, path: true, title: true, content: true } });
-      const vectors = await this.embed(rows.map((r) => `${r.title}\n\n${r.content}`));
-      for (let i = 0; i < rows.length; i++) {
-        const vec = `[${vectors[i].join(',')}]`;
-        await this.prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2', vec, rows[i].id);
-        vetorPorCaminho.set(rows[i].path, vectors[i]);
+
+      /*
+       * A NOTA INTOCADA VOLTA COM O VETOR QUE JÁ TINHA.
+       *
+       * O texto é o mesmo, então o vetor é o mesmo — e revetorizar não seria só
+       * gasto: o modelo de embedding muda de versão sem avisar, e a mesma nota
+       * passaria a ter números diferentes dos vizinhos que não foram tocados,
+       * com a busca por similaridade ficando torta sem nada acusar.
+       */
+      const semVetor: typeof rows = [];
+      for (const r of rows) {
+        const guardado = vetoresAnteriores.get(r.path);
+        if (guardado && jaIndexado.has(r.path) && reaproveitadas.includes(r.path)) {
+          await this.prisma.$executeRawUnsafe(
+            'UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2',
+            `[${guardado.join(',')}]`,
+            r.id,
+          );
+          vetorPorCaminho.set(r.path, guardado);
+          continue;
+        }
+        semVetor.push(r);
+      }
+
+      if (semVetor.length) {
+        const vectors = await this.embed(semVetor.map((r) => `${r.title}\n\n${r.content}`));
+        for (let i = 0; i < semVetor.length; i++) {
+          const vec = `[${vectors[i].join(',')}]`;
+          await this.prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2', vec, semVetor[i].id);
+          vetorPorCaminho.set(semVetor[i].path, vectors[i]);
+        }
+        this.log.log(`Obsidian reindex: ${semVetor.length} nota(s) vetorizadas (de ${rows.length}).`);
       }
     }
 

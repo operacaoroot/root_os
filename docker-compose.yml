@@ -199,6 +199,22 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       OBSIDIAN_VAULT_PATH: /vault
       OBSIDIAN_REINDEX_MIN: ${OBSIDIAN_REINDEX_MIN:-30}
+      # DE ONDE VEM A VAULT: `pasta` (o bind mount abaixo) ou `drive`.
+      #
+      # `pasta` é o padrão e o desenho original — e nesta instalação ele nunca
+      # funcionou: `/vault` aponta para `/srv/marketing-os/vault`, VAZIA desde
+      # 13/07/2026. A vault real sempre morou no Google Drive.
+      #
+      # `drive` lê a pasta que `OBSIDIAN_DRIVE_FOLDER_ID` apontar, do jeito que
+      # o Obsidian pede uma pasta para ser a vault. Ela precisa estar
+      # COMPARTILHADA com a conta do Google ligada ao OS — que é uma por
+      # empresa, e pode não ser a sua; confira em Conexões.
+      #
+      # Valor desconhecido derruba o arranque em vez de cair no padrão: uma
+      # vault que se acha configurada e lê da pasta errada indexa o vazio e
+      # some com o índice de quem confiou nela.
+      OBSIDIAN_FONTE: ${OBSIDIAN_FONTE:-pasta}
+      OBSIDIAN_DRIVE_FOLDER_ID: ${OBSIDIAN_DRIVE_FOLDER_ID:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:4000/api/google/callback}

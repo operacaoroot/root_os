@@ -33,6 +33,26 @@ import {
 // Conector Google (OAuth 2.0) — Gmail/Agenda/Docs/Drive. Credencial PRÓPRIA do root
 // (google.env), tokens guardados por org (isolado do escritório). Escopos read+write
 // (a escrita entra pelo fluxo de aprovação; reads já expostos).
+/**
+ * Um arquivo `.md` visto dentro de uma vault do Obsidian que mora no Drive.
+ *
+ * `caminho` é relativo à raiz da vault e usa `/`, igual ao que o lado do
+ * filesystem produz com `relative()` — as duas fontes precisam gerar a MESMA
+ * chave, senão trocar de fonte reindexaria tudo como nota nova e arquivaria a
+ * memória da origem antiga.
+ *
+ * `modificadoEm` é o que permite pular o download do que não mudou. Ele vem da
+ * listagem, de graça: é a diferença entre reler 152 arquivos a cada meia hora
+ * e reler só os que alguém tocou.
+ */
+export interface ArquivoDeVaultNoDrive {
+  id: string;
+  nome: string;
+  caminho: string;
+  modificadoEm: Date;
+  bytes: number;
+}
+
 const SCOPES = [
   'openid',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -957,6 +977,153 @@ export class GoogleService implements OnModuleInit {
       body,
     });
     return { id: r.id, atualizado: !!existenteId };
+  }
+
+  /*
+   * ===================================================================
+   * LER UMA VAULT DO OBSIDIAN QUE MORA NO DRIVE
+   * ===================================================================
+   *
+   * O par de `gravarArquivoNoDrive`, e pelo mesmo motivo: é o OS lendo o Drive
+   * DELE, por rotina, não ação proposta por agente. Destino fixo (uma pasta que
+   * quem chama já tem), método fixo, sem URL vinda de fora — foi assim que o
+   * passa-tudo `api()` deixou de ser público na fatia 3.3, e não vou reabri-lo
+   * pela porta dos fundos.
+   *
+   * POR QUE SÓ `.md`, E POR QUE ISSO É REGRA E NÃO DETALHE: a vault real do
+   * Pedro tem 1.524 notas `.md` e, ao lado delas, 1.634 jpg, 168 png e 146 mp4.
+   * Uma varredura ingênua baixaria gigabytes de mídia a cada passada para
+   * jogar tudo fora — a base de conhecimento indexa TEXTO. O filtro está na
+   * consulta ao Drive, não depois: assim os anexos nem chegam a ser listados.
+   *
+   * O TETO NÃO É PARANOIA. O identificador de pasta vem de configuração, e uma
+   * configuração errada pode apontar para a raiz do Drive inteiro. Sem teto,
+   * uma letra trocada vira uma varredura de dezenas de milhares de arquivos
+   * contra a cota da conta. Estourar o teto LANÇA em vez de devolver o que
+   * coube: meia vault parece uma vault, e reindexar com metade apagaria o resto
+   * do índice sem ninguém perceber.
+   */
+  async listarVaultNoDrive(
+    orgId: string,
+    folderId: string,
+    limites: { maxArquivos?: number; maxProfundidade?: number; apenasRaiz?: boolean } = {},
+  ): Promise<ArquivoDeVaultNoDrive[]> {
+    const maxArquivos = limites.maxArquivos ?? 5000;
+    const maxProfundidade = limites.maxProfundidade ?? 12;
+    /*
+     * `apenasRaiz` é para a SONDA, que tem 4,5 s e só precisa saber se a pasta
+     * responde. Ele é um interruptor próprio, e não `maxProfundidade: 0`, porque
+     * o teto de profundidade LANÇA ao ser estourado — de propósito, para meia
+     * vault nunca passar por vault inteira. Uma vault com subpastas (todas têm)
+     * faria a sonda ficar vermelha dizendo "mais de 0 níveis", que é acusar
+     * defeito onde não há.
+     */
+    const apenasRaiz = limites.apenasRaiz === true;
+    const achados: ArquivoDeVaultNoDrive[] = [];
+
+    const visitar = async (pastaId: string, prefixo: string, profundidade: number): Promise<void> => {
+      if (profundidade > maxProfundidade) {
+        throw new BadRequestException(
+          `A pasta do Drive tem mais de ${maxProfundidade} níveis a partir da raiz da vault. ` +
+            'Isso é atalho circular ou pasta errada muito mais vezes do que é vault funda.',
+        );
+      }
+      let pageToken: string | undefined;
+      do {
+        /*
+         * `trashed = false` importa: arquivo na lixeira continua respondendo à
+         * consulta por pasta e voltaria para o índice como nota viva.
+         *
+         * Os dois `...AllDrives` cobrem a pasta COMPARTILHADA — que é o caso
+         * real aqui: a vault é de uma conta e o OS entra por outra. Sem eles,
+         * uma vault em Drive compartilhado lista vazia, sem erro nenhum.
+         */
+        const q =
+          `'${pastaId.replace(/'/g, "\\'")}' in parents and trashed = false and ` +
+          "(mimeType = 'application/vnd.google-apps.folder' or name contains '.md')";
+        const url =
+          'https://www.googleapis.com/drive/v3/files' +
+          `?q=${encodeURIComponent(q)}` +
+          '&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true' +
+          `&fields=${encodeURIComponent('nextPageToken,files(id,name,mimeType,modifiedTime,size)')}` +
+          (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+
+        const pagina = await this.api<{
+          nextPageToken?: string;
+          files?: Array<{ id: string; name: string; mimeType: string; modifiedTime?: string; size?: string }>;
+        }>(orgId, url);
+
+        for (const f of pagina.files ?? []) {
+          if (f.mimeType === 'application/vnd.google-apps.folder') {
+            // `.obsidian`, `.trash` e afins: mesma regra do walk do filesystem.
+            if (f.name.startsWith('.')) continue;
+            if (apenasRaiz) continue;
+            await visitar(f.id, prefixo ? `${prefixo}/${f.name}` : f.name, profundidade + 1);
+            continue;
+          }
+          /*
+           * `name contains '.md'` é o que o Drive sabe filtrar, e ele casa
+           * "notas.md.bak" também. A conferência exata é aqui.
+           */
+          if (!f.name.toLowerCase().endsWith('.md')) continue;
+          if (f.name.startsWith('.')) continue;
+
+          if (achados.length >= maxArquivos) {
+            throw new BadRequestException(
+              `A pasta do Drive tem mais de ${maxArquivos} arquivos .md. Ou o identificador aponta ` +
+                'para uma pasta maior do que a vault, ou o teto precisa ser levantado de propósito. ' +
+                'Nada foi indexado — meia vault reindexada apagaria o resto do índice.',
+            );
+          }
+          achados.push({
+            id: f.id,
+            nome: f.name,
+            caminho: prefixo ? `${prefixo}/${f.name}` : f.name,
+            modificadoEm: f.modifiedTime ? new Date(f.modifiedTime) : new Date(0),
+            bytes: f.size ? Number(f.size) : 0,
+          });
+        }
+        pageToken = pagina.nextPageToken;
+      } while (pageToken);
+    };
+
+    await visitar(folderId, '', 0);
+    return achados;
+  }
+
+  /**
+   * O conteúdo de um arquivo do Drive, como texto.
+   *
+   * `api()` não serve: ele manda `Content-Type: application/json` e faz
+   * `res.json()` no retorno, e `alt=media` devolve o arquivo cru. Um `.md`
+   * entraria no índice como erro de parse — que é o tipo de defeito que aparece
+   * como "a busca não acha nada" três telas adiante.
+   *
+   * DOCUMENTO NATIVO DO GOOGLE NÃO PASSA POR AQUI, e a recusa é explícita. Um
+   * Documento Google tem `mimeType` próprio e `alt=media` responde 403 para
+   * ele: precisaria de `/export`. Medido em 13/09/2026, a vault do Pedro tem
+   * ZERO arquivos nativos (nem .gdoc, nem .gsheet) — então isto não é caminho
+   * morto por desenho, é caminho que ainda não existe. Quando existir, a frase
+   * aqui diz o que fazer em vez de deixar um 403 solto subir.
+   */
+  async baixarTextoDoDrive(orgId: string, fileId: string): Promise<string> {
+    const at = await this.token(orgId);
+    const url =
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}` +
+      '?alt=media&supportsAllDrives=true';
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${at}` } });
+    if (!res.ok) {
+      const corpo = await res.text().catch(() => '');
+      if (res.status === 403 && corpo.includes('fileNotDownloadable')) {
+        throw new BadRequestException(
+          `O arquivo ${fileId} é um documento NATIVO do Google (Documento, Planilha), não um ` +
+            'arquivo `.md`. Ele não baixa: precisa ser exportado, e a vault do Obsidian não ' +
+            'deveria tê-lo. Converta para `.md` ou tire-o da pasta da vault.',
+        );
+      }
+      throw new BadRequestException(`Drive alt=media ${fileId} → HTTP ${res.status} ${corpo.slice(0, 160)}`);
+    }
+    return res.text();
   }
 
   async appendDoc(orgId: string, docId: string, text: string, actorId?: string) {

@@ -599,6 +599,24 @@ const EXCECOES: Excecao[] = [
     fatia: 'onda 8 — resto da 3.3: passa-tudo já fechado; o import só sai com capacidade NOVA no catálogo',
   },
   {
+    arquivo: 'src/obsidian/obsidian.service.ts',
+    conector: 'src/google/google.service.ts',
+    motivo:
+      'A METADE DA LEITURA DO MESMO CASO DO ESPELHO, e aceita pelo mesmo argumento. O espelho ' +
+      'ESCREVE no Drive da casa por rotina; este lê. A vault do Obsidian nunca esteve montada ' +
+      'nesta instalação — `OBSIDIAN_VAULT_PATH=/vault` aponta para uma pasta VAZIA desde ' +
+      '13/07/2026, e a vault real sempre morou no Google Drive. Com `OBSIDIAN_FONTE=drive` o ' +
+      'conector lê a pasta que `OBSIDIAN_DRIVE_FOLDER_ID` aponta. ' +
+      'OS DOIS MÉTODOS SÃO DE DESTINO FIXO: `listarVaultNoDrive(orgId, folderId)` e ' +
+      '`baixarTextoDoDrive(orgId, fileId)` recebem pasta e arquivo, NUNCA URL nem método — o ' +
+      'passa-tudo `api()` segue privado desde a fatia 3.3, e mover este import não moveria ' +
+      'fronteira nenhuma porque não há fronteira a mover: não existe URL montada fora do ' +
+      'conector. É leitura do Drive da própria casa pela rotina de reindexação, não ação ' +
+      'proposta por agente; para virar capacidade precisaria de entrada nova no catálogo, e ' +
+      'capacidade nova em produção só entra por semente assinada.',
+    fatia: 'fonte Drive para a vault (13/09/2026) — sai junto com o espelho, quando as duas viram capacidade',
+  },
+  {
     arquivo: 'src/pauta/publicacao.service.ts',
     conector: 'src/pauta/evolution.service.ts',
     motivo: 'Publicação manda WhatsApp em grupo direto pela Evolution.',
@@ -1368,6 +1386,21 @@ const PASTAS_IGNORADAS_MONO = new Set([
   'test',
   'tests',
   '__tests__',
+  /*
+   * `.claude/` guarda WORKTREES — checkouts do PRÓPRIO repositório, dentro dele.
+   *
+   * Não é esconderijo, é o contrário: cada arquivo ali já é varrido na cópia de
+   * verdade, e o que a catraca encontra na aninhada é o mesmo arquivo contado
+   * duas vezes. O estrago é específico e foi visto: em 13/09/2026 uma sessão
+   * paralela abriu `.claude/worktrees/adoring-cohen-74e89a/` e a frente do MCP
+   * reprovou dizendo que "packages/mcp e mais ninguém" tinha virado dois — o
+   * segundo sendo a cópia do primeiro.
+   *
+   * Catraca que fica vermelha pelo motivo errado é pior do que catraca ausente:
+   * ela ensina a ignorar o vermelho. E a que ensina isso protegendo o MCP é a
+   * última que a gente pode dar ao luxo de calejar.
+   */
+  '.claude',
 ]);
 
 /**
