@@ -849,6 +849,12 @@ jobs:
       - name: Aplicar as migrations no banco da CI
         run: pnpm --filter @mktos/api db:deploy
 
+      # O cofre atravessa a porta de ferramentas e grava PolicyDecision. A
+      # capacidade precisa existir no banco para a chave estrangeira provar o
+      # mesmo caminho usado em produção.
+      - name: Semear a política
+        run: pnpm --filter @mktos/api db:seed:politica
+
       # ---------------------------------------------------------------------
       # O papel de aplicação é CRIADO PELA MIGRATION, não aqui.
       #
