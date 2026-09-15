@@ -836,14 +836,15 @@ jobs:
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
 
-      # A suíte importa PrismaClient e PERMISSIONS diretamente. Em checkout
-      # limpo, @mktos/shared aponta para dist/ e esse diretório ainda não
-      # existe; sem estes passos o job morre na coleta antes de medir RLS.
+      # As suítes importam PrismaClient, PERMISSIONS e a política diretamente.
+      # Em checkout limpo, os pacotes internos apontam para dist/ e esses
+      # diretórios ainda não existem; sem estes passos o job morre na coleta
+      # antes de medir RLS e o cofre.
       - name: Gerar o client do Prisma
         run: pnpm --filter @mktos/api db:generate
 
-      - name: Compilar o pacote compartilhado
-        run: pnpm --filter @mktos/shared build
+      - name: Compilar os pacotes internos
+        run: pnpm --filter @mktos/shared --filter @mktos/policy build
 
       - name: Aplicar as migrations no banco da CI
         run: pnpm --filter @mktos/api db:deploy
