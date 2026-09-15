@@ -539,10 +539,11 @@ describe.skipIf(!URL)('o orçamento mensal por agente, contra um Postgres de ver
      * CONTROLE NEGATIVO DA DEFESA. Passo com modelo fora da tabela grava custo
      * ZERO (por falta de preço, não por ser grátis): um agente cujo tráfego
      * fosse todo desse modelo nunca somaria nada e passaria para sempre. Este é
-     * o estado do provider `openrouter`, cujo modelo padrão não está em
-     * `preco.ts`.
+     * Este identificador é deliberadamente fictício para continuar fora da
+     * tabela mesmo quando o modelo padrão do provider ganha preço conhecido.
      */
-    const erro = await conferir(ORG, { modelo: 'anthropic/claude-sonnet-4.5' });
+    const modeloSemPreco = 'modelo/sem-preco-para-teste';
+    const erro = await conferir(ORG, { modelo: modeloSemPreco });
     expect(erro!.detalhe.causa).toBe('modelo_sem_preco');
     // e o RASTRO guarda que a estimativa não era medível — é a procedência da
     // recusa, e sem ela ninguém sabe distinguir isto de "o mês estourou"
@@ -561,7 +562,7 @@ describe.skipIf(!URL)('o orçamento mensal por agente, contra um Postgres de ver
     // E com o orçamento DESLIGADO o mesmo modelo passa: isto não é um regime
     // novo imposto a todo mundo, é o preço de ter ligado o orçamento.
     await definir('analista', 20, false);
-    expect(await conferir(ORG, { modelo: 'anthropic/claude-sonnet-4.5' })).toBeNull();
+    expect(await conferir(ORG, { modelo: modeloSemPreco })).toBeNull();
   });
 
   it('a recusa entra no RASTRO, com a causa e o dinheiro que a decidiu', async () => {
