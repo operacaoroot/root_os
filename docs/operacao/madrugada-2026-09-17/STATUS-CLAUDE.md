@@ -63,3 +63,7 @@
 - **Inventário final da VPS:** novos = 5 containers `rootos_homolog_*`, rede `rootos-homologacao-net`, 3 volumes `root_rootos-homologacao_mktos_*`, imagens `rootos-app:madrugada-v5-…` e `-v6-…` (+ a rede `root_marketing-os_default` do Deploy do painel); sumidos = `root-os-landing` e sua rede (incidente 2). Arquivos meus em `/srv/rootos/`: `bundles/`, `ferramenta/`, `homologacao/`, dois logs, inventários e `sentinelas.antes`. Nada removido por mim.
 - Evidências: `evidencias-e3/`.
 - **Fica à mão (Pedro):** adotar no painel (projeto `root` → serviço Compose `rootos-homologacao` → colar `/srv/rootos/homologacao/painel/docker-compose.yml` + conteúdo do `.env` → Deploy); rota do Traefik para `homolog.operacaoroot.com` → `172.16.0.1:4100` se quiser acesso; apagar `/srv/rootos/homologacao/segredos-iniciais.txt` depois de guardar; a imagem `madrugada-v6` pode ser removida (`docker rmi rootos-app:madrugada-v6-6ce4a4079530`) — não é para produção.
+
+## Validação humana (17/09, ~13:10 -03)
+- Pedro entrou no painel da homologação da VPS pelo túnel SSH (`localhost:14100`) com a conta do seed: "funcionou, entrei no painel". Portão A1 validado pelo Pedro sobre a instância instalada/atualizada por script. Ressalva mantida: não foi outra pessoa (Lucas/Rodrigo) executando o roteiro cronometrado.
+- Q-006 (landing): Pedro migrou a landing para `operacaoroot.com` — desconsiderar; não era do ensaio.
