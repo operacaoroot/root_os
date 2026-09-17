@@ -19,6 +19,25 @@ import type {
   Cashflow,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
+
+/** A resposta da porta quando a escrita foi retida para aprovação (R3+). */
+interface RespostaRetida {
+  status?: string;
+  mensagem?: string;
+  fila?: string;
+  approvalId?: string;
+}
+/** A ação foi retida para aprovação? */
+const foiRetida = (r: unknown): r is RespostaRetida =>
+  !!r && typeof r === 'object' && (r as RespostaRetida).status === 'aguardando_aprovacao';
+/** O aviso de retenção: a frase da API (que sabe o nível) mais o endereço da fila. */
+function avisoDeFila(r: RespostaRetida): string {
+  const base =
+    r.mensagem ??
+    'A ação foi para a fila de aprovações e precisa da confirmação de outra pessoa. Nada foi criado ainda.';
+  const onde = r.fila ? ` Fila: ${r.fila}.` : '';
+  return `⏳ ${base}${onde}${r.approvalId ? ` (aprovação ${r.approvalId})` : ''}`;
+}
 import { useAuth } from '@/lib/auth';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
@@ -764,7 +783,19 @@ function Lancamentos(props: {
       date: form.date,
       dueDate: form.status === 'previsto' && form.dueDate ? form.dueDate : undefined,
     }, token)
-      .then(() => {
+      .then((r: unknown) => {
+        /*
+         * CRIAR LANÇAMENTO É R3 E NÃO SAI NO CLIQUE. A API responde 200 com
+         * `{status:'aguardando_aprovacao'}`: aceito e retido, esperando OUTRA
+         * pessoa com alçada. Dar "✅ criado" em cima disso é o sucesso falso que
+         * a tela do Google já teve — a pessoa fecha achando que o lançamento
+         * existe, e ele está numa fila.
+         */
+        if (foiRetida(r)) {
+          onFlash(avisoDeFila(r));
+          setOpen(false);
+          return;
+        }
         onFlash('✅ Lançamento criado.');
         setForm({ ...form, description: '', amount: '', dueDate: '' });
         setOpen(false);

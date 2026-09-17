@@ -3,18 +3,52 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
+import { UpdateUserSchema } from '@mktos/shared';
 import type { CreateUserInput, RoleList, UpdateUserInput, UserList } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly efeitos: EfeitosRegistry,
   ) {}
+
+  onModuleInit(): void {
+    /*
+     * MUDAR O QUE UMA PESSOA PODE É R4 — e até aqui era um PATCH atrás de uma
+     * permissão só.
+     *
+     * `usuario.permissao.alterar` está no catálogo como R4 desde a base ROOT:
+     * alçada de titular, motivo escrito e reautenticação de verdade na
+     * confirmação. A rota, porém, chamava `update()` direto, protegida por
+     * `admin.usuarios` e mais nada — sem régua, sem segunda pessoa, sem RASTRO
+     * pela porta. Inscrever o efeito é o que deixa o controlador virar tradutor.
+     *
+     * A SENHA ENTRA JUNTO, de propósito. Este método já dizia que resetar a
+     * senha de outra pessoa "deveria ser ação sensível com aprovação"; agora é.
+     * O RASTRO não a grava em claro: a capacidade é `sensibilidade: restrita`,
+     * e a porta redige os argumentos antes de escrever.
+     *
+     * O `id` do alvo viaja nos argumentos porque é parte do que a aprovação
+     * assina: mudar o alvo depois de assinado derruba o vínculo de conteúdo.
+     */
+    // No formato `registrar({` com a chave a seis espaços, de propósito: é o que
+    // a varredura de `test/escritas-pela-porta.test.ts` lê para cruzar efeito e
+    // catálogo. Recuar de outro jeito cega a varredura, e ela reprova por isso.
+    this.efeitos.registrar({
+      'usuario.permissao.alterar': (a, org, ctx: ContextoDoEfeito) => {
+        const { id, ...resto } = a as { id?: unknown };
+        return this.update(org, String(id ?? ''), UpdateUserSchema.parse(resto), ctx.actorId ?? 'porta');
+      },
+    }, 'UsersService');
+  }
 
   async list(orgId: string): Promise<UserList> {
     const rows = await this.prisma.user.findMany({

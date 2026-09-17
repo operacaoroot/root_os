@@ -23,6 +23,7 @@ export function AbaPessoas() {
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<string | null>(null); // userId em edição de perfis
+  const [aviso, setAviso] = useState<string | null>(null); // a mudança foi retida para aprovação
 
   const load = () => {
     if (!token) return;
@@ -39,8 +40,29 @@ export function AbaPessoas() {
 
   const roleKeys = roles?.items.map((r) => r.key) ?? [];
 
+  /*
+   * MUDAR PAPEL, ATIVAÇÃO OU SENHA DE OUTRA PESSOA É R4 E NÃO SAI NO CLIQUE. A
+   * API responde 200 com `{status:'aguardando_aprovacao'}`: a mudança está numa
+   * fila esperando OUTRA pessoa, com alçada de titular, motivo e reautenticação.
+   * Recarregar a lista como se tivesse acontecido seria o sucesso falso que a
+   * tela do Google já teve.
+   */
   const patch = (id: string, body: Record<string, unknown>) =>
-    apiPatch(`/users/${id}`, body, token).then(load).catch((e) => setError(e.message));
+    apiPatch<{ status?: string; mensagem?: string; fila?: string; approvalId?: string }>(
+      `/users/${id}`,
+      body,
+      token,
+    )
+      .then((r) => {
+        if (r && typeof r === 'object' && r.status === 'aguardando_aprovacao') {
+          const base = r.mensagem ?? 'A mudança foi para a fila de aprovações e precisa da confirmação de outra pessoa. Nada mudou ainda.';
+          setAviso(`⏳ ${base}${r.fila ? ` Fila: ${r.fila}.` : ''}${r.approvalId ? ` (aprovação ${r.approvalId})` : ''}`);
+          return;
+        }
+        setAviso(null);
+        load();
+      })
+      .catch((e) => setError(e.message));
 
   const resetPassword = (u: UserRow) => {
     const pw = window.prompt(`Nova senha para ${u.email} (mín. 8):`);
@@ -51,6 +73,11 @@ export function AbaPessoas() {
 
   return (
     <div className="space-y-6">
+      {aviso && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {aviso}
+        </p>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted">{users ? `${users.total} usuário(s)` : 'Carregando…'} · gerencie acessos e perfis.</p>

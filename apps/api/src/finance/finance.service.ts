@@ -13,8 +13,10 @@ import type {
   CreateFinanceTransactionInput,
   UpdateFinanceTransactionInput,
 } from '@mktos/shared';
+import { CreateFinanceTransactionSchema } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
 import type { BankConnection as BankConnectionRow } from '@prisma/client';
@@ -49,12 +51,40 @@ export class FinanceService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly pluggy: PluggyService,
     private readonly asaas: AsaasService,
+    private readonly efeitos: EfeitosRegistry,
   ) {}
 
-  // Sync AGENDADO das conexões bancárias (Pluggy + Asaas), in-process como o ClickUp.
-  // PLUGGY_SYNC_INTERVAL_MIN / ASAAS_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga).
-  // Só roda se ao menos um provedor estiver configurado.
   onModuleInit(): void {
+    /*
+     * AS DUAS ESCRITAS DO FINANCEIRO PASSAM A EXISTIR COMO EFEITO — e é isto que
+     * permite ao controlador deixar de chamá-las direto.
+     *
+     * `financeiro.lancamento.criar` é R3 no catálogo: não sai no clique, fica
+     * retida até OUTRA pessoa confirmar, e quem executa depois é este mesmo
+     * efeito (via `AcoesService`). `financeiro.lancamento.excluir` é R5, o
+     * degrau em que a porta PREPARA e não executa — o efeito está inscrito para
+     * a capacidade poder ser classificada e recusada com o preparo, e para que,
+     * se um dia uma sobrescrita por empresa a rebaixar, a exclusão continue
+     * governada em vez de voltar a ser um DELETE atrás de uma permissão só.
+     *
+     * Vem ANTES do `return` da sincronização bancária de propósito: sem Pluggy e
+     * sem Asaas configurados este método saía cedo, e os efeitos nunca seriam
+     * inscritos — a porta responderia "classificada mas sem efeito ligado" em
+     * toda instalação sem banco conectado.
+     */
+    // No formato `registrar({` com as chaves a seis espaços, de propósito: é o que
+    // a varredura de `test/escritas-pela-porta.test.ts` lê para cruzar efeito e
+    // catálogo. Recuar de outro jeito cega a varredura, e ela reprova por isso.
+    this.efeitos.registrar({
+      'financeiro.lancamento.criar': (a, org, ctx: ContextoDoEfeito) =>
+        this.createTransaction(org, CreateFinanceTransactionSchema.parse(a), ctx.actorId ?? 'porta'),
+      'financeiro.lancamento.excluir': (a, org, ctx: ContextoDoEfeito) =>
+        this.deleteTransaction(org, String(a.id ?? ''), ctx.actorId ?? 'porta'),
+    }, 'FinanceService');
+
+    // Sync AGENDADO das conexões bancárias (Pluggy + Asaas), in-process como o ClickUp.
+    // PLUGGY_SYNC_INTERVAL_MIN / ASAAS_SYNC_INTERVAL_MIN (default 360 = 6h; 0 desliga).
+    // Só roda se ao menos um provedor estiver configurado.
     if (!this.pluggy.configured && !this.asaas.configured) return;
     const min = Number(process.env.PLUGGY_SYNC_INTERVAL_MIN ?? process.env.ASAAS_SYNC_INTERVAL_MIN ?? 360);
     if (!(min > 0)) return;

@@ -381,7 +381,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   // ------------------------------------------------------------------- alçada
 
   it('R4 sem alçada suficiente é RECUSADA — e a aprovação continua pendente', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1', papel: 'admin_master' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1', roles: ['admin_master'] });
     const linha = await aprovacao(retida.approvalId);
     expect(linha.nivelExigido).toBe('R4');
     expect(linha.alcadaMinima).toBe('titular');
@@ -495,7 +495,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   // ---------------------------------------------------------- reautenticação
 
   it('R4 com alçada mas SEM reautenticação é recusada', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     expect((await aprovacao(retida.approvalId)).exigeReauth).toBe(true);
 
     await expect(
@@ -513,7 +513,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('senha errada não reautentica ninguém — e nada é escrito', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
 
     await expect(
       approvals.confirm(
@@ -541,7 +541,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('com alçada E senha certa, R4 passa — e `reautenticadoEm` vira verdade', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
 
     const antes = new Date();
     await approvals.confirm(
@@ -576,9 +576,9 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('a prova em token vale para a aprovação que a pediu — e só para ela', async () => {
-    const alvo = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const alvo = await reter('usuario.permissao.alterar', { id: 'u-1' });
     await prisma.toolCall.deleteMany({ where: { orgId: ORG } });
-    const outra = await reter('usuario.permissao.alterar', { userId: 'u-2' });
+    const outra = await reter('usuario.permissao.alterar', { id: 'u-2' });
 
     const prova = await reauth.provar({
       userId: id.titular,
@@ -621,7 +621,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('token de SESSÃO não serve de prova de reautenticação', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     // Um token de sessão é assinado com a MESMA chave. Se a prova conferisse só
     // a assinatura, quem já está logado reautenticaria sozinho — que é
     // exatamente não reautenticar.
@@ -646,7 +646,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
      * vai ao banco buscar o hash da senha, ela traz os papéis de lá, e a alçada
      * é conferida duas vezes.
      */
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
 
     await expect(
       approvals.confirm(ORG, retida.approvalId, {
@@ -667,7 +667,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('usuário inativo não reautentica, mesmo com a senha certa', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     await prisma.user.update({ where: { id: id.titular }, data: { isActive: false } });
     try {
       await expect(
@@ -762,7 +762,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
     // Montagem sem `ReauthService` (é o que uma suíte antiga faz). A ausência do
     // verificador não pode virar dispensa: seria o bug original de volta, agora
     // por omissão de dependência.
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     await expect(
       semVerificador.confirm(
         ORG,
@@ -876,7 +876,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
   });
 
   it('R4 sem motivo escrito é recusada — e o motivo fica gravado quando existe', async () => {
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
 
     await expect(
       approvals.confirm(ORG, retida.approvalId, {
@@ -933,7 +933,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
      * nesta API e é fatia própria; aqui a trava conta as recusas já registradas
      * no RASTRO, por pessoa e por aprovação.
      */
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     const chutar = (n: number) =>
       approvals
         .confirm(
@@ -984,7 +984,7 @@ describe.skipIf(!URL)('alçada e reautenticação na aprovação', () => {
      * com a senha vigente, a prova de cinco minutos emitida pelo ladrão
      * continuava valendo depois da troca — a vítima achava que tinha resolvido.
      */
-    const retida = await reter('usuario.permissao.alterar', { userId: 'u-1' });
+    const retida = await reter('usuario.permissao.alterar', { id: 'u-1' });
     const prova = await reauth.provar({
       userId: id.titular2,
       orgId: ORG,
