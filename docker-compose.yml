@@ -17,7 +17,11 @@ services:
       - mktos_db_data:/var/lib/postgresql/data
     networks: [marketing-os-net]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mkt}"]
+      # O `-d` não é decorativo: sem ele o pg_isready tenta abrir um banco com o
+      # nome do usuário, que não existe, e o Postgres registra um FATAL a cada
+      # 10s. Eram ~8.600 linhas de erro falso por dia no log do banco — o tipo
+      # de ruído que faz ninguém olhar o log quando o erro é de verdade.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mkt} -d ${DB_NAME:-marketing_os}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -393,6 +397,20 @@ networks:
     name: marketing-os-net             # rede dedicada e isolada
 
 volumes:
+  # Os volumes são EXTERNOS e têm nome FIXO de propósito, desde que o stack
+  # passou a ser um serviço do easyPanel (17/09/2026). O painel roda o compose
+  # com nome de projeto próprio (`-p <projeto>_<serviço>`), e o `-p` da linha de
+  # comando vence o `name: marketing-os` do topo deste arquivo. Sem `name:`
+  # explícito aqui, os volumes nasceriam com o prefixo do painel — vazios — e o
+  # banco subiria zerado ao lado dos dados reais, que continuariam intactos e
+  # inalcançáveis no volume antigo. Não é perda de dado: é pior, é um banco
+  # vazio que parece saudável.
   mktos_db_data:
+    external: true
+    name: marketing-os_mktos_db_data
   mktos_redis_data:
+    external: true
+    name: marketing-os_mktos_redis_data
   mktos_minio_data:
+    external: true
+    name: marketing-os_mktos_minio_data
