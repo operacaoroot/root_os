@@ -66,7 +66,9 @@ services:
         # Trocar esta chave exige RECONSTRUIR a imagem (`--build`), não basta
         # reiniciar o container.
         NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
-    image: mktos-app
+    # O instalador usa tag imutável por release/commit. O default preserva o
+    # fluxo local e a instalação histórica.
+    image: ${ROOTOS_IMAGE:-mktos-app}
     container_name: ${ROOTOS_API_CONTAINER:-mktos_api}
     working_dir: /app/apps/api
     command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
@@ -301,7 +303,7 @@ services:
       start_period: 40s
 
   web:
-    image: mktos-app
+    image: ${ROOTOS_IMAGE:-mktos-app}
     container_name: ${ROOTOS_WEB_CONTAINER:-mktos_web}
     working_dir: /app/apps/web
     command: pnpm start
