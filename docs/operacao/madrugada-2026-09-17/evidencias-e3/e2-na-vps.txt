@@ -1,0 +1,53 @@
+== desfecho do atualizar:
+  Instância 'homologacao' em madrugada-v6 (6ce4a4079530), imagem rootos-app:madrugada-v6-6ce4a4079530.
+  easyPanel — serviço Compose 'root/rootos-homologacao' (projeto Compose root_rootos-homologacao, o mesmo que este script usa):
+     a. no campo de ambiente do serviço, atualize ROOTOS_IMAGE, ROOTOS_VERSION e ROOTOS_COMMIT com os valores de /srv/rootos/homologacao/.env
+     b. o compose do painel (/srv/rootos/homologacao/painel/docker-compose.yml) não mudou nesta versão
+segredo no log? 0
+== depois (v6):
+versao: {"version":"madrugada-v6","commit":"6ce4a40795304f6624300530bc1943954ddfc333"}
+git v6: 6ce4a40795304f6624300530bc1943954ddfc333
+health: {"status":"ok","db":"ok","time":
+db: 1/Marketing OS (root) [sentinela-e3]/users=3/migrations=41
+ferramentas.sha256: 80b74dc6aaa32311 (antes 80b74dc6aaa32311)
+env: chaves alteradas = ROOTOS_IMAGE ROOTOS_VERSION ROOTOS_COMMIT 
+painel.sha256: 0a6304de9a0f746e (antes 0a6304de9a0f746e) · .novo sobrando? 0
+bancos: postgres rootos_homologacao template1 template0
+trava: 0
+imagens: rootos-app:madrugada-v6-6ce4a4079530 rootos-app:madrugada-v5-61ff10bb1461 
+
+== backup + restore-test
+[backup] verificação: ok — 54308 bytes, 87 tabelas, 87 blocos de dados, 318 linhas
+[backup] comparação: 54308 bytes hoje contra 54397 em rootos-20260917-153335.sql.gz — dentro do esperado
+[backup] pronto: /srv/rootos/homologacao/backups/diario/rootos-20260917-154223.sql.gz
+exit backup: 0
+[backup] espaço: origem 13 MB, preciso de 15 MB (folga 20%), livre 80 GB
+[backup] restore-test: /srv/rootos/homologacao/backups/diario/rootos-20260917-154223.sql.gz → banco novo 'rootos_rt_20260917154224_379269'
+[backup] restaurado: 87 tabelas em public
+[backup] Org                               1
+[backup] User                              3
+[backup] Capability                       62
+[backup] restore-test aprovado.
+[backup] banco de teste 'rootos_rt_20260917154224_379269' derrubado.
+exit restore-test: 0
+bancos depois: postgres rootos_homologacao template1 template0
+
+== --voltar (para v5)
+[atualizar] voltar para a versão anterior registrada
+  Runtime de volta em rootos-app:madrugada-v5-61ff10bb1461 (tag madrugada-v5).
+  ATENÇÃO: o BANCO continua com as migrations que a versão madrugada-v6 aplicou. Se precisar do dado
+  anterior, restaure o dump: /srv/rootos/homologacao/backups/diario/rootos-20260917-154223.sql.gz
+  (deploy/backup-db.sh --restore-test para ensaiar num banco descartável antes.)
+  easyPanel — serviço Compose 'root/rootos-homologacao' (projeto Compose root_rootos-homologacao, o mesmo que este script usa):
+     a. no campo de ambiente do serviço, atualize ROOTOS_IMAGE, ROOTOS_VERSION e ROOTOS_COMMIT com os valores de /srv/rootos/homologacao/.env
+     b. o compose do painel (/srv/rootos/homologacao/painel/docker-compose.yml) não mudou nesta versão
+     SEM o passo (a), um "Deploy" pelo painel re-sobe a IMAGEM ANTERIOR: o painel não lê o .env desta instância.
+exit voltar: 0
+versao agora: {"version":"madrugada-v5","commit":"61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5"}
+db depois do voltar: 1/migrations=41
+2026-09-17T14:57:53+0000 | madrugada-v5 | 61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5 | instalado
+2026-09-17T15:36:41+0000 | madrugada-v6 | 6ce4a40795304f6624300530bc1943954ddfc333 | atualizado anterior=rooto
+2026-09-17T15:42:44+0000 | madrugada-v5 | 61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5 | voltou de=rootos-app:madr
+
+== PRODUÇÃO: {"status":"ok","db":"ok","time · os. HTTP 200 · mktos_web:Up 38 minutes mktos_db:Up 38 minutes (healthy) mktos_api:Up 12 hours (healthy) mktos_redis:Up 12 hours mktos_minio:Up 12 hours 
+carga: 0.47 0.53 0.44 · disco livre 81G

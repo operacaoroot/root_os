@@ -4,7 +4,7 @@ Janela executada: 17/09/2026, 01:10 → 02:10 -03 (o relógio real da máquina; 
 
 ## Veredicto
 
-**P1 aprovado em ensaio local, com prova real (Docker de verdade, sem stub) — VPS NÃO validada.** Instalar, atualizar, fazer backup e restaurar, abortar antes de tocar o banco real quando a migration quebra, e voltar sozinho ao runtime anterior quando a versão nova não fica de pé: tudo isso foi executado de ponta a ponta numa instância criada só para isso, com o artefato em execução conferido de fora contra o git (`/api/health/versao` = `git rev-parse <tag>`). O que falta é remoto: a VPS ROOT foi **inventariada** (somente leitura, 09:51 -03, com autorização do Pedro) e o manifesto está preenchido com o medido, mas a instalação remota **não foi aprovada** e depende de Q-005 (easyPanel).
+**P1 aprovado em ensaio local E na VPS ROOT (homologação real ao lado da produção, Docker de verdade, sem stub).** *(Atualizado 12:45 -03; o texto abaixo sobre "VPS não validada" era o estado das 02:12 e foi superado — ver §8.)* Instalar, atualizar, fazer backup e restaurar, abortar antes de tocar o banco real quando a migration quebra, e voltar sozinho ao runtime anterior quando a versão nova não fica de pé: tudo isso foi executado de ponta a ponta numa instância criada só para isso, com o artefato em execução conferido de fora contra o git (`/api/health/versao` = `git rev-parse <tag>`). O que falta é remoto: a VPS ROOT foi **inventariada** (somente leitura, 09:51 -03, com autorização do Pedro) e o manifesto está preenchido com o medido, mas a instalação remota **não foi aprovada** e depende de Q-005 (easyPanel).
 
 ## 1. Commits e arquivos
 
@@ -82,3 +82,21 @@ Sentinelas plantadas antes da primeira atualização e conferidas depois de **ca
 1. Pedro decide Q-005 (easyPanel). Recomendação: modo do instalador que gera o stack para o painel adotar.
 2. Só depois, com o manifesto aprovado por escrito: `ROOTOS_BASE=/srv/rootos ROOTOS_REPO=<bundle ou origem aprovada> deploy/instalar.sh --ambiente homologacao --tag <tag> --dominio <a definir> --bind-ip 172.16.0.1 --sem-llm --so-checar` — o retrato primeiro; o real só depois de ler o retrato, com `nice` e fora do horário de uso da produção.
 3. Q-001 (MCP obrigatório) precisa entrar no `docs/PLANO-PRODUTO.md` (A2) — arquivo do Codex.
+
+## 8. Atualização 12:45 -03 — homologação na VPS ROOT (E3 executado com aprovação do Pedro)
+
+Aprovado às 11:50 -03 ("1. aprovado. 2. bundle. 3. o easypanel que fez"). Detalhe passo a passo em `STATUS-CLAUDE.md` § "E3 executado"; evidências em `evidencias-e3/`.
+
+| Prova na VPS ROOT | Resultado |
+|---|---|
+| Transporte por `git bundle` (sem push); sha256 conferido | ok; ferramenta em `/srv/rootos/ferramenta` (`madrugada-v5` = `61ff10b`) |
+| `--so-checar` | retrato correto, nada criado |
+| `instalar.sh --painel root/rootos-homologacao --bind-ip 172.16.0.1 --sem-llm` (`nice -n 15`) | exit 0 em ~4 min; versão no ar = git; projeto/volumes/rede do painel; compose do painel válido e sem segredo; produção `ok` durante todo o build (carga máx. 0,95) |
+| sentinelas → `atualizar.sh --tag madrugada-v6` (`nice`) | exit 0 em ~3 min; versão no ar = git; sentinelas e `ferramentas/` intactas; `.env` só 3 chaves; painel regenerado e igual; produção `ok` 5/5 (carga máx. 2,59) |
+| `backup-db.sh` + `--restore-test` | aprovado em banco novo, derrubado depois |
+| `atualizar.sh --voltar` | exit 0; runtime de volta em v5 conferido de fora |
+| produção antes × depois | `status ok`, `os.operacaoroot.com` 200 nas duas pontas; nenhum reinício causado pelo ensaio |
+
+**Dois eventos na produção durante a janela, nenhum causado pelo ensaio (provado por eventos do Docker, mtime dos arquivos do painel e ausência de SSH):** (1) Deploy do easyPanel pelo Pedro às 15:03 UTC recriou `mktos_db`/`mktos_web` — confirmado por ele; (2) às 15:41:40 UTC `root-os-landing` e sua rede foram removidos com padrão de `compose down`, ao mesmo tempo em que surgiu o projeto `landing` no painel — **a confirmar pelo Pedro** (o ensaio não tem nenhum comando que toque no landing).
+
+**Veredicto revisado:** P1 aprovado em homologação real na VPS ROOT, ao lado da produção, sem impacto medido. Falta o que só o painel/DNS fazem: adoção do serviço no easyPanel (arquivo pronto em `/srv/rootos/homologacao/painel/docker-compose.yml`), rota do Traefik se quiser acesso por domínio, apagar `segredos-iniciais.txt`.

@@ -1,0 +1,29 @@
+hora: 2026-09-17T15:04:49+00:00
+== log: passos e desfecho
+[instalar] 1/10 pré-condições;[instalar] 2/10 nomes e portas do am;[instalar] 3/10 código na tag madrugada-v5;[instalar] 4/10 override de isolamento;[instalar] 5/10 imagem rootos-app:madrugada-v5-6;[instalar] 6/10 ;[instalar] 7/10 migrations (deploy) + empresa + política;[instalar] 8/10 su;[instalar] 9/10 saúde;[instalar] 10/10 pronto — o que fica À MÃO;
+  Provado por este script: saúde ok, artefato madrugada-v5@61ff10bb1461 no ar, migrations aplicadas, política semeada.
+  NÃO provado por este script: login humano (ninguém entrou), modelo respondendo (LLM desligado), rota do Traefik.
+segredo no log? 0 (esperado 0)
+== de fora (na VPS)
+health: {"status":"ok","db":"ok","time":"2026-09-17T15:04:49.321Z"}
+versao: {"version":"madrugada-v5","commit":"61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5"}
+git v5: 61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5
+web: HTTP 200
+containers: rootos_homolog_web=Up 6 minutes rootos_homolog_api=Up 7 minutes (healthy) rootos_homolog_redis=Up 7 minutes rootos_homolog_db=Up 7 minutes (healthy) rootos_homolog_minio=Up 7 minutes 
+projeto compose: root_rootos-homologacao
+volumes: root_rootos-homologacao_mktos_db_data root_rootos-homologacao_mktos_minio_data root_rootos-homologacao_mktos_redis_data 
+rede: rootos-homologacao-net
+imagem: rootos-app:madrugada-v5-61ff10bb1461 2.36GB
+bind: 4001/tcp -> 172.16.0.1:4101 
+== instância: .env backups override.yml painel repo segredos-iniciais.txt vault versoes.log 
+-rw------- /srv/rootos/homologacao/.env
+-rw------- /srv/rootos/homologacao/painel/docker-compose.yml
+2026-09-17T14:57:53+0000 | madrugada-v5 | 61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5 | instalado
+migrations: 40
+== painel/docker-compose.yml: name=name: root_rootos-homologacao build=0 img-var=2 host_ip=host_ip: 172.16.0.1 senha-interpolada=0
+== PRODUÇÃO depois: {"status":"ok","db":"ok","time · os.operacaoroot.com HTTP 200 · mktos_web:Up 43 seconds mktos_db:Up 54 seconds (healthy) mktos_api:Up 12 hours (healthy) mktos_redis:Up 12 hours mktos_minio:Up 12 hours 
+== inventário: novos
+rootos_homolog_api rootos_homolog_db rootos_homolog_minio rootos_homolog_redis rootos_homolog_web 
+root_rootos-homologacao_mktos_db_data root_rootos-homologacao_mktos_minio_data root_rootos-homologacao_mktos_redis_data 
+rootos-app:madrugada-v5-61ff10bb1461 
+sumidos: 0 containers, 0 volumes (esperado 0 0)

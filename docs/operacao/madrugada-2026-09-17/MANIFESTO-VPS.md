@@ -1,6 +1,6 @@
 # Manifesto para homologação isolada
 
-**RASCUNHO — NÃO APROVADO PARA EXECUÇÃO REMOTA.** Preenchido em 17/09/2026 pelo Claude. Às 09:51 -03 o Pedro confirmou o destino e autorizou **só inventário somente leitura**; feito por `ssh vps-root` (saída em `evidencias-e3/inventario-vps-root.txt`, nenhuma escrita). O que está abaixo é medido, salvo onde diz *proposta*. Sem segredos neste arquivo.
+**APROVADO E EXECUTADO em 17/09/2026 (aprovação do Pedro às 11:50 -03: "1. aprovado. 2. bundle"; execução 11:50→12:45 -03; resultado em `STATUS-CLAUDE.md` § E3 e `RELATORIO-CLAUDE.md` §8).** Texto original mantido abaixo como registro do que foi aprovado. Preenchido em 17/09/2026 pelo Claude. Às 09:51 -03 o Pedro confirmou o destino e autorizou **só inventário somente leitura**; feito por `ssh vps-root` (saída em `evidencias-e3/inventario-vps-root.txt`, nenhuma escrita). O que está abaixo é medido, salvo onde diz *proposta*. Sem segredos neste arquivo.
 
 | Campo | Valor a verificar |
 |---|---|

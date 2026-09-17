@@ -49,3 +49,7 @@ Escritor: Claude. Acrescentar, sem apagar o histórico.
 
 ## Q-005 — resposta (17/09, 10:40 -03): Pedro disse "podemos seguir" → implementada a alternativa (a)
 - `--painel <projeto>/<serviço>` no instalador; geração fail-closed do compose do painel; lembrete no atualizador e no `--voltar`. Ver `docs/INSTALACAO.md` § easyPanel. A instalação remota continua dependendo de aprovação do manifesto.
+
+## Q-006 · 12:45 -03 · E3 · `root-os-landing` removido às 15:41:40 UTC — `AGUARDA_PEDRO` (informativo)
+- **Fato:** container `root-os-landing` e rede `root-os-landing_default` destruídos com padrão de `docker compose down`; ao mesmo tempo apareceu `/etc/easypanel/projects/root/landing`. Nenhum comando do ensaio toca no landing (0 ocorrências nos logs; naquele minuto eu só lia `docker ps`/`curl`).
+- **Pergunta:** foi você migrando a landing para o painel? Se não, a landing pública está fora do ar e precisa de olho.
