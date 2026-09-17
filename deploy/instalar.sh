@@ -236,7 +236,8 @@ gravar_chave_no_env "$ENV" ROOTOS_IMAGE "$IMAGEM"
 conferir_variaveis_do_compose "$DIR_REPO/docker-compose.yml" "$ENV"
 
 passo "4/10 override de isolamento"
-escrever_override "$DIR_INSTANCIA/override.yml" "$PREFIXO" "$REDE" "$IMAGEM" "$BIND_IP" "$WEB" "$API" "$DBP" "$RED" "$MIN" "$MINC"
+escrever_override "$DIR_INSTANCIA/override.yml" "$PREFIXO" "$REDE" "$IMAGEM" "$BIND_IP" "$WEB" "$API" "$DBP" "$RED" "$MIN" "$MINC" \
+  "${PAINEL:+instancia}" "${PAINEL:+${PROJ}_web}"
 carregar_env_da_instancia "$ENV"
 export ROOTOS_VERSION="$TAG" ROOTOS_COMMIT="$COMMIT"
 

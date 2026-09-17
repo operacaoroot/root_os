@@ -556,6 +556,12 @@ describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPa
     expect(y).not.toContain(chave(env, 'ROOTOS_IMAGE'));
     for (const nome of ['rootos_prod_db', 'rootos_prod_redis', 'rootos_prod_minio', 'rootos_prod_api', 'rootos_prod_web']) expect(y).toContain(`container_name: ${nome}`);
     expect(y).toContain('name: rootos-producao-net');
+    // o Traefik do painel roteia os domínios por http://<projeto>_web:4000 na rede easypanel
+    expect(y).toMatch(/easypanel:\n\s+external: true/);
+    expect(y).toMatch(/aliases:\n\s+- root_rootos-prod_web/);
+    const override = readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8');
+    expect(override, 'a instância também precisa da rede, senão a atualização a tiraria do painel').toContain('- root_rootos-prod_web');
+    expect(override).not.toContain('!reset');
     for (const v of ['db', 'redis', 'minio']) expect(y).toContain(`name: root_rootos-prod_mktos_${v}_data`);
     expect(y).toMatch(/host_ip: 172\.16\.0\.1/);
     expect(y).toMatch(/published: "4001"/);
@@ -572,6 +578,7 @@ describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPa
     expect(instalarProd(c).status).toBe(0);
     expect(chave(lerEnv(c, 'producao'), 'ROOTOS_PAINEL')).toBe('');
     expect(existsSync(path.join(c.base, 'producao', 'painel'))).toBe(false);
+    expect(readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8')).not.toContain('easypanel');
     for (const ruim of ['Root/x', 'a/b/c', 'so-projeto', 'root/-x', 'root/x;rm']) {
       const d = caixa();
       const r = instalarProd(d, ['--painel', ruim]);
@@ -597,6 +604,7 @@ describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPa
     expect(r.stdout).toMatch(/não mudou nesta versão/);
     expect(lerPainel(c)).toBe(antes);
     expect(existsSync(path.join(c.base, 'producao', 'painel', 'docker-compose.yml.novo'))).toBe(false);
+    expect(readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8'), 'a atualização manteve a rede do painel').toContain('- root_rootos-prod_web');
     const chk = rodar(c, 'atualizar', ['--ambiente', 'producao', '--voltar', '--so-checar']);
     expect(chk.status, chk.stderr).toBe(0);
     expect(chk.stdout).toMatch(/easyPanel: regeraria/);

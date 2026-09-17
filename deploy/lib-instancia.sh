@@ -148,13 +148,31 @@ conferir_portas_internas() {
 # O override gerado: é o que isola de verdade, independentemente do compose.
 escrever_override() {
   local destino="$1" prefixo="$2" rede="$3" imagem="$4" bind="$5"
-  local web="$6" api="$7" db="$8" redis="$9" minio="${10}" minio_console="${11}" painel="${12:-}"
-  # No override do PAINEL a imagem vai por variável e o `build:` do compose base é
-  # removido (`!reset`): o diretório do easyPanel não tem código para construir, e
-  # imagem por valor faria cada atualização exigir recolar o arquivo — esquecer
-  # seria um "Deploy" pelo painel subindo a versão anterior sem ninguém pedir.
-  local reset_build=""
-  if [ -n "$painel" ]; then imagem='${ROOTOS_IMAGE}'; reset_build='    build: !reset null'; fi
+  local web="$6" api="$7" db="$8" redis="$9" minio="${10}" minio_console="${11}" modo="${12:-}" alias_painel="${13:-}"
+  # `modo` vazio = instância comum. `instancia` = instância que o easyPanel adota:
+  # o web entra também na rede `easypanel` (externa) com o alias `<projeto>_web`,
+  # porque é por esse nome que o Traefik do painel roteia os domínios (medido na
+  # produção: url http://root_marketing-os_web:4000/). `compose-do-painel` = o
+  # arquivo que se cola no painel: além da rede, a imagem vai por variável e o
+  # `build:` do compose base é removido (`!reset`) — o diretório do painel não tem
+  # código para construir, e imagem por valor faria cada atualização exigir recolar
+  # o arquivo; esquecer seria um "Deploy" subindo a versão anterior sem ninguém pedir.
+  local reset_build="" redes_do_web="" rede_easypanel=""
+  case "$modo" in
+    "") ;;
+    instancia|compose-do-painel)
+      [ -n "$alias_painel" ] || falha "escrever_override: modo '$modo' exige o alias do painel"
+      redes_do_web="    networks:
+      marketing-os-net: null
+      easypanel:
+        aliases:
+          - ${alias_painel}"
+      rede_easypanel="  easypanel:
+    external: true"
+      ;;
+    *) falha "escrever_override: modo desconhecido '$modo'" ;;
+  esac
+  if [ "$modo" = compose-do-painel ]; then imagem='${ROOTOS_IMAGE}'; reset_build='    build: !reset null'; fi
   cat > "$destino" <<YML
 # GERADO por deploy/instalar.sh — não edite à mão; a fonte é o .env desta instância.
 # Isola esta instância das irmãs: nomes de container, rede, imagem:tag e portas
@@ -182,11 +200,13 @@ ${reset_build}
   web:
     container_name: ${prefixo}_web
     image: ${imagem}
+${redes_do_web}
     ports: !override
       - "${bind}:${web}:4000"
 networks:
   marketing-os-net:
     name: ${rede}
+${rede_easypanel}
 YML
 }
 
@@ -249,13 +269,14 @@ gerar_compose_do_painel() {
   local destino="$1" tmp_override tmp_saida senha
   tmp_override="$(mktemp -t rootos-painel-override.XXXXXX)"; tmp_saida="$(mktemp -t rootos-painel-compose.XXXXXX)"
   escrever_override "$tmp_override" "$ROOTOS_CONTAINER_PREFIX" "$ROOTOS_NETWORK_NAME" "" "$ROOTOS_BIND_IP" \
-    "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT" painel
+    "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT" compose-do-painel "${ROOTOS_PROJECT}_web"
   if ! OVERRIDE_ATIVO="$tmp_override" compose config --no-interpolate > "$tmp_saida"; then
     rm -f "$tmp_override" "$tmp_saida"; falha "não consegui fundir o compose para o painel (docker compose config --no-interpolate)"
   fi
   rm -f "$tmp_override"
   if grep -qE '^[[:space:]]*build:' "$tmp_saida"; then rm -f "$tmp_saida"; falha "o compose do painel saiu com 'build:' — o painel não tem código para construir; nada gravado"; fi
   [ "$(grep -cF 'image: ${ROOTOS_IMAGE}' "$tmp_saida")" -ge 2 ] || { rm -f "$tmp_saida"; falha "o compose do painel não traz a imagem por variável (\${ROOTOS_IMAGE}) em api e web; nada gravado"; }
+  grep -qF -- "- ${ROOTOS_PROJECT}_web" "$tmp_saida" || { rm -f "$tmp_saida"; falha "o compose do painel não liga o web na rede easypanel com o alias ${ROOTOS_PROJECT}_web — o Traefik do painel não acharia a instância; nada gravado"; }
   senha="$(valor_no_env "$DIR_INSTANCIA/.env" DB_PASSWORD)"
   if [ -n "$senha" ] && grep -qF -- "$senha" "$tmp_saida"; then rm -f "$tmp_saida"; falha "o compose do painel contém um valor do .env interpolado; nada gravado"; fi
   mkdir -p "$(dirname "$destino")"

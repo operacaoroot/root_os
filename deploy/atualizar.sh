@@ -71,7 +71,8 @@ URL_VERSAO="http://$ROOTOS_BIND_IP:$API_HOST_PORT/api/health/versao"
 
 apontar_para() { # imagem tag commit — regrava override + 3 chaves do .env
   escrever_override "$DIR_INSTANCIA/override.yml" "$ROOTOS_CONTAINER_PREFIX" "$ROOTOS_NETWORK_NAME" "$1" "$ROOTOS_BIND_IP" \
-    "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT"
+    "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT" \
+    "${ROOTOS_PAINEL:+instancia}" "${ROOTOS_PAINEL:+${ROOTOS_PROJECT}_web}"
   gravar_chave_no_env "$ENV" ROOTOS_IMAGE "$1"
   gravar_chave_no_env "$ENV" ROOTOS_VERSION "$2"
   gravar_chave_no_env "$ENV" ROOTOS_COMMIT "$3"
@@ -248,7 +249,8 @@ passo "4/8 imagem $NOVA_IMAGEM (a anterior ${ATUAL_IMAGEM:-?} fica; instância i
 # override da instância mudem. Até o corte, `compose` da instância continua igual.
 OVERRIDE_TMP="$(mktemp "$DIR_INSTANCIA/.override.novo.XXXXXX")"
 escrever_override "$OVERRIDE_TMP" "$ROOTOS_CONTAINER_PREFIX" "$ROOTOS_NETWORK_NAME" "$NOVA_IMAGEM" "$ROOTOS_BIND_IP" \
-  "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT"
+  "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT" \
+    "${ROOTOS_PAINEL:+instancia}" "${ROOTOS_PAINEL:+${ROOTOS_PROJECT}_web}"
 export ROOTOS_VERSION="$TAG" ROOTOS_COMMIT="$NOVO_COMMIT" ROOTOS_IMAGE="$NOVA_IMAGEM"
 if ! OVERRIDE_ATIVO="$OVERRIDE_TMP" compose build api; then desfazer_codigo; falha "o build de $TAG falhou; nada subiu, a instância não foi tocada"; fi
 "$DOCKER" image inspect "$NOVA_IMAGEM" >/dev/null 2>&1 || { desfazer_codigo; falha "o build não produziu $NOVA_IMAGEM"; }

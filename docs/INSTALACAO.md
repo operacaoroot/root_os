@@ -86,6 +86,9 @@ ROOTOS_BASE=/srv/rootos deploy/instalar.sh --ambiente homologacao --tag v0.4.0 -
 Depois, no painel: projeto `root` → serviço Compose `rootos-homologacao` → colar `painel/docker-compose.yml`
 e, no campo de ambiente, o conteúdo do `.env` da instância → Deploy. Como o projeto é o mesmo
 (`root_rootos-homologacao`), o painel **adota** containers, rede e volumes já existentes.
+O `web` entra também na rede externa `easypanel` com o alias `<projeto>_web` — é por esse nome que o
+Traefik do painel roteia os domínios (`http://root_rootos-homologacao_web:4000/`); a aba Domains do
+serviço passa a funcionar sem rota à mão. A rede `easypanel` precisa existir no host (existe onde há painel).
 
 **O painel guarda cópia própria do `.env`.** Depois de cada `deploy/atualizar.sh` (ou `--voltar`), o
 script regenera `painel/docker-compose.yml`, diz se ele mudou e lembra de atualizar `ROOTOS_IMAGE`,
