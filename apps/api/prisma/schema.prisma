@@ -144,6 +144,7 @@ model Org {
   workFieldOptions      WorkFieldOption[]
   workFieldValues       WorkFieldValue[]
   workComments          WorkComment[]
+  workApontamentos      WorkApontamento[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -1533,6 +1534,15 @@ model WorkStatus {
   type   WorkStatusType @default(open)
   color  String         @default("#87909e")
   order  Int            @default(0)
+  /// LIMITE DE TRABALHO EM ANDAMENTO da etapa (o WIP do kanban). Nulo = sem
+  /// limite, o estado de toda etapa que já existia.
+  ///
+  /// AVISA, NÃO TRAVA: a coluna acima do limite aparece marcada no quadro, e o
+  /// PATCH que move a tarefa para lá continua passando. Limite de WIP é
+  /// combinado do time, discutido no check-in — um 400 no meio do arraste
+  /// transformaria o combinado em obstáculo e ensinaria todo mundo a apagar o
+  /// limite. O banco só recusa o que não faz sentido (zero ou negativo).
+  limite Int?
 
   tasks WorkTask[]
 
@@ -1633,6 +1643,20 @@ model WorkTask {
   /// travada?", que é a pergunta de quem procura trabalho parado; nulo sempre
   /// que `agenteId` é nulo, e os dois são escritos e apagados juntos.
   agenteEm    DateTime?
+  /// DESDE QUANDO a tarefa está na etapa atual. Responde "há quantos dias este
+  /// cliente está parado aqui?" — a idade do cartão no kanban.
+  ///
+  /// QUEM ESCREVE É O BANCO, não o serviço: o gatilho `WorkTask_statusDesde`
+  /// (migration `20260917010000_esteira_de_clientes`) carimba na inserção e em
+  /// toda troca de `statusId`. Três caminhos mudam etapa hoje — o PATCH do
+  /// quadro, o checkout atômico do `assumir` (um `updateMany` que não passa pelo
+  /// serviço) e a semente `seed-trabalho.ts` —, e uma regra no serviço seria
+  /// esquecida no primeiro que não passa por ele.
+  ///
+  /// Nulo = tarefa anterior à fatia. A data real de entrada na etapa não existe
+  /// para elas, e a tela não inventa uma: preencher com `updatedAt` publicaria
+  /// "parada há 2 dias" para o que está parado há dois meses.
+  statusDesde DateTime?
   dueDate     DateTime?
   startDate   DateTime?
   parentId    String?
@@ -1648,6 +1672,7 @@ model WorkTask {
   tags     WorkTag[]        @relation("WorkTaskTags")
   values   WorkFieldValue[]
   comments WorkComment[]
+  apontamentos WorkApontamento[]
 
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
@@ -1692,6 +1717,40 @@ model WorkComment {
 
   @@index([taskId, createdAt])
   @@index([orgId, createdAt])
+}
+
+/// HORAS APONTADAS numa tarefa — o registro de tempo da esteira de clientes.
+///
+/// Existe para responder uma pergunta de negócio que ninguém media: quantas
+/// horas de gente cada cliente consome, e EM QUAL ETAPA. É o número que define
+/// preço, margem e quantos clientes cabem na agenda.
+///
+/// `etapa` é o NOME da etapa no momento do lançamento, e não um ponteiro para
+/// `WorkStatus`: a soma por etapa tem de sobreviver a etapa renomeada ou
+/// apagada, e um ponteiro obrigaria a escolher entre perder a hora (cascade) e
+/// travar a limpeza da lista (restrict). Fotografia, como o `authorName` do
+/// comentário.
+///
+/// `dia` é DATE, não hora: quem aponta diz "gastei 1h30 na terça", e guardar
+/// um instante inventaria um horário que ninguém informou.
+model WorkApontamento {
+  id        String   @id @default(uuid())
+  /// Sentinela + gatilho `WorkApontamento_orgId_do_pai` (ver topo do arquivo).
+  orgId     String   @default("")
+  org       Org      @relation(fields: [orgId], references: [id])
+  taskId    String
+  task      WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  autorId   String?
+  autorNome String
+  /// Minutos, inteiros. O banco recusa zero, negativo e mais de um dia (1440).
+  minutos   Int
+  dia       DateTime @db.Date
+  etapa     String
+  nota      String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId, dia])
+  @@index([orgId, dia])
 }
 
 // ============================================================================

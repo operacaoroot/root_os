@@ -199,8 +199,15 @@ jobs:
       # novos são da tela de custo de IA (fatia 6.4): `unit/custo-ia` (36) e
       # `component/custo-ia` (14). O piso de ARQUIVOS vai a 19, colado no real;
       # o de CASOS vai a 227, ~18% de folga sobre 278.
-      PISO_CASOS_WEB: '227'
-      PISO_ARQUIVOS_WEB: '19'
+      #
+      # ESTEIRA DE CLIENTES (17/09/2026): +16 casos, +2 arquivos, só desta fatia
+      # — `unit/horas` (7: formatar e ler hora, idade do cartão, o "hoje" de
+      # Brasília) e `component/trabalho-esteira` (9: limite no cabeçalho da
+      # coluna, idade e horas no cartão, apontar na gaveta, só o autor apaga,
+      # arrastar e soltar, criar pelo modelo). O piso de ARQUIVOS vai a 21; o de
+      # CASOS sobe 13 (~18% de folga sobre os 16 novos), para 240.
+      PISO_CASOS_WEB: '240'
+      PISO_ARQUIVOS_WEB: '21'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -548,8 +555,34 @@ jobs:
       #
       # A conta vai de 1488/37 para 1506/38. O piso de ARQUIVOS vai a 38, colado
       # no real; o de CASOS vai a 1235, ~18% de folga sobre 1506.
-      PISO_CASOS_API: '1235'
-      PISO_ARQUIVOS_API: '38'
+      #
+      # ---------------------------------------------------------------------
+      # ESTEIRA DE CLIENTES (17/09/2026): +20 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `esteira-de-clientes` (20): o modelo de lista (etapas, limite, campos),
+      # as regras de hora sem banco, e contra o Postgres o carimbo de etapa feito
+      # pelo GATILHO (inclusive por `updateMany` fora do serviço, o caminho do
+      # checkout), a soma por tarefa e por etapa, dia futuro e dia inexistente
+      # recusados, só o autor apaga, e os CHECKs do banco. Os três casos do
+      # carimbo foram vistos VERMELHOS com o gatilho desligado antes de valer.
+      #
+      # Só o delta desta fatia, pela disciplina de sempre. Para quem for remedir:
+      # o conjunto inteiro rodou nesta sessão com 1723 casos em 45 arquivos, e
+      # dois vermelhos que NÃO são da fatia e não existem na CI — `arquitetura`
+      # varre `_finops_import/` (ignorado pelo git, só existe no Mac) e
+      # `rotas-publicas-tenant` perde a limpeza quando divide o banco com o
+      # conjunto em paralelo (passa sozinho: 38/38).
+      #
+      # O piso de ARQUIVOS vai a 39; o de CASOS sobe 16 (~18% de folga sobre os
+      # 20 novos), para 1251.
+      #
+      # FORA DESTE JOB, medidos na mesma sessão com o papel restrito:
+      #   · isolamento: 293 casos (287 + 6 da `WorkApontamento`: leitura cruzada
+      #     nos dois sentidos e as quatro provas de filho com orgId);
+      #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1`: 53; `cofre`: 97;
+      #     `rastro-retencao`: 33 — iguais, a fatia não mexe neles.
+      PISO_CASOS_API: '1251'
+      PISO_ARQUIVOS_API: '39'
 
     steps:
       - uses: actions/checkout@v4
@@ -988,7 +1021,11 @@ jobs:
           # linha de B" roda contra tabela vazia e passa com qualquer policy.
           # São 83 tabelas de empresa no registro e 86 com RLS e FORCE no
           # banco. O piso vai de 235 para 243, mantendo os ~15%.
-          PISO_CASOS_ISOLAMENTO: '243'
+          #
+          # ESTEIRA DE CLIENTES (17/09/2026): **293 casos**. `WorkApontamento`
+          # (horas por cliente e por etapa) entrou no registro de alvos e em
+          # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 248.
+          PISO_CASOS_ISOLAMENTO: '248'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

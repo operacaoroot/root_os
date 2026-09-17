@@ -1503,16 +1503,24 @@ export const TrabListaUpdateSchema = z.object({
   order: z.number().int().min(0).optional(),
 });
 
+/**
+ * Limite de trabalho em andamento da etapa (o WIP do kanban). `null` apaga o
+ * limite. AVISA, NÃO TRAVA — ver `WorkStatus.limite` no schema do Prisma.
+ */
+const limiteDeEtapa = z.number().int().min(1).max(99);
+
 export const TrabStatusCreateSchema = z.object({
   name: z.string().min(1).max(60),
   type: WorkStatusTypeSchema.default('custom'),
   color: corHex.optional(),
+  limite: limiteDeEtapa.nullish(),
 });
 export const TrabStatusUpdateSchema = z.object({
   name: z.string().min(1).max(60).optional(),
   type: WorkStatusTypeSchema.optional(),
   color: corHex.optional(),
   order: z.number().int().min(0).optional(),
+  limite: limiteDeEtapa.nullish().optional(),
 });
 
 export const TrabCampoCreateSchema = z.object({
@@ -1576,6 +1584,100 @@ export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
 export const TrabComentarioSchema = z.object({ text: z.string().min(1).max(10000) });
 
 /* ----------------------------------------------------------------------------
+ * HORAS APONTADAS — a esteira de clientes (17/09/2026)
+ *
+ * `minutos` inteiros, de 1 a 1440 (o banco confere o mesmo intervalo). A tela
+ * converte "1,5 h" em 90; a API não aceita fração para que a soma nunca dependa
+ * de arredondamento de quem chamou.
+ *
+ * `dia` é a data em que o trabalho aconteceu, no formato AAAA-MM-DD. Ausente =
+ * hoje no fuso de Brasília. Dia futuro é recusado pelo serviço: hora ainda não
+ * gasta não é apontamento, é previsão.
+ * -------------------------------------------------------------------------- */
+export const TrabApontamentoCreateSchema = z.object({
+  minutos: z.number().int().min(1).max(1440),
+  dia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dia no formato AAAA-MM-DD').optional(),
+  nota: z.string().max(500).nullish(),
+});
+export type TrabApontamentoCreateInput = z.infer<typeof TrabApontamentoCreateSchema>;
+
+/* ----------------------------------------------------------------------------
+ * MODELOS DE LISTA — uma lista pronta em um clique
+ *
+ * O modelo é DADO versionado aqui, não linha de banco: é o mesmo para toda
+ * empresa, e mudá-lo é decisão de produto que passa por revisão de código. Criar
+ * a lista a partir dele copia as etapas e os campos; depois disso a lista é da
+ * empresa e se edita como qualquer outra — o modelo não fica amarrado a ela.
+ *
+ * A esteira de clientes nasceu do plano de produto da Root (15–16/09/2026):
+ * seis etapas de trabalho e uma de saída, com limite de duas implantações ao
+ * mesmo tempo enquanto as horas por implantação não forem medidas.
+ * -------------------------------------------------------------------------- */
+export interface ModeloDeLista {
+  chave: string;
+  nome: string;
+  descricao: string;
+  etapas: ReadonlyArray<{ name: string; type: WorkStatusTypeDto; color: string; limite: number | null }>;
+  campos: ReadonlyArray<{
+    name: string;
+    type: WorkFieldTypeDto;
+    opcoes?: ReadonlyArray<{ name: string; color: string }>;
+  }>;
+}
+
+export const MODELOS_DE_LISTA = {
+  'esteira-de-clientes': {
+    chave: 'esteira-de-clientes',
+    nome: 'Esteira de clientes',
+    descricao: 'Da qualificação à operação, com limite de implantações simultâneas e horas por etapa.',
+    etapas: [
+      { name: 'Qualificação', type: 'open', color: '#87909e', limite: null },
+      { name: 'Diagnóstico', type: 'custom', color: '#4194f6', limite: null },
+      { name: 'Contrato', type: 'custom', color: '#a875ff', limite: null },
+      { name: 'Onboarding', type: 'custom', color: '#f9d900', limite: null },
+      { name: 'Implantação', type: 'custom', color: '#ff7800', limite: 2 },
+      { name: 'Operação', type: 'custom', color: '#1bbc9c', limite: null },
+      { name: 'Encerrado', type: 'closed', color: '#6b7280', limite: null },
+    ],
+    campos: [
+      {
+        name: 'Perfil',
+        type: 'drop_down',
+        opcoes: [
+          { name: 'P1 · conhece o ChatGPT', color: '#87909e' },
+          { name: 'P2 · tem sistema e base', color: '#4194f6' },
+          { name: 'P3 · muito dado, não cruza', color: '#a875ff' },
+        ],
+      },
+      {
+        name: 'Origem',
+        type: 'drop_down',
+        opcoes: [
+          { name: 'Indicação', color: '#1bbc9c' },
+          { name: 'Evento', color: '#ff7800' },
+          { name: 'Tráfego', color: '#4194f6' },
+          { name: 'Parceiro ERP', color: '#a875ff' },
+          { name: 'Rede dos sócios', color: '#f9d900' },
+        ],
+      },
+      { name: 'Sistema / ERP', type: 'texto' },
+      { name: 'Valor do contrato (R$)', type: 'numero' },
+      { name: 'Próximo passo', type: 'texto' },
+    ],
+  },
+} as const satisfies Record<string, ModeloDeLista>;
+
+export type ChaveDeModeloDeLista = keyof typeof MODELOS_DE_LISTA;
+
+export const TrabListaDoModeloSchema = z.object({
+  modelo: z.enum(Object.keys(MODELOS_DE_LISTA) as [ChaveDeModeloDeLista, ...ChaveDeModeloDeLista[]]),
+  folderId: z.string().uuid().nullish(),
+  /** Ausente = o nome do modelo. */
+  name: z.string().min(1).max(80).optional(),
+});
+export type TrabListaDoModeloInput = z.infer<typeof TrabListaDoModeloSchema>;
+
+/* ----------------------------------------------------------------------------
  * O CHECKOUT ATÔMICO — assumir e soltar tarefa (fatia A4)
  *
  * `agente` é o SLUG, não o id: é o que a tela mostra, é estável por empresa
@@ -1603,7 +1705,11 @@ export interface TrabCampoDto {
   id: string; listId: string | null; name: string; type: WorkFieldTypeDto; order: number;
   options: TrabOpcaoDto[];
 }
-export interface TrabStatusDto { id: string; name: string; type: WorkStatusTypeDto; color: string; order: number; total: number }
+export interface TrabStatusDto {
+  id: string; name: string; type: WorkStatusTypeDto; color: string; order: number; total: number;
+  /** Limite de trabalho em andamento; `null` = sem limite. `total` acima dele é aviso, não erro. */
+  limite: number | null;
+}
 export interface TrabListaDto {
   id: string; name: string; order: number; externalId: string | null; total: number;
   statuses: TrabStatusDto[]; fields: TrabCampoDto[];
@@ -1662,6 +1768,14 @@ export interface TrabTarefaResumo {
   agenteId: string | null; agenteSlug: string | null; agenteNome: string | null;
   /** Desde quando está travada. É o que responde "isto está parado?". */
   agenteEm: string | null;
+  /**
+   * Desde quando está NA ETAPA ATUAL — a idade do cartão no kanban. Carimbado
+   * pelo banco. Nulo = tarefa anterior à esteira (17/09/2026): a data real não
+   * existe, e a tela não mostra idade em vez de inventar uma.
+   */
+  statusDesde: string | null;
+  /** Soma das horas apontadas nesta tarefa, em minutos. */
+  minutos: number;
   dueDate: string | null; startDate: string | null; overdue: boolean;
   parentId: string | null; subtasks: number; comments: number;
   externalId: string | null; externalUrl: string | null; archived: boolean; order: number;
@@ -1674,10 +1788,23 @@ export interface TrabAtividadeDto {
   id: string; actorType: string; actorName: string | null; action: string;
   before: unknown; after: unknown; createdAt: string;
 }
+export interface TrabApontamentoDto {
+  id: string; autorId: string | null; autorNome: string;
+  minutos: number;
+  /** AAAA-MM-DD — o dia em que o trabalho aconteceu. */
+  dia: string;
+  /** Nome da etapa no momento do lançamento (fotografia). */
+  etapa: string;
+  nota: string | null; createdAt: string;
+}
 export interface TrabTarefaDetalhe extends TrabTarefaResumo {
   description: string | null; listName: string;
   createdAt: string; updatedAt: string;
   comentarios: TrabComentarioDto[]; atividade: TrabAtividadeDto[];
+  /** Os lançamentos, do dia mais recente para o mais antigo (até 200). */
+  apontamentos: TrabApontamentoDto[];
+  /** Soma por etapa, na ordem em que as etapas apareceram pela primeira vez. Cobre TODOS os lançamentos, não só os 200 listados. */
+  minutosPorEtapa: Array<{ etapa: string; minutos: number }>;
   filhos: Array<{ id: string; title: string; statusName: string; statusColor: string }>;
 }
 export interface TrabTarefaLista {

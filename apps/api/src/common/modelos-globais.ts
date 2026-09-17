@@ -191,6 +191,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
     ],
   },
   { modelo: 'WorkComment', pai: 'WorkTask', fk: 'taskId' },
+  // Horas apontadas (esteira de clientes, 17/09/2026). Um pai só: a etapa é
+  // fotografia em texto, não chave estrangeira — ver a migration.
+  { modelo: 'WorkApontamento', pai: 'WorkTask', fk: 'taskId' },
 ] as const;
 
 /**

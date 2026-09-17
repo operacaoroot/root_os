@@ -1,0 +1,279 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+/*
+ * ==========================================================================
+ * A ESTEIRA DE CLIENTES NO QUADRO — limite, idade, horas e arraste
+ * ==========================================================================
+ *
+ * A regra de negócio (carimbo de etapa, soma, quem apaga) tem suíte na api —
+ * `test/esteira-de-clientes.test.ts`. Aqui se cobra o que só a TELA pode errar:
+ *
+ *  1. O LIMITE APARECE no cabeçalho da coluna, e acima dele fica marcado.
+ *  2. A IDADE só aparece quando a data existe, e não em etapa fechada.
+ *  3. AS HORAS aparecem no cartão e na gaveta; "1,5" vira 90 minutos na API.
+ *  4. SÓ O AUTOR vê o botão de apagar um lançamento.
+ *  5. ARRASTAR o cartão para outra coluna move a etapa pelo PATCH de sempre.
+ *  6. O MODELO cria a lista pela rota de modelo.
+ */
+
+const apiGet = vi.fn();
+const apiPost = vi.fn();
+const apiPatch = vi.fn();
+const apiDelete = vi.fn();
+
+vi.mock('@/lib/api', async () => {
+  const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return {
+    ...real,
+    apiGet: (...a: unknown[]) => apiGet(...a),
+    apiPost: (...a: unknown[]) => apiPost(...a),
+    apiPatch: (...a: unknown[]) => apiPatch(...a),
+    apiDelete: (...a: unknown[]) => apiDelete(...a),
+  };
+});
+
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({
+    token: 'tok',
+    ready: true,
+    user: { id: 'u-eu', name: 'Rodrigo', email: 'r@x.com', roles: [], permissions: ['tarefas.ver', 'tarefas.editar'] },
+    can: (p: string) => ['tarefas.ver', 'tarefas.editar'].includes(p),
+  }),
+}));
+
+// eslint-disable-next-line import/first
+import TrabalhoPage from '@/app/trabalho/page';
+
+/* --------------------------------------------------------------- fixtures -- */
+
+const PASTA = { id: 'f-1', name: 'Comercial', order: 0, lists: [] as unknown[] };
+
+const ESTEIRA = {
+  id: 'l-esteira',
+  name: 'Esteira de clientes',
+  order: 0,
+  externalId: null,
+  total: 4,
+  statuses: [
+    { id: 's-diag', name: 'Diagnóstico', type: 'custom', color: '#4194f6', order: 0, total: 1, limite: null },
+    { id: 's-impl', name: 'Implantação', type: 'custom', color: '#ff7800', order: 1, total: 3, limite: 2 },
+    { id: 's-onb', name: 'Onboarding', type: 'custom', color: '#f9d900', order: 2, total: 0, limite: 3 },
+    { id: 's-fim', name: 'Encerrado', type: 'closed', color: '#6b7280', order: 3, total: 1, limite: null },
+  ],
+  fields: [],
+};
+
+function tarefa(over: Record<string, unknown> = {}) {
+  return {
+    id: 't-1', listId: 'l-esteira', title: 'ProMedical',
+    statusId: 's-impl', statusName: 'Implantação', statusType: 'custom', statusColor: '#ff7800',
+    priority: 'normal', assignee: 'Rodrigo',
+    agenteId: null, agenteSlug: null, agenteNome: null, agenteEm: null,
+    statusDesde: null, minutos: 0,
+    dueDate: null, startDate: null, overdue: false,
+    parentId: null, subtasks: 0, comments: 0,
+    externalId: null, externalUrl: null, archived: false, order: 0,
+    tags: [], values: [],
+    ...over,
+  };
+}
+
+const ITENS = [
+  tarefa({ id: 't-pro', title: 'ProMedical', statusDesde: new Date(Date.now() - 12 * 86_400_000).toISOString(), minutos: 90 }),
+  tarefa({ id: 't-bsb', title: 'Cliente BSB' }),
+  tarefa({ id: 't-cart', title: 'Cartório', minutos: 600 }),
+  tarefa({ id: 't-sol', title: 'Soberana', statusId: 's-diag', statusName: 'Diagnóstico' }),
+  tarefa({
+    id: 't-fim', title: 'Cliente encerrado', statusId: 's-fim', statusName: 'Encerrado', statusType: 'closed',
+    statusDesde: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+  }),
+];
+
+function servir(itens = ITENS, detalhe: Record<string, unknown> = {}) {
+  apiGet.mockImplementation((rota: string) => {
+    if (rota.startsWith('/trabalho/estrutura')) {
+      return Promise.resolve({
+        folders: [PASTA], listasSoltas: [ESTEIRA], camposGlobais: [], tags: [], responsaveis: ['Rodrigo'], agentes: [],
+      });
+    }
+    if (rota.startsWith('/trabalho/tarefas?')) {
+      return Promise.resolve({ items: itens, total: itens.length, source: { tool: 'trabalho-interno', generatedAt: '2026-09-17T12:00:00.000Z' } });
+    }
+    const id = rota.replace('/trabalho/tarefas/', '');
+    const achada = itens.find((t) => t.id === id) ?? itens[0];
+    return Promise.resolve({
+      ...achada,
+      description: null, listName: ESTEIRA.name,
+      createdAt: '2026-09-01T10:00:00.000Z', updatedAt: '2026-09-17T10:00:00.000Z',
+      comentarios: [], atividade: [], filhos: [],
+      apontamentos: [], minutosPorEtapa: [],
+      ...detalhe,
+    });
+  });
+}
+
+const coluna = (statusId: string) => document.querySelector(`[data-coluna="${statusId}"]`) as HTMLElement;
+const cartao = (titulo: string) => screen.getByText(titulo).closest('div.rounded-lg') as HTMLElement;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  apiPost.mockResolvedValue({ ok: true });
+  apiPatch.mockResolvedValue({ ok: true });
+  apiDelete.mockResolvedValue({ ok: true });
+});
+
+/* ------------------------------------------------------------- 1. limite -- */
+
+describe('esteira: o limite da etapa no cabeçalho da coluna', () => {
+  it('acima do limite aparece "3/2" marcado; no limite, cheia; sem limite, só o número', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    await waitFor(() => cartao('ProMedical'));
+
+    const impl = within(coluna('s-impl')).getByText('3/2');
+    expect(impl.getAttribute('data-estado-limite')).toBe('passou');
+    expect(impl.getAttribute('title')).toMatch(/Acima do limite/);
+
+    expect(within(coluna('s-onb')).getByText('0/3').getAttribute('data-estado-limite')).toBe('folga');
+    // Diagnóstico sem limite: número puro, sem barra.
+    expect(within(coluna('s-diag')).getByText('1')).toBeTruthy();
+    expect(within(coluna('s-diag')).queryByText(/\//)).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------ 2. idade e horas -- */
+
+describe('esteira: idade e horas no cartão', () => {
+  it('mostra a idade na etapa e as horas apontadas', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    const c = await waitFor(() => cartao('ProMedical'));
+    expect(within(c).getByText('12d na etapa')).toBeTruthy();
+    expect(within(c).getByText('1h30')).toBeTruthy();
+    expect(within(cartao('Cartório')).getByText('10h')).toBeTruthy();
+  });
+
+  it('sem data não há idade, e etapa fechada não envelhece', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    await waitFor(() => cartao('Cliente BSB'));
+    expect(within(cartao('Cliente BSB')).queryByText(/na etapa/)).toBeNull();
+    expect(within(cartao('Cliente encerrado')).queryByText(/na etapa/)).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------ 3. horas na gaveta -- */
+
+describe('esteira: apontar horas na gaveta', () => {
+  it('"1,5" vira 90 minutos na API, e o botão diz quanto e em qual etapa', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('Cliente BSB'));
+
+    const horas = await screen.findByRole('textbox', { name: 'Horas gastas' });
+    await userEvent.type(horas, '1,5');
+    await userEvent.type(screen.getByRole('textbox', { name: 'O que foi feito' }), 'Instalação do MCP');
+
+    const secao = document.querySelector('[data-secao="horas"]') as HTMLElement;
+    expect(within(secao).getByText('Entra na etapa Implantação.')).toBeTruthy();
+    await userEvent.click(within(secao).getByRole('button', { name: 'Apontar 1h30' }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalled());
+    const [rota, corpo] = apiPost.mock.calls[0];
+    expect(rota).toBe('/trabalho/tarefas/t-bsb/apontamentos');
+    expect(corpo).toMatchObject({ minutos: 90, nota: 'Instalação do MCP' });
+    expect(corpo.dia).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('hora inválida não habilita o botão e diz o porquê', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('Cliente BSB'));
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Horas gastas' }), '30');
+
+    const secao = document.querySelector('[data-secao="horas"]') as HTMLElement;
+    expect(within(secao).getByText('Hora inválida: de 1 minuto a 24h.')).toBeTruthy();
+    expect((within(secao).getByRole('button', { name: 'Apontar' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it('mostra total e soma por etapa, e só o AUTOR vê apagar', async () => {
+    servir(ITENS, {
+      minutos: 135,
+      minutosPorEtapa: [{ etapa: 'Diagnóstico', minutos: 60 }, { etapa: 'Implantação', minutos: 75 }],
+      apontamentos: [
+        { id: 'a-meu', autorId: 'u-eu', autorNome: 'Rodrigo', minutos: 30, dia: '2026-09-16', etapa: 'Implantação', nota: null, createdAt: '2026-09-16T20:00:00Z' },
+        { id: 'a-dele', autorId: 'u-pedro', autorNome: 'Pedro', minutos: 45, dia: '2026-09-15', etapa: 'Implantação', nota: 'VPS', createdAt: '2026-09-15T20:00:00Z' },
+      ],
+    });
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('ProMedical'));
+
+    const secao = await waitFor(() => {
+      const s = document.querySelector('[data-secao="horas"]');
+      if (!s) throw new Error('gaveta ainda não abriu');
+      return s as HTMLElement;
+    });
+    await waitFor(() => expect(within(secao).getByText('2h15')).toBeTruthy());
+    expect(within(secao).getByText('1h')).toBeTruthy(); // Diagnóstico
+    expect(within(secao).getByRole('button', { name: /Apagar 30min/ })).toBeTruthy();
+    expect(within(secao).queryByRole('button', { name: /Apagar 45min/ })).toBeNull();
+
+    await userEvent.click(within(secao).getByRole('button', { name: /Apagar 30min/ }));
+    await waitFor(() => expect(apiDelete).toHaveBeenCalledWith('/trabalho/apontamentos/a-meu', 'tok'));
+  });
+});
+
+/* -------------------------------------------------------------- 4. arraste -- */
+
+describe('esteira: arrastar e soltar', () => {
+  function dataTransfer() {
+    const dados: Record<string, string> = {};
+    return {
+      setData: (k: string, v: string) => { dados[k] = v; },
+      getData: (k: string) => dados[k] ?? '',
+      effectAllowed: 'all',
+      dropEffect: 'move',
+    };
+  }
+
+  it('soltar o cartão noutra coluna move a etapa pelo PATCH de sempre', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    const c = await waitFor(() => cartao('Soberana'));
+    const dt = dataTransfer();
+    fireEvent.dragStart(c, { dataTransfer: dt });
+    fireEvent.dragOver(coluna('s-impl'), { dataTransfer: dt });
+    fireEvent.drop(coluna('s-impl'), { dataTransfer: dt });
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-sol', { statusId: 's-impl' }, 'tok'));
+  });
+
+  it('soltar na própria coluna não chama a API', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    const c = await waitFor(() => cartao('Soberana'));
+    const dt = dataTransfer();
+    fireEvent.dragStart(c, { dataTransfer: dt });
+    fireEvent.drop(coluna('s-diag'), { dataTransfer: dt });
+    expect(apiPatch).not.toHaveBeenCalled();
+  });
+});
+
+/* --------------------------------------------------------------- 5. modelo -- */
+
+describe('esteira: criar a lista pelo modelo', () => {
+  it('o botão do modelo chama a rota de modelo, na pasta escolhida', async () => {
+    servir();
+    render(<TrabalhoPage />);
+    await waitFor(() => cartao('ProMedical'));
+
+    await userEvent.click(screen.getByRole('button', { name: /nova lista/i }));
+    // Pela descrição: "Esteira de clientes" também nomeia a lista na árvore.
+    await userEvent.click(screen.getByRole('button', { name: /Da qualificação à operação/ }));
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/trabalho/listas/modelo', { modelo: 'esteira-de-clientes', folderId: 'f-1', name: undefined }, 'tok'),
+    );
+  });
+});

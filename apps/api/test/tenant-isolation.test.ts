@@ -404,6 +404,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkTask', escopo: 'tenant', chaveSql: '"id"', nota: 'Auto-relação parentId para subtarefas dentro da org.' },
   { tabela: 'WorkFieldValue', escopo: 'filho', chaveSql: '"id"', nota: 'DOIS pais obrigatórios (WorkTask e WorkField) — os dois têm de ser da mesma org.' },
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
+  { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
@@ -1118,6 +1119,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('WorkComment', await ins(c, 'WorkComment', {
     id: crypto.randomUUID(), orgId, taskId: tarefaId, authorId: userId,
     authorName: `Usuário ${rotulo}`, text: `Comentário privado da org ${rotulo}`,
+  }));
+
+  reg('WorkApontamento', await ins(c, 'WorkApontamento', {
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, autorId: userId,
+    autorNome: `Usuário ${rotulo}`, minutos: rotulo === 'A' ? 90 : 45, dia: '2026-09-15',
+    etapa: 'Implantação', nota: `Horas privadas da org ${rotulo}`,
   }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
@@ -2907,6 +2914,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
     authorName: 'Gatilho', text: 'comentário do teste de derivação',
   }),
+  WorkApontamento: async () => ({
+    id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
+    autorNome: 'Gatilho', minutos: 30, dia: '2026-09-15', etapa: 'Diagnóstico',
+  }),
 };
 
 /**
@@ -2929,7 +2940,9 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
-    expect(declarados.length).toBe(10);
+    // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
+    // clientes, 17/09/2026). Filho novo sobe este número no mesmo commit.
+    expect(declarados.length).toBe(11);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

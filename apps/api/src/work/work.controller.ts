@@ -4,7 +4,7 @@ import {
   TrabStatusCreateSchema, TrabStatusUpdateSchema, TrabCampoCreateSchema, TrabCampoUpdateSchema,
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
   TrabTarefaCreateSchema, TrabTarefaUpdateSchema, TrabComentarioSchema,
-  TrabAssumirSchema, TrabSoltarSchema,
+  TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
@@ -67,6 +67,13 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   apagarLista(@CurrentUser() u: JwtUser, @Param('id') id: string) {
     return this.svc.apagarLista(u.orgId, u.sub, id);
+  }
+
+  // Lista pronta a partir de um modelo versionado (`MODELOS_DE_LISTA`).
+  @Post('listas/modelo')
+  @RequirePermissions('tarefas.editar')
+  criarListaDoModelo(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.svc.criarListaDoModelo(u.orgId, u.sub, TrabListaDoModeloSchema.parse(body));
   }
 
   // ---- statuses ----
@@ -221,5 +228,24 @@ export class WorkController {
   @RequirePermissions('tarefas.editar')
   comentar(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.svc.comentar(u.orgId, u.sub, id, TrabComentarioSchema.parse(body).text);
+  }
+
+  /* ---- horas apontadas (esteira de clientes) ----
+   *
+   * `tarefas.editar` e não uma permissão nova, pelo mesmo motivo do checkout:
+   * quem mexe no quadro aponta hora nele, e uma chave `tarefas.apontar` custaria
+   * os três passos de permissão para separar gente que ninguém pediu para
+   * separar. Apagar tem uma regra a mais, no serviço: só quem lançou.
+   */
+  @Post('tarefas/:id/apontamentos')
+  @RequirePermissions('tarefas.editar')
+  apontar(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.apontar(u.orgId, u.sub, id, TrabApontamentoCreateSchema.parse(body));
+  }
+
+  @Delete('apontamentos/:id')
+  @RequirePermissions('tarefas.editar')
+  apagarApontamento(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.svc.apagarApontamento(u.orgId, u.sub, id);
   }
 }
