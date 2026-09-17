@@ -1,0 +1,5 @@
+hora: 2026-09-17T01:40:05-0300
+env.sha256: f077a7eece487ac0064aae4d5743883ef23d16dae43beb35094f816dbb773522
+ferramentas.sha256: c3fa73bab00ef3b4679728699b3213a3f1c943f88806ba1a8530999bbdb69d77
+sentinelas.db: 1/Marketing OS (root) [sentinela-e2]/users=3/roles=9/migrations=40
+git status repo (ferramentas untracked?): ?? ferramentas/ 

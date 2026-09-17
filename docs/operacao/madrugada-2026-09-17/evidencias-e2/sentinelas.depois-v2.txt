@@ -1,0 +1,17 @@
+hora: 2026-09-17T01:43:26-0300
+health: {"status":"ok","db":"ok","time":"2026-09-17T04:43:26.475Z"}
+versao: {"version":"madrugada-v2","commit":"fde68d648dbb758d7700ff5fac20597b18632e5d"}
+git madrugada-v2: fde68d648dbb758d7700ff5fac20597b18632e5d
+env.sha256: 3d30a5076d58fca7b01963404b2301979ce46a1b4bdbe74b925c3b0ce86c85ce   (antes f077a7ee… — DIFERENTE é esperado: 3 chaves de versão mudam)
+env diff de chaves (só nomes): 
+env linhas alteradas (só nomes): ROOTOS_IMAGE ROOTOS_VERSION ROOTOS_COMMIT 
+ferramentas.sha256: c3fa73bab00ef3b4679728699b3213a3f1c943f88806ba1a8530999bbdb69d77
+sentinelas.db: 1/Marketing OS (root) [sentinela-e2]/users=3/roles=9/migrations=41
+bancos no cluster: postgres rootos_homologacao template1 template0
+versoes.log:
+  2026-09-17T01:38:19-0300 | madrugada-v1 | 8c4ce0a4a28a68846e43e64e63d3e696e7db9f95 | instalado
+  2026-09-17T01:42:24-0300 | madrugada-v2 | fde68d648dbb758d7700ff5fac20597b18632e5d | atualizado anterior=rootos-app:madrugada-v1-8c4ce0a4a28a@madrugada-v1@8c4ce0a4a28a68846e43e64e63d3e696e7db9f95
+arquivos da instância: .env .env.bak.20260917_014224 backups override.yml override.yml.bak.20260917_014224 repo segredos-iniciais.txt vault versoes.log 
+lock: 0 entradas
+imagens: rootos-app:madrugada-v2-fde68d648dbb rootos-app:madrugada-v1-8c4ce0a4a28a 
+containers: rootos_homolog_web=Up 52 seconds rootos_homolog_api=Up 58 seconds (healthy) rootos_homolog_redis=Up 5 minutes rootos_homolog_db=Up 5 minutes (healthy) rootos_homolog_minio=Up 5 minutes 

@@ -1,0 +1,15 @@
+# Inventário Docker do host: antes do ensaio × depois (o que o ensaio criou)
+## containers
+novos: rootos_homolog_api rootos_homolog_db rootos_homolog_minio rootos_homolog_redis rootos_homolog_web 
+sumidos: 
+## redes
+novos: rootos-homologacao-net 
+sumidos: 
+## volumes
+novos: rootos-homologacao_mktos_db_data rootos-homologacao_mktos_minio_data rootos-homologacao_mktos_redis_data 
+sumidos: 
+## imagens
+novos: rootos-app:madrugada-v1-8c4ce0a4a28a rootos-app:madrugada-v2-fde68d648dbb rootos-app:madrugada-v3-01ef0474938b rootos-app:madrugada-v4-96efbb94cff3 
+sumidos: 
+
+Removidos por mim ao fechar: banco rootos_homolog_test_rls; imagens rootos-app:madrugada-v3-01ef0474938b e rootos-app:madrugada-v4-96efbb94cff3.

@@ -1,0 +1,24 @@
+== backup (pós-v2)
+[backup] conexão: container='rootos_homolog_db' host='/var/run/postgresql' porta='5432' banco='rootos_homologacao' usuário='rootos'
+[backup] banco 'rootos_homologacao' → <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014353.sql.gz
+[backup] verificação: ok — 54724 bytes, 87 tabelas, 87 blocos de dados, 318 linhas
+[backup] comparação: 54724 bytes hoje contra 54778 em rootos-20260917-014014.sql.gz — dentro do esperado
+[backup] pronto: <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014353.sql.gz
+exit backup: 0
+== restore-test
+[backup] conexão: container='rootos_homolog_db' host='/var/run/postgresql' porta='5432' banco='rootos_homologacao' usuário='rootos'
+[backup] verificação: ok — 54724 bytes, 87 tabelas, 87 blocos de dados, 318 linhas
+[backup] espaço: origem 13 MB, preciso de 15 MB (folga 20%), livre 360 GB
+[backup] restore-test: <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014353.sql.gz → banco novo 'rootos_rt_20260917014353_48779'
+[backup] restaurado: 87 tabelas em public
+[backup] TABELA                       LINHAS
+[backup] Org                               1
+[backup] User                              3
+[backup] Capability                       62
+[backup] PolicyVersion                     1
+[backup] restore-test aprovado.
+[backup] alvo: container='rootos_homolog_db' host='/var/run/postgresql' porta='5432' banco='rootos_rt_20260917014353_48779' conteúdo=87 tabelas / 318 linhas
+[backup] banco de teste 'rootos_rt_20260917014353_48779' derrubado.
+exit restore-test: 0
+== bancos depois: postgres rootos_homologacao template1 template0
+== dumps: <scratchpad>/e2/base/homologacao/backups/diario: rootos-20260917-014014.sql.gz rootos-20260917-014353.sql.gz  <scratchpad>/e2/base/homologacao/backups/semanal: rootos-semana-2026-W38.sql.gz 

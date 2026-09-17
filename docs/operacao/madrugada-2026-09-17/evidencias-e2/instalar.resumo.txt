@@ -1,0 +1,116 @@
+[instalar] 1/10 pré-condições
+[instalar] 2/10 nomes e portas do ambiente (isolamento entre irmãs)
+[instalar] 3/10 código na tag madrugada-v1
+[instalar] 4/10 override de isolamento
+[instalar] 5/10 imagem rootos-app:madrugada-v1-8c4ce0a4a28a
+ Image rootos-app:madrugada-v1-8c4ce0a4a28a Building 
+ Image rootos-app:madrugada-v1-8c4ce0a4a28a Built 
+[instalar] 6/10 banco
+ Network rootos-homologacao-net Created 
+ Volume rootos-homologacao_mktos_minio_data Created 
+ Volume rootos-homologacao_mktos_db_data Created 
+ Volume rootos-homologacao_mktos_redis_data Created 
+ Container rootos_homolog_db Created 
+ Container rootos_homolog_minio Created 
+ Container rootos_homolog_redis Created 
+ Container rootos_homolog_minio Starting 
+ Container rootos_homolog_redis Starting 
+ Container rootos_homolog_db Starting 
+ Container rootos_homolog_db Started 
+ Container rootos_homolog_redis Started 
+ Container rootos_homolog_minio Started 
+[instalar] 7/10 migrations (deploy) + empresa + política
+ Container rootos-homologacao-api-run-bfe140b01477 Created 
+For more information, see: https://pris.ly/prisma-config
+Datasource "db": PostgreSQL database "rootos_homologacao", schema "public" at "db:5432"
+40 migrations found in prisma/migrations
+Applying migration `20260707023354_init`
+Applying migration `20260707110329_add_report`
+Applying migration `20260707144122_add_content_item`
+Applying migration `20260707153301_add_knowledge_pgvector`
+Applying migration `20260707161047_add_google_account`
+Applying migration `20260707172550_add_finance`
+Applying migration `20260707183856_add_finops`
+Applying migration `20260707194157_add_apar`
+Applying migration `20260707200749_add_conciliacao`
+Applying migration `20260708010942_add_meta`
+Applying migration `20260708013857_add_goals`
+Applying migration `20260731232257_add_bio`
+Applying migration `20260801012757_trabalho_clickup_like`
+Applying migration `20260801020000_add_pauta`
+Applying migration `20260803115421_add_pauta_rotina`
+Applying migration `20260829161052_regua_porta_rastro`
+Applying migration `20260829162829_tripulacao`
+Applying migration `20260910120000_orgid_em_todo_filho`
+Applying migration `20260911013000_modulos_habilitados_por_org`
+Applying migration `20260911020000_papel_de_aplicacao`
+Applying migration `20260911030000_diff_da_sobrescrita_de_politica`
+Applying migration `20260911040000_diff_com_a_referencia_no_nome`
+Applying migration `20260911050000_isolamento_por_linha`
+Applying migration `20260911060000_rastro_retencao_e_expurgo`
+Applying migration `20260911063600_teto_de_custo_por_empresa_e_dia`
+Applying migration `20260911100000_desligamento_de_conector`
+Applying migration `20260911120000_expurgo_registra_de_dentro`
+Applying migration `20260911150000_cofre_de_segredos`
+Applying migration `20260911170000_memoria_versionada`
+Applying migration `20260911180000_rotinas_por_empresa`
+Applying migration `20260911193000_memoria_elo_do_evento`
+Applying migration `20260911200000_reserva_de_rotina_com_prazo`
+Applying migration `20260911210000_indice_sessao_e_motivo_sem_dado`
+Applying migration `20260911233000_assinatura_e_cobranca`
+Applying migration `20260911234500_mapa_publico_marcado_por_registro`
+Applying migration `20260911235500_console_da_plataforma`
+Applying migration `20260912010000_reativacao_deixa_marca`
+Applying migration `20260913010000_estado_declarado_do_agente`
+Applying migration `20260913020000_orcamento_mensal_do_agente`
+Applying migration `20260913030000_tarefa_com_dono_unico`
+The following migration(s) have been applied:
+migrations/
+All migrations have been successfully applied.
+ Container rootos-homologacao-api-run-885ca73c61fe Created 
+> @mktos/api@0.1.0 db:seed /app/apps/api
+> tsx prisma/seed.ts
+  [seed] ia-acao@marketing-os.local: senha gerada → s5v-nqUgBPxksu3d2wDFs8eM
+         (para trocar depois: defina em env e rode com --rotacionar-senhas)
+✔ Seed concluído (idempotente: nada foi apagado).
+  Org: Marketing OS (root) (root)
+  Contas: admin@marketing-os.local · mcp@marketing-os.local (read-only) · ia-acao@marketing-os.local (ação)
+  Senhas: via env (ADMIN_PASSWORD / MCP_SERVICE_PASSWORD / MCP_ACTION_PASSWORD) ou geradas acima.
+  Dados de exemplo (apaga e recria; só em banco descartável): db:seed:demo -- --sim-apagar
+ Container rootos-homologacao-api-run-8256a4cf1c70 Created 
+> @mktos/api@0.1.0 db:seed:politica /app/apps/api
+> tsx prisma/seed-politica.ts
+política base v1 criada
+capacidades: 62 criadas, 0 atualizadas, 62 no total
+LEMBRETE: a política que VALE é a gravada aqui, não a dos JSON do repositório.
+  Todo ambiente já semeado continua decidindo pela versão antiga até este seed rodar NELE.
+  Trocar nível no arquivo e dar deploy não muda nada — é o erro que mais custa tempo nesta área.
+[instalar] 8/10 subir
+ Container rootos_homolog_redis Running 
+ Container rootos_homolog_db Running 
+ Container rootos_homolog_minio Running 
+ Container rootos_homolog_api Created 
+ Container rootos_homolog_web Created 
+ Container rootos_homolog_db Waiting 
+ Container rootos_homolog_db Healthy 
+ Container rootos_homolog_api Starting 
+ Container rootos_homolog_api Started 
+ Container rootos_homolog_api Waiting 
+ Container rootos_homolog_api Healthy 
+ Container rootos_homolog_web Starting 
+ Container rootos_homolog_web Started 
+[instalar] 9/10 saúde
+[instalar] 10/10 pronto — o que fica À MÃO
+  Instância 'homologacao' no ar em <scratchpad>/e2/base/homologacao (tag madrugada-v1, commit 8c4ce0a4a28a).
+  Provado por este script: saúde ok, artefato madrugada-v1@8c4ce0a4a28a no ar, migrations aplicadas, política semeada.
+  NÃO provado por este script: login humano (ninguém entrou), modelo respondendo (LLM desligado), rota do Traefik.
+  1. ROTA NO TRAEFIK/easyPanel (manual): homolog.madrugada.local → 127.0.0.1:4100
+  2. SEGREDOS INICIAIS (0600): <scratchpad>/e2/base/homologacao/segredos-iniciais.txt — guarde e APAGUE.
+     (a senha é de admin@marketing-os.local; o admin do cliente entra pelo Google)
+  2b. Para login com Google mais tarde: ROOTOS_GOOGLE_CLIENT_ID/SECRET no ambiente e GOOGLE_* no .env, depois up -d --no-build api
+  3. BACKUP diário (crontab do root):
+     BACKUP_DB_CONTAINER=rootos_homolog_db PGUSER=rootos PGDATABASE=rootos_homologacao BACKUP_DIR=<scratchpad>/e2/base/homologacao/backups \
+       <scratchpad>/e2/base/homologacao/repo/deploy/backup-db.sh
+  4. Atualizar: deploy/atualizar.sh --ambiente homologacao --tag <tag-nova>
+  5. Papel restrito do banco (quando decidir): <scratchpad>/e2/base/homologacao/repo/deploy/papel-app.sh
+exit instalar: 0

@@ -1,0 +1,11 @@
+hora: 2026-09-17T01:48:14-0300
+versao no ar: {"version":"madrugada-v2","commit":"fde68d648dbb758d7700ff5fac20597b18632e5d"}  health: {"status":"ok","db":"ok","time
+repo HEAD: fde68d6 (v2=fde68d6 v3=01ef047)
+env versão: ROOTOS_VERSION=madrugada-v2 ROOTOS_COMMIT=fde68d648dbb758d7700ff5fac20597b18632e5d 
+migrations reais: 41 ; quebrada presente? 0
+bancos: postgres rootos_homologacao template1 template0
+sentinelas: 1/Marketing OS (root) [sentinela-e2]  ferramentas: c3fa73bab00ef3b4
+lock: 0  versoes.log linhas:        2  última: 2026-09-17T01:42:24-0300 | madrugada-v2 | fde68d648dbb758d77
+containers: rootos_homolog_web=Up 5 minutes rootos_homolog_api=Up 5 minutes (healthy) rootos_homolog_redis=Up 10 minutes rootos_homolog_db=Up 10 minutes (healthy) rootos_homolog_minio=Up 10 minutes 
+imagens: rootos-app:madrugada-v3-01ef0474938b rootos-app:madrugada-v2-fde68d648dbb rootos-app:madrugada-v1-8c4ce0a4a28a 
+arquivos: .env .env.bak.20260917_014224 backups override.yml override.yml.bak.20260917_014224 repo segredos-iniciais.txt vault versoes.log 

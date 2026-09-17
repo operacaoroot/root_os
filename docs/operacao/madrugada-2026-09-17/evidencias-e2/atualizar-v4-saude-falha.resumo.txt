@@ -1,0 +1,187 @@
+[atualizar] 1/8 compatibilidade (nada é tocado ainda)
+  de:   madrugada-v2 (fde68d648dbb) · imagem rootos-app:madrugada-v2-fde68d648dbb
+  para: madrugada-v4 (96efbb94cff3) · imagem rootos-app:madrugada-v4-96efbb94cff3
+  migrations pendentes: 0
+[atualizar] 2/8 backup do banco
+[backup] conexão: container='rootos_homolog_db' host='/var/run/postgresql' porta='5432' banco='rootos_homologacao' usuário='rootos'
+[backup] banco 'rootos_homologacao' → <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014905.sql.gz
+[backup] verificação: ok — 54728 bytes, 87 tabelas, 87 blocos de dados, 318 linhas
+[backup] comparação: 54728 bytes hoje contra 54726 em rootos-20260917-014401.sql.gz — dentro do esperado
+[backup] pronto: <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014905.sql.gz
+[atualizar] 3/8 código na tag madrugada-v4 (checkout destacado; ferramentas/ conferida)
+[atualizar] 4/8 imagem rootos-app:madrugada-v4-96efbb94cff3 (a anterior rootos-app:madrugada-v2-fde68d648dbb fica; instância intocada)
+ Image rootos-app:madrugada-v4-96efbb94cff3 Building 
+ Image rootos-app:madrugada-v4-96efbb94cff3 Built 
+[atualizar] 5/8 ensaio: migrate deploy + smoke numa CÓPIA do banco
+For more information, see: https://pris.ly/prisma-config
+Datasource "db": PostgreSQL database "rootos_ensaio_20260917015327", schema "public" at "rootos_homolog_db:5432"
+41 migrations found in prisma/migrations
+No pending migrations to apply.
+> @mktos/api@0.1.0 smoke /app/apps/api
+> node scripts/smoke-boot.mjs
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [NestFactory] Starting Nest application...
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ContextoModule dependencies initialized +31ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] StorageModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ContratoDeConectorModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] JwtModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ConfigHostModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ConfigModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] AppModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] PublicMapModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] CofreModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ToolGateway] porta em modo OBSERVAR
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] FunnelModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] LlmModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] DashboardModule dependencies initialized +2ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] EventsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] AppConfigModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] PolicyModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] GatewayModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] LeadsModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] TasksModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] CampaignsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] AuthModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] MemoryModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] FinanceModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] UsersModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] LinhaDoTempoModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] PlataformaModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] AuditModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] WorkModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] IntegrationsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] TenantsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] CanaisModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ApprovalsModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] MetaModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ContentModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] GoogleModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] GoalsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] CaixaModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ReportsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] ObsidianModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] BioModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] RoutinesModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] BillingModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] PautaModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] AgentsModule dependencies initialized +0ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [InstanceLoader] OnboardingModule dependencies initialized +1ms
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ContratoDeConector] conector "google" implementa o contrato (por GoogleService)
+[Nest] 89  - 09/17/2026, 4:53:32 AM    WARN [StorageService] S3/MinIO sem credencial — upload de imagem fica indisponível.
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ContratoDeConector] conector "clickup" implementa o contrato (por ClickupService)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [Interruptores] interruptor de conector ligado à porta por ConectoresService (RF-G-06)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [Efeitos] 20 capacidades com efeito ligado
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ContratoDeConector] conector "obsidian" implementa o contrato (por ObsidianService)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ContratoDeConector] conector "whatsapp" implementa o contrato (por EvolutionService)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [TransporteDeCanal] transporte do canal "whatsapp" ligado por EvolutionService (RF-A-06)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [ContratoDeConector] conector "meta" implementa o contrato (por MetaService)
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [PolicyService] política base v1 carregada DO BANCO (62 capacidades) — os JSON do repositório não valem aqui até rodar db:seed:politica
+[Nest] 89  - 09/17/2026, 4:53:32 AM    WARN [BioSync] ENCRYPTION_KEY ausente — sync do bio desligado
+[Nest] 89  - 09/17/2026, 4:53:32 AM    WARN [AgendadorDeRotinas] ROTINAS_CRON=off — nenhuma rotina dispara sozinha neste processo.
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [PautaScheduler] o agendamento da pauta agora é do módulo de rotinas (de pé desde 2026-09-17T04:53:32.350Z). Esta classe não tem mais relógio: ver src/routines/rotinas.scheduler.ts.
+[Nest] 89  - 09/17/2026, 4:53:32 AM     LOG [NestApplication] Nest application successfully started
+Marketing OS API → http://localhost:4099/api
+SMOKE OK — a aplicação subiu e as rotas conferidas respondem.
+> @mktos/api@0.1.0 smoke /app/apps/api
+> node scripts/smoke-boot.mjs
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [NestFactory] Starting Nest application...
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] ContextoModule dependencies initialized +20ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] StorageModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] ContratoDeConectorModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] JwtModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] ConfigHostModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] ConfigModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] AppModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] PublicMapModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] CofreModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [ToolGateway] porta em modo OBSERVAR
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] FunnelModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] LlmModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] DashboardModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] EventsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] AppConfigModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] PolicyModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] GatewayModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] LeadsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] TasksModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] CampaignsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] AuthModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] MemoryModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] FinanceModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] UsersModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] LinhaDoTempoModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] PlataformaModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] AuditModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] WorkModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] IntegrationsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] TenantsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:34 AM     LOG [InstanceLoader] CanaisModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] ApprovalsModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] MetaModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] ContentModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] GoogleModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] GoalsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] CaixaModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] ReportsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] ObsidianModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] BioModule dependencies initialized +1ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] RoutinesModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] BillingModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] PautaModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] AgentsModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [InstanceLoader] OnboardingModule dependencies initialized +0ms
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [ContratoDeConector] conector "google" implementa o contrato (por GoogleService)
+[Nest] 28  - 09/17/2026, 4:53:35 AM    WARN [StorageService] S3/MinIO sem credencial — upload de imagem fica indisponível.
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [ContratoDeConector] conector "clickup" implementa o contrato (por ClickupService)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [Interruptores] interruptor de conector ligado à porta por ConectoresService (RF-G-06)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [Efeitos] 20 capacidades com efeito ligado
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [ContratoDeConector] conector "obsidian" implementa o contrato (por ObsidianService)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [ContratoDeConector] conector "whatsapp" implementa o contrato (por EvolutionService)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [TransporteDeCanal] transporte do canal "whatsapp" ligado por EvolutionService (RF-A-06)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [ContratoDeConector] conector "meta" implementa o contrato (por MetaService)
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [PolicyService] política base v1 carregada DO BANCO (62 capacidades) — os JSON do repositório não valem aqui até rodar db:seed:politica
+[Nest] 28  - 09/17/2026, 4:53:35 AM    WARN [BioSync] ENCRYPTION_KEY ausente — sync do bio desligado
+[Nest] 28  - 09/17/2026, 4:53:35 AM    WARN [AgendadorDeRotinas] ROTINAS_CRON=off — nenhuma rotina dispara sozinha neste processo.
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [PautaScheduler] o agendamento da pauta agora é do módulo de rotinas (de pé desde 2026-09-17T04:53:35.048Z). Esta classe não tem mais relógio: ver src/routines/rotinas.scheduler.ts.
+[Nest] 28  - 09/17/2026, 4:53:35 AM     LOG [NestApplication] Nest application successfully started
+Marketing OS API → http://localhost:4099/api
+SMOKE OK — a aplicação subiu e as rotas conferidas respondem.
+[atualizar] 6/8 migrations no banco REAL e política versionada (antes do up)
+ Container rootos-homologacao-api-run-8d7fbe647a89 Created 
+For more information, see: https://pris.ly/prisma-config
+Datasource "db": PostgreSQL database "rootos_homologacao", schema "public" at "db:5432"
+41 migrations found in prisma/migrations
+No pending migrations to apply.
+ Container rootos-homologacao-api-run-f6ffdcc37422 Created 
+> @mktos/api@0.1.0 db:seed:politica /app/apps/api
+> tsx prisma/seed-politica.ts
+política base v1 sem mudança
+capacidades: 0 criadas, 62 atualizadas, 62 no total
+LEMBRETE: a política que VALE é a gravada aqui, não a dos JSON do repositório.
+  Todo ambiente já semeado continua decidindo pela versão antiga até este seed rodar NELE.
+  Trocar nível no arquivo e dar deploy não muda nada — é o erro que mais custa tempo nesta área.
+[atualizar] 7/8 O CORTE — transacional
+ Container rootos_homolog_minio Running 
+ Container rootos_homolog_db Running 
+ Container rootos_homolog_redis Running 
+ Container rootos_homolog_api Recreate 
+ Container rootos_homolog_api Recreated 
+ Container rootos_homolog_web Recreate 
+ Container rootos_homolog_web Recreated 
+ Container rootos_homolog_db Waiting 
+ Container rootos_homolog_db Healthy 
+ Container rootos_homolog_api Starting 
+ Container rootos_homolog_api Started 
+ Container rootos_homolog_api Waiting 
+ Container rootos_homolog_api Healthy 
+ Container rootos_homolog_web Starting 
+ Container rootos_homolog_web Started 
+[atualizar] 8/8 saúde e versão no ar
+[atualizar] CORTE INTERROMPIDO — restaurando .env e override e re-subindo rootos-app:madrugada-v2-fde68d648dbb
+  A versão madrugada-v4 não ficou de pé. O RUNTIME voltou para rootos-app:madrugada-v2-fde68d648dbb — CONFIRMADO no ar
+  (saúde ok, versão madrugada-v2@fde68d648dbb); .env e override restaurados.
+  O BANCO ficou com as migrations de madrugada-v4 aplicadas — isto NÃO é rollback de schema.
+  Se a versão antiga não conviver com o schema novo, restaure o dump tirado antes:
+     <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014905.sql.gz
+  (deploy/backup-db.sh --restore-test para ensaiar num banco descartável.)
+  Logs: docker compose -p rootos-homologacao logs api
+exit atualizar: 1

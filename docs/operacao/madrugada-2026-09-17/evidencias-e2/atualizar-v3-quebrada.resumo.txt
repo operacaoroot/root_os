@@ -1,0 +1,32 @@
+[atualizar] 1/8 compatibilidade (nada é tocado ainda)
+  de:   madrugada-v2 (fde68d648dbb) · imagem rootos-app:madrugada-v2-fde68d648dbb
+  para: madrugada-v3 (01ef0474938b) · imagem rootos-app:madrugada-v3-01ef0474938b
+  migrations pendentes: 1
+[atualizar] 2/8 backup do banco
+[backup] conexão: container='rootos_homolog_db' host='/var/run/postgresql' porta='5432' banco='rootos_homologacao' usuário='rootos'
+[backup] banco 'rootos_homologacao' → <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014401.sql.gz
+[backup] verificação: ok — 54726 bytes, 87 tabelas, 87 blocos de dados, 318 linhas
+[backup] comparação: 54726 bytes hoje contra 54724 em rootos-20260917-014353.sql.gz — dentro do esperado
+[backup] pronto: <scratchpad>/e2/base/homologacao/backups/diario/rootos-20260917-014401.sql.gz
+[atualizar] 3/8 código na tag madrugada-v3 (checkout destacado; ferramentas/ conferida)
+[atualizar] 4/8 imagem rootos-app:madrugada-v3-01ef0474938b (a anterior rootos-app:madrugada-v2-fde68d648dbb fica; instância intocada)
+ Image rootos-app:madrugada-v3-01ef0474938b Building 
+ Image rootos-app:madrugada-v3-01ef0474938b Built 
+[atualizar] 5/8 ensaio: migrate deploy + smoke numa CÓPIA do banco
+For more information, see: https://pris.ly/prisma-config
+Datasource "db": PostgreSQL database "rootos_ensaio_20260917014736", schema "public" at "rootos_homolog_db:5432"
+42 migrations found in prisma/migrations
+Applying migration `20260917030000_madrugada_quebrada`
+Error: P3018
+A migration failed to apply. New migrations cannot be applied before the error is recovered from. Read more about how to resolve migration issues in a production database: https://pris.ly/d/migrate-resolve
+Migration name: 20260917030000_madrugada_quebrada
+Database error code: 42P01
+Database error:
+ERROR: relation "tabela_que_nao_existe_madrugada" does not exist
+Position:
+  0
+  1 -- ensaio: migration DELIBERADAMENTE quebrada para provar que o ensaio aborta antes do banco real
+  2 SELECT * FROM tabela_que_nao_existe_madrugada;
+DbError { severity: "ERROR", parsed_severity: Some(Error), code: SqlState(E42P01), message: "relation \"tabela_que_nao_existe_madrugada\" does not exist", detail: None, hint: None, position: Some(Original(113)), where_: None, schema: None, table: None, column: None, datatype: None, constraint: None, file: Some("parse_relation.c"), line: Some(1449), routine: Some("parserOpenTable") }
+[atualizar] ERRO: o ENSAIO reprovou (migration ou boot da imagem nova numa cópia do banco). Produção não foi tocada.
+exit atualizar: 1
