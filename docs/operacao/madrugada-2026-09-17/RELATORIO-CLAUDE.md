@@ -4,7 +4,7 @@ Janela executada: 17/09/2026, 01:10 → 02:10 -03 (o relógio real da máquina; 
 
 ## Veredicto
 
-**P1 aprovado em ensaio local, com prova real (Docker de verdade, sem stub) — VPS NÃO validada.** Instalar, atualizar, fazer backup e restaurar, abortar antes de tocar o banco real quando a migration quebra, e voltar sozinho ao runtime anterior quando a versão nova não fica de pé: tudo isso foi executado de ponta a ponta numa instância criada só para isso, com o artefato em execução conferido de fora contra o git (`/api/health/versao` = `git rev-parse <tag>`). O que falta é remoto: destino não confirmado, manifesto não aprovado (Q-003).
+**P1 aprovado em ensaio local, com prova real (Docker de verdade, sem stub) — VPS NÃO validada.** Instalar, atualizar, fazer backup e restaurar, abortar antes de tocar o banco real quando a migration quebra, e voltar sozinho ao runtime anterior quando a versão nova não fica de pé: tudo isso foi executado de ponta a ponta numa instância criada só para isso, com o artefato em execução conferido de fora contra o git (`/api/health/versao` = `git rev-parse <tag>`). O que falta é remoto: a VPS ROOT foi **inventariada** (somente leitura, 09:51 -03, com autorização do Pedro) e o manifesto está preenchido com o medido, mas a instalação remota **não foi aprovada** e depende de Q-005 (easyPanel).
 
 ## 1. Commits e arquivos
 
@@ -18,7 +18,7 @@ Por Q-002 (sem resposta), os commits foram feitos no **clone isolado** `~/orca/w
 | `96efbb9` | `madrugada-v4` | Só para o ensaio: v2 + linha de doc, sem migration. **Não é para produção.** |
 | HEAD do clone (`git log -1` em `~/orca/workspaces/root_os/madrugada`; o hash muda a cada amend, por isso não está fixado aqui) | — | E2/E3/E4: `docs/operacao/madrugada-2026-09-17/` (status, dúvidas, manifesto, este relatório, `evidencias-e2/`) + os dois documentos do workflow. Sobre `8c4ce0a`. |
 
-O worktree tem o **mesmo conteúdo** de E1 como modificações não commitadas (é de onde os testes e os scripts rodaram). Trazer os commits para cá é um `git fetch` de caminho local + `merge --ff-only` — **não fiz**, porque o `.git` do worktree mora no diretório sincronizado pelo Syncthing e mexer em refs ali é exatamente o que Q-002 pergunta. Comando, quando decidido: `git -C ~/orca/workspaces/root_os/volute fetch ~/orca/workspaces/root_os/madrugada pedromagnago/varredura-pendencias-claude && git checkout -- deploy apps/api/test/deploy-instancia.test.ts && git merge --ff-only FETCH_HEAD`.
+**Atualização 09:52 -03:** o Pedro decidiu Q-002 (fetch local). Conferi byte a byte que cada arquivo modificado/não rastreado do worktree era idêntico ao HEAD do clone, descartei as cópias e fiz `git fetch` de caminho local + `merge --ff-only`. **O worktree está em `72e32d3`, limpo.** Sem push. O clone fica como espelho com as tags do ensaio.
 
 ## 2. Testes: reais × simulados
 
@@ -60,7 +60,7 @@ Sentinelas plantadas antes da primeira atualização e conferidas depois de **ca
 
 ## 5. O que NÃO foi verificado
 
-- **Nada na VPS.** Nenhum inventário, nenhuma instalação remota. "VPS validada" não pode ser dito.
+- **Nenhuma instalação na VPS.** Só inventário somente leitura (09:51 -03, `evidencias-e3/`). "VPS validada" não pode ser dito.
 - Login humano na tela e modelo respondendo (`--sem-llm`; ninguém entrou) — o próprio instalador declara isso no fim.
 - Rota no Traefik/easyPanel, DNS, HTTPS.
 - Build em x86_64 e tempo de build em 2 vCPU (as imagens daqui são arm64 do Mac).
@@ -70,14 +70,15 @@ Sentinelas plantadas antes da primeira atualização e conferidas depois de **ca
 
 ## 6. Perguntas humanas (DUVIDAS.md)
 
-- **Q-001** (Q-TEST): MCP obrigatório? — recomendação: opcional. Sem resposta.
-- **Q-002**: onde commitar com o `.git` sincronizado — adotei o clone isolado (b). Sem resposta.
-- **Q-003**: destino da VPS e aprovação do manifesto — `AGUARDA_PEDRO`.
-- **Q-004**: desmontar a instância local ou deixar — deixei de pé por padrão.
+- **Q-001** (Q-TEST): respondida pelo Pedro — MCP **obrigatório** (entra em A2 com teste na CI).
+- **Q-002**: respondida — fetch local, feito.
+- **Q-003**: respondida — inventário feito; instalação remota não aprovada.
+- **Q-004**: respondida — instância local fica de pé.
+- **Q-005** (nova): homologação na VPS como serviço do easyPanel × instalador por compose direto — `AGUARDA_PEDRO`; recomendo dar ao instalador um modo "gerar stack para o painel adotar" antes de instalar lá.
 - Observações para decisão: (i) a imagem de uma tag reprovada no ensaio fica no host (disco na VPS); (ii) Codex nunca respondeu nesta janela — `RESPOSTAS.md` vazio às 02:10; "silêncio não é aceite" foi respeitado: nada que dependesse de resposta foi feito.
 
 ## 7. Próximo comando seguro
 
-1. Pedro decide Q-002 e Q-003. Sem decisão, nada muda: o worktree segue com E1 não commitada e a instância local de pé.
-2. Se o destino for confirmado: inventário somente leitura na VPS (`docker ps -a`, `docker network ls`, `docker volume ls`, `docker images`, `ss -ltnp`, `df -h`, `free -m`, `nproc`) e completar o manifesto — **nenhuma escrita**.
-3. Se o manifesto for aprovado por escrito: `ROOTOS_BASE=/srv/rootos ROOTOS_REPO=<bundle ou origem aprovada> deploy/instalar.sh --ambiente homologacao --tag madrugada-v1 --dominio <a definir> --bind-ip 172.17.0.1 --sem-llm --so-checar` — o retrato primeiro; o real só depois de ler o retrato.
+1. Pedro decide Q-005 (easyPanel). Recomendação: modo do instalador que gera o stack para o painel adotar.
+2. Só depois, com o manifesto aprovado por escrito: `ROOTOS_BASE=/srv/rootos ROOTOS_REPO=<bundle ou origem aprovada> deploy/instalar.sh --ambiente homologacao --tag <tag> --dominio <a definir> --bind-ip 172.16.0.1 --sem-llm --so-checar` — o retrato primeiro; o real só depois de ler o retrato, com `nice` e fora do horário de uso da produção.
+3. Q-001 (MCP obrigatório) precisa entrar no `docs/PLANO-PRODUTO.md` (A2) — arquivo do Codex.

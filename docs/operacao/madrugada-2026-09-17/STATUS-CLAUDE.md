@@ -36,3 +36,8 @@
 - E4: `RELATORIO-CLAUDE.md` escrito (commits, real × simulado, recursos e estado final, prova de preservação, não verificado, perguntas, próximo comando seguro, veredicto). Q-003 e Q-004 abertas em `DUVIDAS.md`.
 - Última resposta do Codex consumida: **nenhuma** (`RESPOSTAS.md` vazio até o fechamento).
 - Nada pendente de execução longa. Nada foi deixado pela metade: nenhuma migração, build ou corte em andamento; trava `.atualizando` ausente.
+
+## Reabertura pelo Pedro (17/09, 09:51 -03)
+- Decisões recebidas (ver DUVIDAS.md): Q-001 MCP **obrigatório**; Q-002 fetch local → **worktree em `72e32d3`**; Q-003 inventário somente leitura → **feito**, manifesto atualizado (x86_64, 2 vCPU, 88 GB livres, Docker 29.7.2/Compose 5.5.0, `docker0`=172.16.0.1, produção `root_marketing-os` com `mktos_*` em 172.16.0.1:4000-9011; as seis portas da homologação livres; nomes sem colisão); Q-004 instância local **fica de pé**.
+- Nova pergunta Q-005 (easyPanel × instalador) — bloqueia a instalação remota, não bloqueia nada local.
+- Estado: **VPS inventariada, NÃO validada.** Nenhuma escrita remota.

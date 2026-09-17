@@ -34,3 +34,15 @@ Escritor: Claude. Acrescentar, sem apagar o histórico.
 - **Pergunta:** derrubo a instância `rootos-homologacao` do Mac (5 containers, 3 volumes, 1 rede, 2 imagens, ~5 GB) ou deixo de pé para inspeção pela manhã?
 - **Evidência:** tudo foi criado por mim (diff de inventário em `evidencias-e2/inventario-docker.diff.txt`); nada preexistente foi tocado; Docker com folga (67 GB em imagens no total, sem pressão).
 - **Decisão tomada por padrão:** **deixo de pé** e desligada de qualquer rede pública (loopback), com o comando exato de desmonte no `RELATORIO-CLAUDE.md`. Deixar de pé é reversível; derrubar apaga a prova viva.
+
+## Respostas do Pedro (17/09, 09:51 -03, pela sessão do Claude — não pelo RESPOSTAS.md)
+- **Q-001 → OBRIGATÓRIO.** O conector MCP para o Claude Code do cliente é entregável do produto. Consequência: entra na etapa A2 do `docs/PLANO-PRODUTO.md` com teste próprio na CI (`packages/mcp`) — o plano é editado pelo Codex; fica aqui como decisão a refletir lá.
+- **Q-002 → fetch local.** Feito às 09:52: conferência byte a byte das cópias, `git fetch` de caminho local, `merge --ff-only`. Worktree em `72e32d3`, 0 pendências. Sem push. O clone `~/orca/workspaces/root_os/madrugada` fica como espelho (tags do ensaio só lá).
+- **Q-003 → só inventário somente leitura.** Feito às 09:51 (`evidencias-e3/inventario-vps-root.txt`); manifesto atualizado com o medido. Instalação remota segue **não aprovada**.
+- **Q-004 → deixar de pé.** A instância local `rootos-homologacao` continua no Mac para inspeção (`http://127.0.0.1:4100`, `http://127.0.0.1:4101/api/health/versao`).
+
+## Q-005 · 09:55 -03 · E3 · Homologação na VPS × regra "tudo dentro do easyPanel" — `AGUARDA_PEDRO`
+- **Pergunta:** a homologação na VPS ROOT deve nascer como serviço Compose do easyPanel (projeto `root`) ou pode ser exceção fora do painel, escrita?
+- **Evidência:** a produção lá foi adotada pelo painel (`root_marketing-os`, volumes `external` com nome fixo); o `deploy/instalar.sh` sobe por `docker compose -p rootos-homologacao` direto, sem painel.
+- **Alternativas:** (a) adicionar ao instalador um modo que gera o stack (compose + override + `.env`) para o painel adotar, sem subir nada — mais trabalho, coerente com a regra; (b) exceção escrita para homologação; (c) manter só local.
+- **Recomendação:** (a), antes de qualquer instalação remota — é também o que uma instância por cliente vai precisar quando o cliente usar painel.
