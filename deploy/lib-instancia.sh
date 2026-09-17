@@ -197,6 +197,30 @@ compose() {
     "$@"
 }
 
+# TRAVA POR INSTÂNCIA — duas atualizações ao mesmo tempo não podem compartilhar
+# ensaio, metadados nem corte. `mkdir` é atômico no mesmo filesystem; o pid
+# dentro diz de quem é. Pid morto = trava obsoleta (removida com aviso).
+travar_instancia() {
+  local trava="$DIR_INSTANCIA/.atualizando" pid
+  if mkdir "$trava" 2>/dev/null; then
+    printf '%s\n' "$$" > "$trava/pid"; TRAVA_DA_INSTANCIA="$trava"; return 0
+  fi
+  pid="$(cat "$trava/pid" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    falha "outra atualização desta instância está em curso (pid $pid, $trava). Espere terminar; não rode duas em paralelo." 75
+  fi
+  aviso "trava obsoleta em $trava (pid ${pid:-?} não existe) — removendo"
+  rm -rf "$trava"
+  mkdir "$trava" || falha "não consegui travar $trava"
+  printf '%s\n' "$$" > "$trava/pid"; TRAVA_DA_INSTANCIA="$trava"
+}
+destravar_instancia() { [ -n "${TRAVA_DA_INSTANCIA:-}" ] && rm -rf "$TRAVA_DA_INSTANCIA"; TRAVA_DA_INSTANCIA=""; return 0; }
+
+# sha256 de stdin, no macOS e no Linux.
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi
+}
+
 registrar_versao() {
   printf '%s | %s | %s | %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$1" "$2" "$3" >> "$DIR_INSTANCIA/versoes.log"
 }

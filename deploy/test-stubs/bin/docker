@@ -45,10 +45,18 @@ case "$sub" in
     joined="$*"
     case "$joined" in
       *pg_isready*) exit 0 ;;
+      *"count(*) from _prisma_migrations"*)
+        # contagem por banco: o real devolve STUB_COUNT (padrão = nº de aplicadas);
+        # o ensaio devolve o mesmo, salvo STUB_COPIA_INCOMPLETA=1
+        n="${STUB_COUNT:-$(printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n' | grep -c . || true)}"
+        case "$joined" in *rootos_ensaio_*) [ "${STUB_COPIA_INCOMPLETA:-0}" = 1 ] && n=$((n-1)) ;; esac
+        echo "$n"; exit 0 ;;
       *_prisma_migrations*)
         [ "${STUB_FAIL_PSQL:-0}" = 1 ] && exit 1
-        printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n'; echo; exit 0 ;;
-      *"CREATE DATABASE"*|*"DROP DATABASE"*|*pg_dump*) exit 0 ;;
+        # STUB_APPLIED: "nome" ou "nome:checksum", separados por vírgula
+        printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n' | sed -E '/:/! s/$/:/'; echo; exit 0 ;;
+      *pg_dump*) [ "${STUB_FAIL_DUMP:-0}" = 1 ] && exit 1; exit 0 ;;
+      *"CREATE DATABASE"*|*"DROP DATABASE"*) exit 0 ;;
       *) exit 0 ;;
     esac ;;
   run)

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -65,6 +66,10 @@ function fixture(): { origem: string; commits: Record<string, string> } {
   git(origem, 'add', '-A'); git(origem, 'commit', '-qm', 'v3'); git(origem, 'tag', 'v3'); commits.v3 = git(origem, 'rev-parse', 'HEAD');
   rmSync(path.join(origem, 'apps/api/prisma/migrations'), { recursive: true });
   git(origem, 'add', '-A'); git(origem, 'commit', '-qm', 'v4'); git(origem, 'tag', 'v4'); commits.v4 = git(origem, 'rev-parse', 'HEAD');
+  // v5: volta às migrations de v2 mas com a PRIMEIRA (já aplicada) alterada — histórico reescrito
+  git(origem, 'checkout', '-q', 'v2', '--', 'apps/api/prisma/migrations', 'docker-compose.yml');
+  writeFileSync(path.join(origem, 'apps/api/prisma/migrations/20260101000000_um/migration.sql'), '-- um, ALTERADA depois de aplicada\n');
+  git(origem, 'add', '-A'); git(origem, 'commit', '-qm', 'v5'); git(origem, 'tag', 'v5'); commits.v5 = git(origem, 'rev-parse', 'HEAD');
   return { origem, commits };
 }
 
@@ -76,10 +81,18 @@ function caixa(): Caixa {
   const images = path.join(dir, 'images'); writeFileSync(images, '');
   return { base: path.join(dir, 'base'), log, images, origem, commits };
 }
+/**
+ * AMBIENTE LIMPO, de propósito: os scripts NÃO herdam o shell de quem roda a suíte.
+ * Uma DATABASE_URL, TEST_DATABASE_URL ou chave real esquecida no ambiente do
+ * desenvolvedor não pode chegar a instalar.sh/atualizar.sh — e a suíte é o lugar
+ * que prova isso. Só PATH (com os stubs na frente), HOME e TMPDIR passam.
+ */
 function rodar(c: Caixa, script: 'instalar' | 'atualizar', args: string[], env: Record<string, string> = {}) {
-  return sh('bash', [path.join(RAIZ, 'deploy', `${script}.sh`), ...args], {
+  return spawnSync('bash', [path.join(RAIZ, 'deploy', `${script}.sh`), ...args], {
+    encoding: 'utf8',
     env: {
       PATH: `${path.join(STUBS, 'bin')}:${process.env.PATH}`,
+      HOME: process.env.HOME ?? '', TMPDIR: process.env.TMPDIR ?? tmpdir(), LANG: 'C.UTF-8',
       STUB_LOG: c.log, STUB_IMAGES: c.images, ROOTOS_BASE: c.base, ROOTOS_REPO: c.origem,
       ESPERA_ENTRE_TENTATIVAS: '0', ROOTOS_ANTHROPIC_API_KEY: 'sk-ant-sintetica', ...env,
     },
@@ -140,6 +153,11 @@ describe('P1: instalar.sh cria uma instância isolada, sem imprimir segredo', ()
     expect(lerLog(c)).toMatch(/run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD api/);
   });
 
+  it('a mensagem final separa o que foi provado do que não foi', () => {
+    expect(r.stdout).toMatch(/Provado por este script/);
+    expect(r.stdout).toMatch(/NÃO provado por este script: login humano/);
+  });
+
   it('o provedor de LLM segue a chave que veio; a senha inicial é da conta que o seed cria', () => {
     expect(chave(lerEnv(c, 'producao'), 'LLM_PROVIDER')).toBe('openai');
     const segredos = readFileSync(path.join(c.base, 'producao', 'segredos-iniciais.txt'), 'utf8');
@@ -156,6 +174,12 @@ describe('P1: instalar.sh cria uma instância isolada, sem imprimir segredo', ()
     const ov = readFileSync(path.join(c.base, 'homologacao', 'override.yml'), 'utf8');
     expect(ov).toMatch(/"172\.16\.0\.1:4100:4000"/);
     expect(ov).not.toMatch(/0\.0\.0\.0/);
+    // homologação nasce SEM relógio, reindexação e sincronização externa
+    expect(chave(q, 'ROTINAS_CRON')).toBe('off');
+    for (const k of ['BIO_SYNC_INTERVAL_MIN', 'BIO_BRIDGE_INTERVAL_MIN', 'CLICKUP_SYNC_INTERVAL_MIN', 'ASAAS_SYNC_INTERVAL_MIN', 'PLUGGY_SYNC_INTERVAL_MIN', 'OBSIDIAN_REINDEX_MIN']) {
+      expect(chave(q, k), k).toBe('0');
+    }
+    expect(chave(p, 'ROTINAS_CRON')).toBe('on');
   });
 
   it('recusa reinstalar por cima e recusa irmã com porta igual', () => {
@@ -210,9 +234,15 @@ describe('P1: instalar.sh valida o que não se gera', () => {
     expect(rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--dominio', 'a.b', '--bind-ip', 'lo']).status).toBe(64);
     const r = instalarProd(c, ['--so-checar']);
     expect(r.status, r.stderr).toBe(0);
-    expect(existsSync(path.join(c.base, 'producao'))).toBe(false);
+    // NADA persistente: nem a base, nem a instância, nem segredo em disco
+    expect(existsSync(c.base)).toBe(false);
+    expect(r.stdout).toMatch(/nada foi criado/);
+    expect(r.stdout).not.toMatch(/[0-9a-f]{32}/); // nenhum segredo gerado escapa
     // a pré-condição (`docker compose version`) é legítima em --so-checar; build/up não
     expect(lerLog(c)).not.toMatch(/build|up -d|run --rm/);
+    // e o único temporário próprio foi limpo
+    const restos = readdirSync(tmpdir()).filter((f) => f.startsWith('rootos-so-checar.'));
+    expect(restos).toEqual([]);
   });
 
   it('recusa saúde degradada e identidade ausente ou com commit divergente', () => {
@@ -328,9 +358,11 @@ describe('P1: atualizar.sh — compatibilidade, ensaio, corte transacional e vol
   it('saúde falhou depois do corte: .env e override restaurados byte a byte, runtime re-subido na imagem anterior', () => {
     const c = instalada();
     const envAntes = lerEnv(c, 'producao'); const ovAntes = readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8');
+    // saúde falha para TODAS as versões: restaura os arquivos, re-sobe a anterior, mas NÃO
+    // pode afirmar que voltou — sai 2, "recuperação não confirmada"
     const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, STUB_FAIL_HEALTH: '1' });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/RUNTIME voltou/);
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/RECUPERAÇÃO NÃO ESTÁ CONFIRMADA/);
     expect(r.stderr).toMatch(/NÃO é rollback de schema/);
     expect(r.stderr).toMatch(/backups\/diario\/rootos-.*\.sql\.gz/);
     expect(lerEnv(c, 'producao')).toBe(envAntes);
@@ -338,7 +370,7 @@ describe('P1: atualizar.sh — compatibilidade, ensaio, corte transacional e vol
     const l = lerLog(c);
     const ultimoUp = l.lastIndexOf('up -d --no-build api web');
     expect(ultimoUp).toBeGreaterThan(l.indexOf('up -d --no-build api web'));
-    expect(readFileSync(path.join(c.base, 'producao', 'versoes.log'), 'utf8')).toMatch(/voltou automaticamente de=rootos-app:v2-/);
+    expect(readFileSync(path.join(c.base, 'producao', 'versoes.log'), 'utf8')).toMatch(/tentou voltar de=rootos-app:v2-.*NÃO CONFIRMADA/);
     expect(git(path.join(c.base, 'producao', 'repo'), 'rev-parse', 'HEAD')).toBe(c.commits.v1);
   });
 
@@ -363,6 +395,122 @@ describe('P1: atualizar.sh — compatibilidade, ensaio, corte transacional e vol
     expect(chave(env, 'ROOTOS_IMAGE')).toBe(`rootos-app:v1-${c.commits.v1.slice(0, 12)}`);
     expect(v.stdout).toMatch(/BANCO continua com as migrations/);
     expect(git(path.join(c.base, 'producao', 'repo'), 'rev-parse', 'HEAD')).toBe(c.commits.v1);
+  });
+});
+
+describe('E1: --so-checar não toca em nada; cópia falha fechada; recuperação verificada; trava', () => {
+  function instalada(): Caixa {
+    const c = caixa();
+    const r = instalarProd(c);
+    if (r.status !== 0) throw new Error(r.stderr);
+    writeFileSync(c.log, '');
+    return c;
+  }
+  const APLICADAS_V1 = '20260101000000_um,20260102000000_dois';
+  const retrato = (c: Caixa) => ({
+    env: lerEnv(c, 'producao'),
+    override: readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8'),
+    versoes: readFileSync(path.join(c.base, 'producao', 'versoes.log'), 'utf8'),
+    head: git(path.join(c.base, 'producao', 'repo'), 'rev-parse', 'HEAD'),
+    refs: git(path.join(c.base, 'producao', 'repo'), 'for-each-ref'),
+    arquivos: readdirSync(path.join(c.base, 'producao')).sort().join(','),
+  });
+
+  it('atualizar --tag --so-checar não faz fetch, não grava refs, não toca na instância', () => {
+    const c = instalada();
+    const antes = retrato(c);
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2', '--so-checar'], { STUB_APPLIED: APLICADAS_V1 });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/exige o fetch|só checando/);
+    expect(retrato(c)).toEqual(antes);
+    // leitura de _prisma_migrations é legítima; mutação (build, up, run, dump, banco de ensaio) não
+    expect(lerLog(c)).not.toMatch(/build|up -d|run --rm|pg_dump|CREATE DATABASE/);
+  });
+
+  it('atualizar --voltar --so-checar planeja e não toca em nada', () => {
+    const c = instalada();
+    expect(rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1 }).status).toBe(0);
+    writeFileSync(c.log, '');
+    const antes = retrato(c);
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--voltar', '--so-checar']);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/voltaria de/);
+    expect(retrato(c)).toEqual(antes);
+    expect(lerLog(c)).not.toMatch(/up -d|run --rm|exec/);
+    expect(existsSync(path.join(c.base, 'producao', '.atualizando'))).toBe(false);
+  });
+
+  it('pg_dump que falha e cópia incompleta abortam o ensaio; instância intocada', () => {
+    const cenarios: Record<string, string>[] = [{ STUB_FAIL_DUMP: '1' }, { STUB_COPIA_INCOMPLETA: '1' }];
+    for (const env of cenarios) {
+      const c = instalada();
+      const antes = retrato(c);
+      const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, ...env });
+      expect(r.status, JSON.stringify(env)).not.toBe(0);
+      expect(r.stderr).toMatch(/cópia incompleta|ensaio inválido|não consegui copiar/i);
+      expect(lerLog(c)).toMatch(/bash -o pipefail -c pg_dump .* \| psql -q -v ON_ERROR_STOP=1/);
+      expect(lerLog(c)).not.toMatch(/pnpm smoke/);
+      const depois = retrato(c);
+      expect({ ...depois, arquivos: '' }).toEqual({ ...antes, arquivos: '' });
+      expect(existsSync(path.join(c.base, 'producao', '.atualizando'))).toBe(false);
+    }
+  });
+
+  it('recuperação após saúde falha é VERIFICADA: confirmada sai 1, não confirmada sai 2 e não anuncia sucesso', () => {
+    // a) só a versão nova falha: a anterior volta e é confirmada por saúde+versão
+    const a = instalada();
+    const ra = rodar(a, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, STUB_FAIL_HEALTH_FOR: 'v2' });
+    expect(ra.status).toBe(1);
+    expect(ra.stderr).toMatch(/CONFIRMADO no ar/);
+    expect(readFileSync(path.join(a.base, 'producao', 'versoes.log'), 'utf8')).toMatch(/confirmada no ar/);
+    // b) tudo falha: restaurou os arquivos, mas NÃO afirma que o runtime voltou
+    const b = instalada();
+    const envAntes = lerEnv(b, 'producao');
+    const rb = rodar(b, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, STUB_FAIL_HEALTH: '1' });
+    expect(rb.status).toBe(2);
+    expect(rb.stderr).toMatch(/RECUPERAÇÃO NÃO ESTÁ CONFIRMADA/);
+    expect(rb.stderr).not.toMatch(/CONFIRMADO no ar/);
+    expect(lerEnv(b, 'producao')).toBe(envAntes);
+    expect(existsSync(path.join(b.base, 'producao', '.atualizando'))).toBe(false);
+  });
+
+  it('--voltar real confere versão+commit no ar, não só HTTP 200', () => {
+    const c = instalada();
+    expect(rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1 }).status).toBe(0);
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--voltar'], { STUB_COMMIT: 'outro-commit' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/volta NÃO está confirmada/);
+  });
+
+  it('duas atualizações da mesma instância não coexistem: trava por instância, obsoleta é removida', () => {
+    const c = instalada();
+    const trava = path.join(c.base, 'producao', '.atualizando');
+    mkdirSync(trava); writeFileSync(path.join(trava, 'pid'), String(process.pid));
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1 });
+    expect(r.status).toBe(75);
+    expect(r.stderr).toMatch(/outra atualização desta instância está em curso/);
+    expect(lerLog(c)).not.toMatch(/build|pg_dump/);
+    writeFileSync(path.join(trava, 'pid'), '999999');
+    const r2 = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1 });
+    expect(r2.status, r2.stderr).toBe(0);
+    expect(r2.stderr).toMatch(/trava obsoleta/);
+    expect(existsSync(trava)).toBe(false);
+  });
+
+  it('migration histórica alterada na tag nova é detectada pelo checksum e recusada', () => {
+    const c = instalada();
+    const sha = (rel: string) => createHash('sha256').update(readFileSync(path.join(c.base, 'producao', 'repo', rel))).digest('hex');
+    const aplicadas = `20260101000000_um:${sha('apps/api/prisma/migrations/20260101000000_um/migration.sql')},20260102000000_dois:${sha('apps/api/prisma/migrations/20260102000000_dois/migration.sql')}`;
+    // v2 preserva o histórico: passa
+    const ok = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2', '--so-checar'], { STUB_APPLIED: aplicadas });
+    expect(ok.status, ok.stderr).toBe(0);
+    // v5 reescreveu a primeira migration aplicada: recusa, sem tocar
+    const antes = retrato(c);
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v5'], { STUB_APPLIED: aplicadas });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/conteúdo é DIFERENTE na tag v5.*20260101000000_um/);
+    expect({ ...retrato(c), arquivos: '' }).toEqual({ ...antes, arquivos: '' });
+    expect(lerLog(c)).not.toMatch(/build|pg_dump/);
   });
 });
 

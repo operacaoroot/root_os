@@ -99,9 +99,14 @@ checksum_ferramentas() {
 migrations_aplicadas() {
   local saida
   saida="$("$DOCKER" exec "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -tAc \
-    "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1")" \
+    "select migration_name || ':' || coalesce(checksum,'') from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1")" \
     || falha "não consegui ler _prisma_migrations em $DB_CONT/$DB_NAME; sem saber o que está aplicado a atualização não segue"
   printf '%s\n' "$saida"
+}
+
+# Contagem de migrations num banco — é o que prova que a cópia do ensaio é inteira.
+contar_migrations() {
+  "$DOCKER" exec "$DB_CONT" psql -U "$DB_USER" -d "$1" -tAc "select count(*) from _prisma_migrations" 2>/dev/null | tr -d '[:space:]'
 }
 
 # Os diretórios de migration na tag: `commit:caminho` lista os FILHOS do caminho.
@@ -129,11 +134,26 @@ if [ "$VOLTAR" = 1 ]; then
     ANT_IMAGEM="${ANTERIOR%%@*}"; RESTO="${ANTERIOR#*@}"; ANT_TAG="${RESTO%%@*}"; ANT_COMMIT="${RESTO#*@}"
   fi
   "$DOCKER" image inspect "$ANT_IMAGEM" >/dev/null 2>&1 || falha "a imagem anterior $ANT_IMAGEM não está mais neste host — sem ela não há volta de runtime; restaure pelo dump e reinstale a versão"
+  if [ "$SO_CHECAR" = 1 ]; then
+    cat <<MSG
+[atualizar] só checando — nada será tocado.
+  voltaria de: ${ATUAL_IMAGEM:-?} (tag ${ATUAL_TAG:-?})
+  para:        $ANT_IMAGEM (tag $ANT_TAG, commit ${ANT_COMMIT:0:12}) — imagem presente no host
+  faria: checkout destacado, 3 chaves de versão no .env, override, up -d --no-build api web, saúde+versão
+  NÃO faria: nada no banco (as migrations atuais ficam)
+MSG
+    exit 0
+  fi
+  travar_instancia
+  trap 'destravar_instancia' EXIT
   "$GIT" -C "$DIR_REPO" checkout --quiet --detach "$ANT_COMMIT"
   apontar_para "$ANT_IMAGEM" "$ANT_TAG" "$ANT_COMMIT"
   compose up -d --no-build api web
   registrar_versao "$ANT_TAG" "$ANT_COMMIT" "voltou de=$ATUAL_IMAGEM"
-  esperar_saude "$URL_SAUDE" 60 || falha "voltou para $ANT_IMAGEM mas a API não respondeu; veja os logs"
+  esperar_saude "$URL_SAUDE" 60 || falha "voltou para $ANT_IMAGEM mas a API não respondeu; veja os logs" 2
+  V_AR="$(versao_no_ar "$URL_VERSAO")"; C_AR="$(commit_no_ar "$URL_VERSAO")"
+  { [ "$V_AR" = "$ANT_TAG" ] && [ "$C_AR" = "$ANT_COMMIT" ]; } \
+    || falha "a API responde, mas diz '$V_AR@$C_AR' e esperava '$ANT_TAG@$ANT_COMMIT' — a volta NÃO está confirmada" 2
   ULTIMO_DUMP="$(ls -t "$DIR_INSTANCIA"/backups/diario/*.sql.gz 2>/dev/null | head -1 || true)"
   cat <<MSG
 
@@ -148,13 +168,25 @@ fi
 
 # ------------------------------------------------------------- atualizar
 passo "1/8 compatibilidade (nada é tocado ainda)"
-"$GIT" -C "$DIR_REPO" fetch --quiet --tags origin || falha "git fetch falhou (a deploy key tem leitura?)"
-NOVO_COMMIT="$("$GIT" -C "$DIR_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}" || true)"
-[ -n "$NOVO_COMMIT" ] || falha "a tag '$TAG' não existe no remoto"
+if [ "$SO_CHECAR" = 1 ]; then
+  # Só checando: nem o fetch (grava refs no repo da instância). ls-remote não escreve nada.
+  NOVO_COMMIT="$("$GIT" -C "$DIR_REPO" ls-remote --tags origin "refs/tags/$TAG^{}" "refs/tags/$TAG" 2>/dev/null | awk '{print $1}' | tail -1)"
+  [ -n "$NOVO_COMMIT" ] || falha "a tag '$TAG' não existe no remoto"
+  if ! "$GIT" -C "$DIR_REPO" cat-file -e "$NOVO_COMMIT^{commit}" 2>/dev/null; then
+    echo "  tag $TAG → commit ${NOVO_COMMIT:0:12} (no remoto). Os objetos não estão neste clone: o inventário de migrations e do compose exige o fetch, que só a execução real faz."
+    echo "[atualizar] só checando — nada foi tocado."
+    exit 0
+  fi
+else
+  "$GIT" -C "$DIR_REPO" fetch --quiet --tags origin || falha "git fetch falhou (a deploy key tem leitura?)"
+  NOVO_COMMIT="$("$GIT" -C "$DIR_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}" || true)"
+  [ -n "$NOVO_COMMIT" ] || falha "a tag '$TAG' não existe no remoto"
+fi
 [ "$NOVO_COMMIT" != "$ATUAL_COMMIT" ] || falha "a instância já está em $TAG ($NOVO_COMMIT)"
 NOVA_IMAGEM="rootos-app:${TAG}-${NOVO_COMMIT:0:12}"
 
-APLICADAS="$(migrations_aplicadas)"
+APLICADAS_COM_SOMA="$(migrations_aplicadas)"
+APLICADAS="$(printf '%s\n' "$APLICADAS_COM_SOMA" | cut -d: -f1)"
 NA_TAG="$(migrations_na_tag "$NOVO_COMMIT")"
 FALTANDO=""
 while IFS= read -r m; do
@@ -162,9 +194,21 @@ while IFS= read -r m; do
   if ! printf '%s\n' "$NA_TAG" | grep -qxF "$m"; then FALTANDO="$FALTANDO $m"; fi
 done <<< "$APLICADAS"
 [ -z "$FALTANDO" ] || falha "migrations já aplicadas no banco que NÃO existem na tag $TAG:$FALTANDO — isso é downgrade ou histórico divergente; não há caminho seguro por aqui."
+# MIGRATION HISTÓRICA ALTERADA: o checksum que o Prisma gravou ao aplicar tem de
+# ser o sha256 do migration.sql que a tag nova traz. Diferente = alguém editou o
+# passado; `migrate deploy` falharia (ou pior, não) — recusa aqui.
+ALTERADAS=""
+while IFS= read -r par; do
+  [ -n "$par" ] || continue
+  nome="${par%%:*}"; soma="${par#*:}"
+  [ -n "$soma" ] && [ "$soma" != "$nome" ] || continue
+  atual="$("$GIT" -C "$DIR_REPO" show "$NOVO_COMMIT:apps/api/prisma/migrations/$nome/migration.sql" 2>/dev/null | sha256_stdin || true)"
+  [ -n "$atual" ] && [ "$atual" != "$soma" ] && ALTERADAS="$ALTERADAS $nome"
+done <<< "$APLICADAS_COM_SOMA"
+[ -z "$ALTERADAS" ] || falha "migrations já aplicadas cujo conteúdo é DIFERENTE na tag $TAG:$ALTERADAS — histórico alterado depois de aplicado; não há caminho seguro por aqui."
 PENDENTES="$(comm -13 <(printf '%s\n' "$APLICADAS" | sort) <(printf '%s\n' "$NA_TAG" | sort) | grep -v '^$' || true)"
 
-TMP_COMPOSE="$(mktemp)"; trap 'rm -f "$TMP_COMPOSE"' EXIT
+TMP_COMPOSE="$(mktemp)"
 "$GIT" -C "$DIR_REPO" show "$NOVO_COMMIT:docker-compose.yml" > "$TMP_COMPOSE" 2>/dev/null || falha "a tag $TAG não tem docker-compose.yml"
 conferir_variaveis_do_compose "$TMP_COMPOSE" "$ENV"
 
@@ -172,6 +216,14 @@ echo "  de:   ${ATUAL_TAG:-?} (${ATUAL_COMMIT:0:12}) · imagem ${ATUAL_IMAGEM:-?
 echo "  para: $TAG (${NOVO_COMMIT:0:12}) · imagem $NOVA_IMAGEM"
 echo "  migrations pendentes: $(printf '%s' "$PENDENTES" | grep -c . || true)"
 if [ "$SO_CHECAR" = 1 ]; then echo "[atualizar] só checando — nada será tocado."; exit 0; fi
+
+travar_instancia
+# Um único ponto de saída: limpa a trava e os temporários; o corte (passo 7) troca
+# esta função pela sua, que restaura e depois chama esta.
+ao_sair() { local st=$?; rm -f "${TMP_COMPOSE:-}" "${OVERRIDE_TMP:-}"; destravar_instancia; exit "$st"; }
+trap ao_sair EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 passo "2/8 backup do banco"
 BACKUP_DB_CONTAINER="$DB_CONT" PGUSER="$DB_USER" PGDATABASE="$DB_NAME" BACKUP_DIR="$DIR_INSTANCIA/backups" \
@@ -195,7 +247,6 @@ passo "4/8 imagem $NOVA_IMAGEM (a anterior ${ATUAL_IMAGEM:-?} fica; instância i
 OVERRIDE_TMP="$(mktemp "$DIR_INSTANCIA/.override.novo.XXXXXX")"
 escrever_override "$OVERRIDE_TMP" "$ROOTOS_CONTAINER_PREFIX" "$ROOTOS_NETWORK_NAME" "$NOVA_IMAGEM" "$ROOTOS_BIND_IP" \
   "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT"
-trap 'rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"' EXIT
 export ROOTOS_VERSION="$TAG" ROOTOS_COMMIT="$NOVO_COMMIT" ROOTOS_IMAGE="$NOVA_IMAGEM"
 if ! OVERRIDE_ATIVO="$OVERRIDE_TMP" compose build api; then desfazer_codigo; falha "o build de $TAG falhou; nada subiu, a instância não foi tocada"; fi
 "$DOCKER" image inspect "$NOVA_IMAGEM" >/dev/null 2>&1 || { desfazer_codigo; falha "o build não produziu $NOVA_IMAGEM"; }
@@ -205,8 +256,13 @@ ENSAIO="rootos_ensaio_$(date +%Y%m%d%H%M%S)"
 "$DOCKER" exec "$DB_CONT" psql -U "$DB_USER" -d postgres -qc "CREATE DATABASE \"$ENSAIO\"" \
   || { desfazer_codigo; falha "não consegui criar o banco de ensaio"; }
 limpar_ensaio() { "$DOCKER" exec "$DB_CONT" psql -U "$DB_USER" -d postgres -qc "DROP DATABASE IF EXISTS \"$ENSAIO\"" >/dev/null 2>&1 || true; }
-"$DOCKER" exec "$DB_CONT" sh -c "pg_dump -U '$DB_USER' '$DB_NAME' | psql -q -U '$DB_USER' '$ENSAIO'" >/dev/null \
-  || { limpar_ensaio; desfazer_codigo; falha "não consegui copiar o banco para o ensaio"; }
+# FALHA FECHADA nas duas pontas: pipefail pega o pg_dump que morreu no meio; ON_ERROR_STOP
+# pega o psql que engoliria um erro de SQL. E a contagem de migrations prova que a cópia é inteira.
+"$DOCKER" exec "$DB_CONT" bash -o pipefail -c "pg_dump -U '$DB_USER' '$DB_NAME' | psql -q -v ON_ERROR_STOP=1 -U '$DB_USER' '$ENSAIO'" >/dev/null \
+  || { limpar_ensaio; desfazer_codigo; falha "não consegui copiar o banco para o ensaio (pg_dump ou psql falharam). Cópia incompleta não serve de ensaio. Produção não foi tocada."; }
+N_REAL="$(contar_migrations "$DB_NAME")"; N_ENSAIO="$(contar_migrations "$ENSAIO")"
+[ -n "$N_REAL" ] && [ "$N_REAL" = "$N_ENSAIO" ] \
+  || { limpar_ensaio; desfazer_codigo; falha "a cópia do ensaio tem $N_ENSAIO migration(s) e o banco real tem $N_REAL — cópia incompleta, ensaio inválido. Produção não foi tocada."; }
 export DATABASE_URL="postgresql://$DB_USER:$DB_PASSWORD@$DB_CONT:5432/$ENSAIO"
 if ! "$DOCKER" run --rm --network "$ROOTOS_NETWORK_NAME" -e DATABASE_URL -e ROTINAS_CRON=off -e OBSIDIAN_REINDEX_MIN=0 \
      -e BIO_SYNC_INTERVAL_MIN=0 -e BIO_BRIDGE_INTERVAL_MIN=0 -e CLICKUP_SYNC_INTERVAL_MIN=0 \
@@ -248,7 +304,7 @@ CORTE_ARMADO=1
 # restaura .env e override byte a byte e re-sobe a imagem ANTERIOR.
 desfazer_corte() {
   local st=$?
-  [ "${CORTE_ARMADO:-0}" = 1 ] || { rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"; exit "$st"; }
+  if [ "${CORTE_ARMADO:-0}" != 1 ]; then rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"; destravar_instancia; exit "$st"; fi
   CORTE_ARMADO=0
   printf '\n[atualizar] CORTE INTERROMPIDO — restaurando .env e override e re-subindo %s\n' "${ATUAL_IMAGEM:-?}" >&2
   cp -a "$ENV.bak.$CARIMBO" "$ENV"
@@ -256,10 +312,18 @@ desfazer_corte() {
   export ROOTOS_IMAGE="$ATUAL_IMAGEM" ROOTOS_VERSION="$ATUAL_TAG" ROOTOS_COMMIT="$ATUAL_COMMIT"
   desfazer_codigo
   compose up -d --no-build api web >/dev/null 2>&1 || true
-  registrar_versao "$ATUAL_TAG" "$ATUAL_COMMIT" "voltou automaticamente de=$NOVA_IMAGEM"
-  cat >&2 <<MSG
+  # A RECUPERAÇÃO É VERIFICADA, não anunciada: saúde E versão+commit da anterior.
+  local recuperado=0 v c
+  if esperar_saude "$URL_SAUDE" 30; then
+    v="$(versao_no_ar "$URL_VERSAO")"; c="$(commit_no_ar "$URL_VERSAO")"
+    [ "$v" = "$ATUAL_TAG" ] && [ "$c" = "$ATUAL_COMMIT" ] && recuperado=1
+  fi
+  if [ "$recuperado" = 1 ]; then
+    registrar_versao "$ATUAL_TAG" "$ATUAL_COMMIT" "voltou automaticamente de=$NOVA_IMAGEM (confirmada no ar)"
+    cat >&2 <<MSG
 
-  A versão $TAG não ficou de pé. O RUNTIME voltou para ${ATUAL_IMAGEM:-?} e o .env/override foram restaurados.
+  A versão $TAG não ficou de pé. O RUNTIME voltou para ${ATUAL_IMAGEM:-?} — CONFIRMADO no ar
+  (saúde ok, versão $ATUAL_TAG@${ATUAL_COMMIT:0:12}); .env e override restaurados.
   O BANCO ficou com as migrations de $TAG aplicadas — isto NÃO é rollback de schema.
   Se a versão antiga não conviver com o schema novo, restaure o dump tirado antes:
      $ULTIMO_DUMP
@@ -267,10 +331,26 @@ desfazer_corte() {
   Logs: $DOCKER compose -p $ROOTOS_PROJECT logs api
 
 MSG
-  rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"
-  exit 1
+    rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"; destravar_instancia
+    exit 1
+  fi
+  registrar_versao "$ATUAL_TAG" "$ATUAL_COMMIT" "tentou voltar de=$NOVA_IMAGEM — RECUPERAÇÃO NÃO CONFIRMADA"
+  cat >&2 <<MSG
+
+  A versão $TAG não ficou de pé E A RECUPERAÇÃO NÃO ESTÁ CONFIRMADA: depois de re-subir
+  ${ATUAL_IMAGEM:-?}, a API não respondeu saúde ok com versão $ATUAL_TAG@${ATUAL_COMMIT:0:12}.
+  .env e override foram restaurados; o runtime precisa de olho humano AGORA:
+     $DOCKER compose -p $ROOTOS_PROJECT ps
+     $DOCKER compose -p $ROOTOS_PROJECT logs api
+  O BANCO ficou com as migrations de $TAG — isto NÃO é rollback de schema. Dump de antes: $ULTIMO_DUMP
+
+MSG
+  rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"; destravar_instancia
+  exit 2
 }
-trap desfazer_corte EXIT INT TERM
+trap desfazer_corte EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 apontar_para "$NOVA_IMAGEM" "$TAG" "$NOVO_COMMIT"
 registrar_versao "$TAG" "$NOVO_COMMIT" "atualizado anterior=${ATUAL_IMAGEM}@${ATUAL_TAG}@${ATUAL_COMMIT}"
 compose up -d --no-build api web
@@ -291,6 +371,7 @@ fi
 CORTE_ARMADO=0
 trap - EXIT INT TERM
 rm -f "$TMP_COMPOSE" "$OVERRIDE_TMP"
+destravar_instancia
 
 cat <<MSG
 

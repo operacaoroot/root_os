@@ -4,6 +4,8 @@ set -u
 url="${@: -1}"
 printf 'curl %s\n' "$url" >> "${STUB_LOG:?}"
 [ "${STUB_FAIL_HEALTH:-0}" = 1 ] && exit 22
+# saúde falha só quando a versão "no ar" (a que o script exportou) for esta
+[ -n "${STUB_FAIL_HEALTH_FOR:-}" ] && [ "${ROOTOS_VERSION:-}" = "$STUB_FAIL_HEALTH_FOR" ] && exit 22
 case "$url" in
   */health/versao)
     [ "${STUB_SEM_IDENTIDADE:-0}" = 1 ] && exit 22

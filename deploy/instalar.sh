@@ -78,6 +78,7 @@ case "$BIND_IP" in *[!0-9.]*|'') falha "bind-ip inválido: '$BIND_IP' (o IP inte
 
 # Chaves de LLM: só do ambiente. Vazias = LLM desligado, e isso é dito.
 ANTHROPIC_KEY="${ROOTOS_ANTHROPIC_API_KEY:-}"; OPENAI_KEY="${ROOTOS_OPENAI_API_KEY:-}"
+LLM_PROVIDER_ESCOLHIDO="$([ -n "$ANTHROPIC_KEY" ] && echo anthropic || { [ -n "$OPENAI_KEY" ] && echo openai || true; })"
 # Login com Google: só do ambiente. Sem ele o admin do cliente NÃO consegue entrar —
 # e uma instalação em que o dono não entra não está instalada.
 GOOGLE_ID="${ROOTOS_GOOGLE_CLIENT_ID:-}"; GOOGLE_SECRET="${ROOTOS_GOOGLE_CLIENT_SECRET:-}"
@@ -104,13 +105,21 @@ command -v "$DOCKER" >/dev/null 2>&1 || falha "docker não encontrado no PATH"
 command -v "$GIT" >/dev/null 2>&1 || falha "git não encontrado no PATH"
 command -v openssl >/dev/null 2>&1 || falha "openssl não encontrado no PATH"
 "$DOCKER" compose version >/dev/null 2>&1 || falha "docker compose (v2) não responde"
-mkdir -p "$BASE" || falha "não consigo criar $BASE"
 [ ! -e "$DIR_INSTANCIA" ] || falha "$DIR_INSTANCIA já existe. Instalar é criar; para trocar de versão use deploy/atualizar.sh --ambiente $AMBIENTE --tag <tag>."
 
-# .env ANTES de clonar: se a validação de nomes recusar, nada foi baixado.
 umask 077
-mkdir -p "$DIR_INSTANCIA" "$DIR_INSTANCIA/backups"
-ENV="$DIR_INSTANCIA/.env"
+if [ "$SO_CHECAR" = 1 ]; then
+  # SÓ CHECANDO: nada persistente é criado — nem a base, nem a instância, nem segredo.
+  # O .env candidato vai para um temporário FORA da base, só para a conferência de
+  # conflito com as irmãs, e é apagado ao sair.
+  [ -d "$BASE" ] && [ ! -w "$BASE" ] && falha "$BASE existe e não é gravável"
+  ENV="$(mktemp -t rootos-so-checar.XXXXXX)"; trap 'rm -f "$ENV"' EXIT
+else
+  mkdir -p "$BASE" || falha "não consigo criar $BASE"
+  # .env ANTES de clonar: se a validação de nomes recusar, nada foi baixado.
+  mkdir -p "$DIR_INSTANCIA" "$DIR_INSTANCIA/backups"
+  ENV="$DIR_INSTANCIA/.env"
+fi
 
 passo "2/10 nomes e portas do ambiente (isolamento entre irmãs)"
 gerar() { openssl rand -hex "$1"; }
@@ -164,16 +173,35 @@ gerar() { openssl rand -hex "$1"; }
   echo "# --- a porta e o relógio (calibragem começa observando) ---"
   echo "GATEWAY_MODO=observar"
   echo "TENANT_MODO=observar"
-  echo "ROTINAS_CRON=on"
+  if [ "$AMBIENTE" = homologacao ]; then
+    # HOMOLOGAÇÃO NASCE SEM RELÓGIO NEM SINCRONIZAÇÃO: nada de rotina disparando,
+    # reindexação ou integração externa ativa num ambiente de ensaio.
+    echo "ROTINAS_CRON=off"
+    echo "BIO_SYNC_INTERVAL_MIN=0"
+    echo "BIO_BRIDGE_INTERVAL_MIN=0"
+    echo "CLICKUP_SYNC_INTERVAL_MIN=0"
+    echo "ASAAS_SYNC_INTERVAL_MIN=0"
+    echo "PLUGGY_SYNC_INTERVAL_MIN=0"
+  else
+    echo "ROTINAS_CRON=on"
+  fi
   echo "OBSIDIAN_REINDEX_MIN=0"
   echo "OBSIDIAN_VAULT_HOST=$DIR_INSTANCIA/vault"
   echo "RASTRO_RETENCAO_DIAS=1825"
   echo "BACKUP_DIR=$DIR_INSTANCIA/backups"
 } > "$ENV"
 chmod 600 "$ENV"
-mkdir -p "$DIR_INSTANCIA/vault"
+[ "$SO_CHECAR" = 1 ] || mkdir -p "$DIR_INSTANCIA/vault"
 conferir_portas_internas "$ENV"
-conferir_distinto_das_irmas "$BASE" "$AMBIENTE" "$ENV"
+[ -d "$BASE" ] && conferir_distinto_das_irmas "$BASE" "$AMBIENTE" "$ENV"
+
+if [ "$SO_CHECAR" = 1 ]; then
+  echo "[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone)."
+  echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
+  echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
+  echo "  LLM: ${LLM_PROVIDER_ESCOLHIDO:-desligado} · cliente: ${CLIENTE:-nenhum} · relógio: $([ "$AMBIENTE" = homologacao ] && echo desligado || echo ligado)"
+  exit 0
+fi
 
 # A senha inicial do admin é o único segredo que precisa chegar a uma pessoa.
 SENHA_ADMIN="$(gerar 18)"; SENHA_MCP="$(gerar 18)"
@@ -187,14 +215,6 @@ SENHA_ADMIN="$(gerar 18)"; SENHA_MCP="$(gerar 18)"
   if [ -n "$ADMIN_EMAIL" ]; then echo "admin da empresa '$CLIENTE': $ADMIN_EMAIL — entra pelo login com Google, NÃO tem senha aqui"; fi
 } > "$DIR_INSTANCIA/segredos-iniciais.txt"
 chmod 600 "$DIR_INSTANCIA/segredos-iniciais.txt"
-
-if [ "$SO_CHECAR" = 1 ]; then
-  echo "[instalar] só checando — nada será clonado nem subido."
-  echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
-  echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
-  rm -rf "$DIR_INSTANCIA"
-  exit 0
-fi
 
 passo "3/10 código na tag $TAG"
 "$GIT" -c advice.detachedHead=false clone --quiet --branch "$TAG" --depth 1 "$REPO" "$DIR_REPO" 2> >(grep -v "depth is ignored in local clones" >&2 || true) || falha "clone da tag '$TAG' de $REPO falhou (a tag existe? a deploy key tem leitura?)"
@@ -252,6 +272,8 @@ passo "10/10 pronto — o que fica À MÃO"
 cat <<MSG
 
   Instância '$AMBIENTE' no ar em $DIR_INSTANCIA (tag $TAG, commit ${COMMIT:0:12}).
+  Provado por este script: saúde ok, artefato $TAG@${COMMIT:0:12} no ar, migrations aplicadas, política semeada.
+  NÃO provado por este script: login humano (ninguém entrou), modelo respondendo$([ -z "$ANTHROPIC_KEY$OPENAI_KEY" ] && echo " (LLM desligado)" || true), rota do Traefik.
 
   1. ROTA NO TRAEFIK/easyPanel (manual): $DOMINIO → $BIND_IP:$WEB
   2. SEGREDOS INICIAIS (0600): $DIR_INSTANCIA/segredos-iniciais.txt — guarde e APAGUE.
