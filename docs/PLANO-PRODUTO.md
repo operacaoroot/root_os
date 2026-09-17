@@ -150,7 +150,7 @@ uma etapa inteira caiba numa sessão. Dependência de aceite permanece aberta at
 | # | Etapa | Entregas | Evidência de aceite | Estado |
 |---|---|---|---|---|
 | P0 | **Decisões** | ADR-012..015 aceitos ou reescritos | os quatro com "Situação: aceita" | ✅ `0890357` |
-| P1 | **Base instalável e atualizável** | `deploy/instalar.sh` (VPS limpa: segredos gerados, o que ninguém gera perguntado, `migrate deploy`, `db:seed:politica`, tenants de produção e homologação, smoke); `deploy/atualizar.sh` (tag de rollback, seed de política **antes** do `up`, `up -d --no-build`; nunca toca `ferramentas/`, `.env`, vault, dados); `GET /health/versao`; `apps/api/.env.example`; QUICKSTART reescrito | alguém que não é o Pedro sobe uma VPS limpa, atualiza para tag nova com contexto/`.env`/ferramentas intactos; `backup-db.sh --restore-test` restaura; cronometrado | ☐ |
+| P1 | **Base instalável e atualizável** | `deploy/instalar.sh` (VPS limpa: segredos gerados, o que ninguém gera perguntado, `migrate deploy`, `db:seed:politica`, produção e homologação isoladas, smoke); `deploy/atualizar.sh` (tag de recuperação, seed de política **antes** do `up`, `up -d --no-build`; preserva `ferramentas/`, vault, dados e todo o `.env` salvo as três marcas `ROOTOS_VERSION/COMMIT/IMAGE`); `GET /health/versao`; documentação operacional | alguém que não é o Pedro sobe uma VPS limpa, atualiza para tag nova com contexto/`.env`/ferramentas intactos; `backup-db.sh --restore-test` restaura; cronometrado | ◐ scripts e suíte local prontos; instalação limpa/restore por outra pessoa pendentes |
 | P1-b | **Bootstrap local sem seed destrutivo** | `pnpm bootstrap` cria admin, política e permissões e **preserva o que existe**. O `deleteMany` saiu do caminho automático e virou `db:seed:demo`, que **só roda com flag explícita e nome de banco descartável** (`/test\|dev\|local\|staging\|shadow/i`) | seed repetido preserva módulos, papéis, permissões e senha; demo exige duas travas; bootstrap real conclui duas vezes no banco de teste | ✅ `f74ef23` |
 | P2 | **Identidade e contexto por empresa** | token por usuário e empresa (prefixo no texto, hash no banco, só estreita o papel, revogável no painel) substitui a conta de serviço compartilhada; `ContextBuilder` busca na **memória da empresa** (`MemoriaService.buscar`) — **a pasta ROOT nunca é reindexada para outro tenant**; resultado vazio cai para textual e o traço distingue "não achei" de "sem vetor"; teste de isolamento entre duas empresas. Ponte para o Claude Code: o `packages/mcp` que existe, com `memoria_buscar`/`memoria_ler` e o token novo — **um cliente, opcional** | outra pessoa conecta o Claude Code, pergunta algo que só existe no contexto de uma empresa que não é a `root`, recebe com fonte, e revoga — em < 10 min | ☐ |
 | P3 | **Conector local — uma pasta/arquivo (o piloto)** | pareamento; fontes puxadas pelo pulso sem ampliar o consentimento local; prévia; remessa idempotente com revisão e hash; importação e sincronização; regra de exclusão; frescor e saúde no painel; revogação que vale para a coleta programada. Protótipo Python; empacotamento e instalação por usuário a validar. **Se a coleta programada roda sem sessão humana depende de como a origem autentica — medir na máquina do piloto, não presumir** | o cliente seleciona uma pasta, vê a prévia, envia; **interromper e reenviar não duplica**; uma pergunta no Claude Code cita o documento; **um arquivo fora da lista não sai**; revogar para a coleta | ☐ |
@@ -303,3 +303,18 @@ explícito da próxima fronteira.
 foi implementada por Codex e revisada por Claude. Push, deploy, acesso a dados reais e alteração de
 credenciais não fizeram parte desta fatia. Não há monitoramento automático depois que a execução
 do Codex terminar.
+
+#### P1 — implementação local, aceite de VPS ainda aberto
+
+Claude implementou o primeiro recorte dos instaladores; a revisão independente do Codex encontrou
+e corrigiu falhas que poderiam declarar sucesso sem prova: saúde HTTP 200 porém `degraded`, ausência
+ou divergência de `version`/`commit`, erro ao inventariar migrations tratado como lista vazia e volta
+automática para uma imagem antiga sem provar que ela lê o schema novo. A cópia de ensaio agora roda
+a imagem nova depois das migrations e, em seguida, a imagem anterior sobre o mesmo schema; se esta
+segunda prova falhar, o banco real não é tocado. O checksum usa `sha256sum` na VPS Linux, com fallback
+para `shasum`.
+
+Validação local concluída: `bash -n`; `typecheck:test`; build da API; suíte P1 **23/23**; suíte inteira
+da API **45 arquivos aprovados, 4 condicionais ignorados, 1.231 testes aprovados e 539 condicionais
+ignorados**. P1 permanece parcial: não houve VPS limpa, rota/TLS real, credenciais reais, restauração
+de dump nem operação por outra pessoa. Nenhuma VPS ou dado de cliente foi tocado.

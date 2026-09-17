@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# STUB de `curl` para a suíte hermética. Última posição = URL.
+set -u
+url="${@: -1}"
+printf 'curl %s\n' "$url" >> "${STUB_LOG:?}"
+[ "${STUB_FAIL_HEALTH:-0}" = 1 ] && exit 22
+case "$url" in
+  */health/versao)
+    [ "${STUB_SEM_IDENTIDADE:-0}" = 1 ] && exit 22
+    printf '{"version":"%s","commit":"%s"}' \
+      "${STUB_VERSAO:-${ROOTOS_VERSION:-}}" "${STUB_COMMIT:-${ROOTOS_COMMIT:-}}"
+    exit 0 ;;
+  *) printf '{"status":"%s"}' "${STUB_HEALTH_STATUS:-ok}"; exit 0 ;;
+esac
