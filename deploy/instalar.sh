@@ -33,6 +33,7 @@ uso() {
 uso: deploy/instalar.sh --ambiente producao|homologacao --tag <tag> --dominio <host>
         [--cliente <slug> --admin-email <email>]   (a empresa do cliente; o admin entra pelo Google, sem senha)
         [--base /srv/root-os] [--repo <url|caminho>] [--bind-ip 172.17.0.1] [--sem-llm] [--so-checar]
+        [--painel <projeto>/<servico>]   (easyPanel: nasce com o projeto Compose do painel e gera o compose para colar lá)
 Segredos que não se geram vêm do AMBIENTE, nunca de argumento:
         ROOTOS_ANTHROPIC_API_KEY / ROOTOS_OPENAI_API_KEY   (uma das duas, ou --sem-llm)
         ROOTOS_GOOGLE_CLIENT_ID + ROOTOS_GOOGLE_CLIENT_SECRET   (OBRIGATÓRIAS com --cliente: o admin entra pelo Google)
@@ -42,7 +43,7 @@ MSG
 
 AMBIENTE=""; TAG=""; DOMINIO=""; ADMIN_EMAIL=""; BASE="${ROOTOS_BASE:-/srv/root-os}"
 REPO="${ROOTOS_REPO:-https://github.com/operacaoroot/marketing-os.git}"
-BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0
+BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --ambiente)    AMBIENTE="${2:-}"; shift 2 ;;
@@ -55,6 +56,7 @@ while [ $# -gt 0 ]; do
     --cliente)     CLIENTE="${2:-}"; shift 2 ;;
     --sem-llm)     SEM_LLM=1; shift ;;
     --so-checar)   SO_CHECAR=1; shift ;;
+    --painel)      PAINEL="${2:-}"; shift 2 ;;
     *) echo "argumento desconhecido: $1" >&2; uso ;;
   esac
 done
@@ -75,6 +77,9 @@ if [ -n "$CLIENTE" ] || [ -n "$ADMIN_EMAIL" ]; then
   [[ "$CLIENTE" =~ ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$ ]] || falha "slug de cliente inválido: '$CLIENTE' (a-z, 0-9 e hífen; sem começar/terminar com hífen)" 64
 fi
 case "$BIND_IP" in *[!0-9.]*|'') falha "bind-ip inválido: '$BIND_IP' (o IP interno do docker0 desta VPS; confira com: ip -4 addr show docker0)" 64 ;; esac
+if [ -n "$PAINEL" ]; then
+  painel_valido "$PAINEL" || falha "--painel inválido: '$PAINEL' — formato <projeto>/<servico>, minúsculas, dígitos e hífen (o nome vira o projeto Compose <projeto>_<servico>)" 64
+fi
 
 # Chaves de LLM: só do ambiente. Vazias = LLM desligado, e isso é dito.
 ANTHROPIC_KEY="${ROOTOS_ANTHROPIC_API_KEY:-}"; OPENAI_KEY="${ROOTOS_OPENAI_API_KEY:-}"
@@ -95,6 +100,9 @@ case "$AMBIENTE" in
   producao)    PROJ="rootos-producao";    PREFIXO="rootos_prod";    REDE="rootos-producao-net";    WEB=4000; API=4001; DBP=5442; RED=6390; MIN=9010; MINC=9011 ;;
   homologacao) PROJ="rootos-homologacao"; PREFIXO="rootos_homolog"; REDE="rootos-homologacao-net"; WEB=4100; API=4101; DBP=5443; RED=6391; MIN=9012; MINC=9013 ;;
 esac
+# No easyPanel o projeto Compose é <projeto>_<serviço>, e é dele que saem os nomes dos
+# volumes: para o painel adotar a instância depois, o nome tem de ser este desde o primeiro up.
+[ -z "$PAINEL" ] || PROJ="$(projeto_do_painel "$PAINEL")"
 # A imagem só ganha nome depois do clone: a tag é IMUTÁVEL por versão+commit.
 IMAGEM=""
 
@@ -128,6 +136,7 @@ gerar() { openssl rand -hex "$1"; }
   echo "# 0600. Este arquivo é a verdade desta instância; o compose lê daqui. Nunca versionar."
   echo "ROOTOS_AMBIENTE=$AMBIENTE"
   echo "ROOTOS_PROJECT=$PROJ"
+  echo "ROOTOS_PAINEL=$PAINEL"
   echo "ROOTOS_CONTAINER_PREFIX=$PREFIXO"
   echo "ROOTOS_NETWORK_NAME=$REDE"
   echo "ROOTOS_IMAGE="
@@ -200,6 +209,7 @@ if [ "$SO_CHECAR" = 1 ]; then
   echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
   echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
   echo "  LLM: ${LLM_PROVIDER_ESCOLHIDO:-desligado} · cliente: ${CLIENTE:-nenhum} · relógio: $([ "$AMBIENTE" = homologacao ] && echo desligado || echo ligado)"
+  [ -z "$PAINEL" ] || echo "  easyPanel: serviço '$PAINEL' → projeto Compose $PROJ; geraria $DIR_INSTANCIA/painel/docker-compose.yml (sem build:, imagem por variável)"
   exit 0
 fi
 
@@ -269,6 +279,10 @@ COMMIT_NO_AR="$(commit_no_ar "http://$BIND_IP:$API/api/health/versao")"
 [ "$COMMIT_NO_AR" = "$COMMIT" ] || falha "a API no ar diz commit '$COMMIT_NO_AR', esperava '$COMMIT'"
 
 passo "10/10 pronto — o que fica À MÃO"
+if [ -n "$PAINEL" ]; then
+  carregar_env_da_instancia "$ENV"
+  gerar_compose_do_painel "$DIR_INSTANCIA/painel/docker-compose.yml"
+fi
 cat <<MSG
 
   Instância '$AMBIENTE' no ar em $DIR_INSTANCIA (tag $TAG, commit ${COMMIT:0:12}).
@@ -276,6 +290,7 @@ cat <<MSG
   NÃO provado por este script: login humano (ninguém entrou), modelo respondendo$([ -z "$ANTHROPIC_KEY$OPENAI_KEY" ] && echo " (LLM desligado)" || true), rota do Traefik.
 
   1. ROTA NO TRAEFIK/easyPanel (manual): $DOMINIO → $BIND_IP:$WEB
+$(if [ -n "$PAINEL" ]; then echo "  1b. ADOTAR NO PAINEL:"; lembrete_do_painel instalar; fi)
   2. SEGREDOS INICIAIS (0600): $DIR_INSTANCIA/segredos-iniciais.txt — guarde e APAGUE.
      (a senha é de admin@marketing-os.local; o admin do cliente entra pelo Google)
 $(if [ -n "$CLIENTE" ]; then echo "  2b. No console do Google, a URI de redirect autorizada tem de ser: https://$DOMINIO/api/google/callback"; else echo "  2b. Para login com Google mais tarde: ROOTOS_GOOGLE_CLIENT_ID/SECRET no ambiente e GOOGLE_* no .env, depois up -d --no-build api"; fi)

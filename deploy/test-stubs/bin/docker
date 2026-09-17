@@ -7,6 +7,9 @@ printf 'docker %s\n' "$*" >> "${STUB_LOG:?}"
 sub="${1:-}"; shift || true
 case "$sub" in
   compose)
+    # `config` é o único subcomando que precisa do compose DE VERDADE: é ele que
+    # funde base + override para o painel, e o que se testa é o conteúdo fundido.
+    case " $* " in *" config "*) exec "${STUB_REAL_DOCKER:?o stub precisa de STUB_REAL_DOCKER para 'compose config'}" compose "$@" ;; esac
     # extrai os -f para achar o override (o último -f) e o subcomando
     files=(); cmd=""; rest=()
     while [ $# -gt 0 ]; do

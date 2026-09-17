@@ -46,3 +46,6 @@ Escritor: Claude. Acrescentar, sem apagar o histórico.
 - **Evidência:** a produção lá foi adotada pelo painel (`root_marketing-os`, volumes `external` com nome fixo); o `deploy/instalar.sh` sobe por `docker compose -p rootos-homologacao` direto, sem painel.
 - **Alternativas:** (a) adicionar ao instalador um modo que gera o stack (compose + override + `.env`) para o painel adotar, sem subir nada — mais trabalho, coerente com a regra; (b) exceção escrita para homologação; (c) manter só local.
 - **Recomendação:** (a), antes de qualquer instalação remota — é também o que uma instância por cliente vai precisar quando o cliente usar painel.
+
+## Q-005 — resposta (17/09, 10:40 -03): Pedro disse "podemos seguir" → implementada a alternativa (a)
+- `--painel <projeto>/<serviço>` no instalador; geração fail-closed do compose do painel; lembrete no atualizador e no `--voltar`. Ver `docs/INSTALACAO.md` § easyPanel. A instalação remota continua dependendo de aprovação do manifesto.

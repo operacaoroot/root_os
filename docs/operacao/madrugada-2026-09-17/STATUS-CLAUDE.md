@@ -41,3 +41,9 @@
 - Decisões recebidas (ver DUVIDAS.md): Q-001 MCP **obrigatório**; Q-002 fetch local → **worktree em `72e32d3`**; Q-003 inventário somente leitura → **feito**, manifesto atualizado (x86_64, 2 vCPU, 88 GB livres, Docker 29.7.2/Compose 5.5.0, `docker0`=172.16.0.1, produção `root_marketing-os` com `mktos_*` em 172.16.0.1:4000-9011; as seis portas da homologação livres; nomes sem colisão); Q-004 instância local **fica de pé**.
 - Nova pergunta Q-005 (easyPanel × instalador) — bloqueia a instalação remota, não bloqueia nada local.
 - Estado: **VPS inventariada, NÃO validada.** Nenhuma escrita remota.
+
+## Q-005 implementada (10:40 -03)
+- `deploy/lib-instancia.sh`: `painel_valido`, `projeto_do_painel`, `escrever_override … painel` (imagem por variável + `build: !reset null`), `gerar_compose_do_painel` (fail-closed: sem `build:`, imagem por variável em api e web, nenhum valor do `.env` interpolado), `lembrete_do_painel`.
+- `deploy/instalar.sh --painel`; `deploy/atualizar.sh` (fim, `--voltar`, `--so-checar`) regeneram/avisam. Stub do docker delega só `compose config` ao docker real (`STUB_REAL_DOCKER`).
+- Provas: suíte hermética **34/34** (3 casos novos); geração real a partir da instância de ensaio do Mac validada por `docker compose config` sozinho com o `.env`; typecheck da API.
+- Docs: `docs/INSTALACAO.md` § easyPanel; manifesto com o comando final (`--painel root/rootos-homologacao`, `--bind-ip 172.16.0.1`).

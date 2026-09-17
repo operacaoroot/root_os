@@ -64,6 +64,34 @@ trocam o **runtime**; o banco fica com as migrations da versão nova. Se a vers�
 com o schema novo, restaure o dump que o script indica (`deploy/backup-db.sh --restore-test` ensaia
 num banco descartável antes).
 
+## easyPanel (VPS ROOT: "nada fora do painel")
+
+Na VPS ROOT a regra é que todo serviço nasça como serviço Compose do easyPanel. O painel roda cada
+serviço com `-p <projeto>_<serviço>`, a partir de um `docker-compose.yml` **próprio** (o dele, não o do
+repo) e de um `.env` que ele escreve do campo de ambiente — medido na produção em 17/09/2026:
+projeto `root_marketing-os`, arquivos em `/etc/easypanel/projects/root/marketing-os/code/`.
+
+`--painel <projeto>/<serviço>` faz a instância nascer com esse nome de projeto (é dele que saem os
+nomes dos volumes) e gera `<instância>/painel/docker-compose.yml`: o compose da tag fundido com o
+override de isolamento por `docker compose config --no-interpolate` — **sem `build:`** (o painel não tem
+o código) e com `image: ${ROOTOS_IMAGE}` **por variável** (senão cada atualização exigiria recolar o
+arquivo, e um "Deploy" esquecido subiria a versão anterior). O script recusa gravar o arquivo se sair
+`build:`, se a imagem não vier por variável ou se algum valor do `.env` tiver sido interpolado.
+
+```bash
+ROOTOS_BASE=/srv/rootos deploy/instalar.sh --ambiente homologacao --tag v0.4.0 --dominio homolog.cliente.com.br \
+  --bind-ip 172.16.0.1 --painel root/rootos-homologacao --sem-llm
+```
+
+Depois, no painel: projeto `root` → serviço Compose `rootos-homologacao` → colar `painel/docker-compose.yml`
+e, no campo de ambiente, o conteúdo do `.env` da instância → Deploy. Como o projeto é o mesmo
+(`root_rootos-homologacao`), o painel **adota** containers, rede e volumes já existentes.
+
+**O painel guarda cópia própria do `.env`.** Depois de cada `deploy/atualizar.sh` (ou `--voltar`), o
+script regenera `painel/docker-compose.yml`, diz se ele mudou e lembra de atualizar `ROOTOS_IMAGE`,
+`ROOTOS_VERSION` e `ROOTOS_COMMIT` no painel — sem isso, um "Deploy" pelo painel re-sobe a imagem anterior.
+A rota (domínio → `bind-ip:porta do web`) continua sendo configurada no Traefik/easyPanel à mão.
+
 ## Testes
 
 `apps/api/test/deploy-instancia.test.ts` — hermético: `docker` e `curl` são stubs

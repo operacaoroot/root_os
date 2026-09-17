@@ -148,7 +148,13 @@ conferir_portas_internas() {
 # O override gerado: é o que isola de verdade, independentemente do compose.
 escrever_override() {
   local destino="$1" prefixo="$2" rede="$3" imagem="$4" bind="$5"
-  local web="$6" api="$7" db="$8" redis="$9" minio="${10}" minio_console="${11}"
+  local web="$6" api="$7" db="$8" redis="$9" minio="${10}" minio_console="${11}" painel="${12:-}"
+  # No override do PAINEL a imagem vai por variável e o `build:` do compose base é
+  # removido (`!reset`): o diretório do easyPanel não tem código para construir, e
+  # imagem por valor faria cada atualização exigir recolar o arquivo — esquecer
+  # seria um "Deploy" pelo painel subindo a versão anterior sem ninguém pedir.
+  local reset_build=""
+  if [ -n "$painel" ]; then imagem='${ROOTOS_IMAGE}'; reset_build='    build: !reset null'; fi
   cat > "$destino" <<YML
 # GERADO por deploy/instalar.sh — não edite à mão; a fonte é o .env desta instância.
 # Isola esta instância das irmãs: nomes de container, rede, imagem:tag e portas
@@ -169,6 +175,7 @@ services:
       - "${bind}:${minio_console}:9001"
   api:
     container_name: ${prefixo}_api
+${reset_build}
     image: ${imagem}
     ports: !override
       - "${bind}:${api}:4001"
@@ -219,6 +226,72 @@ destravar_instancia() { [ -n "${TRAVA_DA_INSTANCIA:-}" ] && rm -rf "$TRAVA_DA_IN
 # sha256 de stdin, no macOS e no Linux.
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi
+}
+
+# --- easyPanel ---------------------------------------------------------------
+# O painel roda cada serviço Compose com `-p <projeto>_<serviço>` a partir de UM
+# docker-compose.yml próprio (mais um override dele, que só declara a rede
+# `easypanel`) e de um .env que ele escreve do campo de ambiente do serviço. Para
+# ele ADOTAR uma instância instalada por aqui, o que precisa bater desde o
+# primeiro `up` é o nome do projeto — é dele que saem os nomes dos volumes —,
+# a rede e os nomes de container. Medido na produção da VPS ROOT em 17/09/2026:
+# projeto `root_marketing-os`, arquivos em /etc/easypanel/projects/root/marketing-os/code/.
+painel_valido() { [[ $1 =~ ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?/[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$ ]]; }
+projeto_do_painel() { printf '%s_%s' "${1%%/*}" "${1#*/}"; }
+
+# Gera o arquivo ÚNICO que se cola no painel: compose base da tag + override da
+# instância, fundidos por `docker compose config --no-interpolate` (os `${VAR}`
+# ficam como estão — quem interpola é o painel, com o .env dele), sem `build:` e
+# com a imagem por variável. Falha fechada: se sair `build:`, se a imagem não vier
+# por variável ou se algum valor do .env tiver sido interpolado, o arquivo não é
+# gravado. Usa DIR_REPO, DIR_INSTANCIA e o .env já carregado.
+gerar_compose_do_painel() {
+  local destino="$1" tmp_override tmp_saida senha
+  tmp_override="$(mktemp -t rootos-painel-override.XXXXXX)"; tmp_saida="$(mktemp -t rootos-painel-compose.XXXXXX)"
+  escrever_override "$tmp_override" "$ROOTOS_CONTAINER_PREFIX" "$ROOTOS_NETWORK_NAME" "" "$ROOTOS_BIND_IP" \
+    "$WEB_HOST_PORT" "$API_HOST_PORT" "$DB_PORT" "$REDIS_PORT" "$MINIO_PORT" "$MINIO_CONSOLE_PORT" painel
+  if ! OVERRIDE_ATIVO="$tmp_override" compose config --no-interpolate > "$tmp_saida"; then
+    rm -f "$tmp_override" "$tmp_saida"; falha "não consegui fundir o compose para o painel (docker compose config --no-interpolate)"
+  fi
+  rm -f "$tmp_override"
+  if grep -qE '^[[:space:]]*build:' "$tmp_saida"; then rm -f "$tmp_saida"; falha "o compose do painel saiu com 'build:' — o painel não tem código para construir; nada gravado"; fi
+  [ "$(grep -cF 'image: ${ROOTOS_IMAGE}' "$tmp_saida")" -ge 2 ] || { rm -f "$tmp_saida"; falha "o compose do painel não traz a imagem por variável (\${ROOTOS_IMAGE}) em api e web; nada gravado"; }
+  senha="$(valor_no_env "$DIR_INSTANCIA/.env" DB_PASSWORD)"
+  if [ -n "$senha" ] && grep -qF -- "$senha" "$tmp_saida"; then rm -f "$tmp_saida"; falha "o compose do painel contém um valor do .env interpolado; nada gravado"; fi
+  mkdir -p "$(dirname "$destino")"
+  mv "$tmp_saida" "$destino"; chmod 600 "$destino"
+}
+
+# Depois de instalar ou atualizar: regenera o compose do painel e diz o que a
+# pessoa precisa colar lá. Imprime nada quando a instância não é do painel.
+lembrete_do_painel() {
+  local acao="$1" arquivo="$DIR_INSTANCIA/painel/docker-compose.yml" mudou="novo"
+  [ -n "${ROOTOS_PAINEL:-}" ] || return 0
+  if [ -f "$arquivo" ]; then
+    gerar_compose_do_painel "$arquivo.novo"
+    if cmp -s "$arquivo" "$arquivo.novo"; then mudou="igual"; else mudou="mudou"; fi
+    mv "$arquivo.novo" "$arquivo"
+  else
+    gerar_compose_do_painel "$arquivo"
+  fi
+  cat <<MSG
+  easyPanel — serviço Compose '$ROOTOS_PAINEL' (projeto Compose $ROOTOS_PROJECT, o mesmo que este script usa):
+MSG
+  case "$acao" in
+    instalar) cat <<MSG
+     a. no painel, projeto '${ROOTOS_PAINEL%%/*}' → serviço Compose '${ROOTOS_PAINEL#*/}' → cole $arquivo
+     b. no campo de ambiente do serviço, cole o CONTEÚDO de $DIR_INSTANCIA/.env (o painel guarda cópia própria)
+     c. Deploy. Como o projeto é o mesmo, o painel ADOTA os containers, a rede e os volumes que já existem
+        (recria api/web com a mesma imagem; os dados ficam nos volumes $ROOTOS_PROJECT\_mktos_*).
+MSG
+    ;;
+    *) cat <<MSG
+     a. no campo de ambiente do serviço, atualize ROOTOS_IMAGE, ROOTOS_VERSION e ROOTOS_COMMIT com os valores de $DIR_INSTANCIA/.env
+     b. o compose do painel ($arquivo) $([ "$mudou" = mudou ] && echo "MUDOU nesta versão — cole o arquivo novo" || echo "não mudou nesta versão")
+     SEM o passo (a), um "Deploy" pelo painel re-sobe a IMAGEM ANTERIOR: o painel não lê o .env desta instância.
+MSG
+    ;;
+  esac
 }
 
 registrar_versao() {

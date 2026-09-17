@@ -33,6 +33,8 @@ const RAIZ = (() => {
   throw new Error('não achei a raiz do repositório');
 })();
 const STUBS = path.join(RAIZ, 'deploy', 'test-stubs');
+// O stub de docker delega SÓ `compose config` ao docker de verdade (é o que funde o compose do painel).
+const DOCKER_REAL = spawnSync('bash', ['-c', 'command -v docker'], { encoding: 'utf8' }).stdout.trim();
 const COMPOSE_REAL = readFileSync(path.join(RAIZ, 'docker-compose.yml'), 'utf8');
 
 function sh(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) {
@@ -93,7 +95,7 @@ function rodar(c: Caixa, script: 'instalar' | 'atualizar', args: string[], env: 
     env: {
       PATH: `${path.join(STUBS, 'bin')}:${process.env.PATH}`,
       HOME: process.env.HOME ?? '', TMPDIR: process.env.TMPDIR ?? tmpdir(), LANG: 'C.UTF-8',
-      STUB_LOG: c.log, STUB_IMAGES: c.images, ROOTOS_BASE: c.base, ROOTOS_REPO: c.origem,
+      STUB_LOG: c.log, STUB_IMAGES: c.images, STUB_REAL_DOCKER: DOCKER_REAL, ROOTOS_BASE: c.base, ROOTOS_REPO: c.origem,
       ESPERA_ENTRE_TENTATIVAS: '0', ROOTOS_ANTHROPIC_API_KEY: 'sk-ant-sintetica', ...env,
     },
   });
@@ -525,5 +527,88 @@ describe('P1: o override gerado passa no `docker compose config` de verdade', ()
       '-f', path.join(inst, 'repo', 'docker-compose.yml'), '-f', path.join(inst, 'override.yml'), 'config', '--services'], { encoding: 'utf8' });
     expect(cfg.status, cfg.stderr).toBe(0);
     expect(cfg.stdout).toMatch(/api/);
+  });
+});
+
+describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPanel e gera o compose para colar lá', () => {
+  const APLICADAS_V1 = '20260101000000_um,20260102000000_dois';
+  const PAINEL = ['--painel', 'root/rootos-prod'];
+  const lerPainel = (c: Caixa) => readFileSync(path.join(c.base, 'producao', 'painel', 'docker-compose.yml'), 'utf8');
+
+  it('projeto <projeto>_<servico> desde o primeiro up; compose do painel sem build:, imagem por variável, sem segredo', () => {
+    const c = caixa();
+    const r = instalarProd(c, PAINEL);
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    const env = lerEnv(c, 'producao');
+    expect(chave(env, 'ROOTOS_PROJECT')).toBe('root_rootos-prod');
+    expect(chave(env, 'ROOTOS_PAINEL')).toBe('root/rootos-prod');
+    // o compose que SUBIU a instância já usou o projeto do painel — é o que faz o painel adotar volumes e rede
+    const l = lerLog(c);
+    expect(l).toMatch(/compose -p root_rootos-prod .*up -d --no-build/);
+    expect(l).not.toMatch(/-p rootos-producao /);
+    const arq = path.join(c.base, 'producao', 'painel', 'docker-compose.yml');
+    expect(existsSync(arq)).toBe(true);
+    expect(modo(arq)).toBe('600');
+    const y = lerPainel(c);
+    expect(y).toMatch(/^name: root_rootos-prod$/m);
+    expect(y).not.toMatch(/^\s*build:/m);
+    expect((y.match(/image: \$\{ROOTOS_IMAGE\}/g) ?? []).length).toBe(2);
+    expect(y).not.toContain(chave(env, 'ROOTOS_IMAGE'));
+    for (const nome of ['rootos_prod_db', 'rootos_prod_redis', 'rootos_prod_minio', 'rootos_prod_api', 'rootos_prod_web']) expect(y).toContain(`container_name: ${nome}`);
+    expect(y).toContain('name: rootos-producao-net');
+    for (const v of ['db', 'redis', 'minio']) expect(y).toContain(`name: root_rootos-prod_mktos_${v}_data`);
+    expect(y).toMatch(/host_ip: 172\.16\.0\.1/);
+    expect(y).toMatch(/published: "4001"/);
+    // nada do .env interpolado: os placeholders sobrevivem e a senha do banco não aparece
+    expect(y).toMatch(/\$\{DB_PASSWORD/);
+    expect(y).not.toContain(chave(env, 'DB_PASSWORD'));
+    expect(y).not.toContain(chave(env, 'JWT_SECRET'));
+    expect(r.stdout).toMatch(/ADOTAR NO PAINEL/);
+    expect(r.stdout).toMatch(/projeto Compose root_rootos-prod/);
+  });
+
+  it('sem --painel nada disso existe; --painel inválido é recusado antes de criar qualquer coisa; --so-checar só planeja', () => {
+    const c = caixa();
+    expect(instalarProd(c).status).toBe(0);
+    expect(chave(lerEnv(c, 'producao'), 'ROOTOS_PAINEL')).toBe('');
+    expect(existsSync(path.join(c.base, 'producao', 'painel'))).toBe(false);
+    for (const ruim of ['Root/x', 'a/b/c', 'so-projeto', 'root/-x', 'root/x;rm']) {
+      const d = caixa();
+      const r = instalarProd(d, ['--painel', ruim]);
+      expect(r.status, ruim).toBe(64);
+      expect(existsSync(d.base), ruim).toBe(false);
+    }
+    const e = caixa();
+    const chk = instalarProd(e, [...PAINEL, '--so-checar']);
+    expect(chk.status, chk.stderr).toBe(0);
+    expect(chk.stdout).toMatch(/easyPanel: serviço 'root\/rootos-prod' → projeto Compose root_rootos-prod/);
+    expect(existsSync(e.base)).toBe(false);
+  });
+
+  it('atualizar e --voltar regeneram o compose do painel e lembram das 3 chaves de versão; sem --painel, silêncio', () => {
+    const c = caixa();
+    expect(instalarProd(c, PAINEL).status).toBe(0);
+    const antes = lerPainel(c);
+    const r = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, STUB_VERSAO: 'v2' });
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    expect(lerLog(c)).toMatch(/compose -p root_rootos-prod .*up -d --no-build api web/);
+    expect(r.stdout).toMatch(/atualize ROOTOS_IMAGE, ROOTOS_VERSION e ROOTOS_COMMIT/);
+    expect(r.stdout).toMatch(/re-sobe a IMAGEM ANTERIOR/);
+    expect(r.stdout).toMatch(/não mudou nesta versão/);
+    expect(lerPainel(c)).toBe(antes);
+    expect(existsSync(path.join(c.base, 'producao', 'painel', 'docker-compose.yml.novo'))).toBe(false);
+    const chk = rodar(c, 'atualizar', ['--ambiente', 'producao', '--voltar', '--so-checar']);
+    expect(chk.status, chk.stderr).toBe(0);
+    expect(chk.stdout).toMatch(/easyPanel: regeraria/);
+    const v = rodar(c, 'atualizar', ['--ambiente', 'producao', '--voltar']);
+    expect(v.status, v.stderr).toBe(0);
+    expect(v.stdout).toMatch(/atualize ROOTOS_IMAGE, ROOTOS_VERSION e ROOTOS_COMMIT/);
+    // e a instância comum não ganha lembrete nem diretório
+    const d = caixa();
+    expect(instalarProd(d).status).toBe(0);
+    const s = rodar(d, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: APLICADAS_V1, STUB_VERSAO: 'v2' });
+    expect(s.status, s.stderr).toBe(0);
+    expect(s.stdout).not.toMatch(/easyPanel/);
+    expect(existsSync(path.join(d.base, 'producao', 'painel'))).toBe(false);
   });
 });

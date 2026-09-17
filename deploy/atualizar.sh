@@ -141,6 +141,7 @@ if [ "$VOLTAR" = 1 ]; then
   para:        $ANT_IMAGEM (tag $ANT_TAG, commit ${ANT_COMMIT:0:12}) — imagem presente no host
   faria: checkout destacado, 3 chaves de versão no .env, override, up -d --no-build api web, saúde+versão
   NÃO faria: nada no banco (as migrations atuais ficam)
+$([ -z "${ROOTOS_PAINEL:-}" ] || echo "  easyPanel: regeraria painel/docker-compose.yml e lembraria de atualizar as 3 chaves de versão no painel")
 MSG
     exit 0
   fi
@@ -163,6 +164,7 @@ MSG
   (deploy/backup-db.sh --restore-test para ensaiar num banco descartável antes.)
 
 MSG
+  lembrete_do_painel voltar
   exit 0
 fi
 
@@ -380,3 +382,4 @@ cat <<MSG
   Voltar o runtime (sem mexer no banco): deploy/atualizar.sh --ambiente $AMBIENTE --voltar
 
 MSG
+lembrete_do_painel atualizar
