@@ -11,12 +11,12 @@
   (`gateway/`), cofre por empresa, RLS forçado nas 72 tabelas, rastro encadeado, aprovação com segunda
   pessoa e alçada, rotinas, memória versionada por empresa, onboarding autônomo, provisionamento
   idempotente. `origin/main` = `e0e7431` contém `root-os/frente-0` e `root-os/controle-agentes`.
-- **Trabalho de 16/09, não commitado** (12 arquivos alterados, 7 novos; ver diário): as três escritas
+- **Trabalho de 16/09, commitado em `f72529b`** (ver diário): as três escritas
   internas mais sensíveis passaram pela `PortaDoOperador` — `financeiro.lancamento.criar` (R3),
   `financeiro.lancamento.excluir` (R5, responde 403 com o preparo), `usuario.permissao.alterar` (R4)
   — com `argsSchema` fechado, efeitos inscritos pelo dono do dado, telas tratando retenção e suíte
   própria. Medido: API 1721/1721 com banco, web 382/382, policy 74/74, typechecks limpos.
-- **Quatro ADRs propostos** (`docs/adr/ADR-012..015`), aguardando decisão: caso piloto; código chega
+- **Quatro ADRs aceitos em 17/09** (`docs/adr/ADR-012..015`, commit `0890357`): caso piloto; código chega
   por `git pull` de tag; ferramenta = pasta própria; fronteira do dado que vai ao provedor do modelo.
 - `docs/VARREDURA-MODULOS-ROOT-OS-2026-09-16.md` — a varredura dos 15 módulos, fonte da manutenção.
 
@@ -68,7 +68,10 @@
 **O que varia por cliente:** o adaptador de acesso à fonte e o dicionário. **O que é constante:** o
 contrato conector↔API, a procedência e o padrão de ferramenta.
 
-**Homologação × produção** são dois tenants da mesma instância (já existe). O agente de desenvolvimento
+**Homologação × produção:** tenants distintos isolam registros, mas não isolam código, migrations,
+processos nem indisponibilidade da API compartilhada. Desenvolvimento de ferramentas roda em
+ambiente separado, com banco e credenciais de teste. Usar dois tenants da mesma instância serve
+para validar permissões, não como fronteira de execução de código. O agente de desenvolvimento
 não recebe credencial de produção por padrão; publicar é a fronteira.
 
 ## 3. Contrato mínimo conector ↔ API
@@ -84,13 +87,34 @@ declarou.
 | `POST /conector/remessa/:id/lote` | token | `{itens[]}` — idempotente por `(fonteId, caminhoRelativo, hashConteudo)` |
 | `POST /conector/remessa/:id/fim` | token | `{itensVistos, itensEnviados, erros[]}` → o servidor aplica a **regra de exclusão** e atualiza o frescor |
 
-**A fonte** (configurada no painel, puxada pelo pulso — o conector nunca inventa alcance):
+**A fonte** tem dois lados: o painel declara o destino e o alcance permitido no servidor;
+o cliente escolhe e autoriza LOCALMENTE o arquivo/pasta e seus filtros. O pulso pode revogar ou
+estreitar esse alcance, nunca autorizar uma pasta nova, remover exclusões ou ampliar tipos de
+arquivo sozinho. Mudança que amplia alcance exige nova prévia e consentimento local. A raiz
+absoluta e as credenciais SQL não viajam para a VPS. Configuração lógica:
 `{ id, tipo: pasta|arquivo|sql, raizLogica, incluir[], excluir[], tiposPermitidos[], modo:
 importacao|sincronizacao, regraDeExclusao: ignorar|arquivar, tamanhoMaximo }`.
 
 **O item:** `{ caminhoRelativo, hashConteudo, tamanho, modificadoEm, mime, textoExtraido? }`.
-A **prévia** é a mesma listagem sem `textoExtraido`, mostrada antes do primeiro envio; o cliente
-aprova a lista, não uma pasta.
+A **prévia** é local, sem conteúdo, mostrada antes do primeiro envio. Na importação o cliente
+aprova a lista. Na sincronização também escolhe explicitamente se novos arquivos dentro do
+escopo poderão entrar; ampliar escopo sempre exige nova aprovação. Uma prévia incompleta não
+autoriza envio. Antes de ler/enviar, revalidar caminho, tipo, limites e versão: impedir symlinks,
+junctions e troca de caminho entre prévia e leitura de alcançar algo fora da seleção.
+
+**Identidade e remessas:** token é vinculado a dispositivo, empresa e fontes autorizadas;
+identidade da empresa vem do token, nunca do corpo. Pareamento tem limite de tentativas e segredo
+suficientemente imprevisível; o código curto não vira uma senha adivinhável. Revogação é conferida
+em cada lote, não apenas no pulso. Hash é calculado e conferido pelo servidor. Repetir a mesma
+requisição não cria outra versão, mas mudar A → B → A precisa criar a versão do retorno a A:
+deduplicação global pelo hash histórico não serve. Ordem/revisão por item evita lote antigo
+sobrescrever conteúdo novo. Nenhuma destas garantias está implementada só por constar no contrato.
+
+**Finalização e exclusões:** `itensVistos` como contagem não identifica o que desapareceu. Arquivar
+ausências requer manifesto completo das chaves vistas, remessa de snapshot concluída sem erros e
+escopo/filtros estáveis. Remessa interrompida, parcial ou com erro não arquiva ausências nem marca
+sincronização completa. Registrar tentativa e sucesso separadamente; remoção de fonte/revogação
+interrompe coleta/envio, mas não apaga automaticamente conteúdo já recebido.
 
 **No servidor:** valida (fonte autorizada, tipo permitido, tamanho, remessa aberta) → organiza
 (memória da empresa, `sourceType: conector`, `sourceRef: <fonte>/<caminho>`, `colhidoEm`, hash) →
@@ -100,17 +124,22 @@ fonte decide entre ignorar e arquivar, e arquivar é reversível.
 
 **SQL entra como adaptador do mesmo contrato**, depois: a "fonte" é uma consulta/view autorizada, o
 "item" é uma linha com chave de negócio; engine e autenticação **a confirmar por origem** (seção 5).
+No primeiro adaptador, consultas/views são cadastradas e autorizadas localmente; o servidor não
+envia SQL arbitrário para execução. Filtros sintáticos são defesa adicional, não prova de somente
+leitura: a conta do banco deve ter privilégios restritos e a consulta deve usar parâmetros.
+Arrendamento de jobs remotos não é requisito desse primeiro adaptador de coleta programada.
 
 ## 4. Etapas
 
-Cada etapa é pequena o bastante para uma sessão, termina num portão medido e não abre a seguinte
-com o anterior em aberto. **Manutenção (M) e produto (P) são trilhos separados.**
+Cada etapa termina num portão medido e se divide em fatias verificáveis; não há estimativa de que
+uma etapa inteira caiba numa sessão. Dependência de aceite permanece aberta até ser demonstrada.
+**Manutenção (M) e produto (P) são trilhos separados.**
 
 ### Trilho M — manutenção já iniciada
 
 | # | Etapa | Evidência de aceite | Estado |
 |---|---|---|---|
-| M1 | As três escritas internas pela porta | suíte com banco: R3 retida, R5 recusada sem efeito, R4 retida, argumento inválido sem queimar aprovação | ✅ 16/09 (não commitado) |
+| M1 | As três escritas internas pela porta | suíte com banco: R3 retida, R5 recusada sem efeito, R4 retida, argumento inválido sem queimar aprovação | ✅ commit `f72529b` |
 | M2 | As que faltam: `credencial.rotacionar` (R5, `PUT /integrations/:key`), `financeiro.pagamento.baixar` (R5) | mesma suíte, casos novos | ☐ |
 | M3 | Rastro e Linha do tempo leem o mesmo `EventLog` | um fato aparece igual nas duas telas | ☐ |
 | M4 | `/fluxos` fora do menu; `/ferramentas` nasce do catálogo que existe | o menu não anuncia módulo sem página | ☐ |
@@ -120,17 +149,30 @@ com o anterior em aberto. **Manutenção (M) e produto (P) são trilhos separado
 
 | # | Etapa | Entregas | Evidência de aceite | Estado |
 |---|---|---|---|---|
-| P0 | **Decisões** | ADR-012..015 aceitos ou reescritos | os quatro com "Situação: aceita" | ⏳ propostos |
+| P0 | **Decisões** | ADR-012..015 aceitos ou reescritos | os quatro com "Situação: aceita" | ✅ `0890357` |
 | P1 | **Base instalável e atualizável** | `deploy/instalar.sh` (VPS limpa: segredos gerados, o que ninguém gera perguntado, `migrate deploy`, `db:seed:politica`, tenants de produção e homologação, smoke); `deploy/atualizar.sh` (tag de rollback, seed de política **antes** do `up`, `up -d --no-build`; nunca toca `ferramentas/`, `.env`, vault, dados); `GET /health/versao`; `apps/api/.env.example`; QUICKSTART reescrito | alguém que não é o Pedro sobe uma VPS limpa, atualiza para tag nova com contexto/`.env`/ferramentas intactos; `backup-db.sh --restore-test` restaura; cronometrado | ☐ |
-| P1-b | **Bootstrap local sem seed destrutivo** | `pnpm bootstrap` cria admin, política e permissões e **preserva o que existe**. O `deleteMany` de `prisma/seed.ts:141` sai do caminho automático e vira `db:seed:demo`, que **só roda com flag explícita e nome de banco descartável** (`/test\|dev\|local\|staging\|shadow/i`, a mesma trava de `banco-de-teste.ts`) | rodar `bootstrap` duas vezes não apaga nada; `db:seed:demo` recusa banco cujo nome não é descartável | ☐ |
+| P1-b | **Bootstrap local sem seed destrutivo** | `pnpm bootstrap` cria admin, política e permissões e **preserva o que existe**. O `deleteMany` saiu do caminho automático e virou `db:seed:demo`, que **só roda com flag explícita e nome de banco descartável** (`/test\|dev\|local\|staging\|shadow/i`) | seed repetido preserva módulos, papéis, permissões e senha; demo exige duas travas; bootstrap real conclui duas vezes no banco de teste | ✅ `f74ef23` |
 | P2 | **Identidade e contexto por empresa** | token por usuário e empresa (prefixo no texto, hash no banco, só estreita o papel, revogável no painel) substitui a conta de serviço compartilhada; `ContextBuilder` busca na **memória da empresa** (`MemoriaService.buscar`) — **a pasta ROOT nunca é reindexada para outro tenant**; resultado vazio cai para textual e o traço distingue "não achei" de "sem vetor"; teste de isolamento entre duas empresas. Ponte para o Claude Code: o `packages/mcp` que existe, com `memoria_buscar`/`memoria_ler` e o token novo — **um cliente, opcional** | outra pessoa conecta o Claude Code, pergunta algo que só existe no contexto de uma empresa que não é a `root`, recebe com fonte, e revoga — em < 10 min | ☐ |
-| P3 | **Conector local — uma pasta/arquivo (o piloto)** | pareamento; fontes puxadas pelo pulso; prévia; remessa idempotente por hash; importação e sincronização; regra de exclusão; frescor e saúde no painel; revogação que vale para a coleta programada. Python + PyInstaller `--onedir`, escopo de usuário. **Se a coleta programada roda sem sessão humana depende de como a origem autentica — medir na máquina do piloto, não presumir** | o cliente seleciona uma pasta, vê a prévia, envia; **interromper e reenviar não duplica**; uma pergunta no Claude Code cita o documento; **um arquivo fora da lista não sai**; revogar para a coleta | ☐ |
-| P4 | **A primeira ferramenta** | um molde mínimo (`pnpm criar-ferramenta <nome>`: módulo com prefixo declarado, página, permissão, migration com RLS, teste, capacidade classificada) — **não é catálogo genérico**; o procedimento escrito (homologação → prévia → publicar → voltar); publicar = habilitar no tenant de produção pela porta, com rastro; voltar = desabilitar | numa VPS limpa, uma ferramenta publicada com acesso para duas pessoas, construída pelo procedimento por alguém no papel do cliente | ☐ |
+| P3 | **Conector local — uma pasta/arquivo (o piloto)** | pareamento; fontes puxadas pelo pulso sem ampliar o consentimento local; prévia; remessa idempotente com revisão e hash; importação e sincronização; regra de exclusão; frescor e saúde no painel; revogação que vale para a coleta programada. Protótipo Python; empacotamento e instalação por usuário a validar. **Se a coleta programada roda sem sessão humana depende de como a origem autentica — medir na máquina do piloto, não presumir** | o cliente seleciona uma pasta, vê a prévia, envia; **interromper e reenviar não duplica**; uma pergunta no Claude Code cita o documento; **um arquivo fora da lista não sai**; revogar para a coleta | ☐ |
+| P4 | **A primeira ferramenta** | um molde mínimo (`pnpm criar-ferramenta <nome>`: módulo com prefixo declarado, página, permissão, migration com RLS, teste, capacidade classificada) — **não é catálogo genérico**; procedimento homologação isolada → prévia → artefato versionado → publicação com rastro; recuperação compatível com schema e ensaiada, não apenas desabilitar módulo | numa VPS limpa, uma ferramenta publicada com acesso para duas pessoas, construída pelo procedimento por alguém no papel do cliente | ☐ |
 | P5 | **A segunda ferramenta e a prova inteira** | mesma base, mesmo padrão, sem interferir na primeira; uma atualização do núcleo e uma restauração de backup no meio; assistido, anotando cada intervenção do Pedro | **o aceite final da seção 6** | ☐ |
 | P6 | **Conector SQL como adaptador** | as sete travas (login só-leitura declarado; validação sintática que recusa `INTO`, `EXEC`, `xp_`, múltiplos comandos, malformado; teto de linhas e timeout; log com hash; homologação por padrão); contrato de job/resultado com `sql_sha256`; publicar consulta é R3; recepção com arrendamento; procedência em toda leitura. **Engine e autenticação confirmadas por origem antes de codar** | linhas do piloto em tempo medido; reenvio não duplica; job volta à fila; o número confere contra o relatório que a casa já confia | ☐ |
 
 **Ordem:** P0 → P1/P1-b → P2 → P3 → P4 → P5 → P6. Trilho M corre em paralelo e não bloqueia; M2 sai
 da fila (R5 direta é risco vivo).
+
+Partes puramente locais, sem banco nem envio, podem ser construídas antes das dependências do
+aceite integrado. **P3-a: prévia CLI em `tools/conector-local/`**, somente metadados e fixtures
+sintéticas, é uma dessas partes. Não fecha P3, não autoriza coleta e não substitui o seletor visual.
+
+**Correção do aceite P4:** desabilitar um módulo não desfaz código nem migration. Publicação requer
+artefato versionado, verificação em homologação e procedimento de recuperação compatível com o
+schema. Voltar a imagem só é seguro se ela ler o schema corrente; restore envolve dados e tem
+ensaio separado. A geração de ferramentas não pode introduzir migrations diretamente em produção.
+
+**Distribuição P3:** Python é usado no protótipo local por não exigir dependências. PyInstaller é
+uma opção de empacotamento a avaliar, não decisão validada. Seletor visual, instalação por usuário,
+armazenamento de segredos do SO e agendamento exigem validação no sistema operacional do piloto.
 
 ## 5. O primeiro piloto
 
@@ -169,10 +211,10 @@ Cada item só entra com uma frase escrita na tarefa: *"no cliente X, na etapa Y,
 
 | # | O quê | Trava | Quem |
 |---|---|---|---|
-| D1 | Aceitar ou reescrever ADR-012..015 | P0 | Pedro |
+| D1 | ADR-012..015 aceitos em `0890357`; fronteira concreta de dados continua definida por cliente | resolvida para P0 | Pedro |
 | D2 | N-9 executada: `.stignore` ignora `.git` **no mesmo commit** em que a VPS vira clone — nunca antes. Até lá, nenhum checkout de branch no Mac com o Syncthing ligado | P1 | Pedro |
 | D3 | Deploy key de leitura por instância (repo fechado, ADR-006) | P1 | Pedro |
-| D4 | Certificado de assinatura de código (~R$ 1,5–3k/ano) — sem ele o EPP apaga o conector de novo | P3 | Pedro |
+| D4 | Validar distribuição do conector com a TI do piloto. Assinatura pode ser necessária, mas não garante aceite do EPP; preço/fornecedor só após avaliação. Não bloqueia protótipo local sem distribuição | empacotamento P3 | Pedro e TI do cliente |
 | D5 | Engine e autenticação do SQL do piloto; se há sessão humana na coleta programada | P6 | medir na máquina do piloto |
 | D6 | `PATCH /finance/transactions/:id` ganha capacidade (R3)? É capacidade nova — exige assinatura | M2 | Pedro |
 | D7 | `ia-acao@`: sem senha utilizável ou apagada | M5 | Pedro |
@@ -211,3 +253,53 @@ Cada item só entra com uma frase escrita na tarefa: *"no cliente X, na etapa Y,
   ROOT **não** se amplia a tenants (P2). Um cliente MCP, opcional. Contrato mínimo conector↔API
   (seção 3). Piloto: uma pasta/arquivo primeiro; SQL depois, com engine e autenticação a confirmar.
 - Nenhum código, VPS, credencial ou fonte de cliente foi tocado nesta revisão.
+
+### 17/09/2026 — coordenação ativa e primeira fatia do conector
+
+- Divisão comunicada ao Claude `root-os-architecture`: Claude implementa P1-b e testes; Codex
+  revisa este plano e implementa `tools/conector-local/`. Sem testes concorrentes no banco dele.
+- Corrigidas fronteiras de consentimento local, idempotência A → B → A, snapshot antes de
+  arquivamento, revogação por lote, ambiente de homologação e recuperação de código/schema.
+- P3-a implementada: prévia de uma pasta ou arquivo, subpastas opcionais, filtros, limites,
+  bloqueio de links/junctions e nomes protegidos, saída sem conteúdo ou raiz absoluta. Após
+  revisão cruzada do Claude, foram diferenciados reparse points de arquivos sob demanda,
+  adicionados atributo `hidden`, glob sem diferença de caixa no Windows, `--max-depth` e código
+  próprio para prévia incompleta. Quatorze testes com fixtures sintéticas passaram. P3 permanece
+  aberto: a etapa não envia, não pareia e não persiste consentimento.
+- Não houve envio à VPS, leitura de fontes reais ou uso de credenciais no protótipo.
+
+#### Revisão independente P1-b — fechada
+
+Em 17/09, 00:28 (America/Sao_Paulo), Codex executou, **sem banco**:
+
+```sh
+env -u TEST_DATABASE_URL -u DATABASE_URL pnpm --filter @mktos/api exec vitest run test/seed-sem-destruicao.test.ts test/banco-descartavel.test.ts
+```
+
+A primeira rodada encontrou três falhas nos testes sem banco. Claude corrigiu as três e consolidou
+P1-b em `f74ef23`. Codex repetiu a validação: **22 passaram e 1 teste de banco foi corretamente
+pulado** sem `TEST_DATABASE_URL`; depois repetiu contra `marketing_os_test`: **23/23 passaram**, incluindo
+execuções reais do seed sobre módulos, papéis, permissões e senha personalizados, com restauração
+do estado anterior no `finally`.
+
+Correções verificadas:
+
+1. `scripts/bootstrap.sh`: carregar `.env` terminava com status falso quando a última atribuição
+   não é `DATABASE_URL`; `set -e` encerra silenciosamente. Reprodução sem acesso ao banco:
+   `env -u DATABASE_URL BOOTSTRAP_ENV_FILE=apps/api/.env.example bash scripts/bootstrap.sh --so-checar`.
+   Foi corrigido com retorno explícito; o modo `--so-checar` foi exercitado sem tocar no banco.
+2. O teste da trava do demo confundia menção em comentário com uso de
+   `PERMITIR_BANCO_NAO_TESTE`; a varredura passou a ignorar comentários sem enfraquecer a trava.
+3. O teste do comando seed rejeitava `--filter` do próprio pnpm como se fosse argumento destrutivo
+   do seed; a asserção agora identifica o comando `db:seed` puro.
+4. O teste funcional agora restaura hash e papéis exatos capturados antes da alteração.
+
+A comunicação pelo Orca foi restabelecida. Claude confirmou o recebimento, concluiu P1-b e fez
+revisão somente leitura de P3-a. Codex incorporou os achados aplicáveis nesta etapa; a proteção
+contra troca de arquivo entre prévia e leitura pertence ao emissor futuro e segue como requisito
+explícito da próxima fronteira.
+
+**Coordenação desta execução:** P1-b foi concluída por Claude e validada novamente por Codex; P3-a
+foi implementada por Codex e revisada por Claude. Push, deploy, acesso a dados reais e alteração de
+credenciais não fizeram parte desta fatia. Não há monitoramento automático depois que a execução
+do Codex terminar.

@@ -27,6 +27,24 @@ já preenchido; o agente só consegue construir **dentro** do padrão.
 
 ## Consequências
 
+### Ressalva técnica da revisão de 17/09/2026
+
+A decisão de separar as customizações em uma pasta fica preservada. **Essa pasta não é uma
+sandbox**, e um tenant de homologação no mesmo processo não isola código, migrations, recursos
+ou falhas de produção. As expressões abaixo "valem de graça", "só consegue construir dentro do
+padrão" e "sem deploy por ferramenta" descrevem uma intenção que o código atual não garante.
+Não podem ser usadas como critérios de segurança ou como promessa de publicação pronta.
+
+Para P4, desenvolvimento e execução de testes precisam de ambiente separado e dados sintéticos
+ou autorizados. A ferramenta é validada antes de entrar no processo de produção, com artefato
+versionado e migrations compatíveis. Habilitar/desabilitar por tenant é controle de
+disponibilidade, **não rollback de código ou dados**. Recuperação exige versão anterior compatível
+com o schema ou procedimento de restauração testado. O molde e a API ajudam a seguir o padrão;
+credenciais, permissões e isolamento técnico o impõem. O mecanismo de carregamento/publicação
+continua como entrega de P4, não como capacidade já existente por haver uma pasta.
+
+As consequências originais a seguir ficam como histórico da proposta, subordinadas à ressalva.
+
 - `deploy/atualizar.sh` nasce com a regra: nunca toca `ferramentas/`, `.env`, o vault nem o banco além
   de `migrate deploy`.
 - Publicar = ação pela porta (com rastro) que habilita a ferramenta no tenant de produção; desfazer =

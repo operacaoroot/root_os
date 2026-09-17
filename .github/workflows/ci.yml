@@ -96,6 +96,16 @@ env:
   #     banco e se recusa a rodar num que não se anuncie como descartável.
 
 jobs:
+  conector-local:
+    name: Prévia local do conector (sem rede ou banco)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Testar seleção, limites e falhas com arquivos sintéticos
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tools/conector-local -p 'test_*.py' -v
+
   # ---------------------------------------------------------------------------
   # 1. Tipos e testes de policy, web e api — com banco, senão não testa nada.
   # ---------------------------------------------------------------------------
