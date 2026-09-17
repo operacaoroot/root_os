@@ -14,6 +14,7 @@
     "db:diff": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --exit-code",
     "db:diff:sql": "prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url \"$SHADOW_DATABASE_URL\" --script",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "db:migrate-bio": "tsx prisma/migrate-bio.ts",
     "db:seed:finance": "tsx prisma/seed-finance.ts",
     "db:seed:finops": "tsx prisma/seed-finops.ts",

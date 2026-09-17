@@ -77,24 +77,15 @@
  * nada.
  */
 
-/** Nomes que anunciam um banco descartável. */
-const PARECE_DESCARTAVEL = /test|dev|local|staging|shadow/i;
-
-/** Destrava conscientemente rodar fora de um banco que se anuncia como tal. */
-const DESTRAVE = 'PERMITIR_BANCO_NAO_TESTE';
-
-/**
- * O nome do banco dentro de uma URL de conexão. Devolve string vazia quando a
- * URL não é analisável — e string vazia nunca casa com o padrão, então uma URL
- * ilegível cai no lado seguro da trava.
+/*
+ * A TRAVA MUDOU DE CASA (P1-b, 17/09/2026): a expressão regular, o nome do
+ * banco e a recusa moram em `src/common/banco-descartavel.ts`, porque a semente
+ * de demonstração passou a fazer a mesma pergunta antes de apagar dado. Este
+ * arquivo reexporta para que nenhuma suíte precise mudar de import — e para
+ * que continue existindo UMA trava, não duas envelhecendo em ritmos diferentes.
  */
-export function nomeDoBanco(url: string): string {
-  try {
-    return new URL(url).pathname.replace(/^\//, '');
-  } catch {
-    return '';
-  }
-}
+export { nomeDoBanco } from '../src/common/banco-descartavel';
+import { exigirBancoDescartavel as exigir } from '../src/common/banco-descartavel';
 
 /**
  * Recusa rodar quando o nome do banco não se anuncia como descartável.
@@ -107,15 +98,5 @@ export function nomeDoBanco(url: string): string {
  * (`describe.skipIf`) ou se lança, e as duas escolhem diferente de propósito.
  */
 export function exigirBancoDescartavel(url: string, oQueAsuiteFaz: string): void {
-  if (!url) return;
-
-  const nome = nomeDoBanco(url);
-  if (PARECE_DESCARTAVEL.test(nome)) return;
-  if (process.env[DESTRAVE] === '1') return;
-
-  throw new Error(
-    `Banco "${nome}" não parece de teste e a suíte ${oQueAsuiteFaz}. ` +
-      `Aponte TEST_DATABASE_URL para um banco descartável (nome com test/dev/local/staging/shadow) ` +
-      `ou defina ${DESTRAVE}=1 conscientemente.`,
-  );
+  exigir(url, `a suíte ${oQueAsuiteFaz}`, 'TEST_DATABASE_URL');
 }
