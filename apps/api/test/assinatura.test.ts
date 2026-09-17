@@ -1688,6 +1688,7 @@ const ROTAS_ALCANCADAS_POR_SUSPENSO = [
   'Get /api/auth/me',
   'Get /api/config',
   'Get /api/health',
+  'Get /api/health/versao',
   'Get /api/tenants/modulos',
   'Post /api/assinatura/conferir',
   'Post /api/assinatura/reativar',

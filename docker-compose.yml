@@ -56,6 +56,8 @@ services:
     build:
       context: .
       args:
+        ROOTOS_VERSION: ${ROOTOS_VERSION:-development}
+        ROOTOS_COMMIT: ${ROOTOS_COMMIT:-unknown}
         # Ver o `ARG` homônimo no Dockerfile. `NEXT_PUBLIC_*` é trocada pelo
         # VALOR no `next build`; posta só no `environment:` do serviço `web`,
         # ela não chega ao navegador — o pacote já foi compilado sem ela.
