@@ -1,6 +1,9 @@
 # Atualização segura da homologação — plano de execução
 
 Estado: **PLANO PREPARADO; NÃO AUTORIZA EXECUÇÃO REMOTA**.
+Atualização: **G0 concluído localmente** no candidato `a98b8d3`, tag
+`retomada-rls-g0-20260918`; evidências e hashes em [CANDIDATO-G0.md](CANDIDATO-G0.md).
+G1 (configuração efetiva do painel/rota) segue pendente, antes do manifesto final.
 Pedido do Pedro: preparar o plano, sem atualizar serviços. Em 18/09/2026,
 15:29–15:32 -03, foram feitas apenas consultas na VPS. Nenhum backup, restore,
 alteração de papel, configuração, checkout ou recriação foi executado nesta etapa.
@@ -47,7 +50,8 @@ banco novo continua válido, mas não provava compatibilidade com este históric
 
 ## 2. G0 — preparar um candidato compatível, localmente
 
-Próxima tarefa recomendada, **ainda não implementada neste pedido de plano**:
+Roteiro original; itens 1–4 concluídos posteriormente mediante autorização local
+do Pedro, conforme `CANDIDATO-G0.md`. Item 5 aguarda G1 e não autoriza a VPS:
 
 1. Recuperar somente o SQL original acima, byte a byte, para o mesmo caminho
    da migration em uma correção local focada; verificar o hash. Não fazer merge
@@ -196,6 +200,10 @@ comandos sanitizados, checks e mudanças reais; atualizar STATUS-CODEX.md.
 > da imagem. Não altere a VPS. Depois feche G1 por inventário somente leitura e
 > preencha o manifesto com o novo artefato e recursos exatos. Pare para aprovação
 > explícita antes de backup/restore, habilitação de papel ou troca de serviços.
+
+**Handoff atualizado após G0:** não repetir a correção nem reconstruir o artefato
+sem necessidade. Conferir o candidato fechado em `CANDIDATO-G0.md`, fazer apenas
+o inventário de G1 e fechar o manifesto antes de qualquer pedido de execução remota.
 
 Esse texto é um handoff, não uma autorização já concedida. Ao concluir a preparação,
 perguntar a Pedro pela janela e escopo fechado. Não pedir aprovação genérica para

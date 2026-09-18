@@ -8,7 +8,25 @@ Código validado: **`8339f75791167ab05dd2b9bb9567e6a4b54ff90d`**.
 Sem push, merge ou deploy de produção/homologação. Alterações preexistentes em
 `STATUS-CLAUDE.md` foram preservadas.
 
-## Último checkpoint — plano da homologação preparado, sem execução
+## Último checkpoint — candidato G0 validado localmente
+
+Autorizado por Pedro após o plano abaixo. **G0 concluído**: migration histórica
+preservada byte a byte, commit `a98b8d33437af6e6954dd86198f3cd92167d4ca1`, tag
+local `retomada-rls-g0-20260918`. As 41 migrations/checksums agora coincidem com
+o inventário da homologação. Sem editar histórico do banco ou código de negócio.
+
+**340 testes passaram**, mais migrations do zero/repetição, schema sem diferenças,
+upgrade sintético 40→41 preservando registro, HTTP restrito e entrada real da
+imagem Linux/amd64. Build completo concluído; saúde/identidade/papel restrito
+confirmados em 18/09 às 16:09 -03. Recursos locais de teste removidos; artefatos
+preservados no Mac. Nenhum push, merge, cópia de dados ou alteração na VPS.
+
+Registro completo, limites e hashes: [CANDIDATO-G0.md](CANDIDATO-G0.md).
+Próximo passo: **G1, inventário somente leitura da configuração efetiva de
+painel/rota**, seguido do manifesto preenchido e aprovação específica para
+backup/restore e atualização. Não repetir G0 nem aplicar a imagem antiga `8339f75`.
+
+## Histórico — plano da homologação preparado, sem execução
 
 Pedro autorizou preparar o plano, **não atualizar a homologação**. Inventário
 somente leitura em 18/09, 15:29–15:32 -03. Entrega:
