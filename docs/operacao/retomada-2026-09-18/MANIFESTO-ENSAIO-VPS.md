@@ -1,6 +1,8 @@
 # Manifesto — ensaio isolado de RLS na VPS ROOT
 
-Estado: **AGUARDA APROVAÇÃO EXPLÍCITA DO PEDRO — NÃO EXECUTADO**.
+Estado: **APROVADO PELO PEDRO — ENSAIO CONCLUÍDO COM SUCESSO EM 18/09/2026**.
+Janela: 14:54–14:59 -03. Recursos de execução e segredos sintéticos removidos;
+imagem e logs mantidos. Evidências: [RELATORIO-ENSAIO-VPS.md](RELATORIO-ENSAIO-VPS.md).
 Preparado em 18/09/2026. Responsável pela autorização: Pedro Magnago.
 Executor: a sessão que receber a aprovação e reler este manifesto.
 O pedido “pode continuar até o final” autorizou a conclusão local, não este ensaio remoto.
@@ -154,5 +156,7 @@ outro manifesto, janela e aprovação; não estão embutidas neste aceite.
 Pergunta: **“Aprova o ensaio isolado deste manifesto na VPS ROOT, sem alterar
 produção nem a homologação existente?”**
 
-Resposta/horário: **PENDENTES — nenhuma autorização remota nesta retomada**.
-Somente após resposta explícita registrar o aceite e iniciar o checkpoint 1.
+Resposta: **“sim”**, nesta sessão, em resposta direta à pergunta acima.
+Aceite registrado em **18/09/2026 às 14:55 -03** (horário do registro, não
+timestamp fornecido pela mensagem). Escopo permanece exclusivamente o ensaio
+isolado; nenhuma autorização de alteração da homologação existente ou produção.

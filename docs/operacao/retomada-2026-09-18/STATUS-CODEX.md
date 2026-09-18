@@ -1,12 +1,38 @@
 # Retomada — 18/09/2026
 
-Estado: **correção local concluída e commitada; não publicada nem ativada na VPS**.
+Estado: **correção local concluída; ensaio isolado aprovado na VPS e encerrado**.
+Produção e homologação existentes **não foram atualizadas**.
 Workspace: `volute`, branch `pedromagnago/varredura-pendencias-claude`,
 HEAD inicial `0b5cf6253a85f9dcaf2cbf12fdfa53f663b8ee70`.
 Código validado: **`8339f75791167ab05dd2b9bb9567e6a4b54ff90d`**.
-Sem push, merge ou deploy. Alterações preexistentes em `STATUS-CLAUDE.md` foram preservadas.
+Sem push, merge ou deploy de produção/homologação. Alterações preexistentes em
+`STATUS-CLAUDE.md` foram preservadas.
 
-## Continuação autorizada — resultado final local
+## Último checkpoint — ensaio remoto concluído
+
+Após o fechamento local abaixo, Pedro respondeu **“sim”** à aprovação específica
+do manifesto. Executado em **18/09/2026, 14:54–14:59 -03**, somente na VPS ROOT
+confirmada, em containers/rede/volume novos e isolados, sem portas publicadas.
+
+- Imagem transferida com hash e ID idênticos ao artefato local, Linux/amd64 nativo.
+- 40 migrations, política base v1/62 capacidades, 86 tabelas com RLS e FORCE.
+- `SMOKE_RESTRITO_OK`: cadastro, login, carga, isolamento HTTP e recusas passaram.
+- Entrada real `node dist/main.js`: saúde `ok/ok`, versão/commit corretos,
+  `mktos_app` sem superuser/bypass e `TENANT_MODO=impor`, zero reinícios/OOM.
+- Produção/homologação mantiveram saúde, IDs de containers/imagens e zero reinícios.
+- Containers, rede, volume e segredos sintéticos do ensaio foram removidos.
+  Nenhum recurso preexistente foi removido; dados sintéticos são recriáveis,
+  mas não há backup do volume descartado.
+- Na VPS ficaram apenas a imagem candidata e o diretório de artefatos/logs
+  `/srv/rootos/ensaios/rls-20260918`, protegido por modo `0700`, sem arquivos de senha.
+
+Detalhes e limites: [RELATORIO-ENSAIO-VPS.md](RELATORIO-ENSAIO-VPS.md).
+O aceite foi consumido por esse ensaio; **não autoriza atualizar a homologação**.
+Próximo passo remoto exige manifesto próprio de atualização, backup/restauração
+e recuperação, seguido de aprovação explícita. P2/P3 não foram implementados
+por esta rodada. Não há supervisor recorrente em execução.
+
+## Histórico — continuação autorizada e fechamento local
 
 Pedro pediu “pode continuar até o final”. As pendências locais 1 e 2 da primeira
 rodada abaixo foram resolvidas, sem transformar esse pedido em autorização de VPS.
@@ -81,9 +107,9 @@ zero reinícios nos quatro containers API/web consultados, 86 GB livres e
 tabelas têm RLS e FORCE. Logo, RLS existe mas é inerte para essa API remota.
 O clone remoto contém `?? ferramentas/`: preservar; não limpar/resetar.
 
-Próximo portão: **aprovação explícita do manifesto do ensaio remoto** em
+Naquele fechamento, o próximo portão era **aprovação explícita do manifesto do ensaio remoto** em
 `MANIFESTO-ENSAIO-VPS.md`. O ensaio proposto é efêmero e separado; não atualiza
-produção nem a homologação existente. Não há supervisor recorrente em execução.
+produção nem a homologação existente. Esse portão foi atendido no checkpoint acima.
 
 ## Onde paramos
 
