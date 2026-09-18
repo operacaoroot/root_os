@@ -8,7 +8,27 @@ Código validado: **`8339f75791167ab05dd2b9bb9567e6a4b54ff90d`**.
 Sem push, merge ou deploy de produção/homologação. Alterações preexistentes em
 `STATUS-CLAUDE.md` foram preservadas.
 
-## Último checkpoint — ensaio remoto concluído
+## Último checkpoint — plano da homologação preparado, sem execução
+
+Pedro autorizou preparar o plano, **não atualizar a homologação**. Inventário
+somente leitura em 18/09, 15:29–15:32 -03. Entrega:
+[PLANO-ATUALIZACAO-HOMOLOGACAO.md](PLANO-ATUALIZACAO-HOMOLOGACAO.md).
+
+**Trava encontrada:** banco da homologação contém 41 migrations; candidato
+`8339f75` contém 40. As 40 comuns têm checksum idêntico. A adicional aplicada,
+`20260917110000_madrugada_vps_noop`, foi localizada no commit remoto
+`6ce4a40795304f6624300530bc1943954ddfc333` (`madrugada-v6`); comentário e
+`SELECT 1;`, SHA-256 `dd4ce3a6be8f741622f6fd3a7b3a2fb94579d9a8015fa323d9f623d39f835b8e`,
+idêntico ao registro do banco. Nenhuma linha do histórico foi alterada.
+
+Próximo trabalho proposto: preservar esse SQL em candidato novo, validar imagem
+local e reconciliar a configuração efetiva do easyPanel por leitura. Só depois
+preencher manifesto/obter aprovação para backup, restore e troca. Não rodar o
+atualizador genérico, que recusaria a migration ausente e ainda faria rebuild/
+checkout. Nesta rodada não houve backup, cópia de dados ou alteração remota;
+o ensaio anterior continua aprovado apenas para banco novo.
+
+## Checkpoint anterior — ensaio remoto concluído
 
 Após o fechamento local abaixo, Pedro respondeu **“sim”** à aprovação específica
 do manifesto. Executado em **18/09/2026, 14:54–14:59 -03**, somente na VPS ROOT
