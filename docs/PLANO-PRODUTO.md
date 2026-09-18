@@ -32,7 +32,7 @@
 4. **Máquina desligada interrompe a coleta; a VPS continua servindo os últimos dados com frescor
    visível.** Execução sem sessão humana **depende do modelo de autenticação da origem — não presumir.**
 5. **Ingestão local coleta; a VPS recebe, valida e organiza.**
-6. **MCP é opcional**, não requisito. Hospedar apps na VPS **não** obriga hospedar o Claude Code lá.
+6. **Um conector MCP é entregável obrigatório** para o Claude Code do cliente (decisão do Pedro em 17/09, 09:51, registrada em `docs/operacao/madrugada-2026-09-17/DUVIDAS.md`). Ele é a ponte; quem autoriza é a API. Hospedar apps na VPS **não** obriga hospedar o Claude Code lá.
 7. **Segurança por permissões, isolamento e API** — não por prompt.
 8. Ferramentas novas seguem padrão: autenticação, autorização, ambiente de teste, publicação,
    recuperação. **Núcleo, contexto/dados e customizações separados.**
@@ -52,7 +52,7 @@
  ┌───────────────────────────────┐               └──────────────────────────────────────┘
  │ Claude Code (a oficina)       │  token por pessoa           ▲
  │  lê contexto autorizado,      │────────────────────────────┘
- │  constrói em homologação,     │  MCP ou CLI: ponte opcional; quem decide é a API
+ │  constrói em homologação,     │  MCP: ponte do agente; quem autoriza é a API
  │  envia para publicação        │
  └───────────────────────────────┘
 ```
@@ -152,7 +152,7 @@ uma etapa inteira caiba numa sessão. Dependência de aceite permanece aberta at
 | P0 | **Decisões** | ADR-012..015 aceitos ou reescritos | os quatro com "Situação: aceita" | ✅ `0890357` |
 | P1 | **Base instalável e atualizável** | `deploy/instalar.sh` (VPS limpa: segredos gerados, o que ninguém gera perguntado, `migrate deploy`, `db:seed:politica`, produção e homologação isoladas, smoke); `deploy/atualizar.sh` (tag de recuperação, seed de política **antes** do `up`, `up -d --no-build`; preserva `ferramentas/`, vault, dados e todo o `.env` salvo as três marcas `ROOTOS_VERSION/COMMIT/IMAGE`); `GET /health/versao`; documentação operacional | alguém que não é o Pedro sobe uma VPS limpa, atualiza para tag nova com contexto/`.env`/ferramentas intactos; `backup-db.sh --restore-test` restaura; cronometrado | ◐ scripts e suíte local prontos; instalação limpa/restore por outra pessoa pendentes |
 | P1-b | **Bootstrap local sem seed destrutivo** | `pnpm bootstrap` cria admin, política e permissões e **preserva o que existe**. O `deleteMany` saiu do caminho automático e virou `db:seed:demo`, que **só roda com flag explícita e nome de banco descartável** (`/test\|dev\|local\|staging\|shadow/i`) | seed repetido preserva módulos, papéis, permissões e senha; demo exige duas travas; bootstrap real conclui duas vezes no banco de teste | ✅ `f74ef23` |
-| P2 | **Identidade e contexto por empresa** | token por usuário e empresa (prefixo no texto, hash no banco, só estreita o papel, revogável no painel) substitui a conta de serviço compartilhada; `ContextBuilder` busca na **memória da empresa** (`MemoriaService.buscar`) — **a pasta ROOT nunca é reindexada para outro tenant**; resultado vazio cai para textual e o traço distingue "não achei" de "sem vetor"; teste de isolamento entre duas empresas. Ponte para o Claude Code: o `packages/mcp` que existe, com `memoria_buscar`/`memoria_ler` e o token novo — **um cliente, opcional** | outra pessoa conecta o Claude Code, pergunta algo que só existe no contexto de uma empresa que não é a `root`, recebe com fonte, e revoga — em < 10 min | ☐ |
+| P2 | **Identidade e contexto por empresa** | token por usuário e empresa (prefixo no texto, hash no banco, só estreita o papel, revogável no painel) substitui a conta de serviço compartilhada; `ContextBuilder` busca na **memória da empresa** (`MemoriaService.buscar`) — **a pasta ROOT nunca é reindexada para outro tenant**; resultado vazio cai para textual e o traço distingue "não achei" de "sem vetor"; teste de isolamento entre duas empresas. Ponte para o Claude Code: o `packages/mcp` que existe, com `memoria_buscar`/`memoria_ler` e o token novo — **um cliente, obrigatório na entrega** | outra pessoa conecta o Claude Code, pergunta algo que só existe no contexto de uma empresa que não é a `root`, recebe com fonte, e revoga — em < 10 min | ☐ |
 | P3 | **Conector local — uma pasta/arquivo (o piloto)** | pareamento; fontes puxadas pelo pulso sem ampliar o consentimento local; prévia; remessa idempotente com revisão e hash; importação e sincronização; regra de exclusão; frescor e saúde no painel; revogação que vale para a coleta programada. Protótipo Python; empacotamento e instalação por usuário a validar. **Se a coleta programada roda sem sessão humana depende de como a origem autentica — medir na máquina do piloto, não presumir** | o cliente seleciona uma pasta, vê a prévia, envia; **interromper e reenviar não duplica**; uma pergunta no Claude Code cita o documento; **um arquivo fora da lista não sai**; revogar para a coleta | ☐ |
 | P4 | **A primeira ferramenta** | um molde mínimo (`pnpm criar-ferramenta <nome>`: módulo com prefixo declarado, página, permissão, migration com RLS, teste, capacidade classificada) — **não é catálogo genérico**; procedimento homologação isolada → prévia → artefato versionado → publicação com rastro; recuperação compatível com schema e ensaiada, não apenas desabilitar módulo | numa VPS limpa, uma ferramenta publicada com acesso para duas pessoas, construída pelo procedimento por alguém no papel do cliente | ☐ |
 | P5 | **A segunda ferramenta e a prova inteira** | mesma base, mesmo padrão, sem interferir na primeira; uma atualização do núcleo e uma restauração de backup no meio; assistido, anotando cada intervenção do Pedro | **o aceite final da seção 6** | ☐ |
@@ -250,7 +250,8 @@ Cada item só entra com uma frase escrita na tarefa: *"no cliente X, na etapa Y,
 
 - Decisões confirmadas incorporadas (seção 1). Trilhos M e P separados. Heartbeat, metas e delegação
   fora do caminho obrigatório. Bootstrap sem seed destrutivo automático (P1-b). Reindexação da pasta
-  ROOT **não** se amplia a tenants (P2). Um cliente MCP, opcional. Contrato mínimo conector↔API
+  ROOT **não** se amplia a tenants (P2). Um cliente MCP era opcional nesta revisão; a decisão
+  posterior do Pedro, às 09:51 de 17/09, tornou essa entrega obrigatória. Contrato mínimo conector↔API
   (seção 3). Piloto: uma pasta/arquivo primeiro; SQL depois, com engine e autenticação a confirmar.
 - Nenhum código, VPS, credencial ou fonte de cliente foi tocado nesta revisão.
 

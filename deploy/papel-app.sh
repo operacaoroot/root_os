@@ -21,6 +21,9 @@
 #      ClickUp, financeiro, carga da política e a sonda de saúde. A lista com
 #      motivo está em `CAMINHOS_DE_PLATAFORMA_EXIGIDOS`
 #      (`apps/api/src/prisma/contexto-de-plataforma.ts`).
+#      Os sete estão ligados na correção local de 18/09/2026, mas isso NÃO
+#      confirma a imagem instalada na VPS. Confira versão e ensaie homologação
+#      antes de ativar o papel; veja docs/operacao/retomada-2026-09-18/STATUS-CODEX.md.
 #
 #      ENQUANTO FALTAR UM DELES, recriar o container com DB_APP_USER e
 #      DB_APP_PASSWORD preenchidos faz a API **RECUSAR SUBIR**, de propósito
