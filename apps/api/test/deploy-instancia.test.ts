@@ -514,6 +514,47 @@ describe('E1: --so-checar não toca em nada; cópia falha fechada; recuperação
     expect({ ...retrato(c), arquivos: '' }).toEqual({ ...antes, arquivos: '' });
     expect(lerLog(c)).not.toMatch(/build|pg_dump/);
   });
+
+  it('preserva byte a byte a migration de ensaio já aplicada na homologação', () => {
+    // Não adicionar nem editar comentários no SQL: o checksum é o já gravado
+    // na VPS. Origem: madrugada-v6, commit 6ce4a40795304f6624300530bc1943954ddfc333.
+    const sql = readFileSync(path.join(RAIZ, 'apps/api/prisma/migrations/20260917110000_madrugada_vps_noop/migration.sql'));
+    expect(createHash('sha256').update(sql).digest('hex')).toBe(
+      'dd4ce3a6be8f741622f6fd3a7b3a2fb94579d9a8015fa323d9f623d39f835b8e',
+    );
+    expect(sql.toString('utf8').replace(/^--.*$/gm, '').trim()).toBe('SELECT 1;');
+  });
+
+  it('recusa perder a noop aplicada e aceita candidato com o mesmo histórico, sem mutação', () => {
+    const c = instalada();
+    const nome = '20260917110000_madrugada_vps_noop';
+    const rel = `apps/api/prisma/migrations/${nome}/migration.sql`;
+    const sql = readFileSync(path.join(RAIZ, rel));
+    const sha = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
+    const repo = path.join(c.base, 'producao', 'repo');
+    const aplicadas = ['20260101000000_um', '20260102000000_dois'].map(n =>
+      `${n}:${sha(readFileSync(path.join(repo, `apps/api/prisma/migrations/${n}/migration.sql`)))}`,
+    ).concat(`${nome}:${sha(sql)}`).join(',');
+    const antes = retrato(c);
+    const ausente = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2', '--so-checar'], { STUB_APPLIED: aplicadas });
+    expect(ausente.status).not.toBe(0);
+    expect(ausente.stderr).toContain(`NÃO existem na tag v2: ${nome}`);
+    expect({ ...retrato(c), arquivos: '' }).toEqual({ ...antes, arquivos: '' });
+
+    // Apenas repositórios temporários da fixture; nunca checkout no workspace.
+    git(c.origem, 'checkout', '-q', 'v1');
+    mkdirSync(path.dirname(path.join(c.origem, rel)), { recursive: true });
+    writeFileSync(path.join(c.origem, rel), sql);
+    git(c.origem, 'add', rel); git(c.origem, 'commit', '-qm', 'preserva histórico');
+    git(c.origem, 'tag', 'v6');
+    git(repo, 'fetch', '-q', 'origin', 'refs/tags/v6:refs/tags/v6');
+    const preparado = retrato(c);
+    const ok = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v6', '--so-checar'], { STUB_APPLIED: aplicadas });
+    expect(ok.status, ok.stderr + ok.stdout).toBe(0);
+    expect(ok.stdout).toContain('migrations pendentes: 0');
+    expect({ ...retrato(c), arquivos: '' }).toEqual({ ...preparado, arquivos: '' });
+    expect(lerLog(c)).not.toMatch(/build|pg_dump|up -d/);
+  });
 });
 
 describe('P1: o override gerado passa no `docker compose config` de verdade', () => {
