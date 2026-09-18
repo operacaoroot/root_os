@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { AuditService } from '../audit/audit.service';
 import { ConectoresService } from './conectores.service';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
@@ -312,7 +313,8 @@ export class ClickupService implements OnModuleInit {
     if (!(min > 0)) return;
     const run = async () => {
       try {
-        const org = await this.prisma.org.findUnique({ where: { slug: 'root' } });
+        const org = await comContextoDePlataforma(() =>
+          this.prisma.org.findUnique({ where: { slug: 'root' } }));
         if (!org) return;
         /*
          * O CONTEXTO, que este laço não tinha. Sem requisição não há

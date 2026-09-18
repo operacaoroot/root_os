@@ -15,6 +15,7 @@ import type {
 } from '@mktos/shared';
 import { CreateFinanceTransactionSchema } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma, comEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { AuditService } from '../audit/audit.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PluggyService } from './pluggy.service';
@@ -90,17 +91,21 @@ export class FinanceService implements OnModuleInit {
     if (!(min > 0)) return;
     const run = async () => {
       try {
-        const conns = await this.prisma.bankConnection.findMany({
-          where: { provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
-        });
-        for (const c of conns) {
-          try {
-            const r = await this.syncBankConnection(c.orgId, c.id);
-            this.log.log(`${c.provider} sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
-          } catch (e) {
-            this.log.warn(`${c.provider} sync ${c.id} falhou: ${(e as Error).message}`);
+        const empresas = await comContextoDePlataforma(() =>
+          this.prisma.org.findMany({ where: { isActive: true }, select: { id: true } }));
+        for (const empresa of empresas) await comEmpresaResolvida(empresa.id, async () => {
+          const conns = await this.prisma.bankConnection.findMany({
+            where: { orgId: empresa.id, provider: { in: ['pluggy', 'asaas'] }, status: { in: ['connected', 'error'] }, externalId: { not: null } },
+          });
+          for (const c of conns) {
+            try {
+              const r = await this.syncBankConnection(c.orgId, c.id);
+              this.log.log(`${c.provider} sync ${c.id}: ${r.accounts} conta(s), ${r.transactions} lançamento(s)`);
+            } catch (e) {
+              this.log.warn(`${c.provider} sync ${c.id} falhou: ${(e as Error).message}`);
+            }
           }
-        }
+        });
       } catch (e) {
         this.log.warn(`Auto-sync bancário falhou: ${(e as Error).message}`);
       }
@@ -666,7 +671,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
       });
-      await this.markHealth('asaas', 'Asaas', 'ok', null);
+      await this.markHealth(orgId, 'asaas', 'Asaas', 'ok', null);
       await this.audit.log({
         orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
         entityType: 'bank_connection', entityId: conn.id, after: { provider: 'asaas', transactions: txCount, receivables: recvCount },
@@ -676,7 +681,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
       }).catch(() => {});
-      await this.markHealth('asaas', 'Asaas', 'down', (e as Error).message).catch(() => {});
+      await this.markHealth(orgId, 'asaas', 'Asaas', 'down', (e as Error).message).catch(() => {});
       throw e;
     }
   }
@@ -712,7 +717,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'connected', lastSyncAt: new Date(), lastError: null },
       });
-      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'ok', null);
+      await this.markHealth(orgId, 'pluggy', 'Bancos (Pluggy)', 'ok', null);
       await this.audit.log({
         orgId, actorId, actorType: actorId ? 'user' : 'system', action: 'finance.bank.sync',
         entityType: 'bank_connection', entityId: conn.id, after: { accounts: pgAccounts.length, transactions: txCount },
@@ -722,7 +727,7 @@ export class FinanceService implements OnModuleInit {
       await this.prisma.bankConnection.update({
         where: { id: conn.id }, data: { status: 'error', lastError: (e as Error).message },
       }).catch(() => {});
-      await this.markHealth('pluggy', 'Bancos (Pluggy)', 'down', (e as Error).message).catch(() => {});
+      await this.markHealth(orgId, 'pluggy', 'Bancos (Pluggy)', 'down', (e as Error).message).catch(() => {});
       throw e;
     }
   }
@@ -750,18 +755,18 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  private async markHealth(key: string, label: string, health: 'ok' | 'down', lastError: string | null) {
-    const org = await this.prisma.org.findFirst({ where: { slug: 'root' } });
-    if (!org) return;
-    const status = health === 'ok' ? 'connected' : 'error';
-    const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId: org.id, key } });
-    const account = acc
-      ? await this.prisma.integrationAccount.update({ where: { id: acc.id }, data: { status, connectedAt: health === 'ok' ? new Date() : acc.connectedAt } })
-      : await this.prisma.integrationAccount.create({ data: { orgId: org.id, key, label, status, connectedAt: new Date() } });
-    await this.prisma.integrationHealth.upsert({
-      where: { accountId: account.id },
-      update: { status: health, lastSyncAt: new Date(), lastError },
-      create: { accountId: account.id, status: health, lastSyncAt: new Date(), lastError },
+  private async markHealth(orgId: string, key: string, label: string, health: 'ok' | 'down', lastError: string | null) {
+    return comEmpresaResolvida(orgId, async () => {
+      const status = health === 'ok' ? 'connected' : 'error';
+      const acc = await this.prisma.integrationAccount.findFirst({ where: { orgId, key } });
+      const account = acc
+        ? await this.prisma.integrationAccount.update({ where: { id: acc.id }, data: { status, connectedAt: health === 'ok' ? new Date() : acc.connectedAt } })
+        : await this.prisma.integrationAccount.create({ data: { orgId, key, label, status, connectedAt: new Date() } });
+      await this.prisma.integrationHealth.upsert({
+        where: { accountId: account.id },
+        update: { status: health, lastSyncAt: new Date(), lastError },
+        create: { accountId: account.id, status: health, lastSyncAt: new Date(), lastError },
+      });
     });
   }
 

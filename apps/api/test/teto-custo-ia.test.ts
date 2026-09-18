@@ -580,12 +580,16 @@ describe.skipIf(!URL)('teto de custo de IA por empresa e por dia', () => {
     expect((evento?.payload as Record<string, unknown>)?.motivo).toBe('recusa');
   });
 
-  it('a varredura de ARRANQUE solta toda reserva aberta, sem pedir idade', async () => {
+  it('a varredura de ARRANQUE solta reserva vencida, sem presumir que outra instância morreu', async () => {
     await configurar(ORG_A, { tetoUsd: 5 });
     await prisma.gastoDeIaNoDia.create({
       data: { orgId: ORG_A, dia: DIA_SP, reservadoUsd: 3.5 },
     });
 
+    await carimbar(ORG_A, DIA_SP, {
+      criadoEm: new Date(AGORA.getTime() - 3600_000),
+      atualizadoEm: new Date(AGORA.getTime() - 3600_000),
+    });
     const liberado = await teto.liberarReservasPresas('arranque');
 
     expect(liberado).toBeGreaterThanOrEqual(3.5);

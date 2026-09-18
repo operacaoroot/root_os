@@ -4,7 +4,8 @@
 #   1. qualidade   — typecheck + suítes de policy, web e api, COM banco de verdade.
 #   2. isolamento  — a suíte de isolamento entre tenants (fora do `pnpm test`), a
 #                    seção de RLS das rotas públicas e a seção de isolamento do
-#                    COFRE. As três precisam do papel restrito e de um banco só
+#                    COFRE, mais login/serviços de plataforma. As quatro precisam
+#                    do papel restrito e de um banco só
 #                    delas, porque ligam RLS no banco inteiro.
 #   3. migrations  — o histórico aplica num banco vazio E corresponde ao schema.
 #
@@ -1163,6 +1164,30 @@ jobs:
               process.exit(1);
             }
           '
+
+      - name: Login e serviços de plataforma com papel restrito
+        env:
+          RLS_NO_TESTE: '1'
+          RESUMO_PLATAFORMA: ${{ runner.temp }}/resumo-plataforma.json
+        run: |
+          pnpm --filter @mktos/api exec vitest run test/plataforma-restrita.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_PLATAFORMA"
+          node -e '
+            const r = JSON.parse(require("node:fs").readFileSync(process.env.RESUMO_PLATAFORMA, "utf8"));
+            // Só dois casos rodam sem RLS_NO_TESTE: o piso impede verde vazio.
+            if (r.success !== true || !Number.isInteger(r.numTotalTests) || r.numTotalTests < 17 ||
+                r.numPassedTests !== r.numTotalTests || r.numFailedTests !== 0 || r.numPendingTests !== 0) {
+              console.error("::error::a prova de plataforma restrita não rodou inteira.");
+              process.exit(1);
+            }
+            console.log("Plataforma restrita: " + r.numPassedTests + " casos verdes, sem pulados.");
+          '
+
+      - name: API compilada com RLS — cadastro e isolamento por HTTP
+        run: |
+          pnpm --filter @mktos/api build
+          pnpm --filter @mktos/api exec node scripts/smoke-restrito.cjs
 
   # ---------------------------------------------------------------------------
   # 3. As migrations aplicam do zero E correspondem ao schema.

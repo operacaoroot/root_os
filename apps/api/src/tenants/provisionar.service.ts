@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import type { ActorType, Prisma } from '@prisma/client';
 
 import { AuditService } from '../audit/audit.service';
@@ -10,6 +10,7 @@ import {
   type OrigemDoContexto,
 } from '../common/contexto-execucao';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { ModulosService } from './modulos.service';
 import {
   SLUG_DA_PLATAFORMA,
@@ -107,6 +108,35 @@ export class ProvisionamentoService {
     const fora = contextoAtual();
     const ator = { tipo: quem.tipo, id: quem.id ?? fora?.actorId ?? null };
     const correlacao = fora?.correlationId ?? novaCorrelacao('prov');
+    const origem = quem.origem ?? fora?.origem ?? 'script';
+    const negar = async (mensagem: string): Promise<never> => {
+      if (fora?.orgId) await this.auditoria.log({
+        orgId: fora.orgId, actorType: 'user', actorId: fora.actorId ?? undefined,
+        action: 'tenant.provisionar.recusado', entityType: 'org',
+        metadata: { motivo: 'autoridade-insuficiente', correlationId: correlacao, origem },
+      }).catch(() => undefined);
+      throw new ForbiddenException(mensagem);
+    };
+    // A exceção de descoberta global pertence ao provisionamento AUTORIZADO,
+    // não ao invólucro genérico (que nunca troca um tenant autenticado).
+    if (origem === 'http' && entrada.modo === 'reconfigurar') {
+      return negar('Reconfigurar empresa exige o procedimento administrativo.');
+    }
+    if (fora?.orgId) {
+      const org = await this.prisma.org.findUnique({ where: { id: fora.orgId } });
+      const operador = ator.tipo === 'user' && ator.id && ator.id === fora.actorId
+        ? await this.prisma.user.findFirst({
+            where: { id: ator.id, orgId: fora.orgId, isActive: true,
+              roles: { some: { permissions: { some: { key: 'admin.permissoes' } } } } },
+            select: { id: true },
+          })
+        : null;
+      if (org?.slug !== SLUG_DA_PLATAFORMA || !org.isActive || !operador) {
+        return negar('Provisionar exige operador ativo e autorizado da plataforma.');
+      }
+    } else if (ator.tipo !== 'system') {
+      return negar('Operador sem empresa resolvida.');
+    }
     const ordenante = await this.ordenante(fora?.orgId ?? null);
 
     /*
@@ -132,7 +162,12 @@ export class ProvisionamentoService {
         fn,
       );
 
-    const resultado = await provisionarTenant(this.prisma, entrada, {
+    // Autoridade conferida acima, ordenante e ator preservados. Sem essa
+    // fronteira, a descoberta herda root e não encontra um slug de outra empresa;
+    // o reenvio tenta criar duplicata. As escritas ainda exigem naEmpresa.
+    const resultado = await comContexto(
+      { ...fora, orgId: null, correlationId: correlacao },
+      () => provisionarTenant(this.prisma, entrada, {
       emContexto: naEmpresa,
       ordenante,
       correlacao,
@@ -177,7 +212,7 @@ export class ProvisionamentoService {
           }),
         ),
       responsavel: ator,
-    });
+    }));
 
     if (resultado.modulosAlterados) this.modulos.esquecer(resultado.orgId);
 
@@ -205,17 +240,15 @@ export class ProvisionamentoService {
   private async ordenante(doContexto: string | null): Promise<string | null> {
     if (doContexto) return doContexto;
     try {
-      const plataforma = await this.prisma.org.findUnique({
+      const plataforma = await comContextoDePlataforma(() => this.prisma.org.findUnique({
         where: { slug: SLUG_DA_PLATAFORMA },
         select: { id: true },
-      });
+      }));
       return plataforma?.id ?? null;
     } catch (e) {
       /*
-       * Consulta de plataforma sem empresa resolvida: sob `TENANT_MODO=impor` ela
-       * é recusada. Não é motivo para derrubar o provisionamento aqui — quem
-       * derruba com nome próprio é `acharOrg`, na operação. O que se perde é o
-       * endereço do evento de intenção, e a operação AVISA.
+       * Falha na descoberta perde o endereço da intenção, não é prova de que
+       * não existe ordenante. A operação declara o aviso no resultado.
        */
       this.log.warn(
         `não foi possível achar a empresa da plataforma ("${SLUG_DA_PLATAFORMA}") para registrar ` +

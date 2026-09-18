@@ -26,6 +26,7 @@ import {
 import politicaRoot from '@mktos/policy/politica-root.json';
 import politicaMktos from '@mktos/policy/politica-marketing-os.json';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { exigirTenant } from '../common/contexto-execucao';
 import { problemasDeJanela } from './limites';
 
@@ -73,10 +74,10 @@ export class PolicyService implements OnModuleInit {
   async recarregar(orgId?: string): Promise<void> {
     const chave = orgId ?? '';
     try {
-      const versao = await this.prisma.policyVersion.findFirst({
+      const versao = await comContextoDePlataforma(() => this.prisma.policyVersion.findFirst({
         where: { orgId: orgId ?? null, ativaAte: null },
         orderBy: { versao: 'desc' },
-      });
+      }));
       if (versao) {
         const doc = lerPolitica(versao.documento, `PolicyVersion ${versao.id}`);
         this.guardar(chave, doc);
@@ -129,11 +130,11 @@ export class PolicyService implements OnModuleInit {
   async recarregarEmpresas(): Promise<void> {
     let orgIds: string[];
     try {
-      const versoes = await this.prisma.policyVersion.findMany({
+      const versoes = await comContextoDePlataforma(() => this.prisma.policyVersion.findMany({
         where: { orgId: { not: null }, ativaAte: null },
         select: { orgId: true },
         distinct: ['orgId'],
-      });
+      }));
       orgIds = versoes.map((v) => v.orgId as string);
     } catch (e) {
       this.log.error(

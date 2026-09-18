@@ -2,6 +2,7 @@ import {
   ContextoExecucao,
   comContexto,
   contextoAtual,
+  exigirTenant,
   novaCorrelacao,
 } from '../common/contexto-execucao';
 
@@ -27,8 +28,8 @@ import {
  *     reconfigura — a única consulta dele que roda sem empresa resolvida, e que
  *     já traduz a falta num erro com nome (`ProvisionamentoSemPlataformaError`,
  *     `src/tenants/provisionar.ts`).
- *   · o CONECTOR DO CLICKUP e o FINANCEIRO resolvem a empresa da casa por slug
- *     fixo (`src/integrations/clickup.service.ts`, `src/finance/finance.service.ts`).
+ *   · o CONECTOR DO CLICKUP resolve a empresa da casa por slug; o FINANCEIRO
+ *     enumera empresas ativas e lê cada conexão dentro da empresa correspondente.
  *   · a REINDEXAÇÃO DO OBSIDIAN, que roda no arranque e de meia em meia hora —
  *     fora de qualquer requisição (`src/obsidian/obsidian.service.ts`).
  *   · o CARREGAMENTO DA POLÍTICA no `onModuleInit`, que lê a `PolicyVersion`
@@ -37,16 +38,19 @@ import {
  *   · a SONDA DE SAÚDE, que faz `SELECT 1` e não toca tabela nenhuma
  *     (`src/health/health.controller.ts`).
  *
- * DESSES OITO, UM SÓ DECLARA HOJE (a reindexação do Obsidian). Os outros sete
- * são arquivos de outros módulos e ainda não foram ligados. Isso NÃO é uma nota
- * de rodapé: com o papel restrito e sem eles, o login devolve zero linha e vira
- * "credenciais inválidas" para todo mundo, calado. Por isso as duas listas
+ * OS DEZ CAMINHOS DECLARAM CONTEXTO nesta versão (retomada de 18/09/2026),
+ * incluindo a descoberta da ordenante do cadastro e a varredura de reservas IA.
+ * A descoberta tem somente leitura; escritas de login e sincronização ficam na
+ * empresa resolvida. Sem isso, com papel restrito, o login devolvia zero linha e
+ * virava "credenciais inválidas" para todo mundo. Por isso as duas listas
  * abaixo (`CHAMADORES_DE_PLATAFORMA`, o que já declara;
  * `CAMINHOS_DE_PLATAFORMA_EXIGIDOS`, o que precisa declarar) são COMPARADAS NO
  * ARRANQUE: conexão restrita com a lista incompleta **não sobe**
  * (`anunciarPapel`, em `sessao-de-banco.ts`). Preencher `DB_APP_USER` e
  * `DB_APP_PASSWORD` achando que está fazendo a coisa segura passou a ser um erro
- * alto, e não uma tela de login que recusa todo mundo.
+ * alto, e não uma tela de login que recusa todo mundo. A varredura descobre
+ * empresas e trabalha dentro delas; não se libera leitura de GastoDeIaNoDia
+ * à plataforma. Cobertura desta lista não substitui ensaio dos fluxos reais.
  *
  * POR QUE NÃO SERVE RODAR "SEM EMPRESA"
  * O mesmo motivo da 1.4, e ele piora aqui: empresa vazia é o valor padrão de
@@ -132,6 +136,15 @@ export interface ChamadorDePlataforma {
 }
 
 export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
+  { arquivo: 'src/llm/teto-diario.service.ts', porQue: 'Enumera empresas antes de liberar reservas vencidas dentro de cada uma.' },
+  { arquivo: 'src/tenants/provisionar.service.ts', porQue: 'Descobre a empresa ordenante sem sessão; a operação autenticada confere a autoridade antes da descoberta.' },
+  { arquivo: 'src/auth/auth.service.ts', porQue: 'Resolve o usuário antes do login; grava a sessão na empresa encontrada.' },
+  { arquivo: 'src/auth/google-login.service.ts', porQue: 'Resolve usuário e empresa antes de provisionar o login Google.' },
+  { arquivo: 'src/tenants/provisionar.ts', porQue: 'Descobre a empresa pelo slug antes do provisionamento idempotente.' },
+  { arquivo: 'src/integrations/clickup.service.ts', porQue: 'Descobre a empresa root antes de iniciar a sincronização agendada.' },
+  { arquivo: 'src/finance/finance.service.ts', porQue: 'Enumera as empresas antes de sincronizar as conexões dentro de cada uma.' },
+  { arquivo: 'src/policy/policy.service.ts', porQue: 'Lê as políticas da base e das empresas no arranque, sem executar escritas.' },
+  { arquivo: 'src/health/health.controller.ts', porQue: 'Executa SELECT 1 fora de uma requisição autenticada por empresa.' },
   {
     arquivo: 'src/obsidian/obsidian.service.ts',
     porQue:
@@ -171,6 +184,8 @@ export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
  * porque ele "ainda não foi feito". Encurtar esta lista é afrouxar a trava.
  */
 export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = [
+  { arquivo: 'src/llm/teto-diario.service.ts', porQue: 'A varredura de arranque não pode ler o livro-caixa sem empresa.' },
+  { arquivo: 'src/tenants/provisionar.service.ts', porQue: 'O cadastro precisa resolver a empresa ordenante para registrar a intenção.' },
   {
     arquivo: 'src/obsidian/obsidian.service.ts',
     porQue: 'a reindexação do arranque e do cron procura a empresa da casa pelo slug.',
@@ -199,7 +214,7 @@ export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = 
   },
   {
     arquivo: 'src/finance/finance.service.ts',
-    porQue: 'resolve a empresa da casa por slug fixo antes de importar.',
+    porQue: 'enumera empresas ativas antes de importar conexões no contexto de cada uma.',
   },
   {
     arquivo: 'src/policy/policy.service.ts',
@@ -268,4 +283,15 @@ export async function comContextoDePlataforma<T>(fn: () => PromiseLike<T>): Prom
   const jaResolvida = typeof atual === 'string' && atual.trim() !== '';
   if (jaResolvida) return await fn();
   return comContexto(comEmpresa(ORG_PLATAFORMA), async () => await fn());
+}
+
+/** Após a descoberta, trabalha na empresa encontrada sem trocar um tenant já autenticado. */
+export async function comEmpresaResolvida<T>(orgId: string, fn: () => PromiseLike<T>): Promise<T> {
+  const id = exigirTenant(orgId, 'empresa resolvida pela plataforma');
+  if (id.startsWith('__')) throw new Error('Uma sentinela não é uma empresa resolvida.');
+  const atual = contextoAtual()?.orgId;
+  if (atual && atual.trim() && atual !== ORG_PLATAFORMA && atual !== id) {
+    throw new Error('A empresa resolvida diverge do contexto de execução.');
+  }
+  return comContexto(comEmpresa(id), async () => await fn());
 }

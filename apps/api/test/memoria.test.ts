@@ -1034,12 +1034,13 @@ describe.skipIf(!URL)('a integridade da memória é conferível, não declarada'
     const [v1] = await naEmpresa(ORG_A, () => memoria.historico(ORG_A, nota.id));
     expect(v1.eventoId).toBeTruthy();
 
-    try {
-      await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete');
-      await prisma.$executeRawUnsafe('DELETE FROM "EventLog" WHERE id = $1', v1.eventoId);
-    } finally {
-      await prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete');
-    }
+    // Mesma transação: outro arquivo não pode religar a RULE entre o DISABLE
+    // e o DELETE, nem observar a tabela desprotegida durante este ensaio.
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+      prisma.$executeRawUnsafe('DELETE FROM "EventLog" WHERE id = $1', v1.eventoId),
+      prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+    ]);
 
     const depois = await prisma.contextItemVersion.findUniqueOrThrow({ where: { id: v1.id } });
     expect(depois.eventoId, 'a chave estrangeira não limpou o id').toBeNull();

@@ -4,12 +4,11 @@ import { PrismaClient } from '@prisma/client';
 import { PERMISSIONS, ROLES } from '@mktos/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { comContexto, novaCorrelacao } from '../src/common/contexto-execucao';
+import { comContexto, novaCorrelacao, SemTenantError } from '../src/common/contexto-execucao';
 import { comTenantNaSessao, esquecerAvisos } from '../src/prisma/sessao-de-banco';
 import {
   PAPEL_INICIAL,
   ProvisionamentoInvalidoError,
-  ProvisionamentoSemPlataformaError,
   SLUG_DA_PLATAFORMA,
   provisionarTenant,
   type AuditoriaDeProvisionamento,
@@ -721,13 +720,16 @@ describe.skipIf(!URL)('provisionar empresa (RF-T-07)', () => {
   });
 
   describe('sob a sessão de banco com empresa declarada', () => {
-    it('sem empresa resolvida, a busca pelo slug falha com nome próprio', async () => {
+    it('a descoberta por plataforma não libera escrita sem contexto da empresa', async () => {
       esquecerAvisos();
       const restrito = comTenantNaSessao(prisma, { modo: 'impor', avisar: () => undefined });
-
+      const alvo = slug('impor');
+      // A descoberta agora tem contexto explícito; as etapas seguintes continuam
+      // exigindo emContexto. Nunca promover toda a operação a plataforma.
       await expect(
-        provisionarTenant(restrito, { slug: slug('impor') }),
-      ).rejects.toBeInstanceOf(ProvisionamentoSemPlataformaError);
+        provisionarTenant(restrito, { slug: alvo }),
+      ).rejects.toBeInstanceOf(SemTenantError);
+      expect(await prisma.org.count({ where: { slug: alvo } })).toBe(0);
     });
 
     it('com contexto de plataforma por fora, o trabalho roda no contexto da empresa nova', async () => {

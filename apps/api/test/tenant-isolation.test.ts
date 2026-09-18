@@ -2129,7 +2129,7 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
     const exigidos = [...CAMINHOS_DE_PLATAFORMA_EXIGIDOS];
     const declarados = [...CHAMADORES_DE_PLATAFORMA];
 
-    it('o que a lista EXIGE cobre os sete caminhos do cabeçalho da migration', () => {
+    it('a lista EXIGE os caminhos originais e as descobertas de cadastro e reservas IA', () => {
       // A lista de exigidos é o contrato. Encurtá-la é afrouxar a trava sem
       // mexer em nenhuma policy — por isso ela é cobrada aqui, nominalmente.
       expect(exigidos.map((c) => c.arquivo).sort()).toEqual(
@@ -2139,9 +2139,11 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
           'src/finance/finance.service.ts',
           'src/health/health.controller.ts',
           'src/integrations/clickup.service.ts',
+          'src/llm/teto-diario.service.ts',
           'src/obsidian/obsidian.service.ts',
           'src/policy/policy.service.ts',
           'src/tenants/provisionar.ts',
+          'src/tenants/provisionar.service.ts',
         ].sort(),
       );
       // Motivo escrito em toda entrada: lista sem motivo envelhece sem ninguém

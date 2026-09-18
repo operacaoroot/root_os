@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TIPO_DA_SESSAO } from './jwt-auth.guard';
+import { comContextoDePlataforma, comEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 
 /** Usuário com papéis e permissões carregados (o que a sessão precisa). */
 export interface UserWithRoles {
@@ -24,10 +25,10 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string, ip?: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await comContextoDePlataforma(() => this.prisma.user.findUnique({
       where: { email },
       include: { roles: { include: { permissions: true } } },
-    });
+    }));
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
@@ -39,6 +40,10 @@ export class AuthService {
 
   /** Emite o JWT da sessão. Usado pelo login por senha e pelo login com Google. */
   async issueSession(user: UserWithRoles, ip?: string, action = 'auth.login') {
+    return comEmpresaResolvida(user.orgId, () => this.issueSessionNaEmpresa(user, ip, action));
+  }
+
+  private async issueSessionNaEmpresa(user: UserWithRoles, ip?: string, action = 'auth.login') {
     const permissions = Array.from(
       new Set(user.roles.flatMap((r) => r.permissions.map((p) => p.key))),
     );

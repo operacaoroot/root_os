@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 
 @Controller('health')
 export class HealthController {
@@ -9,7 +10,7 @@ export class HealthController {
   async check() {
     let db = 'down';
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await comContextoDePlataforma(() => this.prisma.$queryRaw`SELECT 1`);
       db = 'ok';
     } catch {
       db = 'down';

@@ -4,6 +4,7 @@ import type { ActorType, Prisma, PrismaClient } from '@prisma/client';
 import { MODULOS, PERMISSIONS, ROLES, type ModuloKey, type RoleKey } from '@mktos/shared';
 
 import { SemTenantError } from '../common/contexto-execucao';
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { ehModulo, modulosConhecidos } from './modulos';
 
 /*
@@ -36,12 +37,10 @@ import { ehModulo, modulosConhecidos } from './modulos';
  *
  * ESTA É UMA OPERAÇÃO DE PLATAFORMA, NÃO DE TENANT
  * Ela nasce olhando para uma empresa que ainda não existe: a primeira consulta
- * (achar a `Org` pelo slug) não tem empresa resolvida e, quando o isolamento por
- * linha estiver ligado, vai precisar de uma conexão que enxergue todos os
- * tenants — o papel DONO, nunca o papel da aplicação (07-MODELO-DE-DADOS §3).
- * Enquanto isso não existe, a consulta falha com nome próprio
- * (`ProvisionamentoSemPlataformaError`) em vez de um `SemTenantError` sem
- * endereço.
+ * (achar a `Org` pelo slug) agora declara contexto de plataforma, somente para
+ * descoberta. Uma empresa já autenticada não é trocada por essa declaração.
+ * Escritas continuam dependendo do emContexto do chamador e da autorização do
+ * fluxo; a descoberta não transforma a operação inteira em acesso global.
  */
 
 /** O papel que a empresa ganha para ter alguém que manda nela desde o dia zero. */
@@ -380,10 +379,10 @@ function exigirEmail(bruto: string): string {
  */
 async function acharOrg(prisma: PrismaClient, slug: string) {
   try {
-    return await prisma.org.findUnique({
+    return await comContextoDePlataforma(() => prisma.org.findUnique({
       where: { slug },
       select: { id: true, name: true, modulos: true, isActive: true },
-    });
+    }));
   } catch (e) {
     if (e instanceof SemTenantError) throw new ProvisionamentoSemPlataformaError(e.message);
     throw e;
