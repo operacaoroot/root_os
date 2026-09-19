@@ -19,6 +19,8 @@
     "db:seed": "pnpm --filter @mktos/api db:seed",
     "bootstrap": "bash scripts/bootstrap.sh",
     "db:seed:demo": "pnpm --filter @mktos/api db:seed:demo",
+    "criar-ferramenta": "node tools/ferramentas/cli.mjs criar-ferramenta",
+    "preparar-ferramentas": "node tools/ferramentas/cli.mjs preparar-ferramentas",
     "test": "turbo run test",
     "test:isolamento": "pnpm --filter @mktos/api test:isolamento"
   },
