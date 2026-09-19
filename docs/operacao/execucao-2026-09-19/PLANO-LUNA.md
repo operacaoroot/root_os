@@ -291,6 +291,27 @@ Python atual encontra o pacote `tkinter`, mas seu import falha por ausência de
 `_tkinter`. Não instalar toolkit global nem declarar interface visual testada
 nesta máquina; suporte/distribuição e ensaio humano precisam ficar explícitos.
 
+Recorte preparado E3b.2b: **snapshots manuais**, sem daemon. Cada snapshot fixa
+arquivos/versões e revalida antes de concluir; alterações e arquivos novos têm
+aprovações separadas, sem incorporar descoberta posterior durante retomada.
+Ausência só é ausência em varredura íntegra. Arquivo conhecido agora em skip
+(link, tamanho excedido, acesso negado, tipo inseguro) não pode ser omitido como
+se tivesse sido removido para então arquivá-lo na VPS.
+
+O manifesto de sincronização é autoritativo para a **fonte inteira** no receptor.
+Logo, uma seleção local parcial/filtro adicional/subpastas não percorridas não
+pode fechar `manifestoCompleto=true` e arquivar itens fora dessa seleção.
+Primeiro contrato deve exigir cobertura exata do escopo lógico suportado e
+explicar explicitamente a regra de ausências; caso não consiga provar cobertura,
+recusar sincronização e manter importação, sem inventar completude. Testar regra
+`ignorar`, `arquivar`, ausências reais, skips, erro de varredura e retomada sem
+ampliação. O seletor visual não concede consentimento automaticamente.
+
+Não acrescentar um sistema novo de assinatura/MAC para fingir segurança contra
+o próprio usuário/processo que pode editar o cliente e acessar o cofre. Estado
+0600 é privado ao usuário; fingerprint detecta divergência, não equivale a
+assinatura humana inviolável. A fronteira e essa limitação devem ficar claras.
+
 ## Dependência identificada para E4/E5 — migrations das ferramentas
 
 O revisor Luna confirmou por leitura que `deploy/atualizar.sh` inventaria o
@@ -343,3 +364,18 @@ atualização e restauração. Não executar scripts de deploy no workspace vivo
 O executor deve apresentar qualquer incompatibilidade com os gates existentes
 antes de ampliar esse contrato. A fiscalização de prefixos/permissões e a régua
 do gateway não podem ser removidas para acomodar ferramentas customizadas.
+
+Integração de autorização preparada por leitura: um bridge de build estável
+registra os efeitos com dono/ID único, e o controlador continua passando pela
+porta do operador/gateway. Proposta de capability em arquivo de ferramenta não
+é catálogo ativo: sem classificação na política vigente, continua bloqueada
+em R5. Fixtures podem aplicar um delta explícito com conta/autor sintéticos no
+banco de teste para provar o caminho permitido, sem alegar assinatura do Pedro.
+
+Não há hoje endpoint de sobrescrita de política; o serviço interno e o seed
+possuem os gates de autor/motivo. Não criar uma API ampla de publicação como
+atalho de E4. A operação real de ativação continua revisão/configuração/deploy
+controlados. O molde inicial pode declarar permissões existentes apropriadas
+(por exemplo, `mcp.ver`/`mcp.executar` para ferramentas), sem inventar uma nova
+chave ou rodar o sincronizador destrutivo. Se uma ferramenta exigir alçada ou
+permissão nova, isso vira decisão explícita, não alteração automática de perfis.
