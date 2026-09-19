@@ -233,3 +233,41 @@ E3a.1 enviada ao Luna: pareamento/pulso/fontes/dispositivo. Remessas ficam para
 E3a.2, porque a memória atual grava projeção e evento em transações separadas.
 O receptor terá de demonstrar retomada e rastreabilidade sem prometer atomicidade
 que a composição atual não fornece. Nenhuma coleta real foi autorizada.
+
+Baseline independente do coletor antes de E3: `PYTHONDONTWRITEBYTECODE=1 python3
+-m unittest discover -s tools/conector-local -p 'test_*.py' -v`, **14/14**, exit 0.
+São testes de prévia de metadados com fixtures; não provam leitura segura do
+conteúdo, envio, seleção visual ou funcionamento no Windows real.
+
+## R13 — revisão E3a.1 em elaboração
+
+- Trigger novo restringia `search_path`, mas consultava tabelas sem `public.`;
+  exigida qualificação explícita, sem reabrir o search path.
+- Pareamento deve reler usuário emissor/empresa ativos e ambas as permissões
+  no momento de trocar o código. Expiração e hash não bastam se o emissor
+  perdeu autoridade. Testes de downgrade e empresa inativa adicionados.
+- Tentativas erradas devem persistir: lançar dentro da transação que incrementa
+  contador desfaria o limite. A implementação devolve negação e só lança depois
+  do commit; o teste exige contador 5 e recusa subsequente do código correto.
+- Revisor Luna não encontrou outro bypass de tenant/credenciais no diff parcial.
+  HTTPS continua requisito de cliente/deploy. Isso não equivale a aceite remoto.
+- Exigido smoke bidirecional: JWT/PAT não são dispositivo, e dispositivo não é
+  sessão humana nem PAT de memória. Código de pareamento é a única troca pública.
+
+Provas independentes às 17:59 -03: API typecheck exit 0. Arquitetura, módulos,
+rotas públicas e modelos globais: **166 pass / 29 skip / 1 fail**, exit 1.
+Falha: `ConnectorDeviceSource` usa a sentinela de orgId, mas faltava no catálogo
+de filhos herdados. Enviado para correção e inclusão das novas fixtures no
+isolamento genérico. E3a.1 permanece sem aceite.
+
+## R14 — aceite local E3a.1
+
+Correções conferidas. Reexecução independente às 18:02 -03 do mesmo conjunto:
+**168 pass / 29 skip**, exit 0, diff check limpo. Luna reportou **9/9** na suíte
+dedicada, **309/309** no isolamento, 44 migrations do zero em banco separado
+descartável (removido após ensaio), tipos/build e HTTP restrito verdes. CI dedicada
+com piso 9 foi revisada, mas não executada no GitHub.
+
+Aceite local e commit focado autorizados. Enviada E3a.2 ao mesmo escritor:
+remessas/lotes/finalização, idempotência e ordem, projeção com rastro e exclusões
+somente em snapshot completo. Sem acesso a fonte real nem autorização remota.

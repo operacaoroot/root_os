@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c revisadas localmente; E3a.1 autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a.1 revisadas localmente; E3a.2 autorizada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -189,3 +189,37 @@ Reutiliza o contrato da seção 3 do plano de produto:
 E3a.1 não contém remessa nem UI do coletor. Não confundir o pareamento verde
 com P3 concluído. As restrições de rede, segredos, escrita remota e escritor
 único continuam valendo. Entrega para revisão antes do commit desta subfatia.
+
+## Contrato E3a.2 — remessas rastreáveis e retomáveis
+
+Após commit local focado E3a.1, o mesmo Luna completa as três chamadas de
+remessa, lote e fim da seção 3 do plano de produto, usando somente fixtures.
+
+- Abertura idempotente por chave de requisição; revisão monotônica do servidor
+  impede lote antigo sobrescrever dado novo. Remessa prende dispositivo, fonte,
+  empresa e versão do escopo. Revalidar autoridade de dispositivo/fonte/empresa
+  em cada lote e fim, não apenas no pulso.
+- Memória existente `ContextItem`/versões, origem `conector`, referência
+  `<fonte>/<caminho>`, chave estável. Sem segunda verdade de conteúdo, vault ROOT
+  ou embeddings. Hash e tamanho conferidos no servidor; limites explícitos de
+  arquivo/lote/quantidade, tipos md/txt/csv e filtros do escopo.
+- Repetição não cria outra versão; A → B → A cria três. Recibo de revisão,
+  projeção e evento precisam de uma fronteira transacional demonstrável.
+  A composição ingênua dos métodos humanos atuais não a fornece: eles gravam o
+  rastro separadamente. Preferir extensão interna pequena que reutilize a lógica
+  de hash/montagem do EventLog, preservando comportamento humano existente.
+  Nada de framework ou outbox genérico criado para esta fatia.
+- Finalização com manifesto completo das chaves vistas, escopo estável e zero
+  erros. Snapshot interrompido, parcial, revogado ou antigo não arquiva ausências
+  nem marca sucesso. Regra `ignorar` não arquiva; arquivamento é reversível.
+  Revogação não apaga o já recebido. Distinguir tentativa/sucesso/frescor na fonte.
+- Provas reais com papel SQL restrito: dois tenants, idempotência, retorno A → B
+  → A, ordem, adulteração de hash/tamanho/filtro, dispositivo/tenant indevidos,
+  revogação entre chamadas, exclusões em snapshot completo e falha de rastro com
+  retomada sem duplicação. RLS/catálogo, CI dedicada sequencial e smoke compilado.
+- Memória recebida só fica acessível ao agente após grant separado. Não fabricar
+  consentimento na ingestão. Cliente local e UI ficam para E3b, sem coleta real.
+
+O executor registra a escolha de serialização e segue implementando; entrega
+para revisão antes do commit E3a.2. Todos os limites operacionais anteriores
+continuam válidos. P3 não está concluído com o receptor isolado.
