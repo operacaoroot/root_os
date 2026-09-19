@@ -225,10 +225,57 @@ if (process.argv[2] !== '--filho') {
       token: tokens[0], status: 201,
       body: { nomeDispositivo: 'Smoke laptop', fonteIds: [fonteConector.id] },
     });
-    assert(codigoConector.codigo && codigoConector.id);
+    const snapshotRun = await rodarClientePython(new URL(base).origin, {
+      orgId: pessoas[0].orgId, pairingId: codigoConector.id, code: codigoConector.codigo,
+      sourceId: fonteConector.id, humanToken: tokens[0], snapshot: true,
+    });
+    assert.equal(snapshotRun.marker, 'PYTHON_SNAPSHOT_SMOKE_OK');
+    const snapshotItem = await dono.contextItem.findFirst({ where: { orgId: pessoas[0].orgId, sourceType: 'conector', sourceRef: `${fonteConector.id}/docs/fixture.md` }, include: { versoes: true } });
+    assert(snapshotItem, 'snapshot precisa criar a nota');
+    assert.equal(snapshotItem.versoes.filter((version) => version.mudanca !== 'arquivamento').length, 3, 'snapshot A/B/A precisa preservar exatamente 3 versões de conteúdo');
+    assert.equal(snapshotItem.versoes.length, 4, 'a ausência acrescenta apenas a versão de arquivamento');
+    assert(snapshotItem.arquivadoEm, 'snapshot vazio arquivar precisa arquivar a ausência');
+    const snapshotDeliveries = await dono.connectorDelivery.findMany({
+      where: { orgId: pessoas[0].orgId, sourceId: fonteConector.id },
+      select: { status: true }, orderBy: { ordem: 'asc' },
+    });
+    assert.equal(snapshotDeliveries.length, 4, 'snapshot arquivar deve criar exatamente quatro remessas (A/B/A/vazio)');
+    assert(snapshotDeliveries.every((delivery) => delivery.status === 'concluida'), 'todas as remessas do snapshot devem concluir');
+    const fonteSnapshotIgnorar = await pedir('/conector/fontes', {
+      token: tokens[0], status: 201,
+      body: {
+        nome: 'Smoke snapshot ignorar', tipo: 'pasta', raizLogica: 'cliente/python-fixture-ignore',
+        incluir: ['**/*.md'], excluir: [], tiposPermitidos: ['.md'], modo: 'sincronizacao',
+        regraExclusao: 'ignorar', tamanhoMaximo: 2 * 1024 * 1024,
+      },
+    });
+    const codigoSnapshotIgnorar = await pedir('/conector/pareamento/codigo', {
+      token: tokens[0], status: 201,
+      body: { nomeDispositivo: 'Python snapshot ignorar', fonteIds: [fonteSnapshotIgnorar.id] },
+    });
+    const ignoreRun = await rodarClientePython(new URL(base).origin, {
+      orgId: pessoas[0].orgId, pairingId: codigoSnapshotIgnorar.id, code: codigoSnapshotIgnorar.codigo,
+      sourceId: fonteSnapshotIgnorar.id, humanToken: tokens[0], snapshot: true,
+    });
+    assert.equal(ignoreRun.marker, 'PYTHON_SNAPSHOT_SMOKE_OK');
+    const ignoredItem = await dono.contextItem.findFirst({ where: { orgId: pessoas[0].orgId, sourceType: 'conector', sourceRef: `${fonteSnapshotIgnorar.id}/docs/fixture.md` }, include: { versoes: true } });
+    assert(ignoredItem && !ignoredItem.arquivadoEm, 'snapshot vazio ignorar não pode arquivar ausência');
+    assert.equal(ignoredItem.versoes.filter((version) => version.mudanca !== 'arquivamento').length, 3, 'snapshot ignorar deve preservar exatamente três versões de conteúdo');
+    assert.equal(ignoredItem.versoes.length, 3, 'snapshot ignorar não deve criar versão de arquivamento');
+    const ignoredDeliveries = await dono.connectorDelivery.findMany({
+      where: { orgId: pessoas[0].orgId, sourceId: fonteSnapshotIgnorar.id },
+      select: { status: true }, orderBy: { ordem: 'asc' },
+    });
+    assert.equal(ignoredDeliveries.length, 4, 'snapshot ignorar deve criar exatamente quatro remessas (A/B/A/vazio)');
+    assert(ignoredDeliveries.every((delivery) => delivery.status === 'concluida'), 'todas as remessas ignorar devem concluir');
+    const codigoConectorDireto = await pedir('/conector/pareamento/codigo', {
+      token: tokens[0], status: 201,
+      body: { nomeDispositivo: 'Smoke laptop', fonteIds: [fonteConector.id] },
+    });
+    assert(codigoConectorDireto.codigo && codigoConectorDireto.id);
     const dispositivo = await pedir('/conector/pareamento', {
       status: 201,
-      body: { orgId: pessoas[0].orgId, pairingId: codigoConector.id, code: codigoConector.codigo, nomeDispositivo: 'Smoke laptop' },
+      body: { orgId: pessoas[0].orgId, pairingId: codigoConectorDireto.id, code: codigoConectorDireto.codigo, nomeDispositivo: 'Smoke laptop' },
     });
     assert(dispositivo.token && dispositivo.id);
     const pulso = await pedir('/conector/pulso', {

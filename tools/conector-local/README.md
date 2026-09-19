@@ -2,9 +2,10 @@
 
 Cliente Python 3 sem dependências externas. A seleção começa sempre como prévia
 de metadados; somente uma aprovação explícita, com a fonte lógica e destino
-`agente_externo` exibidos, pode iniciar uma importação. A sincronização contínua
-(`modo=sincronizacao`) permanece bloqueada: E3b.2b.1 oferece somente snapshots
-manuais, sem daemon, agendamento ou descoberta em segundo plano.
+`agente_externo` exibidos, pode iniciar uma importação. O modo
+`sincronizacao` só é executado como snapshot manual aprovado, sem daemon,
+agendamento ou descoberta em segundo plano. O cliente compara localmente o
+manifesto atual com o consentimento anterior; não inventa um inventário remoto.
 
 ## Prévia, pulso e aprovação
 
@@ -83,6 +84,55 @@ python3 tools/conector-local/cli.py --api https://operacao.example preview-snaps
 O modo manual não equivale a sincronização agendada. Windows falha fechado até
 existir leitor ancorado equivalente; não há seletor Tk obrigatório nem coleta
 quando a prévia ou o consentimento são cancelados.
+
+O seletor opcional só escolhe um caminho local; não chama a API:
+
+```sh
+if ROOT_LOCAL="$(python3 tools/conector-local/cli.py --api https://operacao.example select --directory)"; then
+  python3 tools/conector-local/cli.py --api https://operacao.example preview-snapshot \
+    --root "$ROOT_LOCAL" --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID \
+    --output "$ROOTOS_JOB/snapshot.json" &&
+  python3 tools/conector-local/cli.py --api https://operacao.example approve-snapshot \
+    --root "$ROOT_LOCAL" --snapshot-json "$ROOTOS_JOB/snapshot.json" \
+    --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID --org-id ORG_ID \
+    --device-id DEVICE_ID --scope-version 3 --approve-new --output "$ROOTOS_JOB/consent.json" &&
+  python3 tools/conector-local/cli.py --api https://operacao.example --state "$ROOTOS_JOB/state-snapshot.json" sync \
+    --consent "$ROOTOS_JOB/consent.json" --device-id DEVICE_ID
+fi
+```
+
+Para um arquivo individual, a raiz passada ao `approve` é o diretório pai e o
+manifesto usa o nome relativo do arquivo:
+
+```sh
+python3 tools/conector-local/cli.py --api https://operacao.example approve \
+  --root "$PWD/docs" --preview-json "$ROOTOS_JOB/preview-file.json" \
+  --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID --device-id DEVICE_ID \
+  --org-id ORG_ID --scope-version 3 --mode importacao --output "$ROOTOS_JOB/import-file.json"
+```
+
+Uma aprovação posterior usa `--previous` apontando para o consentimento anterior;
+ela exige o mesmo destino, empresa, dispositivo, fonte e escopo. `novos`,
+`alterados` e `ausentes` são diferenças locais entre esses dois snapshots; sem
+`--previous`, a base de ausências é desconhecida. Com `--absence-rule arquivar`,
+todos os itens da fonte ausentes de um snapshot completo podem ser arquivados,
+inclusive importações anteriores ou de outro dispositivo.
+
+Segunda rodada completa (após uma mudança local), comparando e enviando somente
+depois de novo consentimento:
+
+```sh
+python3 tools/conector-local/cli.py --api https://operacao.example preview-snapshot \
+  --root "$ROOT_LOCAL" --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID \
+  --output "$ROOTOS_JOB/snapshot-b.json"
+python3 tools/conector-local/cli.py --api https://operacao.example approve-snapshot \
+  --root "$ROOT_LOCAL" --snapshot-json "$ROOTOS_JOB/snapshot-b.json" \
+  --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID --org-id ORG_ID \
+  --device-id DEVICE_ID --scope-version 3 --previous "$ROOTOS_JOB/consent.json" \
+  --approve-changed --absence-rule arquivar --output "$ROOTOS_JOB/consent-b.json"
+python3 tools/conector-local/cli.py --api https://operacao.example --state "$ROOTOS_JOB/state-snapshot.json" sync \
+  --consent "$ROOTOS_JOB/consent-b.json" --device-id DEVICE_ID
+```
 
 ## Testes
 

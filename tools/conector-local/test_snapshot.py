@@ -1,13 +1,16 @@
 import json
+import io
 import os
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from dataclasses import replace
 from unittest.mock import patch
 
 from client import ConsentRequired, LocalConnectorClient, LocalState, SnapshotConsent, HttpTransport, TransportError, approve_selection, approve_snapshot
 from secure_store import MemoryVault
+from selector import SelectionCancelled, SelectorUnavailable, choose_path
 from snapshot import compare_snapshots, snapshot_source
 
 
@@ -201,7 +204,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_cli_preview_approve_persist_and_previous_consent(self):
         import cli
-        source = config()
+        source = config(rule="arquivar")
         source_file = Path(self.tmp.name).resolve() / "source.json"
         preview_file = Path(self.tmp.name).resolve() / "snapshot.json"
         consent_file = Path(self.tmp.name).resolve() / "consent.json"
@@ -216,9 +219,11 @@ class SnapshotTests(unittest.TestCase):
                                         "--root", str(self.root), "--snapshot-json", str(preview_file),
                                         "--source-json", str(source_file), "--source-id", "source-1",
                                         "--output", str(consent_file), "--org-id", "org", "--device-id", "device",
-                                        "--scope-version", "3", "--approve-new"])
-        with patch("builtins.input", return_value="sim"):
+                                        "--scope-version", "3", "--approve-new", "--absence-rule", "arquivar"])
+        with patch("builtins.input", return_value="sim"), patch("sys.stdout", new_callable=io.StringIO) as output:
             self.assertEqual(cli._run(args), 0)
+            self.assertIn("baseComparacao", output.getvalue())
+            self.assertIn("TODOS os itens desta fonte ausentes", output.getvalue())
         (self.root / "a.md").write_text("B", encoding="utf-8")
         args = cli.parser().parse_args(["--api", "https://snapshot.synthetic", "preview-snapshot",
                                         "--root", str(self.root), "--source-json", str(source_file),
@@ -229,11 +234,11 @@ class SnapshotTests(unittest.TestCase):
                                         "--source-json", str(source_file), "--source-id", "source-1",
                                         "--output", str(next_consent), "--previous", str(consent_file),
                                         "--org-id", "org", "--device-id", "device", "--scope-version", "3",
-                                        "--approve-changed"])
+                                        "--approve-changed", "--absence-rule", "arquivar"])
         with patch("builtins.input", return_value="sim"):
             self.assertEqual(cli._run(args), 0)
         self.assertEqual(cli._snapshot_consent(cli._read_json(str(next_consent))).changed, ("a.md",))
-        source = config()
+        source = config(rule="arquivar")
         transport = SnapshotTransport(source)
         vault = MemoryVault(); state = LocalState(Path(self.tmp.name).resolve() / "cli-sync-state.json")
         fake_client = LocalConnectorClient(transport, vault=vault, state=state)
@@ -241,6 +246,18 @@ class SnapshotTests(unittest.TestCase):
         sync_args = cli.parser().parse_args(["--api", transport.base_url, "sync", "--consent", str(next_consent), "--device-id", "device"])
         with patch("cli.LocalConnectorClient.production", return_value=fake_client):
             self.assertEqual(cli._run(sync_args), 0)
+
+    def test_cli_empty_root_and_selector_cancel_do_not_start_production_or_scan(self):
+        import cli
+        with patch("cli.choose_path", side_effect=SelectionCancelled("cancelado")), \
+             patch("cli.LocalConnectorClient.production") as production, \
+             patch("cli.preview") as generic_preview, \
+             patch("cli.approve_snapshot") as approve:
+            self.assertEqual(cli.main(["--api", "https://snapshot.synthetic", "select"]), 4)
+            self.assertEqual(cli.main(["--api", "https://snapshot.synthetic", "preview-snapshot", "--root", "", "--source-json", "missing", "--source-id", "source-1"]), 4)
+            production.assert_not_called()
+            generic_preview.assert_not_called()
+            approve.assert_not_called()
 
     def test_full_coverage_and_empty_snapshot_are_valid(self):
         report = snapshot_source(self.root, config())
@@ -386,6 +403,32 @@ class SnapshotTests(unittest.TestCase):
                       "approve_changed": consent.approve_changed}
         loaded = _snapshot_consent(serialized)
         self.assertEqual(loaded.fingerprint(), consent.fingerprint())
+
+    def test_selector_cancel_never_collects_and_missing_toolkit_is_closed(self):
+        with patch.dict("sys.modules", {"tkinter": None}):
+            with self.assertRaises(SelectorUnavailable):
+                choose_path()
+
+    def test_selector_doubles_cancel_file_folder_and_destroy_on_error(self):
+        events = []
+        class FakeRoot:
+            def withdraw(self): events.append("withdraw")
+            def destroy(self): events.append("destroy")
+        tk_module = types.ModuleType("tkinter")
+        tk_module.Tk = FakeRoot
+        dialogs = types.ModuleType("tkinter.filedialog")
+        dialogs.askopenfilename = lambda: events.append("file") or "/tmp/fixture.md"
+        dialogs.askdirectory = lambda: events.append("directory") or "/tmp/fixture-dir"
+        with patch.dict("sys.modules", {"tkinter": tk_module, "tkinter.filedialog": dialogs}):
+            self.assertEqual(choose_path(), "/tmp/fixture.md")
+            self.assertEqual(choose_path(directory=True), "/tmp/fixture-dir")
+            dialogs.askopenfilename = lambda: ""
+            with self.assertRaises(SelectionCancelled):
+                choose_path()
+            dialogs.askopenfilename = lambda: (_ for _ in ()).throw(RuntimeError("dialog fixture"))
+            with self.assertRaises(SelectorUnavailable):
+                choose_path()
+        self.assertEqual(events.count("destroy"), 4)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ type Dispositivo = {
   revokedAt: string | null; fonteIds: string[];
 };
 
-const INSTRUCAO_CLI = 'python3 -B tools/conector-local/cli.py --help\npython3 -B tools/conector-local/cli.py --api <URL_HTTPS_DA_API> pair --org-id <ORG_ID> --pairing-id <PAIRING_ID> --name "Este dispositivo"\n# O cliente atual faz somente importação consentida; sincronização contínua ainda não está habilitada.';
+const INSTRUCAO_CLI = 'python3 -B tools/conector-local/cli.py --help\npython3 -B tools/conector-local/cli.py --api <URL_HTTPS_DA_API> pair --org-id <ORG_ID> --pairing-id <PAIRING_ID> --name "Este dispositivo"\n# A sincronização é manual: cada snapshot exige prévia e consentimento; não há daemon/agendamento.';
 
 function idade(iso: string | null): string {
   if (!iso) return 'ainda não visto';
@@ -144,7 +144,7 @@ export function ConectorLocal() {
           <label className="text-xs text-muted">Extensões permitidas<input aria-label="Extensões permitidas" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={tipos} onChange={(e) => setTipos(e.target.value)} /></label>
           <label className="text-xs text-muted">Incluir (glob literal)<input aria-label="Filtros de inclusão" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={incluir} onChange={(e) => setIncluir(e.target.value)} /></label>
           <label className="text-xs text-muted">Excluir (glob literal)<input aria-label="Filtros de exclusão" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={excluir} onChange={(e) => setExcluir(e.target.value)} /></label>
-          <label className="text-xs text-muted">Modo<select aria-label="Modo da fonte" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={modo} onChange={(e) => setModo(e.target.value as typeof modo)}><option value="importacao">importação</option><option value="sincronizacao" disabled>sincronização (cliente pendente)</option></select></label>
+          <label className="text-xs text-muted">Modo<select aria-label="Modo da fonte" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={modo} onChange={(e) => setModo(e.target.value as typeof modo)}><option value="importacao">importação</option><option value="sincronizacao">sincronização manual (snapshot)</option></select></label>
           <label className="text-xs text-muted">Regra de exclusão<select aria-label="Regra de exclusão" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={regraExclusao} onChange={(e) => setRegraExclusao(e.target.value as typeof regraExclusao)}><option value="ignorar">ignorar</option><option value="arquivar">arquivar</option></select></label>
           <label className="text-xs text-muted">Máximo por arquivo (bytes)<input aria-label="Tamanho máximo" type="number" min="1" className="mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-1.5" value={tamanhoMaximo} onChange={(e) => setTamanhoMaximo(e.target.value)} /></label>
         </div>

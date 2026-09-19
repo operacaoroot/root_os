@@ -16,6 +16,7 @@ from preview import preview
 from secure_reader import ApprovedVersionMismatch, SecureReadError
 from secure_store import SecureStoreError
 from snapshot import SnapshotError, snapshot_source
+from selector import SelectionCancelled, SelectorUnavailable, choose_path
 
 
 def _write_json(path: str, value: dict) -> None:
@@ -36,6 +37,12 @@ def _source_json(path: str, source_id: str) -> dict:
         if len(matches) != 1:
             raise SystemExit("fonte não encontrada de forma única no pulso")
         return matches[0]
+    return value
+
+
+def _root_arg(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ClientError("raiz local vazia; seleção cancelada não coleta nem aprova")
     return value
 
 
@@ -123,6 +130,7 @@ def parser() -> argparse.ArgumentParser:
     pair = sub.add_parser("pair"); pair.add_argument("--org-id", required=True); pair.add_argument("--pairing-id", required=True); pair.add_argument("--name", required=True)
     pulse = sub.add_parser("pulse"); pulse.add_argument("--device-id", required=True); pulse.add_argument("--output")
     sync = sub.add_parser("sync"); sync.add_argument("--consent", required=True); sync.add_argument("--device-id", required=True); sync.add_argument("--request-key")
+    select = sub.add_parser("select"); select.add_argument("--directory", action="store_true")
     return root
 
 
@@ -133,15 +141,18 @@ def _run(args: argparse.Namespace) -> int:
             _write_json(args.output, value)
         print(json.dumps(value, ensure_ascii=False, indent=2))
         return 0 if value["complete"] else 3
+    if args.command == "select":
+        print(choose_path(directory=args.directory))
+        return 0
     if args.command == "preview-snapshot":
-        report = snapshot_source(args.root, _source_json(args.source_json, args.source_id), max_entries=args.max_entries, max_depth=args.max_depth)
+        report = snapshot_source(_root_arg(args.root), _source_json(args.source_json, args.source_id), max_entries=args.max_entries, max_depth=args.max_depth)
         value = report.as_dict()
         if args.output:
             _write_json(args.output, value)
         print(json.dumps(value, ensure_ascii=False, indent=2))
         return 0 if report.complete else 3
     if args.command == "approve":
-        value = approve_selection(args.root, _read_json(args.preview_json), target_url=args.api, org_id=args.org_id,
+        value = approve_selection(_root_arg(args.root), _read_json(args.preview_json), target_url=args.api, org_id=args.org_id,
                                   device_id=args.device_id, source_id=args.source_id, scope_version=args.scope_version,
                                   mode=args.mode, source_config=_source_json(args.source_json, args.source_id))
         _confirm(_approval_summary(value))
@@ -155,7 +166,7 @@ def _run(args: argparse.Namespace) -> int:
         return 0
     if args.command == "approve-snapshot":
         snapshot = _read_json(args.snapshot_json)
-        value = approve_snapshot(args.root, snapshot, target_url=args.api, org_id=args.org_id,
+        value = approve_snapshot(_root_arg(args.root), snapshot, target_url=args.api, org_id=args.org_id,
                                  device_id=args.device_id, source_id=args.source_id,
                                  scope_version=args.scope_version,
                                  source_config=_source_json(args.source_json, args.source_id),
@@ -169,7 +180,11 @@ def _run(args: argparse.Namespace) -> int:
                              "tamanhoMaximo", "regraExclusao", "escopoVersao")},
                   "destino": value.destination,
                   "novos": list(value.new), "alterados": list(value.changed),
-                  "ausentes": list(value.absent), "regraAusencia": value.absence_rule})
+                  "ausentes": list(value.absent), "regraAusencia": value.absence_rule,
+                  "avisoAusencia": ("TODOS os itens desta fonte ausentes do snapshot completo podem ser arquivados, inclusive importações anteriores e de outro dispositivo."
+                                     if value.absence_rule == "arquivar" else
+                                     "Itens ausentes ficam retidos; esta comparação é apenas local com o consentimento anterior."),
+                  "baseComparacao": "consentimento anterior local; sem --previous a base de ausências é desconhecida"})
         _write_json(args.output, {"kind": "snapshot-consent", "root": value.root,
                                   "target_url": value.target_url, "org_id": value.org_id,
                                   "device_id": value.device_id, "source_id": value.source_id,
@@ -213,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         return _run(args)
-    except (ClientError, SnapshotError, SecureStoreError, SecureReadError, ApprovedVersionMismatch, OSError, ValueError) as exc:
+    except (ClientError, SnapshotError, SelectorUnavailable, SelectionCancelled, SecureStoreError, SecureReadError, ApprovedVersionMismatch, OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 4
 

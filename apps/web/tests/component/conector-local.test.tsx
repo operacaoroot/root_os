@@ -41,6 +41,15 @@ describe('painel do conector local', () => {
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/conector/fontes', expect.objectContaining({
       tipo: 'pasta', raizLogica: 'cliente/documentos', modo: 'importacao', regraExclusao: 'ignorar',
     }), 'sessao-a'));
+    expect(screen.getByRole('option', { name: 'sincronização manual (snapshot)' })).not.toBeDisabled();
+    expect(screen.getByText(/sincronização é manual/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Nome da fonte'), 'Documentos sync');
+    await user.type(screen.getByLabelText('Raiz lógica'), 'cliente/documentos-sync');
+    await user.selectOptions(screen.getByLabelText('Modo da fonte'), 'sincronizacao');
+    await user.click(screen.getByRole('button', { name: 'Criar fonte lógica' }));
+    await waitFor(() => expect(apiPost).toHaveBeenLastCalledWith('/conector/fontes', expect.objectContaining({
+      modo: 'sincronizacao',
+    }), 'sessao-a'));
     permissoes = ['admin.permissoes'];
     rerender(<ConectorLocal />);
     expect(screen.queryByRole('heading', { name: 'Conector local' })).not.toBeInTheDocument();
