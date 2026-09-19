@@ -463,3 +463,27 @@ com transporte real loopback e cofre de fixture injetado, seguida de controles
 de fonte/pareamento/dispositivo/frescor no painel. Credenciais sintéticas não
 passam por argv/log; nenhum `main.js` do host nem cofre/configuração reais.
 E3b.2b (sincronização/seletor), E4–E8 e aceite independente continuam abertos.
+
+## R20 — integração E3b.2a em andamento
+
+Coletor registrado em **`ea5b442`**; registro do hash no status em `fa80b5a`.
+Novo painel em `/contexto` e runner Python do smoke ainda sem aceite/commit.
+Coordenador verificou os primeiros 3 testes e depois os 5 casos ampliados;
+`web typecheck` exit 0. Às 19:41 -03 repetiu a regressão web inteira:
+**391/391, 30 arquivos**, exit 0. O novo teste de troca de sessão emitiu avisos
+de atualização fora de `act`; solicitado corrigir a espera, não silenciar o
+console. Um aviso em `custo-ia` já existente ficou fora desta fatia.
+
+Apontamentos de integração enviados: Python assíncrono para não bloquear a API
+Nest no mesmo event loop; URL sem duplicar `/api`; fonte revogada provoca
+`ConsentRequired`, dispositivo revogado precisa negativa 401 específica;
+runner restrito ao loopback e cwd isolado, entrada por pipe e saída limitada,
+sem repetir stderr bruto. Consulta de memória fica no Node com PAT, não vira
+atribuição do coletor. Ausência de raiz absoluta deve ser verificada contra a
+raiz realmente selecionada em Python, não contra outro diretório temporário.
+
+Onboarding: coletor não exige build da API no computador local. PairingId,
+orgId e fonte/versão precisam aparecer para viabilizar o comando real; permitido
+acrescentar orgId autenticado ao retorno da emissão, sem ampliar o login.
+Segredo exibido deve pertencer à sessão emissora já no render, além de limpar
+estado e descartar resposta atrasada. Teste HTTP compilado ainda pendente.
