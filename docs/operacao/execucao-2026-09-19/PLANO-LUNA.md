@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a despachada ao Luna**.
+Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a.1 aceita; integração E4a.2/E4b em preparação pelo Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -10,11 +10,17 @@ hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas
 - Executor inicial: **`/root/luna_executor`**, modelo **`gpt-5.6-luna`**, esforço
   `high`, criado nesta sessão a pedido explícito do Pedro. Interrompido durante
   a recuperação de E3b.2a, sem apagar suas alterações.
-- Executor atual: **`/root/luna_fechamento`**, **`gpt-5.6-luna`**, esforço
+- Segundo executor: **`/root/luna_fechamento`**, **`gpt-5.6-luna`**, esforço
   `medium`, contexto reduzido e tarefa delimitada. É o único escritor de código
-  desde a transferência; o executor anterior não deve retomar sem nova passagem
+  durante seu recorte; o executor anterior não deve retomar sem nova passagem
   explícita da exclusividade. A transferência evita manter uma rodada longa sem
   checkpoint verificável e preserva o pedido de execução pelo Luna.
+- Executor atual: **`/root/luna_ferramentas`**, **`gpt-5.6-luna`**, esforço
+  `high`, contexto novo e tarefa de integração delimitada. Recebeu exclusividade
+  após `70ee6b9`; `luna_fechamento` foi interrompido depois do commit e não pode
+  escrever em paralelo. Continua sendo Luna; o modelo da conversa principal não
+  foi alterado. O primeiro despacho é fechar proposta breve, depois implementar
+  integração com build/autorização, sob revisão.
 - Coordenador: esta sessão; escreve o plano/registro, revisa diffs e evidências,
   envia as tarefas e esclarece dúvidas do Luna. Não implementa código em paralelo.
 - Apoio pontual: `/root/luna_revisao_coletor`, também `gpt-5.6-luna`, esforço

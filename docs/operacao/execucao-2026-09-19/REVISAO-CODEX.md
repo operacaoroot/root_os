@@ -652,3 +652,26 @@ preservados. Retirar flexibilidade desnecessária é preferível a um framework 
 filesystem. Remover última ferramenta deve produzir inventário vazio sem deixar
 código obsoleto; não é autorização de remover migrations já aplicadas.
 E4a segue **sem aceite e sem commit**, E4b/E4c ainda não iniciadas.
+
+## R26 — E4a.1 aceita como contrato/staging manual, não ferramenta funcional
+
+Após correção, coordenador repetiu o mesmo reprodutor de R25: **exit 4**,
+arquivo alheio, alpha e marker preservados byte a byte. Repetiu também a suíte
+`node tools/ferramentas/test-cli.mjs`: **`E4A_TOOL_TESTS_OK`**, exit 0. Inclui
+compilação do descriptor/página staged, negativos de conteúdo editado/extra,
+symlink/dangling, marker inválido, diretório no destino de arquivo e inventário
+vazio. Dados capturados de input são reutilizados para hash/cópia. Isso não é
+snapshot atômico nem proteção contra mutação concorrente do próprio usuário.
+
+Commit **`70ee6b9`** aceito somente como **E4a.1**: comandos manuais na raiz,
+contrato e staging. Removidos os acréscimos de scripts nos pacotes API/Web e task
+Turbo que apontavam simultaneamente ao mesmo stage. Não há hooks automáticos,
+Nest funcional, ativação ou integração das migrations próprias ao atualizador.
+O SQL declarativo no descriptor não comprova execução parametrizada com RLS;
+essas provas continuam para E4b/E4c. Não é aceite P4.
+
+Após commit, `luna_fechamento` parou e foi interrompido. Exclusividade transferida
+explicitamente a **`luna_ferramentas` (Luna high, contexto novo)**. Esse agente
+prepara a proposta curta E4a.2/E4b antes do despacho de implementação. Root
+mantém plano/revisão; dois executores anteriores não retomam escrita. Sem
+mutação remota ou mudança do modelo desta conversa.
