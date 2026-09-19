@@ -223,3 +223,51 @@ remessa, lote e fim da seção 3 do plano de produto, usando somente fixtures.
 O executor registra a escolha de serialização e segue implementando; entrega
 para revisão antes do commit E3a.2. Todos os limites operacionais anteriores
 continuam válidos. P3 não está concluído com o receptor isolado.
+
+## Recorte preparado E3b — cliente local, sem dados pessoais
+
+Usar o protótipo Python existente. Não instalar o OS inteiro no computador,
+não abrir porta de entrada e não criar serviço de administração remota.
+Dividir em duas entregas revisáveis pelo mesmo escritor:
+
+1. **E3b.1, núcleo local:** seleção explícita por CLI, prévia completa e aprovação
+   separada; consentimento/estado local com permissões restritas; leitor seguro;
+   transporte de saída e retomada. Token somente em adaptador de cofre do SO,
+   nunca em argv, JSON, logs ou Git. Sem backend seguro disponível, recusar a
+   operação; não criar fallback silencioso para segredo em texto puro.
+2. **E3b.2, integração e uso:** seletor visual pequeno, quando o toolkit nativo
+   estiver disponível, pareamento e ciclo completo contra API compilada restrita;
+   fontes, saúde/frescor e revogação no painel existente. Documentar execução
+   manual/agendada sem instalar tarefa automaticamente. A distribuição e o
+   aceite na máquina do piloto continuam dependências humanas explícitas.
+
+Requisitos de ambas as fatias:
+
+- Guardar a raiz absoluta apenas localmente; transmitir referências relativas.
+  Pareamento não é consentimento. Prévia incompleta, inacessível ou excedendo
+  limites não autoriza envio nem fechamento como snapshot completo.
+- Consentimento liga dispositivo, destino, fonte e versão do escopo à seleção
+  local. Mudança de destino/escopo exige aprovação nova; o pulso pode revogar
+  ou restringir, nunca ampliar pastas/tipos/filtros autorizados localmente.
+- Importação usa lista aprovada e versão dos arquivos. Sincronização de mudanças
+  e inclusão de arquivos novos exigem autorização distinta e explícita. Regra
+  de exclusão fica visível antes de confirmar. Nenhum teste lê arquivos pessoais.
+- Abrir sem seguir links, verificar os componentes da raiz e os descendentes,
+  comparar identidade/metadados antes e depois da leitura e rejeitar mudanças.
+  `lstat` seguido de `open` convencional não elimina TOCTOU. Onde a plataforma
+  não fornecer implementação validável, bloquear envio, não alegar suporte.
+- HTTPS com certificados/hostname verificados, sem redirects com credencial,
+  timeouts e limites de corpo. HTTP somente em opção de teste explícita para
+  loopback literal. Falta de pulso/revogação interrompe coleta programada.
+- Persistir chave/estado da remessa sem conteúdo ou segredo. Resposta ambígua
+  repete a mesma operação idempotente. Arquivo alterado durante retomada exige
+  nova prévia, não reusa a aprovação de outro conteúdo.
+- Fixtures demonstram exclusões, links/ancestrais trocados, alteração entre
+  prévia/leitura/envio, escopo ampliado, revogação, interrupção e reenvio, segredo
+  indisponível e negativas de TLS/redirect. Ensaio real loopback demonstra que o
+  documento só chega ao agente depois do grant separado.
+
+Não instalar agendamento, credenciais ou configuração do Claude real durante os
+testes. Testes simulados de Windows não equivalem a validação na máquina do
+piloto. Não acrescentar assinatura de instalador, SQL ou framework de plugins
+para contornar essas pendências. E3b só começa após aceite local do receptor.

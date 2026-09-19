@@ -271,3 +271,29 @@ com piso 9 foi revisada, mas não executada no GitHub.
 Aceite local e commit focado autorizados. Enviada E3a.2 ao mesmo escritor:
 remessas/lotes/finalização, idempotência e ordem, projeção com rastro e exclusões
 somente em snapshot completo. Sem acesso a fonte real nem autorização remota.
+
+## R15 — revisão intermediária E3a.2
+
+O receptor ainda está em elaboração, sem aceite ou autorização de commit.
+Achados enviados ao escritor para corrigir e demonstrar com testes:
+
+- O lock individual da remessa não serializa duas remessas da mesma fonte.
+  A ordem atribuída na abertura deve impedir também caminho antigo ainda não
+  visto e finalização antiga que arquive dados novos ou regrida o frescor.
+- O guard de estado aberto tornava inalcançável o retorno idempotente de `fim`.
+  Repetir o fechamento deve devolver o recibo sem novos efeitos, mantendo a
+  verificação de revogação. Reutilização da chave com fonte/modo distintos é erro.
+- Arquivamento de ausências pertence apenas a sincronização completa. Manifesto
+  e contadores precisam corresponder ao recebido; um booleano do cliente não é
+  prova suficiente. Importação não deve arquivar outros documentos.
+- Revisor Luna identificou vínculos de `ContextItem` sem garantia de empresa/
+  procedência no banco, colisão de chave que podia alterar nota de outra origem,
+  ausência do limite configurado da fonte e contagem de fim confiada ao cliente.
+- Exigidos testes de glob recursivo e exclusões, integridade da cadeia/eventos
+  e `MemoriaService.conferirElos` após criar, alterar, arquivar e restaurar.
+  A referência textual existente coincide com o helper canônico; não foi
+  apresentada como bug. O payload e a atribuição do ator precisam manter o
+  contrato de memória, sem fingir que o dispositivo é um agente cadastrado.
+
+O coordenador prepara E3b em paralelo à implementação. Não houve coleta real,
+teste com diretórios pessoais ou autorização adicional para a VPS nesta etapa.
