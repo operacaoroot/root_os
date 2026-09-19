@@ -3,7 +3,8 @@
 Cliente Python 3 sem dependências externas. A seleção começa sempre como prévia
 de metadados; somente uma aprovação explícita, com a fonte lógica e destino
 `agente_externo` exibidos, pode iniciar uma importação. A sincronização contínua
-(`modo=sincronizacao`) permanece bloqueada nesta fatia (E3b.2).
+(`modo=sincronizacao`) permanece bloqueada: E3b.2b.1 oferece somente snapshots
+manuais, sem daemon, agendamento ou descoberta em segundo plano.
 
 ## Prévia, pulso e aprovação
 
@@ -55,6 +56,33 @@ explicitamente para o literal `127.0.0.1` em fixtures. Limites locais são 2 MiB
 por arquivo, 10 MiB por lote e 12 MiB no wire. A chave da remessa é persistida
 antes da abertura; timeout deixa recibo pendente para retomada idempotente, sem
 marcar sucesso antes de todos os lotes e do fim confirmado pelo servidor.
+
+## Snapshot manual (sincronização sob demanda)
+
+`preview-snapshot` percorre e lê localmente os bytes da fonte inteira com a configuração recebida no pulso,
+para congelar tamanho/versão/hash no manifesto (não é a prévia genérica só de metadados):
+não aceita subpasta, filtro mais estreito ou `complete=true` inventado pelo chamador.
+Link, tamanho excedido, erro de leitura, limite e mudança da árvore tornam o
+manifesto incompleto; nenhum desses casos vira ausência arquivável. Um snapshot
+vazio só é válido quando a cobertura integral foi comprovada. A aprovação congela
+raiz, destino, empresa, dispositivo, fonte, escopo e filtros; arquivos novos e
+alterados exigem confirmações separadas. A regra de ausência (`ignorar` ou
+`arquivar`) precisa ser a mesma da fonte. Antes do fim e em cada retomada a árvore
+é varrida novamente; descoberta nova nunca é incorporada ao estado antigo. O
+manifesto não guarda conteúdo/segredo e nenhum byte é enviado à rede antes do
+consentimento; a prévia não chama provider nem faz upload.
+
+Exemplo de prévia (o JSON do pulso é somente metadado local):
+
+```sh
+python3 tools/conector-local/cli.py --api https://operacao.example preview-snapshot \
+  --root "$PWD/docs" --source-json "$ROOTOS_JOB/pulso.json" --source-id SOURCE_ID \
+  --output "$ROOTOS_JOB/snapshot.json"
+```
+
+O modo manual não equivale a sincronização agendada. Windows falha fechado até
+existir leitor ancorado equivalente; não há seletor Tk obrigatório nem coleta
+quando a prévia ou o consentimento são cancelados.
 
 ## Testes
 

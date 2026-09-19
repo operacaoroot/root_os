@@ -535,3 +535,9 @@ P2/P3/P4/P5.
 Limites E3b.2a: aceite humano do disclosure/fonte/escopo continua portão; consulta MCP/cliente
 de memória segue no recorte já aceito de E2c, e sincronização
 contínua/seletor de novos arquivos ficam para E3b.2b. Não há commit desta fatia até revisão.
+
+### Registro posterior
+
+- E3b.2a foi aceita localmente e commitada em `88dee20` (`feat(conector): fechar integração local E3b.2a`). O commit contém somente o runner HTTP, retorno mínimo do conector, painel/teste, cliente Python do smoke e este STATUS; não inclui PLANO/REVISAO nem arquivos de usuário.
+- E3b.2b.1 está em working tree, sem commit e sem API/painel/daemon: scanner de snapshot manual ancorado em descritores, consentimento congelado, comparação novo/alterado/ausente, regra de ausência explícita, CLI `preview-snapshot`/`approve-snapshot`, README e testes dedicados. Evidência atual: suíte local **80/80**, zero skips; inclui sync stateful SnapshotConsent, timeouts após abertura/lote/fim com nova instância, snapshots vazios sob ambas as regras, mutação entre lote/fim, A→B→A, importação/snapshot de arquivo único, FIFO fail-closed, envelope/round-trip CLI e divergência do manifesto antes da rede. O smoke HTTP de E3b.2a permanece o último ensaio compilado autorizado.
+- Riscos/limites ainda abertos para revisão: retomada HTTP/snapshot vazio e mutação entre lote/fim precisam de doubles dedicados; Windows segue falha fechada; seletor visual e snapshot via HTTP ficam para E3b.2b.2. Não declarar sincronização agendada nem aceite humano.

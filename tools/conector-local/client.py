@@ -315,6 +315,89 @@ class Consent:
         return hashlib.sha256(_json_bytes(data)).hexdigest()
 
 
+@dataclass(frozen=True)
+class SnapshotConsent:
+    root: str
+    target_url: str
+    org_id: str
+    device_id: str
+    source_id: str
+    scope_version: int
+    destination: str
+    source_config: dict[str, Any]
+    snapshot: dict[str, Any]
+    files: tuple[ApprovedFile, ...]
+    new: tuple[str, ...]
+    changed: tuple[str, ...]
+    absent: tuple[str, ...]
+    absence_rule: str
+    approve_new: bool
+    approve_changed: bool
+
+    @property
+    def mode(self) -> str:
+        return "sincronizacao"
+
+    def fingerprint(self) -> str:
+        data = {
+            "root": self.root, "target": self.target_url, "org": self.org_id,
+            "device": self.device_id, "source": self.source_id, "scope": self.scope_version,
+            "destination": self.destination, "sourceConfig": self.source_config,
+            "snapshot": self.snapshot, "new": self.new, "changed": self.changed,
+            "absent": self.absent, "absenceRule": self.absence_rule,
+            "approveNew": self.approve_new, "approveChanged": self.approve_changed,
+            "files": [file.__dict__ for file in self.files],
+        }
+        return hashlib.sha256(_json_bytes(data)).hexdigest()
+
+
+def approve_snapshot(root: str | os.PathLike[str], snapshot: dict[str, Any], *, target_url: str,
+                     org_id: str, device_id: str, source_id: str, scope_version: int,
+                     source_config: dict[str, Any], previous: dict[str, Any] | None = None,
+                     approve_new: bool = False, approve_changed: bool = False,
+                     absence_rule: str = "ignorar", destination: str = "agente_externo") -> SnapshotConsent:
+    """Congela uma varredura integral; aprovação de novos/alterados é separada."""
+    from snapshot import compare_snapshots, stable_source_config
+    if destination != "agente_externo":
+        raise ConsentRequired("destino não comprovado pelo produto")
+    if not snapshot.get("complete") or source_config.get("modo") != "sincronizacao":
+        raise ConsentRequired("snapshot incompleto ou fonte fora do modo sincronizacao")
+    if absence_rule not in {"ignorar", "arquivar"}:
+        raise ConsentRequired("regra de ausência inválida")
+    source_config = stable_source_config(source_config)
+    if snapshot.get("sourceConfig") != source_config or snapshot.get("root") != str(Path(root).expanduser().absolute()):
+        raise ConsentRequired("snapshot não corresponde à fonte local aprovada")
+    previous_manifest = (previous or {}).get("snapshot") if previous else None
+    if previous and (not isinstance(previous_manifest, dict) or
+                     previous_manifest.get("root") != snapshot.get("root") or
+                     previous_manifest.get("sourceConfig") != source_config):
+        raise ConsentRequired("snapshot anterior pertence a outra fonte local")
+    envelope = (previous or {}).get("consentEnvelope")
+    expected_envelope = {"target_url": target_url, "org_id": org_id, "device_id": device_id,
+                         "source_id": source_id, "scope_version": scope_version}
+    if previous and (not isinstance(envelope, dict) or envelope != expected_envelope or
+                     not isinstance(previous_manifest, dict)):
+        raise ConsentRequired("snapshot anterior não pertence ao mesmo consentimento")
+    if source_config.get("id") != source_id or source_config.get("escopoVersao") != scope_version:
+        raise ConsentRequired("configuração da fonte não corresponde ao escopo aprovado")
+    changes = compare_snapshots(type("SnapshotView", (), {"files": tuple(
+        ApprovedFile(str(item["path"]), int(item["size"]), int(item["modifiedNs"]), str(item["rawSha256"]))
+        for item in snapshot.get("files", [])
+    )})(), previous_manifest)
+    if absence_rule != source_config.get("regraExclusao"):
+        raise ConsentRequired("regra de ausência diverge da fonte aprovada")
+    if changes["new"] and not approve_new:
+        raise ConsentRequired("arquivos novos exigem aprovação separada")
+    if changes["changed"] and not approve_changed:
+        raise ConsentRequired("arquivos alterados exigem aprovação separada")
+    files = tuple(ApprovedFile(str(item["path"]), int(item["size"]), int(item["modifiedNs"]), str(item["rawSha256"]))
+                  for item in snapshot.get("files", []))
+    return SnapshotConsent(str(Path(root).expanduser().absolute()), target_url, org_id, device_id,
+                           source_id, int(scope_version), destination, dict(source_config), dict(snapshot),
+                           files, tuple(changes["new"]), tuple(changes["changed"]), tuple(changes["absent"]),
+                           absence_rule, approve_new, approve_changed)
+
+
 def approve_selection(root: str | os.PathLike[str], preview: dict[str, Any], *, target_url: str,
                       org_id: str, device_id: str, source_id: str, scope_version: int, mode: str,
                       source_config: dict[str, Any],
@@ -417,11 +500,26 @@ class LocalConnectorClient:
             raise ConsentRequired("destino da aprovação diverge da API selecionada")
         if consent.device_id != device_id:
             raise ConsentRequired("dispositivo diverge do consentimento")
-        if consent.mode != "importacao":
+        is_snapshot = isinstance(consent, SnapshotConsent)
+        if consent.mode != "importacao" and not is_snapshot:
             raise ConsentRequired("sincronização ainda não foi validada; use importação aprovada")
+        if is_snapshot:
+            expected_files = tuple(ApprovedFile(str(item.get("path")), int(item.get("size")),
+                                           int(item.get("modifiedNs")), str(item.get("rawSha256")))
+                             for item in consent.snapshot.get("files", []) if isinstance(item, dict))
+            if not consent.snapshot.get("complete") or not isinstance(consent.approve_new, bool) or not isinstance(consent.approve_changed, bool) or consent.files != expected_files:
+                raise ConsentRequired("consentimento de snapshot não corresponde ao manifesto")
+            if consent.absence_rule != consent.source_config.get("regraExclusao"):
+                raise ConsentRequired("regra de ausência diverge da fonte aprovada")
+            if consent.new and not consent.approve_new:
+                raise ConsentRequired("arquivos novos não foram aprovados")
+            if consent.changed and not consent.approve_changed:
+                raise ConsentRequired("arquivos alterados não foram aprovados")
+            if not consent.snapshot.get("complete"):
+                raise ConsentRequired("snapshot incompleto não pode ser enviado")
         if os.name != "posix":
             raise ConsentRequired("envio bloqueado: leitor seguro Windows ainda não validado")
-        if not consent.files:
+        if not consent.files and not is_snapshot:
             raise ConsentRequired("seleção vazia não pode abrir remessa")
         if batch_size < 1 or batch_size > MAX_ITEMS:
             raise ClientError("tamanho de lote inválido")
@@ -434,6 +532,11 @@ class LocalConnectorClient:
         stable_source = {key: source.get(key) for key in ("id", "tipo", "raizLogica", "incluir", "excluir", "tiposPermitidos", "modo", "regraExclusao", "tamanhoMaximo", "escopoVersao")} if source else None
         if (not source or stable_source != consent.source_config or source.get("revokedAt") is not None):
             raise ConsentRequired("fonte ou versão de escopo não está autorizada no pulso")
+        if is_snapshot:
+            from snapshot import snapshot_source
+            current = snapshot_source(consent.root, consent.source_config)
+            if not current.complete or current.as_dict() != consent.snapshot:
+                raise ConsentRequired("árvore mudou desde a prévia; snapshot e aprovação novos são obrigatórios")
         sent = set(state.get("sent", [])) if state else set()
         if request_key is None:
             request_key = state.get("requestKey") if state else None
@@ -461,8 +564,12 @@ class LocalConnectorClient:
         # Primeira passagem: revalida toda a seleção sem manter conteúdo em memória.
         # A segunda passagem envia no máximo um lote; uma mudança entre passagens
         # falha fechada pelo mesmo leitor/versionamento.
+        read_root = (str(Path(consent.root).parent)
+                     if is_snapshot and consent.source_config.get("tipo") == "arquivo" else consent.root)
         for approved in consent.files:
-            raw, info = self.reader(consent.root, approved.path, max_bytes=MAX_FILE_BYTES,
+            read_path = (Path(approved.path).name
+                         if is_snapshot and consent.source_config.get("tipo") == "arquivo" else approved.path)
+            raw, info = self.reader(read_root, read_path, max_bytes=MAX_FILE_BYTES,
                                     expected_size=approved.size, expected_mtime_ns=approved.modified_ns,
                                     expected_raw_sha256=approved.raw_sha256)
             if len(raw) > consent.source_config["tamanhoMaximo"]:
@@ -473,7 +580,9 @@ class LocalConnectorClient:
                 raise ConsentRequired("arquivo não é UTF-8 aprovado") from exc
 
         def item_for(approved: ApprovedFile) -> tuple[dict[str, Any], int]:
-            raw, _ = self.reader(consent.root, approved.path, max_bytes=MAX_FILE_BYTES,
+            read_path = (Path(approved.path).name
+                         if is_snapshot and consent.source_config.get("tipo") == "arquivo" else approved.path)
+            raw, _ = self.reader(read_root, read_path, max_bytes=MAX_FILE_BYTES,
                                  expected_size=approved.size, expected_mtime_ns=approved.modified_ns,
                                  expected_raw_sha256=approved.raw_sha256)
             try:
@@ -519,6 +628,11 @@ class LocalConnectorClient:
             self.state.save(base_state)
         if sent != {file.path for file in consent.files}:
             raise ConsentRequired("nem todos os recibos foram confirmados; fim bloqueado")
+        if is_snapshot:
+            from snapshot import snapshot_source
+            current = snapshot_source(consent.root, consent.source_config)
+            if not current.complete or current.as_dict() != consent.snapshot:
+                raise ConsentRequired("árvore mudou antes do fim; snapshot não foi concluído")
         self.pulse(device_id=device_id)
         result = self.transport.post(f"/api/conector/remessa/{delivery_id}/fim", {
             "itensVistos": [{"caminhoRelativo": file.path} for file in consent.files],
