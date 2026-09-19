@@ -386,3 +386,30 @@ sem exigir novo prompt do Pedro. Agora entram consentimento, leitor, cofre,
 transporte e retomada do cliente Python com fixtures. UI/painel ficam em E3b.2.
 Windows não ganha envio por um teste simulado; nenhuma proteção pode ser ignorada
 por flag. Não houve autorização adicional para fonte real, cofre pessoal ou VPS.
+
+## R17 — coletor em implementação, revisão antecipada
+
+Confirmado commit do receptor **`99203a7`**. E3b.1 segue com Luna como único
+escritor de código; o coordenador acompanha o diff, não apenas prepara prompts.
+
+Na primeira leitura dos arquivos ainda em construção, enviados ao executor:
+abertura da raiz desde `/`, componente a componente (NOFOLLOW apenas na raiz
+final não protege seus ancestrais); abertura não bloqueante para recusar FIFO
+trocado antes de `fstat`; assinaturas e liberação dos ponteiros da API nativa do
+Keychain; atualização de segredo sem apagar o anterior em qualquer erro.
+Esses apontamentos ainda não são evidência de correção nem aceite E3b.
+
+O revisor verificou ajuda local do `security`, sem consultar/gravar o cofre.
+Não há prova de canal secreto seguro via `security -i` por pipe. Executor optou
+por adaptador nativo, cuja validação será com doubles, sem credenciais pessoais.
+O coordenador conferiu o [código primário do GNOME](https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c):
+`secret-tool store` recebe stdin até EOF, preservando newline; solicitado enviar
+o token exato, sem acrescentá-la. Lookup com erro não distingue ausência de
+falha do serviço: deve impedir envio, não disparar substituição silenciosa.
+Também conferido o [header primário da Apple](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/SecKeychainItem.h)
+para liberação e alteração dos itens. Suporte real por SO continua dependente
+do ensaio autorizado na máquina do piloto.
+
+Enquanto o executor implementa, o revisor prepara por leitura a integração
+mínima do inventário de migrations núcleo + ferramentas para E4/E5. Não há
+segundo escritor, instalação remota ou ativação de capacidade nova.

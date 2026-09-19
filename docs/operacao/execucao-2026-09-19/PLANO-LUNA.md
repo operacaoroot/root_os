@@ -295,3 +295,37 @@ critério do plano de produto para declarar a etapa verde.
 A aprovação de capacidade nova permanece humana e explícita. Um fragmento de
 política gerado não é uma assinatura, e autorização para implementar/testar
 localmente não autoriza ativar essa capacidade na VPS.
+
+### Recorte de implementação preparado, ainda não despachado
+
+E4 deve ser pequeno e dividido: primeiro scaffold/contrato validado; depois
+integração determinística de build e inventário de migrations; por fim prova
+HTTP/RLS da ferramenta sintética. E5 reutiliza esse caminho para a segunda,
+atualização e restauração. Não executar scripts de deploy no workspace vivo.
+
+- Um manifesto por `ferramentas/<slug>/` declara prefixo, permissão, capacidades
+  propostas e migrations próprias. Nomes e tabelas têm namespace do slug;
+  colisão com núcleo/outra ferramenta, caminho externo e symlink são recusados.
+  O inventário agregado com hashes é artefato determinístico, não catálogo de
+  plugins nem autorregistro de autorização.
+- Pré-check de atualização combina migrations da tag candidata com as das
+  ferramentas preservadas e verifica todas as aplicadas, inclusive checksum.
+  O mesmo inventário deve chegar ao build/ensaio/migração, sem editar migrations
+  históricas nem copiar SQL somente depois da checagem de compatibilidade.
+- Para o molde mínimo, SQL próprio e queries parametrizadas de tabela constante
+  evitam compor um Prisma Client dinâmico. Tabelas têm empresa obrigatória,
+  integridade, ENABLE/FORCE RLS e a política efetiva existente no repositório;
+  teste com papel restrito e duas empresas. Prisma tipado por ferramenta fica
+  fora deste recorte, não como promessa implícita.
+- A imagem anterior precisa continuar funcionando contra o schema expandido
+  no ensaio. Restore recupera dado/schema em destino descartável; desligar
+  módulo não é rollback. Classificação/aprovação de capacidade e publicação
+  continuam portões humanos; fixtures de autorização não contam como assinatura.
+- Testes mínimos: duas pastas sem editar núcleo por ferramenta; slug/caminho/
+  colisão/manifesto inválidos; SQL adulterado/ausente/extra; banco novo e upgrade;
+  negativa RLS; primeiro módulo preservado após segundo; identidade do artefato,
+  imagem anterior e restore com dado sintético conferido.
+
+O executor deve apresentar qualquer incompatibilidade com os gates existentes
+antes de ampliar esse contrato. A fiscalização de prefixos/permissões e a régua
+do gateway não podem ser removidas para acomodar ferramentas customizadas.
