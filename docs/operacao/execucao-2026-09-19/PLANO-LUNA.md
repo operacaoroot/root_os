@@ -11,6 +11,9 @@ hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas
   `high`, criado nesta sessão a pedido explícito do Pedro. Único escritor de código.
 - Coordenador: esta sessão; escreve o plano/registro, revisa diffs e evidências,
   envia as tarefas e esclarece dúvidas do Luna. Não implementa código em paralelo.
+- Apoio pontual: `/root/luna_revisao_coletor`, também `gpt-5.6-luna`, esforço
+  `medium`, somente leitura. Preparou recorte P3 e revisou caminhos de memória
+  enquanto o executor implementava E2b. Não altera arquivos nem cria recursos.
 - Pedro: aprova fronteiras remotas, uso de dados/provedores e participa dos aceites
   que precisam de usuário real. O cliente/terceiro executa o aceite independente.
 - Cada tarefa termina com diff, testes, riscos e próximo passo. O coordenador
@@ -122,3 +125,22 @@ faltantes como completas.
 - E2b autorizada: memória por empresa + grants de fonte exata/campos, default deny,
   autorização humana atual, projeção/consulta limitada e procedência; MCP/painel
   entram depois. Provas de integração devem ficar reutilizáveis no repositório.
+
+## Recorte preparado para E2c (após revisão E2b)
+
+- API: completar leitura por id no controlador estreito de agente, com o mesmo
+  filtro de fonte/campo e rastro da busca. Não reutilizar a leitura humana integral.
+- MCP: evoluir `packages/mcp/src/client.ts` e `server.ts`, oferecendo
+  `memoria_buscar`/`memoria_ler` com PAT exclusivo. Token ausente, inválido ou
+  revogado não dispara login de conta compartilhada. O modo cliente não deve
+  exigir senha de serviço nem anunciar ferramentas que seu token não pode usar.
+  Compatibilidade legada, se mantida, deve ser explícita e não reabrir memória
+  integral pelo caminho antigo. HTTPS, sem encaminhar bearer em redirects,
+  timeout e erros sem conteúdo/segredo.
+- Painel: reaproveitar `/contexto` e helpers de autenticação para tokens próprios
+  e concessões da empresa. Separar permissão de emitir token da de consentir
+  dados; exibir texto/destino/fonte/campos antes de consentir. Exibição única do
+  segredo, sem persistência no browser. Conectar não concede fonte automaticamente.
+- Entrega: instrução curta baseada nos comandos efetivos do pacote, testes de
+  cliente MCP/UI e HTTP restrito. Não simular conexão humana no Claude Code como
+  aceite concluído. Não criar outro servidor, catálogo ou sistema de orquestração.
