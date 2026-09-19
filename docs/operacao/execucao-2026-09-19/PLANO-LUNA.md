@@ -458,3 +458,38 @@ RLS declarada, porque policy sem linhas de teste não comprova isolamento.
 Queries de dados do molde são parametrizadas e com tabela constante; não há
 catraca global de `RawUnsafe` no código atual, portanto conferir o molde e os
 casos negativos explicitamente, sem prometer sandbox por análise de strings.
+
+### Despacho preparado E4a — contrato e geração, antes da ativação
+
+Após o aceite de E3b.2b.2, o mesmo Luna permanece escritor exclusivo. Primeira
+subfatia de E4 entrega `pnpm criar-ferramenta <slug>` com stdlib Node e molde
+documentado: manifesto JSON, módulo/página, migration SQL, fixture e proposta de
+capacidade. Gerar uma pasta não ativa tenant ou política e não publica nada.
+O gerador recusa sobrescrever uma pasta existente e valida antes de escrever.
+
+Separar criação de preparação determinística do build. A preparação lê dados
+do manifesto, sem executar código da ferramenta no precheck; enumera todos os
+arquivos relevantes e hashes. Staging de TS da API fica dentro de `src`, para
+preservar `dist/main.js`. Staging Next usa área reservada que não confunde a
+rota `/ferramentas` existente com páginas de ferramentas. Só saídas comprovadamente
+geradas podem ser substituídas; colisão com conteúdo não gerado deve recusar.
+Ferramenta removida não pode sobreviver em artefato obsoleto. Duas preparações
+sem alteração devem produzir bytes iguais, sem timestamps voláteis.
+
+Provas desta subfatia são em temporários: dois slugs, nomes inválidos, colisões,
+symlinks, manifesto inválido, arquivo declarado ausente/extra e remoção de
+ferramenta. O núcleo não recebe edição por slug. Não colocar demonstrações do
+cliente permanentemente em `ferramentas/` rastreadas pela release do núcleo.
+O contrato inicial limita a fixture SQL a tabela direta de tenant; não adicionar
+motor de schema/plugins. Dependências externas exigem decisão, não `npm install`.
+
+Hooks devem cobrir chamadas diretas aos pacotes (Docker usa `pnpm --filter`
+e não passa pelo script raiz), além de dev/build/typecheck/test quando precisam
+dos artefatos. Preparação antes do hash do Turbo e entradas globais de ferramentas
+evitam cache stale. Preparadores paralelos não devem apagar a saída um do outro;
+uma alternativa pequena é preparação por alvo com registro comum determinístico.
+O mecanismo exato é revisado com o diff, não presumido como pronto.
+
+E4b integra bridge estável, ativação/autorização atual, gateway, página funcional
+e provas HTTP/RLS. E4c fecha inventário agregado e scripts de atualização. Nenhuma
+subfatia isolada equivale ao aceite P4 com pessoa cliente e publicação remota.
