@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b revisadas localmente; E2c autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c revisadas localmente; E3a.1 autorizada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -131,6 +131,12 @@ faltantes como completas.
   substitui regressão integrada E6 nem execução real do workflow remoto de CI.
 - E2c enviada ao Luna: leitura por id, cliente MCP exclusivo de PAT e controles
   mínimos no painel; humano/P2 final continuam abertos.
+- E2c aprovada localmente: coordenador repetiu web **386/386** e smoke MCP,
+  inclusive após correção do JSON inválido. Executor entregou HTTP compilado
+  restrito, integração SQL 3/3, tipos/builds e CI localmente configurada. Não há
+  aceite humano P2 nem execução da CI no GitHub. Commit focado autorizado.
+- E3a subdividida para revisão segura: E3a.1 identidade, fontes e pareamento/pulso;
+  E3a.2 remessas, revisões, finalização e frescor. E3b integra o coletor local.
 
 ## Recorte preparado para E2c (após revisão E2b)
 
@@ -150,3 +156,36 @@ faltantes como completas.
 - Entrega: instrução curta baseada nos comandos efetivos do pacote, testes de
   cliente MCP/UI e HTTP restrito. Não simular conexão humana no Claude Code como
   aceite concluído. Não criar outro servidor, catálogo ou sistema de orquestração.
+
+## Contrato E3a.1 — dispositivo e fontes, antes do envio
+
+O Luna implementa o módulo receptor `conector`, sem acessar arquivos reais.
+Reutiliza o contrato da seção 3 do plano de produto:
+
+- Fonte lógica de pasta/arquivo: filtros, tipos permitidos, limites, modo,
+  regra de exclusão, versão de escopo e revogação. Nunca raiz absoluta ou
+  credenciais. A fonte não concede acesso ao agente/modelo automaticamente.
+- Dispositivo vinculado a empresa e fontes autorizadas. Credencial opaca
+  separada do PAT de memória, apenas hash persistido. RLS FORCE e integridade
+  de vínculos impedem combinar objetos de empresas diferentes.
+- Código de pareamento de 15 minutos, uso único transacional, pelo menos 128
+  bits aleatórios, hash persistido e tentativas limitadas. Seletor público serve
+  para resolver o tenant, não como autorização nem como leitura global livre.
+- `POST /conector/pareamento` troca o código pelo token;
+  `POST /conector/pulso` exige o token de dispositivo e relê revogação/empresa/
+  fontes. Corpo não escolhe empresa. Tokens JWT, PAT e dispositivo não se
+  substituem entre as três superfícies.
+- Gestão humana mínima de fonte/código/dispositivo com JWT e permissões
+  atuais `admin.permissoes` + `obsidian.editar`, sem alterar o catálogo de
+  permissões. Auditar as mutações na mesma transação. Não devolver segredos
+  ou hashes em listagens. Declarar prefixo e rotas públicas precisamente.
+- O pulso informa alcance permitido no servidor; o coletor fará a interseção
+  com consentimento local em E3b. O servidor não autoriza ampliar pasta/filtros.
+- Provas: dois tenants com papel SQL restrito, uso único concorrente, expiração,
+  revogação, limite de tentativas, rollback ao falhar auditoria e autorização
+  humana atual. Suíte dedicada com proteção estrita de banco local descartável,
+  CI sequencial e piso sem pulados; smoke HTTP compilado pair/pulse/revoke/deny.
+
+E3a.1 não contém remessa nem UI do coletor. Não confundir o pareamento verde
+com P3 concluído. As restrições de rede, segredos, escrita remota e escritor
+único continuam valendo. Entrega para revisão antes do commit desta subfatia.

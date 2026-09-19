@@ -195,3 +195,41 @@ localmente, não executada no GitHub (nenhum push autorizado).
 Baseline independente web antes de E2c (17:21 -03):
 `pnpm --filter @mktos/web test`, **382/382**, 28 arquivos, exit 0. Há warning
 preexistente de React `act` em custo-ia, sem falha. O commit E2b.1 é `683888e`.
+
+## R11 — revisão em andamento E2c
+
+- MCP: corrigir retry legado recursivo sem limite; timeout precisa cobrir o corpo,
+  não apenas headers. Exigir erros de parse sanitizados e não seguir redirect
+  com bearer. Knowledge legado deve recusar a consulta, sem escapar dos grants.
+- Painel: o primeiro componente usava enums inexistentes (`manual/connector`).
+  Orientado a selecionar fontes já carregadas na memória, com referência exata,
+  e explicar a concessão obrigatória de procedência (`sourceRef`).
+- Consentimento deve conter aviso fixo de saída do conteúdo da VPS ao provedor
+  do agente, sem possibilidade de apagá-lo pelo campo livre. Token não deve
+  persistir em storage e resultados tardios de outra sessão devem ser descartados:
+  limpar state no logout não basta se o POST de emissão ainda está pendente.
+- Revisor Luna conferiu código/testes MCP e UI somente por leitura, sem executar.
+  Emissão pendente seguida de troca de sessão requer teste com promessa controlada.
+
+Conferência independente da instrução de instalação: `claude mcp add --help`,
+exit 0, no CLI instalado. Confirmou sintaxe `name -e KEY=value -- node path` e
+`--scope local`. Nenhum servidor foi adicionado à configuração real do Claude.
+E2c ainda não aceita; executor segue implementação e provas.
+
+## R12 — aceite local E2c e transição para o conector
+
+Correções do transporte e das sessões foram vistas no diff final. O coordenador
+executou às 17:43: web **386/386**, 29 arquivos, exit 0; MCP `smoke:e2c`, exit 0;
+`git diff --check`, exit 0. Após o último ajuste de JSON malformado (erro genérico,
+não retorno nulo de sucesso), repetiu o smoke MCP com exit 0. Luna entregou
+integração SQL 3/3, arquitetura 40/40, tipos/builds e `SMOKE_RESTRITO_OK`.
+
+Aceite local E2c concedido e commit focado autorizado. A nova CI não foi rodada
+remotamente e a conexão humana com Claude continua sem aceite. P3/P4/P5 também
+continuam abertos: a frase do executor “pendentes somente revisão/aceite humano”
+é relativa ao recorte E2c, não ao projeto inteiro.
+
+E3a.1 enviada ao Luna: pareamento/pulso/fontes/dispositivo. Remessas ficam para
+E3a.2, porque a memória atual grava projeção e evento em transações separadas.
+O receptor terá de demonstrar retomada e rastreabilidade sem prometer atomicidade
+que a composição atual não fornece. Nenhuma coleta real foi autorizada.
