@@ -5,26 +5,35 @@ import { criarPrismaService, type PrismaService } from '../src/prisma/prisma.ser
 import { AgentDataGrantService } from '../src/memory/agent-data-grant.service';
 import { MemoriaService } from '../src/memory/memoria.service';
 import { EventLogService } from '../src/gateway/event-log.service';
-import { exigirBancoDescartavel } from './banco-de-teste';
+import { bancoDescartavelEstrito } from '../src/common/banco-descartavel';
 
 const URL_ADMIN = process.env.TEST_DATABASE_URL ?? '';
 const URL_TENANT = process.env.TENANT_DATABASE_URL ?? '';
 const dedicado = process.env.MKTOS_CONJUNTO_DE_TESTES === 'memoria-agente';
 if (dedicado) {
   if (!URL_ADMIN || !URL_TENANT) throw new Error('memoria-agente exige TEST_DATABASE_URL e TENANT_DATABASE_URL.');
-  exigirBancoDescartavel(URL_ADMIN, 'fixtures ADR-015');
-  exigirBancoDescartavel(URL_TENANT, 'leitura ADR-015');
   const adminUrl = new URL(URL_ADMIN);
   const tenantUrl = new URL(URL_TENANT);
+  const hostsPermitidos = new Set(['127.0.0.1', 'localhost']);
+  if (!hostsPermitidos.has(adminUrl.hostname) || !hostsPermitidos.has(tenantUrl.hostname)) {
+    throw new Error('memoria-agente exige conexões em localhost/127.0.0.1.');
+  }
   if (adminUrl.hostname !== tenantUrl.hostname || adminUrl.port !== tenantUrl.port || adminUrl.pathname !== tenantUrl.pathname) {
-    throw new Error('memoria-agente exige TEST_DATABASE_URL e TENANT_DATABASE_URL no mesmo banco/host.');
+    throw new Error('memoria-agente exige TEST_DATABASE_URL e TENANT_DATABASE_URL no mesmo banco/host/porta.');
+  }
+  if (!bancoDescartavelEstrito(URL_ADMIN) || !bancoDescartavelEstrito(URL_TENANT)) {
+    throw new Error('memoria-agente exige banco cujo nome contenha test/dev/local/staging/shadow; override não é aceito.');
   }
   if (adminUrl.username === tenantUrl.username) throw new Error('memoria-agente exige usuários admin e mktos_app distintos.');
 }
 
 describe('fronteira ADR-015 da busca de memória', () => {
   const marca = `memoria_agent_${Date.now().toString(36)}_${randomUUID()}`;
-  const admin = new Pool({ connectionString: URL_ADMIN, max: 2 });
+  const admin = dedicado ? new Pool({ connectionString: URL_ADMIN, max: 2 }) : undefined;
+  const adminPool = (): Pool => {
+    if (!admin) throw new Error('memoria-agente não foi habilitada.');
+    return admin;
+  };
   let prisma: PrismaService;
   let memoria: MemoriaService;
   let grants: AgentDataGrantService;
@@ -41,7 +50,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
 
   beforeAll(async () => {
     const now = new Date();
-    const c = await admin.connect();
+    const c = await adminPool().connect();
     try {
       await c.query('BEGIN');
       orgA = randomUUID();
@@ -116,7 +125,8 @@ describe('fronteira ADR-015 da busca de memória', () => {
 
   afterAll(async () => {
     await prisma?.$disconnect();
-    const c = await admin.connect();
+    if (!admin) return;
+    const c = await adminPool().connect();
     try {
       await c.query('BEGIN');
       await c.query('DELETE FROM "AgentDataGrant" WHERE "orgId" IN ($1,$2)', [orgA, orgB]);
@@ -142,7 +152,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
       await c.query('COMMIT');
     } finally {
       c.release();
-      await admin.end();
+      await adminPool().end();
     }
   });
 
@@ -169,7 +179,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
     expect(b.diagnostico).toBe('ok');
     expect(b.itens).toHaveLength(0);
     expect(JSON.stringify(b)).not.toContain('corpo proibido B');
-    const eventos = await admin.query(
+    const eventos = await adminPool().query(
       'SELECT "payload","actorId","correlationId" FROM "EventLog" WHERE "orgId"=$1 AND "tipo"=$2 ORDER BY "seq" DESC',
       [orgA, 'memoria.agent_busca'],
     );
@@ -184,7 +194,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
     expect(vazio.diagnostico).toBe('ok');
     expect(vazio.itens[0]?.fields).toEqual({ title: 'Título B autorizado' });
 
-    const c = await admin.connect();
+    const c = await adminPool().connect();
     try {
       await c.query('UPDATE "AgentDataGrant" SET "revokedAt"=CURRENT_TIMESTAMP WHERE "orgId"=$1', [orgB]);
     } finally {
@@ -211,7 +221,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
     });
     expect(created.sourceRef).toBe(sourceRef);
     expect(created.allowVectorization).toBe(false);
-    const audit = await admin.query(
+    const audit = await adminPool().query(
       'SELECT "action","after" FROM "AuditLog" WHERE "orgId"=$1 AND "entityId"=$2 ORDER BY "createdAt" DESC LIMIT 1',
       [orgA, created.id],
     );
@@ -221,7 +231,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
     await grants.revogar(orgA, userA, created.id);
     const revoked = await grants.listar(orgA, userA);
     expect(revoked.find((row) => row.id === created.id)?.revokedAt).not.toBeNull();
-    const audits = await admin.query(
+    const audits = await adminPool().query(
       'SELECT "action" FROM "AuditLog" WHERE "orgId"=$1 AND "entityId"=$2 ORDER BY "createdAt" ASC',
       [orgA, created.id],
     );
@@ -230,7 +240,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
       'memoria.agent_grant.revogado',
     ]);
 
-    await admin.query('DELETE FROM "_RolePermissions" WHERE "B"=$1', [roleA]);
+    await adminPool().query('DELETE FROM "_RolePermissions" WHERE "B"=$1', [roleA]);
     await expect(grants.conceder(orgA, userA, {
       sourceType: 'upload', sourceRef: `after-downgrade-${marca}.md`, field: 'title',
       provider: 'agente_externo', consentVersion: `${marca}-service-v2`,

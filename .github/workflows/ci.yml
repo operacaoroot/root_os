@@ -1030,6 +1030,42 @@ jobs:
             echo "A suíte mede o isolamento NO BANCO, com o papel restrito \`mktos_app\` fazendo as leituras. Se este job não estiver marcado como verificação obrigatória na proteção de branch da \`main\`, ele reprova e o merge continua liberado."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ADR-015/E2b: esta suíte é deliberadamente separada e sequencial. Ela
+      # cria duas empresas e grava decisões no EventLog; não pode disputar o
+      # mesmo banco com outra suíte que liga/desliga RLS. O gate exige que os
+      # três casos reais rodem, sem skip/pending silencioso.
+      - name: Fronteira ADR-015 da memória de agente
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: memoria-agente
+          RESUMO_MEMORIA_AGENTE: ${{ runner.temp }}/resumo-memoria-agente.json
+          PISO_CASOS_MEMORIA_AGENTE: '3'
+        run: |
+          pnpm --filter @mktos/api exec vitest run test/memoria-agent.integration.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_MEMORIA_AGENTE"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_MEMORIA_AGENTE, "utf8")); }
+            catch (e) { console.log("::error::resumo da fronteira ADR-015 ilegível: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_MEMORIA_AGENTE);
+            const total = r.numTotalTests;
+            console.log("memoria-agente: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados, " +
+              r.numTodoTests + " pendentes (piso: " + piso + ").");
+            const status = (r.testResults || []).flatMap((arquivo) => arquivo.assertionResults || [])
+              .map((caso) => caso.status);
+            if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+                r.numTodoTests !== 0 || status.some((item) => item !== "passed")) {
+              console.log("::error::a fronteira ADR-015 não passou inteira e sem skips.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::a suíte ADR-015 rodou " + total + " casos, abaixo do piso " + piso + ".");
+              process.exit(1);
+            }
+          '
+
       # -----------------------------------------------------------------------
       # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
       #

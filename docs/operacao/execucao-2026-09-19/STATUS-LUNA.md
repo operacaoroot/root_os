@@ -221,9 +221,15 @@ declaram P2 completo.
   `efeitos.service.ts`/`context-builder.service.ts` para `ObsidianService` foram removidas.
 - O harness `apps/api/scripts/smoke-restrito.cjs` foi estendido e executado com cwd temporário,
   env allowlist sintético, timers desligados e `listen(0, 127.0.0.1)`: boot/health, cadastro/login,
-  concessões humanas, emissão de PAT `memoria.buscar`, consulta HTTP textual real, JWT humano
-  recusado no guard PAT, isolamento HTTP e limpeza das fixtures passaram. Nenhuma montagem de
-  home pessoal ou chamada externa foi configurada; o banco foi o mesmo descartável loopback.
+  concessões humanas, emissão de dois PATs em tenants distintos, consulta HTTP textual real,
+  PAT B sem acesso à nota A, revogação de grant efetiva na busca seguinte, revogação de PAT efetiva
+  como `401` no request seguinte, JWT humano recusado no guard PAT, isolamento HTTP e limpeza das
+  fixtures passaram. Nenhuma montagem de home pessoal ou chamada externa foi configurada; o banco
+  foi o mesmo descartável loopback.
+- A integração dedicada valida `bancoDescartavelEstrito` sem `PERMITIR_BANCO_NAO_TESTE`: exige duas
+  URLs localhost/127.0.0.1, mesmo host/porta/database e usuários distintos. O job de isolamento da
+  CI agora executa essa suíte sequencialmente com resumo JSON, piso 3 e recusa qualquer failed,
+  pending, todo ou status diferente de `passed`.
 
 Limites E2b: a migração/serviço local não é aceite humano de fonte real; não há UI/MCP, nem prova
 de catálogo legado, nem autorização de embeddings. O smoke restrito prova apenas as rotas locais

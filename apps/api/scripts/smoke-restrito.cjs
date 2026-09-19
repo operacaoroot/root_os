@@ -57,9 +57,9 @@ if (process.argv[2] !== '--filho') {
   const senha = randomUUID();
   let app;
   let base;
-  async function pedir(path, { token, body, status = 200 } = {}) {
+  async function pedir(path, { token, body, method = body ? 'POST' : 'GET', status = 200 } = {}) {
     const resposta = await fetch(`${base}${path}`, {
-      method: body ? 'POST' : 'GET', signal: AbortSignal.timeout(10_000),
+      method, signal: AbortSignal.timeout(10_000),
       headers: { 'Content-Type': 'application/json', 'x-correlation-id': correlacao,
         ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -95,12 +95,13 @@ if (process.argv[2] !== '--filho') {
     await pedir('/auth/login', { status: 401, body: { email: emails[0], password: 'senha-errada' } });
     const nota = await pedir('/tenants/onboarding/carga/resposta', {
       token: tokens[0], status: 201, body: { tema: 'negocio', orgId: pessoas[1].orgId,
-        resposta: 'Empresa sintética que organiza dados financeiros de pequenas empresas e entrega revisão mensal ao responsável.' },
+        resposta: 'Empresa sintética A: frase-exclusiva-A; organiza dados financeiros de pequenas empresas e entrega revisão mensal ao responsável.' },
     });
     const gravada = await dono.contextItem.findUniqueOrThrow({ where: { id: nota.notaId } });
     assert.equal(gravada.orgId, pessoas[0].orgId, 'orgId do corpo não pode substituir o tenant autenticado');
+    const grantsA = {};
     for (const field of ['sourceRef', 'title', 'body']) {
-      await pedir('/memoria/grants', {
+      grantsA[field] = await pedir('/memoria/grants', {
         token: tokens[0], status: 201,
         body: {
           sourceType: gravada.sourceType, sourceRef: gravada.sourceRef,
@@ -114,7 +115,7 @@ if (process.argv[2] !== '--filho') {
       body: { name: 'smoke-memoria', scopes: ['memoria.buscar'], validadeDias: 1 },
     });
     assert(credencial.token && credencial.id);
-    const buscaAgente = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('Empresa sintética')}`, {
+    const buscaAgente = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-exclusiva-A')}`, {
       token: credencial.token,
     });
     assert.equal(buscaAgente.diagnostico, 'ok');
@@ -122,6 +123,51 @@ if (process.argv[2] !== '--filho') {
     assert.equal(buscaAgente.itens.length, 1);
     assert.equal(buscaAgente.itens[0].sourceRef, gravada.sourceRef);
     assert(!JSON.stringify(buscaAgente).includes('Bearer'));
+
+    const notaB = await pedir('/tenants/onboarding/carga/resposta', {
+      token: tokens[1], status: 201,
+      body: { tema: 'negocio', orgId: pessoas[0].orgId,
+        resposta: 'Empresa B sintética exclusiva: frase-própria-B sem relação com a empresa A.' },
+    });
+    const gravadaB = await dono.contextItem.findUniqueOrThrow({ where: { id: notaB.notaId } });
+    assert.equal(gravadaB.orgId, pessoas[1].orgId);
+    const grantsB = {};
+    for (const field of ['sourceRef', 'title', 'body']) {
+      grantsB[field] = await pedir('/memoria/grants', {
+        token: tokens[1], status: 201,
+        body: {
+          sourceType: gravadaB.sourceType, sourceRef: gravadaB.sourceRef,
+          field, provider: 'agente_externo', consentVersion: 'smoke-v1',
+          consentText: `Consentimento sintético explícito: ${gravadaB.sourceType}/${gravadaB.sourceRef}/${field}.`,
+        },
+      });
+    }
+    const credencialB = await pedir('/auth/agent-tokens', {
+      token: tokens[1], status: 201,
+      body: { name: 'smoke-memoria-b', scopes: ['memoria.buscar'], validadeDias: 1 },
+    });
+    const buscaB = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-exclusiva-A')}`, {
+      token: credencialB.token,
+    });
+    assert.equal(buscaB.diagnostico, 'ok');
+    assert.equal(buscaB.itens.length, 0, 'PAT da empresa B não pode ver a nota A');
+    const buscaBPropria = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-própria-B')}`, {
+      token: credencialB.token,
+    });
+    assert.equal(buscaBPropria.itens.length, 1);
+    assert.equal(buscaBPropria.itens[0].sourceRef, gravadaB.sourceRef);
+
+    const grantsListadas = await pedir('/memoria/grants', { token: tokens[0] });
+    const grantBodyA = grantsListadas.find((grant) => grant.field === 'body' && grant.sourceRef === gravada.sourceRef);
+    assert(grantBodyA?.id, 'a concessão de body da empresa A precisa ser listável antes da revogação');
+    await pedir(`/memoria/grants/${grantBodyA.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
+    const buscaAposRevogarGrant = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-exclusiva-A')}`, {
+      token: credencial.token,
+    });
+    assert.equal(buscaAposRevogarGrant.diagnostico, 'ok');
+    assert.equal(buscaAposRevogarGrant.itens.length, 0, 'revogar grant deve valer na busca seguinte');
+    await pedir(`/auth/agent-tokens/${credencial.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
+    await pedir('/agent/memoria/buscar?q=frase-exclusiva-A', { token: credencial.token, status: 401 });
     await pedir('/agent/memoria/buscar?q=Empresa', { token: tokens[1], status: 401 });
     await pedir(`/memoria/${nota.notaId}`, { token: tokens[0] });
     await pedir(`/memoria/${nota.notaId}`, { token: tokens[1], status: 404 });
@@ -129,7 +175,7 @@ if (process.argv[2] !== '--filho') {
     assert.equal((await pedir('/memoria/integridade', { token: tokens[0] })).ok, true);
     // O arranque não pode apenas engolir uma falha de varredura e parecer saudável.
     await app.get(TetoDeCustoIaService).liberarReservasPresas('varredura');
-    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro, login, carga, isolamento HTTP e recusa de provisionamento.');
+    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro/login, grants, PAT, revogações imediatas, isolamento HTTP entre tenants e recusa de provisionamento.');
   }
   async function limpar() {
     if (app) await app.close();
