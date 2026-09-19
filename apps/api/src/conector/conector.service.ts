@@ -397,6 +397,11 @@ export class ConectorService {
     escopoVersao: number;
     revokedAt: Date | null;
     createdAt: Date;
+    ultimaRemessaTentativaEm?: Date | null;
+    ultimaRemessaSucessoEm?: Date | null;
+    ultimaRemessaStatus?: string | null;
+    ultimaRemessaItens?: number | null;
+    ultimaRemessaErros?: number | null;
   }) {
     return {
       id: row.id,
@@ -412,6 +417,11 @@ export class ConectorService {
       escopoVersao: row.escopoVersao,
       revokedAt: row.revokedAt,
       createdAt: row.createdAt,
+      ultimaRemessaTentativaEm: row.ultimaRemessaTentativaEm ?? null,
+      ultimaRemessaSucessoEm: row.ultimaRemessaSucessoEm ?? null,
+      ultimaRemessaStatus: row.ultimaRemessaStatus ?? null,
+      ultimaRemessaItens: row.ultimaRemessaItens ?? null,
+      ultimaRemessaErros: row.ultimaRemessaErros ?? null,
     };
   }
 }

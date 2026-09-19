@@ -1680,12 +1680,17 @@ function rotasDaApi(): { caminho: string; metodo: string; arquivo: string }[] {
  * não aconteceu quando `tenants` liberava a família inteira e três controllers
  * novos entraram por baixo.
  */
+// A gestão dos próprios PATs fica liberada junto de `auth`: suspenso precisa
+// conseguir revogar uma credencial, e essas rotas nunca concedem dados nem
+// acessam memória. A prova de leitura continua no gate separado de
+// `/agent/memoria`, que não pertence à lista.
 const ROTAS_ALCANCADAS_POR_SUSPENSO = [
   'Get /api/assinatura',
   'Get /api/auth/google/callback',
   'Get /api/auth/google/disponivel',
   'Get /api/auth/google/start',
   'Get /api/auth/me',
+  'Get /api/auth/agent-tokens',
   'Get /api/config',
   'Get /api/health',
   'Get /api/health/versao',
@@ -1694,6 +1699,8 @@ const ROTAS_ALCANCADAS_POR_SUSPENSO = [
   'Post /api/assinatura/reativar',
   'Post /api/assinatura/suspender',
   'Post /api/auth/login',
+  'Post /api/auth/agent-tokens',
+  'Post /api/auth/agent-tokens/:id/revogar',
   'Post /api/auth/reautenticar',
   'Post /api/config/password',
   'Put /api/assinatura',

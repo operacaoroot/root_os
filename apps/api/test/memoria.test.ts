@@ -1265,8 +1265,8 @@ describe('o controlador da memória está pendurado no grafo de módulos', () =>
 
   it('o módulo da memória declara o controlador', () => {
     const modulo = ler('src/memory/memoria.module.ts');
-    expect(modulo).toContain('controllers: [MemoriaController]');
-    expect(modulo).toContain('exports: [MemoriaService]');
+    expect(modulo).toMatch(/controllers:\s*\[[^\]]*MemoriaController/);
+    expect(modulo).toMatch(/exports:\s*\[[^\]]*MemoriaService/);
   });
 });
 

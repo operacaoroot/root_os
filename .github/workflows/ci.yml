@@ -1107,6 +1107,27 @@ jobs:
             }
           '
 
+      # E3a.2: remessa ordenada e projeção de memória no mesmo banco restrito.
+      - name: Remessa do conector local
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: conector-remessa
+          RESUMO_CONECTOR_REMESSA: ${{ runner.temp }}/resumo-conector-remessa.json
+          PISO_CASOS_CONECTOR_REMESSA: '6'
+        run: |
+          pnpm --filter @mktos/api exec vitest run \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_CONECTOR_REMESSA"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_CONECTOR_REMESSA, "utf8")); }
+            catch (e) { console.log("::error::resumo da remessa ilegível: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_CONECTOR_REMESSA);
+            const status = (r.testResults || []).flatMap((a) => a.assertionResults || []).map((c) => c.status);
+            console.log("conector-remessa: " + r.numTotalTests + " casos, " + r.numPassedTests + " verdes, " + r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 || r.numTodoTests !== 0 || status.some((s) => s !== "passed") || r.numTotalTests < piso) process.exit(1);
+          '
+
       # -----------------------------------------------------------------------
       # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
       #

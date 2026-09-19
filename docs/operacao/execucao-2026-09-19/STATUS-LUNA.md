@@ -259,6 +259,101 @@ E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e prove
   quatro tabelas. `FILHOS_COM_ORGID_REDUNDANTE`, o catálogo `ALVOS` e a fixture genérica de
   `tenant-isolation` agora cobrem fonte, dispositivo, relação de dois pais e código.
 
+## E3a.2 — remessa local (implementação aguardando revisão; sem commit)
+
+- `ConnectorDelivery` atribui `ordem` monotônica na abertura, sob lock comum de
+  `(orgId, fonteId)`. Lote e fim usam o mesmo lock e revalidam dispositivo,
+  empresa, vínculo, fonte ativa, modo e `escopoVersao`; uma remessa aberta antes
+  de outra não pode sobrescrever estado mesmo chegando depois.
+- `POST /api/conector/remessa` é idempotente por `(dispositivo, chaveRequisicao)`
+  e recusa reutilização da chave em outro escopo. `POST /:id/lote` e
+  `POST /:id/fim` usam exclusivamente `ConectorDeviceGuard`; JWT/PAT não são
+  credenciais de remessa. Retry de fim concluído devolve o recibo depois de
+  revalidar fonte/dispositivo, sem nova versão.
+- `ConnectorDeliveryItem` guarda somente chave, hash, tamanho, revisão e ponteiro;
+  `ConnectorItemState` guarda a última ordem por `(fonte,caminho)`. O texto é
+  projetado apenas em `ContextItem`/`ContextItemVersion`, com chave estável
+  `conector:<fonteId>:<caminho>`, `sourceType=conector` e `sourceRef` exato.
+  Hash SHA-256 e tamanho são recalculados no servidor; limites de arquivo/lote,
+  `.md/.txt/.csv`, caminhos relativos, filtros de fonte e links declarados são
+  recusados no serviço.
+- Abertura, recibo, projeção/versionamento e evento do rastro são uma transação.
+  `EventLogService.registrarNaTransacao` reutiliza a montagem/encadeamento
+  existente sem duplicar algoritmo; payload contém `itemId`, `versaoId`,
+  `versao` e `mudanca`, sem `agentSlug` inventado nem corpo. Falha sintética de
+  auditoria desfaz a projeção e permite retry sem duplicata.
+- O fim exige manifesto de chaves (não somente contagem), confere contador com o
+  recibo servidor, separa falha/parcial de sucesso e só arquiva ausências em
+  sincronização com manifesto completo e regra `arquivar`. Revogação não apaga
+  conteúdo recebido; `ConnectorSource` expõe tentativa, sucesso, status,
+  contagem e erro da última remessa no pulso/listagem.
+- Migration `20260919140000_conector_remessas` cria tabelas novas com FK, RLS e
+  FORCE. Triggers conferem empresa de dispositivo/fonte, fonte de remessa/item
+  e `ContextItem` do mesmo tenant/fonte. Catálogo de modelos, fixture genérica e
+  conjunto Vitest dedicado foram atualizados; o parser HTTP tem teto explícito
+  de 12 MiB no `main` e no harness restrito; o serviço limita cada arquivo a
+  2 MiB e cada lote a 10 MiB.
+
+### Evidências E3a.2 atuais
+
+- `pnpm --filter @mktos/api typecheck`: exit 0.
+- `pnpm --filter @mktos/api typecheck:test`: exit 0.
+- `ContextoInterceptor` agora projeta a identidade já verificada do dispositivo
+  como tenant/ator técnico no contexto HTTP; assim os gates globais de módulo e
+  suspensão não tratam o pulso/remessa como requisição anônima. A suíte de
+  contexto+assinatura ficou em **99 pass / 15 pending**, sem falhas; a lista de
+  suspensão documenta que PATs próprios em `/auth/agent-tokens` permanecem
+  acessíveis para revogação, enquanto `/agent/memoria` continua bloqueado.
+- Regressão API sem banco após o ajuste: **1266 pass / 539 pending**, 0 falhas
+  (49 arquivos). A suíte padrão não inclui os conjuntos DB dedicados.
+- Rodada focada após R15: `configurar-body-parser`, glob do conector e contexto
+  somaram **45/45 pass**. O parser só abre o limite para `/api/conector/remessa`
+  e recusa `/outro/conector/remessa` e `/outro/api/conector/remessa`; a tradução char-a-char cobre `**/`, `**`,
+  `*`, `?`, regex literal e o nome literal `__GLOBSTAR__`.
+- `pnpm --filter @mktos/api exec vitest run test/conector-remessa.integration.test.ts`
+  com `MKTOS_CONJUNTO_DE_TESTES=conector-remessa`: **6/6 pass**, banco próprio
+  `marketing_os_test_rls`, PostgreSQL local em `127.0.0.1:55439`, URLs admin e
+  restrita no mesmo banco e papéis distintos. Casos cobrem idempotência,
+  tenant/dispositivo, trigger cruzado, A→B→A (3 versões), lote atrasado,
+  hash/tamanho/extensão/filtro, manifesto parcial/completo, arquivamento/restauração,
+  concorrência de lote, lote/fim antigos (inclusive caminho inédito), rollback do
+  rastro e revogação entre lote/fim. A prova SQL agora cobre `ConnectorItemState`
+  cruzado/forjado, colisão de chave sem alterar nota anterior, item recebido
+  omitido do manifesto, regra `ignorar` em modo sincronização e modo importação.
+- Na mesma prova, `EventLogService.verificar(orgA)` retornou cadeia íntegra e
+  `MemoriaService.conferirElos(orgA)` retornou `ok=true` e zero versões sem elo
+  após criar, alterar, arquivar e restaurar. O rollback induzido deixou zero
+  item/estado/versão/evento/recibo; o retry criou exatamente uma versão, evento
+  e recibo.
+- `pnpm --filter @mktos/api exec vitest run test/memoria.test.ts
+  test/rastro-por-nivel.test.ts test/rastro-retencao.test.ts`: **39 pass / 54
+  skip**, sem regressão unitária; os skips são os blocos DB esperados sem URLs.
+- `test/tenant-isolation.test.ts` com conexão `mktos_app` restrita: **315/315
+  pass**, incluindo as três tabelas de remessa e triggers de vínculo. O conjunto
+  de arquitetura/modelos/módulos/rotas/parser: **151 pass / 9 pending**, sem
+  falhas; o parser isolado foi **1/1**.
+- Migration completa (45 migrations) foi aplicada do zero no container descartável próprio;
+  nenhum `main.js`, credencial pessoal, provedor externo, VPS ou container do
+  usuário foi usado. O build + `apps/api/scripts/smoke-restrito.cjs` passou com
+  `SMOKE_RESTRITO_OK`: teto de wire `413` acima de 12 MiB, remessa HTTP em loopback,
+  documento sintético acima de 100 KiB, busca sem grant (zero itens),
+  grant explícito conector/campo, busca autorizada, revogação e separação
+  JWT/PAT/dispositivo. O AppModule compilado rodou em subprocesso com cwd
+  temporário, env allowlist sintético e timers desligados.
+- Uma segunda aplicação limpa foi feita em `marketing_os_e3a2_migration_test`:
+  **45/45 migrations** aplicadas pelo `prisma migrate deploy`; o histórico de
+  migrations não reportou divergência/checksum inválido. Isso não substitui um
+  `prisma migrate diff` para provar drift de schema; o banco foi removido em
+  seguida. A prova de suspensão composta
+  (ContextoInterceptor + SuspensaoInterceptor) bloqueou **PAT e dispositivo**
+  em 2/2 identidades, sem tratá-los como anônimos.
+
+Limites para revisão: o endpoint e serviço foram entregues como fixtures locais;
+E3b (cliente/retomada real) continua fora desta fatia. Não há commit E3a.2 ainda;
+o próximo passo é revisão independente dos testes SQL/HTTP seguro e somente então
+commit focado, sem incluir este plano/revisão do coordenador nem documentos
+preexistentes.
+
 ### Evidências E3a.1 atuais
 
 - `pnpm --filter @mktos/api typecheck` e `typecheck:test`: exit 0; `pnpm --filter @mktos/api build`:

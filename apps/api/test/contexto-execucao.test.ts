@@ -18,6 +18,7 @@ import {
 import { ContextoInterceptor } from '../src/common/contexto.interceptor';
 import { LoggerDeCorrelacao } from '../src/common/logger-correlacao';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../src/gateway/efeitos.registry';
+import { SuspensaoInterceptor } from '../src/billing/suspensao.interceptor';
 
 /*
  * O contexto de execução (RF-T-04, RNF-09) sem banco nenhum.
@@ -408,6 +409,41 @@ describe('o interceptor abre o contexto de cada requisição', () => {
       ),
     );
     expect(erro).toBe('SemTenantError');
+  });
+
+  it('guarda de dispositivo abre tenant e ator técnico para os gates globais', async () => {
+    const { execCtx } = pedido({
+      headers: {},
+      connectorDevice: { id: 'device-1', orgId: 'org-device' },
+    });
+    const visto = await firstValueFrom(
+      new ContextoInterceptor().intercept(
+        execCtx,
+        handler(() => contextoAtual()),
+      ),
+    );
+    expect(visto).toMatchObject({
+      orgId: 'org-device',
+      actorType: ActorType.system,
+      actorId: 'device-1',
+      origem: 'http',
+    });
+  });
+
+  it('suspensão composta bloqueia PAT e dispositivo, sem tratar nenhum como anônimo', async () => {
+    const suspensao = new SuspensaoInterceptor({ async estadoDeAcesso() { return 'suspensa'; } } as never);
+    for (const caso of [
+      { path: '/api/agent/memoria/buscar', identidade: { user: { sub: 'pat-owner', orgId: 'org-pat' } } },
+      { path: '/api/conector/pulso', identidade: { connectorDevice: { id: 'device-suspenso', orgId: 'org-device' } } },
+    ]) {
+      const { execCtx, req } = pedido({ headers: {}, originalUrl: caso.path, ...caso.identidade });
+      await expect(firstValueFrom(new ContextoInterceptor().intercept(execCtx, {
+        handle: () => suspensao.intercept(execCtx, handler(() => 'não deveria chegar')),
+      }))).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'assinatura_suspensa' }),
+      });
+      expect(req).toBeTruthy();
+    }
   });
 
   it('reaproveita a correlação que veio de fora — MARCADA como vinda de fora', async () => {

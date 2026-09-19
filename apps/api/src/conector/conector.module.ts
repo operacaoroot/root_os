@@ -4,11 +4,12 @@ import { ConectorController } from './conector.controller';
 import { ConectorDeviceGuard } from './conector-device.guard';
 import { ConectorPublicController } from './conector-public.controller';
 import { ConectorService } from './conector.service';
+import { ConectorRemessaService } from './conector-remessa.service';
 
 @Module({
   imports: [AuthModule],
   controllers: [ConectorController, ConectorPublicController],
-  providers: [ConectorService, ConectorDeviceGuard],
+  providers: [ConectorService, ConectorRemessaService, ConectorDeviceGuard],
   exports: [ConectorService],
 })
 export class ConectorModule {}

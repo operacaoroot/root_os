@@ -9,6 +9,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ZodExceptionFilter } from './common/zod-exception.filter';
 import { LoggerDeCorrelacao } from './common/logger-correlacao';
+import { configurarBodyParser } from './common/configurar-body-parser';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
@@ -18,7 +19,8 @@ for (const name of ['openai.env', 'zapfy.env', 'clickup.env', 'google.env', 'plu
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  configurarBodyParser(app);
 
   /*
    * UM SALTO DE PROXY, E SÓ UM — o Traefik.

@@ -1,6 +1,5 @@
 // Marketing OS — schema Prisma (Fase 1). Multi-tenant-ready via orgId.
 // Ver docs/DATA_MODEL.md. pgvector/embeddings entram na Fase 5.
-
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
@@ -77,6 +76,9 @@ model Org {
   connectorDevices ConnectorDevice[]
   connectorDeviceSources ConnectorDeviceSource[]
   connectorPairingCodes ConnectorPairingCode[]
+  connectorDeliveries    ConnectorDelivery[]
+  connectorDeliveryItems ConnectorDeliveryItem[]
+  connectorItemStates    ConnectorItemState[]
   roles        Role[]
   leads        Lead[]
   campaigns    Campaign[]
@@ -311,6 +313,14 @@ model ConnectorSource {
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   devices         ConnectorDeviceSource[]
+  deliveries               ConnectorDelivery[]
+  deliveryItems            ConnectorDeliveryItem[]
+  itemStates               ConnectorItemState[]
+  ultimaRemessaTentativaEm DateTime?
+  ultimaRemessaSucessoEm   DateTime?
+  ultimaRemessaStatus      String?
+  ultimaRemessaItens       Int?
+  ultimaRemessaErros       Int?
 
   @@index([orgId, revokedAt])
   @@index([orgId, nome])
@@ -328,6 +338,7 @@ model ConnectorDevice {
   createdAt   DateTime                @default(now())
   lastSeenAt  DateTime?
   sources     ConnectorDeviceSource[]
+  connectorDeliveries ConnectorDelivery[]
 
   @@index([orgId, revokedAt])
 }
@@ -383,6 +394,84 @@ enum ConnectorMode {
 enum ConnectorDeletionRule {
   ignorar
   arquivar
+}
+
+enum ConnectorDeliveryStatus {
+  aberta
+  concluida
+  falha
+  revogada
+}
+
+/// Recibo de uma execução do conector. O conteúdo continua exclusivamente em
+/// ContextItem/ContextItemVersion; estas tabelas guardam escopo, revisão e
+/// idempotência, nunca uma segunda cópia do arquivo.
+model ConnectorDelivery {
+  id               String                  @id @default(uuid())
+  orgId            String
+  org              Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  deviceId         String
+  device           ConnectorDevice         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  sourceId         String
+  source           ConnectorSource         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  chaveRequisicao  String
+  ordem            Int
+  modo             ConnectorMode
+  escopoVersao     Int
+  status           ConnectorDeliveryStatus @default(aberta)
+  snapshotCompleto Boolean                 @default(false)
+  itensVistos      Int                     @default(0)
+  itensEnviados    Int                     @default(0)
+  erros            Int                     @default(0)
+  ultimaRevisao    Int                     @default(0)
+  startedAt        DateTime                @default(now())
+  finishedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  items            ConnectorDeliveryItem[]
+
+  @@unique([orgId, deviceId, chaveRequisicao])
+  @@index([orgId, sourceId, createdAt])
+  @@index([orgId, deviceId, status])
+}
+
+model ConnectorDeliveryItem {
+  id              String            @id @default(uuid())
+  orgId           String
+  org             Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  deliveryId      String
+  delivery        ConnectorDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  sourceId        String
+  source          ConnectorSource   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  contextItemId   String?
+  contextItem     ContextItem?      @relation(fields: [contextItemId], references: [id], onDelete: SetNull)
+  caminhoRelativo String
+  hashConteudo    String
+  tamanho         Int
+  revisao         Int
+  createdAt       DateTime          @default(now())
+
+  @@unique([deliveryId, sourceId, caminhoRelativo, hashConteudo])
+  @@index([orgId, sourceId, caminhoRelativo])
+  @@index([orgId, deliveryId])
+}
+
+/// Última revisão aceita por caminho. É metadado de ordenação, não conteúdo.
+model ConnectorItemState {
+  id              String          @id @default(uuid())
+  orgId           String
+  org             Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sourceId        String
+  source          ConnectorSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  caminhoRelativo String
+  hashConteudo    String
+  contextItemId   String
+  contextItem     ContextItem     @relation(fields: [contextItemId], references: [id], onDelete: Cascade)
+  revisao         Int
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([orgId, sourceId, caminhoRelativo])
+  @@index([orgId, sourceId, revisao])
 }
 
 /// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em
@@ -2939,6 +3028,8 @@ model ContextItem {
   atualizadoPor String?
 
   versoes ContextItemVersion[]
+  connectorDeliveryItems ConnectorDeliveryItem[]
+  connectorItemStates    ConnectorItemState[]
 
   /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
   @@unique([orgId, chave])

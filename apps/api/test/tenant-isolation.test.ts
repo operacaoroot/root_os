@@ -299,6 +299,9 @@ const ALVOS: Alvo[] = [
   { tabela: 'ConnectorDevice', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade opaca do receptor local; o hash do bearer não pode atravessar empresa.' },
   { tabela: 'ConnectorDeviceSource', escopo: 'filho', chaveSql: '"id"', nota: 'Vínculo dispositivo-fonte com dois pais; o trigger confere ambos no mesmo tenant.' },
   { tabela: 'ConnectorPairingCode', escopo: 'tenant', chaveSql: '"id"', nota: 'Código de pareamento de uso único; hash e seleção lógica são dados do tenant.' },
+  { tabela: 'ConnectorDelivery', escopo: 'tenant', chaveSql: '"id"', nota: 'Tentativa de remessa: escopo, ordem e frescor sem conteúdo.' },
+  { tabela: 'ConnectorDeliveryItem', escopo: 'filho', chaveSql: '"id"', nota: 'Recibo de item do dispositivo e da fonte, sem segunda cópia do corpo.' },
+  { tabela: 'ConnectorItemState', escopo: 'filho', chaveSql: '"id"', nota: 'Última revisão por caminho lógico, usada para recusar lotes atrasados.' },
   { tabela: 'Role', escopo: 'tenant', chaveSql: '"id"', nota: 'Papéis por org.' },
   { tabela: 'AuditLog', escopo: 'tenant', chaveSql: '"id"', nota: 'Concentra before/after das outras 57 tabelas. A mais sensível do banco.' },
   { tabela: 'ChannelIdentity', escopo: 'tenant', chaveSql: '"id"', nota: 'Amarra um número de WhatsApp/Telegram a um usuário: é caminho de AUTENTICAÇÃO, não só de dado.' },
@@ -826,10 +829,10 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   // vetorial cruzada exige que a linha de B seja a vizinha MAIS PRÓXIMA da
   // consulta, e é o que faz um vazamento ser determinístico em vez de sorte.
   const contextoId = await ins(c, 'ContextItem', {
-    id: crypto.randomUUID(), orgId, chave: `vault:regras/${suf}.md`, kind: 'regra',
+    id: crypto.randomUUID(), orgId, chave: `conector:${connectorSourceId}:fixture-${rotulo}.md`, kind: 'regra',
     title: `Regra da casa ${rotulo}`,
     body: `Regra secreta da org ${rotulo} (${MARCA}): desconto máximo, alçada e exceções.`,
-    tags: ['regra'], sourceType: 'vault', sourceRef: `regras/${suf}.md`,
+    tags: ['regra'], sourceType: 'conector', sourceRef: `${connectorSourceId}/fixture-${rotulo}.md`,
     confidence: 1, embedding: vec, contentHash: `hash_${suf}`, versao: 1,
     criadoEm: agora, atualizadoEm: agora,
   }, { tags: 'text[]', embedding: 'vector' });
@@ -840,8 +843,27 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, itemId: contextoId, versao: 1, mudanca: 'criacao',
     kind: 'regra', title: `Regra da casa ${rotulo}`,
     body: `Regra secreta da org ${rotulo} (${MARCA}): desconto máximo, alçada e exceções.`,
-    sourceType: 'vault', sourceRef: `regras/${suf}.md`, contentHash: `hash_${suf}`,
+    sourceType: 'conector', sourceRef: `${connectorSourceId}/fixture-${rotulo}.md`, contentHash: `hash_${suf}`,
     motivo: `semente de isolamento ${rotulo}`, autorTipo: 'user', autorId: userId,
+  }));
+
+  // --- recibo de remessa (E3a.2): só hash/chave/revisão, nunca uma segunda
+  // cópia do corpo. A ContextItem acima é o único conteúdo da fixture.
+  const deliveryId = await ins(c, 'ConnectorDelivery', {
+    id: crypto.randomUUID(), orgId, deviceId: connectorDeviceId, sourceId: connectorSourceId,
+    chaveRequisicao: `fixture-${rotulo}-${MARCA}`, ordem: 1, modo: 'sincronizacao', escopoVersao: 1,
+    status: 'concluida', snapshotCompleto: true, itensVistos: 1, itensEnviados: 1, erros: 0,
+    ultimaRevisao: 1, startedAt: agora, finishedAt: agora, createdAt: agora, updatedAt: agora,
+  });
+  reg('ConnectorDelivery', deliveryId);
+  s.ref.deliveryId = deliveryId;
+  reg('ConnectorDeliveryItem', await ins(c, 'ConnectorDeliveryItem', {
+    id: crypto.randomUUID(), orgId, deliveryId, sourceId: connectorSourceId, contextItemId: contextoId,
+    caminhoRelativo: `fixture-${rotulo}.md`, hashConteudo: `hash_${suf}`, tamanho: 64, revisao: 1, createdAt: agora,
+  }));
+  reg('ConnectorItemState', await ins(c, 'ConnectorItemState', {
+    id: crypto.randomUUID(), orgId, sourceId: connectorSourceId, caminhoRelativo: `fixture-${rotulo}.md`,
+    hashConteudo: `hash_${suf}`, contextItemId: contextoId, revisao: 1, updatedAt: agora,
   }));
 
   reg('ContentItem', await ins(c, 'ContentItem', {

@@ -18,6 +18,12 @@ interface UsuarioDoPedido {
   orgId?: string;
 }
 
+/** Identidade já verificada por uma guarda de conector (sem importar o módulo). */
+interface DispositivoDoPedido {
+  id?: string;
+  orgId?: string;
+}
+
 /**
  * Cabeçalho de correlação vindo de fora é CONTEÚDO, não instrução: ele entra em
  * linha de log e em resposta HTTP. Aceito só o que é inofensivo nesses dois
@@ -60,11 +66,13 @@ export class ContextoInterceptor implements NestInterceptor {
     const req = execCtx.switchToHttp().getRequest();
     const correlationId = this.correlacaoDoPedido(req) ?? novaCorrelacao('http');
     const usuario = req?.user as UsuarioDoPedido | undefined;
+    const dispositivo = req?.connectorDevice as DispositivoDoPedido | undefined;
+    const orgId = usuario?.orgId ?? dispositivo?.orgId ?? null;
 
     const ctx: ContextoExecucao = {
-      orgId: usuario?.orgId ?? null,
-      actorType: usuario?.sub ? ActorType.user : null,
-      actorId: usuario?.sub ?? null,
+      orgId,
+      actorType: usuario?.sub ? ActorType.user : dispositivo?.id ? ActorType.system : null,
+      actorId: usuario?.sub ?? dispositivo?.id ?? null,
       agentSlug: null,
       correlationId,
       origem: 'http',

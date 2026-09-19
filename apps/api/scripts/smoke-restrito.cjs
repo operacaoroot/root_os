@@ -50,6 +50,7 @@ if (process.argv[2] !== '--filho') {
   const { AppModule } = require('../dist/app.module');
   const { ZodExceptionFilter } = require('../dist/common/zod-exception.filter');
   const { TetoDeCustoIaService } = require('../dist/llm/teto-diario.service');
+  const { configurarBodyParser } = require('../dist/common/configurar-body-parser');
   const dono = new PrismaClient();
   const papel = new PrismaClient({ datasourceUrl: process.env.APP_DATABASE_URL });
   const emails = [0, 1].map(n => `smoke-${randomUUID()}-${n}@example.test`);
@@ -70,11 +71,17 @@ if (process.argv[2] !== '--filho') {
   async function rodar() {
     const [role] = await papel.$queryRaw`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`;
     assert.deepEqual(role, { rolsuper: false, rolbypassrls: false });
-    app = await NestFactory.create(AppModule, { logger: ['error', 'warn'], abortOnError: false });
+    app = await NestFactory.create(AppModule, { logger: ['error', 'warn'], abortOnError: false, bodyParser: false });
+    configurarBodyParser(app);
     app.setGlobalPrefix('api');
     app.useGlobalFilters(new ZodExceptionFilter());
     await app.listen(0, '127.0.0.1');
     base = `http://127.0.0.1:${app.getHttpServer().address().port}/api`;
+    const wireOverLimit = await fetch(`${base}/conector/remessa`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oversized: 'x'.repeat(12 * 1024 * 1024) }),
+    });
+    assert.equal(wireOverLimit.status, 413, 'parser da remessa deve rejeitar JSON acima do teto de wire');
     assert.equal((await pedir('/health')).db, 'ok');
     await pedir('/tenants/onboarding/estado', { status: 401 });
     const tokens = [], pessoas = [];
@@ -132,7 +139,7 @@ if (process.argv[2] !== '--filho') {
       body: {
         nome: 'Smoke pasta lógica', tipo: 'pasta', raizLogica: 'cliente/documentos',
         incluir: ['**/*.md'], excluir: ['privado/**'], tiposPermitidos: ['.md'],
-        modo: 'sincronizacao', regraExclusao: 'arquivar', tamanhoMaximo: 1024,
+        modo: 'sincronizacao', regraExclusao: 'arquivar', tamanhoMaximo: 2 * 1024 * 1024,
       },
     });
     const codigoConector = await pedir('/conector/pareamento/codigo', {
@@ -162,6 +169,40 @@ if (process.argv[2] !== '--filho') {
     });
     await pedir('/agent/memoria/buscar?q=frase-exclusiva-A', { token: dispositivo.token, status: 401 });
     await pedir('/auth/agent-tokens', { token: dispositivo.token, status: 401 });
+
+    // E3a.2: a remessa atravessa a mesma ponte de dispositivo, mas não concede
+    // memória por si só. O PAT recebe zero itens até haver grant explícito da
+    // fonte/campo, e só então consegue consultar o texto remetido.
+    const remessa = await pedir('/conector/remessa', {
+      token: dispositivo.token, status: 201,
+      body: { fonteId: fonteConector.id, modo: 'sincronizacao', chaveRequisicao: `smoke-${randomUUID()}` },
+    });
+    const textoRemessa = 'conteúdo sintético exclusivo da remessa ' + 'x'.repeat(120_000);
+    const crypto = require('node:crypto');
+    const hashRemessa = crypto.createHash('sha256').update(textoRemessa).digest('hex');
+    await pedir(`/conector/remessa/${remessa.remessaId}/lote`, {
+      token: dispositivo.token, status: 200,
+      body: { itens: [{ caminhoRelativo: 'docs/smoke.md', texto: textoRemessa, hashConteudo: hashRemessa, tamanho: Buffer.byteLength(textoRemessa), mime: 'text/markdown' }] },
+    });
+    await pedir(`/conector/remessa/${remessa.remessaId}/fim`, {
+      token: dispositivo.token, status: 200,
+      body: { itensVistos: [{ caminhoRelativo: 'docs/smoke.md' }], itensEnviados: 1, erros: [], manifestoCompleto: true },
+    });
+    const refRemessa = `${fonteConector.id}/docs/smoke.md`;
+    const patRemessa = await pedir('/auth/agent-tokens', {
+      token: tokens[0], status: 201,
+      body: { name: 'smoke-remessa-sem-grant', scopes: ['memoria.buscar'], validadeDias: 1 },
+    });
+    const semGrant = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('exclusivo da remessa')}`, { token: patRemessa.token });
+    assert.equal(semGrant.itens.length, 0, 'remessa não concede memória sem grant separado');
+    for (const field of ['sourceRef', 'title', 'body']) await pedir('/memoria/grants', {
+      token: tokens[0], status: 201,
+      body: { sourceType: 'conector', sourceRef: refRemessa, field, provider: 'agente_externo', consentVersion: 'smoke-v1', consentText: `Consentimento sintético explícito: conector/${refRemessa}/${field}.` },
+    });
+    const comGrant = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('exclusivo da remessa')}`, { token: patRemessa.token });
+    assert.equal(comGrant.diagnostico, 'ok');
+    assert.equal(comGrant.itens.length, 1);
+    assert.equal(comGrant.itens[0].sourceRef, refRemessa);
     await pedir(`/conector/fontes/${fonteConector.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
     const pulsoSemFonte = await pedir('/conector/pulso', {
       token: dispositivo.token, status: 200,
@@ -249,7 +290,7 @@ if (process.argv[2] !== '--filho') {
     assert.equal((await pedir('/memoria/integridade', { token: tokens[0] })).ok, true);
     // O arranque não pode apenas engolir uma falha de varredura e parecer saudável.
     await app.get(TetoDeCustoIaService).liberarReservasPresas('varredura');
-    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro/login, grants, PAT, conector pareamento/pulso/revogação, isolamento HTTP entre tenants e recusa de provisionamento.');
+    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro/login, grants, PAT, conector pareamento/pulso/remessa/revogação, isolamento HTTP entre tenants e recusa de provisionamento.');
   }
   async function limpar() {
     if (app) await app.close();

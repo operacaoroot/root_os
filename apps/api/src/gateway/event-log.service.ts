@@ -402,8 +402,6 @@ export class EventLogService {
   // ==========================================================================
 
   async registrar(input: EventoInput): Promise<{ id: string; seq: bigint; hash: string }> {
-    const { payload, contentHash } = this.montar(input);
-
     /*
      * A retenção é lida ANTES da transação do evento, de propósito. Dentro
      * dela, uma consulta que falhasse abortaria a transação inteira no
@@ -413,10 +411,27 @@ export class EventLogService {
      */
     const retencaoAte = await this.retencaoAte(input);
 
-    return this.prisma.$transaction(async (tx) => {
-      // Serializa só os escritores DESTA empresa. hashtext devolve int4; o
-      // advisory lock de transação solta sozinho no commit.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.orgId}))`;
+    return this.prisma.$transaction(async (tx) => this.registrarNaTransacao(tx, input, retencaoAte));
+  }
+
+  /**
+   * Variante para o escritor que já possui uma transação de domínio.
+   * Memória/conector não podem confirmar projeção e recibo deixando o rastro
+   * para depois: se esta chamada falhar, a transação do chamador também falha.
+   * A montagem/redação permanece encapsulada aqui para que escritores de
+   * domínio não possam inserir payloads ou hashes fora da política do evento.
+   */
+  async registrarNaTransacao(
+    tx: Prisma.TransactionClient,
+    input: EventoInput,
+    retencaoAte?: Date,
+  ): Promise<{ id: string; seq: bigint; hash: string }> {
+    const { payload, contentHash } = this.montar(input);
+    const prazo = retencaoAte ?? await this.retencaoAte(input);
+
+    // Serializa só os escritores DESTA empresa. hashtext devolve int4; o
+    // advisory lock de transação solta sozinho no commit.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.orgId}))`;
 
       const ultimo = await tx.eventLog.findFirst({
         where: { orgId: input.orgId },
@@ -456,12 +471,11 @@ export class EventLogService {
           prevHash,
           hash,
           ocorreuEm,
-          retencaoAte,
+          retencaoAte: prazo,
         },
         select: { id: true, seq: true, hash: true },
       });
-      return linha;
-    });
+    return linha;
   }
 
   // ==========================================================================
