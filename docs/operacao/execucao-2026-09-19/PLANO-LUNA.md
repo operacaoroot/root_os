@@ -1,14 +1,20 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1 revisadas localmente; E3b.2a enviada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1/E3b.2a aceitas localmente; próximo E3b.2b**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
 
 ## Papéis e mecanismo real
 
-- Executor: subagente **`/root/luna_executor`**, modelo **`gpt-5.6-luna`**, esforço
-  `high`, criado nesta sessão a pedido explícito do Pedro. Único escritor de código.
+- Executor inicial: **`/root/luna_executor`**, modelo **`gpt-5.6-luna`**, esforço
+  `high`, criado nesta sessão a pedido explícito do Pedro. Interrompido durante
+  a recuperação de E3b.2a, sem apagar suas alterações.
+- Executor atual: **`/root/luna_fechamento`**, **`gpt-5.6-luna`**, esforço
+  `medium`, contexto reduzido e tarefa delimitada. É o único escritor de código
+  desde a transferência; o executor anterior não deve retomar sem nova passagem
+  explícita da exclusividade. A transferência evita manter uma rodada longa sem
+  checkpoint verificável e preserva o pedido de execução pelo Luna.
 - Coordenador: esta sessão; escreve o plano/registro, revisa diffs e evidências,
   envia as tarefas e esclarece dúvidas do Luna. Não implementa código em paralelo.
 - Apoio pontual: `/root/luna_revisao_coletor`, também `gpt-5.6-luna`, esforço
@@ -312,6 +318,27 @@ o próprio usuário/processo que pode editar o cliente e acessar o cofre. Estado
 0600 é privado ao usuário; fingerprint detecta divergência, não equivale a
 assinatura humana inviolável. A fronteira e essa limitação devem ficar claras.
 
+Detalhes do próximo despacho E3b.2b, ainda sujeito ao aceite E3b.2a:
+
+- Prévia de snapshot deriva filtros/tipos/limites da fonte exata do pulso,
+  percorre a raiz inteira suportada e liga essa cobertura ao consentimento.
+  Não basta confiar em `complete=true` de uma prévia genérica que aceita seleção
+  parcial. Varredura de diretórios precisa detectar troca/link e erro, inclusive
+  quando o snapshot está vazio; usar abertura ancorada e verificação de identidade.
+- Comparação com o snapshot anterior separa novos, alterados e ausentes. A
+  confirmação mostra esses grupos e a regra de ausência; novos e alterações têm
+  confirmações distintas. Nada autoriza incorporações descobertas na retomada.
+- Remessa vazia só é válida para snapshot integral comprovado, não para
+  importação vazia. Antes do fim, conferir que o snapshot não mudou; se mudou,
+  não declarar sucesso nem arquivar ausentes. Testar também árvore que mudou
+  entre a varredura, os lotes e a finalização.
+- Seletor de arquivo/pasta é opcional e local; cancellation não coleta, seleção
+  não aprova. Toolkit ausente tem erro útil e mantém o CLI. Testes usam doubles,
+  sem abrir diálogos nesta máquina ou instalar dependências globais.
+- Provar via HTTP compilado os snapshots e a regra de ausência com fixtures;
+  manter a distinção entre importação, snapshot manual e agendamento contínuo.
+  Não instalar scheduler nem apresentar o suporte Windows como validado.
+
 ## Dependência identificada para E4/E5 — migrations das ferramentas
 
 O revisor Luna confirmou por leitura que `deploy/atualizar.sh` inventaria o
@@ -379,3 +406,18 @@ controlados. O molde inicial pode declarar permissões existentes apropriadas
 (por exemplo, `mcp.ver`/`mcp.executar` para ferramentas), sem inventar uma nova
 chave ou rodar o sincronizador destrutivo. Se uma ferramenta exigir alçada ou
 permissão nova, isso vira decisão explícita, não alteração automática de perfis.
+
+Revisão adicional para o molde: `mcp.executar` também está nas contas de máquina.
+Uma rota que use `PortaDoOperador` não pode por isso marcar qualquer JWT como
+humano. Reusar a distinção existente `temPapelDeMaquina` e reler usuário/papéis/
+permissões atuais antes da escrita; fixtures devem provar conta de máquina,
+usuário desativado e permissão retirada. Não resolver isso concedendo
+`admin.usuarios` a todos nem presumindo que JWT ainda válido conserva autoridade.
+
+O bridge não deve importar TypeScript diretamente de fora de `apps/api/src`
+e prometer preservar `dist/main.js`: isso pode ampliar o rootDir inferido.
+Preparar cópia determinística para área gerada reservada, recusando colisões e
+artefatos obsoletos, e provar a saída compilada. Manifesto é dado validado, não
+código executado no pré-check. A proposta do revisor sobre ativação por tabela
+própria ainda não foi adotada: escolher o menor mecanismo que preserve negação
+por tenant e o contrato de módulos, sem acrescentar catálogo de plugins.

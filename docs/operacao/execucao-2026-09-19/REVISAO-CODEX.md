@@ -487,3 +487,47 @@ orgId e fonte/versão precisam aparecer para viabilizar o comando real; permitid
 acrescentar orgId autenticado ao retorno da emissão, sem ampliar o login.
 Segredo exibido deve pertencer à sessão emissora já no render, além de limpar
 estado e descartar resposta atrasada. Teste HTTP compilado ainda pendente.
+
+### Segunda leitura da integração
+
+Coordenador repetiu o teste dedicado às 19:51 -03: **5/5**, exit 0, sem os
+avisos de `act` anteriores. Revisor Luna apontou guardas de sessão incompletas
+nas respostas de criar/revogar: solicitado descartar também erro/finalização
+da sessão antiga e testar uma mutação pendente, sem atribuir bypass ao servidor.
+
+O banco descartável foi confirmado por leitura: `rootos-e2a-pg`, imagem
+`pgvector/pgvector:pg16`, bind exclusivo `127.0.0.1:55439`, banco
+`marketing_os_test_rls`. `mktos_app` tem LOGIN e não tem SUPER/BYPASSRLS. A falta
+das URLs no contexto do executor é recuperação de fixture, não portão humano;
+solicitado recuperar credenciais somente em memória, sem expor env/segredos.
+
+Diagnóstico estático do coordenador: o runner de revogação enviava
+`relogio: "smoke"`, incompatível com `z.string().datetime()` no receptor.
+Solicitado corrigir a fixture, sem afrouxar o schema. Um ramo temporário de
+debug que devolvia mensagem de erro HTTP no cliente foi identificado e removido
+da árvore; não pode integrar o cliente de produção.
+
+O registro deve distinguir repetição idempotente HTTP de retomada com perda de
+resposta, hoje coberta por doubles. Requests de lote contêm conteúdo autorizado;
+o que não deve atravessá-los é a raiz absoluta. O estado de entrega não guarda
+raiz/conteúdo/segredo; consentimento local é outro arquivo. Nenhuma dessas
+correções documentais substitui o smoke compilado ainda em validação.
+
+## R21 — aceite local E3b.2a e continuidade
+
+Após interrupção do executor anterior e transferência exclusiva para
+`/root/luna_fechamento` (Luna, medium, contexto reduzido), a fatia foi concluída.
+Luna reportou **SMOKE_RESTRITO_OK**, exit 0, com API compilada, cliente Python
+real em loopback, banco descartável restrito, grant separado e ambas revogações.
+Corrigido o relógio ISO da fixture e incluída recusa por `client.pulse` após
+revogar fonte. Sem ramo de debug em produção; erros do runner expõem somente
+etapa e classe. Retomada com perda de resposta permanece prova unitária.
+
+Painel agora protege também conclusão/erro/finalização de mutações contra troca
+de sessão e reseta `busy`. Luna reportou **392/392 web, 58/58 Python**, tipos e
+builds verdes. Coordenador repetiu o teste dedicado ampliado (**6/6**) e diff
+check, exit 0. Guardas e diff conferidos; commit local focado autorizado.
+
+Seguir diretamente para E3b.2b: snapshot manual seguro, consentimentos distintos,
+seletor opcional e prova integrada. Não é aceite humano P3, nem distribuição
+Windows, agendamento contínuo ou autorização para VPS. E4–E8 permanecem abertos.
