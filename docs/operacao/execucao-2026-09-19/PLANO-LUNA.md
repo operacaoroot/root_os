@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1/E3b.2a/E3b.2b.1 aceitas localmente; E3b.2b.2 em revisão**.
+Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a despachada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.

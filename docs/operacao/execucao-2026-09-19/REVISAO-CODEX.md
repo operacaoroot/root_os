@@ -593,3 +593,36 @@ podem ser substituídos por marcar o seletor do painel como habilitado.
 
 Nenhum diálogo, cofre ou pasta pessoal deve ser aberto para essas provas.
 Windows, distribuição e aceite humano continuam não demonstrados. E4–E8 abertos.
+
+## R24 — coletor integrado aceito localmente; E4a despachada
+
+Às 20:41 -03, coordenador repetiu **83/83 Python**, zero pulados, e o harness
+compilado: **exit 0, `SMOKE_RESTRITO_OK`**, sem sinal/erro de processo. Confirmou
+imagem/bind da fixture e rotacionou apenas senha sintética de `mktos_app`, em
+memória/stdin, como no ensaio anterior. API `typecheck` e `typecheck:test` também
+exit 0 nesta revisão. Executor reportou painel **6/6**, web **392/392**, tipos e
+builds verdes. Commit focado E3b.2b.2 autorizado; não é aceite humano P3.
+
+Prova HTTP: A→B→A→vazio em duas fontes, com regras arquivar e ignorar; exatamente
+quatro remessas concluídas por fonte. Ambas preservam três versões de conteúdo;
+arquivar acrescenta uma versão de arquivamento, ignorar não. Após resposta HTTP
+real, transporte de fixture descarta um recibo de abertura/lote/fim e reconstrói
+o cliente com o estado/cofre anteriores. Chave persistida e IDs observados são
+conferidos antes/depois. Trata-se de perda de recibo **injetada**, não corte
+físico da rede. Raiz absoluta não atravessa requests. Grant para agente continua
+separado da importação.
+
+Seletor é local/opcional e testado com doubles, inclusive cancelamento e erro
+do diálogo com cleanup. Toolkit real não foi instalado/aberto. Caminho vazio no
+CLI é recusado; exemplo de seleção usa `if` e cadeia `preview && approve && sync`,
+para cancelamento não disparar uso de consentimento antigo. Aviso deixa claro
+que diferenças são locais e arquivar afeta todos os itens da fonte ausentes do
+snapshot, inclusive importações anteriores/outro dispositivo.
+
+Uma observação do revisor sobre conjunto `{None}` foi confrontada com o diff:
+o código já filtrava None e incluía a abertura; não foi registrada como defeito
+confirmado. O reforço de comparar estado antes/depois foi implementado e medido.
+
+E4a despachada ao mesmo Luna, escritor exclusivo: contrato/scaffold e staging
+determinístico, sem ativação/publicação. E4b/E4c, E5/E6 e portões E7/E8 continuam
+abertos. Não houve autorização de mutação remota, push, merge ou dados reais.
