@@ -531,3 +531,37 @@ check, exit 0. Guardas e diff conferidos; commit local focado autorizado.
 Seguir diretamente para E3b.2b: snapshot manual seguro, consentimentos distintos,
 seletor opcional e prova integrada. Não é aceite humano P3, nem distribuição
 Windows, agendamento contínuo ou autorização para VPS. E4–E8 permanecem abertos.
+
+Confirmação independente posterior: coordenador repetiu o harness compilado no
+mesmo container descartável, após verificar imagem/bind e recuperar senha do
+dono somente em memória; rotacionou apenas a senha sintética do papel de teste
+via stdin do psql. **Exit 0, `SMOKE_RESTRITO_OK`**, sem sinal/erro de processo.
+API preservou o timeout interno de 60 s, cwd isolado e allowlist de ambiente.
+Saída do coordenador expôs somente status/marcador, não logs ou credenciais.
+
+## R22 — snapshots manuais, revisão antes de aceite
+
+E3b.2a commitada em **`88dee20`**. E3b.2b.1 segue sem aceite/commit: coordenador
+repetiu **68/68**, zero pulados, mas a suíte nova não exercitava o envio/retomada
+de `SnapshotConsent`. Esses testes são desta fatia, não podem ser adiados para
+contar o núcleo como validado. Seletor e HTTP integrado permanecem a subfatia
+seguinte, sem toolkit/cofre/pastas reais nos testes.
+
+Apontamentos enviados ao Luna: abertura não bloqueante contra troca para FIFO;
+conferência de todos os descritores ancestrais e fechamento único mesmo se
+`fstat` falhar; comparação do filho recém-aberto; limites estritos; vínculo
+obrigatório do consentimento anterior, não envelope opcional nunca produzido;
+booleans estritos e preservação do contrato de arquivo da importação existente.
+
+**Reprodutor independente confirmado, sem servidor/rede:** em fixture de
+`ClientTests`, aprovar um snapshot de um arquivo e construir
+`dataclasses.replace(consent, files=())`. `sync` envia **`/fim` com manifesto
+vazio**, apesar de `snapshot.files` conter um arquivo. A resposta do double
+provoca `TransportError` somente depois; isso é tarde para impedir arquivamento
+no receptor. Solicitada igualdade exata `files`/`snapshot.files` e recusa antes
+de qualquer request, com teste que confira lista de chamadas vazia.
+
+Scanner passou de caminhos para descritores durante a revisão, mas isso ainda
+precisa das negativas de troca/falha/cleanup. Prévia de snapshot lê bytes para
+hash local; não descrevê-la como apenas metadados, característica que continua
+pertencendo à prévia genérica. Nenhuma alteração remota foi autorizada.

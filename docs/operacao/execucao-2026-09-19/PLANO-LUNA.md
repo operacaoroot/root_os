@@ -421,3 +421,28 @@ artefatos obsoletos, e provar a saída compilada. Manifesto é dado validado, n�
 código executado no pré-check. A proposta do revisor sobre ativação por tabela
 própria ainda não foi adotada: escolher o menor mecanismo que preserve negação
 por tenant e o contrato de módulos, sem acrescentar catálogo de plugins.
+
+Recorte refinado após segunda leitura do revisor: usar ativações exatas
+`ferramentas:<slug>` no **`Org.modulos` já existente**, validadas contra o
+artefato gerado. API `/ferramentas/<slug>` tem declaração central única; catálogo
+core `MODULOS` e navegação `/ferramentas` não viram listas editadas por cliente.
+Uma lista explícita de ferramentas ativas pode complementar `/tenants/modulos`,
+sem declarar namespace desconhecido como módulo core nem liberar slug ausente
+do build. Não criar tabela de ativação. A escrita real desses valores continua
+parte da publicação controlada, não um endpoint novo de ativação automática.
+
+A verificação de ativação tem de existir **no efeito/serviço compartilhado**, não
+somente no controller. Caso contrário, chamada de agente ou aprovação retida
+alcança o registro diretamente e ignora a ferramenta desligada. Provar 404/recusa
+entre tenants e recusa após desativar também por esse caminho; manter a
+distinção de ator humano/IA e a política vigente. O conteúdo da tabela própria
+continua sob RLS com papel restrito, independentemente do controle de disponibilidade.
+
+Compatibilidade operacional: o instalador exige Docker/Git/OpenSSL, não Node ou
+Python no host da VPS. Um validador Node para manifests/inventário não pode virar
+dependência oculta de `atualizar.sh`. Usar runtime já disponível na imagem, sem
+rede e com entradas de metadados somente leitura, ou declarar/provar outra
+solução sem instalar runtime adicional silenciosamente. Não montar `.env`, cofre
+ou socket Docker no validador; arquivos da ferramenta são dados, não código a
+executar no pré-check. Ensaiar os scripts em clone/instância descartáveis, nunca
+no workspace ativo nem na VPS sem aprovação.
