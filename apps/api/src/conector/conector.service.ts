@@ -185,7 +185,7 @@ export class ConectorService {
         });
         // `code` is returned only by this emission call; it never reaches the
         // database, list endpoints or audit payload.
-        return { id: row.id, nomeDispositivo: nome, codigo: code, expiraEm: row.expiresAt };
+        return { id: row.id, orgId, nomeDispositivo: nome, sourceIds: ids, codigo: code, expiraEm: row.expiresAt };
       });
     });
   }

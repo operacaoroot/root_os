@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { mkdtempSync, rmdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, spawn } = require('node:child_process');
 
 function validarUrls(dono, restrito) {
   const urls = [dono, restrito].map(valor => {
@@ -19,6 +19,42 @@ function validarUrls(dono, restrito) {
   assert(urls[0].host === urls[1].host && urls[0].pathname === urls[1].pathname,
     'As conexões devem apontar para o mesmo banco.');
   assert(urls[0].username !== urls[1].username, 'O papel restrito deve ser distinto do dono.');
+}
+
+function rodarClientePython(api, entrada) {
+  const raiz = join(__dirname, '../../..');
+  const script = join(raiz, 'tools/conector-local/smoke_http.py');
+  return new Promise((resolve, reject) => {
+    const child = spawn('python3', ['-B', script, '--api', api], {
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH, PYTHONPATH: join(raiz, 'tools/conector-local'), PYTHONWARNINGS: 'error' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderrBytes = 0;
+    const maxOutput = 64 * 1024;
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('cliente Python excedeu o timeout do smoke')); }, 30_000);
+    child.stdout.on('data', (chunk) => {
+      if (Buffer.byteLength(stdout) + chunk.length <= maxOutput) stdout += chunk;
+      else child.kill('SIGKILL');
+    });
+    child.stderr.on('data', (chunk) => { stderrBytes += chunk.length; if (stderrBytes > maxOutput) child.kill('SIGKILL'); });
+    child.on('error', (error) => { clearTimeout(timer); reject(new Error(`cliente Python não iniciou: ${error.message}`)); });
+    child.on('close', (status) => {
+      clearTimeout(timer);
+      if (status !== 0) {
+        try {
+          const diagnostic = JSON.parse(stdout);
+          if (diagnostic?.marker === 'PYTHON_CLIENT_SMOKE_ERROR') {
+            return reject(new Error(`cliente Python falhou (${diagnostic.stage}/${diagnostic.kind}${diagnostic.status ? `/${diagnostic.status}` : ''})`));
+          }
+        } catch { /* diagnóstico não estruturado permanece sanitizado */ }
+        return reject(new Error('cliente Python falhou (erro sanitizado)'));
+      }
+      try { resolve(JSON.parse(stdout)); } catch { reject(new Error('cliente Python não devolveu marcador JSON')); }
+    });
+    child.stdin.end(JSON.stringify(entrada));
+  });
 }
 
 if (process.argv[2] !== '--filho') {
@@ -122,6 +158,49 @@ if (process.argv[2] !== '--filho') {
       body: { name: 'smoke-memoria', scopes: ['memoria.buscar'], validadeDias: 1 },
     });
     assert(credencial.token && credencial.id);
+
+    // E3b.2a: a ponte Python usa uma fonte de importação sintética. A
+    // consulta de memória permanece neste processo para provar a separação
+    // entre identidade do dispositivo e PAT/grant do agente.
+    const fontePython = await pedir('/conector/fontes', {
+      token: tokens[0], status: 201,
+      body: {
+        nome: 'Smoke importação Python', tipo: 'pasta', raizLogica: 'cliente/python-fixture',
+        incluir: ['**/*.md'], excluir: [], tiposPermitidos: ['.md'],
+        modo: 'importacao', regraExclusao: 'ignorar', tamanhoMaximo: 2 * 1024 * 1024,
+      },
+    });
+    const codigoPython = await pedir('/conector/pareamento/codigo', {
+      token: tokens[0], status: 201,
+      body: { nomeDispositivo: 'Python fixture', fonteIds: [fontePython.id] },
+    });
+    assert.equal(codigoPython.orgId, pessoas[0].orgId);
+    assert.deepEqual(codigoPython.sourceIds, [fontePython.id]);
+    const pythonRun = await rodarClientePython(new URL(base).origin, {
+      orgId: pessoas[0].orgId, pairingId: codigoPython.id, code: codigoPython.codigo,
+      sourceId: fontePython.id, humanToken: tokens[0],
+    });
+    assert.deepEqual(
+      { marker: pythonRun.marker, sourceId: pythonRun.sourceId, status: pythonRun.status, revocations: pythonRun.revocations },
+      { marker: 'PYTHON_CLIENT_SMOKE_OK', sourceId: fontePython.id, status: 'concluida', revocations: 'ok' },
+    );
+    assert.equal(pythonRun.sourceRef, `${fontePython.id}/docs/fixture.md`);
+    const itemPython = await dono.contextItem.findFirst({ where: { orgId: pessoas[0].orgId, sourceType: 'conector', sourceRef: pythonRun.sourceRef } });
+    assert(itemPython, 'a remessa Python precisa criar uma nota no tenant correto');
+    const semGrantPython = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase exclusiva do cliente Python')}`, { token: credencial.token });
+    assert.equal(semGrantPython.itens.length, 0, 'importação do conector não concede memória automaticamente');
+    for (const field of ['sourceRef', 'title', 'body']) await pedir('/memoria/grants', {
+      token: tokens[0], status: 201,
+      body: {
+        sourceType: 'conector', sourceRef: pythonRun.sourceRef, field, provider: 'agente_externo',
+        consentVersion: 'smoke-python-v1',
+        consentText: `Consentimento sintético explícito: conector/${pythonRun.sourceRef}/${field}.`,
+      },
+    });
+    const comGrantPython = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase exclusiva do cliente Python')}`, { token: credencial.token });
+    assert.equal(comGrantPython.itens.length, 1, 'grant exato deve liberar somente a nota importada');
+    assert.equal(comGrantPython.itens[0].sourceRef, pythonRun.sourceRef);
+
     const buscaAgente = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-exclusiva-A')}`, {
       token: credencial.token,
     });

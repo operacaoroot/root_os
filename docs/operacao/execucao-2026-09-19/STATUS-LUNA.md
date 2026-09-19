@@ -481,3 +481,57 @@ Pendências/limites explícitos: Windows não tem leitor seguro validado; sincro
 agendamento, seleção de novos arquivos e cliente E3b.2 pertencem às próximas fatias. O commit
 local não foi enviado, mesclado ou implantado e não declara aceite humano nem conclusão de
 P2/P3/P4/P5.
+
+## E3b.2a — integração HTTP restrita e painel mínimo (working tree)
+
+- `apps/api/scripts/smoke-restrito.cjs` agora inicia `tools/conector-local/smoke_http.py` com
+  `spawn` assíncrono enquanto o `AppModule` compilado atende em `127.0.0.1`. O subprocesso usa
+  cwd temporário, `PYTHONPATH` explícito, timers desligados e stdout/stderr limitados/sanitizados;
+  não importa `main.js`, não monta home pessoal e não imprime credenciais. O Python aceita somente
+  `http://127.0.0.1:<porta>` neste ensaio, recebe código/JWT sintéticos por stdin e mantém o bearer
+  no cofre `MemoryVault` injetado; o cliente de produção não ganhou consulta GET de memória.
+- O ensaio integrado cobre pareamento/pulso/abertura/lote/fim reais, fonte em modo importação,
+  seleção confirmada sintética, hash/versão, revogação da fonte (resposta de pulso sem fontes e
+  `client.pulse` recusando) e do dispositivo (pulso HTTP 401). A retomada/deduplicação após perda
+  de resposta permanece provada apenas nos unitários E3b.1, não é alegada como retry HTTP neste
+  smoke. O Node confere a nota importada no tenant correto,
+  ausência de memória antes de grant e acesso depois de três grants exatos; o `sourceRef` esperado
+  é exatamente `fonteId/docs/fixture.md`, sem raiz absoluta. O runner verifica em memória que a
+  raiz física não atravessa os corpos enviados; os corpos de lote contêm somente o conteúdo
+  autorizado, enquanto o `LocalState` não contém raiz, conteúdo ou token.
+- A emissão de código agora devolve somente nessa resposta única `orgId` e `sourceIds` além de
+  `id/codigo/expiraEm`, permitindo ao painel mostrar pareamento, empresa, fontes e `escopoVersao`
+  sem decodificar JWT. `ConectorLocal` exige `admin.permissoes` e `obsidian.editar`, limpa dados e
+  descarta respostas antigas na troca de sessão, lista/revoga fontes e dispositivos, mostra
+  tentativa/sucesso/itens/erros separados e exibe o código apenas até o operador o ocultar.
+  A sincronização contínua fica desabilitada na seleção e o texto instrui apenas a importação atual;
+  a revogação interrompe novas coletas, mas não apaga recebidos nem revoga grant de memória.
+
+### Evidências E3b.2a atuais
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/conector-local -p 'test_*.py' -q`:
+  **58/58**, zero skips.
+- `pnpm --filter @mktos/api typecheck`: exit 0; `pnpm --filter @mktos/web typecheck`: exit 0;
+  `pnpm --filter @mktos/web test`: **392/392** em 30 arquivos; o teste dedicado do painel é
+  **6/6** sem warnings, cobrindo permissões, sessão antiga, código/metadados/ocultar, revogações
+  e descarte de mutação pendente após troca de sessão. As três mutações (criar fonte, revogar
+  fonte/dispositivo e emitir código) conferem a sessão capturada após `await`, no `catch` e no
+  `finally`; a troca de sessão limpa o `busy`.
+  `pnpm --filter @mktos/web build`: exit 0. `node --check apps/api/scripts/smoke-restrito.cjs`,
+  `python3 -B -m py_compile tools/conector-local/smoke_http.py` e `git diff --check`: exit 0.
+- O smoke compilado com banco foi executado com `pnpm --filter @mktos/api build` e
+  `pnpm --filter @mktos/api exec node scripts/smoke-restrito.cjs`: **exit 0 / `SMOKE_RESTRITO_OK`**.
+  Usou somente `rootos-e2a-pg` (`pgvector/pgvector:pg16`, `marketing_os_test_rls`, bind
+  `127.0.0.1:55439`), papel dono sintético separado e `mktos_app` `LOGIN` sem `SUPER/BYPASSRLS`;
+  o papel restrito recebeu senha sintética via stdin do `psql` do container. O procedimento é
+  reproduzível inspecionando o container próprio, confirmando roles pelo socket, alterando apenas
+  a senha sintética de `mktos_app` via stdin e construindo as URLs somente no ambiente do processo;
+  nenhum valor de senha/URL autenticada foi registrado. O harness validou wire >100 KiB e 413,
+  cadastro/login, grants/PAT, Python→API pareamento/pulso/remessa/fim, source/device revocation,
+  isolamento HTTP entre tenants e limpeza das fixtures. Nenhuma prova E3b.2a usa `main.js` no
+  host, cofre/arquivos pessoais, provider, VPS ou rede externa. O painel não cria grants nem
+  promete sincronização contínua.
+
+Limites E3b.2a: aceite humano do disclosure/fonte/escopo continua portão; consulta MCP/cliente
+de memória segue no recorte já aceito de E2c, e sincronização
+contínua/seletor de novos arquivos ficam para E3b.2b. Não há commit desta fatia até revisão.

@@ -6,6 +6,7 @@ import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
 import { AcessoAgente } from './AcessoAgente';
+import { ConectorLocal } from './ConectorLocal';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
 import { Mapa } from './Mapa';
 import {
@@ -297,6 +298,7 @@ export default function ContextoPage() {
       {recado && <p className="text-xs text-muted">{recado}</p>}
 
       <AcessoAgente fontes={memoria.dado?.itens ?? []} />
+      <ConectorLocal />
 
       {(juncao || buscando || erroDaBusca) && (
         <Resultados
