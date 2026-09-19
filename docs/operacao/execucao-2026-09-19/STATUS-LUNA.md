@@ -1,6 +1,6 @@
 # Status do executor Luna — 19/09/2026
 
-Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c aprovada localmente no commit `37043b3`; E3a.1 commitada em `HEAD` e E3a.2 em implementação local.**
+Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c aprovada localmente no commit `37043b3`; E3a.1 commitada em `a09108c`, E3a.2 em `99203a7` e E3b.1 em `5ed5414`; E3b.2a em implementação local.**
 
 ## Limites observados
 
@@ -259,7 +259,7 @@ E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e prove
   quatro tabelas. `FILHOS_COM_ORGID_REDUNDANTE`, o catálogo `ALVOS` e a fixture genérica de
   `tenant-isolation` agora cobrem fonte, dispositivo, relação de dois pais e código.
 
-## E3a.2 — remessa local (implementação aguardando revisão; sem commit)
+## E3a.2 — remessa local (commit local `99203a7`)
 
 - `ConnectorDelivery` atribui `ordem` monotônica na abertura, sob lock comum de
   `(orgId, fonteId)`. Lote e fim usam o mesmo lock e revalidam dispositivo,
@@ -349,10 +349,9 @@ E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e prove
   em 2/2 identidades, sem tratá-los como anônimos.
 
 Limites para revisão: o endpoint e serviço foram entregues como fixtures locais;
-E3b (cliente/retomada real) continua fora desta fatia. Não há commit E3a.2 ainda;
-o próximo passo é revisão independente dos testes SQL/HTTP seguro e somente então
-commit focado, sem incluir este plano/revisão do coordenador nem documentos
-preexistentes.
+o cliente E3b.1 abaixo ainda aguarda revisão e não foi commitado. E3a.2 foi
+commitada localmente em `99203a7`, sem push/merge/deploy, sem incluir este
+status, o plano/revisão do coordenador ou documentos preexistentes.
 
 ### Evidências E3a.1 atuais
 
@@ -380,8 +379,8 @@ preexistentes.
 
 Limites E3a.1: não há acesso real a pasta/arquivo, cliente local, pulso com remessa, UI, provider,
 upload, sincronização ou alteração remota. O pulso apenas anuncia alcance lógico atual; a
-interseção com consentimento local e qualquer remessa pertencem à E3a.2/E3b. O diff aguarda
-revisão do coordenador antes de commit E3a.1.
+interseção com consentimento local e qualquer remessa pertencem à E3a.2/E3b. E3a.1 foi
+commitada localmente em `a09108c`, sem push/merge/deploy.
 
 ## E2c — ponte MCP e painel local
 
@@ -436,3 +435,49 @@ isso evita inventar `sourceRef`, mas não é onboarding de fontes ausentes. O ca
 e ferramentas financeiras/leads legadas continuam fora da fronteira ADR-015. Aceite humano do
 texto/provedor/fonte/campo, teste com PAT real e portões G1/DNS/easyPanel continuam pendentes;
 CI verde não declara P2/P3/P4/P5 concluídos.
+
+## E3b.1 — cliente local de importação consentida (commit local `5ed5414`)
+
+- `tools/conector-local/client.py` implementa pareamento, pulso, abertura/lote/fim e retomada
+  idempotente sobre transporte injetável; a chave da requisição é persistida antes da abertura,
+  recibos têm campos obrigatórios e itens só passam a `sent` após recibo válido. Timeout deixa
+  `deliveryId`/`pending` sem marcar sucesso. O cliente recusa `sincronizacao` nesta subfatia.
+- `secure_reader.py` abre a raiz física componente a componente desde `/`, com `O_NOFOLLOW` e
+  `O_NONBLOCK`, verifica `fstat` de ancestrais/arquivo antes e depois, hash bruto aprovado e
+  versão; traversal, symlink, FIFO, troca durante leitura, raiz por ancestral-link e Windows sem
+  leitor validado falham fechados. A aprovação exige todos os campos da fonte lógica, filtros,
+  extensões, limite, destino fixo `agente_externo` e modo `importacao`.
+- `LocalState` não guarda token ou conteúdo e agora lê/escreve por descritor ancorado, com
+  diretório privado e arquivo 0600. O cofre usa somente Keychain nativo macOS ou `secret-tool`
+  Linux; ausência/erro do cofre não vira ausência silenciosa nem fallback plaintext. A chave do
+  cofre inclui origem HTTPS canônica e identidade do dispositivo.
+- `cli.py` tem fluxo de prévia (opcionalmente persistida), pulso (opcionalmente persistido),
+  aprovação com fonte exata do pulso e sincronização. Nenhum token aparece em argv, estado,
+  logs ou saída; nenhum comando acessa pasta pessoal durante os testes.
+- Hash de API usa trim explícito do conjunto ECMAScript (incluindo BOM), normaliza CRLF e é
+  testado com Unicode/CRLF. Glob local traduz caractere a caractere `*`, `**`, `**/`, `?` e
+  literais, sem expansão de regex.
+
+### Evidências E3b.1 atuais
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/conector-local -p 'test_*.py' -v`:
+  **58/58 pass**, sem skips. Inclui 4 casos de CLI (resumo e confirmação humana, fluxo
+  approve→load→sync, fallback de getpass bloqueado e erro sanitizado após mudança), 15 de cliente
+  (aprovação, hash, origem/fonte/dispositivo, pareamento, cofre ausente, arquivo alterado,
+  timeout/retomada após open/lote/fim aplicados, recibos malformados), 8 de leitor seguro
+  (links/traversal/FIFO/mutação/versão e limpeza de descritores), 5 de cofre/adaptador (incluindo
+  find/add/modify/get/falha/release mockados), 4 de estado (permissões, symlinks e falhas de
+  open/fstat/replace/fsync) e 8 de transporte (HTTPS, redirect real entre dois loopbacks sem
+  bearer no segundo, certificado autoassinado real em loopback, TLS inválido injetado, timeout durante leitura,
+  JSON inválido e teto de wire), além
+  dos 14 da prévia.
+- `python3 -m py_compile tools/conector-local/*.py`: exit 0. O job `conector-local` já existente
+  na CI executa a descoberta completa somente com fixtures/loopback sintético, sem rede externa
+  ou banco.
+- Nenhum teste usa Keychain/Secret Service real, `main.js`, AppModule, credencial do host,
+  diretório de usuário, provedor, VPS ou container; transportes e vault são fixtures injetadas.
+
+Pendências/limites explícitos: Windows não tem leitor seguro validado; sincronização contínua,
+agendamento, seleção de novos arquivos e cliente E3b.2 pertencem às próximas fatias. O commit
+local não foi enviado, mesclado ou implantado e não declara aceite humano nem conclusão de
+P2/P3/P4/P5.
