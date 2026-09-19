@@ -441,3 +441,25 @@ filho ainda não havia entrado na lista de limpeza. Reprodutor enviado ao Luna
 para fechar esse caminho e equivalentes de raiz/componente/arquivo. Ainda não
 há aceite E3b.1, nem autorização remota nova. O job de CI do conector já usa
 `test_*.py`; não é necessário duplicá-lo.
+
+## R19 — aceite da importação pontual e despacho da integração
+
+Rodada consolidada do Luna: **58/58**, zero pulados. Coordenador repetiu a suíte
+completa e `git diff --check`, ambos exit 0. Conferidos ownership separado dos
+fds abertos e assinaturas (fechamento único mesmo ao falhar `fstat`), estado com
+`NOFOLLOW`/`NONBLOCK` e `fdopen(closefd=False)`, confirmação humana antes de
+persistir consentimento, `GetPassWarning` transformado em erro antes do fallback,
+e tratamento de erro do leitor no CLI.
+
+Há prova real em loopback de redirecionamento sem bearer no segundo servidor e
+recusa de certificado autoassinado gerado só no diretório temporário do teste.
+O cofre do SO continua exercitado **por doubles**, sem acessar o cofre pessoal.
+Retomadas depois de open/lote/fim aplicados usam servidor simulado stateful;
+não são ainda a prova de cliente Python contra o receptor compilado.
+
+Aceite **local E3b.1/importação pontual** e commit focado autorizados. E3b.2a
+despachada ao mesmo executor: integração via `smoke-restrito.cjs`, criança Python
+com transporte real loopback e cofre de fixture injetado, seguida de controles
+de fonte/pareamento/dispositivo/frescor no painel. Credenciais sintéticas não
+passam por argv/log; nenhum `main.js` do host nem cofre/configuração reais.
+E3b.2b (sincronização/seletor), E4–E8 e aceite independente continuam abertos.

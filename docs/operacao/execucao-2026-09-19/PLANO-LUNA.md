@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a revisadas localmente; E3b.1 autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1 revisadas localmente; E3b.2a enviada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -142,6 +142,12 @@ faltantes como completas.
   repetiu parser/glob/contexto 45/45, tipos e diff check. Commit focado autorizado
   e E3b.1 enviada para continuar sem nova confirmação do Pedro. Instalação,
   fontes reais, distribuição e aceite do piloto continuam fora desse aceite.
+- E3b.1 aceita localmente após correções: coordenador repetiu **58/58**, zero
+  pulados, incluindo redirect entre loopbacks e TLS autoassinado real recusado.
+  Importação pontual apenas; não cobre sincronização contínua, cofre real, UI
+  ou piloto. Commit focado autorizado. E3b.2a enviada diretamente: cliente
+  Python real contra API compilada restrita e gestão de fontes/dispositivos no
+  painel, sem exigir novo prompt do Pedro e sem autorização remota adicional.
 
 ## Recorte preparado para E2c (após revisão E2b)
 
