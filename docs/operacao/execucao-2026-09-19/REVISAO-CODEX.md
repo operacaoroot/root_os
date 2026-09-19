@@ -43,3 +43,56 @@ de 35 tools legadas não autoriza conceder a todas elas um token novo. O fluxo d
 MCP precisa de testes de revogação e isolamento de conteúdo antes de aceite P2.
 
 Revisão de diff/testes E2a: **pendente de entrega do executor**.
+
+## R1 — revisão durante a implementação E2a
+
+O primeiro diff trouxe tabela `AgentToken`, segredo de 32 bytes, hash SHA-256,
+seletor público de empresa/id, guard separado e rotas de sessão próprias.
+O seletor foi aceito para roteamento da consulta, sem autorização implícita:
+nenhuma nova leitura global de tokens é necessária.
+
+Achados enviados ao Luna e já ajustados no diff parcial (ainda sem aceite de
+testes): identidade inicialmente herdava todos os privilégios do usuário;
+guard não exigia escopo da rota; limite de emissão tinha corrida entre count e
+create; auditoria não era atômica com a mutação. A revisão pediu projeção mínima,
+negação sem escopo declarado, lock transacional por usuário e auditoria na mesma
+transação. A catraca de imports de plataforma também precisa reconhecer apenas
+o helper seguro de empresa resolvida, sem liberar a sentinela de plataforma.
+
+Baseline independente, antes de alterar o MCP: `pnpm --filter @mktos/mcp
+typecheck`, exit 0. Isso não valida a nova implementação da API nem substitui
+teste integrado.
+
+## R2 — correção operacional do ambiente de teste
+
+O coordenador observou `rootos-e2a-pg` publicado em `0.0.0.0:55439` e `[::]`.
+Parou exclusivamente esse container descartável (`docker stop`, exit 0), sem
+remover volume/dados. Orientou o Luna a recriar o bind em `127.0.0.1` antes de
+prosseguir; reiniciar o container com o bind antigo não é permitido. Nenhum
+serviço preexistente do usuário foi alterado. Eventuais testes interrompidos por
+essa parada devem ser registrados e repetidos no ambiente corrigido.
+
+Rechecagem: bind confirmado em `127.0.0.1:55439`. Testes independentes do
+coordenador em 19/09, 16:34 -03: API `typecheck` e `typecheck:test` exit 0;
+`test/agent-token.test.ts`, **14/14**, exit 0. São unitários com mocks. O Luna
+reportou 293 casos do isolamento genérico; falta ainda a prova do ciclo do
+serviço real (emissão/autenticação/revogação/concorrência) no banco restrito.
+
+## R3 — passagem E2a → E2b
+
+Luna entregou evidência do ciclo real em `impor`, emissão concorrente mantendo
+5 tokens totais, rollback ao falhar auditoria e HTTP compilado (401 sem JWT,
+201 na emissão, sem hash na resposta). Essas execuções foram reportadas pelo
+executor; a verificação independente do coordenador continua sendo o diff,
+tipos e 14 unitários acima. O teste que limita a isenção de import a
+`{comEmpresaResolvida}` foi conferido no diff final.
+
+Decisão: autorizar commit local focado de E2a e prosseguir E2b. Solicitei corrigir
+o cabeçalho desatualizado de STATUS, informar logs/scripts das provas e tornar a
+integração reaproveitável/versionada. Ausência de integração MCP e consentimento
+significa que P2 permanece aberto. Nenhuma publicação remota está autorizada.
+
+E2b deve filtrar fonte/campo antes da busca/limite, não apenas retirar `body` do
+JSON final: buscar/rankear em campo proibido também permite inferir conteúdo.
+Concessão tenant não substitui RBAC e não amplia o token; sem grant não há fallback
+para vault ROOT ou memória integral. Nada de vetorização paga no recorte local.

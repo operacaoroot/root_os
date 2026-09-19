@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E0 concluído; E2a local autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a entregue/revisada localmente; E2b autorizada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -59,8 +59,9 @@ os testes locais estiverem verdes. Se E2+ acrescentar schema, o manifesto G0
 antigo não cobre o novo artefato: refazer análise de compatibilidade/recuperação.
 
 P6 (SQL) não entra por pressa: engine/autenticação e máquina do piloto precisam
-ser confirmadas. Não acrescentar heartbeat, catálogo genérico, orquestrador próprio,
-outros MCPs ou automações sem caso de uso. Trilho M permanece separado; risco de
+ser confirmadas. Não acrescentar monitor de agentes, catálogo genérico, orquestrador
+próprio, outros MCPs ou automações sem caso de uso. O pulso do conector definido
+no contrato P3 permanece necessário para revogação. Trilho M permanece separado; risco de
 segurança encontrado no caminho é registrado e escalado, não ignorado pelo prazo.
 
 ## Contrato de cada tarefa enviada ao Luna
@@ -86,6 +87,8 @@ Não aumentar timeouts, afrouxar RLS/política ou desabilitar testes para obter 
 - Sem push, merge, deploy de produção, checkout/reset/clean amplo ou prune.
 - Um banco descartável exclusivo por execução; não compartilhar testes que alteram
   RLS nem tocar nos containers preexistentes. Segredos não entram em Git/logs.
+- Recursos de teste só em rede interna ou bind explícito `127.0.0.1`. Nunca
+  publicar banco/API sintética em `0.0.0.0` ou `[::]` por omissão do Docker.
 - Fontes reais do cliente, envio a provedor, OAuth real ou gasto pago dependem
   de consentimento específico. Usar fixtures sintéticas por padrão.
 - Preservar `docs/operacao/madrugada-2026-09-17/STATUS-CLAUDE.md` modificado e
@@ -113,3 +116,9 @@ faltantes como completas.
   rotas humanas de emissão/listagem/revogação próprias. MCP e ContextBuilder
   ficam para E2b/c, depois da fronteira de dados. Emissão e uso relerão autoridade
   atual; nenhum PAT será aceito genericamente nas rotas de sessão.
+- E2a entregue: código revisado, 14 unitários e tipos verificados pelo coordenador;
+  Luna reportou isolamento SQL, ciclo real da credencial, concorrência, rollback
+  de auditoria e HTTP compilado. Commit local autorizado, sem declarar P2 completo.
+- E2b autorizada: memória por empresa + grants de fonte exata/campos, default deny,
+  autorização humana atual, projeção/consulta limitada e procedência; MCP/painel
+  entram depois. Provas de integração devem ficar reutilizáveis no repositório.
