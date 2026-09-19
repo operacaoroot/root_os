@@ -297,3 +297,64 @@ Achados enviados ao escritor para corrigir e demonstrar com testes:
 
 O coordenador prepara E3b em paralelo à implementação. Não houve coleta real,
 teste com diretórios pessoais ou autorização adicional para a VPS nesta etapa.
+
+Prova independente sem banco às 18:29 -03: `rastro-por-nivel`,
+`rastro-retencao` e `memoria` somaram **38 pass / 54 skip / 1 fail**, exit 1.
+A falha é a asserção textual antiga de módulo com controlador/export únicos,
+incompatível com os membros acrescentados em E2b/c. Enviada ao executor para
+preservar a intenção de registro no grafo sem exigir exclusividade. Os testes
+unitários de rastro passaram; os casos SQL pulados não são prova de integridade.
+
+Conferência HTTP do diff também exigiu guards nas três novas rotas e prova de
+arquivo acima de 100 KiB, para não anunciar teto de 2 MiB com parser default
+menor. O helper transacional de eventos deve preservar montagem/redação sem
+expor atalho público para payload já montado. Essas verificações não executaram
+`main.js` nem usaram credenciais reais.
+
+Reexecução independente às 18:33 -03 após correção da asserção de registro:
+**39 pass / 54 skip**, exit 0, nos mesmos três arquivos sem banco. Isso fecha
+apenas a regressão unitária. A revisão seguinte manteve pendentes proveniência
+exata dos vínculos SQL e isolamento do parser maior às rotas de remessa; ampliar
+o parser global e retirar o de formulários não faz parte do contrato do receptor.
+
+Às 18:39 -03, conferência independente: `typecheck` exit 0; arquitetura,
+módulos, rotas públicas e modelos globais **168 pass / 29 skip**, exit 0.
+
+### Portão de aceite E3a.2 — checklist de encerramento
+
+- [ ] Escrita do conector coordenada com o lock da memória humana; caminho
+  repetido com conteúdos diferentes no mesmo lote/snapshot é recusado.
+- [ ] Helper público transacional do EventLog não permite pular montagem/redação.
+- [ ] HTTP real com documento acima de 100 KiB; teto de wire fechado e restrito
+  a remessa, demais JSON/formulários preservados; segredo errado recusado.
+- [ ] SQL direto de ambos os vínculos para memória de outra empresa/fonte ou
+  origem forjada é recusado; colisão de chave não altera a nota anterior.
+- [ ] Lote/fim repetidos não duplicam; concorrência real, lote antigo de caminho
+  inédito e fim antigo não alteram conteúdo/frescor recentes.
+- [ ] Arquivar e restaurar mantêm versões/elos/cadeia; `ignorar` e importação não
+  arquivam ausências. Teste com esse nome precisa exercitar esses dois caminhos.
+- [ ] Manifesto completo omisso/desconhecido e contador falso recusados;
+  parcial com erro não arquiva nem marca sucesso; revogação interrompe o ciclo.
+- [ ] Falha induzida desfaz conteúdo, versão, evento e recibo; retry bem-sucedido
+  mantém contagem exata. `conferirElos.ok` e cadeia verificados após o ciclo.
+- [ ] CI dedicada, isolamento genérico, migration do zero e build compilado
+  repetidos sobre o diff final, com resultados atualizados no STATUS-LUNA.
+
+Lista de provas, não autorização para commit ou publicação. Não inclui testes
+contra diretórios/credenciais reais nem execução de CI remota.
+
+### Regressão ampla sem banco, 18:45 -03
+
+O coordenador executou o conjunto padrão completo com URLs de banco removidas:
+**1264 pass / 539 skip / 1 fail**, 48 arquivos aprovados, 4 ignorados, exit 1.
+Única falha: inventário explícito do que uma assinatura suspensa alcança,
+`assinatura.test.ts:1716`, passou a encontrar as três rotas de gestão de PAT em
+`auth`. Não é autorização para apenas aumentar a lista: a justificativa de
+gestão de credenciais deve ficar explícita e o consumo de memória continuar
+sujeito à suspensão.
+
+Solicitada também prova da identidade de dispositivo perante os interceptores
+globais. O guard põe `connectorDevice`, enquanto suspensão procura empresa no
+contexto/`request.user`; o vínculo autenticado não pode desaparecer entre as
+duas camadas e liberar coleta como se fosse uma rota pública sem empresa.
+Isso preserva o gate existente, sem redesenhar política de cobrança.
