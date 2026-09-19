@@ -23,6 +23,7 @@ import { ProvisionamentoController } from '../src/tenants/provisionar.controller
 import { ModulosService } from '../src/tenants/modulos.service';
 import { OnboardingService } from '../src/onboarding/onboarding.service';
 import { MemoriaService } from '../src/memory/memoria.service';
+import type { AgentDataGrantService } from '../src/memory/agent-data-grant.service';
 import type { AgentRuntime } from '../src/agents/agent-runtime.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { provisionarTenant } from '../src/tenants/provisionar';
@@ -69,7 +70,7 @@ if (process.env.RLS_NO_TESTE === '1') {
     let papelRoot: { id: string };
     const eventos = new EventLogService(app);
     const provisionamento = new ProvisionamentoService(app, eventos, new AuditService(app), new ModulosService(app));
-    const onboarding = new OnboardingService(app, provisionamento, new MemoriaService(app, eventos),
+    const onboarding = new OnboardingService(app, provisionamento, new MemoriaService(app, eventos, {} as AgentDataGrantService),
       eventos, new AuditService(app), {} as AgentRuntime);
 
     beforeAll(async () => {
@@ -339,7 +340,7 @@ if (process.env.RLS_NO_TESTE === '1') {
         await expect(onboarding.estado(cadastro.orgId)).rejects.toThrow('empresa não encontrada');
         expect(await app.contextItem.findMany({ where: { id: resposta.notaId } })).toEqual([]);
       });
-      const elos = await comEmpresaResolvida(cadastro.orgId, () => new MemoriaService(app, eventos).conferirElos(cadastro.orgId));
+      const elos = await comEmpresaResolvida(cadastro.orgId, () => new MemoriaService(app, eventos, {} as AgentDataGrantService).conferirElos(cadastro.orgId));
       expect(elos.ok).toBe(true);
     });
   });

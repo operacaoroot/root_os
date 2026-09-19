@@ -479,28 +479,6 @@ const EXCECOES: Excecao[] = [
    * --------------------------------------------------------------------------
    */
 
-  // --- superfície de agentes: o runtime alcança conector sem passar pela porta
-  {
-    arquivo: 'src/agents/efeitos.service.ts',
-    conector: 'src/obsidian/obsidian.service.ts',
-    motivo:
-      'contexto.memoria.buscar lê o vault direto do mapa de efeitos. É a última linha deste ' +
-      'mapa que importa conector, e o conserto é de UMA linha, igual ao que o EvolutionService ' +
-      'recebeu nesta fatia: o ObsidianService ganha um onModuleInit que registra o efeito em ' +
-      'EfeitosRegistry (que é @Global, então não mexe no grafo de módulos). Não foi feito aqui ' +
-      'porque src/obsidian/ é de outra fatia desta onda e a última escrita venceria.',
-    fatia: 'onda 8 — resto da 3.3: o conserto mora em src/obsidian/, que era de outra fatia da onda 7',
-  },
-  {
-    arquivo: 'src/agents/context-builder.service.ts',
-    conector: 'src/obsidian/obsidian.service.ts',
-    motivo:
-      'O montador de contexto do agente busca no vault sem passar pela porta. Mesmo conserto e ' +
-      'mesmo impedimento da linha acima: o efeito passa a ser declarado pelo ObsidianService e ' +
-      'o montador pede a capacidade `contexto.memoria.buscar` em vez do serviço.',
-    fatia: 'onda 8 — resto da 3.3: o conserto mora em src/obsidian/, que era de outra fatia da onda 7',
-  },
-
   // --- controllers do próprio módulo do conector: HTTP direto no fornecedor
   {
     arquivo: 'src/google/google-conexao.controller.ts',

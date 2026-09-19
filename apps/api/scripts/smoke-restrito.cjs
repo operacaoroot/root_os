@@ -99,6 +99,30 @@ if (process.argv[2] !== '--filho') {
     });
     const gravada = await dono.contextItem.findUniqueOrThrow({ where: { id: nota.notaId } });
     assert.equal(gravada.orgId, pessoas[0].orgId, 'orgId do corpo não pode substituir o tenant autenticado');
+    for (const field of ['sourceRef', 'title', 'body']) {
+      await pedir('/memoria/grants', {
+        token: tokens[0], status: 201,
+        body: {
+          sourceType: gravada.sourceType, sourceRef: gravada.sourceRef,
+          field, provider: 'agente_externo', consentVersion: 'smoke-v1',
+          consentText: `Consentimento sintético explícito: ${gravada.sourceType}/${gravada.sourceRef}/${field}.`,
+        },
+      });
+    }
+    const credencial = await pedir('/auth/agent-tokens', {
+      token: tokens[0], status: 201,
+      body: { name: 'smoke-memoria', scopes: ['memoria.buscar'], validadeDias: 1 },
+    });
+    assert(credencial.token && credencial.id);
+    const buscaAgente = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('Empresa sintética')}`, {
+      token: credencial.token,
+    });
+    assert.equal(buscaAgente.diagnostico, 'ok');
+    assert.equal(buscaAgente.modo, 'textual');
+    assert.equal(buscaAgente.itens.length, 1);
+    assert.equal(buscaAgente.itens[0].sourceRef, gravada.sourceRef);
+    assert(!JSON.stringify(buscaAgente).includes('Bearer'));
+    await pedir('/agent/memoria/buscar?q=Empresa', { token: tokens[1], status: 401 });
     await pedir(`/memoria/${nota.notaId}`, { token: tokens[0] });
     await pedir(`/memoria/${nota.notaId}`, { token: tokens[1], status: 404 });
     await pedir('/tenants/provisionar', { token: tokens[1], body: { slug: 'nao-autorizado-smoke' }, status: 403 });
@@ -113,6 +137,8 @@ if (process.argv[2] !== '--filho') {
     for (const { orgId } of pessoas) {
       await dono.contextItemVersion.deleteMany({ where: { orgId } });
       await dono.contextItem.deleteMany({ where: { orgId } });
+      await dono.agentDataGrant.deleteMany({ where: { orgId } });
+      await dono.agentToken.deleteMany({ where: { orgId } });
       await dono.knowledgeNote.deleteMany({ where: { orgId } });
       await dono.sop.deleteMany({ where: { orgId } });
       await dono.agent.deleteMany({ where: { orgId } });

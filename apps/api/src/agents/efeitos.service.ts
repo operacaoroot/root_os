@@ -7,7 +7,8 @@ import { AprService } from '../finance/apr.service';
 import { LeadsService } from '../leads/leads.service';
 import { TasksService } from '../tasks/tasks.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
-import { ObsidianService } from '../obsidian/obsidian.service';
+import { MemoriaService } from '../memory/memoria.service';
+import { contextoAtual } from '../common/contexto-execucao';
 
 /*
  * O que liga uma CAPACIDADE ao código que a realiza.
@@ -40,7 +41,7 @@ export class EfeitosService implements OnModuleInit {
     private readonly leads: LeadsService,
     private readonly tasks: TasksService,
     private readonly campanhas: CampaignsService,
-    private readonly obsidian: ObsidianService,
+    private readonly memoria: MemoriaService,
   ) {}
 
   onModuleInit(): void {
@@ -59,7 +60,9 @@ export class EfeitosService implements OnModuleInit {
       'pecas.campanha.listar': (a: Record<string, unknown>, org: string) =>
         this.campanhas.list(org, a.status as string | undefined),
       'contexto.memoria.buscar': (a: Record<string, unknown>, org: string) =>
-        this.obsidian.search(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5)),
+        this.memoria.buscarParaAgente(org, String(a.q ?? a.query ?? ''), Number(a.limit ?? 5), {
+          userId: contextoAtual()?.actorId ?? undefined,
+        }),
     }, 'EfeitosService (capacidades do próprio OS)');
     /*
      * O QUE SAIU DAQUI NA FATIA 3.3, e por quê.
@@ -76,12 +79,9 @@ export class EfeitosService implements OnModuleInit {
      * pelo conector daquele sistema; este mapa só liga o que é do próprio OS** —
      * painel, financeiro, leads, tarefas, campanhas, tudo lendo o banco daqui.
      *
-     * A ÚNICA EXCEÇÃO que sobra é `contexto.memoria.buscar`, logo acima, que
-     * importa o `ObsidianService`. Ela fica declarada na catraca com o motivo:
-     * `src/obsidian/` é de outra fatia desta onda e não podia ser editado aqui.
-     * A mudança é de uma linha — o `ObsidianService` ganha um `onModuleInit` que
-     * registra o efeito, igual ao do `EvolutionService` — e está descrita no
-     * relatório.
+     * `contexto.memoria.buscar` passa pelo `MemoriaService` com a mesma
+     * concessão ADR-015 da rota PAT. Não há queda para vault/Obsidian: a busca
+     * sem grant devolve diagnóstico fechado e não conteúdo.
      *
      * O NÚMERO NO LOG deixou de ser "as capacidades desta classe": ele conta o
      * registro INTEIRO, que agora é preenchido por vários serviços em ordem de

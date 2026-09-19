@@ -917,7 +917,11 @@ export class ObsidianService implements OnModuleInit {
    */
   async vetorizarPendentesDaMemoria(orgId: string): Promise<void> {
     if (!this.openaiKey) return;
-    const pendentes = await this.memoria.semVetor(orgId, 100);
+    // Leitura de memória não é consentimento para remeter o corpo a um
+    // provedor de embeddings. E2b deixa a concessão explícita desligada; um
+    // futuro onboarding terá de registrar consentimento específico antes de
+    // qualquer linha chegar a este caminho.
+    const pendentes = await this.memoria.semVetorComConsentimento(orgId, 100);
     if (!pendentes.length) return;
     const vetores = await this.embed(pendentes.map((n) => `${n.title}\n\n${n.body}`));
     for (let i = 0; i < pendentes.length; i++) {

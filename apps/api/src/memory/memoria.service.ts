@@ -14,7 +14,13 @@ import {
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
 import { EventLogService, sigiloso } from '../gateway/event-log.service';
+import { comTenantResolvido } from '../common/contexto-execucao';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AGENT_MEMORY_FIELDS,
+  AgentDataGrantService,
+  type AgentMemoryField,
+} from './agent-data-grant.service';
 import {
   chaveDaVault,
   exigirProcedencia,
@@ -166,6 +172,25 @@ export interface ResultadoDeBusca {
   fonte: { tool: 'memoria'; generatedAt: string };
 }
 
+export interface ResultadoDeBuscaDoAgente {
+  query: string;
+  modo: 'textual';
+  diagnostico: 'ok' | 'sem_consentimento' | 'sem_campo_pesquisavel';
+  itens: Array<{
+    id: string;
+    score: 0;
+    sourceType: ContextSource;
+    sourceRef: string;
+    fields: Partial<Record<AgentMemoryField, unknown>>;
+  }>;
+  fonte: { tool: 'memoria'; generatedAt: string };
+}
+
+export interface AtorDaBuscaDoAgente {
+  userId?: string;
+  tokenId?: string;
+}
+
 /** O que uma volta de projeção da vault mexeu. É o que a sonda e o CLI mostram. */
 export interface ResumoDaProjecao {
   criadas: number;
@@ -215,6 +240,7 @@ export class MemoriaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventos: EventLogService,
+    private readonly agentGrants: AgentDataGrantService,
   ) {}
 
   // ==========================================================================
@@ -352,6 +378,157 @@ export class MemoriaService {
       })),
       fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
     };
+  }
+
+  /**
+   * Busca textual para bearer de agente, com fronteira ADR-015.
+   *
+   * A consulta é montada somente com identificadores desta allowlist e valores
+   * parametrizados. A seleção de grants vem antes da consulta de ContextItem;
+   * assim um campo negado não entra nem no WHERE (ranking textual), nem no
+   * SELECT/snippet, e LIMIT só é aplicado depois do filtro autorizado.
+   */
+  async buscarParaAgente(
+    orgId: string,
+    query: string,
+    limite = 8,
+    ator?: AtorDaBuscaDoAgente,
+  ): Promise<ResultadoDeBuscaDoAgente> {
+    return comTenantResolvido(orgId, () => this.buscarParaAgenteNoTenant(orgId, query, limite, ator));
+  }
+
+  private async buscarParaAgenteNoTenant(
+    orgId: string,
+    query: string,
+    limite: number,
+    ator?: AtorDaBuscaDoAgente,
+  ): Promise<ResultadoDeBuscaDoAgente> {
+    const q = (query ?? '').trim();
+    const empty = (diagnostico: ResultadoDeBuscaDoAgente['diagnostico']): ResultadoDeBuscaDoAgente => ({
+      query: q,
+      modo: 'textual',
+      diagnostico,
+      itens: [],
+      fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
+    });
+    const registrarDecisao = async (resultado: ResultadoDeBuscaDoAgente) => {
+      // O rastro guarda a decisão e metadados autorizados, nunca a consulta,
+      // corpo de nota, bearer ou hash. Falha no rastro falha fechado a leitura.
+      const contexto = contextoAtual();
+      await this.eventos.registrar({
+        orgId,
+        tipo: 'memoria.agent_busca',
+        actorType: ActorType.ai,
+        actorId: ator?.userId ?? contexto?.actorId ?? null,
+        agentSlug: contexto?.agentSlug ?? null,
+        correlationId: contexto?.correlationId ?? null,
+        payload: {
+          modo: resultado.modo,
+          diagnostico: resultado.diagnostico,
+          quantidade: resultado.itens.length,
+          credencialId: ator?.tokenId ?? null,
+          fontes: resultado.itens.map((item) => ({ sourceType: item.sourceType, sourceRef: item.sourceRef })),
+          campos: [...new Set(resultado.itens.flatMap((item) => Object.keys(item.fields)))],
+        },
+      });
+      return resultado;
+    };
+    if (!q) return registrarDecisao(empty('sem_campo_pesquisavel'));
+
+    const grants = await this.agentGrants.ativos(orgId);
+    const porFonte = new Map<string, { sourceType: ContextSource; sourceRef: string; fields: Set<AgentMemoryField> }>();
+    for (const grant of grants) {
+      const key = `${grant.sourceType}\u0000${grant.sourceRef}`;
+      const atual = porFonte.get(key) ?? {
+        sourceType: grant.sourceType,
+        sourceRef: grant.sourceRef,
+        fields: new Set<AgentMemoryField>(),
+      };
+      atual.fields.add(grant.field);
+      porFonte.set(key, atual);
+    }
+    // Procedência é obrigatória: sem grant de sourceRef não devolvemos nenhum
+    // conteúdo, mesmo que alguém tenha concedido title/body isoladamente.
+    const fontes = [...porFonte.values()].filter((fonte) => fonte.fields.has('sourceRef'));
+    if (!fontes.length) return registrarDecisao(empty('sem_consentimento'));
+
+    const pesquisaveis = fontes.filter((fonte) => fonte.fields.has('title') || fonte.fields.has('body'));
+    if (!pesquisaveis.length) return registrarDecisao(empty('sem_campo_pesquisavel'));
+
+    const params: unknown[] = [orgId];
+    const next = (value: unknown) => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+    const branches: string[] = [];
+    const camposPorFonte = new Map<string, Set<AgentMemoryField>>(
+      pesquisaveis.map((fonte) => [`${fonte.sourceType}\u0000${fonte.sourceRef}`, fonte.fields]),
+    );
+    for (const fonte of pesquisaveis) {
+      const tipo = next(fonte.sourceType);
+      const ref = next(fonte.sourceRef);
+      const termos: string[] = [];
+      if (fonte.fields.has('title')) termos.push(`"title" ILIKE ${next(`%${q}%`)}`);
+      if (fonte.fields.has('body')) termos.push(`"body" ILIKE ${next(`%${q}%`)}`);
+      if (!termos.length) continue;
+      // Cada fonte tem sua própria SELECT. Uma fonte que só autoriza title não
+      // pode receber a coluna body só porque outra fonte autorizou body.
+      const jsonFields = [...fonte.fields]
+        .filter((field) => field !== 'sourceRef')
+        .map((field) => `'${field}', "${field}"`)
+        .join(', ');
+      branches.push(
+        `SELECT "id", "sourceType", "sourceRef", "atualizadoEm", ` +
+          `jsonb_build_object(${jsonFields}) AS "fields" FROM "ContextItem" ` +
+          `WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND "sourceType" = ${tipo}::"ContextSource" ` +
+          `AND "sourceRef" = ${ref} AND (${termos.join(' OR ')})`,
+      );
+    }
+    if (!branches.length) return registrarDecisao(empty('sem_campo_pesquisavel'));
+    const take = next(Math.min(Math.max(limite, 1), 20));
+    const rows = await this.prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT "id", "sourceType", "sourceRef", "atualizadoEm", "fields"
+         FROM (${branches.join(' UNION ALL ')}) AS autorizadas
+        ORDER BY "atualizadoEm" DESC
+        LIMIT ${take}`,
+      ...params,
+    );
+    return registrarDecisao({
+      query: q,
+      modo: 'textual',
+      diagnostico: 'ok',
+      itens: rows.map((row) => {
+        const permitidos = camposPorFonte.get(`${String(row.sourceType)}\u0000${String(row.sourceRef)}`);
+        const bruto = (row.fields ?? {}) as Record<string, unknown>;
+        const item: Partial<Record<AgentMemoryField, unknown>> = {};
+        for (const field of permitidos ?? []) {
+          if (field !== 'sourceRef' && Object.prototype.hasOwnProperty.call(bruto, field)) {
+            item[field] = bruto[field];
+          }
+        }
+        return {
+          id: String(row.id),
+          score: 0 as const,
+          sourceType: row.sourceType as ContextSource,
+          sourceRef: String(row.sourceRef),
+          fields: item,
+        };
+      }),
+      fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
+    });
+  }
+
+  /**
+   * O cron de embeddings só recebe linhas com consentimento específico de
+   * vetorização. Consentimento de leitura, inclusive de `body`, não basta.
+   */
+  async semVetorComConsentimento(orgId: string, limite = 100) {
+    // E2b não remete conteúdo a nenhum provedor. A coluna de consentimento
+    // específico permanece preparada para o onboarding futuro, mas não existe
+    // caminho alcançável nesta fatia que a transforme em autorização de cron.
+    void orgId;
+    void limite;
+    return [] as Array<{ id: string; title: string; body: string }>;
   }
 
   // ==========================================================================

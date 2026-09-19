@@ -13,10 +13,12 @@ import { TasksModule } from '../tasks/tasks.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 import { PautaModule } from '../pauta/pauta.module';
 import { WorkModule } from '../work/work.module';
+import { MemoryModule } from '../memory/memoria.module';
 
 @Module({
   imports: [
     ObsidianModule,
+    MemoryModule,
     DashboardModule,
     FinanceModule,
     LeadsModule,

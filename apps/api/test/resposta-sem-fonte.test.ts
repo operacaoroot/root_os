@@ -31,7 +31,7 @@ import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import type { ObsidianService } from '../src/obsidian/obsidian.service';
+import type { MemoriaService } from '../src/memory/memoria.service';
 import type { LlmProvider, LlmStepInput, LlmStepOutput } from '../src/llm/llm.provider';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -111,19 +111,30 @@ function agenteFalso(contextoFixo: string[] = []): Agent {
 }
 
 /** Um `ObsidianService` que devolve exatamente o que se manda. */
-function obsidianFalso(items: unknown[]): ObsidianService {
+function obsidianFalso(items: unknown[]): MemoriaService {
   return {
-    search: async () => ({ query: 'q', mode: 'semantic', items, source: {} }),
-  } as unknown as ObsidianService;
+    buscarParaAgente: async () => ({
+      query: 'q', modo: 'textual', diagnostico: 'ok',
+      itens: (items as Array<Record<string, unknown>>).map((item) => ({
+        id: String(item.id ?? item.path ?? 'nota'), score: 0 as const,
+        sourceType: 'vault' as const, sourceRef: String(item.path ?? item.id ?? 'nota'),
+        fields: {
+          ...(item.title !== undefined ? { title: item.title } : {}),
+          ...(item.snippet !== undefined ? { body: item.snippet } : {}),
+        },
+      })),
+      fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
+    }),
+  } as unknown as MemoriaService;
 }
 
 /** Um `ObsidianService` que cai — a base indisponível, que não é base vazia. */
-function obsidianQueCai(mensagem: string): ObsidianService {
+function obsidianQueCai(mensagem: string): MemoriaService {
   return {
-    search: async () => {
+    buscarParaAgente: async () => {
       throw new Error(mensagem);
     },
-  } as unknown as ObsidianService;
+  } as unknown as MemoriaService;
 }
 
 /** Uma nota no formato que a busca de verdade devolve (com `snippet`, sem `content`). */

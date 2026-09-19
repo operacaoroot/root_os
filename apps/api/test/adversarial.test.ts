@@ -39,7 +39,7 @@ import { EventLogService } from '../src/gateway/event-log.service';
 import { ToolGateway, type ExecCtx } from '../src/gateway/tool-gateway.service';
 import { contemAlgumSegredo } from '../src/cofre/segredo';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import type { ObsidianService } from '../src/obsidian/obsidian.service';
+import type { MemoriaService } from '../src/memory/memoria.service';
 import type { Agent } from '@prisma/client';
 
 /*
@@ -395,10 +395,23 @@ function agenteFalso(contextoFixo: string[] = []): Agent {
  * pede 5). Este falso devolve tudo o que recebe, porque o que está sob teste é
  * o tratamento POR ITEM, e cortar em cinco só esconderia nove carregadores.
  */
-function obsidianFalso(items: unknown[]): ObsidianService {
+function obsidianFalso(items: unknown[]): MemoriaService {
   return {
-    search: async () => ({ query: PERGUNTA, mode: 'semantic', items, source: {} }),
-  } as unknown as ObsidianService;
+    buscarParaAgente: async () => ({
+      query: PERGUNTA,
+      modo: 'textual',
+      diagnostico: 'ok',
+      itens: (items as Array<Record<string, unknown>>).map((item) => ({
+        id: String(item.id ?? item.path ?? 'nota'), score: 0 as const,
+        sourceType: 'vault' as const, sourceRef: String(item.path ?? item.id ?? 'nota'),
+        fields: {
+          ...(item.title !== undefined ? { title: item.title } : {}),
+          ...(item.snippet !== undefined ? { body: item.snippet } : {}),
+        },
+      })),
+      fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
+    }),
+  } as unknown as MemoriaService;
 }
 
 /** Reconstrói os itens exatamente como `ContextBuilder` os monta. */

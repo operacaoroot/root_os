@@ -87,6 +87,24 @@ export function comContexto<T>(ctx: ContextoExecucao, fn: () => T): T {
   return armazem.run({ ...ctx, correlacaoPai: paiDe(ctx) }, fn);
 }
 
+/** Abre somente o tenant já autenticado; não é descoberta de plataforma. */
+export async function comTenantResolvido<T>(orgId: string, fn: () => PromiseLike<T>): Promise<T> {
+  const id = exigirTenant(orgId, 'empresa autenticada');
+  if (id.startsWith('__')) throw new Error('Uma sentinela não é uma empresa autenticada.');
+  const atual = contextoAtual();
+  if (atual?.orgId && atual.orgId !== id) {
+    throw new Error('A empresa autenticada diverge do contexto de execução.');
+  }
+  return comContexto(
+    {
+      ...atual,
+      orgId: id,
+      correlationId: atual?.correlationId ?? randomUUID(),
+    },
+    async () => await fn(),
+  );
+}
+
 /**
  * De onde esta história nasceu, deduzido da pilha de escopos em vez de
  * repassado à mão.

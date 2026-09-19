@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Agent } from '@prisma/client';
-import { ObsidianService } from '../obsidian/obsidian.service';
+import { MemoriaService } from '../memory/memoria.service';
 import { ProcedenciaExterna } from '../policy/sinais.service';
 
 export interface FonteContexto {
@@ -780,7 +780,12 @@ export function blocoExterno(itens: ItemExterno[], opcoes: OpcoesDeBloco = {}): 
  * A declaração que o modelo lê varia só pelo MOTIVO, que é um enum deste
  * arquivo.
  */
-export type MotivoDaAusencia = 'nada_na_base' | 'notas_sem_corpo' | 'busca_indisponivel';
+export type MotivoDaAusencia =
+  | 'nada_na_base'
+  | 'notas_sem_corpo'
+  | 'sem_consentimento'
+  | 'sem_campo_pesquisavel'
+  | 'busca_indisponivel';
 
 export interface AusenciaDeDado {
   motivo: MotivoDaAusencia;
@@ -804,6 +809,10 @@ const PRIMEIRA_LINHA: Record<MotivoDaAusencia, string> = {
   notas_sem_corpo:
     'A busca na base de conhecimento desta empresa achou títulos, mas nenhum deles ' +
     'trouxe texto — na prática, nenhum trecho entrou nesta conversa.',
+  sem_consentimento:
+    'A consulta foi recusada porque nenhuma fonte/campo desta empresa foi consentida para o agente.',
+  sem_campo_pesquisavel:
+    'A empresa tem concessões, mas nenhum campo autorizado pode ser usado para esta busca textual.',
   busca_indisponivel:
     'A base de conhecimento desta empresa está INDISPONÍVEL agora e não pôde ser ' +
     'consultada. Isto não é o mesmo que "não existe registro": é "não deu para ' +
@@ -958,7 +967,7 @@ export class ContextBuilder {
 
   private readonly log = new Logger('ContextBuilder');
 
-  constructor(private readonly obsidian: ObsidianService) {}
+  constructor(private readonly memoria: MemoriaService) {}
 
   async montar(
     orgId: string,
@@ -1011,8 +1020,26 @@ export class ContextBuilder {
     }
 
     try {
-      const busca = await this.obsidian.search(orgId, pedido, 5);
-      const notas = (busca as { items?: Array<Record<string, unknown>> }).items ?? [];
+      const busca = await this.memoria.buscarParaAgente(orgId, pedido, 5);
+      const notas: Array<Record<string, unknown>> = busca.itens.map((item) => {
+        const fields = (item.fields ?? {}) as Record<string, unknown>;
+        return {
+          id: item.id,
+          title: fields.title ?? item.sourceRef,
+          content: fields.body,
+          path: item.sourceRef,
+          score: item.score,
+        };
+      });
+      if (!notas.length && busca.diagnostico !== 'ok') {
+        ausencia = {
+          motivo: busca.diagnostico,
+          detalhe:
+            busca.diagnostico === 'sem_consentimento'
+              ? 'a fronteira ADR-015 não concedeu fonte/campo ao agente'
+              : 'a fronteira ADR-015 não concedeu campo pesquisável',
+        };
+      }
       if (notas.length) {
         const itens: ItemExterno[] = [];
         const pendentes: FonteContexto[] = [];

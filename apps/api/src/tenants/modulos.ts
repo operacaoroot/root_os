@@ -174,6 +174,9 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
  * à home.
  */
 export const PREFIXOS_DA_ESPINHA: readonly string[] = [
+  // A rota PAT da memória tem guarda própria; espinha aqui só declara o
+  // gate de módulos, não concede autenticação nem escopo de dados.
+  'agent',
   'agents',
   'approvals',
   'assinatura',

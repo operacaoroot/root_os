@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MemoriaController } from './memoria.controller';
 import { MemoriaService } from './memoria.service';
+import { AgentDataGrantService } from './agent-data-grant.service';
+import { AgentMemoriaController } from './agent-memoria.controller';
+import { AuthModule } from '../auth/auth.module';
 
 /*
  * A MEMÓRIA (RF-M-01, RF-M-06) — ver `docs/adr/ADR-011-memoria.md`.
@@ -30,8 +33,9 @@ import { MemoriaService } from './memoria.service';
  * para a porta, o cofre e a régua — coisas que TODO módulo alcança.
  */
 @Module({
-  controllers: [MemoriaController],
-  providers: [MemoriaService],
-  exports: [MemoriaService],
+  imports: [AuthModule],
+  controllers: [MemoriaController, AgentMemoriaController],
+  providers: [MemoriaService, AgentDataGrantService],
+  exports: [MemoriaService, AgentDataGrantService],
 })
 export class MemoryModule {}

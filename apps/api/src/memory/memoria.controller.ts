@@ -12,6 +12,7 @@ import {
 import { ContextKind, ContextSource } from '@prisma/client';
 import { z } from 'zod';
 import { MemoriaService } from './memoria.service';
+import { AgentDataGrantService } from './agent-data-grant.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -90,10 +91,24 @@ const PromoverSchema = z
 
 const MotivoSchema = z.object({ motivo: z.string().max(2000).nullish() }).strict();
 
+const GrantSchema = z
+  .object({
+    sourceType: ProcedenciaSchema,
+    sourceRef: z.string().min(1).max(1000),
+    field: z.string().min(1).max(40),
+    provider: z.literal('agente_externo'),
+    consentVersion: z.string().min(1).max(100),
+    consentText: z.string().min(1).max(5000),
+  })
+  .strict();
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('memoria')
 export class MemoriaController {
-  constructor(private readonly memoria: MemoriaService) {}
+  constructor(
+    private readonly memoria: MemoriaService,
+    private readonly grants: AgentDataGrantService,
+  ) {}
 
   @Get()
   @RequirePermissions('obsidian.ver')
@@ -121,6 +136,25 @@ export class MemoriaController {
   @RequirePermissions('obsidian.ver')
   buscar(@CurrentUser() user: JwtUser, @Query('q') q?: string, @Query('limite') limite?: string) {
     return this.memoria.buscar(user.orgId, q ?? '', limite ? Number(limite) : 8);
+  }
+
+  /** Concessões humanas do ADR-015; o serviço relê admin.permissoes no banco. */
+  @Get('grants')
+  @RequirePermissions('admin.permissoes')
+  listarGrants(@CurrentUser() user: JwtUser) {
+    return this.grants.listar(user.orgId, user.sub);
+  }
+
+  @Post('grants')
+  @RequirePermissions('admin.permissoes')
+  concederGrant(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.grants.conceder(user.orgId, user.sub, GrantSchema.parse(body));
+  }
+
+  @Post('grants/:id/revogar')
+  @RequirePermissions('admin.permissoes')
+  revogarGrant(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.grants.revogar(user.orgId, user.sub, id);
   }
 
   /**

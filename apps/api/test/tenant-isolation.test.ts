@@ -294,6 +294,7 @@ const ALVOS: Alvo[] = [
   // ---- identidade e acesso ---------------------------------------------
   { tabela: 'User', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade e passwordHash.' },
   { tabela: 'AgentToken', escopo: 'filho', chaveSql: '"id"', nota: 'Bearer individual: hash, escopos e validade não podem atravessar usuário/tenant.' },
+  { tabela: 'AgentDataGrant', escopo: 'tenant', chaveSql: '"id"', nota: 'Concessão ADR-015: fonte/campo autorizados não podem atravessar tenant.' },
   { tabela: 'Role', escopo: 'tenant', chaveSql: '"id"', nota: 'Papéis por org.' },
   { tabela: 'AuditLog', escopo: 'tenant', chaveSql: '"id"', nota: 'Concentra before/after das outras 57 tabelas. A mais sensível do banco.' },
   { tabela: 'ChannelIdentity', escopo: 'tenant', chaveSql: '"id"', nota: 'Amarra um número de WhatsApp/Telegram a um usuário: é caminho de AUTENTICAÇÃO, não só de dado.' },
@@ -551,6 +552,19 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   });
   reg('AgentToken', agentTokenId);
   s.ref.agentTokenId = agentTokenId;
+
+  const agentGrantId = await ins(c, 'AgentDataGrant', {
+    id: crypto.randomUUID(),
+    orgId,
+    sourceType: 'upload',
+    sourceRef: `fixture-${rotulo}-${MARCA}.md`,
+    field: 'sourceRef',
+    provider: 'agente_externo',
+    consentVersion: 'fixture-v1',
+    consentText: `Consentimento sintético da org ${rotulo}`,
+    grantedByUserId: userId,
+  });
+  reg('AgentDataGrant', agentGrantId);
 
   // A permissão COMPARTILHADA é o que faz `_RolePermissions` ser testável pela
   // coluna B (Role) e não pela A (Permission, global). Vale para as duas orgs,

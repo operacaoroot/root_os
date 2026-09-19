@@ -37,10 +37,14 @@ import { defineConfig } from 'vitest/config';
 const CONJUNTOS = {
   padrao: {
     include: ['test/**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts'],
+    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/memoria-agent.integration.test.ts'],
   },
   isolamento: {
     include: ['test/tenant-isolation.test.ts'],
+    exclude: ['**/node_modules/**'],
+  },
+  'memoria-agente': {
+    include: ['test/memoria-agent.integration.test.ts'],
     exclude: ['**/node_modules/**'],
   },
 } as const;

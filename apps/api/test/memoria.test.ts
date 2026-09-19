@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ActorType, ContextKind, ContextSource, PrismaClient } from '@prisma/client';
 
 import { MemoriaService, VaultSuspeitaError } from '../src/memory/memoria.service';
+import type { AgentDataGrantService } from '../src/memory/agent-data-grant.service';
 import {
   chaveDaVault,
   exigirProcedencia,
@@ -184,6 +185,7 @@ describe.skipIf(!URL)('a memória versiona, guarda procedência e registra no ra
     memoria = new MemoriaService(
       prisma as unknown as PrismaService,
       new EventLogService(prisma as never),
+      {} as AgentDataGrantService,
     );
   });
 
@@ -515,10 +517,12 @@ describe.skipIf(!URL)('duas alterações concorrentes não perdem a do meio', ()
     memoriaA = new MemoriaService(
       prismaA as unknown as PrismaService,
       new EventLogService(prismaA as never),
+      {} as AgentDataGrantService,
     );
     memoriaB = new MemoriaService(
       prismaB as unknown as PrismaService,
       new EventLogService(prismaB as never),
+      {} as AgentDataGrantService,
     );
   });
 
@@ -653,6 +657,7 @@ describe.skipIf(!URL)('migrar o acervo da vault sem perder os vetores', () => {
     memoria = new MemoriaService(
       prisma as unknown as PrismaService,
       new EventLogService(prisma as never),
+      {} as AgentDataGrantService,
     );
   });
 
@@ -938,6 +943,7 @@ describe.skipIf(!URL)('a integridade da memória é conferível, não declarada'
     memoria = new MemoriaService(
       prisma as unknown as PrismaService,
       new EventLogService(prisma as never),
+      {} as AgentDataGrantService,
     );
   });
 
@@ -1120,6 +1126,7 @@ describe.skipIf(!URL)('vault vazia ou montada no lugar errado não arquiva a mem
     memoria = new MemoriaService(
       prisma as unknown as PrismaService,
       new EventLogService(prisma as never),
+      {} as AgentDataGrantService,
     );
   });
 

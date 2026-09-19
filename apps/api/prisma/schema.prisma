@@ -72,6 +72,7 @@ model Org {
 
   users        User[]
   agentTokens  AgentToken[]
+  memoriaGrants AgentDataGrant[]
   roles        Role[]
   leads        Lead[]
   campaigns    Campaign[]
@@ -255,6 +256,34 @@ model AgentToken {
   @@index([orgId, userId])
   @@index([orgId, revokedAt])
   @@index([orgId, expiresAt])
+}
+
+/// Concessão explícita da fronteira de dados do agente.
+///
+/// A tupla é exata: não há fonte ou campo curinga. `sourceRef` é obrigatório
+/// porque a procedência também é dado autorizado, não um metadado implícito.
+/// O texto/versionamento do consentimento fica persistido para que uma futura
+/// integração com provedor externo não dependa de checkbox transitório.
+model AgentDataGrant {
+  id                String       @id @default(uuid())
+  orgId             String
+  org               Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sourceType        ContextSource
+  sourceRef         String
+  field             String
+  provider          String       @default("agente_externo")
+  consentVersion    String
+  consentText       String
+  grantedByUserId   String
+  grantedAt         DateTime     @default(now())
+  revokedAt         DateTime?
+  revokedByUserId   String?
+  allowVectorization Boolean     @default(false)
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([orgId, sourceType, sourceRef, field])
+  @@index([orgId, revokedAt])
+  @@index([orgId, sourceType, sourceRef, field])
 }
 
 /// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em

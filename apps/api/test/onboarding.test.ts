@@ -22,6 +22,7 @@ import { AuditService } from '../src/audit/audit.service';
 import { comContexto } from '../src/common/contexto-execucao';
 import { EventLogService } from '../src/gateway/event-log.service';
 import { MemoriaService } from '../src/memory/memoria.service';
+import type { AgentDataGrantService } from '../src/memory/agent-data-grant.service';
 import {
   CadastroInvalidoError,
   EmailJaTemCasaError,
@@ -1005,7 +1006,7 @@ describe.skipIf(!URL)('o caminho de entrada, de ponta a ponta, pelo serviço de 
     const p = prisma as unknown as PrismaService;
     const eventos = new EventLogService(prisma as never);
     const auditoria = new AuditService(p);
-    memoria = new MemoriaService(p, eventos);
+    memoria = new MemoriaService(p, eventos, {} as AgentDataGrantService);
     const provisionamento = new ProvisionamentoService(
       p,
       eventos,

@@ -1,6 +1,6 @@
 # Status do executor Luna — 19/09/2026
 
-Estado: **E0/E1 concluídos; E2a implementada e validada localmente; E2b aguardando checkpoint de desenho.**
+Estado: **E0/E1 concluídos; E2a implementada/validada; E2b implementada e validada localmente; E2c (MCP/UI) pendente.**
 
 ## Limites observados
 
@@ -155,8 +155,16 @@ só então reduz/integrará o MCP. Não tocar na VPS nem reexecutar G0.
   removido antes de encerrar o banco.
 - Artefato compilado (`pnpm --filter @mktos/api build`) subiu localmente em `TENANT_MODO=impor`;
   o boot registrou as três rotas `/api/auth/agent-tokens*`. HTTP sem JWT retornou 401; POST com
-  JWT sintético retornou 201 e a resposta tinha token uma vez, sem `tokenHash`. O processo foi
-  encerrado; nenhum serviço remoto foi tocado.
+  JWT sintético retornou 201 e a resposta tinha token uma vez, sem `tokenHash`. Esse smoke foi
+  executado diretamente no host com `node apps/api/dist/main.js`: `main.ts` carregou os arquivos
+  `~/.config/root/*.env` disponíveis e iniciou os schedulers do `AppModule`; os nomes de variáveis
+  explicitamente fornecidos foram `APP_DATABASE_URL`, `TENANT_MODO`, `JWT_SECRET` e `API_PORT`
+  (valores sintéticos; nenhum valor de segredo é registrado). A porta foi a local 4001. Como os
+  arquivos pessoais foram carregados, o processo podia ter timers/sincronizações habilitados; não
+  trato a ausência de evento nos logs locais como prova de que nenhuma chamada externa ocorreu.
+  Portanto esse smoke prova apenas o registro HTTP compilado, não é harness isolado e não será
+  repetido em E2b. Antes de qualquer novo boot será usado runner/container estreito, sem mounts
+  pessoais, timers desligados e bind loopback; nenhum serviço remoto foi tocado.
 
 Arquivos versionados que materializam as provas: `apps/api/test/agent-token.test.ts` (14 unitários
 com mocks), `apps/api/test/tenant-isolation.test.ts` (RLS/trigger/isolamento real),
@@ -164,7 +172,60 @@ com mocks), `apps/api/test/tenant-isolation.test.ts` (RLS/trigger/isolamento rea
 `tsx`), além de `apps/api/dist/main.js` gerado pelo build para o smoke HTTP. Os logs transitórios
 de migration/seed usados no ensaio foram `/tmp/rootos-e2a-db-deploy.log`,
 `/tmp/rootos-e2a-seed.log`, `/tmp/rootos-e2a-role.log` e `/tmp/rootos-e2a-audit-trigger.log`;
-não contêm credenciais reais. O banco `rootos-e2a-pg` foi removido ao fim.
+não contêm credenciais reais. O recurso descartável `rootos-e2a-pg` foi recriado/preservado com
+bind somente `127.0.0.1:55439:5432`; continua fora de qualquer rede pública e sem dados reais.
 
-Limitações ainda explícitas: não há integração MCP/ContextBuilder nem consentimento fonte/campo
-(E2b/c), e não há aceite humano real. E2a não declara P2 completo.
+Limitações ainda explícitas: não há integração MCP/UI nem aceite humano real. E2a/E2b não
+declaram P2 completo.
+
+## E2b — fronteira ADR-015 local
+
+- `AgentDataGrant` entrou em migration/schema com RLS/FORCE de tenant. A tupla exata é
+  `(orgId, sourceType, sourceRef, field)`; `sourceRef` é obrigatório e não há seletor curinga.
+  A allowlist de campos é fechada (`sourceRef`, `title`, `body`, `tags`, `kind`, validade e
+  confiança). O destino persistido é fixo `agente_externo`, com texto/versão/ator do consentimento;
+  nenhuma concessão de leitura habilita vetorização.
+- `AgentDataGrantService` reconsulta o usuário/empresa e a permissão atual `admin.permissoes` no
+  banco para conceder/listar/revogar. Escrita e `AuditLog` são uma transação; listagem não expõe
+  texto de nota, hash ou segredo. `MemoriaService.buscarParaAgente` registra no `EventLog` a
+  decisão/diagnóstico, token id/ator e fontes/campos efetivamente devolvidos, sem query, corpo,
+  bearer ou hash; se o rastro falhar, a leitura falha fechada.
+- A consulta textual monta `UNION ALL` por fonte: `body` só aparece na branch com grant de body,
+  e a projeção ainda é filtrada por fonte antes do retorno. Filtros autorizados precedem `LIMIT`;
+  revogação vale na consulta seguinte. `ok` com zero itens é busca autorizada vazia, distinto de
+  `sem_consentimento`/`sem_campo_pesquisavel`. Não há vetor, embedding ou fornecedor pago nesta
+  fatia; o cron de Obsidian está explicitamente desabilitado para vetorização de memória.
+- `ContextBuilder` depende obrigatoriamente de `MemoriaService` e preserva neutralização/cerca e
+  procedência; não importa nem chama `ObsidianService`. O efeito legado `contexto.memoria.buscar`
+  também usa `buscarParaAgente`, fechando o bypass interno. MCP e catálogo `/knowledge` ficam em
+  E2c; tools financeiras/leads legadas não são declaradas cobertas por ADR-015.
+
+### Evidências E2b
+
+- `pnpm --filter @mktos/api typecheck` e `typecheck:test`: exit 0.
+- `test/tenant-isolation.test.ts`: 296/296; 85 alvos, 88 tabelas com RLS/FORCE, papel restrito
+  `mktos_app` com `bypassrls=false`.
+- `test/memoria-agent.integration.test.ts`: 3/3 em PostgreSQL descartável `pgvector/pg16`, com
+  conexão de leitura `mktos_app` e bind somente `127.0.0.1:55439`. Prova dois tenants, duas
+  fontes na mesma empresa A (uma com `body`, outra só `title/sourceRef`), uma terceira fonte sem
+  grant filtrada antes de `LIMIT 1`, corpo negado sem resultado/snippet, isolamento de B, busca
+  vazia autorizada, revogação no request seguinte, rechecagem real de `admin.permissoes` após
+  rebaixamento e auditoria real no `EventLog`/`AuditLog`. As fixtures carregam apenas texto
+  sintético e são removidas ao fim.
+- `test/context-builder-agent-boundary.test.ts`: 2/2; ausência de grant vira diagnóstico
+  `sem_consentimento`, a fonte do builder não tem import/chamada Obsidian e sentinelas/divergência
+  de tenant são recusadas. `adversarial`: 54 pass/12 skipped; `resposta-sem-fonte`: 26 pass/6
+  skipped; 18 casos de banco permanecem skipped por desenho no conjunto padrão.
+- `test/arquitetura.test.ts` (40/40), `test/modulos-por-tenant.test.ts` (88 pass/9 skipped) e
+  `test/plataforma-restrita.test.ts` (2/2) passaram; as exceções obsoletas de
+  `efeitos.service.ts`/`context-builder.service.ts` para `ObsidianService` foram removidas.
+- O harness `apps/api/scripts/smoke-restrito.cjs` foi estendido e executado com cwd temporário,
+  env allowlist sintético, timers desligados e `listen(0, 127.0.0.1)`: boot/health, cadastro/login,
+  concessões humanas, emissão de PAT `memoria.buscar`, consulta HTTP textual real, JWT humano
+  recusado no guard PAT, isolamento HTTP e limpeza das fixtures passaram. Nenhuma montagem de
+  home pessoal ou chamada externa foi configurada; o banco foi o mesmo descartável loopback.
+
+Limites E2b: a migração/serviço local não é aceite humano de fonte real; não há UI/MCP, nem prova
+de catálogo legado, nem autorização de embeddings. O smoke restrito prova apenas as rotas locais
+compiladas e fixtures sintéticas; não autoriza deploy, fornecedor ou alteração remota. Antes de
+E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e provedor do aceite real.
