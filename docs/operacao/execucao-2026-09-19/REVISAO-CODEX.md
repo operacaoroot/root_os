@@ -167,3 +167,31 @@ banco dessa execução. Isso não comprova integração SQL nem HTTP.
 
 E2b segue em execução pelo escritor único. O revisor Luna prepara em paralelo
 somente o mapa de extensão do MCP/painel para E2c, sem editar código.
+
+## R10 — entrega E2b e correção de aceite E2b.1
+
+Luna entregou `ed84dfc` com 296 casos de isolamento SQL e 3 de integração
+ADR-015 reportados, além de smoke compilado seguro. O commit local preserva o
+trabalho, mas **não equivale a aceite**: faltavam CI dedicada, trava estrita de
+banco e negativas de revogação/PAT entre tenants no HTTP. Correção E2b.1 enviada
+ao mesmo escritor, sem reverter o commit e sem ampliar escopo.
+
+Checagem independente às 17:15 -03: arquitetura, módulos, boundary e token:
+**144 pass / 9 skip**, exit 0. Os nove pulados pertencem aos cenários de banco
+de módulos; não são evidência de isolamento SQL nesta execução. As duas
+exceções obsoletas de arquitetura foram removidas e a catraca passou.
+
+E2b.1 aprovada após conferir o diff incremental: a alternativa de criar o Pool
+somente com a flag dedicada também impede conexão sem a validação estrita;
+fora dela o teste falha fechado. CI inclui a suíte com piso 3 e zero pulados.
+O smoke prova PAT B com fonte própria sem acesso à A, revogação do grant de
+body e PAT revogado retornando 401. Luna reportou execução 3/3 e smoke verde;
+o coordenador conferiu diff/check e sintaxe do harness (`node --check`, exit 0),
+sem rodar outra suíte simultânea no banco compartilhado de teste.
+
+Commit incremental autorizado; E2c enviado ao mesmo escritor. A CI foi alterada
+localmente, não executada no GitHub (nenhum push autorizado).
+
+Baseline independente web antes de E2c (17:21 -03):
+`pnpm --filter @mktos/web test`, **382/382**, 28 arquivos, exit 0. Há warning
+preexistente de React `act` em custo-ia, sem falha. O commit E2b.1 é `683888e`.

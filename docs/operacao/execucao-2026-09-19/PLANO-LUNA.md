@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a entregue/revisada localmente; E2b autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b revisadas localmente; E2c autorizada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -125,6 +125,12 @@ faltantes como completas.
 - E2b autorizada: memória por empresa + grants de fonte exata/campos, default deny,
   autorização humana atual, projeção/consulta limitada e procedência; MCP/painel
   entram depois. Provas de integração devem ficar reutilizáveis no repositório.
+- E2b entregue em `ed84dfc`; correção E2b.1 aprovada pelo coordenador após revisar
+  trava estrita, CI dedicada e negativas HTTP de PAT/grant/tenant. Luna reportou
+  3/3 integração e `SMOKE_RESTRITO_OK`; commit incremental autorizado. Isso não
+  substitui regressão integrada E6 nem execução real do workflow remoto de CI.
+- E2c enviada ao Luna: leitura por id, cliente MCP exclusivo de PAT e controles
+  mínimos no painel; humano/P2 final continuam abertos.
 
 ## Recorte preparado para E2c (após revisão E2b)
 
