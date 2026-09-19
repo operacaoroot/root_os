@@ -1,6 +1,6 @@
 # Status do executor Luna — 19/09/2026
 
-Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c aprovada localmente no commit `37043b3`; E3a.1 commitada em `a09108c`, E3a.2 em `99203a7` e E3b.1 em `5ed5414`; E3b.2a em implementação local.**
+Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c aprovada localmente no commit `37043b3`; E3a.1 commitada em `a09108c`, E3a.2 em `99203a7` e E3b.1 em `ea5b442`; E3b.2a em implementação local.**
 
 ## Limites observados
 
@@ -436,7 +436,7 @@ e ferramentas financeiras/leads legadas continuam fora da fronteira ADR-015. Ace
 texto/provedor/fonte/campo, teste com PAT real e portões G1/DNS/easyPanel continuam pendentes;
 CI verde não declara P2/P3/P4/P5 concluídos.
 
-## E3b.1 — cliente local de importação consentida (commit local `5ed5414`)
+## E3b.1 — cliente local de importação consentida (commit local `ea5b442`)
 
 - `tools/conector-local/client.py` implementa pareamento, pulso, abertura/lote/fim e retomada
   idempotente sobre transporte injetável; a chave da requisição é persistida antes da abertura,
