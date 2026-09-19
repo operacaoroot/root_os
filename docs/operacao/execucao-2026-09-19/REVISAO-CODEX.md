@@ -626,3 +626,29 @@ confirmado. O reforço de comparar estado antes/depois foi implementado e medido
 E4a despachada ao mesmo Luna, escritor exclusivo: contrato/scaffold e staging
 determinístico, sem ativação/publicação. E4b/E4c, E5/E6 e portões E7/E8 continuam
 abertos. Não houve autorização de mutação remota, push, merge ou dados reais.
+
+## R25 — E4a em protótipo, sem aceite; preservação de arquivos reprovada
+
+Coletor consolidado em **`5b37dfc`**. O primeiro protótipo do gerador E4a foi
+revisto antes de hooks/ativação. SQL inicialmente usava `app.current_org_id`,
+que não é o GUC deste projeto; solicitado/revisado uso do helper existente
+`app_rls_aplicar_policies` e FK para `Org.id`, além de fixture com duas empresas.
+TS atual é esqueleto de dados e página, não ferramenta funcional/autorizada.
+
+Limpeza inicialmente aceitava paths do marker com remoção recursiva; exigida
+recusa de caminhos amplos e comprovação da propriedade por inventário/hash.
+Mesmo após a primeira correção, coordenador reproduziu em diretório temporário
+exclusivo: criar/preparar alpha; inserir um arquivo sintético alheio no destino
+staged da futura beta, fora do marker; criar beta e preparar novamente.
+Resultado **exit 0 e `unownedBytesPreserved=false`**: arquivo alheio sobrescrito.
+Todo o reprodutor foi sintético e limpo ao encerrar; não foi executado preparador
+sobre saídas reais do workspace. A afirmação do checkpoint de preservação não
+foi aceita como evidência.
+
+Despachada correção delimitada: inventário real exato, validação integral antes
+da primeira mutação, recusa de symlinks/ancestrais/dangling e colisões, destinos
+sem sobreposição com input, marker estrito e negativos que verifiquem bytes
+preservados. Retirar flexibilidade desnecessária é preferível a um framework de
+filesystem. Remover última ferramenta deve produzir inventário vazio sem deixar
+código obsoleto; não é autorização de remover migrations já aplicadas.
+E4a segue **sem aceite e sem commit**, E4b/E4c ainda não iniciadas.
