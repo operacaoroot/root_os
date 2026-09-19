@@ -1,6 +1,6 @@
 # Status do executor Luna — 19/09/2026
 
-Estado: **E0/E1 concluídos; E2a implementada/validada; E2b implementada e validada localmente; E2c (MCP/UI) pendente.**
+Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c implementada localmente e aguardando revisão/aceite, sem commit E2c.**
 
 ## Limites observados
 
@@ -235,3 +235,57 @@ Limites E2b: a migração/serviço local não é aceite humano de fonte real; n�
 de catálogo legado, nem autorização de embeddings. O smoke restrito prova apenas as rotas locais
 compiladas e fixtures sintéticas; não autoriza deploy, fornecedor ou alteração remota. Antes de
 E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e provedor do aceite real.
+
+## E2c — ponte MCP e painel local
+
+- `GET /api/agent/memoria/ler/:id` usa `memoria.ler`, devolve somente a projeção permitida por
+  `(sourceType,sourceRef,field)` e registra a decisão no `EventLog`; inexistente, arquivada,
+  tenant errado ou fonte/campo sem grant retornam o mesmo `404`, sem revelar existência. A busca
+  e a leitura compartilham a projeção por fonte; não há getter humano integral nesse caminho.
+- O modo MCP padrão (`MCP_MODE=memoria`) anuncia somente `memoria_buscar` e `memoria_ler` e exige
+  `MCP_AGENT_TOKEN`; não tenta login/fallback JWT no `401`. `MCP_MODE=legacy` é opt-in explícito;
+  as tools legadas `search_knowledge`/`get_note` recusam-se para não abrir bypass de ADR-015.
+  `MCP_API_URL` exige HTTPS, salvo HTTP loopback com toggle de teste/desenvolvimento; redirects
+  são manuais e nunca recebem bearer encaminhado; erros são sanitizados. O timeout permanece ativo
+  durante fetch e consumo do corpo, inclusive após headers imediatos.
+- `apps/web/src/app/contexto/AcessoAgente.tsx` lista/emite/revoga apenas tokens do usuário e,
+  com `admin.permissoes` atual, lista/concede/revoga grants exatos selecionando uma fonte já
+  carregada e seu campo. O destino é exibido como `agente_externo`; a declaração fixa informa que
+  o conteúdo pode sair da VPS para o provedor contratado (ex. Anthropic/Claude), durante a
+  concessão ativa, e que revogar não recolhe conteúdo já enviado. Texto/versionamento do
+  consentimento é enviado para auditoria e emitir token não concede fonte. O segredo fica em
+  estado de tela uma vez, sem storage, e é limpo na troca de sessão ou revogação; respostas antigas
+  de emissão/listagem são descartadas.
+
+### Evidências E2c atuais
+
+- `pnpm --filter @mktos/api typecheck`: exit 0; integração dedicada
+  `test/memoria-agent.integration.test.ts`: 3/3, agora incluindo leitura autorizada, leitura
+  com body negado, fonte sem grant e auditoria sem conteúdo.
+- `pnpm --filter @mktos/mcp typecheck`, `build` e `smoke`: exit 0. O smoke versionado
+  `packages/mcp/scripts/smoke-e2c.ts` cobre catálogo de 2 tools, PAT sintético 401/revogado,
+  redirect sem bearer, timeout antes dos headers, headers imediatos com corpo pendente, JSON
+  inválido sem refletir marcador, login legado com timeout e retry legado limitado a duas
+  autenticações. Não houve provider call nem leitura de credencial do host.
+- `test/arquitetura.test.ts`: 40/40; o smoke MCP mantém as chaves sintéticas construídas em
+  runtime para não transformar fixture de teste em nova casa de credencial de máquina.
+- `pnpm --filter @mktos/web typecheck`: exit 0; `pnpm --filter @mktos/web build`: exit 0;
+  `tests/component/acesso-agente.test.tsx`: 4/4, cobrindo segredo sem localStorage, fonte/ref
+  literal+destino fixo, ausência de grant sem `admin.permissoes`, disclosure de saída para
+  provedor, descarte de emissão e listagem após troca de sessão. A suíte web completa pós-E2c passou 386/386
+  em 29 arquivos (warning de `act` preexistente em `custo-ia`); baseline anterior era 382/382
+  em 28 arquivos.
+- O smoke HTTP seguro existente `apps/api/scripts/smoke-restrito.cjs` foi estendido localmente
+  para leitura por id: sucesso com `memoria.ler`, recusa de PAT só-busca, 404 entre tenants,
+  leitura da própria nota B e ausência de body após revogar o grant. Foi reexecutado após o build
+  final e passou `SMOKE_RESTRITO_OK` (exit 0). O harness compilado roda `AppModule` em subprocesso
+  isolado no host, com cwd temporário, env allowlist sintético, timers off e listen loopback; não
+  importa nem executa `main.js` e não monta home/credenciais pessoais.
+- Não houve commit, push, merge, deploy ou escrita remota para E2c. O commit E2b.1 anterior é
+  `683888e`; as mudanças E2c estão deliberadamente no working tree para revisão.
+
+Limites E2c: a UI ainda depende da memória carregada para oferecer referências selecionáveis;
+isso evita inventar `sourceRef`, mas não é onboarding de fontes ausentes. O catálogo `/knowledge`
+e ferramentas financeiras/leads legadas continuam fora da fronteira ADR-015. Aceite humano do
+texto/provedor/fonte/campo, teste com PAT real e portões G1/DNS/easyPanel continuam pendentes;
+CI verde não declara P2/P3/P4/P5 concluídos.

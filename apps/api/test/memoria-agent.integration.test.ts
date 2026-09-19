@@ -46,6 +46,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
   let grantARef: string;
   let grantARestrictedRef: string;
   let ungrantedARef: string;
+  let ungrantedAId: string;
   let grantBRef: string;
 
   beforeAll(async () => {
@@ -81,6 +82,7 @@ describe('fronteira ADR-015 da busca de memória', () => {
       const itemA = randomUUID();
       const itemARestricted = randomUUID();
       const itemAUnGranted = randomUUID();
+      ungrantedAId = itemAUnGranted;
       const itemB = randomUUID();
       const items = [
         [itemA, orgA, `${marca}:a`, `Título A marcador ${marca}`, `corpo permitido A ${marca} marcador`, grantARef, 'hash-a', now],
@@ -165,6 +167,16 @@ describe('fronteira ADR-015 da busca de memória', () => {
     expect(porFonte.get(grantARestrictedRef)?.fields).toMatchObject({ title: expect.stringContaining('Título B marcador') });
     expect(porFonte.get(grantARestrictedRef)?.fields.body).toBeUndefined();
 
+    const lido = await memoria.lerParaAgente(orgA, porFonte.get(grantARef)!.id, { userId: userA, tokenId: 'token-a' });
+    expect(lido?.fields).toMatchObject({ title: expect.stringContaining('Título A marcador'), body: expect.stringContaining('corpo permitido A') });
+    const restrito = await memoria.lerParaAgente(orgA, porFonte.get(grantARestrictedRef)!.id, { userId: userA, tokenId: 'token-a' });
+    expect(restrito?.fields).toMatchObject({ title: expect.stringContaining('Título B marcador') });
+    expect(restrito?.fields.body).toBeUndefined();
+    expect(await memoria.lerParaAgente(orgA, ungrantedAId, { userId: userA, tokenId: 'token-a' })).toBeNull();
+    await adminPool().query('UPDATE "ContextItem" SET "arquivadoEm"=CURRENT_TIMESTAMP WHERE "id"=$1', [porFonte.get(grantARef)!.id]);
+    expect(await memoria.lerParaAgente(orgA, porFonte.get(grantARef)!.id, { userId: userA, tokenId: 'token-a' })).toBeNull();
+    await adminPool().query('UPDATE "ContextItem" SET "arquivadoEm"=NULL WHERE "id"=$1', [porFonte.get(grantARef)!.id]);
+
     const corpoNegado = await memoria.buscarParaAgente(orgA, 'termo-corpo-b', 20);
     expect(corpoNegado.diagnostico).toBe('ok');
     expect(corpoNegado.itens).toEqual([]);
@@ -187,6 +199,12 @@ describe('fronteira ADR-015 da busca de memória', () => {
     expect(eventos.rows.some((row) => row.actorId === userA)).toBe(true);
     expect(eventos.rows.every((row) => row.correlationId)).toBe(true);
     expect(JSON.stringify(eventos.rows.map((row) => row.payload))).not.toContain('corpo permitido A');
+    const leituras = await adminPool().query(
+      'SELECT "payload" FROM "EventLog" WHERE "orgId"=$1 AND "tipo"=$2 ORDER BY "seq" DESC',
+      [orgA, 'memoria.agent_leitura'],
+    );
+    expect(leituras.rows.length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(leituras.rows.map((row) => row.payload))).not.toContain('corpo permitido A');
   });
 
   it('distingue busca autorizada vazia e revogação efetiva no próximo request', async () => {

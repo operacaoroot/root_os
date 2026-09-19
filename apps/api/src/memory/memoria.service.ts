@@ -191,6 +191,15 @@ export interface AtorDaBuscaDoAgente {
   tokenId?: string;
 }
 
+interface DecisaoDaMemoriaDoAgente {
+  modo: 'textual' | 'leitura';
+  diagnostico: string;
+  quantidade: number;
+  fontes: Array<{ sourceType: ContextSource; sourceRef: string }>;
+  campos: string[];
+  recursoId?: string;
+}
+
 /** O que uma volta de projeção da vault mexeu. É o que a sonda e o CLI mostram. */
 export interface ResumoDaProjecao {
   criadas: number;
@@ -412,41 +421,18 @@ export class MemoriaService {
       fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
     });
     const registrarDecisao = async (resultado: ResultadoDeBuscaDoAgente) => {
-      // O rastro guarda a decisão e metadados autorizados, nunca a consulta,
-      // corpo de nota, bearer ou hash. Falha no rastro falha fechado a leitura.
-      const contexto = contextoAtual();
-      await this.eventos.registrar({
-        orgId,
-        tipo: 'memoria.agent_busca',
-        actorType: ActorType.ai,
-        actorId: ator?.userId ?? contexto?.actorId ?? null,
-        agentSlug: contexto?.agentSlug ?? null,
-        correlationId: contexto?.correlationId ?? null,
-        payload: {
-          modo: resultado.modo,
-          diagnostico: resultado.diagnostico,
-          quantidade: resultado.itens.length,
-          credencialId: ator?.tokenId ?? null,
-          fontes: resultado.itens.map((item) => ({ sourceType: item.sourceType, sourceRef: item.sourceRef })),
-          campos: [...new Set(resultado.itens.flatMap((item) => Object.keys(item.fields)))],
-        },
-      });
+      await this.registrarDecisaoAgente(orgId, {
+        modo: resultado.modo,
+        diagnostico: resultado.diagnostico,
+        quantidade: resultado.itens.length,
+        fontes: resultado.itens.map((item) => ({ sourceType: item.sourceType, sourceRef: item.sourceRef })),
+        campos: [...new Set(resultado.itens.flatMap((item) => Object.keys(item.fields)))],
+      }, ator, 'memoria.agent_busca');
       return resultado;
     };
     if (!q) return registrarDecisao(empty('sem_campo_pesquisavel'));
 
-    const grants = await this.agentGrants.ativos(orgId);
-    const porFonte = new Map<string, { sourceType: ContextSource; sourceRef: string; fields: Set<AgentMemoryField> }>();
-    for (const grant of grants) {
-      const key = `${grant.sourceType}\u0000${grant.sourceRef}`;
-      const atual = porFonte.get(key) ?? {
-        sourceType: grant.sourceType,
-        sourceRef: grant.sourceRef,
-        fields: new Set<AgentMemoryField>(),
-      };
-      atual.fields.add(grant.field);
-      porFonte.set(key, atual);
-    }
+    const porFonte = this.agruparGrants(await this.agentGrants.ativos(orgId));
     // Procedência é obrigatória: sem grant de sourceRef não devolvemos nenhum
     // conteúdo, mesmo que alguém tenha concedido title/body isoladamente.
     const fontes = [...porFonte.values()].filter((fonte) => fonte.fields.has('sourceRef'));
@@ -473,10 +459,7 @@ export class MemoriaService {
       if (!termos.length) continue;
       // Cada fonte tem sua própria SELECT. Uma fonte que só autoriza title não
       // pode receber a coluna body só porque outra fonte autorizou body.
-      const jsonFields = [...fonte.fields]
-        .filter((field) => field !== 'sourceRef')
-        .map((field) => `'${field}', "${field}"`)
-        .join(', ');
+      const jsonFields = this.jsonbCampos(fonte.fields);
       branches.push(
         `SELECT "id", "sourceType", "sourceRef", "atualizadoEm", ` +
           `jsonb_build_object(${jsonFields}) AS "fields" FROM "ContextItem" ` +
@@ -515,6 +498,117 @@ export class MemoriaService {
         };
       }),
       fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
+    });
+  }
+
+  /** Leitura individual para PAT: nunca chama obter(), que é a leitura humana integral. */
+  async lerParaAgente(
+    orgId: string,
+    id: string,
+    ator?: AtorDaBuscaDoAgente,
+  ): Promise<ResultadoDeBuscaDoAgente['itens'][number] | null> {
+    return comTenantResolvido(orgId, async () => {
+      const porFonte = this.agruparGrants(await this.agentGrants.ativos(orgId));
+      const metadado = await this.prisma.contextItem.findFirst({
+        where: { id, orgId, arquivadoEm: null },
+        select: { id: true, sourceType: true, sourceRef: true },
+      });
+      const fonte = metadado?.sourceRef
+        ? porFonte.get(`${metadado.sourceType}\u0000${metadado.sourceRef}`)
+        : undefined;
+      const permitido = fonte && fonte.fields.has('sourceRef') &&
+        (fonte.fields.has('title') || fonte.fields.has('body'))
+        ? fonte
+        : undefined;
+      if (!metadado || !permitido) {
+        await this.registrarDecisaoAgente(orgId, {
+          modo: 'leitura', diagnostico: 'negado', quantidade: 0, fontes: [], campos: [],
+          recursoId: id,
+        }, ator, 'memoria.agent_leitura');
+        return null;
+      }
+      const campos = this.jsonbCampos(permitido.fields);
+      const rows = await this.prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+        `SELECT "id", "sourceType", "sourceRef", jsonb_build_object(${campos}) AS "fields"
+           FROM "ContextItem"
+          WHERE "id" = $1 AND "orgId" = $2 AND "arquivadoEm" IS NULL
+            AND "sourceType" = $3::"ContextSource" AND "sourceRef" = $4`,
+        id, orgId, metadado.sourceType, metadado.sourceRef,
+      );
+      if (!rows[0]) {
+        await this.registrarDecisaoAgente(orgId, {
+          modo: 'leitura', diagnostico: 'negado', quantidade: 0, fontes: [], campos: [], recursoId: id,
+        }, ator, 'memoria.agent_leitura');
+        return null;
+      }
+      const bruto = (rows[0].fields ?? {}) as Record<string, unknown>;
+      const fields: Partial<Record<AgentMemoryField, unknown>> = {};
+      for (const field of permitido.fields) {
+        if (field !== 'sourceRef' && Object.prototype.hasOwnProperty.call(bruto, field)) fields[field] = bruto[field];
+      }
+      const item = {
+        id: String(rows[0].id),
+        score: 0 as const,
+        sourceType: rows[0].sourceType as ContextSource,
+        sourceRef: String(rows[0].sourceRef),
+        fields,
+      };
+      await this.registrarDecisaoAgente(orgId, {
+        modo: 'leitura', diagnostico: 'ok', quantidade: 1,
+        fontes: [{ sourceType: item.sourceType, sourceRef: item.sourceRef }],
+        campos: Object.keys(fields), recursoId: id,
+      }, ator, 'memoria.agent_leitura');
+      return item;
+    });
+  }
+
+  private agruparGrants(grants: Awaited<ReturnType<AgentDataGrantService['ativos']>>) {
+    const porFonte = new Map<string, { sourceType: ContextSource; sourceRef: string; fields: Set<AgentMemoryField> }>();
+    for (const grant of grants) {
+      const key = `${grant.sourceType}\u0000${grant.sourceRef}`;
+      const atual = porFonte.get(key) ?? {
+        sourceType: grant.sourceType,
+        sourceRef: grant.sourceRef,
+        fields: new Set<AgentMemoryField>(),
+      };
+      atual.fields.add(grant.field);
+      porFonte.set(key, atual);
+    }
+    return porFonte;
+  }
+
+  private jsonbCampos(fields: Set<AgentMemoryField>): string {
+    return [...fields]
+      .filter((field) => field !== 'sourceRef')
+      .map((field) => `'${field}', "${field}"`)
+      .join(', ');
+  }
+
+  private async registrarDecisaoAgente(
+    orgId: string,
+    decisao: DecisaoDaMemoriaDoAgente,
+    ator: AtorDaBuscaDoAgente | undefined,
+    tipo: string,
+  ): Promise<void> {
+    // O rastro guarda decisão e metadados autorizados, nunca query, corpo,
+    // bearer ou hash. Falha no rastro falha fechado a leitura.
+    const contexto = contextoAtual();
+    await this.eventos.registrar({
+      orgId,
+      tipo,
+      actorType: ActorType.ai,
+      actorId: ator?.userId ?? contexto?.actorId ?? null,
+      agentSlug: contexto?.agentSlug ?? null,
+      correlationId: contexto?.correlationId ?? null,
+      payload: {
+        modo: decisao.modo,
+        diagnostico: decisao.diagnostico,
+        quantidade: decisao.quantidade,
+        credencialId: ator?.tokenId ?? null,
+        recursoId: decisao.recursoId ?? null,
+        fontes: decisao.fontes,
+        campos: decisao.campos,
+      },
     });
   }
 

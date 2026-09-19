@@ -123,6 +123,18 @@ if (process.argv[2] !== '--filho') {
     assert.equal(buscaAgente.itens.length, 1);
     assert.equal(buscaAgente.itens[0].sourceRef, gravada.sourceRef);
     assert(!JSON.stringify(buscaAgente).includes('Bearer'));
+    const credencialLeitura = await pedir('/auth/agent-tokens', {
+      token: tokens[0], status: 201,
+      body: { name: 'smoke-memoria-leitura', scopes: ['memoria.buscar', 'memoria.ler'], validadeDias: 1 },
+    });
+    const leituraA = await pedir(`/agent/memoria/ler/${encodeURIComponent(nota.notaId)}`, {
+      token: credencialLeitura.token,
+    });
+    assert.equal(leituraA.id, nota.notaId);
+    assert(leituraA.fields.body.includes('frase-exclusiva-A'));
+    await pedir(`/agent/memoria/ler/${encodeURIComponent(nota.notaId)}`, {
+      token: credencial.token, status: 403,
+    });
 
     const notaB = await pedir('/tenants/onboarding/carga/resposta', {
       token: tokens[1], status: 201,
@@ -144,7 +156,7 @@ if (process.argv[2] !== '--filho') {
     }
     const credencialB = await pedir('/auth/agent-tokens', {
       token: tokens[1], status: 201,
-      body: { name: 'smoke-memoria-b', scopes: ['memoria.buscar'], validadeDias: 1 },
+      body: { name: 'smoke-memoria-b', scopes: ['memoria.buscar', 'memoria.ler'], validadeDias: 1 },
     });
     const buscaB = await pedir(`/agent/memoria/buscar?q=${encodeURIComponent('frase-exclusiva-A')}`, {
       token: credencialB.token,
@@ -156,6 +168,13 @@ if (process.argv[2] !== '--filho') {
     });
     assert.equal(buscaBPropria.itens.length, 1);
     assert.equal(buscaBPropria.itens[0].sourceRef, gravadaB.sourceRef);
+    await pedir(`/agent/memoria/ler/${encodeURIComponent(nota.notaId)}`, {
+      token: credencialB.token, status: 404,
+    });
+    const leituraB = await pedir(`/agent/memoria/ler/${encodeURIComponent(notaB.notaId)}`, {
+      token: credencialB.token,
+    });
+    assert.equal(leituraB.id, notaB.notaId);
 
     const grantsListadas = await pedir('/memoria/grants', { token: tokens[0] });
     const grantBodyA = grantsListadas.find((grant) => grant.field === 'body' && grant.sourceRef === gravada.sourceRef);
@@ -166,6 +185,10 @@ if (process.argv[2] !== '--filho') {
     });
     assert.equal(buscaAposRevogarGrant.diagnostico, 'ok');
     assert.equal(buscaAposRevogarGrant.itens.length, 0, 'revogar grant deve valer na busca seguinte');
+    const leituraAposRevogarGrant = await pedir(`/agent/memoria/ler/${encodeURIComponent(nota.notaId)}`, {
+      token: credencialLeitura.token,
+    });
+    assert.equal(leituraAposRevogarGrant.fields.body, undefined);
     await pedir(`/auth/agent-tokens/${credencial.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
     await pedir('/agent/memoria/buscar?q=frase-exclusiva-A', { token: credencial.token, status: 401 });
     await pedir('/agent/memoria/buscar?q=Empresa', { token: tokens[1], status: 401 });

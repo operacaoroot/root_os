@@ -2,9 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { apiGet, qs } from './client.js';
 
-// Todas as tools desta fase são read_only (menor privilégio; a conta de serviço
-// nem tem permissão de escrita). Retornamos JSON com o campo `source` da API
-// para que a IA sempre cite a fonte interna dos dados.
+// Todas as tools são read_only. No modo padrão o PAT individual é validado pela
+// API e a resposta preserva a procedência autorizada da memória.
 
 function ok(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -20,6 +19,51 @@ const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
 
 export function buildServer(): McpServer {
   const server = new McpServer({ name: 'marketing-os', version: '0.1.0' });
+  const modo = process.env.MCP_MODE ?? 'memoria';
+  if (modo === 'legacy') registerLegacyTools(server);
+  else if (modo === 'memoria') registerMemoryTools(server);
+  else throw new Error('MCP_MODE inválido; use memoria ou legacy.');
+  return server;
+}
+
+function registerMemoryTools(server: McpServer): void {
+  server.registerTool(
+    'memoria_buscar',
+    {
+      description: 'Busca memória textual somente nas fontes/campos consentidos para este agente. [read_only]',
+      inputSchema: {
+        q: z.string().trim().min(1).max(500).describe('Termo textual'),
+        limite: z.number().int().min(1).max(20).optional().describe('Máximo de resultados (default 8)'),
+      },
+      annotations: { title: 'Buscar memória autorizada', ...READ_ONLY },
+    },
+    async ({ q, limite }) => {
+      try {
+        return ok(await apiGet(`/agent/memoria/buscar${qs({ q, limite })}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'memoria_ler',
+    {
+      description: 'Lê uma memória por id somente quando a fonte e os campos foram consentidos. [read_only]',
+      inputSchema: { id: z.string().min(1).max(200).describe('ID da memória autorizada') },
+      annotations: { title: 'Ler memória autorizada', ...READ_ONLY },
+    },
+    async ({ id }) => {
+      try {
+        return ok(await apiGet(`/agent/memoria/ler/${encodeURIComponent(id)}`));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+}
+
+function registerLegacyTools(server: McpServer): void {
 
   server.registerTool(
     'get_dashboard_summary',
@@ -229,11 +273,9 @@ export function buildServer(): McpServer {
       annotations: { title: 'Buscar conhecimento (Obsidian)', ...READ_ONLY },
     },
     async ({ query, limit }) => {
-      try {
-        return ok(await apiGet(`/knowledge/search${qs({ q: query, limit })}`));
-      } catch (e) {
-        return fail(e);
-      }
+      void query;
+      void limit;
+      return fail(new Error('A ferramenta knowledge legada está desabilitada; use o modo memoria com PAT e grants explícitos.'));
     },
   );
 
@@ -245,11 +287,8 @@ export function buildServer(): McpServer {
       annotations: { title: 'Ler nota (Obsidian)', ...READ_ONLY },
     },
     async ({ note_id }) => {
-      try {
-        return ok(await apiGet(`/knowledge/${encodeURIComponent(note_id)}`));
-      } catch (e) {
-        return fail(e);
-      }
+      void note_id;
+      return fail(new Error('A ferramenta knowledge legada está desabilitada; use memoria_ler com PAT e grants explícitos.'));
     },
   );
 
@@ -651,5 +690,4 @@ export function buildServer(): McpServer {
     },
   );
 
-  return server;
 }

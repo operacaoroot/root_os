@@ -768,6 +768,12 @@ jobs:
           node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-web.json" \
             "$PISO_CASOS_WEB" "$PISO_ARQUIVOS_WEB" web
 
+      - name: MCP E2c — catálogo PAT restrito e transporte seguro
+        run: |
+          pnpm --filter @mktos/mcp typecheck
+          pnpm --filter @mktos/mcp build
+          pnpm --filter @mktos/mcp smoke:e2c
+
       - name: Testes de api
         run: |
           pnpm --filter @mktos/api test -- \

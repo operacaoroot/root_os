@@ -1,57 +1,48 @@
 # @mktos/mcp — servidor MCP do ROOT OS
 
-Servidor **MCP (Model Context Protocol)** que expõe ferramentas padronizadas para qualquer IA
-(Claude Desktop, Claude Code, ou qualquer cliente MCP) consultar o ROOT OS **com segurança**.
+O modo padrão expõe somente memória autorizada por PAT individual de agente. Toda tool chama a
+API do ROOT OS; o agente passa por escopo, grants exatos por fonte/campo, RLS e auditoria. Não há
+fallback para JWT, login de usuário ou acesso direto ao banco.
 
-## Princípios (ver `docs/MCP_TOOLS.md` e `docs/ISOLATION.md`)
-- A IA **nunca** toca o banco direto. Toda tool chama a **API** do ROOT OS.
-- Autentica com uma **conta de serviço só-leitura** (`ia_servico`) → passa por **RBAC + auditoria**.
-- **Todas as tools são `read_only`** (menor privilégio). O cliente (`src/client.ts`) exporta uma
-  única função de acesso, `apiGet`, e o único `POST` que ele faz é o login da conta de serviço:
-  não existe caminho de escrita neste pacote.
-- Quando a escrita entrar, entra pelo **Tool Gateway** (ADR-004), com a régua R0–R5 de
-  `packages/policy` — nunca por um caminho paralelo aqui dentro.
-- Toda resposta inclui o campo `source` da API → a IA **cita a fonte** e não inventa.
+## Catálogo
 
-## Ferramentas
+O modo padrão (`MCP_MODE=memoria`) anuncia apenas `memoria_buscar` e `memoria_ler`, ambas somente
+leitura. O catálogo legado de 35 tools só é carregado com `MCP_MODE=legacy`, de forma explícita,
+para compatibilidade. Nesse modo a conta de serviço é usada apenas no catálogo legado; `search_knowledge`
+e `get_note` recusam-se e não abrem bypass para a vault.
 
-São **35**, todas `read_only`. O catálogo completo (nome, endpoint, permissão exigida e argumentos)
-vive em **`docs/MCP_TOOLS.md`** — é lá que se olha, e não aqui, para não haver duas listas
-divergindo. Este README já trouxe uma tabela de 10 ferramentas por bastante tempo depois de o
-servidor ter 35.
+## Rodar e testar
 
-O número é contável a partir do código, e o código é que manda:
+Em produção, use uma URL HTTPS e um PAT individual emitido no painel `/contexto`:
 
 ```bash
-grep -c 'registerTool(' packages/mcp/src/server.ts
-```
-
-## Rodar
-```bash
-# 1) API do ROOT OS precisa estar no ar (http://localhost:4001) com o seed aplicado
-# 2) build
 pnpm --filter @mktos/mcp build
-# 3) teste end-to-end (sobe o server, lista e chama tools)
-pnpm --filter @mktos/mcp smoke
+pnpm --filter @mktos/mcp smoke:e2c
 ```
+
+O smoke é determinístico: sobe mock loopback, usa PAT/fixtures sintéticos, valida catálogo,
+401, redirect sem encaminhar bearer, timeout antes dos headers e com headers/corpo pendente,
+retry legado limitado e timeout de login legado. Não importa `main.js` nem lê credenciais do host.
 
 ## Variáveis
 
 | Variável | Default | Observação |
 |---|---|---|
-| `MCP_API_URL` | `http://localhost:4001/api` | |
-| `MCP_SERVICE_EMAIL` | `mcp@marketing-os.local` | conta de serviço só-leitura |
-| `MCP_SERVICE_PASSWORD` | — | **obrigatória, sem default no código**: o processo não sobe sem ela |
+| `MCP_MODE` | `memoria` | `legacy` é opt-in explícito |
+| `MCP_API_URL` | — | HTTPS obrigatório; HTTP somente localhost com `NODE_ENV=test/development` ou `MCP_ALLOW_INSECURE_LOCAL=1` |
+| `MCP_AGENT_TOKEN` | — | PAT individual, nunca versionar |
+| `MCP_TIMEOUT_MS` | `10000` | 100–60000 ms; cobre headers e corpo |
+| `MCP_SERVICE_EMAIL` | `mcp@marketing-os.local` | somente `MCP_MODE=legacy` |
+| `MCP_SERVICE_PASSWORD` | — | somente `MCP_MODE=legacy` |
 
-Gere a senha (`openssl rand -base64 24`), ponha no `.env` e, **só em desenvolvimento**, rode
-`pnpm db:seed` para alinhar a conta — **nunca em produção**: o seed não é idempotente e apaga dados
-do org, então rodá-lo lá destrói dado real. **Rotacionar a senha em produção** (por vazamento ou por
-prazo) exige um script próprio, que **ainda não existe**: até ele existir, a troca é manual e a
-combinar com quem cuida do banco. Ver `.env.example`.
+No desenvolvimento local, HTTP em `http://127.0.0.1` exige o toggle explícito
+`MCP_ALLOW_INSECURE_LOCAL=1`. Grants exatos e atuais continuam necessários; emitir token nunca
+concede uma fonte automaticamente. Ver `.env.example`.
 
-## Plugar no **Claude Desktop**
-Edite `~/Library/Application Support/Claude/claude_desktop_config.json`, trocando o caminho pelo
-do seu clone e a senha pela da sua conta de serviço:
+## Configuração de cliente MCP
+
+Exemplo para Claude Desktop, usando placeholder e mantendo o PAT fora do repositório:
+
 ```json
 {
   "mcpServers": {
@@ -59,29 +50,29 @@ do seu clone e a senha pela da sua conta de serviço:
       "command": "node",
       "args": ["/caminho/para/o/repositorio/packages/mcp/dist/index.js"],
       "env": {
-        "MCP_API_URL": "http://localhost:4001/api",
-        "MCP_SERVICE_EMAIL": "mcp@marketing-os.local",
-        "MCP_SERVICE_PASSWORD": "<SENHA_DA_CONTA_DE_SERVICO>"
+        "MCP_MODE": "memoria",
+        "MCP_API_URL": "https://homolog.example/api",
+        "MCP_AGENT_TOKEN": "<PAT_INDIVIDUAL>"
       }
     }
   }
 }
 ```
-Reinicie o Claude Desktop. Pergunte: *"Use o root-os: o que aconteceu hoje?"*
 
-## Plugar no **Claude Code**
+Para Claude Code, use o comando real do cliente com os mesmos valores locais:
+
 ```bash
 claude mcp add root-os \
-  -e MCP_API_URL=http://localhost:4001/api \
-  -e MCP_SERVICE_EMAIL=mcp@marketing-os.local \
-  -e MCP_SERVICE_PASSWORD="$MCP_SERVICE_PASSWORD" \
+  --scope local \
+  -e MCP_MODE=memoria \
+  -e MCP_API_URL=https://homolog.example/api \
+  -e MCP_AGENT_TOKEN="$MCP_AGENT_TOKEN" \
   -- node /caminho/para/o/repositorio/packages/mcp/dist/index.js
 ```
 
-> ⚠️ **Senha nenhuma entra neste arquivo, nem em qualquer arquivo versionado.** No Claude Code,
-> prefira exportar `MCP_SERVICE_PASSWORD` no shell (como acima) a digitar o valor na linha de
-> comando, que fica no histórico. O `claude_desktop_config.json` guarda o valor em texto claro no
-> seu disco — é config local, mantenha fora do repositório.
->
-> Em produção, senha forte para a conta de serviço e rede restrita.
-> Este MCP é **exclusivo do ROOT OS (root)** — não tem qualquer relação com o MCP do escritório.
+`claude mcp add --help` confirma `--scope local`; não use `--scope project` para evitar versionar
+PAT em configuração compartilhada. O comando apenas configura a ponte: não substitui o aceite
+humano de grants nem prova conexão com homologação.
+
+O arquivo local do cliente pode guardar o valor em texto claro; mantenha-o fora do repositório e
+rotacione o PAT pelo painel. Este pacote não faz chamadas a provedores externos.

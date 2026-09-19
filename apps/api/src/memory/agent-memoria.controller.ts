@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { AgentTokenGuard, RequireAgentScopes } from '../auth/agent-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -28,5 +28,16 @@ export class AgentMemoriaController {
       userId: user.sub,
       tokenId: user.agentTokenId,
     });
+  }
+
+  @Get('ler/:id')
+  @RequireAgentScopes('memoria.ler')
+  async ler(@CurrentUser() user: AgentIdentity, @Param('id') id: string) {
+    const item = await this.memoria.lerParaAgente(user.orgId, id, {
+      userId: user.sub,
+      tokenId: user.agentTokenId,
+    });
+    if (!item) throw new NotFoundException('Memória não encontrada.');
+    return item;
   }
 }

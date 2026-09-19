@@ -5,6 +5,7 @@ import { Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
+import { AcessoAgente } from './AcessoAgente';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
 import { Mapa } from './Mapa';
 import {
@@ -294,6 +295,8 @@ export default function ContextoPage() {
       </div>
 
       {recado && <p className="text-xs text-muted">{recado}</p>}
+
+      <AcessoAgente fontes={memoria.dado?.itens ?? []} />
 
       {(juncao || buscando || erroDaBusca) && (
         <Resultados
