@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { LoginSchema } from '@mktos/shared';
@@ -8,6 +8,7 @@ import { ReauthService } from './reauth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, JwtUser } from './current-user.decorator';
 import { enderecoDeOrigem } from './endereco-de-origem';
+import { AgentTokenService, AGENT_TOKEN_SCOPES } from './agent-token.service';
 
 /*
  * A REAUTENTICAÇÃO É PRESA A UMA APROVAÇÃO, e por isso o `aprovacaoId` é
@@ -22,12 +23,21 @@ const ReautenticarSchema = z
   })
   .strict();
 
+const EmitirAgentTokenSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    scopes: z.array(z.enum(AGENT_TOKEN_SCOPES)).min(1).max(AGENT_TOKEN_SCOPES.length),
+    validadeDias: z.number().int().min(1).max(30).default(30),
+  })
+  .strict();
+
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly google: GoogleLoginService,
     private readonly reauth: ReauthService,
+    private readonly agentTokens: AgentTokenService,
   ) {}
 
   @Post('login')
@@ -90,5 +100,25 @@ export class AuthController {
       roles: user.roles,
       permissions: user.permissions,
     };
+  }
+
+  /** Tokens são geridos pelo próprio usuário; não há rota de admin para terceiros. */
+  @UseGuards(JwtAuthGuard)
+  @Post('agent-tokens')
+  emitirAgentToken(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    const input = EmitirAgentTokenSchema.parse(body);
+    return this.agentTokens.emitir(user.orgId, user.sub, input);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('agent-tokens')
+  listarAgentTokens(@CurrentUser() user: JwtUser) {
+    return this.agentTokens.listar(user.orgId, user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('agent-tokens/:id/revogar')
+  revogarAgentToken(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.agentTokens.revogar(user.orgId, user.sub, id);
   }
 }

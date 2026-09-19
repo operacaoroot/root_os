@@ -134,6 +134,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import * as crypto from 'node:crypto';
 import path from 'node:path';
 
 import { PrismaClient } from '@prisma/client';
@@ -292,6 +293,7 @@ const ALVOS: Alvo[] = [
 
   // ---- identidade e acesso ---------------------------------------------
   { tabela: 'User', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade e passwordHash.' },
+  { tabela: 'AgentToken', escopo: 'filho', chaveSql: '"id"', nota: 'Bearer individual: hash, escopos e validade não podem atravessar usuário/tenant.' },
   { tabela: 'Role', escopo: 'tenant', chaveSql: '"id"', nota: 'Papéis por org.' },
   { tabela: 'AuditLog', escopo: 'tenant', chaveSql: '"id"', nota: 'Concentra before/after das outras 57 tabelas. A mais sensível do banco.' },
   { tabela: 'ChannelIdentity', escopo: 'tenant', chaveSql: '"id"', nota: 'Amarra um número de WhatsApp/Telegram a um usuário: é caminho de AUTENTICAÇÃO, não só de dado.' },
@@ -537,6 +539,18 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     await c.query('INSERT INTO "_UserRoles" ("A", "B") VALUES ($1, $2)', [roleId, userId]);
   }
   reg('_UserRoles', `${roleId}|${userId}`);
+
+  const agentTokenId = await ins(c, 'AgentToken', {
+    id: crypto.randomUUID(),
+    orgId,
+    userId,
+    name: `token_${rotulo}_${MARCA}`,
+    tokenHash: crypto.createHash('sha256').update(`fixture-secret-${rotulo}-${MARCA}`).digest('hex'),
+    scopes: ['memoria.buscar'],
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  reg('AgentToken', agentTokenId);
+  s.ref.agentTokenId = agentTokenId;
 
   // A permissão COMPARTILHADA é o que faz `_RolePermissions` ser testável pela
   // coluna B (Role) e não pela A (Permission, global). Vale para as duas orgs,
@@ -2009,6 +2023,12 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
   const MODULO_DA_SENTINELA = 'src/prisma/contexto-de-plataforma.ts';
   const PODE_IMPORTAR_SEM_CHAMAR: ReadonlyArray<{ arquivo: string; porQue: string }> = [
     {
+      arquivo: 'src/auth/agent-token.service.ts',
+      porQue:
+        'importa somente `comEmpresaResolvida`: a descoberta usa o seletor não confiável do bearer ' +
+        'e consulta id+orgId+hash dentro do tenant; nunca abre a sentinela de plataforma.',
+    },
+    {
       arquivo: 'src/prisma/sessao-de-banco.ts',
       porQue:
         'importa `ORG_PLATAFORMA` (para reconhecer a sentinela no inventário) e ' +
@@ -2053,6 +2073,15 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
         '  conferência de quem pode abrir o contexto passa a medir o lugar errado.\n' +
         '  Importe sempre de `src/prisma/contexto-de-plataforma.ts`.\n',
     ).toEqual([]);
+  });
+
+  it('o resolver de AgentToken importa somente o helper seguro de empresa', () => {
+    const raizDaApi = acharRaizDaApi();
+    const arquivo = path.join(raizDaApi, 'src/auth/agent-token.service.ts');
+    const refs = referenciasAoModulo(readFileSync(arquivo, 'utf8'));
+    expect(refs).toHaveLength(1);
+    expect(refs[0].reexporta).toBe(false);
+    expect(refs[0].clausula.replace(/\s/g, '')).toBe('{comEmpresaResolvida}');
   });
 
   it('só os caminhos declarados abrem o contexto de plataforma', () => {
@@ -2868,6 +2897,14 @@ async function emTransacaoDesfeita<T>(fn: (c: PoolClient) => Promise<T>): Promis
  * da mesma transação, que é desfeita no fim.
  */
 const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, unknown>>> = {
+  AgentToken: async () => ({
+    id: crypto.randomUUID(),
+    userId: sementes.A.ref.userId,
+    name: `token_gatilho_${MARCA}`,
+    tokenHash: crypto.createHash('sha256').update(`segredo_${MARCA}`).digest('hex'),
+    scopes: ['memoria.buscar'],
+    expiresAt: new Date(Date.now() + 86_400_000),
+  }),
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -2931,7 +2968,7 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
-    expect(declarados.length).toBe(10);
+    expect(declarados.length).toBe(11);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

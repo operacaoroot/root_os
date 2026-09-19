@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PermissionsGuard } from './permissions.guard';
 import { ReauthService } from './reauth.service';
+import { AgentTokenService } from './agent-token.service';
+import { AgentTokenGuard } from './agent-token.guard';
 
 @Module({
   imports: [
@@ -16,10 +18,26 @@ import { ReauthService } from './reauth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, GoogleLoginService, ReauthService, JwtAuthGuard, PermissionsGuard],
+  providers: [
+    AuthService,
+    GoogleLoginService,
+    ReauthService,
+    JwtAuthGuard,
+    PermissionsGuard,
+    AgentTokenService,
+    AgentTokenGuard,
+  ],
   // `ReauthService` sai daqui porque quem exige reautenticação é a APROVAÇÃO
   // (R4/R5), e ela mora noutro módulo. Conferir quem é a pessoa continua sendo
   // assunto da autenticação — é aqui que a senha é comparada com o hash.
-  exports: [GoogleLoginService, ReauthService, JwtAuthGuard, PermissionsGuard, JwtModule],
+  exports: [
+    GoogleLoginService,
+    ReauthService,
+    JwtAuthGuard,
+    PermissionsGuard,
+    AgentTokenService,
+    AgentTokenGuard,
+    JwtModule,
+  ],
 })
 export class AuthModule {}

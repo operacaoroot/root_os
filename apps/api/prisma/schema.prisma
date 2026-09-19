@@ -71,6 +71,7 @@ model Org {
   modulos String[] @default([])
 
   users        User[]
+  agentTokens  AgentToken[]
   roles        Role[]
   leads        Lead[]
   campaigns    Campaign[]
@@ -211,6 +212,7 @@ model User {
 
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
+  agentTokens AgentToken[]
 
   agentesQueDono Agent[]           @relation("AgentDono")
   identidades    ChannelIdentity[]
@@ -228,6 +230,31 @@ model Role {
   permissions Permission[] @relation("RolePermissions")
 
   @@unique([orgId, key])
+}
+
+/// Credencial bearer individual para integrações de agente.
+///
+/// `orgId` é redundante de propósito: o gatilho deriva/confere a empresa pelo
+/// usuário. O segredo nunca é persistido, apenas seu SHA-256; a emissão devolve
+/// o bearer uma única vez. A autorização efetiva relê usuário, empresa e papéis
+/// a cada uso, portanto revogar papel ou usuário invalida o próximo request.
+model AgentToken {
+  id        String   @id @default(uuid())
+  orgId     String   @default("")
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  tokenHash String   @unique
+  scopes    String[] @default([])
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+
+  @@index([orgId, userId])
+  @@index([orgId, revokedAt])
+  @@index([orgId, expiresAt])
 }
 
 /// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em
