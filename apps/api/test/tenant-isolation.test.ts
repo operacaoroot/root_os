@@ -295,6 +295,10 @@ const ALVOS: Alvo[] = [
   { tabela: 'User', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade e passwordHash.' },
   { tabela: 'AgentToken', escopo: 'filho', chaveSql: '"id"', nota: 'Bearer individual: hash, escopos e validade não podem atravessar usuário/tenant.' },
   { tabela: 'AgentDataGrant', escopo: 'tenant', chaveSql: '"id"', nota: 'Concessão ADR-015: fonte/campo autorizados não podem atravessar tenant.' },
+  { tabela: 'ConnectorSource', escopo: 'tenant', chaveSql: '"id"', nota: 'Destino lógico do receptor local; configuração não pode atravessar empresa nem conter raiz do servidor.' },
+  { tabela: 'ConnectorDevice', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade opaca do receptor local; o hash do bearer não pode atravessar empresa.' },
+  { tabela: 'ConnectorDeviceSource', escopo: 'filho', chaveSql: '"id"', nota: 'Vínculo dispositivo-fonte com dois pais; o trigger confere ambos no mesmo tenant.' },
+  { tabela: 'ConnectorPairingCode', escopo: 'tenant', chaveSql: '"id"', nota: 'Código de pareamento de uso único; hash e seleção lógica são dados do tenant.' },
   { tabela: 'Role', escopo: 'tenant', chaveSql: '"id"', nota: 'Papéis por org.' },
   { tabela: 'AuditLog', escopo: 'tenant', chaveSql: '"id"', nota: 'Concentra before/after das outras 57 tabelas. A mais sensível do banco.' },
   { tabela: 'ChannelIdentity', escopo: 'tenant', chaveSql: '"id"', nota: 'Amarra um número de WhatsApp/Telegram a um usuário: é caminho de AUTENTICAÇÃO, não só de dado.' },
@@ -565,6 +569,31 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     grantedByUserId: userId,
   });
   reg('AgentDataGrant', agentGrantId);
+
+  // --- receptor local (E3a.1): somente identidade e escopo lógico ---------
+  const connectorSourceId = await ins(c, 'ConnectorSource', {
+    id: crypto.randomUUID(), orgId, nome: `Fonte lógica ${rotulo} ${MARCA}`,
+    tipo: 'pasta', raizLogica: `cliente/${suf}`, incluir: ['**/*.md'], excluir: ['privado/**'],
+    tiposPermitidos: ['.md'], modo: 'sincronizacao', regraExclusao: 'arquivar',
+    tamanhoMaximo: 1024, escopoVersao: 1, createdAt: agora, updatedAt: agora,
+  }, { incluir: 'text[]', excluir: 'text[]', tiposPermitidos: 'text[]' });
+  reg('ConnectorSource', connectorSourceId);
+  s.ref.connectorSourceId = connectorSourceId;
+
+  const connectorDeviceId = await ins(c, 'ConnectorDevice', {
+    id: crypto.randomUUID(), orgId, nome: `Receptor ${rotulo} ${MARCA}`,
+    tokenHash: crypto.createHash('sha256').update(`connector-fixture-${rotulo}-${MARCA}`).digest('hex'),
+  });
+  reg('ConnectorDevice', connectorDeviceId);
+  s.ref.connectorDeviceId = connectorDeviceId;
+  reg('ConnectorDeviceSource', await ins(c, 'ConnectorDeviceSource', {
+    id: crypto.randomUUID(), orgId, deviceId: connectorDeviceId, sourceId: connectorSourceId,
+  }));
+  reg('ConnectorPairingCode', await ins(c, 'ConnectorPairingCode', {
+    id: crypto.randomUUID(), orgId, createdByUserId: userId,
+    codeHash: crypto.createHash('sha256').update(`pairing-fixture-${rotulo}-${MARCA}`).digest('hex'),
+    sourceIds: [connectorSourceId], expiresAt: new Date(Date.now() + 900_000), maxAttempts: 5,
+  }, { sourceIds: 'text[]' }));
 
   // A permissão COMPARTILHADA é o que faz `_RolePermissions` ser testável pela
   // coluna B (Role) e não pela A (Permission, global). Vale para as duas orgs,
@@ -2919,6 +2948,14 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     scopes: ['memoria.buscar'],
     expiresAt: new Date(Date.now() + 86_400_000),
   }),
+  ConnectorDeviceSource: async (c) => {
+    const sourceId = await ins(c, 'ConnectorSource', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, nome: `Fonte gatilho ${MARCA}`,
+      tipo: 'pasta', raizLogica: `gatilho/${MARCA}`, incluir: [], excluir: [], tiposPermitidos: ['.md'],
+      modo: 'sincronizacao', regraExclusao: 'ignorar', tamanhoMaximo: 100, escopoVersao: 1,
+    }, { incluir: 'text[]', excluir: 'text[]', tiposPermitidos: 'text[]' });
+    return { id: crypto.randomUUID(), deviceId: sementes.A.ref.connectorDeviceId, sourceId };
+  },
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -2969,6 +3006,8 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
  * A e troca UM pai pelo equivalente da org B.
  */
 const REF_DA_SEMENTE: Record<string, string> = {
+  ConnectorDevice: 'connectorDeviceId',
+  ConnectorSource: 'connectorSourceId',
   WorkTask: 'workTaskId',
   WorkField: 'workFieldId',
   WorkFieldOption: 'workFieldOptionId',
@@ -2982,7 +3021,7 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
-    expect(declarados.length).toBe(11);
+    expect(declarados.length).toBe(12);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

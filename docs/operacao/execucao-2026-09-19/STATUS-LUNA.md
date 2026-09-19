@@ -1,6 +1,6 @@
 # Status do executor Luna — 19/09/2026
 
-Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c implementada localmente e aguardando revisão/aceite, sem commit E2c.**
+Estado: **E0/E1 concluídos; E2a/E2b implementadas e validadas localmente; E2c aprovada localmente no commit `37043b3`; E3a.1 commitada em `HEAD` e E3a.2 em implementação local.**
 
 ## Limites observados
 
@@ -236,6 +236,58 @@ de catálogo legado, nem autorização de embeddings. O smoke restrito prova ape
 compiladas e fixtures sintéticas; não autoriza deploy, fornecedor ou alteração remota. Antes de
 E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e provedor do aceite real.
 
+## E3a.1 — identidade do conector local
+
+- Criado o módulo próprio `apps/api/src/conector/`: `ConnectorSource` descreve somente destino
+  lógico (`pasta`/`arquivo`, raiz relativa, filtros, extensões, limite, modo, regra de exclusão e
+  versão do escopo); não há leitura de filesystem, raiz absoluta, credencial ou remessa.
+- `ConnectorDevice` persiste apenas hash SHA-256 do bearer opaco `rcon1`; o token de dispositivo é
+  separado de JWT/PAT. `ConnectorDeviceSource` liga dispositivo e fonte com um gatilho que confere os dois pais
+  integridade tenant; `ConnectorPairingCode` persiste somente hash, seleção lógica, expiração de
+  15 minutos e contador de tentativas. O código tem 128 bits aleatórios e é consumido sob
+  `FOR UPDATE`; tentativas erradas são commitadas antes da recusa para que o limite seja real.
+- Rotas humanas próprias exigem JWT + `admin.permissoes` + `obsidian.editar`, e o serviço relê
+  usuário, papéis e empresa ativos em cada mutação. Emissão de código e criação/revogação de
+  fonte/dispositivo gravam `AuditLog` na mesma transação. Troca de código relê a autoridade atual
+  do emissor: downgrade/desativação entre emissão e pareamento falha fechado sem criar dispositivo.
+- `POST /api/conector/pareamento` é a única troca pública de código por bearer; `POST
+  /api/conector/pulso` aceita exclusivamente o guard de dispositivo. O tenant é derivado do
+  bearer; `orgId` no pareamento é só seletor público. Cada pulso relê empresa/dispositivo/fontes
+  ativos; fonte revogada retorna `revogado:true` e lista vazia, dispositivo revogado retorna 401.
+  Nenhuma rota JWT/PAT aceita bearer de dispositivo, e nenhuma rota de pulso aceita JWT/PAT.
+- `20260919130000_conector_identidade/migration.sql` cria enums, FK, RLS/FORCE e policies de
+  quatro tabelas. `FILHOS_COM_ORGID_REDUNDANTE`, o catálogo `ALVOS` e a fixture genérica de
+  `tenant-isolation` agora cobrem fonte, dispositivo, relação de dois pais e código.
+
+### Evidências E3a.1 atuais
+
+- `pnpm --filter @mktos/api typecheck` e `typecheck:test`: exit 0; `pnpm --filter @mktos/api build`:
+  exit 0.
+- `DATABASE_URL` sintética no banco descartável separado `marketing_os_e3a_test`: `db:deploy`
+  aplicou as 44 migrations do zero, incluindo `20260919130000_conector_identidade`; o banco
+  temporário foi removido ao fim do ensaio. A suíte de integração usou somente o DB loopback
+  `marketing_os_test_rls` preservado para fixtures.
+- `test/conector-identidade.integration.test.ts`: **9/9**, banco `marketing_os_test_rls` próprio,
+  URLs admin/restrita em `127.0.0.1:55439`, nomes descartáveis, usuários distintos, sem override.
+  Mede rejeição de caminho/limites, auditoria, tentativas persistentes e bloqueio após cinco,
+  concorrência real de oito trocas com um único sucesso, hash sem plaintext, trigger de relação
+  cross-tenant, pulso/revogação, expiração e autoridade atual (permissão/empresa).
+- `test/tenant-isolation.test.ts`: **309/309**, incluindo `ConnectorSource`, `ConnectorDevice`,
+  `ConnectorDeviceSource` e `ConnectorPairingCode`; 89 alvos com RLS/FORCE e 0 sem RLS/FORCE.
+  A relação de dois pais é testada no trigger próprio e na prova genérica de herança/cruzamento.
+- `apps/api/scripts/smoke-restrito.cjs`, após build, executado em subprocesso com cwd temporário,
+  env allowlist sintético, timers desligados e `listen(0,127.0.0.1)`: `SMOKE_RESTRITO_OK`. O fluxo
+  HTTP compilado mediu fonte lógica → código → pareamento → pulso, JWT/PAT no pulso 401, bearer de
+  dispositivo em PAT/memória 401, fonte revogada no pulso seguinte e dispositivo revogado 401.
+  Não executou `main.js`, não montou home pessoal e não chamou provedor/serviço remoto.
+- A CI recebeu o conjunto `conector-identidade` no `vitest.config.ts` e passo sequencial com JSON,
+  piso 9 e zero `failed/pending/todo/skipped`; o smoke compilado existente inclui E3a.1.
+
+Limites E3a.1: não há acesso real a pasta/arquivo, cliente local, pulso com remessa, UI, provider,
+upload, sincronização ou alteração remota. O pulso apenas anuncia alcance lógico atual; a
+interseção com consentimento local e qualquer remessa pertencem à E3a.2/E3b. O diff aguarda
+revisão do coordenador antes de commit E3a.1.
+
 ## E2c — ponte MCP e painel local
 
 - `GET /api/agent/memoria/ler/:id` usa `memoria.ler`, devolve somente a projeção permitida por
@@ -281,8 +333,8 @@ E2c/aceite, o produto deve registrar o texto, versão, ator, fonte/campo e prove
   final e passou `SMOKE_RESTRITO_OK` (exit 0). O harness compilado roda `AppModule` em subprocesso
   isolado no host, com cwd temporário, env allowlist sintético, timers off e listen loopback; não
   importa nem executa `main.js` e não monta home/credenciais pessoais.
-- Não houve commit, push, merge, deploy ou escrita remota para E2c. O commit E2b.1 anterior é
-  `683888e`; as mudanças E2c estão deliberadamente no working tree para revisão.
+- E2c foi commitada localmente em `37043b3`, sem push, merge, deploy ou escrita remota. O commit
+  E2b.1 anterior é `683888e`; o diff E3a.1 permanece no working tree para revisão.
 
 Limites E2c: a UI ainda depende da memória carregada para oferecer referências selecionáveis;
 isso evita inventar `sourceRef`, mas não é onboarding de fontes ausentes. O catálogo `/knowledge`

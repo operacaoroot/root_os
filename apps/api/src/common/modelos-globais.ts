@@ -171,6 +171,12 @@ export interface FilhoComOrgIdRedundante {
 
 export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   { modelo: 'AgentToken', pai: 'User', fk: 'userId' },
+  {
+    modelo: 'ConnectorDeviceSource',
+    pai: 'ConnectorDevice',
+    fk: 'deviceId',
+    paisConferidos: [{ modelo: 'ConnectorSource', fk: 'sourceId' }],
+  },
   { modelo: 'IntegrationHealth', pai: 'IntegrationAccount', fk: 'accountId' },
   { modelo: 'LeadEvent', pai: 'Lead', fk: 'leadId' },
   { modelo: 'BioLink', pai: 'BioPage', fk: 'pageId' },

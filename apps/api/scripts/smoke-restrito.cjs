@@ -123,6 +123,57 @@ if (process.argv[2] !== '--filho') {
     assert.equal(buscaAgente.itens.length, 1);
     assert.equal(buscaAgente.itens[0].sourceRef, gravada.sourceRef);
     assert(!JSON.stringify(buscaAgente).includes('Bearer'));
+
+    // E3a.1: o receptor só conhece destino lógico. O pareamento público usa o
+    // orgId como seletor, mas o código/hash vinculado é a autoridade; nenhum
+    // JWT de sessão pode atravessar a guarda exclusiva do dispositivo.
+    const fonteConector = await pedir('/conector/fontes', {
+      token: tokens[0], status: 201,
+      body: {
+        nome: 'Smoke pasta lógica', tipo: 'pasta', raizLogica: 'cliente/documentos',
+        incluir: ['**/*.md'], excluir: ['privado/**'], tiposPermitidos: ['.md'],
+        modo: 'sincronizacao', regraExclusao: 'arquivar', tamanhoMaximo: 1024,
+      },
+    });
+    const codigoConector = await pedir('/conector/pareamento/codigo', {
+      token: tokens[0], status: 201,
+      body: { nomeDispositivo: 'Smoke laptop', fonteIds: [fonteConector.id] },
+    });
+    assert(codigoConector.codigo && codigoConector.id);
+    const dispositivo = await pedir('/conector/pareamento', {
+      status: 201,
+      body: { orgId: pessoas[0].orgId, pairingId: codigoConector.id, code: codigoConector.codigo, nomeDispositivo: 'Smoke laptop' },
+    });
+    assert(dispositivo.token && dispositivo.id);
+    const pulso = await pedir('/conector/pulso', {
+      token: dispositivo.token, status: 200,
+      body: { versao: 'smoke-1', so: 'fixture', usuarioLocal: 'fixture', relogio: new Date().toISOString() },
+    });
+    assert.equal(pulso.revogado, false);
+    assert.deepEqual(pulso.fontes.map((fonte) => fonte.id), [fonteConector.id]);
+    assert(!JSON.stringify(pulso).includes(dispositivo.token));
+    await pedir('/conector/pulso', {
+      token: tokens[0], status: 401,
+      body: { versao: 'smoke-1', so: 'fixture', usuarioLocal: 'fixture', relogio: new Date().toISOString() },
+    });
+    await pedir('/conector/pulso', {
+      token: credencial.token, status: 401,
+      body: { versao: 'smoke-1', so: 'fixture', usuarioLocal: 'fixture', relogio: new Date().toISOString() },
+    });
+    await pedir('/agent/memoria/buscar?q=frase-exclusiva-A', { token: dispositivo.token, status: 401 });
+    await pedir('/auth/agent-tokens', { token: dispositivo.token, status: 401 });
+    await pedir(`/conector/fontes/${fonteConector.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
+    const pulsoSemFonte = await pedir('/conector/pulso', {
+      token: dispositivo.token, status: 200,
+      body: { versao: 'smoke-1', so: 'fixture', usuarioLocal: 'fixture', relogio: new Date().toISOString() },
+    });
+    assert.equal(pulsoSemFonte.revogado, true);
+    assert.deepEqual(pulsoSemFonte.fontes, []);
+    await pedir(`/conector/dispositivos/${dispositivo.id}/revogar`, { token: tokens[0], method: 'POST', status: 201 });
+    await pedir('/conector/pulso', {
+      token: dispositivo.token, status: 401,
+      body: { versao: 'smoke-1', so: 'fixture', usuarioLocal: 'fixture', relogio: new Date().toISOString() },
+    });
     const credencialLeitura = await pedir('/auth/agent-tokens', {
       token: tokens[0], status: 201,
       body: { name: 'smoke-memoria-leitura', scopes: ['memoria.buscar', 'memoria.ler'], validadeDias: 1 },
@@ -198,7 +249,7 @@ if (process.argv[2] !== '--filho') {
     assert.equal((await pedir('/memoria/integridade', { token: tokens[0] })).ok, true);
     // O arranque não pode apenas engolir uma falha de varredura e parecer saudável.
     await app.get(TetoDeCustoIaService).liberarReservasPresas('varredura');
-    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro/login, grants, PAT, revogações imediatas, isolamento HTTP entre tenants e recusa de provisionamento.');
+    console.log('SMOKE_RESTRITO_OK: boot, saúde, cadastro/login, grants, PAT, conector pareamento/pulso/revogação, isolamento HTTP entre tenants e recusa de provisionamento.');
   }
   async function limpar() {
     if (app) await app.close();

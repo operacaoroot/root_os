@@ -73,6 +73,10 @@ model Org {
   users        User[]
   agentTokens  AgentToken[]
   memoriaGrants AgentDataGrant[]
+  connectorSources ConnectorSource[]
+  connectorDevices ConnectorDevice[]
+  connectorDeviceSources ConnectorDeviceSource[]
+  connectorPairingCodes ConnectorPairingCode[]
   roles        Role[]
   leads        Lead[]
   campaigns    Campaign[]
@@ -214,6 +218,7 @@ model User {
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
   agentTokens AgentToken[]
+  connectorPairingCodes ConnectorPairingCode[]
 
   agentesQueDono Agent[]           @relation("AgentDono")
   identidades    ChannelIdentity[]
@@ -284,6 +289,100 @@ model AgentDataGrant {
   @@unique([orgId, sourceType, sourceRef, field])
   @@index([orgId, revokedAt])
   @@index([orgId, sourceType, sourceRef, field])
+}
+
+/// Destino lógico de um conector. Não é um caminho do servidor: a ponte local
+/// interpreta `raizLogica` e os filtros, e o servidor só anuncia este escopo.
+model ConnectorSource {
+  id              String                 @id @default(uuid())
+  orgId           String
+  org             Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  nome            String
+  tipo            ConnectorSourceType
+  raizLogica      String
+  incluir         String[]               @default([])
+  excluir         String[]               @default([])
+  tiposPermitidos String[]               @default([])
+  modo            ConnectorMode
+  regraExclusao   ConnectorDeletionRule
+  tamanhoMaximo   BigInt
+  escopoVersao    Int                    @default(1)
+  revokedAt       DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  devices         ConnectorDeviceSource[]
+
+  @@index([orgId, revokedAt])
+  @@index([orgId, nome])
+}
+
+/// Identidade opaca do programa local. O bearer nunca é persistido, somente o
+/// SHA-256 de seu segredo; `orgId` é sempre derivado/conferido pelo servidor.
+model ConnectorDevice {
+  id          String                  @id @default(uuid())
+  orgId       String
+  org         Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  nome        String
+  tokenHash   String                  @unique
+  revokedAt   DateTime?
+  createdAt   DateTime                @default(now())
+  lastSeenAt  DateTime?
+  sources     ConnectorDeviceSource[]
+
+  @@index([orgId, revokedAt])
+}
+
+/// Relação explícita para que a mesma fonte possa ser ligada a mais de um
+/// dispositivo sem copiar a configuração nem abrir uma ligação entre tenants.
+model ConnectorDeviceSource {
+  id        String           @id @default(uuid())
+  orgId     String           @default("")
+  deviceId  String
+  sourceId  String
+  createdAt DateTime         @default(now())
+  org       Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device    ConnectorDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  source    ConnectorSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, sourceId])
+  @@index([orgId, deviceId])
+  @@index([orgId, sourceId])
+}
+
+/// Código de pareamento de curta duração. `codeHash` e `sourceIds` não são
+/// segredo utilizável: o primeiro é hash do código e os segundos são apenas a
+/// seleção lógica validada novamente na troca.
+model ConnectorPairingCode {
+  id              String   @id @default(uuid())
+  orgId           String
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  createdByUser   User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  codeHash        String   @unique
+  sourceIds       String[]
+  expiresAt       DateTime
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(5)
+  usedAt          DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([orgId, expiresAt])
+  @@index([orgId, usedAt])
+}
+
+enum ConnectorSourceType {
+  pasta
+  arquivo
+}
+
+enum ConnectorMode {
+  importacao
+  sincronizacao
+}
+
+enum ConnectorDeletionRule {
+  ignorar
+  arquivar
 }
 
 /// Catálogo GLOBAL de permissões, sem orgId de propósito: a chave é a mesma em

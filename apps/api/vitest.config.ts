@@ -37,7 +37,7 @@ import { defineConfig } from 'vitest/config';
 const CONJUNTOS = {
   padrao: {
     include: ['test/**/*.test.ts'],
-    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/memoria-agent.integration.test.ts'],
+    exclude: ['**/node_modules/**', 'test/tenant-isolation.test.ts', 'test/memoria-agent.integration.test.ts', 'test/conector-identidade.integration.test.ts'],
   },
   isolamento: {
     include: ['test/tenant-isolation.test.ts'],
@@ -45,6 +45,10 @@ const CONJUNTOS = {
   },
   'memoria-agente': {
     include: ['test/memoria-agent.integration.test.ts'],
+    exclude: ['**/node_modules/**'],
+  },
+  'conector-identidade': {
+    include: ['test/conector-identidade.integration.test.ts'],
     exclude: ['**/node_modules/**'],
   },
 } as const;

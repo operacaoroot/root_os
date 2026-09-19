@@ -184,6 +184,7 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'auth',
   'caixa',
   'config',
+  'conector',
   'dashboard',
   'google',
   'health',

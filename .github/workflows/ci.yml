@@ -1072,6 +1072,41 @@ jobs:
             }
           '
 
+      # E3a.1: identidade do receptor no mesmo banco descartável, em sequência,
+      # com admin e papel de aplicação distintos. O piso e o status impedem
+      # skips silenciosos na prova de pareamento/RLS.
+      - name: Identidade do conector local
+        env:
+          MKTOS_CONJUNTO_DE_TESTES: conector-identidade
+          RESUMO_CONECTOR_IDENTIDADE: ${{ runner.temp }}/resumo-conector-identidade.json
+          PISO_CASOS_CONECTOR_IDENTIDADE: '9'
+        run: |
+          pnpm --filter @mktos/api exec vitest run test/conector-identidade.integration.test.ts \
+            --reporter=default --reporter=json \
+            --outputFile.json="$RESUMO_CONECTOR_IDENTIDADE"
+          node -e '
+            const fs = require("node:fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync(process.env.RESUMO_CONECTOR_IDENTIDADE, "utf8")); }
+            catch (e) { console.log("::error::resumo do conector ilegível: " + e.message); process.exit(1); }
+            const piso = Number(process.env.PISO_CASOS_CONECTOR_IDENTIDADE);
+            const total = r.numTotalTests;
+            const status = (r.testResults || []).flatMap((arquivo) => arquivo.assertionResults || [])
+              .map((caso) => caso.status);
+            console.log("conector-identidade: " + total + " casos, " + r.numPassedTests + " verdes, " +
+              r.numFailedTests + " vermelhos, " + r.numPendingTests + " pulados, " + r.numTodoTests +
+              " pendentes (piso: " + piso + ").");
+            if (r.success !== true || r.numFailedTests !== 0 || r.numPendingTests !== 0 ||
+                r.numTodoTests !== 0 || status.some((item) => item !== "passed")) {
+              console.log("::error::a prova de identidade do conector não passou inteira e sem skips.");
+              process.exit(1);
+            }
+            if (!Number.isInteger(piso) || total < piso) {
+              console.log("::error::a suíte do conector rodou " + total + " casos, abaixo do piso de " + piso + ".");
+              process.exit(1);
+            }
+          '
+
       # -----------------------------------------------------------------------
       # A SEÇÃO DE RLS DAS ROTAS PÚBLICAS — mora aqui, e não no job `qualidade`.
       #
