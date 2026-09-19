@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1/E3b.2a aceitas localmente; próximo E3b.2b**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a/E3b.1/E3b.2a/E3b.2b.1 aceitas localmente; E3b.2b.2 em revisão**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -446,3 +446,15 @@ solução sem instalar runtime adicional silenciosamente. Não montar `.env`, co
 ou socket Docker no validador; arquivos da ferramenta são dados, não código a
 executar no pré-check. Ensaiar os scripts em clone/instância descartáveis, nunca
 no workspace ativo nem na VPS sem aprovação.
+
+Outra integração obrigatória: `test/tenant-isolation.test.ts` compara `ALVOS`
+com **todas** as tabelas públicas. Incorporar um artefato estático gerado de
+alvos/fixtures das ferramentas ao registro e ao seed/cleanup existentes, sem
+editar o núcleo por slug nem excluir tabelas `Tool_*` da conferência. O recorte
+inicial pode limitar o molde a tabela direta de tenant com chave `id`, `orgId`
+obrigatório e fixture A/B; não precisa criar agora um motor genérico de joins.
+Manifesto ausente/inválido ou tabela extra deve reprovar, inclusive se tiver
+RLS declarada, porque policy sem linhas de teste não comprova isolamento.
+Queries de dados do molde são parametrizadas e com tabela constante; não há
+catraca global de `RawUnsafe` no código atual, portanto conferir o molde e os
+casos negativos explicitamente, sem prometer sandbox por análise de strings.

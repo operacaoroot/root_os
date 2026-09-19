@@ -565,3 +565,31 @@ Scanner passou de caminhos para descritores durante a revisão, mas isso ainda
 precisa das negativas de troca/falha/cleanup. Prévia de snapshot lê bytes para
 hash local; não descrevê-la como apenas metadados, característica que continua
 pertencendo à prévia genérica. Nenhuma alteração remota foi autorizada.
+
+## R23 — aceite do núcleo de snapshots e integração em revisão
+
+E3b.2b.1 aceita em **`18734e8`**. Coordenador repetiu **80/80 testes Python**,
+zero pulados, incluindo envio de SnapshotConsent, reconstrução após perda de
+recibo em doubles, snapshot vazio, alteração antes do fim, arquivo único e
+roundtrip dos arquivos produzidos pelo CLI. Repetiu também o reprodutor de R22:
+agora resulta em `ConsentRequired` com **zero chamadas de rede**. Igualdade exata
+entre arquivos e snapshot é verificada antes do envio.
+
+O scanner abre diretórios/arquivos por descritores, confere ancestrais e usa
+abertura não bloqueante contra FIFO. Isso é uma varredura conservadora com
+checagens, não snapshot atômico do filesystem ou segurança contra o próprio
+usuário do sistema. A suite não demonstra todas as possíveis falhas de `fstat`.
+O envelope anterior vincula destino/empresa/dispositivo/fonte/escopo e raiz;
+não foi criado um sistema de assinatura que simule consentimento inviolável.
+
+E3b.2b.2 entregue para revisão, ainda **não aceita**: seletor opcional e smoke
+compilado reportado verde pelo executor. O diff mostrou apenas A→B→vazio e uma
+assertiva de versões `>= 2`, sem perda de recibo após HTTP real. Solicitado
+completar A→B→A, exatamente três versões e retomadas com recibo descartado pelo
+transporte de fixture após aplicação real no servidor. O teste do seletor só
+cobria toolkit ausente; faltavam cancelamento/sucesso/cleanup em doubles, além
+dos exemplos de uso e teste do modo manual no painel. Esses requisitos não
+podem ser substituídos por marcar o seletor do painel como habilitado.
+
+Nenhum diálogo, cofre ou pasta pessoal deve ser aberto para essas provas.
+Windows, distribuição e aceite humano continuam não demonstrados. E4–E8 abertos.
