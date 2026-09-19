@@ -322,22 +322,22 @@ módulos, rotas públicas e modelos globais **168 pass / 29 skip**, exit 0.
 
 ### Portão de aceite E3a.2 — checklist de encerramento
 
-- [ ] Escrita do conector coordenada com o lock da memória humana; caminho
+- [x] Escrita do conector coordenada com o lock da memória humana; caminho
   repetido com conteúdos diferentes no mesmo lote/snapshot é recusado.
-- [ ] Helper público transacional do EventLog não permite pular montagem/redação.
-- [ ] HTTP real com documento acima de 100 KiB; teto de wire fechado e restrito
+- [x] Helper público transacional do EventLog não permite pular montagem/redação.
+- [x] HTTP real com documento acima de 100 KiB; teto de wire fechado e restrito
   a remessa, demais JSON/formulários preservados; segredo errado recusado.
-- [ ] SQL direto de ambos os vínculos para memória de outra empresa/fonte ou
+- [x] SQL direto de ambos os vínculos para memória de outra empresa/fonte ou
   origem forjada é recusado; colisão de chave não altera a nota anterior.
-- [ ] Lote/fim repetidos não duplicam; concorrência real, lote antigo de caminho
+- [x] Lote/fim repetidos não duplicam; concorrência real, lote antigo de caminho
   inédito e fim antigo não alteram conteúdo/frescor recentes.
-- [ ] Arquivar e restaurar mantêm versões/elos/cadeia; `ignorar` e importação não
+- [x] Arquivar e restaurar mantêm versões/elos/cadeia; `ignorar` e importação não
   arquivam ausências. Teste com esse nome precisa exercitar esses dois caminhos.
-- [ ] Manifesto completo omisso/desconhecido e contador falso recusados;
+- [x] Manifesto completo omisso/desconhecido e contador falso recusados;
   parcial com erro não arquiva nem marca sucesso; revogação interrompe o ciclo.
-- [ ] Falha induzida desfaz conteúdo, versão, evento e recibo; retry bem-sucedido
+- [x] Falha induzida desfaz conteúdo, versão, evento e recibo; retry bem-sucedido
   mantém contagem exata. `conferirElos.ok` e cadeia verificados após o ciclo.
-- [ ] CI dedicada, isolamento genérico, migration do zero e build compilado
+- [x] CI dedicada, isolamento genérico, migration do zero e build compilado
   repetidos sobre o diff final, com resultados atualizados no STATUS-LUNA.
 
 Lista de provas, não autorização para commit ou publicação. Não inclui testes
@@ -358,3 +358,31 @@ globais. O guard põe `connectorDevice`, enquanto suspensão procura empresa no
 contexto/`request.user`; o vínculo autenticado não pode desaparecer entre as
 duas camadas e liberar coleta como se fosse uma rota pública sem empresa.
 Isso preserva o gate existente, sem redesenhar política de cobrança.
+
+## R16 — aceite local do receptor e início E3b.1
+
+Revisão complementar corrigiu o parser para começo exato `/api/conector/remessa`
+e filtros glob sem sentinelas colidentes. Vistos testes de ambos os vínculos de
+memória, colisão sem sobrescrita, omissão de recebido, exclusão ignorada/importação,
+arquivamento/restauração com elos/cadeia e rollback com contagem exata no retry.
+A montagem/redação do EventLog permanece interna. O dispositivo entra no contexto
+como ator técnico, e a composição com suspensão recusa tanto PAT quanto dispositivo.
+
+Provas independentes: às 18:51, seis arquivos focados **139 pass / 69 skip**;
+às 18:56, parser/glob/contexto **45/45**, `typecheck` e `diff --check` exit 0.
+Luna reportou integração dedicada **6/6**, isolamento **315/315**, regressão sem
+banco **1266 pass / 539 skip** antes da última ampliação focada, build e smoke
+compilado com arquivo acima de 100 KiB/413 acima de 12 MiB, memória negada sem
+grant e permitida após concessão explícita. A CI foi configurada, não executada
+remotamente; pedido piso 6 para os seis casos dedicados.
+
+Luna reportou nova aplicação limpa das **45 migrations** em
+`marketing_os_e3a2_migration_test`, removido após o ensaio. Isso prova aplicação
+do histórico em banco vazio; `migrate deploy` sozinho não prova ausência de drift
+de schema. Solicitado ajustar essa distinção no status.
+
+Aceite **local E3a.2** concedido e commit focado autorizado, seguido de E3b.1
+sem exigir novo prompt do Pedro. Agora entram consentimento, leitor, cofre,
+transporte e retomada do cliente Python com fixtures. UI/painel ficam em E3b.2.
+Windows não ganha envio por um teste simulado; nenhuma proteção pode ser ignorada
+por flag. Não houve autorização adicional para fonte real, cofre pessoal ou VPS.

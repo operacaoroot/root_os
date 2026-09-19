@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a.1 revisadas localmente; E3a.2 autorizada ao Luna**.
+Estado: **EM EXECUÇÃO — E2a/E2b/E2c/E3a revisadas localmente; E3b.1 autorizada ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -137,6 +137,11 @@ faltantes como completas.
   aceite humano P2 nem execução da CI no GitHub. Commit focado autorizado.
 - E3a subdividida para revisão segura: E3a.1 identidade, fontes e pareamento/pulso;
   E3a.2 remessas, revisões, finalização e frescor. E3b integra o coletor local.
+- E3a.2 aceita localmente às 18:56 -03: remessas revisadas, integração SQL 6/6,
+  isolamento 315/315 e HTTP compilado reportados pelo executor; coordenador
+  repetiu parser/glob/contexto 45/45, tipos e diff check. Commit focado autorizado
+  e E3b.1 enviada para continuar sem nova confirmação do Pedro. Instalação,
+  fontes reais, distribuição e aceite do piloto continuam fora desse aceite.
 
 ## Recorte preparado para E2c (após revisão E2b)
 
@@ -271,3 +276,22 @@ Não instalar agendamento, credenciais ou configuração do Claude real durante 
 testes. Testes simulados de Windows não equivalem a validação na máquina do
 piloto. Não acrescentar assinatura de instalador, SQL ou framework de plugins
 para contornar essas pendências. E3b só começa após aceite local do receptor.
+
+## Dependência identificada para E4/E5 — migrations das ferramentas
+
+O revisor Luna confirmou por leitura que `deploy/atualizar.sh` inventaria o
+histórico de migrations da **tag do núcleo**, antes do build, enquanto preserva
+`ferramentas/` por checksum. Isso não incorpora migrations próprias dessas
+pastas. Copiá-las somente no Docker build não resolve: a checagem anterior
+poderia interpretar migration já aplicada como ausente/downgrade.
+
+Consequência para a execução: o scaffold pode ser preparado, mas não publicado
+como P4 concluído antes de integrar e testar o inventário **núcleo + ferramentas**,
+com nomes/checksums, migração em cópia, imagem anterior compatível e restauração.
+Uma alternativa sem schema próprio pode ser um recorte intermediário, não a
+entrega prometida de tabela/migration com RLS. Não alterar silenciosamente esse
+critério do plano de produto para declarar a etapa verde.
+
+A aprovação de capacidade nova permanece humana e explícita. Um fragmento de
+política gerado não é uma assinatura, e autorização para implementar/testar
+localmente não autoriza ativar essa capacidade na VPS.
