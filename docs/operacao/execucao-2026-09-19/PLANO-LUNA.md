@@ -277,6 +277,14 @@ testes. Testes simulados de Windows não equivalem a validação na máquina do
 piloto. Não acrescentar assinatura de instalador, SQL ou framework de plugins
 para contornar essas pendências. E3b só começa após aceite local do receptor.
 
+Sequenciamento refinado durante E3b.1: o primeiro recorte é importação pontual,
+não sincronização automática. Depois, E3b.2a liga o cliente real à API compilada
+restrita e acrescenta controles no painel; E3b.2b cobre snapshots/sincronização
+com consentimentos separados e seletor local. O coordenador verificou que o
+Python atual encontra o pacote `tkinter`, mas seu import falha por ausência de
+`_tkinter`. Não instalar toolkit global nem declarar interface visual testada
+nesta máquina; suporte/distribuição e ensaio humano precisam ficar explícitos.
+
 ## Dependência identificada para E4/E5 — migrations das ferramentas
 
 O revisor Luna confirmou por leitura que `deploy/atualizar.sh` inventaria o

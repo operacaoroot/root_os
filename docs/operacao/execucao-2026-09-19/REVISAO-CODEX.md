@@ -413,3 +413,31 @@ do ensaio autorizado na máquina do piloto.
 Enquanto o executor implementa, o revisor prepara por leitura a integração
 mínima do inventário de migrations núcleo + ferramentas para E4/E5. Não há
 segundo escritor, instalação remota ou ativação de capacidade nova.
+
+## R18 — primeira entrega do coletor, ainda sem aceite
+
+Luna entregou E3b.1 como **importação pontual**; sincronização contínua, UI e
+Windows não estão implementados/aceitos. Coordenador repetiu a suíte:
+**37/37, zero pulados**, exit 0. Também executou `cli.main` em diretório sintético
+privado: aprovação → JSON de consentimento → carga → envio, com transporte e
+cofre em memória injetados; ambos os comandos retornaram 0 e estado `concluida`.
+Isso não é conexão à API compilada nem teste do cofre real.
+
+A revisão reteve o commit até a rodada consolidada:
+
+- Resumo visível de destino/escopo antes da confirmação; prompt de pareamento
+  sem fallback que ecoe segredo; erros esperados sem traceback de causas.
+- Exemplos executáveis em diretório privado, incluindo pareamento e estado
+  distinto para nova importação, preservando retomada ativa.
+- Recibo de fim ligado à remessa/fonte/contagens; vínculo do pareamento validado.
+- Timeout após aplicação no servidor em abrir/lote/fim com double stateful;
+  negativas reais de redirect/TLS em loopback e timeout de leitura; CLI na suíte.
+- Doubles da API nativa do Keychain, sem acessar o cofre; testes de estado local
+  symlink/permissões/falhas de gravação e leitor com troca de ancestral.
+
+Bug confirmado independentemente apenas com mocks: `_open_anchored_root` abre
+fds `[100, 101]`; ao falhar `fstat(101)`, fecha somente `[100]`. O descritor do
+filho ainda não havia entrado na lista de limpeza. Reprodutor enviado ao Luna
+para fechar esse caminho e equivalentes de raiz/componente/arquivo. Ainda não
+há aceite E3b.1, nem autorização remota nova. O job de CI do conector já usa
+`test_*.py`; não é necessário duplicá-lo.
