@@ -525,3 +525,40 @@ de preservação da pasta com identificação do que está rodando. A imagem ant
 já contém seu código compilado e pode recuperar o runtime sem sobrescrever a
 pasta atual do cliente; registrar essa diferença entre fonte preservada e
 artefato ativo, em vez de inventar um catálogo/bundle manager como atalho.
+
+### E4c/E5 — ordem preparada para o próximo despacho (ainda não executada)
+
+1. **Inventário e identidade.** Uma única enumeração validada de core+tool
+   migrations, nomes/checksums sem duplicatas, é usada no pré-check, no build e
+   no `migrate deploy`. Histórico aplicado ausente ou alterado reprova antes do
+   corte. Testes devem confrontar os bytes, não apenas contar migrations. O
+   `toolHash` é calculado dos inputs validados e ligado aos bytes compilados;
+   não aceitar um valor arbitrário de env como identidade. Identidade core/hash
+   embutida na imagem deve prevalecer sobre env de runtime, com desenvolvimento
+   explicitamente distinto. Não precisa de nova variável `ARTIFACT_ID` se for
+   derivável. Fixtures de ferramentas antigas sem manifesto não são convertidas
+   nem ignoradas silenciosamente: recusa legível, preservando os arquivos.
+2. **Atualizador e recuperação.** Atualização somente de ferramenta deve ser
+   possível com mesmo core e hash diferente. Imagem nomeada/registrada pela
+   identidade completa, sem sobrescrever a anterior; health e recuperação
+   conferem a mesma identidade. `--voltar` seleciona imagem exata registrada,
+   não a reconstrói só por tag/core. A pasta do cliente permanece intocada mesmo
+   se sua fonte estiver adiante do runtime restaurado. Imagem legada sem hash
+   não equivale a conjunto vazio validado: registrar a lacuna e exigir caminho
+   explícito de transição, sem declarar recuperação totalmente comprovada.
+   No host, usar Node da imagem para validação de dados somente leitura e sem
+   rede; não instalar Node/Python nem executar TS/SQL da ferramenta no pré-check.
+3. **Duas ferramentas e restore.** Em instância/clone local descartável, provar
+   primeira ferramenta, segunda, mudança de núcleo e mudança só de ferramenta;
+   dados, arquivos e env preservados. Ensaiar imagem anterior sobre schema novo
+   e restaurar backup em outro banco descartável antes de afirmar recuperação.
+   Stubs de deploy são prova de controle/ordem, não substituem imagem e banco
+   reais. Nenhum destes passos autoriza tocar na homologação ou produção.
+
+E6 distingue explicitamente boot da imagem, HTTP/RLS, cliente Python no host e
+integração cliente→imagem. O harness `smoke-restrito.cjs` atual chama Python:
+não roda inalterado na imagem Node sem Python. Não adicionar Python à produção
+nem pular o filho e devolver o marcador antigo como se fosse prova completa.
+Um harness Node da imagem pode ter marcador próprio e complementar a prova do
+cliente; uma integração completa precisa realmente conectar ambos. Bind local
+ou rede interna exclusiva e ambiente allowlist permanecem obrigatórios.
