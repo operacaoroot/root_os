@@ -693,3 +693,28 @@ commit interrompe o atualizador, e health/imagem só identificam core. Identidad
 core+toolhash e inventário agregado ficam em E4c/E5; não ampliar a2/b silenciosamente.
 Rollback de runtime usa imagem anterior exata e preserva a pasta do cliente;
 checksum/fonte preservada e versão efetivamente ativa são conceitos distintos.
+
+## R28 — checkpoint de revisão funcional, E4a.2/E4b ainda sem aceite
+
+Às 21:22 -03, coordenador repetiu em diretórios temporários exclusivos as suítes
+`test-build-hook.mjs` e `test-cli.mjs`: **exit 0**, marcadores
+`E4A_HOOK_TESTS_OK` e `E4A_TOOL_TESTS_OK`. A primeira ainda precisava ampliar
+negativos de marker reivindicando núcleo/landing, ancestrais symlink, colisão Web
+preservando saídas API e lock estrangeiro. A suíte CLI atual não compila mais o
+template staged: a prova de compilação real com ferramenta presente é requisito
+da integração, não pode ser atribuída à versão atual desse teste.
+
+Revisão estática encontrou divergência entre lista de activationKeys retornada
+por `/tenants/modulos` e links que esperavam slugs, além de leitura retida pela
+Porta tratada na UI como lista comum. Solicitados contrato consistente, bilhete
+explícito para leitura/criação, máscara de dados e formulário já no render ao
+trocar sessão/slug, descarte de respostas atrasadas e testes comportamentais.
+Esses apontamentos são de código em implementação; não substituem HTTP compilado
+ou medição de isolamento com duas empresas. Escritor segue exclusivamente Luna.
+
+Preparação E4c confirmou pontos de extensão em `deploy/atualizar.sh`,
+`lib-instancia.sh` e `test/deploy-instancia.test.ts`. Não foi adotada a sugestão
+de exigir um gerenciador de bundles ou fonte antiga para voltar o runtime:
+imagem anterior exata já contém o compilado; fonte preservada e imagem ativa
+devem ser distinguidas e verificadas. E4c deve cobrir inventário agregado,
+checksum histórico e identidade core+toolHash antes de qualquer publicação.
