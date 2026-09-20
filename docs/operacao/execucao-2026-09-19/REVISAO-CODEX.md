@@ -718,3 +718,31 @@ de exigir um gerenciador de bundles ou fonte antiga para voltar o runtime:
 imagem anterior exata já contém o compilado; fonte preservada e imagem ativa
 devem ser distinguidas e verificadas. E4c deve cobrir inventário agregado,
 checksum histórico e identidade core+toolHash antes de qualquer publicação.
+
+## R29 — checkpoint recuperado; boot compilado sem ferramenta passa
+
+Coordenador reproduziu em fixture própria a colisão Web com mudança real no
+input: alpha preparado, fonte alpha alterada, beta criada e destino Web beta
+ocupado por sentinel alheio. Hook recusou com **exit 4**, todos os arquivos API
+e seu marker ficaram byte a byte iguais e o sentinel Web foi preservado.
+
+Após pedidos de checkpoint sem resposta, executor foi brevemente interrompido
+sem desfazer alterações e devolveu o registro. Reportou testes CLI/hook, tipos
+API/Web, API build, compilação temporária com ferramenta presente, focados
+**5 ferramentas + 97 módulos**, regressão API **1273 pass / 539 skips**. Ainda
+não havia prova HTTP/DB da ferramenta. Nenhum banco adicional tinha sido criado.
+Esses números são relato do executor, não repetição integral pelo coordenador.
+
+Root conferiu e repetiu **API typecheck/typecheck:test/build e Web typecheck**,
+todos exit 0, e **`SMOKE_RESTRITO_OK`, exit 0**, com índice de ferramentas vazio.
+Isso comprova a injeção/boot integrado do módulo, não a ferramenta com tabela
+própria. Usou somente fixture `rootos-e2a-pg`, bind/imagem conferidos, senha
+sintética rotacionada em memória; harness compilado com ambiente restrito e
+loopback. Nenhum `main.js` foi executado no host nesta verificação.
+
+Retomada explicitamente ao mesmo Luna, único escritor: fechar testes React,
+HTTP compilado da ferramenta, política proposta→classificada em fixture e RLS
+com dois tenants. Autorizado banco local adicional `marketing_os_tools_test`
+somente se ausente no container já confirmado; root confirmou ausência por
+leitura antes do despacho. Aplicação por histórico Prisma agregado temporário,
+não DDL avulso para contornar as migrations. E4c continua etapa posterior.
