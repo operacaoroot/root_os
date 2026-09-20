@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a.1 aceita; integração E4a.2/E4b em preparação pelo Luna**.
+Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a.1 aceita; E4a.2/E4b despachadas ao Luna**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -499,3 +499,19 @@ O mecanismo exato é revisado com o diff, não presumido como pronto.
 E4b integra bridge estável, ativação/autorização atual, gateway, página funcional
 e provas HTTP/RLS. E4c fecha inventário agregado e scripts de atualização. Nenhuma
 subfatia isolada equivale ao aceite P4 com pessoa cliente e publicação remota.
+
+Despacho efetivo ao `luna_ferramentas`: integrar build e depois API/página com
+funções reais no **código da própria ferramenta**, não um CRUD genérico guiado
+apenas por query-string/configuração. Tabela literal e valores parametrizados
+no módulo gerado; bridge tipado estático. Dois efeitos mínimos propostos: ler
+(R0) e criar artefato interno (R1), sem classificá-los automaticamente na política
+vigente; desconhecido continua R5. Fixtures de revisão aplicam delta explícito
+com autor/motivo sintéticos e provam a recusa anterior.
+
+Não existe `app/ferramentas/page.tsx` dedicado no estado anterior: `/ferramentas`
+é navegação/placeholder do catchall. E4b pode criar uma landing mínima com as
+ferramentas ativas da empresa, além da página própria `/ferramentas/<slug>`;
+isso não requer um catálogo genérico. Testar troca de sessão, além de autoridade
+atual no servidor. A primeira fonte de SQL da ferramenta deve entrar no
+inventário da fixture e na prova de RLS, sem tabela aplicada invisivelmente
+fora do histórico só para produzir um smoke verde.
