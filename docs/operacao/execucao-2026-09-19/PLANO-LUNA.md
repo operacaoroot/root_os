@@ -515,3 +515,13 @@ isso não requer um catálogo genérico. Testar troca de sessão, além de autor
 atual no servidor. A primeira fonte de SQL da ferramenta deve entrar no
 inventário da fixture e na prova de RLS, sem tabela aplicada invisivelmente
 fora do histórico só para produzir um smoke verde.
+
+Dependência adicional E4c/E5 confirmada por leitura: `atualizar.sh` hoje recusa
+mesmo commit e nomeia/verifica a imagem apenas pelo núcleo; `health/versao` não
+identifica ferramentas. Publicar alteração só de ferramenta requer identidade
+**core + hash determinístico das ferramentas**, verificação no artefato e na
+saúde/recuperação e caminho explícito no atualizador. Não confundir o checksum
+de preservação da pasta com identificação do que está rodando. A imagem antiga
+já contém seu código compilado e pode recuperar o runtime sem sobrescrever a
+pasta atual do cliente; registrar essa diferença entre fonte preservada e
+artefato ativo, em vez de inventar um catálogo/bundle manager como atalho.

@@ -675,3 +675,21 @@ explicitamente a **`luna_ferramentas` (Luna high, contexto novo)**. Esse agente
 prepara a proposta curta E4a.2/E4b antes do despacho de implementação. Root
 mantém plano/revisão; dois executores anteriores não retomam escrita. Sem
 mutação remota ou mudança do modelo desta conversa.
+
+## R27 — integração em implementação, revisão antecipada do hook
+
+E4a.2/E4b despachadas após proposta curta. Ao ler o primeiro `build-hook.mjs`,
+coordenador solicitou correção antes de execução no workspace: não roubar lock
+somente pela idade (pode pertencer a processo vivo), liberar somente lock próprio;
+limitar destino API à árvore gerada, não permitir marker arbitrário sob todo
+`src`; conferir ancestrais/symlinks; resolver caminhos de input em relação ao
+stage, não ao cwd; não chamar escrita direta de atômica; planejar e validar API
+e Web antes de qualquer mutação. São apontamentos estáticos de versão em
+implementação, não aceite/reprovação da entrega final ou prova de dano real.
+Negativos devem ser exercitados primeiro em fixture/clone temporário.
+
+Revisor confirmou lacuna futura de publicação só de ferramenta: igualdade de
+commit interrompe o atualizador, e health/imagem só identificam core. Identidade
+core+toolhash e inventário agregado ficam em E4c/E5; não ampliar a2/b silenciosamente.
+Rollback de runtime usa imagem anterior exata e preserva a pasta do cliente;
+checksum/fonte preservada e versão efetivamente ativa são conceitos distintos.
