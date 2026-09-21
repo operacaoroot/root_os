@@ -1,6 +1,6 @@
 # ROOT OS — execução conduzida pelo Luna, 19/09/2026
 
-Estado: **EM EXECUÇÃO — E2/E3 aceitas no recorte local; E4a.1 aceita; E4a.2/E4b despachadas ao Luna**.
+Estado: **RETOMADO EM 21/09 — E2/E3 aceitas no recorte local; E4a.1 aceita; E4a.2/E4b em validação pelo Sol**.
 Pedido: Pedro quer um plano que o modelo Luna execute, não uma lista de prompts
 para ele repassar manualmente. Meta temporal: avançar até o aceite do projeto
 hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas.
@@ -21,6 +21,13 @@ hoje, sem prometer concluir etapas que ainda não foram implementadas ou aceitas
   escrever em paralelo. Continua sendo Luna; o modelo da conversa principal não
   foi alterado. O primeiro despacho é fechar proposta breve, depois implementar
   integração com build/autorização, sob revisão.
+- Retomada atual: **`/root/sol_finalizador`**, **`gpt-5.6-sol`**, esforço `high`,
+  criado em 21/09 após o Luna atingir seu limite de uso. Recebeu exclusividade
+  sobre código e a árvore suja preservada, começando pela auditoria das mudanças
+  E4a.2/E4b. Os executores Luna permanecem parados e não podem editar em paralelo.
+  Depois do aceite de E4b, o mesmo Sol segue sequencialmente por E4c/E5/E6; E7/E8
+  continuam condicionadas a manifesto, autorização remota específica e pessoa
+  no papel do cliente.
 - Coordenador: esta sessão; escreve o plano/registro, revisa diffs e evidências,
   envia as tarefas e esclarece dúvidas do Luna. Não implementa código em paralelo.
 - Apoio pontual: `/root/luna_revisao_coletor`, também `gpt-5.6-luna`, esforço
