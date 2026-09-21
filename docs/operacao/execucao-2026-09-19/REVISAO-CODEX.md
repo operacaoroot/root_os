@@ -746,3 +746,28 @@ com dois tenants. Autorizado banco local adicional `marketing_os_tools_test`
 somente se ausente no container já confirmado; root confirmou ausência por
 leitura antes do despacho. Aplicação por histórico Prisma agregado temporário,
 não DDL avulso para contornar as migrations. E4c continua etapa posterior.
+
+## R30 — retomada pelo Sol; E4a.2 sem banco passa no checkpoint
+
+Em 21/09, o Luna anterior permaneceu indisponível por limite de uso e a
+exclusividade de escrita foi transferida ao **`/root/sol_finalizador`**, modelo
+Sol. A árvore E4 inacabada foi preservada, sem reset/clean. Os arquivos do
+usuário continuam fora do escopo de commits. Não houve ação remota.
+
+O Sol confirmou e corrigiu lacunas da primeira revisão: hooks explícitos também
+nas chamadas diretas `typecheck:test`/`test:isolamento`; negativos de marker
+reivindicando núcleo/landing, lock alheio, symlink, extras e falha cruzada antes
+de mutação; UI com propriedade por sessão+slug+permissões, descarte de resposta
+atrasada e trava síncrona contra double-submit; serviço relendo autoridade de
+humano/máquina/AI e ativação no efeito. Reportou: CLI e hook com seus marcadores,
+React **4/4**, API ferramenta+módulos **94 pass / 9 condicionais**, tipos API/Web
+e diff-check verdes. A materialização continua sem promessa de snapshot atômico
+contra crash ou mutação maliciosa concorrente do mesmo usuário.
+
+Inventário read-only corrigiu o registro anterior: `marketing_os_tools_test`
+passou a existir após a leitura de root, sem outras sessões, com histórico
+terminando na migration sintética `99999999999999_e4b_db_check_tool` em 20/09.
+Foi identificado como resíduo da própria tentativa E4b. Reuso/reset autorizado
+somente nesse banco descartável, pelo runner Prisma reproduzível, sem remover
+container/volume e sem tocar `marketing_os_test_rls`. E4b segue sem aceite até
+HTTP compilado, R5→política explícita e RLS de duas empresas ficarem verdes.
