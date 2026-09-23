@@ -46,6 +46,15 @@ import {
   resultadosDaBusca,
   resultadosPedidos,
 } from './busca-da-pauta';
+import {
+  brutoDoPost,
+  comProcedenciaDoPerfil,
+  lerHandleDoPerfil,
+  plataformaDoPerfil,
+  postsDoPerfil,
+  procedenciaDoPerfil,
+  textoDoPost,
+} from './perfil-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 const EMBED_MODEL = 'text-embedding-3-small';
@@ -255,6 +264,12 @@ export class PautaService implements OnModuleInit {
     if (!c.url || veioDoGmail(c.bruto)) {
       return { texto: this.textoDoBruto(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
     }
+    // O post do X e do YouTube já foi lido na coleta do perfil (MC4): abrir o link
+    // daria a tela de login do X ou o HTML inteiro do YouTube.
+    const doPerfil = procedenciaDoPerfil(c.bruto);
+    if (doPerfil && (doPerfil.plataforma === 'x' || doPerfil.plataforma === 'youtube')) {
+      return { texto: textoDoPost(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    }
 
     const plataforma = ApifyService.plataformaDaUrl(c.url);
     const precisaApify = plataforma === 'instagram' || plataforma === 'tiktok';
@@ -332,9 +347,10 @@ export class PautaService implements OnModuleInit {
   private metricasDoItem(item: Record<string, unknown>): Prisma.InputJsonValue | undefined {
     const n = (k: string) => (typeof item[k] === 'number' ? (item[k] as number) : undefined);
     const m: Record<string, number> = {};
-    const curtidas = n('likesCount') ?? n('diggCount');
-    const comentarios = n('commentsCount');
-    const views = n('videoPlayCount') ?? n('playCount');
+    // Instagram, TikTok, X e YouTube, nesta ordem, em cada linha.
+    const curtidas = n('likesCount') ?? n('diggCount') ?? n('likeCount') ?? n('likes');
+    const comentarios = n('commentsCount') ?? n('commentCount') ?? n('replyCount');
+    const views = n('videoPlayCount') ?? n('playCount') ?? n('viewCount');
     if (curtidas !== undefined) m.curtidas = curtidas;
     if (comentarios !== undefined) m.comentarios = comentarios;
     if (views !== undefined) m.views = views;
@@ -408,7 +424,9 @@ export class PautaService implements OnModuleInit {
         : 'ALC') as PautaObjetivo;
 
       const metricas = this.metricasDoItem(bruto);
-      const publicado = typeof bruto.timestamp === 'string' ? new Date(bruto.timestamp) : null;
+      const quando = typeof bruto.timestamp === 'string' ? bruto.timestamp : bruto.publicadoEm;
+      const publicado = typeof quando === 'string' ? new Date(quando) : null;
+      const doPerfil = procedenciaDoPerfil(c.bruto);
 
       const ref = await this.prisma.pautaReferencia.create({
         data: {
@@ -416,7 +434,7 @@ export class PautaService implements OnModuleInit {
           capturaId: c.id,
           titulo: this.campo(f.titulo, c.titulo ?? 'Sem título'),
           plataforma: c.url ? ApifyService.plataformaDaUrl(c.url) : 'texto',
-          autor: bruto.ownerUsername ? `@${String(bruto.ownerUsername)}` : null,
+          autor: bruto.ownerUsername ? `@${String(bruto.ownerUsername)}` : doPerfil ? `@${doPerfil.handle}` : null,
           url: c.url,
           publicadoEm: publicado && !Number.isNaN(publicado.getTime()) ? publicado : null,
           familia,
@@ -442,7 +460,10 @@ export class PautaService implements OnModuleInit {
         where: { id },
         data: {
           status: 'ficha',
-          bruto: comProcedenciaDaBusca(c.bruto, comProcedencia(c.bruto, bruto)) as Prisma.InputJsonValue,
+          bruto: comProcedenciaDoPerfil(
+            c.bruto,
+            comProcedenciaDaBusca(c.bruto, comProcedencia(c.bruto, bruto)),
+          ) as Prisma.InputJsonValue,
           // A leitura do link pela web não tem run: o custo e o run da coleta
           // que trouxe a captura (a busca do MC3) continuam valendo.
           apifyRunId: coleta.runId ?? c.apifyRunId,
@@ -776,6 +797,9 @@ export class PautaService implements OnModuleInit {
       handle = this.consultaValida(input.handle);
       url = null;
       plataforma = 'google';
+    } else if (input.tipo === 'perfil') {
+      // O teto vale para o @ já tirado da URL colada, e a regra de cada rede é mais curta que ele.
+      ({ handle, plataforma } = this.perfilValido(input.plataforma, handle));
     } else {
       this.exigirHandleCurto(handle);
     }
@@ -824,6 +848,22 @@ export class PautaService implements OnModuleInit {
     }
   }
 
+  /** Plataforma entre as quatro do MC4 e o @ que o actor dela aceita, tirado da URL se vier colada. */
+  private perfilValido(
+    plataformaBruta: string | null | undefined,
+    handleBruto: string | null | undefined,
+  ): { plataforma: string; handle: string } {
+    const plataforma = plataformaDoPerfil(plataformaBruta);
+    if (!plataforma) {
+      throw new BadRequestException(
+        `Perfil do "${plataformaBruta}" não é coletado. Plataformas aceitas: instagram, tiktok, x e youtube.`,
+      );
+    }
+    const lido = lerHandleDoPerfil(plataforma, handleBruto);
+    if ('erro' in lido) throw new BadRequestException(lido.erro);
+    return { plataforma, handle: lido.handle };
+  }
+
   private etiquetaValida(bruta: string | null | undefined): string {
     const lida = lerEtiqueta(bruta);
     if ('erro' in lida) throw new BadRequestException(lida.erro);
@@ -852,8 +892,18 @@ export class PautaService implements OnModuleInit {
       data.plataforma = 'google';
     } else if (tipo !== 'busca') {
       // Quem sai da busca leva a consulta junto se o corpo não trouxer outro handle.
-      this.exigirHandleCurto(patch.handle !== undefined ? patch.handle : f.handle);
+      const handle = patch.handle !== undefined ? patch.handle : f.handle;
       if (f.tipo === 'busca' && patch.plataforma === undefined) data.plataforma = null;
+      const mexeuNoPerfil = f.tipo !== 'perfil' || patch.handle !== undefined || patch.plataforma !== undefined;
+      if (tipo !== 'perfil' || !mexeuNoPerfil) this.exigirHandleCurto(handle);
+      if (tipo === 'perfil' && mexeuNoPerfil) {
+        // Sem plataforma no corpo vale a gravada; vinda de outro tipo, a dele não é de perfil.
+        const plataforma = patch.plataforma !== undefined ? patch.plataforma : f.tipo === 'perfil' ? f.plataforma : null;
+        const valido = this.perfilValido(plataforma, handle);
+        data.handle = valido.handle;
+        if (patch.plataforma !== undefined) data.plataforma = valido.plataforma;
+        else if (f.tipo !== 'perfil') data.plataforma = null;
+      }
     }
     await this.prisma.pautaFonte.update({ where: { id }, data });
     await this.audit.log({
@@ -880,59 +930,107 @@ export class PautaService implements OnModuleInit {
     return { ok: true, novas: r.novas, repetidas: r.repetidas, ...(r.aviso ? { aviso: r.aviso } : {}) };
   }
 
-  /** Puxa os últimos posts de um perfil vigiado e joga na fila como captura. */
+  /**
+   * Os últimos posts de um creator (MC4: Instagram, TikTok, X ou YouTube), cada
+   * um como captura com a chave da tela. Como a busca, o perfil entra na coleta
+   * da rodada, e por isso o teto do mês é o freio e não erro: reserva o run
+   * antes de chamar o Apify e, estourado, pula com aviso na fonte.
+   */
   private async coletarPerfil(f: PautaFonte, ator: AtorDaColeta, limite: number): Promise<ResultadoDaColeta> {
-    if (!f.handle) throw new BadRequestException('Fonte perfil exige handle.');
-
-    // Teto de gasto: o contador zera na virada do mês.
-    const mes = new Date().toISOString().slice(0, 7);
-    const runs = f.mesReferente === mes ? f.runsNoMes : 0;
-    if (runs >= f.tetoRunsMes) {
+    const plataforma = plataformaDoPerfil(f.plataforma);
+    if (!plataforma) {
       throw new BadRequestException(
-        `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}". Aumente o teto ou espere virar o mês.`,
+        `"${f.nome}" está gravada com a plataforma "${f.plataforma}", que não é coletada. ` +
+          'Plataformas aceitas: instagram, tiktok, x e youtube.',
+      );
+    }
+    const lido = lerHandleDoPerfil(plataforma, f.handle);
+    if ('erro' in lido) throw new BadRequestException(lido.erro);
+    const { handle } = lido;
+    // Antes de reservar: sem token não há run, e o teto não pode gastar o que não rodou.
+    if (!this.apify.configured) {
+      throw new ServiceUnavailableException(
+        'O perfil vigiado roda no Apify. Defina APIFY_TOKEN no .env (ver .env.example) e reinicie a API.',
       );
     }
 
-    let novas = 0;
+    const mes = new Date().toISOString().slice(0, 7);
+    if (!(await this.reservarRun(f, mes))) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso:
+          `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}": o perfil foi pulado. ` +
+          'Aumente o teto ou espere virar o mês.',
+      };
+    }
+
+    // O run já está contado: se o Apify falhar daqui em diante, cobrou do mesmo jeito.
+    const r = await this.apify.scrapePerfil(handle, limite, plataforma);
+    const novas: string[] = [];
     let repetidas = 0;
     try {
-      const r = await this.apify.scrapePerfil(f.handle, limite);
-      for (const item of r.items) {
-        const url = typeof item.url === 'string' ? item.url : null;
-        if (!url) continue;
-        const res = await this.capturar(f.orgId, ator.id, {
-          tipo: 'link',
-          url,
-          titulo: typeof item.caption === 'string' ? item.caption.slice(0, 120) : null,
-          nota: null,
-          texto: null,
-          fonteId: f.id,
+      // Grava direto, como a busca: `capturar` registraria cada post no RASTRO
+      // como se uma pessoa o tivesse colado, e a rotina não é pessoa. O RASTRO
+      // da coleta é o `pauta.coleta_perfil` abaixo, com o ator de verdade.
+      for (const { post, item } of postsDoPerfil(plataforma, r.items)) {
+        const url = this.normalizarUrl(post.url);
+        const urlHash = this.hash(url);
+        const existe = await this.prisma.pautaCaptura.findUnique({
+          where: { orgId_urlHash: { orgId: f.orgId, urlHash } },
+          select: { id: true },
         });
-        if (res.duplicada) {
+        if (existe) {
           repetidas++;
           continue;
         }
-        novas++;
-        // já guarda o payload: evita um segundo run do Apify no processamento
-        await this.prisma.pautaCaptura.update({
-          where: { id: res.id },
-          data: { bruto: item as Prisma.InputJsonValue, apifyRunId: r.runId },
-        });
+        try {
+          const criada = await this.prisma.pautaCaptura.create({
+            data: {
+              orgId: f.orgId,
+              fonteId: f.id,
+              tipo: 'link',
+              url,
+              urlHash,
+              titulo: post.titulo,
+              nota: null,
+              // já guarda o post: o processamento do X e do YouTube lê daqui, sem outro run
+              bruto: brutoDoPost(post, item, plataforma, handle) as Prisma.InputJsonValue,
+              apifyRunId: r.runId,
+              capturadoPor: ator.id,
+            },
+            select: { id: true },
+          });
+          novas.push(criada.id);
+        } catch (e) {
+          // A rotina e o "Coletar agora" (ou o grupo de links) gravaram o mesmo post ao mesmo tempo.
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') repetidas++;
+          else throw e;
+        }
+      }
+      const rateio = custoPorCaptura(r.custoUsd, novas.length);
+      if (rateio !== null) {
+        await this.prisma.pautaCaptura.updateMany({ where: { id: { in: novas } }, data: { custoUsd: rateio } });
       }
     } finally {
-      // O run conta mesmo quando falha: o Apify cobra do mesmo jeito.
-      await this.prisma.pautaFonte.update({
-        where: { id: f.id },
-        data: { runsNoMes: runs + 1, mesReferente: mes },
+      await this.audit.log({
+        orgId: f.orgId,
+        actorType: ator.tipo,
+        actorId: ator.id,
+        action: 'pauta.coleta_perfil',
+        entityType: 'pauta_fonte',
+        entityId: f.id,
+        after: { plataforma, handle, runId: r.runId, custoUsd: r.custoUsd, capturas: novas, repetidas },
       });
     }
-    return { novas, repetidas };
+    return { novas: novas.length, repetidas };
   }
 
   /**
    * A busca salva (MC3): uma consulta no Google do Brasil, última semana, e cada
    * resultado orgânico vira captura com a chave da tela. O teto do mês NÃO é
-   * erro aqui, ao contrário do perfil: a rodada coleta a busca sozinha, e teto
+   * erro aqui, como no perfil desde o MC4: a rodada coleta a busca sozinha, e teto
    * atingido é o freio funcionando — pula com aviso na fonte e a rodada segue.
    */
   private async coletarBusca(f: PautaFonte, ator: AtorDaColeta, limite?: number): Promise<ResultadoDaColeta> {

@@ -656,8 +656,42 @@ jobs:
       # com o banco de teste, e 1364 passados / 557 pulados sem ele (1320 + 44).
       # O piso de ARQUIVOS vai a 42; o de CASOS sobe 37 (~16% de folga sobre os
       # 44 novos), para 1360.
-      PISO_CASOS_API: '1360'
-      PISO_ARQUIVOS_API: '42'
+      #
+      # ---------------------------------------------------------------------
+      # MC4, CREATORS NO X E NO YOUTUBE DENTRO DA RODADA (23/09/2026): +48 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-perfil` (48): a plataforma do perfil (sem plataforma é Instagram,
+      # twitter é o X) e o @ tirado da URL colada, com a regra de cada rede,
+      # recusando link de post, página da rede, host de outra rede e /user/ do
+      # YouTube, com o teto de 60 valendo para o @ extraído; o
+      # item de cada actor (Instagram, TikTok, X, YouTube) virando o mesmo
+      # {url, titulo, texto, publicadoEm}, sem o marcador `noResults`, sem URL
+      # que não é http(s), sem repetir URL no run; o bruto com resumo, data e
+      # procedência que atravessa o virar ficha; o actor e o input que saem pelo
+      # ApifyService DE VERDADE com o `fetch` trocado (tweet-scraper,
+      # youtube-scraper, o Instagram de antes, e o link avulso do X/YouTube
+      # seguindo no crawler da web); a coleta no PautaService com dublê do
+      # Apify — capturas com run e custo rateado, RASTRO `pauta.coleta_perfil`,
+      # teto reservado antes do run e pulado com aviso, run que falha conta,
+      # sem token/plataforma inválida/@ inválido não gastam teto, o perfil na
+      # coleta da rodada sem virar pessoa no RASTRO, P2002 contado como
+      # repetido, a rotina ['R', 'N'] sem run de perfil, o post do X processado
+      # sem abrir o link; o cadastro
+      # no Radar; o rótulo de origem (W/N/R/C/L) e as origens pedidas, a mesma
+      # matéria com as letras juntas, o link do grupo com a mensagem de resumo,
+      # a origem da IA descartada, a cota por origem sem post velho de creator; e o
+      # `gerar()` DE VERDADE lendo as cinco origens, sem publicar newsletter, com
+      # `origens: ['R', 'N']` reproduzindo a rodada de antes — pela rotina nova
+      # (executor) e pela tela de Pauta (RotinaService), na coleta e no gerar. Em
+      # `pauta-gmail` o caso do perfil trocou de assunto, e em `pauta-busca` dois
+      # casos trocaram a mensagem do @ comprido (a conta dos dois não muda). Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1969 casos em 51 arquivos
+      # com o banco de teste, e 1412 passados / 557 pulados sem ele (1364 + 48).
+      # O piso de ARQUIVOS vai a 43; o de CASOS sobe 41 (~15% de folga sobre os
+      # 48 novos), para 1401.
+      PISO_CASOS_API: '1401'
+      PISO_ARQUIVOS_API: '43'
 
     steps:
       - uses: actions/checkout@v4

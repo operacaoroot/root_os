@@ -708,20 +708,20 @@ describe('gmail da pauta: o despacho e a rodada', () => {
     else process.env.GOOGLE_CLIENT_SECRET = ambienteGoogle.segredo;
   });
 
-  // A busca (MC3) também entra na rodada; o teste dela mora em `pauta-busca.test.ts`.
-  it('a rodada coleta RSS e Gmail; perfil, manual e fonte pausada ficam de fora', async () => {
+  // A busca (MC3) e o perfil (MC4) também entram na rodada; os testes deles moram
+  // em `pauta-busca.test.ts` e `pauta-perfil.test.ts`.
+  it('a rodada coleta RSS e Gmail; manual e fonte pausada ficam de fora', async () => {
     const m = montar();
     m.fontes.push(
       novaFonte({ id: 'f-rss', tipo: 'rss', url: 'https://feed.exemplo/rss', handle: null }),
       novaFonte({ id: 'f-gmail' }),
-      novaFonte({ id: 'f-perfil', tipo: 'perfil', handle: 'alguem' }),
       novaFonte({ id: 'f-manual', tipo: 'manual', handle: null, plataforma: 'whatsapp' }),
       novaFonte({ id: 'f-pausada', ativo: false, handle: 'outra' }),
     );
 
     const r = await m.coleta.coletarDaRodada(ORG, 'rotina');
 
-    expect(TIPOS_DA_COLETA_DA_RODADA).toEqual(['rss', 'gmail', 'busca']);
+    expect(TIPOS_DA_COLETA_DA_RODADA).toEqual(['rss', 'gmail', 'busca', 'perfil']);
     expect(r).toEqual({ novas: 3, fontes: 2, erros: 0, puladas: 0 });
     expect(m.feeds).toEqual(['https://feed.exemplo/rss']);
     expect(m.capturas.filter((c) => c.fonteId === 'f-rss')).toHaveLength(1);
@@ -866,28 +866,17 @@ describe('gmail da pauta: o cadastro no Radar e o processamento', () => {
     expect(capturas).toHaveLength(2);
   });
 
-  it('o perfil se inscreve no despacho e segue contando o run, inclusive o que falha', async () => {
-    let falhar = false;
-    const { svc, fontes, capturas } = servico({
-      scrapePerfil: async () => {
-        if (falhar) throw new Error('Apify caiu');
-        return { runId: 'run-1', items: [{ url: 'https://www.instagram.com/p/AAA/', caption: 'legenda' }] };
-      },
-    });
+  // O teto, o run e as plataformas do perfil (MC4) são medidos em `pauta-perfil.test.ts`.
+  it('o perfil se inscreve no mesmo despacho, e o erro dele fica na fonte', async () => {
+    const scrapePerfil = vi.fn();
+    const { svc, fontes, coleta } = servico({ configured: false, scrapePerfil });
     const perfil = novaFonte({ id: 'f-perfil', tipo: 'perfil', handle: 'alguem', plataforma: 'instagram', tetoRunsMes: 2 });
     fontes.push(perfil);
 
-    expect(await svc.coletarFonte(ORG, 'f-perfil', PESSOA)).toEqual({ ok: true, novas: 1, repetidas: 0 });
-    expect(capturas[0]).toMatchObject({ apifyRunId: 'run-1', fonteId: 'f-perfil' });
-    expect(perfil).toMatchObject({ runsNoMes: 1, ultimoErro: null });
-
-    falhar = true;
-    await expect(svc.coletarFonte(ORG, 'f-perfil', PESSOA)).rejects.toThrow('Apify caiu');
-    expect(perfil).toMatchObject({ runsNoMes: 2, ultimoErro: 'Apify caiu' });
-
-    await expect(svc.coletarFonte(ORG, 'f-perfil', PESSOA)).rejects.toThrow(/Teto de 2 execuções/);
-    expect(perfil.runsNoMes).toBe(2);
-    expect(perfil.ultimoErro).toMatch(/Teto de 2 execuções/);
+    expect(coleta.temColetor('perfil')).toBe(true);
+    await expect(svc.coletarFonte(ORG, 'f-perfil', PESSOA)).rejects.toThrow(/APIFY_TOKEN/);
+    expect(scrapePerfil).not.toHaveBeenCalled();
+    expect(perfil).toMatchObject({ runsNoMes: 0, ultimoErro: expect.stringMatching(/APIFY_TOKEN/) });
   });
 
   it('processar uma captura do Gmail usa o texto guardado, sem abrir o permalink', async () => {

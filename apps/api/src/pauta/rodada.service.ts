@@ -10,7 +10,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ColetaService, type ResultadoDaColetaDaRodada } from './coleta.service';
 import { parseJsonDaIa } from './parse-json';
-import { umaPorMateria } from './url-da-captura';
+import {
+  comOrigem,
+  filtroDasOrigens,
+  lerOrigensDaRodada,
+  insumoDaRodada,
+  linhaDoInsumo,
+  tiposDaColetaDasOrigens,
+} from './origem-da-rodada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
@@ -19,8 +26,13 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 // derivador recebe família, objetivo, fórmula de headline e anti-padrões
 // validados — não "escreva um carrossel sobre X".
 
+/** Quantos itens a curadoria recebe no prompt, somadas as origens. */
+const TETO_DO_INSUMO = 60;
+
 const SYSTEM_CURADORIA = `Você é o editor de conteúdo da ROOT, uma comunidade brasileira sobre IA aplicada a negócios.
 Recebe uma lista de notícias coletadas na janela e escolhe o que vira pauta.
+Cada item traz a origem: W grupo de WhatsApp, N busca/notícia, R feed RSS, C creator
+(post de um perfil vigiado), L newsletter.
 
 Responda SOMENTE com um objeto JSON válido, sem cercas de código:
 {
@@ -39,6 +51,8 @@ Descarte: press release sem produto, especulação sobre modelo não lançado, t
 
 Regras:
 - Use SOMENTE os itens fornecidos. Nunca invente notícia, número ou URL.
+- Item sem link público (newsletter) serve de contexto e de confirmação; não o selecione.
+- Post de creator (C) é opinião de uma pessoa: só selecione se a URL sustentar o fato.
 - "porque" explica em uma frase por que isso importa para quem toca um negócio.
 - "ganchoBr" traduz a notícia para a realidade brasileira em uma frase.
 - O "corpo" é texto corrido em português do Brasil, direto, sem emoji e sem "no mundo da IA".
@@ -99,13 +113,18 @@ export class RodadaService {
   // ---------- coleta do insumo ----------
 
   /**
-   * Coleta as fontes da rodada (RSS, Gmail e busca) e grava cada item novo como
+   * Coleta as fontes da rodada (RSS, Gmail, busca e perfis) e grava cada item novo como
    * captura. Insumo e referência moram na mesma caixa de entrada de propósito:
    * os dois são "item cru capturado" — o que muda é o destino (rodada × ficha),
    * não a natureza. O despacho por tipo mora em `ColetaService`.
+   *
+   * `origens` é a mesma da rotina: sem ela, todas; `['R', 'N']` coleta só feed e
+   * busca, como antes do MC4, e não gasta run do Apify com perfil.
    */
-  coletarFeeds(orgId: string, actorId = 'sistema'): Promise<ResultadoDaColetaDaRodada> {
-    return this.coleta.coletarDaRodada(orgId, actorId);
+  async coletarFeeds(orgId: string, actorId = 'sistema', origens?: unknown): Promise<ResultadoDaColetaDaRodada> {
+    const lidas = lerOrigensDaRodada(origens);
+    if ('erro' in lidas) throw new BadRequestException(lidas.erro);
+    return this.coleta.coletarDaRodada(orgId, actorId, tiposDaColetaDasOrigens(lidas.origens));
   }
 
   // ---------- geração da rodada ----------
@@ -129,12 +148,19 @@ export class RodadaService {
     });
   }
 
-  /** Roda a curadoria da janela. `horas` default 72h (a validade do insumo). */
+  /**
+   * Roda a curadoria da janela. `horas` default 72h (a validade do insumo).
+   * `origens` default todas (MC4); `['R', 'N']` é a rodada de antes do MC4.
+   */
   async gerar(
     orgId: string,
     actorId: string,
-    opts: { rotinaId?: string | null; horas?: number } = {},
+    opts: { rotinaId?: string | null; horas?: number; origens?: unknown } = {},
   ) {
+    const lidas = lerOrigensDaRodada(opts.origens);
+    if ('erro' in lidas) throw new BadRequestException(lidas.erro);
+    const { origens } = lidas;
+
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(
         `IA não configurada: falta a credencial do provider "${this.llm.name}".`,
@@ -145,28 +171,30 @@ export class RodadaService {
     const janelaFim = new Date();
     const janelaIni = new Date(janelaFim.getTime() - horas * 3600_000);
 
-    // Insumo: capturas de feed dentro da janela que ainda não viraram ficha.
-    const lidas = await this.prisma.pautaCaptura.findMany({
-      where: {
-        orgId,
-        capturadoEm: { gte: janelaIni },
-        status: { in: ['rascunho', 'ficha'] },
-        // A busca (MC3) entra: o link é a matéria, como no feed. Gmail é coletado
-        // mas não entra aqui: a URL da captura é o permalink de uma caixa de
-        // entrada, e o item escolhido vira link publicado no grupo. Entra com a
-        // curadoria humana (MC5/MC6), que decide o link de cada item.
-        fonte: { tipo: { in: ['rss', 'busca'] } },
-      },
-      orderBy: { capturadoEm: 'desc' },
-      take: 60,
-      include: { fonte: { select: { nome: true } } },
-    });
-    // O feed e a busca gravam a mesma matéria com chaves diferentes (ver `url-da-captura.ts`).
-    const capturas = umaPorMateria(lidas);
+    // Insumo: as capturas da janela, uma consulta por origem, para que o lote que a
+    // coleta acabou de gravar (perfis, busca) não tire do corte o link que o
+    // grupo mandou na semana. O equilíbrio mora em `insumoDaRodada`.
+    const porOrigem = await Promise.all(
+      filtroDasOrigens(origens).map((fonte) =>
+        this.prisma.pautaCaptura.findMany({
+          where: {
+            orgId,
+            capturadoEm: { gte: janelaIni },
+            status: { in: ['rascunho', 'ficha'] },
+            fonte,
+          },
+          orderBy: { capturadoEm: 'desc' },
+          take: TETO_DO_INSUMO,
+          include: { fonte: { select: { nome: true, tipo: true, plataforma: true, handle: true } } },
+        }),
+      ),
+    );
+    const capturas = insumoDaRodada(porOrigem, { janelaIni, teto: TETO_DO_INSUMO });
 
     if (capturas.length < 3) {
       throw new BadRequestException(
-        `Só ${capturas.length} item(ns) de feed nas últimas ${horas}h — colete o Radar antes de gerar a rodada.`,
+        `Só ${capturas.length} item(ns) coletado(s) nas últimas ${horas}h (origens ${origens.join(', ')}) — ` +
+          'colete o Radar antes de gerar a rodada.',
       );
     }
 
@@ -183,19 +211,7 @@ export class RodadaService {
 
     try {
       const fichas = await this.repertorio(orgId);
-      const lista = capturas
-        .map((c, i) => {
-          const b = (c.bruto ?? {}) as { resumo?: string; publicadoEm?: string };
-          return [
-            `[${i + 1}] ${c.titulo ?? '(sem título)'}`,
-            `    fonte: ${c.fonte?.nome ?? 'n/d'}${b.publicadoEm ? ` · ${b.publicadoEm.slice(0, 10)}` : ''}`,
-            `    url: ${c.url}`,
-            b.resumo ? `    resumo: ${b.resumo.slice(0, 500)}` : '',
-          ]
-            .filter(Boolean)
-            .join('\n');
-        })
-        .join('\n\n');
+      const lista = capturas.map((c, i) => linhaDoInsumo(c, i + 1)).join('\n\n');
 
       const saida = await this.llm.complete({
         system: SYSTEM_CURADORIA,
@@ -207,7 +223,10 @@ export class RodadaService {
       });
       const cur = parseJsonDaIa<Curadoria>(saida);
 
-      const itens = (cur.itens ?? []).filter((i) => i.url && i.titulo).slice(0, 5);
+      const itens = comOrigem(
+        (cur.itens ?? []).filter((i) => i.url && i.titulo),
+        capturas,
+      ).slice(0, 5);
       if (!itens.length) throw new Error('A curadoria não selecionou nenhum item.');
 
       const atualizada = await this.prisma.pautaRodada.update({
@@ -229,7 +248,12 @@ export class RodadaService {
         action: 'pauta.rodada_gerada',
         entityType: 'pauta_rodada',
         entityId: rodada.id,
-        after: { itens: itens.length, provider: this.llm.name, model: this.llm.model },
+        after: {
+          itens: itens.length,
+          origens: itens.map((i) => i.origem ?? null),
+          provider: this.llm.name,
+          model: this.llm.model,
+        },
       });
 
       return atualizada;

@@ -1269,7 +1269,7 @@ model PautaFonte {
   nome          String
   url           String? // feed RSS
   handle        String? // @perfil (tipo perfil), a etiqueta do Gmail (tipo gmail) ou a consulta (tipo busca)
-  plataforma    String? // instagram | tiktok | x | web | gmail | google | whatsapp
+  plataforma    String? // instagram | tiktok | x | youtube | web | gmail | google | whatsapp
   ativo         Boolean        @default(true)
   intervaloMin  Int            @default(720)
   // Teto de gasto do Apify: sem isso um perfil vigiado queima crédito em silêncio.

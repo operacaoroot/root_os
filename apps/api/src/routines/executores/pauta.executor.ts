@@ -47,7 +47,7 @@ export class ExecutorDePauta implements OnModuleInit {
   }
 
   private async executar(ctx: ContextoDaRotina): Promise<ResultadoDaRotina> {
-    const cfg = ctx.config as { horas?: number; coletarAntes?: boolean };
+    const cfg = ctx.config as { horas?: number; coletarAntes?: boolean; origens?: unknown };
 
     /*
      * A ORIGEM AINDA EXISTE?
@@ -77,8 +77,10 @@ export class ExecutorDePauta implements OnModuleInit {
       // assunto. Feed e Gmail são baratos (fetch); a busca (MC3) não: gasta 1 run
       // do Apify por fonte a cada disparo, sem olhar `intervaloMin`, e quem freia
       // é o teto do mês de cada fonte — estourado, a busca é pulada com aviso.
+      // O perfil vigiado (MC4) entra na mesma regra. Só se coleta o que as
+      // `origens` da rotina leem: com ['R', 'N'], nem perfil nem Gmail.
       if (cfg.coletarAntes !== false) {
-        const c = await this.rodadas.coletarFeeds(ctx.orgId, 'rotina');
+        const c = await this.rodadas.coletarFeeds(ctx.orgId, 'rotina', cfg.origens);
         this.log.log(
           `  coleta: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)` +
             (c.erros > 0 ? `, ${c.erros} com erro (o motivo fica na fonte, no Radar)` : '') +
@@ -89,6 +91,8 @@ export class ExecutorDePauta implements OnModuleInit {
       const rodada = await this.rodadas.gerar(ctx.orgId, 'rotina', {
         rotinaId: ctx.refExterna,
         horas: cfg.horas ?? 72,
+        // Sem `origens` na config, todas (MC4); `['R', 'N']` mantém a rodada de antes.
+        origens: cfg.origens,
       });
 
       const resumo = `rodada ${rodada.id.slice(0, 8)}`;

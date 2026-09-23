@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_CANAL_LABEL,
+  PAUTA_ORIGEM_ROTULOS,
+  PAUTA_ORIGENS,
   type PautaCanalEstado,
+  type PautaOrigem,
   type PautaRodadaDetalhe,
   type PautaRodadaList,
 } from '@mktos/shared';
@@ -29,6 +32,11 @@ const TOM_RODADA: Record<string, 'muted' | 'good' | 'warn' | 'bad'> = {
   publicada: 'good',
   falhou: 'bad',
 };
+
+// O item curado é JSON gravado: a letra só aparece se for uma das cinco.
+function temOrigem(o: unknown): o is PautaOrigem {
+  return typeof o === 'string' && (PAUTA_ORIGENS as readonly string[]).includes(o);
+}
 
 export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudou }: Props) {
   const [data, setData] = useState<PautaRodadaList | null>(null);
@@ -187,10 +195,24 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   </div>
                 )}
 
+                {detalhe.itens.some((i) => temOrigem(i.origem)) && (
+                  <p className="mb-1.5 text-xs text-muted">
+                    Origem: {PAUTA_ORIGENS.map((o) => `${o} ${PAUTA_ORIGEM_ROTULOS[o].toLowerCase()}`).join(' · ')}
+                  </p>
+                )}
                 {detalhe.itens.length > 0 && (
                   <ul className="mb-4 space-y-1.5">
                     {detalhe.itens.map((i) => (
                       <li key={i.url} className="text-sm">
+                        {temOrigem(i.origem) && (
+                          <span
+                            className="mr-1.5 inline-block rounded border border-border px-1 font-mono text-[11px] text-muted"
+                            title={PAUTA_ORIGEM_ROTULOS[i.origem]}
+                            aria-label={`Origem: ${PAUTA_ORIGEM_ROTULOS[i.origem]}`}
+                          >
+                            {i.origem}
+                          </span>
+                        )}
                         <a
                           href={i.url}
                           target="_blank"

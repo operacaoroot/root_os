@@ -96,7 +96,11 @@ export class RotinaService {
         cron: input.cron,
         tz,
         ativo: input.ativo ?? true,
-        config: { horas: input.horas ?? 72, coletarAntes: input.coletarAntes ?? true },
+        config: {
+          horas: input.horas ?? 72,
+          coletarAntes: input.coletarAntes ?? true,
+          ...(input.origens ? { origens: input.origens } : {}),
+        },
         proximoRun: proximaOcorrencia(input.cron, tz, new Date()),
       },
     });
@@ -115,7 +119,8 @@ export class RotinaService {
     const tz = patch.tz ?? atual.tz;
     if (patch.cron || patch.tz) this.assertCron(cron, tz);
 
-    const cfgAtual = (atual.config ?? {}) as { horas?: number; coletarAntes?: boolean };
+    const cfgAtual = (atual.config ?? {}) as { horas?: number; coletarAntes?: boolean; origens?: string[] };
+    const origens = patch.origens ?? cfgAtual.origens;
     const r = await this.prisma.pautaRotina.update({
       where: { id },
       data: {
@@ -127,6 +132,7 @@ export class RotinaService {
         config: {
           horas: patch.horas ?? cfgAtual.horas ?? 72,
           coletarAntes: patch.coletarAntes ?? cfgAtual.coletarAntes ?? true,
+          ...(origens ? { origens } : {}),
         },
         proximoRun: proximaOcorrencia(cron, tz, new Date()),
       },
@@ -154,10 +160,14 @@ export class RotinaService {
   async rodarAgora(orgId: string, id: string, actorId: string) {
     const r = await this.prisma.pautaRotina.findFirst({ where: { id, orgId } });
     if (!r) throw new NotFoundException('Rotina não encontrada');
-    const cfg = (r.config ?? {}) as { horas?: number; coletarAntes?: boolean };
+    const cfg = (r.config ?? {}) as { horas?: number; coletarAntes?: boolean; origens?: unknown };
 
-    if (cfg.coletarAntes !== false) await this.rodadas.coletarFeeds(orgId, actorId);
-    const rodada = await this.rodadas.gerar(orgId, actorId, { rotinaId: r.id, horas: cfg.horas ?? 72 });
+    if (cfg.coletarAntes !== false) await this.rodadas.coletarFeeds(orgId, actorId, cfg.origens);
+    const rodada = await this.rodadas.gerar(orgId, actorId, {
+      rotinaId: r.id,
+      horas: cfg.horas ?? 72,
+      origens: cfg.origens,
+    });
 
     await this.prisma.pautaRotina.update({
       where: { id },

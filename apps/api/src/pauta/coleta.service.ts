@@ -35,12 +35,12 @@ export type Coletor = (
 ) => Promise<ResultadoDaColeta>;
 
 /**
- * O que a coleta da rodada percorre sozinha. `busca` também é run pago do
- * Apify, e entra porque o coletor dela pula com aviso quando o teto do mês
- * acaba, sem derrubar a rodada. `perfil` fica de fora até o MC4; `manual` não
+ * O que a coleta da rodada percorre sozinha. `busca` e `perfil` (MC4) são run
+ * pago do Apify, e entram porque os coletores deles reservam o run no teto do
+ * mês e, com o teto no fim, pulam com aviso sem derrubar a rodada. `manual` não
  * se coleta — recebe.
  */
-export const TIPOS_DA_COLETA_DA_RODADA: readonly PautaFonteTipo[] = ['rss', 'gmail', 'busca'];
+export const TIPOS_DA_COLETA_DA_RODADA: readonly PautaFonteTipo[] = ['rss', 'gmail', 'busca', 'perfil'];
 
 /** Quem chama a coleta sem ser uma pessoa. O resto é o id de quem clicou. */
 const ATORES_DE_SISTEMA = new Set(['rotina', 'sistema']);
@@ -117,10 +117,20 @@ export class ColetaService {
     }
   }
 
-  /** Todas as fontes ativas que a rodada coleta. Uma fonte que falha não derruba as outras. */
-  async coletarDaRodada(orgId: string, actorId = 'sistema'): Promise<ResultadoDaColetaDaRodada> {
+  /**
+   * As fontes ativas que a rodada coleta — só dos `tipos` pedidos, quando vierem
+   * (as origens da rotina: uma rotina de feed e busca não gasta run com perfil).
+   * Uma fonte que falha não derruba as outras.
+   */
+  async coletarDaRodada(
+    orgId: string,
+    actorId = 'sistema',
+    tipos: readonly PautaFonteTipo[] = TIPOS_DA_COLETA_DA_RODADA,
+  ): Promise<ResultadoDaColetaDaRodada> {
+    const pedidos = TIPOS_DA_COLETA_DA_RODADA.filter((t) => tipos.includes(t));
+    if (!pedidos.length) return { novas: 0, fontes: 0, erros: 0, puladas: 0 };
     const fontes = await this.prisma.pautaFonte.findMany({
-      where: { orgId, ativo: true, tipo: { in: [...TIPOS_DA_COLETA_DA_RODADA] } },
+      where: { orgId, ativo: true, tipo: { in: pedidos } },
       orderBy: { criadaEm: 'asc' },
     });
 

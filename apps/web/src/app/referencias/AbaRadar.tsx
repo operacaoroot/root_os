@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PAUTA_FONTE_ROTULOS, type PautaFonteList, type PautaFonteTipo } from '@mktos/shared';
+import {
+  PAUTA_FONTE_ROTULOS,
+  PAUTA_PERFIL_PLATAFORMAS,
+  PAUTA_PERFIL_PLATAFORMA_ROTULOS,
+  type PautaFonteList,
+  type PautaFonteTipo,
+  type PautaPerfilPlataforma,
+} from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
 import { Botao, Campo, Card, Chip, inputCls } from './ui';
 
@@ -40,6 +47,7 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
   const [tipo, setTipo] = useState<PautaFonteTipo>('perfil');
   const [nome, setNome] = useState('');
   const [handle, setHandle] = useState('');
+  const [plataformaDoPerfil, setPlataformaDoPerfil] = useState<PautaPerfilPlataforma>('instagram');
   const [url, setUrl] = useState('');
   const [etiqueta, setEtiqueta] = useState('');
   const [consulta, setConsulta] = useState('');
@@ -73,7 +81,7 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
                   : null,
           url: tipo === 'rss' ? url.trim() : null,
           plataforma:
-            tipo === 'perfil' ? 'instagram' : tipo === 'gmail' ? 'gmail' : tipo === 'busca' ? 'google' : null,
+            tipo === 'perfil' ? plataformaDoPerfil : tipo === 'gmail' ? 'gmail' : tipo === 'busca' ? 'google' : null,
           tetoRunsMes: teto,
         },
         token,
@@ -159,7 +167,7 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
     <div className="space-y-4">
       {data && !data.apifyConfigurado && (
         <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-          APIFY_TOKEN não configurado — perfis do Instagram/TikTok e buscas no Google não coletam. Defina no{' '}
+          APIFY_TOKEN não configurado — perfis (Instagram, TikTok, X, YouTube) e buscas no Google não coletam. Defina no{' '}
           <code className="text-xs">.env</code> e reinicie a API.
         </div>
       )}
@@ -266,11 +274,31 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
             />
           </Campo>
 
+          {tipo === 'perfil' && (
+            <Campo label="Plataforma">
+              <select
+                className={inputCls}
+                value={plataformaDoPerfil}
+                onChange={(e) => setPlataformaDoPerfil(e.target.value as PautaPerfilPlataforma)}
+                disabled={!editavel}
+              >
+                {PAUTA_PERFIL_PLATAFORMAS.map((p) => (
+                  <option key={p} value={p}>
+                    {PAUTA_PERFIL_PLATAFORMA_ROTULOS[p]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+
           {tipo === 'perfil' ? (
-            <Campo label="@handle">
+            <Campo
+              label="@handle"
+              hint="O @ do creator ou o endereço do perfil. Cada coleta traz os últimos posts e gasta 1 execução do teto."
+            >
               <input
                 className={inputCls}
-                placeholder="@blankschool"
+                placeholder={plataformaDoPerfil === 'youtube' ? '@canal' : '@blankschool'}
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 disabled={!editavel}
@@ -336,6 +364,7 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
             disabled={
               !editavel ||
               nome.trim().length < 2 ||
+              (tipo === 'perfil' && !handle.trim()) ||
               (tipo === 'gmail' && !etiqueta.trim()) ||
               (tipo === 'busca' && !consulta.trim())
             }
@@ -356,6 +385,12 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
                 <div className="flex flex-wrap items-center gap-2">
                   <Chip tone={f.ativo ? 'good' : 'muted'}>{f.ativo ? 'ativa' : 'pausada'}</Chip>
                   <Chip>{PAUTA_FONTE_ROTULOS[f.tipo] ?? f.tipo}</Chip>
+                  {f.tipo === 'perfil' && (
+                    <Chip>
+                      {PAUTA_PERFIL_PLATAFORMA_ROTULOS[(f.plataforma ?? 'instagram') as PautaPerfilPlataforma] ??
+                        f.plataforma}
+                    </Chip>
+                  )}
                   {TIPOS_COM_TETO.includes(f.tipo) && (
                     <Chip
                       tone={f.runsNoMes >= f.tetoRunsMes ? 'bad' : f.runsNoMes > f.tetoRunsMes * 0.7 ? 'warn' : 'muted'}
@@ -412,9 +447,9 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
       )}
 
       <p className="text-xs text-muted">
-        A rotina da pauta coleta sozinha os feeds RSS, as etiquetas do Gmail e as buscas no Google
-        antes de cada rodada — cada busca gasta uma execução do teto do mês e, com o teto no fim, é
-        pulada com aviso; perfis só no “Coletar agora”, que também respeita o teto. Ver{' '}
+        A rotina da pauta coleta sozinha os feeds RSS, as etiquetas do Gmail, as buscas no Google e os
+        perfis vigiados antes de cada rodada — cada busca e cada perfil gasta uma execução do teto do
+        mês e, com o teto no fim, é pulado com aviso; o “Coletar agora” respeita o mesmo teto. Ver{' '}
         <code>docs/PAUTA.md</code>.
       </p>
     </div>

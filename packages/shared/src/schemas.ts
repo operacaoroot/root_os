@@ -1205,6 +1205,60 @@ export const PAUTA_FONTE_ROTULOS: Record<PautaFonteTipo, string> = {
   gmail: 'Etiqueta do Gmail',
 };
 
+/**
+ * Onde o perfil vigiado mora (fonte `perfil`, MC4). Perfil gravado sem
+ * plataforma é Instagram: era a única antes do MC4.
+ */
+export const PAUTA_PERFIL_PLATAFORMAS = ['instagram', 'tiktok', 'x', 'youtube'] as const;
+export type PautaPerfilPlataforma = (typeof PAUTA_PERFIL_PLATAFORMAS)[number];
+
+export const PAUTA_PERFIL_PLATAFORMA_ROTULOS: Record<PautaPerfilPlataforma, string> = {
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  x: 'X (Twitter)',
+  youtube: 'YouTube',
+};
+
+/**
+ * A letra que a curadoria mostra ao lado de cada item da rodada (MC4): de que
+ * origem ele veio. W grupo de WhatsApp, N busca/notícia, R feed RSS, C creator
+ * (perfil vigiado), L newsletter (etiqueta do Gmail).
+ */
+export const PAUTA_ORIGENS = ['W', 'N', 'R', 'C', 'L'] as const;
+export type PautaOrigem = (typeof PAUTA_ORIGENS)[number];
+
+export const PAUTA_ORIGEM_ROTULOS: Record<PautaOrigem, string> = {
+  W: 'Grupo de WhatsApp',
+  N: 'Busca/notícia',
+  R: 'Feed RSS',
+  C: 'Creator',
+  L: 'Newsletter',
+};
+
+/**
+ * A origem de um item pela fonte que o trouxe. Fonte `manual` só é W quando é
+ * o grupo de links do WhatsApp; outra manual (ou captura sem fonte, colada na
+ * tela de referências) não é insumo de rodada e fica `null`.
+ */
+export function origemDaFonte(
+  fonte: { tipo: PautaFonteTipo; plataforma?: string | null } | null | undefined,
+): PautaOrigem | null {
+  switch (fonte?.tipo) {
+    case 'rss':
+      return 'R';
+    case 'busca':
+      return 'N';
+    case 'perfil':
+      return 'C';
+    case 'gmail':
+      return 'L';
+    case 'manual':
+      return fonte.plataforma === 'whatsapp' ? 'W' : null;
+    default:
+      return null;
+  }
+}
+
 // --- Entradas (write) ---
 
 // Captura aceita link OU texto colado; o print sobe pelo endpoint de upload.
@@ -1391,6 +1445,9 @@ export const PautaRotinaSchema = z.object({
   // Janela de coleta do insumo. 72h é a validade prática de uma notícia.
   horas: z.number().int().min(6).max(336).default(72),
   coletarAntes: z.boolean().default(true),
+  // De que origens a curadoria lê (MC4). Sem o campo, todas; ['R', 'N'] é a
+  // rodada de antes do MC4, que lia só o feed e a busca.
+  origens: z.array(z.enum(PAUTA_ORIGENS)).min(1).max(PAUTA_ORIGENS.length).optional(),
 });
 export type PautaRotinaInput = z.infer<typeof PautaRotinaSchema>;
 
@@ -1442,6 +1499,8 @@ export interface PautaItemCurado {
   url: string;
   porque?: string;
   ganchoBr?: string;
+  /** De que origem o item veio (MC4). Rodada de antes do MC4 não tem. */
+  origem?: PautaOrigem;
 }
 
 export interface PautaPecaItem {

@@ -582,9 +582,10 @@ const EXCECOES: Excecao[] = [
     arquivo: 'src/pauta/pauta.service.ts',
     conector: 'src/pauta/apify.service.ts',
     motivo:
-      'Coleta de Instagram/TikTok e, desde o MC3, a busca do Google da pauta via Apify direto, sem ' +
-      'teto de execuções decidido pela porta. A busca reserva o run no teto do mês da fonte ANTES ' +
-      'de chamar o Apify, e o gasto de cada run fica no RASTRO `pauta.coleta_busca`.',
+      'Coleta dos perfis (Instagram/TikTok e, desde o MC4, X/YouTube) e, desde o MC3, a busca do ' +
+      'Google da pauta via Apify direto, sem teto de execuções decidido pela porta. Perfil e busca ' +
+      'reservam o run no teto do mês da fonte ANTES de chamar o Apify, e o gasto de cada run fica ' +
+      'no RASTRO (`pauta.coleta_perfil`, `pauta.coleta_busca`).',
     fatia: 'onda 8 — resto da 3.3',
   },
   {

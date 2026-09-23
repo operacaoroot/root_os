@@ -87,8 +87,9 @@ export class RodadaController {
 
   @Post('rodadas')
   @RequirePermissions('pauta.editar', 'automacoes.executar')
-  gerarRodada(@CurrentUser() user: JwtUser, @Body() body: { horas?: number }) {
-    return this.rodadas.gerar(user.orgId, user.sub, { horas: body?.horas });
+  gerarRodada(@CurrentUser() user: JwtUser, @Body() body: { horas?: number; origens?: unknown }) {
+    // `origens` é conferida em `gerar` (lerOrigensDaRodada): ausente é todas.
+    return this.rodadas.gerar(user.orgId, user.sub, { horas: body?.horas, origens: body?.origens });
   }
 
   @Post('rodadas/:id/derivar')

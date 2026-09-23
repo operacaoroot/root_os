@@ -784,7 +784,8 @@ describe('busca da pauta: a rodada e o cadastro', () => {
   it('sair da busca sem mandar handle não leva a consulta para o @perfil; a plataforma google sai junto', async () => {
     const m = montar();
     m.fontes.push(novaFonte({ handle: 'x'.repeat(61) }));
-    await expect(m.svc.atualizarFonte(ORG, 'f-busca', PESSOA, { tipo: 'perfil' })).rejects.toThrow(/no máximo 60/);
+    // Desde o MC4 o @ do perfil passa pela regra da rede, mais curta que o teto de 60.
+    await expect(m.svc.atualizarFonte(ORG, 'f-busca', PESSOA, { tipo: 'perfil' })).rejects.toThrow(/não é um @ válido/);
     expect(m.fontes[0].tipo).toBe('busca');
 
     await m.svc.atualizarFonte(ORG, 'f-busca', PESSOA, { tipo: 'perfil', handle: 'alguem' });
@@ -797,7 +798,7 @@ describe('busca da pauta: a rodada e o cadastro', () => {
       m.svc.criarFonte(ORG, PESSOA, {
         tipo: 'perfil', nome: 'P', handle: 'x'.repeat(61), ativo: true, intervaloMin: 720, tetoRunsMes: 30,
       }),
-    ).rejects.toThrow(/no máximo 60/);
+    ).rejects.toThrow(/não é um @ válido/);
     expect(m.fontes).toHaveLength(0);
   });
 });

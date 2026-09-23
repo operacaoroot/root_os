@@ -336,6 +336,53 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     é removê-la e cadastrar de novo com os termos.
   - **Mesma dívida do perfil:** o Apify é chamado direto de `pauta.service.ts`, fora da porta
     (lista de exceções de `test/arquitetura.test.ts`, "onda 8 — resto da 3.3").
+- **Creators no X e no YouTube (MC4).** A fonte `perfil` ganhou plataforma: `instagram` (o
+  padrão, e o que vale para perfil gravado sem plataforma), `tiktok`, `x` (`twitter` é aceito
+  como apelido) e `youtube`. O cadastro confere o @ pela regra da rede e aceita a URL do perfil
+  colada (`x.com/fulano`, `youtube.com/@canal`, `youtube.com/channel/UC…`). Actors:
+  `apidojo~tweet-scraper` (`twitterHandles`, `sort: 'Latest'`) e `streamers~youtube-scraper`
+  (aba de vídeos do canal, sem shorts nem lives); os ids ficam em `ACTORS`, sem variável de
+  ambiente — trocar um id é trocar o formato do item, que `postDoItem`
+  (`pauta/perfil-da-pauta.ts`) lê por plataforma. Cada post vira captura com a chave da tela; o
+  bruto guarda o item cru mais `resumo`, `publicadoEm` e `perfil: {plataforma, handle, texto}`.
+  - **Na rodada.** O perfil entra na coleta da rodada como a busca: reserva o run antes do
+    Apify, teto atingido pula com aviso (antes do MC4 era erro), run que falha conta, custo
+    rateado + RASTRO `pauta.coleta_perfil`. **Cada disparo gasta 1 run por perfil ativo** —
+    menos na rotina com `origens` sem `C`: a coleta antes da curadoria percorre só os tipos das
+    origens pedidas (`tiposDaColetaDasOrigens`), e `['R', 'N']` coleta só feed e busca, como
+    antes do MC4. Rotina sem `origens` na config coleta tudo, perfis inclusive, com o teto de
+    cada fonte como freio.
+  - **Gravação.** O post é gravado direto, como na busca, e não por `capturar`: a rotina não
+    aparece no RASTRO como pessoa que colou o link (o registro é o `pauta.coleta_perfil`, com o
+    ator de verdade), e o mesmo post gravado ao mesmo tempo por outra coleta (P2002) conta como
+    repetido em vez de derrubar o resto do run.
+  - **URL colada.** O @ sai da URL só se o host for o da rede escolhida, e o link de post ou de
+    página (`/p/`, `/reel/`, `/watch`, `/shorts/`, `x.com/i/…`) é recusado com mensagem, em vez
+    de virar `@p` e gastar run no creator errado. O `/user/` e o `/c/` do YouTube também são
+    recusados: o nome antigo não é o @ do canal. O teto de 60 caracteres vale para o @ extraído.
+  - **Post velho.** A primeira coleta de um canal traz os últimos vídeos, que podem ter meses, e
+    a janela da rodada se mede por `capturadoEm`. A captura fica (serve de referência), mas a
+    curadoria descarta o post de creator com `publicadoEm` anterior à janela.
+  - **Processar.** Post do X e do YouTube vira ficha com o texto guardado na coleta (abrir o
+    link daria a tela de login do X); Instagram e TikTok seguem relendo pelo Apify, e a
+    procedência do perfil atravessa.
+- **As origens da rodada (MC4).** A curadoria lê as capturas da janela de **todas** as origens,
+  com a letra que a curadoria humana vai mostrar: **W** grupo de WhatsApp (fonte `manual` com
+  plataforma `whatsapp`), **N** busca, **R** RSS, **C** creator, **L** newsletter
+  (`origemDaFonte`, em `@mktos/shared`). A letra vai ao prompt e ao item curado (`origem`).
+  A newsletter entra **só como contexto**: a URL dela é o permalink de uma caixa de entrada, o
+  prompt a mostra sem link e o item L que a IA escolher mesmo assim sai da seleção (até o MC6
+  decidir o link de cada item). `origens` no corpo de `POST /pauta/rodadas` ou em
+  `config.origens` da rotina restringe a leitura; `['R', 'N']` reproduz a rodada de antes do
+  MC4. Newsletters não se fundem entre si na deduplicação da curadoria.
+  - **Cota por origem.** Uma consulta por origem (60 cada) e as origens alternando até o teto
+    de 60 itens (`insumoDaRodada`): o lote que a coleta acabou de gravar não tira do corte o link
+    que o grupo mandou na semana.
+  - **A mesma matéria em mais de uma origem** vira um item só, com todas as letras no prompt
+    (`origem: W+R`); o item curado leva a primeira de `PAUTA_ORIGENS`, W antes de todas.
+  - **O link do grupo** chega sem título: o prompt usa a mensagem (`nota`) como resumo.
+  - **A origem é sempre a nossa:** a que a IA escrever no item é descartada antes de casar a
+    URL com a captura.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.
