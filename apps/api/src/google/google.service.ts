@@ -851,7 +851,7 @@ export class GoogleService implements OnModuleInit {
       const m = await this.api<any>(orgId,
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`);
       const h = (name: string) => (m.payload?.headers ?? []).find((x: any) => x.name === name)?.value ?? null;
-      out.push({ id, from: h('From'), subject: h('Subject'), date: h('Date'), snippet: m.snippet ?? '', unread: (m.labelIds ?? []).includes('UNREAD') });
+      out.push({ id, from: h('From'), subject: h('Subject'), date: h('Date'), snippet: m.snippet ?? '', unread: (m.labelIds ?? []).includes('UNREAD'), link: permalinkDoGmail(id) });
     }
     return out;
   }
@@ -859,7 +859,7 @@ export class GoogleService implements OnModuleInit {
   async gmailGet(orgId: string, id: string) {
     const m = await this.api<any>(orgId, `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`);
     const h = (name: string) => (m.payload?.headers ?? []).find((x: any) => x.name === name)?.value ?? null;
-    return { id, from: h('From'), to: h('To'), subject: h('Subject'), date: h('Date'), snippet: m.snippet ?? '', body: extractBody(m.payload) };
+    return { id, from: h('From'), to: h('To'), subject: h('Subject'), date: h('Date'), snippet: m.snippet ?? '', body: extractBody(m.payload), link: permalinkDoGmail(id) };
   }
 
   async driveList(orgId: string, q = '', pageSize = 15) {
@@ -1157,6 +1157,14 @@ function buildRawEmail(input: { to: string; subject: string; body: string; cc?: 
 }
 
 // Decodifica base64url do corpo do Gmail (prioriza text/plain).
+/**
+ * O endereço do e-mail no Gmail. Estável: é a chave com que a pauta deduplica a
+ * newsletter coletada (MC2), então mudar o formato duplica o que já entrou.
+ */
+function permalinkDoGmail(id: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(id)}`;
+}
+
 function extractBody(payload: any): string {
   const walk = (p: any): string => {
     if (!p) return '';

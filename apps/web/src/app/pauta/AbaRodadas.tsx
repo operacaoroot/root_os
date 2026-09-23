@@ -77,6 +77,17 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     }
   };
 
+  // A coleta não para por uma fonte: a que falhou vem só contada em `erros`,
+  // com o motivo gravado na fonte. Sem este aviso o clique pareceria ter dado certo.
+  const coletar = async () => {
+    const saida: { erros?: number } = {};
+    await acao('coletar', async () => {
+      const r = await apiPost<{ novas: number; fontes: number; erros: number }>('/pauta/feeds/coletar', {}, token);
+      saida.erros = r.erros;
+    });
+    if (saida.erros) onErro(`${saida.erros} fonte(s) falharam na coleta — o motivo está em Referências → Radar.`);
+  };
+
   const publicar = async (pecaId: string, resumo: string) =>
     acao(`pub-${pecaId}`, () => publicarComAprovacao(pecaId, resumo, token));
 
@@ -84,10 +95,10 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Botao
-          onClick={() => acao('coletar', () => apiPost('/pauta/feeds/coletar', {}, token))}
+          onClick={coletar}
           disabled={!editavel || ocupado === 'coletar'}
         >
-          {ocupado === 'coletar' ? 'Coletando…' : 'Coletar feeds'}
+          {ocupado === 'coletar' ? 'Coletando…' : 'Coletar fontes'}
         </Botao>
         <Botao
           tone="brand"

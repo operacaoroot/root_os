@@ -1218,6 +1218,7 @@ enum PautaFonteTipo {
   perfil
   busca
   manual
+  gmail // MC2: newsletters com uma etiqueta; a etiqueta mora em `handle`
 }
 
 enum PautaCapturaTipo {
@@ -1267,7 +1268,7 @@ model PautaFonte {
   tipo          PautaFonteTipo
   nome          String
   url           String? // feed RSS ou URL da busca
-  handle        String? // @perfil, quando tipo = perfil
+  handle        String? // @perfil (tipo perfil) ou a etiqueta do Gmail (tipo gmail)
   plataforma    String? // instagram | tiktok | x | web
   ativo         Boolean        @default(true)
   intervaloMin  Int            @default(720)

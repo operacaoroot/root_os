@@ -2,15 +2,13 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { Prisma, PautaCanal, PautaRodadaStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { RssService } from './rss.service';
+import { ColetaService } from './coleta.service';
 import { parseJsonDaIa } from './parse-json';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
@@ -90,71 +88,23 @@ interface PecasGeradas {
 
 @Injectable()
 export class RodadaService {
-  private readonly log = new Logger('RodadaService');
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly rss: RssService,
+    private readonly coleta: ColetaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
   ) {}
 
   // ---------- coleta do insumo ----------
 
   /**
-   * Lê os feeds ativos e grava cada item novo como captura. Insumo e referência
-   * moram na mesma caixa de entrada de propósito: os dois são "item cru
-   * capturado" — o que muda é o destino (rodada × ficha), não a natureza.
+   * Coleta as fontes da rodada (RSS e Gmail) e grava cada item novo como
+   * captura. Insumo e referência moram na mesma caixa de entrada de propósito:
+   * os dois são "item cru capturado" — o que muda é o destino (rodada × ficha),
+   * não a natureza. O despacho por tipo mora em `ColetaService`.
    */
-  async coletarFeeds(orgId: string, actorId = 'sistema'): Promise<{ novas: number; fontes: number }> {
-    const fontes = await this.prisma.pautaFonte.findMany({
-      where: { orgId, tipo: 'rss', ativo: true },
-    });
-
-    let novas = 0;
-    for (const f of fontes) {
-      if (!f.url) continue;
-      try {
-        const itens = await this.rss.ler(f.url);
-        for (const item of itens) {
-          const urlNorm = item.url.replace(/[?#].*$/, '').replace(/\/$/, '');
-          const urlHash = createHash('sha256').update(urlNorm).digest('hex');
-          const existe = await this.prisma.pautaCaptura.findUnique({
-            where: { orgId_urlHash: { orgId, urlHash } },
-            select: { id: true },
-          });
-          if (existe) continue;
-
-          await this.prisma.pautaCaptura.create({
-            data: {
-              orgId,
-              fonteId: f.id,
-              tipo: 'link',
-              url: item.url,
-              urlHash,
-              titulo: item.titulo,
-              nota: null,
-              bruto: {
-                resumo: item.resumo,
-                publicadoEm: item.publicadoEm?.toISOString() ?? null,
-                feed: f.nome,
-              },
-              capturadoPor: actorId,
-            },
-          });
-          novas++;
-        }
-        await this.prisma.pautaFonte.update({
-          where: { id: f.id },
-          data: { ultimaLeitura: new Date(), ultimoErro: null },
-        });
-      } catch (e) {
-        const msg = (e as Error).message.slice(0, 300);
-        this.log.warn(`feed "${f.nome}" falhou: ${msg}`);
-        await this.prisma.pautaFonte.update({ where: { id: f.id }, data: { ultimoErro: msg } });
-      }
-    }
-    return { novas, fontes: fontes.length };
+  coletarFeeds(orgId: string, actorId = 'sistema'): Promise<{ novas: number; fontes: number; erros: number }> {
+    return this.coleta.coletarDaRodada(orgId, actorId);
   }
 
   // ---------- geração da rodada ----------
@@ -200,6 +150,9 @@ export class RodadaService {
         orgId,
         capturadoEm: { gte: janelaIni },
         status: { in: ['rascunho', 'ficha'] },
+        // Gmail é coletado mas não entra aqui: a URL da captura é o permalink de
+        // uma caixa de entrada, e o item escolhido vira link publicado no grupo.
+        // Entra com a curadoria humana (MC5/MC6), que decide o link de cada item.
         fonte: { tipo: 'rss' },
       },
       orderBy: { capturadoEm: 'desc' },

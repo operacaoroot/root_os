@@ -77,7 +77,10 @@ export class ExecutorDePauta implements OnModuleInit {
       // assunto, e o feed é barato (fetch, sem Apify).
       if (cfg.coletarAntes !== false) {
         const c = await this.rodadas.coletarFeeds(ctx.orgId, 'rotina');
-        this.log.log(`  feeds: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)`);
+        this.log.log(
+          `  coleta: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)` +
+            (c.erros > 0 ? `, ${c.erros} com erro (o motivo fica na fonte, no Radar)` : ''),
+        );
       }
 
       const rodada = await this.rodadas.gerar(ctx.orgId, 'rotina', {

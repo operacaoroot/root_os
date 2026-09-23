@@ -154,14 +154,14 @@ export class PautaController {
   @RequirePermissions('pauta.editar')
   criarFonte(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = PautaFonteSchema.parse(body);
-    return this.svc.criarFonte(user.orgId, user.sub, input);
+    return this.svc.criarFonte(user.orgId, user.sub, input, user.permissions ?? []);
   }
 
   @Patch('fontes/:id')
   @RequirePermissions('pauta.editar')
   atualizarFonte(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const patch = PautaFonteUpdateSchema.parse(body);
-    return this.svc.atualizarFonte(user.orgId, id, user.sub, patch);
+    return this.svc.atualizarFonte(user.orgId, id, user.sub, patch, user.permissions ?? []);
   }
 
   @Delete('fontes/:id')
@@ -170,7 +170,7 @@ export class PautaController {
     return this.svc.removerFonte(user.orgId, id, user.sub);
   }
 
-  // Gasta crédito do Apify → exige a permissão de execução, não só de edição.
+  // Perfil gasta crédito do Apify → exige a permissão de execução, não só de edição.
   @Post('fontes/:id/coletar')
   @RequirePermissions('pauta.editar', 'automacoes.executar')
   coletarFonte(

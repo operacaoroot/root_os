@@ -14,6 +14,8 @@ import { PautaSchedulerService } from './scheduler.service';
 import { EvolutionService } from './evolution.service';
 import { PublicacaoService } from './publicacao.service';
 import { EntradaDeLinksService } from './entrada-de-links.service';
+import { ColetaService } from './coleta.service';
+import { ColetorGmailService } from './coletor-gmail.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -32,6 +34,9 @@ import { EntradaDeLinksService } from './entrada-de-links.service';
     PublicacaoService,
     // MC1: o grupo de links do WhatsApp entra pelo webhook do canal, por registro.
     EntradaDeLinksService,
+    // MC2: despacho da coleta por tipo de fonte; o Gmail é lido pela porta (R0).
+    ColetaService,
+    ColetorGmailService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

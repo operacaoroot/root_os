@@ -1194,8 +1194,16 @@ export type PautaCapturaTipo = (typeof PAUTA_CAPTURA_TIPOS)[number];
 export const PAUTA_CAPTURA_STATUS = ['rascunho', 'processando', 'ficha', 'descartada', 'erro'] as const;
 export type PautaCapturaStatus = (typeof PAUTA_CAPTURA_STATUS)[number];
 
-export const PAUTA_FONTE_TIPOS = ['rss', 'perfil', 'busca', 'manual'] as const;
+export const PAUTA_FONTE_TIPOS = ['rss', 'perfil', 'busca', 'manual', 'gmail'] as const;
 export type PautaFonteTipo = (typeof PAUTA_FONTE_TIPOS)[number];
+
+export const PAUTA_FONTE_ROTULOS: Record<PautaFonteTipo, string> = {
+  rss: 'Feed RSS',
+  perfil: 'Perfil vigiado',
+  busca: 'Busca salva',
+  manual: 'Manual',
+  gmail: 'Etiqueta do Gmail',
+};
 
 // --- Entradas (write) ---
 

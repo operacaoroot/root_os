@@ -600,8 +600,34 @@ jobs:
       # nesta sessão com 1835 casos em 48 arquivos com o banco de teste, e 1278
       # passados / 557 pulados sem ele (1233 + 45). O piso de ARQUIVOS vai a 40;
       # o de CASOS sobe 37 (~18% de folga sobre os 45 novos), para 1288.
-      PISO_CASOS_API: '1288'
-      PISO_ARQUIVOS_API: '40'
+      #
+      # ---------------------------------------------------------------------
+      # MC2, GMAIL COMO FONTE DA PAUTA (23/09/2026): +42 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-gmail` (42): a etiqueta que vira busca (espaço e aninhada viram
+      # hífen, prefixo label:, aspas/dois-pontos/parênteses e pastas do próprio
+      # Gmail recusados), o permalink como chave sem a normalização da tela, o
+      # corpo HTML/texto que vira nota — sem metade de par substituto (emoji na
+      # fronteira do teto, corpo já cortado pelo conector) e sem o CSS de um
+      # <style> cortado no meio; a coleta com o GoogleService DE VERDADE
+      # pela porta e só o `fetch` trocado por um Gmail de mentira — uma captura
+      # por e-mail da etiqueta, coletar de novo não duplica nem reabre, P2002 é
+      # repetida, a rotina aparece como sistema no RASTRO, Google não conectado /
+      # conector desligado / leitura retida viram erro na fonte, um e-mail que
+      # falha não tranca os outros (e a auditoria sai mesmo assim), a leitura
+      # retida no meio da lista para a coleta, a lista cheia deixa aviso; o
+      # despacho por tipo (a rodada coleta RSS e Gmail e segue quando o Google
+      # falta); e o
+      # PautaService: `gmail.ver` para cadastrar ou trocar a etiqueta, o perfil
+      # inscrito no mesmo despacho contando run, e o processamento que não abre
+      # o permalink. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1877 casos em 49 arquivos
+      # com o banco de teste, e 1320 passados / 557 pulados sem ele (1278 + 42).
+      # O piso de ARQUIVOS vai a 41; o de CASOS sobe 35 (~17% de folga sobre os
+      # 42 novos), para 1323.
+      PISO_CASOS_API: '1323'
+      PISO_ARQUIVOS_API: '41'
 
     steps:
       - uses: actions/checkout@v4

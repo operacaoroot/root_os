@@ -10,6 +10,7 @@ import { ActorType, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
 import type { Capacidade, Decisao } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto } from '../common/contexto-execucao';
+import { cortarSemPartirCaractere } from '../common/texto';
 import { PolicyService } from '../policy/policy.service';
 import {
   SinaisService,
@@ -1399,17 +1400,4 @@ export class ToolGateway implements OnModuleInit {
     if (texto.length > 4000) return { resumo: cortarSemPartirCaractere(texto, 4000), truncado: true };
     return (r ?? {}) as Prisma.InputJsonValue;
   }
-}
-
-/** Corta em ponto de código, nunca no meio de um par substituto. Ver `resumirResultado`. */
-export function cortarSemPartirCaractere(texto: string, limite: number): string {
-  if (texto.length <= limite) return texto;
-  const pontos = Array.from(texto);
-  let usado = 0;
-  let i = 0;
-  while (i < pontos.length && usado + pontos[i].length <= limite) {
-    usado += pontos[i].length;
-    i++;
-  }
-  return pontos.slice(0, i).join('');
 }

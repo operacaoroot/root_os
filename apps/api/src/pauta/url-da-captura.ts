@@ -9,10 +9,10 @@ import { createHash } from 'node:crypto';
  * na tela e o link colado no grupo virarem duas capturas — que é justamente o
  * que o `@@unique([orgId, urlHash])` existe para impedir.
  *
- * AINDA NÃO É A ÚNICA: `RodadaService.coletarFeeds` grava o `urlHash` do RSS
- * com outra regra (tira a query inteira, não tira `www`, não baixa a caixa do
- * host). A matéria que chega pelo feed e depois é colada no grupo vira duas
- * capturas. Unificar muda o hash das capturas de RSS novas contra as já
+ * AINDA NÃO É A ÚNICA: `ColetaService.coletarRss` (`pauta/coleta.service.ts`)
+ * grava o `urlHash` do RSS com outra regra (tira a query inteira, não tira
+ * `www`, não baixa a caixa do host). A matéria que chega pelo feed e depois é
+ * colada no grupo vira duas capturas. Unificar muda o hash das capturas de RSS novas contra as já
  * gravadas — decisão do MC5, quando a rodada juntar W e N.
  */
 

@@ -137,6 +137,11 @@ export class PortaDoOperador {
   async executar<R = unknown>(entrada: {
     orgId: string;
     actorId: string;
+    /**
+     * `system` quando não há pessoa por trás — a coleta da rotina da pauta lê o
+     * Gmail (R0) de madrugada, e o RASTRO não pode dizer que alguém clicou.
+     */
+    actorType?: ActorType;
     capabilityId: string;
     args: Record<string, unknown>;
     resource?: { type: string; id: string };
@@ -162,7 +167,7 @@ export class PortaDoOperador {
 
     const ctx: ExecCtx = {
       orgId: entrada.orgId,
-      actorType: ActorType.user,
+      actorType: entrada.actorType ?? ActorType.user,
       actorId: entrada.actorId,
       agentSlug: null,
       /*

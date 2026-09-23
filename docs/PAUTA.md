@@ -109,7 +109,7 @@ Prefixo `Pauta*` (mesma convenção do módulo `Bio*`). Migration: `add_pauta`.
 > `PAUTA_FAMILIA_LABEL` / `PAUTA_OBJETIVO_LABEL` em `packages/shared/src/schemas.ts`.
 
 ```prisma
-enum PautaFonteTipo     { rss  perfil  busca  manual }
+enum PautaFonteTipo     { rss  perfil  busca  manual  gmail }
 enum PautaCapturaStatus { rascunho  processando  ficha  descartada  erro }
 enum PautaFamilia       { CUR  REA  STO  DEM  CON  INT  TRE  ENC  outra }
 enum PautaObjetivo      { ALC  AUT  VIN  VEN  ENG  PRO  LEA }
@@ -117,7 +117,7 @@ enum PautaRodadaStatus  { coletando  curada  aprovada  publicada  falhou }
 enum PautaCanal         { whatsapp  instagram  newsletter  clickup }
 enum PautaPecaStatus    { rascunho  aprovada  publicada  descartada }
 
-model PautaFonte {          // o Radar: feed, perfil vigiado ou busca salva
+model PautaFonte {          // o Radar: feed, perfil vigiado, busca salva ou etiqueta do Gmail (handle)
   id, orgId, tipo, nome, url, handle?, ativo, intervaloMin, ultimaLeitura?, ultimoErro?
 }
 
@@ -168,8 +168,8 @@ Quatro abas, uma responsabilidade cada:
    `família × objetivo`; **você aprova ou corrige**. A curadoria continua sua, o braçal sai.
 3. **Acervo** — busca semântica (pgvector, mesmo motor do módulo Obsidian) + filtros por família,
    objetivo, plataforma, autor, período, performance. Marca `campeã` no que entra na geração.
-4. **Radar** — as fontes automáticas: feeds de IA, perfis vigiados, buscas salvas. Origem do
-   insumo das rodadas.
+4. **Radar** — as fontes automáticas: feeds de IA, perfis vigiados, buscas salvas e etiquetas
+   do Gmail. Origem do insumo das rodadas.
 
 ## 7. Rodadas, peças e canais
 
@@ -281,6 +281,29 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   escalar, a rodada duplica: precisa de lock (advisory lock no Postgres em volta do disparo).
 - **Feed que morre não derruba a coleta.** Cada fonte é lida em try/catch e o erro fica em
   `PautaFonte.ultimoErro`, visível na tela. Um 404 num feed não impede os outros de entrarem.
+  Vale para o Gmail (MC2): Google não conectado vira "Google não conectado. Conecte em
+  Integrações." na fonte, e a rodada segue com o RSS.
+- **Gmail como fonte (MC2).** A fonte `gmail` guarda uma etiqueta em `handle`; a coleta busca
+  `label:<etiqueta> newer_than:7d` e cada e-mail vira uma captura (assunto no título, trecho
+  limpo na nota, texto inteiro no `bruto`). Lê pela porta, com as capacidades R0
+  `comunicacao.email.buscar`/`ler` — o interruptor do conector Gmail corta a coleta. A URL da
+  captura é o permalink que o conector devolve e o `urlHash` sai dele sem normalização (a da
+  tela apaga o fragmento, onde mora o id). Cadastrar ou trocar a etiqueta exige `gmail.ver`, e
+  pastas do próprio Gmail (inbox, sent…) são recusadas: a etiqueta é a fronteira do que entra
+  numa pauta que `pauta.ver` lê. A captura é coletada pela rodada mas ainda **não** entra na
+  curadoria da rodada (o permalink é de uma caixa de entrada, não link publicável) — entra
+  com a curadoria humana (MC5/MC6).
+  - **Teto de 50 e-mails por coleta**, o do conector, sem paginação. Lista cheia deixa um
+    aviso em `ultimoErro` ("os mais antigos podem ter ficado de fora").
+  - **Um e-mail que falha não tranca a etiqueta**: os outros entram, a auditoria registra os
+    que entraram e a fonte guarda "N de M e-mail(s) não entraram". Conector desligado e
+    leitura retida param a coleta inteira.
+  - **Limitação conhecida — leitura acima de R0.** Se a empresa sobrescrever
+    `comunicacao.email.buscar`/`ler` para R2 ou acima, a porta cria a aprovação antes de o
+    coletor ver a retenção: cada coleta (inclusive a da rotina) deixa um pedido novo na fila,
+    e aprová-lo executa uma busca cujo resultado não vai a lugar nenhum. A fonte mostra o
+    motivo; o conserto é voltar a leitura a R0 ou pausar a fonte. Não há hoje consulta à
+    política sem registro para o coletor desistir antes.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

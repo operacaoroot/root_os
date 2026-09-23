@@ -1,12 +1,21 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma, PautaCapturaStatus, PautaFamilia, PautaObjetivo } from '@prisma/client';
+import {
+  Prisma,
+  PautaCapturaStatus,
+  PautaFamilia,
+  PautaObjetivo,
+  type PautaFonte,
+  type PautaFonteTipo,
+} from '@prisma/client';
 import {
   PAUTA_FAMILIAS,
   PAUTA_OBJETIVOS,
@@ -26,6 +35,8 @@ import { ApifyService } from './apify.service';
 import { EspelhoService } from './espelho.service';
 import { hashDaCaptura, normalizarUrlDaCaptura } from './url-da-captura';
 import { comProcedencia } from './links-do-grupo';
+import { ColetaService, type AtorDaColeta, type ResultadoDaColeta } from './coleta.service';
+import { lerEtiqueta, veioDoGmail } from './gmail-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 const EMBED_MODEL = 'text-embedding-3-small';
@@ -84,8 +95,15 @@ interface FichaGerada {
   [k: string]: unknown;
 }
 
+/**
+ * Quem cadastra ou muda a etiqueta de uma fonte do Gmail decide o que da caixa
+ * da empresa entra na pauta — e a pauta é lida por quem tem só `pauta.ver`.
+ * Por isso a mesma permissão de ler o Gmail pela tela.
+ */
+const PERMISSAO_DA_FONTE_GMAIL = 'gmail.ver';
+
 @Injectable()
-export class PautaService {
+export class PautaService implements OnModuleInit {
   private readonly log = new Logger('PautaService');
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
   private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
@@ -96,7 +114,17 @@ export class PautaService {
     private readonly apify: ApifyService,
     private readonly espelho: EspelhoService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    private readonly coleta: ColetaService,
   ) {}
+
+  onModuleInit(): void {
+    // O perfil se inscreve daqui porque o Apify só pode ser importado por este arquivo.
+    this.coleta.registrar(
+      'perfil',
+      (f, ator, opcoes) => this.coletarPerfil(f, ator, opcoes.limite ?? 12),
+      'PautaService',
+    );
+  }
 
   // ---------- utilidades ----------
 
@@ -209,7 +237,10 @@ export class PautaService {
 
   /** Puxa o conteúdo bruto da captura. Instagram/TikTok via Apify; resto via fetch. */
   private async coletar(c: { id: string; url: string | null; bruto: unknown }) {
-    if (!c.url) return { texto: this.textoDoBruto(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    // A URL do e-mail é o permalink da caixa de entrada: abrir daria a tela de login.
+    if (!c.url || veioDoGmail(c.bruto)) {
+      return { texto: this.textoDoBruto(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    }
 
     const plataforma = ApifyService.plataformaDaUrl(c.url);
     const precisaApify = plataforma === 'instagram' || plataforma === 'tiktok';
@@ -348,8 +379,9 @@ export class PautaService {
       const bruto = (coleta.bruto ?? {}) as Record<string, unknown>;
       const saida = await this.llm.complete({
         system: SYSTEM_FICHA,
+        // Na captura do Gmail a nota é o trecho automático do mesmo corpo, não a voz de alguém.
         user: `Material capturado${c.url ? ` (${c.url})` : ''}:\n\n${coleta.texto}${
-          c.nota ? `\n\nNota de quem capturou: ${c.nota}` : ''
+          c.nota && !veioDoGmail(c.bruto) ? `\n\nNota de quem capturou: ${c.nota}` : ''
         }`,
       });
       const f = this.parseFicha(saida);
@@ -704,17 +736,35 @@ export class PautaService {
     };
   }
 
-  async criarFonte(orgId: string, actorId: string, input: PautaFonteInput) {
+  /**
+   * `permissoes` é o que o guard da rota já leu do token; `null` só para quem
+   * não é pessoa. Fonte do Gmail pede `gmail.ver` (ver `PERMISSAO_DA_FONTE_GMAIL`).
+   */
+  async criarFonte(
+    orgId: string,
+    actorId: string,
+    input: PautaFonteInput,
+    permissoes: readonly string[] | null = null,
+  ) {
     if (input.tipo === 'rss' && !input.url) throw new BadRequestException('Fonte RSS exige url.');
     if (input.tipo === 'perfil' && !input.handle) throw new BadRequestException('Fonte perfil exige handle.');
+    let handle = input.handle ?? null;
+    let url = input.url ?? null;
+    let plataforma = input.plataforma ?? null;
+    if (input.tipo === 'gmail') {
+      this.exigirPermissaoDoGmail(permissoes);
+      handle = this.etiquetaValida(input.handle);
+      url = null;
+      plataforma = 'gmail';
+    }
     const f = await this.prisma.pautaFonte.create({
       data: {
         orgId,
         tipo: input.tipo,
         nome: input.nome,
-        url: input.url ?? null,
-        handle: input.handle ?? null,
-        plataforma: input.plataforma ?? null,
+        url,
+        handle,
+        plataforma,
         ativo: input.ativo ?? true,
         intervaloMin: input.intervaloMin ?? 720,
         tetoRunsMes: input.tetoRunsMes ?? 30,
@@ -722,15 +772,43 @@ export class PautaService {
     });
     await this.audit.log({
       orgId, actorId, action: 'pauta.fonte_criada', entityType: 'pauta_fonte', entityId: f.id,
-      after: { tipo: f.tipo, nome: f.nome },
+      after: { tipo: f.tipo, nome: f.nome, ...(f.tipo === 'gmail' ? { etiqueta: f.handle } : {}) },
     });
     return { ok: true, id: f.id };
   }
 
-  async atualizarFonte(orgId: string, id: string, actorId: string, patch: PautaFonteUpdateInput) {
+  private exigirPermissaoDoGmail(permissoes: readonly string[] | null): void {
+    if (permissoes && !permissoes.includes(PERMISSAO_DA_FONTE_GMAIL)) {
+      throw new ForbiddenException(
+        `Fonte do Gmail escolhe o que da caixa da empresa entra na pauta: exige a permissão ${PERMISSAO_DA_FONTE_GMAIL}.`,
+      );
+    }
+  }
+
+  private etiquetaValida(bruta: string | null | undefined): string {
+    const lida = lerEtiqueta(bruta);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    return lida.etiqueta;
+  }
+
+  async atualizarFonte(
+    orgId: string,
+    id: string,
+    actorId: string,
+    patch: PautaFonteUpdateInput,
+    permissoes: readonly string[] | null = null,
+  ) {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
-    await this.prisma.pautaFonte.update({ where: { id }, data: patch });
+    const data: PautaFonteUpdateInput = { ...patch };
+    const tipo: PautaFonteTipo = patch.tipo ?? f.tipo;
+    // Virar Gmail, ou trocar a etiqueta de uma que já é, é o mesmo que criar uma.
+    if (tipo === 'gmail' && (f.tipo !== 'gmail' || patch.handle !== undefined)) {
+      this.exigirPermissaoDoGmail(permissoes);
+      data.handle = this.etiquetaValida(patch.handle !== undefined ? patch.handle : f.handle);
+      data.plataforma = 'gmail';
+    }
+    await this.prisma.pautaFonte.update({ where: { id }, data });
     await this.audit.log({
       orgId, actorId, action: 'pauta.fonte_editada', entityType: 'pauta_fonte', entityId: id,
     });
@@ -747,13 +825,17 @@ export class PautaService {
     return { ok: true };
   }
 
-  /** Puxa os últimos posts de um perfil vigiado e joga na fila como captura. */
+  /** "Coletar agora" do Radar: o despacho por tipo mora em `ColetaService`. */
   async coletarFonte(orgId: string, id: string, actorId: string, limite = 12) {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
-    if (f.tipo !== 'perfil' || !f.handle) {
-      throw new BadRequestException('Coleta automática hoje só para fonte do tipo perfil (onda 1).');
-    }
+    const r = await this.coleta.coletar(f, actorId, { limite });
+    return { ok: true, novas: r.novas, repetidas: r.repetidas };
+  }
+
+  /** Puxa os últimos posts de um perfil vigiado e joga na fila como captura. */
+  private async coletarPerfil(f: PautaFonte, ator: AtorDaColeta, limite: number): Promise<ResultadoDaColeta> {
+    if (!f.handle) throw new BadRequestException('Fonte perfil exige handle.');
 
     // Teto de gasto: o contador zera na virada do mês.
     const mes = new Date().toISOString().slice(0, 7);
@@ -765,12 +847,13 @@ export class PautaService {
     }
 
     let novas = 0;
+    let repetidas = 0;
     try {
       const r = await this.apify.scrapePerfil(f.handle, limite);
       for (const item of r.items) {
         const url = typeof item.url === 'string' ? item.url : null;
         if (!url) continue;
-        const res = await this.capturar(orgId, actorId, {
+        const res = await this.capturar(f.orgId, ator.id, {
           tipo: 'link',
           url,
           titulo: typeof item.caption === 'string' ? item.caption.slice(0, 120) : null,
@@ -778,28 +861,25 @@ export class PautaService {
           texto: null,
           fonteId: f.id,
         });
-        if (!res.duplicada) {
-          novas++;
-          // já guarda o payload: evita um segundo run do Apify no processamento
-          await this.prisma.pautaCaptura.update({
-            where: { id: res.id },
-            data: { bruto: item as Prisma.InputJsonValue, apifyRunId: r.runId },
-          });
+        if (res.duplicada) {
+          repetidas++;
+          continue;
         }
+        novas++;
+        // já guarda o payload: evita um segundo run do Apify no processamento
+        await this.prisma.pautaCaptura.update({
+          where: { id: res.id },
+          data: { bruto: item as Prisma.InputJsonValue, apifyRunId: r.runId },
+        });
       }
+    } finally {
+      // O run conta mesmo quando falha: o Apify cobra do mesmo jeito.
       await this.prisma.pautaFonte.update({
-        where: { id },
-        data: { ultimaLeitura: new Date(), ultimoErro: null, runsNoMes: runs + 1, mesReferente: mes },
+        where: { id: f.id },
+        data: { runsNoMes: runs + 1, mesReferente: mes },
       });
-    } catch (e) {
-      await this.prisma.pautaFonte.update({
-        where: { id },
-        data: { ultimoErro: (e as Error).message.slice(0, 300), runsNoMes: runs + 1, mesReferente: mes },
-      });
-      throw e;
     }
-
-    return { ok: true, novas };
+    return { novas, repetidas };
   }
 
   // ---------- espelho ----------
