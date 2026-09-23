@@ -225,7 +225,7 @@ function ItemCard({ i, base, nome, ocupado, agir, onMudou }: { i: ItemDoLink; ba
         const blob = new Blob(pedacos.current, { type: tipo });
         if (blob.size < 1000) return;
         const arquivo = new File([blob], `resposta.${tipo.includes('mp4') ? 'm4a' : 'webm'}`, { type: tipo });
-        const r = await agir(chave, () => apiUpload<{ texto: string; estado: EstadoDoLink }>(`${rota}/audio`, arquivo));
+        const r = await agir(chave, () => apiUpload<{ texto: string; estado: EstadoDoLink }>(`${rota}/audio?nome=${encodeURIComponent(nome)}`, arquivo));
         if (r) onMudou(r.estado);
       };
       gravador.current = rec;

@@ -143,6 +143,8 @@ services:
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Transcrição de áudio do onboarding (src/llm/transcricao.provider.ts).
+      TRANSCRICAO_MODELO: ${TRANSCRICAO_MODELO:-gpt-4o-transcribe}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       # OpenRouter: mesma API de Chat Completions, com nome e custo próprios.

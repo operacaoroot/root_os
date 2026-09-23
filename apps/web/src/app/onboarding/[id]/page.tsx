@@ -208,11 +208,8 @@ export default function TrilhoPage() {
                   <span className="text-[11px] text-muted">{m.quem}</span>
                 </div>
                 <p className="mt-0.5">{m.texto}</p>
-                {typeof m.dados.mensagem === 'string' && (
-                  <div className="mt-1 flex items-start gap-2">
-                    <pre className="flex-1 whitespace-pre-wrap rounded-lg bg-surface-2 p-2 text-[12px]">{m.dados.mensagem}</pre>
-                    <Botao onClick={() => navigator.clipboard.writeText(String(m.dados.mensagem))}>copiar</Botao>
-                  </div>
+                {m.dados.mensagemPronta === true && (
+                  <p className="mt-1 text-[11px] text-muted">Mensagem pronta em “Mensagens prontas”, no convite (aba “A fase e os portões”).</p>
                 )}
                 {typeof m.dados.aviso === 'string' && <p className="mt-1 text-[11px] text-warn">{m.dados.aviso}</p>}
               </li>
@@ -532,6 +529,11 @@ function SecaoAta({ t, editavel, agir, token, setAviso }: { t: TrilhoCompleto; e
     if (modo === 'arquivo') {
       if (!arquivo) return;
       return agir('ata', () => apiUpload<ResultadoDaLeitura>(`/tenants/onboarding/trilhos/${t.id}/ata/arquivo${k ? `?kickoffEm=${encodeURIComponent(k)}` : ''}`, arquivo, token), depois);
+    }
+    // Texto colado acima de ~80 mil caracteres não cabe no corpo JSON da API: vai como arquivo.
+    if (modo === 'texto' && texto.length > 80_000) {
+      const blob = new File([texto], 'ata-colada.txt', { type: 'text/plain' });
+      return agir('ata', () => apiUpload<ResultadoDaLeitura>(`/tenants/onboarding/trilhos/${t.id}/ata/arquivo${k ? `?kickoffEm=${encodeURIComponent(k)}` : ''}`, blob, token), depois);
     }
     const fonte = modo === 'texto' ? { tipo: 'texto', texto } : { tipo: 'link', url };
     return agir('ata', () => apiPost<ResultadoDaLeitura>(`/tenants/onboarding/trilhos/${t.id}/ata`, { fonte, kickoffEm: k }, token), depois);

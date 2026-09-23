@@ -164,7 +164,8 @@ export class LinkPublicoService {
     const feito = itemRespondido(status);
     const aprovado = status === 'aprovado' && !!i?.proposta;
     let fonte: string | null = null;
-    if (i && (aprovado || feito)) {
+    // Resposta livre não tem fonte de reunião — só confirmado/corrigido vêm da proposta.
+    if (i && (aprovado || (feito && status !== 'respondido'))) {
       if (i.origem === 'ata') {
         fonte = `Da reunião${t.kickoffEm ? ` de ${formatarData(t.kickoffEm)}` : ''}${i.fonteMinuto ? ` · ${i.fonteMinuto}` : ''}`;
         if (i.tipo === 'interpretado') fonte += ' · aprovado pela Root';
@@ -249,26 +250,27 @@ export class LinkPublicoService {
       if (tema.formato === 'escolha' && tema.opcoes && !tema.opcoes.includes(limpo)) {
         throw new BadRequestException(`escolha uma das opções: ${tema.opcoes.join(', ')}.`);
       }
+      /*
+       * Resposta LIVRE apaga a procedência da proposta: o texto é do cliente,
+       * agora, e não "da reunião de 30/09 · 04:12". A proposta fica guardada
+       * para a bancada ver o que ele preferiu não confirmar.
+       */
       const dados = {
         status: 'respondido',
         textoFinal: limpo,
         respondidoPor: quem.nome,
         respondidoEm: new Date(),
         respondidoVia: via,
+        origem: 'cliente',
+        tipo: 'em-branco',
+        fonteMinuto: null,
+        fonteTrecho: null,
       };
       if (item) {
         await this.prisma.onboardingItem.update({ where: { id: item.id }, data: dados });
       } else {
         await this.prisma.onboardingItem.create({
-          data: {
-            orgId: t.orgId,
-            trilhoId: t.id,
-            temaId,
-            bloco: tema.bloco,
-            origem: 'cliente',
-            tipo: 'em-branco',
-            ...dados,
-          },
+          data: { orgId: t.orgId, trilhoId: t.id, temaId, bloco: tema.bloco, ...dados },
         });
       }
     });
@@ -284,6 +286,16 @@ export class LinkPublicoService {
   ): Promise<{ texto: string; estado: EstadoDoLink }> {
     const r = await this.resolver(token);
     if (r.estado !== 'ativo') throw new ConflictException('este link já foi concluído.');
+    // Conferir ANTES de pagar a transcrição: convite aberto e tema deste link.
+    await comTenantPublico(r.orgId, async () => {
+      const convite = await this.prisma.onboardingConvite.findUnique({ where: { id: r.conviteId } });
+      if (!convite || !aceitaEscrita(convite)) throw new ConflictException('este link já foi concluído ou não aceita mais respostas.');
+      const t = await this.trilhoDoConvite(r);
+      const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
+      if (!temasDoConvite(r.blocos, nivel).some((x) => x.id === temaId)) {
+        throw new BadRequestException('este tema não faz parte deste link.');
+      }
+    });
     let texto: string;
     try {
       texto = (await this.transcricao.transcrever({ orgId: r.orgId, audio, mimetype })).texto;

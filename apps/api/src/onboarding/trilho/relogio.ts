@@ -53,8 +53,14 @@ export interface TrilhoParaRelogio {
   faseDesde: Date;
   /** O último marco `check.semanal`, se houve. */
   ultimoCheckEm: Date | null;
-  /** A última pergunta/uso do cliente no OS, se medido. */
+  /**
+   * A última atividade MEDIDA do cliente: sessão dele no OS, mensagem, ou o
+   * último `contato.ativo`/`check.semanal` registrado. `null` = sem medida
+   * nenhuma, e aí o alerta de uso NÃO dispara — alerta sem medida é ruído.
+   */
   ultimaAtividadeEm: Date | null;
+  /** O último `alerta.sem-uso` já dado: o próximo só depois de N dias dele. */
+  ultimoAlertaSemUsoEm: Date | null;
   /** Marcos já registrados nas últimas 24h, por tipo — para não repetir. */
   marcosRecentes: readonly string[];
   /** Aviso de cobrança pessoal já dado? (marco `convite.cobranca-pessoal`) */
@@ -85,8 +91,16 @@ export interface ConfigDoRelogio {
   nDiasSemUso: number;
 }
 
-function diasAte(alvo: Date, agora: Date): number {
-  return Math.ceil((alvo.getTime() - agora.getTime()) / DIA_MS);
+/** A data civil em Brasília, como `YYYY-MM-DD` — o relógio conta dias de calendário, não horas. */
+export function diaCivil(d: Date, tz = 'America/Sao_Paulo'): string {
+  return d.toLocaleDateString('en-CA', { timeZone: tz });
+}
+
+/** Dias de calendário entre hoje (em Brasília) e a data-alvo. Amanhã = 1, hoje = 0, ontem = -1. */
+export function diasAte(alvo: Date, agora: Date): number {
+  const a = Date.parse(`${diaCivil(alvo)}T00:00:00Z`);
+  const b = Date.parse(`${diaCivil(agora)}T00:00:00Z`);
+  return Math.round((a - b) / DIA_MS);
 }
 
 export function pendencias(
@@ -138,7 +152,7 @@ export function pendencias(
       const faltam = diasAte(t.reuniaoEm, agora);
       const triagem = meus.find((c) => c.blocos === 'A');
       const respondida = !!t.portoes?.triagemRespondidaEm || !!triagem?.concluidoEm;
-      if (faltam <= 1 && faltam >= -0 && !respondida) {
+      if (faltam === 1 && !respondida) {
         push({
           trilhoId: t.id,
           tipo: 'triagem.d-1',
@@ -151,7 +165,7 @@ export function pendencias(
     // ---- fase 2: o ambiente no D-1 --------------------------------------
     if (t.fase === OnboardingFase.contrato && t.imersaoEm) {
       const faltam = diasAte(t.imersaoEm, agora);
-      if (faltam <= 1 && faltam >= 0 && !t.portoes?.ambienteOkEm) {
+      if (faltam === 1 && !t.portoes?.ambienteOkEm) {
         push({
           trilhoId: t.id,
           tipo: 'ambiente.d-1',
@@ -194,14 +208,17 @@ export function pendencias(
           texto: `${t.cliente}: dia 30 de operação chegou e a medição contra a linha de base não foi registrada.`,
         });
       }
-      const ultima = t.ultimaAtividadeEm ?? t.faseDesde;
-      const semUso = diasDesde(ultima, agora);
-      if (semUso >= config.nDiasSemUso) {
+      // Só com atividade MEDIDA; e um alerta por janela de N dias, não um por dia.
+      const marcoDeContagem = [t.ultimaAtividadeEm, t.ultimoAlertaSemUsoEm]
+        .filter((d): d is Date => !!d)
+        .sort((x, y) => y.getTime() - x.getTime())[0];
+      const semUso = t.ultimaAtividadeEm ? diasDesde(marcoDeContagem ?? t.ultimaAtividadeEm, agora) : -1;
+      if (t.ultimaAtividadeEm && semUso >= config.nDiasSemUso) {
         push({
           trilhoId: t.id,
           tipo: 'alerta.sem-uso',
-          texto: `${t.cliente}: ${semUso} dias sem uso ou mensagem. Contato ativo (card 35).`,
-          dados: { dias: semUso, n: config.nDiasSemUso },
+          texto: `${t.cliente}: ${diasDesde(t.ultimaAtividadeEm as Date, agora)} dias sem uso ou mensagem. Contato ativo (card 35).`,
+          dados: { dias: diasDesde(t.ultimaAtividadeEm as Date, agora), n: config.nDiasSemUso },
         });
       }
     }

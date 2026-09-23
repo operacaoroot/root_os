@@ -24,7 +24,7 @@ import { ORDEM_DAS_FASES, ROTULO_DA_FASE } from './fases';
 import { LeituraDaAtaService, type FonteDaAta } from './leitura-da-ata.service';
 import { REGUA_DO_LINK, SemDataError } from './mensagens';
 import { RECEITAS } from './receitas';
-import { TrilhoService, type Quem } from './trilho.service';
+import { MARCOS_MANUAIS, TrilhoService, type Quem } from './trilho.service';
 
 /* ==========================================================================
  * A BANCADA — as rotas autenticadas do trilho
@@ -108,7 +108,8 @@ const TextoSchema = z.object({ texto: z.string().min(1).max(4000) });
 
 const AtaSchema = z.object({
   fonte: z.discriminatedUnion('tipo', [
-    z.object({ tipo: z.literal('texto'), texto: z.string().min(1).max(500_000), referencia: z.string().max(300).nullish() }),
+    // O corpo JSON da API tem teto de 100 kB (express). Texto maior vai por `ata/arquivo`.
+    z.object({ tipo: z.literal('texto'), texto: z.string().min(1).max(90_000), referencia: z.string().max(300).nullish() }),
     z.object({ tipo: z.literal('link'), url: z.string().trim().url().max(2000) }),
   ]),
   kickoffEm: DataOuVazio,
@@ -123,7 +124,16 @@ const BoasVindasSchema = z.object({
   root: z.array(z.string().trim().min(1).max(120)).min(1).max(5),
 });
 
-const MarcoSchema = z.object({ tipo: z.string().trim().min(3).max(60).regex(/^[a-z0-9.-]+$/), texto: z.string().trim().min(2).max(1000), dados: z.record(z.unknown()).optional() });
+/**
+ * Marco escrito por gente: tipo de uma LISTA FECHADA e `dados` só com
+ * chaves-valor de texto. Tipo do sistema (`fase.avancou`, `dossie.gerado`…)
+ * ou `dados` livres seriam forjar o que o código fez.
+ */
+const MarcoSchema = z.object({
+  tipo: z.enum(MARCOS_MANUAIS as [string, ...string[]]),
+  texto: z.string().trim().min(2).max(1000),
+  dados: z.record(z.string().max(500)).optional(),
+});
 
 const MotivoSchema = z.object({ motivo: z.string().trim().min(4).max(1000) });
 
@@ -141,10 +151,12 @@ export class TrilhosController {
 
   // ------------------------------------------------------------ leituras
 
+  /** `?cardId=` devolve só o trilho pendurado naquele cartão da esteira. */
   @Get()
   @RequirePermissions('tarefas.ver')
-  listar(@CurrentUser() user: JwtUser) {
-    return this.trilhos.listar(user.orgId);
+  listar(@CurrentUser() user: JwtUser, @Query('cardId') cardId?: string) {
+    const filtro = typeof cardId === 'string' && /^[0-9a-f-]{36}$/i.test(cardId) ? { cardId } : {};
+    return this.trilhos.listar(user.orgId, filtro);
   }
 
   @Get('pendencias')

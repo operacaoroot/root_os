@@ -332,7 +332,10 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
 
     await link.confirmar(tokenBCD, 'negocio', 'Marcos');
     await link.confirmar(tokenBCD, 'cliente-ideal', 'Marcos');
-    await link.confirmar(tokenBCD, 'oferta-e-preco', 'Marcos');
+    // Resposta LIVRE num tema com proposta apaga a procedência da reunião.
+    const livre = await link.responder(tokenBCD, 'oferta-e-preco', 'Cobramos por peça e o contrato é mensal.', 'Marcos');
+    const oferta = livre.itens.find((i) => i.temaId === 'oferta-e-preco');
+    expect(oferta).toMatchObject({ status: 'respondido', fonte: null });
     await link.confirmar(tokenBCD, 'numeros-que-importam', 'Marcos');
     await link.corrigir(tokenBCD, 'vocabulario', '"Giro" são 60 peças, não 40. O resto está certo.', 'Marcos');
     await link.confirmar(tokenBCD, 'canais', 'Marcos');
@@ -384,6 +387,8 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     const notas = await prisma.contextItem.findMany({ where: { orgId: t.empresaId! }, select: { chave: true, body: true, sourceType: true, sourceRef: true, kind: true } });
     const negocio = notas.find((n) => n.chave === 'onboarding:negocio');
     expect(negocio?.body).toContain('frota pesada');
+    // A resposta livre não cita o kickoff na procedência.
+    expect(notas.find((n) => n.chave === 'onboarding:oferta-e-preco')?.sourceRef).not.toContain('kickoff');
     expect(negocio?.sourceType).toBe('operador');
     expect(negocio?.sourceRef).toContain('kickoff 2026-09-30 00:04:12');
     expect(negocio?.sourceRef).toContain('confirmado por Marcos');
@@ -435,6 +440,8 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     expect(depois.convites[0].lembradoEm).toBeTruthy();
     const marco = depois.marcos.find((m) => m.tipo === 'convite.lembrete');
     expect(marco?.quem).toBe('relógio do onboarding');
+    // O marco NUNCA carrega a mensagem (ela leva o link vivo, e o rastro é append-only).
+    expect(marco?.dados.mensagem).toBeUndefined();
     // Sem chave no ambiente, o marco diz que o link não pôde ser reescrito.
     if (!process.env.ENCRYPTION_KEY) expect(marco?.dados.aviso).toContain('ENCRYPTION_KEY');
 

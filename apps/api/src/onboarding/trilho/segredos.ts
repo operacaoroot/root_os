@@ -50,7 +50,7 @@ const REGRAS: readonly Regra[] = [
   {
     tipo: 'senha',
     padrao:
-      /\b((?:senha|password|passcode|pwd|pass)(?:\s+d[oa]\s+[\w-]+)?(?:\s+(?:é|e|eh|:|=|is|seria|fica))?)\s*[:=]?\s*["'“”]?([^\s"'“”,.;)]{3,})/gi,
+      /\b((?:senha|password|passcode|pwd|pass)\b(?:\s+d[oa]\s+[\w-]+)?(?:\s+(?:é|e|eh|:|=|is|seria|fica))?)\s*[:=]?\s*["'“”]?([^\s"'“”,.;)]{3,})/gi,
     grupoDoValor: 2,
   },
   {
@@ -85,8 +85,10 @@ const REGRAS: readonly Regra[] = [
   },
   {
     // Strings longas sem espaço com cara de token (letras E dígitos, 32+).
+    // NÃO dentro de URL: id do Drive/Docs/Granola vem depois de `/`, `=`, `?`,
+    // `&` ou `#`, e é exatamente o que o bloco D pede ao cliente para colar.
     tipo: 'string-longa',
-    padrao: /()(\b(?=[A-Za-z0-9_\-]*\d)(?=[A-Za-z0-9_\-]*[A-Za-z])[A-Za-z0-9_\-]{32,}\b)/g,
+    padrao: /(?<![\/=?&#.])()(\b(?=[A-Za-z0-9_\-]*\d)(?=[A-Za-z0-9_\-]*[A-Za-z])[A-Za-z0-9_\-]{32,}\b)/g,
     grupoDoValor: 2,
   },
 ];

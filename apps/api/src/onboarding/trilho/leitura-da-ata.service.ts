@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
+import { lookup } from 'node:dns/promises';
 
 import {
   SLUG_DO_LEITOR_DE_ATA,
@@ -80,6 +82,114 @@ export function htmlParaTexto(html: string): string {
     .replace(/[ \t]+/g, ' ')
     .replace(/\n\s*\n\s*\n+/g, '\n\n')
     .trim();
+}
+
+/*
+ * BUSCAR UM LINK DE FORA, E SÓ DE FORA.
+ *
+ * O sócio cola o link da ata (Granola, Docs publicado). A API vai buscá-lo —
+ * e uma busca de URL informada por gente é o caminho clássico para dentro da
+ * rede do servidor (MinIO, Traefik, a própria API) se ninguém conferir o
+ * destino. O que esta função faz valer:
+ *
+ *   · só http(s), só porta padrão (nada de `:9000`);
+ *   · o host é resolvido ANTES de conectar e endereço privado, de loopback,
+ *     link-local ou "este host" é recusado — em cada salto de redirect;
+ *   · redirect é seguido À MÃO (até 3), conferindo o destino de novo;
+ *   · o corpo é lido com teto de 2 MB — uma transcrição tem dezenas de KB.
+ *
+ * Sair da casa por conector (pela porta) continua sendo o desenho certo para
+ * o dia em que o Granola for conector; até lá, é isto que impede a bancada de
+ * virar sonda da rede interna.
+ */
+const TETO_DE_BYTES_DO_LINK = 2 * 1024 * 1024;
+
+function enderecoPrivado(ip: string): boolean {
+  if (isIP(ip) === 4) {
+    const [a, b] = ip.split('.').map(Number);
+    return (
+      a === 10 || a === 127 || a === 0 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  const v6 = ip.toLowerCase();
+  return v6 === '::1' || v6 === '::' || v6.startsWith('fc') || v6.startsWith('fd') || v6.startsWith('fe80') || v6.startsWith('::ffff:');
+}
+
+async function conferirDestino(bruto: string): Promise<URL> {
+  let u: URL;
+  try {
+    u = new URL(bruto);
+  } catch {
+    throw new FonteIndisponivelError('o link não é uma URL válida.');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new FonteIndisponivelError('o link precisa começar com http(s)://');
+  if (u.port && u.port !== '80' && u.port !== '443') throw new FonteIndisponivelError('link com porta fora do padrão não é aceito.');
+  if (u.username || u.password) throw new FonteIndisponivelError('link com credencial embutida não é aceito.');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) {
+    throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
+  }
+  if (isIP(host)) {
+    if (enderecoPrivado(host)) throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
+    return u;
+  }
+  let enderecos: { address: string }[];
+  try {
+    enderecos = await lookup(host, { all: true });
+  } catch {
+    throw new FonteIndisponivelError(`não consegui resolver ${host}.`);
+  }
+  if (!enderecos.length || enderecos.some((e) => enderecoPrivado(e.address))) {
+    throw new FonteIndisponivelError('o link aponta para dentro da casa; só endereço público.');
+  }
+  return u;
+}
+
+async function lerComTeto(res: Response): Promise<string> {
+  const leitor = res.body?.getReader();
+  if (!leitor) return '';
+  const partes: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await leitor.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > TETO_DE_BYTES_DO_LINK) {
+      await leitor.cancel().catch(() => undefined);
+      throw new FonteIndisponivelError('a página passa de 2 MB — isso não é uma transcrição. Cole o texto.');
+    }
+    partes.push(value);
+  }
+  return Buffer.concat(partes.map((p) => Buffer.from(p))).toString('utf8');
+}
+
+export async function buscarLinkDeFora(bruto: string): Promise<{ corpo: string; tipo: string; url: string }> {
+  let alvo = await conferirDestino(bruto);
+  for (let salto = 0; salto < 4; salto++) {
+    let res: Response;
+    try {
+      res = await fetch(alvo, {
+        redirect: 'manual',
+        headers: { accept: 'text/html,text/plain,application/json;q=0.8,*/*;q=0.5', 'user-agent': 'ROOT-OS/onboarding' },
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (e) {
+      throw new FonteIndisponivelError(`não consegui abrir o link: ${(e as Error).message}`);
+    }
+    if (res.status >= 300 && res.status < 400) {
+      const para = res.headers.get('location');
+      if (!para) throw new FonteIndisponivelError('o link redireciona sem destino.');
+      alvo = await conferirDestino(new URL(para, alvo).toString());
+      continue;
+    }
+    if (!res.ok) throw new FonteIndisponivelError(`o link respondeu ${res.status}. Cole a transcrição ou envie o PDF.`);
+    return { corpo: await lerComTeto(res), tipo: res.headers.get('content-type') ?? '', url: alvo.toString() };
+  }
+  throw new FonteIndisponivelError('o link redireciona demais.');
 }
 
 @Injectable()
@@ -205,21 +315,7 @@ export class LeituraDaAtaService {
       return { texto: conferirAta(fonte.texto), referencia: fonte.referencia ?? null, custoUsd: 0 };
     }
     if (fonte.tipo === 'link') {
-      const url = String(fonte.url ?? '').trim();
-      if (!/^https?:\/\//i.test(url)) throw new FonteIndisponivelError('o link precisa começar com http(s)://');
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          redirect: 'follow',
-          headers: { accept: 'text/html,text/plain,application/json;q=0.8,*/*;q=0.5', 'user-agent': 'ROOT-OS/onboarding' },
-          signal: AbortSignal.timeout(15_000),
-        });
-      } catch (e) {
-        throw new FonteIndisponivelError(`não consegui abrir o link: ${(e as Error).message}`);
-      }
-      if (!res.ok) throw new FonteIndisponivelError(`o link respondeu ${res.status}. Cole a transcrição ou envie o PDF.`);
-      const tipo = res.headers.get('content-type') ?? '';
-      const corpo = await res.text();
+      const { corpo, tipo, url } = await buscarLinkDeFora(String(fonte.url ?? '').trim());
       const texto = /html/i.test(tipo) ? htmlParaTexto(corpo) : corpo;
       try {
         return { texto: conferirAta(texto), referencia: url, custoUsd: 0 };

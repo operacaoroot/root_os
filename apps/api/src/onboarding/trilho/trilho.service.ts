@@ -96,6 +96,22 @@ import { varrerSegredos } from './segredos';
  */
 
 export const TIPO_DA_ROTINA_DO_RELOGIO = 'onboarding.relogio';
+
+/**
+ * Os marcos que uma PESSOA escreve pela tela. Lista fechada: os outros tipos
+ * (`fase.avancou`, `dossie.gerado`, `roteiro.personalizado`, `convite.*`…) são
+ * produzidos pelo código e lidos de volta como estado — deixar alguém gravá-los
+ * com `dados` livres seria forjar o que o sistema fez.
+ */
+export const MARCOS_MANUAIS: readonly string[] = [
+  'check.semanal',
+  'retrospectiva',
+  'contato.ativo',
+  'imersao.dia1',
+  'imersao.dia2',
+  'imersao.duvida',
+  'nota',
+] as const;
 export const SLUG_DA_ROTINA_DO_RELOGIO = 'onboarding-relogio';
 
 export interface Quem {
@@ -306,7 +322,12 @@ export class TrilhoService {
    * listagem, pelo mesmo motivo de `garantirRoster` na entrada: conserto que
    * depende de alguém rodar comando não existe.
    */
+  /** Empresas já garantidas neste processo — a listagem não escreve de novo. */
+  private readonly garantidas = new Set<string>();
+
   async garantir(orgId: string): Promise<void> {
+    if (this.garantidas.has(orgId)) return;
+    this.garantidas.add(orgId);
     try {
       if (await precisaSemear(this.prisma, orgId, ROSTER_DO_ONBOARDING)) {
         const dono = await this.prisma.user.findFirst({
@@ -365,15 +386,32 @@ export class TrilhoService {
   // 1. O TRILHO
   // ==========================================================================
 
-  async listar(orgId: string): Promise<TrilhoResumo[]> {
+  async listar(orgId: string, filtro: { cardId?: string } = {}): Promise<TrilhoResumo[]> {
     await this.garantir(orgId);
     const trilhos = await this.prisma.onboardingTrilho.findMany({
-      where: { orgId },
+      where: { orgId, ...(filtro.cardId ? { cardId: filtro.cardId } : {}) },
       orderBy: [{ fase: 'asc' }, { atualizadoEm: 'desc' }],
-      include: { itens: true, convites: true, marcos: { orderBy: { em: 'desc' }, take: 60 } },
+      include: { itens: true, convites: true, marcos: this.marcosParaORelogio() },
     });
     const pend = await this.pendenciasDe(orgId, trilhos);
     return trilhos.map((t) => this.resumo(t, t.itens, pend.filter((p) => p.trilhoId === t.id).length));
+  }
+
+  /**
+   * Os marcos que o relógio precisa — por TIPO, não os últimos N. Uma janela de
+   * "últimos 60" some com o `fase.avancou` depois de duas semanas de rotina
+   * diária, e o relógio passaria a contar da criação do trilho.
+   */
+  private marcosParaORelogio(agora: Date = new Date()) {
+    return {
+      where: {
+        OR: [
+          { tipo: { in: ['fase.avancou', 'check.semanal', 'convite.cobranca-pessoal', 'contato.ativo', 'alerta.sem-uso'] } },
+          { em: { gte: new Date(agora.getTime() - 86_400_000) } },
+        ],
+      },
+      orderBy: { em: 'desc' as const },
+    };
   }
 
   async criar(orgId: string, entrada: NovoTrilho, quem: Quem): Promise<TrilhoCompleto> {
@@ -433,7 +471,8 @@ export class TrilhoService {
       },
     });
     if (!t) throw new NotFoundException('trilho não encontrado.');
-    const pend = await this.pendenciasDe(orgId, [t]);
+    const paraRelogio = await this.prisma.onboardingMarco.findMany({ where: { trilhoId: id, ...this.marcosParaORelogio().where }, orderBy: { em: 'desc' } });
+    const pend = await this.pendenciasDe(orgId, [{ ...t, marcos: paraRelogio }]);
     const estado = this.estadoParaPortao(t, t.itens);
     const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
     const temas = this.temasDoTrilho(nivel);
@@ -986,7 +1025,14 @@ export class TrilhoService {
         (!i.carregadoEm || i.atualizadoEm.getTime() > i.carregadoEm.getTime() + FOLGA_MS),
     );
 
-    let carregados = 0;
+    /*
+     * Duas casas, dois contextos. As NOTAS são da empresa do cliente e são
+     * escritas no contexto dela; a MARCA "carregado" fica na linha do item, que
+     * é da ROOT — e sob isolamento por linha o contexto do cliente não enxerga
+     * essa linha. Então o laço de dentro só devolve o que gravou, e a marca é
+     * escrita depois, de volta no contexto de quem chamou.
+     */
+    const gravadas: { itemId: string; notaId: string }[] = [];
     await comContexto(
       {
         orgId: empresaId,
@@ -1024,11 +1070,7 @@ export class TrilhoService {
           } catch (e) {
             this.log.warn(`empresa ${empresaId}: nota "${nota.chave}" fora do índice de busca (${(e as Error).message})`);
           }
-          await this.prisma.onboardingItem.update({
-            where: { id: i.id },
-            data: { notaId: gravada.id, carregadoEm: new Date() },
-          });
-          carregados += 1;
+          gravadas.push({ itemId: i.id, notaId: gravada.id });
         }
 
         // O retrato também vira nota — a mesma chave da carga guiada.
@@ -1051,6 +1093,11 @@ export class TrilhoService {
       },
     );
 
+    const agora = new Date();
+    for (const g of gravadas) {
+      await this.prisma.onboardingItem.update({ where: { id: g.itemId }, data: { notaId: g.notaId, carregadoEm: agora } });
+    }
+    const carregados = gravadas.length;
     await this.marco(orgId, trilhoId, 'memoria.carregada', `${carregados} nota(s) carregada(s) na memória de ${t.cliente}.`, { carregados, empresaId }, quem);
     return { carregados, retrato: true };
   }
@@ -1062,7 +1109,7 @@ export class TrilhoService {
   async pendencias(orgId: string, nDiasSemUso = N_DIAS_SEM_USO_PADRAO, agora = new Date()): Promise<Pendencia[]> {
     const trilhos = await this.prisma.onboardingTrilho.findMany({
       where: { orgId, fase: { not: OnboardingFase.encerrado } },
-      include: { convites: true, marcos: { orderBy: { em: 'desc' }, take: 60 } },
+      include: { convites: true, marcos: this.marcosParaORelogio(agora) },
     });
     return this.pendenciasDe(orgId, trilhos, agora, nDiasSemUso);
   }
@@ -1078,6 +1125,12 @@ export class TrilhoService {
       const avancou = t.marcos.find((m) => m.tipo === 'fase.avancou');
       const check = t.marcos.find((m) => m.tipo === 'check.semanal');
       const cobranca = t.marcos.find((m) => m.tipo === 'convite.cobranca-pessoal');
+      const contato = t.marcos.find((m) => m.tipo === 'contato.ativo');
+      const alerta = t.marcos.find((m) => m.tipo === 'alerta.sem-uso');
+      // Atividade MEDIDA: o que a Root registrou (check, contato ativo). Sessão
+      // do cliente no OS dele entra quando houver leitura dela — até lá, sem
+      // medida não há alerta (ver `relogio.ts`).
+      const atividade = [check?.em, contato?.em].filter((d): d is Date => !!d).sort((x, y) => y.getTime() - x.getTime())[0] ?? null;
       return {
         id: t.id,
         cliente: t.cliente,
@@ -1089,7 +1142,8 @@ export class TrilhoService {
         proximoPassoEm: t.proximoPassoEm,
         faseDesde: avancou?.em ?? t.criadoEm,
         ultimoCheckEm: check?.em ?? null,
-        ultimaAtividadeEm: null,
+        ultimaAtividadeEm: atividade,
+        ultimoAlertaSemUsoEm: alerta?.em ?? null,
         marcosRecentes: t.marcos.filter((m) => m.em.getTime() >= umDia).map((m) => m.tipo),
         cobrancaPessoalDadaEm: cobranca?.em ?? null,
       };
@@ -1112,23 +1166,20 @@ export class TrilhoService {
 
   /** O que a rotina faz com uma pendência: grava o marco e, no lembrete, carimba o convite. */
   async registrarPendencia(orgId: string, p: Pendencia): Promise<void> {
+    /*
+     * A MENSAGEM NÃO VAI PARA O MARCO. Ela carrega o link vivo do cliente, e o
+     * marco vira evento do RASTRO, que é append-only: o link ficaria legível
+     * para sempre em quem lê a linha do tempo ou exporta a auditoria. O marco
+     * aponta o convite; a bancada reescreve a mensagem na hora, do token
+     * cifrado (`mensagensDoConvite`).
+     */
     const dados: Record<string, unknown> = { ...(p.dados ?? {}) };
     if (p.conviteId) {
       dados.conviteId = p.conviteId;
       const c = await this.prisma.onboardingConvite.findFirst({ where: { id: p.conviteId, trilhoId: p.trilhoId } });
       if (c) {
-        const link = this.linkDoConviteGuardado(c);
-        const t = await this.exigirTrilho(orgId, p.trilhoId, true);
-        if (link) {
-          const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
-          const porTema = new Map(t.itens.map((i) => [i.temaId, i]));
-          const faltam = obrigatorios(c.blocos as BlocosDoConvite, nivel)
-            .filter((tema) => !itemRespondido(porTema.get(tema.id)?.status ?? 'em-branco'))
-            .map((tema) => tema.titulo);
-          dados.mensagem =
-            p.tipo === 'convite.lembrete' ? mensagemDeLembrete(t, link, faltam) : mensagemDeCobrancaPessoal(t, link);
-        } else {
-          dados.mensagem = null;
+        dados.mensagemPronta = !!this.linkDoConviteGuardado(c);
+        if (!dados.mensagemPronta) {
           dados.aviso = 'o link não pôde ser reescrito (sem ENCRYPTION_KEY); gere um link novo na bancada.';
         }
         if (p.tipo === 'convite.lembrete') {
@@ -1223,7 +1274,7 @@ export class TrilhoService {
 
   private procedenciaDoItem(t: OnboardingTrilho, i: OnboardingItem): string {
     const partes = [`onboarding:${t.slug}`];
-    if (i.origem === 'ata') {
+    if (i.origem === 'ata' && (i.status === 'confirmado' || i.status === 'corrigido')) {
       partes.push(`kickoff ${t.kickoffEm ? t.kickoffEm.toISOString().slice(0, 10) : 'sem data'}${i.fonteMinuto ? ` ${i.fonteMinuto}` : ''}`);
     }
     partes.push(`${i.status} por ${i.respondidoPor ?? 'cliente'}${i.respondidoVia === 'audio' ? ' (áudio)' : ''}`);

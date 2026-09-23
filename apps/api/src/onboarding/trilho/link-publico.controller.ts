@@ -9,6 +9,7 @@ import {
   Logger,
   Param,
   Post,
+  Query,
   Req,
   UploadedFile,
   UseInterceptors,
@@ -129,11 +130,14 @@ export class LinkPublicoController {
     @Param('temaId') temaId: string,
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: { nome?: string },
+    @Query('nome') nomeDaQuery?: string,
     @Req() req?: RequisicaoComEndereco,
   ) {
     this.conferirTeto(req, true);
     if (!file) throw new BadRequestException('nenhum áudio enviado (campo "file").');
-    const nome = typeof body?.nome === 'string' ? body.nome.trim().slice(0, 120) : null;
+    // O multipart do navegador leva só o arquivo: o nome vem na query.
+    const bruto = nomeDaQuery ?? body?.nome;
+    const nome = typeof bruto === 'string' ? bruto.trim().slice(0, 120) : null;
     return this.svc.responderPorAudio(token, temaId, file.buffer, file.mimetype, nome || null);
   }
 

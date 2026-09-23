@@ -1246,8 +1246,8 @@ function LinkDoTrilho({ taskId, token }: { taskId: string; token: string | null 
   const [trilho, setTrilho] = useState<{ id: string; cliente: string; faseRotulo: string; faltando: string[] } | null | undefined>(undefined);
   useEffect(() => {
     if (!token) return;
-    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>('/tenants/onboarding/trilhos', token)
-      .then((lista) => setTrilho(lista.find((x) => x.cardId === taskId) ?? null))
+    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>(`/tenants/onboarding/trilhos?cardId=${encodeURIComponent(taskId)}`, token)
+      .then((lista) => setTrilho(lista[0] ?? null))
       .catch(() => setTrilho(null));
   }, [taskId, token]);
   if (trilho === undefined) return null;

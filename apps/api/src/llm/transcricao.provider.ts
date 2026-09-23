@@ -86,7 +86,9 @@ export class TranscricaoService {
           'responder por texto.',
       );
     }
-    if (!TIPOS_DE_AUDIO[p.mimetype]) {
+    // O navegador manda `audio/webm;codecs=opus`: o tipo é o que vem antes do `;`.
+    const tipo = String(p.mimetype ?? '').split(';')[0].trim().toLowerCase();
+    if (!TIPOS_DE_AUDIO[tipo]) {
       throw new TranscricaoIndisponivelError(`formato de áudio não aceito: ${p.mimetype}`);
     }
     if (p.audio.length > MAX_BYTES_DE_AUDIO) {
@@ -101,8 +103,8 @@ export class TranscricaoService {
     const form = new FormData();
     form.append(
       'file',
-      new Blob([new Uint8Array(p.audio)], { type: p.mimetype }),
-      p.nome ?? `audio.${TIPOS_DE_AUDIO[p.mimetype]}`,
+      new Blob([new Uint8Array(p.audio)], { type: tipo }),
+      p.nome ?? `audio.${TIPOS_DE_AUDIO[tipo]}`,
     );
     form.append('model', this.modelo);
     form.append('language', p.idioma ?? 'pt');

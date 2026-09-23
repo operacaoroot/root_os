@@ -54,7 +54,8 @@ import {
   mensagemDoLinkBCD,
 } from '../src/onboarding/trilho/mensagens';
 import { RECEITAS, receita } from '../src/onboarding/trilho/receitas';
-import { N_DIAS_SEM_USO_PADRAO, pendencias, type ConviteParaRelogio, type TrilhoParaRelogio } from '../src/onboarding/trilho/relogio';
+import { N_DIAS_SEM_USO_PADRAO, diasAte, pendencias, type ConviteParaRelogio, type TrilhoParaRelogio } from '../src/onboarding/trilho/relogio';
+import { TranscricaoIndisponivelError, TranscricaoService } from '../src/llm/transcricao.provider';
 import { montarRetratoDoTrilho } from '../src/onboarding/trilho/retrato-do-trilho';
 import { CONSENTIMENTO, montarRoteiro } from '../src/onboarding/trilho/roteiro';
 import { MARCA_DE_SEGREDO, varrerSegredos } from '../src/onboarding/trilho/segredos';
@@ -260,6 +261,22 @@ describe('a varredura de segredos: mascara o rotulado, deixa o texto em paz', ()
     expect(v.texto).toContain('(32) 99999-0000');
     expect(v.texto).toContain('123.456.789-00');
     expect(v.texto).toContain('marcos@exemplo.com');
+  });
+
+  it('CONTROLE NEGATIVO: "passado", "passagem" e "passaporte" não são senha', () => {
+    const fala = 'No ano passado a passagem subiu; o passaporte venceu e a gente passa no balcão.';
+    const v = varrerSegredos(fala);
+    expect(v.removidos).toBe(0);
+    expect(v.texto).toBe(fala);
+  });
+
+  it('CONTROLE NEGATIVO: id de link do Drive/Granola não é token', () => {
+    const fala = 'Os documentos estão em https://drive.google.com/file/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/view e a ata em https://notes.granola.ai/p/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8';
+    const v = varrerSegredos(fala);
+    expect(v.removidos).toBe(0);
+    expect(v.texto).toBe(fala);
+    // Mas um token solto, fora de URL, continua sendo mascarado.
+    expect(varrerSegredos('token: sk_live_ABCDEFGHIJ0123456789abcdefghij1234').removidos).toBe(1);
   });
 
   it('CONTROLE NEGATIVO: uma fala normal não perde nada', () => {
@@ -494,6 +511,7 @@ describe('o relógio: lembrete no dia 3, cobrança no dia 5, D-1, próximo passo
     ultimaAtividadeEm: null,
     marcosRecentes: [],
     cobrancaPessoalDadaEm: null,
+    ultimoAlertaSemUsoEm: null,
     ...p,
   });
   const convite = (p: Partial<ConviteParaRelogio>): ConviteParaRelogio => ({
@@ -525,10 +543,10 @@ describe('o relógio: lembrete no dia 3, cobrança no dia 5, D-1, próximo passo
   });
 
   it('reunião amanhã sem bloco A → aviso D-1; imersão amanhã sem ambiente → aviso', () => {
-    const t0 = trilho({ fase: OnboardingFase.qualificar, reuniaoEm: new Date(agora.getTime() + DIA / 2) });
+    const t0 = trilho({ fase: OnboardingFase.qualificar, reuniaoEm: new Date(agora.getTime() + DIA) });
     expect(pendencias([t0], [], agora).map((p) => p.tipo)).toEqual(['triagem.d-1']);
     expect(pendencias([{ ...t0, portoes: { triagemRespondidaEm: '2026-10-01' } }], [], agora)).toEqual([]);
-    const t2 = trilho({ fase: OnboardingFase.contrato, imersaoEm: new Date(agora.getTime() + DIA / 2) });
+    const t2 = trilho({ fase: OnboardingFase.contrato, imersaoEm: new Date(agora.getTime() + DIA) });
     expect(pendencias([t2], [], agora).map((p) => p.tipo)).toEqual(['ambiente.d-1']);
   });
 
@@ -538,7 +556,7 @@ describe('o relógio: lembrete no dia 3, cobrança no dia 5, D-1, próximo passo
   });
 
   it('fase 4: check semanal, medição do dia 30 e N dias sem uso', () => {
-    const t = trilho({ fase: OnboardingFase.operacao, faseDesde: new Date(agora.getTime() - 31 * DIA) });
+    const t = trilho({ fase: OnboardingFase.operacao, faseDesde: new Date(agora.getTime() - 31 * DIA), ultimaAtividadeEm: new Date(agora.getTime() - 31 * DIA) });
     const tipos = pendencias([t], [], agora).map((p) => p.tipo);
     expect(tipos).toContain('check.semanal');
     expect(tipos).toContain('medicao.dia-30');
@@ -546,6 +564,26 @@ describe('o relógio: lembrete no dia 3, cobrança no dia 5, D-1, próximo passo
     const emDia = { ...t, ultimoCheckEm: new Date(agora.getTime() - DIA), ultimaAtividadeEm: new Date(agora.getTime() - DIA), portoes: { medicaoDia30: { valor: 5, medidoEm: '2026-10-05', quemMediu: 'Pedro' } } };
     expect(pendencias([emDia], [], agora)).toEqual([]);
     expect(N_DIAS_SEM_USO_PADRAO).toBe(7);
+  });
+
+  it('D-1 conta dia de CALENDÁRIO em Brasília, não 24 horas', () => {
+    // Reunião amanhã às 10h BRT (13:00Z); agora é hoje ao meio-dia (15:00Z): faltam 1 dia civil.
+    const hoje = new Date('2026-10-01T15:00:00Z');
+    const amanha10h = new Date('2026-10-02T13:00:00Z');
+    expect(diasAte(amanha10h, hoje)).toBe(1);
+    expect(pendencias([trilho({ fase: OnboardingFase.qualificar, reuniaoEm: amanha10h })], [], hoje).map((p) => p.tipo)).toEqual(['triagem.d-1']);
+    // No dia da reunião não é "amanhã": nada de aviso atrasado.
+    expect(pendencias([trilho({ fase: OnboardingFase.qualificar, reuniaoEm: amanha10h })], [], new Date('2026-10-02T12:00:00Z'))).toEqual([]);
+  });
+
+  it('alerta de uso só com atividade MEDIDA, e um por janela de N dias', () => {
+    const t = trilho({ fase: OnboardingFase.operacao, faseDesde: new Date(agora.getTime() - 40 * DIA), ultimoCheckEm: new Date(agora.getTime() - DIA), portoes: { medicaoDia30: { valor: 1, medidoEm: '2026-10-01', quemMediu: 'x' } } });
+    // Sem medida nenhuma: nada.
+    expect(pendencias([{ ...t, ultimaAtividadeEm: null }], [], agora).map((p) => p.tipo)).toEqual([]);
+    // Atividade há 8 dias: alerta.
+    expect(pendencias([{ ...t, ultimaAtividadeEm: new Date(agora.getTime() - 8 * DIA) }], [], agora).map((p) => p.tipo)).toEqual(['alerta.sem-uso']);
+    // Alerta dado há 2 dias: espera a próxima janela.
+    expect(pendencias([{ ...t, ultimaAtividadeEm: new Date(agora.getTime() - 8 * DIA), ultimoAlertaSemUsoEm: new Date(agora.getTime() - 2 * DIA) }], [], agora)).toEqual([]);
   });
 
   it('trilho encerrado não gera pendência', () => {
@@ -652,6 +690,32 @@ describe('o cardápio de receitas e o roster do onboarding', () => {
       ).not.toThrow(FormatoDaSopInvalido);
       expect(a.autonomiaAte).toBe('R1');
       expect(a.capacidades.every((c) => c.startsWith('contexto.'))).toBe(true);
+    }
+  });
+});
+
+describe('a transcrição de áudio', () => {
+  const teto = { motivoDeCorte: async () => null } as never;
+
+  it('aceita o tipo com parâmetro que o navegador manda (audio/webm;codecs=opus)', async () => {
+    process.env.OPENAI_API_KEY = 'teste';
+    const svc = new TranscricaoService(teto);
+    const original = globalThis.fetch;
+    let corpo: FormData | null = null;
+    globalThis.fetch = (async (_u: unknown, init?: RequestInit) => {
+      corpo = init?.body as FormData;
+      return new Response(JSON.stringify({ text: 'ninguém dá desconto sem a Carla' }), { status: 200 });
+    }) as never;
+    try {
+      const r = await svc.transcrever({ orgId: 'o', audio: Buffer.from('x'.repeat(8000)), mimetype: 'audio/webm;codecs=opus' });
+      expect(r.texto).toContain('Carla');
+      expect(r.custoEstimado).toBe(true);
+      expect(r.segundosEstimados).toBe(2);
+      expect((corpo!.get('file') as File).type).toBe('audio/webm');
+      await expect(svc.transcrever({ orgId: 'o', audio: Buffer.from('x'), mimetype: 'text/plain' })).rejects.toThrow(TranscricaoIndisponivelError);
+    } finally {
+      globalThis.fetch = original;
+      delete process.env.OPENAI_API_KEY;
     }
   });
 });
