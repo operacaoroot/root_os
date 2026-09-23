@@ -1267,9 +1267,9 @@ model PautaFonte {
   org           Org            @relation(fields: [orgId], references: [id])
   tipo          PautaFonteTipo
   nome          String
-  url           String? // feed RSS ou URL da busca
-  handle        String? // @perfil (tipo perfil) ou a etiqueta do Gmail (tipo gmail)
-  plataforma    String? // instagram | tiktok | x | web
+  url           String? // feed RSS
+  handle        String? // @perfil (tipo perfil), a etiqueta do Gmail (tipo gmail) ou a consulta (tipo busca)
+  plataforma    String? // instagram | tiktok | x | web | gmail | google | whatsapp
   ativo         Boolean        @default(true)
   intervaloMin  Int            @default(720)
   // Teto de gasto do Apify: sem isso um perfil vigiado queima crédito em silêncio.

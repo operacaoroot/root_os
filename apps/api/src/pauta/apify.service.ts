@@ -11,7 +11,15 @@ const ACTORS: Record<string, string> = {
   instagram: 'apify~instagram-scraper',
   tiktok: 'clockworks~tiktok-scraper',
   web: 'apify~website-content-crawler',
+  // Busca do Google (MC3): um run = uma página de resultados de uma consulta.
+  busca: 'apify~google-search-scraper',
 };
+
+/** Recorte da busca do Google: país, idioma e janela de dias (`quickDateRange` do actor, `d<N>`). */
+export interface OpcoesDaBusca {
+  resultados: number;
+  dias: number;
+}
 
 export interface ApifyRun {
   runId: string | null;
@@ -71,6 +79,24 @@ export class ApifyService {
       resultsType: 'posts',
       resultsLimit: Math.min(Math.max(limite, 1), 50),
       addParentData: false,
+    });
+  }
+
+  /**
+   * Resultados de UMA consulta no Google do Brasil, em português, só dos últimos
+   * `dias`. Uma página só (`maxPagesPerQuery: 1`): cada página a mais é cobrada,
+   * e o teto de runs da fonte conta runs, não páginas. A consulta chega sem
+   * quebra de linha — no actor, cada linha de `queries` é outra busca paga.
+   */
+  async buscarNoGoogle(consulta: string, opcoes: OpcoesDaBusca): Promise<ApifyRun> {
+    return this.run(ACTORS.busca, {
+      queries: consulta.replace(/\s+/g, ' ').trim(),
+      resultsPerPage: Math.min(Math.max(Math.trunc(opcoes.resultados), 1), 100),
+      maxPagesPerQuery: 1,
+      countryCode: 'br',
+      languageCode: 'pt-BR',
+      quickDateRange: `d${Math.max(Math.trunc(opcoes.dias), 1)}`,
+      mobileResults: false,
     });
   }
 

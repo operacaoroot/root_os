@@ -37,6 +37,15 @@ import { hashDaCaptura, normalizarUrlDaCaptura } from './url-da-captura';
 import { comProcedencia } from './links-do-grupo';
 import { ColetaService, type AtorDaColeta, type ResultadoDaColeta } from './coleta.service';
 import { lerEtiqueta, veioDoGmail } from './gmail-da-pauta';
+import {
+  DIAS_DA_JANELA_DA_BUSCA,
+  capturaDoResultado,
+  comProcedenciaDaBusca,
+  custoPorCaptura,
+  lerConsulta,
+  resultadosDaBusca,
+  resultadosPedidos,
+} from './busca-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 const EMBED_MODEL = 'text-embedding-3-small';
@@ -102,6 +111,9 @@ interface FichaGerada {
  */
 const PERMISSAO_DA_FONTE_GMAIL = 'gmail.ver';
 
+/** O @perfil e a etiqueta cabem nisso; só a consulta da busca usa o teto maior do schema. */
+const TETO_DO_HANDLE_FORA_DA_BUSCA = 60;
+
 @Injectable()
 export class PautaService implements OnModuleInit {
   private readonly log = new Logger('PautaService');
@@ -124,6 +136,8 @@ export class PautaService implements OnModuleInit {
       (f, ator, opcoes) => this.coletarPerfil(f, ator, opcoes.limite ?? 12),
       'PautaService',
     );
+    // A busca também roda no Apify: mesma razão para morar aqui.
+    this.coleta.registrar('busca', (f, ator, opcoes) => this.coletarBusca(f, ator, opcoes.limite), 'PautaService');
   }
 
   // ---------- utilidades ----------
@@ -428,9 +442,11 @@ export class PautaService implements OnModuleInit {
         where: { id },
         data: {
           status: 'ficha',
-          bruto: comProcedencia(c.bruto, bruto) as Prisma.InputJsonValue,
-          apifyRunId: coleta.runId,
-          custoUsd: coleta.custoUsd ?? null,
+          bruto: comProcedenciaDaBusca(c.bruto, comProcedencia(c.bruto, bruto)) as Prisma.InputJsonValue,
+          // A leitura do link pela web não tem run: o custo e o run da coleta
+          // que trouxe a captura (a busca do MC3) continuam valendo.
+          apifyRunId: coleta.runId ?? c.apifyRunId,
+          custoUsd: coleta.custoUsd ?? c.custoUsd,
         },
       });
 
@@ -756,6 +772,12 @@ export class PautaService implements OnModuleInit {
       handle = this.etiquetaValida(input.handle);
       url = null;
       plataforma = 'gmail';
+    } else if (input.tipo === 'busca') {
+      handle = this.consultaValida(input.handle);
+      url = null;
+      plataforma = 'google';
+    } else {
+      this.exigirHandleCurto(handle);
     }
     const f = await this.prisma.pautaFonte.create({
       data: {
@@ -772,7 +794,12 @@ export class PautaService implements OnModuleInit {
     });
     await this.audit.log({
       orgId, actorId, action: 'pauta.fonte_criada', entityType: 'pauta_fonte', entityId: f.id,
-      after: { tipo: f.tipo, nome: f.nome, ...(f.tipo === 'gmail' ? { etiqueta: f.handle } : {}) },
+      after: {
+        tipo: f.tipo,
+        nome: f.nome,
+        ...(f.tipo === 'gmail' ? { etiqueta: f.handle } : {}),
+        ...(f.tipo === 'busca' ? { consulta: f.handle } : {}),
+      },
     });
     return { ok: true, id: f.id };
   }
@@ -782,6 +809,18 @@ export class PautaService implements OnModuleInit {
       throw new ForbiddenException(
         `Fonte do Gmail escolhe o que da caixa da empresa entra na pauta: exige a permissão ${PERMISSAO_DA_FONTE_GMAIL}.`,
       );
+    }
+  }
+
+  private consultaValida(bruta: string | null | undefined): string {
+    const lida = lerConsulta(bruta);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    return lida.consulta;
+  }
+
+  private exigirHandleCurto(handle: string | null | undefined): void {
+    if (handle && handle.length > TETO_DO_HANDLE_FORA_DA_BUSCA) {
+      throw new BadRequestException(`O handle tem no máximo ${TETO_DO_HANDLE_FORA_DA_BUSCA} caracteres.`);
     }
   }
 
@@ -807,6 +846,14 @@ export class PautaService implements OnModuleInit {
       this.exigirPermissaoDoGmail(permissoes);
       data.handle = this.etiquetaValida(patch.handle !== undefined ? patch.handle : f.handle);
       data.plataforma = 'gmail';
+    } else if (tipo === 'busca' && (f.tipo !== 'busca' || patch.handle !== undefined)) {
+      data.handle = this.consultaValida(patch.handle !== undefined ? patch.handle : f.handle);
+      data.url = null;
+      data.plataforma = 'google';
+    } else if (tipo !== 'busca') {
+      // Quem sai da busca leva a consulta junto se o corpo não trouxer outro handle.
+      this.exigirHandleCurto(patch.handle !== undefined ? patch.handle : f.handle);
+      if (f.tipo === 'busca' && patch.plataforma === undefined) data.plataforma = null;
     }
     await this.prisma.pautaFonte.update({ where: { id }, data });
     await this.audit.log({
@@ -830,7 +877,7 @@ export class PautaService implements OnModuleInit {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
     const r = await this.coleta.coletar(f, actorId, { limite });
-    return { ok: true, novas: r.novas, repetidas: r.repetidas };
+    return { ok: true, novas: r.novas, repetidas: r.repetidas, ...(r.aviso ? { aviso: r.aviso } : {}) };
   }
 
   /** Puxa os últimos posts de um perfil vigiado e joga na fila como captura. */
@@ -880,6 +927,128 @@ export class PautaService implements OnModuleInit {
       });
     }
     return { novas, repetidas };
+  }
+
+  /**
+   * A busca salva (MC3): uma consulta no Google do Brasil, última semana, e cada
+   * resultado orgânico vira captura com a chave da tela. O teto do mês NÃO é
+   * erro aqui, ao contrário do perfil: a rodada coleta a busca sozinha, e teto
+   * atingido é o freio funcionando — pula com aviso na fonte e a rodada segue.
+   */
+  private async coletarBusca(f: PautaFonte, ator: AtorDaColeta, limite?: number): Promise<ResultadoDaColeta> {
+    // Antes do MC3 o Radar cadastrava "Busca salva" sem consulta. O Radar não
+    // edita a consulta: aviso na fonte, e não erro que suja a conta da rodada.
+    if (!f.handle?.trim()) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso: `"${f.nome}" foi cadastrada sem consulta: remova e cadastre de novo com os termos da busca.`,
+      };
+    }
+    const lida = lerConsulta(f.handle);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    const { consulta } = lida;
+    // Antes de reservar: sem token não há run, e o teto não pode gastar o que não rodou.
+    if (!this.apify.configured) {
+      throw new ServiceUnavailableException(
+        'A busca web roda no Apify. Defina APIFY_TOKEN no .env (ver .env.example) e reinicie a API.',
+      );
+    }
+
+    const agora = new Date();
+    const mes = agora.toISOString().slice(0, 7);
+    if (!(await this.reservarRun(f, mes))) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso:
+          `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}": a busca foi pulada. ` +
+          'Aumente o teto ou espere virar o mês.',
+      };
+    }
+
+    // O run já está contado: se o Apify falhar daqui em diante, cobrou do mesmo jeito.
+    const r = await this.apify.buscarNoGoogle(consulta, {
+      resultados: resultadosPedidos(limite),
+      dias: DIAS_DA_JANELA_DA_BUSCA,
+    });
+    const { resultados, foraDaJanela } = resultadosDaBusca(r.items, agora);
+
+    const novas: string[] = [];
+    let repetidas = 0;
+    try {
+      for (const resultado of resultados) {
+        const c = capturaDoResultado(resultado, consulta);
+        const existe = await this.prisma.pautaCaptura.findUnique({
+          where: { orgId_urlHash: { orgId: f.orgId, urlHash: c.urlHash } },
+          select: { id: true },
+        });
+        if (existe) {
+          repetidas++;
+          continue;
+        }
+        try {
+          const criada = await this.prisma.pautaCaptura.create({
+            data: {
+              orgId: f.orgId,
+              fonteId: f.id,
+              tipo: 'link',
+              url: c.url,
+              urlHash: c.urlHash,
+              titulo: c.titulo,
+              nota: c.nota,
+              bruto: c.bruto as Prisma.InputJsonValue,
+              apifyRunId: r.runId,
+              capturadoPor: ator.id,
+            },
+            select: { id: true },
+          });
+          novas.push(criada.id);
+        } catch (e) {
+          // A rotina e o botão do Radar gravaram o mesmo link ao mesmo tempo.
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') repetidas++;
+          else throw e;
+        }
+      }
+
+      const rateio = custoPorCaptura(r.custoUsd, novas.length);
+      if (rateio !== null) {
+        await this.prisma.pautaCaptura.updateMany({ where: { id: { in: novas } }, data: { custoUsd: rateio } });
+      }
+    } finally {
+      // O gasto do run fica no RASTRO mesmo quando nada novo entrou ou a gravação caiu no meio.
+      await this.audit.log({
+        orgId: f.orgId,
+        actorType: ator.tipo,
+        actorId: ator.id,
+        action: 'pauta.coleta_busca',
+        entityType: 'pauta_fonte',
+        entityId: f.id,
+        after: { consulta, runId: r.runId, custoUsd: r.custoUsd, capturas: novas, repetidas, foraDaJanela },
+      });
+    }
+    return { novas: novas.length, repetidas };
+  }
+
+  /**
+   * Reserva o run ANTES de chamar o Apify, numa escrita condicional: a rotina e
+   * o botão do Radar ao mesmo tempo não passam os dois pelo último run do teto,
+   * como passariam lendo `runsNoMes` e somando depois.
+   */
+  private async reservarRun(f: PautaFonte, mes: string): Promise<boolean> {
+    if (f.tetoRunsMes <= 0) return false;
+    const virou = await this.prisma.pautaFonte.updateMany({
+      where: { id: f.id, OR: [{ mesReferente: null }, { mesReferente: { not: mes } }] },
+      data: { runsNoMes: 1, mesReferente: mes },
+    });
+    if (virou.count > 0) return true;
+    const somou = await this.prisma.pautaFonte.updateMany({
+      where: { id: f.id, mesReferente: mes, runsNoMes: { lt: f.tetoRunsMes } },
+      data: { runsNoMes: { increment: 1 } },
+    });
+    return somou.count > 0;
   }
 
   // ---------- espelho ----------

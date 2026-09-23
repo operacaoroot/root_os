@@ -708,21 +708,21 @@ describe('gmail da pauta: o despacho e a rodada', () => {
     else process.env.GOOGLE_CLIENT_SECRET = ambienteGoogle.segredo;
   });
 
-  it('a rodada coleta RSS e Gmail; perfil, busca, manual e fonte pausada ficam de fora', async () => {
+  // A busca (MC3) também entra na rodada; o teste dela mora em `pauta-busca.test.ts`.
+  it('a rodada coleta RSS e Gmail; perfil, manual e fonte pausada ficam de fora', async () => {
     const m = montar();
     m.fontes.push(
       novaFonte({ id: 'f-rss', tipo: 'rss', url: 'https://feed.exemplo/rss', handle: null }),
       novaFonte({ id: 'f-gmail' }),
       novaFonte({ id: 'f-perfil', tipo: 'perfil', handle: 'alguem' }),
-      novaFonte({ id: 'f-busca', tipo: 'busca', handle: null }),
       novaFonte({ id: 'f-manual', tipo: 'manual', handle: null, plataforma: 'whatsapp' }),
       novaFonte({ id: 'f-pausada', ativo: false, handle: 'outra' }),
     );
 
     const r = await m.coleta.coletarDaRodada(ORG, 'rotina');
 
-    expect(TIPOS_DA_COLETA_DA_RODADA).toEqual(['rss', 'gmail']);
-    expect(r).toEqual({ novas: 3, fontes: 2, erros: 0 });
+    expect(TIPOS_DA_COLETA_DA_RODADA).toEqual(['rss', 'gmail', 'busca']);
+    expect(r).toEqual({ novas: 3, fontes: 2, erros: 0, puladas: 0 });
     expect(m.feeds).toEqual(['https://feed.exemplo/rss']);
     expect(m.capturas.filter((c) => c.fonteId === 'f-rss')).toHaveLength(1);
     expect(m.capturas.filter((c) => c.fonteId === 'f-gmail')).toHaveLength(2);
@@ -736,7 +736,7 @@ describe('gmail da pauta: o despacho e a rodada', () => {
 
     const r = await m.coleta.coletarDaRodada(ORG, 'rotina');
 
-    expect(r).toEqual({ novas: 1, fontes: 2, erros: 1 });
+    expect(r).toEqual({ novas: 1, fontes: 2, erros: 1, puladas: 0 });
     expect(gmail.ultimoErro).toBe('Google não conectado. Conecte em Integrações.');
     expect(rss.ultimoErro).toBeNull();
     expect(rss.ultimaLeitura).toBeInstanceOf(Date);
@@ -766,7 +766,9 @@ describe('gmail da pauta: o despacho e a rodada', () => {
     expect(busca.ultimoErro).toBeNull();
     expect(manual.ultimoErro).toBeNull();
     expect(m.coleta.temColetor('gmail')).toBe(true);
+    // Perfil e busca se inscrevem do PautaService, que este `montar` não constrói.
     expect(m.coleta.temColetor('perfil')).toBe(false);
+    expect(m.coleta.temColetor('busca')).toBe(false);
   });
 
   it('um tipo tem um coletor só: a segunda inscrição estoura no arranque', () => {

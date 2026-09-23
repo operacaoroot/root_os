@@ -8,8 +8,9 @@ import {
 import { Prisma, PautaCanal, PautaRodadaStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { ColetaService } from './coleta.service';
+import { ColetaService, type ResultadoDaColetaDaRodada } from './coleta.service';
 import { parseJsonDaIa } from './parse-json';
+import { umaPorMateria } from './url-da-captura';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
@@ -98,12 +99,12 @@ export class RodadaService {
   // ---------- coleta do insumo ----------
 
   /**
-   * Coleta as fontes da rodada (RSS e Gmail) e grava cada item novo como
+   * Coleta as fontes da rodada (RSS, Gmail e busca) e grava cada item novo como
    * captura. Insumo e referência moram na mesma caixa de entrada de propósito:
    * os dois são "item cru capturado" — o que muda é o destino (rodada × ficha),
    * não a natureza. O despacho por tipo mora em `ColetaService`.
    */
-  coletarFeeds(orgId: string, actorId = 'sistema'): Promise<{ novas: number; fontes: number; erros: number }> {
+  coletarFeeds(orgId: string, actorId = 'sistema'): Promise<ResultadoDaColetaDaRodada> {
     return this.coleta.coletarDaRodada(orgId, actorId);
   }
 
@@ -145,20 +146,23 @@ export class RodadaService {
     const janelaIni = new Date(janelaFim.getTime() - horas * 3600_000);
 
     // Insumo: capturas de feed dentro da janela que ainda não viraram ficha.
-    const capturas = await this.prisma.pautaCaptura.findMany({
+    const lidas = await this.prisma.pautaCaptura.findMany({
       where: {
         orgId,
         capturadoEm: { gte: janelaIni },
         status: { in: ['rascunho', 'ficha'] },
-        // Gmail é coletado mas não entra aqui: a URL da captura é o permalink de
-        // uma caixa de entrada, e o item escolhido vira link publicado no grupo.
-        // Entra com a curadoria humana (MC5/MC6), que decide o link de cada item.
-        fonte: { tipo: 'rss' },
+        // A busca (MC3) entra: o link é a matéria, como no feed. Gmail é coletado
+        // mas não entra aqui: a URL da captura é o permalink de uma caixa de
+        // entrada, e o item escolhido vira link publicado no grupo. Entra com a
+        // curadoria humana (MC5/MC6), que decide o link de cada item.
+        fonte: { tipo: { in: ['rss', 'busca'] } },
       },
       orderBy: { capturadoEm: 'desc' },
       take: 60,
       include: { fonte: { select: { nome: true } } },
     });
+    // O feed e a busca gravam a mesma matéria com chaves diferentes (ver `url-da-captura.ts`).
+    const capturas = umaPorMateria(lidas);
 
     if (capturas.length < 3) {
       throw new BadRequestException(

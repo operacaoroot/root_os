@@ -74,12 +74,15 @@ export class ExecutorDePauta implements OnModuleInit {
 
     try {
       // Coletar antes de curar é o default: sem insumo fresco a rodada não tem
-      // assunto, e o feed é barato (fetch, sem Apify).
+      // assunto. Feed e Gmail são baratos (fetch); a busca (MC3) não: gasta 1 run
+      // do Apify por fonte a cada disparo, sem olhar `intervaloMin`, e quem freia
+      // é o teto do mês de cada fonte — estourado, a busca é pulada com aviso.
       if (cfg.coletarAntes !== false) {
         const c = await this.rodadas.coletarFeeds(ctx.orgId, 'rotina');
         this.log.log(
           `  coleta: ${c.novas} item(ns) novo(s) de ${c.fontes} fonte(s)` +
-            (c.erros > 0 ? `, ${c.erros} com erro (o motivo fica na fonte, no Radar)` : ''),
+            (c.erros > 0 ? `, ${c.erros} com erro (o motivo fica na fonte, no Radar)` : '') +
+            (c.puladas > 0 ? `, ${c.puladas} pulada(s) com aviso (teto do mês ou consulta faltando)` : ''),
         );
       }
 

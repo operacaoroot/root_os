@@ -13,7 +13,9 @@ import { createHash } from 'node:crypto';
  * grava o `urlHash` do RSS com outra regra (tira a query inteira, não tira
  * `www`, não baixa a caixa do host). A matéria que chega pelo feed e depois é
  * colada no grupo vira duas capturas. Unificar muda o hash das capturas de RSS novas contra as já
- * gravadas — decisão do MC5, quando a rodada juntar W e N.
+ * gravadas — decisão do MC5, quando a rodada juntar W e N. O mesmo vale para a
+ * matéria que chega pelo feed e pela busca do Google (MC3): são duas capturas, e
+ * por isso a curadoria da rodada passa a lista por `umaPorMateria` antes do prompt.
  */
 
 /** Normaliza a URL antes do hash: sem UTM, sem barra final, sem fragmento. */
@@ -35,4 +37,19 @@ export function normalizarUrlDaCaptura(url: string): string {
 /** O `urlHash` da captura: sha256 da chave já normalizada. */
 export function hashDaCaptura(chave: string): string {
   return createHash('sha256').update(chave).digest('hex');
+}
+
+/**
+ * Uma captura por matéria, pela chave da tela: fica a primeira de cada chave, na
+ * ordem recebida. Captura sem URL não tem com quem repetir e passa.
+ */
+export function umaPorMateria<T extends { url: string | null }>(capturas: readonly T[]): T[] {
+  const vistas = new Set<string>();
+  return capturas.filter((c) => {
+    if (!c.url) return true;
+    const chave = normalizarUrlDaCaptura(c.url);
+    if (vistas.has(chave)) return false;
+    vistas.add(chave);
+    return true;
+  });
 }

@@ -168,7 +168,7 @@ Quatro abas, uma responsabilidade cada:
    `família × objetivo`; **você aprova ou corrige**. A curadoria continua sua, o braçal sai.
 3. **Acervo** — busca semântica (pgvector, mesmo motor do módulo Obsidian) + filtros por família,
    objetivo, plataforma, autor, período, performance. Marca `campeã` no que entra na geração.
-4. **Radar** — as fontes automáticas: feeds de IA, perfis vigiados, buscas salvas e etiquetas
+4. **Radar** — as fontes automáticas: feeds de IA, perfis vigiados, buscas no Google e etiquetas
    do Gmail. Origem do insumo das rodadas.
 
 ## 7. Rodadas, peças e canais
@@ -304,6 +304,38 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     e aprová-lo executa uma busca cujo resultado não vai a lugar nenhum. A fonte mostra o
     motivo; o conserto é voltar a leitura a R0 ou pausar a fonte. Não há hoje consulta à
     política sem registro para o coletor desistir antes.
+- **Busca no Google (MC3).** A fonte `busca` guarda a consulta em `handle` (uma linha, até 200
+  caracteres e 32 palavras; URL é recusada) e roda o actor `apify~google-search-scraper` com
+  recorte fixo: `countryCode: 'br'`, `languageCode: 'pt-BR'`, `quickDateRange: 'd7'`, uma
+  página (`maxPagesPerQuery: 1`). Cada resultado **orgânico** vira captura: título, link e a
+  descrição do Google na nota; anúncio, "as pessoas também perguntam" e endereço interno do
+  Google ficam de fora. A chave é a **mesma da tela e do grupo de links**
+  (`normalizarUrlDaCaptura`): a matéria que a busca acha e alguém cola no grupo é uma captura
+  só. A URL gravada é a que o Google devolveu (a normalizada serve só à chave). O RSS ainda
+  grava com a regra própria, então a matéria que chega pelo feed e pela busca vira duas
+  capturas; a curadoria passa a lista por `umaPorMateria` antes do prompt. A data é conferida de novo do nosso lado — resultado com data (no campo `date` ou na
+  frente da descrição, "há 2 dias —") mais velha que a semana é descartado; sem data, passa.
+  A rodada coleta a busca junto com RSS e Gmail, e a curadoria lê as capturas de `rss` e
+  `busca` (o bruto tem `resumo`/`publicadoEm`, os mesmos campos do RSS).
+  - **Teto por fonte, reservado antes do run.** A coleta reserva o run numa escrita
+    condicional (`runsNoMes < tetoRunsMes`, com a virada do mês zerando o contador) antes de
+    chamar o Apify: a rotina e o "Coletar agora" ao mesmo tempo não passam os dois pelo último
+    run. Teto atingido **não é erro**: a busca é pulada, o aviso fica em `ultimoErro` e a
+    rodada segue. Run que falha no Apify conta (cobrou); sem `APIFY_TOKEN` não reserva nada.
+    Busca pulada não mexe em `ultimaLeitura`, e o "Coletar fontes" da aba Rodadas diz quantas
+    foram puladas.
+  - **Cada coleta da rodada gasta.** A rotina com `coletarAntes`, o "Rodar agora" e o botão
+    "Coletar fontes" gastam 1 run por fonte de busca ativa a cada disparo, sem olhar
+    `intervaloMin`; quem freia é o teto do mês da fonte.
+  - **Custo.** O `custoUsd` do run é rateado entre as capturas novas, em 4 casas (somar a
+    coluna dá o gasto **aproximado**); o total exato vai para o RASTRO em
+    `pauta.coleta_busca`, mesmo quando nada novo entrou. Processar a captura (virar ficha)
+    mantém o custo, o run e a procedência da busca.
+  - **Busca salva antiga.** Antes do MC3 o Radar cadastrava "Busca salva" sem consulta. Essa
+    fonte é pulada com aviso ("foi cadastrada sem consulta") e não conta como erro; o conserto
+    é removê-la e cadastrar de novo com os termos.
+  - **Mesma dívida do perfil:** o Apify é chamado direto de `pauta.service.ts`, fora da porta
+    (lista de exceções de `test/arquitetura.test.ts`, "onda 8 — resto da 3.3").
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

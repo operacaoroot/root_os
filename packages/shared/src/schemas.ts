@@ -1200,7 +1200,7 @@ export type PautaFonteTipo = (typeof PAUTA_FONTE_TIPOS)[number];
 export const PAUTA_FONTE_ROTULOS: Record<PautaFonteTipo, string> = {
   rss: 'Feed RSS',
   perfil: 'Perfil vigiado',
-  busca: 'Busca salva',
+  busca: 'Busca no Google',
   manual: 'Manual',
   gmail: 'Etiqueta do Gmail',
 };
@@ -1260,7 +1260,8 @@ export const PautaFonteSchema = z.object({
   tipo: z.enum(PAUTA_FONTE_TIPOS),
   nome: z.string().min(1).max(120),
   url: z.string().url().max(2048).optional().nullable(),
-  handle: z.string().max(60).optional().nullable(),
+  // @perfil, etiqueta do Gmail ou a consulta da busca (MC3, até 200). A API corta os outros tipos em 60.
+  handle: z.string().max(200).optional().nullable(),
   plataforma: z.string().max(40).optional().nullable(),
   ativo: z.boolean().default(true),
   intervaloMin: z.number().int().min(30).max(20160).default(720),

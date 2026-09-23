@@ -626,8 +626,38 @@ jobs:
       # com o banco de teste, e 1320 passados / 557 pulados sem ele (1278 + 42).
       # O piso de ARQUIVOS vai a 41; o de CASOS sobe 35 (~17% de folga sobre os
       # 42 novos), para 1323.
-      PISO_CASOS_API: '1323'
-      PISO_ARQUIVOS_API: '41'
+      #
+      # ---------------------------------------------------------------------
+      # MC3, BUSCA WEB DAS NOTÍCIAS DO NICHO (23/09/2026): +44 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-busca` (44): a consulta em uma linha só (quebra de linha seria
+      # outra busca paga no mesmo run; URL, vazia, >200 caracteres e >32
+      # palavras recusadas); a data que o Google escreve de cinco jeitos (ISO,
+      # "há 3 dias", "há 1 mês", "2 days ago", "22 de set. de 2026", "Sep 22,
+      # 2026"); o
+      # dataset do actor que vira resultado — só orgânico, sem endereço interno
+      # do Google, a mesma matéria uma vez por run, data velha descartada e
+      # contada; a captura com a chave da tela e o custo rateado; o input que
+      # sai para o `apify~google-search-scraper` pelo ApifyService DE VERDADE
+      # com o `fetch` trocado; e a coleta no PautaService com um dublê do Apify
+      # — capturas deduplicadas contra a coleta anterior e contra a tela, P2002
+      # como repetida, o gasto no RASTRO mesmo sem nada novo, e o teto: reservado
+      # antes do run (teto 2 = 2 runs em 3 cliques; rotina e botão no último run
+      # = um só chega ao Apify), virada do mês, teto zero, run que falha conta,
+      # sem token não conta, e teto estourado pula com aviso sem derrubar a
+      # rodada nem mexer em `ultimaLeitura`. Da revisão (+6): "há 1 mês" na
+      # descrição cai fora da semana; a procedência da busca atravessa o virar
+      # ficha; a mesma matéria do feed (com www) e da busca chega UMA vez ao
+      # prompt da curadoria, pelo `gerar()` DE VERDADE; a busca salva antiga,
+      # sem consulta, é pulada sem contar erro; e sair da busca sem handle não
+      # leva a consulta para o @perfil. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1921 casos em 50 arquivos
+      # com o banco de teste, e 1364 passados / 557 pulados sem ele (1320 + 44).
+      # O piso de ARQUIVOS vai a 42; o de CASOS sobe 37 (~16% de folga sobre os
+      # 44 novos), para 1360.
+      PISO_CASOS_API: '1360'
+      PISO_ARQUIVOS_API: '42'
 
     steps:
       - uses: actions/checkout@v4

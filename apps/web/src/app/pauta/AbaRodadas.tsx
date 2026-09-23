@@ -77,15 +77,25 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     }
   };
 
-  // A coleta não para por uma fonte: a que falhou vem só contada em `erros`,
-  // com o motivo gravado na fonte. Sem este aviso o clique pareceria ter dado certo.
+  // A coleta não para por uma fonte: a que falhou vem só contada em `erros`, e
+  // a pulada com aviso (teto do mês da busca), em `puladas`; o motivo dos dois
+  // fica gravado na fonte. Sem este aviso o clique pareceria ter dado certo.
   const coletar = async () => {
-    const saida: { erros?: number } = {};
+    const saida: { erros?: number; puladas?: number } = {};
     await acao('coletar', async () => {
-      const r = await apiPost<{ novas: number; fontes: number; erros: number }>('/pauta/feeds/coletar', {}, token);
+      const r = await apiPost<{ novas: number; fontes: number; erros: number; puladas?: number }>(
+        '/pauta/feeds/coletar',
+        {},
+        token,
+      );
       saida.erros = r.erros;
+      saida.puladas = r.puladas;
     });
-    if (saida.erros) onErro(`${saida.erros} fonte(s) falharam na coleta — o motivo está em Referências → Radar.`);
+    const partes = [
+      saida.erros ? `${saida.erros} fonte(s) falharam na coleta` : '',
+      saida.puladas ? `${saida.puladas} fonte(s) foram puladas (teto do mês ou consulta faltando)` : '',
+    ].filter(Boolean);
+    if (partes.length) onErro(`${partes.join('; ')} — o motivo está em Referências → Radar.`);
   };
 
   const publicar = async (pecaId: string, resumo: string) =>

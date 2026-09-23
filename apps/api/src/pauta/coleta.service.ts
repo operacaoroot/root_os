@@ -11,6 +11,16 @@ export interface ResultadoDaColeta {
   repetidas: number;
   /** A coleta rodou, mas algo ficou de fora: vai para `ultimoErro`, que é o que o Radar mostra. */
   aviso?: string;
+  /** Não leu nada (teto do mês, consulta faltando): `ultimaLeitura` fica como estava. */
+  pulada?: boolean;
+}
+
+export interface ResultadoDaColetaDaRodada {
+  novas: number;
+  fontes: number;
+  erros: number;
+  /** Puladas com aviso, sem ser erro: o motivo fica na fonte, no Radar. */
+  puladas: number;
 }
 
 export interface AtorDaColeta {
@@ -25,11 +35,12 @@ export type Coletor = (
 ) => Promise<ResultadoDaColeta>;
 
 /**
- * O que a coleta da rodada percorre sozinha. `perfil` fica de fora: cada
- * leitura é um run pago do Apify, e trazê-lo para a rodada é do MC4. `busca`
- * entra quando tiver coletor (MC3); `manual` não se coleta — recebe.
+ * O que a coleta da rodada percorre sozinha. `busca` também é run pago do
+ * Apify, e entra porque o coletor dela pula com aviso quando o teto do mês
+ * acaba, sem derrubar a rodada. `perfil` fica de fora até o MC4; `manual` não
+ * se coleta — recebe.
  */
-export const TIPOS_DA_COLETA_DA_RODADA: readonly PautaFonteTipo[] = ['rss', 'gmail'];
+export const TIPOS_DA_COLETA_DA_RODADA: readonly PautaFonteTipo[] = ['rss', 'gmail', 'busca'];
 
 /** Quem chama a coleta sem ser uma pessoa. O resto é o id de quem clicou. */
 const ATORES_DE_SISTEMA = new Set(['rotina', 'sistema']);
@@ -50,8 +61,8 @@ export function atorDaColeta(actorId: string): AtorDaColeta {
  * escolhe o coletor pelo tipo e registra `ultimaLeitura`/`ultimoErro` na fonte
  * do mesmo jeito para todos.
  *
- * O COLETOR DE PERFIL SE INSCREVE DE FORA (`registrar`) em vez de morar aqui:
- * ele chama o Apify, e o import do Apify está preso a `pauta.service.ts` na
+ * OS COLETORES DE PERFIL E DE BUSCA SE INSCREVEM DE FORA (`registrar`) em vez
+ * de morar aqui: eles chamam o Apify, e o import do Apify está preso a `pauta.service.ts` na
  * lista de dívida da catraca de arquitetura — mover o import seria abrir uma
  * violação nova para fechar outra.
  */
@@ -96,7 +107,7 @@ export class ColetaService {
       const r = await inscrito.coletor(fonte, atorDaColeta(actorId), opcoes);
       await this.prisma.pautaFonte.update({
         where: { id: fonte.id },
-        data: { ultimaLeitura: new Date(), ultimoErro: r.aviso ?? null },
+        data: { ...(r.pulada ? {} : { ultimaLeitura: new Date() }), ultimoErro: r.aviso ?? null },
       });
       return r;
     } catch (e) {
@@ -107,10 +118,7 @@ export class ColetaService {
   }
 
   /** Todas as fontes ativas que a rodada coleta. Uma fonte que falha não derruba as outras. */
-  async coletarDaRodada(
-    orgId: string,
-    actorId = 'sistema',
-  ): Promise<{ novas: number; fontes: number; erros: number }> {
+  async coletarDaRodada(orgId: string, actorId = 'sistema'): Promise<ResultadoDaColetaDaRodada> {
     const fontes = await this.prisma.pautaFonte.findMany({
       where: { orgId, ativo: true, tipo: { in: [...TIPOS_DA_COLETA_DA_RODADA] } },
       orderBy: { criadaEm: 'asc' },
@@ -118,15 +126,18 @@ export class ColetaService {
 
     let novas = 0;
     let erros = 0;
+    let puladas = 0;
     for (const f of fontes) {
       try {
-        novas += (await this.coletar(f, actorId)).novas;
+        const r = await this.coletar(f, actorId);
+        novas += r.novas;
+        if (r.pulada) puladas++;
       } catch (e) {
         erros++;
         this.log.warn(`fonte "${f.nome}" (${f.tipo}) falhou: ${(e as Error).message}`);
       }
     }
-    return { novas, fontes: fontes.length, erros };
+    return { novas, fontes: fontes.length, erros, puladas };
   }
 
   /**
