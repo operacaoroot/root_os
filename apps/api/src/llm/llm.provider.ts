@@ -54,8 +54,22 @@ export interface LlmToolResult {
   isError?: boolean;
 }
 
+/**
+ * Um documento que viaja junto com um turno do usuário.
+ *
+ * Existe para o leitor de ata ler a transcrição em PDF SEM biblioteca de PDF
+ * no processo: o modelo lê o documento nativamente. Só o provider da Anthropic
+ * sabe fazer isso; os outros ignoram o anexo e quem chama precisa saber
+ * (`LlmProvider.leAnexos`). Base64 sem quebra de linha, até 32 MB de pedido.
+ */
+export interface AnexoDoTurno {
+  tipo: 'pdf';
+  base64: string;
+  titulo?: string;
+}
+
 export type LlmTurn =
-  | { role: 'user'; text: string }
+  | { role: 'user'; text: string; anexos?: AnexoDoTurno[] }
   | { role: 'assistant'; text?: string; toolCalls?: LlmToolCall[]; raw?: unknown }
   | { role: 'tool'; results: LlmToolResult[] };
 
@@ -143,6 +157,11 @@ export interface LlmProvider {
   readonly configured: boolean;
   /** false quando o provider não sabe chamar ferramenta — o runtime recusa antes de tentar. */
   readonly supportsTools: boolean;
+  /**
+   * true quando o provider lê `AnexoDoTurno` (PDF) num turno do usuário.
+   * Opcional para os dublês de teste não precisarem declará-lo; ausente = não lê.
+   */
+  readonly leAnexos?: boolean;
   complete(input: LlmMessage): Promise<string>;
   step(input: LlmStepInput): Promise<LlmStepOutput>;
   /**

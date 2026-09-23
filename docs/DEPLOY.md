@@ -588,6 +588,29 @@ cuja lista padrão passou a incluir `/api/caixa`.
    número, porque o impedimento da porta não cabe em SQL). O `title` carrega a hora da medição; medição
    que falhou desenha `?` e **nunca 0**; e teto de consulta batido vira `N+`, porque aí o total é piso.
 
+### 2.3k O ONBOARDING DO CLIENTE (23/09/2026) — migration aditiva, sem variável nova
+
+- Migration `20260924010000_onboarding_do_cliente`: cinco tabelas novas, RLS nas cinco,
+  quatro gatilhos `_orgId_do_pai`, conferência local no fim. **Aditiva**: não altera nem
+  converte dado existente; o rollback de imagem não exige desfazê-la.
+- **Sem variável de ambiente nova.** O que o módulo lê já existe no bloco `environment:`
+  do `api`: `ENCRYPTION_KEY` (cifra o token do link para o lembrete), `OPENAI_API_KEY`
+  (transcrição de áudio), `PUBLIC_BASE_URL` (o link `/e/<token>`), `ANTHROPIC_API_KEY`/
+  `LLM_PROVIDER` (o leitor de ata roda no provedor que o OS já usa). Opcional:
+  `TRANSCRICAO_MODELO` (padrão `gpt-4o-transcribe`).
+- **Sem permissão nova** (`tarefas.ver`/`tarefas.editar`) e **sem capacidade nova** — nada
+  de `db:sync-permissions` nem `db:seed:politica` por causa desta fatia.
+- **Semente é preguiçosa:** o roster do onboarding (3 agentes) e a rotina
+  `onboarding.relogio` da empresa nascem na primeira abertura de `/onboarding` por alguém
+  daquela empresa (`TrilhoService.garantir`). Nenhum comando a rodar.
+- Conferir depois de subir: `GET /api/tenants/onboarding/trilhos` sem token → **401**;
+  `GET /api/tenants/onboarding/link/<43 letras>` → **404** (é a resposta certa para link
+  inexistente); `/e/qualquercoisa` no web → página "link não disponível" (200); `/onboarding`
+  → redireciona para o login.
+- O provedor de modelo em produção decide qual modelo lê a ata. Com `LLM_PROVIDER=anthropic`
+  é `claude-opus-5` (o desenho); com `openrouter`, é `OPENROUTER_MODEL`, e PDF não é lido
+  (só o provider da Anthropic lê anexo) — cole a transcrição como texto.
+
 ### 2.4 Subir
 
 ```bash

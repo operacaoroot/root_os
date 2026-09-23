@@ -689,6 +689,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+        <LinkDoTrilho taskId={t.id} token={token} />
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
@@ -1233,5 +1234,32 @@ function OpcaoNova({ fieldId, token, trata }: { fieldId: string; token: string |
       placeholder="+ opção"
       className="w-20 rounded border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] outline-none"
     />
+  );
+}
+
+/*
+ * O trilho de onboarding pendurado neste cartão (23/09/2026). A esteira de
+ * clientes é a VISTA de fora (fase por coluna); o trilho é a vista de dentro
+ * (portões, propostas, link). Um cartão sem trilho mostra o caminho para criar.
+ */
+function LinkDoTrilho({ taskId, token }: { taskId: string; token: string | null }) {
+  const [trilho, setTrilho] = useState<{ id: string; cliente: string; faseRotulo: string; faltando: string[] } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!token) return;
+    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>('/tenants/onboarding/trilhos', token)
+      .then((lista) => setTrilho(lista.find((x) => x.cardId === taskId) ?? null))
+      .catch(() => setTrilho(null));
+  }, [taskId, token]);
+  if (trilho === undefined) return null;
+  return (
+    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
+      {trilho ? (
+        <a href={`/onboarding/${trilho.id}`} className="underline underline-offset-2">
+          Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
+        </a>
+      ) : (
+        <span className="text-muted">Sem trilho de onboarding. <a href="/onboarding" className="underline underline-offset-2">Criar na bancada</a> e ligar a este cartão.</span>
+      )}
+    </div>
   );
 }

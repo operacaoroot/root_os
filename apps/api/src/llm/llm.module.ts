@@ -8,6 +8,7 @@ import { RelatorioDeCustoIaService } from './relatorio-custo.service';
 import { OrcamentoDeAgenteService } from './orcamento-de-agente.service';
 import { ProviderComTeto } from './provider-com-teto';
 import { env } from './env';
+import { TranscricaoService } from './transcricao.provider';
 
 // Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai.
 //
@@ -65,6 +66,7 @@ import { env } from './env';
     TetoDeCustoIaService,
     RelatorioDeCustoIaService,
     OrcamentoDeAgenteService,
+    TranscricaoService,
     {
       provide: LLM_PROVIDER,
       useFactory: (
@@ -96,6 +98,7 @@ import { env } from './env';
     TetoDeCustoIaService,
     RelatorioDeCustoIaService,
     OrcamentoDeAgenteService,
+    TranscricaoService,
   ],
 })
 export class LlmModule {}

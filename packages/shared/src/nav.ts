@@ -245,6 +245,9 @@ export const NAV: NavItem[] = [
   // ── A execução ───────────────────────────────────────────────────────────
   { key: 'trabalho', label: 'Trabalho', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho' },
   { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
+  // O trilho de onboarding (23/09/2026): a esteira de entrega em cinco fases com
+  // portão. Filho do Trabalho porque é a esteira de clientes vista de dentro.
+  { key: 'onboarding', label: 'Onboarding', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'execucao', modulo: 'relatorios' },
 
   // ── O que entra ──────────────────────────────────────────────────────────

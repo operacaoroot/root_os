@@ -3,47 +3,32 @@ import { Module } from '@nestjs/common';
 import { AgentsModule } from '../agents/agents.module';
 import { AuthModule } from '../auth/auth.module';
 import { MemoryModule } from '../memory/memoria.module';
+import { RoutinesModule } from '../routines/routines.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { OnboardingController } from './onboarding.controller';
 import { OnboardingService } from './onboarding.service';
+import { LeituraDaAtaService } from './trilho/leitura-da-ata.service';
+import { LinkPublicoController } from './trilho/link-publico.controller';
+import { LinkPublicoService } from './trilho/link-publico.service';
+import { ExecutorDoRelogioDoOnboarding } from './trilho/relogio.executor';
+import { TrilhoService } from './trilho/trilho.service';
+import { TrilhosController } from './trilho/trilhos.controller';
 
 /*
- * O DEGRAU DE ENTRADA — RF-O-01, RF-O-02, RF-M-05.
+ * DUAS METADES NO MESMO MÓDULO. A entrada (`/entrar`, o cliente sozinho) e o
+ * trilho (a bancada da ROOT + o link público) escrevem a MESMA memória com as
+ * MESMAS chaves — separá-los em módulos daria duas verdades sobre "este tema
+ * foi carregado?". Ver `docs/ONBOARDING.md`.
  *
- * ONDE ELE PRECISA ENTRAR NO `AppModule`, e por quê:
- *
- *   import { OnboardingModule } from './onboarding/onboarding.module';
- *   …
- *   AgentsModule,
- *   OnboardingModule,   // <— depois de AgentsModule e de MemoryModule
- *   AuthModule,
- *
- * `src/app.module.ts` é arquivo de outra fatia nesta onda e não foi editado
- * aqui — a linha está no relatório, em FORA DO ESCOPO. **Sem ela o módulo não
- * existe**: as rotas somem, o cadastro responde 404 e nada acusa. É o mesmo
- * acidente que deixou a memória pendurada no conector do Obsidian na onda 9 e
- * o cofre inalcançável na fatia 5.3 — código inteiro, correto e fora do
- * alcance de qualquer chamador.
- *
- * AS QUATRO IMPORTAÇÕES, uma a uma:
- *   · `TenantsModule` exporta `ProvisionamentoService`, que é quem faz a
- *     empresa existir. A entrada NÃO reescreve provisionamento;
- *   · `MemoryModule` exporta `MemoriaService`, que é quem grava nota com
- *     versão, procedência e RASTRO. A entrada NÃO reescreve memória;
- *   · `AgentsModule` exporta `AgentRuntime`, para a pergunta livre rodar pelo
- *     laço de verdade — com sessão, teto de custo e a marca de procedência que
- *     a onda 10 ligou;
- *   · `AuthModule` por causa do `JwtAuthGuard` das rotas autenticadas. A rota
- *     de cadastro é anônima de propósito e por isso os guardas são declarados
- *     POR MÉTODO, nunca na classe.
- *
- * `EventLogService` e `AuditService` vêm de módulos `@Global` (`GatewayModule`
- * e `AuditModule`) — nada a importar.
+ * `RoutinesModule` entra pelo registro de executores (o relógio do onboarding
+ * é uma rotina como as outras). Não há ciclo: `RoutinesModule` não importa
+ * este módulo. O `LlmModule` é global — o leitor de ata e a transcrição vêm
+ * de lá sem import.
  */
 @Module({
-  imports: [TenantsModule, MemoryModule, AgentsModule, AuthModule],
-  controllers: [OnboardingController],
-  providers: [OnboardingService],
-  exports: [OnboardingService],
+  imports: [TenantsModule, MemoryModule, AgentsModule, AuthModule, RoutinesModule],
+  controllers: [OnboardingController, TrilhosController, LinkPublicoController],
+  providers: [OnboardingService, TrilhoService, LeituraDaAtaService, LinkPublicoService, ExecutorDoRelogioDoOnboarding],
+  exports: [OnboardingService, TrilhoService],
 })
 export class OnboardingModule {}

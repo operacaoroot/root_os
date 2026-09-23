@@ -211,6 +211,8 @@ describe('a sentinela da resolução pública', () => {
       'resolverOrgDaChave',
       'resolverOrgDoSlugInterno',
       'resolverTenantDaPage',
+      // O link público do onboarding (23/09/2026): acha a empresa pelo hash do token.
+      'resolverTenantDoConvite',
       'resolverTenantDoHandle',
       'resolverTenantDoLink',
     ]);

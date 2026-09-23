@@ -39,6 +39,7 @@ const TETO_SAIDA_STREAM = 64000;
 export class AnthropicProvider implements LlmProvider {
   readonly name = 'anthropic';
   readonly supportsTools = true;
+  readonly leAnexos = true;
   private readonly log = new Logger('AnthropicProvider');
   private readonly apiKey = envOpcional('ANTHROPIC_API_KEY');
   // O SDK também aceita ANTHROPIC_AUTH_TOKEN (perfil OAuth). Não dá para forçar
@@ -211,7 +212,18 @@ export class AnthropicProvider implements LlmProvider {
   }
 
   private paraMensagem(t: LlmTurn): Anthropic.Beta.BetaMessageParam {
-    if (t.role === 'user') return { role: 'user', content: t.text };
+    if (t.role === 'user') {
+      if (!t.anexos?.length) return { role: 'user', content: t.text };
+      // O documento vem ANTES do texto, que é a ordem que a API recomenda: o
+      // modelo lê o anexo e depois a pergunta sobre ele.
+      const blocos: Anthropic.Beta.BetaContentBlockParam[] = t.anexos.map((a) => ({
+        type: 'document' as const,
+        source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: a.base64 },
+        ...(a.titulo ? { title: a.titulo } : {}),
+      }));
+      blocos.push({ type: 'text', text: t.text });
+      return { role: 'user', content: blocos };
+    }
     if (t.role === 'assistant') {
       // Preferir os blocos crus: é o que preserva thinking e assinatura.
       if (t.raw) return { role: 'assistant', content: t.raw as Anthropic.Beta.BetaContentBlockParam[] };

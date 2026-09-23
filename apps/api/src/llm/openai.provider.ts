@@ -34,6 +34,7 @@ const TETO_SAIDA_PASSO = 4000;
 export class OpenAiProvider implements LlmProvider {
   readonly name: string = 'openai';
   readonly supportsTools = true;
+  readonly leAnexos = false;
   protected readonly log = new Logger('OpenAiProvider');
   protected readonly apiKey: string = envOpcional('OPENAI_API_KEY');
   protected readonly baseUrl: string = (
