@@ -6,7 +6,6 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { Prisma, PautaCapturaStatus, PautaFamilia, PautaObjetivo } from '@prisma/client';
 import {
   PAUTA_FAMILIAS,
@@ -25,6 +24,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ApifyService } from './apify.service';
 import { EspelhoService } from './espelho.service';
+import { hashDaCaptura, normalizarUrlDaCaptura } from './url-da-captura';
+import { comProcedencia } from './links-do-grupo';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 const EMBED_MODEL = 'text-embedding-3-small';
@@ -99,24 +100,12 @@ export class PautaService {
 
   // ---------- utilidades ----------
 
-  /** Normaliza a URL antes do hash: sem UTM, sem barra final, sem fragmento. */
   private normalizarUrl(url: string): string {
-    try {
-      const u = new URL(url.trim());
-      u.hash = '';
-      for (const k of [...u.searchParams.keys()]) {
-        if (/^(utm_|fbclid|gclid|igshid|si$)/i.test(k)) u.searchParams.delete(k);
-      }
-      u.hostname = u.hostname.replace(/^www\./, '').toLowerCase();
-      const s = u.toString();
-      return s.endsWith('/') ? s.slice(0, -1) : s;
-    } catch {
-      return url.trim();
-    }
+    return normalizarUrlDaCaptura(url);
   }
 
   private hash(v: string): string {
-    return createHash('sha256').update(v).digest('hex');
+    return hashDaCaptura(v);
   }
 
   // ---------- captura ----------
@@ -407,7 +396,7 @@ export class PautaService {
         where: { id },
         data: {
           status: 'ficha',
-          bruto: (bruto as Prisma.InputJsonValue) ?? Prisma.DbNull,
+          bruto: comProcedencia(c.bruto, bruto) as Prisma.InputJsonValue,
           apifyRunId: coleta.runId,
           custoUsd: coleta.custoUsd ?? null,
         },

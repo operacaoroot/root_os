@@ -295,15 +295,20 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
                 <div className="flex flex-wrap items-center gap-2">
                   <Chip tone={f.ativo ? 'good' : 'muted'}>{f.ativo ? 'ativa' : 'pausada'}</Chip>
                   <Chip>{f.tipo}</Chip>
-                  <Chip
-                    tone={f.runsNoMes >= f.tetoRunsMes ? 'bad' : f.runsNoMes > f.tetoRunsMes * 0.7 ? 'warn' : 'muted'}
-                  >
-                    {f.runsNoMes}/{f.tetoRunsMes} runs no mês
-                  </Chip>
+                  {f.tipo !== 'manual' && (
+                    <Chip
+                      tone={f.runsNoMes >= f.tetoRunsMes ? 'bad' : f.runsNoMes > f.tetoRunsMes * 0.7 ? 'warn' : 'muted'}
+                    >
+                      {f.runsNoMes}/{f.tetoRunsMes} runs no mês
+                    </Chip>
+                  )}
                 </div>
                 <p className="mt-1 text-sm">
                   {f.nome}
                   {f.handle && <span className="text-muted"> · @{f.handle}</span>}
+                  {f.tipo === 'manual' && f.plataforma === 'whatsapp' && (
+                    <span className="text-muted"> · link colado no grupo entra sozinho; pausar cala o grupo</span>
+                  )}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted">
                   {f.capturas} captura(s)
@@ -326,9 +331,11 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
                 <Botao onClick={() => alternar(f.id, !f.ativo)} disabled={!editavel}>
                   {f.ativo ? 'Pausar' : 'Ativar'}
                 </Botao>
-                <Botao tone="bad" onClick={() => remover(f.id)} disabled={!editavel}>
-                  Remover
-                </Botao>
+                {!(f.tipo === 'manual' && f.plataforma === 'whatsapp') && (
+                  <Botao tone="bad" onClick={() => remover(f.id)} disabled={!editavel}>
+                    Remover
+                  </Botao>
+                )}
               </div>
             </div>
           ))}

@@ -13,6 +13,7 @@ import { RotinaService } from './rotina.service';
 import { PautaSchedulerService } from './scheduler.service';
 import { EvolutionService } from './evolution.service';
 import { PublicacaoService } from './publicacao.service';
+import { EntradaDeLinksService } from './entrada-de-links.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -29,6 +30,8 @@ import { PublicacaoService } from './publicacao.service';
     PautaSchedulerService,
     EvolutionService,
     PublicacaoService,
+    // MC1: o grupo de links do WhatsApp entra pelo webhook do canal, por registro.
+    EntradaDeLinksService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

@@ -581,8 +581,27 @@ jobs:
       #     nos dois sentidos e as quatro provas de filho com orgId);
       #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1`: 53; `cofre`: 97;
       #     `rastro-retencao`: 33 — iguais, a fatia não mexe neles.
-      PISO_CASOS_API: '1251'
-      PISO_ARQUIVOS_API: '39'
+      #
+      # ---------------------------------------------------------------------
+      # MC1, GRUPO DE LINKS DO WHATSAPP (23/09/2026): +45 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `grupo-de-links` (45): a leitura pura do webhook (link único, vários,
+      # sem link, outro grupo, legenda de imagem, URL repetida, citação,
+      # edição, teto; emoji e aspas tipográficas colados, sublinhado do perfil,
+      # vírgula entre links, IP literal e nome interno recusados), a chave de
+      # deduplicação igual à da tela, a procedência que sobrevive ao
+      # processamento, o registro de entrada por grupo, o controlador do canal
+      # desviando SÓ o grupo inscrito (e o canal seguindo recusando qualquer
+      # outro), e o serviço de entrada com prisma de mentira — o mesmo link duas
+      # vezes é 1 captura, renomear a fonte não a duplica, e o arranque avisa
+      # quando o webhook do canal está desligado. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: o conjunto inteiro rodou
+      # nesta sessão com 1835 casos em 48 arquivos com o banco de teste, e 1278
+      # passados / 557 pulados sem ele (1233 + 45). O piso de ARQUIVOS vai a 40;
+      # o de CASOS sobe 37 (~18% de folga sobre os 45 novos), para 1288.
+      PISO_CASOS_API: '1288'
+      PISO_ARQUIVOS_API: '40'
 
     steps:
       - uses: actions/checkout@v4

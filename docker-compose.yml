@@ -170,6 +170,10 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
       EVOLUTION_GRUPO_JID: ${EVOLUTION_GRUPO_JID:-}
+      # Grupo "Root · links" (MC1): link colado lá vira captura em /referencias.
+      # Entra pelo MESMO webhook do canal de aprovação (a Evolution só aceita
+      # uma URL por instância). Vazio = desligado.
+      EVOLUTION_LINKS_JID: ${EVOLUTION_LINKS_JID:-}
       # APROVAR PELO WHATSAPP (fatia 5.5, RF-A-06). DESLIGADO É O PADRÃO: sem as
       # duas variáveis abaixo o webhook responde 404, nenhum pedido de aprovação
       # sai e nenhum código é gerado. Precisam estar NESTE bloco — o container não
