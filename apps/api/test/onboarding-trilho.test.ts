@@ -54,6 +54,8 @@ import {
 } from '../src/onboarding/trilho/mapa-do-cliente';
 import {
   SemDataError,
+  formatarData,
+  formatarDataComDia,
   mensagemDeBoasVindas,
   mensagemDeLembrete,
   mensagemDoLinkA,
@@ -475,8 +477,8 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
     fase: OnboardingFase.diagnostico,
     nivel: 'avancar-junto',
     receitaNome: null,
-    reuniaoEm: new Date('2026-09-22T12:00:00Z'),
-    kickoffEm: new Date('2026-09-22T12:00:00Z'),
+    reuniaoEm: new Date('2026-09-22'),
+    kickoffEm: new Date('2026-09-22'),
     portoes: {},
     blocosDoLink: 'BCD',
     linkConcluido: false,
@@ -502,6 +504,7 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
     // O link B–D só nasce depois do acordo: conversa e acordo ficam para trás.
     expect(m.estacoes[0].estado).toBe('feita');
     expect(m.estacoes[0].quando).toBe('22/09');
+    // (a reunião é 22/09 à meia-noite UTC: no fuso de Brasília, sem a régua, daria 21/09)
     expect(m.estacoes[1].estado).toBe('feita');
     // E o que vem depois nunca aparece como feito.
     expect(m.estacoes.slice(3).map((e) => e.estado)).toEqual(['adiante', 'adiante', 'adiante']);
@@ -562,6 +565,17 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
 
 describe('as mensagens: data de verdade ou nada', () => {
   const c = { cliente: 'Andrade Peças', contatoNome: 'Marcos Andrade' };
+
+  it('DIA não é INSTANTE: data do trilho não volta um dia no fuso de Brasília', () => {
+    // "2026-09-22" é gravada à meia-noite UTC e diz o DIA: em São Paulo daria 21/09.
+    expect(formatarData(new Date('2026-09-22'))).toBe('22/09');
+    expect(formatarData('2026-09-22')).toBe('22/09');
+    expect(formatarData(new Date('2026-09-22'), true)).toBe('22/09/2026');
+    expect(formatarDataComDia(new Date('2026-09-22'))).toContain('22/09');
+    // Instante de verdade continua no fuso de quem lê: 02:30 UTC ainda é o dia 22 aqui.
+    expect(formatarData(new Date('2026-09-23T02:30:00Z'))).toBe('22/09');
+    expect(formatarData(new Date('2026-09-22T15:00:00Z'))).toBe('22/09');
+  });
 
   it('o link A leva a data da reunião e o prazo; sem data, recusa', () => {
     const m = mensagemDoLinkA(c, 'https://x/e/t', new Date('2026-10-02T12:00:00Z'), new Date('2026-09-29T12:00:00Z'));
