@@ -1773,7 +1773,7 @@ export const PautaPalavraDeCorteSchema = z
   .trim()
   .min(2, 'A palavra de corte precisa de pelo menos 2 caracteres.')
   .max(40, 'A palavra de corte tem no máximo 40 caracteres.')
-  .regex(/^[^\r\n]+$/, 'A palavra de corte é uma linha só.');
+  .regex(/^[^\u0000-\u001f\u007f]+$/, 'A palavra de corte é uma linha só, sem caractere de controle.');
 
 export const PautaRoteiroGerarSchema = z.object({
   /** O episódio já tem roteiro: gerar de novo só com a confirmação explícita. */
@@ -1815,6 +1815,210 @@ export interface PautaRoteiroDoEpisodio {
   motivo: string | null;
   /** O resultado do espelho na escrita que devolveu esta resposta; ausente = não tentou. */
   espelho?: { caminho: string | null; erro: string | null } | null;
+}
+
+// ---------- Pauta: a mídia do episódio (MC9) ----------
+// O vídeo é editado e transcrito NO MAC (`tools/root-midia`) e fica lá: o MinIO
+// da VPS não é público, e o upload no YouTube é manual na V1 (D-MC6). O OS só
+// recebe o que é leve — onde estão os arquivos, a duração, o que foi cortado e
+// a transcrição com os tempos do vídeo FINAL.
+
+/** Os status em que o Mac tem trabalho: gravado (falta editar) e em edição (falta transcrever). */
+export const PAUTA_STATUS_PENDENTES_DE_MIDIA = ['gravacao', 'edicao'] as const satisfies readonly PautaEpisodioStatus[];
+
+/** Quatro horas: nenhum episódio chega perto, e um número absurdo é arquivo errado. */
+export const PAUTA_TETO_DA_DURACAO_SEG = 4 * 3600;
+/** Cortes de uma edição: os silêncios de um bruto de 1h, com folga. */
+export const PAUTA_TETO_DE_CORTES = 3000;
+/*
+ * Os tetos da transcrição valem para 1h de fala (~1 segmento a cada 3 s, ~150
+ * palavras/min). Na prática o corpo JSON de 100 kb do Nest chega antes, por
+ * volta de 40 min de fala — a estação de mídia confere o tamanho antes de
+ * mandar e diz isso em vez de receber um 413 mudo.
+ */
+export const PAUTA_TETO_DE_SEGMENTOS = 2000;
+export const PAUTA_TETO_DO_SEGMENTO = 2000;
+export const PAUTA_TETO_DA_TRANSCRICAO = 120_000;
+/**
+ * Folga entre o fim da transcrição e a duração do vídeo final (s): o whisper
+ * arredonda o último segmento para cima e o ffprobe mede o contêiner.
+ */
+export const PAUTA_FOLGA_DA_TRANSCRICAO_SEG = 1.5;
+
+/**
+ * Uma linha só, sem caractere de controle. O NUL, além de tudo, derruba o
+ * Postgres (22P05 no jsonb e no text) — viraria 500 em vez de 400.
+ */
+const SEM_CONTROLE = /^[^\u0000-\u001f\u007f]+$/;
+/** Texto corrido: tab e quebra de linha valem, o resto do controle não. */
+const SEM_CONTROLE_NO_TEXTO = /^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/;
+
+const caminhoNoMac = z
+  .string()
+  .trim()
+  .min(1, 'O caminho do arquivo não pode ficar vazio.')
+  .max(500, 'O caminho do arquivo tem no máximo 500 caracteres.')
+  .regex(SEM_CONTROLE, 'O caminho do arquivo é uma linha só, sem caractere de controle.');
+
+const segundos = z
+  .number({ invalid_type_error: 'Tempo em segundos.' })
+  .finite()
+  .min(0, 'Tempo negativo.')
+  .max(PAUTA_TETO_DA_DURACAO_SEG, `Tempo acima de ${PAUTA_TETO_DA_DURACAO_SEG} s.`);
+
+export const PAUTA_MOTIVOS_DE_CORTE = ['silencio', 'palavra-de-corte', 'manual'] as const;
+export type PautaMotivoDeCorte = (typeof PAUTA_MOTIVOS_DE_CORTE)[number];
+
+export const PAUTA_EDITORES_DE_MIDIA = ['palmier', 'ffmpeg', 'manual'] as const;
+export type PautaEditorDeMidia = (typeof PAUTA_EDITORES_DE_MIDIA)[number];
+
+/**
+ * Intervalos em ordem e sem sobreposição; encostar no anterior (fim = início)
+ * vale. Os 10 ms de folga são o arredondamento do whisper.
+ */
+function conferirOrdem(
+  lista: ReadonlyArray<{ inicio: number; fim: number }>,
+  ctx: z.RefinementCtx,
+  campo: string,
+  rotulo: string,
+  { duracaoZeroVale }: { duracaoZeroVale: boolean },
+) {
+  let fimAnterior = -Infinity;
+  lista.forEach((s, i) => {
+    if (duracaoZeroVale ? s.fim < s.inicio : s.fim <= s.inicio) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [campo, i, 'fim'], message: `O ${rotulo} ${i + 1} termina antes de começar.` });
+    }
+    if (s.inicio < fimAnterior - 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [campo, i, 'inicio'],
+        message: `O ${rotulo} ${i + 1} começa antes do fim do anterior — a lista vem em ordem, sem sobreposição.`,
+      });
+    }
+    fimAnterior = Math.max(fimAnterior, s.fim);
+  });
+}
+
+export const PautaCorteDeMidiaSchema = z.object({
+  inicio: segundos,
+  fim: segundos,
+  motivo: z.enum(PAUTA_MOTIVOS_DE_CORTE),
+});
+export type PautaCorteDeMidia = z.infer<typeof PautaCorteDeMidiaSchema>;
+
+/** `POST /pauta/episodios/:id/midia` — o que a estação de mídia devolve depois de editar. */
+export const PautaMidiaSchema = z
+  .object({
+    arquivoBruto: caminhoNoMac,
+    arquivoFinal: caminhoNoMac,
+    /** Duração do vídeo FINAL: é nela que a transcrição tem de caber. */
+    duracaoSeg: segundos.refine((s) => s > 0, 'A duração do vídeo final precisa ser maior que zero.'),
+    duracaoBrutoSeg: segundos.optional(),
+    /** O que foi TIRADO do bruto, em segundos do bruto. */
+    cortes: z
+      .array(PautaCorteDeMidiaSchema)
+      .max(PAUTA_TETO_DE_CORTES, `No máximo ${PAUTA_TETO_DE_CORTES} cortes.`)
+      .default([]),
+    /** A palavra que a edição procurou; nula = só silêncios (sem transcrição do bruto). */
+    palavraDeCorte: PautaPalavraDeCorteSchema.nullable().default(null),
+    editor: z.enum(PAUTA_EDITORES_DE_MIDIA).default('ffmpeg'),
+  })
+  .superRefine((m, ctx) => {
+    conferirOrdem(m.cortes, ctx, 'cortes', 'corte', { duracaoZeroVale: false });
+    if (m.duracaoBrutoSeg === undefined) return;
+    const bruto = m.duracaoBrutoSeg;
+    const fora = m.cortes.findIndex((c) => c.fim > bruto + 0.01);
+    if (fora >= 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cortes', fora, 'fim'], message: `O corte ${fora + 1} passa do fim do bruto.` });
+    }
+    if (m.duracaoSeg > bruto + 0.5) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['duracaoSeg'], message: 'O vídeo final não pode ser mais longo que o bruto.' });
+    }
+  });
+export type PautaMidiaInput = z.infer<typeof PautaMidiaSchema>;
+
+/** Como a mídia fica guardada no episódio: o que veio, mais quando chegou. */
+export type PautaMidiaDoEpisodio = PautaMidiaInput & { recebidaEm: string };
+
+/** A mídia guardada no JSON do episódio, ou nula (vazia, de antes do MC9, fora da forma). */
+export function midiaDoEpisodio(valor: unknown): PautaMidiaDoEpisodio | null {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null;
+  const recebidaEm = (valor as { recebidaEm?: unknown }).recebidaEm;
+  if (typeof recebidaEm !== 'string') return null;
+  const r = PautaMidiaSchema.safeParse(valor);
+  return r.success ? { ...r.data, recebidaEm } : null;
+}
+
+export const PautaSegmentoSchema = z.object({
+  inicio: segundos,
+  fim: segundos,
+  texto: z
+    .string()
+    .trim()
+    .min(1, 'Segmento sem texto.')
+    .max(PAUTA_TETO_DO_SEGMENTO, `Segmento com mais de ${PAUTA_TETO_DO_SEGMENTO} caracteres.`)
+    .regex(SEM_CONTROLE_NO_TEXTO, 'O texto do segmento tem caractere de controle.'),
+});
+export type PautaSegmento = z.infer<typeof PautaSegmentoSchema>;
+
+/** `POST /pauta/episodios/:id/transcricao` — os tempos são do vídeo FINAL. */
+export const PautaTranscricaoSchema = z
+  .object({
+    segmentos: z
+      .array(PautaSegmentoSchema)
+      .min(1, 'A transcrição precisa de pelo menos um segmento.')
+      .max(PAUTA_TETO_DE_SEGMENTOS, `No máximo ${PAUTA_TETO_DE_SEGMENTOS} segmentos.`),
+    idioma: z.string().trim().min(2).max(10).regex(SEM_CONTROLE, 'O idioma não pode ter caractere de controle.').optional(),
+    /** O modelo que transcreveu (nome do arquivo ggml), para o RASTRO. */
+    modelo: z.string().trim().min(1).max(120).regex(SEM_CONTROLE, 'O modelo não pode ter caractere de controle.').optional(),
+  })
+  .superRefine((t, ctx) => {
+    conferirOrdem(t.segmentos, ctx, 'segmentos', 'segmento', { duracaoZeroVale: true });
+    const total = t.segmentos.reduce((n, s) => n + s.texto.length, 0);
+    if (total > PAUTA_TETO_DA_TRANSCRICAO) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['segmentos'],
+        message: `A transcrição tem ${total} caracteres; o teto é ${PAUTA_TETO_DA_TRANSCRICAO}.`,
+      });
+    }
+  });
+export type PautaTranscricaoInput = z.infer<typeof PautaTranscricaoSchema>;
+
+/** O texto corrido da transcrição, que a voz (MC10) e a newsletter (MC13) leem. */
+export function textoDaTranscricao(segmentos: ReadonlyArray<{ texto: string }>): string {
+  return segmentos
+    .map((s) => s.texto.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** `12:34` ou `1:02:03`: o tempo como a tela e a descrição do YouTube mostram. */
+export function tempoDoVideo(seg: number): string {
+  const t = Math.max(0, Math.floor(Number.isFinite(seg) ? seg : 0));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = String(t % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+export interface PautaEpisodioPendenteDeMidia {
+  id: string;
+  numero: number;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  /** A palavra que vale agora (episódio > empresa > padrão): é ela que a edição procura. */
+  palavraDeCorte: string;
+  /** O que falta: editar e mandar a mídia, ou transcrever o vídeo final. */
+  falta: 'midia' | 'transcricao';
+  arquivoFinal: string | null;
+  atualizadoEm: string;
+}
+
+export interface PautaEpisodiosPendentesDeMidia {
+  items: PautaEpisodioPendenteDeMidia[];
+  source: { tool: string; generatedAt: string };
 }
 
 export interface PautaCanalEstado {

@@ -21,13 +21,17 @@ import { EpisodioService } from './episodio.service';
 import { RoteiroController } from './roteiro.controller';
 import { RoteiroService } from './roteiro.service';
 import { MemoryModule } from '../memory/memoria.module';
+import { MidiaController } from './midia.controller';
+import { MidiaService } from './midia.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
 // MemoryModule: o roteiro (MC8) LÊ a palavra de corte da empresa na memória.
 @Module({
   imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule],
-  controllers: [PautaController, RodadaController, EpisodioController, RoteiroController],
+  // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
+  // casar antes do `GET :id` de lá (Express casa na ordem de registro).
+  controllers: [PautaController, RodadaController, MidiaController, EpisodioController, RoteiroController],
   providers: [
     PautaService,
     ApifyService,
@@ -47,6 +51,8 @@ import { MemoryModule } from '../memory/memoria.module';
     EpisodioService,
     // MC8: o roteiro do episódio, gerado dos itens mantidos.
     RoteiroService,
+    // MC9: a estação de mídia do Mac devolve o leve (arquivos, cortes, transcrição).
+    MidiaService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

@@ -251,6 +251,22 @@ describe('o detalhe', () => {
     await userEvent.click(salvar);
     expect(apiPatch).toHaveBeenCalledWith('/pauta/episodios/e2', { titulo: 'Especial: IA na PME' }, 'tok');
   });
+
+  it('mostra a mídia que o Mac devolveu (MC9), com o comando quando falta a transcrição', async () => {
+    respostas({
+      detalhe: detalhe('edicao', {
+        midia: {
+          arquivoBruto: '/m/bruto.mp4', arquivoFinal: '/m/ep-02-final.mp4', duracaoSeg: 600, cortes: [],
+          palavraDeCorte: null, editor: 'palmier', recebidaEm: '2026-09-24T23:00:00.000Z',
+        },
+      }),
+    });
+    renderAba();
+    const midia = await screen.findByRole('region', { name: 'Mídia do episódio' });
+    await waitFor(() => expect(midia).toHaveTextContent('ep-02-final.mp4'));
+    expect(midia).toHaveTextContent('PalmierPro');
+    expect(midia).toHaveTextContent('/root-midia ep-02');
+  });
 });
 
 describe('o episódio nasce da rodada curada', () => {

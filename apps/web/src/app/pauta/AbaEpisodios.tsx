@@ -15,12 +15,14 @@ import {
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { SecaoRoteiro } from './SecaoRoteiro';
+import { SecaoMidia } from './SecaoMidia';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
  * e no fim da Curadoria); aqui ele anda do roteiro ao concluído, um passo por
  * vez. A regra de quem pode ir para onde é da API — a tela só oferece os dois
- * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`.
+ * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`; a
+ * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`.
  */
 
 interface Props {
@@ -230,6 +232,13 @@ export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial =
             bump={bump}
             onErro={onErro}
             onMudou={onMudou}
+          />
+
+          <SecaoMidia
+            apelido={detalhe.apelido}
+            status={detalhe.status}
+            midia={detalhe.midia}
+            transcricao={detalhe.transcricao}
           />
 
           <div>

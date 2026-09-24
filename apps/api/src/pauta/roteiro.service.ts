@@ -85,8 +85,11 @@ export class RoteiroService {
     return e as LinhaDoRoteiro;
   }
 
-  /** A palavra da empresa: a nota da memória (chaves em ordem), só lida. */
-  private async palavraDaEmpresa(orgId: string): Promise<string | null> {
+  /**
+   * A palavra da empresa: a nota da memória (chaves em ordem), só lida. Pública
+   * porque a fila da estação de mídia (MC9) entrega a palavra efetiva ao Mac.
+   */
+  async palavraDaEmpresa(orgId: string): Promise<string | null> {
     try {
       for (const chave of PAUTA_CHAVES_DA_PALAVRA_DE_CORTE) {
         const palavra = palavraDaNota(await this.memoria.porChave(orgId, chave));

@@ -267,8 +267,19 @@ jobs:
       # `pauta-episodios` ganhou a rota do painel do roteiro, sem caso novo.
       # Medido: 457 casos em 34 arquivos (436 + 21). O piso de ARQUIVOS sobe 1,
       # para 25; o de CASOS sobe 18 (~12% de folga sobre os 21 novos), para 290.
-      PISO_CASOS_WEB: '290'
-      PISO_ARQUIVOS_WEB: '25'
+      #
+      # MC9, A ESTAÇÃO DE MÍDIA NO MAC (23/09/2026): +6 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-midia` (5: gravado e sem mídia dizendo o
+      # comando `/root-midia ep-NN` e que o vídeo fica no Mac; no roteiro sem
+      # comando; em edição o nome do vídeo final com o caminho só no título, as
+      # durações, os cortes por motivo e o que falta; a transcrição com a conta,
+      # o fim e cada trecho com o tempo do final; mídia fora da forma contando
+      # como sem mídia) e +1 em `pauta-episodios` (o detalhe mostra a seção da
+      # mídia). Medido: 463 casos em 35 arquivos (457 + 6). O piso de ARQUIVOS
+      # sobe 1, para 26; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para
+      # 295.
+      PISO_CASOS_WEB: '295'
+      PISO_ARQUIVOS_WEB: '26'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -877,8 +888,53 @@ jobs:
       # com o banco de teste, e 1575 passados / 563 pulados sem ele (1523 + 52).
       # O piso de ARQUIVOS vai a 47; o de CASOS sobe 45 (~15% de folga sobre os
       # 53 novos), para 1545.
-      PISO_CASOS_API: '1545'
-      PISO_ARQUIVOS_API: '47'
+      #
+      # ---------------------------------------------------------------------
+      # MC9, A ESTAÇÃO DE MÍDIA NO MAC (23/09/2026): +80 casos, +2 arquivos
+      # ---------------------------------------------------------------------
+      # `pauta-midia` (34): a fila do Mac é gravação e edição; quem recebe mídia
+      # (gravação, edição) e transcrição (só edição, com a mídia lá), com o
+      # porquê em cada recusa; a transcrição que passa do fim do vídeo final (a
+      # do bruto) recusada; o RASTRO só com o nome do arquivo e a conta por
+      # motivo; a linha da fila com o que falta e a palavra efetiva. Os esquemas:
+      # padrões, corte fora de ordem/sobreposto/invertido/motivo estranho, corte
+      # além do bruto e final mais longo que o bruto, caminho com quebra de
+      # linha/vazio/longo, duração zero/negativa/absurda/NaN, a mídia guardada
+      # lida de volta; segmentos em ordem (10 ms de folga), zero de duração vale,
+      # sem texto/longo/negativo/tetos recusados, caractere de controle (o NUL
+      # derrubaria o Postgres com 500) no idioma, modelo, texto e palavra
+      # recusado, o texto corrido e o tempo do vídeo. O `MidiaService` DE VERDADE com prisma de mentira: a fila (pedido,
+      # ordem, teto, memória lida uma vez e não lida com fila vazia); mídia da
+      # gravação para a edição com escrita condicionada ao status e à versão e
+      # auditada, na edição substituindo e descartando a transcrição velha,
+      # roteiro/pacote/concluído 400, outra empresa 404, corrida 409;
+      # transcrição para o pacote com o texto corrido e auditada, sem mídia ou
+      # fora da edição 400, a do bruto 400, corrida 409, outra empresa 404. O
+      # controller montado à mão (parse, recusa antes do serviço, caminhos e
+      # `pauta.editar`), e a ORDEM dos controllers no módulo (`pendentes-midia`
+      # antes do `:id`). E COM BANCO (1, pulado sem ele): do gravado ao pacote
+      # pela sessão da empresa, com o RASTRO.
+      # `root-midia` (46): as funções puras de `tools/root-midia` — o
+      # silencedetect (negativo, aberto no fim, linha perdida), o miolo de cada
+      # silêncio com margem e as pontas inteiras, a palavra de corte sem acento
+      # nem pontuação levando o segmento anterior e a pausa até a retomada, o
+      # que manter e o que saiu cobrindo o bruto, o filtro trim+concat, quando
+      # dá para cortar sem reencodar, a lista do concat, o codec; o JSON do
+      # whisper em segmentos em ordem que passam no esquema da API; e o cliente
+      # do OS com fetch de mentira (login normal, 401 refaz uma vez, mensagem da
+      # API, ep-NN, corpo grande barrado antes). E o que a revisão pediu: os
+      # cortes enviados saem do `manter` (ajuste à mão vira `manual`, o corte
+      # alargado se parte em dois), o cortes.json de outro bruto recusado, a
+      # transcrição em qualquer forma (lista, whisper-cli; vazia é erro), a
+      # legenda .srt, http fora de loopback recusado, o arquivo de variáveis
+      # com o ambiente vencendo, e a trava do bruto por link simbólico.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2218 casos em 57 arquivos
+      # com o banco de teste, e 1654 passados / 564 pulados sem ele (1575 + 79).
+      # O piso de ARQUIVOS vai a 49; o de CASOS sobe 68 (~15% de folga sobre os
+      # 80 novos), para 1613.
+      PISO_CASOS_API: '1613'
+      PISO_ARQUIVOS_API: '49'
 
     steps:
       - uses: actions/checkout@v4

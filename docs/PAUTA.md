@@ -448,8 +448,8 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Tela:** aba "Episódios" em `/pauta` (lista com número, título e status; detalhe com a linha
     do tempo das sete etapas, os itens e os botões dos vizinhos). "Criar episódio" na rodada
     curada da aba Rodadas e no aviso depois de confirmar a Curadoria.
-  - Os campos de mídia, transcrição, títulos, thumbs e descrição **existem e ficam vazios** até o
-    MC9–MC12; o roteiro é escrito desde o MC8 (abaixo).
+  - Os campos de títulos, thumbs e descrição **existem e ficam vazios** até o MC11–MC12; o roteiro
+    é escrito desde o MC8, e a mídia e a transcrição desde o MC9 (abaixo).
 - **O roteiro do episódio (MC8).** Sai dos itens que a curadoria manteve e vira o markdown de
   `PautaEpisodio.roteiro`; gerar passa o episódio de `roteiro` para `gravacao`.
   - **Gerar** (`POST /pauta/episodios/:id/roteiro/gerar`, `pauta.editar` + `automacoes.executar`,
@@ -491,6 +491,44 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     tela limpa por cima do painel, fonte grande ajustável, links clicáveis, Tela cheia para o
     segundo monitor, rola no celular. O markdown vira elemento React (`roteiro-markdown.tsx`), sem
     innerHTML, e só http(s) é link.
+- **A mídia do episódio (MC9).** A edição e a transcrição rodam **no Mac** e o vídeo **fica lá**:
+  o MinIO da VPS não é público (`docker-compose.vps.yml` publica em `172.17.0.1`), então URL
+  assinada não chega ao Mac, e o upload no YouTube é manual na V1 (D-MC6). O OS recebe só o leve.
+  - **API** (módulo `pauta`, todas `pauta.editar`; `MidiaService`, parte pura em
+    `pauta/midia-do-episodio.ts`): `GET /pauta/episodios/pendentes-midia` — gravação e edição, do
+    número menor, com a palavra de corte efetiva e o que falta (`midia` ou `transcricao`);
+    `POST /pauta/episodios/:id/midia` (`PautaMidiaSchema`: `arquivoBruto`, `arquivoFinal`,
+    `duracaoSeg` do final, `duracaoBrutoSeg`, `cortes` `{inicio, fim, motivo}` em segundos do bruto,
+    em ordem e sem sobreposição, `palavraDeCorte`, `editor`) — da gravação ou da edição vai para a
+    edição, e uma mídia nova **descarta** a transcrição que houver (os tempos eram do vídeo
+    anterior); `POST /pauta/episodios/:id/transcricao` (`PautaTranscricaoSchema`: segmentos
+    `{inicio, fim, texto}` em ordem, com tetos de quantidade e de tamanho) — só na edição e com a
+    mídia lá; segmento que passa do fim do vídeo final é a transcrição do bruto (400). Grava
+    `transcricao` + `transcricaoTexto` e vai para o pacote. Escrita condicionada ao status e ao
+    `atualizadoEm` (409 quando outro envio passou na frente); RASTRO `pauta.episodio_midia` e
+    `pauta.episodio_transcricao`, com o nome do arquivo e nunca a pasta do Mac.
+  - **Rota antes do `:id`:** o `MidiaController` é registrado antes do `EpisodioController`, senão
+    o `GET /pauta/episodios/:id` casa com `pendentes-midia` e responde 404.
+  - **Limite prático:** o corpo JSON do Nest é de 100 kb, cerca de 40 min de fala; a ferramenta
+    confere antes de mandar. Subir o limite é decisão de quem cuida da API.
+  - **No Mac** (`tools/root-midia/`, Node 22 sem dependência; README e `SKILL.md` lá): `pendentes`,
+    `silencios` (ffmpeg silencedetect), `cortes` (a lista do que manter), `cortar` (sem reencodar
+    quando toda borda cai em quadro-chave; senão `trim` + `concat`), `transcrever` (`whisper-cli`,
+    modelo em `WHISPER_MODEL`), `enviar` e `ensaio` (clipe sintético). Login normal da API com
+    `ROOT_OS_API_URL` (fora desta máquina, só `https://`), `ROOT_OS_EMAIL`, `ROOT_OS_SENHA`, lidas
+    também de `~/.config/root/root-midia.env`. A skill `/root-midia ep-NN` prefere o MCP do
+    PalmierPro (troca de câmera) e cai no ffmpeg quando o app está fechado.
+  - **Heurística da palavra de corte:** achada num segmento da transcrição do bruto, saem esse
+    segmento, o anterior (a tomada errada) e a pausa até a retomada, menos a margem. Se a tomada
+    errada ocupou dois segmentos, sobra um pedaço — por isso a skill mostra as tomadas ao Pedro antes
+    de cortar. Silêncio ≥ 0,8 s sai com 0,2 s de margem de cada lado; nas pontas do arquivo, inteiro.
+  - **Os cortes enviados saem do `manter`**, não dos `removidos` do `cortes.json`: o `manter` pode ser
+    ajustado à mão, e o que sai fora do plano automático vai com o motivo `manual`. A transcrição do
+    `cortes` tem de ser a do bruto (duração conferida), e o `cortar` recusa plano de outro bruto e
+    saída que seja o bruto por outro nome (caixa do APFS, link simbólico).
+  - **Tela:** seção "Mídia" no detalhe do episódio (`SecaoMidia.tsx`, só leitura): o nome do vídeo
+    final, as durações, os cortes por motivo, a transcrição com o tempo de cada trecho, e o comando
+    `/root-midia ep-NN` enquanto falta algo.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

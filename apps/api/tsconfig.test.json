@@ -1,5 +1,10 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true },
+  "compilerOptions": {
+    "noEmit": true,
+    // A estação de mídia (tools/root-midia) é .mjs com `// @ts-check`: o teste
+    // dela importa o próprio arquivo, e os tipos saem do JSDoc.
+    "allowJs": true
+  },
   "include": ["src", "prisma", "test"]
 }
