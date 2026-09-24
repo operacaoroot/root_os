@@ -18,6 +18,7 @@ import {
   type PautaPecaNaAgenda,
 } from '@mktos/shared';
 import { apiBlob, apiGet, apiPost, apiPut } from '@/lib/api';
+import { baixarArquivo, compartilhaArquivos, compartilharArquivos } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 
 /*
@@ -55,20 +56,6 @@ async function copiar(texto: string) {
     throw new Error('Este navegador não deixou copiar. Selecione o texto e copie à mão.');
   }
   await navigator.clipboard.writeText(texto);
-}
-
-function baixarBlob(nome: string, blob: Blob) {
-  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
-    throw new Error('Este navegador não deixou baixar o arquivo.');
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nome;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 /** O valor do `datetime-local` (relógio de São Paulo) a partir do ISO, e o caminho de volta. */
@@ -117,16 +104,58 @@ function PecaNoSlot({
     }
   };
 
+  const nomeDaImagem = (n: number) =>
+    `${peca.apelido}-m${peca.itemN}-${peca.formato === 'carrossel' ? `carrossel-${String(n).padStart(2, '0')}` : 'story'}.png`;
+  const imagens = peca.midia.onde === 'storage' ? peca.midia.imagens : [];
+  // Os PNG já buscados, à espera do segundo toque quando a folha de compartilhar recusou o primeiro.
+  const [prontos, setProntos] = useState<File[] | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
   const baixar = async (n: number) => {
     onErro(null);
     try {
       const blob = await apiBlob(`/pauta/pecas/${peca.id}/imagens/${n}`, token);
-      const sufixo = peca.formato === 'carrossel' ? `carrossel-${String(n).padStart(2, '0')}` : 'story';
-      baixarBlob(`${peca.apelido}-m${peca.itemN}-${sufixo}.png`, blob);
+      baixarArquivo(nomeDaImagem(n), blob);
     } catch (e) {
       onErro(`A mídia não baixou: ${(e as Error).message}`);
     }
   };
+
+  /**
+   * Todas as imagens da peça num toque: no celular, a folha de compartilhar
+   * (Salvar imagens → Fotos, ou direto no Instagram); sem ela, um download por
+   * imagem.
+   */
+  const salvarTodas = async () => {
+    onErro(null);
+    setSalvando(true);
+    try {
+      const arquivos =
+        prontos ??
+        (await Promise.all(
+          imagens.map(async (n) => {
+            const blob = await apiBlob(`/pauta/pecas/${peca.id}/imagens/${n}`, token);
+            return new File([blob], nomeDaImagem(n), { type: 'image/png' });
+          }),
+        ));
+      if (compartilhaArquivos(arquivos)) {
+        const r = await compartilharArquivos(arquivos, peca.titulo);
+        setProntos(r === 'precisa-de-outro-toque' ? arquivos : null);
+        return;
+      }
+      for (const f of arquivos) baixarArquivo(f.name, f);
+      setProntos(null);
+    } catch (e) {
+      onErro(`A mídia não baixou: ${(e as Error).message}`);
+    } finally {
+      setSalvando(false);
+    }
+  };
+  const rotuloDoSalvar = prontos
+    ? `Abrir o compartilhar (${prontos.length} ${prontos.length === 1 ? 'imagem pronta' : 'imagens prontas'})`
+    : imagens.length === 1
+      ? 'Salvar a imagem'
+      : `Salvar as ${imagens.length} imagens`;
 
   const reagendar = async (agendadaPara: string | null) => {
     if (await onAcao(() => apiPut(`/pauta/pecas/${peca.id}/agenda`, { agendadaPara }, token))) setModo('nada');
@@ -155,20 +184,22 @@ function PecaNoSlot({
 
       <div className="flex flex-wrap items-center gap-2">
         <Botao onClick={() => copiarComo('legenda', peca.legenda)}>{copiado === 'legenda' ? 'Copiado' : rotuloDaLegenda}</Botao>
-        {peca.midia.onde === 'storage' &&
-          (peca.midia.esperadas === 1 ? (
-            <Botao onClick={() => baixar(peca.midia.onde === 'storage' ? peca.midia.imagens[0] : 1)}>Baixar mídia</Botao>
-          ) : (
-            <span className="flex flex-wrap items-center gap-1" aria-label="Baixar mídia">
-              <span className="text-xs text-muted">Baixar mídia:</span>
-              {peca.midia.imagens.map((n) => (
-                <Botao key={n} tone="ghost" onClick={() => baixar(n)}>
-                  {n}
-                </Botao>
-              ))}
-            </span>
-          ))}
+        {peca.midia.onde === 'storage' && (
+          <Botao tone={prontos ? 'brand' : undefined} onClick={salvarTodas} disabled={salvando}>
+            {salvando ? 'Buscando…' : rotuloDoSalvar}
+          </Botao>
+        )}
       </div>
+      {peca.midia.onde === 'storage' && peca.midia.esperadas > 1 && (
+        <span className="flex flex-wrap items-center gap-1" aria-label="Baixar mídia">
+          <span className="text-xs text-muted">Uma de cada vez:</span>
+          {peca.midia.imagens.map((n) => (
+            <Botao key={n} tone="ghost" onClick={() => baixar(n)} title={`Baixar a imagem ${n}`}>
+              {n}
+            </Botao>
+          ))}
+        </span>
+      )}
       {peca.midia.onde === 'mac' && (
         <div className="space-y-1 text-xs">
           <p className="break-all">

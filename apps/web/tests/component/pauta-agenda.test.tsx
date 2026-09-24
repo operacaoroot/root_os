@@ -157,21 +157,75 @@ describe('a aba Semana', () => {
     expect(writeText).toHaveBeenLastCalledWith('O preço caiu');
   });
 
-  it('baixa a mídia do storage com o token: um botão por slide no carrossel, "Baixar mídia" no story', async () => {
+  it('salva a mídia do storage com o token: sem a folha de compartilhar, um download por imagem, e a URL não é revogada na hora', async () => {
     const criar = vi.fn(() => 'blob:x');
     const revogar = vi.fn();
     Object.assign(URL, { createObjectURL: criar, revokeObjectURL: revogar });
-    apiBlob.mockResolvedValue(new Blob(['png']));
-    renderAba();
-    const car = await waitFor(() => aPeca('Carrossel de ep-04'));
-    const botoes = within(within(car).getByLabelText('Baixar mídia')).getAllByRole('button');
-    expect(botoes.map((b) => b.textContent)).toEqual(['1', '2', '3']);
-    await userEvent.click(botoes[1]);
-    expect(apiBlob).toHaveBeenCalledWith('/pauta/pecas/p1/imagens/2', 'tok');
-    await waitFor(() => expect(criar).toHaveBeenCalled());
-    const story = within(oDia('Qua 30/09')).getAllByLabelText('Story de ep-04')[0];
-    await userEvent.click(within(story).getByRole('button', { name: 'Baixar mídia' }));
-    expect(apiBlob).toHaveBeenLastCalledWith('/pauta/pecas/p3/imagens/1', 'tok');
+    const baixados: string[] = [];
+    const clique = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      baixados.push(this.download);
+    });
+    try {
+      apiBlob.mockResolvedValue(new Blob(['png']));
+      renderAba();
+      const car = await waitFor(() => aPeca('Carrossel de ep-04'));
+      // Uma de cada vez continua, para o computador.
+      const botoes = within(within(car).getByLabelText('Baixar mídia')).getAllByRole('button');
+      expect(botoes.map((b) => b.textContent)).toEqual(['1', '2', '3']);
+      await userEvent.click(botoes[1]);
+      expect(apiBlob).toHaveBeenCalledWith('/pauta/pecas/p1/imagens/2', 'tok');
+      await waitFor(() => expect(baixados).toEqual(['ep-04-m1-carrossel-02.png']));
+
+      await userEvent.click(within(car).getByRole('button', { name: 'Salvar as 3 imagens' }));
+      await waitFor(() => expect(baixados).toHaveLength(4));
+      expect(baixados.slice(1)).toEqual(['ep-04-m1-carrossel-01.png', 'ep-04-m1-carrossel-02.png', 'ep-04-m1-carrossel-03.png']);
+      // O Safari do iOS lê o blob depois do clique: revogar na hora quebrava o download.
+      expect(revogar).not.toHaveBeenCalled();
+
+      const story = within(oDia('Qua 30/09')).getAllByLabelText('Story de ep-04')[0];
+      await userEvent.click(within(story).getByRole('button', { name: 'Salvar a imagem' }));
+      expect(apiBlob).toHaveBeenLastCalledWith('/pauta/pecas/p3/imagens/1', 'tok');
+    } finally {
+      clique.mockRestore();
+    }
+  });
+
+  it('no celular, as imagens do carrossel vão juntas para a folha de compartilhar; se ela pedir outro toque, os PNG ficam prontos', async () => {
+    const compartilhados: File[][] = [];
+    let recusar = true;
+    const nav = navigator as Navigator & { canShare?: unknown; share?: unknown };
+    Object.assign(nav, {
+      canShare: vi.fn((d: { files?: File[] }) => (d.files?.length ?? 0) > 0),
+      share: vi.fn(async (d: { files: File[] }) => {
+        if (recusar) {
+          recusar = false;
+          throw Object.assign(new Error('sem gesto'), { name: 'NotAllowedError' });
+        }
+        compartilhados.push(d.files);
+      }),
+    });
+    try {
+      apiBlob.mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
+      const { onErro } = renderAba();
+      const car = await waitFor(() => aPeca('Carrossel de ep-04'));
+      await userEvent.click(within(car).getByRole('button', { name: 'Salvar as 3 imagens' }));
+      const deNovo = await within(car).findByRole('button', { name: 'Abrir o compartilhar (3 imagens prontas)' });
+      expect(apiBlob).toHaveBeenCalledTimes(3);
+      await userEvent.click(deNovo);
+      await waitFor(() => expect(compartilhados).toHaveLength(1));
+      // O segundo toque não busca de novo: abre a folha na hora, com os três PNG.
+      expect(apiBlob).toHaveBeenCalledTimes(3);
+      expect(compartilhados[0].map((f) => [f.name, f.type])).toEqual([
+        ['ep-04-m1-carrossel-01.png', 'image/png'],
+        ['ep-04-m1-carrossel-02.png', 'image/png'],
+        ['ep-04-m1-carrossel-03.png', 'image/png'],
+      ]);
+      expect(within(car).getByRole('button', { name: 'Salvar as 3 imagens' })).toBeInTheDocument();
+      expect(onErro).not.toHaveBeenCalledWith(expect.any(String));
+    } finally {
+      Reflect.deleteProperty(nav, 'canShare');
+      Reflect.deleteProperty(nav, 'share');
+    }
   });
 
   it('o carrossel que subiu pela metade diz "N de M PNG", o que falta e o comando, sem botão de baixar', async () => {
@@ -191,7 +245,7 @@ describe('a aba Semana', () => {
     expect(within(car).queryByLabelText('Baixar mídia')).toBeNull();
   });
 
-  it('o carrossel de um slide só tem o botão único; o de três, um botão por slide', async () => {
+  it('o carrossel de um slide só tem o botão único, sem a fileira de números', async () => {
     apiGet.mockResolvedValue(
       agenda({
         dias: [
@@ -202,7 +256,8 @@ describe('a aba Semana', () => {
     );
     renderAba();
     const car = await waitFor(() => aPeca('Carrossel de ep-04'));
-    expect(within(car).getByRole('button', { name: 'Baixar mídia' })).toBeInTheDocument();
+    expect(within(car).getByRole('button', { name: 'Salvar a imagem' })).toBeInTheDocument();
+    expect(within(car).queryByLabelText('Baixar mídia')).toBeNull();
   });
 
   it('peça de episódio fora da Derivação/Agendado: sem Reagendar nem Tirar, com o motivo; postar continua', async () => {

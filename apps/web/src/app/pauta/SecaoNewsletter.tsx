@@ -10,6 +10,7 @@ import {
   type PautaNewsletterPainel,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPut, apiTexto } from '@/lib/api';
+import { baixarArquivo } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 
 /*
@@ -29,17 +30,7 @@ interface Props {
 }
 
 function baixar(nome: string, conteudo: string, tipo: string) {
-  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
-    throw new Error('Este navegador não deixou baixar o arquivo. Use o Copiar.');
-  }
-  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nome;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  baixarArquivo(nome, new Blob([conteudo], { type: tipo }), 'Este navegador não deixou baixar o arquivo. Use o Copiar.');
 }
 
 /**

@@ -223,7 +223,8 @@ describe('editar, exportar e a palavra do episódio', () => {
         leitor.readAsText(blobs[0]);
       });
       expect(lido).toBe(`${ROTEIRO}\n`);
-      expect(revogar).toHaveBeenCalledWith('blob:roteiro');
+      // A URL fica viva depois do clique: o Safari do iOS lê o blob depois, e revogar na hora quebrava o download.
+      expect(revogar).not.toHaveBeenCalled();
       expect(onErro).not.toHaveBeenCalledWith(expect.any(String));
     } finally {
       clique.mockRestore();

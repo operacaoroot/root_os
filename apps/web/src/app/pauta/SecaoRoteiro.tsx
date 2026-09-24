@@ -9,6 +9,7 @@ import {
   type PautaRoteiroDoEpisodio,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPut, apiTexto } from '@/lib/api';
+import { baixarArquivo } from '@/lib/baixar';
 import { Botao, inputCls } from '../referencias/ui';
 import { RoteiroMarkdown } from './roteiro-markdown';
 
@@ -41,17 +42,11 @@ const ORIGEM: Record<PautaRoteiroDoEpisodio['palavraDeCorte']['origem'], string>
 const semLembrete = (roteiro: string) => comPalavraDeCorte(roteiro, '');
 
 function baixar(nome: string, conteudo: string) {
-  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
-    throw new Error('Este navegador não deixou baixar o arquivo. Copie o texto do editor.');
-  }
-  const url = URL.createObjectURL(new Blob([conteudo], { type: 'text/markdown;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = nome;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  baixarArquivo(
+    nome,
+    new Blob([conteudo], { type: 'text/markdown;charset=utf-8' }),
+    'Este navegador não deixou baixar o arquivo. Copie o texto do editor.',
+  );
 }
 
 export function SecaoRoteiro({ token, episodioId, status, editavel, podeGastarIa, bump, onErro, onMudou }: Props) {
