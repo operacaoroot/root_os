@@ -322,8 +322,22 @@ export interface EstadoDoLink {
   progresso: { confirmados: number; respondidos: number; total: number; obrigatoriosFaltando: string[] };
 }
 
-export const dataBR = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+/*
+ * DIA não é INSTANTE — a mesma régua do `fusoDaData` da API (`mensagens.ts`):
+ * data do trilho ("2026-09-22") é gravada à meia-noite UTC e diz o DIA, então
+ * se formata em UTC; no fuso de Brasília ela voltaria um dia. Instante de
+ * verdade (acesso, resposta, marco) continua em São Paulo.
+ */
+const fusoDaData = (d: Date) =>
+  d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
+    ? 'UTC'
+    : 'America/Sao_Paulo';
+
+export const dataBR = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR', { timeZone: fusoDaData(d) });
+};
 export const dataHoraBR = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : '—';
 export const paraInputDate = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '');

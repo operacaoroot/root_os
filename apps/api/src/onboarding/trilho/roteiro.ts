@@ -8,6 +8,7 @@ import {
   type TemaDaEspinha,
 } from './espinha';
 import { ROTULO_DA_FASE } from './fases';
+import { formatarData as formatarDataCurta } from './mensagens';
 import { receita } from './receitas';
 import type { OnboardingFase } from '@prisma/client';
 
@@ -97,11 +98,9 @@ function tagDoTema(t: TemaDaEspinha): string {
   return `${base} · ramo: ${t.niveis.map((n) => ROTULO_DO_NIVEL[n].toLowerCase()).join(' / ')}`;
 }
 
+/** Com ano, e pela mesma régua de dia × instante das mensagens (`fusoDaData`). */
 function formatarData(d: Date | string | null | undefined): string | null {
-  if (!d) return null;
-  const data = typeof d === 'string' ? new Date(d) : d;
-  if (Number.isNaN(data.getTime())) return null;
-  return data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  return formatarDataCurta(d, true);
 }
 
 /** Um item "cobre" o tema quando existe com qualquer coisa além de em-branco. */

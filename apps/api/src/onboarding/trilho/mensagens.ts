@@ -21,12 +21,32 @@ export class SemDataError extends Error {
   }
 }
 
+/**
+ * DIA não é INSTANTE. `reuniaoEm`, `kickoffEm`, `propostaEnviadaEm` e as outras
+ * datas do trilho chegam do formulário como "2026-09-22" e são gravadas à
+ * meia-noite UTC — elas dizem o DIA, não a hora. Formatadas no fuso de
+ * Brasília, voltariam um dia: a conversa de 22/09 aparecia como "21/09" no mapa
+ * do cliente e na etiqueta "Da reunião de…" de cada confirmação.
+ *
+ * A régua, então: valor exatamente à meia-noite UTC é DIA e se formata em UTC;
+ * qualquer outro é INSTANTE de verdade (resposta do cliente, acesso ao link,
+ * marco do relógio) e continua em São Paulo, que é onde as pessoas estão.
+ */
+function fusoDaData(data: Date): string {
+  const meiaNoiteUtc =
+    data.getUTCHours() === 0 &&
+    data.getUTCMinutes() === 0 &&
+    data.getUTCSeconds() === 0 &&
+    data.getUTCMilliseconds() === 0;
+  return meiaNoiteUtc ? 'UTC' : 'America/Sao_Paulo';
+}
+
 export function formatarData(d: Date | string | null | undefined, comAno = false): string | null {
   if (!d) return null;
   const data = typeof d === 'string' ? new Date(d) : d;
   if (Number.isNaN(data.getTime())) return null;
   return data.toLocaleDateString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
+    timeZone: fusoDaData(data),
     day: '2-digit',
     month: '2-digit',
     ...(comAno ? { year: 'numeric' } : {}),
@@ -37,7 +57,7 @@ export function formatarDataComDia(d: Date | string | null | undefined): string 
   if (!d) return null;
   const data = typeof d === 'string' ? new Date(d) : d;
   if (Number.isNaN(data.getTime())) return null;
-  const dia = data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' });
+  const dia = data.toLocaleDateString('pt-BR', { timeZone: fusoDaData(data), weekday: 'long' });
   return `${dia}, ${formatarData(data)}`;
 }
 
