@@ -473,6 +473,7 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
   const base: EstadoParaMapa = {
     slug: 'andrade-pecas',
     fase: OnboardingFase.diagnostico,
+    nivel: 'avancar-junto',
     receitaNome: null,
     reuniaoEm: new Date('2026-09-22T12:00:00Z'),
     kickoffEm: new Date('2026-09-22T12:00:00Z'),
@@ -493,7 +494,10 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
     expect(m.estacoes.map((e) => e.chave)).toEqual(['conversa', 'acordo', 'kickoff', 'contexto', 'memoria', 'frente']);
     const kickoff = m.estacoes[2];
     expect(kickoff.estado).toBe('aqui');
-    expect(kickoff.detalhe).toBe('confirmar 2 · decidir 1');
+    // A conta é sobre os TEMAS do link (tema em branco não tem linha no banco).
+    const obr = obrigatorios('BCD', 'avancar-junto').map((t) => t.id);
+    const cobertos = ['negocio', 'canais'].filter((id) => obr.includes(id)).length;
+    expect(kickoff.detalhe).toBe(`confirmar 2 · decidir ${obr.length - cobertos}`);
     expect(kickoff.quando).toBe('até 07/10');
     // O link B–D só nasce depois do acordo: conversa e acordo ficam para trás.
     expect(m.estacoes[0].estado).toBe('feita');

@@ -1,6 +1,6 @@
 import { OnboardingFase } from '@prisma/client';
 
-import { temasDoBloco } from './espinha';
+import { ehNivel, temasDoBloco, temasDoConvite, type Nivel } from './espinha';
 import type { Portoes } from './fases';
 import { formatarData } from './mensagens';
 
@@ -81,6 +81,8 @@ export interface ItemParaMapa {
 export interface EstadoParaMapa {
   slug: string;
   fase: OnboardingFase;
+  /** O nível decide quais temas do ramo entram na conta da estação do kickoff. */
+  nivel: string | null;
   receitaNome: string | null;
   reuniaoEm: Date | string | null;
   kickoffEm: Date | string | null;
@@ -188,10 +190,20 @@ export function montarMapaDoCliente(e: EstadoParaMapa): MapaDoCliente {
 
   const iAtual = ORDEM.indexOf(atual);
 
-  const comProposta = e.itens.filter(
-    (i) => i.bloco !== 'A' && (!!i.proposta || i.status === 'confirmado' || i.status === 'corrigido'),
-  ).length;
-  const emBranco = e.itens.filter((i) => i.bloco !== 'A' && !i.proposta && i.status === 'em-branco').length;
+  /*
+   * A conta da estação do kickoff é sobre os TEMAS do link, não sobre as linhas
+   * do banco: tema em branco não tem linha, e contar linha diria "decidir 0"
+   * exatamente onde há mais a decidir. Mesma régua de `ordemDoKickoff`.
+   */
+  const nivel: Nivel | null = ehNivel(e.nivel) ? e.nivel : null;
+  let comProposta = 0;
+  let aDecidir = 0;
+  for (const t of temasDoConvite('BCD', nivel)) {
+    const i = porTema.get(t.id);
+    const daConversa = !!i?.proposta || i?.status === 'confirmado' || i?.status === 'corrigido';
+    if (daConversa) comProposta += 1;
+    else if (t.obrigatorio) aDecidir += 1;
+  }
 
   const estacoes: EstacaoDoMapa[] = ORDEM.map((chave, i) => {
     const estado: EstadoDaEstacao = i < iAtual ? 'feita' : i === iAtual ? 'aqui' : feita[chave] ? 'feita' : 'adiante';
@@ -201,7 +213,7 @@ export function montarMapaDoCliente(e: EstadoParaMapa): MapaDoCliente {
       titulo: TEXTO[chave].titulo,
       oQueE: TEXTO[chave].oQueE,
       quando: quandoDaEstacao(chave, e, estado),
-      detalhe: detalheDaEstacao(chave, e, estado, { comProposta, emBranco, porTema }),
+      detalhe: detalheDaEstacao(chave, e, estado, { comProposta, aDecidir, porTema }),
       estado,
     };
   });
@@ -240,13 +252,13 @@ function detalheDaEstacao(
   chave: ChaveDaEstacao,
   e: EstadoParaMapa,
   estado: EstadoDaEstacao,
-  ctx: { comProposta: number; emBranco: number; porTema: Map<string, ItemParaMapa> },
+  ctx: { comProposta: number; aDecidir: number; porTema: Map<string, ItemParaMapa> },
 ): string | null {
   const p = e.portoes ?? {};
   switch (chave) {
     case 'kickoff':
       if (estado !== 'aqui') return null;
-      return [ctx.comProposta ? `confirmar ${ctx.comProposta}` : null, ctx.emBranco ? `decidir ${ctx.emBranco}` : null]
+      return [ctx.comProposta ? `confirmar ${ctx.comProposta}` : null, ctx.aDecidir ? `decidir ${ctx.aDecidir}` : null]
         .filter(Boolean)
         .join(' · ') || null;
     case 'contexto':

@@ -180,6 +180,7 @@ export class LinkPublicoService {
     const mapa = montarMapaDoCliente({
       slug: t.slug,
       fase: t.fase,
+      nivel: t.nivel,
       receitaNome: receita(t.receita)?.nome ?? null,
       reuniaoEm: t.reuniaoEm,
       kickoffEm: t.kickoffEm,
