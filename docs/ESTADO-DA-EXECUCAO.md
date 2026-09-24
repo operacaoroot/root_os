@@ -802,6 +802,46 @@ descartável).
   editar ou descartar tira a peça da agenda; o teste de "aprovar de novo não recria o slot" agora
   reaprova a descartada de fato.
 
+
+### Fatia MC18 — especificação da DM por palavra-chave (24/09/2026)
+
+**Só documento, nenhum código:** `docs/especificacoes/MC18-dm-por-palavra-chave.md`, ligado no
+`docs/PLANO-MAQUINA-DE-CONTEUDO.md` (linhas da MC18 e da D-MC9). O que ele fixa:
+
+- **Meta** (conferido nas páginas oficiais em 24/09/2026, com o que é "a conferir" marcado): resposta
+  privada em até 7 dias do comentário, uma por comentário, `instagram_business_manage_comments`; o
+  webhook `comments` só chega com o app em **Live** e com **Advanced Access** — App Review mesmo para
+  a conta da própria Root. Não existe hoje no código nenhum receptor de webhook da Meta.
+- **Régua:** `classificar()` rodado contra `packages/policy/dist`: o envio avulso é R3 (R4 com
+  `fonte_nao_confiavel`, que o executor marca em todo comentário); a ativação de uma regra com teto
+  acima de 10/dia é R4 (`titular`, senha, motivo), sempre ≥ o envio. A proposta, "resposta
+  pré-aprovada com alcance", pede mudar a invariante 4 (de uso único para também "uso contado"),
+  ensinar `maximum` ao validador da porta e dar à porta o envio sob regra.
+  Registrado junto: `limitesPadrao.porHora`/`porDia` não são lidos por nenhum código de runtime.
+- **Decisões do Pedro, por fatia:** D-MC9.1 a D-MC9.10, com recomendação. A **MC18.0** (resposta à
+  mão com o link rastreado) só depende da D-MC9.6 e da D-MC9.7, não da Meta nem da régua; a DM
+  automática (MC18.1 em diante) depende da D-MC9.1 a .5 e .8 e do App Review. A mais urgente é a
+  D-MC9.7: o CTA que a MC15 já escreve ("chegam no direct") promete uma DM que ninguém manda, e a
+  frase mora em três funções da derivação, no fallback de `tools/root-midia/lib/semana.mjs` e nas
+  peças já derivadas.
+- **Revisão (três leitores: correção, regras, contrato), toda incorporada na especificação:** o
+  `CapacidadeSchema` (Zod sem `.strict()`) apagaria calado o campo `aprovacao`, e o seed pede as
+  duas assinaturas (`CAPACIDADE_NOVA` pelas três capacidades, `REBAIXAMENTO` pela invariante 4); o
+  envio é **R4** pelo `fonte_nao_confiavel` (o `destinatario_novo` não é calculado em runtime e o
+  `erro_recente` só conta com agente), o RASTRO dele segue o R4 e a D-MC9.2(b) (ativação R3) caiu
+  por rebaixar; a porta ganha o modo `sob_regra` para o envio (hash sem `comment_id`); teto do dia,
+  prazo e conector recusam sem pausar a regra, e o contador vira o dia na mesma escrita, em
+  `America/Sao_Paulo`; `volume_atipico` não serve de disjuntor (acende no segundo envio de uma
+  rajada); webhook pela sentinela **pública** (`resolverTenantDoIgUserId`), com um segredo de
+  plataforma do ambiente e o corpo cru só na rota; `EnvioDeResposta` com `regraId` e único
+  `(regraId, pessoa)`; link `campanha:dm:<itemId>` por matéria, destino por `linkPublicoDoItem`;
+  PII no RASTRO por `sigiloso()` (`piiNoRastro` não tem leitor). **Pendência à parte, fora da
+  MC18:** o sinal `fora_da_janela` da porta compara com `getHours()` no fuso do processo, e o
+  container não define `TZ` — a janela 08:00–20:00 vale das 05:00 às 17:00 de Brasília.
+
+**Medido** (sem mudança de código, só para confirmar a base): typechecks limpos; api **2563/2563**
+em 64 arquivos com `TEST_DATABASE_URL`; web **540** em 41; policy 74. Pisos da CI intocados.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
