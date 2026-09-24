@@ -132,6 +132,7 @@ model Org {
   pautaRotinas     PautaRotina[]
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
+  pautaEpisodios   PautaEpisodio[]
 
   // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
   leadEvents            LeadEvent[]
@@ -976,6 +977,7 @@ model BioPage {
   challenges BioChallenge[]
   visits     BioVisit[]
   events     BioEvent[]
+  episodios  PautaEpisodio[]
 
   @@index([orgId])
 }
@@ -1443,9 +1445,63 @@ model PautaRodada {
 
   criadaEm DateTime @default(now())
 
-  pecas PautaPeca[]
+  pecas    PautaPeca[]
+  episodio PautaEpisodio?
 
   @@index([orgId, status, criadaEm])
+}
+
+// MC7 — o episódio da semana. A coleta e a curadoria são estados da RODADA;
+// daqui em diante quem anda é o episódio, do roteiro ao concluído.
+enum PautaEpisodioStatus {
+  roteiro
+  gravacao
+  edicao
+  pacote
+  derivacao
+  agendado
+  concluido
+}
+
+/// O episódio que nasce de uma rodada curada (MC7). Filho 1:1 da rodada, com
+/// `orgId` redundante conferido pelo banco — ver a migration
+/// `20260924060000_pauta_episodio`.
+model PautaEpisodio {
+  id    String @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaRodada.orgId`.
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Uma rodada vira no máximo um episódio. `Restrict`: apagar a rodada não
+  /// pode levar junto roteiro, mídia e transcrição.
+  rodadaId String              @unique
+  rodada   PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
+  /// Sequencial por empresa (ep-01, ep-02…), dado sob cadeado na criação.
+  numero   Int
+  titulo   String
+  status   PautaEpisodioStatus @default(roteiro)
+
+  roteiro          String @default("")
+  /// Arquivos locais do Mac, duração, cortes — o que a estação de mídia devolve (MC9).
+  midia            Json   @default("{}")
+  /// Segmentos `{inicio, fim, texto}` em segundos do vídeo final.
+  transcricao      Json   @default("[]")
+  transcricaoTexto String @default("")
+  titulos          Json   @default("[]")
+  thumbs           Json   @default("[]")
+  descricao        String @default("")
+
+  /// A página de links do episódio (MC12). Conferida pelo mesmo gatilho: página
+  /// de outra empresa é recusada.
+  bioPageId String?
+  bioPage   BioPage? @relation(fields: [bioPageId], references: [id], onDelete: SetNull)
+
+  criadoPor    String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, numero])
+  @@index([orgId, status])
 }
 
 model PautaPeca {

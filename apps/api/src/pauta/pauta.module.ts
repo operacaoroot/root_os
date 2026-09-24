@@ -4,6 +4,7 @@ import { GoogleModule } from '../google/google.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { PautaController } from './pauta.controller';
 import { RodadaController } from './rodada.controller';
+import { EpisodioController } from './episodio.controller';
 import { PautaService } from './pauta.service';
 import { ApifyService } from './apify.service';
 import { EspelhoService } from './espelho.service';
@@ -16,12 +17,13 @@ import { PublicacaoService } from './publicacao.service';
 import { EntradaDeLinksService } from './entrada-de-links.service';
 import { ColetaService } from './coleta.service';
 import { ColetorGmailService } from './coletor-gmail.service';
+import { EpisodioService } from './episodio.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
 @Module({
   imports: [StorageModule, GoogleModule, IntegrationsModule],
-  controllers: [PautaController, RodadaController],
+  controllers: [PautaController, RodadaController, EpisodioController],
   providers: [
     PautaService,
     ApifyService,
@@ -37,6 +39,8 @@ import { ColetorGmailService } from './coletor-gmail.service';
     // MC2: despacho da coleta por tipo de fonte; o Gmail é lido pela porta (R0).
     ColetaService,
     ColetorGmailService,
+    // MC7: o episódio que nasce da rodada curada.
+    EpisodioService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

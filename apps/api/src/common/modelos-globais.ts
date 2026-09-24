@@ -200,6 +200,15 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   { modelo: 'OnboardingConvite', pai: 'OnboardingTrilho', fk: 'trilhoId' },
   { modelo: 'OnboardingAta', pai: 'OnboardingTrilho', fk: 'trilhoId' },
   { modelo: 'OnboardingMarco', pai: 'OnboardingTrilho', fk: 'trilhoId' },
+  // O episódio da máquina de conteúdo (MC7, 23/09/2026): a empresa é a da
+  // rodada, e a página de links, quando houver, tem de ser da mesma empresa —
+  // migration `20260924060000_pauta_episodio`.
+  {
+    modelo: 'PautaEpisodio',
+    pai: 'PautaRodada',
+    fk: 'rodadaId',
+    paisConferidos: [{ modelo: 'BioPage', fk: 'bioPageId' }],
+  },
 ] as const;
 
 /**

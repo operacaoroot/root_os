@@ -378,6 +378,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaRotina', escopo: 'tenant', chaveSql: '"id"', nota: 'Cron rodado pelo scheduler FORA do request HTTP — não terá app.org_id setado.' },
   { tabela: 'PautaRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'Mesma ressalva de execução por scheduler.' },
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
+  { tabela: 'PautaEpisodio', escopo: 'filho', chaveSql: '"id"', nota: 'O episódio da semana (MC7): roteiro, mídia do Mac, transcrição, títulos e a página de links. Ler o da outra é ler o que ela vai publicar antes de publicar; escrever `status` é mover o episódio alheio de etapa. Filho 1:1 da rodada, com a empresa conferida pelo gatilho — e a página de links também.' },
 
   // ---- rotinas (fatia 5.1) ----------------------------------------------
   { tabela: 'Rotina', escopo: 'tenant', chaveSql: '"id"', nota: 'O trabalho que roda sozinho na empresa (RF-N-04). O agendador dispara FORA de requisição e por isso abre o contexto de CADA empresa antes de ler — ver src/routines/rotinas.scheduler.ts. Ler a da outra revela o que ela automatizou e quando; ESCREVER é pior: mudar `estado` para `rodando` liga trabalho na empresa alheia, e mudar o `cron` muda a hora em que o modelo dela é chamado.' },
@@ -994,6 +995,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('PautaPeca', await ins(c, 'PautaPeca', {
     id: crypto.randomUUID(), orgId, rodadaId, canal: 'whatsapp', formato: 'texto',
     titulo: `Peça ${rotulo}`, corpo: `Texto que vai para o grupo da org ${rotulo}`, status: 'rascunho',
+  }));
+
+  // O episódio (MC7): filho 1:1 da rodada, com a página de links da mesma empresa.
+  reg('PautaEpisodio', await ins(c, 'PautaEpisodio', {
+    id: crypto.randomUUID(), orgId, rodadaId, numero: 1, titulo: `Episódio ${rotulo} ${MARCA}`,
+    roteiro: `Roteiro privado da org ${rotulo}`, bioPageId: s.ref.bioPageId, atualizadoEm: agora,
   }));
 
   // --- rotinas (fatia 5.1) -------------------------------------------------
@@ -2964,6 +2971,18 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
   OnboardingMarco: async () => ({
     id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, tipo: 'gatilho', texto: 'marco do teste de derivação',
   }),
+  PautaEpisodio: async (c) => {
+    // rodadaId é @unique (uma rodada, um episódio): precisa de uma rodada nova.
+    const agora = new Date();
+    const rodada = await ins(c, 'PautaRodada', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, status: 'curada', titulo: `Rodada do gatilho ${MARCA}`,
+      janelaIni: agora, janelaFim: agora,
+    });
+    return {
+      id: crypto.randomUUID(), rodadaId: rodada, numero: 900, titulo: 'Episódio do gatilho',
+      bioPageId: sementes.A.ref.bioPageId, atualizadoEm: agora,
+    };
+  },
 };
 
 /**
@@ -2977,6 +2996,7 @@ const REF_DA_SEMENTE: Record<string, string> = {
   WorkField: 'workFieldId',
   WorkFieldOption: 'workFieldOptionId',
   OnboardingTrilho: 'onboardingTrilhoId',
+  BioPage: 'bioPageId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -2988,9 +3008,9 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
     // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
-    // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026).
-    // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(15);
+    // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
+    // + `PautaEpisodio` (MC7, 23/09/2026). Filho novo sobe este número no mesmo commit.
+    expect(declarados.length).toBe(16);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

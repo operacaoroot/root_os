@@ -424,6 +424,32 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   `pulada` sem gastar Apify nem IA.
   **Sob o papel restrito (passo 16 de `docs/ESTADO-DA-EXECUCAO.md`) nenhuma rotina dispara, esta
   inclusive**; o "Rodar agora" segue funcionando.
+- **O episódio (MC7).** A rodada `curada` vira `PautaEpisodio` — e só ela: aguardando curadoria,
+  coletando, falhou, aprovada e publicada são 400. Filho 1:1 da rodada (`rodadaId` único, FK
+  `RESTRICT`), com a sentinela `''` e o gatilho `mktos_orgid_do_pai` conferindo a rodada **e** a
+  página de links (`bioPageId`, para o MC12). Migration `20260924060000_pauta_episodio`.
+  - **Número por empresa** (`ep-01`, `ep-02`…, `apelidoDoEpisodio`): sai sob
+    `pg_advisory_xact_lock('pauta-episodio:<orgId>')` na mesma transação que grava, e o índice
+    único `(orgId, numero)` é a segunda tranca. Rodada que já tem episódio é 409; rodada apagada
+    no meio da criação (o gatilho recusa, P2003) é 404. Título padrão: o da rodada, sem o apelido
+    (a tela já o mostra ao lado).
+  - **Status** (`PautaEpisodioStatus`, espelho em `PAUTA_EPISODIO_STATUS`): roteiro → gravação →
+    edição → pacote → derivação → agendado → concluído. Anda **um passo**, para a frente ou para
+    trás (refazer); pular é 400 (`transicaoDoEpisodio`, no shared, porque a tela desenha os botões
+    com a mesma conta). A escrita é condicionada ao status lido — duas abas não fazem pular dois.
+  - **API** em `/pauta/episodios` (módulo `pauta`; `pauta.ver` lê, `pauta.editar` escreve):
+    `POST` `{rodadaId, titulo?}`, `GET`, `GET /:id` (com os itens mantidos da rodada e os dois
+    vizinhos do status), `PATCH /:id` `{titulo}`, `POST /:id/status` `{para}`. Tudo auditado
+    (`pauta.episodio_criado`/`_titulo`/`_status`). Nada sai do OS.
+  - **A rodada que virou episódio não se apaga** (409 na API, inclusive quando o episódio nasce
+    entre a conferência e o delete; o banco recusa por fora dela).
+  - O item de newsletter (`semLinkPublico`) chega ao episódio **sem** o `url`: o episódio é a fonte
+    da página de links pública (MC12) e não carrega o link privado da caixa de entrada.
+  - **Tela:** aba "Episódios" em `/pauta` (lista com número, título e status; detalhe com a linha
+    do tempo das sete etapas, os itens e os botões dos vizinhos). "Criar episódio" na rodada
+    curada da aba Rodadas e no aviso depois de confirmar a Curadoria.
+  - Os campos de roteiro, mídia, transcrição, títulos, thumbs e descrição **existem e ficam
+    vazios** até o MC8–MC12; nenhuma rota escreve neles ainda.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

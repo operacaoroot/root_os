@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { apelidoDoEpisodio } from '@mktos/shared';
 import type {
   PautaRodadaDetalhe,
   PautaRodadaList,
@@ -9,6 +10,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
+import { semPai } from './episodio';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
 
@@ -183,7 +185,11 @@ export class RotinaService {
       where: { orgId },
       orderBy: { criadaEm: 'desc' },
       take: Math.min(Math.max(limite, 1), 100),
-      include: { _count: { select: { pecas: true } }, rotina: { select: { nome: true } } },
+      include: {
+        _count: { select: { pecas: true } },
+        rotina: { select: { nome: true } },
+        episodio: { select: { id: true, numero: true, status: true } },
+      },
     });
     return {
       items: rows.map((r) => ({
@@ -203,6 +209,7 @@ export class RotinaService {
         janelaIni: r.janelaIni.toISOString(),
         janelaFim: r.janelaFim.toISOString(),
         criadaEm: r.criadaEm.toISOString(),
+        episodio: r.episodio ?? null,
       })),
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
@@ -211,7 +218,11 @@ export class RotinaService {
   async obterRodada(orgId: string, id: string): Promise<PautaRodadaDetalhe> {
     const r = await this.prisma.pautaRodada.findFirst({
       where: { id, orgId },
-      include: { pecas: { orderBy: { criadaEm: 'asc' } }, rotina: { select: { nome: true } } },
+      include: {
+        pecas: { orderBy: { criadaEm: 'asc' } },
+        rotina: { select: { nome: true } },
+        episodio: { select: { id: true, numero: true, status: true } },
+      },
     });
     if (!r) throw new NotFoundException('Rodada não encontrada');
     return {
@@ -241,13 +252,29 @@ export class RotinaService {
         erro: p.erro,
         publicadaEm: p.publicadaEm?.toISOString() ?? null,
       })),
+      episodio: r.episodio ?? null,
     };
   }
 
   async removerRodada(orgId: string, id: string, actorId: string) {
-    const r = await this.prisma.pautaRodada.findFirst({ where: { id, orgId } });
+    const r = await this.prisma.pautaRodada.findFirst({
+      where: { id, orgId },
+      include: { episodio: { select: { numero: true } } },
+    });
     if (!r) throw new NotFoundException('Rodada não encontrada');
-    await this.prisma.pautaRodada.delete({ where: { id } });
+    // A FK do episódio é RESTRICT: sem esta recusa, o banco devolveria 500.
+    if (r.episodio) {
+      throw new ConflictException(
+        `Esta rodada já é o episódio ${apelidoDoEpisodio(r.episodio.numero)} — ela carrega o roteiro e a mídia, e não se apaga.`,
+      );
+    }
+    try {
+      await this.prisma.pautaRodada.delete({ where: { id } });
+    } catch (e) {
+      // O episódio nasceu entre a leitura acima e o delete.
+      if (semPai(e)) throw new ConflictException('Esta rodada acabou de virar episódio — ela não se apaga.');
+      throw e;
+    }
     await this.audit.log({
       orgId, actorId, action: 'pauta.rodada_removida', entityType: 'pauta_rodada', entityId: id,
     });

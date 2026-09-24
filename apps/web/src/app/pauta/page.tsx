@@ -4,14 +4,16 @@ import { useCallback, useState } from 'react';
 import { CODIGO_CONECTOR_DESLIGADO } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AbaCuradoria } from './AbaCuradoria';
+import { AbaEpisodios } from './AbaEpisodios';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
 // propósito (repertório dura anos, pauta dura 72h). Ver docs/PAUTA.md §2.
-// A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro.
-const ABAS = ['Rodadas', 'Curadoria', 'Rotinas'] as const;
+// A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro; a
+// rodada curada vira episódio (MC7), que anda do roteiro ao concluído.
+const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Rotinas'] as const;
 type Aba = (typeof ABAS)[number];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
@@ -28,7 +30,13 @@ export default function PautaPage() {
   const [erro, setErro] = useState<Erro | null>(null);
   const [bump, setBump] = useState(0);
   const [curadoriaAberta, setCuradoriaAberta] = useState<string | null>(null);
+  const [episodioAberto, setEpisodioAberto] = useState<string | null>(null);
   const recarregar = useCallback(() => setBump((b) => b + 1), []);
+
+  const abrirEpisodio = useCallback((id: string) => {
+    setEpisodioAberto(id);
+    setAba('Episódios');
+  }, []);
 
   /*
    * A CAIXA DE ERRO PRECISA SABER **QUAL** ERRO — RF-G-06.
@@ -66,6 +74,7 @@ export default function PautaPage() {
             key={a}
             onClick={() => {
               setCuradoriaAberta(null);
+              setEpisodioAberto(null);
               setAba(a);
             }}
             className={`-mb-px border-b-2 px-1 pb-2 text-sm ${
@@ -106,6 +115,7 @@ export default function PautaPage() {
             setCuradoriaAberta(id);
             setAba('Curadoria');
           }}
+          onAbrirEpisodio={abrirEpisodio}
         />
       )}
       {ready && aba === 'Curadoria' && (
@@ -116,6 +126,17 @@ export default function PautaPage() {
           bump={bump}
           onMudou={recarregar}
           inicial={curadoriaAberta}
+          onAbrirEpisodio={abrirEpisodio}
+        />
+      )}
+      {ready && aba === 'Episódios' && (
+        <AbaEpisodios
+          token={token}
+          editavel={editavel}
+          onErro={aoErrar}
+          bump={bump}
+          onMudou={recarregar}
+          inicial={episodioAberto}
         />
       )}
       {ready && aba === 'Rotinas' && (

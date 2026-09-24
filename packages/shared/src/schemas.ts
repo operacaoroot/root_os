@@ -1527,6 +1527,8 @@ export interface PautaRodadaResumo {
   janelaIni: string;
   janelaFim: string;
   criadaEm: string;
+  /** O episódio que nasceu desta rodada (MC7), se já nasceu. */
+  episodio?: PautaEpisodioRef | null;
 }
 
 export interface PautaRodadaList {
@@ -1585,6 +1587,137 @@ export interface PautaRodadaDetalhe {
   janelaFim: string;
   criadaEm: string;
   pecas: PautaPecaItem[];
+  /** O episódio que nasceu desta rodada (MC7), se já nasceu. */
+  episodio?: PautaEpisodioRef | null;
+}
+
+// ---------- Pauta: o episódio (MC7) ----------
+// A coleta e a curadoria são estados da RODADA; o episódio nasce de uma rodada
+// `curada` e anda daqui até o concluído. Espelho do enum `PautaEpisodioStatus`
+// do Prisma — a ORDEM é a do trabalho e é dela que as transições saem.
+
+export const PAUTA_EPISODIO_STATUS = [
+  'roteiro',
+  'gravacao',
+  'edicao',
+  'pacote',
+  'derivacao',
+  'agendado',
+  'concluido',
+] as const;
+export type PautaEpisodioStatus = (typeof PAUTA_EPISODIO_STATUS)[number];
+
+export const PAUTA_EPISODIO_STATUS_ROTULO: Record<PautaEpisodioStatus, string> = {
+  roteiro: 'Roteiro',
+  gravacao: 'Gravação',
+  edicao: 'Edição',
+  pacote: 'Pacote',
+  derivacao: 'Derivação',
+  agendado: 'Agendado',
+  concluido: 'Concluído',
+};
+
+/** Os dois vizinhos do status: é só para eles que o episódio anda. */
+export function vizinhosDoEpisodio(atual: PautaEpisodioStatus): {
+  avancar: PautaEpisodioStatus | null;
+  voltar: PautaEpisodioStatus | null;
+} {
+  const i = PAUTA_EPISODIO_STATUS.indexOf(atual);
+  return {
+    avancar: i >= 0 && i < PAUTA_EPISODIO_STATUS.length - 1 ? PAUTA_EPISODIO_STATUS[i + 1] : null,
+    voltar: i > 0 ? PAUTA_EPISODIO_STATUS[i - 1] : null,
+  };
+}
+
+/**
+ * Quem pode ir para onde. Um passo à frente, ou um passo atrás para refazer —
+ * pular etapa não existe: a mídia (MC9) parte do roteiro gravado, o pacote
+ * (MC11) da transcrição, e um episódio que pulasse chegaria sem o insumo.
+ */
+export function transicaoDoEpisodio(
+  de: PautaEpisodioStatus,
+  para: PautaEpisodioStatus,
+): { ok: true; sentido: 'avancar' | 'voltar' } | { ok: false; erro: string } {
+  if (!(PAUTA_EPISODIO_STATUS as readonly string[]).includes(de)) {
+    return { ok: false, erro: `Status atual desconhecido: "${de}".` };
+  }
+  if (!(PAUTA_EPISODIO_STATUS as readonly string[]).includes(para)) {
+    return { ok: false, erro: `Status desconhecido: "${para}".` };
+  }
+  if (de === para) return { ok: false, erro: `O episódio já está em ${PAUTA_EPISODIO_STATUS_ROTULO[de]}.` };
+  const v = vizinhosDoEpisodio(de);
+  if (para === v.avancar) return { ok: true, sentido: 'avancar' };
+  if (para === v.voltar) return { ok: true, sentido: 'voltar' };
+  const quais = [v.avancar, v.voltar].filter((x): x is PautaEpisodioStatus => x !== null);
+  return {
+    ok: false,
+    erro:
+      `De ${PAUTA_EPISODIO_STATUS_ROTULO[de]} o episódio só vai para ` +
+      `${quais.map((q) => PAUTA_EPISODIO_STATUS_ROTULO[q]).join(' ou ')} — um passo por vez.`,
+  };
+}
+
+/** `ep-07`: o apelido do episódio no Mac (`/root-midia ep-07`) e na página de links. */
+export function apelidoDoEpisodio(numero: number): string {
+  return `ep-${String(numero).padStart(2, '0')}`;
+}
+
+const tituloDoEpisodio = z.string().trim().min(1, 'O título não pode ficar vazio.').max(160);
+
+export const PautaEpisodioCriarSchema = z.object({
+  rodadaId: z.string().uuid('rodadaId precisa ser o id de uma rodada.'),
+  titulo: tituloDoEpisodio.optional(),
+});
+export type PautaEpisodioCriarInput = z.infer<typeof PautaEpisodioCriarSchema>;
+
+export const PautaEpisodioAtualizarSchema = z.object({ titulo: tituloDoEpisodio });
+export type PautaEpisodioAtualizarInput = z.infer<typeof PautaEpisodioAtualizarSchema>;
+
+export const PautaEpisodioStatusSchema = z.object({ para: z.enum(PAUTA_EPISODIO_STATUS) });
+export type PautaEpisodioStatusInput = z.infer<typeof PautaEpisodioStatusSchema>;
+
+export interface PautaEpisodioRef {
+  id: string;
+  numero: number;
+  status: PautaEpisodioStatus;
+}
+
+export interface PautaEpisodioResumo {
+  id: string;
+  numero: number;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  rodadaId: string;
+  rodadaTitulo: string;
+  /** Quantos itens a curadoria manteve na rodada. */
+  itens: number;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface PautaEpisodioList {
+  items: PautaEpisodioResumo[];
+  source: { tool: string; generatedAt: string };
+}
+
+export interface PautaEpisodioDetalhe extends Omit<PautaEpisodioResumo, 'itens'> {
+  /** Os itens que a curadoria manteve, na ordem da rodada. */
+  itens: PautaItemCurado[];
+  janelaIni: string;
+  janelaFim: string;
+  roteiro: string;
+  descricao: string;
+  midia: Record<string, unknown>;
+  transcricao: Array<{ inicio: number; fim: number; texto: string }>;
+  transcricaoTexto: string;
+  titulos: unknown[];
+  thumbs: unknown[];
+  bioPageId: string | null;
+  criadoPor: string | null;
+  /** Para onde o episódio pode andar agora (os dois vizinhos da ordem). */
+  avancar: PautaEpisodioStatus | null;
+  voltar: PautaEpisodioStatus | null;
 }
 
 export interface PautaCanalEstado {

@@ -6,7 +6,9 @@ import {
   PAUTA_CANAL_LABEL,
   PAUTA_ORIGEM_ROTULOS,
   PAUTA_ORIGENS,
+  apelidoDoEpisodio,
   type PautaCanalEstado,
+  type PautaEpisodioDetalhe,
   type PautaOrigem,
   type PautaRodadaDetalhe,
   type PautaRodadaList,
@@ -24,6 +26,8 @@ interface Props {
   bump: number;
   onMudou: () => void;
   onAbrirCuradoria?: (rodadaId: string) => void;
+  /** MC7: a rodada curada vira episódio, e a tela vai para ele. */
+  onAbrirEpisodio?: (episodioId: string) => void;
 }
 
 const TOM_RODADA: Record<string, 'muted' | 'good' | 'warn' | 'bad'> = {
@@ -40,7 +44,16 @@ function temOrigem(o: unknown): o is PautaOrigem {
   return typeof o === 'string' && (PAUTA_ORIGENS as readonly string[]).includes(o);
 }
 
-export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudou, onAbrirCuradoria }: Props) {
+export function AbaRodadas({
+  token,
+  editavel,
+  podePublicar,
+  onErro,
+  bump,
+  onMudou,
+  onAbrirCuradoria,
+  onAbrirEpisodio,
+}: Props) {
   const [data, setData] = useState<PautaRodadaList | null>(null);
   const [canais, setCanais] = useState<{ whatsapp: PautaCanalEstado } | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -108,6 +121,12 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     if (partes.length) onErro(`${partes.join('; ')} — o motivo está em Referências → Radar.`);
   };
 
+  const criarEpisodio = (rodadaId: string) =>
+    acao(`ep-${rodadaId}`, async () => {
+      const e = await apiPost<PautaEpisodioDetalhe>('/pauta/episodios', { rodadaId }, token);
+      onAbrirEpisodio?.(e.id);
+    });
+
   const publicar = async (pecaId: string, resumo: string) =>
     acao(`pub-${pecaId}`, () => publicarComAprovacao(pecaId, resumo, token));
 
@@ -169,6 +188,7 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   <Chip tone={r.pecas ? 'brand' : 'muted'}>{r.pecas} peça(s)</Chip>
                   {r.model && <Chip>{r.model}</Chip>}
                   {r.rotina && <Chip tone="brand">{r.rotina}</Chip>}
+                  {r.episodio && <Chip tone="good">{apelidoDoEpisodio(r.episodio.numero)}</Chip>}
                 </div>
                 <p className="mt-1 truncate text-sm">{r.titulo}</p>
                 <p className="mt-0.5 text-[11px] text-muted">
@@ -207,7 +227,27 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   >
                     {ocupado === 'derivar' ? 'Derivando…' : 'Gerar peças'}
                   </Botao>
-                  <Botao tone="bad" onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))} disabled={!editavel}>
+                  {detalhe.status === 'curada' && !detalhe.episodio && (
+                    <Botao
+                      tone="brand"
+                      onClick={() => criarEpisodio(r.id)}
+                      disabled={!editavel || ocupado === `ep-${r.id}`}
+                      title="O episódio nasce no roteiro, com os itens desta rodada"
+                    >
+                      {ocupado === `ep-${r.id}` ? 'Criando…' : 'Criar episódio'}
+                    </Botao>
+                  )}
+                  {detalhe.episodio && onAbrirEpisodio && (
+                    <Botao onClick={() => onAbrirEpisodio(detalhe.episodio!.id)}>
+                      Abrir episódio {apelidoDoEpisodio(detalhe.episodio.numero)}
+                    </Botao>
+                  )}
+                  <Botao
+                    tone="bad"
+                    onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))}
+                    disabled={!editavel || !!detalhe.episodio}
+                    title={detalhe.episodio ? 'A rodada que virou episódio não se apaga' : undefined}
+                  >
                     Remover rodada
                   </Botao>
                   <span className="text-xs text-muted">

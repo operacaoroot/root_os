@@ -29,6 +29,8 @@ interface Props {
   onMudou: () => void;
   /** A rodada que a aba Rodadas mandou abrir; sem ela, abre a pendente mais recente. */
   inicial?: string | null;
+  /** MC7: depois de confirmar, a rodada curada pode virar episódio daqui mesmo. */
+  onAbrirEpisodio?: (episodioId: string) => void;
 }
 
 type Candidato = PautaItemCurado & { id: string };
@@ -52,7 +54,7 @@ function mesmoConjunto(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial = null }: Props) {
+export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial = null, onAbrirEpisodio }: Props) {
   const [pendentes, setPendentes] = useState<PautaRodadaList['items'] | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(inicial);
   const [detalhe, setDetalhe] = useState<PautaRodadaDetalhe | null>(null);
@@ -63,6 +65,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const [horas, setHoras] = useState<number>(PAUTA_HORAS_DA_CURADORIA);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [confirmada, setConfirmada] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -124,7 +127,11 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
 
   const acao = async (nome: string, fn: () => Promise<void>) => {
     onErro(null);
-    setAviso(null);
+    // Criar o episódio não apaga o aviso: se der erro, o botão continua ali.
+    if (nome !== 'episodio') {
+      setAviso(null);
+      setConfirmada(null);
+    }
     setOcupado(nome);
     try {
       await fn();
@@ -167,8 +174,17 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
         token,
       );
       setAviso(`Curadoria confirmada: ${r.itens} item(ns) seguem. A rodada está em Rodadas, pronta para gerar peças.`);
+      setConfirmada(selecionada);
       setSelecionada(null);
       onMudou();
+    });
+
+  const criarEpisodio = () =>
+    acao('episodio', async () => {
+      if (!confirmada) return;
+      const e = await apiPost<{ id: string }>('/pauta/episodios', { rodadaId: confirmada }, token);
+      onMudou();
+      onAbrirEpisodio?.(e.id);
     });
 
   return (
@@ -208,9 +224,14 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
       </div>
 
       {aviso && (
-        <p role="status" className="rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">
-          {aviso}
-        </p>
+        <div role="status" className="space-y-2 rounded-lg border border-good/40 bg-good/10 px-3 py-2 text-sm text-good">
+          <p>{aviso}</p>
+          {confirmada && onAbrirEpisodio && (
+            <Botao tone="brand" onClick={criarEpisodio} disabled={!editavel || escrevendo}>
+              {ocupado === 'episodio' ? 'Criando…' : 'Criar episódio desta rodada'}
+            </Botao>
+          )}
+        </div>
       )}
 
       {pendentes && pendentes.length === 0 && !detalhe && (

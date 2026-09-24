@@ -231,8 +231,23 @@ jobs:
       # "Rodar agora" que volta `pulada` mostra o motivo). Medido: 420 casos em
       # 32 arquivos (412 + 8). O piso de ARQUIVOS sobe 1, para 23; o de CASOS
       # sobe 7 (~12% de folga sobre os 8 novos), para 258.
-      PISO_CASOS_WEB: '258'
-      PISO_ARQUIVOS_WEB: '23'
+      #
+      # MC7, O EPISÓDIO VIRA ENTIDADE DO OS (23/09/2026): +16 casos, +1 arquivo,
+      # só desta fatia — `component/pauta-episodios` (16: a lista com número,
+      # título e status do mais novo ao mais velho; a lista vazia que diz de
+      # onde o episódio nasce; abrir o que outra aba mandou e trocar no clique;
+      # a linha do tempo com as sete etapas, a atual destacada e as anteriores
+      # feitas; só os dois vizinhos oferecidos e avançar mandando o próximo;
+      # a lista travada enquanto a escrita corre; voltar mandando o anterior; roteiro sem voltar; a recusa da API na
+      # caixa da página sem mexer na etapa; sem `pauta.editar` nada anda; os
+      # itens mantidos com a origem e a newsletter sem link; renomear; "Criar
+      # episódio" na rodada curada da aba Rodadas; a rodada que já é episódio
+      # mostra o número, abre o episódio e não se remove; o botão no fim da
+      # Curadoria; e a aba Episódios na página). Medido: 436 casos em 33
+      # arquivos (420 + 16). O piso de ARQUIVOS sobe 1, para 24; o de CASOS
+      # sobe 14 (~12% de folga sobre os 16 novos), para 272.
+      PISO_CASOS_WEB: '272'
+      PISO_ARQUIVOS_WEB: '24'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -771,8 +786,40 @@ jobs:
       # com o banco de teste, e 1479 passados / 557 pulados sem ele (1452 + 27).
       # O piso de ARQUIVOS vai a 45; o de CASOS sobe 23 (~15% de folga sobre os
       # 27 novos), para 1458.
-      PISO_CASOS_API: '1458'
-      PISO_ARQUIVOS_API: '45'
+      #
+      # ---------------------------------------------------------------------
+      # MC7, O EPISÓDIO VIRA ENTIDADE DO OS (23/09/2026): +49 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-episodio` (48): quem anda para onde (um passo à frente em toda
+      # etapa menos a última, um atrás inclusive saindo do concluído, as 49
+      # combinações com só as 12 vizinhas passando, o erro com o nome da
+      # etapa, ficar onde está e status desconhecido recusados, os vizinhos);
+      # número, apelido `ep-NN` e título padrão; os itens mantidos sem a marca
+      # da curadoria, o item de newsletter sem o link privado, `semPai` só
+      # para P2003, a transcrição só com segmentos e o detalhe/resumo; o enum
+      # do Prisma espelhado no shared, a tabela 1:1 numerada por empresa com
+      # RESTRICT, e os esquemas da rota. O `EpisodioService` DE VERDADE com
+      # prisma de mentira: nasce da curada como ep-01 sob o cadeado da empresa
+      # e audita; o número de outra empresa não conta; rodada com episódio é
+      # 409; aguardando curadoria e os outros quatro status são 400; rodada de
+      # outra empresa é 404; P2002 de rodada e de número viram 409; a rodada
+      # apagada no meio da criação (P2003) é 404; transição válida com escrita
+      # condicionada, pulo 400, corrida entre abas 409; título, a lista pedida
+      # por número desc no teto de 100, detalhe; a rodada com episódio não se
+      # apaga (409, também quando o episódio nasce entre a conferência e o
+      # delete) e a sem episódio segue. E COM BANCO (5, pulados sem ele): seis
+      # criações simultâneas saem 1..6, a mesma rodada disputada vira um
+      # episódio só, cada empresa conta do 1 e anda só por transição válida, o
+      # RESTRICT recusa apagar a rodada por fora da API com P2003, e o gatilho
+      # recusa episódio sem rodada com P2003. +1 em `modelos-globais` (o
+      # `it.each` dos filhos ganhou `PautaEpisodio`).
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2085 casos em 54 arquivos
+      # com o banco de teste, e 1523 passados / 562 pulados sem ele (1479 + 44).
+      # O piso de ARQUIVOS vai a 46; o de CASOS sobe 42 (~15% de folga sobre os
+      # 49 novos), para 1500.
+      PISO_CASOS_API: '1500'
+      PISO_ARQUIVOS_API: '46'
 
     steps:
       - uses: actions/checkout@v4
@@ -1215,7 +1262,12 @@ jobs:
           # ESTEIRA DE CLIENTES (17/09/2026): **293 casos**. `WorkApontamento`
           # (horas por cliente e por etapa) entrou no registro de alvos e em
           # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 248.
-          PISO_CASOS_ISOLAMENTO: '248'
+          #
+          # MC7, O EPISÓDIO (23/09/2026): **326 casos** (319 medidos antes da
+          # fatia, com o onboarding). `PautaEpisodio` entrou no registro de
+          # alvos e em `FILHOS_COM_ORGID_REDUNDANTE` com DOIS pais conferidos
+          # (a rodada e a página de links): +7 casos. O piso sobe 6, para 254.
+          PISO_CASOS_ISOLAMENTO: '254'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
