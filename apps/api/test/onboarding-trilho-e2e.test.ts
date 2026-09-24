@@ -394,7 +394,13 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     await link.confirmar(tokenBCD, 'd-acessos', 'Marcos');
     await expect(link.confirmar(tokenBCD, 'regras-da-casa', 'Marcos')).rejects.toThrow(/não há proposta/);
 
+    // O áudio é DESLIGADO por padrão (24/09): a tela não o oferece e a API recusa. Liga por variável.
+    expect((await link.estado(tokenBCD)).audioDisponivel).toBe(false);
+    await expect(link.responderPorAudio(tokenBCD, 'regras-da-casa', Buffer.from('fake'), 'audio/webm', 'Marcos')).rejects.toThrow(/desligada/);
+    process.env.ONBOARDING_AUDIO = 'on';
+    expect((await link.estado(tokenBCD)).audioDisponivel).toBe(true);
     const audio = await link.responderPorAudio(tokenBCD, 'regras-da-casa', Buffer.from('fake'), 'audio/webm', 'Marcos');
+    delete process.env.ONBOARDING_AUDIO;
     expect(audio.texto).toContain('oito por cento');
     expect(audio.estado.itens.find((i) => i.temaId === 'regras-da-casa')).toMatchObject({ status: 'respondido', respondidoVia: 'audio' });
 

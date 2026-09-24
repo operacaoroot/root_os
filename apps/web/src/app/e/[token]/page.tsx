@@ -209,7 +209,7 @@ export default function LinkPage() {
           chave: 'decisoes',
           rotulo: 'Só você decide',
           titulo: decisoes.length === 1 ? 'A decisão desta estação' : 'As decisões desta estação',
-          ajuda: 'Vêm primeiro porque são elas que definem o que a gente constrói. Pode escrever ou gravar um áudio. Cada resposta vira uma nota no seu vault — a teia ao lado mostra onde ela se encaixa.',
+          ajuda: `Vêm primeiro porque são elas que definem o que a gente constrói.${estado.audioDisponivel ? ' Pode escrever ou gravar um áudio.' : ''} Cada resposta vira uma nota no seu vault — a teia ao lado mostra onde ela se encaixa.`,
           itens: decisoes,
         },
         {
@@ -283,6 +283,7 @@ export default function LinkPage() {
                       nome={nome}
                       ocupado={ocupado}
                       erro={erroDe[`item-${i.temaId}`] || null}
+                      audio={estado.audioDisponivel}
                       agir={agir}
                       onMudou={setEstado}
                       aoClicarVizinho={abrirNo}
@@ -710,7 +711,7 @@ type Agir = <T>(chave: string, fn: () => Promise<T>) => Promise<T | undefined>;
  * por texto ou áudio. Cada gravação mostra "salvo às", com a hora que veio do
  * banco — é a prova, na tela, de que chegou. O erro fica aqui, ao lado.
  */
-function ItemCard({ i, no, vizinhos, base, nome, ocupado, erro, agir, onMudou, aoClicarVizinho }: { i: ItemDoLink; no: NoDaTeia | null; vizinhos: NoDaTeia[]; base: string; nome: string; ocupado: string | null; erro: string | null; agir: Agir; onMudou: (e: EstadoDoLink) => void; aoClicarVizinho: (no: NoDaTeia) => void }) {
+function ItemCard({ i, no, vizinhos, base, nome, ocupado, erro, audio, agir, onMudou, aoClicarVizinho }: { i: ItemDoLink; no: NoDaTeia | null; vizinhos: NoDaTeia[]; base: string; nome: string; ocupado: string | null; erro: string | null; audio: boolean; agir: Agir; onMudou: (e: EstadoDoLink) => void; aoClicarVizinho: (no: NoDaTeia) => void }) {
   const [corrigindo, setCorrigindo] = useState(false);
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState('');
@@ -777,11 +778,12 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, erro, agir, onMudou, a
       autoFocus
     />
   );
-  const botaoDeAudio = (
+  // O áudio só aparece quando a API diz que está ligado (transcrição configurada E com crédito).
+  const botaoDeAudio = audio ? (
     <button type="button" className={gravando ? BOTAO_GRAVANDO : BOTAO} disabled={salvando && !gravando} onClick={alternarGravacao} aria-label={gravando ? 'Parar gravação' : 'Gravar áudio'} aria-busy={salvando && !gravando}>
       {gravando ? '■ Gravando… toque para parar' : salvando ? 'transcrevendo…' : '● Prefere falar? Gravar áudio'}
     </button>
-  );
+  ) : null;
 
   return (
     <div id={`tema-${i.temaId}`} className={`scroll-mt-28 rounded-xl border p-4 transition-colors ${i.modo === 'feito' ? 'border-brand/40' : 'border-border'} bg-surface`}>
@@ -838,7 +840,7 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, erro, agir, onMudou, a
               {botaoDeAudio}
               <button type="button" className={BOTAO} disabled={salvando} onClick={() => { setEditando(false); setTexto(''); }}>Cancelar</button>
             </div>
-            {editarEhCorrigir && <p className="text-[11px] text-muted">Salvar substitui o texto e mantém a origem (a reunião e o minuto). Gravar áudio vira resposta sua, sem a origem.</p>}
+            {editarEhCorrigir && <p className="text-[11px] text-muted">Salvar substitui o texto e mantém a origem (a reunião e o minuto).{audio ? ' Gravar áudio vira resposta sua, sem a origem.' : ''}</p>}
           </div>
           {erroInline}
         </div>
