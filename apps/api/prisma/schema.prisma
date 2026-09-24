@@ -295,11 +295,11 @@ model AgentDataGrant {
   revokedAt         DateTime?
   revokedByUserId   String?
   allowVectorization Boolean     @default(false)
-  updatedAt         DateTime     @updatedAt
+  updatedAt         DateTime     @default(now()) @updatedAt
 
   @@unique([orgId, sourceType, sourceRef, field])
   @@index([orgId, revokedAt])
-  @@index([orgId, sourceType, sourceRef, field])
+  @@index([orgId, sourceType, sourceRef, field], map: "AgentDataGrant_source_idx")
 }
 
 /// Destino lógico de um conector. Não é um caminho do servidor: a ponte local
@@ -320,7 +320,7 @@ model ConnectorSource {
   escopoVersao    Int                    @default(1)
   revokedAt       DateTime?
   createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  updatedAt       DateTime               @default(now()) @updatedAt
   devices         ConnectorDeviceSource[]
   deliveries               ConnectorDelivery[]
   deliveryItems            ConnectorDeliveryItem[]
@@ -436,10 +436,11 @@ model ConnectorDelivery {
   startedAt        DateTime                @default(now())
   finishedAt       DateTime?
   createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  updatedAt        DateTime                @default(now()) @updatedAt
   items            ConnectorDeliveryItem[]
 
   @@unique([orgId, deviceId, chaveRequisicao])
+  @@unique([orgId, sourceId, ordem])
   @@index([orgId, sourceId, createdAt])
   @@index([orgId, deviceId, status])
 }
@@ -460,7 +461,7 @@ model ConnectorDeliveryItem {
   revisao         Int
   createdAt       DateTime          @default(now())
 
-  @@unique([deliveryId, sourceId, caminhoRelativo, hashConteudo])
+  @@unique([deliveryId, sourceId, caminhoRelativo, hashConteudo], map: "ConnectorDeliveryItem_deliveryId_sourceId_caminhoRelativo_hashC")
   @@index([orgId, sourceId, caminhoRelativo])
   @@index([orgId, deliveryId])
 }
@@ -477,7 +478,7 @@ model ConnectorItemState {
   contextItemId   String
   contextItem     ContextItem     @relation(fields: [contextItemId], references: [id], onDelete: Cascade)
   revisao         Int
-  updatedAt       DateTime        @updatedAt
+  updatedAt       DateTime        @default(now()) @updatedAt
 
   @@unique([orgId, sourceId, caminhoRelativo])
   @@index([orgId, sourceId, revisao])
