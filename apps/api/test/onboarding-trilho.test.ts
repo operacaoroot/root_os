@@ -511,6 +511,20 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
     expect(m.estacoes.slice(3).map((e) => e.estado)).toEqual(['adiante', 'adiante', 'adiante']);
   });
 
+  it('proposta descartada na bancada volta a ser decisão do cliente, não confirmação', () => {
+    const m = montarMapaDoCliente({
+      ...base,
+      itens: [
+        ...base.itens,
+        { temaId: 'regras-da-casa', bloco: 'B', status: 'descartado', proposta: 'ficou guardada na bancada', textoFinal: null, origem: 'ata' },
+      ],
+    });
+    const obr = obrigatorios('BCD', 'avancar-junto').map((t) => t.id);
+    const cobertos = ['negocio', 'canais'].filter((id) => obr.includes(id)).length;
+    // "regras-da-casa" é obrigatório e continua a decidir: a proposta descartada não conta como "confirmar".
+    expect(m.estacoes[2].detalhe).toBe(`confirmar 2 · decidir ${obr.length - cobertos}`);
+  });
+
   it('estação futura sem data gravada não ganha data', () => {
     const m = montarMapaDoCliente(base);
     expect(m.estacoes.find((e) => e.chave === 'memoria')?.quando).toBeNull();
