@@ -1,7 +1,9 @@
 # root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16, vigia na MD2)
 
-A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo **fica no Mac** (o MinIO da VPS não é
-público e o upload no YouTube é manual na V1, D-MC6).
+A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo do episódio **fica no Mac** (o upload no
+YouTube é manual na V1, D-MC6). Desde a MD4, o mp4 de cada **corte** vertical e um JPEG de cada
+imagem da semana sobem também ao storage do OS, porque a Meta só publica o que consegue baixar de
+uma URL (assinada, de até 1 h). Nada é apagado no Mac.
 
 | Arquivo | O quê |
 |---|---|
@@ -36,6 +38,7 @@ para o repositório, e `ROOT_OS_API_URL` fora desta máquina tem de ser `https:/
 | Variável | Para quê | Padrão |
 |---|---|---|
 | `ROOT_OS_API_URL` | a API do OS, com o `/api` | `http://localhost:4001/api` |
+| `ROOT_OS_ENVIO_URL` | MD4: para onde sobe o mp4 do corte, com o `/api`. O proxy do Next (`os.operacaoroot.com/api`) corta o corpo em 10 MB: aponte para a API sem passar pelo web. Fora desta máquina, só `https://` | `ROOT_OS_API_URL` |
 | `ROOT_OS_EMAIL` / `ROOT_OS_SENHA` | uma conta do OS com `pauta.editar` | — (exigidas por `pendentes` e `enviar`) |
 | `WHISPER_MODEL` | caminho do modelo ggml do whisper.cpp | — (sem ele, `transcrever` para e diz o que baixar; D-MC3) |
 | `ROOT_MIDIA_PALAVRA` | a palavra de corte, quando não vem da fila do OS | `root, corta` |
@@ -92,10 +95,19 @@ cada matéria tem um carrossel, um story e um corte. `semana ep-NN` lista o esta
   direita, escalada para dentro de uma caixa 336×299 em (1533, 737) — a imagem cai em 1538–1864 ×
   737–1036, e a região vai arredondada para dentro em par: **1540,738,322,298** (não os 480×270 do
   canto que o plano supunha). `--pip`/`ROOT_MIDIA_PIP`, `--tela`, `--canvas`, `--obs` e `--cena`
-  trocam. `cortes <arquivo>` sem `ep-` segue sendo o plano de cortes do MC9. **O mp4 fica no Mac**:
-  ao OS vão o caminho, a duração, o tamanho e os bytes (`PUT /pauta/pecas/:id/video`).
+  trocam. `cortes <arquivo>` sem `ep-` segue sendo o plano de cortes do MC9. O áudio sai em 48 kHz
+  (o teto da Graph). Ao OS vão o caminho, a duração, o tamanho e os bytes
+  (`PUT /pauta/pecas/:id/video`) e, desde a MD4, o **próprio mp4**: confere o faststart pelas caixas
+  de topo (`ftyp` primeiro, `moov` antes do `mdat`), calcula o sha256 e sobe cru, por stream
+  (`POST /pauta/pecas/:id/video/arquivo`, `X-Conteudo-Sha256`, até 300 MB). O mesmo arquivo que já
+  está no OS (mesmo sha) não é registrado nem sobe de novo. O mp4 continua no Mac. A falha do envio
+  fica no corte: ele volta com `subiu: false` e o motivo (o vigia avisa), e a ferramenta segue para o
+  próximo. Sem `ROOT_OS_ENVIO_URL`, com a API fora desta máquina, o mp4 acima de 10 MB nem tenta
+  subir (o proxy do web não responderia); o envio tem prazo de 1 min mais 1 s a cada 256 kB.
 
-Os PNG sobem para a peça (`POST /pauta/pecas/:id/imagens/:n`, até 5 MB); `--sem-enviar` só grava na
+Os PNG sobem para a peça (`POST /pauta/pecas/:id/imagens/:n`, até 5 MB) e, ao lado de cada um, o
+JPEG que o `sips` do macOS converte (`-s format jpeg -s formatOptions 90`, até 8 MB), que é o que a
+Meta aceita; `--sem-enviar` só grava na
 pasta (`<ep>-semana/` ao lado do vídeo final, ou `--saida`). `ensaio-semana` prova tudo sem o OS: um
 vídeo sintético 1920×1080 com um PiP cor-de-rosa, 1 corte (1080×1920, a duração do trecho e o rosa
 embaixo), 1 story (1080×1920) e, com a máquina instalada, 1 carrossel (1080×1350).

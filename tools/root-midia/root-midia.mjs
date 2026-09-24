@@ -15,11 +15,14 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  closeSync,
   createReadStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  readSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -63,6 +66,13 @@ import {
   REGIAO_DO_PIP_PADRAO,
   aceitaRender,
   argsDoChromeNoTamanho,
+  argsDoSips,
+  caixasDeTopo,
+  conferirJpegNoTamanho,
+  jpegDoPng,
+  jpegJaNoOs,
+  motivoSemFaststart,
+  TETO_DO_MP4_DO_CORTE,
   argsDoCorteVertical,
   argsDoFrameDoStory,
   candidatosDoRender,
@@ -80,6 +90,7 @@ import {
   linhasDaAgenda,
   slidesEstourados,
   slidesParaAMaquina,
+  subirCorteAoOs,
 } from './lib/semana.mjs';
 import {
   acharEpisodio,
@@ -160,14 +171,17 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
   root-midia semana <ep-NN>
       As matérias do episódio e o estado das três peças de cada uma (carrossel, story, corte).
   root-midia carrosseis <ep-NN> [--saida pasta] [--so N] [--sem-enviar] [--forcar]
-      Renderiza cada carrossel pela máquina de carrossel (plugin, 1080×1350, marca root) e sobe os PNG.
+      Renderiza cada carrossel pela máquina de carrossel (plugin, 1080×1350, marca root) e sobe os PNG
+      e, desde a MD4, o JPEG de cada um (sips, qualidade 90), que é o que a Meta baixa.
       Slide com texto estourado (o report.json do render) não sobe, salvo com --forcar.
   root-midia stories <ep-NN> [--final f.mp4] [--saida pasta] [--so N] [--sem-enviar]
-      story.html 1080×1920 com o frame do episódio no começo do corte da matéria, e sobe o PNG.
+      story.html 1080×1920 com o frame do episódio no começo do corte da matéria, e sobe o PNG e o JPEG.
   root-midia cortes <ep-NN> [<vídeo final>] [--pip x,y,l,a] [--tela x,y,l,a] [--canvas 1920x1080]
                     [--obs colecao.json] [--cena "2 · Tela + Câmera"] [--saida pasta] [--so N] [--sem-enviar]
       (também \`cortes-verticais\`) O trecho de cada corte em 1080×1920: a tela em cima e o rosto
-      (o PiP do OBS) embaixo. O mp4 FICA no Mac; ao OS vai o caminho e o que foi medido.
+      (o PiP do OBS) embaixo. Ao OS vão o caminho e o que foi medido e, desde a MD4, o próprio mp4
+      (conferido o faststart, por stream, com o sha256; o mesmo arquivo não sobe de novo). O mp4
+      também fica no Mac. ROOT_OS_ENVIO_URL aponta a API sem o proxy do web (que corta em 10 MB).
   root-midia agenda [--de AAAA-MM-DD]
       O calendário da semana (MC16): cada slot com a peça, o estado e onde está a mídia para
       postar à mão (o PNG no OS, o mp4 no Mac pelo caminho). Só lê; postar é na aba Semana.
@@ -873,6 +887,51 @@ async function renderizarCorte({ video, inicio, fim, saida, regioes }) {
   return { arquivo: saida, duracaoSeg: Math.round(duracaoSeg * 1000) / 1000, largura: saiu.largura, altura: saiu.altura, bytes: statSync(saida).size, rosto, tela };
 }
 
+/** As caixas de topo do mp4, lendo só os cabeçalhos. @param {string} caminho */
+function caixasDoArquivo(caminho) {
+  const fd = openSync(caminho, 'r');
+  try {
+    return caixasDeTopo((offset, n) => {
+      const b = Buffer.alloc(n);
+      return b.subarray(0, readSync(fd, b, 0, n, offset));
+    }, statSync(caminho).size);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * MD4: o mp4 do corte, conferido o faststart, sobe por stream com o sha256 no
+ * cabeçalho (`subirCorteAoOs`: o mesmo arquivo que já está no OS não é
+ * registrado nem sobe de novo, e o envio que falha fica neste corte).
+ * @param {ReturnType<typeof clienteDoOs>} os @param {any} peca
+ * @param {{ arquivo: string, duracaoSeg: number, largura: number, altura: number, bytes: number }} corpo
+ */
+async function subirOCorte(os, peca, corpo) {
+  const motivo = motivoSemFaststart(caixasDoArquivo(corpo.arquivo));
+  if (motivo) throw new Error(motivo);
+  if (corpo.bytes > TETO_DO_MP4_DO_CORTE) throw new Error(`O corte tem ${Math.round(corpo.bytes / 1024 / 1024)} MB; a Meta aceita até 300 MB.`);
+  const sha256 = await sha256DoArquivo(corpo.arquivo);
+  return subirCorteAoOs(os, peca, corpo, { sha256, abrir: () => createReadStream(corpo.arquivo) });
+}
+
+/**
+ * MD4: o JPEG ao lado do PNG, pelo `sips` do macOS (qualidade 90), conferido e
+ * enviado — o mesmo conteúdo que já está no OS não sobe de novo.
+ * @param {ReturnType<typeof clienteDoOs>} os @param {any} peca @param {number} n @param {string} png @param {{ largura: number, altura: number }} tamanho
+ */
+async function subirOJpeg(os, peca, n, png, tamanho) {
+  const jpg = jpegDoPng(png);
+  await rodar('/usr/bin/sips', argsDoSips(png, jpg));
+  const bytes = readFileSync(jpg);
+  const erro = conferirJpegNoTamanho(bytes, tamanho.largura, tamanho.altura);
+  if (erro) throw new Error(erro);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  if (jpegJaNoOs(peca, n, sha256)) return false;
+  await os.enviarImagemDaPeca(peca.id, n, bytes, basename(jpg), 'image/jpeg');
+  return true;
+}
+
 /** @param {string} ep @param {string | undefined} finalArg @param {Record<string, string | true>} o */
 async function cortesVerticais(ep, finalArg, o) {
   const { os, alvo, semana } = await semanaDoOs(ep);
@@ -895,11 +954,24 @@ async function cortesVerticais(ep, finalArg, o) {
     const r = await renderizarCorte({ video, inicio: peca.inicio, fim: peca.fim, saida, regioes });
     avisar(`→ ${saida} (${r.duracaoSeg.toFixed(1)} s, ${Math.round(r.bytes / 1024)} kB)`);
     const corpo = { arquivo: r.arquivo, duracaoSeg: r.duracaoSeg, largura: r.largura, altura: r.altura, bytes: r.bytes };
+    /** @type {{ sha256: string, subiu: boolean } | null} */
+    let noOs = null;
     if (o['sem-enviar'] !== true) {
-      await os.videoDoCorte(peca.id, corpo);
-      avisar(`Corte da matéria ${n} registrado no OS (o mp4 fica no Mac).`);
+      noOs = await subirOCorte(os, peca, corpo);
+      avisar(
+        noOs.motivo
+          ? `Corte da matéria ${n}: o mp4 não subiu ao OS (${noOs.motivo}); ele segue no Mac.`
+          : noOs.subiu
+            ? `Corte da matéria ${n} registrado e enviado ao OS (sha ${noOs.sha256.slice(0, 12)}; o mp4 também fica no Mac).`
+            : `Corte da matéria ${n}: o mesmo mp4 já está no OS (sha ${noOs.sha256.slice(0, 12)}).`,
+      );
     }
-    feitas.push({ n, ...corpo, enviado: o['sem-enviar'] !== true });
+    feitas.push({
+      n,
+      ...corpo,
+      enviado: o['sem-enviar'] !== true,
+      ...(noOs ? { sha256: noOs.sha256, subiu: noOs.subiu, ...(noOs.motivo ? { motivo: noOs.motivo } : {}) } : {}),
+    });
   }
   return { id: alvo.id, apelido: alvo.apelido, pasta, pip: regioes.pip, cortes: feitas, pulados };
 }
@@ -950,7 +1022,8 @@ async function stories(ep, o) {
     avisar(`→ ${saida} (${Math.round(png.length / 1024)} kB)`);
     if (o['sem-enviar'] !== true) {
       await os.enviarImagemDaPeca(peca.id, 1, png, basename(saida));
-      avisar(`Story da matéria ${n} enviado ao OS.`);
+      await subirOJpeg(os, peca, 1, saida, { largura: LARGURA_VERTICAL, altura: ALTURA_VERTICAL });
+      avisar(`Story da matéria ${n} enviado ao OS (PNG e JPEG).`);
     }
     feitas.push({ n, arquivo: saida, bytes: png.length, enviado: o['sem-enviar'] !== true });
   }
@@ -1035,8 +1108,11 @@ async function carrosseis(ep, o) {
     // Texto cortado não sobe sem querer: encurte o slide na tela e renderize de novo, ou --forcar.
     const enviar = o['sem-enviar'] !== true && (!estourados.length || o.forcar === true);
     if (enviar) {
-      for (const p of pngs) await os.enviarImagemDaPeca(peca.id, p.n, p.buffer, basename(p.arquivo));
-      avisar(`Carrossel da matéria ${n}: ${pngs.length} slide(s) enviados ao OS.`);
+      for (const p of pngs) {
+        await os.enviarImagemDaPeca(peca.id, p.n, p.buffer, basename(p.arquivo));
+        await subirOJpeg(os, peca, p.n, p.arquivo, { largura: LARGURA_DO_SLIDE, altura: ALTURA_DO_SLIDE });
+      }
+      avisar(`Carrossel da matéria ${n}: ${pngs.length} slide(s) enviados ao OS (PNG e JPEG).`);
     } else if (o['sem-enviar'] !== true) {
       avisar(`Carrossel da matéria ${n}: não enviado ao OS por causa do estouro (encurte o texto ou rode com --forcar).`);
     }
@@ -1055,7 +1131,13 @@ async function semanaNaTela(ep) {
         const p = m.pecas?.[f];
         if (!p) return `${f}: —`;
         const render =
-          f === 'corte' ? (p.video ? 'mp4 no Mac' : 'sem mp4') : `${p.imagens?.length ?? 0} PNG`;
+          f === 'corte'
+            ? p.video?.sha256
+              ? 'mp4 no OS'
+              : p.video
+                ? 'mp4 só no Mac'
+                : 'sem mp4'
+            : `${p.imagens?.length ?? 0} PNG, ${p.jpegs?.length ?? 0} JPEG`;
         return `${f}: ${p.status}, ${render}`;
       })
       .join(' · ');
@@ -1167,7 +1249,7 @@ function lerTextoSeHouver(caminho) {
   }
 }
 
-/** O sha256 de um arquivo, lido em pedaços (o bruto pode ter gigas). @param {string} caminho */
+/** O sha256 de um arquivo, lido em pedaços (o bruto pode ter gigas). @param {string} caminho @returns {Promise<string>} */
 function sha256DoArquivo(caminho) {
   return new Promise((ok, falha) => {
     const h = createHash('sha256');

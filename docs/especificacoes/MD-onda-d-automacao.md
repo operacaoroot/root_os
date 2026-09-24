@@ -409,6 +409,13 @@ sinal pelo horário de SP.
 
 ### MD4 — Mídia da peça no OS: JPEG, mp4 do corte e URL pública assinada
 
+> **Estado (24/09/2026):** implementada, com o ensaio do "pronto quando" contra MinIO descartável, a
+> revisão e as pendências do Pedro registrados no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 26
+> da §4). Escolhas além do texto abaixo: o sha256 vem declarado em `X-Conteudo-Sha256` e é conferido
+> no fim; o envio em partes é feito à mão com as primitivas do `minio` (o `putObject(stream)`
+> pendura quando a origem falha); `POST …/midia-publica` só assina peça **aprovada**; o Mac sobe o
+> mp4 por `ROOT_OS_ENVIO_URL`, porque o proxy do Next corta corpo acima de 10 MB.
+
 **SPEC.**
 
 1. **JPEG:** `POST /pauta/pecas/:id/imagens/:n` (`derivacao.controller.ts`) passa a aceitar

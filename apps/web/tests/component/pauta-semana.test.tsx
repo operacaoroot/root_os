@@ -141,6 +141,28 @@ describe('a semana de posts do episódio', () => {
     expect(materia(2)).toHaveTextContent('Carrossel: não saiu — gere de novo.');
   });
 
+  it('MD4: o estado do render diz o mp4 no OS ou só no Mac, e o JPEG que falta para a Meta', async () => {
+    apiGet.mockResolvedValue(
+      semana({}, {
+        story: story({ jpegs: [] }),
+        corte: corte({ video: { arquivo: '/m/c.mp4', duracaoSeg: 60, largura: 1080, altura: 1920, bytes: 42 * 1024 * 1024, chave: 'k', sha256: 'a'.repeat(64) } }),
+        carrossel: carrossel({ imagens: [{ n: 1, largura: 1080, altura: 1350, bytes: 1, enviadaEm: 'x' }], jpegs: [{ n: 1, largura: 1080, altura: 1350, bytes: 1, enviadaEm: 'x' }] }),
+      }),
+    );
+    renderSecao();
+    const m1 = await waitFor(() => materia(1));
+    expect(within(m1).getByLabelText('Corte vertical')).toHaveTextContent('mp4 no OS (42 MB)');
+    expect(within(m1).getByLabelText('Story')).toHaveTextContent('1 de 1 PNG · 0 JPEG (a Meta só aceita JPEG)');
+    expect(within(m1).getByLabelText('Carrossel')).toHaveTextContent('1 de 4 PNG · 1 JPEG (a Meta só aceita JPEG)');
+  });
+
+  it('MD4: o mp4 registrado e ainda não enviado aparece como só no Mac, com o comando que sobe', async () => {
+    apiGet.mockResolvedValue(semana({}, { corte: corte({ video: { arquivo: '/m/ep-04-m1-corte.mp4', duracaoSeg: 60, largura: 1080, altura: 1920, bytes: 1, registradoEm: 'x' } }) }));
+    renderSecao();
+    const m1 = await waitFor(() => materia(1));
+    expect(within(m1).getByLabelText('Corte vertical')).toHaveTextContent('mp4 só no Mac (ep-04-m1-corte.mp4) — /root-midia cortes ep-04 sobe');
+  });
+
   it('gerar de novo pede confirmação e substitui só os rascunhos', async () => {
     apiPost.mockResolvedValue({ ...semana(), conta: { criadas: 0, substituidas: 5, mantidas: 1, falharam: 0 }, avisos: [] });
     renderSecao();

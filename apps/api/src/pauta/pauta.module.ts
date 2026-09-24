@@ -38,6 +38,9 @@ import { AgendaController } from './agenda.controller';
 import { AgendaService } from './agenda.service';
 import { EncadeamentoController } from './encadeamento.controller';
 import { EncadeamentoService } from './encadeamento.service';
+import { TenantsModule } from '../tenants/tenants.module';
+import { MidiaPublicaController, MidiaPublicaDaPecaController } from './midia-publica.controller';
+import { MidiaPublicaService } from './midia-publica.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -45,8 +48,10 @@ import { EncadeamentoService } from './encadeamento.service';
 // a voz do autor (MC10) é nota da memória, escrita pelo MemoriaService (ADR-011).
 // BioModule: a página de links do episódio (MC12) publica pelo BioService.
 // A grade da semana (MC16) também é nota da memória, escrita pelo MemoriaService.
+// TenantsModule: a rota pública da mídia (MD4) confere se a empresa do token
+// ainda tem o módulo pauta — requisição anônima passa pelo gate de módulos.
 @Module({
-  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule],
+  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
@@ -62,6 +67,8 @@ import { EncadeamentoService } from './encadeamento.service';
     DerivacaoController,
     AgendaController,
     EncadeamentoController,
+    MidiaPublicaDaPecaController,
+    MidiaPublicaController,
   ],
   providers: [
     PautaService,
@@ -98,6 +105,8 @@ import { EncadeamentoService } from './encadeamento.service';
     AgendaService,
     // MD1: a transcrição anda sozinha até a semana em rascunho (rotina pauta.encadear).
     EncadeamentoService,
+    // MD4: a mídia da peça numa URL pública assinada, de prazo curto, para a Meta baixar.
+    MidiaPublicaService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService, para o

@@ -391,8 +391,9 @@ Cada passo diz onde se faz.
 
 **Segunda a sexta — postar (celular)**
 
-13. Na hora do slot, na aba **Semana**: **Copiar legenda**, **Salvar as imagens** (ou o mp4 do corte
-    por AirDrop do Mac), postar no Instagram/TikTok e **Marcar como postada** com o link do post.
+13. Na hora do slot, na aba **Semana**: **Copiar legenda**, **Salvar as imagens** (ou **Salvar o mp4**
+    do corte, que desde a MD4 sobe ao OS), postar no Instagram/TikTok e **Marcar como postada** com o
+    link do post.
     Postar sozinho é a MC17 (em espera, D-MC8).
 14. Comentário com a palavra-chave: responder à mão até a D-MC9.7/MC18.0.
 

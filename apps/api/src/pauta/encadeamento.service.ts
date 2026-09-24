@@ -32,7 +32,7 @@ import { itensMantidos, lerTranscricao } from './episodio';
 import { thumbsGuardadas } from './pacote-do-episodio';
 import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
 import { chaveDoItem, ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
-import { midiaDaPeca } from './agenda-da-semana';
+import { midiaProntaDaPeca } from './midia-do-episodio';
 import {
   ConfigDoEncadeamentoInvalidaError,
   STATUS_QUE_ENCADEIAM,
@@ -212,13 +212,12 @@ export class EncadeamentoService {
       pecasDescartadas: daSemana.length - pecas.length,
       pecas: pecas.map((p) => {
         const formato = p.formato as PautaFormatoDaSemana;
-        const onde = midiaDaPeca(formato, p.meta, apelido).onde;
         return {
           formato,
           status: p.status,
           agendada: !!p.agendadaPara,
           temSlotProposto: !!p.slotProposto,
-          midiaPronta: onde === 'storage' || onde === 'mac',
+          midiaPronta: midiaProntaDaPeca(formato, p.meta, apelido),
         };
       }),
     };

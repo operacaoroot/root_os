@@ -24,8 +24,9 @@ import { Botao, Chip, inputCls } from '../referencias/ui';
 /*
  * A SEMANA (MC16): o calendário das peças aprovadas da semana de posts. Cada
  * slot da grade da empresa mostra a peça com o que precisa para postar À MÃO —
- * copiar a legenda, baixar a mídia (o PNG que está no storage) ou o caminho do
- * mp4 que ficou no Mac — e o "Marcar como postada", que só registra no OS. A
+ * copiar a legenda, baixar a mídia (o PNG e, desde a MD4, o mp4 do corte, que
+ * estão no storage; o caminho no Mac quando o mp4 ainda não subiu) — e o
+ * "Marcar como postada", que só registra no OS. A
  * publicação automática no Instagram/TikTok é a MC17 (D-MC8). Tudo no relógio
  * de São Paulo.
  */
@@ -138,6 +139,32 @@ function PecaNoSlot({
   const [prontos, setProntos] = useState<File[] | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // O mp4 já buscado, à espera do segundo toque — o download de dezenas de MB deixa o primeiro para trás.
+  const [videoPronto, setVideoPronto] = useState<File | null>(null);
+  const [buscandoVideo, setBuscandoVideo] = useState(false);
+
+  /** Como as imagens: a folha de compartilhar leva o mp4 a Fotos ou ao Instagram; sem ela, o download. */
+  const salvarVideo = async () => {
+    onErro(null);
+    setBuscandoVideo(true);
+    try {
+      const arquivo =
+        videoPronto ??
+        new File([await apiBlob(`/pauta/pecas/${peca.id}/video/arquivo`, token)], `${peca.apelido}-m${peca.itemN}-corte.mp4`, { type: 'video/mp4' });
+      if (compartilhaArquivos([arquivo])) {
+        const r = await compartilharArquivos([arquivo], peca.titulo);
+        setVideoPronto(r === 'precisa-de-outro-toque' ? arquivo : null);
+        return;
+      }
+      baixarArquivo(arquivo.name, arquivo);
+      setVideoPronto(null);
+    } catch (e) {
+      onErro(`O mp4 não baixou: ${(e as Error).message}`);
+    } finally {
+      setBuscandoVideo(false);
+    }
+  };
+
   const baixar = async (n: number) => {
     onErro(null);
     try {
@@ -238,6 +265,16 @@ function PecaNoSlot({
           </p>
           <Botao tone="ghost" onClick={() => copiarComo('caminho', peca.midia.onde === 'mac' ? peca.midia.arquivo : '')}>
             {copiado === 'caminho' ? 'Copiado' : 'Copiar caminho'}
+          </Botao>
+        </div>
+      )}
+      {peca.midia.onde === 'video' && (
+        <div className="space-y-1 text-xs">
+          <p className="break-words text-muted">
+            O mp4 está no OS ({Math.max(1, Math.round(peca.midia.bytes / 1024 / 1024))} MB): salve no celular e poste.
+          </p>
+          <Botao tone={videoPronto ? 'brand' : 'ghost'} onClick={salvarVideo} disabled={buscandoVideo}>
+            {buscandoVideo ? 'Buscando…' : videoPronto ? 'Abrir o compartilhar (mp4 pronto)' : 'Salvar o mp4'}
           </Botao>
         </div>
       )}

@@ -29,6 +29,7 @@ import {
   type EpisodioParaEncadear,
   type PassoNoRastro,
 } from '../src/pauta/encadeamento-do-episodio';
+import { midiaProntaDaPeca } from '../src/pauta/midia-do-episodio';
 import { ACAO_DO_PASSO, EncadeamentoService, LOTE_DE_CANDIDATOS, resultadoDoErro, type Passagem } from '../src/pauta/encadeamento.service';
 import { ACAO_DA_MONTAGEM_DA_PAGINA } from '../src/pauta/pagina-de-links.service';
 import { EncadeamentoController } from '../src/pauta/encadeamento.controller';
@@ -184,6 +185,30 @@ describe('encadeamento: o próximo passo', () => {
     expect(r.motivo).toContain('1 peça(s) aprovada(s) sem data');
     const semMateria = proximoPasso(sit({ temPacote: true, temNewsletter: true, moduloBio: false, materias: 0 }));
     expect(semMateria.motivo).toMatch(/nenhuma matéria/);
+  });
+
+  it('MD4: a mídia pronta é a mesma régua do vigia — o corte com o mp4 no storage não pede render, o só registrado no Mac pede', () => {
+    const img = (n: number, tipo?: 'jpeg') => ({ n, chave: `k${n}${tipo ? '.jpg' : ''}`, sha: 's', largura: 1080, altura: 1920, bytes: 1, enviadaEm: 'x', ...(tipo ? { tipo } : {}) });
+    const noStorage = { video: { arquivo: '/x.mp4', chave: 'pauta/pecas/p/corte-a.mp4', sha256: 'a'.repeat(64), bytes: 1, duracaoSeg: 1 } };
+    expect(midiaProntaDaPeca('corte', noStorage, 'ep-03')).toBe(true);
+    expect(midiaProntaDaPeca('corte', { video: { arquivo: '/x.mp4' } }, 'ep-03')).toBe(false);
+    expect(midiaProntaDaPeca('corte', {}, 'ep-03')).toBe(false);
+    expect(midiaProntaDaPeca('story', { imagens: [img(1), img(1, 'jpeg')] }, 'ep-03')).toBe(true);
+    expect(midiaProntaDaPeca('story', { imagens: [img(1)] }, 'ep-03')).toBe(false);
+    const fim = (midiaPronta: boolean) =>
+      proximoPasso(
+        sit({
+          status: 'derivacao',
+          temPacote: true,
+          temTitulos: true,
+          temPagina: true,
+          paginaNoAr: true,
+          temNewsletter: true,
+          pecas: [pecaSit({ formato: 'corte', status: 'aprovada', agendada: true, temSlotProposto: true, midiaPronta })],
+        }),
+      ).motivo;
+    expect(fim(midiaProntaDaPeca('corte', noStorage, 'ep-03'))).not.toContain('sem render');
+    expect(fim(midiaProntaDaPeca('corte', { video: { arquivo: '/x.mp4' } }, 'ep-03'))).toContain('1 peça(s) sem render');
   });
 
   it('as etapas da config limitam o caminho; a que ficou de fora não trava as seguintes', () => {

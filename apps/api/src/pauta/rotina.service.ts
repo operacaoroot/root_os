@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
 import { semPai } from './episodio';
 import { lerCandidatos } from './curadoria-da-rodada';
-import { ehPecaDaSemana } from './derivacao-do-episodio';
+import { ehPecaDaSemana, motivoParaNaoAprovarDaSemana } from './derivacao-do-episodio';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
 
@@ -305,6 +305,10 @@ export class RotinaService {
       throw new BadRequestException(
         `Esta peça é da semana de posts do episódio: edite o texto na aba Episódios (PUT /pauta/pecas/${id}/semana). Aqui só muda o status.`,
       );
+    }
+    if (patch.status === 'aprovada' && ehPecaDaSemana(p.meta)) {
+      const motivo = motivoParaNaoAprovarDaSemana(p.formato, p.meta);
+      if (motivo) throw new BadRequestException(motivo);
     }
 
     const atualizada = await this.prisma.pautaPeca.update({

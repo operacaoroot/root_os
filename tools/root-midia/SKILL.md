@@ -21,6 +21,9 @@ A ferramenta é `root-midia.mjs`, nesta mesma pasta (Node 22, sem dependência).
   arquivo. Se faltar e-mail ou senha, peça ao Pedro para completar o arquivo:
   - `ROOT_OS_API_URL` — a API do OS com o `/api` (padrão `http://localhost:4001/api`). Fora desta
     máquina, só `https://` — com `http://` a ferramenta recusa, porque a senha iria em claro;
+  - `ROOT_OS_ENVIO_URL` — (MD4) para onde sobe o mp4 do corte; vazia = `ROOT_OS_API_URL`. O proxy
+    do web corta corpo acima de 10 MB, então em produção ela aponta para a API direto (sem ela, o
+    corte acima de 10 MB é registrado mas o mp4 não sobe, e a saída diz o motivo);
   - `ROOT_OS_EMAIL` e `ROOT_OS_SENHA` — uma conta do OS com `pauta.editar`. A ferramenta entra pelo
     login normal da API (`POST /auth/login`), como o servidor MCP do repositório;
   - `WHISPER_MODEL` — o caminho do modelo ggml do whisper.cpp;
@@ -123,8 +126,10 @@ carrossel, um story e um corte vertical em rascunho ou aprovados.
    ela, a ferramenta diz o que falta — instalar é decisão do Pedro. Slide com texto estourado (o
    `report.json` do render) é avisado e o carrossel **não sobe**: o texto se encurta na tela e o
    render se refaz. `--forcar` sobe assim mesmo, só com o Pedro de acordo.
-4. Sem `--sem-enviar`, sobem: os PNG vão para a peça (até 5 MB) e o corte registra **só o caminho**
-   do mp4, que fica no Mac. Peça publicada ou descartada não recebe render. `--so N` refaz a matéria N.
+4. Sem `--sem-enviar`, sobem: os PNG vão para a peça (até 5 MB) com um JPEG ao lado de cada (o
+   `sips` converte; é o que a Meta aceita), e o corte registra o caminho e sobe o mp4 ao storage do
+   OS (MD4), conferido o faststart e com o sha256 — o mesmo arquivo não sobe duas vezes, e o mp4
+   continua no Mac. Peça publicada ou descartada não recebe render. `--so N` refaz a matéria N.
 
 Texto errado numa peça se corrige na tela (Editar), não aqui — editar descarta o render anterior, e
 aí é renderizar de novo. Conferir sem tocar no OS: `RM ensaio-semana`.

@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { Client } from 'minio';
+import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
+
+/** O pedaço de cada parte do envio em partes: só ele fica em memória. O S3 pede ao menos 5 MB. */
+export const PARTE_DO_ENVIO = 16 * 1024 * 1024;
 
 /**
  * Storage de objetos (MinIO na stack, S3 em qualquer outro lugar).
@@ -59,6 +63,72 @@ export class StorageService implements OnModuleInit {
       // imutável: a chave carrega o hash do conteúdo, então nunca muda embaixo
       'Cache-Control': 'public, max-age=31536000, immutable',
     });
+  }
+
+  /**
+   * Grava um arquivo grande que chega como stream (MD4, o mp4 do corte), sem
+   * segurá-lo inteiro em memória: no máximo uma parte de 16 MB por vez.
+   *
+   * Não usa o `putObject(stream)` do `minio`: ele liga o stream ao fatiador com
+   * `pipe`, que não repassa erro da origem. Quando a conferência do mp4 recusa
+   * o arquivo no meio (sem faststart, sha diferente, corpo maior que o
+   * declarado), o fatiador nunca termina e o envio fica pendurado para sempre.
+   * Aqui o envio em partes é feito à mão: o erro do stream interrompe a leitura,
+   * o envio é abortado e o objeto NUNCA aparece — no S3 ele só passa a existir
+   * no `complete`, que só roda depois de o stream terminar limpo. Uma chave que
+   * já existia com o mesmo conteúdo não é tocada por um envio que falhou.
+   *
+   * Arquivo que cabe numa parte vai num PUT só, como o `put`.
+   */
+  async putStream(key: string, stream: Readable, tamanho: number, contentType: string): Promise<void> {
+    const cliente = this.client;
+    const cabecalhos = { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=31536000, immutable' };
+    if (tamanho <= PARTE_DO_ENVIO) {
+      const partes: Buffer[] = [];
+      for await (const pedaco of stream) partes.push(pedaco as Buffer);
+      const corpo = Buffer.concat(partes);
+      await cliente.putObject(this.bucket, key, corpo, corpo.length, cabecalhos);
+      return;
+    }
+    const uploadId = await cliente.initiateNewMultipartUpload(this.bucket, key, cabecalhos);
+    try {
+      const etags: Array<{ part: number; etag: string }> = [];
+      let pendentes: Buffer[] = [];
+      let acumulado = 0;
+      const enviarParte = async (corpo: Buffer) => {
+        const part = etags.length + 1;
+        const r = await cliente.uploadPart(
+          {
+            bucketName: this.bucket,
+            objectName: key,
+            uploadID: uploadId,
+            partNumber: part,
+            headers: { 'Content-Length': corpo.length, 'Content-MD5': createHash('md5').update(corpo).digest('base64') },
+          },
+          corpo,
+        );
+        etags.push({ part, etag: r.etag });
+      };
+      for await (const pedaco of stream) {
+        pendentes.push(pedaco as Buffer);
+        acumulado += (pedaco as Buffer).length;
+        while (acumulado >= PARTE_DO_ENVIO) {
+          const tudo = Buffer.concat(pendentes);
+          await enviarParte(tudo.subarray(0, PARTE_DO_ENVIO));
+          const sobra = tudo.subarray(PARTE_DO_ENVIO);
+          pendentes = sobra.length ? [sobra] : [];
+          acumulado = sobra.length;
+        }
+      }
+      if (acumulado > 0 || etags.length === 0) await enviarParte(Buffer.concat(pendentes));
+      await cliente.completeMultipartUpload(this.bucket, key, uploadId, etags);
+    } catch (e) {
+      stream.destroy();
+      await cliente.abortMultipartUpload(this.bucket, key, uploadId).catch((erro: Error) => {
+        this.log.warn(`envio em partes de ${key} não foi abortado: ${erro.message}`);
+      });
+      throw e;
+    }
   }
 
   async get(key: string): Promise<{ stream: Readable; contentType: string; size: number }> {

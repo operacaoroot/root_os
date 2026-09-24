@@ -252,7 +252,8 @@ export function argsDoCorteVertical(o) {
     '-hide_banner', '-loglevel', 'error', o.sobrescrever ? '-y' : '-n',
     '-ss', o.inicio.toFixed(3), '-t', duracao.toFixed(3), '-i', o.video,
     '-filter_complex', o.filtro, '-map', '[v]',
-    ...(o.audio ? ['-map', '0:a:0', '-c:a', 'aac', '-b:a', '160k'] : ['-an']),
+    // MD4: 48 kHz fixo — a Graph aceita AAC até 48 kHz, e o microfone pode gravar a 96.
+    ...(o.audio ? ['-map', '0:a:0', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000'] : ['-an']),
     ...o.codec,
     '-r', '30', '-movflags', '+faststart', o.saida,
   ];
@@ -480,7 +481,9 @@ export function linhasDaAgenda(agenda) {
           ? `proposto, falta ${p.status === 'aprovada' ? 'distribuir' : 'aprovar'}`
           : p.status;
       const midia =
-        p.midia?.onde === 'mac'
+        p.midia?.onde === 'video'
+          ? `mp4 no OS (${Math.round((p.midia.bytes ?? 0) / 1024 / 1024)} MB; baixe na aba Semana)${p.midia.arquivo ? ` e no Mac: ${p.midia.arquivo}` : ''}`
+          : p.midia?.onde === 'mac'
           ? `mp4 no Mac: ${p.midia.arquivo}`
           : p.midia?.onde === 'storage'
             ? `${p.midia.imagens.length} PNG no OS`
@@ -496,3 +499,142 @@ export function linhasDaAgenda(agenda) {
   return linhas;
 }
 
+
+/*
+ * MD4: a mídia sobe ao OS. O mp4 do corte vai inteiro ao storage da VPS (a Meta
+ * baixa de lá por URL assinada) e cada PNG ganha um JPEG ao lado, que é o que a
+ * Graph aceita. Nada no Mac é apagado.
+ */
+
+/** O teto do JPEG que a API aceita (PAUTA_JPEG_DA_PECA_MAX_BYTES). */
+export const TETO_DO_JPEG_DA_PECA = 8 * 1024 * 1024;
+/** O teto do mp4 do corte que a API aceita por padrão (PAUTA_VIDEO_MAX_BYTES). */
+export const TETO_DO_MP4_DO_CORTE = 300 * 1024 * 1024;
+
+/**
+ * O `sips` do macOS converte o PNG em JPEG com qualidade 90 — nativo, sem
+ * dependência. A saída é um arquivo novo ao lado; o PNG fica.
+ * @param {string} png @param {string} jpg
+ */
+export function argsDoSips(png, jpg) {
+  if (!/\.png$/i.test(png) || !/\.jpe?g$/i.test(jpg)) throw new Error('O sips converte .png em .jpg.');
+  return ['-s', 'format', 'jpeg', '-s', 'formatOptions', '90', png, '--out', jpg];
+}
+
+/** O nome do JPEG ao lado do PNG. @param {string} png */
+export const jpegDoPng = (png) => png.replace(/\.png$/i, '.jpg');
+
+/**
+ * Largura e altura do JPEG pelo marcador SOF (a mesma leitura da API, em
+ * `apps/api/src/pauta/imagem-jpeg.ts`), ou nulo se não for JPEG.
+ * @param {Uint8Array} b
+ */
+export function dimensoesDoJpeg(b) {
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8 || b[2] !== 0xff) return null;
+  const u16 = (/** @type {number} */ i) => (b[i] << 8) | b[i + 1];
+  let i = 2;
+  while (i + 4 <= b.length) {
+    if (b[i] !== 0xff) return null;
+    while (i < b.length && b[i] === 0xff) i++;
+    const m = b[i++];
+    if (m === 0x01 || (m >= 0xd0 && m <= 0xd9)) continue;
+    const comprimento = u16(i);
+    if (comprimento < 2) return null;
+    if (m === 0xc0 || m === 0xc1 || m === 0xc2) return { largura: u16(i + 5), altura: u16(i + 3) };
+    if (m === 0xda) return null;
+    i += comprimento;
+  }
+  return null;
+}
+
+/**
+ * O JPEG saiu na proporção da peça, na faixa de largura da Meta e abaixo do
+ * teto? Nulo = sim; senão, o porquê.
+ * @param {Uint8Array} b @param {number} largura @param {number} altura
+ */
+export function conferirJpegNoTamanho(b, largura, altura) {
+  const d = dimensoesDoJpeg(b);
+  if (!d) return 'A conversão não saiu JPEG.';
+  if (d.largura !== largura || d.altura !== altura) return `O JPEG saiu ${d.largura}×${d.altura}; a peça é ${largura}×${altura}.`;
+  if (b.length > TETO_DO_JPEG_DA_PECA) return `O JPEG tem ${Math.round(b.length / 1024)} kB; o teto é 8 MB.`;
+  return null;
+}
+
+/**
+ * As caixas de topo do mp4, lidas só pelos cabeçalhos (16 bytes por caixa),
+ * sem carregar o arquivo. `ler(offset, n)` devolve os bytes daquele trecho.
+ * @param {(offset: number, n: number) => Uint8Array} ler
+ * @param {number} tamanho o tamanho do arquivo
+ * @returns {Array<{ tipo: string, inicio: number, tamanho: number }>}
+ */
+export function caixasDeTopo(ler, tamanho) {
+  const caixas = [];
+  let i = 0;
+  while (i + 8 <= tamanho && caixas.length < 1000) {
+    const cab = ler(i, 16);
+    const v = new DataView(cab.buffer, cab.byteOffset, cab.byteLength);
+    let t = v.getUint32(0);
+    const tipo = String.fromCharCode(cab[4], cab[5], cab[6], cab[7]);
+    if (t === 1) t = Number(v.getBigUint64(8));
+    else if (t === 0) t = tamanho - i;
+    if (t < 8 || i + t > tamanho) throw new Error(`A caixa "${tipo}" do mp4 passa do fim do arquivo: o mp4 está truncado.`);
+    caixas.push({ tipo, inicio: i, tamanho: t });
+    i += t;
+  }
+  return caixas;
+}
+
+/**
+ * O que a Graph pede das caixas de topo: `ftyp` primeiro e `moov` antes do
+ * `mdat` (o `+faststart` do ffmpeg). Nulo = ok.
+ * @param {Array<{ tipo: string }>} caixas
+ */
+export function motivoSemFaststart(caixas) {
+  const tipos = caixas.map((c) => c.tipo);
+  if (tipos[0] !== 'ftyp') return 'O arquivo não é mp4 (a primeira caixa não é ftyp).';
+  const moov = tipos.indexOf('moov');
+  const mdat = tipos.indexOf('mdat');
+  if (moov < 0 || mdat < 0) return 'O mp4 não tem moov e mdat.';
+  if (moov > mdat) return 'O mp4 não tem faststart (o moov vem depois do mdat): renderize de novo, o ffmpeg põe -movflags +faststart.';
+  return null;
+}
+
+/**
+ * O mp4 do corte já está no OS com este conteúdo? Reenviar é idempotente pelo
+ * sha256: o mesmo arquivo não sobe de novo.
+ * @param {{ video?: { sha256?: string | null } | null }} peca @param {string} sha256
+ */
+export const videoJaNoOs = (peca, sha256) => !!peca.video?.sha256 && peca.video.sha256 === sha256;
+
+/**
+ * MD4: o corte vai ao OS — o registro do caminho no Mac (MC15) e o próprio mp4.
+ * A falha do envio fica neste corte: volta `subiu: false` com o motivo, e o laço
+ * segue para o próximo. Sem caminho para o mp4 (o proxy do web), nem tenta; e,
+ * se a peça já tem um mp4 no OS, também não registra de novo, porque o registro
+ * apaga a referência a ele.
+ * @param {{ videoDoCorte: (id: string, corpo: unknown) => Promise<unknown>, enviarVideoDoCorte: (id: string, a: { abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string }) => Promise<unknown>, motivoParaNaoEnviar: (bytes: number) => string | null }} os
+ * @param {{ id: string, video?: { sha256?: string | null } | null }} peca
+ * @param {{ bytes: number }} corpo o que o PUT registra
+ * @param {{ sha256: string, abrir: () => AsyncIterable<Uint8Array> }} arquivo
+ * @returns {Promise<{ sha256: string, subiu: boolean, motivo?: string }>}
+ */
+export async function subirCorteAoOs(os, peca, corpo, arquivo) {
+  const { sha256 } = arquivo;
+  if (videoJaNoOs(peca, sha256)) return { sha256, subiu: false };
+  const barrado = os.motivoParaNaoEnviar(corpo.bytes);
+  if (barrado && peca.video?.sha256) return { sha256, subiu: false, motivo: barrado };
+  await os.videoDoCorte(peca.id, corpo);
+  if (barrado) return { sha256, subiu: false, motivo: barrado };
+  try {
+    await os.enviarVideoDoCorte(peca.id, { abrir: arquivo.abrir, bytes: corpo.bytes, sha256 });
+  } catch (e) {
+    return { sha256, subiu: false, motivo: /** @type {Error} */ (e)?.message ?? String(e) };
+  }
+  return { sha256, subiu: true };
+}
+
+/**
+ * O JPEG n da peça já está no OS com este conteúdo?
+ * @param {{ jpegs?: Array<{ n: number, sha256?: string }> }} peca @param {number} n @param {string} sha256
+ */
+export const jpegJaNoOs = (peca, n, sha256) => (peca.jpegs ?? []).some((j) => j.n === n && j.sha256 === sha256);

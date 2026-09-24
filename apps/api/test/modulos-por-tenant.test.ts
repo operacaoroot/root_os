@@ -510,6 +510,14 @@ describe('o gate de módulos (interceptor)', () => {
     await expect(passou('/api/conectar/instagram/callback', [], null)).resolves.toBe(SEGUIU);
   });
 
+  it('a mídia pública da peça (MD4) é do módulo pauta: anônima passa (quem confere é o serviço); com sessão, sem pauta, 404', async () => {
+    expect(moduloDoCaminho('/api/midia-publica/abc.def')).toBe('pauta');
+    await expect(passou('/api/midia-publica/abc.def', [], null)).resolves.toBe(SEGUIU);
+    await expect(passou('/api/midia-publica/abc.def', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/midia-publica/abc.def', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+  });
+
   /*
    * O CONTRÁRIO DA ROTA PÚBLICA: usuário presente e empresa ausente.
    *

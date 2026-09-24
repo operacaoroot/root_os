@@ -18,7 +18,7 @@ import {
   type PautaSegmento,
 } from '@mktos/shared';
 import { palavraDeCorteEfetiva } from './roteiro-do-episodio';
-import { ehPecaDaSemana, lerMetaDaSemana, versaoDoTexto } from './derivacao-do-episodio';
+import { ehPecaDaSemana, lerMetaDaSemana, tipoDaImagem, versaoDoTexto } from './derivacao-do-episodio';
 import { midiaDaPeca } from './agenda-da-semana';
 
 /*
@@ -135,6 +135,23 @@ export interface PecaParaRender {
   meta: unknown;
 }
 
+/** Um JPEG por imagem esperada (MD4): é o que a Graph da Meta baixa. */
+function jpegsCompletos(meta: { imagens: readonly { n: number; tipo?: string }[] }, esperadas: number): boolean {
+  const jpegs = new Set(meta.imagens.filter((i) => tipoDaImagem(i) === 'jpeg').map((i) => i.n));
+  return Array.from({ length: esperadas }, (_, i) => i + 1).every((n) => jpegs.has(n));
+}
+
+/**
+ * A mídia da peça está inteira para a Meta (MD4): o corte com o mp4 no storage
+ * (só registrado no Mac não basta), o carrossel e o story com um PNG e um JPEG
+ * por imagem. A régua única do vigia (`renderPendente`) e do encadeamento (MD1).
+ */
+export function midiaProntaDaPeca(formato: PautaFormatoDaSemana, meta: unknown, apelido: string): boolean {
+  const midia = midiaDaPeca(formato, meta, apelido);
+  if (formato === 'corte') return midia.onde === 'video';
+  return midia.onde === 'storage' && jpegsCompletos(lerMetaDaSemana(meta), midia.esperadas);
+}
+
 /**
  * O que o vigia do Mac (MD2) ainda tem a renderizar num episódio: a peça da
  * semana deste episódio, da transcrição ATUAL (`sha`), em rascunho ou aprovada,
@@ -143,6 +160,9 @@ export interface PecaParaRender {
  * (`midiaDaPeca`). A assinatura muda quando o texto ou a mídia de alguma delas
  * muda: é o que deixa o vigia não refazer o mesmo render que já falhou (o
  * carrossel com texto estourado, por exemplo) a cada passagem.
+ *
+ * Desde a MD4 "a mídia inteira" é a que a Meta consegue baixar: o mp4 do corte
+ * no storage (só registrado no Mac não basta) e um JPEG por imagem.
  */
 export function renderPendente(
   pecas: readonly PecaParaRender[],
@@ -157,9 +177,10 @@ export function renderPendente(
     if (!(PAUTA_FORMATOS_DA_SEMANA as readonly string[]).includes(formato)) continue;
     const meta = lerMetaDaSemana(p.meta);
     if (meta.transcricaoSha !== e.sha) continue;
+    if (midiaProntaDaPeca(formato, p.meta, apelido)) continue;
     const midia = midiaDaPeca(formato, p.meta, apelido);
-    if (midia.onde !== 'nenhuma' && midia.onde !== 'parcial') continue;
-    const linha = [p.id, versaoDoTexto(p), midia.onde, meta.imagens.map((i) => i.n).sort((a, b) => a - b).join(',')].join(':');
+    const imagens = meta.imagens.map((i) => `${i.n}${tipoDaImagem(i) === 'jpeg' ? 'j' : ''}`).sort();
+    const linha = [p.id, versaoDoTexto(p), midia.onde, imagens.join(',')].join(':');
     porFormato.set(formato, [...(porFormato.get(formato) ?? []), linha]);
   }
   const saida: Partial<Record<PautaFormatoDaSemana, PautaRenderPendente>> = {};

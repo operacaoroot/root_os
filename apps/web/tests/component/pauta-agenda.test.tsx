@@ -306,6 +306,82 @@ describe('a aba Semana', () => {
     expect(oDia('Qua 30/09')).toHaveTextContent('Sem mídia ainda — no Mac: /root-midia stories ep-04');
   });
 
+  it('MD4: o corte que subiu ao OS baixa o mp4 com o token, em vez de mostrar o caminho do Mac', async () => {
+    const baixados: string[] = [];
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() });
+    const clique = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      baixados.push(this.download);
+    });
+    try {
+      apiGet.mockResolvedValue(
+        agenda({
+          dias: [
+            dia('2026-09-29', 'ter', [
+              {
+                hora: '18:00', formato: 'corte', em: '2026-09-29T21:00:00.000Z', daGrade: true,
+                peca: peca({ id: 'p9', formato: 'corte', titulo: 'Corte no OS', midia: { onde: 'video', arquivo: '/m/c.mp4', bytes: 40 * 1024 * 1024 } }),
+              },
+            ]),
+          ],
+        }),
+      );
+      apiBlob.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }));
+      renderAba();
+      const corte = await waitFor(() => within(oDia('Ter 29/09')).getByLabelText('Corte vertical de ep-04'));
+      expect(corte).toHaveTextContent('O mp4 está no OS (40 MB)');
+      expect(corte).not.toHaveTextContent('AirDrop');
+      // Sem a folha de compartilhar (desktop), o download.
+      await userEvent.click(within(corte).getByRole('button', { name: 'Salvar o mp4' }));
+      expect(apiBlob).toHaveBeenCalledWith('/pauta/pecas/p9/video/arquivo', 'tok');
+      await waitFor(() => expect(baixados).toEqual(['ep-04-m1-corte.mp4']));
+    } finally {
+      clique.mockRestore();
+    }
+  });
+
+  it('MD4: no celular o mp4 vai à folha de compartilhar, como as imagens (Fotos ou o Instagram); se ela pedir outro toque, fica pronto', async () => {
+    const compartilhados: File[][] = [];
+    let recusar = true;
+    const nav = navigator as Navigator & { canShare?: unknown; share?: unknown };
+    Object.assign(nav, {
+      canShare: vi.fn((d: { files?: File[] }) => (d.files?.length ?? 0) > 0),
+      share: vi.fn(async (d: { files: File[] }) => {
+        if (recusar) {
+          recusar = false;
+          throw Object.assign(new Error('sem gesto'), { name: 'NotAllowedError' });
+        }
+        compartilhados.push(d.files);
+      }),
+    });
+    try {
+      apiGet.mockResolvedValue(
+        agenda({
+          dias: [
+            dia('2026-09-29', 'ter', [
+              {
+                hora: '18:00', formato: 'corte', em: '2026-09-29T21:00:00.000Z', daGrade: true,
+                peca: peca({ id: 'p9', formato: 'corte', titulo: 'Corte no OS', midia: { onde: 'video', arquivo: null, bytes: 40 * 1024 * 1024 } }),
+              },
+            ]),
+          ],
+        }),
+      );
+      apiBlob.mockResolvedValue(new Blob(['mp4'], { type: 'video/mp4' }));
+      renderAba();
+      const corte = await waitFor(() => within(oDia('Ter 29/09')).getByLabelText('Corte vertical de ep-04'));
+      await userEvent.click(within(corte).getByRole('button', { name: 'Salvar o mp4' }));
+      const deNovo = await within(corte).findByRole('button', { name: 'Abrir o compartilhar (mp4 pronto)' });
+      await userEvent.click(deNovo);
+      await waitFor(() => expect(compartilhados).toHaveLength(1));
+      expect(apiBlob).toHaveBeenCalledTimes(1);
+      expect(compartilhados[0].map((f) => [f.name, f.type])).toEqual([['ep-04-m1-corte.mp4', 'video/mp4']]);
+      expect(within(corte).getByRole('button', { name: 'Salvar o mp4' })).toBeInTheDocument();
+    } finally {
+      Reflect.deleteProperty(nav, 'canShare');
+      Reflect.deleteProperty(nav, 'share');
+    }
+  });
+
   it('reagenda pelo relógio de São Paulo, e tira da agenda', async () => {
     apiPut.mockResolvedValue({ id: 'p1', agendadaPara: '2026-09-29T22:30:00.000Z' });
     renderAba();

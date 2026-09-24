@@ -805,12 +805,14 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     `PATCH /pauta/pecas/:id` de sempre. Nada publica: o Instagram segue manual (D-MC8/MC17).
   - **Renders (Mac):** `POST /pauta/pecas/:id/imagens/:n` (PNG pela assinatura, até 5 MB, 1080×1350
     no carrossel — um por slide — e 1080×1920 no story) grava no MinIO (`pauta/peca/<id>-<n>-<hash>.png`,
-    chave só no banco) e `GET` devolve a prévia. **O mp4 do corte fica no Mac** (`PUT
-    /pauta/pecas/:id/video` `{arquivo, duracaoSeg, largura: 1080, altura: 1920, bytes}`, com a
-    duração batendo com o trecho): o MinIO da VPS não é público, um corte pesa dezenas de MB e o
-    Instagram publica por URL pública — guardar vídeo lá não publica nada e pesa na VPS. O RASTRO
-    leva só o nome do arquivo. No Mac, `root-midia carrosseis|stories|cortes ep-NN` (README da
-    ferramenta).
+    chave só no banco) e `GET` devolve a prévia. O mp4 do corte tem dois registros: o caminho no Mac
+    (`PUT /pauta/pecas/:id/video` `{arquivo, duracaoSeg, largura: 1080, altura: 1920, bytes}`, com a
+    duração batendo com o trecho; o RASTRO leva só o nome do arquivo) e, desde a MD4, o próprio
+    arquivo no storage (`POST /pauta/pecas/:id/video/arquivo`, cru e por stream, até 300 MB, com
+    faststart, na chave `pauta/pecas/<id>/corte-<sha256>.mp4`). A aba Semana baixa o mp4 de lá, e a
+    Graph da Meta o busca por URL pública assinada de até 1 h (`GET /api/midia-publica/:token`). Até
+    a MD4 o mp4 ficava só no Mac; a decisão mudou porque o Instagram publica por URL pública. No
+    Mac, `root-midia carrosseis|stories|cortes ep-NN` (README da ferramenta).
   - **Tela:** seção "Semana de posts" no detalhe do episódio (`SecaoSemana.tsx`): gerar (com
     confirmação para substituir), por matéria as três peças com a prévia em texto (slides, story com
     a chamada, trecho do corte com os tempos), o estado do render e o comando que falta, aprovar,

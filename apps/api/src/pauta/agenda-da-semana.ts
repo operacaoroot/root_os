@@ -17,7 +17,7 @@ import {
   type PautaPecaStatus,
   type PautaPostagemDaPeca,
 } from '@mktos/shared';
-import { lerMetaDaSemana } from './derivacao-do-episodio';
+import { lerMetaDaSemana, tipoDaImagem } from './derivacao-do-episodio';
 
 /*
  * O CALENDÁRIO DA SEMANA (MC16), a parte pura: os slots que a grade da empresa
@@ -161,10 +161,13 @@ export function midiaDaPeca(formato: PautaFormatoDaSemana, meta: unknown, apelid
   const m = lerMetaDaSemana(meta);
   const comando = comandoDaMidia(formato, apelido);
   if (formato === 'corte') {
+    // MD4: o mp4 no storage vence o caminho no Mac — baixa-se pela tela, de qualquer lugar.
+    if (m.video?.chave) return { onde: 'video', arquivo: m.video.arquivo ?? null, bytes: m.video.bytes };
     return m.video?.arquivo ? { onde: 'mac', arquivo: m.video.arquivo } : { onde: 'nenhuma', comando };
   }
-  if (!m.imagens.length) return { onde: 'nenhuma', comando };
-  const imagens = [...new Set(m.imagens.map((i) => i.n))].sort((a, b) => a - b);
+  const pngs = m.imagens.filter((i) => tipoDaImagem(i) === 'png');
+  if (!pngs.length) return { onde: 'nenhuma', comando };
+  const imagens = [...new Set(pngs.map((i) => i.n))].sort((a, b) => a - b);
   // Peça sem os slides na meta (anterior à MC15): o maior número que subiu.
   const esperadas = formato === 'story' ? 1 : m.slides?.length || Math.max(...imagens);
   const faltam = Array.from({ length: esperadas }, (_, i) => i + 1).filter((n) => !imagens.includes(n));

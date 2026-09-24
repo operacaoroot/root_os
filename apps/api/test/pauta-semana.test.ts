@@ -59,6 +59,7 @@ import { comContexto } from '../src/common/contexto-execucao';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
+import { jpegDeTeste, mp4DeTeste, sha256 } from './mp4-de-teste';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
 /*
@@ -582,7 +583,15 @@ function servico(opts: {
 
   const storage = {
     put: async (chave: string, corpo: Buffer, tipo: string) => {
-      if (tipo !== 'image/png') throw new Error('tipo errado');
+      if (tipo !== (chave.endsWith('.jpg') ? 'image/jpeg' : 'image/png')) throw new Error('tipo errado');
+      guardados[chave] = corpo;
+    },
+    putStream: async (chave: string, stream: Readable, tamanho: number, tipo: string) => {
+      if (tipo !== 'video/mp4') throw new Error('tipo errado');
+      const partes: Buffer[] = [];
+      for await (const p of stream) partes.push(p as Buffer);
+      const corpo = Buffer.concat(partes);
+      if (corpo.length !== tamanho) throw new Error('tamanho errado');
       guardados[chave] = corpo;
     },
     get: async (chave: string) => {
@@ -960,7 +969,7 @@ describe('semana: editar, subir o PNG e registrar o mp4', () => {
     await expect(s.semana.enviarImagem(ORG, story.id, PESSOA, 2, { buffer: png(1080, 1920), mimetype: 'image/png' })).rejects.toThrow(/não há a 2/);
     await expect(s.semana.enviarImagem(ORG, da('c1', 'carrossel').id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' })).rejects.toThrow(/1080×1350/);
     await expect(s.semana.enviarImagem(ORG, da('c1', 'carrossel').id, PESSOA, 6, { buffer: png(1080, 1350), mimetype: 'image/png' })).rejects.toThrow(/não há a 6/);
-    await expect(s.semana.enviarImagem(ORG, da('c1', 'corte').id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' })).rejects.toThrow(/mp4 fica no Mac/);
+    await expect(s.semana.enviarImagem(ORG, da('c1', 'corte').id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' })).rejects.toThrow(/video\/arquivo/);
     await expect(s.semana.imagem(ORG, da('c2', 'story').id, 1)).rejects.toThrow(NotFoundException);
   });
 
@@ -989,6 +998,165 @@ describe('semana: editar, subir o PNG e registrar o mp4', () => {
     // O carrossel não tem tempo do vídeo: o PNG dele segue aceito.
     const r = await s.semana.enviarImagem(ORG, da('c2', 'carrossel').id, PESSOA, 1, { buffer: png(1080, 1350), mimetype: 'image/png' });
     expect(r.imagens.map((i) => i.n)).toEqual([1]);
+  });
+});
+
+describe('semana: o JPEG ao lado do PNG e o mp4 do corte no storage (MD4)', () => {
+  async function gerado() {
+    const s = servico();
+    await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    const da = (item: string, f: string) => s.pecas.find((p) => meta(p).itemId === item && p.formato === f)!;
+    return { s, da };
+  }
+  const envio = (b: Buffer, o: { sha?: string; bytes?: number } = {}) => ({ corpo: Readable.from([b]), bytes: o.bytes ?? b.length, sha256: o.sha ?? sha256(b) });
+
+  it('o JPEG sobe ao lado do PNG, com o .jpg e o sha256 inteiro; a tela separa os dois e a prévia continua o PNG', async () => {
+    const { s, da } = await gerado();
+    const story = da('c1', 'story');
+    await s.semana.enviarImagem(ORG, story.id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' });
+    const jpg = jpegDeTeste(1080, 1920);
+    const r = await s.semana.enviarImagem(ORG, story.id, PESSOA, 1, { buffer: jpg, mimetype: 'image/jpeg' });
+    expect(r.imagens).toEqual([expect.objectContaining({ n: 1, largura: 1080, altura: 1920, sha256: expect.stringMatching(/^[0-9a-f]{64}$/) })]);
+    expect(r.jpegs).toEqual([expect.objectContaining({ n: 1, bytes: jpg.length, sha256: sha256(jpg) })]);
+    const chaves = (meta(story).imagens as Array<{ chave: string }>).map((i) => i.chave);
+    expect(chaves).toEqual([expect.stringMatching(/-1-[0-9a-f]{12}\.jpg$/), expect.stringMatching(/-1-[0-9a-f]{12}\.png$/)]);
+    expect((await s.semana.imagem(ORG, story.id, 1)).contentType).toBe('image/png');
+    expect(await s.semana.imagem(ORG, story.id, 1, 'jpeg')).toMatchObject({ contentType: 'image/jpeg', size: jpg.length });
+    // O mesmo número e tipo de novo substitui, não duplica.
+    await s.semana.enviarImagem(ORG, story.id, PESSOA, 1, { buffer: jpegDeTeste(1080, 1920, { total: 99 }), mimetype: 'image/jpeg' });
+    expect(meta(story).imagens as unknown[]).toHaveLength(2);
+  });
+
+  it('JPEG inválido é 400: proporção de outro formato, largura acima de 1440, assinatura de PNG', async () => {
+    const { s, da } = await gerado();
+    const car = da('c1', 'carrossel');
+    await expect(s.semana.enviarImagem(ORG, car.id, PESSOA, 1, { buffer: jpegDeTeste(1080, 1920), mimetype: 'image/jpeg' })).rejects.toThrow(/1080×1350/);
+    await expect(s.semana.enviarImagem(ORG, car.id, PESSOA, 1, { buffer: jpegDeTeste(1600, 2000), mimetype: 'image/jpeg' })).rejects.toThrow(/320 a 1440/);
+    await expect(s.semana.enviarImagem(ORG, car.id, PESSOA, 1, { buffer: png(1080, 1350), mimetype: 'image/jpeg' })).rejects.toThrow(/não é um JPEG/);
+    const r = await s.semana.enviarImagem(ORG, car.id, PESSOA, 2, { buffer: jpegDeTeste(1080, 1350), mimetype: 'image/jpeg' });
+    expect(r.jpegs?.map((j) => j.n)).toEqual([2]);
+    expect(r.imagens).toEqual([]);
+  });
+
+  it('o mp4 com faststart sobe por stream: a chave leva o sha inteiro, a peça grava o sha e mantém o caminho do Mac', async () => {
+    const { s, da } = await gerado();
+    const c = da('c1', 'corte');
+    await s.semana.registrarVideo(ORG, c.id, PESSOA, { arquivo: '/Users/pedro/Movies/ep-04-m1-corte.mp4', duracaoSeg: 60.02, largura: 1080, altura: 1920, bytes: 9_000_000 });
+    const mp4 = mp4DeTeste({ duracaoSeg: 60 });
+    const r = await s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4));
+    expect(r.video).toMatchObject({
+      arquivo: '/Users/pedro/Movies/ep-04-m1-corte.mp4',
+      chave: `pauta/pecas/${c.id}/corte-${sha256(mp4)}.mp4`,
+      sha256: sha256(mp4),
+      bytes: mp4.length,
+      duracaoSeg: 60,
+      registradoEm: expect.any(String),
+      enviadoEm: expect.any(String),
+    });
+    expect(s.guardados[`pauta/pecas/${c.id}/corte-${sha256(mp4)}.mp4`]).toEqual(mp4);
+    expect(s.auditoria.find((a) => a.action === 'pauta.semana_video_enviado')?.after).toEqual({ bytes: mp4.length, duracaoSeg: 60, sha: sha256(mp4).slice(0, 12) });
+    const baixado = await s.semana.video(ORG, c.id);
+    expect(baixado.size).toBe(mp4.length);
+    // Reenviar o mesmo arquivo cai na mesma chave.
+    await s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4));
+    expect(Object.keys(s.guardados).filter((k) => k.endsWith('.mp4'))).toHaveLength(1);
+    // Registrar um render novo do Mac tira o envio anterior: é outro arquivo até ele subir.
+    const r2 = await s.semana.registrarVideo(ORG, c.id, PESSOA, { arquivo: '/Users/pedro/Movies/ep-04-m1-corte.mp4', duracaoSeg: 60, largura: 1080, altura: 1920, bytes: 1 });
+    expect(r2.video?.sha256).toBeUndefined();
+    await expect(s.semana.video(ORG, c.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('sem faststart é 400; de outro trecho ou de outro tamanho, 400 no moov; corpo maior que o declarado aborta; nada vai ao storage', async () => {
+    const { s, da } = await gerado();
+    const c = da('c1', 'corte');
+    const semFast = mp4DeTeste({ faststart: false });
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, envio(semFast))).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/faststart/) });
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4DeTeste({ duracaoSeg: 30 })))).rejects.toThrow(/renderize o corte de novo/);
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4DeTeste({ largura: 1920, altura: 1080 })))).rejects.toThrow(/1920×1080; é 1080×1920/);
+    const mp4 = mp4DeTeste();
+    const maior = Buffer.concat([mp4, Buffer.alloc(100)]);
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, { corpo: Readable.from([maior]), bytes: mp4.length, sha256: sha256(mp4) })).rejects.toMatchObject({ status: 413 });
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4, { sha: 'f'.repeat(64) }))).rejects.toThrow(/sha256/);
+    expect(Object.keys(s.guardados).filter((k) => k.endsWith('.mp4'))).toEqual([]);
+    expect(meta(c).video ?? null).toBeNull();
+  });
+
+  it('editar o título ou a legenda enquanto o mp4 sobe não derruba o envio; mudar o trecho derruba (409)', async () => {
+    const { s, da } = await gerado();
+    const c = da('c1', 'corte');
+    const storage = s.semana['storage'] as unknown as { putStream: (...a: unknown[]) => Promise<void> };
+    const original = storage.putStream;
+    let enquantoSobe = () => {};
+    storage.putStream = async (...a: unknown[]) => {
+      await original(...a);
+      enquantoSobe();
+    };
+    enquantoSobe = () => {
+      c.titulo = 'Outro título';
+      c.corpo = 'Legenda nova';
+    };
+    const mp4 = mp4DeTeste({ duracaoSeg: 60 });
+    expect((await s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4))).video?.sha256).toBe(sha256(mp4));
+    enquantoSobe = () => {
+      c.meta = { ...meta(c), inicio: Number(meta(c).inicio) + 1 };
+    };
+    await expect(s.semana.enviarVideo(ORG, c.id, PESSOA, envio(mp4DeTeste({ duracaoSeg: 60, mdat: 100 })))).rejects.toThrow(/O trecho da peça mudou/);
+    expect(meta(c).video).toMatchObject({ sha256: sha256(mp4) });
+  });
+
+  it('o que se recusa sem ler o corpo: story, descartada e transcrição que mudou', async () => {
+    const { s, da } = await gerado();
+    let lido = false;
+    const corpo = new Readable({ read() { lido = true; this.push(null); } });
+    await expect(s.semana.enviarVideo(ORG, da('c1', 'story').id, PESSOA, { corpo, bytes: 100, sha256: 'a'.repeat(64) })).rejects.toThrow(/Só o corte/);
+    da('c2', 'corte').status = 'descartada';
+    await expect(s.semana.enviarVideo(ORG, da('c2', 'corte').id, PESSOA, { corpo, bytes: 100, sha256: 'a'.repeat(64) })).rejects.toThrow(/descartada/);
+    const e = s.lista[0] as unknown as { transcricao: Array<{ texto: string }> };
+    e.transcricao = e.transcricao.map((t) => ({ ...t, texto: `${t.texto} (B)` }));
+    await expect(s.semana.enviarVideo(ORG, da('c1', 'corte').id, PESSOA, { corpo, bytes: 100, sha256: 'a'.repeat(64) })).rejects.toThrow(/transcrição mudou/);
+    expect(lido).toBe(false);
+  });
+
+  it('o controller: Content-Length acima do teto é 413 ANTES de ler, com Connection: close; sem sha, 400; tipo errado, 415', async () => {
+    const chamadas: unknown[] = [];
+    const c = new DerivacaoController({ enviarVideo: async (...a: unknown[]) => void chamadas.push(a) } as unknown as DerivacaoService);
+    const pedido = (headers: Record<string, string>) => {
+      const req = Object.assign(new Readable({ read() { throw new Error('leu o corpo'); } }), { headers });
+      const cab = new Map<string, string>();
+      return { req, res: { setHeader: (k: string, v: string) => cab.set(k, v) }, cab };
+    };
+    const certo = { 'content-type': 'video/mp4', 'content-length': '5000', 'x-conteudo-sha256': 'a'.repeat(64) };
+    for (const [h, status] of [
+      [{ ...certo, 'content-length': String(301 * 1024 * 1024) }, 413],
+      [{ ...certo, 'x-conteudo-sha256': '' }, 400],
+      [{ ...certo, 'content-type': 'application/octet-stream' }, 415],
+      [{ 'content-type': 'video/mp4', 'x-conteudo-sha256': 'a'.repeat(64) }, 411],
+    ] as const) {
+      const { req, res, cab } = pedido(h as Record<string, string>);
+      await expect(c.enviarVideo({ sub: PESSOA, orgId: ORG } as never, 'p1', req as never, res as never)).rejects.toMatchObject({ status });
+      expect(cab.get('Connection')).toBe('close');
+    }
+    expect(chamadas).toEqual([]);
+    const { req, res } = pedido(certo);
+    await c.enviarVideo({ sub: PESSOA, orgId: ORG } as never, 'p1', req as never, res as never);
+    expect(chamadas).toEqual([[ORG, 'p1', PESSOA, { bytes: 5000, sha256: 'a'.repeat(64), corpo: req }]]);
+  });
+
+  it('carrossel com mais de 10 slides não se aprova', async () => {
+    const { s, da } = await gerado();
+    const pecaDb = s.prisma as unknown as { pautaPeca: Record<string, unknown> };
+    pecaDb.pautaPeca.update = async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const p = s.pecas.find((x) => x.id === where.id)!;
+      Object.assign(p, data);
+      return structuredClone(p);
+    };
+    const rotinas = new RotinaService(s.prisma, new AuditService(s.prisma), {} as never);
+    const car = da('c1', 'carrossel');
+    (meta(car) as { slides: unknown[] }).slides = Array.from({ length: 11 }, (_, i) => ({ titulo: `s${i}`, texto: '' }));
+    await expect(rotinas.editarPeca(ORG, car.id, PESSOA, { status: 'aprovada' })).rejects.toThrow(/11 slides e o Instagram aceita até 10/);
+    expect(car.status).toBe('rascunho');
+    (meta(car) as { slides: unknown[] }).slides.length = 10;
+    await expect(rotinas.editarPeca(ORG, car.id, PESSOA, { status: 'aprovada' })).resolves.toEqual({ ok: true, status: 'aprovada' });
   });
 });
 
@@ -1052,7 +1220,7 @@ describe('semana: o controller', () => {
   it('os esquemas chegam antes do serviço; as rotas e as permissões; nenhuma publica', async () => {
     const chamadas: Array<{ metodo: string; args: unknown[] }> = [];
     const anota = (metodo: string) => async (...args: unknown[]) => void chamadas.push({ metodo, args });
-    const duble = { painel: anota('painel'), gerar: anota('gerar'), editar: anota('editar'), enviarImagem: anota('enviarImagem'), registrarVideo: anota('registrarVideo') } as unknown as DerivacaoService;
+    const duble = { painel: anota('painel'), gerar: anota('gerar'), editar: anota('editar'), enviarImagem: anota('enviarImagem'), registrarVideo: anota('registrarVideo'), enviarVideo: anota('enviarVideo') } as unknown as DerivacaoService;
     const c = new DerivacaoController(duble);
     await c.gerar(usuario, 'e1', undefined);
     expect(chamadas[0]).toEqual({ metodo: 'gerar', args: [ORG, 'e1', PESSOA, { substituir: false, itens: undefined }] });
@@ -1070,6 +1238,8 @@ describe('semana: o controller', () => {
       ['enviarImagem', 'pecas/:id/imagens/:n', ['pauta.editar']],
       ['imagem', 'pecas/:id/imagens/:n', ['pauta.ver']],
       ['video', 'pecas/:id/video', ['pauta.editar']],
+      ['enviarVideo', 'pecas/:id/video/arquivo', ['pauta.editar']],
+      ['baixarVideo', 'pecas/:id/video/arquivo', ['pauta.ver']],
     ];
     for (const [metodo, caminho, perms] of rotas) {
       expect(Reflect.getMetadata('path', proto[metodo]), metodo).toBe(caminho);

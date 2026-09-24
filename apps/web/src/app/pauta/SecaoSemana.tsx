@@ -74,12 +74,14 @@ function naAgenda(iso: string): string {
 
 function estadoDoRender(p: PautaPecaDaSemana, apelido: string): string {
   if (p.formato === 'corte') {
-    if (p.video) return `mp4 no Mac (${p.video.arquivo.split('/').pop()})`;
+    if (p.video?.sha256) return `mp4 no OS (${Math.round(p.video.bytes / 1024 / 1024)} MB)`;
+    if (p.video?.arquivo) return `mp4 só no Mac (${p.video.arquivo.split('/').pop()}) — /root-midia cortes ${apelido} sobe`;
     return `sem mp4 — /root-midia cortes ${apelido}`;
   }
   const esperadas = p.formato === 'story' ? 1 : (p.slides?.length ?? 0);
   if (!p.imagens.length) return `sem PNG — /root-midia ${p.formato === 'story' ? 'stories' : 'carrosseis'} ${apelido}`;
-  return `${p.imagens.length} de ${esperadas} PNG`;
+  const jpegs = p.jpegs?.length ?? 0;
+  return `${p.imagens.length} de ${esperadas} PNG${jpegs < esperadas ? ` · ${jpegs} JPEG (a Meta só aceita JPEG)` : ''}`;
 }
 
 type Rascunho = {

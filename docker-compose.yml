@@ -170,6 +170,14 @@ services:
       PAUTA_ESPELHO: ${PAUTA_ESPELHO:-off}
       PAUTA_ESPELHO_DIR: ${PAUTA_ESPELHO_DIR:-}
       PAUTA_DRIVE_FOLDER_ID: ${PAUTA_DRIVE_FOLDER_ID:-}
+      # MD4: a mídia da peça (JPEG e mp4 do corte) servida à Meta por URL
+      # assinada de até 1 h. Segredo vazio (ou com menos de 32 caracteres) =
+      # rota pública desligada, sempre 404. A origem padrão é a da bio, que já
+      # leva /api à API. O teto do mp4 que sobe por stream é o do Reels, 300 MB.
+      # Fonte: apps/api/src/pauta/midia-publica.ts e video-do-corte.ts.
+      PAUTA_MIDIA_PUBLICA_SEGREDO: ${PAUTA_MIDIA_PUBLICA_SEGREDO:-}
+      PAUTA_MIDIA_PUBLICA_ORIGEM: ${PAUTA_MIDIA_PUBLICA_ORIGEM:-}
+      PAUTA_VIDEO_MAX_BYTES: ${PAUTA_VIDEO_MAX_BYTES:-314572800}
       EVOLUTION_URL: ${EVOLUTION_URL:-}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}

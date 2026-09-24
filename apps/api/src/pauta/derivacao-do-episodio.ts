@@ -19,6 +19,7 @@ import {
   type PautaItemCurado,
   type PautaPecaStatus,
   type PautaSlideDaSemana,
+  type PautaVideoDaPeca,
 } from '@mktos/shared';
 import { parseJsonDaIa } from './parse-json';
 import { semLinksDeCaixaDeEntrada } from './link-publico';
@@ -551,6 +552,23 @@ export function chaveDoItem(item: Pick<PautaItemCurado, 'id' | 'titulo' | 'url'>
   return `h-${createHash('sha256').update(`${item.titulo ?? ''}|${item.url ?? ''}`).digest('hex').slice(0, 16)}`;
 }
 
+export interface ImagemDaMeta {
+  n: number;
+  chave: string;
+  sha: string;
+  /** MD4: o sha256 inteiro (as de antes só têm os 12 do nome). */
+  sha256?: string;
+  /** Ausente = PNG (o que havia antes da MD4). */
+  tipo?: 'png' | 'jpeg';
+  largura: number;
+  altura: number;
+  bytes: number;
+  enviadaEm: string;
+}
+
+/** O tipo da imagem gravada: a anterior à MD4 não diz, e era PNG. */
+export const tipoDaImagem = (i: { tipo?: string }): 'png' | 'jpeg' => (i.tipo === 'jpeg' ? 'jpeg' : 'png');
+
 export interface MetaDaSemana {
   episodioId: string;
   itemId: string;
@@ -559,7 +577,8 @@ export interface MetaDaSemana {
   transcricaoSha: string;
   linkDaMateria: string | null;
   avisos: string[];
-  imagens: Array<{ n: number; chave: string; sha: string; largura: number; altura: number; bytes: number; enviadaEm: string }>;
+  /** PNG (a prévia) e, desde a MD4, JPEG (o que a Meta baixa): no máximo um de cada tipo por número. */
+  imagens: ImagemDaMeta[];
   // carrossel
   slides?: PautaSlideDaSemana[];
   cta?: PautaCtaDoCarrossel;
@@ -573,7 +592,7 @@ export interface MetaDaSemana {
   de?: number;
   ate?: number;
   trecho?: string;
-  video?: { arquivo: string; duracaoSeg: number; largura: number; altura: number; bytes: number; registradoEm: string } | null;
+  video?: PautaVideoDaPeca | null;
   provider?: string;
   model?: string;
 }
@@ -671,8 +690,21 @@ export function versaoDoTexto(p: { titulo: string; corpo: string; meta: unknown 
 }
 
 /** Chave da imagem no storage: o hash no nome, trocar grava outra. */
-export function chaveDaImagemDaPeca(pecaId: string, n: number, sha: string): string {
-  return `pauta/peca/${pecaId}-${n}-${sha.slice(0, 12)}.png`;
+export function chaveDaImagemDaPeca(pecaId: string, n: number, sha: string, tipo: 'png' | 'jpeg' = 'png'): string {
+  return `pauta/peca/${pecaId}-${n}-${sha.slice(0, 12)}.${tipo === 'jpeg' ? 'jpg' : 'png'}`;
+}
+
+/**
+ * O que impede aprovar uma peça da semana (MD4), ou nulo. O carrossel da Graph
+ * da Meta aceita até 10 itens: acima disso o post não sai, então nem aprova.
+ */
+export function motivoParaNaoAprovarDaSemana(formato: string, meta: unknown): string | null {
+  if (formato !== 'carrossel') return null;
+  const slides = lerMetaDaSemana(meta).slides?.length ?? 0;
+  if (slides > PAUTA_SLIDES_MAXIMO) {
+    return `O carrossel tem ${slides} slides e o Instagram aceita até ${PAUTA_SLIDES_MAXIMO}: encurte antes de aprovar.`;
+  }
+  return null;
 }
 
 const ASSINATURA_PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];

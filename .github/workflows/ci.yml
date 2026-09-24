@@ -418,7 +418,20 @@ jobs:
       # servidor, trava o campo e mostra a hora que ele leu). Medido: 560 casos
       # em 43 arquivos. O piso de CASOS sobe 4, para 379; o de ARQUIVOS fica
       # em 34.
-      PISO_CASOS_WEB: '379'
+      #
+      # MD4, A MÍDIA DA PEÇA NO STORAGE (24/09/2026): +3 casos, nenhum arquivo
+      # novo. `component/pauta-agenda` +1 (o corte que subiu ao OS baixa o mp4
+      # com o token em vez do caminho do Mac) e `component/pauta-semana` +2 (o
+      # estado do render com o mp4 no OS ou só no Mac e o JPEG que falta para a
+      # Meta). Medido: 563 casos em 43 arquivos. O piso de CASOS sobe 3, para
+      # 382; o de ARQUIVOS fica em 34.
+      #
+      # MD4, CORREÇÃO DA REVISÃO (24/09/2026): +1 caso, nenhum arquivo novo.
+      # `component/pauta-agenda` +1 (no celular o mp4 vai à folha de
+      # compartilhar, como as imagens, e fica pronto para o segundo toque).
+      # Medido: 564 casos em 43 arquivos. O piso de CASOS sobe 1, para 383; o
+      # de ARQUIVOS fica em 34.
+      PISO_CASOS_WEB: '383'
       PISO_ARQUIVOS_WEB: '34'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1434,8 +1447,50 @@ jobs:
       # em 65 arquivos com o banco, verde também com TZ=UTC; sem ele, 2113
       # passados e 576 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe
       # 4 (~15% de folga sobre os 5), para 1994.
-      PISO_CASOS_API: '1994'
-      PISO_ARQUIVOS_API: '57'
+      #
+      # MD4, A MÍDIA DA PEÇA NO STORAGE (24/09/2026): +45 casos, +1 arquivo.
+      # `pauta-midia-publica` (24, novo, sem banco: o token assinado — ida e
+      # volta, vencido, segredo errado, adulterado em empresa/peça/chave/prazo/
+      # HMAC, exp acima de 1 h ao assinar e ao conferir, segredo curto e a
+      # origem; o serviço — nulo SEM consulta para token ruim ou rota desligada,
+      # a empresa do token, a chave que deixou de ser da peça, o PNG da prévia,
+      # o módulo desligado, a descartada, as URLs com 8 caracteres do HMAC no
+      # RASTRO, sem mídia 400; as rotas pública e assinada; o JPEG pelo SOF;
+      # o mp4 — cabeçalho 415/411/413/400, faststart em qualquer pedaço, sem
+      # faststart parando no mdat, maior/menor/sha, o moov que aborta cedo; o
+      # storage em partes que conclui e o que aborta sem pendurar; o corpo
+      # video/mp4 que nenhum parser lê); `pauta-semana` +7 (JPEG ao lado do
+      # PNG, JPEG inválido, o mp4 que sobe com o sha e o caminho do Mac, as
+      # recusas no caminho sem gravar, o que se recusa sem ler, o controller com
+      # 413 antes de ler e o carrossel de 11 slides que não aprova);
+      # `root-midia` +9 (48 kHz, sips, o JPEG conferido, as caixas de topo, o
+      # sha que não sobe de novo, ROOT_OS_ENVIO_URL, o envio por stream a um
+      # servidor dublê com o 401 que reabre o arquivo, o JPEG em multipart e a
+      # agenda com o mp4 no OS); `modulos-por-tenant` +1 (o prefixo novo no
+      # gate); `pauta-midia` +1 (o vigia refaz o corte só registrado no Mac e a
+      # imagem sem JPEG); COM BANCO, `rotas-publicas-tenant` +3, pulados sem ele (a rota
+      # pública lê só dentro da empresa do token, sem a sentinela; token ruim
+      # sem consulta nenhuma; token de B com a peça de A não acha). Medido:
+      # 2734 casos em 66 arquivos com o banco; sem ele, 2155 passados e 579
+      # pulados (61 + 5 arquivos). O piso de ARQUIVOS sobe 1, para 58; o de
+      # CASOS sobe 36 (~15% de folga sobre os 42 que rodam sem banco), para 2030.
+      #
+      # MD4, CORREÇÃO DA REVISÃO (24/09/2026): +8 casos, nenhum arquivo novo,
+      # todos sem banco. `pauta-encadeamento` +1 (a mídia pronta do
+      # encadeamento é a régua do vigia: o corte com o mp4 no storage não pede
+      # render, o só registrado no Mac pede); `pauta-midia-publica` +3 (o mdat
+      # com tamanho de 64 bits partido em qualquer byte do cabeçalho; o storage
+      # que falha no meio encerra a resposta e quem desiste destrói a leitura;
+      # só a peça aprovada ganha URL); `pauta-semana` +1 (editar título ou
+      # legenda durante o envio não derruba o mp4, mudar o trecho derruba);
+      # `root-midia` +3 (o mp4 acima de 10 MB pelo proxy do web nem tenta e o
+      # prazo do envio; cada corte falha sozinho e o barrado não apaga o mp4
+      # que já está no OS; o envio que passa do prazo vira erro). Medido: 2742
+      # casos em 66 arquivos com o banco; sem ele, 2163 passados e 579 pulados.
+      # O piso de ARQUIVOS fica em 58; o de CASOS sobe 7 (~15% de folga sobre
+      # os 8), para 2037.
+      PISO_CASOS_API: '2037'
+      PISO_ARQUIVOS_API: '58'
 
     steps:
       - uses: actions/checkout@v4

@@ -2895,6 +2895,21 @@ export const PAUTA_DIMENSOES_DA_PECA: Record<'carrossel' | 'story', { largura: n
 };
 /** O corte vertical: 1080×1920, a tela em cima e o rosto embaixo. */
 export const PAUTA_DIMENSOES_DO_CORTE = { largura: 1080, altura: 1920 } as const;
+/*
+ * MD4: o JPEG da peça, que é o que a Graph da Meta aceita (só JPEG, até 8 MB,
+ * largura de 320 a 1440). O Mac converte o PNG com o `sips` e sobe os dois; a
+ * proporção é a do formato (carrossel 4:5, story 9:16).
+ */
+export const PAUTA_JPEG_DA_PECA_MAX_BYTES = 8 * 1024 * 1024;
+export const PAUTA_JPEG_LARGURA_MINIMA = 320;
+export const PAUTA_JPEG_LARGURA_MAXIMA = 1440;
+/**
+ * MD4: o teto padrão do mp4 do corte que sobe ao storage (o do Reels na Graph é
+ * 300 MB). `PAUTA_VIDEO_MAX_BYTES` troca na API.
+ */
+export const PAUTA_VIDEO_DO_CORTE_MAX_BYTES = 300 * 1024 * 1024;
+/** MD4: a URL pública assinada da mídia vale no máximo 1 h. */
+export const PAUTA_MIDIA_PUBLICA_VALIDADE_MAXIMA_SEG = 3600;
 
 export const PautaNumeroDaImagemSchema = z.coerce
   .number({ invalid_type_error: 'O número da imagem é 1 a 10.' })
@@ -2929,6 +2944,38 @@ export interface PautaImagemDaPeca {
   altura: number;
   bytes: number;
   enviadaEm: string;
+  /** MD4: o sha256 inteiro do arquivo (o Mac compara antes de reenviar). Ausente nas imagens de antes. */
+  sha256?: string;
+}
+
+/**
+ * MD4: o mp4 do corte. O caminho no Mac (MC15, `PUT …/video`) e, depois do
+ * envio (`POST …/video/arquivo`), a chave no storage com o sha256 e a data. Um
+ * sem o outro é normal: o registro vem antes do envio, e o envio sem registro
+ * não tem caminho.
+ */
+export interface PautaVideoDaPeca {
+  arquivo: string | null;
+  duracaoSeg: number;
+  largura: number;
+  altura: number;
+  bytes: number;
+  registradoEm?: string;
+  /** No storage da casa (MD4). */
+  chave?: string;
+  sha256?: string;
+  enviadoEm?: string;
+}
+
+/**
+ * MD4: as URLs públicas assinadas da mídia de uma peça (`POST
+ * /pauta/pecas/:id/midia-publica`), válidas até `exp`. É o que a Graph da Meta
+ * baixa (MD6): o JPEG de cada imagem e o mp4 do corte.
+ */
+export interface PautaMidiaPublicaDaPeca {
+  pecaId: string;
+  exp: string;
+  midias: Array<{ tipo: 'jpeg' | 'mp4'; n: number | null; url: string; bytes: number; sha256: string | null }>;
 }
 
 export interface PautaSlideDaSemana {
@@ -2965,9 +3012,11 @@ export interface PautaPecaDaSemana {
   fim?: number;
   /** O que é dito no trecho, dos segmentos da transcrição. */
   trecho?: string;
-  video?: { arquivo: string; duracaoSeg: number; largura: number; altura: number; bytes: number; registradoEm: string } | null;
-  /** O que o Mac já renderizou e subiu (carrossel: um por slide; story: 1). */
+  video?: PautaVideoDaPeca | null;
+  /** O que o Mac já renderizou e subiu em PNG (carrossel: um por slide; story: 1). */
   imagens: PautaImagemDaPeca[];
+  /** MD4: os JPEG que a Graph da Meta baixa, um por imagem, ao lado do PNG. */
+  jpegs?: PautaImagemDaPeca[];
   avisos: string[];
   /** A transcrição mudou depois desta peça (mídia refeita): o corte pode não bater mais. */
   transcricaoMudou: boolean;
@@ -3413,6 +3462,8 @@ export type PautaMidiaNaAgenda =
   | { onde: 'storage'; imagens: number[]; esperadas: number }
   | { onde: 'parcial'; imagens: number[]; esperadas: number; faltam: number[]; comando: string }
   | { onde: 'mac'; arquivo: string }
+  /** MD4: o mp4 do corte subiu ao storage (baixar pela tela); o caminho no Mac, se registrado. */
+  | { onde: 'video'; arquivo: string | null; bytes: number }
   | { onde: 'nenhuma'; comando: string };
 
 export interface PautaPecaNaAgenda {

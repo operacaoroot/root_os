@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -8,10 +9,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { pipeline, type Readable } from 'node:stream';
 import type { Prisma } from '@prisma/client';
 import {
   PAUTA_DIMENSOES_DA_PECA,
+  PAUTA_DIMENSOES_DO_CORTE,
   PAUTA_FORMATOS_DA_SEMANA,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   PAUTA_PNG_DA_PECA_MAX_BYTES,
@@ -28,8 +30,11 @@ import {
   type PautaPecaStatus,
   type PautaSemanaDePosts,
   type PautaSemanaGerada,
+  type PautaVideoDaPeca,
   type PautaVideoDoCorteInput,
 } from '@mktos/shared';
+import { conferirJpegDaPeca } from './imagem-jpeg';
+import { ConferenciaDoMp4, ErroDoEnvio, chaveDoVideoDaPeca, type CabecalhoDoEnvio } from './video-do-corte';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../storage/storage.service';
@@ -50,6 +55,7 @@ import {
   chaveDoItem,
   conferirPngDaPeca,
   entradaDaDerivacao,
+  tipoDaImagem,
   ehPecaDaSemana,
   falaDoTrecho,
   legendaComCta,
@@ -101,6 +107,18 @@ const DA_PECA = {
   externalId: true,
   urlPublicada: true,
 } as const;
+
+/** As imagens de um tipo, como a tela e o Mac as leem (sem a chave do storage). */
+function imagensDoTipo(imagens: MetaDaSemana['imagens'], tipo: 'png' | 'jpeg') {
+  return imagens
+    .filter((i) => tipoDaImagem(i) === tipo)
+    .map(({ n, largura, altura, bytes, enviadaEm, sha256 }) => ({ n, largura, altura, bytes, enviadaEm, ...(sha256 ? { sha256 } : {}) }))
+    .sort((a, b) => a.n - b.n);
+}
+
+/** O corte: o mp4 subiu ao storage, com a chave e o sha256 (MD4). */
+const videoNoStorage = (v: MetaDaSemana['video']): v is PautaVideoDaPeca & { chave: string; sha256: string } =>
+  !!v?.chave && !!v.sha256;
 
 /** A duração do vídeo final: a da mídia (MC9); sem ela, o fim da transcrição. */
 function duracaoDoEpisodio(e: Pick<PautaEpisodioDetalhe, 'midia' | 'transcricao'>): number {
@@ -158,7 +176,8 @@ export class DerivacaoService {
       titulo: p.titulo,
       corpo: p.corpo,
       criadaEm: p.criadaEm.toISOString(),
-      imagens: m.imagens.map(({ n, largura, altura, bytes, enviadaEm }) => ({ n, largura, altura, bytes, enviadaEm })).sort((a, b) => a.n - b.n),
+      imagens: imagensDoTipo(m.imagens, 'png'),
+      jpegs: imagensDoTipo(m.imagens, 'jpeg'),
       avisos: m.avisos,
       transcricaoMudou: m.transcricaoSha !== shaAtual,
       agendadaPara: p.agendadaPara?.toISOString() ?? null,
@@ -613,10 +632,12 @@ export class DerivacaoService {
   }
 
   /**
-   * O PNG que o Mac renderizou: um por slide do carrossel, um para o story. Vai
-   * ao storage da casa (MinIO, não público) com o hash no nome; a peça guarda a
-   * chave. Trocar grava outra chave em vez de sobrescrever. Se o texto da peça
-   * mudou enquanto o PNG subia, o PNG é do texto velho: 409.
+   * A imagem que o Mac renderizou: um PNG por slide do carrossel, um para o
+   * story — e, desde a MD4, o JPEG de cada uma, que é o que a Graph da Meta
+   * baixa. Vai ao storage da casa (MinIO, não público) com o hash no nome; a
+   * peça guarda a chave, no máximo uma por número e tipo. Trocar grava outra
+   * chave em vez de sobrescrever. Se o texto da peça mudou enquanto a imagem
+   * subia, ela é do texto velho: 409.
    */
   async enviarImagem(
     orgId: string,
@@ -628,26 +649,41 @@ export class DerivacaoService {
     const antes = await this.pecaDaSemana(orgId, pecaId);
     this.exigirEditavel(antes);
     if (antes.formato !== 'carrossel' && antes.formato !== 'story') {
-      throw new BadRequestException('O corte vertical não sobe imagem: o mp4 fica no Mac (registre por PUT …/video).');
+      throw new BadRequestException('O corte vertical não sobe imagem: o mp4 sobe por POST …/video/arquivo.');
     }
     const quantas = antes.formato === 'story' ? 1 : (antes.m.slides ?? []).length;
     if (n > quantas) throw new BadRequestException(`Esta peça tem ${quantas} imagem(ns): não há a ${n}.`);
-    const conferido = conferirPngDaPeca(arquivo, PAUTA_DIMENSOES_DA_PECA[antes.formato], PAUTA_PNG_DA_PECA_MAX_BYTES);
+    const tipo: 'png' | 'jpeg' = arquivo?.mimetype === 'image/jpeg' ? 'jpeg' : 'png';
+    const conferido =
+      tipo === 'jpeg'
+        ? conferirJpegDaPeca(arquivo, PAUTA_DIMENSOES_DA_PECA[antes.formato])
+        : conferirPngDaPeca(arquivo, PAUTA_DIMENSOES_DA_PECA[antes.formato], PAUTA_PNG_DA_PECA_MAX_BYTES);
     if (!conferido.ok) throw new BadRequestException(conferido.motivo);
 
     const buffer = arquivo!.buffer;
-    const sha = createHash('sha256').update(buffer).digest('hex');
-    const chave = chaveDaImagemDaPeca(antes.id, n, sha);
-    await this.storage.put(chave, buffer, 'image/png');
-    const imagem = { n, chave, sha: sha.slice(0, 12), largura: conferido.largura, altura: conferido.altura, bytes: buffer.length, enviadaEm: new Date().toISOString() };
+    const sha256 = createHash('sha256').update(buffer).digest('hex');
+    const chave = chaveDaImagemDaPeca(antes.id, n, sha256, tipo);
+    await this.storage.put(chave, buffer, tipo === 'jpeg' ? 'image/jpeg' : 'image/png');
+    const imagem = {
+      n,
+      chave,
+      sha: sha256.slice(0, 12),
+      sha256,
+      tipo,
+      largura: conferido.largura,
+      altura: conferido.altura,
+      bytes: buffer.length,
+      enviadaEm: new Date().toISOString(),
+    };
 
     const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
       if (p.formato === 'story') await this.exigirATranscricaoDaPeca(tx, orgId, p);
       if (versaoDoTexto(p) !== versaoDoTexto(antes)) {
-        throw new ConflictException('O texto da peça mudou enquanto o PNG subia — renderize de novo no Mac.');
+        throw new ConflictException('O texto da peça mudou enquanto a imagem subia — renderize de novo no Mac.');
       }
-      const meta = { ...p.m, imagens: [...p.m.imagens.filter((i) => i.n !== n), imagem].sort((a, b) => a.n - b.n) };
+      const outras = p.m.imagens.filter((i) => i.n !== n || tipoDaImagem(i) !== tipo);
+      const meta = { ...p.m, imagens: [...outras, imagem].sort((a, b) => a.n - b.n || tipoDaImagem(a).localeCompare(tipoDaImagem(b))) };
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
         data: { meta: meta as unknown as Prisma.InputJsonValue },
@@ -661,43 +697,50 @@ export class DerivacaoService {
       action: 'pauta.semana_imagem',
       entityType: 'pauta_peca',
       entityId: p.id,
-      before: { n, tinha: p.m.imagens.some((i) => i.n === n) },
-      after: { n, bytes: imagem.bytes, largura: imagem.largura, altura: imagem.altura, sha: imagem.sha },
+      before: { n, tipo, tinha: p.m.imagens.some((i) => i.n === n && tipoDaImagem(i) === tipo) },
+      after: { n, tipo, bytes: imagem.bytes, largura: imagem.largura, altura: imagem.altura, sha: imagem.sha },
     });
     return this.paraATela({ ...p, meta }, p.m.transcricaoSha);
   }
 
-  async imagem(orgId: string, pecaId: string, n: number): Promise<{ stream: Readable; size: number }> {
+  /** A imagem n da peça: o PNG (a prévia), ou o JPEG com `tipo`. */
+  async imagem(
+    orgId: string,
+    pecaId: string,
+    n: number,
+    tipo: 'png' | 'jpeg' = 'png',
+  ): Promise<{ stream: Readable; size: number; contentType: string }> {
     const p = await this.pecaDaSemana(orgId, pecaId);
-    const alvo = p.m.imagens.find((i) => i.n === n);
-    if (!alvo) throw new NotFoundException(`A imagem ${n} desta peça ainda não foi renderizada.`);
+    const alvo = p.m.imagens.find((i) => i.n === n && tipoDaImagem(i) === tipo);
+    const rotulo = tipo === 'jpeg' ? 'O JPEG' : 'A imagem';
+    if (!alvo) throw new NotFoundException(`${rotulo} ${n} desta peça ainda não foi renderizad${tipo === 'jpeg' ? 'o' : 'a'}.`);
+    const { stream, size } = await this.lerDoStorage(alvo.chave, `${tipo} ${n} da peça ${pecaId} (${orgId})`, `${rotulo} ${n} não está no storage — renderize de novo no Mac.`);
+    return { stream, size, contentType: tipo === 'jpeg' ? 'image/jpeg' : 'image/png' };
+  }
+
+  private async lerDoStorage(chave: string, oQue: string, msg404: string): Promise<{ stream: Readable; size: number }> {
     try {
-      const { stream, size } = await this.storage.get(alvo.chave);
+      const { stream, size } = await this.storage.get(chave);
       return { stream, size };
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
-      this.log.warn(`imagem ${n} da peça ${pecaId} (${orgId}) sumiu do storage: ${(err as Error).message}`);
-      throw new NotFoundException(`A imagem ${n} não está no storage — renderize de novo no Mac.`);
+      this.log.warn(`${oQue} sumiu do storage: ${(err as Error).message}`);
+      throw new NotFoundException(msg404);
     }
   }
 
   /**
-   * O corte renderizado no Mac: o mp4 FICA lá (como o vídeo do episódio, MC9),
-   * e a peça guarda onde ele está e o que foi medido. A duração tem de bater com
-   * o trecho da peça — senão o mp4 é de outro trecho.
+   * O corte renderizado no Mac (MC15): a peça guarda onde o mp4 está e o que foi
+   * medido. A duração tem de bater com o trecho da peça — senão o mp4 é de outro
+   * trecho. Registrar de novo é outro render: o envio anterior ao storage (MD4)
+   * deixa de valer, e o Mac sobe o arquivo novo em seguida.
    */
   async registrarVideo(orgId: string, pecaId: string, actorId: string, input: PautaVideoDoCorteInput): Promise<PautaPecaDaSemana> {
     const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
-      if (p.formato !== 'corte') throw new BadRequestException('Só o corte vertical tem vídeo.');
-      if (p.m.inicio === undefined || p.m.fim === undefined) throw new BadRequestException('A peça não tem o trecho do corte.');
+      this.exigirTrechoDoCorte(p);
       await this.exigirATranscricaoDaPeca(tx, orgId, p);
-      const esperado = p.m.fim - p.m.inicio;
-      if (Math.abs(input.duracaoSeg - esperado) > 1) {
-        throw new BadRequestException(
-          `O vídeo tem ${input.duracaoSeg.toFixed(1)} s e o trecho da peça, ${esperado.toFixed(1)} s: renderize o corte de novo.`,
-        );
-      }
+      this.exigirDuracaoDoTrecho(p, input.duracaoSeg);
       const meta = { ...p.m, video: { ...input, registradoEm: new Date().toISOString() } };
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
@@ -716,5 +759,121 @@ export class DerivacaoService {
       after: { arquivo: input.arquivo.split('/').pop(), duracaoSeg: input.duracaoSeg, bytes: input.bytes },
     });
     return this.paraATela({ ...p, meta }, p.m.transcricaoSha);
+  }
+
+  private exigirTrechoDoCorte(p: { formato: string; m: MetaDaSemana }): asserts p is { formato: 'corte'; m: MetaDaSemana & { inicio: number; fim: number } } {
+    if (p.formato !== 'corte') throw new BadRequestException('Só o corte vertical tem vídeo.');
+    if (p.m.inicio === undefined || p.m.fim === undefined) throw new BadRequestException('A peça não tem o trecho do corte.');
+  }
+
+  private exigirDuracaoDoTrecho(p: { m: MetaDaSemana }, duracaoSeg: number): void {
+    const esperado = (p.m.fim ?? 0) - (p.m.inicio ?? 0);
+    if (Math.abs(duracaoSeg - esperado) > 1) {
+      throw new BadRequestException(
+        `O vídeo tem ${duracaoSeg.toFixed(1)} s e o trecho da peça, ${esperado.toFixed(1)} s: renderize o corte de novo.`,
+      );
+    }
+  }
+
+  /**
+   * O mp4 do corte sobe ao storage (MD4), por stream, para a Meta poder baixar
+   * por URL assinada. Tudo o que dá para recusar sem ler o corpo é recusado
+   * antes (peça, formato, status, transcrição); lido o `moov`, a duração tem de
+   * bater com o trecho, e o vídeo, ser 1080×1920 — senão o envio aborta ali. O
+   * arquivo vai à chave `pauta/pecas/<id>/corte-<sha256>.mp4`: o mesmo arquivo
+   * reenviado cai na mesma chave, e nada é apagado. O caminho no Mac, se
+   * registrado, fica.
+   */
+  async enviarVideo(
+    orgId: string,
+    pecaId: string,
+    actorId: string,
+    envio: CabecalhoDoEnvio & { corpo: Readable },
+  ): Promise<PautaPecaDaSemana> {
+    const antes = await this.pecaDaSemana(orgId, pecaId);
+    this.exigirEditavel(antes);
+    this.exigirTrechoDoCorte(antes);
+    await this.exigirATranscricaoDaPeca(this.prisma as unknown as Prisma.TransactionClient, orgId, antes);
+
+    const conferencia = new ConferenciaDoMp4(envio, (moov) => {
+      if (moov.duracaoSeg === null) throw new ErroDoEnvio(400, 'O mp4 não diz a duração (mvhd).');
+      this.exigirDuracaoDoTrecho(antes, moov.duracaoSeg);
+      if (moov.largura !== PAUTA_DIMENSOES_DO_CORTE.largura || moov.altura !== PAUTA_DIMENSOES_DO_CORTE.altura) {
+        throw new ErroDoEnvio(
+          400,
+          `O corte tem ${moov.largura ?? '?'}×${moov.altura ?? '?'}; é ${PAUTA_DIMENSOES_DO_CORTE.largura}×${PAUTA_DIMENSOES_DO_CORTE.altura}.`,
+        );
+      }
+    });
+    const chave = chaveDoVideoDaPeca(antes.id, envio.sha256);
+    // `pipeline` leva o erro de um lado ao outro: a conexão caída destrói a
+    // conferência (e o storage aborta), e a recusa da conferência para de ler.
+    pipeline(envio.corpo, conferencia, () => undefined);
+    try {
+      await this.storage.putStream(chave, conferencia, envio.bytes, 'video/mp4');
+    } catch (e) {
+      conferencia.destroy();
+      throw this.erroDoEnvio(e);
+    }
+    const lido = conferencia.resultado;
+    if (!lido || lido.duracaoSeg === null) throw new BadRequestException('O mp4 não foi conferido até o fim.');
+    const video = {
+      bytes: lido.bytes,
+      duracaoSeg: lido.duracaoSeg,
+      largura: PAUTA_DIMENSOES_DO_CORTE.largura,
+      altura: PAUTA_DIMENSOES_DO_CORTE.altura,
+      chave,
+      sha256: lido.sha256,
+      enviadoEm: new Date().toISOString(),
+    };
+
+    const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
+      this.exigirEditavel(p);
+      await this.exigirATranscricaoDaPeca(tx, orgId, p);
+      // Só o que está no vídeo: editar o título ou a legenda durante o envio não derruba o mp4.
+      const trecho = (x: { m: MetaDaSemana }) => JSON.stringify([x.m.inicio ?? null, x.m.fim ?? null, x.m.transcricaoSha ?? null]);
+      if (trecho(p) !== trecho(antes)) {
+        throw new ConflictException('O trecho da peça mudou enquanto o mp4 subia — renderize o corte de novo no Mac.');
+      }
+      const meta = {
+        ...p.m,
+        video: { arquivo: p.m.video?.arquivo ?? null, ...(p.m.video?.registradoEm ? { registradoEm: p.m.video.registradoEm } : {}), ...video },
+      };
+      const r = await tx.pautaPeca.updateMany({
+        where: { id: p.id, orgId, status: p.status },
+        data: { meta: meta as unknown as Prisma.InputJsonValue },
+      });
+      if (r.count === 0) throw new ConflictException('A peça mudou enquanto isso — recarregue e tente de novo.');
+      return { p, meta };
+    });
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'pauta.semana_video_enviado',
+      entityType: 'pauta_peca',
+      entityId: p.id,
+      before: { tinha: videoNoStorage(p.m.video) ? p.m.video.sha256.slice(0, 12) : null },
+      after: { bytes: video.bytes, duracaoSeg: video.duracaoSeg, sha: video.sha256.slice(0, 12) },
+    });
+    return this.paraATela({ ...p, meta }, p.m.transcricaoSha);
+  }
+
+  /** O erro do envio como resposta HTTP; o que não é do envio (storage fora, banco) segue como veio. */
+  private erroDoEnvio(e: unknown): Error {
+    if (e instanceof ErroDoEnvio) return new HttpException(e.message, e.status);
+    if (e instanceof HttpException) return e;
+    const codigo = (e as { code?: string }).code;
+    if (codigo === 'ECONNRESET' || codigo === 'ERR_STREAM_PREMATURE_CLOSE' || (e as Error).message === 'aborted') {
+      return new BadRequestException('O envio do mp4 foi interrompido antes do fim.');
+    }
+    return e as Error;
+  }
+
+  /** O mp4 do corte que está no storage, para baixar pela tela (MD4). */
+  async video(orgId: string, pecaId: string): Promise<{ stream: Readable; size: number; nome: string }> {
+    const p = await this.pecaDaSemana(orgId, pecaId);
+    if (!videoNoStorage(p.m.video)) throw new NotFoundException('O mp4 deste corte ainda não subiu ao OS — rode /root-midia cortes no Mac.');
+    const { stream, size } = await this.lerDoStorage(p.m.video.chave, `mp4 da peça ${pecaId} (${orgId})`, 'O mp4 não está no storage — suba o corte de novo pelo Mac.');
+    return { stream, size, nome: `corte-${p.m.itemN || 'x'}-${p.m.video.sha256.slice(0, 8)}.mp4` };
   }
 }

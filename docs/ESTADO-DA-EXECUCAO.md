@@ -1395,6 +1395,140 @@ data em `integrations/conectores.ts` (texto de exibição, não decide nível).
 **Deploy:** nenhuma migration, capacidade, permissão ou seed. `POLITICA_FUSO_HORARIO` já tem padrão no
 compose; valor inválido derruba a API no arranque (conferir o log se ela não subir).
 
+### Onda D, fatia MD4 — a mídia da peça no storage e a URL pública assinada (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD4). A Graph da Meta só publica
+mídia que ela consegue baixar de uma URL pública, e só aceita imagem em JPEG. Até aqui o mp4 do
+corte ficava só no Mac e as imagens eram PNG num MinIO fechado. **Decisão que muda (MC9/MC15):** o
+mp4 do corte passa a morar também no storage da VPS; nada é apagado no Mac. Nenhuma capacidade
+nova: servir o arquivo é leitura, e publicar é a MD6.
+
+| Peça | Onde |
+|---|---|
+| JPEG da peça: assinatura FFD8FF, tamanho pelo SOF0/SOF1/SOF2, até 8 MB, largura 320–1440, proporção do formato | `apps/api/src/pauta/imagem-jpeg.ts`; `POST /pauta/pecas/:id/imagens/:n` aceita `image/jpeg` (multer em 8 MB); `GET …/imagens/:n?tipo=jpeg` |
+| `meta.imagens[]` com `tipo` (`png`/`jpeg`, ausente = PNG) e `sha256` inteiro; a tela recebe `imagens` (PNG) e `jpegs` | `derivacao-do-episodio.ts`, `derivacao.service.ts`, `PautaImagemDaPeca` no shared |
+| O mp4 cru, por stream: `POST /pauta/pecas/:id/video/arquivo` (`pauta.editar`), `Content-Type: video/mp4`, `Content-Length` ≤ `PAUTA_VIDEO_MAX_BYTES` e `X-Conteudo-Sha256` conferidos antes de ler; 415/411/413/400 com `Connection: close` | `derivacao.controller.ts`, `video-do-corte.ts` (`conferirCabecalhosDoEnvio`) |
+| `ConferenciaDoMp4` (Transform): conta, sha256, `ftyp` primeiro, `moov` antes do `mdat`, nenhuma caixa passa do fim; lido o `moov`, a duração tem de bater com o trecho (±1 s) e o vídeo ser 1080×1920, senão aborta ali | `apps/api/src/pauta/video-do-corte.ts` |
+| `StorageService.putStream`: envio em partes de 16 MB feito à mão (no máximo uma parte em memória); o erro do stream aborta o envio e o objeto nunca aparece | `apps/api/src/storage/storage.service.ts` |
+| Chave `pauta/pecas/<id>/corte-<sha256>.mp4`; `meta.video` = o registro do Mac (`arquivo`, `registradoEm`) + `chave`, `sha256`, `bytes`, `duracaoSeg`, `enviadoEm`; o `PUT …/video` (render novo) tira os campos do storage | `derivacao.service.ts` (`enviarVideo`, `registrarVideo`), `PautaVideoDaPeca` no shared |
+| `GET /pauta/pecas/:id/video/arquivo` (`pauta.ver`): baixar o mp4 pela tela | `derivacao.controller.ts`; botão "Salvar o mp4" na aba Semana (`AbaSemana.tsx`: a folha de compartilhar no celular, como as imagens, e o download no desktop), agenda com `midia.onde: 'video'` |
+| Token `base64url(payload).base64url(HMAC-SHA256)` com `PAUTA_MIDIA_PUBLICA_SEGREDO` (32+ caracteres, senão rota desligada), `exp` de no máximo 1 h, conferido em tempo constante | `apps/api/src/pauta/midia-publica.ts` |
+| `POST /pauta/pecas/:id/midia-publica` (`pauta.publicar`), **só para a peça aprovada** (400 nas outras): as URLs do JPEG de cada imagem e do mp4, RASTRO `pauta.midia_publica_assinada` com 8 caracteres de cada HMAC | `midia-publica.service.ts`, `midia-publica.controller.ts` (`MidiaPublicaDaPecaController`) |
+| `GET /api/midia-publica/:token`, sem guarda: token conferido ANTES de consulta; depois `comTenantPublico(orgId do token)`, o módulo `pauta` da empresa, a chave ainda da peça (só JPEG e mp4), peça aprovada ou já publicada (a que voltou a rascunho perde a URL), streaming por `pipeline` com `Cache-Control: private, no-store`, `nosniff`, sem `x-correlation-id`; qualquer falha = o mesmo 404 | `midia-publica.controller.ts` (`MidiaPublicaController`); prefixo `midia-publica` → módulo `pauta` em `tenants/modulos.ts` |
+| O vigia (MD2) passa a contar como render a fazer o corte só registrado no Mac (sem o mp4 no storage) e a imagem sem o JPEG; o JPEG entra na assinatura. O encadeamento (MD1) usa a mesma régua para o motivo "peça(s) sem render" | `midiaProntaDaPeca` e `renderPendente` em `pauta/midia-do-episodio.ts`; `encadeamento.service.ts` |
+| Carrossel com mais de 10 slides não aprova (`PATCH /pauta/pecas/:id`) | `motivoParaNaoAprovarDaSemana` em `derivacao-do-episodio.ts`, chamado em `rotina.service.ts` |
+| Mac: `-ar 48000` no corte; `cortes` confere o faststart pelas caixas de topo, calcula o sha256, registra (PUT) e sobe (POST) por `fetch` com `createReadStream` e `duplex: 'half'`; o mesmo sha que já está no OS não sobe de novo; a falha do envio fica no corte (`subiu: false` com o motivo, o vigia avisa) e o laço segue; pelo proxy do web o mp4 acima de 10 MB nem tenta, e o envio tem prazo; `stories`/`carrosseis` convertem com `sips -s format jpeg -s formatOptions 90` e sobem os dois | `tools/root-midia/lib/semana.mjs`, `lib/os.mjs` (`enviarVideoDoCorte`, `ROOT_OS_ENVIO_URL`), `root-midia.mjs` |
+| `PAUTA_MIDIA_PUBLICA_SEGREDO`, `PAUTA_MIDIA_PUBLICA_ORIGEM` (vazia = `PUBLIC_BIO_ORIGIN`), `PAUTA_VIDEO_MAX_BYTES` (314572800); `ROOT_OS_ENVIO_URL` só no Mac | `docker-compose.yml` (`environment:` do `api`) e `.env.example` |
+
+**Desvios da especificação, com o porquê:**
+- O `putObject(stream)` do `minio` **não** é usado para o mp4: ele liga o stream ao fatiador com
+  `pipe`, que não repassa erro da origem. Quando a conferência recusa o arquivo no meio, o fatiador
+  nunca termina e o envio fica pendurado (lido em `node_modules/minio/dist/main/internal/client.js`,
+  `uploadStream`). O `putStream` usa as primitivas públicas do mesmo `minio`
+  (`initiateNewMultipartUpload`, `uploadPart`, `completeMultipartUpload`, `abortMultipartUpload`).
+- O sha256 vem **declarado** no cabeçalho `X-Conteudo-Sha256` e é conferido no fim. É ele que dá o
+  nome da chave antes de o corpo terminar; sem ele seria preciso subir numa chave temporária e
+  depois copiar e apagar. Como o S3 só publica o objeto no `complete`, um envio recusado não
+  substitui nada que já estava na chave.
+- A duração não vem do Mac: é lida do `mvhd` do próprio arquivo, e a largura/altura do `tkhd`.
+- A rota pública também confere se a empresa do token ainda tem o módulo `pauta` (o gate deixa
+  anônimo passar).
+
+**Achado que vira manual — o proxy do Next corta o corpo em 10 MB.** O `/api` do
+`os.operacaoroot.com` passa pelo rewrite do Next, e o Next 15 clona o corpo de toda requisição
+com teto de `middlewareClientMaxBodySize` (10 MB) — `next/dist/server/body-streams.js`,
+usado por `router-server.js` no proxy do rewrite, com ou sem middleware. Medido com `next dev`
+apontando para a API compilada: o corte de 17,9 MB por `http://127.0.0.1:4315/api/…` fica sem
+resposta e o Next registra "Request body exceeded 10MB"; nada é gravado (a peça seguiu com o sha
+anterior). Subir o teto do Next faria o web segurar o corpo inteiro em memória (o clone não tem
+contrapressão). Por isso o Mac sobe o mp4 por `ROOT_OS_ENVIO_URL`, que precisa apontar para a API
+sem passar pelo `mktos_web` (passo do Pedro na VPS). PNG (5 MB) e JPEG (8 MB) cabem nos 10 MB.
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~18h30): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto com `TEST_DATABASE_URL` **2734 de 2734** em 66 arquivos (+45, +1 arquivo:
+`pauta-midia-publica` 24, `pauta-semana` +7, `root-midia` +9, `modulos-por-tenant` +1,
+`pauta-midia` +1, `rotas-publicas-tenant` +3 com banco); sem ele, 2155 passados e 579 pulados; web **563** em 43
+(+3); `test:isolamento` **326** (nenhuma tabela nova); `test:porta` 45; policy 74 (não tocada);
+`db:diff` "No difference detected." (nenhuma migration); `build` + `smoke` OK com
+`/api/pauta/pecas/x/video/arquivo` e `/api/pauta/episodios/x/semana` em 401. Pisos da CI: api
+2030/58, web 382/34, com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md4`, criado vazio:
+migrations do zero, `db:seed` e `db:seed:politica`; segredo gerado com `openssl rand -base64 48`;
+MinIO descartável da imagem `minio/minio` em `127.0.0.1:9312`, removido no fim; um episódio `ep-01`
+em Derivação com 4 matérias semeado direto no banco; vídeo final sintético de 120 s em 1920×1080
+com áudio de 44,1 kHz):
+1. `root-midia cortes-verticais ep-01` → 4 cortes (20, 25, 20 e 30 s; 17,9, 22,4, 17,9 e 26,9 MB,
+   todos acima de uma parte, então pelo envio em partes), áudio em **48000 Hz** no ffprobe; o
+   `sha256` gravado no OS é **igual** ao `shasum -a 256` local nos quatro. Rodar de novo a matéria 1
+   → "o mesmo mp4 já está no OS", sem PUT nem POST.
+2. `POST …/midia-publica` → URL com `exp` em 1 h; `curl` nela → 200 `video/mp4`, `Content-Length`
+   17900266, `Cache-Control: private, no-store`, sem `x-correlation-id`, e `cmp` **byte a byte
+   igual** ao mp4 do Mac. O download autenticado (`GET …/video/arquivo`) também igual; sem token, 401.
+3. Com `log_statement = all` no banco do ensaio: token **vencido**, **outra empresa**, **outra
+   chave** e **HMAC trocado** → 404 cada, e **0** comandos no Postgres; o token válido, de controle,
+   → `set_config` + `SELECT … "PautaPeca"`.
+4. `root-midia carrosseis ep-01 --so 1` → 4 PNG e 4 JPEG no OS; a URL assinada do JPEG 1 → 200
+   `image/jpeg`, **1080×1350** pelo `sips`, igual ao do Mac. `stories --so 1` → JPEG 1080×1920.
+5. `Content-Length` de **301 MB** (arquivo esparso, `curl -T`) → **413** "O mp4 tem 301 MB; o teto é
+   300 MB." em 19 ms, com 851 kB enviados antes de a conexão fechar. Um corte refeito com
+   `-movflags -faststart` → 400 "não tem faststart".
+
+**Volume:** um corte de 20–30 s saiu com 17–27 MB no ensaio (vídeo sintético, `libx264`, ~7 Mbit/s).
+Com cortes reais de 1–3 min, a estimativa é de 50 a 150 MB por corte e **0,3 a 1 GB por semana** de
+quatro cortes, mais uns 5 MB de JPEG. **Estimativa**, a medir com o primeiro episódio real. Nada é
+apagado do storage nesta fatia (nem ao reenviar: o sha novo é outra chave).
+
+**Deploy:** nenhuma migration, capacidade, permissão ou seed. Variáveis novas com padrão no compose;
+sem `PAUTA_MIDIA_PUBLICA_SEGREDO` a rota pública responde 404 e `POST …/midia-publica` responde 503.
+
+**Correção da revisão (três revisores, 24/09/2026).** Corrigido, cada item com teste:
+- **O encadeamento contava o corte com o mp4 no OS como "sem render".** A MD4 criou `onde: 'video'`
+  e o encadeamento seguia com `storage || mac`. Agora os dois (vigia e encadeamento) usam a mesma
+  função, `midiaProntaDaPeca`: o corte está pronto só com o mp4 no storage, e a imagem, com o PNG e
+  um JPEG por imagem. O corte só registrado no Mac passa a pedir render no motivo, como já pedia ao
+  vigia.
+- **Um envio que não chegava derrubava os cortes seguintes.** `subirCorteAoOs`
+  (`tools/root-midia/lib/semana.mjs`) isola a falha do POST por corte; sem `ROOT_OS_ENVIO_URL` e com
+  a API fora desta máquina, o mp4 acima de 10 MB nem tenta subir; se a peça já tem outro mp4 no OS,
+  o corte barrado também não é registrado, porque o PUT apagaria a referência. O fetch do envio tem
+  prazo (`AbortSignal.timeout`, 1 min mais 1 s a cada 256 kB).
+- **O cabeçalho de 64 bits partido entre 9 e 15 bytes dava 500.** A conferência recalcula quantos
+  bytes o cabeçalho precisa depois de juntar o pedaço.
+- **`pipe` no lugar de `pipeline`** nas três rotas que entregam arquivo do storage (mídia pública,
+  mp4 e imagem da peça): `common/entregar-arquivo.ts`.
+- **Editar a legenda durante o envio derrubava o mp4 (409).** O envio compara só o que está no vídeo
+  (início, fim e transcrição).
+- **Salvar o mp4 no celular:** a folha de compartilhar, como as imagens (o download do iPhone vai
+  ao app Arquivos, e o Instagram escolhe das Fotos).
+- Os textos que ainda diziam "o mp4 fica no Mac" (`docs/PAUTA.md`, o uso semanal do
+  `PLANO-MAQUINA-DE-CONTEUDO.md` e o cabeçalho de `AbaSemana.tsx`), e a ordem dos comentários em
+  `midia-do-episodio.ts`.
+
+**Decisão registrada:** `POST /pauta/pecas/:id/midia-publica` fica como rota (é o ensaio da MD6 e o
+que o efeito da MD6 vai chamar), mas só assina peça **aprovada**. Uma pessoa com `pauta.publicar`
+não põe mais o arquivo de um rascunho numa URL pública.
+
+**Medido depois da correção** (Mac, `marketing_os_test`, 24/09/2026): `pnpm typecheck` 7/7;
+`typecheck:test` limpo; api direto com `TEST_DATABASE_URL` **2742 de 2742** em 66 arquivos (+8:
+`pauta-encadeamento` +1, `pauta-midia-publica` +3, `pauta-semana` +1, `root-midia` +3); sem ele,
+2163 passados e 579 pulados; web **564** em 43 (+1); `build` + `smoke` OK. Schema, política e porta
+não mudaram. Pisos da CI: api 2037/58, web 383/34, com a conta no `ci.yml`.
+
+**Pendências (do Pedro), na ordem:**
+1. **Gerar `PAUTA_MIDIA_PUBLICA_SEGREDO`** no terminal da VPS (`openssl rand -base64 48`) e colar no
+   serviço `api` do easyPanel. Nunca em chat. Sem ele a rota pública fica desligada (404).
+2. **Conferir `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT` e `S3_BUCKET`** no serviço `api` da
+   VPS. Sem elas, o envio de imagem e de mp4 responde 503.
+3. **Abrir uma rota até a API que não passe pelo `mktos_web`** (o proxy do Next corta o corpo em
+   10 MB), com o limite de corpo do Traefik em pelo menos 300 MB.
+4. **Pôr `ROOT_OS_ENVIO_URL`** (essa rota, com o `/api`) em `~/.config/root/root-midia.env`
+   **antes do deploy**. Sem ela, a primeira passagem do vigia depois do deploy refaz os cortes, e o
+   mp4 acima de 10 MB fica só registrado, com o aviso "não subiu ao OS".
+5. **Conferir na MD6** se a Graph pede `Range` (esta versão não atende) e se baixa pela origem
+   `PUBLIC_BIO_ORIGIN`. O `requestTimeout` do Node é de 300 s: subir 300 MB pede cerca de 8 Mbit/s
+   de subida do Mac até a VPS.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -1616,6 +1750,20 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     de madrugada nessa faixa passa a subir. Regra nova no arranque: valor inválido na variável
     impede a API de subir, com a linha `POLITICA_FUSO_HORARIO="<valor>" não é um fuso conhecido` no
     log. A agenda da semana segue na constante de SP e não lê a variável.
+
+**Na mídia da peça (onda D)**
+
+26. **MD4: o mp4 do corte deixa de ficar só no Mac.** `root-midia cortes` passa a subir o arquivo
+    inteiro ao storage da VPS (`pauta/pecas/<id>/corte-<sha256>.mp4`), além de registrar o caminho,
+    e `stories`/`carrosseis` sobem também um JPEG por imagem. A aba Semana troca "o vídeo ficou no
+    Mac" por "Salvar o mp4" quando ele está no OS. Há uma rota pública nova,
+    `GET /api/midia-publica/:token`, que serve o JPEG e o mp4 da peça aprovada por URL assinada de até 1 h; sem
+    `PAUTA_MIDIA_PUBLICA_SEGREDO` ela responde 404 para tudo. Carrossel com mais de 10 slides deixa
+    de ser aprovado. O vigia do Mac passa a refazer o corte que só foi registrado (sem o mp4 no
+    storage) e a imagem sem JPEG — na primeira passagem depois do deploy, as peças da semana já
+    renderizadas voltam a ser renderizadas uma vez para subir o que falta. O mp4 acima de 10 MB
+    **não passa pelo proxy do Next**: o Mac precisa de `ROOT_OS_ENVIO_URL` apontando para a API
+    direto.
 
 ---
 

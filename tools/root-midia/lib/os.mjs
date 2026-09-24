@@ -22,8 +22,11 @@ export const TETO_DO_CORPO = 2 * 1024 * 1024 - 2048;
  */
 export function configuracao(env) {
   const limpo = (/** @type {string | undefined} */ v) => (v ?? '').trim();
+  const url = (limpo(env.ROOT_OS_API_URL) || 'http://localhost:4001/api').replace(/\/+$/, '');
   return {
-    url: (limpo(env.ROOT_OS_API_URL) || 'http://localhost:4001/api').replace(/\/+$/, ''),
+    url,
+    // MD4: o mp4 do corte sobe direto à API — o proxy do Next corta corpo acima de 10 MB.
+    envio: (limpo(env.ROOT_OS_ENVIO_URL) || url).replace(/\/+$/, ''),
     email: limpo(env.ROOT_OS_EMAIL),
     senha: env.ROOT_OS_SENHA ?? '',
     modelo: limpo(env.WHISPER_MODEL),
@@ -69,6 +72,35 @@ export function ehLocal(url) {
   }
 }
 
+/**
+ * O proxy do Next (`mktos_web`) corta o corpo acima de 10 MB e não responde:
+ * o mp4 maior que isso só sobe pela ROOT_OS_ENVIO_URL (a API direto).
+ */
+export const TETO_DO_PROXY_DO_WEB = 10 * 1024 * 1024;
+
+/**
+ * Por que o mp4 não tem caminho para subir, ou null. Recusa antes de mandar o
+ * primeiro byte: pelo proxy do web o pedido ficaria pendurado minutos.
+ * @param {{ url: string, envio?: string }} c @param {number} bytes
+ */
+export function motivoParaNaoEnviarOMp4(c, bytes) {
+  const envio = c.envio ?? c.url;
+  if (envio !== c.url || ehLocal(c.url) || bytes <= TETO_DO_PROXY_DO_WEB) return null;
+  return (
+    `o mp4 tem ${Math.round(bytes / 1024 / 1024)} MB e iria pelo proxy do web, que corta acima de 10 MB: ` +
+    'ponha ROOT_OS_ENVIO_URL (a API sem passar pelo web) em ~/.config/root/root-midia.env'
+  );
+}
+
+/**
+ * O prazo do envio do mp4: 1 min de folga mais 1 s a cada 256 kB (2 Mbit/s).
+ * Acima disso o pedido não vai terminar, e o corte seguinte não espera por ele.
+ * @param {number} bytes
+ */
+export function prazoDoEnvioDoMp4(bytes) {
+  return 60_000 + Math.ceil(bytes / (256 * 1024)) * 1000;
+}
+
 /** @param {ReturnType<typeof configuracao>} c */
 export function exigirOs(c) {
   const faltam = [!c.email && 'ROOT_OS_EMAIL', !c.senha && 'ROOT_OS_SENHA'].filter(Boolean);
@@ -83,12 +115,15 @@ export function exigirOs(c) {
       `ROOT_OS_API_URL (${c.url}) é http fora desta máquina: a senha iria em claro. Use https://.`,
     );
   }
+  if (c.envio && /^http:/i.test(c.envio) && !ehLocal(c.envio)) {
+    throw new Error(`ROOT_OS_ENVIO_URL (${c.envio}) é http fora desta máquina: o token iria em claro. Use https://.`);
+  }
 }
 
 /**
- * @param {{ url: string, email: string, senha: string, fetch?: typeof globalThis.fetch }} opcoes
+ * @param {{ url: string, envio?: string, email: string, senha: string, fetch?: typeof globalThis.fetch }} opcoes
  */
-export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) {
+export function clienteDoOs({ url, envio = url, email, senha, fetch: f = globalThis.fetch }) {
   /** @type {string | null} */
   let token = null;
 
@@ -149,13 +184,59 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
     },
     /** A semana de posts do episódio (MC15): as matérias e as três peças de cada uma. @param {string} id */
     semana: (id) => pedir('GET', `/pauta/episodios/${encodeURIComponent(id)}/semana`),
-    /** Um PNG da peça: o slide n do carrossel, ou o story (n = 1). @param {string} pecaId @param {number} n @param {Uint8Array} png @param {string} nome */
-    enviarImagemDaPeca: (pecaId, n, png, nome) => {
+    /**
+     * Uma imagem da peça: o slide n do carrossel, ou o story (n = 1). PNG (a
+     * prévia) ou, desde a MD4, JPEG (o que a Meta baixa).
+     * @param {string} pecaId @param {number} n @param {Uint8Array} bytes @param {string} nome @param {'image/png' | 'image/jpeg'} [tipo]
+     */
+    enviarImagemDaPeca: (pecaId, n, bytes, nome, tipo = 'image/png') => {
       const form = new FormData();
-      form.append('file', new Blob([png], { type: 'image/png' }), nome);
+      form.append('file', new Blob([bytes], { type: tipo }), nome);
       return pedir('POST', `/pauta/pecas/${encodeURIComponent(pecaId)}/imagens/${n}`, form);
     },
-    /** O corte renderizado: o mp4 fica no Mac, vai só onde ele está e o que foi medido. @param {string} pecaId @param {unknown} corpo */
+    /**
+     * MD4: o mp4 do corte sobe ao storage do OS, cru, por stream (nunca inteiro
+     * em memória), com o tamanho e o sha256 no cabeçalho. `abrir` devolve um
+     * stream novo a cada chamada: o 401 do token vencido reabre o arquivo.
+     * @param {string} pecaId @param {{ abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string }} arquivo
+     */
+    enviarVideoDoCorte: async (pecaId, arquivo) => {
+      if (!token) await entrar();
+      const caminho = `/pauta/pecas/${encodeURIComponent(pecaId)}/video/arquivo`;
+      const enviar = () =>
+        f(`${envio}${caminho}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'video/mp4',
+            'Content-Length': String(arquivo.bytes),
+            'X-Conteudo-Sha256': arquivo.sha256,
+          },
+          body: /** @type {any} */ (arquivo.abrir()),
+          // @ts-ignore o fetch do Node exige `duplex` para corpo em stream
+          duplex: 'half',
+          signal: AbortSignal.timeout(prazo),
+        });
+      const prazo = prazoDoEnvioDoMp4(arquivo.bytes);
+      try {
+        let res = await enviar();
+        if (res.status === 401) {
+          await entrar();
+          res = await enviar();
+        }
+        const texto = await res.text();
+        if (!res.ok) throw new Error(`POST ${caminho} → HTTP ${res.status}: ${mensagemDoErro(texto)}`);
+        return texto ? JSON.parse(texto) : null;
+      } catch (e) {
+        if (/** @type {Error} */ (e)?.name === 'TimeoutError') {
+          throw new Error(`POST ${caminho}: o envio passou de ${Math.round(prazo / 1000)} s sem resposta.`);
+        }
+        throw e;
+      }
+    },
+    /** Por que este mp4 não tem caminho para subir, ou null (MD4). @param {number} bytes */
+    motivoParaNaoEnviar: (bytes) => motivoParaNaoEnviarOMp4({ url, envio }, bytes),
+    /** O corte renderizado: onde o mp4 está no Mac e o que foi medido (MC15). @param {string} pecaId @param {unknown} corpo */
     videoDoCorte: (pecaId, corpo) => pedir('PUT', `/pauta/pecas/${encodeURIComponent(pecaId)}/video`, corpo),
     /** O calendário da semana (MC16): sete dias a partir de `de` (AAAA-MM-DD), ou desta semana. @param {string} [de] */
     agenda: (de) => pedir('GET', `/pauta/agenda${de ? `?de=${encodeURIComponent(de)}` : ''}`),

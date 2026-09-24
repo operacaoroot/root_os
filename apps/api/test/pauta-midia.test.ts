@@ -423,6 +423,8 @@ describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação',
     { titulo: 'Palavra-chave: PIX', texto: 'Comentário com PIX' },
   ];
   const png = (n: number) => ({ n, chave: `k${n}`, sha: 's', largura: 1080, altura: 1350, bytes: 1, enviadaEm: 'x' });
+  const jpg = (n: number) => ({ ...png(n), chave: `k${n}.jpg`, tipo: 'jpeg' });
+  const noStorage = { arquivo: '/x.mp4', chave: 'pauta/pecas/p/corte-a.mp4', sha256: 'a'.repeat(64), bytes: 1, duracaoSeg: 1, largura: 1080, altura: 1920 };
   const peca = (id: string, formato: string, over: Partial<PecaFalsa> = {}, m: Record<string, unknown> = {}): PecaFalsa & { titulo: string; corpo: string } => ({
     id, orgId: ORG, rodadaId: RODADA, canal: 'instagram', formato, status: 'rascunho', agendadaPara: null,
     titulo: `t-${id}`, corpo: `c-${id}`, meta: meta(formato, m), ...over,
@@ -432,11 +434,11 @@ describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação',
     const r = renderPendente(
       [
         peca('corte-sem-mp4', 'corte'),
-        peca('corte-com-mp4', 'corte', {}, { video: { arquivo: '/x.mp4' } }),
+        peca('corte-no-storage', 'corte', {}, { video: noStorage }),
         peca('story-sem', 'story', { status: 'aprovada' }),
-        peca('story-com', 'story', {}, { imagens: [png(1)] }),
+        peca('story-com', 'story', {}, { imagens: [png(1), jpg(1)] }),
         peca('carrossel-pela-metade', 'carrossel', {}, { slides, imagens: [png(1), png(2)] }),
-        peca('carrossel-inteiro', 'carrossel', {}, { slides, imagens: [1, 2, 3, 4].map(png) }),
+        peca('carrossel-inteiro', 'carrossel', {}, { slides, imagens: [1, 2, 3, 4].flatMap((n) => [png(n), jpg(n)]) }),
         peca('publicada', 'corte', { status: 'publicada' }),
         peca('descartada', 'story', { status: 'descartada' }),
         peca('outra-fala', 'corte', {}, { transcricaoSha: 'velho' }),
@@ -447,7 +449,23 @@ describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação',
     );
     expect(Object.fromEntries(Object.entries(r).map(([f, v]) => [f, v?.pecas]))).toEqual({ carrossel: 1, story: 1, corte: 1 });
     expect(r.corte?.assinatura).toMatch(/^[0-9a-f]{16}$/);
-    expect(renderPendente([peca('corte-com-mp4', 'corte', {}, { video: { arquivo: '/x.mp4' } })], { id: 'e1', numero: 3, sha: SHA })).toEqual({});
+    expect(renderPendente([peca('corte-no-storage', 'corte', {}, { video: noStorage })], { id: 'e1', numero: 3, sha: SHA })).toEqual({});
+  });
+
+  it('MD4: o mp4 só registrado no Mac e o PNG sem o JPEG ainda são render a fazer — a Meta só baixa do storage, e só JPEG', () => {
+    const e = { id: 'e1', numero: 3, sha: SHA };
+    const r = renderPendente(
+      [
+        peca('corte-so-no-mac', 'corte', {}, { video: { arquivo: '/x.mp4' } }),
+        peca('story-so-png', 'story', {}, { imagens: [png(1)] }),
+        peca('carrossel-sem-um-jpeg', 'carrossel', {}, { slides, imagens: [...[1, 2, 3, 4].map(png), ...[1, 2, 3].map(jpg)] }),
+      ],
+      e,
+    );
+    expect(Object.fromEntries(Object.entries(r).map(([f, v]) => [f, v?.pecas]))).toEqual({ carrossel: 1, story: 1, corte: 1 });
+    // O JPEG que chega muda a assinatura: o vigia não fica preso ao render que já falhou antes dele.
+    const antes = renderPendente([peca('s', 'story', {}, { imagens: [png(1)] })], e).story!.assinatura;
+    expect(renderPendente([peca('s', 'story', {}, { imagens: [jpg(1)] })], e).story!.assinatura).not.toBe(antes);
   });
 
   it('a assinatura só muda quando o texto ou a mídia mudam — é o que impede o vigia de refazer o mesmo render que falhou', () => {

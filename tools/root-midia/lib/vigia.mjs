@@ -198,7 +198,7 @@ export function motivoParaOVigiaNaoEnviar(alvo, apelido) {
 /**
  * O que um render do vigia deixou de fora e o Pedro precisa saber, porque o
  * comando manual só avisa no terminal: o carrossel com texto estourado não
- * sobe, e o corte sem trecho é pulado.
+ * sobe, o corte sem trecho é pulado, e o mp4 que não subiu ao OS (MD4) fica no Mac.
  * @param {string} apelido @param {'corte' | 'story' | 'carrossel'} formato
  * @param {any} retorno o que `cortesVerticais`, `stories` ou `carrosseis` devolveu
  * @returns {string[]}
@@ -214,7 +214,12 @@ export function avisosDoRender(apelido, formato, retorno) {
       });
   }
   if (formato === 'corte') {
-    return (retorno?.pulados ?? []).map((/** @type {any} */ p) => `${apelido}: o corte da matéria ${p.n} ficou sem render (${p.motivo})`);
+    return [
+      ...(retorno?.pulados ?? []).map((/** @type {any} */ p) => `${apelido}: o corte da matéria ${p.n} ficou sem render (${p.motivo})`),
+      ...(retorno?.cortes ?? [])
+        .filter((/** @type {any} */ c) => c?.subiu === false && c.motivo)
+        .map((/** @type {any} */ c) => `${apelido}: o mp4 do corte da matéria ${c.n} não subiu ao OS (${c.motivo})`),
+    ];
   }
   return [];
 }

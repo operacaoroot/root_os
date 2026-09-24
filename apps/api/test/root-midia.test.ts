@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { PautaMidiaSchema, PautaTranscricaoSchema } from '@mktos/shared';
 import {
@@ -43,6 +46,8 @@ import {
   juntarVariaveis,
   lerArquivoDeVariaveis,
   mensagemDoErro,
+  motivoParaNaoEnviarOMp4,
+  prazoDoEnvioDoMp4,
 } from '../../../tools/root-midia/lib/os.mjs';
 import {
   ALTURA,
@@ -69,8 +74,17 @@ import {
   argsDoChromeNoTamanho,
   argsDoCorteVertical,
   argsDoFrameDoStory,
+  argsDoSips,
+  caixasDeTopo,
   candidatosDoRender,
+  conferirJpegNoTamanho,
   conferirPngNoTamanho,
+  dimensoesDoJpeg as dimensoesDoJpegNoMac,
+  jpegDoPng,
+  jpegJaNoOs,
+  motivoSemFaststart,
+  subirCorteAoOs,
+  videoJaNoOs,
   filtroDoCorteVertical,
   layoutDoCorte,
   lerRegiao,
@@ -126,6 +140,7 @@ import {
   travaOcupada,
   ultimaLinha,
 } from '../../../tools/root-midia/lib/vigia.mjs';
+import { caixa, jpegDeTeste, mp4DeTeste, sha256 } from './mp4-de-teste';
 
 /*
  * A ESTAÇÃO DE MÍDIA NO MAC — MC9, o lado do Mac (`tools/root-midia`).
@@ -1505,6 +1520,9 @@ describe('root-midia: o vigia do Mac — o que a passagem decide fora do bruto (
     expect(avisosDoRender('ep-07', 'corte', { cortes: [], pulados: [{ n: 2, motivo: 'sem trecho; gere a semana de novo' }] })).toEqual([
       'ep-07: o corte da matéria 2 ficou sem render (sem trecho; gere a semana de novo)',
     ]);
+    expect(avisosDoRender('ep-07', 'corte', { cortes: [{ n: 1, subiu: true }, { n: 3, subiu: false, motivo: 'HTTP 503' }, { n: 4, subiu: false }], pulados: [] })).toEqual([
+      'ep-07: o mp4 do corte da matéria 3 não subiu ao OS (HTTP 503)',
+    ]);
     expect(avisosDoRender('ep-07', 'story', { stories: [] })).toEqual([]);
     expect(avisosDoRender('ep-07', 'corte', undefined)).toEqual([]);
   });
@@ -1553,5 +1571,185 @@ describe('root-midia: a catraca do não-apagar (MD2)', () => {
       expect(texto, a).not.toMatch(/['"`](rm|trash|srm|rmdir)['"`]/);
       expect(texto, a).not.toMatch(/fs\/promises|promises\.(rm|unlink)/);
     }
+  });
+});
+
+/*
+ * MD4 — a mídia sobe ao OS: o JPEG ao lado do PNG pelo `sips` e o mp4 do corte
+ * inteiro, por stream, conferido o faststart e com o sha256 no cabeçalho.
+ */
+describe('root-midia: o JPEG e o mp4 do corte sobem ao OS (MD4)', () => {
+  it('o corte sai com o áudio em 48 kHz e o faststart', () => {
+    const args = argsDoCorteVertical({ video: 'v', saida: 's.mp4', inicio: 0, fim: 30, filtro: 'F', audio: true, codec: [] });
+    expect(args.join(' ')).toContain('-c:a aac -b:a 160k -ar 48000');
+    expect(args.join(' ')).toContain('-movflags +faststart');
+  });
+
+  it('o sips converte o PNG num JPEG ao lado, qualidade 90, em lista de argumentos', () => {
+    expect(argsDoSips('/p/ep 04; rm.png', '/p/ep 04; rm.jpg')).toEqual(['-s', 'format', 'jpeg', '-s', 'formatOptions', '90', '/p/ep 04; rm.png', '--out', '/p/ep 04; rm.jpg']);
+    expect(() => argsDoSips('/p/a.jpg', '/p/b.png')).toThrow(/converte .png em .jpg/);
+    expect(jpegDoPng('/p/slide-01.PNG')).toBe('/p/slide-01.jpg');
+  });
+
+  it('o JPEG convertido é conferido: tamanho da peça e teto de 8 MB', () => {
+    expect(dimensoesDoJpegNoMac(jpegDeTeste(1080, 1350))).toEqual({ largura: 1080, altura: 1350 });
+    expect(dimensoesDoJpegNoMac(Buffer.from('não é jpeg'))).toBeNull();
+    expect(conferirJpegNoTamanho(jpegDeTeste(1080, 1920), 1080, 1920)).toBeNull();
+    expect(conferirJpegNoTamanho(jpegDeTeste(1080, 1350), 1080, 1920)).toMatch(/1080×1350; a peça é 1080×1920/);
+    expect(conferirJpegNoTamanho(Buffer.concat([jpegDeTeste(1080, 1920), Buffer.alloc(8 * 1024 * 1024)]), 1080, 1920)).toMatch(/8 MB/);
+    expect(conferirJpegNoTamanho(Buffer.from('x'), 1080, 1920)).toMatch(/não saiu JPEG/);
+  });
+
+  it('as caixas de topo pelo cabeçalho: com faststart passa; moov depois do mdat, sem ftyp ou truncado não', () => {
+    const ler = (b: Buffer) => (offset: number, n: number) => b.subarray(offset, offset + n);
+    const bom = mp4DeTeste();
+    expect(caixasDeTopo(ler(bom), bom.length).map((c) => c.tipo)).toEqual(['ftyp', 'moov', 'mdat']);
+    expect(motivoSemFaststart(caixasDeTopo(ler(bom), bom.length))).toBeNull();
+    const ruim = mp4DeTeste({ faststart: false });
+    expect(motivoSemFaststart(caixasDeTopo(ler(ruim), ruim.length))).toMatch(/faststart/);
+    const semFtyp = Buffer.concat([caixa('free', Buffer.alloc(4)), bom]);
+    expect(motivoSemFaststart(caixasDeTopo(ler(semFtyp), semFtyp.length))).toMatch(/ftyp/);
+    expect(() => caixasDeTopo(ler(bom.subarray(0, bom.length - 1)), bom.length - 1)).toThrow(/truncado/);
+  });
+
+  it('o mesmo conteúdo que já está no OS não sobe de novo', () => {
+    expect(videoJaNoOs({ video: { sha256: 'a' } }, 'a')).toBe(true);
+    expect(videoJaNoOs({ video: { sha256: 'a' } }, 'b')).toBe(false);
+    expect(videoJaNoOs({ video: null }, 'a')).toBe(false);
+    expect(jpegJaNoOs({ jpegs: [{ n: 2, sha256: 'x' }] }, 2, 'x')).toBe(true);
+    expect(jpegJaNoOs({ jpegs: [{ n: 2, sha256: 'x' }] }, 1, 'x')).toBe(false);
+    expect(jpegJaNoOs({}, 1, 'x')).toBe(false);
+  });
+
+  it('o envio vai à ROOT_OS_ENVIO_URL (a API sem o proxy do web), que também só aceita https fora desta máquina', () => {
+    expect(configuracao({ ROOT_OS_API_URL: 'https://os.x/api/' }).envio).toBe('https://os.x/api');
+    expect(configuracao({ ROOT_OS_API_URL: 'https://os.x/api', ROOT_OS_ENVIO_URL: 'https://api.x/api/' }).envio).toBe('https://api.x/api');
+    expect(() => exigirOs(configuracao({ ROOT_OS_API_URL: 'https://os.x/api', ROOT_OS_ENVIO_URL: 'http://api.x/api', ROOT_OS_EMAIL: 'a', ROOT_OS_SENHA: 'b' }))).toThrow(/ROOT_OS_ENVIO_URL/);
+    expect(() => exigirOs(configuracao({ ROOT_OS_API_URL: 'https://os.x/api', ROOT_OS_ENVIO_URL: 'http://127.0.0.1:4001/api', ROOT_OS_EMAIL: 'a', ROOT_OS_SENHA: 'b' }))).not.toThrow();
+  });
+
+  it('o mp4 sobe por stream a um servidor dublê: Content-Length, o sha no cabeçalho, os bytes iguais; o 401 reabre o arquivo', async () => {
+    const recebidos: Array<{ url: string; cabecalhos: Record<string, unknown>; corpo: Buffer }> = [];
+    let recusarUma = true;
+    const servidor = createServer((req, res) => {
+      const partes: Buffer[] = [];
+      req.on('data', (d: Buffer) => partes.push(d));
+      req.on('end', () => {
+        if (req.url?.endsWith('/auth/login')) return res.end(JSON.stringify({ token: `t${recebidos.length}` }));
+        recebidos.push({ url: req.url ?? '', cabecalhos: req.headers, corpo: Buffer.concat(partes) });
+        if (recusarUma) {
+          recusarUma = false;
+          res.statusCode = 401;
+          return res.end('{}');
+        }
+        res.end(JSON.stringify({ video: { sha256: req.headers['x-conteudo-sha256'] } }));
+      });
+    });
+    await new Promise<void>((ok) => servidor.listen(0, '127.0.0.1', ok));
+    try {
+      const base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
+      const mp4 = mp4DeTeste({ mdat: 200_000 });
+      let aberturas = 0;
+      const abrir = () => {
+        aberturas++;
+        return Readable.from([mp4.subarray(0, 100_000), mp4.subarray(100_000)]);
+      };
+      const os = clienteDoOs({ url: `${base}/api`, envio: `${base}/api`, email: 'a', senha: 'b' });
+      const r = await os.enviarVideoDoCorte('p 1', { abrir, bytes: mp4.length, sha256: sha256(mp4) });
+      expect(r).toEqual({ video: { sha256: sha256(mp4) } });
+      expect(aberturas).toBe(2);
+      expect(recebidos).toHaveLength(2);
+      for (const pedido of recebidos) {
+        expect(pedido.url).toBe('/api/pauta/pecas/p%201/video/arquivo');
+        expect(pedido.cabecalhos).toMatchObject({
+          'content-type': 'video/mp4',
+          'content-length': String(mp4.length),
+          'x-conteudo-sha256': sha256(mp4),
+        });
+        expect(pedido.cabecalhos['transfer-encoding']).toBeUndefined();
+        expect(pedido.corpo.equals(mp4)).toBe(true);
+      }
+    } finally {
+      servidor.close();
+    }
+  });
+
+  it('pelo proxy do web o mp4 acima de 10 MB nem tenta subir; a API direto ou local, sim; o prazo cresce com o tamanho', () => {
+    const MB = 1024 * 1024;
+    const prod = configuracao({ ROOT_OS_API_URL: 'https://os.x/api' });
+    expect(motivoParaNaoEnviarOMp4(prod, 11 * MB)).toMatch(/ROOT_OS_ENVIO_URL/);
+    expect(motivoParaNaoEnviarOMp4(prod, 9 * MB)).toBeNull();
+    expect(motivoParaNaoEnviarOMp4(configuracao({ ROOT_OS_API_URL: 'https://os.x/api', ROOT_OS_ENVIO_URL: 'https://api.x/api' }), 200 * MB)).toBeNull();
+    expect(motivoParaNaoEnviarOMp4(configuracao({ ROOT_OS_API_URL: 'http://localhost:4001/api' }), 200 * MB)).toBeNull();
+    expect(clienteDoOs({ url: 'https://os.x/api', email: 'a', senha: 'b' }).motivoParaNaoEnviar(11 * MB)).toMatch(/ROOT_OS_ENVIO_URL/);
+    expect(prazoDoEnvioDoMp4(0)).toBe(60_000);
+    expect(prazoDoEnvioDoMp4(300 * MB)).toBe(60_000 + 1200 * 1000);
+  });
+
+  it('cada corte falha sozinho: o envio que não chega volta com o motivo, e o barrado não apaga o mp4 que a peça já tem no OS', async () => {
+    const chamadas: string[] = [];
+    const osFalso = (o: { barrado?: string | null; falhaNoEnvio?: boolean } = {}) => ({
+      motivoParaNaoEnviar: () => o.barrado ?? null,
+      videoDoCorte: async (id: string) => void chamadas.push(`PUT ${id}`),
+      enviarVideoDoCorte: async (id: string) => {
+        chamadas.push(`POST ${id}`);
+        if (o.falhaNoEnvio) throw new Error('POST … → HTTP 503: storage fora');
+      },
+    });
+    const arquivo = { sha256: 'b'.repeat(64), abrir: () => Readable.from([Buffer.from('x')]) };
+    const corpo = { bytes: 20 * 1024 * 1024 };
+
+    expect(await subirCorteAoOs(osFalso(), { id: 'p1' }, corpo, arquivo)).toEqual({ sha256: arquivo.sha256, subiu: true });
+    expect(await subirCorteAoOs(osFalso({ falhaNoEnvio: true }), { id: 'p2' }, corpo, arquivo)).toEqual({ sha256: arquivo.sha256, subiu: false, motivo: 'POST … → HTTP 503: storage fora' });
+    // Barrado sem mp4 no OS: registra o caminho do Mac (MC15), não manda o arquivo.
+    expect(await subirCorteAoOs(osFalso({ barrado: 'pelo proxy' }), { id: 'p3', video: null }, corpo, arquivo)).toMatchObject({ subiu: false, motivo: 'pelo proxy' });
+    // Barrado com outro mp4 já no OS: nem registra, que o registro apagaria a referência.
+    expect(await subirCorteAoOs(osFalso({ barrado: 'pelo proxy' }), { id: 'p4', video: { sha256: 'a'.repeat(64) } }, corpo, arquivo)).toMatchObject({ subiu: false, motivo: 'pelo proxy' });
+    // O mesmo mp4 já no OS: nada.
+    expect(await subirCorteAoOs(osFalso(), { id: 'p5', video: { sha256: arquivo.sha256 } }, corpo, arquivo)).toEqual({ sha256: arquivo.sha256, subiu: false });
+    expect(chamadas).toEqual(['PUT p1', 'POST p1', 'PUT p2', 'POST p2', 'PUT p3']);
+  });
+
+  it('o envio que passa do prazo vira erro com o tempo, sem pendurar o corte seguinte', async () => {
+    const fetchQueEstoura = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://127.0.0.1:1/api', email: 'a', senha: 'b', fetch: fetchQueEstoura });
+    await expect(os.enviarVideoDoCorte('p1', { abrir: () => Readable.from([Buffer.from('x')]), bytes: 1, sha256: 'a'.repeat(64) })).rejects.toThrow(/passou de 61 s sem resposta/);
+  });
+
+  it('o JPEG sobe no mesmo multipart do PNG, como image/jpeg', async () => {
+    const pedidos: Array<{ url: string; arquivo: File }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      pedidos.push({ url, arquivo: (init.body as FormData).get('file') as File });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+    await os.enviarImagemDaPeca('p1', 2, jpegDeTeste(1080, 1350), 'slide-02.jpg', 'image/jpeg');
+    expect(pedidos[0].url).toBe('http://os/api/pauta/pecas/p1/imagens/2');
+    expect(pedidos[0].arquivo).toMatchObject({ type: 'image/jpeg', name: 'slide-02.jpg' });
+  });
+
+  it('na agenda do terminal, o mp4 que subiu aparece como no OS', () => {
+    const linhas = linhasDaAgenda({
+      dias: [
+        {
+          dia: '2026-09-29',
+          diaDaSemana: 'ter',
+          linhas: [
+            {
+              hora: '18:00',
+              formato: 'corte',
+              daGrade: true,
+              peca: { apelido: 'ep-04', itemN: 1, titulo: 'Preço', status: 'aprovada', postada: null, agendadaPara: 'x', midia: { onde: 'video', arquivo: '/m/c.mp4', bytes: 40 * 1024 * 1024 } },
+            },
+          ],
+        },
+      ],
+    });
+    expect(linhas.join('\n')).toContain('mp4 no OS (40 MB; baixe na aba Semana) e no Mac: /m/c.mp4');
   });
 });

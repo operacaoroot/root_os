@@ -82,6 +82,10 @@ export function segmentoDaApi(caminho: string): { cru: string; decodificado: str
  *    Instagram, e só ela (`/conexoes` usa `integrations`, que é espinha).
  *  - `conectar` é do módulo `bio`: é o callback OAuth de Instagram/TikTok da
  *    bio. O path é travado por App Review (ver CLAUDE.md) e é público.
+ *  - `midia-publica` é do módulo `pauta` (MD4): serve o JPEG e o mp4 da peça
+ *    por URL assinada de 1 h, para a Graph da Meta baixar. É pública (sem
+ *    token de sessão) e, como o gate deixa anônimo passar, o serviço confere
+ *    o módulo da empresa do token por conta própria.
  */
 export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   trabalho: 'trabalho',
@@ -93,6 +97,7 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   events: 'pixels',
   content: 'conteudo',
   pauta: 'pauta',
+  'midia-publica': 'pauta',
   meta: 'instagram',
   bio: 'bio',
   conectar: 'bio',
