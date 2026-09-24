@@ -4,8 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
+import { NovaRotinaDeColeta } from './NovaRotinaDeColeta';
 import {
   ESTADOS,
+  TIPO_PAUTA_COLETA,
+  type ResultadoDoRodar,
   emHoras,
   quando,
   tomDoEstado,
@@ -52,14 +55,19 @@ import {
  * para renovação ("esta rotina devolve X horas por semana"). A conta inteira,
  * com o que entra e o que não entra, está em `horas.ts`.
  *
- * A tela NÃO cria rotina. Hoje toda rotina nasce de outro lugar (a da pauta, da
- * tela de Pauta) e o criador genérico depende de escolher o executor — é
- * decisão de produto, não de tela, e está no relatório da fatia.
+ * A tela cria UM tipo de rotina: a coleta de quinta da pauta (MC5), pelo
+ * `POST /rotinas`, só quando a API a oferece (executor inscrito e módulo pauta
+ * contratado) e só enquanto a empresa não tem uma — a segunda dobraria Apify e
+ * IA na mesma noite, e rotina não se apaga, só se desliga. O criador
+ * genérico continua fora: escolher executor é decisão de produto, e cada tipo
+ * novo que precisar de tela ganha o formulário dele. A rotina da pauta de antes
+ * segue nascendo na tela de Pauta.
  */
 export default function RotinasPage() {
   const { token, ready, can } = useAuth();
   const [data, setData] = useState<RotinasList | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Record<string, ExecucaoResumo[]>>({});
@@ -119,6 +127,7 @@ export default function RotinasPage() {
 
   async function agir(id: string, fn: () => Promise<unknown>) {
     setErro(null);
+    setAviso(null);
     setOcupado(id);
     try {
       await fn();
@@ -167,6 +176,12 @@ export default function RotinasPage() {
 
       {erro && (
         <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>
+      )}
+
+      {aviso && (
+        <div role="status" className="rounded-root border border-brand/40 bg-brand/10 p-3 text-sm">
+          Não rodou: {aviso}
+        </div>
       )}
 
       {data?.descobertaCega && (
@@ -238,11 +253,17 @@ export default function RotinasPage() {
         inteiros — ali o número é piso, não total.
       </p>
 
+      {editavel &&
+        data?.tiposDisponiveis?.includes(TIPO_PAUTA_COLETA) &&
+        !data.items.some((r) => r.tipo === TIPO_PAUTA_COLETA) && (
+          <NovaRotinaDeColeta token={token} onCriada={carregar} />
+        )}
+
       {data && data.items.length === 0 && (
         <Card>
           <p className="text-sm text-muted">
             Nenhuma rotina nesta empresa ainda. A rotina de pauta aparece aqui sozinha assim que for
-            criada na tela de Pauta.
+            criada na tela de Pauta; a coleta de quinta nasce pelo botão acima.
           </p>
         </Card>
       )}
@@ -260,7 +281,13 @@ export default function RotinasPage() {
             minutos={minutos[r.id] ?? ''}
             onMinutos={(v) => setMinutos((m) => ({ ...m, [r.id]: v }))}
             onAbrir={() => abrirHistorico(r.id)}
-            onRodar={() => agir(r.id, () => apiPost(`/rotinas/${r.id}/rodar`, {}, token))}
+            onRodar={() =>
+              agir(r.id, async () => {
+                // A passagem pulada não grava histórico: sem isto o clique não dá retorno nenhum.
+                const res = await apiPost<ResultadoDoRodar>(`/rotinas/${r.id}/rodar`, {}, token);
+                if (res?.status === 'pulada') setAviso(res.resumo);
+              })
+            }
             onEstado={(estado) => agir(r.id, () => apiPatch(`/rotinas/${r.id}`, { estado }, token))}
             onAtivo={(ativo) => agir(r.id, () => apiPatch(`/rotinas/${r.id}`, { ativo }, token))}
             onLinhaDeBase={(n) =>

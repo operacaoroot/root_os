@@ -52,6 +52,16 @@ export class RotinasController {
     return this.svc.listar(user.orgId, await this.agendador.diagnostico());
   }
 
+  /**
+   * Cria rotina sem linha de origem (MC5) — a coleta de quinta, por exemplo. A
+   * permissão é a mesma que já edita rotina: criar é agir, não ler.
+   */
+  @Post()
+  @RequirePermissions('automacoes.executar')
+  criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.svc.criar(user.orgId, body, user.sub);
+  }
+
   @Get(':id/execucoes')
   @RequirePermissions('automacoes.ver')
   historico(

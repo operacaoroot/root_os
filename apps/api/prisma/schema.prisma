@@ -2993,7 +2993,8 @@ model Rotina {
   tipo String
 
   /// O que o executor precisa saber. Para `pauta.rodada`: `{ horas,
-  /// coletarAntes }`, espelhado de `PautaRotina.config`.
+  /// coletarAntes }`, espelhado de `PautaRotina.config`. Para `pauta.coleta`
+  /// (MC5): `{ horas?, origens? }`, gravado pelo `POST /rotinas`.
   config Json @default("{}")
 
   /// Cron de 5 campos, avaliado no fuso `tz` (ver `src/pauta/cron.ts`).

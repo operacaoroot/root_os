@@ -1,4 +1,5 @@
 import { AgentEstado } from '@prisma/client';
+import { MODULOS } from '@mktos/shared';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
 /*
@@ -96,6 +97,8 @@ export interface EstadoDoBancoFalso {
   rotinas: RotinaFalsa[];
   pautaRotinas: PautaRotinaFalsa[];
   execucoes: ExecucaoFalsa[];
+  /** `Org.modulos` por empresa. Empresa fora daqui contrata todos. */
+  modulos?: Record<string, string[]>;
 }
 
 export function rotinaFalsa(p: Partial<RotinaFalsa> & { id: string; orgId: string }): RotinaFalsa {
@@ -327,6 +330,11 @@ export function prismaDeRotinas(estado: EstadoDoBancoFalso): PrismaService {
       },
     },
     pautaRotina: tabela(() => estado.pautaRotinas as unknown as Record<string, unknown>[]),
+    org: {
+      findUnique: async (args: { where: { id: string } }) => ({
+        modulos: estado.modulos?.[args.where.id] ?? [...MODULOS],
+      }),
+    },
     $queryRaw: async () => [{ atravessa: true, papel: 'mkt', forcado: false }],
   } as unknown as PrismaService;
 }

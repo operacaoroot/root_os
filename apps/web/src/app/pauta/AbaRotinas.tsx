@@ -89,6 +89,12 @@ export function AbaRotinas({ token, editavel, onErro, bump, onMudou }: Props) {
         </div>
       )}
 
+      <p className="text-xs text-muted">
+        Estas rotinas curam sozinhas (a IA escolhe os itens). A coleta de quinta, que deixa a rodada
+        aguardando a sua curadoria, nasce em <a className="underline" href="/rotinas">Rotinas</a> →
+        &ldquo;Nova rotina de coleta&rdquo;.
+      </p>
+
       <Card titulo="Nova rotina">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Campo label="Nome">

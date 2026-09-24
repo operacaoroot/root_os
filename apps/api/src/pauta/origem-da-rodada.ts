@@ -80,6 +80,16 @@ export function tiposDaColetaDasOrigens(origens: readonly PautaOrigem[]): PautaF
   return filtroDasOrigens(origens.filter((o) => o !== 'W')).map((f) => f.tipo);
 }
 
+/** A conta da coleta por tipo de fonte, relida pela letra da origem. Tipo sem letra fica de fora. */
+export function coletaPorOrigem<T>(porTipo: Partial<Record<PautaFonteTipo, T>>): Partial<Record<PautaOrigem, T>> {
+  const saida: Partial<Record<PautaOrigem, T>> = {};
+  for (const [tipo, conta] of Object.entries(porTipo) as Array<[PautaFonteTipo, T | undefined]>) {
+    const o = origemDaFonte({ tipo });
+    if (o && conta) saida[o] = conta;
+  }
+  return saida;
+}
+
 export interface CapturaDoInsumo {
   titulo: string | null;
   url: string | null;

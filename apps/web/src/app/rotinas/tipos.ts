@@ -74,9 +74,36 @@ export interface RotinasList {
    * tarja vermelha em cima de tudo.
    */
   descobertaCega: boolean;
+  /**
+   * Os tipos com executor inscrito e módulo contratado: os únicos que `POST
+   * /rotinas` aceita. Opcional porque web e API sobem em serviços separados, e
+   * a API anterior não manda o campo — faltar só esconde o botão.
+   */
+  tiposDisponiveis?: string[];
   /** O que a última reconciliação não conseguiu fazer. Vazio é o normal. */
   avisos: string[];
   source: { tool: string; generatedAt: string };
+}
+
+/** O executor da coleta de quinta (MC5). */
+export const TIPO_PAUTA_COLETA = 'pauta.coleta';
+
+/** O que `POST /rotinas/:id/rodar` devolve. */
+export interface ResultadoDoRodar {
+  ok: boolean;
+  status: 'ok' | 'erro' | 'pulada';
+  resumo: string;
+}
+
+/** O corpo de `POST /rotinas` para a coleta de quinta. */
+export interface CorpoDaNovaColeta {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_COLETA;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: { horas: number };
 }
 
 /** Os quatro estados, na ordem em que a tela os oferece. */

@@ -219,8 +219,20 @@ jobs:
       # a lista vazia que monta pela API; e sem `pauta.editar` nada se marca).
       # Medido: 412 casos em 31 arquivos (398 + 14). O piso de ARQUIVOS sobe 1,
       # para 22; o de CASOS sobe 11 (~20% de folga sobre os 14 novos), para 251.
-      PISO_CASOS_WEB: '251'
-      PISO_ARQUIVOS_WEB: '22'
+      #
+      # MC5, COLETA DE QUINTA (23/09/2026): +8 casos, +1 arquivo, só desta
+      # fatia — `component/rotinas-coleta` (8: o formulário abre com quinta 22h,
+      # São Paulo, 168h e "rodando"; Criar manda o corpo do `POST /rotinas` com
+      # o tipo `pauta.coleta` e fecha; o erro da API aparece dentro do card com
+      # o formulário aberto; cron sem cinco campos ou janela fora de 6–336h trava
+      # o Criar; na tela /rotinas o botão aparece com o tipo oferecido e criar
+      # recarrega a lista; some sem o tipo ou para quem só lê; some quando a
+      # empresa já tem uma coleta e quando a API não manda `tiposDisponiveis`;
+      # "Rodar agora" que volta `pulada` mostra o motivo). Medido: 420 casos em
+      # 32 arquivos (412 + 8). O piso de ARQUIVOS sobe 1, para 23; o de CASOS
+      # sobe 7 (~12% de folga sobre os 8 novos), para 258.
+      PISO_CASOS_WEB: '258'
+      PISO_ARQUIVOS_WEB: '23'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -729,8 +741,38 @@ jobs:
       # com o banco de teste, e 1452 passados / 557 pulados sem ele (1412 + 40).
       # O piso de ARQUIVOS vai a 44; o de CASOS sobe 34 (~15% de folga sobre os
       # 40 novos), para 1435.
-      PISO_CASOS_API: '1435'
-      PISO_ARQUIVOS_API: '44'
+      #
+      # ---------------------------------------------------------------------
+      # MC5, ROTINA DE QUINTA 22h QUE COLETA TUDO (23/09/2026): +27 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-coleta-rotina` (27): o executor `pauta.coleta` com dublês —
+      # inscrito uma vez só; todas as origens coletadas como rotina e a rodada
+      # gerada para curadoria com 168h contadas do disparo, `rotinaId` nulo e o
+      # resumo contado por origem; empresa sem o módulo pauta = `pulada` sem
+      # contar fonte, sem Apify e sem IA; a contagem de fontes com o grupo incluído; `config.horas` e
+      # `config.origens` valendo na coleta, na contagem e na rodada; fonte com
+      # erro e pulada na conta da origem sem impedir a rodada; sem fonte =
+      # `pulada` sem coletar nem gerar; janela vazia como erro com a conta da
+      # coleta; origem desconhecida na config; o aviso de sem sugestão; os
+      # resumos só com contagem. A coleta aberta por tipo (fonte que falha não
+      # derruba as outras; tipo→origem; W não se coleta). A leitura do `POST
+      # /rotinas` (padrões, corpo completo, tipo sem executor, cron e fuso,
+      # nome/slug/estado, config por tipo) e o `RotinasService.criar` (rotina
+      # manual rodando com a próxima quinta 22h e auditoria; planejada não
+      # dispara; slug repetido 409 e tipo sem executor 400; `tiposDisponiveis`
+      # na lista; sem o módulo pauta a criação é 400 e a lista não oferece o
+      # tipo; `PAUTA_CRON=off` pulando o tipo novo). E de ponta a ponta, com
+      # o executor, a coleta e o `RodadaService` DE VERDADE: o tique de quinta
+      # 22h dispara (o de quarta não), a rodada fica `aguardando_curadoria` com
+      # W/N/R/C/L e nada marcado, e o "rodar agora" passa pelo mesmo caminho com
+      # a fonte que falha só na conta dela. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2036 casos em 53 arquivos
+      # com o banco de teste, e 1479 passados / 557 pulados sem ele (1452 + 27).
+      # O piso de ARQUIVOS vai a 45; o de CASOS sobe 23 (~15% de folga sobre os
+      # 27 novos), para 1458.
+      PISO_CASOS_API: '1458'
+      PISO_ARQUIVOS_API: '45'
 
     steps:
       - uses: actions/checkout@v4

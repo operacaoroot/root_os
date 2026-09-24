@@ -23,6 +23,12 @@ export interface ResultadoDaColetaDaRodada {
   puladas: number;
 }
 
+/** A mesma conta, separada por tipo de fonte: a rotina de coleta (MC5) resume por origem. */
+export interface ColetaDaRodadaPorTipo {
+  total: ResultadoDaColetaDaRodada;
+  porTipo: Partial<Record<PautaFonteTipo, ResultadoDaColetaDaRodada>>;
+}
+
 export interface AtorDaColeta {
   id: string;
   tipo: ActorType;
@@ -127,33 +133,50 @@ export class ColetaService {
     actorId = 'sistema',
     tipos: readonly PautaFonteTipo[] = TIPOS_DA_COLETA_DA_RODADA,
   ): Promise<ResultadoDaColetaDaRodada> {
+    return (await this.coletarDaRodadaPorTipo(orgId, actorId, tipos)).total;
+  }
+
+  /** `coletarDaRodada` com a conta aberta por tipo de fonte. */
+  async coletarDaRodadaPorTipo(
+    orgId: string,
+    actorId = 'sistema',
+    tipos: readonly PautaFonteTipo[] = TIPOS_DA_COLETA_DA_RODADA,
+  ): Promise<ColetaDaRodadaPorTipo> {
+    const total: ResultadoDaColetaDaRodada = { novas: 0, fontes: 0, erros: 0, puladas: 0 };
+    const porTipo: ColetaDaRodadaPorTipo['porTipo'] = {};
     const pedidos = TIPOS_DA_COLETA_DA_RODADA.filter((t) => tipos.includes(t));
-    if (!pedidos.length) return { novas: 0, fontes: 0, erros: 0, puladas: 0 };
+    if (!pedidos.length) return { total, porTipo };
     const fontes = await this.prisma.pautaFonte.findMany({
       where: { orgId, ativo: true, tipo: { in: pedidos } },
       orderBy: { criadaEm: 'asc' },
     });
 
-    let novas = 0;
-    let erros = 0;
-    let puladas = 0;
     for (const f of fontes) {
+      const doTipo = (porTipo[f.tipo] ??= { novas: 0, fontes: 0, erros: 0, puladas: 0 });
+      doTipo.fontes++;
+      total.fontes++;
       try {
         const r = await this.coletar(f, actorId);
-        novas += r.novas;
-        if (r.pulada) puladas++;
+        doTipo.novas += r.novas;
+        total.novas += r.novas;
+        if (r.pulada) {
+          doTipo.puladas++;
+          total.puladas++;
+        }
       } catch (e) {
-        erros++;
+        doTipo.erros++;
+        total.erros++;
         this.log.warn(`fonte "${f.nome}" (${f.tipo}) falhou: ${(e as Error).message}`);
       }
     }
-    return { novas, fontes: fontes.length, erros, puladas };
+    return { total, porTipo };
   }
 
   /**
    * O feed RSS, como `RodadaService.coletarFeeds` fazia. O `urlHash` continua
    * com a regra própria do RSS: unificar com a da tela muda o hash das capturas
-   * novas contra as já gravadas, e é decisão do MC5 (ver `url-da-captura.ts`).
+   * novas contra as já gravadas. O MC5 manteve assim, porque a curadoria já junta
+   * a mesma matéria antes da lista (ver `url-da-captura.ts`).
    */
   private async coletarRss(f: PautaFonte, ator: AtorDaColeta): Promise<ResultadoDaColeta> {
     if (!f.url) throw new BadRequestException('Fonte RSS sem url.');

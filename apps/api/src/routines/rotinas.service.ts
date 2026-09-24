@@ -17,10 +17,14 @@ import {
   type ContextoExecucao,
 } from '../common/contexto-execucao';
 import { ExecutoresDeRotinaRegistry } from './executores.registry';
+import { lerNovaRotina } from './nova-rotina';
 import {
   AGENTE_DA_PAUTA,
+  AGENTE_DO_TIPO,
   ARRENDAMENTO_MS,
   LIVRE,
+  MODULO_DO_TIPO,
+  ORIGEM_MANUAL,
   ORIGEM_PAUTA,
   RENOVACAO_MS,
   TIPO_PAUTA_RODADA,
@@ -676,9 +680,24 @@ export class RotinasService {
       agendadorAtivo: agendador.ativo,
       pautaDesligadaPorVariavel: agendador.pautaDesligada,
       descobertaCega: agendador.descobertaCega,
+      tiposDisponiveis: await this.tiposDaEmpresa(orgId),
       avisos: this.problemas.get(orgId) ?? [],
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
+  }
+
+  /**
+   * Os tipos que esta empresa pode criar: com executor inscrito no processo e,
+   * quando o tipo pede módulo, com o módulo contratado. Lê `Org.modulos` direto,
+   * como `entrada-de-links.service.ts`: o `ModulosService` não é deste módulo e
+   * a pergunta aqui é uma só por chamada.
+   */
+  private async tiposDaEmpresa(orgId: string): Promise<string[]> {
+    const inscritos = this.executores.inscritos;
+    if (!inscritos.some((t) => MODULO_DO_TIPO[t])) return inscritos;
+    const org = await this.prisma.org.findUnique({ where: { id: orgId }, select: { modulos: true } });
+    const ligados = org?.modulos ?? [];
+    return inscritos.filter((t) => !MODULO_DO_TIPO[t] || ligados.includes(MODULO_DO_TIPO[t]));
   }
 
   async historico(orgIdBruto: string, rotinaId: string, limite = HISTORICO_PADRAO): Promise<ExecucaoResumo[]> {
@@ -748,6 +767,74 @@ export class RotinasService {
   // -------------------------------------------------------------------------
   // AÇÕES DA TELA
   // -------------------------------------------------------------------------
+
+  /**
+   * Cria uma rotina sem linha de origem (`origem: manual`) — MC5.
+   *
+   * Só tipo com executor inscrito e, se o tipo pede módulo, com o módulo
+   * contratado — esta rota é espinha e o gate de módulos não a cobre. Nasce `planejado` quando o corpo não diz o
+   * estado (ver o schema); `ativo` nasce ligado, porque o que decide se dispara
+   * é o estado declarado, e as duas coisas separadas é o que a tela mostra.
+   */
+  async criar(orgIdBruto: string, corpo: unknown, actorId: string): Promise<RotinaResumo> {
+    const orgId = exigirTenant(orgIdBruto, 'RotinasService.criar');
+    const lida = lerNovaRotina(corpo, this.executores.inscritos);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    const d = lida.dados;
+    const modulo = MODULO_DO_TIPO[d.tipo];
+    if (modulo && !(await this.tiposDaEmpresa(orgId)).includes(d.tipo)) {
+      throw new BadRequestException(
+        `A rotina "${d.tipo}" é do módulo "${modulo}", que esta empresa não contrata.`,
+      );
+    }
+    const dispara = estadoDispara(d.estado);
+
+    let nova: Rotina;
+    try {
+      nova = await this.prisma.rotina.create({
+        data: {
+          orgId,
+          slug: d.slug,
+          nome: d.nome,
+          tipo: d.tipo,
+          config: d.config as Prisma.InputJsonValue,
+          cron: d.cron,
+          tz: d.tz,
+          ativo: true,
+          estado: d.estado,
+          origem: ORIGEM_MANUAL,
+          refExterna: null,
+          agenteSlug: AGENTE_DO_TIPO[d.tipo] ?? null,
+          reservadoEm: LIVRE,
+          reservadoAte: LIVRE,
+          proximaExecucaoEm: dispara ? this.calcularProxima(d, new Date()) : null,
+        },
+      });
+    } catch (e) {
+      if (colisaoDeNome(e)) {
+        throw new ConflictException(`Já existe uma rotina "${d.slug}" nesta empresa. Escolha outro slug.`);
+      }
+      throw e;
+    }
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      actorType: ActorType.user,
+      action: 'rotina.criada',
+      entityType: 'rotina',
+      entityId: nova.id,
+      after: {
+        slug: nova.slug,
+        tipo: nova.tipo,
+        cron: nova.cron,
+        tz: nova.tz,
+        estado: nova.estado,
+        config: d.config as Prisma.InputJsonValue,
+      },
+    });
+    return this.resumo(nova);
+  }
 
   /** Dispara a rotina agora, sem esperar o cron. Mesmo caminho do tique. */
   async rodarAgora(orgIdBruto: string, id: string, actorId: string) {

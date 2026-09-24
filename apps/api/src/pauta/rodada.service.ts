@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { ColetaService, type ResultadoDaColetaDaRodada } from './coleta.service';
 import { parseJsonDaIa } from './parse-json';
 import {
+  coletaPorOrigem,
   comOrigem,
   filtroDasOrigens,
   lerOrigensDaRodada,
@@ -45,6 +46,12 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 /** Quantos itens a curadoria recebe no prompt, somadas as origens. */
 const TETO_DO_INSUMO = 60;
+
+/**
+ * O fuso da data no título padrão. O container roda em UTC: sem isto, a coleta
+ * de quinta 22h em São Paulo (sexta 01:00 UTC) sairia com a data de sexta.
+ */
+const FUSO_DO_TITULO = 'America/Sao_Paulo';
 
 const SYSTEM_CURADORIA = `Você é o editor de conteúdo da ROOT, uma comunidade brasileira sobre IA aplicada a negócios.
 Recebe uma lista de notícias coletadas na janela e escolhe o que vira pauta.
@@ -146,6 +153,21 @@ export class RodadaService {
     return this.coleta.coletarDaRodada(orgId, actorId, tiposDaColetaDasOrigens(lidas.origens));
   }
 
+  /**
+   * A mesma coleta, com a conta aberta por origem (R, N, C, L; W não se coleta).
+   * É o que a rotina de coleta de quinta (MC5) escreve no resumo da passagem.
+   */
+  async coletarPorOrigem(
+    orgId: string,
+    actorId = 'sistema',
+    origens?: unknown,
+  ): Promise<{ total: ResultadoDaColetaDaRodada; porOrigem: Partial<Record<PautaOrigem, ResultadoDaColetaDaRodada>> }> {
+    const lidas = lerOrigensDaRodada(origens);
+    if ('erro' in lidas) throw new BadRequestException(lidas.erro);
+    const r = await this.coleta.coletarDaRodadaPorTipo(orgId, actorId, tiposDaColetaDasOrigens(lidas.origens));
+    return { total: r.total, porOrigem: coletaPorOrigem(r.porTipo) };
+  }
+
   // ---------- geração da rodada ----------
 
   private async repertorio(orgId: string, limite = 12) {
@@ -208,7 +230,7 @@ export class RodadaService {
         orgId,
         rotinaId: opts.rotinaId ?? null,
         status: 'coletando',
-        titulo: `Rodada de ${janelaFim.toLocaleDateString('pt-BR')}`,
+        titulo: `Rodada de ${janelaFim.toLocaleDateString('pt-BR', { timeZone: FUSO_DO_TITULO })}`,
         janelaIni,
         janelaFim,
       },
@@ -310,7 +332,7 @@ export class RodadaService {
   async gerarParaCuradoria(
     orgId: string,
     actorId: string,
-    opts: { rotinaId?: string | null; horas?: number; origens?: unknown } = {},
+    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown } = {},
   ) {
     const lidas = lerOrigensDaRodada(opts.origens);
     if ('erro' in lidas) throw new BadRequestException(lidas.erro);
@@ -318,7 +340,7 @@ export class RodadaService {
 
     const horas = opts.horas ?? PAUTA_HORAS_DA_CURADORIA;
     const janelaFim = new Date();
-    const janelaIni = new Date(janelaFim.getTime() - horas * 3600_000);
+    const janelaIni = opts.desde ?? new Date(janelaFim.getTime() - horas * 3600_000);
     const teto = PAUTA_TETO_DE_CANDIDATOS;
 
     const porOrigem = await this.capturasDaJanela(orgId, origens, janelaIni, teto);
@@ -360,7 +382,7 @@ export class RodadaService {
         orgId,
         rotinaId: opts.rotinaId ?? null,
         status: 'coletando',
-        titulo: `Curadoria de ${janelaFim.toLocaleDateString('pt-BR')}`,
+        titulo: `Curadoria de ${janelaFim.toLocaleDateString('pt-BR', { timeZone: FUSO_DO_TITULO })}`,
         janelaIni,
         janelaFim,
       },

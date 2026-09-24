@@ -407,6 +407,23 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     resumo, destaque nos sugeridos com o porquê, filtro por origem e "só sugeridos", contador e
     a barra de Salvar/Confirmar presa no rodapé (celular primeiro, com o canto do botão
     "perguntar" livre). "Abrir Curadoria" na aba Rodadas abre a rodada clicada.
+- **Coleta de quinta (MC5).** Rotina do tipo `pauta.coleta`
+  (`routines/executores/pauta-coleta.executor.ts`), sem `PautaRotina` por trás: nasce pelo
+  `POST /rotinas` (tela `/rotinas`, "Nova rotina de coleta": `0 22 * * 4`, `America/Sao_Paulo`,
+  168h) com `origem: manual` e a config na própria `Rotina` (`{horas?, origens?}`; padrão 168h
+  e todas as origens). Cada passagem: (1) sem fonte ativa nas origens (o grupo de WhatsApp conta)
+  é `pulada`; (2) coleta rss, busca, perfil e gmail pelo despacho de sempre — uma fonte que falha
+  fica com o erro dela no Radar e as outras seguem (`coletarDaRodadaPorTipo`); (3) gera a rodada
+  por `gerarParaCuradoria` (status `aguardando_curadoria`, a IA só sugere, **ninguém cura**). O
+  resumo da passagem é só contagem: novas/fontes/erros/puladas por origem e os candidatos por
+  letra. Janela vazia vira `erro` com a conta da coleta junto, em vez de sumir. O W não se coleta:
+  chega pelo webhook e entra pela janela. `PAUTA_CRON=off` também tira este tipo do tique. A
+  janela conta do disparo, não do fim da coleta (senão a semana de coleta mais lenta abre um
+  buraco que rodada nenhuma lê). Empresa sem o módulo `pauta` não cria a rotina (o
+  `POST /rotinas` é espinha e confere `MODULO_DO_TIPO`) e, se tiver uma de antes, a passagem sai
+  `pulada` sem gastar Apify nem IA.
+  **Sob o papel restrito (passo 16 de `docs/ESTADO-DA-EXECUCAO.md`) nenhuma rotina dispara, esta
+  inclusive**; o "Rodar agora" segue funcionando.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

@@ -13,9 +13,9 @@ import { createHash } from 'node:crypto';
  * grava o `urlHash` do RSS com outra regra (tira a query inteira, não tira
  * `www`, não baixa a caixa do host). A matéria que chega pelo feed e depois é
  * colada no grupo vira duas capturas. Unificar muda o hash das capturas de RSS novas contra as já
- * gravadas — decisão do MC5, quando a rodada juntar W e N. O mesmo vale para a
- * matéria que chega pelo feed e pela busca do Google (MC3): são duas capturas, e
- * por isso a curadoria da rodada passa a lista por `umaPorMateria` antes do prompt.
+ * gravadas, e o MC5 decidiu não unificar: a rodada junta a mesma matéria antes do
+ * prompt e da lista da curadoria (`umaPorMateriaDoInsumo`), com as letras de todas
+ * as origens. O mesmo vale para a matéria que chega pelo feed e pela busca (MC3).
  */
 
 /** Normaliza a URL antes do hash: sem UTM, sem barra final, sem fragmento. */

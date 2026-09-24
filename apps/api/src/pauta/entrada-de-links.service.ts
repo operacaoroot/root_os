@@ -27,9 +27,8 @@ const ATOR = 'whatsapp';
  *
  * O QUE NÃO ACONTECE NA CHEGADA, de propósito: nem Apify nem IA. Os dois custam
  * por chamada, e quem cola dez links no grupo durante a semana não pediu dez
- * fichas. A captura entra como `rascunho` e espera quem a processe. Hoje é só a
- * fila da tela: a rodada lê apenas captura de fonte `rss`, e trazer a do grupo
- * (rótulo W) é do MC5.
+ * fichas. A captura entra como `rascunho` e espera quem a processe: a fila da
+ * tela e, desde o MC4, a rodada, que a lê com o rótulo W.
  *
  * TRÊS FREIOS antes de gravar:
  *  · o módulo `pauta` precisa estar contratado pela empresa do caminho — a
