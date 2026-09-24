@@ -371,10 +371,22 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     expect(aposConfirmar.teia.nos.find((n) => n.id === 'negocio')?.estado).toBe('pronta');
     expect(aposConfirmar.teia.nos.find((n) => n.id === 'indice')?.ligacoes).toContain('negocio');
     await link.confirmar(tokenBCD, 'cliente-ideal', 'Marcos');
+    // ATÉ O BOTÃO FINAL, TUDO SE REFAZ: quem confirmou corrige (a procedência fica), quem corrigiu volta ao que ouvimos.
+    const corrigidoDepois = await link.corrigir(tokenBCD, 'cliente-ideal', 'Dá certo com transportadora de dez veículos ou mais.', 'Marcos');
+    const ci = corrigidoDepois.itens.find((i) => i.temaId === 'cliente-ideal');
+    expect(ci).toMatchObject({ status: 'corrigido', modo: 'feito' });
+    expect(ci?.fonte).toContain('Da reunião de 30/09');
+    expect(ci?.respondidoEm).toBeTruthy();
+    const voltou = await link.confirmar(tokenBCD, 'cliente-ideal', 'Marcos');
+    expect(voltou.itens.find((i) => i.temaId === 'cliente-ideal')).toMatchObject({ status: 'confirmado' });
     // Resposta LIVRE num tema com proposta apaga a procedência da reunião.
     const livre = await link.responder(tokenBCD, 'oferta-e-preco', 'Cobramos por peça e o contrato é mensal.', 'Marcos');
     const oferta = livre.itens.find((i) => i.temaId === 'oferta-e-preco');
     expect(oferta).toMatchObject({ status: 'respondido', fonte: null });
+    // Respondeu livre: confirmar não vale mais (a procedência já foi embora), mas responder de novo vale.
+    await expect(link.confirmar(tokenBCD, 'oferta-e-preco', 'Marcos')).rejects.toThrow(/não há proposta/);
+    const deNovo = await link.responder(tokenBCD, 'oferta-e-preco', 'Cobramos por peça; contrato mensal para os grandes.', 'Marcos');
+    expect(deNovo.itens.find((i) => i.temaId === 'oferta-e-preco')?.textoFinal).toContain('contrato mensal');
     await link.confirmar(tokenBCD, 'numeros-que-importam', 'Marcos');
     await link.corrigir(tokenBCD, 'vocabulario', '"Giro" são 60 peças, não 40. O resto está certo.', 'Marcos');
     await link.confirmar(tokenBCD, 'canais', 'Marcos');

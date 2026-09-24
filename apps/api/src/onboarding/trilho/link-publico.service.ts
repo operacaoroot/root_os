@@ -74,6 +74,8 @@ export interface ItemDoLink {
   status: string;
   textoFinal: string | null;
   respondidoVia: string | null;
+  /** Quando a resposta foi gravada — a prova, na tela, de que chegou. */
+  respondidoEm: string | null;
 }
 
 export interface EstadoDoLink {
@@ -278,6 +280,7 @@ export class LinkPublicoService {
       status,
       textoFinal: feito ? i!.textoFinal : null,
       respondidoVia: feito ? i!.respondidoVia : null,
+      respondidoEm: feito && i!.respondidoEm ? i!.respondidoEm.toISOString() : null,
     };
   }
 
@@ -285,9 +288,19 @@ export class LinkPublicoService {
   // 3. As escritas do cliente
   // ==========================================================================
 
+  /*
+   * ATÉ O BOTÃO FINAL, TUDO SE REFAZ (24/09). Confirmar, corrigir e responder
+   * valem de novo em cima do que já foi respondido: o cliente que confirmou e
+   * mudou de ideia corrige; o que corrigiu volta ao que ouvimos; o que
+   * respondeu livre responde de novo. O que fecha o link é `concluir` — e só
+   * ele (`aceitaEscrita` do convite). Menos atrito, e nada se perde: cada
+   * escrita substitui a anterior na mesma linha, com quem e quando.
+   */
+  private static readonly COM_PROPOSTA: readonly string[] = ['aprovado', 'confirmado', 'corrigido'];
+
   async confirmar(token: string, temaId: string, nome: string | null): Promise<EstadoDoLink> {
     return this.escrever(token, temaId, nome, async (t, item, quem) => {
-      if (!item || item.status !== 'aprovado' || !item.proposta) {
+      if (!item || !item.proposta || !LinkPublicoService.COM_PROPOSTA.includes(item.status)) {
         throw new ConflictException('não há proposta para confirmar neste tema — responda em vez de confirmar.');
       }
       await this.prisma.onboardingItem.update({
@@ -305,7 +318,7 @@ export class LinkPublicoService {
 
   async corrigir(token: string, temaId: string, textoBruto: string, nome: string | null): Promise<EstadoDoLink> {
     return this.escrever(token, temaId, nome, async (t, item, quem) => {
-      if (!item || item.status !== 'aprovado' || !item.proposta) {
+      if (!item || !item.proposta || !LinkPublicoService.COM_PROPOSTA.includes(item.status)) {
         throw new ConflictException('não há proposta para corrigir neste tema — responda em vez de corrigir.');
       }
       const limpo = varrerSegredos(String(textoBruto ?? '').trim()).texto;
