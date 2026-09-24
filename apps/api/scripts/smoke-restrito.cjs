@@ -103,6 +103,7 @@ if (process.argv[2] !== '--filho') {
   const { EfeitosRegistry } = require('../dist/gateway/efeitos.registry');
   const { ferramentasGeradas, FERRAMENTAS_TOOL_HASH } = require('../dist/ferramentas/bridge');
   const { configurarBodyParser } = require('../dist/common/configurar-body-parser');
+  const { comEmpresaResolvida } = require('../dist/prisma/contexto-de-plataforma');
   const dono = new PrismaClient();
   const papel = new PrismaClient({ datasourceUrl: process.env.APP_DATABASE_URL });
   const emails = [0, 1].map(n => `smoke-${randomUUID()}-${n}@example.test`);
@@ -204,12 +205,14 @@ if (process.argv[2] !== '--filho') {
       };
       const policyService = app.get(PolicyService);
       for (const pessoa of pessoas) {
-        const resultado = await policyService.sobrescrever({
+        // Fora de requisição não há empresa no contexto, e sob TENANT_MODO=impor
+        // o $transaction da sobrescrita recusa (RF-T-04) — como faria em produção.
+        const resultado = await comEmpresaResolvida(pessoa.orgId, () => policyService.sobrescrever({
           orgId: pessoa.orgId,
           delta,
           autorId: 'fixture-autor-sintetico-e4b',
           motivo: 'fixture E4b local: classificar R0/R1 sem alegar assinatura humana real',
-        });
+        }));
         assert.equal(resultado.criada, true, 'a política sintética deve abrir versão própria');
         const policy = await dono.policyVersion.findFirstOrThrow({ where: { orgId: pessoa.orgId, ativaAte: null } });
         assert.equal(policy.autorId, 'fixture-autor-sintetico-e4b');
@@ -591,6 +594,15 @@ if (process.argv[2] !== '--filho') {
     if (app) await app.close();
     const pessoas = await dono.user.findMany({ where: { email: { in: emails } }, select: { orgId: true } });
     for (const { orgId } of pessoas) {
+      // O que a prova E4b deixa: registros da ferramenta sintética, a decisão e
+      // a chamada da porta, e a versão de política aberta pela sobrescrita.
+      if (process.env.E4B_TOOL_REQUIRED === '1' && /^tool_[a-z0-9_]+_registro$/.test(process.env.E4B_TOOL_TABLE ?? '')) {
+        await dono.$executeRawUnsafe(`DELETE FROM "${process.env.E4B_TOOL_TABLE}" WHERE "orgId" = $1`, orgId);
+      }
+      await dono.policyDecision.deleteMany({ where: { orgId } });
+      await dono.toolCall.deleteMany({ where: { orgId } });
+      await dono.approval.deleteMany({ where: { orgId } });
+      await dono.policyVersion.deleteMany({ where: { orgId } });
       await dono.contextItemVersion.deleteMany({ where: { orgId } });
       await dono.contextItem.deleteMany({ where: { orgId } });
       await dono.agentDataGrant.deleteMany({ where: { orgId } });
