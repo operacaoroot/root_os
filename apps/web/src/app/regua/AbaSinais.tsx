@@ -103,7 +103,7 @@ export function AbaSinais({ painel }: { painel: PainelDaRegua }) {
             <Linha rotulo="Por dia" valor={limites.porDia} />
             <Linha
               rotulo="Janela horária"
-              valor={`${limites.janelaHoraria[0]} – ${limites.janelaHoraria[1]}`}
+              valor={`${limites.janelaHoraria[0]} – ${limites.janelaHoraria[1]} (${painel.fuso})`}
             />
             <Linha
               rotulo="Teto de custo por execução"

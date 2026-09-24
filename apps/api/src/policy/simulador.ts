@@ -14,7 +14,14 @@ import {
   type Sinal,
 } from '@mktos/policy';
 import { z } from 'zod';
-import { acimaDoTeto, foraDaJanela, minutosDoDia } from './limites';
+import {
+  acimaDoTeto,
+  foraDaJanela,
+  fusoDaPolitica,
+  horarioNoFuso,
+  minutosDoDia,
+  minutosNoFuso,
+} from './limites';
 
 /*
  * O SIMULADOR DA TELA DA RÉGUA — RF-P-09.
@@ -90,11 +97,25 @@ export const PedidoDeSimulacaoSchema = z
     sinais: z.array(SinalSchema).max(SinalSchema.options.length).optional(),
     /** RF-G-07: procedência externa é sinal de mão única — marca, não desmarca. */
     procedenciaExterna: z.boolean().optional(),
-    /** `HH:MM` hipotético, conferido contra a janela horária DESTA empresa. */
+    /**
+     * `HH:MM` hipotético, conferido contra a janela horária DESTA empresa. É a
+     * hora de parede do fuso da política (São Paulo), não a do servidor.
+     */
     horario: z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'horário no formato HH:MM')
       .optional(),
+    /**
+     * Um instante de verdade (ISO com fuso), lido no fuso da política pela
+     * MESMA conta da porta. É o "e se fosse neste instante?".
+     */
+    momento: z.string().datetime({ offset: true }).optional(),
+    /**
+     * O "e se fosse agora?" da tela. A hora vem do relógio do SERVIDOR, que é o
+     * da porta, e não do navegador: um computador com o relógio adiantado veria
+     * 20:05 e R4 enquanto a porta, no mesmo instante, daria 19:55 e R3.
+     */
+    agora: z.literal(true).optional(),
     /** Valor hipotético, conferido contra o teto DESTA empresa. */
     valorCentavos: z.number().int().nonnegative().max(1_000_000_000).optional(),
     /** Só vale em R2, onde a aprovação é configurável por cliente. */
@@ -102,7 +123,11 @@ export const PedidoDeSimulacaoSchema = z
   })
   .refine((p) => Boolean(p.capabilityId) || Boolean(p.efeito), {
     message: 'descreva a ação: escolha uma capacidade do catálogo ou descreva o efeito dela',
-  });
+  })
+  .refine(
+    (p) => [p.horario, p.momento, p.agora].filter((v) => v !== undefined).length <= 1,
+    { message: 'informe o horário, o instante OU agora, só um deles' },
+  );
 
 export type PedidoDeSimulacao = z.infer<typeof PedidoDeSimulacaoSchema>;
 
@@ -217,7 +242,11 @@ export interface SinalAceso {
  * quatro vêm do operador — três porque exigiriam histórico no banco, e a
  * procedência externa porque ela é DECLARADA pelo runtime, nunca calculada.
  */
-export function sinaisDaSimulacao(politica: Politica, pedido: PedidoDeSimulacao): SinalAceso[] {
+export function sinaisDaSimulacao(
+  politica: Politica,
+  pedido: PedidoDeSimulacao,
+  fuso: string = fusoDaPolitica(),
+): SinalAceso[] {
   const descricoes = new Map(
     (politica.escalonamento?.sinais ?? []).map((s) => [s.id as Sinal, s.descricao]),
   );
@@ -245,13 +274,17 @@ export function sinaisDaSimulacao(politica: Politica, pedido: PedidoDeSimulacao)
     );
   }
 
-  if (pedido.horario !== undefined) {
-    const minutos = minutosDoDia(pedido.horario);
+  if (pedido.horario !== undefined || pedido.momento !== undefined) {
+    const relogio = relogioDaSimulacao(pedido, fuso);
+    const minutos =
+      pedido.horario !== undefined
+        ? minutosDoDia(pedido.horario)
+        : minutosNoFuso(new Date(pedido.momento as string), fuso);
     if (foraDaJanela(minutos, limites.janelaHoraria)) {
       anotar(
         'fora_da_janela',
         'calculado',
-        `${pedido.horario} está fora da janela desta empresa ` +
+        `${relogio.horario ?? 'hora ilegível'} (${fuso}) está fora da janela desta empresa ` +
           `(${limites.janelaHoraria[0]}–${limites.janelaHoraria[1]})`,
       );
     }
@@ -282,6 +315,18 @@ export function sinaisDaSimulacao(politica: Politica, pedido: PedidoDeSimulacao)
   }
 
   return acesos;
+}
+
+/** Que horas a simulação está supondo, já no fuso da política. */
+export function relogioDaSimulacao(
+  pedido: PedidoDeSimulacao,
+  fuso: string = fusoDaPolitica(),
+): { fuso: string; horario: string | null } {
+  if (pedido.horario !== undefined) return { fuso, horario: pedido.horario };
+  if (pedido.momento !== undefined) {
+    return { fuso, horario: horarioNoFuso(new Date(pedido.momento), fuso) };
+  }
+  return { fuso, horario: null };
 }
 
 /* ----------------------------------------------------------- exigências ----- */
@@ -406,15 +451,37 @@ export interface ResultadoDaSimulacao {
   exigencias: Exigencia[];
   rastro: string[];
   avisos: string[];
+  /** A hora que a simulação supôs, no fuso da política. Nula sem hora informada. */
+  relogio: { fuso: string; horario: string | null };
   /** Procedência da régua usada — é a resposta a "de qual política é este nível". */
   politica: { versao: string; atualizadoEm: string; origem: string };
 }
 
 /**
- * A simulação inteira. Pura: recebe o documento que vale para a empresa e o
- * pedido, devolve o resultado. Não escreve em lugar nenhum.
+ * `agora: true` vira o `momento` lido do relógio de quem roda a simulação, que
+ * é o servidor. Uma leitura só, para o sinal e a hora mostrada não discordarem
+ * na virada do minuto.
  */
-export function simularAcao(politica: Politica, pedido: PedidoDeSimulacao): ResultadoDaSimulacao {
+export function resolverAgora(
+  pedido: PedidoDeSimulacao,
+  relogio: () => Date = () => new Date(),
+): PedidoDeSimulacao {
+  if (!pedido.agora) return pedido;
+  return { ...pedido, agora: undefined, momento: relogio().toISOString() };
+}
+
+/**
+ * A simulação inteira. Pura a menos do relógio (que só é lido com `agora`):
+ * recebe o documento que vale para a empresa e o pedido, devolve o resultado.
+ * Não escreve em lugar nenhum.
+ */
+export function simularAcao(
+  politica: Politica,
+  pedidoBruto: PedidoDeSimulacao,
+  fuso: string = fusoDaPolitica(),
+  relogio: () => Date = () => new Date(),
+): ResultadoDaSimulacao {
+  const pedido = resolverAgora(pedidoBruto, relogio);
   const avisos: string[] = [];
 
   let origem: OrigemDaAcao;
@@ -451,7 +518,7 @@ export function simularAcao(politica: Politica, pedido: PedidoDeSimulacao): Resu
     );
   }
 
-  const sinais = sinaisDaSimulacao(politica, pedido);
+  const sinais = sinaisDaSimulacao(politica, pedido, fuso);
   const decisao = avaliar(capacidade, {
     sinais: sinais.map((s) => s.id),
     aprovacaoR2Ligada: pedido.aprovacaoR2Ligada,
@@ -504,6 +571,7 @@ export function simularAcao(politica: Politica, pedido: PedidoDeSimulacao): Resu
     exigencias: exigenciasDe(politica, decisao, capacidade),
     rastro: politica.niveis?.[decisao.nivel]?.rastro ?? [],
     avisos,
+    relogio: relogioDaSimulacao(pedido, fuso),
     politica: {
       versao: politica.versao,
       atualizadoEm: politica.atualizadoEm,

@@ -368,6 +368,14 @@ e a dica da tela dizem isso).
 
 ### MD3 — Janela da porta no fuso de São Paulo
 
+> **Estado (24/09/2026):** implementada, com o ensaio pelo HTTP e a revisão registrados no
+> `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 25 da §4). Escolhas além do texto abaixo: a hora
+> vem de `partesNoFuso` do `@mktos/shared` (a mesma conta da agenda da semana), e `FUSO_DA_POLITICA`
+> é a própria `PAUTA_FUSO_DA_AGENDA`; a agenda **não** lê `POLITICA_FUSO_HORARIO`; o simulador da
+> Régua aceita `momento` (ISO) e `agora: true`, e o "Agora" usa o relógio do **servidor**, não o do
+> navegador; fuso inválido derruba o arranque. Quem decidir por hora de SP depois (a D-MC9.4 é a
+> primeira) usa `minutosNoFuso` de `policy/limites.ts`.
+
 **SPEC.**
 
 1. **Onde está o erro:** `apps/api/src/policy/sinais.service.ts:230` calcula `agora.getHours() * 60 +

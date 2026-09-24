@@ -50,6 +50,7 @@ export function AbaSimulador({ painel, token }: { painel: PainelDaRegua; token: 
   const [descricao, setDescricao] = useState('');
   const [efeito, setEfeito] = useState<Efeito>(painel.efeitoNeutro);
   const [horario, setHorario] = useState('');
+  const [agora, setAgora] = useState(false);
   const [valor, setValor] = useState('');
   const [suposicoes, setSuposicoes] = useState<SinalId[]>([]);
   const [externa, setExterna] = useState(false);
@@ -68,6 +69,7 @@ export function AbaSimulador({ painel, token }: { painel: PainelDaRegua; token: 
     setExterna(false);
     setSuposicoes([]);
     setHorario('');
+    setAgora(false);
     setValor('');
     setEfeito(painel.efeitoNeutro);
   };
@@ -77,7 +79,7 @@ export function AbaSimulador({ painel, token }: { painel: PainelDaRegua; token: 
       sinais: suposicoes,
       procedenciaExterna: externa || undefined,
       aprovacaoR2Ligada: aprovacaoR2,
-      ...(horario ? { horario } : {}),
+      ...(agora ? { agora: true as const } : horario ? { horario } : {}),
       ...(valor !== '' ? { valorCentavos: Number(valor) } : {}),
       ...(modo === 'catalogo'
         ? { capabilityId }
@@ -225,16 +227,39 @@ export function AbaSimulador({ painel, token }: { painel: PainelDaRegua; token: 
         <div className="grid gap-3 md:grid-cols-2">
           <div>
             <label htmlFor="sim-horario" className="mb-1 block text-xs text-muted">
-              Hora da execução (janela {painel.limites.janelaHoraria[0]}–
+              Hora da execução no fuso {painel.fuso} (janela {painel.limites.janelaHoraria[0]}–
               {painel.limites.janelaHoraria[1]})
             </label>
-            <input
-              id="sim-horario"
-              type="time"
-              value={horario}
-              onChange={(e) => setHorario(e.target.value)}
-              className={`w-full ${inputCls}`}
-            />
+            <div className="flex gap-2">
+              <input
+                id="sim-horario"
+                type="time"
+                value={horario}
+                disabled={agora}
+                onChange={(e) => setHorario(e.target.value)}
+                className={`min-w-0 flex-1 ${inputCls}`}
+              />
+              <button
+                type="button"
+                aria-pressed={agora}
+                onClick={() => {
+                  setAgora((v) => !v);
+                  setHorario('');
+                }}
+                className={`shrink-0 rounded-lg border px-3 py-2 text-xs ${
+                  agora
+                    ? 'border-brand-dim bg-brand/15 text-brand'
+                    : 'border-border text-muted hover:text-text'
+                }`}
+              >
+                Agora
+              </button>
+            </div>
+            {agora && (
+              <p className="mt-1 text-[11px] text-muted">
+                A hora vem do relógio do servidor, lida em {painel.fuso}, como a porta faz.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="sim-valor" className="mb-1 block text-xs text-muted">
@@ -338,6 +363,11 @@ function Resultado({ r }: { r: ResultadoDaSimulacao }) {
             </span>
           )}
         </div>
+        {r.relogio.horario && (
+          <p className="mt-3 text-xs text-muted">
+            Hora considerada: {r.relogio.horario} em {r.relogio.fuso}
+          </p>
+        )}
         <p className="mt-3 text-xs text-muted">
           Nível base {r.nivelBase}
           {r.nivelBase !== r.nivel && ` · elevado para ${r.nivel} pelos sinais acesos`} · régua

@@ -121,6 +121,10 @@ services:
       # `up -d --no-build api`.
       GATEWAY_MODO: ${GATEWAY_MODO:-observar}
       RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
+      # Fuso em que a janela horária da política é lida (onda D, MD3). O container
+      # roda em UTC; sem isto a janela 08–20 valia das 05h às 17h de Brasília.
+      # Fuso desconhecido derruba o arranque. Fonte: apps/api/src/policy/limites.ts.
+      POLITICA_FUSO_HORARIO: ${POLITICA_FUSO_HORARIO:-America/Sao_Paulo}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       # Percentual do teto diário de IA em que o painel alerta (RF-B-03). Lido em
       # `apps/api/src/llm/relatorio-custo.service.ts` e devolvido no payload, para

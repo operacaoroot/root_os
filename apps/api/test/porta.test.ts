@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { PrismaClient, ActorType, ApprovalState, RiskLevel, ToolCallStatus } from '@prisma/client';
 import { PolicyService } from '../src/policy/policy.service';
 import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
+import {
+  FUSO_DA_POLITICA,
+  foraDaJanela,
+  fusoDaPolitica,
+  fusoValido,
+  horarioNoFuso,
+  minutosNoFuso,
+} from '../src/policy/limites';
+import { PAUTA_FUSO_DA_AGENDA, horaNoFuso, instanteNoFuso } from '@mktos/shared';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { ApprovalsController } from '../src/approvals/approvals.controller';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -594,6 +603,38 @@ describe.skipIf(!URL)('a porta', () => {
       expect(r.decisao.nivel).toBe('R1');
       expect(r.decisao.sinaisAcionados).toContain('fora_da_janela');
       expect(r.decisao.motivo).toContain('elevado');
+    }
+  });
+
+  it('a janela é lida no horário de São Paulo, qualquer que seja o TZ do processo (MD3)', async () => {
+    /*
+     * O container roda em UTC. Antes da MD3 a porta lia `getHours()` e a janela
+     * 08–20 valia das 05h às 17h de Brasília: o post das 18h subia um degrau.
+     * O mesmo instante tem que dar o mesmo sinal em UTC, em Tóquio e em SP.
+     */
+    const sinais = new SinaisService(prisma as unknown as PrismaService, policy);
+    const casos = [
+      { instante: '2026-09-01T21:00:00Z', acende: false }, // 18h00 em SP
+      { instante: '2026-09-01T23:30:00Z', acende: true }, // 20h30 em SP
+      { instante: '2026-09-01T10:30:00Z', acende: true }, // 07h30 em SP
+      { instante: '2026-09-01T11:00:00Z', acende: false }, // 08h00 em SP, a borda
+    ];
+    const tzAntes = process.env.TZ;
+    try {
+      for (const tz of ['UTC', 'Asia/Tokyo', 'America/Sao_Paulo']) {
+        process.env.TZ = tz;
+        for (const c of casos) {
+          const acesos = await sinais.calcular({
+            orgId: ORG,
+            capabilityId: 'numeros.painel.ler',
+            agora: new Date(c.instante),
+          });
+          expect(acesos.includes('fora_da_janela'), `${c.instante} com TZ=${tz}`).toBe(c.acende);
+        }
+      }
+    } finally {
+      if (tzAntes === undefined) delete process.env.TZ;
+      else process.env.TZ = tzAntes;
     }
   });
 
@@ -1814,5 +1855,90 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
       where: { orgId: ORG2, tipo: 'teste.colisao' },
     });
     expect((linha.payload as Record<string, unknown>).motivo).toBe('o que o conteudo diz');
+  });
+});
+
+/*
+ * A HORA DA JANELA, sem banco (onda D, MD3). A conta pura que a porta e o
+ * simulador da Régua usam: o mesmo instante dá a mesma hora de São Paulo em
+ * qualquer `TZ` do processo, e fuso desconhecido não cai calado para UTC.
+ */
+describe('a hora da janela é a de São Paulo', () => {
+  const JANELA: [string, string] = ['08:00', '20:00'];
+  let tzAntes: string | undefined;
+  let fusoAntes: string | undefined;
+
+  beforeEach(() => {
+    tzAntes = process.env.TZ;
+    fusoAntes = process.env.POLITICA_FUSO_HORARIO;
+    delete process.env.POLITICA_FUSO_HORARIO;
+  });
+  afterEach(() => {
+    if (tzAntes === undefined) delete process.env.TZ;
+    else process.env.TZ = tzAntes;
+    if (fusoAntes === undefined) delete process.env.POLITICA_FUSO_HORARIO;
+    else process.env.POLITICA_FUSO_HORARIO = fusoAntes;
+  });
+
+  const acende = (iso: string) => foraDaJanela(minutosNoFuso(new Date(iso)), JANELA);
+
+  it('21:00 UTC é 18h em SP e não acende; 23:30 UTC (20h30) e 10:30 UTC (07h30) acendem', () => {
+    expect(acende('2026-09-01T21:00:00Z')).toBe(false);
+    expect(acende('2026-09-01T23:30:00Z')).toBe(true);
+    expect(acende('2026-09-01T10:30:00Z')).toBe(true);
+    expect(horarioNoFuso(new Date('2026-09-01T21:00:00Z'))).toBe('18:00');
+  });
+
+  it('o slot das 18:00 que a agenda da semana propõe é julgado pela porta como 18:00', () => {
+    // Uma conta só: a porta lê a hora com `partesNoFuso`, a mesma da agenda.
+    const slot = instanteNoFuso('2026-09-01', '18:00');
+    process.env.TZ = 'UTC';
+    expect(horarioNoFuso(slot)).toBe(horaNoFuso(slot));
+    expect(horarioNoFuso(slot)).toBe('18:00');
+    expect(FUSO_DA_POLITICA).toBe(PAUTA_FUSO_DA_AGENDA);
+    expect(acende(slot.toISOString())).toBe(false);
+    expect(acende(instanteNoFuso('2026-09-01', '20:30').toISOString())).toBe(true);
+  });
+
+  it('o resultado é o mesmo com TZ=UTC, TZ=Asia/Tokyo e TZ=America/Sao_Paulo', () => {
+    const instantes = [
+      '2026-09-01T21:00:00Z',
+      '2026-09-01T23:30:00Z',
+      '2026-09-01T10:30:00Z',
+      '2026-09-02T02:59:00Z',
+      '2026-09-02T03:00:00Z',
+    ];
+    const medir = () => instantes.map((i) => [minutosNoFuso(new Date(i)), acende(i)]);
+    process.env.TZ = 'America/Sao_Paulo';
+    const emSp = medir();
+    for (const tz of ['UTC', 'Asia/Tokyo']) {
+      process.env.TZ = tz;
+      expect(medir(), `TZ=${tz}`).toEqual(emSp);
+    }
+    // meia-noite é 00:00, não 24:00 — o hourCycle h23 é o que garante
+    expect(horarioNoFuso(new Date('2026-09-02T03:00:00Z'))).toBe('00:00');
+  });
+
+  it('POLITICA_FUSO_HORARIO troca o fuso; vazia volta a São Paulo', () => {
+    expect(fusoDaPolitica({})).toBe(FUSO_DA_POLITICA);
+    expect(fusoDaPolitica({ POLITICA_FUSO_HORARIO: '  ' })).toBe('America/Sao_Paulo');
+    expect(fusoDaPolitica({ POLITICA_FUSO_HORARIO: 'Europe/Lisbon' })).toBe('Europe/Lisbon');
+    process.env.POLITICA_FUSO_HORARIO = 'UTC';
+    expect(horarioNoFuso(new Date('2026-09-01T21:00:00Z'))).toBe('21:00');
+    expect(acende('2026-09-01T21:00:00Z')).toBe(true);
+  });
+
+  it('fuso desconhecido acende o sinal e derruba o arranque da porta', () => {
+    expect(fusoValido('Marte/Olympus')).toBe(false);
+    expect(Number.isNaN(minutosNoFuso(new Date(), 'Marte/Olympus'))).toBe(true);
+    expect(foraDaJanela(minutosNoFuso(new Date(), 'Marte/Olympus'), JANELA)).toBe(true);
+    process.env.POLITICA_FUSO_HORARIO = 'Marte/Olympus';
+    expect(
+      () => new SinaisService({} as unknown as PrismaService, {} as unknown as PolicyService),
+    ).toThrow(/POLITICA_FUSO_HORARIO="Marte\/Olympus" não é um fuso conhecido/);
+    delete process.env.POLITICA_FUSO_HORARIO;
+    expect(
+      () => new SinaisService({} as unknown as PrismaService, {} as unknown as PolicyService),
+    ).not.toThrow();
   });
 });

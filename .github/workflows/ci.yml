@@ -409,7 +409,16 @@ jobs:
       # (o roteiro pede Gravação antes de gravar; a gravação diz quando o
       # vigia age sozinho). Medido: 556 casos em 43 arquivos. O piso de CASOS
       # sobe 1, para 375; o de ARQUIVOS fica em 34.
-      PISO_CASOS_WEB: '375'
+      #
+      # MD3, A JANELA EM SÃO PAULO (24/09/2026): +4 casos, nenhum arquivo novo.
+      # `unit/regua-simulador` +3 (o instante lido no fuso de SP pela conta da
+      # porta: 21:00 UTC não acende, 23:30 e 10:30 UTC acendem; horário,
+      # instante OU agora, instante em ISO; "agora" é o relógio do servidor,
+      # lido uma vez só) e `component/regua` +1 (o botão Agora pede a hora ao
+      # servidor, trava o campo e mostra a hora que ele leu). Medido: 560 casos
+      # em 43 arquivos. O piso de CASOS sobe 4, para 379; o de ARQUIVOS fica
+      # em 34.
+      PISO_CASOS_WEB: '379'
       PISO_ARQUIVOS_WEB: '34'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1414,7 +1423,18 @@ jobs:
       # Medido: 2683 casos em 65 arquivos com o banco; sem ele, 2108 passados
       # e 575 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 13 (~15%
       # de folga sobre os 15), para 1990.
-      PISO_CASOS_API: '1990'
+      #
+      # MD3, A JANELA EM SÃO PAULO (24/09/2026): +6 casos em `porta`, nenhum
+      # arquivo novo. Sem banco, +5 (a hora de SP: 21:00 UTC não acende, 23:30
+      # e 10:30 UTC acendem; o slot das 18:00 da agenda é 18:00 para a porta;
+      # o mesmo resultado com TZ=UTC, Asia/Tokyo e SP, e meia-noite como 00:00;
+      # POLITICA_FUSO_HORARIO troca o fuso e vazia volta a SP; fuso desconhecido
+      # acende e derruba o arranque da porta). COM BANCO, +1 (o SinaisService dá
+      # o mesmo sinal para os quatro instantes nos três TZ). Medido: 2689 casos
+      # em 65 arquivos com o banco, verde também com TZ=UTC; sem ele, 2113
+      # passados e 576 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe
+      # 4 (~15% de folga sobre os 5), para 1994.
+      PISO_CASOS_API: '1994'
       PISO_ARQUIVOS_API: '57'
 
     steps:

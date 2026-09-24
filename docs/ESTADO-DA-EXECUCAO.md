@@ -1342,6 +1342,59 @@ Nenhuma variável na API, capacidade, permissão ou seed nova; as variáveis nov
 (`ROOT_MIDIA_OBS_DIR`, `ROOT_MIDIA_VIGIA_LOG`, `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO`, comentadas no
 `.env.example`).
 
+### Onda D, fatia MD3 — a janela da porta no fuso de São Paulo (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD3). O sinal `fora_da_janela`
+lia a hora com `getHours()`, que segue o `TZ` do processo; o container roda em UTC, e a janela
+08:00–20:00 da política valia das 05h às 17h de Brasília. Agora a porta e o simulador da Régua
+leem a hora no fuso da política por `partesNoFuso` do `@mktos/shared` (a mesma conta que põe os
+slots na agenda da semana, `Intl` com `hourCycle: 'h23'`), e o `TZ` do processo deixa de
+importar. O JSON da política não mudou: sem seed e sem assinatura.
+
+| Peça | Onde |
+|---|---|
+| `FUSO_DA_POLITICA`, `fusoDaPolitica()` (`POLITICA_FUSO_HORARIO`), `minutosNoFuso`, `horarioNoFuso`, `fusoValido` | `apps/api/src/policy/limites.ts` |
+| A porta lê a hora pelo fuso; fuso desconhecido derruba o arranque | `apps/api/src/policy/sinais.service.ts` |
+| O simulador aceita `momento` (ISO) ou `agora: true` e devolve `relogio` (fuso e hora considerada); horário, instante OU agora | `apps/api/src/policy/simulador.ts` |
+| O painel devolve `fuso`; o texto do sinal diz o fuso | `apps/api/src/policy/regua.service.ts` |
+| O rótulo diz o fuso, o botão "Agora" pede a hora ao servidor, o resultado mostra a hora lida; a janela em "Limites desta empresa" diz o fuso | `apps/web/src/app/regua/AbaSimulador.tsx`, `AbaSinais.tsx`, `tipos.ts` |
+| `POLITICA_FUSO_HORARIO` (padrão `America/Sao_Paulo`) | `docker-compose.yml` (`environment:` do `api`) e `.env.example` |
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~17h50, já com as correções da revisão):
+`pnpm typecheck` 7/7; `typecheck:test` limpo; api direto com `TEST_DATABASE_URL` **2689 de 2689**
+em 65 arquivos, igual com `TZ=UTC`, `TZ=Asia/Tokyo` e o fuso do Mac (+6 em `porta`, 1 com banco;
+sem ele, 2113 passados e 576 pulados); `test:porta` **45**; web **560** em 43 (+4); policy 74 (não
+tocada). `build` + `smoke` OK com `TZ=UTC`, e `POLITICA_FUSO_HORARIO=Marte/Olympus` com
+`SMOKE_ESPERA_QUEBRA` fecha a trava. O caso novo da porta foi rodado contra o `getHours()` antigo e
+reprovou em `21:00Z com TZ=UTC`. Pisos da CI: api 1994/57, web 379/34, com a conta no `ci.yml`.
+
+**Ensaio pelo HTTP** (`dist/main.js` com `TZ=UTC`, token assinado com segredo descartável):
+`GET /api/policy/regua` devolve `fuso: America/Sao_Paulo`; `POST /api/policy/simular` com
+`email.enviar` e `momento` 21:00Z → hora considerada 18:00, nenhum sinal, R3; 23:30Z → 20:30,
+`fora_da_janela`, R4; 10:30Z → 07:30, `fora_da_janela`, R4. Depois da revisão, com o
+`dist/main.js` em `TZ=UTC` às 20:50 UTC: `agora: true` → hora considerada 17:50 em SP, R3;
+`agora` junto com `horario` → 400 "informe o horário, o instante OU agora, só um deles".
+
+**Depois da revisão de três revisores:** o botão "Agora" mandava `new Date()` do navegador, e um
+computador com o relógio 10 min adiantado via 20:05 e R4 onde a porta, no mesmo instante, daria
+19:55 e R3. Agora ele manda `agora: true` e o simulador lê o relógio do servidor, uma vez só
+(`resolverAgora`), que é a mesma fonte da porta. `minutosNoFuso` deixou de ter um `Intl` próprio e
+lê a hora de `partesNoFuso` do `@mktos/shared`; `FUSO_DA_POLITICA` é a própria
+`PAUTA_FUSO_DA_AGENDA`. **Limite registrado:** a agenda da semana (MC16, slots propostos da MD1)
+lê a constante `PAUTA_FUSO_DA_AGENDA` e NÃO acompanha `POLITICA_FUSO_HORARIO`. Preencher a
+variável com outro fuso faz a porta julgar o slot das 18:00 de SP em outro relógio; se um dia a
+operação sair de SP, as duas mudam juntas. A regra para as próximas fatias (a D-MC9.4, "08h–20h de
+SP pelo executor", é a primeira): quem decide por hora de SP usa `minutosNoFuso` de
+`policy/limites.ts`, nunca `getHours()` nem uma conta nova.
+
+**Mudança de comportamento, para TODAS as capacidades:** das 17h às 20h de São Paulo o sinal
+deixa de acender, e das 05h às 08h passa a acender. Rotina que hoje sobe um degrau à tarde deixa
+de subir; rotina que roda de madrugada entre 05h e 08h passa a subir. Fica de fora a formatação de
+data em `integrations/conectores.ts` (texto de exibição, não decide nível).
+
+**Deploy:** nenhuma migration, capacidade, permissão ou seed. `POLITICA_FUSO_HORARIO` já tem padrão no
+compose; valor inválido derruba a API no arranque (conferir o log se ela não subir).
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -1553,6 +1606,16 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     futuro e na grade vigente (sem feriado novo); sem ele, o de antes. O proposto de outro episódio e
     o das irmãs em rascunho do mesmo episódio passam a ocupar o slot para o distribuir. Descartar pelo
     PATCH devolve o slot proposto; aprovar não converte proposto em agenda.
+
+**Na porta (onda D)**
+
+25. **MD3: a janela horária da política é lida em São Paulo** (`POLITICA_FUSO_HORARIO`, padrão
+    `America/Sao_Paulo`, em `apps/api/src/policy/limites.ts`), e não mais no `TZ` do processo, que no
+    container é UTC. Em TODA capacidade, das 17h às 20h de SP o `fora_da_janela` deixa de acender e
+    das 05h às 08h passa a acender: rotina que subia um degrau à tarde deixa de subir, e a que roda
+    de madrugada nessa faixa passa a subir. Regra nova no arranque: valor inválido na variável
+    impede a API de subir, com a linha `POLITICA_FUSO_HORARIO="<valor>" não é um fuso conhecido` no
+    log. A agenda da semana segue na constante de SP e não lê a variável.
 
 ---
 

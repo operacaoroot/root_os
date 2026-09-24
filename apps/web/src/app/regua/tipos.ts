@@ -198,6 +198,8 @@ export interface PainelDaRegua {
   limites: Limites;
   /** Falso = `fora_da_janela` está aceso em toda ação desta empresa. */
   janelaLegivel: boolean;
+  /** O fuso em que a janela é lida no servidor (padrão America/Sao_Paulo). */
+  fuso: string;
   retencao: Record<string, unknown>;
   /** Já filtrado pelos módulos que ESTA empresa contratou (RF-T-06). */
   capacidades: CapacidadeDaRegua[];
@@ -222,7 +224,12 @@ export interface PedidoDeSimulacao {
   descricao?: string;
   sinais?: SinalId[];
   procedenciaExterna?: boolean;
+  /** Hora de parede no fuso da política, `HH:MM`. */
   horario?: string;
+  /** Um instante ISO; o servidor lê a hora dele no fuso da política. */
+  momento?: string;
+  /** "E se fosse agora?": o servidor usa o relógio DELE, o mesmo da porta. */
+  agora?: true;
   valorCentavos?: number;
   aprovacaoR2Ligada?: boolean;
 }
@@ -269,5 +276,6 @@ export interface ResultadoDaSimulacao {
   exigencias: Exigencia[];
   rastro: string[];
   avisos: string[];
+  relogio: { fuso: string; horario: string | null };
   politica: { versao: string; atualizadoEm: string; origem: string };
 }
