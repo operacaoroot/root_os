@@ -16,6 +16,8 @@ import {
 } from '../src/pauta/busca-da-pauta';
 import { hashDaCaptura, normalizarUrlDaCaptura, umaPorMateria } from '../src/pauta/url-da-captura';
 import { RodadaService } from '../src/pauta/rodada.service';
+import type { VozService } from '../src/pauta/voz.service';
+import { TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
 import { ColetaService, TIPOS_DA_COLETA_DA_RODADA } from '../src/pauta/coleta.service';
 import { PautaService } from '../src/pauta/pauta.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
@@ -23,6 +25,9 @@ import { ApifyService, type ApifyRun, type OpcoesDaBusca } from '../src/pauta/ap
 import type { RssService } from '../src/pauta/rss.service';
 import { AuditService } from '../src/audit/audit.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
+
+// MC10: sem perfil, as peças recebem o tom da casa.
+const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
 
 /*
  * BUSCA WEB DAS NOTÍCIAS DO NICHO — MC3.
@@ -748,7 +753,7 @@ describe('busca da pauta: a rodada e o cadastro', () => {
         return JSON.stringify({ titulo: 'T', itens: [{ titulo: 'IA nas PMEs', url: capturas[0].url }], corpo: '' });
       },
     } as unknown as LlmProvider;
-    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm);
+    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa);
 
     await rodadas.gerar(ORG, PESSOA);
 

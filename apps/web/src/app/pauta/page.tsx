@@ -7,13 +7,15 @@ import { AbaCuradoria } from './AbaCuradoria';
 import { AbaEpisodios } from './AbaEpisodios';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
+import { AbaVoz } from './AbaVoz';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
 // propósito (repertório dura anos, pauta dura 72h). Ver docs/PAUTA.md §2.
 // A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro; a
-// rodada curada vira episódio (MC7), que anda do roteiro ao concluído.
-const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Rotinas'] as const;
+// rodada curada vira episódio (MC7), que anda do roteiro ao concluído. A Voz
+// (MC10) é o perfil do autor com que o roteiro e as peças são escritos.
+const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Voz', 'Rotinas'] as const;
 type Aba = (typeof ABAS)[number];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
@@ -68,7 +70,7 @@ export default function PautaPage() {
         </p>
       </div>
 
-      <div className="flex gap-4 border-b border-border">
+      <div className="flex flex-wrap gap-x-4 border-b border-border">
         {ABAS.map((a) => (
           <button
             key={a}
@@ -139,6 +141,9 @@ export default function PautaPage() {
           inicial={episodioAberto}
           podeGastarIa={can('automacoes.executar')}
         />
+      )}
+      {ready && aba === 'Voz' && (
+        <AbaVoz token={token} editavel={editavel} podeGastarIa={can('automacoes.executar')} bump={bump} onErro={aoErrar} />
       )}
       {ready && aba === 'Rotinas' && (
         <AbaRotinas token={token} editavel={editavel} onErro={aoErrar} bump={bump} onMudou={recarregar} />

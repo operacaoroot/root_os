@@ -476,8 +476,8 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     `operador:palavra-de-corte`). A palavra **vale na hora**: o painel, o modo de gravação, o `.md` e
     o espelho trazem o lembrete do topo com a palavra efetiva (`comPalavraDeCorte`, no shared), e
     definir a do episódio reescreve essa linha no roteiro gravado. Não é preciso gerar de novo.
-  - **Voz:** o prompt recebe `blocoDeVoz()` (`pauta/voz-da-pauta.ts`), o ponto único que o MC10
-    preenche com o perfil do autor; hoje é o tom da casa.
+  - **Voz:** o prompt recebe o bloco de voz da empresa (`VozService.bloco`, MC10 — abaixo): o
+    perfil do autor com as regras da marca, ou o tom da casa sem perfil.
   - **Editar** (`PUT /pauta/episodios/:id/roteiro` `{roteiro, versao}`): não muda o status; versão
     diferente da atual é outra aba (409). **Exportar**: `GET /pauta/episodios/:id/roteiro.md`
     (`text/markdown`, `ep-NN-roteiro.md`; 404 sem roteiro). **Painel**: `GET …/:id/roteiro`.
@@ -529,6 +529,53 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Tela:** seção "Mídia" no detalhe do episódio (`SecaoMidia.tsx`, só leitura): o nome do vídeo
     final, as durações, os cortes por motivo, a transcrição com o tempo de cada trecho, e o comando
     `/root-midia ep-NN` enquanto falta algo.
+- **A voz do autor (MC10).** O roteiro e as peças passam a ser escritos no jeito de falar do Pedro.
+  - **Onde mora:** nota da memória de chave `voz.pedro` (kind `definicao`), escrita só por
+    `MemoriaService` — o caminho da ADR-011, com evento `memoria.item.*` no RASTRO e versão no
+    histórico. Perfil novo é **versão nova da mesma nota**; a anterior continua em
+    `GET /memoria/:id/versoes`. A empresa troca a chave pela nota `pauta.voz.chave` (a primeira
+    linha é a chave, também com histórico), sempre sob o prefixo `voz.`: assim quem só tem
+    `pauta.editar` não alcança nenhuma outra nota da memória.
+  - **Aprender** (`POST /pauta/voz/aprender`, `pauta.editar` + `automacoes.executar`,
+    `PautaVozAprenderSchema`): até 6 episódios com transcrição (sem transcrição = 400, de outra
+    empresa = 404, antes de gastar IA) e até 5 textos colados de 200 a 20 mil caracteres, somando
+    no máximo 60 mil (o corpo JSON morre em 100 kb no body-parser antes do esquema). O material
+    vai ao modelo com teto de 60 mil caracteres dividido entre as fontes (a menor inteira, a sobra
+    para as maiores) e passa por `neutralizarConteudoExterno`. `SYSTEM_VOZ` pede JSON com ritmo,
+    tamanho de frase, vocabulário, expressões recorrentes, como abre, como fecha, como explica termo
+    técnico e o que nunca diz — instrução seguível, sem fato do material. O sistema monta o perfil
+    com seções fixas, tira do vocabulário e das expressões a palavra que a marca proíbe e soma as
+    regras da marca ao "Nunca diz". Resposta fora do formato: 503, nada gravado. Procedência:
+    `promocao` (texto de modelo) e `sourceRef` com os apelidos, a contagem de textos e o modelo —
+    o título colado não entra, porque a procedência vai para o RASTRO sem redação.
+  - **Editar à mão** (`PUT /pauta/voz` `{perfil, versao, chave}`, `pauta.editar`): versão nova com
+    procedência `operador`; `versao` diferente da atual é outra aba (409, conferido dentro do
+    cadeado da memória por `versaoEsperada`), e `chave` diferente da atual quer dizer que o
+    rascunho é de outra nota (409). A tela guarda a versão e a chave de quando abriu o editor, e
+    trava aprender e trocar a chave enquanto ele está aberto. Trocar a chave não põe a chave no
+    motivo da versão: o motivo vai em claro para o RASTRO, que redige a chave. **Trocar a chave**: `PUT /pauta/voz/chave`.
+    **Painel**: `GET /pauta/voz` (`pauta.ver`) — perfil, procedência, últimas 10 versões, regras da
+    marca e os episódios transcritos com o tamanho.
+  - **Montagem:** `VozService.bloco(orgId, semPerfil)` é o ponto único; `blocoDeVoz` devolve o
+    perfil (neutralizado, até 4 mil caracteres, com a linha de procedência `perfil vN · origem ·
+    data`) seguido das regras da marca — as palavras proibidas, sem emoji, sem "no mundo da IA" e
+    sem jargão de palco, não prometer o que a matéria não sustenta: o tom da casa menos as linhas
+    de estilo, que o perfil substitui. Sem perfil (ou arquivado, ou memória fora do ar) o roteiro
+    fica no tom da casa e as peças no `SYSTEM_PECAS` de antes, sem bloco. Recebem o bloco o roteiro
+    (`systemDoRoteiro`) e as peças (`systemDasPecas`). **A curadoria antiga não recebe:** o
+    `SYSTEM_CURADORIA` (`POST /pauta/rodadas`, rotina `pauta.rodada`) escreve o miolo de 200–350
+    palavras com voz fixa, e esse miolo é insumo das peças. Ligá-la ao bloco ficou para decisão do
+    Pedro. O perfil não vai numa cerca `blocoExterno`: é instrução de estilo, e o cabeçalho diz que
+    ele não muda formato, fonte nem link — exceção registrada na ADR-011 ("Fronteiras").
+  - **O que o perfil não pode ensinar:** `montarPerfil` tira a palavra proibida do vocabulário e
+    das expressões e, nos campos de texto, a frase que a cita (campo que fica vazio recusa o
+    perfil, 503). O "Nunca diz" começa pelas regras da marca; o teto corta primeiro expressões,
+    vocabulário e itens do autor, e nunca as alcança.
+  - **Tela:** aba "Voz" em `/pauta` (`AbaVoz.tsx`): perfil vigente renderizado com a procedência,
+    editar à mão (com aviso de palavra proibida), aprender marcando episódios e colando textos, as
+    regras da marca, o histórico e a chave.
+  - **Falta:** o teste cego com o Pedro (roteiro com e sem perfil) — é o critério de pronto do
+    plano e depende dele.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

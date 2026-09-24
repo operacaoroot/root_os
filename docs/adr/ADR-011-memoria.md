@@ -194,6 +194,26 @@ Três consequências que são parte da decisão, não efeito colateral:
   `src/agents/context-builder.service.ts` (`blocoExterno`, `neutralizarConteudoExterno`), pelo
   caminho que já existe. Esta fatia **não** abre caminho novo até o modelo, e por isso o inventário
   de cercas da suíte adversarial continua com os três lugares de hoje.
+
+  **Exceção registrada — a voz do autor (MC10, 24/09/2026).** As notas de chave `voz.*` (o perfil
+  de voz, `voz.pedro` por padrão) e a nota `pauta.voz.chave` (qual chave a empresa usa) abrem um
+  caminho novo até o modelo, fora do `context-builder`: o corpo do perfil entra no system prompt do
+  roteiro e das peças da pauta **como instrução de estilo**, por `blocoDeVoz`
+  (`apps/api/src/pauta/voz-da-pauta.ts`). O que continua valendo: passa por
+  `neutralizarConteudoExterno`, leva uma linha de procedência (`perfil vN · origem · data`), tem
+  teto de 4 mil caracteres, entra DEPOIS das regras de formato, de fonte e de link — com um
+  cabeçalho dizendo que não as muda — e vem seguido das regras da marca, que o perfil não
+  substitui. O que muda: não vai na cerca `blocoExterno`, porque a cerca manda o modelo tratar o
+  texto como dado, e um perfil de voz tratado como dado não serve para nada. O inventário de cercas
+  do adversarial segue com três.
+
+  A permissão também atravessa: estas notas são lidas com `pauta.ver` e escritas com
+  `pauta.editar` (aprender gasta IA e pede ainda `automacoes.executar`), e não com
+  `obsidian.ver`/`obsidian.editar`. O que limita o alcance é o prefixo: a chave da voz só pode
+  estar sob `voz.`, então quem tem só `pauta.editar` não alcança nenhuma outra nota. A escrita
+  continua sendo `MemoriaService` (evento no RASTRO, versão, histórico). **Pendente com o Pedro:**
+  confirmar que `pauta.editar` (o papel `analista` inclusive) pode escrever uma instrução que vai
+  ao modelo; até lá, é a decisão desta fatia.
 - **O corpo não entra no RASTRO, em tamanho nenhum.** O evento carrega a FORMA do corpo (tamanho e
   hash), os hashes e a `referencia`; o corpo mora na versão. A primeira versão desta fatia mandava
   um excerto de 280 letras, o que quer dizer que corpo curto — que é a maioria das regras da casa —

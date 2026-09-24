@@ -37,6 +37,7 @@ import {
   type SugestaoDaIa,
 } from './curadoria-da-rodada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { VozService } from './voz.service';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
 // Ver docs/PAUTA.md §7. O que a diferencia de "gerar um texto com IA" é o
@@ -107,6 +108,11 @@ Restrições por canal:
 Regras: português do Brasil, sem emoji, sem inventar dado. Se o repertório indicar um
 anti-padrão, respeite-o explicitamente.`;
 
+/** As peças com o bloco de voz (MC10). Sem perfil o bloco vem vazio e o prompt é o de antes. */
+export function systemDasPecas(voz: string): string {
+  return voz.trim() ? `${SYSTEM_PECAS}\n\n${voz.trim()}` : SYSTEM_PECAS;
+}
+
 interface ItemCurado {
   titulo?: string;
   url?: string;
@@ -134,6 +140,7 @@ export class RodadaService {
     private readonly audit: AuditService,
     private readonly coleta: ColetaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    private readonly vozes: VozService,
   ) {}
 
   // ---------- coleta do insumo ----------
@@ -590,7 +597,7 @@ export class RodadaService {
 
     const itens = (rodada.itens as unknown as Array<ItemCurado & { resumo?: string; semLinkPublico?: boolean }>) ?? [];
     const saida = await this.llm.complete({
-      system: SYSTEM_PECAS,
+      system: systemDasPecas(await this.vozes.bloco(orgId, '')),
       user:
         `Edição: ${rodada.titulo}\n\nMiolo curado:\n${rodada.corpo}\n\n` +
         `Itens (com URL):\n${itens

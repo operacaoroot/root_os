@@ -278,8 +278,24 @@ jobs:
       # mídia). Medido: 463 casos em 35 arquivos (457 + 6). O piso de ARQUIVOS
       # sobe 1, para 26; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para
       # 295.
-      PISO_CASOS_WEB: '295'
-      PISO_ARQUIVOS_WEB: '26'
+      #
+      # MC10, A VOZ DO AUTOR (24/09/2026): +13 casos, +1 arquivo, só desta fatia —
+      # `component/pauta-voz` (13: o perfil vigente renderizado com a
+      # procedência, as regras da marca e o histórico; sem perfil, o aviso do
+      # tom da casa; aprender dos episódios marcados e do texto colado, com a
+      # versão nova e a conta do material; texto colado abaixo do mínimo
+      # travando o botão; sem `automacoes.executar` o botão apagado com o
+      # porquê; editar à mão salvando com a versão lida e avisando a palavra
+      # proibida; abrir a edição com a proibida só no "Nunca diz" sem aviso;
+      # com a edição aberta, aprender e trocar a chave travados e o salvar com
+      # a versão e a chave de onde o rascunho partiu, mesmo com o painel
+      # recarregado; a soma dos textos colados com teto; o campo da chave
+      # cabendo 63; sem `pauta.editar` nada escreve; a chave só sob `voz.` e a
+      # recusa na caixa da página; a aba Voz na página). Medido: 476 casos em
+      # 36 arquivos (463 + 13). O piso de ARQUIVOS sobe 1, para 27; o de CASOS
+      # sobe 11 (~15% de folga sobre os 13 novos), para 306.
+      PISO_CASOS_WEB: '306'
+      PISO_ARQUIVOS_WEB: '27'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -933,8 +949,47 @@ jobs:
       # com o banco de teste, e 1654 passados / 564 pulados sem ele (1575 + 79).
       # O piso de ARQUIVOS vai a 49; o de CASOS sobe 68 (~15% de folga sobre os
       # 80 novos), para 1613.
-      PISO_CASOS_API: '1613'
-      PISO_ARQUIVOS_API: '49'
+      #
+      # ---------------------------------------------------------------------
+      # MC10, A VOZ DO AUTOR (24/09/2026): +45 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-voz` (45): o bloco de voz (sem perfil o tom da casa; com perfil
+      # o perfil e as regras da marca, inclusive as do tom da casa que não são
+      # estilo; o escondido neutralizado e o teto; a linha de procedência e o
+      # "sem perfil" de quem chama); as
+      # palavras proibidas sem acento, caixa e conjugadas; a chave presa a
+      # `voz.` e a nota de configuração; o material dividido no teto com a
+      # fonte pequena inteira; o pedido rotulado e neutralizado; o prompt de
+      # destilar; a leitura do JSON (não-JSON, não-objeto, campo faltando,
+      # emoji, repetidos, tetos) e o perfil montado (seções fixas, proibida
+      # fora do que ele ensina, inclusive a frase dos campos de texto, o
+      # "nunca diz" do autor sem repetir a marca, as regras da marca
+      # preservadas com todos os campos no teto); a procedência sem o título
+      # colado; os limites dos esquemas (a soma dos textos cabendo nos 100 kb
+      # do body-parser, a chave de 63). O
+      # `VozService` DE VERDADE com memória de mentira: aprender cria a nota
+      # (definicao, promocao, empresa pagando, RASTRO sem conteúdo), de novo
+      # grava a versão 2 com a 1 no histórico, a chave da empresa, 400/404
+      # antes da IA, 503 sem IA e sem gravar, a nota arquivada que volta; a
+      # edição à mão com a versão lida (409), criando quando não há; o
+      # rascunho de outra chave (409); trocar a chave sem a chave no motivo do
+      # RASTRO; a memória fora nos caminhos de escrita subindo o erro antes da
+      # IA; o bloco com e sem perfil, de outra empresa e com a memória fora.
+      # O PRONTO QUANDO: o roteiro e as peças (SYSTEM_PECAS) com o bloco de voz
+      # quando há perfil; sem perfil, o roteiro no tom da casa e as peças no
+      # prompt de antes. O controller
+      # montado à mão (parse, recusa antes do serviço, caminhos e permissões).
+      # E COM BANCO (1, pulado sem ele): aprender duas vezes e editar pela
+      # sessão da empresa, cada versão com o elo do evento `memoria.item.*`.
+      # Os construtores de `RodadaService`/`RoteiroService` nas suítes vizinhas
+      # ganharam a voz, sem caso novo.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2263 casos em 58 arquivos
+      # com o banco de teste, e 1698 passados / 565 pulados sem ele (1654 + 44).
+      # O piso de ARQUIVOS vai a 50; o de CASOS sobe 38 (~15% de folga sobre os
+      # 45 novos), para 1651.
+      PISO_CASOS_API: '1651'
+      PISO_ARQUIVOS_API: '50'
 
     steps:
       - uses: actions/checkout@v4

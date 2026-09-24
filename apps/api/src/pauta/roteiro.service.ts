@@ -20,7 +20,7 @@ import { MemoriaService } from '../memory/memoria.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { EspelhoService } from './espelho.service';
 import { itensMantidos } from './episodio';
-import { blocoDeVoz } from './voz-da-pauta';
+import { VozService } from './voz.service';
 import {
   RoteiroInvalidoError,
   entradaDoRoteiro,
@@ -77,6 +77,7 @@ export class RoteiroService {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly espelho: EspelhoService,
     private readonly memoria: MemoriaService,
+    private readonly vozes: VozService,
   ) {}
 
   private async ler(orgId: string, id: string): Promise<LinhaDoRoteiro> {
@@ -101,14 +102,6 @@ export class RoteiroService {
       this.log.warn(`palavra de corte de ${orgId}: memória indisponível (${(e as Error).message})`);
       return null;
     }
-  }
-
-  /**
-   * O ponto único de montagem da voz (MC10 preenche): hoje o tom da casa.
-   * Quando o perfil existir, é lido aqui, por empresa, e nada mais muda.
-   */
-  private async voz(_orgId: string): Promise<string> {
-    return blocoDeVoz(null);
   }
 
   /**
@@ -168,7 +161,7 @@ export class RoteiroService {
     const palavra = palavraDeCorteEfetiva(e.palavraDeCorte, daEmpresa);
 
     const saida = await this.llm.complete({
-      system: systemDoRoteiro(await this.voz(orgId)),
+      system: systemDoRoteiro(await this.vozes.bloco(orgId)),
       user: entradaDoRoteiro({ apelido, titulo: e.titulo, itens }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,

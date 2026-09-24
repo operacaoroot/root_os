@@ -2021,6 +2021,199 @@ export interface PautaEpisodiosPendentesDeMidia {
   source: { tool: string; generatedAt: string };
 }
 
+// ---------- Pauta: a voz do autor (MC10) ----------
+// O perfil de voz é uma nota da MEMÓRIA (kind `definicao`), escrita só pelo
+// caminho da ADR-011: cada perfil novo é uma VERSÃO da mesma nota, e as
+// anteriores ficam no histórico. Os prompts que escrevem (roteiro e peças)
+// recebem o perfil; sem ele, o tom da casa.
+
+/** A chave da nota com o perfil, quando a empresa não escolheu outra. */
+export const PAUTA_CHAVE_DA_VOZ_PADRAO = 'voz.pedro';
+
+/**
+ * A nota que guarda QUAL chave a empresa usa (a primeira linha é a chave). Ela
+ * mesma é memória, pelo caminho da ADR-011 — a configuração tem histórico.
+ */
+export const PAUTA_CHAVE_DA_CHAVE_DA_VOZ = 'pauta.voz.chave';
+
+/**
+ * A chave da voz mora sob `voz.`: quem só tem `pauta.editar` escreve o perfil,
+ * e a chave presa ao prefixo impede que "aprender" sobrescreva uma regra da
+ * casa escolhendo a chave dela.
+ */
+export const PAUTA_TETO_DA_CHAVE_DA_VOZ = 63;
+export const PautaChaveDaVozSchema = z
+  .string()
+  .trim()
+  .max(PAUTA_TETO_DA_CHAVE_DA_VOZ)
+  .regex(
+    /^voz\.[a-z0-9][a-z0-9-]{0,58}$/,
+    'A chave da voz começa com "voz." e segue com letras minúsculas, números e hífen (ex.: voz.pedro).',
+  );
+
+/** Regras de marca da ROOT que valem com ou sem perfil (brand kit e prompts da casa). */
+export const PAUTA_VOZ_PALAVRAS_PROIBIDAS = [
+  'alavancar',
+  'potencializar',
+  'solução completa',
+  'disruptivo',
+  'sinergia',
+  'mindset',
+  'jornada de transformação',
+] as const;
+
+/**
+ * As regras da casa que o perfil do autor NÃO substitui: o tom da casa sem as
+ * linhas de estilo (frase curta, para quem toca o negócio), que o perfil troca.
+ */
+export const PAUTA_VOZ_REGRAS_DA_MARCA: readonly string[] = [
+  `Nunca usar: ${PAUTA_VOZ_PALAVRAS_PROIBIDAS.map((p) => `"${p}"`).join(', ')} — nem as variações.`,
+  'Sem emoji.',
+  'Sem "no mundo da IA" e sem jargão de palco.',
+  'Não promete o que a matéria não sustenta.',
+];
+
+function semAcento(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// O radical pega a conjugação ("alavancando", "potencializa", "disruptiva").
+const RADICAIS_PROIBIDOS: ReadonlyArray<{ palavra: (typeof PAUTA_VOZ_PALAVRAS_PROIBIDAS)[number]; re: RegExp }> = [
+  { palavra: 'alavancar', re: /\balavanc\w*/ },
+  { palavra: 'potencializar', re: /\bpotencializ\w*/ },
+  { palavra: 'solução completa', re: /\bsolucao completa\b/ },
+  { palavra: 'disruptivo', re: /\bdisrupt\w*/ },
+  { palavra: 'sinergia', re: /\bsinergi\w*/ },
+  { palavra: 'mindset', re: /\bmindsets?\b/ },
+  { palavra: 'jornada de transformação', re: /\bjornada de transformacao\b/ },
+];
+
+/** As palavras proibidas que aparecem no texto (sem acento, sem caixa). */
+export function palavrasProibidasEm(texto: string): string[] {
+  const t = semAcento(String(texto ?? '')).replace(/\s+/g, ' ');
+  return RADICAIS_PROIBIDOS.filter((r) => r.re.test(t)).map((r) => r.palavra);
+}
+
+/** Teto do perfil: voz é instrução curta, não acervo. É o que entra no prompt. */
+export const PAUTA_TETO_DO_PERFIL_DE_VOZ = 4_000;
+/** Abaixo disso não é perfil, é um lembrete. */
+export const PAUTA_PISO_DO_PERFIL_DE_VOZ = 80;
+export const PAUTA_TETO_DE_EPISODIOS_DA_VOZ = 6;
+export const PAUTA_TETO_DE_TEXTOS_DA_VOZ = 5;
+/** Um texto colado: de um parágrafo de verdade a um artigo longo. */
+export const PAUTA_PISO_DO_TEXTO_DA_VOZ = 200;
+export const PAUTA_TETO_DO_TEXTO_DA_VOZ = 20_000;
+/** O que vai ao modelo, somadas as fontes; o excedente é cortado e a procedência diz. */
+export const PAUTA_TETO_DO_MATERIAL_DA_VOZ = 60_000;
+/**
+ * A soma dos textos colados. O corpo JSON da API morre em 100 kb (body-parser
+ * do Nest) antes do esquema; 60 mil caracteres de português cabem com folga
+ * para acento e escape, e acima disso o material seria cortado de todo jeito.
+ */
+export const PAUTA_TETO_DOS_TEXTOS_DA_VOZ = PAUTA_TETO_DO_MATERIAL_DA_VOZ;
+
+/** `POST /pauta/voz/aprender`: episódios transcritos e/ou textos colados. */
+export const PautaVozAprenderSchema = z
+  .object({
+    episodios: z
+      .array(z.string().uuid('Episódio inválido.'))
+      .max(PAUTA_TETO_DE_EPISODIOS_DA_VOZ, `No máximo ${PAUTA_TETO_DE_EPISODIOS_DA_VOZ} episódios por vez.`)
+      .default([]),
+    textos: z
+      .array(
+        z.object({
+          titulo: z
+            .string()
+            .trim()
+            .max(120, 'O título do texto tem no máximo 120 caracteres.')
+            .regex(/^[^\u0000-\u001f\u007f]*$/, 'O título é uma linha só.')
+            .optional(),
+          texto: z
+            .string()
+            .trim()
+            .min(PAUTA_PISO_DO_TEXTO_DA_VOZ, `Cada texto precisa de pelo menos ${PAUTA_PISO_DO_TEXTO_DA_VOZ} caracteres.`)
+            .max(PAUTA_TETO_DO_TEXTO_DA_VOZ, `Cada texto tem no máximo ${PAUTA_TETO_DO_TEXTO_DA_VOZ} caracteres.`)
+            .regex(SEM_CONTROLE_NO_TEXTO, 'O texto tem caractere de controle.'),
+        }),
+      )
+      .max(PAUTA_TETO_DE_TEXTOS_DA_VOZ, `No máximo ${PAUTA_TETO_DE_TEXTOS_DA_VOZ} textos por vez.`)
+      .default([]),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.episodios.length && !v.textos.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['episodios'],
+        message: 'Escolha ao menos um episódio transcrito ou cole um texto.',
+      });
+    }
+    if (new Set(v.episodios).size !== v.episodios.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['episodios'], message: 'Episódio repetido.' });
+    }
+    const soma = v.textos.reduce((s, t) => s + t.texto.length, 0);
+    if (soma > PAUTA_TETO_DOS_TEXTOS_DA_VOZ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['textos'],
+        message: `Os textos somam no máximo ${PAUTA_TETO_DOS_TEXTOS_DA_VOZ / 1000} mil caracteres.`,
+      });
+    }
+  });
+export type PautaVozAprenderInput = z.infer<typeof PautaVozAprenderSchema>;
+
+/** `PUT /pauta/voz`: a edição à mão, que vira uma versão nova da nota. */
+export const PautaVozSalvarSchema = z.object({
+  perfil: z
+    .string()
+    .trim()
+    .min(PAUTA_PISO_DO_PERFIL_DE_VOZ, `O perfil precisa de pelo menos ${PAUTA_PISO_DO_PERFIL_DE_VOZ} caracteres.`)
+    .max(PAUTA_TETO_DO_PERFIL_DE_VOZ, `O perfil tem no máximo ${PAUTA_TETO_DO_PERFIL_DE_VOZ} caracteres.`)
+    .regex(SEM_CONTROLE_NO_TEXTO, 'O perfil tem caractere de controle.'),
+  /** A versão da nota que a tela leu: diferente da atual é outra aba (409). */
+  versao: z.number().int().min(1).optional(),
+  /** A chave que a tela leu: trocada no meio da edição, o rascunho é de outra nota (409). */
+  chave: PautaChaveDaVozSchema.optional(),
+  motivo: z.string().trim().max(300).regex(/^[^\u0000-\u001f\u007f]*$/, 'O motivo é uma linha só.').optional(),
+});
+export type PautaVozSalvarInput = z.infer<typeof PautaVozSalvarSchema>;
+
+export const PautaVozChaveSchema = z.object({ chave: PautaChaveDaVozSchema });
+export type PautaVozChaveInput = z.infer<typeof PautaVozChaveSchema>;
+
+export interface PautaVozVersao {
+  versao: number;
+  mudanca: string;
+  procedencia: string;
+  motivo: string | null;
+  criadoEm: string;
+}
+
+export interface PautaVozPainel {
+  chave: string;
+  origemDaChave: 'empresa' | 'padrao';
+  /** A nota vigente. Arquivada conta como sem perfil: os prompts caem no tom da casa. */
+  perfil: {
+    id: string;
+    corpo: string;
+    versao: number;
+    procedencia: string;
+    sourceType: string;
+    sourceRef: string | null;
+    atualizadoEm: string;
+    arquivado: boolean;
+  } | null;
+  /** As últimas versões, da mais nova para a mais velha. */
+  historico: PautaVozVersao[];
+  regrasDaMarca: readonly string[];
+  /** Os episódios com transcrição, de onde a voz pode aprender. */
+  episodios: Array<{ id: string; apelido: string; titulo: string; caracteres: number }>;
+  iaConfigurada: boolean;
+}
+
+export interface PautaVozAprendida extends PautaVozPainel {
+  material: { fontes: number; caracteres: number; cortado: boolean };
+}
+
 export interface PautaCanalEstado {
   configurada: boolean;
   conectada: boolean;

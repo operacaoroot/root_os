@@ -41,6 +41,7 @@ import {
 } from '../src/pauta/roteiro-do-episodio';
 import { TOM_DA_CASA, blocoDeVoz } from '../src/pauta/voz-da-pauta';
 import { RoteiroService } from '../src/pauta/roteiro.service';
+import { VozService } from '../src/pauta/voz.service';
 import { RoteiroController } from '../src/pauta/roteiro.controller';
 import { EpisodioService } from '../src/pauta/episodio.service';
 import { MemoriaService } from '../src/memory/memoria.service';
@@ -109,14 +110,15 @@ describe('roteiro: o prompt e a voz', () => {
     expect(s).toContain('"gancho"');
   });
 
-  it('o bloco de voz é o ponto único: hoje o tom da casa, depois o perfil do autor', () => {
+  it('o bloco de voz é o ponto único: sem perfil o tom da casa, com ele o perfil do autor (MC10)', () => {
     expect(blocoDeVoz(null)).toBe(TOM_DA_CASA);
     expect(blocoDeVoz('   ')).toBe(TOM_DA_CASA);
     expect(systemDoRoteiro(blocoDeVoz(null)).endsWith(TOM_DA_CASA)).toBe(true);
     const perfil = blocoDeVoz('Fala curta, exemplos de BPO.');
     expect(perfil).toContain('Fala curta, exemplos de BPO.');
     expect(perfil).not.toContain('Tom da casa');
-    expect(blocoDeVoz('x'.repeat(10_000)).length).toBeLessThan(4_100);
+    // O perfil tem teto de 4 mil; o que sobra é o cabeçalho e as regras da marca.
+    expect(blocoDeVoz('x'.repeat(10_000)).length).toBeLessThan(4_600);
   });
 
   it('o pedido numera as matérias com origem e link; a newsletter vai sem link, com a fonte', () => {
@@ -446,7 +448,7 @@ function servico(opts: {
   } as unknown as MemoriaService;
 
   return {
-    roteiros: new RoteiroService(prisma, new AuditService(prisma), llm, espelho, memoria),
+    roteiros: new RoteiroService(prisma, new AuditService(prisma), llm, espelho, memoria, new VozService(prisma, new AuditService(prisma), llm, memoria)),
     lista,
     chamadas,
     condicionais,
@@ -725,7 +727,8 @@ describe.skipIf(!URL)('roteiro com banco: gerar, editar e exportar pela sessão 
     const llm = { name: 'dublê', model: 'd', configured: true, supportsTools: false, complete: async () => respostaDaIa([2, 1]) } as unknown as LlmProvider;
     const espelhoDesligado = { espelharDocumento: async () => null } as unknown as EspelhoService;
     // `porChave` só lê o prisma: o livro do RASTRO não entra nesta leitura.
-    roteiros = new RoteiroService(app, new AuditService(app), llm, espelhoDesligado, new MemoriaService(app, {} as never));
+    const memoria = new MemoriaService(app, {} as never);
+    roteiros = new RoteiroService(app, new AuditService(app), llm, espelhoDesligado, memoria, new VozService(app, new AuditService(app), llm, memoria));
     episodios = new EpisodioService(app, new AuditService(app));
     const o = await admin.org.create({ data: { name: `Roteiro ${MARCA}`, slug: `rt-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;

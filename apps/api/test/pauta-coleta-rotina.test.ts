@@ -5,6 +5,8 @@ import { PAUTA_HORAS_DA_CURADORIA, PAUTA_ORIGENS } from '@mktos/shared';
 
 import { ColetaService } from '../src/pauta/coleta.service';
 import { RodadaService } from '../src/pauta/rodada.service';
+import type { VozService } from '../src/pauta/voz.service';
+import { TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
 import { coletaPorOrigem } from '../src/pauta/origem-da-rodada';
 import type { Candidato } from '../src/pauta/curadoria-da-rodada';
 import type { RssService } from '../src/pauta/rss.service';
@@ -29,6 +31,9 @@ import {
   type EstadoDoAgendador,
 } from '../src/routines/rotina.tipos';
 import { auditoriaFalsa, prismaDeRotinas, rotinaFalsa, type EstadoDoBancoFalso } from './prisma-de-rotinas';
+
+// MC10: sem perfil, as peças recebem o tom da casa.
+const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
 
 /*
  * A ROTINA DE QUINTA 22h QUE COLETA TUDO — MC5.
@@ -407,7 +412,7 @@ function montarPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = [], opts: 
   coleta.registrar('busca', async (f) => porFonte(f), 'teste');
   coleta.registrar('perfil', async (f) => porFonte(f), 'teste');
   const llm = { name: 'falso', model: 'falso-1', configured: false } as unknown as LlmProvider;
-  const rodadas = new RodadaService(banco.prisma, new AuditService(banco.prisma), coleta, llm);
+  const rodadas = new RodadaService(banco.prisma, new AuditService(banco.prisma), coleta, llm, vozDaCasa);
   return { ...banco, coleta, rodadas };
 }
 

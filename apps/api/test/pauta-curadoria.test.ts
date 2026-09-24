@@ -21,9 +21,14 @@ import {
 } from '../src/pauta/curadoria-da-rodada';
 import { insumoDaRodadaComSobra, filtroDasOrigens } from '../src/pauta/origem-da-rodada';
 import { RodadaService } from '../src/pauta/rodada.service';
+import type { VozService } from '../src/pauta/voz.service';
+import { TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
 import { AuditService } from '../src/audit/audit.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 import type { PrismaService } from '../src/prisma/prisma.service';
+
+// MC10: sem perfil, as peças recebem o tom da casa.
+const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
 
 /*
  * CURADORIA HUMANA ANTES DO ROTEIRO — MC6.
@@ -314,7 +319,7 @@ function servico(opts: {
     ...opts.llm,
   } as unknown as LlmProvider;
 
-  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm);
+  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa);
   return { rodadas, prompts, criadas, gravadas, condicionais, auditoria, contagens, atual: () => rodada };
 }
 
