@@ -137,6 +137,7 @@ export default function PautaPage() {
           bump={bump}
           onMudou={recarregar}
           inicial={episodioAberto}
+          podeGastarIa={can('automacoes.executar')}
         />
       )}
       {ready && aba === 'Rotinas' && (

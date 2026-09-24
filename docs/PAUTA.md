@@ -448,8 +448,49 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Tela:** aba "Episódios" em `/pauta` (lista com número, título e status; detalhe com a linha
     do tempo das sete etapas, os itens e os botões dos vizinhos). "Criar episódio" na rodada
     curada da aba Rodadas e no aviso depois de confirmar a Curadoria.
-  - Os campos de roteiro, mídia, transcrição, títulos, thumbs e descrição **existem e ficam
-    vazios** até o MC8–MC12; nenhuma rota escreve neles ainda.
+  - Os campos de mídia, transcrição, títulos, thumbs e descrição **existem e ficam vazios** até o
+    MC9–MC12; o roteiro é escrito desde o MC8 (abaixo).
+- **O roteiro do episódio (MC8).** Sai dos itens que a curadoria manteve e vira o markdown de
+  `PautaEpisodio.roteiro`; gerar passa o episódio de `roteiro` para `gravacao`.
+  - **Gerar** (`POST /pauta/episodios/:id/roteiro/gerar`, `pauta.editar` + `automacoes.executar`,
+    corpo `{substituir}`): só em roteiro ou gravação — depois, o roteiro é registro do que foi
+    gravado (400; dá para voltar o status ou editar à mão). Já tem roteiro e `substituir` não veio:
+    409 sem gastar IA. A chamada leva o `orgId` (teto e custo da empresa) e o RASTRO registra
+    provider, modelo, a ordem e quais matérias o sistema completou (`pauta.episodio_roteiro_gerado`).
+    A escrita é condicionada ao status **e** ao `atualizadoEm` lidos antes da IA: uma edição à mão
+    feita enquanto o modelo pensava não some (409).
+  - **A IA devolve JSON** (`SYSTEM_ROTEIRO` em `pauta/roteiro-do-episodio.ts`): abertura, as
+    matérias na ordem dramática (abre com a de maior impacto, meio com as densas, fecha em alta) com
+    título curto, resumo de 2–3 linhas, "na tela" e o gancho para quem toca o negócio, e o
+    fechamento. O markdown é montado pelo sistema: o **link de cada matéria sai do item pelo
+    número**, URL escrita pelo modelo é tirada do texto, a newsletter sai "sem link público", e a
+    matéria que a IA esquecer entra antes do fechamento com o que a curadoria disse dela. Resposta
+    que não é JSON (markdown, frase) é 503 e nada é gravado.
+  - **Palavra de corte (D-MC2)**, fixada no topo do roteiro pelo sistema: a do episódio
+    (`PUT /pauta/episodios/:id/palavra-de-corte` `{palavraDeCorte}`, nulo volta à da empresa;
+    migration `20260924070000_pauta_episodio_palavra_de_corte`), senão a da empresa — a primeira
+    linha da nota da memória com chave `pauta.palavra-de-corte` ou, sem ela, `operador:palavra-de-corte`,
+    **só lida** —, senão `root, corta`. Memória fora do ar cai no padrão. A nota da empresa se cria
+    pelo caminho da ADR-011, hoje `POST /memoria` com a chave `pauta.palavra-de-corte`: a tela
+    Contexto só oferece criar nota enquanto a memória está vazia (e então a chave sai
+    `operador:palavra-de-corte`). A palavra **vale na hora**: o painel, o modo de gravação, o `.md` e
+    o espelho trazem o lembrete do topo com a palavra efetiva (`comPalavraDeCorte`, no shared), e
+    definir a do episódio reescreve essa linha no roteiro gravado. Não é preciso gerar de novo.
+  - **Voz:** o prompt recebe `blocoDeVoz()` (`pauta/voz-da-pauta.ts`), o ponto único que o MC10
+    preenche com o perfil do autor; hoje é o tom da casa.
+  - **Editar** (`PUT /pauta/episodios/:id/roteiro` `{roteiro, versao}`): não muda o status; versão
+    diferente da atual é outra aba (409). **Exportar**: `GET /pauta/episodios/:id/roteiro.md`
+    (`text/markdown`, `ep-NN-roteiro.md`; 404 sem roteiro). **Painel**: `GET …/:id/roteiro`.
+  - **Espelho:** com o espelho ligado (off/local/drive), gerar, editar e trocar a palavra gravam
+    `ep-NN-roteiro-<8 primeiros do id>.md` pelo mesmo `EspelhoService` das fichas
+    (`espelharDocumento`; no local, na subpasta `episodios/`). O id vai no nome porque o número é
+    por empresa e o destino padrão (a vault do servidor, a pasta do Drive da variável de ambiente)
+    pode ser o mesmo para várias. Desligado não faz nada; falhando, o roteiro fica salvo e o erro volta na resposta.
+  - **Tela:** bloco "Roteiro" no detalhe da aba Episódios (`SecaoRoteiro.tsx`): palavra de corte,
+    Gerar roteiro (com confirmação para substituir), editor, Exportar .md e **Abrir para gravar** —
+    tela limpa por cima do painel, fonte grande ajustável, links clicáveis, Tela cheia para o
+    segundo monitor, rola no celular. O markdown vira elemento React (`roteiro-markdown.tsx`), sem
+    innerHTML, e só http(s) é link.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

@@ -1482,6 +1482,9 @@ model PautaEpisodio {
   status   PautaEpisodioStatus @default(roteiro)
 
   roteiro          String @default("")
+  /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =
+  /// a da empresa (nota `pauta.palavra-de-corte` da memória) ou "root, corta".
+  palavraDeCorte   String?
   /// Arquivos locais do Mac, duração, cortes — o que a estação de mídia devolve (MC9).
   midia            Json   @default("{}")
   /// Segmentos `{inicio, fim, texto}` em segundos do vídeo final.

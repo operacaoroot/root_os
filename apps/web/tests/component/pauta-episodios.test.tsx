@@ -100,6 +100,14 @@ function respostas(opts: { lista?: unknown[]; detalhe?: unknown } = {}) {
       const { itens: _conta, ...resumo } = RESUMO('e1', 1, 'concluido');
       return structuredClone(detalhe('concluido', resumo));
     }
+    // O roteiro (MC8) mora no detalhe e tem suíte própria (`pauta-roteiro`).
+    const roteiro = path.match(/^\/pauta\/episodios\/([^/]+)\/roteiro$/);
+    if (roteiro) {
+      return {
+        episodioId: roteiro[1], apelido: 'ep-02', titulo: 'x', status: 'edicao', roteiro: '', atualizadoEm: '2026-09-23T10:00:00.000Z',
+        palavraDeCorte: { efetiva: 'root, corta', origem: 'padrao', doEpisodio: null, daEmpresa: null }, podeGerar: false, motivo: null,
+      };
+    }
     if (path.startsWith('/pauta/rodadas')) return { items: [], source: { tool: 't', generatedAt: '' } };
     if (path === '/pauta/canais') return { whatsapp: { configurada: false, conectada: false, motivo: null, grupo: null } };
     throw new Error(`GET inesperado: ${path}`);

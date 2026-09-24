@@ -246,8 +246,29 @@ jobs:
       # Curadoria; e a aba Episódios na página). Medido: 436 casos em 33
       # arquivos (420 + 16). O piso de ARQUIVOS sobe 1, para 24; o de CASOS
       # sobe 14 (~12% de folga sobre os 16 novos), para 272.
-      PISO_CASOS_WEB: '272'
-      PISO_ARQUIVOS_WEB: '24'
+      #
+      # MC8, O ROTEIRO DO EPISÓDIO (23/09/2026): +21 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-roteiro` (21: o markdown do roteiro
+      # virando elemento, com a URL solta clicável em nova aba, só http(s) como
+      # link e sem HTML cru, a URL com parênteses equilibrados inteira, e o
+      # parágrafo que a linha em branco separa; gerar
+      # mostrando a palavra de corte e avisando a aba; a confirmação antes de
+      # substituir; o motivo quando já passou da gravação; sem
+      # `automacoes.executar` o botão apagado com o porquê; sem `pauta.editar`
+      # editor e palavra travados; a recusa na caixa da página; editar salvando
+      # com a versão lida; exportar pelo `.md` com o token, baixando o Blob com
+      # o nome do episódio, e avisando quando o navegador não deixa baixar; a
+      # palavra do episódio e a volta à da empresa, e trocá-la sem apagar a
+      # edição em curso; a releitura com o mesmo roteiro adotando a versão
+      # nova, e com o roteiro mudado em outra aba avisando e mandando a versão
+      # de onde a edição partiu; o espelho que falha sem esconder o salvo; o
+      # modo de gravação com fonte grande, link, palavra de corte e A+; Esc e
+      # Fechar; sem roteiro não há gravar nem exportar). O mock de
+      # `pauta-episodios` ganhou a rota do painel do roteiro, sem caso novo.
+      # Medido: 457 casos em 34 arquivos (436 + 21). O piso de ARQUIVOS sobe 1,
+      # para 25; o de CASOS sobe 18 (~12% de folga sobre os 21 novos), para 290.
+      PISO_CASOS_WEB: '290'
+      PISO_ARQUIVOS_WEB: '25'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -818,8 +839,46 @@ jobs:
       # com o banco de teste, e 1523 passados / 562 pulados sem ele (1479 + 44).
       # O piso de ARQUIVOS vai a 46; o de CASOS sobe 42 (~15% de folga sobre os
       # 49 novos), para 1500.
-      PISO_CASOS_API: '1500'
-      PISO_ARQUIVOS_API: '46'
+      #
+      # ---------------------------------------------------------------------
+      # MC8, O ROTEIRO DO EPISÓDIO (23/09/2026): +53 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-roteiro` (53): o prompt com a ordem dramática e o bloco de voz
+      # (hoje o tom da casa, o ponto único que o MC10 preenche), o pedido
+      # numerado com origem e link e a newsletter sem link, só http(s) como
+      # link público; a leitura do que o modelo devolve (JSON em cerca, markdown
+      # no lugar de JSON, JSON sem lista/lista/vazio, número fora, repetido,
+      # sem título ou em texto, URL escrita pelo modelo tirada do texto); a
+      # ordem da IA com a esquecida antes do fechamento; o markdown com a
+      # palavra de corte logo abaixo do título, as matérias numeradas, todo
+      # link público e nenhum da caixa de entrada, "na tela" e o gancho, e a
+      # cópia do vault com cabeçalho e nome com o começo do id (o ep-01 de
+      # duas empresas não colide); trocar a palavra reescreve só a linha do
+      # lembrete; a palavra de corte (padrão, prioridade
+      # episódio > empresa > padrão, a nota da memória lida sem marcação,
+      # arquivada/vazia/longa ignorada); quando dá para gerar; a coluna, a
+      # migration e os esquemas. O `RoteiroService` DE VERDADE com dublês:
+      # gera dos itens mantidos com a empresa pagando e vai para a gravação
+      # com escrita condicionada ao status e ao `atualizadoEm`, audita provider,
+      # modelo e ordem, a palavra do episódio/da empresa/memória fora do ar,
+      # markdown no lugar de JSON é 503 sem gravar, já tem roteiro é 409 sem
+      # gastar IA, depois da gravação e rodada vazia são 400, sem credencial é
+      # 503, a edição de outra aba durante a IA é 409, outra empresa 404; o
+      # espelho ligado, desligado e falhando; editar, a versão velha, o vazio
+      # sem espelho, exportar, a palavra do episódio e o painel; trocar a
+      # palavra depois de gerar deixa roteiro, painel, .md e espelho com a
+      # nova, a nota da empresa mudada já sai no painel e no .md, e salvar um
+      # texto com a palavra velha grava com a atual. O controller montado à
+      # mão: os cabeçalhos do .md e o parse dos corpos. E COM BANCO (1, pulado
+      # sem ele): gerar, editar com a versão, a palavra e exportar pela sessão
+      # com empresa.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2138 casos em 55 arquivos
+      # com o banco de teste, e 1575 passados / 563 pulados sem ele (1523 + 52).
+      # O piso de ARQUIVOS vai a 47; o de CASOS sobe 45 (~15% de folga sobre os
+      # 53 novos), para 1545.
+      PISO_CASOS_API: '1545'
+      PISO_ARQUIVOS_API: '47'
 
     steps:
       - uses: actions/checkout@v4

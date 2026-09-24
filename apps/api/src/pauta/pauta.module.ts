@@ -18,12 +18,16 @@ import { EntradaDeLinksService } from './entrada-de-links.service';
 import { ColetaService } from './coleta.service';
 import { ColetorGmailService } from './coletor-gmail.service';
 import { EpisodioService } from './episodio.service';
+import { RoteiroController } from './roteiro.controller';
+import { RoteiroService } from './roteiro.service';
+import { MemoryModule } from '../memory/memoria.module';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
+// MemoryModule: o roteiro (MC8) LÊ a palavra de corte da empresa na memória.
 @Module({
-  imports: [StorageModule, GoogleModule, IntegrationsModule],
-  controllers: [PautaController, RodadaController, EpisodioController],
+  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule],
+  controllers: [PautaController, RodadaController, EpisodioController, RoteiroController],
   providers: [
     PautaService,
     ApifyService,
@@ -41,6 +45,8 @@ import { EpisodioService } from './episodio.service';
     ColetorGmailService,
     // MC7: o episódio que nasce da rodada curada.
     EpisodioService,
+    // MC8: o roteiro do episódio, gerado dos itens mantidos.
+    RoteiroService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

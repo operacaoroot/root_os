@@ -111,6 +111,22 @@ export function apiGet<T>(path: string, token?: string | null): Promise<T> {
   }).then((r) => handle<T>(r));
 }
 
+/**
+ * GET que responde texto (markdown, csv). O token vai no cabeçalho, como nos
+ * outros: um `<a href>` direto não levaria o `Authorization`.
+ */
+export async function apiTexto(path: string, token?: string | null): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw erroDaResposta(body as Record<string, unknown>, res.status);
+  }
+  return res.text();
+}
+
 export function apiPost<T>(
   path: string,
   body: unknown,

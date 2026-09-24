@@ -1720,6 +1720,103 @@ export interface PautaEpisodioDetalhe extends Omit<PautaEpisodioResumo, 'itens'>
   voltar: PautaEpisodioStatus | null;
 }
 
+// ---------- Pauta: o roteiro do episódio (MC8) ----------
+
+/**
+ * D-MC2: a palavra dita em voz alta a cada erro na gravação; a edição (MC9)
+ * corta dali para trás. Vale a do episódio; sem ela, a da empresa (nota da
+ * memória com a chave abaixo); sem as duas, esta.
+ */
+export const PAUTA_PALAVRA_DE_CORTE_PADRAO = 'root, corta';
+
+/** A chave da nota da memória que guarda a palavra de corte da empresa. */
+export const PAUTA_CHAVE_DA_PALAVRA_DE_CORTE = 'pauta.palavra-de-corte';
+
+/**
+ * As chaves lidas, na ordem. A segunda é a que a tela Contexto dá a uma nota
+ * de título "Palavra de corte" (`operador:<slug do título>`) — mas a tela só
+ * cria nota com a memória vazia; fora disso, a nota se cria por `POST /memoria`.
+ */
+export const PAUTA_CHAVES_DA_PALAVRA_DE_CORTE = [PAUTA_CHAVE_DA_PALAVRA_DE_CORTE, 'operador:palavra-de-corte'] as const;
+
+/** Só roteiro e gravação geram roteiro: depois da gravação ele é registro do que foi dito. */
+export const PAUTA_STATUS_QUE_GERAM_ROTEIRO = ['roteiro', 'gravacao'] as const satisfies readonly PautaEpisodioStatus[];
+
+export function podeGerarRoteiro(status: PautaEpisodioStatus): boolean {
+  return (PAUTA_STATUS_QUE_GERAM_ROTEIRO as readonly string[]).includes(status);
+}
+
+/** Teto do roteiro em caracteres: um episódio de 20 min cabe folgado em 60 mil. */
+export const PAUTA_TETO_DO_ROTEIRO = 60_000;
+
+/** O lembrete do topo do roteiro: a primeira coisa que quem grava lê. */
+export function lembreteDaPalavraDeCorte(palavra: string): string {
+  return (
+    `> **Palavra de corte: “${palavra}”.** Errou? Diga a palavra, respire e repita a frase ` +
+    'inteira — a edição corta daí para trás.'
+  );
+}
+
+const LINHA_DO_LEMBRETE = /^> \*\*Palavra de corte: “.*”\.\*\*.*$/m;
+
+/**
+ * O roteiro com o lembrete trocado pela palavra que vale agora. A palavra muda
+ * depois de gerar (no episódio ou na nota da empresa) e quem grava não pode ler
+ * uma no cabeçalho e outra no texto. Sem o lembrete, o texto fica como está.
+ */
+export function comPalavraDeCorte(roteiro: string, palavra: string): string {
+  return roteiro.replace(LINHA_DO_LEMBRETE, () => lembreteDaPalavraDeCorte(palavra));
+}
+
+export const PautaPalavraDeCorteSchema = z
+  .string()
+  .trim()
+  .min(2, 'A palavra de corte precisa de pelo menos 2 caracteres.')
+  .max(40, 'A palavra de corte tem no máximo 40 caracteres.')
+  .regex(/^[^\r\n]+$/, 'A palavra de corte é uma linha só.');
+
+export const PautaRoteiroGerarSchema = z.object({
+  /** O episódio já tem roteiro: gerar de novo só com a confirmação explícita. */
+  substituir: z.boolean().default(false),
+});
+export type PautaRoteiroGerarInput = z.infer<typeof PautaRoteiroGerarSchema>;
+
+export const PautaRoteiroSalvarSchema = z.object({
+  roteiro: z.string().max(PAUTA_TETO_DO_ROTEIRO, `O roteiro tem no máximo ${PAUTA_TETO_DO_ROTEIRO} caracteres.`),
+  /** O `atualizadoEm` que a tela leu: diferente do atual é edição de outra aba (409). */
+  versao: z.string().datetime().optional(),
+});
+export type PautaRoteiroSalvarInput = z.infer<typeof PautaRoteiroSalvarSchema>;
+
+/** `null` devolve o episódio à palavra da empresa. */
+export const PautaPalavraDeCorteDoEpisodioSchema = z.object({
+  palavraDeCorte: PautaPalavraDeCorteSchema.nullable(),
+});
+export type PautaPalavraDeCorteDoEpisodioInput = z.infer<typeof PautaPalavraDeCorteDoEpisodioSchema>;
+
+export type PautaOrigemDaPalavraDeCorte = 'episodio' | 'empresa' | 'padrao';
+
+export interface PautaRoteiroDoEpisodio {
+  episodioId: string;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  roteiro: string;
+  /** Vai de volta no salvar (`versao`). */
+  atualizadoEm: string;
+  palavraDeCorte: {
+    efetiva: string;
+    origem: PautaOrigemDaPalavraDeCorte;
+    doEpisodio: string | null;
+    daEmpresa: string | null;
+  };
+  podeGerar: boolean;
+  /** Por que não dá para gerar agora (status, rodada sem itens), ou nulo. */
+  motivo: string | null;
+  /** O resultado do espelho na escrita que devolveu esta resposta; ausente = não tentou. */
+  espelho?: { caminho: string | null; erro: string | null } | null;
+}
+
 export interface PautaCanalEstado {
   configurada: boolean;
   conectada: boolean;

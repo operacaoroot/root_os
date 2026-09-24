@@ -14,12 +14,13 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
+import { SecaoRoteiro } from './SecaoRoteiro';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
  * e no fim da Curadoria); aqui ele anda do roteiro ao concluído, um passo por
  * vez. A regra de quem pode ir para onde é da API — a tela só oferece os dois
- * vizinhos que o detalhe devolve.
+ * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`.
  */
 
 interface Props {
@@ -30,6 +31,8 @@ interface Props {
   onMudou: () => void;
   /** O episódio que outra aba mandou abrir (acabou de nascer). */
   inicial?: string | null;
+  /** Gerar o roteiro gasta IA (MC8): exige `automacoes.executar`. */
+  podeGastarIa?: boolean;
 }
 
 function ehOrigem(o: unknown): o is PautaOrigem {
@@ -46,7 +49,7 @@ const TOM: Record<PautaEpisodioStatus, 'muted' | 'brand' | 'good' | 'warn'> = {
   concluido: 'good',
 };
 
-export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial = null }: Props) {
+export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial = null, podeGastarIa = false }: Props) {
   const [lista, setLista] = useState<PautaEpisodioList | null>(null);
   const [aberto, setAberto] = useState<string | null>(inicial);
   const [detalhe, setDetalhe] = useState<PautaEpisodioDetalhe | null>(null);
@@ -217,6 +220,17 @@ export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial =
               {!detalhe.avancar && <span className="self-center text-sm text-good">Episódio concluído.</span>}
             </div>
           </div>
+
+          <SecaoRoteiro
+            token={token}
+            episodioId={detalhe.id}
+            status={detalhe.status}
+            editavel={editavel}
+            podeGastarIa={podeGastarIa}
+            bump={bump}
+            onErro={onErro}
+            onMudou={onMudou}
+          />
 
           <div>
             <h3 className="mb-2 font-os-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
