@@ -536,6 +536,41 @@ da Meta continuam no código; esta fatia escolhe a do Instagram e não pede publ
 
 ### MD6 — Publicador do Instagram: capacidade R3, efeito por registro e executor
 
+> **Estado (24/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local da Graph
+> e MinIO descartável registrados no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 28 da §4).
+> Escolhas além do texto abaixo: o publicador recebe o cliente da Graph por injeção
+> (`GRAPH_DE_PUBLICACAO`, montado no `*.module.ts` da pasta do conector), porque a catraca proíbe
+> `pauta/` de importar o conector; o schema da política não tem `hashKeys`, então os argumentos são
+> exatamente os seis do item 1 (o corpo inteiro vai ao hash) e `agendadaPara` é opcional (a porta
+> recusa `null` em campo obrigatório); a rotina ainda não chama a porta — sem a MD7 a porta não
+> confere lote, e chamá-la criaria uma aprovação por minuto —, então com a nota ligada e o lote ela
+> também registra `pulada` com o motivo; o container com a resposta do publish perdida é achado pela
+> legenda nas mídias recentes (o story, sem legenda, fica `publicada` sem id, nunca repostado);
+> "Voltar ao manual" leva a `recusada`; a aprovação que esperava na fila continua lá, mas não publica:
+> de `recusada` o efeito não começa e, depois de um pedido novo, recusa toda aprovação que não seja a
+> do último pedido gravado na linha. Quem a confirmar recebe a recusa com o motivo.
+>
+> **Depois da revisão (24/09/2026):** a linha a caminho tem POSSE (`proximaEm` no futuro enquanto
+> alguém trabalha nela; a rotina só pega a vencida e a toma condicionada ao valor lido), porque o
+> tique de cada minuto disputava a linha com o efeito — abortava o carrossel aprovado no meio dos
+> containers e podia mandar um segundo `media_publish`. Depois da marca `publicandoEm` o mesmo
+> container nunca é publicado de novo: `FINISHED` só é relido, e em 10 min vira erro que manda
+> conferir no Instagram; o pedido novo relê o container antigo antes de criar outro. O efeito que
+> termina em erro lança (`acao.falhou`, a confirmação mostra o motivo). A conclusão pela rotina
+> escreve o RASTRO na correlação e no ator da chamada aprovada (item 5), com a da passagem em
+> `correlacaoDaRotina`. O pedido morto (aprovação vencida, recusada ou sumida) chega à tela como
+> `erro`, com o botão de pedir de novo; o container vencido continua voltando a `pendente` (item 5),
+> e a tela o mostra como erro. A falta da URL pública da mídia é conferida também no pedido, antes da
+> fila. A `pulada` do executor vai ao RASTRO uma vez por peça, slot e motivo (item 6). **A única
+> mudança na rota antiga** `POST /pauta/pecas/:id/publicar` (item 7) é o texto da recusa de peça do
+> Instagram, que apontava para App Review e passou a apontar para o "Publicar agora".
+>
+> **Manual, a acrescentar:** a segunda pessoa com alçada `responsavel` só confirma o pedido R3. Fora
+> das 08h–20h de São Paulo (`fora_da_janela`) ou no segundo pedido dentro de uma hora
+> (`volume_atipico`) o "Publicar agora" sai **R4**, e aí a confirmação exige alçada **`titular`**,
+> reautenticação e até 10 min. Recomendação: a segunda pessoa com alçada titular; ou o Pedro decide
+> aceitar só o R3 dentro da janela, e os posts da noite ficam manuais.
+
 **SPEC.**
 
 1. **Capacidade `instagram.post.publicar`** em `packages/policy/politica-marketing-os.json`: efeito

@@ -1984,3 +1984,56 @@ describe('catraca de arquitetura: mensagem de serviço do canal só sai do canal
     ).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// MD6: o publicador do Instagram
+// ---------------------------------------------------------------------------
+
+/*
+ * A primeira escrita pública automática do OS. Três coisas que não podem
+ * escorregar sem ninguém ver:
+ *
+ *   1. O endereço da Graph do Instagram mora num arquivo só, o conector da bio.
+ *      A frente 2 vigia `instagram.com` com o dono errado (a Meta) e pula todo
+ *      arquivo de conector; esta vigia o host exato, em código e em texto.
+ *   2. O publicador recebe o cliente da Graph por injeção, montado no
+ *      `*.module.ts` da pasta do conector (a fiação que a frente 1 permite). O
+ *      token de injeção tem dono: aparece só na declaração, na fiação e no
+ *      publicador. Um quarto arquivo que o injetasse seria outro caminho para a
+ *      Graph sem a porta — é isso que esta catraca impede.
+ *   3. O publicador INSCREVE o efeito e nunca o dispara: quem dispara é a porta.
+ */
+describe('catraca de arquitetura: o publicador do Instagram (MD6)', () => {
+  const CONECTOR = 'src/bio/plataformas/instagram.ts';
+  const TOKEN = 'src/pauta/graph-de-publicacao.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const PUBLICADOR = 'src/pauta/publicacao-instagram.service.ts';
+
+  it('os quatro arquivos existem onde a catraca procura', () => {
+    for (const a of [CONECTOR, TOKEN, FIACAO, PUBLICADOR]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o endereço da Graph do Instagram só aparece no conector', () => {
+    const fora = FONTES.filter((f) => f.arquivo !== CONECTOR && /graph\.instagram\.com/.test(f.codigo)).map((f) => f.arquivo);
+    expect(fora, 'endereço da Graph fora do conector da bio').toEqual([]);
+    expect(FONTES.find((f) => f.arquivo === CONECTOR)!.codigo).toMatch(/graph\.instagram\.com/);
+  });
+
+  it('o cliente de publicação da Graph tem um dono: só a declaração, a fiação e o publicador o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_PUBLICACAO\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, PUBLICADOR].sort());
+    // E a fiação só declara: nenhuma chamada da Graph passa por ela.
+    const fiacao = FONTES.find((f) => f.arquivo === FIACAO)!;
+    expect(fiacao.semTexto).not.toMatch(/\bfetch\s*\(/);
+    expect(fiacao.semTexto).not.toMatch(/\binstagram\.\w+\s*\(/);
+  });
+
+  it('o publicador não importa o conector e só inscreve o efeito — quem dispara é a porta', () => {
+    const imports = REFS.filter((r) => r.arquivo === PUBLICADOR && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o publicador importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === PUBLICADOR)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.post\.publicar'/);
+  });
+});

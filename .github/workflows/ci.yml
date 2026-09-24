@@ -148,6 +148,15 @@ jobs:
       #
       # ONDA 10, ESTABILIZAÇÃO (11/09/2026): remedido, 74 em 2 — inalterado. A
       # onda não tocou no motor puro. Os pisos ficam onde estão.
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): (77) em 2 arquivos —
+      # politica 40 (+3: `instagram.post.publicar` é R3 pelo efeito, sem
+      # desfazer nem ferramenta; um sinal aceso a sobe a R4; o `argsSchema`
+      # fechado, com `midias` conferida item a item), sobrescrita 37 (o caso das
+      # capacidades sem ferramenta foi de 14 a 15, sem caso novo). O piso de
+      # CASOS fica em 60 de propósito: os 3 novos cabem na folga de 17, e perder
+      # o arquivo inteiro de sobrescrita (37) continua reprovando pelo piso de
+      # ARQUIVOS, que fica em 2.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -447,7 +456,17 @@ jobs:
       # bio, a lixeira da conta de publicação só aparece para quem tem
       # pauta.publicar. Medido: 571 casos em 44 arquivos. O piso de CASOS sobe
       # 1, para 389; o de ARQUIVOS fica em 35.
-      PISO_CASOS_WEB: '389'
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): +6 casos, sem arquivo
+      # novo — `component/pauta-agenda` +4 ("Publicar agora" pede à porta e
+      # diz que outra pessoa confirma; cada estado da publicação no slot, o
+      # link da publicada e "Voltar ao manual"; o pedido que morreu mostra o
+      # motivo e oferece pedir de novo; sem pauta.publicar, nada) e
+      # `component/pauta-encadeamento` +2 (a nova rotina de publicação e o
+      # botão em /rotinas). Medido: 577 casos em 44 arquivos. O piso de
+      # CASOS sobe 5 (~15% de folga sobre os 6 novos), para 394; o de
+      # ARQUIVOS fica em 35.
+      PISO_CASOS_WEB: '394'
       PISO_ARQUIVOS_WEB: '35'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1536,8 +1555,35 @@ jobs:
       # arquivos com o banco; sem ele, 2184 passados e 591 pulados. O piso de
       # ARQUIVOS fica em 59; o de CASOS sobe 2 (~15% de folga sobre os 3 que
       # rodam sem banco), para 2054.
-      PISO_CASOS_API: '2054'
-      PISO_ARQUIVOS_API: '59'
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): +45 casos, +1 arquivo.
+      # `pauta-publicacao-instagram` (34, novo): sem banco, 13 — as mídias do
+      # pedido (5 JPEG na ordem, falta de JPEG/sha/mp4, carrossel de 1 slide);
+      # rascunho, conta, escopo e token morto não pedem; os argumentos do
+      # catálogo e a releitura; a barreira de caixa de entrada na legenda; o
+      # que mudou desde o pedido; cada status_code; o post achado pela legenda;
+      # a decisão da rotina (nota, lote, porta, janela); o desfecho da
+      # passagem; os enums espelhados; o tipo da rotina; as permissões das
+      # rotas. COM BANCO, 21, pulados sem ele (retido e quem clicou não
+      # confirma; 5+1 containers com a URL assinada, publish e permalink; story;
+      # Reels processando e concluído pela rotina na correlação do clique;
+      # ERROR e limite rejeitam a confirmação; resposta perdida sem segundo
+      # post; interruptor na porta e na rotina; rascunho antes da porta; mídia
+      # trocada depois do pedido; segunda execução sem repostar; voltar ao
+      # manual; a rotina sem lote registra pulada uma vez por motivo; a POSSE
+      # — o tique no meio da criação dos containers, no meio do publish e com a
+      # posse vencida —; o publish sem resposta que nunca se repete e vira erro
+      # em 10 min; o pedido novo que acha o post antigo; o pedido vencido ou
+      # recusado chega como erro; a aprovação de pedido antigo não publica; o
+      # 503 antes da fila). `validacao` +2 (a lista com minItems, maxItems e
+      # items), `arquitetura` +4, `escritas-pela-porta` +2,
+      # `modulos-por-tenant` +1, `pauta-agenda` +1, `root-midia` +1 — todos
+      # sem banco. Medido: 2821 casos em 68 arquivos com o banco; sem ele,
+      # 2209 passados e 612 pulados (63 + 5 arquivos). O piso de ARQUIVOS sobe
+      # 1, para 60; o de CASOS sobe 21 (~15% de folga sobre os 25 que rodam
+      # sem banco), para 2075.
+      PISO_CASOS_API: '2075'
+      PISO_ARQUIVOS_API: '60'
 
     steps:
       - uses: actions/checkout@v4
@@ -1985,7 +2031,11 @@ jobs:
           # fatia, com o onboarding). `PautaEpisodio` entrou no registro de
           # alvos e em `FILHOS_COM_ORGID_REDUNDANTE` com DOIS pais conferidos
           # (a rodada e a página de links): +7 casos. O piso sobe 6, para 254.
-          PISO_CASOS_ISOLAMENTO: '254'
+          #
+          # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): **332 casos**.
+          # `PautaPublicacao` entrou no registro de alvos e em
+          # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 259.
+          PISO_CASOS_ISOLAMENTO: '259'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

@@ -518,6 +518,15 @@ describe('o gate de módulos (interceptor)', () => {
     expect(erro).toBeInstanceOf(NotFoundException);
   });
 
+  it('publicar no Instagram pelo OS (MD6) é do módulo pauta: sem ele, a rota some', async () => {
+    for (const c of ['/api/pauta/pecas/p1/publicar-instagram', '/api/pauta/pecas/p1/publicacao', '/api/pauta/pecas/p1/publicacao/manual']) {
+      expect(moduloDoCaminho(c)).toBe('pauta');
+    }
+    await expect(passou('/api/pauta/pecas/p1/publicacao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/pecas/p1/publicar-instagram', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+  });
+
   it('a conta de publicação (MD5) é do módulo pauta; o retorno dela é o callback público da bio', async () => {
     expect(moduloDoCaminho('/api/pauta/instagram/conectar')).toBe('pauta');
     expect(moduloDoCaminho('/api/pauta/instagram/conexao')).toBe('pauta');

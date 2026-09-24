@@ -45,6 +45,8 @@ import { NovaRotinaDeEncadeamento } from '@/app/rotinas/NovaRotinaDeEncadeamento
 import { LinhaDoEncadeamento, textoDoEncadeamento } from '@/app/pauta/LinhaDoEncadeamento';
 // eslint-disable-next-line import/first
 import RotinasPage from '@/app/rotinas/page';
+// eslint-disable-next-line import/first
+import { NovaRotinaDePublicacao } from '@/app/rotinas/NovaRotinaDePublicacao';
 
 function peca(over: Record<string, unknown> = {}) {
   return {
@@ -168,6 +170,39 @@ describe('nova rotina de encadeamento', () => {
     render(<RotinasPage />);
     await screen.findByRole('button', { name: 'Nova rotina de coleta' });
     expect(screen.queryByRole('button', { name: 'Nova rotina de encadeamento' })).toBeNull();
+  });
+});
+
+describe('nova rotina de publicação (MD6)', () => {
+  it('abre a cada minuto em São Paulo, diz que publicar sozinha pede a nota e o lote, e cria sem config', async () => {
+    apiPost.mockResolvedValue({ id: 'r2' });
+    const onCriada = vi.fn();
+    render(<NovaRotinaDePublicacao token="tok" onCriada={onCriada} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de publicação' }));
+    expect(screen.getByLabelText(/Quando/)).toHaveValue('* * * * *');
+    expect(screen.getByText(/pauta\.publicacao\.automatica/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar rotina' }));
+    await waitFor(() => expect(onCriada).toHaveBeenCalledTimes(1));
+    expect(apiPost).toHaveBeenCalledWith(
+      '/rotinas',
+      { nome: 'Publicação da semana', slug: 'publicacao-da-semana', tipo: 'pauta.publicar-agendadas', cron: '* * * * *', tz: 'America/Sao_Paulo', estado: 'rodando', config: {} },
+      'tok',
+    );
+  });
+
+  it('/rotinas oferece o botão só com o tipo disponível e sem a rotina criada', async () => {
+    const lista = (tipos: string[], items: unknown[] = []) => ({
+      items, execucoes: [], agendadorAtivo: true, pautaDesligadaPorVariavel: false, descobertaCega: false, tiposDisponiveis: tipos, avisos: [],
+      source: { tool: 'banco-interno', generatedAt: '' },
+    });
+    apiGet.mockResolvedValue(lista(['pauta.publicar-agendadas']));
+    const { unmount } = render(<RotinasPage />);
+    expect(await screen.findByRole('button', { name: 'Nova rotina de publicação' })).toBeInTheDocument();
+    unmount();
+    apiGet.mockResolvedValue(lista(['pauta.coleta']));
+    render(<RotinasPage />);
+    await screen.findByRole('button', { name: 'Nova rotina de coleta' });
+    expect(screen.queryByRole('button', { name: 'Nova rotina de publicação' })).toBeNull();
   });
 });
 

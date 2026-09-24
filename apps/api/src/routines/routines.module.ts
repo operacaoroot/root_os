@@ -5,6 +5,7 @@ import { ExecutoresDeRotinaRegistry } from './executores.registry';
 import { ExecutorDePauta } from './executores/pauta.executor';
 import { ExecutorDeColetaDaPauta } from './executores/pauta-coleta.executor';
 import { ExecutorDeEncadeamentoDaPauta } from './executores/pauta-encadear.executor';
+import { ExecutorDePublicacaoDaPauta } from './executores/pauta-publicar.executor';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -47,6 +48,7 @@ import { RotinasService } from './rotinas.service';
     ExecutorDePauta,
     ExecutorDeColetaDaPauta,
     ExecutorDeEncadeamentoDaPauta,
+    ExecutorDePublicacaoDaPauta,
     RotinasService,
     RotinasScheduler,
   ],

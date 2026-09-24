@@ -1639,6 +1639,170 @@ capacidade, permissão ou seed. As três variáveis novas ficam **vazias** em pr
    conexão fica como da bio (falha fechada) e o aviso aparece: aí é trocar a leitura por outra
    prova antes da MD6.
 
+### Onda D, fatia MD6 — o publicador do Instagram (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD6). A primeira escrita pública
+automática do OS entra pela régua como qualquer escrita de fora: capacidade R3, efeito por registro,
+segunda pessoa. **Nada publica sozinho nesta onda**: a rotina conclui o que já foi aprovado item a
+item e, no horário, só registra `pulada` até existir o lote (MD7/MD8).
+
+| Peça | Onde |
+|---|---|
+| Capacidade `instagram.post.publicar` (R3 pelo efeito, `reversibilidade: manual`, `sensibilidade: publica`; sem `ferramenta`, sem `desfazer`; `argsSchema` fechado com `pecaId`, `formato`, `legenda`, `midias`, `igUserId` obrigatórios e `agendadaPara` opcional); delta `1.3.0`, catálogo com 63; `CONECTOR_DA_CAPACIDADE` = `instagram` | `packages/policy/politica-marketing-os.json`, `apps/api/src/integrations/conectores.ts` |
+| HTTP puro da publicação (`limiteDePublicacao`, `criarContainer`, `statusDoContainer`, `publicarContainer`, `permalinkDe`, `midiasRecentes`), Graph `v24.0` no caminho, prazo de 60 s, `ErroDaGraph` com `status: null` quando não houve resposta | `apps/api/src/bio/plataformas/instagram.ts` (o único arquivo com o endereço da Graph) |
+| O cliente chega ao publicador por injeção: token e interface em `pauta/graph-de-publicacao.ts`, fiação em `bio/plataformas/publicacao.module.ts` (o `*.module.ts` da pasta do conector, que a catraca permite) | idem; catraca nova em `arquitetura.test.ts` |
+| O serviço: pedido pela porta, efeito inscrito no `EfeitosRegistry`, máquina de estados (tomada só de `pendente`/`erro`, posse em `proximaEm`, escrita condicionada ao estado lido e à posse), conclusão pela rotina com o interruptor, RASTRO `pauta.publicacao_passo` e `pauta.peca_publicada` | `apps/api/src/pauta/publicacao-instagram.service.ts`, parte pura em `publicacao-instagram.ts` |
+| Rotas `POST /pauta/pecas/:id/publicar-instagram` e `POST …/publicacao/manual` (`pauta.publicar`), `GET …/publicacao` (`pauta.ver`) | `apps/api/src/pauta/publicacao-instagram.controller.ts` |
+| Tabela `PautaPublicacao` (filha de `PautaPeca`: sentinela, gatilho `mktos_orgid_do_pai`, RLS FORCE com leitura e escrita separadas; único `(pecaId, rede)`); enums `PautaRede` e `PautaPublicacaoEstado` espelhados em `PAUTA_REDES` e `PAUTA_PUBLICACAO_ESTADOS` | migration `20260924224733_pauta_publicacao`; `modelos-globais.ts` (`FILHOS_COM_ORGID_REDUNDANTE` = 17); `tenant-isolation.test.ts` |
+| Rotina `pauta.publicar-agendadas` (`* * * * *`), no `TIPOS_DA_PAUTA` (`PAUTA_CRON=off` a cala), criada em `/rotinas` por "Nova rotina de publicação" | `apps/api/src/routines/executores/pauta-publicar.executor.ts`; `apps/web/src/app/rotinas/NovaRotinaDePublicacao.tsx` |
+| A agenda traz `publicacao` por peça; cada slot da Semana mostra o estado, o link da publicada, o motivo do erro, "Publicar agora" e "Voltar ao manual"; o `root-midia agenda` mostra a mesma linha | `agenda.service.ts`; `apps/web/src/app/pauta/PublicacaoNoInstagram.tsx`; `tools/root-midia/lib/semana.mjs` |
+
+**Desvios da especificação, com o porquê:**
+- **O publicador não importa o conector.** A catraca "conector só pela porta" proíbe `pauta/`
+  de importar `bio/plataformas/instagram.ts`, e acrescentar uma exceção seria dívida nova. O
+  cliente chega por injeção, e a catraca nova confere que só a declaração, a fiação e o publicador
+  citam o token.
+- **Sem `hashKeys` no catálogo.** O `CapacidadeSchema` não tem o campo (o Zod o descartaria em
+  silêncio). Os argumentos são exatamente os seis da SPEC, e o corpo inteiro vai ao hash, que é o
+  mesmo conteúdo. O `loteItemId` fora do hash é da MD7.
+- **`agendadaPara` é opcional.** A validação da porta trata `null` em campo obrigatório como
+  ausente; o "Publicar agora" de peça sem agenda não teria como passar.
+- **A rotina ainda não chama a porta.** Sem a MD7 a porta não confere lote: um `ToolGateway.executar`
+  da rotina criaria uma aprovação R3 por minuto. A decisão (`decisaoDaRotina`) já cobre nota, lote,
+  janela e a espera pela MD7; o que falta é a MD7 trocar `loteConferidoPelaPorta` e a chamada.
+- **Resposta do publish perdida:** o container `PUBLISHED` é achado pela legenda nas mídias recentes
+  (não há campo que ligue container a mídia). O story, sem legenda e fora de `/media`, fica
+  `publicada` sem id e com o aviso — nunca repostado.
+- **Limite de 100/24 h atingido vira `erro`** (volta ao manual), não espera: a janela é móvel e o
+  container vence em 24 h.
+- **O texto da recusa de Instagram na rota antiga** (`publicacao.service.ts`) deixou de dizer que
+  publicar exige App Review e aponta para o "Publicar agora". Só o texto: a rota e o
+  `publicar-peca.test.ts` não mudaram.
+
+**Correção da revisão (três revisores, 24/09/2026 ~21h).** Confirmados e corrigidos, cada um com teste:
+- **A rotina disputava a linha com o efeito** (bloqueante). A `concluir` pegava `container_criado`
+  com `proximaEm` nulo, que era exatamente a linha do efeito trabalhando: o tique no meio dos
+  containers mandava o carrossel aprovado para `erro` (e o efeito terminava sem publicar, com a
+  aprovação gasta); o tique no meio do `media_publish` passava pela "tomada" (de `container_criado`
+  para `container_criado`) e mandava um **segundo publish** do mesmo container. Agora a linha tem
+  **posse**: a tomada do efeito grava `proximaEm = agora + (mídias + 6) × 60 s`, a marca do publish
+  grava outra, a rotina só pega posse vencida e a toma com `updateMany` condicionado ao `proximaEm`
+  lido, e toda escrita do dono é condicionada à posse dele (o `gravar` dos containers que der 0
+  aborta com 409). `publicandoEm` passou a ser lido: com ele, a máquina **nunca** chama
+  `media_publish` de novo — `FINISHED` vira "confirmando" (relê a cada minuto) e, passados 10 min,
+  erro que manda conferir no Instagram. Publish com erro e resposta: relê uma vez; `PUBLISHED`
+  recupera, senão `erro`. Publish sem resposta: `container_criado` e a rotina relê. O pedido novo
+  depois de um publish incerto relê o container antigo antes de criar outro (`PUBLISHED` = é este o
+  post). Testes: tique no meio da criação, tique no meio do publish, posse vencida no meio do publish,
+  publish perdido sem post (1 min, 10 min, pedido novo) e pedido novo que acha o post antigo.
+- **O efeito devolvia sucesso em falha** (ERROR, limite, publish recusado): agora lança depois de
+  gravar estado e passo; a porta registra `acao.falhou` e a confirmação mostra o motivo.
+- **O pedido `pendente` não tinha saída** quando a aprovação vencia (900 s) ou era recusada, e o
+  container vencido gravava `pendente` "peça de novo" sem botão. `publicacoesParaATela` (usada pela
+  agenda e por `GET …/publicacao`; o `dasPecas` sem chamador saiu) deriva da aprovação: vencida,
+  recusada, sumida ou consumida sem a tomada chega como `erro` com o motivo; `pendente` com erro
+  gravado também. A tela oferece "Publicar agora" em `pendente` com motivo. A falta da URL pública
+  da mídia é conferida no pedido, **antes** da fila (nenhuma aprovação queimada), e no efeito grava
+  `erro` antes do 503.
+- **O RASTRO da conclusão pela rotina** saía na correlação e no ator da passagem. A tomada do efeito
+  guarda `correlacao` e `aprovadoPor` em `containers`; a rotina escreve os passos e o
+  `pauta.peca_publicada` neles, com `correlacaoDaRotina` e `approvalId` no `metadata`, e
+  `publicadaPor` é quem confirmou.
+- **A `pulada` do executor não ficava em lugar nenhum** (o histórico não grava `pulada`). Agora vai
+  ao RASTRO como passo `pulada`, uma vez por peça, slot e motivo.
+- Menores: o `pedir` cria a linha ou a reabre só de `pendente`/`erro`/`recusada` (409 se outra
+  aprovação a levou); o `recusar` do efeito só escreve de `pendente`/`erro`; a aprovação de um
+  pedido antigo não publica (o `ContextoDoEfeito` leva o `approvalId` quando vem da fila); o post
+  recuperado sem id deixa de aparecer como "à mão" na agenda; o comentário de `containers` no
+  schema lista as chaves reais; `midias` no `argsSchema` ganhou `minItems` 1, `maxItems` 10 e
+  `items` fechado (chave e sha256 hex de 64), e o validador da porta passou a percorrer lista e
+  `pattern` (`validacao.test.ts` +2). No banco de teste o reseed pediu a assinatura de
+  REBAIXAMENTO (o seed não prova que `items` aperta, e a capacidade já estava lá); **na VPS a
+  capacidade é nova**, e a assinatura continua sendo só a `POLITICA_CAPACIDADE_NOVA_*`.
+- **Pisos:** isolamento 254 → 259 e a conta da policy (77, piso em 60 por escrito), que tinham
+  ficado para trás; api e web remedidos.
+
+Recusados: nenhum. Mantido e declarado: o texto da recusa da rota antiga (acima) e o container
+vencido voltando a `pendente` como a SPEC pede (a tela o mostra como erro, com o botão).
+
+**Medido depois da correção** (Mac, `marketing_os_test`, 24/09/2026 ~21h): `pnpm typecheck`;
+`typecheck:test`; api direto **2821 de 2821** em 68 arquivos (sem banco, 2209 passados e 612
+pulados); web **577** em 44; policy **77** em 2; `test:porta` 45; `test:isolamento` **332**;
+`db:diff` "No difference detected.". Pisos da CI: api 2075/60, web 394/35, isolamento 259, policy
+60/2.
+
+**Medido na primeira entrega** (Mac, `marketing_os_test`, 24/09/2026 ~20h): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; policy **77** (+3: nível e efeito, sinal sobe a R4, `argsSchema`; o piso de 14 sem ferramenta
+foi a 15); api direto com `TEST_DATABASE_URL` **2811 de 2811** em 68 arquivos (+35:
+`pauta-publicacao-instagram` 26, novo, 13 com banco; `arquitetura` +4; `escritas-pela-porta` +2;
+`modulos-por-tenant` +1; `pauta-agenda` +1; `root-midia` +1); sem ele, 2207 passados e 604 pulados;
+web **576** em 44 (+5); `test:porta` 45; `test:isolamento` **332** (+6, `PautaPublicacao`);
+`db:diff` "No difference detected."; `build` + `smoke` OK. Pisos da CI: api 2073/60, web 393/35,
+com a conta no `ci.yml`. O `db:seed:politica` no banco de teste recusou sem assinatura e aceitou com
+`POLITICA_CAPACIDADE_NOVA_*` ("capacidade nova em R3 (não declarada valia R5)").
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md6`, criado vazio:
+migrations do zero, `db:seed` e `db:seed:politica`; MinIO descartável da imagem `minio/minio` em
+`127.0.0.1:9316`; dublê da Graph em `127.0.0.1:4296` como `INSTAGRAM_GRAPH_URL`, que **baixa** cada
+`image_url` e registra o sha256; conta de publicação e episódio semeados no banco; 5 JPEG
+1080×1350 do `sips` subidos por `POST …/imagens/:n`; banco, MinIO, API e dublê removidos no fim):
+1. "Publicar agora" no carrossel aprovado → `aguardando_aprovacao`, `precisaDeOutraPessoa`, fila
+   `/atendimento`; **0** chamadas ao dublê. Às 20h08 de SP o pedido saiu **R4** por
+   `fora_da_janela` (a régua da MD3 funcionando): quem pediu → 403 "Quem propôs a ação não pode
+   aprová-la"; a conta `gestor_marketing` → 403 "Alçada insuficiente para aprovar R4". Para medir o
+   R3 da SPEC, a API subiu de novo com `POLITICA_FUSO_HORARIO=Pacific/Auckland` (11h lá) e o
+   histórico de chamadas do banco descartável foi zerado (o segundo pedido da hora acende
+   `volume_atipico`): o terceiro pedido saiu **R3**.
+2. A segunda conta descartável (`gestor_marketing`, alçada `responsavel`) confirmou por
+   `POST /approvals/:id/confirm` (o que `/atendimento` chama) → `executado`.
+3. O dublê recebeu **5** containers de item (`is_carousel_item=true`), cada um com a URL assinada
+   `…/api/midia-publica/<token>`, baixou os 5 JPEG (200 `image/jpeg`) com o sha256 **igual** ao
+   `shasum -a 256` local dos cinco, e **1** `CAROUSEL` com `children=c1,…,c5` e a legenda; depois o
+   status, o limite, o `media_publish` e o permalink.
+4. A peça ficou `publicada` com `externalId` e `urlPublicada`; `PautaPublicacao` `publicada` com a
+   aprovação; o RASTRO tem `pauta.peca_publicada` (canal `instagram`) e os passos `pedido`,
+   `container`, `publicada` com a correlação da chamada; `acao.executada` no EventLog; a agenda
+   mostra a postada com `manual: false` e a publicação.
+5. Com o Instagram desligado (`POST /integrations/instagram/desligamento`), "Publicar agora" num
+   segundo carrossel aprovado → 403 com a frase do interruptor; **0** chamadas novas ao dublê.
+6. `POST /rotinas` (tipo `pauta.publicar-agendadas`) e "Rodar agora" com a peça no horário →
+   `pulada (publicação automática desligada)`; com a nota `pauta.publicacao.automatica` = `ligada`
+   → `pulada (sem aprovação da semana)`; **0** chamadas ao dublê, peça segue aprovada e sem
+   publicação.
+
+Não conferido na tela: o bloco novo do slot a 375 px (o ensaio não loga no navegador); a
+disposição segue a dos botões vizinhos (`flex-wrap`, `break-words`) e o teste de componente cobre
+os estados.
+
+**Deploy:** uma migration aditiva (dois enums e a tabela, com RLS e gatilho). **Antes da subida**,
+o `db:seed:politica` com `POLITICA_CAPACIDADE_NOVA_AUTOR` e `POLITICA_CAPACIDADE_NOVA_MOTIVO`:
+sem ele a capacidade não existe na política do banco, vale R5 e a porta bloqueia (falha fechada,
+nada sai). Nenhuma permissão nova, nenhuma variável nova (usa `INSTAGRAM_GRAPH_URL` da MD5 vazia e
+`PAUTA_MIDIA_PUBLICA_*` da MD4).
+
+**Pendências (do Pedro), na ordem:**
+1. A MD5 feita no painel da Meta e a conta reconectada na aba Semana (itens 1 a 4 da MD5).
+2. `db:seed:politica` na VPS **antes** do deploy, assinado:
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD6: catálogo ganha instagram.post.publicar (R3)' pnpm --filter @mktos/api db:seed:politica`.
+3. `PAUTA_MIDIA_PUBLICA_SEGREDO` (32+) no `.env` da VPS e a origem pública da API (MD4): sem eles o
+   efeito recusa com 503 e nada é enviado.
+4. Uma segunda pessoa na empresa Root (`POST /users` pela tela de usuários). Sem ela, todo
+   "Publicar agora" fica retido. **A alçada decide o horário:** com `responsavel` (papel
+   `gestor_marketing` ou acima) ela confirma só o pedido R3. Fora das 08h–20h de São Paulo
+   (`fora_da_janela`) ou no segundo pedido dentro de uma hora (`volume_atipico`), o pedido sai
+   **R4**: exige alçada **`titular`**, reautenticação e confirmação em até 10 min (o ensaio mediu
+   isso às 20h08). Recomendação: a segunda pessoa com alçada titular; ou decidir por escrito
+   aceitar só o R3 dentro da janela, e os posts da noite ficam manuais.
+5. O 403 da fila em produção: `pnpm --filter @mktos/shared build` → `db:sync-permissions` → todos saem e
+   entram (pendente desde 12/09/2026).
+6. Criar a rotina em `/rotinas` › "Nova rotina de publicação" (conclui o Reels que a Meta ainda
+   processa). Sob o papel restrito (passo 16), nenhuma rotina dispara até a decisão do agendamento.
+7. **Não** ligar a nota `pauta.publicacao.automatica` antes da MD7/MD8 e do seed assinado com as
+   duas categorias.
+8. **A conferir no primeiro post real:** o valor `PUBLISHED` do `status_code` do container já
+   publicado; se o post feito com o app em modo de desenvolvimento aparece para quem não tem papel
+   no app; o teto de 2.200 caracteres da legenda.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -1883,6 +2047,17 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     pela bio sem o escopo de publicar, deixa de ser de publicação (aviso na volta); o sync agendado
     da bio passa a renovar também o token da conta de publicação; a Graph da trilha do Facebook
     (métricas do `MetaService`) passa de `v21.0` para `v24.0` quando `META_GRAPH_URL` está vazia.
+28. **MD6: publicar no Instagram pelo OS.** A capacidade R3 `instagram.post.publicar` existe (depois
+    do seed assinado); "Publicar agora" na aba Semana fica retido até OUTRA pessoa confirmar em
+    `/atendimento`, e o conector `instagram` desligado barra também essa publicação. A recusa da
+    rota antiga para peça de Instagram mudou de texto (aponta para o "Publicar agora"). A peça
+    publicada pelo OS aparece como postada com `manual: false`. A rotina nova só age se for criada
+    em `/rotinas`. O pedido cuja aprovação venceu ou foi recusada aparece como erro, com "Publicar
+    agora" de novo. Fora das 08h–20h de SP ou no segundo pedido da hora, a confirmação exige
+    alçada titular (R4). **Porta:** o validador de argumentos passou a conferir listas
+    (`minItems`, `maxItems`, `items`) e `pattern` quando o `argsSchema` os declara; a outra
+    capacidade que declara é o `convidados` do evento do Google (lista de texto), que passa a recusar item
+    que não seja texto já na porta.
 
 ---
 

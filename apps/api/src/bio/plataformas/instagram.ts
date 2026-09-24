@@ -188,3 +188,133 @@ export async function midiasDesde(token: string, desde: Date, tetoPaginas = 20) 
 
   return posts
 }
+
+// ---------------------------------------------------------------------------
+// Publicação (MD6): container → status → publish, na conta de publicação.
+// ---------------------------------------------------------------------------
+
+/**
+ * A versão da Graph nas chamadas de publicação. As de leitura acima seguem sem
+ * versão no caminho (valem a do app), como sempre foram.
+ */
+export const VERSAO_DA_GRAPH_DE_PUBLICACAO = 'v24.0';
+
+/** Cada chamada de publicação tem prazo: a Meta baixa a mídia antes de responder ao container. */
+const PRAZO_DA_CHAMADA_MS = 60_000;
+
+const PUBLICACAO = () => `${GRAPH()}/${VERSAO_DA_GRAPH_DE_PUBLICACAO}`;
+
+/** O erro de uma chamada da Graph, com o código HTTP separado para quem decide o que repetir. */
+export class ErroDaGraph extends Error {
+  constructor(
+    mensagem: string,
+    /** `null` quando nem houve resposta (rede, prazo): o pedido pode ter chegado. */
+    readonly status: number | null,
+  ) {
+    super(mensagem);
+  }
+}
+
+async function chamar(url: string, init: RequestInit, oQue: string): Promise<unknown> {
+  let r: Response;
+  try {
+    r = await fetch(url, { ...init, signal: AbortSignal.timeout(PRAZO_DA_CHAMADA_MS) });
+  } catch (e) {
+    throw new ErroDaGraph(`${oQue} sem resposta: ${(e as Error).message}`, null);
+  }
+  const texto = await r.text();
+  if (!r.ok) throw new ErroDaGraph(`${oQue} falhou: ${r.status} ${texto.slice(0, 400)}`, r.status);
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new ErroDaGraph(`${oQue} devolveu corpo que não é JSON`, r.status);
+  }
+}
+
+const porFormulario = (campos: Record<string, string>): RequestInit => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams(campos),
+});
+
+/** Quanto do teto de 100 posts em 24 h móveis a conta já usou. */
+export async function limiteDePublicacao(token: string, igUserId: string): Promise<{ usado: number; teto: number }> {
+  const p = new URLSearchParams({ fields: 'quota_usage,config', access_token: token });
+  const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(igUserId)}/content_publishing_limit?${p}`, {}, 'limite de publicação')) as {
+    data?: Array<{ quota_usage?: number; config?: { quota_total?: number } }>;
+  };
+  const linha = d.data?.[0] ?? {};
+  return { usado: Number(linha.quota_usage ?? 0), teto: Number(linha.config?.quota_total ?? 100) };
+}
+
+export interface ContainerNovo {
+  image_url?: string;
+  video_url?: string;
+  media_type?: 'CAROUSEL' | 'REELS' | 'STORIES';
+  is_carousel_item?: boolean;
+  children?: string[];
+  caption?: string;
+  share_to_feed?: boolean;
+}
+
+/** Cria um container e devolve o id dele (a mídia é baixada pela Meta da URL dada). */
+export async function criarContainer(token: string, igUserId: string, c: ContainerNovo): Promise<string> {
+  const campos: Record<string, string> = { access_token: token };
+  if (c.image_url) campos.image_url = c.image_url;
+  if (c.video_url) campos.video_url = c.video_url;
+  if (c.media_type) campos.media_type = c.media_type;
+  if (c.is_carousel_item) campos.is_carousel_item = 'true';
+  if (c.children?.length) campos.children = c.children.join(',');
+  if (c.caption) campos.caption = c.caption;
+  if (c.share_to_feed !== undefined) campos.share_to_feed = String(c.share_to_feed);
+  const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(igUserId)}/media`, porFormulario(campos), 'criar container')) as { id?: unknown };
+  if (typeof d.id !== 'string' || !d.id) throw new ErroDaGraph('criar container sem id na resposta', 200);
+  return d.id;
+}
+
+/** `EXPIRED`, `ERROR`, `FINISHED`, `IN_PROGRESS` ou `PUBLISHED`, como a Meta escreve. */
+export async function statusDoContainer(token: string, containerId: string): Promise<{ codigo: string; detalhe: string | null }> {
+  const p = new URLSearchParams({ fields: 'status_code,status', access_token: token });
+  const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(containerId)}?${p}`, {}, 'status do container')) as {
+    status_code?: unknown;
+    status?: unknown;
+  };
+  return { codigo: String(d.status_code ?? ''), detalhe: typeof d.status === 'string' ? d.status.slice(0, 300) : null };
+}
+
+/** Publica o container; devolve o id da mídia publicada. */
+export async function publicarContainer(token: string, igUserId: string, creationId: string): Promise<string> {
+  const d = (await chamar(
+    `${PUBLICACAO()}/${encodeURIComponent(igUserId)}/media_publish`,
+    porFormulario({ creation_id: creationId, access_token: token }),
+    'publicar',
+  )) as { id?: unknown };
+  if (typeof d.id !== 'string' || !d.id) throw new ErroDaGraph('publicar sem id na resposta', 200);
+  return d.id;
+}
+
+export async function permalinkDe(token: string, mediaId: string): Promise<string | null> {
+  const p = new URLSearchParams({ fields: 'permalink', access_token: token });
+  const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(mediaId)}?${p}`, {}, 'permalink')) as { permalink?: unknown };
+  return typeof d.permalink === 'string' && /^https:\/\//.test(d.permalink) ? d.permalink : null;
+}
+
+/** As mídias mais recentes da conta, para achar o post cuja resposta do publish se perdeu. */
+export async function midiasRecentes(
+  token: string,
+  igUserId: string,
+  limite = 10,
+): Promise<Array<{ id: string; caption: string | null; timestamp: string | null; permalink: string | null }>> {
+  const p = new URLSearchParams({ fields: 'id,caption,timestamp,permalink', limit: String(limite), access_token: token });
+  const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(igUserId)}/media?${p}`, {}, 'mídias recentes')) as {
+    data?: Array<Record<string, unknown>>;
+  };
+  return (d.data ?? [])
+    .filter((m) => typeof m.id === 'string')
+    .map((m) => ({
+      id: m.id as string,
+      caption: typeof m.caption === 'string' ? m.caption : null,
+      timestamp: typeof m.timestamp === 'string' ? m.timestamp : null,
+      permalink: typeof m.permalink === 'string' ? m.permalink : null,
+    }));
+}

@@ -25,9 +25,9 @@ export type RastreioDaPeca =
 //
 //   whatsapp   → Evolution, grupo, automático (atrás de aprovação humana)
 //   clickup    → cria o tema de verdade na lista de pauta
-//   instagram  → NÃO publica. Publicar carrossel exige `content_publish` +
-//                App Review, e o app da Meta está em troca. A peça sai pronta
-//                aqui e o post é manual (máquina de carrossel).
+//   instagram  → NÃO publica por aqui. Desde a MD6 a peça da semana sai pelo
+//                "Publicar agora" da aba Semana (`publicacao-instagram.service.ts`,
+//                capacidade R3 pela porta); esta rota só manda ao export.
 //   newsletter → idem: o corpo fica pronto, o envio é do canal de e-mail.
 //
 // O link publicado vira link de campanha na página do episódio da rodada (MC12),
@@ -113,8 +113,8 @@ export class PublicacaoService {
       default:
         throw new BadRequestException(
           peca.canal === 'instagram'
-            ? 'Instagram não publica pelo OS: exige content_publish com App Review (o app da Meta está em troca). ' +
-              'Use o export para a máquina de carrossel e poste manualmente.'
+            ? 'Instagram não publica por esta rota: a peça da semana sai pelo "Publicar agora" da aba Semana ' +
+              '(retido até outra pessoa confirmar), ou use o export para a máquina de carrossel e poste à mão.'
             : 'Newsletter não tem canal de envio ligado — copie o corpo e envie pela ferramenta de e-mail.',
         );
     }

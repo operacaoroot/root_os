@@ -91,6 +91,9 @@ export const TIPO_PAUTA_COLETA = 'pauta.coleta';
 /** O executor do encadeamento da transcrição à semana em rascunho (MD1). */
 export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
 
+/** O executor que conclui e olha a publicação no Instagram (MD6). */
+export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
+
 /** O que `POST /rotinas/:id/rodar` devolve. */
 export interface ResultadoDoRodar {
   ok: boolean;
@@ -118,6 +121,17 @@ export interface CorpoDoNovoEncadeamento {
   tz: string;
   estado: EstadoDaRotina;
   config: { etapas?: string[] };
+}
+
+/** O corpo de `POST /rotinas` para a publicação (MD6): sem configuração. */
+export interface CorpoDaNovaPublicacao {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_PUBLICAR;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: Record<string, never>;
 }
 
 /** Os quatro estados, na ordem em que a tela os oferece. */

@@ -209,6 +209,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
     fk: 'rodadaId',
     paisConferidos: [{ modelo: 'BioPage', fk: 'bioPageId' }],
   },
+  // A publicação da peça numa rede (MD6, 24/09/2026): a empresa é a da peça —
+  // migration `20260924224733_pauta_publicacao`.
+  { modelo: 'PautaPublicacao', pai: 'PautaPeca', fk: 'pecaId' },
 ] as const;
 
 /**

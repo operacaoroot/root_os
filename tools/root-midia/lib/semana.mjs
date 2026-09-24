@@ -450,11 +450,25 @@ export function aceitaRender(p) {
 }
 
 /**
+ * MD6: onde a publicação pelo OS está, com as mesmas palavras da aba Semana.
+ * @type {Record<string, string>}
+ */
+const ROTULO_DA_PUBLICACAO = {
+  pendente: 'esperando a confirmação de outra pessoa em /atendimento',
+  container_criado: 'enviada à Meta',
+  processando: 'a Meta está processando',
+  publicada: 'publicada pelo OS',
+  erro: 'a publicação falhou',
+  recusada: 'de volta ao manual',
+};
+
+/**
  * O calendário da semana (MC16) em linhas para o terminal: um dia por bloco,
  * cada slot com o horário, o formato, a peça e onde está a mídia para postar à
  * mão — o PNG no OS (baixar pela tela) ou o mp4 que ficou no Mac, pelo caminho;
  * o carrossel que subiu pela metade diz quantos PNG faltam. O slot só proposto
- * pelo encadeamento (MD1) diz que falta aprovar. Só lê: postar e marcar como postada são da tela.
+ * pelo encadeamento (MD1) diz que falta aprovar; a publicação pelo OS (MD6), onde
+ * ela está. Só lê: postar, publicar e marcar como postada são da tela.
  * @param {any} agenda o `GET /pauta/agenda`
  * @returns {string[]}
  */
@@ -492,6 +506,11 @@ export function linhasDaAgenda(agenda) {
               : `sem mídia — ${p.midia?.comando ?? 'rode a /root-midia'}`;
       linhas.push(`  ${l.hora}  ${l.formato.padEnd(9)}  ${p.apelido} m${p.itemN}  ${estado}${l.daGrade ? '' : ' (fora da grade)'}  ${p.titulo}`);
       linhas.push(`         ${midia}`);
+      // MD6: a publicação pelo OS, quando alguém pediu e a peça ainda não foi ao ar.
+      const pub = p.publicacao;
+      if (pub && !p.postada) {
+        linhas.push(`         Instagram pelo OS: ${ROTULO_DA_PUBLICACAO[pub.estado] ?? pub.estado}${pub.erro ? ` — ${pub.erro}` : ''}`);
+      }
     }
   }
   const pendentes = agenda?.paraDistribuir ?? [];

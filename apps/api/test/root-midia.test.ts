@@ -1104,6 +1104,26 @@ describe('root-midia: o calendário da semana no terminal (MC16)', () => {
     ]);
   });
 
+  it('MD6: a publicação pelo OS aparece embaixo da peça, com o motivo do erro; a postada não repete', () => {
+    const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'aprovada', postada: null, midia: { onde: 'storage', imagens: [1] }, ...over });
+    const linhas = linhasDaAgenda({
+      dias: [
+        {
+          dia: '2026-09-28', diaDaSemana: 'seg', feriado: null,
+          linhas: [
+            { hora: '09:00', formato: 'story', daGrade: true, peca: peca({ publicacao: { estado: 'pendente', erro: null } }) },
+            { hora: '12:00', formato: 'carrossel', daGrade: true, peca: peca({ publicacao: { estado: 'erro', erro: 'A Meta não processou a mídia (ERROR).' } }) },
+            { hora: '18:00', formato: 'corte', daGrade: true, peca: peca({ status: 'publicada', postada: { url: 'https://www.instagram.com/p/m9' }, publicacao: { estado: 'publicada', erro: null } }) },
+          ],
+        },
+      ],
+    });
+    expect(linhas.filter((l) => l.includes('Instagram pelo OS'))).toEqual([
+      '         Instagram pelo OS: esperando a confirmação de outra pessoa em /atendimento',
+      '         Instagram pelo OS: a publicação falhou — A Meta não processou a mídia (ERROR).',
+    ]);
+  });
+
   it('MD1: o slot só proposto pelo encadeamento diz que falta aprovar (ou distribuir) — não é agenda', () => {
     const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'rascunho', postada: null, agendadaPara: null, midia: { onde: 'nenhuma', comando: '/root-midia carrosseis ep-04' }, ...over });
     const linhas = linhasDaAgenda({

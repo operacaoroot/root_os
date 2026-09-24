@@ -20,15 +20,17 @@ import {
 import { apiBlob, apiGet, apiPost, apiPut } from '@/lib/api';
 import { baixarArquivo, compartilhaArquivos, compartilharArquivos } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
+import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
 
 /*
  * A SEMANA (MC16): o calendário das peças aprovadas da semana de posts. Cada
  * slot da grade da empresa mostra a peça com o que precisa para postar À MÃO —
  * copiar a legenda, baixar a mídia (o PNG e, desde a MD4, o mp4 do corte, que
  * estão no storage; o caminho no Mac quando o mp4 ainda não subiu) — e o
- * "Marcar como postada", que só registra no OS. A
- * publicação automática no Instagram é a MD6; a do TikTok está em espera (MD12). Tudo no relógio
- * de São Paulo.
+ * "Marcar como postada", que só registra no OS. Desde a MD6 o slot também
+ * pede a publicação no Instagram pelo OS ("Publicar agora", retido até outra
+ * pessoa confirmar) e mostra onde ela está; a do TikTok está em espera (MD12).
+ * Tudo no relógio de São Paulo.
  */
 
 interface Props {
@@ -304,6 +306,8 @@ function PecaNoSlot({
           )}
         </p>
       )}
+
+      <PublicacaoNoInstagram peca={peca} token={token} podePublicar={podePostar} ocupado={ocupado} onAcao={onAcao} />
 
       {aprovada && editavel && peca.motivoParaNaoAgendar && <p className="break-words text-xs text-muted">{peca.motivoParaNaoAgendar}</p>}
 

@@ -32,6 +32,7 @@ import {
   type PautaLinhaDoDia,
   type PautaMarcarPostadaInput,
   type PautaPecaNaAgenda,
+  type PautaPublicacaoDaPeca,
   type PautaPecaStatus,
   type PautaReagendarInput,
 } from '@mktos/shared';
@@ -42,6 +43,7 @@ import { EpisodioService } from './episodio.service';
 import { itensMantidos } from './episodio';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca, slotsDoPeriodo, type Distribuida } from './agenda-da-semana';
+import { publicacoesParaATela } from './publicacao-instagram.service';
 
 const TITULO_DA_GRADE = 'Grade da semana de posts (pauta)';
 const MINUTO = 60_000;
@@ -195,7 +197,7 @@ export class AgendaService {
     return new Map(linhas.map((e) => [e.id, e]));
   }
 
-  private naAgenda(p: LinhaDaPeca, e: EpisodioDaAgenda | undefined): PautaPecaNaAgenda {
+  private naAgenda(p: LinhaDaPeca, e: EpisodioDaAgenda | undefined, publicacao: PautaPublicacaoDaPeca | null = null): PautaPecaNaAgenda {
     const m = lerMetaDaSemana(p.meta);
     const formato = p.formato as PautaFormatoDaSemana;
     const apelido = e ? apelidoDoEpisodio(e.numero) : 'ep-??';
@@ -215,9 +217,10 @@ export class AgendaService {
       em: em.toISOString(),
       agendadaPara: p.agendadaPara?.toISOString() ?? null,
       midia: midiaDaPeca(formato, p.meta, apelido),
-      postada: postagemDaPeca(p),
+      postada: postagemDaPeca(p, publicacao?.estado === 'publicada'),
       motivoParaNaoAgendar: e ? motivoParaNaoAgendar(e.status) : 'O episódio desta peça não foi achado.',
       slotProposto: p.slotProposto?.toISOString() ?? null,
+      publicacao,
     };
   }
 
@@ -255,7 +258,9 @@ export class AgendaService {
 
     const ids = [...new Set([...pecas, ...pendentes].map((p) => lerMetaDaSemana(p.meta).episodioId))];
     const eps = await this.episodiosDe(orgId, ids);
-    const naTela = pecas.map((p) => this.naAgenda(p, eps.get(lerMetaDaSemana(p.meta).episodioId)));
+    // MD6: a publicação pelo OS de cada peça, quando alguém pediu (o pedido morto chega como erro).
+    const publicacoes = await publicacoesParaATela(this.prisma, orgId, pecas.map((p) => p.id));
+    const naTela = pecas.map((p) => this.naAgenda(p, eps.get(lerMetaDaSemana(p.meta).episodioId), publicacoes.get(p.id) ?? null));
 
     const dias: PautaDiaDaAgenda[] = [];
     for (let i = 0; i < 7; i++) {

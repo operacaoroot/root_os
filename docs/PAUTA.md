@@ -833,6 +833,17 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     volta traz o aviso. Uma por empresa (índice parcial). `GET /pauta/instagram/conexao`
     (`pauta.ver`) mostra @, escopos e validade, nunca o token; o sync da bio renova o token de 60
     dias. Publicar na conta da própria Root não passa por App Review; o @ precisa ter papel no app.
+  - **Publicar no Instagram pelo OS (MD6).** Cada slot mostra "Publicar agora" na peça aprovada
+    (`POST /pauta/pecas/:id/publicar-instagram`, `pauta.publicar`). O pedido vai à porta como a
+    capacidade R3 `instagram.post.publicar` e fica retido até OUTRA pessoa com alçada confirmar em
+    `/atendimento`; quem pediu não confirma. Confirmado, o OS cria os containers na Graph com as
+    URLs assinadas da MD4 (um por JPEG e o `CAROUSEL`; `STORIES`; `REELS` com o mp4) e publica. O
+    Reels que a Meta ainda processa fica `processando` e a rotina `pauta.publicar-agendadas`
+    (`/rotinas`, a cada minuto) conclui. O slot mostra o estado (pendente, processando, publicada
+    com o link, erro com o motivo) e "Voltar ao manual" (`POST …/publicacao/manual`). Desligar o
+    Instagram em Conexões barra o pedido e a conclusão. Publicar sozinha no horário exige a nota
+    `pauta.publicacao.automatica` ligada **e** o lote da semana (MD8); até lá a rotina só registra
+    `pulada`. A rota antiga `POST /pauta/pecas/:id/publicar` não publica Instagram.
   - **Colunas** (migration `20260924090000_pauta_peca_agenda`): `PautaPeca.agendadaPara` (o instante
     em UTC; nulo = fora da agenda; índice `(orgId, agendadaPara)`) e `urlPublicada` (o endereço
     público do post). **Decisão:** "postada à mão" reaproveita `status = publicada`, `publicadaEm` e

@@ -42,6 +42,9 @@ import { TenantsModule } from '../tenants/tenants.module';
 import { MidiaPublicaController, MidiaPublicaDaPecaController } from './midia-publica.controller';
 import { MidiaPublicaService } from './midia-publica.service';
 import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
+import { PublicacaoInstagramController } from './publicacao-instagram.controller';
+import { PublicacaoInstagramService } from './publicacao-instagram.service';
+import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -52,8 +55,10 @@ import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
 // A grade da semana (MC16) também é nota da memória, escrita pelo MemoriaService.
 // TenantsModule: a rota pública da mídia (MD4) confere se a empresa do token
 // ainda tem o módulo pauta — requisição anônima passa pelo gate de módulos.
+// GraphDePublicacaoModule: o cliente da Graph que o publicador do Instagram
+// (MD6) recebe por injeção; o HTTP mora no conector da bio.
 @Module({
-  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule],
+  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule, GraphDePublicacaoModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
@@ -72,6 +77,7 @@ import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
     MidiaPublicaDaPecaController,
     MidiaPublicaController,
     ContaDePublicacaoController,
+    PublicacaoInstagramController,
   ],
   providers: [
     PautaService,
@@ -110,10 +116,12 @@ import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
     EncadeamentoService,
     // MD4: a mídia da peça numa URL pública assinada, de prazo curto, para a Meta baixar.
     MidiaPublicaService,
+    // MD6: o publicador do Instagram — o efeito de instagram.post.publicar e a conclusão pela rotina.
+    PublicacaoInstagramService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
-  // whatsapp.mensagem.enviar ao envio real. EncadeamentoService, para o
-  // executor da rotina (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService],
+  // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
+  // PublicacaoInstagramService, para os executores das rotinas (RoutinesModule).
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService],
 })
 export class PautaModule {}

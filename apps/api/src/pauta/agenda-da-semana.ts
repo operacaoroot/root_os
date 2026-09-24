@@ -146,10 +146,17 @@ export function comandoDaMidia(formato: PautaFormatoDaSemana, apelido: string): 
   return `/root-midia ${sub} ${apelido}`;
 }
 
-/** A postagem da peça: à mão (MC16, sem `externalId`) ou pela MC17. */
-export function postagemDaPeca(p: { status: PautaPecaStatus; publicadaEm: Date | null; externalId: string | null; urlPublicada: string | null }): PautaPostagemDaPeca | null {
+/**
+ * A postagem da peça: à mão (MC16, sem `externalId`) ou pela MC17/MD6. `pelaRede`
+ * é a publicação do OS em `publicada`: o post recuperado sem id (o story cuja
+ * resposta se perdeu) continua sendo do OS, não da mão de alguém.
+ */
+export function postagemDaPeca(
+  p: { status: PautaPecaStatus; publicadaEm: Date | null; externalId: string | null; urlPublicada: string | null },
+  pelaRede = false,
+): PautaPostagemDaPeca | null {
   if (p.status !== 'publicada' || !p.publicadaEm) return null;
-  return { em: p.publicadaEm.toISOString(), manual: !p.externalId, url: p.urlPublicada ?? null };
+  return { em: p.publicadaEm.toISOString(), manual: !p.externalId && !pelaRede, url: p.urlPublicada ?? null };
 }
 
 /**

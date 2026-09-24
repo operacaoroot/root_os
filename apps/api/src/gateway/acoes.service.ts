@@ -412,6 +412,7 @@ export class AcoesService {
       actorId,
       agentSlug: chamada.agentSlug,
       correlationId,
+      approvalId,
     };
 
     /*

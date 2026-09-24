@@ -182,6 +182,28 @@ describe('fatia 3.3: o catálogo declara cada escrita migrada', () => {
   });
 });
 
+describe('MD6: a publicação no Instagram é escrita pela porta desde o primeiro dia', () => {
+  it('instagram.post.publicar é R3, pública, com conector e argsSchema fechado', () => {
+    const cap = CATALOGO.find((c) => c.id === 'instagram.post.publicar');
+    expect(cap, 'instagram.post.publicar sumiu de politica-marketing-os.json').toBeDefined();
+    expect(cap!.nivel).toBe('R3');
+    expect(cap!.efeito?.escreveForaDoOS).toBe(true);
+    expect(cap!.efeito?.sensibilidade).toBe('publica');
+    expect(cap!.rota).toBe('POST /pauta/pecas/:id/publicar-instagram');
+    expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
+    expect(cap!.argsSchema!.additionalProperties).toBe(false);
+  });
+
+  it('a rota nova entrega à porta e não conhece a Graph; a rota antiga ficou como estava', () => {
+    const rota = ler('src/pauta/publicacao-instagram.controller.ts');
+    expect(rota).not.toMatch(/plataformas\/instagram|GRAPH_DE_PUBLICACAO/);
+    const servico = ler('src/pauta/publicacao-instagram.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    // A rota antiga (WhatsApp/ClickUp) e a dívida que ela mede não mudaram de lugar.
+    expect(ler('src/pauta/rodada.controller.ts')).toMatch(/'pecas\/:id\/publicar'/);
+  });
+});
+
 describe('fatia 3.3: o caminho HTTP não alcança mais o conector', () => {
   const controlador = ler('src/google/google.controller.ts');
 
@@ -365,6 +387,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       'src/google/google.service.ts',
       'src/integrations/clickup.service.ts',
       'src/pauta/evolution.service.ts',
+      // MD6: o publicador do Instagram inscreve `instagram.post.publicar`.
+      'src/pauta/publicacao-instagram.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */
@@ -388,8 +412,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
     const inscritas = QUEM_INSCREVE.flatMap(chavesDe);
     expect(
       inscritas.length,
-      'a varredura achou menos efeitos do que os 21 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
-    ).toBeGreaterThanOrEqual(21);
+      'a varredura achou menos efeitos do que os 22 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
+    ).toBeGreaterThanOrEqual(22);
 
     const foraDoCatalogo = inscritas.filter((id) => !uniao.has(id));
     expect(

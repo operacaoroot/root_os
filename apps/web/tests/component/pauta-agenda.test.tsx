@@ -431,6 +431,101 @@ describe('a aba Semana', () => {
     expect(apiPost).toHaveBeenCalledWith('/pauta/pecas/p2/postada', {}, 'tok');
   });
 
+  it('MD6: "Publicar agora" pede à porta e diz que outra pessoa confirma em /atendimento; nada é publicado no clique', async () => {
+    apiPost.mockResolvedValue({ status: 'aguardando_aprovacao', approvalId: 'a1', precisaDeOutraPessoa: true, fila: '/atendimento', nivel: 'R3' });
+    renderAba();
+    const car = await waitFor(() => aPeca('Carrossel de ep-04'));
+    const bloco = within(car).getByLabelText('Publicação no Instagram');
+    expect(bloco).toHaveTextContent('não pedida');
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Publicar agora' }));
+    expect(apiPost).toHaveBeenCalledWith('/pauta/pecas/p1/publicar-instagram', {}, 'tok');
+    await waitFor(() => expect(within(car).getByRole('status')).toHaveTextContent('outra pessoa com alçada confirma em /atendimento'));
+    // A peça já postada não oferece publicar pelo OS.
+    const postada = within(oDia('Qui 01/10')).getByLabelText('Corte vertical de ep-04');
+    expect(within(postada).queryByRole('button', { name: 'Publicar agora' })).toBeNull();
+  });
+
+  it('MD6: cada estado da publicação no slot — pendente, processando, publicada com o link, erro com o motivo e voltar ao manual', async () => {
+    const pub = (estado: string, over: Record<string, unknown> = {}) => ({
+      id: `pub-${estado}`, rede: 'instagram', estado, externalId: null, permalink: null, erro: null, tentativas: 1, proximaEm: null,
+      atualizadaEm: '2026-09-28T15:00:00.000Z', ...over,
+    });
+    apiGet.mockResolvedValue(
+      agenda({
+        dias: [
+          dia('2026-09-28', 'seg', [
+            { hora: '09:00', formato: 'story', em: '2026-09-28T12:00:00.000Z', daGrade: true, peca: peca({ id: 's1', formato: 'story', titulo: 'Story 1', publicacao: pub('pendente') }) },
+            { hora: '12:00', formato: 'carrossel', em: '2026-09-28T15:00:00.000Z', daGrade: true, peca: peca({ publicacao: pub('erro', { erro: 'A Meta não processou a mídia (ERROR).' }) }) },
+            { hora: '18:00', formato: 'corte', em: '2026-09-28T21:00:00.000Z', daGrade: true, peca: peca({ id: 'c1', formato: 'corte', titulo: 'Corte 1', midia: { onde: 'video', arquivo: null, bytes: 5_000_000 }, publicacao: pub('processando') }) },
+          ]),
+          dia('2026-09-29', 'ter', [
+            {
+              hora: '18:00', formato: 'corte', em: '2026-09-29T21:00:00.000Z', daGrade: true,
+              peca: peca({ id: 'c2', formato: 'corte', status: 'publicada', titulo: 'Corte 2', midia: { onde: 'video', arquivo: null, bytes: 5_000_000 },
+                postada: { em: '2026-09-29T21:01:00.000Z', manual: false, url: 'https://www.instagram.com/p/m9' },
+                publicacao: pub('publicada', { externalId: 'm9', permalink: 'https://www.instagram.com/p/m9' }) }),
+            },
+          ]),
+          ...restoDaSemana().slice(1),
+        ],
+      }),
+    );
+    apiPost.mockResolvedValue({});
+    renderAba();
+    const story = await waitFor(() => aPeca('Story de ep-04'));
+    expect(within(story).getByLabelText('Publicação no Instagram')).toHaveTextContent('Esperando a confirmação de outra pessoa com alçada em /atendimento');
+    expect(within(story).queryByRole('button', { name: 'Publicar agora' })).toBeNull();
+
+    const corte = within(oDia('Seg 28/09')).getByLabelText('Corte vertical de ep-04');
+    expect(within(corte).getByLabelText('Publicação no Instagram')).toHaveTextContent('a Meta está processando');
+
+    const car = aPeca('Carrossel de ep-04');
+    const erro = within(car).getByLabelText('Publicação no Instagram');
+    expect(erro).toHaveTextContent('a publicação falhou');
+    expect(erro).toHaveTextContent('A Meta não processou a mídia (ERROR).');
+    expect(within(erro).getByRole('button', { name: 'Publicar agora' })).toBeInTheDocument();
+    await userEvent.click(within(erro).getByRole('button', { name: 'Voltar ao manual' }));
+    expect(apiPost).toHaveBeenCalledWith('/pauta/pecas/p1/publicacao/manual', {}, 'tok');
+
+    const publicada = within(oDia('Ter 29/09')).getByLabelText('Corte vertical de ep-04');
+    expect(within(publicada).getByRole('link', { name: /ver no Instagram/ })).toHaveAttribute('href', 'https://www.instagram.com/p/m9');
+    expect(publicada).not.toHaveTextContent('(à mão)');
+    expect(within(publicada).queryByRole('button', { name: 'Voltar ao manual' })).toBeNull();
+  });
+
+  it('MD6: o pedido que morreu (pendente com motivo) mostra o motivo e oferece pedir de novo, sem "esperando"', async () => {
+    const pendenteMorto = {
+      id: 'pub-s1', rede: 'instagram', estado: 'pendente', externalId: null, permalink: null,
+      erro: 'O container da Meta venceu (24 h) antes de publicar: peça de novo.', tentativas: 1, proximaEm: null,
+      atualizadaEm: '2026-09-28T15:00:00.000Z',
+    };
+    apiGet.mockResolvedValue(
+      agenda({
+        dias: [
+          dia('2026-09-28', 'seg', [
+            { hora: '09:00', formato: 'story', em: '2026-09-28T12:00:00.000Z', daGrade: true, peca: peca({ id: 's1', formato: 'story', titulo: 'Story 1', publicacao: pendenteMorto }) },
+          ]),
+          ...restoDaSemana().slice(1),
+        ],
+      }),
+    );
+    apiPost.mockResolvedValue({ status: 'aguardando_aprovacao', approvalId: 'a2', precisaDeOutraPessoa: true, fila: '/atendimento', nivel: 'R3' });
+    renderAba();
+    const story = await waitFor(() => aPeca('Story de ep-04'));
+    const bloco = within(story).getByLabelText('Publicação no Instagram');
+    expect(bloco).toHaveTextContent('venceu (24 h)');
+    expect(bloco).not.toHaveTextContent('Esperando a confirmação');
+    await userEvent.click(within(bloco).getByRole('button', { name: 'Publicar agora' }));
+    expect(apiPost).toHaveBeenCalledWith('/pauta/pecas/s1/publicar-instagram', {}, 'tok');
+  });
+
+  it('MD6: sem pauta.publicar não pede nem devolve ao manual', async () => {
+    renderAba({ podePostar: false });
+    const car = await waitFor(() => aPeca('Carrossel de ep-04'));
+    expect(within(car).queryByRole('button', { name: 'Publicar agora' })).toBeNull();
+    expect(within(car).queryByLabelText('Publicação no Instagram')).toBeNull();
+  });
+
   it('distribui o episódio com as aprovadas sem data (a partir de agora ou do dia escolhido) e mostra a conta', async () => {
     apiPost.mockResolvedValue({ conta: { alocadas: 3, jaAgendadas: 1, semVaga: 1 }, pecas: [], avisos: ['Corte vertical da matéria 3: sem slot livre nas próximas 4 semanas da grade — distribua de novo com um "a partir de" mais adiante ou abra mais slots na grade.'] });
     renderAba();

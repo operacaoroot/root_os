@@ -1,6 +1,6 @@
 {
-  "versao": "1.2.0",
-  "atualizadoEm": "2026-09-11",
+  "versao": "1.3.0",
+  "atualizadoEm": "2026-09-24",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1067,6 +1067,86 @@
         "exposicaoExterna": true,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "instagram.post.publicar",
+      "rota": "POST /pauta/pecas/:id/publicar-instagram",
+      "descricao": "Publica a peça aprovada da semana (carrossel, story ou corte) na conta de publicação do Instagram da empresa, pela Graph: cria os containers com a mídia do OS numa URL assinada e publica. Não existe despublicar pela API; apagar o post é à mão, no Instagram.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pecaId",
+          "formato",
+          "legenda",
+          "midias",
+          "igUserId"
+        ],
+        "properties": {
+          "pecaId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a peça da semana, aprovada"
+          },
+          "formato": {
+            "type": "string",
+            "enum": [
+              "carrossel",
+              "story",
+              "corte"
+            ]
+          },
+          "legenda": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a legenda do post (o texto, no story, que não leva legenda)"
+          },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chave",
+                "sha256"
+              ],
+              "properties": {
+                "chave": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "description": "a mídia exata, na ordem: [{chave, sha256}] do JPEG de cada slide, do story ou do mp4 do corte"
+          },
+          "igUserId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a conta de publicação do Instagram que recebe o post"
+          },
+          "agendadaPara": {
+            "type": "string",
+            "description": "o slot da agenda, quando a peça tem um (ISO)"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
         "destruicao": false,
         "obrigacaoLegal": false
       }

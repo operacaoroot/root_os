@@ -218,6 +218,9 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   // Meta / Instagram.
   'social.instagram.resumo': 'instagram',
   'social.instagram.midia': 'instagram',
+  // MD6: a conta de publicação da bio (Login do Instagram) responde pela MESMA
+  // chave — desligar o Instagram em /conexoes para também a publicação.
+  'instagram.post.publicar': 'instagram',
 
   // ClickUp — só a ESCRITA sai da casa; a listagem lê o espelho no banco.
   'clickup.tarefa.alterar': 'clickup',

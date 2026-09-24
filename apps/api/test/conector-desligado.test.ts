@@ -128,7 +128,7 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 54 do delta, 8 repetidos', () => {
+  it('a união do catálogo é o que a catraca mede — 16 da base + 55 do delta, 8 repetidos', () => {
     /*
      * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
      * número cai para o do delta e este caso avisa antes de as oito sumirem
@@ -142,10 +142,13 @@ describe('o mapa capacidade → conector', () => {
      * delta sobrescreve a entrada inteira, então foi para lá que ela foi: mesmo
      * nível, mesmo efeito, com o schema. Por isso o repetido subiu de 7 para 8 e
      * o "só na base" caiu de 9 para 8.
+     *
+     * A MD6 (24/09/2026) acrescentou `instagram.post.publicar` ao delta: 55 e
+     * 63 na união, sem repetido novo.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(54);
-    expect(capacidadesDoCatalogo()).toHaveLength(62);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(55);
+    expect(capacidadesDoCatalogo()).toHaveLength(63);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -186,7 +189,7 @@ describe('o mapa capacidade → conector', () => {
     expect(nasDuas, `declaradas duas vezes: ${nasDuas.join(', ')}`).toEqual([]);
   });
 
-  it('o ALCANCE do interruptor é medido, não estimado — 17 capacidades saem da casa', () => {
+  it('o ALCANCE do interruptor é medido, não estimado — 18 capacidades saem da casa', () => {
     /*
      * QUANTAS CAPACIDADES O INTERRUPTOR DE FATO ALCANÇA.
      *
@@ -203,8 +206,10 @@ describe('o mapa capacidade → conector', () => {
      * `src/gateway/tool-gateway.service.ts`.
      */
     const comConector = Object.entries(CONECTOR_DA_CAPACIDADE).filter(([, c]) => c !== null);
-    expect(comConector).toHaveLength(17);
-    expect(capacidadesDoCatalogo()).toHaveLength(62);
+    // 18 desde a MD6: `instagram.post.publicar` responde pela chave `instagram`.
+    expect(comConector).toHaveLength(18);
+    expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
+    expect(capacidadesDoCatalogo()).toHaveLength(63);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

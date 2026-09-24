@@ -133,6 +133,7 @@ model Org {
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
   pautaEpisodios   PautaEpisodio[]
+  pautaPublicacoes PautaPublicacao[]
 
   // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
   leadEvents            LeadEvent[]
@@ -1567,10 +1568,67 @@ model PautaPeca {
 
   criadaEm DateTime @default(now())
 
+  // MD6: a publicação pelo OS, uma por rede.
+  publicacoes PautaPublicacao[]
+
   @@index([orgId, status])
   @@index([rodadaId])
   @@index([orgId, agendadaPara])
   @@index([orgId, slotProposto])
+}
+
+// MD6: a rede em que a peça é publicada pelo OS. Espelhado em PAUTA_REDES
+// (@mktos/shared). Só o Instagram publica nesta onda; o YouTube é a MD10 e o
+// TikTok está em espera (MD12).
+enum PautaRede {
+  instagram
+  youtube
+  tiktok
+}
+
+// MD6: onde a publicação de uma peça está. Espelhado em PAUTA_PUBLICACAO_ESTADOS.
+enum PautaPublicacaoEstado {
+  pendente
+  container_criado
+  processando
+  publicada
+  erro
+  recusada
+}
+
+/// MD6: a publicação de uma peça numa rede, pelo OS. Uma por peça e rede.
+/// Filha de `PautaPeca`: a empresa vem da peça pelo gatilho
+/// `mktos_orgid_do_pai` (migration `20260924224733_pauta_publicacao`).
+model PautaPublicacao {
+  id           String                @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaPeca.orgId`.
+  orgId        String                @default("")
+  org          Org                   @relation(fields: [orgId], references: [id])
+  pecaId       String
+  peca         PautaPeca             @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  rede         PautaRede
+  estado       PautaPublicacaoEstado @default(pendente)
+  /// Os containers criados na Meta e a trilha da aprovação: `{itens, final, criadoEm,
+  /// publicandoEm, legenda, correlacao, aprovadoPor}` (`ContainersGravados` em
+  /// `pauta/publicacao-instagram.ts`).
+  containers   Json                  @default("{}")
+  /// O id da mídia publicada na rede.
+  externalId   String?
+  permalink    String?
+  tentativas   Int                   @default(0)
+  /// Quando a rotina volta a olhar (o status do Reels, uma vez por minuto) e, com a
+  /// linha a caminho, a POSSE: até lá quem a tomou trabalha nela e a rotina não a pega.
+  proximaEm    DateTime?
+  erro         String?
+  /// MD8: o item do lote da semana que autoriza a publicação automática.
+  loteItemId   String?
+  /// A aprovação que a porta consumiu no pedido item a item.
+  approvalId   String?
+  criadaEm     DateTime              @default(now())
+  atualizadaEm DateTime              @updatedAt
+
+  @@unique([pecaId, rede])
+  @@index([orgId, estado, proximaEm])
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------

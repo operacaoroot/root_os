@@ -898,6 +898,8 @@ function agendaFalsa(opts: { pecas: PecaAgenda[]; episodios: EpAgenda[]; agora: 
         return data;
       },
     },
+    // MD6: a agenda lê a publicação de cada peça; aqui nenhuma foi pedida.
+    pautaPublicacao: { findMany: async () => [] },
   } as unknown as PrismaService;
   const memoria = { porChave: async () => null } as unknown as MemoriaService;
   const audit = new AuditService(prisma);

@@ -385,7 +385,12 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // religar um conector que uma pessoa desligou. Se alguém acrescentar
     // `ferramenta` a qualquer uma delas, o desligamento de emergência vira algo
     // que o próprio OS desfaz — e é este caso que reprova primeiro.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(14);
+    //
+    // Quinze desde a MD6 (24/09/2026): `instagram.post.publicar` também nasce
+    // sem ferramenta. Quem publica é gente pela tela ou a rotina com o lote
+    // assinado (MD8); agente nenhum posta no Instagram da empresa.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(15);
+    expect(BASE.capacidades.find((c) => c.id === 'instagram.post.publicar')?.ferramenta).toBeUndefined();
     for (const id of ['conector.desligar', 'conector.religar']) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }

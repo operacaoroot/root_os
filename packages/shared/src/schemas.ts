@@ -3528,6 +3528,8 @@ export interface PautaPecaNaAgenda {
    * decisão humana. Opcional porque web e API sobem separadas.
    */
   slotProposto?: string | null;
+  /** MD6: a publicação pelo OS no Instagram, quando alguém pediu. Opcional pelo mesmo motivo. */
+  publicacao?: PautaPublicacaoDaPeca | null;
 }
 
 export interface PautaLinhaDoDia {
@@ -3645,6 +3647,62 @@ export interface PautaEncadeamentoDoEpisodio {
   rotina: { existe: boolean; dispara: boolean; nome: string | null; calada: string | null };
   /** Os últimos passos registrados, do mais novo. */
   ultimos: PautaPassoRegistrado[];
+}
+
+// ---------- Pauta: o publicador do Instagram (MD6) ----------
+
+/** Espelha o enum `PautaRede` do Prisma. O TikTok está em espera (MD12) e o YouTube é da MD10. */
+export const PAUTA_REDES = ['instagram', 'youtube', 'tiktok'] as const;
+export type PautaRede = (typeof PAUTA_REDES)[number];
+
+/**
+ * Espelha o enum `PautaPublicacaoEstado` do Prisma. `container_criado`: o
+ * container está pronto na Meta e o publish ainda não foi confirmado;
+ * `processando`: o vídeo ainda está em IN_PROGRESS; `recusada`: a peça mudou
+ * depois do pedido, ou alguém a devolveu ao fluxo manual.
+ */
+export const PAUTA_PUBLICACAO_ESTADOS = ['pendente', 'container_criado', 'processando', 'publicada', 'erro', 'recusada'] as const;
+export type PautaPublicacaoEstado = (typeof PAUTA_PUBLICACAO_ESTADOS)[number];
+
+export const PAUTA_PUBLICACAO_ESTADO_ROTULO: Record<PautaPublicacaoEstado, string> = {
+  pendente: 'publicação pendente',
+  container_criado: 'enviada à Meta',
+  processando: 'a Meta está processando',
+  publicada: 'publicada pelo OS',
+  erro: 'a publicação falhou',
+  recusada: 'de volta ao manual',
+};
+
+/** A capacidade da régua (R3) que publica no Instagram. */
+export const PAUTA_CAPACIDADE_DE_PUBLICAR_NO_INSTAGRAM = 'instagram.post.publicar';
+
+/** O tipo da rotina que olha as peças agendadas (executor em `routines/executores/pauta-publicar.executor.ts`). */
+export const PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO = 'pauta.publicar-agendadas';
+
+/**
+ * A nota da memória que liga a publicação AUTOMÁTICA da empresa (D-MD1): a
+ * primeira linha `ligada`. Sem ela, o executor não publica nada sozinho e a
+ * peça segue o caminho manual (MC16) ou o "Publicar agora" item a item.
+ */
+export const PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA = 'pauta.publicacao.automatica';
+
+/** A legenda do Instagram aceita até 2.200 caracteres (a conferir no primeiro post real). */
+export const PAUTA_LEGENDA_DO_INSTAGRAM_MAXIMO = 2200;
+
+/** A janela da publicação automática: do slot até 2 h depois. Passou disso, volta ao manual. */
+export const PAUTA_JANELA_DA_PUBLICACAO_MS = 2 * 3600_000;
+
+/** A publicação de uma peça, como a aba Semana a mostra. */
+export interface PautaPublicacaoDaPeca {
+  id: string;
+  rede: PautaRede;
+  estado: PautaPublicacaoEstado;
+  externalId: string | null;
+  permalink: string | null;
+  erro: string | null;
+  tentativas: number;
+  proximaEm: string | null;
+  atualizadaEm: string;
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------

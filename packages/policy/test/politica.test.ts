@@ -480,3 +480,43 @@ describe('catálogo do marketing-os', () => {
     }
   });
 });
+
+/*
+ * MD6 (24/09/2026): a primeira escrita pública automática do OS. O que não pode
+ * mudar sem alguém ver: o degrau (R3, e é o efeito que diz, não a vontade), a
+ * ausência de `desfazer` (apagar post pela API não existe, e seria R5) e a
+ * ausência de `ferramenta` (agente nenhum publica no Instagram da empresa).
+ */
+describe('instagram.post.publicar (MD6)', () => {
+  const c = MKTOS.capacidades.find((x) => x.id === 'instagram.post.publicar');
+
+  it('é R3 pelo efeito, sem desfazer e sem ferramenta', () => {
+    expect(c, 'a capacidade sumiu do catálogo').toBeTruthy();
+    expect(c!.nivel).toBe('R3');
+    expect(classificar(c!.efeito)).toBe('R3');
+    expect(c!.efeito).toMatchObject({ escreveForaDoOS: true, exposicaoExterna: true, reversibilidade: 'manual', sensibilidade: 'publica', destruicao: false });
+    expect(c!.desfazer).toBeUndefined();
+    expect(c!.ferramenta).toBeUndefined();
+    expect(c!.rota).toBe('POST /pauta/pecas/:id/publicar-instagram');
+  });
+
+  it('com qualquer sinal aceso sobe a R4, nunca desce', () => {
+    const cap: Capacidade = { id: c!.id, descricao: c!.descricao, nivel: c!.nivel, efeito: c!.efeito };
+    expect(avaliar(cap, {}).nivel).toBe('R3');
+    expect(avaliar(cap, { sinais: ['fora_da_janela'] }).nivel).toBe('R4');
+  });
+
+  it('o argsSchema é fechado e exige o conteúdo que a aprovação assina', () => {
+    const s = c!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, unknown> };
+    expect(s.additionalProperties).toBe(false);
+    expect([...s.required].sort()).toEqual(['formato', 'igUserId', 'legenda', 'midias', 'pecaId']);
+    expect(Object.keys(s.properties).sort()).toEqual(['agendadaPara', 'formato', 'igUserId', 'legenda', 'midias', 'pecaId']);
+    // A mídia que prende a aprovação ao arquivo é conferida na PORTA, item a item.
+    expect(s.properties.midias).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: { type: 'object', additionalProperties: false, required: ['chave', 'sha256'], properties: { sha256: { pattern: '^[0-9a-f]{64}$' } } },
+    });
+  });
+});

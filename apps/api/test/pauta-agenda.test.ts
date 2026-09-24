@@ -261,6 +261,8 @@ describe('agenda: os slots e o distribuir', () => {
     const em = new Date('2026-09-28T15:02:00.000Z');
     expect(postagemDaPeca({ status: 'publicada', publicadaEm: em, externalId: null, urlPublicada: null })).toEqual({ em: em.toISOString(), manual: true, url: null });
     expect(postagemDaPeca({ status: 'publicada', publicadaEm: em, externalId: '1789', urlPublicada: 'https://x' })).toMatchObject({ manual: false });
+    // MD6: o post recuperado sem id (story com a resposta perdida) é do OS, não da mão de alguém.
+    expect(postagemDaPeca({ status: 'publicada', publicadaEm: em, externalId: null, urlPublicada: null }, true)).toMatchObject({ manual: false });
     expect(postagemDaPeca({ status: 'aprovada', publicadaEm: null, externalId: null, urlPublicada: null })).toBeNull();
   });
 });
@@ -366,7 +368,15 @@ function casa(obj: Record<string, unknown>, where: Record<string, unknown>): boo
   });
 }
 
-function servico(opts: { pecas?: Peca[]; episodios?: Ep[]; agora?: string; nota?: { id: string; body: string; versao: number; arquivadoEm: string | null } | null } = {}) {
+function servico(
+  opts: {
+    pecas?: Peca[];
+    episodios?: Ep[];
+    agora?: string;
+    nota?: { id: string; body: string; versao: number; arquivadoEm: string | null } | null;
+    publicacoes?: Array<Record<string, unknown> & { pecaId: string }>;
+  } = {},
+) {
   const lista = opts.episodios ?? [ep()];
   const pecas = opts.pecas ?? [];
   const auditoria: Array<Record<string, unknown>> = [];
@@ -410,6 +420,11 @@ function servico(opts: { pecas?: Peca[]; episodios?: Ep[]; agora?: string; nota?
         auditoria.push(data);
         return data;
       },
+    },
+    // MD6: a agenda lê a publicação de cada peça.
+    pautaPublicacao: {
+      findMany: async ({ where }: { where: { pecaId: { in: string[] } } }) =>
+        structuredClone((opts.publicacoes ?? []).filter((p) => where.pecaId.in.includes(p.pecaId))),
     },
   } as unknown as PrismaService;
 
@@ -593,6 +608,27 @@ describe('agenda: marcar como postada (registro interno)', () => {
 });
 
 describe('agenda: a semana na tela', () => {
+  it('MD6: a peça traz a publicação pelo OS quando alguém pediu, e nulo quando não', async () => {
+    const pecas = [peca('carrossel', 1, { agendadaPara: SP('2026-09-28', '12:00') }), peca('story', 2, { agendadaPara: SP('2026-09-28', '09:00') })];
+    const s = servico({
+      pecas,
+      agora: '2026-09-28T12:00:00.000Z',
+      publicacoes: [
+        {
+          id: 'pub1', pecaId: pecas[0].id, rede: 'instagram', estado: 'processando', externalId: null, permalink: null, erro: null,
+          tentativas: 2, proximaEm: new Date('2026-09-28T15:01:00.000Z'), atualizadaEm: new Date('2026-09-28T15:00:00.000Z'),
+        },
+      ],
+    });
+    const a = await s.agenda.semana(ORG);
+    const doDia = a.dias[0].linhas.map((l) => l.peca).filter(Boolean);
+    expect(doDia.find((p) => p!.id === pecas[0].id)?.publicacao).toEqual({
+      id: 'pub1', rede: 'instagram', estado: 'processando', externalId: null, permalink: null, erro: null, tentativas: 2,
+      proximaEm: '2026-09-28T15:01:00.000Z', atualizadaEm: '2026-09-28T15:00:00.000Z',
+    });
+    expect(doDia.find((p) => p!.id === pecas[1].id)?.publicacao).toBeNull();
+  });
+
   it('sete dias a partir da segunda, cada slot com a peça ou vago; fora da grade, postada e o que falta distribuir', async () => {
     const pecas = [
       peca('carrossel', 1, { agendadaPara: SP('2026-09-28', '12:00'), metaExtra: { imagens: [{ n: 1, chave: 'a' }, { n: 2, chave: 'b' }], palavraChave: 'PRECO' } }),

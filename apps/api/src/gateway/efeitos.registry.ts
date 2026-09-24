@@ -17,6 +17,12 @@ export interface ContextoDoEfeito {
   actorId?: string | null;
   agentSlug?: string | null;
   correlationId?: string | null;
+  /**
+   * A aprovação que liberou este disparo, quando ele vem da fila
+   * (`AcoesService.executarAprovada`). Não se herda do ambiente: só quem
+   * consumiu a aprovação sabe qual foi.
+   */
+  approvalId?: string | null;
 }
 
 /**
@@ -176,6 +182,7 @@ export class EfeitosRegistry {
       actorId: bruto.actorId ?? herdado?.actorId ?? null,
       agentSlug: bruto.agentSlug ?? herdado?.agentSlug ?? null,
       correlationId: bruto.correlationId ?? herdado?.correlationId ?? null,
+      ...(bruto.approvalId ? { approvalId: bruto.approvalId } : {}),
     };
   }
 }
