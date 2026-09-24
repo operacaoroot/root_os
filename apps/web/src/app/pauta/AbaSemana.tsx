@@ -69,6 +69,33 @@ const doCampo = (v: string) => {
   return m ? instanteNoFuso(m[1], m[2]).toISOString() : null;
 };
 
+/** MD1: a peça que só tem o slot PROPOSTO pelo encadeamento, sem agenda de verdade. */
+export function ehProposta(p: PautaPecaNaAgenda): boolean {
+  return !p.agendadaPara && !p.postada && !!p.slotProposto;
+}
+
+/**
+ * O slot proposto aparece em cinza e sem ação: virar agenda pede aprovar a peça
+ * (na semana de posts do episódio) e distribuir — o encadeamento não aprova nada.
+ */
+function PecaProposta({ peca }: { peca: PautaPecaNaAgenda }) {
+  return (
+    <div
+      className="min-w-0 flex-1 space-y-1 rounded-lg border border-dashed border-border p-2 text-muted opacity-80"
+      aria-label={`${PAUTA_FORMATO_DA_SEMANA_ROTULO[peca.formato]} proposto de ${peca.apelido}`}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Chip>{peca.status === 'aprovada' ? 'proposto, falta distribuir' : 'proposto, falta aprovar'}</Chip>
+        <span className="text-xs">
+          {peca.apelido} · matéria {peca.itemN}
+        </span>
+      </div>
+      <p className="break-words text-sm">{peca.titulo}</p>
+      <p className="break-words text-xs">{peca.materia}</p>
+    </div>
+  );
+}
+
 function PecaNoSlot({
   peca,
   token,
@@ -445,7 +472,7 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
   if (!agenda) return <p className="text-sm text-muted">Carregando a semana…</p>;
 
   const pular = (n: number) => setDe(somarDias(agenda.de, n));
-  const vazia = agenda.dias.every((d) => d.linhas.every((l) => !l.peca));
+  const vazia = agenda.dias.every((d) => d.linhas.every((l) => !l.peca || ehProposta(l.peca)));
 
   return (
     <div className="space-y-4">
@@ -545,7 +572,9 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
                     <Chip tone={TOM_DO_FORMATO[l.formato]}>{PAUTA_FORMATO_DA_SEMANA_ROTULO[l.formato]}</Chip>
                     {!l.daGrade && <span className="text-[10px] text-muted">fora da grade</span>}
                   </div>
-                  {l.peca ? (
+                  {l.peca && ehProposta(l.peca) ? (
+                    <PecaProposta peca={l.peca} />
+                  ) : l.peca ? (
                     <PecaNoSlot
                       peca={l.peca}
                       token={token}

@@ -1541,12 +1541,16 @@ model PautaPeca {
   // MC16: o slot da semana em que a peça aprovada vai ao ar (instante em UTC;
   // a grade é lida no fuso de São Paulo). Nulo = fora da agenda.
   agendadaPara DateTime?
+  // MD1: o slot que o encadeamento PROPÔS para a peça em rascunho. Não é agenda:
+  // agendadaPara continua só da peça aprovada, e aprovar não converte um no outro.
+  slotProposto DateTime?
 
   criadaEm DateTime @default(now())
 
   @@index([orgId, status])
   @@index([rodadaId])
   @@index([orgId, agendadaPara])
+  @@index([orgId, slotProposto])
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------

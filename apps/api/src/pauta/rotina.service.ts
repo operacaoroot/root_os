@@ -315,6 +315,8 @@ export class RotinaService {
         ...(patch.status ? { status: patch.status as 'rascunho' | 'aprovada' | 'descartada' } : {}),
         // O slot da semana (MC16) é da peça aprovada: saindo dela, sai da agenda.
         ...(patch.status && patch.status !== 'aprovada' ? { agendadaPara: null } : {}),
+        // O slot proposto (MD1) nunca vira agenda por aqui; a descartada o devolve à grade.
+        ...(patch.status === 'descartada' ? { slotProposto: null } : {}),
       },
     });
     await this.audit.log({

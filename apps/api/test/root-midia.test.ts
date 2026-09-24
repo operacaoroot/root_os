@@ -1049,4 +1049,25 @@ describe('root-midia: o calendário da semana no terminal (MC16)', () => {
       'ep-05: 4 aprovada(s) sem data — "Distribuir" na aba Semana.',
     ]);
   });
+
+  it('MD1: o slot só proposto pelo encadeamento diz que falta aprovar (ou distribuir) — não é agenda', () => {
+    const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'rascunho', postada: null, agendadaPara: null, midia: { onde: 'nenhuma', comando: '/root-midia carrosseis ep-04' }, ...over });
+    const linhas = linhasDaAgenda({
+      dias: [
+        {
+          dia: '2026-09-28', diaDaSemana: 'seg', feriado: null,
+          linhas: [
+            { hora: '12:00', formato: 'carrossel', daGrade: true, peca: peca({ slotProposto: '2026-09-28T15:00:00.000Z' }) },
+            { hora: '18:00', formato: 'corte', daGrade: true, peca: peca({ status: 'aprovada', slotProposto: '2026-09-28T21:00:00.000Z' }) },
+            { hora: '19:00', formato: 'corte', daGrade: false, peca: peca({ status: 'aprovada', agendadaPara: '2026-09-28T22:00:00.000Z', slotProposto: '2026-09-28T21:00:00.000Z' }) },
+          ],
+        },
+      ],
+    });
+    expect(linhas.filter((l) => l.startsWith('  1'))).toEqual([
+      '  12:00  carrossel  ep-04 m1  proposto, falta aprovar  Preço caiu',
+      '  18:00  corte      ep-04 m1  proposto, falta distribuir  Preço caiu',
+      '  19:00  corte      ep-04 m1  aprovada (fora da grade)  Preço caiu',
+    ]);
+  });
 });

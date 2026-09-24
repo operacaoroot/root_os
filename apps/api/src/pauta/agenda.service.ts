@@ -6,6 +6,7 @@ import {
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   PAUTA_FUSO_DA_AGENDA,
   PAUTA_GRADE_PADRAO,
+  PAUTA_HORIZONTE_DA_AGENDA_DIAS,
   PAUTA_TETO_DO_A_PARTIR_DE_DIAS,
   PAUTA_TETO_DO_REAGENDAR_DIAS,
   apelidoDoEpisodio,
@@ -40,7 +41,7 @@ import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { EpisodioService } from './episodio.service';
 import { itensMantidos } from './episodio';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
-import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca } from './agenda-da-semana';
+import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca, slotsDoPeriodo, type Distribuida } from './agenda-da-semana';
 
 const TITULO_DA_GRADE = 'Grade da semana de posts (pauta)';
 const MINUTO = 60_000;
@@ -55,6 +56,7 @@ const DA_PECA = {
   corpo: true,
   meta: true,
   agendadaPara: true,
+  slotProposto: true,
   publicadaEm: true,
   externalId: true,
   urlPublicada: true,
@@ -68,6 +70,7 @@ interface LinhaDaPeca {
   corpo: string;
   meta: unknown;
   agendadaPara: Date | null;
+  slotProposto: Date | null;
   publicadaEm: Date | null;
   externalId: string | null;
   urlPublicada: string | null;
@@ -197,7 +200,7 @@ export class AgendaService {
     const formato = p.formato as PautaFormatoDaSemana;
     const apelido = e ? apelidoDoEpisodio(e.numero) : 'ep-??';
     const itens = e ? itensMantidos(e.rodada?.itens) : [];
-    const em = p.agendadaPara ?? p.publicadaEm ?? new Date(0);
+    const em = p.agendadaPara ?? p.publicadaEm ?? p.slotProposto ?? new Date(0);
     return {
       id: p.id,
       formato,
@@ -214,6 +217,7 @@ export class AgendaService {
       midia: midiaDaPeca(formato, p.meta, apelido),
       postada: postagemDaPeca(p),
       motivoParaNaoAgendar: e ? motivoParaNaoAgendar(e.status) : 'O episódio desta peça não foi achado.',
+      slotProposto: p.slotProposto?.toISOString() ?? null,
     };
   }
 
@@ -238,6 +242,8 @@ export class AgendaService {
         OR: [
           { agendadaPara: { gte: ini, lt: fim } },
           { agendadaPara: null, status: 'publicada', publicadaEm: { gte: ini, lt: fim } },
+          // MD1: o slot proposto aparece em cinza até a peça ganhar agenda de verdade.
+          { agendadaPara: null, status: { in: ['rascunho', 'aprovada'] }, slotProposto: { gte: ini, lt: fim } },
         ],
       },
       select: DA_PECA,
@@ -337,24 +343,40 @@ export class AgendaService {
     const feito = await this.comAAgendaTravada(orgId, async (tx) => {
       const doEpisodio = ((await tx.pautaPeca.findMany({
         where: { orgId, rodadaId: e.rodadaId, ...daSemana, status: 'aprovada' },
-        select: { id: true, formato: true, meta: true, agendadaPara: true },
-      })) as Array<{ id: string; formato: string; meta: unknown; agendadaPara: Date | null }>).filter((p) => ehPecaDaSemana(p.meta, e.id));
+        select: { id: true, formato: true, meta: true, agendadaPara: true, slotProposto: true },
+      })) as Array<{ id: string; formato: string; meta: unknown; agendadaPara: Date | null; slotProposto: Date | null }>).filter((p) =>
+        ehPecaDaSemana(p.meta, e.id),
+      );
       if (!doEpisodio.length) {
         throw new BadRequestException('Nenhuma peça aprovada neste episódio: aprove na seção Semana de posts antes de distribuir.');
       }
       const semData = doEpisodio.filter((p) => !p.agendadaPara);
-      const ocupados = ((await tx.pautaPeca.findMany({
-        where: { orgId, ...daSemana, status: { in: ['aprovada', 'publicada'] }, agendadaPara: { gte: minuto(new Date(desde.getTime() - MINUTO)) } },
-        select: { formato: true, agendadaPara: true },
-      })) as Array<{ formato: string; agendadaPara: Date | null }>)
-        .filter((x): x is { formato: string; agendadaPara: Date } => !!x.agendadaPara)
-        .map((x) => ({ formato: x.formato, em: x.agendadaPara }));
-      const r = distribuir({
-        pecas: semData.map((p) => ({ id: p.id, formato: p.formato as PautaFormatoDaSemana, itemN: lerMetaDaSemana(p.meta).itemN })),
-        ocupados,
+      // O proposto às irmãs ainda em rascunho também está tomado: a aprovada
+      // sem proposta não cai em cima do slot que a pessoa vai ver na irmã.
+      const irmas = await this.propostosDoEpisodio(tx, orgId, e, new Set(semData.map((p) => p.id)));
+      const ocupados = [...(await this.slotsOcupados(tx, orgId, desde, e.id)), ...irmas];
+      // MD1: a peça que o encadeamento propôs num slot ainda livre fica nele —
+      // o que a pessoa aprovou olhando a semana é o que vai para a agenda. Só
+      // se o slot ainda está na grade vigente (grade editada ou feriado novo
+      // depois da proposta = vai para o próximo livre).
+      const daGrade = new Set(slotsDoPeriodo(grade, desde, PAUTA_HORIZONTE_DA_AGENDA_DIAS).map((s) => chaveDoSlot(s.formato, s.em)));
+      const tomados = new Set(ocupados.map((x) => chaveDoSlot(x.formato, x.em)));
+      const noProposto: Distribuida['alocacoes'] = [];
+      const resto: typeof semData = [];
+      for (const p of semData) {
+        const chave = p.slotProposto ? chaveDoSlot(p.formato, p.slotProposto) : null;
+        if (p.slotProposto && chave && daGrade.has(chave) && !tomados.has(chave)) {
+          tomados.add(chave);
+          noProposto.push({ id: p.id, formato: p.formato as PautaFormatoDaSemana, itemN: lerMetaDaSemana(p.meta).itemN, em: p.slotProposto });
+        } else resto.push(p);
+      }
+      const distribuida = distribuir({
+        pecas: resto.map((p) => ({ id: p.id, formato: p.formato as PautaFormatoDaSemana, itemN: lerMetaDaSemana(p.meta).itemN })),
+        ocupados: [...ocupados, ...noProposto.map((a) => ({ formato: a.formato, em: a.em }))],
         grade,
         desde,
       });
+      const r: Distribuida = { alocacoes: [...noProposto, ...distribuida.alocacoes], semVaga: distribuida.semVaga };
       const gravadas: PautaDistribuicao['pecas'] = [];
       const avisos: string[] = [];
       for (const a of r.alocacoes) {
@@ -389,6 +411,115 @@ export class AgendaService {
       pecas: feito.gravadas,
       avisos: [...avisosDaGrade, ...feito.avisos],
     };
+  }
+
+  /**
+   * Os slots já tomados a partir de `desde`: a agenda de verdade (aprovada ou
+   * publicada, de qualquer episódio) e os slots PROPOSTOS de outros episódios
+   * (MD1). Os propostos do próprio episódio não contam contra ele: quem
+   * distribui ou propõe de novo é dono deles.
+   */
+  private async slotsOcupados(tx: Prisma.TransactionClient, orgId: string, desde: Date, episodioId: string): Promise<Array<{ formato: string; em: Date }>> {
+    const aPartir = minuto(new Date(desde.getTime() - MINUTO));
+    const linhas = (await tx.pautaPeca.findMany({
+      where: {
+        orgId,
+        ...daSemana,
+        OR: [
+          { status: { in: ['aprovada', 'publicada'] }, agendadaPara: { gte: aPartir } },
+          { status: { in: ['rascunho', 'aprovada'] }, agendadaPara: null, slotProposto: { gte: aPartir } },
+        ],
+      },
+      select: { formato: true, status: true, meta: true, agendadaPara: true, slotProposto: true },
+    })) as Array<{ formato: string; status: PautaPecaStatus; meta: unknown; agendadaPara: Date | null; slotProposto: Date | null }>;
+    const saida: Array<{ formato: string; em: Date }> = [];
+    for (const x of linhas) {
+      if (x.agendadaPara && (x.status === 'aprovada' || x.status === 'publicada')) saida.push({ formato: x.formato, em: x.agendadaPara });
+      else if (x.slotProposto && !x.agendadaPara && !ehPecaDaSemana(x.meta, episodioId)) saida.push({ formato: x.formato, em: x.slotProposto });
+    }
+    return saida;
+  }
+
+  /** Os slots propostos às peças da semana do episódio ainda sem agenda, menos as de `exceto`. */
+  private async propostosDoEpisodio(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    e: { id: string; rodadaId: string },
+    exceto: ReadonlySet<string>,
+  ): Promise<Array<{ formato: string; em: Date }>> {
+    const linhas = (await tx.pautaPeca.findMany({
+      where: { orgId, rodadaId: e.rodadaId, ...daSemana, status: { in: ['rascunho', 'aprovada'] }, agendadaPara: null, slotProposto: { not: null } },
+      select: { id: true, formato: true, meta: true, slotProposto: true },
+    })) as Array<{ id: string; formato: string; meta: unknown; slotProposto: Date | null }>;
+    return linhas
+      .filter((p) => !exceto.has(p.id) && ehPecaDaSemana(p.meta, e.id) && !!p.slotProposto)
+      .map((p) => ({ formato: p.formato, em: p.slotProposto as Date }));
+  }
+
+  /**
+   * MD1: PROPÕE um slot da grade para as peças da semana ainda em RASCUNHO do
+   * episódio (sem agenda e sem proposta), a partir do dia seguinte — quem
+   * aprova precisa de tempo para olhar. Grava só `slotProposto`: `agendadaPara`
+   * continua exclusivo da peça aprovada. Não colide com a agenda de ninguém nem
+   * com o proposto de outro episódio; o que não cabe fica sem slot, com aviso.
+   */
+  async proporSlots(orgId: string, episodioId: string, actorId: string): Promise<{ propostas: number; semVaga: number; avisos: string[] }> {
+    const e = await this.episodios.obter(orgId, episodioId);
+    const motivo = motivoParaNaoAgendar(e.status);
+    if (motivo) throw new BadRequestException(motivo);
+    let lida: ReturnType<typeof gradeDaNota>;
+    try {
+      lida = gradeDaNota(await this.notaDaGrade(orgId));
+    } catch (erro) {
+      this.log.warn(`propor slots de ${orgId}: memória indisponível (${(erro as Error).message})`);
+      throw new ServiceUnavailableException('A grade da empresa não pôde ser lida agora: nenhum slot foi proposto.');
+    }
+    const { grade, avisos: avisosDaGrade } = lida;
+    const desde = instanteNoFuso(somarDias(diaNoFuso(this.agora(), PAUTA_FUSO_DA_AGENDA), 1), '00:00');
+
+    const feito = await this.comAAgendaTravada(orgId, async (tx) => {
+      const rascunhos = ((await tx.pautaPeca.findMany({
+        where: { orgId, rodadaId: e.rodadaId, ...daSemana, status: 'rascunho', agendadaPara: null, slotProposto: null },
+        select: { id: true, formato: true, meta: true },
+      })) as Array<{ id: string; formato: string; meta: unknown }>).filter((p) => ehPecaDaSemana(p.meta, e.id));
+      if (!rascunhos.length) return { gravadas: [] as Array<{ id: string; em: string }>, avisos: [] as string[], semVaga: 0 };
+      const ocupados = await this.slotsOcupados(tx, orgId, desde, e.id);
+      // Os já propostos do próprio episódio também tomam o slot: senão duas
+      // passagens poriam duas peças do mesmo formato no mesmo minuto.
+      const proprios = await this.propostosDoEpisodio(tx, orgId, e, new Set());
+      const r = distribuir({
+        pecas: rascunhos.map((p) => ({ id: p.id, formato: p.formato as PautaFormatoDaSemana, itemN: lerMetaDaSemana(p.meta).itemN })),
+        ocupados: [...ocupados, ...proprios],
+        grade,
+        desde,
+      });
+      const gravadas: Array<{ id: string; em: string }> = [];
+      const avisos: string[] = [];
+      for (const a of r.alocacoes) {
+        const u = await tx.pautaPeca.updateMany({
+          where: { id: a.id, orgId, status: 'rascunho', agendadaPara: null, slotProposto: null },
+          data: { slotProposto: a.em },
+        });
+        if (u.count === 0) avisos.push(`A peça ${a.id} mudou enquanto isso e ficou sem slot proposto.`);
+        else gravadas.push({ id: a.id, em: a.em.toISOString() });
+      }
+      for (const s of r.semVaga) {
+        avisos.push(`${PAUTA_FORMATO_DA_SEMANA_ROTULO[s.formato]} da matéria ${s.itemN}: sem slot livre nas próximas 4 semanas da grade.`);
+      }
+      return { gravadas, avisos, semVaga: r.semVaga.length };
+    });
+
+    if (feito.gravadas.length || feito.semVaga) {
+      await this.audit.log({
+        orgId,
+        actorId,
+        action: 'pauta.semana_proposta',
+        entityType: 'pauta_episodio',
+        entityId: episodioId,
+        after: { desde: desde.toISOString(), propostas: feito.gravadas, semVaga: feito.semVaga },
+      });
+    }
+    return { propostas: feito.gravadas.length, semVaga: feito.semVaga, avisos: [...avisosDaGrade, ...feito.avisos] };
   }
 
   private async pecaDaSemana(orgId: string, pecaId: string, db: Prisma.TransactionClient | PrismaService = this.prisma): Promise<LinhaDaPeca> {

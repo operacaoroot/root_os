@@ -36,6 +36,8 @@ import { DerivacaoController } from './derivacao.controller';
 import { DerivacaoService } from './derivacao.service';
 import { AgendaController } from './agenda.controller';
 import { AgendaService } from './agenda.service';
+import { EncadeamentoController } from './encadeamento.controller';
+import { EncadeamentoService } from './encadeamento.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -59,6 +61,7 @@ import { AgendaService } from './agenda.service';
     NewsletterController,
     DerivacaoController,
     AgendaController,
+    EncadeamentoController,
   ],
   providers: [
     PautaService,
@@ -93,9 +96,12 @@ import { AgendaService } from './agenda.service';
     DerivacaoService,
     // MC16: o calendário da semana — a grade, os slots e a postagem manual.
     AgendaService,
+    // MD1: a transcrição anda sozinha até a semana em rascunho (rotina pauta.encadear).
+    EncadeamentoService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
-  // whatsapp.mensagem.enviar ao envio real.
-  exports: [PautaService, RodadaService, EvolutionService],
+  // whatsapp.mensagem.enviar ao envio real. EncadeamentoService, para o
+  // executor da rotina (RoutinesModule).
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService],
 })
 export class PautaModule {}

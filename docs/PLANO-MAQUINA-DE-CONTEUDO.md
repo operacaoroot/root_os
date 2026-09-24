@@ -370,6 +370,11 @@ Cada passo diz onde se faz.
 6. No Claude Code: `/root-midia ep-NN`. Ele corta silêncios e tomadas erradas, transcreve e manda
    ao OS só o leve. O vídeo fica em `~/Movies/OBS/root-midia/ep-NN/`.
 
+> **Com a rotina de encadeamento criada em `/rotinas` (MD1):** os passos 7 a 10 e a proposta de
+> slots andam sozinhos a partir da transcrição, até a semana em rascunho — sem escolher título, sem
+> publicar a página, sem aprovar nada. O detalhe do episódio diz o "Próximo passo automático"; o que
+> sobra são os pontos humanos (título, página no ar, revisar e aprovar, renders no Mac, distribuir).
+
 **Segunda — pacote do episódio**
 
 7. No episódio: **Gerar pacote** (3 títulos, descrição com capítulos, briefs de thumb) e, no Mac,

@@ -5,9 +5,11 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { NovaRotinaDeColeta } from './NovaRotinaDeColeta';
+import { NovaRotinaDeEncadeamento } from './NovaRotinaDeEncadeamento';
 import {
   ESTADOS,
   TIPO_PAUTA_COLETA,
+  TIPO_PAUTA_ENCADEAR,
   type ResultadoDoRodar,
   emHoras,
   quando,
@@ -257,6 +259,12 @@ export default function RotinasPage() {
         data?.tiposDisponiveis?.includes(TIPO_PAUTA_COLETA) &&
         !data.items.some((r) => r.tipo === TIPO_PAUTA_COLETA) && (
           <NovaRotinaDeColeta token={token} onCriada={carregar} />
+        )}
+
+      {editavel &&
+        data?.tiposDisponiveis?.includes(TIPO_PAUTA_ENCADEAR) &&
+        !data.items.some((r) => r.tipo === TIPO_PAUTA_ENCADEAR) && (
+          <NovaRotinaDeEncadeamento token={token} onCriada={carregar} />
         )}
 
       {data && data.items.length === 0 && (

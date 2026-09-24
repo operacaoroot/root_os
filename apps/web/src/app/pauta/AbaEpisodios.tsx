@@ -21,6 +21,7 @@ import { SecaoPacote } from './SecaoPacote';
 import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
 import { SecaoNewsletter } from './SecaoNewsletter';
 import { SecaoSemana } from './SecaoSemana';
+import { LinhaDoEncadeamento } from './LinhaDoEncadeamento';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
@@ -261,6 +262,9 @@ export function AbaEpisodios({
               )}
               {semInsumo && <p className="w-full break-words text-xs text-muted">{semInsumo}</p>}
               {!detalhe.avancar && <span className="self-center text-sm text-good">Episódio concluído.</span>}
+            </div>
+            <div className="mt-3">
+              <LinhaDoEncadeamento token={token} detalhe={detalhe} />
             </div>
           </div>
 

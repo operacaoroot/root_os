@@ -88,6 +88,9 @@ export interface RotinasList {
 /** O executor da coleta de quinta (MC5). */
 export const TIPO_PAUTA_COLETA = 'pauta.coleta';
 
+/** O executor do encadeamento da transcrição à semana em rascunho (MD1). */
+export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
+
 /** O que `POST /rotinas/:id/rodar` devolve. */
 export interface ResultadoDoRodar {
   ok: boolean;
@@ -104,6 +107,17 @@ export interface CorpoDaNovaColeta {
   tz: string;
   estado: EstadoDaRotina;
   config: { horas: number };
+}
+
+/** O corpo de `POST /rotinas` para o encadeamento (MD1): sem `etapas`, todas. */
+export interface CorpoDoNovoEncadeamento {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_ENCADEAR;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: { etapas?: string[] };
 }
 
 /** Os quatro estados, na ordem em que a tela os oferece. */

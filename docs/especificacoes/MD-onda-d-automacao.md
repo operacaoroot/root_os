@@ -210,6 +210,13 @@ fatia termina com as suítes verdes e os pisos da CI subidos no mesmo commit.
 
 ### MD1 — Encadeamento no OS: da transcrição à semana em rascunho
 
+> **Estado (24/09/2026):** implementada, com o ensaio do "pronto quando" e a revisão registrados no
+> `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D). Escolhas além do texto abaixo: os slots são propostos a
+> partir do **dia seguinte**; o distribuir manual usa o slot proposto da peça aprovada quando ele
+> ainda está livre e na grade; "sem newsletter"/"sem peças" contam as **descartadas** como existentes
+> (a rotina só gera onde nunca houve nada) e a página apagada no `/bio` não é recriada; a semana
+> parcial é `erro` e a passagem seguinte refaz só as matérias sem peça.
+
 **SPEC.** Quando a transcrição chega (`POST /pauta/episodios/:id/transcricao`), o OS anda sozinho até
 a semana distribuída **em rascunho** e para nos pontos humanos. Não publica nada.
 

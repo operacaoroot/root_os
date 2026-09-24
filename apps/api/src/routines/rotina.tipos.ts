@@ -73,8 +73,27 @@ export const TIPO_PAUTA_RODADA = 'pauta.rodada';
  */
 export const TIPO_PAUTA_COLETA = 'pauta.coleta';
 
+/**
+ * O encadeamento (MD1): da transcrição à semana em rascunho, um passo por
+ * episódio por passagem. Ver `executores/pauta-encadear.executor.ts`. A rotina
+ * é o interruptor: sem ela criada em /rotinas, nada anda sozinho. O valor é o
+ * de `PAUTA_TIPO_DA_ROTINA_DE_ENCADEAMENTO` no shared (a tela usa aquele).
+ */
+export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
+
 /** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
-export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA];
+export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR];
+
+/**
+ * A variável que cala o tique das rotinas da pauta neste processo, ou `null` —
+ * a mesma leitura que o `RotinasScheduler` faz ao subir. Existe para a tela da
+ * pauta não dizer que a rotina "dispara" com o agendador desligado.
+ */
+export function silencioDoTiqueDaPauta(env: NodeJS.ProcessEnv = process.env): string | null {
+  if ((env.ROTINAS_CRON ?? 'on') === 'off') return 'ROTINAS_CRON=off';
+  if ((env.PAUTA_CRON ?? 'on') === 'off') return 'PAUTA_CRON=off';
+  return null;
+}
 
 /** O agente do roster que representa a rotina da pauta no organograma. */
 export const AGENTE_DA_PAUTA = 'editor-de-pauta';
@@ -86,6 +105,7 @@ export const AGENTE_DA_PAUTA = 'editor-de-pauta';
 export const AGENTE_DO_TIPO: Readonly<Record<string, string>> = {
   [TIPO_PAUTA_RODADA]: AGENTE_DA_PAUTA,
   [TIPO_PAUTA_COLETA]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_ENCADEAR]: AGENTE_DA_PAUTA,
 };
 
 /**
@@ -97,6 +117,7 @@ export const AGENTE_DO_TIPO: Readonly<Record<string, string>> = {
 export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   [TIPO_PAUTA_RODADA]: 'pauta',
   [TIPO_PAUTA_COLETA]: 'pauta',
+  [TIPO_PAUTA_ENCADEAR]: 'pauta',
 };
 
 /** Como a execução foi disparada. */

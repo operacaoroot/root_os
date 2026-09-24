@@ -113,6 +113,10 @@ function respostas(opts: { lista?: unknown[]; detalhe?: unknown } = {}) {
     if (/^\/pauta\/episodios\/[^/]+\/newsletter$/.test(path)) return { newsletter: null };
     // A semana de posts (MC15) também: do Pacote em diante ela é lida.
     if (/^\/pauta\/episodios\/[^/]+\/semana$/.test(path)) return { episodioId: 'e1', apelido: 'ep-01', status: 'concluido', arquivoFinal: null, duracaoSeg: null, paginaDeLinks: null, motivo: null, materias: [] };
+    // O próximo passo automático (MD1) tem suíte própria (`pauta-encadeamento`).
+    if (/^\/pauta\/episodios\/[^/]+\/encadeamento$/.test(path)) {
+      return { episodioId: 'e2', passo: 'parar', motivo: 'nada a fazer sozinho.', etapas: [], rotina: { existe: false, dispara: false, nome: null, calada: null }, ultimos: [] };
+    }
     if (path.startsWith('/pauta/rodadas')) return { items: [], source: { tool: 't', generatedAt: '' } };
     if (path === '/pauta/canais') return { whatsapp: { configurada: false, conectada: false, motivo: null, grupo: null } };
     throw new Error(`GET inesperado: ${path}`);

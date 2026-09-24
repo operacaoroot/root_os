@@ -29,6 +29,10 @@ import {
   urlDaPagina,
   type LinkDaCasa,
 } from './pagina-de-links-do-episodio';
+import { umaPorVez } from './uma-por-vez';
+
+/** O evento de cada montagem no RASTRO: o encadeamento (MD1) o lê para não recriar a página apagada no /bio. */
+export const ACAO_DA_MONTAGEM_DA_PAGINA = 'pauta.episodio_pagina_de_links';
 
 /** Quem pede: o id e as permissões do token — mexer numa página no ar pede `bio.editar`. */
 export interface QuemMonta {
@@ -165,7 +169,12 @@ export class PaginaDeLinksService {
    * o que a montagem anterior pôs e esta não põe mais é desativado (o histórico
    * de cliques fica). Botão do painel não é tocado, só vai para depois.
    */
-  async montar(orgId: string, id: string, quem: QuemMonta): Promise<PautaPaginaDeLinksMontada> {
+  montar(orgId: string, id: string, quem: QuemMonta): Promise<PautaPaginaDeLinksMontada> {
+    // A mesma chave para o clique e para o encadeamento (MD1): o segundo pedido é 409 na hora.
+    return umaPorVez(`pauta-pagina-de-links:${orgId}:${id}`, 'A montagem da página de links deste episódio', () => this.montarAgora(orgId, id, quem));
+  }
+
+  private async montarAgora(orgId: string, id: string, quem: QuemMonta): Promise<PautaPaginaDeLinksMontada> {
     const e = await this.prisma.pautaEpisodio.findFirst({
       where: { id, orgId },
       select: {
@@ -253,7 +262,7 @@ export class PaginaDeLinksService {
     await this.audit.log({
       orgId,
       actorId: quem.sub,
-      action: 'pauta.episodio_pagina_de_links',
+      action: ACAO_DA_MONTAGEM_DA_PAGINA,
       entityType: 'pauta_episodio',
       entityId: id,
       after: {

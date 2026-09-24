@@ -690,6 +690,8 @@ describe('semana: gerar (o critério de pronto, com a transcrição de exemplo)'
     const s = servico();
     await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
     const ids = s.pecas.map((p) => p.id).sort();
+    // MD1: o encadeamento propôs slot para as rascunho; derivar de novo o zera.
+    for (const p of s.pecas) (p as { slotProposto?: Date | null }).slotProposto = new Date('2026-09-28T15:00:00.000Z');
 
     await expect(s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false })).rejects.toThrow(ConflictException);
     expect(s.chamadas).toHaveLength(3);
@@ -698,6 +700,7 @@ describe('semana: gerar (o critério de pronto, com a transcrição de exemplo)'
     expect(s.chamadas).toHaveLength(6);
     expect(s.pecas.map((p) => p.id).sort()).toEqual(ids);
     expect(r.conta).toEqual({ criadas: 0, substituidas: 9, mantidas: 0, falharam: 0 });
+    expect(s.pecas.every((p) => (p as { slotProposto?: Date | null }).slotProposto === null)).toBe(true);
   });
 
   it('a aprovada e a publicada nunca são tocadas; matéria com as três firmes nem chama a IA', async () => {

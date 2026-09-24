@@ -439,7 +439,8 @@ export class DerivacaoService {
           // Escrita condicionada ao status relido: aprovada no meio não é sobrescrita.
           const u = await tx.pautaPeca.updateMany({
             where: { id: acao.id, orgId, status: acao.status },
-            data: { titulo: d.titulo.slice(0, 200), corpo: d.corpo, meta, status: 'rascunho', erro: null },
+            // O slot proposto (MD1) era do texto anterior: a peça nova volta a esperar proposta.
+            data: { titulo: d.titulo.slice(0, 200), corpo: d.corpo, meta, status: 'rascunho', erro: null, slotProposto: null },
           });
           if (u.count === 0) throw new ConflictException(MSG_CORRIDA);
           r.substituidas++;

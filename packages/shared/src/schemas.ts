@@ -3409,6 +3409,12 @@ export interface PautaPecaNaAgenda {
   postada: PautaPostagemDaPeca | null;
   /** Por que o episódio não deixa reagendar agora (fora da Derivação/Agendado), ou nulo. */
   motivoParaNaoAgendar: string | null;
+  /**
+   * MD1: o slot que o encadeamento propôs para a peça ainda sem agenda. A peça
+   * aparece nele em cinza ("proposto, falta aprovar"); virar agenda de verdade é
+   * decisão humana. Opcional porque web e API sobem separadas.
+   */
+  slotProposto?: string | null;
 }
 
 export interface PautaLinhaDoDia {
@@ -3473,6 +3479,61 @@ export interface PautaCanalEstado {
   motivo: string | null;
   grupo: string | null;
 }
+// ---------- Pauta: o encadeamento da transcrição à semana em rascunho (MD1) ----------
+
+/**
+ * As etapas que a rotina `pauta.encadear` anda sozinha, na ordem. Nenhuma sai
+ * do OS: a página só é MONTADA (pôr no ar é humano) e os slots são PROPOSTOS em
+ * peças rascunho (agenda de verdade é só de peça aprovada).
+ */
+export const PAUTA_ETAPAS_DO_ENCADEAMENTO = ['pacote', 'pagina', 'newsletter', 'semana', 'slots'] as const;
+export type PautaEtapaDoEncadeamento = (typeof PAUTA_ETAPAS_DO_ENCADEAMENTO)[number];
+
+export const PAUTA_ETAPA_DO_ENCADEAMENTO_ROTULO: Record<PautaEtapaDoEncadeamento, string> = {
+  pacote: 'gerar o pacote do YouTube',
+  pagina: 'montar a página de links (sem pôr no ar)',
+  newsletter: 'gerar a newsletter',
+  semana: 'gerar a semana de posts',
+  slots: 'propor os slots da semana',
+};
+
+/** O tipo da rotina (o executor mora na API, `routines/executores/pauta-encadear.executor.ts`). */
+export const PAUTA_TIPO_DA_ROTINA_DE_ENCADEAMENTO = 'pauta.encadear';
+
+/** A `config` da rotina: sem `etapas`, todas. */
+export const PautaEncadeamentoConfigSchema = z
+  .object({ etapas: z.array(z.enum(PAUTA_ETAPAS_DO_ENCADEAMENTO)).min(1).max(PAUTA_ETAPAS_DO_ENCADEAMENTO.length).optional() })
+  .strict();
+export type PautaEncadeamentoConfig = z.infer<typeof PautaEncadeamentoConfigSchema>;
+
+/** O desfecho de um passo, como fica no RASTRO (`pauta.encadeamento_passo`). */
+export type PautaResultadoDoPasso = 'ok' | 'erro' | 'pulada' | 'dispensada' | 'travada';
+
+export interface PautaPassoRegistrado {
+  etapa: PautaEtapaDoEncadeamento;
+  resultado: PautaResultadoDoPasso;
+  detalhe: string | null;
+  em: string;
+}
+
+/** `GET /pauta/episodios/:id/encadeamento`. */
+export interface PautaEncadeamentoDoEpisodio {
+  episodioId: string;
+  /** A etapa que a próxima passagem roda, ou `parar` (com o motivo). Nunca publica. */
+  passo: PautaEtapaDoEncadeamento | 'parar';
+  motivo: string | null;
+  /** As etapas que a rotina anda (a config dela; sem rotina, todas). */
+  etapas: PautaEtapaDoEncadeamento[];
+  /**
+   * A rotina `pauta.encadear` da empresa: sem ela criada, nada anda sozinho.
+   * `calada` é a variável que desliga o tique neste servidor (`ROTINAS_CRON=off`
+   * ou `PAUTA_CRON=off`); com ela, `dispara` é falso.
+   */
+  rotina: { existe: boolean; dispara: boolean; nome: string | null; calada: string | null };
+  /** Os últimos passos registrados, do mais novo. */
+  ultimos: PautaPassoRegistrado[];
+}
+
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------
 // Contratos do módulo /trabalho: réplica de usabilidade do espaço `root` do
 // ClickUp (fotografia 25/07/2026). Todo campo visível é editável.

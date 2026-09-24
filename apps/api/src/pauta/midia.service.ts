@@ -93,7 +93,7 @@ export class MidiaService {
       const meta = { ...(p.meta as Record<string, unknown>), imagens: [], video: null };
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
-        data: { status: 'rascunho', agendadaPara: null, meta: meta as unknown as Prisma.InputJsonValue },
+        data: { status: 'rascunho', agendadaPara: null, slotProposto: null, meta: meta as unknown as Prisma.InputJsonValue },
       });
       if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
       voltaram.push(p.id);

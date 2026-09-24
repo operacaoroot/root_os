@@ -1150,6 +1150,93 @@ continuam valendo, aqui na ordem do que destrava mais):
   pendente), e publicar a peça no grupo depende dela.
 - **A branch só existe no disco**, o risco nº 1 do plano inteiro.
 
+### Onda D, fatia MD1 — o encadeamento da transcrição à semana em rascunho (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD1). A rotina nova `pauta.encadear`
+anda sozinha, um passo por episódio a cada passagem (no máximo dois episódios), da transcrição até a
+semana em rascunho com os slots **propostos**: pacote → página de links **montada, fora do ar** →
+newsletter → semana de posts → slots. Nada sai do OS. O interruptor é a própria rotina: sem ela
+criada em `/rotinas`, nada anda.
+
+| Peça | Onde |
+|---|---|
+| O próximo passo (puro; nunca devolve publicar), a trava de três erros e a dispensa | `apps/api/src/pauta/encadeamento-do-episodio.ts` |
+| O serviço (os MESMOS serviços e chaves do `umaPorVez` dos botões; RASTRO `pauta.encadeamento_passo` com ator sistema e a correlação da rotina) | `apps/api/src/pauta/encadeamento.service.ts` |
+| O executor, registrado no molde da coleta | `apps/api/src/routines/executores/pauta-encadear.executor.ts`; tipo em `rotina.tipos.ts`, config em `nova-rotina.ts` |
+| `GET /pauta/episodios/:id/encadeamento` (`pauta.ver`) | `encadeamento.controller.ts` |
+| `AgendaService.proporSlots` + migration `20260924100000_pauta_peca_slot_proposto` (`PautaPeca.slotProposto`, índice `(orgId, slotProposto)`) | `agenda.service.ts` |
+| Tela: "Nova rotina de encadeamento", "Próximo passo automático" no episódio, slot proposto em cinza na Semana; `root-midia agenda` diz "proposto, falta aprovar" | `NovaRotinaDeEncadeamento.tsx`, `LinhaDoEncadeamento.tsx`, `AbaSemana.tsx`, `tools/root-midia/lib/semana.mjs` |
+
+Desfechos de um passo: 409 (o clique manual em curso, pela mesma chave do `umaPorVez`) é `pulada`,
+sem pagar a IA duas vezes; 400/403/404 (falta insumo, como página sem nenhum link) é `dispensada`
+até alguém mexer no episódio; o resto (IA fora, JSON ruim, teto de custo) é `erro` e a passagem
+lança, para contar como falha no histórico da rotina. Três erros seguidos na mesma etapa, com o
+episódio igual, travam a etapa: a passagem do relógio registra `travada` uma vez e pula; o "Rodar
+agora" tenta de novo. O slot é proposto a partir do dia seguinte (quem aprova precisa de tempo), sem
+colidir com a agenda de ninguém nem com o proposto de outro episódio.
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~15h20): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto com `TEST_DATABASE_URL` **2634 de 2634** em 65 arquivos (+39: `pauta-encadeamento`
+37, `pauta-midia` +1, `root-midia` +1); web **554** em 43 (+8, `component/pauta-encadeamento`);
+`test:isolamento` **326** (coluna nova em tabela que já tinha RLS); `db:diff` limpo; `tools/root-midia`
+**112**. Policy e porta não foram tocadas. Pisos da CI: api 1949/57, web 373/34, com a conta no
+`ci.yml`.
+
+**Ensaio local** (`dist/main.js` contra `marketing_os_zero_md1`, criado vazio: **49 de 49**
+migrations do zero e `db:seed:politica`; empresa e conta descartáveis com teto de custo de IA de
+US$ 5 ligado; o dublê de LLM da MC-C, com atraso de 1,5 s por matéria na semana; Evolution e Graph
+apontadas para um "escutador" local; `ROTINAS_CRON` ligado):
+
+1. Transcrição do `ep-01` → Pacote. **Oitenta segundos com o relógio de pé e sem a rotina: nada.**
+   O GET do encadeamento dizia "gerar o pacote" e "rotina: não existe".
+2. `POST /rotinas` do tipo novo (config `{etapas: ["publicar"]}` → 400). Cinco "Rodar agora":
+   pacote (3 títulos) → página montada fora do ar (4 botões) → newsletter em rascunho → **12 peças**
+   em rascunho, episódio em Derivação → **12 slots propostos**, `agendadaPara` nulo em todas. A sexta
+   passagem: `pulada`, "nenhum episódio com passo a dar".
+3. RASTRO: um `pauta.encadeamento_passo` por etapa, `actorType system`, com a correlação. O teto da
+   empresa contou **6 chamadas** (US$ 0,03 estimados) — as mesmas 6 que o dublê recebeu (pacote 1,
+   newsletter 1, semana 4).
+4. `ep-02`, rotina posta em `rodando`: o **tique das 15h30** (fuso de São Paulo) gerou o pacote
+   sozinho (`origem cron`). Página e newsletter por "Rodar agora". Com um **"Gerar semana" manual em
+   curso**, a passagem voltou `pulada` ("já está em andamento") e o dublê recebeu 4 chamadas da semana
+   do `ep-02`, não 8. A passagem seguinte propôs os 12 slots do `ep-02`: **zero colisões** entre os 24.
+5. O escutador da Evolution e da Meta recebeu **zero** pedidos. `smoke` com as rotas novas: 401.
+6. A 375 px (`next dev`, agent-browser): Semana com o proposto em cinza ("proposto, falta aprovar"),
+   o detalhe com "Próximo passo automático" e `/rotinas`, todas com `scrollWidth` 375.
+
+**A revisão (três revisores, 24/09/2026 ~16h)** mudou seis coisas no comportamento:
+
+- **O que a pessoa descartou ou apagou não volta sozinho.** A semana inteira descartada, a newsletter
+  da transcrição descartada e a página apagada no `/bio` (há `pauta.episodio_pagina_de_links` no
+  RASTRO e o episódio ficou sem página) param a rotina com o motivo na tela; refazer é o botão. A
+  newsletter do miolo **aprovada** também para a etapa (gerar a da transcrição a descartaria).
+- **A semana pela metade é `erro`** (IA ou teto de custo cortou numa matéria): entra no histórico e na
+  trava de três, e a passagem seguinte volta só às matérias sem peça nenhuma (`itens`), sem ir aos
+  slots. A matéria com um formato faltando fica para a mão, citada no motivo.
+- **A passagem lê os candidatos em lotes de 20** até dar os dois passos ou acabar a lista: os
+  episódios parados na Derivação (o fim normal do caminho) não escondem o novo.
+- **O "Rodar agora" passa por cima da dispensa**, como já passava da trava: o insumo que faltava
+  pode morar fora do episódio (a grade, a rodada, o env).
+- **Config ilegível lança** no executor (`configuração da rotina: …`), como na coleta, em vez de andar
+  todas as etapas; o GET mostra a parada. O GET também diz quando `ROTINAS_CRON=off` ou
+  `PAUTA_CRON=off` calam o tique (`rotina.calada`), e aí `dispara` é falso.
+- No distribuir à mão, o proposto às irmãs em rascunho do mesmo episódio ocupa o slot, e o proposto
+  da aprovada só vale se ainda está na grade vigente (grade editada ou feriado novo → próximo livre).
+
+Medido depois da revisão: api direto **2645 de 2645** em 65 arquivos (+11, todos sem banco; sem ele
+2071 passados e 574 pulados); web **555** em 43 (+1); typecheck e `typecheck:test` limpos; `db:diff`
+limpo. Pisos da CI: api 1958/57, web 374/34.
+
+**Pendências (do Pedro, e da onda):** criar a rotina em `/rotinas` depois do deploy (ela é o
+interruptor); a virada do papel restrito cala todas as rotinas, esta inclusive (§3); a grade da
+semana (D-MC11) é de onde os slots propostos saem — sem nota `pauta.semana.grade`, vale a padrão.
+Os prompts nunca viram modelo real: a primeira semana pode sair ruim em cadeia, e isso só aparece
+na revisão. Virar o slot proposto em agenda é a MD8.
+
+**Deploy:** a migration aditiva `20260924100000_pauta_peca_slot_proposto` entra depois das seis da
+frente (coluna nula e índice numa tabela com RLS); `SMOKE_ROTAS` ganha
+`/api/pauta/episodios/x/encadeamento`; nenhuma variável, capacidade, permissão ou seed nova.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -1352,6 +1439,15 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     fatia não podem ser verdadeiras juntas para uma capacidade confidencial: "o canal mostra
     exatamente o que vai sair" e "o canal não copia conteúdo não público para fora do sistema". Foi
     deixado no lado seguro, à espera de decisão.
+
+**Na pauta (onda D)**
+
+23. **MD1: montar a página de links passou pelo `umaPorVez`** (`pauta-pagina-de-links:<empresa>:<episódio>`):
+    o segundo clique simultâneo, ou o clique durante a passagem do encadeamento, é 409 na hora.
+24. **MD1: distribuir põe a peça aprovada no slot PROPOSTO dela** quando ele ainda está livre, no
+    futuro e na grade vigente (sem feriado novo); sem ele, o de antes. O proposto de outro episódio e
+    o das irmãs em rascunho do mesmo episódio passam a ocupar o slot para o distribuir. Descartar pelo
+    PATCH devolve o slot proposto; aprovar não converte proposto em agenda.
 
 ---
 

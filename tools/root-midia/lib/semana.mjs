@@ -452,7 +452,8 @@ export function aceitaRender(p) {
  * O calendário da semana (MC16) em linhas para o terminal: um dia por bloco,
  * cada slot com o horário, o formato, a peça e onde está a mídia para postar à
  * mão — o PNG no OS (baixar pela tela) ou o mp4 que ficou no Mac, pelo caminho;
- * o carrossel que subiu pela metade diz quantos PNG faltam. Só lê: postar e marcar como postada são da tela.
+ * o carrossel que subiu pela metade diz quantos PNG faltam. O slot só proposto
+ * pelo encadeamento (MD1) diz que falta aprovar. Só lê: postar e marcar como postada são da tela.
  * @param {any} agenda o `GET /pauta/agenda`
  * @returns {string[]}
  */
@@ -471,7 +472,13 @@ export function linhasDaAgenda(agenda) {
         linhas.push(`  ${l.hora}  ${l.formato.padEnd(9)}  (vago)`);
         continue;
       }
-      const estado = p.postada ? `postada${p.postada.url ? ` ${p.postada.url}` : ''}` : p.status;
+      // MD1: o slot só PROPOSTO pelo encadeamento não é agenda — não se posta.
+      const proposta = !p.postada && !p.agendadaPara && !!p.slotProposto;
+      const estado = p.postada
+        ? `postada${p.postada.url ? ` ${p.postada.url}` : ''}`
+        : proposta
+          ? `proposto, falta ${p.status === 'aprovada' ? 'distribuir' : 'aprovar'}`
+          : p.status;
       const midia =
         p.midia?.onde === 'mac'
           ? `mp4 no Mac: ${p.midia.arquivo}`

@@ -1,7 +1,8 @@
 import { AgentEstado } from '@prisma/client';
 import { validarCron } from '../pauta/cron';
 import { lerOrigensDaRodada } from '../pauta/origem-da-rodada';
-import { TIPO_PAUTA_COLETA } from './rotina.tipos';
+import { PautaEncadeamentoConfigSchema } from '@mktos/shared';
+import { TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR } from './rotina.tipos';
 
 /*
  * A ROTINA CRIADA PELA TELA — `POST /rotinas` (MC5). A parte pura.
@@ -64,9 +65,19 @@ function configDaColeta(bruto: Record<string, unknown>): ConfigLida {
   return { config };
 }
 
+/** As etapas do encadeamento (MD1): sem `etapas`, todas; repetida sai. */
+function configDoEncadeamento(bruto: Record<string, unknown>): ConfigLida {
+  const lida = PautaEncadeamentoConfigSchema.safeParse(bruto);
+  if (!lida.success) {
+    return { erro: 'config do encadeamento só aceita etapas: uma lista de pacote, pagina, newsletter, semana e slots.' };
+  }
+  return { config: lida.data.etapas ? { etapas: [...new Set(lida.data.etapas)] } : {} };
+}
+
 /** O que cada tipo aceita em `config`. Tipo fora daqui não recebe configuração. */
 const CONFIG_POR_TIPO: Readonly<Record<string, (bruto: Record<string, unknown>) => ConfigLida>> = {
   [TIPO_PAUTA_COLETA]: configDaColeta,
+  [TIPO_PAUTA_ENCADEAR]: configDoEncadeamento,
 };
 
 function texto(v: unknown): string | null {

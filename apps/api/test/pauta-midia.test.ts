@@ -277,7 +277,7 @@ function ep(over: Partial<Ep> = {}): Ep {
   };
 }
 
-type PecaFalsa = { id: string; orgId: string; rodadaId: string; canal: string; formato: string; status: string; meta: Record<string, unknown>; agendadaPara: Date | null };
+type PecaFalsa = { id: string; orgId: string; rodadaId: string; canal: string; formato: string; status: string; meta: Record<string, unknown>; agendadaPara: Date | null; slotProposto?: Date | null };
 
 function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGravar?: (lista: Ep[]) => void; pecas?: PecaFalsa[] } = {}) {
   const lista = opts.episodios ?? [ep()];
@@ -518,6 +518,19 @@ describe('mídia refeita: as peças da semana voltam ao rascunho', () => {
     expect(por('antiga').status).toBe('aprovada');
     expect(s.travas).toEqual(['pauta-semana:e1']);
     expect(s.auditoria[0]).toMatchObject({ after: { pecasAoRascunho: ['corte', 'story'] } });
+  });
+
+  it('MD1: o slot PROPOSTO pelo encadeamento também cai — a peça volta a esperar proposta', async () => {
+    const s = servico({
+      episodios: [ep({ status: 'edicao', midia: { ...MIDIA, recebidaEm: 'ontem' }, transcricao: SEGMENTOS })],
+      pecas: [
+        peca({ id: 'proposta', status: 'rascunho', agendadaPara: null, slotProposto: new Date('2026-09-28T15:00:00.000Z') }),
+        peca({ id: 'de-outro', status: 'rascunho', agendadaPara: null, slotProposto: new Date('2026-09-30T15:00:00.000Z'), meta: { episodioId: 'e9', itemId: 'c2', transcricaoSha: SHA_VELHO, imagens: [], video: null } }),
+      ],
+    });
+    await s.midia.registrarMidia(ORG, 'e1', PESSOA, PautaMidiaSchema.parse({ ...MIDIA, duracaoSeg: 500 }));
+    expect(s.pecas.find((p) => p.id === 'proposta')).toMatchObject({ status: 'rascunho', agendadaPara: null, slotProposto: null });
+    expect(s.pecas.find((p) => p.id === 'de-outro')?.slotProposto).toEqual(new Date('2026-09-30T15:00:00.000Z'));
   });
 
   it('a transcrição reenviada sem mídia nova: só a peça de outra fala volta ao rascunho', async () => {

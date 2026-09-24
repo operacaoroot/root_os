@@ -4,6 +4,7 @@ import { PautaModule } from '../pauta/pauta.module';
 import { ExecutoresDeRotinaRegistry } from './executores.registry';
 import { ExecutorDePauta } from './executores/pauta.executor';
 import { ExecutorDeColetaDaPauta } from './executores/pauta-coleta.executor';
+import { ExecutorDeEncadeamentoDaPauta } from './executores/pauta-encadear.executor';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -45,6 +46,7 @@ import { RotinasService } from './rotinas.service';
     ExecutoresDeRotinaRegistry,
     ExecutorDePauta,
     ExecutorDeColetaDaPauta,
+    ExecutorDeEncadeamentoDaPauta,
     RotinasService,
     RotinasScheduler,
   ],

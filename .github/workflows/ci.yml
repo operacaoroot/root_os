@@ -387,8 +387,25 @@ jobs:
       # foram reescritos, não somados.
       # Medido: 546 casos em 42 arquivos (540 + 6). O piso de ARQUIVOS sobe 1,
       # para 33; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para 366.
-      PISO_CASOS_WEB: '366'
-      PISO_ARQUIVOS_WEB: '33'
+      #
+      # MD1, O ENCADEAMENTO (24/09/2026): +8 casos, +1 arquivo —
+      # `component/pauta-encadeamento` (o slot proposto em cinza com "proposto,
+      # falta aprovar", sem reagendar nem postar, e a aprovada ainda sem agenda
+      # com "falta distribuir"; quem é proposta; a "Nova rotina de
+      # encadeamento" com os padrões e config vazia, as etapas desmarcadas na
+      # ordem do caminho e nenhuma marcada travando o botão; o botão em
+      # /rotinas só com o tipo disponível; o próximo passo automático no
+      # detalhe, sem consulta antes da transcrição e sumindo depois de
+      # Agendado; o texto parado e o da rotina pausada). Medido: 554 casos em 43
+      # arquivos (546 + 8). O piso de ARQUIVOS sobe 1, para 34; o de CASOS sobe
+      # 7 (~15% de folga sobre os 8 novos), para 373.
+      #
+      # MD1, A REVISÃO (24/09/2026): +1 caso em `component/pauta-encadeamento`
+      # (com o agendador calado por ROTINAS_CRON/PAUTA_CRON a linha diz qual, e
+      # não que a rotina vai andar). Medido: 555 casos em 43 arquivos. O piso de
+      # CASOS sobe 1, para 374; o de ARQUIVOS fica em 34.
+      PISO_CASOS_WEB: '374'
+      PISO_ARQUIVOS_WEB: '34'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1323,8 +1340,48 @@ jobs:
       # Para quem for remedir: 2581 casos em 64 arquivos com o banco de teste,
       # e 2009 passados / 572 pulados sem ele (1991 + 18). O piso de ARQUIVOS
       # fica em 56; o de CASOS sobe 15 (~15% de folga sobre os 18), para 1916.
-      PISO_CASOS_API: '1916'
-      PISO_ARQUIVOS_API: '56'
+      #
+      # MD1, O ENCADEAMENTO DA TRANSCRIÇÃO À SEMANA EM RASCUNHO (24/09/2026):
+      # +39 casos, +1 arquivo. `pauta-encadeamento` (37: o `proximoPasso` em
+      # cada estado — antes da transcrição e depois de Agendado não mexe, a
+      # ordem pacote → página → newsletter → semana → slots, sem bio/sem título
+      # sem página, sem transcrição para, slots só na Derivação, os motivos da
+      # parada, as etapas da config, a dispensada e a varredura de todas as
+      # combinações provando que nunca publica; as etapas da config e o
+      # `POST /rotinas` do tipo novo; a trava de três erros, o destravar quando
+      # alguém mexe e a dispensa; o desfecho do passo e da passagem; o serviço
+      # com dublês — cinco passagens até a semana com um evento por etapa, teto
+      # de dois episódios, as etapas da config, erro/trava/"Rodar agora", a
+      # página dispensada; o 409 do `umaPorVez` com o `DerivacaoService`, o
+      # `PacoteService` e o `NewsletterService` de verdade como `pulada` sem
+      # IA; o GET do episódio e a trava nele, a permissão da rota; os slots
+      # propostos sem colisão, a peça nova do mesmo episódio, fora da Derivação,
+      # o PATCH que não converte, distribuir no proposto e a semana em cinza; E
+      # COM BANCO, 1, pulado sem ele: dois episódios propondo pela sessão) e
+      # `pauta-midia` +1 (a mídia refeita zera o slot proposto); `root-midia`
+      # +1 (a agenda no terminal diz "proposto, falta aprovar"); em
+      # `pauta-semana` o caso de derivar de novo ganhou a conferência do slot
+      # zerado, sem caso novo.
+      #
+      # Para quem for remedir: 2634 casos em 65 arquivos com o banco de teste
+      # (a base de 2595 inclui o que entrou depois da conta acima). Sem ele,
+      # +38 passados e +1 pulado. O piso de ARQUIVOS sobe 1, para 57; o de
+      # CASOS sobe 33 (~15% de folga sobre os 38 que rodam sem banco), para 1949.
+      #
+      # MD1, A REVISÃO (24/09/2026): +11 casos em `pauta-encadeamento`, todos
+      # sem banco — o descarte da semana e da newsletter e a página apagada no
+      # /bio não voltam sozinhos (puro e no serviço, sem chamar a IA); a
+      # newsletter do miolo aprovada segura a da transcrição (puro e serviço);
+      # a semana pela metade é erro e refaz só a matéria sem peça (puro e
+      # serviço); os 21 parados na Derivação não escondem o episódio novo; o
+      # "Rodar agora" passa por cima da dispensa; o tique calado e a config
+      # ilegível no GET; distribuir sem cair no proposto da irmã em rascunho e
+      # só no proposto que ainda está na grade (grade editada, feriado). Medido:
+      # 2645 casos em 65 arquivos com o banco; sem ele, 2071 passados e 574
+      # pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 9 (~15% de
+      # folga sobre os 11), para 1958.
+      PISO_CASOS_API: '1958'
+      PISO_ARQUIVOS_API: '57'
 
     steps:
       - uses: actions/checkout@v4
