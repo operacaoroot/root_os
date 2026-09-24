@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_DIA_DA_SEMANA_ROTULO,
@@ -202,6 +202,9 @@ function PecaNoSlot({
       )}
       {peca.midia.onde === 'mac' && (
         <div className="space-y-1 text-xs">
+          <p className="break-words text-warn">
+            O vídeo ficou no Mac: poste de lá ou mande por AirDrop para o celular antes do horário.
+          </p>
           <p className="break-all">
             <span className="text-muted">arquivo no Mac: </span>
             <span className="font-mono">{peca.midia.arquivo}</span>
@@ -386,6 +389,16 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aPartirDe, setAPartirDe] = useState('');
   const [resultado, setResultado] = useState<{ apelido: string; r: PautaDistribuicao } | null>(null);
+  // Na primeira carga da semana corrente a tela desce até hoje: no celular, na
+  // sexta, eram uns dez slots de segunda a quinta antes do que vai ao ar agora.
+  const hojeRef = useRef<HTMLElement | null>(null);
+  const jaFoiAteHoje = useRef(false);
+
+  useEffect(() => {
+    if (jaFoiAteHoje.current || de !== null || !agenda || !hojeRef.current) return;
+    jaFoiAteHoje.current = true;
+    hojeRef.current.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [agenda, de]);
 
   const carregar = useCallback(async () => {
     if (!token) return;
@@ -510,7 +523,12 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
 
       <div className="space-y-3">
         {agenda.dias.map((d) => (
-          <section key={d.dia} className="rounded-lg border border-border p-3" aria-label={`${PAUTA_DIA_DA_SEMANA_ROTULO[d.diaDaSemana]} ${diaCurto(d.dia)}`}>
+          <section
+            key={d.dia}
+            ref={d.dia === agenda.hoje ? hojeRef : undefined}
+            className="scroll-mt-4 rounded-lg border border-border p-3"
+            aria-label={`${PAUTA_DIA_DA_SEMANA_ROTULO[d.diaDaSemana]} ${diaCurto(d.dia)}`}
+          >
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold">
                 {PAUTA_DIA_DA_SEMANA_ROTULO[d.diaDaSemana]} {diaCurto(d.dia)}

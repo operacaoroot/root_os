@@ -225,7 +225,7 @@ describe('marcar, salvar e confirmar', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar (1)' }));
     expect(apiPost).toHaveBeenCalledWith('/pauta/rodadas/r1/curadoria/confirmar', { marcados: ['c2'] }, 'tok');
     expect(onMudou).toHaveBeenCalled();
-    expect(await screen.findByRole('status')).toHaveTextContent('1 item(ns) seguem');
+    expect(await screen.findByRole('status')).toHaveTextContent('Curadoria confirmada: 1 matéria segue. Próximo passo: criar o episódio.');
   });
 
   it('"Marcar sugeridos" marca só os sugeridos, e Salvar grava a marcação sem confirmar', async () => {

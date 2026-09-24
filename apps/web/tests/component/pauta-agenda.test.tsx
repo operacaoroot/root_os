@@ -277,10 +277,30 @@ describe('a aba Semana', () => {
     expect(within(car).getByRole('button', { name: 'Marcar como postada' })).toBeInTheDocument();
   });
 
+  it('na primeira carga a tela desce até hoje, uma vez só', async () => {
+    const rolou: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      rolou.push(this.getAttribute('aria-label') ?? '');
+    };
+    try {
+      apiGet.mockResolvedValue(agenda({ hoje: '2026-09-30' }));
+      renderAba();
+      await waitFor(() => expect(rolou).toEqual(['Qua 30/09']));
+      await userEvent.click(screen.getByRole('button', { name: /Próxima/ }));
+      await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2));
+      expect(rolou).toEqual(['Qua 30/09']);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('o corte que ficou no Mac mostra o caminho; sem mídia, o comando que a faz', async () => {
     renderAba();
     const corte = await waitFor(() => within(oDia('Ter 29/09')).getByLabelText('Corte vertical de ep-04'));
     expect(corte).toHaveTextContent('arquivo no Mac: /Users/pedro/Movies/root-midia/ep-04/ep-04-m1-corte.mp4');
+    // No celular o caminho não serve: a tela diz como o vídeo chega até o post.
+    expect(corte).toHaveTextContent('O vídeo ficou no Mac: poste de lá ou mande por AirDrop para o celular antes do horário.');
     expect(within(corte).getByRole('button', { name: 'Copiar caminho' })).toBeInTheDocument();
     expect(within(corte).queryByRole('button', { name: 'Baixar mídia' })).toBeNull();
     expect(oDia('Qua 30/09')).toHaveTextContent('Sem mídia ainda — no Mac: /root-midia stories ep-04');

@@ -61,16 +61,12 @@ export default function PautaPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm text-muted">
-          A rotina coleta os feeds, cura a janela numa chamada só e deriva uma peça por canal —
-          usando as fichas campeãs de{' '}
-          <a href="/referencias" className="text-brand hover:underline">
-            Referências
-          </a>{' '}
-          como molde.
-        </p>
-      </div>
+      <ol className="list-decimal space-y-0.5 pl-5 text-sm text-muted" aria-label="O caminho da semana">
+        <li>Quinta à noite a rotina coleta as fontes do Radar. Ela não escolhe nada.</li>
+        <li>Curadoria: marcar à mão o que segue; a IA só sugere.</li>
+        <li>Episódio: roteiro, gravação, /root-midia no Mac, pacote do YouTube e semana de posts.</li>
+        <li>Semana: cada slot com a legenda e a mídia para postar à mão.</li>
+      </ol>
 
       <div className="flex flex-wrap gap-x-4 border-b border-border">
         {ABAS.map((a) => (

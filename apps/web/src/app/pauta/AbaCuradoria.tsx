@@ -173,7 +173,9 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
         { marcados: [...marcados] },
         token,
       );
-      setAviso(`Curadoria confirmada: ${r.itens} item(ns) seguem. A rodada está em Rodadas, pronta para gerar peças.`);
+      setAviso(
+        `Curadoria confirmada: ${r.itens} ${r.itens === 1 ? 'matéria segue' : 'matérias seguem'}. Próximo passo: criar o episódio.`,
+      );
       setConfirmada(selecionada);
       setSelecionada(null);
       onMudou();
