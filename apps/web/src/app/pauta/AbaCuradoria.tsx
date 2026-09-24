@@ -331,9 +331,12 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
             {visiveis.length === 0 && <li className="text-sm text-muted">Nada neste filtro.</li>}
           </ul>
 
-          {/* pr-40 deixa livre o canto do botão flutuante "perguntar" (fixed, z-40), que cobriria o Confirmar. */}
-          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-bg/95 py-3 pl-1 pr-40 backdrop-blur">
-            <span className="text-sm" aria-live="polite">
+          {/* O botão flutuante "perguntar" (fixed, z-40, ~130 px no canto de baixo) cobriria o Confirmar.
+              No desktop a barra deixa livre o canto à direita (pr-40); a 375 px isso sobrava ~115 px de
+              largura, a barra empilhava um botão por linha e tomava um terço da tela — lá ela usa a
+              largura toda e deixa livre a faixa de baixo (pb-[4.5rem]). */}
+          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-bg/95 pb-[4.5rem] pl-1 pr-1 pt-3 backdrop-blur sm:pb-3 sm:pr-40">
+            <span className="whitespace-nowrap text-sm" aria-live="polite">
               <strong>{marcados.size}</strong> de {candidatos.length} marcado(s)
             </span>
             {sujo && <span className="text-xs text-warn">não salvo</span>}
