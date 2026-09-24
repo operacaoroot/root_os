@@ -38,6 +38,7 @@ import { TIPO_PAUTA_RODADA } from '../src/routines/rotina.tipos';
 import type { RssService } from '../src/pauta/rss.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 import { AuditService } from '../src/audit/audit.service';
+import { destinoDosItens } from '../src/pauta/curadoria-da-rodada';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
 // MC10: sem perfil, as peças recebem o tom da casa.
@@ -753,7 +754,7 @@ describe('rodada: o rótulo de origem', () => {
     expect(unicas[0].origens).toEqual(['W', 'N']);
     expect(linhaDoInsumo(unicas[0], 1)).toContain('origem: W+N · fonte: Grupo de links (WhatsApp)');
     expect(comOrigem([{ titulo: 'A', url: 'https://noticia.exemplo/a' }], unicas)).toEqual([
-      { titulo: 'A', url: 'https://noticia.exemplo/a', origem: 'W' },
+      { titulo: 'A', url: 'https://www.noticia.exemplo/a/', origem: 'W' },
     ]);
   });
 
@@ -776,11 +777,8 @@ describe('rodada: o rótulo de origem', () => {
       ],
       capturas,
     );
-    expect(itens).toEqual([
-      { titulo: 'Inventada', url: 'https://inventada.exemplo/y' },
-      { titulo: 'B', url: 'https://x.com/sama/status/1', origem: 'C' },
-      { titulo: 'L falsa', url: 'https://outra.exemplo/z' },
-    ]);
+    // URL que não casa com captura nenhuma sai inteira: não há origem a quem atribuí-la.
+    expect(itens).toEqual([{ titulo: 'B', url: 'https://x.com/sama/status/1', origem: 'C' }]);
   });
 
   it('insumo: o lote novo de creators não tira do corte o link antigo do grupo; post velho de creator fica de fora', () => {
@@ -810,7 +808,7 @@ describe('rodada: o rótulo de origem', () => {
     expect(insumo.at(-1)?.url).toBe('https://noticia.exemplo/semana');
   });
 
-  it('o item escolhido ganha a origem da captura; newsletter escolhida sai; URL que não casa segue sem origem', () => {
+  it('o item escolhido ganha a origem e a URL da captura; newsletter escolhida sai; URL que não casa sai', () => {
     const capturas: CapturaDoInsumo[] = [
       { titulo: 'A', url: 'https://noticia.exemplo/a', bruto: {}, fonte: GRUPO },
       { titulo: 'B', url: 'https://x.com/sama/status/1', bruto: {}, fonte: CREATOR },
@@ -826,9 +824,8 @@ describe('rodada: o rótulo de origem', () => {
       capturas,
     );
     expect(itens).toEqual([
-      { titulo: 'A', url: 'https://www.noticia.exemplo/a/', origem: 'W' },
+      { titulo: 'A', url: 'https://noticia.exemplo/a', origem: 'W' },
       { titulo: 'B', url: 'https://x.com/sama/status/1', origem: 'C' },
-      { titulo: 'Z', url: 'https://outra.exemplo/z' },
     ]);
   });
 });
@@ -914,6 +911,25 @@ describe('rodada: gerar() lê todas as origens', () => {
     ]);
     await r.rodadas.gerar(ORG, PESSOA);
     expect(r.gravadas.at(-1)?.itens).toEqual([{ titulo: 'Matéria do feed', url: 'https://feed.exemplo/1', origem: 'R' }]);
+  });
+
+  it('a URL que o modelo tirou do texto de um creator não vira item, nem destino da peça do grupo', async () => {
+    // O post vigiado traz um endereço no texto; o modelo o devolve como URL do item.
+    const r = rodadaFalsa([
+      { titulo: 'Ferramenta grátis', url: 'https://phish.exemplo/login' },
+      { titulo: 'Vídeo do creator', url: 'https://youtube.com/watch?v=abc&utm_source=x' },
+    ]);
+    await r.rodadas.gerar(ORG, PESSOA);
+    const itens = r.gravadas.at(-1)?.itens;
+    expect(itens).toEqual([{ titulo: 'Vídeo do creator', url: 'https://youtube.com/watch?v=abc', origem: 'C' }]);
+    expect(JSON.stringify(itens)).not.toContain('phish');
+    expect(destinoDosItens(itens)).toBe('https://youtube.com/watch?v=abc');
+  });
+
+  it('sem nenhum item que case com captura, a rodada falha em vez de gravar só o que o modelo inventou', async () => {
+    const r = rodadaFalsa([{ titulo: 'Inventada', url: 'https://phish.exemplo/login' }]);
+    await expect(r.rodadas.gerar(ORG, PESSOA)).rejects.toThrow('não selecionou nenhum item');
+    expect(r.gravadas.at(-1)).toMatchObject({ status: 'falhou' });
   });
 
   it("a rodada de antes continua disponível: origens ['R', 'N'] consulta só o feed e a busca", async () => {

@@ -239,31 +239,36 @@ export interface ItemEscolhido {
 }
 
 /**
- * Os itens que a IA escolheu, com a origem da captura de mesma chave. O item
- * que casa com uma origem sem link público sai; o que não casa com captura
- * nenhuma segue sem origem, como antes do MC4. A origem é sempre a nossa:
- * a que a IA devolver no item é descartada, porque o prompt mostra a letra e
- * ela pode ecoar qualquer coisa. Matéria em mais de uma origem leva a primeira
- * de `PAUTA_ORIGENS` (W antes de todas).
+ * Os itens que a IA escolheu, com a origem e a URL da captura de mesma chave.
+ * O item que casa com uma origem sem link público sai, e o que não casa com
+ * captura nenhuma também: o prompt leva texto de terceiros (post de creator,
+ * mensagem do grupo, trecho de newsletter), e um endereço escrito ali viraria
+ * link do grupo, da página de links e da descrição. Pelo mesmo motivo a URL
+ * gravada é a da captura, nunca a que o modelo escreveu. A origem também é
+ * sempre a nossa: a que a IA devolver é descartada. Matéria em mais de uma
+ * origem leva a primeira de `PAUTA_ORIGENS` (W antes de todas).
  */
 export function comOrigem<T extends ItemEscolhido>(
   escolhidos: readonly T[],
   capturas: readonly CapturaDoInsumo[],
 ): Array<Omit<T, 'origem'> & { origem?: PautaOrigem }> {
-  const porChave = new Map<string, Set<PautaOrigem>>();
+  const porChave = new Map<string, { url: string; origens: Set<PautaOrigem> }>();
   for (const c of capturas) {
     if (!c.url) continue;
     const chave = normalizarUrlDaCaptura(c.url);
-    const origens = porChave.get(chave) ?? new Set<PautaOrigem>();
-    for (const o of origensDa(c)) origens.add(o);
-    porChave.set(chave, origens);
+    const casada = porChave.get(chave) ?? { url: c.url, origens: new Set<PautaOrigem>() };
+    for (const o of origensDa(c)) casada.origens.add(o);
+    porChave.set(chave, casada);
   }
   const saida: Array<Omit<T, 'origem'> & { origem?: PautaOrigem }> = [];
   for (const item of escolhidos) {
     const { origem: _daIa, ...resto } = item as T & { origem?: unknown };
-    const origens = item.url ? emOrdem(porChave.get(normalizarUrlDaCaptura(item.url)) ?? []) : [];
-    if (temOrigemSemLinkPublico(origens) || ehUrlDeCaixaDeEntrada(item.url)) continue;
-    saida.push(origens.length ? { ...resto, origem: origens[0] } : resto);
+    const casada = item.url ? porChave.get(normalizarUrlDaCaptura(item.url)) : undefined;
+    if (!casada) continue;
+    const origens = emOrdem(casada.origens);
+    if (temOrigemSemLinkPublico(origens) || ehUrlDeCaixaDeEntrada(casada.url)) continue;
+    const comUrl = { ...resto, url: casada.url };
+    saida.push(origens.length ? { ...comUrl, origem: origens[0] } : comUrl);
   }
   return saida;
 }

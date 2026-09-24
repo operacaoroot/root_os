@@ -376,7 +376,8 @@ describe('MC-R 1: a regra única do link público', () => {
     const captura = { id: 'c1', titulo: 'Sem fonte', url: PERMALINK, nota: null, bruto: {}, fonte: null };
     expect(candidatoDaCaptura(captura).semLinkPublico).toBe(true);
     semGmail(linhaDoInsumo(captura, 1));
-    expect(comOrigem([{ titulo: 'Sem fonte', url: PERMALINK }, { titulo: 'Pública', url: PUBLICO }], [captura])).toEqual([
+    const publica = { id: 'c2', titulo: 'Pública', url: PUBLICO, nota: null, bruto: {}, fonte: null };
+    expect(comOrigem([{ titulo: 'Sem fonte', url: PERMALINK }, { titulo: 'Pública', url: PUBLICO }], [captura, publica])).toEqual([
       { titulo: 'Pública', url: PUBLICO },
     ]);
   });
