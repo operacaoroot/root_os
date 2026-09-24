@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { OnboardingFase, type OnboardingItem, type OnboardingTrilho } from '@prisma/client';
 
 import { comTenantPublico, resolverTenantDoConvite } from '../../common/tenant-publico';
+import { env } from '../../llm/env';
 import { TranscricaoIndisponivelError, TranscricaoService } from '../../llm/transcricao.provider';
 import { PrismaService } from '../../prisma/prisma.service';
 import { aceitaEscrita, estadoDoConvite, hashDoToken, tokenBemFormado, type EstadoDoConvite } from './convite';
@@ -86,6 +87,13 @@ export interface EstadoDoLink {
   validoAte: string;
   concluido: boolean;
   kickoffEm: string | null;
+  /**
+   * O botão de áudio só aparece quando a transcrição está configurada E ligada
+   * (`ONBOARDING_AUDIO=on`). Padrão DESLIGADO (24/09): a conta da OpenAI ficou
+   * sem crédito e o cliente via um botão que não funcionava. Religar é
+   * variável no compose + `.env`, depois de haver crédito.
+   */
+  audioDisponivel: boolean;
   itens: ItemDoLink[];
   /** O trecho do cliente, do acordo à memória viva, com a estação de hoje. */
   mapa: MapaDoCliente;
@@ -221,6 +229,7 @@ export class LinkPublicoService {
       validoAte: r.validoAte.toISOString(),
       concluido: r.estado === 'concluido',
       kickoffEm: t.kickoffEm ? t.kickoffEm.toISOString() : null,
+      audioDisponivel: this.audioLigado(),
       itens,
       mapa,
       ordem: ordemDoKickoff(itens),
@@ -375,6 +384,10 @@ export class LinkPublicoService {
     });
   }
 
+  audioLigado(): boolean {
+    return this.transcricao.configured && env('ONBOARDING_AUDIO', 'off').trim().toLowerCase() === 'on';
+  }
+
   /** O áudio vira texto e a resposta entra como `respondido por áudio`. */
   async responderPorAudio(
     token: string,
@@ -383,6 +396,7 @@ export class LinkPublicoService {
     mimetype: string,
     nome: string | null,
   ): Promise<{ texto: string; estado: EstadoDoLink }> {
+    if (!this.audioLigado()) throw new ConflictException('a resposta por áudio está desligada. Responda por texto.');
     const r = await this.resolver(token);
     if (r.estado !== 'ativo') throw new ConflictException('este link já foi concluído.');
     // Conferir ANTES de pagar a transcrição: convite aberto e tema deste link.

@@ -339,6 +339,7 @@ export interface EstadoDoLink {
   validoAte: string;
   concluido: boolean;
   kickoffEm: string | null;
+  audioDisponivel: boolean;
   itens: ItemDoLink[];
   mapa: MapaDoCliente;
   ordem: OrdemDoKickoff;
