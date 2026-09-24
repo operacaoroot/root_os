@@ -421,6 +421,148 @@ manutenção com a conexão dona. Até essa decisão, a rodada da semana só sai
 `/rotinas`. O grupo de links não depende de rotina (entra pelo webhook, sob `comTenantPublico`),
 mas a escrita dele ainda não foi medida com `TENANT_DATABASE_URL`.
 
+### Onda MC-B — do episódio à newsletter · `23fa681` (24/09/2026)
+
+Fases 2 e 3 do `docs/PLANO-MAQUINA-DE-CONTEUDO.md`, fatias MC7 a MC13, na mesma branch
+`root-os/maquina-de-conteudo`, por cima do fechamento da MC-A (`a72ddd9`). Nada empurrado, nada
+mesclado, nada na VPS. Sete commits, um por fatia, na ordem do plano.
+
+| Fatia | Commit | O que entrou | Parcial? |
+|---|---|---|---|
+| MC7 | `668992e` | Entidade `PautaEpisodio` (migration `20260924060000_pauta_episodio`), 1:1 com a rodada `curada`, número sequencial por empresa, status de `roteiro` a `concluido` andando um passo por vez (`transicaoDoEpisodio`, shared). Filho com sentinela `''` + gatilho `mktos_orgid_do_pai` para a rodada **e** para `bioPageId`, que virou FK para `BioPage` com `SET NULL`. Aba "Episódios" em `/pauta` e "Criar episódio" nas abas Rodadas e Curadoria | Não no código. Duas decisões esperam o Pedro: do Concluído dá para voltar a Agendado; e coleta/curadoria continuam sendo status da rodada, não do episódio (o plano listava as duas no episódio). A aba foi vista a 375px no fechamento (abaixo) |
+| MC8 | `5dc2149` | Roteiro: `SYSTEM_ROTEIRO` devolve ordem e texto, o sistema monta o markdown com o link do item (nunca o do modelo) e a palavra de corte no topo. Gerar leva a `gravacao`; editar com versão lida; `.md` para abrir na gravação; espelho opcional. Palavra de corte por episódio (migration `20260924070000_pauta_episodio_palavra_de_corte`) ou por empresa (nota `pauta.palavra-de-corte`), padrão `root, corta` | **Sim.** D-MC2 (a palavra) é do Pedro. Nenhum LLM real foi chamado: o formato do prompt só foi provado com dublê. O espelho no Drive e na vault real não foi exercitado |
+| MC9 | `9ff2142` | `tools/root-midia` (Node 22, sem dependência: silêncios, palavra de corte, cortar, transcrever pelo `whisper-cli`, enviar) e a skill `/root-midia`. O vídeo **fica no Mac**; o OS recebe só o leve por `GET …/pendentes-midia`, `POST …/:id/midia` (→ Edição) e `POST …/:id/transcricao` (→ Pacote), pelo login normal da API | **Sim.** Sem modelo do whisper (D-MC3) não houve bruto real de 10 min, e sem ele a palavra de corte não é detectada. O caminho pelo PalmierPro está só descrito: o MCP dele recusou conexão (app fechado). Transcrição acima de ~40 min de fala esbarra no corpo de 100 kB do Nest |
+| MC10 | `1d6becb` | Perfil de voz: `POST /pauta/voz/aprender` destila as transcrições (e textos colados) por `SYSTEM_VOZ` e grava versão nova da nota `voz.pedro` pelo `MemoriaService` (caminho da ADR-011, exceção registrada na própria ADR); `VozService.bloco` entra no roteiro e nas peças. Aba "Voz" | **Sim.** O critério é o teste cego com o Pedro. A curadoria (`SYSTEM_CURADORIA`) ficou com a voz própria. A rota exige `pauta.editar`, não `obsidian.editar`, com a chave presa ao prefixo `voz.` — confirmar com o Pedro |
+| MC11 | `b9235c2` | Pacote do YouTube: 3 títulos, descrição com capítulos conferidos pelas regras do YouTube (consertados ou tirados com motivo), links só de item com link público, 3 briefs de thumb; `root-midia thumbs ep-NN` renderiza `thumb.html` num Chrome sem janela e sobe o PNG (≤ 2 MB) para o MinIO | **Sim.** Falta a transcrição de um episódio real. O upload das thumbs contra um MinIO de verdade não foi provado (o ambiente de teste não tem `S3_*`). Thumb substituída fica no MinIO (o `StorageService` não apaga). As fontes vêm do Google Fonts na hora do render |
+| MC12 | `5c7df88` | Página de links: uma `BioPage` por episódio (handle `<slug>-ep-NN`), um botão por matéria de link público e os links da casa da nota `pauta.pagina-de-links.chamadas`, idempotente por `BioLink.chave` (migration `20260924080000_pauta_pagina_de_links`). Publicar passa pelo mesmo `BioService.publicar` do `/bio` e exige `pauta.publicar` + `bio.editar`. A peça do grupo sai com link de campanha medido na página do episódio no ar | **Sim.** Falta publicar e clicar de verdade em `bio.operacaoroot.com`. **Mudança de comportamento:** peça de rodada sem episódio no ar sai com o link cru (motivo no `rastreio`); antes era medida pela primeira `BioPage` da empresa |
+| MC13 | `23fa681` | Newsletter tirada da transcrição, gravada como `PautaPeca` newsletter/email da rodada, com a checagem anti-slop pura do shared (refaz uma vez; persistindo, grava com os apontamentos), `.md`/`.html` para copiar, marcadores `{{pagina-de-links}}` e `{{video}}` trocados quando existem | **Sim.** D-MC7 (destino) está em aberto: não há rota de envio e o canal newsletter segue recusado com 400. Falta a transcrição real e a conferência do texto com o Pedro |
+
+**Medido no fechamento** (Mac, banco de teste descartável `marketing_os_test` no container
+`mktos-mc-db`, pgvector pg16, política semeada, 24/09/2026 ~02h40):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck` (com `--force`, sem cache do turbo) | 7 de 7 tarefas verdes |
+| `pnpm --filter @mktos/api typecheck:test` | limpo |
+| `turbo run test --force` | policy **74** em 2 arquivos · api **1847 passando / 570 pulados** em 56 arquivos (+ 5 pulados) · web **506** em 39 arquivos |
+| `pnpm --filter @mktos/api test` direto, com `TEST_DATABASE_URL` | **2417 de 2417** em 61 arquivos |
+| `pnpm --filter @mktos/api test:porta` | **39** |
+| `pnpm --filter @mktos/api test:isolamento` com `TENANT_DATABASE_URL` no papel restrito (`mktos_app`/`ci`) | **326** em 1 arquivo. Os +7 são a semente de `PautaEpisodio`, a única tabela nova da onda |
+| `pnpm --filter @mktos/api db:diff` | `No difference detected.` |
+| `db:deploy` num banco **novo** (`marketing_os_e2e`, criado vazio no mesmo container) | todas as migrations aplicam do zero, as três da onda inclusive; depois `db:seed:politica` (62 capacidades) e `db:seed` com senhas descartáveis |
+| `pnpm --filter @mktos/api build` + `smoke` | **SMOKE OK** duas vezes: as cinco rotas padrão e, com `SMOKE_ROTAS`, `/api/pauta/episodios`, `/api/pauta/episodios/pendentes-midia` e `/api/pauta/voz`, todas 401. As 29 rotas novas de `/api/pauta/episodios/…` e `/api/pauta/voz…` aparecem mapeadas, e `pendentes-midia` antes de `:id`. Linha de boot: `política base v1 carregada DO BANCO (62 capacidades)`, 21 capacidades com efeito ligado. Variáveis descartáveis: `JWT_SECRET` de teste, `ROTINAS_CRON=off` e os seis intervalos em 0 |
+
+Contra a linha de base da MC-A (api 2036 em 53 arquivos, web 420 em 32, policy 74, porta 39,
+isolamento 319): **+381 casos e +8 arquivos na api** (`pauta-episodio`, `pauta-roteiro`,
+`pauta-midia`, `root-midia`, `pauta-voz`, `pauta-pacote`, `pauta-pagina-de-links`,
+`pauta-newsletter`), **+86 casos e +7 arquivos no web** (um `component/pauta-*` por fatia), +7 no
+isolamento. Policy e porta iguais. Os pisos da CI subiram fatia a fatia, com a conta no comentário
+(web 332/30; api 1778/53). **O fechamento não achou nada quebrado pela onda, e por isso não há
+commit de conserto.**
+
+**Ensaio ponta a ponta, local.** API compilada (`dist/main.js`) contra o banco novo
+`marketing_os_e2e`, com a conta `admin@marketing-os.local` do seed e senha descartável. O LLM foi
+um **dublê** local compatível com Chat Completions (`LLM_PROVIDER=openai`, `OPENAI_BASE_URL` em
+`127.0.0.1`, chave falsa), que devolve JSON fixo no formato de cada prompt. Nenhuma chave real.
+Duas fontes e três capturas inseridas por SQL (um RSS com duas matérias e uma newsletter de origem
+L com permalink do Gmail). O que rodou de verdade, em ordem:
+
+1. `POST /pauta/rodadas/curadoria` → rodada em `aguardando_curadoria` com 3 candidatos e a
+   sugestão da IA; marcar e confirmar → `curada`.
+2. `POST /pauta/episodios` → `ep-01` em `roteiro`; `…/roteiro/gerar` → `gravacao`. O roteiro saiu
+   com a palavra `root, corta` no topo, o link de cada matéria pelo item e, na newsletter L,
+   "sem link público — cite <fonte>" (o permalink do Gmail não aparece).
+3. `tools/root-midia`: bruto sintético de 200 s (ffmpeg, dois silêncios) → `silencios` → `cortes`
+   → `cortar` (189,8 s, reencodado) → `pendentes` → `enviar ep-01 --final --cortes --transcricao`
+   com uma transcrição **escrita à mão** (6 segmentos; não houve whisper) → `edicao` e depois
+   `pacote`.
+4. `…/pacote/gerar` → 3 títulos, 3 capítulos conferidos, os dois links públicos, o marcador da
+   página e 3 briefs de thumb.
+5. `…/pagina-de-links` → `BioPage` `root-ep-01` com 2 botões e o aviso da newsletter que ficou de
+   fora; `…/publicar` → no ar; a descrição do pacote passou a sair com
+   `https://bio.operacaoroot.com/@root-ep-01` no lugar do marcador. `GET /api/bio/public/page/root-ep-01`
+   devolveu os dois botões; `GET /api/bio/r/<linkId>` com cookie `rid` → 302 para a matéria e uma
+   linha `link_click` em `BioEvent` e em `PixelEvent`.
+6. `…/newsletter/gerar` → checagem aprovada, uma seção por matéria falada (a L sem linha "Fonte");
+   `PUT …/newsletter/video` e o `.md`/`.html` com os dois marcadores trocados.
+7. `POST /pauta/voz/aprender` com o episódio → nota `voz.pedro` versão 1.
+8. Status até `agendado` e `concluido`; gerar o pacote depois disso é recusado com 400.
+
+O RASTRO ficou com uma linha por passo (`pauta.rodada_para_curadoria`, `…curadoria_marcada`,
+`…curadoria_confirmada`, `…episodio_criado`, `…episodio_roteiro_gerado`, `…episodio_midia`,
+`…episodio_transcricao`, `…episodio_pacote_gerado`, `…episodio_pagina_de_links`,
+`bio.page_create`, `bio.page_publish`, `…newsletter_gerada`, `…newsletter_video`, três
+`…episodio_status`). O dublê recebeu 5 chamadas, todas reconhecidas. `root-midia ensaio` e
+`ensaio-thumb` (1280×720, 573 kB, Chrome de `/Applications`) também passaram.
+
+Com o web em `next dev` contra essa API, a aba Episódios e o detalhe inteiro do `ep-01` foram
+abertos num Chrome sem janela (agent-browser) a **375×812**: `scrollWidth` 375, nenhum elemento
+passando da borda, linha do tempo e seções quebrando linha. O único alerta da página é o de
+hidratação do `data-os-theme` no `<html>`, que vem de `d81991a`, anterior à frente.
+
+**O que não rodou no ensaio:** LLM real (os prompts nunca viram um modelo), whisper (sem modelo),
+PalmierPro (app fechado), `root-midia thumbs` com upload (sem MinIO/`S3_*`), espelho no Drive/vault,
+a peça do WhatsApp com o link de campanha (coberta só pelos testes do serviço) e o papel restrito
+na API de pé (o ensaio conectou como dono; o isolamento das tabelas novas foi medido pela suíte).
+O banco `marketing_os_e2e` ficou no container descartável.
+
+**O que não foi feito, e por quê:**
+
+- **Nada rodou contra sistema externo nem com gravação real.** Os critérios de MC9, MC11 e MC13
+  ("bruto real de 10 min", "episódio real", "frases ditas no vídeo") dependem do modelo do whisper
+  e de uma gravação do Pedro.
+- **As decisões de produto ficaram com o Pedro** (lista abaixo). Nenhuma foi tomada por agente
+  além do que cada fatia registrou como decisão provisória.
+- **MC14 a MC18 e D-MC6, D-MC8, D-MC9** ficaram fora da onda, por escopo.
+- **A limpeza de thumbs antigas no MinIO** e o **limite de corpo de 100 kB** do Nest são decisões
+  de quem cuida da API; nenhuma foi mexida.
+- **Problema anterior à frente, achado no MC12 e não corrigido:** `destinoDosItens`
+  (`curadoria-da-rodada.ts`) pode escolher o permalink do Gmail de uma newsletter antiga sem a
+  marca `semLinkPublico`, e a peça do WhatsApp mandaria esse link privado ao grupo.
+
+**Ordem de deploy desta onda.** Soma-se à da MC-A (A1–A5) e à consolidada do §3:
+
+| # | Passo | Se pular |
+|---|---|---|
+| B1 | Backup e tag de rollback, como no §3 (passos 5 e 8) | As três migrations são aditivas e não se desfazem sozinhas |
+| B2 | `db:deploy` aplica, nesta ordem e depois das da MC-A: `20260924060000_pauta_episodio` (tabela `PautaEpisodio` com RLS FORCE, policies de leitura e escrita, gatilhos `mktos_orgid_do_pai` para a rodada e para a `BioPage`), `20260924070000_pauta_episodio_palavra_de_corte` (coluna nula) e `20260924080000_pauta_pagina_de_links` (coluna nula `BioLink.chave` + índice único `(pageId, chave)`, sem conflito: hoje todos os valores são NULL). Só usa funções que já existem (`mktos_orgid_do_pai`, `app_rls_aplicar_policies`). Ensaiar antes num banco descartável, como manda o §3 | Código novo contra tabela ausente: toda a aba Episódios responde 500 |
+| B3 | **Nenhuma variável nova na API.** As seis do `tools/root-midia` (`ROOT_OS_API_URL`, `ROOT_OS_EMAIL`, `ROOT_OS_SENHA`, `WHISPER_MODEL`, `ROOT_MIDIA_PALAVRA`, `ROOT_MIDIA_CHROME`) são **só do Mac**, catalogadas comentadas no `.env.example` e fora do `docker-compose.yml` de propósito | — |
+| B4 | **Nada de `db:seed:politica` nem de `db:sync-permissions` por causa desta onda.** Nenhuma capacidade e nenhuma permissão nova: as rotas usam `pauta.ver`, `pauta.editar`, `pauta.publicar`, `automacoes.executar` e, na página de links, `bio.editar`. Publicar a página passa pelo `BioService.publicar` que o `/bio` já usa | — |
+| B5 | Smoke da imagem com `ROTINAS_CRON=off` antes do `up` (§3, passo 9), com `SMOKE_ROTAS` incluindo `/api/pauta/episodios` e `/api/pauta/voz` | Sete controllers novos no `PautaModule`; aqui subiram, mas quem vale é a imagem construída |
+
+**Tarefas do Pedro, fora do repositório** (nenhum agente pode fazer):
+
+1. **Whisper (D-MC3):** o `whisper-cli` já está no Mac (`/opt/homebrew/bin/whisper-cli`). Falta
+   baixar um modelo ggml (`ggml-large-v3-turbo.bin` ou `ggml-small.bin`) e apontar `WHISPER_MODEL`
+   para ele. Sem isso `transcrever` para, e a palavra de corte não é detectada.
+2. **Conta e variáveis do Mac:** escolher a conta do OS com `pauta.editar` que o Mac vai usar e
+   gravar `ROOT_OS_API_URL` (o domínio público da API, com `/api`, em `https://`), `ROOT_OS_EMAIL` e
+   `ROOT_OS_SENHA` em `~/.config/root/root-midia.env`, fora do repositório.
+3. **Instalar a skill:** `ln -s <repo>/tools/root-midia ~/.claude/skills/root-midia`.
+4. **PalmierPro:** abrir o app (o MCP em `127.0.0.1:19789` recusou conexão) e validar o caminho da
+   skill com as ferramentas reais.
+5. **Palavra de corte (D-MC2):** escolher; hoje vale `root, corta`, trocável pela nota
+   `pauta.palavra-de-corte` (via `POST /memoria`) ou por episódio.
+6. **Primeira gravação real:** `/root-midia ep-NN` num bruto de verdade, conferindo o roteiro, o
+   pacote e a newsletter gerados por um modelo real.
+7. **Teste cego da voz (MC10):** roteiro e peças com e sem perfil; e decidir se a curadoria entra no
+   bloco de voz e se `pauta.editar` pode escrever a nota `voz.*`.
+8. **Destino da newsletter (D-MC7):** Substack sem API, Beehiiv, Gmail para uma lista ou só
+   rascunho.
+9. **Links da casa da página:** criar a nota `pauta.pagina-de-links.chamadas` (`Rótulo | https://…`,
+   até 5) por `POST /memoria`; e confirmar a regra de permissão (remontar página no ar pede
+   `bio.editar`; publicar pede `pauta.publicar` + `bio.editar`).
+10. **Decisões menores em aberto:** Concluído voltar a Agendado; marcar o título escolhido renomear o
+    episódio; editar títulos, descrição e brief de thumb no OS; mídia refeita descartar a
+    newsletter; a D-MC5 (pixel da Meta) segue adiada.
+
+**Riscos que esta onda deixa:** os prompts de roteiro, pacote, newsletter e voz nunca viram um
+modelo de verdade, então o primeiro episódio real é também o primeiro teste do formato. Com
+`LLM_PROVIDER=openai` a saída de `complete()` fica em 900 tokens (`TETO_SAIDA_RESPOSTA`, anterior
+à frente), pouco para roteiro e newsletter longos; o padrão `anthropic` usa 16000. E o aviso do
+papel restrito da MC-A continua valendo: sem a decisão do passo 16, a rodada da semana só sai pelo
+"Rodar agora".
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -459,7 +601,8 @@ ou de **uma pessoa fazendo algo fora do repositório** — e esta execução nã
 ## 3. A ordem de deploy, consolidada
 
 > A frente da máquina de conteúdo (onda MC-A, §1) tem uma ordem curta própria, que se soma a
-> esta: duas migrations de enum, uma variável e nenhum seed.
+> esta: duas migrations de enum, uma variável e nenhum seed. A onda MC-B (§1) soma mais três
+> migrations (uma tabela nova com RLS e duas colunas nulas), nenhuma variável na API e nenhum seed.
 
 **Este é o item mais importante deste documento.** A ordem cresceu onda a onda e não é a de sempre:
 dois passos são **anteriores** ao que antes era o começo, e nenhum deles dá erro na hora — dá
