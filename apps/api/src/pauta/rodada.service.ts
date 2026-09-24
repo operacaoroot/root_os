@@ -38,6 +38,7 @@ import {
 } from './curadoria-da-rodada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { VozService } from './voz.service';
+import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
 // Ver docs/PAUTA.md §7. O que a diferencia de "gerar um texto com IA" é o
@@ -563,9 +564,13 @@ export class RodadaService {
     if (rodada.status === 'coletando' || rodada.status === 'falhou') {
       throw new BadRequestException('Rodada ainda não foi curada com sucesso.');
     }
-    if (rodada.pecas.length) {
+    // A newsletter tirada da transcrição do episódio (MC13) não conta: ela é
+    // de outra derivação e, valendo, toma o lugar da newsletter feita do miolo.
+    const daTranscricao = rodada.pecas.filter((p) => ehNewsletterDaTranscricao(p.meta));
+    if (rodada.pecas.length > daTranscricao.length) {
       throw new BadRequestException('Esta rodada já tem peças — apague-as antes de gerar de novo.');
     }
+    const temNewsletterDaTranscricao = daTranscricao.some((p) => p.status !== 'descartada');
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(`IA não configurada (${this.llm.name}).`);
     }
@@ -639,7 +644,7 @@ export class RodadaService {
         meta: { slides: p.instagram.slides },
       });
     }
-    if (p.newsletter?.corpo) {
+    if (p.newsletter?.corpo && !temNewsletterDaTranscricao) {
       criar.push({
         canal: 'newsletter',
         formato: 'email',

@@ -322,8 +322,23 @@ jobs:
       # erro da API vai para a tela). Medido: 495 casos em 38 arquivos
       # (488 + 7). O piso de ARQUIVOS sobe 1, para 29; o de CASOS sobe 6 (~15%
       # de folga sobre os 7 novos), para 322.
-      PISO_CASOS_WEB: '322'
-      PISO_ARQUIVOS_WEB: '29'
+      #
+      # MC13, A NEWSLETTER A PARTIR DA TRANSCRIÇÃO (24/09/2026): +11 casos, +1
+      # arquivo — `component/pauta-newsletter` (10: sem newsletter explica de
+      # onde sai, diz que o envio é manual (D-MC7) e gera sem substituir,
+      # mostrando a checagem aprovada, as frases ditas e o que falta; reprovada
+      # lista cada apontamento com a regra, o trecho e onde, e avisa a refeita e
+      # a transcrição mudada; gerar de novo pede confirmação; copiar markdown e
+      # HTML (o HTML que a API exporta); com ClipboardItem o HTML vai no clique,
+      # antes de a API responder (Safari), e a falha da API vai para a tela; o
+      # link do vídeo recusa http na tela, salva https e tira com vazio; sem `automacoes.executar` o gerar apagado
+      # com o porquê; sem `pauta.editar` nada escreve e copiar segue; antes do
+      # Pacote não oferece gerar; o erro da API vai para a tela) e +1 em
+      # `pauta-episodios` (o detalhe mostra a seção da newsletter). Medido: 506
+      # casos em 39 arquivos (495 + 11). O piso de ARQUIVOS sobe 1, para 30; o
+      # de CASOS sobe 10 (~15% de folga sobre os 11 novos), para 332.
+      PISO_CASOS_WEB: '332'
+      PISO_ARQUIVOS_WEB: '30'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1100,8 +1115,45 @@ jobs:
       # com o banco de teste, e 1795 passados / 569 pulados sem ele (1764 + 31).
       # O piso de ARQUIVOS vai a 52; o de CASOS sobe 26 (~15% de folga sobre os
       # 31 que rodam sem banco), para 1733.
-      PISO_CASOS_API: '1733'
-      PISO_ARQUIVOS_API: '52'
+      #
+      # MC13, A NEWSLETTER A PARTIR DA TRANSCRIÇÃO (24/09/2026): +53 casos, +1
+      # arquivo, só desta fatia — `pauta-newsletter` (53). A parte pura: a
+      # checagem anti-slop (limpo passa; palavra proibida pela conjugação, sem
+      # acento nem caixa, com onde está; emoji uma vez por bloco, com bandeira e
+      # keycap e sem ©/®/™; o endereço do link não conta; o bloco do sistema
+      # pulado sem mudar a numeração; as frases de abertura de IA; o parágrafo acima de 60 palavras, sem contar título nem
+      # endereço de link; o pedido de reescrita com cada apontamento); a
+      # montagem (título, abertura, uma seção por matéria falada, o link do item
+      # e nunca o da newsletter L nem o do Gmail, a URL do modelo fora, a
+      # chamada final com os marcadores, matéria sem seção e seção sem fala
+      # viram aviso, JSON ruim é inválido, emoji e palavra proibida NÃO são
+      # limpos para a checagem vê-los, link com parêntese e colchete; URL, link
+      # de qualquer esquema e marcador fora também dos TÍTULOS, no markdown e no
+      # HTML; o título do item sem emoji; a checagem só do texto do modelo);
+      # as frases ditas; o prompt com a transcrição e o bloco de voz; os marcadores; a meta
+      # da peça; o HTML escapado (script, aspas, `javascript:`). Os contratos (o
+      # link do vídeo só https, os status que geram). Com dublês, o critério de
+      # pronto com a transcrição de exemplo (as frases ditas, os 3 links, a
+      # checagem aprovada, a peça newsletter/email da rodada com a meta), a
+      # reprovada refeita UMA vez com os apontamentos no pedido, a persistente
+      # gravada com os apontamentos, a reescrita pior ou inválida não entrando,
+      # 400/404/409/503 sem gastar IA, a anterior descartada ao substituir, a
+      # corrida (transcrição refeita, outra newsletter, concluído) = 409, o
+      # link do vídeo salvo no meio relido sob o cadeado, a do miolo descartada
+      # ao gerar (derivar → gerar), o item com emoji/palavra proibida no título
+      # e na URL aprovado numa chamada, o RASTRO com as contas; o painel
+      # conferindo o texto de agora; o link do vídeo; o export md/html com a página no ar; a derivação antiga
+      # convivendo com a da transcrição; o controller (esquemas, cabeçalhos do
+      # anexo e a CSP do HTML, rotas e permissões, nenhuma rota de envio). E COM
+      # BANCO (1, pulado sem ele): gerar, substituir e exportar pela sessão da
+      # empresa.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2417 casos em 61 arquivos
+      # com o banco de teste, e 1847 passados / 570 pulados sem ele (1795 + 52).
+      # O piso de ARQUIVOS vai a 53; o de CASOS sobe 45 (~15% de folga sobre os
+      # 52 que rodam sem banco), para 1778.
+      PISO_CASOS_API: '1778'
+      PISO_ARQUIVOS_API: '53'
 
     steps:
       - uses: actions/checkout@v4

@@ -18,6 +18,7 @@ import { SecaoRoteiro } from './SecaoRoteiro';
 import { SecaoMidia } from './SecaoMidia';
 import { SecaoPacote } from './SecaoPacote';
 import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
+import { SecaoNewsletter } from './SecaoNewsletter';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
@@ -26,7 +27,8 @@ import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
  * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`; a
  * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`; o pacote do
  * YouTube (MC11), em `SecaoPacote`; a página de links (MC12), em
- * `SecaoPaginaDeLinks`.
+ * `SecaoPaginaDeLinks`; a newsletter tirada da transcrição (MC13), em
+ * `SecaoNewsletter`.
  */
 
 interface Props {
@@ -288,6 +290,14 @@ export function AbaEpisodios({
             podePublicar={podePublicarPagina}
             onErro={onErro}
             onDetalhe={aplicarDetalhe}
+          />
+
+          <SecaoNewsletter
+            token={token}
+            detalhe={detalhe}
+            editavel={editavel}
+            podeGastarIa={podeGastarIa}
+            onErro={onErro}
           />
 
           <div>

@@ -183,7 +183,7 @@ anti-padrões, tirados do que o próprio estudo já provou.
 | **WhatsApp (grupo)** | Evolution API, instância e número **dedicados do root** | `@SensitiveWrite('content')` — não sai sem token de aprovação confirmado |
 | **ClickUp** | cria o tema de verdade (`CLICKUP_LIST_PAUTA`) | — |
 | **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
-| **Newsletter** | corpo em markdown, link sempre como `BioLink` | — |
+| **Newsletter** | corpo em markdown; a do episódio sai da transcrição (MC13) e se exporta em `.md`/`.html`. Os links das seções saem **crus** (a URL do item), não como `BioLink`: só a chamada para a página de links é medida (decisão da MC13, revista com a D-MC7) | **manual** até a D-MC7: não há envio pelo OS |
 | **ClickUp** | vira tema em Gestão de Temas (write-back que já existe) | — |
 
 **O link publicado nasce `BioLink` na página de links do episódio (MC12).** O clique no grupo
@@ -687,6 +687,56 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Tela:** seção "Página de links" no detalhe do episódio (`SecaoPaginaDeLinks.tsx`): criar /
     montar de novo com a conta e os avisos, os botões com a origem (matéria, da casa, do /bio) e o
     que saiu riscado, publicar / tirar do ar, e o endereço.
+- **A newsletter a partir da transcrição (MC13).** A newsletter sai do que foi **dito** no vídeo,
+  não de um texto novo da IA nem do `corpo` da rodada. `NewsletterService`, parte pura em
+  `pauta/newsletter-do-episodio.ts`; a checagem anti-slop é do shared (`checagemAntiSlop`).
+  - **Gerar** (`POST /pauta/episodios/:id/newsletter/gerar` `{substituir, urlDoVideo?}`,
+    `pauta.editar` + `automacoes.executar`): só no Pacote, na Derivação e no Agendado e com
+    transcrição (senão 400 sem IA); já tem newsletter = 409, e com a confirmação a anterior vira
+    `descartada` (não se apaga). O modelo recebe as matérias numeradas **sem link** e a transcrição
+    `[mm:ss] fala` (mesma montagem do pacote), com o bloco de voz da MC10, e devolve JSON (título,
+    abertura, uma seção por matéria falada, fechamento); o markdown é montado pelo sistema: `# título`,
+    abertura, `## seção` + texto + `Fonte: [título](url)` do **item** (nunca da newsletter L, do
+    Gmail nem do texto do modelo), fechamento e as duas chamadas finais com os marcadores
+    `{{pagina-de-links}}` e `{{video}}` (`PAUTA_MARCADOR_DO_VIDEO`). Matéria sem seção e seção sem
+    nenhuma frase dita viram aviso.
+  - **Checagem anti-slop** (`checagemAntiSlop`, pura): as 7 palavras proibidas da casa (pela
+    conjugação), emoji, as frases de IA (`PAUTA_FRASES_DE_IA`: "Neste artigo", "Vamos explorar",
+    "Em um mundo cada vez mais"…) e parágrafo acima de 60 palavras (`PAUTA_PALAVRAS_POR_PARAGRAFO`,
+    celular). Emoji e palavra proibida **não** são limpos na montagem: reprovada, a derivação pede
+    **uma** reescrita com os apontamentos no pedido; persistindo, grava a versão com menos
+    apontamentos, e eles ficam visíveis. Nunca há terceira chamada. A checagem confere **só o que o
+    modelo escreveu** (`checagemDaNewsletter`): a linha `Fonte: [título](url)` e as duas chamadas
+    finais são do sistema e ficam de fora (a IA não tem como corrigi-las), o endereço de um link
+    nunca é lido e o título do item que o sistema põe sai sem emoji. Emoji é também bandeira e
+    keycap; ©, ® e ™ são tipografia. Os títulos do modelo passam pela mesma limpeza do texto: sem
+    URL, sem link de markdown de qualquer esquema (`//host`, `mailto:` viram só o rótulo) e sem
+    marcador.
+  - **A peça:** `PautaPeca` da rodada do episódio, canal `newsletter`, formato `email`, meta
+    `{episodioId, origem: 'transcricao', tentativas, secoes, links, avisos, urlDoVideo,
+    transcricaoSha}`. Escrita numa transação sob `pg_advisory_xact_lock` do episódio, condicionada
+    ao hash da transcrição e às newsletters lidas antes da IA (mídia refeita ou outra geração no
+    meio = 409). RASTRO `pauta.newsletter_gerada` com as contas (apontamentos por regra, frases
+    ditas), nunca o texto. A derivação antiga (`POST /pauta/rodadas/:id/derivar`) ignora essa peça
+    na trava de "já tem peças" e, com ela valendo, não cria a newsletter do miolo; na ordem inversa
+    (derivar → gerar), gerar descarta na mesma transação a newsletter do miolo em rascunho ou
+    aprovada, com aviso na peça e os ids em `before.doMiolo` do RASTRO. Sem `urlDoVideo` no pedido,
+    o link do vídeo que segue é o da anterior relido sob o cadeado (outra aba pode tê-lo salvo
+    enquanto a IA escrevia).
+  - **Painel e export:** `GET …/:id/newsletter` (`pauta.ver`) devolve a vigente com a checagem e
+    as frases ditas **conferidas no texto de agora** (a peça se edita na aba Rodadas), o aviso de
+    transcrição refeita e os `pendentes`; `PUT …/:id/newsletter/video` `{urlDoVideo}` (https;
+    nulo tira) guarda o link do vídeo. `GET …/:id/newsletter.md` e `…/newsletter.html` exportam com
+    os marcadores trocados pelo que existe (página **no ar**, link do vídeo); o que falta fica com o
+    marcador. O HTML é simples (título, subtítulos, parágrafos, links, estilo em linha, 600 px),
+    tudo escapado, só `http(s)` vira link, servido como anexo com CSP `default-src 'none'; sandbox`.
+  - **Destino (D-MC7, pendente):** não publica. `PublicacaoService` segue recusando a newsletter
+    (400), e a tela diz que o envio é manual.
+  - **Tela:** seção "Newsletter" no detalhe do episódio (`SecaoNewsletter.tsx`): gerar (com
+    confirmação para substituir), a checagem aprovada ou os apontamentos, "N de M frases vêm da
+    fala", avisos e pendentes, "Copiar markdown", "Copiar HTML" (formatado quando o navegador deixa;
+    o `ClipboardItem` vai no clique com o HTML ainda chegando da API, que é o que o Safari aceita),
+    baixar .md/.html, o link do vídeo e a prévia do texto.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

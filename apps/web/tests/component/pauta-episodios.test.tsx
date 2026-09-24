@@ -108,6 +108,8 @@ function respostas(opts: { lista?: unknown[]; detalhe?: unknown } = {}) {
         palavraDeCorte: { efetiva: 'root, corta', origem: 'padrao', doEpisodio: null, daEmpresa: null }, podeGerar: false, motivo: null,
       };
     }
+    // A newsletter (MC13) também tem suíte própria (`pauta-newsletter`).
+    if (/^\/pauta\/episodios\/[^/]+\/newsletter$/.test(path)) return { newsletter: null };
     if (path.startsWith('/pauta/rodadas')) return { items: [], source: { tool: 't', generatedAt: '' } };
     if (path === '/pauta/canais') return { whatsapp: { configurada: false, conectada: false, motivo: null, grupo: null } };
     throw new Error(`GET inesperado: ${path}`);
@@ -272,6 +274,14 @@ describe('o detalhe', () => {
     renderAba();
     const pacote = await screen.findByRole('region', { name: 'Pacote do YouTube' });
     expect(pacote).toHaveTextContent('O pacote sai da transcrição do vídeo final');
+  });
+
+  it('mostra a newsletter (MC13) no detalhe; em edição, diz que ela sai da transcrição e que o envio é manual', async () => {
+    renderAba();
+    const newsletter = await screen.findByRole('region', { name: 'Newsletter' });
+    await waitFor(() => expect(newsletter).toHaveTextContent('A newsletter sai da transcrição do vídeo final'));
+    expect(newsletter).toHaveTextContent('O envio é manual por enquanto');
+    expect(apiGet).toHaveBeenCalledWith('/pauta/episodios/e2/newsletter', 'tok');
   });
 });
 

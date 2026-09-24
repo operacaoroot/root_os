@@ -30,6 +30,8 @@ import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
 import { PaginaDeLinksController } from './pagina-de-links.controller';
 import { PaginaDeLinksService } from './pagina-de-links.service';
+import { NewsletterController } from './newsletter.controller';
+import { NewsletterService } from './newsletter.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -49,6 +51,7 @@ import { PaginaDeLinksService } from './pagina-de-links.service';
     VozController,
     PacoteController,
     PaginaDeLinksController,
+    NewsletterController,
   ],
   providers: [
     PautaService,
@@ -77,6 +80,8 @@ import { PaginaDeLinksService } from './pagina-de-links.service';
     PacoteService,
     // MC12: a página de links do episódio na bio.
     PaginaDeLinksService,
+    // MC13: a newsletter tirada da transcrição, exportada para envio manual (D-MC7).
+    NewsletterService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

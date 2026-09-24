@@ -2523,6 +2523,197 @@ export interface PautaVozAprendida extends PautaVozPainel {
   material: { fontes: number; caracteres: number; cortado: boolean };
 }
 
+// ---------- Pauta: a newsletter do episódio (MC13) ----------
+// A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
+// novo: uma seção por matéria com o link da matéria, e o fechamento chamando
+// para a página de links e para o vídeo. É uma PautaPeca (canal newsletter,
+// formato email) da rodada do episódio. Não publica: o destino é a D-MC7, e até
+// lá sai como markdown e HTML para copiar.
+
+/** O link do vídeo no YouTube, que só existe depois do envio manual (D-MC6). */
+export const PAUTA_MARCADOR_DO_VIDEO = '{{video}}';
+
+/**
+ * A transcrição do vídeo final chega no Pacote; a newsletter pode sair até o
+ * vídeo agendado. Concluído é registro.
+ */
+export const PAUTA_STATUS_QUE_GERAM_NEWSLETTER = ['pacote', 'derivacao', 'agendado'] as const satisfies readonly PautaEpisodioStatus[];
+
+/** Por que não dá para gerar a newsletter agora, ou nulo. */
+export function motivoParaNaoGerarNewsletter(status: PautaEpisodioStatus, segmentos: number): string | null {
+  if (!(PAUTA_STATUS_QUE_GERAM_NEWSLETTER as readonly string[]).includes(status)) {
+    return status === 'concluido'
+      ? 'O episódio está concluído: a newsletter dele é registro.'
+      : `A newsletter sai da transcrição do vídeo final, que chega no Pacote (o episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`;
+  }
+  if (segmentos === 0) return 'O episódio não tem transcrição do vídeo final — rode /root-midia no Mac.';
+  return null;
+}
+
+/** Parágrafo acima disso vira paredão na tela do celular. */
+export const PAUTA_PALAVRAS_POR_PARAGRAFO = 60;
+
+/** Frases que denunciam texto de IA. A conferência é sem acento e sem caixa, em qualquer ponto do texto. */
+export const PAUTA_FRASES_DE_IA = [
+  'Neste artigo',
+  'Nesta newsletter, vamos',
+  'Vamos explorar',
+  'Vamos mergulhar',
+  'Em um mundo cada vez mais',
+  'Num mundo cada vez mais',
+  'No mundo da IA',
+  'No cenário atual',
+  'Nos dias de hoje',
+  'Você já se perguntou',
+  'Sem mais delongas',
+  'É importante ressaltar',
+] as const;
+
+export const PAUTA_REGRAS_ANTI_SLOP = ['palavra_proibida', 'emoji', 'frase_de_ia', 'paragrafo_longo'] as const;
+export type PautaRegraAntiSlop = (typeof PAUTA_REGRAS_ANTI_SLOP)[number];
+
+export const PAUTA_REGRA_ANTI_SLOP_ROTULO: Record<PautaRegraAntiSlop, string> = {
+  palavra_proibida: 'Palavra proibida da casa',
+  emoji: 'Emoji',
+  frase_de_ia: 'Frase de IA',
+  paragrafo_longo: 'Parágrafo longo para o celular',
+};
+
+export interface PautaApontamentoAntiSlop {
+  regra: PautaRegraAntiSlop;
+  /** O que foi achado: a palavra, o emoji, a frase ou o começo do parágrafo. */
+  trecho: string;
+  /** "título …", "parágrafo 3" — onde procurar. */
+  onde: string;
+}
+
+export interface PautaChecagemAntiSlop {
+  aprovada: boolean;
+  apontamentos: PautaApontamentoAntiSlop[];
+}
+
+/*
+ * Emoji como a tela mostra: bandeira (par de indicadores regionais), keycap
+ * (1️⃣), o que já nasce emoji e o pictograma de texto forçado a emoji (❤️).
+ * Fica de fora o que é tipografia e só vira emoji com o seletor: © ® ™ ↔ ‼.
+ */
+const EMOJI_NO_TEXTO = /\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F/gu;
+const LINK_MARKDOWN = /\[([^\]]*)\]\(([^)\s]*)\)/g;
+const URL_SOLTA = /\b(?:https?:\/\/|www\.)[^\s<>]+/gi;
+
+/** O texto sem emoji (e sem o que sobra dele: junção, seletor e tom de pele), em uma linha limpa. */
+export function semEmoji(texto: string): string {
+  return String(texto ?? '')
+    .replace(EMOJI_NO_TEXTO, ' ')
+    .replace(/[\u200D\uFE0F\u{1F3FB}-\u{1F3FF}]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+/** Os blocos do texto (separados por linha em branco) com o rótulo de onde estão. */
+function blocosDoTexto(texto: string): Array<{ texto: string; onde: string; titulo: boolean }> {
+  let paragrafo = 0;
+  return String(texto ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter(Boolean)
+    .map((b) => {
+      const titulo = /^#{1,6}\s/.test(b);
+      return { texto: b, titulo, onde: titulo ? `título “${b.replace(/^#+\s*/, '').slice(0, 60)}”` : `parágrafo ${++paragrafo}` };
+    });
+}
+
+function palavrasDoBloco(b: string): string[] {
+  return b.replace(LINK_MARKDOWN, '$1').split(/\s+/).filter((p) => /[\p{L}\p{N}]/u.test(p));
+}
+
+/**
+ * A checagem anti-slop da casa: as palavras proibidas, emoji, as frases de
+ * abertura de IA e o parágrafo longo demais para ler no celular. Aprovada é
+ * zero apontamento. Pura: a API confere o que a IA escreveu e a tela mostra.
+ * O endereço de um link não é texto: só o rótulo é conferido. `ignorarBloco`
+ * pula o que o sistema montou (a IA não tem como corrigir), sem mudar a
+ * numeração dos parágrafos que a tela mostra.
+ */
+export function checagemAntiSlop(
+  texto: string,
+  opcoes: { palavrasPorParagrafo?: number; ignorarBloco?: (bloco: string) => boolean } = {},
+): PautaChecagemAntiSlop {
+  const teto = opcoes.palavrasPorParagrafo ?? PAUTA_PALAVRAS_POR_PARAGRAFO;
+  const frases = PAUTA_FRASES_DE_IA.map((f) => ({ f, chave: semAcento(f).replace(/\s+/g, ' ') }));
+  const apontamentos: PautaApontamentoAntiSlop[] = [];
+  for (const b of blocosDoTexto(texto)) {
+    if (opcoes.ignorarBloco?.(b.texto)) continue;
+    const legivel = b.texto.replace(LINK_MARKDOWN, '$1').replace(URL_SOLTA, ' ');
+    for (const p of palavrasProibidasEm(legivel)) apontamentos.push({ regra: 'palavra_proibida', trecho: p, onde: b.onde });
+    const emojis = [...new Set(legivel.match(EMOJI_NO_TEXTO) ?? [])];
+    if (emojis.length) apontamentos.push({ regra: 'emoji', trecho: emojis.join(' '), onde: b.onde });
+    const plano = semAcento(legivel).replace(/\s+/g, ' ');
+    for (const { f, chave } of frases) {
+      if (plano.includes(chave)) apontamentos.push({ regra: 'frase_de_ia', trecho: f, onde: b.onde });
+    }
+    if (!b.titulo) {
+      const palavras = palavrasDoBloco(b.texto);
+      if (palavras.length > teto) {
+        apontamentos.push({
+          regra: 'paragrafo_longo',
+          trecho: `${palavras.slice(0, 8).join(' ')}…`,
+          onde: `${b.onde} (${palavras.length} palavras; o teto é ${teto})`,
+        });
+      }
+    }
+  }
+  return { aprovada: apontamentos.length === 0, apontamentos };
+}
+
+/** O link do vídeo publicado: https, uma linha. */
+export const PautaUrlDoVideoSchema = z
+  .string()
+  .trim()
+  .max(500, 'O link do vídeo tem no máximo 500 caracteres.')
+  .regex(/^https:\/\/[^\s<>"'`{}]+$/i, 'O link do vídeo começa com https:// e não tem espaço.');
+
+export const PautaNewsletterGerarSchema = z.object({
+  /** O episódio já tem newsletter: gerar de novo só com a confirmação (a anterior vira descartada). */
+  substituir: z.boolean().default(false),
+  urlDoVideo: PautaUrlDoVideoSchema.nullable().optional(),
+});
+export type PautaNewsletterGerarInput = z.infer<typeof PautaNewsletterGerarSchema>;
+
+/** Nulo tira o link. */
+export const PautaNewsletterVideoSchema = z.object({ urlDoVideo: PautaUrlDoVideoSchema.nullable() });
+export type PautaNewsletterVideoInput = z.infer<typeof PautaNewsletterVideoSchema>;
+
+/** A newsletter vigente do episódio, pronta para copiar. */
+export interface PautaNewsletterDoEpisodio {
+  pecaId: string;
+  titulo: string;
+  status: PautaPecaStatus;
+  criadaEm: string;
+  /** O markdown com os marcadores trocados pelo que já existe (página no ar, link do vídeo). */
+  markdown: string;
+  /** Conferida no texto de agora: a peça pode ter sido editada depois de gerada. */
+  checagem: PautaChecagemAntiSlop;
+  /** Quantas chamadas à IA a geração levou (2 = a primeira foi reprovada e refeita). */
+  tentativas: number;
+  /** Frases do texto (5 palavras ou mais) e quantas delas saíram da fala do vídeo. */
+  frases: { total: number; ditas: number };
+  secoes: number;
+  links: number;
+  urlDoVideo: string | null;
+  /** O que ainda falta para o texto sair inteiro (o marcador fica até lá). */
+  pendentes: string[];
+  /** A transcrição mudou depois desta newsletter (mídia refeita): gere de novo. */
+  transcricaoMudou: boolean;
+  avisos: string[];
+}
+
+/** `GET /pauta/episodios/:id/newsletter` e o retorno das escritas. */
+export interface PautaNewsletterPainel {
+  newsletter: PautaNewsletterDoEpisodio | null;
+}
+
 export interface PautaCanalEstado {
   configurada: boolean;
   conectada: boolean;
