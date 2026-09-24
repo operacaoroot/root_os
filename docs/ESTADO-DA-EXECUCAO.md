@@ -875,6 +875,53 @@ descartável).
 **Medido** (sem mudança de código, só para confirmar a base): typechecks limpos; api **2563/2563**
 em 64 arquivos com `TEST_DATABASE_URL`; web **540** em 41; policy 74. Pisos da CI intocados.
 
+
+### Correção final da frente (24/09/2026)
+
+A revisão da branch inteira deixou oito achados importantes que sobreviveram à verificação
+adversarial; os oito foram corrigidos, cada um com teste que prova o conserto. Dos menores, os
+baratos e claramente certos também.
+
+| Achado | Commit | O que mudou |
+|---|---|---|
+| Rodada antiga guardava a URL escrita pelo modelo | `3449d39` | `comOrigem` descarta o item cuja URL não casa com captura e grava a URL **da captura**; sem item que case, a rodada falha |
+| Mensagem do grupo virava título público | `d0741ec` | Candidato sem título leva o **domínio**; a mensagem fica só no `resumo`; processar grava o título da ficha na captura |
+| Mídia refeita deixava o corte e o story nos tempos antigos | `b07c35c` | `registrarMidia` (e a transcrição reenviada, pelo hash) leva as peças da semana não postadas ao rascunho, sem agenda nem render, sob `pauta-semana:<id>` tomado antes do episódio; `PUT …/video` e o PNG do story são 409 fora da transcrição atual; o `root-midia` pula `transcricaoMudou` |
+| Proxy do Next cortava as gerações em 30 s | `5546c97` | `experimental.proxyTimeout` = 10 min (`PRAZO_DO_PROXY_DA_API_MS`), exige refazer a imagem do `web`; semana, roteiro, pacote, newsletter, voz, curadoria e "Coletar agora" passam por `umaPorVez` (`pauta/uma-por-vez.ts`): o segundo pedido é 409 **antes** de gastar. Memória do processo — vale com um container da API só |
+| Rollback da imagem com enums novos | `5c23e41` | Receita A1-volta (CSV fora do banco + `UPDATE`) e o passo 8 do §3 apontando para ela; a migration da MC16 entrou na ordem do B2 e na nota do §3 |
+| Erro fora da tela no celular | `555396b` | A caixa de erro de `/pauta` é `sticky top-0`, `role="alert"`, com "Fechar" |
+| "Baixar mídia" no iPhone | `bbabe61` | "Salvar as N imagens" pela folha de compartilhar (`navigator.share` com arquivos; se o gesto venceu, segundo toque com os PNG prontos); sem ela, um download por imagem; a URL do blob vive 40 s (`lib/baixar.ts`, também no roteiro e na newsletter) |
+| Skill com caminho relativo | `354f255` | `SKILL.md` com o caminho absoluto da pasta do episódio; a CLI cria a pasta do `--saida` antes do whisper e diz qual criou |
+
+Menores feitos: o corpo de 2 MB só com sessão válida (`55b46fa`; conferido no dist: anônimo e
+token forjado com 500 kB → 413, sessão válida → 403 do guarda de permissão, anônimo pequeno →
+401); a busca da captura conferindo o host resolvido a cada salto e seguindo redirecionamento à
+mão (`d3e9234`, `pauta/pagina-publica.ts`; a troca de DNS entre a conferência e a conexão fica de
+fora); o grupo de links preso a uma empresa por `EVOLUTION_LINKS_ORG_ID` (`a23acb7`, **variável
+nova**, no compose e no `.env.example`; sem ela o grupo fica desligado); o Avançar da Edição ao
+Pacote só com transcrição e a mensagem de pacote/newsletter mandando voltar à Edição (`66de2b6`);
+a receita copiável das notas da palavra de corte e dos links da casa em `docs/PAUTA.md`
+(`0a03c60`); o texto do topo de `/pauta` com o caminho da semana, a confirmação da curadoria
+apontando o episódio, a aba Semana descendo até hoje e o slot do corte dizendo como o mp4 do Mac
+chega ao post (`ee0428f`).
+
+**Não feitos, e por quê:** a barra fixa da Curadoria a 375 px (mexer no espaço do botão
+"perguntar" pede conferir no navegador, e o achado não foi verificado); abrir `/pauta` direto na
+Curadoria quando há rodada esperando (pede uma leitura a mais na abertura da página); as rotas
+próprias da palavra de corte e dos links da casa (ficou a receita); a D-MC9.7 e o resto da MC18.
+Nenhum achado confirmado foi recusado.
+
+**Deploy desta correção:** nenhuma migration, tabela, enum, permissão ou seed. Uma variável nova
+(`EVOLUTION_LINKS_ORG_ID`, passo A3). A imagem do `web` precisa ser refeita (o prazo do proxy mora
+no `next.config.mjs`). Fumaça do prazo: `next dev` com `API_PROXY_TARGET` num servidor que responde
+em 35 s → 200 em 35 s (o `next build` completo não roda aqui: o `next/font` do Google precisa de
+rede).
+
+**Medido:** `pnpm typecheck` e `typecheck:test` limpos; api **2581/2581** em 64 arquivos com
+`TEST_DATABASE_URL`, 2009 + 572 pulados sem ele; web **546** em 42; policy 74; `build` + `smoke`
+com `SMOKE_ROTAS` de `/api/pauta/episodios`, `/agenda`, `/voz` e `pendentes-midia` → **SMOKE OK**.
+Pisos da CI: api 1916/56, web 366/33, com a conta no `ci.yml`.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê

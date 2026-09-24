@@ -374,8 +374,21 @@ jobs:
       # agenda avisa que editar ou descartar a tira de lá). Medido: 540 casos em
       # 41 arquivos (522 + 18). O piso de ARQUIVOS sobe 1, para 32; o de CASOS
       # sobe 15 (~15% de folga sobre os 18 novos), para 361.
-      PISO_CASOS_WEB: '361'
-      PISO_ARQUIVOS_WEB: '32'
+      #
+      # CORREÇÃO FINAL DA FRENTE (24/09/2026): +6 casos, +1 arquivo —
+      # `unit/proxy-da-api` (2: o prazo do proxy de /api acima do Apify e das
+      # gerações longas, e o rewrite que continua indo para a API); em
+      # `component/pauta-agenda` +3 (salvar as imagens pela folha de
+      # compartilhar com o segundo toque, a tela que desce até hoje uma vez só,
+      # a recusa presa no topo da página e fechando) e em
+      # `component/pauta-episodios` +1 (da Edição ao Pacote sem transcrição o
+      # avançar fica apagado com o porquê); o caso do download (agora sem
+      # revogar a URL na hora) e o do botão único do carrossel de um slide
+      # foram reescritos, não somados.
+      # Medido: 546 casos em 42 arquivos (540 + 6). O piso de ARQUIVOS sobe 1,
+      # para 33; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para 366.
+      PISO_CASOS_WEB: '366'
+      PISO_ARQUIVOS_WEB: '33'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1288,7 +1301,29 @@ jobs:
       # com o banco de teste, e 1991 passados / 572 pulados sem ele (1944 + 47).
       # O piso de ARQUIVOS vai a 56; o de CASOS sobe 40 (~15% de folga sobre os
       # 47 que rodam sem banco), para 1901.
-      PISO_CASOS_API: '1901'
+      #
+      # CORREÇÃO FINAL DA FRENTE (24/09/2026): +18 casos, nenhum arquivo novo.
+      # `pauta-perfil` +2 (a URL que o modelo tira do texto de um creator não
+      # vira item nem destino da peça do grupo; sem item que case com captura a
+      # rodada falha); `pauta-curadoria` +2 (a mensagem do grupo não sai no
+      # botão da página, na descrição nem na newsletter; a captura de texto sem
+      # link ainda mostra a nota); `pauta-midia` +2 (a mídia refeita leva as
+      # peças da semana não postadas ao rascunho, fora da agenda e sem render;
+      # a transcrição reenviada só leva as de outra fala); `pauta-semana` +2
+      # (o mp4 e o PNG do story da transcrição antiga são 409; o segundo clique
+      # durante a geração é 409 sem IA); `pauta-robustez` +5 (uma geração por
+      # chave; o corpo grande só com sessão válida; a busca da captura que
+      # recusa endereço interno por 302, DNS e IP literal, e segue o
+      # redirecionamento público à mão); `grupo-de-links` +2 (a mensagem pelo
+      # caminho de outra empresa é ignorada; sem a empresa dona o grupo fica
+      # desligado); `pauta-episodio` +1 (da Edição ao Pacote à mão só com
+      # transcrição); `root-midia` +2 (a peça de outra transcrição não recebe
+      # render; a pasta do --saida criada antes do whisper).
+      #
+      # Para quem for remedir: 2581 casos em 64 arquivos com o banco de teste,
+      # e 2009 passados / 572 pulados sem ele (1991 + 18). O piso de ARQUIVOS
+      # fica em 56; o de CASOS sobe 15 (~15% de folga sobre os 18), para 1916.
+      PISO_CASOS_API: '1916'
       PISO_ARQUIVOS_API: '56'
 
     steps:
