@@ -20,6 +20,9 @@ import {
   type Candidato,
 } from '../src/pauta/curadoria-da-rodada';
 import { insumoDaRodadaComSobra, filtroDasOrigens } from '../src/pauta/origem-da-rodada';
+import { planoDaPagina } from '../src/pauta/pagina-de-links-do-episodio';
+import { linksDaDescricao } from '../src/pauta/pacote-do-episodio';
+import { montarNewsletter } from '../src/pauta/newsletter-do-episodio';
 import { RodadaService } from '../src/pauta/rodada.service';
 import type { VozService } from '../src/pauta/voz.service';
 import { TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
@@ -94,11 +97,44 @@ describe('curadoria: a captura vira candidato', () => {
     });
   });
 
-  it('o link do grupo sem título mostra o começo da mensagem, que também é o resumo', () => {
+  it('o link do grupo sem título leva o domínio como título; a mensagem fica só no resumo', () => {
     const c = candidatoDaCaptura(CAPTURAS[0]);
-    expect(c.titulo).toBe('olha isso aqui importante');
+    expect(c.titulo).toBe('noticia.exemplo');
     expect(c.resumo).toBe('olha isso aqui importante');
     expect(c.origem).toBe('W');
+  });
+
+  it('a mensagem do grupo não sai no botão da página, na descrição nem na newsletter', () => {
+    const mensagem = 'Pedro, liga pro João 61 99999-0000 sobre isso, cliente X quer https://www.site.exemplo/materia';
+    const captura: Captura = {
+      id: 'w1',
+      titulo: null,
+      url: 'https://www.site.exemplo/materia',
+      nota: mensagem,
+      bruto: {},
+      capturadoEm: hora(1),
+      fonte: { nome: 'Grupo', tipo: 'manual', plataforma: 'whatsapp', handle: null },
+    };
+    const itens = itensDaCuradoria([{ ...candidatoDaCaptura(captura), marcado: true }]);
+    const pagina = planoDaPagina(itens, []);
+    const descricao = linksDaDescricao(itens);
+    const news = montarNewsletter(JSON.stringify({ titulo: 'A semana', secoes: [{ n: 1, texto: 'A matéria do site.' }] }), {
+      tituloDoEpisodio: 'Ep 1',
+      itens,
+      segmentos: [],
+    });
+    expect(pagina.links[0].rotulo).toBe('site.exemplo');
+    expect(descricao[0].titulo).toBe('site.exemplo');
+    expect(news.markdown).toContain('Fonte: [site.exemplo](');
+    for (const saida of [JSON.stringify(pagina), JSON.stringify(descricao), news.markdown]) {
+      expect(saida).not.toContain('99999');
+      expect(saida).not.toContain('João');
+    }
+  });
+
+  it('a captura de texto, sem link, ainda mostra o começo da nota (nada dela sai como link)', () => {
+    const c = candidatoDaCaptura({ ...CAPTURAS[0], id: 't1', url: null });
+    expect(c.titulo).toBe('olha isso aqui importante');
   });
 
   it('a newsletter é candidata, mas marcada como sem link público', () => {

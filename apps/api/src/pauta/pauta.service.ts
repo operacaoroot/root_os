@@ -460,6 +460,11 @@ export class PautaService implements OnModuleInit {
         where: { id },
         data: {
           status: 'ficha',
+          // A captura do grupo chega sem título, e o título da captura é o que
+          // a curadoria leva para fora (botão, descrição, newsletter).
+          ...(!c.titulo?.trim() && typeof f.titulo === 'string' && f.titulo.trim()
+            ? { titulo: f.titulo.trim().slice(0, 300) }
+            : {}),
           bruto: comProcedenciaDoPerfil(
             c.bruto,
             comProcedenciaDaBusca(c.bruto, comProcedencia(c.bruto, bruto)),

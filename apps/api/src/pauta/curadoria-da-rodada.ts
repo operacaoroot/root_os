@@ -59,13 +59,27 @@ function resumoDa(c: CapturaDoInsumo): string {
   return texto.replace(/\s+/g, ' ').trim().slice(0, TETO_DO_RESUMO);
 }
 
-/** O título que a tela mostra: o da captura, ou o começo da mensagem do grupo, ou a URL. */
+function hostDaUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O título do candidato, que segue para o botão da página de links, a descrição
+ * do YouTube e a newsletter: o da captura ou, sem ele, o domínio do link. A
+ * mensagem do grupo (`nota`) nunca vira título de captura com link — é o texto
+ * de quem colou, com nome e telefone de terceiros; ela fica no `resumo`, que
+ * não sai da casa. Sem link, nada disso é publicado, e a nota ajuda a tela.
+ */
 function tituloDa(c: CapturaDoInsumo): string {
   const t = c.titulo?.trim();
   if (t) return t.slice(0, 300);
+  if (c.url) return hostDaUrl(c.url) ?? c.url;
   const nota = (c.nota ?? '').replace(/\s+/g, ' ').trim();
-  if (nota) return nota.slice(0, 120);
-  return c.url ?? '(sem título)';
+  return nota ? nota.slice(0, 120) : '(sem título)';
 }
 
 /** Uma captura do insumo vira candidato: nada marcado, nada sugerido. */
