@@ -166,7 +166,7 @@ export function SecaoPaginaDeLinks({ token, detalhe, editavel, podeMexerNoAr, po
       )}
       <p className="text-xs text-muted">
         Links da casa: nota da memória <code>{PAUTA_CHAVES_DOS_LINKS_DA_CASA[0]}</code>, um por linha (
-        <code>Rótulo | https://…</code>).
+        <code>Rótulo | https://…</code>), criada pela API da memória — receita em <code>docs/PAUTA.md</code>.
       </p>
     </section>
   );

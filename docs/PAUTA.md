@@ -887,6 +887,34 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
 - **Deploy.** `deploy/up.sh --vps api web`. O `--vps` é obrigatório: sem ele o compose base
   publica em `0.0.0.0` e expõe banco/redis/minio. Ver `CLAUDE.md`.
 
+### A palavra de corte e os links da casa, sem tela (receita copiável)
+
+As duas notas da empresa que a pauta **só lê** — a palavra de corte (`pauta.palavra-de-corte`,
+primeira linha = a palavra) e os links da casa da página de links (`pauta.pagina-de-links.chamadas`,
+uma linha por link, `Rótulo | https://…`, até 5) — se criam pelo caminho da ADR-011, `POST
+/memoria` (`obsidian.editar`). A tela Contexto só cria nota com a memória vazia, então enquanto
+não houver tela própria (como a da grade da semana) é por aqui, no Mac. A senha fica no arquivo de
+variáveis da estação de mídia e não passa pela linha de comando:
+
+```sh
+set -a; . ~/.config/root/root-midia.env; set +a   # ROOT_OS_API_URL (com /api), ROOT_OS_EMAIL, ROOT_OS_SENHA
+TOKEN=$(node -e 'fetch(process.env.ROOT_OS_API_URL+"/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email:process.env.ROOT_OS_EMAIL,password:process.env.ROOT_OS_SENHA})}).then(r=>r.json()).then(d=>console.log(d.token??""))')
+
+# A palavra de corte da empresa.
+curl -sS -X POST "$ROOT_OS_API_URL/memoria" -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' --data-binary @- <<'JSON'
+{"chave":"pauta.palavra-de-corte","kind":"regra","title":"Palavra de corte da gravação","body":"root, corta","sourceType":"operador","sourceRef":"definida pelo Pedro","motivo":"palavra de corte da empresa (D-MC2)"}
+JSON
+
+# Os links da casa da página de links do episódio (\n separa as linhas dentro do JSON).
+curl -sS -X POST "$ROOT_OS_API_URL/memoria" -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' --data-binary @- <<'JSON'
+{"chave":"pauta.pagina-de-links.chamadas","kind":"regra","title":"Links da casa na página do episódio","body":"Conheça o ROOT OS | https://operacaoroot.com\nComunidade | https://operacaoroot.com/comunidade","sourceType":"operador","sourceRef":"definidos pelo Pedro","motivo":"botões fixos da página de links (MC12)"}
+JSON
+```
+
+A resposta traz a nota com a versão 1. Chave que já existe é 409: para trocar o texto, `PATCH
+/memoria/:id` com `{"body": "…", "motivo": "…"}` (o id vem de `GET /memoria?kind=regra`, que lista as notas com a chave). As
+URLs de exemplo acima são só o formato — troque pelas reais antes de rodar.
+
 ## 12. Importador do acervo (onda 1)
 
 `apps/api/prisma/import-pauta.ts`, idempotente (reimportar não duplica). Lê duas coisas, ambas

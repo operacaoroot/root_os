@@ -206,7 +206,8 @@ export function SecaoRoteiro({ token, episodioId, status, editavel, podeGastarIa
         <p className="text-[11px] text-muted">
           Vale já: o topo do roteiro, o .md e o espelho passam a trazer a palavra nova. A da empresa é a nota da memória
           com a chave <code>{PAUTA_CHAVE_DA_PALAVRA_DE_CORTE}</code> (a primeira linha é a palavra), criada pela API da
-          memória (<code>POST /memoria</code>); a tela Contexto só cria nota enquanto a memória está vazia.
+          memória (<code>POST /memoria</code>, com a receita pronta em <code>docs/PAUTA.md</code>); a tela Contexto só cria
+          nota enquanto a memória está vazia.
         </p>
       </div>
 
