@@ -875,6 +875,12 @@ describe('root-midia: o corte vertical e o story (MC15)', () => {
     expect([nomeDoCorte('ep-04', 2), nomeDoStory('ep-04', 2), pastaDoCarrossel('ep-04', 2)]).toEqual(['ep-04-m2-corte.mp4', 'ep-04-m2-story.png', 'ep-04-m2-carrossel']);
     expect(['rascunho', 'aprovada', 'publicada', 'descartada'].map((status) => aceitaRender({ status }))).toEqual([true, true, false, false]);
   });
+
+  it('a peça gerada de outra transcrição não recebe render, nem aprovada (os tempos são do vídeo anterior)', () => {
+    expect(aceitaRender({ status: 'aprovada', transcricaoMudou: true })).toBe(false);
+    expect(aceitaRender({ status: 'rascunho', transcricaoMudou: true })).toBe(false);
+    expect(aceitaRender({ status: 'aprovada', transcricaoMudou: false })).toBe(true);
+  });
 });
 
 /** Um PNG de mentira com o cabeçalho IHDR. */

@@ -947,6 +947,22 @@ describe('semana: editar, subir o PNG e registrar o mp4', () => {
     expect(s.auditoria.find((a) => a.action === 'pauta.semana_video')?.after).toEqual({ arquivo: 'ep-04-m2-corte.mp4', duracaoSeg: 109, bytes: 20_000_000 });
     await expect(s.semana.registrarVideo(ORG, da('c2', 'story').id, PESSOA, corpo)).rejects.toThrow(/Só o corte/);
   });
+
+  it('mídia refeita: o mp4 e o frame da peça gerada da transcrição antiga são 409, mesmo com a duração batendo', async () => {
+    const { s, da } = await gerado();
+    // A edição B: outra fala, 40 s mais curta, e o trecho da matéria 2 continua cabendo nela.
+    const e = s.lista[0] as unknown as { transcricao: Array<{ inicio: number; fim: number; texto: string }> };
+    e.transcricao = e.transcricao.slice(0, -1).map((t) => ({ ...t, texto: `${t.texto} (tomada B)` }));
+    const c = da('c2', 'corte');
+    const corpo = { arquivo: '/Users/pedro/Movies/OBS/ep-04-semana/ep-04-m2-corte.mp4', duracaoSeg: 109, largura: 1080 as const, altura: 1920 as const, bytes: 20_000_000 };
+    await expect(s.semana.registrarVideo(ORG, c.id, PESSOA, corpo)).rejects.toThrow(ConflictException);
+    await expect(s.semana.registrarVideo(ORG, c.id, PESSOA, corpo)).rejects.toThrow(/transcrição mudou/);
+    expect(meta(c).video ?? null).toBeNull();
+    await expect(s.semana.enviarImagem(ORG, da('c2', 'story').id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' })).rejects.toThrow(/transcrição mudou/);
+    // O carrossel não tem tempo do vídeo: o PNG dele segue aceito.
+    const r = await s.semana.enviarImagem(ORG, da('c2', 'carrossel').id, PESSOA, 1, { buffer: png(1080, 1350), mimetype: 'image/png' });
+    expect(r.imagens.map((i) => i.n)).toEqual([1]);
+  });
 });
 
 describe('semana: convive com a derivação antiga e com o export do carrossel', () => {

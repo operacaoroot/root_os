@@ -690,6 +690,10 @@ function pecasParaRender(semana, formato, o) {
       avisar(`Matéria ${m.n}: sem ${formato} — gere a semana na tela (aba Episódios).`);
       continue;
     }
+    if (p.transcricaoMudou === true) {
+      avisar(`Matéria ${m.n}: o ${formato} é da transcrição anterior (a mídia foi refeita) — gere a semana de novo na tela antes de renderizar.`);
+      continue;
+    }
     if (!aceitaRender(p)) {
       avisar(`Matéria ${m.n}: o ${formato} está ${p.status} e não recebe render.`);
       continue;

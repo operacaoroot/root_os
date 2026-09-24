@@ -26,6 +26,7 @@ import {
   transcricaoForaDoVideo,
 } from '../src/pauta/midia-do-episodio';
 import { MidiaService } from '../src/pauta/midia.service';
+import { shaDaTranscricao } from '../src/pauta/newsletter-do-episodio';
 import { MidiaController } from '../src/pauta/midia.controller';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
 import { EpisodioService } from '../src/pauta/episodio.service';
@@ -276,8 +277,12 @@ function ep(over: Partial<Ep> = {}): Ep {
   };
 }
 
-function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGravar?: (lista: Ep[]) => void } = {}) {
+type PecaFalsa = { id: string; orgId: string; rodadaId: string; canal: string; formato: string; status: string; meta: Record<string, unknown>; agendadaPara: Date | null };
+
+function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGravar?: (lista: Ep[]) => void; pecas?: PecaFalsa[] } = {}) {
   const lista = opts.episodios ?? [ep()];
+  const pecas = opts.pecas ?? [];
+  const travas: string[] = [];
   const rodada = { titulo: 'Semana 39', itens: [{ titulo: 'A', url: 'https://a.exemplo' }], janelaIni: new Date(), janelaFim: new Date() };
   const auditoria: Array<Record<string, unknown>> = [];
   const condicionais: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
@@ -308,6 +313,29 @@ function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGra
         return { count: alvo.length };
       },
     },
+    pautaPeca: {
+      findMany: async ({ where }: { where: { orgId: string; rodadaId: string; canal: string; formato: { in: string[] }; status: { in: string[] } } }) =>
+        structuredClone(
+          pecas.filter(
+            (p) =>
+              p.orgId === where.orgId &&
+              p.rodadaId === where.rodadaId &&
+              p.canal === where.canal &&
+              where.formato.in.includes(p.formato) &&
+              where.status.in.includes(p.status),
+          ),
+        ),
+      updateMany: async ({ where, data }: { where: { id: string; orgId: string; status: string }; data: Partial<PecaFalsa> }) => {
+        const alvo = pecas.filter((p) => p.id === where.id && p.orgId === where.orgId && p.status === where.status);
+        for (const p of alvo) Object.assign(p, structuredClone(data));
+        return { count: alvo.length };
+      },
+    },
+    $executeRaw: async (_partes: TemplateStringsArray, ...valores: unknown[]) => {
+      travas.push(String(valores[0]));
+      return 1;
+    },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
     auditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         auditoria.push(data);
@@ -327,6 +355,8 @@ function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGra
   return {
     midia: new MidiaService(prisma, audit, new EpisodioService(prisma, audit), roteiros),
     lista,
+    pecas,
+    travas,
     auditoria,
     condicionais,
     listagens,
@@ -437,6 +467,69 @@ describe('mídia: registrar a mídia editada', () => {
     await expect(s.midia.registrarMidia(ORG, 'e1', PESSOA, PautaMidiaSchema.parse(MIDIA))).rejects.toBeInstanceOf(ConflictException);
     expect(s.lista[0].status).toBe('gravacao');
     expect(s.auditoria).toEqual([]);
+  });
+});
+
+describe('mídia refeita: as peças da semana voltam ao rascunho', () => {
+  const SHA_VELHO = shaDaTranscricao(SEGMENTOS);
+  const peca = (over: Partial<PecaFalsa> & { id: string }): PecaFalsa => {
+    const p = base(over);
+    return { ...p, meta: { formato: p.formato, ...p.meta } };
+  };
+  const base = (over: Partial<PecaFalsa> & { id: string }): PecaFalsa => ({
+    orgId: ORG,
+    rodadaId: RODADA,
+    canal: 'instagram',
+    formato: 'corte',
+    status: 'aprovada',
+    agendadaPara: new Date('2026-09-29T21:00:00.000Z'),
+    meta: {
+      episodioId: 'e1',
+      itemId: 'c2',
+      transcricaoSha: SHA_VELHO,
+      inicio: 312,
+      fim: 371,
+      imagens: [{ n: 1, chave: 'k' }],
+      video: { arquivo: '/Users/p/ep-03-m2-corte.mp4', duracaoSeg: 59, bytes: 1 },
+    },
+    ...over,
+  });
+
+  it('a mídia nova tira da agenda e do render toda peça não postada do episódio, na mesma transação e sob o cadeado da semana', async () => {
+    const s = servico({
+      episodios: [ep({ status: 'edicao', midia: { ...MIDIA, recebidaEm: 'ontem' }, transcricao: SEGMENTOS })],
+      pecas: [
+        peca({ id: 'corte' }),
+        peca({ id: 'story', formato: 'story', status: 'rascunho' }),
+        peca({ id: 'postada', formato: 'carrossel', status: 'publicada' }),
+        peca({ id: 'outro-ep', meta: { episodioId: 'e9', itemId: 'c2', transcricaoSha: SHA_VELHO, imagens: [], video: null } }),
+        peca({ id: 'antiga', meta: { canal: 'derivacao-antiga' } }),
+      ],
+    });
+    await s.midia.registrarMidia(ORG, 'e1', PESSOA, PautaMidiaSchema.parse({ ...MIDIA, duracaoSeg: 500 }));
+
+    const por = (id: string) => s.pecas.find((p) => p.id === id)!;
+    for (const id of ['corte', 'story']) {
+      expect(por(id)).toMatchObject({ status: 'rascunho', agendadaPara: null, meta: { imagens: [], video: null, inicio: 312, transcricaoSha: SHA_VELHO } });
+    }
+    expect(por('postada').status).toBe('publicada');
+    expect(por('outro-ep')).toMatchObject({ status: 'aprovada', meta: { video: null } });
+    expect(por('outro-ep').agendadaPara).not.toBeNull();
+    expect(por('antiga').status).toBe('aprovada');
+    expect(s.travas).toEqual(['pauta-semana:e1']);
+    expect(s.auditoria[0]).toMatchObject({ after: { pecasAoRascunho: ['corte', 'story'] } });
+  });
+
+  it('a transcrição reenviada sem mídia nova: só a peça de outra fala volta ao rascunho', async () => {
+    const outra = [{ inicio: 0, fim: 10, texto: 'Outra fala.' }];
+    const s = servico({
+      episodios: [ep({ status: 'edicao', midia: { ...PautaMidiaSchema.parse(MIDIA), recebidaEm: '2026-09-24T12:00:00.000Z' } })],
+      pecas: [peca({ id: 'velha' }), peca({ id: 'da-mesma', meta: { episodioId: 'e1', itemId: 'c3', transcricaoSha: shaDaTranscricao(outra), imagens: [], video: null } })],
+    });
+    await s.midia.registrarTranscricao(ORG, 'e1', PESSOA, PautaTranscricaoSchema.parse({ segmentos: outra }));
+    expect(s.pecas.find((p) => p.id === 'velha')).toMatchObject({ status: 'rascunho', agendadaPara: null });
+    expect(s.pecas.find((p) => p.id === 'da-mesma')?.status).toBe('aprovada');
+    expect(s.auditoria[0]).toMatchObject({ after: { pecasAoRascunho: ['velha'] } });
   });
 });
 

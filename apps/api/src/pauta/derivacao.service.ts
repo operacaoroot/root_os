@@ -66,6 +66,8 @@ import {
 } from './derivacao-do-episodio';
 
 const MSG_CORRIDA = 'O episódio mudou enquanto isso (mídia refeita ou saiu da Derivação) — recarregue e tente de novo.';
+const MSG_TRANSCRICAO_MUDOU =
+  'A transcrição mudou depois desta peça (a mídia foi refeita): edite o trecho ou gere a semana de novo antes de renderizar.';
 
 interface LinhaDaPeca {
   id: string;
@@ -478,6 +480,18 @@ export class DerivacaoService {
     });
   }
 
+  /**
+   * O corte e o story são tempos do vídeo: gerados de outra transcrição, o mp4
+   * e o frame que o Mac manda saem de outro trecho do vídeo novo, e a duração
+   * pode bater por acaso. Só a peça da transcrição atual recebe render.
+   */
+  private async exigirATranscricaoDaPeca(tx: Prisma.TransactionClient, orgId: string, p: { m: MetaDaSemana }) {
+    const e = await tx.pautaEpisodio.findFirst({ where: { id: p.m.episodioId, orgId }, select: { transcricao: true } });
+    if (!e || shaDaTranscricao(lerTranscricao(e.transcricao)) !== p.m.transcricaoSha) {
+      throw new ConflictException(MSG_TRANSCRICAO_MUDOU);
+    }
+  }
+
   private exigirEditavel(p: { status: PautaPecaStatus }) {
     if (p.status === 'publicada') throw new BadRequestException('Peça já publicada — não dá para mexer.');
     if (p.status === 'descartada') throw new BadRequestException('Peça descartada — volte-a para rascunho antes de mexer.');
@@ -623,6 +637,7 @@ export class DerivacaoService {
 
     const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
+      if (p.formato === 'story') await this.exigirATranscricaoDaPeca(tx, orgId, p);
       if (versaoDoTexto(p) !== versaoDoTexto(antes)) {
         throw new ConflictException('O texto da peça mudou enquanto o PNG subia — renderize de novo no Mac.');
       }
@@ -670,6 +685,7 @@ export class DerivacaoService {
       this.exigirEditavel(p);
       if (p.formato !== 'corte') throw new BadRequestException('Só o corte vertical tem vídeo.');
       if (p.m.inicio === undefined || p.m.fim === undefined) throw new BadRequestException('A peça não tem o trecho do corte.');
+      await this.exigirATranscricaoDaPeca(tx, orgId, p);
       const esperado = p.m.fim - p.m.inicio;
       if (Math.abs(input.duracaoSeg - esperado) > 1) {
         throw new BadRequestException(

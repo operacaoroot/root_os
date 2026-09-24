@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  PAUTA_FORMATOS_DA_SEMANA,
   PAUTA_STATUS_PENDENTES_DE_MIDIA,
   midiaDoEpisodio,
   textoDaTranscricao,
@@ -18,6 +19,8 @@ import { AuditService } from '../audit/audit.service';
 import { EpisodioService } from './episodio.service';
 import { RoteiroService } from './roteiro.service';
 import { lerTranscricao } from './episodio';
+import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
+import { shaDaTranscricao } from './newsletter-do-episodio';
 import {
   motivoParaNaoReceberMidia,
   motivoParaNaoReceberTranscricao,
@@ -60,15 +63,68 @@ export class MidiaService {
   }
 
   /**
+   * As peças da semana (MC15) do episódio que ainda não foram postadas voltam ao
+   * rascunho, saem da agenda e perdem o render: o trecho do corte e o frame do
+   * story são tempos do vídeo anterior, e o texto foi tirado da fala de antes.
+   * Com `shaNovo`, só as geradas de outra transcrição. Roda sob o cadeado do
+   * `gerar` e das edições da semana, tomado ANTES de tocar o episódio — a
+   * mesma ordem do `gerar`, para as duas transações não se travarem.
+   */
+  private async pecasDaSemanaAoRascunho(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    e: { id: string; rodadaId: string },
+    shaNovo?: string,
+  ): Promise<string[]> {
+    const pecas = await tx.pautaPeca.findMany({
+      where: {
+        orgId,
+        rodadaId: e.rodadaId,
+        canal: 'instagram',
+        formato: { in: [...PAUTA_FORMATOS_DA_SEMANA] },
+        status: { in: ['rascunho', 'aprovada'] },
+      },
+      select: { id: true, status: true, meta: true, agendadaPara: true },
+    });
+    const voltaram: string[] = [];
+    for (const p of pecas) {
+      if (!ehPecaDaSemana(p.meta, e.id)) continue;
+      if (shaNovo !== undefined && lerMetaDaSemana(p.meta).transcricaoSha === shaNovo) continue;
+      const meta = { ...(p.meta as Record<string, unknown>), imagens: [], video: null };
+      const r = await tx.pautaPeca.updateMany({
+        where: { id: p.id, orgId, status: p.status },
+        data: { status: 'rascunho', agendadaPara: null, meta: meta as unknown as Prisma.InputJsonValue },
+      });
+      if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
+      voltaram.push(p.id);
+    }
+    return voltaram;
+  }
+
+  private travarASemana(tx: Prisma.TransactionClient, id: string) {
+    return tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pauta-semana:${id}`}))`;
+  }
+
+  /**
    * A mídia editada. Da gravação vai para a edição; na edição, substitui a de
    * antes. Uma mídia nova DESCARTA a transcrição que houver e o pacote do
    * YouTube (MC11) que saiu dela: os capítulos e os frames das thumbs são tempos
-   * do vídeo anterior e não bateriam com o novo.
+   * do vídeo anterior e não bateriam com o novo. Pelo mesmo motivo, as peças da
+   * semana ainda não postadas voltam ao rascunho, fora da agenda e sem render.
    */
   async registrarMidia(orgId: string, id: string, actorId: string, entrada: PautaMidiaInput): Promise<PautaEpisodioDetalhe> {
     const e = await this.prisma.pautaEpisodio.findFirst({
       where: { id, orgId },
-      select: { status: true, midia: true, transcricao: true, titulos: true, descricao: true, thumbs: true, atualizadoEm: true },
+      select: {
+        status: true,
+        rodadaId: true,
+        midia: true,
+        transcricao: true,
+        titulos: true,
+        descricao: true,
+        thumbs: true,
+        atualizadoEm: true,
+      },
     });
     if (!e) throw new NotFoundException('Episódio não encontrado');
     const motivo = motivoParaNaoReceberMidia(e.status);
@@ -79,19 +135,23 @@ export class MidiaService {
     const transcricaoDescartada = lerTranscricao(e.transcricao).length > 0;
     const pacoteDescartado =
       titulosDoPacote(e.titulos).length > 0 || e.descricao.trim() !== '' || thumbsDoPacote(e.thumbs).length > 0;
-    const r = await this.prisma.pautaEpisodio.updateMany({
-      where: { id, orgId, status: e.status, atualizadoEm: e.atualizadoEm },
-      data: {
-        midia: midia as unknown as Prisma.InputJsonValue,
-        transcricao: [],
-        transcricaoTexto: '',
-        titulos: [],
-        descricao: '',
-        thumbs: [],
-        status: para,
-      },
+    const pecasAoRascunho = await this.prisma.$transaction(async (tx) => {
+      await this.travarASemana(tx, id);
+      const r = await tx.pautaEpisodio.updateMany({
+        where: { id, orgId, status: e.status, atualizadoEm: e.atualizadoEm },
+        data: {
+          midia: midia as unknown as Prisma.InputJsonValue,
+          transcricao: [],
+          transcricaoTexto: '',
+          titulos: [],
+          descricao: '',
+          thumbs: [],
+          status: para,
+        },
+      });
+      if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
+      return this.pecasDaSemanaAoRascunho(tx, orgId, { id, rodadaId: e.rodadaId });
     });
-    if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
 
     await this.audit.log({
       orgId,
@@ -100,7 +160,7 @@ export class MidiaService {
       entityType: 'pauta_episodio',
       entityId: id,
       before: { status: e.status, tinhaMidia: midiaDoEpisodio(e.midia) !== null },
-      after: { status: para, ...resumoDaMidia(entrada), transcricaoDescartada, pacoteDescartado },
+      after: { status: para, ...resumoDaMidia(entrada), transcricaoDescartada, pacoteDescartado, pecasAoRascunho },
     });
     return this.episodios.obter(orgId, id);
   }
@@ -114,7 +174,7 @@ export class MidiaService {
   ): Promise<PautaEpisodioDetalhe> {
     const e = await this.prisma.pautaEpisodio.findFirst({
       where: { id, orgId },
-      select: { status: true, midia: true, atualizadoEm: true },
+      select: { status: true, rodadaId: true, midia: true, atualizadoEm: true },
     });
     if (!e) throw new NotFoundException('Episódio não encontrado');
     const midia = midiaDoEpisodio(e.midia);
@@ -126,11 +186,17 @@ export class MidiaService {
     const segmentos = entrada.segmentos.map((s) => ({ inicio: s.inicio, fim: s.fim, texto: s.texto }));
     const texto = textoDaTranscricao(segmentos);
     const para: PautaEpisodioStatus = 'pacote';
-    const r = await this.prisma.pautaEpisodio.updateMany({
-      where: { id, orgId, status: e.status, atualizadoEm: e.atualizadoEm },
-      data: { transcricao: segmentos, transcricaoTexto: texto, status: para },
+    // A transcrição pode ser reenviada sem mídia nova (o episódio voltou à
+    // Edição): a peça da semana gerada de outra fala também volta ao rascunho.
+    const pecasAoRascunho = await this.prisma.$transaction(async (tx) => {
+      await this.travarASemana(tx, id);
+      const r = await tx.pautaEpisodio.updateMany({
+        where: { id, orgId, status: e.status, atualizadoEm: e.atualizadoEm },
+        data: { transcricao: segmentos, transcricaoTexto: texto, status: para },
+      });
+      if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
+      return this.pecasDaSemanaAoRascunho(tx, orgId, { id, rodadaId: e.rodadaId }, shaDaTranscricao(segmentos));
     });
-    if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
 
     await this.audit.log({
       orgId,
@@ -147,6 +213,7 @@ export class MidiaService {
         duracaoSeg: midia!.duracaoSeg,
         idioma: entrada.idioma ?? null,
         modelo: entrada.modelo ?? null,
+        pecasAoRascunho,
       },
     });
     return this.episodios.obter(orgId, id);

@@ -439,11 +439,13 @@ export const pastaDoCarrossel = (apelido, n) => `${apelido}-m${n}-carrossel`;
 
 /**
  * A peça ainda aceita render? Aprovada aceita (o render é o que falta para
- * postar); publicada e descartada, não.
- * @param {{ status: string }} p
+ * postar); publicada e descartada, não. A que foi gerada de outra transcrição
+ * também não: o trecho e o frame dela são tempos do vídeo anterior, e cortar
+ * o final novo nesses tempos sai outra fala sem erro nenhum.
+ * @param {{ status: string, transcricaoMudou?: boolean }} p
  */
 export function aceitaRender(p) {
-  return p.status === 'rascunho' || p.status === 'aprovada';
+  return (p.status === 'rascunho' || p.status === 'aprovada') && p.transcricaoMudou !== true;
 }
 
 /**
