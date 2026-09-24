@@ -23,7 +23,8 @@ const ATOR = 'whatsapp';
  * `gateway/canais/entrada-de-grupo.registry.ts`): este serviço se inscreve lá
  * com o JID de `EVOLUTION_LINKS_JID` e recebe só as mensagens desse grupo, já
  * dentro do contexto da empresa do caminho (`comTenantPublico`, no controlador
- * do canal). Sem a variável, não se inscreve e nada muda.
+ * do canal) — e só grava quando essa empresa é a de `EVOLUTION_LINKS_ORG_ID`.
+ * Sem as duas variáveis, não se inscreve e nada muda.
  *
  * O QUE NÃO ACONTECE NA CHEGADA, de propósito: nem Apify nem IA. Os dois custam
  * por chamada, e quem cola dez links no grupo durante a semana não pediu dez
@@ -42,6 +43,13 @@ const ATOR = 'whatsapp';
 export class EntradaDeLinksService implements OnModuleInit {
   private readonly log = new Logger('EntradaDeLinks');
   private readonly jid = (process.env.EVOLUTION_LINKS_JID ?? '').trim();
+  /**
+   * A empresa dona do grupo. O webhook do canal tem uma URL por empresa e um
+   * segredo só para todas, e o JID é global: sem esta trava, a instância de
+   * outra empresa que também estivesse no grupo gravaria cada link lá — com o
+   * texto da mensagem e quem colou — e criaria a fonte ativa na primeira vez.
+   */
+  private readonly orgDoGrupo = (process.env.EVOLUTION_LINKS_ORG_ID ?? '').trim();
 
   /**
    * Uma mensagem por vez, neste processo. A Evolution reentrega e o grupo pode
@@ -57,10 +65,14 @@ export class EntradaDeLinksService implements OnModuleInit {
   ) {}
 
   get ligado(): boolean {
-    return this.jid !== '';
+    return this.jid !== '' && this.orgDoGrupo !== '';
   }
 
   onModuleInit(): void {
+    if (this.jid !== '' && this.orgDoGrupo === '') {
+      this.log.warn('EVOLUTION_LINKS_JID definido sem EVOLUTION_LINKS_ORG_ID (a empresa dona do grupo): grupo de links desligado');
+      return;
+    }
     if (!this.ligado) return;
     if (!this.grupos) {
       this.log.warn('EVOLUTION_LINKS_JID definido, mas o registro de entrada por grupo não está no ar');
@@ -93,6 +105,7 @@ export class EntradaDeLinksService implements OnModuleInit {
   }
 
   private async processar(orgId: string, evento: unknown): Promise<string> {
+    if (orgId !== this.orgDoGrupo) return 'ignorado:empresa-errada';
     const leitura = lerLinksDoGrupo(evento, this.jid);
     if (leitura.tipo === 'ignorar') return `ignorado:${leitura.porque}`;
 

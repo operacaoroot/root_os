@@ -510,13 +510,17 @@ function prismaDeMentira(modulos: string[] = ['pauta']) {
 
 describe('grupo de links: o serviço de entrada', () => {
   const antes = process.env.EVOLUTION_LINKS_JID;
+  const orgAntes = process.env.EVOLUTION_LINKS_ORG_ID;
 
   beforeEach(() => {
     process.env.EVOLUTION_LINKS_JID = GRUPO;
+    process.env.EVOLUTION_LINKS_ORG_ID = ORG;
   });
   afterEach(() => {
     if (antes === undefined) delete process.env.EVOLUTION_LINKS_JID;
     else process.env.EVOLUTION_LINKS_JID = antes;
+    if (orgAntes === undefined) delete process.env.EVOLUTION_LINKS_ORG_ID;
+    else process.env.EVOLUTION_LINKS_ORG_ID = orgAntes;
   });
 
   function montar(modulos?: string[]) {
@@ -633,6 +637,31 @@ describe('grupo de links: o serviço de entrada', () => {
       'capturadas:1,repetidas:1',
     );
     expect(capturas.map((c) => c.url)).toEqual(['https://b.com']);
+  });
+
+  it('a mesma mensagem do grupo chegando pelo caminho de outra empresa não grava captura nem cria fonte lá', async () => {
+    const { servico, fontes, capturas, auditoria } = montar();
+    expect(await servico.receber('outra-empresa-com-pauta', payload({ texto: 'https://a.com/post' }))).toBe('ignorado:empresa-errada');
+    expect(fontes).toHaveLength(0);
+    expect(capturas).toHaveLength(0);
+    expect(auditoria).toHaveLength(0);
+    expect(await servico.receber(ORG, payload({ texto: 'https://a.com/post' }))).toBe('capturadas:1,repetidas:0');
+  });
+
+  it('sem a empresa dona do grupo, o grupo fica desligado e avisa no arranque', () => {
+    const aviso = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      delete process.env.EVOLUTION_LINKS_ORG_ID;
+      const banco = prismaDeMentira();
+      const reg = new EntradaDeGrupoRegistry();
+      const s = new EntradaDeLinksService(banco.prisma, new AuditService(banco.prisma), reg);
+      expect(s.ligado).toBe(false);
+      s.onModuleInit();
+      expect(reg.inscrito(GRUPO)).toBe(false);
+      expect(aviso).toHaveBeenCalledWith(expect.stringContaining('EVOLUTION_LINKS_ORG_ID'));
+    } finally {
+      aviso.mockRestore();
+    }
   });
 
   it('se inscreve no registro com o JID da variável — e sem ela, não', () => {
