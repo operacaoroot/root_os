@@ -64,6 +64,7 @@ import {
   type DerivacaoMontada,
   type MetaDaSemana,
 } from './derivacao-do-episodio';
+import { umaPorVez } from './uma-por-vez';
 
 const MSG_CORRIDA = 'O episódio mudou enquanto isso (mídia refeita ou saiu da Derivação) — recarregue e tente de novo.';
 const MSG_TRANSCRICAO_MUDOU =
@@ -211,7 +212,11 @@ export class DerivacaoService {
    * transação, sob o cadeado do episódio e conferindo que a transcrição é a
    * mesma lida antes da IA: uma matéria que falha não leva as outras.
    */
-  async gerar(
+  gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean; itens?: number[] }): Promise<PautaSemanaGerada> {
+    return umaPorVez(`pauta-semana:${orgId}:${id}`, 'A geração da semana deste episódio', () => this.gerarAgora(orgId, id, actorId, opts));
+  }
+
+  private async gerarAgora(
     orgId: string,
     id: string,
     actorId: string,

@@ -662,6 +662,30 @@ describe('semana: gerar (o critério de pronto, com a transcrição de exemplo)'
     expect(s.pecas.map((p) => meta(p).linkDaMateria)).not.toContain(GMAIL);
   });
 
+  it('o segundo clique enquanto a primeira geração ainda roda é 409 na hora, sem pagar a IA de novo', async () => {
+    let soltar: () => void = () => undefined;
+    const segura = new Promise<void>((r) => (soltar = r));
+    let primeira = true;
+    const s = servico({
+      llm: {
+        complete: async (m: { user: string }) => {
+          if (primeira) {
+            primeira = false;
+            await segura;
+          }
+          return respostaDaIa(Number(/Matéria (\d+) de/.exec(m.user)?.[1] ?? 0));
+        },
+      } as Partial<LlmProvider>,
+    });
+    const emCurso = s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    await new Promise((r) => setTimeout(r, 0));
+    await expect(s.semana.gerar(ORG, 'e1', PESSOA, { substituir: true })).rejects.toThrow(/já está em andamento/);
+    soltar();
+    expect((await emCurso).conta.criadas).toBe(9);
+    // Terminada a primeira, a chave se solta: gerar de novo volta a valer.
+    await expect(s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false })).rejects.toThrow(/confirme|substituir/i);
+  });
+
   it('gerar de novo: sem confirmar é 409 sem IA; confirmando, substitui no mesmo registro e não duplica', async () => {
     const s = servico();
     await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });

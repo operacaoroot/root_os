@@ -42,6 +42,7 @@ import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { VozService } from './voz.service';
 import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
 import { ehPecaDaSemana } from './derivacao-do-episodio';
+import { umaPorVez } from './uma-por-vez';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
 // Ver docs/PAUTA.md §7. O que a diferencia de "gerar um texto com IA" é o
@@ -340,7 +341,15 @@ export class RodadaService {
    * pessoa consegue curar sem a IA, e travar a curadoria por causa dela seria
    * devolver à IA a decisão que esta fatia tira dela.
    */
-  async gerarParaCuradoria(
+  gerarParaCuradoria(
+    orgId: string,
+    actorId: string,
+    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown } = {},
+  ) {
+    return umaPorVez(`pauta-curadoria:${orgId}`, 'A rodada para curadoria', () => this.gerarParaCuradoriaAgora(orgId, actorId, opts));
+  }
+
+  private async gerarParaCuradoriaAgora(
     orgId: string,
     actorId: string,
     opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown } = {},

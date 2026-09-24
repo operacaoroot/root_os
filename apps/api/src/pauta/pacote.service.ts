@@ -40,6 +40,7 @@ import {
   thumbsGuardadas,
   type ThumbGuardada,
 } from './pacote-do-episodio';
+import { umaPorVez } from './uma-por-vez';
 
 const DO_EPISODIO = {
   id: true,
@@ -110,7 +111,11 @@ export class PacoteService {
    * enquanto o modelo pensava não é apagado em silêncio (409). Gerar de novo
    * troca os briefs, e as imagens das thumbs antigas saem junto.
    */
-  async gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaPacoteGerado> {
+  gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaPacoteGerado> {
+    return umaPorVez(`pauta-pacote:${orgId}:${id}`, 'A geração do pacote deste episódio', () => this.gerarAgora(orgId, id, actorId, opts));
+  }
+
+  private async gerarAgora(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaPacoteGerado> {
     const e = await this.ler(orgId, id);
     const segmentos = lerTranscricao(e.transcricao);
     const motivo = motivoParaNaoGerarPacote(e.status, segmentos.length);

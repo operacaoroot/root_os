@@ -56,6 +56,7 @@ import {
   textoDoPost,
 } from './perfil-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { umaPorVez } from './uma-por-vez';
 
 const EMBED_MODEL = 'text-embedding-3-small';
 // Teto de itens por página. `total` na resposta é a contagem REAL do filtro (não o
@@ -928,7 +929,11 @@ export class PautaService implements OnModuleInit {
   }
 
   /** "Coletar agora" do Radar: o despacho por tipo mora em `ColetaService`. */
-  async coletarFonte(orgId: string, id: string, actorId: string, limite = 12) {
+  coletarFonte(orgId: string, id: string, actorId: string, limite = 12) {
+    return umaPorVez(`pauta-coleta:${orgId}:${id}`, 'A coleta desta fonte', () => this.coletarFonteAgora(orgId, id, actorId, limite));
+  }
+
+  private async coletarFonteAgora(orgId: string, id: string, actorId: string, limite = 12) {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
     const r = await this.coleta.coletar(f, actorId, { limite });

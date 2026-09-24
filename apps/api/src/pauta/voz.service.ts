@@ -38,6 +38,7 @@ import {
   procedenciaDoPerfil,
   type FonteDaVoz,
 } from './voz-da-pauta';
+import { umaPorVez } from './uma-por-vez';
 
 const TITULO_DO_PERFIL = 'Voz do autor (pauta)';
 const TITULO_DA_CHAVE = 'Chave da voz da pauta';
@@ -151,7 +152,11 @@ export class VozService {
    * A IA destila o perfil das transcrições e dos textos colados, e ele vira a
    * versão nova da nota. Resposta fora do formato é 503 sem gravar nada.
    */
-  async aprender(orgId: string, actorId: string, entrada: PautaVozAprenderInput): Promise<PautaVozAprendida> {
+  aprender(orgId: string, actorId: string, entrada: PautaVozAprenderInput): Promise<PautaVozAprendida> {
+    return umaPorVez(`pauta-voz:${orgId}`, 'O aprendizado da voz', () => this.aprenderAgora(orgId, actorId, entrada));
+  }
+
+  private async aprenderAgora(orgId: string, actorId: string, entrada: PautaVozAprenderInput): Promise<PautaVozAprendida> {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
     }

@@ -36,6 +36,7 @@ import {
   palavraDeCorteEfetiva,
   systemDoRoteiro,
 } from './roteiro-do-episodio';
+import { umaPorVez } from './uma-por-vez';
 
 const DO_EPISODIO = {
   id: true,
@@ -145,7 +146,11 @@ export class RoteiroService {
    * ao status E ao `atualizadoEm` lidos antes da IA: uma edição à mão feita
    * enquanto o modelo pensava não é apagada em silêncio (409).
    */
-  async gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaRoteiroDoEpisodio> {
+  gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaRoteiroDoEpisodio> {
+    return umaPorVez(`pauta-roteiro:${orgId}:${id}`, 'A geração do roteiro deste episódio', () => this.gerarAgora(orgId, id, actorId, opts));
+  }
+
+  private async gerarAgora(orgId: string, id: string, actorId: string, opts: { substituir: boolean }): Promise<PautaRoteiroDoEpisodio> {
     const e = await this.ler(orgId, id);
     const itens = itensMantidos(e.rodada.itens);
     const motivo = motivoParaNaoGerar(e.status, itens.length);

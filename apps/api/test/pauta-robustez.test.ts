@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ExpressAdapter } from '@nestjs/platform-express';
+import { ConflictException } from '@nestjs/common';
 import {
   PAUTA_TETO_DA_TRANSCRICAO,
   PAUTA_TETO_DE_SEGMENTOS,
@@ -32,6 +33,7 @@ import { entradaDoPacote, linksDaDescricao, montarPacote } from '../src/pauta/pa
 import { planoDaPagina } from '../src/pauta/pagina-de-links-do-episodio';
 import { entradaDaNewsletter, montarNewsletter } from '../src/pauta/newsletter-do-episodio';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
+import { MSG_EM_ANDAMENTO, umaPorVez } from '../src/pauta/uma-por-vez';
 import { PublicacaoService } from '../src/pauta/publicacao.service';
 import { RodadaService } from '../src/pauta/rodada.service';
 import { VozService } from '../src/pauta/voz.service';
@@ -596,5 +598,26 @@ describe('MC-R 3: o corpo grande só nas rotas de mídia', () => {
     expect(instala).toBeGreaterThan(-1);
     expect(instala).toBeLessThan(main.indexOf('app.listen('));
     expect(main).not.toMatch(/useBodyParser|bodyParser:\s*false/);
+  });
+});
+
+describe('MC-R 4: uma geração longa de cada vez', () => {
+  it('a mesma chave em curso é 409 antes de chamar nada; outra chave passa; ao terminar, solta — também quando falha', async () => {
+    let soltar: () => void = () => undefined;
+    const primeira = umaPorVez('pauta-teste:org:e1', 'A geração de teste', () => new Promise<string>((r) => (soltar = () => r('ok'))));
+    let chamou = false;
+    await expect(
+      umaPorVez('pauta-teste:org:e1', 'A geração de teste', async () => {
+        chamou = true;
+        return 'segunda';
+      }),
+    ).rejects.toThrow(new ConflictException(`A geração de teste ${MSG_EM_ANDAMENTO}`));
+    expect(chamou).toBe(false);
+    await expect(umaPorVez('pauta-teste:org:e2', 'Outra', async () => 'outra')).resolves.toBe('outra');
+    soltar();
+    await expect(primeira).resolves.toBe('ok');
+
+    await expect(umaPorVez('pauta-teste:org:e1', 'X', async () => Promise.reject(new Error('caiu')))).rejects.toThrow('caiu');
+    await expect(umaPorVez('pauta-teste:org:e1', 'X', async () => 'de novo')).resolves.toBe('de novo');
   });
 });

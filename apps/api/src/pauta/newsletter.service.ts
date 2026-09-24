@@ -40,6 +40,7 @@ import {
   type MetaDaNewsletter,
   type NewsletterMontada,
 } from './newsletter-do-episodio';
+import { umaPorVez } from './uma-por-vez';
 
 const MSG_CORRIDA = 'O episódio mudou enquanto isso (outra aba, outra geração ou a mídia refeita) — recarregue e tente de novo.';
 
@@ -137,7 +138,11 @@ export class NewsletterService {
    * tela os mostra. A escrita é condicionada à transcrição e às newsletters
    * lidas antes da IA: mídia refeita ou outra geração no meio = 409.
    */
-  async gerar(
+  gerar(orgId: string, id: string, actorId: string, opts: { substituir: boolean; urlDoVideo?: string | null }): Promise<PautaNewsletterPainel> {
+    return umaPorVez(`pauta-newsletter:${orgId}:${id}`, 'A geração da newsletter deste episódio', () => this.gerarAgora(orgId, id, actorId, opts));
+  }
+
+  private async gerarAgora(
     orgId: string,
     id: string,
     actorId: string,
