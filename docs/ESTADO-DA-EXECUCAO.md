@@ -326,6 +326,101 @@ tempo); a recusa escrita no RASTRO do cliente tem teto de taxa; e a cerca do con
   precisa entrar de novo. Não é perda de dado e não tem conserto a fazer — é um aviso para não
   acontecer no meio de uma demonstração.
 
+### Onda MC-A — entrada da máquina de conteúdo · `5fab6e5` (23/09/2026)
+
+Frente nova, fora da numeração do plano de continuidade: `docs/PLANO-MAQUINA-DE-CONTEUDO.md`,
+fatias MC1 a MC6. **Branch `root-os/maquina-de-conteudo`**, saída de `origin/main` do
+`operacaoroot/marketing-os`, com o plano em `d8b20be`. Nada empurrado, nada mesclado, nada na VPS.
+
+Seis commits, um por fatia, na ordem MC1 → MC2 → MC3 → MC4 → MC6 → MC5. A MC6 veio antes da MC5
+porque é ela que cria o status `aguardando_curadoria`, onde a rotina de quinta deixa a rodada.
+
+| Fatia | Commit | O que entrou | Parcial? |
+|---|---|---|---|
+| MC1 | `1f88073` | Link colado no grupo de WhatsApp vira captura em `/referencias`. Não há endpoint novo: a Evolution só aceita uma URL de webhook por instância, então o webhook do canal de aprovação (`POST /approvals/canal/whatsapp/:orgId`) desvia o grupo `EVOLUTION_LINKS_JID` para `pauta/entrada-de-links.service.ts` antes de o canal ler. Parser puro, deduplicação por `urlHash` | **Sim.** Só liga com o grupo criado, a variável preenchida e o canal de aprovação configurado, e isso é tarefa do Pedro. O critério "aparece em menos de 1 min" só se mede em produção; aqui, do webhook à captura leva menos de 1 s. A escrita foi medida com o dono do banco, não com o papel restrito |
+| MC2 | `fb29ab4` | Tipo `gmail` em `PautaFonteTipo`. A etiqueta fica em `handle`, e a leitura passa **pela porta** com as capacidades R0 `comunicacao.email.buscar`/`ler`. Google ausente vira erro na fonte e não derruba a rodada | **Sim.** Se a empresa subir a leitura do Gmail para R2 ou mais, a coleta fica retida (no máximo uma aprovação por rodada, documentado em `docs/PAUTA.md`). O permalink usa `/mail/u/0/`, que pode abrir outra conta para quem tem várias logadas |
+| MC3 | `24fff3d` | Tipo `busca` implementado: `ApifyService.buscarNoGoogle` (`apify~google-search-scraper`, Brasil, `d7`). O run é reservado antes da chamada e o custo é rateado nas capturas. Teto estourado pula a fonte com aviso | **Sim.** O actor não rodou contra o Apify real, então falta conferir se `languageCode: 'pt-BR'` é aceito e se `resultsPerPage` ainda tem efeito. A chamada herda a exceção de arquitetura que já existia para o perfil ("onda 8 — resto da 3.3"); nenhuma exceção nova. O `handle` subiu de 60 para 200 caracteres |
+| MC4 | `93dd440` | X (`apidojo~tweet-scraper`) e YouTube (`streamers~youtube-scraper`). O perfil entra na coleta da rodada, e a rodada lê todas as origens com rótulo W/N/R/C/L. `origens: ['R','N']` reproduz a rodada antiga | **Sim.** Os dois actors e os campos de entrada e saída seguem o schema público e não rodaram contra o Apify real. **Mudança de gasto:** rotina sem `origens` passa a coletar os perfis ativos, a 1 run por perfil por disparo. `origens` só se muda pela API |
+| MC6 | `48a9313` | Curadoria humana. O modo novo `gerarParaCuradoria` põe todos os candidatos da janela (até 200) com a sugestão da IA, e o operador marca na aba "Curadoria" de `/pauta`. Só os marcados seguem. A newsletter entra como `semLinkPublico` e nunca vira link publicado. O modo antigo (`gerar`) ficou intacto | Não no código. A aba não foi aberta num navegador real. Em aberto: os sugeridos já virem marcados (é uma linha em `aplicarSugestoes`) |
+| MC5 | `5fab6e5` | Executor `pauta.coleta`: conta as fontes, coleta por origem (uma fonte que falha não derruba as outras) e gera em `aguardando_curadoria`, sem curar. Rotina criada por `POST /rotinas` ou pelo botão "Nova rotina de coleta" em `/rotinas` (quinta 22h, São Paulo, 168h) | **Sim.** Sob o papel restrito ela não dispara (passo 16 do §3). A rodada nasce com `rotinaId` nulo, e a aba mostra "rotina: —". A tela `/rotinas` a 375px não foi vista |
+
+**Medido no fechamento** (Mac, banco de teste descartável `marketing_os_test` no container
+`mktos-mc-db`, pgvector pg16, política semeada, 23/09/2026 ~22h):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck` | 7 de 7 tarefas verdes |
+| `pnpm --filter @mktos/api typecheck:test` | limpo |
+| `pnpm test` (turbo) | policy **74** em 2 arquivos · api **1479 passando / 557 pulados** em 53 arquivos (48 + 5 pulados) · web **420** em 32 arquivos |
+| `pnpm --filter @mktos/api test` direto, com `TEST_DATABASE_URL` | **2036 de 2036** em 53 arquivos. Os 557 pulados do turbo são os casos que pedem banco: o turbo não repassa `TEST_DATABASE_URL` à tarefa |
+| `pnpm --filter @mktos/api test:porta` | **39** |
+| `pnpm --filter @mktos/api test:isolamento` com `TENANT_DATABASE_URL` no papel restrito | **319** em 1 arquivo. A onda não criou tabela, então não houve semente nova. Para rodar foi preciso dar ao `mktos_app` a senha da CI (`ALTER ROLE ... LOGIN PASSWORD 'ci'`, o mesmo passo do `ci.yml`) no container descartável. Sem a conexão restrita a suíte mede o dono e dá 193 falhas, que é o comportamento esperado da suíte |
+| `pnpm --filter @mktos/api db:diff` | `No difference detected.` |
+| `pnpm --filter @mktos/api build` + `smoke` | **SMOKE OK.** As cinco rotas padrão responderam 401. As rotas novas da onda aparecem mapeadas no boot: `POST /api/approvals/canal/whatsapp/:orgId`, `POST /api/pauta/rodadas/curadoria`, `PUT` e `POST …/:id/curadoria[/confirmar]`, `POST /api/rotinas`. Linha de boot: `política base v1 carregada DO BANCO (62 capacidades)`, e 21 capacidades com efeito ligado. Variáveis do smoke, todas descartáveis: `JWT_SECRET` de teste, `ROTINAS_CRON=off` e os seis intervalos de sincronização em 0, como em `docs/DEPLOY.md` §2.3 |
+
+Contra a linha de base de antes da onda (api 1233 / 557, web 398, policy 74): **+246 casos na
+api** (seis arquivos novos: `grupo-de-links`, `pauta-gmail`, `pauta-busca`, `pauta-perfil`,
+`pauta-curadoria`, `pauta-coleta-rotina`), **+22 no web** (`pauta-curadoria`, `rotinas-coleta`).
+Policy igual. Os pisos da CI subiram fatia a fatia, com a conta no comentário: api 1458/45 e web
+258/23. **O fechamento não achou nada quebrado pela onda, e por isso não há commit de conserto.**
+O boot com o provider novo do executor, que o MC5 tinha deixado sem conferir, passou no smoke.
+
+**O que não foi feito, e por quê:**
+
+- **Nada rodou contra sistema externo.** Os actors do Apify (busca, X, YouTube), o Gmail real e o
+  webhook real da Evolution nunca foram chamados. A execução não podia sair da máquina. O primeiro
+  run de cada um precisa ser conferido: formato do item e custo por run. O `tweet-scraper` pode
+  ter cobrança mínima por consulta.
+- **As três chaves de URL continuam separadas.** O RSS grava `urlHash` pela própria regra, e a
+  busca e o grupo usam `normalizarUrlDaCaptura`. Unificar mudaria o hash contra as capturas já
+  gravadas, e os itens ainda presentes nos feeds entrariam de novo. A curadoria junta a mesma
+  matéria antes do prompt (`umaPorMateriaDoInsumo`). Se o Pedro quiser unificar, é outra fatia.
+- **`origens` não tem controle na tela de Rotinas.** Só pela API.
+- **A consulta à política antes da porta** (para a coleta do Gmail não criar aprovação quando a
+  empresa sobe a leitura para R2+) não existe. Criar essa consulta mexeria no núcleo de governança.
+- **O `next lint` do web** não está configurado e abre o assistente interativo. Não rodou.
+- **As fases 2 a 4 (MC7 a MC18) e as decisões D-MC2 a D-MC9** ficaram fora da onda, por escopo.
+
+**Ordem de deploy desta onda.** Vale por cima da ordem consolidada do §3, que continua inteira:
+
+| # | Passo | Se pular |
+|---|---|---|
+| A1 | Backup e tag de rollback, como no §3 (passos 5 e 8) | Os dois `ALTER TYPE ... ADD VALUE` não se desfazem: o Postgres não remove valor de enum |
+| A2 | `db:deploy` aplica, nesta ordem, `20260924020000_pauta_fonte_gmail` (`PautaFonteTipo += gmail`) e `20260924050000_pauta_rodada_aguardando_curadoria` (`PautaRodadaStatus += aguardando_curadoria`). Nenhuma tabela nova e nada muda no RLS. Conferir antes com `db:status`: se a produção ainda não tiver as migrations anteriores da `main` (`20260917010000_esteira_de_clientes`, `20260924010000_onboarding_do_cliente`), elas entram antes, na ordem do nome | Código novo contra enum antigo: cadastrar fonte Gmail e gerar rodada para curadoria falham no Prisma com valor de enum inválido |
+| A3 | Variável nova: `EVOLUTION_LINKS_JID`, já declarada no bloco `environment:` do serviço `api` no `docker-compose.yml` e no `.env.example`. Na VPS, preencher no `.env` e recriar o container (`up -d --no-build api`) | Vazia, o grupo de links fica desligado, que é o padrão seguro. `docker restart` não pega a variável |
+| A4 | **Nada de `db:seed:politica` nem de `db:sync-permissions` por causa desta onda.** A política e as permissões não mudaram: a coleta do Gmail usa as capacidades R0 que já existiam, e as telas usam `pauta.ver`, `pauta.editar` e `automacoes.executar`. Se o deploy levar também commits anteriores que mexem nisso, vale o §3 deles | — |
+| A5 | Smoke da imagem com `ROTINAS_CRON=off` antes do `up` (§3, passo 9) | O executor `pauta.coleta` é provider novo no `RoutinesModule`. Aqui ele subiu, mas quem vale é o smoke da imagem construída |
+
+**Tarefas do Pedro, fora do repositório** (nenhum agente pode fazer):
+
+1. **Grupo de links (D-MC10):** criar o grupo "Root · links" com o número da instância dedicada do
+   root. Pegar o JID do grupo (termina em `@g.us`) e preencher `EVOLUTION_LINKS_JID` no `.env` da
+   VPS. Conferir que o webhook da instância tem o evento `messages.upsert` apontando para
+   `/approvals/canal/whatsapp/<orgId do root>`, com o cabeçalho `x-canal-segredo`. **Sem o canal
+   de aprovação configurado** (`CANAL_APROVACAO_SEGREDO` e as outras do passo 6 do §3), o grupo de
+   links também fica desligado.
+2. **Gmail:** conectar a conta Google da empresa em Integrações e criar no Gmail uma etiqueta só
+   para as newsletters. Depois, cadastrar a fonte `gmail` com essa etiqueta em
+   `/referencias → Radar`. Quem cadastra precisa de `gmail.ver`.
+3. **Busca:** cadastrar em Radar as fontes de busca com a consulta do nicho. Cada disparo gasta 1
+   run por fonte. Com o teto padrão de 30 por mês e a rotina uma vez por semana, cabe com folga.
+4. **Creators:** cadastrar os perfis do X e do YouTube em Radar e **revisar o teto dos perfis que
+   já existem**, porque perfil agora entra na coleta automática. Para manter o gasto de antes,
+   gravar `origens` na config da rotina.
+5. **Rotina de quinta:** depois do deploy, criar na empresa root pela tela `/rotinas` ("Nova
+   rotina de coleta") ou por `POST /rotinas`. Nada foi criado no banco de produção.
+6. **Decisões de produto em aberto:** sugeridos já virem marcados na curadoria (MC6); unificar a
+   chave de URL do RSS; cercar o texto do grupo como conteúdo externo no prompt da ficha (hoje ele
+   entra como a nota digitada na tela).
+
+**Aviso do papel restrito, e ele vale para esta onda inteira.** Quando o papel restrito virar
+(passos 15 a 18 do §3), a consulta que descobre quais empresas varrer volta vazia sob policy e
+**nenhuma rotina dispara**, em empresa nenhuma, a coleta de quinta inclusive. É o passo 16, e ele
+não tem padrão seguro: `BYPASSRLS` no papel da aplicação, ou mover a descoberta para um comando de
+manutenção com a conexão dona. Até essa decisão, a rodada da semana só sai pelo "Rodar agora" em
+`/rotinas`. O grupo de links não depende de rotina (entra pelo webhook, sob `comTenantPublico`),
+mas a escrita dele ainda não foi medida com `TENANT_DATABASE_URL`.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -363,6 +458,9 @@ ou de **uma pessoa fazendo algo fora do repositório** — e esta execução nã
 
 ## 3. A ordem de deploy, consolidada
 
+> A frente da máquina de conteúdo (onda MC-A, §1) tem uma ordem curta própria, que se soma a
+> esta: duas migrations de enum, uma variável e nenhum seed.
+
 **Este é o item mais importante deste documento.** A ordem cresceu onda a onda e não é a de sempre:
 dois passos são **anteriores** ao que antes era o começo, e nenhum deles dá erro na hora — dá
 comportamento errado depois. A versão operacional, com os comandos, está em `docs/DEPLOY.md §2.0`;
@@ -382,7 +480,7 @@ o que segue é a lista inteira, incluindo o que aconteceu depois daquele texto.
 | # | Passo | Se pular |
 |---|---|---|
 | 5 | Backup do banco do dia (`docs/DEPLOY.md §4`) | Migration aditiva não desfaz. Sem backup, o rollback de estrutura não existe |
-| 6 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | O container **não lê arquivo `.env`**: só chega o que está no bloco. Foi o que segurou a `ANTHROPIC_API_KEY` por semanas. Nesta execução entraram: `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL` (vazias = cofre funciona na chave antiga, mas **não rotaciona**), `ROTINAS_CRON` (padrão ligado; único jeito de subir sem relógio), as três do canal de aprovação — `CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO`, `CANAL_APROVACAO_CAPACIDADES` (vazias = canal desligado) — e, da onda 11, o limiar de alerta do painel de custo |
+| 6 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | O container **não lê arquivo `.env`**: só chega o que está no bloco. Foi o que segurou a `ANTHROPIC_API_KEY` por semanas. Nesta execução entraram: `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL` (vazias = cofre funciona na chave antiga, mas **não rotaciona**), `ROTINAS_CRON` (padrão ligado; único jeito de subir sem relógio), as três do canal de aprovação — `CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO`, `CANAL_APROVACAO_CAPACIDADES` (vazias = canal desligado) — e, da onda 11, o limiar de alerta do painel de custo. Da onda MC-A, `EVOLUTION_LINKS_JID` (vazia = grupo de links desligado; ordem própria no §1, onda MC-A) |
 | 7 | `NEXT_PUBLIC_CENTRAL_PIXEL_KEY` como **build arg** da imagem | O Next troca toda `NEXT_PUBLIC_*` pelo valor durante o `next build`. Declarada só no bloco `environment:`, ela nunca chega ao navegador e o rastreio da Central segue caindo na empresa padrão. Trocar a chave exige **reconstruir a imagem**; `docker restart` não muda nada |
 | 8 | `docker tag mktos-app:latest mktos-app:rollback` | A imagem anterior vira lixo na próxima poda e o rollback deixa de existir. É o passo que mais dói ter pulado |
 
