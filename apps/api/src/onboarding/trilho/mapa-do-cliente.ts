@@ -200,7 +200,8 @@ export function montarMapaDoCliente(e: EstadoParaMapa): MapaDoCliente {
   let aDecidir = 0;
   for (const t of temasDoConvite('BCD', nivel)) {
     const i = porTema.get(t.id);
-    const daConversa = !!i?.proposta || i?.status === 'confirmado' || i?.status === 'corrigido';
+    // Proposta DESCARTADA na bancada não é "confirmar": o cliente responde em branco (mesma régua da teia).
+    const daConversa = (i?.status === 'aprovado' && !!i?.proposta) || i?.status === 'confirmado' || i?.status === 'corrigido';
     if (daConversa) comProposta += 1;
     else if (t.obrigatorio) aDecidir += 1;
   }
