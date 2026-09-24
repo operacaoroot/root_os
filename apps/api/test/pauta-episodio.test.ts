@@ -421,6 +421,16 @@ describe('episódio: anda de status só por transição válida', () => {
     expect(s.auditoria.at(-1)).toMatchObject({ after: { sentido: 'voltar' } });
   });
 
+  it('da Edição ao Pacote à mão só com a transcrição: sem ela é 400 com o caminho, e voltar continua livre', async () => {
+    const s = servico({ episodios: [episodio({ status: 'edicao' })] });
+    await expect(s.episodios.mudarStatus(ORG, 'e1', PESSOA, 'pacote')).rejects.toThrow(/rode \/root-midia no Mac/);
+    expect(s.condicionais).toHaveLength(0);
+    expect((await s.episodios.mudarStatus(ORG, 'e1', PESSOA, 'gravacao')).status).toBe('gravacao');
+
+    const t = servico({ episodios: [episodio({ status: 'edicao', transcricao: [{ inicio: 0, fim: 5, texto: 'Bom dia.' }] })] });
+    expect((await t.episodios.mudarStatus(ORG, 'e1', PESSOA, 'pacote')).status).toBe('pacote');
+  });
+
   it('pular etapa é 400 e nada é gravado', async () => {
     const s = servico({ episodios: [episodio()] });
     await expect(s.episodios.mudarStatus(ORG, 'e1', PESSOA, 'concluido')).rejects.toBeInstanceOf(BadRequestException);

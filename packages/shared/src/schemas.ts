@@ -1657,6 +1657,23 @@ export function transicaoDoEpisodio(
   };
 }
 
+/**
+ * O avanço à mão que chegaria sem o insumo. Da Edição ao Pacote só com a
+ * transcrição: quem leva até lá é o `/root-midia` (a transcrição move o
+ * episódio), e o Pacote sem ela prende o episódio — o Mac só enxerga Gravação e
+ * Edição, e a transcrição só entra na Edição. Nulo = pode avançar.
+ */
+export function motivoParaNaoAvancar(
+  de: PautaEpisodioStatus,
+  para: PautaEpisodioStatus,
+  insumo: { segmentos: number },
+): string | null {
+  if (de === 'edicao' && para === 'pacote' && insumo.segmentos === 0) {
+    return 'O Pacote parte da transcrição do vídeo final: rode /root-midia no Mac, que manda a transcrição e leva o episódio ao Pacote.';
+  }
+  return null;
+}
+
 /** `ep-07`: o apelido do episódio no Mac (`/root-midia ep-07`) e na página de links. */
 export function apelidoDoEpisodio(numero: number): string {
   return `ep-${String(numero).padStart(2, '0')}`;
@@ -2075,6 +2092,13 @@ export function motivoParaNaoMexerNoPacote(status: PautaEpisodioStatus): string 
     : null;
 }
 
+/**
+ * Sem transcrição depois da Edição, o `/root-midia` não acha o episódio (a fila
+ * do Mac é Gravação e Edição): o caminho é voltar o status antes.
+ */
+const SEM_TRANSCRICAO_NO_PACOTE =
+  'O episódio não tem transcrição do vídeo final — volte o status até Edição e rode /root-midia no Mac.';
+
 /** Por que não dá para gerar o pacote agora, ou nulo. */
 export function motivoParaNaoGerarPacote(status: PautaEpisodioStatus, segmentos: number): string | null {
   if (!(PAUTA_STATUS_QUE_GERAM_PACOTE as readonly string[]).includes(status)) {
@@ -2083,7 +2107,7 @@ export function motivoParaNaoGerarPacote(status: PautaEpisodioStatus, segmentos:
       `O pacote sai da transcrição do vídeo final, que chega no Pacote (o episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`
     );
   }
-  if (segmentos === 0) return 'O episódio não tem transcrição do vídeo final — rode /root-midia no Mac.';
+  if (segmentos === 0) return SEM_TRANSCRICAO_NO_PACOTE;
   return null;
 }
 
@@ -2553,7 +2577,7 @@ export function motivoParaNaoGerarNewsletter(status: PautaEpisodioStatus, segmen
       ? 'O episódio está concluído: a newsletter dele é registro.'
       : `A newsletter sai da transcrição do vídeo final, que chega no Pacote (o episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`;
   }
-  if (segmentos === 0) return 'O episódio não tem transcrição do vídeo final — rode /root-midia no Mac.';
+  if (segmentos === 0) return SEM_TRANSCRICAO_NO_PACOTE;
   return null;
 }
 

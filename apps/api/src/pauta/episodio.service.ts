@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import {
   PAUTA_EPISODIO_STATUS_ROTULO,
   apelidoDoEpisodio,
+  motivoParaNaoAvancar,
   transicaoDoEpisodio,
   type PautaEpisodioDetalhe,
   type PautaEpisodioList,
@@ -18,6 +19,7 @@ import { AuditService } from '../audit/audit.service';
 import {
   STATUS_DA_RODADA_QUE_VIRA_EPISODIO,
   detalheDoEpisodio,
+  lerTranscricao,
   proximoNumero,
   resumoDoEpisodio,
   semPai,
@@ -158,10 +160,13 @@ export class EpisodioService {
    * foi lido: duas abas movendo o mesmo episódio não fazem ele pular dois.
    */
   async mudarStatus(orgId: string, id: string, actorId: string, para: PautaEpisodioStatus) {
-    const e = await this.prisma.pautaEpisodio.findFirst({ where: { id, orgId }, select: { status: true } });
+    const e = await this.prisma.pautaEpisodio.findFirst({ where: { id, orgId }, select: { status: true, transcricao: true } });
     if (!e) throw new NotFoundException('Episódio não encontrado');
     const t = transicaoDoEpisodio(e.status, para);
     if (!t.ok) throw new BadRequestException(t.erro);
+    const semInsumo =
+      t.sentido === 'avancar' ? motivoParaNaoAvancar(e.status, para, { segmentos: lerTranscricao(e.transcricao).length }) : null;
+    if (semInsumo) throw new BadRequestException(semInsumo);
 
     const r = await this.prisma.pautaEpisodio.updateMany({
       where: { id, orgId, status: e.status },

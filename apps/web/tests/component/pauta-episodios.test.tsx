@@ -78,7 +78,8 @@ function detalhe(status: Status = 'edicao', over: Record<string, unknown> = {}) 
     roteiro: '',
     descricao: '',
     midia: {},
-    transcricao: [],
+    // Na Edição com transcrição (voltou do Pacote): é o caso em que avançar à mão vale.
+    transcricao: status === 'edicao' ? [{ inicio: 0, fim: 5, texto: 'Bom dia.' }] : [],
     transcricaoTexto: '',
     titulos: [],
     thumbs: [],
@@ -202,6 +203,15 @@ describe('a linha do tempo', () => {
     expect(apiPost).toHaveBeenCalledWith('/pauta/episodios/e2/status', { para: 'pacote' }, 'tok');
   });
 
+  it('da Edição ao Pacote sem a transcrição, avançar fica apagado com o porquê: quem leva é o /root-midia', async () => {
+    respostas({ detalhe: detalhe('edicao', { transcricao: [] }) });
+    renderAba();
+    const avancar = await screen.findByRole('button', { name: 'Avançar para Pacote →' });
+    expect(avancar).toBeDisabled();
+    expect(screen.getByText(/O Pacote parte da transcrição do vídeo final: rode \/root-midia no Mac/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '← Voltar para Gravação' })).toBeEnabled();
+  });
+
   it('voltar um passo manda o status anterior', async () => {
     apiPost.mockResolvedValue(detalhe('gravacao'));
     renderAba();
@@ -263,6 +273,7 @@ describe('o detalhe', () => {
           arquivoBruto: '/m/bruto.mp4', arquivoFinal: '/m/ep-02-final.mp4', duracaoSeg: 600, cortes: [],
           palavraDeCorte: null, editor: 'palmier', recebidaEm: '2026-09-24T23:00:00.000Z',
         },
+        transcricao: [],
       }),
     });
     renderAba();

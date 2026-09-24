@@ -5,6 +5,7 @@ import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_EPISODIO_STATUS,
   PAUTA_EPISODIO_STATUS_ROTULO,
+  motivoParaNaoAvancar,
   PAUTA_ORIGEM_ROTULOS,
   PAUTA_ORIGENS,
   type PautaEpisodioDetalhe,
@@ -157,6 +158,8 @@ export function AbaEpisodios({
   const escrevendo = ocupado !== null;
   const atual = detalhe ? PAUTA_EPISODIO_STATUS.indexOf(detalhe.status) : -1;
   const tituloMudou = !!detalhe && titulo.trim() !== '' && titulo.trim() !== detalhe.titulo;
+  const semInsumo =
+    detalhe?.avancar ? motivoParaNaoAvancar(detalhe.status, detalhe.avancar, { segmentos: detalhe.transcricao.length }) : null;
 
   return (
     <div className="space-y-4">
@@ -248,10 +251,15 @@ export function AbaEpisodios({
                 </Botao>
               )}
               {detalhe.avancar && (
-                <Botao tone="brand" onClick={() => mover(detalhe.id, detalhe.avancar!)} disabled={!editavel || escrevendo}>
+                <Botao
+                  tone="brand"
+                  onClick={() => mover(detalhe.id, detalhe.avancar!)}
+                  disabled={!editavel || escrevendo || semInsumo !== null}
+                >
                   Avançar para {PAUTA_EPISODIO_STATUS_ROTULO[detalhe.avancar]} →
                 </Botao>
               )}
+              {semInsumo && <p className="w-full break-words text-xs text-muted">{semInsumo}</p>}
               {!detalhe.avancar && <span className="self-center text-sm text-good">Episódio concluído.</span>}
             </div>
           </div>
