@@ -19,6 +19,7 @@ import { SecaoMidia } from './SecaoMidia';
 import { SecaoPacote } from './SecaoPacote';
 import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
 import { SecaoNewsletter } from './SecaoNewsletter';
+import { SecaoSemana } from './SecaoSemana';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
@@ -28,7 +29,7 @@ import { SecaoNewsletter } from './SecaoNewsletter';
  * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`; o pacote do
  * YouTube (MC11), em `SecaoPacote`; a página de links (MC12), em
  * `SecaoPaginaDeLinks`; a newsletter tirada da transcrição (MC13), em
- * `SecaoNewsletter`.
+ * `SecaoNewsletter`; a semana de posts por matéria (MC15), em `SecaoSemana`.
  */
 
 interface Props {
@@ -298,6 +299,15 @@ export function AbaEpisodios({
             editavel={editavel}
             podeGastarIa={podeGastarIa}
             onErro={onErro}
+          />
+
+          <SecaoSemana
+            token={token}
+            detalhe={detalhe}
+            editavel={editavel}
+            podeGastarIa={podeGastarIa}
+            onErro={onErro}
+            onMudou={onMudou}
           />
 
           <div>

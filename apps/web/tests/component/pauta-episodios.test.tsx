@@ -110,6 +110,8 @@ function respostas(opts: { lista?: unknown[]; detalhe?: unknown } = {}) {
     }
     // A newsletter (MC13) também tem suíte própria (`pauta-newsletter`).
     if (/^\/pauta\/episodios\/[^/]+\/newsletter$/.test(path)) return { newsletter: null };
+    // A semana de posts (MC15) também: do Pacote em diante ela é lida.
+    if (/^\/pauta\/episodios\/[^/]+\/semana$/.test(path)) return { episodioId: 'e1', apelido: 'ep-01', status: 'concluido', arquivoFinal: null, duracaoSeg: null, paginaDeLinks: null, motivo: null, materias: [] };
     if (path.startsWith('/pauta/rodadas')) return { items: [], source: { tool: 't', generatedAt: '' } };
     if (path === '/pauta/canais') return { whatsapp: { configurada: false, conectada: false, motivo: null, grupo: null } };
     throw new Error(`GET inesperado: ${path}`);
@@ -283,6 +285,14 @@ describe('o detalhe', () => {
     expect(newsletter).toHaveTextContent('O envio é manual por enquanto');
     expect(apiGet).toHaveBeenCalledWith('/pauta/episodios/e2/newsletter', 'tok');
   });
+
+  it('mostra a semana de posts (MC15) no detalhe; em edição, diz de onde ela sai e não lê a semana', async () => {
+    renderAba();
+    const semana = await screen.findByRole('region', { name: 'Semana de posts' });
+    await waitFor(() => expect(semana).toHaveTextContent('A semana de posts sai no Pacote ou na Derivação'));
+    expect(semana).toHaveTextContent('Nada é publicado daqui');
+    expect(apiGet).not.toHaveBeenCalledWith('/pauta/episodios/e2/semana', 'tok');
+  });
 });
 
 describe('o episódio nasce da rodada curada', () => {
@@ -314,6 +324,40 @@ describe('o episódio nasce da rodada curada', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Criar episódio' }));
     expect(apiPost).toHaveBeenCalledWith('/pauta/episodios', { rodadaId: 'r1' }, 'tok');
     await waitFor(() => expect(onAbrirEpisodio).toHaveBeenCalledWith('novo-ep'));
+  });
+
+  it('as peças da semana aparecem na rodada sem "Salvar texto": o texto se edita no episódio; "Baixar carrossel" só no carrossel', async () => {
+    const peca = (id: string, formato: string, meta: Record<string, unknown>) => ({
+      id, canal: 'instagram', formato, titulo: `Peça ${id}`, corpo: `corpo ${id}`, meta, status: 'rascunho', externalId: null, bioLinkId: null, erro: null, publicadaEm: null,
+    });
+    const semana = (formato: string) => ({ episodioId: 'e9', itemId: 'c1', formato });
+    apiGet.mockImplementation(async (path: string) => {
+      if (path === '/pauta/rodadas') return { items: [RODADA('r1', 'curada')], source: { tool: 't', generatedAt: '' } };
+      if (path === '/pauta/rodadas/r1') {
+        return {
+          ...DETALHE_RODADA('r1'),
+          pecas: [
+            peca('antiga', 'carrossel', { slides: [{ titulo: 'a' }] }),
+            peca('car', 'carrossel', { ...semana('carrossel'), slides: [{ titulo: 'a' }] }),
+            peca('st', 'story', semana('story')),
+            peca('co', 'corte', semana('corte')),
+          ],
+        };
+      }
+      if (path === '/pauta/canais') return { whatsapp: { configurada: false, conectada: false, motivo: null, grupo: null } };
+      throw new Error(`GET inesperado: ${path}`);
+    });
+    render(<AbaRodadas token="tok" editavel podePublicar={false} onErro={vi.fn()} bump={0} onMudou={vi.fn()} onAbrirEpisodio={vi.fn()} />);
+    await userEvent.click(await screen.findByText('Semana r1'));
+    await screen.findByText('Peça st');
+    // Só a peça da derivação antiga tem o texto editável aqui.
+    expect(screen.getAllByRole('button', { name: 'Salvar texto' })).toHaveLength(1);
+    expect(screen.getAllByText(/o texto se edita na aba Episódios/)).toHaveLength(3);
+    expect(screen.getAllByRole('link', { name: 'Baixar carrossel' }).map((a) => a.getAttribute('href'))).toEqual([
+      '/api/pauta/pecas/antiga/carrossel',
+      '/api/pauta/pecas/car/carrossel',
+    ]);
+    expect(screen.getAllByRole('button', { name: 'Descartar' })).toHaveLength(4);
   });
 
   it('a rodada que já é episódio mostra o número, abre o episódio e não se remove', async () => {

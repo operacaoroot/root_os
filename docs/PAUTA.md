@@ -182,7 +182,7 @@ anti-padrões, tirados do que o próprio estudo já provou.
 |---|---|---|
 | **WhatsApp (grupo)** | Evolution API, instância e número **dedicados do root** | `@SensitiveWrite('content')` — não sai sem token de aprovação confirmado |
 | **ClickUp** | cria o tema de verdade (`CLICKUP_LIST_PAUTA`) | — |
-| **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
+| **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`); do episódio, por matéria, carrossel + story + corte vertical (MC15) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
 | **Newsletter** | corpo em markdown; a do episódio sai da transcrição (MC13) e se exporta em `.md`/`.html`. Os links das seções saem **crus** (a URL do item), não como `BioLink`: só a chamada para a página de links é medida (decisão da MC13, revista com a D-MC7) | **manual** até a D-MC7: não há envio pelo OS |
 | **ClickUp** | vira tema em Gestão de Temas (write-back que já existe) | — |
 
@@ -754,6 +754,63 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     fala", avisos e pendentes, "Copiar markdown", "Copiar HTML" (formatado quando o navegador deixa;
     o `ClipboardItem` vai no clique com o HTML ainda chegando da API, que é o que o Safari aceita),
     baixar .md/.html, o link do vídeo e a prévia do texto.
+- **A semana de posts: derivação por notícia (MC15).** Cada matéria mantida do episódio vira um
+  **carrossel**, um **story** e o roteiro de um **corte vertical**, para revisar — não uma peça por
+  rodada. `DerivacaoService`, parte pura em `pauta/derivacao-do-episodio.ts`; regras que a tela
+  também usa no shared (`conferirTrechoDoCorte`, `motivoParaNaoDerivar`, `PAUTA_CORTE_*`).
+  - **Gerar** (`POST /pauta/episodios/:id/semana/gerar` `{substituir, itens?}`, `pauta.editar` +
+    `automacoes.executar`): só no Pacote e na Derivação, com transcrição e matéria (senão 400 sem
+    IA). **Uma chamada ao modelo por matéria** (com `orgId`, `SAIDA_DA_GERACAO_LONGA` e o bloco de
+    voz da MC10), só das matérias pedidas e só das que têm algum formato a refazer. O pedido leva a
+    matéria **sem URL nenhuma** (nem no título) e a transcrição numerada por segmento (`#n [mm:ss–mm:ss]
+    fala`; longa, encurta a fala pelo espaço que sobra do prefixo real de cada linha e, se preciso,
+    zera a fala — nunca corta segmento do fim). O modelo devolve o texto dos três e, para o corte, **os números
+    dos segmentos** de começo e fim; o tempo sai dos segmentos reais, conferido por `trechoDoCorte`
+    (existem, na ordem, dentro do vídeo, menos de 3 min — encurta pelo fim — e pelo menos 10 s —
+    cresce), e o que não fecha fica de fora com o porquê. Todo link, marcador e emoji do texto do
+    modelo sai. O **CTA da palavra-chave** é do sistema: o último slide do modelo só sai quando tem
+    cara de CTA (o verbo de comentar E a palavra, as duas como palavra inteira — no máximo um slide),
+    entra o `Palavra-chave: X` + `cta: {instrucao, palavra, beneficio}` (sem segunda pessoa), e a
+    legenda do carrossel **e a do corte** fecham com a linha do CTA. A palavra é da matéria e única
+    no episódio (repetida ganha o número da matéria; com carrossel ou corte já aprovado, fica a
+    dele) porque o DM do MC18 vai casar palavra com matéria. O story não leva a palavra — chama
+    para o link da bio (decisão pendente com a D-MC9). Uma matéria que falha (JSON ruim, provider fora) não
+    leva as outras; a recusa por custo para o laço; nenhuma gravada = 503. Gravar leva o episódio do
+    Pacote à Derivação (escrita condicionada ao status). RASTRO `pauta.semana_gerada` com a conta.
+  - **A peça:** `PautaPeca` da rodada do episódio, canal `instagram`, formato `carrossel` | `story` |
+    `corte` (texto livre, sem migration), meta `{episodioId, itemId, itemN, formato, transcricaoSha,
+    linkDaMateria, avisos, imagens, …}` — carrossel com `slides` (o formato que `exportarCarrossel`
+    já produz, e o export passou a levar `cta` e `palavraChave`), story com `chamada` e `tempoSeg` (o
+    frame sai do começo do corte da matéria), corte com `inicio`/`fim` em segundos do vídeo final,
+    `de`/`ate`, o `trecho` dito e o `video`. `linkDaMateria` sai de `linkPublicoDoItem`: nulo para a
+    newsletter. **Idempotente por (episódio, matéria, formato)**: rascunho e descartada são
+    substituídas **no mesmo registro** (sem confirmar é 409 quando há rascunho), aprovada e publicada
+    nunca são tocadas, e a matéria com as três firmes nem chama a IA. Cada matéria grava na própria
+    transação sob `pg_advisory_xact_lock` do episódio, relendo o plano e conferindo o hash da
+    transcrição (mídia refeita no meio = 409). A derivação antiga ignora essas peças na trava de
+    "já tem peças".
+  - **Editar** (`PUT /pauta/pecas/:id/semana`, `pauta.editar`): cada formato só os seus campos
+    (título; carrossel: slides de conteúdo, palavra, legenda — o CTA se refaz; story: texto e
+    chamada; corte: `inicio`/`fim` conferidos e legenda — o CTA se refaz, e o trecho, os números
+    de segmento e o mp4 só mudam quando o tempo muda). Aprovada volta ao rascunho e o render feito
+    com o texto anterior deixa de valer. Depois de agendado, o texto não se edita mais (400, como o
+    pacote); o render segue aceito. Editar, subir PNG e registrar mp4 releem a peça sob o mesmo
+    cadeado do gerar (a meta inteira não volta velha por cima), e o PNG que chega depois de uma
+    edição é recusado (409). O `PATCH /pauta/pecas/:id` da aba Rodadas só muda o status dessas
+    peças (texto = 400), e lá elas aparecem sem "Salvar texto"; "Baixar carrossel" só no carrossel. Aprovar e descartar são o
+    `PATCH /pauta/pecas/:id` de sempre. Nada publica: o Instagram segue manual (D-MC8/MC17).
+  - **Renders (Mac):** `POST /pauta/pecas/:id/imagens/:n` (PNG pela assinatura, até 5 MB, 1080×1350
+    no carrossel — um por slide — e 1080×1920 no story) grava no MinIO (`pauta/peca/<id>-<n>-<hash>.png`,
+    chave só no banco) e `GET` devolve a prévia. **O mp4 do corte fica no Mac** (`PUT
+    /pauta/pecas/:id/video` `{arquivo, duracaoSeg, largura: 1080, altura: 1920, bytes}`, com a
+    duração batendo com o trecho): o MinIO da VPS não é público, um corte pesa dezenas de MB e o
+    Instagram publica por URL pública — guardar vídeo lá não publica nada e pesa na VPS. O RASTRO
+    leva só o nome do arquivo. No Mac, `root-midia carrosseis|stories|cortes ep-NN` (README da
+    ferramenta).
+  - **Tela:** seção "Semana de posts" no detalhe do episódio (`SecaoSemana.tsx`): gerar (com
+    confirmação para substituir), por matéria as três peças com a prévia em texto (slides, story com
+    a chamada, trecho do corte com os tempos), o estado do render e o comando que falta, aprovar,
+    descartar, recuperar e editar (o corte conferido na tela antes de salvar).
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

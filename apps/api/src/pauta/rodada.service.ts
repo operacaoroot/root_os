@@ -41,6 +41,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { VozService } from './voz.service';
 import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
+import { ehPecaDaSemana } from './derivacao-do-episodio';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
 // Ver docs/PAUTA.md §7. O que a diferencia de "gerar um texto com IA" é o
@@ -568,8 +569,10 @@ export class RodadaService {
     }
     // A newsletter tirada da transcrição do episódio (MC13) não conta: ela é
     // de outra derivação e, valendo, toma o lugar da newsletter feita do miolo.
+    // A semana de posts do episódio (MC15, uma peça por matéria) também não.
     const daTranscricao = rodada.pecas.filter((p) => ehNewsletterDaTranscricao(p.meta));
-    if (rodada.pecas.length > daTranscricao.length) {
+    const daSemana = rodada.pecas.filter((p) => ehPecaDaSemana(p.meta));
+    if (rodada.pecas.length > daTranscricao.length + daSemana.length) {
       throw new BadRequestException('Esta rodada já tem peças — apague-as antes de gerar de novo.');
     }
     const temNewsletterDaTranscricao = daTranscricao.some((p) => p.status !== 'descartada');

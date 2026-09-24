@@ -39,6 +39,12 @@ const TOM_RODADA: Record<string, 'muted' | 'good' | 'warn' | 'bad'> = {
   falhou: 'bad',
 };
 
+/** A peça da semana de posts do episódio (MC15): tem episódio, matéria e o formato na meta. */
+function ehPecaDaSemana(meta: unknown): boolean {
+  const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : null;
+  return !!m && typeof m.episodioId === 'string' && typeof m.itemId === 'string' && typeof m.formato === 'string';
+}
+
 // O item curado é JSON gravado: a letra só aparece se for uma das cinco.
 function temOrigem(o: unknown): o is PautaOrigem {
   return typeof o === 'string' && (PAUTA_ORIGENS as readonly string[]).includes(o);
@@ -293,99 +299,111 @@ export function AbaRodadas({
                   </ul>
                 )}
 
-                {detalhe.pecas.map((p) => (
-                  <div key={p.id} className="mb-3 rounded-lg border border-border p-3">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Chip tone="brand">{PAUTA_CANAL_LABEL[p.canal] ?? p.canal}</Chip>
-                      <Chip>{p.formato}</Chip>
-                      <Chip tone={p.status === 'publicada' ? 'good' : p.status === 'descartada' ? 'muted' : 'warn'}>
-                        {p.status}
-                      </Chip>
-                      {p.bioLinkId && <Chip tone="good">link rastreado</Chip>}
-                      <span className="text-sm">{p.titulo}</span>
-                    </div>
+                {detalhe.pecas.map((p) => {
+                  // A semana de posts do episódio (MC15): o texto se edita lá, onde o CTA se refaz e o render velho cai.
+                  const daSemana = ehPecaDaSemana(p.meta);
+                  return (
+                    <div key={p.id} className="mb-3 rounded-lg border border-border p-3">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <Chip tone="brand">{PAUTA_CANAL_LABEL[p.canal] ?? p.canal}</Chip>
+                        <Chip>{p.formato}</Chip>
+                        <Chip tone={p.status === 'publicada' ? 'good' : p.status === 'descartada' ? 'muted' : 'warn'}>
+                          {p.status}
+                        </Chip>
+                        {p.bioLinkId && <Chip tone="good">link rastreado</Chip>}
+                        <span className="text-sm">{p.titulo}</span>
+                      </div>
 
-                    <textarea
-                      className={`${inputCls} min-h-[120px] font-mono text-xs`}
-                      value={rascunho[p.id] ?? p.corpo}
-                      onChange={(e) => setRascunho((r0) => ({ ...r0, [p.id]: e.target.value }))}
-                      disabled={p.status === 'publicada' || !editavel}
-                    />
+                      {daSemana ? (
+                        <p className="text-xs text-muted">
+                          Peça da semana de posts do episódio: o texto se edita na aba Episódios, seção “Semana de posts”.
+                        </p>
+                      ) : (
+                        <textarea
+                          className={`${inputCls} min-h-[120px] font-mono text-xs`}
+                          value={rascunho[p.id] ?? p.corpo}
+                          onChange={(e) => setRascunho((r0) => ({ ...r0, [p.id]: e.target.value }))}
+                          disabled={p.status === 'publicada' || !editavel}
+                        />
+                      )}
 
-                    {p.canal === 'instagram' && Array.isArray((p.meta as { slides?: unknown[] }).slides) && (
-                      <p className="mt-1 text-xs text-muted">
-                        {((p.meta as { slides: unknown[] }).slides ?? []).length} slides prontos — use
-                        “Baixar carrossel” e rode a máquina de carrossel (marca root).
-                      </p>
-                    )}
+                      {!daSemana && p.canal === 'instagram' && Array.isArray((p.meta as { slides?: unknown[] }).slides) && (
+                        <p className="mt-1 text-xs text-muted">
+                          {((p.meta as { slides: unknown[] }).slides ?? []).length} slides prontos — use
+                          “Baixar carrossel” e rode a máquina de carrossel (marca root).
+                        </p>
+                      )}
 
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {p.status !== 'publicada' && (
-                        <>
-                          <Botao
-                            onClick={() =>
-                              acao(`save-${p.id}`, () =>
-                                apiPatch(`/pauta/pecas/${p.id}`, { corpo: rascunho[p.id] ?? p.corpo }, token),
-                              )
-                            }
-                            disabled={!editavel}
-                          >
-                            Salvar texto
-                          </Botao>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {p.status !== 'publicada' && (
+                          <>
+                            {!daSemana && (
+                              <Botao
+                                onClick={() =>
+                                  acao(`save-${p.id}`, () =>
+                                    apiPatch(`/pauta/pecas/${p.id}`, { corpo: rascunho[p.id] ?? p.corpo }, token),
+                                  )
+                                }
+                                disabled={!editavel}
+                              >
+                                Salvar texto
+                              </Botao>
+                            )}
 
-                          {(p.canal === 'whatsapp' || p.canal === 'clickup') && (
+                            {(p.canal === 'whatsapp' || p.canal === 'clickup') && (
+                              <Botao
+                                tone="brand"
+                                onClick={() => publicar(p.id, `Publicar "${p.titulo}" em ${p.canal}`)}
+                                disabled={
+                                  !podePublicar ||
+                                  ocupado === `pub-${p.id}` ||
+                                  (p.canal === 'whatsapp' && !canais?.whatsapp.conectada)
+                                }
+                                title={
+                                  p.canal === 'whatsapp' && !canais?.whatsapp.conectada
+                                    ? (canais?.whatsapp.motivo ?? 'WhatsApp indisponível')
+                                    : 'Passa pela aprovação antes de sair'
+                                }
+                              >
+                                {ocupado === `pub-${p.id}` ? 'Publicando…' : 'Publicar'}
+                              </Botao>
+                            )}
+
+                            {p.canal === 'instagram' && (!p.formato || p.formato === 'carrossel') && (
+                              <a
+                                href={`/api/pauta/pecas/${p.id}/carrossel`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-muted hover:text-text"
+                              >
+                                Baixar carrossel
+                              </a>
+                            )}
+
                             <Botao
-                              tone="brand"
-                              onClick={() => publicar(p.id, `Publicar "${p.titulo}" em ${p.canal}`)}
-                              disabled={
-                                !podePublicar ||
-                                ocupado === `pub-${p.id}` ||
-                                (p.canal === 'whatsapp' && !canais?.whatsapp.conectada)
+                              tone="ghost"
+                              onClick={() =>
+                                acao(`desc-${p.id}`, () =>
+                                  apiPatch(`/pauta/pecas/${p.id}`, { status: 'descartada' }, token),
+                                )
                               }
-                              title={
-                                p.canal === 'whatsapp' && !canais?.whatsapp.conectada
-                                  ? (canais?.whatsapp.motivo ?? 'WhatsApp indisponível')
-                                  : 'Passa pela aprovação antes de sair'
-                              }
+                              disabled={!editavel}
                             >
-                              {ocupado === `pub-${p.id}` ? 'Publicando…' : 'Publicar'}
+                              Descartar
                             </Botao>
-                          )}
-
-                          {p.canal === 'instagram' && (
-                            <a
-                              href={`/api/pauta/pecas/${p.id}/carrossel`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-muted hover:text-text"
-                            >
-                              Baixar carrossel
-                            </a>
-                          )}
-
-                          <Botao
-                            tone="ghost"
-                            onClick={() =>
-                              acao(`desc-${p.id}`, () =>
-                                apiPatch(`/pauta/pecas/${p.id}`, { status: 'descartada' }, token),
-                              )
-                            }
-                            disabled={!editavel}
-                          >
-                            Descartar
-                          </Botao>
-                        </>
-                      )}
-                      {p.status === 'publicada' && p.publicadaEm && (
-                        <span className="text-xs text-muted">
-                          publicada em {new Date(p.publicadaEm).toLocaleString('pt-BR')}
-                          {p.externalId && ` · id ${p.externalId.slice(0, 16)}`}
-                        </span>
-                      )}
-                      {p.erro && <span className="text-xs text-bad">{p.erro}</span>}
+                          </>
+                        )}
+                        {p.status === 'publicada' && p.publicadaEm && (
+                          <span className="text-xs text-muted">
+                            publicada em {new Date(p.publicadaEm).toLocaleString('pt-BR')}
+                            {p.externalId && ` · id ${p.externalId.slice(0, 16)}`}
+                          </span>
+                        )}
+                        {p.erro && <span className="text-xs text-bad">{p.erro}</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -2721,6 +2721,240 @@ export interface PautaNewsletterPainel {
   newsletter: PautaNewsletterDoEpisodio | null;
 }
 
+// ---------- Pauta: a semana de posts — derivação por notícia (MC15) ----------
+// Cada matéria mantida do episódio vira três peças para revisar: um carrossel,
+// um story e um corte vertical do vídeo. São `PautaPeca` do canal instagram da
+// rodada do episódio, com o formato abaixo (texto livre no banco, sem migration)
+// e a meta `{episodioId, itemId, …}` que as amarra à matéria.
+
+export const PAUTA_FORMATOS_DA_SEMANA = ['carrossel', 'story', 'corte'] as const;
+export type PautaFormatoDaSemana = (typeof PAUTA_FORMATOS_DA_SEMANA)[number];
+
+export const PAUTA_FORMATO_DA_SEMANA_ROTULO: Record<PautaFormatoDaSemana, string> = {
+  carrossel: 'Carrossel',
+  story: 'Story',
+  corte: 'Corte vertical',
+};
+
+/**
+ * Deriva no Pacote (e leva o episódio a Derivação) e na Derivação. Depois de
+ * agendado, o TEXTO das peças é o que vai ao ar: nem gerar nem editar (como o
+ * título e a thumb do pacote). O render (PNG e mp4) segue aceito, porque o
+ * Instagram é manual até o MC17 e a peça aprovada ainda precisa dele.
+ */
+export const PAUTA_STATUS_QUE_DERIVAM = ['pacote', 'derivacao'] as const satisfies readonly PautaEpisodioStatus[];
+
+/** Por que o texto das peças da semana não se edita mais, ou nulo. */
+export function motivoParaNaoEditarASemana(status: PautaEpisodioStatus): string | null {
+  return status === 'agendado' || status === 'concluido'
+    ? `O episódio já foi agendado (${PAUTA_EPISODIO_STATUS_ROTULO[status]}): o texto das peças é o que vai ao ar.`
+    : null;
+}
+
+export function motivoParaNaoDerivar(status: PautaEpisodioStatus, segmentos: number, itens: number): string | null {
+  if (!(PAUTA_STATUS_QUE_DERIVAM as readonly string[]).includes(status)) {
+    return `A semana de posts sai no Pacote ou na Derivação (este episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`;
+  }
+  if (segmentos === 0) return 'O episódio não tem transcrição: o corte de cada matéria sai dela. Rode a /root-midia antes.';
+  if (itens === 0) return 'O episódio não tem matérias mantidas: não há o que derivar.';
+  return null;
+}
+
+/** O corte vertical tem MENOS de 3 minutos (o teto do Reels e do TikTok de trecho) e pelo menos 10 s. */
+export const PAUTA_CORTE_MAXIMO_SEG = 180;
+export const PAUTA_CORTE_MINIMO_SEG = 10;
+
+/**
+ * O trecho do corte está de pé? Nulo = sim; senão, o porquê. A mesma conta na
+ * API (o que a IA escolheu e o que alguém editou) e na tela (antes de salvar).
+ */
+export function conferirTrechoDoCorte(inicio: unknown, fim: unknown, duracaoSeg: number | null | undefined): string | null {
+  if (typeof inicio !== 'number' || typeof fim !== 'number' || !Number.isFinite(inicio) || !Number.isFinite(fim)) {
+    return 'O início e o fim do corte são números em segundos.';
+  }
+  if (inicio < 0) return 'O corte não começa antes do vídeo (início negativo).';
+  if (fim <= inicio) return 'O fim do corte vem depois do início.';
+  if (typeof duracaoSeg === 'number' && Number.isFinite(duracaoSeg) && fim > duracaoSeg + 0.05) {
+    return `O corte passa do fim do vídeo (${fim.toFixed(1)} s num vídeo de ${duracaoSeg.toFixed(1)} s).`;
+  }
+  const dura = fim - inicio;
+  if (dura >= PAUTA_CORTE_MAXIMO_SEG) return `O corte tem ${dura.toFixed(1)} s; precisa ter menos de ${PAUTA_CORTE_MAXIMO_SEG / 60} minutos.`;
+  if (dura < PAUTA_CORTE_MINIMO_SEG) return `O corte tem ${dura.toFixed(1)} s; o mínimo é ${PAUTA_CORTE_MINIMO_SEG} s.`;
+  return null;
+}
+
+/** O carrossel da máquina de carrossel: 4 a 10 slides, com a capa no 1 e o CTA da palavra-chave no último. */
+export const PAUTA_SLIDES_MINIMO = 4;
+export const PAUTA_SLIDES_MAXIMO = 10;
+export const PAUTA_TETO_DO_TITULO_DO_SLIDE = 90;
+export const PAUTA_TETO_DO_TEXTO_DO_SLIDE = 240;
+export const PAUTA_TETO_DA_LEGENDA = 2000;
+export const PAUTA_TETO_DO_TEXTO_DO_STORY = 180;
+export const PAUTA_TETO_DA_CHAMADA_DO_STORY = 90;
+export const PAUTA_TETO_DO_TITULO_DA_PECA = 120;
+/** A palavra do CTA ("comenta X"): maiúsculas e números, sem acento, para o DM do MC18 casar sem ambiguidade. */
+export const PautaPalavraChaveSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Z0-9]{3,20}$/, 'A palavra-chave tem de 3 a 20 letras maiúsculas ou números, sem acento nem espaço.');
+
+export const PautaDerivacaoGerarSchema = z.object({
+  /** Já há peças em rascunho: gerar de novo só com a confirmação (aprovada e publicada nunca são tocadas). */
+  substituir: z.boolean().default(false),
+  /** Só estas matérias (o número na lista do episódio); ausente = todas. */
+  itens: z.array(z.number().int().min(1).max(200)).min(1).max(200).optional(),
+});
+export type PautaDerivacaoGerarInput = z.infer<typeof PautaDerivacaoGerarSchema>;
+
+const textoDaPeca = (teto: number) => z.string().trim().min(1, 'O texto não pode ficar vazio.').max(teto);
+
+/**
+ * Editar o texto de uma peça da semana. Cada formato aceita os seus campos; o
+ * serviço recusa o campo de outro formato. Editar uma peça aprovada a devolve
+ * ao rascunho: o que foi aprovado é o texto de antes.
+ */
+export const PautaPecaDaSemanaEditarSchema = z
+  .object({
+    titulo: textoDaPeca(PAUTA_TETO_DO_TITULO_DA_PECA).optional(),
+    legenda: z.string().trim().max(PAUTA_TETO_DA_LEGENDA).optional(),
+    slides: z
+      .array(
+        z.object({
+          titulo: z.string().trim().max(PAUTA_TETO_DO_TITULO_DO_SLIDE),
+          texto: z.string().trim().max(PAUTA_TETO_DO_TEXTO_DO_SLIDE),
+        }),
+      )
+      .min(PAUTA_SLIDES_MINIMO - 1)
+      .max(PAUTA_SLIDES_MAXIMO - 1)
+      .optional(),
+    palavraChave: PautaPalavraChaveSchema.optional(),
+    texto: textoDaPeca(PAUTA_TETO_DO_TEXTO_DO_STORY).optional(),
+    chamada: textoDaPeca(PAUTA_TETO_DA_CHAMADA_DO_STORY).optional(),
+    inicio: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
+    fim: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, 'Nada para mudar.')
+  .refine((v) => (v.inicio === undefined) === (v.fim === undefined), 'O corte muda com início e fim juntos.');
+export type PautaPecaDaSemanaEditarInput = z.infer<typeof PautaPecaDaSemanaEditarSchema>;
+
+/** As imagens que o Mac renderiza: PNG, no tamanho do formato, até 5 MB (o frame de vídeo pesa no story). */
+export const PAUTA_PNG_DA_PECA_MAX_BYTES = 5 * 1024 * 1024;
+export const PAUTA_DIMENSOES_DA_PECA: Record<'carrossel' | 'story', { largura: number; altura: number }> = {
+  carrossel: { largura: 1080, altura: 1350 },
+  story: { largura: 1080, altura: 1920 },
+};
+/** O corte vertical: 1080×1920, a tela em cima e o rosto embaixo. */
+export const PAUTA_DIMENSOES_DO_CORTE = { largura: 1080, altura: 1920 } as const;
+
+export const PautaNumeroDaImagemSchema = z.coerce
+  .number({ invalid_type_error: 'O número da imagem é 1 a 10.' })
+  .int('O número da imagem é 1 a 10.')
+  .min(1, 'O número da imagem é 1 a 10.')
+  .max(PAUTA_SLIDES_MAXIMO, 'O número da imagem é 1 a 10.');
+
+/**
+ * O mp4 do corte FICA NO MAC, como o vídeo do episódio (MC9): o MinIO da VPS
+ * não é público, e um corte de 1–3 min pesa dezenas de MB. A peça guarda onde
+ * ele está e o que o Mac mediu.
+ */
+export const PautaVideoDoCorteSchema = z
+  .object({
+    arquivo: z
+      .string()
+      .trim()
+      .min(2)
+      .max(500)
+      .regex(/^\/[^\0\n\r]*\.mp4$/i, 'O arquivo é o caminho absoluto do .mp4 no Mac.'),
+    duracaoSeg: z.number().finite().positive().max(PAUTA_CORTE_MAXIMO_SEG + 5),
+    largura: z.literal(PAUTA_DIMENSOES_DO_CORTE.largura),
+    altura: z.literal(PAUTA_DIMENSOES_DO_CORTE.altura),
+    bytes: z.number().int().positive().max(2 * 1024 * 1024 * 1024),
+  })
+  .strict();
+export type PautaVideoDoCorteInput = z.infer<typeof PautaVideoDoCorteSchema>;
+
+export interface PautaImagemDaPeca {
+  n: number;
+  largura: number;
+  altura: number;
+  bytes: number;
+  enviadaEm: string;
+}
+
+export interface PautaSlideDaSemana {
+  titulo: string;
+  texto: string;
+}
+
+/** O CTA do último slide, no formato do fechamento da máquina de carrossel. */
+export interface PautaCtaDoCarrossel {
+  instrucao: string;
+  palavra: string;
+  beneficio: string;
+}
+
+/** Uma peça da semana, como a tela e o Mac a leem. Os campos de cada formato só vêm nele. */
+export interface PautaPecaDaSemana {
+  id: string;
+  formato: PautaFormatoDaSemana;
+  status: PautaPecaStatus;
+  titulo: string;
+  /** Carrossel e corte: a legenda. Story: o texto. */
+  corpo: string;
+  criadaEm: string;
+  // carrossel
+  slides?: PautaSlideDaSemana[];
+  cta?: PautaCtaDoCarrossel;
+  palavraChave?: string;
+  // story
+  chamada?: string;
+  /** O segundo do vídeo final de onde sai o frame do story (o começo do corte da matéria). */
+  tempoSeg?: number | null;
+  // corte
+  inicio?: number;
+  fim?: number;
+  /** O que é dito no trecho, dos segmentos da transcrição. */
+  trecho?: string;
+  video?: { arquivo: string; duracaoSeg: number; largura: number; altura: number; bytes: number; registradoEm: string } | null;
+  /** O que o Mac já renderizou e subiu (carrossel: um por slide; story: 1). */
+  imagens: PautaImagemDaPeca[];
+  avisos: string[];
+  /** A transcrição mudou depois desta peça (mídia refeita): o corte pode não bater mais. */
+  transcricaoMudou: boolean;
+}
+
+export interface PautaMateriaDaSemana {
+  /** O número da matéria na lista do episódio. */
+  n: number;
+  itemId: string;
+  titulo: string;
+  origem: PautaOrigem | null;
+  /** O link público da matéria, pela regra única; nulo para newsletter e caixa de entrada. */
+  link: string | null;
+  pecas: Partial<Record<PautaFormatoDaSemana, PautaPecaDaSemana>>;
+}
+
+/** `GET /pauta/episodios/:id/semana` e o retorno das escritas. */
+export interface PautaSemanaDePosts {
+  episodioId: string;
+  apelido: string;
+  status: PautaEpisodioStatus;
+  /** Onde está o vídeo final no Mac (MC9) e quanto dura: o corte e o frame do story saem dele. */
+  arquivoFinal: string | null;
+  duracaoSeg: number | null;
+  /** A página de links no ar, para onde o story chama; nula enquanto não estiver no ar. */
+  paginaDeLinks: string | null;
+  motivo: string | null;
+  materias: PautaMateriaDaSemana[];
+}
+
+export interface PautaSemanaGerada extends PautaSemanaDePosts {
+  /** Quantas peças saíram novas, quantas substituíram um rascunho e quantas ficaram (aprovada/publicada). */
+  conta: { criadas: number; substituidas: number; mantidas: number; falharam: number };
+  avisos: string[];
+}
+
 export interface PautaCanalEstado {
   configurada: boolean;
   conectada: boolean;

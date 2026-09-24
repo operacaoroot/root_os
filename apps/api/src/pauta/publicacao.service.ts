@@ -231,8 +231,14 @@ export class PublicacaoService {
     const peca = await this.prisma.pautaPeca.findFirst({ where: { id: pecaId, orgId } });
     if (!peca) throw new NotFoundException('Peça não encontrada');
     if (peca.canal !== 'instagram') throw new BadRequestException('Só peças de Instagram têm carrossel.');
+    // O story e o corte da semana (MC15) também são do canal instagram, e não têm slides.
+    if (peca.formato && peca.formato !== 'carrossel') throw new BadRequestException(`Esta peça é ${peca.formato}, não carrossel.`);
 
-    const meta = (peca.meta ?? {}) as { slides?: Array<{ titulo?: string; texto?: string }> };
+    const meta = (peca.meta ?? {}) as {
+      slides?: Array<{ titulo?: string; texto?: string }>;
+      cta?: { instrucao?: string; palavra?: string; beneficio?: string };
+      palavraChave?: string;
+    };
     return {
       marca: 'root',
       titulo: peca.titulo,
@@ -242,6 +248,8 @@ export class PublicacaoService {
         titulo: semLinksDeCaixaDeEntrada(s.titulo ?? ''),
         texto: semLinksDeCaixaDeEntrada(s.texto ?? ''),
       })),
+      // O fechamento da máquina de carrossel (MC15): a palavra do comentário no último slide.
+      ...(meta.cta?.palavra ? { cta: meta.cta, palavraChave: meta.palavraChave ?? meta.cta.palavra } : {}),
     };
   }
 }

@@ -124,7 +124,7 @@ recomendação.
 
 | # | Entrega | Depende | Pronto quando | Muda no repo | Tam |
 |---|---|---|---|---|---|
-| MC15 | **Derivação por notícia** | MC9, MC10 | um episódio com 6 notícias vira 6 carrosséis, 6 stories e 6 cortes para revisar | `derivar()` (`rodada.service.ts:291`) roda por item; formatos `story` e `corte` em `PautaPeca.formato` (texto livre, sem migration); renders no Mac: carrossel a partir de `exportarCarrossel` (`publicacao.service.ts:200`), story no template da marca, corte vertical pelo PalmierPro com os timestamps do item; CTA com palavra-chave em cada peça | G |
+| MC15 | **Derivação por notícia** ✅ 24/09/2026 (código; falta um episódio real) | MC9, MC10 | um episódio com 6 notícias vira 6 carrosséis, 6 stories e 6 cortes para revisar | ~~`derivar()` roda por item~~ **feito ao lado dele:** `DerivacaoService` (`pauta/derivacao-do-episodio.ts`) com uma chamada por matéria mantida do episódio (`POST /pauta/episodios/:id/semana/gerar`), formatos `carrossel`/`story`/`corte` em `PautaPeca` canal instagram (sem migration), idempotente por (episódio, matéria, formato) — rascunho substituído no lugar, aprovada/publicada intocadas —, o corte escolhido pela IA pelos números dos segmentos e conferido por função pura (dentro do vídeo, ordem, < 3 min, ≥ 10 s), CTA com palavra-chave única no último slide e na legenda do carrossel e na legenda do corte (**divergência pendente, D-MC9:** o story chama para o link da bio, sem a palavra), nenhum link no prompt nem no texto; o episódio vai a Derivação; editar/aprovar/descartar na seção "Semana de posts". Renders no Mac: carrossel pelo **render da máquina de carrossel** chamado por linha de comando (`slides.json` → 1080×1350, marca root), story no `story.html` da marca (1080×1920), corte vertical pelo **ffmpeg** (não pelo PalmierPro) com a tela em cima e o rosto do PiP embaixo, região lida do JSON da cena do OBS (1540,738,322,298, não 480×270); PNG sobem à peça (≤ 5 MB), o **mp4 fica no Mac** e a peça guarda o caminho. Provado com a transcrição de exemplo (3+3+3), na API compilada com LLM dublê e no `ensaio-semana` | G |
 | MC16 | **Calendário da semana** | MC15 | a semana aparece com os slots preenchidos e dá para arrastar e reagendar | `agendadaPara` em `PautaPeca` (migration); aba "Semana" | M |
 | MC17 | **Publicação agendada no IG e no TikTok** | MC16, D-MC8, 403 da aprovação resolvido | uma peça aprovada publica sozinha no horário e aparece como publicada, com `externalId` | capacidades `instagram.post.publicar` e `tiktok.post.publicar` (o IG não apaga post por API: reversibilidade `manual`, nível sobe); efeito por registro; executor `pauta.publicar-agendadas`, que publica **só** peça já aprovada | G |
 | MC18 | **DM por palavra-chave** | MC17, D-MC9 | especificação escrita; nenhuma linha de código antes de D-MC9 | só `docs/especificacoes/MC-18-*.md` | G |
@@ -146,7 +146,7 @@ régua.
 | D-MC6 | Upload no YouTube | pendente | Manual até o Pedro parar de corrigir o pacote; depois, a API |
 | D-MC7 | Destino da newsletter | pendente | Em aberto: o Substack não tem API de publicar. Alternativas: Beehiiv, Gmail para uma lista, ou só rascunho. **Até decidir (MC13):** a newsletter sai como rascunho para copiar (`.md`/`.html`), sem rota de envio; o canal newsletter segue recusado com 400 |
 | D-MC8 | Publicação no IG/TikTok | pendente | Pedir já o App Review da Meta (`instagram_content_publish`; a redirect `/api/conectar/:plataforma/callback` já está registrada). Até aprovar, a peça chega pronta para postar com um toque |
-| D-MC9 | DM automática sob a régua | pendente | Desenhar "resposta pré-aprovada" como capacidade própria antes de construir |
+| D-MC9 | DM automática sob a régua | pendente | Desenhar "resposta pré-aprovada" como capacidade própria antes de construir. Junto: o story da MC15 leva a palavra-chave (hoje só carrossel e corte levam)? |
 | D-MC10 | Grupo e número do WhatsApp de links | **aplicada no código** | Grupo novo "Root · links" na instância dedicada do root que já existe. O código lê o grupo de `EVOLUTION_LINKS_JID` (MC1). **Fica com o Pedro:** criar o grupo, preencher a variável e configurar o webhook `messages.upsert` na instância — mudança em sistema externo |
 
 ## Esta onda
@@ -159,6 +159,9 @@ medido e o que ficou de fora.
 
 **Concluída em 23/09/2026** (onda MC-A): seis commits, de `1f88073` a `5fab6e5`. Registro, números
 medidos, ordem de deploy e tarefas do Pedro em `docs/ESTADO-DA-EXECUCAO.md` §1, onda MC-A.
+
+**MC15, 24/09/2026 (fatia da fase 4):** a semana de posts por matéria — registro, números, a
+revisão e o que falta em `docs/ESTADO-DA-EXECUCAO.md` §1, "Fatia MC15".
 
 **Onda MC-B, concluída em 24/09/2026:** MC7 a MC13 (fases 2 e 3), sete commits, de `668992e` a
 `23fa681`, conferidos de ponta a ponta num banco descartável com LLM dublê. Registro, números,

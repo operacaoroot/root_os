@@ -460,7 +460,8 @@ isolamento. Policy e porta iguais. Os pisos da CI subiram fatia a fatia, com a c
 (web 332/30; api 1778/53). **O fechamento não achou nada quebrado pela onda, e por isso não há
 commit de conserto.**
 
-**Ensaio ponta a ponta, local.** API compilada (`dist/main.js`) contra o banco novo
+**Ensaio ponta a ponta, local** (feito antes da revisão; as correções dela estão cobertas pelos
+testes, e o ensaio não foi refeito). API compilada (`dist/main.js`) contra o banco novo
 `marketing_os_e2e`, com a conta `admin@marketing-os.local` do seed e senha descartável. O LLM foi
 um **dublê** local compatível com Chat Completions (`LLM_PROVIDER=openai`, `OPENAI_BASE_URL` em
 `127.0.0.1`, chave falsa), que devolve JSON fixo no formato de cada prompt. Nenhuma chave real.
@@ -612,6 +613,101 @@ ficou anotado como resolvido. Nada recusado.
 Medido: api 2448/2448 com o banco (62 arquivos), 1878 + 570 pulados sem ele; web 506 (39);
 `pnpm typecheck`, `typecheck:test` e o smoke do dist limpos. Sem tabela, sem enum, sem migration,
 sem variável e sem permissão nova — nada muda na ordem de deploy além do build da imagem.
+
+
+### Fatia MC15 — a semana de posts: derivação por notícia (24/09/2026)
+
+Por matéria mantida do episódio, um carrossel, um story e um corte vertical para revisar. Sem tabela,
+sem enum, sem migration, sem permissão e sem capacidade nova; nenhuma variável nova na API (as cinco
+novas são do Mac, catalogadas comentadas no `.env.example`, como as da MC9).
+
+- **API:** `DerivacaoService` + `DerivacaoController` (`pauta/derivacao*.ts`). `GET
+  /pauta/episodios/:id/semana`, `POST …/semana/gerar` (uma chamada por matéria, orgId, voz da MC10,
+  teto longo da MC-R), `PUT /pauta/pecas/:id/semana`, `POST|GET /pauta/pecas/:id/imagens/:n` e `PUT
+  /pauta/pecas/:id/video`. `PautaPeca` canal `instagram`, formato `carrossel`/`story`/`corte`.
+  Idempotente por (episódio, matéria, formato); aprovada e publicada nunca são tocadas. O corte sai
+  dos números dos segmentos que a IA escolhe, conferido por `trechoDoCorte`. Nenhum link no prompt;
+  todo link do texto do modelo sai; `linkDaMateria` pela regra única da MC-R. O episódio vai do
+  Pacote à Derivação. A derivação antiga ignora essas peças; `exportarCarrossel` recusa story/corte e
+  leva o `cta`.
+- **Mac:** `root-midia semana|carrosseis|stories|cortes ep-NN` e `ensaio-semana`
+  (`tools/root-midia/lib/semana.mjs`, `story.html`). **O carrossel usa o render da máquina de
+  carrossel** (plugin instalado, `render/render.mjs <pasta>` a partir de `slides.json`, 1080×1350,
+  marca root) — não houve template próprio. **O rosto do corte** sai do JSON da coleção "Gravação" do
+  OBS (lido, nunca escrito): a C920 em 1280×720 recortada e escalada para dentro de 336×299 em
+  (1533, 737) → região **1540,738,322,298**, e não os 480×270 que o plano supunha. **O mp4 do corte
+  fica no Mac** (MinIO da VPS não é público; um corte pesa dezenas de MB; o Instagram publica por URL
+  pública, então guardar lá não publica nada) — a peça guarda caminho, duração, tamanho e bytes.
+- **Tela:** seção "Semana de posts" no detalhe do episódio (`SecaoSemana.tsx`).
+
+**Revisão (três revisores, antes do commit).** Corrigido:
+
+- o slide de CTA do modelo só sai quando é CTA (verbo de comentar e a palavra, as duas como palavra
+  inteira; no máximo o último) — antes, um carrossel sobre PREÇO com a palavra PRECO perdia os
+  slides de conteúdo até virar nulo;
+- a transcrição longa no prompt não perde mais o fim (1.200 segmentos só levavam até o #912): o
+  espaço da fala sai do prefixo real, e sem espaço a fala zera em vez de cortar segmentos;
+- **o CTA da palavra-chave também fecha a legenda do corte** (Reels/TikTok), com a mesma palavra do
+  carrossel da matéria; com carrossel ou corte já aprovado, a matéria fica com a palavra dele; a
+  unicidade vale entre carrossel e corte das outras matérias;
+- editar só a legenda/título do corte mantém o mp4 (o trecho só se refaz quando o tempo muda, a
+  tela só manda o trecho quando mudou), e o trecho novo refaz `de`/`até`; o Mac tira o frame do
+  story do começo do corte **atual** da matéria;
+- editar, subir PNG e registrar mp4 releem a peça sob o cadeado do `gerar` e gravam na mesma
+  transação; PNG que chega depois de uma edição é 409;
+- depois de agendado, o texto não se edita (400, como o pacote); o render continua aceito;
+- na aba Rodadas, a peça da semana aparece sem "Salvar texto" (e o `PATCH /pauta/pecas/:id`
+  recusa texto dela com 400, aceitando só o status); "Baixar carrossel" só no carrossel;
+- a conta do `gerar` quando a IA falha soma o formato firme como mantido;
+- o título da matéria e o do episódio vão ao prompt sem URL;
+- o story avisa na tela quando a página de links do episódio não está no ar;
+- no Mac: o carrossel com texto estourado (o `report.json` do render) não sobe sem `--forcar`; o
+  `tema` do `slides.json` sai escapado; sem `--tela`/`--pip`, o padrão acompanha o `--canvas`.
+
+**Medido** (Mac, `marketing_os_test` no `mktos-mc-db`, 24/09/2026 ~04h):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck` / `pnpm --filter @mktos/api typecheck:test` | limpos |
+| `pnpm --filter @mktos/api test` com `TEST_DATABASE_URL` | **2515 de 2515** em 63 arquivos (+67: `pauta-semana` 53, `root-midia` +14) |
+| a mesma suíte sem banco | 1944 passados / 571 pulados |
+| `pnpm --filter @mktos/web test` | **522** em 40 arquivos (+16: `pauta-semana` 14, `pauta-episodios` +2) |
+| `build` + `smoke` com `SMOKE_ROTAS` de `…/semana` e `…/imagens/1` | **SMOKE OK**; as 6 rotas novas mapeadas (refeito depois da revisão) |
+| `root-midia ensaio-semana` | **OK**: corte 1080×1920 com 12,4 s (o trecho pedido) e o rosa do PiP embaixo; story 1080×1920 (255 kB); carrossel de 4 slides 1080×1350 pela máquina de carrossel |
+
+Pisos da CI: api 1861/55, web 346/31, com a conta no `ci.yml`. Policy, porta e isolamento não mudam
+(nenhuma capacidade nem tabela).
+
+**Ensaio ponta a ponta, local.** API compilada contra `marketing_os_e2e`, LLM dublê local
+(`LLM_PROVIDER=openai`, `OPENAI_BASE_URL` em loopback, chave falsa), empresa e conta descartáveis
+(`pauta.ver`, `pauta.editar`, `automacoes.executar`), episódio em Pacote com a **transcrição de
+exemplo** (13 segmentos, 3 matérias, uma delas newsletter com permalink do Gmail sem a marca) e um
+vídeo sintético 1920×1080 de 390 s com o PiP no lugar da câmera. `POST …/semana/gerar` → **9 peças
+(3+3+3)**, episódio em Derivação, a matéria 3 com o corte encurtado (a IA pediu 198 s) e aviso; a
+newsletter sem link em peça nenhuma. No Mac, pelo login normal: `semana` listou; `cortes ep-04 <final>`
+gerou os 3 cortes 1080×1920 (57,9 s, 131,5 s, 139,7 s) e registrou os três no OS (`pauta.semana_video`);
+`stories` e `carrosseis --sem-enviar` renderizaram 3 stories e 3 carrosséis de 5 slides. Com envio, o
+PNG recebeu **503 "storage não configurado"** — o ambiente não tem MinIO (`S3_*`), como no MC11.
+Com o `next dev` contra essa API, o detalhe do episódio a **375×812** (agent-browser): `scrollWidth`
+375, nenhum elemento passando da borda, as 3 matérias com as 3 peças. Empresa do ensaio apagada no
+fim.
+
+**O que não rodou / fica com o Pedro:**
+
+1. **LLM real** — o prompt da derivação só viu o dublê; o primeiro episódio real é o primeiro teste
+   do formato (em especial a escolha do trecho pelos números dos segmentos).
+2. **Upload dos PNG contra um MinIO de verdade** (o ambiente não tem `S3_*`); a rota e a gravação da
+   chave estão cobertas pelos testes com storage dublê. Imagem substituída fica no MinIO (o
+   `StorageService` não apaga), como as thumbs.
+3. **Decisões:** a palavra-chave e o texto do CTA (hoje "Comentário com a palavra X → o link da
+   matéria e o episódio completo chegam no direct", sem segunda pessoa) dependem da D-MC9 (DM
+   automática); **o story não leva a palavra** — chama para o link da bio. O plano pede "CTA com
+   palavra-chave em cada peça"; carrossel e corte cumprem, e o story fica como **divergência
+   pendente do Pedro, ligada à D-MC9** (a resposta a story chega por DM, e o texto dela depende de
+   como a automação vai casar a palavra); a região da tela no corte é o canvas inteiro, com o PiP aparecendo pequeno no canto de
+   cima — recortar só a área útil é `--tela`, a decidir com o Pedro depois de um corte real; o
+   PalmierPro não entrou no corte vertical (ffmpeg direto, reproduzível e testável).
+4. **O que publica** continua fora: Instagram/TikTok são MC17/D-MC8, o agendamento é MC16.
 
 ---
 

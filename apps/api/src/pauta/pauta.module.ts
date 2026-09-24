@@ -32,6 +32,8 @@ import { PaginaDeLinksController } from './pagina-de-links.controller';
 import { PaginaDeLinksService } from './pagina-de-links.service';
 import { NewsletterController } from './newsletter.controller';
 import { NewsletterService } from './newsletter.service';
+import { DerivacaoController } from './derivacao.controller';
+import { DerivacaoService } from './derivacao.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -52,6 +54,7 @@ import { NewsletterService } from './newsletter.service';
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
+    DerivacaoController,
   ],
   providers: [
     PautaService,
@@ -82,6 +85,8 @@ import { NewsletterService } from './newsletter.service';
     PaginaDeLinksService,
     // MC13: a newsletter tirada da transcrição, exportada para envio manual (D-MC7).
     NewsletterService,
+    // MC15: a semana de posts — carrossel, story e corte por matéria do episódio.
+    DerivacaoService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

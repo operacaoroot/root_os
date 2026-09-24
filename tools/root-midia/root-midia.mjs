@@ -40,6 +40,33 @@ import {
   preencherThumb,
 } from './lib/thumbs.mjs';
 import {
+  ALTURA_DO_SLIDE,
+  ALTURA_VERTICAL,
+  CANVAS_PADRAO,
+  LARGURA_DO_SLIDE,
+  LARGURA_VERTICAL,
+  REGIAO_DA_TELA_PADRAO,
+  REGIAO_DO_PIP_PADRAO,
+  aceitaRender,
+  argsDoChromeNoTamanho,
+  argsDoCorteVertical,
+  argsDoFrameDoStory,
+  candidatosDoRender,
+  conferirPngNoTamanho,
+  filtroDoCorteVertical,
+  lerRegiao,
+  marcaDoCarrossel,
+  nomeDoCorte,
+  nomeDoStory,
+  pastaDoCarrossel,
+  preencherStory,
+  regiaoDoPip,
+  regiaoNoVideo,
+  regioesPadraoNoCanvas,
+  slidesEstourados,
+  slidesParaAMaquina,
+} from './lib/semana.mjs';
+import {
   acharEpisodio,
   clienteDoOs,
   configuracao,
@@ -81,10 +108,28 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
   root-midia ensaio-thumb [--saida thumb.png] [--manter]
       Renderiza 1 thumb com um frame sintético, sem falar com o OS, e confere 1280×720 e 2 MB.
 
+  A semana de posts (MC15) — as peças por matéria que o OS gerou:
+  root-midia semana <ep-NN>
+      As matérias do episódio e o estado das três peças de cada uma (carrossel, story, corte).
+  root-midia carrosseis <ep-NN> [--saida pasta] [--so N] [--sem-enviar] [--forcar]
+      Renderiza cada carrossel pela máquina de carrossel (plugin, 1080×1350, marca root) e sobe os PNG.
+      Slide com texto estourado (o report.json do render) não sobe, salvo com --forcar.
+  root-midia stories <ep-NN> [--final f.mp4] [--saida pasta] [--so N] [--sem-enviar]
+      story.html 1080×1920 com o frame do episódio no começo do corte da matéria, e sobe o PNG.
+  root-midia cortes <ep-NN> [<vídeo final>] [--pip x,y,l,a] [--tela x,y,l,a] [--canvas 1920x1080]
+                    [--obs colecao.json] [--cena "2 · Tela + Câmera"] [--saida pasta] [--so N] [--sem-enviar]
+      (também \`cortes-verticais\`) O trecho de cada corte em 1080×1920: a tela em cima e o rosto
+      (o PiP do OBS) embaixo. O mp4 FICA no Mac; ao OS vai o caminho e o que foi medido.
+  root-midia ensaio-semana [--manter]
+      Vídeo sintético 1920×1080 com um PiP colorido: 1 corte vertical e 1 story (e 1 carrossel, se a
+      máquina de carrossel estiver instalada), conferindo 1080×1920, a duração e o rosto embaixo.
+
 Variáveis: ROOT_OS_API_URL (padrão http://localhost:4001/api), ROOT_OS_EMAIL, ROOT_OS_SENHA,
 WHISPER_MODEL (caminho do .bin ggml), ROOT_MIDIA_PALAVRA (padrão "root, corta"),
-ROOT_MIDIA_CHROME (o Chrome do render, quando não é o de /Applications). Lidas do
-ambiente e do arquivo ~/.config/root/root-midia.env (ou o de ROOT_MIDIA_ENV); o ambiente vence.`;
+ROOT_MIDIA_CHROME (o Chrome do render, quando não é o de /Applications), ROOT_MIDIA_PIP e
+ROOT_MIDIA_TELA (x,y,l,a no canvas), ROOT_MIDIA_OBS_COLECAO (o JSON da coleção do OBS),
+ROOT_MIDIA_CARROSSEL_RENDER (o render.mjs da máquina de carrossel) e ROOT_MIDIA_MARCA (o brand.json).
+Lidas do ambiente e do arquivo ~/.config/root/root-midia.env (ou o de ROOT_MIDIA_ENV); o ambiente vence.`;
 
 /** O ambiente mais o arquivo de variáveis do Mac, sem sobrescrever o que já foi exportado. */
 function ambiente() {
@@ -96,7 +141,7 @@ function ambiente() {
   return juntarVariaveis(process.env, lerArquivoDeVariaveis(readFileSync(caminho, 'utf8')));
 }
 
-const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar']);
+const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar', 'forcar']);
 
 /** @param {string[]} argv */
 function lerArgumentos(argv) {
@@ -487,13 +532,13 @@ function acharChrome() {
  * Sem Chrome, o agent-browser (se houver) abre o HTML num navegador próprio,
  * numa sessão só desta ferramenta, e tira a foto — depois da rede parar e das
  * fontes do Google carregarem, para o texto não sair na fonte de reserva.
- * @param {string} html @param {string} png
+ * @param {string} html @param {string} png @param {number} [largura] @param {number} [altura]
  */
-async function renderizarComAgentBrowser(html, png) {
+async function renderizarComAgentBrowser(html, png, largura = 1280, altura = 720) {
   const ab = binario('agent-browser');
   const sessao = ['--session', `root-midia-thumb-${process.pid}`];
   try {
-    await rodar(ab, [...sessao, 'set', 'viewport', '1280', '720']);
+    await rodar(ab, [...sessao, 'set', 'viewport', String(largura), String(altura)]);
     await rodar(ab, [...sessao, 'open', `file://${html}`]);
     await rodar(ab, [...sessao, 'wait', '--load', 'networkidle']);
     await rodar(ab, [...sessao, 'wait', '--fn', "document.fonts.status === 'loaded'"]);
@@ -597,6 +642,421 @@ async function ensaioThumb({ saida, manter = false }) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// A semana de posts (MC15)
+// ---------------------------------------------------------------------------
+
+/** Largura e altura do primeiro fluxo de vídeo. @param {string} arquivo */
+async function dimensoesDe(arquivo) {
+  const { stdout } = await rodar(binario('ffprobe'), [
+    '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=x', arquivo,
+  ]);
+  const [largura, altura] = stdout.trim().split('x').map(Number);
+  if (!largura || !altura) throw new Error(`O ffprobe não mediu o tamanho de ${arquivo}.`);
+  return { largura, altura };
+}
+
+/**
+ * O episódio e a semana dele no OS.
+ * @param {string} ep
+ * @returns {Promise<{ os: ReturnType<typeof clienteDoOs>, alvo: { id: string, apelido: string }, semana: any }>}
+ */
+async function semanaDoOs(ep) {
+  const cfg = configuracao(ambiente());
+  exigirOs(cfg);
+  const os = clienteDoOs(cfg);
+  const lista = await os.episodios();
+  const alvo = acharEpisodio(lista?.items ?? [], ep, { lista: true });
+  const semana = await os.semana(alvo.id);
+  return { os, alvo, semana };
+}
+
+/**
+ * As matérias pedidas (`--so N`) que têm a peça do formato e aceitam render.
+ * @param {any} semana @param {'carrossel' | 'story' | 'corte'} formato @param {Record<string, string | true>} o
+ */
+function pecasParaRender(semana, formato, o) {
+  const so = texto(o, 'so') ? numero(o, 'so', 0) : null;
+  /** @type {Array<{ n: number, titulo: string, peca: any, corte: any }>} */
+  const lista = [];
+  for (const m of semana.materias ?? []) {
+    if (so !== null && m.n !== so) continue;
+    const p = m.pecas?.[formato];
+    if (!p) {
+      avisar(`Matéria ${m.n}: sem ${formato} — gere a semana na tela (aba Episódios).`);
+      continue;
+    }
+    if (!aceitaRender(p)) {
+      avisar(`Matéria ${m.n}: o ${formato} está ${p.status} e não recebe render.`);
+      continue;
+    }
+    lista.push({ n: m.n, titulo: m.titulo, peca: p, corte: m.pecas?.corte ?? null });
+  }
+  if (so !== null && !lista.length) throw new Error(`A matéria ${so} não tem ${formato} para renderizar.`);
+  return lista;
+}
+
+/** A pasta dos renders da semana: ao lado do vídeo final, ou a pedida. @param {Record<string, string | true>} o @param {string | null} final @param {string} apelido */
+function pastaDaSemana(o, final, apelido) {
+  const base = texto(o, 'saida') ?? (final ? join(dirname(final), `${apelido}-semana`) : join(process.cwd(), `${apelido}-semana`));
+  const pasta = resolve(base);
+  mkdirSync(pasta, { recursive: true });
+  return pasta;
+}
+
+/**
+ * Onde está a câmera e a tela no canvas: argumento > variável > o JSON da
+ * coleção do OBS (só leitura) > o padrão medido em 24/09/2026.
+ * @param {Record<string, string | true>} o
+ */
+function regioesDoCorte(o) {
+  const env = ambiente();
+  const canvasTexto = texto(o, 'canvas');
+  const canvas = canvasTexto
+    ? (() => {
+        const [largura, altura] = canvasTexto.split(/[x×,]/).map(Number);
+        if (!Number.isInteger(largura) || !Number.isInteger(altura)) throw new Error(`--canvas é LxA (ex.: 1920x1080), veio "${canvasTexto}".`);
+        return { largura, altura };
+      })()
+    : CANVAS_PADRAO;
+  // Sem --tela, a tela é o canvas pedido inteiro, e o PiP medido escala com ele.
+  const padrao = regioesPadraoNoCanvas(canvas);
+  const tela = texto(o, 'tela') ? lerRegiao(/** @type {string} */ (texto(o, 'tela'))) : env.ROOT_MIDIA_TELA ? lerRegiao(env.ROOT_MIDIA_TELA) : padrao.tela;
+  if (texto(o, 'pip')) return { canvas, tela, pip: lerRegiao(/** @type {string} */ (texto(o, 'pip'))), origem: '--pip' };
+  if (env.ROOT_MIDIA_PIP?.trim()) return { canvas, tela, pip: lerRegiao(env.ROOT_MIDIA_PIP), origem: 'ROOT_MIDIA_PIP' };
+  const colecao = texto(o, 'obs') ?? env.ROOT_MIDIA_OBS_COLECAO?.trim() ?? join(homedir(), 'Library', 'Application Support', 'obs-studio', 'basic', 'scenes', 'Gravação.json');
+  if (existsSync(colecao)) {
+    try {
+      const pip = regiaoDoPip(JSON.parse(readFileSync(colecao, 'utf8')), { cena: texto(o, 'cena'), canvas });
+      return { canvas, tela, pip, origem: `OBS (${basename(colecao)})` };
+    } catch (e) {
+      if (texto(o, 'obs')) throw e;
+      avisar(`Não li o PiP do OBS (${/** @type {Error} */ (e).message}); sigo com o padrão.`);
+    }
+  }
+  const escalado = canvas.largura !== CANVAS_PADRAO.largura || canvas.altura !== CANVAS_PADRAO.altura;
+  return {
+    canvas,
+    tela,
+    pip: padrao.pip,
+    origem: escalado
+      ? `padrão medido em 1920×1080, escalado para ${canvas.largura}×${canvas.altura} (confira com --pip)`
+      : 'padrão (medido no OBS em 24/09/2026)',
+  };
+}
+
+/**
+ * Um corte vertical: o trecho reencodado em 1080×1920, a tela em cima e o
+ * rosto embaixo, conferido pelo ffprobe (tamanho e duração).
+ * @param {{ video: string, inicio: number, fim: number, saida: string, regioes: ReturnType<typeof regioesDoCorte> }} o
+ */
+async function renderizarCorte({ video, inicio, fim, saida, regioes }) {
+  if (mesmoArquivo(saida, video)) throw new Error('A saída do corte não pode ser o próprio vídeo final.');
+  const dims = await dimensoesDe(video);
+  const fluxos = await fluxosDe(video);
+  const rosto = regiaoNoVideo(regioes.pip, regioes.canvas, dims);
+  const tela = regiaoNoVideo(regioes.tela, regioes.canvas, dims);
+  const ffmpeg = binario('ffmpeg');
+  const { stdout: encoders } = await rodar(ffmpeg, ['-hide_banner', '-encoders']);
+  await rodar(
+    ffmpeg,
+    argsDoCorteVertical({
+      video,
+      saida,
+      inicio,
+      fim,
+      filtro: filtroDoCorteVertical({ tela, rosto }),
+      audio: fluxos.audio,
+      codec: codecDeVideo(encoders),
+      sobrescrever: true,
+    }),
+  );
+  const saiu = await dimensoesDe(saida);
+  const duracaoSeg = await duracaoDe(saida);
+  if (saiu.largura !== LARGURA_VERTICAL || saiu.altura !== ALTURA_VERTICAL) {
+    throw new Error(`O corte saiu ${saiu.largura}×${saiu.altura}; era para ser ${LARGURA_VERTICAL}×${ALTURA_VERTICAL}.`);
+  }
+  if (Math.abs(duracaoSeg - (fim - inicio)) > 0.5) {
+    throw new Error(`O corte saiu com ${duracaoSeg.toFixed(2)} s; o trecho é de ${(fim - inicio).toFixed(2)} s.`);
+  }
+  return { arquivo: saida, duracaoSeg: Math.round(duracaoSeg * 1000) / 1000, largura: saiu.largura, altura: saiu.altura, bytes: statSync(saida).size, rosto, tela };
+}
+
+/** @param {string} ep @param {string | undefined} finalArg @param {Record<string, string | true>} o */
+async function cortesVerticais(ep, finalArg, o) {
+  const { os, alvo, semana } = await semanaDoOs(ep);
+  const final = finalArg ?? texto(o, 'final') ?? semana.arquivoFinal;
+  if (!final) throw new Error(`O ${alvo.apelido} não tem o vídeo final registrado: passe o arquivo (root-midia cortes ${alvo.apelido} <final.mp4>).`);
+  const video = exigirArquivo(final);
+  const regioes = regioesDoCorte(o);
+  avisar(`Rosto em ${regioes.pip.largura}×${regioes.pip.altura} a partir de (${regioes.pip.x}, ${regioes.pip.y}) — ${regioes.origem}.`);
+  const pasta = pastaDaSemana(o, video, alvo.apelido);
+  const feitas = [];
+  for (const { n, peca } of pecasParaRender(semana, 'corte', o)) {
+    if (typeof peca.inicio !== 'number' || typeof peca.fim !== 'number') {
+      avisar(`Matéria ${n}: o corte não tem trecho — gere a semana de novo.`);
+      continue;
+    }
+    const saida = join(pasta, nomeDoCorte(alvo.apelido, n));
+    avisar(`Corte da matéria ${n}: ${peca.inicio.toFixed(1)}–${peca.fim.toFixed(1)} s…`);
+    const r = await renderizarCorte({ video, inicio: peca.inicio, fim: peca.fim, saida, regioes });
+    avisar(`→ ${saida} (${r.duracaoSeg.toFixed(1)} s, ${Math.round(r.bytes / 1024)} kB)`);
+    const corpo = { arquivo: r.arquivo, duracaoSeg: r.duracaoSeg, largura: r.largura, altura: r.altura, bytes: r.bytes };
+    if (o['sem-enviar'] !== true) {
+      await os.videoDoCorte(peca.id, corpo);
+      avisar(`Corte da matéria ${n} registrado no OS (o mp4 fica no Mac).`);
+    }
+    feitas.push({ n, ...corpo, enviado: o['sem-enviar'] !== true });
+  }
+  return { id: alvo.id, apelido: alvo.apelido, pasta, pip: regioes.pip, cortes: feitas };
+}
+
+/**
+ * Um story: o frame do episódio no tempo pedido, o template preenchido e a
+ * foto do Chrome em 1080×1920, conferida.
+ * @param {{ video: string, tempoSeg: number, texto: string, chamada: string, apelido: string, saida: string }} o
+ */
+async function renderizarStory(o) {
+  const template = readFileSync(fileURLToPath(new URL('./story.html', import.meta.url)), 'utf8');
+  const pasta = mkdtempSync(join(tmpdir(), 'root-midia-story-'));
+  try {
+    await rodar(binario('ffmpeg'), argsDoFrameDoStory(o.video, o.tempoSeg, join(pasta, 'frame.jpg')));
+    const html = join(pasta, 'story.html');
+    writeFileSync(html, preencherStory(template, { texto: o.texto, chamada: o.chamada, apelido: o.apelido, frame: 'frame.jpg' }));
+    const png = join(pasta, 'story.png');
+    const chrome = acharChrome();
+    if (chrome) {
+      await rodarAteGravar(chrome, argsDoChromeNoTamanho({ html, png, perfil: join(pasta, 'perfil'), largura: LARGURA_VERTICAL, altura: ALTURA_VERTICAL }), png);
+    } else await renderizarComAgentBrowser(html, png, LARGURA_VERTICAL, ALTURA_VERTICAL);
+    if (!existsSync(png)) throw new Error('O navegador não gravou o PNG do story.');
+    const buffer = readFileSync(png);
+    const erro = conferirPngNoTamanho(buffer, LARGURA_VERTICAL, ALTURA_VERTICAL);
+    if (erro) throw new Error(erro);
+    writeFileSync(o.saida, buffer);
+    return buffer;
+  } finally {
+    rmSync(pasta, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
+
+/** @param {string} ep @param {Record<string, string | true>} o */
+async function stories(ep, o) {
+  const { os, alvo, semana } = await semanaDoOs(ep);
+  const final = texto(o, 'final') ?? semana.arquivoFinal;
+  if (!final) throw new Error(`O ${alvo.apelido} não tem o vídeo final registrado: passe --final <vídeo final>.`);
+  const video = exigirArquivo(final);
+  const duracao = await duracaoDe(video);
+  const pasta = pastaDaSemana(o, video, alvo.apelido);
+  const feitas = [];
+  for (const { n, peca, corte } of pecasParaRender(semana, 'story', o)) {
+    // O começo do corte da matéria como está AGORA (o trecho pode ter sido editado); sem corte, o gravado; sem nada, o meio.
+    const tempoSeg = typeof corte?.inicio === 'number' ? corte.inicio : typeof peca.tempoSeg === 'number' ? peca.tempoSeg : duracao / 2;
+    const saida = join(pasta, nomeDoStory(alvo.apelido, n));
+    avisar(`Story da matéria ${n} (frame em ${tempoSeg.toFixed(1)} s)…`);
+    const png = await renderizarStory({ video, tempoSeg: Math.min(tempoSeg + 1, Math.max(0, duracao - 0.5)), texto: peca.corpo, chamada: peca.chamada ?? '', apelido: alvo.apelido, saida });
+    avisar(`→ ${saida} (${Math.round(png.length / 1024)} kB)`);
+    if (o['sem-enviar'] !== true) {
+      await os.enviarImagemDaPeca(peca.id, 1, png, basename(saida));
+      avisar(`Story da matéria ${n} enviado ao OS.`);
+    }
+    feitas.push({ n, arquivo: saida, bytes: png.length, enviado: o['sem-enviar'] !== true });
+  }
+  return { id: alvo.id, apelido: alvo.apelido, pasta, stories: feitas };
+}
+
+/** O render da máquina de carrossel instalado (com o playwright ao lado), ou nulo. */
+function acharRenderDoCarrossel() {
+  const cache = join(homedir(), '.claude', 'plugins', 'cache', 'maquina-carrossel-marketplace', 'maquina-carrossel');
+  let versoes = [];
+  try {
+    versoes = readdirSync(cache);
+  } catch {
+    /* plugin fora do cache: segue com os outros candidatos */
+  }
+  return (
+    candidatosDoRender(ambiente(), homedir(), versoes).find(
+      (c) => existsSync(c) && existsSync(join(dirname(c), 'node_modules', 'playwright')),
+    ) ?? null
+  );
+}
+
+/** O @ da marca no brand pack da máquina (a marca d'água do slide). @param {string} marcaRef */
+function handleDaMarca(marcaRef) {
+  try {
+    const h = JSON.parse(readFileSync(marcaRef, 'utf8'))?.handle;
+    return typeof h === 'string' && h.trim() ? h.trim() : '@root';
+  } catch {
+    return '@root';
+  }
+}
+
+/**
+ * Um carrossel pela máquina de carrossel: o `slides.json` na pasta da peça, o
+ * render do plugin (node, com o próprio Chromium do playwright) e os PNG de
+ * `png/slide-NN.png` conferidos em 1080×1350.
+ * @param {{ peca: any, apelido: string, dir: string, render: string, marcaRef: string }} o
+ */
+async function renderizarCarrossel({ peca, apelido, dir, render, marcaRef }) {
+  mkdirSync(dir, { recursive: true });
+  const slides = slidesParaAMaquina(peca, { handle: handleDaMarca(marcaRef), marcaRef, apelido });
+  writeFileSync(join(dir, 'slides.json'), `${JSON.stringify(slides, null, 2)}\n`);
+  await rodar(process.execPath, [render, dir]);
+  let estourados = [];
+  try {
+    estourados = slidesEstourados(JSON.parse(readFileSync(join(dir, 'report.json'), 'utf8')));
+  } catch {
+    avisar(`A máquina de carrossel não gravou o report.json em ${dir}: o estouro de texto não foi conferido.`);
+  }
+  const pngs = [];
+  for (let i = 1; i <= slides.slides.length; i++) {
+    const arquivo = join(dir, 'png', `slide-${String(i).padStart(2, '0')}.png`);
+    if (!existsSync(arquivo)) throw new Error(`A máquina de carrossel não gravou ${basename(arquivo)}.`);
+    const buffer = readFileSync(arquivo);
+    const erro = conferirPngNoTamanho(buffer, LARGURA_DO_SLIDE, ALTURA_DO_SLIDE);
+    if (erro) throw new Error(`Slide ${i}: ${erro}`);
+    pngs.push({ n: i, arquivo, buffer });
+  }
+  return { pngs, estourados };
+}
+
+/** @param {string} ep @param {Record<string, string | true>} o */
+async function carrosseis(ep, o) {
+  const render = acharRenderDoCarrossel();
+  if (!render) {
+    throw new Error(
+      'Não achei o render da máquina de carrossel com o playwright ao lado. Rode /maquina-carrossel:setup ' +
+        '(instalar é decisão sua) ou aponte ROOT_MIDIA_CARROSSEL_RENDER para o render.mjs.',
+    );
+  }
+  const marcaRef = marcaDoCarrossel(ambiente(), homedir());
+  if (!existsSync(marcaRef)) throw new Error(`O brand pack da marca não está em ${marcaRef} (ROOT_MIDIA_MARCA troca).`);
+  const { os, alvo, semana } = await semanaDoOs(ep);
+  const pasta = pastaDaSemana(o, semana.arquivoFinal && existsSync(semana.arquivoFinal) ? semana.arquivoFinal : null, alvo.apelido);
+  const feitas = [];
+  for (const { n, peca } of pecasParaRender(semana, 'carrossel', o)) {
+    avisar(`Carrossel da matéria ${n}: ${peca.slides?.length ?? 0} slides, palavra ${peca.palavraChave}…`);
+    const { pngs, estourados } = await renderizarCarrossel({ peca, apelido: alvo.apelido, dir: join(pasta, pastaDoCarrossel(alvo.apelido, n)), render, marcaRef });
+    for (const e of estourados) {
+      avisar(e.n ? `Carrossel da matéria ${n}, slide ${e.n}: o texto estourou a caixa em ${e.excessoPx} px (sai cortado).` : `Carrossel da matéria ${n}: o render acusou estouro de texto.`);
+    }
+    // Texto cortado não sobe sem querer: encurte o slide na tela e renderize de novo, ou --forcar.
+    const enviar = o['sem-enviar'] !== true && (!estourados.length || o.forcar === true);
+    if (enviar) {
+      for (const p of pngs) await os.enviarImagemDaPeca(peca.id, p.n, p.buffer, basename(p.arquivo));
+      avisar(`Carrossel da matéria ${n}: ${pngs.length} slide(s) enviados ao OS.`);
+    } else if (o['sem-enviar'] !== true) {
+      avisar(`Carrossel da matéria ${n}: não enviado ao OS por causa do estouro (encurte o texto ou rode com --forcar).`);
+    }
+    feitas.push({ n, pasta: dirname(pngs[0].arquivo), slides: pngs.length, estourados: estourados.map((e) => e.n), enviado: enviar });
+  }
+  return { id: alvo.id, apelido: alvo.apelido, pasta, render, carrosseis: feitas };
+}
+
+/** @param {string} ep */
+async function semanaNaTela(ep) {
+  const { alvo, semana } = await semanaDoOs(ep);
+  if (semana.motivo) avisar(semana.motivo);
+  for (const m of semana.materias ?? []) {
+    const estado = ['carrossel', 'story', 'corte']
+      .map((f) => {
+        const p = m.pecas?.[f];
+        if (!p) return `${f}: —`;
+        const render =
+          f === 'corte' ? (p.video ? 'mp4 no Mac' : 'sem mp4') : `${p.imagens?.length ?? 0} PNG`;
+        return `${f}: ${p.status}, ${render}`;
+      })
+      .join(' · ');
+    console.log(`${alvo.apelido} m${m.n}\t${estado}\t${m.titulo}`);
+  }
+  return 0;
+}
+
+/**
+ * O ensaio da semana, sem falar com o OS: um vídeo sintético 1920×1080 com um
+ * PiP cor-de-rosa onde a câmera fica, 1 corte vertical (confere 1080×1920, a
+ * duração e que o rosa caiu embaixo), 1 story (1080×1920) e, com a máquina de
+ * carrossel instalada, 1 carrossel (1080×1350).
+ */
+async function ensaioSemana({ manter = false }) {
+  const pasta = mkdtempSync(join(tmpdir(), 'root-midia-ensaio-semana-'));
+  const ffmpeg = binario('ffmpeg');
+  try {
+    const clipe = join(pasta, 'final.mp4');
+    const p = REGIAO_DO_PIP_PADRAO;
+    await rodar(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30:duration=30',
+      '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=30',
+      '-vf', `drawbox=x=${p.x}:y=${p.y}:w=${p.largura}:h=${p.altura}:color=0xFF1F6B@1:t=fill`,
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clipe,
+    ]);
+    const inicio = 5.2;
+    const fim = 17.6;
+    const regioes = { canvas: CANVAS_PADRAO, tela: REGIAO_DA_TELA_PADRAO, pip: REGIAO_DO_PIP_PADRAO, origem: 'padrão' };
+    const corte = await renderizarCorte({ video: clipe, inicio, fim, saida: join(pasta, nomeDoCorte('ep-00', 1)), regioes });
+    // Um pixel do meio da faixa de baixo: tem de ser o rosa do PiP.
+    const pixel = join(pasta, 'pixel.rgb');
+    await rodar(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-ss', '2', '-i', corte.arquivo, '-frames:v', '1', '-vf', 'format=rgb24,crop=1:1:540:1420', '-f', 'rawvideo', '-pix_fmt', 'rgb24', pixel]);
+    const [r, g, b] = readFileSync(pixel);
+    const rostoEmbaixo = r > 200 && g < 90 && b > 60 && b < 160;
+
+    const story = await renderizarStory({
+      video: clipe,
+      tempoSeg: inicio + 1,
+      texto: 'A planilha de contas a pagar agora se preenche sozinha',
+      chamada: 'O episódio completo está no link da bio.',
+      apelido: 'ep-00',
+      saida: join(tmpdir(), `root-midia-ensaio-${nomeDoStory('ep-00', 1)}`),
+    });
+
+    let carrossel = /** @type {{ slides: number } | { pulado: string }} */ ({ pulado: 'máquina de carrossel não instalada' });
+    const render = acharRenderDoCarrossel();
+    const marcaRef = marcaDoCarrossel(ambiente(), homedir());
+    if (render && existsSync(marcaRef)) {
+      const { pngs } = await renderizarCarrossel({
+        render,
+        marcaRef,
+        apelido: 'ep-00',
+        dir: join(pasta, pastaDoCarrossel('ep-00', 1)),
+        peca: {
+          titulo: 'Ensaio da semana',
+          slides: [
+            { titulo: 'A planilha que se preenche sozinha', texto: '' },
+            { titulo: 'O que mudou', texto: 'O agente lê o e-mail do fornecedor e lança a conta a pagar.' },
+            { titulo: 'Quanto tempo volta', texto: 'Duas horas por semana de quem fecha o caixa.' },
+            { titulo: 'Palavra-chave: PLANILHA', texto: 'Comentário com PLANILHA → o link da matéria e o episódio completo chegam no direct.' },
+          ],
+          cta: { instrucao: 'Comentário com a palavra', palavra: 'PLANILHA', beneficio: 'O link da matéria e o episódio completo chegam no direct.' },
+          palavraChave: 'PLANILHA',
+        },
+      });
+      carrossel = { slides: pngs.length };
+    }
+
+    const ok =
+      corte.largura === LARGURA_VERTICAL &&
+      corte.altura === ALTURA_VERTICAL &&
+      Math.abs(corte.duracaoSeg - (fim - inicio)) < 0.2 &&
+      rostoEmbaixo &&
+      conferirPngNoTamanho(story, LARGURA_VERTICAL, ALTURA_VERTICAL) === null &&
+      (!('slides' in carrossel) || carrossel.slides === 4);
+    escrever(
+      {
+        ok,
+        pasta: manter ? pasta : null,
+        corte: { ...corte, arquivo: manter ? corte.arquivo : null, esperadoSeg: fim - inicio, pixelDoRosto: [r, g, b], rostoEmbaixo },
+        story: { png: join(tmpdir(), `root-midia-ensaio-${nomeDoStory('ep-00', 1)}`), bytes: story.length },
+        carrossel,
+      },
+      undefined,
+    );
+    avisar(ok ? 'ENSAIO OK: corte 1080×1920 com o rosto embaixo e a duração do trecho; story 1080×1920.' : 'ENSAIO FALHOU: veja o relatório acima.');
+    return ok;
+  } finally {
+    if (!manter) rmSync(pasta, { recursive: true, force: true });
+  }
+}
+
 async function principal() {
   const [comando, ...resto] = process.argv.slice(2);
   const { posicionais, opcoes } = lerArgumentos(resto);
@@ -627,6 +1087,11 @@ async function principal() {
       return 0;
     }
     case 'cortes': {
+      // `cortes <ep-NN> [final]` é o corte vertical da semana (MC15); `cortes <arquivo>` segue sendo o plano do MC9.
+      if (/^ep-?\d+$/i.test(posicionais[0] ?? '') && !existsSync(posicionais[0])) {
+        escrever(await cortesVerticais(posicionais[0], posicionais[1], opcoes), undefined);
+        return 0;
+      }
       const arquivo = exigirArquivo(posicionais[0]);
       const minimoSeg = numero(opcoes, 'minimo', PADROES.minimoSeg);
       const s = texto(opcoes, 'silencios')
@@ -701,6 +1166,26 @@ async function principal() {
     }
     case 'ensaio-thumb':
       return (await ensaioThumb({ saida: texto(opcoes, 'saida'), manter: opcoes.manter === true })) ? 0 : 1;
+    case 'semana':
+      if (!posicionais[0]) throw new Error('Uso: root-midia semana <ep-NN>');
+      return semanaNaTela(posicionais[0]);
+    case 'cortes-verticais': {
+      if (!posicionais[0]) throw new Error('Uso: root-midia cortes-verticais <ep-NN> [vídeo final]');
+      escrever(await cortesVerticais(posicionais[0], posicionais[1], opcoes), undefined);
+      return 0;
+    }
+    case 'stories': {
+      if (!posicionais[0]) throw new Error('Uso: root-midia stories <ep-NN> [--final …] [--sem-enviar]');
+      escrever(await stories(posicionais[0], opcoes), undefined);
+      return 0;
+    }
+    case 'carrosseis': {
+      if (!posicionais[0]) throw new Error('Uso: root-midia carrosseis <ep-NN> [--sem-enviar]');
+      escrever(await carrosseis(posicionais[0], opcoes), undefined);
+      return 0;
+    }
+    case 'ensaio-semana':
+      return (await ensaioSemana({ manter: opcoes.manter === true })) ? 0 : 1;
     default:
       throw new Error(`Comando desconhecido: ${comando}. Veja \`root-midia ajuda\`.`);
   }

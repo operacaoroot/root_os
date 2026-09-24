@@ -105,7 +105,7 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
   }
 
   /**
-   * @param {'GET' | 'POST'} metodo
+   * @param {'GET' | 'POST' | 'PUT'} metodo
    * @param {string} caminho
    * @param {unknown} [corpo] JSON, ou um FormData (o multipart monta o próprio cabeçalho)
    */
@@ -147,6 +147,16 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
       form.append('file', new Blob([png], { type: 'image/png' }), nome);
       return pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/thumbs/${n}`, form);
     },
+    /** A semana de posts do episódio (MC15): as matérias e as três peças de cada uma. @param {string} id */
+    semana: (id) => pedir('GET', `/pauta/episodios/${encodeURIComponent(id)}/semana`),
+    /** Um PNG da peça: o slide n do carrossel, ou o story (n = 1). @param {string} pecaId @param {number} n @param {Uint8Array} png @param {string} nome */
+    enviarImagemDaPeca: (pecaId, n, png, nome) => {
+      const form = new FormData();
+      form.append('file', new Blob([png], { type: 'image/png' }), nome);
+      return pedir('POST', `/pauta/pecas/${encodeURIComponent(pecaId)}/imagens/${n}`, form);
+    },
+    /** O corte renderizado: o mp4 fica no Mac, vai só onde ele está e o que foi medido. @param {string} pecaId @param {unknown} corpo */
+    videoDoCorte: (pecaId, corpo) => pedir('PUT', `/pauta/pecas/${encodeURIComponent(pecaId)}/video`, corpo),
   };
 }
 

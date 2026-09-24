@@ -59,6 +59,33 @@ import {
   preencherThumb,
   textoComDestaque,
 } from '../../../tools/root-midia/lib/thumbs.mjs';
+import {
+  ALTURA_VERTICAL,
+  CANVAS_PADRAO,
+  LARGURA_VERTICAL,
+  REGIAO_DA_TELA_PADRAO,
+  REGIAO_DO_PIP_PADRAO,
+  aceitaRender,
+  argsDoChromeNoTamanho,
+  argsDoCorteVertical,
+  argsDoFrameDoStory,
+  candidatosDoRender,
+  conferirPngNoTamanho,
+  filtroDoCorteVertical,
+  layoutDoCorte,
+  lerRegiao,
+  marcaDoCarrossel,
+  nomeDoCorte,
+  nomeDoStory,
+  pastaDoCarrossel,
+  preencherStory,
+  regiaoDoPip,
+  regiaoNoVideo,
+  regioesPadraoNoCanvas,
+  resolucaoDoPreset,
+  slidesEstourados,
+  slidesParaAMaquina,
+} from '../../../tools/root-midia/lib/semana.mjs';
 
 /*
  * A ESTAÇÃO DE MÍDIA NO MAC — MC9, o lado do Mac (`tools/root-midia`).
@@ -723,5 +750,226 @@ describe('root-midia: as thumbs (MC11)', () => {
     expect(arquivo.name).toBe('ep-07-thumb-2.png');
     expect(arquivo.size).toBe(64);
     expect(pedidos.map((p) => p.url)).toContain('http://os/api/pauta/episodios/e7/thumbs');
+  });
+});
+
+/*
+ * A SEMANA DE POSTS NO MAC — MC15 (`tools/root-midia/lib/semana.mjs`): onde
+ * está o rosto na cena do OBS, o filtro do corte vertical, o story e o
+ * `slides.json` da máquina de carrossel. O ffmpeg, o Chrome e o render de
+ * verdade rodam em `root-midia ensaio-semana`, fora da suíte.
+ */
+
+/** A coleção "Gravação" do OBS como ela está no Mac (24/09/2026), só com o que importa. */
+function colecaoDoObs(item: Record<string, unknown> = {}, preset = 'AVCaptureSessionPreset1280x720') {
+  return {
+    name: 'Gravação',
+    sources: [
+      { id: 'av_capture_input', name: 'Câmera (PiP)', settings: { device_name: 'HD Pro Webcam C920', preset } },
+      {
+        id: 'scene',
+        name: '2 · Tela + Câmera',
+        settings: {
+          items: [
+            { name: 'TelaH', pos: { x: 0, y: 0 }, scale: { x: 1, y: 1 }, bounds: { x: 0, y: 0 }, bounds_type: 0, align: 5 },
+            {
+              name: 'Câmera (PiP)', pos: { x: 1533, y: 737 }, scale: { x: 1, y: 1 }, bounds: { x: 336, y: 299 }, bounds_type: 2,
+              crop_left: 296, crop_top: 0, crop_right: 201, crop_bottom: 0, align: 5, bounds_align: 0, ...item,
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+describe('root-midia: onde está o rosto na cena do OBS (MC15)', () => {
+  it('a câmera da cena "2 · Tela + Câmera": recorte, caixa escalada para dentro e centralizada, par e para dentro', () => {
+    expect(regiaoDoPip(colecaoDoObs())).toEqual({ x: 1540, y: 738, largura: 322, altura: 298 });
+    expect(regiaoDoPip(colecaoDoObs())).toEqual(REGIAO_DO_PIP_PADRAO);
+    expect(resolucaoDoPreset('AVCaptureSessionPreset1920x1080')).toEqual({ largura: 1920, altura: 1080 });
+    // A mesma câmera em 1080p muda a proporção do recorte: a caixa passa a limitar pela largura.
+    const hd = regiaoDoPip(colecaoDoObs({ crop_left: 0, crop_right: 0 }, 'AVCaptureSessionPreset1920x1080'));
+    expect(hd).toEqual({ x: 1534, y: 792, largura: 334, altura: 188 });
+  });
+
+  it('sem caixa, com escala e âncora no canto de baixo à direita; esticada; e o que não sabe ler é erro', () => {
+    const livre = regiaoDoPip(colecaoDoObs({ bounds_type: 0, scale: { x: 0.25, y: 0.25 }, crop_left: 0, crop_right: 0, pos: { x: 1920, y: 1080 }, align: 10 }));
+    expect(livre).toEqual({ x: 1600, y: 900, largura: 320, altura: 180 });
+    expect(regiaoDoPip(colecaoDoObs({ bounds_type: 1 }))).toEqual({ x: 1534, y: 738, largura: 334, altura: 298 });
+    expect(() => regiaoDoPip(colecaoDoObs({ bounds_type: 3 }))).toThrow(/--pip/);
+    expect(() => regiaoDoPip(colecaoDoObs(), { cena: 'Outra' })).toThrow(/não tem a cena "Outra"/);
+    expect(() => regiaoDoPip(colecaoDoObs(), { fonte: 'Webcam' })).toThrow(/não tem a fonte "Webcam"/);
+    expect(() => regiaoDoPip(colecaoDoObs({}, 'sem-preset'))).toThrow(/resolução da fonte/);
+    expect(regiaoDoPip(colecaoDoObs({}, 'sem-preset'), { resolucaoDaFonte: { largura: 1280, altura: 720 } })).toEqual(REGIAO_DO_PIP_PADRAO);
+  });
+
+  it('a região por argumento, e a do canvas levada para o vídeo que saiu em outra resolução', () => {
+    expect(lerRegiao('1540,738,322,298')).toEqual(REGIAO_DO_PIP_PADRAO);
+    expect(lerRegiao(' 0:0:1920:1080 ')).toEqual(REGIAO_DA_TELA_PADRAO);
+    expect(() => lerRegiao('1540,738,322')).toThrow(/x,y,largura,altura/);
+    expect(() => lerRegiao('-1,0,10,10')).toThrow();
+    expect(() => lerRegiao('0,0,8,8')).toThrow(/pequena/);
+    expect(regiaoNoVideo(REGIAO_DO_PIP_PADRAO, CANVAS_PADRAO, { largura: 1920, altura: 1080 })).toEqual(REGIAO_DO_PIP_PADRAO);
+    expect(regiaoNoVideo(REGIAO_DO_PIP_PADRAO, CANVAS_PADRAO, { largura: 1280, altura: 720 })).toEqual({ x: 1028, y: 492, largura: 212, altura: 198 });
+    expect(() => regiaoNoVideo({ x: 1900, y: 1060, largura: 322, altura: 298 }, CANVAS_PADRAO, CANVAS_PADRAO)).toThrow(/passa do canvas 1920×1080/);
+  });
+
+  it('sem --tela nem --pip, o padrão acompanha o --canvas: a tela é o canvas inteiro e o PiP escala junto', () => {
+    expect(regioesPadraoNoCanvas(CANVAS_PADRAO)).toEqual({ tela: REGIAO_DA_TELA_PADRAO, pip: REGIAO_DO_PIP_PADRAO });
+    const menor = { largura: 1280, altura: 720 };
+    const r = regioesPadraoNoCanvas(menor);
+    expect(r.tela).toEqual({ x: 0, y: 0, largura: 1280, altura: 720 });
+    expect(r.pip).toEqual({ x: 1028, y: 492, largura: 212, altura: 198 });
+    // O que antes lançava "passa do canvas" agora cabe.
+    expect(regiaoNoVideo(r.tela, menor, menor)).toEqual(r.tela);
+    expect(regiaoNoVideo(r.pip, menor, menor)).toEqual(r.pip);
+    expect(regioesPadraoNoCanvas({ largura: 2560, altura: 1440 }).tela).toEqual({ x: 0, y: 0, largura: 2560, altura: 1440 });
+  });
+});
+
+describe('root-midia: o corte vertical e o story (MC15)', () => {
+  it('o filtro: a tela encaixada em cima sem deformar, o rosto cobrindo a faixa de baixo, 1080×1920', () => {
+    expect(layoutDoCorte(REGIAO_DO_PIP_PADRAO)).toEqual({ alturaDoRosto: 1000, alturaDaTela: 920 });
+    expect(layoutDoCorte({ x: 0, y: 0, largura: 400, altura: 100 }).alturaDoRosto).toBe(640);
+    const f = filtroDoCorteVertical({ tela: REGIAO_DA_TELA_PADRAO, rosto: REGIAO_DO_PIP_PADRAO });
+    expect(f).toBe(
+      '[0:v]split=2[t0][r0];' +
+        '[t0]crop=1920:1080:0:0,scale=1080:920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:920:(ow-iw)/2:(oh-ih)/2:color=0x070A08,setsar=1[tela];' +
+        '[r0]crop=322:298:1540:738,scale=1080:1000:force_original_aspect_ratio=increase,crop=1080:1000,setsar=1[rosto];' +
+        '[tela][rosto]vstack=inputs=2,format=yuv420p[v]',
+    );
+    expect(920 + 1000).toBe(ALTURA_VERTICAL);
+  });
+
+  it('os argumentos do ffmpeg em lista: busca antes do -i, a duração do trecho, o áudio quando há, nada de shell', () => {
+    const args = argsDoCorteVertical({ video: '/v/final; rm -rf ~.mp4', saida: '/s/c.mp4', inicio: 20.4, fim: 80.4, filtro: 'F', audio: true, codec: ['-c:v', 'libx264'] });
+    expect(args.slice(0, 11)).toEqual(['-hide_banner', '-loglevel', 'error', '-n', '-ss', '20.400', '-t', '60.000', '-i', '/v/final; rm -rf ~.mp4', '-filter_complex']);
+    expect(args).toContain('/s/c.mp4');
+    expect(args.join(' ')).toContain('-map [v] -map 0:a:0 -c:a aac');
+    expect(argsDoCorteVertical({ video: 'v', saida: 's', inicio: 0, fim: 30, filtro: 'F', audio: false, codec: [], sobrescrever: true })).toEqual(
+      expect.arrayContaining(['-y', '-an']),
+    );
+    expect(() => argsDoCorteVertical({ video: 'v', saida: 's', inicio: 0, fim: 180, filtro: 'F', audio: false, codec: [] })).toThrow(/menos de 3 minutos/);
+    expect(() => argsDoCorteVertical({ video: 'v', saida: 's', inicio: 30, fim: 20, filtro: 'F', audio: false, codec: [] })).toThrow(/inválido/);
+  });
+
+  it('o story: frame na largura do story, template escapado, Chrome em 1080×1920 e o PNG conferido', () => {
+    expect(argsDoFrameDoStory('v.mp4', 21.4, 'f.jpg')).toEqual(['-hide_banner', '-loglevel', 'error', '-y', '-ss', '21.400', '-i', 'v.mp4', '-frames:v', '1', '-vf', 'scale=1080:-2', '-q:v', '3', 'f.jpg']);
+    const html = preencherStory('<p>{{TEXTO}}</p><i>{{CHAMADA}}</i>{{APELIDO}}<img src="{{FRAME}}">', {
+      texto: '<script>x</script>',
+      chamada: 'Link "na" bio',
+      apelido: 'ep-04',
+      frame: 'frame.jpg',
+    });
+    expect(html).toBe('<p>&lt;script&gt;x&lt;/script&gt;</p><i>Link &quot;na&quot; bio</i>ep-04<img src="frame.jpg">');
+    expect(() => preencherStory('{{TEXTO}}', { texto: '', chamada: '', apelido: '', frame: 'f.jpg' })).toThrow(/CHAMADA/);
+    expect(() => preencherStory('{{TEXTO}}{{CHAMADA}}{{APELIDO}}{{FRAME}}', { texto: '', chamada: '', apelido: '', frame: '../f.jpg' })).toThrow(/frame/);
+    expect(argsDoChromeNoTamanho({ html: '/t/s.html', png: '/t/s.png', perfil: '/t/p', largura: LARGURA_VERTICAL, altura: ALTURA_VERTICAL })).toContain('--window-size=1080,1920');
+    expect(conferirPngNoTamanho(pngFalso(1080, 1920), 1080, 1920)).toBeNull();
+    expect(conferirPngNoTamanho(pngFalso(1280, 720), 1080, 1920)).toMatch(/1280×720/);
+  });
+
+  it('os nomes, e só rascunho e aprovada recebem render', () => {
+    expect([nomeDoCorte('ep-04', 2), nomeDoStory('ep-04', 2), pastaDoCarrossel('ep-04', 2)]).toEqual(['ep-04-m2-corte.mp4', 'ep-04-m2-story.png', 'ep-04-m2-carrossel']);
+    expect(['rascunho', 'aprovada', 'publicada', 'descartada'].map((status) => aceitaRender({ status }))).toEqual([true, true, false, false]);
+  });
+});
+
+/** Um PNG de mentira com o cabeçalho IHDR. */
+function pngFalso(largura: number, altura: number): Uint8Array {
+  const b = Buffer.alloc(64);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'latin1');
+  b.writeUInt32BE(largura, 16);
+  b.writeUInt32BE(altura, 20);
+  return b;
+}
+
+describe('root-midia: o carrossel pela máquina de carrossel (MC15)', () => {
+  const peca = {
+    titulo: 'Carrossel da matéria 1',
+    slides: [
+      { titulo: 'O preço <caiu>', texto: '' },
+      { titulo: 'O fato', texto: 'A API ficou pela metade & mais.' },
+      { titulo: '', texto: 'Só texto' },
+      { titulo: 'Palavra-chave: PRECO', texto: 'Comentário com PRECO → …' },
+    ],
+    cta: { instrucao: 'Comentário com a palavra', palavra: 'PRECO', beneficio: 'O link chega no direct.' },
+    palavraChave: 'PRECO',
+  };
+
+  it('o slides.json: capa, conteúdo alternando, fechamento com o CTA da palavra; tudo escapado (o render põe HTML cru)', () => {
+    const j = slidesParaAMaquina(peca, { handle: '@root', marcaRef: '/m/root/brand.json', apelido: 'ep-04' });
+    expect(j.meta).toEqual({ handle: '@root', marca: 'root', tipo_badge: 'EP-04', framework: 'raio-x', tema: 'Carrossel da matéria 1' });
+    expect(j.brand_pack_ref).toBe('/m/root/brand.json');
+    expect(j.slides.map((s) => [s.ordem, s.tipo, s.bg])).toEqual([
+      [1, 'capa', 'dark'],
+      [2, 'conteudo', 'light'],
+      [3, 'conteudo', 'dark'],
+      [4, 'fechamento', 'gradient'],
+    ]);
+    expect(j.slides[0]).toMatchObject({ headline: 'O preço &lt;caiu&gt;' });
+    expect(j.slides[1]).toMatchObject({ headline: 'O fato', blocos: ['A API ficou pela metade &amp; mais.'] });
+    expect(j.slides[2]).not.toHaveProperty('headline');
+    expect(j.slides[3]).toMatchObject({ tag: 'PALAVRA-CHAVE', cta: { palavra: 'PRECO', instrucao: 'Comentário com a palavra' } });
+    // CTA só no fechamento, como o render da máquina valida.
+    expect(j.slides.filter((s) => 'cta' in s)).toHaveLength(1);
+  });
+
+  it('o tema (o título da peça, que o render põe cru no preview.html) e o selo entram escapados', () => {
+    const j = slidesParaAMaquina({ ...peca, titulo: '<img src=x onerror=alert(1)> & cia' }, { handle: '@root', marcaRef: 'b.json', apelido: 'ep-<04>' });
+    expect(j.meta.tema).toBe('&lt;img src=x onerror=alert(1)&gt; &amp; cia');
+    expect(j.meta.tipo_badge).toBe('EP-&lt;04&gt;');
+  });
+
+  it('o report.json do render: os slides que estouraram, pelo número; ok falso sem lista ainda acusa', () => {
+    expect(slidesEstourados({ ok: true, overflow: [] })).toEqual([]);
+    expect(
+      slidesEstourados({ ok: false, overflow: [{ id: 'slide-3', overflow: true, excesso_px: 42 }, { id: 'slide-1', overflow: true, excesso_px: 7 }] }),
+    ).toEqual([{ n: 1, excessoPx: 7 }, { n: 3, excessoPx: 42 }]);
+    expect(slidesEstourados({ ok: false, overflow: ['slide-2'] })).toEqual([{ n: 2, excessoPx: 0 }]);
+    expect(slidesEstourados({ ok: false })).toEqual([{ n: 0, excessoPx: 0 }]);
+    expect(slidesEstourados(null)).toEqual([]);
+  });
+
+  it('menos de 4 slides, mais de 10 ou sem a palavra é recusado antes do render', () => {
+    const o = { handle: '@root', marcaRef: 'b.json', apelido: 'ep-04' };
+    expect(() => slidesParaAMaquina({ ...peca, slides: peca.slides.slice(0, 3) }, o)).toThrow(/pelo menos 4/);
+    expect(() => slidesParaAMaquina({ ...peca, slides: Array.from({ length: 11 }, () => peca.slides[1]) }, o)).toThrow(/até 10/);
+    expect(() => slidesParaAMaquina({ ...peca, cta: null, palavraChave: null }, o)).toThrow(/palavra-chave/);
+  });
+
+  it('onde achar o render e a marca: o apontado primeiro, depois o do plugin, a versão mais nova do cache antes', () => {
+    expect(candidatosDoRender({ ROOT_MIDIA_CARROSSEL_RENDER: ' /x/render.mjs ' }, '/Users/p', ['0.1.0', '0.10.0', '0.2.0'])).toEqual([
+      '/x/render.mjs',
+      '/Users/p/.claude/plugins/marketplaces/maquina-carrossel-marketplace/plugins/maquina-carrossel/render/render.mjs',
+      '/Users/p/.claude/plugins/cache/maquina-carrossel-marketplace/maquina-carrossel/0.10.0/render/render.mjs',
+      '/Users/p/.claude/plugins/cache/maquina-carrossel-marketplace/maquina-carrossel/0.2.0/render/render.mjs',
+      '/Users/p/.claude/plugins/cache/maquina-carrossel-marketplace/maquina-carrossel/0.1.0/render/render.mjs',
+    ]);
+    expect(marcaDoCarrossel({}, '/Users/p')).toBe('/Users/p/.maquina-carrossel/marcas/root/brand.json');
+    expect(marcaDoCarrossel({ ROOT_MIDIA_MARCA: '/m.json' }, '/Users/p')).toBe('/m.json');
+  });
+});
+
+describe('root-midia: a semana na conversa com o OS (MC15)', () => {
+  it('lê a semana, sobe o PNG da peça em multipart e registra o mp4 do corte com PUT', async () => {
+    const pedidos: Array<{ url: string; metodo: string; corpo: unknown }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      pedidos.push({ url, metodo: String(init.method), corpo: init.body instanceof FormData ? 'multipart' : init.body ? JSON.parse(String(init.body)) : undefined });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+    await os.semana('e1');
+    await os.enviarImagemDaPeca('p 1', 3, pngFalso(1080, 1350), 'slide-03.png');
+    await os.videoDoCorte('p2', { arquivo: '/m/c.mp4', duracaoSeg: 60 });
+    expect(pedidos).toEqual([
+      { url: 'http://os/api/pauta/episodios/e1/semana', metodo: 'GET', corpo: undefined },
+      { url: 'http://os/api/pauta/pecas/p%201/imagens/3', metodo: 'POST', corpo: 'multipart' },
+      { url: 'http://os/api/pauta/pecas/p2/video', metodo: 'PUT', corpo: { arquivo: '/m/c.mp4', duracaoSeg: 60 } },
+    ]);
   });
 });

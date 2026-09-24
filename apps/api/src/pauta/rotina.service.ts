@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
 import { semPai } from './episodio';
 import { lerCandidatos } from './curadoria-da-rodada';
+import { ehPecaDaSemana } from './derivacao-do-episodio';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
 
@@ -297,6 +298,13 @@ export class RotinaService {
     if (p.status === 'publicada') throw new BadRequestException('Peça já publicada — não dá para editar.');
     if (patch.status && !['rascunho', 'aprovada', 'descartada'].includes(patch.status)) {
       throw new BadRequestException('Status inválido (publicar é pelo endpoint /publicar).');
+    }
+    // A peça da semana (MC15) edita o texto só pelo PUT dela: lá o CTA da
+    // legenda se refaz, o render velho cai e a aprovada volta ao rascunho.
+    if ((patch.titulo !== undefined || patch.corpo !== undefined) && ehPecaDaSemana(p.meta)) {
+      throw new BadRequestException(
+        `Esta peça é da semana de posts do episódio: edite o texto na aba Episódios (PUT /pauta/pecas/${id}/semana). Aqui só muda o status.`,
+      );
     }
 
     const atualizada = await this.prisma.pautaPeca.update({

@@ -1,6 +1,6 @@
 ---
 name: root-midia
-description: Estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11). Pega um episódio gravado da fila do OS, corta os silêncios e as tomadas erradas (palavra de corte), edita no PalmierPro quando ele está aberto ou no ffmpeg, transcreve com o whisper-cli e devolve ao OS só o leve — mídia e transcrição; depois do pacote gerado, renderiza as 3 thumbs no template da marca e sobe os PNG. Use quando o Pedro disser "/root-midia ep-NN", "edita o episódio", "sobe a transcrição do ep", "o que falta de mídia" ou "/root-midia thumbs ep-NN".
+description: Estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15). Pega um episódio gravado da fila do OS, corta os silêncios e as tomadas erradas (palavra de corte), edita no PalmierPro quando ele está aberto ou no ffmpeg, transcreve com o whisper-cli e devolve ao OS só o leve — mídia e transcrição; depois do pacote gerado, renderiza as 3 thumbs no template da marca e sobe os PNG. Use quando o Pedro disser "/root-midia ep-NN", "edita o episódio", "sobe a transcrição do ep", "o que falta de mídia" "/root-midia thumbs ep-NN" ou "/root-midia semana ep-NN" (renderizar os carrosséis, stories e cortes verticais da semana).
 argument-hint: ep-NN
 ---
 
@@ -103,6 +103,27 @@ de thumb (texto de até 4 palavras, a palavra de destaque e o tempo do frame).
 O template é `thumb.html`, nesta pasta, com as cores e fontes da ROOT copiadas. O Chrome do render é o
 de `/Applications`, o de `ROOT_MIDIA_CHROME` ou o que o agent-browser baixou; ele roda sem janela, com
 perfil temporário, e é encerrado assim que grava o PNG. Conferir sem tocar no OS: `RM ensaio-thumb`.
+
+## A semana de posts (`/root-midia semana ep-NN`, MC15)
+
+Depois que o Pedro gerou a semana na tela (aba Episódios → Semana de posts), cada matéria tem um
+carrossel, um story e um corte vertical em rascunho ou aprovados.
+
+1. `RM semana ep-NN` — o que existe e o que falta renderizar, por matéria.
+2. `RM cortes ep-NN --sem-enviar` — os cortes em 1080×1920 (tela em cima, rosto embaixo) na pasta
+   `ep-NN-semana/` ao lado do vídeo final. O rosto sai da cena "2 · Tela + Câmera" do OBS (o JSON da
+   coleção "Gravação" é **só lido**); se o Pedro mudou a câmera de lugar e o JSON não reflete, use
+   `--pip x,y,largura,altura`. **Mostre um frame de cada corte ao Pedro** antes de registrar.
+3. `RM stories ep-NN --sem-enviar` e `RM carrosseis ep-NN --sem-enviar` — os PNG na mesma pasta.
+   Mostre-os (Read). O carrossel é renderizado pela máquina de carrossel instalada (marca root); sem
+   ela, a ferramenta diz o que falta — instalar é decisão do Pedro. Slide com texto estourado (o
+   `report.json` do render) é avisado e o carrossel **não sobe**: o texto se encurta na tela e o
+   render se refaz. `--forcar` sobe assim mesmo, só com o Pedro de acordo.
+4. Sem `--sem-enviar`, sobem: os PNG vão para a peça (até 5 MB) e o corte registra **só o caminho**
+   do mp4, que fica no Mac. Peça publicada ou descartada não recebe render. `--so N` refaz a matéria N.
+
+Texto errado numa peça se corrige na tela (Editar), não aqui — editar descarta o render anterior, e
+aí é renderizar de novo. Conferir sem tocar no OS: `RM ensaio-semana`.
 
 ## Quando algo falha
 
