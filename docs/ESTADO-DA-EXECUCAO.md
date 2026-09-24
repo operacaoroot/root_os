@@ -385,11 +385,39 @@ O boot com o provider novo do executor, que o MC5 tinha deixado sem conferir, pa
 
 | # | Passo | Se pular |
 |---|---|---|
-| A1 | Backup e tag de rollback, como no §3 (passos 5 e 8) | Os dois `ALTER TYPE ... ADD VALUE` não se desfazem: o Postgres não remove valor de enum |
+| A1 | Backup e tag de rollback, como no §3 (passos 5 e 8). **E a receita de volta (A1-volta, abaixo) fica à mão antes do `up`** | Os dois `ALTER TYPE ... ADD VALUE` não se desfazem: o Postgres não remove valor de enum. E a imagem de antes **não lê** linha com valor novo: o Prisma dela não conhece `aguardando_curadoria` nem `gmail`, e valor de enum fora do client gerado é erro de conversão, não valor ignorado |
 | A2 | `db:deploy` aplica, nesta ordem, `20260924020000_pauta_fonte_gmail` (`PautaFonteTipo += gmail`) e `20260924050000_pauta_rodada_aguardando_curadoria` (`PautaRodadaStatus += aguardando_curadoria`). Nenhuma tabela nova e nada muda no RLS. Conferir antes com `db:status`: se a produção ainda não tiver as migrations anteriores da `main` (`20260917010000_esteira_de_clientes`, `20260924010000_onboarding_do_cliente`), elas entram antes, na ordem do nome | Código novo contra enum antigo: cadastrar fonte Gmail e gerar rodada para curadoria falham no Prisma com valor de enum inválido |
 | A3 | Variável nova: `EVOLUTION_LINKS_JID`, já declarada no bloco `environment:` do serviço `api` no `docker-compose.yml` e no `.env.example`. Na VPS, preencher no `.env` e recriar o container (`up -d --no-build api`) | Vazia, o grupo de links fica desligado, que é o padrão seguro. `docker restart` não pega a variável |
 | A4 | **Nada de `db:seed:politica` nem de `db:sync-permissions` por causa desta onda.** A política e as permissões não mudaram: a coleta do Gmail usa as capacidades R0 que já existiam, e as telas usam `pauta.ver`, `pauta.editar` e `automacoes.executar`. Se o deploy levar também commits anteriores que mexem nisso, vale o §3 deles | — |
 | A5 | Smoke da imagem com `ROTINAS_CRON=off` antes do `up` (§3, passo 9) | O executor `pauta.coleta` é provider novo no `RoutinesModule`. Aqui ele subiu, mas quem vale é o smoke da imagem construída |
+
+**A1-volta — antes de subir a imagem de antes** (`mktos-app:rollback`), a partir da primeira rodada
+em curadoria ou da primeira fonte Gmail. Sem isso, `GET /pauta/rodadas` e a aba Radar de
+`/referencias` respondem 500 para a empresa inteira: `listarRodadas` e a lista de fontes da `main`
+não filtram por status nem por tipo, e as capturas lidas com a fonte junto caem no mesmo erro. A
+migration não volta — valor de enum não se remove —, então a volta é de **dado**:
+
+```bash
+# 1. Guardar o original FORA do banco (tabela auxiliar em `public` faz a conferência do isolamento abortar).
+docker exec -i mktos_db psql -U mkt -d marketing_os -c "\copy (SELECT id, status FROM \"PautaRodada\" WHERE status = 'aguardando_curadoria') TO STDOUT CSV" > volta-rodadas.csv
+docker exec -i mktos_db psql -U mkt -d marketing_os -c "\copy (SELECT id, tipo, ativo FROM \"PautaFonte\" WHERE tipo = 'gmail') TO STDOUT CSV" > volta-fontes.csv
+# 2. Levar as linhas a valores que a imagem antiga conhece.
+docker exec -i mktos_db psql -U mkt -d marketing_os <<'SQL'
+BEGIN;
+UPDATE "PautaRodada" SET status = 'falhou', erro = 'volta da imagem: aguardava curadoria (ver volta-rodadas.csv)' WHERE status = 'aguardando_curadoria';
+UPDATE "PautaFonte" SET tipo = 'manual', ativo = false WHERE tipo = 'gmail';
+COMMIT;
+SQL
+```
+
+`falhou` porque a imagem antiga não tem o que fazer com uma lista de candidatos; `manual` + pausada
+porque a coleta antiga não sabe ler o Gmail. Ao voltar para a imagem nova, os dois CSV dizem o que
+restaurar (`UPDATE … SET status = 'aguardando_curadoria' WHERE id IN (…)`; `tipo = 'gmail'` e o
+`ativo` guardado). Se ninguém quiser guardar nada, a outra saída é declarar que, a partir da
+primeira linha com valor novo, a volta é **só por restauração do backup do passo A1**, perdendo o
+que entrou depois dele. As tabelas e colunas da MC-B e da MC16 não pedem nada: a imagem antiga não
+as consulta (o Prisma lista as colunas que conhece), e só apagar uma rodada que já virou episódio
+dá erro (FK `RESTRICT`), como deve.
 
 **Tarefas do Pedro, fora do repositório** (nenhum agente pode fazer):
 
@@ -527,8 +555,8 @@ O banco `marketing_os_e2e` ficou no container descartável.
 
 | # | Passo | Se pular |
 |---|---|---|
-| B1 | Backup e tag de rollback, como no §3 (passos 5 e 8) | As três migrations são aditivas e não se desfazem sozinhas |
-| B2 | `db:deploy` aplica, nesta ordem e depois das da MC-A: `20260924060000_pauta_episodio` (tabela `PautaEpisodio` com RLS FORCE, policies de leitura e escrita, gatilhos `mktos_orgid_do_pai` para a rodada e para a `BioPage`), `20260924070000_pauta_episodio_palavra_de_corte` (coluna nula) e `20260924080000_pauta_pagina_de_links` (coluna nula `BioLink.chave` + índice único `(pageId, chave)`, sem conflito: hoje todos os valores são NULL). Só usa funções que já existem (`mktos_orgid_do_pai`, `app_rls_aplicar_policies`). Ensaiar antes num banco descartável, como manda o §3 | Código novo contra tabela ausente: toda a aba Episódios responde 500 |
+| B1 | Backup e tag de rollback, como no §3 (passos 5 e 8); a receita A1-volta vale também aqui | As três migrations são aditivas e não se desfazem sozinhas. Tabela e colunas novas não quebram a imagem antiga; os valores de enum da MC-A, sim |
+| B2 | `db:deploy` aplica, nesta ordem e depois das da MC-A: `20260924060000_pauta_episodio` (tabela `PautaEpisodio` com RLS FORCE, policies de leitura e escrita, gatilhos `mktos_orgid_do_pai` para a rodada e para a `BioPage`), `20260924070000_pauta_episodio_palavra_de_corte` (coluna nula) e `20260924080000_pauta_pagina_de_links` (coluna nula `BioLink.chave` + índice único `(pageId, chave)`, sem conflito: hoje todos os valores são NULL); e, por último, a da MC16, `20260924090000_pauta_peca_agenda` (ver a seção da fatia). Só usa funções que já existem (`mktos_orgid_do_pai`, `app_rls_aplicar_policies`). Ensaiar antes num banco descartável, como manda o §3 | Código novo contra tabela ausente: toda a aba Episódios responde 500 |
 | B3 | **Nenhuma variável nova na API.** As seis do `tools/root-midia` (`ROOT_OS_API_URL`, `ROOT_OS_EMAIL`, `ROOT_OS_SENHA`, `WHISPER_MODEL`, `ROOT_MIDIA_PALAVRA`, `ROOT_MIDIA_CHROME`) são **só do Mac**, catalogadas comentadas no `.env.example` e fora do `docker-compose.yml` de propósito | — |
 | B4 | **Nada de `db:seed:politica` nem de `db:sync-permissions` por causa desta onda.** Nenhuma capacidade e nenhuma permissão nova: as rotas usam `pauta.ver`, `pauta.editar`, `pauta.publicar`, `automacoes.executar` e, na página de links, `bio.editar`. Publicar a página passa pelo `BioService.publicar` que o `/bio` já usa | — |
 | B5 | Smoke da imagem com `ROTINAS_CRON=off` antes do `up` (§3, passo 9), com `SMOKE_ROTAS` incluindo `/api/pauta/episodios` e `/api/pauta/voz` | Sete controllers novos no `PautaModule`; aqui subiram, mas quem vale é a imagem construída |
@@ -721,6 +749,11 @@ no fim desta seção).
   agendadaPara)`) e `urlPublicada`. **Decisão registrada:** "postada à mão" reaproveita `status
   publicada`, `publicadaEm` e `publicadaPor`, com `externalId` nulo; o id na rede fica para a MC17,
   que preenche o mesmo `urlPublicada`.
+- **Deploy desta fatia (entra no fim da ordem do B2):** `db:deploy` aplica
+  `20260924090000_pauta_peca_agenda` depois das três da MC-B — migration aditiva, duas colunas
+  nulas numa tabela que já tem RLS e um índice pequeno `(orgId, agendadaPara)`; nenhum seed,
+  nenhuma variável, nenhuma permissão. Smoke com `SMOKE_ROTAS` incluindo `/api/pauta/agenda` (401).
+  Na volta para a imagem anterior, as colunas ficam e ninguém as lê.
 - **Grade:** nota da memória `pauta.semana.grade` (o padrão mais próximo do que o repo já faz para
   configuração por empresa: voz, palavra de corte, links da casa), escrita só pelo `MemoriaService`.
   Padrão sem nota: carrossel seg/qua/sex 12h, corte ter/qui 18h, story seg–sex 9h, São Paulo.
@@ -882,6 +915,11 @@ ou de **uma pessoa fazendo algo fora do repositório** — e esta execução nã
 > A frente da máquina de conteúdo (onda MC-A, §1) tem uma ordem curta própria, que se soma a
 > esta: duas migrations de enum, uma variável e nenhum seed. A onda MC-B (§1) soma mais três
 > migrations (uma tabela nova com RLS e duas colunas nulas), nenhuma variável na API e nenhum seed.
+> A MC16 soma a sexta, `20260924090000_pauta_peca_agenda` (duas colunas nulas e um índice), no fim
+> da ordem do B2: **MC-A 2 + MC-B 3 + MC16 1**, e o `db:status` da produção mostra essas seis mais
+> as da `main` que ainda não subiram. A imagem do `web` também muda (o prazo do proxy de `/api`
+> subiu para 10 min em `apps/web/next.config.mjs`): vale só com a imagem reconstruída no passo 9 —
+> `up -d --no-build` com a imagem velha mantém os 30 s e as gerações longas voltam a dar 500.
 
 **Este é o item mais importante deste documento.** A ordem cresceu onda a onda e não é a de sempre:
 dois passos são **anteriores** ao que antes era o começo, e nenhum deles dá erro na hora — dá
@@ -904,7 +942,7 @@ o que segue é a lista inteira, incluindo o que aconteceu depois daquele texto.
 | 5 | Backup do banco do dia (`docs/DEPLOY.md §4`) | Migration aditiva não desfaz. Sem backup, o rollback de estrutura não existe |
 | 6 | Variável nova nos **dois** lugares: bloco `environment:` do serviço em `docker-compose.yml` **e** `.env` | O container **não lê arquivo `.env`**: só chega o que está no bloco. Foi o que segurou a `ANTHROPIC_API_KEY` por semanas. Nesta execução entraram: `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL` (vazias = cofre funciona na chave antiga, mas **não rotaciona**), `ROTINAS_CRON` (padrão ligado; único jeito de subir sem relógio), as três do canal de aprovação — `CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO`, `CANAL_APROVACAO_CAPACIDADES` (vazias = canal desligado) — e, da onda 11, o limiar de alerta do painel de custo. Da onda MC-A, `EVOLUTION_LINKS_JID` (vazia = grupo de links desligado; ordem própria no §1, onda MC-A) |
 | 7 | `NEXT_PUBLIC_CENTRAL_PIXEL_KEY` como **build arg** da imagem | O Next troca toda `NEXT_PUBLIC_*` pelo valor durante o `next build`. Declarada só no bloco `environment:`, ela nunca chega ao navegador e o rastreio da Central segue caindo na empresa padrão. Trocar a chave exige **reconstruir a imagem**; `docker restart` não muda nada |
-| 8 | `docker tag mktos-app:latest mktos-app:rollback` | A imagem anterior vira lixo na próxima poda e o rollback deixa de existir. É o passo que mais dói ter pulado |
+| 8 | `docker tag mktos-app:latest mktos-app:rollback` | A imagem anterior vira lixo na próxima poda e o rollback deixa de existir. É o passo que mais dói ter pulado. **Voltar para ela depois da máquina de conteúdo pede antes a receita A1-volta (§1, onda MC-A)**: a imagem antiga não lê rodada em `aguardando_curadoria` nem fonte `gmail` |
 
 ### Construir e provar
 
