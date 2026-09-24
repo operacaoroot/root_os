@@ -40,6 +40,8 @@ import {
 } from './convite';
 import { folhaDeReuniao, type Dossie } from './dossie';
 import {
+  MINUTOS_DA_TRIAGEM,
+  QUANTAS_NA_TRIAGEM,
   ROTULO_DO_NIVEL,
   chaveDaNotaDaEspinha,
   ehNivel,
@@ -1307,7 +1309,7 @@ export class TrilhoService {
       try {
         return mensagemDoLinkA(t, link, t.reuniaoEm, prazo);
       } catch {
-        return `Oi! Cinco perguntas rápidas antes da nossa conversa, uns 5 minutos: ${link}`;
+        return `Oi! ${QUANTAS_NA_TRIAGEM} perguntas rápidas antes da nossa conversa, uns ${MINUTOS_DA_TRIAGEM} minutos: ${link}`;
       }
     }
     const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;

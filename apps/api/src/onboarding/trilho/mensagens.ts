@@ -1,4 +1,5 @@
 import { COBRANCA_PESSOAL_DIAS, LEMBRETE_DIAS, VALIDADE_DIAS } from './convite';
+import { MINUTOS_DA_TRIAGEM, MINUTOS_DO_KICKOFF, QUANTAS_NA_TRIAGEM } from './espinha';
 
 /* ==========================================================================
  * AS MENSAGENS — o que vai no grupo, pronto para copiar
@@ -83,7 +84,7 @@ export function mensagemDoLinkA(
   if (!reuniao) throw new SemDataError('a data da reunião');
   if (!ate) throw new SemDataError('o prazo para responder');
   return [
-    `Oi, ${primeiroNome(c.contatoNome)}! Antes da nossa conversa de ${reuniao}, cinco perguntas rápidas — uns 5 minutos, no celular:`,
+    `Oi, ${primeiroNome(c.contatoNome)}! Antes da nossa conversa de ${reuniao}, ${QUANTAS_NA_TRIAGEM} perguntas rápidas — uns ${MINUTOS_DA_TRIAGEM} minutos, no celular:`,
     '',
     link,
     '',
@@ -112,7 +113,7 @@ export function mensagemDoLinkBCD(
       ? ` ${args.faltam === 1 ? 'Um item' : `Os outros ${args.faltam}`} você responde por texto ou áudio.`
       : '';
   return [
-    `${primeiroNome(c.contatoNome)}, ${abertura} Aqui está o onboarding da ${c.cliente}: ${vieram}${faltam} Uns 8 minutos.`,
+    `${primeiroNome(c.contatoNome)}, ${abertura} Aqui está o onboarding da ${c.cliente}: ${vieram}${faltam} Uns ${MINUTOS_DO_KICKOFF} minutos.`,
     '',
     link,
     '',

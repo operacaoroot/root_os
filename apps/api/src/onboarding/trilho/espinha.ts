@@ -10,7 +10,7 @@ import { TEMAS_DA_CARGA, chaveDoTema } from '../../agents/roster';
  * questionário de admissão e as "15 perguntas" viram UM formulário, em blocos,
  * com a regra "rico em informação, leve de responder".
  *
- *   A · qualificação — antes da 1ª reunião, até 5 min (a porta do ponto zero);
+ *   A · qualificação — antes da 1ª reunião, uns 7 min (a porta do ponto zero);
  *   B · os 8 temas da carga guiada — IMPORTADOS de `carregador-de-contexto.ts`,
  *       como estão. Não existe nono questionário: o que o cliente confirma pelo
  *       link é a mesma nota, com a mesma chave estável, que ele carregaria
@@ -28,6 +28,27 @@ import { TEMAS_DA_CARGA, chaveDoTema } from '../../agents/roster';
  * RAMOS POR NÍVEL (decisão de 23/09): o tronco vale para todos; um tema com
  * `niveis` só entra quando o nível do trilho está na lista. No "beabá" o tema
  * de acessos vira "quem participa da turma".
+ *
+ * O BLOCO A PASSOU A PERGUNTAR PELA PESSOA (24/09/2026). As cinco perguntas
+ * originais são todas sobre a EMPRESA: o que ela faz, que sistema usa, o que
+ * toma tempo. Nenhuma pergunta quem está do outro lado, e a triagem existe
+ * justamente para quem a Root ainda não conhece — o caso que abriu isto foi um
+ * lead que chegou pela rede de um sócio, sem ficha nenhuma. Faltavam quatro
+ * coisas, e cada uma decide algo antes da primeira reunião:
+ *
+ *   · `a-quem-e` — o papel dela e QUEM DECIDE. Sem isso a reunião é marcada
+ *     com quem não assina, que é o "decisor múltiplo" do POP do escritório;
+ *   · `a-porte` — o tamanho da operação, que é o que separa uma venda de
+ *     prateleira de uma implantação, e o único proxy honesto de orçamento
+ *     numa casa que ainda não tem tabela de preço;
+ *   · `a-onde-doi` — a dor QUALITATIVA. `a-tarefa-que-toma-tempo` mede horas,
+ *     e dor também é cliente que reclama, retrabalho e dinheiro parado;
+ *   · `a-o-que-espera` — a expectativa e o prazo, que é o que distingue
+ *     "quero começar agora" de "estou só olhando".
+ *
+ * Ficou de fora, de propósito, "o que você já tentou": é boa pergunta e o
+ * bloco A tem que caber em minutos. Entra quando a mesa quiser trocá-la por
+ * outra, não somada.
  *
  * PURO: sem banco, sem Nest. Os ids NUNCA mudam depois de usados — eles entram
  * na chave estável da nota (`onboarding:<id>`) e em `OnboardingItem.temaId`.
@@ -84,6 +105,32 @@ const A: readonly TemaDaEspinha[] = [
     minimo: 20,
   },
   {
+    id: 'a-quem-e',
+    bloco: 'A',
+    titulo: 'Quem você é no negócio',
+    pergunta: 'E você: o que você faz no negócio, e o que passa pela sua mão todo dia?',
+    aprofundar:
+      'Diga também se a decisão de contratar é sua, ou se tem mais alguém decidindo junto.',
+    obrigatorio: true,
+    formato: 'texto',
+    kind: ContextKind.fato,
+    tags: ['onboarding', 'triagem', 'pessoa'],
+    minimo: 20,
+  },
+  {
+    id: 'a-porte',
+    bloco: 'A',
+    titulo: 'O tamanho da operação',
+    pergunta:
+      'Quantos clientes, pedidos ou atendimentos vocês tiveram no último mês, mais ou menos?',
+    aprofundar: 'Um número aproximado basta. Se varia muito, diga o mês bom e o mês fraco.',
+    obrigatorio: true,
+    formato: 'texto',
+    kind: ContextKind.fato,
+    tags: ['onboarding', 'triagem', 'porte'],
+    minimo: 3,
+  },
+  {
     id: 'a-sistemas',
     bloco: 'A',
     titulo: 'Os sistemas e o acesso ao dado',
@@ -111,6 +158,20 @@ const A: readonly TemaDaEspinha[] = [
     minimo: 15,
   },
   {
+    id: 'a-onde-doi',
+    bloco: 'A',
+    titulo: 'Onde a dor aparece',
+    pergunta:
+      'Quando essa tarefa atrasa ou sai errada, o que acontece? Cliente reclama, sobra retrabalho, ' +
+      'dinheiro para?',
+    aprofundar: 'Conte o último caso concreto: em que mês foi, e o que ele custou.',
+    obrigatorio: true,
+    formato: 'texto',
+    kind: ContextKind.fato,
+    tags: ['onboarding', 'triagem', 'dor'],
+    minimo: 20,
+  },
+  {
     id: 'a-tirar-do-prato',
     bloco: 'A',
     titulo: 'A única coisa a tirar do prato',
@@ -134,6 +195,19 @@ const A: readonly TemaDaEspinha[] = [
     kind: ContextKind.fato,
     tags: ['onboarding', 'triagem', 'ia'],
     minimo: 4,
+  },
+  {
+    id: 'a-o-que-espera',
+    bloco: 'A',
+    titulo: 'O que espera da gente, e para quando',
+    pergunta: 'O que você espera que a gente resolva, e existe uma data ou um prazo?',
+    aprofundar:
+      'Se não houver prazo, diga qual das duas é: "quero começar agora" ou "estou só olhando".',
+    obrigatorio: true,
+    formato: 'texto',
+    kind: ContextKind.definicao,
+    tags: ['onboarding', 'triagem', 'expectativa'],
+    minimo: 15,
   },
 ] as const;
 
@@ -321,6 +395,26 @@ export function temaDaEspinha(id: string): TemaDaEspinha | undefined {
 export function temasDoBloco(bloco: Bloco): TemaDaEspinha[] {
   return ESPINHA.filter((t) => t.bloco === bloco);
 }
+
+/**
+ * QUANTAS PERGUNTAS A TRIAGEM TEM, e quanto tempo ela pede.
+ *
+ * A mensagem que vai no WhatsApp cita os dois números, e citá-los à mão foi o
+ * que deixou "cinco perguntas rápidas — uns 5 minutos" escrito dentro de
+ * `mensagens.ts` enquanto o bloco A crescia neste arquivo. Número que a pessoa
+ * vai conferir na tela não se digita em outro lugar: quem conta é a espinha.
+ *
+ * Os minutos são declarados, não calculados — o que pesa numa pergunta é o
+ * quanto ela obriga a pensar, e isso nenhum `minimo` mede. Mexeu no bloco A?
+ * Releia este número.
+ */
+export const QUANTAS_NA_TRIAGEM: number = temasDoBloco('A').length;
+export const MINUTOS_DA_TRIAGEM = 7;
+/**
+ * O link B–D pede mais, mas a maior parte chega pré-preenchida pela ata: o
+ * cliente confirma, não redige. Por isso não é a soma dos temas.
+ */
+export const MINUTOS_DO_KICKOFF = 8;
 
 /**
  * Os temas que valem para um nível. Sem nível decidido, só o tronco: um ramo

@@ -212,7 +212,17 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
 
     const estado = await link.estado(tokenA);
     expect(estado.blocos).toBe('A');
-    expect(estado.itens.map((i) => i.temaId)).toEqual(['a-empresa', 'a-sistemas', 'a-tarefa-que-toma-tempo', 'a-tirar-do-prato', 'a-uso-de-ia']);
+    expect(estado.itens.map((i) => i.temaId)).toEqual([
+      'a-empresa',
+      'a-quem-e',
+      'a-porte',
+      'a-sistemas',
+      'a-tarefa-que-toma-tempo',
+      'a-onde-doi',
+      'a-tirar-do-prato',
+      'a-uso-de-ia',
+      'a-o-que-espera',
+    ]);
     expect(estado.itens.every((i) => i.modo === 'responder')).toBe(true);
 
     // Concluir antes de responder: recusa com a lista.
@@ -222,9 +232,13 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     await expect(link.responder(tokenA, 'a-uso-de-ia', 'sei lá', 'Marcos')).rejects.toThrow(/escolha uma das opções/);
 
     await link.responder(tokenA, 'a-empresa', 'Distribuímos peças de reposição para frota pesada; somos 14 pessoas.', 'Marcos');
+    await link.responder(tokenA, 'a-quem-e', 'Sou dono e cuido do comercial; a decisão de contratar é minha.', 'Marcos');
+    await link.responder(tokenA, 'a-porte', 'Uns 300 pedidos no mês passado.', 'Marcos');
     await link.responder(tokenA, 'a-sistemas', 'Omie desde 2022, com API; o Júnior da TI tira relatório.', 'Marcos');
     await link.responder(tokenA, 'a-tarefa-que-toma-tempo', 'Conferir o aberto com o extrato: umas 6 horas por semana.', 'Marcos');
+    await link.responder(tokenA, 'a-onde-doi', 'Em agosto cobramos um cliente que já tinha pago e ele quase saiu.', 'Marcos');
     await link.responder(tokenA, 'a-tirar-do-prato', 'A conferência do aberto.', 'Marcos');
+    await link.responder(tokenA, 'a-o-que-espera', 'Quero o aberto conferido sozinho, e começar agora.', 'Marcos');
     const depois = await link.responder(tokenA, 'a-uso-de-ia', 'uso o chat às vezes', 'Marcos');
     expect(depois.progresso.obrigatoriosFaltando).toEqual([]);
 

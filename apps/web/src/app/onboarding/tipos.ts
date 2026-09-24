@@ -340,6 +340,8 @@ export interface EstadoDoLink {
   concluido: boolean;
   kickoffEm: string | null;
   audioDisponivel: boolean;
+  /** Quantos minutos a tela promete. Vem do servidor; a contagem sai de `itens`. */
+  minutosEstimados: number;
   itens: ItemDoLink[];
   mapa: MapaDoCliente;
   ordem: OrdemDoKickoff;

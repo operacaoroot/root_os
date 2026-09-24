@@ -67,7 +67,14 @@ modelo. O modelo entra antes (ler a ata) e depois (retrato é construído das no
 
 ## 5. O formulário único (a espinha)
 
-- **A · qualificação** (5 perguntas, antes da 1ª reunião, até 5 min) — `espinha.ts`.
+- **A · qualificação** (9 perguntas, antes da 1ª reunião, uns 7 min) — `espinha.ts`. Cinco são
+  sobre a empresa (o que faz, sistemas e acesso ao dado, a tarefa que toma tempo, a coisa a tirar
+  do prato, o uso de IA hoje) e quatro, acrescentadas em **24/09/2026**, são sobre a pessoa e a
+  compra: `a-quem-e` (o papel dela e **quem decide**), `a-porte` (o tamanho da operação, que é o
+  que separa prateleira de implantação), `a-onde-doi` (a dor qualitativa, além das horas) e
+  `a-o-que-espera` (expectativa e prazo). Quantas são e quantos minutos leva saem de
+  `QUANTAS_NA_TRIAGEM` e `MINUTOS_DA_TRIAGEM`: a mensagem do WhatsApp e a tela do cliente contam
+  da espinha, porque o texto fixo "cinco perguntas, uns 5 minutos" sobreviveu ao bloco A crescer.
 - **B · os 8 temas** — importados de `agents/roster/carregador-de-contexto.ts` como estão.
 - **C · intenção** (3 perguntas abertas, do card 08).
 - **D · operação e linha de base** — a dupla (dono das perguntas + guardião do acesso), o número

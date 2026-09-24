@@ -148,7 +148,7 @@ export default function LinkPage() {
           <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
             {kickoff
               ? `Isto é o kickoff, não um formulário.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''} — você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''}${estado.teia.contagem.daConversa ? ` E ${estado.teia.contagem.daConversa} notas já nasceram da conversa — o seu vault começa com elas.` : ''} Pode parar e voltar.`
-              : 'Cinco perguntas, uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.'}
+              : `${estado.itens.length} perguntas, uns ${estado.minutosEstimados} minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.`}
           </p>
           <label className="mt-4 block text-xs text-muted">Quem está respondendo?</label>
           <input className={INPUT} value={nome} onChange={(e) => setNome(e.target.value)} placeholder={estado.contatoNome ?? 'seu nome'} onKeyDown={(e) => e.key === 'Enter' && guardarNome()} />
@@ -231,8 +231,8 @@ export default function LinkPage() {
         {
           chave: 'triagem',
           rotulo: 'Antes da conversa',
-          titulo: 'As cinco perguntas',
-          ajuda: 'Uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa.',
+          titulo: `As ${estado.itens.length} perguntas`,
+          ajuda: `Uns ${estado.minutosEstimados} minutos. Com elas a gente chega na reunião falando da sua empresa.`,
           itens: [...decisoes, ...confirmacoes, ...extras],
         },
       ];

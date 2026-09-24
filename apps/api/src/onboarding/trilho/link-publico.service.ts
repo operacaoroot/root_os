@@ -7,6 +7,8 @@ import { TranscricaoIndisponivelError, TranscricaoService } from '../../llm/tran
 import { PrismaService } from '../../prisma/prisma.service';
 import { aceitaEscrita, estadoDoConvite, hashDoToken, tokenBemFormado, type EstadoDoConvite } from './convite';
 import {
+  MINUTOS_DA_TRIAGEM,
+  MINUTOS_DO_KICKOFF,
   ROTULO_DO_BLOCO,
   ehNivel,
   obrigatorios,
@@ -94,6 +96,13 @@ export interface EstadoDoLink {
    * variável no compose + `.env`, depois de haver crédito.
    */
   audioDisponivel: boolean;
+  /**
+   * QUANTOS MINUTOS a tela promete. Vem da espinha (`MINUTOS_DA_TRIAGEM`) porque
+   * a página do cliente dizia "Cinco perguntas, uns 5 minutos" em texto fixo
+   * enquanto o bloco A crescia no servidor — promessa que a pessoa confere
+   * contando na tela. A CONTAGEM ela tira de `itens`; só o tempo precisa vir.
+   */
+  minutosEstimados: number;
   itens: ItemDoLink[];
   /** O trecho do cliente, do acordo à memória viva, com a estação de hoje. */
   mapa: MapaDoCliente;
@@ -230,6 +239,7 @@ export class LinkPublicoService {
       concluido: r.estado === 'concluido',
       kickoffEm: t.kickoffEm ? t.kickoffEm.toISOString() : null,
       audioDisponivel: this.audioLigado(),
+      minutosEstimados: r.blocos === 'A' ? MINUTOS_DA_TRIAGEM : MINUTOS_DO_KICKOFF,
       itens,
       mapa,
       ordem: ordemDoKickoff(itens),

@@ -20,7 +20,9 @@ import {
 import { folhaDeReuniao, interpretarDossie, promptDoDossie } from '../src/onboarding/trilho/dossie';
 import {
   ESPINHA,
+  MINUTOS_DA_TRIAGEM,
   NIVEIS,
+  QUANTAS_NA_TRIAGEM,
   chaveDaNotaDaEspinha,
   espinhaParaNivel,
   obrigatorios,
@@ -101,10 +103,18 @@ describe('a espinha: quatro blocos, os 8 temas como estão, ramos por nível', (
     expect(chaveDaNotaDaEspinha('negocio')).toBe('onboarding:negocio');
   });
 
-  it('o bloco A tem as cinco perguntas da qualificação, e a de IA é escolha', () => {
+  it('o bloco A pergunta pela empresa E pela pessoa, e a de IA é escolha', () => {
     const a = temasDoBloco('A');
-    expect(a).toHaveLength(5);
+    expect(a).toHaveLength(9);
     expect(a.every((t) => t.obrigatorio)).toBe(true);
+    // As quatro de 24/09: quem decide, o porte, onde dói e o que ela espera.
+    for (const id of ['a-quem-e', 'a-porte', 'a-onde-doi', 'a-o-que-espera']) {
+      expect(a.map((t) => t.id)).toContain(id);
+    }
+    // A TRIAGEM É TODA TRONCO: ela é respondida antes de existir nível, então um
+    // ramo aqui seria pergunta que nunca aparece no link (`espinhaParaNivel(null)`).
+    expect(a.every((t) => t.niveis === undefined)).toBe(true);
+    expect(temasDoConvite('A', null)).toHaveLength(a.length);
     const ia = a.find((t) => t.id === 'a-uso-de-ia');
     expect(ia?.formato).toBe('escolha');
     expect(ia?.opcoes).toEqual(['nunca uso', 'uso o chat às vezes', 'uso todo dia', 'já automatizei algo']);
@@ -673,6 +683,15 @@ describe('as mensagens: data de verdade ou nada', () => {
     expect(m).toContain('https://x/e/t');
     expect(m).toContain('02/10');
     expect(() => mensagemDoLinkA(c, 'l', null, new Date())).toThrow(SemDataError);
+  });
+
+  it('quantas perguntas a mensagem promete é a conta da espinha, não um número digitado', () => {
+    // O texto dizia "cinco perguntas rápidas — uns 5 minutos" com o bloco A em 9.
+    expect(QUANTAS_NA_TRIAGEM).toBe(temasDoBloco('A').length);
+    const m = mensagemDoLinkA(c, 'https://x/e/t', new Date('2026-10-02T12:00:00Z'), new Date('2026-09-29T12:00:00Z'));
+    expect(m).toContain(`${QUANTAS_NA_TRIAGEM} perguntas`);
+    expect(m).toContain(`${MINUTOS_DA_TRIAGEM} minutos`);
+    expect(m).not.toContain('cinco perguntas');
   });
 
   it('o link BCD conta o que já veio e o que falta', () => {

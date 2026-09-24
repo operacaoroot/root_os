@@ -416,7 +416,9 @@ function SecaoTriagem({ t, editavel, agir, token }: { t: TrilhoCompleto; editave
   const convite = t.convites.find((c) => c.blocos === 'A' && c.estado !== 'revogado');
   return (
     <Card titulo="Fase 0 · a triagem (bloco A) antes da 1ª reunião">
-      <p className="text-[12.5px] text-muted">Cinco perguntas, 5 minutos, no celular. Vai no WhatsApp com prazo D-3 da reunião. Sem resposta em D-1, o relógio avisa.</p>
+      {/* Sem número aqui de propósito: quantas perguntas são é conta da espinha, e
+          a mensagem gerada pelo servidor já diz. Repetir viraria mais um "cinco". */}
+      <p className="text-[12.5px] text-muted">Perguntas curtas, no celular, sobre a empresa e sobre quem decide. Vai no WhatsApp com prazo D-3 da reunião. Sem resposta em D-1, o relógio avisa.</p>
       <Convites t={t} blocos="A" convite={convite} editavel={editavel} agir={agir} token={token} />
     </Card>
   );
