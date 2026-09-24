@@ -362,6 +362,23 @@ describe('a aba Semana', () => {
     expect(oDia('Seg 12/10')).toHaveTextContent('Nossa Senhora Aparecida — sem slot');
   });
 
+  it('a recusa de uma ação do meio da página aparece presa no topo da tela, e fecha', async () => {
+    apiGet.mockImplementation(async (path: string) => (path.startsWith('/pauta/agenda') ? agenda() : { items: [] }));
+    apiPost.mockRejectedValue(new Error('A peça mudou enquanto isso — recarregue e tente de novo.'));
+    render(<PautaPage />);
+    await userEvent.click(screen.getByRole('button', { name: 'Semana' }));
+    const car = await waitFor(() => within(screen.getByRole('region', { name: 'Seg 28/09' })).getByLabelText('Carrossel de ep-04'));
+    await userEvent.click(within(car).getByRole('button', { name: 'Marcar como postada' }));
+    await userEvent.click(within(car).getByRole('button', { name: 'Confirmar' }));
+    const aviso = await screen.findByRole('alert');
+    expect(aviso).toHaveTextContent('A peça mudou enquanto isso');
+    // `sticky top-0`: no celular a caixa acima das abas ficava fora da vista.
+    expect(aviso.className).toMatch(/\bsticky\b/);
+    expect(aviso.className).toMatch(/\btop-0\b/);
+    await userEvent.click(within(aviso).getByRole('button', { name: 'Fechar o aviso de erro' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('a página tem a aba Semana, e ela abre o calendário', async () => {
     apiGet.mockImplementation(async (path: string) => (path.startsWith('/pauta/agenda') ? agenda() : { items: [] }));
     render(<PautaPage />);

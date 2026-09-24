@@ -90,18 +90,34 @@ export default function PautaPage() {
         ))}
       </div>
 
+      {/* Presa no topo da tela: a ação que falha costuma estar no meio da página
+          (Gerar a semana, Confirmar da curadoria, Marcar como postada), e no
+          celular a caixa acima das abas ficava fora da vista — o botão voltava
+          ao normal sem motivo nenhum visível. */}
       {erro && (
-        <div className="space-y-1 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-          <div>{erro.texto}</div>
-          {erro.conectorDesligado && (
-            <div>
-              Nada foi enviado e a peça continua na fila.{' '}
-              <a href="/conexoes" className="font-medium underline">
-                Abrir Conexões
-              </a>{' '}
-              para religar o conector — depois é só publicar de novo.
+        <div role="alert" className="sticky top-0 z-20 rounded-lg bg-bg">
+          <div className="flex items-start gap-3 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+            <div className="min-w-0 flex-1 space-y-1">
+              <div>{erro.texto}</div>
+              {erro.conectorDesligado && (
+                <div>
+                  Nada foi enviado e a peça continua na fila.{' '}
+                  <a href="/conexoes" className="font-medium underline">
+                    Abrir Conexões
+                  </a>{' '}
+                  para religar o conector — depois é só publicar de novo.
+                </div>
+              )}
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setErro(null)}
+              className="min-h-[44px] flex-none px-2 text-xs font-medium underline"
+              aria-label="Fechar o aviso de erro"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       )}
 
