@@ -16,7 +16,14 @@ import {
   type TemaDaEspinha,
 } from './espinha';
 import { itemRespondido, type Portoes } from './fases';
+import {
+  montarMapaDoCliente,
+  ordemDoKickoff,
+  type MapaDoCliente,
+  type OrdemDoKickoff,
+} from './mapa-do-cliente';
 import { formatarData } from './mensagens';
+import { receita } from './receitas';
 import type { RetratoDoTrilho } from './retrato-do-trilho';
 import { varrerSegredos } from './segredos';
 import { TrilhoService, type Quem } from './trilho.service';
@@ -77,6 +84,10 @@ export interface EstadoDoLink {
   concluido: boolean;
   kickoffEm: string | null;
   itens: ItemDoLink[];
+  /** O trecho do cliente, do acordo à memória viva, com a estação de hoje. */
+  mapa: MapaDoCliente;
+  /** A ordem do kickoff: decisão primeiro, confirmação depois, opcional no fim. */
+  ordem: OrdemDoKickoff;
   progresso: {
     confirmados: number;
     respondidos: number;
@@ -129,16 +140,63 @@ export class LinkPublicoService {
       this.prisma.onboardingConvite
         .update({ where: { id: r.conviteId }, data: { acessos: { increment: 1 }, ultimoAcessoEm: new Date() } })
         .catch(() => undefined);
-      return this.montarEstado(t, r);
+      return this.montarEstadoCompleto(t, r);
     });
   }
 
-  private montarEstado(t: OnboardingTrilho & { itens: OnboardingItem[] }, r: Resolvido): EstadoDoLink {
+  /**
+   * As perguntas que o roteirista reescreveu com o vocabulário do cliente
+   * (marco `roteiro.personalizado`). É a MESMA fonte do roteiro do kickoff:
+   * quem conduziu a conversa perguntou daquele jeito, e o cliente lê daquele
+   * jeito no link. Sem marco, vale a espinha.
+   */
+  private async perguntasDoRoteiro(trilhoId: string): Promise<Record<string, string>> {
+    const m = await this.prisma.onboardingMarco.findFirst({
+      where: { trilhoId, tipo: 'roteiro.personalizado' },
+      orderBy: { em: 'desc' },
+    });
+    const p = (m?.dados as { perguntas?: Record<string, string> } | null)?.perguntas;
+    return p && typeof p === 'object' ? p : {};
+  }
+
+  private async montarEstadoCompleto(
+    t: OnboardingTrilho & { itens: OnboardingItem[] },
+    r: Resolvido,
+  ): Promise<EstadoDoLink> {
+    const perguntas = await this.perguntasDoRoteiro(t.id);
+    return this.montarEstado(t, r, perguntas);
+  }
+
+  private montarEstado(
+    t: OnboardingTrilho & { itens: OnboardingItem[] },
+    r: Resolvido,
+    perguntas: Record<string, string> = {},
+  ): EstadoDoLink {
     const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
     const temas = temasDoConvite(r.blocos, nivel);
     const porTema = new Map(t.itens.map((i) => [i.temaId, i]));
-    const itens = temas.map((tema) => this.itemDoLink(tema, porTema.get(tema.id) ?? null, t));
+    const itens = temas.map((tema) => this.itemDoLink(tema, porTema.get(tema.id) ?? null, t, perguntas));
     const obrig = obrigatorios(r.blocos, nivel);
+    const mapa = montarMapaDoCliente({
+      slug: t.slug,
+      fase: t.fase,
+      receitaNome: receita(t.receita)?.nome ?? null,
+      reuniaoEm: t.reuniaoEm,
+      kickoffEm: t.kickoffEm,
+      portoes: (t.portoes ?? {}) as Portoes,
+      blocosDoLink: r.blocos,
+      linkConcluido: r.estado === 'concluido',
+      validoAte: r.validoAte,
+      itens: t.itens.map((i) => ({
+        temaId: i.temaId,
+        bloco: i.bloco,
+        status: i.status,
+        proposta: i.proposta,
+        textoFinal: i.textoFinal,
+        origem: i.origem,
+        notaId: i.notaId,
+      })),
+    });
     return {
       cliente: t.cliente,
       contatoNome: t.contatoNome,
@@ -148,6 +206,8 @@ export class LinkPublicoService {
       concluido: r.estado === 'concluido',
       kickoffEm: t.kickoffEm ? t.kickoffEm.toISOString() : null,
       itens,
+      mapa,
+      ordem: ordemDoKickoff(itens),
       progresso: {
         confirmados: itens.filter((i) => i.status === 'confirmado' || i.status === 'corrigido').length,
         respondidos: itens.filter((i) => i.status === 'respondido').length,
@@ -159,7 +219,12 @@ export class LinkPublicoService {
     };
   }
 
-  private itemDoLink(tema: TemaDaEspinha, i: OnboardingItem | null, t: OnboardingTrilho): ItemDoLink {
+  private itemDoLink(
+    tema: TemaDaEspinha,
+    i: OnboardingItem | null,
+    t: OnboardingTrilho,
+    perguntas: Record<string, string> = {},
+  ): ItemDoLink {
     const status = i?.status ?? 'em-branco';
     const feito = itemRespondido(status);
     const aprovado = status === 'aprovado' && !!i?.proposta;
@@ -180,7 +245,7 @@ export class LinkPublicoService {
       bloco: tema.bloco,
       blocoRotulo: ROTULO_DO_BLOCO[tema.bloco],
       titulo: tema.titulo,
-      pergunta: tema.pergunta,
+      pergunta: perguntas[tema.id]?.trim() || tema.pergunta,
       aprofundar: tema.aprofundar,
       obrigatorio: tema.obrigatorio,
       formato: tema.formato,
@@ -330,7 +395,7 @@ export class LinkPublicoService {
       const quem: Quem = { id: null, nome: (nome ?? '').trim() || t.contatoNome || 'cliente' };
       await acao(t, item, quem, tema);
       const depois = await this.trilhoDoConvite(r);
-      return this.montarEstado(depois, r);
+      return this.montarEstadoCompleto(depois, r);
     });
   }
 

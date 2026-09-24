@@ -317,6 +317,28 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     else expect(msgs.link).toBeNull();
   });
 
+  it('o link é o KICKOFF: mapa na estação 3, decisão antes de confirmação, e a pergunta é a do roteirista', async () => {
+    const e = await link.estado(tokenBCD);
+    // O mapa: seis estações, o kickoff é onde ele está, e nada do futuro aparece como feito.
+    expect(e.mapa.estacoes).toHaveLength(6);
+    expect(e.mapa.estacaoAtual).toBe(3);
+    expect(e.mapa.estacoes[2]).toMatchObject({ chave: 'kickoff', estado: 'aqui' });
+    expect(e.mapa.estacoes[2].detalhe).toContain('confirmar');
+    expect(e.mapa.estacoes.slice(3).every((x) => x.estado === 'adiante')).toBe(true);
+    expect(e.mapa.promessa.pasta).toContain('/');
+    expect(e.mapa.promessa.notas.length).toBeGreaterThan(0);
+    // A ordem do kickoff: o que só ele decide vem primeiro; o que veio da conversa, depois.
+    expect(e.ordem.decisoes).toContain('d-status');
+    expect(e.ordem.decisoes).toContain('regras-da-casa');
+    expect(e.ordem.confirmacoes).toContain('negocio');
+    expect(e.ordem.decisoes.concat(e.ordem.confirmacoes, e.ordem.extras).sort()).toEqual(e.itens.map((i) => i.temaId).sort());
+    // A pergunta que o cliente lê é a MESMA do roteiro do kickoff, reescrita pelo roteirista.
+    const roteiro = await naRoot(() => trilhos.roteiro(rootId, trilhoId));
+    const doRoteiro = new Map(roteiro.blocos.flatMap((b) => b.temas).map((t) => [t.id, t.pergunta]));
+    for (const i of e.itens) expect(i.pergunta).toBe(doRoteiro.get(i.temaId));
+    expect(e.itens.find((i) => i.temaId === 'negocio')?.pergunta).toContain('Andrade');
+  });
+
   it('o cliente confirma, corrige e responde (texto e áudio); concluir recusa até os obrigatórios; depois sai o retrato', async () => {
     const e0 = await link.estado(tokenBCD);
     const por = new Map(e0.itens.map((i) => [i.temaId, i]));

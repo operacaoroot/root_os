@@ -82,6 +82,44 @@ Uma espinha, duas superfícies: o **roteiro do kickoff** é a espinha escrita co
 frase de consentimento e a pergunta "se ficar raso"); o **link do cliente** é a mesma lista, com o
 que a ata já respondeu em modo confirmar.
 
+**A pergunta é uma só.** Se o roteirista reescreveu a pergunta com o vocabulário do cliente (marco
+`roteiro.personalizado`), o link mostra a versão reescrita — a mesma que o roteiro impresso mostra
+a quem conduziu. Quem conduziu perguntou daquele jeito; o cliente lê daquele jeito. A tela nunca
+reescreve pergunta.
+
+## 5b. O link é o KICKOFF, não um formulário (24/09/2026)
+
+`mapa-do-cliente.ts` + `/e/[token]`. O link do cliente deixou de ser "responda 18 campos" e passou
+a ser **a estação atual de um trecho**: ele vê o caminho inteiro, onde está, o que ficou para trás
+e o que recebe adiante. É o recorte do cliente das cinco fases — não a esteira interna da Root.
+
+Seis estações, iguais para todo cliente (dado versionado, uma casa só):
+
+| # | Estação | O que é para o cliente | De onde o OS tira o estado |
+|---|---|---|---|
+| 1 | Conversa | a conversa em que ele conta a casa | `reuniaoEm` / `kickoffEm` / item com origem `ata` |
+| 2 | Acordo | o combinado do trabalho | `portoes.propostaEnviadaEm`, fase ≥ contrato, ou existir link B–D |
+| 3 | **Kickoff** | confirmar o que já disse, decidir o que só ele decide | convite B–D aberto e não concluído |
+| 4 | Contexto | as fontes dele entram | memória carregada ou `portoes.ambienteOkEm`; detalhe vem de `d-anexos` |
+| 5 | Memória viva | o vault com as notas da casa, na voz dele | `OnboardingItem.notaId` (o `carregarMemoria` rodou) |
+| 6 | Frente rodando | a frente escolhida em operação | `portoes.criterioDeSaida` ou fase ≥ operação |
+
+Duas regras que valem mais do que o desenho:
+
+1. **Nunca inventa data.** `quando` só existe quando há data gravada; a única data do futuro que o
+   mapa afirma é a validade do convite ("até 07/10"). É a mesma regra do `SemDataError` das
+   mensagens — nunca `XX/XX`.
+2. **A posição é a afirmação.** O que vem antes da estação atual aparece como vencido (o link B–D
+   só nasce depois do acordo, e o acordo depois da conversa); o que vem depois **nunca** aparece
+   como feito.
+
+E a estação de hoje pede o que falta **nesta ordem** (`ordemDoKickoff`): (1) as **decisões** — o
+obrigatório que a conversa não cobriu, porque é ele que define o que a gente constrói; (2) **o que
+ouvimos de você** — as propostas aprovadas, com o minuto, para confirmar ou corrigir; (3) o
+**opcional**, sem peso. A página termina na **promessa da estação 5** (`promessaDaMemoria`): a
+pasta pelo slug, os títulos das notas da casa, as fontes que ele já citou e a pergunta da primeira
+semana — construída do que existe, nunca pedida a modelo, como o retrato.
+
 ## 6. Onde mora cada coisa
 
 **Banco (empresa da Root, tenant 001), migration `20260924010000_onboarding_do_cliente`:**
@@ -119,7 +157,8 @@ na bancada com o botão de copiar. Mandar pelo OS passa por `whatsapp.mensagem.e
 com segunda pessoa — é decisão da mesa (ver §9).
 
 **Web:** `/onboarding` (a bancada: fases, portões, propostas, link, marcos), `/onboarding/[id]/
-roteiro` (imprimível), `/e/[token]` (o link do cliente, público, no celular).
+roteiro` (imprimível), `/e/[token]` (o **kickoff** do cliente: o mapa das seis estações, as
+decisões, as confirmações e a promessa da memória viva — público, no celular).
 
 ## 7. O fluxo, ponta a ponta
 

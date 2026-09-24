@@ -47,6 +47,12 @@ import {
   normalizarParaBusca,
 } from '../src/onboarding/trilho/leitor-de-ata';
 import {
+  montarMapaDoCliente,
+  ordemDoKickoff,
+  promessaDaMemoria,
+  type EstadoParaMapa,
+} from '../src/onboarding/trilho/mapa-do-cliente';
+import {
   SemDataError,
   mensagemDeBoasVindas,
   mensagemDeLembrete,
@@ -460,6 +466,93 @@ describe('o roteiro do kickoff é a espinha como conversa', () => {
   it('descartado não conta como coberto', () => {
     const r = montarRoteiro(cab, [{ temaId: 'negocio', bloco: 'B', status: 'descartado', textoFinal: null, proposta: 'x' }], []);
     expect(r.cobertura.cobertos).toBe(0);
+  });
+});
+
+describe('o mapa do cliente: onde ele está, sem inventar data', () => {
+  const base: EstadoParaMapa = {
+    slug: 'andrade-pecas',
+    fase: OnboardingFase.diagnostico,
+    receitaNome: null,
+    reuniaoEm: new Date('2026-09-22T12:00:00Z'),
+    kickoffEm: new Date('2026-09-22T12:00:00Z'),
+    portoes: {},
+    blocosDoLink: 'BCD',
+    linkConcluido: false,
+    validoAte: new Date('2026-10-07T12:00:00Z'),
+    itens: [
+      { temaId: 'negocio', bloco: 'B', status: 'aprovado', proposta: 'Vendemos peças.', textoFinal: null, origem: 'ata' },
+      { temaId: 'canais', bloco: 'B', status: 'confirmado', proposta: 'Indicação.', textoFinal: 'Indicação.', origem: 'ata' },
+      { temaId: 'd-dupla', bloco: 'D', status: 'em-branco', proposta: null, textoFinal: null, origem: 'ata' },
+    ],
+  };
+
+  it('o link B–D em aberto para na estação do kickoff, com o que confirmar e o que decidir', () => {
+    const m = montarMapaDoCliente(base);
+    expect(m.estacaoAtual).toBe(3);
+    expect(m.estacoes.map((e) => e.chave)).toEqual(['conversa', 'acordo', 'kickoff', 'contexto', 'memoria', 'frente']);
+    const kickoff = m.estacoes[2];
+    expect(kickoff.estado).toBe('aqui');
+    expect(kickoff.detalhe).toBe('confirmar 2 · decidir 1');
+    expect(kickoff.quando).toBe('até 07/10');
+    // O link B–D só nasce depois do acordo: conversa e acordo ficam para trás.
+    expect(m.estacoes[0].estado).toBe('feita');
+    expect(m.estacoes[0].quando).toBe('22/09');
+    expect(m.estacoes[1].estado).toBe('feita');
+    // E o que vem depois nunca aparece como feito.
+    expect(m.estacoes.slice(3).map((e) => e.estado)).toEqual(['adiante', 'adiante', 'adiante']);
+  });
+
+  it('estação futura sem data gravada não ganha data', () => {
+    const m = montarMapaDoCliente(base);
+    expect(m.estacoes.find((e) => e.chave === 'memoria')?.quando).toBeNull();
+    expect(m.estacoes.find((e) => e.chave === 'frente')?.quando).toBeNull();
+  });
+
+  it('o link da triagem para na primeira estação — ele é antes da conversa', () => {
+    const m = montarMapaDoCliente({ ...base, blocosDoLink: 'A', reuniaoEm: null, kickoffEm: null, itens: [] });
+    expect(m.estacaoAtual).toBe(1);
+    expect(m.estacoes[0].estado).toBe('aqui');
+  });
+
+  it('com a memória carregada o kickoff fica para trás e a estação passa a ser a frente', () => {
+    const m = montarMapaDoCliente({
+      ...base,
+      linkConcluido: true,
+      itens: base.itens.map((i) => ({ ...i, notaId: 'nota-1' })),
+    });
+    expect(m.estacoes[2].estado).toBe('feita');
+    expect(m.estacoes.find((e) => e.chave === 'memoria')?.estado).toBe('feita');
+    expect(m.estacaoAtual).toBe(6);
+  });
+
+  it('a promessa da estação 5 é construída do que existe: a pasta, as notas da casa, a primeira pergunta', () => {
+    const p = promessaDaMemoria({
+      ...base,
+      itens: [
+        ...base.itens,
+        { temaId: 'd-anexos', bloco: 'D', status: 'aprovado', proposta: 'A pasta do Drive.', textoFinal: null, origem: 'ata' },
+        { temaId: 'd-primeira-pergunta', bloco: 'D', status: 'respondido', proposta: null, textoFinal: 'Quanto vendi por peça?', origem: 'cliente' },
+      ],
+    });
+    expect(p.pasta).toBe('andrade-pecas/');
+    expect(p.notas).toHaveLength(TEMAS_DA_CARGA.length);
+    expect(p.notas[0]).toBe(TEMAS_DA_CARGA[0].titulo);
+    expect(p.fontes).toBe('A pasta do Drive.');
+    expect(p.primeiraPergunta).toBe('Quanto vendi por peça?');
+  });
+
+  it('a ordem do kickoff põe a decisão antes da confirmação, e o opcional no fim', () => {
+    const o = ordemDoKickoff([
+      { temaId: 'negocio', obrigatorio: true, modo: 'confirmar', status: 'aprovado' },
+      { temaId: 'd-dupla', obrigatorio: true, modo: 'responder', status: 'em-branco' },
+      { temaId: 'c-duvidas', obrigatorio: false, modo: 'responder', status: 'em-branco' },
+      { temaId: 'canais', obrigatorio: true, modo: 'feito', status: 'confirmado' },
+      { temaId: 'd-status', obrigatorio: true, modo: 'feito', status: 'respondido' },
+    ]);
+    expect(o.decisoes).toEqual(['d-dupla', 'd-status']);
+    expect(o.confirmacoes).toEqual(['negocio', 'canais']);
+    expect(o.extras).toEqual(['c-duvidas']);
   });
 });
 
