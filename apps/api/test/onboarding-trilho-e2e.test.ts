@@ -11,6 +11,7 @@ import type {
   LlmStepInput,
   LlmStepOutput,
 } from '../src/llm/llm.provider';
+import { AgentDataGrantService } from '../src/memory/agent-data-grant.service';
 import { MemoriaService } from '../src/memory/memoria.service';
 import { hashDoToken } from '../src/onboarding/trilho/convite';
 import { LeituraDaAtaService } from '../src/onboarding/trilho/leitura-da-ata.service';
@@ -138,13 +139,23 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
   const naRoot = <T>(fn: () => Promise<T>) =>
     comContexto({ orgId: rootId, actorType: 'user', actorId: quem.id, correlationId: `teste-${MARCA}`, origem: 'http' }, fn);
 
+  // Provisionar empresa exige operador ativo da PLATAFORMA (slug `root`) com
+  // `admin.permissoes`. Em produção o trilho mora na própria `root`, então os
+  // dois contextos coincidem; aqui o trilho vive numa org isolada do teste, e o
+  // passo de provisionar roda como um operador sintético da plataforma.
+  let plataformaId = '';
+  let plataformaEraNossa = false;
+  const operador = { id: '', papelId: '', nome: 'Operador da plataforma (teste)' };
+  const naPlataforma = <T>(fn: () => Promise<T>) =>
+    comContexto({ orgId: plataformaId, actorType: 'user', actorId: operador.id, correlationId: `teste-${MARCA}`, origem: 'http' }, fn);
+
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.$connect();
     const p = prisma as unknown as PrismaService;
     const eventos = new EventLogService(prisma as never);
     const auditoria = new AuditService(p);
-    const memoria = new MemoriaService(p, eventos);
+    const memoria = new MemoriaService(p, eventos, new AgentDataGrantService(p));
     const provisionamento = new ProvisionamentoService(p, eventos, auditoria, new ModulosService(p));
     modelo = new ModeloDuble();
     trilhos = new TrilhoService(p, memoria, eventos, provisionamento);
@@ -158,6 +169,21 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     rootId = root.orgId;
     criadas.push(rootId);
     quem.id = root.admin?.userId ?? null;
+
+    // Outras suítes deixam uma `root` sintética: não renomear nem apagar a de
+    // ninguém — criar só o nosso operador e limpar só os rastros dele.
+    let plataforma = await prisma.org.findUnique({ where: { slug: 'root' } });
+    if (!plataforma) {
+      plataforma = await prisma.org.create({ data: { slug: 'root', name: 'Plataforma sintética' } });
+      plataformaEraNossa = true;
+    }
+    plataformaId = plataforma.id;
+    const papel = await prisma.role.create({ data: { orgId: plataformaId, key: `teste-${MARCA}`, name: 'Operador sintético',
+      permissions: { connectOrCreate: { where: { key: 'admin.permissoes' }, create: { key: 'admin.permissoes' } } } } });
+    const usuario = await prisma.user.create({ data: { orgId: plataformaId, email: `operador.${MARCA}@root.local`, name: operador.nome,
+      passwordHash: 'inutilizavel-no-teste', roles: { connect: { id: papel.id } } } });
+    operador.id = usuario.id;
+    operador.papelId = papel.id;
   });
 
   afterAll(async () => {
@@ -179,6 +205,19 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
       await prisma.role.deleteMany({ where: { orgId } });
       await prisma.org.deleteMany({ where: { id: orgId } });
     }
+    if (operador.id) {
+      await prisma.auditLog.deleteMany({ where: { orgId: plataformaId, OR: [
+        { actorId: operador.id }, { metadata: { path: ['correlationId'], equals: `teste-${MARCA}` } },
+      ] } });
+      await prisma.$transaction([
+        prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+        prisma.eventLog.deleteMany({ where: { orgId: plataformaId, correlationId: `teste-${MARCA}` } }),
+        prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+      ]);
+      await prisma.user.delete({ where: { id: operador.id } });
+      await prisma.role.delete({ where: { id: operador.papelId } });
+    }
+    if (plataformaEraNossa) await prisma.org.deleteMany({ where: { id: plataformaId } });
     await prisma.$disconnect();
   });
 
@@ -434,7 +473,7 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
   });
 
   it('a empresa do cliente é provisionada e a memória dela recebe as notas com chave estável e procedência', async () => {
-    const t = await naRoot(() => trilhos.provisionarEmpresa(rootId, trilhoId, quem));
+    const t = await naPlataforma(() => trilhos.provisionarEmpresa(rootId, trilhoId, operador));
     expect(t.empresaId).toBeTruthy();
     criadas.push(t.empresaId!);
 
