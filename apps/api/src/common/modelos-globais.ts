@@ -198,6 +198,15 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
     ],
   },
   { modelo: 'WorkComment', pai: 'WorkTask', fk: 'taskId' },
+  // Horas apontadas (esteira de clientes, 17/09/2026). Um pai só: a etapa é
+  // fotografia em texto, não chave estrangeira — ver a migration.
+  { modelo: 'WorkApontamento', pai: 'WorkTask', fk: 'taskId' },
+  // O onboarding do cliente (23/09/2026): os quatro filhos do trilho. A
+  // empresa é sempre a do trilho — migration `20260924010000_onboarding_do_cliente`.
+  { modelo: 'OnboardingItem', pai: 'OnboardingTrilho', fk: 'trilhoId' },
+  { modelo: 'OnboardingConvite', pai: 'OnboardingTrilho', fk: 'trilhoId' },
+  { modelo: 'OnboardingAta', pai: 'OnboardingTrilho', fk: 'trilhoId' },
+  { modelo: 'OnboardingMarco', pai: 'OnboardingTrilho', fk: 'trilhoId' },
 ] as const;
 
 /**

@@ -350,3 +350,50 @@ export class MemoriaDeResolucao<V> {
     return this.itens.size;
   }
 }
+
+/**
+ * A empresa dona de um convite de onboarding, pelo HASH do token (23/09/2026).
+ *
+ * O link público `/e/<token>` não tem empresa até achar o convite. É a mesma
+ * forma das quatro resoluções acima: consulta mínima sob a sentinela, devolve o
+ * endereço e o que decide o 404 — e nada mais. O token cru nunca chega aqui:
+ * quem chama já o transformou em hash (`onboarding/trilho/convite.ts`).
+ */
+export async function resolverTenantDoConvite(
+  prisma: PrismaClient,
+  tokenHash: string,
+): Promise<{
+  conviteId: string;
+  trilhoId: string;
+  orgId: string;
+  blocos: string;
+  validoAte: Date;
+  revogadoEm: Date | null;
+  concluidoEm: Date | null;
+} | null> {
+  const c = await sobASentinela(() =>
+    prisma.onboardingConvite.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        trilhoId: true,
+        orgId: true,
+        blocos: true,
+        validoAte: true,
+        revogadoEm: true,
+        concluidoEm: true,
+      },
+    }),
+  );
+  return c && c.orgId
+    ? {
+        conviteId: c.id,
+        trilhoId: c.trilhoId,
+        orgId: c.orgId,
+        blocos: c.blocos,
+        validoAte: c.validoAte,
+        revogadoEm: c.revogadoEm,
+        concluidoEm: c.concluidoEm,
+      }
+    : null;
+}

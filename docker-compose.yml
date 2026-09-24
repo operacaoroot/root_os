@@ -19,7 +19,11 @@ services:
       - mktos_db_data:/var/lib/postgresql/data
     networks: [marketing-os-net]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mkt}"]
+      # O `-d` não é decorativo: sem ele o pg_isready tenta abrir um banco com o
+      # nome do usuário, que não existe, e o Postgres registra um FATAL a cada
+      # 10s. Eram ~8.600 linhas de erro falso por dia no log do banco — o tipo
+      # de ruído que faz ninguém olhar o log quando o erro é de verdade.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mkt} -d ${DB_NAME:-marketing_os}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -149,6 +153,8 @@ services:
       ANTHROPIC_EFFORT: ${ANTHROPIC_EFFORT:-high}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-16000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Transcrição de áudio do onboarding (src/llm/transcricao.provider.ts).
+      TRANSCRICAO_MODELO: ${TRANSCRICAO_MODELO:-gpt-4o-transcribe}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       # OpenRouter: mesma API de Chat Completions, com nome e custo próprios.

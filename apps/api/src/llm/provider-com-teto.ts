@@ -95,6 +95,10 @@ export class ProviderComTeto implements LlmProvider {
     return this.interno.supportsTools;
   }
 
+  get leAnexos(): boolean {
+    return this.interno.leAnexos ?? false;
+  }
+
   tetoDeSaida(chamada: ChamadaParaTeto): number {
     return this.interno.tetoDeSaida(chamada);
   }

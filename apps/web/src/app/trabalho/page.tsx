@@ -1,13 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, Bot, ExternalLink, Flag, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
+import { Archive, Bot, Clock, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
+import { MODELOS_DE_LISTA } from '@mktos/shared';
 import type {
   TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe,
 } from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 
 // Trabalho — gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Réplica de usabilidade do espaço `root` (fotografia 25/07/2026): pastas →
@@ -48,7 +50,7 @@ const paraInputDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 const deInputDate = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
 export default function TrabalhoPage() {
-  const { token, ready, can } = useAuth();
+  const { token, ready, can, user } = useAuth();
   const editable = can('tarefas.editar');
   const [erro, setErro] = useState<string | null>(null);
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
@@ -140,6 +142,31 @@ export default function TrabalhoPage() {
             </div>
           </div>
         ))}
+        {/*
+          LISTAS SEM PASTA também aparecem na árvore. Antes da esteira elas só
+          existiam por importação; com o modelo, uma empresa sem pastas cria a
+          lista solta — e ela sumiria da navegação se a árvore só desenhasse pastas.
+        */}
+        {estrutura && estrutura.listasSoltas.length > 0 && (
+          <div>
+            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Sem pasta</div>
+            <div className="mt-1 space-y-0.5">
+              {estrutura.listasSoltas.map((l) => (
+                <button
+                  key={l.id}
+                  onClick={() => { setListaId(l.id); setFOpcao(''); }}
+                  className={[
+                    'flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
+                    l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
+                  ].join(' ')}
+                >
+                  <span className="truncate">{l.name}</span>
+                  <span className="ml-1 text-[10px] text-muted">{l.total}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {editable && estrutura && <NovaLista folders={estrutura.folders} token={token} onDone={refresh} onErro={setErro} />}
       </aside>
 
@@ -234,7 +261,7 @@ export default function TrabalhoPage() {
 
       {painelId && estrutura && (
         <PainelTarefa
-          id={painelId} estrutura={estrutura} editable={editable} token={token}
+          id={painelId} estrutura={estrutura} editable={editable} token={token} usuarioId={user?.id ?? null}
           onFechar={() => setPainelId(null)} onMudou={refresh} onErro={setErro}
         />
       )}
@@ -247,23 +274,69 @@ export default function TrabalhoPage() {
 
 // ---------- board por status (colunas coloridas, quick-add por coluna) ----------
 
+/**
+ * O LIMITE DA ETAPA, no cabeçalho da coluna (esteira de clientes).
+ *
+ * `3/2` em vermelho quando passou, `2/2` em amarelo quando encheu, `1/2` neutro.
+ * AVISA, NÃO TRAVA: o arraste para uma coluna cheia continua funcionando. O
+ * limite é combinado do time; quem decide furar é a conversa de quinta, não um
+ * erro no meio do arraste. A contagem é a das tarefas VISÍVEIS com os filtros —
+ * o `title` diz isso para ninguém ler "1/2" filtrado como folga real.
+ */
+function ContagemDaEtapa({ quantas, limite }: { quantas: number; limite: number | null | undefined }) {
+  if (limite == null) {
+    return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">{quantas}</span>;
+  }
+  const estado = quantas > limite ? 'passou' : quantas === limite ? 'cheia' : 'folga';
+  const cor = estado === 'passou' ? 'bg-bad/15 text-bad' : estado === 'cheia' ? 'bg-warn/15 text-warn' : 'bg-surface-2 text-muted';
+  const dica = estado === 'passou'
+    ? `Acima do limite: ${quantas} de ${limite}. Termine antes de puxar mais.`
+    : `Limite de ${limite} ao mesmo tempo (contagem com os filtros aplicados).`;
+  return (
+    <span data-estado-limite={estado} title={dica} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cor}`}>
+      {quantas}/{limite}
+    </span>
+  );
+}
+
 function Board({ lista, tarefas, editable, token, agentes, onAbrir, onMudou, onErro }: {
   lista: TrabListaDto; tarefas: TrabTarefaResumo[]; editable: boolean; token: string | null;
   agentes: TrabAgenteDto[];
   onAbrir: (id: string) => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
+  /*
+   * ARRASTAR E SOLTAR com a API nativa do HTML5, sem biblioteca: dependência
+   * nova é decisão humana (02-CONSTRAINTS). O `<select>` "Mover etapa" do cartão
+   * continua lá — é o caminho do teclado e do celular, onde arrastar não existe.
+   */
+  const [sobre, setSobre] = useState<string | null>(null);
+  const soltar = (statusId: string, e: React.DragEvent) => {
+    e.preventDefault();
+    setSobre(null);
+    const id = e.dataTransfer.getData('text/plain');
+    const t = tarefas.find((x) => x.id === id);
+    if (!t || t.statusId === statusId) return;
+    apiPatch(`/trabalho/tarefas/${id}`, { statusId }, token).then(onMudou).catch((er) => onErro(er.message));
+  };
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
       {lista.statuses.map((st) => {
         const itens = tarefas.filter((t) => t.statusId === st.id);
         return (
-          <div key={st.id} className="w-72 shrink-0">
+          <div
+            key={st.id}
+            data-coluna={st.id}
+            className={`w-72 shrink-0 rounded-lg transition ${sobre === st.id ? 'bg-brand/5 outline outline-1 outline-brand-dim' : ''}`}
+            onDragOver={editable ? (e) => { e.preventDefault(); if (sobre !== st.id) setSobre(st.id); } : undefined}
+            onDragLeave={editable ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null); } : undefined}
+            onDrop={editable ? (e) => soltar(st.id, e) : undefined}
+          >
             <div className="mb-2 flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-sm font-medium capitalize">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
                 {st.name}
               </span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">{itens.length}</span>
+              <ContagemDaEtapa quantas={itens.length} limite={st.limite} />
             </div>
             <div className="space-y-2">
               {itens.map((t) => (
@@ -286,8 +359,15 @@ function Cartao({ t, lista, editable, token, agentes, onAbrir, onMudou, onErro }
 }) {
   const pr = PRIORIDADES.find((p) => p.key === t.priority);
   const agente = nomeDoAgente(t);
+  // Etapa fechada não envelhece: cliente encerrado não está "parado".
+  const dias = t.statusType === 'closed' ? null : diasDesde(t.statusDesde);
+  const minutos = t.minutos ?? 0;
   return (
-    <div className="rounded-lg border border-border bg-surface p-3">
+    <div
+      className="rounded-lg border border-border bg-surface p-3"
+      draggable={editable}
+      onDragStart={editable ? (e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+    >
       <div className="flex items-start justify-between gap-2">
         <button onClick={() => onAbrir(t.id)} className="text-left text-sm hover:text-brand">{t.title}</button>
         {t.externalUrl && (
@@ -315,6 +395,30 @@ function Cartao({ t, lista, editable, token, agentes, onAbrir, onMudou, onErro }
         {t.comments > 0 && <span className="flex items-center gap-0.5"><MessageSquare size={10} />{t.comments}</span>}
         {t.subtasks > 0 && <span>{t.subtasks} sub</span>}
       </div>
+      {/*
+        IDADE NA ETAPA E HORAS (esteira de clientes). A idade só aparece quando a
+        data existe — tarefa anterior à esteira não tem, e "0d" seria mentira. Com
+        14 dias ou mais na mesma etapa, o selo fica amarelo: é a pergunta "isto
+        está parado?" respondida sem abrir a gaveta.
+      */}
+      {(dias !== null || minutos > 0) && (
+        <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+          {dias !== null && (
+            <span
+              data-idade-dias={dias}
+              title={`Nesta etapa desde ${dataHoraBR(t.statusDesde)}`}
+              className={`flex items-center gap-0.5 ${dias >= 14 ? 'text-warn' : 'text-muted'}`}
+            >
+              <Hourglass size={10} />{dias}d na etapa
+            </span>
+          )}
+          {minutos > 0 && (
+            <span title="Horas apontadas nesta tarefa" className="flex items-center gap-0.5 text-muted">
+              <Clock size={10} />{formatarHoras(minutos)}
+            </span>
+          )}
+        </div>
+      )}
       {/*
         QUEM ESTÁ COM A TAREFA, no cartão (fatia A4).
         O selo aparece só quando há agente: uma linha "sem agente" em toda
@@ -517,8 +621,10 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
 
 // ---------- painel da tarefa (drawer): TODO campo editável ----------
 
-function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErro }: {
+function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onMudou, onErro }: {
   id: string; estrutura: TrabEstrutura; editable: boolean; token: string | null;
+  /** Quem está logado — só o autor de um lançamento de horas vê o botão de apagar. */
+  usuarioId: string | null;
   onFechar: () => void; onMudou: () => void; onErro: (m: string) => void;
 }) {
   const [t, setT] = useState<TrabTarefaDetalhe | null>(null);
@@ -583,6 +689,7 @@ function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErr
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
+        <LinkDoTrilho taskId={t.id} token={token} />
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
@@ -673,6 +780,11 @@ function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErr
             </div>
           </div>
         )}
+
+        <HorasDaTarefa
+          t={t} editable={editable} token={token} usuarioId={usuarioId}
+          onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
+        />
 
         {/* etiquetas */}
         <div>
@@ -788,6 +900,125 @@ function PainelTarefa({ id, estrutura, editable, token, onFechar, onMudou, onErr
   );
 }
 
+/**
+ * HORAS DA TAREFA (esteira de clientes).
+ *
+ * Três decisões que a peça carrega:
+ *  1. A ETAPA NÃO SE ESCOLHE. A hora cai na etapa atual da tarefa, e a tela diz
+ *     isso no botão. Deixar escolher faria a soma por etapa ser ajustada à mão —
+ *     e é o número que decide preço.
+ *  2. A HORA SE DIGITA COMO SE FALA: "1,5", "1.5" ou "1:30". A conversão para
+ *     minutos inteiros é da tela; a API só recebe inteiro.
+ *  3. SÓ O AUTOR VÊ "APAGAR". A API recusa com 403 de qualquer jeito; esconder o
+ *     botão evita oferecer um clique que vai dar erro.
+ */
+function HorasDaTarefa({ t, editable, token, usuarioId, onMudou, onErro }: {
+  t: TrabTarefaDetalhe; editable: boolean; token: string | null; usuarioId: string | null;
+  onMudou: () => void; onErro: (m: string) => void;
+}) {
+  const [horas, setHoras] = useState('');
+  const [dia, setDia] = useState(hojeEmBrasilia());
+  const [nota, setNota] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const apontamentos = t.apontamentos ?? [];
+  const porEtapa = t.minutosPorEtapa ?? [];
+  const minutos = minutosDeTexto(horas);
+
+  const lancar = () => {
+    if (minutos === null || enviando) return;
+    setEnviando(true);
+    apiPost(`/trabalho/tarefas/${t.id}/apontamentos`, { minutos, dia, nota: nota.trim() || null }, token)
+      .then(() => { setHoras(''); setNota(''); onMudou(); })
+      .catch((e) => onErro(e.message))
+      .finally(() => setEnviando(false));
+  };
+
+  return (
+    <div data-secao="horas">
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Horas</span>
+        <span className="text-[13px] font-semibold" data-total-minutos={t.minutos ?? 0}>
+          {(t.minutos ?? 0) > 0 ? formatarHoras(t.minutos) : 'nenhuma apontada'}
+        </span>
+      </div>
+
+      {porEtapa.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {porEtapa.map((e) => (
+            <span key={e.etapa} className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+              {e.etapa} · <span className="text-text">{formatarHoras(e.minutos)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {editable && (
+        <div className="mb-2 space-y-1.5 rounded-lg border border-border p-2">
+          <div className="grid grid-cols-[5.5rem_1fr] gap-1.5">
+            <input
+              aria-label="Horas gastas"
+              value={horas}
+              onChange={(e) => setHoras(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && lancar()}
+              placeholder="1,5 ou 1:30"
+              inputMode="decimal"
+              className={INP}
+            />
+            <input aria-label="Dia" type="date" value={dia} max={hojeEmBrasilia()} onChange={(e) => setDia(e.target.value)} className={INP} />
+          </div>
+          <input
+            aria-label="O que foi feito"
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && lancar()}
+            placeholder="O que foi feito (opcional)"
+            maxLength={500}
+            className={INP}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted">
+              {horas && minutos === null ? 'Hora inválida: de 1 minuto a 24h.' : `Entra na etapa ${t.statusName}.`}
+            </span>
+            <button
+              onClick={lancar}
+              disabled={minutos === null || enviando}
+              className="shrink-0 rounded-lg bg-brand/15 px-3 py-1 text-[12px] text-brand enabled:hover:bg-brand/25 disabled:opacity-40"
+            >
+              {minutos !== null ? `Apontar ${formatarHoras(minutos)}` : 'Apontar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {apontamentos.map((a) => (
+          <div key={a.id} className="flex items-start justify-between gap-2 rounded-lg bg-surface-2 px-2.5 py-1.5">
+            <div className="min-w-0">
+              <div className="text-[11px] text-muted">
+                {new Date(`${a.dia}T12:00:00`).toLocaleDateString('pt-BR')} · {a.autorNome} · {a.etapa}
+              </div>
+              <div className="text-[13px]">
+                <span className="font-medium">{formatarHoras(a.minutos)}</span>
+                {a.nota && <span className="text-muted"> — {a.nota}</span>}
+              </div>
+            </div>
+            {editable && a.autorId !== null && a.autorId === usuarioId && (
+              <button
+                title="Apagar este lançamento"
+                aria-label={`Apagar ${formatarHoras(a.minutos)} de ${a.dia}`}
+                onClick={() => { void apiDelete(`/trabalho/apontamentos/${a.id}`, token).then(onMudou).catch((e) => onErro(e.message)); }}
+                className="shrink-0 p-0.5 text-muted hover:text-bad"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -817,6 +1048,7 @@ function NovaLista({ folders, token, onDone, onErro }: {
       <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da lista" className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none" />
       <select value={pasta} onChange={(e) => setPasta(e.target.value)} className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none">
         {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        <option value="">Sem pasta</option>
       </select>
       <div className="flex gap-1">
         <button
@@ -831,6 +1063,28 @@ function NovaLista({ folders, token, onDone, onErro }: {
           Criar
         </button>
         <button onClick={() => setAberto(false)} className="px-2 py-1 text-xs text-muted">Cancelar</button>
+      </div>
+      {/*
+        OU A PARTIR DE UM MODELO: etapas, limites e campos prontos. O nome
+        digitado vale para o modelo também; vazio = o nome do modelo.
+      */}
+      <div className="border-t border-border pt-1.5">
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-muted">ou usar um modelo</div>
+        {Object.values(MODELOS_DE_LISTA).map((m) => (
+          <button
+            key={m.chave}
+            title={m.descricao}
+            onClick={() =>
+              apiPost('/trabalho/listas/modelo', { modelo: m.chave, folderId: pasta || null, name: nome.trim() || undefined }, token)
+                .then(() => { setNome(''); setAberto(false); onDone(); })
+                .catch((e) => onErro(e.message))
+            }
+            className="block w-full rounded px-1.5 py-1 text-left text-xs text-brand hover:bg-brand/10"
+          >
+            {m.nome}
+            <span className="block text-[10px] text-muted">{m.descricao}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -882,6 +1136,28 @@ function ConfigLista({ lista, token, onFechar, onErro }: {
               >
                 <option value="open">open</option><option value="custom">custom</option><option value="closed">closed</option>
               </select>
+              {/*
+                LIMITE DE TRABALHO EM ANDAMENTO. Vazio = sem limite (manda `null`).
+                Valor fora de 1..99 volta para o que estava: a API recusaria com
+                400, e a caixa mostrando o número recusado seria uma tela mentindo.
+              */}
+              <input
+                type="number" min={1} max={99}
+                aria-label={`Limite de ${s.name}`}
+                title="Limite de tarefas ao mesmo tempo nesta etapa (vazio = sem limite)"
+                defaultValue={s.limite ?? ''}
+                placeholder="∞"
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  const limite = v === '' ? null : Number(v);
+                  if (limite !== null && !(Number.isInteger(limite) && limite >= 1 && limite <= 99)) {
+                    e.target.value = s.limite == null ? '' : String(s.limite);
+                    return;
+                  }
+                  if (limite !== (s.limite ?? null)) trata(apiPatch(`/trabalho/statuses/${s.id}`, { limite }, token));
+                }}
+                className="w-12 shrink-0 rounded border border-border bg-surface-2 px-1 py-1 text-center text-[11px] outline-none"
+              />
               <span className="shrink-0 text-[10px] text-muted">{s.total}</span>
               <button
                 title={s.total > 0 ? 'Mova as tarefas antes' : 'Apagar status'}
@@ -958,5 +1234,32 @@ function OpcaoNova({ fieldId, token, trata }: { fieldId: string; token: string |
       placeholder="+ opção"
       className="w-20 rounded border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[11px] outline-none"
     />
+  );
+}
+
+/*
+ * O trilho de onboarding pendurado neste cartão (23/09/2026). A esteira de
+ * clientes é a VISTA de fora (fase por coluna); o trilho é a vista de dentro
+ * (portões, propostas, link). Um cartão sem trilho mostra o caminho para criar.
+ */
+function LinkDoTrilho({ taskId, token }: { taskId: string; token: string | null }) {
+  const [trilho, setTrilho] = useState<{ id: string; cliente: string; faseRotulo: string; faltando: string[] } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!token) return;
+    apiGet<{ id: string; cliente: string; faseRotulo: string; cardId: string | null; faltando: string[] }[]>(`/tenants/onboarding/trilhos?cardId=${encodeURIComponent(taskId)}`, token)
+      .then((lista) => setTrilho(lista[0] ?? null))
+      .catch(() => setTrilho(null));
+  }, [taskId, token]);
+  if (trilho === undefined) return null;
+  return (
+    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12px]">
+      {trilho ? (
+        <a href={`/onboarding/${trilho.id}`} className="underline underline-offset-2">
+          Trilho de onboarding · {trilho.faseRotulo}{trilho.faltando.length ? ` · falta ${trilho.faltando.length}` : ' · portão cumprido'}
+        </a>
+      ) : (
+        <span className="text-muted">Sem trilho de onboarding. <a href="/onboarding" className="underline underline-offset-2">Criar na bancada</a> e ligar a este cartão.</span>
+      )}
+    </div>
   );
 }

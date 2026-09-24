@@ -1,21 +1,30 @@
 # Override de PRODUÇÃO (VPS Hostinger) — não commitado no repo original.
-# Padrão de segurança da VPS: nenhuma porta pública direta; tudo bindado em
-# 172.17.0.1 e exposto só via Traefik do easyPanel
-# (/etc/easypanel/traefik/config/marketing-os.yaml → 172.17.0.1:4000).
+# Padrão de segurança da VPS: nenhuma porta pública direta; tudo bindado na
+# docker0 e exposto só via Traefik do easyPanel
+# (/etc/easypanel/traefik/config/marketing-os.yaml → <docker0>:4000).
+#
+# O IP da docker0 NÃO é o mesmo em toda máquina: a VPS FullBPO (31.97.21.167)
+# usa 172.17.0.1, a VPS ROOT (2.25.223.180) usa 172.16.0.1 — o Docker escolhe a
+# primeira faixa privada livre ao criar a bridge, e ali o 172.17/16 já estava
+# tomado. Bindar o IP errado não "cai para outra interface": o Docker recusa com
+# "cannot assign requested address" e o serviço não sobe. Por isso o valor é
+# variável, com o IP da VPS antiga como padrão — quem tem outro declara
+# IP_DOCKER_HOST no .env. O que NÃO pode virar default é 0.0.0.0: era esse o
+# furo que publicava banco, redis e minio na internet.
 services:
   db:
     ports: !override
-      - "172.17.0.1:5442:5432"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:5442:5432"
   redis:
     ports: !override
-      - "172.17.0.1:6390:6379"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:6390:6379"
   minio:
     ports: !override
-      - "172.17.0.1:9010:9000"
-      - "172.17.0.1:9011:9001"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:9010:9000"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:9011:9001"
   api:
     ports: !override
-      - "172.17.0.1:4001:4001"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:4001:4001"
   web:
     ports: !override
-      - "172.17.0.1:4000:4000"
+      - "${IP_DOCKER_HOST:-172.17.0.1}:4000:4000"

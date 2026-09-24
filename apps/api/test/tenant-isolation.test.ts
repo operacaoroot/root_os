@@ -447,6 +447,14 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkTask', escopo: 'tenant', chaveSql: '"id"', nota: 'Auto-relação parentId para subtarefas dentro da org.' },
   { tabela: 'WorkFieldValue', escopo: 'filho', chaveSql: '"id"', nota: 'DOIS pais obrigatórios (WorkTask e WorkField) — os dois têm de ser da mesma org.' },
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
+  { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
+
+  // ---- onboarding do cliente (23/09/2026) -------------------------------
+  { tabela: 'OnboardingTrilho', escopo: 'tenant', chaveSql: '"id"', nota: 'O cliente na esteira de entrega da empresa que o entrega: fase, perfil, nível, receita, contato, portões (entrada compensada, linha de base, dupla). É a carteira comercial em andamento — ler a da outra é ler quem ela está fechando e em que pé; ESCREVER `fase` é mover o cliente alheio de fase sem portão.' },
+  { tabela: 'OnboardingItem', escopo: 'filho', chaveSql: '"id"', nota: 'A proposta do agente e a resposta do cliente por tema (o que a empresa vende, as regras da casa, o número de partida). É o contexto confidencial do cliente de OUTRA empresa, dito numa reunião gravada.' },
+  { tabela: 'OnboardingConvite', escopo: 'filho', chaveSql: '"id"', nota: 'O link público: hash do token e o token cifrado. Ler a linha alheia com a chave do ambiente na mão é montar o link do cliente de outra empresa e responder por ele. A LEITURA aceita a sentinela pública (é por ela que o link acha a empresa); a escrita não.' },
+  { tabela: 'OnboardingAta', escopo: 'filho', chaveSql: '"id"', nota: 'O registro da leitura da ata: hash, tamanho, quantos segredos foram mascarados, custo. Não guarda a transcrição — mas diz que houve reunião, quando e quanto custou.' },
+  { tabela: 'OnboardingMarco', escopo: 'filho', chaveSql: '"id"', nota: 'A linha do tempo do trilho, com as mensagens prontas de lembrete (o link dentro). Ler a alheia é ler o link do cliente da outra.' },
 
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
@@ -1238,6 +1246,37 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, taskId: tarefaId, authorId: userId,
     authorName: `Usuário ${rotulo}`, text: `Comentário privado da org ${rotulo}`,
   }));
+
+  reg('WorkApontamento', await ins(c, 'WorkApontamento', {
+    id: crypto.randomUUID(), orgId, taskId: tarefaId, autorId: userId,
+    autorNome: `Usuário ${rotulo}`, minutos: rotulo === 'A' ? 90 : 45, dia: '2026-09-15',
+    etapa: 'Implantação', nota: `Horas privadas da org ${rotulo}`,
+  }));
+
+  // Onboarding do cliente (23/09/2026): o trilho e os quatro filhos.
+  const trilhoId = await ins(c, 'OnboardingTrilho', {
+    id: crypto.randomUUID(), orgId, cliente: `Cliente ${rotulo} ${MARCA}`, slug: `cliente-${rotulo.toLowerCase()}-${suf}`,
+    fase: 'contrato', perfil: 'P2', nivel: 'entregar-pronto', contatoNome: `Contato ${rotulo}`,
+    portoes: JSON.stringify({ entradaCompensadaEm: '2026-09-20' }), atualizadoEm: agora,
+  }, { fase: '"OnboardingFase"', portoes: 'jsonb' });
+  reg('OnboardingTrilho', trilhoId);
+  s.ref.onboardingTrilhoId = trilhoId;
+
+  reg('OnboardingItem', await ins(c, 'OnboardingItem', {
+    id: crypto.randomUUID(), orgId, trilhoId, temaId: 'negocio', bloco: 'B', origem: 'ata', tipo: 'literal',
+    proposta: `Proposta privada da org ${rotulo}`, fonteTrecho: 'trecho', status: 'aprovado', atualizadoEm: agora,
+  }));
+  reg('OnboardingConvite', await ins(c, 'OnboardingConvite', {
+    id: crypto.randomUUID(), orgId, trilhoId, blocos: 'BCD', tokenHash: `hash_${rotulo}_${suf}`,
+    validoAte: new Date(agora.getTime() + 14 * 86_400_000),
+  }));
+  reg('OnboardingAta', await ins(c, 'OnboardingAta', {
+    id: crypto.randomUUID(), orgId, trilhoId, fonte: 'texto', caracteres: 1000, hash: `ata_${rotulo}_${suf}`,
+  }));
+  reg('OnboardingMarco', await ins(c, 'OnboardingMarco', {
+    id: crypto.randomUUID(), orgId, trilhoId, tipo: 'trilho.criado', texto: `Marco privado da org ${rotulo}`,
+    dados: JSON.stringify({}),
+  }, { dados: 'jsonb' }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
   reg('_WorkTaskTags', `${tagId}|${tarefaId}`);
@@ -3075,6 +3114,24 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
     authorName: 'Gatilho', text: 'comentário do teste de derivação',
   }),
+  WorkApontamento: async () => ({
+    id: crypto.randomUUID(), taskId: sementes.A.ref.workTaskId,
+    autorNome: 'Gatilho', minutos: 30, dia: '2026-09-15', etapa: 'Diagnóstico',
+  }),
+  OnboardingItem: async () => ({
+    id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, temaId: `gatilho_${MARCA}`, bloco: 'D',
+    atualizadoEm: new Date(),
+  }),
+  OnboardingConvite: async () => ({
+    id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, blocos: 'A',
+    tokenHash: `gatilho_${MARCA}_${crypto.randomUUID()}`, validoAte: new Date(Date.now() + 86_400_000),
+  }),
+  OnboardingAta: async () => ({
+    id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, fonte: 'texto', caracteres: 10, hash: `g_${MARCA}`,
+  }),
+  OnboardingMarco: async () => ({
+    id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, tipo: 'gatilho', texto: 'marco do teste de derivação',
+  }),
 };
 
 /**
@@ -3089,6 +3146,7 @@ const REF_DA_SEMENTE: Record<string, string> = {
   WorkTask: 'workTaskId',
   WorkField: 'workFieldId',
   WorkFieldOption: 'workFieldOptionId',
+  OnboardingTrilho: 'onboardingTrilhoId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -3099,7 +3157,11 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const declarados = FILHOS_COM_ORGID_REDUNDANTE.map((f) => f.modelo).sort();
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
-    expect(declarados.length).toBe(12);
+    // 10 da migration `orgid_em_todo_filho` + `AgentToken` e
+    // `ConnectorDeviceSource` (E2/E3, 19/09/2026) + `WorkApontamento` (esteira
+    // de clientes, 17/09/2026) + os 4 filhos do trilho de onboarding
+    // (23/09/2026). Filho novo sobe este número no mesmo commit.
+    expect(declarados.length).toBe(17);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

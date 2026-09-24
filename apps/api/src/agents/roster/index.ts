@@ -17,6 +17,13 @@ export {
 export { ROSTER_DE_ENTRADA, agenteDoRoster, type AgenteDoRoster } from './roster';
 
 export {
+  ROSTER_DO_ONBOARDING,
+  SLUG_DO_LEITOR_DE_ATA,
+  SLUG_DO_PESQUISADOR_DE_CONTA,
+  SLUG_DO_ROTEIRISTA,
+} from './onboarding-da-root';
+
+export {
   precisaSemear,
   semearRoster,
   type AvisoDoRoster,

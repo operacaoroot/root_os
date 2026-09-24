@@ -323,7 +323,8 @@ describe('navEmArvore', () => {
     const execucao = navEmArvore(todas).find((g) => g.secao.key === 'execucao')!;
     expect(execucao.itens.map((no) => no.item.key)).not.toContain('tarefas');
     const trabalho = execucao.itens.find((no) => no.item.key === 'trabalho')!;
-    expect(trabalho.filhos.map((f) => f.key)).toEqual(['tarefas']);
+    // `onboarding` entrou como filho do Trabalho em 23/09/2026 (o trilho de entrega).
+    expect(trabalho.filhos.map((f) => f.key)).toEqual(['tarefas', 'onboarding']);
   });
 
   /*

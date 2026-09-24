@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { MODELOS_DE_LISTA } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
+  TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
 } from '@mktos/shared';
 import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,6 +35,27 @@ const TASK_INCLUDE = {
 } satisfies Prisma.WorkTaskInclude;
 
 type TaskRow = Prisma.WorkTaskGetPayload<{ include: typeof TASK_INCLUDE }>;
+
+/**
+ * O dia de HOJE no fuso de Brasília, como AAAA-MM-DD.
+ *
+ * Apontamento é por dia, e o dia de quem aponta é o do relógio dele: às 22h de
+ * terça em Brasília o UTC já é quarta, e `toISOString()` publicaria a hora no dia
+ * seguinte. A empresa é brasileira; fuso por empresa entra quando houver cliente
+ * fora dele.
+ */
+export function hojeEmBrasilia(agora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(agora);
+}
+
+/** `true` só para data de calendário que existe (recusa 2026-02-31). */
+export function diaDeCalendarioValido(dia: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return false;
+  const d = new Date(`${dia}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === dia;
+}
 
 @Injectable()
 export class WorkService {
@@ -88,7 +111,7 @@ export class WorkService {
       total: porLista.get(l.id) ?? 0,
       statuses: l.statuses.map((s) => ({
         id: s.id, name: s.name, type: s.type, color: s.color, order: s.order,
-        total: porStatus.get(s.id) ?? 0,
+        total: porStatus.get(s.id) ?? 0, limite: s.limite,
       })),
       fields: l.fields.sort((a, b) => a.order - b.order).map((f) => this.mapField(f)),
     });
@@ -166,17 +189,20 @@ export class WorkService {
 
   // ---------- statuses (pipeline por lista) ----------
 
-  async criarStatus(orgId: string, actorId: string, listId: string, input: { name: string; type: WorkStatusType; color?: string }) {
+  async criarStatus(orgId: string, actorId: string, listId: string, input: { name: string; type: WorkStatusType; color?: string; limite?: number | null }) {
     await this.achar(this.prisma.workList, orgId, listId, 'Lista');
     const max = await this.prisma.workStatus.aggregate({ where: { listId }, _max: { order: true } });
     return this.logado(orgId, actorId, 'work.status.create', 'work_status', null, () =>
       this.prisma.workStatus.create({
-        data: { listId, name: input.name, type: input.type, color: input.color ?? '#ee5e99', order: (max._max.order ?? 0) + 1 },
+        data: {
+          listId, name: input.name, type: input.type, color: input.color ?? '#ee5e99', order: (max._max.order ?? 0) + 1,
+          limite: input.limite ?? null,
+        },
       }),
     );
   }
 
-  async editarStatus(orgId: string, actorId: string, id: string, input: { name?: string; type?: WorkStatusType; color?: string; order?: number }) {
+  async editarStatus(orgId: string, actorId: string, id: string, input: { name?: string; type?: WorkStatusType; color?: string; order?: number; limite?: number | null }) {
     const st = await this.prisma.workStatus.findFirst({ where: { id, list: { orgId } } });
     if (!st) throw new NotFoundException('Status não encontrado');
     return this.logado(orgId, actorId, 'work.status.update', 'work_status', id, () =>
@@ -273,11 +299,15 @@ export class WorkService {
    * de carregá-lo publicar toda tarefa como "sem agente", que é uma tela
    * mentindo em silêncio. Mapa vazio é resposta válida (nenhuma tarefa travada);
    * mapa ausente, não.
+   *
+   * `minutos` segue a mesma regra, pelo mesmo motivo: um chamador que esquecesse
+   * a soma publicaria "0 h" em cliente que consumiu quarenta.
    */
   private mapTask(
     t: TaskRow,
     now: Date,
     agentes: Map<string, AgenteDaCasa>,
+    minutos: Map<string, number>,
   ): TrabTarefaResumo {
     const agente = t.agenteId ? agentes.get(t.agenteId) ?? null : null;
     return {
@@ -286,6 +316,8 @@ export class WorkService {
       priority: t.priority, assignee: t.assignee,
       agenteId: t.agenteId, agenteSlug: agente?.slug ?? null, agenteNome: agente?.nome ?? null,
       agenteEm: t.agenteEm?.toISOString() ?? null,
+      statusDesde: t.statusDesde?.toISOString() ?? null,
+      minutos: minutos.get(t.id) ?? 0,
       dueDate: t.dueDate?.toISOString() ?? null, startDate: t.startDate?.toISOString() ?? null,
       overdue: !!t.dueDate && t.dueDate < now && t.status.type !== 'closed',
       parentId: t.parentId, subtasks: t._count.subtasks, comments: t._count.comments,
@@ -323,8 +355,9 @@ export class WorkService {
      * agentes travando trabalho, não no de tarefas.
      */
     const agentes = await agentesDaCasa(this.prisma, orgId, rows.map((t) => t.agenteId));
+    const minutos = await this.minutosPorTarefa(orgId, rows.map((t) => t.id));
     return {
-      items: rows.map((t) => this.mapTask(t, now, agentes)),
+      items: rows.map((t) => this.mapTask(t, now, agentes, minutos)),
       total: rows.length,
       source: { tool: 'trabalho-interno', generatedAt: now.toISOString() },
     };
@@ -353,9 +386,28 @@ export class WorkService {
       : [];
     const nomePorAtor = new Map(atores.map((u) => [u.id, u.name]));
     const now = new Date();
-    const agentes = await agentesDaCasa(this.prisma, orgId, [t.agenteId]);
+    const [agentes, apontamentos, porEtapa] = await Promise.all([
+      agentesDaCasa(this.prisma, orgId, [t.agenteId]),
+      this.prisma.workApontamento.findMany({
+        where: { orgId, taskId: id },
+        orderBy: [{ dia: 'desc' }, { createdAt: 'desc' }],
+        take: 200,
+      }),
+      /*
+       * A SOMA POR ETAPA VEM DO BANCO, não dos 200 listados: cliente com mais
+       * lançamentos que isso teria a conta cortada em silêncio. A ordem é a da
+       * primeira hora gasta em cada etapa, que é a ordem em que o cliente andou.
+       */
+      this.prisma.workApontamento.groupBy({
+        by: ['etapa'],
+        where: { orgId, taskId: id },
+        _sum: { minutos: true },
+        _min: { createdAt: true },
+      }),
+    ]);
+    const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
     return {
-      ...this.mapTask(t, now, agentes),
+      ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]])),
       description: t.description, listName: t.list.name,
       createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(),
       comentarios: t.comments.map((c) => ({
@@ -369,6 +421,11 @@ export class WorkService {
       filhos: t.subtasks.map((s) => ({
         id: s.id, title: s.title, statusName: s.status.name, statusColor: s.status.color,
       })),
+      apontamentos: apontamentos.map((a) => this.mapApontamento(a)),
+      minutosPorEtapa: porEtapa
+        .slice()
+        .sort((a, b) => (a._min.createdAt?.getTime() ?? 0) - (b._min.createdAt?.getTime() ?? 0))
+        .map((g) => ({ etapa: g.etapa, minutos: g._sum.minutos ?? 0 })),
     };
   }
 
@@ -484,6 +541,116 @@ export class WorkService {
       after: { comment: text.slice(0, 200) },
     });
     return { id: c.id, createdAt: c.createdAt.toISOString() };
+  }
+
+  // ---------- horas apontadas (esteira de clientes) ----------
+
+  /**
+   * Lança horas numa tarefa. A ETAPA é a atual da tarefa, lida aqui — quem
+   * aponta não escolhe, porque a pergunta que o número responde é "quanto custou
+   * cada etapa" e deixar escolher a etapa deixaria a conta ser ajustada à mão.
+   * Hora gasta numa etapa anterior e lançada depois fica na etapa de agora: é
+   * limitação conhecida, e a alternativa (reconstruir a etapa do dia pelo
+   * histórico) erra mais do que acerta.
+   *
+   * Não passa pela porta nem por aprovação: é escrita interna do quadro, como o
+   * comentário. O gate é `tarefas.editar`.
+   */
+  async apontar(orgId: string, actorId: string, taskId: string, input: TrabApontamentoCreateInput): Promise<TrabApontamentoDto> {
+    const t = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId }, include: { status: true } });
+    if (!t) throw new NotFoundException('Tarefa não encontrada');
+    const hoje = hojeEmBrasilia();
+    const dia = input.dia ?? hoje;
+    if (!diaDeCalendarioValido(dia)) throw new BadRequestException(`Dia inválido: ${dia}.`);
+    if (dia > hoje) throw new BadRequestException('Dia no futuro: aponte a hora depois de gastá-la.');
+    const autor = await this.prisma.user.findFirst({ where: { id: actorId, orgId }, select: { name: true } });
+    const a = await this.prisma.workApontamento.create({
+      data: {
+        orgId, taskId, autorId: actorId, autorNome: autor?.name ?? 'sistema',
+        minutos: input.minutos, dia: new Date(`${dia}T00:00:00.000Z`),
+        etapa: t.status.name, nota: input.nota ?? null,
+      },
+    });
+    await this.audit.log({
+      orgId, actorId, action: 'work.time.create', entityType: 'work_task', entityId: taskId,
+      after: { minutos: input.minutos, dia, etapa: t.status.name },
+    });
+    return this.mapApontamento(a);
+  }
+
+  /**
+   * Só QUEM LANÇOU apaga. `tarefas.editar` diz quem mexe no quadro; não diz quem
+   * pode sumir com a hora de outra pessoa — e a hora é o número que sustenta
+   * preço. O apagamento fica na atividade da tarefa, com o que foi apagado.
+   */
+  async apagarApontamento(orgId: string, actorId: string, id: string) {
+    const a = await this.prisma.workApontamento.findFirst({ where: { id, orgId } });
+    if (!a) throw new NotFoundException('Apontamento não encontrado');
+    if (a.autorId !== actorId) throw new ForbiddenException('Só quem lançou a hora pode apagá-la.');
+    await this.prisma.workApontamento.deleteMany({ where: { id, orgId } });
+    await this.audit.log({
+      orgId, actorId, action: 'work.time.delete', entityType: 'work_task', entityId: a.taskId,
+      before: { minutos: a.minutos, dia: a.dia.toISOString().slice(0, 10), etapa: a.etapa },
+    });
+    return { id };
+  }
+
+  private mapApontamento(a: Prisma.WorkApontamentoGetPayload<object>): TrabApontamentoDto {
+    return {
+      id: a.id, autorId: a.autorId, autorNome: a.autorNome, minutos: a.minutos,
+      dia: a.dia.toISOString().slice(0, 10), etapa: a.etapa, nota: a.nota,
+      createdAt: a.createdAt.toISOString(),
+    };
+  }
+
+  /** Soma de minutos por tarefa, numa consulta só (a lista tem até 500 tarefas). */
+  private async minutosPorTarefa(orgId: string, taskIds: string[]): Promise<Map<string, number>> {
+    if (taskIds.length === 0) return new Map();
+    const grupos = await this.prisma.workApontamento.groupBy({
+      by: ['taskId'],
+      where: { orgId, taskId: { in: taskIds } },
+      _sum: { minutos: true },
+    });
+    return new Map(grupos.map((g) => [g.taskId, g._sum.minutos ?? 0]));
+  }
+
+  // ---------- modelos de lista ----------
+
+  /**
+   * Cria uma lista pronta a partir de `MODELOS_DE_LISTA` (hoje, a esteira de
+   * clientes): etapas com cor, tipo e limite, e campos com opções.
+   *
+   * Sem transação interativa, como `criarLista`: a sessão de banco carimba a
+   * empresa por consulta (`prisma/sessao-de-banco.ts`), e nenhum outro caminho do
+   * código abre `$transaction(async ...)` sob ela. Se falhar no meio, sobra uma
+   * lista incompleta — visível, editável e apagável pela tela, que é um estado
+   * melhor que um caminho de transação que ninguém mais exercita.
+   */
+  async criarListaDoModelo(orgId: string, actorId: string, input: TrabListaDoModeloInput) {
+    const modelo: ModeloDeLista = MODELOS_DE_LISTA[input.modelo];
+    if (input.folderId) await this.achar(this.prisma.workFolder, orgId, input.folderId, 'Pasta');
+    return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, async () => {
+      const list = await this.prisma.workList.create({
+        data: { orgId, folderId: input.folderId ?? null, name: input.name ?? modelo.nome },
+      });
+      await this.prisma.workStatus.createMany({
+        data: modelo.etapas.map((e, i) => ({
+          orgId, listId: list.id, name: e.name, type: e.type as WorkStatusType,
+          color: e.color, order: i, limite: e.limite,
+        })),
+      });
+      for (const [i, c] of modelo.campos.entries()) {
+        const campo = await this.prisma.workField.create({
+          data: { orgId, listId: list.id, name: c.name, type: c.type as WorkFieldType, order: i },
+        });
+        if (c.opcoes && c.opcoes.length > 0) {
+          await this.prisma.workFieldOption.createMany({
+            data: c.opcoes.map((o, j) => ({ orgId, fieldId: campo.id, name: o.name, color: o.color, order: j })),
+          });
+        }
+      }
+      return list;
+    });
   }
 
   // ---------- utilitários ----------

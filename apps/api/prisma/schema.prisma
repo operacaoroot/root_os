@@ -152,6 +152,7 @@ model Org {
   workFieldOptions      WorkFieldOption[]
   workFieldValues       WorkFieldValue[]
   workComments          WorkComment[]
+  workApontamentos      WorkApontamento[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -202,6 +203,14 @@ model Org {
   // ESTA Org é um CLIENTE que autorizou suporte a entrar.
   empresasNaPlataforma EmpresaNaPlataforma[]
   acessosDeSuporte     AcessoDeSuporte[]
+
+  // O ONBOARDING DO CLIENTE (bloco no fim do arquivo, 23/09/2026). Mesma regra
+  // das de cima: só o outro lado da relação mora aqui.
+  onboardingTrilhos  OnboardingTrilho[]
+  onboardingItens    OnboardingItem[]
+  onboardingConvites OnboardingConvite[]
+  onboardingAtas     OnboardingAta[]
+  onboardingMarcos   OnboardingMarco[]
 }
 
 model User {
@@ -1777,6 +1786,15 @@ model WorkStatus {
   type   WorkStatusType @default(open)
   color  String         @default("#87909e")
   order  Int            @default(0)
+  /// LIMITE DE TRABALHO EM ANDAMENTO da etapa (o WIP do kanban). Nulo = sem
+  /// limite, o estado de toda etapa que já existia.
+  ///
+  /// AVISA, NÃO TRAVA: a coluna acima do limite aparece marcada no quadro, e o
+  /// PATCH que move a tarefa para lá continua passando. Limite de WIP é
+  /// combinado do time, discutido no check-in — um 400 no meio do arraste
+  /// transformaria o combinado em obstáculo e ensinaria todo mundo a apagar o
+  /// limite. O banco só recusa o que não faz sentido (zero ou negativo).
+  limite Int?
 
   tasks WorkTask[]
 
@@ -1877,6 +1895,20 @@ model WorkTask {
   /// travada?", que é a pergunta de quem procura trabalho parado; nulo sempre
   /// que `agenteId` é nulo, e os dois são escritos e apagados juntos.
   agenteEm    DateTime?
+  /// DESDE QUANDO a tarefa está na etapa atual. Responde "há quantos dias este
+  /// cliente está parado aqui?" — a idade do cartão no kanban.
+  ///
+  /// QUEM ESCREVE É O BANCO, não o serviço: o gatilho `WorkTask_statusDesde`
+  /// (migration `20260917010000_esteira_de_clientes`) carimba na inserção e em
+  /// toda troca de `statusId`. Três caminhos mudam etapa hoje — o PATCH do
+  /// quadro, o checkout atômico do `assumir` (um `updateMany` que não passa pelo
+  /// serviço) e a semente `seed-trabalho.ts` —, e uma regra no serviço seria
+  /// esquecida no primeiro que não passa por ele.
+  ///
+  /// Nulo = tarefa anterior à fatia. A data real de entrada na etapa não existe
+  /// para elas, e a tela não inventa uma: preencher com `updatedAt` publicaria
+  /// "parada há 2 dias" para o que está parado há dois meses.
+  statusDesde DateTime?
   dueDate     DateTime?
   startDate   DateTime?
   parentId    String?
@@ -1892,6 +1924,9 @@ model WorkTask {
   tags     WorkTag[]        @relation("WorkTaskTags")
   values   WorkFieldValue[]
   comments WorkComment[]
+  apontamentos WorkApontamento[]
+  /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
+  onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
 
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
@@ -1936,6 +1971,40 @@ model WorkComment {
 
   @@index([taskId, createdAt])
   @@index([orgId, createdAt])
+}
+
+/// HORAS APONTADAS numa tarefa — o registro de tempo da esteira de clientes.
+///
+/// Existe para responder uma pergunta de negócio que ninguém media: quantas
+/// horas de gente cada cliente consome, e EM QUAL ETAPA. É o número que define
+/// preço, margem e quantos clientes cabem na agenda.
+///
+/// `etapa` é o NOME da etapa no momento do lançamento, e não um ponteiro para
+/// `WorkStatus`: a soma por etapa tem de sobreviver a etapa renomeada ou
+/// apagada, e um ponteiro obrigaria a escolher entre perder a hora (cascade) e
+/// travar a limpeza da lista (restrict). Fotografia, como o `authorName` do
+/// comentário.
+///
+/// `dia` é DATE, não hora: quem aponta diz "gastei 1h30 na terça", e guardar
+/// um instante inventaria um horário que ninguém informou.
+model WorkApontamento {
+  id        String   @id @default(uuid())
+  /// Sentinela + gatilho `WorkApontamento_orgId_do_pai` (ver topo do arquivo).
+  orgId     String   @default("")
+  org       Org      @relation(fields: [orgId], references: [id])
+  taskId    String
+  task      WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  autorId   String?
+  autorNome String
+  /// Minutos, inteiros. O banco recusa zero, negativo e mais de um dia (1440).
+  minutos   Int
+  dia       DateTime @db.Date
+  etapa     String
+  nota      String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId, dia])
+  @@index([orgId, dia])
 }
 
 // ============================================================================
@@ -3752,4 +3821,234 @@ model AcessoDeSuporte {
   /// O caminho quente: "esta empresa autorizou este operador, e ainda vale?".
   @@index([orgId, operadorEmail, expiraEm])
   @@index([orgId, expiraEm])
+}
+
+// ============================================================================
+// O ONBOARDING DO CLIENTE — o trilho da esteira de entrega (23/09/2026)
+// ============================================================================
+//
+// Desenho em `docs/ONBOARDING.md`. Cinco tabelas, todas da empresa da ROOT
+// (tenant 001): o trilho fala DE um cliente, mas PERTENCE a quem o entrega —
+// como `EmpresaNaPlataforma`. O que o cliente confirma vira nota na memória
+// da empresa DELE (`ContextItem`, quando ela existe no OS); aqui fica o estado
+// da esteira, a proposta do agente e a prova de quem confirmou o quê.
+//
+// OS QUATRO FILHOS carregam `orgId` com a sentinela `''` e o gatilho
+// `mktos_orgid_do_pai('OnboardingTrilho', 'trilhoId')`: a empresa é sempre a
+// do trilho, e um filho pendurado em trilho de outra empresa é recusado pelo
+// banco. Entram em `FILHOS_COM_ORGID_REDUNDANTE`.
+
+/// As cinco fases da esteira do Pedro (nota de 23/09), mais o fim.
+enum OnboardingFase {
+  /// 0 · Qualificar — antes da 1ª reunião; bloco A do formulário.
+  qualificar
+  /// 1 · Diagnóstico — a reunião de 60 min com roteiro fixo.
+  diagnostico
+  /// 2 · Contrato e onboarding — D-10 a D-1; kickoff, ata, bancada, link.
+  contrato
+  /// 3 · Imersão — a instalação ao vivo, 2 dias.
+  imersao
+  /// 4 · Operação assistida — 30 a 90 dias.
+  operacao
+  /// Saiu da esteira, com ou sem case.
+  encerrado
+}
+
+/// Um cliente na esteira. Uma linha por cliente, da empresa que o entrega.
+model OnboardingTrilho {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// O nome do cliente como a Root o chama.
+  cliente String
+  /// Identificador estável por empresa (`andrade-pecas`). Entra na URL do link.
+  slug    String
+  fase    OnboardingFase @default(qualificar)
+
+  /// P1 · P2 · P3 · nao-entra (ICP — três perfis).
+  perfil  String?
+  /// beaba · avancar-junto · entregar-pronto (a oferta em três níveis).
+  nivel   String?
+  /// A chave da receita escolhida no cardápio (`receitas.ts`).
+  receita String?
+
+  /// O cartão na esteira de clientes do Trabalho, quando há um.
+  cardId String?
+  card   WorkTask? @relation("OnboardingDoCartao", fields: [cardId], references: [id], onDelete: SetNull)
+  /// A empresa do cliente no OS, quando provisionada. É lá que a memória mora.
+  /// Sem chave estrangeira, pelo mesmo motivo de `EmpresaNaPlataforma.empresaId`.
+  empresaId String?
+
+  contatoNome     String?
+  contatoWhatsapp String?
+  contatoEmail    String?
+
+  /// Quem conduz (o sócio da reunião inicial) e quem implanta.
+  conduzidoPor  String?
+  implantadoPor String?
+
+  reuniaoEm DateTime?
+  kickoffEm DateTime?
+  imersaoEm DateTime?
+  /// O grupo `ROOT | <cliente>` no WhatsApp, quando conhecido.
+  grupoJid  String?
+
+  /// OS PORTÕES, com data e quem: `entradaCompensadaEm`, `ambienteOkEm`,
+  /// `dupla`, `linhaDeBase`, `criterioDeSaida`, `antesDepois`. Formato em
+  /// `onboarding/trilho/fases.ts`; quem valida é o código, antes de avançar.
+  portoes Json @default("{}")
+
+  /// Toda fase termina com próximo passo, dono e data. Sem os três, alerta.
+  proximoPasso     String?
+  proximoPassoDono String?
+  proximoPassoEm   DateTime?
+
+  observacoes String?
+  criadoPor   String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  itens    OnboardingItem[]
+  convites OnboardingConvite[]
+  atas     OnboardingAta[]
+  marcos   OnboardingMarco[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, fase])
+  @@index([orgId, cardId])
+}
+
+/// Uma linha por (trilho, tema do formulário): a proposta do agente, o que o
+/// sócio decidiu e o que o cliente confirmou.
+model OnboardingItem {
+  id    String @id @default(uuid())
+  /// Sentinela: o gatilho troca por `OnboardingTrilho.orgId`. Ver o bloco.
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  trilhoId String
+  trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
+
+  /// O id do tema na espinha (`espinha.ts`): `negocio`, `a-sistemas`, `d-dupla`…
+  temaId String
+  /// A · B · C · D.
+  bloco  String
+
+  /// De onde a proposta veio: `ata` (o agente), `triagem` (bloco A respondido
+  /// antes), `root` (o sócio escreveu), `cliente` (respondido em branco).
+  origem String @default("ata")
+  /// `literal` (trecho citado como está) · `interpretado` (o agente juntou ou
+  /// deduziu) · `em-branco` (a ata não cobriu).
+  tipo   String @default("em-branco")
+
+  proposta    String?
+  fonteMinuto String?
+  fonteTrecho String?
+  fonteNota   String?
+
+  /// proposto → aprovado | descartado → confirmado | corrigido | respondido.
+  /// `em-branco` é o estado inicial de tema sem proposta.
+  status     String @default("em-branco")
+  textoFinal String?
+
+  aprovadoPor String?
+  aprovadoEm  DateTime?
+
+  respondidoPor String?
+  respondidoEm  DateTime?
+  /// `texto` · `audio`.
+  respondidoVia String?
+
+  /// A nota na memória da empresa do cliente, quando carregada.
+  notaId      String?
+  carregadoEm DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([trilhoId, temaId])
+  @@index([orgId, trilhoId])
+}
+
+/// O link público. Guarda o HASH do token, nunca o token.
+model OnboardingConvite {
+  id    String @id @default(uuid())
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  trilhoId String
+  trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
+
+  /// `A` (a triagem, antes da 1ª reunião) ou `BCD` (o formulário completo).
+  blocos    String
+  tokenHash String @unique
+  /// O token cifrado (AES-GCM, chave derivada de ENCRYPTION_KEY, AAD = id),
+  /// para o lembrete mandar o MESMO link. Nulo quando não há chave no ambiente.
+  tokenCifrado String?
+
+  validoAte   DateTime
+  revogadoEm  DateTime?
+  enviadoEm   DateTime?
+  lembradoEm  DateTime?
+  concluidoEm DateTime?
+
+  acessos        Int       @default(0)
+  ultimoAcessoEm DateTime?
+
+  criadoPor String?
+  criadoEm  DateTime @default(now())
+
+  @@index([orgId, trilhoId])
+}
+
+/// O registro de uma leitura de ata. A TRANSCRIÇÃO NÃO É GRAVADA: fica o hash,
+/// o tamanho, quantos segredos foram mascarados e o que a leitura rendeu.
+model OnboardingAta {
+  id    String @id @default(uuid())
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  trilhoId String
+  trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
+
+  /// `texto` · `pdf` · `link` · `granola`.
+  fonte      String
+  referencia String?
+  caracteres Int
+  hash       String
+  segredosRemovidos Int @default(0)
+
+  modelo        String?
+  custoUsd      Decimal @default(0) @db.Decimal(12, 6)
+  custoEstimado Boolean @default(false)
+  propostas     Int     @default(0)
+  emBranco      Int     @default(0)
+  erro          String?
+
+  lidaPor String?
+  lidaEm  DateTime @default(now())
+
+  @@index([orgId, trilhoId])
+}
+
+/// A linha do tempo do trilho. Cada marco também vai ao RASTRO (`eventoId`).
+model OnboardingMarco {
+  id    String @id @default(uuid())
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  trilhoId String
+  trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
+
+  /// `fase.avancou` · `portao.cumprido` · `convite.enviado` · `convite.lembrete`
+  /// · `ata.lida` · `retrato.fechado` · `memoria.carregada` · `alerta` …
+  tipo  String
+  texto String
+  dados Json   @default("{}")
+  quem  String?
+  eventoId String?
+  em    DateTime @default(now())
+
+  @@index([orgId, trilhoId, em])
 }
