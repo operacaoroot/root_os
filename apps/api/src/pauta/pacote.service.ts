@@ -26,6 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../storage/storage.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EpisodioService } from './episodio.service';
 import { VozService } from './voz.service';
 import { itensMantidos, lerTranscricao } from './episodio';
@@ -131,6 +132,7 @@ export class PacoteService {
       user: entradaDoPacote({ apelido, titulo: e.titulo, itens, segmentos, duracaoSeg }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,
+      maxTokens: SAIDA_DA_GERACAO_LONGA,
     });
 
     let pacote;

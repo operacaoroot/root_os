@@ -11,6 +11,7 @@ import {
   type PautaItemCurado,
 } from '@mktos/shared';
 import { cabeNaDescricao, paginaParaATela, type LinhaDaPagina } from './pagina-de-links-do-episodio';
+import { ehLinkPrivado } from './link-publico';
 
 /*
  * O EPISÓDIO (MC7) — a parte pura: número, título padrão e a leitura dos
@@ -55,8 +56,9 @@ export function itensMantidos(itens: unknown): PautaItemCurado[] {
     .map((i) => {
       const { marcado: _marcado, ...resto } = i;
       // O link de caixa de entrada é privado: o episódio é a fonte da página
-      // de links pública (MC12) e não pode nem carregá-lo.
-      return resto.semLinkPublico ? { ...resto, url: '' } : resto;
+      // de links pública (MC12) e não pode nem carregá-lo. A marca é regravada
+      // porque o item antigo chega sem ela (`link-publico.ts`).
+      return ehLinkPrivado(resto) ? { ...resto, url: '', semLinkPublico: true } : resto;
     });
 }
 

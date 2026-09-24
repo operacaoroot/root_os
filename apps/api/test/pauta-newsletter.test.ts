@@ -53,6 +53,7 @@ import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 
 /*
  * A NEWSLETTER A PARTIR DA TRANSCRIÇÃO — MC13.
@@ -516,7 +517,7 @@ function servico(opts: {
 } = {}) {
   const lista = opts.episodios ?? [ep()];
   const pecas: Peca[] = opts.pecas ?? [];
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const auditoria: Array<Record<string, unknown>> = [];
   const travas: string[] = [];
   let seq = 0;
@@ -527,7 +528,7 @@ function servico(opts: {
     model: 'dublê-1',
     configured: true,
     supportsTools: false,
-    complete: async (m: { system: string; user: string; orgId?: string }) => {
+    complete: async (m: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       chamadas.push(m);
       opts.duranteIa?.({ lista, pecas });
       const saidas = opts.saidas ?? [respostaDaIa()];
@@ -607,6 +608,7 @@ describe('newsletter: gerar (o critério de pronto, com a transcrição de exemp
 
     expect(s.chamadas).toHaveLength(1);
     expect(s.chamadas[0].orgId).toBe(ORG);
+    expect(s.chamadas[0].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);
     expect(s.chamadas[0].system).toContain(TOM_DA_CASA);
     expect(s.chamadas[0].user).toContain('[01:04] A segunda é o agente que preenche planilha');
 
@@ -643,6 +645,7 @@ describe('newsletter: gerar (o critério de pronto, com a transcrição de exemp
     expect(s.chamadas[1].user).toContain('- Emoji: "🚀"');
     expect(s.chamadas[1].user).toContain('- Palavra proibida da casa: "alavancar"');
     expect(s.chamadas[1].orgId).toBe(ORG);
+    expect(s.chamadas[1].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);
     expect(n!.checagem.aprovada).toBe(true);
     expect(n!.tentativas).toBe(2);
     const rastro = s.auditoria.find((a) => a.action === 'pauta.newsletter_gerada') as { after: Record<string, unknown> };

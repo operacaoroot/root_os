@@ -193,9 +193,22 @@ link inativo manda para a home da bio sem medir nada. Agora é um **link de camp
 episódio da rodada, e **no ar**: chave `campanha:peca:<id>` (`bio/link-de-campanha.ts`), inativo
 para não aparecer na página, mas o `BioService.destinoDoLink` segue link ativo **ou** de campanha
 (sempre com a página no ar) — o clique cai na matéria e grava o `PixelEvent`. O destino é o primeiro
-item com link público pela regra da página e da descrição (`linkDoPacote`: nunca o permalink da
-newsletter). Sem episódio, sem página ou com a página em rascunho, a peça sai com o destino cru e
+item com link público pela regra única de `pauta/link-publico.ts` (ver abaixo). Sem episódio, sem página ou com a página em rascunho, a peça sai com o destino cru e
 o motivo vai ao RASTRO (`rastreio` em `pauta.peca_publicada`).
+
+**O link que pode sair é decidido num lugar só (MC-R): `pauta/link-publico.ts`.** O destino da peça
+no grupo, a página de links (MC12), a descrição do YouTube (MC11), a newsletter (MC13), o roteiro
+(MC8), o miolo da curadoria e o pedido que deriva as peças chamam `linkPublicoDoItem`. A marca
+`semLinkPublico` não basta — a captura de newsletter antiga, a rodada de antes do MC6 e o item cuja
+fonte foi apagada chegam sem ela e com o permalink do Gmail no `url`. Barra qualquer um dos três: a
+marca, a origem L (em qualquer uma das `origens` da matéria) e o host de caixa de entrada. O texto
+já gravado, escrito pelo modelo ou editado à mão (o miolo da rodada, o corpo da peça que vai ao grupo
+e ao ClickUp, a legenda e os slides do carrossel do Instagram) passa por `semLinksDeCaixaDeEntrada`,
+que acha o `http` em qualquer posição (inclusive dentro de `_itálico_` e `*negrito*`) e varre o
+texto em tempo linear. A captura sem fonte com permalink de caixa de entrada nasce marcada na
+curadoria e não se funde com outra newsletter no insumo; o candidato antigo ganha a marca na leitura
+(`lerCandidatos`, também no `GET /pauta/rodadas/:id` em curadoria, que é o que a aba lê — a tela
+mostra "só contexto") e o item antigo, ao entrar no episódio (`itensMantidos`).
 
 ## 8. Espelho `.md` no vault — três destinos, escolhidos na tela
 
@@ -451,7 +464,7 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     (`pauta.episodio_criado`/`_titulo`/`_status`). Nada sai do OS.
   - **A rodada que virou episódio não se apaga** (409 na API, inclusive quando o episódio nasce
     entre a conferência e o delete; o banco recusa por fora dela).
-  - O item de newsletter (`semLinkPublico`) chega ao episódio **sem** o `url`: o episódio é a fonte
+  - O item de link privado (a regra única de `link-publico.ts`) chega ao episódio **sem** o `url` e com a marca `semLinkPublico`: o episódio é a fonte
     da página de links pública (MC12) e não carrega o link privado da caixa de entrada.
   - **Tela:** aba "Episódios" em `/pauta` (lista com número, título e status; detalhe com a linha
     do tempo das sete etapas, os itens e os botões dos vizinhos). "Criar episódio" na rodada
@@ -517,8 +530,12 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     `pauta.episodio_transcricao`, com o nome do arquivo e nunca a pasta do Mac.
   - **Rota antes do `:id`:** o `MidiaController` é registrado antes do `EpisodioController`, senão
     o `GET /pauta/episodios/:id` casa com `pendentes-midia` e responde 404.
-  - **Limite prático:** o corpo JSON do Nest é de 100 kb, cerca de 40 min de fala; a ferramenta
-    confere antes de mandar. Subir o limite é decisão de quem cuida da API.
+  - **Limite do corpo (MC-R):** a API inteira segue no corpo JSON de 100 kb do Nest; só
+    `POST /pauta/episodios/:id/midia` e `/transcricao` aceitam até 2 MB
+    (`PAUTA_TETO_DO_CORPO_DA_MIDIA`, `common/corpo-da-midia.ts`, instalado no `main.ts` antes do
+    parser padrão). Quem limita de verdade são os tetos do schema (2000 segmentos, 120 mil
+    caracteres, ~1h de fala); o pior corpo que eles deixam passar fica abaixo de 1 MB. A
+    ferramenta confere o tamanho antes de mandar. Os 100 kb acabavam por volta de 40 min de fala.
   - **No Mac** (`tools/root-midia/`, Node 22 sem dependência; README e `SKILL.md` lá): `pendentes`,
     `silencios` (ffmpeg silencedetect), `cortes` (a lista do que manter), `cortar` (sem reencodar
     quando toda borda cai em quadro-chave; senão `trim` + `concat`), `transcrever` (`whisper-cli`,

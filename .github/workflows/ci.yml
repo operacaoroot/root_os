@@ -1152,8 +1152,33 @@ jobs:
       # com o banco de teste, e 1847 passados / 570 pulados sem ele (1795 + 52).
       # O piso de ARQUIVOS vai a 53; o de CASOS sobe 45 (~15% de folga sobre os
       # 52 que rodam sem banco), para 1778.
-      PISO_CASOS_API: '1778'
-      PISO_ARQUIVOS_API: '53'
+      #
+      # MC-R, OS CONSERTOS DE ROBUSTEZ DAS ONDAS A E B (24/09/2026): +31 casos,
+      # +1 arquivo, só desta fatia — `pauta-robustez` (31), todos sem banco. O
+      # link privado: a regra única (marca, origem L em qualquer das origens,
+      # host de caixa de entrada; http(s) sem `<>`), o texto sem o endereço de
+      # caixa, e a captura L antiga sem a marca fora de todo caminho — destino e
+      # mensagem do WhatsApp, página de links, descrição e pedido do pacote,
+      # newsletter, roteiro (pedido e markdown), miolo da curadoria, pedido e
+      # serviço da derivação, item do episódio, candidato e linha do prompt da
+      # rodada. O teto de saída: `saidaDaResposta`, OpenAI, OpenRouter,
+      # Anthropic (padrão intacto, sem temperature/top_p/top_k; padrão baixado
+      # sobe) e a reserva do envelope. O corpo das rotas de mídia: o parser do
+      # Nest continua instalado, 500 kB passa só na mídia e na transcrição, 2 MB
+      # é 413, as vizinhas seguem em 100 kb, o pior corpo válido cabe com folga,
+      # o `main.ts` instala antes do `listen`. Depois da revisão (+7): o link
+      # colado em `_itálico_`/`*negrito*`/letra, o `()` que não era do link, a
+      # varredura linear com 100 mil espaços, o rótulo "newsletter" só no item
+      # privado, o ClickUp e o carrossel sem o permalink, o GET da rodada em
+      # curadoria com a marca e as newsletters sem fonte que não se fundem. As
+      # asserções de `maxTokens` nos arquivos da pauta não somam caso.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2448 casos em 62 arquivos
+      # com o banco de teste, e 1878 passados / 570 pulados sem ele (1847 + 31).
+      # O piso de ARQUIVOS vai a 54; o de CASOS sobe 26 (~16% de folga sobre os
+      # 31 que rodam sem banco), para 1804.
+      PISO_CASOS_API: '1804'
+      PISO_ARQUIVOS_API: '54'
 
     steps:
       - uses: actions/checkout@v4

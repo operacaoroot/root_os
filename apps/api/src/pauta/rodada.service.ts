@@ -28,6 +28,7 @@ import {
   aplicarSugestoes,
   candidatoDaCaptura,
   corpoDaCuradoria,
+  entradaDasPecas,
   itensDaCuradoria,
   lerCandidatos,
   marcar,
@@ -37,6 +38,7 @@ import {
   type SugestaoDaIa,
 } from './curadoria-da-rodada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { VozService } from './voz.service';
 import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
 
@@ -600,19 +602,10 @@ export class RodadaService {
           .join('\n\n')
       : '(acervo sem fichas campeãs — escreva no tom direto da ROOT)';
 
-    const itens = (rodada.itens as unknown as Array<ItemCurado & { resumo?: string; semLinkPublico?: boolean }>) ?? [];
     const saida = await this.llm.complete({
       system: systemDasPecas(await this.vozes.bloco(orgId, '')),
-      user:
-        `Edição: ${rodada.titulo}\n\nMiolo curado:\n${rodada.corpo}\n\n` +
-        `Itens (com URL):\n${itens
-          .map(
-            (i) =>
-              `- ${i.titulo}${i.semLinkPublico ? ' (newsletter, sem link público)' : ` — ${i.url}`}` +
-              (i.ganchoBr ? ` (gancho BR: ${i.ganchoBr})` : i.resumo ? ` (resumo: ${i.resumo})` : ''),
-          )
-          .join('\n')}\n\n` +
-        `Repertório de estruturas campeãs:\n${repertorio}`,
+      user: entradaDasPecas({ titulo: rodada.titulo, corpo: rodada.corpo, itens: rodada.itens, repertorio }),
+      maxTokens: SAIDA_DA_GERACAO_LONGA,
       // De quem é o gasto (RF-G-05). Ver o comentário em `gerar`.
       orgId,
     });

@@ -52,6 +52,7 @@ import { comContexto } from '../src/common/contexto-execucao';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 
 /*
  * O ROTEIRO DO EPISÓDIO — MC8.
@@ -384,7 +385,7 @@ function servico(opts: {
   duranteIa?: (lista: Ep[]) => void;
 } = {}) {
   const lista = opts.episodios ?? [ep()];
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const condicionais: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
   const auditoria: Array<Record<string, unknown>> = [];
   const espelhados: Array<{ orgId: string; nome: string; conteudo: string; subpastaLocal?: string }> = [];
@@ -395,7 +396,7 @@ function servico(opts: {
     model: 'dublê-1',
     configured: true,
     supportsTools: false,
-    complete: async (m: { system: string; user: string; orgId?: string }) => {
+    complete: async (m: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       chamadas.push(m);
       opts.duranteIa?.(lista);
       return opts.saida ?? respostaDaIa([4, 2, 3, 1]);
@@ -464,6 +465,8 @@ describe('roteiro: gerar', () => {
 
     expect(s.chamadas).toHaveLength(1);
     expect(s.chamadas[0].orgId).toBe(ORG);
+    // MC-R: o roteiro é geração longa — pede o teto de saída maior.
+    expect(s.chamadas[0].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);
     expect(s.chamadas[0].system).toContain(TOM_DA_CASA);
     for (const i of ITENS) expect(s.chamadas[0].user).toContain(i.titulo);
 

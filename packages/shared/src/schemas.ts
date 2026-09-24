@@ -1836,13 +1836,20 @@ export const PAUTA_TETO_DA_DURACAO_SEG = 4 * 3600;
 export const PAUTA_TETO_DE_CORTES = 3000;
 /*
  * Os tetos da transcrição valem para 1h de fala (~1 segmento a cada 3 s, ~150
- * palavras/min). Na prática o corpo JSON de 100 kb do Nest chega antes, por
- * volta de 40 min de fala — a estação de mídia confere o tamanho antes de
- * mandar e diz isso em vez de receber um 413 mudo.
+ * palavras/min). São eles que limitam o tamanho do que a rota aceita: o corpo
+ * JSON da API é de 100 kb, que acabava por volta de 40 min de fala, e as duas
+ * rotas de mídia do episódio aceitam até `PAUTA_TETO_DO_CORPO_DA_MIDIA` (MC-R).
  */
 export const PAUTA_TETO_DE_SEGMENTOS = 2000;
 export const PAUTA_TETO_DO_SEGMENTO = 2000;
 export const PAUTA_TETO_DA_TRANSCRICAO = 120_000;
+/**
+ * O corpo JSON das rotas `POST /pauta/episodios/:id/midia` e `/transcricao`, em
+ * bytes. O pior corpo que os tetos acima deixam passar (2000 segmentos com
+ * tempos de 4h e 120 mil caracteres fora do ASCII, escapados em `\uXXXX`) fica
+ * abaixo de 1 MB; 2 MB é o dobro disso, e nenhuma outra rota muda.
+ */
+export const PAUTA_TETO_DO_CORPO_DA_MIDIA = 2 * 1024 * 1024;
 /**
  * Folga entre o fim da transcrição e a duração do vídeo final (s): o whisper
  * arredonda o último segmento para cima e o ffprobe mede o contêiner.

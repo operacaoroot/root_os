@@ -66,6 +66,7 @@ import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 
 /*
  * O PACOTE DO YOUTUBE — MC11.
@@ -621,7 +622,7 @@ function servico(opts: {
   guardados?: Record<string, Buffer>;
 } = {}) {
   const lista = opts.episodios ?? [ep()];
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const condicionais: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
   const auditoria: Array<Record<string, unknown>> = [];
   const guardados: Record<string, Buffer> = opts.guardados ?? {};
@@ -632,7 +633,7 @@ function servico(opts: {
     model: 'dublê-1',
     configured: true,
     supportsTools: false,
-    complete: async (m: { system: string; user: string; orgId?: string }) => {
+    complete: async (m: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       chamadas.push(m);
       opts.duranteIa?.(lista);
       return opts.saida ?? respostaDaIa();
@@ -699,6 +700,7 @@ describe('pacote: gerar (o critério de pronto, com a transcrição de exemplo)'
 
     expect(s.chamadas).toHaveLength(1);
     expect(s.chamadas[0].orgId).toBe(ORG);
+    expect(s.chamadas[0].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);
     expect(s.chamadas[0].system).toContain(TOM_DA_CASA);
     expect(s.chamadas[0].user).toContain('[01:04] A segunda é o agente');
 

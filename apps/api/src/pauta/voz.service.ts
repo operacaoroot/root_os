@@ -23,6 +23,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import {
   SYSTEM_VOZ,
   TOM_DA_CASA,
@@ -184,6 +185,7 @@ export class VozService {
       user: entradaDaVoz(material),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,
+      maxTokens: SAIDA_DA_GERACAO_LONGA,
     });
 
     let corpo: string;

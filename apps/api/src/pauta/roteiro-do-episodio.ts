@@ -10,6 +10,7 @@ import {
   type PautaOrigemDaPalavraDeCorte,
 } from '@mktos/shared';
 import { parseJsonDaIa } from './parse-json';
+import { linkPublicoDoItem } from './link-publico';
 
 /*
  * ============================================================================
@@ -68,11 +69,12 @@ export function systemDoRoteiro(voz: string): string {
   return `${SYSTEM_ROTEIRO_BASE}\n\n${voz.trim()}`;
 }
 
-/** Só http(s) vira link: o roteiro abre numa tela com links clicáveis. */
-export function linkPublico(item: Pick<PautaItemCurado, 'url' | 'semLinkPublico'>): string | null {
-  if (item.semLinkPublico) return null;
-  const url = (item.url ?? '').trim();
-  return /^https?:\/\/\S+$/i.test(url) ? url : null;
+/**
+ * O link da matéria no roteiro, pela regra única de `link-publico.ts`: o
+ * roteiro abre numa tela com links clicáveis e é espelhado no vault.
+ */
+export function linkPublico(item: Pick<PautaItemCurado, 'url' | 'semLinkPublico' | 'origem' | 'origens'>): string | null {
+  return linkPublicoDoItem(item);
 }
 
 function umaLinha(v: unknown, teto: number): string {

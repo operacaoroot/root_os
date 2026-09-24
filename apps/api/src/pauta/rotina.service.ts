@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
 import { semPai } from './episodio';
+import { lerCandidatos } from './curadoria-da-rodada';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
 
@@ -231,7 +232,11 @@ export class RotinaService {
       status: r.status,
       rotina: r.rotina?.nome ?? null,
       corpo: r.corpo,
-      itens: (r.itens ?? []) as unknown as PautaRodadaDetalhe['itens'],
+      // Em curadoria, o candidato gravado antes da regra única ganha na leitura a
+      // marca `semLinkPublico`: a tela mostra "só contexto" e não o permalink.
+      itens: (r.status === 'aguardando_curadoria'
+        ? lerCandidatos(r.itens)
+        : (r.itens ?? [])) as unknown as PautaRodadaDetalhe['itens'],
       fichasUsadas: r.fichasUsadas.length,
       provider: r.provider,
       model: r.model,

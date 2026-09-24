@@ -52,6 +52,7 @@ import { comContexto } from '../src/common/contexto-execucao';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
 
 /*
  * A VOZ DO AUTOR — MC10.
@@ -488,14 +489,14 @@ function servicoDeVoz(opts: {
     { id: EP2, orgId: ORG, numero: 4, titulo: 'Semana 40', transcricaoTexto: '' },
     { id: EP3, orgId: OUTRA, numero: 1, titulo: 'De outra empresa', transcricaoTexto: FALA },
   ];
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const auditoria: Array<Record<string, unknown>> = [];
   const llm = {
     name: 'dublê',
     model: 'dublê-1',
     configured: true,
     supportsTools: false,
-    complete: async (msg: { system: string; user: string; orgId?: string }) => {
+    complete: async (msg: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       chamadas.push(msg);
       return opts.saida ?? respostaDaVoz();
     },
@@ -527,6 +528,7 @@ describe('voz: aprender', () => {
 
     expect(s.chamadas).toHaveLength(1);
     expect(s.chamadas[0].orgId).toBe(ORG);
+    expect(s.chamadas[0].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);
     expect(s.chamadas[0].system).toBe(SYSTEM_VOZ);
     expect(s.chamadas[0].user).toContain('episódio ep-03 · Semana 39');
     expect(s.chamadas[0].user).toContain('Simples assim.');
@@ -722,13 +724,13 @@ async function comPerfil(perfil: string | null) {
   return m;
 }
 
-function llmQueResponde(saida: string, chamadas: Array<{ system: string; user: string; orgId?: string }>) {
+function llmQueResponde(saida: string, chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }>) {
   return {
     name: 'dublê',
     model: 'd',
     configured: true,
     supportsTools: false,
-    complete: async (msg: { system: string; user: string; orgId?: string }) => {
+    complete: async (msg: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       chamadas.push(msg);
       return saida;
     },
@@ -737,7 +739,7 @@ function llmQueResponde(saida: string, chamadas: Array<{ system: string; user: s
 
 async function gerarRoteiro(perfil: string | null) {
   const m = await comPerfil(perfil);
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const llm = llmQueResponde(
     JSON.stringify({
       abertura: 'O preço caiu.',
@@ -776,7 +778,7 @@ async function gerarRoteiro(perfil: string | null) {
 
 async function derivarPecas(perfil: string | null) {
   const m = await comPerfil(perfil);
-  const chamadas: Array<{ system: string; user: string; orgId?: string }> = [];
+  const chamadas: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const llm = llmQueResponde(JSON.stringify({ whatsapp: { titulo: 'W', corpo: 'O preço caiu. Bora?' } }), chamadas);
   const criadas: unknown[] = [];
   const prisma = {

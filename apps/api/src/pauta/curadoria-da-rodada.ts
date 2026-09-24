@@ -1,6 +1,6 @@
 import type { PautaItemCurado, PautaOrigem } from '@mktos/shared';
-import { ORIGENS_SEM_LINK_PUBLICO, origensDa, type CapturaDoInsumo } from './origem-da-rodada';
-import { linkDoPacote } from './pacote-do-episodio';
+import { origensDa, type CapturaDoInsumo } from './origem-da-rodada';
+import { ehLinkPrivado, linkPublicoDoItem, semLinksDeCaixaDeEntrada } from './link-publico';
 
 /*
  * ============================================================================
@@ -83,7 +83,7 @@ export function candidatoDaCaptura(c: CapturaCandidata): Candidato {
   };
   if (origens.length) candidato.origem = origens[0];
   if (origens.length > 1) candidato.origens = origens;
-  if (origens.some((o) => ORIGENS_SEM_LINK_PUBLICO.includes(o))) candidato.semLinkPublico = true;
+  if (ehLinkPrivado({ url: c.url, origens })) candidato.semLinkPublico = true;
   return candidato;
 }
 
@@ -129,7 +129,11 @@ export function lerCandidatos(itens: unknown): Candidato[] {
   if (!Array.isArray(itens)) return [];
   return itens
     .filter((i): i is Candidato => !!i && typeof (i as { id?: unknown }).id === 'string')
-    .map((i) => ({ ...i, sugerido: i.sugerido === true, marcado: i.marcado === true }));
+    .map((i) => {
+      const c = { ...i, sugerido: i.sugerido === true, marcado: i.marcado === true };
+      // Candidato gravado antes da regra única chega sem a marca: ela é relida aqui.
+      return !c.semLinkPublico && ehLinkPrivado(c) ? { ...c, semLinkPublico: true } : c;
+    });
 }
 
 export type MarcacaoLida = { candidatos: Candidato[]; marcados: number } | { erro: string };
@@ -168,24 +172,58 @@ export function corpoDaCuradoria(itens: readonly PautaItemCurado[]): string {
   return itens
     .map((i) => {
       const detalhe = [i.porque, i.resumo].filter((t) => t && t.trim()).join(' — ');
-      const link = i.semLinkPublico || !i.url ? '' : ` (${i.url})`;
+      const url = linkPublicoDoItem(i);
+      const link = url ? ` (${url})` : '';
       return `- **${i.titulo}**${link}${detalhe ? `: ${detalhe}` : ''}`;
     })
     .join('\n');
 }
 
 /**
- * O destino do link publicado: o primeiro item com link público, pela MESMA
- * regra da página de links e da descrição (`linkDoPacote`). Newsletter antiga,
- * sem a marca `semLinkPublico`, ainda guarda o permalink do Gmail no `url`: a
- * origem L e o host de caixa de entrada é que a barram.
+ * O destino do link publicado: o primeiro item com link público, pela regra
+ * única (`link-publico.ts`) — a mesma da página de links e da descrição. A
+ * newsletter antiga, sem a marca `semLinkPublico`, ainda guarda o permalink do
+ * Gmail no `url`: a origem L e o host de caixa de entrada é que a barram.
  */
 export function destinoDosItens(itens: unknown): string | null {
   const lista = Array.isArray(itens) ? (itens as Array<Partial<PautaItemCurado> | null>) : [];
   for (const i of lista) {
     if (!i || typeof i !== 'object') continue;
-    const url = linkDoPacote({ url: typeof i.url === 'string' ? i.url : '', semLinkPublico: i.semLinkPublico, origem: i.origem });
+    const url = linkPublicoDoItem({
+      url: typeof i.url === 'string' ? i.url : '',
+      semLinkPublico: i.semLinkPublico,
+      origem: i.origem,
+      origens: Array.isArray(i.origens) ? i.origens : null,
+    });
     if (url) return url;
   }
   return null;
+}
+
+/** Um item da rodada como a derivação das peças o lê: JSON de banco, qualquer idade. */
+type ItemDaDerivacao = Partial<Pick<PautaItemCurado, 'titulo' | 'url' | 'ganchoBr' | 'resumo' | 'semLinkPublico' | 'origem' | 'origens'>>;
+
+/**
+ * O pedido que deriva as peças da rodada. O link de cada item sai pela regra
+ * única, e o miolo gravado passa sem endereço de caixa de entrada: a peça do
+ * WhatsApp é escrita a partir deste texto, e o que o modelo não viu ele não
+ * copia para o grupo.
+ */
+export function entradaDasPecas(e: { titulo: string; corpo: string; itens: unknown; repertorio: string }): string {
+  const itens = (Array.isArray(e.itens) ? e.itens : []).filter(
+    (i): i is ItemDaDerivacao => !!i && typeof i === 'object',
+  );
+  const linhas = itens.map((i) => {
+    const item = { ...i, origens: Array.isArray(i.origens) ? i.origens : null };
+    const url = linkPublicoDoItem(item);
+    // Só o privado é newsletter; a mensagem do grupo sem URL não é.
+    const link = url ? ` — ${url}` : ehLinkPrivado(item) ? ' (newsletter, sem link público)' : ' (sem link)';
+    const extra = i.ganchoBr ? ` (gancho BR: ${i.ganchoBr})` : i.resumo ? ` (resumo: ${i.resumo})` : '';
+    return `- ${i.titulo ?? '(sem título)'}${link}${extra}`;
+  });
+  return (
+    `Edição: ${e.titulo}\n\nMiolo curado:\n${semLinksDeCaixaDeEntrada(e.corpo)}\n\n` +
+    `Itens (com URL):\n${linhas.join('\n')}\n\n` +
+    `Repertório de estruturas campeãs:\n${e.repertorio}`
+  );
 }

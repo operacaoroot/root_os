@@ -10,6 +10,7 @@ import {
   type PautaPaginaDeLinks,
 } from '@mktos/shared';
 import { linkDoPacote } from './pacote-do-episodio';
+import { ehLinkPrivado } from './link-publico';
 import { ehLinkDeCampanha } from '../bio/link-de-campanha';
 
 /*
@@ -140,7 +141,7 @@ export function planoDaPagina(itens: readonly PautaItemCurado[], casa: readonly 
   for (const item of itens) {
     const url = linkDoPacote(item);
     if (!url) {
-      if (item.origem === 'L' || item.semLinkPublico) privados += 1;
+      if (ehLinkPrivado(item)) privados += 1;
       continue;
     }
     if (url.length > TETO_DO_DESTINO) {

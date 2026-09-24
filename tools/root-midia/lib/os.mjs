@@ -8,8 +8,12 @@
 import { PALAVRA_PADRAO, cortesAplicados } from './cortes.mjs';
 import { segmentosDaTranscricao } from './whisper.mjs';
 
-/** O corpo JSON que o Nest aceita por padrão (100 kb), com uma folga para os cabeçalhos. */
-export const TETO_DO_CORPO = 100 * 1024 - 2048;
+/**
+ * O corpo JSON que as rotas de mídia do episódio aceitam (2 MB, o
+ * `PAUTA_TETO_DO_CORPO_DA_MIDIA` do shared — `apps/api/test/pauta-robustez.test.ts`
+ * confere que os dois andam juntos), com uma folga. O resto da API segue nos 100 kb do Nest.
+ */
+export const TETO_DO_CORPO = 2 * 1024 * 1024 - 2048;
 
 /**
  * As variáveis que a ferramenta lê. Faltar a senha não é erro aqui: só os
@@ -237,7 +241,7 @@ export function corpoGrandeDemais(corpo) {
   const bytes = Buffer.byteLength(JSON.stringify(corpo), 'utf8');
   if (bytes <= TETO_DO_CORPO) return null;
   return (
-    `A transcrição tem ${Math.round(bytes / 1024)} kB e a API aceita até ~${Math.floor(TETO_DO_CORPO / 1024)} kB por pedido ` +
-    '(cerca de 40 min de fala). Suba o limite do corpo na API ou divida o episódio — decisão de quem cuida da API.'
+    `A transcrição tem ${Math.round(bytes / 1024)} kB e a API aceita até ~${Math.floor(TETO_DO_CORPO / 1024)} kB por pedido. ` +
+    'Isso passa muito de 1h de fala: confira se o arquivo é a transcrição do vídeo final ou divida o episódio.'
   );
 }

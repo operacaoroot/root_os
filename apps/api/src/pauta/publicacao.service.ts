@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { EvolutionService } from './evolution.service';
 import { ClickupService } from '../integrations/clickup.service';
 import { destinoDosItens } from './curadoria-da-rodada';
+import { semLinksDeCaixaDeEntrada } from './link-publico';
 import { chaveDeCampanha } from '../bio/link-de-campanha';
 
 /** Para onde foi o link da peça — vai ao RASTRO, para "não foi medido" nunca ser silêncio. */
@@ -141,7 +142,9 @@ export class PublicacaoService {
     }
 
     const destino = this.destinoDaRodada(peca.rodada.itens);
-    let texto = peca.corpo;
+    // O corpo foi escrito pelo modelo (e pode ter sido editado à mão): o link
+    // de caixa de entrada não sai para o grupo nem que alguém o tenha colado.
+    let texto = semLinksDeCaixaDeEntrada(peca.corpo);
     let bioLinkId: string | null = null;
     let rastreio: RastreioDaPeca = 'sem_link';
     if (destino) {
@@ -195,7 +198,7 @@ export class PublicacaoService {
     peca: { id: string; titulo: string; corpo: string },
     actorId: string,
   ) {
-    const t = await this.clickup.criarTarefa({ nome: peca.titulo, descricao: peca.corpo });
+    const t = await this.clickup.criarTarefa({ nome: peca.titulo, descricao: semLinksDeCaixaDeEntrada(peca.corpo) });
     await this.prisma.pautaPeca.update({
       where: { id: peca.id },
       data: {
@@ -220,7 +223,9 @@ export class PublicacaoService {
 
   /**
    * Pacote da peça de Instagram para a máquina de carrossel (marca `root`):
-   * capa + slides + legenda no formato que o gerador consome.
+   * capa + slides + legenda no formato que o gerador consome. A legenda e os
+   * slides vão para o Instagram, que é público: passam pela mesma barreira do
+   * grupo, porque a peça derivada antes do MC-R pode ter o permalink no texto.
    */
   async exportarCarrossel(orgId: string, pecaId: string) {
     const peca = await this.prisma.pautaPeca.findFirst({ where: { id: pecaId, orgId } });
@@ -231,11 +236,11 @@ export class PublicacaoService {
     return {
       marca: 'root',
       titulo: peca.titulo,
-      legenda: peca.corpo,
+      legenda: semLinksDeCaixaDeEntrada(peca.corpo),
       slides: (meta.slides ?? []).map((s, i) => ({
         ordem: i + 1,
-        titulo: s.titulo ?? '',
-        texto: s.texto ?? '',
+        titulo: semLinksDeCaixaDeEntrada(s.titulo ?? ''),
+        texto: semLinksDeCaixaDeEntrada(s.texto ?? ''),
       })),
     };
   }

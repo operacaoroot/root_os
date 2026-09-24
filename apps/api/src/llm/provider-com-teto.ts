@@ -121,7 +121,7 @@ export class ProviderComTeto implements LlmProvider {
           orgId,
           modelo: this.interno.model,
           entrada,
-          tokensSaida: this.interno.tetoDeSaida({ tipo: 'completa' }),
+          tokensSaida: this.interno.tetoDeSaida({ tipo: 'completa', maxTokens: input.maxTokens }),
         })
       : null;
 

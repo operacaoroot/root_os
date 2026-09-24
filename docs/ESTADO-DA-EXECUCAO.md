@@ -515,10 +515,12 @@ O banco `marketing_os_e2e` ficou no container descartável.
   além do que cada fatia registrou como decisão provisória.
 - **MC14 a MC18 e D-MC6, D-MC8, D-MC9** ficaram fora da onda, por escopo.
 - **A limpeza de thumbs antigas no MinIO** e o **limite de corpo de 100 kB** do Nest são decisões
-  de quem cuida da API; nenhuma foi mexida.
+  de quem cuida da API; nenhuma foi mexida. (O limite do corpo foi resolvido na MC-R, só para as
+  rotas de mídia.)
 - **Problema anterior à frente, achado no MC12 e não corrigido:** `destinoDosItens`
   (`curadoria-da-rodada.ts`) pode escolher o permalink do Gmail de uma newsletter antiga sem a
-  marca `semLinkPublico`, e a peça do WhatsApp mandaria esse link privado ao grupo.
+  marca `semLinkPublico`, e a peça do WhatsApp mandaria esse link privado ao grupo. (Corrigido na
+  MC-R, com a regra única de `pauta/link-publico.ts`.)
 
 **Ordem de deploy desta onda.** Soma-se à da MC-A (A1–A5) e à consolidada do §3:
 
@@ -559,9 +561,57 @@ O banco `marketing_os_e2e` ficou no container descartável.
 **Riscos que esta onda deixa:** os prompts de roteiro, pacote, newsletter e voz nunca viram um
 modelo de verdade, então o primeiro episódio real é também o primeiro teste do formato. Com
 `LLM_PROVIDER=openai` a saída de `complete()` fica em 900 tokens (`TETO_SAIDA_RESPOSTA`, anterior
-à frente), pouco para roteiro e newsletter longos; o padrão `anthropic` usa 16000. E o aviso do
+à frente), pouco para roteiro e newsletter longos; o padrão `anthropic` usa 16000. (Resolvido na
+MC-R: as gerações longas pedem 8000 via `maxTokens`.) E o aviso do
 papel restrito da MC-A continua valendo: sem a decisão do passo 16, a rodada da semana só sai pelo
 "Rodar agora".
+
+### Onda MC-R — consertos de robustez das ondas A e B · commitada (24/09/2026)
+
+Três defeitos apontados nos fechamentos da MC-A e da MC-B, cada um com teste que falhava antes
+(`apps/api/test/pauta-robustez.test.ts`: 14 dos 24 casos originais reprovam no código anterior) e
+passa agora; a revisão de três leitores somou 7 casos (abaixo).
+
+1. **O permalink do Gmail não sai mais por caminho nenhum.** A regra de "link público" mora num
+   lugar só, `pauta/link-publico.ts` (`linkPublicoDoItem`, `ehLinkPrivado`), e barra por qualquer um
+   de três fatos: a marca `semLinkPublico`, a origem L (em qualquer das `origens`) e o host de caixa
+   de entrada. Usam a regra o destino da peça no WhatsApp, a página de links (MC12), a descrição do
+   YouTube (MC11), a newsletter (MC13), o roteiro (MC8 — lia só a marca), o miolo da curadoria e o
+   pedido que deriva as peças (os dois imprimiam o `url` de qualquer item sem a marca). O miolo já
+   gravado e o corpo da peça que vai ao grupo, ao ClickUp e ao carrossel do Instagram (legenda e
+   slides) passam por `semLinksDeCaixaDeEntrada`; a captura sem fonte com permalink nasce marcada,
+   fica sem URL no prompt da rodada e não se funde com outra newsletter no insumo; o candidato antigo
+   ganha a marca na leitura (`lerCandidatos`, também no `GET /pauta/rodadas/:id` em curadoria, que a
+   aba lê — a tela mostra "só contexto") e o item antigo ao entrar no episódio (`itensMantidos`).
+2. **Teto de saída por chamada.** `LlmMessage.maxTokens` (opcional) e `saidaDaResposta`: só sobe o
+   padrão do provider, nunca o baixa, para em `TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA` (16000 — o SDK da
+   Anthropic recusa chamada sem streaming acima de ~21 mil) e ignora pedido inválido. OpenAI e
+   OpenRouter saem de 900 para 8000 (`SAIDA_DA_GERACAO_LONGA`) no roteiro, pacote, newsletter (as
+   duas chamadas), voz e peças; a Anthropic segue em 16000 (padrão maior). O envelope do teto de
+   custo reserva pelo mesmo número (`tetoDeSaida({ tipo: 'completa', maxTokens })`). Curadoria,
+   ficha, relatório e `step()` não mudaram. Nenhum `temperature`/`top_p`/`budget_tokens` novo.
+3. **Corpo grande só nas rotas de mídia.** `common/corpo-da-midia.ts`, instalado no `main.ts` antes
+   do `listen`: `POST /api/pauta/episodios/:id/midia` e `/transcricao` aceitam até 2 MB
+   (`PAUTA_TETO_DO_CORPO_DA_MIDIA`, no shared); o resto da API segue nos 100 kb do Nest. Dois
+   cuidados que o teste fixa: o parser vai embrulhado com outro nome (o Nest pula o seu `json()` se
+   achar um `jsonParser` na pilha) e é o body-parser do próprio `@nestjs/platform-express` (o
+   `express` da raiz é o 5, com outro body-parser que não marca `req._body`). Conferido também no
+   dist de verdade: 500 kB na transcrição e na mídia → 401 (passou do parser), nas vizinhas → 413,
+   2,2 MB → 413, JSON pequeno no login continua lido. A estação de mídia confere pelo mesmo teto.
+
+**Revisão (três leitores).** Corrigido: `semLinksDeCaixaDeEntrada` deixava passar o link colado em
+`_itálico_`, `*negrito*` ou letra (o `\b` antes do `https`), apagava qualquer `()` do texto e era
+quadrática numa sequência longa de espaços (o regex começava por `[ \t]*`; 100 mil espaços davam
+5 s de event loop pelo PATCH da peça) — virou varredura linear que limpa só em volta do link; o
+pedido das peças chamava de "newsletter" todo item sem link público (agora só o privado; o resto é
+"sem link"); ClickUp e carrossel mandavam o corpo cru; o GET da rodada em curadoria devolvia o
+candidato antigo sem a marca; `chaveDaMateria` fundia as newsletters sem fonte (decidia só pela
+origem); o comentário do `TETO_DO_CORPO` apontava o teste errado; o risco dos 900 tokens da MC-B
+ficou anotado como resolvido. Nada recusado.
+
+Medido: api 2448/2448 com o banco (62 arquivos), 1878 + 570 pulados sem ele; web 506 (39);
+`pnpm typecheck`, `typecheck:test` e o smoke do dist limpos. Sem tabela, sem enum, sem migration,
+sem variável e sem permissão nova — nada muda na ordem de deploy além do build da imagem.
 
 ---
 

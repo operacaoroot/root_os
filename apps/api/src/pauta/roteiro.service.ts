@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MemoriaService } from '../memory/memoria.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EspelhoService } from './espelho.service';
 import { itensMantidos } from './episodio';
 import { VozService } from './voz.service';
@@ -165,6 +166,7 @@ export class RoteiroService {
       user: entradaDoRoteiro({ apelido, titulo: e.titulo, itens }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,
+      maxTokens: SAIDA_DA_GERACAO_LONGA,
     });
 
     let blocos;

@@ -20,7 +20,7 @@ import {
   type PautaTituloDoPacote,
 } from '@mktos/shared';
 import { parseJsonDaIa } from './parse-json';
-import { linkPublico } from './roteiro-do-episodio';
+import { linkPublicoDoItem } from './link-publico';
 
 /*
  * ============================================================================
@@ -123,23 +123,12 @@ export function transcricaoParaOPrompt(
   return { texto: r.texto.slice(0, teto), blocos: r.blocos, graoSeg: grao };
 }
 
-/** Hosts de caixa de entrada: o link de lá é privado, abre a tela de login. */
-const HOSTS_DE_CAIXA_DE_ENTRADA = new Set(['mail.google.com', 'outlook.live.com', 'outlook.office.com', 'mail.yahoo.com']);
-
 /**
- * O link que o pacote pode publicar, ou nulo. Newsletter (origem L ou marcada
- * `semLinkPublico`) nunca: o que a captura guardou é o permalink do Gmail.
+ * O link que o pacote pode publicar, ou nulo — a regra única de
+ * `link-publico.ts` (marca, origem L e host de caixa de entrada).
  */
-export function linkDoPacote(item: Pick<PautaItemCurado, 'url' | 'semLinkPublico' | 'origem'>): string | null {
-  if (item.origem === 'L') return null;
-  const url = linkPublico(item);
-  if (!url || /[<>]/.test(url)) return null;
-  try {
-    if (HOSTS_DE_CAIXA_DE_ENTRADA.has(new URL(url).hostname.toLowerCase())) return null;
-  } catch {
-    return null;
-  }
-  return url;
+export function linkDoPacote(item: Pick<PautaItemCurado, 'url' | 'semLinkPublico' | 'origem' | 'origens'>): string | null {
+  return linkPublicoDoItem(item);
 }
 
 /** O pedido ao modelo: as matérias numeradas e a transcrição com os tempos. */

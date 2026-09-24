@@ -261,7 +261,7 @@ function servico(opts: {
   rodada?: Record<string, unknown> | null;
 } = {}) {
   const capturas = opts.capturas ?? CAPTURAS;
-  const prompts: Array<{ system: string; user: string; orgId?: string }> = [];
+  const prompts: Array<{ system: string; user: string; orgId?: string; maxTokens?: number }> = [];
   const criadas: Array<Record<string, unknown>> = [];
   const gravadas: Array<Record<string, unknown>> = [];
   const condicionais: Array<{ where: Record<string, unknown>; data: Record<string, unknown> }> = [];
@@ -311,7 +311,7 @@ function servico(opts: {
     name: 'falso',
     model: 'falso-1',
     configured: true,
-    complete: async (p: { system: string; user: string; orgId?: string }) => {
+    complete: async (p: { system: string; user: string; orgId?: string; maxTokens?: number }) => {
       prompts.push(p);
       if (opts.llm?.falha) throw opts.llm.falha;
       return opts.llm?.saida ?? JSON.stringify({ titulo: 'Semana 39', sugeridos: [{ n: 1, porque: 'mandado pelo grupo' }] });
@@ -344,6 +344,8 @@ describe('curadoria: gerar a rodada para curadoria', () => {
     // A IA recebe a lista inteira, com o prompt que só sugere, e o gasto é da empresa.
     expect(s.prompts).toHaveLength(1);
     expect(s.prompts[0].orgId).toBe(ORG);
+    // MC-R: a sugestão não é geração longa e sai com o teto padrão do provider.
+    expect(s.prompts[0].maxTokens).toBeUndefined();
     expect(s.prompts[0].system).toContain('Você não corta a lista');
     expect(s.prompts[0].user).toContain('Itens coletados (7)');
     expect(s.prompts[0].user).not.toContain('mail.google.com');

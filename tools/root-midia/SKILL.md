@@ -109,8 +109,8 @@ perfil temporário, e é encerrado assim que grava o PNG. Conferir sem tocar no 
 - `HTTP 400` da API traz o motivo em português (status errado, transcrição do bruto em vez do final,
   corte fora de ordem) — leia e corrija, não force.
 - `HTTP 409`: o episódio mudou no meio (outra aba, outro envio). Rode `RM pendentes` e repita.
-- Transcrição grande demais para a API (~40 min de fala): a ferramenta avisa antes de mandar; é
-  decisão de quem cuida da API subir o limite do corpo.
+- Transcrição grande demais para a API (acima de 2 MB, muito mais que 1h de fala): a ferramenta
+  avisa antes de mandar. Quase sempre é a transcrição do bruto no lugar da do vídeo final.
 - Conferir a instalação sem tocar em gravação real: `RM ensaio` (clipe sintético numa pasta
   temporária: silencios → cortes → cortar).
 

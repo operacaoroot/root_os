@@ -20,6 +20,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EpisodioService } from './episodio.service';
 import { VozService } from './voz.service';
 import { lerTranscricao } from './episodio';
@@ -157,7 +158,7 @@ export class NewsletterService {
     const system = systemDaNewsletter(await this.vozes.bloco(orgId));
     const user = entradaDaNewsletter({ apelido: e.apelido, titulo: e.titulo, itens: e.itens, segmentos: e.transcricao });
     // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
-    const primeira = await this.llm.complete({ system, user, orgId });
+    const primeira = await this.llm.complete({ system, user, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let escolhida: NewsletterMontada;
     try {
       escolhida = montarNewsletter(primeira, ctx);
@@ -173,7 +174,12 @@ export class NewsletterService {
     let tentativas = 1;
     if (!checagem.aprovada) {
       tentativas = 2;
-      const segunda = await this.llm.complete({ system, user: user + pedidoDeReescrita(checagem), orgId });
+      const segunda = await this.llm.complete({
+        system,
+        user: user + pedidoDeReescrita(checagem),
+        orgId,
+        maxTokens: SAIDA_DA_GERACAO_LONGA,
+      });
       try {
         const refeita = montarNewsletter(segunda, ctx);
         const checagemRefeita = checagemDaNewsletter(refeita.markdown);

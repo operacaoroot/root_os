@@ -6,6 +6,7 @@ import {
   type PautaOrigem,
 } from '@mktos/shared';
 import { normalizarUrlDaCaptura } from './url-da-captura';
+import { ehLinkPrivado, ehUrlDeCaixaDeEntrada, temOrigemSemLinkPublico } from './link-publico';
 
 /*
  * ============================================================================
@@ -29,9 +30,6 @@ import { normalizarUrlDaCaptura } from './url-da-captura';
 
 /** A rodada de antes do MC4: feed e busca. É o que uma rotina com `origens: ['R', 'N']` reproduz. */
 export const ORIGENS_ANTES_DO_MC4: readonly PautaOrigem[] = ['R', 'N'];
-
-/** Origens cujo link é privado: entram no prompt e não podem ser escolhidas. */
-export const ORIGENS_SEM_LINK_PUBLICO: readonly PautaOrigem[] = ['L'];
 
 export type OrigensLidas = { origens: PautaOrigem[] } | { erro: string };
 
@@ -116,13 +114,16 @@ function emOrdem(origens: Iterable<PautaOrigem>): PautaOrigem[] {
 
 function chaveDaMateria(c: CapturaDoInsumo, url: string): string {
   const origem = origemDaFonte(c.fonte);
-  return origem && ORIGENS_SEM_LINK_PUBLICO.includes(origem) ? `${origem}:${url}` : normalizarUrlDaCaptura(url);
+  const privada = (!!origem && temOrigemSemLinkPublico([origem])) || ehUrlDeCaixaDeEntrada(url);
+  return privada ? `privada:${url}` : normalizarUrlDaCaptura(url);
 }
 
 /**
  * Uma captura por matéria (`umaPorMateria`), menos na newsletter: o id do
  * e-mail mora no fragmento do permalink, que a chave da tela apaga, e todas as
- * newsletters virariam uma só. Lá a repetição é pela URL inteira. Fica a
+ * newsletters virariam uma só. Lá a repetição é pela URL inteira — pela origem
+ * ou pelo host de caixa de entrada, porque a captura cuja fonte foi apagada
+ * chega sem origem e com o permalink. Fica a
  * primeira captura de cada matéria, com as origens de todas em `origens`: o
  * mesmo link no grupo e no feed é W e R, e o W não pode se perder.
  */
@@ -218,7 +219,7 @@ export function linhaDoInsumo(c: CapturaDoInsumo, posicao: number, limiteDoResum
   const origens = origensDa(c);
   const creator = c.fonte?.tipo === 'perfil' && c.fonte.handle ? ` (@${c.fonte.handle}${c.fonte.plataforma ? ` · ${c.fonte.plataforma}` : ''})` : '';
   const data = typeof b.publicadoEm === 'string' ? ` · ${b.publicadoEm.slice(0, 10)}` : '';
-  const semLink = origens.some((o) => ORIGENS_SEM_LINK_PUBLICO.includes(o));
+  const semLink = ehLinkPrivado({ url: c.url, origens });
   const resumo = typeof b.resumo === 'string' && b.resumo ? b.resumo : (c.nota ?? '').trim();
   return [
     `[${posicao}] ${c.titulo ?? '(sem título)'}`,
@@ -261,7 +262,7 @@ export function comOrigem<T extends ItemEscolhido>(
   for (const item of escolhidos) {
     const { origem: _daIa, ...resto } = item as T & { origem?: unknown };
     const origens = item.url ? emOrdem(porChave.get(normalizarUrlDaCaptura(item.url)) ?? []) : [];
-    if (origens.some((o) => ORIGENS_SEM_LINK_PUBLICO.includes(o))) continue;
+    if (temOrigemSemLinkPublico(origens) || ehUrlDeCaixaDeEntrada(item.url)) continue;
     saida.push(origens.length ? { ...resto, origem: origens[0] } : resto);
   }
   return saida;
