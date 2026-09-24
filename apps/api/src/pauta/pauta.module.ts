@@ -27,13 +27,17 @@ import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
+import { BioModule } from '../bio/bio.module';
+import { PaginaDeLinksController } from './pagina-de-links.controller';
+import { PaginaDeLinksService } from './pagina-de-links.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
 // MemoryModule: o roteiro (MC8) LÊ a palavra de corte da empresa na memória, e
 // a voz do autor (MC10) é nota da memória, escrita pelo MemoriaService (ADR-011).
+// BioModule: a página de links do episódio (MC12) publica pelo BioService.
 @Module({
-  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule],
+  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
@@ -44,6 +48,7 @@ import { PacoteService } from './pacote.service';
     RoteiroController,
     VozController,
     PacoteController,
+    PaginaDeLinksController,
   ],
   providers: [
     PautaService,
@@ -70,6 +75,8 @@ import { PacoteService } from './pacote.service';
     VozService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
+    // MC12: a página de links do episódio na bio.
+    PaginaDeLinksService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

@@ -193,11 +193,13 @@ const URL_NO_TEXTO = /<?\b(?:https?:\/\/|www\.)[^\s>)]+>?/gi;
 
 /**
  * Texto que veio do modelo e vai ao YouTube: sem URL (o link sai do item), sem
- * emoji (regra da marca), sem `<` e `>` (o YouTube recusa a descrição inteira).
+ * emoji (regra da marca), sem `<` e `>` (o YouTube recusa a descrição inteira)
+ * e sem o marcador da página de links, que só a montagem da descrição põe.
  */
 export function textoParaOYoutube(v: unknown, teto: number): string {
   if (typeof v !== 'string') return '';
-  return umaLinha(v.replace(URL_NO_TEXTO, ' ').replace(EMOJI, '').replace(/[<>]/g, ''), teto);
+  const semMarcador = v.split(PAUTA_MARCADOR_DA_PAGINA_DE_LINKS).join(' ');
+  return umaLinha(semMarcador.replace(URL_NO_TEXTO, ' ').replace(EMOJI, '').replace(/[<>]/g, ''), teto);
 }
 
 /** Corta no teto sem partir palavra (o título do YouTube para em 100). */

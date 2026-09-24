@@ -186,8 +186,16 @@ anti-padrões, tirados do que o próprio estudo já provou.
 | **Newsletter** | corpo em markdown, link sempre como `BioLink` | — |
 | **ClickUp** | vira tema em Gestão de Temas (write-back que já existe) | — |
 
-**Todo link publicado nasce `BioLink`.** O clique no grupo volta como `BioEvent` + `PixelEvent`
-e alimenta `GoalWeek.bioClicks` sozinho — a peça nasce medida, sem digitar nada em Metas.
+**O link publicado nasce `BioLink` na página de links do episódio (MC12).** O clique no grupo
+volta como `BioEvent` + `PixelEvent` e alimenta `GoalWeek.bioClicks` sozinho. Até o MC12 o link
+caía na primeira `BioPage` da empresa (qualquer uma) e nascia inativo sem chave — e o `/r/` de
+link inativo manda para a home da bio sem medir nada. Agora é um **link de campanha** na página do
+episódio da rodada, e **no ar**: chave `campanha:peca:<id>` (`bio/link-de-campanha.ts`), inativo
+para não aparecer na página, mas o `BioService.destinoDoLink` segue link ativo **ou** de campanha
+(sempre com a página no ar) — o clique cai na matéria e grava o `PixelEvent`. O destino é o primeiro
+item com link público pela regra da página e da descrição (`linkDoPacote`: nunca o permalink da
+newsletter). Sem episódio, sem página ou com a página em rascunho, a peça sai com o destino cru e
+o motivo vai ao RASTRO (`rastreio` em `pauta.peca_publicada`).
 
 ## 8. Espelho `.md` no vault — três destinos, escolhidos na tela
 
@@ -634,6 +642,51 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     confirmação para substituir), os três títulos com a escolha e copiar, a descrição com "Copiar
     descrição", a conta em bytes e os capítulos conferidos, e as thumbs — a prévia das que o Mac
     subiu, o brief e o comando `/root-midia thumbs ep-NN` das que faltam.
+- **A página de links do episódio (MC12).** Uma `BioPage` por episódio no `bio.operacaoroot.com`,
+  com um botão por matéria mantida que tem link público e os links de chamada da casa. O clique
+  segue o caminho de sempre da bio (`/r/:linkId` → `BioTrackingService` → `BioEvent` + `PixelEvent`);
+  o pixel da Meta no cliente não entra (D-MC5, adiada). `PaginaDeLinksService`, parte pura em
+  `pauta/pagina-de-links-do-episodio.ts`.
+  - **Montar** (`POST /pauta/episodios/:id/pagina-de-links`, `pauta.editar`): cria a página em
+    rascunho na primeira vez (handle `<slug da empresa>-ep-NN`; o handle é único na bio inteira, e
+    o de outra empresa é invisível sob RLS, então quem acusa é o índice único e aí vai o segundo
+    candidato, `<slug>-ep-NN-<4 do id>`; a URL tem de caber nos 200 bytes da descrição) e guarda
+    `bioPageId` no episódio (escrita condicionada a `bioPageId` nulo; duas abas = 409). Os botões:
+    as matérias com link público na ordem da rodada, sem repetir URL (a regra é a mesma da
+    descrição, `linkDoPacote`: origem L, `semLinkPublico` e host de caixa de entrada ficam de fora,
+    com aviso), rótulo = título da matéria (80), destino = URL (500, só http/https); depois os links
+    da casa, em destaque. **Idempotente:** cada botão leva `BioLink.chave` (`pauta:item:<hash da
+    URL>`/`pauta:casa:<hash>`, único por página — migration `20260924080000_pauta_pagina_de_links`);
+    montar de novo atualiza o que mudou, **desativa** (não apaga — os cliques ficam) o que saiu e
+    põe os botões do painel (sem chave) depois, na ordem deles; campanha de peça e botão do painel
+    nunca são tocados. Tudo sob `pg_advisory_xact_lock` da página. RASTRO `bio.page_create` e
+    `pauta.episodio_pagina_de_links` (as contas, os avisos e `botoes`: o antes/depois de cada botão
+    criado, atualizado ou desativado, como o `bio.link_update` do `/bio`). Página **no ar** só se
+    remonta com `bio.editar` também (403) — é mudar o que o público vê, como editar um botão no
+    `/bio`. Plano vazio é 400 só sem página; com ela, montar de novo desativa os botões da montagem.
+  - **Módulo bio:** as rotas moram em `/pauta`, então o gate de módulos só confere a pauta. Montar
+    e publicar leem `Org.modulos` e recusam com 403 quem não contrata a `bio` (no `/api/bio/*` ela
+    receberia 404); a seção some da tela pelo `useModulos`.
+  - **Desvio do plano:** a página e os botões são gravados pelo Prisma, não por `salvarPage` /
+    `criarLink`: o `findUnique` do `salvarPage` não enxerga o handle de outra empresa sob RLS (quem
+    acusa é o índice único) e o `criarLink` não aceita `chave`. Publicar, sim, é o `BioService.publicar`.
+  - **Links da casa:** nota da memória `pauta.pagina-de-links.chamadas` (ou
+    `operador:links-da-casa`), **só lida** por `MemoriaService.porChave`; a nota se cria por
+    `POST /memoria` (ADR-011). Uma linha por link: `Rótulo | https://…`, `Rótulo: https://…`,
+    `[Rótulo](https://…)` ou só a URL; no máximo 5. Memória fora do ar: a página sai sem eles, com
+    aviso.
+  - **Publicar** (`POST …/:id/pagina-de-links/publicar` `{publicada}`, `pauta.publicar` +
+    `bio.editar`): passa pelo **mesmo** `BioService.publicar` do painel (`bio.editar`, RASTRO
+    `bio.page_publish`/`bio.page_unpublish`) — o `BioModule` exporta o serviço para isso. Publicar
+    sem página ou sem botão ativo é 400. A página pública é a de sempre
+    (`GET /bio/public/page/:handle`, `/@handle` no host da bio); rascunho é 404.
+  - **A descrição aponta para a página:** o detalhe do episódio traz `paginaDeLinks` e, com a página
+    **no ar**, a `descricao` já sai com a URL no lugar de `{{pagina-de-links}}`
+    (`descricaoComPaginaDeLinks`); o banco guarda o marcador, então gerar o pacote de novo continua
+    certo. Em rascunho, o marcador fica e a tela avisa.
+  - **Tela:** seção "Página de links" no detalhe do episódio (`SecaoPaginaDeLinks.tsx`): criar /
+    montar de novo com a conta e os avisos, os botões com a origem (matéria, da casa, do /bio) e o
+    que saiu riscado, publicar / tirar do ar, e o endereço.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

@@ -1,5 +1,6 @@
 import type { PautaItemCurado, PautaOrigem } from '@mktos/shared';
 import { ORIGENS_SEM_LINK_PUBLICO, origensDa, type CapturaDoInsumo } from './origem-da-rodada';
+import { linkDoPacote } from './pacote-do-episodio';
 
 /*
  * ============================================================================
@@ -173,9 +174,18 @@ export function corpoDaCuradoria(itens: readonly PautaItemCurado[]): string {
     .join('\n');
 }
 
-/** O destino do link publicado: o primeiro item com link público. */
+/**
+ * O destino do link publicado: o primeiro item com link público, pela MESMA
+ * regra da página de links e da descrição (`linkDoPacote`). Newsletter antiga,
+ * sem a marca `semLinkPublico`, ainda guarda o permalink do Gmail no `url`: a
+ * origem L e o host de caixa de entrada é que a barram.
+ */
 export function destinoDosItens(itens: unknown): string | null {
-  const lista = Array.isArray(itens) ? (itens as Array<{ url?: unknown; semLinkPublico?: unknown }>) : [];
-  const item = lista.find((i) => typeof i?.url === 'string' && i.url && i.semLinkPublico !== true);
-  return (item?.url as string | undefined) ?? null;
+  const lista = Array.isArray(itens) ? (itens as Array<Partial<PautaItemCurado> | null>) : [];
+  for (const i of lista) {
+    if (!i || typeof i !== 'object') continue;
+    const url = linkDoPacote({ url: typeof i.url === 'string' ? i.url : '', semLinkPublico: i.semLinkPublico, origem: i.origem });
+    if (url) return url;
+  }
+  return null;
 }

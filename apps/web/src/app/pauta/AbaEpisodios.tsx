@@ -17,6 +17,7 @@ import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { SecaoRoteiro } from './SecaoRoteiro';
 import { SecaoMidia } from './SecaoMidia';
 import { SecaoPacote } from './SecaoPacote';
+import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
@@ -24,7 +25,8 @@ import { SecaoPacote } from './SecaoPacote';
  * vez. A regra de quem pode ir para onde é da API — a tela só oferece os dois
  * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`; a
  * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`; o pacote do
- * YouTube (MC11), em `SecaoPacote`.
+ * YouTube (MC11), em `SecaoPacote`; a página de links (MC12), em
+ * `SecaoPaginaDeLinks`.
  */
 
 interface Props {
@@ -37,6 +39,10 @@ interface Props {
   inicial?: string | null;
   /** Gerar o roteiro (MC8) e o pacote (MC11) gasta IA: exige `automacoes.executar`. */
   podeGastarIa?: boolean;
+  /** `bio.editar`: remontar a página de links que já está no ar (MC12). */
+  podeMexerNaBio?: boolean;
+  /** `pauta.publicar` + `bio.editar`: pôr a página de links no ar (MC12). */
+  podePublicarPagina?: boolean;
 }
 
 function ehOrigem(o: unknown): o is PautaOrigem {
@@ -53,7 +59,17 @@ const TOM: Record<PautaEpisodioStatus, 'muted' | 'brand' | 'good' | 'warn'> = {
   concluido: 'good',
 };
 
-export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial = null, podeGastarIa = false }: Props) {
+export function AbaEpisodios({
+  token,
+  editavel,
+  onErro,
+  bump,
+  onMudou,
+  inicial = null,
+  podeGastarIa = false,
+  podeMexerNaBio = false,
+  podePublicarPagina = false,
+}: Props) {
   const [lista, setLista] = useState<PautaEpisodioList | null>(null);
   const [aberto, setAberto] = useState<string | null>(inicial);
   const [detalhe, setDetalhe] = useState<PautaEpisodioDetalhe | null>(null);
@@ -260,6 +276,16 @@ export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial =
             detalhe={detalhe}
             editavel={editavel}
             podeGastarIa={podeGastarIa}
+            onErro={onErro}
+            onDetalhe={aplicarDetalhe}
+          />
+
+          <SecaoPaginaDeLinks
+            token={token}
+            detalhe={detalhe}
+            editavel={editavel}
+            podeMexerNoAr={podeMexerNaBio}
+            podePublicar={podePublicarPagina}
             onErro={onErro}
             onDetalhe={aplicarDetalhe}
           />

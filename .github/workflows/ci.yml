@@ -310,8 +310,20 @@ jobs:
       # (o detalhe mostra a seção do pacote). Medido: 488 casos em 37 arquivos
       # (476 + 12). O piso de ARQUIVOS sobe 1, para 28; o de CASOS sobe 10 (~15%
       # de folga sobre os 12 novos), para 316.
-      PISO_CASOS_WEB: '316'
-      PISO_ARQUIVOS_WEB: '28'
+      #
+      # MC12, A PÁGINA DE LINKS DO EPISÓDIO (24/09/2026): +7 casos, +1 arquivo,
+      # só desta fatia — `component/pauta-pagina-de-links` (7: sem página explica
+      # o que entra e cria, mostrando a conta e os avisos da montagem; em
+      # rascunho o endereço sem link, os botões com a origem, o tirado riscado e
+      # publicar pelo /publicar; no ar o endereço vira link e dá para tirar do
+      # ar; no ar e sem `bio.editar` montar de novo fica apagado com o porquê;
+      # sem `pauta.publicar` + `bio.editar` publicar apagado, sem
+      # `pauta.editar` montar também; sem o módulo bio a seção não aparece; o
+      # erro da API vai para a tela). Medido: 495 casos em 38 arquivos
+      # (488 + 7). O piso de ARQUIVOS sobe 1, para 29; o de CASOS sobe 6 (~15%
+      # de folga sobre os 7 novos), para 322.
+      PISO_CASOS_WEB: '322'
+      PISO_ARQUIVOS_WEB: '29'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1055,8 +1067,41 @@ jobs:
       # com o banco de teste, e 1764 passados / 566 pulados sem ele (1698 + 66).
       # O piso de ARQUIVOS vai a 51; o de CASOS sobe 56 (~15% de folga sobre os
       # 66 que rodam sem banco), para 1707.
-      PISO_CASOS_API: '1707'
-      PISO_ARQUIVOS_API: '51'
+      #
+      # MC12, A PÁGINA DE LINKS DO EPISÓDIO (24/09/2026): +34 casos, +1 arquivo,
+      # só desta fatia — `pauta-pagina-de-links` (34). A parte pura: o handle
+      # com o slug da empresa e o segundo candidato, todos dentro do
+      # `BIO_HANDLE_RE`, e a URL cabendo na folga da descrição; os links da casa
+      # lidos da nota (formatos, teto de 5, arquivada não vale); o plano (um
+      # botão por matéria pública, sem repetir URL, a newsletter fora com aviso,
+      # a casa depois e em destaque, `javascript:`/URL longa fora, rótulo
+      # cortado, a chave pela URL); a sincronia idempotente (vazia cria tudo, a
+      # mesma não mexe em nada, a que saiu é desativada, o painel vai para
+      # depois, o desativado à mão volta); o detalhe (a ordem, sem o link de
+      # campanha nem ativo, e a descrição só com a URL da página no ar, trocando
+      # um marcador só mesmo com outro vindo de título de fora); o link de
+      # campanha (o `/r/` segue o ativo ou o de campanha, só com a página no ar)
+      # e o destino da peça pela regra da página (nunca o Gmail). Os contratos (o
+      # esquema de publicar, montar `pauta.editar`, publicar `pauta.publicar` +
+      # `bio.editar` como o /bio, o controller passando as permissões). Com
+      # dublês: 403 antes de escrever em página no ar sem `bio.editar`, 403 sem
+      # o módulo bio (montar e publicar), 400 sem link nenhum e sem página,
+      # publicar sem página/sem botão é 400 e com botão passa pelo
+      # `BioService.publicar`; o link da peça sem episódio não procura página
+      # nenhuma, com página em rascunho sai cru e com página no ar vai para ELA.
+      # E COM BANCO (3, pulados sem ele): montar/remontar sem duplicar com o
+      # handle de outra empresa ocupado, o antes de cada botão no RASTRO e o
+      # plano vazio limpando a página existente; publicar, a página pública, o
+      # clique virando PixelEvent e a descrição com a URL; a peça pendurada na
+      # página do episódio como link de campanha, o `/r/` dela caindo na matéria
+      # com o PixelEvent, e, sem episódio, em página nenhuma.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2364 casos em 60 arquivos
+      # com o banco de teste, e 1795 passados / 569 pulados sem ele (1764 + 31).
+      # O piso de ARQUIVOS vai a 52; o de CASOS sobe 26 (~15% de folga sobre os
+      # 31 que rodam sem banco), para 1733.
+      PISO_CASOS_API: '1733'
+      PISO_ARQUIVOS_API: '52'
 
     steps:
       - uses: actions/checkout@v4

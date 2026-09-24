@@ -265,7 +265,7 @@ export function SecaoPacote({ token, detalhe, editavel, podeGastarIa, onErro, on
           {comMarcador && (
             <p className="text-xs text-muted">
               O marcador <code>{PAUTA_MARCADOR_DA_PAGINA_DE_LINKS}</code> vira o endereço da página de links do episódio
-              quando ela existir; até lá, troque à mão ao colar no YouTube.
+              quando ela estiver no ar (seção Página de links); até lá, troque à mão ao colar no YouTube.
             </p>
           )}
         </div>

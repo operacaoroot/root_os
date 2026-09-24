@@ -10,6 +10,15 @@ import { AuditService } from '../audit/audit.service';
 import { EvolutionService } from './evolution.service';
 import { ClickupService } from '../integrations/clickup.service';
 import { destinoDosItens } from './curadoria-da-rodada';
+import { chaveDeCampanha } from '../bio/link-de-campanha';
+
+/** Para onde foi o link da peça — vai ao RASTRO, para "não foi medido" nunca ser silêncio. */
+export type RastreioDaPeca =
+  | 'pagina_do_episodio'
+  | 'sem_pagina_do_episodio'
+  | 'pagina_do_episodio_fora_do_ar'
+  | 'sem_origem_da_bio'
+  | 'sem_link';
 
 // Publicação das peças (onda 3). O que cada canal faz e o que NÃO faz:
 //
@@ -20,8 +29,10 @@ import { destinoDosItens } from './curadoria-da-rodada';
 //                aqui e o post é manual (máquina de carrossel).
 //   newsletter → idem: o corpo fica pronto, o envio é do canal de e-mail.
 //
-// Todo link publicado vira BioLink primeiro: assim o clique no grupo volta como
-// BioEvent/PixelEvent e alimenta GoalWeek.bioClicks sem ninguém digitar nada.
+// O link publicado vira link de campanha na página do episódio da rodada (MC12),
+// quando ela está no ar: o `/r/` dele redireciona para a matéria e o clique no
+// grupo volta como BioEvent/PixelEvent, alimentando GoalWeek.bioClicks sem
+// ninguém digitar nada. Sem ela, sai cru.
 @Injectable()
 export class PublicacaoService {
   private readonly log = new Logger('PublicacaoService');
@@ -35,42 +46,49 @@ export class PublicacaoService {
   ) {}
 
   /**
-   * Cria o link rastreado da peça e devolve a URL curta. Sem página de bio
-   * publicada não há como rastrear — nesse caso devolve o destino cru, para a
-   * peça sair mesmo assim (medir é desejável, publicar é obrigatório).
+   * O link rastreado da peça, na página de links do EPISÓDIO da rodada (MC12).
+   * Até o MC12 ele caía na primeira BioPage da empresa — qualquer uma, até a
+   * página pessoal de alguém — e nascia inativo sem chave, e o `/r/` de link
+   * inativo manda para a home da bio sem medir nada. Agora é um link de
+   * CAMPANHA (`campanha:peca:<id>`): invisível na página, mas o `/r/` segue e
+   * grava o clique, com a página no ar (rascunho perderia o clique). Sem ela, a
+   * peça sai com o destino cru e o motivo vai para o RASTRO — medir é
+   * desejável, publicar é obrigatório.
    */
   private async linkRastreado(
     orgId: string,
+    pecaId: string,
+    pageId: string | null,
     rotulo: string,
     destino: string,
-  ): Promise<{ url: string; bioLinkId: string | null }> {
+  ): Promise<{ url: string; bioLinkId: string | null; rastreio: RastreioDaPeca }> {
+    if (!this.baseBio) return { url: destino, bioLinkId: null, rastreio: 'sem_origem_da_bio' };
+    if (!pageId) return { url: destino, bioLinkId: null, rastreio: 'sem_pagina_do_episodio' };
     const page = await this.prisma.bioPage.findFirst({
-      where: { orgId },
-      orderBy: [{ publicada: 'desc' }, { criadaEm: 'asc' }],
-      select: { id: true },
+      where: { id: pageId, orgId },
+      select: { id: true, publicada: true },
     });
-    if (!page || !this.baseBio) return { url: destino, bioLinkId: null };
+    if (!page) return { url: destino, bioLinkId: null, rastreio: 'sem_pagina_do_episodio' };
+    if (!page.publicada) return { url: destino, bioLinkId: null, rastreio: 'pagina_do_episodio_fora_do_ar' };
 
     const ultimo = await this.prisma.bioLink.findFirst({
       where: { pageId: page.id },
       orderBy: { ordem: 'desc' },
       select: { ordem: true },
     });
-    const link = await this.prisma.bioLink.create({
-      data: {
-        pageId: page.id,
-        ordem: (ultimo?.ordem ?? 0) + 1,
-        tipo: 'url',
-        rotulo: rotulo.slice(0, 80),
-        destino,
-        // Não aparece na página pública: é link de campanha, não item de menu.
-        ativo: false,
-      },
+    // Upsert pela chave: se a tentativa anterior de enviar falhou e o link não
+    // foi apagado, a nova reaproveita o mesmo em vez de bater no índice único.
+    const chave = chaveDeCampanha('peca', pecaId);
+    const dados = { rotulo: rotulo.slice(0, 80), destino, ativo: false };
+    const link = await this.prisma.bioLink.upsert({
+      where: { pageId_chave: { pageId: page.id, chave } },
+      create: { pageId: page.id, chave, ordem: (ultimo?.ordem ?? 0) + 1, tipo: 'url', ...dados },
+      update: dados,
     });
-    return { url: `${this.baseBio}/r/${link.id}`, bioLinkId: link.id };
+    return { url: `${this.baseBio}/r/${link.id}`, bioLinkId: link.id, rastreio: 'pagina_do_episodio' };
   }
 
-  /** Destino do link da peça: o primeiro item curado da rodada com link público (MC6). */
+  /** Destino do link da peça: o primeiro item curado com link público, pela regra da página e da descrição (MC12). */
   private destinoDaRodada(itens: unknown): string | null {
     return destinoDosItens(itens);
   }
@@ -78,7 +96,7 @@ export class PublicacaoService {
   async publicar(orgId: string, pecaId: string, actorId: string) {
     const peca = await this.prisma.pautaPeca.findFirst({
       where: { id: pecaId, orgId },
-      include: { rodada: { select: { titulo: true, itens: true } } },
+      include: { rodada: { select: { titulo: true, itens: true, episodio: { select: { bioPageId: true } } } } },
     });
     if (!peca) throw new NotFoundException('Peça não encontrada');
     if (peca.status === 'publicada') throw new BadRequestException('Esta peça já foi publicada.');
@@ -103,7 +121,12 @@ export class PublicacaoService {
 
   private async publicarWhatsapp(
     orgId: string,
-    peca: { id: string; corpo: string; titulo: string; rodada: { titulo: string; itens: unknown } },
+    peca: {
+      id: string;
+      corpo: string;
+      titulo: string;
+      rodada: { titulo: string; itens: unknown; episodio: { bioPageId: string | null } | null };
+    },
     actorId: string,
   ) {
     const estado = await this.evolution.estado();
@@ -120,9 +143,11 @@ export class PublicacaoService {
     const destino = this.destinoDaRodada(peca.rodada.itens);
     let texto = peca.corpo;
     let bioLinkId: string | null = null;
+    let rastreio: RastreioDaPeca = 'sem_link';
     if (destino) {
-      const l = await this.linkRastreado(orgId, peca.rodada.titulo, destino);
+      const l = await this.linkRastreado(orgId, peca.id, peca.rodada.episodio?.bioPageId ?? null, peca.rodada.titulo, destino);
       bioLinkId = l.bioLinkId;
+      rastreio = l.rastreio;
       texto = `${texto}\n\n${l.url}`;
     }
 
@@ -160,7 +185,7 @@ export class PublicacaoService {
       action: 'pauta.peca_publicada',
       entityType: 'pauta_peca',
       entityId: peca.id,
-      after: { canal: 'whatsapp', jid, mensagemId: r.id, bioLinkId },
+      after: { canal: 'whatsapp', jid, mensagemId: r.id, bioLinkId, rastreio },
     });
     return { ok: true, canal: 'whatsapp', externalId: atualizada.externalId };
   }

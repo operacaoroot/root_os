@@ -140,6 +140,8 @@ export default function PautaPage() {
           onMudou={recarregar}
           inicial={episodioAberto}
           podeGastarIa={can('automacoes.executar')}
+          podeMexerNaBio={can('bio.editar')}
+          podePublicarPagina={can('pauta.publicar') && can('bio.editar')}
         />
       )}
       {ready && aba === 'Voz' && (

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import {
   apelidoDoEpisodio,
+  descricaoComPaginaDeLinks,
   thumbsDoPacote,
   titulosDoPacote,
   vizinhosDoEpisodio,
@@ -9,6 +10,7 @@ import {
   type PautaEpisodioStatus,
   type PautaItemCurado,
 } from '@mktos/shared';
+import { cabeNaDescricao, paginaParaATela, type LinhaDaPagina } from './pagina-de-links-do-episodio';
 
 /*
  * O EPISÓDIO (MC7) — a parte pura: número, título padrão e a leitura dos
@@ -112,24 +114,30 @@ export function detalheDoEpisodio(
     titulos: unknown;
     thumbs: unknown;
     bioPageId: string | null;
+    bioPage?: LinhaDaPagina | null;
     criadoPor: string | null;
   },
+  origemDaBio = '',
 ): PautaEpisodioDetalhe {
   const { itens: _quantos, ...resumo } = resumoDoEpisodio(e);
   const { avancar, voltar } = vizinhosDoEpisodio(e.status);
+  const paginaDeLinks = e.bioPage ? paginaParaATela(e.bioPage, origemDaBio) : null;
+  // A descrição só aponta para página no ar: rascunho responde 404 a quem clica.
+  const url = paginaDeLinks?.publicada && cabeNaDescricao(paginaDeLinks.url) ? paginaDeLinks.url : null;
   return {
     ...resumo,
     itens: itensMantidos(e.rodada.itens),
     janelaIni: e.rodada.janelaIni.toISOString(),
     janelaFim: e.rodada.janelaFim.toISOString(),
     roteiro: e.roteiro,
-    descricao: e.descricao,
+    descricao: descricaoComPaginaDeLinks(e.descricao, url),
     midia: objeto(e.midia),
     transcricao: lerTranscricao(e.transcricao),
     transcricaoTexto: e.transcricaoTexto,
     titulos: titulosDoPacote(e.titulos),
     thumbs: thumbsDoPacote(e.thumbs),
     bioPageId: e.bioPageId,
+    paginaDeLinks,
     criadoPor: e.criadoPor,
     avancar,
     voltar,

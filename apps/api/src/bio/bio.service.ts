@@ -17,6 +17,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { BioChallengeService } from './bio-challenge.service';
 import { BioCredenciaisService } from './bio-credenciais.service';
+import { linkRedireciona } from './link-de-campanha';
 import * as instagram from './plataformas/instagram';
 import * as tiktok from './plataformas/tiktok';
 
@@ -348,7 +349,7 @@ export class BioService {
       where: { id: linkId },
       include: { page: { select: { id: true, orgId: true, handle: true, publicada: true } } },
     });
-    if (!link || !link.ativo || !link.page.publicada) return null;
+    if (!link || !linkRedireciona(link)) return null;
 
     const destino =
       link.tipo === 'whatsapp'

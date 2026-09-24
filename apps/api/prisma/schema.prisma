@@ -996,8 +996,14 @@ model BioLink {
   icone    String?
   destaque Boolean     @default(false)
   ativo    Boolean     @default(true)
+  /// Quem montou o link fora do painel, e para quê: `pauta:item:<hash>` e
+  /// `pauta:casa:<hash>` na página de links do episódio (MC12). Nulo = botão do
+  /// painel ou link de campanha. Único por página: é o que faz montar a página
+  /// de novo atualizar o link em vez de duplicá-lo.
+  chave    String?
   criadoEm DateTime    @default(now())
 
+  @@unique([pageId, chave])
   @@index([pageId, ordem])
   @@index([orgId])
 }

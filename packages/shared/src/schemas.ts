@@ -1716,6 +1716,8 @@ export interface PautaEpisodioDetalhe extends Omit<PautaEpisodioResumo, 'itens'>
   /** Os briefs das thumbs (MC11) e, quando o Mac já renderizou, a imagem. */
   thumbs: PautaThumbDoPacote[];
   bioPageId: string | null;
+  /** A página de links do episódio (MC12); nula até montar. */
+  paginaDeLinks: PautaPaginaDeLinks | null;
   criadoPor: string | null;
   /** Para onde o episódio pode andar agora (os dois vizinhos da ordem). */
   avancar: PautaEpisodioStatus | null;
@@ -2153,11 +2155,16 @@ export function capitulosDaDescricao(descricao: string): PautaCapitulo[] {
 
 /**
  * A descrição pronta para colar: com a URL da página de links (MC12), ou como
- * está. A URL cabe na folga de `PAUTA_RESERVA_DA_PAGINA_DE_LINKS` bytes.
+ * está. A URL cabe na folga de `PAUTA_RESERVA_DA_PAGINA_DE_LINKS` bytes — folga
+ * para UMA URL, então só a última ocorrência (a linha que a montagem pôs, antes
+ * das hashtags) é trocada: um marcador vindo de texto de fora não multiplica a
+ * URL e não empurra a descrição para além do teto do YouTube.
  */
 export function descricaoComPaginaDeLinks(descricao: string, url: string | null | undefined): string {
   const u = (url ?? '').trim();
-  return u ? descricao.split(PAUTA_MARCADOR_DA_PAGINA_DE_LINKS).join(u) : descricao;
+  const i = descricao.lastIndexOf(PAUTA_MARCADOR_DA_PAGINA_DE_LINKS);
+  if (!u || i < 0) return descricao;
+  return descricao.slice(0, i) + u + descricao.slice(i + PAUTA_MARCADOR_DA_PAGINA_DE_LINKS.length);
 }
 
 export interface PautaTituloDoPacote {
@@ -2269,6 +2276,58 @@ export interface PautaPacoteGerado {
   avisos: string[];
   /** O que foi consertado no que a IA devolveu (tempos, ordem, texto de thumb longo). */
   correcoes: string[];
+}
+
+// ---------- Pauta: a página de links do episódio (MC12) ----------
+// Uma BioPage por episódio no bio.operacaoroot.com, com um botão por matéria
+// mantida que tem link público (nunca o permalink da newsletter) e os links de
+// chamada da casa. O clique segue o caminho de sempre da bio: /r/:linkId →
+// BioEvent + PixelEvent.
+
+/**
+ * As notas da memória com os links de chamada da casa, lidas em ordem (só
+ * leitura; a nota se cria por `POST /memoria`, caminho da ADR-011). Uma linha
+ * por link: `Rótulo | https://…`, `[Rótulo](https://…)` ou só a URL.
+ */
+export const PAUTA_CHAVES_DOS_LINKS_DA_CASA = ['pauta.pagina-de-links.chamadas', 'operador:links-da-casa'] as const;
+export const PAUTA_MAXIMO_DE_LINKS_DA_CASA = 5;
+
+/** De onde veio o botão: matéria do episódio, chamada da casa ou o painel da bio. */
+export const PAUTA_ORIGENS_DO_LINK_DA_PAGINA = ['item', 'casa', 'painel'] as const;
+export type PautaOrigemDoLinkDaPagina = (typeof PAUTA_ORIGENS_DO_LINK_DA_PAGINA)[number];
+
+export interface PautaLinkDaPagina {
+  id: string;
+  rotulo: string;
+  destino: string;
+  ativo: boolean;
+  origem: PautaOrigemDoLinkDaPagina;
+}
+
+export interface PautaPaginaDeLinks {
+  id: string;
+  handle: string;
+  /** O endereço público (`<origem da bio>/@handle`), o que entra na descrição. */
+  url: string;
+  titulo: string;
+  /** Rascunho responde 404 lá fora; a descrição só aponta para página publicada. */
+  publicada: boolean;
+  links: PautaLinkDaPagina[];
+}
+
+/** `POST /pauta/episodios/:id/pagina-de-links/publicar`. */
+export const PautaPaginaDeLinksPublicarSchema = z.object({ publicada: z.boolean() });
+export type PautaPaginaDeLinksPublicarInput = z.infer<typeof PautaPaginaDeLinksPublicarSchema>;
+
+/** `POST /pauta/episodios/:id/pagina-de-links`: o episódio e a conta do que mudou na página. */
+export interface PautaPaginaDeLinksMontada {
+  episodio: PautaEpisodioDetalhe;
+  criados: number;
+  atualizados: number;
+  /** Botões que a montagem anterior pôs e esta não pôs mais: saem da página, o histórico de cliques fica. */
+  desativados: number;
+  /** O que ficou de fora e por quê (newsletter, link longo demais, nota da casa ilegível). */
+  avisos: string[];
 }
 
 // ---------- Pauta: a voz do autor (MC10) ----------

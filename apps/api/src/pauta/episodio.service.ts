@@ -26,6 +26,17 @@ import {
 
 const DA_RODADA = { select: { titulo: true, itens: true, janelaIni: true, janelaFim: true } } as const;
 
+/** A página de links (MC12) com os botões, para o detalhe e para a descrição apontar para ela. */
+const DA_PAGINA = {
+  select: {
+    id: true,
+    handle: true,
+    titulo: true,
+    publicada: true,
+    links: { select: { id: true, rotulo: true, destino: true, ativo: true, chave: true, ordem: true } },
+  },
+} as const;
+
 function repetido(e: unknown): string | null {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return null;
   return JSON.stringify(e.meta?.target ?? '');
@@ -117,9 +128,12 @@ export class EpisodioService {
   }
 
   async obter(orgId: string, id: string): Promise<PautaEpisodioDetalhe> {
-    const e = await this.prisma.pautaEpisodio.findFirst({ where: { id, orgId }, include: { rodada: DA_RODADA } });
+    const e = await this.prisma.pautaEpisodio.findFirst({
+      where: { id, orgId },
+      include: { rodada: DA_RODADA, bioPage: DA_PAGINA },
+    });
     if (!e) throw new NotFoundException('Episódio não encontrado');
-    return detalheDoEpisodio(e);
+    return detalheDoEpisodio(e, process.env.PUBLIC_BIO_ORIGIN);
   }
 
   async atualizarTitulo(orgId: string, id: string, actorId: string, titulo: string) {
