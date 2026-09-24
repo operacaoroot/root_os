@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -87,6 +87,45 @@ import {
   slidesEstourados,
   slidesParaAMaquina,
 } from '../../../tools/root-midia/lib/semana.mjs';
+import {
+  ESPERA_DO_RENDER_REPETIDO_MS,
+  IDADE_MINIMA_MS,
+  PRAZO_DA_TRAVA_MS,
+  ROTULO,
+  SILENCIO_DA_NOTIFICACAO_MS,
+  argsDaNotificacao,
+  argsDoLaunchctl,
+  caminhosDoVigia,
+  candidatosDoBruto,
+  PRAZO_DA_PORTA_MS,
+  ambienteDoAgente,
+  avisosDoRender,
+  chaveDoBruto,
+  chaveDoRender,
+  episodioDaGravacao,
+  estadoDoBruto,
+  gravacaoParaVarios,
+  lerMemoria,
+  motivoParaOVigiaNaoEnviar,
+  obsEscrevendo,
+  passoDoBruto,
+  lerPastaDoObs,
+  lerTrava,
+  linhaDoLog,
+  mensagemDeAmbiguo,
+  nomeLivre,
+  pastaDoEpisodio,
+  permissaoAbertaDemais,
+  plistDoVigia,
+  precisaRodarOLog,
+  registrarNotificacao,
+  rendersAFazer,
+  soltarTrava,
+  tomarTrava,
+  transcricaoDeEnsaio,
+  travaOcupada,
+  ultimaLinha,
+} from '../../../tools/root-midia/lib/vigia.mjs';
 
 /*
  * A ESTAÇÃO DE MÍDIA NO MAC — MC9, o lado do Mac (`tools/root-midia`).
@@ -1069,5 +1108,450 @@ describe('root-midia: o calendário da semana no terminal (MC16)', () => {
       '  18:00  corte      ep-04 m1  proposto, falta distribuir  Preço caiu',
       '  19:00  corte      ep-04 m1  aprovada (fora da grade)  Preço caiu',
     ]);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// MD2: o vigia do Mac
+// ---------------------------------------------------------------------------
+
+describe('root-midia: o vigia do Mac — qual arquivo é o bruto (MD2)', () => {
+  const T = Date.parse('2026-09-25T13:00:00.000Z');
+  const entrada = (nome: string, over: Partial<{ arquivo: boolean; tamanho: number; mtimeMs: number }> = {}) => ({
+    nome, arquivo: true, tamanho: 1_000_000, mtimeMs: T + 60_000, ...over,
+  });
+
+  it('candidato é arquivo comum .mkv/.mp4/.mov na raiz, não oculto, gravado DEPOIS da entrada em Gravação', () => {
+    const c = candidatosDoBruto(
+      [
+        entrada('2026-09-25 13-10-00.MKV'),
+        entrada('b.mov'),
+        entrada('c.mp4'),
+        entrada('antes da transicao.mp4', { mtimeMs: T - 1 }),
+        entrada('no instante da transicao.mp4', { mtimeMs: T }),
+        entrada('.oculto.mp4'),
+        entrada('notas.txt'),
+        entrada('root-midia', { arquivo: false }),
+        entrada('link.mp4', { arquivo: false }),
+      ],
+      { statusDesdeMs: T },
+    );
+    expect(c.map((e) => e.nome)).toEqual(['2026-09-25 13-10-00.MKV', 'b.mov', 'c.mp4']);
+  });
+
+  it('estável: tamanho e data iguais nas duas leituras e parado há 2 min = pronto', () => {
+    const e = [entrada('g.mp4')];
+    expect(estadoDoBruto(e, e, { agoraMs: T + 60_000 + IDADE_MINIMA_MS })).toEqual({ estado: 'pronto', arquivo: 'g.mp4', tamanho: 1_000_000, mtimeMs: T + 60_000 });
+  });
+
+  it('gravando: o tamanho ou a data mudaram, ou um arquivo novo apareceu, entre as leituras — a passagem pula', () => {
+    const agoraMs = T + 10 * 60_000;
+    expect(estadoDoBruto([entrada('g.mp4')], [entrada('g.mp4', { tamanho: 2_000_000 })], { agoraMs })).toEqual({ estado: 'gravando', arquivos: ['g.mp4'] });
+    expect(estadoDoBruto([entrada('g.mp4')], [entrada('g.mp4', { mtimeMs: T + 61_000 })], { agoraMs })).toMatchObject({ estado: 'gravando' });
+    expect(estadoDoBruto([], [entrada('novo.mkv')], { agoraMs })).toEqual({ estado: 'gravando', arquivos: ['novo.mkv'] });
+    // Um parado e outro crescendo: o OBS está gravando, e isso vem antes do "ambíguo".
+    expect(estadoDoBruto([entrada('a.mp4'), entrada('b.mp4')], [entrada('a.mp4'), entrada('b.mp4', { tamanho: 9 })], { agoraMs })).toEqual({ estado: 'gravando', arquivos: ['b.mp4'] });
+  });
+
+  it('ambíguo: dois candidatos parados — ninguém adivinha, a notificação manda rodar à mão', () => {
+    const dois = [entrada('a.mp4'), entrada('b.mkv')];
+    expect(estadoDoBruto(dois, dois, { agoraMs: T + 10 * 60_000 })).toEqual({ estado: 'ambiguo', arquivos: ['a.mp4', 'b.mkv'] });
+    expect(mensagemDeAmbiguo('ep-07')).toBe('ambíguo: rode /root-midia ep-07');
+  });
+
+  it('anterior à transição não conta; parado mas novo demais espera o que falta dos 2 min; vazio não vai', () => {
+    const velho = candidatosDoBruto([entrada('ontem.mp4', { mtimeMs: T - 86_400_000 })], { statusDesdeMs: T });
+    expect(estadoDoBruto(velho, velho, { agoraMs: T + 60_000 })).toEqual({ estado: 'nenhum' });
+    const novo = [entrada('g.mp4', { mtimeMs: T })];
+    expect(estadoDoBruto(novo, novo, { agoraMs: T + 61_000 })).toEqual({ estado: 'jovem', arquivo: 'g.mp4', esperarMs: IDADE_MINIMA_MS - 61_000 });
+    const vazio = [entrada('g.mp4', { tamanho: 0 })];
+    expect(estadoDoBruto(vazio, vazio, { agoraMs: T + 10 * 60_000 })).toMatchObject({ estado: 'vazio' });
+  });
+
+  it('a pasta do OBS é lida sem descer: root-midia/ep-NN e o link simbólico ficam de fora', () => {
+    const obs = mkdtempSync(join(tmpdir(), 'root-midia-vigia-obs-'));
+    try {
+      writeFileSync(join(obs, 'bruto.mp4'), 'x');
+      mkdirSync(join(obs, 'root-midia', 'ep-01'), { recursive: true });
+      writeFileSync(join(obs, 'root-midia', 'ep-01', 'ep-01-final.mp4'), 'y');
+      symlinkSync(join(obs, 'root-midia', 'ep-01', 'ep-01-final.mp4'), join(obs, 'atalho.mp4'));
+      const lidas = lerPastaDoObs(obs);
+      expect(lidas.find((e) => e.nome === 'root-midia')?.arquivo).toBe(false);
+      expect(lidas.find((e) => e.nome === 'atalho.mp4')?.arquivo).toBe(false);
+      expect(candidatosDoBruto(lidas, { statusDesdeMs: 0 }).map((e) => e.nome)).toEqual(['bruto.mp4']);
+      expect(pastaDoEpisodio(obs, 'ep-01')).toBe(join(obs, 'root-midia', 'ep-01'));
+    } finally {
+      rmSync(obs, { recursive: true, force: true });
+    }
+  });
+
+  it('só age com EXATAMENTE um episódio em Gravação sem mídia', () => {
+    const g = (id: string, status = 'gravacao', falta = 'midia') => ({ id, status, falta });
+    expect(episodioDaGravacao([g('a'), g('b', 'edicao', 'transcricao')])).toEqual({ episodio: g('a') });
+    expect(episodioDaGravacao([g('b', 'edicao', 'midia')])).toEqual({ motivo: 'nenhum', quantos: 0 });
+    expect(episodioDaGravacao([g('a'), g('c')])).toEqual({ motivo: 'varios', quantos: 2 });
+  });
+
+  it('o final do vigia nunca sobrescreve um que já está na pasta do episódio', () => {
+    const existe = (c: string) => c.endsWith('ep-01-final.mp4') || c.endsWith('ep-01-final-2.mp4');
+    expect(nomeLivre('/obs/root-midia/ep-01', 'ep-01-final', '.mp4', existe)).toBe('/obs/root-midia/ep-01/ep-01-final-3.mp4');
+    expect(nomeLivre('/p', 'cortes', '.json', () => false)).toBe('/p/cortes.json');
+  });
+});
+
+describe('root-midia: o vigia do Mac — trava, memória, launchd e log (MD2)', () => {
+  it('onde fica cada coisa: a trava e a memória ao lado do arquivo de variáveis; OBS e log com padrão', () => {
+    const c = caminhosDoVigia({}, '/Users/p');
+    expect(c).toEqual({
+      obs: '/Users/p/Movies/OBS',
+      variaveis: '/Users/p/.config/root/root-midia.env',
+      trava: '/Users/p/.config/root/root-midia-vigia.lock',
+      memoria: '/Users/p/.config/root/root-midia-vigia.estado.json',
+      log: '/Users/p/Library/Logs/root-midia/vigia.log',
+      agentes: '/Users/p/Library/LaunchAgents',
+    });
+    const outro = caminhosDoVigia({ ROOT_MIDIA_ENV: '/tmp/e/vars.env', ROOT_MIDIA_OBS_DIR: '~/Gravações', ROOT_MIDIA_VIGIA_LOG: '/tmp/e/v.log' }, '/Users/p');
+    expect(outro).toMatchObject({ obs: '/Users/p/Gravações', trava: '/tmp/e/root-midia-vigia.lock', log: '/tmp/e/v.log' });
+  });
+
+  it('a trava: a segunda instância sai calada; processo morto ou trava de 3 h libera; soltar não apaga o arquivo', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'root-midia-vigia-trava-'));
+    try {
+      const trava = join(pasta, 'sub', 'root-midia-vigia.lock');
+      const agoraMs = Date.parse('2026-09-25T13:00:00.000Z');
+      expect(tomarTrava(trava, { pid: 111, agoraMs, vivo: () => true })).toBe(true);
+      expect(lerTrava(readFileSync(trava, 'utf8'))).toEqual({ pid: 111, desdeMs: agoraMs });
+      expect(tomarTrava(trava, { pid: 222, agoraMs: agoraMs + 1000, vivo: () => true })).toBe(false);
+      expect(tomarTrava(trava, { pid: 222, agoraMs: agoraMs + 1000, vivo: () => false })).toBe(true);
+      expect(tomarTrava(trava, { pid: 333, agoraMs: agoraMs + 1000 + PRAZO_DA_TRAVA_MS, vivo: () => true })).toBe(true);
+      expect(soltarTrava(trava, 222, agoraMs)).toBe(false);
+      expect(soltarTrava(trava, 333, agoraMs)).toBe(true);
+      expect(existsSync(trava)).toBe(true);
+      expect(lerTrava(readFileSync(trava, 'utf8'))).toBeNull();
+      expect(tomarTrava(trava, { pid: 444, agoraMs, vivo: () => true })).toBe(true);
+      expect(existsSync(`${trava}.porta`)).toBe(false);
+      expect(travaOcupada(null, { agoraMs, vivo: () => true })).toBe(false);
+      expect(lerTrava('lixo')).toBeNull();
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
+  });
+
+  it('a trava é tomada atrás de uma porta exclusiva: com a porta fechada por outra instância, perde mesmo com a trava livre; a porta de uma tomada morta sai depois de 1 min', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'root-midia-vigia-porta-'));
+    try {
+      const trava = join(pasta, 'root-midia-vigia.lock');
+      const agoraMs = Date.now();
+      writeFileSync(`${trava}.porta`, '');
+      expect(tomarTrava(trava, { pid: 111, agoraMs, vivo: () => false })).toBe(false);
+      expect(existsSync(trava)).toBe(false);
+      expect(existsSync(`${trava}.porta`)).toBe(true);
+      const velha = (agoraMs - PRAZO_DA_PORTA_MS - 1000) / 1000;
+      utimesSync(`${trava}.porta`, velha, velha);
+      expect(tomarTrava(trava, { pid: 111, agoraMs, vivo: () => false })).toBe(false);
+      expect(existsSync(`${trava}.porta`)).toBe(false);
+      expect(tomarTrava(trava, { pid: 111, agoraMs, vivo: () => false })).toBe(true);
+      expect(lerTrava(readFileSync(trava, 'utf8'))).toMatchObject({ pid: 111 });
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
+  });
+
+  it('o plist: o node e o script em lista, WatchPaths no OBS, 15 min, 60 s de folga, log, e das variáveis só o CAMINHO do arquivo', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'root-midia-vigia-env-'));
+    try {
+      const variaveis = join(pasta, 'root-midia.env');
+      writeFileSync(variaveis, 'ROOT_OS_EMAIL=eu@root\nROOT_OS_SENHA=senha-que-nao-vaza\n', { mode: 0o600 });
+      const xml = plistDoVigia({ node: '/opt/node/bin/node', script: '/repo/tools/root-midia/root-midia.mjs', obs: '/Users/p/Movies/OBS & Cia', log: '/Users/p/Library/Logs/root-midia/vigia.log', variaveis });
+      const chave = (k: string) => new RegExp(`<key>${k}</key>\\s*([\\s\\S]*?)\\s*(?=<key>|</dict>\\s*</plist>)`).exec(xml)?.[1] ?? '';
+      expect(chave('Label')).toBe(`<string>${ROTULO}</string>`);
+      expect(ROTULO).toBe('com.operacaoroot.root-midia.vigia');
+      expect(chave('ProgramArguments').match(/<string>(.*?)<\/string>/g)).toEqual([
+        '<string>/opt/node/bin/node</string>',
+        '<string>/repo/tools/root-midia/root-midia.mjs</string>',
+        '<string>vigia</string>',
+      ]);
+      expect(chave('WatchPaths')).toContain('<string>/Users/p/Movies/OBS &amp; Cia</string>');
+      expect(chave('StartInterval')).toBe('<integer>900</integer>');
+      expect(chave('ThrottleInterval')).toBe('<integer>60</integer>');
+      expect(chave('StandardOutPath')).toBe('<string>/Users/p/Library/Logs/root-midia/vigia.log</string>');
+      expect(chave('StandardErrorPath')).toBe('<string>/Users/p/Library/Logs/root-midia/vigia.log</string>');
+      expect([...xml.matchAll(/<key>(ROOT_[A-Z_]+)<\/key>/g)].map((m) => m[1])).toEqual(['ROOT_MIDIA_ENV']);
+      expect(xml).toContain(`<string>${variaveis}</string>`);
+      expect(xml).not.toMatch(/senha-que-nao-vaza|ROOT_OS_SENHA|eu@root/);
+      expect(permissaoAbertaDemais(0o100600)).toBe(false);
+      expect(permissaoAbertaDemais(0o100644)).toBe(true);
+      expect(permissaoAbertaDemais(0o100640)).toBe(true);
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
+  });
+
+  it('launchctl e osascript em lista de argumentos; a notificação vai como argumento do script, nunca dentro dele', () => {
+    expect(argsDoLaunchctl('bootstrap', { uid: 501, plist: '/x/a.plist' })).toEqual(['bootstrap', 'gui/501', '/x/a.plist']);
+    expect(argsDoLaunchctl('bootout', { uid: 501 })).toEqual(['bootout', `gui/501/${ROTULO}`]);
+    expect(argsDoLaunchctl('print', { uid: 501 })).toEqual(['print', `gui/501/${ROTULO}`]);
+    expect(() => argsDoLaunchctl('bootstrap', { uid: 501 })).toThrow(/plist/);
+    expect(() => argsDoLaunchctl('print', { uid: Number.NaN })).toThrow(/uid/);
+    const a = argsDaNotificacao('ambíguo: "a.mp4" & end tell\ndo shell script "x"');
+    expect(a.slice(0, 6)).toEqual(['-e', 'on run argv', '-e', 'display notification (item 1 of argv) with title (item 2 of argv)', '-e', 'end run']);
+    expect(a[6]).toBe('ambíguo: "a.mp4" & end tell do shell script "x"');
+    expect(a[7]).toBe('root-midia');
+    expect(argsDaNotificacao('x'.repeat(500))[6]).toHaveLength(240);
+  });
+
+  it('a memória: a notificação repetida fica calada por 6 h; o render que falhou com as mesmas peças não é refeito por 24 h', () => {
+    const agora = Date.parse('2026-09-25T13:00:00.000Z');
+    const m0 = lerMemoria('{lixo');
+    expect(m0).toEqual({ notificacoes: {}, renders: {}, brutosQueFalharam: {} });
+    const m1 = registrarNotificacao(m0, 'ambíguo: rode /root-midia ep-01', agora)!;
+    expect(registrarNotificacao(m1, 'ambíguo: rode /root-midia ep-01', agora + 60_000)).toBeNull();
+    expect(registrarNotificacao(m1, 'outra', agora + 60_000)).not.toBeNull();
+    expect(registrarNotificacao(m1, 'ambíguo: rode /root-midia ep-01', agora + SILENCIO_DA_NOTIFICACAO_MS)).not.toBeNull();
+
+    const ep = { id: 'e1', precisaDeRender: { carrossel: { pecas: 2, assinatura: 'aaa' }, corte: { pecas: 1, assinatura: 'ccc' }, story: { pecas: 0, assinatura: 'x' } } };
+    expect(rendersAFazer(ep, m0, agora).map((r) => r.formato)).toEqual(['corte', 'carrossel']);
+    const tentou = lerMemoria(JSON.stringify({ renders: { [chaveDoRender('e1', 'carrossel')]: { assinatura: 'aaa', em: agora }, lixo: 'x' } }));
+    expect(Object.keys(tentou.renders)).toEqual(['e1:carrossel']);
+    expect(rendersAFazer(ep, tentou, agora + 60_000).map((r) => r.formato)).toEqual(['corte']);
+    expect(rendersAFazer({ ...ep, precisaDeRender: { carrossel: { pecas: 2, assinatura: 'bbb' } } }, tentou, agora + 60_000)).toHaveLength(1);
+    expect(rendersAFazer(ep, tentou, agora + ESPERA_DO_RENDER_REPETIDO_MS).map((r) => r.formato)).toEqual(['corte', 'carrossel']);
+    expect(chaveDoBruto('/obs/a.mp4', 10, 1234.6)).toBe('/obs/a.mp4|10|1235');
+  });
+
+  it('o log: uma linha por aviso com a hora, roda aos 5 MB, e o estado lê a última linha', () => {
+    expect(linhaDoLog(Date.parse('2026-09-25T13:00:00.000Z'), 'um\ndois\n')).toBe('2026-09-25T13:00:00.000Z um ⏎ dois\n');
+    expect(precisaRodarOLog(5 * 1024 * 1024)).toBe(true);
+    expect(precisaRodarOLog(5 * 1024 * 1024 - 1)).toBe(false);
+    expect(ultimaLinha('a\nb\n\n')).toBe('b');
+    expect(ultimaLinha('')).toBeNull();
+  });
+
+  it('a transcrição de ENSAIO: um segmento por trecho com som, aceito pelo OS, e a palavra no segundo tira a tomada', () => {
+    const silencios = [{ inicio: 3, fim: 6 }, { inicio: 9, fim: 12 }];
+    const t = transcricaoDeEnsaio(silencios, 15, { palavra: 'root, corta' });
+    expect(t.segmentos.map((s) => [s.inicio, s.fim])).toEqual([[0, 3], [6, 9], [12, 15]]);
+    expect(t.segmentos[1].texto).toContain('root, corta');
+    expect(PautaTranscricaoSchema.safeParse(corpoDaTranscricao(t)).success).toBe(true);
+    const plano = planoDeCortes({ duracao: 15, silencios, segmentos: t.segmentos, palavra: 'root, corta' });
+    expect(plano.tomadasErradas).toHaveLength(1);
+    expect(plano.duracaoFinalSeg).toBeLessThan(5);
+    expect(transcricaoDeEnsaio([], 4).segmentos).toEqual([{ inicio: 0, fim: 4, texto: 'Trecho 1 do ensaio do vigia.' }]);
+  });
+});
+
+describe('root-midia: o vigia do Mac — a metade do bruto, com disco, relógio e cadeia de mentira (MD2)', () => {
+  const T = Date.parse('2026-09-25T13:00:00.000Z');
+  const EP = { apelido: 'ep-07', statusDesde: new Date(T).toISOString() };
+  const arq = (nome: string, over: Partial<{ tamanho: number; mtimeMs: number }> = {}) => ({ nome, arquivo: true, tamanho: 1_000_000, mtimeMs: T + 60_000, ...over });
+
+  /** As leituras da pasta saem da lista, uma por chamada (a última se repete); o relógio só anda pela espera. */
+  function montar(leituras: Array<Array<ReturnType<typeof arq>>>, over: Partial<Parameters<typeof passoDoBruto>[0]> = {}) {
+    let agora = T + 10 * 60_000;
+    let i = 0;
+    const r = { notificacoes: [] as string[], esperas: [] as number[], cadeias: [] as string[], falhas: [] as string[], registros: [] as string[] };
+    const o = {
+      ep: EP,
+      obs: '/obs',
+      existe: () => true,
+      ler: () => leituras[Math.min(i++, leituras.length - 1)],
+      agora: () => agora,
+      esperar: async (ms: number) => {
+        r.esperas.push(ms);
+        agora += ms;
+      },
+      intervaloMs: 60_000,
+      idadeMinimaMs: IDADE_MINIMA_MS,
+      esperaMaximaMs: 5 * 60_000,
+      jaFalhou: () => false,
+      lembrarFalha: (k: string) => void r.falhas.push(k),
+      transcritor: () => ({ ensaio: false }),
+      cadeia: async (bruto: string) => {
+        r.cadeias.push(bruto);
+        return { status: 'pacote' };
+      },
+      notificar: async (m: string) => void r.notificacoes.push(m),
+      registrar: (m: string) => void r.registros.push(m),
+      ...over,
+    };
+    return { o, r, avancar: (ms: number) => (agora += ms), agora: () => agora };
+  }
+
+  it('um bruto parado e maduro vai pela cadeia; a notificação diz o status', async () => {
+    const { o, r } = montar([[arq('g.mp4')]]);
+    expect(await passoDoBruto(o)).toEqual({ estado: 'enviado', texto: 'ep-07: g.mp4 → pacote' });
+    expect(r.cadeias).toEqual([join('/obs', 'g.mp4')]);
+    expect(r.esperas).toEqual([60_000]);
+    expect(r.notificacoes).toEqual(['ep-07: mídia e transcrição no OS (pacote).']);
+  });
+
+  it('dois candidatos: a cadeia não é chamada, sai o "ambíguo" e nada é enviado', async () => {
+    const { o, r } = montar([[arq('a.mp4'), arq('b.mkv')]]);
+    expect(await passoDoBruto(o)).toMatchObject({ estado: 'ambiguo' });
+    expect(r.cadeias).toEqual([]);
+    expect(r.notificacoes).toEqual([mensagemDeAmbiguo('ep-07')]);
+  });
+
+  it('o arquivo mudando entre as leituras: "gravando", pula sem cadeia nem notificação', async () => {
+    const { o, r } = montar([[arq('g.mp4')], [arq('g.mp4', { tamanho: 2_000_000 })]]);
+    expect(await passoDoBruto(o)).toMatchObject({ estado: 'gravando' });
+    expect(r.cadeias).toEqual([]);
+    expect(r.notificacoes).toEqual([]);
+  });
+
+  it('o jovem espera o que falta dos 2 min e segue; o que passaria dos 5 min fica para a próxima passagem', async () => {
+    const { o, r, agora } = montar([]);
+    const recente = [arq('g.mp4', { mtimeMs: agora() - 10_000 })];
+    o.ler = () => recente;
+    expect(await passoDoBruto(o)).toMatchObject({ estado: 'enviado' });
+    // 60 s entre as leituras; faltavam 120 − 70 = 50 s de idade.
+    expect(r.esperas).toEqual([60_000, 50_000]);
+
+    const lento = montar([], { idadeMinimaMs: 10 * 60_000 });
+    const novo = [arq('g.mp4', { mtimeMs: lento.agora() })];
+    lento.o.ler = () => novo;
+    expect(await passoDoBruto(lento.o)).toMatchObject({ estado: 'jovem' });
+    expect(lento.r.cadeias).toEqual([]);
+  });
+
+  it('sem o modelo do whisper: notifica e para, SEM marcar o bruto como falho', async () => {
+    const { o, r } = montar([[arq('g.mp4')]], { transcritor: () => ({ falta: 'Falta o modelo do whisper (WHISPER_MODEL, D-MC3)' }) });
+    expect(await passoDoBruto(o)).toMatchObject({ estado: 'sem-modelo' });
+    expect(r.cadeias).toEqual([]);
+    expect(r.falhas).toEqual([]);
+    expect(r.notificacoes).toEqual(['ep-07: Falta o modelo do whisper (WHISPER_MODEL, D-MC3)']);
+  });
+
+  it('a cadeia que lança marca o bruto como falho pela chave dele; o que já falhou não roda de novo', async () => {
+    const { o, r } = montar([[arq('g.mp4')]], {
+      cadeia: async () => {
+        throw new Error('ffmpeg saiu com 1\ndetalhe');
+      },
+    });
+    expect(await passoDoBruto(o)).toEqual({ estado: 'falhou', texto: 'ep-07: a cadeia parou (ffmpeg saiu com 1)' });
+    expect(r.falhas).toEqual([chaveDoBruto(join('/obs', 'g.mp4'), 1_000_000, T + 60_000)]);
+    expect(r.notificacoes).toEqual(['ep-07: o vigia parou (ffmpeg saiu com 1). Rode /root-midia ep-07.']);
+
+    const deNovo = montar([[arq('g.mp4')]], { jaFalhou: (k: string) => k === r.falhas[0] });
+    expect(await passoDoBruto(deNovo.o)).toMatchObject({ estado: 'ja-falhou' });
+    expect(deNovo.r.cadeias).toEqual([]);
+  });
+
+  it('o episódio que saiu de Gravação durante a cadeia: nada enviado, notificado, e o bruto não vira falho', async () => {
+    const motivo = motivoParaOVigiaNaoEnviar({ apelido: 'ep-07', status: 'edicao', falta: 'transcricao' }, 'ep-07')!;
+    const { o, r } = montar([[arq('g.mp4')]], { cadeia: async () => ({ naoEnviado: motivo }) });
+    expect(await passoDoBruto(o)).toEqual({ estado: 'mudou', texto: motivo });
+    expect(r.falhas).toEqual([]);
+    expect(r.notificacoes).toEqual([motivo]);
+  });
+
+  it('sem a pasta do OBS, sem statusDesde ou sem gravação nova: nenhuma leitura de espera nem cadeia', async () => {
+    const semObs = montar([[arq('g.mp4')]], { existe: () => false });
+    expect(await passoDoBruto(semObs.o)).toMatchObject({ estado: 'sem-obs' });
+    const semDesde = montar([[arq('g.mp4')]], { ep: { apelido: 'ep-07', statusDesde: null } });
+    expect(await passoDoBruto(semDesde.o)).toMatchObject({ estado: 'sem-status' });
+    const velho = montar([[arq('ontem.mp4', { mtimeMs: T - 1 })]]);
+    expect(await passoDoBruto(velho.o)).toMatchObject({ estado: 'nenhum' });
+    for (const x of [semObs, semDesde, velho]) {
+      expect(x.r.cadeias).toEqual([]);
+      expect(x.r.esperas).toEqual([]);
+    }
+  });
+});
+
+describe('root-midia: o vigia do Mac — o que a passagem decide fora do bruto (MD2)', () => {
+  const T = Date.parse('2026-09-25T13:00:00.000Z');
+  const arq = (nome: string, mtimeMs: number) => ({ nome, arquivo: true, tamanho: 10, mtimeMs });
+
+  it('a mídia só vai se o episódio AINDA está em Gravação sem mídia', () => {
+    expect(motivoParaOVigiaNaoEnviar({ apelido: 'ep-07', status: 'gravacao', falta: 'midia' }, 'ep-07')).toBeNull();
+    expect(motivoParaOVigiaNaoEnviar({ apelido: 'ep-07', status: 'edicao', falta: 'transcricao' }, 'ep-07')).toBe(
+      'ep-07 mudou durante a cadeia (agora em edicao, falta transcricao); nada enviado',
+    );
+    expect(motivoParaOVigiaNaoEnviar(null, 'ep-07')).toMatch(/^ep-07 mudou durante a cadeia \(saiu da fila da mídia\); nada enviado$/);
+  });
+
+  it('vários em Gravação só avisam com gravação nova depois da entrada do mais antigo', () => {
+    const itens = [
+      { status: 'gravacao', falta: 'midia', statusDesde: new Date(T).toISOString() },
+      { status: 'gravacao', falta: 'midia', statusDesde: new Date(T + 3_600_000).toISOString() },
+      { status: 'edicao', falta: 'transcricao', statusDesde: new Date(T - 86_400_000).toISOString() },
+    ];
+    expect(gravacaoParaVarios(itens, [arq('ontem.mp4', T - 1)])).toBe(false);
+    expect(gravacaoParaVarios(itens, [arq('agora.mp4', T + 1)])).toBe(true);
+    expect(gravacaoParaVarios([{ status: 'gravacao', falta: 'midia' }], [])).toBe(true);
+  });
+
+  it('o OBS escrevendo na raiz nos últimos 2 min segura os renders', () => {
+    expect(obsEscrevendo([arq('g.mkv', T - 30_000)], T)).toBe(true);
+    expect(obsEscrevendo([arq('g.mkv', T - IDADE_MINIMA_MS - 1)], T)).toBe(false);
+    expect(obsEscrevendo([arq('notas.txt', T)], T)).toBe(false);
+  });
+
+  it('o render que não subiu vira notificação: o carrossel estourado e o corte sem trecho', () => {
+    expect(
+      avisosDoRender('ep-07', 'carrossel', {
+        carrosseis: [
+          { n: 1, enviado: true, estourados: [] },
+          { n: 2, enviado: false, estourados: [3, 5] },
+          { n: 3, enviado: false, estourados: [null] },
+        ],
+      }),
+    ).toEqual([
+      'ep-07: o carrossel da matéria 2 estourou o texto no slide 3, 5 e não subiu; encurte na tela',
+      'ep-07: o carrossel da matéria 3 estourou o texto e não subiu; encurte na tela',
+    ]);
+    expect(avisosDoRender('ep-07', 'corte', { cortes: [], pulados: [{ n: 2, motivo: 'sem trecho; gere a semana de novo' }] })).toEqual([
+      'ep-07: o corte da matéria 2 ficou sem render (sem trecho; gere a semana de novo)',
+    ]);
+    expect(avisosDoRender('ep-07', 'story', { stories: [] })).toEqual([]);
+    expect(avisosDoRender('ep-07', 'corte', undefined)).toEqual([]);
+  });
+
+  it('o instalar monta os caminhos só com o arquivo de variáveis, que é o que o launchd vai ver', () => {
+    const env = ambienteDoAgente('ROOT_MIDIA_OBS_DIR=~/Gravações\nROOT_OS_EMAIL=eu@root\n', '/p/root-midia.env');
+    expect(env).toEqual({ ROOT_MIDIA_OBS_DIR: '~/Gravações', ROOT_OS_EMAIL: 'eu@root', ROOT_MIDIA_ENV: '/p/root-midia.env' });
+    expect(caminhosDoVigia(env, '/Users/p')).toMatchObject({ obs: '/Users/p/Gravações', variaveis: '/p/root-midia.env', trava: '/p/root-midia-vigia.lock' });
+    // O que está só no shell de quem instala não entra.
+    expect(caminhosDoVigia(ambienteDoAgente('', '/p/v.env'), '/Users/p').obs).toBe('/Users/p/Movies/OBS');
+  });
+});
+
+describe('root-midia: a catraca do não-apagar (MD2)', () => {
+  const raiz = join(__dirname, '../../../tools/root-midia');
+  const arquivos = ['root-midia.mjs', ...readdirSync(join(raiz, 'lib')).filter((n) => n.endsWith('.mjs')).map((n) => `lib/${n}`)];
+  const fontes = arquivos.map((a) => ({ a, linhas: readFileSync(join(raiz, a), 'utf8').split('\n') }));
+
+  it('a varredura pega todo arquivo da ferramenta, o vigia inclusive', () => {
+    expect(arquivos).toContain('lib/vigia.mjs');
+    expect(arquivos).toContain('root-midia.mjs');
+  });
+
+  it('só apaga pasta temporária própria (mkdtemp), o plist do agente e a porta da trava; nunca o bruto, o final nem nada da pasta do OBS', () => {
+    const achados: string[] = [];
+    for (const { a, linhas } of fontes) {
+      linhas.forEach((linha, i) => {
+        for (const m of linha.matchAll(/\b(unlinkSync|unlink|rmSync|rm|rmdirSync|rmdir|renameSync|rename)\s*\(\s*([^,)]+)/g)) {
+          const [, chamada, alvo] = m;
+          const antes = linhas.slice(Math.max(0, i - 80), i).reverse();
+          const origem = antes.find((l) => new RegExp(`\\bconst ${alvo.trim()} = `).test(l)) ?? '';
+          if (chamada === 'rmSync' && alvo.trim() === 'pasta' && /mkdtempSync\(/.test(origem)) continue;
+          if (chamada === 'unlinkSync' && alvo.trim() === 'plist' && /`\$\{ROTULO\}\.plist`/.test(origem)) continue;
+          if (chamada === 'unlinkSync' && alvo.trim() === 'porta' && a === 'lib/vigia.mjs' && /`\$\{caminho\}\.porta`/.test(origem)) continue;
+          if (chamada === 'renameSync' && alvo.trim() === 'log' && a === 'root-midia.mjs') continue;
+          achados.push(`${a}:${i + 1}: ${linha.trim()}`);
+        }
+      });
+    }
+    expect(achados).toEqual([]);
+  });
+
+  it('nenhum comando externo de apagar (rm, trash) nem a API de promessas do fs', () => {
+    for (const { a, linhas } of fontes) {
+      const texto = linhas.join('\n');
+      expect(texto, a).not.toMatch(/['"`](rm|trash|srm|rmdir)['"`]/);
+      expect(texto, a).not.toMatch(/fs\/promises|promises\.(rm|unlink)/);
+    }
   });
 });

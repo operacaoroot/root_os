@@ -3,11 +3,13 @@ import { Prisma } from '@prisma/client';
 import {
   PAUTA_FORMATOS_DA_SEMANA,
   PAUTA_STATUS_PENDENTES_DE_MIDIA,
+  apelidoDoEpisodio,
   midiaDoEpisodio,
   textoDaTranscricao,
   thumbsDoPacote,
   titulosDoPacote,
   type PautaEpisodioDetalhe,
+  type PautaEpisodioPendenteDeRender,
   type PautaEpisodioStatus,
   type PautaEpisodiosPendentesDeMidia,
   type PautaMidiaDoEpisodio,
@@ -25,9 +27,26 @@ import {
   motivoParaNaoReceberMidia,
   motivoParaNaoReceberTranscricao,
   pendenteDeMidia,
+  renderPendente,
   resumoDaMidia,
   transcricaoForaDoVideo,
 } from './midia-do-episodio';
+
+/** Quantos episódios da Derivação a fila do Mac leva por vez, e o tamanho de cada lote lido. */
+const TETO_DE_PENDENTES_DE_RENDER = 20;
+/** A varredura da Derivação para em 5 lotes (100 episódios): o que sobra é o mais antigo, e a leitura a cada 15 min não cresce com os anos. */
+const TETO_DE_LOTES_DA_DERIVACAO = 5;
+
+type LinhaDaDerivacao = {
+  id: string;
+  numero: number;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  rodadaId: string;
+  midia: Prisma.JsonValue;
+  transcricao: Prisma.JsonValue;
+  statusDesde: Date;
+};
 
 const MSG_CORRIDA = 'O episódio mudou enquanto isso (outra aba ou outro envio) — confira e mande de novo.';
 
@@ -46,20 +65,80 @@ export class MidiaService {
     private readonly roteiros: RoteiroService,
   ) {}
 
-  /** Gravados e em edição, do mais antigo: é a fila do Mac. */
+  /**
+   * Gravados e em edição, do mais antigo: é a fila do Mac. Junto, os da
+   * Derivação com peça da semana sem render (MD2), que o vigia renderiza.
+   */
   async pendentes(orgId: string): Promise<PautaEpisodiosPendentesDeMidia> {
     const rows = await this.prisma.pautaEpisodio.findMany({
       where: { orgId, status: { in: [...PAUTA_STATUS_PENDENTES_DE_MIDIA] } },
       orderBy: { numero: 'asc' },
       take: 50,
-      select: { id: true, numero: true, titulo: true, status: true, palavraDeCorte: true, midia: true, atualizadoEm: true },
+      select: { id: true, numero: true, titulo: true, status: true, palavraDeCorte: true, midia: true, atualizadoEm: true, statusDesde: true },
     });
     // Uma leitura da memória para a fila inteira, e só se houver fila.
     const daEmpresa = rows.length ? await this.roteiros.palavraDaEmpresa(orgId) : null;
     return {
       items: rows.map((e) => pendenteDeMidia(e, daEmpresa)),
+      derivacao: await this.pendentesDeRender(orgId),
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
+  }
+
+  /**
+   * Os da Derivação com render pendente, do MAIS NOVO, até 20. Nada tira um
+   * episódio da Derivação sozinho (o MD1 para nela), então a leitura anda em
+   * lotes de 20 até juntar os 20 pendentes: os antigos já renderizados não
+   * escondem o da semana. Uma leitura das peças por episódio.
+   */
+  private async pendentesDeRender(orgId: string): Promise<PautaEpisodioPendenteDeRender[]> {
+    const saida: PautaEpisodioPendenteDeRender[] = [];
+    let antesDe: number | null = null;
+    for (let lote = 0; lote < TETO_DE_LOTES_DA_DERIVACAO; lote++) {
+      const rows: LinhaDaDerivacao[] = await this.prisma.pautaEpisodio.findMany({
+        where: { orgId, status: { in: ['derivacao'] }, ...(antesDe === null ? {} : { numero: { lt: antesDe } }) },
+        orderBy: { numero: 'desc' },
+        take: TETO_DE_PENDENTES_DE_RENDER,
+        select: { id: true, numero: true, titulo: true, status: true, rodadaId: true, midia: true, transcricao: true, statusDesde: true },
+      });
+      if (!rows.length) break;
+      antesDe = rows[rows.length - 1].numero;
+      await this.juntarPendentesDeRender(orgId, rows, saida);
+      if (saida.length >= TETO_DE_PENDENTES_DE_RENDER || rows.length < TETO_DE_PENDENTES_DE_RENDER) break;
+    }
+    return saida;
+  }
+
+  private async juntarPendentesDeRender(
+    orgId: string,
+    rows: LinhaDaDerivacao[],
+    saida: PautaEpisodioPendenteDeRender[],
+  ): Promise<void> {
+    for (const e of rows) {
+      if (saida.length >= TETO_DE_PENDENTES_DE_RENDER) return;
+      const pecas = await this.prisma.pautaPeca.findMany({
+        where: {
+          orgId,
+          rodadaId: e.rodadaId,
+          canal: 'instagram',
+          formato: { in: [...PAUTA_FORMATOS_DA_SEMANA] },
+          status: { in: ['rascunho', 'aprovada'] },
+        },
+        select: { id: true, formato: true, status: true, titulo: true, corpo: true, meta: true },
+      });
+      const precisaDeRender = renderPendente(pecas, { id: e.id, numero: e.numero, sha: shaDaTranscricao(lerTranscricao(e.transcricao)) });
+      if (!Object.keys(precisaDeRender).length) continue;
+      saida.push({
+        id: e.id,
+        numero: e.numero,
+        apelido: apelidoDoEpisodio(e.numero),
+        titulo: e.titulo,
+        status: e.status,
+        statusDesde: e.statusDesde.toISOString(),
+        arquivoFinal: midiaDoEpisodio(e.midia)?.arquivoFinal ?? null,
+        precisaDeRender,
+      });
+    }
   }
 
   /**

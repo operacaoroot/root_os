@@ -54,6 +54,16 @@ describe('a mídia do episódio', () => {
     expect(secao()).not.toHaveTextContent('/root-midia');
   });
 
+  it('MD2: o roteiro pede Gravação antes de gravar, e a gravação diz quando o vigia do Mac age sozinho', () => {
+    const { unmount } = render(<SecaoMidia apelido="ep-02" status="roteiro" midia={{}} transcricao={[]} />);
+    expect(secao()).toHaveTextContent('Ponha o episódio em Gravação antes de gravar: é assim que o vigia do Mac reconhece o bruto.');
+    unmount();
+    render(<SecaoMidia apelido="ep-02" status="gravacao" midia={{}} transcricao={[]} />);
+    expect(secao()).toHaveTextContent('Com o vigia do Mac instalado, isso roda sozinho');
+    expect(secao()).toHaveTextContent('a única feita depois de o episódio entrar em Gravação');
+    expect(secao()).toHaveTextContent('não tenha pausa de mais de 2 min');
+  });
+
   it('em edição com mídia: o nome do vídeo final, durações, cortes por motivo e o que falta', () => {
     render(<SecaoMidia apelido="ep-02" status="edicao" midia={MIDIA} transcricao={[]} />);
     const final = screen.getByText('ep-02-final.mp4');

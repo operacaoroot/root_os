@@ -12,7 +12,21 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  appendFileSync,
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -74,10 +88,43 @@ import {
   corpoDaMidia,
   corpoDaTranscricao,
   corpoGrandeDemais,
+  ehLocal,
   exigirOs,
   juntarVariaveis,
   lerArquivoDeVariaveis,
 } from './lib/os.mjs';
+import {
+  ESPERA_MAXIMA_MS,
+  IDADE_MINIMA_MS,
+  INTERVALO_DAS_LEITURAS_MS,
+  ROTULO,
+  ambienteDoAgente,
+  argsDaNotificacao,
+  argsDoLaunchctl,
+  avisosDoRender,
+  caminhosDoVigia,
+  chaveDoRender,
+  episodioDaGravacao,
+  gravacaoParaVarios,
+  lerMemoria,
+  lerPastaDoObs,
+  motivoParaOVigiaNaoEnviar,
+  obsEscrevendo,
+  passoDoBruto,
+  linhaDoLog,
+  mensagemDeAmbiguo,
+  nomeLivre,
+  pastaDoEpisodio,
+  permissaoAbertaDemais,
+  plistDoVigia,
+  precisaRodarOLog,
+  registrarNotificacao,
+  rendersAFazer,
+  soltarTrava,
+  tomarTrava,
+  transcricaoDeEnsaio,
+  ultimaLinha,
+} from './lib/vigia.mjs';
 
 const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
 
@@ -128,11 +175,27 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
       Vídeo sintético 1920×1080 com um PiP colorido: 1 corte vertical e 1 story (e 1 carrossel, se a
       máquina de carrossel estiver instalada), conferindo 1080×1920, a duração e o rosto embaixo.
 
+  O vigia (MD2) — o launchd roda a cadeia sozinho quando aparece gravação nova:
+  root-midia vigia
+      Uma passagem e sai: com EXATAMENTE um episódio em Gravação no OS, acha o bruto na raiz de
+      ROOT_MIDIA_OBS_DIR (.mkv/.mp4/.mov gravado depois da entrada em Gravação, parado há 2 min),
+      roda transcrever → cortes → cortar → transcrever → enviar só pelo ffmpeg, e renderiza o que
+      a Derivação ainda não tem. Dois brutos novos = notificação "ambíguo" e nada enviado. O bruto
+      só é lido. Log em ~/Library/Logs/root-midia/vigia.log.
+  root-midia vigia instalar | desinstalar | estado
+      Grava o agente do launchd (~/Library/LaunchAgents/com.operacaoroot.root-midia.vigia.plist,
+      só com o caminho do arquivo de variáveis — a senha fica nele, com chmod 600) e o carrega;
+      desinstalar descarrega e apaga só o plist; estado mostra o launchctl e a última linha do log.
+  root-midia ensaio-vigia [--whisper] [--manter]
+      Contra a API DESTA máquina, com um episódio em Gravação: dois brutos sintéticos (ambíguo, nada
+      enviado) e depois um (vai a Pacote, o sha256 do bruto igual antes e depois).
+
 Variáveis: ROOT_OS_API_URL (padrão http://localhost:4001/api), ROOT_OS_EMAIL, ROOT_OS_SENHA,
 WHISPER_MODEL (caminho do .bin ggml), ROOT_MIDIA_PALAVRA (padrão "root, corta"),
 ROOT_MIDIA_CHROME (o Chrome do render, quando não é o de /Applications), ROOT_MIDIA_PIP e
 ROOT_MIDIA_TELA (x,y,l,a no canvas), ROOT_MIDIA_OBS_COLECAO (o JSON da coleção do OBS),
-ROOT_MIDIA_CARROSSEL_RENDER (o render.mjs da máquina de carrossel) e ROOT_MIDIA_MARCA (o brand.json).
+ROOT_MIDIA_CARROSSEL_RENDER (o render.mjs da máquina de carrossel), ROOT_MIDIA_MARCA (o brand.json),
+ROOT_MIDIA_OBS_DIR (a pasta das gravações, padrão ~/Movies/OBS) e ROOT_MIDIA_VIGIA_LOG (o log do vigia).
 Lidas do ambiente e do arquivo ~/.config/root/root-midia.env (ou o de ROOT_MIDIA_ENV); o ambiente vence.`;
 
 /** O ambiente mais o arquivo de variáveis do Mac, sem sobrescrever o que já foi exportado. */
@@ -145,7 +208,7 @@ function ambiente() {
   return juntarVariaveis(process.env, lerArquivoDeVariaveis(readFileSync(caminho, 'utf8')));
 }
 
-const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar', 'forcar']);
+const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar', 'forcar', 'whisper']);
 
 /** @param {string[]} argv */
 function lerArgumentos(argv) {
@@ -182,9 +245,16 @@ function numero(o, nome, padrao) {
   return n;
 }
 
+/**
+ * Para onde vão os avisos: o terminal, ou o log do vigia (MD2) enquanto uma
+ * passagem roda sob o launchd.
+ * @type {(msg: string) => void}
+ */
+let destinoDosAvisos = (msg) => process.stderr.write(`${msg}\n`);
+
 /** @param {string} msg */
 function avisar(msg) {
-  process.stderr.write(`${msg}\n`);
+  destinoDosAvisos(msg);
 }
 
 /** Acha o binário no PATH ou no Homebrew; faltar é mensagem, não instalação. @param {string} nome */
@@ -425,6 +495,16 @@ async function enviar(ep, o) {
   const fila = await os.pendentes();
   /** @type {Array<{ id: string, numero: number, apelido: string, titulo: string, status: string, falta: string }>} */
   const itens = fila?.items ?? [];
+  if (o.exigirGravacao === true) {
+    let achado = null;
+    try {
+      achado = acharEpisodio(itens, ep);
+    } catch {
+      /* saiu da fila: o motivo diz */
+    }
+    const motivo = motivoParaOVigiaNaoEnviar(achado, ep);
+    if (motivo) return { id: achado?.id ?? null, apelido: achado?.apelido ?? ep, status: achado?.status ?? null, naoEnviado: motivo };
+  }
   const alvo = acharEpisodio(itens, ep);
   avisar(`${alvo.apelido} — ${alvo.titulo} (${alvo.status}; falta ${alvo.falta})`);
 
@@ -482,18 +562,21 @@ async function enviar(ep, o) {
   return { id: alvo.id, apelido: alvo.apelido, status: resposta?.status ?? alvo.status };
 }
 
-/** Clipe sintético: tom 0–3 s, silêncio 3–6 s, tom 6–9 s, silêncio 9–12 s, tom 12–15 s. */
+/** Clipe sintético: tom 0–3 s, silêncio 3–6 s, tom 6–9 s, silêncio 9–12 s, tom 12–15 s. @param {string} clipe */
+async function gerarClipeDeEnsaio(clipe) {
+  await rodar(binario('ffmpeg'), [
+    '-hide_banner', '-loglevel', 'error', '-n',
+    '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=15',
+    '-f', 'lavfi', '-i', "aevalsrc='if(lt(mod(t,6),3),0.5*sin(2*PI*440*t),0)':s=48000:d=15",
+    '-c:v', 'libx264', '-g', '60', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clipe,
+  ]);
+  return clipe;
+}
+
 async function ensaio({ manter = false }) {
   const pasta = mkdtempSync(join(tmpdir(), 'root-midia-ensaio-'));
-  const ffmpeg = binario('ffmpeg');
   try {
-    const clipe = join(pasta, 'bruto.mp4');
-    await rodar(ffmpeg, [
-      '-hide_banner', '-loglevel', 'error',
-      '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=15',
-      '-f', 'lavfi', '-i', "aevalsrc='if(lt(mod(t,6),3),0.5*sin(2*PI*440*t),0)':s=48000:d=15",
-      '-c:v', 'libx264', '-g', '60', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clipe,
-    ]);
+    const clipe = await gerarClipeDeEnsaio(join(pasta, 'bruto.mp4'));
     const s = await detectarSilencios(clipe, { ruidoDb: PADROES.ruidoDb, minimoSeg: PADROES.minimoSeg });
     const plano = planoDeCortes({ duracao: s.duracaoSeg, silencios: s.silencios });
     const cortesJson = join(pasta, 'cortes.json');
@@ -800,9 +883,11 @@ async function cortesVerticais(ep, finalArg, o) {
   avisar(`Rosto em ${regioes.pip.largura}×${regioes.pip.altura} a partir de (${regioes.pip.x}, ${regioes.pip.y}) — ${regioes.origem}.`);
   const pasta = pastaDaSemana(o, video, alvo.apelido);
   const feitas = [];
+  const pulados = [];
   for (const { n, peca } of pecasParaRender(semana, 'corte', o)) {
     if (typeof peca.inicio !== 'number' || typeof peca.fim !== 'number') {
       avisar(`Matéria ${n}: o corte não tem trecho — gere a semana de novo.`);
+      pulados.push({ n, motivo: 'sem trecho; gere a semana de novo' });
       continue;
     }
     const saida = join(pasta, nomeDoCorte(alvo.apelido, n));
@@ -816,7 +901,7 @@ async function cortesVerticais(ep, finalArg, o) {
     }
     feitas.push({ n, ...corpo, enviado: o['sem-enviar'] !== true });
   }
-  return { id: alvo.id, apelido: alvo.apelido, pasta, pip: regioes.pip, cortes: feitas };
+  return { id: alvo.id, apelido: alvo.apelido, pasta, pip: regioes.pip, cortes: feitas, pulados };
 }
 
 /**
@@ -1065,6 +1150,406 @@ async function ensaioSemana({ manter = false }) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// O vigia do Mac (MD2): o launchd dispara, uma passagem faz o que o comando
+// manual faria — só pelo ffmpeg — e sai. O bruto só é lido.
+// ---------------------------------------------------------------------------
+
+const LAUNCHCTL = '/bin/launchctl';
+const OSASCRIPT = '/usr/bin/osascript';
+
+/** @param {string} caminho */
+function lerTextoSeHouver(caminho) {
+  try {
+    return readFileSync(caminho, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/** O sha256 de um arquivo, lido em pedaços (o bruto pode ter gigas). @param {string} caminho */
+function sha256DoArquivo(caminho) {
+  return new Promise((ok, falha) => {
+    const h = createHash('sha256');
+    createReadStream(caminho)
+      .on('data', (d) => h.update(d))
+      .on('error', falha)
+      .on('end', () => ok(h.digest('hex')));
+  });
+}
+
+/**
+ * O log do vigia: uma linha com a hora por aviso. Passou de 5 MB, o de agora
+ * vira `.1` (o `.1` anterior é substituído) no começo da passagem.
+ * @param {string} log @param {{ eco?: boolean }} [o]
+ */
+function registradorDoVigia(log, { eco = process.stderr.isTTY === true } = {}) {
+  mkdirSync(dirname(log), { recursive: true });
+  try {
+    if (precisaRodarOLog(statSync(log).size)) renameSync(log, `${log}.1`);
+  } catch {
+    /* ainda não há log */
+  }
+  return (/** @type {string} */ msg) => {
+    appendFileSync(log, linhaDoLog(Date.now(), msg));
+    if (eco) process.stderr.write(`${msg}\n`);
+  };
+}
+
+/**
+ * A notificação nativa do Mac. Falhar ao notificar não derruba a passagem.
+ * @param {string} mensagem
+ */
+async function notificarNoMac(mensagem) {
+  await rodar(OSASCRIPT, argsDaNotificacao(mensagem, 'root-midia · vigia'));
+}
+
+/**
+ * Quem transcreve na passagem: o whisper-cli com o modelo de WHISPER_MODEL,
+ * ou — só contra a API desta máquina — a transcrição de ENSAIO (o complemento
+ * dos silêncios com texto sintético), para provar a cadeia sem o modelo.
+ * @param {ReturnType<typeof configuracao>} cfg
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ transcrever: (arquivo: string, papel: 'bruto' | 'final', palavra: string | null) => Promise<any>, ensaio: boolean } | { falta: string }}
+ */
+function transcritorDaPassagem(cfg, env) {
+  if (/^(1|sim|true)$/i.test(env.ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO?.trim() ?? '')) {
+    if (!ehLocal(cfg.url)) {
+      return { falta: `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO só vale contra a API desta máquina (a de agora é ${cfg.url}).` };
+    }
+    return { transcrever: transcricaoDeEnsaioDoArquivo, ensaio: true };
+  }
+  if (!cfg.modelo || !existsSync(cfg.modelo)) {
+    return { falta: 'Falta o modelo do whisper (WHISPER_MODEL, D-MC3): o vigia não baixa nada. Aponte o modelo ou rode a /root-midia à mão.' };
+  }
+  return { transcrever: (arquivo) => transcrever(arquivo, { idioma: 'pt', modelo: cfg.modelo }), ensaio: false };
+}
+
+/** @param {string} arquivo @param {'bruto' | 'final'} papel @param {string | null} palavra */
+async function transcricaoDeEnsaioDoArquivo(arquivo, papel, palavra) {
+  const s = await detectarSilencios(arquivo, { ruidoDb: PADROES.ruidoDb, minimoSeg: PADROES.minimoSeg });
+  return { arquivo, ...transcricaoDeEnsaio(s.silencios, s.duracaoSeg, { palavra: papel === 'bruto' ? palavra : null }) };
+}
+
+/**
+ * A cadeia do comando manual, só pelo ffmpeg (o PalmierPro exige o app aberto):
+ * transcrever o bruto → silêncios e palavra de corte → cortar → transcrever o
+ * final → enviar, se o episódio ainda estiver em Gravação sem mídia. Tudo o que
+ * é gerado vai para `<OBS>/root-midia/ep-NN/`, com nome que ainda não existe; o
+ * bruto só é lido.
+ * @param {{ apelido: string, palavraDeCorte: string }} ep
+ * @param {string} bruto
+ * @param {string} pasta
+ * @param {(arquivo: string, papel: 'bruto' | 'final', palavra: string | null) => Promise<any>} transcritor
+ */
+async function cadeiaDoBruto(ep, bruto, pasta, transcritor) {
+  mkdirSync(pasta, { recursive: true });
+  const salvar = (/** @type {string} */ base, /** @type {unknown} */ valor) => {
+    const arquivo = nomeLivre(pasta, base, '.json');
+    writeFileSync(arquivo, `${JSON.stringify(valor, null, 2)}\n`);
+    return arquivo;
+  };
+  avisar(`${ep.apelido}: transcrevendo o bruto ${basename(bruto)} (acha as tomadas erradas pela palavra "${ep.palavraDeCorte}")…`);
+  const doBruto = await transcritor(bruto, 'bruto', ep.palavraDeCorte);
+  salvar('bruto.transcricao', doBruto);
+  const s = await detectarSilencios(bruto, { ruidoDb: PADROES.ruidoDb, minimoSeg: PADROES.minimoSeg });
+  const plano = planoDeCortes({
+    duracao: s.duracaoSeg,
+    silencios: s.silencios,
+    segmentos: segmentosDaTranscricao(doBruto),
+    palavra: ep.palavraDeCorte,
+  });
+  const cortesJson = salvar('cortes', { arquivo: bruto, ...plano });
+  avisar(
+    `${ep.apelido}: ${plano.duracaoBrutoSeg.toFixed(1)} s → ${plano.duracaoFinalSeg.toFixed(1)} s, ` +
+      `${plano.tomadasErradas.length} tomada(s) errada(s) e ${plano.removidos.length} trecho(s) fora.`,
+  );
+  const final = nomeLivre(pasta, `${ep.apelido}-final`, '.mp4');
+  const r = await cortar(bruto, { arquivo: bruto, ...plano }, final, { modo: 'auto' });
+  avisar(`${ep.apelido}: final ${basename(final)} com ${r.duracaoFinalSeg.toFixed(1)} s.`);
+  const doFinal = await transcritor(final, 'final', null);
+  const transcricaoJson = salvar('final.transcricao', doFinal);
+  writeFileSync(`${transcricaoJson.replace(/\.json$/i, '')}.srt`, srtDosSegmentos(segmentosDaTranscricao(doFinal)));
+  // Relê a fila antes de mandar: se o episódio saiu de Gravação no meio, nada vai.
+  return enviar(ep.apelido, { final, bruto, cortes: cortesJson, transcricao: transcricaoJson, editor: 'ffmpeg', exigirGravacao: true });
+}
+
+/**
+ * O render de um formato da semana, pelas mesmas funções dos comandos. A pasta
+ * vai explícita: sob o launchd o diretório atual é `/`, e o carrossel sem o
+ * final no disco cairia nele.
+ * @param {'corte' | 'story' | 'carrossel'} formato @param {string} apelido @param {string} obs
+ */
+function renderDoFormato(formato, apelido, obs) {
+  const o = { saida: join(pastaDoEpisodio(obs, apelido), `${apelido}-semana`) };
+  if (formato === 'corte') return cortesVerticais(apelido, undefined, o);
+  if (formato === 'story') return stories(apelido, o);
+  return carrosseis(apelido, o);
+}
+
+/**
+ * Uma passagem do vigia. Sai calada se outra está rodando (a trava).
+ * @param {{
+ *   env: Record<string, string | undefined>,
+ *   caminhos: ReturnType<typeof caminhosDoVigia>,
+ *   registrar: (msg: string) => void,
+ *   notificar?: (msg: string) => Promise<void>,
+ *   intervaloMs?: number,
+ *   idadeMinimaMs?: number,
+ *   esperaMaximaMs?: number,
+ *   renders?: boolean,
+ *   transcritor?: (arquivo: string, papel: 'bruto' | 'final', palavra: string | null) => Promise<any>,
+ * }} o
+ */
+async function passagemDoVigia(o) {
+  const { caminhos, registrar } = o;
+  const intervaloMs = o.intervaloMs ?? INTERVALO_DAS_LEITURAS_MS;
+  const idadeMinimaMs = o.idadeMinimaMs ?? IDADE_MINIMA_MS;
+  const esperaMaximaMs = o.esperaMaximaMs ?? ESPERA_MAXIMA_MS;
+  const esperar = (/** @type {number} */ ms) => new Promise((ok) => setTimeout(ok, ms));
+  if (!tomarTrava(caminhos.trava, { pid: process.pid, agoraMs: Date.now() })) return { saida: 'ocupada' };
+
+  registrar(`passagem começou (pid ${process.pid})`);
+  const anterior = destinoDosAvisos;
+  destinoDosAvisos = registrar;
+  let memoria = lerMemoria(lerTextoSeHouver(caminhos.memoria));
+  /** @type {Record<string, unknown>} */
+  const resumo = { saida: 'ok' };
+  const notificar = async (/** @type {string} */ msg) => {
+    const nova = registrarNotificacao(memoria, msg, Date.now());
+    registrar(`notificação${nova ? '' : ' (repetida, calada)'}: ${msg}`);
+    if (!nova) return;
+    memoria = nova;
+    try {
+      await (o.notificar ?? notificarNoMac)(msg);
+    } catch (e) {
+      registrar(`a notificação falhou: ${/** @type {Error} */ (e).message}`);
+    }
+  };
+  try {
+    const cfg = configuracao(o.env);
+    exigirOs(cfg);
+    const os = clienteDoOs(cfg);
+    const fila = await os.pendentes();
+
+    // (1) O bruto do episódio em Gravação.
+    const escolha = episodioDaGravacao(fila?.items ?? []);
+    /** @type {string | null} */
+    let estadoDoPasso = null;
+    if ('motivo' in escolha) {
+      resumo.bruto = escolha.motivo === 'varios' ? `${escolha.quantos} episódios em Gravação: o vigia não escolhe` : 'nenhum episódio em Gravação';
+      if (escolha.motivo === 'varios' && existsSync(caminhos.obs) && gravacaoParaVarios(fila?.items ?? [], lerPastaDoObs(caminhos.obs))) {
+        await notificar(`${escolha.quantos} episódios em Gravação: deixe só o do bruto, ou rode /root-midia ep-NN.`);
+      }
+    } else {
+      const ep = escolha.episodio;
+      const passo = await passoDoBruto({
+        ep,
+        obs: caminhos.obs,
+        existe: existsSync,
+        ler: lerPastaDoObs,
+        agora: Date.now,
+        esperar,
+        intervaloMs,
+        idadeMinimaMs,
+        esperaMaximaMs,
+        jaFalhou: (k) => Boolean(memoria.brutosQueFalharam[k]),
+        lembrarFalha: (k) => (memoria = { ...memoria, brutosQueFalharam: { ...memoria.brutosQueFalharam, [k]: Date.now() } }),
+        transcritor: () => (o.transcritor ? { transcrever: o.transcritor, ensaio: true } : transcritorDaPassagem(cfg, o.env)),
+        cadeia: (bruto, t) => cadeiaDoBruto(ep, bruto, pastaDoEpisodio(caminhos.obs, ep.apelido), t.transcrever),
+        notificar,
+        registrar,
+      });
+      estadoDoPasso = passo.estado;
+      resumo.bruto = passo.texto;
+    }
+
+    // (2) Os renders da Derivação que o OS diz que faltam — nunca com o OBS gravando.
+    const gravando =
+      estadoDoPasso === 'gravando' ||
+      estadoDoPasso === 'jovem' ||
+      (existsSync(caminhos.obs) && obsEscrevendo(lerPastaDoObs(caminhos.obs), Date.now(), idadeMinimaMs));
+    if (o.renders !== false && gravando && (fila?.derivacao ?? []).length) {
+      resumo.renders = 'adiados: o OBS está gravando';
+    } else if (o.renders !== false) {
+      /** @type {string[]} */
+      const feitos = [];
+      for (const ep of fila?.derivacao ?? []) {
+        for (const r of rendersAFazer(ep, memoria, Date.now())) {
+          registrar(`${ep.apelido}: renderizando ${r.pecas} ${r.formato}(s)…`);
+          try {
+            const retorno = await renderDoFormato(r.formato, ep.apelido, caminhos.obs);
+            feitos.push(`${ep.apelido} ${r.formato}`);
+            for (const aviso of avisosDoRender(ep.apelido, r.formato, retorno)) await notificar(aviso);
+          } catch (e) {
+            await notificar(`${ep.apelido}: o render de ${r.formato} parou (${/** @type {Error} */ (e).message.split('\n')[0].slice(0, 120)}).`);
+          }
+          memoria = { ...memoria, renders: { ...memoria.renders, [chaveDoRender(ep.id, r.formato)]: { assinatura: r.assinatura, em: Date.now() } } };
+        }
+      }
+      resumo.renders = feitos;
+    }
+  } catch (e) {
+    resumo.saida = 'erro';
+    resumo.erro = /** @type {Error} */ (e).message;
+    await notificar(`O vigia parou: ${/** @type {Error} */ (e).message.split('\n')[0].slice(0, 160)}`);
+  } finally {
+    destinoDosAvisos = anterior;
+    try {
+      mkdirSync(dirname(caminhos.memoria), { recursive: true });
+      writeFileSync(caminhos.memoria, `${JSON.stringify(memoria, null, 2)}\n`, { mode: 0o600 });
+    } catch (e) {
+      registrar(`não gravei a memória do vigia: ${/** @type {Error} */ (e).message}`);
+    }
+    soltarTrava(caminhos.trava, process.pid, Date.now());
+  }
+  registrar(`passagem: ${JSON.stringify(resumo)}`);
+  return resumo;
+}
+
+/** O agente do launchd: instalar, desinstalar ou ver o estado. @param {string} acao @param {Record<string, string | true>} o */
+async function agenteDoVigia(acao, o) {
+  if (process.platform !== 'darwin') throw new Error('O vigia usa o launchd: só no Mac.');
+  const uid = typeof process.getuid === 'function' ? process.getuid() : -1;
+  const doArquivo = caminhosDoVigia(process.env, homedir()).variaveis;
+  // Sob o launchd só existe o arquivo: o instalar confere e monta os caminhos com ele, nunca com o shell.
+  const env = existsSync(doArquivo) ? ambienteDoAgente(readFileSync(doArquivo, 'utf8'), doArquivo) : ambiente();
+  const c = caminhosDoVigia(env, homedir());
+  // --agentes troca a pasta do plist: é o ensaio, que não grava em ~/Library/LaunchAgents.
+  const plist = join(resolve(texto(o, 'agentes') ?? c.agentes), `${ROTULO}.plist`);
+
+  if (acao === 'instalar') {
+    if (!existsSync(c.variaveis)) {
+      throw new Error(
+        `Falta ${c.variaveis}: crie com ROOT_OS_API_URL, ROOT_OS_EMAIL e ROOT_OS_SENHA (e ROOT_MIDIA_OBS_DIR, WHISPER_MODEL) e rode chmod 600 nele.`,
+      );
+    }
+    if (permissaoAbertaDemais(statSync(c.variaveis).mode)) {
+      throw new Error(`${c.variaveis} tem a senha e está legível por outros: rode chmod 600 "${c.variaveis}" e instale de novo.`);
+    }
+    try {
+      exigirOs(configuracao(env));
+    } catch (e) {
+      throw new Error(`${c.variaveis}: ${/** @type {Error} */ (e).message} O agente do launchd só vê este arquivo, não o seu shell.`);
+    }
+    const modelo = configuracao(env).modelo;
+    if (!modelo || !existsSync(modelo)) avisar(`AVISO: ${c.variaveis} não aponta WHISPER_MODEL para um modelo que exista; cada gravação vai notificar a falta até ele estar lá.`);
+    if (!existsSync(c.obs)) avisar(`AVISO: a pasta ${c.obs} não existe; o launchd dispara quando ela aparecer (confira ROOT_MIDIA_OBS_DIR).`);
+    mkdirSync(dirname(c.log), { recursive: true });
+    mkdirSync(dirname(plist), { recursive: true });
+    writeFileSync(plist, plistDoVigia({ node: process.execPath, script: fileURLToPath(import.meta.url), obs: c.obs, log: c.log, variaveis: c.variaveis }), { mode: 0o644 });
+    // Reinstalar: o agente antigo sai antes (sem ele carregado, o bootout só reclama).
+    await rodar(LAUNCHCTL, argsDoLaunchctl('bootout', { uid })).catch(() => undefined);
+    await rodar(LAUNCHCTL, argsDoLaunchctl('bootstrap', { uid, plist }));
+    return { instalado: ROTULO, plist, obs: c.obs, log: c.log, variaveis: c.variaveis };
+  }
+  if (acao === 'desinstalar') {
+    const saiu = await rodar(LAUNCHCTL, argsDoLaunchctl('bootout', { uid })).then(
+      () => true,
+      () => false,
+    );
+    // Só o plist: o log, a memória e tudo o que o vigia gerou ficam.
+    const apagou = existsSync(plist);
+    if (apagou) unlinkSync(plist);
+    return { desinstalado: ROTULO, estavaCarregado: saiu, plistApagado: apagou ? plist : null };
+  }
+  if (acao === 'estado') {
+    const impresso = await rodar(LAUNCHCTL, argsDoLaunchctl('print', { uid })).then(
+      (r) => r.stdout,
+      () => null,
+    );
+    const campo = (/** @type {string} */ nome) => (impresso ? /^\s*([^=\n]+?)\s*=\s*(.+)$/m.exec(impresso.split('\n').filter((l) => l.trim().startsWith(`${nome} =`))[0] ?? '')?.[2] ?? null : null);
+    return {
+      rotulo: ROTULO,
+      carregado: impresso !== null,
+      estado: campo('state'),
+      execucoes: campo('runs'),
+      ultimaSaida: campo('last exit code'),
+      plist: existsSync(plist) ? plist : null,
+      log: c.log,
+      ultimaLinhaDoLog: ultimaLinha(lerTextoSeHouver(c.log) ?? ''),
+    };
+  }
+  throw new Error('Uso: root-midia vigia [instalar | desinstalar | estado]');
+}
+
+/**
+ * O ensaio do vigia, contra a API DESTA máquina (recusa outra): precisa de um
+ * episódio em Gravação lá. Gera brutos sintéticos pelo mesmo clipe do `ensaio`
+ * em pastas temporárias e roda duas passagens: dois brutos → "ambíguo" e nada
+ * enviado; um bruto → Edição → Pacote, com o sha256 do bruto igual antes e
+ * depois. Sem WHISPER_MODEL (ou sem --whisper), a transcrição é a de ensaio.
+ * @param {Record<string, string | true>} o
+ */
+async function ensaioDoVigia(o) {
+  const env = ambiente();
+  const cfg = configuracao(env);
+  exigirOs(cfg);
+  if (!ehLocal(cfg.url)) throw new Error(`O ensaio do vigia só roda contra a API desta máquina; ROOT_OS_API_URL é ${cfg.url}.`);
+  const os = clienteDoOs(cfg);
+  const escolha = episodioDaGravacao((await os.pendentes())?.items ?? []);
+  if ('motivo' in escolha) throw new Error(`O ensaio precisa de exatamente um episódio em Gravação na API local (há ${escolha.quantos}).`);
+  const ep = escolha.episodio;
+  const usarWhisper = o.whisper === true && !!cfg.modelo && existsSync(cfg.modelo);
+  const pasta = mkdtempSync(join(tmpdir(), 'root-midia-ensaio-vigia-'));
+  /** @type {string[]} */
+  const notificacoes = [];
+  const registrar = (/** @type {string} */ msg) => process.stderr.write(`  ${msg}\n`);
+  const passar = (/** @type {string} */ obs, /** @type {string} */ nome) =>
+    passagemDoVigia({
+      env,
+      caminhos: { ...caminhosDoVigia(env, homedir()), obs, trava: join(pasta, `${nome}.lock`), memoria: join(pasta, `${nome}.json`), log: join(pasta, 'vigia.log') },
+      registrar,
+      notificar: async (msg) => void notificacoes.push(msg),
+      intervaloMs: 1000,
+      idadeMinimaMs: 2000,
+      esperaMaximaMs: 30_000,
+      renders: false,
+      transcritor: usarWhisper ? undefined : transcricaoDeEnsaioDoArquivo,
+    });
+  try {
+    avisar(`Ensaio do vigia com o ${ep.apelido} (em Gravação desde ${ep.statusDesde}); transcrição ${usarWhisper ? 'pelo whisper' : 'de ensaio'}.`);
+    const obsAmbiguo = join(pasta, 'obs-ambiguo');
+    mkdirSync(obsAmbiguo);
+    await gerarClipeDeEnsaio(join(obsAmbiguo, 'gravacao-a.mkv'));
+    await gerarClipeDeEnsaio(join(obsAmbiguo, 'gravacao-b.mp4'));
+    avisar('1) dois brutos novos na pasta:');
+    const ambiguo = await passar(obsAmbiguo, 'ambiguo');
+    const depoisDoAmbiguo = acharEpisodio((await os.pendentes())?.items ?? [], ep.id);
+
+    const obs = join(pasta, 'obs');
+    mkdirSync(obs);
+    const bruto = await gerarClipeDeEnsaio(join(obs, 'gravacao.mp4'));
+    const shaAntes = await sha256DoArquivo(bruto);
+    avisar('2) um bruto novo na pasta:');
+    const unico = await passar(obs, 'unico');
+    const shaDepois = await sha256DoArquivo(bruto);
+    const lista = await os.episodios();
+    const agora = (lista?.items ?? []).find((/** @type {{ id: string }} */ e) => e.id === ep.id);
+    const ok =
+      notificacoes[0] === mensagemDeAmbiguo(ep.apelido) &&
+      depoisDoAmbiguo.status === 'gravacao' &&
+      agora?.status === 'pacote' &&
+      shaAntes === shaDepois &&
+      existsSync(join(pastaDoEpisodio(obs, ep.apelido), `${ep.apelido}-final.mp4`));
+    escrever(
+      {
+        ok,
+        episodio: ep.apelido,
+        ambiguo: { passagem: ambiguo, statusDepois: depoisDoAmbiguo.status },
+        unico: { passagem: unico, statusDepois: agora?.status ?? null, sha256Antes: shaAntes, sha256Depois: shaDepois },
+        notificacoes,
+        pasta: o.manter === true ? pasta : null,
+      },
+      undefined,
+    );
+    avisar(ok ? 'ENSAIO OK: "ambíguo" sem envio; o bruto único levou o episódio a Pacote e ficou intacto.' : 'ENSAIO FALHOU: veja o relatório acima.');
+    return ok;
+  } finally {
+    if (o.manter !== true) rmSync(pasta, { recursive: true, force: true });
+  }
+}
+
 async function principal() {
   const [comando, ...resto] = process.argv.slice(2);
   const { posicionais, opcoes } = lerArgumentos(resto);
@@ -1203,6 +1688,18 @@ async function principal() {
     }
     case 'ensaio-semana':
       return (await ensaioSemana({ manter: opcoes.manter === true })) ? 0 : 1;
+    case 'vigia': {
+      if (posicionais[0]) {
+        escrever(await agenteDoVigia(posicionais[0], opcoes), undefined);
+        return 0;
+      }
+      const env = ambiente();
+      const caminhos = caminhosDoVigia(env, homedir());
+      const r = await passagemDoVigia({ env, caminhos, registrar: registradorDoVigia(caminhos.log) });
+      return r.saida === 'erro' ? 1 : 0;
+    }
+    case 'ensaio-vigia':
+      return (await ensaioDoVigia(opcoes)) ? 0 : 1;
     default:
       throw new Error(`Comando desconhecido: ${comando}. Veja \`root-midia ajuda\`.`);
   }

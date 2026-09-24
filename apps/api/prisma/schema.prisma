@@ -1486,6 +1486,11 @@ model PautaEpisodio {
   numero   Int
   titulo   String
   status   PautaEpisodioStatus @default(roteiro)
+  /// MD2: desde quando está no status atual. Quem carimba é o GATILHO
+  /// `PautaEpisodio_statusDesde`, em toda troca de status por qualquer caminho
+  /// (mídia, transcrição, roteiro, semana, o passo à mão). O vigia do Mac só
+  /// aceita bruto do OBS gravado depois da entrada em Gravação.
+  statusDesde DateTime @default(now())
 
   roteiro          String @default("")
   /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =

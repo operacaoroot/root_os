@@ -404,7 +404,12 @@ jobs:
       # (com o agendador calado por ROTINAS_CRON/PAUTA_CRON a linha diz qual, e
       # não que a rotina vai andar). Medido: 555 casos em 43 arquivos. O piso de
       # CASOS sobe 1, para 374; o de ARQUIVOS fica em 34.
-      PISO_CASOS_WEB: '374'
+      #
+      # MD2, O VIGIA DO MAC (24/09/2026): +1 caso em `component/pauta-midia`
+      # (o roteiro pede Gravação antes de gravar; a gravação diz quando o
+      # vigia age sozinho). Medido: 556 casos em 43 arquivos. O piso de CASOS
+      # sobe 1, para 375; o de ARQUIVOS fica em 34.
+      PISO_CASOS_WEB: '375'
       PISO_ARQUIVOS_WEB: '34'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1380,7 +1385,36 @@ jobs:
       # 2645 casos em 65 arquivos com o banco; sem ele, 2071 passados e 574
       # pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 9 (~15% de
       # folga sobre os 11), para 1958.
-      PISO_CASOS_API: '1958'
+      #
+      # MD2, O VIGIA DO MAC (24/09/2026): +23 casos, nenhum arquivo novo.
+      # `root-midia` +18 (o bruto: candidato na raiz com a extensão do OBS e
+      # depois do statusDesde, estável, gravando, ambíguo, anterior à
+      # transição/jovem/vazio, a pasta lida sem descer nem seguir link, só com
+      # um episódio em Gravação, o final que nunca sobrescreve; a trava, os
+      # caminhos, o plist sem senha e com as chaves certas, launchctl e
+      # osascript em lista, a memória que cala a notificação repetida e o
+      # render que já falhou, o log, a transcrição de ensaio; a catraca do
+      # não-apagar em três casos); `pauta-midia` +3 (o que falta renderizar
+      # por formato e a assinatura; a fila com `derivacao` e o `statusDesde`);
+      # `pauta-episodio` +2 (o contrato do gatilho e, COM BANCO, pulado sem
+      # ele: o carimbo em toda troca de status por qualquer caminho e só nela).
+      # Medido: 2668 casos em 65 arquivos com o banco de teste. Sem ele, +22
+      # passados e +1 pulado. O piso de ARQUIVOS fica em 57; o de CASOS sobe 19
+      # (~15% de folga sobre os 22 que rodam sem banco), para 1977.
+      #
+      # MD2, A REVISÃO DO VIGIA (24/09/2026): +15 casos, nenhum arquivo novo,
+      # todos sem banco. `root-midia` +14 (a porta da trava; a metade do bruto
+      # com disco, relógio e cadeia de mentira em 8 caminhos: enviado, ambíguo,
+      # gravando, jovem, sem modelo sem marcar falho, cadeia que falha e bruto
+      # já falho, episódio que mudou, sem pasta/statusDesde/gravação nova; e 5
+      # do que a passagem decide fora dele: não enviar fora de Gravação,
+      # "vários" só com gravação nova, OBS escrevendo segura os renders, o
+      # render que não subiu vira aviso, o instalar só com o arquivo);
+      # `pauta-midia` +1 (21 episódios na Derivação: o da semana aparece).
+      # Medido: 2683 casos em 65 arquivos com o banco; sem ele, 2108 passados
+      # e 575 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 13 (~15%
+      # de folga sobre os 15), para 1990.
+      PISO_CASOS_API: '1990'
       PISO_ARQUIVOS_API: '57'
 
     steps:

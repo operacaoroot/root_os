@@ -135,6 +135,18 @@ aí é renderizar de novo. Conferir sem tocar no OS: `RM ensaio-semana`.
 onde está a mídia — o mp4 do corte pelo caminho no Mac, os PNG no OS (ou quantos faltam). Só lê. Distribuir, reagendar e
 "Marcar como postada" são da aba Semana em `/pauta`; postar no Instagram é à mão até a MC17 (D-MC8).
 
+## O vigia (`root-midia vigia`, MD2)
+
+Com o vigia instalado (`RM vigia instalar`, uma vez, pelo Pedro), o passo a passo acima roda sozinho
+quando o OBS termina uma gravação — só pelo ffmpeg, sem PalmierPro — desde que o episódio esteja em
+**Gravação antes de gravar** e só haja **uma** gravação nova na raiz da pasta do OBS. Dois arquivos
+novos viram a notificação "ambíguo: rode /root-midia ep-NN": aí é este roteiro, à mão. `RM vigia
+estado` mostra se o agente está carregado e a última linha do log
+(`~/Library/Logs/root-midia/vigia.log`). O vigia não baixa o modelo do whisper e nunca apaga o
+bruto. Se o episódio sair de Gravação enquanto o vigia trabalha (você mandou a mídia à mão), ele
+não envia nada. O vigia pressupõe **um arquivo por episódio e nenhuma pausa maior que 2 min**: com
+pausa longa, pare a gravação e rode este roteiro à mão. Detalhes no `README.md`.
+
 ## Quando algo falha
 
 - `HTTP 400` da API traz o motivo em português (status errado, transcrição do bruto em vez do final,

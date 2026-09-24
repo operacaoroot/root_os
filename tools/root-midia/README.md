@@ -1,4 +1,4 @@
-# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16)
+# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16, vigia na MD2)
 
 A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo **fica no Mac** (o MinIO da VPS não é
 público e o upload no YouTube é manual na V1, D-MC6).
@@ -14,6 +14,7 @@ público e o upload no YouTube é manual na V1, D-MC6).
 | `thumb.html` | o template da thumb, 1280×720, com os tokens da marca ROOT **copiados** (não lê o brand pack em tempo de execução) |
 | `lib/semana.mjs` | puro (MC15): a região do rosto lida da coleção de cenas do OBS, o filtro e os argumentos do corte vertical, o story preenchido, o `slides.json` da máquina de carrossel e onde achar o render; (MC16) a agenda da semana em linhas |
 | `story.html` | o template do story, 1080×1920, no mesmo padrão do `thumb.html` (tokens copiados) |
+| `lib/vigia.mjs` | (MD2) o vigia: qual arquivo é o bruto, a trava, a memória entre passagens, o plist do launchd, a notificação, o log e a transcrição de ensaio |
 | `SKILL.md` | a skill `/root-midia ep-NN` do Claude Code — o passo a passo, PalmierPro primeiro |
 
 Rotas do OS (módulo `pauta`): `GET /pauta/episodios/pendentes-midia`,
@@ -44,6 +45,9 @@ para o repositório, e `ROOT_OS_API_URL` fora desta máquina tem de ser `https:/
 | `ROOT_MIDIA_OBS_COLECAO` | o JSON da coleção de cenas do OBS, só lido (MC15) | `~/Library/Application Support/obs-studio/basic/scenes/Gravação.json` |
 | `ROOT_MIDIA_CARROSSEL_RENDER` | o `render.mjs` da máquina de carrossel (MC15) | o do plugin instalado, com o `playwright` ao lado |
 | `ROOT_MIDIA_MARCA` | o `brand.json` da marca na máquina de carrossel (MC15) | `~/.maquina-carrossel/marcas/root/brand.json` |
+| `ROOT_MIDIA_OBS_DIR` | a pasta das gravações que o vigia olha, só a raiz (MD2) | `~/Movies/OBS` |
+| `ROOT_MIDIA_VIGIA_LOG` | o log do vigia (MD2) | `~/Library/Logs/root-midia/vigia.log` |
+| `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO` | **só ensaio** (MD2): `1` troca o whisper por uma transcrição sintética; recusada fora da API desta máquina | — |
 
 ## Comandos
 
@@ -105,6 +109,85 @@ reagendar e marcar como postada são da tela.
 `cortar` não reencoda quando toda borda cai num quadro-chave (gravação intra, ou nada a cortar);
 senão reencoda com `trim` + `concat` (corte exato, aguenta taxa de quadros variável). `--copiar`
 força a cópia, com as bordas no quadro-chave mais próximo.
+
+## O vigia (MD2)
+
+O launchd roda `root-midia vigia` quando a pasta do OBS muda (`WatchPaths`) e a cada 15 min
+(`StartInterval`, para os renders), com 60 s de folga entre disparos. Uma passagem:
+
+1. **Trava** em `~/.config/root/root-midia-vigia.lock` (ao lado do arquivo de variáveis), com o pid e
+   a hora. Outra passagem de pé sai calada; trava de processo morto ou com mais de 3 h é retomada.
+   Ler, conferir e escrever a trava acontece atrás de uma porta (`…lock.porta`, criada exclusiva e
+   removida logo depois): `root-midia vigia` rodado à mão junto com o launchd não sai com dois donos.
+   Soltar escreve "livre" no arquivo, não o apaga.
+2. **A fila do OS** (`GET /pauta/episodios/pendentes-midia`, login normal): só age com **exatamente um**
+   episódio em Gravação sem mídia; dois ou mais = nada feito, e a notificação só sai se houver
+   gravação nova na pasta depois da entrada do mais antigo deles (gravar em lote não vira aviso).
+3. **O bruto:** na **raiz** de `ROOT_MIDIA_OBS_DIR` (não desce; `root-midia/ep-NN` e links simbólicos
+   ficam de fora), `.mkv`/`.mp4`/`.mov` com data de modificação **depois do `statusDesde`** do
+   episódio (a entrada em Gravação, carimbada pelo banco). Duas leituras com 60 s de intervalo: mudou
+   = o OBS está gravando, a passagem pula; dois candidatos parados = notificação
+   **"ambíguo: rode /root-midia ep-NN"** e nada enviado; um só, parado há 2 min = segue (a passagem
+   espera até 5 min um bruto novo amadurecer).
+4. **A cadeia do comando manual, só pelo ffmpeg** (o PalmierPro exige o app aberto): transcrever o
+   bruto → silêncios e palavra de corte (a que a fila devolve) → cortar → transcrever o final →
+   `enviar --final --bruto --cortes --transcricao`. Tudo vai para `<OBS>/root-midia/ep-NN/`, com nome
+   que ainda não existe (o final de uma edição à mão nunca é sobrescrito). Antes de mandar, a fila é
+   relida: se o episódio saiu de Gravação no meio da cadeia (a mídia foi à mão, o status mudou),
+   **nada vai** e a notificação diz "ep-NN mudou durante a cadeia". **Sem `WHISPER_MODEL`,
+   notifica e para — não baixa modelo (D-MC3).** Bruto que falhou não é refeito a cada passagem:
+   rode `/root-midia ep-NN` à mão.
+5. **Os renders da Derivação:** a fila também devolve `derivacao` (os episódios com peça da semana
+   da transcrição atual sem render) com `precisaDeRender` por formato e uma assinatura; o vigia roda
+   `cortes`, `stories` e `carrosseis` do episódio, na pasta `<OBS>/root-midia/ep-NN/ep-NN-semana`. A
+   fila lista os da Derivação do mais novo, até 20 com render pendente. O mesmo render com a mesma
+   assinatura só é tentado de novo depois de 24 h (o carrossel estourado não gira a cada 15 min), e
+   o que não subiu vira notificação: o carrossel com texto estourado ("encurte na tela") e o corte
+   sem trecho. **Com o OBS gravando** (o bruto mudando, ou arquivo da raiz mexido nos últimos 2 min),
+   os renders ficam para a próxima passagem: ffmpeg e Chrome não disputam o Mac com a gravação. A subida do mp4 e
+   do JPEG ao storage (MD4) e o envio ao YouTube (MD10) entram aqui quando essas fatias chegarem.
+6. **Notifica** pelo `osascript` nativo (o texto vai como argumento do script); a mesma notificação
+   fica calada por 6 h.
+7. **Log** em `~/Library/Logs/root-midia/vigia.log`, uma linha com a hora por aviso, rodado aos 5 MB.
+
+**Nunca apaga** o bruto nem nada da pasta do OBS: a catraca de `apps/api/test/root-midia.test.ts`
+varre `root-midia.mjs` e `lib/*.mjs` e só aceita remover pasta temporária própria (`mkdtemp`), o plist
+do agente e a porta da trava.
+
+```sh
+node tools/root-midia/root-midia.mjs vigia instalar     # grava o plist e roda launchctl bootstrap gui/<uid>
+node tools/root-midia/root-midia.mjs vigia estado       # launchctl print + a última linha do log
+node tools/root-midia/root-midia.mjs vigia desinstalar  # launchctl bootout e apaga SÓ o plist
+node tools/root-midia/root-midia.mjs vigia              # uma passagem agora, à mão
+node tools/root-midia/root-midia.mjs ensaio-vigia       # contra a API DESTA máquina, com um episódio em Gravação
+```
+
+`instalar` recusa arquivo de variáveis legível por outros (a senha mora nele: `chmod 600`) e grava em
+`~/Library/LaunchAgents/com.operacaoroot.root-midia.vigia.plist` só `ProgramArguments` (o node e este
+script, em lista), `WatchPaths`, `StartInterval` 900, `ThrottleInterval` 60, `Nice` 10, o log e
+`EnvironmentVariables` com **apenas** `ROOT_MIDIA_ENV`. O agente usa o node de quem instalou
+(`process.execPath`): trocar de versão do node pede instalar de novo. Com o Mac dormindo não há
+vigia; o launchd roda ao acordar. O `instalar` confere as variáveis e monta os caminhos **só com o
+arquivo de variáveis**, que é o que o agente vai ver: o que estiver exportado apenas no seu shell
+não conta (e falta de `WHISPER_MODEL` no arquivo sai como aviso). **O hábito que faz tudo
+funcionar:** pôr o episódio em Gravação **antes** de gravar — gravação anterior à entrada em
+Gravação não é aceita sozinha.
+
+**O que o vigia pressupõe:** um arquivo por episódio e **nenhuma pausa maior que 2 min** na
+gravação. O único sinal de "ainda gravando" é o arquivo mudar; uma pausa longa do OBS parece
+gravação terminada, e a passagem que cair nela manda a fala parcial (o episódio vai a Pacote e o
+resto é ignorado). Para pausa longa, pare a gravação e rode `/root-midia ep-NN` à mão com os
+arquivos.
+
+A decisão da metade do bruto (`passoDoBruto` em `lib/vigia.mjs`: esperar, gravando, ambíguo,
+jovem, sem modelo, cadeia que falha, episódio que mudou) roda na suíte com disco, relógio e cadeia
+de mentira, sem ffmpeg. O `ensaio-vigia` fica fora da suíte pelo mesmo motivo do `ensaio` da MC9: a
+CI não tem ffmpeg, e ele prova a cadeia de verdade contra a API local.
+
+`ensaio-vigia` recusa API fora de loopback e exige um episódio em Gravação nela: gera dois brutos
+sintéticos (pelo clipe do `ensaio`) numa pasta temporária e confere "ambíguo" sem envio; depois um
+bruto só, que leva o episódio a Pacote com o sha256 do bruto igual antes e depois. Sem
+`--whisper` (ou sem o modelo), usa a transcrição de ensaio.
 
 ## Testes
 

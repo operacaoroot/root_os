@@ -59,8 +59,8 @@ export function juntarVariaveis(/** @type {Record<string, string | undefined>} *
   return saida;
 }
 
-/** @param {string} url */
-function ehLocal(url) {
+/** A API é desta máquina (loopback)? O ensaio do vigia só roda contra ela. @param {string} url */
+export function ehLocal(url) {
   try {
     const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
     return host === 'localhost' || host === '::1' || /^127\./.test(host);

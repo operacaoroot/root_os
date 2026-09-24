@@ -2042,10 +2042,35 @@ export interface PautaEpisodioPendenteDeMidia {
   falta: 'midia' | 'transcricao';
   arquivoFinal: string | null;
   atualizadoEm: string;
+  /**
+   * Desde quando o episódio está no status atual (MD2; o banco carimba em toda
+   * troca). O vigia do Mac só aceita bruto do OBS gravado DEPOIS disso.
+   */
+  statusDesde: string;
+}
+
+/** O que falta renderizar de um formato: quantas peças, e a assinatura delas (muda quando o texto ou a mídia mudam). */
+export interface PautaRenderPendente {
+  pecas: number;
+  assinatura: string;
+}
+
+/** Um episódio na Derivação com peça da semana sem render (MD2): é o que o vigia do Mac renderiza sozinho. */
+export interface PautaEpisodioPendenteDeRender {
+  id: string;
+  numero: number;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  statusDesde: string;
+  arquivoFinal: string | null;
+  precisaDeRender: Partial<Record<PautaFormatoDaSemana, PautaRenderPendente>>;
 }
 
 export interface PautaEpisodiosPendentesDeMidia {
   items: PautaEpisodioPendenteDeMidia[];
+  /** Só os da Derivação com algo a renderizar (peça da transcrição atual, em rascunho ou aprovada). */
+  derivacao: PautaEpisodioPendenteDeRender[];
   source: { tool: string; generatedAt: string };
 }
 

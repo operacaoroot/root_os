@@ -273,6 +273,31 @@ em cadeia, e isso só aparece na revisão. Com o papel restrito virado, tudo cal
 
 ### MD2 — Vigia do Mac: launchd dispara o `root-midia` quando aparece gravação nova
 
+> **Estado (24/09/2026):** implementada, com o "pronto quando" ensaiado pelo launchd de verdade
+> (plist carregado de uma pasta temporária, API local, transcrição de ensaio porque o modelo do
+> whisper não está no Mac) e registrado no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D). Escolhas além
+> do texto abaixo: quem carimba o `statusDesde` é um **gatilho** do banco (o status muda por cinco
+> serviços, nem todos pelo `EpisodioService`); a fila devolve `derivacao` como lista à parte (a
+> `items` segue sendo a do `enviar` manual); a passagem **espera** até 5 min um bruto novo ficar
+> maduro (senão o `WatchPaths` dispararia cedo demais e só o intervalo de 15 min o pegaria); bruto
+> que falhou e render repetido com a mesma assinatura não giram a cada passagem; a notificação
+> repetida fica calada por 6 h; a trava fica ao lado do arquivo de variáveis; o final nunca
+> sobrescreve um que já está na pasta. A subida do mp4/JPEG (MD4) e o YouTube (MD10) ainda não
+> estão no vigia: entram no passo dos renders quando essas fatias chegarem.
+>
+> **Depois da revisão (24/09/2026):** a fila da Derivação é lida do mais novo, em lotes de 20, até
+> juntar 20 com render pendente (os antigos parados lá escondiam o da semana); a cadeia relê a fila
+> antes de mandar e não envia se o episódio saiu de Gravação no meio (a mídia mandada à mão não é
+> trocada pelo corte do ffmpeg); a trava é tomada atrás de uma porta exclusiva (`wx`), que é o único
+> arquivo que o vigia remove; o `instalar` confere e monta os caminhos só com o arquivo de
+> variáveis; os renders esperam com o OBS gravando; o carrossel estourado e o corte sem trecho viram
+> notificação; os renders vão para `<OBS>/root-midia/ep-NN/ep-NN-semana` (sob o launchd o diretório
+> atual é `/`); "vários em Gravação" só avisa com gravação nova na pasta. **Desvio do item 6:** o
+> `ensaio-vigia` ficou subcomando manual, como o `ensaio` da MC9 (a CI não tem ffmpeg); a decisão da
+> passagem (`passoDoBruto`, com disco, relógio, espera e cadeia injetados) é que está na suíte, com
+> os caminhos ambíguo, gravando, jovem, sem modelo, cadeia que falha, bruto já falho e episódio que
+> mudou.
+
 **SPEC.**
 
 1. **Arquivos:** `tools/root-midia/lib/vigia.mjs`; subcomandos novos em `tools/root-midia/root-midia.mjs`:
@@ -334,7 +359,11 @@ vigia qual episódio é o do bruto.
 **Risco.** Processar um arquivo que não era o episódio; a exigência de um episódio em gravação,
 `mtime` posterior à transição e candidato único reduz. Mac dormindo não vigia (o launchd roda ao
 acordar). ffmpeg e whisper pesam se dispararem durante uma reunião. A senha do OS fica em arquivo
-local, como já é hoje.
+local, como já é hoje. **Pausa longa:** o único sinal de "ainda gravando" é o arquivo mudar; uma
+pausa do OBS maior que 2 min parece gravação terminada, e a passagem que cair nela manda a fala
+parcial (o episódio vai a Pacote e o resto é ignorado). O vigia pressupõe um arquivo por episódio
+sem pausa longa; com pausa longa, parar a gravação e rodar `/root-midia ep-NN` à mão (README, SKILL
+e a dica da tela dizem isso).
 
 
 ### MD3 — Janela da porta no fuso de São Paulo

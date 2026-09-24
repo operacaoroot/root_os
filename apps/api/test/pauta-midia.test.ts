@@ -22,6 +22,7 @@ import {
   motivoParaNaoReceberTranscricao,
   nomeDoArquivo,
   pendenteDeMidia,
+  renderPendente,
   resumoDaMidia,
   transcricaoForaDoVideo,
 } from '../src/pauta/midia-do-episodio';
@@ -136,10 +137,14 @@ describe('mídia: quem recebe o quê', () => {
   });
 
   it('a linha da fila diz o que falta e a palavra que vale (episódio > empresa > padrão)', () => {
-    const base = { id: 'e1', numero: 3, titulo: 'Semana 39', palavraDeCorte: null, atualizadoEm: new Date('2026-09-24T10:00:00Z') };
+    const base = {
+      id: 'e1', numero: 3, titulo: 'Semana 39', palavraDeCorte: null,
+      atualizadoEm: new Date('2026-09-24T10:00:00Z'), statusDesde: new Date('2026-09-24T09:30:00Z'),
+    };
     expect(pendenteDeMidia({ ...base, status: 'gravacao', midia: {} }, null)).toEqual({
       id: 'e1', numero: 3, apelido: 'ep-03', titulo: 'Semana 39', status: 'gravacao',
       palavraDeCorte: 'root, corta', falta: 'midia', arquivoFinal: null, atualizadoEm: '2026-09-24T10:00:00.000Z',
+      statusDesde: '2026-09-24T09:30:00.000Z',
     });
     const comMidia = { ...MIDIA, recebidaEm: '2026-09-24T11:00:00.000Z' };
     const edicao = pendenteDeMidia({ ...base, status: 'edicao', midia: comMidia }, 'ops');
@@ -265,7 +270,7 @@ type Ep = {
   id: string; orgId: string; rodadaId: string; numero: number; titulo: string; status: PautaEpisodioStatus;
   roteiro: string; palavraDeCorte: string | null; descricao: string; midia: unknown; transcricao: unknown;
   transcricaoTexto: string; titulos: unknown; thumbs: unknown; bioPageId: string | null; criadoPor: string | null;
-  criadoEm: Date; atualizadoEm: Date;
+  criadoEm: Date; atualizadoEm: Date; statusDesde: Date;
 };
 
 function ep(over: Partial<Ep> = {}): Ep {
@@ -273,11 +278,11 @@ function ep(over: Partial<Ep> = {}): Ep {
   return {
     id: 'e1', orgId: ORG, rodadaId: RODADA, numero: 3, titulo: 'Semana 39', status: 'gravacao', roteiro: '# ep-03',
     palavraDeCorte: null, descricao: '', midia: {}, transcricao: [], transcricaoTexto: '', titulos: [], thumbs: [],
-    bioPageId: null, criadoPor: PESSOA, criadoEm: t, atualizadoEm: t, ...over,
+    bioPageId: null, criadoPor: PESSOA, criadoEm: t, atualizadoEm: t, statusDesde: t, ...over,
   };
 }
 
-type PecaFalsa = { id: string; orgId: string; rodadaId: string; canal: string; formato: string; status: string; meta: Record<string, unknown>; agendadaPara: Date | null; slotProposto?: Date | null };
+type PecaFalsa = { id: string; orgId: string; rodadaId: string; canal: string; formato: string; status: string; meta: Record<string, unknown>; agendadaPara: Date | null; slotProposto?: Date | null; titulo?: string; corpo?: string };
 
 function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGravar?: (lista: Ep[]) => void; pecas?: PecaFalsa[] } = {}) {
   const lista = opts.episodios ?? [ep()];
@@ -296,9 +301,14 @@ function servico(opts: { episodios?: Ep[]; daEmpresa?: string | null; antesDeGra
         const e = lista.find((x) => x.id === where.id && x.orgId === where.orgId);
         return e ? { ...e, rodada } : null;
       },
-      findMany: async (args: { where: { orgId: string; status: { in: string[] } } }) => {
+      findMany: async (args: { where: { orgId: string; status: { in: string[] }; numero?: { lt: number } }; orderBy?: { numero: 'asc' | 'desc' }; take?: number }) => {
         listagens.push(args);
-        return lista.filter((e) => e.orgId === args.where.orgId && args.where.status.in.includes(e.status));
+        const achados = lista.filter(
+          (e) => e.orgId === args.where.orgId && args.where.status.in.includes(e.status) && (args.where.numero === undefined || e.numero < args.where.numero.lt),
+        );
+        const sentido = args.orderBy?.numero === 'desc' ? -1 : 1;
+        if (args.orderBy) achados.sort((a, b) => sentido * (a.numero - b.numero));
+        return args.take === undefined ? achados : achados.slice(0, args.take);
       },
       updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
         condicionais.push({ where, data });
@@ -394,6 +404,96 @@ describe('mídia: a fila do Mac', () => {
     const s = servico({ episodios: [ep({ status: 'pacote' })] });
     expect((await s.midia.pendentes(ORG)).items).toEqual([]);
     expect(s.leiturasDaMemoria).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MD2: o que o vigia do Mac lê da fila — desde quando e o que falta renderizar
+// ---------------------------------------------------------------------------
+
+describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação', () => {
+  const SHA = shaDaTranscricao(SEGMENTOS);
+  const meta = (formato: string, over: Record<string, unknown> = {}) => ({
+    episodioId: 'e1', itemId: 'c1', itemN: 1, formato, transcricaoSha: SHA, imagens: [], video: null, ...over,
+  });
+  const slides = [
+    { titulo: 'Capa', texto: '' },
+    { titulo: 'Dois', texto: 'b' },
+    { titulo: 'Três', texto: 'c' },
+    { titulo: 'Palavra-chave: PIX', texto: 'Comentário com PIX' },
+  ];
+  const png = (n: number) => ({ n, chave: `k${n}`, sha: 's', largura: 1080, altura: 1350, bytes: 1, enviadaEm: 'x' });
+  const peca = (id: string, formato: string, over: Partial<PecaFalsa> = {}, m: Record<string, unknown> = {}): PecaFalsa & { titulo: string; corpo: string } => ({
+    id, orgId: ORG, rodadaId: RODADA, canal: 'instagram', formato, status: 'rascunho', agendadaPara: null,
+    titulo: `t-${id}`, corpo: `c-${id}`, meta: meta(formato, m), ...over,
+  });
+
+  it('conta por formato só a peça deste episódio, da transcrição atual, em rascunho ou aprovada, sem a mídia inteira', () => {
+    const r = renderPendente(
+      [
+        peca('corte-sem-mp4', 'corte'),
+        peca('corte-com-mp4', 'corte', {}, { video: { arquivo: '/x.mp4' } }),
+        peca('story-sem', 'story', { status: 'aprovada' }),
+        peca('story-com', 'story', {}, { imagens: [png(1)] }),
+        peca('carrossel-pela-metade', 'carrossel', {}, { slides, imagens: [png(1), png(2)] }),
+        peca('carrossel-inteiro', 'carrossel', {}, { slides, imagens: [1, 2, 3, 4].map(png) }),
+        peca('publicada', 'corte', { status: 'publicada' }),
+        peca('descartada', 'story', { status: 'descartada' }),
+        peca('outra-fala', 'corte', {}, { transcricaoSha: 'velho' }),
+        peca('outro-ep', 'corte', {}, { episodioId: 'e9' }),
+        peca('miolo', 'carrossel', {}, { episodioId: undefined }),
+      ],
+      { id: 'e1', numero: 3, sha: SHA },
+    );
+    expect(Object.fromEntries(Object.entries(r).map(([f, v]) => [f, v?.pecas]))).toEqual({ carrossel: 1, story: 1, corte: 1 });
+    expect(r.corte?.assinatura).toMatch(/^[0-9a-f]{16}$/);
+    expect(renderPendente([peca('corte-com-mp4', 'corte', {}, { video: { arquivo: '/x.mp4' } })], { id: 'e1', numero: 3, sha: SHA })).toEqual({});
+  });
+
+  it('a assinatura só muda quando o texto ou a mídia mudam — é o que impede o vigia de refazer o mesmo render que falhou', () => {
+    const e = { id: 'e1', numero: 3, sha: SHA };
+    const a = renderPendente([peca('c', 'carrossel', {}, { slides, imagens: [png(1)] })], e).carrossel!.assinatura;
+    expect(renderPendente([peca('c', 'carrossel', {}, { slides, imagens: [png(1)] })], e).carrossel!.assinatura).toBe(a);
+    expect(renderPendente([peca('c', 'carrossel', { corpo: 'legenda editada' }, { slides, imagens: [png(1)] })], e).carrossel!.assinatura).not.toBe(a);
+    expect(renderPendente([peca('c', 'carrossel', {}, { slides, imagens: [png(1), png(2)] })], e).carrossel!.assinatura).not.toBe(a);
+  });
+
+  it('o serviço junta aos pendentes de mídia os episódios da Derivação com render pendente, com o statusDesde e o vídeo final', async () => {
+    const desde = new Date('2026-09-25T10:00:00.000Z');
+    const s = servico({
+      episodios: [
+        ep({ id: 'e1', numero: 3, status: 'derivacao', transcricao: SEGMENTOS, statusDesde: desde, midia: { ...MIDIA, recebidaEm: 'x' } }),
+        ep({ id: 'e2', numero: 4, status: 'derivacao', transcricao: SEGMENTOS }),
+        ep({ id: 'e5', numero: 5, status: 'gravacao', statusDesde: desde }),
+      ],
+      pecas: [peca('corte', 'corte'), peca('story', 'story', { status: 'aprovada' })],
+    });
+    const r = await s.midia.pendentes(ORG);
+    expect(r.items.map((e) => [e.apelido, e.statusDesde])).toEqual([['ep-05', desde.toISOString()]]);
+    expect(s.listagens[1]).toMatchObject({ where: { orgId: ORG, status: { in: ['derivacao'] } }, orderBy: { numero: 'desc' }, take: 20 });
+    // O e2 é da mesma rodada no prisma de mentira, mas as peças são do e1: ele fica de fora.
+    expect(r.derivacao).toEqual([
+      {
+        id: 'e1', numero: 3, apelido: 'ep-03', titulo: 'Semana 39', status: 'derivacao', statusDesde: desde.toISOString(),
+        arquivoFinal: MIDIA.arquivoFinal,
+        precisaDeRender: { story: { pecas: 1, assinatura: expect.any(String) }, corte: { pecas: 1, assinatura: expect.any(String) } },
+      },
+    ]);
+  });
+  it('21 episódios parados na Derivação, os 20 mais antigos já renderizados: o da semana (o 21º) aparece, lido do mais novo em lotes', async () => {
+    const episodios = Array.from({ length: 21 }, (_, i) => ep({ id: `e${i + 1}`, numero: i + 1, status: 'derivacao', transcricao: SEGMENTOS }));
+    const s = servico({ episodios, pecas: [peca('corte-do-21', 'corte', {}, { episodioId: 'e21' })] });
+    const r = await s.midia.pendentes(ORG);
+    expect(r.derivacao.map((e) => e.apelido)).toEqual(['ep-21']);
+
+    // Com o da semana já renderizado e um antigo pendente, a leitura desce ao segundo lote e acha o ep-01.
+    const s2 = servico({ episodios: episodios.map((e) => ({ ...e })), pecas: [peca('corte-do-1', 'corte')] });
+    const r2 = await s2.midia.pendentes(ORG);
+    expect(r2.derivacao.map((e) => e.apelido)).toEqual(['ep-01']);
+    expect(s2.listagens.slice(1)).toMatchObject([
+      { orderBy: { numero: 'desc' }, take: 20, where: { status: { in: ['derivacao'] } } },
+      { orderBy: { numero: 'desc' }, take: 20, where: { numero: { lt: 2 } } },
+    ]);
   });
 });
 

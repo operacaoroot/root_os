@@ -210,6 +210,16 @@ describe('episódio: contratos', () => {
     expect(modelo).toMatch(/orgId String @default\(""\)/);
   });
 
+  it('MD2: statusDesde nasce com o episódio e quem carimba a troca é o gatilho do banco, não um serviço', () => {
+    const modelo = schema.match(/model PautaEpisodio \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(modelo).toMatch(/statusDesde DateTime @default\(now\(\)\)/);
+    const pasta = join(__dirname, '../prisma/migrations/20260924190735_pauta_episodio_status_desde/migration.sql');
+    const sql = readFileSync(pasta, 'utf8');
+    expect(sql).toMatch(/CREATE TRIGGER "PautaEpisodio_statusDesde"\s+BEFORE UPDATE ON "PautaEpisodio"/);
+    expect(sql).toMatch(/IF NEW\."status" IS DISTINCT FROM OLD\."status" THEN\s+NEW\."statusDesde" := now\(\);/);
+    expect(sql).toContain('SET search_path = pg_catalog, pg_temp');
+  });
+
   it('criar exige o id da rodada e aceita título aparado de até 160', () => {
     expect(PautaEpisodioCriarSchema.parse({ rodadaId: RODADA })).toEqual({ rodadaId: RODADA });
     expect(PautaEpisodioCriarSchema.parse({ rodadaId: RODADA, titulo: '  Ep da IA  ' }).titulo).toBe('Ep da IA');
@@ -580,6 +590,31 @@ describe.skipIf(!URL)('episódio com banco: numera sem colidir', () => {
     expect(andou.status).toBe('gravacao');
     await expect(na(orgB, () => episodios.mudarStatus(orgB, e.id, 'pessoa', 'derivacao'))).rejects.toBeInstanceOf(BadRequestException);
     expect((await admin.pautaEpisodio.findUnique({ where: { id: e.id } }))?.status).toBe('gravacao');
+  }, 60_000);
+
+  it('MD2: o banco carimba statusDesde em toda troca de status, por qualquer caminho, e só na troca', async () => {
+    const [, orgB] = orgs;
+    const [rodadaId] = await rodadasCuradas(orgB, 1);
+    const e = await na(orgB, () => episodios.criar(orgB, 'pessoa', { rodadaId }));
+    const desde = async () => (await admin.pautaEpisodio.findUniqueOrThrow({ where: { id: e.id }, select: { statusDesde: true } })).statusDesde.getTime();
+    const esperar = () => new Promise((ok) => setTimeout(ok, 15));
+    const nasceu = await desde();
+
+    await esperar();
+    await na(orgB, () => episodios.mudarStatus(orgB, e.id, 'pessoa', 'gravacao'));
+    const gravacao = await desde();
+    expect(gravacao).toBeGreaterThan(nasceu);
+
+    // Editar sem trocar de status (roteiro, título, mídia) não reinicia a data.
+    await esperar();
+    await admin.pautaEpisodio.update({ where: { id: e.id }, data: { titulo: `outro ${MARCA}`, roteiro: '# ep', midia: { x: 1 } } });
+    expect(await desde()).toBe(gravacao);
+
+    // O caminho da mídia é um updateMany condicionado, fora do EpisodioService: carimba igual.
+    await esperar();
+    const r = await admin.pautaEpisodio.updateMany({ where: { id: e.id, status: 'gravacao' }, data: { status: 'edicao' } });
+    expect(r.count).toBe(1);
+    expect(await desde()).toBeGreaterThan(gravacao);
   }, 60_000);
 
   it('o banco recusa apagar a rodada que virou episódio (RESTRICT), mesmo por fora da API', async () => {

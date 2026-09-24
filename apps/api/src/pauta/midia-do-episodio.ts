@@ -1,18 +1,25 @@
+import { createHash } from 'node:crypto';
 import {
   PAUTA_EPISODIO_STATUS_ROTULO,
+  PAUTA_FORMATOS_DA_SEMANA,
   PAUTA_FOLGA_DA_TRANSCRICAO_SEG,
   PAUTA_STATUS_PENDENTES_DE_MIDIA,
   apelidoDoEpisodio,
   midiaDoEpisodio,
   tempoDoVideo,
   type PautaEpisodioPendenteDeMidia,
+  type PautaEpisodioPendenteDeRender,
+  type PautaFormatoDaSemana,
   type PautaEpisodioStatus,
   type PautaMidiaDoEpisodio,
   type PautaMidiaInput,
   type PautaMotivoDeCorte,
+  type PautaRenderPendente,
   type PautaSegmento,
 } from '@mktos/shared';
 import { palavraDeCorteEfetiva } from './roteiro-do-episodio';
+import { ehPecaDaSemana, lerMetaDaSemana, versaoDoTexto } from './derivacao-do-episodio';
+import { midiaDaPeca } from './agenda-da-semana';
 
 /*
  * A MÍDIA DO EPISÓDIO (MC9) — a parte pura. O Mac edita e transcreve; aqui
@@ -100,6 +107,7 @@ export interface LinhaPendenteDeMidia {
   palavraDeCorte: string | null;
   midia: unknown;
   atualizadoEm: Date;
+  statusDesde: Date;
 }
 
 export function pendenteDeMidia(e: LinhaPendenteDeMidia, daEmpresa: string | null): PautaEpisodioPendenteDeMidia {
@@ -114,5 +122,52 @@ export function pendenteDeMidia(e: LinhaPendenteDeMidia, daEmpresa: string | nul
     falta: e.status === 'edicao' && midia ? 'transcricao' : 'midia',
     arquivoFinal: midia?.arquivoFinal ?? null,
     atualizadoEm: e.atualizadoEm.toISOString(),
+    statusDesde: e.statusDesde.toISOString(),
   };
+}
+
+export interface PecaParaRender {
+  id: string;
+  formato: string;
+  status: string;
+  titulo: string;
+  corpo: string;
+  meta: unknown;
+}
+
+/**
+ * O que o vigia do Mac (MD2) ainda tem a renderizar num episódio: a peça da
+ * semana deste episódio, da transcrição ATUAL (`sha`), em rascunho ou aprovada,
+ * sem a mídia inteira — o corte sem mp4, o story sem PNG, o carrossel sem um PNG
+ * por slide. A mesma régua do `root-midia` (`aceitaRender`) e da agenda
+ * (`midiaDaPeca`). A assinatura muda quando o texto ou a mídia de alguma delas
+ * muda: é o que deixa o vigia não refazer o mesmo render que já falhou (o
+ * carrossel com texto estourado, por exemplo) a cada passagem.
+ */
+export function renderPendente(
+  pecas: readonly PecaParaRender[],
+  e: { id: string; numero: number; sha: string },
+): PautaEpisodioPendenteDeRender['precisaDeRender'] {
+  const apelido = apelidoDoEpisodio(e.numero);
+  const porFormato = new Map<PautaFormatoDaSemana, string[]>();
+  for (const p of pecas) {
+    if (p.status !== 'rascunho' && p.status !== 'aprovada') continue;
+    if (!ehPecaDaSemana(p.meta, e.id)) continue;
+    const formato = p.formato as PautaFormatoDaSemana;
+    if (!(PAUTA_FORMATOS_DA_SEMANA as readonly string[]).includes(formato)) continue;
+    const meta = lerMetaDaSemana(p.meta);
+    if (meta.transcricaoSha !== e.sha) continue;
+    const midia = midiaDaPeca(formato, p.meta, apelido);
+    if (midia.onde !== 'nenhuma' && midia.onde !== 'parcial') continue;
+    const linha = [p.id, versaoDoTexto(p), midia.onde, meta.imagens.map((i) => i.n).sort((a, b) => a - b).join(',')].join(':');
+    porFormato.set(formato, [...(porFormato.get(formato) ?? []), linha]);
+  }
+  const saida: Partial<Record<PautaFormatoDaSemana, PautaRenderPendente>> = {};
+  for (const formato of PAUTA_FORMATOS_DA_SEMANA) {
+    const linhas = porFormato.get(formato);
+    if (!linhas?.length) continue;
+    const assinatura = createHash('sha256').update(linhas.sort().join('|')).digest('hex').slice(0, 16);
+    saida[formato] = { pecas: linhas.length, assinatura };
+  }
+  return saida;
 }

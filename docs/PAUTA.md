@@ -517,7 +517,11 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   assinada não chega ao Mac, e o upload no YouTube é manual na V1 (D-MC6). O OS recebe só o leve.
   - **API** (módulo `pauta`, todas `pauta.editar`; `MidiaService`, parte pura em
     `pauta/midia-do-episodio.ts`): `GET /pauta/episodios/pendentes-midia` — gravação e edição, do
-    número menor, com a palavra de corte efetiva e o que falta (`midia` ou `transcricao`);
+    número menor, com a palavra de corte efetiva, o que falta (`midia` ou `transcricao`) e, desde a
+    MD2, o `statusDesde` (carimbado pelo gatilho `PautaEpisodio_statusDesde` em toda troca de
+    status); junto, `derivacao` — os episódios da Derivação com peça da semana da transcrição
+    atual sem render, com `precisaDeRender` por formato (quantas peças e uma assinatura). É o que
+    o vigia do Mac (`root-midia vigia`, launchd) lê;
     `POST /pauta/episodios/:id/midia` (`PautaMidiaSchema`: `arquivoBruto`, `arquivoFinal`,
     `duracaoSeg` do final, `duracaoBrutoSeg`, `cortes` `{inicio, fim, motivo}` em segundos do bruto,
     em ordem e sem sobreposição, `palavraDeCorte`, `editor`) — da gravação ou da edição vai para a

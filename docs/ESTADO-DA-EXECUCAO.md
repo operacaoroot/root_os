@@ -1237,6 +1237,111 @@ na revisão. Virar o slot proposto em agenda é a MD8.
 frente (coluna nula e índice numa tabela com RLS); `SMOKE_ROTAS` ganha
 `/api/pauta/episodios/x/encadeamento`; nenhuma variável, capacidade, permissão ou seed nova.
 
+### Onda D, fatia MD2 — o vigia do Mac (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD2). O launchd acorda o
+`root-midia vigia` quando a pasta do OBS muda e a cada 15 min; uma passagem faz o que a
+`/root-midia ep-NN` faria à mão, só pelo ffmpeg, e sai. Nada é apagado: o bruto só é lido.
+
+| Peça | Onde |
+|---|---|
+| O que decide e monta (bruto, trava, memória, plist, notificação, log, transcrição de ensaio) | `tools/root-midia/lib/vigia.mjs` |
+| A passagem, `vigia instalar\|desinstalar\|estado` e `ensaio-vigia` | `tools/root-midia/root-midia.mjs` |
+| `PautaEpisodio.statusDesde` + gatilho `PautaEpisodio_statusDesde` | migration `20260924190735_pauta_episodio_status_desde` |
+| A fila com `statusDesde` e `derivacao[].precisaDeRender` (peça da transcrição atual sem render, com assinatura) | `pauta/midia.service.ts`, `renderPendente` em `pauta/midia-do-episodio.ts`; tipos no shared |
+| A dica "ponha em Gravação antes de gravar" | `apps/web/src/app/pauta/SecaoMidia.tsx` |
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~17h): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto com `TEST_DATABASE_URL` **2668 de 2668** em 65 arquivos (+23: `root-midia` 18,
+`pauta-midia` 3, `pauta-episodio` 2, um deles com banco); web **556** em 43 (+1); `test:isolamento`
+**326** (coluna nova em tabela que já tinha RLS); `db:diff` limpo; `smoke` com
+`/api/pauta/episodios/pendentes-midia` → 401. Policy e porta não foram tocadas. Pisos da CI: api
+1977/57, web 375/34, com a conta no `ci.yml`.
+
+**Medido depois da revisão** (mesmo banco, 24/09/2026 ~17h30): `pnpm typecheck` 7/7;
+`typecheck:test` limpo; api direto **2683 de 2683** em 65 arquivos (+15: `root-midia` +14,
+`pauta-midia` +1, todos sem banco; sem ele, 2108 passados e 575 pulados); web **556** em 43 (a dica
+da pausa entrou num caso que já existia); `test:isolamento` **326**; `db:diff` limpo. Piso de casos
+da api a **1990** (+13), com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando" pelo launchd de verdade** (`dist/main.js` contra
+`marketing_os_zero_md2`, criado vazio: migrations do zero e `db:seed` com senhas aleatórias numa
+pasta temporária; arquivo de variáveis com `chmod 600` apontando para a API em loopback; o modelo do
+whisper **não está no Mac**, então a transcrição foi a de ensaio, `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO=1`,
+recusada fora de loopback; o plist foi carregado de uma pasta temporária com `--agentes`, sem gravar
+em `~/Library/LaunchAgents`):
+
+1. `vigia instalar` → `launchctl print gui/501/com.operacaoroot.root-midia.vigia` mostrou o agente
+   (node e script em lista, `ROOT_MIDIA_ENV` como única variável); `plutil -lint` OK. Com o arquivo
+   de variáveis em 644, `instalar` recusou pedindo `chmod 600`.
+2. `ep-02` em Gravação; um bruto sintético de 15 s copiado para a pasta às 19:21:25 → a passagem
+   esperou as duas leituras e os 2 min, e às **19:23:37** o episódio estava em **Pacote** (2 min 12 s):
+   tomada errada da palavra de corte tirada (15,0 s → 3,2 s), mídia e transcrição no OS, a
+   notificação nativa disparada. `bruto.transcricao.json`, `cortes.json`, `ep-02-final.mp4` e a
+   transcrição do final com `.srt` em `<OBS>/root-midia/ep-02/`.
+3. O sha256 do bruto: `1b7e8847…ca71e32` antes e depois.
+4. `ep-03` em Gravação e **dois** brutos copiados juntos → em ~1 min, "ambíguo: rode /root-midia
+   ep-03", nada enviado, `ep-03` segue em Gravação. Na passagem seguinte, a mesma notificação saiu
+   calada no log (6 h).
+5. `ep-02` posto em Derivação com um corte sem mp4 → `launchctl kickstart` → a passagem renderizou o
+   corte vertical (1080×1920, 3 s) e o registrou no OS; a fila deixou de listar o episódio.
+6. Sem `WHISPER_MODEL` (arquivo sem a chave de ensaio): "Falta o modelo do whisper (WHISPER_MODEL,
+   D-MC3)", notificado, o bruto **não** marcado como falho (vale assim que o modelo aparecer).
+7. `vigia estado` (carregado, 4 execuções, última saída 0, a última linha do log) → `vigia
+   desinstalar` → `launchctl print` sai com 113 e o plist sumiu.
+
+Também `ensaio-vigia` (no processo, intervalos curtos): dois brutos → ambíguo e nada enviado; um →
+Pacote, sha256 igual.
+
+**Correções da revisão (três revisores, 24/09/2026):**
+- A `derivacao` da fila é lida do **mais novo**, em lotes de 20 e no máximo 5 lotes, até juntar 20
+  com render pendente. Antes, os 20 mais antigos parados na Derivação (nada os tira de lá sozinho)
+  escondiam o episódio da semana. Caso novo em `pauta-midia` com 21 episódios.
+- A cadeia do vigia **relê a fila antes de mandar** (`enviar` com `exigirGravacao`): se o episódio
+  saiu de Gravação no meio (a mídia foi à mão, o status mudou), nada vai, a notificação diz "ep-NN
+  mudou durante a cadeia" e o bruto não vira falho.
+- A trava é tomada atrás de uma **porta** criada com `wx` e removida logo depois (a catraca libera
+  esse caminho pelo nome): o `vigia` à mão junto com o launchd não sai com dois donos.
+- O `vigia instalar` confere as variáveis e monta os caminhos **só com o arquivo de variáveis**
+  (o que o launchd vai ver); falta de `WHISPER_MODEL` no arquivo sai como aviso.
+- Os renders **esperam com o OBS gravando** (bruto mudando, jovem, ou arquivo da raiz mexido nos
+  últimos 2 min); o carrossel estourado e o corte sem trecho **viram notificação**; os renders vão
+  para `<OBS>/root-midia/ep-NN/ep-NN-semana` (sob o launchd o diretório atual é `/`, e o carrossel
+  sem o final no disco tentava `mkdir /ep-NN-semana`).
+- "Vários em Gravação" só notifica com gravação nova na pasta depois da entrada do mais antigo.
+- A decisão da metade do bruto saiu para `passoDoBruto` (`lib/vigia.mjs`), com disco, relógio,
+  espera, transcritor e cadeia injetados, e a suíte cobre os caminhos sem ffmpeg. **Desvio do
+  item 6 da SPEC:** o `ensaio-vigia` ficou subcomando manual, como o `ensaio` da MC9 (a CI não tem
+  ffmpeg).
+- Documentado (README, SKILL, dica da tela, risco da spec): o vigia pressupõe um arquivo por
+  episódio e **nenhuma pausa maior que 2 min** na gravação.
+- Recusado: renderizar só a peça pendente em vez do formato inteiro. O render do formato é o mesmo
+  do comando manual e é idempotente; a memória de 24 h por assinatura já segura a repetição.
+
+**Mudanças de comportamento:** `GET /pauta/episodios/pendentes-midia` devolve `statusDesde` em cada
+item e a lista nova `derivacao`, do episódio mais novo para o mais antigo (a `items` segue igual
+para o `enviar` manual). O `statusDesde` é
+carimbado pelo **banco** em toda troca de status, por qualquer caminho; o episódio que já existe
+ganha o instante da migration (gravação anterior a ela não é aceita pelo vigia — o manual segue).
+
+**Pendências (do Pedro):**
+- Baixar um modelo ggml do whisper e pôr `WHISPER_MODEL=/caminho/ggml-….bin` no
+  `~/.config/root/root-midia.env` (D-MC3). Sem isso o vigia notifica e para a cada bruto novo.
+- Criar `~/.config/root/root-midia.env` com `ROOT_OS_API_URL` (https), `ROOT_OS_EMAIL`,
+  `ROOT_OS_SENHA` (e `ROOT_MIDIA_OBS_DIR` se a pasta não for `~/Movies/OBS`) e rodar
+  `chmod 600 ~/.config/root/root-midia.env`.
+- Rodar uma vez `node <repo>/tools/root-midia/root-midia.mjs vigia instalar` e conferir com `vigia
+  estado`. A permissão do macOS para o node ler `~/Movies` na primeira execução sob o launchd
+  **não foi conferida** (o ensaio usou uma pasta temporária): se o log disser `EPERM` na pasta,
+  dar acesso ao node em Ajustes › Privacidade.
+- O hábito: pôr o episódio em Gravação **antes** de gravar.
+
+**Deploy:** a migration `20260924190735_pauta_episodio_status_desde` (coluna com padrão, gatilho e a
+conferência do gatilho) entra depois da `20260924100000`; `SMOKE_ROTAS` já tem a fila da mídia.
+Nenhuma variável na API, capacidade, permissão ou seed nova; as variáveis novas são do Mac
+(`ROOT_MIDIA_OBS_DIR`, `ROOT_MIDIA_VIGIA_LOG`, `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO`, comentadas no
+`.env.example`).
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê

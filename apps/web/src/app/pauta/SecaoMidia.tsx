@@ -51,9 +51,17 @@ export function SecaoMidia({ apelido, status, midia: bruta, transcricao }: Props
             <>
               Ainda sem mídia. No Mac, rode <code className="break-all">{comando}</code> no Claude Code: ele corta os
               silêncios e as tomadas erradas, transcreve e devolve aqui. O vídeo fica no Mac.
+              {status === 'gravacao' && (
+                <>
+                  {' '}
+                  Com o vigia do Mac instalado, isso roda sozinho quando a gravação do OBS termina, desde que ela
+                  seja a única feita depois de o episódio entrar em Gravação e não tenha pausa de mais de 2 min
+                  (com pausa longa, pare a gravação e rode o comando à mão).
+                </>
+              )}
             </>
           ) : status === 'roteiro' ? (
-            'A mídia vem depois da gravação.'
+            'A mídia vem depois da gravação. Ponha o episódio em Gravação antes de gravar: é assim que o vigia do Mac reconhece o bruto.'
           ) : (
             'Este episódio não tem mídia registrada.'
           )}
