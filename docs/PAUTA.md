@@ -448,8 +448,8 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Tela:** aba "Episódios" em `/pauta` (lista com número, título e status; detalhe com a linha
     do tempo das sete etapas, os itens e os botões dos vizinhos). "Criar episódio" na rodada
     curada da aba Rodadas e no aviso depois de confirmar a Curadoria.
-  - Os campos de títulos, thumbs e descrição **existem e ficam vazios** até o MC11–MC12; o roteiro
-    é escrito desde o MC8, e a mídia e a transcrição desde o MC9 (abaixo).
+  - Os campos de títulos, thumbs e descrição são escritos pelo pacote do YouTube (MC11); o roteiro
+    desde o MC8, e a mídia e a transcrição desde o MC9 (abaixo).
 - **O roteiro do episódio (MC8).** Sai dos itens que a curadoria manteve e vira o markdown de
   `PautaEpisodio.roteiro`; gerar passa o episódio de `roteiro` para `gravacao`.
   - **Gerar** (`POST /pauta/episodios/:id/roteiro/gerar`, `pauta.editar` + `automacoes.executar`,
@@ -576,6 +576,64 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     regras da marca, o histórico e a chave.
   - **Falta:** o teste cego com o Pedro (roteiro com e sem perfil) — é o critério de pronto do
     plano e depende dele.
+- **O pacote do YouTube (MC11).** Da transcrição do vídeo final saem 3 títulos, a descrição com
+  capítulos e 3 briefs de thumb; as thumbs são renderizadas no Mac (D-MC4) e voltam como PNG. Subir
+  no YouTube é manual na V1 (D-MC6). `PacoteService`, parte pura em `pauta/pacote-do-episodio.ts`;
+  as regras dos capítulos moram no shared, porque a tela confere com a mesma conta.
+  - **Gerar** (`POST /pauta/episodios/:id/pacote/gerar`, `pauta.editar` + `automacoes.executar`,
+    `{substituir}`): só no Pacote e na Derivação, e com transcrição (400 antes de gastar IA); já tem
+    pacote e `substituir` não veio, 409 — gerar de novo troca os briefs e as imagens das thumbs saem
+    junto. A chamada leva o `orgId` e o bloco de voz (`VozService.bloco`, MC10; sem perfil, o tom da
+    casa). A transcrição vai ao modelo como `[mm:ss] fala`; longa demais (45 mil caracteres), os
+    segmentos se agrupam em blocos de 15 s a 4 min, e o tempo de cada bloco continua sendo o começo
+    real de uma fala. Escrita condicionada ao status e ao `atualizadoEm` lidos antes da IA (409);
+    o status **não** muda. RASTRO `pauta.episodio_pacote_gerado` só com as contas, as correções e os
+    avisos. Resposta sem JSON ou com menos de 3 títulos utilizáveis: 503, nada gravado. A resposta
+    traz `{episodio, avisos, correcoes}`.
+  - **Títulos:** 3, dentro de 100 caracteres (cortados na palavra), sem URL, emoji nem `<`/`>` (o
+    YouTube recusa), sem palavra proibida da marca e sem repetir; cada um com o ângulo. **Título
+    escolhido:** `PUT …/:id/pacote/titulo` `{n: 1..3 | null}` marca um só (RASTRO
+    `pauta.episodio_titulo_escolhido`).
+  - **Capítulos** (`consertarCapitulos` + `conferirCapitulos`/`linhasDosCapitulos` do shared): o
+    modelo copia os tempos dos colchetes; o sistema encosta cada um no começo de fala mais próximo,
+    ordena, tira o repetido e o que passa do fim, leva o primeiro para 00:00 (ou põe uma "Abertura"
+    em 00:00 se o primeiro estiver a 10 s ou mais), junta ao anterior o que dura menos de 10 s, fica
+    com no máximo 10 (o mais curto se junta ao anterior, com a correção dita) e confere as regras do YouTube (primeiro em 00:00, pelo menos 3, 10 s cada, ordem crescente, o
+    último até o fim). Formato `mm:ss`; com uma hora ou mais, `hh:mm:ss` em todas as linhas. O que
+    não fecha nem consertado sai da descrição com o motivo em `avisos` — vídeo de 25 s nunca terá 3.
+  - **Descrição:** abertura (2–3 frases do modelo, sem URL), "Capítulos", "Links citados no episódio"
+    (os itens mantidos com link público, na ordem da rodada — **nunca** o da newsletter: origem L,
+    `semLinkPublico` ou host de caixa de entrada ficam de fora), a chamada para a página de links do
+    episódio com o marcador `{{pagina-de-links}}` (o MC12 troca pela URL — `descricaoComPaginaDeLinks`
+    no shared) e até 3 hashtags. Teto de 5.000 **bytes**, medido com o marcador e guardando 200 bytes
+    (`PAUTA_RESERVA_DA_PAGINA_DE_LINKS`) para a URL que o MC12 põe no lugar — a URL tem de caber
+    nisso. Passando, saem os links do fim ("e mais N na página do episódio"), depois o fim da
+    abertura; com no máximo 10 capítulos, isso basta. Títulos sem três ângulos diferentes viram aviso.
+  - **Thumbs:** 3 briefs `{n, texto (até 4 palavras), destaque (uma palavra do texto, a que vai na
+    cor de acento; se o modelo apontar outra, a mais longa), tempoSeg (o frame, dentro do vídeo)}`;
+    faltando brief, trechos de 4 palavras dos títulos completam (sem repetir texto, pontuação e acento
+    à parte); se nem assim chegar a 3, o aviso diz. Não há edição de brief: trocar uma thumb é gerar o
+    pacote de novo, o que troca também títulos e descrição. `GET …/:id/thumbs` (`pauta.ver`) entrega ao Mac os briefs,
+    o `arquivoFinal` e a duração; `POST …/:id/thumbs/:n` (`pauta.editar`, multipart `file`) aceita só
+    `image/png` com a assinatura de PNG, até 2 MB (o multer corta antes), 16:9 e de 640 a 3840 de
+    largura — grava no storage da casa (MinIO, não público) em `pauta/thumb/<episódio>-<n>-<hash>.png`
+    e guarda a chave no JSON do episódio (a chave não sai no detalhe); RASTRO `pauta.episodio_thumb`.
+    `GET …/:id/thumbs/:n/imagem` (`pauta.ver`) devolve o PNG para a prévia, sem cache.
+  - **No Mac** (`tools/root-midia`): `root-midia thumbs ep-NN` lê os briefs, tira o frame do vídeo
+    final no tempo de cada um (ffmpeg, 1280×720), preenche `thumb.html` (o template da marca, com os
+    tokens da ROOT **copiados** do brand pack: verde-limão `#9BDB1F`, magenta `#FF1F6B`, fundo
+    `#070A08`, JetBrains Mono no título, Space Grotesk no apoio), fotografa num Chrome sem janela
+    (perfil temporário; o Chrome de `/Applications`, `ROOT_MIDIA_CHROME` ou o do agent-browser; sem
+    nenhum, o próprio agent-browser), confere 1280×720 e 2 MB e sobe. `--sem-enviar` só grava;
+    `root-midia ensaio-thumb` prova o render com um frame sintético, sem falar com o OS.
+  - **Depois de agendado** (e concluído) o pacote é o registro do que subiu: gerar, marcar título e
+    enviar thumb são 400 (`motivoParaNaoMexerNoPacote`, shared), e as escritas são condicionadas ao
+    status lido. **Mídia nova** (edição refeita) descarta a transcrição **e o pacote**, porque os
+    capítulos e os frames das thumbs são tempos do vídeo anterior (`pacoteDescartado` no RASTRO).
+  - **Tela:** seção "Pacote do YouTube" no detalhe do episódio (`SecaoPacote.tsx`): gerar (com
+    confirmação para substituir), os três títulos com a escolha e copiar, a descrição com "Copiar
+    descrição", a conta em bytes e os capítulos conferidos, e as thumbs — a prévia das que o Mac
+    subiu, o brief e o comando `/root-midia thumbs ep-NN` das que faltam.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

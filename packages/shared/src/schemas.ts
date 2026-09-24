@@ -1711,8 +1711,10 @@ export interface PautaEpisodioDetalhe extends Omit<PautaEpisodioResumo, 'itens'>
   midia: Record<string, unknown>;
   transcricao: Array<{ inicio: number; fim: number; texto: string }>;
   transcricaoTexto: string;
-  titulos: unknown[];
-  thumbs: unknown[];
+  /** Os títulos do pacote do YouTube (MC11); vazio até gerar. */
+  titulos: PautaTituloDoPacote[];
+  /** Os briefs das thumbs (MC11) e, quando o Mac já renderizou, a imagem. */
+  thumbs: PautaThumbDoPacote[];
   bioPageId: string | null;
   criadoPor: string | null;
   /** Para onde o episódio pode andar agora (os dois vizinhos da ordem). */
@@ -2019,6 +2021,254 @@ export interface PautaEpisodioPendenteDeMidia {
 export interface PautaEpisodiosPendentesDeMidia {
   items: PautaEpisodioPendenteDeMidia[];
   source: { tool: string; generatedAt: string };
+}
+
+// ---------- Pauta: o pacote do YouTube (MC11) ----------
+// Da transcrição do vídeo final saem 3 títulos, a descrição com capítulos e 3
+// briefs de thumb. As regras dos capítulos são do YouTube e moram aqui porque a
+// tela confere a descrição com a mesma conta da API. As thumbs são renderizadas
+// no Mac, num template HTML da marca (D-MC4), e sobem como PNG.
+
+export const PAUTA_TITULOS_DO_PACOTE = 3;
+export const PAUTA_THUMBS_DO_PACOTE = 3;
+/** O YouTube não aceita título acima de 100 caracteres. */
+export const PAUTA_TETO_DO_TITULO_DO_YOUTUBE = 100;
+/** O YouTube recusa descrição acima de 5.000 bytes (não caracteres: acento conta 2). */
+export const PAUTA_TETO_DA_DESCRICAO_DO_YOUTUBE = 5000;
+/** A thumb se lê de relance no celular: no máximo 4 palavras. */
+export const PAUTA_PALAVRAS_DA_THUMB = 4;
+/** O PNG da thumb: o YouTube aceita até 2 MB. */
+export const PAUTA_THUMB_MAX_BYTES = 2 * 1024 * 1024;
+export const PAUTA_THUMB_LARGURA = 1280;
+export const PAUTA_THUMB_ALTURA = 720;
+/**
+ * O lugar da página de links do episódio na descrição. O MC12 cria a página e
+ * troca o marcador pela URL; até lá, quem copia a descrição é avisado.
+ */
+export const PAUTA_MARCADOR_DA_PAGINA_DE_LINKS = '{{pagina-de-links}}';
+/**
+ * A folga, em bytes, que a descrição guarda para a URL que entra no lugar do
+ * marcador: a conta dos 5.000 é feita com o marcador, e a URL do MC12 tem de
+ * caber aqui para a troca não estourar o teto.
+ */
+export const PAUTA_RESERVA_DA_PAGINA_DE_LINKS = 200;
+
+/** O pacote sai da transcrição do final: antes do Pacote não há transcrição, depois da Derivação o vídeo já foi agendado. */
+export const PAUTA_STATUS_QUE_GERAM_PACOTE = ['pacote', 'derivacao'] as const satisfies readonly PautaEpisodioStatus[];
+
+/**
+ * Depois de agendado, o pacote é o registro do que subiu: nem gerar de novo,
+ * nem trocar o título marcado, nem a imagem de uma thumb. Nulo = pode mexer.
+ */
+export function motivoParaNaoMexerNoPacote(status: PautaEpisodioStatus): string | null {
+  return status === 'agendado' || status === 'concluido'
+    ? `O vídeo já foi agendado (${PAUTA_EPISODIO_STATUS_ROTULO[status]}): o pacote é o registro do que subiu.`
+    : null;
+}
+
+/** Por que não dá para gerar o pacote agora, ou nulo. */
+export function motivoParaNaoGerarPacote(status: PautaEpisodioStatus, segmentos: number): string | null {
+  if (!(PAUTA_STATUS_QUE_GERAM_PACOTE as readonly string[]).includes(status)) {
+    return (
+      motivoParaNaoMexerNoPacote(status) ??
+      `O pacote sai da transcrição do vídeo final, que chega no Pacote (o episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`
+    );
+  }
+  if (segmentos === 0) return 'O episódio não tem transcrição do vídeo final — rode /root-midia no Mac.';
+  return null;
+}
+
+/** As regras do YouTube para os capítulos virarem marcadores no vídeo. */
+export const PAUTA_MINIMO_DE_CAPITULOS = 3;
+export const PAUTA_CAPITULO_MINIMO_SEG = 10;
+
+export interface PautaCapitulo {
+  inicioSeg: number;
+  titulo: string;
+}
+
+/**
+ * `00:00`, `12:34` ou, em vídeo de uma hora ou mais, `00:12:34` em todos — o
+ * YouTube lê os dois, e a lista num formato só fica alinhada.
+ */
+export function tempoDoCapitulo(seg: number, comHoras = false): string {
+  const t = Math.max(0, Math.floor(Number.isFinite(seg) ? seg : 0));
+  const h = Math.floor(t / 3600);
+  const mm = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+  const ss = String(t % 60).padStart(2, '0');
+  return comHoras || h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * O que impede a lista de virar capítulos no YouTube; vazia = vale. O primeiro
+ * começa em 00:00, são pelo menos 3, em ordem crescente, e cada um dura 10 s
+ * ou mais — o último conta até o fim do vídeo, quando a duração é conhecida.
+ */
+export function conferirCapitulos(capitulos: ReadonlyArray<PautaCapitulo>, duracaoSeg?: number | null): string[] {
+  const erros: string[] = [];
+  if (capitulos.length < PAUTA_MINIMO_DE_CAPITULOS) {
+    erros.push(`São ${capitulos.length} capítulo(s); o YouTube pede pelo menos ${PAUTA_MINIMO_DE_CAPITULOS}.`);
+  }
+  if (capitulos.length && Math.floor(capitulos[0].inicioSeg) !== 0) {
+    erros.push(`O primeiro capítulo começa em ${tempoDoCapitulo(capitulos[0].inicioSeg)}; tem de ser 00:00.`);
+  }
+  capitulos.forEach((c, i) => {
+    if (!c.titulo.trim()) erros.push(`O capítulo ${i + 1} está sem título.`);
+    if (i === 0) return;
+    const antes = capitulos[i - 1];
+    if (Math.floor(c.inicioSeg) <= Math.floor(antes.inicioSeg)) {
+      erros.push(`O capítulo ${i + 1} (${tempoDoCapitulo(c.inicioSeg)}) não vem depois do anterior.`);
+    } else if (Math.floor(c.inicioSeg) - Math.floor(antes.inicioSeg) < PAUTA_CAPITULO_MINIMO_SEG) {
+      erros.push(`O capítulo ${i} (${tempoDoCapitulo(antes.inicioSeg)}) dura menos de ${PAUTA_CAPITULO_MINIMO_SEG} s.`);
+    }
+  });
+  const ultimo = capitulos[capitulos.length - 1];
+  if (ultimo && typeof duracaoSeg === 'number' && Number.isFinite(duracaoSeg) && duracaoSeg - ultimo.inicioSeg < PAUTA_CAPITULO_MINIMO_SEG) {
+    erros.push(`O último capítulo (${tempoDoCapitulo(ultimo.inicioSeg)}) dura menos de ${PAUTA_CAPITULO_MINIMO_SEG} s até o fim do vídeo.`);
+  }
+  return erros;
+}
+
+/** As linhas `00:00 Título` da descrição, num formato só. */
+export function linhasDosCapitulos(capitulos: ReadonlyArray<PautaCapitulo>, duracaoSeg?: number | null): string[] {
+  const comHoras = capitulos.some((c) => c.inicioSeg >= 3600) || (typeof duracaoSeg === 'number' && duracaoSeg >= 3600);
+  return capitulos.map((c) => `${tempoDoCapitulo(c.inicioSeg, comHoras)} ${c.titulo}`);
+}
+
+const LINHA_DE_CAPITULO = /^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s+(\S.*)$/;
+
+/**
+ * Os capítulos que o YouTube leria da descrição: as linhas que começam por um
+ * tempo. Serve para a tela conferir a descrição que está gravada.
+ */
+export function capitulosDaDescricao(descricao: string): PautaCapitulo[] {
+  const saida: PautaCapitulo[] = [];
+  for (const linha of String(descricao ?? '').split(/\r?\n/)) {
+    const m = LINHA_DE_CAPITULO.exec(linha.trim());
+    if (!m || Number(m[3]) > 59 || (m[1] !== undefined && Number(m[2]) > 59)) continue;
+    saida.push({ inicioSeg: Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]), titulo: m[4].trim() });
+  }
+  return saida;
+}
+
+/**
+ * A descrição pronta para colar: com a URL da página de links (MC12), ou como
+ * está. A URL cabe na folga de `PAUTA_RESERVA_DA_PAGINA_DE_LINKS` bytes.
+ */
+export function descricaoComPaginaDeLinks(descricao: string, url: string | null | undefined): string {
+  const u = (url ?? '').trim();
+  return u ? descricao.split(PAUTA_MARCADOR_DA_PAGINA_DE_LINKS).join(u) : descricao;
+}
+
+export interface PautaTituloDoPacote {
+  texto: string;
+  /** O ângulo que o título explora (curiosidade, resultado, lista…). */
+  angulo: string;
+  escolhido: boolean;
+}
+
+export interface PautaImagemDaThumb {
+  bytes: number;
+  largura: number;
+  altura: number;
+  enviadaEm: string;
+}
+
+export interface PautaThumbDoPacote {
+  /** 1 a 3: o número da thumb na rota de envio. */
+  n: number;
+  /** Até 4 palavras. */
+  texto: string;
+  /** A palavra do texto que vai na cor de acento. */
+  destaque: string;
+  /** O frame sugerido, em segundos do vídeo final. */
+  tempoSeg: number;
+  /** A imagem que o Mac renderizou e subiu; nula até lá. */
+  imagem: PautaImagemDaThumb | null;
+}
+
+function textoCurto(v: unknown, teto: number): string {
+  return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, teto) : '';
+}
+
+/** Os títulos guardados no JSON do episódio; o que não tiver a forma fica de fora. */
+export function titulosDoPacote(valor: unknown): PautaTituloDoPacote[] {
+  if (!Array.isArray(valor)) return [];
+  return valor
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === 'object' && typeof (t as { texto?: unknown }).texto === 'string')
+    .map((t) => ({
+      texto: textoCurto(t.texto, PAUTA_TETO_DO_TITULO_DO_YOUTUBE),
+      angulo: textoCurto(t.angulo, 60),
+      escolhido: t.escolhido === true,
+    }))
+    .filter((t) => t.texto);
+}
+
+/** Os briefs guardados; a chave do storage fica no banco e não sai para a tela. */
+export function thumbsDoPacote(valor: unknown): PautaThumbDoPacote[] {
+  if (!Array.isArray(valor)) return [];
+  const saida: PautaThumbDoPacote[] = [];
+  for (const t of valor) {
+    if (!t || typeof t !== 'object') continue;
+    const r = t as Record<string, unknown>;
+    const n = Number(r.n);
+    const tempoSeg = Number(r.tempoSeg);
+    if (!Number.isInteger(n) || n < 1 || n > PAUTA_THUMBS_DO_PACOTE || !Number.isFinite(tempoSeg)) continue;
+    const texto = textoCurto(r.texto, 60);
+    if (!texto) continue;
+    const img = r.imagem && typeof r.imagem === 'object' ? (r.imagem as Record<string, unknown>) : null;
+    saida.push({
+      n,
+      texto,
+      destaque: textoCurto(r.destaque, 60),
+      tempoSeg: Math.max(0, tempoSeg),
+      imagem:
+        img && typeof img.enviadaEm === 'string' && Number.isFinite(Number(img.bytes))
+          ? { bytes: Number(img.bytes), largura: Number(img.largura) || 0, altura: Number(img.altura) || 0, enviadaEm: img.enviadaEm }
+          : null,
+    });
+  }
+  return saida;
+}
+
+export const PautaPacoteGerarSchema = z.object({
+  /** O episódio já tem pacote: gerar de novo só com a confirmação (as imagens das thumbs saem junto). */
+  substituir: z.boolean().default(false),
+});
+export type PautaPacoteGerarInput = z.infer<typeof PautaPacoteGerarSchema>;
+
+/** `null` desmarca: nenhum título escolhido. */
+export const PautaTituloEscolhidoSchema = z.object({
+  n: z.number().int().min(1).max(PAUTA_TITULOS_DO_PACOTE).nullable(),
+});
+export type PautaTituloEscolhidoInput = z.infer<typeof PautaTituloEscolhidoSchema>;
+
+/** O `:n` da rota da thumb. */
+export const PautaNumeroDaThumbSchema = z.coerce
+  .number({ invalid_type_error: 'A thumb é 1, 2 ou 3.' })
+  .int('A thumb é 1, 2 ou 3.')
+  .min(1, 'A thumb é 1, 2 ou 3.')
+  .max(PAUTA_THUMBS_DO_PACOTE, 'A thumb é 1, 2 ou 3.');
+
+/** `GET /pauta/episodios/:id/thumbs` — o que o Mac precisa para renderizar. */
+export interface PautaThumbsParaRender {
+  episodioId: string;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  /** O vídeo final no Mac, de onde sai o frame; nulo sem mídia. */
+  arquivoFinal: string | null;
+  duracaoSeg: number | null;
+  thumbs: Array<Omit<PautaThumbDoPacote, 'imagem'> & { tempo: string; temImagem: boolean }>;
+}
+
+/** `POST /pauta/episodios/:id/pacote/gerar`: o episódio e o que o sistema consertou ou recusou. */
+export interface PautaPacoteGerado {
+  episodio: PautaEpisodioDetalhe;
+  /** Capítulos recusados (a descrição saiu sem eles), com o motivo. */
+  avisos: string[];
+  /** O que foi consertado no que a IA devolveu (tempos, ordem, texto de thumb longo). */
+  correcoes: string[];
 }
 
 // ---------- Pauta: a voz do autor (MC10) ----------

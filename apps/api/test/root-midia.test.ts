@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -44,6 +44,21 @@ import {
   lerArquivoDeVariaveis,
   mensagemDoErro,
 } from '../../../tools/root-midia/lib/os.mjs';
+import {
+  ALTURA,
+  APOIO_PADRAO,
+  LARGURA,
+  TETO_DO_PNG,
+  argsDoChrome,
+  argsDoFrame,
+  candidatosDoChrome,
+  conferirPng,
+  dimensoesDoPng,
+  escaparHtml,
+  nomeDaThumb,
+  preencherThumb,
+  textoComDestaque,
+} from '../../../tools/root-midia/lib/thumbs.mjs';
 
 /*
  * A ESTAÇÃO DE MÍDIA NO MAC — MC9, o lado do Mac (`tools/root-midia`).
@@ -588,5 +603,125 @@ describe('root-midia: as variáveis e a senha', () => {
     } finally {
       rmSync(pasta, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MC11: as thumbs renderizadas no Mac (lib/thumbs.mjs e thumb.html)
+// ---------------------------------------------------------------------------
+
+function pngDe(largura: number, altura: number, total = 64): Uint8Array {
+  const b = Buffer.alloc(total);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'latin1');
+  b.writeUInt32BE(largura, 16);
+  b.writeUInt32BE(altura, 20);
+  return b;
+}
+
+/** O template mora na raiz do monorepo; o vitest roda com o cwd em `apps/api` ou na raiz. */
+function acharTemplate(): string {
+  for (const base of [process.cwd(), join(process.cwd(), '..', '..')]) {
+    const caminho = join(base, 'tools', 'root-midia', 'thumb.html');
+    if (existsSync(caminho)) return caminho;
+  }
+  throw new Error(`Não achei tools/root-midia/thumb.html a partir de ${process.cwd()}.`);
+}
+
+const TEMPLATE = readFileSync(acharTemplate(), 'utf8');
+
+describe('root-midia: as thumbs (MC11)', () => {
+  it('o template é 1280×720 com os tokens da marca copiados — não lê o brand pack em tempo de execução', () => {
+    expect(TEMPLATE).toContain('width: 1280px; height: 720px');
+    for (const token of ['#9BDB1F', '#FF1F6B', '#C4FF2E', '#DFFFE8', '#070A08', "'JetBrains Mono'", "'Space Grotesk'"]) {
+      expect(TEMPLATE, token).toContain(token);
+    }
+    expect(TEMPLATE).not.toMatch(/maquina-carrossel|brand\.json"|\.\.\//);
+    for (const m of ['{{TEXTO}}', '{{APOIO}}', '{{APELIDO}}', '{{FRAME}}']) expect(TEMPLATE.split(m)).toHaveLength(2);
+    expect([LARGURA, ALTURA, TETO_DO_PNG]).toEqual([1280, 720, 2 * 1024 * 1024]);
+  });
+
+  it('preenche escapando tudo: o texto da IA não vira HTML, e a palavra de destaque ganha a cor', () => {
+    const html = preencherThumb(TEMPLATE, { texto: 'Preço <b>da</b> IA caiu', destaque: 'CAIU', apelido: 'ep-07', frame: 'frame.jpg' });
+    expect(html).toContain('Preço &lt;b&gt;da&lt;/b&gt; IA <span class="destaque">caiu</span>');
+    expect(html).toContain('<span class="ep">ep-07</span>');
+    expect(html).toContain('src="frame.jpg"');
+    expect(html).toContain(APOIO_PADRAO);
+    expect(html).not.toMatch(/\{\{[A-Z]+\}\}/);
+    expect(escaparHtml(`"x" & 'y'`)).toBe('&quot;x&quot; &amp; &#39;y&#39;');
+  });
+
+  it('destaque sem acento e sem pontuação acha a palavra; só a primeira ocorrência; ausente não destaca', () => {
+    expect(textoComDestaque('Ata grátis, grátis', 'gratis')).toBe('Ata <span class="destaque">grátis,</span> grátis');
+    expect(textoComDestaque('Planilha sozinha', 'nada')).toBe('Planilha sozinha');
+    expect(textoComDestaque('Planilha sozinha', '')).toBe('Planilha sozinha');
+  });
+
+  it('frame com barra ou "..", ou template sem marcador, é recusado', () => {
+    const v = { texto: 'x', destaque: 'x', apelido: 'ep-01' };
+    expect(() => preencherThumb(TEMPLATE, { ...v, frame: '../segredo.jpg' })).toThrow(/frame inválido/);
+    expect(() => preencherThumb(TEMPLATE, { ...v, frame: 'a/b.jpg' })).toThrow(/frame inválido/);
+    expect(() => preencherThumb('<p>{{TEXTO}}</p>', { ...v, frame: 'f.jpg' })).toThrow(/perdeu o marcador \{\{APOIO\}\}/);
+  });
+
+  it('o frame sai do vídeo final no tempo do brief, cobrindo 1280×720', () => {
+    const a = argsDoFrame('/v/ep-07-final.mp4', 82, '/tmp/f.jpg');
+    expect(a.slice(a.indexOf('-ss'), a.indexOf('-ss') + 4)).toEqual(['-ss', '82.000', '-i', '/v/ep-07-final.mp4']);
+    expect(a).toContain('scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720');
+    expect(a.at(-1)).toBe('/tmp/f.jpg');
+    expect(argsDoFrame('/v.mp4', Number.NaN, '/f.jpg')).toContain('0.000');
+  });
+
+  it('o Chrome roda sem janela, com perfil próprio, na janela exata da thumb', () => {
+    const a = argsDoChrome({ html: '/tmp/x/thumb.html', png: '/tmp/x/thumb.png', perfil: '/tmp/x/perfil' });
+    expect(a).toEqual(
+      expect.arrayContaining(['--headless=new', '--user-data-dir=/tmp/x/perfil', '--window-size=1280,720', '--screenshot=/tmp/x/thumb.png']),
+    );
+    expect(a.at(-1)).toBe('file:///tmp/x/thumb.html');
+  });
+
+  it('procura o Chrome apontado, depois o instalado, depois o do agent-browser (o mais novo primeiro)', () => {
+    const c = candidatosDoChrome({ ROOT_MIDIA_CHROME: ' /opt/chrome ' }, ['/h/.agent-browser/browsers/chrome-140', '/h/.agent-browser/browsers/chrome-152']);
+    expect(c[0]).toBe('/opt/chrome');
+    expect(c[1]).toContain('/Applications/Google Chrome.app');
+    expect(c.at(-2)).toContain('chrome-152/Google Chrome for Testing.app');
+    expect(candidatosDoChrome({})[0]).toContain('/Applications/Google Chrome.app');
+  });
+
+  it('o PNG renderizado é conferido antes de subir: assinatura, 1280×720 e 2 MB', () => {
+    expect(dimensoesDoPng(pngDe(1280, 720))).toEqual({ largura: 1280, altura: 720 });
+    expect(dimensoesDoPng(new Uint8Array([1, 2, 3]))).toBeNull();
+    expect(conferirPng(pngDe(1280, 720))).toBeNull();
+    expect(conferirPng(pngDe(2560, 1440))).toMatch(/2560×1440/);
+    expect(conferirPng(pngDe(1280, 720, TETO_DO_PNG + 1))).toMatch(/2 MB/);
+    expect(conferirPng(Buffer.from('não é png, é texto qualquer'))).toMatch(/não saiu PNG/);
+    expect(nomeDaThumb('ep-07', 2)).toBe('ep-07-thumb-2.png');
+  });
+
+  it('o cliente acha o episódio na lista inteira, lê os briefs e sobe o PNG em multipart (sem JSON no cabeçalho)', async () => {
+    const pedidos: Array<{ url: string; metodo: string; tipo: string | null; corpo: unknown }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      const cabecalhos = (init.headers ?? {}) as Record<string, string>;
+      pedidos.push({ url, metodo: init.method ?? 'GET', tipo: cabecalhos['Content-Type'] ?? null, corpo: init.body });
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      if (url.endsWith('/pauta/episodios')) return new Response(JSON.stringify({ items: [{ id: 'e7', numero: 7, apelido: 'ep-07' }] }));
+      return new Response(JSON.stringify({ ok: true }));
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+
+    const lista = await os.episodios();
+    expect(acharEpisodio(lista.items, 'ep-7', { lista: true }).id).toBe('e7');
+    expect(() => acharEpisodio(lista.items, 'ep-9', { lista: true })).toThrow(/entre os episódios da empresa \(ep-07\)/);
+
+    await os.thumbs('e7');
+    await os.enviarThumb('e7', 2, pngDe(1280, 720), 'ep-07-thumb-2.png');
+    const envio = pedidos.at(-1)!;
+    expect(envio).toMatchObject({ url: 'http://os/api/pauta/episodios/e7/thumbs/2', metodo: 'POST', tipo: null });
+    const arquivo = (envio.corpo as FormData).get('file') as File;
+    expect(arquivo.type).toBe('image/png');
+    expect(arquivo.name).toBe('ep-07-thumb-2.png');
+    expect(arquivo.size).toBe(64);
+    expect(pedidos.map((p) => p.url)).toContain('http://os/api/pauta/episodios/e7/thumbs');
   });
 });

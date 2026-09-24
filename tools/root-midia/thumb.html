@@ -1,0 +1,108 @@
+<!doctype html>
+<!--
+  A thumb do episódio (MC11, D-MC4): 1280×720 no brand kit da ROOT.
+  Tokens COPIADOS do brand pack da marca (brand.json, render_tokens) — o render
+  não lê aquele arquivo: P #9BDB1F, PL #C4FF2E, PD #1C3010, LB #DFFFE8,
+  DB #070A08, ALERT #FF1F6B; título em JetBrains Mono, apoio em Space Grotesk.
+  Preenchido por lib/thumbs.mjs (`preencherThumb`): o marcador TEXTO já vem
+  escapado, com a palavra de destaque embrulhada; FRAME é o arquivo do frame ao lado.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>thumb</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700;800&family=Space+Grotesk:wght@500;600&display=block" rel="stylesheet">
+<style>
+  :root {
+    --p: #9BDB1F;
+    --pl: #C4FF2E;
+    --pd: #1C3010;
+    --lb: #DFFFE8;
+    --db: #070A08;
+    --alerta: #FF1F6B;
+    --f-titulo: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    --f-apoio: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: var(--db); }
+  .quadro { position: relative; width: 1280px; height: 720px; overflow: hidden; background: var(--db); }
+  .frame {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    filter: saturate(0.85) contrast(1.05);
+  }
+  /* O texto mora à esquerda: o frame escurece para ele, e aparece à direita. */
+  .veu {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(7,10,8,0.97) 0%, rgba(7,10,8,0.9) 42%, rgba(7,10,8,0.45) 72%, rgba(7,10,8,0.15) 100%);
+  }
+  .grade {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(155,219,31,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(155,219,31,0.08) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .brilho {
+    position: absolute; right: -140px; top: -140px; width: 480px; height: 480px;
+    background: radial-gradient(circle, rgba(255,31,107,0.38), transparent 70%);
+  }
+  .borda { position: absolute; left: 0; top: 0; bottom: 0; width: 14px; background: var(--p); }
+  .topo {
+    position: absolute; left: 72px; top: 56px; display: flex; gap: 16px; align-items: center;
+    font-family: var(--f-titulo); font-weight: 800; font-size: 30px; letter-spacing: 1px;
+  }
+  .marca { background: var(--p); color: var(--db); padding: 6px 16px; }
+  .ep { color: var(--pl); }
+  .titulo {
+    position: absolute; left: 72px; top: 150px; width: 820px; height: 420px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .texto {
+    font-family: var(--f-titulo); font-weight: 800; font-size: 112px; line-height: 1.02;
+    letter-spacing: -3px; color: var(--p); overflow-wrap: anywhere;
+    text-shadow: 0 4px 24px rgba(7,10,8,0.8);
+  }
+  .texto .destaque { color: var(--alerta); }
+  .texto::after {
+    content: ""; display: inline-block; width: 0.5em; height: 0.82em; margin-left: 0.12em;
+    vertical-align: -0.06em; background: var(--pl);
+  }
+  .apoio {
+    position: absolute; left: 72px; bottom: 56px;
+    font-family: var(--f-apoio); font-weight: 600; font-size: 34px; color: var(--lb);
+  }
+  .apoio::before { content: "> "; font-family: var(--f-titulo); color: var(--alerta); }
+</style>
+</head>
+<body>
+  <div class="quadro">
+    <img class="frame" src="{{FRAME}}" alt="">
+    <div class="veu"></div>
+    <div class="grade"></div>
+    <div class="brilho"></div>
+    <div class="borda"></div>
+    <div class="topo"><span class="marca">ROOT</span><span class="ep">{{APELIDO}}</span></div>
+    <div class="titulo"><p class="texto" id="texto">{{TEXTO}}</p></div>
+    <p class="apoio">{{APOIO}}</p>
+  </div>
+  <script>
+    // Texto longo encolhe até caber na caixa; nunca abaixo de 64 px.
+    (function () {
+      var caixa = document.querySelector('.titulo');
+      var t = document.getElementById('texto');
+      function caber() {
+        var tam = 112;
+        t.style.fontSize = tam + 'px';
+        while ((t.scrollHeight > caixa.clientHeight || t.scrollWidth > caixa.clientWidth) && tam > 64) {
+          tam -= 4;
+          t.style.fontSize = tam + 'px';
+        }
+      }
+      caber();
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(caber);
+    })();
+  </script>
+</body>
+</html>

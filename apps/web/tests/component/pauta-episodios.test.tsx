@@ -267,6 +267,12 @@ describe('o detalhe', () => {
     expect(midia).toHaveTextContent('PalmierPro');
     expect(midia).toHaveTextContent('/root-midia ep-02');
   });
+
+  it('mostra o pacote do YouTube (MC11) no detalhe; em edição, diz que ele sai da transcrição', async () => {
+    renderAba();
+    const pacote = await screen.findByRole('region', { name: 'Pacote do YouTube' });
+    expect(pacote).toHaveTextContent('O pacote sai da transcrição do vídeo final');
+  });
 });
 
 describe('o episódio nasce da rodada curada', () => {

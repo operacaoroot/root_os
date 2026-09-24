@@ -25,6 +25,8 @@ import { MidiaController } from './midia.controller';
 import { MidiaService } from './midia.service';
 import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
+import { PacoteController } from './pacote.controller';
+import { PacoteService } from './pacote.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -34,7 +36,15 @@ import { VozService } from './voz.service';
   imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
-  controllers: [PautaController, RodadaController, MidiaController, EpisodioController, RoteiroController, VozController],
+  controllers: [
+    PautaController,
+    RodadaController,
+    MidiaController,
+    EpisodioController,
+    RoteiroController,
+    VozController,
+    PacoteController,
+  ],
   providers: [
     PautaService,
     ApifyService,
@@ -58,6 +68,8 @@ import { VozService } from './voz.service';
     MidiaService,
     // MC10: o perfil de voz do autor, que o roteiro e as peças recebem.
     VozService,
+    // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
+    PacoteService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

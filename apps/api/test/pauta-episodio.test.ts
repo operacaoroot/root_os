@@ -179,7 +179,8 @@ describe('episódio: o que vem da rodada e dos campos JSON', () => {
     };
     expect(resumoDoEpisodio(linha)).toMatchObject({ apelido: 'ep-02', itens: 2, rodadaTitulo: 'Semana' });
     const d = detalheDoEpisodio(linha);
-    expect(d).toMatchObject({ avancar: 'gravacao', voltar: null, midia: {}, transcricao: [], titulos: [], thumbs: ['t1'] });
+    // Desde o MC11 títulos e thumbs têm forma: o que não a tem fica de fora.
+    expect(d).toMatchObject({ avancar: 'gravacao', voltar: null, midia: {}, transcricao: [], titulos: [], thumbs: [] });
     expect(d.itens).toHaveLength(2);
     expect(d.janelaIni).toBe('2026-09-16T00:00:00.000Z');
   });

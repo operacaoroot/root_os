@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import {
   apelidoDoEpisodio,
+  thumbsDoPacote,
+  titulosDoPacote,
   vizinhosDoEpisodio,
   type PautaEpisodioDetalhe,
   type PautaEpisodioResumo,
@@ -73,10 +75,6 @@ function objeto(valor: unknown): Record<string, unknown> {
   return valor && typeof valor === 'object' && !Array.isArray(valor) ? (valor as Record<string, unknown>) : {};
 }
 
-function lista(valor: unknown): unknown[] {
-  return Array.isArray(valor) ? valor : [];
-}
-
 export interface LinhaDoEpisodio {
   id: string;
   numero: number;
@@ -129,8 +127,8 @@ export function detalheDoEpisodio(
     midia: objeto(e.midia),
     transcricao: lerTranscricao(e.transcricao),
     transcricaoTexto: e.transcricaoTexto,
-    titulos: lista(e.titulos),
-    thumbs: lista(e.thumbs),
+    titulos: titulosDoPacote(e.titulos),
+    thumbs: thumbsDoPacote(e.thumbs),
     bioPageId: e.bioPageId,
     criadoPor: e.criadoPor,
     avancar,

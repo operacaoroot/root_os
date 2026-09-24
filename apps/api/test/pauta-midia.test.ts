@@ -381,7 +381,7 @@ describe('mídia: registrar a mídia editada', () => {
       entityType: 'pauta_episodio',
       entityId: 'e1',
       before: { status: 'gravacao', tinhaMidia: false },
-      after: { status: 'edicao', arquivoFinal: 'ep-03-final.mp4', cortes: 3, removidoSeg: 69.5, transcricaoDescartada: false },
+      after: { status: 'edicao', arquivoFinal: 'ep-03-final.mp4', cortes: 3, removidoSeg: 69.5, transcricaoDescartada: false, pacoteDescartado: false },
     });
   });
 
@@ -395,6 +395,27 @@ describe('mídia: registrar a mídia editada', () => {
     expect(d.transcricaoTexto).toBe('');
     expect(d.midia).toMatchObject({ duracaoSeg: 500 });
     expect(s.auditoria[0]).toMatchObject({ after: { transcricaoDescartada: true } });
+  });
+
+  it('descarta também o pacote do YouTube, cujos capítulos e frames eram do vídeo anterior', async () => {
+    const s = servico({
+      episodios: [
+        ep({
+          status: 'edicao',
+          midia: { ...MIDIA, recebidaEm: 'ontem' },
+          transcricao: SEGMENTOS,
+          titulos: [{ texto: 'Título velho do corte antigo', angulo: 'a', escolhido: true }],
+          descricao: 'Capítulos\n00:00 Abertura\n00:31 Velho',
+          thumbs: [{ n: 1, texto: 'Frame velho', destaque: 'velho', tempoSeg: 31, imagem: null }],
+        }),
+      ],
+    });
+    const d = await s.midia.registrarMidia(ORG, 'e1', PESSOA, PautaMidiaSchema.parse({ ...MIDIA, duracaoSeg: 500 }));
+    expect(d.titulos).toEqual([]);
+    expect(d.descricao).toBe('');
+    expect(d.thumbs).toEqual([]);
+    expect(s.condicionais[0].data).toMatchObject({ titulos: [], descricao: '', thumbs: [] });
+    expect(s.auditoria[0]).toMatchObject({ after: { transcricaoDescartada: true, pacoteDescartado: true } });
   });
 
   it('no roteiro e depois da edição é 400 sem escrever', async () => {

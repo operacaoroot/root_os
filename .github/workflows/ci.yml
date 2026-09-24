@@ -294,8 +294,24 @@ jobs:
       # recusa na caixa da página; a aba Voz na página). Medido: 476 casos em
       # 36 arquivos (463 + 13). O piso de ARQUIVOS sobe 1, para 27; o de CASOS
       # sobe 11 (~15% de folga sobre os 13 novos), para 306.
-      PISO_CASOS_WEB: '306'
-      PISO_ARQUIVOS_WEB: '27'
+      #
+      # MC11, O PACOTE DO YOUTUBE (24/09/2026): +12 casos, +1 arquivo, só desta
+      # fatia — `component/pauta-pacote` (11: antes do Pacote diz de onde o
+      # pacote sai e não oferece gerar; no Pacote gera sem substituir e mostra
+      # o que o sistema ajustou; sem `automacoes.executar` o botão apagado com o
+      # porquê; gerar de novo pede confirmação e mostra o aviso dos capítulos;
+      # os três títulos com o escolhido marcado, escolher manda o número e
+      # desmarcar manda nulo; a descrição com copiar, a conta em bytes, os
+      # capítulos conferidos e o aviso do marcador da página de links; o
+      # capítulo fora da regra com o motivo; a prévia da thumb enviada pela API
+      # com o token e o brief + comando da que falta; agendado trava o título,
+      # o desmarcar e o comando das thumbs; sem `pauta.editar` nada
+      # escreve; a prévia que não carrega vira erro) e +1 em `pauta-episodios`
+      # (o detalhe mostra a seção do pacote). Medido: 488 casos em 37 arquivos
+      # (476 + 12). O piso de ARQUIVOS sobe 1, para 28; o de CASOS sobe 10 (~15%
+      # de folga sobre os 12 novos), para 316.
+      PISO_CASOS_WEB: '316'
+      PISO_ARQUIVOS_WEB: '28'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -988,8 +1004,59 @@ jobs:
       # com o banco de teste, e 1698 passados / 565 pulados sem ele (1654 + 44).
       # O piso de ARQUIVOS vai a 50; o de CASOS sobe 38 (~15% de folga sobre os
       # 45 novos), para 1651.
-      PISO_CASOS_API: '1651'
-      PISO_ARQUIVOS_API: '50'
+      #
+      # ---------------------------------------------------------------------
+      # MC11, O PACOTE DO YOUTUBE (24/09/2026): +67 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-pacote` (57): os capítulos — mm:ss e hh:mm:ss num formato só, as
+      # regras do YouTube (00:00, pelo menos 3, 10 s cada, ordem crescente, o
+      # último até o fim), a leitura da descrição, o tempo em texto, e o
+      # conserto do que a IA erra (encostar na fala real, ordenar, tirar o
+      # repetido e o que passa do fim, o primeiro para 00:00 ou uma Abertura,
+      # juntar o curto, no máximo 10 juntando o mais curto) com a recusa e o motivo quando nem consertado fecha; os
+      # links (newsletter por L ou sem link público, caixa de entrada, não-http
+      # e `<>` de fora; nunca o permalink do Gmail), a ordem e o repetido; o
+      # pedido ao modelo sem link e a transcrição agrupada no teto com tempos
+      # reais; títulos (100, corte na palavra, URL/emoji/`<>`, proibida,
+      # repetido, menos de 3 = inválido), hashtags, os briefs das thumbs (4
+      # palavras, destaque do texto, frame dentro do vídeo, completar com os
+      # títulos, inclusive os que começam igual, e o aviso quando não chega a
+      # 3), o aviso de ângulo repetido, a descrição na ordem com o marcador e o
+      # teto de 5.000 bytes com a folga da URL da página (e o pior caso de 150
+      # capítulos e 120 links cabendo), o bloco de voz, o pacote inteiro e o
+      # aviso sem capítulos; os limites do
+      # upload (só PNG pela assinatura, 2 MB pelo tamanho ou pelo buffer, 16:9 a
+      # partir de 640, o número 1–3, a chave com o hash, a chave fora do
+      # detalhe); os esquemas e quando dá para gerar. O `PacoteService` DE
+      # VERDADE com dublês de prisma, LLM, memória e storage — o PRONTO QUANDO
+      # com a transcrição de exemplo (3 títulos, capítulos válidos, os links
+      # públicos e nenhum privado, o marcador, 3 briefs, a empresa pagando), a
+      # escrita condicionada e o RASTRO só com contas, 400 antes do Pacote e
+      # sem transcrição, 409 sem confirmar (e as imagens que saem ao
+      # substituir), 503 sem JSON ou com menos de 3 títulos, o aviso do vídeo
+      # curto, a duração pela transcrição, sem credencial e outra empresa, a
+      # marcação durante a IA (409); o título escolhido (um só, nulo, 400/404,
+      # travado depois de agendado); as thumbs (os briefs para o Mac, o PNG no
+      # storage com hash e RASTRO, a imagem de volta, o limite antes do
+      # storage, travada depois de agendado, sem brief, sumida do storage,
+      # corrida 409). O controller montado à mão (parse, a imagem sem
+      # cache, caminhos e permissões). E COM BANCO (1, pulado sem ele): gerar,
+      # escolher e subir a thumb pela sessão da empresa, com o RASTRO.
+      # `root-midia` (+9): o template 1280×720 com os tokens copiados da marca e
+      # sem ler o brand pack, o preenchimento escapado com o destaque, o frame
+      # e o template recusados, os argumentos do ffmpeg e do Chrome, onde
+      # procurar o Chrome, o PNG conferido antes de subir, e o cliente do OS
+      # (a lista inteira, os briefs e o upload multipart). `pauta-episodio`
+      # mudou um caso sem somar: o detalhe agora dá forma a títulos e thumbs.
+      # `pauta-midia` (+1): a mídia nova descarta também o pacote, cujos tempos
+      # eram do vídeo anterior.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2330 casos em 59 arquivos
+      # com o banco de teste, e 1764 passados / 566 pulados sem ele (1698 + 66).
+      # O piso de ARQUIVOS vai a 51; o de CASOS sobe 56 (~15% de folga sobre os
+      # 66 que rodam sem banco), para 1707.
+      PISO_CASOS_API: '1707'
+      PISO_ARQUIVOS_API: '51'
 
     steps:
       - uses: actions/checkout@v4

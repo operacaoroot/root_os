@@ -103,18 +103,19 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
   /**
    * @param {'GET' | 'POST'} metodo
    * @param {string} caminho
-   * @param {unknown} [corpo]
+   * @param {unknown} [corpo] JSON, ou um FormData (o multipart monta o próprio cabeçalho)
    */
   async function pedir(metodo, caminho, corpo) {
     if (!token) await entrar();
+    const multipart = typeof FormData !== 'undefined' && corpo instanceof FormData;
     const enviar = () =>
       f(`${url}${caminho}`, {
         method: metodo,
         headers: {
           Authorization: `Bearer ${token}`,
-          ...(corpo === undefined ? {} : { 'Content-Type': 'application/json' }),
+          ...(corpo === undefined || multipart ? {} : { 'Content-Type': 'application/json' }),
         },
-        body: corpo === undefined ? undefined : JSON.stringify(corpo),
+        body: corpo === undefined ? undefined : multipart ? /** @type {FormData} */ (corpo) : JSON.stringify(corpo),
       });
     let res = await enviar();
     if (res.status === 401) {
@@ -132,6 +133,16 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
     midia: (id, corpo) => pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/midia`, corpo),
     /** @param {string} id @param {unknown} corpo */
     transcricao: (id, corpo) => pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/transcricao`, corpo),
+    /** Todos os episódios da empresa (MC11: o pacote é depois da fila da mídia). */
+    episodios: () => pedir('GET', '/pauta/episodios'),
+    /** @param {string} id */
+    thumbs: (id) => pedir('GET', `/pauta/episodios/${encodeURIComponent(id)}/thumbs`),
+    /** @param {string} id @param {number} n @param {Uint8Array} png @param {string} nome */
+    enviarThumb: (id, n, png, nome) => {
+      const form = new FormData();
+      form.append('file', new Blob([png], { type: 'image/png' }), nome);
+      return pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/thumbs/${n}`, form);
+    },
   };
 }
 
@@ -160,17 +171,20 @@ export function mensagemDoErro(texto) {
 
 /**
  * O episódio da fila pelo que o Pedro digita: `ep-07`, `7`, `07` ou o id.
+ * Com `lista`, a busca é na lista de todos os episódios (o pacote, MC11).
  * @template {{ id: string, numero: number, apelido: string }} T
  * @param {T[]} fila
  * @param {string} ep
+ * @param {{ lista?: boolean }} [opcoes]
  * @returns {T}
  */
-export function acharEpisodio(fila, ep) {
+export function acharEpisodio(fila, ep, opcoes = {}) {
   const alvo = String(ep ?? '').trim().toLowerCase();
   const numero = /^(?:ep-?)?0*(\d+)$/.exec(alvo)?.[1];
   const achado = fila.find((e) => e.id === alvo || e.apelido === alvo || (numero !== undefined && e.numero === Number(numero)));
   if (achado) return achado;
   const quais = fila.map((e) => e.apelido).join(', ') || 'nenhum';
+  if (opcoes.lista) throw new Error(`Não achei o ${ep} entre os episódios da empresa (${quais}).`);
   throw new Error(
     `O ${ep} não está na fila da mídia (gravação ou edição). Na fila: ${quais}. ` +
       'Se ele ainda está no roteiro, gere o roteiro; se já passou da edição, volte o status na tela.',

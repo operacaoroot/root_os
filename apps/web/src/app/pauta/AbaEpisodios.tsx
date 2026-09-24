@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_EPISODIO_STATUS,
@@ -16,13 +16,15 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { SecaoRoteiro } from './SecaoRoteiro';
 import { SecaoMidia } from './SecaoMidia';
+import { SecaoPacote } from './SecaoPacote';
 
 /*
  * EPISÓDIOS (MC7). A rodada curada vira episódio (o botão mora na aba Rodadas
  * e no fim da Curadoria); aqui ele anda do roteiro ao concluído, um passo por
  * vez. A regra de quem pode ir para onde é da API — a tela só oferece os dois
  * vizinhos que o detalhe devolve. O roteiro (MC8) mora em `SecaoRoteiro`; a
- * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`.
+ * mídia e a transcrição que o Mac devolve (MC9), em `SecaoMidia`; o pacote do
+ * YouTube (MC11), em `SecaoPacote`.
  */
 
 interface Props {
@@ -33,7 +35,7 @@ interface Props {
   onMudou: () => void;
   /** O episódio que outra aba mandou abrir (acabou de nascer). */
   inicial?: string | null;
-  /** Gerar o roteiro gasta IA (MC8): exige `automacoes.executar`. */
+  /** Gerar o roteiro (MC8) e o pacote (MC11) gasta IA: exige `automacoes.executar`. */
   podeGastarIa?: boolean;
 }
 
@@ -117,6 +119,18 @@ export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial =
   // `aberto`, que pode já ter trocado enquanto o detalhe novo não chegou.
   const mover = (id: string, para: PautaEpisodioStatus) =>
     acao(`status-${para}`, () => apiPost<PautaEpisodioDetalhe>(`/pauta/episodios/${id}/status`, { para }, token));
+
+  // A seção do pacote escreve sozinha e devolve o episódio; vale se ainda for o aberto.
+  const aplicarDetalhe = useCallback(
+    (d: PautaEpisodioDetalhe) => {
+      if (d.id === abertoRef.current) {
+        setDetalhe(d);
+        setTitulo(d.titulo);
+      }
+      onMudou();
+    },
+    [onMudou],
+  );
 
   const salvarTitulo = (id: string) =>
     acao('titulo', () => apiPatch<PautaEpisodioDetalhe>(`/pauta/episodios/${id}`, { titulo }, token));
@@ -239,6 +253,15 @@ export function AbaEpisodios({ token, editavel, onErro, bump, onMudou, inicial =
             status={detalhe.status}
             midia={detalhe.midia}
             transcricao={detalhe.transcricao}
+          />
+
+          <SecaoPacote
+            token={token}
+            detalhe={detalhe}
+            editavel={editavel}
+            podeGastarIa={podeGastarIa}
+            onErro={onErro}
+            onDetalhe={aplicarDetalhe}
           />
 
           <div>

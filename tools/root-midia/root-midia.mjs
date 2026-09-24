@@ -12,9 +12,10 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, delimiter, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { mesmoArquivo } from './lib/arquivos.mjs';
 import {
   PADROES,
@@ -29,6 +30,15 @@ import {
   podeCortarSemReencodar,
 } from './lib/cortes.mjs';
 import { segmentosDaTranscricao, segmentosDoWhisper, srtDosSegmentos } from './lib/whisper.mjs';
+import {
+  APOIO_PADRAO,
+  argsDoChrome,
+  argsDoFrame,
+  candidatosDoChrome,
+  conferirPng,
+  nomeDaThumb,
+  preencherThumb,
+} from './lib/thumbs.mjs';
 import {
   acharEpisodio,
   clienteDoOs,
@@ -64,9 +74,16 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
   root-midia ensaio [--manter]
       Gera um clipe sintético (tom + silêncio) numa pasta temporária e roda
       silencios → cortes → cortar, conferindo que o final saiu mais curto e sem silêncio.
+  root-midia thumbs <ep-NN> [--final f.mp4] [--saida pasta] [--so 1|2|3] [--apoio "texto"] [--sem-enviar]
+      Lê do OS os 3 briefs do pacote (MC11), tira o frame de cada um do vídeo final no tempo
+      sugerido, renderiza o template da marca (thumb.html, 1280×720) num Chrome sem janela e
+      sobe o PNG. --sem-enviar só grava os PNG na pasta.
+  root-midia ensaio-thumb [--saida thumb.png] [--manter]
+      Renderiza 1 thumb com um frame sintético, sem falar com o OS, e confere 1280×720 e 2 MB.
 
 Variáveis: ROOT_OS_API_URL (padrão http://localhost:4001/api), ROOT_OS_EMAIL, ROOT_OS_SENHA,
-WHISPER_MODEL (caminho do .bin ggml), ROOT_MIDIA_PALAVRA (padrão "root, corta"). Lidas do
+WHISPER_MODEL (caminho do .bin ggml), ROOT_MIDIA_PALAVRA (padrão "root, corta"),
+ROOT_MIDIA_CHROME (o Chrome do render, quando não é o de /Applications). Lidas do
 ambiente e do arquivo ~/.config/root/root-midia.env (ou o de ROOT_MIDIA_ENV); o ambiente vence.`;
 
 /** O ambiente mais o arquivo de variáveis do Mac, sem sobrescrever o que já foi exportado. */
@@ -79,7 +96,7 @@ function ambiente() {
   return juntarVariaveis(process.env, lerArquivoDeVariaveis(readFileSync(caminho, 'utf8')));
 }
 
-const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda']);
+const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar']);
 
 /** @param {string[]} argv */
 function lerArgumentos(argv) {
@@ -147,6 +164,57 @@ function rodar(bin, args) {
       if (codigo === 0) ok({ stdout, stderr });
       else falha(new Error(`${basename(bin)} saiu com código ${codigo}:\n${stderr.split('\n').slice(-15).join('\n')}`));
     });
+  });
+}
+
+/**
+ * O Chrome sem janela grava o PNG e, no Mac, pode ficar de pé por minutos
+ * depois disso. Espera o arquivo (o aviso "bytes written" ou o tamanho
+ * parado), encerra o processo e segue; passar do prazo é erro.
+ * @param {string} bin @param {string[]} args @param {string} arquivo @param {number} [prazoMs]
+ */
+function rodarAteGravar(bin, args, arquivo, prazoMs = 60_000) {
+  return new Promise((ok, falha) => {
+    const filho = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let saida = '';
+    let tamanho = -1;
+    let fim = false;
+    const acabar = (/** @type {Error | null} */ erro) => {
+      if (fim) return;
+      fim = true;
+      clearInterval(relogio);
+      clearTimeout(prazo);
+      const devolver = () => (erro ? falha(erro) : ok(undefined));
+      if (filho.exitCode !== null || filho.signalCode !== null) return devolver();
+      // Só devolve com o processo morto: ele ainda escreve no perfil temporário
+      // que a chamada apaga em seguida.
+      const forca = setTimeout(() => filho.kill('SIGKILL'), 3000);
+      filho.once('close', () => {
+        clearTimeout(forca);
+        devolver();
+      });
+      filho.kill('SIGTERM');
+    };
+    const pronto = () => {
+      if (!existsSync(arquivo)) return false;
+      const agora = statSync(arquivo).size;
+      const parado = agora > 0 && agora === tamanho;
+      tamanho = agora;
+      return parado || (agora > 0 && /bytes written to file/.test(saida));
+    };
+    filho.stdout.on('data', (d) => (saida += d));
+    filho.stderr.on('data', (d) => (saida += d));
+    filho.on('error', (e) => acabar(e));
+    filho.on('close', (codigo) => {
+      if (fim) return;
+      if (existsSync(arquivo) && statSync(arquivo).size > 0) acabar(null);
+      else acabar(new Error(`${basename(bin)} saiu com código ${codigo} sem gravar ${basename(arquivo)}:\n${saida.split('\n').slice(-10).join('\n')}`));
+    });
+    const relogio = setInterval(() => pronto() && acabar(null), 250);
+    const prazo = setTimeout(
+      () => acabar(new Error(`${basename(bin)} não gravou ${basename(arquivo)} em ${Math.round(prazoMs / 1000)} s.`)),
+      prazoMs,
+    );
   });
 }
 
@@ -403,6 +471,132 @@ async function ensaio({ manter = false }) {
   }
 }
 
+/** O Chrome do render: o apontado, o instalado ou o que o agent-browser baixou. */
+function acharChrome() {
+  const pasta = join(homedir(), '.agent-browser', 'browsers');
+  let doAgentBrowser = [];
+  try {
+    doAgentBrowser = readdirSync(pasta).filter((n) => n.startsWith('chrome-')).map((n) => join(pasta, n));
+  } catch {
+    /* sem agent-browser: segue com os outros */
+  }
+  return candidatosDoChrome(ambiente(), doAgentBrowser).find((c) => existsSync(c)) ?? null;
+}
+
+/**
+ * Sem Chrome, o agent-browser (se houver) abre o HTML num navegador próprio,
+ * numa sessão só desta ferramenta, e tira a foto — depois da rede parar e das
+ * fontes do Google carregarem, para o texto não sair na fonte de reserva.
+ * @param {string} html @param {string} png
+ */
+async function renderizarComAgentBrowser(html, png) {
+  const ab = binario('agent-browser');
+  const sessao = ['--session', `root-midia-thumb-${process.pid}`];
+  try {
+    await rodar(ab, [...sessao, 'set', 'viewport', '1280', '720']);
+    await rodar(ab, [...sessao, 'open', `file://${html}`]);
+    await rodar(ab, [...sessao, 'wait', '--load', 'networkidle']);
+    await rodar(ab, [...sessao, 'wait', '--fn', "document.fonts.status === 'loaded'"]);
+    await rodar(ab, [...sessao, 'screenshot', png]);
+  } finally {
+    await rodar(ab, [...sessao, 'close']).catch(() => undefined);
+  }
+}
+
+/**
+ * Uma thumb: o frame do vídeo no tempo do brief, o template preenchido e a
+ * foto do Chrome. Devolve o PNG conferido (1280×720, até 2 MB).
+ * @param {{ video: string, tempoSeg: number, texto: string, destaque: string, apelido: string, apoio?: string, saida: string }} o
+ */
+async function renderizarThumb(o) {
+  const template = readFileSync(fileURLToPath(new URL('./thumb.html', import.meta.url)), 'utf8');
+  const pasta = mkdtempSync(join(tmpdir(), 'root-midia-thumb-'));
+  try {
+    await rodar(binario('ffmpeg'), argsDoFrame(o.video, o.tempoSeg, join(pasta, 'frame.jpg')));
+    const html = join(pasta, 'thumb.html');
+    writeFileSync(html, preencherThumb(template, { texto: o.texto, destaque: o.destaque, apoio: o.apoio, apelido: o.apelido, frame: 'frame.jpg' }));
+    const png = join(pasta, 'thumb.png');
+    const chrome = acharChrome();
+    if (chrome) await rodarAteGravar(chrome, argsDoChrome({ html, png, perfil: join(pasta, 'perfil') }), png);
+    else await renderizarComAgentBrowser(html, png);
+    if (!existsSync(png)) throw new Error('O navegador não gravou o PNG da thumb.');
+    const buffer = readFileSync(png);
+    const erro = conferirPng(buffer);
+    if (erro) throw new Error(erro);
+    writeFileSync(o.saida, buffer);
+    return buffer;
+  } finally {
+    rmSync(pasta, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
+
+/** @param {string} ep @param {Record<string, string | true>} o */
+async function thumbs(ep, o) {
+  const cfg = configuracao(ambiente());
+  exigirOs(cfg);
+  const os = clienteDoOs(cfg);
+  const lista = await os.episodios();
+  const alvo = acharEpisodio(lista?.items ?? [], ep, { lista: true });
+  /** @type {{ status: string, arquivoFinal: string | null, thumbs: Array<{ n: number, texto: string, destaque: string, tempoSeg: number, tempo: string }> }} */
+  const pacote = await os.thumbs(alvo.id);
+  if (!pacote.thumbs?.length) throw new Error(`O ${alvo.apelido} ainda não tem os briefs das thumbs: gere o pacote na tela (aba Episódios).`);
+  if (o['sem-enviar'] !== true && (pacote.status === 'agendado' || pacote.status === 'concluido')) {
+    throw new Error(`O ${alvo.apelido} já foi agendado: o pacote é o registro do que subiu e a thumb não muda mais (com --sem-enviar, só renderiza).`);
+  }
+  const final = texto(o, 'final') ?? pacote.arquivoFinal;
+  if (!final) throw new Error(`O ${alvo.apelido} não tem o vídeo final registrado: passe --final <vídeo final>.`);
+  const video = exigirArquivo(final);
+  const pasta = resolve(texto(o, 'saida') ?? join(dirname(video), `${alvo.apelido}-thumbs`));
+  mkdirSync(pasta, { recursive: true });
+  const so = texto(o, 'so') ? numero(o, 'so', 0) : null;
+  const escolhidas = pacote.thumbs.filter((t) => so === null || t.n === so);
+  if (!escolhidas.length) throw new Error(`Não há a thumb ${so}: o pacote tem ${pacote.thumbs.map((t) => t.n).join(', ')}.`);
+
+  const feitas = [];
+  for (const t of escolhidas) {
+    const saida = join(pasta, nomeDaThumb(alvo.apelido, t.n));
+    avisar(`Thumb ${t.n}: "${t.texto}" (destaque "${t.destaque}", frame em ${t.tempo})…`);
+    const png = await renderizarThumb({ video, tempoSeg: t.tempoSeg, texto: t.texto, destaque: t.destaque, apelido: alvo.apelido, apoio: texto(o, 'apoio'), saida });
+    avisar(`→ ${saida} (${Math.round(png.length / 1024)} kB)`);
+    if (o['sem-enviar'] !== true) {
+      await os.enviarThumb(alvo.id, t.n, png, basename(saida));
+      avisar(`Thumb ${t.n} enviada ao OS.`);
+    }
+    feitas.push({ n: t.n, arquivo: saida, bytes: png.length, enviada: o['sem-enviar'] !== true });
+  }
+  return { id: alvo.id, apelido: alvo.apelido, pasta, thumbs: feitas };
+}
+
+/** Uma thumb com frame sintético: prova o ffmpeg, o template e o Chrome sem tocar no OS. */
+async function ensaioThumb({ saida, manter = false }) {
+  const pasta = mkdtempSync(join(tmpdir(), 'root-midia-ensaio-thumb-'));
+  try {
+    const clipe = join(pasta, 'final.mp4');
+    await rodar(binario('ffmpeg'), [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30:duration=4',
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', clipe,
+    ]);
+    // Fora da pasta temporária, que é apagada no fim: o caminho mostrado continua valendo.
+    const destino = resolve(saida ?? join(tmpdir(), `root-midia-ensaio-${nomeDaThumb('ep-00', 1)}`));
+    const png = await renderizarThumb({
+      video: clipe,
+      tempoSeg: 2,
+      texto: 'Preço da IA caiu',
+      destaque: 'caiu',
+      apelido: 'ep-00',
+      apoio: APOIO_PADRAO,
+      saida: destino,
+    });
+    const ok = conferirPng(png) === null;
+    escrever({ ok, png: destino, bytes: png.length, pasta: manter ? pasta : null }, undefined);
+    avisar(ok ? 'ENSAIO OK: a thumb saiu 1280×720 e abaixo de 2 MB.' : 'ENSAIO FALHOU.');
+    return ok;
+  } finally {
+    if (!manter) rmSync(pasta, { recursive: true, force: true });
+  }
+}
+
 async function principal() {
   const [comando, ...resto] = process.argv.slice(2);
   const { posicionais, opcoes } = lerArgumentos(resto);
@@ -500,6 +694,13 @@ async function principal() {
     }
     case 'ensaio':
       return (await ensaio({ manter: opcoes.manter === true })) ? 0 : 1;
+    case 'thumbs': {
+      if (!posicionais[0]) throw new Error('Uso: root-midia thumbs <ep-NN> [--final …] [--sem-enviar]');
+      escrever(await thumbs(posicionais[0], opcoes), undefined);
+      return 0;
+    }
+    case 'ensaio-thumb':
+      return (await ensaioThumb({ saida: texto(opcoes, 'saida'), manter: opcoes.manter === true })) ? 0 : 1;
     default:
       throw new Error(`Comando desconhecido: ${comando}. Veja \`root-midia ajuda\`.`);
   }

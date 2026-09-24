@@ -4,6 +4,8 @@ import {
   PAUTA_STATUS_PENDENTES_DE_MIDIA,
   midiaDoEpisodio,
   textoDaTranscricao,
+  thumbsDoPacote,
+  titulosDoPacote,
   type PautaEpisodioDetalhe,
   type PautaEpisodioStatus,
   type PautaEpisodiosPendentesDeMidia,
@@ -59,13 +61,14 @@ export class MidiaService {
 
   /**
    * A mídia editada. Da gravação vai para a edição; na edição, substitui a de
-   * antes. Uma mídia nova DESCARTA a transcrição que houver: os tempos dela são
+   * antes. Uma mídia nova DESCARTA a transcrição que houver e o pacote do
+   * YouTube (MC11) que saiu dela: os capítulos e os frames das thumbs são tempos
    * do vídeo anterior e não bateriam com o novo.
    */
   async registrarMidia(orgId: string, id: string, actorId: string, entrada: PautaMidiaInput): Promise<PautaEpisodioDetalhe> {
     const e = await this.prisma.pautaEpisodio.findFirst({
       where: { id, orgId },
-      select: { status: true, midia: true, transcricao: true, atualizadoEm: true },
+      select: { status: true, midia: true, transcricao: true, titulos: true, descricao: true, thumbs: true, atualizadoEm: true },
     });
     if (!e) throw new NotFoundException('Episódio não encontrado');
     const motivo = motivoParaNaoReceberMidia(e.status);
@@ -74,12 +77,17 @@ export class MidiaService {
     const para: PautaEpisodioStatus = 'edicao';
     const midia: PautaMidiaDoEpisodio = { ...entrada, recebidaEm: new Date().toISOString() };
     const transcricaoDescartada = lerTranscricao(e.transcricao).length > 0;
+    const pacoteDescartado =
+      titulosDoPacote(e.titulos).length > 0 || e.descricao.trim() !== '' || thumbsDoPacote(e.thumbs).length > 0;
     const r = await this.prisma.pautaEpisodio.updateMany({
       where: { id, orgId, status: e.status, atualizadoEm: e.atualizadoEm },
       data: {
         midia: midia as unknown as Prisma.InputJsonValue,
         transcricao: [],
         transcricaoTexto: '',
+        titulos: [],
+        descricao: '',
+        thumbs: [],
         status: para,
       },
     });
@@ -92,7 +100,7 @@ export class MidiaService {
       entityType: 'pauta_episodio',
       entityId: id,
       before: { status: e.status, tinhaMidia: midiaDoEpisodio(e.midia) !== null },
-      after: { status: para, ...resumoDaMidia(entrada), transcricaoDescartada },
+      after: { status: para, ...resumoDaMidia(entrada), transcricaoDescartada, pacoteDescartado },
     });
     return this.episodios.obter(orgId, id);
   }
