@@ -922,6 +922,234 @@ rede).
 com `SMOKE_ROTAS` de `/api/pauta/episodios`, `/agenda`, `/voz` e `pendentes-midia` → **SMOKE OK**.
 Pisos da CI: api 1916/56, web 366/33, com a conta no `ci.yml`.
 
+### Onda MC-C — a semana de posts, e o fechamento da frente · `ab3e5bc` (24/09/2026)
+
+Fase 4 do `docs/PLANO-MAQUINA-DE-CONTEUDO.md` (MC15, MC16, MC18) mais a MC-R (consertos das ondas A
+e B), a correção final da revisão da branch e o conserto deste fechamento. Mesma branch
+`root-os/maquina-de-conteudo`, por cima do fechamento da MC-B (`4814250`). **Nada empurrado, nada
+mesclado, nada na VPS.** Vinte commits, de `edb44ac` a `ab3e5bc`; as seções acima (MC-R, MC15,
+MC16, MC18, correção final) têm o detalhe de cada um.
+
+| Fatia | Commit | O que entrou | Parcial? |
+|---|---|---|---|
+| MC-R | `edb44ac` | Permalink do Gmail barrado por uma regra só (`pauta/link-publico.ts`) em roteiro, pacote, página, newsletter, peça do grupo, ClickUp e carrossel; teto de saída próprio para as gerações longas (`SAIDA_DA_GERACAO_LONGA` = 8000 no OpenAI/OpenRouter); corpo de 2 MB só nas rotas de mídia (`common/corpo-da-midia.ts`) | **Sim.** Os 8000 tokens são estimativa, nunca rodaram com modelo real. O body-parser vem do `@nestjs/platform-express` sem estar declarado na api (decisão humana). Transcrição acima de ~1h de fala segue recusada pelo schema (decisão de produto) |
+| MC15 | `c2b6190` | Por matéria mantida, um carrossel, um story e um corte vertical (`DerivacaoService`, `POST …/semana/gerar`, uma chamada por matéria); renders no Mac: carrossel pela máquina de carrossel, story no `story.html`, corte 1080×1920 pelo ffmpeg com o rosto lido do OBS; PNG sobem, o mp4 fica no Mac | **Sim.** O prompt só viu o dublê. CTA "chegam no direct" pendente da D-MC9.7. Região da tela no corte = canvas inteiro, a decidir depois de um corte real |
+| MC16 | `4b8b538` | Migration `20260924090000_pauta_peca_agenda` (`agendadaPara`, `urlPublicada`); grade por empresa na nota `pauta.semana.grade`; distribuir, reagendar, marcar postada à mão; aba "Semana"; `root-midia agenda` | **Sim.** Arrastar e soltar ficou de fora (seletor de dia e hora). Grade padrão, feriados facultativos e "distribuir não leva a Agendado" esperam o Pedro. Postar pelo OS é a MC17 |
+| MC18 | `1ac517c` | Só a especificação da DM por palavra-chave (`docs/especificacoes/MC18-dm-por-palavra-chave.md`): Meta, régua, D-MC9.1 a D-MC9.10, fatias MC18.0 a MC18.5 | **Sim, por desenho.** Nenhum código antes das decisões; o App Review da Meta é do Pedro |
+| Correção final | `3449d39` … `168ca2c` (15) | Os oito achados importantes da revisão da branch e os menores baratos (tabela na seção "Correção final da frente") | Três menores não feitos (abaixo) |
+| Fechamento | `ab3e5bc` | A barra fixa da Curadoria a 375 px: 267 px de altura (um botão por linha, espremida pelo `pr-40`) → 187 px, usando a largura toda e deixando livre a faixa de baixo para o "perguntar"; desktop igual (59 px) | Não |
+
+**Medido no fechamento** (Mac, `marketing_os_test` no container `mktos-mc-db`, pgvector pg16,
+política semeada, 24/09/2026 ~06h20–06h45):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck --force` | 7 de 7 tarefas verdes, 0 do cache |
+| `pnpm --filter @mktos/api typecheck:test` | limpo |
+| `turbo run test --force` (sem `TEST_DATABASE_URL`) | policy **74** em 2 arquivos · api **2009 passando / 572 pulados** em 64 arquivos (59 + 5 pulados) · web **546** em 42 |
+| `pnpm --filter @mktos/api test` direto, com `TEST_DATABASE_URL` | **2581 de 2581** em 64 arquivos |
+| `pnpm --filter @mktos/api test:porta` | **39** |
+| `test:isolamento` com `TENANT_DATABASE_URL` no papel restrito (`mktos_app`/`ci`) | **326** em 1 arquivo (a onda não criou tabela) |
+| `pnpm --filter @mktos/api db:diff` | `No difference detected.` |
+| `db:deploy` num banco **novo** (`marketing_os_zero_c`, criado vazio no mesmo container) | **48 de 48** migrations do zero, as seis da frente inclusive; `db:status` "up to date"; depois `db:seed:politica` |
+| `pnpm --filter @mktos/api build` + `smoke` (contra o banco novo) | **SMOKE OK** duas vezes: as cinco rotas padrão e, com `SMOKE_ROTAS`, `/api/pauta/episodios`, `…/pendentes-midia`, `/api/pauta/voz`, `/api/pauta/agenda`, `/api/pauta/agenda/grade` e `/api/pauta/rodadas`, todas 401 |
+| `tools/root-midia` | `root-midia.test.ts` + `pauta-midia.test.ts` **110** (dentro da suíte da api); `ensaio` OK (final mais curto e sem silêncio longo); `ensaio-thumb` 1280×720, 573 kB; `ensaio-semana` OK (corte 1080×1920 com o rosto embaixo, story 1080×1920, carrossel de 4 slides) |
+| `pnpm --filter @mktos/web test` depois do conserto `ab3e5bc` | **546** em 42 (nenhum caso novo: o conserto é de classe CSS, conferido no navegador) |
+
+**A frente inteira contra a linha de base de antes dela** (23/09, antes da MC-A): api **1233 + 557
+pulados → 2009 + 572 sem banco; 2581 com banco** (+791 no total, +11 arquivos), web **398 → 546**
+(+148), isolamento **319 → 326** (+7, a semente de `PautaEpisodio`), policy **74 = 74**, porta
+**39 = 39**. Só esta onda, contra o fechamento da MC-B: api 2417 → 2581 (+164; `pauta-robustez`,
+`pauta-semana`, `pauta-agenda` e casos novos nos vizinhos), web 506 → 546 (+40, 39 → 42 arquivos).
+Pisos da CI: api 1916/56, web 366/33 (subiram na correção final, com a conta no `ci.yml`; o
+fechamento não acrescentou caso).
+
+**Ensaio ponta a ponta, local** — o da MC-B, agora até a semana postada. API compilada
+(`dist/main.js`) contra o banco novo `marketing_os_zero_c` (migrations do zero, política semeada),
+empresa `root` e conta descartáveis (`pauta.ver`, `pauta.editar`, `pauta.publicar`,
+`automacoes.executar`, `bio.editar`). LLM: o **dublê** local de Chat Completions (`LLM_PROVIDER=openai`,
+`OPENAI_BASE_URL` em `127.0.0.1`, chave falsa; o dublê da MC15, com a derivação). Canal de
+aprovação com os dois segredos descartáveis e `EVOLUTION_LINKS_JID`/`EVOLUTION_LINKS_ORG_ID`
+preenchidas. **Storage:** um MinIO descartável em `127.0.0.1:9311`, da imagem `minio/minio` que já
+estava no Mac (nada baixado), removido no fim — é a primeira vez que o envio dos PNG e das thumbs
+roda contra um MinIO. O que rodou de verdade, em ordem:
+
+1. **Grupo de links pelo webhook:** mensagem com nome, telefone e link → 201 e captura em
+   rascunho, título nulo, a mensagem na `nota`; a mesma pelo webhook de outra empresa →
+   `ignorado:empresa-errada`; sem o segredo → 404.
+2. **Curadoria** (`origens` W, R, L): 4 candidatos; o do grupo com título **`blog.exemplo`** (o
+   domínio, `d0741ec`), a newsletter marcada `semLinkPublico`. Marcar os 4 e confirmar → `curada`.
+3. **Episódio e roteiro:** `ep-01` → roteiro gerado → Gravação; o `.md` com `root, corta` no topo, o
+   link de cada item e, na newsletter, "sem link público — cite Newsletters (ensaio)". Nenhum
+   permalink.
+4. **Mac, `root-midia`:** bruto sintético 1920×1080 de 410 s (PiP rosa na região do OBS, dois
+   silêncios) → `silencios` (2) → `cortes` (3 trechos, 401,8 s) → `cortar` (reencodado, 28 s) →
+   `enviar ep-01 --final --bruto --cortes --transcricao` com 15 segmentos **escritos à mão** (não há
+   whisper) → Edição → Pacote.
+5. **Pacote e página:** 3 títulos, 5 capítulos, os 3 links públicos (o do grupo como
+   `blog.exemplo`), nenhum Gmail; `root-midia thumbs ep-01` renderizou e **subiu as 3 thumbs** (~550
+   kB). Página `root-ep-01` com 3 botões e o aviso da newsletter de fora; publicada, a descrição
+   passou a levar `https://bio.operacaoroot.com/@root-ep-01`. A página pública não tem nome nem
+   telefone; eles só aparecem no `resumo` interno do item, como a correção decidiu.
+6. **Newsletter** com o link do vídeo: o `.md` sem Gmail, sem nome, sem telefone e sem marcador
+   sobrando. **Voz:** `POST /pauta/voz/aprender` → nota `voz.pedro`.
+7. **Semana de posts:** `POST …/semana/gerar` → **12 peças** (4 matérias × 3, `criadas: 12`),
+   episódio em Derivação, uma palavra por matéria (PRECO, PLANILHA, ABERTOS, AGENTES) no CTA do
+   carrossel e do corte, nenhum Gmail em peça nenhuma.
+8. **Renders no Mac:** `cortes ep-01` → 4 mp4 1080×1920 (39,7 s, 119,7 s, 124,7 s, 115,8 s) em 28 s,
+   com o rosto lido do `Gravação.json` do OBS (1540,738,322,298), registrados no OS. `stories` e
+   `carrosseis` **sem** MinIO → 503 "storage não configurado" (o mesmo da MC15); **com** o MinIO
+   local → 4 stories e 4 carrosséis de 5 slides no OS (24 `pauta.semana_imagem`), e `GET
+   /pauta/pecas/:id/imagens/1` → 200 `image/png`.
+9. **Agenda:** aprovar 11 das 12 (o story da matéria 2 ficou rascunho) → `distribuir {aPartirDe:
+   2026-09-28}` → **11 alocadas, 0 sem vaga** (seg 28/09: story 9h e carrossel 12h; ter: story 9h e
+   corte 18h; …). Marcar postada o carrossel 1 com `https://www.instagram.com/p/…` e o corte 1 sem
+   link → `publicada` à mão; o rascunho → 400 "aprove antes"; `http://` → 400. `root-midia agenda
+   --de 2026-09-28` listou cada slot com "5 PNG no OS" ou "mp4 no Mac: <caminho>".
+10. **Mídia refeita** (`b07c35c`): voltar o episódio Derivação → Pacote → Edição e reenviar a
+    transcrição com uma fala trocada → Pacote. As 10 peças não postadas voltaram a rascunho, fora
+    da agenda, sem PNG e sem mp4; as 2 postadas ficaram. `root-midia cortes --so 2` pula ("o corte
+    é da transcrição anterior") e `PUT /pauta/pecas/:id/video` → **409**.
+
+O RASTRO ficou com `pauta.captura_whatsapp` (3), `…rodada_para_curadoria` (2), `…curadoria_marcada`,
+`…curadoria_confirmada`, `…episodio_criado`, `…roteiro_gerado`, `…episodio_midia`,
+`…episodio_transcricao` (2), `…pacote_gerado`, `bio.page_create`, `…pagina_de_links`,
+`bio.page_publish`, `…newsletter_gerada`, `…voz_aprendida`, `…semana_gerada`, `…semana_video` (4),
+`…semana_imagem` (24), `…episodio_thumb` (3), `…peca_editada` (11), `…semana_distribuida`,
+`…semana_postada` (2) e `…episodio_status` (2). O dublê recebeu 11 chamadas, 10 reconhecidas; a
+outra foi a vetorização da nota de voz (embeddings no mesmo `OPENAI_BASE_URL`), que devolveu 500 e
+virou o aviso "vetorização falhou" da memória, sem efeito no fluxo.
+
+**A 375×812** (`next dev` com `API_PROXY_TARGET` na API do ensaio — a linha de boot mostra
+`proxyTimeout: 600000` —, agent-browser sem janela, sessão com o token injetado): Curadoria (com uma
+segunda rodada em curadoria, 3 candidatos do grupo), Episódios, Semana (a de hoje e a seguinte, com
+os 11 slots), Voz e o detalhe inteiro do `ep-01`. Em todas, `scrollWidth` 375 e nenhum elemento
+passando da borda. Os únicos "cortados" da medida são dois `<input>` com o valor mais longo que o
+campo (rolam por dentro, como deve). **Achado e consertado:** a barra fixa da Curadoria (o menor
+que a correção final deixou por conferir no navegador) media 267 px, com um botão por linha →
+`ab3e5bc`, 187 px, nenhum dos quatro botões no retângulo do "perguntar", desktop igual. **Achado
+e não consertado, anterior à frente:** o seletor de tema da barra lateral sai cortado a 375 px
+("ESCUR", "PAPE", "MON"); é o `Sidebar.tsx`, que a frente não tocou.
+
+**O que não rodou:** LLM real (nenhum dos prompts da frente viu um modelo), whisper (sem modelo),
+PalmierPro, o MinIO **da VPS** (o do ensaio é local), Evolution, Gmail, Apify, Meta, TikTok e
+YouTube reais, o papel restrito com a API de pé, o `next build` (o `next/font` do Google precisa de
+rede), o 409 do segundo clique (`umaPorVez`, coberto pelos testes; o dublê responde rápido demais
+para a corrida) e o clique medido em `/r/` (feito na MC-B). O banco `marketing_os_zero_c` ficou no
+container descartável; o MinIO do ensaio foi removido.
+
+**Revisão adversarial da branch** (antes do fechamento, registrada em "Correção final da frente"):
+**8 achados importantes confirmados, 0 refutados, 8 corrigidos**, cada um com teste que prova o
+conserto (`3449d39`, `d0741ec`, `b07c35c`, `5546c97`, `5c23e41`, `555396b`, `bbabe61`, `354f255`),
+mais 7 menores feitos. Dos três menores não feitos, este fechamento conferiu e consertou um (a
+barra da Curadoria); ficam abrir `/pauta` direto na Curadoria quando há rodada esperando e as rotas
+próprias da palavra de corte e dos links da casa (hoje, a receita do `docs/PAUTA.md`). O ensaio
+acima exercitou de ponta a ponta três dos consertos (`d0741ec`, `b07c35c`, `a23acb7`) e o envio dos
+PNG que ficara sem prova desde a MC11.
+
+**Ordem de deploy desta onda.** Soma-se à A (A1–A5) e à B (B1–B5):
+
+| # | Passo | Se pular |
+|---|---|---|
+| C1 | A migration da MC16, `20260924090000_pauta_peca_agenda`, já está no fim do B2: duas colunas nulas e o índice `(orgId, agendadaPara)` numa tabela que já tem RLS | Aba Semana e distribuir respondem 500 |
+| C2 | **A imagem do `web` é reconstruída**: o prazo do proxy de `/api` (10 min, `apps/web/next.config.mjs`) vale no build | `up -d --no-build` com a imagem velha mantém os 30 s, e gerar a semana, o roteiro, o pacote, a newsletter e a voz voltam a dar 500 no meio |
+| C3 | `EVOLUTION_LINKS_ORG_ID` (passo A3), já no compose e no `.env.example` | Grupo de links desligado, o padrão seguro |
+| C4 | Nenhuma capacidade, permissão ou seed nova: `pauta.publicar` (marcar postada) já existia | — |
+| C5 | Smoke da imagem com `SMOKE_ROTAS` incluindo `/api/pauta/agenda` e `/api/pauta/agenda/grade` | `AgendaController` e `DerivacaoController` são controllers novos do `PautaModule` |
+| C6 | Um container da API só: o freio do segundo clique (`umaPorVez`) mora na memória do processo | Com duas réplicas, dois cliques em containers diferentes pagam a IA duas vezes |
+
+**ORDEM DE DEPLOY CONSOLIDADA DA FRENTE (A + B + C).** Vale por cima do §3, que continua inteiro
+(os passos 1–4, 10–11 e a virada do papel restrito são dele):
+
+1. **Merge da branch** `root-os/maquina-de-conteudo` na `main`, com a CI verde (§3, passos 1–4). É
+   decisão do Pedro; nenhum agente mescla nem empurra.
+2. **`db:status` na produção:** se faltarem as migrations anteriores da `main`
+   (`20260917010000_esteira_de_clientes`, `20260924010000_onboarding_do_cliente`), elas entram antes,
+   na ordem do nome.
+3. **Backup do dia** (§3, passo 5) e **`docker tag mktos-app:latest mktos-app:rollback`** (passo 8).
+   Deixar à mão a **receita A1-volta** (§1, onda MC-A): a imagem antiga não lê `aguardando_curadoria`
+   nem `gmail`.
+4. **Variáveis no `.env` da VPS:** `EVOLUTION_LINKS_JID` e `EVOLUTION_LINKS_ORG_ID` (as duas já
+   estão no bloco `environment:` do compose). Pré-requisito: o canal de aprovação configurado
+   (`CANAL_APROVACAO_SEGREDO`, `CANAL_APROVACAO_CODIGO_SEGREDO`). Conferir que `S3_*` estão
+   preenchidas (PNG da semana e thumbs). Nenhuma outra variável na API; as do `tools/root-midia`
+   são **só do Mac**.
+5. **Build das duas imagens**, `api` e `web` (a `web` por causa do prazo do proxy).
+6. **Ensaio das migrations** num banco descartável com o dump da produção. As seis da frente, nesta
+   ordem: `20260924020000_pauta_fonte_gmail`, `20260924050000_pauta_rodada_aguardando_curadoria`,
+   `20260924060000_pauta_episodio`, `20260924070000_pauta_episodio_palavra_de_corte`,
+   `20260924080000_pauta_pagina_de_links`, `20260924090000_pauta_peca_agenda`. Todas aditivas; as
+   duas primeiras são `ALTER TYPE … ADD VALUE`, que não se desfazem.
+7. **Smoke da imagem** com `ROTINAS_CRON=off`, os intervalos em 0 e
+   `SMOKE_ROTAS=/api/pauta/episodios,/api/pauta/episodios/pendentes-midia,/api/pauta/voz,/api/pauta/agenda,/api/pauta/agenda/grade,/api/pauta/rodadas`.
+8. **Seeds e permissões:** nada por causa da frente (nenhuma capacidade, nenhuma permissão nova). O
+   `db:seed:politica` do §3 (passo 10) segue valendo se o deploy levar commits de fora que mexem na
+   política.
+9. **`up -d --no-build --vps api web`** (a migration roda no `command` do container).
+10. **Conferir:** a linha de boot da política; `entrada do grupo … ligada por EntradaDeLinksService`
+    (sem as variáveis, o aviso de desligado); `storage pronto`; `/pauta` abrindo as seis abas; o
+    RASTRO.
+11. **Registrar** o que subiu (commit/tag).
+12. **Depois do deploy, na tela:** a rotina de quinta em `/rotinas` ("Nova rotina de coleta"), as
+    fontes em Radar e as notas da memória pela receita do `docs/PAUTA.md` (palavra de corte, links
+    da casa). **Aviso:** sob o papel restrito (§3, passo 16), nenhuma rotina dispara — a de quinta
+    inclusive — até a decisão do agendamento.
+
+**Voltar:** receita A1-volta antes da imagem `rollback`; as tabelas e colunas da B e da MC16 não
+pedem nada. A `web` antiga volta aos 30 s de proxy.
+
+**Tarefas do Pedro, consolidadas da frente** (nenhum agente pode fazer; as das ondas A e B acima
+continuam valendo, aqui na ordem do que destrava mais):
+
+1. **Merge, push e deploy** pela ordem acima — e a proteção da `main` (§3, passo 4).
+2. **Grupo "Root · links" (D-MC10):** criar o grupo na instância do root, preencher o JID e o id da
+   org, apontar o webhook `messages.upsert` para `/approvals/canal/whatsapp/<orgId>` com
+   `x-canal-segredo`.
+3. **Fontes:** conectar o Google e criar a etiqueta das newsletters (fonte `gmail`); cadastrar as
+   buscas e os creators; revisar o teto dos perfis (perfil agora entra na coleta automática).
+4. **Rotina de quinta** em `/rotinas` e a **decisão do passo 16** (sem ela, só "Rodar agora").
+5. **Mac:** baixar o modelo do whisper e apontar `WHISPER_MODEL` (D-MC3); gravar
+   `~/.config/root/root-midia.env` com a URL `https://…/api` e a conta com `pauta.editar`;
+   `ln -s <repo>/tools/root-midia ~/.claude/skills/root-midia`; abrir o PalmierPro e validar a skill.
+6. **Episódio 00 real:** gravar, rodar `/root-midia ep-00` e conferir roteiro, pacote, newsletter e
+   semana gerados por um **modelo real**; medir o tempo humano de cada etapa; ajustar os 8000 tokens
+   da `SAIDA_DA_GERACAO_LONGA` se faltar.
+7. **D-MC9.7, a mais urgente:** o CTA que a MC15 já escreve promete uma DM ("chegam no direct") que
+   ninguém manda. Responder à mão (MC18.0, com a D-MC9.6) ou trocar para "link na bio".
+8. **D-MC8, App Review da Meta** (app em Live, Advanced Access, as permissões de conteúdo,
+   comentários e mensagens) — destrava a MC17 e a DM automática (D-MC9.1 a .5 e .8).
+9. **D-MC6 (YouTube)** e **D-MC7 (destino da newsletter)**.
+10. **D-MC2 (palavra de corte)** e as notas `pauta.palavra-de-corte` e
+    `pauta.pagina-de-links.chamadas` pela receita do `docs/PAUTA.md`.
+11. **A semana:** confirmar a grade padrão (carrossel seg/qua/sex 12h, corte ter/qui 18h, story dia
+    útil 9h), Carnaval e Corpus Christi sem slot, e se distribuir leva o episódio a Agendado.
+12. **O corte:** depois de um corte real, recortar só a área útil da tela (`--tela`) ou manter o
+    canvas inteiro.
+13. **Teste cego da voz** (MC10), e se `pauta.editar` pode escrever a nota `voz.*`.
+14. **Menores:** declarar `body-parser` na api; subir o teto da transcrição acima de 1h; o ClickUp
+    pelo mesmo portão de links do WhatsApp; sugeridos já marcados na curadoria; unificar a chave de
+    URL do RSS; Concluído voltar a Agendado; zip dos PNG do carrossel (dependência nova); o `TZ` do
+    container (a janela `fora_da_janela` da porta está em UTC); abrir `/pauta` na Curadoria quando há
+    rodada esperando; rotas e tela próprias para a palavra de corte e os links da casa; o seletor de
+    tema cortado a 375 px na barra lateral.
+
+**Riscos que a frente deixa:**
+
+- **Nenhum prompt viu um modelo real** — curadoria, roteiro, pacote, newsletter, voz e derivação só
+  conversaram com o dublê. O primeiro episódio real é o primeiro teste do formato, da escolha do
+  trecho do corte pelos números dos segmentos e do teto de 8000 tokens.
+- **O freio do segundo clique mora na memória do processo:** vale com um container da API só.
+- **O papel restrito cala a rotina de quinta** (§3, passo 16), sem padrão seguro.
+- **A imagem do `web` velha** deixa as gerações longas morrerem aos 30 s.
+- **Rollback com enum novo** só pela receita A1-volta (ou pelo backup, perdendo o que entrou).
+- **O mp4 do corte só existe no Mac:** limpar a pasta `~/Movies/OBS/root-midia/ep-NN` apaga o que o
+  slot aponta. E o MinIO nunca apaga PNG ou thumb substituída.
+- **O CTA promete DM** que ninguém manda até a D-MC9.7.
+- **A troca de DNS** entre a conferência e a conexão, ao processar uma captura, segue aberta.
+- **A aprovação em produção** responde 403 desde o deploy de 12/09 (`db:sync-permissions`
+  pendente), e publicar a peça no grupo depende dela.
+- **A branch só existe no disco**, o risco nº 1 do plano inteiro.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -967,6 +1195,8 @@ ou de **uma pessoa fazendo algo fora do repositório** — e esta execução nã
 > as da `main` que ainda não subiram. A imagem do `web` também muda (o prazo do proxy de `/api`
 > subiu para 10 min em `apps/web/next.config.mjs`): vale só com a imagem reconstruída no passo 9 —
 > `up -d --no-build` com a imagem velha mantém os 30 s e as gerações longas voltam a dar 500.
+> A ordem da frente inteira, numerada de 1 a 12, está no fim da onda MC-C (§1): "ORDEM DE DEPLOY
+> CONSOLIDADA DA FRENTE (A + B + C)".
 
 **Este é o item mais importante deste documento.** A ordem cresceu onda a onda e não é a de sempre:
 dois passos são **anteriores** ao que antes era o começo, e nenhum deles dá erro na hora — dá
