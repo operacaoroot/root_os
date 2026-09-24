@@ -48,6 +48,9 @@ export default function LinkPage() {
   const [mensagemFinal, setMensagemFinal] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [notaAberta, setNotaAberta] = useState<string | null>(null);
+  /* O erro mora ao lado do que falhou (o campo, o botão de fechar), não num aviso no topo. */
+  const [erroDe, setErroDe] = useState<Record<string, string>>({});
+  const [fechando, setFechando] = useState(false);
 
   const base = `/tenants/onboarding/link/${token}`;
 
@@ -75,13 +78,13 @@ export default function LinkPage() {
   }, [estado, base, retrato]);
 
   async function agir<T>(chave: string, fn: () => Promise<T>): Promise<T | undefined> {
-    setErro(null);
+    setErroDe((atual) => ({ ...atual, [chave]: '' }));
     setOcupado(chave);
     try {
       const r = await fn();
       return r;
     } catch (e) {
-      setErro((e as Error).message);
+      setErroDe((atual) => ({ ...atual, [chave]: (e as Error).message }));
       return undefined;
     } finally {
       setOcupado(null);
@@ -197,6 +200,8 @@ export default function LinkPage() {
 
   const feitos = estado.progresso.confirmados + estado.progresso.respondidos;
   const pct = Math.round((feitos / Math.max(1, estado.progresso.total)) * 100);
+  const faltando = estado.progresso.obrigatoriosFaltando;
+  const temaDoTitulo = (titulo: string) => estado.itens.find((i) => i.titulo === titulo)?.temaId ?? null;
 
   const secoes: { chave: string; rotulo: string; titulo: string; ajuda: string; itens: ItemDoLink[] }[] = kickoff
     ? [
@@ -237,13 +242,15 @@ export default function LinkPage() {
       <Marca rotulo={rotulo} />
       <div className={kickoff ? 'lg:grid lg:grid-cols-[minmax(0,640px)_minmax(300px,360px)] lg:items-start lg:gap-6' : ''}>
         <div className="min-w-0">
-          <div className="sticky top-0 z-10 -mx-2 mb-4 rounded-xl border border-border bg-surface p-3">
-            <div className="flex items-baseline justify-between text-[12px]">
-              <span className="font-medium">{estado.cliente}</span>
-              <span className="text-muted">{feitos} de {estado.progresso.total} · válido até {dataCurta(estado.validoAte)}</span>
+          <div className="sticky top-0 z-10 -mx-2 mb-4 rounded-xl border border-border bg-surface px-3 py-2">
+            <div className="flex items-baseline justify-between gap-3 text-[12px]">
+              <span className="truncate font-medium">{estado.cliente}</span>
+              <span className="shrink-0 text-muted" aria-live="polite">
+                {feitos} de {estado.progresso.total}
+                {faltando.length ? ` · faltam ${faltando.length} obrigatória${faltando.length === 1 ? '' : 's'}` : ' · tudo respondido'}
+              </span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${pct}%` }} /></div>
-            {estado.progresso.obrigatoriosFaltando.length > 0 && <p className="mt-1 text-[11px] text-muted">Faltam: {estado.progresso.obrigatoriosFaltando.join(', ')}</p>}
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${pct}%` }} /></div>
           </div>
 
           <MapaDoTrilho mapa={estado.mapa} />
@@ -258,8 +265,6 @@ export default function LinkPage() {
               </div>
             </details>
           )}
-
-          {erro && <p className="my-3 rounded-lg border border-bad/40 bg-bad/10 p-2 text-[13px] text-bad">{erro}</p>}
 
           <div className="mt-6">
             {secoes.filter((s) => s.itens.length > 0).map((s) => (
@@ -277,6 +282,7 @@ export default function LinkPage() {
                       base={base}
                       nome={nome}
                       ocupado={ocupado}
+                      erro={erroDe[`item-${i.temaId}`] || null}
                       agir={agir}
                       onMudou={setEstado}
                       aoClicarVizinho={abrirNo}
@@ -289,16 +295,46 @@ export default function LinkPage() {
 
           {kickoff && <Indice teia={estado.teia} cliente={estado.cliente} mapa={estado.mapa} notaAberta={notaAberta} aoAbrir={setNotaAberta} />}
 
-          <div className="mb-8 space-y-2">
-            <button
-              type="button"
-              disabled={estado.progresso.obrigatoriosFaltando.length > 0 || ocupado === 'concluir'}
-              onClick={() => agir('concluir', () => apiPost<{ retrato: RetratoDoTrilho | null; mensagem: string }>(`${base}/concluir`, { nome })).then((r) => { if (r) { setRetrato(r.retrato); setMensagemFinal(r.mensagem); } })}
-              className={BOTAO_PRIMARIO}
-            >
-              {kickoff ? 'Concluir e ver o que o OS entendeu →' : 'Concluir'}
-            </button>
-            <p className="text-center text-[11px] text-muted">Pode fechar e voltar depois: o link guarda de onde parou. Senha, token e dado bancário nunca entram por aqui.</p>
+          <div className="mb-8 space-y-3">
+            {faltando.length > 0 && (
+              <div className="rounded-lg border border-warn/40 bg-warn/10 p-3 text-[12.5px]" role="status">
+                <p className="font-semibold">Antes de fechar, {faltando.length === 1 ? 'falta uma obrigatória' : `faltam ${faltando.length} obrigatórias`}:</p>
+                <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {faltando.map((titulo) => {
+                    const id = temaDoTitulo(titulo);
+                    return (
+                      <li key={titulo}>
+                        <button type="button" onClick={() => id && irParaTema(id)} className={`underline underline-offset-2 hover:text-brand ${FOCO}`}>{titulo}</button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {!fechando ? (
+              <button type="button" disabled={faltando.length > 0} onClick={() => setFechando(true)} className={BOTAO_PRIMARIO}>
+                {kickoff ? 'Concluir e ver o que o OS entendeu →' : 'Concluir'}
+              </button>
+            ) : (
+              <div className="rounded-lg border border-brand/40 bg-brand/10 p-3">
+                <p className="text-[13.5px] font-semibold">Isto fecha o link.</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Até aqui você pode editar qualquer resposta. Depois de fechar, ajustes vão pelo grupo com a Root.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={ocupado === 'concluir'}
+                    aria-busy={ocupado === 'concluir'}
+                    onClick={() => agir('concluir', () => apiPost<{ retrato: RetratoDoTrilho | null; mensagem: string }>(`${base}/concluir`, { nome })).then((r) => { if (r) { setRetrato(r.retrato); setMensagemFinal(r.mensagem); } })}
+                    className={BOTAO_PRIMARIO}
+                  >
+                    {ocupado === 'concluir' ? 'fechando…' : kickoff ? 'Fechar e ver o retrato' : 'Fechar'}
+                  </button>
+                  <button type="button" onClick={() => setFechando(false)} className={BOTAO}>Ainda não</button>
+                </div>
+                {erroDe.concluir && <p role="alert" className="mt-2 text-[12.5px] text-bad">{erroDe.concluir}</p>}
+              </div>
+            )}
+            <p className="text-center text-[11px] text-muted">Cada resposta é salva na hora e pode ser editada até você fechar. Pode sair e voltar: o link guarda de onde parou. Senha, token e dado bancário nunca entram por aqui.</p>
           </div>
         </div>
 
@@ -399,8 +435,8 @@ function Vault({ teia, aoClicar, notaAberta, aoFecharNota, semMoldura = false }:
           <h2 className="font-os-mono text-[13px] font-bold">{teia.pasta}</h2>
         </div>
         <div className="flex gap-1 font-os-mono text-[10px] uppercase tracking-[0.12em]">
-          <button type="button" onClick={() => setAba('grafo')} className={`rounded px-2 py-1 ${aba === 'grafo' ? 'bg-brand/15 text-brand' : 'text-muted hover:text-text'}`}>grafo</button>
-          <button type="button" onClick={() => setAba('arquivos')} className={`rounded px-2 py-1 ${aba === 'arquivos' ? 'bg-brand/15 text-brand' : 'text-muted hover:text-text'}`}>arquivos</button>
+          <button type="button" onClick={() => setAba('grafo')} className={`rounded px-2 py-1 ${FOCO} ${aba === 'grafo' ? 'bg-brand/15 text-brand' : 'text-muted hover:text-text'}`}>grafo</button>
+          <button type="button" onClick={() => setAba('arquivos')} className={`rounded px-2 py-1 ${FOCO} ${aba === 'arquivos' ? 'bg-brand/15 text-brand' : 'text-muted hover:text-text'}`}>arquivos</button>
         </div>
       </div>
       <p className="mt-1 font-os-mono text-[10px] text-muted">
@@ -666,18 +702,33 @@ function Indice({ teia, cliente, mapa, notaAberta, aoAbrir }: { teia: TeiaDoClie
 
 type Agir = <T>(chave: string, fn: () => Promise<T>) => Promise<T | undefined>;
 
-function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClicarVizinho }: { i: ItemDoLink; no: NoDaTeia | null; vizinhos: NoDaTeia[]; base: string; nome: string; ocupado: string | null; agir: Agir; onMudou: (e: EstadoDoLink) => void; aoClicarVizinho: (no: NoDaTeia) => void }) {
+/*
+ * O CARTÃO DE UM TEMA. Três modos vindos da API — confirmar (há proposta),
+ * responder (em branco), feito — e, no feito, EDITAR: até o botão final tudo
+ * se refaz. Quem confirmou corrige (a procedência da reunião fica); quem
+ * corrigiu pode voltar ao que ouvimos; quem respondeu livre responde de novo,
+ * por texto ou áudio. Cada gravação mostra "salvo às", com a hora que veio do
+ * banco — é a prova, na tela, de que chegou. O erro fica aqui, ao lado.
+ */
+function ItemCard({ i, no, vizinhos, base, nome, ocupado, erro, agir, onMudou, aoClicarVizinho }: { i: ItemDoLink; no: NoDaTeia | null; vizinhos: NoDaTeia[]; base: string; nome: string; ocupado: string | null; erro: string | null; agir: Agir; onMudou: (e: EstadoDoLink) => void; aoClicarVizinho: (no: NoDaTeia) => void }) {
   const [corrigindo, setCorrigindo] = useState(false);
+  const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState('');
   const [gravando, setGravando] = useState(false);
   const gravador = useRef<MediaRecorder | null>(null);
   const pedacos = useRef<Blob[]>([]);
   const rota = `${base}/itens/${i.temaId}`;
   const chave = `item-${i.temaId}`;
+  const salvando = ocupado === chave;
+  const idDoErro = `${chave}-erro`;
 
-  const confirmar = () => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/confirmar`, { nome })).then((e) => e && onMudou(e));
-  const corrigir = () => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/corrigir`, { texto, nome })).then((e) => { if (e) { onMudou(e); setCorrigindo(false); setTexto(''); } });
-  const responder = (t: string) => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/responder`, { texto: t, nome })).then((e) => { if (e) { onMudou(e); setTexto(''); } });
+  // Quem confirmou ou corrigiu tem a proposta por baixo: editar é corrigir. Quem respondeu livre responde de novo.
+  const editarEhCorrigir = i.status === 'confirmado' || i.status === 'corrigido';
+
+  const confirmar = () => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/confirmar`, { nome })).then((e) => { if (e) { onMudou(e); setEditando(false); } });
+  const corrigir = (t: string) => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/corrigir`, { texto: t, nome })).then((e) => { if (e) { onMudou(e); setCorrigindo(false); setEditando(false); setTexto(''); } });
+  const responder = (t: string) => agir(chave, () => apiPost<EstadoDoLink>(`${rota}/responder`, { texto: t, nome })).then((e) => { if (e) { onMudou(e); setEditando(false); setTexto(''); } });
+  const salvarEdicao = () => (editarEhCorrigir ? corrigir(texto) : responder(texto));
 
   async function alternarGravacao() {
     if (gravando) {
@@ -698,7 +749,10 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
         if (blob.size < 1000) return;
         const arquivo = new File([blob], `resposta.${tipo.includes('mp4') ? 'm4a' : 'webm'}`, { type: tipo });
         const r = await agir(chave, () => apiUpload<{ texto: string; estado: EstadoDoLink }>(`${rota}/audio?nome=${encodeURIComponent(nome)}`, arquivo));
-        if (r) onMudou(r.estado);
+        if (r) {
+          onMudou(r.estado);
+          setEditando(false);
+        }
       };
       gravador.current = rec;
       rec.start();
@@ -709,9 +763,28 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
   }
 
   const rodape = i.fonte ? <div className="font-os-mono text-[10.5px] text-muted">{i.fonte}</div> : null;
+  const erroInline = erro ? <p id={idDoErro} role="alert" className="mt-2 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-[12.5px] text-bad">{erro}</p> : null;
+
+  const areaDeTexto = (placeholder: string, linhas: number) => (
+    <textarea
+      className={INPUT}
+      rows={linhas}
+      placeholder={placeholder}
+      value={texto}
+      onChange={(e) => setTexto(e.target.value)}
+      aria-invalid={!!erro}
+      aria-describedby={erro ? idDoErro : undefined}
+      autoFocus
+    />
+  );
+  const botaoDeAudio = (
+    <button type="button" className={gravando ? BOTAO_GRAVANDO : BOTAO} disabled={salvando && !gravando} onClick={alternarGravacao} aria-label={gravando ? 'Parar gravação' : 'Gravar áudio'} aria-busy={salvando && !gravando}>
+      {gravando ? '■ Gravando… toque para parar' : salvando ? 'transcrevendo…' : '● Prefere falar? Gravar áudio'}
+    </button>
+  );
 
   return (
-    <div id={`tema-${i.temaId}`} className={`scroll-mt-24 rounded-xl border p-4 ${i.modo === 'feito' ? 'border-brand/40' : 'border-border'} bg-surface`}>
+    <div id={`tema-${i.temaId}`} className={`scroll-mt-28 rounded-xl border p-4 transition-colors ${i.modo === 'feito' ? 'border-brand/40' : 'border-border'} bg-surface`}>
       <div className="flex items-start justify-between gap-2">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">{i.titulo}</div>
         <div className="font-os-mono text-[10px] text-muted">{i.obrigatorio ? 'obrigatório' : 'opcional'}</div>
@@ -729,7 +802,7 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
               {vizinhos.slice(0, 3).map((v, k) => (
                 <span key={v.id}>
                   {k > 0 && ' · '}
-                  <button type="button" onClick={() => aoClicarVizinho(v)} className={`hover:underline ${v.estado === 'conversa' ? 'text-info' : v.estado === 'pronta' ? 'text-brand' : 'text-muted'}`}>[[{v.titulo}]]</button>
+                  <button type="button" onClick={() => aoClicarVizinho(v)} className={`hover:underline ${FOCO} ${v.estado === 'conversa' ? 'text-info' : v.estado === 'pronta' ? 'text-brand' : 'text-muted'}`}>[[{v.titulo}]]</button>
                 </span>
               ))}
             </span>
@@ -737,11 +810,37 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
         </div>
       )}
 
-      {i.modo === 'feito' && (
+      {i.modo === 'feito' && !editando && (
         <div className="mt-2">
           <p className="text-[14px] leading-relaxed">{i.textoFinal}</p>
-          <div className="mt-1 flex items-center gap-2 text-[12px] text-brand">✓ {i.status === 'confirmado' ? 'Confirmado' : i.status === 'corrigido' ? 'Corrigido' : i.respondidoVia === 'audio' ? 'Respondido por áudio' : 'Respondido'} · a nota está no seu vault</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-brand">
+            <span>✓ {i.status === 'confirmado' ? 'Confirmado' : i.status === 'corrigido' ? 'Corrigido' : i.respondidoVia === 'audio' ? 'Respondido por áudio' : 'Respondido'}</span>
+            {i.respondidoEm && <span className="font-os-mono text-[10.5px] text-muted">salvo {dataHora(i.respondidoEm)}</span>}
+          </div>
           {rodape}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className={BOTAO} disabled={salvando} onClick={() => { setTexto(i.textoFinal ?? ''); setEditando(true); }}>Editar resposta</button>
+            {i.status === 'corrigido' && (
+              <button type="button" className={BOTAO} disabled={salvando} aria-busy={salvando} onClick={confirmar}>{salvando ? 'salvando…' : 'Voltar ao que ouvimos'}</button>
+            )}
+          </div>
+          {erroInline}
+        </div>
+      )}
+
+      {i.modo === 'feito' && editando && (
+        <div className="mt-2">
+          <p className="text-[12px] leading-snug text-muted">{i.pergunta}</p>
+          <div className="mt-2 space-y-2">
+            {areaDeTexto('Escreva a resposta como quer que fique.', 4)}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={BOTAO_PRIMARIO} disabled={!texto.trim() || salvando} aria-busy={salvando} onClick={salvarEdicao}>{salvando ? 'salvando…' : 'Salvar'}</button>
+              {botaoDeAudio}
+              <button type="button" className={BOTAO} disabled={salvando} onClick={() => { setEditando(false); setTexto(''); }}>Cancelar</button>
+            </div>
+            {editarEhCorrigir && <p className="text-[11px] text-muted">Salvar substitui o texto e mantém a origem (a reunião e o minuto). Gravar áudio vira resposta sua, sem a origem.</p>}
+          </div>
+          {erroInline}
         </div>
       )}
 
@@ -753,18 +852,19 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
           {rodape}
           {corrigindo ? (
             <div className="mt-2 space-y-2">
-              <textarea className={INPUT} rows={3} placeholder="Escreva só a correção." value={texto} onChange={(e) => setTexto(e.target.value)} />
-              <div className="flex gap-2">
-                <button type="button" className={BOTAO_PRIMARIO} disabled={!texto.trim() || ocupado === chave} onClick={corrigir}>Salvar correção</button>
-                <button type="button" className={BOTAO} onClick={() => setCorrigindo(false)}>Cancelar</button>
+              {areaDeTexto('Escreva só a correção.', 3)}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={BOTAO_PRIMARIO} disabled={!texto.trim() || salvando} aria-busy={salvando} onClick={() => corrigir(texto)}>{salvando ? 'salvando…' : 'Salvar correção'}</button>
+                <button type="button" className={BOTAO} disabled={salvando} onClick={() => { setCorrigindo(false); setTexto(''); }}>Cancelar</button>
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex gap-2">
-              <button type="button" className={BOTAO_PRIMARIO} disabled={ocupado === chave} onClick={confirmar}>Confirmar</button>
-              <button type="button" className={BOTAO} onClick={() => setCorrigindo(true)}>Corrigir</button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className={BOTAO_PRIMARIO} disabled={salvando} aria-busy={salvando} onClick={confirmar}>{salvando ? 'salvando…' : 'Confirmar'}</button>
+              <button type="button" className={BOTAO} disabled={salvando} onClick={() => { setTexto(i.proposta ?? ''); setCorrigindo(true); }}>Corrigir</button>
             </div>
           )}
+          {erroInline}
         </div>
       )}
 
@@ -775,33 +875,44 @@ function ItemCard({ i, no, vizinhos, base, nome, ocupado, agir, onMudou, aoClica
           {i.formato === 'escolha' && i.opcoes ? (
             <div className="mt-3 grid gap-2">
               {i.opcoes.map((o) => (
-                <button key={o} type="button" disabled={ocupado === chave} onClick={() => responder(o)} className="rounded-lg border border-border bg-surface-2 px-3 py-3 text-left text-[14px] hover:border-brand">{o}</button>
+                <button key={o} type="button" disabled={salvando} onClick={() => responder(o)} className={`rounded-lg border border-border bg-surface-2 px-3 py-3 text-left text-[14px] hover:border-brand ${FOCO}`}>{o}</button>
               ))}
             </div>
           ) : (
             <div className="mt-3 space-y-2">
-              <textarea className={INPUT} rows={4} placeholder="Escreva aqui…" value={texto} onChange={(e) => setTexto(e.target.value)} />
+              <textarea
+                className={INPUT}
+                rows={4}
+                placeholder="Escreva aqui…"
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                aria-invalid={!!erro}
+                aria-describedby={erro ? idDoErro : undefined}
+              />
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={BOTAO_PRIMARIO} disabled={!texto.trim() || ocupado === chave} onClick={() => responder(texto)}>Enviar</button>
-                <button type="button" className={gravando ? BOTAO_GRAVANDO : BOTAO} disabled={ocupado === chave && !gravando} onClick={alternarGravacao} aria-label={gravando ? 'Parar gravação' : 'Gravar áudio'}>
-                  {gravando ? '■ Gravando… toque para parar' : ocupado === chave ? 'transcrevendo…' : '● Prefere falar? Gravar áudio'}
-                </button>
+                <button type="button" className={BOTAO_PRIMARIO} disabled={!texto.trim() || salvando} aria-busy={salvando} onClick={() => responder(texto)}>{salvando ? 'salvando…' : 'Enviar'}</button>
+                {botaoDeAudio}
               </div>
             </div>
           )}
+          {erroInline}
         </div>
       )}
     </div>
   );
 }
 
-const INPUT = 'w-full rounded-lg border border-border bg-bg px-3 py-2 text-[14px] outline-none focus:border-brand';
-const BOTAO_PRIMARIO = 'w-full rounded-lg bg-brand px-4 py-3 text-[14px] font-semibold text-ink transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto';
-const BOTAO = 'rounded-lg border border-border px-4 py-3 text-[14px] transition hover:border-brand disabled:opacity-50';
-const BOTAO_GRAVANDO = 'rounded-lg border border-bad bg-bad/10 px-4 py-3 text-[14px] text-bad';
+/* Foco visível em tudo que se clica (teclado e leitor de tela): nunca sumir sem substituto. */
+const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg';
+const INPUT = `w-full rounded-lg border border-border bg-bg px-3 py-2 text-[14px] outline-none focus:border-brand ${FOCO}`;
+const BOTAO_PRIMARIO = `w-full rounded-lg bg-brand px-4 py-3 text-[14px] font-semibold text-ink transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto ${FOCO}`;
+const BOTAO = `rounded-lg border border-border px-4 py-3 text-[14px] transition hover:border-brand disabled:opacity-50 ${FOCO}`;
+const BOTAO_GRAVANDO = `rounded-lg border border-bad bg-bad/10 px-4 py-3 text-[14px] text-bad ${FOCO}`;
 
 const dataCurta = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+const dataHora = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 function Casca({ children, largura = 'max-w-sm' }: { children: React.ReactNode; largura?: string }) {
   return (

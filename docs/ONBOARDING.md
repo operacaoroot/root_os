@@ -141,7 +141,18 @@ ligações), esperando OK, em branco. E `carregarMemoria` passou a gravar també
 conversa na memória do cliente (`onboarding:ata:<id>`, kind `nota`, procedência com a data da ata
 e o minuto), idempotente pelo corpo.
 
-## 6. Onde mora cada coisa
+## 5d. Até o botão final, tudo se refaz (24/09/2026)
+
+Pedido do Rodrigo depois de testar o link: **nada pode se perder, e o cliente precisa poder corrigir
+o que já mandou**. Cada resposta é gravada na hora (`OnboardingItem`, com quem, quando e por onde) e
+a tela mostra "salvo às" com a hora que veio do banco. `confirmar` e `corrigir` valem de novo sobre
+o que já foi confirmado/corrigido (a procedência da reunião fica); `responder` vale sobre qualquer
+estado; quem corrigiu pode "voltar ao que ouvimos". O que fecha o link é só o botão final — em dois
+passos ("isto fecha o link… ainda não"). O erro fica ao lado do campo que falhou, com
+`aria-describedby`; a barra fixa mostra só a conta ("faltam 3 obrigatórias"), e a lista do que
+falta fica junto do botão de fechar, com atalho para cada tema.
+
+
 
 **Banco (empresa da Root, tenant 001), migration `20260924010000_onboarding_do_cliente`:**
 

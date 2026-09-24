@@ -280,6 +280,7 @@ export interface ItemDoLink {
   status: string;
   textoFinal: string | null;
   respondidoVia: string | null;
+  respondidoEm: string | null;
 }
 
 export type EstadoDaEstacao = 'feita' | 'aqui' | 'adiante';

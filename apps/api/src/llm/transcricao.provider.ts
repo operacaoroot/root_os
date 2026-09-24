@@ -110,16 +110,41 @@ export class TranscricaoService {
     form.append('language', p.idioma ?? 'pt');
     form.append('response_format', 'json');
 
-    const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
-      body: form,
-    });
-    if (!res.ok) {
-      const corpo = await res.text().catch(() => '');
-      this.log.warn(`transcrição falhou (${res.status}): ${corpo.slice(0, 300)}`);
+    /*
+     * DUAS TENTATIVAS, e a mensagem certa para quem está do outro lado. O 429 da
+     * OpenAI tem duas caras: "sem crédito" (a conta zerou — ninguém do lado do
+     * cliente resolve, e repetir não adianta) e "ocupado" (limite de taxa, que
+     * uma segunda tentativa costuma vencer). Nenhum código de status vai para
+     * a tela do cliente: ele lê o que fazer, e o log diz à Root o que houve.
+     */
+    let res: Response | null = null;
+    let corpo = '';
+    for (let tentativa = 1; tentativa <= 2; tentativa += 1) {
+      res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        body: form,
+      });
+      if (res.ok) break;
+      corpo = await res.text().catch(() => '');
+      this.log.warn(`transcrição falhou (${res.status}, tentativa ${tentativa}): ${corpo.slice(0, 300)}`);
+      const semCredito = res.status === 429 && /credit|quota|billing/i.test(corpo);
+      if (semCredito) {
+        this.log.error(
+          'OpenAI SEM CRÉDITO: a transcrição de áudio do onboarding está parada até alguém adicionar crédito em ' +
+            'platform.openai.com/settings/organization/billing. O cliente foi orientado a responder por texto.',
+        );
+        throw new TranscricaoIndisponivelError(
+          'a transcrição por áudio está indisponível agora. Responda por texto — ou tente o áudio mais tarde.',
+        );
+      }
+      const passageiro = res.status === 429 || res.status >= 500;
+      if (!passageiro || tentativa === 2) break;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (!res || !res.ok) {
       throw new TranscricaoIndisponivelError(
-        `a transcrição falhou (${res.status}). Tente de novo ou responda por texto.`,
+        'o serviço de transcrição não respondeu. Tente o áudio de novo em instantes, ou responda por texto.',
       );
     }
     const json = (await res.json()) as { text?: string };
