@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { BioPlataforma } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BioFinalidade, BioPlataforma } from '@prisma/client';
+import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_PUBLICAR } from '@mktos/shared';
 import type {
   BioLinkInput,
   BioLinkUpdateInput,
   BioPageInput,
   BioPublicPage,
+  PautaContaDePublicacao,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -375,6 +377,7 @@ export class BioService {
         status: true,
         expiraEm: true,
         escopos: true,
+        finalidade: true,
         ultimoErro: true,
         conectadaEm: true,
         atualizadaEm: true,
@@ -388,8 +391,16 @@ export class BioService {
     };
   }
 
-  /** Cria o state anti-CSRF (uso único, 10 min) e devolve a URL de autorização. */
-  async iniciarConexao(orgId: string, plataforma: BioPlataforma) {
+  /**
+   * Cria o state anti-CSRF (uso único, 10 min) e devolve a URL de autorização.
+   * A `finalidade` vai no state, e o callback é o mesmo: com `publicacao` o
+   * Instagram pede os escopos de publicar (MD5). Publicar pelo TikTok está em
+   * espera (MD12) e é recusado aqui.
+   */
+  async iniciarConexao(orgId: string, plataforma: BioPlataforma, finalidade: BioFinalidade = 'bio') {
+    if (finalidade === 'publicacao' && plataforma !== 'instagram') {
+      throw new BadRequestException('a conta de publicação existe só para o Instagram');
+    }
     const cred = await this.credenciais.resolver(plataforma, orgId);
     if (!cred) {
       throw new BadRequestException(
@@ -405,6 +416,7 @@ export class BioService {
         estado,
         orgId,
         plataforma,
+        finalidade,
         verifier,
         expiraEm: new Date(Date.now() + STATE_VALIDO_MIN * 60_000),
       },
@@ -412,15 +424,67 @@ export class BioService {
 
     const url =
       plataforma === 'instagram'
-        ? instagram.urlDeAutorizacao(estado, cred)
+        ? instagram.urlDeAutorizacao(estado, cred, finalidade)
         : tiktok.urlDeAutorizacao(estado, verifier!, cred);
 
     return { url };
   }
 
-  async desconectar(orgId: string, conexaoId: string, actorId: string) {
+  /**
+   * A conta de publicação do Instagram da empresa, para a aba Semana (MD5).
+   * Sem token: só o @, os escopos concedidos e a validade.
+   */
+  async contaDePublicacao(orgId: string): Promise<PautaContaDePublicacao> {
+    const [c, cred] = await Promise.all([
+      this.prisma.bioConexao.findFirst({
+        where: { orgId, plataforma: 'instagram', finalidade: 'publicacao' },
+        select: {
+          id: true,
+          handle: true,
+          escopos: true,
+          status: true,
+          expiraEm: true,
+          ultimoErro: true,
+          conectadaEm: true,
+          atualizadaEm: true,
+        },
+      }),
+      // `estado`, e não `resolver`: abrir a aba não decifra o segredo nem o
+      // pega emprestado do cofre, o que carimbaria `usadoEm` a cada leitura.
+      this.credenciais.estado(orgId),
+    ]);
+    const escopos = c ? instagram.escoposConcedidos(c.escopos ?? '') ?? [] : [];
+    return {
+      credencialConfigurada: cred.items.some((i) => i.plataforma === 'instagram' && i.configurada),
+      escoposPedidos: [...instagram.ESCOPOS_DE_PUBLICACAO],
+      conexao: c
+        ? {
+            id: c.id,
+            handle: c.handle,
+            escopos,
+            podePublicar: escopos.includes(INSTAGRAM_ESCOPO_DE_PUBLICAR),
+            podeComentarios: escopos.includes(INSTAGRAM_ESCOPO_DE_COMENTARIOS),
+            status: c.status,
+            expiraEm: c.expiraEm?.toISOString() ?? null,
+            ultimoErro: c.ultimoErro,
+            conectadaEm: c.conectadaEm.toISOString(),
+            atualizadaEm: c.atualizadaEm.toISOString(),
+          }
+        : null,
+      source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
+    };
+  }
+
+  /**
+   * A conta de publicação só se conecta com `pauta.publicar`; a mesma permissão
+   * vale para tirá-la, senão quem só edita a bio desligaria a publicação.
+   */
+  async desconectar(orgId: string, conexaoId: string, actorId: string, permissoes: readonly string[]) {
     const conexao = await this.prisma.bioConexao.findFirst({ where: { id: conexaoId, orgId } });
     if (!conexao) throw new NotFoundException('conexão não encontrada');
+    if (conexao.finalidade === 'publicacao' && !permissoes.includes('pauta.publicar')) {
+      throw new ForbiddenException('esta é a conta de publicação: desconectar exige pauta.publicar');
+    }
 
     // As contas do desafio voltam pro modo manual em vez de sumir.
     await this.prisma.bioChallengeAccount.updateMany({
@@ -435,7 +499,7 @@ export class BioService {
       action: 'bio.conexao_delete',
       entityType: 'BioConexao',
       entityId: conexaoId,
-      before: { plataforma: conexao.plataforma, handle: conexao.handle },
+      before: { plataforma: conexao.plataforma, handle: conexao.handle, finalidade: conexao.finalidade },
     });
     return { ok: true };
   }

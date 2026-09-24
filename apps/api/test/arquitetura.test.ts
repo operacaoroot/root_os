@@ -656,11 +656,12 @@ const EXCECOES: Excecao[] = [
    *     diferentes, telas de consentimento diferentes, ciclos de renovação
    *     diferentes. Fundir os dois obrigaria uma das duas superfícies a pedir
    *     escopo que ela não usa — o contrário do que a régua quer.
-   *  2. O ENDEREÇO DE RETORNO ESTÁ TRAVADO POR REVISÃO EXTERNA. O callback da
-   *     bio (`/api/conectar/:plataforma/callback`) é a redirect URI registrada
-   *     nos consoles da Meta e do TikTok. Trocá-la exige App Review novo, cujo
-   *     prazo não depende de nós. Pagar esse custo para ganhar um cliente HTTP a
-   *     menos é trocar risco de arquitetura por risco de operação.
+   *  2. O ENDEREÇO DE RETORNO ESTÁ TRAVADO NOS CONSOLES. O callback da bio
+   *     (`/api/conectar/:plataforma/callback`) é a redirect URI registrada nos
+   *     consoles da Meta e do TikTok. Trocá-la obriga a recadastrar nos dois
+   *     consoles e a refazer toda conexão (a pesquisa da onda D não achou fonte
+   *     de que exija App Review novo). Pagar esse custo para ganhar um cliente
+   *     HTTP a menos é trocar risco de arquitetura por risco de operação.
    *  3. O QUE PRECISA CONVERGIR NÃO É O CLIENTE, É O PORTÃO. Dois clientes são
    *     aceitáveis; duas fronteiras, não. As três consequências concretas, que é
    *     o que sobra de dívida aqui:
@@ -1137,6 +1138,10 @@ const CREDENCIAIS: Record<string, string> = {
   META_APP_SECRET: 'src/meta/meta.service.ts',
   META_REDIRECT_URI: 'src/meta/meta.service.ts',
   META_GRAPH_URL: 'src/meta/meta.service.ts',
+  // MD5: só o dublê local as preenche; vazias, valem os endereços da Meta.
+  INSTAGRAM_OAUTH_URL: 'src/bio/plataformas/instagram.ts',
+  INSTAGRAM_TOKEN_URL: 'src/bio/plataformas/instagram.ts',
+  INSTAGRAM_GRAPH_URL: 'src/bio/plataformas/instagram.ts',
   OBSIDIAN_VAULT_PATH: 'src/obsidian/obsidian.service.ts',
 };
 

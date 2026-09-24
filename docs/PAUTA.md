@@ -825,6 +825,14 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   `textoDaGrade`), porque a tela conta com as mesmas regras. `instanteNoFuso` segue o "compatible"
   do Temporal: a hora que não existe na virada do horário de verão vai para depois; a repetida vale
   a primeira.
+  - **Conta de publicação (MD5).** O cartão no topo da aba Semana conecta o @ por onde o OS vai
+    publicar (MD6): `POST /pauta/instagram/conectar` (`pauta.publicar` e `bio.editar`) devolve a URL
+    da Meta com `ESCOPOS_DE_PUBLICACAO` (ler, publicar e comentários), e o callback é o mesmo da bio
+    (`/api/conectar/instagram/callback`), com a finalidade no `state`. A conexão só fica
+    `publicacao` se a Meta concedeu `instagram_business_content_publish`; sem ele fica da bio e a
+    volta traz o aviso. Uma por empresa (índice parcial). `GET /pauta/instagram/conexao`
+    (`pauta.ver`) mostra @, escopos e validade, nunca o token; o sync da bio renova o token de 60
+    dias. Publicar na conta da própria Root não passa por App Review; o @ precisa ter papel no app.
   - **Colunas** (migration `20260924090000_pauta_peca_agenda`): `PautaPeca.agendadaPara` (o instante
     em UTC; nulo = fora da agenda; índice `(orgId, agendadaPara)`) e `urlPublicada` (o endereço
     público do post). **Decisão:** "postada à mão" reaproveita `status = publicada`, `publicadaEm` e

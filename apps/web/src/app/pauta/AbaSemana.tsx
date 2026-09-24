@@ -27,7 +27,7 @@ import { Botao, Chip, inputCls } from '../referencias/ui';
  * copiar a legenda, baixar a mídia (o PNG e, desde a MD4, o mp4 do corte, que
  * estão no storage; o caminho no Mac quando o mp4 ainda não subiu) — e o
  * "Marcar como postada", que só registra no OS. A
- * publicação automática no Instagram/TikTok é a MC17 (D-MC8). Tudo no relógio
+ * publicação automática no Instagram é a MD6; a do TikTok está em espera (MD12). Tudo no relógio
  * de São Paulo.
  */
 
@@ -515,7 +515,7 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
     <div className="space-y-4">
       <p className="text-sm text-muted">
         As peças aprovadas da semana de posts, nos slots da grade. Cada slot entrega a legenda e a mídia para postar à mão — a
-        publicação automática no Instagram e no TikTok espera a aprovação da Meta (D-MC8).
+        publicação automática no Instagram chega na MD6, e a do TikTok está em espera.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">

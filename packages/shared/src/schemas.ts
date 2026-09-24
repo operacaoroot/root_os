@@ -1078,6 +1078,43 @@ export const BioLinkMoveSchema = z.object({ direcao: z.enum(['cima', 'baixo']) }
 export const BIO_PLATAFORMAS = ['instagram', 'tiktok'] as const;
 export type BioPlataforma = (typeof BIO_PLATAFORMAS)[number];
 
+/**
+ * Para que a conexão OAuth foi pedida (MD5) — espelho do enum `BioFinalidade`
+ * do Prisma, na mesma ordem. `publicacao` é a conta da própria empresa que o OS
+ * usa para publicar; `bio` é a do criador, que só lê.
+ */
+export const BIO_FINALIDADES = ['bio', 'publicacao'] as const;
+export type BioFinalidade = (typeof BIO_FINALIDADES)[number];
+
+/** O escopo sem o qual a conexão do Instagram não vira conta de publicação. */
+export const INSTAGRAM_ESCOPO_DE_PUBLICAR = 'instagram_business_content_publish';
+/** O escopo que a fila de comentários (MD9) vai usar; já pedido na MD5 para não exigir outra reconexão. */
+export const INSTAGRAM_ESCOPO_DE_COMENTARIOS = 'instagram_business_manage_comments';
+
+/**
+ * A conta de publicação do Instagram como a aba Semana a mostra
+ * (`GET /pauta/instagram/conexao`). Nunca carrega token.
+ */
+export interface PautaContaDePublicacao {
+  /** Há credencial do app do Instagram (tela, cofre ou ambiente) para começar a conexão. */
+  credencialConfigurada: boolean;
+  /** Os escopos que "Conectar" pede à Meta. */
+  escoposPedidos: string[];
+  conexao: {
+    id: string;
+    handle: string;
+    escopos: string[];
+    podePublicar: boolean;
+    podeComentarios: boolean;
+    status: 'ok' | 'token_expirado' | 'conta_pessoal' | 'privada' | 'erro';
+    expiraEm: string | null;
+    ultimoErro: string | null;
+    conectadaEm: string;
+    atualizadaEm: string;
+  } | null;
+  source: { tool: string; generatedAt: string };
+}
+
 export const BioChallengeSchema = z.object({
   id: z.string().uuid().optional(),
   pageId: z.string().uuid(),

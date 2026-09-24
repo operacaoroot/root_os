@@ -41,12 +41,14 @@ import { EncadeamentoService } from './encadeamento.service';
 import { TenantsModule } from '../tenants/tenants.module';
 import { MidiaPublicaController, MidiaPublicaDaPecaController } from './midia-publica.controller';
 import { MidiaPublicaService } from './midia-publica.service';
+import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
 // MemoryModule: o roteiro (MC8) LÊ a palavra de corte da empresa na memória, e
 // a voz do autor (MC10) é nota da memória, escrita pelo MemoriaService (ADR-011).
-// BioModule: a página de links do episódio (MC12) publica pelo BioService.
+// BioModule: a página de links do episódio (MC12) publica pelo BioService, e a
+// conta de publicação do Instagram (MD5) é uma conexão da bio.
 // A grade da semana (MC16) também é nota da memória, escrita pelo MemoriaService.
 // TenantsModule: a rota pública da mídia (MD4) confere se a empresa do token
 // ainda tem o módulo pauta — requisição anônima passa pelo gate de módulos.
@@ -69,6 +71,7 @@ import { MidiaPublicaService } from './midia-publica.service';
     EncadeamentoController,
     MidiaPublicaDaPecaController,
     MidiaPublicaController,
+    ContaDePublicacaoController,
   ],
   providers: [
     PautaService,

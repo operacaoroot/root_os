@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CODIGO_CONECTOR_DESLIGADO } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AbaCuradoria } from './AbaCuradoria';
@@ -9,6 +9,7 @@ import { AbaSemana } from './AbaSemana';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
 import { AbaVoz } from './AbaVoz';
+import { ContaDePublicacao } from './ContaDePublicacao';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
@@ -36,6 +37,21 @@ export default function PautaPage() {
   const [curadoriaAberta, setCuradoriaAberta] = useState<string | null>(null);
   const [episodioAberto, setEpisodioAberto] = useState<string | null>(null);
   const recarregar = useCallback(() => setBump((b) => b + 1), []);
+  const [retornoDaConexao, setRetornoDaConexao] = useState<string | null>(null);
+
+  /*
+   * A volta do OAuth da conta de publicação (MD5) chega em
+   * `/pauta?aba=semana&conexao=<motivo>`. Lido do endereço uma vez e apagado
+   * dele, para recarregar a página não repetir o aviso.
+   */
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const motivo = q.get('conexao');
+    if (q.get('aba') !== 'semana' && !motivo) return;
+    setAba('Semana');
+    if (motivo) setRetornoDaConexao(motivo.slice(0, 40));
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
 
   const abrirEpisodio = useCallback((id: string) => {
     setEpisodioAberto(id);
@@ -159,7 +175,15 @@ export default function PautaPage() {
         />
       )}
       {ready && aba === 'Semana' && (
-        <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
+        <>
+          <ContaDePublicacao
+            token={token}
+            podeConectar={podePublicar && can('bio.editar')}
+            aviso={retornoDaConexao}
+            onErro={aoErrar}
+          />
+          <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
+        </>
       )}
       {ready && aba === 'Voz' && (
         <AbaVoz token={token} editavel={editavel} podeGastarIa={can('automacoes.executar')} bump={bump} onErro={aoErrar} />

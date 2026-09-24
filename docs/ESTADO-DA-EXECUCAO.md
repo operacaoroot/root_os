@@ -1529,6 +1529,116 @@ não mudaram. Pisos da CI: api 2037/58, web 383/34, com a conta no `ci.yml`.
    `PUBLIC_BIO_ORIGIN`. O `requestTimeout` do Node é de 300 s: subir 300 MB pede cerca de 8 Mbit/s
    de subida do Mac até a VPS.
 
+### Onda D, fatia MD5 — a conta de publicação do Instagram e a Graph v24 (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD5). A conta da própria Root publica
+com Standard Access, sem App Review, desde que o @ tenha papel no app. Esta fatia cria só a
+**conexão**: nada é publicado (isso é a MD6), nenhuma capacidade nova, nenhuma permissão nova.
+
+| Peça | Onde |
+|---|---|
+| `ESCOPOS_DE_PUBLICACAO` = `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments` (comentários já pedidos para a MD9); o `ESCOPOS` da bio **intocado** (só `instagram_business_basic`); `urlDeAutorizacao(estado, cred, finalidade)` | `apps/api/src/bio/plataformas/instagram.ts` |
+| `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL`, `INSTAGRAM_GRAPH_URL` só para dublê (vazias = Meta), lidas a cada chamada | `instagram.ts`; `docker-compose.yml` e `.env.example` |
+| Os escopos concedidos lidos nas formas que a Meta usa (texto ou lista, com ou sem `data[]`); ausentes = `null`, e a publicação não presume nada | `escoposConcedidos` e `trocarCodigo` em `instagram.ts` |
+| Migration `20260924220041_bio_finalidade`: enum `BioFinalidade {bio, publicacao}`, `BioOauthState.finalidade` e `BioConexao.finalidade` (padrão `bio`), índice único parcial `BioConexao_publicacao_unica` (`orgId`, `plataforma`) `WHERE finalidade = 'publicacao'`; espelho `BIO_FINALIDADES` no shared | `apps/api/prisma/`; `packages/shared/src/schemas.ts` |
+| `iniciarConexao(orgId, plataforma, finalidade)` grava a finalidade no state; publicação pelo TikTok recusada (MD12 em espera) | `apps/api/src/bio/bio.service.ts` |
+| Callback no **mesmo** `/api/conectar/instagram/callback`: `publicacao` só com `instagram_business_content_publish` concedido; sem ele, grava `bio` e volta com `publicacao_sem_escopo`. A de publicação reconectada pela bio sem publicar cai para `bio` (`publicacao_perdida`). Um segundo @ de publicação rebaixa o anterior na mesma transação; o índice parcial segura duas autorizações simultâneas. State fora do formato (16–128 base64url) volta como `expirado` sem consulta; cancelar gasta o state. A volta da publicação é `/pauta?aba=semana&conexao=<motivo>` | `bio-oauth.controller.ts`, `bio/finalidade-da-conexao.ts` |
+| `POST /pauta/instagram/conectar` (`pauta.publicar` **e** `bio.editar`) devolve a URL; `GET /pauta/instagram/conexao` (`pauta.ver`) devolve @, escopos, validade, status e se há credencial, nunca o token. Conectar não pergunta ao interruptor (autorizar não sai da casa, como `IntegrationsService.autorizar`) | `apps/api/src/pauta/conta-de-publicacao.controller.ts`, `BioService.contaDePublicacao` |
+| O token de 60 dias da conta de publicação passa a ser renovado pelo sync agendado da bio (antes só a conta de desafio era renovada, e a de publicação morreria em 60 dias) | `BioSyncService.renovarContasDePublicacao` |
+| Graph da trilha do Facebook de `v21.0` para `v24.0` (padrão de `META_GRAPH_URL` e o diálogo do OAuth); o texto que dizia que mudar a redirect exige App Review foi corrigido (sem fonte; o que exige é recadastrar no console) | `apps/api/src/meta/meta.service.ts`, `integrations.controller.ts`, `bio-oauth.controller.ts`, `CLAUDE.md` |
+| Cartão "Conta de publicação" no topo da aba Semana: conectar/reconectar, o @, os escopos, a validade e a frase do App Review; a volta do OAuth abre a Semana com o aviso. Na bio, a conexão de publicação ganha o selo "publicação" | `apps/web/src/app/pauta/ContaDePublicacao.tsx`, `pauta/page.tsx`, `bio/AbaConexoes.tsx` |
+
+**Desvios da especificação, com o porquê:**
+- A renovação do token "já existia" só para conta de desafio (`sincronizarTudo` só varre
+  `BioChallengeAccount`). Sem o laço novo, a conta de publicação morreria em 60 dias.
+- A reconexão pela bio da conta que era de publicação: se a Meta não devolver o escopo de publicar,
+  a conexão cai para `bio` (o token novo não publica). Deixar `publicacao` faria a MD6 falhar na
+  hora do post.
+- O callback continua sem declarar empresa no contexto (a leitura do state é anterior a saber a
+  empresa), e a renovação nova varre as conexões de todas as empresas do mesmo jeito que o sync dos
+  desafios já varria. Sob `TENANT_MODO=impor` a rodada lança e vira aviso; sob `mktos_app` não acha
+  conta nenhuma; nos dois casos o token de publicação morreria no dia 60 sem alarme. Os dois
+  arquivos (`src/bio/bio-sync.service.ts` e `src/bio/bio-oauth.controller.ts`) entraram em
+  `CAMINHOS_DE_PLATAFORMA_EXIGIDOS`: a conferência do arranque passa a recusar a virada do papel
+  restrito enquanto eles não declararem contexto. Hoje a API conecta como dona e só loga o aviso.
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~19h10): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto com `TEST_DATABASE_URL` **2769 de 2769** em 67 arquivos (+27: `bio-oauth` 26,
+novo, 9 deles com banco; `modulos-por-tenant` +1); sem ele, 2181 passados e 588 pulados; web
+**570** em 44 (+6, `component/pauta-conta-de-publicacao` novo); `test:isolamento` **326** (a
+semente de `BioConexao` e `BioOauthState` agora com `finalidade = 'publicacao'`); `db:diff` "No
+difference detected."; `build` + `smoke` OK. Policy e porta não mudaram. Pisos da CI: api 2052/59,
+web 388/35, com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md5`, criado vazio
+com as migrations do zero e o `db:seed`, apagado no fim; dublê HTTP da Meta em `127.0.0.1:4199`
+nas três variáveis; credencial de app fictícia no ambiente):
+1. `POST /api/pauta/instagram/conectar` → URL com
+   `scope=instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments`
+   e a redirect `…/api/conectar/instagram/callback`.
+2. O dublê concede publicar → callback → `302 /pauta?aba=semana&conexao=ok`;
+   `GET /api/pauta/instagram/conexao` mostra `@root.ensaio`, os três escopos, `podePublicar: true`
+   e a validade de 60 dias, sem token.
+3. O dublê nega publicar → `302 /pauta?aba=semana&conexao=publicacao_sem_escopo`; a conexão fica
+   `bio` com `instagram_business_basic`, e a conta de publicação volta a `null`.
+4. `GET /api/bio/connections/instagram/start` → `scope=instagram_business_basic` só; o callback
+   volta em `/bio?conexao=ok` e grava `criador.ensaio` como `bio`.
+5. State malformado → `/bio?conexao=expirado`; nenhum state sobrou no banco; sem sessão, 401.
+
+**Correção da revisão** (três revisores, 24/09/2026 ~19h30):
+- A renovação da conta de publicação deixou de filtrar por `status: 'ok'`. Antes, uma falha de rede
+  ou um 5xx gravava `erro`, a heurística `/oauth|token|401|expired/` marcava `token_expirado` até em
+  limite de taxa (a Graph devolve `OAuthException` com código 4), e a conta saía de todas as rodadas
+  seguintes: o token morria no dia 60. Agora a busca é pela validade (vence em menos de 10 dias e
+  ainda não venceu); só o código 190 da Graph (`tokenRecusadoPelaMeta`) marca `token_expirado`; o
+  resto grava só `ultimoErro`; e a renovação que dá certo volta a `status: 'ok'` e limpa o erro
+  (vale também para a conta de desafio, que passa pelo mesmo `tokenValido`).
+- `GET /pauta/instagram/conexao` responde se há credencial por `BioCredenciaisService.estado`, sem
+  decifrar o segredo nem pegá-lo emprestado do cofre (o empréstimo carimbava `usadoEm` a cada vez que
+  alguém abria a aba Semana).
+- `DELETE /bio/connections/:id` exige `pauta.publicar` quando a conexão é a de publicação, e o audit
+  `bio.conexao_delete` guarda a `finalidade`. Na aba Conexões da bio a lixeira dela some para quem
+  não tem `pauta.publicar`.
+- O state que existe mas venceu (ou é de outra plataforma) é gasto e volta para a tela que o pediu:
+  `/pauta?aba=semana&conexao=expirado` na publicação.
+- `INSTAGRAM_OAUTH_URL`, `INSTAGRAM_TOKEN_URL` e `INSTAGRAM_GRAPH_URL` são lidas por
+  `process.env.X` dentro de `instagram.ts` e entraram no catálogo `CREDENCIAIS` da catraca de
+  arquitetura: ler qualquer uma delas fora do conector reprova a suíte.
+- O texto "mudar a redirect exige App Review" saiu também de `arquitetura.test.ts`,
+  `tenants/modulos.ts` e `tenants/modulos.interceptor.ts`. O parágrafo da aba Semana deixou de dizer
+  que a publicação espera a Meta (D-MC8): ela chega na MD6, e o TikTok está em espera. A mensagem de
+  `publicacao.service.ts` ("exige content_publish com App Review") fica para a MD6, porque a lista
+  "não fazer" proíbe mexer na rota antiga.
+- O caso "outra empresa" do `bio-oauth.test.ts` passou a provar algo: a empresa B conecta o MESMO @
+  para publicar pelo state dela, a conexão fica em B e a conta de publicação de A não muda.
+
+Recusado: reconectar pela bio a conta que era de publicação continua podendo rebaixá-la
+(`publicacao_perdida`). O @ só é conhecido depois do OAuth, e o token novo, sem o escopo de
+publicar, já substituiu o antigo na mesma linha; manter `publicacao` faria a MD6 falhar na hora do
+post. O aviso na volta é o que sobra.
+
+**Medido depois da correção**: `pnpm typecheck` 7/7; `typecheck:test` limpo; api direto com
+`TEST_DATABASE_URL` **2775 de 2775** em 67 arquivos (`bio-oauth` 26 → 32); sem ele, 2184 passados e
+591 pulados; web **571** em 44; `test:isolamento` **326**; `db:diff` "No difference detected.";
+`build` + `smoke` OK. Pisos da CI: api 2054/59, web 389/35.
+
+**Deploy:** uma migration aditiva (enum, duas colunas com padrão `bio`, um índice parcial); nenhuma
+capacidade, permissão ou seed. As três variáveis novas ficam **vazias** em produção.
+
+**Pendências (do Pedro), na ordem:**
+1. No developers.facebook.com, no app de `INSTAGRAM_APP_ID`: conferir que é do tipo **Business** e
+   tem o caso de uso **"API setup with Instagram login"**; ver `instagram_business_content_publish`
+   e `instagram_business_manage_comments` com **Standard Access**, sem pedir Advanced Access.
+2. Ainda no app: conferir que `https://bio.operacaoroot.com/api/conectar/instagram/callback` está
+   nas redirects do Login do Instagram.
+3. App roles › Roles › **Instagram Testers**: adicionar o @ da Root; no Instagram, Configurações ›
+   Apps e sites › Convites de testador › aceitar. Conferir que a conta é **profissional**.
+4. Depois do deploy: aba Semana da Pauta › **Conectar** (ou Reconectar) e aceitar publicar. Se
+   voltar "A Meta não concedeu publicar", refazer os passos 1 e 3.
+5. **A conferir no primeiro OAuth real:** se o corpo do token curto traz `permissions`. Sem ele a
+   conexão fica como da bio (falha fechada) e o aviso aparece: aí é trocar a leitura por outra
+   prova antes da MD6.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -1764,6 +1874,15 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     renderizadas voltam a ser renderizadas uma vez para subir o que falta. O mp4 acima de 10 MB
     **não passa pelo proxy do Next**: o Mac precisa de `ROOT_OS_ENVIO_URL` apontando para a API
     direto.
+
+**Na conexão da bio (onda D)**
+
+27. **MD5: a conta de publicação do Instagram.** Nasce a finalidade da conexão (`bio` ou
+    `publicacao`). Tudo que existe fica `bio` e a bio de um criador continua pedindo só
+    `instagram_business_basic`. Mudanças visíveis: a conexão que era a de publicação, se reconectada
+    pela bio sem o escopo de publicar, deixa de ser de publicação (aviso na volta); o sync agendado
+    da bio passa a renovar também o token da conta de publicação; a Graph da trilha do Facebook
+    (métricas do `MetaService`) passa de `v21.0` para `v24.0` quando `META_GRAPH_URL` está vazia.
 
 ---
 

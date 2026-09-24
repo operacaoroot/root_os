@@ -944,6 +944,15 @@ enum BioPlataforma {
   tiktok
 }
 
+// Para que a conexão foi pedida (MD5). `bio` é a do criador que liga a conta à
+// página de links e ao desafio: pede só a leitura. `publicacao` é a conta da
+// própria empresa que o OS vai usar para publicar, com os escopos de publicar e
+// de comentários. Espelho em `BIO_FINALIDADES` (packages/shared).
+enum BioFinalidade {
+  bio
+  publicacao
+}
+
 // Como os posts chegam. "descoberta" (business_discovery) só existe no Instagram:
 // o TikTok não tem equivalente — lá é conectado ou manual.
 enum BioModoColeta {
@@ -1108,6 +1117,11 @@ model BioConexao {
   refreshCifrado String?
   expiraEm       DateTime?
   escopos        String?
+  /// `publicacao` só quando os escopos concedidos incluem publicar (o callback
+  /// confere). No máximo UMA por empresa e plataforma: índice único parcial
+  /// `BioConexao_publicacao_unica` (migration 20260924220041_bio_finalidade),
+  /// que o Prisma não sabe declarar.
+  finalidade     BioFinalidade  @default(bio)
   status         BioContaStatus @default(ok)
   ultimoErro     String?
   conectadaEm    DateTime       @default(now())
@@ -1142,6 +1156,7 @@ model BioOauthState {
   orgId      String
   org        Org           @relation(fields: [orgId], references: [id])
   plataforma BioPlataforma
+  finalidade BioFinalidade @default(bio)
   verifier   String?
   expiraEm   DateTime
   criadoEm   DateTime      @default(now())

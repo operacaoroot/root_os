@@ -10,7 +10,7 @@
 ## Link na bio (módulo `bio`)
 - Absorvido do root-bio em 01/08/26 (app standalone aposentado, serviço `root_bio` em 0/0; código de referência em `~/dev/root-bio`, commitado, sem deploy). Dados de produção migrados.
 - Superfície pública: `bio.operacaoroot.com` aponta para o `mktos_web`; o middleware reescreve `/@handle` → `/b/handle` e `/r/:id` → `/api/bio/r/:id`. Painel em `/bio`.
-- Callback OAuth em `/api/conectar/:plataforma/callback` — **path travado**: é a redirect URI registrada nos consoles da Meta e do TikTok. Mudar exige novo App Review.
+- Callback OAuth em `/api/conectar/:plataforma/callback` — **path travado**: é a redirect URI registrada nos consoles da Meta e do TikTok. Mudar exige recadastrar nos dois consoles e refazer as conexões (a pesquisa da onda D, 24/09/2026, não achou fonte de que exija App Review novo). Desde a MD5 a conta de **publicação** do Instagram volta pelo mesmo endereço: a finalidade (`bio`/`publicacao`) viaja no `state`, `ESCOPOS_DE_PUBLICACAO` fica fora do `ESCOPOS` da bio, e só vira `publicacao` a conexão em que a Meta concedeu `instagram_business_content_publish` (uma por empresa, índice parcial). Conectar pela aba Semana da Pauta.
 - `ENCRYPTION_KEY` cifra os tokens OAuth; trocar sem re-cifrar torna todos ilegíveis (ver `apps/api/prisma/migrate-bio.ts`).
 - Cada evento da bio também vira `PixelEvent` com o mesmo `eventId`, e os cliques alimentam `GoalWeek.bioClicks` sozinhos (não digitar na tela de Metas).
 - Virada para produção: `docs/DEPLOY_BIO.md`.

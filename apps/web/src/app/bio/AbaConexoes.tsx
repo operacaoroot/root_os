@@ -14,12 +14,15 @@ const PLATAFORMAS = [
 export function AbaConexoes({
   token,
   editavel,
+  podePublicar,
   admin,
   aviso,
   onErro,
 }: {
   token: string | null;
   editavel: boolean;
+  /** `pauta.publicar`: a conta de publicação só sai por quem pode conectá-la. */
+  podePublicar: boolean;
   admin: boolean;
   aviso: string | null;
   onErro: (m: string) => void;
@@ -60,6 +63,7 @@ export function AbaConexoes({
             >
               <span className="text-sm">@{c.handle}</span>
               <Chip>{c.plataforma}</Chip>
+              {c.finalidade === 'publicacao' && <Chip tone="brand">publicação</Chip>}
               <StatusConta status={c.status} />
               {c.expiraEm && (
                 <span className="text-[11px] text-muted">
@@ -69,7 +73,7 @@ export function AbaConexoes({
               <span className="ml-auto text-[11px] text-muted">
                 {c._count.contas} conta(s) no desafio
               </span>
-              {editavel && (
+              {editavel && (c.finalidade !== 'publicacao' || podePublicar) && (
                 <button
                   type="button"
                   title="Desconectar"
@@ -206,6 +210,8 @@ function MensagemDeRetorno({ motivo }: { motivo: string }) {
     expirado: 'O pedido de conexão expirou. Tente de novo.',
     sem_credencial: 'Falta cadastrar a credencial do app dessa plataforma.',
     conta_pessoal: 'Conta pessoal não tem API. Converta para Profissional (Criador ou Empresa) e tente de novo.',
+    publicacao_perdida:
+      'Conta conectada à bio. Ela era a conta de publicação, e esta autorização não inclui publicar: reconecte pela aba Semana da Pauta.',
     erro: 'Não foi possível concluir a conexão.',
   };
   const bom = motivo === 'ok';

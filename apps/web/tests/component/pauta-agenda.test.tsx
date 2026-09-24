@@ -130,7 +130,7 @@ describe('a aba Semana', () => {
     expect(car).toHaveTextContent('Preço do modelo caiu pela metade');
     expect(car).toHaveTextContent('PRECO');
     expect(oDia('Qua 30/09')).toHaveTextContent('fora da grade');
-    expect(screen.getByText(/espera a aprovação da Meta/)).toBeInTheDocument();
+    expect(screen.getByText(/no Instagram chega na MD6, e a do TikTok está em espera/)).toBeInTheDocument();
   });
 
   it('anda de semana em semana e volta para esta', async () => {

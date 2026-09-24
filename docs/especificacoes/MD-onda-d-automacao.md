@@ -479,6 +479,13 @@ proxy durante essa hora. Proxy com limite de corpo pode cortar o upload.
 
 ### MD5 — Conexão de publicação do Instagram (trilha Login do Instagram) e Graph v24
 
+> **Estado (24/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local da Meta e
+> as pendências do Pedro registrados no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 27 da §4).
+> Escolhas além do texto abaixo: o sync da bio passa a renovar o token da conta de publicação (antes
+> só renovava conta de desafio); a de publicação reconectada pela bio sem o escopo de publicar cai
+> para `bio`; um segundo @ de publicação rebaixa o anterior na mesma transação; `permissions`
+> ausente na resposta da Meta não conta como concedido.
+
 **SPEC.**
 
 1. **`apps/api/src/bio/plataformas/instagram.ts`:** constante nova `ESCOPOS_DE_PUBLICACAO =

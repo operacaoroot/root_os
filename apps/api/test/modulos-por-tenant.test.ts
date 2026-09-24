@@ -518,6 +518,15 @@ describe('o gate de módulos (interceptor)', () => {
     expect(erro).toBeInstanceOf(NotFoundException);
   });
 
+  it('a conta de publicação (MD5) é do módulo pauta; o retorno dela é o callback público da bio', async () => {
+    expect(moduloDoCaminho('/api/pauta/instagram/conectar')).toBe('pauta');
+    expect(moduloDoCaminho('/api/pauta/instagram/conexao')).toBe('pauta');
+    await expect(passou('/api/pauta/instagram/conexao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/instagram/conectar', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+    await expect(passou('/api/conectar/instagram/callback', [], null)).resolves.toBe(SEGUIU);
+  });
+
   /*
    * O CONTRÁRIO DA ROTA PÚBLICA: usuário presente e empresa ausente.
    *

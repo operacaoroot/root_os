@@ -48,7 +48,8 @@ export class MetaService implements OnModuleInit {
   private readonly appId = process.env.META_APP_ID ?? '';
   private readonly appSecret = process.env.META_APP_SECRET ?? '';
   private readonly redirectUri = process.env.META_REDIRECT_URI ?? 'http://localhost:4000/api/meta/callback';
-  private readonly graph = (process.env.META_GRAPH_URL ?? 'https://graph.facebook.com/v21.0').replace(/\/$/, '');
+  // v24.0 desde a MD5: a v21.0 sai do ar em 21/01/2027. O diálogo do OAuth (`authUrl`) acompanha.
+  private readonly graph = (process.env.META_GRAPH_URL || 'https://graph.facebook.com/v24.0').replace(/\/$/, '');
   private readonly webBase = process.env.WEB_ORIGIN?.split(',')[0] ?? 'http://localhost:4000';
 
   constructor(
@@ -223,7 +224,7 @@ export class MetaService implements OnModuleInit {
               'O aplicativo da Meta não tem credencial neste processo: o operador precisa ' +
               'definir o par app/segredo no ambiente da API e reiniciá-la. E há uma pegadinha ' +
               'própria deste conector: a URI de retorno do OAuth é REGISTRADA na consola da ' +
-              'Meta — mudá-la exige App Review novo.',
+              'Meta — mudá-la exige cadastrar a nova lá antes do deploy, senão o login falha.',
           };
         }
         return { tipo: 'redirecionar', url: this.authUrl(ctx.orgId) };
@@ -350,7 +351,7 @@ export class MetaService implements OnModuleInit {
       state,
       scope: SCOPES.join(','),
     });
-    return `https://www.facebook.com/v21.0/dialog/oauth?${p}`;
+    return `https://www.facebook.com/v24.0/dialog/oauth?${p}`;
   }
 
   private async g<T = any>(url: string): Promise<T> {

@@ -81,7 +81,8 @@ export function segmentoDaApi(caminho: string): { cru: string; decodificado: str
  *  - `meta` é do módulo `instagram`: a Graph API da Meta serve a tela do
  *    Instagram, e só ela (`/conexoes` usa `integrations`, que é espinha).
  *  - `conectar` é do módulo `bio`: é o callback OAuth de Instagram/TikTok da
- *    bio. O path é travado por App Review (ver CLAUDE.md) e é público.
+ *    bio. O path é travado porque é a redirect cadastrada nos consoles; mudar
+ *    exige recadastrar e refazer as conexões (ver CLAUDE.md). É público.
  *  - `midia-publica` é do módulo `pauta` (MD4): serve o JPEG e o mp4 da peça
  *    por URL assinada de 1 h, para a Graph da Meta baixar. É pública (sem
  *    token de sessão) e, como o gate deixa anônimo passar, o serviço confere

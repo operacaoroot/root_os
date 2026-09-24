@@ -890,7 +890,8 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   const conexaoId = await ins(c, 'BioConexao', {
     id: crypto.randomUUID(), orgId, plataforma: 'instagram', externalId: `ig_${suf}`,
     handle: `@${suf}`, tokenCifrado: `CIFRADO_${suf}`, refreshCifrado: `REFRESH_${suf}`,
-    status: 'ok', atualizadaEm: agora,
+    // MD5: cada empresa com a SUA conta de publicação — o índice parcial é por empresa.
+    status: 'ok', atualizadaEm: agora, finalidade: 'publicacao', escopos: 'instagram_business_basic,instagram_business_content_publish',
   });
   reg('BioConexao', conexaoId);
 
@@ -922,7 +923,7 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }));
 
   reg('BioOauthState', await ins(c, 'BioOauthState', {
-    id: crypto.randomUUID(), estado: `state_${suf}`, orgId, plataforma: 'instagram',
+    id: crypto.randomUUID(), estado: `state_${suf}`, orgId, plataforma: 'instagram', finalidade: 'publicacao',
     verifier: `pkce_${suf}`, expiraEm: new Date(Date.now() + 600_000),
   }));
 
@@ -2175,13 +2176,16 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
     const exigidos = [...CAMINHOS_DE_PLATAFORMA_EXIGIDOS];
     const declarados = [...CHAMADORES_DE_PLATAFORMA];
 
-    it('o que a lista EXIGE cobre os sete caminhos do cabeçalho da migration', () => {
+    it('o que a lista EXIGE cobre os caminhos do cabeçalho da migration e os da bio', () => {
       // A lista de exigidos é o contrato. Encurtá-la é afrouxar a trava sem
       // mexer em nenhuma policy — por isso ela é cobrada aqui, nominalmente.
       expect(exigidos.map((c) => c.arquivo).sort()).toEqual(
         [
           'src/auth/auth.service.ts',
           'src/auth/google-login.service.ts',
+          // MD5: o cron e o callback da bio atravessam empresas sem contexto.
+          'src/bio/bio-oauth.controller.ts',
+          'src/bio/bio-sync.service.ts',
           'src/finance/finance.service.ts',
           'src/health/health.controller.ts',
           'src/integrations/clickup.service.ts',

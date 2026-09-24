@@ -431,8 +431,24 @@ jobs:
       # compartilhar, como as imagens, e fica pronto para o segundo toque).
       # Medido: 564 casos em 43 arquivos. O piso de CASOS sobe 1, para 383; o
       # de ARQUIVOS fica em 34.
-      PISO_CASOS_WEB: '383'
-      PISO_ARQUIVOS_WEB: '34'
+      #
+      # MD5, A CONTA DE PUBLICAÇÃO DO INSTAGRAM (24/09/2026): +6 casos, +1
+      # arquivo — `component/pauta-conta-de-publicacao` (sem conta: "não
+      # conectada", a frase do App Review e Conectar indo à URL da Meta; com
+      # conta: o @, os escopos, a validade em SP e Reconectar; a conta que não
+      # publica e o botão travado sem credencial; sem as duas permissões não há
+      # botão e a recusa vai à caixa de erro; o aviso de publicar não
+      # concedido; a volta do OAuth abre a Semana com o aviso e limpa o
+      # endereço). Medido: 570 casos em 44 arquivos (564 + 6). O piso de
+      # ARQUIVOS sobe 1, para 35; o de CASOS sobe 5 (~15% de folga sobre os 6
+      # novos), para 388.
+      #
+      # MD5, CORREÇÃO DA REVISÃO (24/09/2026): +1 caso no mesmo arquivo — na
+      # bio, a lixeira da conta de publicação só aparece para quem tem
+      # pauta.publicar. Medido: 571 casos em 44 arquivos. O piso de CASOS sobe
+      # 1, para 389; o de ARQUIVOS fica em 35.
+      PISO_CASOS_WEB: '389'
+      PISO_ARQUIVOS_WEB: '35'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1489,8 +1505,39 @@ jobs:
       # casos em 66 arquivos com o banco; sem ele, 2163 passados e 579 pulados.
       # O piso de ARQUIVOS fica em 58; o de CASOS sobe 7 (~15% de folga sobre
       # os 8), para 2037.
-      PISO_CASOS_API: '2037'
-      PISO_ARQUIVOS_API: '58'
+      #
+      # MD5, A CONTA DE PUBLICAÇÃO DO INSTAGRAM (24/09/2026): +27 casos, +1
+      # arquivo. `bio-oauth` (26, novo): sem banco, 17 — a bio segue pedindo só
+      # instagram_business_basic; a publicação pede os três escopos pela MESMA
+      # redirect; o dublê por ambiente e o vazio que vale a Meta; o enum
+      # espelhado e o índice parcial na migration; os concedidos em texto,
+      # lista em data[] e ausentes, e o corpo sem token; as sete combinações
+      # da finalidade; o state malformado; as rotas com as permissões; o TikTok
+      # recusado; o callback que volta sem tocar no banco. COM BANCO, 9,
+      # pulados sem ele (o state com a finalidade; o callback com publicar
+      # grava `publicacao` e volta na Semana; sem o escopo fica `bio` com o
+      # aviso; a bio do criador como antes; outra empresa não lê; o segundo @
+      # troca o primeiro e o índice segura; a de publicação reconectada pela
+      # bio perde publicar; cancelar gasta o state; o sync renova só a de
+      # publicação). `modulos-por-tenant` +1 (as rotas novas são do módulo
+      # pauta). Medido: 2769 casos em 67 arquivos com o banco; sem ele, 2181
+      # passados e 588 pulados (62 + 5 arquivos). O piso de ARQUIVOS sobe 1,
+      # para 59; o de CASOS sobe 15 (~15% de folga sobre os 18 que rodam sem
+      # banco), para 2052.
+      #
+      # MD5, CORREÇÃO DA REVISÃO (24/09/2026): +6 casos em `bio-oauth`, sem
+      # arquivo novo. Sem banco, 3: a tela lê a credencial por `estado`, sem
+      # decifrar nem pegar do cofre; desconectar a conta de publicação exige
+      # pauta.publicar e o audit guarda a finalidade; só o código 190 da Graph
+      # é token morto. COM BANCO, 3 (o state vencido volta na Semana e é
+      # gasto; a renovação que falha por 5xx ou limite de taxa segue nas
+      # rodadas seguintes e a que dá certo limpa o erro; o 190 marca token
+      # vencido e a rodada seguinte ainda recupera). Medido: 2775 casos em 67
+      # arquivos com o banco; sem ele, 2184 passados e 591 pulados. O piso de
+      # ARQUIVOS fica em 59; o de CASOS sobe 2 (~15% de folga sobre os 3 que
+      # rodam sem banco), para 2054.
+      PISO_CASOS_API: '2054'
+      PISO_ARQUIVOS_API: '59'
 
     steps:
       - uses: actions/checkout@v4
