@@ -472,6 +472,11 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     expect(t.itens_.find((i) => i.temaId === 'negocio')?.status).toBe('confirmado');
   });
 
+  it('editar o trilho não vincula empresa: só o provisionamento grava empresaId', async () => {
+    const t = await naRoot(() => trilhos.atualizar(rootId, trilhoId, { empresaId: rootId } as never, quem));
+    expect(t.empresaId).toBeNull();
+  });
+
   it('a empresa do cliente é provisionada e a memória dela recebe as notas com chave estável e procedência', async () => {
     const t = await naPlataforma(() => trilhos.provisionarEmpresa(rootId, trilhoId, operador));
     expect(t.empresaId).toBeTruthy();

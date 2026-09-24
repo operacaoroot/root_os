@@ -92,7 +92,8 @@ const PatchSchema = NovoTrilhoSchema.partial().extend({
   kickoffEm: DataOuVazio,
   imersaoEm: DataOuVazio,
   grupoJid: z.string().trim().max(80).nullish(),
-  empresaId: z.string().trim().max(80).nullish(),
+  // Sem `empresaId`: só `provisionarEmpresa` vincula a empresa do cliente.
+  // Aceitá-lo aqui deixava `carregarMemoria` gravar na memória de qualquer org.
   proximoPasso: z.string().trim().max(500).nullish(),
   proximoPassoDono: TextoCurto,
   proximoPassoEm: DataOuVazio,
