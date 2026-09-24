@@ -57,6 +57,7 @@ import {
 } from './perfil-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { umaPorVez } from './uma-por-vez';
+import { buscarPaginaPublica } from './pagina-publica';
 
 const EMBED_MODEL = 'text-embedding-3-small';
 // Teto de itens por página. `total` na resposta é a contagem REAL do filtro (não o
@@ -288,7 +289,7 @@ export class PautaService implements OnModuleInit {
     }
 
     // web: fetch simples + limpeza de tags. Suficiente para artigo/newsletter.
-    const res = await fetch(c.url, {
+    const res = await buscarPaginaPublica(c.url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MarketingOS/1.0)' },
       signal: AbortSignal.timeout(20_000),
     });
