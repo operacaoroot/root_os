@@ -308,6 +308,28 @@ export interface OrdemDoKickoff {
   extras: string[];
 }
 
+export type EstadoDoNo = 'pronta' | 'rascunho' | 'vazia' | 'conversa' | 'indice';
+
+export interface NoDaTeia {
+  id: string;
+  tipo: 'tema' | 'conversa' | 'indice';
+  titulo: string;
+  pasta: string;
+  estado: EstadoDoNo;
+  bloco: string | null;
+  temaId: string | null;
+  minuto: string | null;
+  corpo: string | null;
+  ligacoes: string[];
+}
+
+export interface TeiaDoCliente {
+  pasta: string;
+  nos: NoDaTeia[];
+  arestas: { de: string; para: string }[];
+  contagem: { prontas: number; rascunhos: number; vazias: number; daConversa: number };
+}
+
 export interface EstadoDoLink {
   cliente: string;
   contatoNome: string | null;
@@ -319,6 +341,7 @@ export interface EstadoDoLink {
   itens: ItemDoLink[];
   mapa: MapaDoCliente;
   ordem: OrdemDoKickoff;
+  teia: TeiaDoCliente;
   progresso: { confirmados: number; respondidos: number; total: number; obrigatoriosFaltando: string[] };
 }
 
