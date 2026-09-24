@@ -2922,6 +2922,10 @@ export interface PautaPecaDaSemana {
   avisos: string[];
   /** A transcrição mudou depois desta peça (mídia refeita): o corte pode não bater mais. */
   transcricaoMudou: boolean;
+  /** O slot da semana (MC16), em ISO; nulo fora da agenda. */
+  agendadaPara?: string | null;
+  /** Postada (à mão, MC16, ou pela MC17): quando, e o endereço público se houver. */
+  postada?: PautaPostagemDaPeca | null;
 }
 
 export interface PautaMateriaDaSemana {
@@ -2952,6 +2956,490 @@ export interface PautaSemanaDePosts {
 export interface PautaSemanaGerada extends PautaSemanaDePosts {
   /** Quantas peças saíram novas, quantas substituíram um rascunho e quantas ficaram (aprovada/publicada). */
   conta: { criadas: number; substituidas: number; mantidas: number; falharam: number };
+  avisos: string[];
+}
+
+// ---------- Pauta: o calendário da semana e a postagem com um toque (MC16) ----------
+// As peças APROVADAS da semana de posts ganham um slot (`PautaPeca.agendadaPara`)
+// numa grade por empresa — nota da memória `pauta.semana.grade`, lida no fuso
+// de São Paulo — e cada slot entrega a legenda e a mídia para postar À MÃO.
+// Postar pelo OS no Instagram/TikTok é a MC17 (D-MC8). "Marcar como postada" é
+// registro interno: status `publicada`, `publicadaEm`/`publicadaPor`, a URL
+// pública opcional em `urlPublicada` e `externalId` nulo (o id na rede é da MC17).
+
+export const PAUTA_FUSO_DA_AGENDA = 'America/Sao_Paulo';
+
+/** A grade da empresa é uma nota da memória (caminho da ADR-011), com esta chave. */
+export const PAUTA_CHAVE_DA_GRADE = 'pauta.semana.grade';
+
+/** Quantos dias o distribuir procura slot livre; o reagendar aceita até o teto. */
+export const PAUTA_HORIZONTE_DA_AGENDA_DIAS = 28;
+export const PAUTA_TETO_DO_REAGENDAR_DIAS = 90;
+/** O "a partir de" do distribuir vai até aqui: somado ao horizonte, não passa do teto do reagendar. */
+export const PAUTA_TETO_DO_A_PARTIR_DE_DIAS = PAUTA_TETO_DO_REAGENDAR_DIAS - PAUTA_HORIZONTE_DA_AGENDA_DIAS;
+
+export const PAUTA_DIAS_DA_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const;
+export type PautaDiaDaSemana = (typeof PAUTA_DIAS_DA_SEMANA)[number];
+export const PAUTA_DIA_DA_SEMANA_ROTULO: Record<PautaDiaDaSemana, string> = {
+  dom: 'Dom',
+  seg: 'Seg',
+  ter: 'Ter',
+  qua: 'Qua',
+  qui: 'Qui',
+  sex: 'Sex',
+  sab: 'Sáb',
+};
+
+const DIA_CIVIL_RE = /^\d{4}-\d{2}-\d{2}$/;
+const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+interface PartesNoFuso {
+  dia: string;
+  hora: string;
+  diaDaSemana: PautaDiaDaSemana;
+}
+
+const formatadores = new Map<string, Intl.DateTimeFormat>();
+function formatador(fuso: string): Intl.DateTimeFormat {
+  let f = formatadores.get(fuso);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: fuso,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    formatadores.set(fuso, f);
+  }
+  return f;
+}
+
+/** O dia civil e a hora de parede de um instante no fuso. */
+export function partesNoFuso(instante: Date, fuso: string = PAUTA_FUSO_DA_AGENDA): PartesNoFuso {
+  const p = Object.fromEntries(formatador(fuso).formatToParts(instante).map((x) => [x.type, x.value]));
+  const dia = `${p.year}-${p.month}-${p.day}`;
+  return { dia, hora: `${p.hour}:${p.minute}`, diaDaSemana: diaDaSemanaDe(dia) };
+}
+
+export const diaNoFuso = (instante: Date, fuso: string = PAUTA_FUSO_DA_AGENDA) => partesNoFuso(instante, fuso).dia;
+export const horaNoFuso = (instante: Date, fuso: string = PAUTA_FUSO_DA_AGENDA) => partesNoFuso(instante, fuso).hora;
+
+/** O dia da semana de um dia civil `AAAA-MM-DD` (o calendário não depende de fuso). */
+export function diaDaSemanaDe(dia: string): PautaDiaDaSemana {
+  const [a, m, d] = dia.split('-').map(Number);
+  return PAUTA_DIAS_DA_SEMANA[new Date(Date.UTC(a, m - 1, d)).getUTCDay()];
+}
+
+export function somarDias(dia: string, n: number): string {
+  const [a, m, d] = dia.split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** A segunda-feira da semana do dia (a semana da agenda vai de segunda a domingo). */
+export function segundaDaSemana(dia: string): string {
+  const i = PAUTA_DIAS_DA_SEMANA.indexOf(diaDaSemanaDe(dia));
+  return somarDias(dia, -((i + 6) % 7));
+}
+
+/**
+ * O instante em que o relógio de parede do fuso marca `hora` no `dia`, como o
+ * "compatible" do Temporal: na hora repetida (fim do horário de verão) vale a
+ * primeira; na hora que não existe (início), empurra para depois pelo tamanho
+ * do salto — 00:30 no dia em que 00:00 vira 01:00 é 01:30, nunca o dia anterior.
+ * São Paulo não tem horário de verão desde 2019, mas o tzdata pode mudar.
+ */
+export function instanteNoFuso(dia: string, hora: string, fuso: string = PAUTA_FUSO_DA_AGENDA): Date {
+  const [a, m, d] = dia.split('-').map(Number);
+  const [h, mi] = hora.split(':').map(Number);
+  const comoUtc = Date.UTC(a, m - 1, d, h, mi);
+  const desvio = (t: number) => {
+    const p = partesNoFuso(new Date(t), fuso);
+    const [pa, pm, pd] = p.dia.split('-').map(Number);
+    const [ph, pmi] = p.hora.split(':').map(Number);
+    return Date.UTC(pa, pm - 1, pd, ph, pmi) - t;
+  };
+  // As viradas de um fuso ficam a meses uma da outra: o desvio da véspera e o do
+  // dia seguinte são os únicos candidatos.
+  const UM_DIA = 24 * 3600_000;
+  const candidatos = [...new Set([desvio(comoUtc - UM_DIA), desvio(comoUtc + UM_DIA)])].map((o) => comoUtc - o);
+  const validos = candidatos.filter((t) => t + desvio(t) === comoUtc);
+  return new Date(validos.length ? Math.min(...validos) : Math.max(...candidatos));
+}
+
+/** Domingo de Páscoa (algoritmo gregoriano anônimo), `AAAA-MM-DD`. */
+export function pascoa(ano: number): string {
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+/**
+ * Os feriados nacionais do ano (leis 662/1949, 6.802/1980 e 14.759/2023) mais
+ * Carnaval e Corpus Christi, pontos facultativos em que a agenda também não
+ * posta. Feriado local entra pela grade da empresa (`feriados:`).
+ */
+export function feriadosDoAno(ano: number): Array<{ dia: string; nome: string }> {
+  const p = pascoa(ano);
+  const fixos: Array<[string, string]> = [
+    ['01-01', 'Confraternização Universal'],
+    ['04-21', 'Tiradentes'],
+    ['05-01', 'Dia do Trabalho'],
+    ['09-07', 'Independência'],
+    ['10-12', 'Nossa Senhora Aparecida'],
+    ['11-02', 'Finados'],
+    ['11-15', 'Proclamação da República'],
+    ['11-20', 'Consciência Negra'],
+    ['12-25', 'Natal'],
+  ];
+  return [
+    ...fixos.map(([md, nome]) => ({ dia: `${ano}-${md}`, nome })),
+    { dia: somarDias(p, -48), nome: 'Carnaval' },
+    { dia: somarDias(p, -47), nome: 'Carnaval' },
+    { dia: somarDias(p, -2), nome: 'Sexta-feira Santa' },
+    { dia: somarDias(p, 60), nome: 'Corpus Christi' },
+  ].sort((x, y) => x.dia.localeCompare(y.dia));
+}
+
+/** O nome do feriado do dia (nacional ou da grade da empresa), ou nulo. */
+export function feriadoDoDia(dia: string, extras: readonly string[] = []): string | null {
+  if (extras.includes(dia)) return 'Feriado da empresa';
+  return feriadosDoAno(Number(dia.slice(0, 4))).find((f) => f.dia === dia)?.nome ?? null;
+}
+
+export interface PautaSlotDaGrade {
+  formato: PautaFormatoDaSemana;
+  dia: PautaDiaDaSemana;
+  /** `HH:MM`, relógio de São Paulo. */
+  hora: string;
+}
+
+export interface PautaGradeDaSemana {
+  slots: PautaSlotDaGrade[];
+  /** Feriados da empresa, `AAAA-MM-DD` (os nacionais já são pulados). */
+  feriados: string[];
+}
+
+/** O padrão: carrossel seg/qua/sex 12h, corte ter/qui 18h, story todo dia útil 9h. */
+export const PAUTA_GRADE_PADRAO: PautaGradeDaSemana = {
+  slots: [
+    ...(['seg', 'ter', 'qua', 'qui', 'sex'] as const).map((dia) => ({ formato: 'story' as const, dia, hora: '09:00' })),
+    ...(['seg', 'qua', 'sex'] as const).map((dia) => ({ formato: 'carrossel' as const, dia, hora: '12:00' })),
+    ...(['ter', 'qui'] as const).map((dia) => ({ formato: 'corte' as const, dia, hora: '18:00' })),
+  ],
+  feriados: [],
+};
+
+export const PAUTA_TETO_DE_SLOTS_DA_GRADE = 70;
+export const PAUTA_TETO_DO_TEXTO_DA_GRADE = 2_000;
+
+const ORDEM_DO_DIA: Record<PautaDiaDaSemana, number> = { seg: 0, ter: 1, qua: 2, qui: 3, sex: 4, sab: 5, dom: 6 };
+
+function ordenarSlots(slots: PautaSlotDaGrade[]): PautaSlotDaGrade[] {
+  const f = (x: PautaFormatoDaSemana) => PAUTA_FORMATOS_DA_SEMANA.indexOf(x);
+  return [...slots].sort((a, b) => ORDEM_DO_DIA[a.dia] - ORDEM_DO_DIA[b.dia] || a.hora.localeCompare(b.hora) || f(a.formato) - f(b.formato));
+}
+
+function diaDoTexto(t: string): PautaDiaDaSemana | null {
+  const limpo = t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().slice(0, 3);
+  return (PAUTA_DIAS_DA_SEMANA as readonly string[]).includes(limpo) ? (limpo as PautaDiaDaSemana) : null;
+}
+
+function horaDoTexto(t: string): string | null {
+  const m = /^(\d{1,2})(?::(\d{2})|h(\d{2})?)$/i.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2] ?? m[3] ?? 0);
+  if (h > 23 || mi > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+}
+
+function diaCivilDoTexto(t: string): string | null {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  const [a, m, d] = iso ? [iso[1], iso[2], iso[3]] : br ? [br[3], br[2], br[1]] : [];
+  if (!a) return null;
+  const dia = `${a}-${m}-${d}`;
+  return somarDias(dia, 0) === dia ? dia : null;
+}
+
+/**
+ * Lê a grade do texto da nota. Uma linha por formato — `carrossel: seg, qua,
+ * sex 12:00`, `story: dias úteis 9h`, `corte: ter-qui 18h` — e `feriados:
+ * 20/11/2026, 2026-12-24`. `#` comenta. Linha que não fecha vira aviso e fica
+ * de fora; o que não é da grade não é inventado.
+ */
+export function lerGradeDoTexto(texto: string): { grade: PautaGradeDaSemana; avisos: string[] } {
+  const slots: PautaSlotDaGrade[] = [];
+  const feriados: string[] = [];
+  const avisos: string[] = [];
+  const linhas = String(texto ?? '').split(/\r?\n/);
+  linhas.forEach((bruta, i) => {
+    const linha = bruta.replace(/#.*$/, '').trim();
+    if (!linha) return;
+    // Corta no primeiro ':' (linear): uma regex com quantificador preguiçoso aqui
+    // é quadrática numa linha longa sem ':'.
+    const doisPontos = linha.indexOf(':');
+    const rotulo = doisPontos < 0 ? '' : linha.slice(0, doisPontos).trim();
+    const onde = `Linha ${i + 1}`;
+    if (!rotulo || !/^[a-zà-ú ]+$/i.test(rotulo)) {
+      avisos.push(`${onde}: esperava "formato: dias hora" (ex.: carrossel: seg, qua, sex 12:00).`);
+      return;
+    }
+    const chave = rotulo.toLowerCase();
+    const resto = linha.slice(doisPontos + 1).trim();
+    if (chave === 'feriados' || chave === 'feriado') {
+      for (const t of resto.split(/[\s,;]+/).filter(Boolean)) {
+        const d = diaCivilDoTexto(t);
+        if (d) feriados.push(d);
+        else avisos.push(`${onde}: "${t}" não é uma data (use 20/11/2026 ou 2026-11-20).`);
+      }
+      return;
+    }
+    const formato = chave === 'corte vertical' ? 'corte' : chave === 'stories' ? 'story' : chave === 'carrosseis' || chave === 'carrosséis' ? 'carrossel' : chave;
+    if (!(PAUTA_FORMATOS_DA_SEMANA as readonly string[]).includes(formato)) {
+      avisos.push(`${onde}: "${rotulo}" não é formato da semana (carrossel, story ou corte).`);
+      return;
+    }
+    const expandido = resto
+      .toLowerCase()
+      .replace(/todo dia [uú]til|todos os dias [uú]teis|dias [uú]teis/g, 'seg-sex')
+      .replace(/todos os dias|todo dia/g, 'dom-sab');
+    const dias = new Set<PautaDiaDaSemana>();
+    const horas = new Set<string>();
+    let ruim: string | null = null;
+    for (const t of expandido.split(/[\s,;]+/).filter((x) => x && x !== 'e' && x !== 'às' && x !== 'as')) {
+      const faixa = /^([a-zà-ú]+)-([a-zà-ú]+)$/i.exec(t);
+      if (faixa) {
+        const de = diaDoTexto(faixa[1]);
+        const ate = diaDoTexto(faixa[2]);
+        if (!de || !ate) {
+          ruim = t;
+          break;
+        }
+        for (let k = PAUTA_DIAS_DA_SEMANA.indexOf(de); ; k = (k + 1) % 7) {
+          dias.add(PAUTA_DIAS_DA_SEMANA[k]);
+          if (PAUTA_DIAS_DA_SEMANA[k] === ate) break;
+        }
+        continue;
+      }
+      const dia = diaDoTexto(t);
+      if (dia && t.length <= 7) {
+        dias.add(dia);
+        continue;
+      }
+      const hora = horaDoTexto(t);
+      if (hora) {
+        horas.add(hora);
+        continue;
+      }
+      ruim = t;
+      break;
+    }
+    if (ruim) avisos.push(`${onde}: não entendi "${ruim}".`);
+    else if (!dias.size) avisos.push(`${onde}: faltam os dias (ex.: seg, qua, sex ou dias úteis).`);
+    else if (!horas.size) avisos.push(`${onde}: falta a hora (ex.: 12:00 ou 12h).`);
+    else for (const dia of dias) for (const hora of horas) slots.push({ formato: formato as PautaFormatoDaSemana, dia, hora });
+  });
+  const vistos = new Set<string>();
+  const unicos = slots.filter((s) => {
+    const k = `${s.formato}|${s.dia}|${s.hora}`;
+    if (vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
+  if (unicos.length > PAUTA_TETO_DE_SLOTS_DA_GRADE) {
+    avisos.push(`A grade tem ${unicos.length} slots; o teto é ${PAUTA_TETO_DE_SLOTS_DA_GRADE} por semana.`);
+  }
+  return {
+    grade: { slots: ordenarSlots(unicos.slice(0, PAUTA_TETO_DE_SLOTS_DA_GRADE)), feriados: [...new Set(feriados)].sort() },
+    avisos,
+  };
+}
+
+/** A grade escrita como a nota guarda (e como a tela edita). */
+export function textoDaGrade(grade: PautaGradeDaSemana): string {
+  const linhas = ['# Grade da semana de posts (MC16) · horário de São Paulo'];
+  for (const formato of PAUTA_FORMATOS_DA_SEMANA) {
+    const porHora = new Map<string, PautaDiaDaSemana[]>();
+    for (const s of ordenarSlots(grade.slots.filter((x) => x.formato === formato))) {
+      porHora.set(s.hora, [...(porHora.get(s.hora) ?? []), s.dia]);
+    }
+    for (const [hora, dias] of [...porHora].sort(([a], [b]) => a.localeCompare(b))) {
+      linhas.push(`${formato}: ${dias.join(', ')} ${hora}`);
+    }
+  }
+  if (grade.feriados.length) {
+    linhas.push(`feriados: ${grade.feriados.map((d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`).join(', ')}`);
+  }
+  return `${linhas.join('\n')}\n`;
+}
+
+export const PautaGradeSalvarSchema = z
+  .object({
+    texto: z.string().max(PAUTA_TETO_DO_TEXTO_DA_GRADE),
+    /** A versão da nota de quando a tela abriu o editor: outra aba no meio = 409. */
+    versao: z.number().int().positive().optional(),
+  })
+  .strict();
+export type PautaGradeSalvarInput = z.infer<typeof PautaGradeSalvarSchema>;
+
+/** Um dia civil `AAAA-MM-DD` que existe, entre 2000 e 2100 (a conta de fuso não passa do ano 9999). */
+export const PautaDiaCivilSchema = z
+  .string()
+  .regex(DIA_CIVIL_RE, 'A data é AAAA-MM-DD.')
+  .refine((d) => somarDias(d, 0) === d, 'Essa data não existe.')
+  .refine((d) => d >= '2000-01-01' && d <= '2100-12-31', 'A data vai de 2000 a 2100.');
+
+export const PautaDistribuirSchema = z
+  .object({
+    /**
+     * O primeiro dia (São Paulo) em que pode haver slot; ausente = agora. Dia
+     * passado vale como agora; além de `PAUTA_TETO_DO_A_PARTIR_DE_DIAS` é 400
+     * no serviço (depende de hoje).
+     */
+    aPartirDe: PautaDiaCivilSchema.optional(),
+  })
+  .strict();
+export type PautaDistribuirInput = z.infer<typeof PautaDistribuirSchema>;
+
+export const PautaReagendarSchema = z
+  .object({
+    /** O instante novo (ISO com fuso), ou nulo para tirar a peça da agenda. */
+    agendadaPara: z.string().datetime({ offset: true, message: 'A data e a hora vão em ISO (2026-09-29T12:00:00-03:00).' }).nullable(),
+  })
+  .strict();
+export type PautaReagendarInput = z.infer<typeof PautaReagendarSchema>;
+
+export const PautaMarcarPostadaSchema = z
+  .object({
+    /** O link público do post (opcional): só https, sem espaço. */
+    url: z
+      .string()
+      .trim()
+      .max(500)
+      .url('O link do post é um endereço completo (https://…).')
+      .regex(/^https:\/\/[^\s]+$/i, 'O link do post começa com https://.')
+      .optional(),
+  })
+  .strict();
+export type PautaMarcarPostadaInput = z.infer<typeof PautaMarcarPostadaSchema>;
+
+/** Distribuir e reagendar: da Derivação em diante, enquanto a semana está viva. */
+export const PAUTA_STATUS_QUE_AGENDAM = ['derivacao', 'agendado'] as const satisfies readonly PautaEpisodioStatus[];
+
+export function motivoParaNaoAgendar(status: PautaEpisodioStatus): string | null {
+  return (PAUTA_STATUS_QUE_AGENDAM as readonly string[]).includes(status)
+    ? null
+    : `A agenda da semana vale na Derivação e no Agendado (este episódio está em ${PAUTA_EPISODIO_STATUS_ROTULO[status]}).`;
+}
+
+export interface PautaPostagemDaPeca {
+  em: string;
+  /** Postada à mão pelo operador (MC16) ou pela publicação automática (MC17). */
+  manual: boolean;
+  url: string | null;
+}
+
+/**
+ * Onde está a mídia para postar: no storage da casa (baixar) ou no Mac (o
+ * caminho). `parcial` é o PNG que subiu pela metade (o carrossel de 7 com 3 no
+ * storage): não se posta, e o comando completa.
+ */
+export type PautaMidiaNaAgenda =
+  | { onde: 'storage'; imagens: number[]; esperadas: number }
+  | { onde: 'parcial'; imagens: number[]; esperadas: number; faltam: number[]; comando: string }
+  | { onde: 'mac'; arquivo: string }
+  | { onde: 'nenhuma'; comando: string };
+
+export interface PautaPecaNaAgenda {
+  id: string;
+  formato: PautaFormatoDaSemana;
+  status: PautaPecaStatus;
+  titulo: string;
+  /** O que se cola no post: a legenda (carrossel e corte) ou o texto (story). */
+  legenda: string;
+  palavraChave: string | null;
+  episodioId: string;
+  apelido: string;
+  itemN: number;
+  materia: string;
+  /** `agendadaPara`, ou — postada sem slot — quando foi postada. */
+  em: string;
+  agendadaPara: string | null;
+  midia: PautaMidiaNaAgenda;
+  postada: PautaPostagemDaPeca | null;
+  /** Por que o episódio não deixa reagendar agora (fora da Derivação/Agendado), ou nulo. */
+  motivoParaNaoAgendar: string | null;
+}
+
+export interface PautaLinhaDoDia {
+  /** `HH:MM`, São Paulo. */
+  hora: string;
+  formato: PautaFormatoDaSemana;
+  em: string;
+  /** É um slot da grade (vazio ou não), ou uma peça posta à mão fora da grade. */
+  daGrade: boolean;
+  peca: PautaPecaNaAgenda | null;
+}
+
+export interface PautaDiaDaAgenda {
+  dia: string;
+  diaDaSemana: PautaDiaDaSemana;
+  feriado: string | null;
+  linhas: PautaLinhaDoDia[];
+}
+
+export interface PautaEpisodioParaDistribuir {
+  episodioId: string;
+  apelido: string;
+  titulo: string;
+  status: PautaEpisodioStatus;
+  aprovadasSemData: number;
+  motivo: string | null;
+}
+
+/** `GET /pauta/agenda?de=AAAA-MM-DD`: sete dias a partir de `de`. */
+export interface PautaAgendaDaSemana {
+  de: string;
+  ate: string;
+  fuso: string;
+  hoje: string;
+  grade: PautaGradeDaSemana;
+  origemDaGrade: 'empresa' | 'padrao';
+  dias: PautaDiaDaAgenda[];
+  /** Episódios com peça aprovada ainda sem slot: o "Distribuir". */
+  paraDistribuir: PautaEpisodioParaDistribuir[];
+}
+
+/** `GET /pauta/agenda/grade` e o retorno do PUT. */
+export interface PautaGradePainel {
+  grade: PautaGradeDaSemana;
+  texto: string;
+  origem: 'empresa' | 'padrao';
+  /** A versão da nota (para o PUT conferir), nula no padrão. */
+  versao: number | null;
+  avisos: string[];
+}
+
+/** `POST /pauta/episodios/:id/agenda/distribuir`. */
+export interface PautaDistribuicao {
+  conta: { alocadas: number; jaAgendadas: number; semVaga: number };
+  pecas: Array<{ id: string; formato: PautaFormatoDaSemana; itemN: number; em: string }>;
   avisos: string[];
 }
 

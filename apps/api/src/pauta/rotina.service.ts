@@ -313,11 +313,14 @@ export class RotinaService {
         ...(patch.titulo !== undefined ? { titulo: patch.titulo.slice(0, 200) } : {}),
         ...(patch.corpo !== undefined ? { corpo: patch.corpo } : {}),
         ...(patch.status ? { status: patch.status as 'rascunho' | 'aprovada' | 'descartada' } : {}),
+        // O slot da semana (MC16) é da peça aprovada: saindo dela, sai da agenda.
+        ...(patch.status && patch.status !== 'aprovada' ? { agendadaPara: null } : {}),
       },
     });
     await this.audit.log({
       orgId, actorId, action: 'pauta.peca_editada', entityType: 'pauta_peca', entityId: id,
-      before: { status: p.status }, after: { status: atualizada.status },
+      before: { status: p.status, ...(p.agendadaPara ? { agendadaPara: p.agendadaPara.toISOString() } : {}) },
+      after: { status: atualizada.status, ...(p.agendadaPara && !atualizada.agendadaPara ? { saiuDaAgenda: true } : {}) },
     });
     return { ok: true, status: atualizada.status };
   }

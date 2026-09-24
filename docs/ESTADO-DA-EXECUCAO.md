@@ -709,6 +709,99 @@ fim.
    PalmierPro não entrou no corte vertical (ffmpeg direto, reproduzível e testável).
 4. **O que publica** continua fora: Instagram/TikTok são MC17/D-MC8, o agendamento é MC16.
 
+
+### Fatia MC16 — o calendário da semana e a postagem com um toque (24/09/2026)
+
+As peças aprovadas da semana de posts se distribuem nos slots da grade e cada slot fica pronto para
+postar à mão. **Uma migration** (duas colunas numa tabela que já tem RLS), sem tabela, enum,
+permissão, capacidade nem variável nova. Revisada por três lentes antes do commit (ver "A revisão"
+no fim desta seção).
+
+- **Banco:** `20260924090000_pauta_peca_agenda` — `PautaPeca.agendadaPara` (+ índice `(orgId,
+  agendadaPara)`) e `urlPublicada`. **Decisão registrada:** "postada à mão" reaproveita `status
+  publicada`, `publicadaEm` e `publicadaPor`, com `externalId` nulo; o id na rede fica para a MC17,
+  que preenche o mesmo `urlPublicada`.
+- **Grade:** nota da memória `pauta.semana.grade` (o padrão mais próximo do que o repo já faz para
+  configuração por empresa: voz, palavra de corte, links da casa), escrita só pelo `MemoriaService`.
+  Padrão sem nota: carrossel seg/qua/sex 12h, corte ter/qui 18h, story seg–sex 9h, São Paulo.
+  Feriados nacionais (com os da Páscoa, Carnaval e Corpus Christi) e os da empresa não abrem slot.
+- **API:** `AgendaService`/`AgendaController` (`pauta/agenda*.ts`) — `GET /pauta/agenda`, `GET|PUT
+  /pauta/agenda/grade`, `POST /pauta/episodios/:id/agenda/distribuir`, `PUT /pauta/pecas/:id/agenda`
+  e `POST /pauta/pecas/:id/postada` (`pauta.publicar`; registro interno, nada sai do OS). O
+  `distribuir` é função pura. A peça que sai de `aprovada` (PATCH de status, edição do texto) sai da
+  agenda. Distribuir **não** muda o status do episódio.
+- **Tela:** aba "Semana" em `/pauta` (`AbaSemana.tsx`); a "Semana de posts" do episódio mostra o slot
+  ou a postagem da peça. **Mac:** `root-midia agenda [--de]`, só leitura.
+
+**Medido** (Mac, `marketing_os_test` no `mktos-mc-db`, 24/09/2026 ~04h50):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck` / `pnpm --filter @mktos/api typecheck:test` | limpos |
+| `pnpm --filter @mktos/api test` com `TEST_DATABASE_URL` | **2563 de 2563** em 64 arquivos (+48: `pauta-agenda` 46, `root-midia` +2) |
+| a mesma suíte sem banco | 1991 passados / 572 pulados |
+| `pnpm --filter @mktos/web test` | **540** em 41 arquivos (+18: `pauta-agenda` 17, `pauta-semana` +1) |
+| `pnpm --filter @mktos/policy test` / `test:porta` | 74 / 39 (iguais) |
+| `test:isolamento` com `TENANT_DATABASE_URL` (`mktos_app`/`ci`) | 326 (igual: nenhuma tabela nova) |
+| `db:deploy` + `db:diff` | aplicou; "No difference detected" |
+| `build` + `smoke` (com `SMOKE_ROTAS` de `/pauta/agenda` e `/pauta/agenda/grade`) | **SMOKE OK** |
+
+Pisos da CI: api 1901/56, web 361/32, com a conta no `ci.yml`.
+
+**Ensaio local.** API compilada contra `marketing_os_e2e` (migration aplicada lá), conta do seed com
+senha descartável, um episódio em Derivação com 2 matérias e 6 peças inseridas (5 aprovadas, 1
+rascunho; carrossel com PNG no storage, corte com mp4 no Mac). `POST …/agenda/distribuir
+{aPartirDe: 2026-09-28}` → 5 alocadas: carrosséis seg e qua 12h, stories seg e ter 9h, corte ter
+18h. Reagendar o carrossel 2 para qui 12h30 → fora da grade; o carrossel 1 no mesmo minuto → 409; o
+passado → 400; sem fuso → 400. Marcar o corte postado com o link → publicada à mão; o rascunho → 400;
+`http://` → 400. Grade: `reels:` → 400 com a linha; a boa gravou a nota versão 1 pelo
+`MemoriaService` e o feriado da empresa (02/10) sumiu com os slots da sexta. RASTRO com
+`pauta.semana_distribuida`, `…_reagendada`, `…_postada` e `pauta.agenda_grade`. `root-midia agenda
+--de 2026-09-28` pelo login normal listou os slots com o caminho do mp4. Com o `next dev` contra
+essa API, a aba Semana a **375×812** (agent-browser, sessão com o token injetado): `scrollWidth`
+375, nenhum elemento passando da borda, as 5 peças com copiar/baixar/reagendar/marcar postada.
+Rodada, episódio e peças do ensaio apagados no fim (a nota da grade e o RASTRO ficaram no banco
+descartável).
+
+**O que não rodou / fica com o Pedro:**
+
+1. **Arrastar e soltar** ficou de fora (opcional no pedido): reagendar é pelo seletor de dia e hora,
+   que funciona no celular.
+2. **Baixar mídia contra um MinIO de verdade** — o ambiente não tem `S3_*`; a rota é a de prévia do
+   MC15 (`GET /pauta/pecas/:id/imagens/:n`), já coberta pelos testes com storage dublê.
+3. **Decisões:** a grade padrão (horários e dias) é sugestão — confirmar com o Pedro; Carnaval e
+   Corpus Christi (pontos facultativos) entram como dia sem slot; o episódio não vai sozinho para
+   Agendado ao distribuir (lá o texto trava) — se a Root quiser o contrário, é uma linha.
+4. **O que publica** segue fora: postar no Instagram/TikTok pelo OS é a MC17 (D-MC8, App Review da
+   Meta). Os PNG de um carrossel baixam um a um (não há zip; dependência nova é decisão humana).
+5. **Agendar à mão a peça sem data** (escolher o horário de uma aprovada que ainda não tem slot) não
+   tem tela: ela volta pelo Distribuir, e depois se move com Reagendar. O aviso do "sem vaga" aponta
+   esse caminho, não um que não existe.
+
+**A revisão (três lentes: correção, regras, contrato).** O que mudou por causa dela:
+
+- **Carrossel pela metade** deixava de avisar: `midiaDaPeca` devolvia `storage` com 1 PNG só. Agora
+  a mídia traz `esperadas` (1 no story, os slides no carrossel) e, faltando PNG, é `parcial` com os
+  que faltam e o comando; a aba mostra "3 de 7 PNG (falta: …) — não poste ainda" sem botão de
+  baixar, e o `root-midia agenda` imprime o mesmo.
+- **"A partir de" sem teto**: `2099-01-05` agendava lá e sumia com as peças. Agora vai até hoje + 62
+  dias (90 do reagendar − 28 do horizonte), 400 além disso, com `min`/`max` no campo. O
+  `PautaDiaCivilSchema` ganhou a faixa 2000–2100: `?de=9999-12-27` era 500 (RangeError na conta de
+  fuso) e agora é 400.
+- **Distribuir com a memória fora** gravava pela grade padrão; agora é 503 e nada é agendado. O
+  plano B do padrão ficou só na leitura da semana.
+- **A nota da grade editada por `/memoria`** passava do teto e a regex da linha era quadrática (99
+  mil caracteres travavam o event loop por ~3,5 s a cada GET, na medida da revisão). Acima do teto a leitura não parseia; a linha é
+  cortada no primeiro `:`.
+- **Horário de verão**: `instanteNoFuso` devolvia uma hora antes na hora que não existe (00:00 de
+  04/11/2018 em São Paulo virava sábado 23h). Agora segue o "compatible" do Temporal, com teste em
+  Nova York e na São Paulo de 2018/2019.
+- **Reagendar/Tirar numa peça de episódio fora da Derivação/Agendado** sempre falhava; a peça traz
+  `motivoParaNaoAgendar` e a tela troca os botões pelo motivo.
+- O aviso "agende à mão" apontava um caminho que não existe; a seção "Semana de posts" avisa que
+  editar ou descartar tira a peça da agenda; o teste de "aprovar de novo não recria o slot" agora
+  reaprova a descartada de fato.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê

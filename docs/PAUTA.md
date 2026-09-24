@@ -182,7 +182,7 @@ anti-padrões, tirados do que o próprio estudo já provou.
 |---|---|---|
 | **WhatsApp (grupo)** | Evolution API, instância e número **dedicados do root** | `@SensitiveWrite('content')` — não sai sem token de aprovação confirmado |
 | **ClickUp** | cria o tema de verdade (`CLICKUP_LIST_PAUTA`) | — |
-| **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`); do episódio, por matéria, carrossel + story + corte vertical (MC15) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
+| **Instagram** | legenda + espinha do carrossel → máquina de carrossel (marca `root`); do episódio, por matéria, carrossel + story + corte vertical (MC15), distribuídos na semana e postados com um toque (MC16) | **manual**: publicação via Graph API exige `content_publish` + App Review, e o app da Meta está em troca |
 | **Newsletter** | corpo em markdown; a do episódio sai da transcrição (MC13) e se exporta em `.md`/`.html`. Os links das seções saem **crus** (a URL do item), não como `BioLink`: só a chamada para a página de links é medida (decisão da MC13, revista com a D-MC7) | **manual** até a D-MC7: não há envio pelo OS |
 | **ClickUp** | vira tema em Gestão de Temas (write-back que já existe) | — |
 
@@ -811,6 +811,70 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     confirmação para substituir), por matéria as três peças com a prévia em texto (slides, story com
     a chamada, trecho do corte com os tempos), o estado do render e o comando que falta, aprovar,
     descartar, recuperar e editar (o corte conferido na tela antes de salvar).
+- **O calendário da semana e a postagem com um toque (MC16).** As peças **aprovadas** da semana de
+  posts ganham um slot na grade da empresa, e cada slot entrega o que precisa para postar **à mão** —
+  a publicação automática no Instagram/TikTok é a MC17 (D-MC8). `AgendaService` + `AgendaController`
+  (`pauta/agenda*.ts`); a parte pura em `pauta/agenda-da-semana.ts`; o relógio de São Paulo, os
+  feriados e a leitura da grade no shared (`instanteNoFuso`, `feriadosDoAno`, `lerGradeDoTexto`,
+  `textoDaGrade`), porque a tela conta com as mesmas regras. `instanteNoFuso` segue o "compatible"
+  do Temporal: a hora que não existe na virada do horário de verão vai para depois; a repetida vale
+  a primeira.
+  - **Colunas** (migration `20260924090000_pauta_peca_agenda`): `PautaPeca.agendadaPara` (o instante
+    em UTC; nulo = fora da agenda; índice `(orgId, agendadaPara)`) e `urlPublicada` (o endereço
+    público do post). **Decisão:** "postada à mão" reaproveita `status = publicada`, `publicadaEm` e
+    `publicadaPor`, com `externalId` **nulo** — o id na rede é da publicação automática (MC17), que
+    vai preencher o mesmo `urlPublicada`. Sem tabela nova, sem enum novo.
+  - **A grade** é nota da memória de chave `pauta.semana.grade` (ADR-011: lida por `porChave`,
+    escrita só pelo `MemoriaService`, com histórico — o mesmo padrão da voz e da palavra de corte),
+    uma linha por formato, no horário de São Paulo: `carrossel: seg, qua, sex 12:00`, `story: dias
+    úteis 9h`, `corte: ter-qui 18h`, `feriados: 20/11/2026`. Sem nota (ou arquivada, ou sem slot
+    válido), vale o **padrão**: carrossel seg/qua/sex 12h, corte ter/qui 18h, story seg–sex 9h.
+    Feriado não abre slot: os nacionais fixos, Carnaval, Sexta-feira Santa e Corpus Christi (da
+    Páscoa), mais os da empresa. `GET /pauta/agenda/grade` (`pauta.ver`) e `PUT` (`pauta.editar`,
+    `{texto, versao}`): linha que não fecha é 400 com o número da linha; versão velha é 409; o texto
+    gravado sai normalizado. A nota também se edita por `PUT /memoria/:id`, sem o teto de 2.000
+    caracteres do PUT da grade: acima dele a leitura não parseia (vale o padrão, com o aviso), e a
+    linha é cortada no primeiro `:` — nada de regex quadrática no GET da agenda.
+  - **Distribuir** (`POST /pauta/episodios/:id/agenda/distribuir` `{aPartirDe?}`, `pauta.editar`):
+    só na Derivação e no Agendado; aloca as aprovadas **sem data** do episódio nos próximos slots
+    livres do formato de cada uma (a matéria 1 pega o primeiro), a partir de agora ou do dia pedido,
+    por até 4 semanas; o "a partir de" vai até hoje + 62 dias (`PAUTA_TETO_DO_A_PARTIR_DE_DIAS`, 90 do
+    reagendar menos o horizonte de 28) — além disso é 400, e a tela põe `min`/`max` no campo; nunca no slot de outra peça do mesmo formato (de qualquer episódio). A que já
+    tem data fica; a que não cabe volta como aviso, sem data inventada. **O status do episódio não
+    muda** — ir para Agendado segue sendo o passo do operador (lá o texto trava). Cadeado da
+    empresa (`pauta-agenda:<orgId>`) e escrita condicionada a `aprovada` + sem data. RASTRO
+    `pauta.semana_distribuida`. A grade aqui **grava** slot: memória fora do ar é 503 e nada é
+    agendado (o padrão como plano B vale só para ler a semana).
+  - **Reagendar** (`PUT /pauta/pecas/:id/agenda` `{agendadaPara: ISO com fuso | null}`,
+    `pauta.editar`): só a aprovada; nem passado nem além de 90 dias; o mesmo formato no mesmo minuto
+    é 409; nulo tira da agenda. RASTRO `pauta.semana_reagendada` com o antes e o depois.
+  - **A peça sai da agenda quando deixa de estar aprovada**: o `PATCH /pauta/pecas/:id` para
+    rascunho/descartada e a edição do texto (`PUT …/semana`, que volta a peça ao rascunho) zeram
+    `agendadaPara`. Aprovar de novo não inventa slot: distribui-se de novo.
+  - **Marcar como postada** (`POST /pauta/pecas/:id/postada` `{url?}`, **`pauta.publicar`** — é
+    quem responde pelo que foi ao ar): registro **interno**, não passa pela porta nem escreve fora.
+    Aprovada → publicada com quando e quem; o link é opcional e só `https://`. Na já marcada à mão,
+    só acrescenta o link (a data fica); a publicada pelo OS (com `externalId`) não se mexe daqui.
+    RASTRO `pauta.semana_postada`.
+  - **A semana** (`GET /pauta/agenda?de=AAAA-MM-DD`, `pauta.ver`; sem `de`, a segunda desta
+    semana; o dia civil vai de 2000 a 2100, fora disso é 400): sete dias, cada um com os slots da grade — vazios ou com a peça — e as peças postas
+    fora da grade (reagendadas à mão, ou postadas sem slot, no dia em que foram ao ar). Cada peça
+    traz tipo, episódio, matéria, legenda, palavra-chave, a mídia (`storage` com os números das
+    imagens e quantas são esperadas; `parcial` quando falta PNG — o carrossel de 7 com 3 no storage,
+    porque o upload do Mac para na primeira falha —, com os que faltam e o comando que completa;
+    `mac` com o caminho do mp4; ou o comando da `/root-midia` que falta), a postagem e o
+    `motivoParaNaoAgendar` do episódio (fora da Derivação/Agendado a tela não oferece reagendar).
+    Mais `paraDistribuir`: os episódios com aprovadas sem data.
+  - **Tela:** aba **"Semana"** em `/pauta` (`AbaSemana.tsx`): semana anterior/próxima, "Aprovadas sem
+    data" com Distribuir (e "a partir de"), os dias em blocos que empilham no celular, e por peça
+    "Copiar legenda" (story: "Copiar texto"), "Baixar mídia" (um botão por slide no carrossel; o PNG
+    vem do storage com o token), "arquivo no Mac: <caminho>" + "Copiar caminho" no corte, Reagendar
+    (dia e hora de São Paulo; arrastar ficou de fora), Tirar da agenda e "Marcar como postada" (link
+    opcional). O carrossel `parcial` mostra "3 de 7 PNG (falta: …) — não poste ainda" e o comando,
+    sem botão de baixar. "Grade da semana" abre o texto da nota para editar. Na seção "Semana de posts" do
+    episódio, a peça mostra o slot ou a postagem, e a que está na agenda avisa que editar ou
+    descartar a tira de lá. No Mac, `root-midia agenda [--de AAAA-MM-DD]`
+    lista a semana com o caminho de cada mp4 (só lê).
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

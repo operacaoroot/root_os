@@ -1530,14 +1530,23 @@ model PautaPeca {
   // Link rastreado: o clique volta como BioEvent/PixelEvent e alimenta Metas.
   bioLinkId    String?
   externalId   String?
+  // MC16: publicada vale tanto para a postagem automática (externalId = id na
+  // rede, MC17) quanto para a manual — "Marcar como postada" grava status
+  // publicada, publicadaEm/publicadaPor e deixa externalId nulo.
   publicadaEm  DateTime?
   publicadaPor String?
+  // O endereço público do post (o permalink do Instagram/TikTok), quando há.
+  urlPublicada String?
   erro         String?
+  // MC16: o slot da semana em que a peça aprovada vai ao ar (instante em UTC;
+  // a grade é lida no fuso de São Paulo). Nulo = fora da agenda.
+  agendadaPara DateTime?
 
   criadaEm DateTime @default(now())
 
   @@index([orgId, status])
   @@index([rodadaId])
+  @@index([orgId, agendadaPara])
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------

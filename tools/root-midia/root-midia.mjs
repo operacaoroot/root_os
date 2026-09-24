@@ -63,6 +63,7 @@ import {
   regiaoDoPip,
   regiaoNoVideo,
   regioesPadraoNoCanvas,
+  linhasDaAgenda,
   slidesEstourados,
   slidesParaAMaquina,
 } from './lib/semana.mjs';
@@ -120,6 +121,9 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
                     [--obs colecao.json] [--cena "2 · Tela + Câmera"] [--saida pasta] [--so N] [--sem-enviar]
       (também \`cortes-verticais\`) O trecho de cada corte em 1080×1920: a tela em cima e o rosto
       (o PiP do OBS) embaixo. O mp4 FICA no Mac; ao OS vai o caminho e o que foi medido.
+  root-midia agenda [--de AAAA-MM-DD]
+      O calendário da semana (MC16): cada slot com a peça, o estado e onde está a mídia para
+      postar à mão (o PNG no OS, o mp4 no Mac pelo caminho). Só lê; postar é na aba Semana.
   root-midia ensaio-semana [--manter]
       Vídeo sintético 1920×1080 com um PiP colorido: 1 corte vertical e 1 story (e 1 carrossel, se a
       máquina de carrossel estiver instalada), conferindo 1080×1920, a duração e o rosto embaixo.
@@ -1182,6 +1186,13 @@ async function principal() {
     case 'carrosseis': {
       if (!posicionais[0]) throw new Error('Uso: root-midia carrosseis <ep-NN> [--sem-enviar]');
       escrever(await carrosseis(posicionais[0], opcoes), undefined);
+      return 0;
+    }
+    case 'agenda': {
+      const de = texto(opcoes, 'de');
+      if (de !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(de)) throw new Error('Uso: root-midia agenda [--de AAAA-MM-DD]');
+      exigirOs(cfg);
+      for (const linha of linhasDaAgenda(await clienteDoOs(cfg).agenda(de))) console.log(linha);
       return 0;
     }
     case 'ensaio-semana':

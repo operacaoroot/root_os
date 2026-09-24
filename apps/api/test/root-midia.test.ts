@@ -74,6 +74,7 @@ import {
   filtroDoCorteVertical,
   layoutDoCorte,
   lerRegiao,
+  linhasDaAgenda,
   marcaDoCarrossel,
   nomeDoCorte,
   nomeDoStory,
@@ -970,6 +971,60 @@ describe('root-midia: a semana na conversa com o OS (MC15)', () => {
       { url: 'http://os/api/pauta/episodios/e1/semana', metodo: 'GET', corpo: undefined },
       { url: 'http://os/api/pauta/pecas/p%201/imagens/3', metodo: 'POST', corpo: 'multipart' },
       { url: 'http://os/api/pauta/pecas/p2/video', metodo: 'PUT', corpo: { arquivo: '/m/c.mp4', duracaoSeg: 60 } },
+    ]);
+  });
+});
+
+describe('root-midia: o calendário da semana no terminal (MC16)', () => {
+  it('pede a agenda da semana (com e sem o dia) e só lê', async () => {
+    const pedidos: Array<{ url: string; metodo: string }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      pedidos.push({ url, metodo: String(init.method) });
+      return new Response('{"dias":[]}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+    await os.agenda();
+    await os.agenda('2026-09-28');
+    expect(pedidos).toEqual([
+      { url: 'http://os/api/pauta/agenda', metodo: 'GET' },
+      { url: 'http://os/api/pauta/agenda?de=2026-09-28', metodo: 'GET' },
+    ]);
+  });
+
+  it('cada slot com a peça, o estado e onde está a mídia: o PNG no OS (ou quantos faltam), o mp4 no Mac pelo caminho, ou o comando', () => {
+    const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'aprovada', postada: null, ...over });
+    const linhas = linhasDaAgenda({
+      dias: [
+        {
+          dia: '2026-09-28', diaDaSemana: 'seg', feriado: null,
+          linhas: [
+            { hora: '09:00', formato: 'story', daGrade: true, peca: null },
+            { hora: '12:00', formato: 'carrossel', daGrade: true, peca: peca({ midia: { onde: 'storage', imagens: [1, 2, 3] } }) },
+            { hora: '12:00', formato: 'carrossel', daGrade: true, peca: peca({ itemN: 2, midia: { onde: 'parcial', imagens: [1, 2, 3], esperadas: 7, faltam: [4, 5, 6, 7], comando: '/root-midia carrosseis ep-04' } }) },
+            { hora: '18:00', formato: 'corte', daGrade: false, peca: peca({ status: 'publicada', postada: { url: 'https://www.instagram.com/reel/x/' }, midia: { onde: 'mac', arquivo: '/Users/p/ep-04-m1-corte.mp4' } }) },
+          ],
+        },
+        { dia: '2026-10-12', diaDaSemana: 'seg', feriado: 'Nossa Senhora Aparecida', linhas: [] },
+        { dia: '2026-10-13', diaDaSemana: 'ter', feriado: null, linhas: [{ hora: '09:00', formato: 'story', daGrade: true, peca: peca({ midia: { onde: 'nenhuma', comando: '/root-midia stories ep-04' } }) }] },
+      ],
+      paraDistribuir: [{ apelido: 'ep-05', aprovadasSemData: 4 }],
+    });
+    expect(linhas).toEqual([
+      'seg 28/09',
+      '  09:00  story      (vago)',
+      '  12:00  carrossel  ep-04 m1  aprovada  Preço caiu',
+      '         3 PNG no OS',
+      '  12:00  carrossel  ep-04 m2  aprovada  Preço caiu',
+      '         3 de 7 PNG no OS (falta: 4, 5, 6, 7) — não poste ainda; /root-midia carrosseis ep-04',
+      '  18:00  corte      ep-04 m1  postada https://www.instagram.com/reel/x/ (fora da grade)  Preço caiu',
+      '         mp4 no Mac: /Users/p/ep-04-m1-corte.mp4',
+      'seg 12/10 · Nossa Senhora Aparecida (sem slot)',
+      '  —',
+      'ter 13/10',
+      '  09:00  story      ep-04 m1  aprovada  Preço caiu',
+      '         sem mídia — /root-midia stories ep-04',
+      'ep-05: 4 aprovada(s) sem data — "Distribuir" na aba Semana.',
     ]);
   });
 });

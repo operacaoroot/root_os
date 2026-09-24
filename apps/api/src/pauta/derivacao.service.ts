@@ -42,6 +42,7 @@ import { VozService } from './voz.service';
 import { lerTranscricao } from './episodio';
 import { linkPublicoDoItem, semLinksDeCaixaDeEntrada } from './link-publico';
 import { shaDaTranscricao } from './newsletter-do-episodio';
+import { postagemDaPeca } from './agenda-da-semana';
 import type { Segmento } from './pacote-do-episodio';
 import {
   carrosselComPalavra,
@@ -76,6 +77,10 @@ interface LinhaDaPeca {
   meta: unknown;
   status: PautaPecaStatus;
   criadaEm: Date;
+  agendadaPara?: Date | null;
+  publicadaEm?: Date | null;
+  externalId?: string | null;
+  urlPublicada?: string | null;
 }
 
 const DA_PECA = {
@@ -88,6 +93,10 @@ const DA_PECA = {
   meta: true,
   status: true,
   criadaEm: true,
+  agendadaPara: true,
+  publicadaEm: true,
+  externalId: true,
+  urlPublicada: true,
 } as const;
 
 /** A duração do vídeo final: a da mídia (MC9); sem ela, o fim da transcrição. */
@@ -149,6 +158,13 @@ export class DerivacaoService {
       imagens: m.imagens.map(({ n, largura, altura, bytes, enviadaEm }) => ({ n, largura, altura, bytes, enviadaEm })).sort((a, b) => a.n - b.n),
       avisos: m.avisos,
       transcricaoMudou: m.transcricaoSha !== shaAtual,
+      agendadaPara: p.agendadaPara?.toISOString() ?? null,
+      postada: postagemDaPeca({
+        status: p.status,
+        publicadaEm: p.publicadaEm ?? null,
+        externalId: p.externalId ?? null,
+        urlPublicada: p.urlPublicada ?? null,
+      }),
     };
     if (formato === 'carrossel') return { ...base, slides: m.slides ?? [], cta: m.cta, palavraChave: m.palavraChave };
     if (formato === 'story') return { ...base, chamada: m.chamada ?? '', tempoSeg: m.tempoSeg ?? null };
@@ -548,7 +564,8 @@ export class DerivacaoService {
 
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
-        data: { titulo: titulo.slice(0, 200), corpo, meta: meta as unknown as Prisma.InputJsonValue, status: 'rascunho' },
+        // Volta ao rascunho, então sai da agenda (MC16): o slot é da peça aprovada.
+        data: { titulo: titulo.slice(0, 200), corpo, meta: meta as unknown as Prisma.InputJsonValue, status: 'rascunho', agendadaPara: null },
       });
       if (r.count === 0) throw new ConflictException('A peça mudou enquanto isso — recarregue e tente de novo.');
       return {
@@ -565,7 +582,12 @@ export class DerivacaoService {
       entityType: 'pauta_peca',
       entityId: feito.p.id,
       before: { status: feito.p.status, formato: feito.formato },
-      after: { status: 'rascunho', campos: Object.keys(input), renderDescartado: feito.renderDescartado },
+      after: {
+        status: 'rascunho',
+        campos: Object.keys(input),
+        renderDescartado: feito.renderDescartado,
+        saiuDaAgenda: !!feito.p.agendadaPara,
+      },
     });
     return this.montarSemana(e, await this.pecasDoEpisodio(orgId, e));
   }

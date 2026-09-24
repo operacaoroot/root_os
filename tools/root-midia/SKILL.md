@@ -125,6 +125,12 @@ carrossel, um story e um corte vertical em rascunho ou aprovados.
 Texto errado numa peça se corrige na tela (Editar), não aqui — editar descarta o render anterior, e
 aí é renderizar de novo. Conferir sem tocar no OS: `RM ensaio-semana`.
 
+## O que vai ao ar esta semana (`/root-midia agenda`, MC16)
+
+`RM agenda` (ou `--de AAAA-MM-DD`) lista a semana da agenda do OS: cada slot com a peça, o estado e
+onde está a mídia — o mp4 do corte pelo caminho no Mac, os PNG no OS (ou quantos faltam). Só lê. Distribuir, reagendar e
+"Marcar como postada" são da aba Semana em `/pauta`; postar no Instagram é à mão até a MC17 (D-MC8).
+
 ## Quando algo falha
 
 - `HTTP 400` da API traz o motivo em português (status errado, transcrição do bruto em vez do final,

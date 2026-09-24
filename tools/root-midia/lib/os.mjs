@@ -157,6 +157,8 @@ export function clienteDoOs({ url, email, senha, fetch: f = globalThis.fetch }) 
     },
     /** O corte renderizado: o mp4 fica no Mac, vai só onde ele está e o que foi medido. @param {string} pecaId @param {unknown} corpo */
     videoDoCorte: (pecaId, corpo) => pedir('PUT', `/pauta/pecas/${encodeURIComponent(pecaId)}/video`, corpo),
+    /** O calendário da semana (MC16): sete dias a partir de `de` (AAAA-MM-DD), ou desta semana. @param {string} [de] */
+    agenda: (de) => pedir('GET', `/pauta/agenda${de ? `?de=${encodeURIComponent(de)}` : ''}`),
   };
 }
 

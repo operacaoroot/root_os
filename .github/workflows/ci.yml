@@ -357,8 +357,25 @@ jobs:
       # carrossel). Medido: 522 casos em 40 arquivos (506 + 16). O piso de
       # ARQUIVOS sobe 1, para 31; o de CASOS sobe 14 (~12% de folga sobre os 16
       # novos), para 346.
-      PISO_CASOS_WEB: '346'
-      PISO_ARQUIVOS_WEB: '31'
+      #
+      # MC16, O CALENDÁRIO DA SEMANA (24/09/2026): +18 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-agenda` (17: os sete dias com os slots,
+      # vago, a peça com tipo, matéria e horário, fora da grade e o hoje; anda
+      # de semana; copiar legenda e texto; baixar a mídia do storage com o token,
+      # um botão por slide; o caminho do mp4 no Mac e o comando que falta;
+      # reagendar pelo relógio de São Paulo e tirar da agenda; marcar postada
+      # com o link só https, e a postada pedindo o link; confirmar sem link;
+      # distribuir com e sem "a partir de" e a conta; editar a grade com a
+      # versão lida e a recusa da API; sem `pauta.editar`/`pauta.publicar`; a
+      # recusa numa ação; semana vazia e feriado; a aba na página; o carrossel
+      # que subiu pela metade com "N de M PNG" e sem botão de baixar; o de um
+      # slide com o botão único; a peça de episódio fora da Derivação sem
+      # Reagendar e com o motivo) e +1 em `component/pauta-semana` (a peça na
+      # agenda avisa que editar ou descartar a tira de lá). Medido: 540 casos em
+      # 41 arquivos (522 + 18). O piso de ARQUIVOS sobe 1, para 32; o de CASOS
+      # sobe 15 (~15% de folga sobre os 18 novos), para 361.
+      PISO_CASOS_WEB: '361'
+      PISO_ARQUIVOS_WEB: '32'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1240,8 +1257,39 @@ jobs:
       # com o banco de teste, e 1944 passados / 571 pulados sem ele (1878 + 66).
       # O piso de ARQUIVOS vai a 55; o de CASOS sobe 57 (~14% de folga sobre os
       # 66 que rodam sem banco), para 1861.
-      PISO_CASOS_API: '1861'
-      PISO_ARQUIVOS_API: '55'
+      #
+      # MC16, O CALENDÁRIO DA SEMANA (24/09/2026): +48 casos, +1 arquivo, só
+      # desta fatia — `pauta-agenda` (46) e +2 em `root-midia`. A parte pura: o
+      # relógio de São Paulo (meio-dia = 15h UTC, o dia de volta do instante, a
+      # hora que não existe na virada do horário de verão indo para depois),
+      # a semana começando na segunda, os feriados (Páscoa, Carnaval, Corpus
+      # Christi, os fixos e os da empresa); a grade no texto da nota (o padrão
+      # que volta igual, o jeito de escrever, linha ruim vira aviso com o
+      # número, a nota que não vale cai no padrão, a nota acima do teto não é
+      # lida, a linha longa sem ':' em tempo linear); os slots de um período e o
+      # distribuir (3 matérias, semana cheia, feriado pulado, reagendar
+      # liberando o slot, o que não cabe no horizonte), a mídia (o carrossel
+      # pela metade é `parcial`) e a postagem. Os contratos (reagendar, postada
+      # só https, distribuir, o dia civil de 2000 a 2100, grade, em que status).
+      # Com dublês: distribuir (só aprovada sem data, sem colidir com outro
+      # episódio, "a partir de" e o teto dele, 400/404, a grade da empresa com o
+      # 12/10 no meio, memória fora = 503 sem gravar), reagendar (RASTRO, 409 do mesmo minuto, passado e 90 dias,
+      # rascunho/postada/peça antiga), marcar postada (quem, quando, link; só o
+      # link depois; rascunho e a publicada pelo OS recusados), a semana na tela
+      # (slots, fora da grade, postada sem slot, paraDistribuir, feriado, o
+      # motivo da peça de episódio fora da Derivação, `?de=` fora da faixa), a
+      # grade na memória (criar, versão conferida, arquivada que volta, memória
+      # fora), a peça que sai da agenda no PATCH de status (e a reaprovada volta
+      # sem data), o controller. No
+      # `root-midia`: o pedido da agenda e as linhas do terminal. E COM BANCO
+      # (1, pulado sem ele): distribuir, reagendar e postar pela sessão.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2563 casos em 64 arquivos
+      # com o banco de teste, e 1991 passados / 572 pulados sem ele (1944 + 47).
+      # O piso de ARQUIVOS vai a 56; o de CASOS sobe 40 (~15% de folga sobre os
+      # 47 que rodam sem banco), para 1901.
+      PISO_CASOS_API: '1901'
+      PISO_ARQUIVOS_API: '56'
 
     steps:
       - uses: actions/checkout@v4

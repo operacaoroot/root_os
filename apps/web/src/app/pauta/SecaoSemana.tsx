@@ -11,6 +11,8 @@ import {
   PAUTA_TETO_DO_TITULO_DO_SLIDE,
   PautaPalavraChaveSchema,
   conferirTrechoDoCorte,
+  diaNoFuso,
+  horaNoFuso,
   motivoParaNaoDerivar,
   motivoParaNaoEditarASemana,
   tempoDoCapitulo,
@@ -29,7 +31,8 @@ import { Botao, Chip, inputCls } from '../referencias/ui';
  * um carrossel, um story e um corte vertical, com a prévia em texto (slides,
  * story, trecho do corte com os tempos), aprovar, descartar e editar. Nada é
  * publicado daqui — o Instagram é manual até a D-MC8. Os renders (PNG e mp4)
- * saem no Mac pela /root-midia.
+ * saem no Mac pela /root-midia. A peça aprovada vai para a agenda na aba
+ * Semana (MC16), que mostra aqui o slot dela.
  */
 
 interface Props {
@@ -61,6 +64,13 @@ const ROTULO_DO_STATUS: Record<PautaPecaStatus, string> = {
 };
 
 const tempo = (s: number | undefined) => (typeof s === 'number' ? tempoDoCapitulo(s) : '—');
+
+/** O slot da semana (MC16), no relógio de São Paulo: `29/09 12:00`. */
+function naAgenda(iso: string): string {
+  const d = new Date(iso);
+  const dia = diaNoFuso(d);
+  return `${dia.slice(8, 10)}/${dia.slice(5, 7)} ${horaNoFuso(d)}`;
+}
 
 function estadoDoRender(p: PautaPecaDaSemana, apelido: string): string {
   if (p.formato === 'corte') {
@@ -175,6 +185,8 @@ function PecaDaSemana({
         <span className="font-os-mono text-[11px] font-semibold uppercase tracking-wide text-muted">{rotulo}</span>
         <Chip tone={TOM_DO_STATUS[peca.status]}>{ROTULO_DO_STATUS[peca.status]}</Chip>
         {peca.palavraChave && <Chip tone="brand">{peca.palavraChave}</Chip>}
+        {peca.agendadaPara && !peca.postada && <Chip>{`na agenda: ${naAgenda(peca.agendadaPara)}`}</Chip>}
+        {peca.postada && <Chip>{`postada ${naAgenda(peca.postada.em)}${peca.postada.manual ? ' à mão' : ''}`}</Chip>}
       </div>
       <p className="break-words text-sm font-medium">{peca.titulo}</p>
 
@@ -221,6 +233,12 @@ function PecaDaSemana({
         </p>
       ))}
 
+      {editavel && !firme && !edicao && peca.agendadaPara && (
+        <p className="text-[11px] text-muted">
+          {textoTravado ? 'Descartar' : 'Editar ou descartar'} tira a peça da agenda ({naAgenda(peca.agendadaPara)}); depois é distribuir de
+          novo na aba Semana.
+        </p>
+      )}
       {editavel && !firme && !edicao && (
         <div className="flex flex-wrap gap-2">
           {peca.status === 'rascunho' && (

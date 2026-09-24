@@ -34,12 +34,15 @@ import { NewsletterController } from './newsletter.controller';
 import { NewsletterService } from './newsletter.service';
 import { DerivacaoController } from './derivacao.controller';
 import { DerivacaoService } from './derivacao.service';
+import { AgendaController } from './agenda.controller';
+import { AgendaService } from './agenda.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
 // MemoryModule: o roteiro (MC8) LÊ a palavra de corte da empresa na memória, e
 // a voz do autor (MC10) é nota da memória, escrita pelo MemoriaService (ADR-011).
 // BioModule: a página de links do episódio (MC12) publica pelo BioService.
+// A grade da semana (MC16) também é nota da memória, escrita pelo MemoriaService.
 @Module({
   imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
@@ -55,6 +58,7 @@ import { DerivacaoService } from './derivacao.service';
     PaginaDeLinksController,
     NewsletterController,
     DerivacaoController,
+    AgendaController,
   ],
   providers: [
     PautaService,
@@ -87,6 +91,8 @@ import { DerivacaoService } from './derivacao.service';
     NewsletterService,
     // MC15: a semana de posts — carrossel, story e corte por matéria do episódio.
     DerivacaoService,
+    // MC16: o calendário da semana — a grade, os slots e a postagem manual.
+    AgendaService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real.

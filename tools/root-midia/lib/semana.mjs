@@ -445,3 +445,45 @@ export const pastaDoCarrossel = (apelido, n) => `${apelido}-m${n}-carrossel`;
 export function aceitaRender(p) {
   return p.status === 'rascunho' || p.status === 'aprovada';
 }
+
+/**
+ * O calendário da semana (MC16) em linhas para o terminal: um dia por bloco,
+ * cada slot com o horário, o formato, a peça e onde está a mídia para postar à
+ * mão — o PNG no OS (baixar pela tela) ou o mp4 que ficou no Mac, pelo caminho;
+ * o carrossel que subiu pela metade diz quantos PNG faltam. Só lê: postar e marcar como postada são da tela.
+ * @param {any} agenda o `GET /pauta/agenda`
+ * @returns {string[]}
+ */
+export function linhasDaAgenda(agenda) {
+  const linhas = [];
+  const data = (/** @type {string} */ d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  for (const d of agenda?.dias ?? []) {
+    linhas.push(`${d.diaDaSemana} ${data(d.dia)}${d.feriado ? ` · ${d.feriado} (sem slot)` : ''}`);
+    if (!d.linhas?.length) {
+      linhas.push('  —');
+      continue;
+    }
+    for (const l of d.linhas) {
+      const p = l.peca;
+      if (!p) {
+        linhas.push(`  ${l.hora}  ${l.formato.padEnd(9)}  (vago)`);
+        continue;
+      }
+      const estado = p.postada ? `postada${p.postada.url ? ` ${p.postada.url}` : ''}` : p.status;
+      const midia =
+        p.midia?.onde === 'mac'
+          ? `mp4 no Mac: ${p.midia.arquivo}`
+          : p.midia?.onde === 'storage'
+            ? `${p.midia.imagens.length} PNG no OS`
+            : p.midia?.onde === 'parcial'
+              ? `${p.midia.imagens.length} de ${p.midia.esperadas} PNG no OS (falta: ${p.midia.faltam.join(', ')}) — não poste ainda; ${p.midia.comando}`
+              : `sem mídia — ${p.midia?.comando ?? 'rode a /root-midia'}`;
+      linhas.push(`  ${l.hora}  ${l.formato.padEnd(9)}  ${p.apelido} m${p.itemN}  ${estado}${l.daGrade ? '' : ' (fora da grade)'}  ${p.titulo}`);
+      linhas.push(`         ${midia}`);
+    }
+  }
+  const pendentes = agenda?.paraDistribuir ?? [];
+  for (const e of pendentes) linhas.push(`${e.apelido}: ${e.aprovadasSemData} aprovada(s) sem data — "Distribuir" na aba Semana.`);
+  return linhas;
+}
+

@@ -1,4 +1,4 @@
-# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15)
+# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16)
 
 A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo **fica no Mac** (o MinIO da VPS não é
 público e o upload no YouTube é manual na V1, D-MC6).
@@ -12,7 +12,7 @@ público e o upload no YouTube é manual na V1, D-MC6).
 | `lib/arquivos.mjs` | a trava do bruto: o mesmo arquivo por outro nome (caixa, link simbólico) |
 | `lib/thumbs.mjs` | puro: o template preenchido e escapado, os argumentos do ffmpeg (frame) e do Chrome, onde achar o Chrome, a conferência do PNG (MC11) |
 | `thumb.html` | o template da thumb, 1280×720, com os tokens da marca ROOT **copiados** (não lê o brand pack em tempo de execução) |
-| `lib/semana.mjs` | puro (MC15): a região do rosto lida da coleção de cenas do OBS, o filtro e os argumentos do corte vertical, o story preenchido, o `slides.json` da máquina de carrossel e onde achar o render |
+| `lib/semana.mjs` | puro (MC15): a região do rosto lida da coleção de cenas do OBS, o filtro e os argumentos do corte vertical, o story preenchido, o `slides.json` da máquina de carrossel e onde achar o render; (MC16) a agenda da semana em linhas |
 | `story.html` | o template do story, 1080×1920, no mesmo padrão do `thumb.html` (tokens copiados) |
 | `SKILL.md` | a skill `/root-midia ep-NN` do Claude Code — o passo a passo, PalmierPro primeiro |
 
@@ -21,7 +21,8 @@ Rotas do OS (módulo `pauta`): `GET /pauta/episodios/pendentes-midia`,
 `pauta.editar`; e, para as thumbs (MC11), `GET /pauta/episodios` e `GET /pauta/episodios/:id/thumbs`
 (`pauta.ver`) e `POST /pauta/episodios/:id/thumbs/:n` (`pauta.editar`, PNG até 2 MB); e, para a
 semana de posts (MC15), `GET /pauta/episodios/:id/semana` (`pauta.ver`), `POST /pauta/pecas/:id/imagens/:n`
-(PNG até 5 MB) e `PUT /pauta/pecas/:id/video` (`pauta.editar`).
+(PNG até 5 MB) e `PUT /pauta/pecas/:id/video` (`pauta.editar`); e, para o calendário (MC16),
+`GET /pauta/agenda` (`pauta.ver`), só lido.
 Detalhes em `docs/PAUTA.md`.
 
 ## Variáveis
@@ -94,6 +95,12 @@ Os PNG sobem para a peça (`POST /pauta/pecas/:id/imagens/:n`, até 5 MB); `--se
 pasta (`<ep>-semana/` ao lado do vídeo final, ou `--saida`). `ensaio-semana` prova tudo sem o OS: um
 vídeo sintético 1920×1080 com um PiP cor-de-rosa, 1 corte (1080×1920, a duração do trecho e o rosa
 embaixo), 1 story (1080×1920) e, com a máquina instalada, 1 carrossel (1080×1350).
+
+**O calendário da semana (MC16).** `agenda [--de AAAA-MM-DD]` lista os sete dias da agenda do OS
+(sem `--de`, esta semana): cada slot com a peça, o estado e onde está a mídia para postar à mão — os
+PNG no OS (baixar pela aba Semana; o carrossel pela metade diz "3 de 7 PNG" e o comando que
+completa) ou o mp4 que ficou no Mac, pelo caminho. Só lê: distribuir,
+reagendar e marcar como postada são da tela.
 
 `cortar` não reencoda quando toda borda cai num quadro-chave (gravação intra, ou nada a cortar);
 senão reencoda com `trim` + `concat` (corte exato, aguenta taxa de quadros variável). `--copiar`

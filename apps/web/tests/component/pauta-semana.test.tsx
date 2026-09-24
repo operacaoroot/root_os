@@ -225,6 +225,16 @@ describe('a semana de posts do episódio', () => {
     expect(within(m1).getByLabelText('Story')).toHaveTextContent('A página de links do episódio ainda não está no ar');
   });
 
+  it('a peça na agenda avisa que editar ou descartar a tira de lá (o slot não volta sozinho)', async () => {
+    apiGet.mockResolvedValue(semana({}, { carrossel: carrossel({ status: 'aprovada', agendadaPara: '2026-09-28T15:00:00.000Z' }), story: story({ status: 'aprovada' }) }));
+    renderSecao();
+    const car = within(await waitFor(() => materia(1))).getByLabelText('Carrossel');
+    expect(car).toHaveTextContent('na agenda: 28/09 12:00');
+    expect(car).toHaveTextContent('Editar ou descartar tira a peça da agenda (28/09 12:00); depois é distribuir de novo na aba Semana.');
+    // A aprovada sem slot não tem o aviso.
+    expect(within(materia(1)).getByLabelText('Story')).not.toHaveTextContent('tira a peça da agenda');
+  });
+
   it('com a página de links no ar, o story não avisa', async () => {
     apiGet.mockResolvedValue(semana({ paginaDeLinks: 'https://bio.exemplo/ep-04' }));
     renderSecao();

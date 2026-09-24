@@ -5,6 +5,7 @@ import { CODIGO_CONECTOR_DESLIGADO } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AbaCuradoria } from './AbaCuradoria';
 import { AbaEpisodios } from './AbaEpisodios';
+import { AbaSemana } from './AbaSemana';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
 import { AbaVoz } from './AbaVoz';
@@ -14,8 +15,9 @@ import { AbaVoz } from './AbaVoz';
 // propósito (repertório dura anos, pauta dura 72h). Ver docs/PAUTA.md §2.
 // A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro; a
 // rodada curada vira episódio (MC7), que anda do roteiro ao concluído. A Voz
-// (MC10) é o perfil do autor com que o roteiro e as peças são escritos.
-const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Voz', 'Rotinas'] as const;
+// (MC10) é o perfil do autor com que o roteiro e as peças são escritos. A
+// Semana (MC16) é o calendário das peças aprovadas, prontas para postar à mão.
+const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Semana', 'Voz', 'Rotinas'] as const;
 type Aba = (typeof ABAS)[number];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
@@ -143,6 +145,9 @@ export default function PautaPage() {
           podeMexerNaBio={can('bio.editar')}
           podePublicarPagina={can('pauta.publicar') && can('bio.editar')}
         />
+      )}
+      {ready && aba === 'Semana' && (
+        <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
       )}
       {ready && aba === 'Voz' && (
         <AbaVoz token={token} editavel={editavel} podeGastarIa={can('automacoes.executar')} bump={bump} onErro={aoErrar} />
