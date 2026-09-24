@@ -192,6 +192,10 @@ export class RotinaService {
         status: r.status,
         rotina: r.rotina?.nome ?? null,
         itens: Array.isArray(r.itens) ? (r.itens as unknown[]).length : 0,
+        marcados:
+          r.status === 'aguardando_curadoria' && Array.isArray(r.itens)
+            ? (r.itens as Array<{ marcado?: unknown }>).filter((i) => i?.marcado === true).length
+            : 0,
         pecas: r._count.pecas,
         provider: r.provider,
         model: r.model,

@@ -1429,8 +1429,46 @@ export const PAUTA_CANAL_LABEL: Record<PautaCanal, string> = {
 export const PAUTA_PECA_STATUS = ['rascunho', 'aprovada', 'publicada', 'descartada'] as const;
 export type PautaPecaStatus = (typeof PAUTA_PECA_STATUS)[number];
 
-export const PAUTA_RODADA_STATUS = ['coletando', 'curada', 'aprovada', 'publicada', 'falhou'] as const;
+export const PAUTA_RODADA_STATUS = [
+  'coletando',
+  'aguardando_curadoria',
+  'curada',
+  'aprovada',
+  'publicada',
+  'falhou',
+] as const;
 export type PautaRodadaStatus = (typeof PAUTA_RODADA_STATUS)[number];
+
+/**
+ * Curadoria humana (MC6). A rodada "para curadoria" nasce em
+ * `aguardando_curadoria` com TODOS os candidatos da janela até este teto; a IA
+ * só sugere, e o operador marca o que segue. O teto é alto de propósito e o
+ * que passa dele fica registrado no log e na auditoria da rodada.
+ */
+export const PAUTA_TETO_DE_CANDIDATOS = 200;
+
+/** Janela padrão da rodada para curadoria: a semana do episódio. */
+export const PAUTA_HORAS_DA_CURADORIA = 168;
+
+export const PautaGerarCuradoriaSchema = z.object({
+  horas: z.number().int().min(6).max(336).optional(),
+  origens: z.array(z.enum(PAUTA_ORIGENS)).min(1).max(PAUTA_ORIGENS.length).optional(),
+});
+export type PautaGerarCuradoriaInput = z.infer<typeof PautaGerarCuradoriaSchema>;
+
+const idDoCandidato = z.string().min(1).max(64);
+
+/** Quais candidatos ficam. Lista vazia é válida aqui: é desmarcar tudo. */
+export const PautaCuradoriaMarcacaoSchema = z.object({
+  marcados: z.array(idDoCandidato).max(PAUTA_TETO_DE_CANDIDATOS),
+});
+export type PautaCuradoriaMarcacaoInput = z.infer<typeof PautaCuradoriaMarcacaoSchema>;
+
+/** Confirmar pode levar a marcação junto; sem ela, vale a que foi salva. */
+export const PautaCuradoriaConfirmacaoSchema = z.object({
+  marcados: z.array(idDoCandidato).max(PAUTA_TETO_DE_CANDIDATOS).optional(),
+});
+export type PautaCuradoriaConfirmacaoInput = z.infer<typeof PautaCuradoriaConfirmacaoSchema>;
 
 // Cron de 5 campos. A validação forte é no servidor (parseCron); aqui só barra
 // o que é obviamente inválido antes da viagem.
@@ -1480,6 +1518,8 @@ export interface PautaRodadaResumo {
   status: PautaRodadaStatus;
   rotina: string | null;
   itens: number;
+  /** Quantos candidatos o operador já marcou (MC6); 0 fora da curadoria. */
+  marcados: number;
   pecas: number;
   provider: string | null;
   model: string | null;
@@ -1501,6 +1541,19 @@ export interface PautaItemCurado {
   ganchoBr?: string;
   /** De que origem o item veio (MC4). Rodada de antes do MC4 não tem. */
   origem?: PautaOrigem;
+  // --- Curadoria humana (MC6): só nos itens da rodada "para curadoria". ---
+  /** O id da captura que trouxe o item: é o que a marcação envia. */
+  id?: string;
+  /** Todas as origens em que a matéria apareceu, quando foi mais de uma. */
+  origens?: PautaOrigem[];
+  fonte?: string | null;
+  resumo?: string;
+  /** A IA achou que vale; `porque` diz por quê. Não decide nada sozinho. */
+  sugerido?: boolean;
+  /** O operador marcou. Só existe enquanto a rodada aguarda a curadoria. */
+  marcado?: boolean;
+  /** Link de caixa de entrada (newsletter): nunca vira o link publicado. */
+  semLinkPublico?: boolean;
 }
 
 export interface PautaPecaItem {

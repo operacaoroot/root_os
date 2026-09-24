@@ -206,8 +206,21 @@ jobs:
       # coluna, idade e horas no cartão, apontar na gaveta, só o autor apaga,
       # arrastar e soltar, criar pelo modelo). O piso de ARQUIVOS vai a 21; o de
       # CASOS sobe 13 (~18% de folga sobre os 16 novos), para 240.
-      PISO_CASOS_WEB: '240'
-      PISO_ARQUIVOS_WEB: '21'
+      #
+      # MC6, CURADORIA HUMANA (23/09/2026): +14 casos, +1 arquivo, só desta
+      # fatia — `component/pauta-curadoria` (14: todos os candidatos com origem,
+      # link e resumo e nada marcado; o sugerido em destaque com o porquê e a
+      # newsletter como "só contexto"; filtro por origem e "só sugeridos"; a
+      # matéria de duas origens nos dois filtros; abrir na rodada que a aba
+      # Rodadas mandou; a resposta atrasada da rodada anterior descartada;
+      # Confirmar travado sem marcado; só os marcados na confirmação; "Marcar
+      # sugeridos" + Salvar sem confirmar; a marcação salva que volta; Confirmar
+      # travado enquanto o Salvar não volta; o erro da API na caixa da página;
+      # a lista vazia que monta pela API; e sem `pauta.editar` nada se marca).
+      # Medido: 412 casos em 31 arquivos (398 + 14). O piso de ARQUIVOS sobe 1,
+      # para 22; o de CASOS sobe 11 (~20% de folga sobre os 14 novos), para 251.
+      PISO_CASOS_WEB: '251'
+      PISO_ARQUIVOS_WEB: '22'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -690,8 +703,34 @@ jobs:
       # com o banco de teste, e 1412 passados / 557 pulados sem ele (1364 + 48).
       # O piso de ARQUIVOS vai a 43; o de CASOS sobe 41 (~15% de folga sobre os
       # 48 novos), para 1401.
-      PISO_CASOS_API: '1401'
-      PISO_ARQUIVOS_API: '43'
+      #
+      # ---------------------------------------------------------------------
+      # MC6, CURADORIA HUMANA ANTES DO ROTEIRO (23/09/2026): +40 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-curadoria` (40): a captura que vira candidato (id da captura,
+      # origem da fonte, título do link do grupo tirado da mensagem, newsletter
+      # sem link público, as duas letras da mesma matéria, resumo no teto); o
+      # teto de candidatos com a sobra contada por origem; a sugestão da IA que
+      # só acende a marca (número fora da lista, repetido, fracionário ou em
+      # texto ignorado); a marcação do operador (lista inteira, id de outra
+      # rodada recusa tudo, vazia desmarca); o que segue depois de confirmar, o
+      # miolo sem IA e o link publicável que pula a newsletter; os esquemas do
+      # shared que a rota usa; e o `RodadaService` DE VERDADE com prisma de
+      # mentira — a rodada nasce em `aguardando_curadoria` com TODOS os
+      # candidatos, janela da semana, origens pedidas, a origem que enche a
+      # consulta contada inteira na sobra, lista vazia recusada antes de criar
+      # a rodada, um item basta, IA falhando / devolvendo lixo / sem credencial
+      # não trava a lista; salvar e confirmar só nesse status, com escrita
+      # condicionada (corrida entre abas), confirmar exige um marcado e limpa o
+      # aviso de "sem sugestão", e derivar recusa a rodada que aguarda e,
+      # depois de confirmada, manda os itens sem o link da newsletter. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2009 casos em 52 arquivos
+      # com o banco de teste, e 1452 passados / 557 pulados sem ele (1412 + 40).
+      # O piso de ARQUIVOS vai a 44; o de CASOS sobe 34 (~15% de folga sobre os
+      # 40 novos), para 1435.
+      PISO_CASOS_API: '1435'
+      PISO_ARQUIVOS_API: '44'
 
     steps:
       - uses: actions/checkout@v4

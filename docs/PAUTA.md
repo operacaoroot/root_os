@@ -113,7 +113,7 @@ enum PautaFonteTipo     { rss  perfil  busca  manual  gmail }
 enum PautaCapturaStatus { rascunho  processando  ficha  descartada  erro }
 enum PautaFamilia       { CUR  REA  STO  DEM  CON  INT  TRE  ENC  outra }
 enum PautaObjetivo      { ALC  AUT  VIN  VEN  ENG  PRO  LEA }
-enum PautaRodadaStatus  { coletando  curada  aprovada  publicada  falhou }
+enum PautaRodadaStatus  { coletando  aguardando_curadoria  curada  aprovada  publicada  falhou }
 enum PautaCanal         { whatsapp  instagram  newsletter  clickup }
 enum PautaPecaStatus    { rascunho  aprovada  publicada  descartada }
 
@@ -292,7 +292,7 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   pastas do próprio Gmail (inbox, sent…) são recusadas: a etiqueta é a fronteira do que entra
   numa pauta que `pauta.ver` lê. A captura é coletada pela rodada mas ainda **não** entra na
   curadoria da rodada (o permalink é de uma caixa de entrada, não link publicável) — entra
-  com a curadoria humana (MC5/MC6).
+  com a curadoria humana (MC6), como candidata sem link público.
   - **Teto de 50 e-mails por coleta**, o do conector, sem paginação. Lista cheia deixa um
     aviso em `ultimoErro` ("os mais antigos podem ter ficado de fora").
   - **Um e-mail que falha não tranca a etiqueta**: os outros entram, a auditoria registra os
@@ -383,6 +383,30 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **O link do grupo** chega sem título: o prompt usa a mensagem (`nota`) como resumo.
   - **A origem é sempre a nossa:** a que a IA escrever no item é descartada antes de casar a
     URL com a captura.
+- **Curadoria humana (MC6).** Um segundo modo de gerar a rodada, ao lado do antigo (que a
+  rotina `pauta.rodada` segue usando, com a IA escolhendo de 3 a 5): `POST
+  /pauta/rodadas/curadoria` (`{horas?, origens?}`, janela padrão 168h) monta a lista com
+  **todas** as capturas da janela, até `PAUTA_TETO_DE_CANDIDATOS` (200) — o que passa do teto
+  fica contado por origem no log e na auditoria (`pauta.rodada_para_curadoria`), inclusive o
+  que nem coube na consulta da origem que encheu (conta-se o total dela). A rodada nasce
+  em `aguardando_curadoria` e cada candidato é `{id, origem, titulo, url, resumo, sugerido,
+  porque}`, com o id da captura. A IA só **sugere** (acende `sugerido` e diz `porque`, pelo
+  número do item): não tira ninguém, não marca ninguém, e sem IA ou com a chamada falhando a
+  lista nasce do mesmo jeito, com o motivo em `erro`. Um item basta.
+  - **Marcar e confirmar** (`pauta.editar`): `PUT /pauta/rodadas/:id/curadoria` com
+    `{marcados: [ids]}` grava a marcação inteira; `POST …/curadoria/confirmar` (a marcação pode
+    vir junto) deixa só os marcados em `itens`, monta o `corpo` deles **sem IA**, limpa o aviso
+    de `erro` e passa a rodada a `curada` — daí em diante é a rodada de sempre (derivar, publicar). Confirmar exige
+    um marcado; id que não é candidato recusa a marcação inteira; as duas escritas são
+    condicionadas ao status, então uma aba atrasada não reabre curadoria confirmada. Derivar
+    recusa a rodada que ainda aguarda.
+  - **A newsletter** é candidata como as outras, marcada `semLinkPublico`: a tela mostra o
+    permalink para quem cura, mas o miolo, o prompt das peças e o link publicado
+    (`destinoDosItens`) pulam o dela.
+  - **Aba Curadoria** em `/pauta`: lista com checkbox, letra da origem, título com link,
+    resumo, destaque nos sugeridos com o porquê, filtro por origem e "só sugeridos", contador e
+    a barra de Salvar/Confirmar presa no rodapé (celular primeiro, com o canto do botão
+    "perguntar" livre). "Abrir Curadoria" na aba Rodadas abre a rodada clicada.
 - **CDATA no RSS.** Limpar tags antes de desembrulhar o CDATA apaga o conteúdo inteiro
   (`<![CDATA[…]]>` casa com `/<[^>]+>/`). O `semTags` desembrulha primeiro — foi um bug real,
   pego rodando contra o Ars Technica, onde 0 de 40 itens vinham com resumo.

@@ -7,10 +7,17 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { PautaRotinaSchema, PautaRotinaUpdateSchema } from '@mktos/shared';
+import {
+  PautaCuradoriaConfirmacaoSchema,
+  PautaCuradoriaMarcacaoSchema,
+  PautaGerarCuradoriaSchema,
+  PautaRotinaSchema,
+  PautaRotinaUpdateSchema,
+} from '@mktos/shared';
 import { RodadaService } from './rodada.service';
 import { PublicacaoService } from './publicacao.service';
 import { EvolutionService } from './evolution.service';
@@ -90,6 +97,28 @@ export class RodadaController {
   gerarRodada(@CurrentUser() user: JwtUser, @Body() body: { horas?: number; origens?: unknown }) {
     // `origens` é conferida em `gerar` (lerOrigensDaRodada): ausente é todas.
     return this.rodadas.gerar(user.orgId, user.sub, { horas: body?.horas, origens: body?.origens });
+  }
+
+  // Curadoria humana (MC6). Gerar a lista gasta IA (a sugestão), como gerar a rodada.
+  @Post('rodadas/curadoria')
+  @RequirePermissions('pauta.editar', 'automacoes.executar')
+  gerarParaCuradoria(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    const { horas, origens } = PautaGerarCuradoriaSchema.parse(body ?? {});
+    return this.rodadas.gerarParaCuradoria(user.orgId, user.sub, { horas, origens });
+  }
+
+  @Put('rodadas/:id/curadoria')
+  @RequirePermissions('pauta.editar')
+  salvarCuradoria(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const { marcados } = PautaCuradoriaMarcacaoSchema.parse(body);
+    return this.rodadas.salvarMarcacao(user.orgId, id, user.sub, marcados);
+  }
+
+  @Post('rodadas/:id/curadoria/confirmar')
+  @RequirePermissions('pauta.editar')
+  confirmarCuradoria(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const { marcados } = PautaCuradoriaConfirmacaoSchema.parse(body ?? {});
+    return this.rodadas.confirmarCuradoria(user.orgId, id, user.sub, marcados);
   }
 
   @Post('rodadas/:id/derivar')

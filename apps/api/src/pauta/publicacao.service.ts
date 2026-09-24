@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EvolutionService } from './evolution.service';
 import { ClickupService } from '../integrations/clickup.service';
+import { destinoDosItens } from './curadoria-da-rodada';
 
 // Publicação das peças (onda 3). O que cada canal faz e o que NÃO faz:
 //
@@ -69,10 +70,9 @@ export class PublicacaoService {
     return { url: `${this.baseBio}/r/${link.id}`, bioLinkId: link.id };
   }
 
-  /** Destino do link da peça: o primeiro item curado da rodada. */
+  /** Destino do link da peça: o primeiro item curado da rodada com link público (MC6). */
   private destinoDaRodada(itens: unknown): string | null {
-    const lista = Array.isArray(itens) ? (itens as Array<{ url?: string }>) : [];
-    return lista.find((i) => typeof i.url === 'string' && i.url)?.url ?? null;
+    return destinoDosItens(itens);
   }
 
   async publicar(orgId: string, pecaId: string, actorId: string) {

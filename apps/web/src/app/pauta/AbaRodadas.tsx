@@ -23,10 +23,12 @@ interface Props {
   onErro: (m: string | null, codigo?: string | null) => void;
   bump: number;
   onMudou: () => void;
+  onAbrirCuradoria?: (rodadaId: string) => void;
 }
 
 const TOM_RODADA: Record<string, 'muted' | 'good' | 'warn' | 'bad'> = {
   coletando: 'warn',
+  aguardando_curadoria: 'warn',
   curada: 'good',
   aprovada: 'good',
   publicada: 'good',
@@ -38,7 +40,7 @@ function temOrigem(o: unknown): o is PautaOrigem {
   return typeof o === 'string' && (PAUTA_ORIGENS as readonly string[]).includes(o);
 }
 
-export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudou }: Props) {
+export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudou, onAbrirCuradoria }: Props) {
   const [data, setData] = useState<PautaRodadaList | null>(null);
   const [canais, setCanais] = useState<{ whatsapp: PautaCanalEstado } | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -156,8 +158,14 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Chip tone={TOM_RODADA[r.status] ?? 'muted'}>{r.status}</Chip>
-                  <Chip>{r.itens} item(ns)</Chip>
+                  <Chip tone={TOM_RODADA[r.status] ?? 'muted'}>{r.status.replace('_', ' ')}</Chip>
+                  {r.status === 'aguardando_curadoria' ? (
+                    <Chip>
+                      {r.marcados} de {r.itens} marcado(s)
+                    </Chip>
+                  ) : (
+                    <Chip>{r.itens} item(ns)</Chip>
+                  )}
                   <Chip tone={r.pecas ? 'brand' : 'muted'}>{r.pecas} peça(s)</Chip>
                   {r.model && <Chip>{r.model}</Chip>}
                   {r.rotina && <Chip tone="brand">{r.rotina}</Chip>}
@@ -167,11 +175,29 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   {new Date(r.criadaEm).toLocaleString('pt-BR')} · janela de{' '}
                   {Math.round((+new Date(r.janelaFim) - +new Date(r.janelaIni)) / 3600000)}h
                 </p>
-                {r.erro && <p className="mt-0.5 text-xs text-bad">{r.erro}</p>}
+                {r.erro && (
+                  <p className={`mt-0.5 text-xs ${r.status === 'falhou' ? 'text-bad' : 'text-warn'}`}>{r.erro}</p>
+                )}
               </div>
             </button>
 
-            {aberta === r.id && detalhe && (
+            {aberta === r.id && detalhe && detalhe.status === 'aguardando_curadoria' && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3 text-sm text-muted">
+                <span>
+                  {detalhe.itens.length} candidato(s) esperando a curadoria — só o que for marcado segue para as peças.
+                </span>
+                {onAbrirCuradoria && (
+                  <Botao tone="brand" onClick={() => onAbrirCuradoria(r.id)}>
+                    Abrir Curadoria
+                  </Botao>
+                )}
+                <Botao tone="bad" onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))} disabled={!editavel}>
+                  Remover rodada
+                </Botao>
+              </div>
+            )}
+
+            {aberta === r.id && detalhe && detalhe.status !== 'aguardando_curadoria' && (
               <div className="border-t border-border px-4 py-3">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <Botao
@@ -203,7 +229,7 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                 {detalhe.itens.length > 0 && (
                   <ul className="mb-4 space-y-1.5">
                     {detalhe.itens.map((i) => (
-                      <li key={i.url} className="text-sm">
+                      <li key={i.id ?? i.url} className="text-sm">
                         {temOrigem(i.origem) && (
                           <span
                             className="mr-1.5 inline-block rounded border border-border px-1 font-mono text-[11px] text-muted"

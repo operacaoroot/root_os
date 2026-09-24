@@ -1368,6 +1368,8 @@ model PautaReferencia {
 
 enum PautaRodadaStatus {
   coletando
+  // MC6: a lista de candidatos está pronta e espera o operador marcar o que segue.
+  aguardando_curadoria
   curada
   aprovada
   publicada
@@ -1426,7 +1428,9 @@ model PautaRodada {
 
   janelaIni    DateTime
   janelaFim    DateTime
-  // O que a IA selecionou, com fonte e URL de cada item (procedência).
+  // O que a IA selecionou, com fonte e URL de cada item (procedência). Em
+  // `aguardando_curadoria` (MC6) são TODOS os candidatos, com a marcação do
+  // operador; confirmar a curadoria deixa só os marcados.
   itens        Json     @default("[]")
   // Quais fichas campeãs entraram no prompt (auditoria do repertório usado).
   fichasUsadas String[]

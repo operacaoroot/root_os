@@ -21,9 +21,10 @@ import { normalizarUrlDaCaptura } from './url-da-captura';
  *
  * A NEWSLETTER ENTRA COMO CONTEXTO, NÃO COMO LINK. A URL da captura do Gmail é
  * o permalink de uma caixa de entrada, e o item escolhido vira link publicado
- * no grupo. Até a curadoria humana decidir o link de cada item (MC6), o prompt
- * mostra a newsletter sem URL e o item L que a IA escolher mesmo assim é tirado
- * da seleção.
+ * no grupo. No modo em que a IA escolhe (`gerar`), o prompt mostra a newsletter
+ * sem URL e o item L que ela escolher mesmo assim é tirado da seleção. Na
+ * curadoria humana (MC6) ela é candidata como as outras, marcada sem link
+ * público (`curadoria-da-rodada.ts`).
  */
 
 /** A rodada de antes do MC4: feed e busca. É o que uma rotina com `origens: ['R', 'N']` reproduz. */
@@ -91,7 +92,7 @@ export interface CapturaDoInsumo {
 }
 
 /** As origens da captura: as que a junção guardou, ou a da fonte dela. */
-function origensDa(c: CapturaDoInsumo): PautaOrigem[] {
+export function origensDa(c: CapturaDoInsumo): PautaOrigem[] {
   if (c.origens?.length) return [...c.origens];
   const o = origemDaFonte(c.fonte);
   return o ? [o] : [];
@@ -163,6 +164,17 @@ export function insumoDaRodada<T extends CapturaDoInsumo & { capturadoEm: Date }
   porOrigem: ReadonlyArray<readonly T[]>,
   opcoes: { janelaIni: Date; teto: number },
 ): T[] {
+  return insumoDaRodadaComSobra(porOrigem, opcoes).escolhidas;
+}
+
+/**
+ * O mesmo corte de `insumoDaRodada`, com o que ficou de fora dele — a curadoria
+ * humana (MC6) registra a sobra em vez de a perder calada.
+ */
+export function insumoDaRodadaComSobra<T extends CapturaDoInsumo & { capturadoEm: Date }>(
+  porOrigem: ReadonlyArray<readonly T[]>,
+  opcoes: { janelaIni: Date; teto: number },
+): { escolhidas: T[]; deFora: T[] } {
   const todas = porOrigem
     .flat()
     .filter((c) => !postForaDaJanela(c, opcoes.janelaIni))
@@ -183,11 +195,15 @@ export function insumoDaRodada<T extends CapturaDoInsumo & { capturadoEm: Date }
       if (i < l.length && escolhidas.length < opcoes.teto) escolhidas.push(l[i]);
     }
   }
-  return escolhidas.sort((a, b) => b.capturadoEm.getTime() - a.capturadoEm.getTime());
+  const ficou = new Set<T>(escolhidas);
+  return {
+    escolhidas: escolhidas.sort((a, b) => b.capturadoEm.getTime() - a.capturadoEm.getTime()),
+    deFora: unicas.filter((c) => !ficou.has(c)),
+  };
 }
 
 /** A linha do prompt: a letra da origem, a fonte e — se o link for publicável — a URL. */
-export function linhaDoInsumo(c: CapturaDoInsumo, posicao: number): string {
+export function linhaDoInsumo(c: CapturaDoInsumo, posicao: number, limiteDoResumo = 500): string {
   const b = (c.bruto ?? {}) as { resumo?: unknown; publicadoEm?: unknown };
   const origens = origensDa(c);
   const creator = c.fonte?.tipo === 'perfil' && c.fonte.handle ? ` (@${c.fonte.handle}${c.fonte.plataforma ? ` · ${c.fonte.plataforma}` : ''})` : '';
@@ -198,7 +214,7 @@ export function linhaDoInsumo(c: CapturaDoInsumo, posicao: number): string {
     `[${posicao}] ${c.titulo ?? '(sem título)'}`,
     `    origem: ${origens.length ? origens.join('+') : '?'} · fonte: ${c.fonte?.nome ?? 'n/d'}${creator}${data}`,
     semLink ? '    url: (newsletter — sem link público; use como contexto, não selecione)' : `    url: ${c.url}`,
-    resumo ? `    resumo: ${resumo.slice(0, 500)}` : '',
+    resumo ? `    resumo: ${resumo.slice(0, limiteDoResumo)}` : '',
   ]
     .filter(Boolean)
     .join('\n');

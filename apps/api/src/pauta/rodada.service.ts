@@ -2,9 +2,11 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { PAUTA_HORAS_DA_CURADORIA, PAUTA_TETO_DE_CANDIDATOS, type PautaOrigem } from '@mktos/shared';
 import { Prisma, PautaCanal, PautaRodadaStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -15,9 +17,24 @@ import {
   filtroDasOrigens,
   lerOrigensDaRodada,
   insumoDaRodada,
+  insumoDaRodadaComSobra,
   linhaDoInsumo,
   tiposDaColetaDasOrigens,
 } from './origem-da-rodada';
+import {
+  RESUMO_NO_PROMPT_DE_SUGESTAO,
+  SYSTEM_SUGESTAO,
+  aplicarSugestoes,
+  candidatoDaCaptura,
+  corpoDaCuradoria,
+  itensDaCuradoria,
+  lerCandidatos,
+  marcar,
+  sobraPorOrigem,
+  tituloDaSugestao,
+  type Candidato,
+  type SugestaoDaIa,
+} from './curadoria-da-rodada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 
 // Uma rodada é a peça-mãe: coleta a janela, cura numa chamada só e vira N peças.
@@ -103,6 +120,8 @@ interface PecasGeradas {
 
 @Injectable()
 export class RodadaService {
+  private readonly log = new Logger('RodadaService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -174,21 +193,7 @@ export class RodadaService {
     // Insumo: as capturas da janela, uma consulta por origem, para que o lote que a
     // coleta acabou de gravar (perfis, busca) não tire do corte o link que o
     // grupo mandou na semana. O equilíbrio mora em `insumoDaRodada`.
-    const porOrigem = await Promise.all(
-      filtroDasOrigens(origens).map((fonte) =>
-        this.prisma.pautaCaptura.findMany({
-          where: {
-            orgId,
-            capturadoEm: { gte: janelaIni },
-            status: { in: ['rascunho', 'ficha'] },
-            fonte,
-          },
-          orderBy: { capturadoEm: 'desc' },
-          take: TETO_DO_INSUMO,
-          include: { fonte: { select: { nome: true, tipo: true, plataforma: true, handle: true } } },
-        }),
-      ),
-    );
+    const porOrigem = await this.capturasDaJanela(orgId, origens, janelaIni, TETO_DO_INSUMO);
     const capturas = insumoDaRodada(porOrigem, { janelaIni, teto: TETO_DO_INSUMO });
 
     if (capturas.length < 3) {
@@ -267,6 +272,254 @@ export class RodadaService {
     }
   }
 
+  private whereDaJanela(orgId: string, fonte: ReturnType<typeof filtroDasOrigens>[number], janelaIni: Date) {
+    return {
+      orgId,
+      capturadoEm: { gte: janelaIni },
+      status: { in: ['rascunho' as const, 'ficha' as const] },
+      fonte,
+    };
+  }
+
+  private capturasDaJanela(orgId: string, origens: readonly PautaOrigem[], janelaIni: Date, take: number) {
+    return Promise.all(
+      filtroDasOrigens(origens).map((fonte) =>
+        this.prisma.pautaCaptura.findMany({
+          where: this.whereDaJanela(orgId, fonte, janelaIni),
+          orderBy: { capturadoEm: 'desc' },
+          take,
+          include: { fonte: { select: { nome: true, tipo: true, plataforma: true, handle: true } } },
+        }),
+      ),
+    );
+  }
+
+  // ---------- curadoria humana (MC6) ----------
+
+  /**
+   * A rodada "para curadoria": todos os candidatos da janela (até
+   * `PAUTA_TETO_DE_CANDIDATOS`, com a sobra registrada), a IA só sugere, e a
+   * rodada nasce em `aguardando_curadoria`. O modo de `gerar` — o da rotina
+   * `pauta.rodada` — não muda.
+   *
+   * A sugestão é acessório: sem IA configurada, ou com a chamada falhando, a
+   * lista nasce do mesmo jeito, sem sugeridos, e o motivo fica em `erro` — a
+   * pessoa consegue curar sem a IA, e travar a curadoria por causa dela seria
+   * devolver à IA a decisão que esta fatia tira dela.
+   */
+  async gerarParaCuradoria(
+    orgId: string,
+    actorId: string,
+    opts: { rotinaId?: string | null; horas?: number; origens?: unknown } = {},
+  ) {
+    const lidas = lerOrigensDaRodada(opts.origens);
+    if ('erro' in lidas) throw new BadRequestException(lidas.erro);
+    const { origens } = lidas;
+
+    const horas = opts.horas ?? PAUTA_HORAS_DA_CURADORIA;
+    const janelaFim = new Date();
+    const janelaIni = new Date(janelaFim.getTime() - horas * 3600_000);
+    const teto = PAUTA_TETO_DE_CANDIDATOS;
+
+    const porOrigem = await this.capturasDaJanela(orgId, origens, janelaIni, teto);
+    const { escolhidas, deFora } = insumoDaRodadaComSobra(porOrigem, { janelaIni, teto });
+    // A consulta de cada origem já para no teto: o que passou dele nela nem chega
+    // ao corte acima. Para a sobra não sair subestimada, a origem que encheu a
+    // consulta é contada inteira e o excedente entra na conta dela.
+    const filtros = filtroDasOrigens(origens);
+    const origensNoTeto = origens.filter((_, i) => porOrigem[i].length >= teto);
+    const alemDaConsulta = await Promise.all(
+      origensNoTeto.map(async (o) => {
+        const total = await this.prisma.pautaCaptura.count({
+          where: this.whereDaJanela(orgId, filtros[origens.indexOf(o)], janelaIni),
+        });
+        return [o, Math.max(0, total - teto)] as const;
+      }),
+    );
+
+    if (!escolhidas.length) {
+      throw new BadRequestException(
+        `Nenhum item coletado nas últimas ${horas}h (origens ${origens.join(', ')}) — ` +
+          'colete as fontes antes de montar a lista da curadoria.',
+      );
+    }
+
+    const sobra = sobraPorOrigem(deFora);
+    for (const [o, n] of alemDaConsulta) if (n) sobra[o] = (sobra[o] ?? 0) + n;
+    const totalDeFora = Object.values(sobra).reduce((a, n) => a + (n ?? 0), 0);
+    if (totalDeFora || origensNoTeto.length) {
+      this.log.warn(
+        `curadoria ${orgId}: ${escolhidas.length} candidato(s) no teto de ${teto}; ` +
+          `${totalDeFora} ficaram de fora (${JSON.stringify(sobra)})` +
+          (origensNoTeto.length ? `; origem(ns) ${origensNoTeto.join(', ')} bateram o teto da consulta` : ''),
+      );
+    }
+
+    const rodada = await this.prisma.pautaRodada.create({
+      data: {
+        orgId,
+        rotinaId: opts.rotinaId ?? null,
+        status: 'coletando',
+        titulo: `Curadoria de ${janelaFim.toLocaleDateString('pt-BR')}`,
+        janelaIni,
+        janelaFim,
+      },
+    });
+
+    try {
+      const fichas = await this.repertorio(orgId);
+      let candidatos: Candidato[] = escolhidas.map((c) => candidatoDaCaptura(c));
+      let titulo = rodada.titulo;
+      let aviso: string | null = null;
+      let usouIa = false;
+
+      if (!this.llm.configured) {
+        aviso = `Sem sugestão da IA: falta a credencial do provider "${this.llm.name}".`;
+      } else {
+        try {
+          const lista = escolhidas
+            .map((c, i) => linhaDoInsumo(c, i + 1, RESUMO_NO_PROMPT_DE_SUGESTAO))
+            .join('\n\n');
+          const saida = await this.llm.complete({
+            system: SYSTEM_SUGESTAO,
+            user: `Janela: ${janelaIni.toISOString()} até ${janelaFim.toISOString()}\n\nItens coletados (${escolhidas.length}):\n\n${lista}`,
+            orgId,
+          });
+          usouIa = true;
+          const sugestao = parseJsonDaIa<SugestaoDaIa>(saida);
+          candidatos = aplicarSugestoes(candidatos, sugestao);
+          titulo = tituloDaSugestao(sugestao) ?? titulo;
+        } catch (e) {
+          aviso = `Sem sugestão da IA: ${((e as Error).message ?? 'falha desconhecida').slice(0, 300)}`;
+          this.log.warn(`curadoria ${orgId}: ${aviso}`);
+        }
+      }
+
+      const atualizada = await this.prisma.pautaRodada.update({
+        where: { id: rodada.id },
+        data: {
+          status: 'aguardando_curadoria',
+          titulo,
+          itens: candidatos as unknown as Prisma.InputJsonValue,
+          corpo: '',
+          fichasUsadas: fichas.map((f) => f.id),
+          erro: aviso,
+          ...(usouIa ? { provider: this.llm.name, model: this.llm.model } : {}),
+        },
+      });
+
+      await this.audit.log({
+        orgId,
+        actorId,
+        action: 'pauta.rodada_para_curadoria',
+        entityType: 'pauta_rodada',
+        entityId: rodada.id,
+        after: {
+          candidatos: candidatos.length,
+          sugeridos: candidatos.filter((c) => c.sugerido).length,
+          deFora: totalDeFora,
+          sobraPorOrigem: sobra,
+          origensNoTeto,
+          teto,
+          semSugestao: aviso,
+        },
+      });
+
+      return atualizada;
+    } catch (e) {
+      const msg = (e as Error).message ?? 'falha desconhecida';
+      await this.prisma.pautaRodada.update({
+        where: { id: rodada.id },
+        data: { status: 'falhou', erro: msg.slice(0, 500) },
+      });
+      throw e;
+    }
+  }
+
+  private async rodadaEmCuradoria(orgId: string, rodadaId: string) {
+    const rodada = await this.prisma.pautaRodada.findFirst({ where: { id: rodadaId, orgId } });
+    if (!rodada) throw new NotFoundException('Rodada não encontrada');
+    if (rodada.status !== 'aguardando_curadoria') {
+      throw new BadRequestException(
+        `Esta rodada está "${rodada.status}" — só a rodada aguardando curadoria aceita marcação.`,
+      );
+    }
+    return rodada;
+  }
+
+  /**
+   * Grava os itens que ficam — a lista inteira, não um delta: o que não vier
+   * marcado fica desmarcado. A escrita é condicionada ao status, para uma
+   * marcação atrasada não reabrir rodada que alguém acabou de confirmar.
+   */
+  async salvarMarcacao(orgId: string, rodadaId: string, actorId: string, ids: readonly string[]) {
+    const rodada = await this.rodadaEmCuradoria(orgId, rodadaId);
+    const lida = marcar(lerCandidatos(rodada.itens), ids);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+
+    const r = await this.prisma.pautaRodada.updateMany({
+      where: { id: rodada.id, orgId, status: 'aguardando_curadoria' },
+      data: { itens: lida.candidatos as unknown as Prisma.InputJsonValue },
+    });
+    if (r.count === 0) throw new BadRequestException('A rodada saiu da curadoria enquanto a marcação era salva.');
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'pauta.curadoria_marcada',
+      entityType: 'pauta_rodada',
+      entityId: rodada.id,
+      after: { marcados: lida.marcados, candidatos: lida.candidatos.length },
+    });
+    return { ok: true, marcados: lida.marcados, candidatos: lida.candidatos.length };
+  }
+
+  /**
+   * Fecha a curadoria: só os marcados seguem, o miolo é montado deles, e a
+   * rodada vira `curada` — daí em diante é a rodada de sempre (derivar, publicar).
+   * `ids` presente grava a marcação junto; ausente, vale a que foi salva.
+   */
+  async confirmarCuradoria(orgId: string, rodadaId: string, actorId: string, ids?: readonly string[]) {
+    const rodada = await this.rodadaEmCuradoria(orgId, rodadaId);
+    let candidatos = lerCandidatos(rodada.itens);
+    if (ids) {
+      const lida = marcar(candidatos, ids);
+      if ('erro' in lida) throw new BadRequestException(lida.erro);
+      candidatos = lida.candidatos;
+    }
+    const itens = itensDaCuradoria(candidatos);
+    if (!itens.length) {
+      throw new BadRequestException('Marque pelo menos um item antes de confirmar a curadoria.');
+    }
+
+    const r = await this.prisma.pautaRodada.updateMany({
+      where: { id: rodada.id, orgId, status: 'aguardando_curadoria' },
+      data: {
+        status: 'curada',
+        itens: itens as unknown as Prisma.InputJsonValue,
+        corpo: corpoDaCuradoria(itens),
+        // O "sem sugestão da IA" era aviso da lista; curada, a rodada não tem erro.
+        erro: null,
+      },
+    });
+    if (r.count === 0) throw new BadRequestException('Esta curadoria já foi confirmada.');
+
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'pauta.curadoria_confirmada',
+      entityType: 'pauta_rodada',
+      entityId: rodada.id,
+      before: { candidatos: candidatos.length },
+      after: {
+        mantidos: itens.map((i) => i.id),
+        descartados: candidatos.length - itens.length,
+        sugeridosMantidos: itens.filter((i) => i.sugerido).length,
+      },
+    });
+    return { ok: true, status: 'curada' as const, itens: itens.length };
+  }
+
   // ---------- derivação das peças ----------
 
   async derivar(orgId: string, rodadaId: string, actorId: string) {
@@ -275,6 +528,9 @@ export class RodadaService {
       include: { pecas: true },
     });
     if (!rodada) throw new NotFoundException('Rodada não encontrada');
+    if (rodada.status === 'aguardando_curadoria') {
+      throw new BadRequestException('Rodada aguardando curadoria — confirme os itens na aba Curadoria antes de gerar peças.');
+    }
     if (rodada.status === 'coletando' || rodada.status === 'falhou') {
       throw new BadRequestException('Rodada ainda não foi curada com sucesso.');
     }
@@ -310,12 +566,18 @@ export class RodadaService {
           .join('\n\n')
       : '(acervo sem fichas campeãs — escreva no tom direto da ROOT)';
 
-    const itens = (rodada.itens as unknown as ItemCurado[]) ?? [];
+    const itens = (rodada.itens as unknown as Array<ItemCurado & { resumo?: string; semLinkPublico?: boolean }>) ?? [];
     const saida = await this.llm.complete({
       system: SYSTEM_PECAS,
       user:
         `Edição: ${rodada.titulo}\n\nMiolo curado:\n${rodada.corpo}\n\n` +
-        `Itens (com URL):\n${itens.map((i) => `- ${i.titulo} — ${i.url}${i.ganchoBr ? ` (gancho BR: ${i.ganchoBr})` : ''}`).join('\n')}\n\n` +
+        `Itens (com URL):\n${itens
+          .map(
+            (i) =>
+              `- ${i.titulo}${i.semLinkPublico ? ' (newsletter, sem link público)' : ` — ${i.url}`}` +
+              (i.ganchoBr ? ` (gancho BR: ${i.ganchoBr})` : i.resumo ? ` (resumo: ${i.resumo})` : ''),
+          )
+          .join('\n')}\n\n` +
         `Repertório de estruturas campeãs:\n${repertorio}`,
       // De quem é o gasto (RF-G-05). Ver o comentário em `gerar`.
       orgId,

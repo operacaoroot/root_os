@@ -3,13 +3,15 @@
 import { useCallback, useState } from 'react';
 import { CODIGO_CONECTOR_DESLIGADO } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AbaCuradoria } from './AbaCuradoria';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
 // propósito (repertório dura anos, pauta dura 72h). Ver docs/PAUTA.md §2.
-const ABAS = ['Rodadas', 'Rotinas'] as const;
+// A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro.
+const ABAS = ['Rodadas', 'Curadoria', 'Rotinas'] as const;
 type Aba = (typeof ABAS)[number];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
@@ -25,6 +27,7 @@ export default function PautaPage() {
   const [aba, setAba] = useState<Aba>('Rodadas');
   const [erro, setErro] = useState<Erro | null>(null);
   const [bump, setBump] = useState(0);
+  const [curadoriaAberta, setCuradoriaAberta] = useState<string | null>(null);
   const recarregar = useCallback(() => setBump((b) => b + 1), []);
 
   /*
@@ -61,7 +64,10 @@ export default function PautaPage() {
         {ABAS.map((a) => (
           <button
             key={a}
-            onClick={() => setAba(a)}
+            onClick={() => {
+              setCuradoriaAberta(null);
+              setAba(a);
+            }}
             className={`-mb-px border-b-2 px-1 pb-2 text-sm ${
               aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
             }`}
@@ -96,6 +102,20 @@ export default function PautaPage() {
           onErro={aoErrar}
           bump={bump}
           onMudou={recarregar}
+          onAbrirCuradoria={(id) => {
+            setCuradoriaAberta(id);
+            setAba('Curadoria');
+          }}
+        />
+      )}
+      {ready && aba === 'Curadoria' && (
+        <AbaCuradoria
+          token={token}
+          editavel={editavel}
+          onErro={aoErrar}
+          bump={bump}
+          onMudou={recarregar}
+          inicial={curadoriaAberta}
         />
       )}
       {ready && aba === 'Rotinas' && (
