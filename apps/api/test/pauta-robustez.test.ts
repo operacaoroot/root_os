@@ -521,6 +521,7 @@ describe('MC-R 2: o teto de saída de complete()', () => {
 // ---------------------------------------------------------------------------
 
 describe('MC-R 3: o corpo grande só nas rotas de mídia', () => {
+  const SESSAO = 'sessao-valida';
   let servidor: Server;
   let base = '';
   let parserPadraoInstalado = false;
@@ -529,7 +530,7 @@ describe('MC-R 3: o corpo grande só nas rotas de mídia', () => {
     // Na ordem do Nest: o `main.ts` instala antes do `listen`, e o `init`
     // instala o parser padrão depois, se não achar um `jsonParser` na pilha.
     const adapter = new ExpressAdapter();
-    instalarCorpoDaMidia(adapter, 'api');
+    instalarCorpoDaMidia(adapter, 'api', (token) => token === SESSAO);
     parserPadraoInstalado = !(adapter as unknown as { isMiddlewareApplied(nome: string): boolean }).isMiddlewareApplied('jsonParser');
     adapter.registerParserMiddleware();
     const app = adapter.getInstance();
@@ -549,8 +550,19 @@ describe('MC-R 3: o corpo grande só nas rotas de mídia', () => {
   });
 
   const corpoDe = (kb: number) => JSON.stringify({ segmentos: [{ inicio: 0, fim: 1, texto: 'x'.repeat(kb * 1024) }] });
-  const postar = (rota: string, corpo: string) =>
-    fetch(`${base}${rota}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: corpo });
+  const postar = (rota: string, corpo: string, token: string | null = SESSAO) =>
+    fetch(`${base}${rota}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: corpo,
+    });
+
+  it('sem sessão válida, o corpo grande não é lido: cai nos 100 kb do padrão antes de o guarda dizer 401', async () => {
+    expect((await postar('/api/pauta/episodios/e1/transcricao', corpoDe(500), null)).status).toBe(413);
+    expect((await postar('/api/pauta/episodios/e1/midia', corpoDe(500), 'forjado')).status).toBe(413);
+    // O corpo pequeno do anônimo segue pelo caminho de sempre (o guarda, depois, recusa).
+    expect((await postar('/api/pauta/episodios/e1/transcricao', JSON.stringify({ a: 1 }), null)).status).toBe(200);
+  });
 
   it('o parser grande não se passa pelo padrão: o Nest continua instalando o dele para a API inteira', () => {
     expect(parserPadraoInstalado).toBe(true);
@@ -594,7 +606,9 @@ describe('MC-R 3: o corpo grande só nas rotas de mídia', () => {
     expect(TETO_DO_CORPO).toBeLessThan(PAUTA_TETO_DO_CORPO_DA_MIDIA);
     expect(TETO_DO_CORPO).toBeGreaterThan(PAUTA_TETO_DO_CORPO_DA_MIDIA - 4096);
     const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
-    const instala = main.indexOf('instalarCorpoDaMidia(app, prefixo)');
+    const instala = main.indexOf('instalarCorpoDaMidia(app, prefixo, ');
+    // Quem decide se o corpo grande é lido é a mesma regra do guarda de sessão.
+    expect(main).toMatch(/ehTokenDeSessao\(jwt\.verify\(token\)\)/);
     expect(instala).toBeGreaterThan(-1);
     expect(instala).toBeLessThan(main.indexOf('app.listen('));
     expect(main).not.toMatch(/useBodyParser|bodyParser:\s*false/);

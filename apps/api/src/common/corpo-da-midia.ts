@@ -34,11 +34,22 @@ interface ComUse {
   use(caminho: string, ...handlers: Array<(req: Request, res: Response, next: NextFunction) => void>): unknown;
 }
 
-/** Instala o parser grande nas rotas de mídia. Chamar antes do `listen` (o Nest instala o padrão no `init`). */
-export function instalarCorpoDaMidia(app: ComUse, prefixo = 'api'): void {
+/**
+ * Instala o parser grande nas rotas de mídia. Chamar antes do `listen` (o Nest
+ * instala o padrão no `init`).
+ *
+ * O teto maior é para quem já entrou: este middleware roda ANTES do guarda de
+ * sessão, e sem conferir o token qualquer anônimo faria a API ler e parsear
+ * 2 MB para só então ouvir 401 — vinte vezes o custo de qualquer outra rota.
+ * Sem sessão válida, a requisição segue para o parser padrão (100 kb → 413) e
+ * o guarda responde o resto.
+ */
+export function instalarCorpoDaMidia(app: ComUse, prefixo: string, ehSessao: (token: string) => boolean): void {
   const parser = json({ limit: PAUTA_TETO_DO_CORPO_DA_MIDIA });
   const corpoGrandeDaMidia = (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'POST') return next();
+    const auth = req.headers.authorization;
+    if (typeof auth !== 'string' || !auth.startsWith('Bearer ') || !ehSessao(auth.slice(7))) return next();
     parser(req, res, next);
   };
   const base = prefixo ? `/${prefixo.replace(/^\/+|\/+$/g, '')}` : '';
