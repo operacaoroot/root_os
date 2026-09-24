@@ -30,7 +30,7 @@ import {
   srtDosSegmentos,
   tempoDoWhisper,
 } from '../../../tools/root-midia/lib/whisper.mjs';
-import { mesmoArquivo } from '../../../tools/root-midia/lib/arquivos.mjs';
+import { garantirPastaDaSaida, mesmoArquivo } from '../../../tools/root-midia/lib/arquivos.mjs';
 import {
   TETO_DO_CORPO,
   acharEpisodio,
@@ -628,6 +628,22 @@ describe('root-midia: as variáveis e a senha', () => {
       expect(mesmoArquivo(bruto, bruto)).toBe(true);
       expect(mesmoArquivo(join(pasta, 'outro.mp4'), bruto)).toBe(false);
       expect(mesmoArquivo(join(pasta, 'nao-existe.mp4'), bruto)).toBe(false);
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
+  });
+
+  it('a pasta do --saida existe antes do trabalho longo, e criar é dito com o caminho absoluto', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'root-midia-teste-'));
+    try {
+      const avisos: string[] = [];
+      const saida = join(pasta, 'ep-04', 'bruto.transcricao.json');
+      expect(garantirPastaDaSaida(saida, (m) => avisos.push(m))).toBe(saida);
+      expect(existsSync(join(pasta, 'ep-04'))).toBe(true);
+      expect(avisos).toEqual([`Criei a pasta ${join(pasta, 'ep-04')}.`]);
+      // A pasta que já existe não é anunciada de novo.
+      garantirPastaDaSaida(join(pasta, 'ep-04', 'cortes.json'), (m) => avisos.push(m));
+      expect(avisos).toHaveLength(1);
     } finally {
       rmSync(pasta, { recursive: true, force: true });
     }

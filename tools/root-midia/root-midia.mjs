@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { homedir, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mesmoArquivo } from './lib/arquivos.mjs';
+import { garantirPastaDaSaida, mesmoArquivo } from './lib/arquivos.mjs';
 import {
   PADROES,
   codecDeVideo,
@@ -288,7 +288,7 @@ function lerJson(caminho) {
 function escrever(valor, saida) {
   const json = `${JSON.stringify(valor, null, 2)}\n`;
   if (saida) {
-    writeFileSync(resolve(saida), json);
+    writeFileSync(garantirPastaDaSaida(saida, avisar), json);
     avisar(`→ ${resolve(saida)}`);
   } else process.stdout.write(json);
 }
@@ -1137,7 +1137,7 @@ async function principal() {
       const [entrada, cortesJson, saida] = posicionais;
       if (!saida) throw new Error('Uso: root-midia cortar <arquivo> <cortes.json> <saida>');
       const modo = opcoes.copiar ? 'copiar' : opcoes.reencodar ? 'reencodar' : 'auto';
-      const r = await cortar(exigirArquivo(entrada), lerJson(cortesJson), resolve(saida), {
+      const r = await cortar(exigirArquivo(entrada), lerJson(cortesJson), garantirPastaDaSaida(saida, avisar), {
         modo,
         sobrescrever: opcoes.sobrescrever === true,
       });
@@ -1146,6 +1146,8 @@ async function principal() {
       return 0;
     }
     case 'transcrever': {
+      const destino = texto(opcoes, 'saida');
+      if (destino) garantirPastaDaSaida(destino, avisar);
       const r = await transcrever(exigirArquivo(posicionais[0]), {
         idioma: texto(opcoes, 'idioma') ?? 'pt',
         modelo: cfg.modelo,

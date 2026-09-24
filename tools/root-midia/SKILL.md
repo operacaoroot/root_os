@@ -44,13 +44,16 @@ A ferramenta é `root-midia.mjs`, nesta mesma pasta (Node 22, sem dependência).
 2. **O bruto.** As gravações do OBS ficam em `~/Movies/OBS` (`.mp4`, nome com data e hora). Liste
    as mais recentes com a duração (`ffprobe`) e **confirme com o Pedro** qual é o bruto do episódio.
 3. **Pasta de trabalho:** `~/Movies/OBS/root-midia/ep-NN/` (crie). Tudo o que for gerado vai nela;
-   o bruto fica onde está.
+   o bruto fica onde está. **Os comandos abaixo usam o caminho absoluto dela** e rodam de qualquer
+   diretório — o de trabalho do Claude Code costuma ser a vault, no Google Drive. Nunca troque por
+   `ep-NN/…` relativo: a ferramenta resolve contra o diretório atual e criaria a pasta (e o mp4 de
+   centenas de MB) dentro do Drive; quando ela cria uma pasta, diz qual.
 4. **Transcrever o bruto** (é o que acha as tomadas erradas):
-   `RM transcrever <bruto> --saida ep-NN/bruto.transcricao.json`.
+   `RM transcrever <bruto> --saida ~/Movies/OBS/root-midia/ep-NN/bruto.transcricao.json`.
    Sem modelo: avise o Pedro do que baixar e siga só com os silêncios — o episódio vai até Edição e
    espera a transcrição.
 5. **Os cortes:**
-   `RM cortes <bruto> --transcricao ep-NN/bruto.transcricao.json --palavra "<palavra da fila>" --saida ep-NN/cortes.json`.
+   `RM cortes <bruto> --transcricao ~/Movies/OBS/root-midia/ep-NN/bruto.transcricao.json --palavra "<palavra da fila>" --saida ~/Movies/OBS/root-midia/ep-NN/cortes.json`.
    O `cortes.json` traz `manter` (o que fica), `removidos` (o que sai, com o motivo) e
    `tomadasErradas` (o trecho de cada uma). **Mostre as tomadas erradas ao Pedro** antes de cortar.
    A heurística: ao achar a palavra num segmento, saem esse segmento e o anterior (a tomada errada).
@@ -63,25 +66,26 @@ A ferramenta é `root-midia.mjs`, nesta mesma pasta (Node 22, sem dependência).
      Pedro para abrir o app ou siga no ffmpeg). No PalmierPro: importar o bruto, montar a timeline com
      os trechos de `manter` na ordem, aplicar a **troca de câmera** (cena "2 · Tela + Câmera" do OBS:
      tela cheia nos trechos de demonstração, câmera nos de fala — o Pedro diz o critério do episódio)
-     e exportar `ep-NN/ep-NN-final.mp4`. Editor = `palmier`.
-   - **Sem o PalmierPro:** `RM cortar <bruto> ep-NN/cortes.json ep-NN/ep-NN-final.mp4`. Sem reencodar
+     e exportar `~/Movies/OBS/root-midia/ep-NN/ep-NN-final.mp4`. Editor = `palmier`.
+   - **Sem o PalmierPro:** `RM cortar <bruto> ~/Movies/OBS/root-midia/ep-NN/cortes.json ~/Movies/OBS/root-midia/ep-NN/ep-NN-final.mp4`. Sem reencodar
      quando toda borda cai em quadro-chave; senão reencoda (corte exato). Não troca câmera. Editor =
      `ffmpeg`.
    Confira a duração do final contra o `esperadoSeg` que o `cortar` imprime (a soma do `manter`; o
    `duracaoFinalSeg` do `cortes.json` fica velho se você ajustou o `manter`). O `cortar` recusa um
    `cortes.json` de outro bruto e uma saída que seja o próprio bruto por outro nome.
 7. **Transcrever o final** (os tempos têm de bater com o vídeo que vai ao ar):
-   `RM transcrever ep-NN/ep-NN-final.mp4 --saida ep-NN/final.transcricao.json`. Sai junto a legenda
-   `ep-NN/final.transcricao.srt`, a que o Pedro sobe no YouTube.
+   `RM transcrever ~/Movies/OBS/root-midia/ep-NN/ep-NN-final.mp4 --saida ~/Movies/OBS/root-midia/ep-NN/final.transcricao.json`. Sai junto a legenda
+   `~/Movies/OBS/root-midia/ep-NN/final.transcricao.srt`, a que o Pedro sobe no YouTube.
 8. **Enviar ao OS:**
-   `RM enviar ep-NN --final ep-NN/ep-NN-final.mp4 --bruto <bruto> --cortes ep-NN/cortes.json --transcricao ep-NN/final.transcricao.json --editor ffmpeg|palmier`.
+   `RM enviar ep-NN --final ~/Movies/OBS/root-midia/ep-NN/ep-NN-final.mp4 --bruto <bruto> --cortes ~/Movies/OBS/root-midia/ep-NN/cortes.json --transcricao ~/Movies/OBS/root-midia/ep-NN/final.transcricao.json --editor ffmpeg|palmier`.
    A mídia leva o episódio a Edição; a transcrição, a Pacote. Mandar a mídia de novo (edição
    refeita) descarta a transcrição anterior e o pacote do YouTube que saiu dela (títulos, descrição
-   e thumbs, com os tempos do vídeo antigo) — mande a transcrição nova junto e avise o Pedro que o
-   pacote tem de ser gerado de novo. A transcrição é lida e conferida
+   e thumbs, com os tempos do vídeo antigo) e leva ao rascunho as peças da semana ainda não
+   postadas, fora da agenda e sem render — mande a transcrição nova junto e avise o Pedro que o
+   pacote e a semana têm de ser gerados de novo. A transcrição é lida e conferida
    antes do primeiro envio: arquivo errado para tudo sem escrever nada no OS. Se o final não bate
    com a soma do `manter`, sai um AVISO — ajuste o `manter` e envie de novo.
-   Só a transcrição (a mídia já está lá): `RM enviar ep-NN --transcricao ep-NN/final.transcricao.json`.
+   Só a transcrição (a mídia já está lá): `RM enviar ep-NN --transcricao ~/Movies/OBS/root-midia/ep-NN/final.transcricao.json`.
 9. **Relate ao Pedro:** o status novo, a duração bruto → final, quantos cortes por motivo e as
    tomadas erradas tiradas. O detalhe do episódio em `/pauta` (aba Episódios) mostra o mesmo.
 
