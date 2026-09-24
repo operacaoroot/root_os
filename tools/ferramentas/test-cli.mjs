@@ -3,8 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
-const repo = new URL('../..', import.meta.url).pathname;
+const repo = fileURLToPath(new URL('../..', import.meta.url));
 const cli = join(repo, 'tools/ferramentas/cli.mjs');
 function run(args, root) { return execFileSync(process.execPath, [cli, ...args, '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
 function fails(args, root) { assert.throws(() => run(args, root)); }
@@ -40,11 +41,11 @@ try {
   assert.match(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/migration.sql'), 'utf8'), /FORCE ROW LEVEL SECURITY/);
   assert.match(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/migration.sql'), 'utf8'), /app_rls_aplicar_policies/);
   assert.match(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/migration.sql'), 'utf8'), /REFERENCES "Org"\("id"\)/);
-  assert.match(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/api/module.ts'), 'utf8'), /\$1/);
+  assert.match(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/api/module.ts'), 'utf8'), /Prisma\.sql/);
   assert.equal(JSON.parse(readFileSync(join(root, 'stage', 'ferramentas/alpha-tool/fixture.json'), 'utf8')).tenants.length, 2);
-  assert.match(readFileSync(join(root, 'stage/apps/api/src/ferramentas-geradas/alpha-tool/module.ts'), 'utf8'), /export const ferramenta/);
-  assert.match(readFileSync(join(root, 'stage/apps/web/src/app/ferramentas-geradas/alpha-tool/page.tsx'), 'utf8'), /Molde não ativado/);
-  execFileSync('pnpm', ['exec', 'tsc', '--noEmit', '--target', 'ES2022', '--module', 'ESNext', '--moduleResolution', 'Bundler', '--jsx', 'preserve', '--skipLibCheck', join(root, 'stage/apps/api/src/ferramentas-geradas/alpha-tool/module.ts'), join(root, 'stage/apps/web/src/app/ferramentas-geradas/alpha-tool/page.tsx')], { cwd: repo, stdio: 'pipe' });
+  assert.match(readFileSync(join(root, 'stage/apps/api/src/ferramentas-geradas/alpha-tool/module.ts'), 'utf8'), /export const SLUG/);
+  assert.match(readFileSync(join(root, 'stage/apps/web/src/app/ferramentas/alpha-tool/page.tsx'), 'utf8'), /FerramentaPage/);
+  assert.match(readFileSync(join(root, 'stage/apps/api/src/ferramentas-geradas/index.ts'), 'utf8'), /TOOL_HASH/);
   const edited = join(root, 'stage/apps/api/src/ferramentas-geradas/alpha-tool/module.ts');
   const editedBytes = readFileSync(edited);
   writeFileSync(edited, Buffer.concat([editedBytes, Buffer.from('edited')]));

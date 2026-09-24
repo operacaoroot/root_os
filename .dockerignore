@@ -8,3 +8,8 @@
 !**/.env.example
 *.log
 data/
+.staging/
+**/.staging/
+**/.rootos-generated.json
+apps/api/src/ferramentas-geradas/
+apps/web/src/app/ferramentas/*/

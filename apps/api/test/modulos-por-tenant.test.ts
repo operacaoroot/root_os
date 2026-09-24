@@ -458,6 +458,8 @@ const proximo: CallHandler = { handle: () => of(SEGUIU) };
 function servicoFalso(modulos: string[]): ModulosService {
   return {
     modulosDaOrg: async () => new Set(modulos),
+    ferramentaAtivaDaOrg: async () => false,
+    ferramentasDaOrg: async () => [],
     esquecer: () => undefined,
   } as unknown as ModulosService;
 }

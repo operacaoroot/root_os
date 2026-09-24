@@ -21,6 +21,7 @@
     "db:seed:demo": "pnpm --filter @mktos/api db:seed:demo",
     "criar-ferramenta": "node tools/ferramentas/cli.mjs criar-ferramenta",
     "preparar-ferramentas": "node tools/ferramentas/cli.mjs preparar-ferramentas",
+    "provar:ferramenta": "node tools/ferramentas/prova-e4b.mjs",
     "test": "turbo run test",
     "test:isolamento": "pnpm --filter @mktos/api test:isolamento"
   },

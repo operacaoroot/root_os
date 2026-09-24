@@ -24,3 +24,7 @@ redis_data/
 .idea/
 _finops_import/
 *.tsbuildinfo
+.staging/
+/apps/api/src/ferramentas-geradas/
+/apps/web/src/app/ferramentas/*/
+/apps/web/src/app/ferramentas/.rootos-generated.json

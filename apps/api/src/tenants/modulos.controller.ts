@@ -3,6 +3,8 @@ import { MODULOS } from '@mktos/shared';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { ModulosService } from './modulos.service';
+import { PREFIXO_FERRAMENTAS } from './modulos';
+import { ferramentasGeradas } from '../ferramentas/bridge';
 
 /**
  * O que ESTA empresa contratou — RF-T-06.
@@ -41,11 +43,21 @@ export class ModulosController {
       throw new UnauthorizedException('Sessão sem empresa');
     }
     const ligados = await this.modulos.modulosDaOrg(user.orgId);
+    const chavesDeFerramentas = await this.modulos.ferramentasDaOrg(
+      user.orgId,
+      ferramentasGeradas().map((ferramenta) => ferramenta.activationKey),
+    );
+    const prefixo = `${PREFIXO_FERRAMENTAS}:`;
+    const ferramentas = chavesDeFerramentas
+      .filter((chave) => chave.startsWith(prefixo))
+      .map((chave) => chave.slice(prefixo.length));
     return {
       /** Os módulos desta empresa, na ordem canônica de `MODULOS`. */
       modulos: MODULOS.filter((m) => ligados.has(m)),
       /** O catálogo inteiro — o web usa para saber o que EXISTE e está de fora. */
       catalogo: MODULOS,
+      /** Slugs dinâmicos são uma lista separada; não entram no catálogo core. */
+      ferramentas,
     };
   }
 }

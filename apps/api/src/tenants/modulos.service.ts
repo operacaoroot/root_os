@@ -90,6 +90,25 @@ export class ModulosService {
     return new Set(conjunto);
   }
 
+  /** Ativações de ferramentas ficam no mesmo campo legado, mas fora do catálogo core. */
+  async ferramentaAtivaDaOrg(orgId: string, activationKey: string): Promise<boolean> {
+    const id = exigirTenant(orgId, 'ModulosService.ferramentaAtivaDaOrg');
+    const org = await this.prisma.org.findUnique({
+      where: { id },
+      select: { isActive: true, modulos: true },
+    });
+    return Boolean(org?.isActive && org.modulos.includes(activationKey));
+  }
+
+  /** Lista explícita, sem misturar chaves dinâmicas ao MODULOS core. */
+  async ferramentasDaOrg(orgId: string, activationKeys: readonly string[]): Promise<string[]> {
+    const id = exigirTenant(orgId, 'ModulosService.ferramentasDaOrg');
+    const org = await this.prisma.org.findUnique({ where: { id }, select: { isActive: true, modulos: true } });
+    if (!org?.isActive) return [];
+    const presentes = new Set(org.modulos);
+    return activationKeys.filter((key) => presentes.has(key));
+  }
+
   /**
    * Descarta o que está em cache. Existe para o dia em que houver tela de
    * ligar/desligar módulo: sem isto, a mudança levaria até `VALIDADE_MS` para

@@ -185,6 +185,7 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'caixa',
   'config',
   'conector',
+  'ferramentas',
   'dashboard',
   'google',
   'health',
@@ -201,6 +202,9 @@ export const PREFIXOS_DA_ESPINHA: readonly string[] = [
   'tenants',
   'users',
 ] as const;
+
+/** Namespace reservado para ferramentas próprias; não é um módulo do catálogo core. */
+export const PREFIXO_FERRAMENTAS = 'ferramentas' as const;
 
 const ESPINHA = new Set<string>(PREFIXOS_DA_ESPINHA);
 

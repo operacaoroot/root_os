@@ -63,7 +63,7 @@ function expectedManifest(slug) {
     generatedFiles: [...FILES], migrationName: `e4a_${slug.replaceAll('-', '_')}_001_tool_registro`,
     outputs: {
       api: `apps/api/src/ferramentas-geradas/${slug}/module.ts`,
-      web: `apps/web/src/app/ferramentas-geradas/${slug}/page.tsx`,
+      web: `apps/web/src/app/ferramentas/${slug}/page.tsx`,
     },
     capability: { proposalId: `ferramenta:${slug}:proposal`, activationKey: `ferramentas:${slug}`, status: 'proposta', active: false, risk: 'R5', permissions: ['mcp.ver', 'mcp.executar'], reason: 'capacidade proposta; requer aprovação explícita' },
   };
@@ -72,17 +72,63 @@ function generatedFiles(slug) {
   const manifest = expectedManifest(slug);
   const cap = { ...manifest.capability };
   const fixture = { schemaVersion: 1, tenants: [
-    { orgId: 'fixture-org-a', records: [{ id: 'a', titulo: 'A' }] },
-    { orgId: 'fixture-org-b', records: [{ id: 'b', titulo: 'B' }] },
+    { orgId: 'fixture-org-a', records: [{ id: 'a', titulo: 'A', texto: 'texto A' }] },
+    { orgId: 'fixture-org-b', records: [{ id: 'b', titulo: 'B', texto: 'texto B' }] },
   ] };
-  const sql = `-- E4a scaffold; migration própria, sem ativação.\nCREATE TABLE "${manifest.tableName}" (\n  "id" TEXT NOT NULL,\n  "orgId" TEXT NOT NULL,\n  "titulo" TEXT NOT NULL,\n  CONSTRAINT "${manifest.tableName}_pkey" PRIMARY KEY ("id"),\n  CONSTRAINT "${manifest.tableName}_org_fkey" FOREIGN KEY ("orgId") REFERENCES "Org"("id") ON DELETE CASCADE\n);\nALTER TABLE "${manifest.tableName}" ENABLE ROW LEVEL SECURITY;\nALTER TABLE "${manifest.tableName}" FORCE ROW LEVEL SECURITY;\nSELECT app_rls_aplicar_policies(\n  '${manifest.tableName}',\n  'public.app_org_resolvida() AND "orgId" = public.app_org_atual()',\n  'public.app_org_resolvida() AND "orgId" = public.app_org_atual()'\n);\n`;
+  const sql = `-- E4a scaffold; migration própria, sem ativação.\nCREATE TABLE "${manifest.tableName}" (\n  "id" TEXT NOT NULL,\n  "orgId" TEXT NOT NULL,\n  "titulo" TEXT NOT NULL,\n  "texto" TEXT NOT NULL,\n  CONSTRAINT "${manifest.tableName}_pkey" PRIMARY KEY ("id"),\n  CONSTRAINT "${manifest.tableName}_org_fkey" FOREIGN KEY ("orgId") REFERENCES "Org"("id") ON DELETE CASCADE\n);\nALTER TABLE "${manifest.tableName}" ENABLE ROW LEVEL SECURITY;\nALTER TABLE "${manifest.tableName}" FORCE ROW LEVEL SECURITY;\nSELECT app_rls_aplicar_policies(\n  '${manifest.tableName}',\n  'public.app_org_resolvida() AND "orgId" = public.app_org_atual()',\n  'public.app_org_resolvida() AND "orgId" = public.app_org_atual()'\n);\n`;
   const files = new Map([
     ['README.md', `# Ferramenta ${slug}\n\nMolde E4a não publicado nem ativado. A capability proposta permanece R5.\n`],
     ['capability-proposal.json', stable(cap)],
     ['fixture.json', stable(fixture)],
     ['migration.sql', sql],
-    ['api/module.ts', `export const ferramenta = ${JSON.stringify({ slug, tableName: manifest.tableName, query: `SELECT "id", "orgId", "titulo" FROM "${manifest.tableName}" WHERE "orgId" = $1 ORDER BY "id"` }, null, 2)} as const;\n`],
-    ['web/page.tsx', `export default function ${slug.replaceAll('-', '_')}Page() { return <main><h1>${slug}</h1><p>Molde não ativado.</p></main>; }\n`],
+    ['api/module.ts', `import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import type { PrismaService } from '../../prisma/prisma.service';
+
+export const SLUG = ${JSON.stringify(slug)} as const;
+export const TABLE_NAME = ${JSON.stringify(manifest.tableName)} as const;
+export const LIST_CAPABILITY = ${JSON.stringify(`ferramentas.${slug}.registro.listar`)} as const;
+export const CREATE_CAPABILITY = ${JSON.stringify(`ferramentas.${slug}.registro.criar`)} as const;
+
+export interface RegistroDaFerramenta {
+  id: string;
+  orgId: string;
+  titulo: string;
+  texto: string;
+}
+
+/**
+ * Código da ferramenta compilado junto com a API. A tabela é um literal
+ * produzido pelo gerador; os valores continuam parâmetros Prisma.
+ */
+export async function listarRegistros(prisma: PrismaService, orgId: string): Promise<RegistroDaFerramenta[]> {
+  return prisma.$queryRaw<RegistroDaFerramenta[]>(Prisma.sql\`SELECT "id", "orgId", "titulo", "texto"
+    FROM \${Prisma.raw(TABLE_NAME)}
+    WHERE "orgId" = \${orgId}
+    ORDER BY "id"\`);
+}
+
+export async function criarRegistro(
+  prisma: PrismaService,
+  orgId: string,
+  titulo: string,
+  texto: string,
+): Promise<RegistroDaFerramenta> {
+  const id = randomUUID();
+  const linhas = await prisma.$queryRaw<RegistroDaFerramenta[]>(Prisma.sql\`INSERT INTO \${Prisma.raw(TABLE_NAME)} ("id", "orgId", "titulo", "texto")
+    VALUES (\${id}, \${orgId}, \${titulo}, \${texto})
+    RETURNING "id", "orgId", "titulo", "texto"\`);
+  const registro = linhas[0];
+  if (!registro) throw new Error('registro da ferramenta não foi criado');
+  return registro;
+}
+`],
+    ['web/page.tsx', `'use client';
+import { FerramentaPage } from '@/ferramentas/FerramentaPage';
+export default function ${slug.replaceAll('-', '_')}Page() {
+  return <FerramentaPage slug=${JSON.stringify(slug)} />;
+}
+`],
   ]);
   files.set('manifest.json', stable(manifest));
   return files;
@@ -155,7 +201,8 @@ function recognizedMarkerPath(value) {
   const parts = value.split('/');
   if (parts.length >= 3 && parts[0] === 'ferramentas' && slugRe.test(parts[1]) && FILES.includes(parts.slice(2).join('/'))) return true;
   if (parts.length === 6 && parts[0] === 'apps' && parts[1] === 'api' && parts[2] === 'src' && parts[3] === 'ferramentas-geradas' && slugRe.test(parts[4]) && parts[5] === 'module.ts') return true;
-  if (parts.length === 7 && parts[0] === 'apps' && parts[1] === 'web' && parts[2] === 'src' && parts[3] === 'app' && parts[4] === 'ferramentas-geradas' && slugRe.test(parts[5]) && parts[6] === 'page.tsx') return true;
+  if (parts.length === 7 && parts[0] === 'apps' && parts[1] === 'web' && parts[2] === 'src' && parts[3] === 'app' && parts[4] === 'ferramentas' && slugRe.test(parts[5]) && parts[6] === 'page.tsx') return true;
+  if (value === 'apps/api/src/ferramentas-geradas/index.ts') return true;
   return false;
 }
 function actualFiles(root) {
@@ -172,6 +219,36 @@ function actualFiles(root) {
   walk(root);
   return files.sort();
 }
+
+function identifier(slug) {
+  return `ferramenta_${slug.replaceAll('-', '_')}`;
+}
+
+function generatedIndex(tools, toolHash) {
+  if (tools.length === 0) {
+    return `// Gerado por preparar-ferramentas; não editar.\nimport type { PrismaService } from '../prisma/prisma.service';\nexport interface FerramentaGerada { slug: string; activationKey: string; tableName: string; listCapability: string; createCapability: string; listarRegistros(prisma: PrismaService, orgId: string): Promise<unknown>; criarRegistro(prisma: PrismaService, orgId: string, titulo: string, texto: string): Promise<unknown>; }\nexport const TOOL_HASH = ${JSON.stringify(toolHash)} as const;\nexport const FERRAMENTAS_GERADAS: readonly FerramentaGerada[] = [];\n`;
+  }
+  const imports = tools.map((tool) =>
+    `import * as ${identifier(tool.slug)} from './${tool.slug}/module';`,
+  );
+  const entries = tools.map((tool) => {
+    const name = identifier(tool.slug);
+    return `  { slug: ${name}.SLUG, activationKey: ${JSON.stringify(`ferramentas:${tool.slug}`)}, tableName: ${name}.TABLE_NAME, listCapability: ${name}.LIST_CAPABILITY, createCapability: ${name}.CREATE_CAPABILITY, listarRegistros: ${name}.listarRegistros, criarRegistro: ${name}.criarRegistro },`;
+  });
+  return [
+    '// Gerado por preparar-ferramentas; não editar.',
+    "import type { PrismaService } from '../prisma/prisma.service';",
+    'export interface FerramentaGerada { slug: string; activationKey: string; tableName: string; listCapability: string; createCapability: string; listarRegistros(prisma: PrismaService, orgId: string): Promise<unknown>; criarRegistro(prisma: PrismaService, orgId: string, titulo: string, texto: string): Promise<unknown>; }',
+    `export const TOOL_HASH = ${JSON.stringify(toolHash)} as const;`,
+    ...imports,
+    '',
+    'export const FERRAMENTAS_GERADAS: readonly FerramentaGerada[] = [',
+    ...entries,
+    '];',
+    '',
+  ].join('\n');
+}
+
 function validateMarkerFile(stage, entry) {
   if (!entry || JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(['path', 'sha256', 'size']) || typeof entry.path !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isInteger(entry.size) || entry.size < 0) fail('marcador de staging inválido');
   if (!recognizedMarkerPath(entry.path)) fail('marcador contém caminho de saída não reconhecido');
@@ -198,11 +275,14 @@ function prepare(options) {
     });
     inventory.tools.push({ slug: manifest.slug, manifestSha256: createHash('sha256').update(inputBytes.get(join(dir, 'manifest.json'))).digest('hex'), files, outputs: manifest.outputs });
   }
+  const canonicalInventory = stable({ schemaVersion: VERSION, tools: inventory.tools });
+  inventory.toolHash = createHash('sha256').update(canonicalInventory).digest('hex');
   const nextPaths = ['inventory.json'];
   for (const manifest of inventory.tools) {
     for (const file of manifest.files) nextPaths.push(`ferramentas/${manifest.slug}/${file.path}`);
     nextPaths.push(manifest.outputs.api, manifest.outputs.web);
   }
+  nextPaths.push('apps/api/src/ferramentas-geradas/index.ts');
   const marker = join(stage, '.rootos-generated.json');
   if (existsSync(stage)) {
     if (!existsSync(marker)) fail('staging existente não foi gerado por este preparador');
@@ -230,6 +310,9 @@ function prepare(options) {
     copyStageBytes(inputBytes.get(join(sourceDir, 'api/module.ts')), apiDestination); paths.push(relative(stage, apiDestination));
     copyStageBytes(inputBytes.get(join(sourceDir, 'web/page.tsx')), webDestination); paths.push(relative(stage, webDestination));
   }
+  const indexDestination = join(stage, 'apps/api/src/ferramentas-geradas/index.ts');
+  copyStageBytes(Buffer.from(generatedIndex(inventory.tools, inventory.toolHash), 'utf8'), indexDestination);
+  paths.push(relative(stage, indexDestination));
   const inventoryJson = stable(inventory);
   writeText(join(stage, 'inventory.json'), inventoryJson); paths.push('inventory.json');
   const stagedFiles = paths.sort().map(path => ({ path, size: statSync(join(stage, path)).size, sha256: hash(join(stage, path)) }));

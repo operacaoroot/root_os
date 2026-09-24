@@ -261,6 +261,39 @@ interface Alvo {
   nota: string;
 }
 
+interface FixtureDeFerramenta {
+  slug: string;
+  tabela: string;
+  tenants: Array<{ orgId: string; records: Array<{ id: string; titulo: string; texto: string }> }>;
+}
+
+/**
+ * Ferramentas não entram como exceção silenciosa: quando uma pasta própria
+ * existe, seu alvo/fixture também passa a compor esta suíte. E4c é quem fará a
+ * migration chegar ao banco; até lá uma ferramenta presente sem tabela reprova
+ * o catálogo, em vez de ser simplesmente ignorada.
+ */
+function carregarFixturesDeFerramentas(): FixtureDeFerramenta[] {
+  let repo = process.cwd();
+  for (let i = 0; i < 8 && !existsSync(path.join(repo, 'tools', 'ferramentas', 'cli.mjs')); i += 1) repo = path.dirname(repo);
+  const raiz = path.join(repo, 'ferramentas');
+  if (!existsSync(raiz)) return [];
+  return readdirSync(raiz, { withFileTypes: true })
+    .filter((entrada) => entrada.isDirectory())
+    .map((entrada) => {
+      const dir = path.join(raiz, entrada.name);
+      const manifest = JSON.parse(readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as { slug: string; tableName: string };
+      if (!/^[a-z][a-z0-9-]{1,47}$/.test(manifest.slug) || !/^tool_[a-z0-9_]+_registro$/.test(manifest.tableName)) {
+        throw new Error(`manifesto de ferramenta inválido para isolamento: ${entrada.name}`);
+      }
+      const fixture = JSON.parse(readFileSync(path.join(dir, 'fixture.json'), 'utf8')) as FixtureDeFerramenta;
+      if (!Array.isArray(fixture.tenants) || fixture.tenants.length < 2) throw new Error(`fixture de ferramenta sem dois tenants: ${manifest.slug}`);
+      return { slug: manifest.slug, tabela: manifest.tableName, tenants: fixture.tenants };
+    });
+}
+
+const FIXTURES_DE_FERRAMENTAS = carregarFixturesDeFerramentas();
+
 /**
  * Tabelas TENANT (modelos com coluna orgId + a própria Org, que se escopa pela
  * PK), as 10 FILHAS e as 3 junções implícitas do Prisma.
@@ -420,6 +453,13 @@ const ALVOS: Alvo[] = [
   { tabela: '_RolePermissions', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Permission.id (GLOBAL), B=Role.id (TENANT). A policy vai em B, nunca em A.' },
   { tabela: '_WorkTaskTags', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=WorkTag.id, B=WorkTask.id. Os dois pais têm orgId.' },
 ];
+
+ALVOS.push(...FIXTURES_DE_FERRAMENTAS.map((fixture) => ({
+  tabela: fixture.tabela,
+  escopo: 'tenant' as const,
+  chaveSql: '"id"',
+  nota: `Ferramenta própria ${fixture.slug}: registros internos não podem atravessar empresa.`,
+})));
 
 /**
  * Tabelas GLOBAIS por design: ligar RLS nelas QUEBRA o sistema.
@@ -1221,6 +1261,22 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     chamadas: rotulo === 'A' ? 3 : 40, chamadasSemPreco: 0, cortes: 0,
     criadoEm: agora, atualizadoEm: agora,
   }));
+
+  // Ferramentas próprias têm fixture mínima gerada (id/orgId/título/texto).
+  // O nome da tabela veio do manifesto já validado acima; os valores seguem
+  // parâmetros, e cada linha entra no mesmo registro de limpeza da suíte.
+  for (const ferramenta of FIXTURES_DE_FERRAMENTAS) {
+    const fixture = ferramenta.tenants[rotulo === 'A' ? 0 : 1];
+    for (const registro of fixture.records) {
+      const id = `${ferramenta.slug}_${MARCA}_${registro.id}`;
+      reg(ferramenta.tabela, await ins(c, ferramenta.tabela, {
+        id,
+        orgId,
+        titulo: registro.titulo,
+        texto: registro.texto,
+      }));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

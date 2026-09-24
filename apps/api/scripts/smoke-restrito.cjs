@@ -61,6 +61,12 @@ if (process.argv[2] !== '--filho') {
   const dono = process.env.TEST_DATABASE_URL;
   const restrito = process.env.TENANT_DATABASE_URL;
   validarUrls(dono, restrito);
+  const e4bObrigatorio = process.env.E4B_TOOL_REQUIRED === '1';
+  if (e4bObrigatorio) {
+    for (const nome of ['E4B_TOOL_SLUG', 'E4B_TOOL_TABLE', 'E4B_TOOL_HASH']) {
+      assert(process.env[nome], `${nome} é obrigatório quando E4B_TOOL_REQUIRED=1`);
+    }
+  }
   const pasta = mkdtempSync(join(tmpdir(), 'rootos-smoke-restrito-'));
   try {
     const filho = spawnSync(process.execPath, [__filename, '--filho'], {
@@ -71,6 +77,12 @@ if (process.argv[2] !== '--filho') {
         JWT_SECRET: 'segredo-exclusivamente-sintetico-do-smoke',
         ONBOARDING_ABERTO: 'sim', ROTINAS_CRON: 'off',
         CLICKUP_SYNC_INTERVAL_MIN: '0', PLUGGY_SYNC_INTERVAL_MIN: '0', OBSIDIAN_REINDEX_MIN: '0',
+        ...(e4bObrigatorio ? {
+          E4B_TOOL_REQUIRED: '1',
+          E4B_TOOL_SLUG: process.env.E4B_TOOL_SLUG,
+          E4B_TOOL_TABLE: process.env.E4B_TOOL_TABLE,
+          E4B_TOOL_HASH: process.env.E4B_TOOL_HASH,
+        } : {}),
       },
     });
     process.exitCode = filho.status === 0 && !filho.error ? 0 : 1;
@@ -80,12 +92,16 @@ if (process.argv[2] !== '--filho') {
   assert.equal(process.env.TENANT_MODO, 'impor', 'Smoke exige modo impor.');
   require('reflect-metadata');
   const { randomUUID } = require('node:crypto');
-  const { PrismaClient } = require('@prisma/client');
+  const { ActorType, Prisma, PrismaClient } = require('@prisma/client');
   const { NestFactory } = require('@nestjs/core');
   const bcrypt = require('bcryptjs');
   const { AppModule } = require('../dist/app.module');
   const { ZodExceptionFilter } = require('../dist/common/zod-exception.filter');
   const { TetoDeCustoIaService } = require('../dist/llm/teto-diario.service');
+  const { PolicyService } = require('../dist/policy/policy.service');
+  const { ToolGateway } = require('../dist/gateway/tool-gateway.service');
+  const { EfeitosRegistry } = require('../dist/gateway/efeitos.registry');
+  const { ferramentasGeradas, FERRAMENTAS_TOOL_HASH } = require('../dist/ferramentas/bridge');
   const { configurarBodyParser } = require('../dist/common/configurar-body-parser');
   const dono = new PrismaClient();
   const papel = new PrismaClient({ datasourceUrl: process.env.APP_DATABASE_URL });
@@ -135,6 +151,159 @@ if (process.argv[2] !== '--filho') {
       tokens.push(sessao.token);
       await pedir('/tenants/onboarding/estado', { token: sessao.token });
     }
+
+    async function rodarFerramentaE4b() {
+      assert.equal(process.env.E4B_TOOL_REQUIRED, '1', 'a prova E4b exige marcador explícito');
+      const slug = process.env.E4B_TOOL_SLUG;
+      const tabela = process.env.E4B_TOOL_TABLE;
+      const toolHash = process.env.E4B_TOOL_HASH;
+      assert(slug && tabela && toolHash, 'identidade E4b incompleta');
+      assert(/^[a-z][a-z0-9-]{1,47}$/.test(slug), 'slug E4B inválido');
+      assert(/^tool_[a-z0-9_]+_registro$/.test(tabela), 'tabela E4B inválida');
+      assert(/^[a-f0-9]{64}$/.test(toolHash), 'toolHash E4B inválido');
+      const geradas = ferramentasGeradas();
+      assert.equal(geradas.length, 1, 'a prova E4b exige exatamente uma ferramenta sintética compilada');
+      assert.equal(geradas[0].slug, slug, 'slug compilado diverge do esperado');
+      assert.equal(geradas[0].tableName, tabela, 'tabela compilada diverge do esperado');
+      assert.equal(FERRAMENTAS_TOOL_HASH, toolHash, 'toolHash compilado diverge do inventário validado');
+      const ativacao = `ferramentas:${slug}`;
+      const listCapability = geradas[0].listCapability;
+      const createCapability = geradas[0].createCapability;
+      for (const pessoa of pessoas) {
+        await dono.org.update({ where: { id: pessoa.orgId }, data: { modulos: { push: ativacao } } });
+      }
+
+      // A proposta no manifesto não ativa catálogo: antes da sobrescrita o
+      // gateway classifica como R5 e o efeito não chega à tabela.
+      await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0], status: 403 });
+      assert.equal(await dono.$queryRaw(Prisma.sql`SELECT count(*)::int AS total FROM ${Prisma.raw(tabela)}`).then((r) => r[0].total), 0);
+
+      const efeitoR0 = {
+        escreveForaDoOS: false, produzArtefato: false, reversibilidade: 'automatica',
+        exposicaoExterna: false, impactoFinanceiro: 'nenhum', sensibilidade: 'interna',
+        destruicao: false, obrigacaoLegal: false,
+      };
+      const capacidadeListar = {
+        id: listCapability, ferramenta: `${slug}_listar`, rota: `GET /ferramentas/${slug}/registros`,
+        descricao: 'lista registros sintéticos da prova local E4b', nivel: 'R0',
+        argsSchema: { type: 'object', additionalProperties: false, properties: {} }, efeito: efeitoR0,
+      };
+      const capacidadeCriar = {
+        id: createCapability, ferramenta: `${slug}_criar`, rota: `POST /ferramentas/${slug}/registros`,
+        descricao: 'cria artefato interno sintético da prova local E4b', nivel: 'R1',
+        argsSchema: {
+          type: 'object', additionalProperties: false, required: ['titulo', 'texto'],
+          properties: { titulo: { type: 'string', minLength: 1 }, texto: { type: 'string', minLength: 1 } },
+        },
+        efeito: { ...efeitoR0, produzArtefato: true },
+      };
+      const delta = {
+        versao: 'e4b-sintetica-1', atualizadoEm: '2026-09-21', origem: 'fixture sintética E4b',
+        descricao: 'classificação local reproduzível da ferramenta sintética',
+        estende: 'politica-marketing-os.json', capacidades: [capacidadeListar, capacidadeCriar],
+      };
+      const policyService = app.get(PolicyService);
+      for (const pessoa of pessoas) {
+        const resultado = await policyService.sobrescrever({
+          orgId: pessoa.orgId,
+          delta,
+          autorId: 'fixture-autor-sintetico-e4b',
+          motivo: 'fixture E4b local: classificar R0/R1 sem alegar assinatura humana real',
+        });
+        assert.equal(resultado.criada, true, 'a política sintética deve abrir versão própria');
+        const policy = await dono.policyVersion.findFirstOrThrow({ where: { orgId: pessoa.orgId, ativaAte: null } });
+        assert.equal(policy.autorId, 'fixture-autor-sintetico-e4b');
+        assert.match(policy.motivo, /fixture E4b local/);
+      }
+
+      await pedir(`/ferramentas/${slug}/registros`, {
+        token: tokens[0], status: 201, body: { titulo: 'A', texto: 'registro exclusivo A' },
+      });
+      await pedir(`/ferramentas/${slug}/registros`, {
+        token: tokens[1], status: 201, body: { titulo: 'B', texto: 'registro exclusivo B' },
+      });
+      const listaA = await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0] });
+      const listaB = await pedir(`/ferramentas/${slug}/registros`, { token: tokens[1] });
+      assert(listaA.registros.every((row) => row.orgId === pessoas[0].orgId), 'leitura A atravessou RLS');
+      assert(listaB.registros.every((row) => row.orgId === pessoas[1].orgId), 'leitura B atravessou RLS');
+      assert(listaA.registros.some((row) => row.texto === 'registro exclusivo A'));
+      assert(!listaA.registros.some((row) => row.texto === 'registro exclusivo B'));
+      const criado = await pedir(`/ferramentas/${slug}/registros`, {
+        token: tokens[0], status: 201, body: { titulo: 'criado A', texto: 'artefato interno A' },
+      });
+      assert.equal(criado.orgId, pessoas[0].orgId);
+
+      // O papel SQL restrito, sem WHERE de tenant, ainda só enxerga A.
+      const linhasRestritas = await papel.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.org_id', ${pessoas[0].orgId}, true)`;
+        return tx.$queryRaw(Prisma.sql`SELECT "orgId", "texto" FROM ${Prisma.raw(tabela)} ORDER BY "id"`);
+      });
+      assert(linhasRestritas.length >= 2);
+      assert(linhasRestritas.every((row) => row.orgId === pessoas[0].orgId), 'papel restrito atravessou RLS');
+
+      const usuarioComPapeis = await dono.user.findUniqueOrThrow({
+        where: { id: pessoas[0].id }, select: { roles: { select: { id: true, key: true } } },
+      });
+      const papeisOriginais = usuarioComPapeis.roles.map((role) => ({ id: role.id }));
+      const permissaoVer = await dono.permission.findUniqueOrThrow({ where: { key: 'mcp.ver' } });
+      for (const role of usuarioComPapeis.roles) {
+        await dono.role.update({ where: { id: role.id }, data: { permissions: { disconnect: { id: permissaoVer.id } } } });
+      }
+      await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0], status: 403 });
+      for (const role of usuarioComPapeis.roles) {
+        await dono.role.update({ where: { id: role.id }, data: { permissions: { connect: { id: permissaoVer.id } } } });
+      }
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { roles: { set: [] } } });
+      await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0], status: 403 });
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { roles: { set: papeisOriginais } } });
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { isActive: false } });
+      await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0], status: 403 });
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { isActive: true } });
+
+      const papelMaquina = await dono.role.findFirstOrThrow({ where: { orgId: pessoas[0].orgId, key: 'ia_acao' } });
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { roles: { set: [{ id: papelMaquina.id }] } } });
+      await assert.rejects(
+        app.get(EfeitosRegistry).executar(listCapability, {}, {
+          orgId: pessoas[0].orgId, actorId: pessoas[0].id, actorType: ActorType.user,
+        }),
+        /máquina não opera como pessoa/,
+      );
+      await dono.user.update({ where: { id: pessoas[0].id }, data: { roles: { set: papeisOriginais } } });
+
+      const agente = await dono.agent.create({
+        data: {
+          orgId: pessoas[0].orgId, slug: `e4b-${randomUUID()}`, nome: 'Agente sintético E4b',
+          missao: 'Provar autoridade atual da ferramenta sintética', estado: 'ativo', ativo: true,
+          capacidades: [listCapability, createCapability], contextoFixo: [],
+        },
+      });
+      const gateway = app.get(ToolGateway);
+      const ctxAi = {
+        orgId: pessoas[0].orgId, actorType: ActorType.ai, actorId: agente.id,
+        agentSlug: agente.slug, correlationId: `e4b-ai-${randomUUID()}`,
+        capacidadesDeclaradas: [listCapability, createCapability],
+      };
+      const aiCriou = await gateway.executar(
+        { capabilityId: createCapability, args: { titulo: 'AI real', texto: 'validada no banco' }, ctx: ctxAi },
+        (args, ctx) => app.get(EfeitosRegistry).executar(createCapability, args, ctx),
+      );
+      assert.equal(aiCriou.status, 'executado', 'AI ativa e declarada deve executar R1');
+
+      await dono.org.update({
+        where: { id: pessoas[0].orgId },
+        data: { modulos: { set: (await dono.org.findUniqueOrThrow({ where: { id: pessoas[0].orgId } })).modulos.filter((m) => m !== ativacao) } },
+      });
+      await pedir(`/ferramentas/${slug}/registros`, { token: tokens[0], status: 404 });
+      await assert.rejects(
+        app.get(EfeitosRegistry).executar(listCapability, {}, {
+          orgId: pessoas[0].orgId, actorId: agente.id, actorType: ActorType.ai, agentSlug: agente.slug,
+        }),
+        /Ferramenta não encontrada/,
+      );
+      await pedir(`/ferramentas/slug-desconhecido-e4b/registros`, { token: tokens[1], status: 404 });
+      console.log('E4B_TOOL_HTTP_RLS_OK: R5 antes de PolicyService, R0/R1, 2 orgs/RLS, autoridade humana/máquina/AI e efeito pós-desativação.');
+    }
+    if (process.env.E4B_TOOL_REQUIRED === '1') await rodarFerramentaE4b();
     await pedir('/auth/login', { status: 401, body: { email: emails[0], password: 'senha-errada' } });
     const nota = await pedir('/tenants/onboarding/carga/resposta', {
       token: tokens[0], status: 201, body: { tema: 'negocio', orgId: pessoas[1].orgId,

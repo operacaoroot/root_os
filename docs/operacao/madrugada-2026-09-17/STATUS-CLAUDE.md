@@ -1,9 +1,9 @@
 # Estado do executor
 
-- Estado: EM EXECUÇÃO — iniciado 17/09/2026 01:24 -03 por instrução direta do Pedro (antes da janela proposta de 02:00; a janela não passou).
+- Estado: ENCERRADO — execução local e homologação VPS concluídas em 17/09/2026; sem operação longa em andamento.
 - Escritor deste arquivo durante execução: Claude.
-- Diretório: `/Users/pedro/orca/workspaces/root_os/volute` · branch `pedromagnago/varredura-pendencias-claude` · HEAD `409fbf3` (base observada confirmada; sem reset).
-- Etapa: **ENCERRADA (02:12 -03).** E0 · E1 · E2 verdes com prova real; E3 só como rascunho de manifesto (destino da VPS não confirmado, nenhum acesso remoto); E4 concluída — `RELATORIO-CLAUDE.md` completo, evidências sanitizadas em `evidencias-e2/`, commit focado no clone isolado (Q-002): HEAD do clone, sobre `8c4ce0a`. Veredicto: **P1 aprovado em ensaio local; VPS NÃO validada.**
+- Diretório: `/Users/pedro/orca/workspaces/root_os/volute` · branch `pedromagnago/varredura-pendencias-claude` · HEAD `d7ac2f6` (registro consolidado; sem reset).
+- Etapa: **ENCERRADA (homologação VPS validada às 12:45 -03; acesso humano validado ~13:10).** E0–E2 verdes localmente; E3 executada na VPS ROOT com instalação, atualização, backup/restore e retorno; E4 concluída. Veredicto: **P1 aprovado localmente e em homologação VPS; produção não foi alvo do ensaio.**
 - Mudanças preexistentes preservadas: só os três documentos da madrugada, não rastreados (`docs/WORKFLOW-MADRUGADA-CLAUDE.md`, `docs/ACOMPANHAMENTO-MADRUGADA-CODEX.md`, `docs/operacao/`). Nada mais na árvore.
 - Syncthing (evidência em DUVIDAS Q-002): a pasta `projetos-mdc` = `~/Library/Projetos` inteiro, `sendreceive`, compartilhada com `dc6de249b110`. Este worktree está em `~/orca/` (fora), mas seu `gitdir` é `~/Library/Projetos/root_os/.git/worktrees/volute` — **commits escrevem em pasta sincronizada**. Edição e teste aqui não sincronizam. **Decisão provisória: editar/testar aqui, não commitar até Q-002.**
 - Baseline revalidada 01:30 -03: `bash -n` dos 3 scripts OK; `deploy-instancia.test.ts` **23/23** (sem `TEST_DATABASE_URL`); conector local **14/14**; Docker Compose v5.1.3 disponível; containers do projeto no host: `mktos_pg_test`, `mktos-shadow` (descartáveis).

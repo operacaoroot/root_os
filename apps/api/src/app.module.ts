@@ -40,6 +40,7 @@ import { PlataformaModule } from './platform/plataforma.module';
 import { LinhaDoTempoModule } from './linha-do-tempo/linha-do-tempo.module';
 import { CaixaModule } from './caixa/caixa.module';
 import { ConectorModule } from './conector/conector.module';
+import { FerramentasModule } from './ferramentas/ferramentas.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { ConectorModule } from './conector/conector.module';
     // As duas linhas não se duplicam — esta declara o DONO, a de lá declara USO.
     MemoryModule,
     ConectorModule,
+    FerramentasModule,
     AgentsModule,
     AuthModule,
     // O DEGRAU DE ENTRADA (RF-O-01, RF-O-02, RF-M-05, fatia 6.1+4.5). Depois de

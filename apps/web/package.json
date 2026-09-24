@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 4000",
+    "predev": "node ../../tools/ferramentas/build-hook.mjs",
     "build": "next build",
+    "prebuild": "node ../../tools/ferramentas/build-hook.mjs",
     "start": "next start -p 4000",
     "typecheck": "tsc --noEmit",
+    "pretypecheck": "node ../../tools/ferramentas/build-hook.mjs",
     "lint": "next lint",
     "test": "vitest run",
+    "pretest": "node ../../tools/ferramentas/build-hook.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
