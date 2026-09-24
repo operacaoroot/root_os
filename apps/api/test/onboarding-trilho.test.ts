@@ -66,6 +66,7 @@ import { N_DIAS_SEM_USO_PADRAO, diasAte, pendencias, type ConviteParaRelogio, ty
 import { TranscricaoIndisponivelError, TranscricaoService } from '../src/llm/transcricao.provider';
 import { montarRetratoDoTrilho } from '../src/onboarding/trilho/retrato-do-trilho';
 import { CONSENTIMENTO, montarRoteiro } from '../src/onboarding/trilho/roteiro';
+import { ID_DO_INDICE, LIGACOES_DA_ESPINHA, montarTeia, notasDaConversaDe } from '../src/onboarding/trilho/teia-do-cliente';
 import { MARCA_DE_SEGREDO, varrerSegredos } from '../src/onboarding/trilho/segredos';
 
 /*
@@ -560,6 +561,81 @@ describe('o mapa do cliente: onde ele está, sem inventar data', () => {
     expect(o.decisoes).toEqual(['d-dupla', 'd-status']);
     expect(o.confirmacoes).toEqual(['negocio', 'canais']);
     expect(o.extras).toEqual(['c-duvidas']);
+  });
+});
+
+describe('a teia do cliente: cada tema é uma nota, o índice liga o que existe', () => {
+  const notas = [
+    { id: 'selbetti', titulo: 'A Selbetti é uma one-stop tech', corpo: 'Dez unidades de negócio.', minuto: '02:10:05', liga: ['negocio', 'oferta-e-preco', 'tema-que-nao-existe'] },
+  ];
+  const base = {
+    slug: 'andrade-pecas',
+    nivel: 'avancar-junto',
+    blocosDoLink: 'BCD' as const,
+    itens: [
+      { temaId: 'negocio', status: 'aprovado', proposta: 'Vendemos peças.', textoFinal: null },
+      { temaId: 'canais', status: 'confirmado', proposta: 'Indicação.', textoFinal: 'Indicação.' },
+      { temaId: 'd-status', status: 'em-branco', proposta: null, textoFinal: null },
+    ],
+    notasDaConversa: notas,
+  };
+
+  it('nasce com os temas do link, as notas da conversa e o índice; cada um com o estado certo', () => {
+    const t = montarTeia(base);
+    expect(t.pasta).toBe('andrade-pecas/');
+    const por = new Map(t.nos.map((n) => [n.id, n]));
+    expect(por.get('negocio')).toMatchObject({ tipo: 'tema', estado: 'rascunho', pasta: 'Casa', corpo: 'Vendemos peças.' });
+    expect(por.get('canais')).toMatchObject({ estado: 'pronta', corpo: 'Indicação.' });
+    expect(por.get('d-status')).toMatchObject({ estado: 'vazia', pasta: 'Operação', corpo: null });
+    expect(por.get('d-dupla')?.estado).toBe('vazia'); // tema sem linha no banco também é nó
+    expect(por.get('conversa:selbetti')).toMatchObject({ tipo: 'conversa', estado: 'conversa', pasta: 'Da conversa', minuto: '02:10:05' });
+    expect(por.get(ID_DO_INDICE)?.tipo).toBe('indice');
+    // O link A não entra no B–D; o ramo do beabá tampouco.
+    expect(por.has('a-empresa')).toBe(false);
+    expect(por.has('d-turma')).toBe(false);
+    expect(t.contagem).toEqual({ prontas: 1, rascunhos: 1, vazias: t.nos.filter((n) => n.tipo === 'tema').length - 2, daConversa: 1 });
+  });
+
+  it('as arestas são únicas, só entre nós que existem, e a nota da conversa traz as suas', () => {
+    const t = montarTeia(base);
+    const chaves = t.arestas.map((a) => (a.de < a.para ? `${a.de}|${a.para}` : `${a.para}|${a.de}`));
+    expect(new Set(chaves).size).toBe(chaves.length);
+    const ids = new Set(t.nos.map((n) => n.id));
+    for (const a of t.arestas) {
+      expect(ids.has(a.de)).toBe(true);
+      expect(ids.has(a.para)).toBe(true);
+    }
+    const daNota = t.arestas.filter((a) => (a.de === 'conversa:selbetti' || a.para === 'conversa:selbetti') && a.de !== ID_DO_INDICE && a.para !== ID_DO_INDICE);
+    expect(daNota).toHaveLength(2); // negocio e oferta-e-preco; o tema inexistente caiu (a do índice é dele, não da nota)
+    expect(t.nos.find((n) => n.id === 'conversa:selbetti')?.ligacoes.sort()).toEqual([ID_DO_INDICE, 'negocio', 'oferta-e-preco']);
+  });
+
+  it('o índice liga só o que EXISTE — pronta e da conversa — e cresce quando o cliente confirma', () => {
+    const antes = montarTeia(base);
+    const doIndice = (t: ReturnType<typeof montarTeia>) => t.nos.find((n) => n.id === ID_DO_INDICE)!.ligacoes.sort();
+    expect(doIndice(antes)).toEqual(['canais', 'conversa:selbetti']);
+    const depois = montarTeia({
+      ...base,
+      itens: base.itens.map((i) => (i.temaId === 'negocio' ? { ...i, status: 'confirmado', textoFinal: 'Vendemos peças.' } : i)),
+    });
+    expect(doIndice(depois)).toEqual(['canais', 'conversa:selbetti', 'negocio']);
+    expect(depois.contagem.prontas).toBe(2);
+  });
+
+  it('as ligações da espinha apontam para temas que existem', () => {
+    const ids = new Set(ESPINHA.map((t) => t.id));
+    for (const [a, b] of LIGACOES_DA_ESPINHA) {
+      expect(ids.has(a), a).toBe(true);
+      expect(ids.has(b), b).toBe(true);
+    }
+  });
+
+  it('lê o marco ata.notas com tolerância: sem id ou título, a nota não entra', () => {
+    const lidas = notasDaConversaDe({ notas: [{ id: 'a', titulo: 'A', corpo: 'x', minuto: '', liga: ['negocio', 7] }, { titulo: 'sem id' }, 'lixo', null] });
+    expect(lidas).toHaveLength(1);
+    expect(lidas[0]).toMatchObject({ id: 'a', titulo: 'A', minuto: null, liga: ['negocio'], tags: [] });
+    expect(notasDaConversaDe(null)).toEqual([]);
+    expect(notasDaConversaDe({ notas: 'x' })).toEqual([]);
   });
 });
 

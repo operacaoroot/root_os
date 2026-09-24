@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AgentEstado,
+  ContextKind,
   ContextSource,
   OnboardingFase,
   Prisma,
@@ -80,6 +81,7 @@ import {
 import { montarRetratoDoTrilho, type RetratoDoTrilho } from './retrato-do-trilho';
 import { montarRoteiro, type RoteiroDoKickoff } from './roteiro';
 import { varrerSegredos } from './segredos';
+import { notasDaConversaDe } from './teia-do-cliente';
 
 /* ==========================================================================
  * O SERVIÇO DO TRILHO — a casca injetável do onboarding do cliente
@@ -1032,7 +1034,12 @@ export class TrilhoService {
      * essa linha. Então o laço de dentro só devolve o que gravou, e a marca é
      * escrita depois, de volta no contexto de quem chamou.
      */
+    // As notas que nasceram da conversa (marco `ata.notas`, o mais recente) também entram.
+    const marcoDaAta = await this.prisma.onboardingMarco.findFirst({ where: { trilhoId, tipo: 'ata.notas' }, orderBy: { em: 'desc' } });
+    const notasDaConversa = marcoDaAta ? notasDaConversaDe(marcoDaAta.dados) : [];
+
     const gravadas: { itemId: string; notaId: string }[] = [];
+    let daConversa = 0;
     await comContexto(
       {
         orgId: empresaId,
@@ -1073,6 +1080,41 @@ export class TrilhoService {
           gravadas.push({ itemId: i.id, notaId: gravada.id });
         }
 
+        /*
+         * As notas da conversa são o conteúdo do vault dele desde o primeiro
+         * dia — não esperam confirmação, e dizem de onde vieram (o minuto).
+         * Idempotente pelo corpo: nota igual à que já está lá não é regravada.
+         */
+        for (const n of notasDaConversa) {
+          const chave = `onboarding:ata:${n.id}`;
+          const corpo = (n.corpo ?? '').trim();
+          if (!corpo) continue;
+          const existente = await this.memoria.porChave(empresaId, chave);
+          if (existente && !existente.arquivadoEm && existente.body === corpo) continue;
+          const nota = {
+            chave,
+            title: n.titulo,
+            body: corpo,
+            kind: ContextKind.nota,
+            tags: ['onboarding', 'ata', ...(n.tags ?? [])],
+            sourceType: ContextSource.operador,
+            sourceRef: `onboarding:${t.slug} · ata ${t.kickoffEm ? t.kickoffEm.toISOString().slice(0, 10) : 'sem data'}${n.minuto ? ` ${n.minuto}` : ''} · nota do leitor de ata`,
+            motivo: `nota da conversa, lida da ata${n.minuto ? ` (${n.minuto})` : ''}`,
+          };
+          if (existente) {
+            if (existente.arquivadoEm) await this.memoria.restaurar(empresaId, existente.id, 'a nota da conversa voltou pelo onboarding');
+            await this.memoria.alterar(empresaId, existente.id, { ...nota, motivo: `${nota.motivo} (revista)` });
+          } else {
+            await this.memoria.criar(empresaId, nota);
+          }
+          try {
+            await espelharNoIndice(this.prisma, empresaId, { chave, titulo: n.titulo, corpo, tags: nota.tags });
+          } catch (e) {
+            this.log.warn(`empresa ${empresaId}: nota "${chave}" fora do índice de busca (${(e as Error).message})`);
+          }
+          daConversa += 1;
+        }
+
         // O retrato também vira nota — a mesma chave da carga guiada.
         const retrato = this.retratoDe(t, t.itens);
         if (retrato.nota) {
@@ -1097,8 +1139,15 @@ export class TrilhoService {
     for (const g of gravadas) {
       await this.prisma.onboardingItem.update({ where: { id: g.itemId }, data: { notaId: g.notaId, carregadoEm: agora } });
     }
-    const carregados = gravadas.length;
-    await this.marco(orgId, trilhoId, 'memoria.carregada', `${carregados} nota(s) carregada(s) na memória de ${t.cliente}.`, { carregados, empresaId }, quem);
+    const carregados = gravadas.length + daConversa;
+    await this.marco(
+      orgId,
+      trilhoId,
+      'memoria.carregada',
+      `${carregados} nota(s) carregada(s) na memória de ${t.cliente}${daConversa ? ` (${daConversa} da conversa)` : ''}.`,
+      { carregados, daConversa, empresaId },
+      quem,
+    );
     return { carregados, retrato: true };
   }
 

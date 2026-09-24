@@ -25,6 +25,7 @@ import {
 import { formatarData } from './mensagens';
 import { receita } from './receitas';
 import type { RetratoDoTrilho } from './retrato-do-trilho';
+import { montarTeia, notasDaConversaDe, type NotaDaConversa, type TeiaDoCliente } from './teia-do-cliente';
 import { varrerSegredos } from './segredos';
 import { TrilhoService, type Quem } from './trilho.service';
 
@@ -88,6 +89,8 @@ export interface EstadoDoLink {
   mapa: MapaDoCliente;
   /** A ordem do kickoff: decisão primeiro, confirmação depois, opcional no fim. */
   ordem: OrdemDoKickoff;
+  /** O vault dele crescendo: cada tema é uma nota, as notas se ligam, o índice liga o que existe. */
+  teia: TeiaDoCliente;
   progresso: {
     confirmados: number;
     respondidos: number;
@@ -145,32 +148,42 @@ export class LinkPublicoService {
   }
 
   /**
-   * As perguntas que o roteirista reescreveu com o vocabulário do cliente
-   * (marco `roteiro.personalizado`). É a MESMA fonte do roteiro do kickoff:
-   * quem conduziu a conversa perguntou daquele jeito, e o cliente lê daquele
-   * jeito no link. Sem marco, vale a espinha.
+   * O que o trilho já sabe além dos itens, e que o link mostra:
+   *   · as perguntas que o roteirista reescreveu com o vocabulário do cliente
+   *     (marco `roteiro.personalizado`). É a MESMA fonte do roteiro do kickoff:
+   *     quem conduziu a conversa perguntou daquele jeito, e o cliente lê daquele
+   *     jeito no link. Sem marco, vale a espinha;
+   *   · as notas que já nasceram da transcrição (marco `ata.notas`), que
+   *     entram na teia como notas da conversa.
+   * Sempre o marco mais recente de cada tipo.
    */
-  private async perguntasDoRoteiro(trilhoId: string): Promise<Record<string, string>> {
-    const m = await this.prisma.onboardingMarco.findFirst({
-      where: { trilhoId, tipo: 'roteiro.personalizado' },
+  private async marcosDoLink(trilhoId: string): Promise<{ perguntas: Record<string, string>; notas: NotaDaConversa[] }> {
+    const marcos = await this.prisma.onboardingMarco.findMany({
+      where: { trilhoId, tipo: { in: ['roteiro.personalizado', 'ata.notas'] } },
       orderBy: { em: 'desc' },
     });
-    const p = (m?.dados as { perguntas?: Record<string, string> } | null)?.perguntas;
-    return p && typeof p === 'object' ? p : {};
+    const roteiro = marcos.find((m) => m.tipo === 'roteiro.personalizado');
+    const ata = marcos.find((m) => m.tipo === 'ata.notas');
+    const p = (roteiro?.dados as { perguntas?: Record<string, string> } | null)?.perguntas;
+    return {
+      perguntas: p && typeof p === 'object' ? p : {},
+      notas: ata ? notasDaConversaDe(ata.dados) : [],
+    };
   }
 
   private async montarEstadoCompleto(
     t: OnboardingTrilho & { itens: OnboardingItem[] },
     r: Resolvido,
   ): Promise<EstadoDoLink> {
-    const perguntas = await this.perguntasDoRoteiro(t.id);
-    return this.montarEstado(t, r, perguntas);
+    const { perguntas, notas } = await this.marcosDoLink(t.id);
+    return this.montarEstado(t, r, perguntas, notas);
   }
 
   private montarEstado(
     t: OnboardingTrilho & { itens: OnboardingItem[] },
     r: Resolvido,
     perguntas: Record<string, string> = {},
+    notasDaConversa: NotaDaConversa[] = [],
   ): EstadoDoLink {
     const nivel: Nivel | null = ehNivel(t.nivel) ? t.nivel : null;
     const temas = temasDoConvite(r.blocos, nivel);
@@ -209,6 +222,13 @@ export class LinkPublicoService {
       itens,
       mapa,
       ordem: ordemDoKickoff(itens),
+      teia: montarTeia({
+        slug: t.slug,
+        nivel: t.nivel,
+        blocosDoLink: r.blocos,
+        itens: t.itens.map((i) => ({ temaId: i.temaId, status: i.status, proposta: i.proposta, textoFinal: i.textoFinal })),
+        notasDaConversa,
+      }),
       progresso: {
         confirmados: itens.filter((i) => i.status === 'confirmado' || i.status === 'corrigido').length,
         respondidos: itens.filter((i) => i.status === 'respondido').length,

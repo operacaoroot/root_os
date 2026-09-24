@@ -318,7 +318,21 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
   });
 
   it('o link é o KICKOFF: mapa na estação 3, decisão antes de confirmação, e a pergunta é a do roteirista', async () => {
+    // As notas que nasceram da conversa entram pelo marco `ata.notas` e aparecem na teia.
+    await naRoot(() =>
+      trilhos.marco(rootId, trilhoId, 'ata.notas', '1 nota nasceu da conversa.', {
+        notas: [{ id: 'frota-pesada', titulo: 'Frota pesada é o mercado', corpo: 'Caminhão e ônibus, transportadora e oficina de frota.', minuto: '00:04:12', liga: ['negocio', 'cliente-ideal'] }],
+      }, quem),
+    );
     const e = await link.estado(tokenBCD);
+    // A teia: cada tema é uma nota; a proposta aprovada é rascunho; a nota da conversa já existe; o índice liga o que existe.
+    const no = new Map(e.teia.nos.map((n) => [n.id, n]));
+    expect(e.teia.pasta).toContain('/');
+    expect(no.get('negocio')?.estado).toBe('rascunho');
+    expect(no.get('regras-da-casa')?.estado).toBe('vazia');
+    expect(no.get('conversa:frota-pesada')).toMatchObject({ estado: 'conversa', minuto: '00:04:12' });
+    expect(no.get('indice')?.ligacoes).toEqual(['conversa:frota-pesada']);
+    expect(e.teia.arestas.some((a) => a.de === 'conversa:frota-pesada' && a.para === 'negocio')).toBe(true);
     // O mapa: seis estações, o kickoff é onde ele está, e nada do futuro aparece como feito.
     expect(e.mapa.estacoes).toHaveLength(6);
     expect(e.mapa.estacaoAtual).toBe(3);
@@ -352,7 +366,10 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     expect(JSON.stringify(e0)).not.toContain('A gente vende peça');
     expect(JSON.stringify(e0)).not.toContain('fonteTrecho');
 
-    await link.confirmar(tokenBCD, 'negocio', 'Marcos');
+    const aposConfirmar = await link.confirmar(tokenBCD, 'negocio', 'Marcos');
+    // Confirmou: a nota acende e o índice passa a ligá-la.
+    expect(aposConfirmar.teia.nos.find((n) => n.id === 'negocio')?.estado).toBe('pronta');
+    expect(aposConfirmar.teia.nos.find((n) => n.id === 'indice')?.ligacoes).toContain('negocio');
     await link.confirmar(tokenBCD, 'cliente-ideal', 'Marcos');
     // Resposta LIVRE num tema com proposta apaga a procedência da reunião.
     const livre = await link.responder(tokenBCD, 'oferta-e-preco', 'Cobramos por peça e o contrato é mensal.', 'Marcos');
@@ -417,6 +434,11 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     expect(negocio?.kind).toBe('fato');
     expect(notas.find((n) => n.chave === 'onboarding:regras-da-casa')?.kind).toBe('regra');
     expect(notas.find((n) => n.chave === 'onboarding:retrato')).toBeTruthy();
+    // A nota da conversa (marco `ata.notas`) também entrou, com o minuto na procedência.
+    const daConversa = notas.find((n) => n.chave === 'onboarding:ata:frota-pesada');
+    expect(daConversa?.body).toContain('Caminhão e ônibus');
+    expect(daConversa?.kind).toBe('nota');
+    expect(daConversa?.sourceRef).toContain('ata 2026-09-30 00:04:12');
     // A linha de base do bloco D entrou como fato na memória do cliente.
     expect(notas.find((n) => n.chave === 'onboarding:d-linha-de-base')?.body).toContain('6 horas');
 

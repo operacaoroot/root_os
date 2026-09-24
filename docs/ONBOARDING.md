@@ -120,6 +120,27 @@ ouvimos de você** — as propostas aprovadas, com o minuto, para confirmar ou c
 pasta pelo slug, os títulos das notas da casa, as fontes que ele já citou e a pergunta da primeira
 semana — construída do que existe, nunca pedida a modelo, como o retrato.
 
+## 5c. A teia: o vault dele crescendo enquanto responde (24/09/2026)
+
+`teia-do-cliente.ts` + o painel "O seu vault" em `/e/[token]`. Pedido do Rodrigo: o link "imita o
+Obsidian". Cada tema da espinha É uma nota do vault do cliente (a mesma chave `onboarding:<id>` que a
+carga guiada escreve) e as notas se ligam entre si como no grafo do Obsidian. Ao confirmar ou
+responder, a nota acende e a ligação com o índice aparece — a teia de contexto se forma na frente
+dele, e não num "obrigado, recebemos" no fim.
+
+Três espécies de nó: **tema** (`pronta` quando ele confirmou/respondeu, `rascunho` quando há
+proposta aprovada esperando o OK, `vazia` quando nada foi dito); **da conversa** — uma nota que JÁ
+NASCEU da transcrição (marco `ata.notas`, com minuto e trecho; hoje escrita pelo agente na sessão,
+amanhã pelo leitor de ata), o que dá ao vault conteúdo desde o primeiro dia; e o **índice** (o MOC
+do Obsidian), que liga só o que existe de verdade: pronta e da conversa. As ligações entre temas
+são dado versionado (`LIGACOES_DA_ESPINHA`); as notas da conversa trazem as suas (`liga`).
+
+Ao lado de cada pergunta vai a referência `[[Nota]]` com o estado e "liga com". O último tópico é
+o **Índice** — a nota-mapa: já escritas da conversa (com minuto e corpo), prontas (com as
+ligações), esperando OK, em branco. E `carregarMemoria` passou a gravar também as notas da
+conversa na memória do cliente (`onboarding:ata:<id>`, kind `nota`, procedência com a data da ata
+e o minuto), idempotente pelo corpo.
+
 ## 6. Onde mora cada coisa
 
 **Banco (empresa da Root, tenant 001), migration `20260924010000_onboarding_do_cliente`:**
