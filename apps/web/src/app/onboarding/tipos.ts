@@ -282,6 +282,32 @@ export interface ItemDoLink {
   respondidoVia: string | null;
 }
 
+export type EstadoDaEstacao = 'feita' | 'aqui' | 'adiante';
+
+export interface EstacaoDoMapa {
+  n: number;
+  chave: 'conversa' | 'acordo' | 'kickoff' | 'contexto' | 'memoria' | 'frente';
+  titulo: string;
+  oQueE: string;
+  quando: string | null;
+  estado: EstadoDaEstacao;
+  detalhe: string | null;
+}
+
+export interface MapaDoCliente {
+  titulo: string;
+  subtitulo: string;
+  estacaoAtual: number;
+  estacoes: EstacaoDoMapa[];
+  promessa: { pasta: string; notas: string[]; fontes: string | null; primeiraPergunta: string | null };
+}
+
+export interface OrdemDoKickoff {
+  decisoes: string[];
+  confirmacoes: string[];
+  extras: string[];
+}
+
 export interface EstadoDoLink {
   cliente: string;
   contatoNome: string | null;
@@ -291,6 +317,8 @@ export interface EstadoDoLink {
   concluido: boolean;
   kickoffEm: string | null;
   itens: ItemDoLink[];
+  mapa: MapaDoCliente;
+  ordem: OrdemDoKickoff;
   progresso: { confirmados: number; respondidos: number; total: number; obrigatoriosFaltando: string[] };
 }
 

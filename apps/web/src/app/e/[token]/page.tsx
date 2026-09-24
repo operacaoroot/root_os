@@ -3,16 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { apiGet, apiPost, apiUpload } from '@/lib/api';
-import type { EstadoDoLink, ItemDoLink, RetratoDoTrilho } from '../../onboarding/tipos';
+import type { EstadoDoLink, ItemDoLink, MapaDoCliente, RetratoDoTrilho } from '../../onboarding/tipos';
 
 /*
- * O LINK DO CLIENTE — a superfície pública do onboarding, no celular.
+ * O LINK DO CLIENTE — o KICKOFF, não um formulário.
  *
  * Sem login (a rota está em `PUBLICAS` do AppShell): o token na URL é a
- * credencial. Quatro blocos, na ordem do desenho de 23/09: o que já ficou
- * resolvido na conversa (confirmar em um minuto), o que só o cliente sabe
- * (texto ou áudio), pessoas e acessos, o primeiro resultado. Termina no
- * retrato — o OS lendo de volta o que entendeu, com a origem de cada parte.
+ * credencial. A página é a ESTAÇÃO ATUAL DE UM MAPA (desenho de 24/09): o
+ * cliente vê o trecho inteiro — conversa, acordo, kickoff, contexto, memória
+ * viva, frente rodando —, onde está, e o que recebe na estação 5. A estação de
+ * hoje pede só o que falta, nesta ordem:
+ *
+ *   1. DECISÕES — o que só ele decide (obrigatório que a conversa não cobriu).
+ *      Vêm primeiro porque são elas que definem o que a gente constrói.
+ *   2. O QUE OUVIMOS DE VOCÊ — as propostas aprovadas, para confirmar ou
+ *      corrigir, com o minuto da gravação.
+ *   3. SE QUISER ACRESCENTAR — o opcional, sem peso.
+ *
+ * A PERGUNTA É A DO ROTEIRO DO KICKOFF, sempre: a espinha, ou a versão que o
+ * roteirista reescreveu com o vocabulário do cliente (a API resolve isso em
+ * `perguntasDoRoteiro`). Quem conduziu a conversa perguntou daquele jeito, e é
+ * daquele jeito que ele lê aqui. Nada de reescrever pergunta na tela.
  *
  * O estado é o da API a cada resposta; nada de progresso no navegador (o link
  * guarda de onde parou porque o banco guarda). O nome de quem responde fica
@@ -94,16 +105,28 @@ export default function LinkPage() {
   }
   if (!estado) return <Casca><Marca /><p className="text-sm text-muted">carregando…</p></Casca>;
 
+  const kickoff = estado.blocos === 'BCD';
+  const porTema = new Map(estado.itens.map((i) => [i.temaId, i]));
+  const pegar = (ids: string[]) => ids.map((id) => porTema.get(id)).filter((i): i is ItemDoLink => !!i);
+  const decisoes = pegar(estado.ordem.decisoes);
+  const confirmacoes = pegar(estado.ordem.confirmacoes);
+  const extras = pegar(estado.ordem.extras);
+  const decisoesAbertas = decisoes.filter((i) => i.modo !== 'feito').length;
+  const jaConfirmados = confirmacoes.filter((i) => i.modo === 'feito').length;
+
   if (!nomeOk) {
     return (
-      <Casca>
-        <Marca />
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h1 className="text-[16px] font-bold">Onboarding da {estado.cliente}</h1>
-          <p className="mt-1 text-[13px] leading-relaxed text-muted">
-            {estado.blocos === 'A'
-              ? 'Cinco perguntas, uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.'
-              : 'Parte já veio do que você disse na conversa — é só confirmar. O resto você responde por texto ou áudio. Uns 8 minutos, e pode parar e voltar.'}
+      <Casca largura="max-w-[560px]">
+        <Marca rotulo={kickoff ? 'kickoff' : 'onboarding'} />
+        <MapaDoTrilho mapa={estado.mapa} compacto />
+        <div className="mt-4 rounded-xl border border-border bg-surface p-5">
+          <h1 className="text-[18px] font-bold leading-snug">
+            {kickoff ? 'O trabalho começa aqui.' : `Onboarding da ${estado.cliente}`}
+          </h1>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
+            {kickoff
+              ? `Isto é o kickoff, não um formulário.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''} — você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''} Pode parar e voltar.`
+              : 'Cinco perguntas, uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.'}
           </p>
           <label className="mt-4 block text-xs text-muted">Quem está respondendo?</label>
           <input className={INPUT} value={nome} onChange={(e) => setNome(e.target.value)} placeholder={estado.contatoNome ?? 'seu nome'} onKeyDown={(e) => e.key === 'Enter' && guardarNome()} />
@@ -116,8 +139,9 @@ export default function LinkPage() {
   if (estado.concluido || mensagemFinal) {
     return (
       <Casca largura="max-w-[640px]">
-        <Marca />
-        <div className="rounded-xl border border-border bg-surface p-5">
+        <Marca rotulo={kickoff ? 'kickoff' : 'onboarding'} />
+        <MapaDoTrilho mapa={estado.mapa} />
+        <div className="mt-4 rounded-xl border border-border bg-surface p-5">
           <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">{estado.cliente}</p>
           <h1 className="mt-1 text-[16px] font-bold">{mensagemFinal ?? 'Onboarding concluído.'}</h1>
           {retrato && (
@@ -142,38 +166,75 @@ export default function LinkPage() {
     );
   }
 
-  const blocos = ['A', 'B', 'C', 'D'].map((b) => ({ b, itens: estado.itens.filter((i) => i.bloco === b) })).filter((x) => x.itens.length);
   const feitos = estado.progresso.confirmados + estado.progresso.respondidos;
   const pct = Math.round((feitos / Math.max(1, estado.progresso.total)) * 100);
 
+  const secoes: { chave: string; rotulo: string; titulo: string; ajuda: string; itens: ItemDoLink[] }[] = kickoff
+    ? [
+        {
+          chave: 'decisoes',
+          rotulo: 'Só você decide',
+          titulo: decisoes.length === 1 ? 'A decisão desta estação' : 'As decisões desta estação',
+          ajuda: 'Vêm primeiro porque são elas que definem o que a gente constrói. Pode escrever ou gravar um áudio.',
+          itens: decisoes,
+        },
+        {
+          chave: 'confirmacoes',
+          rotulo: 'Da conversa',
+          titulo: 'O que ouvimos de você',
+          ajuda: `${jaConfirmados} de ${confirmacoes.length} confirmados. Cada trecho diz de onde veio — confirme, ou corrija com as suas palavras.`,
+          itens: confirmacoes,
+        },
+        {
+          chave: 'extras',
+          rotulo: 'Opcional',
+          titulo: 'Se quiser acrescentar',
+          ajuda: 'Pode deixar em branco: nada aqui trava o trabalho.',
+          itens: extras,
+        },
+      ]
+    : [
+        {
+          chave: 'triagem',
+          rotulo: 'Antes da conversa',
+          titulo: 'As cinco perguntas',
+          ajuda: 'Uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa.',
+          itens: [...decisoes, ...confirmacoes, ...extras],
+        },
+      ];
+
   return (
     <Casca largura="max-w-[640px]">
-      <Marca />
+      <Marca rotulo={kickoff ? 'kickoff' : 'onboarding'} />
       <div className="sticky top-0 z-10 -mx-2 mb-4 rounded-xl border border-border bg-surface p-3">
         <div className="flex items-baseline justify-between text-[12px]">
           <span className="font-medium">{estado.cliente}</span>
-          <span className="text-muted">{feitos} de {estado.progresso.total} · válido até {new Date(estado.validoAte).toLocaleDateString('pt-BR')}</span>
+          <span className="text-muted">{feitos} de {estado.progresso.total} · válido até {dataCurta(estado.validoAte)}</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} /></div>
         {estado.progresso.obrigatoriosFaltando.length > 0 && <p className="mt-1 text-[11px] text-muted">Faltam: {estado.progresso.obrigatoriosFaltando.join(', ')}</p>}
       </div>
 
-      {erro && <p className="mb-3 rounded-lg border border-bad/40 bg-bad/10 p-2 text-[13px] text-bad">{erro}</p>}
+      <MapaDoTrilho mapa={estado.mapa} />
 
-      {blocos.map(({ b, itens }) => (
-        <section key={b} className="mb-6">
-          <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">Bloco {b}</p>
-          <h2 className="text-[17px] font-bold">{itens[0].blocoRotulo}</h2>
-          <p className="mb-2 text-[12px] text-muted">
-            {b === 'A' ? 'Cinco perguntas rápidas.' : b === 'B' ? 'O que já ficou resolvido na conversa aparece para confirmar. O resto, você responde.' : b === 'C' ? 'Não chegamos a falar disto. Escreva ou grave um áudio.' : 'Duas pessoas, sempre: quem propõe não aprova. E o número de partida, para medir depois.'}
-          </p>
-          <div className="space-y-3">
-            {itens.map((i) => (
-              <ItemCard key={i.temaId} i={i} base={base} nome={nome} ocupado={ocupado} agir={agir} onMudou={setEstado} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {erro && <p className="my-3 rounded-lg border border-bad/40 bg-bad/10 p-2 text-[13px] text-bad">{erro}</p>}
+
+      <div className="mt-6">
+        {secoes.filter((s) => s.itens.length > 0).map((s) => (
+          <section key={s.chave} className="mb-7">
+            <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">{s.rotulo}</p>
+            <h2 className="text-[17px] font-bold">{s.titulo}</h2>
+            <p className="mb-2 text-[12px] text-muted">{s.ajuda}</p>
+            <div className="space-y-3">
+              {s.itens.map((i) => (
+                <ItemCard key={i.temaId} i={i} base={base} nome={nome} ocupado={ocupado} agir={agir} onMudou={setEstado} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {kickoff && <Promessa mapa={estado.mapa} />}
 
       <div className="mb-8 space-y-2">
         <button
@@ -182,11 +243,91 @@ export default function LinkPage() {
           onClick={() => agir('concluir', () => apiPost<{ retrato: RetratoDoTrilho | null; mensagem: string }>(`${base}/concluir`, { nome })).then((r) => { if (r) { setRetrato(r.retrato); setMensagemFinal(r.mensagem); } })}
           className={BOTAO_PRIMARIO}
         >
-          {estado.blocos === 'A' ? 'Concluir' : 'Concluir e ver o que o OS entendeu →'}
+          {kickoff ? 'Concluir e ver o que o OS entendeu →' : 'Concluir'}
         </button>
         <p className="text-center text-[11px] text-muted">Pode fechar e voltar depois: o link guarda de onde parou. Senha, token e dado bancário nunca entram por aqui.</p>
       </div>
     </Casca>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// O MAPA — as seis estações, o ponto onde ele está e o que vem a seguir.
+// ---------------------------------------------------------------------------
+
+function MapaDoTrilho({ mapa, compacto = false }: { mapa: MapaDoCliente; compacto?: boolean }) {
+  const atual = mapa.estacoes.find((e) => e.estado === 'aqui') ?? null;
+  const seguinte = atual ? mapa.estacoes.find((e) => e.n === atual.n + 1) ?? null : null;
+
+  return (
+    <section className="rounded-xl border border-border bg-surface p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 className="text-[13px] font-bold">{mapa.titulo}</h2>
+        <span className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">{mapa.subtitulo}</span>
+      </div>
+
+      <ol className="mt-3 grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-6">
+        {mapa.estacoes.map((e) => (
+          <li key={e.chave} className="min-w-0">
+            <div className={`h-[3px] rounded-full ${e.estado === 'aqui' ? 'bg-brand' : e.estado === 'feita' ? 'bg-brand/40' : 'bg-surface-3'}`} />
+            <div className="mt-1.5 flex items-baseline gap-1">
+              <span className={`font-os-mono text-[10px] ${e.estado === 'adiante' ? 'text-dim' : 'text-brand'}`}>{e.estado === 'feita' ? '✓' : e.n}</span>
+              <span className={`truncate text-[11.5px] font-semibold ${e.estado === 'adiante' ? 'text-dim' : ''}`}>{e.titulo}</span>
+            </div>
+            {e.quando && <div className="font-os-mono text-[10px] text-muted">{e.quando}</div>}
+            {e.estado === 'aqui' && <div className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-brand">você está aqui</div>}
+          </li>
+        ))}
+      </ol>
+
+      {atual && (
+        <div className="mt-4 rounded-lg border border-brand/40 bg-brand/10 p-3">
+          <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">
+            Estação {atual.n} · {atual.titulo}{atual.detalhe ? ` · ${atual.detalhe}` : ''}
+          </p>
+          <p className="mt-1 text-[13.5px] leading-relaxed">{atual.oQueE}</p>
+        </div>
+      )}
+      {!compacto && seguinte && (
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">
+          <span className="font-semibold">A seguir — estação {seguinte.n}, {seguinte.titulo.toLowerCase()}:</span> {seguinte.oQueE}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A PROMESSA — o que ele recebe na estação da memória viva.
+// ---------------------------------------------------------------------------
+
+function Promessa({ mapa }: { mapa: MapaDoCliente }) {
+  const estacao = mapa.estacoes.find((e) => e.chave === 'memoria');
+  const { pasta, notas, fontes, primeiraPergunta } = mapa.promessa;
+  const arvore = [pasta, ...notas.map((n, i) => `${i === notas.length - 1 ? '└─' : '├─'} ${n}.md`)];
+
+  return (
+    <section className="mb-8 rounded-xl border border-border bg-surface p-4">
+      <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">
+        {estacao ? `Estação ${estacao.n} · o que você recebe` : 'O que você recebe'}
+      </p>
+      <h2 className="mt-1 text-[16px] font-bold">A sua memória viva</h2>
+      <p className="mt-1 text-[13px] leading-relaxed text-muted">
+        É o pontapé inicial, e não “obrigado por responder”. Tudo o que você confirmar aqui vira nota sua, com a origem de
+        cada frase — é o contexto que a IA passa a ler antes de qualquer proposta, dossiê ou post.
+      </p>
+      <pre className="mt-3 overflow-x-auto rounded-lg border border-border bg-surface-2 p-3 font-os-mono text-[11px] leading-relaxed text-muted">{arvore.join('\n')}</pre>
+      {fontes && (
+        <p className="mt-2 text-[12.5px] leading-relaxed">
+          <span className="font-semibold">As suas fontes entram antes:</span> <span className="text-muted">{fontes}</span>
+        </p>
+      )}
+      {primeiraPergunta && (
+        <p className="mt-2 text-[12.5px] leading-relaxed">
+          <span className="font-semibold">E a primeira pergunta que o seu dado responde:</span> <span className="text-muted">“{primeiraPergunta}”</span>
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -255,7 +396,9 @@ function ItemCard({ i, base, nome, ocupado, agir, onMudou }: { i: ItemDoLink; ba
 
       {i.modo === 'confirmar' && (
         <div className="mt-2">
-          <p className="text-[14px] leading-relaxed">{i.interpretado ? 'Entendemos que: ' : ''}{i.proposta}</p>
+          {/* A pergunta que foi feita na conversa, para ele conferir a resposta contra ela. */}
+          <p className="text-[12px] leading-snug text-muted">{i.pergunta}</p>
+          <p className="mt-1.5 text-[14px] leading-relaxed">{i.interpretado ? 'Entendemos que: ' : ''}{i.proposta}</p>
           {rodape}
           {corrigindo ? (
             <div className="mt-2 space-y-2">
@@ -306,6 +449,9 @@ const BOTAO_PRIMARIO = 'w-full rounded-lg bg-brand px-4 py-3 text-[14px] font-se
 const BOTAO = 'rounded-lg border border-border px-4 py-3 text-[14px] transition hover:border-brand disabled:opacity-50';
 const BOTAO_GRAVANDO = 'rounded-lg border border-bad bg-bad/10 px-4 py-3 text-[14px] text-bad';
 
+const dataCurta = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—';
+
 function Casca({ children, largura = 'max-w-sm' }: { children: React.ReactNode; largura?: string }) {
   return (
     <div data-os-app className="grid min-h-screen place-items-start justify-center bg-bg p-4">
@@ -314,13 +460,13 @@ function Casca({ children, largura = 'max-w-sm' }: { children: React.ReactNode; 
   );
 }
 
-function Marca() {
+function Marca({ rotulo = 'onboarding' }: { rotulo?: string }) {
   return (
     <div className="mb-5 flex items-center gap-3">
       <span aria-hidden className="grid h-10 w-10 place-items-center rounded-root border border-brand/30 bg-brand/10 text-[20px] font-extrabold italic leading-none tracking-[-0.05em] text-brand" style={{ transform: 'skewX(-10deg)', textShadow: 'var(--os-logo-shadow, none)' }}>R</span>
       <div className="font-os-mono">
         <div className="text-[14px] font-bold tracking-[-0.02em]">ROOT</div>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted">onboarding</div>
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted">{rotulo}</div>
       </div>
     </div>
   );
