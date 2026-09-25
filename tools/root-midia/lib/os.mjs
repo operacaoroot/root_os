@@ -240,6 +240,19 @@ export function clienteDoOs({ url, envio = url, email, senha, fetch: f = globalT
     videoDoCorte: (pecaId, corpo) => pedir('PUT', `/pauta/pecas/${encodeURIComponent(pecaId)}/video`, corpo),
     /** O calendário da semana (MC16): sete dias a partir de `de` (AAAA-MM-DD), ou desta semana. @param {string} [de] */
     agenda: (de) => pedir('GET', `/pauta/agenda${de ? `?de=${encodeURIComponent(de)}` : ''}`),
+    // MD10: o vídeo final ao YouTube. A sessão e o token nunca vão a arquivo nem a log.
+    /** @param {string} id */
+    youtube: (id) => pedir('GET', `/pauta/episodios/${encodeURIComponent(id)}/youtube`),
+    /** @param {string} id @param {{ sha256: string, bytes: number, mime: string }} corpo */
+    declararYoutube: (id, corpo) => pedir('PUT', `/pauta/episodios/${encodeURIComponent(id)}/youtube/arquivo`, corpo),
+    /** @param {string} id @param {{ sha256: string, bytes: number, mime: string, nova: boolean }} corpo */
+    sessaoDoYoutube: (id, corpo) => pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/youtube/sessao`, corpo),
+    /** @param {string} id */
+    tokenDoYoutube: (id) => pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/youtube/sessao/token`, {}),
+    /** @param {string} id @param {string} videoId */
+    concluirYoutube: (id, videoId) => pedir('POST', `/pauta/episodios/${encodeURIComponent(id)}/youtube/concluido`, { videoId }),
+    /** Os episódios com envio liberado pelo lote assinado e ainda não conferido (o vigia). */
+    youtubePendentes: () => pedir('GET', '/pauta/youtube/pendentes'),
   };
 }
 

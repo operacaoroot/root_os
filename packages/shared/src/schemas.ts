@@ -324,6 +324,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'zapier', label: 'Zapier', category: 'automation', phase: 3, authType: 'webhook', requires: 'webhook (suspenso por ora)' },
   { key: 'apify', label: 'Apify', category: 'automation', phase: 3, authType: 'api_key', requires: 'API token (suspenso por ora)' },
   { key: 'instagram', label: 'Instagram', category: 'social', phase: 4, authType: 'oauth2', requires: 'App Meta + OAuth (Graph API)' },
+  // MD10: projeto próprio no Google Cloud, separado do Google da empresa (outro par cliente/segredo, outros escopos).
+  { key: 'youtube', label: 'YouTube', category: 'social', phase: 4, authType: 'oauth2', requires: 'OAuth do canal (YOUTUBE_CLIENT_ID/SECRET, projeto próprio no Google Cloud)' },
   { key: 'gmail', label: 'Gmail', category: 'email', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
   { key: 'gcal', label: 'Google Agenda', category: 'calendar', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
   { key: 'gdocs', label: 'Google Docs', category: 'knowledge', phase: 5, authType: 'oauth2', requires: 'Conectar conta Google (OAuth)' },
@@ -1877,7 +1879,7 @@ export interface PautaRoteiroDoEpisodio {
 
 // ---------- Pauta: a mídia do episódio (MC9) ----------
 // O vídeo é editado e transcrito NO MAC (`tools/root-midia`) e fica lá: o MinIO
-// da VPS não é público, e o upload no YouTube é manual na V1 (D-MC6). O OS só
+// da VPS não é público; desde a MD10 o Mac o manda direto ao YouTube. O OS só
 // recebe o que é leve — onde estão os arquivos, a duração, o que foi cortado e
 // a transcrição com os tempos do vídeo FINAL.
 
@@ -3848,6 +3850,8 @@ export interface PautaAprovacaoDaSemana {
   impedimentos: string[];
   pecas: PautaPecaParaAprovar[];
   lotes: PautaLoteDaSemana[];
+  /** O vídeo do episódio no YouTube (MD10): entra no mesmo lote quando está pronto. */
+  youtube: PautaYoutubeNoLote;
 }
 
 /** O retorno da montagem: o lote em `proposta`, pronto para pedir a assinatura. */
@@ -3893,6 +3897,8 @@ export interface PautaConteudoDoLote {
   divergentes: number;
   handle: string | null;
   itens: PautaItemDoConteudoDoLote[];
+  /** Os itens do YouTube (MD10): o envio privado e o agendamento, com o título, a descrição e a thumb. */
+  youtube: PautaItemDoYoutubeNoLote[];
 }
 
 // ---------- Pauta: a DM por palavra-chave, respondida à mão (MD9) ----------
@@ -4004,6 +4010,268 @@ export interface PautaFilaDeComentarios {
   /** A última passagem da rotina de comentários, ou nulo se ela nunca rodou. */
   ultimaColeta: { em: string; status: string; resumo: string | null } | null;
   source: { tool: string; generatedAt: string };
+}
+
+// ---------- Pauta: o YouTube pela API (MD10) ----------
+//
+// O Mac manda os bytes do vídeo final direto ao YouTube, numa sessão de envio
+// resumable que o OS abre com os metadados travados (sempre privado). O OS
+// guarda a credencial, confere o vídeo que chegou, define a thumb e, com o lote
+// da semana assinado, manda o `publishAt`: daí em diante quem publica é o
+// YouTube. O vídeo nunca passa pela VPS.
+
+/** A capacidade (R3, sob o lote da semana) que abre a sessão de envio e conclui o vídeo privado. */
+export const PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE = 'youtube.video.enviar';
+/** A capacidade (R3, sob o lote da semana) que agenda a publicação (`publishAt`), com a thumb e a playlist. */
+export const PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE = 'youtube.video.publicar';
+
+/**
+ * O interruptor da auditoria do projeto no Google (D-MC6), pela variável
+ * `YOUTUBE_AUDITORIA`. Todo vídeo enviado por projeto sem auditoria fica
+ * privado para SEMPRE, sem recurso: `pendente` (o padrão) recusa a sessão e a
+ * publicação; `teste` libera o envio SÓ para o canal de `YOUTUBE_CANAL_DE_TESTE`
+ * (o vídeo enviado nesse modo nunca é publicado depois) e recusa a publicação;
+ * `aprovada` libera tudo. O envio é sempre privado, em qualquer um.
+ */
+export const YOUTUBE_AUDITORIAS = ['pendente', 'teste', 'aprovada'] as const;
+export type YoutubeAuditoria = (typeof YOUTUBE_AUDITORIAS)[number];
+
+export const YOUTUBE_AUDITORIA_ROTULO: Record<YoutubeAuditoria, string> = {
+  pendente: 'auditoria pendente: nada vai ao YouTube',
+  teste: 'modo teste: o envio vai só ao canal de teste e fica privado para sempre; a publicação não',
+  aprovada: 'auditoria aprovada: envio e publicação',
+};
+
+/** O valor da variável, ou `pendente` quando vazia ou fora da lista (falha fechada). */
+export function youtubeAuditoria(valor: string | null | undefined): YoutubeAuditoria {
+  const v = String(valor ?? '').trim().toLowerCase();
+  return (YOUTUBE_AUDITORIAS as readonly string[]).includes(v) ? (v as YoutubeAuditoria) : 'pendente';
+}
+
+/** Por que a auditoria não deixa ENVIAR, ou nulo. */
+export function motivoDaAuditoriaParaEnviar(a: YoutubeAuditoria): string | null {
+  return a === 'pendente'
+    ? 'YOUTUBE_AUDITORIA=pendente: o projeto do Google ainda não passou pela auditoria, e todo vídeo enviado agora ficaria PRIVADO PARA SEMPRE, sem recurso. Nada foi enviado. Para testar num canal de teste, use YOUTUBE_AUDITORIA=teste com YOUTUBE_CANAL_DE_TESTE.'
+    : null;
+}
+
+/** Por que a auditoria não deixa PUBLICAR, ou nulo. */
+export function motivoDaAuditoriaParaPublicar(a: YoutubeAuditoria): string | null {
+  if (a === 'aprovada') return null;
+  return a === 'teste'
+    ? 'YOUTUBE_AUDITORIA=teste: o envio vale só para o canal de teste, e o vídeo enviado nesse modo fica privado para sempre. A publicação espera a auditoria (YOUTUBE_AUDITORIA=aprovada).'
+    : 'YOUTUBE_AUDITORIA=pendente: sem a auditoria do projeto, o YouTube não deixa o vídeo sair do privado. Nada foi enviado.';
+}
+
+/**
+ * Espelha o enum `EnvioAoYoutubeEstado` do Prisma. `declarado`: o Mac disse o
+ * sha256 e o tamanho do vídeo final; `sessao_aberta`: a sessão de envio existe
+ * (vale 7 dias); `conferido`: o vídeo chegou, está privado, os metadados batem
+ * e a thumb foi definida; `agendado`: o `publishAt` foi aceito; `erro`: a
+ * última tentativa falhou, com o motivo.
+ */
+export const ENVIO_AO_YOUTUBE_ESTADOS = ['declarado', 'sessao_aberta', 'conferido', 'agendado', 'erro'] as const;
+export type EnvioAoYoutubeEstado = (typeof ENVIO_AO_YOUTUBE_ESTADOS)[number];
+
+export const ENVIO_AO_YOUTUBE_ESTADO_ROTULO: Record<EnvioAoYoutubeEstado, string> = {
+  declarado: 'vídeo final declarado pelo Mac',
+  sessao_aberta: 'envio em curso',
+  conferido: 'no YouTube, privado e conferido',
+  agendado: 'publicação agendada no YouTube',
+  erro: 'o envio falhou',
+};
+
+/** O bloco que o Mac manda por pedido: 64 MiB. */
+export const YOUTUBE_BLOCO_DO_ENVIO = 64 * 1024 * 1024;
+/** Todo bloco que não é o último tem de ser múltiplo de 256 KiB (regra do upload resumable). */
+export const YOUTUBE_MULTIPLO_DO_BLOCO = 256 * 1024;
+/** O teto do YouTube para um vídeo: 256 GB. */
+export const YOUTUBE_VIDEO_MAX_BYTES = 256 * 1024 * 1024 * 1024;
+/** O vídeo final sai do ffmpeg do Mac como mp4; o .mov do OBS também vale. */
+export const YOUTUBE_MIMES_DO_VIDEO = ['video/mp4', 'video/quicktime'] as const;
+/** A sessão de envio resumable vale uma semana do lado do YouTube. */
+export const YOUTUBE_VALIDADE_DA_SESSAO_MS = 7 * 86_400_000;
+/** O envio precisa terminar até 1 h antes do horário do vídeo: a janela do item de envio fecha aí. */
+export const YOUTUBE_ANTECEDENCIA_DO_ENVIO_MS = 3600_000;
+/** O `publishAt` é mandado até 15 min antes do horário: a janela do item de publicação fecha aí. */
+export const YOUTUBE_ANTECEDENCIA_DA_PUBLICACAO_MS = 15 * 60_000;
+/** Cada sessão aberta e a conclusão gastam um uso do item de envio: três sessões (404, 7 dias) e a conclusão. */
+export const YOUTUBE_USOS_DO_ENVIO = 4;
+/** O `publishAt` pode ser reenviado depois de uma resposta perdida. */
+export const YOUTUBE_USOS_DA_PUBLICACAO = 2;
+
+/** Nota da memória: a playlist (o id, `PL…`) onde o vídeo entra. Sem ela, nenhuma. */
+export const PAUTA_CHAVE_DA_PLAYLIST_DO_YOUTUBE = 'pauta.youtube.playlist';
+/** Nota da memória: a categoria do vídeo (o número do YouTube). Sem ela, 28 (Ciência e tecnologia). */
+export const PAUTA_CHAVE_DA_CATEGORIA_DO_YOUTUBE = 'pauta.youtube.categoria';
+export const YOUTUBE_CATEGORIA_PADRAO = '28';
+
+/** "fica fora" do lote da semana: este valor deixa o YouTube de fora (os outros são ids de peça). */
+export const PAUTA_FORA_DO_LOTE_YOUTUBE = 'youtube';
+
+const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/, 'O sha256 é hexadecimal minúsculo, com 64 caracteres.');
+
+/** `PUT /pauta/episodios/:id/youtube/arquivo` e `POST …/youtube/sessao`: o vídeo final como o Mac o mediu. */
+export const YoutubeArquivoSchema = z
+  .object({
+    sha256: sha256Hex,
+    bytes: z.number().int().positive().max(YOUTUBE_VIDEO_MAX_BYTES, 'O YouTube aceita até 256 GB.'),
+    mime: z.enum(YOUTUBE_MIMES_DO_VIDEO).default('video/mp4'),
+  })
+  .strict();
+export type YoutubeArquivoInput = z.infer<typeof YoutubeArquivoSchema>;
+
+/** `POST …/youtube/sessao`: o arquivo, e `nova` quando a sessão anterior sumiu (404) e o envio recomeça do zero. */
+export const YoutubeSessaoSchema = YoutubeArquivoSchema.extend({ nova: z.boolean().default(false) }).strict();
+export type YoutubeSessaoInput = z.infer<typeof YoutubeSessaoSchema>;
+
+/** O id que o YouTube devolve no fim do envio. */
+export const YoutubeVideoIdSchema = z.string().regex(/^[A-Za-z0-9_-]{6,32}$/, 'O id do vídeo do YouTube tem letras, números, - e _.');
+
+/** `POST …/youtube/concluido`. */
+export const YoutubeConcluidoSchema = z.object({ videoId: YoutubeVideoIdSchema }).strict();
+export type YoutubeConcluidoInput = z.infer<typeof YoutubeConcluidoSchema>;
+
+/** `PUT …/pacote/thumb`: a thumb que sobe ao YouTube (1 a 3), ou nenhuma. */
+export const PautaThumbEscolhidaSchema = z
+  .object({ n: z.number().int().min(1).max(PAUTA_THUMBS_DO_PACOTE).nullable() })
+  .strict();
+export type PautaThumbEscolhidaInput = z.infer<typeof PautaThumbEscolhidaSchema>;
+
+/** `PUT …/pacote/horario`: quando o vídeo vai ao ar no YouTube (ISO com fuso), ou nenhum. */
+export const PautaHorarioDoYoutubeSchema = z
+  .object({ publicarEm: z.string().datetime({ offset: true, message: 'O horário vai em ISO com o fuso (ex.: 2026-09-29T18:00:00-03:00).' }).nullable() })
+  .strict();
+export type PautaHorarioDoYoutubeInput = z.infer<typeof PautaHorarioDoYoutubeSchema>;
+
+/** O que falta para o YouTube entrar no lote da semana, com a frase de cada coisa. Vazio = pronto. */
+export function faltasDoYoutube(e: {
+  conectado: boolean;
+  auditoria: YoutubeAuditoria;
+  tituloEscolhido: boolean;
+  descricao: boolean;
+  thumbEscolhida: boolean;
+  thumbComImagem: boolean;
+  arquivo: boolean;
+  publicarEm: Date | null;
+  agora: Date;
+  validadeMaximaMs: number;
+}): string[] {
+  const saida: string[] = [];
+  const auditoria = motivoDaAuditoriaParaEnviar(e.auditoria);
+  if (auditoria) saida.push(auditoria);
+  if (!e.conectado) saida.push('O canal do YouTube não está conectado: conecte em Conexões (o OAuth é feito na conta dona do canal).');
+  if (!e.tituloEscolhido) saida.push('Marque o título do vídeo no pacote.');
+  if (!e.descricao) saida.push('O pacote não tem descrição: gere o pacote.');
+  if (!e.thumbEscolhida) saida.push('Escolha a thumb que sobe ao YouTube no pacote.');
+  else if (!e.thumbComImagem) saida.push('A thumb escolhida ainda não foi renderizada: rode root-midia thumbs no Mac.');
+  if (!e.arquivo) saida.push('O Mac ainda não declarou o vídeo final: rode root-midia youtube ep-NN --declarar.');
+  if (!e.publicarEm) saida.push('Defina o horário do vídeo no pacote.');
+  else if (e.publicarEm.getTime() - YOUTUBE_ANTECEDENCIA_DO_ENVIO_MS <= e.agora.getTime()) {
+    saida.push('O horário do vídeo precisa estar pelo menos 1 h à frente: o envio fecha 1 h antes.');
+  } else if (e.publicarEm.getTime() > e.agora.getTime() + e.validadeMaximaMs) {
+    saida.push('O horário do vídeo passa dos 8 dias que um lote vale: aprove o vídeo na semana dele.');
+  }
+  return saida;
+}
+
+/** O envio ao YouTube de um episódio, como a tela e o Mac o leem. Nunca traz a URI da sessão nem token. */
+export interface PautaEnvioAoYoutube {
+  estado: EnvioAoYoutubeEstado;
+  sha256: string;
+  bytes: number;
+  mime: string;
+  videoId: string | null;
+  /** Até quando a sessão aberta vale. */
+  sessaoExpiraEm: string | null;
+  sessoes: number;
+  conferidoEm: string | null;
+  thumbDefinidaEm: string | null;
+  playlistId: string | null;
+  publicarEm: string | null;
+  agendadoEm: string | null;
+  erro: string | null;
+  /** O vídeo subiu com `YOUTUBE_AUDITORIA=teste` (canal de teste): fica privado para sempre e nunca é publicado. */
+  enviadoEmTeste: boolean;
+  atualizadoEm: string;
+}
+
+/** `GET /pauta/episodios/:id/youtube`. */
+export interface PautaYoutubeDoEpisodio {
+  episodioId: string;
+  apelido: string;
+  auditoria: YoutubeAuditoria;
+  /** O canal conectado (há credencial no cofre desta empresa); a saúde de verdade é a de Conexões. */
+  conectado: boolean;
+  tituloEscolhido: string | null;
+  thumbEscolhida: number | null;
+  publicarEm: string | null;
+  /** O caminho do vídeo final no Mac (MC9). */
+  arquivoFinal: string | null;
+  envio: PautaEnvioAoYoutube | null;
+  /** O que falta para o YouTube entrar no lote da semana. */
+  faltas: string[];
+  /** Os itens do YouTube num lote em curso. */
+  itens: Array<{ capabilityId: string; itemId: string; loteId: string; estadoDoLote: LoteEstado; estadoDoItem: ItemDoLoteEstado; janelaAte: string }>;
+  /** O link do vídeo, só depois de agendado (o vídeo privado não abre para ninguém de fora). */
+  url: string | null;
+}
+
+/** `POST …/youtube/sessao` e `…/sessao/token`: o que só o Mac recebe, e nunca vai ao RASTRO. */
+export interface PautaSessaoDoYoutube {
+  uri: string;
+  /** Token de acesso curto (~1 h). O refresh token nunca sai do cofre. */
+  token: string;
+  tokenExpiraEm: string;
+  sessaoExpiraEm: string;
+  bytes: number;
+  sha256: string;
+  /** Uma sessão nova (a anterior sumiu ou venceu) começa do byte zero. */
+  nova: boolean;
+}
+
+/** Um episódio com envio ao YouTube liberado pelo lote e ainda não concluído: o que o vigia do Mac envia. */
+export interface PautaYoutubePendente {
+  id: string;
+  numero: number;
+  apelido: string;
+  arquivoFinal: string | null;
+  sha256: string | null;
+  estado: EnvioAoYoutubeEstado | null;
+  janelaAte: string;
+}
+
+/** O YouTube diante do lote da semana. */
+export interface PautaYoutubeNoLote {
+  /** Entra no próximo lote (as faltas estão vazias e o item não está num lote ativo). */
+  entra: boolean;
+  faltas: string[];
+  publicarEm: string | null;
+  /** Os itens que entram: só o envio no modo teste, os dois com a auditoria aprovada, só o agendamento com o vídeo já no YouTube. */
+  capacidades: string[];
+  noLote: { loteId: string; estadoDoLote: LoteEstado } | null;
+  /** A nota `pauta.publicacao.automatica` ligada: sem ela, o agendamento no horário não sai sozinho. */
+  automatica: boolean;
+}
+
+/** Um item do YouTube do lote, como a titular o lê. */
+export interface PautaItemDoYoutubeNoLote {
+  itemId: string;
+  capabilityId: string;
+  /** O episódio: a miniatura da thumb assinada sai de `GET /pauta/episodios/:id/thumbs/:n/imagem`. */
+  episodioId: string;
+  titulo: string;
+  descricao: string;
+  bytesDaDescricao: number;
+  categoria: string;
+  thumbN: number | null;
+  arquivo: { sha256Curto: string; bytes: number };
+  /** O horário do vídeo (o `publishAt`), só no item de publicação. */
+  publicarEm: string | null;
+  janelaAte: string;
+  estadoDoItem: ItemDoLoteEstado;
+  hashCurto: string;
+  divergente: string | null;
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------

@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   LOTE_ESTADO_ROTULO,
+  PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE,
+  PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE,
+  PAUTA_FORA_DO_LOTE_YOUTUBE,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   diaNoFuso,
   horaNoFuso,
@@ -24,7 +27,20 @@ import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
  * sozinho e a semana segue manual. Marcar "fica fora" deixa a peça fora do
  * lote (e manual). "Cancelar a semana" revoga o lote sem pedir assinatura:
  * só diminui o alcance.
+ *
+ * MD10: o vídeo do episódio no YouTube entra no MESMO lote quando está pronto
+ * (o envio privado e, com a auditoria aprovada, o agendamento). A linha do
+ * YouTube diz o que falta e o que entra, e ele também pode ficar fora.
  */
+
+/** O que do YouTube entra no lote, pelo que a API mandou: os dois, só o envio (modo teste) ou só o agendamento (o vídeo já subiu). */
+export function oQueEntraDoYoutube(capacidades: string[]): string {
+  const envio = capacidades.includes(PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE);
+  const publicacao = capacidades.includes(PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE);
+  if (envio && publicacao) return 'Entra com o envio privado (o Mac sobe o vídeo) e o agendamento no horário.';
+  if (envio) return 'Modo teste: entra só o envio, para o canal de teste. O vídeo enviado agora fica privado para sempre e não é publicado depois.';
+  return 'O vídeo já está no YouTube, privado: entra o agendamento no horário.';
+}
 
 interface Retida {
   status: 'aguardando_aprovacao';
@@ -103,7 +119,15 @@ export function AprovarASemana({
 
   const livres = estado.pecas.filter((p) => p.status !== 'publicada' && p.noLote?.estadoDoLote !== 'ativo');
   const entram = livres.filter((p) => !fora.has(p.id));
-  const bloqueio = estado.impedimentos.length > 0 || entram.some((p) => p.problema) || entram.length === 0;
+  const yt = estado.youtube ?? null;
+  const youtubeEntra = !!yt?.entra && !fora.has(PAUTA_FORA_DO_LOTE_YOUTUBE);
+  const bloqueio = estado.impedimentos.length > 0 || entram.some((p) => p.problema) || (entram.length === 0 && !youtubeEntra);
+  const rotuloDoBotao = [
+    entram.length ? `${entram.length} post${entram.length === 1 ? '' : 's'}` : '',
+    youtubeEntra ? 'o vídeo no YouTube' : '',
+  ]
+    .filter(Boolean)
+    .join(' + ');
   const alternar = (id: string) =>
     setFora((s) => {
       const n = new Set(s);
@@ -155,10 +179,41 @@ export function AprovarASemana({
         })}
       </ul>
 
+      {yt && (
+        <div className="space-y-1 rounded-lg border border-border p-2" aria-label="O vídeo no YouTube">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium">Vídeo no YouTube</span>
+            {yt.publicarEm && <span className="font-mono text-xs text-muted">{quando(yt.publicarEm)}</span>}
+            {yt.noLote && <Chip tone={yt.noLote.estadoDoLote === 'ativo' ? 'good' : 'warn'}>{LOTE_ESTADO_ROTULO[yt.noLote.estadoDoLote]}</Chip>}
+            {yt.entra && podePublicar && (
+              <label className="ml-auto flex items-center gap-1 text-xs text-muted">
+                <input type="checkbox" checked={fora.has(PAUTA_FORA_DO_LOTE_YOUTUBE)} onChange={() => alternar(PAUTA_FORA_DO_LOTE_YOUTUBE)} />
+                fica fora
+              </label>
+            )}
+          </div>
+          {yt.entra && <p className="break-words text-xs text-muted">{oQueEntraDoYoutube(yt.capacidades)}</p>}
+          {yt.entra && yt.capacidades.includes(PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE) && !yt.automatica && (
+            <p className="break-words text-xs text-warn">
+              A publicação automática está desligada: o agendamento não sai sozinho, e o horário é marcado à mão no Studio.
+            </p>
+          )}
+          {!yt.entra && yt.faltas.length > 0 && (
+            <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted">
+              {yt.faltas.map((f) => (
+                <li key={f} className="break-words">
+                  {f}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {podePublicar && (
         <div className="space-y-1">
           <Botao tone="brand" onClick={aprovar} disabled={ocupado || bloqueio}>
-            {ocupado ? 'Montando…' : `Aprovar a semana (${entram.length} post${entram.length === 1 ? '' : 's'})`}
+            {ocupado ? 'Montando…' : `Aprovar a semana (${rotuloDoBotao || '0 posts'})`}
           </Botao>
           <p className="text-[11px] text-muted">
             Monta o lote com o conteúdo exato de cada post e pede a assinatura de outra pessoa, titular, em /atendimento (senha e

@@ -262,6 +262,22 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
+      # MD10: o canal do YouTube, num projeto PRÓPRIO do Google Cloud (outro par
+      # que o GOOGLE_* acima). Sem cliente/segredo, nenhuma empresa conecta o
+      # canal. A redirect tem de bater com a do cliente OAuth no console.
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:4000/api/youtube/callback}
+      # Só para dublê local: vazias valem os endereços do Google.
+      YOUTUBE_API_URL: ${YOUTUBE_API_URL:-}
+      YOUTUBE_UPLOAD_URL: ${YOUTUBE_UPLOAD_URL:-}
+      YOUTUBE_OAUTH_URL: ${YOUTUBE_OAUTH_URL:-}
+      # D-MC6: pendente (padrão) recusa envio e publicação — vídeo de projeto
+      # sem auditoria fica privado para sempre; teste libera só o envio, e só
+      # ao canal de YOUTUBE_CANAL_DE_TESTE (o id UC… dele; vazio recusa); aprovada
+      # libera tudo. O envio é sempre privado.
+      YOUTUBE_AUDITORIA: ${YOUTUBE_AUDITORIA:-pendente}
+      YOUTUBE_CANAL_DE_TESTE: ${YOUTUBE_CANAL_DE_TESTE:-}
       # Link na bio (absorvido do root-bio)
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       # O COFRE (RF-C-01..04). Vazias por padrão, e vazio É um estado válido:

@@ -225,6 +225,11 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   // Instagram desligado — a fila da DM deixa de encher, nada mais.
   'instagram.comentario.ler': 'instagram',
 
+  // MD10: o canal do YouTube, com credencial própria (não é o Google da empresa).
+  // Desligar o YouTube em /conexoes barra a sessão de envio, o token do Mac e o agendamento.
+  'youtube.video.enviar': 'youtube',
+  'youtube.video.publicar': 'youtube',
+
   // ClickUp — só a ESCRITA sai da casa; a listagem lê o espelho no banco.
   'clickup.tarefa.alterar': 'clickup',
   'clickup.tarefa.criar': 'clickup',

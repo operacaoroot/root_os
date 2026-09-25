@@ -1,5 +1,5 @@
 {
-  "versao": "1.5.0",
+  "versao": "1.6.0",
   "atualizadoEm": "2026-09-25",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
@@ -1192,6 +1192,73 @@
         "exposicaoExterna": false,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "youtube.video.enviar",
+      "rota": "POST /pauta/episodios/:id/youtube/sessao",
+      "descricao": "Abre no YouTube a sessão de envio resumable do vídeo final do episódio, SEMPRE privado e sem publishAt, com o título, a descrição, a categoria e a thumb do pacote; o Mac manda os bytes direto ao YouTube e, no fim, o OS confere que o vídeo está privado e com os metadados assinados e define a thumb (e a playlist, se houver nota). Cada sessão aberta e a conclusão gastam um uso do item. Desfazer seria apagar o vídeo, que é destruição e R5: por isso a reversibilidade é manual, e o OS nunca apaga vídeo.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["episodioId", "sha256", "bytes", "titulo", "descricao", "categoria", "thumbN", "thumbChave", "thumbSha"],
+        "properties": {
+          "episodioId": { "type": "string", "minLength": 1, "description": "o episódio cujo vídeo final sobe" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o sha256 do vídeo final, medido no Mac" },
+          "bytes": { "type": "integer", "minimum": 1, "description": "o tamanho do vídeo final, em bytes" },
+          "titulo": { "type": "string", "minLength": 1, "description": "o título marcado no pacote (até 100 caracteres)" },
+          "descricao": { "type": "string", "minLength": 1, "description": "a descrição do pacote com a página de links no lugar do marcador (até 5.000 bytes)" },
+          "categoria": { "type": "string", "pattern": "^[0-9]{1,3}$", "description": "a categoria do YouTube (o número)" },
+          "thumbN": { "type": "integer", "minimum": 1, "maximum": 3, "description": "a thumb escolhida no pacote" },
+          "thumbChave": { "type": "string", "minLength": 1, "description": "onde o PNG da thumb está no storage do OS" },
+          "thumbSha": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "o sha curto do PNG da thumb (o mesmo do nome no storage)" }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "youtube.video.publicar",
+      "rota": "PUT /pauta/episodios/:id/pacote/horario",
+      "descricao": "Agenda a publicação do vídeo que já está no YouTube, privado e conferido: relê o vídeo, recusa se o título, a descrição ou a thumb divergem do que foi assinado, garante a thumb e a playlist e manda videos.update só com part=status (privacyStatus private e publishAt no horário do pacote). Daí em diante quem publica é o YouTube. Só vale com a auditoria do projeto aprovada. Quem agenda é a rotina pauta.publicar-agendadas, sem ferramenta de agente; a rota declarada é a do horário do vídeo no pacote, que prende a capacidade ao módulo pauta e nunca dispara o agendamento. Tirar do ar é à mão, no Studio.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["episodioId", "sha256", "bytes", "titulo", "descricao", "categoria", "thumbN", "thumbChave", "thumbSha", "publicarEm"],
+        "properties": {
+          "episodioId": { "type": "string", "minLength": 1, "description": "o episódio cujo vídeo final sobe" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o sha256 do vídeo final, medido no Mac" },
+          "bytes": { "type": "integer", "minimum": 1, "description": "o tamanho do vídeo final, em bytes" },
+          "titulo": { "type": "string", "minLength": 1, "description": "o título marcado no pacote (até 100 caracteres)" },
+          "descricao": { "type": "string", "minLength": 1, "description": "a descrição do pacote com a página de links no lugar do marcador (até 5.000 bytes)" },
+          "categoria": { "type": "string", "pattern": "^[0-9]{1,3}$", "description": "a categoria do YouTube (o número)" },
+          "thumbN": { "type": "integer", "minimum": 1, "maximum": 3, "description": "a thumb escolhida no pacote" },
+          "thumbChave": { "type": "string", "minLength": 1, "description": "onde o PNG da thumb está no storage do OS" },
+          "thumbSha": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "o sha curto do PNG da thumb (o mesmo do nome no storage)" },
+          "publicarEm": { "type": "string", "minLength": 1, "description": "quando o vídeo vai ao ar (o publishAt, ISO)" }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
         "destruicao": false,
         "obrigacaoLegal": false
       }

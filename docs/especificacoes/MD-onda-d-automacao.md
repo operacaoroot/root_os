@@ -856,6 +856,19 @@ o volume passar do que dá para responder à mão, a pressão vai para ManyChat,
 
 ### MD10 — YouTube: conector próprio, upload resumable pelo Mac e publicação agendada pelo OS
 
+> **Estado (25/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local do
+> Google (300 MB em 5 blocos, a conexão derrubada no 3º) e as pendências do Pedro registrados no
+> `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 32 da §4). Escolhas além do texto abaixo: a
+> thumb e a playlist entram na conclusão (um segundo uso do item de envio, pela porta) e são
+> conferidas de novo no agendamento, que recusa sem a thumb assinada; `YOUTUBE_OAUTH_URL` existe para
+> o dublê renovar o token; o "desligado até o OAuth" é o conector sem credencial (não há interruptor
+> desligado por padrão); a thumb escolhida e o horário viraram colunas do episódio e o arquivo é
+> declarado por rota própria; o token de acesso fica só na memória da API e cada entrega ao Mac vai ao
+> RASTRO. Depois dos três revisores: o Mac recebe um token renovado com `scope=youtube.upload` (o
+> largo não sai com a auditoria aprovada); a sessão e o token só saem dentro da janela do item de
+> envio; o modo teste exige `YOUTUBE_CANAL_DE_TESTE` e marca o vídeo, que nunca é publicado; o pacote
+> mudado revoga os itens; a rotina parte dos itens vivos e, com a nota desligada, só pula.
+
 **SPEC.** O Mac só envia os bytes; o OS abre a sessão com os metadados travados (sempre `private`),
 guarda a credencial, confere o vídeo e publica.
 

@@ -1,13 +1,13 @@
 ---
 name: root-midia
-description: Estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15). Pega um episódio gravado da fila do OS, corta os silêncios e as tomadas erradas (palavra de corte), edita no PalmierPro quando ele está aberto ou no ffmpeg, transcreve com o whisper-cli e devolve ao OS só o leve — mídia e transcrição; depois do pacote gerado, renderiza as 3 thumbs no template da marca e sobe os PNG. Use quando o Pedro disser "/root-midia ep-NN", "edita o episódio", "sobe a transcrição do ep", "o que falta de mídia" "/root-midia thumbs ep-NN" ou "/root-midia semana ep-NN" (renderizar os carrosséis, stories e cortes verticais da semana).
+description: Estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, YouTube na MD10). Pega um episódio gravado da fila do OS, corta os silêncios e as tomadas erradas (palavra de corte), edita no PalmierPro quando ele está aberto ou no ffmpeg, transcreve com o whisper-cli e devolve ao OS só o leve — mídia e transcrição; depois do pacote gerado, renderiza as 3 thumbs no template da marca e sobe os PNG. Use quando o Pedro disser "/root-midia ep-NN", "edita o episódio", "sobe a transcrição do ep", "o que falta de mídia" "/root-midia thumbs ep-NN" ou "/root-midia semana ep-NN" (renderizar os carrosséis, stories e cortes verticais da semana) ou "/root-midia youtube ep-NN" (subir o vídeo final ao YouTube com a semana assinada).
 argument-hint: ep-NN
 ---
 
 # /root-midia ep-NN
 
-A mídia pesada roda no Mac e **o vídeo fica aqui**: o MinIO da VPS não é público, e o upload no
-YouTube é manual na V1 (D-MC6). O OS recebe só o leve — onde estão os arquivos, a duração, o que foi
+A mídia pesada roda no Mac e **o vídeo fica aqui**: o MinIO da VPS não é público, e desde a MD10 o
+upload no YouTube sai daqui, direto (`/root-midia youtube ep-NN`). O OS recebe só o leve — onde estão os arquivos, a duração, o que foi
 cortado e a transcrição com os tempos do vídeo **final**. Depois disso o episódio está em **Pacote**.
 
 A ferramenta é `root-midia.mjs`, nesta mesma pasta (Node 22, sem dependência). Abaixo, `RM` é
@@ -151,6 +151,23 @@ estado` mostra se o agente está carregado e a última linha do log
 bruto. Se o episódio sair de Gravação enquanto o vigia trabalha (você mandou a mídia à mão), ele
 não envia nada. O vigia pressupõe **um arquivo por episódio e nenhuma pausa maior que 2 min**: com
 pausa longa, pare a gravação e rode este roteiro à mão. Detalhes no `README.md`.
+
+## O vídeo no YouTube (`/root-midia youtube ep-NN`, MD10)
+
+O vídeo final sobe **do Mac, direto ao YouTube, sempre privado**. O OS abre a sessão de envio só com
+o **lote da semana assinado** pela titular (com o YouTube dentro) e com `YOUTUBE_AUDITORIA` fora de
+`pendente`; sem isso a API recusa e nada vai ao YouTube.
+
+1. `RM youtube ep-NN --declarar` — mede o sha256 do vídeo final (por stream) e o declara ao OS. É o
+   que o lote assina; o `RM enviar` já declara sozinho ao mandar a mídia. Declarar outro arquivo
+   derruba os itens do YouTube do lote montado: aprove a semana de novo.
+2. Na tela: marcar o título, escolher a thumb e o horário do vídeo (seção YouTube do episódio);
+   aprovar a semana (aba Semana), e a titular assina em `/atendimento`.
+3. `RM youtube ep-NN` — pede a sessão e sobe em blocos de 64 MiB, retomando do que já chegou (a
+   conexão que cai, o 5xx, a sessão que some); no fim o OS confere o vídeo privado e define a thumb.
+   O estado fica em `~/.config/root/youtube-ep-NN.json`, sem a sessão nem o token. Rodar de novo
+   continua de onde parou. O horário (`publishAt`) é marcado pela rotina de publicação do OS, não
+   aqui. Com o vigia instalado, ele faz este passo sozinho quando o lote tem o envio.
 
 ## Quando algo falha
 

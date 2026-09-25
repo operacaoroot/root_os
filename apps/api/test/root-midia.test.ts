@@ -524,6 +524,33 @@ describe('root-midia: a conversa com o OS', () => {
     expect(mensagemDoErro('<html>502</html>')).toBe('<html>502</html>');
   });
 
+  it('MD10: o cliente do YouTube declara, pede a sessão (nova ou a mesma), o token e conclui pelas rotas da pauta', async () => {
+    const pedidos: Array<{ url: string; metodo: string; corpo?: unknown }> = [];
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      pedidos.push({ url, metodo: String(init.method), corpo: init.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+    const arquivo = { sha256: 'a'.repeat(64), bytes: 10, mime: 'video/mp4' };
+    await os.youtube('e1');
+    await os.declararYoutube('e1', arquivo);
+    await os.sessaoDoYoutube('e1', { ...arquivo, nova: true });
+    await os.tokenDoYoutube('e1');
+    await os.concluirYoutube('e1', 'vid-1');
+    await os.youtubePendentes();
+    expect(pedidos.slice(1).map((p) => `${p.metodo} ${p.url.replace('http://os/api', '')}`)).toEqual([
+      'GET /pauta/episodios/e1/youtube',
+      'PUT /pauta/episodios/e1/youtube/arquivo',
+      'POST /pauta/episodios/e1/youtube/sessao',
+      'POST /pauta/episodios/e1/youtube/sessao/token',
+      'POST /pauta/episodios/e1/youtube/concluido',
+      'GET /pauta/youtube/pendentes',
+    ]);
+    expect(pedidos[3].corpo).toEqual({ ...arquivo, nova: true });
+    expect(pedidos[5].corpo).toEqual({ videoId: 'vid-1' });
+  });
+
   it('login recusado diz quais variáveis conferir', async () => {
     const fetchFalso = (async () => new Response('{}', { status: 401 })) as unknown as typeof fetch;
     await expect(clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso }).pendentes()).rejects.toThrow(

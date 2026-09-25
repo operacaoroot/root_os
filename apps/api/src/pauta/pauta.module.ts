@@ -45,6 +45,9 @@ import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
 import { PublicacaoInstagramController } from './publicacao-instagram.controller';
 import { PublicacaoInstagramService } from './publicacao-instagram.service';
 import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
+import { YoutubeModule } from '../youtube/youtube.module';
+import { EnvioAoYoutubeService } from './envio-ao-youtube.service';
+import { EnvioAoYoutubeController, YoutubeDaPautaController } from './envio-ao-youtube.controller';
 import { LoteDaSemanaController } from './lote-da-semana.controller';
 import { LoteDaSemanaService } from './lote-da-semana.service';
 import { ComentariosController } from './comentarios.controller';
@@ -62,8 +65,10 @@ import { ComentariosService } from './comentarios.service';
 // GraphDePublicacaoModule: os clientes da Graph que o publicador do Instagram
 // (MD6) e o coletor de comentários (MD9) recebem por injeção; o HTTP mora no
 // conector da bio.
+// YoutubeModule: o cliente do YouTube (MD10) que o envio recebe por injeção; o
+// HTTP e a credencial moram no conector, e o retorno do OAuth também.
 @Module({
-  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule, GraphDePublicacaoModule],
+  imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule, GraphDePublicacaoModule, YoutubeModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
@@ -85,6 +90,8 @@ import { ComentariosService } from './comentarios.service';
     PublicacaoInstagramController,
     LoteDaSemanaController,
     ComentariosController,
+    YoutubeDaPautaController,
+    EnvioAoYoutubeController,
   ],
   providers: [
     PautaService,
@@ -129,11 +136,13 @@ import { ComentariosService } from './comentarios.service';
     LoteDaSemanaService,
     // MD9: a fila da DM à mão — o efeito de instagram.comentario.ler e a gravação pela rotina.
     ComentariosService,
+    // MD10: o vídeo do episódio no YouTube — a sessão do Mac, os efeitos de envio e de agendamento.
+    EnvioAoYoutubeService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
   // PublicacaoInstagramService e ComentariosService, para os executores das
   // rotinas (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService],
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService],
 })
 export class PautaModule {}

@@ -223,6 +223,31 @@ describe('MD9: a leitura dos comentários passa pela porta, e a fila não conhec
   });
 });
 
+describe('MD10: o YouTube é escrita pela porta desde o primeiro dia, só pelo lote', () => {
+  it('youtube.video.enviar e youtube.video.publicar são R3, públicas, sob o lote, com conector e argsSchema fechado', () => {
+    for (const id of ['youtube.video.enviar', 'youtube.video.publicar']) {
+      const cap = CATALOGO.find((c) => c.id === id);
+      expect(cap, `${id} sumiu de politica-marketing-os.json`).toBeDefined();
+      expect(cap!.nivel).toBe('R3');
+      expect(cap!.efeito?.escreveForaDoOS).toBe(true);
+      expect(cap!.efeito?.sensibilidade).toBe('publica');
+      expect((cap as { ferramenta?: string }).ferramenta).toBeUndefined();
+      expect((cap as { aprovacao?: unknown }).aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+      expect(CONECTOR_DA_CAPACIDADE[id]).toBe('youtube');
+      expect(cap!.argsSchema!.additionalProperties).toBe(false);
+    }
+  });
+
+  it('as rotas entregam à porta e não conhecem o conector; o retorno do OAuth não toca a porta', () => {
+    const rota = ler('src/pauta/envio-ao-youtube.controller.ts');
+    expect(rota).not.toMatch(/youtube\/youtube\.service|CLIENTE_DO_YOUTUBE|PortaDoOperador|this\.porta/);
+    const servico = ler('src/pauta/envio-ao-youtube.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    const callback = ler('src/youtube/youtube-conexao.controller.ts');
+    expect(callback).not.toMatch(/PortaDoOperador|this\.porta|\.\/youtube\.service/);
+  });
+});
+
 describe('fatia 3.3: o caminho HTTP não alcança mais o conector', () => {
   const controlador = ler('src/google/google.controller.ts');
 
@@ -410,6 +435,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       'src/pauta/publicacao-instagram.service.ts',
       // MD9: o coletor da fila da DM inscreve `instagram.comentario.ler`.
       'src/pauta/comentarios.service.ts',
+      // MD10: o envio ao YouTube inscreve `youtube.video.enviar` e `youtube.video.publicar`.
+      'src/pauta/envio-ao-youtube.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */

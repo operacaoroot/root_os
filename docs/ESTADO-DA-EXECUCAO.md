@@ -2178,6 +2178,192 @@ ferramenta de fora (ManyChat), que é decisão do Pedro e fica fora do OS.
    conta de publicação (a triagem também compara pelo @, por garantia); e o limite de chamadas da
    Graph para ~6 leituras por hora por post.
 
+### Onda D, fatia MD10 — o YouTube pela API (25/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD10), com a decisão D-MC6 do Pedro:
+implementar a MD10 inteira, com o conector sem credencial até o OAuth dele e o envio sempre privado
+até a auditoria. O Mac só manda os bytes, direto ao YouTube; o OS abre a sessão com os metadados
+travados, guarda a credencial, confere o vídeo e marca o horário. **Nada vai ao YouTube sem o lote
+da semana assinado pela titular**, e com `YOUTUBE_AUDITORIA=pendente` (o padrão) nada vai de jeito
+nenhum.
+
+| Peça | Onde |
+|---|---|
+| Conector `youtube`: OAuth web com `state` assinado de 10 min (`typ: estado-youtube`, que o guarda de sessão recusa), escopos `youtube.upload` + `youtube.force-ssl`, `access_type=offline` + `prompt=consent`, refresh token no cofre (chave `youtube`), token de acesso só em memória; contrato inteiro (autorizar, sincronizar, saúde que acusa Testing e diz a auditoria, revogar no Google e no cofre); HTTP do Data API com destinos fixos | `apps/api/src/youtube/youtube.service.ts` (único arquivo com o endereço do YouTube); `CONNECTORS` no shared; `DEVEM_IMPLEMENTAR` do `RegistroDeConectores` |
+| O retorno do OAuth `GET /api/youtube/callback` (público, prefixo `youtube` = módulo `pauta`): o controlador recebe só `concluirAutorizacao` por injeção e não importa o conector | `youtube/youtube-conexao.controller.ts`, `youtube/conexao-do-youtube.ts`, `youtube/youtube.module.ts` |
+| Capacidades R3 `youtube.video.enviar` (`exposicaoExterna: false`) e `youtube.video.publicar` (`true`), as duas `reversibilidade: manual` e `sob_lote` de `pauta.semana.aprovar`, sem ferramenta; delta `1.6.0`, catálogo com 67; `CONECTOR_DA_CAPACIDADE` = `youtube` | `packages/policy/politica-marketing-os.json`, `integrations/conectores.ts` |
+| O cliente chega à pauta por injeção (`CLIENTE_DO_YOUTUBE`); os dois efeitos, a sessão do Mac, a conclusão, a thumb e o horário, e a parte do YouTube da rotina `pauta.publicar-agendadas` | `pauta/cliente-do-youtube.ts`, `pauta/envio-ao-youtube.service.ts`, parte pura em `pauta/youtube-do-episodio.ts`; `routines/executores/pauta-publicar.executor.ts` |
+| Rotas: `GET …/:id/youtube` (`pauta.ver`); `PUT …/:id/youtube/arquivo`, `POST …/youtube/sessao`, `…/sessao/token`, `…/youtube/concluido`, `PUT …/pacote/thumb` e `…/pacote/horario` (`pauta.editar`); `GET /pauta/youtube/pendentes` (`pauta.ver`, o vigia); `POST /pauta/youtube/conectar` (`pauta.publicar`) | `pauta/envio-ao-youtube.controller.ts` |
+| O lote da semana leva os dois itens: o envio (janela até 1 h antes do horário, 4 usos: até 3 sessões e a conclusão) e o agendamento (até 15 min antes, 2 usos); a titular lê o título, a descrição inteira, a thumb, o arquivo e o horário; a ativação revoga o item cujo pacote mudou | `pauta/lote-da-semana.service.ts`; `PautaAprovacaoDaSemana.youtube` e `PautaConteudoDoLote.youtube` no shared |
+| Tabela `EnvioAoYoutube` (filha do episódio: sentinela, gatilho, RLS FORCE; `episodioId` único; `bytes` BigInt; a URI da sessão cifrada; `enviadoEmTeste`); `PautaEpisodio.thumbEscolhida` (CHECK 1–3) e `publicarNoYoutubeEm`; enum espelhado em `ENVIO_AO_YOUTUBE_ESTADOS` | migrations `20260925032020_envio_ao_youtube` e `20260925042725_envio_ao_youtube_em_teste`; `FILHOS_COM_ORGID_REDUNDANTE` = 20; `tenant-isolation.test.ts` |
+| Tela: seção "YouTube" no detalhe do episódio (auditoria, canal, thumb, horário de São Paulo, vídeo declarado, faltas, "Conectar o canal", o aviso da volta do OAuth); a linha do vídeo no "Aprovar a semana" com "fica fora"; o vídeo no cartão do lote em `/atendimento` | `apps/web/src/app/pauta/SecaoYoutube.tsx`, `AprovarASemana.tsx`, `apps/web/src/app/atendimento/CartaoDoLote.tsx` |
+| Mac: `root-midia youtube ep-NN [--final] [--declarar]` (sha256 por stream, blocos de 64 MiB, retomada pelo 308/`bytes */total`, 5xx com espera, 401 pede token, 404 pede sessão nova; estado em `~/.config/root/youtube-ep-NN.json` sem a URI nem o token); o `enviar` declara sozinho; o vigia envia os de `pendentes` quando o OBS não está gravando | `tools/root-midia/lib/youtube.mjs`, `root-midia.mjs`, `lib/os.mjs` |
+
+**Desvios da especificação, com o porquê:**
+- **A thumb e a playlist entram na CONCLUSÃO, pelo efeito de envio** (o PRONTO QUANDO pede "o OS
+  confere o vídeo e define a thumb" antes do horário, e a SPEC da capacidade põe as duas no efeito
+  de publicar). Ficou nos dois: o "concluído" é um segundo uso do item de envio, pela porta (definir
+  a thumb é escrita no canal), e o efeito de publicar confere a thumb e a playlist de novo — a thumb
+  que não entrou na conclusão (o 403 do canal sem verificação) fica como aviso e é refeita no
+  agendamento, que RECUSA se ela ainda não entrar.
+- **`YOUTUBE_OAUTH_URL`**, uma variável a mais que as seis da SPEC: sem ela o ensaio renovaria o
+  token no Google de verdade. Vazia vale `https://oauth2.googleapis.com`; fora de loopback, só https
+  (vale para as três URLs e para a URI da sessão).
+- **"Conector desligado até o OAuth"** é o estado sem credencial: a saúde diz "não conectado", e a
+  sessão, o token e o agendamento são recusados. Não nasce uma linha de `ConectorDesligado`: o
+  interruptor por empresa não tem estado "desligado por padrão", e criar um mudaria todos os
+  conectores. O que segura por padrão é o `YOUTUBE_AUDITORIA=pendente`.
+- **A thumb que sobe e o horário do vídeo viraram colunas do episódio** (o pacote do MC11 não tinha
+  os dois). Travam só quando o VÍDEO está agendado: o Agendado do episódio vem da semana do
+  Instagram (D-MC11) e não pode impedir o YouTube de entrar num lote depois.
+- **O arquivo é declarado por rota própria** (`PUT …/youtube/arquivo`): reenviar a mídia do MC9
+  descartaria a transcrição e o pacote. Declarar outro arquivo derruba os itens do YouTube ainda
+  vivos; depois que o vídeo subiu, o arquivo não troca pelo OS (409).
+- **A rota declarada de `youtube.video.publicar` é `PUT …/pacote/horario`**: quem agenda é a rotina;
+  a rota só prende a capacidade ao módulo `pauta` (o mesmo recurso da MD9).
+- **O lote só do YouTube ainda pede os impedimentos da semana** (página de links no ar, conta de
+  publicação do Instagram): o YouTube anda junto com a semana, como a SPEC da MD8.
+- **O token do Mac é OUTRO, renovado com `scope=youtube.upload`** (`tokenDoEnvio`, guardado à parte
+  do da API). Se o Google ignorar o escopo pedido e devolver o largo (o `force-ssl` publica e apaga
+  fora do lote), com `YOUTUBE_AUDITORIA=aprovada` ele não sai, e a recusa vem antes da porta; sem a
+  auditoria, todo vídeo do projeto fica privado de qualquer jeito, e o modo teste só alcança o canal
+  de teste. Cada entrega vai ao RASTRO (`pauta.youtube_token_entregue`, com `soEnvio` e `renovado`,
+  sem o valor).
+- Depois do `publishAt` aceito, os usos que sobraram dos dois itens são revogados: o lote se
+  encerra, e o vídeo agendado não tem por onde sair de novo pelo OS.
+- **A sessão já aberta é devolvida sem passar pela porta** (e sem gastar uso), como o token novo:
+  os dois conferem ali o item ativo do lote assinado, o hash do pacote de agora contra o assinado,
+  a auditoria e o interruptor do YouTube. Só abrir sessão nova e concluir gastam uso.
+
+**Medido** (Mac, `marketing_os_test`, 25/09/2026 ~01h): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto **2977 de 2977** em 73 arquivos (+51: `youtube` 28 novo, `pauta-youtube` 13 novo com
+banco, `arquitetura` +5, `escritas-pela-porta` +2, `modulos-por-tenant` +1, `modelos-globais` +1,
+`root-midia` +1; `conector-desligado` remediu a conta); sem banco, 2293 passados e 684 pulados; web
+**604** em 47 (+8, `pauta-youtube` novo); policy **93** (+3); `test:porta` 61; `test:isolamento`
+**352** (+6, `EnvioAoYoutube`); `db:diff` "No difference detected."; `build` + `smoke` OK. O
+`db:seed:politica` no banco de teste recusou sem assinatura e aceitou com `POLITICA_CAPACIDADE_NOVA_*`
+("capacidade nova em R3 (não declarada valia R5)", as duas). Pisos da CI: api 2145/65, web 417/38,
+isolamento 276, policy 60/2, com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md10`, criado vazio:
+migrations do zero, `db:seed` e `db:seed:politica` assinado; MinIO descartável da imagem
+`minio/minio` em `127.0.0.1:9419`; dublê do Google/YouTube em `127.0.0.1:4412` como
+`YOUTUBE_API_URL`/`_UPLOAD_URL`/`_OAUTH_URL`, que grava os bytes recebidos e derruba a conexão no
+meio do 3º bloco; arquivo sintético de 300 MB (`dd`), `HOME` do `root-midia` numa pasta
+descartável; banco, MinIO, API, dublê e o arquivo removidos no fim):
+1. `POST /pauta/youtube/conectar` → a URL do Google com os dois escopos, `offline` e `consent`; o
+   callback com o `state` devolvido → 302 `…/pauta?aba=episodios&youtube=ok` (o dublê recebeu a
+   troca do código e o `channels.list`); com `state` forjado → `youtube=expirado`, sem consulta.
+2. Thumb 1280×720 subida e escolhida, horário `2026-09-27T18:00-03:00`. Com `YOUTUBE_AUDITORIA=pendente`,
+   `root-midia youtube ep-01` declarou o arquivo e a sessão voltou **400** "PRIVADO PARA SEMPRE"; o
+   dublê recebeu **0** chamadas. Com `aprovada` e **sem lote**: **409** "Não há item de envio…", **0**
+   chamadas.
+3. "Aprovar a semana" → lote com 2 itens (envio e agendamento); a titular leu o conteúdo (título,
+   thumb 1, arquivo `5bc28a28ef2d`, 314.572.800 bytes, horário) e assinou com senha e motivo → ativo.
+4. `root-midia youtube ep-01`: o dublê recebeu a sessão com `privacyStatus: private`, sem `publishAt`,
+   título, descrição com a página no ar e categoria 28; 5 blocos de 64 MiB, a conexão derrubada no
+   3º (20 MiB guardados), a consulta `bytes */314572800` → 308 com `Range`, a retomada em
+   `155189248-` e o 200 com o id. **O sha256 recebido é igual ao do arquivo** (`5bc28a28…`). O
+   "concluído": `videos.list` e `thumbnails.set` com o PNG (sha256 igual ao da thumb) → `conferido`.
+5. `POST /rotinas` (`pauta.publicar-agendadas`) e "Rodar agora": com a nota desligada, `pulada`
+   (publicação automática desligada) e **0** chamadas; com `pauta.publicacao.automatica` = `ligada`,
+   `ok` "ep-01 youtube: agendada (2026-09-27T21:00:00.000Z)": o dublê recebeu `videos.list` e
+   `videos.update?part=status` com `{id, status: {privacyStatus: private, publishAt, selfDeclaredMadeForKids: false}}`
+   — nenhum campo de `snippet`.
+6. O vigia: um segundo episódio com o lote assinado apareceu em `GET /pauta/youtube/pendentes`, e
+   uma passagem de `root-midia vigia` (arquivo de variáveis descartável) subiu os 5 blocos e concluiu
+   (`"youtube":["ep-02 conferido"]`).
+7. No banco: 3 `ToolCall` do YouTube (R4 às 01h de SP, `fora_da_janela`, coberto pelo lote R4), e
+   **nenhum** `ToolCall`, `EventLog` ou `AuditLog` com a URI da sessão, o token ou o refresh.
+
+**A correção dos três revisores** (25/09/2026, no mesmo commit):
+- **O 401 do Mac não vira laço.** O `root-midia` pede no máximo 2 tokens seguidos (`TOKENS_SEGUIDOS`)
+  e para na hora se o OS devolver o mesmo token, com a frase de conectar o canal de novo; o
+  `POST …/sessao/token` descarta o token guardado e renova de verdade (`forcar`). O dublê do protocolo
+  ganhou o 401 que persiste.
+- **A janela do item de envio vale fora da porta.** A sessão aberta, o token novo e a fila do vigia
+  (`pendentes`) exigem `agora` entre `janelaDe` e `janelaAte` do item — o lote vai até o último post
+  da semana, e sem isso o token seguia saindo por dias depois do que a titular assinou.
+- **A rotina parte dos itens vivos** (`LotesService.recursosComItemAtivo`) e só então lê os envios
+  deles: as linhas `declarado`/`conferido` de outros episódios não tiram o da semana da consulta. Com
+  a nota desligada, a passagem só pula, também com a janela fechada (como o Instagram).
+- **O pacote mudado revoga os itens.** A sessão e o token recusados por hash revogam os dois itens do
+  vídeo ali mesmo, e o "Aprovar a semana" oferece o vídeo de novo (a montagem revoga o item ativo
+  divergente antes de montar). O item de envio gasto (o vídeo já subiu) não segura mais o vídeo.
+- **O modo teste tem trava de canal.** `YOUTUBE_CANAL_DE_TESTE` (compose e `.env.example`) com o id
+  do canal; vazio ou outro canal conectado (`IntegrationAccount.config.canalId`) recusa a sessão. A
+  linha grava `enviadoEmTeste`; o vídeo desse modo nunca é oferecido nem aceito para publicar, e o
+  mesmo arquivo declarado de novo fora do modo teste recomeça o envio (o `root-midia` redeclara
+  sozinho). Os textos do "Aprovar a semana" e do resumo do lote dizem que ele fica privado para
+  sempre.
+- **O vídeo que sumiu ou foi recusado solta a linha.** `divergenciaDoVideo` recusa `uploadStatus`
+  `rejected`, `failed` e `deleted`; a conclusão com um id que não existe no canal mantém a sessão
+  reaproveitável (a próxima execução pergunta ao YouTube o id, sem subir de novo); o agendamento de
+  um vídeo que sumiu solta o `videoId`.
+- **A playlist não duplica:** `playlistItems.list` por vídeo antes do insert.
+- **A titular vê a thumb** no cartão do lote (a imagem pela rota autenticada do pacote), e não só o
+  número; `PautaItemDoYoutubeNoLote` ganhou `episodioId`. O "Aprovar a semana" distingue os três
+  casos (os dois itens, só o envio do modo teste, só o agendamento do vídeo que já subiu) e avisa
+  quando a publicação automática está desligada.
+- **Rastro e catraca:** `POST /pauta/youtube/conectar` grava `conector.autorizar` (o mesmo evento de
+  /conexoes; a permissão segue `pauta.publicar`, o precedente da conta de publicação da MD5);
+  `youtube.com` e `youtu.be` entraram em `HOSTS`, e o link de exibição vem do conector
+  (`urlDoVideo`). O aviso da volta do OAuth mora no topo da aba Episódios. A saúde lembra do Testing
+  pela data da conexão quando o Google não manda o prazo.
+- **Recusado:** nada. Medido depois da correção: api direto **2990 de 2990** em 73 arquivos (+13:
+  `youtube` +10, `pauta-youtube` +3); sem banco, 2303 passados e 687 pulados; web **605** em 47 (+1);
+  policy 93; `test:porta` 61; `test:isolamento` 352; `root-midia` 122; `db:diff` limpo; `build` +
+  `smoke` OK. Pisos: api 2153/65, web 418/38.
+
+Não conferido na tela a 375 px: o ensaio não entra no navegador com senha. A seção segue os
+vizinhos (`flex-wrap`, `break-words`, `min-w-0`, `grid-cols-1` até `sm`) e o teste de componente
+cobre os estados.
+
+**Deploy:** duas migrations aditivas (o enum, a tabela com RLS e gatilho, duas colunas e um CHECK no
+episódio; depois a coluna `enviadoEmTeste`). **Antes da subida**, o `db:seed:politica` com `POLITICA_CAPACIDADE_NOVA_*`: sem ele as
+duas capacidades valem R5 e a porta bloqueia (falha fechada, nada vai ao YouTube). Variáveis novas no
+compose e no `.env.example`: `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`,
+`YOUTUBE_API_URL`/`_UPLOAD_URL`/`_OAUTH_URL` (vazias em produção), `YOUTUBE_AUDITORIA` (padrão
+`pendente`) e `YOUTUBE_CANAL_DE_TESTE` (vazia). Nenhuma permissão nova.
+
+**Riscos.** Antes da auditoria, qualquer envio real trava o vídeo em privado para sempre: com
+`teste`, só no canal de `YOUTUBE_CANAL_DE_TESTE`. O Mac recebe por ~1 h um token pedido só com
+`youtube.upload`; se o Google não estreitar, com `aprovada` o envio pelo Mac fica parado até a
+autorização só de envio existir (pendência 9) — sem a auditoria, o token largo sai, curto, só com a
+sessão aberta, o item ativo dentro da janela e o RASTRO de cada entrega.
+O token de acesso fica na memória do processo: dois containers da API renovariam cada um o seu (a
+regra de uma réplica, da onda D, continua). O prazo da auditoria é desconhecido.
+
+**Pendências (do Pedro), na ordem:**
+1. Dizer qual conta Google é dona do canal da Root (pessoal, Workspace ou Brand Account).
+2. Criar o projeto próprio no Google Cloud, ativar a **YouTube Data API v3**, criar o cliente OAuth
+   **web** com a redirect `https://os.operacaoroot.com/api/youtube/callback` e pôr a tela de
+   consentimento em **produção** (ou Internal, se a conta for Workspace). Em Testing a autorização
+   vence em 7 dias (a saúde avisa).
+3. Pôr no `.env` da VPS (easyPanel): `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` e
+   `YOUTUBE_REDIRECT_URI=https://os.operacaoroot.com/api/youtube/callback`; deixar
+   `YOUTUBE_AUDITORIA=pendente`.
+4. `db:seed:politica` na VPS **antes** do deploy, assinado:
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD10: catálogo ganha youtube.video.enviar e youtube.video.publicar (R3, sob o lote da semana)' pnpm --filter @mktos/api db:seed:politica`.
+5. Verificar o canal por telefone em `youtube.com/verify` (sem isso o `thumbnails.set` devolve 403).
+6. Conectar uma vez, logado na conta dona do canal: aba Episódios › seção YouTube › "Conectar o
+   canal" (ou Conexões).
+7. Pedir a auditoria no formulário "YouTube API Services - Audit and Quota Extension"
+   (`support.google.com/youtube/contact/yt_api_form`), com a política de privacidade publicada e uma
+   conta de demonstração. Para testar antes, um **canal de teste** com `YOUTUBE_AUDITORIA=teste` e
+   `YOUTUBE_CANAL_DE_TESTE=<id UC… do canal de teste>`, conectado no lugar do canal real. O vídeo
+   do teste fica privado para sempre no canal de teste; para mandar o episódio ao canal real depois,
+   reconecte o canal real e rode `root-midia youtube ep-NN` fora do modo teste (o arquivo é
+   declarado de novo e o vídeo volta ao "Aprovar a semana").
+8. Quando a auditoria sair: `YOUTUBE_AUDITORIA=aprovada` no `.env` e recriar o container (`up -d`).
+   A publicação só sai também com a nota `pauta.publicacao.automatica` ligada (D-MD1).
+9. **A conferir no primeiro OAuth real:** se o refresh com `scope=youtube.upload` devolve um token
+   só de envio (o RASTRO `pauta.youtube_token_entregue` diz `soEnvio`). Se não devolver, com
+   `aprovada` o OS não entrega token ao Mac: a saída é uma segunda autorização só de envio, guardada
+   no cofre com outro nome (fatia a abrir). Conferir também se o Google manda
+   `refresh_token_expires_in` em Testing (sem ele, a saúde lembra pela data da conexão) e a categoria
+   certa do canal (nota `pauta.youtube.categoria`, padrão 28).
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2465,6 +2651,16 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     (também usado pela sincronização da bio) passou a paginar pelo cursor `after`, sem seguir o
     `next` do corpo. Sem `META_WEBHOOK_PESSOA_HMAC_KEY`, sem o escopo de comentários ou sem o seed
     assinado, nada é lido.
+32. **MD10: o YouTube pela API.** O canal se conecta por OAuth próprio (`/api/youtube/callback`, fora
+    do Google da empresa) e o refresh token vai ao cofre. Com o lote da semana assinado e
+    `YOUTUBE_AUDITORIA` fora de `pendente`, o Mac abre a sessão pela porta e sobe o vídeo direto ao
+    YouTube, sempre privado; o OS confere o vídeo e define a thumb. Com `aprovada` e a nota
+    `pauta.publicacao.automatica` ligada, a rotina `pauta.publicar-agendadas` passa a mandar também o
+    `publishAt` (só `part=status`). O "Aprovar a semana" passa a incluir o vídeo quando ele está
+    pronto, e a titular o lê no cartão do lote. O `root-midia enviar` passa a declarar o vídeo final
+    (sha256), e o vigia passa a enviar os episódios com o item de envio ativo. Sem o seed assinado,
+    sem credencial ou com a auditoria pendente (o padrão), nada vai ao YouTube. O modo teste passa a
+    exigir `YOUTUBE_CANAL_DE_TESTE` e só abre sessão para esse canal.
 
 ---
 

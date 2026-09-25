@@ -39,6 +39,7 @@ export default function PautaPage() {
   const [episodioAberto, setEpisodioAberto] = useState<string | null>(null);
   const recarregar = useCallback(() => setBump((b) => b + 1), []);
   const [retornoDaConexao, setRetornoDaConexao] = useState<string | null>(null);
+  const [retornoDoYoutube, setRetornoDoYoutube] = useState<string | null>(null);
 
   /*
    * A volta do OAuth da conta de publicação (MD5) chega em
@@ -47,6 +48,14 @@ export default function PautaPage() {
    */
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    // MD10: a volta do OAuth do YouTube chega em `/pauta?aba=episodios&youtube=<motivo>`.
+    const doYoutube = q.get('youtube');
+    if (doYoutube) {
+      setAba('Episódios');
+      setRetornoDoYoutube(doYoutube.slice(0, 40));
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
     const motivo = q.get('conexao');
     if (q.get('aba') !== 'semana' && !motivo) return;
     setAba('Semana');
@@ -173,6 +182,8 @@ export default function PautaPage() {
           podeGastarIa={can('automacoes.executar')}
           podeMexerNaBio={can('bio.editar')}
           podePublicarPagina={can('pauta.publicar') && can('bio.editar')}
+          podeConectarYoutube={podePublicar}
+          avisoDoYoutube={retornoDoYoutube}
         />
       )}
       {ready && aba === 'Semana' && (

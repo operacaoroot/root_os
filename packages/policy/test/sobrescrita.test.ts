@@ -397,8 +397,13 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // Dezessete desde a MD9 (25/09/2026): `instagram.comentario.ler` também.
     // É leitura, mas o que ela devolve é o @ de quem comentou — vai para a fila
     // da DM à mão, nunca para o contexto de um modelo.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(17);
-    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar', 'instagram.comentario.ler']) {
+    //
+    // Dezenove desde a MD10 (25/09/2026): `youtube.video.enviar` e
+    // `youtube.video.publicar`. Quem envia é o Mac, pela sessão que a tela
+    // abre com o lote assinado; quem agenda é a rotina. Agente nenhum sobe
+    // vídeo nem marca horário no canal da empresa.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(19);
+    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar', 'instagram.comentario.ler', 'youtube.video.enviar', 'youtube.video.publicar']) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }
     for (const id of ['conector.desligar', 'conector.religar']) {

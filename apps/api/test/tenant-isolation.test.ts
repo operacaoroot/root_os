@@ -382,6 +382,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
   { tabela: 'PautaPublicacao', escopo: 'filho', chaveSql: '"id"', nota: 'A publicação da peça no Instagram pelo OS (MD6): o estado, os containers na Meta, o id e o permalink do post. Ler a da outra é saber o que ela vai postar e quando; escrever `estado` é destravar ou derrubar a publicação alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'ComentarioComPalavra', escopo: 'filho', chaveSql: '"id"', nota: 'Quem comentou a palavra-chave num post da semana (MD9): o @ por 7 dias, o HMAC da pessoa e se a DM já foi respondida. Ler a da outra é saber quem pediu o link a ela; escrever `respondidoEm` é sumir com a fila alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
+  { tabela: 'EnvioAoYoutube', escopo: 'filho', chaveSql: '"id"', nota: 'O vídeo do episódio a caminho do YouTube (MD10): o sha256 do vídeo final, a URI da sessão de envio cifrada e o id do vídeo privado. Ler a da outra é saber o que ela vai publicar e onde está o vídeo privado dela; escrever `videoId` ou `estado` é levar o agendamento da outra a um vídeo que não é dela. Filha do episódio, com a empresa conferida pelo gatilho.' },
   { tabela: 'PautaEpisodio', escopo: 'filho', chaveSql: '"id"', nota: 'O episódio da semana (MC7): roteiro, mídia do Mac, transcrição, títulos e a página de links. Ler o da outra é ler o que ela vai publicar antes de publicar; escrever `status` é mover o episódio alheio de etapa. Filho 1:1 da rodada, com a empresa conferida pelo gatilho — e a página de links também.' },
 
   // ---- rotinas (fatia 5.1) ----------------------------------------------
@@ -1032,9 +1033,16 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }));
 
   // O episódio (MC7): filho 1:1 da rodada, com a página de links da mesma empresa.
-  reg('PautaEpisodio', await ins(c, 'PautaEpisodio', {
+  const episodioId = await ins(c, 'PautaEpisodio', {
     id: crypto.randomUUID(), orgId, rodadaId, numero: 1, titulo: `Episódio ${rotulo} ${MARCA}`,
     roteiro: `Roteiro privado da org ${rotulo}`, bioPageId: s.ref.bioPageId, atualizadoEm: agora,
+  });
+  reg('PautaEpisodio', episodioId);
+
+  // O vídeo a caminho do YouTube (MD10): filho do episódio, a empresa pelo gatilho.
+  reg('EnvioAoYoutube', await ins(c, 'EnvioAoYoutube', {
+    id: crypto.randomUUID(), episodioId, sha256: 'a'.repeat(64), bytes: 1024, estado: 'sessao_aberta',
+    sessaoCifrada: `sessao_privada_${suf}`, videoId: `video_privado_${suf}`, atualizadoEm: agora,
   }));
 
   // --- rotinas (fatia 5.1) -------------------------------------------------
@@ -3020,6 +3028,18 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
     palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: new Date(), expiraEm: new Date(Date.now() + 86_400_000),
   }),
+  EnvioAoYoutube: async (c) => {
+    // episodioId é @unique: a semente já usou o episódio de A. Um episódio novo de A.
+    const agora = new Date();
+    const rodada = await ins(c, 'PautaRodada', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, status: 'curada', titulo: `Rodada do envio ${MARCA}`,
+      janelaIni: agora, janelaFim: agora,
+    });
+    const episodio = await ins(c, 'PautaEpisodio', {
+      id: crypto.randomUUID(), rodadaId: rodada, numero: 901, titulo: 'Episódio do envio', atualizadoEm: agora,
+    });
+    return { id: crypto.randomUUID(), episodioId: episodio, sha256: 'b'.repeat(64), bytes: 1, atualizadoEm: agora };
+  },
   PautaEpisodio: async (c) => {
     // rodadaId é @unique (uma rodada, um episódio): precisa de uma rodada nova.
     const agora = new Date();
@@ -3061,9 +3081,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
     // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
     // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
-    // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026).
+    // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
+    // + `EnvioAoYoutube` (MD10, 25/09/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(19);
+    expect(declarados.length).toBe(20);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

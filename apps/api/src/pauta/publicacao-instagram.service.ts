@@ -102,7 +102,8 @@ export interface DesfechoDaPublicacao {
 /** Uma linha da passagem da rotina, para o histórico (só apelido, formato e desfecho). */
 export interface LinhaDaPassagem {
   rotulo: string;
-  resultado: 'publicada' | 'processando' | 'erro' | 'pulada' | 'pendente' | 'interruptor';
+  /** `agendada`: o YouTube aceitou o `publishAt` (MD10) — daí em diante quem publica é ele. */
+  resultado: 'publicada' | 'agendada' | 'processando' | 'erro' | 'pulada' | 'pendente' | 'interruptor';
   detalhe: string | null;
 }
 

@@ -18,6 +18,7 @@ import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { SecaoRoteiro } from './SecaoRoteiro';
 import { SecaoMidia } from './SecaoMidia';
 import { SecaoPacote } from './SecaoPacote';
+import { AvisoDoYoutube, SecaoYoutube } from './SecaoYoutube';
 import { SecaoPaginaDeLinks } from './SecaoPaginaDeLinks';
 import { SecaoNewsletter } from './SecaoNewsletter';
 import { SecaoSemana } from './SecaoSemana';
@@ -48,6 +49,10 @@ interface Props {
   podeMexerNaBio?: boolean;
   /** `pauta.publicar` + `bio.editar`: pôr a página de links no ar (MC12). */
   podePublicarPagina?: boolean;
+  /** `pauta.publicar`: conectar o canal do YouTube (MD10). */
+  podeConectarYoutube?: boolean;
+  /** O `youtube=` com que o retorno do OAuth do YouTube voltou para a aba (MD10). */
+  avisoDoYoutube?: string | null;
 }
 
 function ehOrigem(o: unknown): o is PautaOrigem {
@@ -74,6 +79,8 @@ export function AbaEpisodios({
   podeGastarIa = false,
   podeMexerNaBio = false,
   podePublicarPagina = false,
+  podeConectarYoutube = false,
+  avisoDoYoutube = null,
 }: Props) {
   const [lista, setLista] = useState<PautaEpisodioList | null>(null);
   const [aberto, setAberto] = useState<string | null>(inicial);
@@ -164,6 +171,9 @@ export function AbaEpisodios({
 
   return (
     <div className="space-y-4">
+      {/* A volta do OAuth chega sem episódio aberto: o aviso (o Testing que vence em 7 dias) fica no topo da aba. */}
+      {avisoDoYoutube && <AvisoDoYoutube motivo={avisoDoYoutube} />}
+
       {lista && lista.items.length === 0 && (
         <Card>
           <p className="text-sm text-muted">
@@ -293,6 +303,17 @@ export function AbaEpisodios({
             podeGastarIa={podeGastarIa}
             onErro={onErro}
             onDetalhe={aplicarDetalhe}
+          />
+
+          <SecaoYoutube
+            key={detalhe.id}
+            token={token}
+            episodioId={detalhe.id}
+            apelido={detalhe.apelido}
+            thumbs={detalhe.thumbs}
+            editavel={editavel}
+            podeConectar={podeConectarYoutube}
+            onErro={onErro}
           />
 
           <SecaoPaginaDeLinks

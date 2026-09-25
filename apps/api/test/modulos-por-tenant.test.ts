@@ -518,6 +518,26 @@ describe('o gate de módulos (interceptor)', () => {
     expect(erro).toBeInstanceOf(NotFoundException);
   });
 
+  it('o YouTube (MD10) é do módulo pauta: as rotas do Mac somem sem ele, e o retorno do OAuth é público', async () => {
+    for (const c of [
+      '/api/pauta/episodios/e1/youtube',
+      '/api/pauta/episodios/e1/youtube/sessao',
+      '/api/pauta/episodios/e1/youtube/concluido',
+      '/api/pauta/youtube/pendentes',
+      '/api/pauta/youtube/conectar',
+      '/api/youtube/callback',
+    ]) {
+      expect(moduloDoCaminho(c)).toBe('pauta');
+    }
+    await expect(passou('/api/pauta/episodios/e1/youtube/sessao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/episodios/e1/youtube/sessao', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+    // Autenticado numa empresa sem o módulo: o callback também some.
+    expect(await recusa(passou('/api/youtube/callback', ['bio']))).toBeInstanceOf(NotFoundException);
+    // Anônimo (o navegador voltando do Google): passa, e quem confere é o `state` assinado.
+    await expect(passou('/api/youtube/callback', [], null)).resolves.toBe(SEGUIU);
+  });
+
   it('publicar no Instagram pelo OS (MD6) é do módulo pauta: sem ele, a rota some', async () => {
     for (const c of ['/api/pauta/pecas/p1/publicar-instagram', '/api/pauta/pecas/p1/publicacao', '/api/pauta/pecas/p1/publicacao/manual']) {
       expect(moduloDoCaminho(c)).toBe('pauta');

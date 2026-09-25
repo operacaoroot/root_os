@@ -731,6 +731,22 @@ export class LotesService {
     return new Map([...mapa].map(([k, { criadoEm: _c, ...v }]) => [k, v]));
   }
 
+  /**
+   * Os recursos com item ATIVO de `capabilityId` num lote ATIVO, do que fecha
+   * antes — vencido ou não: é por onde a rotina começa, para o que ela tem a
+   * olhar nunca ficar de fora de uma consulta limitada.
+   */
+  async recursosComItemAtivo(orgId: string, capabilityId: string, teto = 50): Promise<string[]> {
+    exigirTenant(orgId, 'LotesService.recursosComItemAtivo');
+    const itens = await this.prisma.itemDoLote.findMany({
+      where: { orgId, capabilityId, estado: ItemDoLoteEstado.ativo, lote: { estado: LoteEstado.ativo } },
+      select: { recursoId: true },
+      orderBy: { janelaAte: 'asc' },
+      take: teto,
+    });
+    return [...new Set(itens.map((i) => i.recursoId))];
+  }
+
   /** Os lotes em curso de um recurso (o episódio), do mais novo: a aba Semana os mostra. */
   async lotesEmCurso(orgId: string, capabilityId: string, recursoTipo: string, recursoId: string, agora = new Date()) {
     exigirTenant(orgId, 'LotesService.lotesEmCurso');

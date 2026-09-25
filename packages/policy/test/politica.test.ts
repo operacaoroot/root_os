@@ -690,3 +690,59 @@ describe('instagram.comentario.ler (MD9)', () => {
     });
   });
 });
+
+/*
+ * MD10 (25/09/2026): o YouTube pela API. O que não pode mudar sem alguém ver:
+ * as duas são R3 pelo efeito, com reversibilidade `manual` — `automatica` daria
+ * R2, mas desfazer o envio seria apagar o vídeo, que é destruição e R5, então
+ * o valor honesto é `manual` —; o envio não expõe (o vídeo é sempre privado) e a
+ * publicação expõe; as duas saem só pelo lote da semana (R4), que cobre o sinal
+ * aceso; e os argumentos prendem a aprovação ao arquivo (sha256 e tamanho), ao
+ * texto, à categoria, à thumb e, na publicação, ao horário.
+ */
+describe('youtube.video.enviar e youtube.video.publicar (MD10)', () => {
+  const enviar = MKTOS.capacidades.find((x) => x.id === 'youtube.video.enviar');
+  const publicar = MKTOS.capacidades.find((x) => x.id === 'youtube.video.publicar');
+  const lote = MKTOS.capacidades.find((x) => x.id === 'pauta.semana.aprovar');
+
+  it('as duas são R3 pelo efeito, sem ferramenta e sem desfazer; o envio não expõe, a publicação expõe', () => {
+    expect(enviar, 'youtube.video.enviar sumiu do catálogo').toBeTruthy();
+    expect(publicar, 'youtube.video.publicar sumiu do catálogo').toBeTruthy();
+    for (const c of [enviar!, publicar!]) {
+      expect(c.nivel).toBe('R3');
+      expect(classificar(c.efeito)).toBe('R3');
+      expect(c.efeito).toMatchObject({ escreveForaDoOS: true, reversibilidade: 'manual', sensibilidade: 'publica', destruicao: false });
+      expect(c.ferramenta).toBeUndefined();
+      expect(c.desfazer).toBeUndefined();
+      expect(c.aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    }
+    expect(enviar!.efeito.exposicaoExterna).toBe(false);
+    expect(publicar!.efeito.exposicaoExterna).toBe(true);
+    // O contraexemplo que decidiu a reversibilidade: `automatica` desceria o envio a R2.
+    expect(classificar({ ...enviar!.efeito, reversibilidade: 'automatica' })).toBe('R2');
+  });
+
+  it('com sinal aceso sobem a R4, e o lote da semana (R4) ainda cobre', () => {
+    for (const c of [enviar!, publicar!]) {
+      const cap: Capacidade = { id: c.id, descricao: c.descricao, nivel: c.nivel, efeito: c.efeito };
+      expect(avaliar(cap, {}).nivel).toBe('R3');
+      expect(avaliar(cap, { sinais: ['fora_da_janela'] }).nivel).toBe('R4');
+    }
+    expect(lote!.nivel).toBe('R4');
+  });
+
+  it('os esquemas são fechados; a publicação é o envio mais o horário', () => {
+    const e = enviar!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, Record<string, unknown>> };
+    const p = publicar!.argsSchema as typeof e;
+    const campos = ['bytes', 'categoria', 'descricao', 'episodioId', 'sha256', 'thumbChave', 'thumbN', 'thumbSha', 'titulo'];
+    expect(e.additionalProperties).toBe(false);
+    expect([...e.required].sort()).toEqual(campos);
+    expect(Object.keys(e.properties).sort()).toEqual(campos);
+    expect(p.additionalProperties).toBe(false);
+    expect([...p.required].sort()).toEqual([...campos, 'publicarEm'].sort());
+    expect(e.properties.sha256).toMatchObject({ pattern: '^[0-9a-f]{64}$' });
+    expect(e.properties.thumbSha).toMatchObject({ pattern: '^[0-9a-f]{12}$' });
+    expect(e.properties.bytes).toMatchObject({ type: 'integer', minimum: 1 });
+    expect(e.properties.thumbN).toMatchObject({ type: 'integer', minimum: 1, maximum: 3 });
+  });
+});

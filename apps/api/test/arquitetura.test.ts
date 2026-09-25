@@ -344,6 +344,13 @@ const CONECTORES: Record<string, string> = {
   'src/billing/cobranca-asaas.service.ts': 'Asaas (cobrança da assinatura)',
   'src/bio/plataformas/instagram.ts': 'Instagram (bio)',
   'src/bio/plataformas/tiktok.ts': 'TikTok (bio)',
+  /*
+   * MD10: o canal do YouTube, com projeto próprio no Google Cloud — outra
+   * autorização que o Google da empresa, com outros escopos. O endereço
+   * `googleapis.com` é o mesmo do Google; quem o cita aqui é este conector, e a
+   * catraca do MD10 (abaixo) confere que o do YouTube não aparece em outro lugar.
+   */
+  'src/youtube/youtube.service.ts': 'YouTube',
 };
 
 /**
@@ -949,6 +956,9 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   // TikTok tem dois domínios: o de autorização e o da API aberta.
   { padrao: /https?:\/\/(?:[\w-]+\.)*tiktok\.com/, conector: 'src/bio/plataformas/tiktok.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*tiktokapis\.com/, conector: 'src/bio/plataformas/tiktok.ts' },
+  // MD10: o link de exibição do vídeo também é endereço do YouTube; quem o monta é o conector (`urlDoVideo`).
+  { padrao: /https?:\/\/(?:[\w-]+\.)*youtube\.com/, conector: 'src/youtube/youtube.service.ts' },
+  { padrao: /https?:\/\/(?:[\w-]+\.)*youtu\.be/, conector: 'src/youtube/youtube.service.ts' },
 ];
 
 /*
@@ -1143,6 +1153,13 @@ const CREDENCIAIS: Record<string, string> = {
   INSTAGRAM_TOKEN_URL: 'src/bio/plataformas/instagram.ts',
   INSTAGRAM_GRAPH_URL: 'src/bio/plataformas/instagram.ts',
   OBSIDIAN_VAULT_PATH: 'src/obsidian/obsidian.service.ts',
+  // MD10: o projeto próprio do YouTube; as três URLs só o dublê preenche.
+  YOUTUBE_CLIENT_ID: 'src/youtube/youtube.service.ts',
+  YOUTUBE_CLIENT_SECRET: 'src/youtube/youtube.service.ts',
+  YOUTUBE_REDIRECT_URI: 'src/youtube/youtube.service.ts',
+  YOUTUBE_API_URL: 'src/youtube/youtube.service.ts',
+  YOUTUBE_UPLOAD_URL: 'src/youtube/youtube.service.ts',
+  YOUTUBE_OAUTH_URL: 'src/youtube/youtube.service.ts',
 };
 
 /*
@@ -2116,5 +2133,74 @@ describe('catraca de arquitetura: o lote de aprovação (MD7)', () => {
     expect(escreveCru.test(FONTES.find((f) => f.arquivo === SERVICO)!.codigo)).toBe(true);
     const sqlCru = FONTES.filter((f) => f.arquivo !== SERVICO && escreveCru.test(f.codigo)).map((f) => f.arquivo);
     expect(sqlCru, 'SQL cru escrevendo em lote fora de LotesService').toEqual([]);
+  });
+});
+
+/*
+ * MD10 — o YouTube tem o mesmo desenho do publicador do Instagram: o HTTP e a
+ * credencial moram no conector, o cliente chega à pauta por injeção (token
+ * com dono), e o que escreve no canal só roda dentro dos efeitos que a porta
+ * dispara. O retorno do OAuth também chega por injeção, e o controlador não
+ * importa o conector — a lista de exceções não cresce.
+ */
+describe('catraca de arquitetura: o YouTube (MD10)', () => {
+  const CONECTOR = 'src/youtube/youtube.service.ts';
+  const TOKEN = 'src/pauta/cliente-do-youtube.ts';
+  const FIACAO = 'src/youtube/youtube.module.ts';
+  const ENVIO = 'src/pauta/envio-ao-youtube.service.ts';
+  const CONEXAO = 'src/youtube/conexao-do-youtube.ts';
+  const CALLBACK = 'src/youtube/youtube-conexao.controller.ts';
+
+  it('os arquivos existem onde a catraca procura', () => {
+    for (const a of [CONECTOR, TOKEN, FIACAO, ENVIO, CONEXAO, CALLBACK]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o endereço do YouTube (a API, o upload e os escopos) só aparece no conector', () => {
+    const doYoutube = /googleapis\.com\/(?:upload\/)?youtube|youtube\.googleapis\.com|auth\/youtube/;
+    const fora = FONTES.filter((f) => f.arquivo !== CONECTOR && doYoutube.test(f.codigo)).map((f) => f.arquivo);
+    expect(fora, 'endereço do YouTube fora do conector').toEqual([]);
+    expect(FONTES.find((f) => f.arquivo === CONECTOR)!.codigo).toMatch(doYoutube);
+    // O `SCOPES` do Google da empresa não pede o canal.
+    expect(FONTES.find((f) => f.arquivo === 'src/google/google.service.ts')!.codigo).not.toMatch(/auth\/youtube/);
+  });
+
+  it('o cliente do YouTube tem um dono: só a declaração, a fiação e o envio o citam', () => {
+    const citam = FONTES.filter((f) => /\bCLIENTE_DO_YOUTUBE\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, ENVIO].sort());
+    const fiacao = FONTES.find((f) => f.arquivo === FIACAO)!;
+    expect(fiacao.semTexto).not.toMatch(/\bfetch\s*\(/);
+  });
+
+  it('o retorno do OAuth chega ao controlador por injeção, e o controlador não importa o conector', () => {
+    const citam = FONTES.filter((f) => /\bCONEXAO_DO_YOUTUBE\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, CONEXAO, CALLBACK].sort());
+    const imports = REFS.filter((r) => r.arquivo === CALLBACK && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o controlador do OAuth importou um conector').toEqual([]);
+    // A conexão só conclui a autorização: nenhuma chamada do Data API passa por ela.
+    const contrato = FONTES.find((f) => f.arquivo === CONEXAO)!.semTexto;
+    expect(contrato).toMatch(/concluirAutorizacao/);
+    expect(contrato).not.toMatch(/abrirSessao|agendar|definirThumb|inserirNaPlaylist|lerVideo/);
+  });
+
+  it('o envio não importa o conector, inscreve os dois efeitos e nunca os dispara; o que escreve no canal só roda dentro deles', () => {
+    const imports = REFS.filter((r) => r.arquivo === ENVIO && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o envio importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === ENVIO)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'youtube\.video\.enviar'/);
+    expect(fonte.codigo).toMatch(/'youtube\.video\.publicar'/);
+    const escritas = /this\s*\.\s*youtube\s*\.\s*(abrirSessao|definirThumb|inserirNaPlaylist|agendar)\s*\(/g;
+    const total = (fonte.semTexto.match(escritas) ?? []).length;
+    expect(total).toBeGreaterThanOrEqual(4);
+    const inicio = fonte.semTexto.indexOf('async efeitoDeEnviar(');
+    const fim = fonte.semTexto.indexOf('// ------------------------------------------------------------------ a rotina');
+    // `thumbEPlaylist` é chamado só pelos dois efeitos: ele mora dentro do trecho medido.
+    const trechoDosEfeitos = fonte.semTexto.slice(fonte.semTexto.indexOf('private async thumbEPlaylist('), fim);
+    expect(inicio).toBeGreaterThan(0);
+    expect((trechoDosEfeitos.match(escritas) ?? []).length, 'escrita no YouTube fora dos efeitos').toBe(total);
+    const chamadasDoAjudante = (fonte.semTexto.match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
+    const noTrechoDosEfeitos = (fonte.semTexto.slice(inicio, fim).match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
+    expect(noTrechoDosEfeitos).toBe(chamadasDoAjudante);
   });
 });

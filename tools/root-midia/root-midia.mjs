@@ -5,10 +5,13 @@
  *
  * A mídia pesada roda aqui e só o leve volta ao OS: onde estão os arquivos, a
  * duração, o que foi cortado e a transcrição com os tempos do vídeo final. O
- * vídeo FICA no Mac (o MinIO da VPS não é público; o YouTube é manual na V1).
+ * vídeo FICA no Mac (o MinIO da VPS não é público).
  *
  * Node 22, sem dependência: fetch nativo e child_process chamando ffmpeg,
  * ffprobe e whisper-cli. Passo a passo e variáveis: SKILL.md e README.md.
+ *
+ * Desde a MD10 o vídeo final também vai ao YouTube DAQUI (`root-midia youtube
+ * ep-NN`, ou o vigia): o OS abre a sessão e o Mac manda os bytes direto.
  */
 
 import { spawn } from 'node:child_process';
@@ -136,6 +139,7 @@ import {
   transcricaoDeEnsaio,
   ultimaLinha,
 } from './lib/vigia.mjs';
+import { caminhoDoEstado, enviarAoYoutube } from './lib/youtube.mjs';
 
 const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
 
@@ -166,6 +170,12 @@ const AJUDA = `root-midia — estação de mídia do ROOT OS (MC9)
       sobe o PNG. --sem-enviar só grava os PNG na pasta.
   root-midia ensaio-thumb [--saida thumb.png] [--manter]
       Renderiza 1 thumb com um frame sintético, sem falar com o OS, e confere 1280×720 e 2 MB.
+  root-midia youtube <ep-NN> [--final f.mp4] [--declarar]
+      (MD10) Manda o vídeo final ao YouTube: declara ao OS o sha256 e o tamanho (lidos por stream),
+      pede a sessão de envio (o OS só abre com o lote da semana assinado e YOUTUBE_AUDITORIA fora
+      de pendente) e sobe em blocos de 64 MiB, retomando do que já chegou; no fim o OS confere o
+      vídeo privado e define a thumb. --declarar só declara (é o que o lote assina). Estado em
+      ~/.config/root/youtube-ep-NN.json, sem a sessão nem o token.
 
   A semana de posts (MC15) — as peças por matéria que o OS gerou:
   root-midia semana <ep-NN>
@@ -222,7 +232,7 @@ function ambiente() {
   return juntarVariaveis(process.env, lerArquivoDeVariaveis(readFileSync(caminho, 'utf8')));
 }
 
-const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar', 'forcar', 'whisper']);
+const BOOLEANAS = new Set(['copiar', 'reencodar', 'sobrescrever', 'manter', 'ajuda', 'sem-enviar', 'forcar', 'whisper', 'declarar']);
 
 /** @param {string[]} argv */
 function lerArgumentos(argv) {
@@ -572,6 +582,14 @@ async function enviar(ep, o) {
   if (corpoTranscricao) {
     resposta = await os.transcricao(alvo.id, corpoTranscricao);
     avisar(`Transcrição registrada: ${alvo.apelido} em ${resposta.status} (${corpoTranscricao.segmentos.length} segmento(s)).`);
+  }
+  // MD10: o vídeo final fica declarado para o YouTube (o lote assina o sha256). Falhar aqui não desfaz o envio.
+  if (corpoMidia) {
+    try {
+      await enviarEpisodioAoYoutube(os, alvo, { final: corpoMidia.arquivoFinal, soDeclarar: true });
+    } catch (e) {
+      avisar(`O vídeo final não foi declarado para o YouTube (${/** @type {Error} */ (e).message}); rode root-midia youtube ${alvo.apelido} --declarar.`);
+    }
   }
   return { id: alvo.id, apelido: alvo.apelido, status: resposta?.status ?? alvo.status };
 }
@@ -1249,6 +1267,94 @@ function lerTextoSeHouver(caminho) {
   }
 }
 
+/** O tipo do vídeo pelo nome: o final do ffmpeg é mp4; o .mov do OBS também vale. @param {string} arquivo */
+function mimeDoVideo(arquivo) {
+  return /\.mov$/i.test(arquivo) ? 'video/quicktime' : 'video/mp4';
+}
+
+/** Um trecho do arquivo, do byte `inicio` ao `fim` (inclusivo), sem carregar o resto. @param {string} arquivo @param {number} inicio @param {number} fim */
+function lerTrecho(arquivo, inicio, fim) {
+  const tamanho = fim - inicio + 1;
+  const buf = Buffer.alloc(tamanho);
+  const fd = openSync(arquivo, 'r');
+  try {
+    let lidos = 0;
+    while (lidos < tamanho) {
+      const n = readSync(fd, buf, lidos, tamanho - lidos, inicio + lidos);
+      if (n === 0) throw new Error(`o arquivo acabou antes do byte ${fim}: ele mudou durante o envio?`);
+      lidos += n;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return buf;
+}
+
+/** O estado do envio ao YouTube no Mac: nunca a URI da sessão nem o token. @param {string} caminho @param {Record<string, unknown>} estado */
+function gravarEstadoDoYoutube(caminho, estado) {
+  mkdirSync(dirname(caminho), { recursive: true });
+  writeFileSync(caminho, `${JSON.stringify(estado, null, 2)}\n`, { mode: 0o600 });
+}
+
+/**
+ * O vídeo final de um episódio ao YouTube (MD10). Declara ao OS o arquivo
+ * medido agora (só quando mudou), e, salvo `soDeclarar`, pede a sessão, sobe os
+ * bytes e conclui. Quem decide se pode sair é o OS (o item do lote assinado).
+ * @param {ReturnType<typeof clienteDoOs>} os
+ * @param {{ id: string, apelido: string }} alvo
+ * @param {{ final?: string, soDeclarar?: boolean }} o
+ */
+async function enviarEpisodioAoYoutube(os, alvo, o = {}) {
+  /** @type {{ auditoria: string, arquivoFinal: string | null, envio: { estado: string, sha256: string, bytes: number, videoId: string | null, erro: string | null, enviadoEmTeste?: boolean } | null, faltas: string[] }} */
+  const antes = await os.youtube(alvo.id);
+  const final = o.final ?? antes.arquivoFinal;
+  if (!final) throw new Error(`O ${alvo.apelido} não tem o vídeo final registrado: passe --final <vídeo final>.`);
+  const arquivo = exigirArquivo(final);
+  const bytes = statSync(arquivo).size;
+  avisar(`${alvo.apelido}: medindo o sha256 de ${basename(arquivo)} (${Math.round(bytes / 1024 / 1024)} MB)…`);
+  const sha256 = await sha256DoArquivo(arquivo);
+  const mime = mimeDoVideo(arquivo);
+  // O vídeo do modo teste ficou no canal de teste, privado para sempre: fora do modo teste, o mesmo arquivo é declarado de novo, para o canal real.
+  const doTeste = !!antes.envio?.enviadoEmTeste && !!antes.envio.videoId && antes.auditoria !== 'teste';
+  const declarar = !antes.envio || antes.envio.sha256 !== sha256 || antes.envio.bytes !== bytes || doTeste;
+  if (declarar) {
+    await os.declararYoutube(alvo.id, { sha256, bytes, mime });
+    avisar(`${alvo.apelido}: vídeo final declarado ao OS (sha256 ${sha256.slice(0, 12)}…). Ele entra no próximo "Aprovar a semana".`);
+  }
+  if (o.soDeclarar) return { apelido: alvo.apelido, declarado: true, sha256, bytes };
+  if (!declarar && antes.envio && ['conferido', 'agendado'].includes(antes.envio.estado)) {
+    return { apelido: alvo.apelido, videoId: antes.envio.videoId, estado: antes.envio.estado, jaEstava: true };
+  }
+  let videoId = !declarar && antes.envio ? antes.envio.videoId : null;
+  const caminho = caminhoDoEstado(homedir(), alvo.apelido);
+  if (!videoId) {
+    const r = await enviarAoYoutube({
+      total: bytes,
+      sessao: (nova) => os.sessaoDoYoutube(alvo.id, { sha256, bytes, mime, nova }),
+      tokenNovo: () => os.tokenDoYoutube(alvo.id),
+      lerBloco: async (inicio, fim) => lerTrecho(arquivo, inicio, fim),
+      gravarEstado: (e) => gravarEstadoDoYoutube(caminho, { episodioId: alvo.id, apelido: alvo.apelido, arquivo, sha256, ...e }),
+      avisar: (m) => avisar(`${alvo.apelido}: ${m}`),
+    });
+    videoId = r.videoId;
+    avisar(`${alvo.apelido}: ${r.blocos} bloco(s) enviados, ${r.retomadas} retomada(s), ${r.sessoes} sessão(ões); vídeo ${videoId}.`);
+  }
+  const depois = await os.concluirYoutube(alvo.id, /** @type {string} */ (videoId));
+  gravarEstadoDoYoutube(caminho, { episodioId: alvo.id, apelido: alvo.apelido, arquivo, sha256, videoId, estado: depois?.envio?.estado ?? null, concluidoEm: new Date().toISOString() });
+  if (depois?.envio?.erro) avisar(`${alvo.apelido}: ${depois.envio.erro}`);
+  return { apelido: alvo.apelido, videoId, estado: depois?.envio?.estado ?? null };
+}
+
+/** `root-midia youtube ep-NN`. @param {string} ep @param {Record<string, string | true>} o */
+async function youtube(ep, o) {
+  const cfg = configuracao(ambiente());
+  exigirOs(cfg);
+  const os = clienteDoOs(cfg);
+  const lista = await os.episodios();
+  const alvo = acharEpisodio(lista?.items ?? [], ep, { lista: true });
+  return enviarEpisodioAoYoutube(os, alvo, { final: texto(o, 'final'), soDeclarar: o.declarar === true });
+}
+
 /** O sha256 de um arquivo, lido em pedaços (o bruto pode ter gigas). @param {string} caminho @returns {Promise<string>} */
 function sha256DoArquivo(caminho) {
   return new Promise((ok, falha) => {
@@ -1470,6 +1576,30 @@ async function passagemDoVigia(o) {
         }
       }
       resumo.renders = feitos;
+    }
+
+    // (3) MD10: o vídeo ao YouTube, quando o lote da semana assinado tem o item de envio — nunca com o OBS gravando.
+    if (o.youtube !== false && !gravando) {
+      /** @type {string[]} */
+      const enviados = [];
+      const pendentes = await os.youtubePendentes().catch((/** @type {Error} */ e) => {
+        registrar(`a fila do YouTube não respondeu: ${e.message}`);
+        return { items: [] };
+      });
+      for (const ep of pendentes?.items ?? []) {
+        if (!ep.arquivoFinal || !existsSync(ep.arquivoFinal)) {
+          await notificar(`${ep.apelido}: o YouTube espera o vídeo final, e ele não está em ${ep.arquivoFinal ?? '(sem caminho)'}.`);
+          continue;
+        }
+        registrar(`${ep.apelido}: enviando o vídeo final ao YouTube…`);
+        try {
+          const r = await enviarEpisodioAoYoutube(os, ep, {});
+          enviados.push(`${ep.apelido} ${r.estado ?? '?'}`);
+        } catch (e) {
+          await notificar(`${ep.apelido}: o envio ao YouTube parou (${/** @type {Error} */ (e).message.split('\n')[0].slice(0, 140)}).`);
+        }
+      }
+      resumo.youtube = enviados;
     }
   } catch (e) {
     resumo.saida = 'erro';
@@ -1743,6 +1873,11 @@ async function principal() {
     }
     case 'ensaio-thumb':
       return (await ensaioThumb({ saida: texto(opcoes, 'saida'), manter: opcoes.manter === true })) ? 0 : 1;
+    case 'youtube': {
+      if (!posicionais[0]) throw new Error('Uso: root-midia youtube <ep-NN> [--final f.mp4] [--declarar]');
+      escrever(await youtube(posicionais[0], opcoes), undefined);
+      return 0;
+    }
     case 'semana':
       if (!posicionais[0]) throw new Error('Uso: root-midia semana <ep-NN>');
       return semanaNaTela(posicionais[0]);

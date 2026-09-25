@@ -514,7 +514,8 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     innerHTML, e só http(s) é link.
 - **A mídia do episódio (MC9).** A edição e a transcrição rodam **no Mac** e o vídeo **fica lá**:
   o MinIO da VPS não é público (`docker-compose.vps.yml` publica em `172.17.0.1`), então URL
-  assinada não chega ao Mac, e o upload no YouTube é manual na V1 (D-MC6). O OS recebe só o leve.
+  assinada não chega ao Mac; o envio ao YouTube sai do Mac, direto (ver "O vídeo no YouTube (MD10)").
+  O OS recebe só o leve.
   - **API** (módulo `pauta`, todas `pauta.editar`; `MidiaService`, parte pura em
     `pauta/midia-do-episodio.ts`): `GET /pauta/episodios/pendentes-midia` — gravação e edição, do
     número menor, com a palavra de corte efetiva, o que falta (`midia` ou `transcricao`) e, desde a
@@ -606,8 +607,8 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
   - **Falta:** o teste cego com o Pedro (roteiro com e sem perfil) — é o critério de pronto do
     plano e depende dele.
 - **O pacote do YouTube (MC11).** Da transcrição do vídeo final saem 3 títulos, a descrição com
-  capítulos e 3 briefs de thumb; as thumbs são renderizadas no Mac (D-MC4) e voltam como PNG. Subir
-  no YouTube é manual na V1 (D-MC6). `PacoteService`, parte pura em `pauta/pacote-do-episodio.ts`;
+  capítulos e 3 briefs de thumb; as thumbs são renderizadas no Mac (D-MC4) e voltam como PNG. O
+  envio e o agendamento no YouTube estão em "O vídeo no YouTube (MD10)". `PacoteService`, parte pura em `pauta/pacote-do-episodio.ts`;
   as regras dos capítulos moram no shared, porque a tela confere com a mesma conta.
   - **Gerar** (`POST /pauta/episodios/:id/pacote/gerar`, `pauta.editar` + `automacoes.executar`,
     `{substituir}`): só no Pacote e na Derivação, e com transcrição (400 antes de gastar IA); já tem
@@ -859,6 +860,23 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     (`pauta.editar`): até 1000 **bytes** (a Meta conta bytes), com o link rastreado e sem slop.
     Matéria de newsletter não gera link. Precisa da conta de publicação com o escopo de comentários
     (MD5) e de `META_WEBHOOK_PESSOA_HMAC_KEY` (32+) no servidor; sem elas, a passagem pula.
+  - **O vídeo no YouTube (MD10).** Na seção "YouTube" do episódio: conectar o canal (OAuth na conta
+    dona do canal, projeto próprio no Google Cloud), escolher a thumb que sobe e o horário do vídeo
+    (São Paulo). O Mac declara o vídeo final (`root-midia youtube ep-NN --declarar`, ou sozinho no
+    `enviar`) e, com isso, o vídeo entra no "Aprovar a semana" com dois itens: o envio privado e o
+    agendamento. Assinado o lote, `root-midia youtube ep-NN` (ou o vigia) sobe o vídeo direto do Mac
+    ao YouTube, sempre privado, retomando do que já chegou; o OS confere o vídeo e define a thumb.
+    No horário, a rotina de publicação manda o `publishAt` (a nota `pauta.publicacao.automatica`
+    ligada) e daí quem publica é o YouTube. `YOUTUBE_AUDITORIA` segura tudo: `pendente` (padrão) não
+    manda nada, porque vídeo de projeto sem auditoria fica privado para sempre; `teste` só envia, e
+    só ao canal de `YOUTUBE_CANAL_DE_TESTE` (o vídeo desse modo nunca é publicado; declarar o mesmo
+    arquivo de novo, fora do modo teste, recomeça o envio para o canal real); `aprovada` libera o
+    agendamento. O Mac recebe um token pedido só com `youtube.upload`; se o Google devolver um mais
+    largo, com `aprovada` ele não sai. Nem a sessão nem o token saem fora da janela do item de envio
+    (até 1 h antes do horário). O pacote mudado depois da assinatura derruba os itens do vídeo, que
+    volta ao "Aprovar a semana". Com a nota da publicação automática desligada, a rotina só pula, e
+    o horário é marcado à mão no Studio. Categoria pela nota `pauta.youtube.categoria` (padrão 28) e
+    playlist pela `pauta.youtube.playlist` (sem entrada repetida).
   - **Colunas** (migration `20260924090000_pauta_peca_agenda`): `PautaPeca.agendadaPara` (o instante
     em UTC; nulo = fora da agenda; índice `(orgId, agendadaPara)`) e `urlPublicada` (o endereço
     público do post). **Decisão:** "postada à mão" reaproveita `status = publicada`, `publicadaEm` e

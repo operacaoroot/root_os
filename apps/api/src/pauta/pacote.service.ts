@@ -75,8 +75,8 @@ const MSG_CORRIDA = 'O episódio mudou enquanto isso (outra aba ou outro envio) 
 /*
  * O PACOTE DO YOUTUBE (MC11): títulos, descrição com capítulos e os briefs das
  * thumbs saem da transcrição; as thumbs são renderizadas no Mac e voltam como
- * PNG para o storage da casa. Tudo é escrita DENTRO do OS: publicar no YouTube
- * é manual na V1 (D-MC6), e a página de links é do MC12.
+ * PNG para o storage da casa. Tudo é escrita DENTRO do OS: o envio ao YouTube é
+ * da MD10 (`envio-ao-youtube.service.ts`), e a página de links é do MC12.
  */
 @Injectable()
 export class PacoteService {

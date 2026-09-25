@@ -1,7 +1,7 @@
-# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16, vigia na MD2)
+# root-midia — a estação de mídia do ROOT OS no Mac (MC9, thumbs no MC11, semana de posts no MC15, agenda no MC16, vigia na MD2, YouTube na MD10)
 
-A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo do episódio **fica no Mac** (o upload no
-YouTube é manual na V1, D-MC6). Desde a MD4, o mp4 de cada **corte** vertical e um JPEG de cada
+A mídia pesada roda no Mac; ao OS volta só o leve. O vídeo do episódio **fica no Mac** e, desde a
+MD10, sobe DAQUI direto ao YouTube (`youtube ep-NN`), nunca pela VPS. Desde a MD4, o mp4 de cada **corte** vertical e um JPEG de cada
 imagem da semana sobem também ao storage do OS, porque a Meta só publica o que consegue baixar de
 uma URL (assinada, de até 1 h). Nada é apagado no Mac.
 
@@ -117,6 +117,21 @@ embaixo), 1 story (1080×1920) e, com a máquina instalada, 1 carrossel (1080×1
 PNG no OS (baixar pela aba Semana; o carrossel pela metade diz "3 de 7 PNG" e o comando que
 completa) ou o mp4 que ficou no Mac, pelo caminho. Só lê: distribuir,
 reagendar e marcar como postada são da tela.
+
+**O vídeo no YouTube (MD10).** `youtube <ep-NN> [--final f.mp4] [--declarar]` manda o vídeo final
+direto ao YouTube, sem passar pela VPS. Mede o sha256 por stream e declara ao OS
+(`PUT /pauta/episodios/:id/youtube/arquivo`) quando mudou — é o que o lote da semana assina; o
+`enviar` já declara sozinho. Sem `--declarar`, pede a sessão (`POST …/youtube/sessao`): a API só
+abre com o item de envio num lote ASSINADO, com a auditoria fora de `pendente` e o YouTube ligado em
+Conexões, e devolve a URI da sessão e um token de ~1 h (o refresh fica no cofre do OS). Os blocos
+são de 64 MiB (múltiplos de 256 KiB), por `fetch` nativo; a retomada é a do protocolo: 308 com
+`Range` diz o próximo byte, conexão caída pergunta `Content-Range: bytes */total`, 5xx espera
+(1 s, 2 s, 4 s…) e pergunta, 401 pede token novo para a mesma sessão (no máximo 2 seguidos; o
+mesmo token de volta para na hora, com a frase de conectar o canal de novo), 404 pede sessão nova e
+recomeça do zero. No fim, `POST …/youtube/concluido {videoId}`: o OS confere o vídeo privado e
+define a thumb escolhida. O estado vai para `~/.config/root/youtube-ep-NN.json` (`chmod 600`), sem a
+URI nem o token; rodar de novo continua de onde parou. O vigia faz o mesmo sozinho com os episódios
+de `GET /pauta/youtube/pendentes`, nunca com o OBS gravando.
 
 `cortar` não reencoda quando toda borda cai num quadro-chave (gravação intra, ou nada a cortar);
 senão reencoda com `trim` + `concat` (corte exato, aguenta taxa de quadros variável). `--copiar`

@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { diaNoFuso, horaNoFuso, type PautaConteudoDoLote, type PautaItemDoConteudoDoLote } from '@mktos/shared';
+import {
+  PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE,
+  diaNoFuso,
+  horaNoFuso,
+  type PautaConteudoDoLote,
+  type PautaItemDoConteudoDoLote,
+  type PautaItemDoYoutubeNoLote,
+} from '@mktos/shared';
 import { apiBlob, apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
@@ -14,6 +21,10 @@ import { useAuth } from '@/lib/auth';
  * miniatura, horário em São Paulo, @ de destino), com o hash recalculado pela
  * API — e marca o item cuja peça mudou depois de o lote ser montado (ele não
  * sai). O botão de aprovar só aparece depois que o conteúdo carregou.
+ *
+ * MD10: o vídeo do YouTube aparece como os posts — o título, a descrição
+ * inteira, a imagem da thumb, o arquivo (sha256 e tamanho) e o horário que o
+ * OS vai marcar —, com a mesma marca de divergência.
  */
 
 const quando = (iso: string) => {
@@ -21,13 +32,18 @@ const quando = (iso: string) => {
   return `${diaNoFuso(d).slice(8, 10)}/${diaNoFuso(d).slice(5, 7)} ${horaNoFuso(d)}`;
 };
 
-function Miniatura({ pecaId, token }: { pecaId: string; token: string | null }) {
+/** A imagem de um item, pela rota autenticada, como URL de blob enquanto o cartão vive. */
+function useImagem(caminho: string | null, token: string | null): { url: string | null; falhou: boolean } {
   const [url, setUrl] = useState<string | null>(null);
   const [falhou, setFalhou] = useState(false);
   useEffect(() => {
+    if (!caminho) {
+      setFalhou(true);
+      return;
+    }
     let vivo = true;
     let criada: string | null = null;
-    apiBlob(`/pauta/pecas/${pecaId}/imagens/1?tipo=jpeg`, token)
+    apiBlob(caminho, token)
       .then((b) => {
         if (!vivo || typeof URL.createObjectURL !== 'function') return;
         criada = URL.createObjectURL(b);
@@ -38,7 +54,12 @@ function Miniatura({ pecaId, token }: { pecaId: string; token: string | null }) 
       vivo = false;
       if (criada) URL.revokeObjectURL(criada);
     };
-  }, [pecaId, token]);
+  }, [caminho, token]);
+  return { url, falhou };
+}
+
+function Miniatura({ pecaId, token }: { pecaId: string; token: string | null }) {
+  const { url, falhou } = useImagem(`/pauta/pecas/${pecaId}/imagens/1?tipo=jpeg`, token);
   if (url) return <img src={url} alt="Miniatura do primeiro slide" className="h-20 w-16 shrink-0 rounded object-cover" />;
   return (
     <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded bg-surface-2 text-center text-[9px] text-muted">
@@ -76,6 +97,52 @@ function ItemDoLote({ item, token }: { item: PautaItemDoConteudoDoLote; token: s
       <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1 text-[12px] text-text">
         {item.legenda || '(sem texto)'}
       </pre>
+      {item.divergente && (
+        <p className="break-words text-xs text-bad" data-testid={`divergente-${item.itemId}`}>
+          {item.divergente}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/** A thumb assinada, em 16:9: ela entra no hash e fica pública no horário, então a titular a vê, e não só o número. */
+function ThumbDoVideo({ episodioId, n, token }: { episodioId: string; n: number | null; token: string | null }) {
+  const { url, falhou } = useImagem(n ? `/pauta/episodios/${episodioId}/thumbs/${n}/imagem` : null, token);
+  if (url) return <img src={url} alt={`Thumb ${n} do vídeo`} className="h-[72px] w-32 shrink-0 rounded object-cover" />;
+  return (
+    <div className="flex h-[72px] w-32 shrink-0 items-center justify-center rounded bg-surface-2 text-center text-[9px] text-muted">
+      {falhou ? 'sem thumb' : '…'}
+    </div>
+  );
+}
+
+function ItemDoYoutube({ item, token }: { item: PautaItemDoYoutubeNoLote; token: string | null }) {
+  const envio = item.capabilityId === PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE;
+  return (
+    <li
+      className={`space-y-2 rounded-lg border p-2 ${item.divergente ? 'border-bad/50 bg-bad/5' : 'border-border'}`}
+      data-testid={`item-do-youtube-${item.itemId}`}
+    >
+      <div className="flex flex-wrap gap-2">
+        <ThumbDoVideo episodioId={item.episodioId} n={item.thumbN} token={token} />
+        <div className="min-w-0 flex-1 space-y-0.5 text-xs">
+          <p className="font-medium">
+            YouTube · {envio ? 'envio privado (o Mac sobe o vídeo)' : `agendado para ${item.publicarEm ? quando(item.publicarEm) : '?'}`}
+          </p>
+          {!envio && <p className="text-muted">o agendamento sai sozinho só com a publicação automática ligada</p>}
+          <p className="break-words text-muted">
+            vídeo de {Math.round(item.arquivo.bytes / 1024 / 1024)} MB (sha256 {item.arquivo.sha256Curto}) · thumb {item.thumbN ?? '?'} · categoria{' '}
+            {item.categoria} · até {quando(item.janelaAte)} · hash {item.hashCurto}
+          </p>
+          <p className="break-words font-medium">{item.titulo}</p>
+          {item.estadoDoItem !== 'ativo' && <p className="text-muted">item {item.estadoDoItem}</p>}
+        </div>
+      </div>
+      <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1 text-[12px] text-text">
+        {item.descricao || '(sem descrição)'}
+      </pre>
+      <p className="text-[11px] text-muted">{item.bytesDaDescricao} de 5000 bytes</p>
       {item.divergente && (
         <p className="break-words text-xs text-bad" data-testid={`divergente-${item.itemId}`}>
           {item.divergente}
@@ -138,6 +205,9 @@ export function CartaoDoLote({
       <ul className="space-y-2">
         {conteudo.itens.map((i) => (
           <ItemDoLote key={i.itemId} item={i} token={token} />
+        ))}
+        {(conteudo.youtube ?? []).map((i) => (
+          <ItemDoYoutube key={i.itemId} item={i} token={token} />
         ))}
       </ul>
     </section>

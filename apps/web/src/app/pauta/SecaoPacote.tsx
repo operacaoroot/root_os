@@ -21,7 +21,8 @@ import { Botao, Chip } from '../referencias/ui';
 /*
  * O PACOTE DO YOUTUBE (MC11), dentro do detalhe da aba Episódios: gerar da
  * transcrição, escolher o título, copiar a descrição e ver as thumbs que o Mac
- * renderizou. Subir no YouTube é manual na V1 (D-MC6).
+ * renderizou. O envio ao YouTube, com a thumb e o horário, é da seção YouTube
+ * (`SecaoYoutube.tsx`, MD10).
  */
 
 interface Props {

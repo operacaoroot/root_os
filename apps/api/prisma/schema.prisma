@@ -136,6 +136,7 @@ model Org {
   pautaPublicacoes PautaPublicacao[]
   /// MD9: quem comentou a palavra-chave num post da semana (a fila da DM à mão).
   pautaComentarios ComentarioComPalavra[]
+  enviosAoYoutube  EnvioAoYoutube[]
   lotesDeAprovacao AprovacaoDeLote[]
   itensDeLote      ItemDoLote[]
 
@@ -1530,12 +1531,71 @@ model PautaEpisodio {
   bioPageId String?
   bioPage   BioPage? @relation(fields: [bioPageId], references: [id], onDelete: SetNull)
 
+  /// MD10: a thumb (1 a 3) que sobe ao YouTube; nula = nenhuma escolhida.
+  thumbEscolhida      Int?
+  /// MD10: quando o vídeo vai ao ar no YouTube (o `publishAt`). Do pacote, como o título.
+  publicarNoYoutubeEm DateTime?
+  envioAoYoutube      EnvioAoYoutube?
+
   criadoPor    String?
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
   @@unique([orgId, numero])
   @@index([orgId, status])
+}
+
+/// MD10: o estado do envio do vídeo final ao YouTube. Ver `ENVIO_AO_YOUTUBE_ESTADOS` no shared.
+enum EnvioAoYoutubeEstado {
+  declarado
+  sessao_aberta
+  conferido
+  agendado
+  erro
+}
+
+/// MD10: o vídeo final do episódio a caminho do YouTube. Um por episódio.
+/// O Mac declara o arquivo (sha256 e tamanho) e manda os bytes direto ao
+/// YouTube, numa sessão resumable que o OS abre pela porta; a URI da sessão
+/// fica aqui cifrada e só sai para o Mac. Filha do episódio: sentinela +
+/// gatilho `mktos_orgid_do_pai`.
+model EnvioAoYoutube {
+  id               String               @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaEpisodio.orgId`.
+  orgId            String               @default("")
+  org              Org                  @relation(fields: [orgId], references: [id])
+  episodioId       String               @unique
+  episodio         PautaEpisodio        @relation(fields: [episodioId], references: [id], onDelete: Cascade)
+  sha256           String
+  /// O vídeo pode passar de 2 GB.
+  bytes            BigInt
+  mime             String               @default("video/mp4")
+  estado           EnvioAoYoutubeEstado @default(declarado)
+  /// A URI da sessão resumable, cifrada (`common/crypto.ts`). Nula fora de `sessao_aberta`.
+  sessaoCifrada    String?
+  sessaoAbertaEm   DateTime?
+  /// A sessão do YouTube vale 7 dias.
+  expiraEm         DateTime?
+  sessoes          Int                  @default(0)
+  videoId          String?
+  conferidoEm      DateTime?
+  /// O `sha` curto da thumb que o YouTube recebeu (o mesmo do nome no storage).
+  thumbSha         String?
+  thumbDefinidaEm  DateTime?
+  playlistId       String?
+  playlistItemId   String?
+  /// O `publishAt` que o YouTube aceitou.
+  publicarEm       DateTime?
+  agendadoEm       DateTime?
+  erro             String?
+  /// O último item de lote que agiu sobre esta linha (envio ou publicação).
+  loteItemId       String?
+  /// A sessão foi aberta com `YOUTUBE_AUDITORIA=teste` (o canal de teste): o vídeo fica privado para sempre e não é publicado.
+  enviadoEmTeste   Boolean              @default(false)
+  criadoEm         DateTime             @default(now())
+  atualizadoEm     DateTime             @updatedAt
+
+  @@index([orgId, estado])
 }
 
 model PautaPeca {

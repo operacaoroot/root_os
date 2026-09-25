@@ -56,7 +56,7 @@ const MSG_CORRIDA = 'O episódio mudou enquanto isso (outra aba ou outro envio) 
  * A ESTAÇÃO DE MÍDIA (MC9), o lado do OS. O Mac pergunta o que falta, edita e
  * transcreve lá, e devolve só o leve: onde estão os arquivos, a duração, o que
  * foi cortado e a transcrição. Tudo é escrita DENTRO do OS — o vídeo não sobe
- * (o MinIO da VPS não é público e o YouTube é manual na V1, D-MC6).
+ * (o MinIO da VPS não é público; desde a MD10 o Mac o manda direto ao YouTube).
  */
 @Injectable()
 export class MidiaService {

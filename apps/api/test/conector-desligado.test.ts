@@ -128,7 +128,7 @@ describe('o mapa capacidade → conector', () => {
    * conector que o desligamento não reconhece e que segue mandando coisa para
    * fora depois de alguém ter mandado parar.
    */
-  it('a união do catálogo é o que a catraca mede — 16 da base + 57 do delta, 8 repetidos', () => {
+  it('a união do catálogo é o que a catraca mede — 16 da base + 59 do delta, 8 repetidos', () => {
     /*
      * Trava a FONTE, não só o resultado: se alguém voltar a ler só o delta, o
      * número cai para o do delta e este caso avisa antes de as oito sumirem
@@ -145,11 +145,12 @@ describe('o mapa capacidade → conector', () => {
      *
      * A MD6 (24/09/2026) acrescentou `instagram.post.publicar` ao delta: 55 e
      * 63 na união, sem repetido novo. A MD7 (24/09/2026), `pauta.semana.aprovar`:
-     * 56 e 64. A MD9 (25/09/2026), `instagram.comentario.ler`: 57 e 65.
+     * 56 e 64. A MD9 (25/09/2026), `instagram.comentario.ler`: 57 e 65. A MD10
+     * (25/09/2026), `youtube.video.enviar` e `youtube.video.publicar`: 59 e 67.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(57);
-    expect(capacidadesDoCatalogo()).toHaveLength(65);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(59);
+    expect(capacidadesDoCatalogo()).toHaveLength(67);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -190,7 +191,7 @@ describe('o mapa capacidade → conector', () => {
     expect(nasDuas, `declaradas duas vezes: ${nasDuas.join(', ')}`).toEqual([]);
   });
 
-  it('o ALCANCE do interruptor é medido, não estimado — 19 capacidades saem da casa', () => {
+  it('o ALCANCE do interruptor é medido, não estimado — 21 capacidades saem da casa', () => {
     /*
      * QUANTAS CAPACIDADES O INTERRUPTOR DE FATO ALCANÇA.
      *
@@ -210,13 +211,17 @@ describe('o mapa capacidade → conector', () => {
     // 18 desde a MD6: `instagram.post.publicar` responde pela chave `instagram`.
     // 19 desde a MD9: a leitura dos comentários (`instagram.comentario.ler`)
     // também — desligar o Instagram para de encher a fila da DM.
-    expect(comConector).toHaveLength(19);
+    // 21 desde a MD10: o envio e o agendamento do YouTube respondem pela chave
+    // `youtube` — desligar o canal barra a sessão, o token do Mac e o publishAt.
+    expect(comConector).toHaveLength(21);
     expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
     expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
+    expect(CONECTOR_DA_CAPACIDADE['youtube.video.enviar']).toBe('youtube');
+    expect(CONECTOR_DA_CAPACIDADE['youtube.video.publicar']).toBe('youtube');
     // A MD7 acrescentou `pauta.semana.aprovar` SEM conector: ativar o lote não
     // sai da casa, e cada item pergunta ao interruptor dele na hora.
     expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
-    expect(capacidadesDoCatalogo()).toHaveLength(65);
+    expect(capacidadesDoCatalogo()).toHaveLength(67);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

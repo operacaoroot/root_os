@@ -174,6 +174,14 @@ jobs:
       # com sinal sobe a R1 sem pedir aprovação, enquanto o mesmo efeito como
       # R1 pediria; o esquema de argumentos fechado), sobrescrita 39 (a conta
       # das sem ferramenta foi a 17, sem caso novo). Os pisos ficam onde estão.
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): (93) em 2 arquivos — politica
+      # 54 (+3: `youtube.video.enviar` e `youtube.video.publicar` são R3 pelo
+      # efeito com reversibilidade `manual` — `automatica` daria R2 —, o envio
+      # não expõe e a publicação expõe, as duas sob o lote; com sinal sobem a R4
+      # e o lote R4 cobre; os esquemas fechados, a publicação é o envio mais o
+      # horário), sobrescrita 39 (a conta das sem ferramenta foi a 19, sem caso
+      # novo). Os pisos ficam onde estão.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -513,8 +521,27 @@ jobs:
       # pauta.editar, nada; e a nova rotina de comentários. Medido: 596 casos
       # em 46 arquivos. O piso de ARQUIVOS sobe 1, para 37; o de CASOS sobe 9
       # (~15% de folga sobre os 11 novos), para 410.
-      PISO_CASOS_WEB: '410'
-      PISO_ARQUIVOS_WEB: '37'
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): +8 casos, +1 arquivo.
+      # `component/pauta-youtube` (8, novo): a seção YouTube com a auditoria, o
+      # canal e as faltas, e "Conectar o canal" que leva à URL do Google; a
+      # instrução manual sem credencial e sem pauta.publicar nada; a thumb e o
+      # horário de São Paulo em ISO; o vídeo agendado com o link e os campos
+      # travados; o aviso de Testing e o erro do envio; o vídeo no "Aprovar a
+      # semana" com o "fica fora" e sem ele com a falta (e só o envio no modo
+      # teste); e o vídeo no cartão do lote em /atendimento, com a descrição
+      # inteira e a divergência. Medido: 604 casos em 47 arquivos. O piso de
+      # ARQUIVOS sobe 1, para 38; o de CASOS sobe 7 (~15% de folga sobre os 8
+      # novos), para 417.
+      #
+      # MD10, a correção dos três revisores (25/09/2026): +1 caso, 0 arquivo.
+      # `component/pauta-youtube` (9): o vídeo que já subiu entra só com o
+      # agendamento e a linha avisa a publicação automática desligada; os
+      # casos de antes passaram a conferir a thumb como IMAGEM no cartão do
+      # lote, o texto do modo teste e o aviso do OAuth no topo da aba.
+      # Medido: 605 casos em 47 arquivos. O piso de CASOS sobe 1, para 418.
+      PISO_CASOS_WEB: '418'
+      PISO_ARQUIVOS_WEB: '38'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1728,8 +1755,49 @@ jobs:
       # 2255 passados e 671 pulados (66 + 5 arquivos). O piso de ARQUIVOS sobe
       # 1, para 63; o de CASOS sobe 16 (~15% de folga sobre os 19 que rodam
       # sem banco), para 2113.
-      PISO_CASOS_API: '2113'
-      PISO_ARQUIVOS_API: '63'
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): +51 casos, +2 arquivos.
+      # `youtube` (28, novo, sem banco): a auditoria que nasce pendente e falha
+      # fechada; as faltas; os argumentos dos dois itens (título até 100
+      # CARACTERES, descrição até 5.000 BYTES contados depois de trocar o
+      # marcador, sem < >); as janelas; a conferência do vídeo; as variáveis no
+      # compose e no .env.example; as permissões; o conector contra um dublê
+      # HTTP (o state assinado conferido antes do banco, os dois escopos, o
+      # refresh do cofre, a sessão SEMPRE privada, o update só com
+      # part=status, o Testing na saúde); e o envio do Mac pelo protocolo
+      # resumable (308 com Range, conexão caída no 3º bloco, 5xx, 404 de
+      # sessão, o processo que morre e retoma, a resposta final perdida).
+      # `pauta-youtube` (13, novo, COM BANCO): o PRONTO QUANDO com a porta, o
+      # lote assinado pela titular e um YouTube de mentira — sem lote e com a
+      # auditoria pendente o YouTube não recebe nada; a sessão pelo uso contado,
+      # cifrada, reaproveitada sem gastar uso (e recusada ao pacote mudado),
+      # e o token no RASTRO sem o valor;
+      # o YouTube desligado; o "concluído" que confere e define a thumb; o
+      # modo teste e a nota desligada que pulam; o pacote mudado que não agenda;
+      # e o publishAt uma vez só, com os itens encerrados depois.
+      # `arquitetura` +5 (o YouTube tem o desenho do publicador),
+      # `escritas-pela-porta` +2, `modulos-por-tenant` +1, `modelos-globais` +1
+      # (o filho novo no it.each), `root-midia` +1 (as rotas do YouTube no
+      # cliente do OS), todos sem banco; `conector-desligado` só remediu a
+      # conta (67, 21 com interruptor). Medido: 2977 casos em 73 arquivos com o
+      # banco; sem ele, 2293 passados e 684 pulados (67 + 6 arquivos). O piso de
+      # ARQUIVOS sobe 2, para 65; o de CASOS sobe 32 (~15% de folga sobre os
+      # 38 que rodam sem banco), para 2145.
+      #
+      # MD10, a correção dos três revisores (25/09/2026): +13 casos, 0 arquivo.
+      # `youtube` +10 (sem banco): o `uploadStatus` recusado, o canal de teste,
+      # a playlist sem entrada repetida, o token do Mac pedido só com
+      # `youtube.upload` e guardado à parte, o canal da conexão, o Testing
+      # lembrado pela data da conexão, o `conector.autorizar` no RASTRO e o
+      # 401 do Mac — uma vez, o mesmo token de volta e o que persiste, os dois
+      # que terminam). `pauta-youtube` +3 (COM BANCO): o token largo e o canal
+      # de teste recusados antes da porta, a janela do envio fechada com o
+      # lote de pé, e o modo teste do começo ao fim (e mais de 20 envios
+      # parados no caso da rotina). Medido: 2990 casos em 73 arquivos com o
+      # banco; sem ele, 2303 passados e 687 pulados. O piso de CASOS sobe 8
+      # (~15% de folga sobre os 10 que rodam sem banco), para 2153.
+      PISO_CASOS_API: '2153'
+      PISO_ARQUIVOS_API: '65'
 
     steps:
       - uses: actions/checkout@v4
@@ -2191,7 +2259,12 @@ jobs:
           # `ComentarioComPalavra` (filha da peça, em
           # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
           # casos. O piso sobe 5, para 271.
-          PISO_CASOS_ISOLAMENTO: '271'
+          #
+          # MD10, O YOUTUBE PELA API (25/09/2026): **352 casos**.
+          # `EnvioAoYoutube` (filha do episódio, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 276.
+          PISO_CASOS_ISOLAMENTO: '276'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

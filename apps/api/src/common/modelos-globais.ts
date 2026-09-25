@@ -218,6 +218,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // Quem comentou a palavra-chave num post da semana (MD9, 25/09/2026): a
   // empresa é a da peça — migration `20260925021740_comentario_com_palavra`.
   { modelo: 'ComentarioComPalavra', pai: 'PautaPeca', fk: 'pecaId' },
+  // O vídeo do episódio a caminho do YouTube (MD10, 25/09/2026): a empresa é a
+  // do episódio — migration `20260925032020_envio_ao_youtube`.
+  { modelo: 'EnvioAoYoutube', pai: 'PautaEpisodio', fk: 'episodioId' },
 ] as const;
 
 /**
