@@ -698,3 +698,51 @@ describe('Regressão VPS: .env, override e chamadas ao docker iguais aos do v0.4
     });
   }
 });
+
+/*
+ * O MAC DO CLIENTE: /bin/bash 3.2 e ferramentas BSD. O que quebra lá e passa num
+ * Linux com bash 5 é silencioso até o dia da instalação — por isso a checagem é
+ * estática (sobre o texto dos scripts, sem comentários) e também de execução
+ * (`bash -n` pelo mesmo /bin/bash que a suíte usa para rodar os scripts).
+ */
+describe('Mac: os scripts de instalação rodam no /bin/bash 3.2 com ferramentas BSD', () => {
+  const SCRIPTS = [
+    ...['instalar.sh', 'atualizar.sh', 'lib-instancia.sh', 'backup-db.sh'].map((f) => path.join(RAIZ, 'deploy', f)),
+    ...readdirSync(path.join(STUBS, 'bin')).map((f) => path.join(STUBS, 'bin', f)),
+    ...readdirSync(path.join(STUBS, 'deterministico')).map((f) => path.join(STUBS, 'deterministico', f)),
+  ];
+  const PROIBIDOS: [RegExp, string][] = [
+    [/\b(declare|local|typeset)\s+-[a-zA-Z]*A/, 'array associativo (bash 4)'],
+    [/\b(declare|local|typeset)\s+-[a-zA-Z]*n\b/, 'nameref (bash 4.3)'],
+    [/\b(mapfile|readarray|coproc)\b/, 'mapfile/readarray/coproc (bash 4)'],
+    [/\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?(,,?|\^\^?)\}/, 'troca de caixa ${v,,} (bash 4)'],
+    [/\$\{[A-Za-z_][A-Za-z0-9_]*@[QEPAaUuLK]\}/, 'transformação ${v@Q} (bash 4.4)'],
+    [/&>>|\|&|;;&|\bwait -n\b/, 'operador de bash 4'],
+    [/\bsed\s+(-[a-zA-Z]*\s+)*-i\b/, 'sed -i (a sintaxe BSD é outra)'],
+    [/\bgrep\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*P/, 'grep -P (não existe no BSD)'],
+    [/\breadlink\s+-f\b|\bdate\s+-d\b|\bstat\s+-c\b|-printf\b|\bsort\s+-V\b|\bnumfmt\b|\btac\b/, 'ferramenta só do GNU'],
+    [/(grep|sed)[^|]*'[^']*\\s/, '\\s em grep/sed (o ERE do BSD não entende)'],
+  ];
+  const semComentario = (linha: string) => (/^\s*#/.test(linha) ? '' : linha);
+
+  it('nenhum recurso de bash 4+ nem ferramenta só do GNU', () => {
+    const achados: string[] = [];
+    for (const arq of SCRIPTS) {
+      readFileSync(arq, 'utf8').split('\n').map(semComentario).forEach((linha, i) => {
+        for (const [re, motivo] of PROIBIDOS) if (re.test(linha)) achados.push(`${path.relative(RAIZ, arq)}:${i + 1} ${motivo}: ${linha.trim()}`);
+      });
+    }
+    expect(achados).toEqual([]);
+  });
+
+  it('o /bin/bash aceita a sintaxe de todos; no macOS ele é mesmo o 3.2', () => {
+    for (const arq of SCRIPTS) {
+      const r = spawnSync(BASH, ['-n', arq], { encoding: 'utf8' });
+      expect(r.status, `${path.relative(RAIZ, arq)}: ${r.stderr}`).toBe(0);
+    }
+    if (process.platform === 'darwin') {
+      const v = spawnSync(BASH, ['-c', 'echo "${BASH_VERSINFO[0]}"'], { encoding: 'utf8' }).stdout.trim();
+      expect(v, 'a suíte no Mac tem de rodar os scripts no bash que o cliente tem').toBe('3');
+    }
+  });
+});
