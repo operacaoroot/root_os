@@ -443,9 +443,9 @@ describe('herança da política', () => {
 });
 
 describe('catálogo do marketing-os', () => {
-  it('cobre as 35 ferramentas MCP, todas em R0', () => {
+  it('cobre as 36 ferramentas MCP, todas em R0', () => {
     const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0');
-    expect(leituras).toHaveLength(35);
+    expect(leituras).toHaveLength(36);
     for (const c of leituras) {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();
       expect(c.efeito.escreveForaDoOS).toBe(false);
