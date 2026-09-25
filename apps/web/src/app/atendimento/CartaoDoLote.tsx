@@ -21,7 +21,9 @@ import { useAuth } from '@/lib/auth';
  * Este cartão busca o conteúdo de cada item na peça de AGORA (legenda inteira,
  * miniatura, horário em São Paulo, @ de destino), com o hash recalculado pela
  * API — e marca o item cuja peça mudou depois de o lote ser montado (ele não
- * sai). O botão de aprovar só aparece depois que o conteúdo carregou.
+ * sai). O botão de aprovar só aparece depois que o conteúdo carregou. Todos os
+ * slides do carrossel aparecem, e não só a capa: o hash cobre cada JPEG, e o
+ * texto do carrossel mora nos slides. O corte se assiste ali mesmo.
  *
  * MD10: o vídeo do YouTube aparece como os posts — o título, a descrição
  * inteira, a imagem da thumb, o arquivo (sha256 e tamanho) e o horário que o
@@ -63,12 +65,94 @@ function useImagem(caminho: string | null, token: string | null): { url: string 
   return { url, falhou };
 }
 
-function Miniatura({ pecaId, token }: { pecaId: string; token: string | null }) {
-  const { url, falhou } = useImagem(`/pauta/pecas/${pecaId}/imagens/1?tipo=jpeg`, token);
-  if (url) return <img src={url} alt="Miniatura do primeiro slide" className="h-20 w-16 shrink-0 rounded object-cover" />;
+/** Um slide do post na faixa; o toque abre em tela cheia, para ler. */
+function SlideDaFaixa({
+  pecaId,
+  n,
+  total,
+  token,
+  onAbrir,
+}: {
+  pecaId: string;
+  n: number;
+  total: number;
+  token: string | null;
+  onAbrir: (url: string) => void;
+}) {
+  const { url, falhou } = useImagem(`/pauta/pecas/${pecaId}/imagens/${n}?tipo=jpeg`, token);
+  if (url) {
+    return (
+      <button type="button" className="shrink-0 snap-start" onClick={() => onAbrir(url)} aria-label={`Abrir o slide ${n} de ${total}`}>
+        <img src={url} alt={`Slide ${n} de ${total}`} className="h-[150px] w-[120px] rounded object-cover" />
+      </button>
+    );
+  }
   return (
-    <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded bg-surface-2 text-center text-[9px] text-muted">
-      {falhou ? 'sem miniatura' : '…'}
+    <div
+      className="flex h-[150px] w-[120px] shrink-0 snap-start items-center justify-center rounded bg-surface-2 text-center text-[10px] text-muted"
+      aria-label={`Slide ${n} de ${total}`}
+    >
+      {falhou ? `slide ${n}: sem imagem` : '…'}
+    </div>
+  );
+}
+
+/**
+ * Todos os slides do post, não só a capa: o hash do item cobre o sha256 de
+ * cada JPEG, e no carrossel o texto que vai ao ar mora nos slides.
+ */
+function FaixaDeSlides({ pecaId, ns, token }: { pecaId: string; ns: number[]; token: string | null }) {
+  const [aberta, setAberta] = useState<{ url: string; n: number } | null>(null);
+  return (
+    <>
+      <div className="flex snap-x gap-2 overflow-x-auto pb-1" aria-label={`Os ${ns.length} slide(s) do post`}>
+        {ns.map((n) => (
+          <SlideDaFaixa key={n} pecaId={pecaId} n={n} total={ns.length} token={token} onAbrir={(url) => setAberta({ url, n })} />
+        ))}
+      </div>
+      {aberta && (
+        <div
+          role="dialog"
+          aria-label={`Slide ${aberta.n} em tela cheia`}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-black/90 p-3"
+        >
+          <img src={aberta.url} alt={`Slide ${aberta.n}`} className="max-h-[85vh] max-w-full object-contain" />
+          <button type="button" className="rounded bg-surface px-3 py-1 text-sm" onClick={() => setAberta(null)}>
+            Fechar
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** O corte que vai ao ar. Só baixa quando a titular pede: o mp4 pode ter 300 MB, e o celular não precisa dele para ler a legenda. */
+function AssistirOCorte({ pecaId, token }: { pecaId: string; token: string | null }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [estado, setEstado] = useState<'parado' | 'buscando' | 'falhou'>('parado');
+  useEffect(
+    () => () => {
+      if (url && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
+    },
+    [url],
+  );
+  const assistir = async () => {
+    setEstado('buscando');
+    try {
+      const b = await apiBlob(`/pauta/pecas/${pecaId}/video/arquivo`, token);
+      setUrl(URL.createObjectURL(b));
+      setEstado('parado');
+    } catch {
+      setEstado('falhou');
+    }
+  };
+  if (url) return <video src={url} controls playsInline className="max-h-[70vh] w-full rounded bg-black" aria-label="O corte que vai ao ar" />;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <button type="button" className="rounded border border-border px-2 py-1" onClick={() => void assistir()} disabled={estado === 'buscando'}>
+        {estado === 'buscando' ? 'Baixando o corte…' : 'Assistir ao corte'}
+      </button>
+      {estado === 'falhou' && <span className="text-bad">O mp4 não baixou: sem assistir, não assine este item.</span>}
     </div>
   );
 }
@@ -79,14 +163,7 @@ function ItemDoLote({ item, token }: { item: PautaItemDoConteudoDoLote; token: s
       className={`space-y-2 rounded-lg border p-2 ${item.divergente ? 'border-bad/50 bg-bad/5' : 'border-border'}`}
       data-testid={`item-do-lote-${item.itemId}`}
     >
-      <div className="flex gap-2">
-        {item.midia.tipo === 'imagens' ? (
-          <Miniatura pecaId={item.pecaId} token={token} />
-        ) : (
-          <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded bg-surface-2 text-center text-[9px] text-muted">
-            {item.midia.tipo === 'video' ? `mp4${item.midia.duracaoSeg ? ` ${Math.round(item.midia.duracaoSeg)} s` : ''}` : 'sem mídia'}
-          </div>
-        )}
+      <div className="min-w-0 space-y-2">
         <div className="min-w-0 space-y-0.5 text-xs">
           <p className="font-medium">
             {quando(item.agendadaPara)} · {item.formato} · {item.apelido} m{item.itemN}
@@ -98,6 +175,17 @@ function ItemDoLote({ item, token }: { item: PautaItemDoConteudoDoLote; token: s
           <p className="break-words">{item.titulo}</p>
           {item.estadoDoItem !== 'ativo' && <p className="text-muted">item {item.estadoDoItem}</p>}
         </div>
+        {item.midia.tipo === 'imagens' && <FaixaDeSlides pecaId={item.pecaId} ns={item.midia.n} token={token} />}
+        {item.midia.tipo === 'video' && (
+          <>
+            <p className="text-xs text-muted">
+              mp4{item.midia.duracaoSeg ? ` ${Math.round(item.midia.duracaoSeg)} s` : ''}
+              {item.midia.bytes && item.midia.bytes >= 1024 * 1024 ? ` · ${Math.round(item.midia.bytes / 1024 / 1024)} MB` : ''}
+            </p>
+            <AssistirOCorte pecaId={item.pecaId} token={token} />
+          </>
+        )}
+        {item.midia.tipo === 'nenhuma' && <p className="text-xs text-muted">sem mídia</p>}
       </div>
       <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1 text-[12px] text-text">
         {item.legenda || '(sem texto)'}

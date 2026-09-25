@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /*
@@ -310,6 +310,39 @@ describe('MD8: o lote da semana em /atendimento', () => {
     // R4: senha e motivo.
     expect(screen.getByText(/R4 exige motivo escrito/)).toBeInTheDocument();
     expect(screen.getByText(/R4 exige que você prove de novo/)).toBeInTheDocument();
+  });
+
+  it('a titular vê todos os slides do carrossel (e abre em tela cheia) e assiste ao corte antes de assinar', async () => {
+    apiGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/pauta/lotes/') ? CONTEUDO : FILA));
+    const criadas: string[] = [];
+    const antes = { criar: URL.createObjectURL, soltar: URL.revokeObjectURL };
+    URL.createObjectURL = vi.fn(() => {
+      criadas.push(`blob:${criadas.length + 1}`);
+      return criadas[criadas.length - 1];
+    });
+    URL.revokeObjectURL = vi.fn();
+    apiBlob.mockResolvedValue(new Blob(['x']));
+    try {
+      render(<AtendimentoPage />);
+      const carrossel = await screen.findByTestId('item-do-lote-i1');
+      const faixa = within(carrossel).getByLabelText('Os 3 slide(s) do post');
+      await waitFor(() => expect(within(faixa).getAllByRole('img')).toHaveLength(3));
+      for (const n of [1, 2, 3]) expect(apiBlob).toHaveBeenCalledWith(`/pauta/pecas/p1/imagens/${n}?tipo=jpeg`, 'tok');
+      await userEvent.click(within(faixa).getByRole('button', { name: 'Abrir o slide 3 de 3' }));
+      const tela = screen.getByRole('dialog', { name: 'Slide 3 em tela cheia' });
+      await userEvent.click(within(tela).getByRole('button', { name: 'Fechar' }));
+      expect(screen.queryByRole('dialog')).toBeNull();
+
+      const corte = screen.getByTestId('item-do-lote-i2');
+      expect(apiBlob).not.toHaveBeenCalledWith('/pauta/pecas/p3/video/arquivo', 'tok');
+      await userEvent.click(within(corte).getByRole('button', { name: 'Assistir ao corte' }));
+      expect(apiBlob).toHaveBeenCalledWith('/pauta/pecas/p3/video/arquivo', 'tok');
+      expect(await within(corte).findByLabelText('O corte que vai ao ar')).toHaveAttribute('controls');
+    } finally {
+      cleanup();
+      URL.createObjectURL = antes.criar;
+      URL.revokeObjectURL = antes.soltar;
+    }
   });
 
   it('se o conteúdo do lote não carrega, não há botão de aprovar: sem ler, não se assina', async () => {
