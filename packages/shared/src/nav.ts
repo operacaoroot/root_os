@@ -151,6 +151,19 @@ export const NAV: NavItem[] = [
    * avisaria ao cliente que algo aqui está pela metade quando está inteiro.
    */
   { key: 'caixa', label: 'Caixa', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'central' },
+  /*
+   * A AGENDA (24/09/2026) — o calendário do `operacao.root@gmail.com` desenhado
+   * pelo padrão de nomenclatura da casa, e o lugar de marcar reunião.
+   *
+   * Fica em "A central", e não em "O que existe", porque ela não é a tela de uma
+   * CONEXÃO — `/conexoes` é quem cuida do OAuth do Google. Esta é o compromisso
+   * da semana, ao lado da Caixa: as duas respondem "o que me espera".
+   *
+   * `dashboard.ver` para VER (é a mesma chave da leitura da agenda na API) e
+   * `agenda.editar` para marcar, cobrada dentro da tela — quem só acompanha vê
+   * o mês inteiro e não vê o formulário.
+   */
+  { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'central' },
 
   // ── Quem trabalha ────────────────────────────────────────────────────────
   { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },

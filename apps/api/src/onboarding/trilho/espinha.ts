@@ -76,7 +76,7 @@ const A: readonly TemaDaEspinha[] = [
     bloco: 'A',
     titulo: 'O que a empresa faz, e quantas pessoas',
     pergunta: 'O que a sua empresa faz, em uma frase? E quantas pessoas trabalham nela?',
-    aprofundar: 'Diga o que vocês vendem e para quem — e um número aproximado de gente.',
+    aprofundar: 'Diga o que vocês vendem e para quem, e um número aproximado de gente.',
     obrigatorio: true,
     formato: 'texto',
     kind: ContextKind.fato,
@@ -228,7 +228,7 @@ const D: readonly TemaDaEspinha[] = [
     pergunta:
       'Nas máquinas de quem vai usar: qual sistema operacional, quem é o administrador da máquina, ' +
       'e existe antivírus ou VPN corporativa?',
-    aprofundar: 'Se não souber, diga quem sabe — a TI, o Júnior, o suporte terceirizado.',
+    aprofundar: 'Se não souber, diga quem sabe: a TI, o Júnior, o suporte terceirizado.',
     obrigatorio: true,
     niveis: ['avancar-junto', 'entregar-pronto'],
     formato: 'texto',
@@ -242,7 +242,7 @@ const D: readonly TemaDaEspinha[] = [
     titulo: 'O que conectamos primeiro',
     pergunta: 'Qual sistema conectamos primeiro, e quem libera o acesso a ele?',
     aprofundar:
-      'Não precisa de senha nenhuma aqui — nunca. Só o nome do sistema e de quem tem a chave.',
+      'Não precisa de senha nenhuma aqui, nunca. Só o nome do sistema e de quem tem a chave.',
     obrigatorio: true,
     niveis: ['avancar-junto', 'entregar-pronto'],
     formato: 'texto',
@@ -270,7 +270,7 @@ const D: readonly TemaDaEspinha[] = [
     pergunta:
       'Documentos, processos ou material de marca que ajudam a gente a entender a casa: mande o ' +
       'link (Drive, pasta) ou envie no grupo.',
-    aprofundar: 'Um organograma, um manual de bolso, o padrão de nome de arquivo — qualquer coisa.',
+    aprofundar: 'Um organograma, um manual de bolso, o padrão de nome de arquivo: qualquer coisa serve.',
     obrigatorio: false,
     formato: 'texto',
     kind: ContextKind.nota,
@@ -295,7 +295,7 @@ const D: readonly TemaDaEspinha[] = [
     id: 'd-status',
     bloco: 'D',
     titulo: 'Como e quando quer notícia',
-    pergunta: 'Como você quer receber o status do trabalho — por qual canal e com que frequência?',
+    pergunta: 'Como você quer receber o status do trabalho: por qual canal e com que frequência?',
     aprofundar: 'Grupo, e-mail ou painel? Toda semana, ou só quando acontecer algo?',
     obrigatorio: true,
     formato: 'texto',

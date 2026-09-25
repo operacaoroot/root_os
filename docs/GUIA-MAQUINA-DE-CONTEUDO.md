@@ -54,11 +54,11 @@ antes de tudo; o resto pode seguir em qualquer ordem, menos onde o texto avisa.
 
 1. **Deploy na ordem consolidada.** Siga `docs/ESTADO-DA-EXECUCAO.md`, seção "Onda MD", "Ordem de
    deploy consolidada da frente inteira".
-   *Confere:* `docker logs mktos_api` mostra `política base vN carregada DO BANCO (69 capacidades)`.
+   *Confere:* `docker logs mktos_api` mostra `política base vN carregada DO BANCO (71 capacidades)`.
 2. **Seed da política, assinado, antes do `up`.** A assinatura é o portão humano da publicação
    automática. Comando pronto em `docs/DEPLOY.md` §2.3l (`POLITICA_CAPACIDADE_NOVA_*` e
    `POLITICA_REBAIXAMENTO_*`, as duas).
-   *Confere:* o seed termina com `capacidades: 7 criadas, … 69 no total`. Se disser "Nada foi
+   *Confere:* o seed termina com `capacidades: 7 criadas (9 se a agenda da Root ainda não tiver sido semeada), … 71 no total`. Se disser "Nada foi
    semeado", faltou uma das duas assinaturas.
 3. **Permissões novas, em três passos.** `pnpm --filter @mktos/shared build`, depois
    `pnpm --filter @mktos/api db:sync-permissions`, depois todo mundo sai e entra de novo.

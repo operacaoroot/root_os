@@ -443,7 +443,9 @@ describe('herança da política', () => {
 });
 
 describe('catálogo do marketing-os', () => {
-  it('cobre as 35 ferramentas MCP, todas em R0', () => {
+  it('cobre as 36 ferramentas MCP, todas em R0', () => {
+    // A 36ª é `comunicacao.agenda.periodo` (list_calendar_range), da agenda da
+    // Root (PR #11, 24/09/2026), que chegou sem este número subir.
     // MD9 (25/09/2026): a 36ª leitura, `instagram.comentario.ler`, é da rotina
     // da fila da DM e nasce SEM ferramenta — o que ela devolve é o @ de quem
     // comentou, que vai para a fila e nunca para um modelo.
@@ -451,7 +453,7 @@ describe('catálogo do marketing-os', () => {
     // ferramenta — é o freio da DM automática, clicado por gente na fila.
     const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar'];
     const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && !semFerramenta.includes(c.id));
-    expect(leituras).toHaveLength(35);
+    expect(leituras).toHaveLength(36);
     for (const id of semFerramenta) expect(DELTA.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     for (const c of leituras) {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();

@@ -6,7 +6,7 @@ import { apiGet, apiPost, apiUpload } from '@/lib/api';
 import type { EstadoDoLink, ItemDoLink, MapaDoCliente, NoDaTeia, RetratoDoTrilho, TeiaDoCliente } from '../../onboarding/tipos';
 
 /*
- * O LINK DO CLIENTE — o KICKOFF, não um formulário.
+ * O LINK DO CLIENTE — o KICKOFF, a estação atual de um mapa.
  *
  * Sem login (a rota está em `PUBLICAS` do AppShell): o token na URL é a
  * credencial. A página é a ESTAÇÃO ATUAL DE UM MAPA (desenho de 24/09): o
@@ -147,7 +147,7 @@ export default function LinkPage() {
           </h1>
           <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
             {kickoff
-              ? `Isto é o kickoff, não um formulário.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''} — você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''}${estado.teia.contagem.daConversa ? ` E ${estado.teia.contagem.daConversa} notas já nasceram da conversa — o seu vault começa com elas.` : ''} Pode parar e voltar.`
+              ? `Você está na estação 3 de 6, o kickoff.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''}, e você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''}${estado.teia.contagem.daConversa ? ` E ${estado.teia.contagem.daConversa} notas já nasceram da conversa, e o seu vault começa com elas.` : ''} Pode parar e voltar.`
               : 'Cinco perguntas, uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.'}
           </p>
           <label className="mt-4 block text-xs text-muted">Quem está respondendo?</label>
@@ -209,14 +209,14 @@ export default function LinkPage() {
           chave: 'decisoes',
           rotulo: 'Só você decide',
           titulo: decisoes.length === 1 ? 'A decisão desta estação' : 'As decisões desta estação',
-          ajuda: `Vêm primeiro porque são elas que definem o que a gente constrói.${estado.audioDisponivel ? ' Pode escrever ou gravar um áudio.' : ''} Cada resposta vira uma nota no seu vault — a teia ao lado mostra onde ela se encaixa.`,
+          ajuda: `Vêm primeiro porque são elas que definem o que a gente constrói.${estado.audioDisponivel ? ' Pode escrever ou gravar um áudio.' : ''} Cada resposta vira uma nota no seu vault, e a teia ao lado mostra onde ela se encaixa.`,
           itens: decisoes,
         },
         {
           chave: 'confirmacoes',
           rotulo: 'Da conversa',
           titulo: 'O que ouvimos de você',
-          ajuda: `${jaConfirmados} de ${confirmacoes.length} confirmados. Cada trecho diz de onde veio — confirme, ou corrija com as suas palavras. Ao confirmar, a nota acende na teia.`,
+          ajuda: `${jaConfirmados} de ${confirmacoes.length} confirmados. Cada trecho diz de onde veio: confirme, ou corrija com as suas palavras. Ao confirmar, a nota acende na teia.`,
           itens: confirmacoes,
         },
         {
@@ -388,7 +388,7 @@ function MapaDoTrilho({ mapa, compacto = false }: { mapa: MapaDoCliente; compact
       )}
       {!compacto && seguinte && (
         <p className="mt-2 text-[12px] leading-relaxed text-muted">
-          <span className="font-semibold">A seguir — estação {seguinte.n}, {seguinte.titulo.toLowerCase()}:</span> {seguinte.oQueE}
+          <span className="font-semibold">A seguir, estação {seguinte.n}, {seguinte.titulo.toLowerCase()}:</span> {seguinte.oQueE}
         </p>
       )}
     </section>
@@ -635,10 +635,10 @@ function Indice({ teia, cliente, mapa, notaAberta, aoAbrir }: { teia: TeiaDoClie
       <p className="font-os-mono text-[10px] uppercase tracking-[0.16em] text-brand">
         {estacao ? `Estação ${estacao.n} · o índice do seu vault` : 'O índice do seu vault'}
       </p>
-      <h2 className="mt-1 text-[16px] font-bold">Índice — {cliente}</h2>
+      <h2 className="mt-1 text-[16px] font-bold">Índice de {cliente}</h2>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
-        É o pontapé inicial, e não “obrigado por responder”. Esta é a nota-mapa do seu vault: o que já existe, de onde veio e o que ainda
-        falta. Tudo o que você confirmar aqui vira nota sua, com a origem de cada frase — é o contexto que a IA passa a ler antes de
+        É o pontapé inicial do trabalho. Esta é a nota-mapa do seu vault: o que já existe, de onde veio e o que ainda
+        falta. Tudo o que você confirmar aqui vira nota sua, com a origem de cada frase. É o contexto que a IA passa a ler antes de
         qualquer proposta, dossiê ou post.
       </p>
 
@@ -654,7 +654,7 @@ function Indice({ teia, cliente, mapa, notaAberta, aoAbrir }: { teia: TeiaDoClie
                 {notaAberta === n.id && n.corpo && <p className="mt-1 rounded-lg border border-border bg-surface-2 p-2 text-[12px] leading-relaxed text-muted">{n.corpo}</p>}
               </li>
             ))}
-            {conversa.length === 0 && <li className="text-muted">Nenhuma ainda — a leitura da conversa escreve as primeiras.</li>}
+            {conversa.length === 0 && <li className="text-muted">Nenhuma ainda. A leitura da conversa escreve as primeiras.</li>}
           </ul>
         </div>
         <div>
@@ -668,7 +668,7 @@ function Indice({ teia, cliente, mapa, notaAberta, aoAbrir }: { teia: TeiaDoClie
                 )}
               </li>
             ))}
-            {prontas.length === 0 && <li className="text-muted">Nenhuma ainda — a primeira confirmação acende a primeira.</li>}
+            {prontas.length === 0 && <li className="text-muted">Nenhuma ainda. A primeira confirmação acende a primeira.</li>}
           </ul>
           {rascunhos.length > 0 && (
             <>

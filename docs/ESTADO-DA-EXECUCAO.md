@@ -2736,8 +2736,8 @@ invariante 4 (MD7), e isso conta como afrouxamento: só `POLITICA_CAPACIDADE_NOV
    `pauta.enviar_ao_youtube`, só no Admin Master) e todo mundo sai e entra de novo. Dar
    `pauta.enviar_ao_youtube` só à conta do vigia do Mac, num perfil próprio (MD10, pendência 10).
 9. **`up -d --no-build --vps api web`.**
-10. **Conferir:** a linha de boot `política base vN carregada DO BANCO (69 capacidades)` (62 da base
-    + as 7 da onda); `storage pronto` e a linha `mídia das peças no storage: …` (anotar o total);
+10. **Conferir:** a linha de boot `política base vN carregada DO BANCO (71 capacidades)` (62 de antes,
+    + as 2 da agenda da Root, PR #11, + as 7 da onda); `storage pronto` e a linha `mídia das peças no storage: …` (anotar o total);
     `/pauta` abrindo a aba Semana com os interruptores; o RASTRO.
 11. **Registrar** o que subiu (commit/tag).
 12. **Depois, na tela e no Mac:** as rotinas em `/rotinas` (encadeamento, "Publicação da semana",
@@ -2965,7 +2965,7 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
 7. **Ensaio das 15 migrations** num banco descartável com o dump da produção.
 8. **Smoke da imagem** com `ROTINAS_CRON=off`, os intervalos em 0 e
    `SMOKE_ROTAS=/api/pauta/episodios,/api/pauta/episodios/pendentes-midia,/api/pauta/voz,/api/pauta/agenda,/api/pauta/agenda/grade,/api/pauta/rodadas,/api/pauta/episodios/x/encadeamento,/api/pauta/youtube/pendentes,/api/pauta/comentarios`
-   (medido neste fechamento: SMOKE OK, 69 capacidades).
+   (medido neste fechamento: SMOKE OK, 69 capacidades; depois do merge com o `main` de 25/09, que trouxe as 2 da agenda, são 71).
 
 *Seeds e permissões, antes do `up`*
 
@@ -2980,7 +2980,7 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
 *Subir e conferir*
 
 11. **`deploy/up.sh --vps --no-build api web`** (as migrations rodam no `command` do container).
-12. **Conferir:** `política base vN carregada DO BANCO (69 capacidades)`; `storage pronto` e
+12. **Conferir:** `política base vN carregada DO BANCO (71 capacidades)`; `storage pronto` e
     `mídia das peças no storage: …` (anotar o total); `entrada do grupo … ligada por
     EntradaDeLinksService`; `/pauta` abrindo as abas, a Semana com a conta de publicação; o RASTRO.
 13. **Registrar** o que subiu (commit/tag).

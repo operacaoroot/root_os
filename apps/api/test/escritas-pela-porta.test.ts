@@ -89,6 +89,35 @@ const ESCRITAS: EscritaMigrada[] = [
     args: { titulo: 'Reunião de kickoff', inicio: '2026-09-20T14:00:00-03:00' },
     argsInvalidos: { inicio: '2026-09-20T14:00:00-03:00' }, // sem título
   },
+  /*
+   * A QUINTA DO GOOGLE, e a mais nova (24/09/2026): marcar reunião no padrão de
+   * nomenclatura da Root. Ela entra nesta suíte pelo mesmo motivo das outras
+   * quatro — é escrita externa —, e com uma exigência a mais que só ela tem: o
+   * `argsSchema` NÃO aceita `titulo`. O título é montado pelo conector
+   * (`montarTituloDeReuniao`), e um campo de título aqui seria a porta dos
+   * fundos do padrão. É o que o caso `argsInvalidos` mede.
+   */
+  {
+    capacidade: 'agenda.reuniao.marcar',
+    rota: 'POST /google/calendar/reuniao',
+    conector: 'gcal',
+    args: {
+      tipo: 'cliente',
+      modalidade: 'online',
+      cliente: 'Andrade Peças',
+      responsavel: 'Pedro',
+      inicio: '2026-09-25T14:00:00-03:00',
+    },
+    // Título escrito na mão: `additionalProperties: false` recusa antes do efeito.
+    argsInvalidos: {
+      tipo: 'cliente',
+      modalidade: 'online',
+      cliente: 'Andrade Peças',
+      responsavel: 'Pedro',
+      inicio: '2026-09-25T14:00:00-03:00',
+      titulo: 'Reunião c/ Andrade',
+    },
+  },
   {
     capacidade: 'documento.criar',
     rota: 'POST /google/docs',

@@ -116,7 +116,7 @@ export function montarRetratoDoTrilho(args: {
     ? `Ainda não consigo responder: preciso ${sistema ? `de "${sistema.slice(0, 80)}" conectado` : 'da fonte de dados conectada'}.` +
       (args.proximoPasso ? ` Próximo passo: ${args.proximoPasso}.` : ' O próximo passo é a conexão da primeira fonte.') +
       ' Essa resposta é o que define a implantação como pronta.'
-    : 'Você ainda não me disse qual pergunta quer ver respondida na primeira semana — é ela que define a implantação como pronta.';
+    : 'Você ainda não me disse qual pergunta quer ver respondida na primeira semana. É ela que define a implantação como pronta.';
 
   const linhas: string[] = [`O que o ROOT OS entendeu da ${args.cliente}:`, ''];
   let blocoAtual: Bloco | null = null;
