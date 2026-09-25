@@ -144,11 +144,12 @@ describe('o mapa capacidade → conector', () => {
      * o "só na base" caiu de 9 para 8.
      *
      * A MD6 (24/09/2026) acrescentou `instagram.post.publicar` ao delta: 55 e
-     * 63 na união, sem repetido novo.
+     * 63 na união, sem repetido novo. A MD7 (24/09/2026), `pauta.semana.aprovar`:
+     * 56 e 64.
      */
     expect(lerCatalogo('politica-root.json')).toHaveLength(16);
-    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(55);
-    expect(capacidadesDoCatalogo()).toHaveLength(63);
+    expect(lerCatalogo('politica-marketing-os.json')).toHaveLength(56);
+    expect(capacidadesDoCatalogo()).toHaveLength(64);
     const soNaBase = lerCatalogo('politica-root.json')
       .map((c) => c.id)
       .filter((id) => !lerCatalogo('politica-marketing-os.json').some((d) => d.id === id));
@@ -209,7 +210,10 @@ describe('o mapa capacidade → conector', () => {
     // 18 desde a MD6: `instagram.post.publicar` responde pela chave `instagram`.
     expect(comConector).toHaveLength(18);
     expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
-    expect(capacidadesDoCatalogo()).toHaveLength(63);
+    // A MD7 acrescentou `pauta.semana.aprovar` SEM conector: ativar o lote não
+    // sai da casa, e cada item pergunta ao interruptor dele na hora.
+    expect(CONECTOR_DA_CAPACIDADE['pauta.semana.aprovar']).toBeNull();
+    expect(capacidadesDoCatalogo()).toHaveLength(64);
 
     // E `conectorDaCapacidade` concorda com o mapa, para os dois lados: o que
     // está declarado `null` e o que está em `SEM_INTERRUPTOR` devolve `null`.

@@ -389,8 +389,14 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // Quinze desde a MD6 (24/09/2026): `instagram.post.publicar` também nasce
     // sem ferramenta. Quem publica é gente pela tela ou a rotina com o lote
     // assinado (MD8); agente nenhum posta no Instagram da empresa.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(15);
-    expect(BASE.capacidades.find((c) => c.id === 'instagram.post.publicar')?.ferramenta).toBeUndefined();
+    //
+    // Dezesseis desde a MD7 (24/09/2026): `pauta.semana.aprovar` também. Pedir
+    // a assinatura do lote é clique de gente; um agente que a pedisse estaria
+    // propondo a semana inteira de uma vez.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(16);
+    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar']) {
+      expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
+    }
     for (const id of ['conector.desligar', 'conector.religar']) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }
@@ -485,6 +491,34 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
       }),
     ]);
     expect(diff.capacidades[0].travas.argsSchema?.direcao).toBe('afrouxa');
+  });
+
+  /*
+   * MD7: o modo de aprovação decide quantas saídas uma assinatura cobre. Toda
+   * mudança nele é afrouxamento, e é por isso que o seed da MD7 pede a
+   * assinatura de REBAIXAMENTO além da de capacidade nova.
+   */
+  it('a invariante 4 reescrita (MD7) conta como invariante removida: pede a assinatura de rebaixamento', () => {
+    const antiga = 'aprovação é de uso único, presa ao conteúdo exato e com prazo';
+    const anterior = { ...BASE, invariantes: BASE.invariantes.map((i, n) => (n === 3 ? antiga : i)) };
+    const diff = diffDePolitica(anterior, BASE);
+    const itens = afrouxamentosDoDiff(diff);
+    expect(itens).toEqual([{ tipo: 'secao', alvo: 'invariantes', texto: `invariante removida: ${antiga}` }]);
+  });
+
+  it('mudar o modo de aprovação afrouxa, em qualquer direção', () => {
+    const pub = 'instagram.post.publicar';
+    const semModo = diffDoDelta(BASE, [comoNaBase(pub, { aprovacao: undefined })]);
+    expect(semModo.capacidades[0].travas.aprovacao?.direcao).toBe('afrouxa');
+    expect(textos(semModo).join()).toMatch(/modo de aprovação mudou \(sob_lote → uso único\)/);
+
+    const outroLote = diffDoDelta(BASE, [comoNaBase('pauta.semana.aprovar', { aprovacao: { modo: 'lote', tetoDeItens: 90, validadeMaximaDias: 8 } })]);
+    expect(outroLote.capacidades[0].travas.aprovacao?.direcao).toBe('afrouxa');
+    expect(afrouxamentosDoDiff(outroLote).map((a) => a.tipo)).toEqual(['trava-de-execucao']);
+    expect(recusas(outroLote, {})).toHaveLength(2);
+
+    const igual = diffDoDelta(BASE, [comoNaBase(pub, { descricao: 'outra' })]);
+    expect(igual.capacidades[0].travas.aprovacao).toBeUndefined();
   });
 });
 

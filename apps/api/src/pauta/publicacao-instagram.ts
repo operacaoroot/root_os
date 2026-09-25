@@ -295,7 +295,7 @@ export function decisaoDaRotina(e: {
   if (e.agora.getTime() - e.agendadaPara.getTime() > PAUTA_JANELA_DA_PUBLICACAO_MS) {
     return { tipo: 'janela_perdida', motivo: 'a janela de 2 h do slot passou sem publicar: volta ao manual' };
   }
-  if (!e.loteConferidoPelaPorta) return { tipo: 'pular', motivo: 'o lote da semana ainda não é conferido pela porta (MD7)' };
+  if (!e.loteConferidoPelaPorta) return { tipo: 'pular', motivo: 'a rotina ainda não publica por item de lote (MD8)' };
   return { tipo: 'publicar', loteItemId: e.loteItemId };
 }
 

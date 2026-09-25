@@ -134,6 +134,8 @@ model Org {
   pautaPecas       PautaPeca[]
   pautaEpisodios   PautaEpisodio[]
   pautaPublicacoes PautaPublicacao[]
+  lotesDeAprovacao AprovacaoDeLote[]
+  itensDeLote      ItemDoLote[]
 
   // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
   leadEvents            LeadEvent[]
@@ -2149,6 +2151,93 @@ model Approval {
 
   @@index([orgId, status, expiraEm])
   @@index([orgId, criadoEm])
+}
+
+/// MD7: o estado do lote. Espelhado em `LOTE_ESTADOS` (`@mktos/shared`).
+enum LoteEstado {
+  proposta
+  aguardando
+  ativo
+  encerrado
+  vencido
+  revogado
+}
+
+/// MD7: o estado de um item do lote. Espelhado em `ITEM_DO_LOTE_ESTADOS`.
+enum ItemDoLoteEstado {
+  ativo
+  consumido
+  revogado
+}
+
+/// A APROVAÇÃO DE LOTE (MD7) — a segunda forma da invariante 4: uma assinatura
+/// para uma lista, e cada item vale um uso CONTADO da capacidade dele.
+///
+/// A assinatura em si é uma `Approval` comum da capacidade `lote` (hoje
+/// `pauta.semana.aprovar`, R4), com `hashConteudo` nos argumentos. O efeito dela
+/// só ATIVA esta linha; o que sai para fora é cada item, pela porta, com o
+/// consumo atômico de `LotesService.consumirItem`.
+model AprovacaoDeLote {
+  id            String       @id @default(uuid())
+  orgId         String
+  org           Org          @relation(fields: [orgId], references: [id])
+  /// A capacidade `modo: lote` que assina a lista.
+  capabilityId  String
+  /// O dono da lista: `pauta_episodio` e o id do episódio, na semana de posts.
+  recursoTipo   String
+  recursoId     String
+  /// sha256 canônico da lista ORDENADA de itens (capacidade, recurso, hash do
+  /// item, janela, usos): é o que a pessoa assina.
+  hashConteudo  String
+  estado        LoteEstado   @default(proposta)
+  validaAte     DateTime
+  /// A aprovação R4 do pedido de assinatura em curso. Pedir de novo troca a
+  /// aprovação e mantém o hash.
+  approvalId    String?
+  propostoPorId String
+  aprovadoPorId String?
+  aprovadoEm    DateTime?
+  motivo        String?
+  resumo        String       @default("")
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
+  itens         ItemDoLote[]
+
+  @@index([orgId, estado, validaAte])
+  @@index([orgId, recursoTipo, recursoId])
+}
+
+/// Um item do lote: o uso contado de UMA capacidade `sob_lote` para UM recurso.
+model ItemDoLote {
+  id                String           @id @default(uuid())
+  /// Sentinela: o gatilho troca por `AprovacaoDeLote.orgId`.
+  orgId             String           @default("")
+  org               Org              @relation(fields: [orgId], references: [id])
+  loteId            String
+  lote              AprovacaoDeLote  @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  capabilityId      String
+  /// A peça, na publicação; a regra, na DM.
+  recursoId         String
+  /// `canonicalHash` com as hashKeys da capacidade do item: o conteúdo exato.
+  hashItem          String
+  janelaDe          DateTime
+  janelaAte         DateTime
+  /// 1 na publicação: o post sai uma vez.
+  usoMaximo         Int              @default(1)
+  /// A DM do MD11: teto por dia, com a virada em São Paulo dentro da mesma escrita.
+  tetoPorDia        Int?
+  usosNoDia         Int              @default(0)
+  /// `AAAA-MM-DD` em America/Sao_Paulo do último uso contado no dia.
+  diaDoContador     String?
+  usos              Int              @default(0)
+  consumidoEm       DateTime?
+  estado            ItemDoLoteEstado @default(ativo)
+  revogadoEm        DateTime?
+  motivoDaRevogacao String?
+  criadoEm          DateTime         @default(now())
+
+  @@unique([loteId, capabilityId, recursoId])
+  @@index([orgId, capabilityId, recursoId, estado])
 }
 
 /// RASTRO append-only e encadeado por hash.

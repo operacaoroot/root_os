@@ -1803,6 +1803,123 @@ nada sai). Nenhuma permissão nova, nenhuma variável nova (usa `INSTAGRAM_GRAPH
    publicado; se o post feito com o app em modo de desenvolvimento aparece para quem não tem papel
    no app; o teto de 2.200 caracteres da legenda.
 
+### Onda D, fatia MD7 — a régua aprende a aprovação de lote com uso contado (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD7), base na MC18.1 generalizada.
+Decisão D-MD1 aplicada como recomendado: a invariante 4 ganhou a segunda forma, e o portão humano é
+a assinatura do seed. **Nada publica sozinho nesta fatia**: a rotina da MD6 segue registrando
+`pulada` (quem troca a chamada para o item de lote é a MD8), e a nota `pauta.publicacao.automatica`
+continua desligada.
+
+| Peça | Onde |
+|---|---|
+| `CapacidadeSchema.aprovacao` = `{modo:'lote', tetoDeItens, validadeMaximaDias}` \| `{modo:'sob_lote', lote}`, união discriminada com `.strict()` (modo desconhecido ou chave estranha é recusa, nunca descarte calado) | `packages/policy/src/esquema.ts` |
+| `aprovacao` virou trava de execução no diff: qualquer mudança afrouxa | `packages/policy/src/sobrescrita.ts` |
+| `verificarCatalogo()` cobra as três regras (sob_lote aponta para lote; o lote é ≥ o item com um sinal aceso; lote só com alcance > 10) e devolve `problemas` por linha | `packages/policy/src/verificacao.ts`, `scripts/verificar.ts` |
+| Invariante 4 reescrita; base `1.2.0` | `packages/policy/politica-root.json` |
+| `pauta.semana.aprovar` (R4 pelo alcance 60: titular, reautenticação, motivo, 600 s; lote de até 60 itens por até 8 dias; sem ferramenta; `argsSchema` fechado com `totalDeItens` 1–60); `instagram.post.publicar` ganhou `sob_lote` e continua aceitando o caminho de sempre; delta `1.4.0`, catálogo com 64; `CONECTOR_DA_CAPACIDADE` = `null` (ativar o lote não sai da casa; cada item pergunta ao interruptor dele) | `packages/policy/politica-marketing-os.json`, `apps/api/src/integrations/conectores.ts` |
+| Tabelas `AprovacaoDeLote` (empresa, RLS FORCE) e `ItemDoLote` (filho: sentinela, gatilho `mktos_orgid_do_pai`, `FILHOS_COM_ORGID_REDUNDANTE` = 18); enums `LoteEstado` e `ItemDoLoteEstado` espelhados em `LOTE_ESTADOS` e `ITEM_DO_LOTE_ESTADOS` | migration `20260924235614_aprovacao_de_lote`; `modelos-globais.ts`; `tenant-isolation.test.ts` |
+| `LotesService`: `montar` (confere o catálogo da empresa, o teto, o prazo, as janelas e o `argsSchema` de cada item; grava o hash de cada item e o da lista ordenada), `ativar` (o efeito), `consumirItem` (UMA instrução `UPDATE … FROM … RETURNING`, com a virada do dia em SP para o teto diário da DM do MD11), `revogarItensDoRecurso`, `revogarLote`, `detalhe` | `apps/api/src/approvals/lotes.service.ts`, parte pura em `lotes.ts` |
+| `AssinaturaDeLoteService`: pede a assinatura pela `PortaDoOperador` (só quem montou; "pedir de novo" troca a aprovação e mantém o hash) e inscreve o efeito que ativa | `apps/api/src/approvals/assinatura-de-lote.service.ts` |
+| Rotas `POST /approvals/lotes/:id/pedir-assinatura` (`pauta.publicar`) e `GET /approvals/lotes/:id` (`aprovacoes.ver`) | `apps/api/src/approvals/lotes.controller.ts` |
+| A porta: `loteItemId` sai dos argumentos antes de tudo (fora da validação, do hash, do RASTRO dos argumentos e do efeito, que o recebe em `ctx.loteItemId`); capacidade sem `sob_lote`, id vazio, token junto ou recurso ausente é recusa `lote_nao_aceito`; com item, o CAMINHO L consome em vez de propor, confere que o degrau do lote cobre o degrau efetivo, e zero linhas é recusa `lote_recusado` registrada, nunca o caminho B; `tool.resultado` leva o `hashConteudo` da lista, aprovador, aprovadoEm, motivo e o contador antes e depois; o arranque recusa subir sem `LotesService` | `apps/api/src/gateway/tool-gateway.service.ts`, `efeitos.registry.ts` |
+| `acao.executada` passa a levar `estadoAnterior`/`estadoNovo` quando o efeito os devolve (a ativação do lote é o primeiro) | `apps/api/src/gateway/acoes.service.ts` |
+| O validador da porta aprende `minimum` e `maximum` | `apps/api/src/gateway/validacao.ts` |
+| A aba Capacidades da Régua mostra "aprova em lote" e "sai também por item de lote" | `apps/api/src/policy/regua.service.ts`, `apps/web/src/app/regua/AbaCapacidades.tsx` |
+| Catraca: só a porta consome item; só o efeito inscrito ativa; nada fora do serviço escreve lote | `apps/api/test/arquitetura.test.ts` |
+
+**Desvios da especificação, com o porquê:**
+- **O `loteItemId` não entrou no `argsSchema`.** A porta o tira dos argumentos antes da validação,
+  então o esquema continua descrevendo só o conteúdo assinado. A trava do diff pede a assinatura de
+  rebaixamento pela mudança do campo `aprovacao`, não por uma propriedade nova.
+- **A janela e o prazo usam o relógio do processo** (`agora` como parâmetro), não o `now()` do banco:
+  é o mesmo instante com que a régua decidiu os sinais (MD3), e as suítes que prendem o relógio
+  conseguem medir a janela.
+- **A rota é `/approvals/lotes/…`, não `/pauta/lotes/…`.** O lote é genérico (a semana, o YouTube e a
+  DM entram como itens) e o prefixo `approvals` já é espinha; a montagem da semana, que é da pauta,
+  fica na MD8.
+- **Quem pede a assinatura é quem montou.** Assim a trava da fila ("quem propôs não aprova") vale
+  para o lote inteiro antes de qualquer aprovação ser consumida; o efeito repete a conferência.
+- **`vencido` é calculado na leitura**, como a fila de aprovação faz (ninguém roda o expirador).
+- **O item consumido fica `consumido`** (enum com três estados: `ativo`, `consumido`, `revogado`), e o
+  lote sem item ativo passa a `encerrado`.
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~21h): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; policy **88** em 2 (+11); api direto com `TEST_DATABASE_URL` **2854 de 2854** em 69 arquivos
+(+33: `lotes` 13, novo; `porta` +12; `validacao` +3; `arquitetura` +4; `modelos-globais` +1); sem
+ele, 2221 passados e 633 pulados; web **578** em 44 (+1); `test:porta` **57**; `test:isolamento`
+**340** (+8); `db:diff` "No difference detected."; `build` + `smoke` OK; `verificar` "64
+capacidades · 0 divergência(s)"; `publicar-peca.test.ts` sem mudança. Pisos da CI: api 2085/61, web
+395/35, isolamento 266, policy 60/2, com a conta no `ci.yml`. O banco de teste foi ressemeado com as
+duas assinaturas (`teste-md7@local`).
+
+**Ensaio local — o "pronto quando"** (banco `marketing_os_zero_md7` criado vazio, migrations do zero,
+semeado com o catálogo da MD6 e depois com o da MD7; `dist/main.js` em `127.0.0.1:4097`; duas contas
+descartáveis, a que monta e a titular; tudo removido no fim):
+1. `db:seed:politica` sem assinatura, só com `CAPACIDADE_NOVA_*` e só com `REBAIXAMENTO_*` →
+   "Nada foi semeado" (os três itens listados acima); com as duas → `1 criadas, 63 atualizadas, 64
+   no total`, a versão gravada com as duas assinaturas; de novo, idempotente.
+2. Lote de 2 posts montado pelo `LotesService` compilado. A titular pede a assinatura → 403 "Quem
+   pede a assinatura do lote é quem o montou"; quem montou → `aguardando_aprovacao`, **R4**, fila
+   `/atendimento`; pedir de novo → 409; quem montou confirma → 403 "Quem propôs a ação não pode
+   aprová-la"; a titular sem motivo → 400; com senha e motivo → `executado`, lote `ativo` com
+   aprovador e motivo, `estadoAnterior`/`estadoNovo` no retorno.
+3. A porta de verdade (contexto do Nest, do `dist`) com `loteItemId`: o primeiro post sai (**R4**,
+   com `volume_atipico`; o lote R4 cobre), o segundo uso do mesmo item → "já foi usado", o outro post
+   com a legenda trocada → "o conteúdo difere do que foi assinado", o mesmo post como assinado → sai.
+   O efeito foi chamado **2** vezes, sem `loteItemId` nos argumentos e com ele no contexto; **0**
+   aprovações novas na fila; lote `encerrado`; RASTRO com `contentHash` da lista, aprovador,
+   antes `{usos:0}` e depois `{usos:1}` (só `agente` faltando, que não existe numa rotina) e as duas
+   recusas como `lote_recusado`.
+
+Não conferido: nenhum dublê da Graph nesta fatia — nada nela chama o Instagram (a publicação por item
+de lote liga na MD8, que troca a chamada da rotina).
+
+**Revisão da MD7 (três revisores, 24/09/2026 ~22h).** Corrigido, cada um com caso:
+- **`ctx.loteItemId` só vem da porta.** `executar` descarta o campo do contexto de quem chama antes de
+  tudo; só o consumo do CAMINHO L o escreve de novo. Um ctx forjado numa capacidade R0 chega ao efeito
+  sem o campo (`porta`).
+- **A falha ao encerrar o lote não desfaz um uso que já contou.** `encerrarSeAcabou` virou arrumação
+  com log dentro de `consumirItem`; antes, uma queda ali fazia a porta registrar recusa e não chamar
+  o efeito de uma saída assinada (`lotes`, com a contagem quebrada por proxy).
+- **Lote vencido não vai à fila** (409 antes da porta), e aprovação `confirmada` que venceu sem
+  executar não segura mais o lote com "já está na fila" (`lotes`).
+- **Revogar o último item ativo encerra o lote**, e a auditoria passou a `entityType:
+  'recurso_do_lote'` com os ids dos itens em `after.itens` (`lotes`).
+- **`expirarVencidos` recebe `orgId`** e passa por `exigirTenant`, como os irmãos.
+- **O antes e o depois da `acao.executada`** entram só com a capacidade resolvida, na mesma guarda do
+  conteúdo redigível.
+- **A porta prova, com banco,** o item de outra capacidade (usos 0), o lote que a política resolvida
+  deixou abaixo do degrau efetivo e o `sob_lote` sem lote no catálogo (`porta`, com a política
+  forjada por espião, porque a sobrescrita já é recusada por `verificarCatalogo`).
+- **A catraca de arquitetura procura também SQL cru** (`UPDATE/INSERT/DELETE "AprovacaoDeLote"` ou
+  `"ItemDoLote"` na visão com as strings) fora do serviço, e confere que enxerga o do próprio serviço.
+- A asserção vazia `semLotes.onModuleInit()` saiu de `porta` (caía pelo teto, não pelos lotes; a prova
+  real está em `teto-custo-ia`). Textos: o motivo de `pulada` passou a "a rotina ainda não publica
+  por item de lote (MD8)", o `CLAUDE.md` e o passo 2 da MD8 na especificação apontam a rota que já
+  existe, e o passo 3 ganhou o requisito de a titular VER o conteúdo de cada item, com o hash
+  recalculado da peça atual, antes de assinar (hoje o item guarda só o hash).
+
+Medido depois da revisão: api direto **2862 de 2862** em 69 (+8, todos com banco); sem banco, 2221
+passados e 641 pulados; web 578; policy 88; `test:porta` **61**; `test:isolamento` 340; `db:diff`
+limpo. Pisos sem mudança (nada novo roda sem banco). Uma execução da suíte inteira teve um vermelho
+passageiro em `cofre.test.ts` (inventário de credenciais herdadas), que passou sozinho e na
+repetição inteira; não tem relação com lote.
+
+**Deploy:** uma migration aditiva (dois enums, duas tabelas, RLS e gatilho). **Antes da subida**, o
+`db:seed:politica` com as DUAS assinaturas (`docs/DEPLOY.md` §2.3b): sem ele a capacidade nova vale
+R5 e a porta bloqueia todo pedido de assinatura (falha fechada). Nenhuma permissão nova, nenhuma
+variável nova.
+
+**Pendências (do Pedro), na ordem:**
+1. Decidir, antes do seed, se o prazo de assinatura do lote fica em 600 s (o do R4, recomendado) —
+   se não, é outra linha na régua e volta para cá.
+2. `db:seed:politica` na VPS **antes** do deploy, com as duas assinaturas (comando no §2.3b).
+3. **No mesmo dia**, atualizar a nota do vault `Root/20-empresa/root-os/09 - Escada de risco R0-R5.md`
+   com o texto novo da invariante 4 (está em `politica-root.json`) — `escada.ts` não mudou.
+4. A segunda pessoa com alçada **titular** (o lote é R4): sem ela, nenhum lote é ativado.
+5. O 403 da fila em produção (pendente desde 12/09/2026) continua valendo para quem assina.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2058,6 +2175,15 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     (`minItems`, `maxItems`, `items`) e `pattern` quando o `argsSchema` os declara; a outra
     capacidade que declara é o `convidados` do evento do Google (lista de texto), que passa a recusar item
     que não seja texto já na porta.
+29. **MD7: a aprovação de lote com uso contado.** Depois do seed com as DUAS assinaturas, existe
+    `pauta.semana.aprovar` (R4) e a invariante 4 tem a segunda forma. A porta aceita `loteItemId` só
+    em capacidade `sob_lote` (hoje só `instagram.post.publicar`): em qualquer outra, o campo é
+    recusado com a causa `lote_nao_aceito` em vez de ignorado. Com item válido, a publicação sai sem
+    fila, uma vez, e o RASTRO leva o aprovador do lote; item vencido, revogado, fora da janela, com
+    conteúdo trocado ou já usado é recusa registrada (`lote_recusado`), nunca pedido novo na fila. A
+    porta recusa subir sem `LotesService`. O validador passou a conferir `minimum`/`maximum`; nenhuma
+    capacidade anterior os declarava. `acao.executada` passa a levar `estadoAnterior`/`estadoNovo`
+    quando o efeito os devolve. A Régua mostra o modo de lote na aba Capacidades.
 
 ---
 

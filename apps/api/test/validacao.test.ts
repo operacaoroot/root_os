@@ -112,3 +112,31 @@ describe('validação de lista na porta (MD6)', () => {
     expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [{ sha256: 'a'.repeat(64) }] }))).toContain('midias[0].chave obrigatório');
   });
 });
+
+/*
+ * MD7: `totalDeItens` de `pauta.semana.aprovar` tem `minimum` 1 e `maximum`
+ * 60. Antes, o validador ignorava as duas palavras em silêncio — o mesmo
+ * risco que a A8 registrou para `maxItems`.
+ */
+describe('validação de número na porta (MD7)', () => {
+  const LOTE = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['totalDeItens'],
+    properties: { totalDeItens: { type: 'integer', minimum: 1, maximum: 60 } },
+  };
+
+  it('dentro dos limites passa, nas duas pontas', () => {
+    expect(validarArgs(LOTE, { totalDeItens: 1 })).toEqual([]);
+    expect(validarArgs(LOTE, { totalDeItens: 60 })).toEqual([]);
+  });
+
+  it('acima do máximo e abaixo do mínimo são recusados com o limite', () => {
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: 61 }))).toContain('totalDeItens aceita até 60');
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: 0 }))).toContain('totalDeItens precisa ser ao menos 1');
+  });
+
+  it('o limite não vale para texto, e o tipo errado continua sendo o erro', () => {
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: '999' }))).toBe('argumentos inválidos: totalDeItens esperava integer, veio string');
+  });
+});

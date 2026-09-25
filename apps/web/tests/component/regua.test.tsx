@@ -426,6 +426,26 @@ describe('a tela da Régua', () => {
     expect(screen.getByText(/sem ferramenta/)).toBeInTheDocument();
   });
 
+  it('mostra o modo de aprovação de lote que o catálogo declara (MD7)', async () => {
+    const [primeira, segunda] = PAINEL.capacidades;
+    apiGet.mockImplementation((path: string) =>
+      path === '/policy/regua'
+        ? Promise.resolve({
+            ...PAINEL,
+            capacidades: [
+              { ...primeira, aprovacao: { modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8 } },
+              { ...segunda, aprovacao: { modo: 'sob_lote', lote: 'pauta.semana.aprovar' } },
+            ],
+          })
+        : Promise.reject(new Error(`rota não esperada: ${path}`)),
+    );
+    render(<ReguaPage />);
+    await irPara('Capacidades');
+
+    expect(screen.getByText('aprova em lote: até 60 itens, por até 8 dias')).toBeInTheDocument();
+    expect(screen.getByText('sai também por item de lote de pauta.semana.aprovar')).toBeInTheDocument();
+  });
+
   it('mostra a fatia do catálogo que cada agente declarou, com o degrau que o SERVIDOR deu', async () => {
     render(<ReguaPage />);
     await irPara('Capacidades');

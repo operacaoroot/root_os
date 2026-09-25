@@ -266,6 +266,33 @@ que a fatia declarou já existia na base ROOT; o delta passou a sobrescrevê-la.
 Como conferir depois do `up`: a linha de boot
 `política base vN carregada DO BANCO (N capacidades)` precisa dizer **62**.
 
+**MD7 (24/09/2026) — as DUAS assinaturas, no mesmo comando.** A aprovação de lote com uso contado
+mexe em três coisas, e o seed as separa em duas categorias:
+
+```
+  AFROUXA a política em vigor (nível, limite ou seção do documento) — 2 item(ns):
+    instagram.post.publicar: aprovacao — o modo de aprovação mudou (uso único → sob_lote): …
+    invariante removida: aprovação é de uso único, presa ao conteúdo exato e com prazo
+  ACRESCENTA capacidade que a base do banco ainda não classifica … — 1 item(ns):
+    pauta.semana.aprovar: capacidade nova em R4 (não declarada valia R5)
+```
+
+```bash
+docker run --rm --network marketing-os-net -w /app/apps/api \
+  -e DATABASE_URL='postgresql://<user>:<senha>@db:5432/<banco de produção>' \
+  -e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+  -e POLITICA_CAPACIDADE_NOVA_MOTIVO='MD7: catálogo ganha pauta.semana.aprovar (R4)' \
+  -e POLITICA_REBAIXAMENTO_AUTOR='<quem responde>' \
+  -e POLITICA_REBAIXAMENTO_MOTIVO='MD7: invariante 4 com uso contado; publicar sai também por item de lote' \
+  mktos-app pnpm db:seed:politica
+```
+
+Ensaiado em 24/09/2026 num banco descartável criado do zero e semeado primeiro com o catálogo da
+MD6 (63): sem assinatura e com só uma das duas, **"Nada foi semeado"**; com as duas,
+`1 criadas, 63 atualizadas, 64 no total`, e a versão gravada leva as duas assinaturas. A linha de boot
+precisa dizer **64 capacidades**. **Esta assinatura é o portão humano da D-MD1**: sem ela,
+`pauta.semana.aprovar` não existe na política do banco, vale R5, e nenhum lote é assinado.
+
 ### 2.3c As duas variáveis do COFRE
 
 `COFRE_CHAVES` e `COFRE_CHAVE_ATUAL`, **as duas nos dois lugares** (bloco `environment:` do serviço

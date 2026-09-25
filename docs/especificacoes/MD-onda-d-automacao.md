@@ -647,6 +647,14 @@ baixar um vídeo grande. A API da Meta muda de versão. É a primeira escrita p�
 
 ### MD7 — A régua aprende a aprovação de lote com uso contado
 
+> **Estado (24/09/2026):** implementada, com o seed ensaiado num banco descartável (recusa sem as
+> duas assinaturas, aceita com elas) e o fluxo pelo HTTP e pela porta do `dist` registrados no
+> `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 29 da §4). Escolhas além do texto abaixo: o
+> `loteItemId` é tirado dos argumentos pela porta e NÃO entra no `argsSchema`; a janela e o prazo
+> comparam com o relógio do processo; as rotas são `/approvals/lotes/:id` e
+> `/approvals/lotes/:id/pedir-assinatura` (quem pede é quem montou); `vencido` é calculado na
+> leitura. A rotina da MD6 continua sem chamar a porta com o item: é o item 7 da MD8.
+
 **SPEC.** É o desenho da MC18.1 ("O que muda na régua", `docs/especificacoes/MC18-dm-por-palavra-chave.md`)
 generalizado para uma lista de itens. Serve à semana de posts, ao YouTube e à DM.
 
@@ -724,12 +732,17 @@ corrida. Com 600 s de prazo, a segunda pessoa precisa assinar logo depois do ped
    `semLinksDeCaixaDeEntrada`, as mídias `{chave, sha256}`, o `igUserId` e o `agendadaPara`. A janela
    vai do slot a slot + 2 h. Os itens do YouTube (MD10) e as regras de DM (MD11) entram no **mesmo**
    lote quando existirem.
-2. **Pedir a assinatura:** `POST /pauta/lotes/:id/pedir-assinatura` entrega `pauta.semana.aprovar` à
-   `PortaDoOperador` (`gateway/porta-do-operador.service.ts`), que devolve `aguardando_aprovacao` com
-   `precisaDeOutraPessoa`.
+2. **Pedir a assinatura:** a rota **já existe desde a MD7**: `POST /approvals/lotes/:id/pedir-assinatura`
+   (`AssinaturaDeLoteService.pedirAssinatura`) entrega `pauta.semana.aprovar` à `PortaDoOperador`
+   (`gateway/porta-do-operador.service.ts`), que devolve `aguardando_aprovacao` com
+   `precisaDeOutraPessoa`. A MD8 não cria uma segunda rota: só a montagem (`preparar-aprovacao`)
+   fica com a pauta.
 3. **Em `/atendimento`,** o cartão do lote mostra, por item, a miniatura (rota autenticada), a legenda
    inteira, o horário em SP e o @ de destino, além do total e do hash curto. A assinatura R4 pede
-   senha e motivo.
+   senha e motivo. **Requisito vindo da revisão da MD7:** o `ItemDoLote` guarda só o `hashItem`, e
+   `GET /approvals/lotes/:id` não mostra conteúdo. Antes do confirm, a tela recalcula o `hashItem` de
+   cada item a partir da peça atual (`argsDaPublicacao` + `hashDoItem`), mostra o conteúdo e marca a
+   divergência; a titular não assina hash sem ver o que ele cobre.
 4. **Ao confirmar,** o efeito ativa o lote; passa as peças a `aprovada` com `agendadaPara =
    slotProposto`, numa escrita condicionada ao estado lido; limpa o `slotProposto`; leva o episódio a
    `agendado` (D-MC11).

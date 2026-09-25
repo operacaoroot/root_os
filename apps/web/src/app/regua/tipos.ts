@@ -93,8 +93,15 @@ export interface CapacidadeDaRegua {
   ferramenta: string | null;
   rota: string | null;
   validaArgumentos: boolean;
+  /** MD7: o modo de aprovação que o catálogo declara. Ausente ou nulo = uso único. */
+  aprovacao?: ModoDeAprovacao | null;
   agentes: AgenteDaCapacidade[];
 }
+
+/** Espelho do `aprovacao` do catálogo (`@mktos/policy`, MD7). */
+export type ModoDeAprovacao =
+  | { modo: 'lote'; tetoDeItens: number; validadeMaximaDias: number }
+  | { modo: 'sob_lote'; lote: string };
 
 /** Uma capacidade como o agente a declarou, já explicada pelo servidor. */
 export interface CapacidadeDeclarada {

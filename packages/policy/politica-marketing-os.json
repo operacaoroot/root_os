@@ -1,5 +1,5 @@
 {
-  "versao": "1.3.0",
+  "versao": "1.4.0",
   "atualizadoEm": "2026-09-24",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
@@ -1140,6 +1140,10 @@
           }
         }
       },
+      "aprovacao": {
+        "modo": "sob_lote",
+        "lote": "pauta.semana.aprovar"
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -1278,6 +1282,39 @@
         "sensibilidade": "restrita",
         "destruicao": false,
         "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pauta.semana.aprovar",
+      "rota": "POST /approvals/lotes/:id/pedir-assinatura",
+      "descricao": "Aprova de uma vez a lista de saídas da semana (os posts do Instagram, e depois o YouTube e a DM): cada item fica valendo um uso contado da capacidade dele, preso ao hash do conteúdo exato, com janela e prazo. O efeito só ativa o lote dentro do OS; o que sai para fora é cada item, pela porta, na hora dele.",
+      "nivel": "R4",
+      "aprovacao": {
+        "modo": "lote",
+        "tetoDeItens": 60,
+        "validadeMaximaDias": 8
+      },
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["loteId", "hashConteudo", "totalDeItens", "validaAte"],
+        "properties": {
+          "loteId": { "type": "string", "minLength": 1, "description": "o lote montado, com a lista de itens" },
+          "hashConteudo": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o hash canônico da lista ordenada de itens: é o que a assinatura cobre" },
+          "totalDeItens": { "type": "integer", "minimum": 1, "maximum": 60, "description": "quantos itens a lista tem" },
+          "validaAte": { "type": "string", "minLength": 1, "description": "até quando o lote vale (ISO)" }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false,
+        "alcance": 60
       }
     }
   ]

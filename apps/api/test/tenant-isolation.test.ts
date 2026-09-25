@@ -311,6 +311,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'PolicyVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId NULLABLE: null = política base de todas. Leitura tem de ser orgId = atual OR IS NULL, e escrita só a própria.' },
   { tabela: 'PolicyDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada decisão da escada R0–R5, com motivo e sinais. Diz o que a outra empresa deixa passar.' },
   { tabela: 'Approval', escopo: 'tenant', chaveSql: '"id"', nota: 'Fila de aprovação: resumo do conteúdo a publicar e tokenHash. Ler é ver o que a outra empresa vai postar.' },
+  { tabela: 'AprovacaoDeLote', escopo: 'tenant', chaveSql: '"id"', nota: 'O lote assinado (MD7): o hash da semana, quem assinou e até quando vale. Escrever `estado` na da outra é ATIVAR a semana dela sem assinatura, ou derrubá-la.' },
+  { tabela: 'ItemDoLote', escopo: 'filho', chaveSql: '"id"', nota: 'Cada uso contado do lote (MD7): a janela, o hash do conteúdo e os usos. Escrever `usos` na da outra é gastar ou devolver a publicação dela. Filho do lote, com a empresa conferida pelo gatilho.' },
 
   // ---- teto de custo de IA (fatia 3.6) ----------------------------------
   { tabela: 'TetoDeCustoIa', escopo: 'tenant', chaveSql: '"id"', nota: 'Quanto a empresa pode gastar com modelo por dia. Ler é saber o orçamento dela; escrever é desligar o freio de gasto da outra.' },
@@ -666,6 +668,21 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     contentHash: `conteudo_${suf}`,
     resumo: `Texto que a org ${rotulo} vai publicar (${MARCA}).`,
     tokenHash: `token_${suf}`, expiraEm: new Date(Date.now() + 3600_000),
+  }));
+
+  // O lote de aprovação (MD7) e um item dele — o item sem orgId: a empresa
+  // vem do lote, pelo gatilho.
+  const loteId = await ins(c, 'AprovacaoDeLote', {
+    id: crypto.randomUUID(), orgId, capabilityId: 'pauta.semana.aprovar', recursoTipo: 'pauta_episodio',
+    recursoId: crypto.randomUUID(), hashConteudo: `lote_${suf}`, estado: 'ativo',
+    validaAte: new Date(Date.now() + 86_400_000), propostoPorId: `pessoa_${suf}`,
+    resumo: `A semana da org ${rotulo} (${MARCA})`, atualizadoEm: new Date(),
+  });
+  reg('AprovacaoDeLote', loteId);
+  s.ref.aprovacaoDeLoteId = loteId;
+  reg('ItemDoLote', await ins(c, 'ItemDoLote', {
+    id: crypto.randomUUID(), loteId, capabilityId: 'instagram.post.publicar', recursoId: crypto.randomUUID(),
+    hashItem: `item_${suf}`, janelaDe: new Date(), janelaAte: new Date(Date.now() + 7_200_000),
   }));
 
   // --- integrações ---------------------------------------------------------
@@ -2984,6 +3001,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
   OnboardingMarco: async () => ({
     id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, tipo: 'gatilho', texto: 'marco do teste de derivação',
   }),
+  ItemDoLote: async () => ({
+    id: crypto.randomUUID(), loteId: sementes.A.ref.aprovacaoDeLoteId, capabilityId: 'instagram.post.publicar',
+    recursoId: crypto.randomUUID(), hashItem: `gatilho_${MARCA}`, janelaDe: new Date(), janelaAte: new Date(Date.now() + 60_000),
+  }),
   PautaPublicacao: async () => ({
     // (pecaId, rede) é único: a semente já usou `instagram` nesta peça.
     id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, rede: 'youtube', atualizadaEm: new Date(),
@@ -3015,6 +3036,7 @@ const REF_DA_SEMENTE: Record<string, string> = {
   OnboardingTrilho: 'onboardingTrilhoId',
   BioPage: 'bioPageId',
   PautaPeca: 'pautaPecaId',
+  AprovacaoDeLote: 'aprovacaoDeLoteId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -3027,9 +3049,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
     // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
     // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
-    // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026).
+    // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
+    // + `ItemDoLote` (MD7, 24/09/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(17);
+    expect(declarados.length).toBe(18);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

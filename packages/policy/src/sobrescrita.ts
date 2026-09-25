@@ -114,8 +114,13 @@ export type DirecaoDoLimite = DirecaoDaTrava;
  * de fora porque o nível é calculado dele: mudança de efeito que importa
  * aparece como mudança de nível, e `verificarCatalogo()` reprova quando não
  * aparece.
+ *
+ * `aprovacao` (MD7) entrou na lista porque decide COMO a assinatura vale: com
+ * `sob_lote`, a capacidade passa a sair por um item de lote assinado uma vez
+ * para a semana inteira, sem aprovação por pedido. Qualquer mudança nesse campo
+ * é afrouxamento — ver `direcaoDaAprovacao`.
  */
-export const TRAVAS_DE_EXECUCAO = ['ferramenta', 'argsSchema'] as const;
+export const TRAVAS_DE_EXECUCAO = ['ferramenta', 'argsSchema', 'aprovacao'] as const;
 export type TravaDeExecucao = (typeof TRAVAS_DE_EXECUCAO)[number];
 
 export interface MudancaDeTrava {
@@ -332,6 +337,22 @@ function direcaoDoArgsSchema(de: unknown, para: unknown): MudancaDeTrava {
   return { direcao: 'afrouxa', porque: 'mudou de um jeito que não dá para provar que aperta' };
 }
 
+/**
+ * O modo de aprovação da capacidade (`lote`/`sob_lote`, MD7). Toda mudança
+ * AFROUXA, inclusive a que parece apertar, e é falha fechada como a janela
+ * horária: o campo decide quantas saídas uma assinatura cobre, e trocar o teto
+ * de itens, o prazo máximo ou o lote apontado muda o alcance de uma assinatura
+ * que ninguém releu. Quem mexe assina.
+ */
+function direcaoDaAprovacao(de: unknown, para: unknown): MudancaDeTrava {
+  if (canonico(de) === canonico(para)) return { direcao: 'igual', porque: 'sem mudança' };
+  const modo = (v: unknown) => (objeto(v)?.modo as string | undefined) ?? 'uso único';
+  return {
+    direcao: 'afrouxa',
+    porque: `o modo de aprovação mudou (${modo(de)} → ${modo(para)}): decide quantas saídas uma assinatura cobre`,
+  };
+}
+
 function travasDaCapacidade(
   a: CapacidadeCatalogo,
   b: CapacidadeCatalogo,
@@ -342,7 +363,12 @@ function travasDaCapacidade(
     if (!campos.includes(campo)) continue;
     const de = (a as Record<string, unknown>)[campo];
     const para = (b as Record<string, unknown>)[campo];
-    r[campo] = campo === 'ferramenta' ? direcaoDaFerramenta(de, para) : direcaoDoArgsSchema(de, para);
+    r[campo] =
+      campo === 'ferramenta'
+        ? direcaoDaFerramenta(de, para)
+        : campo === 'aprovacao'
+          ? direcaoDaAprovacao(de, para)
+          : direcaoDoArgsSchema(de, para);
   }
   return r;
 }

@@ -823,7 +823,7 @@ export class PublicacaoInstagramService implements OnModuleInit {
         saida.push({ rotulo, resultado: 'erro', detalhe: d.motivo });
         continue;
       }
-      const motivo = d.tipo === 'pular' ? d.motivo : 'o lote ainda não é conferido pela porta (MD7)';
+      const motivo = d.tipo === 'pular' ? d.motivo : 'a rotina ainda não publica por item de lote (MD8)';
       await this.registrarPulada(orgId, p.id, p.agendadaPara, motivo, trilha);
       saida.push({ rotulo, resultado: 'pulada', detalhe: motivo });
     }

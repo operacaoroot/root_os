@@ -230,6 +230,8 @@ export class ReguaService {
         desfazer: c.desfazer ?? null,
         ferramenta: c.ferramenta ?? null,
         rota: c.rota ?? null,
+        /** MD7: `lote` (aprova uma lista) ou `sob_lote` (sai por item de lote); nulo é uso único. */
+        aprovacao: c.aprovacao ?? null,
         validaArgumentos: Boolean(
           c.argsSchema &&
             (c.argsSchema as { properties?: unknown }).properties &&

@@ -277,6 +277,10 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   // --- Daqui para baixo, o que só existe na base ROOT (politica-root.json) ---
   // A cópia só-leitura do ERP mora no banco do OS; consultar não sai da casa.
   'espelho.consultar': null,
+  // MD7: assinar o lote só LIGA o lote, dentro do OS. O que sai é cada item,
+  // pela porta, e cada item pergunta ao interruptor do conector DELE na hora:
+  // desligar o Instagram segura os posts da semana mesmo com o lote assinado.
+  'pauta.semana.aprovar': null,
   // O CRM deste produto é tabela do próprio OS — mesmo caso de `crm.lead.alterar`.
   'crm.lead.criar': null,
 };

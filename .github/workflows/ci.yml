@@ -157,6 +157,17 @@ jobs:
       # CASOS fica em 60 de propósito: os 3 novos cabem na folga de 17, e perder
       # o arquivo inteiro de sobrescrita (37) continua reprovando pelo piso de
       # ARQUIVOS, que fica em 2.
+      #
+      # MD7, A APROVAÇÃO DE LOTE COM USO CONTADO (24/09/2026): (88) em 2
+      # arquivos — politica 49 (+9: o campo `aprovacao` sobrevive a lerPolitica
+      # e lerDelta; modo desconhecido e chave estranha recusados; o catálogo
+      # passa nas três regras do lote; lote com alcance até 10 recusado; lote
+      # abaixo do item com sinal recusado; sob_lote para capacidade inexistente
+      # ou que não é lote; `pauta.semana.aprovar` R4; a publicação continua R3
+      # e o lote a cobre com sinal; o texto novo da invariante 4), sobrescrita
+      # 39 (+2: a invariante 4 reescrita conta como removida; mudar o modo de
+      # aprovação afrouxa). O piso de CASOS fica em 60: os 11 novos cabem na
+      # folga, e o de ARQUIVOS em 2.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -466,7 +477,12 @@ jobs:
       # botão em /rotinas). Medido: 577 casos em 44 arquivos. O piso de
       # CASOS sobe 5 (~15% de folga sobre os 6 novos), para 394; o de
       # ARQUIVOS fica em 35.
-      PISO_CASOS_WEB: '394'
+      #
+      # MD7, A APROVAÇÃO DE LOTE (24/09/2026): +1 caso, sem arquivo novo —
+      # `component/regua` (a aba Capacidades mostra "aprova em lote" e "sai
+      # também por item de lote"). Medido: 578 casos em 44 arquivos. O piso de
+      # CASOS sobe 1, para 395; o de ARQUIVOS fica em 35.
+      PISO_CASOS_WEB: '395'
       PISO_ARQUIVOS_WEB: '35'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1582,8 +1598,42 @@ jobs:
       # 2209 passados e 612 pulados (63 + 5 arquivos). O piso de ARQUIVOS sobe
       # 1, para 60; o de CASOS sobe 21 (~15% de folga sobre os 25 que rodam
       # sem banco), para 2075.
-      PISO_CASOS_API: '2075'
-      PISO_ARQUIVOS_API: '60'
+      #
+      # MD7, A APROVAÇÃO DE LOTE COM USO CONTADO (24/09/2026): +33 casos, +1
+      # arquivo. `lotes` (13, novo): sem banco, 4 — o hash da lista não
+      # depende da ordem e muda com qualquer campo; o loteItemId sai do
+      # conteúdo; os enums espelhados e o efeito da capacidade do catálogo; a
+      # frase da recusa. COM BANCO, 9 (a montagem recusa o que a
+      # porta recusaria; o pedido vai à fila como R4, quem montou não assina e
+      # a titular assina com senha e motivo e o efeito ativa; o efeito recusa a
+      # assinatura de quem montou, o pedido antigo e o hash trocado; pedir de
+      # novo mantém o hash; seis consumos simultâneos deixam passar UM; editar
+      # uma peça derruba só o item dela; o teto por dia com a virada em SP e
+      # corrida; o lote de outra empresa; o vencido). `porta` +12 com banco
+      # (o item sai uma vez sem fila e o RASTRO leva o lote e o contador;
+      # segundo uso; conteúdo diferente; fora da janela; vencido e revogado;
+      # aguardando; outra empresa; outro recurso; loteItemId em capacidade
+      # comum; vazio, com token e sem recurso; sem loteItemId vai à fila; porta
+      # sem o serviço recusa). `validacao` +3, `arquitetura` +4 (o consumo e a
+      # ativação têm dono), `modelos-globais` +1 (`ItemDoLote` no it.each dos
+      # filhos), todos sem banco; `teto-custo-ia` ganhou a asserção da porta
+      # sem o serviço de lotes no mesmo caso, e `conector-desligado` só
+      # remediu a conta (64). Medido: 2854 casos em 69 arquivos com o banco;
+      # sem ele, 2221 passados e 633 pulados (64 + 5 arquivos). O piso de
+      # ARQUIVOS sobe 1, para 61; o de CASOS sobe 10 (~15% de folga sobre os 12
+      # que rodam sem banco), para 2085.
+      #
+      # MD7, A REVISÃO (24/09/2026): +8 casos, todos COM BANCO. `lotes` +4 (lote
+      # vencido não vai à fila; confirmada vencida não segura o lote; revogar o
+      # último item encerra o lote; a falha ao encerrar não desfaz o uso) e o
+      # caso do vencido passou a provar a empresa; `porta` +4 (item de outra
+      # capacidade; lote abaixo do degrau efetivo; sob_lote sem lote no
+      # catálogo; loteItemId forjado no contexto não chega ao efeito).
+      # `arquitetura` ganhou a busca de SQL cru no caso que já existia. Medido:
+      # 2862 casos em 69 arquivos com o banco; sem ele, os mesmos 2221 passados
+      # e 641 pulados. Os pisos ficam onde estão: nada novo roda sem banco.
+      PISO_CASOS_API: '2085'
+      PISO_ARQUIVOS_API: '61'
 
     steps:
       - uses: actions/checkout@v4
@@ -2035,7 +2085,12 @@ jobs:
           # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): **332 casos**.
           # `PautaPublicacao` entrou no registro de alvos e em
           # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 259.
-          PISO_CASOS_ISOLAMENTO: '259'
+          #
+          # MD7, A APROVAÇÃO DE LOTE (24/09/2026): **340 casos**.
+          # `AprovacaoDeLote` (empresa própria) e `ItemDoLote` (filho do lote,
+          # em `FILHOS_COM_ORGID_REDUNDANTE`) entraram no registro de alvos:
+          # +8 casos. O piso sobe 7, para 266.
+          PISO_CASOS_ISOLAMENTO: '266'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

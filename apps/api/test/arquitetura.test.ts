@@ -2037,3 +2037,50 @@ describe('catraca de arquitetura: o publicador do Instagram (MD6)', () => {
     expect(fonte.codigo).toMatch(/'instagram\.post\.publicar'/);
   });
 });
+
+/*
+ * MD7 — o uso contado do lote tem UM chamador: a porta.
+ *
+ * `LotesService.consumirItem` é o que deixa uma saída acontecer sem aprovação
+ * por pedido. Chamado de qualquer outro lugar, ele gastaria o uso de um item
+ * sem régua, sem sinais e sem RASTRO — e o efeito poderia vir logo depois, pela
+ * porta ou não. A ativação do lote tem dono também: o efeito inscrito por
+ * `AssinaturaDeLoteService`, que a porta dispara depois da assinatura.
+ */
+describe('catraca de arquitetura: o lote de aprovação (MD7)', () => {
+  const PORTA = 'src/gateway/tool-gateway.service.ts';
+  const SERVICO = 'src/approvals/lotes.service.ts';
+  const ASSINATURA = 'src/approvals/assinatura-de-lote.service.ts';
+
+  it('os arquivos existem onde a catraca procura', () => {
+    for (const a of [PORTA, SERVICO, ASSINATURA]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('só a porta consome item de lote', () => {
+    const consomem = FONTES.filter((f) => /\.\s*consumirItem\s*\(/.test(f.semTexto)).map((f) => f.arquivo);
+    expect(consomem, 'consumo de item de lote fora da porta').toEqual([PORTA]);
+  });
+
+  it('só o efeito inscrito ativa o lote, e a inscrição não dispara nada', () => {
+    const ativam = FONTES.filter((f) => /\blotes\s*\.\s*ativar\s*\(/.test(f.semTexto)).map((f) => f.arquivo);
+    expect(ativam).toEqual([ASSINATURA]);
+    const fonte = FONTES.find((f) => f.arquivo === ASSINATURA)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+  });
+
+  it('nada fora do serviço escreve estado de lote ou de item à mão', () => {
+    const escrevem = FONTES.filter(
+      (f) => f.arquivo !== SERVICO && /\b(aprovacaoDeLote|itemDoLote)\s*\.\s*(update|updateMany|create|createMany|upsert|delete|deleteMany)\s*\(/.test(f.semTexto),
+    ).map((f) => f.arquivo);
+    expect(escrevem, 'escrita em lote fora de LotesService').toEqual([]);
+
+    // O SQL cru mora dentro de template: a visão `semTexto` o apaga. Ativar um
+    // lote por fora com `$executeRaw` seria pular a segunda pessoa.
+    const escreveCru = /\b(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"(AprovacaoDeLote|ItemDoLote)"/i;
+    // A régua enxerga o consumo do próprio serviço; sem isso a catraca seria vazia.
+    expect(escreveCru.test(FONTES.find((f) => f.arquivo === SERVICO)!.codigo)).toBe(true);
+    const sqlCru = FONTES.filter((f) => f.arquivo !== SERVICO && escreveCru.test(f.codigo)).map((f) => f.arquivo);
+    expect(sqlCru, 'SQL cru escrevendo em lote fora de LotesService').toEqual([]);
+  });
+});

@@ -212,6 +212,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // A publicação da peça numa rede (MD6, 24/09/2026): a empresa é a da peça —
   // migration `20260924224733_pauta_publicacao`.
   { modelo: 'PautaPublicacao', pai: 'PautaPeca', fk: 'pecaId' },
+  // O item do lote de aprovação (MD7, 24/09/2026): a empresa é a do lote —
+  // migration `20260924235614_aprovacao_de_lote`.
+  { modelo: 'ItemDoLote', pai: 'AprovacaoDeLote', fk: 'loteId' },
 ] as const;
 
 /**

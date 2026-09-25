@@ -73,7 +73,7 @@ describe.each(CATALOGOS)('%s', (_nome, pol, ids) => {
     const linhas = verificarCatalogo(pol);
     const falhas = linhas.filter((l) => !l.ok);
     expect(
-      falhas.map((f) => `${f.id}: declarado=${f.declarado} calculado=${f.calculado}`),
+      falhas.map((f) => `${f.id}: declarado=${f.declarado} calculado=${f.calculado} ${f.problemas.join('; ')}`.trim()),
     ).toEqual([]);
     expect(linhas.length).toBeGreaterThan(0);
   });
@@ -518,5 +518,128 @@ describe('instagram.post.publicar (MD6)', () => {
       maxItems: 10,
       items: { type: 'object', additionalProperties: false, required: ['chave', 'sha256'], properties: { sha256: { pattern: '^[0-9a-f]{64}$' } } },
     });
+  });
+});
+
+/*
+ * MD7 (24/09/2026): a régua aprende a aprovação de lote com uso contado. O que
+ * não pode mudar sem alguém ver: o campo `aprovacao` chega ao runtime (o Zod
+ * descartaria em silêncio um campo que o esquema não declara), o modo é enum
+ * fechado, o lote só existe com alcance e nunca abaixo do item com sinal, e a
+ * invariante 4 diz as duas formas.
+ */
+describe('aprovação de lote com uso contado (MD7)', () => {
+  const lote = MKTOS.capacidades.find((x) => x.id === 'pauta.semana.aprovar');
+  const publicar = MKTOS.capacidades.find((x) => x.id === 'instagram.post.publicar');
+
+  const EFEITO_DO_LOTE = {
+    escreveForaDoOS: true,
+    produzArtefato: false,
+    reversibilidade: 'nenhuma',
+    exposicaoExterna: true,
+    impactoFinanceiro: 'nenhum',
+    sensibilidade: 'publica',
+    destruicao: false,
+    obrigacaoLegal: false,
+    alcance: 60,
+  } satisfies CapacidadeDoCatalogo['efeito'];
+
+  it('o campo sobrevive a lerPolitica e a lerDelta', () => {
+    expect(lote?.aprovacao).toEqual({ modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8 });
+    expect(publicar?.aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    // Direto no delta, sem a resolução no meio.
+    expect(DELTA.capacidades.find((c) => c.id === 'pauta.semana.aprovar')?.aprovacao?.modo).toBe('lote');
+    // E numa política inteira lida do zero.
+    const bruto = json('politica-root.json');
+    bruto.capacidades = [...bruto.capacidades, { ...lote, efeito: EFEITO_DO_LOTE }];
+    const lida = lerPolitica(bruto, 'teste');
+    expect(lida.capacidades.find((c) => c.id === 'pauta.semana.aprovar')?.aprovacao).toEqual(lote?.aprovacao);
+  });
+
+  it('modo desconhecido é recusado, e chave estranha também — nada some calado', () => {
+    const comModo = (aprovacao: unknown) => {
+      const d = json('politica-marketing-os.json');
+      d.capacidades = d.capacidades.map((c: { id: string }) =>
+        c.id === 'pauta.semana.aprovar' ? { ...c, aprovacao } : c,
+      );
+      return () => lerDelta(d, 'teste');
+    };
+    expect(comModo({ modo: 'alcance', tetoPorDia: 200, validadeMaximaDias: 7 })).toThrow(/aprovacao/);
+    expect(comModo({ modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8, usoUnico: false })).toThrow(/aprovacao/);
+    expect(comModo({ modo: 'lote', tetoDeItens: 0, validadeMaximaDias: 8 })).toThrow(/tetoDeItens/);
+    expect(comModo({ modo: 'sob_lote' })).toThrow(/lote/);
+  });
+
+  it('o catálogo resolvido passa nas três regras do lote', () => {
+    const doLote = verificarCatalogo(MKTOS).filter((l) => l.problemas.length);
+    expect(doLote).toEqual([]);
+  });
+
+  it('lote com alcance até 10 é recusado', () => {
+    const pol = {
+      capacidades: [
+        cap({ id: 'x.lote.aprovar', nivel: 'R3', efeito: { ...EFEITO_DO_LOTE, alcance: 10 }, aprovacao: { modo: 'lote', tetoDeItens: 5, validadeMaximaDias: 1 } }),
+      ],
+    };
+    const [l] = verificarCatalogo(pol);
+    expect(l.ok).toBe(false);
+    expect(l.problemas.join()).toMatch(/alcance acima de 10/);
+  });
+
+  it('lote abaixo do nível do item com um sinal aceso é recusado', () => {
+    // O item é R3 (post público) e um sinal aceso o leva a R4.
+    const item = cap({
+      id: 'x.post.publicar',
+      nivel: 'R3',
+      efeito: { ...EFEITO_DO_LOTE, alcance: 1, reversibilidade: 'manual' },
+      aprovacao: { modo: 'sob_lote', lote: 'x.lote.aprovar' },
+    });
+    // Lote que a régua deixa em R3: escrita interna reversível (R2) que o alcance sobe um degrau.
+    const loteR3 = cap({
+      id: 'x.lote.aprovar',
+      nivel: 'R3',
+      efeito: { ...EFEITO_INTERNO, alcance: 60 },
+      aprovacao: { modo: 'lote', tetoDeItens: 5, validadeMaximaDias: 1 },
+    });
+    expect(classificar(loteR3.efeito)).toBe('R3');
+    const doItem = verificarCatalogo({ capacidades: [item, loteR3] }).find((l) => l.id === item.id)!;
+    expect(doItem.ok).toBe(false);
+    expect(doItem.problemas.join()).toMatch(/é R3 e esta capacidade chega a R4/);
+
+    // O mesmo item sob um lote R4 passa.
+    const loteR4 = cap({ id: 'x.lote.aprovar', nivel: 'R4', efeito: EFEITO_DO_LOTE, aprovacao: loteR3.aprovacao });
+    expect(verificarCatalogo({ capacidades: [item, loteR4] }).every((l) => l.ok)).toBe(true);
+  });
+
+  it('sob_lote que aponta para capacidade inexistente, ou que não é lote, é recusado', () => {
+    const item = cap({ id: 'x.post.publicar', nivel: 'R3', efeito: { ...EFEITO_DO_LOTE, alcance: 1, reversibilidade: 'manual' }, aprovacao: { modo: 'sob_lote', lote: 'x.nao.existe' } });
+    expect(verificarCatalogo({ capacidades: [item] })[0].problemas.join()).toMatch(/não existe/);
+    const comum = cap({ id: 'x.nao.existe', nivel: 'R4', efeito: EFEITO_DO_LOTE });
+    expect(verificarCatalogo({ capacidades: [item, comum] })[0].problemas.join()).toMatch(/não declara modo lote/);
+  });
+
+  it('pauta.semana.aprovar é R4 pelo alcance: titular, reautenticação, motivo e 600 s', () => {
+    expect(lote!.nivel).toBe('R4');
+    expect(classificar(lote!.efeito)).toBe('R4');
+    const d = avaliar({ id: lote!.id, descricao: lote!.descricao, nivel: lote!.nivel, efeito: lote!.efeito });
+    expect(d).toMatchObject({ nivel: 'R4', exigeAprovacao: true, exigeReautenticacao: true, exigeMotivo: true });
+    expect(d.aprovacao).toMatchObject({ alcadaMinima: 'titular', validadeSegundos: 600 });
+    expect(lote!.ferramenta).toBeUndefined();
+    expect((lote!.argsSchema as { properties: { totalDeItens: unknown } }).properties.totalDeItens).toMatchObject({ maximum: 60 });
+  });
+
+  it('a publicação continua R3 no caminho de sempre, e o lote R4 cobre ela com sinal', () => {
+    expect(publicar!.nivel).toBe('R3');
+    const comSinal = avaliar({ id: publicar!.id, descricao: publicar!.descricao, nivel: publicar!.nivel, efeito: publicar!.efeito }, { sinais: ['fora_da_janela'] });
+    expect(comSinal.nivel).toBe('R4');
+    // O `loteItemId` é da porta, não do conteúdo: o esquema de argumentos não o declara.
+    expect(Object.keys((publicar!.argsSchema as { properties: object }).properties)).not.toContain('loteItemId');
+  });
+
+  it('a invariante 4 diz as duas formas: uso único ou uso contado com lote', () => {
+    expect(ROOT.invariantes[3]).toBe(
+      'aprovação é de uso único — ou de uso contado, item a item, quando a capacidade declara lote —, presa ao conteúdo exato e com prazo',
+    );
+    expect(MKTOS.invariantes).toEqual(ROOT.invariantes);
   });
 });

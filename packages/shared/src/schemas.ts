@@ -3649,6 +3649,37 @@ export interface PautaEncadeamentoDoEpisodio {
   ultimos: PautaPassoRegistrado[];
 }
 
+// ---------- Aprovação de lote com uso contado (MD7) ----------
+
+/**
+ * Espelha o enum `LoteEstado` do Prisma. `proposta`: montado, sem pedido de
+ * assinatura; `aguardando`: a aprovação R4 está na fila; `ativo`: assinado, e
+ * cada item vale um uso contado; `encerrado`: nenhum item ativo sobrou;
+ * `vencido`: passou do `validaAte`; `revogado`: cancelado inteiro.
+ */
+export const LOTE_ESTADOS = ['proposta', 'aguardando', 'ativo', 'encerrado', 'vencido', 'revogado'] as const;
+export type LoteEstado = (typeof LOTE_ESTADOS)[number];
+
+export const LOTE_ESTADO_ROTULO: Record<LoteEstado, string> = {
+  proposta: 'montado, sem pedido de assinatura',
+  aguardando: 'aguardando a assinatura de outra pessoa',
+  ativo: 'assinado e valendo',
+  encerrado: 'encerrado: nenhum item ativo',
+  vencido: 'vencido',
+  revogado: 'revogado',
+};
+
+/**
+ * Espelha o enum `ItemDoLoteEstado` do Prisma. `consumido`: gastou todos os
+ * usos; `revogado`: o conteúdo da peça mudou depois da assinatura, ou alguém o
+ * tirou do lote — só ele cai, os outros seguem.
+ */
+export const ITEM_DO_LOTE_ESTADOS = ['ativo', 'consumido', 'revogado'] as const;
+export type ItemDoLoteEstado = (typeof ITEM_DO_LOTE_ESTADOS)[number];
+
+/** A capacidade da régua (R4) que aprova a semana inteira de uma vez. */
+export const CAPACIDADE_DE_APROVAR_A_SEMANA = 'pauta.semana.aprovar';
+
 // ---------- Pauta: o publicador do Instagram (MD6) ----------
 
 /** Espelha o enum `PautaRede` do Prisma. O TikTok está em espera (MD12) e o YouTube é da MD10. */
