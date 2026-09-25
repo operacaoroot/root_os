@@ -299,7 +299,7 @@ describe.skipIf(!URL)('MD11: a DM automática sai sob o lote assinado, pela port
   const notas: Record<string, { body: string; arquivadoEm: string | null } | null> = {};
   const id = { proponente: '', titular: '', episodio: '', rodada: '', pagina: '', carrossel: '', corte: '', newsletter: '' };
   const ambienteAntes: Record<string, string | undefined> = {};
-  const AMBIENTE = ['INSTAGRAM_GRAPH_URL', 'META_WEBHOOK_PESSOA_HMAC_KEY', 'ENCRYPTION_KEY', 'GATEWAY_MODO', 'PUBLIC_BIO_ORIGIN', 'POLITICA_FUSO_HORARIO'];
+  const AMBIENTE = ['INSTAGRAM_GRAPH_URL', 'META_WEBHOOK_PESSOA_HMAC_KEY', 'ENCRYPTION_KEY', 'GATEWAY_MODO', 'PUBLIC_BIO_ORIGIN', 'POLITICA_FUSO_HORARIO', 'PAUTA_MIDIA_PUBLICA_SEGREDO'];
   let seqComentario = 0;
 
   const naEmpresa = <T>(fn: () => Promise<T>, correlationId = 'clique-md11'): Promise<T> => comContexto({ orgId: ORG, correlationId, origem: 'http' }, fn);
@@ -340,6 +340,7 @@ describe.skipIf(!URL)('MD11: a DM automática sai sob o lote assinado, pela port
     relogio(INICIO);
     for (const k of AMBIENTE) ambienteAntes[k] = process.env[k];
     process.env.GATEWAY_MODO = 'impor';
+    process.env.PAUTA_MIDIA_PUBLICA_SEGREDO = 's'.repeat(48);
     process.env.ENCRYPTION_KEY = Buffer.alloc(32, 11).toString('base64');
     process.env.META_WEBHOOK_PESSOA_HMAC_KEY = CHAVE;
     process.env.PUBLIC_BIO_ORIGIN = 'https://bio.teste';

@@ -386,6 +386,16 @@ export class PublicacaoInstagramService implements OnModuleInit {
       await this.passo(orgId, peca.id, trilha, 'recusada', { motivo: 'aprovação de um pedido antigo', daLinha: jaTem.approvalId });
       throw new PublicacaoRecusada('Esta aprovação é de um pedido antigo desta peça (depois dela houve outro pedido): nada foi publicado.');
     }
+    // O "Publicar agora" pedido entre a montagem e a assinatura sobrevive à
+    // ativação; confirmado antes do slot, sairia fora do horário que a titular
+    // assinou. Com o item ativo, quem publica é ele.
+    if (!doLote && this.lotes) {
+      const vivo = (await this.lotes.itensVivos(orgId, CAPACIDADE, [peca.id])).get(peca.id);
+      if (vivo?.estadoDoLote === 'ativo' && vivo.estadoDoItem === 'ativo') {
+        await this.passo(orgId, peca.id, trilha, 'recusada', { motivo: 'a peça sai pelo lote assinado, no horário dela', loteItemId: vivo.itemId });
+        throw new PublicacaoRecusada('Esta peça sai pelo lote da semana, assinado, no horário dela: a aprovação avulsa não publica fora dele. Nada foi publicado.');
+      }
+    }
 
     const recusar = async (motivo: string): Promise<never> => {
       await this.garantirLinha(peca.id);
@@ -851,6 +861,19 @@ export class PublicacaoInstagramService implements OnModuleInit {
         await this.passo(orgId, l.pecaId, trilha, 'recusada', { motivo });
         saida.push({ rotulo, resultado: 'pulada', detalhe: motivo });
         continue;
+      }
+      // "Cancelar a semana" revoga o lote; o Reels que a Meta ainda processava
+      // não pode sair depois disso. O publish já tentado segue: pode ter saído,
+      // e a passagem pergunta à Meta em vez de fingir que não.
+      if (l.loteItemId && !c.publicandoEm) {
+        const item = await this.prisma.itemDoLote.findFirst({ where: { id: l.loteItemId, orgId }, select: { lote: { select: { estado: true } } } });
+        if (item?.lote.estado === 'revogado') {
+          const motivo = 'A semana foi cancelada antes de o post sair: publicação cancelada, nada foi publicado.';
+          await this.gravar(orgId, l.pecaId, { estado: 'recusada', erro: motivo, proximaEm: null }, [...ESTADOS_EM_CURSO], posse);
+          await this.passo(orgId, l.pecaId, trilha, 'recusada', { motivo, loteItemId: l.loteItemId });
+          saida.push({ rotulo, resultado: 'pulada', detalhe: motivo });
+          continue;
+        }
       }
       try {
         const d = await this.avancar(

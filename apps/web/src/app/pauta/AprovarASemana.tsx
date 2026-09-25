@@ -335,7 +335,7 @@ export function AprovarASemana({
                 </div>
               )}
               {cancelando === l.id && (
-                <p className="break-words text-muted">Nada mais sai por este lote. O que já foi publicado fica, e as peças aprovadas seguem na agenda, no manual.</p>
+                <p className="break-words text-muted">Nada mais sai por este lote. O que já foi publicado fica, e as peças aprovadas seguem na agenda, no manual. O post cujo envio à Meta já começou pode ter saído: confira no Instagram.</p>
               )}
             </div>
           ))}

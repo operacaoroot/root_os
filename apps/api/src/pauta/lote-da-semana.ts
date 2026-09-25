@@ -71,6 +71,8 @@ export function impedimentosDaSemana(e: {
   status: string;
   paginaNoAr: boolean;
   conta: ContaParaPublicar | null;
+  /** `PAUTA_MIDIA_PUBLICA_SEGREDO` e a origem: sem eles a Meta não tem de onde baixar, e cada post cairia no slot. */
+  midiaPublicaLigada: boolean;
 }): string[] {
   const saida: string[] = [];
   if (e.status !== 'derivacao' && e.status !== 'agendado') {
@@ -80,6 +82,9 @@ export function impedimentosDaSemana(e: {
   if (!e.conta) saida.push('A empresa não tem conta de publicação do Instagram: conecte na aba Semana.');
   else if (!e.conta.escopos.includes(INSTAGRAM_ESCOPO_DE_PUBLICAR)) saida.push('A conta conectada não deu permissão de publicar: reconecte na aba Semana.');
   else if (e.conta.status !== 'ok') saida.push(`A conta de publicação está com problema (${e.conta.status}): reconecte na aba Semana.`);
+  if (!e.midiaPublicaLigada) {
+    saida.push('A URL pública da mídia está desligada: defina PAUTA_MIDIA_PUBLICA_SEGREDO (32+ caracteres) no servidor. Sem ela, cada post assinado cairia para o manual na hora do slot.');
+  }
   return saida;
 }
 

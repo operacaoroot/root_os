@@ -142,13 +142,15 @@ describe('MD8: as pré-condições de cada peça (puro)', () => {
   });
 
   it('a semana inteira para sem a página de links no ar, sem conta de publicação ou fora da Derivação/Agendado', () => {
-    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: CONTA })).toEqual([]);
-    expect(impedimentosDaSemana({ status: 'agendado', paginaNoAr: true, conta: CONTA })).toEqual([]);
-    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: false, conta: CONTA })).toEqual([expect.stringMatching(/página de links/)]);
-    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: null })).toEqual([expect.stringMatching(/conta de publicação/)]);
-    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: { ...CONTA, escopos: [] } })).toEqual([expect.stringMatching(/permissão de publicar/)]);
-    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: { ...CONTA, status: 'expirada' } })).toEqual([expect.stringMatching(/expirada/)]);
-    expect(impedimentosDaSemana({ status: 'pacote', paginaNoAr: true, conta: CONTA })).toEqual([expect.stringMatching(/Derivação ou no Agendado/)]);
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: CONTA, midiaPublicaLigada: true })).toEqual([]);
+    expect(impedimentosDaSemana({ status: 'agendado', paginaNoAr: true, conta: CONTA, midiaPublicaLigada: true })).toEqual([]);
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: false, conta: CONTA, midiaPublicaLigada: true })).toEqual([expect.stringMatching(/página de links/)]);
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: null, midiaPublicaLigada: true })).toEqual([expect.stringMatching(/conta de publicação/)]);
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: { ...CONTA, escopos: [] }, midiaPublicaLigada: true })).toEqual([expect.stringMatching(/permissão de publicar/)]);
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: { ...CONTA, status: 'expirada' }, midiaPublicaLigada: true })).toEqual([expect.stringMatching(/expirada/)]);
+    expect(impedimentosDaSemana({ status: 'pacote', paginaNoAr: true, conta: CONTA, midiaPublicaLigada: true })).toEqual([expect.stringMatching(/Derivação ou no Agendado/)]);
+    // Sem o segredo da URL pública, a assinatura seria gasta num lote que não tem como sair.
+    expect(impedimentosDaSemana({ status: 'derivacao', paginaNoAr: true, conta: CONTA, midiaPublicaLigada: false })).toEqual([expect.stringMatching(/PAUTA_MIDIA_PUBLICA_SEGREDO/)]);
   });
 
   it('o hash do item muda com a legenda, a mídia, o horário e a conta — e é o mesmo para a peça em rascunho e a aprovada no slot', () => {
@@ -878,6 +880,65 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
 
     const r = (await naEmpresa(() => publicacao.pedir(ORG, longe, id.proponente))) as AcaoRetida;
     expect(r.status).toBe('aguardando_aprovacao');
+  });
+
+  it('o "Publicar agora" pedido entre a montagem e a assinatura, confirmado antes do slot, não publica fora do horário assinado', async () => {
+    const DIA3 = (hhmm: string) => instanteNoFuso('2026-09-03', hhmm);
+    vi.setSystemTime(DIA3('10:00'));
+    nota = null;
+    const avulsa = await aprovadaEm('avulsa-e', 'carrossel', DIA3('18:00'));
+    const m = await naEmpresa(() => semana.preparar(ORG, id.episodio, id.proponente, todasMenos(avulsa)));
+    expect(m.itens).toBe(1);
+    // 10h02: alguém pede "Publicar agora" com o lote ainda sem assinatura.
+    vi.setSystemTime(DIA3('10:02'));
+    const r = (await naEmpresa(() => publicacao.pedir(ORG, avulsa, id.proponente))) as AcaoRetida;
+    expect(r.status).toBe('aguardando_aprovacao');
+    vi.setSystemTime(DIA3('10:05'));
+    await assinar(m.loteId);
+    const item = (await lotes.detalhe(ORG, m.loteId)).itens[0];
+    expect(item).toMatchObject({ recursoId: avulsa, estado: 'ativo' });
+
+    // 10h08, ainda no prazo do pedido: outra pessoa confirma o avulso. O carrossel NÃO sai agora.
+    vi.setSystemTime(DIA3('10:08'));
+    graph.zerar();
+    await naEmpresa(() => approvals.confirm(ORG, r.approvalId, { id: id.titular, papeis: ['admin_master'], reauth: { senha: SENHA } }, 'confirmo o avulso'));
+    await naEmpresa(() => acoes.executarAprovada(ORG, r.approvalId, id.titular)).catch(() => undefined);
+    expect(graph.chamadas).toEqual([]);
+    expect(await prisma.pautaPeca.findUniqueOrThrow({ where: { id: avulsa } })).toMatchObject({ status: 'aprovada' });
+    expect((await lotes.detalhe(ORG, m.loteId)).itens[0]).toMatchObject({ estado: 'ativo' });
+    const recusa = await prisma.auditLog.findFirst({
+      where: { orgId: ORG, entityId: avulsa, AND: [{ after: { path: ['passo'], equals: 'recusada' } }, { after: { path: ['motivo'], equals: 'a peça sai pelo lote assinado, no horário dela' } }] },
+    });
+    expect(recusa).not.toBeNull();
+  });
+
+  it('"Cancelar a semana" com o Reels ainda em processamento na Meta: a passagem seguinte recusa em vez de publicar; o publish já tentado segue', async () => {
+    const DIA3 = (hhmm: string) => instanteNoFuso('2026-09-03', hhmm);
+    vi.setSystemTime(DIA3('12:00'));
+    nota = null;
+    const reels = await aprovadaEm('reels-f', 'corte', DIA3('18:00'));
+    const jaTentado = await aprovadaEm('tentado-c', 'story', DIA3('18:10'));
+    const m = await naEmpresa(() => semana.preparar(ORG, id.episodio, id.proponente, todasMenos(reels, jaTentado)));
+    expect(m.itens).toBe(2);
+    await assinar(m.loteId);
+    const itens = (await lotes.detalhe(ORG, m.loteId)).itens;
+    const itemDe = (pecaId: string) => itens.find((i) => i.recursoId === pecaId)!.id;
+    // 18h01: o Reels passou pela porta e a Meta ainda processa; o story já teve o publish tentado.
+    vi.setSystemTime(DIA3('18:01'));
+    await prisma.pautaPublicacao.create({ data: { pecaId: reels, rede: 'instagram', estado: 'processando', loteItemId: itemDe(reels), containers: { final: 'c-reels' } } });
+    await prisma.pautaPublicacao.create({
+      data: { pecaId: jaTentado, rede: 'instagram', estado: 'container_criado', loteItemId: itemDe(jaTentado), containers: { final: 'c-story', publicandoEm: DIA3('18:00').toISOString() } },
+    });
+    await naEmpresa(() => semana.cancelar(ORG, m.loteId, id.proponente));
+
+    vi.setSystemTime(DIA3('18:02'));
+    graph.zerar();
+    const l = await comContexto({ orgId: ORG, correlationId: 'concluir-cancelada', origem: 'cron' }, () => publicacao.concluir(ORG, 'concluir-cancelada'));
+    expect(l.find((x) => x.detalhe?.includes('cancelada'))).toMatchObject({ resultado: 'pulada' });
+    expect(await prisma.pautaPublicacao.findFirstOrThrow({ where: { pecaId: reels } })).toMatchObject({ estado: 'recusada', erro: expect.stringMatching(/semana foi cancelada/) });
+    expect(graph.chamadas.filter((c) => c.caminho.includes('c-reels') || c.caminho.endsWith('/media_publish'))).toEqual([]);
+    // O story cujo publish já foi tentado não é dado por cancelado: a passagem pergunta à Meta.
+    expect(await prisma.pautaPublicacao.findFirstOrThrow({ where: { pecaId: jaTentado } })).not.toMatchObject({ estado: 'recusada' });
   });
 
   it('o lote montado e não assinado não tira a aprovada da agenda: trocar o JPEG só revoga o item; e a aba reconfere a peça do lote na fila', async () => {

@@ -157,7 +157,7 @@ describe.skipIf(!URL)('MD10: o vídeo do episódio no YouTube, pela porta e pelo
   let nota: { body: string; arquivadoEm: string | null } | null = null;
   const id = { proponente: '', titular: '', episodio: '', rodada: '', pagina: '' };
   const ambienteAntes: Record<string, string | undefined> = {};
-  const AMBIENTE = ['YOUTUBE_AUDITORIA', 'YOUTUBE_CANAL_DE_TESTE', 'PUBLIC_BIO_ORIGIN', 'ENCRYPTION_KEY', 'GATEWAY_MODO'];
+  const AMBIENTE = ['YOUTUBE_AUDITORIA', 'YOUTUBE_CANAL_DE_TESTE', 'PUBLIC_BIO_ORIGIN', 'ENCRYPTION_KEY', 'GATEWAY_MODO', 'PAUTA_MIDIA_PUBLICA_SEGREDO'];
 
   const naEmpresa = <T>(fn: () => Promise<T>, correlationId = 'clique-md10'): Promise<T> => comContexto({ orgId: ORG, correlationId, origem: 'http' }, fn);
   const rotina = (c: string) => comContexto({ orgId: ORG, correlationId: c, origem: 'cron' }, () => youtube.olharOHorario(ORG, c));
@@ -178,6 +178,7 @@ describe.skipIf(!URL)('MD10: o vídeo do episódio no YouTube, pela porta e pelo
     vi.setSystemTime(INICIO);
     for (const k of AMBIENTE) ambienteAntes[k] = process.env[k];
     process.env.GATEWAY_MODO = 'impor';
+    process.env.PAUTA_MIDIA_PUBLICA_SEGREDO = 's'.repeat(48);
     process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
     process.env.PUBLIC_BIO_ORIGIN = 'https://bio.teste';
     process.env.YOUTUBE_AUDITORIA = 'aprovada';

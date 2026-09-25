@@ -35,6 +35,9 @@ import { legendaDoPedido, type ContaParaPublicar } from './publicacao-instagram'
 import { PublicacaoInstagramService, contaDePublicacao, publicacoesEmJogo, publicacoesParaATela } from './publicacao-instagram.service';
 import { umaPorVez } from './uma-por-vez';
 import { rotinaDaPauta } from './rotina-da-pauta';
+import { origemDaMidiaPublica, segredoDaMidiaPublica } from './midia-publica';
+
+const midiaPublicaLigada = (): boolean => !!segredoDaMidiaPublica() && !!origemDaMidiaPublica();
 import {
   CAPACIDADE_DO_ITEM,
   CAPACIDADE_DO_LOTE,
@@ -181,7 +184,7 @@ export class LoteDaSemanaService implements OnModuleInit {
     // As que entrariam num lote novo agora: a mesma lista que o `preparar` confere.
     const candidatas = pecas.filter((p) => entraNaAprovacao(p.status) && vivos.get(p.id)?.estadoDoLote !== 'ativo');
     const ocupado = ocupadoComAsCandidatas(await this.ocupados(orgId, pecas.map(slotDaPeca).filter((d): d is Date => !!d)), candidatas);
-    const impedimentos = impedimentosDaSemana({ status: e.status, paginaNoAr: !!e.bioPage?.publicada, conta });
+    const impedimentos = impedimentosDaSemana({ status: e.status, paginaNoAr: !!e.bioPage?.publicada, conta, midiaPublicaLigada: midiaPublicaLigada() });
 
     const lista: PautaPecaParaAprovar[] = pecas.map((p) => {
       const m = lerMetaDaSemana(p.meta);
@@ -364,7 +367,7 @@ export class LoteDaSemanaService implements OnModuleInit {
     return umaPorVez(`pauta-lote-da-semana:${orgId}:${episodioId}`, 'A montagem do lote desta semana', async () => {
       const e = await this.episodio(orgId, episodioId);
       const conta = await contaDePublicacao(this.prisma, orgId);
-      const impedimentos = impedimentosDaSemana({ status: e.status, paginaNoAr: !!e.bioPage?.publicada, conta });
+      const impedimentos = impedimentosDaSemana({ status: e.status, paginaNoAr: !!e.bioPage?.publicada, conta, midiaPublicaLigada: midiaPublicaLigada() });
       if (impedimentos.length) throw new BadRequestException(impedimentos.join(' '));
 
       const agora = new Date();
