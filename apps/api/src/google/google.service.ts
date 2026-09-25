@@ -6,6 +6,12 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  lerTituloDeReuniao,
+  montarTituloDeReuniao,
+  type ModalidadeDeReuniao,
+  type ReuniaoDaAgenda,
+} from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
@@ -175,6 +181,10 @@ export class GoogleService implements OnModuleInit {
         this.gmailRecent(org, texto(a.q ?? a.busca), numero(a.limite, 10)),
       'comunicacao.email.ler': (a, org) => this.gmailGet(org, texto(a.id)),
       'comunicacao.agenda.listar': (a, org) => this.calendarUpcoming(org, numero(a.limite, 10)),
+      // A agenda de um INTERVALO. `numero()` trava em 50, que serve a uma lista
+      // e não a um mês inteiro de calendário — daí o teto próprio.
+      'comunicacao.agenda.periodo': (a, org) =>
+        this.calendarPeriodo(org, texto(a.de), texto(a.ate), Math.min(Number(a.limite) || 250, 2500)),
       'contexto.arquivo.listar': (a, org) =>
         this.driveList(org, texto(a.q ?? a.busca), numero(a.limite, 15)),
       'contexto.documento.ler': (a, org) => this.docGet(org, texto(a.id)),
@@ -204,6 +214,31 @@ export class GoogleService implements OnModuleInit {
             description: texto(a.descricao) || undefined,
             location: texto(a.local) || undefined,
             attendees: Array.isArray(a.convidados) ? (a.convidados as string[]).map(texto) : [],
+          },
+          ctx.actorId ?? undefined,
+        ),
+      /*
+       * MARCAR REUNIÃO — irmã de `agenda.evento.criar` e, na prática, a que a
+       * casa usa. A outra segue viva para o que não é reunião (bloqueio de
+       * agenda, viagem), onde o título é livre; esta não tem título nenhum nos
+       * argumentos, e é por isso que nem um agente consegue fugir do padrão.
+       */
+      'agenda.reuniao.marcar': (a, org, ctx: ContextoDoEfeito) =>
+        this.marcarReuniao(
+          org,
+          {
+            tipo: texto(a.tipo) === 'interna' ? 'interna' : 'cliente',
+            modalidade: texto(a.modalidade) === 'presencial' ? 'presencial' : 'online',
+            ...(texto(a.cliente) ? { cliente: texto(a.cliente) } : {}),
+            responsavel: texto(a.responsavel),
+            inicio: texto(a.inicio),
+            ...(texto(a.fim) ? { fim: texto(a.fim) } : {}),
+            ...(Number.isFinite(Number(a.duracaoMinutos))
+              ? { duracaoMinutos: Math.trunc(Number(a.duracaoMinutos)) }
+              : {}),
+            ...(texto(a.pauta) ? { pauta: texto(a.pauta) } : {}),
+            ...(texto(a.local) ? { local: texto(a.local) } : {}),
+            ...(Array.isArray(a.convidados) ? { convidados: (a.convidados as string[]).map(texto) } : {}),
           },
           ctx.actorId ?? undefined,
         ),
@@ -842,6 +877,59 @@ export class GoogleService implements OnModuleInit {
     }));
   }
 
+  /**
+   * A AGENDA DE UM INTERVALO — o que o calendário da tela precisa e
+   * `calendarUpcoming` não dá.
+   *
+   * `calendarUpcoming` responde "o que vem a seguir", contado de agora: serve ao
+   * cartão do painel e é inútil para desenhar setembro, porque não sabe voltar
+   * no tempo nem parar no fim do mês. Daí os dois extremos explícitos.
+   *
+   * O que volta a mais em relação à listagem curta é o que a tela mostra sem ter
+   * de pedir de novo: o padrão já DESMONTADO (`reuniao`), o link do Meet e se o
+   * evento é de dia inteiro — um evento `date` (sem hora) colocado numa grade
+   * horária é o clássico "aniversário às 21h" de fuso.
+   */
+  async calendarPeriodo(orgId: string, de: string, ate: string, maxResults = 250) {
+    const inicio = new Date(de);
+    const fim = new Date(ate);
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+      throw new BadRequestException('Período inválido: use datas ISO em `de` e `ate`.');
+    }
+    if (fim <= inicio) throw new BadRequestException('O fim do período tem de ser depois do início.');
+
+    const params = new URLSearchParams({
+      timeMin: inicio.toISOString(),
+      timeMax: fim.toISOString(),
+      maxResults: String(Math.min(Math.max(maxResults, 1), 2500)),
+      singleEvents: 'true',
+      orderBy: 'startTime',
+    });
+    const j = await this.api<{ items: any[] }>(
+      orgId,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+    );
+    return (j.items ?? []).map((e) => {
+      const titulo = e.summary ?? '(sem título)';
+      return {
+        id: e.id,
+        title: titulo,
+        /** O padrão da casa lido do título, ou `null` quando o evento foge dele. */
+        reuniao: lerTituloDeReuniao(titulo),
+        start: e.start?.dateTime ?? e.start?.date ?? null,
+        end: e.end?.dateTime ?? e.end?.date ?? null,
+        diaInteiro: !e.start?.dateTime,
+        location: e.location ?? null,
+        description: e.description ?? null,
+        link: e.htmlLink ?? null,
+        meet: e.hangoutLink ?? null,
+        status: e.status ?? null,
+        organizador: e.organizer?.email ?? null,
+        attendees: (e.attendees ?? []).map((a: any) => a.email).filter(Boolean),
+      };
+    });
+  }
+
   async gmailRecent(orgId: string, q = '', maxResults = 10) {
     const list = await this.api<{ messages?: Array<{ id: string }> }>(orgId,
       `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}${q ? `&q=${encodeURIComponent(q)}` : ''}`);
@@ -893,10 +981,31 @@ export class GoogleService implements OnModuleInit {
 
   async createCalendarEvent(
     orgId: string,
-    input: { title: string; start: string; end: string; description?: string; location?: string; attendees?: string[] },
+    input: {
+      title: string;
+      start: string;
+      end: string;
+      description?: string;
+      location?: string;
+      attendees?: string[];
+      /** Pede um Meet ao próprio Google. Ver `conferenceDataVersion` abaixo. */
+      meet?: boolean;
+    },
     actorId?: string,
   ) {
-    const body = {
+    /*
+     * O MEET NASCE COM O EVENTO, e não depois.
+     *
+     * O `createRequest` é a única forma de a Agenda gerar a sala: não existe
+     * endpoint de "criar Meet" para colar num evento já feito. Duas exigências
+     * do Google que é fácil esquecer e caro descobrir em produção:
+     *   · `requestId` tem de ser único por pedido — repetido, a API devolve a
+     *     conferência ANTERIOR em vez de abrir outra;
+     *   · sem `conferenceDataVersion=1` na URL, o corpo é aceito e o
+     *     `conferenceData` é silenciosamente IGNORADO. O evento nasce sem sala e
+     *     ninguém vê erro nenhum.
+     */
+    const body: Record<string, unknown> = {
       summary: input.title,
       description: input.description,
       location: input.location,
@@ -904,15 +1013,104 @@ export class GoogleService implements OnModuleInit {
       end: { dateTime: new Date(input.end).toISOString() },
       attendees: (input.attendees ?? []).map((email) => ({ email })),
     };
-    const e = await this.api<{ id: string; htmlLink: string }>(orgId,
-      'https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',
+    if (input.meet) {
+      body.conferenceData = {
+        createRequest: {
+          requestId: `root-os-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      };
+    }
+    const e = await this.api<{ id: string; htmlLink: string; hangoutLink?: string }>(orgId,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all${input.meet ? '&conferenceDataVersion=1' : ''}`,
       { method: 'POST', body: JSON.stringify(body) });
     await this.audit.log({
       orgId, actorId, action: 'google.calendar.create', entityType: 'calendar', entityId: e.id,
-      after: { title: input.title, start: input.start },
+      after: { title: input.title, start: input.start, meet: !!input.meet },
     });
     this.log.log(`Evento criado: ${input.title}`);
-    return { ok: true, id: e.id, link: e.htmlLink };
+    return { ok: true, id: e.id, link: e.htmlLink, meet: e.hangoutLink ?? null };
+  }
+
+  /*
+   * ==========================================================================
+   * MARCAR REUNIÃO — a agenda da Root no padrão da casa (24/09/2026)
+   * ==========================================================================
+   *
+   * A diferença para `createCalendarEvent` cabe numa frase: aqui NINGUÉM passa
+   * o título. Ele é montado por `montarTituloDeReuniao` a partir dos campos, e
+   * é essa ausência que faz o padrão valer para todo mundo — a tela, o agente
+   * que um dia marcar uma reunião pelo MCP e qualquer script que chame a porta.
+   * Um campo `titulo` opcional aqui seria o mesmo que não ter padrão.
+   *
+   * O MEET SAI DA MODALIDADE, e não de uma caixinha: reunião online sem link é
+   * reunião que alguém vai perguntar "onde é?" meia hora antes. Presencial não
+   * ganha sala — ganha o campo de local.
+   *
+   * A DURAÇÃO PADRÃO é uma hora, o mesmo default que a capacidade de evento já
+   * usava quando o fim não vinha declarado. Sem fim, a Agenda recusa o evento.
+   */
+  async marcarReuniao(
+    orgId: string,
+    input: {
+      tipo: 'cliente' | 'interna';
+      modalidade: ModalidadeDeReuniao;
+      cliente?: string;
+      responsavel: string;
+      inicio: string;
+      fim?: string;
+      duracaoMinutos?: number;
+      pauta?: string;
+      local?: string;
+      convidados?: string[];
+    },
+    actorId?: string,
+  ) {
+    const inicio = new Date(input.inicio);
+    if (Number.isNaN(inicio.getTime())) {
+      throw new BadRequestException('Início inválido: mande data e hora ISO 8601.');
+    }
+    const fim = input.fim
+      ? new Date(input.fim)
+      : new Date(inicio.getTime() + (input.duracaoMinutos ?? 60) * 60_000);
+    if (Number.isNaN(fim.getTime()) || fim <= inicio) {
+      throw new BadRequestException('A reunião tem de terminar depois de começar.');
+    }
+
+    // `montarTituloDeReuniao` é quem cobra cliente e responsável, com a mensagem
+    // em português que a tela mostra. Aqui só traduzimos o corpo para a forma.
+    const reuniao: ReuniaoDaAgenda =
+      input.tipo === 'cliente'
+        ? {
+            tipo: 'cliente',
+            modalidade: input.modalidade,
+            cliente: input.cliente ?? '',
+            responsavel: input.responsavel,
+          }
+        : { tipo: 'interna', modalidade: input.modalidade, responsavel: input.responsavel };
+
+    let titulo: string;
+    try {
+      titulo = montarTituloDeReuniao(reuniao);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
+    const online = input.modalidade === 'online';
+    const criado = await this.createCalendarEvent(
+      orgId,
+      {
+        title: titulo,
+        start: inicio.toISOString(),
+        end: fim.toISOString(),
+        ...(input.pauta ? { description: input.pauta } : {}),
+        ...(input.local && !online ? { location: input.local } : {}),
+        ...(input.convidados?.length ? { attendees: input.convidados } : {}),
+        meet: online,
+      },
+      actorId,
+    );
+    return { ...criado, titulo, reuniao };
   }
 
   async createDoc(orgId: string, input: { title: string; content?: string }, actorId?: string) {

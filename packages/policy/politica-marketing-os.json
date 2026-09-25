@@ -406,6 +406,23 @@
       }
     },
     {
+      "id": "comunicacao.agenda.periodo",
+      "ferramenta": "list_calendar_range",
+      "rota": "GET /google/calendar/periodo",
+      "descricao": "Eventos da Google Agenda num intervalo de datas, com o padrão de nomenclatura da Root já desmontado (cliente, responsável, modalidade) e o link do Meet.",
+      "nivel": "R0",
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
       "id": "operacao.tarefa.listar",
       "ferramenta": "list_tasks",
       "rota": "GET /tasks",
@@ -903,6 +920,85 @@
           },
           "local": {
             "type": "string"
+          },
+          "convidados": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "e-mails convidados"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "agenda.reuniao.marcar",
+      "ferramenta": "agenda_reuniao_marcar",
+      "rota": "POST /google/calendar/reuniao",
+      "descricao": "Marca reunião na Agenda da Root no padrão da casa. O título é montado pelo OS (Reunião Online|Presencial - Cliente - Responsável, ou Reunião Interna - Responsável); reunião online nasce com link do Meet.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tipo",
+          "modalidade",
+          "responsavel",
+          "inicio"
+        ],
+        "properties": {
+          "tipo": {
+            "enum": [
+              "cliente",
+              "interna"
+            ],
+            "description": "reunião de cliente ou de dentro de casa"
+          },
+          "modalidade": {
+            "enum": [
+              "online",
+              "presencial"
+            ]
+          },
+          "cliente": {
+            "type": "string",
+            "minLength": 1,
+            "description": "obrigatório quando tipo=cliente"
+          },
+          "responsavel": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o sócio que atende, ou \"Todos\""
+          },
+          "inicio": {
+            "type": "string",
+            "description": "ISO 8601"
+          },
+          "fim": {
+            "type": "string",
+            "description": "ISO 8601; sem ele vale duracaoMinutos (padrão 60)"
+          },
+          "duracaoMinutos": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 600
+          },
+          "pauta": {
+            "type": "string"
+          },
+          "local": {
+            "type": "string",
+            "description": "só na presencial"
           },
           "convidados": {
             "type": "array",

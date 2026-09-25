@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { SendEmailSchema, CreateEventSchema, CreateDocSchema, AppendDocSchema } from '@mktos/shared';
+import {
+  SendEmailSchema,
+  CreateEventSchema,
+  MarcarReuniaoSchema,
+  CreateDocSchema,
+  AppendDocSchema,
+} from '@mktos/shared';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
@@ -66,6 +72,29 @@ export class GoogleController {
       actorId: user.sub,
       capabilityId: 'comunicacao.agenda.listar',
       args: { limite: max ? Number(max) : 10 },
+    });
+  }
+
+  /**
+   * A agenda de um intervalo — o que a tela `/agenda` desenha.
+   *
+   * Separada de `GET /google/calendar` porque são perguntas diferentes: aquela
+   * responde "o que vem a seguir" para o cartão do painel; esta responde "o que
+   * tem em setembro", e é a única que sabe olhar para trás.
+   */
+  @Get('calendar/periodo')
+  @RequirePermissions('dashboard.ver')
+  calendarPeriodo(
+    @CurrentUser() user: JwtUser,
+    @Query('de') de: string,
+    @Query('ate') ate: string,
+    @Query('max') max?: string,
+  ) {
+    return this.porta.executar({
+      orgId: user.orgId,
+      actorId: user.sub,
+      capabilityId: 'comunicacao.agenda.periodo',
+      args: { de, ate, ...(max ? { limite: Number(max) } : {}) },
     });
   }
 
@@ -163,6 +192,54 @@ export class GoogleController {
         ...(input.attendees?.length ? { convidados: input.attendees } : {}),
       },
       resource: { type: 'agenda.evento.criar', id: input.title },
+      approvalToken: token,
+    });
+  }
+
+  /**
+   * MARCAR REUNIÃO NO PADRÃO DA CASA — a rota que a tela `/agenda` usa.
+   *
+   * Repare no que ela NÃO aceita: título. Quem monta é o conector, com
+   * `montarTituloDeReuniao`, e o corpo só traz os campos (modalidade, cliente,
+   * responsável). É a forma de o padrão valer também para o que não passa por
+   * esta rota — um agente chamando `agenda.reuniao.marcar` pela porta recebe o
+   * mesmo tratamento, porque o título nasce do outro lado.
+   *
+   * `POST /google/calendar/event` continua existindo para o que não é reunião.
+   */
+  @Post('calendar/reuniao')
+  @RequirePermissions('agenda.editar')
+  marcarReuniao(
+    @CurrentUser() user: JwtUser,
+    @Body() body: unknown,
+    @Headers('x-approval-token') token?: string,
+  ) {
+    const input = MarcarReuniaoSchema.parse(body);
+    return this.porta.executar({
+      orgId: user.orgId,
+      actorId: user.sub,
+      capabilityId: 'agenda.reuniao.marcar',
+      args: {
+        tipo: input.tipo,
+        modalidade: input.modalidade,
+        ...(input.cliente ? { cliente: input.cliente } : {}),
+        responsavel: input.responsavel,
+        inicio: input.inicio,
+        ...(input.fim ? { fim: input.fim } : {}),
+        ...(input.duracaoMinutos ? { duracaoMinutos: input.duracaoMinutos } : {}),
+        ...(input.pauta ? { pauta: input.pauta } : {}),
+        ...(input.local ? { local: input.local } : {}),
+        ...(input.convidados?.length ? { convidados: input.convidados } : {}),
+      },
+      /*
+       * O recurso é quem a reunião TOCA — o cliente, ou a casa. A aprovação fica
+       * amarrada a isso e não ao horário: "reunião com a Andrade Peças" é o que
+       * quem confirma precisa ler na fila.
+       */
+      resource: {
+        type: 'agenda.reuniao.marcar',
+        id: input.tipo === 'cliente' ? (input.cliente ?? 'cliente') : 'interna',
+      },
       approvalToken: token,
     });
   }
