@@ -1090,6 +1090,17 @@ describe('--modulos: repassado ao provisionar-tenant da empresa do cliente', () 
     semRastro(c, comCliente(c, ['--modulos', 'financeiros', '--so-checar']), 'so-checar');
   });
 
+  it('--so-checar com --modulos não diz "nem clone": houve o clone temporário do catálogo', () => {
+    const com = comCliente(caixa(), ['--modulos', 'financeiro', '--so-checar']);
+    expect(com.status, com.stderr).toBe(0);
+    expect(com.stdout).not.toMatch(/nem clone/);
+    expect(com.stdout).toMatch(/nada persistente foi criado \(nem diretório, nem segredo\); o único clone foi o temporário do catálogo de módulos da tag v1, já apagado/);
+    const sem = comCliente(caixa(), ['--so-checar']);
+    expect(sem.status, sem.stderr).toBe(0);
+    expect(sem.stdout).toMatch(/nada foi criado \(nem diretório, nem segredo, nem clone\)/);
+    expect(sem.stdout).not.toMatch(/catálogo/);
+  });
+
   it('`todos` não se mistura com outras chaves', () => {
     for (const ruim of ['todos,leads', 'leads,todos', 'leads,todos,metas']) {
       const c = caixa();

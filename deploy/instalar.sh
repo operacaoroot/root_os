@@ -253,8 +253,12 @@ conferir_portas_internas "$ENV"
 [ -d "$BASE" ] && conferir_distinto_das_irmas "$BASE" "$AMBIENTE" "$ENV"
 
 if [ "$SO_CHECAR" = 1 ]; then
-  echo "[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone)."
-  [ "$MODULOS_CONFERIDOS" = 0 ] || echo "  módulos conferidos no catálogo da tag $TAG (lido de um clone temporário, já apagado)"
+  if [ "$MODULOS_CONFERIDOS" = 0 ]; then
+    echo "[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone)."
+  else
+    echo "[instalar] só checando — nada persistente foi criado (nem diretório, nem segredo); o único clone foi o temporário do catálogo de módulos da tag $TAG, já apagado."
+    echo "  módulos conferidos no catálogo da tag $TAG: $MODULOS_CLIENTE"
+  fi
   echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
   echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
   echo "  endereço: $URL_PUBLICA$([ "$MODO_LOCAL" = 1 ] && echo " (máquina local: só esta máquina alcança)" || true)"
