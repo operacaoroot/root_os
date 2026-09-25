@@ -116,7 +116,7 @@ export function argsDoEnvio(
   const descricao = descricaoQueSobe(e.descricao ?? '', e.bioPage, ctx.origemDaBio);
   const texto = problemaDoTexto(titulo, descricao);
   if (texto) return { problema: texto };
-  if (!e.thumbEscolhida) return { problema: 'Escolha a thumb que sobe ao YouTube no pacote.' };
+  if (!e.thumbEscolhida) return { problema: 'Escolha a thumb que sobe na seção YouTube do episódio.' };
   const thumb = thumbEscolhida(e.thumbs, e.thumbEscolhida);
   if (!thumb) return { problema: 'A thumb escolhida ainda não foi renderizada: rode root-midia thumbs no Mac.' };
   if (!arquivo) return { problema: 'O Mac ainda não declarou o vídeo final: rode root-midia youtube ep-NN --declarar.' };
@@ -143,7 +143,7 @@ export function argsDaPublicacao(
 ): { args: ArgsDaPublicacaoNoYoutube } | { problema: string } {
   const envio = argsDoEnvio(e, arquivo, ctx);
   if ('problema' in envio) return envio;
-  if (!e.publicarNoYoutubeEm) return { problema: 'Defina o horário do vídeo no pacote.' };
+  if (!e.publicarNoYoutubeEm) return { problema: 'Defina o horário do vídeo na seção YouTube do episódio.' };
   return { args: { ...envio.args, publicarEm: e.publicarNoYoutubeEm.toISOString() } };
 }
 

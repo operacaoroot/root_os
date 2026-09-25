@@ -4247,10 +4247,10 @@ export function faltasDoYoutube(e: {
   if (!e.conectado) saida.push('O canal do YouTube não está conectado: conecte em Conexões (o OAuth é feito na conta dona do canal).');
   if (!e.tituloEscolhido) saida.push('Marque o título do vídeo no pacote.');
   if (!e.descricao) saida.push('O pacote não tem descrição: gere o pacote.');
-  if (!e.thumbEscolhida) saida.push('Escolha a thumb que sobe ao YouTube no pacote.');
+  if (!e.thumbEscolhida) saida.push('Escolha a thumb que sobe na seção YouTube do episódio.');
   else if (!e.thumbComImagem) saida.push('A thumb escolhida ainda não foi renderizada: rode root-midia thumbs no Mac.');
   if (!e.arquivo) saida.push('O Mac ainda não declarou o vídeo final: rode root-midia youtube ep-NN --declarar.');
-  if (!e.publicarEm) saida.push('Defina o horário do vídeo no pacote.');
+  if (!e.publicarEm) saida.push('Defina o horário do vídeo na seção YouTube do episódio.');
   else if (e.publicarEm.getTime() - YOUTUBE_ANTECEDENCIA_DO_ENVIO_MS <= e.agora.getTime()) {
     saida.push('O horário do vídeo precisa estar pelo menos 1 h à frente: o envio fecha 1 h antes.');
   } else if (e.publicarEm.getTime() > e.agora.getTime() + e.validadeMaximaMs) {

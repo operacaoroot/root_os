@@ -55,7 +55,7 @@ function estadoDoYoutube(over: Record<string, unknown> = {}) {
     publicarEm: null,
     arquivoFinal: '/Users/pedro/Movies/OBS/final.mp4',
     envio: null,
-    faltas: ['O canal do YouTube não está conectado: conecte em Conexões (o OAuth é feito na conta dona do canal).', 'Escolha a thumb que sobe ao YouTube no pacote.'],
+    faltas: ['O canal do YouTube não está conectado: conecte em Conexões (o OAuth é feito na conta dona do canal).', 'Escolha a thumb que sobe na seção YouTube do episódio.'],
     itens: [],
     url: null,
     ...over,
@@ -79,7 +79,7 @@ describe('MD10: a seção YouTube do episódio', () => {
     expect(apiGet).toHaveBeenCalledWith('/pauta/episodios/e1/youtube', 'tok');
     expect(secao()).toHaveTextContent('auditoria pendente: nada vai ao YouTube');
     expect(secao()).toHaveTextContent('root-midia youtube ep-01');
-    expect(secao()).toHaveTextContent('Escolha a thumb que sobe ao YouTube no pacote.');
+    expect(secao()).toHaveTextContent('Escolha a thumb que sobe na seção YouTube do episódio.');
     expect(secao()).toHaveTextContent('não declarado pelo Mac');
     await userEvent.click(within(secao()).getByRole('button', { name: 'Conectar o canal' }));
     await waitFor(() => expect(navegar).toHaveBeenCalledWith('https://accounts.google.com/o/oauth2/v2/auth?state=abc'));
