@@ -780,6 +780,31 @@ describe.skipIf(!URL)('MD9: a fila da DM à mão pela porta, com o dublê da Gra
     }
   });
 
+  it('a linha inteira (commentId e HMAC) some aos 14 dias do comentário; a que tem envio da DM espera o envio vencer', async () => {
+    const dia = 86_400_000;
+    const linha = (commentId: string, diasAtras: number) => {
+      const comentadoEm = new Date(relogio.getTime() - diasAtras * dia);
+      return { pecaId: carrossel, commentId, midiaId: 'midia-carrossel', palavra: 'AGENTES', pessoaHmac: 'h-mesma', usuario: null, comentadoEm, expiraEm: expiraEmDo(comentadoEm) };
+    };
+    await prisma.comentarioComPalavra.createMany({ data: [linha('velha', 15), linha('com-envio', 15), linha('recente', 13)] });
+    const comEnvio = await prisma.comentarioComPalavra.findFirstOrThrow({ where: { orgId: ORG, commentId: 'com-envio' } });
+    await prisma.envioDeResposta.create({
+      data: { comentarioId: comEnvio.id, loteItemId: 'item-qualquer', pessoaHmac: 'h-mesma', estado: 'enviado', expiraEm: new Date(relogio.getTime() + 75 * dia) },
+    });
+    try {
+      await naEmpresa(() => servico.expurgar(ORG, relogio));
+      const ficaram = await prisma.comentarioComPalavra.findMany({ where: { orgId: ORG }, select: { commentId: true } });
+      expect(ficaram.map((l) => l.commentId).sort()).toEqual(['com-envio', 'recente']);
+
+      // O envio venceu e foi expurgado: a passagem seguinte leva o pai junto, sem deixar filho órfão.
+      await prisma.envioDeResposta.deleteMany({ where: { orgId: ORG } });
+      await naEmpresa(() => servico.expurgar(ORG, relogio));
+      expect((await prisma.comentarioComPalavra.findMany({ where: { orgId: ORG } })).map((l) => l.commentId)).toEqual(['recente']);
+    } finally {
+      await prisma.envioDeResposta.deleteMany({ where: { orgId: ORG } });
+    }
+  });
+
   it('com mais de 200 linhas a fila corta as respondidas, nunca a pendente que vence primeiro; a contagem vem do banco', async () => {
     const hora = 3_600_000;
     await prisma.comentarioComPalavra.createMany({

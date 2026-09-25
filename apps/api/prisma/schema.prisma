@@ -1716,7 +1716,8 @@ model ComentarioComPalavra {
   midiaId       String
   palavra       String
   pessoaHmac    String
-  /// O @ de quem comentou; nulo depois de `expiraEm`.
+  /// O @ de quem comentou; nulo depois de `expiraEm`. A linha inteira (o `commentId` e o HMAC) é apagada 14 dias depois
+  /// do comentário; a que tem `envio`, quando ele vence (90 dias) — `ComentariosService.expurgar`.
   usuario       String?
   comentadoEm   DateTime
   expiraEm      DateTime

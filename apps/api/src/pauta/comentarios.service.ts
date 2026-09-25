@@ -171,7 +171,8 @@ export interface RegraDaMateria {
  *     sha256 sem chave de um @ se desfaz calculando o hash dos candidatos.
  *   · A GRAVAÇÃO é da rotina, depois: uma linha por comentário, única por
  *     empresa. A reentrega (a mesma leitura de 10 em 10 min) cai na mesma linha.
- *   · O @ vive 7 dias (`expiraEm`): a passagem seguinte ao prazo o anula.
+ *   · O @ vive 7 dias (`expiraEm`): a passagem seguinte ao prazo o anula. A
+ *     linha inteira some aos 14 dias (a que tem envio da DM, quando ele vence).
  *   · "Marquei como respondido" vai ao RASTRO (`pauta.dm_manual_respondida`)
  *     só com o HMAC da pessoa.
  *
@@ -312,11 +313,21 @@ export class ComentariosService implements OnModuleInit {
     return linhas.filter((p) => ehPecaDaSemana(p.meta) && /^[A-Z0-9]{3,20}$/.test(lerMetaDaSemana(p.meta).palavraChave ?? ''));
   }
 
-  /** Apaga o @ das linhas que passaram dos 7 dias. Devolve quantas. */
+  /**
+   * Apaga o @ das linhas que passaram dos 7 dias e devolve quantas. A linha
+   * inteira some quando a fila deixa de mostrá-la (14 dias do comentário): o
+   * `commentId` reabre o @ pela Graph, e o HMAC estável liga a mesma pessoa em
+   * todos os posts. A que tem envio da DM automática fica até o envio vencer
+   * (90 dias, D-MC9.9) e sai na passagem seguinte ao expurgo dele. A coleta não
+   * a traz de volta: ela só lê post dos últimos 8 dias.
+   */
   async expurgar(orgId: string, agora: Date = this.agora()): Promise<number> {
     const r = await this.prisma.comentarioComPalavra.updateMany({
       where: { orgId, expiraEm: { lte: agora }, usuario: { not: null } },
       data: { usuario: null },
+    });
+    await this.prisma.comentarioComPalavra.deleteMany({
+      where: { orgId, comentadoEm: { lte: new Date(agora.getTime() - MOSTRA_POR_DIAS * DIA) }, envio: { is: null } },
     });
     return r.count;
   }
