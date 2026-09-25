@@ -335,3 +335,50 @@ Q-001 a Q-003 já estavam respondidas em DUVIDAS.md (seção "Respostas", 25/09)
 - Inspeção de SSL e proxy numa rede corporativa: só a lógica, numa rede sem proxy.
 - Drive compartilhado só para leitura: a escrita local passa e o envio falha depois; o kit declara, não detecta.
 - Contato da FullBPO (Q-006) e o enxugamento do bundle (Q-007).
+
+## 25/09/2026 — Q-007 (b): bundle sem `docs/` e sem as pastas de teste, build provado
+
+Decisões do Pedro de hoje (Q-005 a, Q-006 contato, Q-007 b, marca ROOT) registradas em DUVIDAS.md; aberta **Q-008** (resíduo "FullBPO" no código do produto, com um texto de tela no Financeiro). Escrita só no worktree, no scratchpad e na pasta do kit.
+
+### O que mudou (`c253740`)
+- `distribuicao/montar-bundle.sh`, lista `REMOVER`: `docs` (inteira, 89 arquivos), `apps/api/test` (66), `apps/web/tests` (32), `packages/policy/test` (2), `deploy/test-stubs` (8; só serve a `apps/api/test/deploy-instancia.test.ts`, que saiu junto) e, como antes, `CLAUDE.md` e `tools/clickup-inventario.py`. `apps/mcp`/`packages/shared`/`packages/mcp` não têm pasta de teste. Guarda nova: sobrou arquivo `*.test.*`/`*.spec.*` ou pasta `test/`, `tests/`, `__tests__/` na árvore → a montagem para com exit 1.
+- `distribuicao/CLAUDE.md` (o contrato que vai na raiz do bundle): 3 menções a FullBPO → Root. A cópia do kit (`rootos-home/CLAUDE.md`) recebeu o mesmo arquivo, para as duas continuarem iguais.
+- Build × removidos: o `Dockerfile` faz `COPY . .` e só builda `src/` (api: `tsconfig.build.json` → `include: [src, prisma]`; mcp e shared: `src`; policy: `tsup src/index.ts`; web: `next build`). `vitest.config.ts` e `tsconfig.test.json` citam as pastas só por texto e só servem ao `test`. `deploy/*.sh` não lê `docs/` nem `test-stubs` (0 referências fora de comentário). O kit (PLANO, LEIA-ME, workflow) não cita `docs/` nem teste do repo (grep 0). Nenhum ajuste de build foi preciso.
+
+### Evidência
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | `montar-bundle.sh` duas vezes, áreas novas | 0 · 0 | mesmo sha256 `6d7f76bf…cb2f` (2.144.314 bytes; o antigo `6ae67cc0…7c31` tinha 4.118.890); commit `3397140941264725e906334348fe6abe2f6d90ad`, árvore `1101a7f`, tag `3ed4add` |
+| b | `git clone` do bundle + `checkout --detach v0.4.2` + `git -C <clone> bundle verify` | 0 · 0 · 0 | HEAD = tag = `3397140…`; `rev-list --all` 1; `list-heads` 1; `status --porcelain` 0; autor, committer e tagger `ROOT OS <release@rootos.invalid>` |
+| c | `git diff --name-status` tag `7f8a762` × distribuição | 0 | 198 D (89 `docs/`, 66 + 32 + 2 de teste, 8 `test-stubs`, 1 `tools/`), 1 M (`CLAUDE.md`), 1 A (`.claude/settings.json`); 584 arquivos na árvore |
+| d | varredura `grep -riF` na árvore (8 padrões) | 0 | `120363` 0 · `vps-root` 0 · `2.25.223.180` 0 · `31.97.21.167` 0 · `pedro.magnago` 1 arquivo · `fullbpo` 5 · `Cardozo` 4 · `Saggioro` 4 (os mesmos 4). Detalhe abaixo |
+| e | espaço antes do build: `df -k /System/Volumes/Data` (o `Docker.raw` do Docker Desktop mora nele) | 0 | 11.736.864 KiB livres (≈ 12,0 GB, acima dos 8 GB); dentro da VM, `/` com 343 GB livres (arquivo esparso: o limite real é o disco do Mac). `docker system df`: imagens 75,66 GB, cache de build 30,17 GB |
+| f | `/bin/bash deploy/instalar.sh --ambiente producao --base <scratch>/ensaio --repo <scratch>/rootos-v0.4.2.bundle --tag v0.4.2 --bind-ip 127.0.0.1 --portas web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021 --cliente campo-bom --modulos todos --admin-email ensaio@exemplo.com --sem-llm`, do clone do bundle novo, em segundo plano, com `ROOTOS_GOOGLE_CLIENT_ID`/`SECRET` sintéticos (valores `ensaio-sintetico…`, não são credencial) | **0** | 10/10 passos; imagem `rootos-app:v0.4.2-339714094126` (2,34 GB) construída da árvore sem `docs/` nem testes; menor espaço livre no build 7.590.288 KiB |
+| g | `curl 127.0.0.1:4201/api/health` · `curl 127.0.0.1:4200/` | 0 · 0 | 200 · 200 |
+| h | `curl 127.0.0.1:4201/api/health/versao` | 0 | `{"version":"v0.4.2","commit":"3397140941264725e906334348fe6abe2f6d90ad"}` = commit da tag do bundle |
+| i | `psql … SELECT slug, cardinality(modulos) FROM "Org" WHERE slug='campo-bom'` · usuário `ensaio@exemplo.com` | 0 · 0 | `campo-bom\|11` (trabalho, relatorios, leads, campanhas, pixels, conteudo, pauta, instagram, bio, metas, financeiro) · 1 |
+| j | valores de segredo do `.env` do ensaio (PASSWORD/SECRET/KEY/TOKEN, ≥ 8 caracteres) no log da instalação | 0 | 6 conferidos, 0 no log (só contagem) |
+| k | `docker compose -p rootos-producao down -v` | 0 | 5 containers, 3 volumes e a rede `rootos-producao-net` removidos; depois 0 · 0 · 0 |
+| l | `docker rmi rootos-app:v0.4.2-339714094126` · `docker rmi node:22-slim` | 0 · 0 | a imagem do ensaio e a base `node:22-slim`, que não existia no Docker antes desta etapa e foi baixada por ela (349 MB) |
+| m | foto antes × depois (containers, volumes, redes: `cmp`) | 0 · 0 · 0 | 21 · 274 · 9 linhas iguais; imagens 50 → 50 no `docker system df`, lista igual à de antes do `pull` |
+| n | `cp` do bundle para `kit-rootos-v0.4.2/rootos-v0.4.2.bundle` + clone e `bundle verify` do arquivo do kit | 0 · 0 | sha256 do kit = `6d7f76bf…cb2f`; tag → `3397140…`; `CLAUDE.md` do bundle = `rootos-home/CLAUDE.md` (`cmp` 0) |
+| o | `shasum -a 256 -c SHA256SUMS` no kit | 1 | 2 FAILED esperados (`rootos-v0.4.2.bundle`, `rootos-home/CLAUDE.md`); **o SHA256SUMS é regerado na fase seguinte** |
+
+### O que sobrou na varredura (d), arquivo e motivo — tudo código do produto, nada removido
+| Padrão | Arquivo | Motivo |
+|---|---|---|
+| `pedro.magnago`, `fullbpo` | `apps/api/prisma/seed-politica.ts:59,64` | comentário: exemplo de autor da política no uso do seed |
+| `fullbpo` | `apps/web/src/app/financeiro/page.tsx:443` | **texto de tela** do Financeiro ("plano de contas gerencial FullBPO"); vai à Q-008 por causa da decisão de marca |
+| `fullbpo` | `apps/api/prisma/data/plano-contas-fullbpo.ts`, `apps/api/prisma/seed-finops.ts` | nome do template do plano de contas (`TEMPLATE_FULLBPO`) e comentários |
+| `fullbpo` | `apps/api/src/events/pixel-tenant.service.ts:27` | comentário que cita o slug de uma empresa |
+| `Cardozo`, `Saggioro` | `docker-compose.yml:201`, `.env.example:291`, `apps/api/src/integrations/clickup.service.ts:396` | default de `CLICKUP_IGNORE_TEAMS` (isolamento do ClickUp); é configuração, trocar é mudar o produto |
+| `Cardozo`, `Saggioro` | `README.md:8` | frase de isolamento do README |
+
+Os padrões de antes que não estavam nesta lista (`operacao.root@gmail.com`, nomes da equipe) não foram recontados; os testes e os docs que os levavam saíram.
+
+### Não provado nesta etapa
+- Build no Colima do Mac da Campo Bom: o ensaio rodou no Docker Desktop deste Mac, como o anterior.
+- O `README.md` da raiz ficou com 20 links para `docs/` que não existem mais no bundle; os scripts `test` dos `package.json` rodam o `vitest` sem arquivo. Nenhum dos dois é usado pelo kit nem pelo build.
+- O cache de build do Docker cresceu 30,17 → 32,15 GB e o disco do Mac fechou com 9.866.556 KiB livres (tinha 11.736.864): sem prune, por regra. As imagens somam 77,23 GB contra 75,66 GB antes, com a mesma lista; a diferença não foi atribuída a um objeto.
+- `SHA256SUMS` do kit: desatualizado de propósito até a fase seguinte (o).
+- As menções a FullBPO no LEIA-ME, PLANO, CLAUDE.md do kit, `retorno/LEIA.txt` e no workflow (decisão de marca) e a troca do contato (Q-006): fase seguinte.

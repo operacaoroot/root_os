@@ -97,3 +97,20 @@ Com a resposta: trocar as duas linhas da seção no `LEIA-ME.md` (sem a marca), 
 - (c) outra.
 
 Enquanto não houver resposta: vale (a). O `montar-bundle.sh` tem a lista `REMOVER` num lugar só.
+
+## Respostas Q-005, Q-006 e Q-007 (25/09/2026, decisões do Pedro)
+
+- **Q-005 → (a).** Cliente OAuth num projeto Google Cloud **da Root**, um só para a Campo Bom e revogável. As duas credenciais (`ROOTOS_GOOGLE_CLIENT_ID` e `ROOTOS_GOOGLE_CLIENT_SECRET`) chegam por canal separado, o gerenciador de senhas, e nunca entram no kit. A URI de redirect (`http://localhost:4000/api/google/callback`) é cadastrada pela Root no console do Google. O kit não muda por causa disso: o `~/RootOS/google.env` (0600) da Fase 2 continua sendo onde a pessoa grava as duas linhas.
+- **Q-006 → contato = Pedro Magnago, `pedro.magnago@fullbpo.com`, sem telefone.** A pasta vai à Campo Bom **compartilhada no Drive com permissão de edição**, e o relatório volta por `retorno/`. Pendente para a fase seguinte: trocar a seção do `LEIA-ME.md` (sem a marca `PENDENTE (Q-006)`) e regerar o `SHA256SUMS`.
+- **Q-007 → (b).** O bundle vai sem `docs/` e sem as pastas de teste. Feito em `c253740` (lista `REMOVER` do `distribuicao/montar-bundle.sh`); prova de build e varredura em STATUS.md, seção "Q-007 (b)".
+- **MARCA:** quem assina a instalação é a **ROOT**, não a FullBPO. Nenhuma menção a "FullBPO" no kit, fora do endereço de e-mail do contato. O `CLAUDE.md` que vai dentro do bundle já foi trocado (3 menções → Root, `c253740`). LEIA-ME, PLANO, CLAUDE.md do kit, `retorno/LEIA.txt` e o workflow ficam para a fase seguinte.
+
+## Q-008 · 25/09/2026 · NÃO bloqueia; resíduo de marca no CÓDIGO do produto
+
+**Fato:** depois da Q-007 (b), a varredura da árvore do bundle (`3397140`) ainda acha "FullBPO" em 5 arquivos de código do produto, que a remoção por pasta não alcança sem mudar o produto:
+- `apps/web/src/app/financeiro/page.tsx:443`: **texto de tela**, "plano de contas gerencial FullBPO (mapeado ao DRE)". A Campo Bom vê isso se abrir o módulo Financeiro;
+- `apps/api/prisma/data/plano-contas-fullbpo.ts` e `apps/api/prisma/seed-finops.ts`: o nome do template do plano de contas (`TEMPLATE_FULLBPO`) e comentários;
+- `apps/api/prisma/seed-politica.ts:59,64`: `pedro.magnago@fullbpo.com` como exemplo de autor num comentário;
+- `apps/api/src/events/pixel-tenant.service.ts:27`: o slug `"fullbpo"` citado num comentário.
+
+**Pergunta:** o texto de tela do Financeiro fica, ou vira uma correção do produto (na main, com tag nova e novo bundle)? Os outros quatro são nome interno ou comentário e não aparecem para o usuário.
