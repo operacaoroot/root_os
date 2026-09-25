@@ -29,6 +29,7 @@ Comece por [CLAUDE.md](CLAUDE.md) (as armadilhas que mais custam tempo) e pelo [
 | Conectores | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
 | Ferramentas MCP | [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) |
 | Segurança, RBAC, LGPD | [docs/SECURITY.md](docs/SECURITY.md), [docs/PRIVACY.md](docs/PRIVACY.md) |
+| Agenda da Root e o padrão de nomenclatura | [docs/AGENDA.md](docs/AGENDA.md) |
 | Módulo Pauta e Referências | [docs/PAUTA.md](docs/PAUTA.md) |
 | Módulo Link na bio | [docs/DEPLOY_BIO.md](docs/DEPLOY_BIO.md) |
 | Root Central | [docs/CENTRAL.md](docs/CENTRAL.md) |

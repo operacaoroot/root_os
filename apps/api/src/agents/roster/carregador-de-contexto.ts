@@ -155,7 +155,7 @@ export const TEMAS_DA_CARGA: readonly TemaDaCarga[] = [
     obrigatorio: true,
     minimo: 40,
     aprofundar:
-      'Me diga também o que cada um desses números significa na prática — por exemplo, o que ' +
+      'Me diga também o que cada um desses números significa. Por exemplo: o que ' +
       'conta como "venda fechada" para vocês.',
     sinaisDeConcretude: [],
   },
@@ -197,7 +197,7 @@ export const TEMAS_DA_CARGA: readonly TemaDaCarga[] = [
     tags: ['onboarding', 'aquisicao'],
     obrigatorio: false,
     minimo: 30,
-    aprofundar: 'Se puder, diga mais ou menos quanto vem de cada um — mesmo que seja chute.',
+    aprofundar: 'Se puder, diga mais ou menos quanto vem de cada um, mesmo que seja um chute.',
     sinaisDeConcretude: [],
   },
   {

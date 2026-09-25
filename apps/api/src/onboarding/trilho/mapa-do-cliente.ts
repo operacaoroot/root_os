@@ -100,7 +100,7 @@ const ORDEM: readonly ChaveDaEstacao[] = ['conversa', 'acordo', 'kickoff', 'cont
 const TEXTO: Record<ChaveDaEstacao, { titulo: string; oQueE: string }> = {
   conversa: {
     titulo: 'Conversa',
-    oQueE: 'A conversa em que você conta a casa e a gente escuta — é dela que sai todo o resto.',
+    oQueE: 'A conversa em que você conta a casa e a gente escuta. É dela que sai todo o resto.',
   },
   acordo: {
     titulo: 'Acordo',
@@ -112,7 +112,7 @@ const TEXTO: Record<ChaveDaEstacao, { titulo: string; oQueE: string }> = {
   },
   contexto: {
     titulo: 'Contexto',
-    oQueE: 'As suas fontes entram: pastas, materiais, propostas — o que a gente precisa ler para falar a sua língua.',
+    oQueE: 'As suas fontes entram: pastas, materiais e propostas, o que a gente precisa ler para falar a sua língua.',
   },
   memoria: {
     titulo: 'Memória viva',

@@ -310,7 +310,7 @@ export class LinkPublicoService {
   async confirmar(token: string, temaId: string, nome: string | null): Promise<EstadoDoLink> {
     return this.escrever(token, temaId, nome, async (t, item, quem) => {
       if (!item || !item.proposta || !LinkPublicoService.COM_PROPOSTA.includes(item.status)) {
-        throw new ConflictException('não há proposta para confirmar neste tema — responda em vez de confirmar.');
+        throw new ConflictException('não há proposta para confirmar neste tema. Responda em vez de confirmar.');
       }
       await this.prisma.onboardingItem.update({
         where: { id: item.id },
@@ -328,7 +328,7 @@ export class LinkPublicoService {
   async corrigir(token: string, temaId: string, textoBruto: string, nome: string | null): Promise<EstadoDoLink> {
     return this.escrever(token, temaId, nome, async (t, item, quem) => {
       if (!item || !item.proposta || !LinkPublicoService.COM_PROPOSTA.includes(item.status)) {
-        throw new ConflictException('não há proposta para corrigir neste tema — responda em vez de corrigir.');
+        throw new ConflictException('não há proposta para corrigir neste tema. Responda em vez de corrigir.');
       }
       const limpo = varrerSegredos(String(textoBruto ?? '').trim()).texto;
       if (!limpo) throw new BadRequestException('a correção veio vazia.');
@@ -504,7 +504,7 @@ export class LinkPublicoService {
           this.log.warn(`trilho ${t.id}: o retrato saiu, mas a memória do cliente não foi carregada (${(e as Error).message})`);
         }
       }
-      return { retrato, mensagem: 'Pronto. Isto é o que o OS entendeu — com a origem de cada parte.' };
+      return { retrato, mensagem: 'Pronto. Isto é o que o OS entendeu, com a origem de cada parte.' };
     });
   }
 
