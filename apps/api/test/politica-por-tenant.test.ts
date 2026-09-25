@@ -333,8 +333,15 @@ describe.skipIf(!URL_DO_BANCO)('política por empresa, contra o banco', () => {
      *
      * O conserto é do TESTE, não do código: a chave indefinida que ainda prova o
      * que este caso quer provar é uma que a base realmente não tem. Ficam
-     * `desfazer` (a base não declara) e uma capacidade SEM esquema
-     * (`financeiro.lancamento.criar`), para que continuem sendo duas.
+     * `desfazer` (a base não declara) e uma capacidade SEM esquema, para que
+     * continuem sendo duas.
+     *
+     * E ACONTECEU DE NOVO (etapa A7 do plano de produto, 16/09/2026): a
+     * capacidade sem esquema era `financeiro.lancamento.criar`, e ela ganhou
+     * `argsSchema` quando a rota passou pela porta. Mesmo mecanismo, mesma
+     * recusa certa, mesmo conserto — trocada por `relatorio.gerar`, que segue sem
+     * esquema. Quando ESTA ganhar esquema, este caso vai reprovar de novo, e é
+     * assim que ele deve se comportar.
      */
     it('delta com campo opcional ausente não abre versão nova a cada chamada', async () => {
       const comChaveIndefinida = delta([
@@ -343,8 +350,8 @@ describe.skipIf(!URL_DO_BANCO)('política por empresa, contra o banco', () => {
           // chave que a base NÃO tem, declarada com valor indefinido
           desfazer: undefined,
         }),
-        daBase('financeiro.lancamento.criar', {
-          descricao: 'lançamento — texto próprio desta empresa',
+        daBase('relatorio.gerar', {
+          descricao: 'texto próprio desta empresa',
           // idem: a base não declara esquema para esta capacidade
           argsSchema: undefined,
         }),

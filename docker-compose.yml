@@ -1,11 +1,13 @@
 # Marketing OS — infra ISOLADA (stack próprio do projeto root)
 # ⚠️ Ver docs/ISOLATION.md. NADA aqui compartilha rede/volume/porta com o escritório C&S.
-name: marketing-os                     # isola containers, rede e volumes deste projeto
+# Defaults mantêm a instalação histórica. O instalador define valores próprios
+# para produção e homologação; sem isso duas stacks no mesmo host colidiriam.
+name: ${COMPOSE_PROJECT_NAME:-marketing-os}
 
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: mktos_db
+    container_name: ${ROOTOS_DB_CONTAINER:-mktos_db}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-mkt}
@@ -24,7 +26,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: mktos_redis
+    container_name: ${ROOTOS_REDIS_CONTAINER:-mktos_redis}
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6390}:6379"
@@ -34,7 +36,7 @@ services:
 
   minio:
     image: minio/minio
-    container_name: mktos_minio
+    container_name: ${ROOTOS_MINIO_CONTAINER:-mktos_minio}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -56,14 +58,18 @@ services:
     build:
       context: .
       args:
+        ROOTOS_VERSION: ${ROOTOS_VERSION:-development}
+        ROOTOS_COMMIT: ${ROOTOS_COMMIT:-unknown}
         # Ver o `ARG` homônimo no Dockerfile. `NEXT_PUBLIC_*` é trocada pelo
         # VALOR no `next build`; posta só no `environment:` do serviço `web`,
         # ela não chega ao navegador — o pacote já foi compilado sem ela.
         # Trocar esta chave exige RECONSTRUIR a imagem (`--build`), não basta
         # reiniciar o container.
         NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
-    image: mktos-app
-    container_name: mktos_api
+    # O instalador usa tag imutável por release/commit. O default preserva o
+    # fluxo local e a instalação histórica.
+    image: ${ROOTOS_IMAGE:-mktos-app}
+    container_name: ${ROOTOS_API_CONTAINER:-mktos_api}
     working_dir: /app/apps/api
     command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
     environment:
@@ -299,8 +305,8 @@ services:
       start_period: 40s
 
   web:
-    image: mktos-app
-    container_name: mktos_web
+    image: ${ROOTOS_IMAGE:-mktos-app}
+    container_name: ${ROOTOS_WEB_CONTAINER:-mktos_web}
     working_dir: /app/apps/web
     command: pnpm start
     environment:
@@ -392,7 +398,7 @@ services:
 
 networks:
   marketing-os-net:
-    name: marketing-os-net             # rede dedicada e isolada
+    name: ${ROOTOS_NETWORK_NAME:-marketing-os-net}
 
 volumes:
   mktos_db_data:

@@ -394,6 +394,10 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       'src/google/google.service.ts',
       'src/integrations/clickup.service.ts',
       'src/pauta/evolution.service.ts',
+      // As duas escritas internas que passaram pela porta na etapa A7 do plano
+      // de produto: sem elas aqui a varredura não veria os três efeitos novos.
+      'src/finance/finance.service.ts',
+      'src/users/users.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */
@@ -417,8 +421,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
     const inscritas = QUEM_INSCREVE.flatMap(chavesDe);
     expect(
       inscritas.length,
-      'a varredura achou menos efeitos do que os 21 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
-    ).toBeGreaterThanOrEqual(21);
+      'a varredura achou menos efeitos do que os 24 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
+    ).toBeGreaterThanOrEqual(24);
 
     const foraDoCatalogo = inscritas.filter((id) => !uniao.has(id));
     expect(

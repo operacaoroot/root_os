@@ -1,0 +1,14 @@
+hora: 2026-09-17T15:43:19+00:00
+== inventário Docker da VPS: novos (criados pelo ensaio)
+containers: rootos_homolog_api rootos_homolog_db rootos_homolog_minio rootos_homolog_redis rootos_homolog_web 
+redes: root_marketing-os_default rootos-homologacao-net 
+volumes: root_rootos-homologacao_mktos_db_data root_rootos-homologacao_mktos_minio_data root_rootos-homologacao_mktos_redis_data 
+imagens: rootos-app:madrugada-v5-61ff10bb1461 rootos-app:madrugada-v6-6ce4a4079530 
+sumidos: containers 1 · redes 1 · volumes 0 · imagens 0
+== /srv/rootos: atualizar-v6.log bundles ferramenta homologacao instalar-homolog.log inventario-containers.antes inventario-imagens.antes inventario-redes.antes inventario-volumes.antes sentinelas.antes 
+== homologação no ar: {"version":"madrugada-v5","commit":"61ff10bb1461f7fa8deeb7b01fcf2100cc0f3ea5"}
+== produção: mktos_web:Up 39 minutes mktos_db:Up 39 minutes (healthy) mktos_api:Up 12 hours (healthy) mktos_redis:Up 12 hours mktos_minio:Up 12 hours 
+container sumido: root-os-landing 
+rede sumida: root-os-landing_default 
+containers agora: mktos_web mktos_db mktos_api mktos_redis mktos_minio easypanel-traefik.1.szb48euhcnhqcxxc9kic1ueno easypanel.1.sdjut13knxueyni4wtqzphk7w 
+rede root_marketing-os_default: criada 2026-09-17 15:03:54 · ligada a: mktos_web 

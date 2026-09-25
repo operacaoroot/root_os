@@ -1,20 +1,31 @@
-# Marketing OS — Quickstart (dev)
+# ROOT OS — Quickstart (dev)
 
-> Stack isolado do escritório (ver `docs/ISOLATION.md`). Requer Node ≥ 20, pnpm 9, Docker.
+> Stack isolado do escritório (ver `docs/ISOLATION.md`). Requer **Node ≥ 22**, pnpm 9, Docker.
+> O caminho oficial de desenvolvimento é **dados em container, código no host**: Postgres, Redis e
+> MinIO pelo compose; API e web com `pnpm dev`. (O README descreve o caminho de container, que é o de
+> produção — não misture os dois: as `DATABASE_URL` são diferentes.)
 
 ## 1. Subir o stack de dados isolado
 ```bash
 docker compose up -d db redis minio     # Postgres+pgvector(5442) · Redis(6390) · MinIO(9010/9011)
 ```
+Se a 5442 estiver ocupada (um Postgres de teste avulso, por exemplo), mude `DB_PORT` no `.env` da
+raiz **e** a `DATABASE_URL` do passo 2.
 
 ## 2. Instalar deps + preparar o banco
 ```bash
 pnpm install
-pnpm --filter @mktos/shared build        # gera dist consumido por api/web
-cp apps/api/.env.example apps/api/.env 2>/dev/null || true   # ver DATABASE_URL (porta 5442)
-pnpm --filter @mktos/api db:generate
-pnpm --filter @mktos/api db:migrate       # aplica a migration init
-pnpm --filter @mktos/api db:seed          # cria admin + dados de exemplo
+cp apps/api/.env.example apps/api/.env    # a única obrigatória é DATABASE_URL; leia os comentários
+pnpm bootstrap                            # idempotente: NÃO apaga nada, pode rodar de novo
+```
+O `bootstrap` faz, na ordem certa: build dos pacotes internos → cliente do Prisma → migrations
+(`migrate deploy`) → empresa, papéis, permissões e contas (`db:seed`) → política versionada
+(`db:seed:politica`) → permissões dos papéis (`db:sync-permissions`).
+
+Dados de **exemplo** (leads, campanhas, tarefas) são outro comando, porque ele **apaga e recria** —
+e por isso só roda em banco cujo nome se anuncia como descartável e com a flag explícita:
+```bash
+pnpm --filter @mktos/api db:seed:demo -- --sim-apagar
 ```
 
 ## 3. Rodar
@@ -29,11 +40,17 @@ pnpm --filter @mktos/web dev
 - Web: http://localhost:4000
 - Usuário dev: **admin@marketing-os.local**
 - Senha: **não existe senha padrão, e nenhuma entra em arquivo versionado.** Gere a sua
-  (`openssl rand -base64 24`), ponha em `ADMIN_PASSWORD` no `.env` **antes** do `db:seed` do passo 2
-  e o seed usa essa. Sem a variável, o seed gera uma senha forte e a imprime **uma única vez** na
-  saída — copie dali. Reseed sem `ADMIN_PASSWORD` **não** troca a senha de quem já existe: para
-  rotacionar, defina a variável e rode o seed de novo. Ver `.env.example`.
-- **Só em desenvolvimento.** `db:seed` não é idempotente e apaga dados da org — nunca em produção.
+  (`openssl rand -base64 24`), ponha em `ADMIN_PASSWORD` no `apps/api/.env` **antes** do primeiro
+  `bootstrap` e o seed usa essa ao **criar** a conta. Sem a variável, o seed gera uma senha forte e a
+  imprime **uma única vez** — copie dali. Conta que já existe **nunca** muda de senha por causa da
+  variável: rotacionar é explícito, `pnpm --filter @mktos/api db:seed -- --rotacionar-senhas`.
+- `db:seed` (e o `bootstrap` que o chama) é **idempotente e de preservação exata**: cria só o que
+  falta e **não toca** em empresa, papel, permissão, nome ou senha que já existem — nem módulo
+  desligado, nem lista vazia, nem permissão tirada de propósito, nem senha, mesmo com
+  `ADMIN_PASSWORD` no ambiente. E-mail de conta que pertence a outra empresa faz o seed **parar**.
+  Pode rodar em qualquer ambiente. Operações explícitas, fora do bootstrap: rotacionar senhas
+  (`db:seed -- --rotacionar-senhas`), realinhar papéis com o catálogo (`db:sync-permissions`, que
+  revoga vínculo feito à mão) e dados de exemplo (`db:seed:demo -- --sim-apagar`, que apaga).
 
 ## O que já funciona (Fase 1)
 - Login JWT + RBAC (26 permissões, 6 perfis); sidebar filtra módulos por permissão.

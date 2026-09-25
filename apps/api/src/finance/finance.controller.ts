@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('finance')
@@ -31,6 +32,7 @@ export class FinanceController {
     private readonly finops: FinopsService,
     private readonly apr: AprService,
     private readonly concil: ConciliacaoService,
+    private readonly porta: PortaDoOperador,
   ) {}
 
   // --- Conciliação bancária (score) ---
@@ -215,11 +217,41 @@ export class FinanceController {
     });
   }
 
+  /*
+   * ==========================================================================
+   * CRIAR E APAGAR LANÇAMENTO passam pela porta (RF-G-01, RF-A-01)
+   * ==========================================================================
+   *
+   * As duas estão no catálogo desde a base ROOT — `financeiro.lancamento.criar`
+   * é R3 e `financeiro.lancamento.excluir` é R5 — e viviam aqui como chamada
+   * direta ao serviço, protegidas por `financeiro.editar` e mais nada. Sem
+   * régua, sem retenção, sem segunda pessoa, sem RASTRO pela porta. Uma R5 —
+   * o degrau que a escada diz que o OS NUNCA executa — apagava lançamento em
+   * cima de uma permissão só.
+   *
+   * Agora o controlador TRADUZ e entrega à porta, como o do Google:
+   *   · criar (R3) não sai no clique: a rota responde 200 com
+   *     `{status:'aguardando_aprovacao'}` e OUTRA pessoa confirma;
+   *   · apagar (R5) é recusado com o PREPARO — o OS entrega o que apagar, e a
+   *     pessoa faz na origem. A rota responde 403 sempre, e é o comportamento
+   *     correto do degrau. A tela nunca a chamava.
+   *
+   * `PATCH transactions/:id` continua direto: não tem capacidade no catálogo, e
+   * criá-la é assinatura de capacidade nova — decisão de política, não desta
+   * etapa. Está registrado em docs/PLANO-PRODUTO.md.
+   */
   @Post('transactions')
   @RequirePermissions('financeiro.editar')
   createTransaction(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = CreateFinanceTransactionSchema.parse(body);
-    return this.svc.createTransaction(user.orgId, input, user.sub);
+    return this.porta.executar({
+      orgId: user.orgId,
+      actorId: user.sub,
+      capabilityId: 'financeiro.lancamento.criar',
+      args: input,
+      resource: { type: 'finance_account', id: input.accountId },
+      valorCentavos: Math.round(input.amount * 100),
+    });
   }
 
   @Patch('transactions/:id')
@@ -232,7 +264,13 @@ export class FinanceController {
   @Delete('transactions/:id')
   @RequirePermissions('financeiro.editar')
   deleteTransaction(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.svc.deleteTransaction(user.orgId, id, user.sub);
+    return this.porta.executar({
+      orgId: user.orgId,
+      actorId: user.sub,
+      capabilityId: 'financeiro.lancamento.excluir',
+      args: { id },
+      resource: { type: 'finance_transaction', id },
+    });
   }
 
   // --- Bancos (Open Finance / Pluggy) ---

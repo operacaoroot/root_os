@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# STUB de `docker` para a suíte hermética (apps/api/test/deploy-instancia.test.ts).
+# Registra cada invocação em $STUB_LOG e responde o mínimo que os scripts precisam.
+# Nunca sobe nada. Comportamentos controlados por variáveis STUB_*.
+set -u
+printf 'docker %s\n' "$*" >> "${STUB_LOG:?}"
+sub="${1:-}"; shift || true
+case "$sub" in
+  compose)
+    # `config` é o único subcomando que precisa do compose DE VERDADE: é ele que
+    # funde base + override para o painel, e o que se testa é o conteúdo fundido.
+    case " $* " in *" config "*) exec "${STUB_REAL_DOCKER:?o stub precisa de STUB_REAL_DOCKER para 'compose config'}" compose "$@" ;; esac
+    # extrai os -f para achar o override (o último -f) e o subcomando
+    files=(); cmd=""; rest=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -f) files+=("$2"); shift 2 ;;
+        -p|--project-directory|--env-file) shift 2 ;;
+        version|build|up|run|ps|logs|exec) cmd="$1"; shift; rest=("$@"); break ;;
+        *) shift ;;
+      esac
+    done
+    case "$cmd" in
+      version) exit 0 ;;
+      build)
+        [ "${STUB_FAIL_BUILD:-0}" = 1 ] && exit 1
+        override="${files[${#files[@]}-1]}"
+        # [[:space:]] e não \s: o grep/sed do macOS não entendem \s em ERE
+        img="$(grep -m1 -E '^[[:space:]]*image:' "$override" | sed -E 's/^[[:space:]]*image:[[:space:]]*//' | tr -d '[:space:]')"
+        printf '%s\n' "$img" >> "${STUB_IMAGES:?}"
+        exit 0 ;;
+      up)
+        case " ${rest[*]} " in *" --no-build api web "*) [ "${STUB_FAIL_UP:-0}" = 1 ] && exit 1 ;; esac
+        exit 0 ;;
+      run)
+        joined="${rest[*]}"
+        case "$joined" in
+          *"migrate deploy"*) [ "${STUB_FAIL_MIGRATE_REAL:-0}" = 1 ] && exit 1 ;;
+          *"seed:politica"*)  [ "${STUB_FAIL_POLITICA:-0}" = 1 ] && exit 1 ;;
+        esac
+        exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+  image)
+    [ "${1:-}" = inspect ] || exit 0
+    grep -qxF "${2:-}" "${STUB_IMAGES:?}" 2>/dev/null && exit 0 || exit 1 ;;
+  exec)
+    joined="$*"
+    case "$joined" in
+      *pg_isready*) exit 0 ;;
+      *"count(*) from _prisma_migrations"*)
+        # contagem por banco: o real devolve STUB_COUNT (padrão = nº de aplicadas);
+        # o ensaio devolve o mesmo, salvo STUB_COPIA_INCOMPLETA=1
+        n="${STUB_COUNT:-$(printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n' | grep -c . || true)}"
+        case "$joined" in *rootos_ensaio_*) [ "${STUB_COPIA_INCOMPLETA:-0}" = 1 ] && n=$((n-1)) ;; esac
+        echo "$n"; exit 0 ;;
+      *_prisma_migrations*)
+        [ "${STUB_FAIL_PSQL:-0}" = 1 ] && exit 1
+        # STUB_APPLIED: "nome" ou "nome:checksum", separados por vírgula
+        printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n' | sed -E '/:/! s/$/:/'; echo; exit 0 ;;
+      *pg_dump*) [ "${STUB_FAIL_DUMP:-0}" = 1 ] && exit 1; exit 0 ;;
+      *"CREATE DATABASE"*|*"DROP DATABASE"*) exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+  run)
+    joined="$*"
+    case "$joined" in
+      *rootos-app:v1-*"pnpm smoke"*) [ "${STUB_FAIL_ANTIGA:-0}" = 1 ] && exit 1 ;;
+      *"pnpm smoke"*) [ "${STUB_FAIL_ENSAIO:-0}" = 1 ] && exit 1 ;;
+    esac
+    exit 0 ;;
+  tag) exit 0 ;;
+  *) exit 0 ;;
+esac

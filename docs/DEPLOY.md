@@ -11,6 +11,13 @@
 
 ## 1. Como o código chega na VPS hoje
 
+> **Instância nova (P1, 17/09/2026):** `deploy/instalar.sh` e `deploy/atualizar.sh` são o caminho
+> para uma VPS **de cliente**, sem Syncthing — clone/checkout de **tag** (ADR-013), duas instâncias
+> isoladas (produção e homologação), imagem imutável por tag+commit, ensaio da migration numa cópia
+> do banco e corte transacional. Ver `docs/INSTALACAO.md`. O que está abaixo descreve a VPS da ROOT
+> como ela ainda roda hoje.
+
+
 **Por Syncthing, sincronizando o repositório inteiro entre o Mac e `/srv/marketing-os` — inclusive
 o diretório `.git`.** Não existe `git pull` no servidor, nem rsync, nem pipeline. O que existe é
 uma pasta espelhada.

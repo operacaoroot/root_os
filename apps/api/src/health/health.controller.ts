@@ -20,4 +20,13 @@ export class HealthController {
       time: new Date().toISOString(),
     };
   }
+
+  /** Identifica o artefato em execução sem depender do checkout no host. */
+  @Get('versao')
+  version() {
+    return {
+      version: process.env.ROOTOS_VERSION?.trim() || 'development',
+      commit: process.env.ROOTOS_COMMIT?.trim() || 'unknown',
+    };
+  }
 }

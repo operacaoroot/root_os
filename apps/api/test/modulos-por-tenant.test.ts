@@ -802,10 +802,15 @@ describe.skipIf(!URL)('Org.modulos contra o banco', () => {
  * empresa semeada por requisição. É exatamente o acidente que a fatia existe
  * para impedir.
  *
- * Leitura estática e não execução do seed: `db:seed` não é idempotente, cria
- * dados de demonstração e não pode rodar em produção (ver o aviso no próprio
- * arquivo). O que dá para cobrar sem rodá-lo é que o upsert grava a lista nos
- * DOIS caminhos.
+ * Leitura estática: o que dá para cobrar sem rodar o seed é que o upsert grava
+ * a lista na CRIAÇÃO — e SÓ nela. Desde a etapa P1-b do plano de produto
+ * (17/09/2026) o seed é idempotente e de preservação exata: empresa que existe
+ * fica como está, inclusive com a lista vazia, que é decisão válida (só a
+ * espinha do OS). O "reseed como conserto" que este bloco afirmava deixou de
+ * existir; quem decide módulos de uma empresa existente é o provisionamento
+ * (`POST /tenants/provisionar`, `scripts/provisionar-tenant.ts`), que recebe
+ * `modulos` por escrito. A prova por execução, com fixtures, está em
+ * `test/seed-sem-destruicao.test.ts`.
  */
 describe('o seed provisiona a empresa da ROOT com módulos', () => {
   const seed = readFileSync(path.join(RAIZ, 'prisma', 'seed.ts'), 'utf8');
@@ -822,9 +827,10 @@ describe('o seed provisiona a empresa da ROOT com módulos', () => {
     expect(create, '`create` do upsert da Org não grava `modulos`').toMatch(/\bmodulos\b/);
   });
 
-  it('e também na ATUALIZAÇÃO — reseed é o único conserto que hoje existe', () => {
+  it('e NÃO na atualização — empresa que existe fica como está (P1-b)', () => {
     const update = /\bupdate:\s*\{([^}]*)\}/.exec(upsert!)?.[1] ?? '';
-    expect(update, '`update` do upsert da Org não grava `modulos`').toMatch(/\bmodulos\b/);
+    // Religar todos os módulos a cada rodada desfazia o que a empresa desligou.
+    expect(update.trim(), '`update` do upsert da Org voltou a gravar `modulos`').toBe('');
   });
 
   it('o valor gravado vem de MODULOS, não de uma lista escrita à mão', () => {

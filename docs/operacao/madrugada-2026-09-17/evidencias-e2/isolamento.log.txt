@@ -1,0 +1,46 @@
+### 1/3 suíte de isolamento (MKTOS_CONJUNTO_DE_TESTES=isolamento)
+[isolamento] alvos: 83 | sem RLS: 0 | com RLS sem FORCE: 0
+
+
+stdout | test/tenant-isolation.test.ts > papel de aplicação (RF-T-02) > a conexão de leitura desta suíte é o papel restrito (quando ele pode entrar)
+
+[isolamento] papel de aplicação: existe=true entra=true bypassrls=false | conexão de leitura: "mktos_app"
+
+
+ ✓ test/tenant-isolation.test.ts (287 tests) 1078ms
+
+ Test Files  1 passed (1)
+      Tests  287 passed (287)
+   Start at  01:56:53
+   Duration  1.45s (transform 127ms, setup 0ms, collect 191ms, tests 1.08s, environment 0ms, prepare 39ms)
+
+exit 1/3: 0
+### 2/3 rotas públicas com RLS ligado
+[Nest] 54920  - 09/17/2026, 1:56:55 AM    WARN [PixelTenant] eventos de pixel recusados desde o boot — chave inutilizável: 0 · formato inválido: 0 · chave desconhecida: 1 · empresa padrão ausente: 0. A resposta ao chamador é a mesma nos quatro casos, de propósito (RF-T-04).
+[Nest] 54920  - 09/17/2026, 1:56:55 AM    WARN [PixelTenant] eventos de pixel recusados desde o boot — chave inutilizável: 0 · formato inválido: 0 · chave desconhecida: 1 · empresa padrão ausente: 0. A resposta ao chamador é a mesma nos quatro casos, de propósito (RF-T-04).
+[Nest] 54920  - 09/17/2026, 1:56:55 AM    WARN [PixelTenant] eventos de pixel recusados desde o boot — chave inutilizável: 0 · formato inválido: 1 · chave desconhecida: 0 · empresa padrão ausente: 0. A resposta ao chamador é a mesma nos quatro casos, de propósito (RF-T-04).
+[Nest] 54920  - 09/17/2026, 1:56:55 AM    WARN [PixelTenant] eventos de pixel recusados desde o boot — chave inutilizável: 1 · formato inválido: 0 · chave desconhecida: 0 · empresa padrão ausente: 0. A resposta ao chamador é a mesma nos quatro casos, de propósito (RF-T-04).
+[Nest] 54920  - 09/17/2026, 1:56:55 AM    WARN [PixelTenant] evento de pixel SEM chave: caiu na empresa padrão "root". Instale o pixel com a chave da empresa (data-key / pixel_key) — esta rota deixa de adivinhar quando o inventário zerar.
+ ✓ test/rotas-publicas-tenant.test.ts (53 tests) 579ms
+
+ Test Files  1 passed (1)
+      Tests  53 passed (53)
+   Start at  01:56:55
+   Duration  1.03s (transform 95ms, setup 0ms, collect 281ms, tests 579ms, environment 0ms, prepare 37ms)
+
+exit 2/3: 0
+### 3/3 cofre com RLS ligado
+[Nest] 54976  - 09/17/2026, 1:56:58 AM     LOG [CofreMigracao] migração para o cofre: 1 copiada(s), 0 já estava(m) lá, 0 de plataforma, 0 falha(s)
+[Nest] 54976  - 09/17/2026, 1:56:59 AM     LOG [CofreMigracao] migração para o cofre: 1 copiada(s), 0 já estava(m) lá, 0 de plataforma, 0 falha(s)
+[Nest] 54976  - 09/17/2026, 1:56:59 AM    WARN [Cofre] credencial revogada (empresa org-cofre-consumidor, conector instagram): app_secret — segredo do app vazou
+[Nest] 54976  - 09/17/2026, 1:56:59 AM    WARN [BioCredenciais] credencial de app de instagram da empresa org-cofre-consumidor está REVOGADA no cofre: a bio não vai autenticar com ela. Reautorize em Conexões — revogação não tem volta, e cair para a coluna antiga seria não ter revogado.
+[Nest] 54976  - 09/17/2026, 1:56:59 AM    WARN [Cofre] credencial revogada (empresa org-cofre-consumidor, conector instagram): app_secret — credencial de app removida na tela
+ ✓ test/cofre.test.ts (97 tests) 1976ms
+
+ Test Files  1 passed (1)
+      Tests  97 passed (97)
+   Start at  01:56:56
+   Duration  2.50s (transform 174ms, setup 0ms, collect 326ms, tests 1.98s, environment 0ms, prepare 27ms)
+
+exit 3/3: 0
+fim: 0

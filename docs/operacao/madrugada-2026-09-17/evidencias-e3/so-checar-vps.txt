@@ -1,0 +1,13 @@
+ferramenta em 61ff10b · tags visíveis pelo bundle: 
+== RETRATO (--so-checar):
+
+[instalar] 1/10 pré-condições
+
+[instalar] 2/10 nomes e portas do ambiente (isolamento entre irmãs)
+[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone).
+  instância: /srv/rootos/homologacao · projeto root_rootos-homologacao · prefixo rootos_homolog · rede rootos-homologacao-net · imagem rootos-app:madrugada-v5-<commit>
+  portas em 172.16.0.1: web 4100 · api 4101 · db 5443 · redis 6391 · minio 9012/9013
+  LLM: desligado · cliente: nenhum · relógio: desligado
+  easyPanel: serviço 'root/rootos-homologacao' → projeto Compose root_rootos-homologacao; geraria /srv/rootos/homologacao/painel/docker-compose.yml (sem build:, imagem por variável)
+exit so-checar: 0
+== nada criado? bundles ferramenta inventario-containers.antes inventario-imagens.antes inventario-redes.antes inventario-volumes.antes 

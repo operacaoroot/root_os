@@ -1019,6 +1019,14 @@ está detalhado acima para o Pedro confirmar ou reverter.
 | 30 | ~~**`packages/shared/dist` está velho na árvore**~~ **RESOLVIDO na estabilização da onda 8 (11/09):** o pacote foi construído antes do typecheck, e `aprovacoes.ver`/`aprovacoes.decidir` estão no artefato. Fica registrado porque a armadilha volta a cada onda que mexer em `permissions.ts`: o `dist/` **não** é versionado, então a árvore de qualquer pessoa nasce velha. É o passo 1 do roteiro de três (construir o pacote → sincronizar o catálogo → todo mundo sair e entrar), escrito em `docs/DEPLOY.md` §2.3d e no cabeçalho de `packages/shared/src/permissions.ts`. A CI já constrói antes de testar (`.github/workflows/ci.yml`, passo "Compilar os pacotes internos") | LLM06 | `packages/shared/dist/` |
 | 31 | A capacidade sem efeito ligado deixou de ser a quinta entrada para a gaveta sem saída — a pergunta entrou em `ToolGateway.conferirAprovado`. **Continua sendo verdade que não existe superfície para reexecutar uma aprovação `confirmada` e não consumida**: as quatro causas restantes são transitórias e a recusa acontece antes do `confirm`, mas quem chegar àquele estado por outro caminho (script, janela de corrida com o interruptor) continua sem botão | RF-A-01 | `tool-gateway.service.ts`, `acoes.service.ts` |
 
+### Acrescentado pela etapa A7 do plano de produto (16/09/2026) — escritas internas pela porta
+
+| # | O quê | Risco | Onde |
+|---|---|---|---|
+| 32 | ~~**`DELETE /finance/transactions/:id` estava declarado R5 no catálogo e vivia atrás de `financeiro.editar` e mais nada**~~ — o degrau em que o OS nunca executa, apagando lançamento em cima de uma permissão só, sem régua, sem porta, sem segunda pessoa, sem RASTRO pela porta. Idem `PATCH /users/:id` (`usuario.permissao.alterar`, R4) e `POST /finance/transactions` (`financeiro.lancamento.criar`, R3). **RESOLVIDO em 16/09:** os controladores viraram tradutores para a `PortaDoOperador`; os efeitos são inscritos pelo dono do dado; a exclusão responde 403 com o preparo, sempre. As três ganharam `argsSchema` fechado. Suíte própria com banco: R3 retida, R5 recusada sem chamar o efeito, R4 retida, argumento inválido recusado sem queimar aprovação | LLM06, RF-G-01 | `finance.controller.ts`, `users.controller.ts`, `test/escritas-internas-pela-porta.test.ts` |
+| 33 | **Continuam diretas, declaradas:** `PATCH /finance/transactions/:id` (não tem capacidade — criá-la é assinatura de capacidade nova, decisão), `financeiro.pagamento.baixar` (R5, sem rota) e `credencial.rotacionar` (R5, `PUT /integrations/:key`). São as próximas da mesma etapa | LLM06 | `docs/PLANO-PRODUTO.md`, diário de 16/09 |
+| 34 | O portão "validação de entrada em todas as fronteiras" desce de **47 para 44** capacidades sem `argsSchema` (e de 14 para 11 em R2+). Remedido sobre o catálogo do repositório em 16/09 | LLM05 | `packages/policy/politica-marketing-os.json` |
+
 ---
 
 ## Antes de cada liberação — o portão do checklist

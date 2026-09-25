@@ -1,0 +1,11 @@
+hora: 2026-09-17T01:55:39-0300
+versao no ar (curl REAL): {"version":"madrugada-v2","commit":"fde68d648dbb758d7700ff5fac20597b18632e5d"}  health: {"status":"ok","db":"ok","ti
+container api usa imagem: rootos-app:madrugada-v2-fde68d648dbb  web: rootos-app:madrugada-v2-fde68d648dbb
+repo HEAD: fde68d6 (v2=fde68d6 v4=96efbb9)
+env sha256: 3d30a5076d58fca7… (depois de v2 era 3d30a507…)  versão no env: ROOTOS_VERSION=madrugada-v2
+override sha256 == bak? diferente-do-de-v1 ; bak novos: 2
+sentinelas: 1/Marketing OS (root) [sentinela-e2]/migrations=41  ferramentas: c3fa73bab00ef3b4
+bancos: postgres rootos_homologacao template1 template0
+lock: 0  versoes.log: 4 linhas; última: 2026-09-17T01:55:01-0300 | madrugada-v2 | fde68d648dbb758d7700ff5fac20597b18632e
+tentativas de saúde na v4 (linhas do stub): 0
+containers: rootos_homolog_web=Up 39 seconds rootos_homolog_api=Up 44 seconds (healthy) rootos_homolog_redis=Up 17 minutes rootos_homolog_db=Up 17 minutes (healthy) rootos_homolog_minio=Up 17 minutes 

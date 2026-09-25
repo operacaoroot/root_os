@@ -1,0 +1,57 @@
+hora: 2026-09-17T12:51:01+00:00
+== sistema
+Linux 6.8.0-138-generic x86_64
+2
+               total        used        free      shared  buff/cache   available
+Mem:            7940        1173        1530          23        5566        6767
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        96G  8.7G   88G  10% /
+/dev/sda1        96G  8.7G   88G  10% /
+== docker
+29.7.2
+5.5.0
+docker0: 172.16.0.1/24
+== containers (nome | estado | imagem)
+mktos_web | Up 9 hours | mktos-app
+mktos_api | Up 9 hours (healthy) | mktos-app
+mktos_redis | Up 9 hours | redis:7-alpine
+mktos_db | Up 9 hours (healthy) | pgvector/pgvector:pg16
+mktos_minio | Up 9 hours | minio/minio
+root-os-landing | Up 10 hours (healthy) | nginx:1.27-alpine
+easypanel-traefik.1.szb48euhcnhqcxxc9kic1ueno | Up 11 hours | traefik:3.6.7
+easypanel.1.sdjut13knxueyni4wtqzphk7w | Up 42 hours | easypanel/easypanel:latest
+== redes
+bridge (bridge)
+docker_gwbridge (bridge)
+easypanel (overlay)
+easypanel-root (overlay)
+host (host)
+ingress (overlay)
+marketing-os-net (bridge)
+none (null)
+root-os-landing_default (bridge)
+== volumes
+marketing-os_mktos_db_data
+marketing-os_mktos_minio_data
+marketing-os_mktos_redis_data
+== imagens
+mktos-app:latest 3.65GB
+easypanel/easypanel:latest 1.3GB
+redis:7-alpine 57.8MB
+pgvector/pgvector:pg16 621MB
+traefik:3.6.7 242MB
+minio/minio:latest 355MB
+nginx:1.27-alpine 74.5MB
+== portas em escuta (só porta/endereço)
+[::]:22 [::]:3000 [::]:443 [::]:80 0.0.0.0:22 127.0.0.53%lo:53 127.0.0.54:53 0.0.0.0:80 0.0.0.0:443 *:2377 0.0.0.0:3000 172.16.0.1:4000 172.16.0.1:4001 172.16.0.1:5442 172.16.0.1:6390 *:7946 172.16.0.1:8090 172.16.0.1:9010 172.16.0.1:9011 127.0.0.1:65529 
+== /srv e /etc/easypanel
+total 12
+drwxr-xr-x 3 root root 4096 Sep 17 00:17 .
+drwxr-xr-x 22 root root 4096 Sep 17 12:31 ..
+lrwxrwxrwx 1 root root 21 Sep 17 00:17 marketing-os -> /srv/projetos/root_os
+drwxr-xr-x 5 root root 4096 Sep 17 03:18 projetos
+actions data monitoring projects traefik 
+== compose projects (labels)
+      2 
+      1 root-os-landing
+      5 root_marketing-os

@@ -73,7 +73,12 @@ sobrou nenhum `:?` no `docker-compose.yml`.
 As duas continuam valendo fora do compose: `MCP_SERVICE_PASSWORD` é a senha da conta de serviço do
 servidor MCP avulso (`packages/mcp`) e `MCP_ACTION_PASSWORD` é lida por `apps/api/prisma/seed.ts`.
 Se for usar qualquer um dos dois, gere as senhas (`openssl rand -base64 24`) e rode `pnpm db:seed`
-para alinhar os hashes — mas **nunca em produção**: o seed não é idempotente e apaga dados do org.
+para alinhar os hashes. Desde 17/09/2026 o seed é **idempotente e de preservação exata** — cria só o
+que falta; empresa, papel, permissão, nome e senha existentes ficam como estão, mesmo com a variável
+de senha no ambiente. Rotacionar é explícito: `pnpm db:seed -- --rotacionar-senhas`. Os dados de
+exemplo (que apagam e recriam) são `pnpm db:seed:demo -- --sim-apagar`, e só rodam em banco cujo
+nome se anuncia como descartável, sem destrave por variável. `pnpm bootstrap` encadeia o preparo
+inteiro e nunca chama nenhum dos dois, nem o `db:sync-permissions`.
 
 Comandos: `npm run dev` / `build` / `typecheck`; banco: `db:generate`, `db:migrate`, `db:deploy`. Testes: `pnpm --filter @mktos/api test`, `pnpm --filter @mktos/policy test`, `pnpm --filter @mktos/web test`. Deploy na VPS: `deploy/up.sh --vps api web` (o `--vps` não é opcional — ver CLAUDE.md).
 

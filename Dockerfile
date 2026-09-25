@@ -21,6 +21,14 @@ WORKDIR /app
 ARG API_PROXY_TARGET=http://api:4001
 ENV API_PROXY_TARGET=${API_PROXY_TARGET}
 
+# Identidade imutável do artefato. O instalador/atualizador injeta a versão e o
+# commit no build; a API os publica em GET /api/health/versao. Defaults explícitos
+# mantêm o desenvolvimento local funcional sem fingir que ele é uma release.
+ARG ROOTOS_VERSION=development
+ARG ROOTOS_COMMIT=unknown
+ENV ROOTOS_VERSION=${ROOTOS_VERSION}
+ENV ROOTOS_COMMIT=${ROOTOS_COMMIT}
+
 # De quem são os eventos de BROWSER da Root Central (RF-T-04) — o `id` da Org
 # dona da Central, uuid.
 #

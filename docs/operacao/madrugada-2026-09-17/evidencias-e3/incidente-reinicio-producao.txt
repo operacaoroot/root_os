@@ -1,0 +1,39 @@
+hora: 2026-09-17T15:05:43+00:00
+/mktos_db | criado 2026-09-17T15:03:55.081051988Z | iniciado 2026-09-17T15:03:55.799726387Z | terminado 0001-01-01T00:00:00Z | exit 0 | OOM false | reinícios 0 | política unless-stopped
+/mktos_web | criado 2026-09-17T15:03:55.33210252Z | iniciado 2026-09-17T15:04:07.026803427Z | terminado 0001-01-01T00:00:00Z | exit 0 | OOM false | reinícios 0 | política unless-stopped
+/mktos_api | criado 2026-09-17T03:26:38.579002366Z | iniciado 2026-09-17T03:26:49.544213323Z | terminado 0001-01-01T00:00:00Z | exit 0 | OOM false | reinícios 0 | política unless-stopped
+/mktos_redis | criado 2026-09-17T03:26:38.540062435Z | iniciado 2026-09-17T03:26:38.667600891Z | terminado 0001-01-01T00:00:00Z | exit 0 | OOM false | reinícios 0 | política unless-stopped
+/mktos_minio | criado 2026-09-17T03:26:38.508687779Z | iniciado 2026-09-17T03:26:38.666381752Z | terminado 0001-01-01T00:00:00Z | exit 0 | OOM false | reinícios 0 | política unless-stopped
+/root-os-landing | criado 2026-09-17T02:29:44.915360819Z | iniciado 2026-09-17T03:06:07.433901801Z | terminado 2026-09-17T03:05:52.871990218Z | exit 0 | OOM false | reinícios 0 | política no
+== eventos docker 14:50→agora (containers de produção):
+1789657435 create 6a4ffa9d604a_mktos_db
+1789657435 kill mktos_db
+1789657435 stop mktos_db
+1789657435 die mktos_db
+1789657435 destroy mktos_db
+1789657435 rename mktos_db
+1789657435 create 17b9ba412530_mktos_web
+1789657435 kill mktos_web
+1789657435 stop mktos_web
+1789657435 die mktos_web
+1789657435 destroy mktos_web
+1789657435 rename mktos_web
+1789657436 start mktos_db
+1789657447 start mktos_web
+== OOM no kernel?
+== log do mktos_db (últimas linhas antes/depois do reinício):
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+2026-09-17 15:03:56.185 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+2026-09-17 15:03:56.185 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-09-17 15:03:56.185 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-09-17 15:03:56.187 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-17 15:03:56.193 UTC [28] LOG:  database system was shut down at 2026-09-17 15:03:55 UTC
+2026-09-17 15:03:56.199 UTC [1] LOG:  database system is ready to accept connections
+== log do mktos_web (últimas):
+   - Local:        http://localhost:4000
+   - Network:      http://172.16.2.6:4000
+
+ ✓ Starting...
+ ✓ Ready in 540ms
+== mem agora: 6388 MB livres · carga 0.27 0.45 0.36
+== produção agora: {"status":"ok","db":"ok","time":"2026-09 · os.operacaoroot.com HTTP 200

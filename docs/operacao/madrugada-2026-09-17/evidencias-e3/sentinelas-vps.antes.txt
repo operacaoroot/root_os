@@ -1,0 +1,6 @@
+hora: 2026-09-17T15:33:35+00:00
+env.sha256: bf951ab38b1ca633
+painel.sha256: 0a6304de9a0f746e
+ferramentas.sha256: 80b74dc6aaa32311
+db: 1/Marketing OS (root) [sentinela-e3]/users=3/migrations=40
+atualizar pid 370563 às 2026-09-17T15:33:35+00:00

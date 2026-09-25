@@ -1,8 +1,23 @@
-import { PrismaClient, LeadStatus, TaskStatus } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { MODULOS, PERMISSIONS, ROLES } from '@mktos/shared';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 
+/*
+ * ESTA SEMENTE É IDEMPOTENTE E NÃO APAGA NADA (P1-b, 17/09/2026).
+ *
+ * Até aqui ela fazia as duas coisas: criava a empresa, os papéis e as contas —
+ * e, no mesmo comando, dava `deleteMany` em leads, eventos, tarefas, campanhas
+ * e fontes da empresa para recriar dados de exemplo. O plano chamava isso de
+ * "bootstrap idempotente", e não era: rodar de novo apagava trabalho real. Um
+ * aviso no README não conserta comando que destrói.
+ *
+ * O bloco destrutivo foi para `prisma/seed-demo.ts`, que só roda com nome de
+ * banco descartável E a flag explícita `--sim-apagar`. Aqui fica o que pode
+ * rodar quantas vezes for preciso, em qualquer ambiente: upsert de empresa,
+ * permissões, papéis, contas de serviço e categorias financeiras padrão.
+ * `test/seed-sem-destruicao.test.ts` reprova se um `deleteMany` voltar.
+ */
 const prisma = new PrismaClient();
 
 // Sem senhas fixas no repo (constituição): as contas de serviço leem a senha de
@@ -13,6 +28,15 @@ const ADMIN_EMAIL = 'admin@marketing-os.local';
 const MCP_EMAIL = 'mcp@marketing-os.local';
 const IA_ACAO_EMAIL = 'ia-acao@marketing-os.local';
 
+/**
+ * Rotacionar senha de conta EXISTENTE é operação explícita, não efeito do
+ * bootstrap: `db:seed -- --rotacionar-senhas` aplica as variáveis de ambiente
+ * às contas que já existem. Sem a flag, conta existente não muda de senha nem
+ * que `ADMIN_PASSWORD` esteja no ambiente — variável esquecida no shell não
+ * pode trocar a senha do admin de uma instalação.
+ */
+const ROTACIONAR_SENHAS = process.argv.includes('--rotacionar-senhas');
+
 async function upsertServiceUser(args: {
   orgId: string;
   email: string;
@@ -21,37 +45,44 @@ async function upsertServiceUser(args: {
   envPassword: string | undefined;
 }): Promise<void> {
   const { orgId, email, name, roleId, envPassword } = args;
-  const existing = await prisma.user.findUnique({ where: { email } });
-  let passwordHash: string | undefined;
-  if (envPassword && envPassword.length >= 8) {
-    passwordHash = await bcrypt.hash(envPassword, 10);
-  } else if (envPassword) {
+  if (envPassword && envPassword.length < 8) {
     throw new Error(`Senha de ${email} tem menos de 8 caracteres — use uma forte.`);
-  } else if (!existing) {
-    const gen = randomBytes(18).toString('base64url');
-    passwordHash = await bcrypt.hash(gen, 10);
-    console.log(`  [seed] ${email}: senha gerada → ${gen}\n         (defina em env p/ fixar/rotacionar; sem env o reseed não a altera)`);
   }
-  // update/create separados, não upsert: o Prisma valida o bloco `create` mesmo
-  // quando vai atualizar, então `passwordHash: undefined` derrubava o seed toda
-  // vez que a conta já existia e a senha não vinha do env — ou seja, sempre que
-  // se tentava re-semear a produção.
+  const existing = await prisma.user.findUnique({ where: { email }, select: { orgId: true } });
+
   if (existing) {
-    await prisma.user.update({
-      where: { email },
-      data: { roles: { set: [{ id: roleId }] }, ...(passwordHash ? { passwordHash } : {}) },
-    });
+    /*
+     * PRESERVAÇÃO EXATA (P1-b). Conta que existe fica como está: papéis, nome,
+     * senha. Nem `set` (reduzia ao papel de fábrica) nem `connect` (reelevava
+     * quem foi rebaixado de propósito). O e-mail é único no banco inteiro, então
+     * a mesma conta em OUTRA empresa é um erro de instalação, não um caso a
+     * consertar em silêncio — e o seed para aqui, antes de tocar em qualquer
+     * coisa, em vez de religar a conta na empresa errada.
+     */
+    if (existing.orgId !== orgId) {
+      throw new Error(
+        `${email} já existe e pertence a OUTRA empresa (${existing.orgId}). O seed não move contas ` +
+          'entre empresas; resolva a instalação antes de rodar de novo.',
+      );
+    }
+    if (ROTACIONAR_SENHAS && envPassword) {
+      await prisma.user.update({ where: { email }, data: { passwordHash: await bcrypt.hash(envPassword, 10) } });
+      console.log(`  [seed] ${email}: senha rotacionada (--rotacionar-senhas).`);
+    }
     return;
   }
-  await prisma.user.create({
-    data: { orgId, name, email, passwordHash: passwordHash!, roles: { connect: [{ id: roleId }] } },
-  });
-}
 
-function daysAgo(n: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d;
+  let passwordHash: string;
+  if (envPassword) {
+    passwordHash = await bcrypt.hash(envPassword, 10);
+  } else {
+    const gen = randomBytes(18).toString('base64url');
+    passwordHash = await bcrypt.hash(gen, 10);
+    console.log(`  [seed] ${email}: senha gerada → ${gen}\n         (para trocar depois: defina em env e rode com --rotacionar-senhas)`);
+  }
+  await prisma.user.create({
+    data: { orgId, name, email, passwordHash, roles: { connect: [{ id: roleId }] } },
+  });
 }
 
 async function main() {
@@ -65,15 +96,21 @@ async function main() {
   // empresa semeada por requisição). Enquanto não houver tela de provisionamento
   // é aqui que o escopo de produto da ROOT é decidido.
   //
-  // `update` também, e não só `create`: reseed contra banco existente é o único
-  // caminho de conserto que hoje existe para uma empresa que ficou sem módulo.
   // `MODULOS` vem de @mktos/shared, a mesma fonte única do menu e do gate — e
   // é escrito por extenso, não por spread de um conjunto derivado, porque o
   // Prisma quer `string[]` mutável.
+  //
+  // PRESERVAÇÃO EXATA (P1-b): até 17/09/2026 o `update` religava TODOS os
+  // módulos a cada rodada — uma empresa que tivesse desligado o financeiro o
+  // recebia de volta no próximo bootstrap. Empresa que existe fica como está,
+  // inclusive com a lista VAZIA: nenhum módulo ligado também é uma decisão
+  // válida (só a espinha do OS), e o bootstrap não a revisita. O "conserto" de
+  // uma empresa que ficou sem módulo por acidente é operação explícita, na tela
+  // ou por `provisionar-tenant`, nunca efeito colateral de rodar o seed.
   const modulos = [...MODULOS];
   const org = await prisma.org.upsert({
     where: { slug: 'root' },
-    update: { modulos },
+    update: {},
     create: { name: 'Marketing OS (root)', slug: 'root', modulos },
   });
 
@@ -85,13 +122,18 @@ async function main() {
   const permByKey = new Map(allPerms.map((p) => [p.key, p.id]));
 
   // 3) Roles + vínculos de permissão
+  //
+  // PRESERVAÇÃO EXATA (P1-b). `update` com `permissions: { set }` era a mesma
+  // semântica do `db:sync-permissions` — que É não aditivo de propósito, revoga
+  // vínculo feito à mão e exige que todo mundo saia e entre. `connect` também
+  // não serve: recolocaria uma permissão que alguém tirou de propósito. Papel
+  // que existe fica como está — vínculos e nome. Cria só o que falta.
+  // Realinhar com o catálogo é o ritual de três passos de quando
+  // `permissions.ts` MUDA (`docs/DEPLOY.md` §2.3d), nunca passo de bootstrap.
   for (const [key, def] of Object.entries(ROLES)) {
     await prisma.role.upsert({
       where: { orgId_key: { orgId: org.id, key } },
-      update: {
-        name: def.name,
-        permissions: { set: def.permissions.map((k) => ({ id: permByKey.get(k)! })) },
-      },
+      update: {},
       create: {
         orgId: org.id,
         key,
@@ -137,125 +179,9 @@ async function main() {
     envPassword: process.env.MCP_ACTION_PASSWORD,
   });
 
-  // 5) Limpa dados de exemplo do org (idempotência) e recria
-  await prisma.leadEvent.deleteMany({ where: { lead: { orgId: org.id } } });
-  await prisma.lead.deleteMany({ where: { orgId: org.id } });
-  await prisma.pixelEvent.deleteMany({ where: { orgId: org.id } });
-  await prisma.task.deleteMany({ where: { orgId: org.id } });
-  await prisma.campaign.deleteMany({ where: { orgId: org.id } });
-  await prisma.leadSource.deleteMany({ where: { orgId: org.id } });
-
-  // 5a) Fontes de lead
-  const sources = await Promise.all(
-    [
-      { key: 'instagram', name: 'Instagram', channel: 'social' },
-      { key: 'sales_page', name: 'Página de vendas', channel: 'site' },
-      { key: 'indicacao', name: 'Indicação', channel: 'organico' },
-    ].map((s) =>
-      prisma.leadSource.create({ data: { orgId: org.id, ...s } }),
-    ),
-  );
-
-  // 5b) Campanhas
-  const [camp1, camp2] = await Promise.all([
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Black Friday — Tráfego', objective: 'leads', channel: 'meta_ads', budget: '5000.00', spend: '3200.00', status: 'ativa', startAt: daysAgo(20) },
-    }),
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Lançamento Curso', objective: 'vendas', channel: 'meta_ads', budget: '8000.00', spend: '1200.00', status: 'ativa', startAt: daysAgo(6) },
-    }),
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Remarketing Q3', objective: 'vendas', channel: 'meta_ads', budget: '2000.00', spend: '1980.00', status: 'problema', startAt: daysAgo(40) },
-    }),
-  ]);
-
-  // 5c) Leads (distribuídos no tempo p/ hoje/semana/mês)
-  const leadSeed: Array<{ name: string; status: LeadStatus; days: number; sIdx: number; cId?: string; score: number }> = [
-    { name: 'Ana Prado', status: 'novo', days: 0, sIdx: 0, cId: camp1.id, score: 40 },
-    { name: 'Bruno Lima', status: 'qualificado', days: 0, sIdx: 1, cId: camp2.id, score: 72 },
-    { name: 'Carla Souza', status: 'novo', days: 0, sIdx: 0, cId: camp1.id, score: 30 },
-    { name: 'Diego Alves', status: 'oportunidade', days: 2, sIdx: 1, cId: camp2.id, score: 85 },
-    { name: 'Elisa Nunes', status: 'ganho', days: 3, sIdx: 2, score: 90 },
-    { name: 'Felipe Rocha', status: 'reuniao', days: 5, sIdx: 1, cId: camp2.id, score: 66 },
-    { name: 'Gabi Martins', status: 'novo', days: 12, sIdx: 0, cId: camp1.id, score: 22 },
-    { name: 'Hugo Dias', status: 'perdido', days: 18, sIdx: 2, score: 10 },
-    { name: 'Iara Melo', status: 'ganho', days: 25, sIdx: 1, cId: camp2.id, score: 95 },
-  ];
-  for (const l of leadSeed) {
-    await prisma.lead.create({
-      data: {
-        orgId: org.id,
-        name: l.name,
-        email: `${l.name.toLowerCase().replace(/\s+/g, '.')}@exemplo.com`,
-        phone: '+55 21 99999-0000',
-        sourceId: sources[l.sIdx].id,
-        campaignId: l.cId,
-        utmSource: sources[l.sIdx].key,
-        utmMedium: 'cpc',
-        utmCampaign: l.cId === camp1.id ? 'black-friday' : 'lancamento',
-        status: l.status,
-        score: l.score,
-        enteredAt: daysAgo(l.days),
-        events: { create: [{ type: 'created', payload: { seed: true } }] },
-      },
-    });
-  }
-
-  // 5d) Pixel events (funil da página de vendas)
-  const pixelNames = ['page_view', 'page_view', 'page_view', 'scroll_50', 'click_cta', 'form_submit', 'purchase'];
-  for (let i = 0; i < 40; i++) {
-    const name = pixelNames[i % pixelNames.length];
-    await prisma.pixelEvent.create({
-      data: {
-        orgId: org.id,
-        eventId: `seed-evt-${i}`,
-        sessionId: `sess-${i % 12}`,
-        anonymousId: `anon-${i % 12}`,
-        eventName: name,
-        url: 'https://vendas.exemplo.com/oferta',
-        utmSource: i % 2 ? 'instagram' : 'meta_ads',
-        utmCampaign: i % 2 ? 'black-friday' : 'lancamento',
-        value: name === 'purchase' ? '497.00' : null,
-        occurredAt: daysAgo(i % 7),
-      },
-    });
-  }
-
-  // 5e) Tarefas (algumas atrasadas)
-  const tasks: Array<{ title: string; status: TaskStatus; due: number; tool: string }> = [
-    { title: 'Aprovar criativo Black Friday', status: 'aberta', due: -2, tool: 'clickup' },
-    { title: 'Responder lead quente (Bruno)', status: 'aberta', due: -1, tool: 'interno' },
-    { title: 'Revisar copy da página', status: 'em_andamento', due: 1, tool: 'asana' },
-    { title: 'Configurar pixel de conversão', status: 'aberta', due: -3, tool: 'clickup' },
-    { title: 'Agendar posts da semana', status: 'concluida', due: -5, tool: 'asana' },
-  ];
-  for (const t of tasks) {
-    await prisma.task.create({
-      data: {
-        orgId: org.id,
-        tool: t.tool,
-        title: t.title,
-        status: t.status,
-        priority: t.due < 0 ? 'alta' : 'normal',
-        assignee: 'Equipe',
-        dueDate: daysAgo(t.due), // due<0 => futuro; due>0 => passado (atrasada)
-      },
-    });
-  }
-
-  // 5f) Uma integração conectada (p/ tela de observabilidade)
-  const acc = await prisma.integrationAccount.upsert({
-    where: { id: 'seed-clickup' },
-    update: {},
-    create: { id: 'seed-clickup', orgId: org.id, key: 'clickup', label: 'ClickUp (root)', status: 'connected', connectedAt: new Date() },
-  });
-  await prisma.integrationHealth.upsert({
-    where: { accountId: acc.id },
-    update: { status: 'ok', lastSyncAt: new Date(), latencyMs: 180 },
-    create: { accountId: acc.id, status: 'ok', lastSyncAt: new Date(), latencyMs: 180 },
-  });
-
-  // 5g) Financeiro: categorias padrão + conta Caixa (idempotente)
+  // 5) Financeiro: categorias padrão + conta Caixa (idempotente).
+  // Os dados de EXEMPLO (leads, campanhas, tarefas, pixel, integração) saíram
+  // daqui: `pnpm --filter @mktos/api db:seed:demo -- --sim-apagar`.
   const financeCats: Array<{ name: string; kind: 'receita' | 'despesa' }> = [
     { name: 'Vendas', kind: 'receita' },
     { name: 'Serviços', kind: 'receita' },
@@ -281,10 +207,11 @@ async function main() {
     });
   }
 
-  console.log('✔ Seed concluído.');
+  console.log('✔ Seed concluído (idempotente: nada foi apagado).');
   console.log(`  Org: ${org.name} (${org.slug})`);
   console.log(`  Contas: ${ADMIN_EMAIL} · ${MCP_EMAIL} (read-only) · ${IA_ACAO_EMAIL} (ação)`);
   console.log('  Senhas: via env (ADMIN_PASSWORD / MCP_SERVICE_PASSWORD / MCP_ACTION_PASSWORD) ou geradas acima.');
+  console.log('  Dados de exemplo (apaga e recria; só em banco descartável): db:seed:demo -- --sim-apagar');
 }
 
 main()

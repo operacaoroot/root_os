@@ -1,0 +1,19 @@
+hora: 2026-09-17T14:53:38+00:00
+== pré-requisitos: git 2.43.0 · openssl 3.0.13 · curl 8.5.0 · nice: /usr/bin/nice
+== linha de base da PRODUÇÃO
+health api: {"status":"ok","db":"ok","time":"2026-09-17T14:53:39.008Z"}
+versao api: {"message":"Cannot GET /api/health/versao","error":"Not Found","statusCode":404}
+web: HTTP 200
+os.operacaoroot.com: HTTP 200
+mktos_web | Up 11 hours
+mktos_api | Up 11 hours (healthy)
+mktos_redis | Up 11 hours
+mktos_db | Up 11 hours (healthy)
+mktos_minio | Up 11 hours
+root-os-landing | Up 12 hours (healthy)
+easypanel-traefik.1.szb48euhcnhqcxxc9kic1ueno | Up 13 hours
+easypanel.1.sdjut13knxueyni4wtqzphk7w | Up 44 hours
+== carga: 0.00 0.01 0.00 · mem livre: 6770 MB · disco livre: 88G
+== inventário ANTES
+ 27 total
+portas 4100 4101 5443 6391 9012 9013 livres? 0 ocupadas (esperado 0)

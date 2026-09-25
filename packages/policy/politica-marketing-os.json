@@ -1173,6 +1173,30 @@
       "rota": "POST /finance/transactions",
       "descricao": "Cria um lançamento financeiro. O único desfazer possível é apagar o lançamento (financeiro.lancamento.excluir, R5), que o OS nunca executa — prepara e entrega a uma pessoa. A volta, portanto, é manual.",
       "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["accountId", "type", "description", "amount", "date"],
+        "properties": {
+          "accountId": { "type": "string", "minLength": 1, "description": "conta financeira de destino" },
+          "type": { "type": "string", "minLength": 1, "description": "entrada ou saida" },
+          "status": { "type": "string", "description": "previsto, realizado ou conciliado; padrão realizado" },
+          "description": { "type": "string", "minLength": 1 },
+          "amount": { "type": "number", "description": "valor em reais, positivo" },
+          "date": { "type": "string", "minLength": 1, "description": "ISO ou AAAA-MM-DD" },
+          "dueDate": { "type": "string" },
+          "categoryId": { "type": "string" },
+          "chartAccountId": { "type": "string" },
+          "partnerId": { "type": "string" },
+          "contractId": { "type": "string" },
+          "departamentoId": { "type": "string" },
+          "projetoId": { "type": "string" },
+          "counterparty": { "type": "string" },
+          "documentNumber": { "type": "string" },
+          "notes": { "type": "string" },
+          "splits": { "type": "array", "description": "rateio; a soma tem de bater com amount" }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -1189,6 +1213,17 @@
       "rota": "PATCH /users/:id",
       "descricao": "Muda o papel de uma pessoa — quem pode o quê.",
       "nivel": "R4",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "description": "a pessoa alvo" },
+          "isActive": { "type": "boolean" },
+          "roles": { "type": "array", "description": "as chaves de papel que passam a valer" },
+          "password": { "type": "string", "minLength": 8, "description": "redefinição da senha de OUTRA pessoa; nunca a própria" }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
@@ -1205,6 +1240,14 @@
       "rota": "DELETE /finance/transactions/:id",
       "descricao": "Apaga um lançamento financeiro.",
       "nivel": "R5",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "description": "o lançamento a apagar" }
+        }
+      },
       "efeito": {
         "escreveForaDoOS": true,
         "produzArtefato": false,
