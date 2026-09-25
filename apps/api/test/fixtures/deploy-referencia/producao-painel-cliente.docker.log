@@ -5,7 +5,7 @@ docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --en
 docker exec rootos_prod_db pg_isready -U rootos
 docker exec rootos_prod_db pg_isready -U rootos
 docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml run --rm --no-deps api sh -c pnpm exec prisma migrate deploy
-docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD api sh -c pnpm db:seed
+docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD -e MCP_ACTION_PASSWORD api sh -c pnpm db:seed
 docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml run --rm --no-deps api sh -c pnpm db:seed:politica
 docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml run --rm --no-deps api node dist/scripts/provisionar-tenant.js acme --modulos todos --admin dono@acme.com.br
 docker compose -p root_rootos-prod --project-directory <BASE>/producao/repo --env-file <BASE>/producao/.env -f <BASE>/producao/repo/docker-compose.yml -f <BASE>/producao/override.yml up -d --no-build

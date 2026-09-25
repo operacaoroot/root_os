@@ -164,8 +164,11 @@ describe('P1: instalar.sh cria uma instância isolada, sem imprimir segredo', ()
       expect(r.stderr).not.toContain(s);
       expect(lerLog(c), `segredo em argv do docker: ${s.slice(0, 4)}…`).not.toContain(s);
     }
-    // a senha do seed viaja por `-e ADMIN_PASSWORD` sem valor
-    expect(lerLog(c)).toMatch(/run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD api/);
+    // as senhas do seed viajam por `-e NOME` sem valor; a da conta de ação vai junto, senão o
+    // seed sorteia uma e a imprime no log ("senha gerada →")
+    expect(lerLog(c)).toMatch(/run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD -e MCP_ACTION_PASSWORD api/);
+    expect(segredos).not.toContain('MCP_ACTION_PASSWORD');
+    expect(lerEnv(c, 'producao')).not.toContain('MCP_ACTION_PASSWORD');
   });
 
   it('a mensagem final separa o que foi provado do que não foi', () => {
@@ -646,6 +649,10 @@ describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPa
  * temporário, o commit da fixture, a data do cabeçalho do .env e o nome do
  * override temporário que o compose do painel usa (mktemp).
  * Divergência grava o que saiu em <tmp>/deploy-referencia-atual/ para comparar.
+ *
+ * Única mudança deliberada da referência (25/09/2026, kit da Campo Bom): o `db:seed`
+ * passou a levar `-e MCP_ACTION_PASSWORD`, uma linha por cenário. Sem ela o seed
+ * sorteava a senha da conta ia-acao@ e a imprimia no log. .env e override: intocados.
  */
 describe('Regressão VPS: .env, override e chamadas ao docker iguais aos do v0.4.1', () => {
   const REFERENCIA = path.join(RAIZ, 'apps', 'api', 'test', 'fixtures', 'deploy-referencia');
