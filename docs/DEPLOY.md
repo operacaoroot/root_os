@@ -11,6 +11,34 @@
 
 ## 1. Como o código chega na VPS hoje
 
+> **MEDIDO EM 25/09/2026 — e é diferente do que o resto desta seção descreve.** O que está escrito
+> abaixo sobre Syncthing e `/srv/marketing-os` é história; o §1.0 é o que aconteceu no último
+> deploy. Enquanto os dois não forem reconciliados, siga o §1.0.
+
+### 1.0 O caminho real de hoje
+
+- **O código-fonte mora em `/srv/projetos/root_os`**, e é só de onde a imagem é construída.
+  `docker-compose.vps.yml` tem drift local permanente ali (`IP_DOCKER_HOST`: a docker0 da VPS do
+  Root é `172.16.0.1`, não `172.17.0.1`) — não tente limpá-lo.
+- **A VPS não tem credencial do GitHub.** `git pull origin main` morre com
+  `could not read Username for 'https://github.com'`. O transporte que funciona sem colar token no
+  servidor é um **bundle**: no Mac `git bundle create /tmp/x.bundle <sha-da-vps>..main`, `scp` para
+  a VPS, e lá `cd /srv/projetos/root_os && git pull --ff-only /root/x.bundle main`.
+- **Quem roda em produção é o compose do easyPanel**, em
+  `/etc/easypanel/projects/root/marketing-os/code`, sob o nome de projeto **`root_marketing-os`**.
+  Os serviços usam `image: mktos-app` (a tag `latest`) e **não têm bloco `build`**.
+- **A virada é `docker compose -p root_marketing-os up -d --no-build api web`**, rodada naquele
+  diretório. **O `-p` não é opcional**: sem ele o compose lê `name: marketing-os` do YAML, se acha
+  um projeto novo, tenta criar `mktos_minio` por cima do que existe e para no meio — deixando uma
+  rede `marketing-os_default` órfã para trás. Nada cai (o conflito acontece antes de tocar no que
+  está no ar), mas a subida não acontece e a rede precisa ser removida à mão.
+- **O backup (§4) recusa rodar sem `PGUSER`** no modo container:
+  `BACKUP_DB_CONTAINER=mktos_db PGUSER=mkt PGDATABASE=marketing_os bash deploy/backup-db.sh`.
+- **Não existe banco descartável de pé** para o smoke (§2.3): crie um (`CREATE DATABASE smoke_x`),
+  use, e derrube depois.
+
+### 1.1 Como era (história)
+
 **Por Syncthing, sincronizando o repositório inteiro entre o Mac e `/srv/marketing-os` — inclusive
 o diretório `.git`.** Não existe `git pull` no servidor, nem rsync, nem pipeline. O que existe é
 uma pasta espelhada.
