@@ -1,7 +1,7 @@
 # ROOT OS · Campo Bom — regras de qualquer sessão do Claude nesta máquina
 
 Esta pasta faz parte da instalação do **ROOT OS v0.4.2 da Campo Bom**, feita com o kit
-`kit-rootos-v0.4.2` que a FullBPO entregou. Vale para `~/RootOS/` e tudo abaixo dela: o código em
+`kit-rootos-v0.4.2` que a Root entregou. Vale para `~/RootOS/` e tudo abaixo dela: o código em
 `~/RootOS/codigo`, a instância em `~/RootOS/instancia/producao` e o `repo/` dela. Português do
 Brasil, datas `DD/MM/AAAA`.
 
@@ -31,10 +31,10 @@ em qualquer forma, e `env` / `printenv` / `set` num shell que carregou um desses
 - Expor porta fora de `127.0.0.1`, `colima start --network-address` ou usar o Docker Desktop.
 - Apagar a instância, `docker compose down`, `docker rm`, `docker volume rm`, `docker system prune`,
   `colima delete`, `rm -r`. Rodar `deploy/atualizar.sh` ou `deploy/papel-app.sh`: são decisões da
-  FullBPO.
+  Root.
 - Tocar em SAP, ERP, e-mail, agenda ou arquivo da empresa fora de `~/RootOS/`.
 
 ## Deu errado
 
 Pare e escreva o que aconteceu (comando, exit, últimas linhas do log **sem segredo**) na pasta
-`retorno/` do kit. O contato na FullBPO está no `LEIA-ME.md` do kit.
+`retorno/` do kit. O contato da Root está no `LEIA-ME.md` do kit.

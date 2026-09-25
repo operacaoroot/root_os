@@ -4,10 +4,12 @@
 #   montar-bundle.sh <repo com a tag v0.4.2> <saída .bundle> <área de trabalho vazia>
 #
 # O bundle leva UM commit sem pai e a tag v0.4.2 apontando para ele, e nada mais: nenhuma branch,
-# nenhum histórico, nenhum autor da equipe. A árvore é a de v0.4.2 (7f8a762) menos os arquivos
-# internos da operação (REMOVER), com o CLAUDE.md trocado pelo contrato da máquina do cliente e um
-# .claude/settings.json com as travas de segredo. Identidade e datas fixas: rodar de novo com a
-# mesma tag e os mesmos dois arquivos dá o mesmo commit.
+# nenhum histórico, nenhum autor da equipe. A árvore é a de v0.4.2 (7f8a762) menos docs/ inteira, as
+# pastas de teste e tools/clickup-inventario.py (REMOVER; Q-007 = b), com o CLAUDE.md trocado pelo
+# contrato da máquina do cliente e um .claude/settings.json com as travas de segredo. O build da
+# imagem não lê nenhum dos removidos (Dockerfile: install + build de src/; vitest/tsconfig.test só
+# nos testes). Identidade e datas fixas: rodar de novo com a mesma tag e os mesmos dois arquivos
+# dá o mesmo commit.
 set -euo pipefail
 
 REPO="${1:?repo}"; SAIDA="${2:?saída .bundle}"; TRAB="${3:?área de trabalho}"
@@ -16,13 +18,15 @@ TAG=v0.4.2
 ORIGEM_ESPERADA=7f8a762cda94cb4fa1e299bfab506a6b217469e9
 REMOVER=(
   CLAUDE.md
-  docs/operacao
-  docs/DEPLOY-12-09-2026.md
-  docs/WORKFLOW-MADRUGADA-CLAUDE.md
-  docs/ACOMPANHAMENTO-MADRUGADA-CODEX.md
-  docs/PAUTA.md
+  docs
+  apps/api/test
+  apps/web/tests
+  packages/policy/test
+  deploy/test-stubs
   tools/clickup-inventario.py
 )
+# Qualquer resto de teste fora das pastas acima reprova a montagem (em vez de ir no bundle calado).
+RESTO_TESTE='(^|/)(test|tests|__tests__|test-stubs)/|\.(test|spec)\.[cm]?[jt]sx?$'
 
 [ ! -e "$TRAB" ] || { echo "área de trabalho já existe: $TRAB" >&2; exit 1; }
 [ ! -e "$SAIDA" ] || { echo "saída já existe: $SAIDA" >&2; exit 1; }
@@ -38,6 +42,8 @@ for p in "${REMOVER[@]}"; do
   [ -n "$(git ls-files -- "$p")" ] || { echo "caminho a remover não existe na árvore: $p" >&2; exit 1; }
   git rm -r -q --cached -- "$p"
 done
+RESTO="$(git ls-files | grep -cE "$RESTO_TESTE" || true)"
+[ "$RESTO" = 0 ] || { echo "sobrou $RESTO arquivo(s) de teste na árvore:" >&2; git ls-files | grep -E "$RESTO_TESTE" >&2; exit 1; }
 CLAUDE_SHA="$(git hash-object -w "$AQUI/CLAUDE.md")"
 SETTINGS_SHA="$(git hash-object -w "$AQUI/settings.json")"
 git update-index --add --cacheinfo "100644,$CLAUDE_SHA,CLAUDE.md"
@@ -49,8 +55,9 @@ export GIT_COMMITTER_NAME="ROOT OS" GIT_COMMITTER_EMAIL="release@rootos.invalid"
 COMMIT="$(printf '%s\n' \
   "ROOT OS v0.4.2 - distribuição da Campo Bom" \
   "" \
-  "Árvore de v0.4.2 ($ORIGEM_ESPERADA) sem os arquivos internos da operação," \
-  "com o contrato da máquina do cliente em CLAUDE.md e .claude/settings.json." \
+  "Árvore de v0.4.2 ($ORIGEM_ESPERADA) sem docs/, sem as pastas de teste e sem" \
+  "ferramenta interna, com o contrato da máquina do cliente em CLAUDE.md e" \
+  ".claude/settings.json." \
   "" \
   "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
   | git commit-tree "$ARVORE")"
