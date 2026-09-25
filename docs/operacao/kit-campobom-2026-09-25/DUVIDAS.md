@@ -35,3 +35,17 @@ Enquanto não houver resposta, a fase 0 segue neutra (vale para qualquer alvo) e
 - **Q-001 → base = `98d8ed4` + merge da tag `v0.4.1`.** A branch parte da produção e recebe, por `git merge --no-ff v0.4.1`, o instalador homologado na VPS em 17/09/2026. `git merge-tree --write-tree HEAD v0.4.1` → exit 0 (merge limpo). O WIP sem aceite da integra (`70c1059` em diante) **não entra**: `git merge-base --is-ancestor 70c1059 v0.4.1` → exit 1. Nota de procedência: a tag `v0.4.1` aponta para `0b5cf62` ("Liga o web na rede do easyPanel quando a instância é do painel", 17/09/2026 16:24), um commit depois de `d7ac2f6` ("Registra a validação humana da homologação na VPS"), que é ancestral da tag. O merge traz os 15 commits de `98d8ed4..v0.4.1`.
 - **Q-002 → autorizado.** Criar `Meu Drive/OPERACAO ROOT/clientes/campo-bom/kit-rootos-v0.4.2/` foi autorizado pelo Pedro no plano aprovado em 25/09/2026. Escrita só dentro dessa pasta.
 - **Q-003 → alvo = (b) Mac da Campo Bom com Colima, bind 127.0.0.1.** Nada na VPS. O pedido de VPS foi substituído pelo Pedro.
+
+## Q-004 · 25/09/2026 · BLOQUEIA só o "tudo exit 0" do `pnpm test` (o resto segue)
+
+**Fato:** a própria base de produção `98d8ed4` sai vermelha em `pnpm test` neste Mac, por dois motivos que não vêm do kit. Medido num clone limpo em `98d8ed4` (scratchpad), banco descartável `ckit_base_padrao_test`, `db:deploy` + `db:seed:politica` antes:
+
+1. `packages/policy/test/politica.test.ts` › "cobre as 35 ferramentas MCP, todas em R0": `expected … to have a length of 35 but got 36`. O PR #11 (`b2e0119`, 24/09) pôs `comunicacao.agenda.periodo` (R0) no catálogo sem subir a contagem. A correção existe e é só de teste (2 linhas): `c9f5784` ("O catálogo do marketing-os tem 36 leituras MCP com a agenda", Pedro, 25/09 10:23), mas mora na integra DEPOIS de `70c1059`, que a resposta de Q-001 manda deixar de fora. `origin/main` ainda diz 35.
+2. `apps/api/test/rotas-publicas-tenant.test.ts`: os 38 casos passam, e o `afterAll` morre em `AuditLog_orgId_fkey` ao apagar a org padrão que ele mesmo criou (outro arquivo, em paralelo, grava AuditLog nela). Sozinho o arquivo passa (38/38, exit 0). Vermelho nas duas rodadas completas medidas (base e kit), então não é acaso neste Mac.
+
+**Pergunta:** para o `pnpm test` do kit sair exit 0:
+- (a) cherry-pick `-x` de `c9f5784` (só teste) no kit, como exceção registrada a Q-001; e o item 2 vira tarefa à parte na main (corrigir a limpeza do teste), com o kit declarando o vermelho como herdado;
+- (b) nada entra; o kit declara os dois vermelhos como herdados da produção (mesma contagem de casos da linha de base ou mais);
+- (c) outra.
+
+Enquanto não houver resposta: nenhum teste de produto foi mudado. As outras frentes (tag, bundle, ensaio) seguem, porque não dependem desses dois arquivos; a tag é local e se refaz se a resposta mudar o HEAD.
