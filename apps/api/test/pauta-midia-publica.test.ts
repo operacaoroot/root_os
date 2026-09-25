@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { Readable, Writable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import type { AddressInfo } from 'node:net';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
@@ -22,6 +24,7 @@ import {
   tetoDoVideo,
 } from '../src/pauta/video-do-corte';
 import { PARTE_DO_ENVIO, StorageService } from '../src/storage/storage.service';
+import { chavesDaMeta, formatarBytes, motivoParaNaoRemover, usoDoStorage } from '../src/storage/uso-da-midia';
 import { ROTAS_DE_MIDIA_DO_EPISODIO } from '../src/common/corpo-da-midia';
 import { moduloDoCaminho } from '../src/tenants/modulos';
 import { contextoAtual } from '../src/common/contexto-execucao';
@@ -488,6 +491,84 @@ describe('midia da peça: o storage recebe em partes e nunca conclui um envio qu
     Readable.from([mp4.subarray(0, PARTE_DO_ENVIO), mp4.subarray(PARTE_DO_ENVIO)]).pipe(conferencia);
     await expect(storage.putStream('k.mp4', conferencia, mp4.length, 'video/mp4')).rejects.toMatchObject({ message: expect.stringMatching(/sha256/) });
     expect(chamadas).toEqual(['iniciar', 'abortar']);
+  });
+});
+
+describe('midia da peça: o uso do storage (MD4), medido e com os órfãos separados', () => {
+  const dia = 86_400_000;
+  const agora = new Date('2026-09-25T12:00:00Z');
+  const obj = (chave: string, mb: number, diasAtras: number) => ({ chave, bytes: mb * 1024 * 1024, modificadoEm: new Date(agora.getTime() - diasAtras * dia) });
+
+  it('a meta referencia o mp4 do corte e cada imagem; o resto do bucket é órfão, com a idade', () => {
+    const meta = { video: { chave: 'pauta/pecas/p1/corte-a.mp4' }, imagens: [{ chave: 'pauta/peca/p1-1-aaa.png' }, { chave: 'pauta/peca/p1-1-aaa.jpg' }, { n: 2 }] };
+    expect(chavesDaMeta(meta)).toEqual(['pauta/pecas/p1/corte-a.mp4', 'pauta/peca/p1-1-aaa.png', 'pauta/peca/p1-1-aaa.jpg']);
+    expect(chavesDaMeta(null)).toEqual([]);
+    expect(chavesDaMeta({ video: null, imagens: 'x' })).toEqual([]);
+
+    const objetos = [
+      obj('pauta/pecas/p1/corte-a.mp4', 120, 20),
+      // O candidato trocado (MD13), o re-render e o envio que caiu no 409: ninguém aponta para eles.
+      obj('pauta/pecas/p1/corte-velho.mp4', 118, 30),
+      obj('pauta/pecas/p2/corte-409.mp4', 121, 10),
+      obj('pauta/pecas/p1/corte-de-ontem.mp4', 119, 1),
+      obj('pauta/peca/p1-1-aaa.png', 1, 20),
+    ];
+    const uso = usoDoStorage(objetos, new Set(chavesDaMeta(meta)), agora, 7);
+    expect(uso).toMatchObject({ objetos: 5, referenciados: { objetos: 2 }, orfaos: { objetos: 3 } });
+    expect(uso.bytes).toBe(479 * 1024 * 1024);
+    // O órfão de ontem pode ser um envio que ainda vai ser gravado na peça: fica.
+    expect(uso.removiveis.map((o) => [o.chave, o.idadeDias])).toEqual([
+      ['pauta/pecas/p1/corte-velho.mp4', 30],
+      ['pauta/pecas/p2/corte-409.mp4', 10],
+    ]);
+    expect(formatarBytes(uso.bytes)).toBe('479 MB');
+    expect(formatarBytes(1_610_612_736)).toBe('1,5 GB');
+  });
+
+  it('a remoção recusa quando nenhuma peça referencia nada (a leitura não atravessou o isolamento) ou quando uma empresa falhou', () => {
+    const objetos = [obj('pauta/pecas/p1/corte-a.mp4', 120, 20)];
+    expect(motivoParaNaoRemover(usoDoStorage(objetos, new Set(), agora, 7), 0, 0)).toMatch(/não atravessou o isolamento/);
+    expect(motivoParaNaoRemover(usoDoStorage(objetos, new Set(['pauta/pecas/p1/corte-a.mp4']), agora, 7), 3, 1)).toMatch(/falhou/);
+    expect(motivoParaNaoRemover(usoDoStorage(objetos, new Set(['pauta/pecas/p1/corte-a.mp4']), agora, 7), 3, 0)).toBeNull();
+  });
+
+  it('o storage lista o prefixo com tamanho e data, remove um objeto por vez, e o boot loga o total da mídia das peças', async () => {
+    const removidos: string[] = [];
+    const cliente = {
+      listObjectsV2: (_b: string, prefixo: string) =>
+        Readable.from(
+          prefixo === 'pauta/pecas/'
+            ? [{ name: 'pauta/pecas/p1/corte-a.mp4', size: 3 * 1024 * 1024, lastModified: agora }]
+            : [{ name: 'pauta/peca/p1-1-aaa.png', size: 1024, lastModified: agora }],
+        ),
+      removeObject: async (_b: string, k: string) => void removidos.push(k),
+      bucketExists: async () => true,
+    };
+    vi.stubEnv('S3_ACCESS_KEY', 'k');
+    vi.stubEnv('S3_SECRET_KEY', 's');
+    try {
+      const storage = new StorageService();
+      (storage as unknown as { cliente: unknown }).cliente = cliente;
+      expect(await storage.listar('pauta/pecas/')).toEqual([{ chave: 'pauta/pecas/p1/corte-a.mp4', bytes: 3 * 1024 * 1024, modificadoEm: agora }]);
+      await storage.remover('pauta/pecas/p1/corte-a.mp4');
+      expect(removidos).toEqual(['pauta/pecas/p1/corte-a.mp4']);
+
+      const linhas: string[] = [];
+      (storage as unknown as { log: { log: (m: string) => void; warn: (m: string) => void } }).log = { log: (m) => linhas.push(m), warn: (m) => linhas.push(m) };
+      await storage.onModuleInit();
+      await vi.waitFor(() => expect(linhas.some((l) => l.startsWith('mídia das peças no storage: 3 MB em 2 objeto(s)'))).toBe(true));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('o comando existe compilado no package.json e fica fora de toda rotina', () => {
+    const pacote = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+    expect(pacote.scripts['storage:uso']).toBe('node dist/scripts/storage-uso.js');
+    const script = readFileSync(path.join(__dirname, '..', 'src', 'scripts', 'storage-uso.ts'), 'utf8');
+    expect(script).toMatch(/--remover-orfaos/);
+    expect(script).toMatch(/--confirmar/);
+    expect(script).toMatch(/conferirQueAtravessaOIsolamento/);
   });
 });
 

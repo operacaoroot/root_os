@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@
 import { Client } from 'minio';
 import { createHash } from 'node:crypto';
 import type { Readable } from 'node:stream';
+import { PREFIXOS_DA_MIDIA_DAS_PECAS, formatarBytes, type ObjetoDoStorage } from './uso-da-midia';
 
 /** O pedaço de cada parte do envio em partes: só ele fica em memória. O S3 pede ao menos 5 MB. */
 export const PARTE_DO_ENVIO = 16 * 1024 * 1024;
@@ -51,10 +52,48 @@ export class StorageService implements OnModuleInit {
         this.log.log(`bucket "${this.bucket}" criado`);
       }
       this.log.log(`storage pronto — bucket "${this.bucket}"`);
+      void this.medirAMidiaDasPecas();
     } catch (e) {
       // Não derruba a API: sem storage o resto do sistema segue funcionando.
       this.log.warn(`storage indisponível no boot: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * Uma linha no boot com o total da mídia das peças (MD4): o mp4 do corte
+   * mora no mesmo disco do Postgres e do backup, e nada o apaga sozinho. Roda
+   * fora do caminho do boot; o detalhe (referenciado × órfão) é o
+   * `storage:uso`.
+   */
+  private async medirAMidiaDasPecas(): Promise<void> {
+    try {
+      let objetos = 0;
+      let bytes = 0;
+      for (const prefixo of PREFIXOS_DA_MIDIA_DAS_PECAS) {
+        for (const o of await this.listar(prefixo)) {
+          objetos++;
+          bytes += o.bytes;
+        }
+      }
+      this.log.log(`mídia das peças no storage: ${formatarBytes(bytes)} em ${objetos} objeto(s) — o detalhe e os órfãos: pnpm --filter @mktos/api storage:uso`);
+    } catch (e) {
+      this.log.warn(`a mídia das peças não foi medida: ${(e as Error).message}`);
+    }
+  }
+
+  /** Os objetos de um prefixo, com tamanho e data. Para medir; quem remove é o `storage:uso`, à mão. */
+  async listar(prefixo: string): Promise<ObjetoDoStorage[]> {
+    const stream = this.client.listObjectsV2(this.bucket, prefixo, true);
+    const saida: ObjetoDoStorage[] = [];
+    for await (const o of stream as AsyncIterable<{ name?: string; size?: number; lastModified?: Date }>) {
+      if (o.name) saida.push({ chave: o.name, bytes: o.size ?? 0, modificadoEm: o.lastModified ?? new Date(0) });
+    }
+    return saida;
+  }
+
+  /** Remove UM objeto. Só o `storage:uso --remover-orfaos --confirmar` chama. */
+  async remover(chave: string): Promise<void> {
+    await this.client.removeObject(this.bucket, chave);
   }
 
   async put(key: string, corpo: Buffer, contentType: string): Promise<void> {

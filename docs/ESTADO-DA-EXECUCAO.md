@@ -1479,6 +1479,21 @@ Com cortes reais de 1–3 min, a estimativa é de 50 a 150 MB por corte e **0,3 
 quatro cortes, mais uns 5 MB de JPEG. **Estimativa**, a medir com o primeiro episódio real. Nada é
 apagado do storage nesta fatia (nem ao reenviar: o sha novo é outra chave).
 
+**Correção da estimativa (revisão final, 25/09).** A conta acima supõe um render por corte. Três
+caminhos da própria onda deixam objetos que nenhuma peça referencia: a troca de candidato (MD13),
+o re-render depois de editar a peça ou de trocar a transcrição, e o envio que cai no 409 porque o
+trecho mudou durante o `putStream`. Um episódio com 4 cortes de 2 min, 2 trocas de candidato, um
+409 e uma transcrição corrigida deixa **~1,5–2 GB por semana**, dos quais ~0,5 GB referenciados:
+**~40–50 GB em 6 meses** sem limpeza, no disco de 96 GB que o Postgres, o MinIO e o backup
+dividem. O que mede e limpa:
+- o boot da API loga `mídia das peças no storage: <total> em <n> objeto(s)` (`pauta/pecas/` e
+  `pauta/peca/`);
+- `docker exec mktos_api node dist/scripts/storage-uso.js` separa o referenciado do órfão, com a
+  idade; `--remover-orfaos` diz o que sairia, e só `--remover-orfaos --confirmar` remove (órfão com
+  `--dias` ou mais, padrão 7). Recusa remover quando nenhuma peça referencia nada (a leitura não
+  atravessou o isolamento) e nunca roda como rotina;
+- a conferência pós-deploy da onda D passa a anotar o total do prefixo.
+
 **Deploy:** nenhuma migration, capacidade, permissão ou seed. Variáveis novas com padrão no compose;
 sem `PAUTA_MIDIA_PUBLICA_SEGREDO` a rota pública responde 404 e `POST …/midia-publica` responde 503.
 
