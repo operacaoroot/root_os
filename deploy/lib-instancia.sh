@@ -208,6 +208,46 @@ ouvintes_na_porta() {
     !($1 in ja) { ja[$1] = 1; print }'
 }
 
+# O catálogo de módulos (MODULOS em packages/shared/src/nav.ts), uma chave por linha.
+# Bloco não achado = exit 1; quem chama também trata catálogo vazio como ilegível.
+modulos_do_catalogo() {
+  awk -v q="['\"]" '
+    /^export const MODULOS = \[/ { dentro = 1; next }
+    dentro && /^\]/ { fim = 1; exit }
+    dentro {
+      while (match($0, q "[a-z][a-z0-9_-]*" q)) { print substr($0, RSTART + 1, RLENGTH - 2); $0 = substr($0, RSTART + RLENGTH) }
+    }
+    END { if (!fim) exit 1 }' "$1"
+}
+
+# O catálogo DA TAG que vai ser instalada, lido antes de criar qualquer coisa: clone
+# raso, sem checkout, num temporário apagado na mesma função. Falhou = exit 1.
+catalogo_de_modulos_da_tag() {
+  local repo="$1" tag="$2" tmp saida=""
+  tmp="$(mktemp -d -t rootos-catalogo.XXXXXX)" || return 1
+  if "$GIT" -c advice.detachedHead=false clone --quiet --no-checkout --depth 1 --branch "$tag" "$repo" "$tmp/repo" >/dev/null 2>&1 \
+    && "$GIT" -C "$tmp/repo" show "HEAD:packages/shared/src/nav.ts" > "$tmp/nav.ts" 2>/dev/null; then
+    saida="$(modulos_do_catalogo "$tmp/nav.ts")" || saida=""
+  fi
+  case "$tmp" in */rootos-catalogo.*) rm -rf "$tmp" ;; esac
+  [ -n "$saida" ] || return 1
+  printf '%s\n' "$saida"
+}
+
+# As chaves de "a,b,c" que não estão no catálogo (uma por linha), separadas por ", ".
+modulos_fora_do_catalogo() {
+  local lista="$1" catalogo="$2" m fora=""
+  local IFS=,
+  for m in $lista; do
+    case "
+$catalogo
+" in *"
+$m
+"*) ;; *) fora="${fora:+$fora, }$m" ;; esac
+  done
+  printf '%s' "$fora"
+}
+
 # Colisão de porta contra o HOST — o que as irmãs não cobrem: qualquer programa já
 # ouvindo (outro Postgres, um `next dev`, uma instância antiga fora do instalador).
 # Na VPS o `up` falharia no meio da instalação; no Colima é pior: o container sobe

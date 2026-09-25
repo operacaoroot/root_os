@@ -70,7 +70,11 @@ O que muda com `--bind-ip 127.0.0.1` (qualquer `127.x` conta como máquina local
 - Nada da VPS entra: nem `docker-compose.vps.yml`, nem `IP_DOCKER_HOST`; o override gerado binda as
   seis portas em `127.0.0.1` e a saúde é conferida em `http://127.0.0.1:<porta da api>`.
 - `--modulos <a,b,c|todos>` vai ao `provisionar-tenant` da empresa do cliente; sem a flag, `todos`
-  (o comportamento de sempre). Exige `--cliente`; lista vazia é recusada.
+  (o comportamento de sempre). Exige `--cliente`; lista vazia é recusada, e `todos` não se mistura
+  com outras chaves. A lista é conferida no passo 1, antes de criar qualquer coisa, contra o
+  catálogo da própria tag (`MODULOS` em `packages/shared/src/nav.ts`, lido de um clone raso
+  temporário que é apagado em seguida): chave fora dele recusa com a lista das válidas. Sem
+  conseguir ler o catálogo, a instalação não segue.
 
 **Porta ocupada no Mac.** Antes de criar qualquer coisa, o instalador pergunta ao host quem ouve
 cada uma das seis portas, e recusa dizendo porta, variável e processo. No Colima isso importa mais que na VPS: o container sobe dentro da VM e o encaminhamento

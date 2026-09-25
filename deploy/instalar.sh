@@ -96,11 +96,15 @@ if [ -n "$CLIENTE" ] || [ -n "$ADMIN_EMAIL" ]; then
   [[ "$CLIENTE" =~ ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$ ]] || falha "slug de cliente inválido: '$CLIENTE' (a-z, 0-9 e hífen; sem começar/terminar com hífen)" 64
 fi
 # `--modulos` vai ao provisionar-tenant como está; sem a flag, `todos` (o de sempre).
-# Chave de módulo é minúscula; o catálogo (MODULOS em packages/shared) quem confere é o
-# provisionamento. Aqui só a forma, porque o valor também vira argv no container.
+# Aqui a forma, porque o valor também vira argv no container; o catálogo da tag é
+# conferido no passo 1, antes de criar qualquer coisa (ver MODULOS_CONFERIDOS).
 if [ "$MODULOS_VEIO" = 1 ]; then
   [ -n "$CLIENTE" ] || falha "--modulos são os da empresa do cliente: exige --cliente e --admin-email" 64
   [[ "$MODULOS_CLIENTE" =~ ^(todos|[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*)$ ]] || falha "--modulos inválido: '$MODULOS_CLIENTE' — 'todos' ou chaves separadas por vírgula (ex.: financeiro,relatorios)" 64
+  # O provisionar-tenant só entende `todos` inteiro; no meio da lista vira chave desconhecida.
+  case ",$MODULOS_CLIENTE," in
+    *,todos,*) [ "$MODULOS_CLIENTE" = todos ] || falha "--modulos inválido: '$MODULOS_CLIENTE' — 'todos' não se mistura com outras chaves: ou 'todos', ou a lista" 64 ;;
+  esac
 else
   MODULOS_CLIENTE="todos"
 fi
@@ -147,6 +151,17 @@ command -v openssl >/dev/null 2>&1 || falha "openssl não encontrado no PATH"
 # Antes de criar qualquer coisa: porta ocupada no host recusa aqui, com nada em disco.
 conferir_portas_livres_no_host "$BIND_IP" WEB_HOST_PORT="$WEB" API_HOST_PORT="$API" DB_PORT="$DBP" \
   REDIS_PORT="$RED" MINIO_PORT="$MIN" MINIO_CONSOLE_PORT="$MINC"
+# Módulos contra o catálogo DA TAG, também antes de criar qualquer coisa. Chave fora dele
+# só falharia no passo 7/10, com imagem feita e banco no ar, e a instância pela metade
+# recusaria a nova tentativa. `todos` é o catálogo inteiro e não precisa de conferência.
+MODULOS_CONFERIDOS=0
+if [ "$MODULOS_CLIENTE" != todos ]; then
+  CATALOGO="$(catalogo_de_modulos_da_tag "$REPO" "$TAG")" \
+    || falha "não consegui ler o catálogo de módulos (MODULOS em packages/shared/src/nav.ts) da tag $TAG de $REPO. Sem ele o --modulos não é conferido, e a instalação não segue. Nada foi criado."
+  FORA="$(modulos_fora_do_catalogo "$MODULOS_CLIENTE" "$CATALOGO")"
+  [ -z "$FORA" ] || falha "--modulos com chave fora do catálogo da tag $TAG: $FORA. Os válidos: $(printf '%s\n' "$CATALOGO" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }'). Nada foi criado." 64
+  MODULOS_CONFERIDOS=1
+fi
 
 umask 077
 if [ "$SO_CHECAR" = 1 ]; then
@@ -239,6 +254,7 @@ conferir_portas_internas "$ENV"
 
 if [ "$SO_CHECAR" = 1 ]; then
   echo "[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone)."
+  [ "$MODULOS_CONFERIDOS" = 0 ] || echo "  módulos conferidos no catálogo da tag $TAG (lido de um clone temporário, já apagado)"
   echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
   echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
   echo "  endereço: $URL_PUBLICA$([ "$MODO_LOCAL" = 1 ] && echo " (máquina local: só esta máquina alcança)" || true)"

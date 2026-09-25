@@ -41,6 +41,8 @@ const STUBS = path.join(RAIZ, 'deploy', 'test-stubs');
 // O stub de docker delega SÓ `compose config` ao docker de verdade (é o que funde o compose do painel).
 const DOCKER_REAL = spawnSync('bash', ['-c', 'command -v docker'], { encoding: 'utf8' }).stdout.trim();
 const COMPOSE_REAL = readFileSync(path.join(RAIZ, 'docker-compose.yml'), 'utf8');
+// O catálogo de módulos de verdade vai para a fixture: é contra ele que o `--modulos` é conferido.
+const NAV_REAL = readFileSync(path.join(RAIZ, 'packages', 'shared', 'src', 'nav.ts'), 'utf8');
 
 function sh(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> } = {}) {
   return spawnSync(cmd, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, encoding: 'utf8' });
@@ -62,6 +64,8 @@ function fixture(): { origem: string; commits: Record<string, string> } {
   mkdirSync(path.join(origem, 'deploy'), { recursive: true });
   writeFileSync(path.join(origem, 'deploy/backup-db.sh'), readFileSync(path.join(STUBS, 'backup-db.sh')));
   writeFileSync(path.join(origem, 'docker-compose.yml'), COMPOSE_REAL);
+  mkdirSync(path.join(origem, 'packages/shared/src'), { recursive: true });
+  writeFileSync(path.join(origem, 'packages/shared/src/nav.ts'), NAV_REAL);
   const commits: Record<string, string> = {};
   mig('20260101000000_um');
   git(origem, 'add', '-A'); git(origem, 'commit', '-qm', 'v0'); git(origem, 'tag', 'v0'); commits.v0 = git(origem, 'rev-parse', 'HEAD');
@@ -988,5 +992,50 @@ describe('--modulos: repassado ao provisionar-tenant da empresa do cliente', () 
     const chk = comCliente(caixa(), ['--modulos', 'financeiro', '--so-checar']);
     expect(chk.status, chk.stderr).toBe(0);
     expect(chk.stdout).toMatch(/cliente: campobom \(módulos: financeiro\)/);
+  });
+
+  // O catálogo é fechado (MODULOS em packages/shared/src/nav.ts). Chave fora dele só
+  // falhava no provisionar-tenant, no passo 7/10: imagem feita, banco no ar, migrations
+  // e seed rodados, .env gravado — e a nova tentativa recusada por "já existe".
+  // Do docker, no máximo a pré-condição do passo 1 (`docker compose version`): nada de build, up ou run.
+  const soPreCondicao = (c: Caixa) => lerLog(c).split('\n').filter((l) => l && l !== 'docker compose version');
+  const semRastro = (c: Caixa, r: ReturnType<typeof spawnSync>, rotulo: string) => {
+    expect(r.status, `${rotulo}: ${r.stderr}`).toBe(64);
+    expect(soPreCondicao(c), rotulo).toEqual([]);
+    expect(existsSync(c.base), rotulo).toBe(false);
+  };
+
+  it('chave fora do catálogo da tag é recusada antes de criar qualquer coisa, dizendo quais valem', () => {
+    for (const ruim of ['financeiros', 'leads,financeiros', 'crm,metas']) {
+      const c = caixa();
+      const r = comCliente(c, ['--modulos', ruim]);
+      semRastro(c, r, ruim);
+      expect(r.stderr).toMatch(new RegExp(`fora do catálogo da tag v1: ${ruim.split(',').filter((m) => !['leads', 'metas'].includes(m)).join(', ')}`));
+      expect(r.stderr).toMatch(/válidos: trabalho, relatorios, leads, campanhas, pixels, conteudo, pauta, instagram, bio, metas, financeiro/);
+    }
+    // --so-checar também confere, e não deixa nada
+    const c = caixa();
+    semRastro(c, comCliente(c, ['--modulos', 'financeiros', '--so-checar']), 'so-checar');
+  });
+
+  it('`todos` não se mistura com outras chaves', () => {
+    for (const ruim of ['todos,leads', 'leads,todos', 'leads,todos,metas']) {
+      const c = caixa();
+      const r = comCliente(c, ['--modulos', ruim]);
+      semRastro(c, r, ruim);
+      expect(r.stderr).toMatch(/'todos' não se mistura/);
+    }
+  });
+
+  it('tag sem catálogo legível: falha fechada, sem criar nada', () => {
+    const c = caixa();
+    rmSync(path.join(c.origem, 'packages'), { recursive: true });
+    git(c.origem, 'add', '-A'); git(c.origem, 'commit', '-qm', 'sem catalogo'); git(c.origem, 'tag', 'sem-catalogo');
+    const r = rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'sem-catalogo', '--bind-ip', '127.0.0.1', '--sem-llm', '--cliente', 'campobom', '--admin-email', 'dono@campobom.com.br', '--modulos', 'financeiro'], { ROOTOS_ANTHROPIC_API_KEY: '', ...GOOGLE });
+    // não é erro de uso: é não ter como conferir (tag sem o arquivo, clone que falhou)
+    expect(r.status, r.stderr).toBe(1);
+    expect(soPreCondicao(c)).toEqual([]);
+    expect(existsSync(c.base)).toBe(false);
+    expect(r.stderr).toMatch(/não consegui ler o catálogo de módulos \(MODULOS em packages\/shared\/src\/nav\.ts\) da tag sem-catalogo/);
   });
 });
