@@ -560,10 +560,19 @@ export class EnvioAoYoutubeService implements OnModuleInit {
 
   /**
    * O token que o Mac leva, pedido só com `youtube.upload`. Se o Google
-   * devolver mais que isso (o `force-ssl` publica e apaga vídeo fora do lote),
-   * com a auditoria aprovada ele NÃO sai: sem a auditoria, todo vídeo do
-   * projeto fica privado de qualquer jeito, e o modo teste só alcança o canal
-   * de teste. `forcar`: o Mac pediu outro porque o YouTube respondeu 401.
+   * devolver mais que isso (o `force-ssl` também altera e apaga os vídeos do
+   * canal), com a auditoria aprovada ele NÃO sai: sem a auditoria, todo vídeo
+   * do projeto fica privado de qualquer jeito, e o modo teste só alcança o
+   * canal de teste. `forcar`: o Mac pediu outro porque o YouTube respondeu 401.
+   *
+   * O LIMITE DESTA TRAVA: `soEnvio` defende contra apagar e alterar vídeo, e
+   * NÃO contra publicar. `videos.insert` aceita o escopo `youtube.upload` e
+   * grava `status.privacyStatus` na inserção: num projeto auditado, este token
+   * cria um vídeo PÚBLICO à parte, com qualquer arquivo, sem passar pela porta.
+   * O risco é residual da D-MC6 (os bytes não passam pela VPS, `naoFazer`) e
+   * está com o Pedro. O que o reduz: só quem tem `pauta.youtube.enviar` recebe
+   * o token (a conta do Mac, não todo editor), e a conclusão confere os
+   * uploads do canal na janela da sessão (`conferirUploadsDoCanal`).
    */
   private async tokenParaOMac(orgId: string, forcar: boolean): Promise<{ token: string; expiraEm: Date; soEnvio: boolean }> {
     let token: { token: string; expiraEm: Date; soEnvio: boolean };
@@ -685,6 +694,7 @@ export class EnvioAoYoutubeService implements OnModuleInit {
       const item = await this.itemDeEnvio(orgId, e.id);
       if ('problema' in envio) throw new BadRequestException(`${envio.problema} Nada foi enviado.`);
       if (!r.videoId) {
+        await this.exigirOVideoDaSessao(orgId, r, videoId);
         const u = await this.prisma.envioAoYoutube.updateMany({
           where: { id: r.id, orgId, estado: r.estado, videoId: null },
           data: { videoId },
@@ -694,6 +704,67 @@ export class EnvioAoYoutubeService implements OnModuleInit {
       await this.pelaPorta(orgId, actorId, ActorType.user, CAPACIDADE_DE_ENVIAR, envio.args as unknown as Record<string, unknown>, item.itemId, e.id);
       return this.doEpisodio(orgId, episodioId);
     });
+  }
+
+  /**
+   * O id que o Mac informa não é a fonte da verdade: o OS pergunta à sessão
+   * resumable que ELE abriu (com o tamanho assinado no cabeçalho) qual vídeo
+   * ela criou, e recusa quando não bate. Sem isso, qualquer vídeo privado com
+   * os mesmos título, descrição e categoria passaria pela conferência.
+   */
+  private async exigirOVideoDaSessao(orgId: string, r: EnvioAoYoutube, informado: string): Promise<void> {
+    if (!r.sessaoCifrada) {
+      throw new ConflictException('A sessão de envio que o OS abriu não está mais guardada: peça uma sessão nova (root-midia youtube ep-NN). Nada foi conferido.');
+    }
+    let s;
+    try {
+      s = await this.youtube.resultadoDaSessao(orgId, decifrar(r.sessaoCifrada), Number(r.bytes));
+    } catch (e) {
+      if (e instanceof ErroDoYoutube && e.status === 404) {
+        throw new ConflictException('A sessão de envio que o OS abriu não existe mais no YouTube: peça uma sessão nova e mande o arquivo de novo. Nada foi conferido.');
+      }
+      throw new ServiceUnavailableException(`A sessão de envio não respondeu: ${fraseDoYoutube(e)} Tente concluir de novo.`);
+    }
+    if (!s.videoId) {
+      throw new ConflictException(`O upload na sessão aberta pelo OS não terminou (${s.recebidos} de ${Number(r.bytes)} bytes): o Mac termina de mandar antes de concluir.`);
+    }
+    if (s.videoId !== informado) {
+      throw new ConflictException('O vídeo informado não é o que a sessão aberta pelo OS recebeu (o arquivo assinado): nada foi conferido.');
+    }
+  }
+
+  /**
+   * Depois de conferido, os uploads do canal desde a abertura da sessão: um
+   * vídeo não privado que o OS não abriu é o sinal do token do Mac usado fora
+   * do lote (ver `tokenParaOMac`). Vira aviso na linha e no RASTRO; a leitura
+   * que falha também vira aviso, e não derruba o envio conferido.
+   */
+  private async conferirUploadsDoCanal(orgId: string, r: EnvioAoYoutube, ctx: ContextoDoEfeito): Promise<string | null> {
+    if (!r.sessaoAbertaEm || !r.videoId) return null;
+    let uploads;
+    try {
+      uploads = await this.youtube.uploadsDoCanal(orgId);
+    } catch (e) {
+      return `uploads do canal não conferidos: ${fraseDoYoutube(e)}`;
+    }
+    const desde = r.sessaoAbertaEm.getTime() - 60_000;
+    const estranhos = uploads.filter(
+      (u) => u.videoId !== r.videoId && u.privacidade !== 'private' && u.enviadoEm !== null && new Date(u.enviadoEm).getTime() >= desde,
+    );
+    if (!estranhos.length) return null;
+    await this.audit.log({
+      orgId,
+      actorId: ctx.actorId ?? undefined,
+      action: 'pauta.youtube_upload_fora_do_lote',
+      entityType: 'pauta_episodio',
+      entityId: r.episodioId,
+      after: { videos: estranhos.slice(0, 10).map((u) => ({ videoId: u.videoId, privacidade: u.privacidade, enviadoEm: u.enviadoEm })) },
+      metadata: { correlationId: ctx.correlationId ?? null, loteItemId: ctx.loteItemId ?? null } as Prisma.InputJsonValue,
+    });
+    return `ATENÇÃO: o canal recebeu ${estranhos.length} vídeo(s) não privado(s) que o OS não abriu, desde a sessão deste envio (${estranhos
+      .slice(0, 3)
+      .map((u) => u.videoId)
+      .join(', ')}): confira no Studio e, se não foi a equipe, desligue o YouTube em /conexoes`;
   }
 
   private async pelaPorta(
@@ -868,6 +939,8 @@ export class EnvioAoYoutubeService implements OnModuleInit {
     } catch (e) {
       return this.falhar(orgId, r, ctx, fraseDoYoutube(e));
     }
+    const estranho = await this.conferirUploadsDoCanal(orgId, r, ctx);
+    if (estranho) extra.avisos.unshift(estranho);
     const u = await this.prisma.envioAoYoutube.updateMany({
       where: { id: r.id, orgId, estado: r.estado, videoId: r.videoId },
       data: {

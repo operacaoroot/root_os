@@ -940,6 +940,15 @@ para sessão aberta, RASTRO e releitura pelo OS antes de publicar; se o refresh 
 `scope=youtube.upload` devolver token mais estreito — **a conferir** —, o Mac passa a receber só
 esse). O prazo da auditoria é desconhecido.
 
+**Correção da premissa (revisão final, 25/09).** O token só de envio NÃO impede publicar: o
+`videos.insert` aceita `youtube.upload` e grava `status.privacyStatus` na inserção, então, com a
+auditoria aprovada, ele cria vídeo público à parte no canal, fora da porta. `soEnvio` defende só
+contra alterar e apagar vídeo. O risco residual é da D-MC6 e está com o Pedro (ESTADO, MD10,
+pendência 10). No código: o token, a sessão e a conclusão pedem `pauta.youtube.enviar` (a conta do
+Mac, não todo editor); a conclusão pergunta à sessão aberta pelo OS qual vídeo ela criou (o id do
+Mac não é a fonte da verdade) e confere `fileDetails.fileSize` com os bytes assinados; e lê a
+playlist de uploads do canal, alertando sobre vídeo não privado que o OS não abriu.
+
 
 ### MD11 — DM automática sob o lote, disparada pelo coletor
 

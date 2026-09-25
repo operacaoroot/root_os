@@ -205,6 +205,10 @@ export function divergenciaDoVideo(v: VideoNoYoutube | null, a: ArgsDoEnvioAoYou
   if ((v.titulo ?? '') !== a.titulo) return 'O título do vídeo no YouTube não é o assinado.';
   if ((v.descricao ?? '').replace(/\r\n/g, '\n') !== a.descricao.replace(/\r\n/g, '\n')) return 'A descrição do vídeo no YouTube não é a assinada.';
   if (v.categoria !== null && v.categoria !== a.categoria) return 'A categoria do vídeo no YouTube não é a assinada.';
+  // O sha256 o YouTube não expõe; o tamanho, sim (só ao dono). Ausente, vale a amarra da sessão aberta pelo OS.
+  if (v.tamanho != null && v.tamanho !== a.bytes) {
+    return `O arquivo do vídeo no YouTube tem ${v.tamanho} bytes, e o assinado tem ${a.bytes}: não é o vídeo final da semana.`;
+  }
   if (v.publishAt && a.publicarEm && new Date(v.publishAt).getTime() !== new Date(a.publicarEm).getTime()) {
     return 'O vídeo já tem outro horário de publicação no YouTube.';
   }

@@ -2224,11 +2224,24 @@ nenhum.
 - **O lote só do YouTube ainda pede os impedimentos da semana** (página de links no ar, conta de
   publicação do Instagram): o YouTube anda junto com a semana, como a SPEC da MD8.
 - **O token do Mac é OUTRO, renovado com `scope=youtube.upload`** (`tokenDoEnvio`, guardado à parte
-  do da API). Se o Google ignorar o escopo pedido e devolver o largo (o `force-ssl` publica e apaga
-  fora do lote), com `YOUTUBE_AUDITORIA=aprovada` ele não sai, e a recusa vem antes da porta; sem a
-  auditoria, todo vídeo do projeto fica privado de qualquer jeito, e o modo teste só alcança o canal
-  de teste. Cada entrega vai ao RASTRO (`pauta.youtube_token_entregue`, com `soEnvio` e `renovado`,
-  sem o valor).
+  do da API). Se o Google ignorar o escopo pedido e devolver o largo (o `force-ssl` também altera e
+  apaga os vídeos do canal), com `YOUTUBE_AUDITORIA=aprovada` ele não sai, e a recusa vem antes da
+  porta; sem a auditoria, todo vídeo do projeto fica privado de qualquer jeito, e o modo teste só
+  alcança o canal de teste. Cada entrega vai ao RASTRO (`pauta.youtube_token_entregue`, com
+  `soEnvio` e `renovado`, sem o valor).
+- **Correção da revisão final (25/09):** `soEnvio` NÃO impede publicar. `videos.insert` aceita o
+  escopo `youtube.upload` e grava `status.privacyStatus` na inserção: num projeto auditado, o token
+  do Mac cria um vídeo público à parte, com qualquer arquivo, fora da porta. O que ficou no código:
+  receber a sessão, o token e concluir pedem `pauta.youtube.enviar` (só o Admin Master nasce com
+  ela; a conta do vigia recebe por um perfil próprio), e cada conclusão lê a playlist de uploads do
+  canal e marca vídeo não privado que o OS não abriu, desde a sessão, como `ATENÇÃO` na linha e
+  `pauta.youtube_upload_fora_do_lote` no RASTRO. O resto é risco residual da D-MC6 (pendência 10).
+- **A conclusão amarra o vídeo ao arquivo pela sessão** (correção da revisão final): o id que o Mac
+  manda não é a fonte da verdade. O OS pergunta à sessão resumable que ELE abriu (`PUT` vazio com
+  `Content-Range: bytes */<total>`) qual vídeo ela criou e recusa quando o id diverge ou o upload
+  não terminou. A leitura do vídeo pede também `fileDetails`, e o `fileSize` diferente do assinado
+  é divergência (na conclusão e no agendamento). O YouTube não expõe o sha256: o tamanho e a sessão
+  aberta pelo OS são a amarra possível.
 - Depois do `publishAt` aceito, os usos que sobraram dos dois itens são revogados: o lote se
   encerra, e o vídeo agendado não tem por onde sair de novo pelo OS.
 - **A sessão já aberta é devolvida sem passar pela porta** (e sem gastar uso), como o token novo:
@@ -2363,6 +2376,13 @@ regra de uma réplica, da onda D, continua). O prazo da auditoria é desconhecid
    no cofre com outro nome (fatia a abrir). Conferir também se o Google manda
    `refresh_token_expires_in` em Testing (sem ele, a saúde lembra pela data da conexão) e a categoria
    certa do canal (nota `pauta.youtube.categoria`, padrão 28).
+10. **Decidir o risco residual do token do Mac (D-MC6).** Com a auditoria aprovada, o token só de
+    envio que vai ao Mac por ~1 h ainda cria vídeo PÚBLICO à parte no canal (o `videos.insert`
+    aceita a privacidade na inserção). Defesas no código: só quem tem `pauta.youtube.enviar` recebe
+    o token, e a conclusão alerta sobre upload não privado fora do OS. A alternativa que fecha o
+    buraco é os bytes passarem pela VPS, que o `naoFazer` da onda proíbe. Até decidir: rodar
+    `pnpm --filter @mktos/api exec tsx prisma/sync-permissions.ts` no deploy e dar
+    `pauta.youtube.enviar` só à conta do vigia (um perfil próprio, sem mais nada de escrita).
 
 ### Onda D, fatia MD13 — o corte com nota e motivo (25/09/2026)
 

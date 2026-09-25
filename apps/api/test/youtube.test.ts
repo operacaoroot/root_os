@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   PAUTA_MARCADOR_DA_PAGINA_DE_LINKS,
+  ROLES,
   YOUTUBE_ANTECEDENCIA_DA_PUBLICACAO_MS,
   YOUTUBE_ANTECEDENCIA_DO_ENVIO_MS,
   YoutubeArquivoSchema,
@@ -186,6 +187,10 @@ describe('MD10: a auditoria, as faltas e os argumentos (puro)', () => {
     expect(divergenciaDoVideo({ ...v, categoria: '22' }, a)).toMatch(/categoria/);
     expect(divergenciaDoVideo({ ...v, publishAt: '2026-09-04T21:00:00Z' }, a)).toMatch(/outro horário/);
     expect(divergenciaDoVideo({ ...v, publishAt: a.publicarEm ?? null }, a)).toBeNull();
+    // O tamanho do arquivo (fileDetails, só ao dono) amarra o vídeo ao assinado; ausente, vale a sessão aberta pelo OS.
+    expect(divergenciaDoVideo({ ...v, tamanho: a.bytes }, a)).toBeNull();
+    expect(divergenciaDoVideo({ ...v, tamanho: a.bytes - 1 }, a)).toMatch(/não é o vídeo final da semana/);
+    expect(divergenciaDoVideo({ ...v, tamanho: null }, a)).toBeNull();
   });
 
   it('o vídeo que o YouTube recusou, cujo processamento falhou ou que foi apagado não é conferido (duplicata, por exemplo)', () => {
@@ -242,11 +247,16 @@ describe('MD10: a auditoria, as faltas e os argumentos (puro)', () => {
     expect(exemplo).toMatch(/^YOUTUBE_AUDITORIA=pendente$/m);
   });
 
-  it('as rotas do Mac pedem pauta.editar; ler pede pauta.ver; conectar pede pauta.publicar', () => {
+  it('a sessão, o token e a conclusão pedem pauta.youtube.enviar (a conta do Mac, não todo editor); o resto pede pauta.editar; ler pede pauta.ver; conectar pede pauta.publicar', () => {
     const perm = (c: object, m: string) => Reflect.getMetadata(PERMISSIONS_KEY, (c as Record<string, object>)[m]);
     const p = EnvioAoYoutubeController.prototype as unknown as Record<string, unknown>;
     expect(perm(p, 'estado')).toEqual(['pauta.ver']);
-    for (const m of ['declarar', 'sessao', 'token', 'concluido', 'thumb', 'horario']) expect(perm(p, m), m).toEqual(['pauta.editar']);
+    for (const m of ['declarar', 'thumb', 'horario']) expect(perm(p, m), m).toEqual(['pauta.editar']);
+    for (const m of ['sessao', 'token', 'concluido']) expect(perm(p, m), m).toEqual(['pauta.youtube.enviar']);
+    // Nenhum perfil de editor recebe o token: só o Admin Master nasce com ele.
+    for (const [papel, def] of Object.entries(ROLES)) {
+      expect((def.permissions as readonly string[]).includes('pauta.youtube.enviar'), papel).toBe(papel === 'admin_master');
+    }
     const y = YoutubeDaPautaController.prototype as unknown as Record<string, unknown>;
     expect(perm(y, 'pendentes')).toEqual(['pauta.ver']);
     expect(perm(y, 'conectar')).toEqual(['pauta.publicar']);
@@ -301,9 +311,18 @@ describe('MD10: o conector do YouTube contra o dublê', () => {
   let conta: { connectedAt: Date | null; config: { canalId?: string } | null } | null = null;
   /** O item que o dublê da playlist já tem para o vídeo (o insert de antes cuja resposta se perdeu). */
   let playlistExistente: string | null = null;
+  /** O que a sessão resumable responde à consulta: o id do vídeo, incompleta (308) ou sumiu (404). */
+  let sessaoDoDuble = 'v-da-sessao';
+  const totalDaSessao = 314_572_800;
+  let canalFalha = false;
+  const contas: Array<Record<string, unknown>> = [];
   const prisma = {
     org: { findUnique: async ({ where }: { where: { id: string } }) => (consultasAoBanco++, where.id === 'org-yt' ? { id: 'org-yt' } : null) },
-    integrationAccount: { findFirst: async () => conta, create: async () => ({}), update: async () => ({}) },
+    integrationAccount: {
+      findFirst: async () => conta,
+      create: async (a: Record<string, unknown>) => (contas.push(a), {}),
+      update: async (a: Record<string, unknown>) => (contas.push(a), {}),
+    },
   };
   const audit = { log: vi.fn(async () => undefined) };
   const contrato = { registrar: vi.fn(), esquecer: vi.fn() };
@@ -327,15 +346,39 @@ describe('MD10: o conector do YouTube contra o dublê', () => {
         if (u.pathname === '/upload/youtube/v3/videos' && req.method === 'POST') {
           return json(200, {}, { Location: `${base}/upload/youtube/v3/videos?uploadType=resumable&upload_id=sessao-1` });
         }
+        if (u.pathname === '/upload/youtube/v3/videos' && req.method === 'PUT') {
+          if (req.headers['content-range'] !== `bytes */${totalDaSessao}`) return json(400, { error: { message: 'Content-Range inesperado' } });
+          if (sessaoDoDuble === 'sumiu') return json(404, { error: { message: 'sessão desconhecida' } });
+          if (sessaoDoDuble === 'incompleta') {
+            res.writeHead(308, { Range: 'bytes=0-1048575' });
+            return res.end();
+          }
+          return json(200, { id: sessaoDoDuble, status: { privacyStatus: 'private' } });
+        }
         if (u.pathname === '/upload/youtube/v3/thumbnails/set') return json(200, { items: [] });
         if (u.pathname === '/youtube/v3/videos' && req.method === 'GET') {
-          return json(200, { items: [{ id: u.searchParams.get('id'), snippet: { title: 'T', description: 'D', categoryId: '28' }, status: { privacyStatus: 'private', uploadStatus: 'uploaded' } }] });
+          return json(200, {
+            items: [
+              { id: u.searchParams.get('id'), snippet: { title: 'T', description: 'D', categoryId: '28' }, status: { privacyStatus: 'private', uploadStatus: 'uploaded' }, fileDetails: { fileSize: '314572800' } },
+            ],
+          });
         }
         if (u.pathname === '/youtube/v3/videos' && req.method === 'PUT') {
           const b = JSON.parse(corpo) as { id: string; status: Record<string, unknown> };
           return json(200, { id: b.id, status: b.status });
         }
-        if (u.pathname === '/youtube/v3/channels') return json(200, { items: [{ id: 'UC1', snippet: { title: 'Operação Root' } }] });
+        if (u.pathname === '/youtube/v3/channels') {
+          if (canalFalha) return json(500, { error: { message: 'channels.list caiu' } });
+          return json(200, { items: [{ id: 'UC1', snippet: { title: 'Operação Root' }, contentDetails: { relatedPlaylists: { uploads: 'UU1' } } }] });
+        }
+        if (u.pathname === '/youtube/v3/playlistItems' && req.method === 'GET' && u.searchParams.get('playlistId') === 'UU1') {
+          return json(200, {
+            items: [
+              { snippet: { resourceId: { videoId: 'v-nosso' }, publishedAt: '2026-09-25T10:00:00Z' }, status: { privacyStatus: 'private' } },
+              { snippet: { resourceId: { videoId: 'v-estranho' }, publishedAt: '2026-09-25T10:05:00Z' }, status: { privacyStatus: 'public' } },
+            ],
+          });
+        }
         if (u.pathname === '/youtube/v3/playlistItems' && req.method === 'GET') return json(200, { items: playlistExistente ? [{ id: playlistExistente }] : [] });
         if (u.pathname === '/youtube/v3/playlistItems') return json(200, { id: 'pli-1' });
         return json(404, { error: { message: 'rota do dublê desconhecida' } });
@@ -368,6 +411,9 @@ describe('MD10: o conector do YouTube contra o dublê', () => {
     refreshVenceEm = null;
     conta = null;
     playlistExistente = null;
+    sessaoDoDuble = 'v-da-sessao';
+    canalFalha = false;
+    contas.length = 0;
     respostaDoToken = { status: 200, corpo: { access_token: 'at-novo', expires_in: 3599 } };
     yt = new YoutubeService(prisma as never, audit as never, contrato as never, jwt, cofre as never);
   });
@@ -437,6 +483,23 @@ describe('MD10: o conector do YouTube contra o dublê', () => {
     expect(renovacoes).toEqual([]);
   });
 
+  it('a reconexão cujo channels.list falha apaga o canal da conexão anterior e descarta o token do envio guardado', async () => {
+    conta = { connectedAt: new Date(), config: { canalId: 'UCteste' } };
+    respostaDoToken = { status: 200, corpo: { access_token: 'at-envio', expires_in: 3599, scope: 'https://www.googleapis.com/auth/youtube.upload' } };
+    await yt.tokenDoEnvio('org-yt');
+    const bom = jwt.sign({ typ: TIPO_DO_ESTADO_DO_YOUTUBE, org: 'org-yt', sub: 'pessoa-1' }, { expiresIn: '10m' });
+    respostaDoToken = {
+      status: 200,
+      corpo: { access_token: 'at-real', refresh_token: 'rt-real', expires_in: 3599, scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl' },
+    };
+    canalFalha = true;
+    expect(await yt.concluirAutorizacao(bom, 'codigo', undefined)).toMatch(/youtube=ok$/);
+    expect(contas.at(-1)).toMatchObject({ data: { status: 'connected', config: { canalId: null, canal: null } } });
+    // O token do envio da autorização anterior não sai mais: o próximo é renovado.
+    respostaDoToken = { status: 200, corpo: { access_token: 'at-envio-novo', expires_in: 3599, scope: 'https://www.googleapis.com/auth/youtube.upload' } };
+    expect((await yt.tokenDoEnvio('org-yt')).token).toBe('at-envio-novo');
+  });
+
   it('a sessão resumable é SEMPRE privada e sem publishAt, com o tamanho e o tipo nos cabeçalhos; o token vem do refresh do cofre', async () => {
     const uri = await yt.abrirSessao('org-yt', { bytes: 314_572_800, mime: 'video/mp4', metadados: { titulo: 'T', descricao: 'D', categoria: '28' } });
     expect(uri).toBe(`${base}/upload/youtube/v3/videos?uploadType=resumable&upload_id=sessao-1`);
@@ -460,6 +523,30 @@ describe('MD10: o conector do YouTube contra o dublê', () => {
     const put = chamadas.find((c) => c.metodo === 'PUT' && c.caminho === '/youtube/v3/videos')!;
     expect(put.consulta).toEqual({ part: 'status' });
     expect(JSON.parse(put.corpo)).toEqual({ id: 'v1', status: { privacyStatus: 'private', publishAt: '2026-09-03T21:00:00.000Z', selfDeclaredMadeForKids: false } });
+  });
+
+  it('a consulta da sessão resumable: PUT vazio com bytes */total; 200 traz o id, 308 diz até onde chegou, 404 é a sessão que sumiu', async () => {
+    const uri = `${base}/upload/youtube/v3/videos?uploadType=resumable&upload_id=sessao-1`;
+    expect(await yt.resultadoDaSessao('org-yt', uri, totalDaSessao)).toEqual({ videoId: 'v-da-sessao', recebidos: totalDaSessao });
+    const put = chamadas.find((c) => c.metodo === 'PUT' && c.caminho === '/upload/youtube/v3/videos')!;
+    expect(put.cabecalhos['content-range']).toBe(`bytes */${totalDaSessao}`);
+    expect(put.corpo).toBe('');
+    sessaoDoDuble = 'incompleta';
+    expect(await yt.resultadoDaSessao('org-yt', uri, totalDaSessao)).toEqual({ videoId: null, recebidos: 1_048_576 });
+    sessaoDoDuble = 'sumiu';
+    await expect(yt.resultadoDaSessao('org-yt', uri, totalDaSessao)).rejects.toMatchObject({ status: 404 });
+    // A URI de sessão fora de https (e fora de loopback) não recebe o token.
+    await expect(yt.resultadoDaSessao('org-yt', 'http://upload.fora.teste/sessao', totalDaSessao)).rejects.toThrow(/https/);
+  });
+
+  it('ler o vídeo pede fileDetails (o tamanho); os uploads do canal saem da playlist de uploads, com a privacidade', async () => {
+    expect(await yt.lerVideo('org-yt', 'v1')).toMatchObject({ tamanho: 314_572_800 });
+    expect(chamadas.find((c) => c.caminho === '/youtube/v3/videos')!.consulta.part).toBe('snippet,status,fileDetails');
+    expect(await yt.uploadsDoCanal('org-yt')).toEqual([
+      { videoId: 'v-nosso', privacidade: 'private', enviadoEm: '2026-09-25T10:00:00Z' },
+      { videoId: 'v-estranho', privacidade: 'public', enviadoEm: '2026-09-25T10:05:00Z' },
+    ]);
+    expect(chamadas.find((c) => c.caminho === '/youtube/v3/channels')!.consulta).toMatchObject({ part: 'contentDetails', mine: 'true' });
   });
 
   it('ler o vídeo, a thumb em PNG e a playlist saem dos endereços fixos do conector', async () => {

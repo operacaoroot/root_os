@@ -97,6 +97,13 @@ export const PERMISSIONS = [
   'pauta.ver',
   'pauta.editar',
   'pauta.publicar',
+  /*
+   * MD10: receber a sessão e o token curto do YouTube e concluir o envio. É a
+   * conta do Mac, e não todo editor: o token só de envio ainda cria vídeo à
+   * parte no canal (ver `tokenParaOMac` em envio-ao-youtube.service.ts). Nasce
+   * só no Admin Master; a conta do vigia recebe por um perfil próprio.
+   */
+  'pauta.youtube.enviar',
   'aprovacoes.ver',
   'aprovacoes.decidir',
 ] as const;

@@ -64,6 +64,10 @@ class YoutubeFalso implements ClienteDoYoutube {
   canal: string | null = 'UCreal';
   tokensForcados = 0;
   private sessao = 0;
+  /** O vídeo que cada sessão resumable criou (ausente = o upload não terminou). */
+  videoDaSessao = new Map<string, string>();
+  /** A playlist de uploads do canal. */
+  uploads: Array<{ videoId: string; privacidade: string | null; enviadoEm: string | null }> = [];
 
   async conectado(): Promise<boolean> {
     return true;
@@ -83,6 +87,15 @@ class YoutubeFalso implements ClienteDoYoutube {
     this.metadados = e.metadados;
     return `https://upload.teste/sessao/${++this.sessao}`;
   }
+  async resultadoDaSessao(_org: string, uri: string, bytes: number): Promise<{ videoId: string | null; recebidos: number }> {
+    this.chamadas.push({ metodo: 'resultadoDaSessao', args: [uri, bytes] });
+    const videoId = this.videoDaSessao.get(uri) ?? null;
+    return { videoId, recebidos: videoId ? bytes : 0 };
+  }
+  async uploadsDoCanal(): Promise<Array<{ videoId: string; privacidade: string | null; enviadoEm: string | null }>> {
+    this.chamadas.push({ metodo: 'uploadsDoCanal', args: [] });
+    return this.uploads;
+  }
   async lerVideo(_org: string, id: string): Promise<VideoNoYoutube | null> {
     this.chamadas.push({ metodo: 'lerVideo', args: [id] });
     return this.videos.get(id) ?? null;
@@ -101,13 +114,19 @@ class YoutubeFalso implements ClienteDoYoutube {
     this.videos.set(id, agendado);
     return agendado;
   }
-  /** O vídeo que o Mac "subiu": o que a sessão levou, privado. */
+  /** O vídeo que o Mac "subiu" pela última sessão aberta: o que a sessão levou, privado. */
   subiu(id: string, extra: Partial<VideoNoYoutube> = {}) {
+    const m = this.metadados!;
+    this.videos.set(id, { id, titulo: m.titulo, descricao: m.descricao, categoria: m.categoria, privacidade: 'private', publishAt: null, uploadStatus: 'uploaded', ...extra });
+    this.videoDaSessao.set(`https://upload.teste/sessao/${this.sessao}`, id);
+  }
+  /** Um vídeo que entrou no canal POR FORA da sessão (o Studio, ou o token do Mac usado à parte). */
+  porFora(id: string, extra: Partial<VideoNoYoutube> = {}) {
     const m = this.metadados!;
     this.videos.set(id, { id, titulo: m.titulo, descricao: m.descricao, categoria: m.categoria, privacidade: 'private', publishAt: null, uploadStatus: 'uploaded', ...extra });
   }
   escritas() {
-    return this.chamadas.filter((c) => c.metodo !== 'lerVideo');
+    return this.chamadas.filter((c) => !['lerVideo', 'resultadoDaSessao', 'uploadsDoCanal'].includes(c.metodo));
   }
 }
 
@@ -494,17 +513,46 @@ describe.skipIf(!URL)('MD10: o vídeo do episódio no YouTube, pela porta e pelo
     await naEmpresa(() => conectores.religar(ORG, 'youtube'));
   });
 
-  it('o "concluído" confere o vídeo: um id que não é do canal é recusado e solto, com a sessão reaproveitável; o certo, privado e com o assinado, ganha a thumb', async () => {
-    await expect(naEmpresa(() => youtube.concluir(ORG, id.episodio, id.proponente, 'nao-e-do-canal'))).rejects.toThrow(/não existe no canal/);
+  it('o "concluído" pergunta à sessão aberta pelo OS qual vídeo ela criou: o upload inacabado e o id de outro vídeo (mesmo com o mesmo título) são recusados sem gravar nada', async () => {
+    const usosAntes = (await itens()).find((i) => i.capabilityId === 'youtube.video.enviar')!.usos;
+    // O Mac ainda não terminou: a sessão não criou vídeo nenhum.
+    await expect(naEmpresa(() => youtube.concluir(ORG, id.episodio, id.proponente, 'nao-e-do-canal'))).rejects.toThrow(/não terminou/);
+    expect(await envio()).toMatchObject({ estado: 'sessao_aberta', videoId: null });
+    // Um editor sobe outro vídeo privado com o mesmo título, descrição e categoria, e informa o id dele.
+    falso.porFora('vid-de-outro-arquivo');
+    falso.subiu('vid-md10');
+    await expect(naEmpresa(() => youtube.concluir(ORG, id.episodio, id.proponente, 'vid-de-outro-arquivo'))).rejects.toThrow(/não é o que a sessão aberta pelo OS recebeu/);
+    expect(await envio()).toMatchObject({ estado: 'sessao_aberta', videoId: null });
+    expect(falso.escritas()).toEqual([]);
+    expect(falso.chamadas.filter((c) => c.metodo === 'resultadoDaSessao').map((c) => c.args)).toEqual([
+      [uri, ARQUIVO.bytes],
+      [uri, ARQUIVO.bytes],
+    ]);
+    expect((await itens()).find((i) => i.capabilityId === 'youtube.video.enviar')!.usos).toBe(usosAntes);
+  });
+
+  it('o "concluído" confere o vídeo: o da sessão que sumiu do canal é recusado e solto, com a sessão reaproveitável; o certo, privado e com o assinado, ganha a thumb', async () => {
+    const sumiu = falso.videos.get('vid-md10')!;
+    falso.videos.delete('vid-md10');
+    await expect(naEmpresa(() => youtube.concluir(ORG, id.episodio, id.proponente, 'vid-md10'))).rejects.toThrow(/não existe no canal/);
     expect(await envio()).toMatchObject({ estado: 'sessao_aberta', videoId: null, erro: expect.stringMatching(/não existe no canal/) });
     expect(falso.escritas()).toEqual([]);
     // A execução seguinte do Mac recebe a MESMA sessão (e pergunta ao YouTube o id), sem subir o arquivo de novo.
     expect(await naEmpresa(() => youtube.abrirSessao(ORG, id.episodio, id.proponente, ARQUIVO))).toMatchObject({ uri, nova: false });
     expect(falso.escritas()).toEqual([]);
 
-    falso.subiu('vid-md10');
+    falso.videos.set('vid-md10', sumiu);
+    // Na janela da sessão, o canal recebeu um vídeo PÚBLICO que o OS não abriu (o token do Mac usado à parte).
+    falso.uploads = [
+      { videoId: 'vid-md10', privacidade: 'private', enviadoEm: new Date().toISOString() },
+      { videoId: 'vid-publico-por-fora', privacidade: 'public', enviadoEm: new Date().toISOString() },
+      { videoId: 'vid-antigo', privacidade: 'public', enviadoEm: '2020-01-01T00:00:00Z' },
+    ];
     const r = await naEmpresa(() => youtube.concluir(ORG, id.episodio, id.proponente, 'vid-md10'));
-    expect(r.envio).toMatchObject({ estado: 'conferido', videoId: 'vid-md10', erro: null });
+    expect(r.envio).toMatchObject({ estado: 'conferido', videoId: 'vid-md10', erro: expect.stringMatching(/ATENÇÃO: o canal recebeu 1 vídeo\(s\) não privado\(s\) que o OS não abriu.*vid-publico-por-fora/) });
+    const alerta = await prisma.auditLog.findFirstOrThrow({ where: { orgId: ORG, action: 'pauta.youtube_upload_fora_do_lote' } });
+    expect(alerta.after).toMatchObject({ videos: [{ videoId: 'vid-publico-por-fora', privacidade: 'public' }] });
+    falso.uploads = [];
     expect(r.envio?.thumbDefinidaEm).not.toBeNull();
     expect(falso.escritas()).toEqual([{ metodo: 'definirThumb', args: ['vid-md10', SHA_DO_PNG] }]);
     expect((await envio())!.sessaoCifrada).toBeNull();

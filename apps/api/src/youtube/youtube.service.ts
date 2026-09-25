@@ -23,6 +23,8 @@ import {
   ErroDoYoutube,
   type ClienteDoYoutube,
   type MetadadosDoVideo,
+  type ResultadoDaSessao,
+  type UploadDoCanal,
   type VideoNoYoutube,
 } from '../pauta/cliente-do-youtube';
 import type { ConexaoDoYoutube } from './conexao-do-youtube';
@@ -114,6 +116,7 @@ function paraVideo(item: Record<string, any> | null | undefined): VideoNoYoutube
     privacidade: typeof st.privacyStatus === 'string' ? st.privacyStatus : null,
     publishAt: typeof st.publishAt === 'string' ? st.publishAt : null,
     uploadStatus: typeof st.uploadStatus === 'string' ? st.uploadStatus : null,
+    tamanho: item.fileDetails?.fileSize != null && Number.isFinite(Number(item.fileDetails.fileSize)) ? Number(item.fileDetails.fileSize) : null,
   };
 }
 
@@ -274,8 +277,11 @@ export class YoutubeService implements OnModuleInit, ClienteDoYoutube, ConexaoDo
           actorId: alvo.actorId,
         });
         this.tokens.set(org.orgId, { token: t.access_token, expiraEm: new Date(Date.now() + ((t.expires_in ?? 3600) - 60) * 1000) });
+        // O token do envio guardado é da autorização anterior (talvez de outro canal): não sai mais ao Mac.
+        this.tokensDoEnvio.delete(org.orgId);
         const canal = await this.canal(org.orgId).catch(() => null);
-        await this.marcarIntegracao(org.orgId, 'connected', canal);
+        // Sem o canal lido, o `canalId` da conexão anterior NÃO fica: a trava do modo teste leria o canal errado.
+        await this.marcarIntegracao(org.orgId, 'connected', canal, { esquecerCanal: !canal });
         await this.audit.log({
           orgId: org.orgId,
           actorId: alvo.actorId ?? undefined,
@@ -305,9 +311,14 @@ export class YoutubeService implements OnModuleInit, ClienteDoYoutube, ConexaoDo
     return c ? { id: c.id, titulo: c.snippet?.title ?? c.id } : null;
   }
 
-  private async marcarIntegracao(orgId: string, status: 'connected' | 'disconnected', canal: { id: string; titulo: string } | null) {
+  private async marcarIntegracao(
+    orgId: string,
+    status: 'connected' | 'disconnected',
+    canal: { id: string; titulo: string } | null,
+    o: { esquecerCanal?: boolean } = {},
+  ) {
     const ex = await this.prisma.integrationAccount.findFirst({ where: { orgId, key: CONECTOR } });
-    const config = canal ? { canalId: canal.id, canal: canal.titulo } : undefined;
+    const config = canal ? { canalId: canal.id, canal: canal.titulo } : o.esquecerCanal ? { canalId: null, canal: null } : undefined;
     if (ex) {
       await this.prisma.integrationAccount.update({
         where: { id: ex.id },
@@ -467,14 +478,64 @@ export class YoutubeService implements OnModuleInit, ClienteDoYoutube, ConexaoDo
     return uri;
   }
 
+  async resultadoDaSessao(orgId: string, uri: string, bytes: number): Promise<ResultadoDaSessao> {
+    urlDoFornecedor(uri, uri);
+    const { token } = await this.tokenDeAcesso(orgId);
+    let r: Response;
+    try {
+      r = await fetch(uri, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Range': `bytes */${bytes}` },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(PRAZO_DA_CHAMADA_MS),
+      });
+    } catch (e) {
+      throw new ErroDoYoutube(null, `O YouTube não respondeu à consulta da sessão de envio: ${(e as Error).message}`);
+    }
+    // 308 é "incompleto" no protocolo resumable; o `Range` diz até onde chegou.
+    if (r.status === 308) {
+      const faixa = /bytes=0-(\d+)/.exec(r.headers.get('range') ?? '');
+      await r.text().catch(() => '');
+      return { videoId: null, recebidos: faixa ? Number(faixa[1]) + 1 : 0 };
+    }
+    if (!r.ok) throw await erroDaResposta(r, 'a consulta da sessão de envio');
+    const texto = await r.text();
+    const j = (texto ? JSON.parse(texto) : {}) as { id?: unknown };
+    return { videoId: typeof j.id === 'string' && j.id ? j.id : null, recebidos: bytes };
+  }
+
   async lerVideo(orgId: string, videoId: string): Promise<VideoNoYoutube | null> {
     const j = await this.pedir<{ items?: Array<Record<string, any>> }>(
       orgId,
       'GET',
-      `${this.api}/videos?part=snippet,status&id=${encodeURIComponent(videoId)}`,
+      `${this.api}/videos?part=snippet,status,fileDetails&id=${encodeURIComponent(videoId)}`,
       { onde: 'videos.list' },
     );
     return paraVideo(j.items?.[0]);
+  }
+
+  async uploadsDoCanal(orgId: string): Promise<UploadDoCanal[]> {
+    const c = await this.pedir<{ items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> }>(
+      orgId,
+      'GET',
+      `${this.api}/channels?part=contentDetails&mine=true`,
+      { onde: 'channels.list (uploads)' },
+    );
+    const playlist = c.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!playlist) return [];
+    const j = await this.pedir<{ items?: Array<Record<string, any>> }>(
+      orgId,
+      'GET',
+      `${this.api}/playlistItems?part=snippet,status&playlistId=${encodeURIComponent(playlist)}&maxResults=50`,
+      { onde: 'playlistItems.list (uploads)' },
+    );
+    return (j.items ?? [])
+      .map((i) => ({
+        videoId: String(i.snippet?.resourceId?.videoId ?? ''),
+        privacidade: typeof i.status?.privacyStatus === 'string' ? i.status.privacyStatus : null,
+        enviadoEm: typeof i.snippet?.publishedAt === 'string' ? i.snippet.publishedAt : null,
+      }))
+      .filter((u) => u.videoId);
   }
 
   async definirThumb(orgId: string, videoId: string, png: Buffer): Promise<void> {

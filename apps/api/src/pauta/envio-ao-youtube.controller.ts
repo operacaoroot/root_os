@@ -15,11 +15,13 @@ import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
 /*
- * MD10: o vídeo do episódio no YouTube. As rotas do Mac (`arquivo`, `sessao`,
- * `sessao/token`, `concluido`) usam o login normal da API, com `pauta.editar`;
- * quem autoriza a SAÍDA não é a permissão, é o item do lote da semana
- * assinado pela titular, conferido pela porta. A sessão e o token nunca vão
- * ao RASTRO nem ao log.
+ * MD10: o vídeo do episódio no YouTube. As rotas do Mac usam o login normal da
+ * API: declarar o arquivo pede `pauta.editar`; receber a sessão e o token e
+ * concluir o envio pedem `pauta.youtube.enviar`, que é da conta do Mac e não de
+ * todo editor — o token só de envio ainda cria vídeo à parte no canal (ver
+ * `tokenParaOMac`). Quem autoriza a SAÍDA continua sendo o item do lote da
+ * semana assinado pela titular, conferido pela porta. A sessão e o token nunca
+ * vão ao RASTRO nem ao log.
  */
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('pauta/youtube')
@@ -72,19 +74,19 @@ export class EnvioAoYoutubeController {
   }
 
   @Post(':id/youtube/sessao')
-  @RequirePermissions('pauta.editar')
+  @RequirePermissions('pauta.youtube.enviar')
   sessao(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     return this.envio.abrirSessao(user.orgId, id, user.sub, YoutubeSessaoSchema.parse(body ?? {}));
   }
 
   @Post(':id/youtube/sessao/token')
-  @RequirePermissions('pauta.editar')
+  @RequirePermissions('pauta.youtube.enviar')
   token(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.envio.novoToken(user.orgId, id, user.sub);
   }
 
   @Post(':id/youtube/concluido')
-  @RequirePermissions('pauta.editar')
+  @RequirePermissions('pauta.youtube.enviar')
   concluido(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const { videoId } = YoutubeConcluidoSchema.parse(body ?? {});
     return this.envio.concluir(user.orgId, id, user.sub, videoId);

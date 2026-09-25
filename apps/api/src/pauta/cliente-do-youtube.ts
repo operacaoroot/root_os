@@ -34,6 +34,27 @@ export interface VideoNoYoutube {
   privacidade: string | null;
   publishAt: string | null;
   uploadStatus: string | null;
+  /**
+   * `fileDetails.fileSize`: o tamanho do arquivo que subiu, visível só para o
+   * dono do vídeo. O YouTube não expõe o sha256: o tamanho e a sessão aberta
+   * pelo OS são a amarra possível entre o vídeo do canal e o arquivo assinado.
+   * Ausente quando o YouTube não informou.
+   */
+  tamanho?: number | null;
+}
+
+/** O que a sessão resumable aberta pelo OS recebeu: o id do vídeo, quando o upload terminou. */
+export interface ResultadoDaSessao {
+  videoId: string | null;
+  /** Quantos bytes a sessão confirmou (o total, quando terminou). */
+  recebidos: number;
+}
+
+/** Um vídeo da playlist de uploads do canal, como a conferência pós-envio o lê. */
+export interface UploadDoCanal {
+  videoId: string;
+  privacidade: string | null;
+  enviadoEm: string | null;
 }
 
 export interface ClienteDoYoutube {
@@ -53,8 +74,16 @@ export interface ClienteDoYoutube {
   urlDoVideo(videoId: string): string;
   /** Abre a sessão de envio resumable, sempre privada e sem `publishAt`. Devolve a URI da sessão. */
   abrirSessao(orgId: string, e: { bytes: number; mime: string; metadados: MetadadosDoVideo }): Promise<string>;
+  /**
+   * Pergunta à sessão resumable que o OS abriu qual vídeo ela criou (`PUT`
+   * vazio com `Content-Range: bytes * /<total>`). É por ela, e não pelo id que o
+   * Mac informa, que o vídeo do canal fica amarrado ao arquivo assinado.
+   */
+  resultadoDaSessao(orgId: string, uri: string, bytes: number): Promise<ResultadoDaSessao>;
   /** O vídeo do canal desta empresa, ou nulo quando o id não existe (ou é de outro canal). */
   lerVideo(orgId: string, videoId: string): Promise<VideoNoYoutube | null>;
+  /** Os vídeos da playlist de uploads do canal (`mine`), dos mais novos, até 50. */
+  uploadsDoCanal(orgId: string): Promise<UploadDoCanal[]>;
   definirThumb(orgId: string, videoId: string, png: Buffer): Promise<void>;
   /** Põe o vídeo na playlist e devolve o id do item; se ele já está lá, devolve o item que existe (o insert não é idempotente). */
   inserirNaPlaylist(orgId: string, playlistId: string, videoId: string): Promise<string>;

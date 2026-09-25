@@ -886,8 +886,11 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     manda nada, porque vídeo de projeto sem auditoria fica privado para sempre; `teste` só envia, e
     só ao canal de `YOUTUBE_CANAL_DE_TESTE` (o vídeo desse modo nunca é publicado; declarar o mesmo
     arquivo de novo, fora do modo teste, recomeça o envio para o canal real); `aprovada` libera o
-    agendamento. O Mac recebe um token pedido só com `youtube.upload`; se o Google devolver um mais
-    largo, com `aprovada` ele não sai. Nem a sessão nem o token saem fora da janela do item de envio
+    agendamento. O Mac recebe um token pedido só com `youtube.upload` (e só a conta com
+    `pauta.youtube.enviar`); se o Google devolver um mais largo, com `aprovada` ele não sai. Esse
+    token ainda cria vídeo à parte no canal (a privacidade vai na inserção): a conclusão alerta sobre
+    upload não privado que o OS não abriu, e amarra o vídeo ao arquivo pela sessão que o OS abriu e
+    pelo tamanho (`fileDetails`), já que o YouTube não expõe o sha256. Nem a sessão nem o token saem fora da janela do item de envio
     (até 1 h antes do horário). O pacote mudado depois da assinatura derruba os itens do vídeo, que
     volta ao "Aprovar a semana". Com a nota da publicação automática desligada, a rotina só pula, e
     o horário é marcado à mão no Studio. Categoria pela nota `pauta.youtube.categoria` (padrão 28) e
