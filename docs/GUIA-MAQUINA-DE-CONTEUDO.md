@@ -64,10 +64,11 @@ antes de tudo; o resto pode seguir em qualquer ordem, menos onde o texto avisa.
    `pnpm --filter @mktos/api db:sync-permissions`, depois todo mundo sai e entra de novo.
    *Confere:* `/atendimento` abre sem 403 para você e para o titular (o 403 está pendente desde
    12/09/2026).
-4. **Segredos no easyPanel** (gerados no terminal da VPS com `openssl rand -base64 48`, nunca
+4. **Segredos na aba Ambiente do easyPanel e no `environment:` do compose do painel** (gerados no terminal da VPS com `openssl rand -base64 48`, nunca
    colados em chat): `PAUTA_MIDIA_PUBLICA_SEGREDO` e `META_WEBHOOK_PESSOA_HMAC_KEY`. Conferir também
    `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT` e `S3_BUCKET`. Recriar o container
-   (`deploy/up.sh --vps --no-build api`; restart não basta).
+   (`docker compose -p root_marketing-os up -d --no-build api` em
+   `/etc/easypanel/projects/root/marketing-os/code`; restart não basta).
    *Confere:* o boot mostra `storage pronto` e `mídia das peças no storage: …`.
 5. **Rota até a API sem passar pelo web.** O proxy do Next corta o corpo em 10 MB e o mp4 do corte
    passa disso. No easyPanel, um domínio próprio da API ou uma regra do Traefik para
@@ -250,7 +251,9 @@ semana: é ele que decide se a DM automática vale o custo.
    pedir assinatura. O que já foi publicado fica, e as peças seguem na agenda, no manual.
 5. `/rotinas`: Desligar em cada rotina.
 6. No Mac: `node tools/root-midia/root-midia.mjs vigia desinstalar`. Não apaga nada da pasta do OBS.
-7. Emergência no servidor: `ROTINAS_CRON=off` no easyPanel e `deploy/up.sh --vps --no-build api`.
+7. Emergência no servidor: `ROTINAS_CRON=off` na aba Ambiente do easyPanel e
+   `docker compose -p root_marketing-os up -d --no-build api` em
+   `/etc/easypanel/projects/root/marketing-os/code`.
 
 ---
 

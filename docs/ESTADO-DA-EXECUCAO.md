@@ -2943,8 +2943,9 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
    `20260925021740_comentario_com_palavra`, `20260925032020_envio_ao_youtube`,
    `20260925042725_envio_ao_youtube_em_teste`, `20260925053358_envio_de_resposta` (D). Todas
    aditivas; as duas primeiras são `ALTER TYPE … ADD VALUE` e não se desfazem.
-4. **Variáveis no `.env` da VPS** (todas já estão no `environment:` do compose; o container não lê
-   arquivo). Com valor antes do deploy: `EVOLUTION_LINKS_JID` e `EVOLUTION_LINKS_ORG_ID` (grupo de
+4. **Variáveis na aba Ambiente do serviço no easyPanel e no `environment:` do compose do painel**
+   (`/etc/easypanel/projects/root/marketing-os/code`; o `.env` do repo não chega lá, ver o aviso do
+   `docs/DEPLOY.md` §2.3l). Com valor antes do deploy: `EVOLUTION_LINKS_JID` e `EVOLUTION_LINKS_ORG_ID` (grupo de
    links; pré-requisito: o canal de aprovação com `CANAL_APROVACAO_SEGREDO` e
    `CANAL_APROVACAO_CODIGO_SEGREDO`), `S3_*` (conferir), `PAUTA_MIDIA_PUBLICA_SEGREDO` e
    `META_WEBHOOK_PESSOA_HMAC_KEY` (32+ caracteres, `openssl rand -base64 48` no terminal da VPS).
@@ -2954,14 +2955,16 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
    (até o App Review). Com padrão: `PAUTA_MIDIA_PUBLICA_ORIGEM` (vazia = `PUBLIC_BIO_ORIGIN`),
    `PAUTA_VIDEO_MAX_BYTES` e `POLITICA_FUSO_HORARIO` (`America/Sao_Paulo`, a mudança de
    comportamento da MD3). As do `tools/root-midia` são **só do Mac**.
-5. **A rota até a API sem o `mktos_web`** (Traefik ou domínio próprio, corpo de 300 MB ou mais) e
+5. **A rota até a API sem o `mktos_web`** (no easyPanel, um domínio próprio para o serviço `api`, com corpo de 300 MB ou mais) e
    `ROOT_OS_ENVIO_URL` no `~/.config/root/root-midia.env` do Mac: sem ela o mp4 acima de 10 MB não
    sobe e todo corte fica fora do "Aprovar a semana".
 
 *Construir e provar*
 
-6. **Build das imagens `api` e `web`** (a `web` por causa do prazo de 10 min do proxy, da MC-C, e das
-   telas novas).
+6. **Código e imagem:** o código chega à VPS por `git bundle` + `scp` e `git pull --ff-only` do bundle
+   em `/srv/projetos/root_os` (a VPS não tem credencial do GitHub), e a imagem `mktos-app:latest` é
+   construída ali. Ela serve `api` e `web`, e a `web` precisa da imagem nova por causa do prazo de 10
+   min do proxy (MC-C) e das telas novas.
 7. **Ensaio das 15 migrations** num banco descartável com o dump da produção.
 8. **Smoke da imagem** com `ROTINAS_CRON=off`, os intervalos em 0 e
    `SMOKE_ROTAS=/api/pauta/episodios,/api/pauta/episodios/pendentes-midia,/api/pauta/voz,/api/pauta/agenda,/api/pauta/agenda/grade,/api/pauta/rodadas,/api/pauta/episodios/x/encadeamento,/api/pauta/youtube/pendentes,/api/pauta/comentarios`
@@ -2979,7 +2982,9 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
 
 *Subir e conferir*
 
-11. **`deploy/up.sh --vps --no-build api web`** (as migrations rodam no `command` do container).
+11. **`docker compose -p root_marketing-os up -d --no-build api web`**, rodado em
+    `/etc/easypanel/projects/root/marketing-os/code`; sem o `-p` a subida falha no meio. As migrations
+    rodam no `command` do container.
 12. **Conferir:** `política base vN carregada DO BANCO (71 capacidades)`; `storage pronto` e
     `mídia das peças no storage: …` (anotar o total); `entrada do grupo … ligada por
     EntradaDeLinksService`; `/pauta` abrindo as abas, a Semana com a conta de publicação; o RASTRO.

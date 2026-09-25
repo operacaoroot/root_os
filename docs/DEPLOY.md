@@ -64,7 +64,7 @@ depois, que é a razão de a coluna da direita existir.
 | 6 | `build` + ensaio da migration num banco descartável + **smoke** da imagem (§2.2, §2.3) | antes de subir | As duas formas de a subida morrer: migration que não aplica (e `migrate deploy` roda no `command` do container — falhar é a API não subir) e grafo de injeção do Nest que não resolve. O smoke pega o segundo, que o typecheck **não** enxerga. |
 | 7 | **`db:seed:politica` — E É ANTES DE SUBIR** (§2.3b) | depois do build, **antes** do `up` | Mudou nesta onda: na onda 6 o seed era cosmético (duas capacidades novas que só apareciam na tela da Régua) e podia vir depois. Agora **não pode**. A fatia 3.3 acrescentou **descrição de argumento** a capacidades que o código novo já usa (`cc` no e-mail, `local` e `convidados` no evento) e esquema a outras. O esquema do banco tem `additionalProperties: false`: **campo que o esquema antigo não conhece é recusado pela porta**. Subir a API antes de semear faz toda chamada com campo novo falhar com erro de argumento inválido — numa ação que o catálogo do repositório diz que é válida. |
 | 8 | `up -d --no-build api web` (§2.4) | — | Sem `--no-build` sobe uma imagem reconstruída na hora, não a que passou no smoke. Sem `--vps` o compose base publica em `0.0.0.0` e expõe banco, redis e MinIO na internet (§3). |
-| 9 | Conferir: `docker compose ps`, logs, as três superfícies públicas (§2.5) | depois | A linha de boot `política base vN carregada DO BANCO (N capacidades)` é a prova de que o passo 7 pegou. **N é 62 até a frente A+B+C e 69 com a onda D** (§2.3l). |
+| 9 | Conferir: `docker compose ps`, logs, as três superfícies públicas (§2.5) | depois | A linha de boot `política base vN carregada DO BANCO (N capacidades)` é a prova de que o passo 7 pegou. **N é 62 até a frente A+B+C, 64 com a agenda da Root (PR #11) e 71 com a onda D** (§2.3l). |
 | 10 | Registrar o que subiu (commit/tag) | depois | Enquanto o Syncthing for o transporte, nada no servidor registra isso sozinho (§1). |
 
 Os passos 1 e 7 são os que mudaram de lugar. Os outros são os de sempre.
@@ -296,6 +296,17 @@ número é 69** e o comando é o do §2.3l. **Esta assinatura é o portão human
 
 ### 2.3l A ONDA D INTEIRA DE UMA VEZ (25/09/2026)
 
+> **Caminho real do deploy (conferido em 25/09/2026, §1.0 do PR #12).** Desde 17/09 o OS roda pelo
+> easyPanel da VPS ROOT (`ssh vps-root`), e o compose de `/srv/marketing-os` não sobe nada. Quem roda
+> é o compose do painel em `/etc/easypanel/projects/root/marketing-os/code` (projeto
+> `root_marketing-os`, `image: mktos-app:latest`, sem bloco `build`). A imagem é construída à parte em
+> `/srv/projetos/root_os` (o `/srv/marketing-os` é só symlink para lá). A VPS não tem credencial do
+> GitHub: o código chega por `git bundle` + `scp` e `git pull --ff-only` do bundle. A virada é
+> `docker compose -p root_marketing-os up -d --no-build api web`, rodada naquele diretório; sem o `-p`
+> a subida falha no meio. Variável nova se declara na aba Ambiente do serviço no easyPanel **e** no
+> `environment:` do compose do painel; o `.env` do repo não chega lá. Nos comandos abaixo, a rede e o
+> nome do container seguem o compose antigo: use os do projeto `root_marketing-os`.
+
 A ordem completa, com as 9 migrations e as variáveis, está em `docs/ESTADO-DA-EXECUCAO.md`, no fim da
 MD11: "ORDEM DE DEPLOY DA ONDA D". O que muda aqui:
 
@@ -316,9 +327,9 @@ docker run --rm --network marketing-os-net -w /app/apps/api \
   mktos-app pnpm db:seed:politica
 ```
 
-- **Conferência:** a linha de boot diz **69 capacidades** (as 62 da base, conferidas pela união de
-  `politica-root.json` e `politica-marketing-os.json` no commit `68df3ae`, mais as 7). Com 62 ou 64,
-  o seed não pegou ou pegou só uma fatia.
+- **Conferência:** a linha de boot diz **71 capacidades** (as 62 de antes, as 2 da agenda da Root do
+  PR #11 e as 7 da onda). Com 62, 64 ou 69, o seed não pegou ou pegou só uma parte. Se a agenda ainda
+  não tiver sido semeada em produção, o seed cria 9 e não 7.
 - **Permissão nova `pauta.enviar_ao_youtube`** (MD10, revisão final): o ritual do §2.3d, e dar a
   permissão só à conta do vigia do Mac.
 - **A mídia das peças:** a linha de boot `mídia das peças no storage: …` e, para o detalhe,
@@ -996,7 +1007,7 @@ A ordem completa, com a consequência de pular cada passo, está em **§2.0**. A
    `POLITICA_REBAIXAMENTO_AUTOR`/`_MOTIVO`, que o seed vai exigir (§2.3b)
 10. [ ] `up -d --no-build api web`
 11. [ ] `docker compose ps` + logs + as três superfícies públicas respondendo, e a linha de boot
-    dizendo **62 capacidades DO BANCO** (69 com a onda D, §2.3l)
+    dizendo **62 capacidades DO BANCO** (71 com a agenda e a onda D, §2.3l)
 12. [ ] Registrar o que subiu (commit/tag) — enquanto o Syncthing for o transporte, isso não fica
     registrado sozinho no servidor
 13. [ ] **Onda do controle de agentes (A2–A4): conferir o que as migrações NÃO deviam ter mexido** —
