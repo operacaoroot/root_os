@@ -444,8 +444,12 @@ describe('herança da política', () => {
 
 describe('catálogo do marketing-os', () => {
   it('cobre as 35 ferramentas MCP, todas em R0', () => {
-    const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0');
+    // MD9 (25/09/2026): a 36ª leitura, `instagram.comentario.ler`, é da rotina
+    // da fila da DM e nasce SEM ferramenta — o que ela devolve é o @ de quem
+    // comentou, que vai para a fila e nunca para um modelo.
+    const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && c.id !== 'instagram.comentario.ler');
     expect(leituras).toHaveLength(35);
+    expect(DELTA.capacidades.find((c) => c.id === 'instagram.comentario.ler')?.ferramenta).toBeUndefined();
     for (const c of leituras) {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();
       expect(c.efeito.escreveForaDoOS).toBe(false);
@@ -641,5 +645,48 @@ describe('aprovação de lote com uso contado (MD7)', () => {
       'aprovação é de uso único — ou de uso contado, item a item, quando a capacidade declara lote —, presa ao conteúdo exato e com prazo',
     );
     expect(MKTOS.invariantes).toEqual(ROOT.invariantes);
+  });
+});
+
+/*
+ * MD9 (25/09/2026): a leitura dos comentários para a fila da DM à mão. O que não
+ * pode mudar sem alguém ver: é R0 pelo efeito (nada escreve, nada sai), e é
+ * R0 de propósito — declarada R1, o sinal da noite ou do volume a subiria a R2,
+ * que exige aprovação, e a rotina de 10 em 10 min encheria a fila de pedidos de
+ * LER. Não tem ferramenta: o @ que ela devolve não vai a modelo nenhum.
+ */
+describe('instagram.comentario.ler (MD9)', () => {
+  const c = MKTOS.capacidades.find((x) => x.id === 'instagram.comentario.ler');
+
+  it('é R0 pelo efeito, sem ferramenta e sem desfazer, e com sinal aceso não pede aprovação', () => {
+    expect(c, 'a capacidade sumiu do catálogo').toBeTruthy();
+    expect(c!.nivel).toBe('R0');
+    expect(classificar(c!.efeito)).toBe('R0');
+    expect(c!.efeito).toMatchObject({ escreveForaDoOS: false, produzArtefato: false, exposicaoExterna: false, sensibilidade: 'interna', destruicao: false });
+    expect(c!.ferramenta).toBeUndefined();
+    expect(c!.desfazer).toBeUndefined();
+    const cap: Capacidade = { id: c!.id, descricao: c!.descricao, nivel: c!.nivel, efeito: c!.efeito };
+    const comSinais = avaliar(cap, { sinais: ['fora_da_janela', 'volume_atipico'] });
+    expect(comSinais.nivel).toBe('R1');
+    expect(comSinais.exigeAprovacao).toBe(false);
+    // O contraexemplo que decidiu o degrau: o mesmo efeito com produzArtefato sobe a R2 e pede aprovação.
+    const comoR1: Capacidade = { ...cap, nivel: 'R1', efeito: { ...c!.efeito, produzArtefato: true } };
+    expect(avaliar(comoR1, { sinais: ['fora_da_janela'] }).exigeAprovacao).toBe(true);
+  });
+
+  it('o esquema de argumentos é fechado: a conta e até 30 posts, cada um com a palavra do CTA', () => {
+    const s = c!.argsSchema as unknown as {
+      additionalProperties: boolean;
+      required: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(s.additionalProperties).toBe(false);
+    expect([...s.required].sort()).toEqual(['igUserId', 'midias']);
+    expect(s.properties.midias).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 30,
+      items: { type: 'object', additionalProperties: false, required: ['pecaId', 'palavra'], properties: { palavra: { pattern: '^[A-Z0-9]{3,20}$' } } },
+    });
   });
 });

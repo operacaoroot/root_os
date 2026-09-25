@@ -152,19 +152,22 @@ export type Post = { externalId: string; publicadoEm: Date; permalink?: string; 
 
 /**
  * Mídias com data >= `desde`. Vem ordenado por data desc, então paramos na
- * primeira fora da janela em vez de paginar o perfil inteiro.
+ * primeira fora da janela em vez de paginar o perfil inteiro. A paginação segue
+ * o cursor `after` sobre o nosso endereço, como em `comentariosDa`: o
+ * `paging.next` do corpo levaria o token para onde a resposta mandasse.
  */
 export async function midiasDesde(token: string, desde: Date, tetoPaginas = 20) {
   const posts: Post[] = []
-  let url =
-    `${GRAPH()}/me/media?fields=id,timestamp,permalink,media_type&limit=50&access_token=${encodeURIComponent(token)}`
+  let depois: string | null = null
 
-  for (let pagina = 0; pagina < tetoPaginas && url; pagina++) {
-    const r = await fetch(url)
+  for (let pagina = 0; pagina < tetoPaginas; pagina++) {
+    const p = new URLSearchParams({ fields: 'id,timestamp,permalink,media_type', limit: '50', access_token: token })
+    if (depois) p.set('after', depois)
+    const r = await fetch(`${GRAPH()}/me/media?${p}`)
     if (!r.ok) throw new Error(`mídias falharam: ${r.status} ${await r.text()}`)
     const d = (await r.json()) as {
       data: { id: string; timestamp: string; permalink?: string; media_type?: string }[]
-      paging?: { next?: string }
+      paging?: { next?: string; cursors?: { after?: unknown } }
     }
 
     let passouDaJanela = false
@@ -182,8 +185,9 @@ export async function midiasDesde(token: string, desde: Date, tetoPaginas = 20) 
       })
     }
 
-    if (passouDaJanela) break
-    url = d.paging?.next ?? ''
+    const cursor = d.paging?.cursors?.after
+    if (passouDaJanela || !d.paging?.next || typeof cursor !== 'string' || !cursor) break
+    depois = cursor
   }
 
   return posts
@@ -317,4 +321,71 @@ export async function midiasRecentes(
       timestamp: typeof m.timestamp === 'string' ? m.timestamp : null,
       permalink: typeof m.permalink === 'string' ? m.permalink : null,
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Comentários (MD9): a fila da DM à mão, lida na conta de publicação.
+// ---------------------------------------------------------------------------
+
+/** Um comentário como a Graph o devolve, só com o que a fila usa. */
+export interface ComentarioDaGraph {
+  id: string;
+  texto: string;
+  timestamp: string | null;
+  deId: string | null;
+  deUsuario: string | null;
+  /** Presente quando é resposta a outro comentário. */
+  parentId: string | null;
+  /**
+   * Reserva para o webhook da MD11, onde `ad_id` chega. A leitura por consulta
+   * não pede o campo (fora do nó IG Comment, ele dá #100), então aqui é nulo.
+   */
+  adId: string | null;
+}
+
+/** Quantos comentários cada página pede. A Graph aceita até 50 por página nesta aresta. */
+const COMENTARIOS_POR_PAGINA = 50;
+
+/**
+ * Os comentários de uma mídia, do mais novo ao mais velho, com teto de
+ * páginas. A paginação segue o CURSOR `after` montado sobre o nosso endereço,
+ * e não o `paging.next` que a resposta traz: seguir uma URL vinda do corpo
+ * seria mandar o token para onde a resposta mandasse.
+ */
+export async function comentariosDa(
+  token: string,
+  midiaId: string,
+  tetoPaginas = 5,
+): Promise<{ comentarios: ComentarioDaGraph[]; truncado: boolean }> {
+  const comentarios: ComentarioDaGraph[] = [];
+  let depois: string | null = null;
+  for (let pagina = 0; pagina < tetoPaginas; pagina++) {
+    const p = new URLSearchParams({
+      fields: 'id,text,timestamp,from{id,username},parent_id',
+      limit: String(COMENTARIOS_POR_PAGINA),
+      access_token: token,
+    });
+    if (depois) p.set('after', depois);
+    const d = (await chamar(`${PUBLICACAO()}/${encodeURIComponent(midiaId)}/comments?${p}`, {}, 'comentários')) as {
+      data?: Array<Record<string, unknown>>;
+      paging?: { cursors?: { after?: unknown }; next?: unknown };
+    };
+    for (const c of d.data ?? []) {
+      if (typeof c.id !== 'string' || !c.id) continue;
+      const de = c.from && typeof c.from === 'object' ? (c.from as Record<string, unknown>) : {};
+      comentarios.push({
+        id: c.id,
+        texto: typeof c.text === 'string' ? c.text : '',
+        timestamp: typeof c.timestamp === 'string' ? c.timestamp : null,
+        deId: typeof de.id === 'string' ? de.id : null,
+        deUsuario: typeof de.username === 'string' ? de.username : null,
+        parentId: typeof c.parent_id === 'string' && c.parent_id ? c.parent_id : null,
+        adId: typeof c.ad_id === 'string' && c.ad_id ? c.ad_id : null,
+      });
+    }
+    const cursor = d.paging?.cursors?.after;
+    if (!d.paging?.next || typeof cursor !== 'string' || !cursor) return { comentarios, truncado: false };
+    depois = cursor;
+  }
+  return { comentarios, truncado: true };
 }

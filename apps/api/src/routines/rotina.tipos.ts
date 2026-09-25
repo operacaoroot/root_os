@@ -91,8 +91,17 @@ export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
  */
 export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
 
+/**
+ * A fila da DM à mão (MD9): lê os comentários dos posts da semana com palavra
+ * pela porta (`instagram.comentario.ler`, só leitura), põe na fila quem comentou
+ * a palavra inteira e apaga o @ que passou dos 7 dias. Ver
+ * `executores/pauta-comentarios.executor.ts`. O valor é o de
+ * `PAUTA_TIPO_DA_ROTINA_DE_COMENTARIOS` no shared.
+ */
+export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
+
 /** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
-export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR, TIPO_PAUTA_PUBLICAR];
+export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR, TIPO_PAUTA_PUBLICAR, TIPO_PAUTA_COMENTARIOS];
 
 /**
  * A variável que cala o tique das rotinas da pauta neste processo, ou `null` —
@@ -117,6 +126,7 @@ export const AGENTE_DO_TIPO: Readonly<Record<string, string>> = {
   [TIPO_PAUTA_COLETA]: AGENTE_DA_PAUTA,
   [TIPO_PAUTA_ENCADEAR]: AGENTE_DA_PAUTA,
   [TIPO_PAUTA_PUBLICAR]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_COMENTARIOS]: AGENTE_DA_PAUTA,
 };
 
 /**
@@ -130,6 +140,7 @@ export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   [TIPO_PAUTA_COLETA]: 'pauta',
   [TIPO_PAUTA_ENCADEAR]: 'pauta',
   [TIPO_PAUTA_PUBLICAR]: 'pauta',
+  [TIPO_PAUTA_COMENTARIOS]: 'pauta',
 };
 
 /** Como a execução foi disparada. */

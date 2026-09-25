@@ -204,6 +204,25 @@ describe('MD6: a publicação no Instagram é escrita pela porta desde o primeir
   });
 });
 
+describe('MD9: a leitura dos comentários passa pela porta, e a fila não conhece a Graph', () => {
+  it('instagram.comentario.ler é R0, sem ferramenta, com conector e argsSchema fechado', () => {
+    const cap = CATALOGO.find((c) => c.id === 'instagram.comentario.ler');
+    expect(cap, 'instagram.comentario.ler sumiu de politica-marketing-os.json').toBeDefined();
+    expect(cap!.nivel).toBe('R0');
+    expect(cap!.efeito?.escreveForaDoOS).toBe(false);
+    expect((cap as { ferramenta?: string }).ferramenta).toBeUndefined();
+    expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
+    expect(cap!.argsSchema!.additionalProperties).toBe(false);
+  });
+
+  it('a rotina lê pela porta; as rotas da fila não chamam a Graph nem a porta', () => {
+    const servico = ler('src/pauta/comentarios.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    const rota = ler('src/pauta/comentarios.controller.ts');
+    expect(rota).not.toMatch(/plataformas\/instagram|GRAPH_DE_COMENTARIOS|PortaDoOperador|this\.porta/);
+  });
+});
+
 describe('fatia 3.3: o caminho HTTP não alcança mais o conector', () => {
   const controlador = ler('src/google/google.controller.ts');
 
@@ -389,6 +408,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       'src/pauta/evolution.service.ts',
       // MD6: o publicador do Instagram inscreve `instagram.post.publicar`.
       'src/pauta/publicacao-instagram.service.ts',
+      // MD9: o coletor da fila da DM inscreve `instagram.comentario.ler`.
+      'src/pauta/comentarios.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */
@@ -412,8 +433,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
     const inscritas = QUEM_INSCREVE.flatMap(chavesDe);
     expect(
       inscritas.length,
-      'a varredura achou menos efeitos do que os 22 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
-    ).toBeGreaterThanOrEqual(22);
+      'a varredura achou menos efeitos do que os 23 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
+    ).toBeGreaterThanOrEqual(23);
 
     const foraDoCatalogo = inscritas.filter((id) => !uniao.has(id));
     expect(

@@ -188,6 +188,7 @@ interface ValorSigiloso {
   readonly __sigiloso: true;
   readonly valor: unknown;
   readonly rotulo?: string;
+  readonly semResumo?: boolean;
 }
 
 /**
@@ -200,14 +201,72 @@ interface ValorSigiloso {
  * uma ação `interna` pode carregar um campo que quem audita não pode ler, e
  * classificar a capacidade inteira como confidencial por causa dele cegaria o
  * resto do registro.
+ *
+ * `semResumo` é para valor de BAIXA ENTROPIA (o @ de quem comentou, o id de um
+ * comentário que a Graph lista): o sha256 sem chave desses se desfaz calculando
+ * o hash dos candidatos, e o rastro vive 5 anos. Com ele, o registro guarda só
+ * `{ sigiloso, rotulo }`, sem hash nem tamanho.
  */
-export function sigiloso(valor: unknown, rotulo?: string): unknown {
-  const marcado: ValorSigiloso = { __sigiloso: true, valor, rotulo };
+export function sigiloso(valor: unknown, rotulo?: string, opcoes?: { semResumo?: boolean }): unknown {
+  const marcado: ValorSigiloso = { __sigiloso: true, valor, rotulo, ...(opcoes?.semResumo ? { semResumo: true } : {}) };
   return marcado;
 }
 
 function ehSigiloso(v: unknown): v is ValorSigiloso {
   return typeof v === 'object' && v !== null && (v as ValorSigiloso).__sigiloso === true;
+}
+
+/**
+ * O resumo criptográfico de um valor (sha256 e tamanho), nunca o valor. Ver
+ * `EventLogService.resumoCriptografico` para o que ele prova e o que não prova.
+ */
+export function resumoCriptografico(valor: unknown, referencia?: string): Record<string, unknown> {
+  if (ehSigiloso(valor) && valor.semResumo) {
+    return { sigiloso: true, ...(valor.rotulo ? { rotulo: valor.rotulo } : {}), ...(referencia ? { referencia } : {}) };
+  }
+  const alvo = ehSigiloso(valor) ? valor.valor : valor;
+  const texto = typeof alvo === 'string' ? alvo : JSON.stringify(alvo ?? null);
+  return {
+    sigiloso: true,
+    algoritmo: 'sha256',
+    resumoCriptografico: createHash('sha256').update(texto).digest('hex'),
+    bytes: Buffer.byteLength(texto),
+    ...(ehSigiloso(valor) && valor.rotulo ? { rotulo: valor.rotulo } : {}),
+    ...(alvo && typeof alvo === 'object' && !Array.isArray(alvo) && !(alvo instanceof Date)
+      ? { chaves: Object.keys(alvo as object) }
+      : {}),
+    ...(referencia ? { referencia } : {}),
+  };
+}
+
+/**
+ * O valor com TODO `sigiloso(...)` trocado pelo resumo, em qualquer
+ * profundidade. Exportado porque o registro da chamada (`ToolCall.resultado`)
+ * guarda o que o efeito devolveu, e o que o RASTRO esconde não pode ficar cru
+ * na tabela ao lado (MD9: o @ de quem comentou).
+ */
+export function semSigilosos(valor: unknown, referencia?: string, profundidade = 0): unknown {
+  if (profundidade > 12) return '[aninhamento profundo demais para o rastro]';
+  if (ehSigiloso(valor)) return resumoCriptografico(valor, referencia);
+  if (valor instanceof Date) return valor.toISOString();
+  if (Array.isArray(valor)) return valor.map((v) => semSigilosos(v, referencia, profundidade + 1));
+  if (valor && typeof valor === 'object') {
+    const saida: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(valor as Record<string, unknown>)) saida[k] = semSigilosos(v, referencia, profundidade + 1);
+    return saida;
+  }
+  return valor;
+}
+
+/** Há algum `sigiloso(...)` dentro do valor? */
+export function temSigiloso(valor: unknown, profundidade = 0): boolean {
+  if (profundidade > 12) return false;
+  if (ehSigiloso(valor)) return true;
+  if (Array.isArray(valor)) return valor.some((v) => temSigiloso(v, profundidade + 1));
+  if (valor && typeof valor === 'object' && !(valor instanceof Date)) {
+    return Object.values(valor as Record<string, unknown>).some((v) => temSigiloso(v, profundidade + 1));
+  }
+  return false;
 }
 
 /**
@@ -665,19 +724,7 @@ export class EventLogService {
    * acesso daquele lugar, em vez de virar uma segunda cópia dentro do rastro.
    */
   private resumoCriptografico(valor: unknown, referencia?: string): Record<string, unknown> {
-    const alvo = ehSigiloso(valor) ? valor.valor : valor;
-    const texto = typeof alvo === 'string' ? alvo : JSON.stringify(alvo ?? null);
-    return {
-      sigiloso: true,
-      algoritmo: 'sha256',
-      resumoCriptografico: createHash('sha256').update(texto).digest('hex'),
-      bytes: Buffer.byteLength(texto),
-      ...(ehSigiloso(valor) && valor.rotulo ? { rotulo: valor.rotulo } : {}),
-      ...(alvo && typeof alvo === 'object' && !Array.isArray(alvo) && !(alvo instanceof Date)
-        ? { chaves: Object.keys(alvo as object) }
-        : {}),
-      ...(referencia ? { referencia } : {}),
-    };
+    return resumoCriptografico(valor, referencia);
   }
 
   /**
@@ -688,21 +735,8 @@ export class EventLogService {
    * argumentos, não o objeto inteiro. Sem a varredura recursiva, marcar o campo
    * não faria nada e o texto entraria cru no payload.
    */
-  private redigirSigilosos(valor: unknown, referencia?: string, profundidade = 0): unknown {
-    if (profundidade > 12) return '[aninhamento profundo demais para o rastro]';
-    if (ehSigiloso(valor)) return this.resumoCriptografico(valor, referencia);
-    if (valor instanceof Date) return valor.toISOString();
-    if (Array.isArray(valor)) {
-      return valor.map((v) => this.redigirSigilosos(v, referencia, profundidade + 1));
-    }
-    if (valor && typeof valor === 'object') {
-      const saida: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(valor as Record<string, unknown>)) {
-        saida[k] = this.redigirSigilosos(v, referencia, profundidade + 1);
-      }
-      return saida;
-    }
-    return valor;
+  private redigirSigilosos(valor: unknown, referencia?: string): unknown {
+    return semSigilosos(valor, referencia);
   }
 
   // ==========================================================================

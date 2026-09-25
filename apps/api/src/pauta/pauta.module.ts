@@ -47,6 +47,8 @@ import { PublicacaoInstagramService } from './publicacao-instagram.service';
 import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
 import { LoteDaSemanaController } from './lote-da-semana.controller';
 import { LoteDaSemanaService } from './lote-da-semana.service';
+import { ComentariosController } from './comentarios.controller';
+import { ComentariosService } from './comentarios.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -57,8 +59,9 @@ import { LoteDaSemanaService } from './lote-da-semana.service';
 // A grade da semana (MC16) também é nota da memória, escrita pelo MemoriaService.
 // TenantsModule: a rota pública da mídia (MD4) confere se a empresa do token
 // ainda tem o módulo pauta — requisição anônima passa pelo gate de módulos.
-// GraphDePublicacaoModule: o cliente da Graph que o publicador do Instagram
-// (MD6) recebe por injeção; o HTTP mora no conector da bio.
+// GraphDePublicacaoModule: os clientes da Graph que o publicador do Instagram
+// (MD6) e o coletor de comentários (MD9) recebem por injeção; o HTTP mora no
+// conector da bio.
 @Module({
   imports: [StorageModule, GoogleModule, IntegrationsModule, MemoryModule, BioModule, TenantsModule, GraphDePublicacaoModule],
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
@@ -81,6 +84,7 @@ import { LoteDaSemanaService } from './lote-da-semana.service';
     ContaDePublicacaoController,
     PublicacaoInstagramController,
     LoteDaSemanaController,
+    ComentariosController,
   ],
   providers: [
     PautaService,
@@ -123,10 +127,13 @@ import { LoteDaSemanaService } from './lote-da-semana.service';
     PublicacaoInstagramService,
     // MD8: a semana num lote só, assinado por outra pessoa; reage à ativação do lote por registro.
     LoteDaSemanaService,
+    // MD9: a fila da DM à mão — o efeito de instagram.comentario.ler e a gravação pela rotina.
+    ComentariosService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
-  // PublicacaoInstagramService, para os executores das rotinas (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService],
+  // PublicacaoInstagramService e ComentariosService, para os executores das
+  // rotinas (RoutinesModule).
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService],
 })
 export class PautaModule {}

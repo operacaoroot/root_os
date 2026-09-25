@@ -196,7 +196,8 @@ export function textoDaIa(v: unknown, teto: number): string {
 
 const PALAVRAS_VAZIAS = new Set(['PARA', 'COMO', 'QUE', 'COM', 'UMA', 'DOS', 'DAS', 'NOS', 'NAS', 'MAIS', 'SOBRE', 'ENTRE', 'ESTA', 'ESSE', 'ESSA', 'ISSO']);
 
-function normalizarPalavra(s: string): string {
+/** Maiúscula, sem acento, só letras e números. A mesma régua da palavra do CTA e do casamento no comentário (MD9). */
+export function normalizarPalavra(s: string): string {
   return s
     .normalize('NFD')
     .replace(/\p{M}/gu, '')

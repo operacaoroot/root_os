@@ -48,6 +48,7 @@ import { publicacoesParaATela } from './publicacao-instagram.service';
 import { LotesService, type ItemVivo } from '../approvals/lotes.service';
 import { CAPACIDADE_DO_ITEM, revogarItemDaPeca } from './lote-da-semana';
 import { notaDaAutomaticaLigada } from './publicacao-instagram';
+import { ondeEsperaResposta } from './dm-por-comentario';
 
 const TITULO_DA_GRADE = 'Grade da semana de posts (pauta)';
 const MINUTO = 60_000;
@@ -329,7 +330,17 @@ export class AgendaService {
       dias,
       paraDistribuir,
       publicacaoAutomatica: await this.publicacaoAutomatica(orgId),
+      comentariosPendentes: await this.comentariosPendentes(orgId, agora),
     };
+  }
+
+  /** MD9: quantos comentários com a palavra esperam a DM à mão, dentro dos 7 dias. Falhar aqui não derruba a semana. */
+  private async comentariosPendentes(orgId: string, agora: Date): Promise<number | undefined> {
+    try {
+      return await this.prisma.comentarioComPalavra.count({ where: ondeEsperaResposta(orgId, agora) });
+    } catch {
+      return undefined;
+    }
   }
 
   /** MD8: a nota `pauta.publicacao.automatica`, para a tela dizer ao lado do "Aprovar a semana". Memória fora = desligada. */

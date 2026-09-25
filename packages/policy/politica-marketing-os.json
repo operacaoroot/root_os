@@ -1,6 +1,6 @@
 {
-  "versao": "1.4.0",
-  "atualizadoEm": "2026-09-24",
+  "versao": "1.5.0",
+  "atualizadoEm": "2026-09-25",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1151,6 +1151,47 @@
         "exposicaoExterna": true,
         "impactoFinanceiro": "nenhum",
         "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "instagram.comentario.ler",
+      "rota": "GET /pauta/comentarios",
+      "descricao": "Lê os comentários dos posts da semana com palavra-chave (carrossel e corte dos últimos 7 dias) na conta de publicação do Instagram da empresa, pela Graph, e devolve só quem comentou a palavra inteira: o id do comentário e o @ saem marcados como sigilosos, o id da pessoa sai como HMAC e o texto do comentário nunca sai do efeito. Só leitura: nada é escrito na Meta. Quem lê é a rotina pauta.coletar-comentarios, sem ferramenta de agente (o @ não vai a modelo nenhum). A rota declarada é a da fila que a leitura enche: ela só mostra a fila e nunca dispara a leitura, e está aqui para prender a capacidade ao módulo pauta na Régua.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["igUserId", "midias"],
+        "properties": {
+          "igUserId": { "type": "string", "minLength": 1, "description": "a conta de publicação do Instagram cujos posts são lidos" },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pecaId", "palavra"],
+              "properties": {
+                "pecaId": { "type": "string", "minLength": 1 },
+                "palavra": { "type": "string", "pattern": "^[A-Z0-9]{3,20}$" },
+                "midiaId": { "type": "string", "minLength": 1 },
+                "permalink": { "type": "string", "pattern": "^https://" }
+              }
+            },
+            "description": "as peças publicadas com a palavra do CTA: o id da mídia (publicada pelo OS) ou o permalink colado à mão"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
         "destruicao": false,
         "obrigacaoLegal": false
       }

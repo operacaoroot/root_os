@@ -468,8 +468,9 @@ const ROTULO_DA_PUBLICACAO = {
  * mão — o PNG no OS (baixar pela tela) ou o mp4 que ficou no Mac, pelo caminho;
  * o carrossel que subiu pela metade diz quantos PNG faltam. O slot só proposto
  * pelo encadeamento (MD1) diz que falta aprovar; a publicação pelo OS (MD6), onde
- * ela está; o lote da semana (MD8), se está assinado ou na fila. Só lê: postar,
- * publicar, aprovar a semana e marcar como postada são da tela.
+ * ela está; o lote da semana (MD8), se está assinado ou na fila; e quantos
+ * comentários esperam a DM à mão (MD9), sem dizer quem. Só lê: postar, publicar,
+ * aprovar a semana, marcar como postada e responder são da tela.
  * @param {any} agenda o `GET /pauta/agenda`
  * @returns {string[]}
  */
@@ -525,6 +526,9 @@ export function linhasDaAgenda(agenda) {
   }
   const pendentes = agenda?.paraDistribuir ?? [];
   for (const e of pendentes) linhas.push(`${e.apelido}: ${e.aprovadasSemData} aprovada(s) sem data — "Distribuir" na aba Semana.`);
+  // MD9: a fila da DM à mão. Só o número: o @ de quem comentou não sai da tela.
+  const dm = agenda?.comentariosPendentes ?? 0;
+  if (dm > 0) linhas.push(`${dm} comentário(s) com a palavra-chave esperando a DM à mão — "Quem comentou e o que responder" na aba Semana.`);
   return linhas;
 }
 

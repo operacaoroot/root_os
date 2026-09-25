@@ -2044,6 +2044,140 @@ antes da subida (sem ele `pauta.semana.aprovar` vale R5 e todo pedido de assinat
    a semana inteira sem ninguém olhando na hora.
 7. Conferir no primeiro post real o limite de 2.200 caracteres da legenda (a conferir desde a MD6).
 
+### Onda D, fatia MD9 — a fila da DM à mão, com o coletor de comentários (25/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD9), base na MC18.0 com as
+recomendações D-MC9.6 (a) e D-MC9.7 (a): o CTA "chegam no direct" continua, e a resposta é à mão.
+**Nada sai do OS nesta fatia**: a leitura dos comentários é só leitura, pela porta, e a DM é mandada
+pelo Instagram, à mão. A fila "liga já" (decisão do Pedro): basta a rotina criada em `/rotinas`.
+
+| Peça | Onde |
+|---|---|
+| Capacidade `instagram.comentario.ler` (**R0**, sem `ferramenta`, sem `desfazer`, `rota` = a fila `GET /pauta/comentarios`; `argsSchema` fechado: `igUserId` e até 30 `{pecaId, palavra, midiaId?, permalink?}`); delta `1.5.0`, catálogo com 65; `CONECTOR_DA_CAPACIDADE` = `instagram` | `packages/policy/politica-marketing-os.json`, `apps/api/src/integrations/conectores.ts` |
+| HTTP no conector: `comentariosDa(token, midiaId, tetoPaginas)` faz `GET /<media>/comments` com `fields=id,text,timestamp,from{id,username},parent_id`, 50 por página, paginação pelo cursor `after` montado sobre o nosso endereço (o `paging.next` do corpo nunca é seguido). O `midiasDesde` antigo, que a fila usa para achar o post pelo permalink, passou a paginar do mesmo jeito (antes seguia o `next` do corpo, com o token na URL) | `apps/api/src/bio/plataformas/instagram.ts` |
+| O cliente chega ao coletor por injeção (`GRAPH_DE_COMENTARIOS`, token e interface em `pauta/graph-de-comentarios.ts`, fiação no mesmo `bio/plataformas/publicacao.module.ts`); catraca nova: só os três arquivos citam o token, e a Graph só é chamada dentro do efeito | idem; `arquitetura.test.ts` |
+| A parte pura: `casaPalavraInteira` (a régua de `normalizarPalavra`, agora exportada), `triarComentario` (própria conta pelo id ou pelo @, resposta — salvo a nota `pauta.comentarios.respostas` = `ligada` —, mais de 7 dias, sem autor, sem palavra; o motivo "anúncio" é defensivo, para o webhook da MD11: a consulta não pede `ad_id`, que não é campo do nó IG Comment e daria #100), `ondeEsperaResposta` (a definição única de "pendente", da fila e da agenda), `hmacDaPessoa`, `mesmoPermalink`, `textoDaDm`, `problemaDoTextoDaDm` (bytes, `/r/`, anti-slop) | `apps/api/src/pauta/dm-por-comentario.ts`; `derivacao-do-episodio.ts` |
+| O serviço: o efeito lê e faz a triagem e devolve SÓ quem casou, com o id do comentário e o @ em `sigiloso()` e a pessoa como HMAC — o texto do comentário não sai do efeito; a rotina grava a fila (a reentrega cai na mesma linha), cria o link de campanha da matéria e anula o @ vencido; a fila, marcar respondido (RASTRO `pauta.dm_manual_respondida` só com o HMAC), preparar e editar o texto da DM | `apps/api/src/pauta/comentarios.service.ts`, `comentarios.controller.ts` |
+| O registro da chamada deixa de guardar o que o RASTRO esconde: `ToolCall.resultado` troca `sigiloso()` pelo resumo, como o `EventLog` já fazia (`semSigilosos`, `resumoCriptografico` e `temSigiloso` exportados). `sigiloso(v, rotulo, { semResumo: true })` é o modo para valor de pouca entropia: o registro guarda só `{ sigiloso, rotulo }`, sem sha256 nem tamanho — é o que o @ e o id do comentário usam | `apps/api/src/gateway/event-log.service.ts`, `tool-gateway.service.ts` |
+| Tabela `ComentarioComPalavra` (filha de `PautaPeca`: sentinela, gatilho `mktos_orgid_do_pai`, RLS FORCE com leitura e escrita separadas; `commentId` único por empresa; `usuario` nulo depois de `expiraEm`; sem o texto do comentário) | migration `20260925021740_comentario_com_palavra`; `modelos-globais.ts` (`FILHOS_COM_ORGID_REDUNDANTE` = 19); `tenant-isolation.test.ts` |
+| Rotina `pauta.coletar-comentarios` (`*/10`), no `TIPOS_DA_PAUTA` (`PAUTA_CRON=off` a cala), criada em `/rotinas` por "Nova rotina de comentários" | `apps/api/src/routines/executores/pauta-comentarios.executor.ts`; `apps/web/src/app/rotinas/NovaRotinaDeComentarios.tsx` |
+| Rotas `GET /pauta/comentarios` (`pauta.ver`), `POST /pauta/comentarios/:id/respondido` (`pauta.publicar`), `POST /pauta/episodios/:id/dm/preparar` e `PUT /pauta/episodios/:id/dm/:itemId` (`pauta.editar`, corpo `PautaTextoDaDmSchema`: ≤ 1000 **bytes**) | `comentarios.controller.ts`; `packages/shared/src/schemas.ts` |
+| Tela: "Quem comentou e o que responder" na aba Semana — @, palavra, peça, prazo, "Copiar texto", "Abrir perfil", "Marquei como respondido", a última leitura da rotina e o texto da DM por matéria (copiar, preparar, editar contando bytes, voltar ao padrão) | `apps/web/src/app/pauta/ComentariosComPalavra.tsx`, `page.tsx` |
+| `comentariosPendentes` na agenda; `root-midia agenda` diz quantos esperam a DM, sem @ | `agenda.service.ts`; `tools/root-midia/lib/semana.mjs` |
+| Variável `META_WEBHOOK_PESSOA_HMAC_KEY` (32+; vazia = a rotina pula sem ler) | `docker-compose.yml` (`environment:`) e `.env.example` |
+
+**Desvios da especificação, com o porquê:**
+- **A leitura é R0, não R1.** A SPEC declarava `produzArtefato: true` (R1). Medido na régua: R1 com
+  qualquer sinal sobe a R2, e R2 exige aprovação no OS (a API nunca passa `aprovacaoR2Ligada`).
+  `fora_da_janela` acende toda noite (20h–08h de SP) e `volume_atipico` acende nas primeiras semanas
+  de uma leitura de 10 em 10 min (a média de 30 dias começa perto de zero): a rotina criaria um
+  pedido de aprovação para LER a cada passagem. Declarada R0, o efeito só lê e devolve; quem grava a
+  fila é a rotina, do lado de dentro — o mesmo desenho da coleta de quinta, que lê o Gmail em R0 e
+  grava as capturas. Com sinal, sobe a R1 e segue sem aprovação (caso com banco e caso da política).
+  A assinatura do seed continua sendo a de capacidade nova (`ACRESCENTA`).
+- **O efeito devolve o @ e o id do comentário marcados com `sigiloso(…, { semResumo: true })`**, e
+  por isso o `ToolCall.resultado` passou a redigi-los (antes só o `EventLog` redigia): sem isso, o @
+  ficaria cru no registro da chamada, fora do expurgo dos 7 dias. **Sem resumo**, e não com o
+  sha256 de costume: um @ é público e de pouca entropia, e o id do comentário se lista pela Graph;
+  quem lê o banco calcularia o sha256 dos @ que comentaram no post e acharia a pessoa num rastro que
+  vive 1825 dias. Fica só a marca e o rótulo.
+- **Sem `rota` HTTP própria para a leitura**: quem lê é a rotina. A `rota` do catálogo aponta para a
+  fila que a leitura enche (`GET /pauta/comentarios`), o que também prende a capacidade ao módulo
+  pauta na Régua (`moduloDaCapacidade`); a descrição da capacidade diz que a rota só mostra a fila e
+  nunca dispara a leitura. O teste "todas as R0 são ferramentas MCP" ganhou a exceção declarada.
+- **Sem a linha de aviso de mensagem automática** (ajuste (ii) da pesquisa): a DM desta fatia é
+  mandada por uma pessoa. O aviso entra com a MD11.
+- **O link da DM nasce com a primeira linha da fila** (a rotina o cria, com `pauta.dm_links` no
+  RASTRO como ator `system`/`rotina`) ou pelo "Preparar os textos da DM"; a leitura da fila não cria
+  nada.
+
+**Revisão (três revisores, 25/09/2026), o que mudou:**
+- O @ e o id do comentário deixaram de ir ao `ToolCall` e ao `EventLog` como sha256 sem chave (ver
+  acima); o teste procura `sha256('fulano.silva')` e `sha256('c-secreto-1')` nos dois e não acha.
+- `editarTexto` grava a meta INTEIRA sob o cadeado `pauta-semana:<episodioId>` e relê depois dele,
+  como `comAPecaTravada`: um JPEG ou mp4 gravado no meio não é mais desfeito (teste de corrida que
+  fica vermelho sem o cadeado).
+- A falha da Graph ao listar as mídias (post achado pelo permalink) aparece no resumo como erro, não
+  como "post não achado", e a lista é pedida uma vez por passagem mesmo quando falha.
+- Com o módulo pauta desligado, a passagem ainda apaga o @ vencido (apagar não lê a Graph).
+- A fila corta pelo que importa: primeiro as pendentes, das que vencem antes; o resto completa até
+  200. `pendentes` vem de `count` no banco, com a mesma condição da agenda (`ondeEsperaResposta`).
+- O texto editado à mão com um `/r/` que não existe mais (página remontada no /bio) volta ao padrão,
+  com o aviso para editar de novo.
+- O dublê da Graph devolve só os `fields` pedidos e pagina as mídias pelo cursor com um `next` que
+  aponta para fora; o caso "de anúncio" saiu do teste com banco (continua no puro).
+- Caso novo: carrossel e corte da mesma matéria usam o mesmo `BioLink` e o mesmo `/r/`.
+- O laço que espera o `PixelEvent` conta tentativas (com `vi.setSystemTime` o `Date.now()` fica
+  parado, e o prazo nunca vencia).
+
+**Medido** (Mac, `marketing_os_test`, 25/09/2026 ~00h): `pnpm typecheck` 7/7; `typecheck:test`
+limpo; api direto com `TEST_DATABASE_URL` **2926 de 2926** em 71 arquivos (+37:
+`pauta-comentarios` 29, novo, 18 com banco; `rastro-por-nivel` +1; `arquitetura` +3;
+`escritas-pela-porta` +2; `modelos-globais` +1; `root-midia` +1); sem ele, 2255 passados e 671
+pulados; web **596** em 46 (+11, `component/pauta-comentarios` novo); policy **90** em 2 (+2);
+`test:porta` 61; `test:isolamento` **346** (+6, `ComentarioComPalavra`); `db:diff` "No difference
+detected."; `build` + `smoke` OK. Pisos da CI: api 2113/63, web 410/37, isolamento 271, com a
+conta no `ci.yml`. (Números remedidos depois da revisão; o ensaio abaixo é de antes dela.)
+O `db:seed:politica` no banco de teste recusou sem assinatura ("Nada foi semeado") e aceitou com
+`POLITICA_CAPACIDADE_NOVA_*` ("capacidade nova em R0 (não declarada valia R5)").
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md9`, criado vazio:
+migrations do zero, `db:seed` e `db:seed:politica`; dublê da Graph em `127.0.0.1:4299` como
+`INSTAGRAM_GRAPH_URL`, com os comentários paginados de 2 em 2 pelo cursor e as mídias da conta;
+conta de publicação com o escopo de comentários, página do episódio no ar com o botão da matéria,
+um carrossel publicado pelo OS (MD6, `PautaPublicacao` com o id da mídia) e um corte aprovado; banco,
+API, web e dublê removidos no fim):
+1. O corte foi marcado como postado pela rota da MC16 com `https://www.instagram.com/reel/ENSAIOMD9/?igsh=abc`.
+   `POST /rotinas` (tipo `pauta.coletar-comentarios`) e "Rodar agora" → `ok`, "2 post(s), 4
+   comentário(s) lido(s) · 2 novo(s) na fila · ignorados: sem a palavra 1, da própria conta 1". No
+   carrossel, os três comentários do dublê (`AGENTES por favor`, `AGENTES2` e o da própria conta)
+   viraram **uma** linha, `@maria.ensaio`, com o texto `…/r/78fd4339…` e a página
+   `…/@root-ep-01-md9`; o corte foi achado pelo permalink em `/me/media` (`@ana.ensaio`,
+   `PLANILHA`). O dublê viu a segunda página com `after=2` e os `fields` da SPEC.
+2. "Rodar agora" de novo → "0 novo(s) na fila · 2 já estava(m)"; 2 linhas no banco.
+3. "Marquei como respondido" → 200 com quem e quando; a segunda vez, 409. O `AuditLog`
+   `pauta.dm_manual_respondida` tem só `{pecaId, palavra, pessoaHmac}`. Nenhuma linha de `AuditLog`,
+   `EventLog` ou `ToolCall` contém o @, o id do comentário, o id da pessoa ou o texto do comentário
+   (0, 0, 0). As duas leituras saíram **R1** (23h40 de SP, `fora_da_janela`) e **0** aprovações.
+4. `GET /api/bio/r/<link da DM>` com o cookie de visitante → 302 para a matéria; o `PixelEvent`
+   `link_click` tem o `linkId` do link `campanha:dm:md9-1`, e nenhum tem o do botão da página.
+5. Com a fila levada a 7 dias e 1 hora atrás, "Rodar agora" → "2 @ apagado(s) depois dos 7 dias";
+   as duas linhas ficaram com `usuario` nulo e o HMAC; a fila e a agenda contam 0 pendentes.
+6. Instagram desligado em `/conexoes` → a passagem vira `erro` com a frase do interruptor e **0**
+   chamadas novas ao dublê.
+7. Tela a 375 px (aba Semana, com a fila e o texto por matéria aberto): sem rolagem lateral
+   (`sw = cw = 375`, nenhum elemento para fora).
+
+**Deploy:** uma migration aditiva (a tabela, com RLS e gatilho). **Antes da subida**, o
+`db:seed:politica` com `POLITICA_CAPACIDADE_NOVA_*`: sem ele a capacidade não existe na política do
+banco, vale R5 e a rotina falha fechada (nada é lido). Variável nova `META_WEBHOOK_PESSOA_HMAC_KEY`
+(vazia = a rotina pula). Nenhuma permissão nova.
+
+**Riscos.** A leitura de 10 em 10 min dá cerca de 6 chamadas por hora por post (o limite da Graph
+para leitura de comentários está a conferir). O @ é dado pessoal: quem o apaga é a passagem da
+rotina depois dos 7 dias — com a rotina parada, pausada ou apagada, ele fica no banco (a tela já o
+esconde) até a próxima passagem; com o módulo pauta desligado a passagem ainda o apaga. Se o volume passar do que dá para responder à mão, a pressão vai para uma
+ferramenta de fora (ManyChat), que é decisão do Pedro e fica fora do OS.
+
+**Pendências (do Pedro), na ordem:**
+1. A MD5 feita no painel da Meta com `instagram_business_manage_comments` em Standard Access e a
+   conta reconectada na aba Semana (o cartão mostra o escopo). Sem ele, a passagem pula com o aviso.
+2. Gerar a chave no easyPanel e pôr no `.env` da VPS: `META_WEBHOOK_PESSOA_HMAC_KEY` =
+   `openssl rand -base64 48` (nunca colar em chat). Trocar a chave depois faz a mesma pessoa virar
+   outra no histórico.
+3. `db:seed:politica` na VPS **antes** do deploy, assinado:
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD9: catálogo ganha instagram.comentario.ler (R0), a leitura da fila da DM à mão' pnpm --filter @mktos/api db:seed:politica`.
+4. Depois do deploy, `/rotinas` › "Nova rotina de comentários" (`*/10 * * * *`). Sob o papel
+   restrito (passo 16), nenhuma rotina dispara até a decisão do agendamento.
+5. Publicar em `docs/PRIVACY.md` (e na página pública de privacidade) o parágrafo de dados de quem
+   comenta (D-MC9.9): o @ fica 7 dias para a resposta à mão e some; o id da pessoa só como HMAC; o
+   texto do comentário não é guardado. O texto é do Pedro (é aviso legal).
+6. Mandar as DMs à mão a partir da fila, e medir o volume da primeira semana: é o número que decide
+   se a MD11 (DM automática, depois do App Review) vale o custo.
+7. **A conferir no primeiro uso real:** se `from.id` do comentário da própria conta é o mesmo id da
+   conta de publicação (a triagem também compara pelo @, por garantia); e o limite de chamadas da
+   Graph para ~6 leituras por hora por post.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2321,6 +2455,16 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     `erro`, `recusada` ou com o pedido morto, e a rotina, quando desiste de uma peça do lote, revoga o
     item dela. O conteúdo do lote em `/atendimento` exige `aprovacoes.decidir`. O aviso do canal de aprovação (R4/R5, sem código)
     passa a trazer o link de `/atendimento` quando `WEB_ORIGIN` é https ou loopback.
+31. **MD9: a fila da DM à mão.** Com a rotina `pauta.coletar-comentarios` criada, o OS lê pela porta
+    (R0, só leitura, com o interruptor do Instagram) os comentários dos posts com palavra dos últimos
+    7 dias, a cada 10 min, e grava quem comentou a palavra: o @ por 7 dias e o HMAC da pessoa, nunca o
+    texto. Cada linha nova cria o link de campanha `campanha:dm:<itemId>` (inativo) na página do
+    episódio. O `ToolCall.resultado` de qualquer efeito passa a trocar o que vier em `sigiloso()` pelo
+    resumo criptográfico, como o `EventLog` já fazia (antes desta fatia nenhum efeito devolvia
+    `sigiloso()`); o @ e o id do comentário vão sem resumo (só a marca e o rótulo). O `midiasDesde`
+    (também usado pela sincronização da bio) passou a paginar pelo cursor `after`, sem seguir o
+    `next` do corpo. Sem `META_WEBHOOK_PESSOA_HMAC_KEY`, sem o escopo de comentários ou sem o seed
+    assinado, nada é lido.
 
 ---
 

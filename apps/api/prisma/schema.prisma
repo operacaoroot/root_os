@@ -134,6 +134,8 @@ model Org {
   pautaPecas       PautaPeca[]
   pautaEpisodios   PautaEpisodio[]
   pautaPublicacoes PautaPublicacao[]
+  /// MD9: quem comentou a palavra-chave num post da semana (a fila da DM à mão).
+  pautaComentarios ComentarioComPalavra[]
   lotesDeAprovacao AprovacaoDeLote[]
   itensDeLote      ItemDoLote[]
 
@@ -1572,6 +1574,8 @@ model PautaPeca {
 
   // MD6: a publicação pelo OS, uma por rede.
   publicacoes PautaPublicacao[]
+  // MD9: os comentários com a palavra-chave, para a DM à mão.
+  comentarios ComentarioComPalavra[]
 
   @@index([orgId, status])
   @@index([rodadaId])
@@ -1631,6 +1635,38 @@ model PautaPublicacao {
 
   @@unique([pecaId, rede])
   @@index([orgId, estado, proximaEm])
+}
+
+// MD9: quem comentou a palavra-chave da matéria num post da semana. É a fila
+// "quem comentou e o que responder": a DM sai à mão, por isso o @ existe aqui —
+// e só por 7 dias (`expiraEm`), a janela da Meta; depois a rotina o anula. O
+// TEXTO do comentário nunca é gravado. `pessoaHmac` é o HMAC-SHA256 do id da
+// pessoa no Instagram com META_WEBHOOK_PESSOA_HMAC_KEY: é o que o RASTRO leva.
+model ComentarioComPalavra {
+  id            String    @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaPeca.orgId`.
+  orgId         String    @default("")
+  org           Org       @relation(fields: [orgId], references: [id])
+  pecaId        String
+  peca          PautaPeca @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  /// O id do comentário na Graph. Único por empresa: a coleta de 10 em 10 min relê o mesmo comentário.
+  commentId     String
+  /// O id da mídia do Instagram (o post da peça).
+  midiaId       String
+  palavra       String
+  pessoaHmac    String
+  /// O @ de quem comentou; nulo depois de `expiraEm`.
+  usuario       String?
+  comentadoEm   DateTime
+  expiraEm      DateTime
+  respondidoEm  DateTime?
+  /// O id de quem marcou como respondido.
+  respondidoPor String?
+  criadoEm      DateTime  @default(now())
+
+  @@unique([orgId, commentId])
+  @@index([pecaId])
+  @@index([orgId, expiraEm])
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------

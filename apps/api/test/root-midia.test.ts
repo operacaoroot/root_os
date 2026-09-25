@@ -1149,6 +1149,13 @@ describe('root-midia: o calendário da semana no terminal (MC16)', () => {
     );
   });
 
+  it('MD9: a agenda diz quantos comentários esperam a DM à mão, sem @ nenhum; zero não diz nada', () => {
+    const com = linhasDaAgenda({ dias: [], paraDistribuir: [], comentariosPendentes: 3 });
+    expect(com).toEqual(['3 comentário(s) com a palavra-chave esperando a DM à mão — "Quem comentou e o que responder" na aba Semana.']);
+    expect(linhasDaAgenda({ dias: [], paraDistribuir: [], comentariosPendentes: 0 })).toEqual([]);
+    expect(linhasDaAgenda({ dias: [], paraDistribuir: [] })).toEqual([]);
+  });
+
   it('MD1: o slot só proposto pelo encadeamento diz que falta aprovar (ou distribuir) — não é agenda', () => {
     const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'rascunho', postada: null, agendadaPara: null, midia: { onde: 'nenhuma', comando: '/root-midia carrosseis ep-04' }, ...over });
     const linhas = linhasDaAgenda({

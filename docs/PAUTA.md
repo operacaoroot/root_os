@@ -844,6 +844,21 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     Instagram em Conexões barra o pedido e a conclusão. Publicar sozinha no horário exige a nota
     `pauta.publicacao.automatica` ligada **e** o lote da semana (MD8); até lá a rotina só registra
     `pulada`. A rota antiga `POST /pauta/pecas/:id/publicar` não publica Instagram.
+  - **Quem comentou e o que responder (MD9).** O carrossel e o corte fecham com "comentário com a
+    PALAVRA → o link da matéria e o episódio completo chegam no direct", e a DM é mandada à mão. A
+    rotina `pauta.coletar-comentarios` (`/rotinas` › "Nova rotina de comentários", a cada 10 min)
+    lê pela porta, só leitura (`instagram.comentario.ler`, R0), os comentários dos posts com
+    palavra publicados nos últimos 7 dias — pelo id da mídia (publicado pelo OS) ou pelo permalink
+    colado no "Marcar como postada". Entra na fila quem comentou a palavra INTEIRA ("AGENTES2" não
+    é "AGENTES"); a própria conta, resposta a comentário (salvo a nota
+    `pauta.comentarios.respostas` = `ligada`) e comentário com mais de 7 dias ficam fora. A seção
+    mostra o @, a palavra, a peça, "Copiar texto" (o `/r/` rastreado da matéria, link de campanha
+    `campanha:dm:<itemId>`, e o endereço da página do episódio), "Abrir perfil" e "Marquei como
+    respondido" (`pauta.publicar`; o RASTRO leva só o HMAC da pessoa). O @ some depois de 7 dias; o
+    texto do comentário nunca é guardado. O texto da DM de cada matéria pode ser preparado e editado
+    (`pauta.editar`): até 1000 **bytes** (a Meta conta bytes), com o link rastreado e sem slop.
+    Matéria de newsletter não gera link. Precisa da conta de publicação com o escopo de comentários
+    (MD5) e de `META_WEBHOOK_PESSOA_HMAC_KEY` (32+) no servidor; sem elas, a passagem pula.
   - **Colunas** (migration `20260924090000_pauta_peca_agenda`): `PautaPeca.agendadaPara` (o instante
     em UTC; nulo = fora da agenda; índice `(orgId, agendadaPara)`) e `urlPublicada` (o endereço
     público do post). **Decisão:** "postada à mão" reaproveita `status = publicada`, `publicadaEm` e

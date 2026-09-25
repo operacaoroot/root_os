@@ -3577,6 +3577,8 @@ export interface PautaAgendaDaSemana {
   paraDistribuir: PautaEpisodioParaDistribuir[];
   /** MD8: a nota `pauta.publicacao.automatica` da empresa (desligada = o lote assinado não sai sozinho). */
   publicacaoAutomatica?: boolean;
+  /** MD9: quantos comentários com a palavra esperam a DM à mão, dentro dos 7 dias. */
+  comentariosPendentes?: number;
 }
 
 /** `GET /pauta/agenda/grade` e o retorno do PUT. */
@@ -3891,6 +3893,117 @@ export interface PautaConteudoDoLote {
   divergentes: number;
   handle: string | null;
   itens: PautaItemDoConteudoDoLote[];
+}
+
+// ---------- Pauta: a DM por palavra-chave, respondida à mão (MD9) ----------
+
+/**
+ * A capacidade da régua que lê os comentários das mídias da semana na Graph.
+ * É leitura (R0): nada sai do OS, e o que ela devolve não carrega o texto do
+ * comentário — o casamento da palavra acontece dentro do efeito.
+ */
+export const PAUTA_CAPACIDADE_DE_LER_COMENTARIOS = 'instagram.comentario.ler';
+
+/** O tipo da rotina que monta a fila "quem comentou e o que responder" (`routines/executores/pauta-comentarios.executor.ts`). */
+export const PAUTA_TIPO_DA_ROTINA_DE_COMENTARIOS = 'pauta.coletar-comentarios';
+
+/**
+ * A nota da memória que põe na fila também as RESPOSTAS a comentário (o
+ * `parent_id` da Graph). Primeira linha `ligada`; sem ela, só o comentário de
+ * primeiro nível entra. A própria conta e o comentário com mais de 7 dias
+ * nunca entram, com ou sem nota.
+ */
+export const PAUTA_CHAVE_DAS_RESPOSTAS_NA_FILA = 'pauta.comentarios.respostas';
+
+/** A janela da resposta privada da Meta: 7 dias do comentário. Também é o prazo em que o @ fica guardado. */
+export const PAUTA_DM_JANELA_DIAS = 7;
+
+/** A Meta mede o texto da mensagem em BYTES UTF-8, não em caracteres: "1000 bytes or less". */
+export const PAUTA_DM_TETO_BYTES = 1000;
+
+/** Quantos bytes o texto ocupa em UTF-8 (acento = 2, emoji = 4). Sem `TextEncoder`: roda igual no navegador e no Node. */
+export function bytesUtf8(texto: string): number {
+  let n = 0;
+  for (const c of String(texto ?? '')) {
+    const cp = c.codePointAt(0) ?? 0;
+    n += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+  }
+  return n;
+}
+
+/** O texto da DM de uma matéria, editado à mão. `null` volta ao texto padrão. */
+export const PautaTextoDaDmSchema = z.object({
+  texto: z
+    .string()
+    .trim()
+    .min(1, 'O texto da DM não pode ficar vazio (para voltar ao padrão, use "Voltar ao padrão").')
+    .refine((t) => bytesUtf8(t) <= PAUTA_DM_TETO_BYTES, {
+      message: `O texto da DM passa de ${PAUTA_DM_TETO_BYTES} bytes: a Meta mede em bytes, e cada acento conta 2.`,
+    })
+    .nullable(),
+});
+export type PautaTextoDaDmInput = z.infer<typeof PautaTextoDaDmSchema>;
+
+/** Um @ do Instagram: letras, números, ponto e sublinhado, até 30. */
+export const INSTAGRAM_USUARIO_RE = /^[A-Za-z0-9._]{1,30}$/;
+
+/** O endereço do perfil de quem comentou, para o "abrir perfil"; nulo quando o @ não tem a forma do Instagram. */
+export function perfilDoInstagram(usuario: string | null | undefined): string | null {
+  const u = String(usuario ?? '').trim().replace(/^@/, '');
+  return INSTAGRAM_USUARIO_RE.test(u) ? `https://www.instagram.com/${u}/` : null;
+}
+
+/** O texto da DM de uma matéria, pronto para copiar (MC18.0). */
+export interface PautaTextoDaDm {
+  episodioId: string;
+  apelido: string;
+  itemId: string;
+  itemN: number;
+  palavra: string;
+  materia: string;
+  /** O que se cola no direct: o link rastreado da matéria e o endereço da página do episódio. Nulo com o `motivo`. */
+  texto: string | null;
+  motivo: string | null;
+  /** O `/r/` do link de campanha `campanha:dm:<itemId>`, um por matéria. */
+  link: string | null;
+  bytes: number;
+  /** O texto foi editado à mão (senão é o padrão, montado agora). */
+  editado: boolean;
+  /** A checagem anti-slop do texto de agora. */
+  checagem: PautaChecagemAntiSlop | null;
+}
+
+/** Uma linha da fila "quem comentou e o que responder". Nunca traz o texto do comentário: ele não é gravado. */
+export interface PautaComentarioNaFila {
+  id: string;
+  /** O @ de quem comentou. Some (nulo) depois de `expiraEm`: é dado pessoal e só vive enquanto a Meta deixaria responder. */
+  usuario: string | null;
+  palavra: string;
+  pecaId: string;
+  formato: PautaFormatoDaSemana;
+  apelido: string;
+  itemN: number;
+  tituloDaPeca: string;
+  comentadoEm: string;
+  expiraEm: string;
+  respondidoEm: string | null;
+  /** O nome de quem marcou como respondido. */
+  respondidoPor: string | null;
+  texto: string | null;
+  motivo: string | null;
+}
+
+/** `GET /pauta/comentarios`. */
+export interface PautaFilaDeComentarios {
+  linhas: PautaComentarioNaFila[];
+  /** O texto da DM de cada matéria com palavra, das peças aprovadas ou publicadas nos últimos 7 dias. */
+  textos: PautaTextoDaDm[];
+  /** Quantas linhas ainda esperam resposta dentro dos 7 dias. */
+  pendentes: number;
+  conta: { handle: string | null; podeLerComentarios: boolean };
+  /** A última passagem da rotina de comentários, ou nulo se ela nunca rodou. */
+  ultimaColeta: { em: string; status: string; resumo: string | null } | null;
+  source: { tool: string; generatedAt: string };
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------

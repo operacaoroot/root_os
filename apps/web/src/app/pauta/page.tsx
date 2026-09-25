@@ -10,6 +10,7 @@ import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
 import { AbaVoz } from './AbaVoz';
 import { ContaDePublicacao } from './ContaDePublicacao';
+import { ComentariosComPalavra } from './ComentariosComPalavra';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
@@ -182,6 +183,7 @@ export default function PautaPage() {
             aviso={retornoDaConexao}
             onErro={aoErrar}
           />
+          <ComentariosComPalavra token={token} podeResponder={podePublicar} editavel={editavel} onErro={aoErrar} bump={bump} />
           <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
         </>
       )}

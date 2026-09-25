@@ -393,8 +393,12 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // Dezesseis desde a MD7 (24/09/2026): `pauta.semana.aprovar` também. Pedir
     // a assinatura do lote é clique de gente; um agente que a pedisse estaria
     // propondo a semana inteira de uma vez.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(16);
-    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar']) {
+    //
+    // Dezessete desde a MD9 (25/09/2026): `instagram.comentario.ler` também.
+    // É leitura, mas o que ela devolve é o @ de quem comentou — vai para a fila
+    // da DM à mão, nunca para o contexto de um modelo.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(17);
+    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar', 'instagram.comentario.ler']) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }
     for (const id of ['conector.desligar', 'conector.religar']) {

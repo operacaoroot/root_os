@@ -797,6 +797,16 @@ SP, com teste. Executor parado mais de 2 h derruba a peça no manual.
 
 ### MD9 — DM mínima: fila de respostas com o link rastreado e coletor de comentários
 
+> **Estado (25/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local da Graph e
+> as pendências do Pedro registrados no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 31 da §4).
+> Escolhas além do texto abaixo: a capacidade é **R0**, não R1 — R1 com `fora_da_janela` ou
+> `volume_atipico` vira R2, que exige aprovação, e a rotina de 10 em 10 min encheria a fila de
+> pedidos de LER; o efeito só lê e devolve, e quem grava a fila é a rotina. O efeito devolve o @ e o
+> id do comentário em `sigiloso()` sem resumo (sha256 sem chave de um @ se desfaz), e o
+> `ToolCall.resultado` passou a redigi-los como o `EventLog`. O filtro de `ad_id` fica para o webhook
+> da MD11: a consulta não pede o campo, que não é do nó IG Comment.
+> A linha de aviso de mensagem automática fica para a MD11 (esta DM é mandada por gente).
+
 **SPEC.**
 
 1. **MC18.0 como especificada, com as recomendações como padrão:** D-MC9.6 (a) — link de campanha

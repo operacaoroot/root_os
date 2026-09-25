@@ -2039,6 +2039,40 @@ describe('catraca de arquitetura: o publicador do Instagram (MD6)', () => {
 });
 
 /*
+ * MD9 — o coletor de comentários tem o mesmo desenho do publicador: o cliente da
+ * Graph chega por injeção, com token próprio e dono próprio, e só é usado
+ * DENTRO do efeito que a porta dispara. O texto do comentário não sai do efeito.
+ */
+describe('catraca de arquitetura: o coletor de comentários (MD9)', () => {
+  const TOKEN = 'src/pauta/graph-de-comentarios.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const COLETOR = 'src/pauta/comentarios.service.ts';
+
+  it('os três arquivos existem onde a catraca procura', () => {
+    for (const a of [TOKEN, FIACAO, COLETOR]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o cliente de comentários da Graph tem um dono: só a declaração, a fiação e o coletor o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_COMENTARIOS\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, COLETOR].sort());
+  });
+
+  it('o coletor não importa o conector, inscreve o efeito e nunca o dispara', () => {
+    const imports = REFS.filter((r) => r.arquivo === COLETOR && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o coletor importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === COLETOR)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.comentario\.ler'/);
+    // A Graph só é chamada dentro do efeito: fora dele, nenhum `this.graph.`.
+    const efeito = fonte.semTexto.slice(fonte.semTexto.indexOf('private async efeito('), fonte.semTexto.indexOf('private async pecasPublicadas('));
+    const total = (fonte.semTexto.match(/this\s*\.\s*graph\s*\./g) ?? []).length;
+    expect(total).toBeGreaterThan(0);
+    expect((efeito.match(/this\s*\.\s*graph\s*\./g) ?? []).length, 'chamada à Graph fora do efeito').toBe(total);
+  });
+});
+
+/*
  * MD7 — o uso contado do lote tem UM chamador: a porta.
  *
  * `LotesService.consumirItem` é o que deixa uma saída acontecer sem aprovação

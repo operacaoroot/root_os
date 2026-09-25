@@ -178,6 +178,12 @@ services:
       PAUTA_MIDIA_PUBLICA_SEGREDO: ${PAUTA_MIDIA_PUBLICA_SEGREDO:-}
       PAUTA_MIDIA_PUBLICA_ORIGEM: ${PAUTA_MIDIA_PUBLICA_ORIGEM:-}
       PAUTA_VIDEO_MAX_BYTES: ${PAUTA_VIDEO_MAX_BYTES:-314572800}
+      # MD9: a chave do HMAC-SHA256 do id de quem comentou a palavra-chave (a
+      # fila da DM à mão guarda o HMAC, nunca o id; o RASTRO leva só ele). Vazia
+      # ou com menos de 32 caracteres = a rotina pauta.coletar-comentarios não
+      # lê nada. Trocar a chave faz a mesma pessoa virar outra no histórico.
+      # Fonte: apps/api/src/pauta/dm-por-comentario.ts.
+      META_WEBHOOK_PESSOA_HMAC_KEY: ${META_WEBHOOK_PESSOA_HMAC_KEY:-}
       EVOLUTION_URL: ${EVOLUTION_URL:-}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}

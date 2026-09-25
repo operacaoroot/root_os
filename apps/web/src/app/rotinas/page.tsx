@@ -7,11 +7,13 @@ import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 import { NovaRotinaDeColeta } from './NovaRotinaDeColeta';
 import { NovaRotinaDeEncadeamento } from './NovaRotinaDeEncadeamento';
 import { NovaRotinaDePublicacao } from './NovaRotinaDePublicacao';
+import { NovaRotinaDeComentarios } from './NovaRotinaDeComentarios';
 import {
   ESTADOS,
   TIPO_PAUTA_COLETA,
   TIPO_PAUTA_ENCADEAR,
   TIPO_PAUTA_PUBLICAR,
+  TIPO_PAUTA_COMENTARIOS,
   type ResultadoDoRodar,
   emHoras,
   quando,
@@ -273,6 +275,12 @@ export default function RotinasPage() {
         data?.tiposDisponiveis?.includes(TIPO_PAUTA_PUBLICAR) &&
         !data.items.some((r) => r.tipo === TIPO_PAUTA_PUBLICAR) && (
           <NovaRotinaDePublicacao token={token} onCriada={carregar} />
+        )}
+
+      {editavel &&
+        data?.tiposDisponiveis?.includes(TIPO_PAUTA_COMENTARIOS) &&
+        !data.items.some((r) => r.tipo === TIPO_PAUTA_COMENTARIOS) && (
+          <NovaRotinaDeComentarios token={token} onCriada={carregar} />
         )}
 
       {data && data.items.length === 0 && (

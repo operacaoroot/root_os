@@ -381,6 +381,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'Mesma ressalva de execução por scheduler.' },
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
   { tabela: 'PautaPublicacao', escopo: 'filho', chaveSql: '"id"', nota: 'A publicação da peça no Instagram pelo OS (MD6): o estado, os containers na Meta, o id e o permalink do post. Ler a da outra é saber o que ela vai postar e quando; escrever `estado` é destravar ou derrubar a publicação alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
+  { tabela: 'ComentarioComPalavra', escopo: 'filho', chaveSql: '"id"', nota: 'Quem comentou a palavra-chave num post da semana (MD9): o @ por 7 dias, o HMAC da pessoa e se a DM já foi respondida. Ler a da outra é saber quem pediu o link a ela; escrever `respondidoEm` é sumir com a fila alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'PautaEpisodio', escopo: 'filho', chaveSql: '"id"', nota: 'O episódio da semana (MC7): roteiro, mídia do Mac, transcrição, títulos e a página de links. Ler o da outra é ler o que ela vai publicar antes de publicar; escrever `status` é mover o episódio alheio de etapa. Filho 1:1 da rodada, com a empresa conferida pelo gatilho — e a página de links também.' },
 
   // ---- rotinas (fatia 5.1) ----------------------------------------------
@@ -1022,6 +1023,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('PautaPublicacao', await ins(c, 'PautaPublicacao', {
     id: crypto.randomUUID(), pecaId, rede: 'instagram', estado: 'erro',
     erro: `Motivo privado da org ${rotulo} ${MARCA}`, atualizadaEm: agora,
+  }));
+
+  // A fila da DM à mão (MD9): filha da peça, a empresa pelo gatilho.
+  reg('ComentarioComPalavra', await ins(c, 'ComentarioComPalavra', {
+    id: crypto.randomUUID(), pecaId, commentId: `comentario_${suf}`, midiaId: `midia_${suf}`, palavra: 'AGENTES',
+    pessoaHmac: `hmac_${suf}`, usuario: `pessoa_privada_${suf}`, comentadoEm: agora, expiraEm: new Date(agora.getTime() + 7 * 86_400_000),
   }));
 
   // O episódio (MC7): filho 1:1 da rodada, com a página de links da mesma empresa.
@@ -3009,6 +3016,10 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     // (pecaId, rede) é único: a semente já usou `instagram` nesta peça.
     id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, rede: 'youtube', atualizadaEm: new Date(),
   }),
+  ComentarioComPalavra: async () => ({
+    id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
+    palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: new Date(), expiraEm: new Date(Date.now() + 86_400_000),
+  }),
   PautaEpisodio: async (c) => {
     // rodadaId é @unique (uma rodada, um episódio): precisa de uma rodada nova.
     const agora = new Date();
@@ -3050,9 +3061,9 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
     // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
     // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
-    // + `ItemDoLote` (MD7, 24/09/2026).
+    // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(18);
+    expect(declarados.length).toBe(19);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

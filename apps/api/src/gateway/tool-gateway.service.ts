@@ -26,7 +26,7 @@ import { TetoDeCustoIaService } from '../llm/teto-diario.service';
 import { LotesService, type ConsumoDoItem } from '../approvals/lotes.service';
 import { modoDeAprovacao, separarItemDeLote } from '../approvals/lotes';
 import { ROTULO_CONECTOR_DESLIGADO, conectorDaCapacidade } from '../integrations/conectores';
-import { EventLogService, type ConteudoDoEvento } from './event-log.service';
+import { EventLogService, semSigilosos, temSigiloso, type ConteudoDoEvento } from './event-log.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from './efeitos.registry';
 import { InterruptoresRegistry } from './interruptores.registry';
 import { mensagemDeErro, validarArgs } from './validacao';
@@ -1540,7 +1540,13 @@ export class ToolGateway implements OnModuleInit {
   // `Array.from` corta em PONTOS DE CÓDIGO: cada elemento é um caractere
   // inteiro, e nenhum par nasce partido. O teto continua sendo 4000 unidades de
   // 16 bits (o `while` desconta), então o tamanho gravado não cresce.
-  private resumirResultado(r: unknown): Prisma.InputJsonValue {
+  //
+  // E O QUE O RASTRO ESCONDE NÃO FICA CRU AQUI (MD9). Um efeito pode devolver
+  // um campo marcado com `sigiloso(...)` — o @ de quem comentou, o id do
+  // comentário — para quem o chamou gravar onde é governado. O `EventLog` já
+  // trocava a marca pelo resumo; o `ToolCall.resultado` gravava o valor cru.
+  private resumirResultado(bruto: unknown): Prisma.InputJsonValue {
+    const r = temSigiloso(bruto) ? semSigilosos(bruto) : bruto;
     const texto = typeof r === 'string' ? r : JSON.stringify(r ?? null);
     if (texto.length > 4000) return { resumo: cortarSemPartirCaractere(texto, 4000), truncado: true };
     return (r ?? {}) as Prisma.InputJsonValue;

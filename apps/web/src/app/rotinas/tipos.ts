@@ -94,6 +94,9 @@ export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
 /** O executor que conclui e olha a publicação no Instagram (MD6). */
 export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
 
+/** O executor que monta a fila da DM à mão com quem comentou a palavra-chave (MD9). */
+export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
+
 /** O que `POST /rotinas/:id/rodar` devolve. */
 export interface ResultadoDoRodar {
   ok: boolean;
@@ -128,6 +131,17 @@ export interface CorpoDaNovaPublicacao {
   nome: string;
   slug?: string;
   tipo: typeof TIPO_PAUTA_PUBLICAR;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: Record<string, never>;
+}
+
+/** O corpo de `POST /rotinas` para a fila de comentários (MD9): sem configuração. */
+export interface CorpoDaNovaRotinaDeComentarios {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_COMENTARIOS;
   cron: string;
   tz: string;
   estado: EstadoDaRotina;

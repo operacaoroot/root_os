@@ -168,6 +168,12 @@ jobs:
       # 39 (+2: a invariante 4 reescrita conta como removida; mudar o modo de
       # aprovação afrouxa). O piso de CASOS fica em 60: os 11 novos cabem na
       # folga, e o de ARQUIVOS em 2.
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): (90) em 2 arquivos — politica
+      # 51 (+2: `instagram.comentario.ler` é R0 pelo efeito, sem ferramenta, e
+      # com sinal sobe a R1 sem pedir aprovação, enquanto o mesmo efeito como
+      # R1 pediria; o esquema de argumentos fechado), sobrescrita 39 (a conta
+      # das sem ferramenta foi a 17, sem caso novo). Os pisos ficam onde estão.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -495,8 +501,20 @@ jobs:
       # `component/pauta-semana` mudaram texto, sem caso novo. Medido: 585
       # casos em 45 arquivos. O piso de ARQUIVOS sobe 1, para 36; o de CASOS
       # sobe 6 (~15% de folga sobre os 7 novos), para 401.
-      PISO_CASOS_WEB: '401'
-      PISO_ARQUIVOS_WEB: '36'
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): +11 casos, +1 arquivo.
+      # `component/pauta-comentarios` (11, novo): a fila com o @, a palavra, a
+      # peça, o prazo e a última leitura; o perfil em outra aba; copiar o texto
+      # com o /r/; marcar como respondido (e sem pauta.publicar, sem o botão); o
+      # @ apagado depois de 7 dias com o copiar desligado e o motivo; a conta
+      # sem comentários e a rotina que não rodou; o texto da DM por matéria com
+      # os bytes e o "Preparar"; editar contando bytes (acento vale 2) e o
+      # "Voltar ao padrão"; o texto de 1200 bytes que trava o salvar; sem
+      # pauta.editar, nada; e a nova rotina de comentários. Medido: 596 casos
+      # em 46 arquivos. O piso de ARQUIVOS sobe 1, para 37; o de CASOS sobe 9
+      # (~15% de folga sobre os 11 novos), para 410.
+      PISO_CASOS_WEB: '410'
+      PISO_ARQUIVOS_WEB: '37'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1677,8 +1695,41 @@ jobs:
       # lote não assinado não tira a aprovada da agenda. Medido: 2889 casos em
       # 70 arquivos com o banco; sem ele, 2236 passados e 653 pulados. O piso
       # de CASOS sobe 2 (~15% de folga sobre os 3 sem banco), para 2097.
-      PISO_CASOS_API: '2097'
-      PISO_ARQUIVOS_API: '62'
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): +37 casos, +1 arquivo.
+      # `pauta-comentarios` (29, novo): sem banco, 11 — a palavra INTEIRA
+      # ("AGENTES2" não é "AGENTES"); a triagem (própria conta pelo id e pelo @,
+      # anúncio, resposta e a nota, 7 dias, sem autor, sem palavra); o texto da
+      # DM com o /r/ e a página, sem caixa de entrada; os BYTES (600 "ç" não
+      # passam); o texto editado sem o /r/ ou com slop; o HMAC da pessoa e a
+      # chave curta; o permalink colado à mão e o perfil; a chave do link e o
+      # resumo; a rotina e a capacidade no shared; as permissões; a variável no
+      # compose e no .env.example. COM BANCO, 18 — o PRONTO QUANDO (três
+      # comentários viram UMA linha com o @ e o /r/, paginação pelo cursor);
+      # o RASTRO e o ToolCall sem @ nem id em claro NEM como sha256; a
+      # reentrega na mesma linha; o post marcado à mão achado pelo permalink
+      # (na segunda página das mídias, pelo cursor), com resposta e 8 dias fora
+      # e a nota das respostas; respondido só com o HMAC e 409 na segunda; 7
+      # dias apagam o @; o /r/ vira PixelEvent do link da DM, separado do botão
+      # da página; a newsletter sem link; preparar e editar o texto; o
+      # Instagram desligado sem chamada; fora da janela e com volume atípico,
+      # R1 sem fila de aprovação; sem chave, sem escopo, sem peça; e os seis da
+      # revisão — carrossel e corte da mesma matéria com o MESMO link (e o link
+      # da rotina no RASTRO), a Graph que cai ao listar as mídias como erro e
+      # uma chamada só, o módulo desligado que ainda apaga o @, o teto da fila
+      # que nunca corta a pendente, o texto editado com /r/ morto que volta ao
+      # padrão, e a corrida do texto da DM com o upload sob o cadeado.
+      # `rastro-por-nivel` +1 (o `sigiloso` sem resumo não deixa hash nem
+      # tamanho), `arquitetura` +3 (o cliente de comentários tem dono),
+      # `escritas-pela-porta` +2, `modelos-globais` +1 (o filho novo no
+      # it.each), `root-midia` +1 (a agenda conta os comentários sem @), todos
+      # sem banco; `conector-desligado` só remediu a conta (65, 19 com
+      # interruptor). Medido: 2926 casos em 71 arquivos com o banco; sem ele,
+      # 2255 passados e 671 pulados (66 + 5 arquivos). O piso de ARQUIVOS sobe
+      # 1, para 63; o de CASOS sobe 16 (~15% de folga sobre os 19 que rodam
+      # sem banco), para 2113.
+      PISO_CASOS_API: '2113'
+      PISO_ARQUIVOS_API: '63'
 
     steps:
       - uses: actions/checkout@v4
@@ -2135,7 +2186,12 @@ jobs:
           # `AprovacaoDeLote` (empresa própria) e `ItemDoLote` (filho do lote,
           # em `FILHOS_COM_ORGID_REDUNDANTE`) entraram no registro de alvos:
           # +8 casos. O piso sobe 7, para 266.
-          PISO_CASOS_ISOLAMENTO: '266'
+          #
+          # MD9, A FILA DA DM À MÃO (25/09/2026): **346 casos**.
+          # `ComentarioComPalavra` (filha da peça, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 271.
+          PISO_CASOS_ISOLAMENTO: '271'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \
