@@ -1022,6 +1022,16 @@ depois de uma semana real com o Instagram automático.
 
 ### MD13 — Corte com nota e motivo
 
+> **Estado (25/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local do
+> modelo e MinIO descartável registrado no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, fatia MD13, e
+> item 33 da §4). Escolhas além do texto abaixo: a meta guarda os 3 candidatos (e não só "os
+> outros"), com o que está em uso marcado pelo trecho; a resposta antiga do modelo (`de`/`ate` no
+> próprio corte) vira um candidato sem nota; a troca só aparece antes do lote (o corte proposto da
+> aba Semana e o corte em rascunho da semana de posts); o Mac manda o trecho que renderizou no
+> registro e no envio do mp4, e a API recusa com 409 o de outro trecho; e a troca grava
+> `meta.renderPedidoEm`, que entra na assinatura do render para o vigia não pular a volta a um
+> trecho já renderizado.
+
 **SPEC.** Independente das outras fatias; entra a qualquer hora depois da MD1.
 
 1. Na derivação por matéria (`pauta/derivacao-do-episodio.ts`, a mesma chamada de hoje), o modelo

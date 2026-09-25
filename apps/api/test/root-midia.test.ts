@@ -37,6 +37,7 @@ import { garantirPastaDaSaida, mesmoArquivo } from '../../../tools/root-midia/li
 import {
   TETO_DO_CORPO,
   acharEpisodio,
+  cabecalhoDoTrecho,
   clienteDoOs,
   configuracao,
   corpoDaMidia,
@@ -98,6 +99,7 @@ import {
   regiaoNoVideo,
   regioesPadraoNoCanvas,
   resolucaoDoPreset,
+  rotuloDoCandidato,
   slidesEstourados,
   slidesParaAMaquina,
 } from '../../../tools/root-midia/lib/semana.mjs';
@@ -973,6 +975,16 @@ describe('root-midia: o corte vertical e o story (MC15)', () => {
     expect(['rascunho', 'aprovada', 'publicada', 'descartada'].map((status) => aceitaRender({ status }))).toEqual([true, true, false, false]);
   });
 
+  it('MD13: o log do render diz o candidato em uso e a nota; sem troca possível ou trecho à mão, nada', () => {
+    const c = (n: number, nota: number | null, atual: boolean) => ({ n, nota, atual });
+    expect(rotuloDoCandidato({ candidatos: [c(1, 8.5, false), c(2, 6, true), c(3, null, false)] })).toBe(' (candidato 2 de 3, nota 6)');
+    expect(rotuloDoCandidato({ candidatos: [c(1, 8.5, true), c(2, 6, false)] })).toBe(' (candidato 1 de 2, nota 8,5)');
+    expect(rotuloDoCandidato({ candidatos: [c(1, null, false), c(2, null, true)] })).toBe(' (candidato 2 de 2)');
+    expect(rotuloDoCandidato({ candidatos: [c(1, 8, false), c(2, 6, false)] })).toBe('');
+    expect(rotuloDoCandidato({ candidatos: [c(1, 8, true)] })).toBe('');
+    expect(rotuloDoCandidato({})).toBe('');
+  });
+
   it('a peça gerada de outra transcrição não recebe render, nem aprovada (os tempos são do vídeo anterior)', () => {
     expect(aceitaRender({ status: 'aprovada', transcricaoMudou: true })).toBe(false);
     expect(aceitaRender({ status: 'rascunho', transcricaoMudou: true })).toBe(false);
@@ -1787,6 +1799,46 @@ describe('root-midia: o JPEG e o mp4 do corte sobem ao OS (MD4)', () => {
     // O mesmo mp4 já no OS: nada.
     expect(await subirCorteAoOs(osFalso(), { id: 'p5', video: { sha256: arquivo.sha256 } }, corpo, arquivo)).toEqual({ sha256: arquivo.sha256, subiu: false });
     expect(chamadas).toEqual(['PUT p1', 'POST p1', 'PUT p2', 'POST p2', 'PUT p3']);
+  });
+
+  it('MD13: o corte sobe dizendo de que trecho saiu, e o 409 da troca de candidato fica neste corte', async () => {
+    const pedidos: Array<{ tipo: string; id: string; corpo: unknown }> = [];
+    const osFalso = (conflito = false) => ({
+      motivoParaNaoEnviar: () => null,
+      videoDoCorte: async (id: string, corpo: unknown) => {
+        pedidos.push({ tipo: 'PUT', id, corpo });
+        if (conflito) throw new Error('PUT /pauta/pecas/p2/video → HTTP 409: O mp4 é do trecho 35.0–57.9 s e a peça agora usa 58.2–80.4 s');
+      },
+      enviarVideoDoCorte: async (id: string, a: { trecho?: unknown }) => void pedidos.push({ tipo: 'POST', id, corpo: a.trecho }),
+    });
+    const arquivo = { sha256: 'c'.repeat(64), abrir: () => Readable.from([Buffer.from('x')]) };
+    const corpo = { arquivo: '/x/corte.mp4', bytes: 10 };
+
+    expect(await subirCorteAoOs(osFalso(), { id: 'p1', inicio: 35, fim: 57.9 }, corpo, arquivo)).toMatchObject({ subiu: true });
+    expect(pedidos).toEqual([
+      { tipo: 'PUT', id: 'p1', corpo: { arquivo: '/x/corte.mp4', bytes: 10, inicio: 35, fim: 57.9 } },
+      { tipo: 'POST', id: 'p1', corpo: { inicio: 35, fim: 57.9 } },
+    ]);
+    pedidos.length = 0;
+    expect(await subirCorteAoOs(osFalso(true), { id: 'p2', inicio: 35, fim: 57.9 }, corpo, arquivo)).toMatchObject({ subiu: false, motivo: /HTTP 409/ });
+    expect(pedidos.map((x) => x.tipo)).toEqual(['PUT']);
+    // Outro erro do registro segue parando o comando, como antes.
+    const quebrado = { ...osFalso(), videoDoCorte: async () => { throw new Error('PUT … → HTTP 400: duração'); } };
+    await expect(subirCorteAoOs(quebrado, { id: 'p3', inicio: 1, fim: 20 }, corpo, arquivo)).rejects.toThrow(/HTTP 400/);
+
+    expect(cabecalhoDoTrecho({ inicio: 35, fim: 57.9 })).toBe('35-57.9');
+    expect(cabecalhoDoTrecho({ inicio: 20.40000000001, fim: 80.4 })).toBe('20.4-80.4');
+    let cabecalhos: Record<string, string> = {};
+    const fetchFalso = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/auth/login')) return new Response(JSON.stringify({ token: 't' }), { status: 200 });
+      cabecalhos = init.headers as Record<string, string>;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const os = clienteDoOs({ url: 'http://os/api', email: 'a', senha: 'b', fetch: fetchFalso });
+    await os.enviarVideoDoCorte('p1', { abrir: () => Readable.from([Buffer.from('x')]), bytes: 1, sha256: 'a'.repeat(64), trecho: { inicio: 35, fim: 57.9 } });
+    expect(cabecalhos['X-Trecho-Do-Corte']).toBe('35-57.9');
+    await os.enviarVideoDoCorte('p1', { abrir: () => Readable.from([Buffer.from('x')]), bytes: 1, sha256: 'a'.repeat(64) });
+    expect(cabecalhos).not.toHaveProperty('X-Trecho-Do-Corte');
   });
 
   it('o envio que passa do prazo vira erro com o tempo, sem pendurar o corte seguinte', async () => {

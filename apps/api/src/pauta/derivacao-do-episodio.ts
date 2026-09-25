@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  PAUTA_CORTE_CANDIDATOS_MAXIMO,
   PAUTA_CORTE_MAXIMO_SEG,
   PAUTA_CORTE_MINIMO_SEG,
   PAUTA_FORMATOS_DA_SEMANA,
@@ -7,6 +8,7 @@ import {
   PAUTA_SLIDES_MINIMO,
   PAUTA_TETO_DA_CHAMADA_DO_STORY,
   PAUTA_TETO_DA_LEGENDA,
+  PAUTA_TETO_DO_MOTIVO_DO_CORTE,
   PAUTA_TETO_DO_TEXTO_DO_SLIDE,
   PAUTA_TETO_DO_TEXTO_DO_STORY,
   PAUTA_TETO_DO_TITULO_DA_PECA,
@@ -14,6 +16,7 @@ import {
   conferirTrechoDoCorte,
   semEmoji,
   tempoDoCapitulo,
+  type PautaCandidatoDoCorte,
   type PautaCtaDoCarrossel,
   type PautaFormatoDaSemana,
   type PautaItemCurado,
@@ -38,7 +41,9 @@ import type { Segmento } from './pacote-do-episodio';
  *
  *  - o TRECHO do corte: o modelo escolhe os segmentos (de/até, pelo número), e
  *    o tempo sai dos segmentos reais, conferido aqui (`trechoDoCorte`: dentro da
- *    duração, na ordem, menos de 3 min e pelo menos 10 s);
+ *    duração, na ordem, menos de 3 min e pelo menos 10 s). Desde a MD13 vêm até
+ *    3 candidatos com nota e motivo; cada um passa pela mesma conferência, o de
+ *    maior nota vira o corte e todos ficam na meta para a troca pela tela;
  *  - o CTA do último slide e a PALAVRA-CHAVE única no episódio (o DM do MC18
  *    casa a palavra com a matéria);
  *  - o LINK: o prompt não leva URL nenhuma, e todo endereço que o modelo
@@ -68,10 +73,14 @@ Responda SOMENTE com um objeto JSON válido, sem cercas de código:
     "chamada": string          // até 90 caracteres, chamando para o episódio completo
   },
   "corte": {
-    "titulo": string,          // até 100 caracteres, o gancho que aparece na tela
     "legenda": string,         // até 600 caracteres
-    "de": number,              // o NÚMERO do segmento onde o corte começa
-    "ate": number              // o NÚMERO do segmento onde o corte termina
+    "candidatos": [            // de 1 a ${PAUTA_CORTE_CANDIDATOS_MAXIMO} trechos DIFERENTES em que esta matéria é falada
+      { "titulo": string,      // até 100 caracteres, o gancho que aparece na tela
+        "de": number,          // o NÚMERO do segmento onde o corte começa
+        "ate": number,         // o NÚMERO do segmento onde o corte termina
+        "nota": number,        // de 0 a 10
+        "motivo": string }     // até ${PAUTA_TETO_DO_MOTIVO_DO_CORTE} caracteres: por que essa nota
+    ]
   }
 }
 
@@ -81,6 +90,9 @@ Regras:
 - O corte é o trecho do vídeo em que ESTA matéria é falada, de uma frase inteira até outra: comece
   num segmento que abre o assunto e termine num que fecha a ideia. Tem entre ${PAUTA_CORTE_MINIMO_SEG} segundos e menos
   de ${PAUTA_CORTE_MAXIMO_SEG / 60} minutos.
+- A nota de cada candidato avalia três coisas: um gancho nos 3 primeiros segundos, a fala completa
+  (sem começar nem terminar no meio da frase) e nenhuma referência a slide, tela ou fala anterior
+  que quem vê só o corte não conhece ("como eu disse", "nesse slide"). O motivo diz qual delas pesou.
 - Sem emoji. Frases curtas, para ler no celular.`;
 
 /** O prompt da derivação com o bloco de voz da empresa (MC10). */
@@ -432,6 +444,98 @@ export function trechoDoCorte(
 }
 
 // ---------------------------------------------------------------------------
+// Os candidatos ao corte (MD13)
+// ---------------------------------------------------------------------------
+
+/** Um trecho candidato ao corte, conferido, com a nota e o motivo do modelo. */
+export interface CandidatoDoCorte extends TrechoDoCorte {
+  titulo: string;
+  nota: number | null;
+  motivo: string;
+}
+
+/** A nota do modelo entre 0 e 10, com uma casa; o que não é número vira nula. */
+export function notaDoCorte(v: unknown): number | null {
+  const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.trim().replace(',', '.')) : Number.NaN;
+  if (!Number.isFinite(x)) return null;
+  return Math.round(Math.min(10, Math.max(0, x)) * 10) / 10;
+}
+
+/**
+ * Os candidatos ao corte que o modelo devolveu, cada um pela conferência do
+ * trecho: o que não fecha sai com o porquê, o que repete o trecho de outro de
+ * maior nota sai, e o resto fica em ordem de nota (sem nota por último; empate
+ * mantém a ordem do modelo). A resposta antiga, com `de`/`ate` no próprio
+ * corte, é um candidato sem nota.
+ */
+export function candidatosDoCorte(
+  k: Record<string, unknown>,
+  ctx: { segmentos: readonly Segmento[]; duracaoSeg: number; tituloPadrao: string },
+): { candidatos: CandidatoDoCorte[]; avisos: string[]; legendaDoMelhor?: unknown } {
+  const avisos: string[] = [];
+  const lista = Array.isArray(k.candidatos) ? (k.candidatos as unknown[]) : [k];
+  if (!lista.length) return { candidatos: [], avisos: ['o modelo não devolveu candidato'] };
+  if (lista.length > PAUTA_CORTE_CANDIDATOS_MAXIMO) {
+    avisos.push(`o modelo devolveu ${lista.length} candidatos; ficaram os ${PAUTA_CORTE_CANDIDATOS_MAXIMO} primeiros`);
+  }
+  const usados = lista.slice(0, PAUTA_CORTE_CANDIDATOS_MAXIMO);
+  const validos: Array<CandidatoDoCorte & { ordem: number }> = [];
+  usados.forEach((bruto, i) => {
+    const c = objeto(bruto) ?? {};
+    const t = trechoDoCorte({ de: c.de, ate: c.ate }, ctx.segmentos, ctx.duracaoSeg);
+    if (!t.ok) {
+      avisos.push(usados.length > 1 ? `o candidato ${i + 1} ficou de fora: ${t.motivo}` : t.motivo);
+      return;
+    }
+    validos.push({
+      ...t.corte,
+      titulo: linhaDaIa(c.titulo, PAUTA_TETO_DO_TITULO_DA_PECA) || linhaDaIa(k.titulo, PAUTA_TETO_DO_TITULO_DA_PECA) || ctx.tituloPadrao,
+      nota: notaDoCorte(c.nota),
+      motivo: linhaDaIa(c.motivo, PAUTA_TETO_DO_MOTIVO_DO_CORTE),
+      ordem: i,
+    });
+  });
+  validos.sort((a, b) => (b.nota ?? -1) - (a.nota ?? -1) || a.ordem - b.ordem);
+  const candidatos: CandidatoDoCorte[] = [];
+  for (const { ordem, ...c } of validos) {
+    if (candidatos.some((x) => mesmoTrecho(x, c))) {
+      avisos.push(`o candidato ${ordem + 1} repetia o trecho de outro e ficou de fora`);
+      continue;
+    }
+    candidatos.push(c);
+  }
+  // O prompt pede a legenda no corte; se o modelo a pôs dentro do candidato, vale a do escolhido.
+  const legendaDoMelhor = validos.length ? objeto(usados[validos[0].ordem])?.legenda : undefined;
+  return { candidatos, avisos, legendaDoMelhor };
+}
+
+/** Dois trechos iguais, com a folga de centésimo que a tela e a API usam. */
+export function mesmoTrecho(a: { inicio?: number; fim?: number }, b: { inicio?: number; fim?: number }): boolean {
+  return (
+    typeof a.inicio === 'number' &&
+    typeof a.fim === 'number' &&
+    typeof b.inicio === 'number' &&
+    typeof b.fim === 'number' &&
+    Math.abs(a.inicio - b.inicio) <= 0.01 &&
+    Math.abs(a.fim - b.fim) <= 0.01
+  );
+}
+
+/** Os candidatos gravados na meta, como a tela os lê: numerados, com o que está em uso marcado. */
+export function candidatosParaATela(m: Pick<MetaDaSemana, 'cortesCandidatos' | 'inicio' | 'fim'>): PautaCandidatoDoCorte[] {
+  return (m.cortesCandidatos ?? []).map((c, i) => ({
+    n: i + 1,
+    titulo: c.titulo,
+    inicio: c.inicio,
+    fim: c.fim,
+    trecho: c.trecho,
+    nota: c.nota,
+    motivo: c.motivo,
+    atual: mesmoTrecho(c, m),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // A resposta do modelo, montada
 // ---------------------------------------------------------------------------
 
@@ -443,8 +547,7 @@ export interface StoryMontado {
   tempoSeg: number | null;
 }
 
-export interface CorteMontado extends TrechoDoCorte {
-  titulo: string;
+export interface CorteMontado extends CandidatoDoCorte {
   /** A legenda. */
   corpo: string;
 }
@@ -460,6 +563,8 @@ export interface DerivacaoMontada {
   carrossel: { titulo: string; legenda: string; slides: PautaSlideDaSemana[]; palavraChave: string } | null;
   story: StoryMontado | null;
   corte: CorteMontado | null;
+  /** MD13: os candidatos ao corte que ficaram de pé, o 1 é o `corte`. */
+  cortesCandidatos: CandidatoDoCorte[];
   /** O que não saiu, e o que o sistema ajustou. */
   avisos: string[];
 }
@@ -509,17 +614,17 @@ export function montarDerivacao(
   } else avisos.push('Carrossel: não veio no JSON.');
 
   let corte: CorteMontado | null = null;
+  let cortesCandidatos: CandidatoDoCorte[] = [];
   const k = objeto(r.corte);
   if (k) {
-    const t = trechoDoCorte({ de: k.de, ate: k.ate }, ctx.segmentos, ctx.duracaoSeg);
-    if (t.ok) {
-      corte = {
-        ...t.corte,
-        titulo: linhaDaIa(k.titulo, PAUTA_TETO_DO_TITULO_DA_PECA) || tituloDaMateria,
-        corpo: textoDaIa(k.legenda, 600),
-      };
-      avisos.push(...t.corte.avisos.map((a) => `Corte: ${a}`));
-    } else avisos.push(`Corte: ${t.motivo}.`);
+    const c = candidatosDoCorte(k, { segmentos: ctx.segmentos, duracaoSeg: ctx.duracaoSeg, tituloPadrao: tituloDaMateria });
+    cortesCandidatos = c.candidatos;
+    avisos.push(...c.avisos.map((a) => `Corte: ${a}.`));
+    const melhor = c.candidatos[0];
+    if (melhor) {
+      corte = { ...melhor, corpo: textoDaIa(k.legenda ?? c.legendaDoMelhor, 600) };
+      avisos.push(...melhor.avisos.map((a) => `Corte: ${a}`));
+    }
   } else avisos.push('Corte: não veio no JSON.');
 
   let story: StoryMontado | null = null;
@@ -536,7 +641,7 @@ export function montarDerivacao(
   } else avisos.push('Story: não veio texto.');
 
   if (!carrossel && !story && !corte) throw new DerivacaoInvalidaError(avisos.join(' '));
-  return { palavraChave, carrossel, story, corte, avisos };
+  return { palavraChave, carrossel, story, corte, cortesCandidatos, avisos };
 }
 
 // ---------------------------------------------------------------------------
@@ -594,8 +699,39 @@ export interface MetaDaSemana {
   ate?: number;
   trecho?: string;
   video?: PautaVideoDaPeca | null;
+  /** MD13: os trechos candidatos ao corte, em ordem de nota. O `inicio`/`fim` da peça diz qual está em uso. */
+  cortesCandidatos?: CandidatoGravado[];
+  /** MD13: quando o trecho do corte mudou pela última vez, para a assinatura do render (o vigia) mudar junto. */
+  renderPedidoEm?: string;
   provider?: string;
   model?: string;
+}
+
+/** O candidato como vai à meta: o trecho conferido, a nota, o motivo e os ajustes do sistema. */
+export type CandidatoGravado = Pick<CandidatoDoCorte, 'titulo' | 'inicio' | 'fim' | 'de' | 'ate' | 'trecho' | 'nota' | 'motivo' | 'avisos'>;
+
+export function candidatoGravado(c: CandidatoDoCorte): CandidatoGravado {
+  return { titulo: c.titulo, inicio: c.inicio, fim: c.fim, de: c.de, ate: c.ate, trecho: c.trecho, nota: c.nota, motivo: c.motivo, avisos: c.avisos };
+}
+
+function lerCandidatos(v: unknown): CandidatoGravado[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
+  const texto = (x: unknown) => (typeof x === 'string' ? x : '');
+  return v
+    .map((c) => objeto(c))
+    .filter((c): c is Record<string, unknown> => !!c && num(c.inicio) !== undefined && num(c.fim) !== undefined)
+    .map((c) => ({
+      titulo: texto(c.titulo),
+      inicio: c.inicio as number,
+      fim: c.fim as number,
+      de: num(c.de) ?? 0,
+      ate: num(c.ate) ?? 0,
+      trecho: texto(c.trecho),
+      nota: num(c.nota) ?? null,
+      motivo: texto(c.motivo),
+      avisos: Array.isArray(c.avisos) ? (c.avisos as unknown[]).filter((a): a is string => typeof a === 'string') : [],
+    }));
 }
 
 /** Esta peça é da semana de posts (deste episódio, quando dito). A derivação antiga não tem `episodioId`. */
@@ -633,6 +769,7 @@ export function lerMetaDaSemana(meta: unknown): MetaDaSemana {
     inicio: num(m.inicio),
     fim: num(m.fim),
     video: objeto(m.video) ? (m.video as MetaDaSemana['video']) : null,
+    cortesCandidatos: lerCandidatos(m.cortesCandidatos),
   };
 }
 

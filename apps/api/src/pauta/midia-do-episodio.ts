@@ -180,7 +180,8 @@ export function renderPendente(
     if (midiaProntaDaPeca(formato, p.meta, apelido)) continue;
     const midia = midiaDaPeca(formato, p.meta, apelido);
     const imagens = meta.imagens.map((i) => `${i.n}${tipoDaImagem(i) === 'jpeg' ? 'j' : ''}`).sort();
-    const linha = [p.id, versaoDoTexto(p), midia.onde, imagens.join(',')].join(':');
+    // `renderPedidoEm` só entra quando existe, para não mudar a assinatura das peças de antes da MD13.
+    const linha = [p.id, versaoDoTexto(p), midia.onde, imagens.join(','), ...(meta.renderPedidoEm ? [meta.renderPedidoEm] : [])].join(':');
     porFormato.set(formato, [...(porFormato.get(formato) ?? []), linha]);
   }
   const saida: Partial<Record<PautaFormatoDaSemana, PautaRenderPendente>> = {};

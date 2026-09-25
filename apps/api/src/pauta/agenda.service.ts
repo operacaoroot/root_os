@@ -42,7 +42,7 @@ import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { EpisodioService } from './episodio.service';
 import { itensMantidos } from './episodio';
-import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
+import { candidatosParaATela, ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca, slotsDoPeriodo, type Distribuida } from './agenda-da-semana';
 import { publicacoesParaATela } from './publicacao-instagram.service';
 import { LotesService, type ItemVivo } from '../approvals/lotes.service';
@@ -236,6 +236,7 @@ export class AgendaService {
       lote: lote
         ? { loteId: lote.loteId, itemId: lote.itemId, estadoDoLote: lote.estadoDoLote, estadoDoItem: lote.estadoDoItem, janelaAte: lote.janelaAte.toISOString() }
         : null,
+      ...(formato === 'corte' ? { candidatos: candidatosParaATela(m) } : {}),
     };
   }
 

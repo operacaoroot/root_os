@@ -2875,6 +2875,14 @@ export function conferirTrechoDoCorte(inicio: unknown, fim: unknown, duracaoSeg:
   return null;
 }
 
+/**
+ * MD13: a derivação devolve até 3 trechos candidatos para o corte de cada
+ * matéria, cada um com uma nota de 0 a 10 e o motivo dela. A nota só ordena a
+ * revisão humana; não mede alcance.
+ */
+export const PAUTA_CORTE_CANDIDATOS_MAXIMO = 3;
+export const PAUTA_TETO_DO_MOTIVO_DO_CORTE = 200;
+
 /** O carrossel da máquina de carrossel: 4 a 10 slides, com a capa no 1 e o CTA da palavra-chave no último. */
 export const PAUTA_SLIDES_MINIMO = 4;
 export const PAUTA_SLIDES_MAXIMO = 10;
@@ -2924,10 +2932,13 @@ export const PautaPecaDaSemanaEditarSchema = z
     chamada: textoDaPeca(PAUTA_TETO_DA_CHAMADA_DO_STORY).optional(),
     inicio: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
     fim: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
+    /** MD13: troca o trecho do corte por outro candidato da derivação (o número na lista, de 1 em diante). */
+    candidato: z.number().int().min(1).max(PAUTA_CORTE_CANDIDATOS_MAXIMO).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, 'Nada para mudar.')
-  .refine((v) => (v.inicio === undefined) === (v.fim === undefined), 'O corte muda com início e fim juntos.');
+  .refine((v) => (v.inicio === undefined) === (v.fim === undefined), 'O corte muda com início e fim juntos.')
+  .refine((v) => v.candidato === undefined || v.inicio === undefined, 'Escolha um candidato ou edite o trecho, não os dois.');
 export type PautaPecaDaSemanaEditarInput = z.infer<typeof PautaPecaDaSemanaEditarSchema>;
 
 /** As imagens que o Mac renderiza: PNG, no tamanho do formato, até 5 MB (o frame de vídeo pesa no story). */
@@ -2977,8 +2988,12 @@ export const PautaVideoDoCorteSchema = z
     largura: z.literal(PAUTA_DIMENSOES_DO_CORTE.largura),
     altura: z.literal(PAUTA_DIMENSOES_DO_CORTE.altura),
     bytes: z.number().int().positive().max(2 * 1024 * 1024 * 1024),
+    /** MD13: o trecho que o Mac renderizou. Opcional para o Mac antigo; vindo, tem de ser o da peça. */
+    inicio: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
+    fim: z.number().finite().min(0).max(PAUTA_TETO_DA_DURACAO_SEG).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => (v.inicio === undefined) === (v.fim === undefined), 'O trecho renderizado vem com início e fim juntos.');
 export type PautaVideoDoCorteInput = z.infer<typeof PautaVideoDoCorteSchema>;
 
 export interface PautaImagemDaPeca {
@@ -3033,6 +3048,23 @@ export interface PautaCtaDoCarrossel {
   beneficio: string;
 }
 
+/**
+ * MD13: um trecho candidato ao corte da matéria, na ordem da nota (o 1 é o que
+ * a derivação escolheu). `atual` diz se é o trecho que a peça usa agora: depois
+ * de editar o trecho à mão, nenhum é.
+ */
+export interface PautaCandidatoDoCorte {
+  n: number;
+  titulo: string;
+  inicio: number;
+  fim: number;
+  trecho: string;
+  /** De 0 a 10; nula quando o modelo não deu nota. */
+  nota: number | null;
+  motivo: string;
+  atual: boolean;
+}
+
 /** Uma peça da semana, como a tela e o Mac a leem. Os campos de cada formato só vêm nele. */
 export interface PautaPecaDaSemana {
   id: string;
@@ -3056,6 +3088,8 @@ export interface PautaPecaDaSemana {
   /** O que é dito no trecho, dos segmentos da transcrição. */
   trecho?: string;
   video?: PautaVideoDaPeca | null;
+  /** MD13: os trechos candidatos ao corte, do de maior nota para o de menor. */
+  candidatos?: PautaCandidatoDoCorte[];
   /** O que o Mac já renderizou e subiu em PNG (carrossel: um por slide; story: 1). */
   imagens: PautaImagemDaPeca[];
   /** MD4: os JPEG que a Graph da Meta baixa, um por imagem, ao lado do PNG. */
@@ -3538,6 +3572,8 @@ export interface PautaPecaNaAgenda {
   publicacao?: PautaPublicacaoDaPeca | null;
   /** MD8: o item vivo do lote da semana (montado, na fila ou ativo). Opcional pelo mesmo motivo. */
   lote?: PautaLoteDaPeca | null;
+  /** MD13: no corte, os trechos candidatos, para trocar antes do lote. Opcional pelo mesmo motivo. */
+  candidatos?: PautaCandidatoDoCorte[];
 }
 
 export interface PautaLinhaDoDia {

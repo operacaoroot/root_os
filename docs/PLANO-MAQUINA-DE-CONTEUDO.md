@@ -196,7 +196,7 @@ tabela de interruptores está na especificação.
 | MD10 | **YouTube**: conector próprio, upload resumable pelo Mac, publicação agendada pelo OS | MD7, MD8, D-MC6 | 300 MB em 5 blocos com a conexão derrubada no 3º completam pelo 308; o OS confere o vídeo e define a thumb; com lote ativo e auditoria aprovada manda `publishAt`; sem lote, nada | conector `youtube` desligado até o OAuth; `YOUTUBE_AUDITORIA` (padrão `pendente`) | G | a fazer |
 | MD11 | **DM automática sob o lote**, disparada pelo coletor | MD7, MD8, MD9, App Review | um comentário casado gera um envio com o `/r/`; a mesma pessoa não recebe duas; o 101º do dia é recusado; fora da janela segura até as 08h; com a nota desligada, nada sai | nota `pauta.dm.automatica` (desligada até o App Review) | M | a fazer |
 | MD12 | **TikTok pela caixa de entrada** — **em espera** | MD6, MD8 | — | — | M | em espera (decisão do Pedro) |
-| MD13 | **Corte com nota e motivo** (ideia do OpenShorts, sem código dele) | MD1 | cada matéria sai com 3 candidatos e o de maior nota como padrão; trocar marca novo render | não | P | a fazer |
+| MD13 | **Corte com nota e motivo** (ideia do OpenShorts, sem código dele) | MD1 | cada matéria sai com 3 candidatos e o de maior nota como padrão; trocar marca novo render | não | P | feito 25/09 (ver ESTADO-DA-EXECUCAO) |
 
 **Decisões da onda D** (do Pedro, 24/09/2026, seguindo as recomendações):
 

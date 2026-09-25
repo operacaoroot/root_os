@@ -2364,6 +2364,99 @@ regra de uma réplica, da onda D, continua). O prazo da auditoria é desconhecid
    `refresh_token_expires_in` em Testing (sem ele, a saúde lembra pela data da conexão) e a categoria
    certa do canal (nota `pauta.youtube.categoria`, padrão 28).
 
+### Onda D, fatia MD13 — o corte com nota e motivo (25/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD13). A ideia é do OpenShorts (nota de
+momento com motivo), sem uma linha de código dele. Nenhuma dependência nova, nenhuma variável,
+capacidade, permissão, migration ou seed: a mudança é o que a mesma chamada da derivação devolve e o
+que a meta da peça guarda. Nada escreve fora do OS.
+
+| Peça | Onde |
+|---|---|
+| O prompt pede `corte.candidatos` (até 3, com `nota` de 0 a 10 e `motivo`), avaliando gancho nos 3 primeiros segundos, fala completa e nenhuma referência a slide ou fala anterior | `SYSTEM_DERIVACAO_BASE` em `apps/api/src/pauta/derivacao-do-episodio.ts` |
+| `candidatosDoCorte` (cada um pela `trechoDoCorte` de sempre; o inválido sai com o porquê, o repetido e o quarto saem; ordem por nota, sem nota por último), `notaDoCorte`, `mesmoTrecho`, `candidatosParaATela`; `meta.cortesCandidatos` na peça do corte | `derivacao-do-episodio.ts`, gravação em `derivacao.service.ts` (`gravarMateria`) |
+| A troca: `PUT /pauta/pecas/:id/semana` com `{ candidato: n }` (`pauta.editar`), pelo mesmo `editar` com o cadeado do episódio | `derivacao.service.ts`; `PautaPecaDaSemanaEditarSchema.candidato` no shared |
+| `candidatos` (com `atual`) na peça da semana e na peça da agenda | `PautaCandidatoDoCorte` no shared; `agenda.service.ts` |
+| A lista na tela, com a nota, o motivo, o "em uso" e "Usar este trecho": no corte da semana de posts e no corte proposto da aba Semana que ainda não está num lote | `apps/web/src/app/pauta/CandidatosDoCorte.tsx`, `SecaoSemana.tsx`, `AbaSemana.tsx` |
+| O log do render diz o candidato e a nota (`Corte da matéria 1 (candidato 3 de 3, nota 6)`) | `rotuloDoCandidato` em `tools/root-midia/lib/semana.mjs` |
+
+**Como a troca funciona.** Relê a peça sob o cadeado do episódio; recusa candidato que não existe
+(400), formato que não é corte (400) e transcrição refeita depois da geração (409, os candidatos são
+tempos do vídeo antigo). Troca o trecho, o `de`/`até`, a fala e o gancho (o título pedido junto
+vale), e os avisos de ajuste do trecho passam a ser os do candidato novo. Com o trecho diferente,
+`meta.video` volta a nulo: o mp4 sai da peça e **o objeto no MinIO fica** (desassociar não é
+apagar). A peça volta ao rascunho, sai da agenda e, se estava num lote, o item dela é revogado, como
+qualquer edição (MD8). O vigia da MD2 vê o corte em `precisaDeRender` e renderiza de novo.
+
+**Desvios da especificação, com o porquê:**
+- **`meta.cortesCandidatos` guarda os 3, e não só "os outros".** Guardar só os que sobraram faria
+  a troca virar uma permuta, e o corte editado à mão entraria na lista como candidato sem nota.
+  Com os 3 guardados, a tela marca o que está em uso comparando o trecho (`atual`), voltar ao
+  primeiro é outra troca, e o trecho editado à mão aparece como "nenhum em uso".
+- **A resposta antiga continua aceita** (`de`/`ate` no próprio `corte`): vira um candidato sem nota.
+  O modelo que ignorar o formato novo não perde o corte.
+- **O trecho editado à mão numa transcrição nova esvazia os candidatos**: eles apontariam outra fala
+  do vídeo novo.
+- A troca só aparece **antes do lote**, como a SPEC pede: na aba Semana, no corte proposto e fora
+  de lote; na semana de posts do episódio, só no corte em rascunho. O corte aprovado está na agenda
+  e no lote assinado pela titular, e a troca o tiraria dos dois sem aviso (o item assinado seria
+  revogado e voltar a publicar pediria assinatura nova). Para trocar o corte aprovado, edita-se o
+  trecho à mão (que já avisa que a peça volta ao rascunho) ou gera-se a semana de novo.
+- **O Mac diz de que trecho é o mp4** (achado da revisão): o `PUT …/video` leva `inicio`/`fim` e o
+  `POST …/video/arquivo`, o cabeçalho `X-Trecho-Do-Corte: inicio-fim`. A API recusa com 409 o mp4 de
+  um trecho que não é o da peça, antes de ler o corpo. Sem isso, trocar o candidato enquanto o vigia
+  renderizava deixava o mp4 do trecho antigo entrar no novo quando as durações ficavam a menos de 1 s
+  (candidatos da mesma matéria costumam ter duração parecida), e ele seguia ao lote e à Meta. Os dois
+  campos são opcionais para o `root-midia` de antes da MD13, que continua conferido só pela duração;
+  o 409 no registro fica no corte (`subiu: false` com o motivo), e a próxima passagem do vigia
+  renderiza o trecho novo.
+- **`meta.renderPedidoEm`** (achado da revisão): a troca e a edição do trecho gravam a hora, e ela
+  entra na assinatura do `precisaDeRender`. Sem isso, trocar para o 1 e voltar ao 3 entre duas
+  passagens repetia a assinatura do render do 3, que o vigia pula por 24 h mesmo quando deu certo, e
+  a peça ficava sem mp4 sem aviso. A hora só entra na linha quando existe, e as peças de antes da
+  MD13 mantêm a assinatura.
+- O RASTRO da troca guarda o trecho de antes (`before.trecho`) e o de depois (`after.trecho`), e
+  `campos` lista `titulo` quando o gancho do candidato trocou o título: o número do candidato muda se
+  a semana for gerada de novo, o trecho não. A legenda que o modelo põe dentro do candidato, e não no
+  corte, é a do candidato escolhido.
+
+**Medido** (Mac, `marketing_os_test`, 25/09/2026, depois da revisão): `pnpm typecheck` 7/7;
+`typecheck:test` limpo; api direto com `TEST_DATABASE_URL` **3005 de 3005** em 73 arquivos (+15,
+todos sem banco: `pauta-semana` +12, `pauta-agenda` +1, `root-midia` +2); sem banco, 2318 passados e
+687 pulados; `test:porta` 61; web **609** em 47 (+4: `pauta-semana` +2, `pauta-encadeamento` +2; o
+caso de "sem trocar" passou a montar também a peça aprovada e a publicada). Policy, isolamento e
+schema não foram tocados (nenhuma capacidade, invariante, tabela ou enum). Pisos da CI: api 2165,
+web 421, com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md13`, criado vazio:
+migrations do zero e `db:seed` com senhas aleatórias; MinIO descartável da imagem `minio/minio` em
+`127.0.0.1:9513`; dublê de Chat Completions com a resposta da MD13; vídeo final sintético de 120 s
+do `ffmpeg` (`testsrc2` + seno); `root-midia vigia` com arquivo de variáveis e `HOME` descartáveis;
+banco, MinIO, API, dublê, Next e os vídeos removidos no fim):
+1. `POST …/semana/gerar` → 201, 6 peças; cada matéria com 3 candidatos e o de nota 8,5 em uso
+   (`Direto 1` 10–30 s, `Começo 1` 5–25 s nota 7, `Inteiro 1` 5–30 s nota 6).
+2. Carrossel e story descartados (sem Chrome nem máquina de carrossel no ensaio); a fila
+   `pendentes-midia` deu `corte: {pecas: 2}`. Uma passagem do vigia renderizou os dois cortes e os
+   subiu: matéria 1 com sha `8999be83080e…`.
+3. `PUT …/semana {candidato: 3}` → 200, `Inteiro 1`, 5–30 s, `video: null`, rascunho; a fila deu
+   `corte: {pecas: 1}`; no MinIO, o mp4 antigo continuava lá. RASTRO (antes da revisão, que
+   acrescentou o `trecho` de antes e de depois e o `titulo` em `campos`):
+   `{"campos":["candidato"],"candidato":{"n":3,"nota":6},"renderDescartado":true,…}`.
+4. Outra passagem do vigia: "Corte da matéria 1 (candidato 3 de 3, nota 6): 5.0–30.0 s", subiu com
+   sha **`51723e24e5e5…`** (a matéria 2, igual, "o mesmo mp4 já está no OS"). A fila ficou vazia, e o
+   MinIO com os dois objetos.
+5. Pela tela (Next contra a API do ensaio, 375 px, `agent-browser`): a lista abre com nota em
+   vírgula, motivo e "em uso", sem rolagem lateral (`scrollWidth` 375); "Usar este trecho" no
+   candidato 1 voltou a peça a `video: null`, a fila a `pecas: 1`, e o vigia a renderizou de novo
+   (sha `8999be83080e…`, o mesmo do primeiro render: o ffmpeg é determinístico no mesmo trecho).
+
+**Riscos.** A nota do modelo não mede viralidade: serve só para ordenar a revisão humana (o texto da
+tela diz isso). A saída da derivação cresce uns 3 títulos e 3 motivos por matéria, dentro do teto
+`SAIDA_DA_GERACAO_LONGA` que já valia.
+
+**Pendências (do Pedro):** nenhuma. **Deploy:** só código (API, web e `root-midia` no Mac); a semana
+gerada antes do deploy não tem candidatos e segue funcionando como antes (a tela não mostra a lista).
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2661,6 +2754,15 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     (sha256), e o vigia passa a enviar os episódios com o item de envio ativo. Sem o seed assinado,
     sem credencial ou com a auditoria pendente (o padrão), nada vai ao YouTube. O modo teste passa a
     exigir `YOUTUBE_CANAL_DE_TESTE` e só abre sessão para esse canal.
+33. **MD13: o corte com nota e motivo.** A derivação da semana pede ao modelo até 3 trechos
+    candidatos por matéria, com nota e motivo, na mesma chamada (a saída cresce um pouco). O de maior
+    nota vira o corte, e a peça guarda os 3 em `meta.cortesCandidatos`. O `PUT …/semana` do corte
+    aceita `{ candidato: n }`: troca o trecho e o gancho, tira o mp4 da peça (o objeto no storage fica),
+    volta a peça ao rascunho e fora da agenda, revoga o item do lote se houver, e o vigia renderiza o
+    trecho novo. A peça da semana e a da agenda passam a trazer `candidatos` no corte. O `PUT …/video`
+    aceita `inicio`/`fim` e o `POST …/video/arquivo`, o cabeçalho `X-Trecho-Do-Corte`: vindo o trecho
+    renderizado e sendo outro que o da peça, a resposta é 409 (sem eles, só a duração, como antes). A
+    assinatura do `precisaDeRender` de um corte cujo trecho mudou passa a incluir a hora da mudança.
 
 ---
 

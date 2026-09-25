@@ -112,6 +112,42 @@ describe('aba Semana: o slot proposto', () => {
     expect(within(qua).getByRole('button', { name: 'Reagendar' })).toBeInTheDocument();
   });
 
+  it('MD13: o corte proposto fora do lote troca de candidato pela aba e relê a semana; no lote, não', async () => {
+    const candidatos = [
+      { n: 1, titulo: 'Direto', inicio: 35, fim: 80.4, trecho: 'x', nota: 8.5, motivo: 'Gancho no começo.', atual: true },
+      { n: 2, titulo: 'Inteiro', inicio: 20.4, fim: 80.4, trecho: 'y', nota: 6, motivo: 'Demora.', atual: false },
+    ];
+    const comCandidatos = agenda();
+    Object.assign((comCandidatos.dias[1].linhas[0] as { peca: Record<string, unknown> }).peca, { candidatos });
+    apiGet.mockResolvedValue(comCandidatos);
+    apiPut.mockResolvedValue({});
+    render(<AbaSemana token="tok" editavel podePostar onErro={vi.fn()} bump={0} />);
+    const ter = await screen.findByRole('region', { name: 'Ter 29/09' });
+    const proposta = within(ter).getByLabelText('Corte vertical proposto de ep-04');
+    expect(within(proposta).getByLabelText('Candidato 1')).toHaveTextContent('em uso');
+    const chamadasAntes = apiGet.mock.calls.length;
+    await userEvent.click(within(within(proposta).getByLabelText('Candidato 2')).getByRole('button', { name: 'Usar este trecho' }));
+    expect(apiPut).toHaveBeenCalledWith('/pauta/pecas/p2/semana', { candidato: 2 }, 'tok');
+    await waitFor(() => expect(apiGet.mock.calls.length).toBeGreaterThan(chamadasAntes));
+  });
+
+  it('MD13: o corte que já está num lote não oferece a troca', async () => {
+    const noLote = agenda();
+    Object.assign((noLote.dias[1].linhas[0] as { peca: Record<string, unknown> }).peca, {
+      candidatos: [
+        { n: 1, titulo: 'Direto', inicio: 35, fim: 80.4, trecho: 'x', nota: 8.5, motivo: '', atual: true },
+        { n: 2, titulo: 'Inteiro', inicio: 20.4, fim: 80.4, trecho: 'y', nota: 6, motivo: '', atual: false },
+      ],
+      lote: { loteId: 'l1', itemId: 'i1', estadoDoLote: 'montado', estadoDoItem: 'ativo', janelaAte: '2026-10-04T00:00:00.000Z' },
+    });
+    apiGet.mockResolvedValue(noLote);
+    render(<AbaSemana token="tok" editavel podePostar onErro={vi.fn()} bump={0} />);
+    const ter = await screen.findByRole('region', { name: 'Ter 29/09' });
+    const proposta = within(ter).getByLabelText('Corte vertical proposto de ep-04');
+    expect(proposta).toHaveTextContent('2 candidatos ao corte');
+    expect(within(proposta).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
+  });
+
   it('proposta é só a peça sem agenda, sem postagem e com slot proposto', () => {
     expect(ehProposta(peca() as never)).toBe(true);
     expect(ehProposta(peca({ agendadaPara: '2026-09-28T15:00:00.000Z' }) as never)).toBe(false);

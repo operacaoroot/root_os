@@ -48,10 +48,15 @@ export function tetoDoVideo(env: Record<string, string | undefined> = process.en
 export interface CabecalhoDoEnvio {
   bytes: number;
   sha256: string;
+  /** MD13: o trecho que o Mac renderizou; o Mac antigo não manda. */
+  trecho?: { inicio: number; fim: number };
 }
 
 /** O cabeçalho que diz qual é o sha256 do corpo; o Mac calcula antes de mandar. */
 export const CABECALHO_DO_SHA = 'x-conteudo-sha256';
+
+/** MD13: o trecho do vídeo que virou este mp4, em segundos, `inicio-fim` (ex.: `12.5-40`). */
+export const CABECALHO_DO_TRECHO = 'x-trecho-do-corte';
 
 /**
  * Tudo o que se confere sem ler o corpo. Os status seguem o HTTP: 415 tipo
@@ -81,7 +86,13 @@ export function conferirCabecalhosDoEnvio(
   if (!/^[0-9a-f]{64}$/.test(sha256)) {
     throw new ErroDoEnvio(400, `Falta o sha256 do arquivo no cabeçalho ${CABECALHO_DO_SHA} (64 hexadecimais).`);
   }
-  return { bytes, sha256 };
+  const trechoBruto = headers[CABECALHO_DO_TRECHO];
+  if (trechoBruto === undefined) return { bytes, sha256 };
+  const casou = /^(\d{1,6}(?:\.\d{1,3})?)-(\d{1,6}(?:\.\d{1,3})?)$/.exec((um(trechoBruto) ?? '').trim());
+  if (!casou || Number(casou[1]) >= Number(casou[2])) {
+    throw new ErroDoEnvio(400, `O cabeçalho ${CABECALHO_DO_TRECHO} é o trecho renderizado, início-fim em segundos (ex.: 12.5-40).`);
+  }
+  return { bytes, sha256, trecho: { inicio: Number(casou[1]), fim: Number(casou[2]) } };
 }
 
 export interface MoovLido {

@@ -84,6 +84,7 @@ import {
   lerRegiao,
   marcaDoCarrossel,
   nomeDoCorte,
+  rotuloDoCandidato,
   nomeDoStory,
   pastaDoCarrossel,
   preencherStory,
@@ -968,7 +969,7 @@ async function cortesVerticais(ep, finalArg, o) {
       continue;
     }
     const saida = join(pasta, nomeDoCorte(alvo.apelido, n));
-    avisar(`Corte da matéria ${n}: ${peca.inicio.toFixed(1)}–${peca.fim.toFixed(1)} s…`);
+    avisar(`Corte da matéria ${n}${rotuloDoCandidato(peca)}: ${peca.inicio.toFixed(1)}–${peca.fim.toFixed(1)} s…`);
     const r = await renderizarCorte({ video, inicio: peca.inicio, fim: peca.fim, saida, regioes });
     avisar(`→ ${saida} (${r.duracaoSeg.toFixed(1)} s, ${Math.round(r.bytes / 1024)} kB)`);
     const corpo = { arquivo: r.arquivo, duracaoSeg: r.duracaoSeg, largura: r.largura, altura: r.altura, bytes: r.bytes };

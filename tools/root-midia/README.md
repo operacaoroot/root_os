@@ -104,6 +104,12 @@ cada matéria tem um carrossel, um story e um corte. `semana ep-NN` lista o esta
   fica no corte: ele volta com `subiu: false` e o motivo (o vigia avisa), e a ferramenta segue para o
   próximo. Sem `ROOT_OS_ENVIO_URL`, com a API fora desta máquina, o mp4 acima de 10 MB nem tenta
   subir (o proxy do web não responderia); o envio tem prazo de 1 min mais 1 s a cada 256 kB.
+  Desde a MD13 o trecho é o candidato em uso (o de maior nota, ou o que alguém escolheu na tela), e
+  o log diz qual: `Corte da matéria 1 (candidato 3 de 3, nota 6)`. Trocar o candidato no OS tira o
+  mp4 da peça, e o próximo `cortes` (ou o vigia) renderiza o trecho novo por cima do arquivo local.
+  O registro e o envio levam o trecho renderizado (`inicio`/`fim` no PUT, `X-Trecho-Do-Corte` no
+  POST): se a troca aconteceu enquanto o ffmpeg rodava, o OS responde 409, o corte volta com
+  `subiu: false` e o motivo, e a próxima passagem renderiza o trecho certo.
 
 Os PNG sobem para a peça (`POST /pauta/pecas/:id/imagens/:n`, até 5 MB) e, ao lado de cada um, o
 JPEG que o `sips` do macOS converte (`-s format jpeg -s formatOptions 90`, até 8 MB), que é o que a

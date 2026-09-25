@@ -540,7 +540,16 @@ jobs:
       # casos de antes passaram a conferir a thumb como IMAGEM no cartão do
       # lote, o texto do modo teste e o aviso do OAuth no topo da aba.
       # Medido: 605 casos em 47 arquivos. O piso de CASOS sobe 1, para 418.
-      PISO_CASOS_WEB: '418'
+      #
+      # MD13, O CORTE COM NOTA E MOTIVO (25/09/2026): +4 casos, 0 arquivo.
+      # `component/pauta-semana` +2: os candidatos ao corte com a nota em
+      # vírgula, o motivo e o "em uso", e "Usar este trecho" que manda só
+      # `{ candidato: n }`; sem pauta.editar, aprovada, publicada, da
+      # transcrição anterior ou com um candidato só, nada de trocar. `component/pauta-encadeamento` +2: o
+      # corte proposto na aba Semana troca de candidato e relê a agenda; no
+      # lote, não. Medido: 609 casos em 47 arquivos. O piso de CASOS sobe 3
+      # (~15% de folga sobre os 4 novos), para 421.
+      PISO_CASOS_WEB: '421'
       PISO_ARQUIVOS_WEB: '38'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1796,7 +1805,25 @@ jobs:
       # parados no caso da rotina). Medido: 2990 casos em 73 arquivos com o
       # banco; sem ele, 2303 passados e 687 pulados. O piso de CASOS sobe 8
       # (~15% de folga sobre os 10 que rodam sem banco), para 2153.
-      PISO_CASOS_API: '2153'
+      #
+      # MD13, O CORTE COM NOTA E MOTIVO (25/09/2026): +10 casos, 0 arquivo,
+      # todos sem banco. `pauta-semana` +8: a nota de 0 a 10 (com vírgula);
+      # 3 candidatos em ordem de nota com o maior como corte; o inválido, o
+      # repetido e o quarto fora, com o porquê; a resposta antiga como um
+      # candidato sem nota e o prompt que pede nota e motivo; o schema do
+      # `candidato`; gerar com os 3 na meta; trocar (trecho e gancho novos, o
+      # mp4 fora da peça e ainda no storage, rascunho, render pendente, o
+      # RASTRO); e as recusas (não existe, story, transcrição refeita).
+      # `pauta-agenda` +1 (os candidatos na peça da agenda), `root-midia` +1
+      # (o candidato no log do render). Da revisão, +5 sem banco:
+      # `pauta-semana` +4 (a legenda do candidato escolhido; trocar e voltar
+      # muda a assinatura do render e o vigia não pula; o mp4 de outro trecho
+      # com a mesma duração dá 409 no PUT e no envio; o cabeçalho do trecho),
+      # `root-midia` +1 (o trecho no PUT e no POST, e o 409 que fica no
+      # corte). Medido: 3005 casos em 73 arquivos com o banco; sem ele, 2318
+      # passados e 687 pulados. O piso de CASOS sobe 12 (~15% de folga sobre
+      # os 15 novos), para 2165.
+      PISO_CASOS_API: '2165'
       PISO_ARQUIVOS_API: '65'
 
     steps:

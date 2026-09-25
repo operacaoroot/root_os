@@ -51,6 +51,8 @@ import { shaDaTranscricao } from './newsletter-do-episodio';
 import { postagemDaPeca } from './agenda-da-semana';
 import type { Segmento } from './pacote-do-episodio';
 import {
+  candidatoGravado,
+  candidatosParaATela,
   carrosselComPalavra,
   chaveDaImagemDaPeca,
   chaveDoItem,
@@ -61,6 +63,7 @@ import {
   falaDoTrecho,
   legendaComCta,
   lerMetaDaSemana,
+  mesmoTrecho,
   montarDerivacao,
   numerosDoTrecho,
   palavraUnica,
@@ -195,7 +198,15 @@ export class DerivacaoService {
     };
     if (formato === 'carrossel') return { ...base, slides: m.slides ?? [], cta: m.cta, palavraChave: m.palavraChave };
     if (formato === 'story') return { ...base, chamada: m.chamada ?? '', tempoSeg: m.tempoSeg ?? null };
-    return { ...base, inicio: m.inicio, fim: m.fim, trecho: m.trecho ?? '', video: m.video ?? null, palavraChave: m.palavraChave };
+    return {
+      ...base,
+      inicio: m.inicio,
+      fim: m.fim,
+      trecho: m.trecho ?? '',
+      video: m.video ?? null,
+      palavraChave: m.palavraChave,
+      candidatos: candidatosParaATela(m),
+    };
   }
 
   private montarSemana(e: PautaEpisodioDetalhe, pecas: LinhaDaPeca[]): PautaSemanaDePosts {
@@ -436,6 +447,7 @@ export class DerivacaoService {
             ate: corte.ate,
             trecho: corte.trecho,
             video: null,
+            cortesCandidatos: m.montada.cortesCandidatos.map(candidatoGravado),
             palavraChave: palavra,
             // O aviso da palavra vai no carrossel; se ele não for gravado agora, vai aqui.
             avisos: [...corte.avisos, ...(carrossel && plano.carrossel.tipo !== 'manter' ? [] : avisoDaPalavra)],
@@ -564,7 +576,7 @@ export class DerivacaoService {
       const permitidos: Record<PautaFormatoDaSemana, string[]> = {
         carrossel: ['titulo', 'legenda', 'slides', 'palavraChave'],
         story: ['titulo', 'texto', 'chamada'],
-        corte: ['titulo', 'legenda', 'inicio', 'fim'],
+        corte: ['titulo', 'legenda', 'inicio', 'fim', 'candidato'],
       };
       const estranhos = Object.keys(input).filter((k) => !permitidos[formato].includes(k));
       if (estranhos.length) {
@@ -576,6 +588,7 @@ export class DerivacaoService {
       let corpo = p.corpo;
       const meta: MetaDaSemana = { ...p.m };
       let trechoMudou = false;
+      let candidato: { n: number; nota: number | null } | null = null;
 
       if (formato === 'carrossel') {
         let palavra = meta.palavraChave ?? 'LINK';
@@ -604,8 +617,28 @@ export class DerivacaoService {
           const legenda = limpo(input.legenda);
           corpo = meta.palavraChave ? legendaComCta(legenda, meta.palavraChave) : legenda;
         }
-        const igual = (a: number | undefined, b: number) => a !== undefined && Math.abs(a - b) <= 0.01;
-        if (input.inicio !== undefined && input.fim !== undefined && !(igual(meta.inicio, input.inicio) && igual(meta.fim, input.fim))) {
+        const shaAtual = shaDaTranscricao(e.transcricao);
+        if (input.candidato !== undefined) {
+          const lista = meta.cortesCandidatos ?? [];
+          const c = lista[input.candidato - 1];
+          if (!c) throw new BadRequestException(`Este corte tem ${lista.length} candidato(s): não há o ${input.candidato}.`);
+          // Os candidatos são tempos do vídeo de quando a semana foi gerada.
+          if (meta.transcricaoSha !== shaAtual) {
+            throw new ConflictException('A transcrição mudou depois destes candidatos (a mídia foi refeita): gere a semana de novo.');
+          }
+          const erro = conferirTrechoDoCorte(c.inicio, c.fim, duracaoDoEpisodio(e));
+          if (erro) throw new BadRequestException(`O candidato ${input.candidato} não serve mais: ${erro}`);
+          candidato = { n: input.candidato, nota: c.nota };
+          if (input.titulo === undefined) titulo = c.titulo || titulo;
+          // Os ajustes do sistema ao trecho (encurtou, cresceu) são do candidato em uso.
+          const dosCandidatos = new Set(lista.flatMap((x) => x.avisos ?? []));
+          meta.avisos = [...(c.avisos ?? []), ...meta.avisos.filter((a) => !dosCandidatos.has(a))];
+          if (!mesmoTrecho(meta, c)) {
+            trechoMudou = true;
+            // O mp4 renderizado é de outro trecho: sai da peça (o objeto no storage fica) e o vigia renderiza de novo.
+            Object.assign(meta, { inicio: c.inicio, fim: c.fim, de: c.de, ate: c.ate, trecho: c.trecho, video: null });
+          }
+        } else if (input.inicio !== undefined && input.fim !== undefined && !mesmoTrecho(meta, { inicio: input.inicio, fim: input.fim })) {
           const erro = conferirTrechoDoCorte(input.inicio, input.fim, duracaoDoEpisodio(e));
           if (erro) throw new BadRequestException(erro);
           const segs = e.transcricao as Segmento[];
@@ -619,11 +652,15 @@ export class DerivacaoService {
             trecho: falaDoTrecho(segs, input.inicio, input.fim),
             // O trecho mudou: o mp4 renderizado é de outro trecho.
             video: null,
-            transcricaoSha: shaDaTranscricao(e.transcricao),
+            transcricaoSha: shaAtual,
+            // Os candidatos de outra transcrição apontariam outra fala do vídeo novo.
+            ...(meta.transcricaoSha !== shaAtual ? { cortesCandidatos: [] } : {}),
           });
         }
       }
       if (!titulo) titulo = p.titulo;
+      // Voltar a um trecho já renderizado repetiria a assinatura do vigia (MD2), que a pula por 24 h.
+      if (trechoMudou) meta.renderPedidoEm = new Date().toISOString();
 
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
@@ -634,6 +671,9 @@ export class DerivacaoService {
       return {
         p,
         formato,
+        candidato,
+        trecho: trechoMudou ? { antes: { inicio: p.m.inicio, fim: p.m.fim }, depois: { inicio: meta.inicio, fim: meta.fim } } : null,
+        tituloMudou: titulo.slice(0, 200) !== p.titulo,
         renderDescartado: formato === 'corte' ? trechoMudou && !!p.m.video : p.m.imagens.length > 0,
       };
     });
@@ -645,11 +685,14 @@ export class DerivacaoService {
       action: 'pauta.semana_peca_editada',
       entityType: 'pauta_peca',
       entityId: feito.p.id,
-      before: { status: feito.p.status, formato: feito.formato },
+      before: { status: feito.p.status, formato: feito.formato, ...(feito.trecho ? { trecho: feito.trecho.antes } : {}) },
       after: {
         status: 'rascunho',
-        campos: Object.keys(input),
+        // O candidato traz o gancho dele como título: a troca muda o título sem o campo vir no pedido.
+        campos: [...Object.keys(input), ...(feito.tituloMudou && input.titulo === undefined ? ['titulo'] : [])],
+        ...(feito.trecho ? { trecho: feito.trecho.depois } : {}),
         renderDescartado: feito.renderDescartado,
+        ...(feito.candidato ? { candidato: feito.candidato } : {}),
         saiuDaAgenda: !!feito.p.agendadaPara,
         ...(itemDoLoteRevogado ? { itemDoLoteRevogado } : {}),
       },
@@ -771,8 +814,10 @@ export class DerivacaoService {
       this.exigirEditavel(p);
       this.exigirTrechoDoCorte(p);
       await this.exigirATranscricaoDaPeca(tx, orgId, p);
+      this.exigirORenderDoTrecho(p, input);
       this.exigirDuracaoDoTrecho(p, input.duracaoSeg);
-      const meta = { ...p.m, video: { ...input, registradoEm: new Date().toISOString() } };
+      const registro = { arquivo: input.arquivo, duracaoSeg: input.duracaoSeg, largura: input.largura, altura: input.altura, bytes: input.bytes };
+      const meta = { ...p.m, video: { ...registro, registradoEm: new Date().toISOString() } };
       // Render novo tira o mp4 do storage da peça: o item do lote (MD8) cobria o de antes.
       const trocou = videoNoStorage(p.m.video);
       const saiDoLote = trocou && (await this.temItemAssinado(tx, orgId, p.id));
@@ -802,6 +847,20 @@ export class DerivacaoService {
     if (p.m.inicio === undefined || p.m.fim === undefined) throw new BadRequestException('A peça não tem o trecho do corte.');
   }
 
+  /**
+   * O Mac diz de que trecho renderizou (MD13): a troca de candidato no meio de
+   * um render deixaria um mp4 de outra fala com a mesma duração passar pela
+   * conferência da duração. O Mac antigo não manda, e fica só a duração.
+   */
+  private exigirORenderDoTrecho(p: { m: MetaDaSemana }, render: { inicio?: number; fim?: number }): void {
+    if (render.inicio === undefined || render.fim === undefined) return;
+    if (!mesmoTrecho(p.m, { inicio: render.inicio, fim: render.fim })) {
+      throw new ConflictException(
+        `O mp4 é do trecho ${render.inicio.toFixed(1)}–${render.fim.toFixed(1)} s e a peça agora usa ${(p.m.inicio ?? 0).toFixed(1)}–${(p.m.fim ?? 0).toFixed(1)} s: renderize o corte de novo.`,
+      );
+    }
+  }
+
   private exigirDuracaoDoTrecho(p: { m: MetaDaSemana }, duracaoSeg: number): void {
     const esperado = (p.m.fim ?? 0) - (p.m.inicio ?? 0);
     if (Math.abs(duracaoSeg - esperado) > 1) {
@@ -829,6 +888,8 @@ export class DerivacaoService {
     const antes = await this.pecaDaSemana(orgId, pecaId);
     this.exigirEditavel(antes);
     this.exigirTrechoDoCorte(antes);
+    // Conferido contra `antes`; o trecho que mudar durante o envio cai na comparação com a peça travada, lá embaixo.
+    this.exigirORenderDoTrecho(antes, envio.trecho ?? {});
     await this.exigirATranscricaoDaPeca(this.prisma as unknown as Prisma.TransactionClient, orgId, antes);
 
     const conferencia = new ConferenciaDoMp4(envio, (moov) => {

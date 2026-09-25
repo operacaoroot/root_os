@@ -439,6 +439,19 @@ export const nomeDoStory = (apelido, n) => `${apelido}-m${n}-story.png`;
 export const pastaDoCarrossel = (apelido, n) => `${apelido}-m${n}-carrossel`;
 
 /**
+ * MD13: qual dos candidatos ao corte a peça usa, para o log do render: vazio
+ * sem candidatos, ou com o trecho editado à mão (nenhum em uso).
+ * @param {{ candidatos?: Array<{ n: number, nota: number | null, atual: boolean }> }} p
+ */
+export function rotuloDoCandidato(p) {
+  const lista = Array.isArray(p.candidatos) ? p.candidatos : [];
+  const atual = lista.find((c) => c.atual);
+  if (!atual || lista.length < 2) return '';
+  const nota = typeof atual.nota === 'number' ? `, nota ${String(atual.nota).replace('.', ',')}` : '';
+  return ` (candidato ${atual.n} de ${lista.length}${nota})`;
+}
+
+/**
  * A peça ainda aceita render? Aprovada aceita (o render é o que falta para
  * postar); publicada e descartada, não. A que foi gerada de outra transcrição
  * também não: o trecho e o frame dela são tempos do vídeo anterior, e cortar
@@ -645,8 +658,12 @@ export const videoJaNoOs = (peca, sha256) => !!peca.video?.sha256 && peca.video.
  * segue para o próximo. Sem caminho para o mp4 (o proxy do web), nem tenta; e,
  * se a peça já tem um mp4 no OS, também não registra de novo, porque o registro
  * apaga a referência a ele.
- * @param {{ videoDoCorte: (id: string, corpo: unknown) => Promise<unknown>, enviarVideoDoCorte: (id: string, a: { abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string }) => Promise<unknown>, motivoParaNaoEnviar: (bytes: number) => string | null }} os
- * @param {{ id: string, video?: { sha256?: string | null } | null }} peca
+ *
+ * Desde a MD13 os dois levam o trecho que foi renderizado (o `inicio`/`fim`
+ * da peça lida antes do render): se a pessoa trocou de candidato enquanto o
+ * ffmpeg rodava, o OS responde 409, e o corte fica para a próxima passagem.
+ * @param {{ videoDoCorte: (id: string, corpo: unknown) => Promise<unknown>, enviarVideoDoCorte: (id: string, a: { abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string, trecho?: { inicio: number, fim: number } }) => Promise<unknown>, motivoParaNaoEnviar: (bytes: number) => string | null }} os
+ * @param {{ id: string, inicio?: number, fim?: number, video?: { sha256?: string | null } | null }} peca
  * @param {{ bytes: number }} corpo o que o PUT registra
  * @param {{ sha256: string, abrir: () => AsyncIterable<Uint8Array> }} arquivo
  * @returns {Promise<{ sha256: string, subiu: boolean, motivo?: string }>}
@@ -656,10 +673,17 @@ export async function subirCorteAoOs(os, peca, corpo, arquivo) {
   if (videoJaNoOs(peca, sha256)) return { sha256, subiu: false };
   const barrado = os.motivoParaNaoEnviar(corpo.bytes);
   if (barrado && peca.video?.sha256) return { sha256, subiu: false, motivo: barrado };
-  await os.videoDoCorte(peca.id, corpo);
+  const trecho = typeof peca.inicio === 'number' && typeof peca.fim === 'number' ? { inicio: peca.inicio, fim: peca.fim } : undefined;
+  try {
+    await os.videoDoCorte(peca.id, { ...corpo, ...trecho });
+  } catch (e) {
+    const motivo = /** @type {Error} */ (e)?.message ?? String(e);
+    if (/HTTP 409\b/.test(motivo)) return { sha256, subiu: false, motivo };
+    throw e;
+  }
   if (barrado) return { sha256, subiu: false, motivo: barrado };
   try {
-    await os.enviarVideoDoCorte(peca.id, { abrir: arquivo.abrir, bytes: corpo.bytes, sha256 });
+    await os.enviarVideoDoCorte(peca.id, { abrir: arquivo.abrir, bytes: corpo.bytes, sha256, ...(trecho ? { trecho } : {}) });
   } catch (e) {
     return { sha256, subiu: false, motivo: /** @type {Error} */ (e)?.message ?? String(e) };
   }

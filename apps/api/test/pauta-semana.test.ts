@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   BadRequestException,
   ConflictException,
@@ -11,6 +11,7 @@ import {
   PAUTA_CORTE_MAXIMO_SEG,
   PAUTA_DIMENSOES_DA_PECA,
   PAUTA_PNG_DA_PECA_MAX_BYTES,
+  PAUTA_TETO_DO_MOTIVO_DO_CORTE,
   PautaDerivacaoGerarSchema,
   PautaNumeroDaImagemSchema,
   PautaPecaDaSemanaEditarSchema,
@@ -24,6 +25,7 @@ import {
 import {
   CHAMADA_PADRAO_DO_STORY,
   DerivacaoInvalidaError,
+  candidatosDoCorte,
   carrosselComPalavra,
   chaveDoItem,
   conferirPngDaPeca,
@@ -31,6 +33,7 @@ import {
   entradaDaDerivacao,
   linhaDaIa,
   montarDerivacao,
+  notaDoCorte,
   palavraChaveDe,
   palavraUnica,
   pecaQueVale,
@@ -59,6 +62,10 @@ import { comContexto } from '../src/common/contexto-execucao';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
+import { renderPendente } from '../src/pauta/midia-do-episodio';
+import { CABECALHO_DO_TRECHO, conferirCabecalhosDoEnvio } from '../src/pauta/video-do-corte';
+import { chaveDoRender, rendersAFazer } from '../../../tools/root-midia/lib/vigia.mjs';
+import { shaDaTranscricao } from '../src/pauta/newsletter-do-episodio';
 import { jpegDeTeste, mp4DeTeste, sha256 } from './mp4-de-teste';
 import { exigirBancoDescartavel } from './banco-de-teste';
 
@@ -1160,6 +1167,275 @@ describe('semana: o JPEG ao lado do PNG e o mp4 do corte no storage (MD4)', () =
     expect(car.status).toBe('rascunho');
     (meta(car) as { slides: unknown[] }).slides.length = 10;
     await expect(rotinas.editarPeca(ORG, car.id, PESSOA, { status: 'aprovada' })).resolves.toEqual({ ok: true, status: 'aprovada' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MD13: o corte com nota e motivo
+// ---------------------------------------------------------------------------
+
+/**
+ * O modelo da MD13: três trechos por matéria, fora da ordem da nota. O do meio
+ * (começa um segmento depois) tem a maior nota; a nota em texto com vírgula
+ * também vale.
+ */
+function respostaComCandidatos(n: number, candidatos?: unknown[]): string {
+  const [a, b] = CORTES[n];
+  const base = JSON.parse(respostaDaIa(n)) as Record<string, unknown>;
+  return JSON.stringify({
+    ...base,
+    corte: {
+      legenda: `O trecho da matéria ${n}.`,
+      candidatos: candidatos ?? [
+        { titulo: `Inteiro ${n}`, de: a, ate: b, nota: 6, motivo: 'A fala fecha, mas o começo demora a chegar no número.' },
+        { titulo: `Direto ${n}`, de: a + 1, ate: b, nota: 8.5, motivo: 'Gancho no primeiro segundo e a ideia fecha.' },
+        { titulo: `Começo ${n}`, de: a, ate: b - 1, nota: '7,2', motivo: 'Abre bem, mas termina antes do exemplo.' },
+      ],
+    },
+  });
+}
+
+describe('semana: o corte com nota e motivo (MD13)', () => {
+  const ctx = { segmentos: SEGMENTOS, duracaoSeg: DURACAO, tituloPadrao: 'Matéria' };
+
+  it('a nota fica entre 0 e 10 com uma casa; texto com vírgula vale; o que não é número é nula', () => {
+    expect(notaDoCorte(8.46)).toBe(8.5);
+    expect(notaDoCorte('7,2')).toBe(7.2);
+    expect(notaDoCorte(14)).toBe(10);
+    expect(notaDoCorte(-3)).toBe(0);
+    expect(notaDoCorte('alta')).toBeNull();
+    expect(notaDoCorte(undefined)).toBeNull();
+    expect(notaDoCorte('')).toBeNull();
+  });
+
+  it('3 candidatos: cada um conferido, em ordem de nota, e o de maior nota vira o corte com o motivo', () => {
+    const m = montarDerivacao(respostaComCandidatos(1), { item: ITENS[0], segmentos: SEGMENTOS, duracaoSeg: DURACAO });
+    expect(m.cortesCandidatos.map((c) => [c.titulo, c.nota, c.inicio, c.fim])).toEqual([
+      ['Direto 1', 8.5, 35, 80.4],
+      ['Começo 1', 7.2, 20.4, 57.9],
+      ['Inteiro 1', 6, 20.4, 80.4],
+    ]);
+    expect(m.corte).toMatchObject({ titulo: 'Direto 1', nota: 8.5, motivo: 'Gancho no primeiro segundo e a ideia fecha.', inicio: 35, fim: 80.4, corpo: 'O trecho da matéria 1.' });
+    expect(m.corte?.trecho).toMatch(/^Na prática/);
+    // O frame do story sai do corte escolhido.
+    expect(m.story?.tempoSeg).toBe(35);
+    expect(m.avisos).toEqual([]);
+  });
+
+  it('candidato inválido sai com o motivo, o repetido sai, o quarto não entra; sem nota fica por último', () => {
+    const r = candidatosDoCorte(
+      {
+        titulo: 'Gancho geral',
+        candidatos: [
+          { de: 5, ate: 3, nota: 9, motivo: 'fora de ordem' },
+          { de: 3, ate: 5, motivo: 'sem nota' },
+          { de: 3, ate: 99, nota: 10 },
+          { de: 3, ate: 5, nota: 2 },
+        ],
+      },
+      ctx,
+    );
+    expect(r.candidatos).toHaveLength(1);
+    expect(r.candidatos[0]).toMatchObject({ inicio: 20.4, fim: 80.4, nota: null, titulo: 'Gancho geral', motivo: 'sem nota' });
+    expect(r.avisos).toEqual([
+      'o modelo devolveu 4 candidatos; ficaram os 3 primeiros',
+      'o candidato 1 ficou de fora: o corte está fora de ordem (de 5 até 3)',
+      'o candidato 3 ficou de fora: o corte aponta segmento que não existe (de 3 até 99; são 13)',
+    ]);
+    const repetido = candidatosDoCorte({ candidatos: [{ de: 3, ate: 5, nota: 4 }, { de: 3, ate: 5, nota: 7, titulo: 'Melhor' }] }, ctx);
+    expect(repetido.candidatos.map((c) => [c.titulo, c.nota])).toEqual([['Melhor', 7]]);
+    expect(repetido.avisos).toEqual(['o candidato 1 repetia o trecho de outro e ficou de fora']);
+    // Nenhum de pé: o corte não sai, o resto da matéria sai, e o aviso diz por quê.
+    const m = montarDerivacao(respostaComCandidatos(2, [{ de: 8, ate: 6, nota: 9 }, { de: 0, ate: 1, nota: 8 }]), {
+      item: ITENS[1],
+      segmentos: SEGMENTOS,
+      duracaoSeg: DURACAO,
+    });
+    expect(m.corte).toBeNull();
+    expect(m.cortesCandidatos).toEqual([]);
+    expect(m.carrossel).not.toBeNull();
+    expect(m.avisos).toContain('Corte: o candidato 1 ficou de fora: o corte está fora de ordem (de 8 até 6).');
+    expect(candidatosDoCorte({ candidatos: [] }, ctx)).toEqual({ candidatos: [], avisos: ['o modelo não devolveu candidato'] });
+  });
+
+  it('a resposta antiga (de/até no próprio corte) é um candidato sem nota; o prompt pede os 3 com nota e motivo', () => {
+    const m = montarDerivacao(respostaDaIa(1), { item: ITENS[0], segmentos: SEGMENTOS, duracaoSeg: DURACAO });
+    expect(m.cortesCandidatos).toHaveLength(1);
+    expect(m.corte).toMatchObject({ titulo: 'Corte 1', nota: null, motivo: '', inicio: 20.4 });
+    const system = systemDaDerivacao('');
+    expect(system).toContain('"candidatos"');
+    expect(system).toContain('"nota": number');
+    expect(system).toMatch(/gancho nos 3 primeiros segundos/);
+    expect(system).toMatch(/referência a slide/);
+  });
+
+  it('o schema: candidato de 1 a 3, e nunca junto com o trecho editado à mão', () => {
+    expect(PautaPecaDaSemanaEditarSchema.safeParse({ candidato: 2 }).success).toBe(true);
+    expect(PautaPecaDaSemanaEditarSchema.safeParse({ candidato: 4 }).success).toBe(false);
+    expect(PautaPecaDaSemanaEditarSchema.safeParse({ candidato: 0 }).success).toBe(false);
+    expect(PautaPecaDaSemanaEditarSchema.safeParse({ candidato: 1, inicio: 1, fim: 20 }).success).toBe(false);
+  });
+
+  it('gerar: cada matéria sai com 3 candidatos na meta e o de maior nota como o corte da peça', async () => {
+    const s = servico({ resposta: (n) => respostaComCandidatos(n) });
+    const r = await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    for (const m of r.materias) {
+      const c = m.pecas.corte!;
+      expect(c.candidatos).toHaveLength(3);
+      expect(c.candidatos?.map((x) => x.nota)).toEqual([8.5, 7.2, 6]);
+      expect(c.candidatos?.map((x) => x.atual)).toEqual([true, false, false]);
+      expect(c.titulo).toBe(`Direto ${m.n}`);
+      expect(c.inicio).toBe(c.candidatos?.[0].inicio);
+    }
+    const guardado = meta(s.pecas.find((p) => p.formato === 'corte' && meta(p).itemId === 'c1')!);
+    expect(guardado.cortesCandidatos).toEqual([
+      expect.objectContaining({ titulo: 'Direto 1', nota: 8.5, motivo: 'Gancho no primeiro segundo e a ideia fecha.', de: 4, ate: 5, trecho: expect.stringMatching(/^Na prática/) }),
+      expect.objectContaining({ titulo: 'Começo 1', nota: 7.2 }),
+      expect.objectContaining({ titulo: 'Inteiro 1', nota: 6 }),
+    ]);
+  });
+
+  it('trocar o candidato: o trecho e o gancho mudam, o mp4 sai da peça (e fica no storage), a peça volta ao rascunho e o render a pendente', async () => {
+    const s = servico({ resposta: (n) => respostaComCandidatos(n) });
+    await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    const c = s.pecas.find((p) => p.formato === 'corte' && meta(p).itemId === 'c1')!;
+    const mp4 = mp4DeTeste({ duracaoSeg: 45.4 });
+    await s.semana.enviarVideo(ORG, c.id, PESSOA, { corpo: Readable.from([mp4]), bytes: mp4.length, sha256: sha256(mp4) });
+    c.status = 'aprovada';
+    const pendente = () => renderPendente(structuredClone(s.pecas.filter((x) => x.id === c.id)), { id: 'e1', numero: 4, sha: shaDaTranscricao(SEGMENTOS) }).corte;
+    expect(pendente()).toBeUndefined();
+
+    const r = await s.semana.editar(ORG, c.id, PESSOA, { candidato: 3 });
+    const p = r.materias[0].pecas.corte!;
+    expect(p).toMatchObject({ status: 'rascunho', titulo: 'Inteiro 1', inicio: 20.4, fim: 80.4, video: null });
+    expect(p.trecho).toContain('o preço dos modelos caiu pela metade');
+    expect(p.candidatos?.map((x) => x.atual)).toEqual([false, false, true]);
+    expect(meta(c)).toMatchObject({ de: 3, ate: 5 });
+    // Desassociar não é apagar: o mp4 anterior continua no storage.
+    expect(s.guardados[`pauta/pecas/${c.id}/corte-${sha256(mp4)}.mp4`]).toEqual(mp4);
+    expect(pendente()).toMatchObject({ pecas: 1 });
+    // O RASTRO diz de que trecho saiu e para qual foi, e que o gancho do candidato trocou o título.
+    expect(s.auditoria.filter((a) => a.action === 'pauta.semana_peca_editada').at(-1)).toMatchObject({
+      before: { status: 'aprovada', formato: 'corte', trecho: { inicio: 35, fim: 80.4 } },
+      after: { status: 'rascunho', campos: ['candidato', 'titulo'], trecho: { inicio: 20.4, fim: 80.4 }, renderDescartado: true, candidato: { n: 3, nota: 6 } },
+    });
+
+    // Voltar ao de maior nota, com o gancho escrito à mão: o título pedido vale.
+    const r2 = await s.semana.editar(ORG, c.id, PESSOA, { candidato: 1, titulo: 'Gancho meu' });
+    expect(r2.materias[0].pecas.corte).toMatchObject({ titulo: 'Gancho meu', inicio: 35, fim: 80.4 });
+    // O trecho editado à mão não é candidato nenhum; os candidatos continuam lá.
+    const r3 = await s.semana.editar(ORG, c.id, PESSOA, { inicio: 21, fim: 57.9 });
+    expect(r3.materias[0].pecas.corte?.candidatos?.map((x) => x.atual)).toEqual([false, false, false]);
+  });
+
+  it('a legenda que o modelo pôs dentro do candidato é a do escolhido, não a do primeiro da lista', () => {
+    const base = JSON.parse(respostaDaIa(1)) as Record<string, unknown>;
+    const resposta = JSON.stringify({
+      ...base,
+      corte: {
+        candidatos: [
+          { titulo: 'Fraco', de: 3, ate: 5, nota: 4, legenda: 'Legenda do fraco.' },
+          { titulo: 'Forte', de: 4, ate: 5, nota: 9, legenda: 'Legenda do forte.' },
+        ],
+      },
+    });
+    const m = montarDerivacao(resposta, { item: ITENS[0], segmentos: SEGMENTOS, duracaoSeg: DURACAO });
+    expect(m.corte).toMatchObject({ titulo: 'Forte', corpo: 'Legenda do forte.' });
+    expect(systemDaDerivacao('')).toContain(`até ${PAUTA_TETO_DO_MOTIVO_DO_CORTE} caracteres: por que essa nota`);
+  });
+
+  it('trocar e voltar ao trecho já renderizado muda a assinatura do render: o vigia não pula o corte por 24 h', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-25T10:00:00Z'));
+      const s = servico({ resposta: (n) => respostaComCandidatos(n) });
+      await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+      const c = s.pecas.find((p) => p.formato === 'corte' && meta(p).itemId === 'c1')!;
+      const ep = { id: 'e1', numero: 4, sha: shaDaTranscricao(SEGMENTOS) };
+      const pendente = () => renderPendente(structuredClone(s.pecas.filter((x) => x.formato === 'corte')), ep).corte;
+      const subir = async (duracaoSeg: number) => {
+        const mp4 = mp4DeTeste({ duracaoSeg });
+        await s.semana.enviarVideo(ORG, c.id, PESSOA, { corpo: Readable.from([mp4]), bytes: mp4.length, sha256: sha256(mp4) });
+      };
+
+      await s.semana.editar(ORG, c.id, PESSOA, { candidato: 3 });
+      const noTres = pendente()!;
+      // O vigia tenta o 3 (a memória guarda a assinatura) e o render dá certo.
+      const memoria = { notificacoes: {}, brutosQueFalharam: {}, renders: { [chaveDoRender('e1', 'corte')]: { assinatura: noTres.assinatura, em: Date.now() } } };
+      await subir(60);
+      vi.setSystemTime(new Date('2026-09-25T10:05:00Z'));
+      await s.semana.editar(ORG, c.id, PESSOA, { candidato: 1 });
+      vi.setSystemTime(new Date('2026-09-25T10:06:00Z'));
+      await s.semana.editar(ORG, c.id, PESSOA, { candidato: 3 });
+
+      const deVolta = pendente()!;
+      expect(deVolta.assinatura).not.toBe(noTres.assinatura);
+      expect(rendersAFazer({ id: 'e1', precisaDeRender: { corte: deVolta } }, memoria, Date.now())).toEqual([
+        { formato: 'corte', pecas: deVolta.pecas, assinatura: deVolta.assinatura },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('o mp4 de outro trecho com a mesma duração é recusado (409) quando o Mac diz o que renderizou; o Mac antigo segue só pela duração', async () => {
+    // Dois candidatos de 22,9 s e 22,2 s: a duração sozinha não os separa.
+    const s = servico({
+      resposta: (n) => respostaComCandidatos(n, [{ titulo: 'A', de: 4, ate: 4, nota: 9 }, { titulo: 'B', de: 5, ate: 5, nota: 8 }]),
+    });
+    await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    const c = s.pecas.find((p) => p.formato === 'corte' && meta(p).itemId === 'c1')!;
+    expect(meta(c)).toMatchObject({ inicio: 35, fim: 57.9 });
+    // O vigia leu a semana e renderiza o A; a pessoa troca para o B no meio.
+    const doA = { inicio: 35, fim: 57.9 };
+    await s.semana.editar(ORG, c.id, PESSOA, { candidato: 2 });
+    const video = { arquivo: '/Users/pedro/Movies/ep-04-m1-corte.mp4', duracaoSeg: 22.9, largura: 1080, altura: 1920, bytes: 9_000_000 } as const;
+    await expect(s.semana.registrarVideo(ORG, c.id, PESSOA, { ...video, ...doA })).rejects.toThrow(ConflictException);
+    const mp4DoA = mp4DeTeste({ duracaoSeg: 22.9 });
+    await expect(
+      s.semana.enviarVideo(ORG, c.id, PESSOA, { corpo: Readable.from([mp4DoA]), bytes: mp4DoA.length, sha256: sha256(mp4DoA), trecho: doA }),
+    ).rejects.toThrow(/é do trecho 35.0–57.9 s e a peça agora usa 58.2–80.4 s/);
+    expect(meta(c).video).toBeNull();
+
+    // O mp4 do B, com o trecho do B, entra.
+    const doB = { inicio: 58.2, fim: 80.4 };
+    await s.semana.registrarVideo(ORG, c.id, PESSOA, { ...video, duracaoSeg: 22.2, ...doB });
+    const mp4DoB = mp4DeTeste({ duracaoSeg: 22.2 });
+    await s.semana.enviarVideo(ORG, c.id, PESSOA, { corpo: Readable.from([mp4DoB]), bytes: mp4DoB.length, sha256: sha256(mp4DoB), trecho: doB });
+    expect(meta(c).video).toMatchObject({ sha256: sha256(mp4DoB), arquivo: video.arquivo });
+    expect(meta(c).video).not.toHaveProperty('inicio');
+    // Sem o trecho (o Mac de antes da MD13), a duração dentro de 1 s ainda passa: é o risco que o trecho fecha.
+    await s.semana.registrarVideo(ORG, c.id, PESSOA, video);
+  });
+
+  it('o trecho renderizado: no PUT vem com início e fim juntos; no envio, pelo cabeçalho início-fim', () => {
+    const video = { arquivo: '/x/corte.mp4', duracaoSeg: 22, largura: 1080, altura: 1920, bytes: 10 };
+    expect(PautaVideoDoCorteSchema.safeParse({ ...video, inicio: 1, fim: 23 }).success).toBe(true);
+    expect(PautaVideoDoCorteSchema.safeParse({ ...video, inicio: 1 }).success).toBe(false);
+    const cab = (extra: Record<string, string>) =>
+      conferirCabecalhosDoEnvio({ 'content-type': 'video/mp4', 'content-length': '100', 'x-conteudo-sha256': 'a'.repeat(64), ...extra }, 1_000_000);
+    expect(cab({}).trecho).toBeUndefined();
+    expect(cab({ [CABECALHO_DO_TRECHO]: '58.2-80.4' }).trecho).toEqual({ inicio: 58.2, fim: 80.4 });
+    expect(cab({ [CABECALHO_DO_TRECHO]: '35-57.9' }).trecho).toEqual({ inicio: 35, fim: 57.9 });
+    for (const ruim of ['', '80-58', '1e3-2e3', '-1-5', '10', '10-20-30']) {
+      expect(() => cab({ [CABECALHO_DO_TRECHO]: ruim })).toThrow(/início-fim em segundos/);
+    }
+  });
+
+  it('trocar é recusado: candidato que não existe, formato sem candidato, transcrição refeita', async () => {
+    const s = servico({ resposta: (n) => (n === 2 ? respostaComCandidatos(n, [{ de: 6, ate: 8, nota: 7 }]) : respostaComCandidatos(n)) });
+    await s.semana.gerar(ORG, 'e1', PESSOA, { substituir: false });
+    const da = (item: string, f: string) => s.pecas.find((p) => meta(p).itemId === item && p.formato === f)!;
+    await expect(s.semana.editar(ORG, da('c2', 'corte').id, PESSOA, { candidato: 2 })).rejects.toThrow(/tem 1 candidato\(s\): não há o 2/);
+    await expect(s.semana.editar(ORG, da('c1', 'story').id, PESSOA, { candidato: 1 })).rejects.toThrow(/Story não tem candidato/);
+    const e = s.lista[0] as unknown as { transcricao: Array<{ inicio: number; fim: number; texto: string }> };
+    e.transcricao = e.transcricao.map((t) => ({ ...t, texto: `${t.texto} (tomada B)` }));
+    const antes = structuredClone(meta(da('c1', 'corte')));
+    await expect(s.semana.editar(ORG, da('c1', 'corte').id, PESSOA, { candidato: 2 })).rejects.toThrow(ConflictException);
+    expect(meta(da('c1', 'corte'))).toEqual(antes);
+    // O trecho editado à mão na transcrição nova esquece os candidatos da antiga.
+    await s.semana.editar(ORG, da('c1', 'corte').id, PESSOA, { inicio: 21, fim: 57.9 });
+    expect(meta(da('c1', 'corte')).cortesCandidatos).toEqual([]);
   });
 });
 

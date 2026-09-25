@@ -24,6 +24,7 @@ import { Botao, Chip, inputCls } from '../referencias/ui';
 import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
 import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
 import { AprovarASemana } from './AprovarASemana';
+import { CandidatosDoCorte } from './CandidatosDoCorte';
 
 /*
  * A SEMANA (MC16): o calendário das peças aprovadas da semana de posts. Cada
@@ -85,8 +86,20 @@ export function ehProposta(p: PautaPecaNaAgenda): boolean {
 /**
  * O slot proposto aparece em cinza e sem ação: virar agenda pede aprovar a peça
  * (na semana de posts do episódio) e distribuir — o encadeamento não aprova nada.
+ * A exceção é o corte fora do lote (MD13): dá para trocar o trecho candidato
+ * antes de a semana ir à assinatura.
  */
-function PecaProposta({ peca }: { peca: PautaPecaNaAgenda }) {
+function PecaProposta({
+  peca,
+  editavel,
+  ocupado,
+  onTrocarCandidato,
+}: {
+  peca: PautaPecaNaAgenda;
+  editavel: boolean;
+  ocupado: boolean;
+  onTrocarCandidato: (n: number) => void;
+}) {
   return (
     <div
       className="min-w-0 flex-1 space-y-1 rounded-lg border border-dashed border-border p-2 text-muted opacity-80"
@@ -106,6 +119,9 @@ function PecaProposta({ peca }: { peca: PautaPecaNaAgenda }) {
       </div>
       <p className="break-words text-sm">{peca.titulo}</p>
       <p className="break-words text-xs">{peca.materia}</p>
+      {peca.formato === 'corte' && (
+        <CandidatosDoCorte candidatos={peca.candidatos} podeTrocar={editavel && !peca.lote} ocupado={ocupado} onTrocar={onTrocarCandidato} />
+      )}
       <LinhaDoTempoDaPeca etapa={etapaDaPecaNaSemana(peca)} />
     </div>
   );
@@ -664,7 +680,12 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
                     {!l.daGrade && <span className="text-[10px] text-muted">fora da grade</span>}
                   </div>
                   {l.peca && ehProposta(l.peca) ? (
-                    <PecaProposta peca={l.peca} />
+                    <PecaProposta
+                      peca={l.peca}
+                      editavel={editavel}
+                      ocupado={ocupado !== null}
+                      onTrocarCandidato={(n) => void acao(l.peca!.id, () => apiPut(`/pauta/pecas/${l.peca!.id}/semana`, { candidato: n }, token))}
+                    />
                   ) : l.peca ? (
                     <PecaNoSlot
                       peca={l.peca}

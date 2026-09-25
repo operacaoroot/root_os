@@ -629,6 +629,24 @@ describe('agenda: a semana na tela', () => {
     expect(doDia.find((p) => p!.id === pecas[1].id)?.publicacao).toBeNull();
   });
 
+  it('MD13: o corte traz os candidatos com o que está em uso marcado; os outros formatos não', async () => {
+    const candidatos = [
+      { titulo: 'Direto', inicio: 35, fim: 80.4, de: 4, ate: 5, trecho: 'Na prática…', nota: 8.5, motivo: 'Gancho no começo.', avisos: [] },
+      { titulo: 'Inteiro', inicio: 20.4, fim: 80.4, de: 3, ate: 5, trecho: 'A primeira…', nota: 6, motivo: 'Demora a chegar.', avisos: [] },
+    ];
+    const pecas = [
+      peca('corte', 1, { agendadaPara: SP('2026-09-29', '18:00'), metaExtra: { inicio: 20.4, fim: 80.4, cortesCandidatos: candidatos } }),
+      peca('carrossel', 1, { agendadaPara: SP('2026-09-28', '12:00') }),
+    ];
+    const s = servico({ pecas, agora: '2026-09-28T12:00:00.000Z' });
+    const todas = (await s.agenda.semana(ORG)).dias.flatMap((d) => d.linhas.map((l) => l.peca)).filter(Boolean);
+    expect(todas.find((p) => p!.id === pecas[0].id)?.candidatos).toEqual([
+      { n: 1, titulo: 'Direto', inicio: 35, fim: 80.4, trecho: 'Na prática…', nota: 8.5, motivo: 'Gancho no começo.', atual: false },
+      { n: 2, titulo: 'Inteiro', inicio: 20.4, fim: 80.4, trecho: 'A primeira…', nota: 6, motivo: 'Demora a chegar.', atual: true },
+    ]);
+    expect(todas.find((p) => p!.id === pecas[1].id)).not.toHaveProperty('candidatos');
+  });
+
   it('sete dias a partir da segunda, cada slot com a peça ou vago; fora da grade, postada e o que falta distribuir', async () => {
     const pecas = [
       peca('carrossel', 1, { agendadaPara: SP('2026-09-28', '12:00'), metaExtra: { imagens: [{ n: 1, chave: 'a' }, { n: 2, chave: 'b' }], palavraChave: 'PRECO' } }),

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /*
@@ -235,6 +235,63 @@ describe('a semana de posts do episódio', () => {
     await userEvent.type(legenda, 'Outra legenda');
     await userEvent.click(within(co).getByRole('button', { name: 'Salvar' }));
     expect(apiPut).toHaveBeenCalledWith('/pauta/pecas/co1/semana', { titulo: 'Corte do preço', legenda: 'Outra legenda' }, 'tok');
+  });
+
+  it('MD13: os candidatos ao corte com a nota e o motivo; usar outro manda só o número dele', async () => {
+    const candidatos = [
+      { n: 1, titulo: 'Direto ao número', inicio: 35, fim: 80.4, trecho: 'Na prática…', nota: 8.5, motivo: 'Gancho no primeiro segundo.', atual: true },
+      { n: 2, titulo: 'Desde o começo', inicio: 20.4, fim: 80.4, trecho: 'A primeira…', nota: 6, motivo: 'Demora a chegar no número.', atual: false },
+    ];
+    apiGet.mockResolvedValue(semana({}, { corte: corte({ inicio: 35, candidatos }) }));
+    apiPut.mockResolvedValue(semana());
+    renderSecao();
+    const co = within(await waitFor(() => materia(1))).getByLabelText('Corte vertical');
+    expect(co).toHaveTextContent('2 candidatos ao corte');
+    const c1 = within(co).getByLabelText('Candidato 1');
+    expect(c1).toHaveTextContent('nota 8,5');
+    expect(c1).toHaveTextContent('em uso');
+    expect(c1).toHaveTextContent('Gancho no primeiro segundo.');
+    expect(within(c1).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
+    const c2 = within(co).getByLabelText('Candidato 2');
+    expect(c2).toHaveTextContent('00:20–01:20 (60 s)');
+    expect(co).toHaveTextContent('não mede alcance');
+    await userEvent.click(within(c2).getByRole('button', { name: 'Usar este trecho' }));
+    expect(apiPut).toHaveBeenCalledWith('/pauta/pecas/co1/semana', { candidato: 2 }, 'tok');
+  });
+
+  it('MD13: sem pauta.editar, aprovada, publicada ou da transcrição anterior, os candidatos aparecem sem trocar; um só vira a nota', async () => {
+    const candidatos = [
+      { n: 1, titulo: 'A', inicio: 35, fim: 80.4, trecho: 'x', nota: 8, motivo: 'm1', atual: true },
+      { n: 2, titulo: 'B', inicio: 20.4, fim: 80.4, trecho: 'y', nota: null, motivo: '', atual: false },
+    ];
+    apiGet.mockResolvedValue(semana({}, { corte: corte({ inicio: 35, candidatos, transcricaoMudou: true }) }));
+    renderSecao();
+    let co = within(await waitFor(() => materia(1))).getByLabelText('Corte vertical');
+    expect(within(co).getByLabelText('Candidato 2')).toHaveTextContent('sem nota');
+    expect(within(co).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
+    cleanup();
+
+    apiGet.mockResolvedValue(semana({}, { corte: corte({ inicio: 35, candidatos }) }));
+    renderSecao({ editavel: false });
+    co = within(await waitFor(() => materia(1))).getByLabelText('Corte vertical');
+    expect(within(co).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
+    cleanup();
+
+    // Aprovada já está na agenda e no lote assinado; publicada é o registro. Nas duas, só se lê.
+    for (const status of ['aprovada', 'publicada'] as const) {
+      apiGet.mockResolvedValue(semana({}, { corte: corte({ inicio: 35, status, candidatos }) }));
+      renderSecao();
+      co = within(await waitFor(() => materia(1))).getByLabelText('Corte vertical');
+      expect(within(co).getByLabelText('Candidato 2')).toHaveTextContent('B');
+      expect(within(co).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
+      cleanup();
+    }
+
+    apiGet.mockResolvedValue(semana({}, { corte: corte({ inicio: 35, candidatos: [candidatos[0]] }) }));
+    renderSecao();
+    co = within(await waitFor(() => materia(1))).getByLabelText('Corte vertical');
+    expect(co).toHaveTextContent('Nota do corte');
+    expect(within(co).queryByRole('button', { name: 'Usar este trecho' })).toBeNull();
   });
 
   it('depois de concluído não há Editar (o texto é o registro), e o story avisa a página de links fora do ar', async () => {

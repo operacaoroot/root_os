@@ -25,6 +25,7 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
 import { Botao, Chip, inputCls } from '../referencias/ui';
+import { CandidatosDoCorte } from './CandidatosDoCorte';
 
 /*
  * A SEMANA DE POSTS (MC15), dentro do detalhe da aba Episódios: por matéria,
@@ -218,6 +219,13 @@ function PecaDaSemana({
             {typeof peca.inicio === 'number' && typeof peca.fim === 'number' && ` (${Math.round(peca.fim - peca.inicio)} s)`}
           </p>
           {peca.trecho && <blockquote className="break-words border-l-2 border-border pl-2 text-xs text-muted">{peca.trecho}</blockquote>}
+          <CandidatosDoCorte
+            candidatos={peca.candidatos}
+            // Só no rascunho (antes do lote): a peça aprovada está na agenda e no lote assinado, e a troca a tiraria dos dois.
+            podeTrocar={editavel && !textoTravado && !edicao && peca.status === 'rascunho' && !peca.transcricaoMudou}
+            ocupado={escrevendo}
+            onTrocar={(n) => void onSalvar(peca, { candidato: n })}
+          />
         </div>
       )}
       {peca.formato !== 'story' && peca.corpo && (

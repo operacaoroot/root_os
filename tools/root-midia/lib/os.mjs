@@ -93,6 +93,13 @@ export function motivoParaNaoEnviarOMp4(c, bytes) {
 }
 
 /**
+ * MD13: o trecho renderizado como o OS o lê no cabeçalho, `inicio-fim` em
+ * segundos com até 3 casas (a API confere com folga de centésimo).
+ * @param {{ inicio: number, fim: number }} t
+ */
+export const cabecalhoDoTrecho = (t) => `${Math.round(t.inicio * 1000) / 1000}-${Math.round(t.fim * 1000) / 1000}`;
+
+/**
  * O prazo do envio do mp4: 1 min de folga mais 1 s a cada 256 kB (2 Mbit/s).
  * Acima disso o pedido não vai terminar, e o corte seguinte não espera por ele.
  * @param {number} bytes
@@ -198,7 +205,9 @@ export function clienteDoOs({ url, envio = url, email, senha, fetch: f = globalT
      * MD4: o mp4 do corte sobe ao storage do OS, cru, por stream (nunca inteiro
      * em memória), com o tamanho e o sha256 no cabeçalho. `abrir` devolve um
      * stream novo a cada chamada: o 401 do token vencido reabre o arquivo.
-     * @param {string} pecaId @param {{ abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string }} arquivo
+     * MD13: `trecho` vai no cabeçalho X-Trecho-Do-Corte, e o OS recusa o mp4 de
+     * outro trecho.
+     * @param {string} pecaId @param {{ abrir: () => AsyncIterable<Uint8Array>, bytes: number, sha256: string, trecho?: { inicio: number, fim: number } }} arquivo
      */
     enviarVideoDoCorte: async (pecaId, arquivo) => {
       if (!token) await entrar();
@@ -211,6 +220,7 @@ export function clienteDoOs({ url, envio = url, email, senha, fetch: f = globalT
             'Content-Type': 'video/mp4',
             'Content-Length': String(arquivo.bytes),
             'X-Conteudo-Sha256': arquivo.sha256,
+            ...(arquivo.trecho ? { 'X-Trecho-Do-Corte': cabecalhoDoTrecho(arquivo.trecho) } : {}),
           },
           body: /** @type {any} */ (arquivo.abrir()),
           // @ts-ignore o fetch do Node exige `duplex` para corpo em stream
