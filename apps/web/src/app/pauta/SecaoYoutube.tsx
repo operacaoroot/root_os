@@ -126,7 +126,14 @@ export function SecaoYoutube({ token, episodioId, apelido, thumbs, editavel, pod
     }
   };
 
-  const escolherThumb = (n: number | null) => escrever('thumb', () => apiPut(`/pauta/episodios/${episodioId}/pacote/thumb`, { n }, token));
+  // Trocar a thumb ou o horário revoga os itens do YouTube no lote (o hash deles
+  // muda): com item vivo, a troca passa por uma confirmação, e não por um toque.
+  const [confirmar, setConfirmar] = useState<{ rotulo: string; fazer: () => void } | null>(null);
+  const noLote = (yt?.itens ?? []).some((i) => i.estadoDoItem === 'ativo');
+  const comConfirmacao = (rotulo: string, fazer: () => void) => (noLote ? setConfirmar({ rotulo, fazer }) : fazer());
+
+  const escolherThumb = (n: number | null) =>
+    comConfirmacao(`trocar a thumb para a ${n}`, () => void escrever('thumb', () => apiPut(`/pauta/episodios/${episodioId}/pacote/thumb`, { n }, token)));
 
   const salvarHorario = (limpar = false) => {
     const [dia, hora] = campo.split('T');
@@ -135,7 +142,9 @@ export function SecaoYoutube({ token, episodioId, apelido, thumbs, editavel, pod
       return;
     }
     const publicarEm = limpar ? null : instanteNoFuso(dia, hora).toISOString();
-    void escrever('horario', () => apiPut(`/pauta/episodios/${episodioId}/pacote/horario`, { publicarEm }, token));
+    comConfirmacao(limpar ? 'tirar o horário' : 'salvar o horário novo', () =>
+      void escrever('horario', () => apiPut(`/pauta/episodios/${episodioId}/pacote/horario`, { publicarEm }, token)),
+    );
   };
 
   const conectar = async () => {
@@ -183,6 +192,29 @@ export function SecaoYoutube({ token, episodioId, apelido, thumbs, editavel, pod
 
       {yt && (
         <>
+          {confirmar && (
+            <div className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-2 text-xs" role="alert">
+              <p className="break-words">
+                Isto tira o vídeo da semana assinada: o envio e o agendamento deixam de valer e vão precisar de assinatura nova da titular.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Botao
+                  tone="bad"
+                  onClick={() => {
+                    const f = confirmar.fazer;
+                    setConfirmar(null);
+                    f();
+                  }}
+                >
+                  Confirmar: {confirmar.rotulo}
+                </Botao>
+                <Botao tone="ghost" onClick={() => setConfirmar(null)}>
+                  Manter
+                </Botao>
+              </div>
+            </div>
+          )}
+
           <fieldset className="space-y-1" disabled={!podeMexer}>
             <legend className="text-sm font-medium">Thumb que sobe</legend>
             {thumbs.length === 0 && <p className="text-xs text-muted">O pacote ainda não tem thumbs.</p>}

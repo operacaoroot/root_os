@@ -305,4 +305,18 @@ describe('MD11: a DM automática na fila de comentários', () => {
     expect(dm).toHaveTextContent('desligada — a resposta é à mão');
     expect(dm).toHaveTextContent('Nenhuma regra assinada');
   });
+
+  it('o texto da matéria com a regra assinada avisa que salvar outro a tira do lote; o da matéria sem regra, não', async () => {
+    const texto = (itemN: number, itemId: string) => ({
+      episodioId: 'e4', apelido: 'ep-04', itemId, itemN, palavra: 'AGENTES', materia: 'Agentes', texto: 'Oi! https://bio.teste/r/l1',
+      motivo: null, link: 'https://bio.teste/r/l1', bytes: 30, editado: false, checagem: { aprovada: true, apontamentos: [] },
+    });
+    apiGet.mockResolvedValue(fila({ textos: [texto(1, 'item-1'), texto(2, 'item-2')] }));
+    render(<ComentariosComPalavra token="tok" podeResponder editavel onErro={vi.fn()} bump={0} />);
+    await userEvent.click(await within(secao()).findByText('Texto da DM por matéria (2)'));
+    expect(within(secao()).getByRole('listitem', { name: 'Texto da DM de ep-04 matéria 1' })).toHaveTextContent(
+      'A DM automática desta matéria está assinada na semana: salvar outro texto (ou voltar ao padrão) a tira do lote',
+    );
+    expect(within(secao()).getByRole('listitem', { name: 'Texto da DM de ep-04 matéria 2' })).not.toHaveTextContent('está assinada na semana');
+  });
 });

@@ -132,12 +132,15 @@ function TextoDaMateria({
   ocupado,
   onCopiar,
   onSalvar,
+  assinada = false,
 }: {
   t: PautaTextoDaDm;
   editavel: boolean;
   ocupado: boolean;
   onCopiar: (texto: string) => void;
   onSalvar: (texto: string | null) => Promise<boolean>;
+  /** A regra da DM desta matéria está assinada na semana: mudar o texto a revoga. */
+  assinada?: boolean;
 }) {
   const [editando, setEditando] = useState(false);
   const [rascunho, setRascunho] = useState('');
@@ -154,6 +157,12 @@ function TextoDaMateria({
       </div>
       <p className="break-words text-xs text-muted">{t.materia}</p>
       {t.motivo && <p className="break-words text-xs text-warn">{t.motivo}</p>}
+      {editavel && assinada && (
+        <p className="break-words text-xs text-warn">
+          A DM automática desta matéria está assinada na semana: salvar outro texto (ou voltar ao padrão) a tira do lote, e voltar a mandar
+          sozinha pede assinatura nova.
+        </p>
+      )}
       {t.texto && !editando && (
         <>
           <pre className="whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-2 font-sans text-sm">{t.texto}</pre>
@@ -419,6 +428,7 @@ export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, 
               <TextoDaMateria
                 key={`${t.episodioId}-${t.itemId}`}
                 t={t}
+                assinada={(fila?.dmAutomatica?.regras ?? []).some((r) => r.apelido === t.apelido && r.itemN === t.itemN && r.estadoDoItem === 'ativo')}
                 editavel={editavel}
                 ocupado={ocupado}
                 onCopiar={(x) => void aoCopiar(x)}

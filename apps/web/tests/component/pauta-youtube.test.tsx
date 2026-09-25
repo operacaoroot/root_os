@@ -122,6 +122,28 @@ describe('MD10: a seção YouTube do episódio', () => {
     expect(await within(secao()).findByText('Vai ao ar 03/09 18:00.')).toBeInTheDocument();
   });
 
+  it('com o vídeo na semana assinada, trocar a thumb ou o horário pede confirmação antes de derrubar a assinatura', async () => {
+    const itens = [{ capabilityId: 'youtube.video.enviar', itemId: 'i1', loteId: 'l1', estadoDoLote: 'ativo', estadoDoItem: 'ativo', janelaAte: '2026-09-03T23:00:00.000Z' }];
+    apiGet.mockResolvedValue(estadoDoYoutube({ conectado: true, auditoria: 'aprovada', thumbEscolhida: 2, itens }));
+    apiPut.mockResolvedValue(estadoDoYoutube({ conectado: true, auditoria: 'aprovada', thumbEscolhida: 1 }));
+    render(<SecaoYoutube token="tok" episodioId="e1" apelido="ep-01" thumbs={THUMBS} editavel podeConectar onErro={vi.fn()} />);
+    await within(secao()).findByText('canal conectado');
+
+    // O toque na thumb não grava: mostra o aviso, e "Manter" desiste.
+    await userEvent.click(within(secao()).getByRole('radio', { name: /1\. agentes no escritório/ }));
+    expect(apiPut).not.toHaveBeenCalled();
+    expect(within(secao()).getByRole('alert')).toHaveTextContent('Isto tira o vídeo da semana assinada');
+    await userEvent.click(within(secao()).getByRole('button', { name: 'Manter' }));
+    expect(within(secao()).queryByRole('alert')).toBeNull();
+    expect(apiPut).not.toHaveBeenCalled();
+
+    await userEvent.type(within(secao()).getByLabelText('Horário do vídeo (São Paulo)'), '2026-09-03T18:00');
+    await userEvent.click(within(secao()).getByRole('button', { name: 'Salvar horário' }));
+    expect(apiPut).not.toHaveBeenCalled();
+    await userEvent.click(within(secao()).getByRole('button', { name: 'Confirmar: salvar o horário novo' }));
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/pauta/episodios/e1/pacote/horario', { publicarEm: '2026-09-03T21:00:00.000Z' }, 'tok'));
+  });
+
   it('o vídeo agendado: o link do YouTube, o estado do envio, e a thumb e o horário travados', async () => {
     apiGet.mockResolvedValue(
       estadoDoYoutube({
