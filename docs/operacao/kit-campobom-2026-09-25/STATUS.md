@@ -50,3 +50,36 @@ Nota de procedência: a tag `v0.4.1` aponta para `0b5cf62` (17/09/2026 16:24), u
 - `deploy-instancia.test.ts` roda com stubs de `docker`/`curl` (`deploy/test-stubs/`) e com `docker compose config` real no caso P1; não instala nada num Colima de verdade.
 - Build da web e da imagem Docker: não rodados.
 - Pasta do kit no Drive: autorizada (Q-002), ainda não criada.
+
+## 25/09/2026 — fatia "instalar em Mac limpo" (base de frota)
+
+Commits (locais, sem push): `47d898b` regressão VPS · `51ecda8` bash 3.2 · `63fe594` modo local · `eacfc2a` porta no host · `14c551d` `--modulos` · `34ad9eb` netstat · `e47376b` tipo no teste · `cc1107c` docs.
+
+| # | Passo | Comando | Exit | Contagem |
+|---|---|---|---|---|
+| 1 | referência da VPS gravada ANTES do código | `vitest run test/deploy-instancia.test.ts -t 'Regressão VPS'` | 0 | 3 cenários (produção+painel+cliente, homologação+painel, produção no bind padrão) × 3 arquivos (`.env`, `override.yml`, chamadas ao docker) = 9 referências em `apps/api/test/fixtures/deploy-referencia/`; 2 rodadas seguidas iguais |
+| 2 | referência intocada depois das mudanças | `git diff 47d898b HEAD -- apps/api/test/fixtures/deploy-referencia \| wc -l` | 0 | 0 linhas |
+| 3 | suíte de deploy completa | `pnpm --filter @mktos/api exec vitest run test/deploy-instancia.test.ts` | 0 | 50 passados, 0 falhas, 0 pulados (eram 34), 93,6 s |
+| 4 | typecheck da api | `pnpm --filter @mktos/api typecheck` | 0 | 0 `error TS` |
+| 5 | typecheck dos testes | `pnpm --filter @mktos/api typecheck:test` | 0 | 0 `error TS` |
+| 6 | porta no host, ferramentas reais deste Mac | `/bin/bash deploy/instalar.sh --ambiente producao --tag v0.4.1 --bind-ip 127.0.0.1 --sem-llm --so-checar` | 1 | recusou as 6 portas (4000/4001 `node`, 5442/6390/9010/9011 `com.docker.backend` da instância local `rootos_local_*`); base não criada |
+| 7 | idem, homologação | mesmo comando com `--ambiente homologacao` | 0 | plano impresso: portas 4100–9013 em 127.0.0.1, endereço `http://localhost:4100`; nada criado |
+
+O que entrou:
+- Scripts rodam no `/bin/bash` explícito (3.2 neste Mac); checagem estática de recurso de bash 4+ e de ferramenta só do GNU em instalar, atualizar, lib, backup-db e stubs.
+- `--bind-ip 127.x` = máquina local: `--dominio` opcional (sem ele, `WEB_ORIGIN`/`PUBLIC_BASE_URL`/`PUBLIC_BIO_ORIGIN` = `http://localhost:<web>` e callback do Google em `http://localhost:<web>/api/google/callback`), `--painel` recusado, base padrão `~/root-os`; o `atualizar.sh` acha `~/root-os` quando `/srv/root-os` não existe.
+- Porta ouvindo no host recusa antes de criar qualquer coisa: `lsof` (macOS) → complemento `netstat` só no Darwin (o `lsof` sem sudo não vê outro usuário: medido neste Mac, 1 ouvinte em 127.0.0.1 só apareceu no `netstat`) → `ss` (Linux). `LSOF`, `SS` e `NETSTAT` stubáveis. Sem ferramenta, falha fechada.
+- `--modulos <lista|todos>` repassado ao `provisionar-tenant`; sem a flag, `--modulos todos` (na referência byte a byte).
+- `docs/INSTALACAO.md`: seção "Instalar num Mac (Colima)".
+
+Incidentes desta fatia, corrigidos:
+- A suíte passou de 60 s e o vitest saiu com exit 1 e `Timeout calling "onTaskUpdate"` com os 47 casos verdes (todo caso é `spawnSync`, o worker não atendia o RPC). Correção: `setImmediate` num `beforeEach`; nenhum timeout aumentado. O commit `eacfc2a` foi refeito (`--amend`, local) para não registrar passo vermelho.
+- `eacfc2a` entrou sem rodar `typecheck:test` (TS2345 no array de cenários); corrigido em `e47376b`.
+
+### Não provado nesta fatia
+- Instalação real num Colima: este Mac usa Docker Desktop (`docker context` = `desktop-linux`), não Colima. O encaminhamento de porta do Colima, o bind mount de `~/root-os/<amb>/vault` e o build da imagem na VM não foram exercidos.
+- Login com Google em `http://localhost:<web>` (cookie de sessão em http no Safari, URI de redirect aceita pelo console) não foi testado.
+- `ss` e `netstat` reais do Linux: o caminho `ss` só rodou contra stub (não há `ss` neste Mac).
+- `--modulos` com chave fora do catálogo: a recusa depende do provisionamento (`provisionar-tenant.ts`), não rodado aqui.
+- Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta fatia.
+- Recusa por irmã em conflito continua deixando `<base>/<amb>/.env` para trás (comportamento anterior, fora do escopo).
