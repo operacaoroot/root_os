@@ -154,6 +154,16 @@ describe('bio-oauth: os escopos de cada finalidade', () => {
     expect(instagram.urlDeAutorizacao('x'.repeat(32), { appId: 'a', secret: 's' })).toMatch(/^https:\/\/www\.instagram\.com\/oauth\/authorize\?/);
   });
 
+  it('o endereço sobrescrito em http fora desta máquina é recusado no uso: o segredo do app e o token iriam em claro', async () => {
+    process.env.INSTAGRAM_OAUTH_URL = 'http://duble.exemplo:8080/oauth/authorize';
+    expect(() => instagram.urlDeAutorizacao('x'.repeat(32), { appId: 'a', secret: 's' })).toThrow(/http fora desta máquina/);
+    process.env.INSTAGRAM_TOKEN_URL = 'http://duble.exemplo:8080/oauth/access_token';
+    await expect(instagram.trocarCodigo('codigo', { appId: 'a', secret: 's' })).rejects.toThrow(/http fora desta máquina/);
+    process.env.INSTAGRAM_GRAPH_URL = 'http://duble.exemplo:8080/graph';
+    await expect(instagram.renovar('token-longo')).rejects.toThrow(/http fora desta máquina/);
+    expect(pedidos).toEqual([]);
+  });
+
   it('o enum do Prisma é o espelho exato do shared, na mesma ordem, e a migration tem o índice parcial', () => {
     const schema = readFileSync(join(__dirname, '../prisma/schema.prisma'), 'utf8');
     const bloco = schema.match(/enum BioFinalidade \{([\s\S]*?)\}/)?.[1] ?? '';
@@ -203,7 +213,7 @@ describe('bio-oauth: com que finalidade a conexão fica', () => {
     ['bio comum', 'bio', null, LER, 'bio', null],
     ['bio comum com escopo a mais não vira publicação', 'bio', 'bio', PUB, 'bio', null],
     ['a de publicação reconectada pela bio, ainda publica', 'bio', 'publicacao', PUB, 'publicacao', null],
-    ['a de publicação reconectada pela bio, perdeu publicar', 'bio', 'publicacao', LER, 'bio', 'publicacao_perdida'],
+    ['a de publicação reconectada pela bio sem publicar fica como está', 'bio', 'publicacao', LER, 'publicacao', 'publicacao_mantida'],
   ] as const)('%s', (_n, pedida, anterior, concedidos, finalidade, aviso) => {
     expect(finalidadeDaConexao({ pedida, anterior, concedidos })).toEqual({ finalidade, aviso });
   });
@@ -464,11 +474,14 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth com banco: a conexão de publicação 
     ).rejects.toThrow(/Unique constraint|BioConexao_publicacao_unica/);
   });
 
-  it('a de publicação reconectada pela bio sem publicar deixa de ser de publicação, com aviso', async () => {
+  it('a de publicação reconectada pela bio sem publicar NÃO muda: quem só tem bio.editar não tira a conta de publicação', async () => {
+    const antes = await admin.bioConexao.findFirstOrThrow({ where: { orgId: orgA, finalidade: 'publicacao' } });
     const { volta } = await conectar(orgA, 'bio', `outra${MARCA}:sem`);
-    expect(volta).toBe('https://os.exemplo.test/bio?conexao=publicacao_perdida');
-    expect(await admin.bioConexao.count({ where: { orgId: orgA, finalidade: 'publicacao' } })).toBe(0);
-    expect((await na(orgA, () => bioA.contaDePublicacao(orgA))).conexao).toBeNull();
+    expect(volta).toBe('https://os.exemplo.test/bio?conexao=publicacao_mantida');
+    const depois = await admin.bioConexao.findUniqueOrThrow({ where: { id: antes.id } });
+    expect(depois).toMatchObject({ finalidade: 'publicacao', tokenCifrado: antes.tokenCifrado, escopos: antes.escopos });
+    expect((await na(orgA, () => bioA.contaDePublicacao(orgA))).conexao).not.toBeNull();
+    expect(await admin.auditLog.count({ where: { orgId: orgA, action: 'bio.conexao_mantida' } })).toBe(1);
   });
 
   it('cancelar na tela da Meta gasta o state e volta para a tela que pediu', async () => {

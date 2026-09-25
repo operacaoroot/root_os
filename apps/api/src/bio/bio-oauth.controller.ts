@@ -121,6 +121,16 @@ export class BioOauthController {
         plataforma === 'instagram'
           ? finalidadeDaConexao({ pedida, anterior: anterior?.finalidade ?? null, concedidos })
           : { finalidade: 'bio' as const, aviso: null };
+      if (aviso === 'publicacao_mantida') {
+        await this.audit.log({
+          orgId: registro.orgId,
+          action: 'bio.conexao_mantida',
+          entityType: 'BioConexao',
+          entityId: externalId,
+          after: { plataforma, handle, finalidadePedida: pedida, motivo: 'a conta de publicação não muda pela bio' },
+        });
+        return this.volta(res, aviso, pedida);
+      }
 
       const dados = {
         handle,

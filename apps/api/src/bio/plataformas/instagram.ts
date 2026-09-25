@@ -6,13 +6,16 @@
  */
 import type { BioFinalidade } from '@mktos/shared'
 import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_MENSAGENS, INSTAGRAM_ESCOPO_DE_PUBLICAR, pedeMensagensDoInstagram } from '@mktos/shared'
+import { urlSeguraDoFornecedor } from '../../common/url-do-fornecedor'
 
 /*
  * Os três endereços aceitam sobrescrita por ambiente só para o dublê local
  * (MD5); vazio vale o de produção. Lidos a cada chamada, e não no carregamento
- * do módulo, para a suíte poder apontar para o servidor dela.
+ * do módulo, para a suíte poder apontar para o servidor dela. Só https, ou
+ * http em loopback, como no YouTube: o segredo do app vai na troca do código
+ * e o token na query de toda leitura e publicação.
  */
-const base = (valor: string | undefined, padrao: string) => ((valor ?? '').trim() || padrao).replace(/\/$/, '')
+const base = (valor: string | undefined, padrao: string) => urlSeguraDoFornecedor(valor, padrao, 'do Instagram')
 // Leitura direta de `process.env`, e não por `env('NOME')`: a catraca de
 // credenciais (arquitetura.test.ts) só enxerga o nome fora de string.
 const AUTORIZAR = () => base(process.env.INSTAGRAM_OAUTH_URL, 'https://www.instagram.com/oauth/authorize')

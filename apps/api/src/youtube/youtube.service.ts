@@ -28,6 +28,7 @@ import {
   type VideoNoYoutube,
 } from '../pauta/cliente-do-youtube';
 import type { ConexaoDoYoutube } from './conexao-do-youtube';
+import { urlSeguraDoFornecedor } from '../common/url-do-fornecedor';
 
 /*
  * ============================================================================
@@ -71,18 +72,7 @@ const PRAZO_DA_CHAMADA_MS = 60_000;
 
 /** URL de fornecedor vinda de variável: só https, ou http em loopback (o dublê). */
 export function urlDoFornecedor(valor: string | undefined, padrao: string): string {
-  const v = (valor ?? '').trim().replace(/\/+$/, '');
-  if (!v) return padrao;
-  let u: URL;
-  try {
-    u = new URL(v);
-  } catch {
-    throw new Error(`URL do YouTube inválida: "${v}".`);
-  }
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  const loopback = host === 'localhost' || host === '::1' || /^127\./.test(host);
-  if (u.protocol === 'https:' || (u.protocol === 'http:' && loopback)) return v;
-  throw new Error(`URL do YouTube "${v}" é http fora desta máquina: o token iria em claro. Use https://.`);
+  return urlSeguraDoFornecedor(valor, padrao, 'do YouTube');
 }
 
 function listaDeEscopos(concedidos: string | null | undefined): string[] {

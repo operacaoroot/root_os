@@ -18,12 +18,18 @@ export function finalidadeDaConexao(entrada: {
   pedida: BioFinalidade;
   anterior: BioFinalidade | null;
   concedidos: readonly string[] | null;
-}): { finalidade: BioFinalidade; aviso: 'publicacao_sem_escopo' | 'publicacao_perdida' | null } {
+}): { finalidade: BioFinalidade; aviso: 'publicacao_sem_escopo' | 'publicacao_mantida' | null } {
   const podePublicar = entrada.concedidos?.includes(INSTAGRAM_ESCOPO_DE_PUBLICAR) ?? false;
   const querPublicar = entrada.pedida === 'publicacao' || entrada.anterior === 'publicacao';
   if (querPublicar && podePublicar) return { finalidade: 'publicacao', aviso: null };
   if (entrada.pedida === 'publicacao') return { finalidade: 'bio', aviso: 'publicacao_sem_escopo' };
-  if (entrada.anterior === 'publicacao') return { finalidade: 'bio', aviso: 'publicacao_perdida' };
+  /*
+   * A conta de publicação reconectada pela bio, sem publicar: NÃO é rebaixada
+   * nem tem o token trocado. Rebaixar seria desconectar a conta de publicação
+   * por quem só tem `bio.editar`, contornando o `pauta.publicar` que o
+   * desconectar exige. Quem chama não grava nada e volta com o aviso.
+   */
+  if (entrada.anterior === 'publicacao') return { finalidade: 'publicacao', aviso: 'publicacao_mantida' };
   return { finalidade: 'bio', aviso: null };
 }
 

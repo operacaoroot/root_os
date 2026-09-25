@@ -1557,7 +1557,7 @@ com Standard Access, sem App Review, desde que o @ tenha papel no app. Esta fati
 | Os escopos concedidos lidos nas formas que a Meta usa (texto ou lista, com ou sem `data[]`); ausentes = `null`, e a publicação não presume nada | `escoposConcedidos` e `trocarCodigo` em `instagram.ts` |
 | Migration `20260924220041_bio_finalidade`: enum `BioFinalidade {bio, publicacao}`, `BioOauthState.finalidade` e `BioConexao.finalidade` (padrão `bio`), índice único parcial `BioConexao_publicacao_unica` (`orgId`, `plataforma`) `WHERE finalidade = 'publicacao'`; espelho `BIO_FINALIDADES` no shared | `apps/api/prisma/`; `packages/shared/src/schemas.ts` |
 | `iniciarConexao(orgId, plataforma, finalidade)` grava a finalidade no state; publicação pelo TikTok recusada (MD12 em espera) | `apps/api/src/bio/bio.service.ts` |
-| Callback no **mesmo** `/api/conectar/instagram/callback`: `publicacao` só com `instagram_business_content_publish` concedido; sem ele, grava `bio` e volta com `publicacao_sem_escopo`. A de publicação reconectada pela bio sem publicar cai para `bio` (`publicacao_perdida`). Um segundo @ de publicação rebaixa o anterior na mesma transação; o índice parcial segura duas autorizações simultâneas. State fora do formato (16–128 base64url) volta como `expirado` sem consulta; cancelar gasta o state. A volta da publicação é `/pauta?aba=semana&conexao=<motivo>` | `bio-oauth.controller.ts`, `bio/finalidade-da-conexao.ts` |
+| Callback no **mesmo** `/api/conectar/instagram/callback`: `publicacao` só com `instagram_business_content_publish` concedido; sem ele, grava `bio` e volta com `publicacao_sem_escopo`. A de publicação reconectada pela bio sem publicar não muda (`publicacao_mantida`, revisão final de 25/09; antes caía para `bio`). Um segundo @ de publicação rebaixa o anterior na mesma transação; o índice parcial segura duas autorizações simultâneas. State fora do formato (16–128 base64url) volta como `expirado` sem consulta; cancelar gasta o state. A volta da publicação é `/pauta?aba=semana&conexao=<motivo>` | `bio-oauth.controller.ts`, `bio/finalidade-da-conexao.ts` |
 | `POST /pauta/instagram/conectar` (`pauta.publicar` **e** `bio.editar`) devolve a URL; `GET /pauta/instagram/conexao` (`pauta.ver`) devolve @, escopos, validade, status e se há credencial, nunca o token. Conectar não pergunta ao interruptor (autorizar não sai da casa, como `IntegrationsService.autorizar`) | `apps/api/src/pauta/conta-de-publicacao.controller.ts`, `BioService.contaDePublicacao` |
 | O token de 60 dias da conta de publicação passa a ser renovado pelo sync agendado da bio (antes só a conta de desafio era renovada, e a de publicação morreria em 60 dias) | `BioSyncService.renovarContasDePublicacao` |
 | Graph da trilha do Facebook de `v21.0` para `v24.0` (padrão de `META_GRAPH_URL` e o diálogo do OAuth); o texto que dizia que mudar a redirect exige App Review foi corrigido (sem fonte; o que exige é recadastrar no console) | `apps/api/src/meta/meta.service.ts`, `integrations.controller.ts`, `bio-oauth.controller.ts`, `CLAUDE.md` |
@@ -1630,7 +1630,11 @@ nas três variáveis; credencial de app fictícia no ambiente):
 Recusado: reconectar pela bio a conta que era de publicação continua podendo rebaixá-la
 (`publicacao_perdida`). O @ só é conhecido depois do OAuth, e o token novo, sem o escopo de
 publicar, já substituiu o antigo na mesma linha; manter `publicacao` faria a MD6 falhar na hora do
-post. O aviso na volta é o que sobra.
+post. O aviso na volta é o que sobra. **Revertido na revisão final (25/09):** o callback da bio
+deixou de gravar quando a conexão era de publicação e o token novo não publica: a linha fica como
+estava (finalidade e token), volta `publicacao_mantida` e o RASTRO registra `bio.conexao_mantida`.
+Rebaixar ali era desconectar a conta de publicação com só `bio.editar`, contornando o
+`pauta.publicar` do desconectar.
 
 **Medido depois da correção**: `pnpm typecheck` 7/7; `typecheck:test` limpo; api direto com
 `TEST_DATABASE_URL` **2775 de 2775** em 67 arquivos (`bio-oauth` 26 → 32); sem ele, 2184 passados e

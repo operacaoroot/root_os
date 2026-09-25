@@ -210,8 +210,8 @@ function MensagemDeRetorno({ motivo }: { motivo: string }) {
     expirado: 'O pedido de conexão expirou. Tente de novo.',
     sem_credencial: 'Falta cadastrar a credencial do app dessa plataforma.',
     conta_pessoal: 'Conta pessoal não tem API. Converta para Profissional (Criador ou Empresa) e tente de novo.',
-    publicacao_perdida:
-      'Conta conectada à bio. Ela era a conta de publicação, e esta autorização não inclui publicar: reconecte pela aba Semana da Pauta.',
+    publicacao_mantida:
+      'Esta conta é a de publicação da empresa, e a conexão pela bio não a troca nem tira dela o publicar: nada mudou. Para reconectar, use a aba Semana da Pauta.',
     erro: 'Não foi possível concluir a conexão.',
   };
   const bom = motivo === 'ok';
