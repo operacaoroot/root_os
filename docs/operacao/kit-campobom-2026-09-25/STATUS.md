@@ -215,3 +215,42 @@ Comando: `/bin/bash deploy/instalar.sh --ambiente producao --base <scratch>/ensa
 - LLM: instalado com `--sem-llm`.
 - Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta etapa.
 - A imagem `rootos-app:v0.4.2-77a7f7b91bb5` (2,35 GB) ficou no Docker deste Mac (o `down -v` não apaga imagem); o disco de dados está em 98%.
+
+## 25/09/2026 — Q-004 fechada (decisão do Pedro registrada em DUVIDAS.md)
+
+Commits locais, sem push: `a3739f9` (cherry-pick `-x` de `c9f5784`) · `7f8a762` (resposta da Q-004). Tag anotada `v0.4.2` refeita com `git tag -f -a` → `7f8a762` (objeto `1fe5fcb`; era `43d234d` → `77a7f7b`). `git ls-remote --tags origin v0.4.2`: vazio, a tag nunca foi publicada.
+
+### Suítes (um Postgres `pgvector/pgvector:pg16` por rodada, banco `ckit_<rótulo>_test` em `127.0.0.1:554xx`, `db:deploy` + `db:seed:politica` antes, `conferir-suite.mjs` da CI)
+| Rodada | Repo | Exit | Contagem |
+|---|---|---|---|
+| `pnpm --filter @mktos/policy test` | kit `a3739f9` | 0 | 74/74, 2 arquivos, 0 pulados; `conferir` exit 0 |
+| api inteira ×4 | base `98d8ed4` | 0 ×4 | 1.809/47, 0 falha, 0 pulado; 0 `AuditLog_orgId_fkey` |
+| api inteira ×4 | kit | 0 ×4 | 1.921/52, 0 falha, 0 pulado; 0 `AuditLog_orgId_fkey` |
+| web e depois api, mesmo banco (a ordem do `suite-padrao.sh` da manhã) | base | api 1 | 1.808/1.809: `onboarding.test.ts:1456` "expected null not to be null" |
+| idem | kit | api 0 | 1.921/1.921 |
+| `rotas-publicas-tenant.test.ts` sozinho | base · kit | 0 · 0 | 38/38 · 38/38 |
+
+- **Q-004 (b) herdado:** `git diff --stat 98d8ed4 HEAD -- apps/api/test/rotas-publicas-tenant.test.ts` → 0 linhas. A falha do `afterAll` apareceu nas duas rodadas da manhã (base e kit, log da base em `…/scratchpad/prova/base/test_api.log:878`) e em nenhuma das 10 de agora. É intermitente: corrida entre arquivos da api em paralelo no mesmo banco. A base mostrou a mesma família de falha em outro arquivo (`onboarding`). Nenhum teste de produto mexido, nenhum timeout aumentado.
+- **Q-004 (c) herdado:** `pnpm test` literal (turbo, modo estrito) não foi rodado de novo; segue como no fato 3.
+
+### Diff desde o ensaio
+`git diff 77a7f7b HEAD --stat`: 4 arquivos, 90+/2− antes deste registro. Fora de `docs/` e de `*.test.ts`: 0 arquivos (`grep -vE` exit 1). O ensaio não foi repetido: a imagem e o código de runtime são os de `77a7f7b`.
+
+### Bundle
+`git bundle create …/root_os/bundles/rootos-v0.4.2.bundle root-os/kit-instalacao-mac v0.4.2` → `git bundle verify` exit 0, 2 refs (`7f8a762` branch, `1fe5fcb` tag), "complete history". Recriado depois deste registro, porque a branch anda com este commit de documentação (a tag não muda). Varredura de padrão de segredo na árvore da tag: 0 arquivos; 0 `.env` versionado.
+
+### Disco do Docker deste Mac (`docker system df`)
+| | Imagens | Volumes locais | Build cache | `df -h` livre |
+|---|---|---|---|---|
+| antes | 51 · 77,74 GB | 285 · 13,59 GB | 30,17 GB | 10 GiB (98%) |
+| depois | 50 · 75,66 GB | 272 · 12,65 GB | 30,17 GB | 12 GiB (98%) |
+
+- `docker image rm rootos-app:v0.4.2-77a7f7b91bb5` → exit 0 (`sha256:cb354cda…`, 0 containers a usavam). Nada de prune.
+- **Fora do pedido, declarado:** o `docker rm -f` das 13 rodadas acima deixou 13 volumes anônimos (o `pgvector` declara `VOLUME`). Antes de remover, cada um foi conferido: rótulo `com.docker.volume.anonymous`, sem container, criado entre 14:46 e 14:59 de hoje, e o catálogo `global/` de cada um contém o nome `ckit_<rótulo>_test` de uma destas rodadas (13/13). `docker volume rm` dos 13 → exit 0; os volumes voltaram a 272, a contagem de antes desta etapa. O pedido dizia "só a imagem"; estes eram os bancos descartáveis desta própria etapa.
+- `rootos_local_*`: 3 containers "Up", intocados.
+
+### Não provado nesta etapa
+- `pnpm test` literal exit 0 (Q-004 c, herdado).
+- A causa exata da corrida da api (qual arquivo grava `AuditLog` na org padrão durante o `afterAll`) não foi isolada; a correção é tarefa da main, fora do kit.
+- `/api/health/versao` com o commit novo `7f8a762`: o ensaio rodou em `77a7f7b` e não foi repetido.
+- Pasta do kit no Drive (`kit-rootos-v0.4.2`): continua sem existir; não tocada nesta etapa.

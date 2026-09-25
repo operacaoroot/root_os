@@ -67,3 +67,16 @@ Tag local `v0.4.2` → `77a7f7b`; bundle `…/root_os/bundles/rootos-v0.4.2.bund
 
 ### Não provado (atualizado)
 - `pnpm test` exit 0 (Q-004), `test-cli.mjs` (ausente), `pg_restore --list` (dump é SQL puro), Colima real, login humano, LLM.
+
+## Atualização 25/09/2026 — Q-004 fechada
+
+Tag local `v0.4.2` refeita → `7f8a762` (objeto `1fe5fcb`). `c9f5784` entrou por `cherry-pick -x` (`a3739f9`), exceção única à Q-001. `git diff 77a7f7b 7f8a762 --stat`: 4 arquivos, todos de teste ou docs (`packages/policy/test/politica.test.ts` 2+/2−, `DUVIDAS.md`, `RELATORIO.md`, `STATUS.md`). O ensaio não foi repetido.
+
+| Verificação | Exit | Contagem |
+|---|---|---|
+| policy (banco descartável) | 0 | 74/74, 2 arquivos, 0 pulados |
+| api inteira, base `98d8ed4` | 0 em 4 rodadas, 1 em 1 | 1.809/47; a rodada vermelha falhou em `onboarding.test.ts`, e a de antes em `rotas-publicas-tenant` `afterAll` |
+| api inteira, kit | 0 em 5 rodadas | 1.921/52 |
+| `rotas-publicas-tenant.test.ts` sozinho | 0 · 0 | 38/38 na base e no kit |
+
+Os dois vermelhos da api são herdados e intermitentes: o arquivo é idêntico na base (`git diff 98d8ed4 HEAD -- <arquivo>` vazio). O `pnpm test` literal pelo turbo segue declarado (Q-004 c).
