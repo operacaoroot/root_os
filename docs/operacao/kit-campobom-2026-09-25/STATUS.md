@@ -16,7 +16,7 @@ Worktree: `/Users/pedro/orca/workspaces/root_os/campobom-kit` · branch `root-os
 | 4b | typecheck da api | `pnpm --filter @mktos/api typecheck` | 0 | 0 `error TS` (antes de 3a–3c: exit 2, 1.530 erros) |
 | 4c | typecheck dos testes | `pnpm --filter @mktos/api typecheck:test` | 0 | 0 `error TS`; 52 entradas em `apps/api/test/` |
 
-Observação: num worktree novo, o typecheck só fica verde depois de 3a, 3b e 3c. Sem eles dá 1.530 erros (Prisma Client ausente) e depois 162 e 47 (pacotes `@mktos/shared` e `@mktos/policy` sem `dist/`). Nenhum código foi alterado para chegar ao verde.
+Observação: num worktree novo, o typecheck só fica verde depois de 3a, 3b e 3c. Sem eles dá 1.530 erros (Prisma Client ausente) e depois 162 e 47 (pacotes `@mktos/shared` e `@mktos/policy` sem `distribuicao/`). Nenhum código foi alterado para chegar ao verde.
 
 ### Não provado nesta fase
 - Teste de deploy de instância: o arquivo não existe na base `98d8ed4` (Q-001). Linha de base de deploy **ausente**.
@@ -41,7 +41,7 @@ Respostas de Q-001, Q-002 e Q-003 registradas em `DUVIDAS.md` (commit `9c2481a`)
 | 8b | typecheck da api | `pnpm --filter @mktos/api typecheck` | 0 | 0 `error TS` |
 | 8c | typecheck dos testes | `pnpm --filter @mktos/api typecheck:test` | 0 | 0 `error TS`; 57 entradas em `apps/api/test/` (eram 52) |
 
-**Pré-requisito de worktree novo (vale para toda sessão):** depois de `pnpm install --frozen-lockfile`, rodar `pnpm --filter @mktos/api db:generate`, `pnpm --filter @mktos/shared build` e `pnpm --filter @mktos/policy build` antes de typecheck ou teste. Sem eles, o typecheck da api dá 1.530 erros (Prisma Client ausente) e depois 162 e 47 (`dist/` ausente em `@mktos/shared` e `@mktos/policy`).
+**Pré-requisito de worktree novo (vale para toda sessão):** depois de `pnpm install --frozen-lockfile`, rodar `pnpm --filter @mktos/api db:generate`, `pnpm --filter @mktos/shared build` e `pnpm --filter @mktos/policy build` antes de typecheck ou teste. Sem eles, o typecheck da api dá 1.530 erros (Prisma Client ausente) e depois 162 e 47 (`distribuicao/` ausente em `@mktos/shared` e `@mktos/policy`).
 
 Nota de procedência: a tag `v0.4.1` aponta para `0b5cf62` (17/09/2026 16:24), um commit depois de `d7ac2f6`; `d7ac2f6` é ancestral da tag.
 
@@ -286,3 +286,52 @@ Decisões de desenho (registradas no PLANO/CLAUDE do kit):
 - Credenciais do Google e URI de redirect (Q-005).
 - Tempo de instalação ("1 a 2 horas" no LEIA-ME é estimativa, marcada como tal).
 - Colima real, login humano, reinício do Mac: continuam como no ensaio.
+
+## 25/09/2026 — furos do ensaio a frio corrigidos no kit (`kit-rootos-v0.4.2`)
+
+Q-001 a Q-003 já estavam respondidas em DUVIDAS.md (seção "Respostas", 25/09); nada reaberto. Abertas: **Q-006** (contato da FullBPO; bloqueia a entrega à Campo Bom) e **Q-007** (resíduos do produto no bundle; não bloqueia). Escrita só no worktree e na pasta do kit.
+
+### O que mudou, por furo
+| # | Furo | Correção |
+|---|---|---|
+| 1 | rodar de novo depois da Fase 3 dava beco sem saída | a Fase 1 mede o estado da instalação (`nenhuma`, `em_andamento`, `concluida_ok`, `concluida_falha`, `interrompida`, item 10) e o workflow retoma: em andamento só espera, terminada só relê as evidências (exit, 10/10, commit da instância, conta de vazamento), nunca instala por cima. O `modo: 'verificar'` também relê as evidências da Fase 3. Os três OKs são pedidos antes da primeira rodada (CLAUDE.md, PLANO e LEIA-ME) |
+| 2 | espera de 1 a 2 h sem mecanismo nem teto; Mac dormindo | cada rodada de espera é um agente que roda `caffeinate -i -t 540 -w <pid>` (volta em até 9 min, sem `sleep`); o laço é do script, teto de 180 min e 60 rodadas, depois `aguardando_operador` retomável; processo morto sem `.exit` = vermelho. A instalação roda dentro de `caffeinate -ims`; a Fase 3 não dispara na bateria (`pmset -g batt`), e o LEIA-ME pede tomada e tampa aberta |
+| 3 | rede testava 2 endereços; falha no passo 5 deixava a instância pela metade | 17 endereços (Homebrew, VM do Colima, Docker Hub e CDN, deb.debian.org, npm, binaries.prisma.sh, fontes do Google, login do Google) com `--cacert /etc/ssl/cert.pem` (inspeção de SSL = exit 60 = vermelho) e detecção de proxy. Instalação que não fechou: item 0 da Fase 3, com `okRecomecar`, uma vez, só com 0 containers e 0 volumes, move a tentativa para `~/RootOS/falhas/` (fora da base, para não virar "irmã"); nada é apagado. Corrigido também "etapa 7" → 5 (o build é o passo 5/10 do `instalar.sh`) |
+| 4 | PATH do brew fora dos blocos | `export PATH=…` na primeira linha de 11 blocos; guarda no item 4 da Fase 2 (`test -x "$P/docker-compose"` antes de gravar) e no item 8 da Fase 4 (`test -x "$D/docker"`); `lsof`, `netstat`, `sysctl` e `scutil` por caminho completo (fora do PATH davam 0 linhas = verde falso) |
+| 5 | sem contato na FullBPO; retorno pelo Drive não conferido | seção "Contato na FullBPO" no LEIA-ME com a marca `PENDENTE (Q-006)` e a Fase 1 reprovando enquanto ela existir; teste de escrita em `retorno/` (vermelho se falhar) e detecção de pasta fora do Drive (relatório à mão ao contato) |
+| 6 | o bundle levava o CLAUDE.md interno | o `CLAUDE.md` da raiz do bundle é o contrato da máquina (`distribuicao/CLAUDE.md`); a Fase 2 grava o mesmo em `~/RootOS/CLAUDE.md`, que cobre `~/RootOS/codigo` e `~/RootOS/instancia/producao/repo` |
+| 7 | evidências internas, caminhos e histórico no bundle | bundle de distribuição montado por `distribuicao/montar-bundle.sh`: um commit sem pai, só a tag `v0.4.2`, identidade `ROOT OS <release@rootos.invalid>`, árvore de `7f8a762` menos 33 arquivos internos (28 de `docs/operacao/`, `tools/clickup-inventario.py`, 4 docs com caminho do Mac ou de operação) e com `CLAUDE.md` trocado e `.claude/settings.json` novo |
+| 8 | docker de leitura liberava segredo; sem trava técnica | CLAUDE.md proíbe `docker inspect`, `docker compose config`, `docker exec … env/printenv/sh/bash/cat`, `docker exec` em api/web/minio/redis, `ps`, e a ferramenta Read/Grep nos arquivos de segredo. `.claude/settings.json` (kit, `~/RootOS/.claude/` e raiz do bundle): 17 `allow` de leitura, 130 `deny` (Read/Edit dos segredos, as formas de docker/ps/env, `cat/head/tail/less/more/open/strings/xxd/base64/cp` nos 3 arquivos em 3 grafias, destrutivos, git remoto, `sudo`) e `disableBypassPermissionsMode: disable`. O LEIA-ME manda aprovar comando um a um, sem "don't ask again" |
+
+### Evidência
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | `distribuicao/montar-bundle.sh` duas vezes, áreas novas | 0 · 0 | mesmo sha256 `6ae67cc0…7c31` nas duas; commit `fff7fb9e1da12c382d0b847fce46d12972a37d87`, tag `ad9bbe0` |
+| b | `git clone` do bundle do kit + `checkout --detach v0.4.2` + `git -C <clone> bundle verify` | 0 · 0 · 0 | HEAD = `v0.4.2^{commit}` = `fff7fb9…`; `rev-list --all` 1; refs 1; `list-heads` 1 (só a tag); `status --porcelain` 0 |
+| c | `git clone --branch v0.4.2 --depth 1` (o que o `instalar.sh` faz) | 0 | HEAD `fff7fb9…` (antes, com o bundle antigo: mesmo aviso "is not a commit", mesmo exit) |
+| d | identidades no histórico do bundle | — | 1: `release@rootos.invalid` (autor, committer e tagger) |
+| e | `git diff --name-status` árvore `7f8a762` × distribuição | 0 | 33 D, 1 M (`CLAUDE.md`), 1 A (`.claude/settings.json`); nada fora de `docs/`, `tools/clickup-inventario.py`, `CLAUDE.md` e `.claude/` |
+| f | varredura da árvore do bundle: `/Users/pedro`, `GoogleDrive-pedro`, IPs das duas VPS, `srv1983380`, `vps-root`, space do ClickUp, `marketin-os-mcp` | 1 | 0 arquivos (o 1 acerto do padrão largo é o nome do grupo de WhatsApp num doc do produto: Q-007) |
+| g | varredura de chaves no bundle (sk-ant, AKIA, ghp_, GOCSPX, chave privada, JWT) e `.env` versionado | 1 | 0 · 0 |
+| h | varredura do kit sem o bundle: e-mails da equipe, `fullbpo.com`, CNPJ, caminhos, IPs, chaves | 1 | 0 · 0 |
+| i | referência a arquivo removido em código que o build lê | — | 0 leituras; 12 linhas citam `docs/PAUTA.md` em comentário ou texto de tela; nenhuma lê o arquivo |
+| j | harness do workflow com `agent()` simulado (`distribuicao/harness-workflow.mjs`) | 0 | **32/32 cenários**, entre eles: retomada em andamento sem disparar; concluída sem espera; falha sem OK → aguardando; recomeço com containers antigos → vermelho; segunda falha → vermelho; bateria → aguardando antes de disparar; processo morto → vermelho; 180 min → aguardando; 60 rodadas → aguardando (64 agentes); rede 12/17 com agente dizendo verde → vermelho; proxy; contato pendente; retorno sem escrita; commit antigo `7f8a762` no ar → vermelho |
+| k | workflow: `Date.now`/`Math.random`/`new Date` | 1 | 0 |
+| l | ensaio do padrão disparar/esperar num `$HOME` falso (`env -i`, PATH curto) | 0 | estado `nenhuma` → `em_andamento` → `concluida_ok`; `caffeinate -t -w` voltou ao fim do processo; `terminou=1 vivo=0` |
+| m | guardas do PATH com `env -i PATH=/usr/bin:/bin` | 0 | sem o export: `PARE … /lib/docker/cli-plugins` e `PARE … D=.` (o defeito reproduzido e barrado); com o export: `docker em /usr/local/bin` |
+| n | laço de rede do item 11 neste Mac | 0 | 17/17 com curl exit 0 e código ≠ 000; proxy 0 · 0 |
+| o | comandos do PLANO × `deny` (casamento por prefixo, aproximação) | 0 | 559 subcomandos, 1 negado: `sudo pmset …`, que a pessoa roda no Terminal dela, de propósito |
+| p | exemplos de vazamento do ensaio × `deny` (mesma aproximação) | 0 | 14/14 negados |
+| q | `grep -c 'PENDENTE (Q-006)' LEIA-ME.md` | 0 | 1: o kit reprova na Fase 1 até a Q-006 ser respondida |
+| r | `shasum -a 256 -c SHA256SUMS` (gerado por último) | 0 | 9/9 `OK` |
+
+### Não provado nesta etapa
+- As regras de `.claude/settings.json` numa sessão real do Claude Code: a conferência (o, p) é por prefixo, feita por script; o casamento de verdade do Claude Code (comando composto, aspas, caminho absoluto do binário) não foi exercido. A trava cobre as grafias comuns, não todas; a regra do CLAUDE.md segue sendo a proteção principal.
+- Quantos pedidos de permissão a espera gera por rodada (as atribuições `L=…` e o bloco composto podem pedir OK mesmo com os `allow`).
+- O workflow rodando de verdade pela ferramenta Workflow, a espera de 1 a 2 h e o `caffeinate` mantendo um MacBook acordado com a tampa aberta: só o fluxo de controle (j) e o padrão num `$HOME` falso (l).
+- O processo em segundo plano sobrevivendo ao fim do comando da ferramenta de terminal do Claude.
+- Build da imagem a partir da árvore de distribuição `fff7fb9`: não rodado (o disco deste Mac está em 98%); a árvore só difere de `7f8a762` em docs, `tools/` e `.claude/`, que o Dockerfile copia mas o build não lê.
+- O item 0 (recomeço) contra uma instância pela metade de verdade.
+- Inspeção de SSL e proxy numa rede corporativa: só a lógica, numa rede sem proxy.
+- Drive compartilhado só para leitura: a escrita local passa e o envio falha depois; o kit declara, não detecta.
+- Contato da FullBPO (Q-006) e o enxugamento do bundle (Q-007).

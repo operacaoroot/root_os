@@ -68,3 +68,32 @@ Enquanto não houver resposta: nenhum teste de produto foi mudado. As outras fre
 - (c) instalar sem `--cliente` (só a conta `admin@marketing-os.local` com senha) e ligar o Google depois — muda a Fase 3 e o portão da Fase 4 (sem empresa `campo-bom`).
 
 Enquanto não houver resposta: o kit fica como está (opção a ou b servem sem mudar arquivo).
+
+## Q-006 · 25/09/2026 · BLOQUEIA a entrega do kit à Campo Bom (não bloqueia as outras correções)
+
+**Fato:** o ensaio a frio achou que o kit repete "pare, escreva em `retorno/`, a decisão é da FullBPO" sem dizer quem é essa pessoa na FullBPO. Nome, telefone e e-mail de quem atende a instalação não existem em nenhum arquivo do kit nem do worktree, e escolher quem atende o cliente é decisão do Pedro. O kit agora tem a seção "Contato na FullBPO" no `LEIA-ME.md` com a marca `PENDENTE (Q-006)`, e a Fase 1 (item 1b do `PLANO.md`, `contatoPreenchido` no workflow) reprova enquanto a marca estiver lá: o kit não roda por engano antes da resposta.
+
+**Pergunta:** quem é o contato da instalação (nome, telefone, e-mail)?
+- (a) Pedro Magnago, `pedro.magnago@fullbpo.com`, com o telefone que o Pedro indicar;
+- (b) o canal oficial da FullBPO que está no rodapé do timbrado (`(61) 9.9862-8541`, `fullbpo.com`; fonte: `FullBPO/CLAUDE.md`, seção "Timbrado oficial"), com um e-mail a definir;
+- (c) outra pessoa.
+
+E, junto: a pasta vai à Campo Bom como pasta compartilhada do Drive **com permissão de editar** (o relatório só volta assim)? Se for só leitura ou `.zip`, o kit já manda enviar o relatório à mão ao contato.
+
+Com a resposta: trocar as duas linhas da seção no `LEIA-ME.md` (sem a marca), regerar o `SHA256SUMS` e conferir `grep -c 'PENDENTE (Q-006)' LEIA-ME.md` → 0.
+
+## Q-007 · 25/09/2026 · NÃO bloqueia; decide se o bundle vai mais enxuto
+
+**Fato:** o bundle novo (`fff7fb9`, um commit, sem histórico nem branch, autor `ROOT OS <release@rootos.invalid>`) tirou o que o ensaio apontou: `CLAUDE.md` interno (trocado pelo contrato da máquina), `docs/operacao/` inteira (28 arquivos, com o inventário da VPS ROOT, IP e `ssh vps-root`), `tools/clickup-inventario.py` (ID do space do ClickUp) e os três docs com caminho do Mac do Pedro (`docs/DEPLOY-12-09-2026.md`, `docs/WORKFLOW-MADRUGADA-CLAUDE.md`, `docs/PAUTA.md`), mais `docs/ACOMPANHAMENTO-MADRUGADA-CODEX.md`. Ficou, por ser código ou documentação do produto que a remoção por arquivo não alcança sem mexer em código:
+- 2 arquivos com `pedro.magnago@fullbpo.com` (comentário em `apps/api/prisma/seed-politica.ts` e um teste);
+- 1 teste com o JID real do grupo de WhatsApp (`apps/api/test/canal-de-aprovacao.test.ts`), sem a receita de SQL nem o acesso à VPS;
+- 12 arquivos com nomes da equipe (testes e docs), 6 com o padrão `Cardozo & Saggioro` (default de `CLICKUP_IGNORE_TEAMS`), 1 doc com o nome do grupo "ROOT | Estratégia e Produto";
+- 13 docs do produto que descrevem a arquitetura da VPS em termos gerais (sem IP, sem alias de ssh);
+- 7 arquivos com `operacao.root@gmail.com`, que é o contato público da política de privacidade.
+
+**Pergunta:** o bundle da Campo Bom
+- (a) vai assim (o que ficou é código e documentação do produto, sem segredo, sem IP, sem receita de acesso);
+- (b) vai sem `docs/` inteira e sem as pastas de teste (`apps/*/test`, `apps/web/tests`), que o build da imagem não usa; exige provar o build de novo;
+- (c) outra.
+
+Enquanto não houver resposta: vale (a). O `montar-bundle.sh` tem a lista `REMOVER` num lugar só.
