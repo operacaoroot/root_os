@@ -414,3 +414,54 @@ Escrita só na pasta do kit (8 arquivos de texto + `SHA256SUMS`) e, no worktree,
 - A checagem do item 1b só foi exercida por script neste Mac (d); o agente preenchendo `contatoPreenchido` numa sessão real do Claude Code não foi exercido, como o resto do workflow (só o fluxo de controle no harness).
 - O cliente OAuth da Root (projeto, URI de redirect cadastrada, revogação) não existe neste kit nem foi conferido: é trabalho da Root fora do kit, e o relatório da Campo Bom lista como "Pendências da Root".
 - A pasta compartilhada com a Campo Bom com permissão de editar: decisão registrada, compartilhamento não feito nem conferido nesta etapa.
+
+## 25/09/2026 — Furos do ensaio a frio corrigidos no kit (7 achados) e distribuição `af2923d`
+
+Escrita só no worktree (branch `root-os/kit-instalacao-mac`), no scratchpad e na pasta do kit. Decisões Q-005 (a), Q-006, Q-007 (b) e MARCA reconfirmadas em DUVIDAS.md; abertas **Q-009** (o Drive e o convite são da FullBPO) e **Q-010** (comentários do código que descrevem a VPS). Cópia do kit antes desta etapa: `scratchpad/kit-antes-furos/` (9/9 `OK` no SHA256SUMS de antes).
+
+Commits (locais, sem push): `612f7a9` instalador passa `MCP_ACTION_PASSWORD` ao seed · `d1c5731` distribuição sem override da VPS e `.stignore`, com o patch do instalador e sem `caffeinate` liberado.
+
+### Achado por achado
+| # | Achado | O que mudou |
+|---|---|---|
+| 1 | "Contato na Root" com e-mail da FullBPO; item 1b aceita qualquer e-mail | O e-mail fica (decisão Q-006 e exceção da regra de marca). Item 1b agora recusa endereço de exemplo (`@example.com/.org/.net`). Drive e convite da FullBPO → Q-009 |
+| 2 | Mac limpo sem `docker-buildx`; o passo 5/10 depende dele | PLANO: `brew install colima docker docker-compose docker-buildx`; item 4 da Fase 2 prova `docker-compose` **e** `docker-buildx` na pasta de plugins; `docker buildx version` no Fase 1 item 7 e no Portão 2. Workflow: `buildxOk` obrigatório no portão da Fase 2. CLAUDE.md do kit: OK de programas cita o buildx |
+| 3 | Pedido de retomada sem o e-mail do admin → Verificação vermelha | Workflow: `PEDIDO_ESPERA` leva `com o e-mail do admin <e-mail>` (o informado, ou o marcador); sem e-mail válido a Verificação para em `aguardando_operador` pedindo o e-mail, em vez de rodar com `adminCriado=0` |
+| 4 | Pasta "Compartilhada comigo" não aparece no Finder | LEIA-ME: seção nova "Como deixar esta pasta no Finder" (Drive para computador, Organizar → Adicionar atalho → Meu Drive, onde achar no Finder, não baixar) |
+| 5 | Senha da conta `ia-acao@` impressa em claro no log e copiável para `retorno/` | `deploy/instalar.sh` gera a senha, passa `-e MCP_ACTION_PASSWORD` ao `db:seed` e não a grava em arquivo (a conta não tem usuário; nasce com senha que ninguém conhece). PLANO: frase do log reescrita, `grep -c 'senha gerada'` → 0 no item 6, `umask 077` nos disparos e `chmod 700 ~/RootOS/logs`, as 30 linhas do log vão ao relatório sem linha `senha gerada`. Workflow: `senhaGeradaNoLog` obrigatório e reprovando no portão do fim; prompts do fim e do Relatório tiram a linha e a contam |
+| 6 | `Bash(caffeinate -i -t:*)` liberava qualquer comando embrulhado | Linha removida das 3 cópias (`.claude/settings.json` do kit, `rootos-home/settings.json`, `.claude/settings.json` do bundle). A espera pede OK a cada rodada: dito no PLANO, no CLAUDE.md do kit, no LEIA-ME e no prompt da espera ("nada é escrito depois do `-w <pid>`") |
+| 7 | Bundle com `docker-compose.vps.yml` e `.stignore` | Os dois entram na lista `REMOVER` do `montar-bundle.sh`; o texto da distribuição no PLANO diz o que saiu e o patch que entrou. Resíduo em comentários do produto → Q-010 |
+
+### Evidência
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | `vitest run test/deploy-instancia.test.ts` antes de mexer na referência | 1 | 64/67; 3 falhas, só a regressão VPS: `diff` referência × saída = **1 linha por cenário** (o `-e MCP_ACTION_PASSWORD`); `.env` e `override.yml` sem divergência |
+| b | mesma suíte depois de trocar a linha nas 3 referências (`cmp` referência × saída atual: 3/3 iguais) | 0 | **67/67** |
+| c | `pnpm --filter @mktos/api typecheck:test` | 0 | 0 `error TS` |
+| d | `git diff --quiet v0.4.2 612f7a9~1 -- deploy/instalar.sh` · `git diff v0.4.2 612f7a9 -- deploy/instalar.sh > instalar-senha-acao.patch` | 0 · 0 | patch de 29 linhas, aplicado por `git apply --cached` na árvore da tag |
+| e | `montar-bundle.sh` duas vezes, áreas novas | 0 · 0 | mesmo sha256 `73203b51…2268` (2.143.377 bytes); commit `af2923decb9c81148538d24e3a0725c6345ee57d`, árvore `65a7c43`, tag `cc65426` |
+| f | clone do bundle + `checkout --detach v0.4.2` | 0 · 0 | HEAD = tag = `af2923d…`; `rev-list --all` 1; `list-heads` 1; `status --porcelain` 0; autor/committer `ROOT OS <release@rootos.invalid>`; 582 arquivos |
+| g | `git diff --name-status` bundle anterior (`3397140`) × novo | 0 | 4 linhas: `D .stignore`, `D docker-compose.vps.yml`, `M deploy/instalar.sh` (igual ao da branch, `cmp` 0), `M .claude/settings.json` (0 `caffeinate`) |
+| h | ensaio real: `deploy/instalar.sh --ambiente producao --base <scratch>/ens2/ensaio --repo <bundle do kit> --tag v0.4.2 --bind-ip 127.0.0.1 --portas web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021 --cliente campo-bom --modulos todos --admin-email ensaio@exemplo.com --sem-llm`, do clone do bundle do kit, Google sintético | **0** | 10/10 passos; `grep -c '10/10 pronto'` 1; **`grep -c 'senha gerada'` 0** (os dois logs de ensaio anteriores, `q007/instalar.log` e `prova/ensaio-instalar.log`, tinham 1 cada, da conta `ia-acao@`); conta de vazamento 6 + 2 padrões, 0 no log; log em 600 |
+| i | `curl` health · `/login` · `/api/health/versao` | 0 | 200 · 200 · `{"version":"v0.4.2","commit":"af2923decb9c81148538d24e3a0725c6345ee57d"}` |
+| j | `psql`: `campo-bom` e usuários | 0 | `campo-bom\|11`; 4 usuários (`admin@`, `mcp@`, `ia-acao@` com hash, `ensaio@exemplo.com`); `MCP_ACTION_PASSWORD` em `.env` e `segredos-iniciais.txt`: 0 e 0 |
+| k | `docker compose -p rootos-producao down -v` · `docker image rm rootos-app:v0.4.2-af2923decb9c` | 0 · 0 | 5 containers, 3 volumes, 1 rede removidos |
+| l | foto antes × depois (containers, volumes, redes, imagens: `cmp`) | 0 · 0 · 0 · 0 | 21 · 274 · 9 · 51 linhas iguais; `rootos_local_*` 3 Up, intocados; nenhum prune |
+| m | `node harness-workflow.mjs <workflow do kit>` | 0 | **43/43** cenários (eram 34; novos: buildx ausente, prompt com buildx, `senha gerada` no log, distribuição `3397140` no ar, retomada com e sem e-mail, Verificação sem e-mail, modo verificar sem e-mail, prompt da espera) |
+| n | mordida: harness no workflow de antes · sem o portão `senhaGeradaNoLog` · sem o portão do buildx · sem a guarda do e-mail na Verificação | 1 · 1 · 1 · 1 | 23/43 · 42/43 · 42/43 · 41/43 |
+| o | item 1b: kit · LEIA-ME só com `nome@example.com` na seção | 0 · 1 | 1 (passa) · 0 (reprova) |
+| p | varredura do kit sem o bundle: `grep -rniI fullbpo` · tirando o e-mail · chaves · IPs/caminhos do Mac · `Q-00` | — | 1 linha (`LEIA-ME.md:8`, o e-mail) · 0 · 0 · 0 · 0 |
+| q | `cmp` `rootos-home/settings.json`, `.claude/settings.json` do kit × `.claude/settings.json` do bundle; `rootos-home/CLAUDE.md` × `CLAUDE.md` do bundle | 0 | iguais |
+| r | `SHA256SUMS` regerado por último (fora da pasta e copiado) + `shasum -a 256 -c SHA256SUMS` | 0 | 9 linhas, **9/9 `OK`**, 0 falhas; bundle `73203b51…2268` |
+
+Disco: livre 10.880.788 KiB antes do ensaio, mínimo 9.666.908 KiB durante, 11.795.036 KiB depois. `docker system df`: imagens 77,23 → 78,81 GB com a mesma lista (a base `node:22-slim` do build não aparece com nome), cache de build 32,15 → 34,13 GB. Sem prune, por regra.
+
+Higiene: os dois logs de ensaio anteriores no scratchpad tinham a senha sorteada da `ia-acao@` de instâncias já derrubadas; o valor foi trocado por `<removido>` nos dois (1 linha cada). A base do ensaio de hoje (`ens2/ensaio`, com o `.env` sintético) foi apagada depois do `down -v`.
+
+### Não provado nesta etapa
+- **buildx num Mac só com Colima:** a correção segue a fórmula do Homebrew (`docker-buildx` 0.37.1, mesma pasta `cliPluginsExtraDirs`, conferido com `brew info`), mas o ensaio rodou no Docker Desktop deste Mac, que traz o buildx dele. Que o `compose build` do Compose 5.5.1 falha sem o plugin continua **plausível, não reproduzido**.
+- **Passos do Drive no LEIA-ME** ("Organizar → Adicionar atalho", onde a pasta aparece no Finder): escritos pela interface conhecida do Drive, não clicados hoje.
+- **A espera pedindo OK a cada rodada** numa sessão real do Claude Code: não exercida; o harness só prova o texto do prompt e o fluxo de controle.
+- A senha da `ia-acao@` não aparece em lugar nenhum: provado no log do ensaio; a conta segue viva com permissões de escrita e senha desconhecida, que é a dívida que a catraca `arquitetura.test.ts` já registra (decisão de produto, fora do kit).
+- `umask 077` e `chmod 700 ~/RootOS/logs` do PLANO: não rodados num Mac da Campo Bom; o log do ensaio de hoje saiu com 600 porque o disparo usou `umask 077`.
+- Q-008 (FullBPO no código), Q-009 (Drive da FullBPO) e Q-010 (comentários da VPS) seguem abertas.

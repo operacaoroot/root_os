@@ -121,3 +121,33 @@ Enquanto não houver resposta: vale (a). O `montar-bundle.sh` tem a lista `REMOV
 - `apps/api/src/events/pixel-tenant.service.ts:27`: o slug `"fullbpo"` citado num comentário.
 
 **Pergunta:** o texto de tela do Financeiro fica, ou vira uma correção do produto (na main, com tag nova e novo bundle)? Os outros quatro são nome interno ou comentário e não aparecem para o usuário.
+
+## Decisões Q-005 a Q-007 e MARCA, reconfirmadas pelo Pedro (25/09/2026, com os furos do ensaio a frio)
+
+As respostas acima valem como estão; o pedido desta rodada as repete sem mudança:
+- **Q-005 = (a):** cliente OAuth num projeto Google Cloud da ROOT, um só para a Campo Bom, revogável; as duas credenciais chegam por canal separado (gerenciador de senhas), nunca no kit; a URI de redirect é cadastrada pela Root.
+- **Q-006 = contato:** Pedro Magnago, `pedro.magnago@fullbpo.com`, sem telefone. A pasta vai compartilhada no Drive com permissão de edição.
+- **Q-007 = (b):** o bundle vai sem `docs/` e sem as pastas de teste.
+- **MARCA:** quem assina a instalação é a ROOT. Nenhuma menção a "FullBPO" no kit fora do endereço de e-mail do contato.
+
+Como os furos do ensaio a frio foram tratados diante delas (evidência em STATUS.md, seção "Furos do ensaio a frio"):
+- **E-mail da FullBPO como "Contato na Root":** fica, porque é a decisão Q-006 e a regra de marca abre exceção só para esse endereço. O item 1b passou a recusar endereço de exemplo (`@example.com/.org/.net`), mas continua aceitando o do contato. O que a decisão não cobre vai à Q-009.
+- **buildx, retomada sem e-mail, pasta no Finder, senha no log, `caffeinate` liberado e arquivos da VPS no bundle:** corrigidos no kit e na distribuição, sem conflito com as decisões.
+
+## Q-009 · 25/09/2026 · NÃO bloqueia; o Drive de onde o kit sai é da FullBPO
+
+**Fato:** a pasta do kit mora em `GoogleDrive-pedro.magnago@fullbpo.com/Meu Drive/OPERACAO ROOT/…`. O convite de compartilhamento que a Campo Bom recebe, o dono da pasta que o Drive mostra e o e-mail do contato são da FullBPO, embora o kit assine como Root. O kit segue a decisão (a exceção do e-mail), e o LEIA-ME diz só "o convite chega do contato acima", sem repetir a marca.
+
+**Pergunta:** (a) fica assim; (b) a pasta passa para uma conta Google da Root (e o contato, para um endereço da Root), o que exige recompartilhar e trocar a seção "Contato na Root" do LEIA-ME e regerar o `SHA256SUMS`.
+
+Enquanto não houver resposta: vale (a).
+
+## Q-010 · 25/09/2026 · NÃO bloqueia; comentários do código ainda descrevem a VPS
+
+**Fato:** o bundle novo (`af2923d`) saiu sem `docker-compose.vps.yml` e sem `.stignore`. No código do produto sobram menções em comentário ou em modo que o kit não usa, sem IP público, ssh, chave nem segredo:
+- `deploy/backup-db.sh:54` (o Syncthing da VPS, num comentário do `BACKUP_DIR`);
+- `deploy/up.sh` e `deploy/papel-app.sh` (a flag `--vps`, que soma o `docker-compose.vps.yml`; sem o arquivo, `--vps` falha, e o kit não chama nenhum dos dois);
+- `apps/api/src/storage/storage.service.ts:8` ("na VPS as portas dele ficam bindadas em 172.17.0.1");
+- `README.md:12` e vários textos de tela/SEO com `os.operacaoroot.com` e `bio.operacaoroot.com` (endereço público do produto).
+
+**Pergunta:** ficam (são do produto e saem só com mudança na main e tag nova), ou entram numa limpeza do produto junto com a Q-008?
