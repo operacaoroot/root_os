@@ -6,7 +6,7 @@ import { apiGet, apiPost, apiUpload } from '@/lib/api';
 import type { EstadoDoLink, ItemDoLink, MapaDoCliente, NoDaTeia, RetratoDoTrilho, TeiaDoCliente } from '../../onboarding/tipos';
 
 /*
- * O LINK DO CLIENTE — o KICKOFF, não um formulário.
+ * O LINK DO CLIENTE — o KICKOFF, a estação atual de um mapa.
  *
  * Sem login (a rota está em `PUBLICAS` do AppShell): o token na URL é a
  * credencial. A página é a ESTAÇÃO ATUAL DE UM MAPA (desenho de 24/09): o
@@ -147,7 +147,7 @@ export default function LinkPage() {
           </h1>
           <p className="mt-1 text-[13.5px] leading-relaxed text-muted">
             {kickoff
-              ? `Isto é o kickoff, não um formulário.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''} — você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''}${estado.teia.contagem.daConversa ? ` E ${estado.teia.contagem.daConversa} notas já nasceram da conversa — o seu vault começa com elas.` : ''} Pode parar e voltar.`
+              ? `Você está na estação 3 de 6, o kickoff.${confirmacoes.length ? ` ${confirmacoes.length} respostas já vieram da conversa${estado.kickoffEm ? ` de ${dataCurta(estado.kickoffEm)}` : ''} — você só confirma.` : ''}${decisoesAbertas ? ` ${decisoesAbertas === 1 ? 'Falta uma decisão que só você toma' : `Faltam ${decisoesAbertas} decisões que só você toma`}.` : ''}${estado.teia.contagem.daConversa ? ` E ${estado.teia.contagem.daConversa} notas já nasceram da conversa — o seu vault começa com elas.` : ''} Pode parar e voltar.`
               : 'Cinco perguntas, uns 5 minutos. Com elas a gente chega na reunião falando da sua empresa, e não de IA em geral.'}
           </p>
           <label className="mt-4 block text-xs text-muted">Quem está respondendo?</label>
@@ -637,7 +637,7 @@ function Indice({ teia, cliente, mapa, notaAberta, aoAbrir }: { teia: TeiaDoClie
       </p>
       <h2 className="mt-1 text-[16px] font-bold">Índice — {cliente}</h2>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
-        É o pontapé inicial, e não “obrigado por responder”. Esta é a nota-mapa do seu vault: o que já existe, de onde veio e o que ainda
+        É o pontapé inicial do trabalho. Esta é a nota-mapa do seu vault: o que já existe, de onde veio e o que ainda
         falta. Tudo o que você confirmar aqui vira nota sua, com a origem de cada frase — é o contexto que a IA passa a ler antes de
         qualquer proposta, dossiê ou post.
       </p>
