@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Video, MapPin, Users, AlertTriangle } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { gravarStorage, lerStorage } from '@/central/lib/storage';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { MarcarReuniao } from './MarcarReuniao';
+import { Mes } from './Mes';
+import { Semana } from './Semana';
+import { diasDaGrade, mover, periodoDaBusca, primeiroDoMes, rotuloDoPeriodo, type Visao } from './grade';
 import {
   chaveDoDia,
   diaDoEvento,
   horaCurta,
-  rotuloCurto,
-  tomDoEvento,
   type EventoDaAgenda,
 } from './tipos';
 
@@ -35,45 +37,48 @@ import {
  *     morre em duas semanas.
  *  3. MARCAR JÁ SAI NO PADRÃO, porque o formulário não tem campo de título.
  *
+ * DUAS VISÕES, UMA BUSCA SÓ. Mês e semana pedem períodos diferentes à API
+ * (`periodoDaBusca`) e compartilham tudo o mais: o mesmo filtro, o mesmo mapa de
+ * eventos por dia e o mesmo painel do dia embaixo. A escolha fica guardada no
+ * navegador — quem trabalha na semana não quer reabrir no mês todo dia.
+ *
  * FUSO: tudo é desenhado no relógio de quem está olhando. Evento de dia inteiro
  * chega como data pura e é tratado como string (ver `diaDoEvento`) — convertê-lo
  * jogaria o compromisso para o dia anterior em Brasília.
  */
 
-const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
-
-const primeiroDoMes = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-
-/** A grade de 6×7 que cobre o mês inteiro, começando no domingo. */
-function gradeDoMes(mes: Date): Date[] {
-  const inicio = primeiroDoMes(mes);
-  const comeco = new Date(inicio);
-  comeco.setDate(1 - inicio.getDay());
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(comeco);
-    d.setDate(comeco.getDate() + i);
-    return d;
-  });
-}
-
 type Filtro = 'tudo' | 'cliente' | 'interna' | 'fora';
+
+const CHAVE_DA_VISAO = 'agenda:visao';
 
 export default function AgendaPage() {
   const { token, ready, can } = useAuth();
-  const [mes, setMes] = useState(() => primeiroDoMes(new Date()));
+  const [visao, setVisao] = useState<Visao>('mes');
+  const [ancora, setAncora] = useState(() => new Date());
   const [eventos, setEventos] = useState<EventoDaAgenda[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [diaAberto, setDiaAberto] = useState<string>(() => chaveDoDia(new Date()));
   const [filtro, setFiltro] = useState<Filtro>('tudo');
   const [trilhos, setTrilhos] = useState<string[]>([]);
 
-  const grade = useMemo(() => gradeDoMes(mes), [mes]);
+  // A visão preferida só é lida depois da montagem: o servidor não tem
+  // localStorage, e ler no primeiro render trocaria o HTML por baixo da
+  // hidratação.
+  useEffect(() => {
+    const salva = lerStorage<Visao>(CHAVE_DA_VISAO, 'mes');
+    if (salva === 'semana' || salva === 'mes') setVisao(salva);
+  }, []);
+
+  const trocarVisao = (v: Visao) => {
+    setVisao(v);
+    gravarStorage(CHAVE_DA_VISAO, v);
+  };
+
+  const dias = useMemo(() => diasDaGrade(visao, ancora), [visao, ancora]);
 
   const carregar = useCallback(() => {
     if (!token) return;
-    const de = grade[0];
-    const ate = new Date(grade[41]);
-    ate.setDate(ate.getDate() + 1);
+    const { de, ate } = periodoDaBusca(visao, ancora);
     setErro(null);
     apiGet<EventoDaAgenda[]>(
       `/google/calendar/periodo?de=${encodeURIComponent(de.toISOString())}&ate=${encodeURIComponent(ate.toISOString())}`,
@@ -81,7 +86,7 @@ export default function AgendaPage() {
     )
       .then(setEventos)
       .catch((e) => { setEventos([]); setErro(e.message); });
-  }, [token, grade]);
+  }, [token, visao, ancora]);
 
   useEffect(() => { if (ready && token) carregar(); }, [ready, token, carregar]);
 
@@ -94,12 +99,20 @@ export default function AgendaPage() {
       .catch(() => {});
   }, [ready, token, can]);
 
+  const visiveis = useMemo(
+    () =>
+      (eventos ?? []).filter((e) => {
+        if (filtro === 'cliente') return e.reuniao?.tipo === 'cliente';
+        if (filtro === 'interna') return e.reuniao?.tipo === 'interna';
+        if (filtro === 'fora') return !e.reuniao;
+        return true;
+      }),
+    [eventos, filtro],
+  );
+
   const porDia = useMemo(() => {
     const m = new Map<string, EventoDaAgenda[]>();
-    for (const e of eventos ?? []) {
-      if (filtro === 'cliente' && e.reuniao?.tipo !== 'cliente') continue;
-      if (filtro === 'interna' && e.reuniao?.tipo !== 'interna') continue;
-      if (filtro === 'fora' && e.reuniao) continue;
+    for (const e of visiveis) {
       const dia = diaDoEvento(e);
       if (!dia) continue;
       const lista = m.get(dia) ?? [];
@@ -107,7 +120,7 @@ export default function AgendaPage() {
       m.set(dia, lista);
     }
     return m;
-  }, [eventos, filtro]);
+  }, [visiveis]);
 
   const clientesConhecidos = useMemo(() => {
     const s = new Set<string>(trilhos);
@@ -123,7 +136,15 @@ export default function AgendaPage() {
 
   const foraDoPadrao = (eventos ?? []).filter((e) => !e.reuniao).length;
   const doDia = porDia.get(diaAberto) ?? [];
-  const hoje = chaveDoDia(new Date());
+
+  /** Trocar de dia na grade não muda a página; sair da página mostrada, sim. */
+  const escolherDia = (dia: string) => setDiaAberto(dia);
+
+  const irParaHoje = () => {
+    const h = new Date();
+    setAncora(visao === 'mes' ? primeiroDoMes(h) : h);
+    setDiaAberto(chaveDoDia(h));
+  };
 
   return (
     <div className="space-y-6">
@@ -147,13 +168,27 @@ export default function AgendaPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Botao onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() - 1, 1))}><ChevronLeft size={15} /></Botao>
-          <span className="min-w-[10rem] text-center text-sm font-medium capitalize">
-            {mes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+          <Botao onClick={() => setAncora(mover(visao, ancora, -1))}><ChevronLeft size={15} /></Botao>
+          <span className="min-w-[13rem] text-center text-sm font-medium capitalize">
+            {rotuloDoPeriodo(visao, ancora)}
           </span>
-          <Botao onClick={() => setMes(new Date(mes.getFullYear(), mes.getMonth() + 1, 1))}><ChevronRight size={15} /></Botao>
-          <Botao onClick={() => { const h = new Date(); setMes(primeiroDoMes(h)); setDiaAberto(chaveDoDia(h)); }}>hoje</Botao>
+          <Botao onClick={() => setAncora(mover(visao, ancora, 1))}><ChevronRight size={15} /></Botao>
+          <Botao onClick={irParaHoje}>hoje</Botao>
+
+          {/* mês × semana */}
+          <div className="ml-1 flex overflow-hidden rounded-lg border border-border">
+            {([['mes', 'Mês'], ['semana', 'Semana']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => trocarVisao(v)}
+                className={`px-3 py-1.5 text-sm ${visao === v ? 'bg-brand/10 text-text' : 'bg-surface-2 text-muted hover:text-text'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+
         <div className="flex flex-wrap items-center gap-1.5">
           {([
             ['tudo', 'Tudo'],
@@ -172,50 +207,23 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* a grade do mês */}
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="grid grid-cols-7 border-b border-border">
-          {DIAS.map((d) => (
-            <div key={d} className="px-2 py-1.5 text-center font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">{d}</div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7">
-          {grade.map((d) => {
-            const chave = chaveDoDia(d);
-            const doMes = d.getMonth() === mes.getMonth();
-            const lista = porDia.get(chave) ?? [];
-            return (
-              <button
-                key={chave}
-                onClick={() => setDiaAberto(chave)}
-                className={`min-h-[6.5rem] border-b border-r border-border p-1.5 text-left align-top transition-colors last:border-r-0 hover:bg-surface-2 ${doMes ? '' : 'opacity-40'} ${chave === diaAberto ? 'bg-surface-2' : ''}`}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className={`text-xs ${chave === hoje ? 'rounded bg-brand px-1.5 py-0.5 font-semibold text-bg' : 'text-muted'}`}>
-                    {d.getDate()}
-                  </span>
-                  {lista.length > 2 && <span className="text-[10px] text-muted">+{lista.length - 2}</span>}
-                </div>
-                <div className="space-y-1">
-                  {lista.slice(0, 2).map((e) => {
-                    const tom = tomDoEvento(e);
-                    const cor = tom === 'brand' ? 'bg-brand/15 text-brand'
-                      : tom === 'good' ? 'bg-good/15 text-good'
-                      : tom === 'warn' ? 'bg-warn/15 text-warn'
-                      : 'bg-surface-2 text-muted';
-                    return (
-                      <div key={e.id} className={`truncate rounded px-1 py-0.5 text-[10px] ${cor}`} title={e.title}>
-                        {!e.diaInteiro && <span className="mr-1 opacity-70">{horaCurta(e.start)}</span>}
-                        {rotuloCurto(e)}
-                      </div>
-                    );
-                  })}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {visao === 'mes' ? (
+        <Mes
+          dias={dias}
+          mesVisivel={ancora.getMonth()}
+          porDia={porDia}
+          diaAberto={diaAberto}
+          aoEscolherDia={escolherDia}
+        />
+      ) : (
+        <Semana
+          dias={dias}
+          eventos={visiveis}
+          porDia={porDia}
+          diaAberto={diaAberto}
+          aoEscolherDia={escolherDia}
+        />
+      )}
 
       {/* o dia escolhido, por extenso */}
       <Card titulo={new Date(`${diaAberto}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}>
