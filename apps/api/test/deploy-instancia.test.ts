@@ -875,3 +875,39 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
     expect(chk.stderr).toMatch(/porta 9010 \(MINIO_PORT\)/);
   });
 });
+
+describe('--modulos: repassado ao provisionar-tenant da empresa do cliente', () => {
+  const GOOGLE = { ROOTOS_GOOGLE_CLIENT_ID: 'id-sintetico', ROOTOS_GOOGLE_CLIENT_SECRET: 'segredo-google-sintetico' };
+  const comCliente = (c: Caixa, extra: string[]) =>
+    rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', '--cliente', 'campobom', '--admin-email', 'dono@campobom.com.br', ...extra], { ROOTOS_ANTHROPIC_API_KEY: '', ...GOOGLE });
+  const provisionar = (c: Caixa) => lerLog(c).split('\n').filter((l) => l.includes('provisionar-tenant'));
+
+  it('lista vai por argv, sem sh -c; `todos` explícito e ausência dão o mesmo comando de hoje', () => {
+    const a = caixa();
+    expect(comCliente(a, ['--modulos', 'financeiro,relatorios']).status).toBe(0);
+    expect(provisionar(a)).toHaveLength(1);
+    expect(provisionar(a)[0]).toMatch(/ api node dist\/scripts\/provisionar-tenant\.js campobom --modulos financeiro,relatorios --admin dono@campobom\.com\.br$/);
+    const b = caixa(); const d = caixa();
+    expect(comCliente(b, ['--modulos', 'todos']).status).toBe(0);
+    expect(comCliente(d, []).status).toBe(0);
+    expect(provisionar(b)[0]).toMatch(/provisionar-tenant\.js campobom --modulos todos --admin dono@campobom\.com\.br$/);
+    expect(provisionar(d)).toEqual(provisionar(b).map((l) => l.split(b.base).join(d.base)));
+  });
+
+  it('forma inválida ou sem --cliente é recusada antes de qualquer coisa', () => {
+    for (const ruim of ['', 'Financeiro', 'leads;id', 'leads,,metas', ',leads', 'leads,', 'leads metas', '$(id)']) {
+      const c = caixa();
+      const r = comCliente(c, ['--modulos', ruim]);
+      expect(r.status, `'${ruim}'`).toBe(64);
+      expect(lerLog(c), `'${ruim}'`).toBe('');
+      expect(existsSync(c.base)).toBe(false);
+    }
+    const c = caixa();
+    const r = rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', '--modulos', 'leads'], { ROOTOS_ANTHROPIC_API_KEY: '' });
+    expect(r.status).toBe(64);
+    expect(r.stderr).toMatch(/exige --cliente/);
+    const chk = comCliente(caixa(), ['--modulos', 'financeiro', '--so-checar']);
+    expect(chk.status, chk.stderr).toBe(0);
+    expect(chk.stdout).toMatch(/cliente: campobom \(módulos: financeiro\)/);
+  });
+});

@@ -38,6 +38,7 @@ uso() {
   cat >&2 <<MSG
 uso: deploy/instalar.sh --ambiente producao|homologacao --tag <tag> --dominio <host>
         [--cliente <slug> --admin-email <email>]   (a empresa do cliente; o admin entra pelo Google, sem senha)
+        [--modulos <a,b,c|todos>]   (módulos da empresa do cliente; sem a flag, todos)
         [--base /srv/root-os] [--repo <url|caminho>] [--bind-ip 172.17.0.1] [--sem-llm] [--so-checar]
         [--bind-ip 127.0.0.1]   (máquina local: --dominio opcional, endereço http://localhost:<web>, base ~/root-os)
         [--painel <projeto>/<servico>]   (easyPanel: nasce com o projeto Compose do painel e gera o compose para colar lá)
@@ -50,7 +51,7 @@ MSG
 
 AMBIENTE=""; TAG=""; DOMINIO=""; ADMIN_EMAIL=""; BASE="${ROOTOS_BASE:-}"
 REPO="${ROOTOS_REPO:-https://github.com/operacaoroot/marketing-os.git}"
-BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""
+BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""; MODULOS_CLIENTE=""; MODULOS_VEIO=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ambiente)    AMBIENTE="${2:-}"; shift 2 ;;
@@ -61,6 +62,7 @@ while [ $# -gt 0 ]; do
     --repo)        REPO="${2:-}"; shift 2 ;;
     --bind-ip)     BIND_IP="${2:-}"; shift 2 ;;
     --cliente)     CLIENTE="${2:-}"; shift 2 ;;
+    --modulos)     MODULOS_CLIENTE="${2:-}"; MODULOS_VEIO=1; shift 2 ;;
     --sem-llm)     SEM_LLM=1; shift ;;
     --so-checar)   SO_CHECAR=1; shift ;;
     --painel)      PAINEL="${2:-}"; shift 2 ;;
@@ -92,6 +94,15 @@ if [ -n "$CLIENTE" ] || [ -n "$ADMIN_EMAIL" ]; then
   # Validação CONSERVADORA: estes valores viram argv dentro do container.
   [[ "$ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || falha "e-mail inválido: '$ADMIN_EMAIL'" 64
   [[ "$CLIENTE" =~ ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$ ]] || falha "slug de cliente inválido: '$CLIENTE' (a-z, 0-9 e hífen; sem começar/terminar com hífen)" 64
+fi
+# `--modulos` vai ao provisionar-tenant como está; sem a flag, `todos` (o de sempre).
+# Chave de módulo é minúscula; o catálogo (MODULOS em packages/shared) quem confere é o
+# provisionamento. Aqui só a forma, porque o valor também vira argv no container.
+if [ "$MODULOS_VEIO" = 1 ]; then
+  [ -n "$CLIENTE" ] || falha "--modulos são os da empresa do cliente: exige --cliente e --admin-email" 64
+  [[ "$MODULOS_CLIENTE" =~ ^(todos|[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*)$ ]] || falha "--modulos inválido: '$MODULOS_CLIENTE' — 'todos' ou chaves separadas por vírgula (ex.: financeiro,relatorios)" 64
+else
+  MODULOS_CLIENTE="todos"
 fi
 if [ -n "$PAINEL" ]; then
   [ "$MODO_LOCAL" = 0 ] || falha "--painel é do easyPanel da VPS; com --bind-ip $BIND_IP a instância é local e não tem painel" 64
@@ -231,7 +242,7 @@ if [ "$SO_CHECAR" = 1 ]; then
   echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
   echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
   echo "  endereço: $URL_PUBLICA$([ "$MODO_LOCAL" = 1 ] && echo " (máquina local: só esta máquina alcança)" || true)"
-  echo "  LLM: ${LLM_PROVIDER_ESCOLHIDO:-desligado} · cliente: ${CLIENTE:-nenhum} · relógio: $([ "$AMBIENTE" = homologacao ] && echo desligado || echo ligado)"
+  echo "  LLM: ${LLM_PROVIDER_ESCOLHIDO:-desligado} · cliente: ${CLIENTE:-nenhum}$([ -z "$CLIENTE" ] || echo " (módulos: $MODULOS_CLIENTE)") · relógio: $([ "$AMBIENTE" = homologacao ] && echo desligado || echo ligado)"
   [ -z "$PAINEL" ] || echo "  easyPanel: serviço '$PAINEL' → projeto Compose $PROJ; geraria $DIR_INSTANCIA/painel/docker-compose.yml (sem build:, imagem por variável)"
   exit 0
 fi
@@ -285,7 +296,7 @@ compose run --rm --no-deps api sh -c 'pnpm db:seed:politica'
 if [ -n "$CLIENTE" ]; then
   # argv direto — nunca `sh -c` com interpolação: os dois valores já foram validados,
   # mas validação não é motivo para abrir um shell dentro do container.
-  compose run --rm --no-deps api node dist/scripts/provisionar-tenant.js "$CLIENTE" --modulos todos --admin "$ADMIN_EMAIL"
+  compose run --rm --no-deps api node dist/scripts/provisionar-tenant.js "$CLIENTE" --modulos "$MODULOS_CLIENTE" --admin "$ADMIN_EMAIL"
 fi
 
 passo "8/10 subir"
