@@ -1,0 +1,29 @@
+diff --git a/deploy/instalar.sh b/deploy/instalar.sh
+index b174c0a..304049a 100755
+--- a/deploy/instalar.sh
++++ b/deploy/instalar.sh
+@@ -296,7 +296,11 @@ if [ "$SO_CHECAR" = 1 ]; then
+ fi
+ 
+ # A senha inicial do admin é o único segredo que precisa chegar a uma pessoa.
+-SENHA_ADMIN="$(gerar 18)"; SENHA_MCP="$(gerar 18)"
++# A da conta de ação da IA (ia-acao@) também é gerada aqui, mas não vai a arquivo
++# nenhum: sem ela o seed sorteia uma e a IMPRIME no log ("senha gerada →"), e o log
++# não é lugar de segredo. A conta não tem usuário desde a fatia 5.8; nasce com senha
++# que ninguém conhece (para usar um dia: definir em env e `db:seed --rotacionar-senhas`).
++SENHA_ADMIN="$(gerar 18)"; SENHA_MCP="$(gerar 18)"; SENHA_ACAO="$(gerar 18)"
+ {
+   echo "ROOT OS — instância '$AMBIENTE' — segredos iniciais (gerados em $(date +%Y-%m-%d))"
+   echo "APAGUE ESTE ARQUIVO depois de guardar no gerenciador de senhas."
+@@ -338,8 +342,9 @@ done
+ 
+ passo "7/10 migrations (deploy) + empresa + política"
+ compose run --rm --no-deps api sh -c 'pnpm exec prisma migrate deploy'
+-ADMIN_PASSWORD="$SENHA_ADMIN" MCP_SERVICE_PASSWORD="$SENHA_MCP" \
+-  compose run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD api sh -c 'pnpm db:seed'
++ADMIN_PASSWORD="$SENHA_ADMIN" MCP_SERVICE_PASSWORD="$SENHA_MCP" MCP_ACTION_PASSWORD="$SENHA_ACAO" \
++  compose run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD -e MCP_ACTION_PASSWORD api sh -c 'pnpm db:seed'
++unset SENHA_ACAO
+ compose run --rm --no-deps api sh -c 'pnpm db:seed:politica'
+ if [ -n "$CLIENTE" ]; then
+   # argv direto — nunca `sh -c` com interpolação: os dois valores já foram validados,

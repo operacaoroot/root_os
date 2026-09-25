@@ -5,14 +5,14 @@ if (/Date\.now|Math\.random|new Date/.test(src)) { console.log('não determinís
 if (/fullbpo/i.test(src.replace(/pedro\.magnago@fullbpo\.com/gi, ''))) { console.log('marca: FullBPO no workflow'); process.exit(3) }
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const run = new AsyncFunction('args', 'agent', 'phase', 'log', src)
-const COMMIT = '3397140941264725e906334348fe6abe2f6d90ad'
+const COMMIT = 'af2923decb9c81148538d24e3a0725c6345ee57d'
 
 const base = {
   inv: { pastaKit: '/k', sha256Ok: true, contatoPreenchido: true, kitGravavel: true, kitNoDrive: true, macosMaior: 14, ramGiB: 16, discoLivreGiB: 100, admin: true, energiaAC: true, dockerDesktopAberto: false, portasOcupadas: [], instanciaExiste: false, estadoInstalacao: 'nenhuma', tentativasGuardadas: 0, redeFalhas: [], redeTestados: 17, proxyAtivo: 0 },
-  pre: { contratoRootOS: true, composeOk: true, contextoDocker: 'colima', colimaNoAr: true, googleEnvOk: true },
+  pre: { contratoRootOS: true, composeOk: true, buildxOk: true, contextoDocker: 'colima', colimaNoAr: true, googleEnvOk: true },
   prep: { energiaAC: true, recomecoFeito: false, bundleHashOk: true, commitClone: COMMIT, exitChecar: 0, disparado: true },
   esperas: [{ terminou: false, processoVivo: true, minutos: 9, passo: '5/10' }, { terminou: true, processoVivo: false, minutos: 18, passo: '10/10' }],
-  fim: { exitInstalar: 0, commitInstancia: COMMIT, linhaBackupNoLog: true, permissoes600: true, segredosNaConta: 8, vazamentos: 0 },
+  fim: { exitInstalar: 0, commitInstancia: COMMIT, linhaBackupNoLog: true, permissoes600: true, segredosNaConta: 8, vazamentos: 0, senhaGeradaNoLog: 0 },
   ver: { httpSaude: 200, degradado: false, versaoNoAr: 'v0.4.2', commitNoAr: COMMIT, httpLogin: 200, orgSlug: 'campo-bom', modulos: 11, adminCriado: 1, containersUp: 5, portasEm127: 6, portasFora127: 0, backupOk: true, dumpIntegro: true, restauracaoOk: true, segredosIniciais600: true, crontabGravado: false, pmsetAgendado: false },
 }
 const fase = (dados, estado = 'verde', pedido = '') => ({ estado, resumo: 'r', evidencias: [], pedidoAoOperador: pedido, pendencias: [], naoProvado: [], dados })
@@ -34,8 +34,8 @@ async function cenario(nome, args, mud, espera) {
   const r = await run(args, agent, () => {}, () => {})
   const falhas = []
   for (const [k, v] of Object.entries(espera)) {
-    const got = k === 'chamadas' ? chamadas.length : k === 'temAgente' ? v.every(l => chamadas.some(x => x.startsWith(l))) : k === 'semAgente' ? v.every(l => !chamadas.some(x => x.startsWith(l))) : k === 'prompt' ? v.every(([l, t]) => (prompts[l] || '').includes(t)) : r[k]
-    const ok = (k === 'temAgente' || k === 'semAgente' || k === 'prompt') ? got === true : JSON.stringify(got) === JSON.stringify(v)
+    const got = k === 'chamadas' ? chamadas.length : k === 'temAgente' ? v.every(l => chamadas.some(x => x.startsWith(l))) : k === 'semAgente' ? v.every(l => !chamadas.some(x => x.startsWith(l))) : k === 'prompt' ? v.every(([l, t]) => (prompts[l] || '').includes(t)) : k === 'pedidoContem' ? v.every(t => (r.pedidoAoOperador || '').includes(t)) : r[k]
+    const ok = (k === 'temAgente' || k === 'semAgente' || k === 'prompt' || k === 'pedidoContem') ? got === true : JSON.stringify(got) === JSON.stringify(v)
     if (!ok) falhas.push(`${k}: esperado ${JSON.stringify(v)}, veio ${JSON.stringify(got)}`)
   }
   if (!chamadas.includes('Relatório')) falhas.push('Relatório não rodou')
@@ -79,6 +79,15 @@ T.push(await cenario('verificar: sem instância → vermelho', { ...A, modo: 've
 T.push(await cenario('verificação: porta fora de 127 → vermelho', A, c => { c.ver.portasFora127 = 1 }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
 T.push(await cenario('verificação: commit no ar antigo → vermelho', A, c => { c.ver.commitNoAr = '7f8a762cda94cb4fa1e299bfab506a6b217469e9' }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
 T.push(await cenario('verificação: distribuição anterior fff7fb9 no ar → vermelho', A, c => { c.ver.commitNoAr = 'fff7fb9e1da12c382d0b847fce46d12972a37d87' }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
+T.push(await cenario('verificação: distribuição anterior 3397140 no ar → vermelho', A, c => { c.ver.commitNoAr = '3397140941264725e906334348fe6abe2f6d90ad' }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
+T.push(await cenario('pré-req: docker buildx ausente → vermelho antes de instalar', A, c => { c.pre.buildxOk = false }, { estadoGeral: 'vermelho', parouEm: 'Pré-requisitos', semAgente: ['Instalação · preparo'] }))
+T.push(await cenario('pré-req: prompt cita docker-buildx', A, () => {}, { estadoGeral: 'verde', prompt: [['Pré-requisitos', 'docker-buildx']] }))
+T.push(await cenario('fim: "senha gerada" no log → vermelho, prompts do fim e do relatório tiram a linha', A, c => { c.fim.senhaGeradaNoLog = 1 }, { estadoGeral: 'vermelho', parouEm: 'Instalação', semAgente: ['Verificação'], prompt: [['Instalação · fim', "senhaGeradaNoLog"], ['Relatório', "grep -v 'senha gerada'"]] }))
+T.push(await cenario('espera: passou de 180 min → pedido de retomada leva o e-mail do admin', A, c => { c.esperas = [{ terminou: false, processoVivo: true, minutos: 181, passo: '5/10' }] }, { estadoGeral: 'aguardando_operador', pedidoContem: ['com o e-mail do admin admin@campobom.example'] }))
+T.push(await cenario('retomar: em_andamento sem adminEmail, 180 min → pedido pede o e-mail', { okProgramas: true }, c => { c.inv.estadoInstalacao = 'em_andamento'; c.inv.instanciaExiste = true; c.pre.googleEnvOk = false; c.esperas = [{ terminou: false, processoVivo: true, minutos: 181, passo: '5/10' }] }, { estadoGeral: 'aguardando_operador', pedidoContem: ['com o e-mail do admin <e-mail do administrador>'] }))
+T.push(await cenario('retomar: concluida_ok sem adminEmail → aguardando o e-mail, sem agente da Verificação', { okProgramas: true }, c => { c.inv.estadoInstalacao = 'concluida_ok'; c.inv.instanciaExiste = true; c.pre.googleEnvOk = false }, { estadoGeral: 'aguardando_operador', parouEm: 'Verificação', semAgente: ['Verificação'], temAgente: ['Instalação · fim'], pedidoContem: ['com o e-mail do admin'] }))
+T.push(await cenario('verificar: sem adminEmail → aguardando o e-mail', { modo: 'verificar' }, c => { c.inv.estadoInstalacao = 'concluida_ok'; c.inv.instanciaExiste = true; c.pre.googleEnvOk = false }, { estadoGeral: 'aguardando_operador', parouEm: 'Verificação', semAgente: ['Verificação'] }))
+T.push(await cenario('espera: prompt diz que o caffeinate pede OK e que nada vem depois do -w', A, () => {}, { estadoGeral: 'verde', prompt: [['Instalação · espera 1', 'pede OK da pessoa'], ['Instalação · espera 1', 'nada é escrito depois do -w <pid>']] }))
 const ok = T.filter(Boolean).length
 console.log(`${ok}/${T.length} cenários`)
 process.exit(ok === T.length ? 0 : 1)

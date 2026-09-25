@@ -16,8 +16,7 @@
       "Bash(/usr/sbin/netstat -anl -p tcp:*)",
       "Bash(/usr/sbin/scutil --proxy:*)",
       "Bash(pmset -g batt:*)",
-      "Bash(pgrep -F:*)",
-      "Bash(caffeinate -i -t:*)"
+      "Bash(pgrep -F:*)"
     ],
     "deny": [
       "Read(~/RootOS/**/.env)",
