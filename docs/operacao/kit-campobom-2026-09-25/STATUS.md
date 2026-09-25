@@ -117,3 +117,39 @@ O que mudou:
 - Clone temporário do catálogo contra o GitHub com deploy key: só rodou contra repositório local de fixture. Em rede ruim ele é um ponto a mais de falha (fecha fechado, sem criar nada).
 - Instalação real num Colima: segue não provada (este Mac usa Docker Desktop).
 - Troca da tag entre o clone temporário e o clone real (segundos de diferença): não coberta; o `provisionar-tenant` continua recusando chave desconhecida no passo 7.
+
+## 25/09/2026 — 2ª revisão da fatia "instalar em Mac limpo": 2 bloqueios + 2 menores
+
+Commits (locais, sem push): `bff3da3` linha do crontab do Mac · `82b00a1` ::1 do lsof × netstat · `3138bf8` `netstat -anl` (menor) · `e8b076e` "nem clone" do `--so-checar` (menor).
+
+| # | Item | Antes (teste novo) | Depois |
+|---|---|---|---|
+| 1 | Backup no Mac: a linha impressa não tinha PATH; no cron (`PATH=/usr/bin:/bin`) o `backup-db.sh` abortava em "docker não está no PATH" | `vitest -t 'crontab\|linha antiga'`: exit 1, 2 falhas (linha sem agenda nem PATH; erro sem instrução) | exit 0, 2/2. A linha impressa, rodada com `env -i PATH=/usr/bin:/bin HOME=… /bin/sh -c` contra o `deploy/backup-db.sh` real, sai com exit 0 e grava 1 diário + 1 semanal |
+| 2 | Porta em `::1` saía duas vezes no macOS (lsof `[::1]`, netstat `::1`), a 2ª com dono falso | `vitest -t 'porta já ouvindo'`: exit 1, 2 falhas (2 linhas para a porta 4000) | exit 0, 9/9 no bloco |
+| 3 | (menor) netstat sem `-l` corta IPv6 longo e o cortado não casava com o lsof (bind 0.0.0.0) | `vitest -t 'IPv6 longo'`: exit 1, 1 falha (2 linhas) | exit 0, 1/1 |
+| 4 | (menor) `--so-checar` com `--modulos` dizia "nem clone" e depois admitia o clone temporário | `vitest -t 'nem clone'`: exit 1, 1 falha | exit 0, 1/1 |
+
+Provas:
+
+| # | Comando | Exit | Contagem |
+|---|---|---|---|
+| a | suíte de deploy no worktree (`pnpm --filter @mktos/api exec vitest run test/deploy-instancia.test.ts`) | 0 | 62 passados (eram 57), 0 falhas, 0 pulados |
+| b | `pnpm --filter @mktos/api typecheck` e `typecheck:test` | 0 / 0 | 0 `error TS` / 0 `error TS` |
+| c | referência da VPS intocada: `git diff 47d898b HEAD -- fixtures/deploy-referencia/*.env *.override.yml \| wc -l` | 0 | 0 linhas; `vitest -t 'Regressão VPS'` verde dentro de (a) |
+| d | ferramentas reais: `python3 -m http.server --bind ::1 4100` + `/bin/bash deploy/instalar.sh --ambiente homologacao --tag v0.4.1 --bind-ip 127.0.0.1 --sem-llm --so-checar` | 1 | 1 linha: `porta 4100 (WEB_HOST_PORT) — já ouvindo em [::1]:4100: Python (pid …)`; `~/root-os` não existe depois |
+| e | ferramentas reais, IPv6 global de 37 caracteres do en0 na porta 4100, `--bind-ip 0.0.0.0 --dominio x.teste --so-checar`; antes (lib de `82b00a1`) × depois | 1 / 1 | antes 2 linhas (a 2ª com o endereço cortado e "processo de outro usuário"); depois 1 linha, `Python (pid …)` |
+
+O que mudou:
+- `instalar.sh`, modo máquina local: o passo 3 imprime uma entrada de crontab inteira numa linha só (`17 3 * * *`), com `PATH='<diretório do docker que o instalador usou>':/usr/bin:/bin`, `DOCKER_HOST` se estava definido, valores entre aspas simples, `%` escapado e saída em `<base>/<amb>/backups/backup.log`; logo abaixo, o comando que roda a linha do `crontab -l` no ambiente do cron e o `tail` do log. A saída da VPS é o texto de antes.
+- `backup-db.sh`: o erro de docker fora do PATH mostra o PATH e diz o que pôr na linha do crontab.
+- Stub de `docker`: o `pg_dump -w --no-owner` do backup devolve um dump que passa na verificação do `backup-db.sh` (semente fixa). Stub de `netstat`: IPv6 sem colchetes, `tcp6`, e corte a 22 colunas sem `-l`, como o de verdade.
+- `lib-instancia.sh`: endereço sem colchetes nas três ferramentas; recusa escreve `[::1]:porta`; `netstat -anl -p tcp`.
+- `docs/INSTALACAO.md`: o parágrafo do backup deixou de dizer que a única ressalva é o Mac dormindo; explica o PATH do cron, o log e a prova com `env -i`, e diz que falha de backup não avisa ninguém.
+
+### Não provado nesta etapa
+- `crontab` de verdade disparando no horário: a linha foi rodada no ambiente que o cron monta (`env -i`, PATH curto, `/bin/sh`), não pelo `cron` do macOS. Permissão do `cron` em pasta protegida pelo TCC (Documentos, Mesa) não foi medida; a base padrão `~/root-os` fica fora delas.
+- `docker exec` real do Colima a partir do cron: o `docker` da prova é o stub. Com Colima por `docker context`, o cron lê o mesmo `~/.docker/config.json` pelo `HOME`; isso não foi exercido (este Mac usa Docker Desktop).
+- Saída da VPS no fim da instalação: o texto do passo 3 foi mantido igual por construção, mas não houve diff byte a byte do stdout (a regressão byte a byte cobre `.env`, `override.yml` e as chamadas ao docker).
+- `netstat -l` em macOS antigo: medido só neste Mac (Darwin 25.6.0).
+- Fora do escopo e não mexido: a linha da VPS usa `\` de continuação, que o crontab não junta; quem cola precisa juntar à mão.
+- Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta etapa (não existe ainda).
