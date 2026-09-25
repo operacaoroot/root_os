@@ -893,7 +893,10 @@ export class PublicacaoInstagramService implements OnModuleInit {
    * do item, numa instrução só, e só então dispara o efeito. Sem elas a peça
    * segue manual, e cada `pulada` vai ao RASTRO uma vez por peça, slot e motivo.
    * A peça com item ativo cuja janela passou (a rotina ficou parada, até com o
-   * lote já vencido) cai em erro uma vez, perde o item e volta ao manual.
+   * lote já vencido) cai em erro uma vez, perde o item e volta ao manual. Por
+   * isso a leitura começa também pelos ITENS ativos, como no YouTube: o slot
+   * que passou há mais de 4 h não sai da consulta e não fica preso no "sai
+   * pelo OS no horário" até o lote vencer.
    *
    * O teto vale só para quem vai à porta (publicar e dar por perdida): a
    * `pulada` não ocupa vaga, senão uma fila de puladas seguraria os itens do
@@ -901,12 +904,15 @@ export class PublicacaoInstagramService implements OnModuleInit {
    */
   async olharOHorario(orgId: string, correlationId: string | null, teto = TETO_POR_PASSAGEM): Promise<LinhaDaPassagem[]> {
     const agora = new Date();
+    const comItem = this.lotes ? await this.lotes.recursosComItemAtivo(orgId, CAPACIDADE) : [];
+    const recentes = { agendadaPara: { gte: new Date(agora.getTime() - 2 * PAUTA_JANELA_DA_PUBLICACAO_MS) } };
     const pecas = (await this.prisma.pautaPeca.findMany({
       where: {
         orgId,
         canal: 'instagram',
         status: 'aprovada',
-        agendadaPara: { lte: agora, gte: new Date(agora.getTime() - 2 * PAUTA_JANELA_DA_PUBLICACAO_MS) },
+        agendadaPara: { lte: agora },
+        OR: comItem.length ? [recentes, { id: { in: comItem } }] : [recentes],
       },
       orderBy: { agendadaPara: 'asc' },
       select: { id: true, formato: true, meta: true, agendadaPara: true, publicacoes: { where: { rede: REDE }, select: { estado: true, loteItemId: true, approvalId: true } } },

@@ -9,6 +9,7 @@ import {
   PautaMarcarPostadaSchema,
   diaNoFuso,
   etapaDaPecaNaSemana,
+  faltaNaRotinaDePublicacao,
   horaNoFuso,
   instanteNoFuso,
   somarDias,
@@ -22,6 +23,7 @@ import { apiBlob, apiGet, apiPost, apiPut } from '@/lib/api';
 import { baixarArquivo, compartilhaArquivos, compartilharArquivos } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
+import { InterruptorDaAutomacao } from './InterruptorDaAutomacao';
 import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
 import { AprovarASemana } from './AprovarASemana';
 import { CandidatosDoCorte } from './CandidatosDoCorte';
@@ -135,6 +137,8 @@ function PecaNoSlot({
   ocupado,
   onAcao,
   onErro,
+  automatica,
+  faltaNaRotina = null,
 }: {
   peca: PautaPecaNaAgenda;
   token: string | null;
@@ -143,6 +147,8 @@ function PecaNoSlot({
   ocupado: boolean;
   onAcao: (fn: () => Promise<unknown>) => Promise<boolean>;
   onErro: (m: string | null) => void;
+  automatica?: boolean;
+  faltaNaRotina?: string | null;
 }) {
   const [modo, setModo] = useState<'nada' | 'reagendar' | 'postar'>('nada');
   const [quandoNovo, setQuandoNovo] = useState('');
@@ -336,7 +342,15 @@ function PecaNoSlot({
         </p>
       )}
 
-      <PublicacaoNoInstagram peca={peca} token={token} podePublicar={podePostar} ocupado={ocupado} onAcao={onAcao} />
+      <PublicacaoNoInstagram
+        peca={peca}
+        token={token}
+        podePublicar={podePostar}
+        ocupado={ocupado}
+        onAcao={onAcao}
+        automatica={automatica}
+        faltaNaRotina={faltaNaRotina}
+      />
 
       {aprovada && editavel && peca.motivoParaNaoAgendar && <p className="break-words text-xs text-muted">{peca.motivoParaNaoAgendar}</p>}
 
@@ -614,12 +628,25 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
         <section className="space-y-2 rounded-lg border border-border p-3" aria-label="Aprovar a semana">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-medium">Aprovar a semana</p>
-            {agenda.publicacaoAutomatica === undefined ? null : agenda.publicacaoAutomatica ? (
-              <Chip tone="good">publicação automática ligada</Chip>
-            ) : (
-              <Chip tone="warn">publicação automática desligada</Chip>
-            )}
           </div>
+          <InterruptorDaAutomacao
+            qual="publicacao"
+            ligada={agenda.publicacaoAutomatica}
+            rotina={agenda.rotinaDePublicacao}
+            token={token}
+            podeMudar={podePostar}
+            onMudou={() => void carregar()}
+            onErro={onErro}
+          />
+          <InterruptorDaAutomacao
+            qual="dm"
+            ligada={agenda.dmAutomatica}
+            podeLigar={agenda.dmPodeLigar ?? false}
+            token={token}
+            podeMudar={podePostar}
+            onMudou={() => void carregar()}
+            onErro={onErro}
+          />
           {[...daSemana].map(([episodioId, e]) => (
             <div key={episodioId} className="space-y-2 border-t border-border pt-2 first:border-t-0 first:pt-0">
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -695,6 +722,8 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
                       ocupado={ocupado !== null}
                       onAcao={(fn) => acao(l.peca!.id, fn)}
                       onErro={onErro}
+                      automatica={agenda.publicacaoAutomatica}
+                      faltaNaRotina={faltaNaRotinaDePublicacao(agenda.rotinaDePublicacao)}
                     />
                   ) : (
                     <p className="text-xs text-muted">vago</p>

@@ -33,7 +33,9 @@ import {
   type PautaYoutubePendente,
   type YoutubeArquivoInput,
   type YoutubeAuditoria,
+  PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO,
 } from '@mktos/shared';
+import { rotinaDaPauta } from './rotina-da-pauta';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { cifrar, decifrar } from '../common/crypto';
@@ -351,6 +353,8 @@ export class EnvioAoYoutubeService implements OnModuleInit {
       faltas: await this.faltas(orgId, e, agora),
       itens,
       url: r?.videoId && r.estado === 'agendado' ? this.youtube.urlDoVideo(r.videoId) : null,
+      automatica: await this.publicacaoAutomatica(orgId),
+      rotinaDePublicacao: await rotinaDaPauta(this.prisma, orgId, PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO),
     };
   }
 

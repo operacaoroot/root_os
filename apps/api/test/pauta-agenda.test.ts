@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, NotFoundException, ServiceUnava
 import {
   PAUTA_GRADE_PADRAO,
   PAUTA_TETO_DO_A_PARTIR_DE_DIAS,
+  PautaAutomacaoSalvarSchema,
   PautaDiaCivilSchema,
   PautaDistribuirSchema,
   PautaGradeSalvarSchema,
@@ -735,6 +736,55 @@ describe('agenda: a grade na memória (ADR-011)', () => {
     expect((await s.agenda.grade(ORG)).origem).toBe('empresa');
   });
 
+  it('D-MD1: ligar a publicação automática pela aba Semana é versão da nota pelo MemoriaService, com motivo, e a semana passa a dizer ligada', async () => {
+    const s = servico();
+    expect((await s.agenda.semana(ORG)).publicacaoAutomatica).toBe(false);
+    const r = await s.agenda.ligarAutomacao(ORG, PESSOA, 'publicacao', { ligada: true, motivo: 'seed assinado e titular criada' });
+    expect(r).toEqual({ qual: 'publicacao', ligada: true, versao: 1 });
+    const criada = s.memoriaChamadas.find((c) => c.metodo === 'criar')?.args[1] as { chave: string; body: string; motivo: string; sourceType: string };
+    expect(criada).toMatchObject({ chave: 'pauta.publicacao.automatica', sourceType: 'operador' });
+    expect(criada.body.split('\n')[0]).toBe('ligada');
+    expect(criada.motivo).toMatch(/seed assinado e titular criada/);
+    expect(s.auditoria.at(-1)).toMatchObject({ action: 'pauta.automacao_alterada', before: { qual: 'publicacao', ligada: false }, after: { qual: 'publicacao', ligada: true, versao: 1 } });
+    expect((await s.agenda.semana(ORG)).publicacaoAutomatica).toBe(true);
+
+    // Desligar é versão nova da mesma nota: o freio não depende de montar um POST /memoria.
+    const d = await s.agenda.ligarAutomacao(ORG, PESSOA, 'publicacao', { ligada: false, motivo: 'post errado saiu, parar tudo' });
+    expect(d).toEqual({ qual: 'publicacao', ligada: false, versao: 2 });
+    expect(s.memoriaChamadas.filter((c) => c.metodo === 'alterar')).toHaveLength(1);
+    expect((await s.agenda.semana(ORG)).publicacaoAutomatica).toBe(false);
+  });
+
+  it('D-MD1: a DM automática não liga sem INSTAGRAM_PEDIR_MENSAGENS=sim (nada é gravado), e desligar vale sempre', async () => {
+    const antes = process.env.INSTAGRAM_PEDIR_MENSAGENS;
+    delete process.env.INSTAGRAM_PEDIR_MENSAGENS;
+    try {
+      const s = servico();
+      expect((await s.agenda.semana(ORG)).dmPodeLigar).toBe(false);
+      await expect(s.agenda.ligarAutomacao(ORG, PESSOA, 'dm', { ligada: true, motivo: 'quero ligar a DM agora' })).rejects.toThrow(/App Review/);
+      expect(s.memoriaChamadas.filter((c) => c.metodo !== 'porChave')).toEqual([]);
+      expect((await s.agenda.ligarAutomacao(ORG, PESSOA, 'dm', { ligada: false, motivo: 'desligar por garantia' })).ligada).toBe(false);
+
+      process.env.INSTAGRAM_PEDIR_MENSAGENS = 'sim';
+      expect((await s.agenda.semana(ORG)).dmPodeLigar).toBe(true);
+      expect((await s.agenda.ligarAutomacao(ORG, PESSOA, 'dm', { ligada: true, motivo: 'App Review aprovado' })).ligada).toBe(true);
+    } finally {
+      if (antes === undefined) delete process.env.INSTAGRAM_PEDIR_MENSAGENS;
+      else process.env.INSTAGRAM_PEDIR_MENSAGENS = antes;
+    }
+  });
+
+  it('D-MD1: o interruptor pede motivo; o controller recusa interruptor desconhecido antes do serviço', () => {
+    expect(PautaAutomacaoSalvarSchema.safeParse({ ligada: true, motivo: 'curto' }).success).toBe(false);
+    expect(PautaAutomacaoSalvarSchema.safeParse({ ligada: true }).success).toBe(false);
+    expect(PautaAutomacaoSalvarSchema.safeParse({ ligada: 'sim', motivo: 'um motivo bom' }).success).toBe(false);
+    const chamadas: unknown[] = [];
+    const c = new AgendaController({ ligarAutomacao: async (...a: unknown[]) => chamadas.push(a) } as unknown as AgendaService);
+    expect(() => c.ligarAutomacao({ sub: PESSOA, orgId: ORG } as never, 'tiktok', { ligada: true, motivo: 'um motivo bom' })).toThrow(NotFoundException);
+    expect(() => c.ligarAutomacao({ sub: PESSOA, orgId: ORG } as never, 'dm', { ligada: true, motivo: 'x' })).toThrow();
+    expect(chamadas).toEqual([]);
+  });
+
   it('memória fora do ar não para a semana: vale o padrão', async () => {
     const s = servico();
     (s.agenda as unknown as { memoria: { porChave: () => Promise<never> } }).memoria.porChave = async () => {
@@ -800,6 +850,7 @@ describe('agenda: o controller', () => {
       ['distribuir', 'episodios/:id/agenda/distribuir', ['pauta.editar']],
       ['reagendar', 'pecas/:id/agenda', ['pauta.editar']],
       ['postada', 'pecas/:id/postada', ['pauta.publicar']],
+      ['ligarAutomacao', 'automacao/:qual', ['pauta.publicar']],
     ];
     for (const [metodo, caminho, perms] of rotas) {
       expect(Reflect.getMetadata('path', proto[metodo]), metodo).toBe(caminho);

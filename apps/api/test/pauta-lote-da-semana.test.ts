@@ -527,6 +527,17 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
     const e = await naEmpresa(() => semana.estado(ORG, id.episodio, id.proponente));
     expect(e.impedimentos).toEqual([]);
     expect(e.automaticaLigada).toBe(false);
+    // Sem a rotina de publicação criada, a tela sabe que nada sai no horário.
+    expect(e.rotinaDePublicacao).toEqual({ existe: false, dispara: false, nome: null, calada: null });
+    const rotina = await prisma.rotina.create({
+      data: { orgId: ORG, slug: 'publicacao-da-semana', nome: 'Publicação da semana', tipo: 'pauta.publicar-agendadas', cron: '* * * * *', estado: 'rodando' },
+    });
+    try {
+      const comRotina = await naEmpresa(() => semana.estado(ORG, id.episodio, id.proponente));
+      expect(comRotina.rotinaDePublicacao).toMatchObject({ existe: true, nome: 'Publicação da semana' });
+    } finally {
+      await prisma.rotina.delete({ where: { id: rotina.id } });
+    }
     expect(e.pecas).toHaveLength(12);
     expect(e.pecas.find((x) => x.id === pecas['sem-jpeg'])?.problema).toMatch(/Falta o JPEG/);
     expect(e.pecas.filter((x) => x.problema === null)).toHaveLength(11);
@@ -728,7 +739,7 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
     );
   });
 
-  // Do dia 2 em diante: as peças do dia 1 ficam fora da janela da rotina.
+  // Do dia 2 em diante: as peças do dia 1 sem item ficam fora da janela da rotina; as com item ainda ativo, a primeira passagem dá por perdidas.
   const DIA2 = (hhmm: string) => instanteNoFuso('2026-09-02', hhmm);
   const todasMenos = (...ficam: string[]) => Object.values(pecas).filter((x) => !ficam.includes(x));
 
@@ -739,7 +750,18 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
   }
 
   it('a peça que já tem publicação pelo OS entra no lote e sai no horário: o pedido vencido, a linha em erro, a que voltou ao manual e o "Publicar agora" pedido enquanto a assinatura esperava', async () => {
+    // A tardia-a e a troca-a do dia 1 seguem com o item ativo e a janela passou há mais de 4 h: não ficam presas.
     vi.setSystemTime(DIA2('09:00'));
+    nota = { body: 'ligada', arquivadoEm: null };
+    const perdidas = await rotina('rotina-dia2-0');
+    expect(perdidas.map((l) => [l.resultado, l.detalhe])).toEqual([
+      ['erro', expect.stringMatching(/janela de 2 h/)],
+      ['erro', expect.stringMatching(/janela de 2 h/)],
+    ]);
+    expect(graph.chamadas).toEqual([]);
+    for (const pecaId of [pecas['tardia-a'], pecas['troca-a']]) {
+      expect(await prisma.itemDoLote.findFirstOrThrow({ where: { recursoId: pecaId, capabilityId: 'instagram.post.publicar' }, orderBy: { criadoEm: 'desc' } })).toMatchObject({ estado: 'revogado' });
+    }
     nota = null;
     const vencido = await aprovadaEm('venc-1', 'carrossel', DIA2('11:00'));
     const comErro = await aprovadaEm('erro-2', 'story', DIA2('11:10'));
@@ -830,6 +852,31 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
 
     expect(await rotina('rotina-parada-2')).toEqual([]);
     const r = (await naEmpresa(() => publicacao.pedir(ORG, parada, id.proponente))) as AcaoRetida;
+    expect(r.status).toBe('aguardando_aprovacao');
+  });
+
+  it('o slot que passou há mais de 4 h, com o lote ainda valendo por outra peça, cai em erro e perde o item em vez de ficar preso', async () => {
+    const DIA3 = (hhmm: string) => instanteNoFuso('2026-09-03', hhmm);
+    vi.setSystemTime(DIA3('06:00'));
+    nota = null;
+    const longe = await novaPeca('longe-c', 'story', DIA3('09:00'));
+    const depois = await novaPeca('depois-d', 'story', DIA3('20:00'));
+    const m = await naEmpresa(() => semana.preparar(ORG, id.episodio, id.proponente, todasMenos(longe, depois)));
+    expect(m.itens).toBe(2);
+    await assinar(m.loteId);
+    const itemDe = async (pecaId: string) => (await lotes.detalhe(ORG, m.loteId)).itens.find((i) => i.recursoId === pecaId)!;
+
+    // A API ficou sem tique das 08h30 às 13h30: às 13h31 o slot das 09h está a 4,5 h, e o lote vale até as 22h.
+    nota = { body: 'ligada', arquivadoEm: null };
+    vi.setSystemTime(DIA3('13:31'));
+    const l = await rotina('rotina-longe');
+    expect(l).toEqual([expect.objectContaining({ resultado: 'erro', detalhe: expect.stringMatching(/janela de 2 h/) })]);
+    expect(graph.chamadas).toEqual([]);
+    expect(await prisma.pautaPublicacao.findFirstOrThrow({ where: { pecaId: longe } })).toMatchObject({ estado: 'erro' });
+    expect(await itemDe(longe)).toMatchObject({ estado: 'revogado', motivoDaRevogacao: expect.stringMatching(/janela/) });
+    expect(await itemDe(depois)).toMatchObject({ estado: 'ativo' });
+
+    const r = (await naEmpresa(() => publicacao.pedir(ORG, longe, id.proponente))) as AcaoRetida;
     expect(r.status).toBe('aguardando_aprovacao');
   });
 

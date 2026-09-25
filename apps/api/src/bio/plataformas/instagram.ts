@@ -5,7 +5,7 @@
  * Contrapartida: não tem business_discovery (monitorar perfil de terceiro).
  */
 import type { BioFinalidade } from '@mktos/shared'
-import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_MENSAGENS, INSTAGRAM_ESCOPO_DE_PUBLICAR } from '@mktos/shared'
+import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_MENSAGENS, INSTAGRAM_ESCOPO_DE_PUBLICAR, pedeMensagensDoInstagram } from '@mktos/shared'
 
 /*
  * Os três endereços aceitam sobrescrita por ambiente só para o dublê local
@@ -43,7 +43,7 @@ export const ESCOPOS_DE_PUBLICACAO = [
  * publicação (MD5) para de conectar junto.
  */
 export function pedeMensagens(env: Record<string, string | undefined> = process.env): boolean {
-  return /^(1|sim|true)$/i.test((env.INSTAGRAM_PEDIR_MENSAGENS ?? '').trim())
+  return pedeMensagensDoInstagram(env.INSTAGRAM_PEDIR_MENSAGENS)
 }
 
 export type Credencial = { appId: string; secret: string }

@@ -9,6 +9,7 @@ import {
   PAUTA_FORA_DO_LOTE_YOUTUBE,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   diaNoFuso,
+  faltaNaRotinaDePublicacao,
   horaNoFuso,
   type PautaAprovacaoDaSemana,
   type PautaLoteMontado,
@@ -127,6 +128,7 @@ export function AprovarASemana({
   const yt = estado.youtube ?? null;
   const youtubeEntra = !!yt?.entra && !fora.has(PAUTA_FORA_DO_LOTE_YOUTUBE);
   const dm = estado.dm ?? null;
+  const faltaDaRotina = faltaNaRotinaDePublicacao(estado.rotinaDePublicacao);
   const regrasQueEntram = (dm?.regras ?? []).filter((r) => !r.problema && r.noLote?.estadoDoLote !== 'ativo');
   const dmEntra = regrasQueEntram.length > 0 && !fora.has(PAUTA_FORA_DO_LOTE_DM);
   const bloqueio = estado.impedimentos.length > 0 || entram.some((p) => p.problema) || (entram.length === 0 && !youtubeEntra && !dmEntra);
@@ -149,12 +151,17 @@ export function AprovarASemana({
     <div className="space-y-3 text-sm" aria-label={`Aprovar a semana de ${estado.apelido}`}>
       <p className="flex flex-wrap items-center gap-1.5 text-xs">
         <span className="text-muted">Publicação automática da empresa:</span>
-        {estado.automaticaLigada ? (
+        {estado.automaticaLigada && faltaDaRotina ? (
+          <Chip tone="bad">ligada, mas {faltaDaRotina}</Chip>
+        ) : estado.automaticaLigada ? (
           <Chip tone="good">ligada</Chip>
         ) : (
           <Chip tone="warn">desligada — assinada, a semana não sai sozinha</Chip>
         )}
       </p>
+      {!estado.automaticaLigada && (
+        <p className="break-words text-xs text-muted">Quem tem a permissão de publicar liga e desliga no topo de "Aprovar a semana", com motivo.</p>
+      )}
 
       {estado.impedimentos.map((i) => (
         <p key={i} className="break-words rounded-lg border border-warn/40 bg-warn/10 px-2 py-1 text-xs text-warn">
@@ -202,6 +209,9 @@ export function AprovarASemana({
             )}
           </div>
           {yt.entra && <p className="break-words text-xs text-muted">{oQueEntraDoYoutube(yt.capacidades)}</p>}
+          {yt.entra && yt.capacidades.includes(PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE) && yt.automatica && faltaDaRotina && (
+            <p className="break-words text-xs text-bad">O agendamento não sai no horário: {faltaDaRotina}.</p>
+          )}
           {yt.entra && yt.capacidades.includes(PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE) && !yt.automatica && (
             <p className="break-words text-xs text-warn">
               A publicação automática está desligada: o agendamento não sai sozinho, e o horário é marcado à mão no Studio.
@@ -233,7 +243,8 @@ export function AprovarASemana({
           </div>
           {!dm.automatica && (
             <p className="break-words text-xs text-muted">
-              Enquanto a nota pauta.dm.automatica não for ligada (depois do App Review da Meta), a resposta segue à mão, pela fila de comentários.
+              Enquanto a DM automática estiver desligada, a resposta segue à mão, pela fila de comentários. Ela liga no topo de "Aprovar a semana",
+              depois do App Review da Meta.
             </p>
           )}
           <ul className="space-y-2">

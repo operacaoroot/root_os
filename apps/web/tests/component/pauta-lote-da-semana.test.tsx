@@ -170,6 +170,47 @@ describe('MD8: "Aprovar a semana" na aba Semana', () => {
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/lotes/l1/cancelar', {}, 'tok'));
   });
 
+  it('D-MD1: a publicação automática liga pela tela, com confirmação e motivo; a DM não oferece ligar antes do App Review', async () => {
+    rotas(estado(), agenda([peca()], { dmAutomatica: false, dmPodeLigar: false }));
+    apiPut.mockResolvedValue({ qual: 'publicacao', ligada: true, versao: 1 });
+    renderAba();
+    const pub = await screen.findByLabelText('Interruptor da publicação automática');
+    expect(pub).toHaveTextContent('publicação automática desligada');
+    await userEvent.click(within(pub).getByRole('button', { name: 'Ligar' }));
+    const confirmar = within(pub).getByRole('button', { name: 'Confirmar: ligar a publicação automática' });
+    expect(confirmar).toBeDisabled();
+    expect(pub).toHaveTextContent('sai sozinha no horário');
+    await userEvent.type(within(pub).getByRole('textbox'), 'seed assinado e titular criada');
+    await userEvent.click(confirmar);
+    await waitFor(() => expect(apiPut).toHaveBeenCalledWith('/pauta/automacao/publicacao', { ligada: true, motivo: 'seed assinado e titular criada' }, 'tok'));
+
+    const dm = screen.getByLabelText('Interruptor da DM automática');
+    expect(dm).toHaveTextContent('DM automática desligada');
+    expect(within(dm).queryByRole('button', { name: 'Ligar' })).toBeNull();
+    expect(dm).toHaveTextContent('Só liga depois do App Review');
+  });
+
+  it('com a nota ligada e sem a rotina de publicação, a tela não promete o horário; o slot que passou diz que volta ao manual', async () => {
+    const lote = (janelaAte: string) => ({ loteId: 'l1', itemId: 'i1', estadoDoLote: 'ativo', estadoDoItem: 'ativo', janelaAte });
+    const futura = peca({ status: 'aprovada', agendadaPara: '2026-09-28T15:00:00.000Z', slotProposto: null, lote: lote('2999-01-01T00:00:00.000Z') });
+    const passou = peca({ id: 'p2', formato: 'story', titulo: 'Story', status: 'aprovada', agendadaPara: '2026-09-28T12:00:00.000Z', slotProposto: null, lote: lote('2000-01-01T00:00:00.000Z') });
+    rotas(
+      estado({ automaticaLigada: true, rotinaDePublicacao: { existe: false, dispara: false, nome: null, calada: null } }),
+      agenda([futura, passou], { publicacaoAutomatica: true, rotinaDePublicacao: { existe: false, dispara: false, nome: null, calada: null } }),
+    );
+    renderAba();
+    const interruptor = await screen.findByLabelText('Interruptor da publicação automática');
+    expect(interruptor).toHaveTextContent('publicação automática ligada, mas sem a rotina "Publicação da semana" em /rotinas');
+    expect(within(interruptor).getByRole('link', { name: 'abrir /rotinas' })).toHaveAttribute('href', '/rotinas');
+    const slot = screen.getByLabelText('Carrossel de ep-04');
+    expect(slot).toHaveTextContent('Assinada, mas não sai no horário: sem a rotina');
+    expect(slot).not.toHaveTextContent('Sai pelo OS no horário');
+    expect(screen.getByLabelText('Story de ep-04')).toHaveTextContent('O horário assinado passou sem publicar');
+
+    await userEvent.click(within(screen.getByRole('region', { name: 'Aprovar a semana' })).getByRole('button', { name: 'Aprovar a semana' }));
+    expect(await screen.findByLabelText('Aprovar a semana de ep-04')).toHaveTextContent('ligada, mas sem a rotina');
+  });
+
   it('sem pauta.publicar, a tela mostra o estado e não oferece montar nem cancelar', async () => {
     rotas(estado(), agenda([peca()]));
     render(<AbaSemana token="tok" editavel podePostar={false} onErro={vi.fn()} bump={0} />);

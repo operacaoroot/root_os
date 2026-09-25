@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
+  PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO,
   PAUTA_FORA_DO_LOTE_DM,
   PAUTA_FORA_DO_LOTE_YOUTUBE,
   PAUTA_FORMATOS_DA_SEMANA,
@@ -33,6 +34,7 @@ import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { legendaDoPedido, type ContaParaPublicar } from './publicacao-instagram';
 import { PublicacaoInstagramService, contaDePublicacao, publicacoesEmJogo, publicacoesParaATela } from './publicacao-instagram.service';
 import { umaPorVez } from './uma-por-vez';
+import { rotinaDaPauta } from './rotina-da-pauta';
 import {
   CAPACIDADE_DO_ITEM,
   CAPACIDADE_DO_LOTE,
@@ -222,6 +224,7 @@ export class LoteDaSemanaService implements OnModuleInit {
       apelido: apelidoDoEpisodio(e.numero),
       status: e.status,
       automaticaLigada: await this.publicacao.automaticaLigada(orgId),
+      rotinaDePublicacao: await rotinaDaPauta(this.prisma, orgId, PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO),
       impedimentos,
       pecas: lista,
       lotes: lotes.map((l) => ({

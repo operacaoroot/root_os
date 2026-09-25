@@ -46,6 +46,8 @@ export function PublicacaoNoInstagram({
   podePublicar,
   ocupado,
   onAcao,
+  automatica,
+  faltaNaRotina = null,
 }: {
   peca: PautaPecaNaAgenda;
   token: string | null;
@@ -53,6 +55,10 @@ export function PublicacaoNoInstagram({
   podePublicar: boolean;
   ocupado: boolean;
   onAcao: (fn: () => Promise<unknown>) => Promise<boolean>;
+  /** A nota `pauta.publicacao.automatica`; indefinida quando a API não a mandou. */
+  automatica?: boolean;
+  /** O que falta à rotina de publicação para disparar (`faltaNaRotinaDePublicacao`), ou nulo. */
+  faltaNaRotina?: string | null;
 }) {
   const [aviso, setAviso] = useState<Retida | null>(null);
   const pub = peca.publicacao ?? null;
@@ -74,6 +80,8 @@ export function PublicacaoNoInstagram({
     });
 
   if (!pub && !podePedir && !peloLote) return null;
+  // O item vale até o fim da janela do slot; passou, a rotina o dá por perdido na passagem seguinte.
+  const janelaPassou = peloLote && !pub && Date.parse(peca.lote!.janelaAte) <= Date.now();
 
   return (
     <div className="space-y-1 rounded-lg border border-border p-2 text-xs" aria-label="Publicação no Instagram">
@@ -82,11 +90,7 @@ export function PublicacaoNoInstagram({
         {pub ? <Chip tone={TOM[pub.estado]}>{PAUTA_PUBLICACAO_ESTADO_ROTULO[pub.estado]}</Chip> : <Chip>não pedida</Chip>}
       </div>
 
-      {peloLote && !pub && (
-        <p className="break-words text-muted">
-          Sai pelo OS no horário, pela semana assinada — se a publicação automática da empresa estiver ligada.
-        </p>
-      )}
+      {peloLote && !pub && <p className="break-words text-muted">{textoDoLote({ janelaPassou, automatica, faltaNaRotina })}</p>}
       {pub?.estado === 'pendente' && !pub.erro && !aviso && (
         <p className="break-words text-muted">
           Esperando a confirmação de outra pessoa com alçada em{' '}
@@ -133,4 +137,17 @@ export function PublicacaoNoInstagram({
       )}
     </div>
   );
+}
+
+/** O que o slot diz da peça que sai pelo lote assinado: só promete o horário quando há nota ligada e rotina que dispare. */
+export function textoDoLote(e: { janelaPassou: boolean; automatica?: boolean; faltaNaRotina?: string | null }): string {
+  if (e.janelaPassou) {
+    return 'O horário assinado passou sem publicar: a rotina de publicação devolve a peça ao manual na passagem seguinte. Se ela não estiver rodando em /rotinas, reagende a peça ou poste à mão e marque como postada.';
+  }
+  if (e.automatica === false) {
+    return 'Assinada, mas a publicação automática da empresa está desligada: não sai sozinha. Ligue em "Aprovar a semana", ou poste à mão e marque como postada.';
+  }
+  if (e.faltaNaRotina) return `Assinada, mas não sai no horário: ${e.faltaNaRotina}.`;
+  if (e.automatica === undefined) return 'Sai pelo OS no horário, pela semana assinada — se a publicação automática da empresa estiver ligada.';
+  return 'Sai pelo OS no horário, pela semana assinada.';
 }

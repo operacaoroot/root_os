@@ -3626,6 +3626,35 @@ export interface PautaAgendaDaSemana {
   comentariosPendentes?: number;
   /** MD11: a nota `pauta.dm.automatica` (desligada = a DM segue à mão). */
   dmAutomatica?: boolean;
+  /** Se a DM automática pode ser ligada neste servidor (`INSTAGRAM_PEDIR_MENSAGENS=sim`, depois do App Review). */
+  dmPodeLigar?: boolean;
+  /** A rotina `pauta.publicar-agendadas`: é ela que publica a semana assinada no horário. */
+  rotinaDePublicacao?: PautaRotinaDaPauta;
+}
+
+/**
+ * Uma rotina da pauta como a tela precisa dela: sem ela criada em /rotinas,
+ * nada anda sozinho. `calada` é a variável que desliga o tique neste servidor
+ * (`ROTINAS_CRON=off` ou `PAUTA_CRON=off`); com ela, `dispara` é falso.
+ */
+export interface PautaRotinaDaPauta {
+  existe: boolean;
+  dispara: boolean;
+  nome: string | null;
+  calada: string | null;
+}
+
+/**
+ * O que falta para a rotina de publicação disparar, em uma frase, ou nulo. A
+ * tela põe isto no lugar do "sai no horário" quando a publicação automática
+ * está ligada, para a promessa não ficar sem quem a cumpra.
+ */
+export function faltaNaRotinaDePublicacao(r: PautaRotinaDaPauta | null | undefined): string | null {
+  if (!r) return null;
+  if (!r.existe) return 'sem a rotina "Publicação da semana" em /rotinas: nada sai no horário';
+  if (r.calada) return `a rotina de publicação está calada neste servidor (${r.calada}): nada sai no horário`;
+  if (!r.dispara) return 'a rotina de publicação está parada em /rotinas: nada sai no horário';
+  return null;
 }
 
 /** `GET /pauta/agenda/grade` e o retorno do PUT. */
@@ -3891,6 +3920,8 @@ export interface PautaAprovacaoDaSemana {
   status: PautaEpisodioStatus;
   /** A nota `pauta.publicacao.automatica`: desligada, o lote ativo não publica sozinho. */
   automaticaLigada: boolean;
+  /** A rotina que publica o lote no horário. Opcional: a API anterior não a mandava. */
+  rotinaDePublicacao?: PautaRotinaDaPauta;
   /** O que impede a semana inteira (página de links fora do ar, conta de publicação, status). */
   impedimentos: string[];
   pecas: PautaPecaParaAprovar[];
@@ -4268,6 +4299,9 @@ export interface PautaYoutubeDoEpisodio {
   itens: Array<{ capabilityId: string; itemId: string; loteId: string; estadoDoLote: LoteEstado; estadoDoItem: ItemDoLoteEstado; janelaAte: string }>;
   /** O link do vídeo, só depois de agendado (o vídeo privado não abre para ninguém de fora). */
   url: string | null;
+  /** A nota `pauta.publicacao.automatica` e a rotina que marca o horário. Opcionais: a API anterior não os mandava. */
+  automatica?: boolean;
+  rotinaDePublicacao?: PautaRotinaDaPauta;
 }
 
 /** `POST …/youtube/sessao` e `…/sessao/token`: o que só o Mac recebe, e nunca vai ao RASTRO. */
@@ -4347,6 +4381,33 @@ export const PAUTA_CAPACIDADE_DE_PAUSAR_A_DM = 'instagram.regra_de_resposta.paus
  * (Advanced Access de mensagens), do seed assinado e da segunda pessoa.
  */
 export const PAUTA_CHAVE_DA_DM_AUTOMATICA = 'pauta.dm.automatica';
+
+/**
+ * Os dois interruptores da D-MD1 que a aba Semana liga e desliga: cada um é
+ * uma nota da memória (ADR-011), gravada com motivo, versão e RASTRO.
+ */
+export const PAUTA_AUTOMACOES = ['publicacao', 'dm'] as const;
+export type PautaAutomacao = (typeof PAUTA_AUTOMACOES)[number];
+export const PAUTA_CHAVE_DA_AUTOMACAO: Readonly<Record<PautaAutomacao, string>> = {
+  publicacao: PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA,
+  dm: PAUTA_CHAVE_DA_DM_AUTOMATICA,
+};
+export const PAUTA_AUTOMACAO_ROTULO: Readonly<Record<PautaAutomacao, string>> = {
+  publicacao: 'publicação automática',
+  dm: 'DM automática',
+};
+export const PautaAutomacaoSalvarSchema = z
+  .object({
+    ligada: z.boolean(),
+    motivo: z.string().trim().min(10, 'Diga o motivo em pelo menos 10 caracteres.').max(300),
+  })
+  .strict();
+export type PautaAutomacaoSalvarInput = z.infer<typeof PautaAutomacaoSalvarSchema>;
+
+/** `INSTAGRAM_PEDIR_MENSAGENS`: a DM automática só existe com o escopo de mensagens pedido na conexão. */
+export function pedeMensagensDoInstagram(valor: string | undefined): boolean {
+  return /^(1|sim|true)$/i.test((valor ?? '').trim());
+}
 
 /** "fica fora" do lote da semana: este valor deixa as regras da DM de fora. */
 export const PAUTA_FORA_DO_LOTE_DM = 'dm';

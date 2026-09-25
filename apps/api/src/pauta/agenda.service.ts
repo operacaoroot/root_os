@@ -37,6 +37,12 @@ import {
   type PautaReagendarInput,
   PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA,
   PAUTA_CHAVE_DA_DM_AUTOMATICA,
+  PAUTA_AUTOMACAO_ROTULO,
+  PAUTA_CHAVE_DA_AUTOMACAO,
+  PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO,
+  pedeMensagensDoInstagram,
+  type PautaAutomacao,
+  type PautaAutomacaoSalvarInput,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -50,6 +56,7 @@ import { LotesService, type ItemVivo } from '../approvals/lotes.service';
 import { CAPACIDADE_DO_ITEM, revogarItemDaPeca } from './lote-da-semana';
 import { notaDaAutomaticaLigada } from './publicacao-instagram';
 import { ondeEsperaResposta } from './dm-por-comentario';
+import { rotinaDaPauta } from './rotina-da-pauta';
 
 const TITULO_DA_GRADE = 'Grade da semana de posts (pauta)';
 const MINUTO = 60_000;
@@ -107,6 +114,12 @@ const daSemana = { canal: 'instagram' as const, formato: { in: [...PAUTA_FORMATO
  * de qualquer episódio. As escritas são condicionadas ao status `aprovada`
  * relido — a peça que voltou ao rascunho no meio não ganha slot.
  */
+/** O título das notas dos interruptores da D-MD1, como aparecem em /contexto. */
+const TITULO_DA_AUTOMACAO: Readonly<Record<PautaAutomacao, string>> = {
+  publicacao: 'Publicação automática da semana (D-MD1)',
+  dm: 'DM automática a quem comenta a palavra (MD11)',
+};
+
 @Injectable()
 export class AgendaService {
   private readonly log = new Logger('AgendaService');
@@ -334,7 +347,65 @@ export class AgendaService {
       publicacaoAutomatica: await this.publicacaoAutomatica(orgId),
       comentariosPendentes: await this.comentariosPendentes(orgId, agora),
       dmAutomatica: await this.notaLigada(orgId, PAUTA_CHAVE_DA_DM_AUTOMATICA),
+      dmPodeLigar: pedeMensagensDoInstagram(process.env.INSTAGRAM_PEDIR_MENSAGENS),
+      rotinaDePublicacao: await rotinaDaPauta(this.prisma, orgId, PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO),
     };
+  }
+
+  /**
+   * Liga ou desliga um interruptor da D-MD1 (a publicação automática ou a DM
+   * automática) pela aba Semana: é versão nova da nota, sempre pelo
+   * `MemoriaService` (ADR-011), com o motivo no histórico dela e no RASTRO. A
+   * DM só liga com `INSTAGRAM_PEDIR_MENSAGENS=sim`, depois do App Review:
+   * antes disso a conta nem tem o escopo, e ligar prometeria o que não sai.
+   * Desligar vale sempre — é o freio de emergência.
+   */
+  async ligarAutomacao(orgId: string, actorId: string, qual: PautaAutomacao, entrada: PautaAutomacaoSalvarInput): Promise<{ qual: PautaAutomacao; ligada: boolean; versao: number }> {
+    if (qual === 'dm' && entrada.ligada && !pedeMensagensDoInstagram(process.env.INSTAGRAM_PEDIR_MENSAGENS)) {
+      throw new BadRequestException(
+        'A DM automática só liga depois do App Review da Meta: defina INSTAGRAM_PEDIR_MENSAGENS=sim no servidor e reconecte a conta de publicação.',
+      );
+    }
+    const chave = PAUTA_CHAVE_DA_AUTOMACAO[qual];
+    const rotulo = PAUTA_AUTOMACAO_ROTULO[qual];
+    const corpo = `${entrada.ligada ? 'ligada' : 'desligada'}\n\nA primeira linha liga (\`ligada\`) ou desliga a ${rotulo} da empresa. Mude pela aba Semana, que grava o motivo.`;
+    const motivo = `${rotulo} ${entrada.ligada ? 'ligada' : 'desligada'} na aba Semana: ${entrada.motivo}`;
+    const existente = await this.memoria.porChave(orgId, chave);
+    const antes = notaDaAutomaticaLigada(existente);
+    let nota: NotaDeContexto;
+    if (!existente) {
+      nota = await this.memoria.criar(orgId, {
+        chave,
+        kind: ContextKind.definicao,
+        title: TITULO_DA_AUTOMACAO[qual],
+        body: corpo,
+        tags: ['pauta', 'automacao'],
+        sourceType: ContextSource.operador,
+        sourceRef: `pauta.automacao · ${qual}`,
+        motivo,
+      });
+    } else {
+      nota = await this.memoria.alterar(orgId, existente.id, {
+        kind: ContextKind.definicao,
+        title: TITULO_DA_AUTOMACAO[qual],
+        body: corpo,
+        sourceType: ContextSource.operador,
+        sourceRef: `pauta.automacao · ${qual}`,
+        motivo,
+      });
+      if (nota.arquivadoEm) nota = await this.memoria.restaurar(orgId, nota.id, motivo);
+    }
+    const ligada = notaDaAutomaticaLigada(nota);
+    await this.audit.log({
+      orgId,
+      actorId,
+      action: 'pauta.automacao_alterada',
+      entityType: 'context_item',
+      entityId: nota.id,
+      before: { qual, ligada: antes },
+      after: { qual, ligada, versao: nota.versao, motivo: entrada.motivo },
+    });
+    return { qual, ligada, versao: nota.versao };
   }
 
   /** MD9: quantos comentários com a palavra esperam a DM à mão, dentro dos 7 dias. Falhar aqui não derruba a semana. */

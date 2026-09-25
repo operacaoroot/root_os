@@ -5,6 +5,7 @@ import {
   ENVIO_AO_YOUTUBE_ESTADO_ROTULO,
   LOTE_ESTADO_ROTULO,
   YOUTUBE_AUDITORIA_ROTULO,
+  faltaNaRotinaDePublicacao,
   diaNoFuso,
   horaNoFuso,
   instanteNoFuso,
@@ -173,6 +174,12 @@ export function SecaoYoutube({ token, episodioId, apelido, thumbs, editavel, pod
         O vídeo sobe do Mac, direto ao YouTube e sempre privado (<code className="break-all">root-midia youtube {apelido}</code>). O
         OS só abre o envio com a semana assinada, e o horário é marcado pela rotina de publicação.
       </p>
+      {yt?.automatica === false && (
+        <p className="break-words text-xs text-warn">A publicação automática da empresa está desligada: o horário não é marcado sozinho, só à mão no Studio.</p>
+      )}
+      {yt?.automatica && faltaNaRotinaDePublicacao(yt.rotinaDePublicacao) && (
+        <p className="break-words text-xs text-bad">O horário não é marcado sozinho: {faltaNaRotinaDePublicacao(yt.rotinaDePublicacao)}.</p>
+      )}
 
       {yt && (
         <>

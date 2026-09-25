@@ -1,6 +1,9 @@
-import { Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
+  PAUTA_AUTOMACOES,
+  PautaAutomacaoSalvarSchema,
   PautaDiaCivilSchema,
+  type PautaAutomacao,
   PautaDistribuirSchema,
   PautaGradeSalvarSchema,
   PautaMarcarPostadaSchema,
@@ -38,6 +41,14 @@ export class AgendaController {
   @RequirePermissions('pauta.editar')
   salvarGrade(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     return this.agenda.salvarGrade(user.orgId, user.sub, PautaGradeSalvarSchema.parse(body ?? {}));
+  }
+
+  /** D-MD1: liga ou desliga a publicação ou a DM automática da empresa (a nota da memória), com motivo. */
+  @Put('automacao/:qual')
+  @RequirePermissions('pauta.publicar')
+  ligarAutomacao(@CurrentUser() user: JwtUser, @Param('qual') qual: string, @Body() body: unknown) {
+    if (!(PAUTA_AUTOMACOES as readonly string[]).includes(qual)) throw new NotFoundException('Interruptor desconhecido: é publicacao ou dm.');
+    return this.agenda.ligarAutomacao(user.orgId, user.sub, qual as PautaAutomacao, PautaAutomacaoSalvarSchema.parse(body ?? {}));
   }
 
   @Post('episodios/:id/agenda/distribuir')
