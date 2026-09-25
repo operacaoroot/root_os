@@ -135,7 +135,7 @@ export class TranscricaoService {
             'platform.openai.com/settings/organization/billing. O cliente foi orientado a responder por texto.',
         );
         throw new TranscricaoIndisponivelError(
-          'a transcrição por áudio está indisponível agora. Responda por texto — ou tente o áudio mais tarde.',
+          'a transcrição por áudio está indisponível agora. Responda por texto, ou tente o áudio mais tarde.',
         );
       }
       const passageiro = res.status === 429 || res.status >= 500;
