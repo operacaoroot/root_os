@@ -26,3 +26,20 @@ Instalar o Root OS **base**, sem personalização da Campo Bom. O que for espec�
 - Suíte completa da api (precisa de banco de teste descartável).
 - Build da web e da imagem Docker.
 - Qualquer coisa na VPS ROOT (fora do escopo desta fase).
+
+## Atualização 25/09/2026 — base definida e linha de base refeita
+
+Decisões do Pedro (DUVIDAS.md, respostas de Q-001 a Q-003): base `98d8ed4` + merge da tag `v0.4.1`; pasta do kit no Drive autorizada; alvo = **Mac da Campo Bom com Colima, bind 127.0.0.1**, nada na VPS. Com isso, a linha "Alvo" da tabela de decisões acima deixa de estar em conflito.
+
+Merge `eba198b` (`--no-ff v0.4.1`): exit 0, 0 conflitos, 15 commits, 78 arquivos. Nenhuma dependência nova (lockfile igual).
+
+| Verificação | Comando | Exit | Contagem |
+|---|---|---|---|
+| Teste de deploy de instância | `pnpm --filter @mktos/api exec vitest run test/deploy-instancia.test.ts` | 0 | 1 arquivo · 34 passados · 0 falhas · 0 pulados · 53,6 s |
+| Typecheck da api | `pnpm --filter @mktos/api typecheck` | 0 | 0 erros |
+| Typecheck dos testes da api | `pnpm --filter @mktos/api typecheck:test` | 0 | 0 erros · 57 entradas em `apps/api/test/` |
+
+### Não provado (atualizado)
+- Suíte completa da api (precisa de banco de teste descartável).
+- Instalação num Colima real: o teste de deploy usa stubs de `docker` e `curl`.
+- Build da web e da imagem Docker.
