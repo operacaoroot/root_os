@@ -276,7 +276,7 @@ semana: é ele que decide se a DM automática vale o custo.
    pessoa).
 8. **O post não saiu no horário.** Confira, nesta ordem: a publicação automática ligada; a rotina de
    publicação existindo e ligada (a tela avisa quando não há quem cumpra o horário); o conector do
-   Instagram ligado; o seed assinado (linha de boot com 69). Slot perdido há mais de 4 horas volta
+   Instagram ligado; o seed assinado (linha de boot com 71). Slot perdido há mais de 4 horas volta
    ao manual: poste à mão pela aba Semana e marque como postada.
 9. **Editei um post depois da assinatura e ele não saiu.** É o esperado: a edição revoga só aquele
    item. Peça a assinatura de novo para ele.
