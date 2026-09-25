@@ -49,3 +49,5 @@ Enquanto não houver resposta, a fase 0 segue neutra (vale para qualquer alvo) e
 - (c) outra.
 
 Enquanto não houver resposta: nenhum teste de produto foi mudado. As outras frentes (tag, bundle, ensaio) seguem, porque não dependem desses dois arquivos; a tag é local e se refaz se a resposta mudar o HEAD.
+
+**Q-004, fato 3 (medido depois):** o `pnpm test` literal da raiz é `turbo run test`, e o turbo 2.10.4 roda em modo de ambiente estrito: `TEST_DATABASE_URL` não chega aos pacotes. Com `-- --continue`, a api sai com **566 casos pulados e 5 arquivos pulados** (1.354 passados, 1 falha por timeout de 5 s em `rotinas.test.ts`). Com `--env-mode=loose` os 1.921 rodam, mas os três pacotes em paralelo estouram o timeout de 5 s em um caso da api (`rotinas`) e um do web (`trabalho-esteira`). A CI não usa o turbo para testar: roda `pnpm --filter @mktos/<pacote> test` pacote a pacote, com resumo JSON e piso. É essa a forma que o RELATORIO conta. Nenhum timeout foi aumentado.

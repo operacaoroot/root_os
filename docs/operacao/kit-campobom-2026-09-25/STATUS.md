@@ -153,3 +153,65 @@ O que mudou:
 - `netstat -l` em macOS antigo: medido só neste Mac (Darwin 25.6.0).
 - Fora do escopo e não mexido: a linha da VPS usa `\` de continuação, que o crontab não junta; quem cola precisa juntar à mão.
 - Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta etapa (não existe ainda).
+
+## 25/09/2026 — prova completa, tag v0.4.2, bundle e ensaio no Docker deste Mac
+
+Commits (locais, sem push): `0cb8ced` `--portas` · `77a7f7b` Q-004. Tag anotada `v0.4.2` → `77a7f7b` (objeto `43d234d`).
+
+### 1. Suítes — linha de base (`98d8ed4`, clone limpo) × kit (`77a7f7b`)
+Um Postgres `pgvector/pgvector:pg16` descartável por suíte, em `127.0.0.1:5543x`, banco `ckit_<rótulo>_<suíte>_test`; `db:deploy` + `db:seed:politica` antes; forma da CI (`pnpm --filter @mktos/<pacote> test -- --reporter=json`) e a trava `conferir-suite.mjs` extraída do `ci.yml`.
+
+| Suíte | Base: casos/arquivos · falhas · pulados | Kit: casos/arquivos · falhas · pulados | Exit kit |
+|---|---|---|---|
+| `pnpm typecheck` | 0 `error TS` | 0 `error TS` | 0 |
+| `pnpm typecheck:test` | 0 `error TS` | 0 `error TS` | 0 |
+| policy | 74/2 · 1 · 0 | 74/2 · 1 · 0 | 1 (Q-004, item 1, herdado) |
+| web | 412/31 · 0 · 0 | 412/31 · 0 · 0 | 0 |
+| api | 1.809/47 · 0 casos, 1 arquivo (`afterAll`) · 0 | 1.921/52 · 0 casos, 1 arquivo (`afterAll`) · 0 | 1 (Q-004, item 2, herdado) |
+| `pnpm test:isolamento` (papel `mktos_app` com senha, `TENANT_DATABASE_URL`) | 319/1 · 0 · 0 | 319/1 · 0 · 0 | 0 |
+| `python3 -m unittest discover -s tools/conector-local` | não existe na base | 14 · 0 · 0 | 0 |
+| `node tools/ferramentas/test-cli.mjs` | não existe | **não existe** no kit: só nos commits `70ee6b9`/`70c1059` da integra, fora por Q-001 | 1 (arquivo ausente) |
+
+Por arquivo: nenhum arquivo com menos casos que a base; 5 arquivos novos na api (`deploy-instancia` 67, `escritas-internas-pela-porta` 19, `banco-descartavel` 12, `seed-sem-destruicao` 11, `health-version` 3). `rotas-publicas-tenant.test.ts` sozinho: 38/38, exit 0. `pnpm test` literal (turbo): ver Q-004, fato 3.
+
+### `--portas` (`0cb8ced`)
+- Por quê: as seis portas de produção deste Mac são da instância local (`--so-checar` sem `--portas`: exit 1, 6 portas recusadas — 4000/4001 `node`, 5442/6390/9010/9011 `com.docker.backend`) e o instalador não tinha como escolher outras.
+- `vitest run test/deploy-instancia.test.ts`: exit 0, **67/67** (eram 62), 0 pulados. Os 5 casos novos com o `deploy/` antigo: 5/5 vermelhos. Referência da VPS: `git diff --quiet -- apps/api/test/fixtures` exit 0; `git diff 47d898b -- '*.env' '*.override.yml'` 0 linhas.
+
+### 2. Tag e bundle
+- `git bundle create …/bundles/rootos-v0.4.2.bundle root-os/kit-instalacao-mac v0.4.2` → `git bundle verify`: exit 0, 2 refs, "complete history". Recriado depois deste registro (a branch anda com os commits de documentação; a tag não muda).
+- Varredura de padrão de segredo na árvore da tag (`git grep` de chaves Anthropic/OpenAI/AWS/GitHub/Google/Slack e chave privada): 0 linhas; nenhum `.env` versionado.
+
+### 3. Ensaio (Docker Desktop deste Mac, clone do bundle na tag, base no scratchpad)
+Comando: `/bin/bash deploy/instalar.sh --ambiente producao --base <scratch>/ensaio --repo …/rootos-v0.4.2.bundle --tag v0.4.2 --bind-ip 127.0.0.1 --cliente campo-bom --modulos todos --admin-email ensaio@exemplo.com --sem-llm --portas web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021`, com `ROOTOS_GOOGLE_CLIENT_ID`/`ROOTOS_GOOGLE_CLIENT_SECRET` sintéticos (obrigatórios com `--cliente`; não são credencial de verdade).
+
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | instalação | 0 | 10/10 passos; imagem `rootos-app:v0.4.2-77a7f7b91bb5`; 0 valores de segredo do `.env` no log |
+| b | `curl http://127.0.0.1:4201/api/health` | 0 | HTTP 200 |
+| c | `/api/health/versao` | 0 | `v0.4.2` + `77a7f7b91bb566ae74a5388d9917aceb82651d7f` = `git rev-parse v0.4.2^{commit}` |
+| d | `SELECT … FROM "Org" WHERE slug='campo-bom'` no banco do ensaio | 0 | 1 org, **11/11** módulos, iguais ao `MODULOS` de `nav.ts`; usuário `ensaio@exemplo.com` criado |
+| e | linha do crontab impressa, rodada com `env -i PATH=/usr/bin:/bin` | 0 | 1 diário + 1 semanal, 59.709 bytes, 93 tabelas, 93 blocos de dados, 484 linhas |
+| e2 | `gunzip -t` do dump | 0 | íntegro; 93 `CREATE TABLE`, 93 `COPY` |
+| e3 | `pg_restore --list` do dump | **1** | "input file appears to be a text format dump": o `backup-db.sh` grava SQL puro (`pg_dump \| gzip`) de propósito; `pg_restore` só lê o formato custom |
+| e4 | `backup-db.sh --restore-test` | 0 | restaurado num banco novo `rootos_rt_*`: 93 tabelas; Org 2, User 4, Capability 64, PolicyVersion 1; banco de teste derrubado |
+| f | `atualizar.sh --tag v0.4.2` (mesma tag) | 1 | recusa "a instância já está em v0.4.2"; foto antes × depois (hash de `.env`, `override.yml`, `versoes.log`, refs do repo, arquivos da instância, id/início dos 5 containers, imagem): `cmp` exit 0, 12 linhas iguais |
+| g | `lsof` + `netstat -anl` nas 6 portas | 0 | 6/6 em `127.0.0.1`; 0 fora dele; `docker inspect` idem |
+| h | `http://localhost:4200/login` no navegador | 0 | "ROOT OS · A CENTRAL DE CONTEXTO", botão "Entrar com o Google" e "Entrar com e-mail e senha"; `/`, `/login`, `/entrar` HTTP 200 |
+
+### 4. Colisão
+- Outra base, mesmas `--portas`: exit 1, "porta já em uso NO HOST (bind 127.0.0.1)", as 6 portas com variável e dono (`com.docker.backend`), "Nada foi criado."; a base nova não existe depois.
+- Mesma base: exit 1, "`<base>/producao` já existe. Instalar é criar; para trocar de versão use deploy/atualizar.sh"; `.env` do ensaio com o mesmo hash.
+
+### 5. Derrubada
+`docker compose -p rootos-producao down -v`: exit 0; 0 containers `rootos_prod_*`, 0 volumes `rootos-producao_*`, 0 rede. Containers e volumes que não são do ensaio (22 linhas, inclusive `rootos_local_*` "Up 25 hours"): `cmp` antes × depois exit 0. Os 5 Postgres descartáveis das suítes (`ckit_*`) removidos. A base do ensaio (com `.env` e `segredos-iniciais.txt` de uma instância que não existe mais) foi apagada do scratchpad.
+
+### Não provado nesta etapa
+- `pnpm test` exit 0: vermelho herdado da produção `98d8ed4` (Q-004); nenhum teste de produto mudou.
+- `node tools/ferramentas/test-cli.mjs`: o arquivo não existe nesta base (Q-001 deixa a integra de fora).
+- `pg_restore --list` no dump do `backup-db.sh`: não se aplica ao formato SQL puro; a legibilidade foi provada pelo `--restore-test`.
+- Colima: o ensaio rodou no Docker Desktop (`desktop-linux`), não no Colima do Mac da Campo Bom. Encaminhamento de porta do Colima e montagem do `$HOME` na VM não exercidos.
+- Login humano (Google ou e-mail e senha): a tela abriu, ninguém entrou.
+- LLM: instalado com `--sem-llm`.
+- Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta etapa.
+- A imagem `rootos-app:v0.4.2-77a7f7b91bb5` (2,35 GB) ficou no Docker deste Mac (o `down -v` não apaga imagem); o disco de dados está em 98%.

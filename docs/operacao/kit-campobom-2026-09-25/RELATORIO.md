@@ -43,3 +43,27 @@ Merge `eba198b` (`--no-ff v0.4.1`): exit 0, 0 conflitos, 15 commits, 78 arquivos
 - Suíte completa da api (precisa de banco de teste descartável).
 - Instalação num Colima real: o teste de deploy usa stubs de `docker` e `curl`.
 - Build da web e da imagem Docker.
+
+## Atualização 25/09/2026 — prova completa, v0.4.2 e ensaio
+
+Tag local `v0.4.2` → `77a7f7b`; bundle `…/root_os/bundles/rootos-v0.4.2.bundle` (branch + tag, `git bundle verify` exit 0). Detalhe e comandos em `STATUS.md`.
+
+| Verificação | Exit | Contagem (kit × base `98d8ed4`) |
+|---|---|---|
+| `pnpm typecheck` / `typecheck:test` | 0 / 0 | 0 / 0 `error TS` |
+| policy | 1 | 74 × 74 casos; 1 falha herdada (Q-004) |
+| web | 0 | 412 × 412 |
+| api | 1 | 1.921 × 1.809 casos (+112, 5 arquivos novos), 0 casos falhos, 0 pulados; 1 `afterAll` herdado (Q-004) |
+| `test:isolamento` | 0 | 319 × 319 |
+| conector-local (Python) | 0 | 14 (não existe na base) |
+| `tools/ferramentas/test-cli.mjs` | — | não existe no kit (Q-001) |
+| `deploy-instancia.test.ts` | 0 | 67 (eram 62; +5 de `--portas`) |
+| ensaio: instalar · saúde · versão · tenant | 0 · 200 · commit da tag · 11/11 módulos | |
+| ensaio: backup no ambiente do cron · restore-test | 0 · 0 | 93 tabelas, 484 linhas |
+| ensaio: atualizar na mesma tag | 1 (recusa por projeto) | 12/12 itens da foto iguais |
+| ensaio: portas | 0 | 6/6 em 127.0.0.1 |
+| colisão: mesmas portas · mesma base | 1 · 1 | mensagem certa, nada criado |
+| derrubada do ensaio | 0 | 0 resto; outros containers intocados |
+
+### Não provado (atualizado)
+- `pnpm test` exit 0 (Q-004), `test-cli.mjs` (ausente), `pg_restore --list` (dump é SQL puro), Colima real, login humano, LLM.
