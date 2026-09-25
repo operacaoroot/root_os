@@ -75,8 +75,8 @@ Tag local `v0.4.2` refeita → `7f8a762` (objeto `1fe5fcb`). `c9f5784` entrou po
 | Verificação | Exit | Contagem |
 |---|---|---|
 | policy (banco descartável) | 0 | 74/74, 2 arquivos, 0 pulados |
-| api inteira, base `98d8ed4` | 0 em 4 rodadas, 1 em 1 | 1.809/47; a rodada vermelha falhou em `onboarding.test.ts`, e a de antes em `rotas-publicas-tenant` `afterAll` |
-| api inteira, kit | 0 em 5 rodadas | 1.921/52 |
+| api inteira, base `98d8ed4` | 6 rodadas: 4 verdes, 2 vermelhas | 1.809/47; vermelhas: `rotas-publicas-tenant` `afterAll` (rodada da manhã) e `onboarding.test.ts:1456` (web antes, mesmo banco) |
+| api inteira, kit | 6 rodadas: 5 verdes, 1 vermelha | 1.921/52; vermelha: `rotas-publicas-tenant` `afterAll` (rodada da manhã) |
 | `rotas-publicas-tenant.test.ts` sozinho | 0 · 0 | 38/38 na base e no kit |
 
 Os dois vermelhos da api são herdados e intermitentes: o arquivo é idêntico na base (`git diff 98d8ed4 HEAD -- <arquivo>` vazio). O `pnpm test` literal pelo turbo segue declarado (Q-004 c).
