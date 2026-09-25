@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Monta o bundle de distribuição do ROOT OS v0.4.2 para a Campo Bom.
+#
+#   montar-bundle.sh <repo com a tag v0.4.2> <saída .bundle> <área de trabalho vazia>
+#
+# O bundle leva UM commit sem pai e a tag v0.4.2 apontando para ele, e nada mais: nenhuma branch,
+# nenhum histórico, nenhum autor da equipe. A árvore é a de v0.4.2 (7f8a762) menos os arquivos
+# internos da operação (REMOVER), com o CLAUDE.md trocado pelo contrato da máquina do cliente e um
+# .claude/settings.json com as travas de segredo. Identidade e datas fixas: rodar de novo com a
+# mesma tag e os mesmos dois arquivos dá o mesmo commit.
+set -euo pipefail
+
+REPO="${1:?repo}"; SAIDA="${2:?saída .bundle}"; TRAB="${3:?área de trabalho}"
+AQUI="$(cd "$(dirname "$0")" && pwd)"
+TAG=v0.4.2
+ORIGEM_ESPERADA=7f8a762cda94cb4fa1e299bfab506a6b217469e9
+REMOVER=(
+  CLAUDE.md
+  docs/operacao
+  docs/DEPLOY-12-09-2026.md
+  docs/WORKFLOW-MADRUGADA-CLAUDE.md
+  docs/ACOMPANHAMENTO-MADRUGADA-CODEX.md
+  docs/PAUTA.md
+  tools/clickup-inventario.py
+)
+
+[ ! -e "$TRAB" ] || { echo "área de trabalho já existe: $TRAB" >&2; exit 1; }
+[ ! -e "$SAIDA" ] || { echo "saída já existe: $SAIDA" >&2; exit 1; }
+ORIGEM="$(git -C "$REPO" rev-parse "$TAG^{commit}")"
+[ "$ORIGEM" = "$ORIGEM_ESPERADA" ] || { echo "a tag $TAG de $REPO aponta para $ORIGEM, esperado $ORIGEM_ESPERADA" >&2; exit 1; }
+DATA="$(git -C "$REPO" show -s --format=%cI "$ORIGEM")"
+
+git init -q "$TRAB"
+cd "$TRAB"
+git fetch -q --no-tags "$REPO" "refs/tags/$TAG:refs/origem/$TAG"
+git read-tree "refs/origem/$TAG^{tree}"
+for p in "${REMOVER[@]}"; do
+  [ -n "$(git ls-files -- "$p")" ] || { echo "caminho a remover não existe na árvore: $p" >&2; exit 1; }
+  git rm -r -q --cached -- "$p"
+done
+CLAUDE_SHA="$(git hash-object -w "$AQUI/CLAUDE.md")"
+SETTINGS_SHA="$(git hash-object -w "$AQUI/settings.json")"
+git update-index --add --cacheinfo "100644,$CLAUDE_SHA,CLAUDE.md"
+git update-index --add --cacheinfo "100644,$SETTINGS_SHA,.claude/settings.json"
+ARVORE="$(git write-tree)"
+
+export GIT_AUTHOR_NAME="ROOT OS" GIT_AUTHOR_EMAIL="release@rootos.invalid" GIT_AUTHOR_DATE="$DATA"
+export GIT_COMMITTER_NAME="ROOT OS" GIT_COMMITTER_EMAIL="release@rootos.invalid" GIT_COMMITTER_DATE="$DATA"
+COMMIT="$(printf '%s\n' \
+  "ROOT OS v0.4.2 - distribuição da Campo Bom" \
+  "" \
+  "Árvore de v0.4.2 ($ORIGEM_ESPERADA) sem os arquivos internos da operação," \
+  "com o contrato da máquina do cliente em CLAUDE.md e .claude/settings.json." \
+  "" \
+  "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
+  | git commit-tree "$ARVORE")"
+git tag -a "$TAG" -m "ROOT OS $TAG (distribuição Campo Bom)" "$COMMIT"
+git update-ref -d "refs/origem/$TAG"
+git bundle create -q "$SAIDA" "refs/tags/$TAG"
+git bundle verify -q "$SAIDA"
+echo "commit=$COMMIT"
+echo "arvore=$ARVORE"
+echo "tag=$(git rev-parse "refs/tags/$TAG")"
