@@ -746,3 +746,67 @@ describe('Mac: os scripts de instalação rodam no /bin/bash 3.2 com ferramentas
     }
   });
 });
+
+describe('Mac: modo máquina local (--bind-ip 127.0.0.1, Colima)', () => {
+  const instalarLocal = (c: Caixa, amb: 'producao' | 'homologacao', extra: string[] = [], env: Record<string, string> = {}) =>
+    rodar(c, 'instalar', ['--ambiente', amb, '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', ...extra], { ROOTOS_ANTHROPIC_API_KEY: '', ...env });
+
+  it('sem --dominio nem --painel: endereços em http://localhost:<web>, portas só no loopback, sem nada da VPS', () => {
+    const c = caixa();
+    const r = instalarLocal(c, 'producao');
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    const env = lerEnv(c, 'producao');
+    expect(chave(env, 'ROOTOS_BIND_IP')).toBe('127.0.0.1');
+    for (const k of ['WEB_ORIGIN', 'PUBLIC_BASE_URL', 'PUBLIC_BIO_ORIGIN']) expect(chave(env, k), k).toBe('http://localhost:4000');
+    expect(chave(env, 'GOOGLE_REDIRECT_URI')).toBe('http://localhost:4000/api/google/callback');
+    expect(chave(env, 'ROOTOS_PAINEL')).toBe('');
+    expect(env).not.toMatch(/IP_DOCKER_HOST|172\.1[67]\.0\.1|https:\/\//);
+    const ov = readFileSync(path.join(c.base, 'producao', 'override.yml'), 'utf8');
+    const portas = ov.match(/^\s+- "[^"]+"$/gm) ?? [];
+    expect(portas.length).toBe(6);
+    for (const p of portas) expect(p).toMatch(/- "127\.0\.0\.1:\d+:\d+"$/);
+    expect(ov).not.toMatch(/172\.|0\.0\.0\.0|easypanel/);
+    expect(existsSync(path.join(c.base, 'producao', 'painel'))).toBe(false);
+    // saúde e versão conferidas no loopback, onde a porta está
+    expect(lerLog(c)).toMatch(/^curl http:\/\/127\.0\.0\.1:4001\/api\/health$/m);
+    expect(lerLog(c)).toMatch(/^curl http:\/\/127\.0\.0\.1:4001\/api\/health\/versao$/m);
+    expect(lerLog(c)).not.toMatch(/docker-compose\.vps\.yml/);
+    expect(r.stdout).toMatch(/ENDEREÇO \(máquina local, sem rota a configurar\): http:\/\/localhost:4000/);
+    expect(r.stdout).not.toMatch(/TRAEFIK/);
+  });
+
+  it('homologação local ao lado: http://localhost:4100 e portas distintas; --dominio continua valendo se vier', () => {
+    const c = caixa();
+    expect(instalarLocal(c, 'producao').status).toBe(0);
+    const h = instalarLocal(c, 'homologacao');
+    expect(h.status, h.stderr).toBe(0);
+    expect(chave(lerEnv(c, 'homologacao'), 'PUBLIC_BASE_URL')).toBe('http://localhost:4100');
+    expect(readFileSync(path.join(c.base, 'homologacao', 'override.yml'), 'utf8')).toMatch(/"127\.0\.0\.1:4100:4000"/);
+    const d = caixa();
+    expect(instalarLocal(d, 'producao', ['--dominio', 'os.campobom.teste']).status).toBe(0);
+    expect(chave(lerEnv(d, 'producao'), 'WEB_ORIGIN')).toBe('https://os.campobom.teste');
+  });
+
+  it('--painel com bind local é recusado sem criar nada; bind da VPS continua exigindo --dominio', () => {
+    const c = caixa();
+    const r = instalarLocal(c, 'producao', ['--painel', 'root/rootos-prod']);
+    expect(r.status).toBe(64);
+    expect(r.stderr).toMatch(/--painel é do easyPanel da VPS/);
+    expect(existsSync(c.base)).toBe(false);
+    const d = caixa();
+    expect(rodar(d, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '172.16.0.1', '--sem-llm']).status).toBe(64);
+    expect(existsSync(d.base)).toBe(false);
+  });
+
+  it.skipIf(existsSync('/srv/root-os'))('sem ROOTOS_BASE a base local é ~/root-os, e o atualizar a acha sozinho', () => {
+    const c = caixa();
+    const home = mkdtempSync(path.join(tmpdir(), 'p1-home-'));
+    const r = instalarLocal(c, 'producao', [], { ROOTOS_BASE: '', HOME: home });
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    expect(existsSync(path.join(home, 'root-os', 'producao', '.env'))).toBe(true);
+    expect(chave(readFileSync(path.join(home, 'root-os', 'producao', '.env'), 'utf8'), 'BACKUP_DIR')).toBe(path.join(home, 'root-os', 'producao', 'backups'));
+    const chk = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2', '--so-checar'], { ROOTOS_BASE: '', HOME: home, STUB_APPLIED: '20260101000000_um,20260102000000_dois' });
+    expect(chk.status, chk.stderr + chk.stdout).toBe(0);
+    expect(chk.stdout).toMatch(/só checando/);
+  });
+});

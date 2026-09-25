@@ -7,6 +7,11 @@
 #                      --admin-email dono@cliente.com.br [--bind-ip 172.16.0.1] [--cliente acme]
 #   deploy/instalar.sh --ambiente homologacao --tag v0.3.0 --dominio homolog.cliente.com.br ...
 #
+#   MÁQUINA LOCAL (o Mac do cliente, com Colima): --bind-ip 127.0.0.1. Aí --dominio é
+#   opcional (sem ele os endereços são http://localhost:<porta do web>), --painel é
+#   recusado (easyPanel é da VPS) e a base padrão é ~/root-os — no macOS a raiz do
+#   disco é só leitura, e o Colima só enxerga o que mora dentro do $HOME.
+#
 # O que faz, nesta ordem, e para no primeiro erro:
 #   1. confere docker, git, o diretório-base e que a instância ainda NÃO existe
 #      (instalar é criar; atualizar é deploy/atualizar.sh)
@@ -33,6 +38,7 @@ uso() {
 uso: deploy/instalar.sh --ambiente producao|homologacao --tag <tag> --dominio <host>
         [--cliente <slug> --admin-email <email>]   (a empresa do cliente; o admin entra pelo Google, sem senha)
         [--base /srv/root-os] [--repo <url|caminho>] [--bind-ip 172.17.0.1] [--sem-llm] [--so-checar]
+        [--bind-ip 127.0.0.1]   (máquina local: --dominio opcional, endereço http://localhost:<web>, base ~/root-os)
         [--painel <projeto>/<servico>]   (easyPanel: nasce com o projeto Compose do painel e gera o compose para colar lá)
 Segredos que não se geram vêm do AMBIENTE, nunca de argumento:
         ROOTOS_ANTHROPIC_API_KEY / ROOTOS_OPENAI_API_KEY   (uma das duas, ou --sem-llm)
@@ -41,7 +47,7 @@ MSG
   exit 64
 }
 
-AMBIENTE=""; TAG=""; DOMINIO=""; ADMIN_EMAIL=""; BASE="${ROOTOS_BASE:-/srv/root-os}"
+AMBIENTE=""; TAG=""; DOMINIO=""; ADMIN_EMAIL=""; BASE="${ROOTOS_BASE:-}"
 REPO="${ROOTOS_REPO:-https://github.com/operacaoroot/marketing-os.git}"
 BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""
 while [ $# -gt 0 ]; do
@@ -65,8 +71,18 @@ done
 [ -n "$AMBIENTE" ] && ambiente_valido "$AMBIENTE" || { echo "--ambiente precisa ser producao ou homologacao" >&2; uso; }
 [ -n "$TAG" ] || { echo "--tag é obrigatória: a versão instalada tem de ser explícita" >&2; uso; }
 case "$TAG" in *[!A-Za-z0-9._-]*|'') falha "tag inválida: '$TAG'" 64 ;; esac
-[ -n "$DOMINIO" ] || { echo "--dominio é obrigatório (é o WEB_ORIGIN e a rota do Traefik)" >&2; uso; }
-case "$DOMINIO" in *://*|*/*|*[[:space:]]*|'') falha "domínio inválido: '$DOMINIO' — só o host, sem esquema nem caminho" 64 ;; esac
+case "$BIND_IP" in *[!0-9.]*|'') falha "bind-ip inválido: '$BIND_IP' (o IP interno do docker0 desta VPS; confira com: ip -4 addr show docker0)" 64 ;; esac
+# MÁQUINA LOCAL: porta só no loopback. Ninguém de fora alcança, então não há rota,
+# domínio nem painel — o endereço é o da própria máquina.
+MODO_LOCAL=0
+case "$BIND_IP" in 127.*) MODO_LOCAL=1 ;; esac
+if [ "$MODO_LOCAL" = 0 ]; then
+  [ -n "$DOMINIO" ] || { echo "--dominio é obrigatório (é o WEB_ORIGIN e a rota do Traefik)" >&2; uso; }
+fi
+if [ -n "$DOMINIO" ]; then
+  case "$DOMINIO" in *://*|*/*|*[[:space:]]*) falha "domínio inválido: '$DOMINIO' — só o host, sem esquema nem caminho" 64 ;; esac
+fi
+[ -n "$BASE" ] || { if [ "$MODO_LOCAL" = 1 ]; then BASE="$HOME/root-os"; else BASE="/srv/root-os"; fi; }
 # `--admin-email` é o administrador da EMPRESA DO CLIENTE (provisionar-tenant) e entra
 # pelo login com Google, sem senha. A conta com senha que o seed cria é fixa:
 # admin@marketing-os.local. Não confundir as duas — foi um achado de revisão.
@@ -76,8 +92,8 @@ if [ -n "$CLIENTE" ] || [ -n "$ADMIN_EMAIL" ]; then
   [[ "$ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || falha "e-mail inválido: '$ADMIN_EMAIL'" 64
   [[ "$CLIENTE" =~ ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$ ]] || falha "slug de cliente inválido: '$CLIENTE' (a-z, 0-9 e hífen; sem começar/terminar com hífen)" 64
 fi
-case "$BIND_IP" in *[!0-9.]*|'') falha "bind-ip inválido: '$BIND_IP' (o IP interno do docker0 desta VPS; confira com: ip -4 addr show docker0)" 64 ;; esac
 if [ -n "$PAINEL" ]; then
+  [ "$MODO_LOCAL" = 0 ] || falha "--painel é do easyPanel da VPS; com --bind-ip $BIND_IP a instância é local e não tem painel" 64
   painel_valido "$PAINEL" || falha "--painel inválido: '$PAINEL' — formato <projeto>/<servico>, minúsculas, dígitos e hífen (o nome vira o projeto Compose <projeto>_<servico>)" 64
 fi
 
@@ -103,6 +119,8 @@ esac
 # No easyPanel o projeto Compose é <projeto>_<serviço>, e é dele que saem os nomes dos
 # volumes: para o painel adotar a instância depois, o nome tem de ser este desde o primeiro up.
 [ -z "$PAINEL" ] || PROJ="$(projeto_do_painel "$PAINEL")"
+# O endereço público: o domínio na VPS; na máquina local sem domínio, o próprio web.
+if [ -n "$DOMINIO" ]; then URL_PUBLICA="https://$DOMINIO"; else URL_PUBLICA="http://localhost:$WEB"; fi
 # A imagem só ganha nome depois do clone: a tag é IMUTÁVEL por versão+commit.
 IMAGEM=""
 
@@ -167,13 +185,13 @@ gerar() { openssl rand -hex "$1"; }
   echo "CANAL_APROVACAO_CODIGO_SEGREDO="
   echo "CANAL_APROVACAO_CAPACIDADES="
   echo "# --- endereços ---"
-  echo "WEB_ORIGIN=https://$DOMINIO"
-  echo "PUBLIC_BASE_URL=https://$DOMINIO"
-  echo "PUBLIC_BIO_ORIGIN=https://$DOMINIO"
+  echo "WEB_ORIGIN=$URL_PUBLICA"
+  echo "PUBLIC_BASE_URL=$URL_PUBLICA"
+  echo "PUBLIC_BIO_ORIGIN=$URL_PUBLICA"
   echo "# --- login com Google (o admin do cliente entra por aqui; o callback serve ao login e ao conector) ---"
   echo "GOOGLE_CLIENT_ID=$GOOGLE_ID"
   echo "GOOGLE_CLIENT_SECRET=$GOOGLE_SECRET"
-  echo "GOOGLE_REDIRECT_URI=https://$DOMINIO/api/google/callback"
+  echo "GOOGLE_REDIRECT_URI=$URL_PUBLICA/api/google/callback"
   echo "GOOGLE_LOGIN_ALLOWED_EMAILS=$ADMIN_EMAIL"
   echo "# --- modelo (o provedor segue a chave que veio; sem chave, o LLM fica desligado e a instância diz isso) ---"
   if [ -n "$ANTHROPIC_KEY" ]; then echo "LLM_PROVIDER=anthropic"; elif [ -n "$OPENAI_KEY" ]; then echo "LLM_PROVIDER=openai"; else echo "LLM_PROVIDER="; fi
@@ -208,6 +226,7 @@ if [ "$SO_CHECAR" = 1 ]; then
   echo "[instalar] só checando — nada foi criado (nem diretório, nem segredo, nem clone)."
   echo "  instância: $DIR_INSTANCIA · projeto $PROJ · prefixo $PREFIXO · rede $REDE · imagem rootos-app:$TAG-<commit>"
   echo "  portas em $BIND_IP: web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC"
+  echo "  endereço: $URL_PUBLICA$([ "$MODO_LOCAL" = 1 ] && echo " (máquina local: só esta máquina alcança)" || true)"
   echo "  LLM: ${LLM_PROVIDER_ESCOLHIDO:-desligado} · cliente: ${CLIENTE:-nenhum} · relógio: $([ "$AMBIENTE" = homologacao ] && echo desligado || echo ligado)"
   [ -z "$PAINEL" ] || echo "  easyPanel: serviço '$PAINEL' → projeto Compose $PROJ; geraria $DIR_INSTANCIA/painel/docker-compose.yml (sem build:, imagem por variável)"
   exit 0
@@ -288,14 +307,14 @@ cat <<MSG
 
   Instância '$AMBIENTE' no ar em $DIR_INSTANCIA (tag $TAG, commit ${COMMIT:0:12}).
   Provado por este script: saúde ok, artefato $TAG@${COMMIT:0:12} no ar, migrations aplicadas, política semeada.
-  NÃO provado por este script: login humano (ninguém entrou), modelo respondendo$([ -z "$ANTHROPIC_KEY$OPENAI_KEY" ] && echo " (LLM desligado)" || true), rota do Traefik.
+  NÃO provado por este script: login humano (ninguém entrou), modelo respondendo$([ -z "$ANTHROPIC_KEY$OPENAI_KEY" ] && echo " (LLM desligado)" || true)$([ "$MODO_LOCAL" = 1 ] && echo ", a tela abrindo no navegador" || echo ", rota do Traefik").
 
-  1. ROTA NO TRAEFIK/easyPanel (manual): $DOMINIO → $BIND_IP:$WEB
+$(if [ "$MODO_LOCAL" = 1 ]; then echo "  1. ENDEREÇO (máquina local, sem rota a configurar): $URL_PUBLICA — porta só em $BIND_IP"; else echo "  1. ROTA NO TRAEFIK/easyPanel (manual): $DOMINIO → $BIND_IP:$WEB"; fi)
 $(if [ -n "$PAINEL" ]; then echo "  1b. ADOTAR NO PAINEL:"; lembrete_do_painel instalar; fi)
   2. SEGREDOS INICIAIS (0600): $DIR_INSTANCIA/segredos-iniciais.txt — guarde e APAGUE.
      (a senha é de admin@marketing-os.local; o admin do cliente entra pelo Google)
-$(if [ -n "$CLIENTE" ]; then echo "  2b. No console do Google, a URI de redirect autorizada tem de ser: https://$DOMINIO/api/google/callback"; else echo "  2b. Para login com Google mais tarde: ROOTOS_GOOGLE_CLIENT_ID/SECRET no ambiente e GOOGLE_* no .env, depois up -d --no-build api"; fi)
-  3. BACKUP diário (crontab do root):
+$(if [ -n "$CLIENTE" ]; then echo "  2b. No console do Google, a URI de redirect autorizada tem de ser: $URL_PUBLICA/api/google/callback"; else echo "  2b. Para login com Google mais tarde: ROOTOS_GOOGLE_CLIENT_ID/SECRET no ambiente e GOOGLE_* no .env, depois up -d --no-build api"; fi)
+  3. BACKUP diário ($([ "$MODO_LOCAL" = 1 ] && echo "crontab -e do usuário desta máquina" || echo "crontab do root")):
      BACKUP_DB_CONTAINER=$DB_CONT PGUSER=$DB_USER PGDATABASE=$DB_NAME BACKUP_DIR=$DIR_INSTANCIA/backups \\
        $DIR_REPO/deploy/backup-db.sh
   4. Atualizar: deploy/atualizar.sh --ambiente $AMBIENTE --tag <tag-nova>

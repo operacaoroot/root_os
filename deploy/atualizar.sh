@@ -37,12 +37,12 @@ NOME_DO_SCRIPT="atualizar"
 
 uso() {
   cat >&2 <<MSG
-uso: deploy/atualizar.sh --ambiente producao|homologacao (--tag <tag> | --voltar [tag]) [--base /srv/root-os] [--so-checar]
+uso: deploy/atualizar.sh --ambiente producao|homologacao (--tag <tag> | --voltar [tag]) [--base /srv/root-os | ~/root-os] [--so-checar]
 MSG
   exit 64
 }
 
-AMBIENTE=""; TAG=""; VOLTAR=0; VOLTAR_PARA=""; BASE="${ROOTOS_BASE:-/srv/root-os}"; SO_CHECAR=0
+AMBIENTE=""; TAG=""; VOLTAR=0; VOLTAR_PARA=""; BASE="${ROOTOS_BASE:-}"; SO_CHECAR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ambiente) AMBIENTE="${2:-}"; shift 2 ;;
@@ -54,6 +54,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$AMBIENTE" ] && ambiente_valido "$AMBIENTE" || { echo "--ambiente precisa ser producao ou homologacao" >&2; uso; }
+# Base padrão: /srv/root-os (VPS). Numa máquina local o instalador usa ~/root-os; se
+# /srv/root-os não existe e ~/root-os sim, é ela.
+if [ -z "$BASE" ]; then
+  if [ ! -d /srv/root-os ] && [ -d "$HOME/root-os" ]; then BASE="$HOME/root-os"; else BASE="/srv/root-os"; fi
+fi
 if [ "$VOLTAR" = 0 ]; then
   [ -n "$TAG" ] || { echo "--tag é obrigatória (ou --voltar)" >&2; uso; }
   case "$TAG" in *[!A-Za-z0-9._-]*) falha "tag inválida: '$TAG'" 64 ;; esac
