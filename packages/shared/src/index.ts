@@ -7,5 +7,10 @@ export * from './nav.js';
 // cabeçalho de `horas-devolvidas.ts`.
 export * from './horas-devolvidas.js';
 
+// O padrão de nomenclatura da agenda da Root (`Reunião Online - Cliente -
+// Responsável`). Mora no shared porque a tela monta, a API escreve e a leitura
+// desmonta o MESMO título — ver o cabeçalho de `agenda.ts`.
+export * from './agenda.js';
+
 // Nome padrão; cada app pode sobrescrever via seu próprio env (APP_NAME).
 export const DEFAULT_APP_NAME = 'Marketing OS';

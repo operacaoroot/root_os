@@ -912,6 +912,45 @@ export const CreateEventSchema = z.object({
 });
 export type CreateEventInput = z.infer<typeof CreateEventSchema>;
 
+/*
+ * MARCAR REUNIÃO — a escrita que o OS oferece no lugar de "criar evento".
+ *
+ * A diferença entre este esquema e o `CreateEventSchema` acima é a única que
+ * interessa: aqui NÃO existe campo `title`. O título é montado pelo servidor
+ * com `montarTituloDeReuniao` (ver `agenda.ts`), e é por isso que nem a tela
+ * nem um agente conseguem escrever "Reunião c/ Andrade" na agenda da Root.
+ *
+ * `CreateEventSchema` continua vivo para o que NÃO é reunião — bloqueio de
+ * agenda, viagem, lembrete —, e é o caminho em que o título é livre.
+ */
+export const MarcarReuniaoSchema = z
+  .object({
+    tipo: z.enum(['cliente', 'interna']),
+    /**
+     * Sempre exigida, inclusive na interna: ela não vai para o título da
+     * interna, mas é ela que decide o link do Meet e o campo de local.
+     */
+    modalidade: z.enum(['online', 'presencial']),
+    /** Obrigatório quando `tipo: 'cliente'` — o refine abaixo cobra. */
+    cliente: z.string().min(1).max(120).optional(),
+    /** Um sócio, ou "Todos". */
+    responsavel: z.string().min(1).max(120),
+    inicio: z.string().min(1), // ISO datetime
+    /** O fim, quando declarado; do contrário vale `duracaoMinutos`. */
+    fim: z.string().min(1).optional(),
+    duracaoMinutos: z.number().int().min(10).max(600).optional(),
+    /** Vai para a descrição do evento, acima do que o Google acrescentar. */
+    pauta: z.string().max(5000).optional(),
+    /** Endereço, sala — só faz sentido na presencial. */
+    local: z.string().max(300).optional(),
+    convidados: z.array(z.string().email()).max(50).optional(),
+  })
+  .refine((v) => v.tipo !== 'cliente' || !!v.cliente?.trim(), {
+    message: 'Reunião de cliente precisa do nome do cliente.',
+    path: ['cliente'],
+  });
+export type MarcarReuniaoInput = z.infer<typeof MarcarReuniaoSchema>;
+
 export const CreateDocSchema = z.object({
   title: z.string().min(1).max(300),
   content: z.string().max(50000).optional(),
