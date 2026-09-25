@@ -31,6 +31,58 @@ O que fica em `/srv/root-os/<ambiente>/`: `repo/` (checkout destacado na tag), `
 - **Manual, e o script diz no fim**: a rota do Traefik/easyPanel (`domínio → bind-ip:porta-web`), a
   URI de redirect no console do Google, o crontab do backup.
 
+## Instalar num Mac (Colima)
+
+Alvo: o Mac do cliente, com o Docker rodando dentro do Colima e as portas **só no loopback**
+(`127.0.0.1`). Ninguém fora da máquina alcança a instância; não há domínio, Traefik nem easyPanel.
+
+**Pré-requisitos no Mac** (uma vez): Colima, o cliente `docker` com o plugin `compose` (v2), `git`
+e `openssl`. `lsof` e o `/bin/bash` 3.2 já vêm no macOS — os scripts foram escritos para esse bash
+e a suíte os roda por ele.
+
+```sh
+brew install colima docker docker-compose   # o brew imprime como registrar o plugin compose (cliPluginsExtraDirs)
+colima start --cpu 2 --memory 4 --disk 40   # números sugeridos, não medidos: o build da imagem é o pico
+docker compose version                      # tem de responder; é a primeira coisa que o instalador confere
+```
+
+**Instalar** (de um clone do repositório; o instalador clona a tag de novo dentro da base):
+
+```sh
+export ROOTOS_GOOGLE_CLIENT_ID='…' ROOTOS_GOOGLE_CLIENT_SECRET='…'   # obrigatórias com --cliente
+export ROOTOS_ANTHROPIC_API_KEY='…'                                 # ou --sem-llm
+deploy/instalar.sh --ambiente producao --tag <tag> --bind-ip 127.0.0.1 \
+    --cliente campobom --admin-email dono@cliente.com.br --modulos financeiro,relatorios
+deploy/instalar.sh --ambiente producao --tag <tag> --bind-ip 127.0.0.1 --sem-llm --so-checar   # só o plano
+```
+
+O que muda com `--bind-ip 127.0.0.1` (qualquer `127.x` conta como máquina local):
+
+- **`--dominio` é opcional.** Sem ele, `WEB_ORIGIN`, `PUBLIC_BASE_URL` e `PUBLIC_BIO_ORIGIN` são
+  `http://localhost:<porta do web>` (4000 em produção, 4100 em homologação) e o callback do Google é
+  `http://localhost:<porta do web>/api/google/callback` — é essa a URI que se autoriza no console do
+  Google. Com `--dominio`, vale `https://<domínio>` como na VPS.
+- **`--painel` é recusado** (exit 64): easyPanel é da VPS.
+- **A base padrão é `~/root-os`**, não `/srv/root-os`: no macOS a raiz do disco é só leitura e o
+  Colima só monta o `$HOME` dentro da VM (é lá que o `vault/` da instância é lido). Não aponte
+  `ROOTOS_BASE` para dentro do Google Drive nem do iCloud: o `.env` e os segredos iniciais iriam
+  junto na sincronização. O `atualizar.sh` acha `~/root-os` sozinho quando `/srv/root-os` não existe.
+- Nada da VPS entra: nem `docker-compose.vps.yml`, nem `IP_DOCKER_HOST`; o override gerado binda as
+  seis portas em `127.0.0.1` e a saúde é conferida em `http://127.0.0.1:<porta da api>`.
+- `--modulos <a,b,c|todos>` vai ao `provisionar-tenant` da empresa do cliente; sem a flag, `todos`
+  (o comportamento de sempre). Exige `--cliente`; lista vazia é recusada.
+
+**Porta ocupada no Mac.** Antes de criar qualquer coisa, o instalador pergunta ao host (`lsof` no
+macOS, `ss` no Linux) quem ouve cada uma das seis portas, e recusa dizendo porta, variável e
+processo. No Colima isso importa mais que na VPS: o container sobe dentro da VM e o encaminhamento
+para o Mac falha **calado** se a porta do Mac já estiver tomada. Com bind no loopback, um programa
+ouvindo em `::1` também conta, porque o navegador tenta `::1` primeiro em `localhost`. Sem `sudo`,
+o `lsof` do macOS só enxerga processos do próprio usuário; quando ele não acha ninguém, o instalador
+confere também o `netstat`, que vê todos os ouvintes sem dizer de quem são.
+
+**Backup:** o fim da instalação imprime a linha para o `crontab -e` do usuário. O cron não roda com
+o Mac dormindo; o dump do dia depende de o Mac estar acordado no horário.
+
 ## Atualizar
 
 ```sh
@@ -97,8 +149,14 @@ A rota (domínio → `bind-ip:porta do web`) continua sendo configurada no Traef
 
 ## Testes
 
-`apps/api/test/deploy-instancia.test.ts` — hermético: `docker` e `curl` são stubs
-(`deploy/test-stubs/bin`), o git é real contra um repositório de fixture com quatro tags. Mede a
+`apps/api/test/deploy-instancia.test.ts` — hermético: `docker`, `curl`, `lsof`, `ss` e `netstat` são stubs
+(`deploy/test-stubs/bin`), o git é real contra um repositório de fixture com quatro tags, e os
+scripts rodam pelo `/bin/bash` explícito (no macOS, o 3.2 do cliente). Uma checagem estática recusa
+recurso de bash 4+ e ferramenta só do GNU. A **regressão da VPS** compara byte a byte o `.env`, o
+`override.yml` e a sequência de chamadas ao docker de três instalações de VPS com a referência do
+v0.4.1 em `apps/api/test/fixtures/deploy-referencia/` (com `openssl` determinístico,
+`deploy/test-stubs/deterministico/`); divergência grava a saída nova em
+`$TMPDIR/deploy-referencia-atual/` para comparar. Mede a
 ordem das chamadas, o que fica em disco, o que nunca aparece (segredo em stdout/argv), falha fechada
 de saúde/identidade/migrations, compatibilidade da imagem anterior com o schema novo e cenários de
 interrupção. O último caso valida o override gerado com `docker compose config` real, se houver docker.
