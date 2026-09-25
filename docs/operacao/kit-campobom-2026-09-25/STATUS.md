@@ -382,3 +382,35 @@ Os padrões de antes que não estavam nesta lista (`operacao.root@gmail.com`, no
 - O cache de build do Docker cresceu 30,17 → 32,15 GB e o disco do Mac fechou com 9.866.556 KiB livres (tinha 11.736.864): sem prune, por regra. As imagens somam 77,23 GB contra 75,66 GB antes, com a mesma lista; a diferença não foi atribuída a um objeto.
 - `SHA256SUMS` do kit: desatualizado de propósito até a fase seguinte (o).
 - As menções a FullBPO no LEIA-ME, PLANO, CLAUDE.md do kit, `retorno/LEIA.txt` e no workflow (decisão de marca) e a troca do contato (Q-006): fase seguinte.
+
+## 25/09/2026 — Marca Root, contato (Q-006), credenciais do Google (Q-005 a) e commit novo no kit
+
+Escrita só na pasta do kit (8 arquivos de texto + `SHA256SUMS`) e, no worktree, em `distribuicao/harness-workflow.mjs`, DUVIDAS.md e este arquivo. Cópia dos arquivos antes da mudança no scratchpad da sessão (`kit-antes/`). Bundle, `rootos-home/` e os dois `settings.json` não mudaram.
+
+### O que mudou no kit
+- **Marca:** toda menção à FullBPO como empresa responsável virou Root, com a frase ajustada ("a decisão é da Root", "volta para a Root", "contato da Root"). Antes, linhas com "fullbpo" (`grep -ric`): CLAUDE.md 4, LEIA-ME.md 6, PLANO.md 8, `retorno/LEIA.txt` 2, workflow 7. `rootos-home/CLAUDE.md` já não tinha nenhuma e continua igual ao `CLAUDE.md` da raiz do bundle.
+- **Contato (Q-006):** `LEIA-ME.md`, seção "Contato na Root" = `Pedro Magnago · pedro.magnago@fullbpo.com`, sem a marca `PENDENTE (Q-006)`. A pasta segue compartilhada com permissão de editar (dito no "Antes de começar").
+- **Item 1b do PLANO e `contatoPreenchido`:** a checagem virou `grep -c 'PENDENTE' LEIA-ME.md` → 0 **e** `sed -n '/^## Contato na Root/,/^## /p' LEIA-ME.md | grep -cE '<e-mail>'` → 1 ou mais. O prompt do Inventário diz ao agente como preencher `contatoPreenchido` a partir dessas duas contagens. A mensagem do portão deixou de citar "Q-006" (o kit que vai ao cliente não cita dúvida interna: `grep -c 'Q-00'` → 0 nos 5 arquivos).
+- **Credenciais do Google (Q-005 a):** LEIA-ME ("Antes de começar" e "Crie o arquivo google.env") e PLANO (parágrafo novo "Credenciais do Google", Fase 2 item 7, Fase 5 item 5 "Pendências da Root") dizem: a Root cria o cliente OAuth num projeto Google Cloud dela, um só para a Campo Bom e revogável, cadastra a URI de redirect e manda as duas credenciais pelo gerenciador de senhas; a pessoa grava em `~/RootOS/google.env` (0600); o Claude só confere existência, permissão e nomes de variável. O prompt da Fase 2 do workflow manda nunca pedir, aceitar ou repetir os valores no chat.
+- **Enxugamento (Q-007 b) × kit:** o bundle novo aponta para `3397140941264725e906334348fe6abe2f6d90ad`, e o kit ainda esperava `fff7fb9…` (PLANO 4 lugares, constante `COMMIT` do workflow): o portão da Fase 3 e o da Fase 4 reprovariam uma instalação certa. Trocado. O parágrafo da distribuição diz que saíram `docs/` e as pastas de teste. A nota do Colima citava "a documentação do instalador" (`docs/INSTALACAO.md`, que não vai mais no bundle) e agora diz "números que a Root usa como ponto de partida". Os scripts que o PLANO roda continuam no bundle: `deploy/instalar.sh`, `deploy/backup-db.sh` (`--restore-test` 4 ocorrências).
+- **Harness** (`distribuicao/harness-workflow.mjs`): `COMMIT` novo; guarda de marca (FullBPO no workflow fora do e-mail → exit 3); cenário do contato confere que o prompt do Inventário cita "Contato na Root" e o do Relatório "contato da Root"; cenário novo do prompt do google.env; cenário novo "distribuição anterior `fff7fb9` no ar → vermelho". 32 → 34 cenários.
+
+### Evidência
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | `git clone` do bundle do kit + `rev-parse 'v0.4.2^{commit}'` · `rev-list --all \| wc -l` · `git bundle list-heads` | 0 | `3397140941264725e906334348fe6abe2f6d90ad` · 1 · 1 (tag `3ed4add`) |
+| b | `grep -ric fullbpo .` na pasta do kit | 0 | 1 linha em 1 arquivo (`LEIA-ME.md:8`, o e-mail do contato); 0 nos outros 8; tirando o e-mail, 0 linhas |
+| c | `grep -c fff7fb9` · `grep -c 3397140941264725e906334348fe6abe2f6d90ad` em PLANO e workflow | — | 0 · 0 e 4 · 1 |
+| d | item 1b no kit · na cópia de antes · num LEIA-ME sem o e-mail (scratch) | 0 | PENDENTE 0 e e-mail 1 (passa) · 1 e 0 (reprova) · 0 e 0 (reprova) |
+| e | `node distribuicao/harness-workflow.mjs <workflow do kit>` | 0 | **34/34** cenários |
+| f | mordida: harness no workflow de antes · workflow com `COMMIT` antigo · workflow sem a frase do chat no prompt do google.env | 3 · 1 · 1 | "marca: FullBPO no workflow" · 23/34 · 1 FALHA |
+| g | workflow: `Date.now`/`Math.random`/`new Date` · `meta` avaliado como literal | 1 · 0 | 0 · `campobom-os-instalar`, 5 fases |
+| h | varredura do kit sem o bundle: chaves (sk-ant, GOCSPX, AKIA, ghp_, chave privada, JWT) · caminhos do Mac e IPs das VPS · e-mails | 1 · 1 · 0 | 0 · 0 · `nome@example.com` ×3 (exemplo) e `pedro.magnago@fullbpo.com` ×1 |
+| i | `cmp` `rootos-home/CLAUDE.md` e `rootos-home/settings.json` × `CLAUDE.md` e `.claude/settings.json` da raiz do bundle | 0 · 0 | iguais |
+| j | `SHA256SUMS` regerado por último (`find . -type f ! -path ./SHA256SUMS`, `LC_ALL=C sort`, `shasum -a 256`) + `shasum -a 256 -c SHA256SUMS` | 0 · 0 | 9 linhas, **9/9 `OK`**; bundle `6d7f76bf…cb2f` |
+
+### Não provado nesta etapa
+- O `grep -ric` não enxerga dentro do bundle (o pack do git é comprimido): o código do produto ainda leva "FullBPO" em 5 arquivos, entre eles o texto de tela do Financeiro. Continua na **Q-008**, aberta.
+- A checagem do item 1b só foi exercida por script neste Mac (d); o agente preenchendo `contatoPreenchido` numa sessão real do Claude Code não foi exercido, como o resto do workflow (só o fluxo de controle no harness).
+- O cliente OAuth da Root (projeto, URI de redirect cadastrada, revogação) não existe neste kit nem foi conferido: é trabalho da Root fora do kit, e o relatório da Campo Bom lista como "Pendências da Root".
+- A pasta compartilhada com a Campo Bom com permissão de editar: decisão registrada, compartilhamento não feito nem conferido nesta etapa.

@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 const WF = process.argv[2]
 const src = readFileSync(WF, 'utf8').replace(/^export const meta =/m, 'const meta =')
 if (/Date\.now|Math\.random|new Date/.test(src)) { console.log('não determinístico'); process.exit(2) }
+if (/fullbpo/i.test(src.replace(/pedro\.magnago@fullbpo\.com/gi, ''))) { console.log('marca: FullBPO no workflow'); process.exit(3) }
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const run = new AsyncFunction('args', 'agent', 'phase', 'log', src)
-const COMMIT = 'fff7fb9e1da12c382d0b847fce46d12972a37d87'
+const COMMIT = '3397140941264725e906334348fe6abe2f6d90ad'
 
 const base = {
   inv: { pastaKit: '/k', sha256Ok: true, contatoPreenchido: true, kitGravavel: true, kitNoDrive: true, macosMaior: 14, ramGiB: 16, discoLivreGiB: 100, admin: true, energiaAC: true, dockerDesktopAberto: false, portasOcupadas: [], instanciaExiste: false, estadoInstalacao: 'nenhuma', tentativasGuardadas: 0, redeFalhas: [], redeTestados: 17, proxyAtivo: 0 },
@@ -48,7 +49,8 @@ T.push(await cenario('verde completo: 2 rodadas de espera', A, () => {}, { estad
 T.push(await cenario('inventário: rede com 1 falha → vermelho', A, c => { c.inv.redeFalhas = ['binaries.prisma.sh exit 60'] }, { estadoGeral: 'vermelho', parouEm: 'Inventário', chamadas: 2 }))
 T.push(await cenario('inventário: agente diz verde com 12 endereços → vermelho', A, c => { c.inv.redeTestados = 12 }, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
 T.push(await cenario('inventário: proxy ligado → vermelho', A, c => { c.inv.proxyAtivo = 1 }, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
-T.push(await cenario('inventário: contato pendente (Q-006) → vermelho', A, c => { c.inv.contatoPreenchido = false }, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
+T.push(await cenario('inventário: contato da Root ausente (item 1b) → vermelho, relatório cita o contato da Root', A, c => { c.inv.contatoPreenchido = false }, { estadoGeral: 'vermelho', parouEm: 'Inventário', prompt: [['Inventário', 'Contato na Root'], ['Relatório', 'contato da Root']] }))
+T.push(await cenario('pré-req: prompt do google.env diz gerenciador de senhas e nunca no chat', A, () => {}, { estadoGeral: 'verde', prompt: [['Pré-requisitos', 'gerenciador de senhas'], ['Pré-requisitos', 'nunca peça, aceite ou repita os valores no chat']] }))
 T.push(await cenario('inventário: retorno/ sem escrita → vermelho', A, c => { c.inv.kitGravavel = false }, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
 T.push(await cenario('inventário: porta de outro programa → vermelho', A, c => { c.inv.portasOcupadas = ['4000 node'] }, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
 T.push(await cenario('inventário: agente morto → vermelho', A, c => { c.invAgente = null }, { estadoGeral: 'vermelho', parouEm: 'Inventário', chamadas: 2 }))
@@ -76,6 +78,7 @@ T.push(await cenario('verificar: em_andamento → aguardando', { ...A, modo: 've
 T.push(await cenario('verificar: sem instância → vermelho', { ...A, modo: 'verificar' }, () => {}, { estadoGeral: 'vermelho', parouEm: 'Inventário' }))
 T.push(await cenario('verificação: porta fora de 127 → vermelho', A, c => { c.ver.portasFora127 = 1 }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
 T.push(await cenario('verificação: commit no ar antigo → vermelho', A, c => { c.ver.commitNoAr = '7f8a762cda94cb4fa1e299bfab506a6b217469e9' }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
+T.push(await cenario('verificação: distribuição anterior fff7fb9 no ar → vermelho', A, c => { c.ver.commitNoAr = 'fff7fb9e1da12c382d0b847fce46d12972a37d87' }, { estadoGeral: 'vermelho', parouEm: 'Verificação' }))
 const ok = T.filter(Boolean).length
 console.log(`${ok}/${T.length} cenários`)
 process.exit(ok === T.length ? 0 : 1)
