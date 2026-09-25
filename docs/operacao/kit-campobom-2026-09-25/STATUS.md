@@ -83,3 +83,37 @@ Incidentes desta fatia, corrigidos:
 - `--modulos` com chave fora do catálogo: a recusa depende do provisionamento (`provisionar-tenant.ts`), não rodado aqui.
 - Pasta do kit no Drive (`kit-rootos-v0.4.2`): não tocada nesta fatia.
 - Recusa por irmã em conflito continua deixando `<base>/<amb>/.env` para trás (comportamento anterior, fora do escopo).
+
+## 25/09/2026 — bloqueios da revisão da fatia "instalar em Mac limpo"
+
+Commits (locais, sem push): `57633d5` referências versionadas · `5390bba` lsof + ss/netstat · `7715e37` `--modulos` no catálogo.
+
+| # | Bloqueio | Antes (teste novo) | Depois |
+|---|---|---|---|
+| 1 | `*.docker.log` da regressão caíam no `*.log` do `.gitignore` | `vitest -t 'Regressão VPS'`: exit 1, 1 falha ("referência fora do git", 3 arquivos) | exit 0, 4/4; `git ls-files apps/api/test/fixtures/deploy-referencia` = 9; `git check-ignore` exit 1 (nenhum ignorado) |
+| 2 | Linux com `lsof` cego (sem root) devolvia porta livre sem perguntar ao `ss` | `vitest -t 'porta já ouvindo'`: exit 1, 4 falhas | exit 0, 8/8 no bloco |
+| 3 | `--modulos` fora do catálogo só falhava no passo 7/10 | `vitest -t '--modulos'`: exit 1, 3 falhas (instalação inteira seguia, exit 0) | exit 0, 5/5 no bloco |
+
+Provas:
+
+| # | Comando | Exit | Contagem |
+|---|---|---|---|
+| a | procedência dos `.docker.log`: `git archive HEAD` + `deploy/*.sh` de `eba198b` (v0.4.1), sem os `.docker.log`, `vitest -t 'Regressão VPS'`, depois `cmp` do que o teste gravou com os arquivos | 0 (cmp) | 3/3 iguais byte a byte; `.env` e `override.yml` já batiam (só os 3 `.docker.log` acusados como "sem referência") |
+| b | checkout limpo (`git clone` do worktree em HEAD `7715e37`) + `vitest run test/deploy-instancia.test.ts` | 0 | 57 passados, 0 falhas, 0 pulados |
+| c | checkout limpo em `57633d5` + `deploy/*.sh` de `eba198b` + `vitest -t 'Regressão VPS'` | 0 | 4/4 (a referência versionada é a do v0.4.1) |
+| d | `git diff 47d898b HEAD -- fixtures/deploy-referencia/*.env *.override.yml \| wc -l` | 0 | 0 linhas; os 3 `.docker.log` entram como arquivos novos (+44 linhas) |
+| e | suíte de deploy no worktree | 0 | 57 passados (eram 50), 0 falhas, 0 pulados, 97,8 s |
+| f | `pnpm --filter @mktos/api typecheck` e `typecheck:test` | 0 / 0 | 0 `error TS` / 0 `error TS` |
+| g | ferramentas reais deste Mac: `/bin/bash deploy/instalar.sh --ambiente producao --tag v0.4.1 --bind-ip 127.0.0.1 --sem-llm --so-checar` | 1 | recusou as 6 portas (4000/4001 `node`, 5442/6390/9010/9011 `com.docker.backend`), sem linha repetida |
+| h | idem, `--ambiente homologacao` | 0 | plano impresso; `~/root-os` não existe depois |
+
+O que mudou:
+- `.gitignore`: `!apps/api/test/fixtures/deploy-referencia/*.docker.log`; caso novo confere as 9 referências no git e fora do `.gitignore`.
+- `ouvintes_na_porta`: o `lsof` nunca responde sozinho. Em toda porta o complemento (`netstat -an -p tcp` no macOS, `ss` no Linux) é perguntado e entra o endereço que o `lsof` não viu. Com `lsof` presente, complemento ausente ou falhando = falha fechada. Sem `lsof`, o `ss` sozinho, como antes. Stub novo `deploy/test-stubs/sistema/uname` (`STUB_UNAME_S`) e `STUB_LSOF_CEGO=1` no stub de `lsof`; o caso macOS do `netstat` deixou de ser `skipIf` e roda em qualquer sistema.
+- `--modulos`: `todos` misturado é recusado (64) na validação de forma; no passo 1, depois das portas e antes de criar qualquer coisa, o catálogo `MODULOS` de `packages/shared/src/nav.ts` da tag é lido de um clone raso temporário (apagado na mesma função) e chave fora dele recusa (64) com a lista das válidas; catálogo ilegível = exit 1, nada criado. Sem `--modulos` ou com `todos`, nenhum clone extra (a referência da VPS não muda). A fixture do teste carrega o `nav.ts` real.
+
+### Não provado nesta etapa
+- `ss` real do Linux e `lsof` real sem root numa VPS: o caminho Linux só rodou contra stubs (`uname`, `lsof` cego, `ss`).
+- Clone temporário do catálogo contra o GitHub com deploy key: só rodou contra repositório local de fixture. Em rede ruim ele é um ponto a mais de falha (fecha fechado, sem criar nada).
+- Instalação real num Colima: segue não provada (este Mac usa Docker Desktop).
+- Troca da tag entre o clone temporário e o clone real (segundos de diferença): não coberta; o `provisionar-tenant` continua recusando chave desconhecida no passo 7.
