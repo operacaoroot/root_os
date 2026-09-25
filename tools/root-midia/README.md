@@ -170,15 +170,17 @@ O launchd roda `root-midia vigia` quando a pasta do OBS muda (`WatchPaths`) e a 
    **nada vai** e a notificação diz "ep-NN mudou durante a cadeia". **Sem `WHISPER_MODEL`,
    notifica e para — não baixa modelo (D-MC3).** Bruto que falhou não é refeito a cada passagem:
    rode `/root-midia ep-NN` à mão.
-5. **Os renders da Derivação:** a fila também devolve `derivacao` (os episódios com peça da semana
-   da transcrição atual sem render) com `precisaDeRender` por formato e uma assinatura; o vigia roda
-   `cortes`, `stories` e `carrosseis` do episódio, na pasta `<OBS>/root-midia/ep-NN/ep-NN-semana`. A
-   fila lista os da Derivação do mais novo, até 20 com render pendente. O mesmo render com a mesma
+5. **Os renders da Derivação e do Agendado:** a fila também devolve `derivacao` (os episódios com
+   peça da semana da transcrição atual sem render, na Derivação ou já com a semana assinada) com
+   `precisaDeRender` por formato e uma assinatura; o vigia roda `cortes`, `stories` e `carrosseis` do
+   episódio, na pasta `<OBS>/root-midia/ep-NN/ep-NN-semana`. A fila lista do mais novo, até 20 com
+   render pendente. O mesmo render com a mesma
    assinatura só é tentado de novo depois de 24 h (o carrossel estourado não gira a cada 15 min), e
    o que não subiu vira notificação: o carrossel com texto estourado ("encurte na tela") e o corte
    sem trecho. **Com o OBS gravando** (o bruto mudando, ou arquivo da raiz mexido nos últimos 2 min),
-   os renders ficam para a próxima passagem: ffmpeg e Chrome não disputam o Mac com a gravação. A subida do mp4 e
-   do JPEG ao storage (MD4) e o envio ao YouTube (MD10) entram aqui quando essas fatias chegarem.
+   os renders ficam para a próxima passagem: ffmpeg e Chrome não disputam o Mac com a gravação. Os
+   renders sobem o mp4 e o JPEG ao storage (MD4). O envio ao YouTube (MD10) é o passo seguinte da
+   passagem: só com o lote da semana assinado e nunca com o OBS gravando.
 6. **Notifica** pelo `osascript` nativo (o texto vai como argumento do script); a mesma notificação
    fica calada por 6 h.
 7. **Log** em `~/Library/Logs/root-midia/vigia.log`, uma linha com a hora por aviso, rodado aos 5 MB.

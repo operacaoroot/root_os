@@ -64,7 +64,7 @@ depois, que é a razão de a coluna da direita existir.
 | 6 | `build` + ensaio da migration num banco descartável + **smoke** da imagem (§2.2, §2.3) | antes de subir | As duas formas de a subida morrer: migration que não aplica (e `migrate deploy` roda no `command` do container — falhar é a API não subir) e grafo de injeção do Nest que não resolve. O smoke pega o segundo, que o typecheck **não** enxerga. |
 | 7 | **`db:seed:politica` — E É ANTES DE SUBIR** (§2.3b) | depois do build, **antes** do `up` | Mudou nesta onda: na onda 6 o seed era cosmético (duas capacidades novas que só apareciam na tela da Régua) e podia vir depois. Agora **não pode**. A fatia 3.3 acrescentou **descrição de argumento** a capacidades que o código novo já usa (`cc` no e-mail, `local` e `convidados` no evento) e esquema a outras. O esquema do banco tem `additionalProperties: false`: **campo que o esquema antigo não conhece é recusado pela porta**. Subir a API antes de semear faz toda chamada com campo novo falhar com erro de argumento inválido — numa ação que o catálogo do repositório diz que é válida. |
 | 8 | `up -d --no-build api web` (§2.4) | — | Sem `--no-build` sobe uma imagem reconstruída na hora, não a que passou no smoke. Sem `--vps` o compose base publica em `0.0.0.0` e expõe banco, redis e MinIO na internet (§3). |
-| 9 | Conferir: `docker compose ps`, logs, as três superfícies públicas (§2.5) | depois | A linha de boot `política base vN carregada DO BANCO (62 capacidades)` é a prova de que o passo 7 pegou. |
+| 9 | Conferir: `docker compose ps`, logs, as três superfícies públicas (§2.5) | depois | A linha de boot `política base vN carregada DO BANCO (N capacidades)` é a prova de que o passo 7 pegou. **N é 62 até a frente A+B+C e 69 com a onda D** (§2.3l). |
 | 10 | Registrar o que subiu (commit/tag) | depois | Enquanto o Syncthing for o transporte, nada no servidor registra isso sozinho (§1). |
 
 Os passos 1 e 7 são os que mudaram de lugar. Os outros são os de sempre.
@@ -290,8 +290,40 @@ docker run --rm --network marketing-os-net -w /app/apps/api \
 Ensaiado em 24/09/2026 num banco descartável criado do zero e semeado primeiro com o catálogo da
 MD6 (63): sem assinatura e com só uma das duas, **"Nada foi semeado"**; com as duas,
 `1 criadas, 63 atualizadas, 64 no total`, e a versão gravada leva as duas assinaturas. A linha de boot
-precisa dizer **64 capacidades**. **Esta assinatura é o portão humano da D-MD1**: sem ela,
+precisa dizer **64 capacidades** — isso no ensaio da MD7 sozinha. **Subindo a onda D inteira, o
+número é 69** e o comando é o do §2.3l. **Esta assinatura é o portão humano da D-MD1**: sem ela,
 `pauta.semana.aprovar` não existe na política do banco, vale R5, e nenhum lote é assinado.
+
+### 2.3l A ONDA D INTEIRA DE UMA VEZ (25/09/2026)
+
+A ordem completa, com as 9 migrations e as variáveis, está em `docs/ESTADO-DA-EXECUCAO.md`, no fim da
+MD11: "ORDEM DE DEPLOY DA ONDA D". O que muda aqui:
+
+- **UM seed, com as duas assinaturas.** Contra o banco de produção o catálogo da HEAD acrescenta 7
+  capacidades (`instagram.post.publicar`, `pauta.semana.aprovar`, `instagram.comentario.ler`,
+  `instagram.resposta_privada.enviar`, `instagram.regra_de_resposta.pausar`, `youtube.video.enviar`,
+  `youtube.video.publicar`) e troca o texto da invariante 4. Só `POLITICA_CAPACIDADE_NOVA_*` recusa
+  com "Nada foi semeado". Os comandos de seed de cada fatia no ESTADO são só para quem sobe fatia a
+  fatia.
+
+```bash
+docker run --rm --network marketing-os-net -w /app/apps/api \
+  -e DATABASE_URL='postgresql://<user>:<senha>@db:5432/<banco de produção>' \
+  -e POLITICA_CAPACIDADE_NOVA_AUTOR='<quem responde>' \
+  -e POLITICA_CAPACIDADE_NOVA_MOTIVO='Onda D: catálogo ganha as 7 capacidades de publicação, lote, comentários, DM e YouTube' \
+  -e POLITICA_REBAIXAMENTO_AUTOR='<quem responde>' \
+  -e POLITICA_REBAIXAMENTO_MOTIVO='Onda D (MD7): invariante 4 com uso contado; publicar sai também por item de lote assinado' \
+  mktos-app pnpm db:seed:politica
+```
+
+- **Conferência:** a linha de boot diz **69 capacidades** (as 62 da base, conferidas pela união de
+  `politica-root.json` e `politica-marketing-os.json` no commit `68df3ae`, mais as 7). Com 62 ou 64,
+  o seed não pegou ou pegou só uma fatia.
+- **Permissão nova `pauta.youtube.enviar`** (MD10, revisão final): o ritual do §2.3d, e dar a
+  permissão só à conta do vigia do Mac.
+- **A mídia das peças:** a linha de boot `mídia das peças no storage: …` e, para o detalhe,
+  `docker exec mktos_api node dist/scripts/storage-uso.js` (só mede; remover órfão pede
+  `--remover-orfaos --confirmar`). Anote o total na conferência de cada deploy.
 
 ### 2.3c As duas variáveis do COFRE
 
@@ -864,9 +896,11 @@ reprova na CI. As duas receitas foram medidas em 11/09/2026 no Postgres descart�
 libera a migration, a segunda também.
 
 **Preencher `DB_APP_USER`/`DB_APP_PASSWORD` hoje faz a API RECUSAR SUBIR — de propósito.**
-Existem sete caminhos que consultam o banco **antes** de haver empresa (login por senha, login com
-Google, provisionamento, ClickUp, financeiro, carga da política e a sonda de saúde) e que ainda não
-declaram o contexto de plataforma. Sob o papel restrito, cada um deles passa a devolver **zero
+Existem dez caminhos que consultam o banco **antes** de haver empresa (a lista é
+`CAMINHOS_DE_PLATAFORMA_EXIGIDOS`, em `apps/api/src/prisma/contexto-de-plataforma.ts`: reindexação do
+Obsidian, login por senha, login com Google, provisionamento, ClickUp, financeiro, carga da
+política, a sonda de saúde e, desde a MD5, `bio/bio-sync.service.ts` e `bio/bio-oauth.controller.ts`)
+e que ainda não declaram o contexto de plataforma. Sob o papel restrito, cada um deles passa a devolver **zero
 linha, em silêncio** — o login inclusive, que vira "credenciais inválidas" para a empresa inteira
 sem nada no log. Por isso o arranque compara a lista e lança
 `CoberturaDePlataformaIncompletaError` quando a conexão é restrita e a cobertura está incompleta.
@@ -962,7 +996,7 @@ A ordem completa, com a consequência de pular cada passo, está em **§2.0**. A
    `POLITICA_REBAIXAMENTO_AUTOR`/`_MOTIVO`, que o seed vai exigir (§2.3b)
 10. [ ] `up -d --no-build api web`
 11. [ ] `docker compose ps` + logs + as três superfícies públicas respondendo, e a linha de boot
-    dizendo **62 capacidades DO BANCO**
+    dizendo **62 capacidades DO BANCO** (69 com a onda D, §2.3l)
 12. [ ] Registrar o que subiu (commit/tag) — enquanto o Syncthing for o transporte, isso não fica
     registrado sozinho no servidor
 13. [ ] **Onda do controle de agentes (A2–A4): conferir o que as migrações NÃO deviam ter mexido** —

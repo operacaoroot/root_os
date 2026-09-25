@@ -1157,9 +1157,14 @@ Nenhum agente faz estes passos; o código não contorna nenhum deles. Na ordem d
    conferida, @ da Root como Instagram Tester com o convite aceito; depois do deploy, reconectar pela
    aba Semana.
 5. **Criar as rotinas** em `/rotinas` (encadeamento, publicar agendadas, coletar comentários) e ligar
-   a nota `pauta.publicacao.automatica` quando quiser a publicação no horário.
+   a publicação automática na aba Semana (o interruptor com motivo, que grava a nota
+   `pauta.publicacao.automatica`) quando quiser a publicação no horário. Sem a rotina de publicação,
+   a tela avisa que nada sai no horário.
 6. **Mac:** baixar o modelo do whisper (D-MC3), gravar `~/.config/root/root-midia.env` com `chmod 600`
    e rodar `root-midia vigia instalar`.
+6b. **Rota até a API sem passar pelo web** (Traefik, corpo de 300 MB ou mais) e `ROOT_OS_ENVIO_URL`
+   no `~/.config/root/root-midia.env`, antes do deploy: sem ela, o corte acima de 10 MB não sobe e
+   não entra no lote.
 7. **Segredos no easyPanel** (gerados na hora, nunca colados em chat): `PAUTA_MIDIA_PUBLICA_SEGREDO`,
    `META_WEBHOOK_PESSOA_HMAC_KEY` e, quando a MD10 entrar, `YOUTUBE_CLIENT_ID`/`_SECRET`.
 8. **YouTube:** dizer a conta dona do canal, criar o projeto dedicado, verificar o canal por telefone,
@@ -1167,7 +1172,10 @@ Nenhum agente faz estes passos; o código não contorna nenhum deles. Na ordem d
 9. **Privacidade:** publicar `docs/PRIVACY.md` com o parágrafo de quem comenta (pedido pelo App Review
    e pela auditoria do YouTube).
 10. **Meta, para a DM automática:** verificação da empresa, um App Review com as quatro permissões, o
-    app em Live e o teste único com conta sem papel no app; só então ligar `pauta.dm.automatica`.
+    app em Live e o teste único com conta sem papel no app; só então ligar a DM automática na aba
+    Semana (a API recusa antes de `INSTAGRAM_PEDIR_MENSAGENS=sim`).
+10b. **A ordem de deploy da onda inteira** está no ESTADO, no fim da MD11 ("ORDEM DE DEPLOY DA ONDA
+    D"): um seed só, com as duas assinaturas, e a linha de boot com 69 capacidades.
 11. **Responder à mão** as DMs da semana pela fila da MD9 até lá.
 
 

@@ -1798,7 +1798,7 @@ nada sai). Nenhuma permissão nova, nenhuma variável nova (usa `INSTAGRAM_GRAPH
 **Pendências (do Pedro), na ordem:**
 1. A MD5 feita no painel da Meta e a conta reconectada na aba Semana (itens 1 a 4 da MD5).
 2. `db:seed:politica` na VPS **antes** do deploy, assinado:
-   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD6: catálogo ganha instagram.post.publicar (R3)' pnpm --filter @mktos/api db:seed:politica`.
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD6: catálogo ganha instagram.post.publicar (R3)' pnpm --filter @mktos/api db:seed:politica`. *Só para quem sobe fatia a fatia: a onda inteira usa UM seed com as duas assinaturas ("ORDEM DE DEPLOY DA ONDA D", no fim da MD11).*
 3. `PAUTA_MIDIA_PUBLICA_SEGREDO` (32+) no `.env` da VPS e a origem pública da API (MD4): sem eles o
    efeito recusa com 503 e nada é enviado.
 4. Uma segunda pessoa na empresa Root (`POST /users` pela tela de usuários). Sem ela, todo
@@ -2054,8 +2054,9 @@ antes da subida (sem ele `pauta.semana.aprovar` vale R5 e todo pedido de assinat
 4. A titular assinar em até 10 min depois do pedido; passou, "Pedir a assinatura de novo".
 5. Decidir o papel restrito (passo 16): sob ele nenhuma rotina dispara, e a publicação no horário
    depende da rotina `pauta.publicar-agendadas` criada em `/rotinas`.
-6. Só depois dos itens 1 a 5, ligar a nota `pauta.publicacao.automatica` (primeira linha `ligada`)
-   pela memória. A revisão de segunda na aba Semana precisa ser de verdade: um lote assinado publica
+6. Só depois dos itens 1 a 5, ligar a publicação automática na aba Semana (o interruptor no topo de
+   "Aprovar a semana", com motivo; ele grava a nota `pauta.publicacao.automatica` pela memória, com
+   RASTRO — revisão final de 25/09). Desligar é o mesmo botão. A revisão de segunda na aba Semana precisa ser de verdade: um lote assinado publica
    a semana inteira sem ninguém olhando na hora.
 7. Conferir no primeiro post real o limite de 2.200 caracteres da legenda (a conferir desde a MD6).
 
@@ -2181,7 +2182,7 @@ ferramenta de fora (ManyChat), que é decisão do Pedro e fica fora do OS.
    `openssl rand -base64 48` (nunca colar em chat). Trocar a chave depois faz a mesma pessoa virar
    outra no histórico.
 3. `db:seed:politica` na VPS **antes** do deploy, assinado:
-   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD9: catálogo ganha instagram.comentario.ler (R0), a leitura da fila da DM à mão' pnpm --filter @mktos/api db:seed:politica`.
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD9: catálogo ganha instagram.comentario.ler (R0), a leitura da fila da DM à mão' pnpm --filter @mktos/api db:seed:politica`. *Só para quem sobe fatia a fatia: a onda inteira usa UM seed com as duas assinaturas ("ORDEM DE DEPLOY DA ONDA D", no fim da MD11).*
 4. Depois do deploy, `/rotinas` › "Nova rotina de comentários" (`*/10 * * * *`). Sob o papel
    restrito (passo 16), nenhuma rotina dispara até a decisão do agendamento.
 5. Publicar em `docs/PRIVACY.md` (e na página pública de privacidade) o parágrafo de dados de quem
@@ -2372,7 +2373,7 @@ regra de uma réplica, da onda D, continua). O prazo da auditoria é desconhecid
    `YOUTUBE_REDIRECT_URI=https://os.operacaoroot.com/api/youtube/callback`; deixar
    `YOUTUBE_AUDITORIA=pendente`.
 4. `db:seed:politica` na VPS **antes** do deploy, assinado:
-   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD10: catálogo ganha youtube.video.enviar e youtube.video.publicar (R3, sob o lote da semana)' pnpm --filter @mktos/api db:seed:politica`.
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD10: catálogo ganha youtube.video.enviar e youtube.video.publicar (R3, sob o lote da semana)' pnpm --filter @mktos/api db:seed:politica`. *Só para quem sobe fatia a fatia: a onda inteira usa UM seed com as duas assinaturas ("ORDEM DE DEPLOY DA ONDA D", no fim da MD11).*
 5. Verificar o canal por telefone em `youtube.com/verify` (sem isso o `thumbnails.set` devolve 403).
 6. Conectar uma vez, logado na conta dona do canal: aba Episódios › seção YouTube › "Conectar o
    canal" (ou Conexões).
@@ -2684,11 +2685,63 @@ passagem roda de 10 em 10 min: a DM chega em até 10 min, ou às 08h.
 5. Teste único: comentar a palavra com uma conta SEM papel no app, com a nota ligada por alguns
    minutos; `100/2534001` na fila ("precisa de Advanced Access") confirma que falta o Advanced Access.
 6. `db:seed:politica` na VPS **antes** do deploy, assinado:
-   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD11: catálogo ganha instagram.resposta_privada.enviar (R3, sob o lote da semana) e instagram.regra_de_resposta.pausar (R0)' pnpm --filter @mktos/api db:seed:politica`.
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD11: catálogo ganha instagram.resposta_privada.enviar (R3, sob o lote da semana) e instagram.regra_de_resposta.pausar (R0)' pnpm --filter @mktos/api db:seed:politica`. *Só para quem sobe fatia a fatia: a onda inteira usa UM seed com as duas assinaturas ("ORDEM DE DEPLOY DA ONDA D", no fim da MD11).*
 7. A segunda pessoa titular na empresa (MD8) e o 403 da fila resolvido: sem eles, nenhuma regra é
    assinada. O código não contorna a segunda pessoa.
-8. Só depois de 2 a 7: ligar a nota `pauta.dm.automatica` (primeira linha `ligada`) pela memória, e
-   ler de novo, na assinatura de segunda, o texto que estranhos vão receber.
+8. Só depois de 2 a 7: ligar a DM automática na aba Semana (o interruptor "DM automática", com
+   motivo; a API recusa sem `INSTAGRAM_PEDIR_MENSAGENS=sim`), e ler de novo, na assinatura de
+   segunda, o texto que estranhos vão receber.
+
+### ORDEM DE DEPLOY DA ONDA D (consolidada na revisão final, 25/09/2026)
+
+A produção recebe a onda inteira de uma vez, e esta ordem vale por cima das listas de deploy de
+cada fatia (MD1 a MD13): os comandos de seed de cada fatia são **só para quem sobe fatia a fatia**.
+Contra o banco de produção o catálogo da HEAD, além das capacidades novas, troca o texto da
+invariante 4 (MD7), e isso conta como afrouxamento: só `POLITICA_CAPACIDADE_NOVA_*` recusa com
+"Nada foi semeado".
+
+1. **Merge** da branch na `main` com a CI verde e a ordem da frente A+B+C (§1, onda MC-C) já
+   aplicada ou junto. Decisão do Pedro; nenhum agente mescla nem empurra.
+2. **Backup do dia** e `docker tag mktos-app:latest mktos-app:rollback`.
+3. **As 9 migrations da onda, na ordem do nome** (o `db:status` da produção mostra estas mais as da
+   frente A+B+C que faltarem): `20260924100000_pauta_peca_slot_proposto`,
+   `20260924190735_pauta_episodio_status_desde`, `20260924220041_bio_finalidade`,
+   `20260924224733_pauta_publicacao`, `20260924235614_aprovacao_de_lote`,
+   `20260925021740_comentario_com_palavra`, `20260925032020_envio_ao_youtube`,
+   `20260925042725_envio_ao_youtube_em_teste`, `20260925053358_envio_de_resposta`. Ensaiar num banco
+   descartável com o dump da produção antes.
+4. **Variáveis no `.env` da VPS** (todas já estão no `environment:` do compose). Exigem valor:
+   `PAUTA_MIDIA_PUBLICA_SEGREDO` (32+ caracteres, `openssl rand -base64 48`, gerado no terminal da
+   VPS) e `META_WEBHOOK_PESSOA_HMAC_KEY` (idem). Com valor quando a MD10 entrar:
+   `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`; `YOUTUBE_AUDITORIA=pendente`.
+   Ficam vazias em produção: `INSTAGRAM_OAUTH_URL`/`_TOKEN_URL`/`_GRAPH_URL`,
+   `YOUTUBE_API_URL`/`_UPLOAD_URL`/`_OAUTH_URL`, `YOUTUBE_CANAL_DE_TESTE` e
+   `INSTAGRAM_PEDIR_MENSAGENS` (até o App Review). Com padrão: `PAUTA_MIDIA_PUBLICA_ORIGEM` (vazia =
+   `PUBLIC_BIO_ORIGIN`), `PAUTA_VIDEO_MAX_BYTES` e `POLITICA_FUSO_HORARIO`
+   (`America/Sao_Paulo`; mudança de comportamento da MD3).
+5. **A rota até a API sem passar pelo `mktos_web`** (Traefik, corpo de 300 MB ou mais) e
+   `ROOT_OS_ENVIO_URL` no `~/.config/root/root-midia.env` do Mac, **antes do deploy**: sem elas o mp4
+   acima de 10 MB não sobe, e todo corte fica fora do "Aprovar a semana".
+6. **Build** das imagens `api` e `web` e **smoke** com `ROTINAS_CRON=off`, os intervalos em 0 e
+   `SMOKE_ROTAS` incluindo `/api/pauta/agenda`, `/api/pauta/youtube/pendentes` e
+   `/api/pauta/comentarios`.
+7. **UM `db:seed:politica`, com as duas assinaturas**, da imagem nova contra o banco de produção,
+   antes do `up` (`docs/DEPLOY.md` §2.3b):
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='Onda D: catálogo ganha instagram.post.publicar, pauta.semana.aprovar, instagram.comentario.ler, instagram.resposta_privada.enviar, instagram.regra_de_resposta.pausar, youtube.video.enviar e youtube.video.publicar' POLITICA_REBAIXAMENTO_AUTOR='pedro.magnago@fullbpo.com' POLITICA_REBAIXAMENTO_MOTIVO='Onda D (MD7): invariante 4 com uso contado; publicar sai também por item de lote assinado' pnpm --filter @mktos/api db:seed:politica`.
+8. **Permissões:** `pnpm --filter @mktos/shared build`, `db:sync-permissions` (entra
+   `pauta.youtube.enviar`, só no Admin Master) e todo mundo sai e entra de novo. Dar
+   `pauta.youtube.enviar` só à conta do vigia do Mac, num perfil próprio (MD10, pendência 10).
+9. **`up -d --no-build --vps api web`.**
+10. **Conferir:** a linha de boot `política base vN carregada DO BANCO (69 capacidades)` (62 da base
+    + as 7 da onda); `storage pronto` e a linha `mídia das peças no storage: …` (anotar o total);
+    `/pauta` abrindo a aba Semana com os interruptores; o RASTRO.
+11. **Registrar** o que subiu (commit/tag).
+12. **Depois, na tela e no Mac:** as rotinas em `/rotinas` (encadeamento, "Publicação da semana",
+    comentários); o vigia (`root-midia vigia instalar`); só então ligar a publicação automática na
+    aba Semana (interruptor com motivo), depois da segunda pessoa titular e do 403 da fila.
+
+**Voltar:** a imagem `rollback` não conhece as tabelas novas, mas as migrations são aditivas; a
+política semeada fica (a versão anterior pode ser semeada de novo, assinada).
 
 ---
 
@@ -2774,7 +2827,7 @@ o que segue é a lista inteira, incluindo o que aconteceu depois daquele texto.
 | # | Passo | Se pular |
 |---|---|---|
 | 12 | `up -d --no-build --vps api web` | Sem `--no-build` sobe uma imagem reconstruída na hora, não a que passou no smoke. **Sem `--vps` o compose base publica em `0.0.0.0`** e expõe banco, redis e MinIO na internet |
-| 13 | Conferir: `docker compose ps`, a linha de boot `política base vN carregada DO BANCO (62 capacidades)`, as três superfícies públicas, `/rastro` | Aquela linha de boot é a prova de que o passo 10 pegou |
+| 13 | Conferir: `docker compose ps`, a linha de boot `política base vN carregada DO BANCO (N capacidades)`, as três superfícies públicas, `/rastro` | Aquela linha de boot é a prova de que o passo 10 pegou. **O N certo:** 62 até a frente A+B+C; **69 com a onda D** (a ordem própria está no fim da MD11, §1: "ORDEM DE DEPLOY DA ONDA D") |
 | 14 | Registrar o que subiu (commit/tag) | Enquanto o Syncthing for o transporte, nada no servidor registra isso sozinho |
 
 ### A virada do papel restrito — é outra operação, e tem ordem própria
@@ -2785,7 +2838,7 @@ policy.
 
 | # | Passo | Se pular |
 |---|---|---|
-| 15 | Declarar contexto de plataforma nos **sete** caminhos que consultam o banco antes de haver empresa: login por senha, login com Google, provisionamento, ClickUp, financeiro, carga da política e sonda de saúde | Sob o papel restrito, cada um devolve **zero linha, em silêncio** — o login inclusive, que vira "credenciais inválidas" para a empresa inteira sem nada no log. O arranque compara a lista e recusa subir nessa condição. Enquanto a linha `[tenant] ATENÇÃO: N caminho(s) de plataforma ainda NÃO declaram contexto` existir no boot, **não vire a chave** |
+| 15 | Declarar contexto de plataforma nos **dez** caminhos de `CAMINHOS_DE_PLATAFORMA_EXIGIDOS` (`apps/api/src/prisma/contexto-de-plataforma.ts`), que consultam o banco antes de haver empresa: reindexação do Obsidian, login por senha, login com Google, provisionamento, ClickUp, financeiro, carga da política, sonda de saúde e, desde a MD5, a sincronização da bio (`bio-sync.service.ts`) e o retorno do OAuth da bio (`bio-oauth.controller.ts`) | Sob o papel restrito, cada um devolve **zero linha, em silêncio** — o login inclusive, que vira "credenciais inválidas" para a empresa inteira sem nada no log. O arranque compara a lista e recusa subir nessa condição. Enquanto a linha `[tenant] ATENÇÃO: N caminho(s) de plataforma ainda NÃO declaram contexto` existir no boot, **não vire a chave** |
 | 15b | **Confirmar** o achado da onda 11: dois serviços de autenticação estariam declarados como caminhos exigidos e **fora** da lista de chamadores autorizados | Se for verdade, no dia da virada o login **para de achar usuário** e o caminho de entrada inteiro morre depois do cadastro. Foi levantado e mandado confirmar; não há veredito |
 | 16 | Decidir o **agendamento**: `BYPASSRLS` no papel da aplicação, ou mover a descoberta de rotinas para comando de manutenção com a conexão dona | A pergunta que descobre **quais empresas varrer** é a única consulta do produto sem empresa na sessão. Sob o papel restrito ela volta vazia e calada, por policy: **nenhuma rotina dispara, em empresa nenhuma**, e a causa não é defeito. É decisão humana e **não tem padrão seguro**. **A coleta de quinta da pauta (MC5, `pauta.coleta`) cai junto:** até essa decisão, a rodada da semana só sai pelo "Rodar agora" em `/rotinas` |
 | 17 | Dimensionar a fila de conexões (ou adotar um intermediário) | A vazão medida cai perto da metade (tabela na onda 3). A alternativa que eliminaria o custo — adaptador de driver que define o tenant ao pegar a conexão — é **dependência nova**, logo decisão humana |
