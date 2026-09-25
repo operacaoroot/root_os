@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import {
   PAUTA_CHAVE_DA_GRADE,
@@ -35,6 +35,7 @@ import {
   type PautaPublicacaoDaPeca,
   type PautaPecaStatus,
   type PautaReagendarInput,
+  PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -44,6 +45,9 @@ import { itensMantidos } from './episodio';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca, slotsDoPeriodo, type Distribuida } from './agenda-da-semana';
 import { publicacoesParaATela } from './publicacao-instagram.service';
+import { LotesService, type ItemVivo } from '../approvals/lotes.service';
+import { CAPACIDADE_DO_ITEM, revogarItemDaPeca } from './lote-da-semana';
+import { notaDaAutomaticaLigada } from './publicacao-instagram';
 
 const TITULO_DA_GRADE = 'Grade da semana de posts (pauta)';
 const MINUTO = 60_000;
@@ -112,6 +116,8 @@ export class AgendaService {
     private readonly audit: AuditService,
     private readonly memoria: MemoriaService,
     private readonly episodios: EpisodioService,
+    /** MD8: o item vivo do lote da semana de cada peça, e a revogação ao reagendar. Global; opcional nas suítes. */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   // ---------------------------------------------------------------- a grade
@@ -197,7 +203,12 @@ export class AgendaService {
     return new Map(linhas.map((e) => [e.id, e]));
   }
 
-  private naAgenda(p: LinhaDaPeca, e: EpisodioDaAgenda | undefined, publicacao: PautaPublicacaoDaPeca | null = null): PautaPecaNaAgenda {
+  private naAgenda(
+    p: LinhaDaPeca,
+    e: EpisodioDaAgenda | undefined,
+    publicacao: PautaPublicacaoDaPeca | null = null,
+    lote: ItemVivo | null = null,
+  ): PautaPecaNaAgenda {
     const m = lerMetaDaSemana(p.meta);
     const formato = p.formato as PautaFormatoDaSemana;
     const apelido = e ? apelidoDoEpisodio(e.numero) : 'ep-??';
@@ -221,6 +232,9 @@ export class AgendaService {
       motivoParaNaoAgendar: e ? motivoParaNaoAgendar(e.status) : 'O episódio desta peça não foi achado.',
       slotProposto: p.slotProposto?.toISOString() ?? null,
       publicacao,
+      lote: lote
+        ? { loteId: lote.loteId, itemId: lote.itemId, estadoDoLote: lote.estadoDoLote, estadoDoItem: lote.estadoDoItem, janelaAte: lote.janelaAte.toISOString() }
+        : null,
     };
   }
 
@@ -260,7 +274,11 @@ export class AgendaService {
     const eps = await this.episodiosDe(orgId, ids);
     // MD6: a publicação pelo OS de cada peça, quando alguém pediu (o pedido morto chega como erro).
     const publicacoes = await publicacoesParaATela(this.prisma, orgId, pecas.map((p) => p.id));
-    const naTela = pecas.map((p) => this.naAgenda(p, eps.get(lerMetaDaSemana(p.meta).episodioId), publicacoes.get(p.id) ?? null));
+    // MD8: o item vivo do lote da semana (montado, na fila ou ativo) de cada peça.
+    const vivos = this.lotes ? await this.lotes.itensVivos(orgId, CAPACIDADE_DO_ITEM, pecas.map((p) => p.id), agora) : new Map<string, ItemVivo>();
+    const naTela = pecas.map((p) =>
+      this.naAgenda(p, eps.get(lerMetaDaSemana(p.meta).episodioId), publicacoes.get(p.id) ?? null, vivos.get(p.id) ?? null),
+    );
 
     const dias: PautaDiaDaAgenda[] = [];
     for (let i = 0; i < 7; i++) {
@@ -301,7 +319,26 @@ export class AgendaService {
         motivo: motivoParaNaoAgendar(e.status),
       }));
 
-    return { de: inicio, ate, fuso: PAUTA_FUSO_DA_AGENDA, hoje, grade, origemDaGrade: origem, dias, paraDistribuir };
+    return {
+      de: inicio,
+      ate,
+      fuso: PAUTA_FUSO_DA_AGENDA,
+      hoje,
+      grade,
+      origemDaGrade: origem,
+      dias,
+      paraDistribuir,
+      publicacaoAutomatica: await this.publicacaoAutomatica(orgId),
+    };
+  }
+
+  /** MD8: a nota `pauta.publicacao.automatica`, para a tela dizer ao lado do "Aprovar a semana". Memória fora = desligada. */
+  private async publicacaoAutomatica(orgId: string): Promise<boolean> {
+    try {
+      return notaDaAutomaticaLigada(await this.memoria.porChave(orgId, PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA));
+    } catch {
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------- escrever
@@ -579,6 +616,12 @@ export class AgendaService {
       before: { agendadaPara: p.agendadaPara?.toISOString() ?? null },
       after: { agendadaPara: em?.toISOString() ?? null },
     });
+    // MD8: o horário é parte do que a semana assinou. Reagendar tira a peça do
+    // lote; para ela sair sozinha no horário novo, "Aprovar a semana" monta um
+    // lote novo só com ela.
+    if ((p.agendadaPara?.getTime() ?? null) !== (em?.getTime() ?? null)) {
+      await revogarItemDaPeca(this.lotes, this.log, orgId, p.id, 'a peça foi reagendada', actorId);
+    }
     return { id: p.id, agendadaPara: em?.toISOString() ?? null };
   }
 
@@ -624,6 +667,7 @@ export class AgendaService {
       before: { status: antes.status, urlPublicada: antes.urlPublicada },
       after: { status: 'publicada', manual: true, urlPublicada: url ?? antes.urlPublicada, agendadaPara: antes.agendadaPara?.toISOString() ?? null },
     });
+    if (antes.status !== 'publicada') await revogarItemDaPeca(this.lotes, this.log, orgId, antes.id, 'a peça foi postada à mão', actorId);
     const depois = await this.pecaDaSemana(orgId, pecaId);
     const eps = await this.episodiosDe(orgId, [lerMetaDaSemana(depois.meta).episodioId]);
     return this.naAgenda(depois, eps.get(lerMetaDaSemana(depois.meta).episodioId));

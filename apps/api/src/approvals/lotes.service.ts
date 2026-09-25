@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ApprovalState, ItemDoLoteEstado, LoteEstado } from '@prisma/client';
+import { ApprovalState, ItemDoLoteEstado, LoteEstado, type Prisma } from '@prisma/client';
 import { diaNoFuso } from '@mktos/shared';
 import { AuditService } from '../audit/audit.service';
 import { exigirTenant } from '../common/contexto-execucao';
@@ -113,6 +113,41 @@ export interface DetalheDoLote {
 
 const DIA_MS = 86_400_000;
 
+/** O lote como a reação à ativação o recebe (MD8): só o que foi assinado. */
+export interface LoteQueAtivou {
+  id: string;
+  orgId: string;
+  capabilityId: string;
+  recursoTipo: string;
+  recursoId: string;
+  aprovadoPorId: string;
+  itens: Array<{ id: string; capabilityId: string; recursoId: string; hashItem: string; estado: ItemDoLoteEstado; janelaDe: Date; janelaAte: Date }>;
+}
+
+/**
+ * O que o DONO do recurso faz quando o lote dele é ativado — a semana (MD8)
+ * aprova as peças e leva o episódio a Agendado. Roda na MESMA transação que liga
+ * o lote: ou os dois acontecem, ou nenhum. Não escreve em lote nem em item: o
+ * item que não pode valer volta em `revogar`, e quem escreve é este serviço.
+ */
+export type ReacaoAoAtivar = (
+  tx: Prisma.TransactionClient,
+  lote: LoteQueAtivou,
+) => Promise<{ revogar: Array<{ itemId: string; motivo: string }>; resumo?: Record<string, unknown> }>;
+
+/** O item vivo de um recurso: ativo, num lote que ainda vale (montado, na fila ou ativo). */
+export interface ItemVivo {
+  itemId: string;
+  loteId: string;
+  estadoDoLote: LoteEstado;
+  estadoDoItem: ItemDoLoteEstado;
+  janelaDe: Date;
+  janelaAte: Date;
+  hashItem: string;
+}
+
+const LOTES_EM_CURSO: LoteEstado[] = [LoteEstado.proposta, LoteEstado.aguardando, LoteEstado.ativo];
+
 /** A linha que `consumirItem` devolve do `RETURNING`. */
 interface LinhaConsumida {
   id: string;
@@ -133,12 +168,26 @@ interface LinhaConsumida {
 @Injectable()
 export class LotesService {
   private readonly log = new Logger('Lotes');
+  /** Quem reage à ativação, por tipo de recurso do lote. Uma inscrição por tipo. */
+  private readonly reacoes = new Map<string, { fn: ReacaoAoAtivar; dono: string }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * O dono de um tipo de recurso se inscreve para reagir à ativação (a pauta
+   * inscreve `pauta_episodio`). Por registro, e não por import: `approvals` não
+   * conhece a pauta. Reinscrever o mesmo tipo é ERRO, como no registro de
+   * efeitos — a segunda inscrição não pode vencer em silêncio.
+   */
+  aoAtivar(recursoTipo: string, fn: ReacaoAoAtivar, dono: string): void {
+    const ja = this.reacoes.get(recursoTipo);
+    if (ja) throw new Error(`A ativação de lote de "${recursoTipo}" já tem dono (${ja.dono}); ${dono} não pode se inscrever de novo.`);
+    this.reacoes.set(recursoTipo, { fn, dono });
+  }
 
   // ------------------------------------------------------------------ montar
 
@@ -314,7 +363,11 @@ export class LotesService {
     args: Record<string, unknown>,
     orgId: string,
     ctx: { approvalId?: string | null; actorId?: string | null },
-  ): Promise<{ loteId: string; estadoAnterior: { estado: LoteEstado }; estadoNovo: { estado: LoteEstado; itens: number; validaAte: string } }> {
+  ): Promise<{
+    loteId: string;
+    estadoAnterior: { estado: LoteEstado };
+    estadoNovo: { estado: LoteEstado; itens: number; validaAte: string; revogadosNaAtivacao?: number };
+  }> {
     exigirTenant(orgId, 'LotesService.ativar');
     const loteId = typeof args.loteId === 'string' ? args.loteId : '';
     const lote = await this.prisma.aprovacaoDeLote.findFirst({
@@ -367,25 +420,78 @@ export class LotesService {
       throw new ForbiddenException('Quem propôs o lote não pode aprová-lo: nada foi ativado.');
     }
 
-    const { count } = await this.prisma.aprovacaoDeLote.updateMany({
-      where: { id: lote.id, orgId, estado: LoteEstado.aguardando, approvalId: ctx.approvalId },
-      data: { estado: LoteEstado.ativo, aprovadoPorId: ap.aprovadoPorId, aprovadoEm: ap.aprovadoEm ?? new Date(), motivo: ap.motivo },
+    /*
+     * Ligar o lote e a reação do dono do recurso (a semana aprova as peças e
+     * agenda o episódio, MD8) numa transação só: um lote ativo cujas peças
+     * continuassem em rascunho não publicaria nada e diria que publica. O item
+     * que a reação não consegue fazer valer (a peça mudou depois de montado)
+     * cai aqui mesmo, e o resto segue.
+     */
+    const aprovadoPorId = ap.aprovadoPorId;
+    const reacao = this.reacoes.get(lote.recursoTipo);
+    const { revogados, resumo, encerrado } = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.aprovacaoDeLote.updateMany({
+        where: { id: lote.id, orgId, estado: LoteEstado.aguardando, approvalId: ctx.approvalId },
+        data: { estado: LoteEstado.ativo, aprovadoPorId, aprovadoEm: ap.aprovadoEm ?? new Date(), motivo: ap.motivo },
+      });
+      if (count !== 1) throw new ConflictException('O lote mudou enquanto era ativado: nada foi ativado.');
+      if (!reacao) return { revogados: [] as Array<{ itemId: string; motivo: string }>, resumo: undefined, encerrado: false };
+      // Os itens relidos DEPOIS de ligar o lote: o que foi revogado entre a
+      // leitura de fora e aqui não chega à reação como ativo.
+      const itensAgora = await tx.itemDoLote.findMany({
+        where: { loteId: lote.id, orgId },
+        select: { id: true, capabilityId: true, recursoId: true, hashItem: true, estado: true, janelaDe: true, janelaAte: true },
+      });
+      const r = await reacao.fn(tx, {
+        id: lote.id,
+        orgId,
+        capabilityId: lote.capabilityId,
+        recursoTipo: lote.recursoTipo,
+        recursoId: lote.recursoId,
+        aprovadoPorId,
+        itens: itensAgora,
+      });
+      const doLote = new Set(lote.itens.map((i) => i.id));
+      const revogar = r.revogar.filter((x) => doLote.has(x.itemId));
+      for (const x of revogar) {
+        await tx.itemDoLote.updateMany({
+          where: { id: x.itemId, loteId: lote.id, orgId, estado: ItemDoLoteEstado.ativo },
+          data: { estado: ItemDoLoteEstado.revogado, revogadoEm: new Date(), motivoDaRevogacao: x.motivo.slice(0, 300) },
+        });
+      }
+      const restam = await tx.itemDoLote.count({ where: { loteId: lote.id, orgId, estado: ItemDoLoteEstado.ativo } });
+      if (restam === 0) {
+        await tx.aprovacaoDeLote.updateMany({ where: { id: lote.id, orgId, estado: LoteEstado.ativo }, data: { estado: LoteEstado.encerrado } });
+      }
+      return { revogados: revogar, resumo: r.resumo, encerrado: restam === 0 };
     });
-    if (count !== 1) throw new ConflictException('O lote mudou enquanto era ativado: nada foi ativado.');
 
     await this.audit.log({
       orgId,
-      actorId: ap.aprovadoPorId,
+      actorId: aprovadoPorId,
       action: 'lote.ativado',
       entityType: 'aprovacao_de_lote',
       entityId: lote.id,
-      after: { approvalId: ctx.approvalId, itens: lote.itens.length, hashConteudo: lote.hashConteudo.slice(0, 12), validaAte: lote.validaAte.toISOString() },
+      after: {
+        approvalId: ctx.approvalId,
+        itens: lote.itens.length,
+        hashConteudo: lote.hashConteudo.slice(0, 12),
+        validaAte: lote.validaAte.toISOString(),
+        ...(revogados.length ? { revogadosNaAtivacao: revogados.map((x) => ({ itemId: x.itemId, motivo: x.motivo.slice(0, 200) })) } : {}),
+        ...(resumo ? { reacao: resumo } : {}),
+        ...(encerrado ? { encerrado: true } : {}),
+      } as Prisma.InputJsonValue,
     });
     this.log.log(`lote ${lote.id} ativado (${lote.itens.length} itens) por ${ap.aprovadoPorId}`);
     return {
       loteId: lote.id,
       estadoAnterior: { estado: LoteEstado.aguardando },
-      estadoNovo: { estado: LoteEstado.ativo, itens: lote.itens.length, validaAte: lote.validaAte.toISOString() },
+      estadoNovo: {
+        estado: encerrado ? LoteEstado.encerrado : LoteEstado.ativo,
+        itens: lote.itens.length,
+        validaAte: lote.validaAte.toISOString(),
+        ...(revogados.length ? { revogadosNaAtivacao: revogados.length } : {}),
+      },
     };
   }
 
@@ -547,10 +653,16 @@ export class LotesService {
    * Revoga o lote inteiro. Só diminui o alcance, e por isso não pede
    * assinatura (MD8: "Cancelar a semana" é R1). O que já saiu não volta.
    */
-  async revogarLote(orgId: string, loteId: string, motivo: string, actorId: string): Promise<DetalheDoLote> {
+  async revogarLote(
+    orgId: string,
+    loteId: string,
+    motivo: string,
+    actorId: string,
+    estados: readonly LoteEstado[] = LOTES_EM_CURSO,
+  ): Promise<DetalheDoLote> {
     exigirTenant(orgId, 'LotesService.revogarLote');
     const { count } = await this.prisma.aprovacaoDeLote.updateMany({
-      where: { id: loteId, orgId, estado: { in: [LoteEstado.proposta, LoteEstado.aguardando, LoteEstado.ativo] } },
+      where: { id: loteId, orgId, estado: { in: [...estados] } },
       data: { estado: LoteEstado.revogado },
     });
     if (count === 1) {
@@ -574,6 +686,76 @@ export class LotesService {
   }
 
   // ------------------------------------------------------------------ leitura
+
+  /**
+   * O item vivo de cada recurso (MD8): ativo, num lote que ainda vale e está
+   * montado, na fila ou ativo. Leitura para a tela e para a rotina saber QUAL
+   * item mandar à porta — quem decide se ele vale é o consumo, na porta.
+   */
+  async itensVivos(
+    orgId: string,
+    capabilityId: string,
+    recursoIds: readonly string[],
+    agora = new Date(),
+    opcoes: { mesmoVencido?: boolean } = {},
+  ): Promise<Map<string, ItemVivo>> {
+    exigirTenant(orgId, 'LotesService.itensVivos');
+    if (!recursoIds.length) return new Map();
+    const itens = await this.prisma.itemDoLote.findMany({
+      where: {
+        orgId,
+        capabilityId,
+        recursoId: { in: [...recursoIds] },
+        estado: ItemDoLoteEstado.ativo,
+        // `mesmoVencido`: a rotina precisa achar o item do lote que venceu com ela
+        // parada, para dar a peça por perdida em vez de deixá-la aprovada calada.
+        lote: { estado: { in: LOTES_EM_CURSO }, ...(opcoes.mesmoVencido ? {} : { validaAte: { gt: agora } }) },
+      },
+      select: { id: true, recursoId: true, janelaDe: true, janelaAte: true, hashItem: true, estado: true, loteId: true, lote: { select: { estado: true, criadoEm: true } } },
+      orderBy: { janelaDe: 'asc' },
+    });
+    // Um recurso em dois lotes vivos (um ativo e um montado depois dele): vale o ativo, depois o mais novo.
+    const peso = (e: LoteEstado) => (e === LoteEstado.ativo ? 2 : e === LoteEstado.aguardando ? 1 : 0);
+    const mapa = new Map<string, ItemVivo & { criadoEm: Date }>();
+    for (const i of itens) {
+      const atual = mapa.get(i.recursoId);
+      const melhor =
+        !atual || peso(i.lote.estado) > peso(atual.estadoDoLote) || (peso(i.lote.estado) === peso(atual.estadoDoLote) && i.lote.criadoEm > atual.criadoEm);
+      if (melhor) {
+        mapa.set(i.recursoId, {
+          itemId: i.id, loteId: i.loteId, estadoDoLote: i.lote.estado, estadoDoItem: i.estado,
+          janelaDe: i.janelaDe, janelaAte: i.janelaAte, hashItem: i.hashItem, criadoEm: i.lote.criadoEm,
+        });
+      }
+    }
+    return new Map([...mapa].map(([k, { criadoEm: _c, ...v }]) => [k, v]));
+  }
+
+  /** Os lotes em curso de um recurso (o episódio), do mais novo: a aba Semana os mostra. */
+  async lotesEmCurso(orgId: string, capabilityId: string, recursoTipo: string, recursoId: string, agora = new Date()) {
+    exigirTenant(orgId, 'LotesService.lotesEmCurso');
+    const ls = await this.prisma.aprovacaoDeLote.findMany({
+      where: { orgId, capabilityId, recursoTipo, recursoId, estado: { in: LOTES_EM_CURSO }, validaAte: { gt: agora } },
+      orderBy: { criadoEm: 'desc' },
+      select: {
+        id: true, estado: true, validaAte: true, hashConteudo: true, approvalId: true, aprovadoEm: true, propostoPorId: true,
+        _count: { select: { itens: true } },
+        itens: { where: { estado: ItemDoLoteEstado.ativo }, select: { id: true } },
+      },
+      take: 10,
+    });
+    return ls.map((l) => ({
+      id: l.id,
+      estado: l.estado,
+      validaAte: l.validaAte,
+      hashConteudo: l.hashConteudo,
+      approvalId: l.approvalId,
+      aprovadoEm: l.aprovadoEm,
+      propostoPorId: l.propostoPorId,
+      itens: l._count.itens,
+      ativos: l.itens.length,
+    }));
+  }
 
   async detalhe(orgId: string, loteId: string): Promise<DetalheDoLote> {
     const l = await this.prisma.aprovacaoDeLote.findFirst({

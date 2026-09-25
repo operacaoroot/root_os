@@ -6,9 +6,10 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma, type PautaPublicacao } from '@prisma/client';
+import { ActorType, Prisma, type PautaPublicacao } from '@prisma/client';
 import {
   INSTAGRAM_ESCOPO_DE_PUBLICAR,
   apelidoDoEpisodio,
@@ -26,6 +27,8 @@ import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.regis
 import { InterruptoresRegistry } from '../gateway/interruptores.registry';
 import { PortaDoOperador, type AcaoRetida } from '../gateway/porta-do-operador.service';
 import { MemoriaService } from '../memory/memoria.service';
+import { LotesService, type ItemVivo } from '../approvals/lotes.service';
+import { revogarItemDaPeca, type PublicacaoEmJogo } from './lote-da-semana';
 import { GRAPH_DE_PUBLICACAO, semResposta, type ContainerDaGraph, type GraphDePublicacao } from './graph-de-publicacao';
 import { assinar, origemDaMidiaPublica, rastroDoToken, segredoDaMidiaPublica } from './midia-publica';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
@@ -42,8 +45,10 @@ import {
   lerArgsDaPublicacao,
   lerContainers,
   motivoParaNaoPublicar,
+  notaDaAutomaticaLigada,
   mudouDesdeOPedido,
   passoDoStatus,
+  pedidoMorto,
   posseAte,
   postDoContainer,
   publicacaoParaATela,
@@ -68,6 +73,23 @@ const MIDIA_PUBLICA_DESLIGADA =
   'A URL pública da mídia está desligada (PAUTA_MIDIA_PUBLICA_SEGREDO e a origem): a Meta não teria de onde baixar. Nada foi enviado.';
 
 const DA_PECA = { id: true, canal: true, formato: true, status: true, corpo: true, meta: true, agendadaPara: true } as const;
+
+/**
+ * A conta de publicação do Instagram da empresa (MD5), com o token cifrado.
+ * Uma por empresa; `db` aceita a transação de quem precisa ler junto com a peça.
+ */
+export async function contaDePublicacao(
+  db: Pick<PrismaService, 'bioConexao'> | Prisma.TransactionClient,
+  orgId: string,
+): Promise<(ContaParaPublicar & { tokenCifrado: string }) | null> {
+  const c = await db.bioConexao.findFirst({
+    where: { orgId, plataforma: 'instagram', finalidade: 'publicacao' },
+    select: { externalId: true, handle: true, escopos: true, status: true, tokenCifrado: true },
+  });
+  if (!c) return null;
+  const escopos = (c.escopos ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  return { externalId: c.externalId, handle: c.handle, escopos, status: c.status, tokenCifrado: c.tokenCifrado };
+}
 
 /** O resultado do efeito e da conclusão: onde a publicação ficou. */
 export interface DesfechoDaPublicacao {
@@ -94,6 +116,8 @@ interface Trilha {
   correlationId: string | null;
   approvalId: string | null;
   correlacaoDaRotina?: string | null;
+  /** O item de lote que autorizou esta saída (MD8), quando ela veio da rotina no horário. */
+  loteItemId?: string | null;
 }
 
 class PublicacaoRecusada extends BadRequestException {}
@@ -117,6 +141,40 @@ export async function publicacoesParaATela(
     : [];
   const porId = new Map(aprovacoes.map((a) => [a.id, a]));
   return new Map(linhas.map((l) => [l.pecaId, publicacaoParaATela(l, l.approvalId ? (porId.get(l.approvalId) ?? null) : undefined, agora)]));
+}
+
+/**
+ * A publicação que cada peça já tem, como o lote da semana (MD8) a lê: o
+ * estado GRAVADO (sem a tradução da tela) e se o `pendente` ainda espera uma
+ * aprovação que pode ser confirmada. `db` aceita a transação da ativação.
+ */
+export async function publicacoesEmJogo(
+  db: Pick<PrismaService, 'pautaPublicacao' | 'approval'> | Prisma.TransactionClient,
+  orgId: string,
+  pecaIds: readonly string[],
+  agora: Date = new Date(),
+): Promise<Map<string, PublicacaoEmJogo>> {
+  if (!pecaIds.length) return new Map();
+  const linhas = await db.pautaPublicacao.findMany({
+    where: { orgId, rede: REDE, pecaId: { in: [...pecaIds] } },
+    select: { pecaId: true, estado: true, approvalId: true, erro: true },
+  });
+  const esperando = linhas.filter((l) => l.estado === 'pendente' && l.approvalId).map((l) => l.approvalId!);
+  const aprovacoes = esperando.length
+    ? await db.approval.findMany({ where: { orgId, id: { in: esperando } }, select: { id: true, status: true, expiraEm: true } })
+    : [];
+  const porId = new Map(aprovacoes.map((a) => [a.id, a]));
+  return new Map(
+    linhas.map((l) => [
+      l.pecaId,
+      {
+        estado: l.estado,
+        approvalId: l.approvalId,
+        erro: l.erro,
+        pedidoVivo: l.estado === 'pendente' && !!l.approvalId && pedidoMorto(porId.get(l.approvalId) ?? null, agora) === null,
+      },
+    ]),
+  );
 }
 
 /*
@@ -170,6 +228,13 @@ export class PublicacaoInstagramService implements OnModuleInit {
     private readonly porta: PortaDoOperador,
     private readonly memoria: MemoriaService,
     @Inject(GRAPH_DE_PUBLICACAO) private readonly graph: GraphDePublicacao,
+    /*
+     * MD8: a rotina precisa saber QUAL item de lote mandar à porta. É global
+     * (ApprovalsModule) e chega sempre no Nest; `@Optional()` porque as suítes
+     * montam o serviço à mão, e sem ele a rotina só registra "sem aprovação da
+     * semana" — nunca publica sem lote.
+     */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   onModuleInit(): void {
@@ -181,14 +246,8 @@ export class PublicacaoInstagramService implements OnModuleInit {
 
   // ------------------------------------------------------------------ leitura
 
-  private async contaDe(orgId: string): Promise<(ContaParaPublicar & { tokenCifrado: string }) | null> {
-    const c = await this.prisma.bioConexao.findFirst({
-      where: { orgId, plataforma: 'instagram', finalidade: 'publicacao' },
-      select: { externalId: true, handle: true, escopos: true, status: true, tokenCifrado: true },
-    });
-    if (!c) return null;
-    const escopos = (c.escopos ?? '').split(',').map((x) => x.trim()).filter(Boolean);
-    return { externalId: c.externalId, handle: c.handle, escopos, status: c.status, tokenCifrado: c.tokenCifrado };
+  private contaDe(orgId: string): Promise<(ContaParaPublicar & { tokenCifrado: string }) | null> {
+    return contaDePublicacao(this.prisma, orgId);
   }
 
   private async pecaDe(orgId: string, pecaId: string): Promise<PecaParaPublicar> {
@@ -220,6 +279,14 @@ export class PublicacaoInstagramService implements OnModuleInit {
     if (atual?.estado === 'publicada') throw new ConflictException('Esta peça já foi publicada pelo OS.');
     if (atual && ESTADOS_EM_CURSO.includes(atual.estado)) {
       throw new ConflictException('A publicação desta peça já está a caminho: espere a Meta terminar.');
+    }
+    // Com a semana assinada, a peça sai pelo item dela no horário: um pedido à
+    // parte seria um segundo caminho para o mesmo post.
+    const vivo = (await this.lotes?.itensVivos(orgId, CAPACIDADE, [pecaId]))?.get(pecaId);
+    if (vivo?.estadoDoLote === 'ativo') {
+      throw new ConflictException(
+        'Esta peça já sai pelo lote da semana, assinado, no horário dela. Para publicar agora, tire-a do lote: "Voltar ao manual" na peça, reagendar a peça ou cancelar a semana.',
+      );
     }
 
     const args = argsDaPublicacao(peca, conta!);
@@ -273,6 +340,7 @@ export class PublicacaoInstagramService implements OnModuleInit {
     });
     if (count !== 1) throw new ConflictException('A publicação mudou enquanto isso: recarregue.');
     await this.passo(orgId, pecaId, { ator: actorId, correlationId: correlacaoAtual() ?? null, approvalId: p.approvalId }, 'manual', { de: p.estado });
+    await this.revogarItem(orgId, pecaId, 'a publicação voltou ao fluxo manual', actorId);
     return publicacaoParaATela({ ...p, estado: 'recusada', erro: 'de volta ao fluxo manual', proximaEm: null, atualizadaEm: new Date() });
   }
 
@@ -296,10 +364,24 @@ export class PublicacaoInstagramService implements OnModuleInit {
     const jaTem = await this.prisma.pautaPublicacao.findFirst({ where: { orgId, pecaId: peca.id, rede: REDE } });
     if (jaTem?.estado === 'publicada') return desfecho(jaTem);
 
-    trilha.approvalId = ctx.approvalId ?? (await this.aprovacaoConsumida(orgId, peca.id));
+    /*
+     * Pelo LOTE (MD8): a porta já consumiu o uso do item, com o conteúdo de
+     * agora igual ao assinado. Quem publica é quem assinou a semana, e a
+     * aprovação que vale é a do lote — não há "pedido antigo" a comparar.
+     */
+    const doLote = ctx.loteItemId ? await this.itemDoLote(orgId, ctx.loteItemId) : null;
+    if (ctx.loteItemId && doLote?.recursoId !== peca.id) {
+      await this.passo(orgId, peca.id, trilha, 'recusada', { motivo: 'o item de lote não é desta peça', loteItemId: ctx.loteItemId });
+      throw new PublicacaoRecusada('O item de lote não é desta peça: nada foi publicado.');
+    }
+    if (doLote) {
+      trilha.ator = doLote.aprovadoPorId ?? trilha.ator;
+      trilha.loteItemId = ctx.loteItemId;
+    }
+    trilha.approvalId = ctx.approvalId ?? doLote?.approvalId ?? (await this.aprovacaoConsumida(orgId, peca.id));
     // A aprovação de um pedido antigo (houve outro pedido depois, ou a peça
     // voltou ao manual e foi pedida de novo) não publica, nem mexe na linha.
-    if (jaTem?.approvalId && trilha.approvalId && jaTem.approvalId !== trilha.approvalId) {
+    if (!doLote && jaTem?.approvalId && trilha.approvalId && jaTem.approvalId !== trilha.approvalId) {
       await this.passo(orgId, peca.id, trilha, 'recusada', { motivo: 'aprovação de um pedido antigo', daLinha: jaTem.approvalId });
       throw new PublicacaoRecusada('Esta aprovação é de um pedido antigo desta peça (depois dela houve outro pedido): nada foi publicado.');
     }
@@ -361,6 +443,7 @@ export class PublicacaoInstagramService implements OnModuleInit {
         proximaEm: posse,
         tentativas: { increment: 1 },
         approvalId: trilha.approvalId,
+        ...(ctx.loteItemId ? { loteItemId: ctx.loteItemId } : {}),
       },
     });
     if (tomada.count !== 1) {
@@ -636,7 +719,13 @@ export class PublicacaoInstagramService implements OnModuleInit {
     de: readonly PautaPublicacao['estado'][],
     posse?: Date | null,
   ): Promise<DesfechoDaPublicacao> {
-    await this.gravar(orgId, pecaId, { estado: 'erro', erro: erro.slice(0, 500), proximaEm: null }, de, posse);
+    await this.gravar(
+      orgId,
+      pecaId,
+      { estado: 'erro', erro: erro.slice(0, 500), proximaEm: null, ...(trilha.loteItemId ? { loteItemId: trilha.loteItemId } : {}) },
+      de,
+      posse,
+    );
     await this.passo(orgId, pecaId, trilha, 'erro', { erro: erro.slice(0, 300) });
     return { estado: 'erro', externalId: null, permalink: null, erro };
   }
@@ -665,6 +754,20 @@ export class PublicacaoInstagramService implements OnModuleInit {
       data,
     });
     return count;
+  }
+
+  /** O item de lote e quem assinou o lote dele: leitura, só para a trilha do RASTRO. */
+  private async itemDoLote(orgId: string, itemId: string) {
+    const i = await this.prisma.itemDoLote.findFirst({
+      where: { id: itemId, orgId, capabilityId: CAPACIDADE },
+      select: { recursoId: true, lote: { select: { approvalId: true, aprovadoPorId: true } } },
+    });
+    return i ? { recursoId: i.recursoId, approvalId: i.lote.approvalId, aprovadoPorId: i.lote.aprovadoPorId } : null;
+  }
+
+  /** Derruba o item vivo da peça no lote da semana (MD8). */
+  private revogarItem(orgId: string, pecaId: string, motivo: string, actorId: string): Promise<number> {
+    return revogarItemDaPeca(this.lotes, this.log, orgId, pecaId, motivo, actorId);
   }
 
   private async aprovacaoConsumida(orgId: string, pecaId: string): Promise<string | null> {
@@ -775,21 +878,25 @@ export class PublicacaoInstagramService implements OnModuleInit {
   /** A nota `pauta.publicacao.automatica` com a primeira linha `ligada`. Memória fora = desligada. */
   async automaticaLigada(orgId: string): Promise<boolean> {
     try {
-      const nota = await this.memoria.porChave(orgId, PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA);
-      if (!nota || nota.arquivadoEm) return false;
-      const linha = nota.body.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
-      return linha.replace(/[*_`#>\-\s]/g, '').toLowerCase() === 'ligada';
+      return notaDaAutomaticaLigada(await this.memoria.porChave(orgId, PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA));
     } catch {
       return false;
     }
   }
 
   /**
-   * As peças aprovadas no horário (do slot até 2 h depois) e as que passaram da
-   * janela com item de lote. A rotina não publica nada nesta onda: sem a nota,
-   * sem o lote ou sem a porta que confere o lote (MD7), a peça segue manual.
-   * Cada `pulada` vai ao RASTRO uma vez por peça, slot e motivo — não uma
-   * linha por minuto.
+   * As peças aprovadas no horário (do slot até 2 h depois). Publicar sozinha
+   * pede as duas travas da D-MD1: a nota `pauta.publicacao.automatica` ligada e
+   * o item ativo de um lote ASSINADO (MD8). Com as duas, a rotina manda o
+   * pedido da peça de agora à porta com o `loteItemId`: a porta consome um uso
+   * do item, numa instrução só, e só então dispara o efeito. Sem elas a peça
+   * segue manual, e cada `pulada` vai ao RASTRO uma vez por peça, slot e motivo.
+   * A peça com item ativo cuja janela passou (a rotina ficou parada, até com o
+   * lote já vencido) cai em erro uma vez, perde o item e volta ao manual.
+   *
+   * O teto vale só para quem vai à porta (publicar e dar por perdida): a
+   * `pulada` não ocupa vaga, senão uma fila de puladas seguraria os itens do
+   * lote até a janela deles acabar.
    */
   async olharOHorario(orgId: string, correlationId: string | null, teto = TETO_POR_PASSAGEM): Promise<LinhaDaPassagem[]> {
     const agora = new Date();
@@ -801,33 +908,122 @@ export class PublicacaoInstagramService implements OnModuleInit {
         agendadaPara: { lte: agora, gte: new Date(agora.getTime() - 2 * PAUTA_JANELA_DA_PUBLICACAO_MS) },
       },
       orderBy: { agendadaPara: 'asc' },
-      select: { id: true, formato: true, meta: true, agendadaPara: true, publicacoes: { where: { rede: REDE }, select: { estado: true, loteItemId: true } } },
+      select: { id: true, formato: true, meta: true, agendadaPara: true, publicacoes: { where: { rede: REDE }, select: { estado: true, loteItemId: true, approvalId: true } } },
       take: 50,
-    })) as Array<{ id: string; formato: string; meta: unknown; agendadaPara: Date; publicacoes: Array<{ estado: PautaPublicacao['estado']; loteItemId: string | null }> }>;
-    const candidatas = pecas.filter((p) => {
-      if (!ehPecaDaSemana(p.meta)) return false;
+    })) as Array<{
+      id: string;
+      formato: string;
+      meta: unknown;
+      agendadaPara: Date;
+      publicacoes: Array<{ estado: PautaPublicacao['estado']; loteItemId: string | null; approvalId: string | null }>;
+    }>;
+    const daSemana = pecas.filter((p) => ehPecaDaSemana(p.meta));
+    if (!daSemana.length) return [];
+    const vivos = this.lotes
+      ? await this.lotes.itensVivos(orgId, CAPACIDADE, daSemana.map((p) => p.id), agora, { mesmoVencido: true })
+      : new Map<string, ItemVivo>();
+    const itemAtivo = (pecaId: string) => {
+      const v = vivos.get(pecaId);
+      return v && v.estadoDoLote === 'ativo' ? v.itemId : null;
+    };
+    const candidatas = daSemana.filter((p) => {
       const pub = p.publicacoes[0];
-      if (!pub) return agora.getTime() - p.agendadaPara.getTime() <= PAUTA_JANELA_DA_PUBLICACAO_MS;
-      return pub.estado === 'pendente' && !!pub.loteItemId;
+      const item = itemAtivo(p.id);
+      /*
+       * Com item de lote assinado, a rotina toma a linha de onde o efeito
+       * começa (`pendente` ou `erro`), com ou sem um "Publicar agora" antigo
+       * gravado nela: o efeito pelo lote não compara pedido, e a tomada é uma
+       * só, então a aprovação avulsa confirmada depois acha `publicada` ou perde.
+       * O erro que ESTE item já deu não se repete a cada minuto.
+       */
+      if (item) return !pub || (ESTADOS_QUE_COMECAM.includes(pub.estado) && pub.loteItemId !== item);
+      // Sem item, a linha que existe já tem dono: o pedido item a item, a Meta ou o manual.
+      if (pub) return false;
+      return agora.getTime() - p.agendadaPara.getTime() <= PAUTA_JANELA_DA_PUBLICACAO_MS;
     });
     if (!candidatas.length) return [];
     const ligada = await this.automaticaLigada(orgId);
+    const decididas = candidatas.map((p) => ({
+      p,
+      d: decisaoDaRotina({ agendadaPara: p.agendadaPara, agora, automaticaLigada: ligada, loteItemId: itemAtivo(p.id) }),
+    }));
     const saida: LinhaDaPassagem[] = [];
     const trilha: Trilha = { ator: ATOR_DA_ROTINA, correlationId, approvalId: null };
-    for (const p of candidatas.slice(0, teto)) {
+    for (const { p, d } of decididas) {
+      if (d.tipo !== 'pular') continue;
+      await this.registrarPulada(orgId, p.id, p.agendadaPara, d.motivo, trilha);
+      saida.push({ rotulo: await this.rotuloDa(orgId, p.id), resultado: 'pulada', detalhe: d.motivo });
+    }
+    for (const { p, d } of decididas.filter((x) => x.d.tipo !== 'pular').slice(0, teto)) {
       const rotulo = await this.rotuloDa(orgId, p.id);
-      const loteItemId = p.publicacoes[0]?.loteItemId ?? null;
-      const d = decisaoDaRotina({ agendadaPara: p.agendadaPara, agora, automaticaLigada: ligada, loteItemId, loteConferidoPelaPorta: false });
       if (d.tipo === 'janela_perdida') {
-        await this.falhar(orgId, p.id, d.motivo, trilha, ['pendente']);
+        const perdido = itemAtivo(p.id);
+        await this.garantirLinha(p.id);
+        await this.falhar(orgId, p.id, d.motivo, { ...trilha, loteItemId: perdido }, ['pendente', 'erro']);
+        await this.revogarItem(orgId, p.id, 'a janela de 2 h do slot passou sem publicar', ATOR_DA_ROTINA);
         saida.push({ rotulo, resultado: 'erro', detalhe: d.motivo });
         continue;
       }
-      const motivo = d.tipo === 'pular' ? d.motivo : 'a rotina ainda não publica por item de lote (MD8)';
-      await this.registrarPulada(orgId, p.id, p.agendadaPara, motivo, trilha);
-      saida.push({ rotulo, resultado: 'pulada', detalhe: motivo });
+      if (d.tipo === 'publicar') saida.push({ rotulo, ...(await this.publicarPeloLote(orgId, p.id, d.loteItemId, correlationId)) });
     }
     return saida;
+  }
+
+  /**
+   * Uma peça no horário, pelo item do lote: o pedido é montado da peça de
+   * AGORA (o mesmo `argsDaPublicacao` do "Publicar agora"), e a porta confere
+   * que ele é o assinado. O interruptor do Instagram é perguntado antes, como
+   * na conclusão. Toda recusa vira `erro` na linha, com o motivo: a peça sai da
+   * lista da rotina e volta ao manual, sem tentar de novo a cada minuto.
+   */
+  private async publicarPeloLote(
+    orgId: string,
+    pecaId: string,
+    loteItemId: string,
+    correlationId: string | null,
+  ): Promise<Omit<LinhaDaPassagem, 'rotulo'>> {
+    const trilha: Trilha = { ator: ATOR_DA_ROTINA, correlationId, approvalId: null, loteItemId };
+    const recusa = await this.interruptores.consultar({ orgId, capabilityId: CAPACIDADE, correlationId, actorType: 'system', actorId: ATOR_DA_ROTINA });
+    if (recusa) return { resultado: 'interruptor', detalhe: 'conector do Instagram desligado: nada foi chamado' };
+
+    // A rotina desiste da peça: a linha vai a `erro` com o item gravado, e o
+    // item é revogado — o "Publicar agora" e a aba voltam a valer para ela.
+    const cair = async (motivo: string): Promise<Omit<LinhaDaPassagem, 'rotulo'>> => {
+      await this.garantirLinha(pecaId);
+      const d = await this.falhar(orgId, pecaId, motivo, trilha, ['pendente', 'erro']);
+      await this.revogarItem(orgId, pecaId, 'a rotina não conseguiu publicar pelo lote: volta ao manual', ATOR_DA_ROTINA);
+      return { resultado: 'erro', detalhe: d.erro };
+    };
+
+    const peca = await this.pecaDe(orgId, pecaId);
+    const conta = await this.contaDe(orgId);
+    const motivo = motivoParaNaoPublicar(peca, conta, INSTAGRAM_ESCOPO_DE_PUBLICAR);
+    if (motivo) return cair(`A peça não saiu pelo lote: ${motivo}`);
+    if (!segredoDaMidiaPublica() || !origemDaMidiaPublica()) return cair(MIDIA_PUBLICA_DESLIGADA);
+
+    try {
+      const r = await this.porta.executar({
+        orgId,
+        actorId: ATOR_DA_ROTINA,
+        actorType: ActorType.system,
+        capabilityId: CAPACIDADE,
+        args: { ...(argsDaPublicacao(peca, conta!) as unknown as Record<string, unknown>), loteItemId },
+        resource: { type: CAPACIDADE, id: pecaId },
+      });
+      if (ehRetida(r)) return cair('A porta reteve o pedido em vez de consumir o item do lote: nada foi publicado.');
+      const d = r as DesfechoDaPublicacao;
+      const resultado = d.estado === 'publicada' ? 'publicada' : d.estado === 'erro' ? 'erro' : d.estado === 'pendente' ? 'pendente' : 'processando';
+      return { resultado, detalhe: d.erro };
+    } catch (e) {
+      // O efeito que falhou já gravou o erro dele; a recusa da porta (item que
+      // não vale mais) ainda não gravou nada.
+      const msg = ((e as { response?: { message?: unknown } }).response?.message ?? (e as Error).message) as string;
+      const atual = await this.prisma.pautaPublicacao.findFirst({ where: { orgId, pecaId, rede: REDE }, select: { estado: true, loteItemId: true } });
+      if (atual && (atual.loteItemId === loteItemId || !ESTADOS_QUE_COMECAM.includes(atual.estado))) {
+        return { resultado: 'erro', detalhe: String(msg).slice(0, 200) };
+      }
+      return cair(`A porta não deixou o item do lote sair: ${String(msg)}`.slice(0, 500));
+    }
   }
 
   private async registrarPulada(orgId: string, pecaId: string, agendadaPara: Date, motivo: string, trilha: Trilha): Promise<void> {
@@ -851,6 +1047,7 @@ function metadataDa(t: Trilha): Prisma.InputJsonValue {
     correlationId: t.correlationId,
     ...(t.approvalId ? { approvalId: t.approvalId } : {}),
     ...(t.correlacaoDaRotina ? { correlacaoDaRotina: t.correlacaoDaRotina } : {}),
+    ...(t.loteItemId ? { loteItemId: t.loteItemId } : {}),
   } as Prisma.InputJsonValue;
 }
 

@@ -176,12 +176,11 @@ describe('MD6: o pedido de publicação (puro)', () => {
     expect(postDoContainer(recentes, null, '2026-09-24T10:00:30.000Z')).toBeNull();
   });
 
-  it('a rotina só publica com a nota ligada, o lote e a porta que confere o lote', () => {
-    const base = { agendadaPara: new Date('2026-09-28T15:00:00Z'), agora: new Date('2026-09-28T15:10:00Z'), loteConferidoPelaPorta: false };
+  it('a rotina só publica com a nota ligada e o item de um lote ativo (MD8: quem confere o item é a porta)', () => {
+    const base = { agendadaPara: new Date('2026-09-28T15:00:00Z'), agora: new Date('2026-09-28T15:10:00Z') };
     expect(decisaoDaRotina({ ...base, automaticaLigada: false, loteItemId: 'l1' })).toEqual({ tipo: 'pular', motivo: 'publicação automática desligada' });
     expect(decisaoDaRotina({ ...base, automaticaLigada: true, loteItemId: null })).toEqual({ tipo: 'pular', motivo: 'sem aprovação da semana' });
-    expect(decisaoDaRotina({ ...base, automaticaLigada: true, loteItemId: 'l1' }).tipo).toBe('pular');
-    expect(decisaoDaRotina({ ...base, automaticaLigada: true, loteItemId: 'l1', loteConferidoPelaPorta: true })).toEqual({ tipo: 'publicar', loteItemId: 'l1' });
+    expect(decisaoDaRotina({ ...base, automaticaLigada: true, loteItemId: 'l1' })).toEqual({ tipo: 'publicar', loteItemId: 'l1' });
     expect(decisaoDaRotina({ ...base, agora: new Date('2026-09-28T17:01:00Z'), automaticaLigada: true, loteItemId: 'l1' }).tipo).toBe('janela_perdida');
   });
 

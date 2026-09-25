@@ -237,13 +237,13 @@ describe('a semana de posts do episódio', () => {
     expect(apiPut).toHaveBeenCalledWith('/pauta/pecas/co1/semana', { titulo: 'Corte do preço', legenda: 'Outra legenda' }, 'tok');
   });
 
-  it('depois de agendado não há Editar (o texto é o que vai ao ar), e o story avisa a página de links fora do ar', async () => {
-    apiGet.mockResolvedValue(semana({ status: 'agendado' }));
-    renderSecao({ detalhe: detalhe({ status: 'agendado' }) });
+  it('depois de concluído não há Editar (o texto é o registro), e o story avisa a página de links fora do ar', async () => {
+    apiGet.mockResolvedValue(semana({ status: 'concluido' }));
+    renderSecao({ detalhe: detalhe({ status: 'concluido' }) });
     const m1 = await waitFor(() => materia(1));
     expect(within(m1).queryByRole('button', { name: 'Editar' })).toBeNull();
     expect(within(m1).getAllByRole('button', { name: 'Aprovar' }).length).toBeGreaterThan(0);
-    expect(secao()).toHaveTextContent('o texto das peças é o que vai ao ar');
+    expect(secao()).toHaveTextContent('o texto das peças é o registro do que foi ao ar');
     expect(within(m1).getByLabelText('Story')).toHaveTextContent('A página de links do episódio ainda não está no ar');
   });
 

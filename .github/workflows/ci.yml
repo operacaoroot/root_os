@@ -482,8 +482,21 @@ jobs:
       # `component/regua` (a aba Capacidades mostra "aprova em lote" e "sai
       # também por item de lote"). Medido: 578 casos em 44 arquivos. O piso de
       # CASOS sobe 1, para 395; o de ARQUIVOS fica em 35.
-      PISO_CASOS_WEB: '395'
-      PISO_ARQUIVOS_WEB: '35'
+      #
+      # MD8, APROVAR A SEMANA NUM PONTO SÓ (24/09/2026): +7 casos, +1 arquivo.
+      # `component/pauta-lote-da-semana` (7, novo): na aba Semana, o botão por
+      # episódio com o estado da publicação automática e a linha do tempo; a
+      # montagem com o "fica fora" que pede a assinatura em seguida; o
+      # impedimento da semana que desliga o botão; o lote ativo (sem "Publicar
+      # agora", "Cancelar a semana" com confirmação); sem pauta.publicar, nada;
+      # em /atendimento, o cartão do lote com a legenda inteira, o horário em
+      # SP, o @, a mídia e a divergência, e o botão de aprovar só depois de ele
+      # carregar (e nunca, se não carregar). `component/pauta-agenda` e
+      # `component/pauta-semana` mudaram texto, sem caso novo. Medido: 585
+      # casos em 45 arquivos. O piso de ARQUIVOS sobe 1, para 36; o de CASOS
+      # sobe 6 (~15% de folga sobre os 7 novos), para 401.
+      PISO_CASOS_WEB: '401'
+      PISO_ARQUIVOS_WEB: '36'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1632,8 +1645,40 @@ jobs:
       # `arquitetura` ganhou a busca de SQL cru no caso que já existia. Medido:
       # 2862 casos em 69 arquivos com o banco; sem ele, os mesmos 2221 passados
       # e 641 pulados. Os pisos ficam onde estão: nada novo roda sem banco.
-      PISO_CASOS_API: '2085'
-      PISO_ARQUIVOS_API: '61'
+      #
+      # MD8, APROVAR A SEMANA NUM PONTO SÓ (24/09/2026): +21 casos, +1 arquivo.
+      # `pauta-lote-da-semana` (20, novo): sem banco, 11 — as pré-condições de
+      # cada peça com a frase própria; o que para a semana inteira; o hash do
+      # item muda com legenda, mídia, horário e conta; a janela e a validade;
+      # a divergência; a linha do tempo; o corpo do "fica fora"; as permissões
+      # das rotas; o link da fila no aviso do canal; o fuso (UTC gravado, SP
+      # exibido). COM BANCO, 9 — as pré-condições barram sem gravar; a semana
+      # vira um lote de 11, vai à fila como R4 e nada sai antes da assinatura;
+      # a titular assina e as peças ficam aprovadas no slot com o episódio
+      # Agendado; nota desligada não publica; editar depois de ativo revoga só
+      # o item; o executor publica 10 no dublê da Graph, 3 por passagem, com
+      # um consumo por item e o aprovador no RASTRO; "Cancelar a semana"; a
+      # peça editada antes da assinatura cai na ativação; JPEG, horário e texto
+      # revogam só o item. `root-midia` +1 (o `agenda` diz se a semana está
+      # assinada ou na fila, e avisa a automática desligada), sem banco.
+      # `pauta-publicacao-instagram` e `pauta-semana` mudaram casos, sem caso
+      # novo. Medido: 2883 casos em 70 arquivos com o banco; sem ele, 2233
+      # passados e 650 pulados (65 + 5 arquivos). O piso de ARQUIVOS sobe 1,
+      # para 62; o de CASOS sobe 10 (~15% de folga sobre os 12 que rodam sem
+      # banco), para 2095.
+      #
+      # MD8, correções da revisão: +6 casos em `pauta-lote-da-semana`, sem
+      # arquivo novo. Sem banco, 3 — a segunda candidata do mesmo formato no
+      # mesmo slot; o que a publicação anterior barra e o que a ativação
+      # reabre; "ativo" só com a peça aprovada e fora do manual. COM BANCO, 3 —
+      # o pedido vencido, a linha em erro, a que voltou ao manual e o "Publicar
+      # agora" pedido na fila saem pelo lote, com as puladas fora do teto; a
+      # rotina parada além do lote dá a peça por perdida e revoga o item; o
+      # lote não assinado não tira a aprovada da agenda. Medido: 2889 casos em
+      # 70 arquivos com o banco; sem ele, 2236 passados e 653 pulados. O piso
+      # de CASOS sobe 2 (~15% de folga sobre os 3 sem banco), para 2097.
+      PISO_CASOS_API: '2097'
+      PISO_ARQUIVOS_API: '62'
 
     steps:
       - uses: actions/checkout@v4

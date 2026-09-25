@@ -1920,6 +1920,130 @@ variável nova.
 4. A segunda pessoa com alçada **titular** (o lote é R4): sem ela, nenhum lote é ativado.
 5. O 403 da fila em produção (pendente desde 12/09/2026) continua valendo para quem assina.
 
+### Onda D, fatia MD8 — aprovar a semana num ponto só (24/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD8). Junta a MD1 (slots propostos),
+a MD4 (mídia no storage), a MD5 (conta), a MD6 (publicador) e a MD7 (lote com uso contado): a semana
+de um episódio vira UM lote R4, assinado por outra pessoa, titular, com senha e motivo, e cada post
+sai no horário pelo item dele. **Nada publica sozinho sem as duas travas da D-MD1:** o seed assinado
+(MD7) e a nota `pauta.publicacao.automatica` ligada — desligada, o lote ativo só gera `pulada`.
+
+| Peça | Onde |
+|---|---|
+| Montar o lote (`POST /pauta/episodios/:id/semana/preparar-aprovacao`, `pauta.publicar`, `{fora}`), ler o estado da aprovação (`GET …/semana/aprovacao`, `pauta.ver`), "Cancelar a semana" (`POST /pauta/lotes/:id/cancelar`, `pauta.publicar`) e o conteúdo que a titular lê (`GET /pauta/lotes/:id/conteudo`, `aprovacoes.decidir`: o conteúdo exato só para quem pode decidir) | `apps/api/src/pauta/lote-da-semana.controller.ts`, `lote-da-semana.service.ts`, parte pura em `lote-da-semana.ts` |
+| A reação à assinatura por registro: `LotesService.aoAtivar(recursoTipo, fn)` (uma inscrição por tipo), rodando na transação que liga o lote, com os itens relidos dentro dela; o item que a reação não faz valer é revogado ali e vai à auditoria `lote.ativado` | `apps/api/src/approvals/lotes.service.ts` |
+| A publicação que a peça já tem (MD6): a montagem barra a que está na Meta, publicada ou com "Publicar agora" vivo na fila (`problemaDaPublicacao`); a ativação devolve a `pendente` sem pedido a linha em `erro`, `recusada` ou com o pedido morto (`reabreNaAtivacao`), e revoga o item da peça cuja publicação já está na Meta | `lote-da-semana.ts`, `lote-da-semana.service.ts`, `publicacoesEmJogo` em `publicacao-instagram.service.ts` |
+| Leituras novas do lote: `itensVivos` (o item ativo de cada peça, preferindo o lote ativo) e `lotesEmCurso` | idem |
+| A rotina publica pelo item: acha o item ativo (também o de lote que venceu com ela parada, para dar a peça por perdida), toma a linha em `pendente` ou `erro` com ou sem pedido avulso gravado, pergunta ao interruptor, monta os argumentos da peça de agora e chama a porta com `loteItemId` (`actorType system`); desistir (recusa da porta, janela perdida) vira `erro` com o `loteItemId` e **revoga o item**, e a peça volta ao manual de fato; o teto de 3 conta só quem vai à porta, não as puladas; `decisaoDaRotina` perdeu o `loteConferidoPelaPorta` | `apps/api/src/pauta/publicacao-instagram.service.ts`, `publicacao-instagram.ts` |
+| O efeito da MD6 pelo lote: quem publica é quem assinou, a aprovação é a do lote, `loteItemId` na `PautaPublicacao`; "Publicar agora" de peça com item ativo é 409 | `publicacao-instagram.service.ts` |
+| Revogar só o item da peça ao mexer depois de ativo (`revogarItemDaPeca`): texto, JPEG, mp4, reagendar, status, postada à mão, voltar ao manual, e as peças que o refazer mídia ou a transcrição nova mandam a rascunho. A aprovada só sai da agenda pela troca de mídia quando o lote está **assinado e válido** (`filtroDoItemAssinado`); no lote só montado ou na fila, a troca só revoga o item | `derivacao.service.ts`, `agenda.service.ts`, `rotina.service.ts`, `midia.service.ts`, `publicacao-instagram.service.ts` |
+| O texto da semana se edita no Agendado (`motivoParaNaoEditarASemana` só trava Concluído) | `packages/shared/src/schemas.ts` |
+| Tipos e a etapa da peça (`etapaDaPecaNaSemana`, `PAUTA_ETAPAS_DA_PECA_NA_SEMANA`), `PautaPrepararAprovacaoSchema`, `lote` na peça da agenda e `publicacaoAutomatica` na agenda | `packages/shared/src/schemas.ts`; `agenda.service.ts` |
+| Tela: seção "Aprovar a semana" na aba Semana (por episódio, com o estado da automática, "fica fora", montar e pedir a assinatura, pedir de novo, cancelar com confirmação) e a linha do tempo em cada slot | `apps/web/src/app/pauta/AprovarASemana.tsx`, `LinhaDoTempoDaPeca.tsx`, `AbaSemana.tsx`, `PublicacaoNoInstagram.tsx` |
+| `/atendimento`: o cartão do lote (legenda inteira, miniatura pela rota autenticada, horário em SP, @, hash recalculado, divergência) e o botão de aprovar só com ele carregado | `apps/web/src/app/atendimento/CartaoDoLote.tsx`, `Item.tsx` |
+| O aviso do canal de aprovação leva o link da fila (`linkDaFila`); o caminho `/atendimento` mudou para `gateway/fila-de-aprovacao.ts` (a porta o reexporta) | `apps/api/src/gateway/canais/pedido-no-canal.ts` |
+| `root-midia agenda` diz se a semana está assinada ou na fila (e avisa a automática desligada) | `tools/root-midia/lib/semana.mjs` |
+
+**Desvios da especificação, com o porquê:**
+- **O hash do item é o da peça como aprovada no slot** (`argsDoItem`), porque é esse pedido que o
+  executor manda à porta no horário. Ajustar `agendadaPara` "para o passado recente" mudaria o hash e
+  a porta recusaria (é o horário assinado): o ensaio usou slots poucos minutos à frente e esperou.
+- **A peça editada entre a montagem e a assinatura não é aprovada** (a ativação recalcula e revoga o
+  item), e o resto da semana vale. A titular já via essa peça marcada no cartão.
+- **Editar o texto no Agendado passou a valer.** A regra antiga impediria o item 5 (a assinatura leva
+  o episódio a Agendado). É mudança de comportamento, registrada no §4 (item 30).
+- **Reagendar mantém a peça aprovada** no horário novo e fora do lote; "Aprovar a semana" monta um
+  lote novo só com ela. Trocar o JPEG ou o mp4 leva a aprovada a rascunho, como o item 5 pede.
+- **Montar de novo substitui** o lote do episódio ainda sem assinatura (revogado, com o motivo).
+- **O hash recalculado que a titular vê é conferido pela API**, não no navegador.
+- **Não houve `hashKeys`**: como na MD6, o corpo inteiro do pedido vai ao hash.
+- **"Cancelar a semana" não passa pela porta**: não há capacidade nova (seria outra assinatura de
+  seed) — só revoga, e revogar só diminui o alcance.
+- **Pedir a assinatura usa a rota da MD7**, `POST /approvals/lotes/:id/pedir-assinatura`, e não uma
+  `POST /pauta/lotes/:id/pedir-assinatura` nova (item 2 da SPEC). A rota já existia com a mesma
+  permissão (`pauta.publicar`) e a trava "quem monta é quem pede"; uma segunda seria outro caminho
+  para o mesmo pedido.
+- **O conteúdo do lote é `aprovacoes.decidir`**, não `aprovacoes.ver`: a regra do Pedro para a fila
+  (`approvals.controller.ts`) é que o conteúdo exato vai só para quem pode decidir.
+- **A peça com publicação anterior entra no lote.** A linha em `erro`, `recusada` ou com o pedido
+  morto não barra a montagem: a assinatura é a autorização nova, e a ativação a reabre para o
+  executor. Barra a que está na Meta, a publicada e a que tem "Publicar agora" vivo na fila.
+
+**Correções da revisão (três revisores):**
+- A peça com linha de publicação (pedido R3 vencido ou vivo, `erro`, `recusada`) entrava no lote e a
+  rotina nunca a tomava, em silêncio. Agora a montagem barra só o que não pode sair, a ativação
+  reabre a linha e a rotina toma `pendente`/`erro` com item de lote assinado, com ou sem pedido avulso
+  gravado (o erro que o próprio item já deu não se repete). O "Publicar agora" confirmado depois acha
+  a peça publicada: nenhum post a mais.
+- O lote montado e nunca assinado (a Root hoje, sem segunda pessoa) tirava da agenda a aprovada cuja
+  mídia era trocada. O rebaixamento exige lote `ativo` e válido; sem isso, só o item é revogado.
+- Ao desistir da peça (janela perdida, recusa da porta), a rotina revoga o item: o "Publicar agora" e
+  a aba voltam a valer, e a mensagem do 409 cita "Voltar ao manual". A janela perdida é detectada
+  também com o lote já vencido, e o teto por passagem não conta as puladas.
+- `ativar` relê os itens dentro da transação; a substituição de lote não revoga o lote que foi
+  assinado no meio (o novo cai, 409); duas candidatas do mesmo formato no mesmo slot barram a
+  segunda, na montagem e na ativação; o episódio só vai a Agendado com ao menos uma peça aprovada; a
+  aba reconfere a peça de lote ainda não assinado; "ativo" na linha do tempo exige a peça aprovada e
+  a publicação fora do manual; em `/atendimento`, o "Recusar" aparece enquanto o cartão do lote não
+  carrega.
+
+**Medido** (Mac, `marketing_os_test`, 24/09/2026 ~23h05, já com as correções da revisão): `pnpm
+typecheck` 7/7; `typecheck:test` limpo; api direto **2889 de 2889** em 70 arquivos (+27:
+`pauta-lote-da-semana` 26, novo, 12 com banco; `root-midia` +1); sem banco, 2236 passados e 653
+pulados; web **585** em 45 (+7: `pauta-lote-da-semana`, novo); policy 88; `test:porta` 61;
+`test:isolamento` 340; `db:diff` "No difference detected."; `build` + `smoke` OK. Pisos da CI: api 2097/62, web 401/36, com a conta no `ci.yml`. Uma rodada da suíte teve o vermelho passageiro conhecido de `cofre.test.ts` (inventário de
+herdadas), verde sozinho e na repetição inteira.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md8`, criado vazio:
+migrations do zero, `db:seed` e `db:seed:politica`; MinIO descartável da imagem `minio/minio` em
+`127.0.0.1:9318`; dublê da Graph em `127.0.0.1:4298` que **baixa** cada `image_url`/`video_url` e
+registra o sha256; a semana semeada como a MD1 a deixa — 4 matérias × carrossel/story/corte em
+rascunho com o slot proposto, um minuto entre eles, e um story a mais sem JPEG —, página de links no
+ar, conta de publicação; 16 JPEG 1080×1350, 4 JPEG 1080×1920 e 4 mp4 1080×1920 do `ffmpeg` subidos
+pelas rotas da MD4; duas contas descartáveis, a que monta e a titular; tudo removido no fim):
+1. `GET …/semana/aprovacao`: sem impedimento, automática desligada, 13 peças em `proposto`, o story
+   sem JPEG com "Falta o JPEG 1…". Montar sem "fica fora" → 400 com essa frase e "marque fica fora";
+   com ele → lote de **12** itens, válido até o fim da última janela.
+2. Pedir a assinatura → `aguardando_aprovacao`, **R4**, `precisaDeOutraPessoa`, fila `/atendimento`.
+   A titular leu o conteúdo (12 posts, 0 divergentes, `@root.ensaio`, miniatura 200 `image/jpeg`) e
+   a fila mostrou alçada titular, senha e motivo. Tela a 375 px: sem rolagem lateral (`sw = cw =
+   375`) em `/atendimento` e na aba Semana.
+3. Com a nota ligada, no horário do primeiro slot e sem assinatura: a rotina "nenhuma peça no
+   horário" — **0** chamadas ao dublê. Quem montou confirma → 403 "Quem propôs…"; a titular sem motivo
+   → 400; com senha e motivo → `executado`, lote `ativo`: 12 peças `aprovada` no slot, proposto limpo,
+   episódio **Agendado**.
+4. Nota desligada, no horário → `pulada (publicação automática desligada)`, **0** chamadas.
+5. Editar o texto do story da matéria 2 (`PUT …/semana`) → 200; só o item dela `revogado` ("o texto
+   da peça foi editado"), a peça em rascunho fora da agenda, o lote segue ativo com 11.
+6. Nota ligada, depois do último slot: "Rodar agora" quatro vezes → 3, 3, 3 e 2 publicadas; a quinta,
+   nada. O dublê recebeu **27** containers (16 itens de carrossel, 4 `CAROUSEL`, 4 `REELS`, 3
+   `STORIES`), **23** downloads 200 com o sha256 igual ao dos arquivos locais, e **11** publish. No
+   banco: 11 peças `publicada` com permalink e `publicadaPor` = a titular; o story editado em rascunho;
+   11 `PautaPublicacao` `publicada` com `loteItemId`; lote `encerrado` com 11 itens consumidos e 1
+   revogado; o RASTRO com **11** `tool.resultado` (R4, porque passava das 20h em SP) com o aprovador =
+   a titular, e 11 `pauta.peca_publicada`.
+
+Não conferido: o aviso do canal do WhatsApp (sem canal no ensaio, fica só a fila, como a SPEC diz);
+o YouTube (MD10) e a DM (MD11) como itens do lote, que não existem ainda.
+
+**Deploy:** nenhuma migration, nenhuma variável e nenhuma permissão nova. Vale o seed assinado da MD7
+antes da subida (sem ele `pauta.semana.aprovar` vale R5 e todo pedido de assinatura é bloqueado).
+
+**Pendências (do Pedro), na ordem:**
+1. O seed da MD7 assinado na VPS, antes do deploy (`docs/DEPLOY.md` §2.3b), com
+   `POLITICA_CAPACIDADE_NOVA_*` e `POLITICA_REBAIXAMENTO_*`.
+2. Criar na empresa Root a segunda pessoa com alçada **titular** (Lucas ou Rodrigo, D-MC9.3 a):
+   `POST /users` pela tela de usuários, papel `admin_master`. Sem ela, nenhum lote é ativado.
+3. Resolver o 403 da fila em produção: `pnpm --filter @mktos/shared build` → `db:sync-permissions` →
+   todos saem e entram.
+4. A titular assinar em até 10 min depois do pedido; passou, "Pedir a assinatura de novo".
+5. Decidir o papel restrito (passo 16): sob ele nenhuma rotina dispara, e a publicação no horário
+   depende da rotina `pauta.publicar-agendadas` criada em `/rotinas`.
+6. Só depois dos itens 1 a 5, ligar a nota `pauta.publicacao.automatica` (primeira linha `ligada`)
+   pela memória. A revisão de segunda na aba Semana precisa ser de verdade: um lote assinado publica
+   a semana inteira sem ninguém olhando na hora.
+7. Conferir no primeiro post real o limite de 2.200 caracteres da legenda (a conferir desde a MD6).
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2184,6 +2308,19 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     porta recusa subir sem `LotesService`. O validador passou a conferir `minimum`/`maximum`; nenhuma
     capacidade anterior os declarava. `acao.executada` passa a levar `estadoAnterior`/`estadoNovo`
     quando o efeito os devolve. A Régua mostra o modo de lote na aba Capacidades.
+30. **MD8: a semana assinada publica sozinha — se a nota deixar.** Com um lote ativo e a nota
+    `pauta.publicacao.automatica` ligada, a rotina `pauta.publicar-agendadas` publica cada peça no
+    horário pelo item dela (a porta consome o uso), com `publicadaPor` = quem assinou; sem a nota, só
+    registra `pulada`. Assinar a semana passa as peças a `aprovada` no slot e leva o episódio a
+    **Agendado** (antes, ir a Agendado era passo à mão). **O texto das peças passa a se editar no
+    Agendado** (só Concluído trava): a peça editada volta a rascunho, sai da agenda e do lote. Trocar o
+    JPEG ou o mp4 de uma peça num lote **assinado** também a leva a rascunho, fora da agenda (no lote
+    só montado, só revoga o item); reagendar, mudar o status para fora de aprovada, "Marcar como
+    postada", "Voltar ao manual" e o refazer mídia do episódio revogam o item. "Publicar agora" de peça
+    com item ativo é 409. A assinatura devolve a `pendente` sem pedido a publicação que a peça tinha em
+    `erro`, `recusada` ou com o pedido morto, e a rotina, quando desiste de uma peça do lote, revoga o
+    item dela. O conteúdo do lote em `/atendimento` exige `aprovacoes.decidir`. O aviso do canal de aprovação (R4/R5, sem código)
+    passa a trazer o link de `/atendimento` quando `WEB_ORIGIN` é https ou loopback.
 
 ---
 

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { apelidoDoEpisodio } from '@mktos/shared';
 import type {
   PautaRodadaDetalhe,
@@ -15,6 +15,8 @@ import { lerCandidatos } from './curadoria-da-rodada';
 import { ehPecaDaSemana, motivoParaNaoAprovarDaSemana } from './derivacao-do-episodio';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
+import { LotesService } from '../approvals/lotes.service';
+import { revogarItemDaPeca } from './lote-da-semana';
 
 /*
  * "O GATILHO ESTÁ MESMO DE PÉ?" — a resposta que a tela de Pauta mostra.
@@ -46,10 +48,14 @@ export function gatilhoDaPautaDePe(): boolean {
 // tela usa.
 @Injectable()
 export class RotinaService {
+  private readonly log = new Logger('RotinaService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly rodadas: RodadaService,
+    /** MD8: mudar o status de uma peça da semana tira o item dela do lote. Global; opcional nas suítes. */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   private assertCron(cron: string, tz: string): void {
@@ -328,6 +334,10 @@ export class RotinaService {
       before: { status: p.status, ...(p.agendadaPara ? { agendadaPara: p.agendadaPara.toISOString() } : {}) },
       after: { status: atualizada.status, ...(p.agendadaPara && !atualizada.agendadaPara ? { saiuDaAgenda: true } : {}) },
     });
+    // Aprovar à mão não muda o que o lote cobre (o slot é o mesmo); sair de aprovada ou descartar muda.
+    if (patch.status && patch.status !== p.status && patch.status !== 'aprovada' && ehPecaDaSemana(p.meta)) {
+      await revogarItemDaPeca(this.lotes, this.log, orgId, id, `a peça passou de ${p.status} a ${patch.status}`, actorId);
+    }
     return { ok: true, status: atualizada.status };
   }
 }

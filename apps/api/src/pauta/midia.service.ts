@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   PAUTA_FORMATOS_DA_SEMANA,
@@ -23,6 +23,8 @@ import { RoteiroService } from './roteiro.service';
 import { lerTranscricao } from './episodio';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { shaDaTranscricao } from './newsletter-do-episodio';
+import { LotesService } from '../approvals/lotes.service';
+import { revogarItemDaPeca } from './lote-da-semana';
 import {
   motivoParaNaoReceberMidia,
   motivoParaNaoReceberTranscricao,
@@ -58,12 +60,25 @@ const MSG_CORRIDA = 'O episódio mudou enquanto isso (outra aba ou outro envio) 
  */
 @Injectable()
 export class MidiaService {
+  private readonly log = new Logger('MidiaDoEpisodio');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly episodios: EpisodioService,
     private readonly roteiros: RoteiroService,
+    /** MD8: a peça que volta ao rascunho sai do lote da semana. Global; opcional nas suítes. */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
+
+  /**
+   * As peças que voltaram ao rascunho perdem o item do lote da semana (MD8):
+   * sem isso o item seguiria ativo até o lote vencer, a aba mostraria "ativo" e
+   * a peça, refeita, não entraria em lote novo.
+   */
+  private async tirarDoLote(orgId: string, pecaIds: readonly string[], motivo: string, actorId: string): Promise<void> {
+    for (const id of pecaIds) await revogarItemDaPeca(this.lotes, this.log, orgId, id, motivo, actorId);
+  }
 
   /**
    * Gravados e em edição, do mais antigo: é a fila do Mac. Junto, os da
@@ -231,6 +246,7 @@ export class MidiaService {
       if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
       return this.pecasDaSemanaAoRascunho(tx, orgId, { id, rodadaId: e.rodadaId });
     });
+    await this.tirarDoLote(orgId, pecasAoRascunho, 'a mídia do episódio foi refeita', actorId);
 
     await this.audit.log({
       orgId,
@@ -276,6 +292,7 @@ export class MidiaService {
       if (r.count === 0) throw new ConflictException(MSG_CORRIDA);
       return this.pecasDaSemanaAoRascunho(tx, orgId, { id, rodadaId: e.rodadaId }, shaDaTranscricao(segmentos));
     });
+    await this.tirarDoLote(orgId, pecasAoRascunho, 'a transcrição do episódio mudou', actorId);
 
     await this.audit.log({
       orgId,

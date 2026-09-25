@@ -1124,6 +1124,31 @@ describe('root-midia: o calendário da semana no terminal (MC16)', () => {
     ]);
   });
 
+  it('MD8: o lote da semana aparece embaixo da peça — assinado (e se a automática está desligada) ou na fila; o item revogado não', () => {
+    const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'aprovada', postada: null, midia: { onde: 'storage', imagens: [1] }, ...over });
+    const lote = (estadoDoLote: string, estadoDoItem = 'ativo') => ({ loteId: 'l1', itemId: 'i1', estadoDoLote, estadoDoItem, janelaAte: 'x' });
+    const agenda = (automatica: boolean) => ({
+      publicacaoAutomatica: automatica,
+      dias: [
+        {
+          dia: '2026-09-28', diaDaSemana: 'seg', feriado: null,
+          linhas: [
+            { hora: '09:00', formato: 'story', daGrade: true, peca: peca({ lote: lote('ativo') }) },
+            { hora: '12:00', formato: 'carrossel', daGrade: true, peca: peca({ status: 'rascunho', lote: lote('aguardando') }) },
+            { hora: '18:00', formato: 'corte', daGrade: true, peca: peca({ lote: lote('ativo', 'revogado') }) },
+          ],
+        },
+      ],
+    });
+    expect(linhasDaAgenda(agenda(true)).filter((l) => l.includes('semana'))).toEqual([
+      '         semana assinada: sai pelo OS no horário',
+      '         semana na fila: esperando a assinatura de outra pessoa em /atendimento',
+    ]);
+    expect(linhasDaAgenda(agenda(false)).find((l) => l.includes('semana assinada'))).toBe(
+      '         semana assinada: sai pelo OS no horário — mas a publicação automática está DESLIGADA',
+    );
+  });
+
   it('MD1: o slot só proposto pelo encadeamento diz que falta aprovar (ou distribuir) — não é agenda', () => {
     const peca = (over: Record<string, unknown>) => ({ apelido: 'ep-04', itemN: 1, titulo: 'Preço caiu', status: 'rascunho', postada: null, agendadaPara: null, midia: { onde: 'nenhuma', comando: '/root-midia carrosseis ep-04' }, ...over });
     const linhas = linhasDaAgenda({

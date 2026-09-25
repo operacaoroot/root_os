@@ -2824,16 +2824,20 @@ export const PAUTA_FORMATO_DA_SEMANA_ROTULO: Record<PautaFormatoDaSemana, string
 
 /**
  * Deriva no Pacote (e leva o episódio a Derivação) e na Derivação. Depois de
- * agendado, o TEXTO das peças é o que vai ao ar: nem gerar nem editar (como o
- * título e a thumb do pacote). O render (PNG e mp4) segue aceito, porque o
- * Instagram é manual até o MC17 e a peça aprovada ainda precisa dele.
+ * agendado, gerar de novo não vale mais (como o título e a thumb do pacote). O
+ * render (PNG e mp4) segue aceito, porque a peça aprovada ainda precisa dele.
  */
 export const PAUTA_STATUS_QUE_DERIVAM = ['pacote', 'derivacao'] as const satisfies readonly PautaEpisodioStatus[];
 
-/** Por que o texto das peças da semana não se edita mais, ou nulo. */
+/**
+ * Por que o texto das peças da semana não se edita mais, ou nulo. Desde a MD8
+ * o Agendado (a semana assinada) ainda edita: a peça editada volta a rascunho,
+ * sai da agenda e o item dela no lote é revogado, sem mexer no resto da semana.
+ * Concluído é registro.
+ */
 export function motivoParaNaoEditarASemana(status: PautaEpisodioStatus): string | null {
-  return status === 'agendado' || status === 'concluido'
-    ? `O episódio já foi agendado (${PAUTA_EPISODIO_STATUS_ROTULO[status]}): o texto das peças é o que vai ao ar.`
+  return status === 'concluido'
+    ? `O episódio já foi concluído (${PAUTA_EPISODIO_STATUS_ROTULO[status]}): o texto das peças é o registro do que foi ao ar.`
     : null;
 }
 
@@ -3530,6 +3534,8 @@ export interface PautaPecaNaAgenda {
   slotProposto?: string | null;
   /** MD6: a publicação pelo OS no Instagram, quando alguém pediu. Opcional pelo mesmo motivo. */
   publicacao?: PautaPublicacaoDaPeca | null;
+  /** MD8: o item vivo do lote da semana (montado, na fila ou ativo). Opcional pelo mesmo motivo. */
+  lote?: PautaLoteDaPeca | null;
 }
 
 export interface PautaLinhaDoDia {
@@ -3569,6 +3575,8 @@ export interface PautaAgendaDaSemana {
   dias: PautaDiaDaAgenda[];
   /** Episódios com peça aprovada ainda sem slot: o "Distribuir". */
   paraDistribuir: PautaEpisodioParaDistribuir[];
+  /** MD8: a nota `pauta.publicacao.automatica` da empresa (desligada = o lote assinado não sai sozinho). */
+  publicacaoAutomatica?: boolean;
 }
 
 /** `GET /pauta/agenda/grade` e o retorno do PUT. */
@@ -3734,6 +3742,155 @@ export interface PautaPublicacaoDaPeca {
   tentativas: number;
   proximaEm: string | null;
   atualizadaEm: string;
+}
+
+// ---------- Pauta: aprovar a semana num ponto só (MD8) ----------
+
+/**
+ * O caminho de uma peça da semana até o ar, como a aba Semana o desenha. Só a
+ * assinatura de OUTRA pessoa leva de `aguardando` a `ativo`; daí em diante é o
+ * executor (`pauta.publicar-agendadas`) que publica no horário, se a nota
+ * `pauta.publicacao.automatica` estiver ligada.
+ */
+export const PAUTA_ETAPAS_DA_PECA_NA_SEMANA = ['rascunho', 'proposto', 'aguardando', 'ativo', 'publicando', 'publicada'] as const;
+export type PautaEtapaDaPecaNaSemana = (typeof PAUTA_ETAPAS_DA_PECA_NA_SEMANA)[number];
+
+export const PAUTA_ETAPA_DA_PECA_NA_SEMANA_ROTULO: Record<PautaEtapaDaPecaNaSemana, string> = {
+  rascunho: 'rascunho',
+  proposto: 'proposto',
+  aguardando: 'aguardando assinatura',
+  ativo: 'ativo',
+  publicando: 'publicando',
+  publicada: 'publicada',
+};
+
+/** O item de lote vivo da peça (o lote da semana, MD7/MD8), como a agenda o mostra. */
+export interface PautaLoteDaPeca {
+  loteId: string;
+  itemId: string;
+  estadoDoLote: LoteEstado;
+  estadoDoItem: ItemDoLoteEstado;
+  /** Até quando o item pode sair (slot + 2 h). */
+  janelaAte: string;
+}
+
+/**
+ * Em que etapa a peça está. Postada (à mão ou pelo OS) é `publicada`; a
+ * publicação a caminho na Meta é `publicando`; o item ativo num lote ativo é
+ * `ativo` só com a peça `aprovada` e a publicação fora do manual (`recusada`
+ * não sai); o item num lote montado ou na fila é `aguardando`; a peça com slot
+ * (proposto ou agendado) sem lote vivo é `proposto`.
+ */
+export function etapaDaPecaNaSemana(p: {
+  status: PautaPecaStatus;
+  agendadaPara?: string | null;
+  slotProposto?: string | null;
+  postada?: unknown;
+  publicacao?: Pick<PautaPublicacaoDaPeca, 'estado'> | null;
+  lote?: Pick<PautaLoteDaPeca, 'estadoDoLote' | 'estadoDoItem'> | null;
+}): PautaEtapaDaPecaNaSemana {
+  if (p.status === 'publicada' || p.postada || p.publicacao?.estado === 'publicada') return 'publicada';
+  if (p.publicacao && (p.publicacao.estado === 'container_criado' || p.publicacao.estado === 'processando')) return 'publicando';
+  if (p.lote?.estadoDoItem === 'ativo') {
+    if (p.lote.estadoDoLote === 'ativo' && p.status === 'aprovada' && p.publicacao?.estado !== 'recusada') return 'ativo';
+    if (p.lote.estadoDoLote === 'proposta' || p.lote.estadoDoLote === 'aguardando') return 'aguardando';
+  }
+  if (p.agendadaPara || p.slotProposto) return 'proposto';
+  return 'rascunho';
+}
+
+/** `POST /pauta/episodios/:id/semana/preparar-aprovacao`: as peças que ficam FORA do lote. */
+export const PautaPrepararAprovacaoSchema = z
+  .object({ fora: z.array(z.string().trim().min(1).max(64)).max(60).default([]) })
+  .strict();
+export type PautaPrepararAprovacaoInput = z.infer<typeof PautaPrepararAprovacaoSchema>;
+
+/** Uma peça da semana diante do lote: o slot, o que a impede de entrar e o lote em que já está. */
+export interface PautaPecaParaAprovar {
+  id: string;
+  formato: PautaFormatoDaSemana;
+  itemN: number;
+  titulo: string;
+  status: PautaPecaStatus;
+  /** `agendadaPara` da aprovada, ou o `slotProposto` (MD1). */
+  slot: string | null;
+  /** Por que esta peça não entra no lote agora (a tela a deixa de fora), ou nulo. */
+  problema: string | null;
+  /** O lote vivo em que ela já está: não entra em lote novo. */
+  noLote: { loteId: string; estadoDoLote: LoteEstado } | null;
+  etapa: PautaEtapaDaPecaNaSemana;
+}
+
+/** Um lote da semana deste episódio, ainda em curso (montado, na fila ou ativo). */
+export interface PautaLoteDaSemana {
+  id: string;
+  estado: LoteEstado;
+  validaAte: string;
+  hashCurto: string;
+  approvalId: string | null;
+  aprovadoEm: string | null;
+  itens: number;
+  ativos: number;
+  /** Quem montou é quem pede a assinatura (e pede de novo quando a anterior venceu). */
+  montadoPorMim: boolean;
+}
+
+/** `GET /pauta/episodios/:id/semana/aprovacao`. */
+export interface PautaAprovacaoDaSemana {
+  episodioId: string;
+  apelido: string;
+  status: PautaEpisodioStatus;
+  /** A nota `pauta.publicacao.automatica`: desligada, o lote ativo não publica sozinho. */
+  automaticaLigada: boolean;
+  /** O que impede a semana inteira (página de links fora do ar, conta de publicação, status). */
+  impedimentos: string[];
+  pecas: PautaPecaParaAprovar[];
+  lotes: PautaLoteDaSemana[];
+}
+
+/** O retorno da montagem: o lote em `proposta`, pronto para pedir a assinatura. */
+export interface PautaLoteMontado {
+  loteId: string;
+  hashConteudo: string;
+  validaAte: string;
+  itens: number;
+  fora: string[];
+  /** Os lotes montados antes e ainda sem assinatura que este substituiu. */
+  substituidos: string[];
+}
+
+/** Um item do lote como a titular o lê em /atendimento, com o hash recalculado da peça de agora. */
+export interface PautaItemDoConteudoDoLote {
+  itemId: string;
+  pecaId: string;
+  formato: string;
+  titulo: string;
+  apelido: string;
+  itemN: number;
+  /** A legenda inteira que vai ao ar (no story, o texto da imagem, que não vai como legenda). */
+  legenda: string;
+  /** O que a Meta vai baixar: as imagens (JPEG) pela ordem, ou o mp4 do corte. */
+  midia: { tipo: 'imagens'; n: number[] } | { tipo: 'video'; bytes: number | null; duracaoSeg: number | null } | { tipo: 'nenhuma' };
+  agendadaPara: string;
+  janelaAte: string;
+  /** O @ de destino (a conta de publicação da empresa de agora). */
+  handle: string | null;
+  estadoDoItem: ItemDoLoteEstado;
+  hashCurto: string;
+  /** Por que o conteúdo de agora não é o que o hash cobre, ou nulo quando bate. */
+  divergente: string | null;
+}
+
+/** `GET /pauta/lotes/:id/conteudo`. */
+export interface PautaConteudoDoLote {
+  loteId: string;
+  estado: LoteEstado;
+  hashCurto: string;
+  validaAte: string;
+  total: number;
+  divergentes: number;
+  handle: string | null;
+  itens: PautaItemDoConteudoDoLote[];
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------

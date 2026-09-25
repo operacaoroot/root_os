@@ -273,10 +273,11 @@ export const ESTADOS_EM_CURSO: readonly PautaPublicacaoEstado[] = ['container_cr
 export const ESTADOS_QUE_COMECAM: readonly PautaPublicacaoEstado[] = ['pendente', 'erro'];
 
 /**
- * O que a rotina faz com uma peça aprovada no horário (MD6 item 6). Publicar
- * sozinha exige as duas coisas da D-MD1: a nota `pauta.publicacao.automatica`
- * ligada E o item de um lote assinado. Nesta onda o lote ainda não é conferido
- * pela porta (MD7), então mesmo com os dois a rotina não publica — diz por quê.
+ * O que a rotina faz com uma peça aprovada no horário (MD6 item 6, MD8 item 7).
+ * Publicar sozinha exige as duas coisas da D-MD1: a nota
+ * `pauta.publicacao.automatica` ligada E o item ativo de um lote assinado. Quem
+ * confere que o item vale (o conteúdo de agora é o assinado, a janela, o uso
+ * que sobra) é a PORTA, no consumo contado; aqui só se decide se vale chamá-la.
  */
 export type DecisaoDaRotina =
   | { tipo: 'pular'; motivo: string }
@@ -288,15 +289,24 @@ export function decisaoDaRotina(e: {
   agora: Date;
   automaticaLigada: boolean;
   loteItemId: string | null;
-  loteConferidoPelaPorta: boolean;
 }): DecisaoDaRotina {
   if (!e.automaticaLigada) return { tipo: 'pular', motivo: 'publicação automática desligada' };
   if (!e.loteItemId) return { tipo: 'pular', motivo: 'sem aprovação da semana' };
   if (e.agora.getTime() - e.agendadaPara.getTime() > PAUTA_JANELA_DA_PUBLICACAO_MS) {
     return { tipo: 'janela_perdida', motivo: 'a janela de 2 h do slot passou sem publicar: volta ao manual' };
   }
-  if (!e.loteConferidoPelaPorta) return { tipo: 'pular', motivo: 'a rotina ainda não publica por item de lote (MD8)' };
   return { tipo: 'publicar', loteItemId: e.loteItemId };
+}
+
+/**
+ * A nota `pauta.publicacao.automatica` liga a publicação automática quando a
+ * primeira linha diz `ligada` (a marcação do markdown não conta). Sem nota ou
+ * arquivada, desligada.
+ */
+export function notaDaAutomaticaLigada(nota: { body: string; arquivadoEm?: unknown } | null): boolean {
+  if (!nota || nota.arquivadoEm) return false;
+  const linha = nota.body.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  return linha.replace(/[*_`#>\-\s]/g, '').toLowerCase() === 'ligada';
 }
 
 /** A aprovação que a publicação `pendente` espera, como a tela precisa dela. */

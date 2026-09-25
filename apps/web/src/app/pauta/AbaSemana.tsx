@@ -8,6 +8,7 @@ import {
   PAUTA_TETO_DO_A_PARTIR_DE_DIAS,
   PautaMarcarPostadaSchema,
   diaNoFuso,
+  etapaDaPecaNaSemana,
   horaNoFuso,
   instanteNoFuso,
   somarDias,
@@ -21,6 +22,8 @@ import { apiBlob, apiGet, apiPost, apiPut } from '@/lib/api';
 import { baixarArquivo, compartilhaArquivos, compartilharArquivos } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
+import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
+import { AprovarASemana } from './AprovarASemana';
 
 /*
  * A SEMANA (MC16): o calendário das peças aprovadas da semana de posts. Cada
@@ -30,6 +33,8 @@ import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
  * "Marcar como postada", que só registra no OS. Desde a MD6 o slot também
  * pede a publicação no Instagram pelo OS ("Publicar agora", retido até outra
  * pessoa confirmar) e mostra onde ela está; a do TikTok está em espera (MD12).
+ * Desde a MD8, "Aprovar a semana" junta os posts de um episódio num lote só,
+ * assinado por outra pessoa, e cada slot mostra a linha do tempo da peça.
  * Tudo no relógio de São Paulo.
  */
 
@@ -88,13 +93,20 @@ function PecaProposta({ peca }: { peca: PautaPecaNaAgenda }) {
       aria-label={`${PAUTA_FORMATO_DA_SEMANA_ROTULO[peca.formato]} proposto de ${peca.apelido}`}
     >
       <div className="flex flex-wrap items-center gap-1.5">
-        <Chip>{peca.status === 'aprovada' ? 'proposto, falta distribuir' : 'proposto, falta aprovar'}</Chip>
+        <Chip>
+          {peca.lote?.estadoDoItem === 'ativo' && peca.lote.estadoDoLote !== 'ativo'
+            ? 'na semana, esperando a assinatura'
+            : peca.status === 'aprovada'
+              ? 'proposto, falta distribuir'
+              : 'proposto, falta aprovar'}
+        </Chip>
         <span className="text-xs">
           {peca.apelido} · matéria {peca.itemN}
         </span>
       </div>
       <p className="break-words text-sm">{peca.titulo}</p>
       <p className="break-words text-xs">{peca.materia}</p>
+      <LinhaDoTempoDaPeca etapa={etapaDaPecaNaSemana(peca)} />
     </div>
   );
 }
@@ -237,6 +249,7 @@ function PecaNoSlot({
       </div>
       <p className="break-words text-sm font-medium">{peca.titulo}</p>
       <p className="break-words text-xs text-muted">{peca.materia}</p>
+      <LinhaDoTempoDaPeca etapa={etapaDaPecaNaSemana(peca)} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Botao onClick={() => copiarComo('legenda', peca.legenda)}>{copiado === 'legenda' ? 'Copiado' : rotuloDaLegenda}</Botao>
@@ -457,6 +470,7 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aPartirDe, setAPartirDe] = useState('');
   const [resultado, setResultado] = useState<{ apelido: string; r: PautaDistribuicao } | null>(null);
+  const [aprovando, setAprovando] = useState<string | null>(null);
   // Na primeira carga da semana corrente a tela desce até hoje: no celular, na
   // sexta, eram uns dez slots de segunda a quinta antes do que vai ao ar agora.
   const hojeRef = useRef<HTMLElement | null>(null);
@@ -514,12 +528,21 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
 
   const pular = (n: number) => setDe(somarDias(agenda.de, n));
   const vazia = agenda.dias.every((d) => d.linhas.every((l) => !l.peca || ehProposta(l.peca)));
+  // MD8: os episódios com post desta semana ainda por sair — é deles o "Aprovar a semana".
+  const daSemana = new Map<string, { apelido: string; posts: number }>();
+  for (const d of agenda.dias) {
+    for (const l of d.linhas) {
+      if (!l.peca || l.peca.status === 'publicada' || l.peca.postada) continue;
+      const atual = daSemana.get(l.peca.episodioId) ?? { apelido: l.peca.apelido, posts: 0 };
+      daSemana.set(l.peca.episodioId, { ...atual, posts: atual.posts + 1 });
+    }
+  }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
-        As peças aprovadas da semana de posts, nos slots da grade. Cada slot entrega a legenda e a mídia para postar à mão — a
-        publicação automática no Instagram chega na MD6, e a do TikTok está em espera.
+        As peças da semana de posts, nos slots da grade. Cada slot entrega a legenda e a mídia para postar à mão, ou sai pelo OS
+        no horário depois de outra pessoa assinar a semana. A publicação no TikTok está em espera.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -565,6 +588,33 @@ export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) 
                 <Botao tone="brand" onClick={() => distribuir(e.episodioId, e.apelido)} disabled={!editavel || ocupado !== null}>
                   {ocupado === `distribuir-${e.episodioId}` ? 'Distribuindo…' : 'Distribuir'}
                 </Botao>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {daSemana.size > 0 && (
+        <section className="space-y-2 rounded-lg border border-border p-3" aria-label="Aprovar a semana">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">Aprovar a semana</p>
+            {agenda.publicacaoAutomatica === undefined ? null : agenda.publicacaoAutomatica ? (
+              <Chip tone="good">publicação automática ligada</Chip>
+            ) : (
+              <Chip tone="warn">publicação automática desligada</Chip>
+            )}
+          </div>
+          {[...daSemana].map(([episodioId, e]) => (
+            <div key={episodioId} className="space-y-2 border-t border-border pt-2 first:border-t-0 first:pt-0">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-mono text-xs">{e.apelido}</span>
+                <span className="text-xs text-muted">{e.posts} post(s) nesta semana</span>
+                <Botao tone={aprovando === episodioId ? 'ghost' : 'brand'} onClick={() => setAprovando(aprovando === episodioId ? null : episodioId)}>
+                  {aprovando === episodioId ? 'Fechar' : 'Aprovar a semana'}
+                </Botao>
+              </div>
+              {aprovando === episodioId && (
+                <AprovarASemana episodioId={episodioId} token={token} podePublicar={podePostar} onErro={onErro} onMudou={() => void carregar()} />
               )}
             </div>
           ))}

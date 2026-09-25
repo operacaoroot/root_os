@@ -45,6 +45,8 @@ import { ContaDePublicacaoController } from './conta-de-publicacao.controller';
 import { PublicacaoInstagramController } from './publicacao-instagram.controller';
 import { PublicacaoInstagramService } from './publicacao-instagram.service';
 import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
+import { LoteDaSemanaController } from './lote-da-semana.controller';
+import { LoteDaSemanaService } from './lote-da-semana.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -78,6 +80,7 @@ import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
     MidiaPublicaController,
     ContaDePublicacaoController,
     PublicacaoInstagramController,
+    LoteDaSemanaController,
   ],
   providers: [
     PautaService,
@@ -118,6 +121,8 @@ import { GraphDePublicacaoModule } from '../bio/plataformas/publicacao.module';
     MidiaPublicaService,
     // MD6: o publicador do Instagram — o efeito de instagram.post.publicar e a conclusão pela rotina.
     PublicacaoInstagramService,
+    // MD8: a semana num lote só, assinado por outra pessoa; reage à ativação do lote por registro.
+    LoteDaSemanaService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e

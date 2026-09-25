@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
@@ -71,6 +72,8 @@ import {
   type MetaDaSemana,
 } from './derivacao-do-episodio';
 import { umaPorVez } from './uma-por-vez';
+import { LotesService } from '../approvals/lotes.service';
+import { filtroDoItemAssinado, revogarItemDaPeca } from './lote-da-semana';
 
 const MSG_CORRIDA = 'O episódio mudou enquanto isso (mídia refeita ou saiu da Derivação) — recarregue e tente de novo.';
 const MSG_TRANSCRICAO_MUDOU =
@@ -150,6 +153,8 @@ export class DerivacaoService {
     private readonly vozes: VozService,
     private readonly storage: StorageService,
     private readonly episodios: EpisodioService,
+    /** MD8: mexer na peça depois do lote da semana revoga o item dela. Global; opcional nas suítes. */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   /** As peças da semana deste episódio, de qualquer status. A derivação antiga (sem `episodioId`) fica de fora. */
@@ -517,6 +522,25 @@ export class DerivacaoService {
     }
   }
 
+  /**
+   * A peça tem item num lote da semana ASSINADO e válido (MD8)? Leitura na
+   * transação de quem vai mexer. O lote só montado, ou na fila, não conta: nele
+   * a troca de mídia só revoga o item.
+   */
+  private async temItemAssinado(tx: Prisma.TransactionClient, orgId: string, pecaId: string): Promise<boolean> {
+    if (!this.lotes) return false;
+    return !!(await tx.itemDoLote.findFirst({ where: filtroDoItemAssinado(orgId, pecaId, new Date()), select: { id: true } }));
+  }
+
+  /**
+   * A mídia do lote trocada depois da assinatura: a peça aprovada volta a
+   * rascunho, fora da agenda, como no refazer mídia (MD8 item 5). Sem lote
+   * assinado, a aprovada segue aprovada — o manual (MC16) não muda.
+   */
+  private foraDaAgendaSeSaiDoLote(status: PautaPecaStatus, saiDoLote: boolean) {
+    return saiDoLote && status === 'aprovada' ? { status: 'rascunho' as const, agendadaPara: null } : {};
+  }
+
   private exigirEditavel(p: { status: PautaPecaStatus }) {
     if (p.status === 'publicada') throw new BadRequestException('Peça já publicada — não dá para mexer.');
     if (p.status === 'descartada') throw new BadRequestException('Peça descartada — volte-a para rascunho antes de mexer.');
@@ -613,6 +637,7 @@ export class DerivacaoService {
         renderDescartado: formato === 'corte' ? trechoMudou && !!p.m.video : p.m.imagens.length > 0,
       };
     });
+    const itemDoLoteRevogado = await revogarItemDaPeca(this.lotes, this.log, orgId, feito.p.id, 'o texto da peça foi editado', actorId);
 
     await this.audit.log({
       orgId,
@@ -626,6 +651,7 @@ export class DerivacaoService {
         campos: Object.keys(input),
         renderDescartado: feito.renderDescartado,
         saiuDaAgenda: !!feito.p.agendadaPara,
+        ...(itemDoLoteRevogado ? { itemDoLoteRevogado } : {}),
       },
     });
     return this.montarSemana(e, await this.pecasDoEpisodio(orgId, e));
@@ -676,7 +702,7 @@ export class DerivacaoService {
       enviadaEm: new Date().toISOString(),
     };
 
-    const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
+    const { p, meta, trocou, saiDoLote, status } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
       if (p.formato === 'story') await this.exigirATranscricaoDaPeca(tx, orgId, p);
       if (versaoDoTexto(p) !== versaoDoTexto(antes)) {
@@ -684,13 +710,18 @@ export class DerivacaoService {
       }
       const outras = p.m.imagens.filter((i) => i.n !== n || tipoDaImagem(i) !== tipo);
       const meta = { ...p.m, imagens: [...outras, imagem].sort((a, b) => a.n - b.n || tipoDaImagem(a).localeCompare(tipoDaImagem(b))) };
+      // O JPEG é o que a Meta baixa e entra no hash do item do lote (MD8): trocado, a peça sai do lote.
+      const antigo = p.m.imagens.find((i) => i.n === n && tipoDaImagem(i) === 'jpeg');
+      const trocou = tipo === 'jpeg' && antigo?.sha256 !== sha256;
+      const saiDoLote = trocou && (await this.temItemAssinado(tx, orgId, p.id));
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
-        data: { meta: meta as unknown as Prisma.InputJsonValue },
+        data: { meta: meta as unknown as Prisma.InputJsonValue, ...this.foraDaAgendaSeSaiDoLote(p.status, saiDoLote) },
       });
       if (r.count === 0) throw new ConflictException('A peça mudou enquanto isso — recarregue e tente de novo.');
-      return { p, meta };
+      return { p, meta, trocou, saiDoLote, status: saiDoLote && p.status === 'aprovada' ? ('rascunho' as const) : p.status };
     });
+    if (trocou) await revogarItemDaPeca(this.lotes, this.log, orgId, p.id, `o JPEG ${n} da peça foi trocado`, actorId);
     await this.audit.log({
       orgId,
       actorId,
@@ -698,9 +729,9 @@ export class DerivacaoService {
       entityType: 'pauta_peca',
       entityId: p.id,
       before: { n, tipo, tinha: p.m.imagens.some((i) => i.n === n && tipoDaImagem(i) === tipo) },
-      after: { n, tipo, bytes: imagem.bytes, largura: imagem.largura, altura: imagem.altura, sha: imagem.sha },
+      after: { n, tipo, bytes: imagem.bytes, largura: imagem.largura, altura: imagem.altura, sha: imagem.sha, ...(saiDoLote ? { saiuDoLote: true, status } : {}) },
     });
-    return this.paraATela({ ...p, meta }, p.m.transcricaoSha);
+    return this.paraATela({ ...p, meta, status, ...(status !== p.status ? { agendadaPara: null } : {}) }, p.m.transcricaoSha);
   }
 
   /** A imagem n da peça: o PNG (a prévia), ou o JPEG com `tipo`. */
@@ -736,19 +767,24 @@ export class DerivacaoService {
    * deixa de valer, e o Mac sobe o arquivo novo em seguida.
    */
   async registrarVideo(orgId: string, pecaId: string, actorId: string, input: PautaVideoDoCorteInput): Promise<PautaPecaDaSemana> {
-    const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
+    const feitoVideo = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
       this.exigirTrechoDoCorte(p);
       await this.exigirATranscricaoDaPeca(tx, orgId, p);
       this.exigirDuracaoDoTrecho(p, input.duracaoSeg);
       const meta = { ...p.m, video: { ...input, registradoEm: new Date().toISOString() } };
+      // Render novo tira o mp4 do storage da peça: o item do lote (MD8) cobria o de antes.
+      const trocou = videoNoStorage(p.m.video);
+      const saiDoLote = trocou && (await this.temItemAssinado(tx, orgId, p.id));
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
-        data: { meta: meta as unknown as Prisma.InputJsonValue },
+        data: { meta: meta as unknown as Prisma.InputJsonValue, ...this.foraDaAgendaSeSaiDoLote(p.status, saiDoLote) },
       });
       if (r.count === 0) throw new ConflictException('A peça mudou enquanto isso — recarregue e tente de novo.');
-      return { p, meta };
+      return { p, meta, trocou, saiDoLote };
     });
+    if (feitoVideo.trocou) await revogarItemDaPeca(this.lotes, this.log, orgId, feitoVideo.p.id, 'o corte foi renderizado de novo', actorId);
+    const { p, meta } = feitoVideo;
     await this.audit.log({
       orgId,
       actorId,
@@ -827,7 +863,7 @@ export class DerivacaoService {
       enviadoEm: new Date().toISOString(),
     };
 
-    const { p, meta } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
+    const { p, meta, trocou } = await this.comAPecaTravada(orgId, pecaId, async (tx, p) => {
       this.exigirEditavel(p);
       await this.exigirATranscricaoDaPeca(tx, orgId, p);
       // Só o que está no vídeo: editar o título ou a legenda durante o envio não derruba o mp4.
@@ -839,13 +875,16 @@ export class DerivacaoService {
         ...p.m,
         video: { arquivo: p.m.video?.arquivo ?? null, ...(p.m.video?.registradoEm ? { registradoEm: p.m.video.registradoEm } : {}), ...video },
       };
+      const trocou = p.m.video?.sha256 !== video.sha256;
+      const saiDoLote = trocou && (await this.temItemAssinado(tx, orgId, p.id));
       const r = await tx.pautaPeca.updateMany({
         where: { id: p.id, orgId, status: p.status },
-        data: { meta: meta as unknown as Prisma.InputJsonValue },
+        data: { meta: meta as unknown as Prisma.InputJsonValue, ...this.foraDaAgendaSeSaiDoLote(p.status, saiDoLote) },
       });
       if (r.count === 0) throw new ConflictException('A peça mudou enquanto isso — recarregue e tente de novo.');
-      return { p, meta };
+      return { p, meta, trocou };
     });
+    if (trocou) await revogarItemDaPeca(this.lotes, this.log, orgId, p.id, 'o mp4 do corte foi trocado', actorId);
     await this.audit.log({
       orgId,
       actorId,

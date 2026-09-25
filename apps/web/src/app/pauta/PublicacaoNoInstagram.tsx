@@ -57,7 +57,9 @@ export function PublicacaoNoInstagram({
   const [aviso, setAviso] = useState<Retida | null>(null);
   const pub = peca.publicacao ?? null;
   const aprovada = peca.status === 'aprovada';
-  const podePedir = podePublicar && aprovada && !peca.postada && (!pub || podePedirDe(pub));
+  // MD8: com a semana assinada, a peça sai pelo item dela no horário — sem pedido à parte.
+  const peloLote = peca.lote?.estadoDoLote === 'ativo' && peca.lote.estadoDoItem === 'ativo';
+  const podePedir = podePublicar && aprovada && !peca.postada && !peloLote && (!pub || podePedirDe(pub));
 
   const pedir = () =>
     onAcao(async () => {
@@ -71,7 +73,7 @@ export function PublicacaoNoInstagram({
       setAviso(null);
     });
 
-  if (!pub && !podePedir) return null;
+  if (!pub && !podePedir && !peloLote) return null;
 
   return (
     <div className="space-y-1 rounded-lg border border-border p-2 text-xs" aria-label="Publicação no Instagram">
@@ -80,6 +82,11 @@ export function PublicacaoNoInstagram({
         {pub ? <Chip tone={TOM[pub.estado]}>{PAUTA_PUBLICACAO_ESTADO_ROTULO[pub.estado]}</Chip> : <Chip>não pedida</Chip>}
       </div>
 
+      {peloLote && !pub && (
+        <p className="break-words text-muted">
+          Sai pelo OS no horário, pela semana assinada — se a publicação automática da empresa estiver ligada.
+        </p>
+      )}
       {pub?.estado === 'pendente' && !pub.erro && !aviso && (
         <p className="break-words text-muted">
           Esperando a confirmação de outra pessoa com alçada em{' '}

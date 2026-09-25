@@ -468,7 +468,8 @@ const ROTULO_DA_PUBLICACAO = {
  * mão — o PNG no OS (baixar pela tela) ou o mp4 que ficou no Mac, pelo caminho;
  * o carrossel que subiu pela metade diz quantos PNG faltam. O slot só proposto
  * pelo encadeamento (MD1) diz que falta aprovar; a publicação pelo OS (MD6), onde
- * ela está. Só lê: postar, publicar e marcar como postada são da tela.
+ * ela está; o lote da semana (MD8), se está assinado ou na fila. Só lê: postar,
+ * publicar, aprovar a semana e marcar como postada são da tela.
  * @param {any} agenda o `GET /pauta/agenda`
  * @returns {string[]}
  */
@@ -510,6 +511,15 @@ export function linhasDaAgenda(agenda) {
       const pub = p.publicacao;
       if (pub && !p.postada) {
         linhas.push(`         Instagram pelo OS: ${ROTULO_DA_PUBLICACAO[pub.estado] ?? pub.estado}${pub.erro ? ` — ${pub.erro}` : ''}`);
+      }
+      // MD8: o item da peça no lote da semana — assinado, sai sozinho no horário; na fila, espera a titular.
+      const lote = p.lote;
+      if (lote && lote.estadoDoItem === 'ativo' && !p.postada && !pub) {
+        linhas.push(
+          lote.estadoDoLote === 'ativo'
+            ? `         semana assinada: sai pelo OS no horário${agenda?.publicacaoAutomatica === false ? ' — mas a publicação automática está DESLIGADA' : ''}`
+            : '         semana na fila: esperando a assinatura de outra pessoa em /atendimento',
+        );
       }
     }
   }

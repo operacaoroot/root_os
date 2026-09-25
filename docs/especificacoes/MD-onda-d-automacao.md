@@ -720,6 +720,23 @@ corrida. Com 600 s de prazo, a segunda pessoa precisa assinar logo depois do ped
 
 ### MD8 — Aprovar a semana num ponto só
 
+> **Estado (24/09/2026):** implementada, com o ensaio do "pronto quando" contra dublê local da Graph,
+> MinIO descartável e duas contas descartáveis registrado no `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D).
+> Escolhas além do texto abaixo: o hash de cada item é o da peça **como aprovada no slot**
+> (`argsDoItem`), o mesmo que o executor manda à porta no horário; a reação à assinatura (item 4) é
+> inscrita em `LotesService.aoAtivar` e roda na transação que liga o lote — a peça que mudou entre a
+> montagem e a assinatura não é aprovada, o item dela cai ali; montar de novo substitui o lote ainda
+> sem assinatura; editar o texto no Agendado passou a valer (a peça sai do lote e da agenda), porque a
+> regra antiga ("depois de agendado o texto não muda") impediria o item 5; reagendar mantém a peça
+> aprovada no horário novo, fora do lote; o hash recalculado que a titular vê (item 3) é conferido
+> pela API (`GET /pauta/lotes/:id/conteudo`, só para quem tem `aprovacoes.decidir`), não no
+> navegador; "Publicar agora" de peça com item ativo é 409. Pedir a assinatura (item 2) usa a rota da
+> MD7, `POST /approvals/lotes/:id/pedir-assinatura`, com a mesma permissão `pauta.publicar` e a trava
+> "quem monta é quem pede", em vez de uma rota nova em `/pauta`. A peça que já tem publicação em
+> `erro`, `recusada` ou com o pedido morto entra no lote e a ativação a reabre para o executor; a
+> rotina que desiste de uma peça revoga o item dela. Os itens do YouTube (MD10) e da DM (MD11) entram
+> quando existirem.
+
 **SPEC.**
 
 1. **Montar o lote:** `POST /pauta/episodios/:id/semana/preparar-aprovacao` (`pauta.publicar`) parte

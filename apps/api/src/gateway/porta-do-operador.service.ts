@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger } from '@ne
 import { ActorType } from '@prisma/client';
 import { correlacaoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { EfeitosRegistry } from './efeitos.registry';
+import { FILA_DE_APROVACAO } from './fila-de-aprovacao';
 import { ToolGateway, type ExecCtx } from './tool-gateway.service';
 
 /*
@@ -77,16 +78,8 @@ import { ToolGateway, type ExecCtx } from './tool-gateway.service';
  *                               resultado para não derrubar o laço do agente.
  */
 
-/**
- * Onde a fila de aprovação mora na web.
- *
- * Sai daqui, e não do componente, pelo mesmo motivo do texto do interruptor em
- * `integrations/conectores.ts`: caminho escrito na tela é a forma garantida de
- * os dois lados divergirem na próxima fatia. A tela desta rota ainda é o
- * placeholder do menu — quem a constrói é a fatia 3.10 —, e é justamente por
- * isso que o endereço precisa vir de um lugar só.
- */
-export const FILA_DE_APROVACAO = '/atendimento';
+// Onde a fila de aprovação mora na web: um lugar só (`fila-de-aprovacao.ts`), também lido pelo aviso do canal.
+export { FILA_DE_APROVACAO };
 
 /** O bilhete que a tela recebe quando a ação foi retida para aprovação. */
 export interface AcaoRetida {

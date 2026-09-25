@@ -947,10 +947,13 @@ describe('semana: editar, subir o PNG e registrar o mp4', () => {
     expect(meta(story).imagens).toEqual([]);
   });
 
-  it('depois de agendado o texto não muda (como o pacote); o render ainda sobe', async () => {
+  it('agendado ainda edita (MD8: a peça sai do lote e da agenda); concluído não muda; o render ainda sobe', async () => {
     const { s, da } = await gerado();
     s.lista[0].status = 'agendado';
-    await expect(s.semana.editar(ORG, da('c1', 'story').id, PESSOA, { texto: 'x' })).rejects.toThrow(/já foi agendado/);
+    await s.semana.editar(ORG, da('c1', 'story').id, PESSOA, { texto: 'Texto de depois da assinatura' });
+    expect(da('c1', 'story').corpo).toBe('Texto de depois da assinatura');
+    s.lista[0].status = 'concluido';
+    await expect(s.semana.editar(ORG, da('c1', 'story').id, PESSOA, { texto: 'x' })).rejects.toThrow(/já foi concluído/);
     const r = await s.semana.enviarImagem(ORG, da('c1', 'story').id, PESSOA, 1, { buffer: png(1080, 1920), mimetype: 'image/png' });
     expect(r.imagens).toHaveLength(1);
   });
