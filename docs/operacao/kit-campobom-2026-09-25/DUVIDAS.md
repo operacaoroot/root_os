@@ -57,3 +57,14 @@ Enquanto não houver resposta: nenhum teste de produto foi mudado. As outras fre
 - **(a) `c9f5784` entra por `git cherry-pick -x`, como exceção única à Q-001.** Motivo: só muda `packages/policy/test/politica.test.ts` (35 → 36 ferramentas MCP), e o catálogo com a 36ª (`comunicacao.agenda.periodo`) já está na base `98d8ed4`. Commit no kit: `a3739f9` (traz a linha "cherry picked from commit c9f5784b1b8b…"). Nenhum outro commit da integra entra.
 - **(b) O `afterAll` de `apps/api/test/rotas-publicas-tenant.test.ts` (`AuditLog_orgId_fkey` quando roda junto) é HERDADO da produção `98d8ed4`.** O teste não é mexido. O arquivo é idêntico na base e no kit (`git diff --stat 98d8ed4 HEAD -- apps/api/test/rotas-publicas-tenant.test.ts` → 0 linhas). Sozinho passa 38/38 nos dois. A falha é intermitente, por corrida entre arquivos em paralelo no mesmo banco: medições em STATUS.md (25/09, "Q-004 fechada").
 - **(c) O `pnpm test` literal pelo turbo pulando casos (`TEST_DATABASE_URL` filtrado no modo estrito) é herdado e fica declarado.** A prova do kit vale pacote a pacote (`pnpm --filter @mktos/<pacote> test`), como a CI.
+
+## Q-005 · 25/09/2026 · NÃO bloqueia o kit; bloqueia a Fase 3 (Instalação) no Mac da Campo Bom
+
+**Fato:** `deploy/instalar.sh` com `--cliente` recusa (exit 64) sem `ROOTOS_GOOGLE_CLIENT_ID` e `ROOTOS_GOOGLE_CLIENT_SECRET` no ambiente, porque o admin da empresa só entra pelo Google (`instalar.sh`, validação antes do passo 1). O kit não pode levar segredo, então as duas credenciais não estão nele. O kit prevê que a pessoa na máquina grave as duas linhas em `~/RootOS/google.env` (0600) e o Claude de lá só confere existência, permissão e contagem por nome de variável (`PLANO.md`, Fase 2, item 7). Sem o arquivo, o workflow para em `aguardando_operador`.
+
+**Pergunta:** de onde vêm as credenciais e quem autoriza a URI de redirect `http://localhost:4000/api/google/callback` no console do Google?
+- (a) cliente OAuth num projeto Google Cloud da Root/FullBPO, entregue à Campo Bom por canal separado (gerenciador de senhas);
+- (b) cliente OAuth no Google Workspace da própria Campo Bom, criado por eles;
+- (c) instalar sem `--cliente` (só a conta `admin@marketing-os.local` com senha) e ligar o Google depois — muda a Fase 3 e o portão da Fase 4 (sem empresa `campo-bom`).
+
+Enquanto não houver resposta: o kit fica como está (opção a ou b servem sem mudar arquivo).

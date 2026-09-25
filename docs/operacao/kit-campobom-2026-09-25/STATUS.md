@@ -254,3 +254,35 @@ Commits locais, sem push: `a3739f9` (cherry-pick `-x` de `c9f5784`) · `7f8a762`
 - A causa exata da corrida da api (qual arquivo grava `AuditLog` na org padrão durante o `afterAll`) não foi isolada; a correção é tarefa da main, fora do kit.
 - `/api/health/versao` com o commit novo `7f8a762`: o ensaio rodou em `77a7f7b` e não foi repetido.
 - Pasta do kit no Drive (`kit-rootos-v0.4.2`): continua sem existir; não tocada nesta etapa.
+
+## 25/09/2026 — kit por pasta no Drive montado (`kit-rootos-v0.4.2`)
+
+Pasta (Q-002 autorizada): `Meu Drive/OPERACAO ROOT/clientes/campo-bom/kit-rootos-v0.4.2/`. Escrita só dentro dela. Q-001 a Q-003 já estavam respondidas em DUVIDAS.md; nada reaberto. Q-005 aberta (credenciais do Google; não bloqueia o kit).
+
+Arquivos (7): `rootos-v0.4.2.bundle` · `CLAUDE.md` · `PLANO.md` · `LEIA-ME.md` · `.claude/workflows/campobom-os-instalar.js` · `retorno/LEIA.txt` · `SHA256SUMS` (gerado por último, 6 linhas).
+
+| # | Conferência | Exit | Contagem |
+|---|---|---|---|
+| a | `shasum -a 256` do bundle copiado × original em `…/root_os/bundles/` | 0 | `9f11dd44…c5188` nos dois |
+| b | `git bundle list-heads` | 0 | 2 refs: branch `ba17a81`, tag `v0.4.2` → objeto `1fe5fcb`, `^{commit}` = `7f8a762cda94…` |
+| c | `git clone` do bundle da pasta + `checkout --detach v0.4.2` | 0 · 0 | HEAD `7f8a762cda94cb4fa1e299bfab506a6b217469e9`; `status --porcelain` 0 linhas; aviso "remote HEAD refers to nonexistent ref" esperado e documentado no PLANO |
+| d | varredura de segredo na árvore da tag (`git grep` chaves Anthropic/AWS/GitHub/Google/Slack/OAuth Google, chave privada) | 1 | 0 linhas; 0 `.env` versionado |
+| e | varredura do kit (sem o bundle): nome/e-mail do Pedro, `gmail`, `fullbpo.com`, CNPJ, `R$ <número>`, padrões de chave | 1 | 0 linhas |
+| f | workflow: `Date.now`/`Math.random`/`new Date` | 1 | 0 linhas; `meta` avaliado como literal puro (`new Function` sem escopo) |
+| g | workflow: harness com `agent()` simulado (`scratchpad/wf/harness.mjs`) | 0 | **19/19 cenários**: verde → 5 agentes; vermelho do portão no código mesmo com agente dizendo "verde" (memória 4 GiB, contexto `desktop-linux`, commit no ar errado, porta fora de 127.0.0.1, 10 módulos, segredo no log); `aguardando_operador` sem pedido vira vermelho; sem `adminEmail` / e-mail inválido / `args` ausente → Instalação para sem chamar agente; agente morto → vermelho; `modo: 'verificar'` pula a Instalação; Relatório roda em todos os 19 |
+| h | `shasum -a 256 -c SHA256SUMS` | 0 | 6/6 `OK` |
+
+Decisões de desenho (registradas no PLANO/CLAUDE do kit):
+- Instância em `~/RootOS/instancia` (base explícita, dentro do `$HOME`, fora do Drive); código em `~/RootOS/codigo`; logs em `~/RootOS/logs`. O ensaio da tarde usou `--base` explícita também.
+- Comando com senha: a pessoa roda na janela dela do Terminal; o Claude mostra, espera e confere por leitura.
+- Instalação em segundo plano (`nohup`, exit em arquivo), porque o terminal do Claude corta em 10 min.
+- Conta de vazamento: 8 segredos (6 do `.env` + `ADMIN_PASSWORD` e `MCP_SERVICE_PASSWORD`) contra os logs, só contagem.
+- Backup provado no ambiente do cron (`env -i`) antes de gravar crontab; crontab, `brew services` e `pmset` com OK.
+
+### Não provado nesta etapa
+- O workflow rodando de verdade pela ferramenta Workflow: só o fluxo de controle foi exercido, com `agent()` simulado. Os comandos do PLANO foram conferidos contra `deploy/instalar.sh` e `backup-db.sh` da tag (formato das linhas `portas em`, `[instalar] N/10`, `pronto:`, nome dos containers, `DB_USER`/`DB_NAME`, conteúdo de `segredos-iniciais.txt`), mas não executados em sequência num Mac com Colima.
+- `node --check` do workflow como módulo: acusa `return` no topo, que é o formato dos scripts de workflow; o parse foi provado dentro de função assíncrona no harness.
+- Que o Google Drive sincroniza a pasta oculta `.claude/` até o Mac da Campo Bom. Sem ela, o LEIA-ME manda seguir o `PLANO.md`.
+- Credenciais do Google e URI de redirect (Q-005).
+- Tempo de instalação ("1 a 2 horas" no LEIA-ME é estimativa, marcada como tal).
+- Colima real, login humano, reinício do Mac: continuam como no ensaio.
