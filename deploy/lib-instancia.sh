@@ -35,7 +35,7 @@ AMBIENTES_VALIDOS="producao homologacao"
 : "${DOCKER:=docker}"
 : "${GIT:=git}"
 : "${CURL:=curl}"
-# Quem ouve porta no host: lsof no macOS, ss no Linux (usa o que existir, nessa ordem).
+# Quem ouve porta no host: lsof (nome do processo) sempre junto do netstat (macOS) ou do ss (Linux).
 : "${LSOF:=lsof}"
 : "${SS:=ss}"
 : "${NETSTAT:=netstat}"
@@ -150,41 +150,62 @@ conferir_portas_internas() {
 }
 
 # Quem ouve TCP numa porta do HOST, uma linha por ouvinte: "<endereço> <pid> <comando>".
-# Nada ouvindo = nada impresso. Nem lsof nem ss = exit 2 (quem chama falha fechado:
-# não saber se a porta está livre não é saber que está).
-ouvintes_na_porta() {
+# Nada ouvindo = nada impresso. Sem ferramenta que responda = exit 2 (quem chama falha
+# fechado: não saber se a porta está livre não é saber que está).
+#
+# O lsof dá o nome do processo, mas sem root só enxerga os processos do próprio usuário
+# (no Linux, o docker-proxy do root some; no macOS, o de outro usuário). Por isso ele
+# nunca responde sozinho: o complemento é perguntado SEMPRE e entra o que o lsof não
+# viu (mesmo endereço sai uma vez, com o nome que o lsof deu). O complemento vê todos
+# os sockets: `netstat -an -p tcp` no macOS (lá `-p` é protocolo) e `ss` no Linux.
+# Sem lsof, o `ss` responde sozinho, como antes.
+_ouvintes_ss() {
   local porta="$1" saida
-  if command -v "$LSOF" >/dev/null 2>&1; then
-    # -F: saída de máquina (p=pid, c=comando, n=endereço:porta). Exit 1 = ninguém ouvindo.
-    if saida="$("$LSOF" -nP -iTCP:"$porta" -sTCP:LISTEN -Fpcn 2>/dev/null)"; then
-      printf '%s\n' "$saida" | awk '
-        /^p/ { pid = substr($0, 2) }
-        /^c/ { cmd = substr($0, 2) }
-        /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }'
-      return 0
-    fi
-    # Sem sudo, o lsof do macOS só enxerga processos do próprio usuário. O netstat do
-    # macOS vê todos (sem dizer quem): é o complemento, só no Darwin, onde `-p tcp`
-    # quer dizer protocolo — no Linux o mesmo `-p` é outra coisa.
-    [ "$(uname -s)" = Darwin ] && command -v "$NETSTAT" >/dev/null 2>&1 || return 0
-    "$NETSTAT" -an -p tcp 2>/dev/null | awk -v porta="$porta" '
-      $NF == "LISTEN" {
-        e = $4; p = e; sub(/.*\./, "", p); if (p != porta) next
-        sub(/\.[0-9]+$/, "", e); print e, "?", "processo de outro usuário (só o netstat vê; sem sudo o lsof não mostra)"
-      }'
-  elif command -v "$SS" >/dev/null 2>&1; then
-    # Sem root o ss não mostra o processo: sai "?" no lugar, e a porta conta igual.
-    saida="$("$SS" -Hltnp "sport = :$porta" 2>/dev/null)" || return 2
-    printf '%s\n' "$saida" | awk '
-      NF >= 4 {
-        e = $4; sub(/:[0-9]+$/, "", e); cmd = "?"; pid = "?"
-        if (match($0, /users:\(\("[^"]*"/)) cmd = substr($0, RSTART + 9, RLENGTH - 10)
-        if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
-        print e, pid, cmd
-      }'
-  else
-    return 2
+  # Sem root o ss não mostra o processo: sai "?" no lugar, e a porta conta igual.
+  saida="$("$SS" -Hltnp "sport = :$porta" 2>/dev/null)" || return 2
+  printf '%s\n' "$saida" | awk '
+    NF >= 4 {
+      e = $4; sub(/:[0-9]+$/, "", e); cmd = "?"; pid = "?"
+      if (match($0, /users:\(\("[^"]*"/)) cmd = substr($0, RSTART + 9, RLENGTH - 10)
+      if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
+      print e, pid, cmd
+    }'
+}
+_ouvintes_netstat() {
+  local porta="$1" saida
+  saida="$("$NETSTAT" -an -p tcp 2>/dev/null)" || return 2
+  printf '%s\n' "$saida" | awk -v porta="$porta" '
+    $NF == "LISTEN" {
+      e = $4; p = e; sub(/.*\./, "", p); if (p != porta) next
+      sub(/\.[0-9]+$/, "", e); print e, "?", "processo de outro usuário (só o netstat vê; sem sudo o lsof não mostra)"
+    }'
+}
+ouvintes_na_porta() {
+  local porta="$1" saida vistos="" complemento
+  if ! command -v "$LSOF" >/dev/null 2>&1; then
+    command -v "$SS" >/dev/null 2>&1 || return 2
+    _ouvintes_ss "$porta"; return
   fi
+  # -F: saída de máquina (p=pid, c=comando, n=endereço:porta). Exit 1 = ninguém que
+  # ESTE usuário enxergue — não quer dizer porta livre.
+  if saida="$("$LSOF" -nP -iTCP:"$porta" -sTCP:LISTEN -Fpcn 2>/dev/null)"; then
+    vistos="$(printf '%s\n' "$saida" | awk '
+      /^p/ { pid = substr($0, 2) }
+      /^c/ { cmd = substr($0, 2) }
+      /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }')"
+  fi
+  if [ "$(uname -s)" = Darwin ]; then
+    command -v "$NETSTAT" >/dev/null 2>&1 || return 2
+    complemento="$(_ouvintes_netstat "$porta")" || return 2
+  else
+    command -v "$SS" >/dev/null 2>&1 || return 2
+    complemento="$(_ouvintes_ss "$porta")" || return 2
+  fi
+  [ -z "$vistos" ] || printf '%s\n' "$vistos"
+  # -v não leva quebra de linha no awk do BSD: só os endereços, separados por espaço.
+  [ -z "$complemento" ] || printf '%s\n' "$complemento" | awk -v vistos="$(printf '%s\n' "$vistos" | awk '{ printf "%s ", $1 }')" '
+    BEGIN { n = split(vistos, l, " "); for (i = 1; i <= n; i++) ja[l[i]] = 1 }
+    !($1 in ja) { ja[$1] = 1; print }'
 }
 
 # Colisão de porta contra o HOST — o que as irmãs não cobrem: qualquer programa já
@@ -199,7 +220,7 @@ conferir_portas_livres_no_host() {
   for par in "$@"; do
     var="${par%%=*}"; porta="${par#*=}"
     if ! ouvintes="$(ouvintes_na_porta "$porta")"; then
-      falha "não consigo conferir se a porta $porta está livre no host: nem '$LSOF' nem '$SS' responderam. Sem saber, a instalação não segue."
+      falha "não consigo conferir se a porta $porta está livre no host: precisa de '$SS' (Linux) ou '$NETSTAT' (macOS) respondendo — o '$LSOF' sem root não vê processo de outro usuário. Sem saber, a instalação não segue."
     fi
     while read -r e pid cmd; do
       [ -n "$e" ] || continue

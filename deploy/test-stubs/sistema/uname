@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# STUB de `uname` para simular o sistema do host: `uname -s` responde $STUB_UNAME_S
+# (Linux ou Darwin). Fica fora de bin/ para só entrar no PATH do caso que pede.
+set -u
+if [ "${1:-}" = -s ]; then echo "${STUB_UNAME_S:?STUB_UNAME_S não definido}"; exit 0; fi
+echo "stub uname: só responde -s" >&2
+exit 2

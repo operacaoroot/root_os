@@ -729,6 +729,7 @@ describe('Mac: os scripts de instalação rodam no /bin/bash 3.2 com ferramentas
     ...['instalar.sh', 'atualizar.sh', 'lib-instancia.sh', 'backup-db.sh'].map((f) => path.join(RAIZ, 'deploy', f)),
     ...readdirSync(path.join(STUBS, 'bin')).map((f) => path.join(STUBS, 'bin', f)),
     ...readdirSync(path.join(STUBS, 'deterministico')).map((f) => path.join(STUBS, 'deterministico', f)),
+    ...readdirSync(path.join(STUBS, 'sistema')).map((f) => path.join(STUBS, 'sistema', f)),
   ];
   const PROIBIDOS: [RegExp, string][] = [
     [/\b(declare|local|typeset)\s+-[a-zA-Z]*A/, 'array associativo (bash 4)'],
@@ -834,6 +835,8 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
   const local = (c: Caixa, env: Record<string, string>, extra: string[] = []) =>
     rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', ...extra], { ROOTOS_ANTHROPIC_API_KEY: '', ...env });
   const vps = (c: Caixa, env: Record<string, string>) => instalarProd(c, [], env);
+  // `uname -s` do stub: o caminho de cada sistema roda em qualquer máquina da suíte.
+  const comoSistema = (s: 'Linux' | 'Darwin') => ({ PATH: `${path.join(STUBS, 'sistema')}:${path.join(STUBS, 'bin')}:${process.env.PATH}`, STUB_UNAME_S: s });
 
   it('lsof (macOS): diz qual porta, qual variável e quem ocupa; nada em disco, nenhum docker de build', () => {
     const c = caixa();
@@ -864,20 +867,65 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
     expect(ok.status, ok.stderr).toBe(0);
   });
 
-  it.skipIf(process.platform !== 'darwin')('macOS: o que o lsof sem sudo não vê (outro usuário) o netstat vê, e também recusa', () => {
+  it('macOS: o que o lsof sem sudo não vê (outro usuário) o netstat vê, e também recusa', () => {
+    const mac = comoSistema('Darwin');
     const c = caixa();
     const log = path.join(path.dirname(c.log), 'portas.log');
-    const r = local(c, { STUB_PORTAS_SO_NETSTAT: '5442@* 6390@127.0.0.1 9010@10.0.0.9', STUB_LOG_PORTAS: log });
+    const r = local(c, { ...mac, STUB_PORTAS_SO_NETSTAT: '5442@* 6390@127.0.0.1 9010@10.0.0.9', STUB_LOG_PORTAS: log });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/porta 5442 \(DB_PORT\) — já ouvindo em \*:5442: processo de outro usuário/);
     expect(r.stderr).toMatch(/porta 6390 \(REDIS_PORT\) — já ouvindo em 127\.0\.0\.1:6390/);
     expect(r.stderr).not.toMatch(/9010/);
     expect(existsSync(c.base)).toBe(false);
-    // quando o lsof acha o dono, o netstat nem é consultado para aquela porta
+    // o netstat é perguntado em TODAS as portas, mesmo quando o lsof já achou alguém:
+    // o lsof pode ter visto só o ouvinte do próprio usuário
     const d = caixa();
     const log2 = path.join(path.dirname(d.log), 'portas.log');
-    expect(local(d, { STUB_PORTAS_OCUPADAS: '4000@*@node@1', STUB_LOG_PORTAS: log2 }).status).not.toBe(0);
-    expect(readFileSync(log2, 'utf8').match(/^netstat /gm)?.length).toBe(5);
+    const r2 = local(d, { ...mac, STUB_PORTAS_OCUPADAS: '4000@*@node@1', STUB_PORTAS_SO_NETSTAT: '4000@*', STUB_LOG_PORTAS: log2 });
+    expect(r2.status).not.toBe(0);
+    expect(readFileSync(log2, 'utf8').match(/^netstat /gm)?.length).toBe(6);
+    // o mesmo endereço visto pelos dois sai uma vez só, com o nome que o lsof deu
+    expect(r2.stderr.match(/porta 4000 \(WEB_HOST_PORT\)/g)).toHaveLength(1);
+    expect(r2.stderr).toMatch(/já ouvindo em \*:4000: node \(pid 1\)/);
+  });
+
+  it('macOS: lsof vê só um ouvinte que não colide; o netstat acha o que colide', () => {
+    const r = local(caixa(), { ...comoSistema('Darwin'), STUB_PORTAS_OCUPADAS: '4000@10.0.0.9@node@1', STUB_PORTAS_SO_NETSTAT: '4000@*' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em \*:4000: processo de outro usuário/);
+  });
+
+  it('Linux com lsof que não enxerga o dono (sem root, docker-proxy do root): o ss complementa e recusa', () => {
+    const linux = comoSistema('Linux');
+    const c = caixa();
+    const log = path.join(path.dirname(c.log), 'portas.log');
+    const r = vps(c, { ...linux, STUB_LSOF_CEGO: '1', STUB_PORTAS_OCUPADAS: '4000@0.0.0.0@docker-proxy@-', STUB_LOG_PORTAS: log });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em 0\.0\.0\.0:4000: \? \(pid \?\)/);
+    expect(existsSync(c.base)).toBe(false);
+    const chamadas = readFileSync(log, 'utf8');
+    expect(chamadas.match(/^lsof /gm)?.length).toBe(6);
+    expect(chamadas.match(/^ss /gm)?.length).toBe(6);
+    expect(chamadas).not.toMatch(/^netstat /m);
+    // lsof e ss vendo o mesmo ouvinte: uma linha só
+    const d = caixa();
+    const r2 = vps(d, { ...linux, STUB_PORTAS_OCUPADAS: '4000@0.0.0.0@docker-proxy@12' });
+    expect(r2.status).not.toBe(0);
+    expect(r2.stderr.match(/porta 4000 \(WEB_HOST_PORT\)/g)).toHaveLength(1);
+    // porta livre para os dois: segue
+    expect(vps(caixa(), { ...linux, STUB_LSOF_CEGO: '1' }).status).toBe(0);
+  });
+
+  it('Linux com lsof mas sem ss, ou com ss falhando: falha fechada (o lsof sem root não basta)', () => {
+    const linux = comoSistema('Linux');
+    const cenarios: Record<string, string>[] = [{ SS: 'ss-que-nao-existe' }, { STUB_FAIL_SS: '1' }];
+    for (const env of cenarios) {
+      const c = caixa();
+      const r = vps(c, { ...linux, STUB_LSOF_CEGO: '1', ...env });
+      expect(r.status, JSON.stringify(env)).not.toBe(0);
+      expect(r.stderr).toMatch(/não consigo conferir se a porta 4000 está livre no host/);
+      expect(existsSync(c.base)).toBe(false);
+    }
   });
 
   it('ss (Linux) quando não há lsof: com e sem o processo visível', () => {

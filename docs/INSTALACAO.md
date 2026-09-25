@@ -72,13 +72,14 @@ O que muda com `--bind-ip 127.0.0.1` (qualquer `127.x` conta como máquina local
 - `--modulos <a,b,c|todos>` vai ao `provisionar-tenant` da empresa do cliente; sem a flag, `todos`
   (o comportamento de sempre). Exige `--cliente`; lista vazia é recusada.
 
-**Porta ocupada no Mac.** Antes de criar qualquer coisa, o instalador pergunta ao host (`lsof` no
-macOS, `ss` no Linux) quem ouve cada uma das seis portas, e recusa dizendo porta, variável e
-processo. No Colima isso importa mais que na VPS: o container sobe dentro da VM e o encaminhamento
+**Porta ocupada no Mac.** Antes de criar qualquer coisa, o instalador pergunta ao host quem ouve
+cada uma das seis portas, e recusa dizendo porta, variável e processo. No Colima isso importa mais que na VPS: o container sobe dentro da VM e o encaminhamento
 para o Mac falha **calado** se a porta do Mac já estiver tomada. Com bind no loopback, um programa
-ouvindo em `::1` também conta, porque o navegador tenta `::1` primeiro em `localhost`. Sem `sudo`,
-o `lsof` do macOS só enxerga processos do próprio usuário; quando ele não acha ninguém, o instalador
-confere também o `netstat`, que vê todos os ouvintes sem dizer de quem são.
+ouvindo em `::1` também conta, porque o navegador tenta `::1` primeiro em `localhost`. Sem root,
+o `lsof` só enxerga processos do próprio usuário (no Linux, o `docker-proxy` do root some). Por isso
+ele nunca responde sozinho: em toda porta o instalador pergunta também ao `netstat` (macOS) ou ao
+`ss` (Linux), que veem todos os ouvintes, e junta as duas respostas. Sem esse complemento
+respondendo, a instalação para — não saber se a porta está livre não conta como livre.
 
 **Backup:** o fim da instalação imprime a linha para o `crontab -e` do usuário. O cron não roda com
 o Mac dormindo; o dump do dia depende de o Mac estar acordado no horário.
