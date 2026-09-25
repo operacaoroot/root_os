@@ -939,6 +939,23 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
     expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em \*:4000: processo de outro usuário/);
   });
 
+  // O caso mais comum no Mac do cliente: `next dev`/Node em localhost ouve em ::1. O lsof
+  // escreve "[::1]" e o netstat "::1"; comparando o texto, a mesma porta saía duas vezes, a
+  // segunda com um "processo de outro usuário" que não existe.
+  it('macOS: ouvinte em ::1 visto pelo lsof ([::1]) e pelo netstat (::1) sai uma vez, com o dono certo', () => {
+    const r = local(caixa(), { ...comoSistema('Darwin'), STUB_PORTAS_OCUPADAS: '4000@[::1]@node@4242', STUB_PORTAS_SO_NETSTAT: '4000@::1' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.match(/porta 4000 \(WEB_HOST_PORT\)/g), r.stderr).toHaveLength(1);
+    expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em \[::1\]:4000: node \(pid 4242\)/);
+    expect(r.stderr).not.toMatch(/outro usuário/);
+    // o mesmo no Linux: lsof e ss escrevem [::1]
+    const l = local(caixa(), { ...comoSistema('Linux'), STUB_PORTAS_OCUPADAS: '4000@[::1]@node@4242' });
+    expect(l.stderr.match(/porta 4000 \(WEB_HOST_PORT\)/g), l.stderr).toHaveLength(1);
+    // ::1 que só o netstat vê continua recusando, escrito como endereço IPv6
+    const s = local(caixa(), { ...comoSistema('Darwin'), STUB_PORTAS_SO_NETSTAT: '4001@::1' });
+    expect(s.stderr).toMatch(/porta 4001 \(API_HOST_PORT\) — já ouvindo em \[::1\]:4001: processo de outro usuário/);
+  });
+
   it('Linux com lsof que não enxerga o dono (sem root, docker-proxy do root): o ss complementa e recusa', () => {
     const linux = comoSistema('Linux');
     const c = caixa();

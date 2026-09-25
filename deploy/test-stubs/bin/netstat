@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
-# STUB de `netstat` (macOS) para a suíte hermética: responde `netstat -an -p tcp`.
+# STUB de `netstat` (macOS) para a suíte hermética: responde `netstat -an[l] -p tcp`.
 # STUB_PORTAS_SO_NETSTAT="porta@endereço ..." simula ouvinte que o lsof sem sudo não
-# enxerga (processo de outro usuário). Padrão: ninguém.
+# enxerga (processo de outro usuário). Padrão: ninguém. Como o de verdade, escreve o
+# IPv6 sem colchetes ("::1.4000") e, sem -l, corta o endereço IPv6 longo para caber
+# nos 22 caracteres da coluna, mantendo a porta ("2804:2484:9651:8.57387").
 set -u
 set -f
 [ -n "${STUB_LOG_PORTAS:-}" ] && printf 'netstat %s\n' "$*" >> "$STUB_LOG_PORTAS"
+completo=0
+for a in "$@"; do case "$a" in -*l*) completo=1 ;; esac; done
 echo "Active Internet connections (including servers)"
 echo "Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)"
 for item in ${STUB_PORTAS_SO_NETSTAT:-}; do
-  printf 'tcp4       0      0  %s.%s          *.*                    LISTEN\n' "${item#*@}" "${item%%@*}"
+  p="${item%%@*}"; e="${item#*@}"; proto=tcp4
+  case "$e" in
+    *:*)
+      proto=tcp6
+      cabe=$((22 - 1 - ${#p}))
+      [ "$completo" = 1 ] || [ "${#e}" -le "$cabe" ] || e="${e:0:$cabe}"
+      ;;
+  esac
+  printf '%s       0      0  %s.%s          *.*                    LISTEN\n' "$proto" "$e" "$p"
 done
 exit 0

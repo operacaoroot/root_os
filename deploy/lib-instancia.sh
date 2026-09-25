@@ -159,13 +159,17 @@ conferir_portas_internas() {
 # viu (mesmo endereço sai uma vez, com o nome que o lsof deu). O complemento vê todos
 # os sockets: `netstat -an -p tcp` no macOS (lá `-p` é protocolo) e `ss` no Linux.
 # Sem lsof, o `ss` responde sozinho, como antes.
+#
+# O endereço sai SEM colchetes nos três ("::1", não "[::1]"): o lsof e o ss escrevem o
+# IPv6 entre colchetes e o netstat não, e comparar o texto cru fazia o mesmo ouvinte em
+# ::1 — o `next dev` em localhost — sair duas vezes, a segunda com um dono inventado.
 _ouvintes_ss() {
   local porta="$1" saida
   # Sem root o ss não mostra o processo: sai "?" no lugar, e a porta conta igual.
   saida="$("$SS" -Hltnp "sport = :$porta" 2>/dev/null)" || return 2
   printf '%s\n' "$saida" | awk '
     NF >= 4 {
-      e = $4; sub(/:[0-9]+$/, "", e); cmd = "?"; pid = "?"
+      e = $4; sub(/:[0-9]+$/, "", e); gsub(/\[|\]/, "", e); cmd = "?"; pid = "?"
       if (match($0, /users:\(\("[^"]*"/)) cmd = substr($0, RSTART + 9, RLENGTH - 10)
       if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
       print e, pid, cmd
@@ -192,7 +196,7 @@ ouvintes_na_porta() {
     vistos="$(printf '%s\n' "$saida" | awk '
       /^p/ { pid = substr($0, 2) }
       /^c/ { cmd = substr($0, 2) }
-      /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }')"
+      /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); gsub(/\[|\]/, "", e); print e, pid, cmd }')"
   fi
   if [ "$(uname -s)" = Darwin ]; then
     command -v "$NETSTAT" >/dev/null 2>&1 || return 2
@@ -255,7 +259,7 @@ $m
 # VAR=porta. Colide o ouvinte no próprio bind, no curinga (* 0.0.0.0 ::) e, com
 # bind no loopback, também em ::1 — o navegador tenta ::1 primeiro em "localhost".
 conferir_portas_livres_no_host() {
-  local bind="$1" par var porta ouvintes e pid cmd item conflitos=""
+  local bind="$1" par var porta ouvintes e pid cmd mostra item conflitos=""
   shift
   for par in "$@"; do
     var="${par%%=*}"; porta="${par#*=}"
@@ -265,11 +269,12 @@ conferir_portas_livres_no_host() {
     while read -r e pid cmd; do
       [ -n "$e" ] || continue
       case "$e" in
-        "$bind"|'*'|0.0.0.0|'::'|'[::]') ;;
-        '::1'|'[::1]') case "$bind" in 127.*) ;; *) continue ;; esac ;;
+        "$bind"|'*'|0.0.0.0|'::') ;;
+        '::1') case "$bind" in 127.*) ;; *) continue ;; esac ;;
         *) [ "$bind" = 0.0.0.0 ] || continue ;;
       esac
-      item="porta $porta ($var) — já ouvindo em $e:$porta: ${cmd:-?} (pid ${pid:-?})"
+      case "$e" in *:*) mostra="[$e]" ;; *) mostra="$e" ;; esac
+      item="porta $porta ($var) — já ouvindo em $mostra:$porta: ${cmd:-?} (pid ${pid:-?})"
       case "$conflitos" in *"$item"*) ;; *) conflitos="$conflitos
     $item" ;; esac
     done <<LISTA
