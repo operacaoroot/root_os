@@ -29,3 +29,9 @@ Formato: Q-00x · data · frente bloqueada · pergunta · opções. Frente bloqu
 - (c) os dois: VPS como produção e kit Mac como contingência/local.
 
 Enquanto não houver resposta, a fase 0 segue neutra (vale para qualquer alvo) e nenhuma ação na VPS é feita.
+
+## Respostas (25/09/2026, plano aprovado pelo Pedro)
+
+- **Q-001 → base = `98d8ed4` + merge da tag `v0.4.1`.** A branch parte da produção e recebe, por `git merge --no-ff v0.4.1`, o instalador homologado na VPS em 17/09/2026. `git merge-tree --write-tree HEAD v0.4.1` → exit 0 (merge limpo). O WIP sem aceite da integra (`70c1059` em diante) **não entra**: `git merge-base --is-ancestor 70c1059 v0.4.1` → exit 1. Nota de procedência: a tag `v0.4.1` aponta para `0b5cf62` ("Liga o web na rede do easyPanel quando a instância é do painel", 17/09/2026 16:24), um commit depois de `d7ac2f6` ("Registra a validação humana da homologação na VPS"), que é ancestral da tag. O merge traz os 15 commits de `98d8ed4..v0.4.1`.
+- **Q-002 → autorizado.** Criar `Meu Drive/OPERACAO ROOT/clientes/campo-bom/kit-rootos-v0.4.2/` foi autorizado pelo Pedro no plano aprovado em 25/09/2026. Escrita só dentro dessa pasta.
+- **Q-003 → alvo = (b) Mac da Campo Bom com Colima, bind 127.0.0.1.** Nada na VPS. O pedido de VPS foi substituído pelo Pedro.
