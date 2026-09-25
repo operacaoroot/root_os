@@ -1122,3 +1122,105 @@ describe('--modulos: repassado ao provisionar-tenant da empresa do cliente', () 
     expect(r.stderr).toMatch(/não consegui ler o catálogo de módulos \(MODULOS em packages\/shared\/src\/nav\.ts\) da tag sem-catalogo/);
   });
 });
+
+// A porta do ambiente pode ter dono que não se fecha (no Mac de ensaio, a instância de
+// desenvolvimento ocupa 4000/4001/5442/6390/9010/9011). `--portas` troca só a porta do HOST
+// que vier; o que o container escuta por dentro não muda, e os endereços seguem o web.
+describe('--portas: outra porta no host quando a do ambiente já tem dono', () => {
+  const local = (c: Caixa, extra: string[] = [], env: Record<string, string> = {}) =>
+    rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', ...extra], { ROOTOS_ANTHROPIC_API_KEY: '', ...env });
+  const TODAS = 'web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021';
+  const VARS = ['WEB_HOST_PORT', 'API_HOST_PORT', 'DB_PORT', 'REDIS_PORT', 'MINIO_PORT', 'MINIO_CONSOLE_PORT'];
+  const portasDoOverride = (c: Caixa, amb = 'producao') =>
+    (readFileSync(path.join(c.base, amb, 'override.yml'), 'utf8').match(/^\s+- "[^"]+"$/gm) ?? []).map((l) => l.trim()).sort();
+
+  it('as seis trocadas: .env, override, endereços, saúde e a conferência do host seguem as novas; dentro do container nada muda', () => {
+    const c = caixa();
+    const log = path.join(path.dirname(c.log), 'portas.log');
+    // as do ambiente estão tomadas; com --portas elas nem são perguntadas
+    const r = local(c, ['--portas', TODAS], { STUB_PORTAS_OCUPADAS: '4000@127.0.0.1@node@1 4001@127.0.0.1@node@1 5442@*@docker@2', STUB_LOG_PORTAS: log });
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    const env = lerEnv(c, 'producao');
+    expect(VARS.map((k) => chave(env, k))).toEqual(['4200', '4201', '5452', '6392', '9020', '9021']);
+    for (const k of ['WEB_ORIGIN', 'PUBLIC_BASE_URL', 'PUBLIC_BIO_ORIGIN']) expect(chave(env, k), k).toBe('http://localhost:4200');
+    expect(chave(env, 'GOOGLE_REDIRECT_URI')).toBe('http://localhost:4200/api/google/callback');
+    expect(portasDoOverride(c)).toEqual([
+      '- "127.0.0.1:4200:4000"', '- "127.0.0.1:4201:4001"', '- "127.0.0.1:5452:5432"',
+      '- "127.0.0.1:6392:6379"', '- "127.0.0.1:9020:9000"', '- "127.0.0.1:9021:9001"',
+    ].sort());
+    expect(lerLog(c)).toMatch(/^curl http:\/\/127\.0\.0\.1:4201\/api\/health$/m);
+    expect(lerLog(c)).toMatch(/^curl http:\/\/127\.0\.0\.1:4201\/api\/health\/versao$/m);
+    expect(lerLog(c)).not.toMatch(/127\.0\.0\.1:4001/);
+    const perguntadas = readFileSync(log, 'utf8');
+    for (const p of ['4200', '4201', '5452', '6392', '9020', '9021']) expect(perguntadas).toContain(`-iTCP:${p} `);
+    for (const p of ['4000', '4001', '5442', '6390', '9010', '9011']) expect(perguntadas).not.toContain(`-iTCP:${p} `);
+    expect(r.stdout).toMatch(/ENDEREÇO \(máquina local, sem rota a configurar\): http:\/\/localhost:4200/);
+  });
+
+  it('só as que vierem mudam; as outras ficam as do ambiente; --so-checar mostra o plano com elas', () => {
+    const c = caixa();
+    const r = local(c, ['--portas', 'web=4200,minio-console=9021']);
+    expect(r.status, r.stderr).toBe(0);
+    expect(VARS.map((k) => chave(lerEnv(c, 'producao'), k))).toEqual(['4200', '4001', '5442', '6390', '9010', '9021']);
+    const d = caixa();
+    const plano = local(d, ['--portas', 'web=4200', '--so-checar']);
+    expect(plano.status, plano.stderr).toBe(0);
+    expect(plano.stdout).toMatch(/portas em 127\.0\.0\.1: web 4200 · api 4001 · db 5442/);
+    expect(plano.stdout).toMatch(/endereço: http:\/\/localhost:4200/);
+    expect(existsSync(d.base)).toBe(false);
+  });
+
+  it('forma inválida é recusada com 64 antes de qualquer coisa: nada em disco, nenhum docker', () => {
+    const casos: [string, RegExp][] = [
+      ['', /--portas vazio/],
+      ['web:4200', /--portas inválido: 'web:4200'/],
+      ['web=4200,', /--portas inválido/],
+      ['web=4200,web=4300', /--portas repete 'web'/],
+      ['web=80', /'web=80' fora de 1024–65535/],
+      ['web=70000', /'web=70000' fora de 1024–65535/],
+      ['web=123456789012345678901', /fora de 1024–65535/],
+      ['web=04200', /'web=04200' — porta sem zero à esquerda/],
+      ['http=4200', /chave desconhecida 'http' — as válidas: web, api, db, redis, minio, minio-console/],
+      ['web=4001', /a porta 4001 ficaria em dois serviços desta instância/],
+      ['web=4300,api=4300', /a porta 4300 ficaria em dois serviços/],
+    ];
+    for (const [valor, msg] of casos) {
+      const c = caixa();
+      const r = local(c, ['--portas', valor]);
+      expect(r.status, `${valor}: ${r.stderr}`).toBe(64);
+      expect(r.stderr, valor).toMatch(msg);
+      expect(existsSync(c.base), valor).toBe(false);
+      expect(lerLog(c), valor).toBe('');
+    }
+  });
+
+  it('porta do ambiente ocupada: a recusa aponta --portas; com --portas a mesma máquina instala; porta escolhida ocupada também recusa', () => {
+    const ocupada = { STUB_PORTAS_OCUPADAS: '4000@127.0.0.1@node@4242' };
+    const r = local(caixa(), [], ocupada);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em 127\.0\.0\.1:4000: node \(pid 4242\)/);
+    expect(r.stderr).toMatch(/escolha outra porta do host com --portas \(ex\.: --portas web=4200,api=4201\)\. Nada foi criado\./);
+    const ok = local(caixa(), ['--portas', 'web=4200'], ocupada);
+    expect(ok.status, ok.stderr).toBe(0);
+    const c = caixa();
+    const outra = local(c, ['--portas', 'web=4300'], { STUB_PORTAS_OCUPADAS: '4300@*@Python@7' });
+    expect(outra.status).not.toBe(0);
+    expect(outra.stderr).toMatch(/porta 4300 \(WEB_HOST_PORT\) — já ouvindo em \*:4300: Python \(pid 7\)/);
+    expect(existsSync(c.base)).toBe(false);
+  });
+
+  it('irmã com a mesma porta escolhida é recusada; o atualizar lê as portas do .env, sem repetir a flag', () => {
+    const c = caixa();
+    expect(local(c, ['--portas', TODAS]).status).toBe(0);
+    const h = rodar(c, 'instalar', ['--ambiente', 'homologacao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', '--portas', 'web=4200'], { ROOTOS_ANTHROPIC_API_KEY: '' });
+    expect(h.status).not.toBe(0);
+    expect(h.stderr).toMatch(/NÃO podem compartilhar nome nem porta — conflito com instância irmã: .*WEB_HOST_PORT/);
+    writeFileSync(c.log, '');
+    const a = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2'], { STUB_APPLIED: '20260101000000_um,20260102000000_dois', STUB_VERSAO: 'v2' });
+    expect(a.status, a.stderr + a.stdout).toBe(0);
+    expect(lerLog(c)).toMatch(/^curl http:\/\/127\.0\.0\.1:4201\/api\/health$/m);
+    expect(lerLog(c)).not.toMatch(/127\.0\.0\.1:4001/);
+    expect(portasDoOverride(c)).toContain('- "127.0.0.1:4200:4000"');
+    expect(chave(lerEnv(c, 'producao'), 'WEB_HOST_PORT')).toBe('4200');
+  });
+});

@@ -41,6 +41,7 @@ uso: deploy/instalar.sh --ambiente producao|homologacao --tag <tag> --dominio <h
         [--modulos <a,b,c|todos>]   (módulos da empresa do cliente; sem a flag, todos)
         [--base /srv/root-os] [--repo <url|caminho>] [--bind-ip 172.17.0.1] [--sem-llm] [--so-checar]
         [--bind-ip 127.0.0.1]   (máquina local: --dominio opcional, endereço http://localhost:<web>, base ~/root-os)
+        [--portas web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021]   (troca as portas do host que vierem; as outras ficam as do ambiente)
         [--painel <projeto>/<servico>]   (easyPanel: nasce com o projeto Compose do painel e gera o compose para colar lá)
 Segredos que não se geram vêm do AMBIENTE, nunca de argumento:
         ROOTOS_ANTHROPIC_API_KEY / ROOTOS_OPENAI_API_KEY   (uma das duas, ou --sem-llm)
@@ -51,7 +52,7 @@ MSG
 
 AMBIENTE=""; TAG=""; DOMINIO=""; ADMIN_EMAIL=""; BASE="${ROOTOS_BASE:-}"
 REPO="${ROOTOS_REPO:-https://github.com/operacaoroot/marketing-os.git}"
-BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""; MODULOS_CLIENTE=""; MODULOS_VEIO=0
+BIND_IP="${ROOTOS_BIND_IP:-172.17.0.1}"; CLIENTE=""; SEM_LLM=0; SO_CHECAR=0; PAINEL=""; MODULOS_CLIENTE=""; MODULOS_VEIO=0; PORTAS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --ambiente)    AMBIENTE="${2:-}"; shift 2 ;;
@@ -66,6 +67,7 @@ while [ $# -gt 0 ]; do
     --sem-llm)     SEM_LLM=1; shift ;;
     --so-checar)   SO_CHECAR=1; shift ;;
     --painel)      PAINEL="${2:-}"; shift 2 ;;
+    --portas)      PORTAS="${2:-}"; [ -n "$PORTAS" ] || falha "--portas vazio: web=<n>,api=<n>,db=<n>,redis=<n>,minio=<n>,minio-console=<n> (as que vierem)" 64; shift 2 ;;
     *) echo "argumento desconhecido: $1" >&2; uso ;;
   esac
 done
@@ -135,6 +137,32 @@ esac
 # No easyPanel o projeto Compose é <projeto>_<serviço>, e é dele que saem os nomes dos
 # volumes: para o painel adotar a instância depois, o nome tem de ser este desde o primeiro up.
 [ -z "$PAINEL" ] || PROJ="$(projeto_do_painel "$PAINEL")"
+# `--portas` troca só as portas do HOST que vierem (a de dentro do container não muda). É
+# para a máquina onde a porta do ambiente já tem dono — no Mac, um `pnpm dev` ou outra
+# instância. Conferido aqui, antes de criar qualquer coisa; sem a flag, nada muda.
+aplicar_portas() {
+  local lista="$1" item k v vistas="" todas
+  [[ "$lista" =~ ^[a-z-]+=[0-9]+(,[a-z-]+=[0-9]+)*$ ]] \
+    || falha "--portas inválido: '$lista' — pares chave=porta separados por vírgula (ex.: web=4200,api=4201)" 64
+  for item in $(printf '%s' "$lista" | tr ',' ' '); do
+    k="${item%%=*}"; v="${item#*=}"
+    case " $vistas " in *" $k "*) falha "--portas repete '$k'" 64 ;; esac
+    vistas="$vistas $k"
+    case "$v" in 0*) falha "--portas: '$k=$v' — porta sem zero à esquerda" 64 ;; esac
+    [ "${#v}" -le 5 ] && [ "$v" -ge 1024 ] && [ "$v" -le 65535 ] \
+      || falha "--portas: '$k=$v' fora de 1024–65535 (abaixo de 1024 exige root)" 64
+    case "$k" in
+      web) WEB="$v" ;; api) API="$v" ;; db) DBP="$v" ;; redis) RED="$v" ;; minio) MIN="$v" ;; minio-console) MINC="$v" ;;
+      *) falha "--portas: chave desconhecida '$k' — as válidas: web, api, db, redis, minio, minio-console" 64 ;;
+    esac
+  done
+  todas=" $WEB $API $DBP $RED $MIN $MINC "
+  for v in $WEB $API $DBP $RED $MIN $MINC; do
+    [ "$(printf '%s' "$todas" | tr ' ' '\n' | grep -cx "$v")" = 1 ] \
+      || falha "--portas: a porta $v ficaria em dois serviços desta instância (web $WEB · api $API · db $DBP · redis $RED · minio $MIN/$MINC). Nada foi criado." 64
+  done
+}
+[ -z "$PORTAS" ] || aplicar_portas "$PORTAS"
 # O endereço público: o domínio na VPS; na máquina local sem domínio, o próprio web.
 if [ -n "$DOMINIO" ]; then URL_PUBLICA="https://$DOMINIO"; else URL_PUBLICA="http://localhost:$WEB"; fi
 # A imagem só ganha nome depois do clone: a tag é IMUTÁVEL por versão+commit.

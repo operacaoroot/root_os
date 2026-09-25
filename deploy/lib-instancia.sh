@@ -284,7 +284,7 @@ $ouvintes
 LISTA
   done
   [ -z "$conflitos" ] || falha "porta já em uso NO HOST (bind $bind):$conflitos
-  Feche o programa que ocupa a porta e rode de novo. Nada foi criado."
+  Feche o programa que ocupa a porta e rode de novo, ou escolha outra porta do host com --portas (ex.: --portas web=4200,api=4201). Nada foi criado."
 }
 
 # O override gerado: é o que isola de verdade, independentemente do compose.

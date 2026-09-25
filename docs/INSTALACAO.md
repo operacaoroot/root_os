@@ -85,6 +85,16 @@ ele nunca responde sozinho: em toda porta o instalador pergunta também ao `nets
 `ss` (Linux), que veem todos os ouvintes, e junta as duas respostas. Sem esse complemento
 respondendo, a instalação para — não saber se a porta está livre não conta como livre.
 
+**Outra porta no host: `--portas`.** Quando a porta do ambiente já tem dono que não se pode fechar
+(um `pnpm dev`, outra instância do Root OS), troque só as portas do host que precisar:
+`--portas web=4200,api=4201,db=5452,redis=6392,minio=9020,minio-console=9021` (qualquer subconjunto;
+as que não vierem ficam as do ambiente). A porta de dentro do container não muda. Os endereços
+seguem a porta do web (`http://localhost:4200`, callback `http://localhost:4200/api/google/callback`),
+e a saúde é conferida na porta da api. Chave desconhecida, chave repetida, porta fora de 1024–65535
+ou a mesma porta em dois serviços recusam com exit 64 antes de criar qualquer coisa. As portas
+escolhidas ficam no `.env` da instância, e é de lá que o `atualizar.sh` as lê: não se repete a flag
+ao atualizar.
+
 **Backup:** o fim da instalação imprime a linha inteira para o `crontab -e` do usuário (uma linha
 só: o crontab não junta linhas terminadas em `\`). O cron do macOS roda com `PATH=/usr/bin:/bin` e
 sem nada do perfil do shell, e o `docker` do brew (`/opt/homebrew/bin`) ou do Docker Desktop
