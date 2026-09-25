@@ -878,7 +878,8 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
   });
 
   it('sem lsof nem ss, ou ss falhando: falha fechada, sem criar nada; --so-checar também confere', () => {
-    for (const env of [{ LSOF: 'nao-existe-1', SS: 'nao-existe-2' }, { LSOF: 'nao-existe-1', STUB_FAIL_SS: '1' }]) {
+    const cenarios: Record<string, string>[] = [{ LSOF: 'nao-existe-1', SS: 'nao-existe-2' }, { LSOF: 'nao-existe-1', STUB_FAIL_SS: '1' }];
+    for (const env of cenarios) {
       const c = caixa();
       const r = vps(c, env);
       expect(r.status, JSON.stringify(env)).not.toBe(0);
