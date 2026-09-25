@@ -103,7 +103,7 @@ export const PERMISSIONS = [
    * parte no canal (ver `tokenParaOMac` em envio-ao-youtube.service.ts). Nasce
    * só no Admin Master; a conta do vigia recebe por um perfil próprio.
    */
-  'pauta.youtube.enviar',
+  'pauta.enviar_ao_youtube',
   'aprovacoes.ver',
   'aprovacoes.decidir',
 ] as const;

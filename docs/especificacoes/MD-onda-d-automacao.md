@@ -944,7 +944,7 @@ esse). O prazo da auditoria é desconhecido.
 `videos.insert` aceita `youtube.upload` e grava `status.privacyStatus` na inserção, então, com a
 auditoria aprovada, ele cria vídeo público à parte no canal, fora da porta. `soEnvio` defende só
 contra alterar e apagar vídeo. O risco residual é da D-MC6 e está com o Pedro (ESTADO, MD10,
-pendência 10). No código: o token, a sessão e a conclusão pedem `pauta.youtube.enviar` (a conta do
+pendência 10). No código: o token, a sessão e a conclusão pedem `pauta.enviar_ao_youtube` (a conta do
 Mac, não todo editor); a conclusão pergunta à sessão aberta pelo OS qual vídeo ela criou (o id do
 Mac não é a fonte da verdade) e confere `fileDetails.fileSize` com os bytes assinados; e lê a
 playlist de uploads do canal, alertando sobre vídeo não privado que o OS não abriu.

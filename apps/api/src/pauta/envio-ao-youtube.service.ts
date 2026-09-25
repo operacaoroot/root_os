@@ -570,7 +570,7 @@ export class EnvioAoYoutubeService implements OnModuleInit {
    * grava `status.privacyStatus` na inserção: num projeto auditado, este token
    * cria um vídeo PÚBLICO à parte, com qualquer arquivo, sem passar pela porta.
    * O risco é residual da D-MC6 (os bytes não passam pela VPS, `naoFazer`) e
-   * está com o Pedro. O que o reduz: só quem tem `pauta.youtube.enviar` recebe
+   * está com o Pedro. O que o reduz: só quem tem `pauta.enviar_ao_youtube` recebe
    * o token (a conta do Mac, não todo editor), e a conclusão confere os
    * uploads do canal na janela da sessão (`conferirUploadsDoCanal`).
    */

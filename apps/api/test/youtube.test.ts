@@ -247,15 +247,15 @@ describe('MD10: a auditoria, as faltas e os argumentos (puro)', () => {
     expect(exemplo).toMatch(/^YOUTUBE_AUDITORIA=pendente$/m);
   });
 
-  it('a sessão, o token e a conclusão pedem pauta.youtube.enviar (a conta do Mac, não todo editor); o resto pede pauta.editar; ler pede pauta.ver; conectar pede pauta.publicar', () => {
+  it('a sessão, o token e a conclusão pedem pauta.enviar_ao_youtube (a conta do Mac, não todo editor); o resto pede pauta.editar; ler pede pauta.ver; conectar pede pauta.publicar', () => {
     const perm = (c: object, m: string) => Reflect.getMetadata(PERMISSIONS_KEY, (c as Record<string, object>)[m]);
     const p = EnvioAoYoutubeController.prototype as unknown as Record<string, unknown>;
     expect(perm(p, 'estado')).toEqual(['pauta.ver']);
     for (const m of ['declarar', 'thumb', 'horario']) expect(perm(p, m), m).toEqual(['pauta.editar']);
-    for (const m of ['sessao', 'token', 'concluido']) expect(perm(p, m), m).toEqual(['pauta.youtube.enviar']);
+    for (const m of ['sessao', 'token', 'concluido']) expect(perm(p, m), m).toEqual(['pauta.enviar_ao_youtube']);
     // Nenhum perfil de editor recebe o token: só o Admin Master nasce com ele.
     for (const [papel, def] of Object.entries(ROLES)) {
-      expect((def.permissions as readonly string[]).includes('pauta.youtube.enviar'), papel).toBe(papel === 'admin_master');
+      expect((def.permissions as readonly string[]).includes('pauta.enviar_ao_youtube'), papel).toBe(papel === 'admin_master');
     }
     const y = YoutubeDaPautaController.prototype as unknown as Record<string, unknown>;
     expect(perm(y, 'pendentes')).toEqual(['pauta.ver']);

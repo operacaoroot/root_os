@@ -2252,7 +2252,7 @@ nenhum.
 - **Correção da revisão final (25/09):** `soEnvio` NÃO impede publicar. `videos.insert` aceita o
   escopo `youtube.upload` e grava `status.privacyStatus` na inserção: num projeto auditado, o token
   do Mac cria um vídeo público à parte, com qualquer arquivo, fora da porta. O que ficou no código:
-  receber a sessão, o token e concluir pedem `pauta.youtube.enviar` (só o Admin Master nasce com
+  receber a sessão, o token e concluir pedem `pauta.enviar_ao_youtube` (só o Admin Master nasce com
   ela; a conta do vigia recebe por um perfil próprio), e cada conclusão lê a playlist de uploads do
   canal e marca vídeo não privado que o OS não abriu, desde a sessão, como `ATENÇÃO` na linha e
   `pauta.youtube_upload_fora_do_lote` no RASTRO. O resto é risco residual da D-MC6 (pendência 10).
@@ -2398,11 +2398,11 @@ regra de uma réplica, da onda D, continua). O prazo da auditoria é desconhecid
    certa do canal (nota `pauta.youtube.categoria`, padrão 28).
 10. **Decidir o risco residual do token do Mac (D-MC6).** Com a auditoria aprovada, o token só de
     envio que vai ao Mac por ~1 h ainda cria vídeo PÚBLICO à parte no canal (o `videos.insert`
-    aceita a privacidade na inserção). Defesas no código: só quem tem `pauta.youtube.enviar` recebe
+    aceita a privacidade na inserção). Defesas no código: só quem tem `pauta.enviar_ao_youtube` recebe
     o token, e a conclusão alerta sobre upload não privado fora do OS. A alternativa que fecha o
     buraco é os bytes passarem pela VPS, que o `naoFazer` da onda proíbe. Até decidir: rodar
     `pnpm --filter @mktos/api exec tsx prisma/sync-permissions.ts` no deploy e dar
-    `pauta.youtube.enviar` só à conta do vigia (um perfil próprio, sem mais nada de escrita).
+    `pauta.enviar_ao_youtube` só à conta do vigia (um perfil próprio, sem mais nada de escrita).
 
 ### Onda D, fatia MD13 — o corte com nota e motivo (25/09/2026)
 
@@ -2733,8 +2733,8 @@ invariante 4 (MD7), e isso conta como afrouxamento: só `POLITICA_CAPACIDADE_NOV
    antes do `up` (`docs/DEPLOY.md` §2.3b):
    `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='Onda D: catálogo ganha instagram.post.publicar, pauta.semana.aprovar, instagram.comentario.ler, instagram.resposta_privada.enviar, instagram.regra_de_resposta.pausar, youtube.video.enviar e youtube.video.publicar' POLITICA_REBAIXAMENTO_AUTOR='pedro.magnago@fullbpo.com' POLITICA_REBAIXAMENTO_MOTIVO='Onda D (MD7): invariante 4 com uso contado; publicar sai também por item de lote assinado' pnpm --filter @mktos/api db:seed:politica`.
 8. **Permissões:** `pnpm --filter @mktos/shared build`, `db:sync-permissions` (entra
-   `pauta.youtube.enviar`, só no Admin Master) e todo mundo sai e entra de novo. Dar
-   `pauta.youtube.enviar` só à conta do vigia do Mac, num perfil próprio (MD10, pendência 10).
+   `pauta.enviar_ao_youtube`, só no Admin Master) e todo mundo sai e entra de novo. Dar
+   `pauta.enviar_ao_youtube` só à conta do vigia do Mac, num perfil próprio (MD10, pendência 10).
 9. **`up -d --no-build --vps api web`.**
 10. **Conferir:** a linha de boot `política base vN carregada DO BANCO (69 capacidades)` (62 da base
     + as 7 da onda); `storage pronto` e a linha `mídia das peças no storage: …` (anotar o total);

@@ -887,7 +887,7 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     só ao canal de `YOUTUBE_CANAL_DE_TESTE` (o vídeo desse modo nunca é publicado; declarar o mesmo
     arquivo de novo, fora do modo teste, recomeça o envio para o canal real); `aprovada` libera o
     agendamento. O Mac recebe um token pedido só com `youtube.upload` (e só a conta com
-    `pauta.youtube.enviar`); se o Google devolver um mais largo, com `aprovada` ele não sai. Esse
+    `pauta.enviar_ao_youtube`); se o Google devolver um mais largo, com `aprovada` ele não sai. Esse
     token ainda cria vídeo à parte no canal (a privacidade vai na inserção): a conclusão alerta sobre
     upload não privado que o OS não abriu, e amarra o vídeo ao arquivo pela sessão que o OS abriu e
     pelo tamanho (`fileDetails`), já que o YouTube não expõe o sha256. Nem a sessão nem o token saem fora da janela do item de envio

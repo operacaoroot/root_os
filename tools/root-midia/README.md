@@ -39,7 +39,7 @@ para o repositório, e `ROOT_OS_API_URL` fora desta máquina tem de ser `https:/
 |---|---|---|
 | `ROOT_OS_API_URL` | a API do OS, com o `/api` | `http://localhost:4001/api` |
 | `ROOT_OS_ENVIO_URL` | MD4: para onde sobe o mp4 do corte, com o `/api`. O proxy do Next (`os.operacaoroot.com/api`) corta o corpo em 10 MB: aponte para a API sem passar pelo web. Fora desta máquina, só `https://` | `ROOT_OS_API_URL` |
-| `ROOT_OS_EMAIL` / `ROOT_OS_SENHA` | uma conta do OS com `pauta.editar` (e `pauta.youtube.enviar`, para o envio ao YouTube) | — (exigidas por `pendentes` e `enviar`) |
+| `ROOT_OS_EMAIL` / `ROOT_OS_SENHA` | uma conta do OS com `pauta.editar` (e `pauta.enviar_ao_youtube`, para o envio ao YouTube) | — (exigidas por `pendentes` e `enviar`) |
 | `WHISPER_MODEL` | caminho do modelo ggml do whisper.cpp | — (sem ele, `transcrever` para e diz o que baixar; D-MC3) |
 | `ROOT_MIDIA_PALAVRA` | a palavra de corte, quando não vem da fila do OS | `root, corta` |
 | `ROOT_MIDIA_CHROME` | o Chrome do render das thumbs | o de `/Applications`, depois o Chrome for Testing do agent-browser |

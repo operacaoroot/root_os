@@ -319,7 +319,7 @@ docker run --rm --network marketing-os-net -w /app/apps/api \
 - **Conferência:** a linha de boot diz **69 capacidades** (as 62 da base, conferidas pela união de
   `politica-root.json` e `politica-marketing-os.json` no commit `68df3ae`, mais as 7). Com 62 ou 64,
   o seed não pegou ou pegou só uma fatia.
-- **Permissão nova `pauta.youtube.enviar`** (MD10, revisão final): o ritual do §2.3d, e dar a
+- **Permissão nova `pauta.enviar_ao_youtube`** (MD10, revisão final): o ritual do §2.3d, e dar a
   permissão só à conta do vigia do Mac.
 - **A mídia das peças:** a linha de boot `mídia das peças no storage: …` e, para o detalhe,
   `docker exec mktos_api node dist/scripts/storage-uso.js` (só mede; remover órfão pede
