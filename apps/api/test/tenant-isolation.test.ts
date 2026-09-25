@@ -383,6 +383,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaPublicacao', escopo: 'filho', chaveSql: '"id"', nota: 'A publicação da peça no Instagram pelo OS (MD6): o estado, os containers na Meta, o id e o permalink do post. Ler a da outra é saber o que ela vai postar e quando; escrever `estado` é destravar ou derrubar a publicação alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'ComentarioComPalavra', escopo: 'filho', chaveSql: '"id"', nota: 'Quem comentou a palavra-chave num post da semana (MD9): o @ por 7 dias, o HMAC da pessoa e se a DM já foi respondida. Ler a da outra é saber quem pediu o link a ela; escrever `respondidoEm` é sumir com a fila alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'EnvioAoYoutube', escopo: 'filho', chaveSql: '"id"', nota: 'O vídeo do episódio a caminho do YouTube (MD10): o sha256 do vídeo final, a URI da sessão de envio cifrada e o id do vídeo privado. Ler a da outra é saber o que ela vai publicar e onde está o vídeo privado dela; escrever `videoId` ou `estado` é levar o agendamento da outra a um vídeo que não é dela. Filha do episódio, com a empresa conferida pelo gatilho.' },
+  { tabela: 'EnvioDeResposta', escopo: 'filho', chaveSql: '"id"', nota: 'A DM automática de um comentário da fila (MD11): o HMAC da pessoa, o item de lote da regra, se saiu e o id da mensagem na Meta. Ler a da outra é saber a quem ela respondeu e quando; escrever `travaDaPessoa` ou `estado` é fazer a outra mandar de novo, ou nunca mandar, a quem pediu o link. Filha do comentário, com a empresa conferida pelo gatilho.' },
   { tabela: 'PautaEpisodio', escopo: 'filho', chaveSql: '"id"', nota: 'O episódio da semana (MC7): roteiro, mídia do Mac, transcrição, títulos e a página de links. Ler o da outra é ler o que ela vai publicar antes de publicar; escrever `status` é mover o episódio alheio de etapa. Filho 1:1 da rodada, com a empresa conferida pelo gatilho — e a página de links também.' },
 
   // ---- rotinas (fatia 5.1) ----------------------------------------------
@@ -1027,9 +1028,18 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }));
 
   // A fila da DM à mão (MD9): filha da peça, a empresa pelo gatilho.
-  reg('ComentarioComPalavra', await ins(c, 'ComentarioComPalavra', {
+  const comentarioId = await ins(c, 'ComentarioComPalavra', {
     id: crypto.randomUUID(), pecaId, commentId: `comentario_${suf}`, midiaId: `midia_${suf}`, palavra: 'AGENTES',
     pessoaHmac: `hmac_${suf}`, usuario: `pessoa_privada_${suf}`, comentadoEm: agora, expiraEm: new Date(agora.getTime() + 7 * 86_400_000),
+  });
+  reg('ComentarioComPalavra', comentarioId);
+  s.ref.comentarioComPalavraId = comentarioId;
+
+  // A DM automática do comentário (MD11): filha do comentário, a empresa pelo gatilho.
+  reg('EnvioDeResposta', await ins(c, 'EnvioDeResposta', {
+    id: crypto.randomUUID(), comentarioId, loteItemId: `item_${suf}`, pessoaHmac: `hmac_${suf}`,
+    travaDaPessoa: `item_${suf}:hmac_${suf}`, estado: 'enviado', mensagemId: `mensagem_privada_${suf}`,
+    expiraEm: new Date(agora.getTime() + 90 * 86_400_000), atualizadoEm: agora,
   }));
 
   // O episódio (MC7): filho 1:1 da rodada, com a página de links da mesma empresa.
@@ -3028,6 +3038,18 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
     id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
     palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: new Date(), expiraEm: new Date(Date.now() + 86_400_000),
   }),
+  EnvioDeResposta: async (c) => {
+    // comentarioId é @unique: a semente já usou o comentário de A. Um comentário novo de A.
+    const agora = new Date();
+    const comentario = await ins(c, 'ComentarioComPalavra', {
+      id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_envio_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
+      palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: agora, expiraEm: new Date(agora.getTime() + 86_400_000),
+    });
+    return {
+      id: crypto.randomUUID(), comentarioId: comentario, loteItemId: 'i', pessoaHmac: 'h', estado: 'recusado',
+      expiraEm: new Date(agora.getTime() + 86_400_000), atualizadoEm: agora,
+    };
+  },
   EnvioAoYoutube: async (c) => {
     // episodioId é @unique: a semente já usou o episódio de A. Um episódio novo de A.
     const agora = new Date();
@@ -3068,6 +3090,7 @@ const REF_DA_SEMENTE: Record<string, string> = {
   BioPage: 'bioPageId',
   PautaPeca: 'pautaPecaId',
   AprovacaoDeLote: 'aprovacaoDeLoteId',
+  ComentarioComPalavra: 'comentarioComPalavraId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -3082,9 +3105,9 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
     // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
     // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
-    // + `EnvioAoYoutube` (MD10, 25/09/2026).
+    // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(20);
+    expect(declarados.length).toBe(21);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

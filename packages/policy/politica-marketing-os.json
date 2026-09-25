@@ -1,5 +1,5 @@
 {
-  "versao": "1.6.0",
+  "versao": "1.7.0",
   "atualizadoEm": "2026-09-25",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
@@ -1183,6 +1183,68 @@
             },
             "description": "as peças publicadas com a palavra do CTA: o id da mídia (publicada pelo OS) ou o permalink colado à mão"
           }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "instagram.resposta_privada.enviar",
+      "rota": "GET /pauta/comentarios",
+      "descricao": "Manda UMA resposta privada da Meta (POST <IG_ID>/messages com recipient.comment_id) a quem comentou a palavra-chave num post da semana, com o texto fixo assinado, que abre avisando que a mensagem é automática e leva o link rastreado da matéria. Só sai por item do lote da semana (pauta.semana.aprovar, R4): a regra de cada matéria é o item, com teto por dia contado no dia de São Paulo e janela de 7 dias. Quem chama é a rotina pauta.coletar-comentarios, com a procedência externa marcada (quem comenta é gente de fora), o que sobe o envio a R4; sem ferramenta de agente. O id do comentário e a pessoa nunca entram nos argumentos: o efeito os lê da linha do envio, presa à correlação da passagem. Não existe desenviar pela API. A rota declarada é a da fila, que mostra o envio e nunca o dispara.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["igUserId", "palavra", "texto", "bioLinkId", "destinoAprovado", "midias"],
+        "properties": {
+          "igUserId": { "type": "string", "minLength": 1, "description": "a conta de publicação do Instagram que manda a mensagem" },
+          "palavra": { "type": "string", "pattern": "^[A-Z0-9]{3,20}$", "description": "a palavra-chave da matéria" },
+          "texto": { "type": "string", "minLength": 1, "description": "o texto exato, com a linha de mensagem automática e o link rastreado (até 1000 bytes)" },
+          "bioLinkId": { "type": "string", "minLength": 1, "description": "o link de campanha campanha:dm:<itemId> da matéria, cujo /r/ vai no texto" },
+          "destinoAprovado": { "type": "string", "minLength": 1, "description": "para onde o link leva, como assinado: o link público da matéria" },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "as peças da matéria (carrossel e corte) cujos posts valem: o id da peça, porque o id da mídia na Meta só existe depois de publicada"
+          }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false,
+        "alcance": 1
+      }
+    },
+    {
+      "id": "instagram.regra_de_resposta.pausar",
+      "rota": "POST /pauta/dm/regras/:itemId/pausar",
+      "descricao": "Pausa a regra da DM automática de uma matéria: revoga o item dela no lote da semana, com o motivo. Só diminui o alcance do OS, não escreve fora e não produz nada; voltar a mandar é assinar de novo (a regra entra no próximo lote). É R0 e não R1 pelo mesmo motivo da leitura de comentários: R1 com qualquer sinal (o fora_da_janela de toda noite, o volume_atipico do segundo clique da hora) vira R2, e R2 exige outra pessoa, o que prenderia o freio numa fila. Quem clica é uma pessoa, na fila da DM. As pausas automáticas do executor (destino do link mudado, página fora do ar, três recusas seguidas da Meta, falta de Advanced Access) revogam o mesmo item pelo serviço do lote, como a rotina de publicação faz ao desistir de uma peça.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["regraId", "motivo"],
+        "properties": {
+          "regraId": { "type": "string", "minLength": 1, "description": "o item de lote da regra" },
+          "motivo": { "type": "string", "minLength": 3, "description": "por que a regra vai parar" }
         }
       },
       "efeito": {

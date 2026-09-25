@@ -36,6 +36,7 @@ import {
   type PautaPecaStatus,
   type PautaReagendarInput,
   PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA,
+  PAUTA_CHAVE_DA_DM_AUTOMATICA,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -332,6 +333,7 @@ export class AgendaService {
       paraDistribuir,
       publicacaoAutomatica: await this.publicacaoAutomatica(orgId),
       comentariosPendentes: await this.comentariosPendentes(orgId, agora),
+      dmAutomatica: await this.notaLigada(orgId, PAUTA_CHAVE_DA_DM_AUTOMATICA),
     };
   }
 
@@ -346,8 +348,13 @@ export class AgendaService {
 
   /** MD8: a nota `pauta.publicacao.automatica`, para a tela dizer ao lado do "Aprovar a semana". Memória fora = desligada. */
   private async publicacaoAutomatica(orgId: string): Promise<boolean> {
+    return this.notaLigada(orgId, PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA);
+  }
+
+  /** Uma nota de interruptor (primeira linha `ligada`); a DM automática (MD11) também. Memória fora = desligada. */
+  private async notaLigada(orgId: string, chave: string): Promise<boolean> {
     try {
-      return notaDaAutomaticaLigada(await this.memoria.porChave(orgId, PAUTA_CHAVE_DA_PUBLICACAO_AUTOMATICA));
+      return notaDaAutomaticaLigada(await this.memoria.porChave(orgId, chave));
     } catch {
       return false;
     }

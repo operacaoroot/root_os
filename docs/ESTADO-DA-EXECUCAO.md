@@ -2457,6 +2457,204 @@ tela diz isso). A saída da derivação cresce uns 3 títulos e 3 motivos por ma
 **Pendências (do Pedro):** nenhuma. **Deploy:** só código (API, web e `root-midia` no Mac); a semana
 gerada antes do deploy não tem candidatos e segue funcionando como antes (a tela não mostra a lista).
 
+### Onda D, fatia MD11 — a DM automática sob o lote da semana (25/09/2026)
+
+Especificação em `docs/especificacoes/MD-onda-d-automacao.md` (MD11), base na MC18.1 a MC18.4 adaptada
+ao lote da MD7/MD8 e disparada pela rotina de comentários da MD9, sem webhook. Decisões do Pedro
+aplicadas: D-MD1 (uso contado; a assinatura do seed é o portão humano) e D-MC9.x como recomendado,
+com a **MD11 implementada e DESLIGADA**: sem a nota `pauta.dm.automatica` ligada, a passagem não
+manda nada e a fila à mão da MD9 continua. Nada sai sem a regra assinada no lote por outra pessoa,
+titular, com senha e motivo.
+
+| Peça | Onde |
+|---|---|
+| Capacidade `instagram.resposta_privada.enviar` (R3 pelo efeito: escreve fora, sem volta, exposta, alcance 1; `sob_lote` de `pauta.semana.aprovar`; sem ferramenta; `CONECTOR_DA_CAPACIDADE` = `instagram`; `argsSchema` fechado com `igUserId`, `palavra`, `texto`, `bioLinkId`, `destinoAprovado` e `midias` — as peças —, sem lugar para o comentário nem a pessoa) e `instagram.regra_de_resposta.pausar` (R0, ver os desvios; `null` no mapa de conectores); delta `1.7.0`, catálogo com 69 | `packages/policy/politica-marketing-os.json`, `apps/api/src/integrations/conectores.ts` |
+| A marca de procedência chega à porta do operador (`procedenciaExterna`, de mão única): o executor marca todo envio, `fonte_nao_confiavel` acende e o envio vale **R4**, coberto pelo lote R4 | `apps/api/src/gateway/porta-do-operador.service.ts` |
+| A parte pura: o recurso da regra (`<episodioId>:<itemId>`), a linha de mensagem automática, o texto (≤ 1000 bytes com o aviso, `/r/`, anti-slop), os argumentos com as peças em ordem, o teto (padrão 100, máximo 200 numa constante do shared — não no catálogo), o `usoMaximo` (teto × 8 dias), a janela da primeira publicação a 7 dias depois (sem passar do que o lote vale), a janela de horário e a próxima abertura no fuso da política, a trava da pessoa (presa à matéria), o erro da Meta (`100/2534001` = Advanced Access; sem resposta ou 5xx sem corpo = incerto), as três recusas seguidas e a linha do resumo | `apps/api/src/pauta/dm-automatica.ts` |
+| O serviço: a regra de AGORA de cada matéria (carrossel e corte não descartados), os itens para o lote (a montagem cria o link de campanha antes, e a regra ativa que mudou é revogada e entra de novo), o conteúdo para a titular, a revogação na ativação, a passagem, os dois efeitos e o estado na fila | `apps/api/src/pauta/dm-automatica.service.ts` |
+| HTTP no conector: `responderEmPrivado` (`POST <IG_ID>/messages` com `recipient.comment_id`, token no cabeçalho, `codigoDaMeta` no erro); o cliente chega por injeção (`GRAPH_DE_MENSAGENS`, fiação em `bio/plataformas/publicacao.module.ts`), catraca nova em `arquitetura.test.ts` | `apps/api/src/bio/plataformas/instagram.ts`, `pauta/graph-de-mensagens.ts` |
+| Tabela `EnvioDeResposta` (filha de `ComentarioComPalavra`: sentinela, gatilho, RLS FORCE; `comentarioId` único; `travaDaPessoa` = `<episodioId>:<itemId>:<pessoaHmac>`, única enquanto a tentativa vale; estado `incerto` quando a Meta não respondeu; só o HMAC da pessoa; `expiraEm` de 90 dias); enum espelhado em `ENVIO_DE_RESPOSTA_ESTADOS` | migration `20260925053358_envio_de_resposta`; `FILHOS_COM_ORGID_REDUNDANTE` = 21; `tenant-isolation.test.ts` |
+| O lote da semana leva as regras (uma por matéria com palavra e link público), com "fica fora" (`PAUTA_FORA_DO_LOTE_DM`); a titular lê o texto exato, o destino, os posts, o teto e a janela; a ativação revoga a regra que mudou entre a montagem e a assinatura | `pauta/lote-da-semana.service.ts`; `PautaAprovacaoDaSemana.dm` e `PautaConteudoDoLote.dm` no shared |
+| A rotina `pauta.coletar-comentarios` chama a passagem da DM depois da coleta; o resumo junta os dois | `routines/executores/pauta-comentarios.executor.ts` |
+| Rota `POST /pauta/dm/regras/:itemId/pausar` (`pauta.editar`, corpo `PautaPausarRegraDaDmSchema`, pela porta); `GET /pauta/comentarios` traz `dmAutomatica` (a nota e as regras com "enviadas hoje") e, em cada linha, `automatica` (o envio) | `pauta/comentarios.controller.ts`, `comentarios.service.ts` |
+| Editar o texto da DM de uma matéria revoga a regra dela no lote; a rotina passou a só CRIAR o link de campanha que falta (quem atualiza o destino é gente: "Preparar os textos da DM" e a montagem do lote) | `pauta/comentarios.service.ts` |
+| Variável `INSTAGRAM_PEDIR_MENSAGENS` (vazia = a conexão de publicação não pede `instagram_business_manage_messages`); `INSTAGRAM_ESCOPO_DE_MENSAGENS` no shared | `docker-compose.yml`, `.env.example`, `bio/plataformas/instagram.ts` |
+| Tela: as regras no "Aprovar a semana" (texto, teto, nota, "fica fora"); a regra no cartão do lote em `/atendimento`; na fila, a seção "DM automática" (nota, regras, "enviadas hoje: 37 de 100", Pausar com motivo) e o estado automático de cada linha | `apps/web/src/app/pauta/AprovarASemana.tsx`, `ComentariosComPalavra.tsx`, `apps/web/src/app/atendimento/CartaoDoLote.tsx` |
+| `dmAutomatica` na agenda; o `root-midia agenda` diz que as regras assinadas respondem sozinhas | `pauta/agenda.service.ts`; `tools/root-midia/lib/semana.mjs` |
+
+**A passagem, na ordem da SPEC**, para cada comentário da fila de uma matéria com regra ativa e dentro
+da janela do item (a fila é lida SÓ nas peças das regras que podem mandar agora, até 40 por passagem):
+(1) uma DM por pessoa por regra — a regra é a matéria, não o item do lote (a mesma pessoa vira
+`ignorado` e sai da fila à mão, salvo quando a primeira ficou `incerto`); (2) a regra de agora contra a assinada — o destino do link de campanha é o link da matéria, a
+página está no ar e o hash dos argumentos é o do item; não bate, a regra PAUSA; (3) o teto do dia
+conferido antes (a porta é quem decide; a conferência só evita bater nela à toa); (4) a janela
+08h–20h no fuso da política (MD3), calculada pelo executor: fora dela, o envio fica `segurado` até a
+próxima abertura, dentro do prazo do item e dos 7 dias da Meta (sem tempo, fica à mão); (5) a porta
+com o `loteItemId` e a procedência externa, numa correlação só do envio; (6) o efeito acha a linha do
+envio pela correlação, confere que o comentário é de uma peça da regra e manda a resposta privada. A
+Meta aceitou: `enviado` e a linha da fila marcada "respondido por DM automática". Recusou: `erro`
+com o código; `100/2534001` pausa com "precisa de Advanced Access", e três recusas seguidas pausam.
+Não respondeu (rede, prazo, 5xx sem corpo): `incerto`, com a trava mantida, sem contar como recusa, e
+a linha segue na fila para quem conferir no Instagram. O que o efeito recusa antes da Graph (o
+comentário de outra peça, os 7 dias, a conta trocada) é `recusado`, e também não conta. A segurada
+cuja regra caiu volta à mão.
+
+**Desvios da especificação, com o porquê:**
+- **Pausar é R0, não R1.** Medido na régua, como na MD9: R1 com qualquer sinal vira R2, e R2 exige
+  outra pessoa. O segundo "Pausar" da hora (`volume_atipico`) e todo "Pausar" da noite
+  (`fora_da_janela`) iriam para a fila, e pausar é o freio. Com sinal, sobe a R1 e segue sem
+  aprovação (caso na política e no ensaio). O teste "toda leitura aponta para o GET" ganhou a exceção
+  declarada.
+- **As pausas automáticas do executor não passam pela capacidade de pausar**: revogam o item pelo
+  serviço do lote (`revogarItensDoRecurso`), com `pauta.dm_regra_pausada` na auditoria, como a rotina
+  de publicação faz ao desistir de uma peça (MD8). A capacidade é o botão da tela.
+- **`midias` são as peças, não os ids de mídia da Meta.** A regra é assinada na segunda, antes de os
+  posts saírem; o id da mídia só existe depois. O efeito confere que o comentário é de uma peça da
+  regra.
+- **O id do comentário não entra nos argumentos.** O catálogo não tem `hashKeys` (o esquema as
+  descarta), então o corpo inteiro vai ao hash, e o `comment_id` faria nenhum envio casar com o item.
+  A passagem grava a linha do envio em `enviando` com uma correlação nova e chama a porta DENTRO dela;
+  o efeito acha a linha por `(loteItemId, correlationId)`. O RASTRO do envio não guarda o comentário
+  nem a pessoa de jeito nenhum (nem em `sigiloso()`, nem o HMAC): o resultado leva só o id do envio e
+  o estado. (A leitura da MD9, `instagram.comentario.ler`, grava o HMAC de quem casou no resultado
+  dela, que vive 5 anos: é da MD9 e ficou como está.)
+- **Duas capacidades novas, não três.** A "ativação" da MC18 é o próprio lote da semana (MD7).
+- **O teto padrão é constante** (100; preso entre 1 e 200 por `PAUTA_DM_TETO_POR_DIA_MAXIMO`, uma
+  constante do shared — a D-MC9.2 fala em "200 no catálogo", e ele não está lá), sem nota para mudar.
+  O `tetoPorDia` entra no hash do lote que a titular assina.
+- **O comentário no teto do dia não ganha linha de envio**: fica na fila e sai no dia seguinte, se
+  ainda estiver nos 7 dias.
+- **A rotina da MD9 deixou de regravar o destino do link de campanha** (mudança de comportamento, §4
+  item 34): antes, cada comentário novo desfazia uma troca feita no /bio, e a regra nunca veria o
+  destino mudado.
+- **`INSTAGRAM_PEDIR_MENSAGENS`**, uma variável a mais: pedir o escopo de mensagens antes de ele estar
+  no painel do app faria a Meta recusar a tela de conexão inteira, e a publicação da MD5 deixaria de
+  conectar. O efeito não exige o escopo (a página "Private Replies" pede só comentários): se a Meta
+  recusar, as três recusas ou o `100/2534001` pausam a regra.
+- **O erro da Meta é limpo antes do RASTRO**: se a mensagem de erro ecoar o id do comentário, ele
+  vira `[id do comentário]` na linha do envio e no `tool.erro` (que vive 5 anos).
+- **O webhook (MC18.3) não entrou**, como a SPEC manda: `META_WEBHOOK_APP_SECRET` e o prefixo
+  `webhooks/meta` ficam para quando ele voltar.
+
+**Revisão (três revisores, 25/09/2026).** Corrigido, cada um com caso na suíte:
+- **A fila podia travar.** A passagem lia os 40 comentários pendentes mais antigos da empresa e só
+  depois descartava os sem regra valendo; 40 da newsletter, de uma regra pausada ou no teto tomavam
+  todas as vagas por 7 dias. Agora a regra de cada item vivo é calculada antes, e a fila é lida só nas
+  peças das regras que podem mandar agora (no prazo, abaixo do teto, com tempo até a janela abrir); o
+  "esperando o teto" e o "sem tempo" são contados à parte. A regra cuja matéria sumiu pausa já aí.
+- **A resposta perdida soltava a trava.** Sem resposta da Meta (status nulo, ou 5xx sem corpo de
+  erro), o envio vira `incerto` (valor novo do enum, na migration da fatia, ainda não publicada) e a
+  trava fica; o segundo comentário da mesma pessoa é `ignorado` e segue na fila, sem ser dado por
+  respondido. A linha presa em `enviando` por mais de 15 min (a passagem caiu no meio) também vira
+  `incerto` na passagem seguinte.
+- **A trava era do item do lote.** Pausada e assinada de novo, a regra ganhava outro item e a pessoa
+  recebia de novo. A trava é `<episodioId>:<itemId>:<pessoaHmac>`: a matéria.
+- **Sem o seed, a semana inteira caía.** `LotesService.montar` recusa o lote todo quando o catálogo da
+  empresa não tem a capacidade `sob_lote`; agora `paraOLote` confere o catálogo antes e a regra fica
+  fora com "rode o db:seed:politica assinado", e os posts seguem.
+- **Falha local contava como recusa da Meta.** O que o efeito recusa antes da Graph é `recusado`; só
+  `erro` (a Meta respondeu) entra nas três recusas. A matéria com palavras diferentes no carrossel e
+  no corte não assina mais (o coletor casa cada post com a palavra dele).
+- **O HMAC ia ao RASTRO** no resultado do efeito; saiu.
+- **A tela escondia o motivo** quando o link ainda não existia (a conta sem o escopo de comentários
+  aparecia como regra que entra); o link ausente tem marca própria.
+- **Com o módulo desligado, o expurgo de 90 dias não rodava**; roda, como o do @.
+- **O horário fixo "08h às 20h"** no cartão do lote e nos rótulos virou a janela da política (`horario`
+  e `fuso` no conteúdo do lote) e "até a janela abrir".
+- Caso novo: a regra vencida não envia (o item fora da janela, e a porta também recusa).
+
+Recusado: levar o teto de 200 ao catálogo. Mudar o teto absoluto pelo seed assinado pediria campo novo
+na `aprovacao` da política e conferência em `LotesService.montar` para uma capacidade só; o valor está
+no hash de cada item, que a titular lê e assina. O texto daqui e do CLAUDE.md passou a dizer
+"constante do shared".
+
+**Medido** (Mac, `marketing_os_test`, 25/09/2026, depois da revisão): `pnpm typecheck` 7/7;
+`typecheck:test` limpo; api direto com `TEST_DATABASE_URL` **3045 de 3045** em 74 arquivos (+40:
+`pauta-dm-automatica` 32 novo, 23 com banco; `arquitetura` +4; `escritas-pela-porta` +2; `root-midia`
++1); sem banco, 2335 passados e 710 pulados; web **616** em 48 (+7, `component/pauta-dm-automatica` novo); policy **97** (+4);
+`test:porta` 61; `test:isolamento` **358** (+6, `EnvioDeResposta`); `root-midia` 125; `db:diff` "No
+difference detected."; `build` + `smoke` OK. O `db:seed:politica` no banco de teste recusou sem
+assinatura ("Nada foi semeado") e aceitou com `POLITICA_CAPACIDADE_NOVA_*` ("capacidade nova em R3 /
+R1 (não declarada valia R5)"); depois que pausar desceu a R0, o banco de teste pediu também
+`POLITICA_REBAIXAMENTO_*` (R1 → R0), o que só vale para quem semeou a versão intermediária. Pisos da
+CI: api 2179/66, web 427/39, isolamento 281, policy 60/2, com a conta no `ci.yml`.
+
+**Ensaio local — o "pronto quando"** (`dist/main.js` contra `marketing_os_zero_md11`, criado vazio:
+migrations do zero, `db:seed` com senhas aleatórias e `db:seed:politica`; dublê da Graph em
+`127.0.0.1:4611` como `INSTAGRAM_GRAPH_URL`, que devolve os comentários de cada mídia e recebe as
+respostas privadas; duas contas descartáveis, a que monta e a titular; a matéria 1 com carrossel e
+corte publicados uma hora antes, a matéria 2 de newsletter, a página de links no ar e a conta de
+publicação com o escopo de comentários; banco, API e dublê removidos no fim). O ensaio rodou às 03h de
+São Paulo: os passos com envio usaram `POLITICA_FUSO_HORARIO=Asia/Tokyo` (15h lá) e o passo 5 usou
+São Paulo — é o fuso configurável da MD3.
+1. `GET …/semana/aprovacao`: a regra da matéria 1 (AGENTES, 100 por dia, janela de 7 dias da
+   publicação, o link nasce na montagem) e a da matéria 2 fora ("não tem link público"). "Aprovar a
+   semana" → lote de **1** item; a titular leu em `…/conteudo` o texto exato ("Mensagem automática,
+   enviada porque você comentou AGENTES no nosso post." + o `/r/` + a página, 300 bytes), o destino, os
+   dois posts e o teto. Quem montou confirma → 403; a titular com senha e motivo → lote `ativo`.
+2. **7:** com a nota desligada, o comentário "AGENTES por favor, quero o link" entrou na fila à mão e
+   a passagem disse "DM automática desligada …"; o dublê recebeu **0** respostas.
+3. **1:** nota ligada (`POST /memoria`), "Rodar agora" → "1 enviada(s)": o dublê recebeu `POST
+   /graph/v24.0/<ig>/messages` com `recipient.comment_id` = o do comentário, `Authorization: Bearer`,
+   e o texto com a linha de aviso e o `/r/`, sem o texto do comentário. O `/r/` respondeu 302 para a
+   matéria.
+4. **2:** a mesma pessoa no corte → "1 da mesma pessoa, ignorada(s)", 0 envio novo.
+5. **3:** o item levado a 100 usos no dia → um comentário novo: "1 esperando o teto do dia virar", 0
+   envio, item `ativo`. **4:** o contador passado para ontem (no teto) → a mesma linha saiu, e o item
+   ficou com 1 uso no dia de hoje; **0** aprovações da capacidade de envio.
+6. **6:** `PATCH /bio/links/<link da DM>` com outro destino → comentário novo: 0 envio, a regra
+   `revogado` com "o destino do link da DM foi alterado no /bio depois da assinatura", e o comentário
+   ficou na fila à mão.
+7. **5:** destino de volta, lote novo assinado, API no fuso de São Paulo (03h) → "2 segurada(s) até as
+   08h" (a do passo 6 e uma nova), `seguradoAte` = 08:00 de São Paulo; outra passagem, ainda de
+   madrugada: seguem seguradas. Com o `seguradoAte` vencido e a API num fuso em que é dia: as duas
+   saíram (o relógio do Mac não anda até as 08h).
+8. `100/2534001` programado no dublê → o envio ficou `erro` com o código e "precisa de Advanced
+   Access", e a regra caiu com o mesmo motivo; o comentário voltou à mão.
+9. **8:** no banco, o RASTRO do envio: 6 `tool.proposta` e 5 `tool.resultado` em **R4** (sinais
+   `fonte_nao_confiavel`, e `volume_atipico` a partir do segundo), 1 `tool.erro`; os 5 `tool.resultado`
+   com o aprovador = a titular (só `agente` em `rastro.faltando`, que não existe numa rotina). Nenhuma
+   linha de `EventLog`, `ToolCall` ou `AuditLog` com o id de comentário, o id da pessoa, o @ ou o texto
+   do comentário (0, 0, 0; a mesma busca acha 7 na tabela da fila).
+10. `GET /pauta/comentarios` trouxe as três regras (a ativa e as duas pausadas, com o motivo) e o estado
+    automático de cada linha; `POST /pauta/dm/regras/<item>/pausar` → `revogado`, **R0** sem aprovação;
+    o segundo → 400 (a regra não está valendo), **R1** com `volume_atipico`, também sem aprovação.
+
+Não conferido: a tela a 375 px no navegador (o ensaio não entra na tela com senha); os componentes
+seguem os vizinhos (`flex-wrap`, `break-words`, `break-all` no destino) e os testes de componente cobrem
+os estados. O limite de mensagens da Meta (750/h por conta, a conferir) não é medido pelo OS: o teto do
+dia é o freio.
+
+**Deploy:** uma migration aditiva (o enum e a tabela, com RLS e gatilho). **Antes da subida**, o
+`db:seed:politica` com `POLITICA_CAPACIDADE_NOVA_*`: sem ele as duas capacidades valem R5 e a porta
+bloqueia (nada sai), e a regra da DM fica fora do "Aprovar a semana" com "rode o db:seed:politica
+assinado" — os posts seguem. Antes da revisão, a falta do seed fazia o "Aprovar a semana" de todo
+episódio com matéria elegível dar 400, com posts e tudo. Variável nova `INSTAGRAM_PEDIR_MENSAGENS` (vazia). Nenhuma permissão nova.
+
+**Riscos.** A marca passa a falar sozinha com estranhos: o texto assinado tem de servir a quem pediu e
+a quem não pediu ("não quero saber de AGENTES" também casa). Um robô comentando a palavra gasta o teto
+do dia (a trava por pessoa reduz). O App Review pode ser negado ou demorar; aí a fila à mão fica. A
+passagem roda de 10 em 10 min: a DM chega em até 10 min, ou às 08h.
+
+**Pendências (do Pedro), na ordem:**
+1. Decidir e fazer D-MC9.1 a 9.5 e 9.8 como estão aplicadas (as recomendações): nada a mudar no código.
+2. Verificação da empresa no portfólio de negócios da Meta (business.facebook.com › Configurações ›
+   Central de segurança › Verificação).
+3. **Um** pedido de App Review com `instagram_business_basic`, `instagram_business_manage_comments`,
+   `instagram_business_manage_messages` e `instagram_business_content_publish`, com o vídeo do fluxo,
+   a política de privacidade (o parágrafo de quem comenta, pendência 5 da MD9) e a URL de exclusão de
+   dados; depois, o app em **Live**.
+4. Pôr `INSTAGRAM_PEDIR_MENSAGENS=sim` no `.env` da VPS (easyPanel), recriar o container e
+   **reconectar** a conta de publicação na aba Semana (o cartão mostra os escopos).
+5. Teste único: comentar a palavra com uma conta SEM papel no app, com a nota ligada por alguns
+   minutos; `100/2534001` na fila ("precisa de Advanced Access") confirma que falta o Advanced Access.
+6. `db:seed:politica` na VPS **antes** do deploy, assinado:
+   `POLITICA_CAPACIDADE_NOVA_AUTOR='pedro.magnago@fullbpo.com' POLITICA_CAPACIDADE_NOVA_MOTIVO='MD11: catálogo ganha instagram.resposta_privada.enviar (R3, sob o lote da semana) e instagram.regra_de_resposta.pausar (R0)' pnpm --filter @mktos/api db:seed:politica`.
+7. A segunda pessoa titular na empresa (MD8) e o 403 da fila resolvido: sem eles, nenhuma regra é
+   assinada. O código não contorna a segunda pessoa.
+8. Só depois de 2 a 7: ligar a nota `pauta.dm.automatica` (primeira linha `ligada`) pela memória, e
+   ler de novo, na assinatura de segunda, o texto que estranhos vão receber.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2763,6 +2961,16 @@ Tudo abaixo é mudança deliberada. A lista existe para ninguém descobrir no di
     aceita `inicio`/`fim` e o `POST …/video/arquivo`, o cabeçalho `X-Trecho-Do-Corte`: vindo o trecho
     renderizado e sendo outro que o da peça, a resposta é 409 (sem eles, só a duração, como antes). A
     assinatura do `precisaDeRender` de um corte cujo trecho mudou passa a incluir a hora da mudança.
+34. **MD11: a DM automática sob o lote.** O "Aprovar a semana" passa a incluir uma regra de DM por
+    matéria com palavra e link público (a montagem cria o link de campanha que falta e grava
+    `pauta.dm_links` com quem montou), e a titular a lê no cartão do lote. A rotina
+    `pauta.coletar-comentarios` passa a rodar a passagem da DM depois da coleta — que, com a nota
+    `pauta.dm.automatica` desligada (o padrão), só apaga os envios com mais de 90 dias. **A coleta
+    deixou de regravar o destino do link de campanha que já existe**: a troca feita no /bio fica, e
+    quem atualiza o destino é "Preparar os textos da DM" ou a montagem do lote. Editar o texto da DM
+    de uma matéria revoga a regra dela no lote. A fila de comentários mostra "respondido por DM
+    automática" e o estado do envio. A conexão de publicação só pede o escopo de mensagens com
+    `INSTAGRAM_PEDIR_MENSAGENS=sim`.
 
 ---
 

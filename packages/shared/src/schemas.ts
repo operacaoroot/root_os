@@ -1092,6 +1092,13 @@ export type BioFinalidade = (typeof BIO_FINALIDADES)[number];
 export const INSTAGRAM_ESCOPO_DE_PUBLICAR = 'instagram_business_content_publish';
 /** O escopo que a fila de comentários (MD9) vai usar; já pedido na MD5 para não exigir outra reconexão. */
 export const INSTAGRAM_ESCOPO_DE_COMENTARIOS = 'instagram_business_manage_comments';
+/**
+ * O escopo de mensagens (MD11). A página "Private Replies" da Meta pede só o de
+ * comentários, mas o relato de campo mostra a DM falhando sem este para quem
+ * não tem papel no app: vai no mesmo App Review, e a conexão só o pede com
+ * `INSTAGRAM_PEDIR_MENSAGENS=sim`.
+ */
+export const INSTAGRAM_ESCOPO_DE_MENSAGENS = 'instagram_business_manage_messages';
 
 /**
  * A conta de publicação do Instagram como a aba Semana a mostra
@@ -3617,6 +3624,8 @@ export interface PautaAgendaDaSemana {
   publicacaoAutomatica?: boolean;
   /** MD9: quantos comentários com a palavra esperam a DM à mão, dentro dos 7 dias. */
   comentariosPendentes?: number;
+  /** MD11: a nota `pauta.dm.automatica` (desligada = a DM segue à mão). */
+  dmAutomatica?: boolean;
 }
 
 /** `GET /pauta/agenda/grade` e o retorno do PUT. */
@@ -3888,6 +3897,8 @@ export interface PautaAprovacaoDaSemana {
   lotes: PautaLoteDaSemana[];
   /** O vídeo do episódio no YouTube (MD10): entra no mesmo lote quando está pronto. */
   youtube: PautaYoutubeNoLote;
+  /** As regras da DM automática (MD11): uma por matéria com palavra e link público. */
+  dm?: PautaDmNoLote;
 }
 
 /** O retorno da montagem: o lote em `proposta`, pronto para pedir a assinatura. */
@@ -3935,6 +3946,8 @@ export interface PautaConteudoDoLote {
   itens: PautaItemDoConteudoDoLote[];
   /** Os itens do YouTube (MD10): o envio privado e o agendamento, com o título, a descrição e a thumb. */
   youtube: PautaItemDoYoutubeNoLote[];
+  /** As regras da DM automática (MD11): a palavra, o texto exato, o link e o destino, o teto e a janela. */
+  dm?: PautaItemDaDmNoLote[];
 }
 
 // ---------- Pauta: a DM por palavra-chave, respondida à mão (MD9) ----------
@@ -4033,6 +4046,8 @@ export interface PautaComentarioNaFila {
   respondidoPor: string | null;
   texto: string | null;
   motivo: string | null;
+  /** MD11: o envio automático desta linha, quando houve. */
+  automatica?: PautaEnvioAutomatico | null;
 }
 
 /** `GET /pauta/comentarios`. */
@@ -4045,6 +4060,8 @@ export interface PautaFilaDeComentarios {
   conta: { handle: string | null; podeLerComentarios: boolean };
   /** A última passagem da rotina de comentários, ou nulo se ela nunca rodou. */
   ultimaColeta: { em: string; status: string; resumo: string | null } | null;
+  /** MD11: a DM automática (a nota e as regras do lote). */
+  dmAutomatica?: PautaDmAutomaticaNaFila;
   source: { tool: string; generatedAt: string };
 }
 
@@ -4309,6 +4326,147 @@ export interface PautaItemDoYoutubeNoLote {
   hashCurto: string;
   divergente: string | null;
 }
+
+// ---------- Pauta: a DM automática sob o lote da semana (MD11) ----------
+//
+// Quem comenta a palavra recebe a resposta privada da Meta sem ninguém
+// digitar. A regra de cada matéria (a palavra, o texto fixo, o link rastreado
+// e o destino) é um ITEM do lote da semana, assinado pela titular com o resto
+// da semana, com teto por dia e janela de 7 dias. O disparo é a rotina de
+// comentários (MD9). Tudo nasce DESLIGADO pela nota `pauta.dm.automatica`:
+// desligada, a fila da DM à mão continua sendo o caminho.
+
+/** A capacidade (R3; R4 com a procedência externa que o executor sempre marca) que manda UMA resposta privada, sob o lote. */
+export const PAUTA_CAPACIDADE_DE_RESPONDER_EM_PRIVADO = 'instagram.resposta_privada.enviar';
+/** A capacidade (R0: só diminui o alcance) que pausa a regra de uma matéria: o item de lote dela é revogado, e voltar pede assinatura nova. */
+export const PAUTA_CAPACIDADE_DE_PAUSAR_A_DM = 'instagram.regra_de_resposta.pausar';
+
+/**
+ * A nota da memória que liga a DM automática da empresa: a primeira linha
+ * `ligada`. Nasce desligada e só deve ser ligada depois do App Review da Meta
+ * (Advanced Access de mensagens), do seed assinado e da segunda pessoa.
+ */
+export const PAUTA_CHAVE_DA_DM_AUTOMATICA = 'pauta.dm.automatica';
+
+/** "fica fora" do lote da semana: este valor deixa as regras da DM de fora. */
+export const PAUTA_FORA_DO_LOTE_DM = 'dm';
+
+/** O teto de envios por dia de cada regra (D-MC9.4), contado no dia de São Paulo. */
+export const PAUTA_DM_TETO_POR_DIA_PADRAO = 100;
+/**
+ * O teto absoluto por regra (D-MC9.2): nenhuma regra passa disso. Mora aqui,
+ * como constante, e não no catálogo da política: o `tetoPorDia` do item é
+ * calculado por `tetoDaRegra` e entra no hash do lote que a titular assina.
+ */
+export const PAUTA_DM_TETO_POR_DIA_MAXIMO = 200;
+
+/**
+ * Espelha o enum `EnvioDeRespostaEstado` do Prisma. `segurado`: fora da
+ * janela de horário, espera ela abrir; `enviando`: o pedido está na porta;
+ * `enviado`: a Meta aceitou; `recusado`: não saiu, com o porquê (a regra caiu,
+ * a porta ou o próprio efeito recusou antes da Meta); `erro`: a Meta recusou;
+ * `ignorado`: a mesma pessoa já recebeu a DM desta regra; `incerto`: a Meta
+ * não respondeu (rede, prazo, 5xx sem corpo, a passagem caiu no meio) e a DM
+ * pode ter saído — a trava da pessoa fica.
+ */
+export const ENVIO_DE_RESPOSTA_ESTADOS = ['segurado', 'enviando', 'enviado', 'recusado', 'erro', 'ignorado', 'incerto'] as const;
+export type EnvioDeRespostaEstado = (typeof ENVIO_DE_RESPOSTA_ESTADOS)[number];
+
+export const ENVIO_DE_RESPOSTA_ESTADO_ROTULO: Record<EnvioDeRespostaEstado, string> = {
+  segurado: 'DM automática segurada até a janela de horário abrir',
+  enviando: 'DM automática saindo',
+  enviado: 'DM automática enviada',
+  recusado: 'a DM automática não saiu',
+  erro: 'a Meta recusou a DM automática',
+  ignorado: 'a mesma pessoa já recebeu a DM desta matéria',
+  incerto: 'a Meta não respondeu: a DM automática pode ter saído, confira no Instagram antes de responder à mão',
+};
+
+/** O envio automático de uma linha da fila, como a tela o mostra. */
+export interface PautaEnvioAutomatico {
+  estado: EnvioDeRespostaEstado;
+  seguradoAte: string | null;
+  enviadoEm: string | null;
+  motivo: string | null;
+}
+
+/** Uma regra da DM (uma matéria) diante do próximo lote da semana. */
+export interface PautaRegraDaDmParaAprovar {
+  itemId: string;
+  itemN: number;
+  palavra: string;
+  materia: string;
+  /** O texto exato que sai, com a linha de mensagem automática no começo. Nulo com o `problema`. */
+  texto: string | null;
+  bytes: number;
+  link: string | null;
+  destino: string | null;
+  janelaDe: string | null;
+  janelaAte: string | null;
+  tetoPorDia: number;
+  /** Por que esta regra não entra no lote agora, ou nulo. */
+  problema: string | null;
+  noLote: { loteId: string; estadoDoLote: LoteEstado } | null;
+}
+
+/** As regras da DM no "Aprovar a semana". */
+export interface PautaDmNoLote {
+  /** A nota `pauta.dm.automatica`: desligada, a regra assinada não manda nada e a fila à mão continua. */
+  automatica: boolean;
+  regras: PautaRegraDaDmParaAprovar[];
+}
+
+/** Um item de DM do lote, como a titular o lê em /atendimento. */
+export interface PautaItemDaDmNoLote {
+  itemId: string;
+  apelido: string;
+  itemN: number;
+  palavra: string;
+  materia: string;
+  texto: string;
+  bytes: number;
+  link: string;
+  destino: string;
+  /** Os posts onde a regra vale (carrossel e corte da matéria). */
+  pecas: Array<{ id: string; formato: string; titulo: string }>;
+  tetoPorDia: number | null;
+  janelaDe: string;
+  janelaAte: string;
+  handle: string | null;
+  estadoDoItem: ItemDoLoteEstado;
+  hashCurto: string;
+  divergente: string | null;
+  /** A janela de horário da política em que a DM sai (`08:00–20:00`), no fuso dela. */
+  horario: string;
+  fuso: string;
+}
+
+/** Uma regra do lote, como a fila da DM a mostra. */
+export interface PautaRegraDaDmNaFila {
+  loteItemId: string;
+  apelido: string;
+  itemN: number;
+  palavra: string;
+  estadoDoItem: ItemDoLoteEstado;
+  /** Por que a regra caiu (pausada à mão, destino mudado, Advanced Access, três recusas). */
+  motivoDaPausa: string | null;
+  tetoPorDia: number;
+  /** Quantas saíram hoje (dia de São Paulo). */
+  enviadasHoje: number;
+  janelaAte: string;
+}
+
+/** O estado da DM automática na fila. */
+export interface PautaDmAutomaticaNaFila {
+  ligada: boolean;
+  regras: PautaRegraDaDmNaFila[];
+}
+
+/** `POST /pauta/dm/regras/:itemId/pausar`: o porquê, que vai ao RASTRO. */
+export const PautaPausarRegraDaDmSchema = z
+  .object({ motivo: z.string().trim().min(3, 'Diga em poucas palavras por que a regra vai parar.').max(300) })
+  .strict();
+export type PautaPausarRegraDaDmInput = z.infer<typeof PautaPausarRegraDaDmSchema>;
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp) ----------
 // Contratos do módulo /trabalho: réplica de usabilidade do espaço `root` do

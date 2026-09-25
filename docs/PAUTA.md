@@ -860,6 +860,21 @@ Depois, em `/referencias → Radar` cadastre os feeds e em `/pauta → Rotinas` 
     (`pauta.editar`): até 1000 **bytes** (a Meta conta bytes), com o link rastreado e sem slop.
     Matéria de newsletter não gera link. Precisa da conta de publicação com o escopo de comentários
     (MD5) e de `META_WEBHOOK_PESSOA_HMAC_KEY` (32+) no servidor; sem elas, a passagem pula.
+  - **A DM automática (MD11).** Nasce DESLIGADA: só com a nota `pauta.dm.automatica` ligada (depois
+    do App Review da Meta) a rotina de comentários responde sozinha; desligada, a fila à mão continua.
+    A regra de cada matéria com palavra e link público entra no "Aprovar a semana" como mais um item
+    do lote: o texto exato (abre com "Mensagem automática, enviada porque você comentou PALAVRA no
+    nosso post.", leva o `/r/` da matéria e a página do episódio, até 1000 bytes), o destino do link,
+    os posts onde vale, até 100 por dia e 7 dias a partir da publicação; "fica fora" deixa as DMs de
+    fora. A titular lê tudo isso no cartão do lote. Assinado, a cada passagem da rotina: uma DM por
+    pessoa por matéria (também depois de a regra ser pausada e assinada de novo); destino do link
+    trocado no /bio, página fora do ar ou regra mudada pausam a regra; fora da janela de horário da
+    política (08h–20h de São Paulo por padrão) a DM fica segurada até a janela abrir; o 101º do dia
+    espera o dia seguinte. Se a Meta não responder, a DM fica "pode ter saído": a mesma pessoa não
+    recebe outra, e a linha segue na fila para conferir no Instagram antes de responder à mão. A fila mostra a regra ("enviadas hoje: 37 de 100", por que caiu), o Pausar (com motivo;
+    voltar é assinar de novo) e, em cada linha, o que a DM automática fez. `100/2534001` da Meta
+    ("precisa de Advanced Access") e três recusas seguidas pausam a regra. Editar o texto da DM
+    derruba a regra assinada. A conexão só pede o escopo de mensagens com `INSTAGRAM_PEDIR_MENSAGENS=sim`.
   - **O vídeo no YouTube (MD10).** Na seção "YouTube" do episódio: conectar o canal (OAuth na conta
     dona do canal, projeto próprio no Google Cloud), escolher a thumb que sobe e o horário do vídeo
     (São Paulo). O Mac declara o vídeo final (`root-midia youtube ep-NN --declarar`, ou sozinho no

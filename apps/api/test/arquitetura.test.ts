@@ -2090,6 +2090,45 @@ describe('catraca de arquitetura: o coletor de comentários (MD9)', () => {
 });
 
 /*
+ * MD11 — a DM automática tem o mesmo desenho: o cliente de mensagens da Graph
+ * chega por injeção, com token e dono próprios, e só é chamado DENTRO do efeito
+ * de `instagram.resposta_privada.enviar`, que a porta dispara depois de
+ * consumir o uso do item do lote. O id do comentário não passa pelos argumentos.
+ */
+describe('catraca de arquitetura: a DM automática (MD11)', () => {
+  const TOKEN = 'src/pauta/graph-de-mensagens.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const SERVICO = 'src/pauta/dm-automatica.service.ts';
+
+  it('os três arquivos existem onde a catraca procura', () => {
+    for (const a of [TOKEN, FIACAO, SERVICO]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o cliente de mensagens da Graph tem um dono: só a declaração, a fiação e a DM automática o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_MENSAGENS\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, SERVICO].sort());
+  });
+
+  it('a DM automática não importa o conector, inscreve o efeito, nunca o dispara, e só fala com a Graph dentro dele', () => {
+    const imports = REFS.filter((r) => r.arquivo === SERVICO && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'a DM automática importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === SERVICO)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.resposta_privada\.enviar'/);
+    const efeito = fonte.semTexto.slice(fonte.semTexto.indexOf('private async efeito('), fonte.semTexto.indexOf('private async efeitoDePausar('));
+    const total = (fonte.semTexto.match(/this\s*\.\s*graph\s*\./g) ?? []).length;
+    expect(total).toBeGreaterThan(0);
+    expect((efeito.match(/this\s*\.\s*graph\s*\./g) ?? []).length, 'chamada à Graph fora do efeito').toBe(total);
+  });
+
+  it('o consumo do lote não é chamado pela DM automática: quem consome é a porta', () => {
+    const fonte = FONTES.find((f) => f.arquivo === SERVICO)!;
+    expect(fonte.semTexto).not.toMatch(/consumirItem\s*\(/);
+  });
+});
+
+/*
  * MD7 — o uso contado do lote tem UM chamador: a porta.
  *
  * `LotesService.consumirItem` é o que deixa uma saída acontecer sem aprovação

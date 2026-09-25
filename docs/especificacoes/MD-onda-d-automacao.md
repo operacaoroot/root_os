@@ -943,6 +943,18 @@ esse). O prazo da auditoria é desconhecido.
 
 ### MD11 — DM automática sob o lote, disparada pelo coletor
 
+> **Estado (25/09/2026):** implementada e **desligada** (nota `pauta.dm.automatica`), com o ensaio do
+> "pronto quando" contra dublê local da Graph e as pendências do Pedro registrados no
+> `docs/ESTADO-DA-EXECUCAO.md` (§1, onda D, e item 34 da §4). Escolhas além do texto abaixo: pausar é
+> **R0**, não R1 (R1 com sinal vira R2 e exige outra pessoa, e pausar é o freio); as pausas automáticas
+> revogam o item pelo serviço do lote, como a rotina de publicação (MD8), e a capacidade é o botão da
+> tela; `midias` são as PEÇAS da matéria (a regra é assinada antes de os posts existirem na Meta); o
+> id do comentário não entra nos argumentos nem no RASTRO — o efeito acha a linha do envio pela
+> correlação da passagem; duas capacidades novas, não três (a ativação é o lote); a coleta da MD9
+> deixou de regravar o destino do link de campanha (a troca no /bio fica, e a regra a vê);
+> `INSTAGRAM_PEDIR_MENSAGENS` liga o pedido do escopo de mensagens na conexão, só depois do painel e
+> do App Review.
+
 **SPEC.** A MC18.1 a MC18.4 adaptadas ao lote da MD7/MD8, sem depender do webhook. **Implementada e
 desligada** até o App Review.
 

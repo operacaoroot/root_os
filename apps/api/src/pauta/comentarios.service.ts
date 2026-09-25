@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ActorType, Prisma } from '@prisma/client';
@@ -25,6 +26,7 @@ import {
   type PautaTextoDaDm,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { LotesService } from '../approvals/lotes.service';
 import { AuditService } from '../audit/audit.service';
 import { decifrar } from '../common/crypto';
 import { EfeitosRegistry } from '../gateway/efeitos.registry';
@@ -52,6 +54,7 @@ import {
   type MotivoParaIgnorar,
   type ResumoDaColeta,
 } from './dm-por-comentario';
+import { ATOR_DA_DM, CAPACIDADE_DA_DM, recursoDaRegra } from './dm-automatica';
 
 const CAPACIDADE = PAUTA_CAPACIDADE_DE_LER_COMENTARIOS;
 const DIA = 86_400_000;
@@ -136,6 +139,19 @@ interface Materia {
   pecas: PecaComPalavra[];
 }
 
+/** O texto de uma matéria e o que a DM automática (MD11) confere por trás dele. */
+export interface RegraDaMateria {
+  texto: PautaTextoDaDm;
+  /** As peças da matéria (carrossel e corte) que vieram na pergunta. */
+  pecaIds: string[];
+  bioLinkId: string | null;
+  /** Para onde o link de campanha leva AGORA (editável no /bio). */
+  destinoDoLink: string | null;
+  /** Para onde ele deveria levar: o link público da matéria (D-MC9.6 a). */
+  destinoDaMateria: string | null;
+  paginaNoAr: boolean;
+}
+
 /**
  * ============================================================================
  * A FILA DA DM À MÃO (MD9)
@@ -177,6 +193,12 @@ export class ComentariosService implements OnModuleInit {
     private readonly porta: PortaDoOperador,
     private readonly memoria: MemoriaService,
     @Inject(GRAPH_DE_COMENTARIOS) private readonly graph: GraphDeComentarios,
+    /*
+     * MD11: editar o texto da DM de uma matéria revoga a regra dela no lote da
+     * semana (o hash do item cobre o texto). Global (ApprovalsModule);
+     * `@Optional()` porque as suítes da MD9 montam o serviço sem ele.
+     */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   /** O relógio, trocável na suíte (o expurgo dos 7 dias). */
@@ -500,23 +522,65 @@ export class ComentariosService implements OnModuleInit {
   }
 
   private async textosDe(orgId: string, pecas: PecaComPalavra[]): Promise<PautaTextoDaDm[]> {
+    return (await this.regrasDe(orgId, pecas)).map((r) => r.texto);
+  }
+
+  /** O texto de cada matéria e, para a DM automática (MD11), o link e o destino por trás dele. */
+  private async regrasDe(orgId: string, pecas: PecaComPalavra[]): Promise<RegraDaMateria[]> {
     const materias = this.materiasDe(pecas);
     const eps = await this.episodios(orgId, [...new Set(materias.map((m) => m.episodioId))]);
     const links = await this.linksDasPaginas([...new Set([...eps.values()].map((e) => e.bioPage?.id).filter((x): x is string => !!x))]);
     return materias
       .map((m) => {
         const ep = eps.get(m.episodioId);
-        return this.montarTexto(m, ep, ep?.bioPage ? links.get(`${ep.bioPage.id}|${chaveDaDm(m.itemId)}`) : undefined);
+        const link = ep?.bioPage ? links.get(`${ep.bioPage.id}|${chaveDaDm(m.itemId)}`) : undefined;
+        return {
+          texto: this.montarTexto(m, ep, link),
+          pecaIds: m.pecas.map((p) => p.id),
+          bioLinkId: link?.id ?? null,
+          destinoDoLink: link?.destino ?? null,
+          destinoDaMateria: ep ? this.destinoDa(m, ep.itens).destino : null,
+          paginaNoAr: !!ep?.bioPage?.publicada,
+        };
       })
-      .sort((a, b) => a.apelido.localeCompare(b.apelido) || a.itemN - b.itemN);
+      .sort((a, b) => a.texto.apelido.localeCompare(b.texto.apelido) || a.texto.itemN - b.texto.itemN);
+  }
+
+  /**
+   * As peças dadas, na forma que os textos leem (qualquer status), em ordem
+   * fixa: o texto editado vem da primeira peça que o tiver, e a DM automática
+   * (MD11) assina esse texto — a ordem de leitura não pode mudar o hash.
+   */
+  private async pecasPorId(orgId: string, pecaIds: string[]): Promise<PecaComPalavra[]> {
+    if (!pecaIds.length) return [];
+    return (await this.prisma.pautaPeca.findMany({
+      where: { orgId, id: { in: pecaIds } },
+      orderBy: { id: 'asc' },
+      select: { id: true, formato: true, titulo: true, status: true, meta: true, externalId: true, urlPublicada: true, publicadaEm: true, publicacoes: { select: { externalId: true, permalink: true }, where: { rede: 'instagram' } } },
+    })) as PecaComPalavra[];
+  }
+
+  /**
+   * A regra de cada matéria das peças dadas, para a DM automática (MD11): o
+   * texto (o padrão ou o editado), o link de campanha e para onde ele leva
+   * agora, e o destino que ele DEVERIA ter (o link público da matéria). Não
+   * cria nada.
+   */
+  async regrasDasPecas(orgId: string, pecaIds: string[]): Promise<RegraDaMateria[]> {
+    return this.regrasDe(orgId, await this.pecasPorId(orgId, pecaIds));
   }
 
   /**
    * Cria (ou atualiza o destino de) o link de campanha `campanha:dm:<itemId>` de
    * cada matéria, na página do episódio no ar. Inativo: não aparece na página,
    * mas o `/r/` segue e grava o clique como qualquer link de campanha (MC12).
+   *
+   * Só gente ATUALIZA o destino ("Preparar os textos da DM", a montagem do lote
+   * da semana). A rotina só cria o que falta: se ela regravasse o destino a cada
+   * comentário novo, uma troca feita no /bio seria desfeita calada, e a DM
+   * automática (MD11), que pausa quando o destino muda, nunca a veria.
    */
-  private async garantirLinks(orgId: string, materias: Materia[]): Promise<number> {
+  private async garantirLinks(orgId: string, materias: Materia[], atualizar = true): Promise<number> {
     const eps = await this.episodios(orgId, [...new Set(materias.map((m) => m.episodioId))]);
     let feitos = 0;
     for (const m of materias) {
@@ -525,6 +589,7 @@ export class ComentariosService implements OnModuleInit {
       const { destino, titulo } = this.destinoDa(m, ep.itens);
       if (!destino || destino.length > TETO_DO_DESTINO) continue;
       const chave = chaveDaDm(m.itemId);
+      if (!atualizar && (await this.prisma.bioLink.findUnique({ where: { pageId_chave: { pageId: ep.bioPage.id, chave } }, select: { id: true } }))) continue;
       const ultimo = await this.prisma.bioLink.findFirst({ where: { pageId: ep.bioPage.id }, orderBy: { ordem: 'desc' }, select: { ordem: true } });
       const dados = { rotulo: `DM: ${titulo}`.slice(0, TETO_DO_ROTULO), destino, ativo: false };
       await this.prisma.bioLink.upsert({
@@ -537,25 +602,27 @@ export class ComentariosService implements OnModuleInit {
     return feitos;
   }
 
-  private async garantirLinksDasPecas(orgId: string, pecaIds: string[]): Promise<void> {
-    const pecas = (await this.prisma.pautaPeca.findMany({
-      where: { orgId, id: { in: pecaIds } },
-      select: { id: true, formato: true, titulo: true, status: true, meta: true, externalId: true, urlPublicada: true, publicadaEm: true, publicacoes: { select: { externalId: true, permalink: true }, where: { rede: 'instagram' } } },
-    })) as PecaComPalavra[];
+  /**
+   * O link de campanha da DM de cada matéria das peças dadas: a rotina (MD9) e a
+   * montagem do lote da semana (MD11, com quem montou como ator) chamam.
+   */
+  async garantirLinksDasPecas(orgId: string, pecaIds: string[], actorId: string = ATOR_DO_COLETOR): Promise<void> {
+    const pecas = await this.pecasPorId(orgId, pecaIds);
     const materias = this.materiasDe(pecas);
     // O /r/ é público: o link criado pela rotina deixa rastro como o do "Preparar".
     for (const episodioId of new Set(materias.map((m) => m.episodioId))) {
       const doEpisodio = materias.filter((m) => m.episodioId === episodioId);
-      const feitos = await this.garantirLinks(orgId, doEpisodio);
+      const feitos = await this.garantirLinks(orgId, doEpisodio, actorId !== ATOR_DO_COLETOR);
       if (!feitos) continue;
+      const daRotina = actorId === ATOR_DO_COLETOR;
       await this.audit.log({
         orgId,
-        actorId: ATOR_DO_COLETOR,
-        actorType: ActorType.system,
+        actorId,
+        ...(daRotina ? { actorType: ActorType.system } : {}),
         action: 'pauta.dm_links',
         entityType: 'pauta_episodio',
         entityId: episodioId,
-        after: { materias: doEpisodio.length, links: feitos, origem: PAUTA_TIPO_DA_ROTINA_DE_COMENTARIOS },
+        after: { materias: doEpisodio.length, links: feitos, ...(daRotina ? { origem: PAUTA_TIPO_DA_ROTINA_DE_COMENTARIOS } : {}) },
       });
     }
   }
@@ -565,7 +632,10 @@ export class ComentariosService implements OnModuleInit {
   /** `GET /pauta/comentarios`: a fila e os textos. */
   async fila(orgId: string, incluir?: string): Promise<PautaFilaDeComentarios> {
     const agora = this.agora();
-    const include = { peca: { select: { id: true, formato: true, titulo: true, status: true, meta: true, externalId: true, urlPublicada: true, publicadaEm: true } } } as const;
+    const include = {
+      peca: { select: { id: true, formato: true, titulo: true, status: true, meta: true, externalId: true, urlPublicada: true, publicadaEm: true } },
+      envio: { select: { estado: true, seguradoAte: true, enviadoEm: true, motivo: true } },
+    } as const;
     // O teto corta pelo que importa: primeiro as que esperam resposta, das que
     // vencem antes; o resto (respondidas e vencidas) completa, das mais novas.
     const esperando = ondeEsperaResposta(orgId, agora);
@@ -614,9 +684,17 @@ export class ComentariosService implements OnModuleInit {
         comentadoEm: l.comentadoEm.toISOString(),
         expiraEm: l.expiraEm.toISOString(),
         respondidoEm: l.respondidoEm?.toISOString() ?? null,
-        respondidoPor: l.respondidoPor ? (nomes.get(l.respondidoPor) ?? 'outra pessoa') : null,
+        respondidoPor: l.respondidoPor ? (l.respondidoPor === ATOR_DA_DM ? 'DM automática' : (nomes.get(l.respondidoPor) ?? 'outra pessoa')) : null,
         texto: t?.texto ?? null,
         motivo: t ? t.motivo : 'A matéria desta peça não foi achada.',
+        automatica: l.envio
+          ? {
+              estado: l.envio.estado,
+              seguradoAte: l.envio.seguradoAte?.toISOString() ?? null,
+              enviadoEm: l.envio.enviadoEm?.toISOString() ?? null,
+              motivo: l.envio.motivo,
+            }
+          : null,
       };
     });
     // Primeiro o que espera resposta dentro do prazo, do mais antigo (o que vence antes) ao mais novo.
@@ -717,6 +795,12 @@ export class ComentariosService implements OnModuleInit {
       entityId: episodioId,
       after: { itemId, padrao: limpo === null, bytes: limpo === null ? null : bytesUtf8(limpo) },
     });
+    // A regra assinada da DM automática levava o texto de antes: ela cai, e volta no próximo lote.
+    if (this.lotes) {
+      await this.lotes
+        .revogarItensDoRecurso(orgId, CAPACIDADE_DA_DM, recursoDaRegra(episodioId, itemId), 'o texto da DM foi editado depois da montagem do lote', actorId)
+        .catch((e) => this.log.warn(`a regra da DM de ${itemId} não foi revogada: ${(e as Error).message}`));
+    }
     const pecasDepois = (await this.pecasDosTextos(orgId, this.agora(), episodioId)).filter((p) => lerMetaDaSemana(p.meta).itemId === itemId);
     const [depois] = await this.textosDe(orgId, pecasDepois);
     return depois;

@@ -701,7 +701,7 @@ describe.skipIf(!URL)('MD9: a fila da DM à mão pela porta, com o dublê da Gra
     expect(graph.chamadas).toEqual([]);
   });
 
-  it('carrossel e corte da mesma matéria usam o MESMO link da DM, e o link criado pela rotina vai ao RASTRO', async () => {
+  it('carrossel e corte da mesma matéria usam o MESMO link da DM, e o link criado pela rotina vai ao RASTRO; o que já existe a rotina não regrava', async () => {
     const { rodadaId } = (await prisma.pautaPeca.findUniqueOrThrow({ where: { id: carrossel }, select: { rodadaId: true } }));
     const corteDosAgentes = (
       await prisma.pautaPeca.create({
@@ -710,6 +710,8 @@ describe.skipIf(!URL)('MD9: a fila da DM à mão pela porta, com o dublê da Gra
     ).id;
     try {
       await prisma.auditLog.deleteMany({ where: { orgId: ORG, action: 'pauta.dm_links' } });
+      // MD11: a rotina só CRIA o link que falta; o que existe (e o destino dele) é de gente.
+      await prisma.bioLink.deleteMany({ where: { pageId, chave: 'campanha:dm:item-1' } });
       graph.comentarios.set('midia-carrossel', [comentario('m-1', 'AGENTES', FULANO)]);
       graph.comentarios.set('midia-corte-agentes', [comentario('m-2', 'agentes', BELTRANO)]);
       await coletar();
@@ -724,8 +726,16 @@ describe.skipIf(!URL)('MD9: a fila da DM à mão pela porta, com o dublê da Gra
       const rastro = await prisma.auditLog.findMany({ where: { orgId: ORG, action: 'pauta.dm_links' } });
       expect(rastro.length).toBeGreaterThan(0);
       expect(rastro[0]).toMatchObject({ actorType: 'system', actorId: 'rotina', entityId: episodioId });
+
+      // O destino trocado no /bio não é desfeito pela rotina: é o que a DM automática confere para pausar.
+      await prisma.bioLink.update({ where: { id: links[0].id }, data: { destino: 'https://outro.site/trocado' } });
+      graph.comentarios.set('midia-carrossel', [comentario('m-1', 'AGENTES', FULANO), comentario('m-3', 'AGENTES', { id: 'pessoa-m3', username: 'm3' })]);
+      await coletar();
+      expect((await prisma.bioLink.findUniqueOrThrow({ where: { id: links[0].id } })).destino).toBe('https://outro.site/trocado');
+      await prisma.bioLink.update({ where: { id: links[0].id }, data: { destino: ITENS[0].url } });
     } finally {
       await prisma.comentarioComPalavra.deleteMany({ where: { pecaId: corteDosAgentes } });
+      await prisma.comentarioComPalavra.deleteMany({ where: { orgId: ORG, commentId: 'm-3' } });
       await prisma.pautaPeca.delete({ where: { id: corteDosAgentes } });
     }
   });

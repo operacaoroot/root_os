@@ -298,6 +298,11 @@ services:
       INSTAGRAM_OAUTH_URL: ${INSTAGRAM_OAUTH_URL:-}
       INSTAGRAM_TOKEN_URL: ${INSTAGRAM_TOKEN_URL:-}
       INSTAGRAM_GRAPH_URL: ${INSTAGRAM_GRAPH_URL:-}
+      # MD11: `sim` faz a conexão de publicação pedir também
+      # instagram_business_manage_messages (a DM automática). Só depois de o
+      # escopo estar no painel do app e no App Review: sem isso a Meta recusa a
+      # tela de conexão inteira. Vazia = não pede (o padrão).
+      INSTAGRAM_PEDIR_MENSAGENS: ${INSTAGRAM_PEDIR_MENSAGENS:-}
       TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
       BIO_SYNC_INTERVAL_MIN: ${BIO_SYNC_INTERVAL_MIN:-360}

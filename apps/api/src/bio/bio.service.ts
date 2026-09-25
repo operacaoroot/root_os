@@ -456,7 +456,7 @@ export class BioService {
     const escopos = c ? instagram.escoposConcedidos(c.escopos ?? '') ?? [] : [];
     return {
       credencialConfigurada: cred.items.some((i) => i.plataforma === 'instagram' && i.configurada),
-      escoposPedidos: [...instagram.ESCOPOS_DE_PUBLICACAO],
+      escoposPedidos: [...instagram.escoposDa('publicacao')],
       conexao: c
         ? {
             id: c.id,

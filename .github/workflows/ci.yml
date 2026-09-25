@@ -182,6 +182,13 @@ jobs:
       # e o lote R4 cobre; os esquemas fechados, a publicação é o envio mais o
       # horário), sobrescrita 39 (a conta das sem ferramenta foi a 19, sem caso
       # novo). Os pisos ficam onde estão.
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): (97) em 2 arquivos —
+      # politica 58 (+4: o envio é R3 pelo efeito e só sob o lote; com a
+      # procedência externa vira R4 e o lote R4 cobre; o esquema fechado sem
+      # lugar para o comentário nem a pessoa; pausar é R0 e nem com sinal pede
+      # outra pessoa, contra o R1 que pediria), sobrescrita 39 (a conta das sem
+      # ferramenta foi a 21, sem caso novo). Os pisos ficam onde estão.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -549,8 +556,18 @@ jobs:
       # corte proposto na aba Semana troca de candidato e relê a agenda; no
       # lote, não. Medido: 609 casos em 47 arquivos. O piso de CASOS sobe 3
       # (~15% de folga sobre os 4 novos), para 421.
-      PISO_CASOS_WEB: '421'
-      PISO_ARQUIVOS_WEB: '38'
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): +7 casos, +1 arquivo,
+      # `component/pauta-dm-automatica` (novo): as regras no "Aprovar a
+      # semana" com o texto exato, o teto e a nota; o "fica fora" da DM no
+      # pedido; a regra já assinada que não entra de novo; o cartão do lote em
+      # /atendimento com o texto, o destino, os posts e o teto; na fila, a
+      # regra com "enviadas hoje", o Pausar com motivo, o estado automático de
+      # cada linha e a nota desligada. Medido: 616 casos em 48 arquivos. O
+      # piso de ARQUIVOS sobe 1, para 39; o de CASOS sobe 6 (~15% de folga
+      # sobre os 7 novos), para 427.
+      PISO_CASOS_WEB: '427'
+      PISO_ARQUIVOS_WEB: '39'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -1823,8 +1840,30 @@ jobs:
       # corte). Medido: 3005 casos em 73 arquivos com o banco; sem ele, 2318
       # passados e 687 pulados. O piso de CASOS sobe 12 (~15% de folga sobre
       # os 15 novos), para 2165.
-      PISO_CASOS_API: '2165'
-      PISO_ARQUIVOS_API: '65'
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): +40 casos, +1 arquivo.
+      # `pauta-dm-automatica` (novo, 32): 9 sem banco (o texto com a linha de
+      # mensagem automática e os bytes, os argumentos sem o comentário, o teto
+      # 100/200, a janela de 7 dias, as 08h de São Paulo, as três recusas, o
+      # 100/2534001 e o resultado incerto, as constantes e a rota, a variável
+      # das mensagens) e 23 COM BANCO (o "pronto quando" inteiro, a corrida no
+      # último uso do dia e na virada, o conector desligado, as pausas, a
+      # segurada que perde a regra, o "fica fora" e a ativação que revoga; e,
+      # da revisão, o catálogo sem a capacidade que não derruba a semana, a
+      # trava da matéria que sobrevive à regra assinada de novo, os 41
+      # comentários de matéria sem regra que não tomam as vagas, a Meta que
+      # não responde, o `enviando` preso, a regra vencida e o expurgo de 90
+      # dias também com o módulo desligado).
+      # `arquitetura` +4 e `escritas-pela-porta` +2 (o cliente de mensagens tem
+      # dono e só o efeito o chama; a DM não consome item; o envio marca a
+      # procedência), `root-midia` +1 (a agenda com a DM automática ligada),
+      # `pauta-comentarios` +0 (o caso do link ganhou a rotina que não regrava
+      # o destino). Medido: 3045 casos em 74 arquivos com o banco; sem ele,
+      # 2335 passados e 710 pulados (68 + 6 arquivos). O piso de ARQUIVOS
+      # sobe 1, para 66; o de CASOS sobe 14 (~15% de folga sobre os 17 que
+      # rodam sem banco; os 6 da revisão são todos com banco), para 2179.
+      PISO_CASOS_API: '2179'
+      PISO_ARQUIVOS_API: '66'
 
     steps:
       - uses: actions/checkout@v4
@@ -2291,7 +2330,12 @@ jobs:
           # `EnvioAoYoutube` (filha do episódio, em
           # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
           # casos. O piso sobe 5, para 276.
-          PISO_CASOS_ISOLAMENTO: '276'
+          #
+          # MD11, A DM AUTOMÁTICA (25/09/2026): **358 casos**.
+          # `EnvioDeResposta` (filha do comentário, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 281.
+          PISO_CASOS_ISOLAMENTO: '281'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

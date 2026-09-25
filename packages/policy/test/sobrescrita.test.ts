@@ -402,8 +402,21 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // `youtube.video.publicar`. Quem envia é o Mac, pela sessão que a tela
     // abre com o lote assinado; quem agenda é a rotina. Agente nenhum sobe
     // vídeo nem marca horário no canal da empresa.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(19);
-    for (const id of ['instagram.post.publicar', 'pauta.semana.aprovar', 'instagram.comentario.ler', 'youtube.video.enviar', 'youtube.video.publicar']) {
+    //
+    // Vinte e uma desde a MD11 (25/09/2026): `instagram.resposta_privada.enviar`
+    // e `instagram.regra_de_resposta.pausar`. Quem manda a DM é a rotina, com a
+    // regra assinada no lote; quem pausa é gente na fila. Um agente que
+    // mandasse DM a estranho em nome da marca é exatamente o que a regra evita.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(21);
+    for (const id of [
+      'instagram.post.publicar',
+      'pauta.semana.aprovar',
+      'instagram.comentario.ler',
+      'youtube.video.enviar',
+      'youtube.video.publicar',
+      'instagram.resposta_privada.enviar',
+      'instagram.regra_de_resposta.pausar',
+    ]) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }
     for (const id of ['conector.desligar', 'conector.religar']) {

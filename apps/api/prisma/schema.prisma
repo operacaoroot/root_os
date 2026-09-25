@@ -137,6 +137,7 @@ model Org {
   /// MD9: quem comentou a palavra-chave num post da semana (a fila da DM à mão).
   pautaComentarios ComentarioComPalavra[]
   enviosAoYoutube  EnvioAoYoutube[]
+  enviosDeResposta EnvioDeResposta[]
   lotesDeAprovacao AprovacaoDeLote[]
   itensDeLote      ItemDoLote[]
 
@@ -1720,12 +1721,62 @@ model ComentarioComPalavra {
   comentadoEm   DateTime
   expiraEm      DateTime
   respondidoEm  DateTime?
-  /// O id de quem marcou como respondido.
+  /// O id de quem marcou como respondido (ou `dm-automatica`, quando a DM saiu sozinha, MD11).
   respondidoPor String?
   criadoEm      DateTime  @default(now())
+  /// MD11: a tentativa de DM automática deste comentário, quando houve (uma por comentário).
+  envio         EnvioDeResposta?
 
   @@unique([orgId, commentId])
   @@index([pecaId])
+  @@index([orgId, expiraEm])
+}
+
+/// MD11: o que a DM automática fez com um comentário da fila.
+enum EnvioDeRespostaEstado {
+  segurado
+  enviando
+  enviado
+  recusado
+  erro
+  ignorado
+  /// A Meta não respondeu (rede, prazo, 5xx sem corpo) ou a passagem caiu no meio: pode ter saído, e a trava fica.
+  incerto
+}
+
+/// MD11: a DM automática de UM comentário, sob o item de lote da regra da matéria.
+/// Guarda só o HMAC da pessoa (nunca o @ nem o texto do comentário) e vive 90 dias.
+model EnvioDeResposta {
+  id            String                @id @default(uuid())
+  /// Sentinela: o gatilho troca por `ComentarioComPalavra.orgId`.
+  orgId         String                @default("")
+  org           Org                   @relation(fields: [orgId], references: [id])
+  comentarioId  String                @unique
+  comentario    ComentarioComPalavra  @relation(fields: [comentarioId], references: [id], onDelete: Cascade)
+  /// O item de lote da regra (a matéria) que autoriza o envio.
+  loteItemId    String
+  pessoaHmac    String
+  /// `<episodioId>:<itemId>:<pessoaHmac>` (a matéria, não o item do lote) enquanto a tentativa vale (segurada, saindo,
+  /// enviada ou incerta): uma DM por pessoa por regra, também depois de a regra ser assinada de novo.
+  /// Nula quando não saiu, para a mesma pessoa poder receber por outro comentário.
+  travaDaPessoa String?               @unique
+  estado        EnvioDeRespostaEstado
+  /// Fora da janela de horário: sai a partir daqui (a abertura da janela da política, no fuso dela).
+  seguradoAte   DateTime?
+  /// A correlação da passagem que levou o pedido à porta: é por ela que o efeito acha esta linha.
+  correlationId String?
+  mensagemId    String?
+  /// `código/subcódigo` do erro da Meta, quando houve.
+  codigoDoErro  String?
+  motivo        String?
+  enviadoEm     DateTime?
+  /// Retenção de 90 dias (D-MC9.9): a rotina apaga a linha depois disso.
+  expiraEm      DateTime
+  criadoEm      DateTime              @default(now())
+  atualizadoEm  DateTime              @updatedAt
+
+  @@index([orgId, loteItemId, estado])
+  @@index([orgId, estado, seguradoAte])
   @@index([orgId, expiraEm])
 }
 

@@ -52,6 +52,7 @@ import { LoteDaSemanaController } from './lote-da-semana.controller';
 import { LoteDaSemanaService } from './lote-da-semana.service';
 import { ComentariosController } from './comentarios.controller';
 import { ComentariosService } from './comentarios.service';
+import { DmAutomaticaService } from './dm-automatica.service';
 
 // Módulo Pauta — ondas 1 (acervo), 2 (rotina) e 3 (canais). Ver docs/PAUTA.md.
 // GoogleModule: espelho .md no Drive. IntegrationsModule: write-back no ClickUp.
@@ -63,8 +64,8 @@ import { ComentariosService } from './comentarios.service';
 // TenantsModule: a rota pública da mídia (MD4) confere se a empresa do token
 // ainda tem o módulo pauta — requisição anônima passa pelo gate de módulos.
 // GraphDePublicacaoModule: os clientes da Graph que o publicador do Instagram
-// (MD6) e o coletor de comentários (MD9) recebem por injeção; o HTTP mora no
-// conector da bio.
+// (MD6), o coletor de comentários (MD9) e a DM automática (MD11) recebem por
+// injeção; o HTTP mora no conector da bio.
 // YoutubeModule: o cliente do YouTube (MD10) que o envio recebe por injeção; o
 // HTTP e a credencial moram no conector, e o retorno do OAuth também.
 @Module({
@@ -138,11 +139,13 @@ import { ComentariosService } from './comentarios.service';
     ComentariosService,
     // MD10: o vídeo do episódio no YouTube — a sessão do Mac, os efeitos de envio e de agendamento.
     EnvioAoYoutubeService,
+    // MD11: a DM automática sob o lote — os efeitos de responder e de pausar, e a passagem da rotina.
+    DmAutomaticaService,
   ],
   // EvolutionService sai daqui para o AgentsModule ligar a capacidade
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
   // PublicacaoInstagramService e ComentariosService, para os executores das
   // rotinas (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService],
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService],
 })
 export class PautaModule {}

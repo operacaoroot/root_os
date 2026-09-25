@@ -5,6 +5,7 @@ import {
   LOTE_ESTADO_ROTULO,
   PAUTA_CAPACIDADE_DE_ENVIAR_AO_YOUTUBE,
   PAUTA_CAPACIDADE_DE_PUBLICAR_NO_YOUTUBE,
+  PAUTA_FORA_DO_LOTE_DM,
   PAUTA_FORA_DO_LOTE_YOUTUBE,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   diaNoFuso,
@@ -31,6 +32,10 @@ import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
  * MD10: o vídeo do episódio no YouTube entra no MESMO lote quando está pronto
  * (o envio privado e, com a auditoria aprovada, o agendamento). A linha do
  * YouTube diz o que falta e o que entra, e ele também pode ficar fora.
+ *
+ * MD11: as regras da DM automática (uma por matéria com palavra e link
+ * público) também entram no lote, com o texto exato e o teto por dia. Elas só
+ * mandam alguma coisa com a nota `pauta.dm.automatica` ligada — a tela diz.
  */
 
 /** O que do YouTube entra no lote, pelo que a API mandou: os dois, só o envio (modo teste) ou só o agendamento (o vídeo já subiu). */
@@ -121,10 +126,14 @@ export function AprovarASemana({
   const entram = livres.filter((p) => !fora.has(p.id));
   const yt = estado.youtube ?? null;
   const youtubeEntra = !!yt?.entra && !fora.has(PAUTA_FORA_DO_LOTE_YOUTUBE);
-  const bloqueio = estado.impedimentos.length > 0 || entram.some((p) => p.problema) || (entram.length === 0 && !youtubeEntra);
+  const dm = estado.dm ?? null;
+  const regrasQueEntram = (dm?.regras ?? []).filter((r) => !r.problema && r.noLote?.estadoDoLote !== 'ativo');
+  const dmEntra = regrasQueEntram.length > 0 && !fora.has(PAUTA_FORA_DO_LOTE_DM);
+  const bloqueio = estado.impedimentos.length > 0 || entram.some((p) => p.problema) || (entram.length === 0 && !youtubeEntra && !dmEntra);
   const rotuloDoBotao = [
     entram.length ? `${entram.length} post${entram.length === 1 ? '' : 's'}` : '',
     youtubeEntra ? 'o vídeo no YouTube' : '',
+    dmEntra ? `${regrasQueEntram.length} DM${regrasQueEntram.length === 1 ? '' : 's'} automática${regrasQueEntram.length === 1 ? '' : 's'}` : '',
   ]
     .filter(Boolean)
     .join(' + ');
@@ -207,6 +216,45 @@ export function AprovarASemana({
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {dm && dm.regras.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-border p-2" aria-label="A DM automática">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium">DM automática a quem comentar a palavra</span>
+            {dm.automatica ? <Chip tone="good">ligada</Chip> : <Chip tone="warn">desligada — assinada, nada sai sozinho</Chip>}
+            {regrasQueEntram.length > 0 && podePublicar && (
+              <label className="ml-auto flex items-center gap-1 text-xs text-muted">
+                <input type="checkbox" checked={fora.has(PAUTA_FORA_DO_LOTE_DM)} onChange={() => alternar(PAUTA_FORA_DO_LOTE_DM)} />
+                fica fora
+              </label>
+            )}
+          </div>
+          {!dm.automatica && (
+            <p className="break-words text-xs text-muted">
+              Enquanto a nota pauta.dm.automatica não for ligada (depois do App Review da Meta), a resposta segue à mão, pela fila de comentários.
+            </p>
+          )}
+          <ul className="space-y-2">
+            {dm.regras.map((r) => (
+              <li key={r.itemId} className="space-y-1 text-xs" aria-label={`DM da matéria ${r.itemN}`}>
+                <p className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-medium">
+                    matéria {r.itemN} · {r.palavra}
+                  </span>
+                  <span className="text-muted">até {r.tetoPorDia} por dia{r.janelaAte ? `, até ${quando(r.janelaAte)}` : ''}</span>
+                  {r.noLote && <Chip tone={r.noLote.estadoDoLote === 'ativo' ? 'good' : 'warn'}>{LOTE_ESTADO_ROTULO[r.noLote.estadoDoLote]}</Chip>}
+                </p>
+                {r.texto ? (
+                  <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1 text-[12px]">{r.texto}</pre>
+                ) : (
+                  !r.problema && <p className="break-words text-muted">O link rastreado da matéria nasce na montagem, e o texto sai com ele.</p>
+                )}
+                {r.problema && <p className="break-words text-muted">Fica de fora: {r.problema}</p>}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

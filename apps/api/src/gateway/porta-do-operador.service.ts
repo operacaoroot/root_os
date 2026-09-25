@@ -3,6 +3,7 @@ import { ActorType } from '@prisma/client';
 import { correlacaoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { EfeitosRegistry } from './efeitos.registry';
 import { FILA_DE_APROVACAO } from './fila-de-aprovacao';
+import type { ProcedenciaExterna } from '../policy/sinais.service';
 import { ToolGateway, type ExecCtx } from './tool-gateway.service';
 
 /*
@@ -141,6 +142,12 @@ export class PortaDoOperador {
     valorCentavos?: number | null;
     /** Só quando a rota recebeu um `x-approval-token` já confirmado. */
     approvalToken?: string;
+    /**
+     * A marca de conteúdo de fora (RF-G-07), de mão única: quem monta o pedido a
+     * partir do que um estranho escreveu (a DM automática responde a um
+     * comentário, MD11) marca, e o sinal `fonte_nao_confiavel` sobe um degrau.
+     */
+    procedenciaExterna?: ProcedenciaExterna;
   }): Promise<R | AcaoRetida> {
     const { capabilityId } = entrada;
 
@@ -169,6 +176,7 @@ export class PortaDoOperador {
        * história só. Sem contexto aberto (script de terminal, cron) cunha-se uma.
        */
       correlationId: correlacaoAtual() ?? novaCorrelacao('operador'),
+      ...(entrada.procedenciaExterna ? { procedenciaExterna: entrada.procedenciaExterna } : {}),
       /*
        * `capacidadesDeclaradas` fica de fora DE PROPÓSITO. A declaração é o
        * escopo de um AGENTE (RF-N-03); uma pessoa é limitada pela permissão de

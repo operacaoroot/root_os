@@ -221,6 +221,9 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // O vídeo do episódio a caminho do YouTube (MD10, 25/09/2026): a empresa é a
   // do episódio — migration `20260925032020_envio_ao_youtube`.
   { modelo: 'EnvioAoYoutube', pai: 'PautaEpisodio', fk: 'episodioId' },
+  // A DM automática de um comentário da fila (MD11, 25/09/2026): a empresa é a
+  // do comentário — migration `20260925053358_envio_de_resposta`.
+  { modelo: 'EnvioDeResposta', pai: 'ComentarioComPalavra', fk: 'comentarioId' },
 ] as const;
 
 /**

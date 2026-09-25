@@ -5,7 +5,7 @@
  * Contrapartida: não tem business_discovery (monitorar perfil de terceiro).
  */
 import type { BioFinalidade } from '@mktos/shared'
-import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_PUBLICAR } from '@mktos/shared'
+import { INSTAGRAM_ESCOPO_DE_COMENTARIOS, INSTAGRAM_ESCOPO_DE_MENSAGENS, INSTAGRAM_ESCOPO_DE_PUBLICAR } from '@mktos/shared'
 
 /*
  * Os três endereços aceitam sobrescrita por ambiente só para o dublê local
@@ -36,6 +36,16 @@ export const ESCOPOS_DE_PUBLICACAO = [
   INSTAGRAM_ESCOPO_DE_COMENTARIOS,
 ] as const
 
+/**
+ * A DM automática (MD11) pede também mensagens, mas só quando o ambiente manda
+ * (`INSTAGRAM_PEDIR_MENSAGENS=sim`): o escopo precisa estar configurado no
+ * painel do app antes, senão a Meta recusa a tela de conexão inteira e a
+ * publicação (MD5) para de conectar junto.
+ */
+export function pedeMensagens(env: Record<string, string | undefined> = process.env): boolean {
+  return /^(1|sim|true)$/i.test((env.INSTAGRAM_PEDIR_MENSAGENS ?? '').trim())
+}
+
 export type Credencial = { appId: string; secret: string }
 
 export function redirectUri() {
@@ -43,7 +53,8 @@ export function redirectUri() {
 }
 
 export function escoposDa(finalidade: BioFinalidade): readonly string[] {
-  return finalidade === 'publicacao' ? ESCOPOS_DE_PUBLICACAO : ESCOPOS
+  if (finalidade !== 'publicacao') return ESCOPOS
+  return pedeMensagens() ? [...ESCOPOS_DE_PUBLICACAO, INSTAGRAM_ESCOPO_DE_MENSAGENS] : ESCOPOS_DE_PUBLICACAO
 }
 
 /** A mesma redirect nas duas finalidades: a diferença viaja no `state`, não no endereço. */
@@ -210,6 +221,9 @@ const PUBLICACAO = () => `${GRAPH()}/${VERSAO_DA_GRAPH_DE_PUBLICACAO}`;
 
 /** O erro de uma chamada da Graph, com o código HTTP separado para quem decide o que repetir. */
 export class ErroDaGraph extends Error {
+  /** O `code`/`error_subcode` do corpo de erro da Meta, quando veio (a DM automática decide por ele, MD11). */
+  codigoDaMeta?: { code: number | null; subcode: number | null };
+
   constructor(
     mensagem: string,
     /** `null` quando nem houve resposta (rede, prazo): o pedido pode ter chegado. */
@@ -388,4 +402,53 @@ export async function comentariosDa(
     depois = cursor;
   }
   return { comentarios, truncado: true };
+}
+
+// ---------------------------------------------------------------------------
+// A resposta privada (MD11): a DM automática a quem comentou a palavra.
+// ---------------------------------------------------------------------------
+
+/**
+ * Manda UMA resposta privada a um comentário (`recipient.comment_id`). O token
+ * vai no cabeçalho, não na URL. O erro traz o `code`/`error_subcode` da Meta
+ * em `codigoDaMeta`: `100/2534001` é a mensagem que exige Advanced Access.
+ */
+export async function responderEmPrivado(
+  token: string,
+  igUserId: string,
+  commentId: string,
+  texto: string,
+): Promise<{ mensagemId: string | null }> {
+  let r: Response;
+  try {
+    r = await fetch(`${PUBLICACAO()}/${encodeURIComponent(igUserId)}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text: texto } }),
+      signal: AbortSignal.timeout(PRAZO_DA_CHAMADA_MS),
+    });
+  } catch (e) {
+    throw new ErroDaGraph(`resposta privada sem resposta: ${(e as Error).message}`, null);
+  }
+  const corpo = await r.text();
+  let json: unknown = null;
+  try {
+    json = JSON.parse(corpo);
+  } catch {
+    json = null;
+  }
+  if (!r.ok) {
+    const erro = (json as { error?: { code?: unknown; error_subcode?: unknown; message?: unknown } } | null)?.error;
+    const falha = new ErroDaGraph(
+      `resposta privada falhou: ${r.status} ${typeof erro?.message === 'string' ? erro.message.slice(0, 300) : corpo.slice(0, 300)}`,
+      r.status,
+    );
+    falha.codigoDaMeta = {
+      code: typeof erro?.code === 'number' ? erro.code : null,
+      subcode: typeof erro?.error_subcode === 'number' ? erro.error_subcode : null,
+    };
+    throw falha;
+  }
+  const id = (json as { message_id?: unknown } | null)?.message_id;
+  return { mensagemId: typeof id === 'string' && id ? id : null };
 }

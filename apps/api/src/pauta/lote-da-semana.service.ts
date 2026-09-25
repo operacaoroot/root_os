@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
+  PAUTA_FORA_DO_LOTE_DM,
   PAUTA_FORA_DO_LOTE_YOUTUBE,
   PAUTA_FORMATOS_DA_SEMANA,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
@@ -25,6 +26,8 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LotesService, type DetalheDoLote, type ItemParaMontar, type ItemVivo, type LoteQueAtivou, type ReacaoAoAtivar } from '../approvals/lotes.service';
 import { EnvioAoYoutubeService } from './envio-ao-youtube.service';
+import { DmAutomaticaService } from './dm-automatica.service';
+import { CAPACIDADE_DA_DM } from './dm-automatica';
 import { CAPACIDADE_DE_ENVIAR, CAPACIDADE_DE_PUBLICAR, capacidadesDoLote, janelasDoYoutube } from './youtube-do-episodio';
 import { ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
 import { legendaDoPedido, type ContaParaPublicar } from './publicacao-instagram';
@@ -108,6 +111,11 @@ export class LoteDaSemanaService implements OnModuleInit {
      * ele — e então o lote é só do Instagram, como antes.
      */
     @Optional() private readonly youtube?: EnvioAoYoutubeService,
+    /*
+     * MD11: as regras da DM automática entram no MESMO lote (uma por matéria).
+     * `@Optional()` pelo mesmo motivo do YouTube: sem ele, o lote não leva DM.
+     */
+    @Optional() private readonly dm?: DmAutomaticaService,
   ) {}
 
   onModuleInit(): void {
@@ -206,8 +214,10 @@ export class LoteDaSemanaService implements OnModuleInit {
 
     const lotes = await this.lotes.lotesEmCurso(orgId, CAPACIDADE_DO_LOTE, RECURSO_DO_LOTE, e.id, agora);
     const youtube = await this.itensDoYoutube(orgId, e.id, agora);
+    const dm = this.dm ? (await this.dm.paraOLote(orgId, e.id, agora)).tela : undefined;
     return {
       youtube: youtube.tela,
+      ...(dm ? { dm } : {}),
       episodioId: e.id,
       apelido: apelidoDoEpisodio(e.numero),
       status: e.status,
@@ -357,13 +367,15 @@ export class LoteDaSemanaService implements OnModuleInit {
       const agora = new Date();
       const todas = await this.pecasDoEpisodio(orgId, e);
       const pecas = todas.filter((p) => entraNaAprovacao(p.status));
-      const desconhecidas = fora.filter((id) => id !== PAUTA_FORA_DO_LOTE_YOUTUBE && !todas.some((p) => p.id === id));
+      const desconhecidas = fora.filter((id) => id !== PAUTA_FORA_DO_LOTE_YOUTUBE && id !== PAUTA_FORA_DO_LOTE_DM && !todas.some((p) => p.id === id));
       if (desconhecidas.length) throw new BadRequestException(`"Fica fora" com peça que não é desta semana: ${desconhecidas.join(', ')}.`);
 
       const vivos = await this.lotes.itensVivos(orgId, CAPACIDADE_DO_ITEM, pecas.map((p) => p.id), agora);
       const candidatas = pecas.filter((p) => !fora.includes(p.id) && vivos.get(p.id)?.estadoDoLote !== 'ativo');
       const youtube = fora.includes(PAUTA_FORA_DO_LOTE_YOUTUBE) ? { itens: [] as ItemParaMontar[], resumo: '' } : await this.itensDoYoutube(orgId, e.id, agora, { actorId });
-      if (!candidatas.length && !youtube.itens.length) {
+      const dm =
+        fora.includes(PAUTA_FORA_DO_LOTE_DM) || !this.dm ? { itens: [] as ItemParaMontar[], resumo: '' } : await this.dm.paraOLote(orgId, e.id, agora, { actorId });
+      if (!candidatas.length && !youtube.itens.length && !dm.itens.length) {
         throw new BadRequestException('Não há peça para aprovar: todas estão fora, sem rascunho ou aprovada, ou já no lote assinado.');
       }
       const ocupado = ocupadoComAsCandidatas(await this.ocupados(orgId, candidatas.map(slotDaPeca).filter((d): d is Date => !!d)), candidatas);
@@ -386,7 +398,7 @@ export class LoteDaSemanaService implements OnModuleInit {
         const slot = slotDaPeca(p)!;
         return { capabilityId: CAPACIDADE_DO_ITEM, recursoId: p.id, args: argsDoItem(p, conta!) as unknown as Record<string, unknown>, ...janelaDoItem(slot) };
       });
-      const itens = [...posts, ...youtube.itens];
+      const itens = [...posts, ...youtube.itens, ...dm.itens];
       const validaAte = validadeDoLote(itens.map((i) => i.janelaAte));
       const slots = posts.map((i) => i.janelaDe.getTime());
       const apelido = apelidoDoEpisodio(e.numero);
@@ -395,6 +407,7 @@ export class LoteDaSemanaService implements OnModuleInit {
           ? `Semana de ${apelido}: ${posts.length} post(s) no @${conta!.handle}, de ${quando(new Date(Math.min(...slots)))} a ${quando(new Date(Math.max(...slots)))} (São Paulo)`
           : `Semana de ${apelido}`,
         youtube.resumo,
+        dm.resumo,
       ]
         .filter(Boolean)
         .join('; ');
@@ -433,6 +446,7 @@ export class LoteDaSemanaService implements OnModuleInit {
           loteId: m.loteId,
           itens: itens.length,
           ...(youtube.itens.length ? { youtube: youtube.itens.map((i) => i.capabilityId) } : {}),
+          ...(dm.itens.length ? { dm: dm.itens.length } : {}),
           fora: [...fora],
           hashConteudo: m.hashConteudo.slice(0, 12),
           validaAte: m.validaAte,
@@ -549,16 +563,18 @@ export class LoteDaSemanaService implements OnModuleInit {
         divergente: i.estado === 'ativo' ? d.divergente : null,
       });
     }
+    const dm = this.dm ? await this.dm.conteudoDoLote(orgId, l.itens.filter((x) => x.capabilityId === CAPACIDADE_DA_DM), conta?.handle ?? null) : [];
     return {
       loteId: l.id,
       estado: l.estado,
       hashCurto: l.hashConteudo.slice(0, 12),
       validaAte: l.validaAte,
       total: l.itens.length,
-      divergentes: itens.filter((i) => i.divergente).length + youtube.filter((i) => i.divergente).length,
+      divergentes: itens.filter((i) => i.divergente).length + youtube.filter((i) => i.divergente).length + dm.filter((i) => i.divergente).length,
       handle: conta?.handle ?? null,
       itens,
       youtube,
+      ...(dm.length ? { dm } : {}),
     };
   }
 
@@ -652,6 +668,12 @@ export class LoteDaSemanaService implements OnModuleInit {
     for (const i of lote.itens.filter((x) => x.estado === 'ativo' && (x.capabilityId === CAPACIDADE_DE_ENVIAR || x.capabilityId === CAPACIDADE_DE_PUBLICAR))) {
       const d = await this.divergenciaDoYoutube(orgId, i, tx);
       if (d.divergente) revogar.push({ itemId: i.id, motivo: d.divergente });
+    }
+
+    // A DM (MD11): a regra que mudou entre a montagem e a assinatura não vale.
+    if (this.dm) {
+      const regras = lote.itens.filter((x) => x.estado === 'ativo' && x.capabilityId === CAPACIDADE_DA_DM);
+      if (regras.length) revogar.push(...(await this.dm.divergentesNaAtivacao(orgId, regras)));
     }
 
     // Sem peça aprovada, o episódio fica onde está: Agendado sem post agendado travaria o "gerar de novo".

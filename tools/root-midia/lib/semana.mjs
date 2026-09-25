@@ -541,7 +541,15 @@ export function linhasDaAgenda(agenda) {
   for (const e of pendentes) linhas.push(`${e.apelido}: ${e.aprovadasSemData} aprovada(s) sem data — "Distribuir" na aba Semana.`);
   // MD9: a fila da DM à mão. Só o número: o @ de quem comentou não sai da tela.
   const dm = agenda?.comentariosPendentes ?? 0;
-  if (dm > 0) linhas.push(`${dm} comentário(s) com a palavra-chave esperando a DM à mão — "Quem comentou e o que responder" na aba Semana.`);
+  // MD11: com a DM automática ligada, os pendentes das regras assinadas saem sozinhos na próxima passagem.
+  const auto = agenda?.dmAutomatica === true;
+  if (dm > 0) {
+    linhas.push(
+      auto
+        ? `${dm} comentário(s) com a palavra-chave na fila — a DM automática responde os das regras assinadas; o resto é à mão, na aba Semana.`
+        : `${dm} comentário(s) com a palavra-chave esperando a DM à mão — "Quem comentou e o que responder" na aba Semana.`,
+    );
+  }
   return linhas;
 }
 

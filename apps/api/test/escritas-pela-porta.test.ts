@@ -248,6 +248,33 @@ describe('MD10: o YouTube é escrita pela porta desde o primeiro dia, só pelo l
   });
 });
 
+describe('MD11: a DM automática é escrita pela porta, só pelo lote, e pausar também passa por ela', () => {
+  it('instagram.resposta_privada.enviar é R3, pública, sob o lote, com conector; pausar é R0 interno, sem conector', () => {
+    const enviar = CATALOGO.find((c) => c.id === 'instagram.resposta_privada.enviar');
+    expect(enviar, 'instagram.resposta_privada.enviar sumiu de politica-marketing-os.json').toBeDefined();
+    expect(enviar!.nivel).toBe('R3');
+    expect(enviar!.efeito?.escreveForaDoOS).toBe(true);
+    expect((enviar as { ferramenta?: string }).ferramenta).toBeUndefined();
+    expect((enviar as { aprovacao?: unknown }).aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    expect(CONECTOR_DA_CAPACIDADE['instagram.resposta_privada.enviar']).toBe('instagram');
+    expect(enviar!.argsSchema!.additionalProperties).toBe(false);
+    const pausar = CATALOGO.find((c) => c.id === 'instagram.regra_de_resposta.pausar');
+    expect(pausar!.nivel).toBe('R0');
+    expect(pausar!.efeito?.escreveForaDoOS).toBe(false);
+    expect(pausar!.rota).toBe('POST /pauta/dm/regras/:itemId/pausar');
+    expect(CONECTOR_DA_CAPACIDADE['instagram.regra_de_resposta.pausar']).toBeNull();
+  });
+
+  it('a rota de pausar e a passagem entregam à porta; o serviço marca a procedência externa em todo envio', () => {
+    const rota = ler('src/pauta/comentarios.controller.ts');
+    expect(rota).not.toMatch(/PortaDoOperador|this\.porta|graph-de-mensagens|plataformas\/instagram/);
+    const servico = ler('src/pauta/dm-automatica.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    expect(servico).toMatch(/procedenciaExterna: procedencia/);
+    expect(servico).toMatch(/new ProcedenciaExterna\(\)\.marcar\(/);
+  });
+});
+
 describe('fatia 3.3: o caminho HTTP não alcança mais o conector', () => {
   const controlador = ler('src/google/google.controller.ts');
 
@@ -437,6 +464,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       'src/pauta/comentarios.service.ts',
       // MD10: o envio ao YouTube inscreve `youtube.video.enviar` e `youtube.video.publicar`.
       'src/pauta/envio-ao-youtube.service.ts',
+      // MD11: a DM automática inscreve `instagram.resposta_privada.enviar` e `instagram.regra_de_resposta.pausar`.
+      'src/pauta/dm-automatica.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */
@@ -460,8 +489,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
     const inscritas = QUEM_INSCREVE.flatMap(chavesDe);
     expect(
       inscritas.length,
-      'a varredura achou menos efeitos do que os 23 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
-    ).toBeGreaterThanOrEqual(23);
+      'a varredura achou menos efeitos do que os 25 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
+    ).toBeGreaterThanOrEqual(25);
 
     const foraDoCatalogo = inscritas.filter((id) => !uniao.has(id));
     expect(

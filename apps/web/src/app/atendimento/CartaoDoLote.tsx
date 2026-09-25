@@ -6,6 +6,7 @@ import {
   diaNoFuso,
   horaNoFuso,
   type PautaConteudoDoLote,
+  type PautaItemDaDmNoLote,
   type PautaItemDoConteudoDoLote,
   type PautaItemDoYoutubeNoLote,
 } from '@mktos/shared';
@@ -25,6 +26,10 @@ import { useAuth } from '@/lib/auth';
  * MD10: o vídeo do YouTube aparece como os posts — o título, a descrição
  * inteira, a imagem da thumb, o arquivo (sha256 e tamanho) e o horário que o
  * OS vai marcar —, com a mesma marca de divergência.
+ *
+ * MD11: a regra da DM automática de cada matéria também — a palavra, o texto
+ * EXATO que estranhos vão receber (com a linha de mensagem automática), para
+ * onde o link leva, os posts onde ela vale, o teto por dia e a janela.
  */
 
 const quando = (iso: string) => {
@@ -152,6 +157,41 @@ function ItemDoYoutube({ item, token }: { item: PautaItemDoYoutubeNoLote; token:
   );
 }
 
+function ItemDaDm({ item }: { item: PautaItemDaDmNoLote }) {
+  return (
+    <li
+      className={`space-y-2 rounded-lg border p-2 ${item.divergente ? 'border-bad/50 bg-bad/5' : 'border-border'}`}
+      data-testid={`item-da-dm-${item.itemId}`}
+    >
+      <div className="min-w-0 space-y-0.5 text-xs">
+        <p className="font-medium">
+          DM automática · quem comentar {item.palavra} · {item.apelido} m{item.itemN}
+        </p>
+        <p className="break-words text-muted">
+          de {item.handle ? `@${item.handle}` : '(sem conta de publicação)'} · até {item.tetoPorDia ?? '?'} por dia · de {quando(item.janelaDe)} a{' '}
+          {quando(item.janelaAte)} · hash {item.hashCurto}
+        </p>
+        <p className="break-words">
+          {item.materia} · vale nos posts: {item.pecas.map((p) => p.formato).join(' e ') || '(nenhum)'}
+        </p>
+        <p className="break-all text-muted">o link leva a {item.destino || '(sem destino)'}</p>
+        {item.estadoDoItem !== 'ativo' && <p className="text-muted">item {item.estadoDoItem}</p>}
+      </div>
+      <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1 text-[12px] text-text">
+        {item.texto || '(sem texto)'}
+      </pre>
+      <p className="text-[11px] text-muted">
+        {item.bytes} de 1000 bytes · sai sozinha só com a nota pauta.dm.automatica ligada, uma por pessoa, das {item.horario} ({item.fuso})
+      </p>
+      {item.divergente && (
+        <p className="break-words text-xs text-bad" data-testid={`divergente-${item.itemId}`}>
+          {item.divergente}
+        </p>
+      )}
+    </li>
+  );
+}
+
 export function CartaoDoLote({
   loteId,
   onPronto,
@@ -208,6 +248,9 @@ export function CartaoDoLote({
         ))}
         {(conteudo.youtube ?? []).map((i) => (
           <ItemDoYoutube key={i.itemId} item={i} token={token} />
+        ))}
+        {(conteudo.dm ?? []).map((i) => (
+          <ItemDaDm key={i.itemId} item={i} />
         ))}
       </ul>
     </section>

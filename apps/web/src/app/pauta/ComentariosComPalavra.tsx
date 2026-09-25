@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
+  ENVIO_DE_RESPOSTA_ESTADO_ROTULO,
   PAUTA_DM_TETO_BYTES,
   PAUTA_FORMATO_DA_SEMANA_ROTULO,
   PautaTextoDaDmSchema,
@@ -11,6 +12,7 @@ import {
   horaNoFuso,
   perfilDoInstagram,
   type PautaComentarioNaFila,
+  type PautaDmAutomaticaNaFila,
   type PautaFilaDeComentarios,
   type PautaTextoDaDm,
 } from '@mktos/shared';
@@ -27,6 +29,11 @@ import { Botao, Chip, inputCls } from '../referencias/ui';
  * palavra, com o texto pronto (o /r/ rastreado da matéria e a página do
  * episódio). Copiar, abrir o perfil, mandar pelo Instagram e marcar como
  * respondido. O @ some depois de 7 dias; o texto do comentário nunca é guardado.
+ *
+ * MD11: com a nota `pauta.dm.automatica` ligada e a regra da matéria assinada
+ * no lote da semana, a rotina responde sozinha. A seção mostra cada regra
+ * ("enviadas hoje: 37 de 100", por que caiu) com o botão Pausar, e cada linha
+ * diz o que a DM automática fez com ela (enviada, segurada até a janela abrir, erro, sem resposta da Meta).
  */
 
 interface Props {
@@ -87,6 +94,14 @@ function LinhaDaFila({
         {linha.respondidoEm && ` · respondido${linha.respondidoPor ? ` por ${linha.respondidoPor}` : ''} em ${quando(linha.respondidoEm)}`}
       </p>
       {linha.motivo && <p className="break-words text-xs text-warn">{linha.motivo}</p>}
+      {linha.automatica && (
+        <p className={`break-words text-xs ${linha.automatica.estado === 'erro' || linha.automatica.estado === 'recusado' || linha.automatica.estado === 'incerto' ? 'text-warn' : 'text-muted'}`}>
+          {ENVIO_DE_RESPOSTA_ESTADO_ROTULO[linha.automatica.estado]}
+          {linha.automatica.estado === 'segurado' && linha.automatica.seguradoAte ? ` (sai a partir de ${quando(linha.automatica.seguradoAte)})` : ''}
+          {linha.automatica.enviadoEm ? ` em ${quando(linha.automatica.enviadoEm)}` : ''}
+          {linha.automatica.motivo ? ` — ${linha.automatica.motivo}` : ''}
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <Botao onClick={() => linha.texto && onCopiar(linha.texto)} disabled={!linha.texto}>
           Copiar texto
@@ -202,6 +217,83 @@ function TextoDaMateria({
   );
 }
 
+/** A DM automática (MD11): a nota e as regras do lote, com "enviadas hoje" e o botão Pausar. */
+function DmAutomatica({
+  dm,
+  editavel,
+  ocupado,
+  onPausar,
+}: {
+  dm: PautaDmAutomaticaNaFila;
+  editavel: boolean;
+  ocupado: boolean;
+  onPausar: (itemId: string, motivo: string) => Promise<boolean>;
+}) {
+  const [pausando, setPausando] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState('');
+  return (
+    <div className="space-y-2 rounded-lg border border-border p-2" aria-label="DM automática">
+      <p className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="font-medium">DM automática:</span>
+        {dm.ligada ? <Chip tone="good">ligada</Chip> : <Chip tone="warn">desligada — a resposta é à mão</Chip>}
+      </p>
+      {dm.regras.length === 0 && (
+        <p className="text-xs text-muted">Nenhuma regra assinada: as regras entram no lote da semana, no "Aprovar a semana".</p>
+      )}
+      <ul className="space-y-2">
+        {dm.regras.map((r) => (
+          <li key={r.loteItemId} className="space-y-1 text-xs" aria-label={`Regra da DM ${r.palavra}`}>
+            <p className="flex flex-wrap items-center gap-1.5">
+              <span className="font-mono">{r.apelido}</span>
+              <span className="text-muted">matéria {r.itemN}</span>
+              <Chip tone="brand">{r.palavra}</Chip>
+              {r.estadoDoItem === 'ativo' ? <Chip tone="good">valendo</Chip> : <Chip tone="warn">pausada</Chip>}
+            </p>
+            <p className="text-muted">
+              enviadas hoje: {r.enviadasHoje} de {r.tetoPorDia} · vale até {quando(r.janelaAte)}
+            </p>
+            {r.motivoDaPausa && <p className="break-words text-warn">{r.motivoDaPausa}</p>}
+            {editavel && r.estadoDoItem === 'ativo' && pausando !== r.loteItemId && (
+              <Botao tone="bad" onClick={() => setPausando(r.loteItemId)} disabled={ocupado}>
+                Pausar
+              </Botao>
+            )}
+            {pausando === r.loteItemId && (
+              <div className="space-y-1">
+                <input
+                  className={inputCls}
+                  aria-label="Por que pausar"
+                  placeholder="Por que pausar (vai ao RASTRO)"
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value)}
+                />
+                <p className="text-[11px] text-muted">Voltar a mandar pede assinatura nova: a regra entra no próximo lote.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Botao
+                    tone="bad"
+                    disabled={ocupado || motivo.trim().length < 3}
+                    onClick={async () => {
+                      if (await onPausar(r.loteItemId, motivo.trim())) {
+                        setPausando(null);
+                        setMotivo('');
+                      }
+                    }}
+                  >
+                    Confirmar: pausar
+                  </Botao>
+                  <Botao tone="ghost" onClick={() => setPausando(null)} disabled={ocupado}>
+                    Manter
+                  </Botao>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, bump }: Props) {
   const [fila, setFila] = useState<PautaFilaDeComentarios | null>(null);
   const [falhou, setFalhou] = useState(false);
@@ -259,7 +351,8 @@ export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, 
       </div>
       <p className="text-xs text-muted">
         Quem comentou a palavra-chave num post dos últimos 7 dias. A DM sai à mão: copie o texto, abra o perfil, mande pelo
-        Instagram e marque como respondido. O @ some depois de 7 dias, e o texto do comentário não é guardado.
+        Instagram e marque como respondido. Com a DM automática ligada, as regras assinadas respondem sozinhas. O @ some depois de
+        7 dias, e o texto do comentário não é guardado.
       </p>
 
       {falhou && <p className="text-xs text-muted">A fila de comentários não carregou.</p>}
@@ -282,6 +375,15 @@ export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, 
             ? `Última leitura: ${quando(fila.ultimaColeta.em)} (${fila.ultimaColeta.status})${fila.ultimaColeta.resumo ? ` — ${fila.ultimaColeta.resumo}` : ''}`
             : 'A rotina de comentários ainda não rodou: crie em Rotinas › "Nova rotina de comentários".'}
         </p>
+      )}
+
+      {fila?.dmAutomatica && (
+        <DmAutomatica
+          dm={fila.dmAutomatica}
+          editavel={editavel}
+          ocupado={ocupado}
+          onPausar={(itemId, motivo) => fazer(() => apiPost(`/pauta/dm/regras/${encodeURIComponent(itemId)}/pausar`, { motivo }, token))}
+        />
       )}
 
       {fila && fila.linhas.length > 0 ? (

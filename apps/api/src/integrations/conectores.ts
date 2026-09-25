@@ -224,6 +224,11 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   // MD9: a leitura dos comentários da conta de publicação também para com o
   // Instagram desligado — a fila da DM deixa de encher, nada mais.
   'instagram.comentario.ler': 'instagram',
+  // MD11: a DM automática sai pela mesma conta — desligar o Instagram segura a
+  // resposta privada mesmo com a regra assinada no lote.
+  'instagram.resposta_privada.enviar': 'instagram',
+  // Pausar a regra só revoga o item dela no lote, dentro do OS: nada sai da casa.
+  'instagram.regra_de_resposta.pausar': null,
 
   // MD10: o canal do YouTube, com credencial própria (não é o Google da empresa).
   // Desligar o YouTube em /conexoes barra a sessão de envio, o token do Mac e o agendamento.
