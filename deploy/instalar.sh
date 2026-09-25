@@ -13,8 +13,9 @@
 #   disco é só leitura, e o Colima só enxerga o que mora dentro do $HOME.
 #
 # O que faz, nesta ordem, e para no primeiro erro:
-#   1. confere docker, git, o diretório-base e que a instância ainda NÃO existe
-#      (instalar é criar; atualizar é deploy/atualizar.sh)
+#   1. confere docker, git, o diretório-base, que a instância ainda NÃO existe
+#      (instalar é criar; atualizar é deploy/atualizar.sh) e que nenhuma das portas
+#      já está ouvindo no host (lsof/ss)
 #   2. escolhe nomes e portas do ambiente e RECUSA se colidirem com uma irmã
 #   3. `git clone --branch <tag>` — a versão é explícita e fica registrada
 #   4. gera os segredos (openssl rand) direto no .env, 0600; nada em stdout
@@ -132,6 +133,9 @@ command -v "$GIT" >/dev/null 2>&1 || falha "git não encontrado no PATH"
 command -v openssl >/dev/null 2>&1 || falha "openssl não encontrado no PATH"
 "$DOCKER" compose version >/dev/null 2>&1 || falha "docker compose (v2) não responde"
 [ ! -e "$DIR_INSTANCIA" ] || falha "$DIR_INSTANCIA já existe. Instalar é criar; para trocar de versão use deploy/atualizar.sh --ambiente $AMBIENTE --tag <tag>."
+# Antes de criar qualquer coisa: porta ocupada no host recusa aqui, com nada em disco.
+conferir_portas_livres_no_host "$BIND_IP" WEB_HOST_PORT="$WEB" API_HOST_PORT="$API" DB_PORT="$DBP" \
+  REDIS_PORT="$RED" MINIO_PORT="$MIN" MINIO_CONSOLE_PORT="$MINC"
 
 umask 077
 if [ "$SO_CHECAR" = 1 ]; then

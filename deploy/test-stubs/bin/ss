@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# STUB de `ss` (o caminho Linux) para a suíte hermética: responde `ss -Hltnp "sport = :<porta>"`.
+# Mesmo STUB_PORTAS_OCUPADAS do stub de lsof; pid "-" simula ss sem root (sem processo).
+# STUB_FAIL_SS=1 faz o ss falhar.
+set -u
+set -f  # o endereço pode ser '*': sem glob no laço abaixo
+[ -n "${STUB_LOG_PORTAS:-}" ] && printf 'ss %s\n' "$*" >> "$STUB_LOG_PORTAS"
+[ "${STUB_FAIL_SS:-0}" = 1 ] && exit 1
+filtro="${*: -1}"; porta="${filtro##*:}"
+for item in ${STUB_PORTAS_OCUPADAS:-}; do
+  p="${item%%@*}"; resto="${item#*@}"; e="${resto%%@*}"; resto="${resto#*@}"; cmd="${resto%%@*}"; pid="${resto#*@}"
+  [ "$p" = "$porta" ] || continue
+  if [ "$pid" = - ]; then
+    printf 'LISTEN 0      4096      %s:%s      0.0.0.0:*\n' "$e" "$p"
+  else
+    printf 'LISTEN 0      4096      %s:%s      0.0.0.0:*    users:(("%s",pid=%s,fd=4))\n' "$e" "$p" "$cmd" "$pid"
+  fi
+done
+exit 0

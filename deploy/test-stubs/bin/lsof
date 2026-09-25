@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# STUB de `lsof` para a suíte hermética: responde só `lsof -nP -iTCP:<porta> -sTCP:LISTEN -Fpcn`.
+# STUB_PORTAS_OCUPADAS="porta@endereço@comando@pid ..." simula quem ouve (padrão: ninguém).
+# Registra em $STUB_LOG_PORTAS, se houver — o $STUB_LOG é o das chamadas ao docker.
+set -u
+set -f  # o endereço pode ser '*': sem glob no laço abaixo
+[ -n "${STUB_LOG_PORTAS:-}" ] && printf 'lsof %s\n' "$*" >> "$STUB_LOG_PORTAS"
+porta=""
+for a in "$@"; do case "$a" in -iTCP:*) porta="${a#-iTCP:}" ;; esac; done
+[ -n "$porta" ] || { echo "stub lsof: sem -iTCP:<porta>" >&2; exit 2; }
+achou=1
+for item in ${STUB_PORTAS_OCUPADAS:-}; do
+  p="${item%%@*}"; resto="${item#*@}"; e="${resto%%@*}"; resto="${resto#*@}"; cmd="${resto%%@*}"; pid="${resto#*@}"
+  [ "$p" = "$porta" ] || continue
+  printf 'p%s\nc%s\nf10\nn%s:%s\n' "$pid" "$cmd" "$e" "$p"
+  achou=0
+done
+exit "$achou"

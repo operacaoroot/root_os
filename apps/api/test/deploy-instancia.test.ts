@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -9,6 +9,11 @@ import path from 'node:path';
 // Isolada termina em ~30 s; junto das 48 suítes da API há contenção de CPU/IO,
 // então o timeout unitário padrão de 5 s produz falso negativo sem indicar trava.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// Todo caso aqui é síncrono (spawnSync). Sem devolver o laço de eventos entre um caso
+// e outro, o worker passa o arquivo inteiro sem atender o RPC do vitest, e passados
+// 60 s de arquivo o vitest acusa `Timeout calling "onTaskUpdate"` com todos os casos
+// verdes. Um setImmediate por caso deixa a mensagem passar; nenhum timeout muda.
+beforeEach(() => new Promise<void>((pronto) => setImmediate(pronto)));
 
 /*
  * ETAPA P1 DO PLANO DE PRODUTO — instalar e atualizar uma instância SEM tocar em servidor.
@@ -808,5 +813,65 @@ describe('Mac: modo máquina local (--bind-ip 127.0.0.1, Colima)', () => {
     const chk = rodar(c, 'atualizar', ['--ambiente', 'producao', '--tag', 'v2', '--so-checar'], { ROOTOS_BASE: '', HOME: home, STUB_APPLIED: '20260101000000_um,20260102000000_dois' });
     expect(chk.status, chk.stderr + chk.stdout).toBe(0);
     expect(chk.stdout).toMatch(/só checando/);
+  });
+});
+
+describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualquer coisa', () => {
+  const local = (c: Caixa, env: Record<string, string>, extra: string[] = []) =>
+    rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--bind-ip', '127.0.0.1', '--sem-llm', ...extra], { ROOTOS_ANTHROPIC_API_KEY: '', ...env });
+  const vps = (c: Caixa, env: Record<string, string>) => instalarProd(c, [], env);
+
+  it('lsof (macOS): diz qual porta, qual variável e quem ocupa; nada em disco, nenhum docker de build', () => {
+    const c = caixa();
+    const log = path.join(path.dirname(c.log), 'portas.log');
+    const r = local(c, { STUB_PORTAS_OCUPADAS: '4000@127.0.0.1@node@4242 5442@*@postgres@77', STUB_LOG_PORTAS: log });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta já em uso NO HOST \(bind 127\.0\.0\.1\)/);
+    expect(r.stderr).toMatch(/porta 4000 \(WEB_HOST_PORT\) — já ouvindo em 127\.0\.0\.1:4000: node \(pid 4242\)/);
+    expect(r.stderr).toMatch(/porta 5442 \(DB_PORT\) — já ouvindo em \*:5442: postgres \(pid 77\)/);
+    expect(r.stderr).not.toMatch(/4001/);
+    expect(existsSync(c.base)).toBe(false);
+    expect(lerLog(c)).not.toMatch(/build|up -d|run --rm/);
+    // as seis portas da instância foram perguntadas ao host
+    for (const p of ['4000', '4001', '5442', '6390', '9010', '9011']) expect(readFileSync(log, 'utf8')).toContain(`-iTCP:${p} `);
+  });
+
+  it('o que colide depende do endereço: bind, curinga e ::1 no loopback; outro IP específico não', () => {
+    // ::1 com bind local: o navegador tenta ::1 primeiro em "localhost"
+    expect(local(caixa(), { STUB_PORTAS_OCUPADAS: '4000@[::1]@node@1' }).status).not.toBe(0);
+    // curinga IPv6 colide com qualquer bind
+    const c = caixa();
+    const r = vps(c, { STUB_PORTAS_OCUPADAS: '4001@[::]@docker-proxy@9' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 4001 \(API_HOST_PORT\)/);
+    // na VPS (bind 172.16.0.1), quem ouve só no loopback ou só em ::1 não disputa a porta
+    const d = caixa();
+    const ok = vps(d, { STUB_PORTAS_OCUPADAS: '4000@127.0.0.1@node@1 4000@[::1]@node@1 5442@10.0.0.5@pg@2' });
+    expect(ok.status, ok.stderr).toBe(0);
+  });
+
+  it('ss (Linux) quando não há lsof: com e sem o processo visível', () => {
+    const c = caixa();
+    const r = vps(c, { LSOF: 'lsof-que-nao-existe', STUB_PORTAS_OCUPADAS: '6390@0.0.0.0@redis-server@55 9011@172.16.0.1@x@-' });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 6390 \(REDIS_PORT\) — já ouvindo em 0\.0\.0\.0:6390: redis-server \(pid 55\)/);
+    expect(r.stderr).toMatch(/porta 9011 \(MINIO_CONSOLE_PORT\) — já ouvindo em 172\.16\.0\.1:9011: \? \(pid \?\)/);
+    expect(existsSync(c.base)).toBe(false);
+    const livre = caixa();
+    expect(vps(livre, { LSOF: 'lsof-que-nao-existe' }).status).toBe(0);
+  });
+
+  it('sem lsof nem ss, ou ss falhando: falha fechada, sem criar nada; --so-checar também confere', () => {
+    for (const env of [{ LSOF: 'nao-existe-1', SS: 'nao-existe-2' }, { LSOF: 'nao-existe-1', STUB_FAIL_SS: '1' }]) {
+      const c = caixa();
+      const r = vps(c, env);
+      expect(r.status, JSON.stringify(env)).not.toBe(0);
+      expect(r.stderr).toMatch(/não consigo conferir se a porta 4000 está livre no host/);
+      expect(existsSync(c.base)).toBe(false);
+    }
+    const c = caixa();
+    const chk = local(c, { STUB_PORTAS_OCUPADAS: '9010@*@minio@3' }, ['--so-checar']);
+    expect(chk.status).not.toBe(0);
+    expect(chk.stderr).toMatch(/porta 9010 \(MINIO_PORT\)/);
   });
 });

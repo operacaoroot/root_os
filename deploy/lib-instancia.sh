@@ -35,6 +35,9 @@ AMBIENTES_VALIDOS="producao homologacao"
 : "${DOCKER:=docker}"
 : "${GIT:=git}"
 : "${CURL:=curl}"
+# Quem ouve porta no host: lsof no macOS, ss no Linux (usa o que existir, nessa ordem).
+: "${LSOF:=lsof}"
+: "${SS:=ss}"
 
 falha() { printf '\n[%s] ERRO: %s\n\n' "${NOME_DO_SCRIPT:-instancia}" "$1" >&2; exit "${2:-1}"; }
 aviso() { printf '[%s] aviso: %s\n' "${NOME_DO_SCRIPT:-instancia}" "$*" >&2; }
@@ -143,6 +146,65 @@ conferir_portas_internas() {
     case " $vistas " in *" $p "*) falha "duas portas iguais ($p) na mesma instância" ;; esac
     vistas="$vistas $p"
   done
+}
+
+# Quem ouve TCP numa porta do HOST, uma linha por ouvinte: "<endereço> <pid> <comando>".
+# Nada ouvindo = nada impresso. Nem lsof nem ss = exit 2 (quem chama falha fechado:
+# não saber se a porta está livre não é saber que está).
+ouvintes_na_porta() {
+  local porta="$1" saida
+  if command -v "$LSOF" >/dev/null 2>&1; then
+    # -F: saída de máquina (p=pid, c=comando, n=endereço:porta). Exit 1 = ninguém ouvindo.
+    saida="$("$LSOF" -nP -iTCP:"$porta" -sTCP:LISTEN -Fpcn 2>/dev/null)" || return 0
+    printf '%s\n' "$saida" | awk '
+      /^p/ { pid = substr($0, 2) }
+      /^c/ { cmd = substr($0, 2) }
+      /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }'
+  elif command -v "$SS" >/dev/null 2>&1; then
+    # Sem root o ss não mostra o processo: sai "?" no lugar, e a porta conta igual.
+    saida="$("$SS" -Hltnp "sport = :$porta" 2>/dev/null)" || return 2
+    printf '%s\n' "$saida" | awk '
+      NF >= 4 {
+        e = $4; sub(/:[0-9]+$/, "", e); cmd = "?"; pid = "?"
+        if (match($0, /users:\(\("[^"]*"/)) cmd = substr($0, RSTART + 9, RLENGTH - 10)
+        if (match($0, /pid=[0-9]+/)) pid = substr($0, RSTART + 4, RLENGTH - 4)
+        print e, pid, cmd
+      }'
+  else
+    return 2
+  fi
+}
+
+# Colisão de porta contra o HOST — o que as irmãs não cobrem: qualquer programa já
+# ouvindo (outro Postgres, um `next dev`, uma instância antiga fora do instalador).
+# Na VPS o `up` falharia no meio da instalação; no Colima é pior: o container sobe
+# dentro da VM e o encaminhamento para o Mac falha calado. Recebe o bind e pares
+# VAR=porta. Colide o ouvinte no próprio bind, no curinga (* 0.0.0.0 ::) e, com
+# bind no loopback, também em ::1 — o navegador tenta ::1 primeiro em "localhost".
+conferir_portas_livres_no_host() {
+  local bind="$1" par var porta ouvintes e pid cmd item conflitos=""
+  shift
+  for par in "$@"; do
+    var="${par%%=*}"; porta="${par#*=}"
+    if ! ouvintes="$(ouvintes_na_porta "$porta")"; then
+      falha "não consigo conferir se a porta $porta está livre no host: nem '$LSOF' nem '$SS' responderam. Sem saber, a instalação não segue."
+    fi
+    while read -r e pid cmd; do
+      [ -n "$e" ] || continue
+      case "$e" in
+        "$bind"|'*'|0.0.0.0|'::'|'[::]') ;;
+        '::1'|'[::1]') case "$bind" in 127.*) ;; *) continue ;; esac ;;
+        *) [ "$bind" = 0.0.0.0 ] || continue ;;
+      esac
+      item="porta $porta ($var) — já ouvindo em $e:$porta: ${cmd:-?} (pid ${pid:-?})"
+      case "$conflitos" in *"$item"*) ;; *) conflitos="$conflitos
+    $item" ;; esac
+    done <<LISTA
+$ouvintes
+LISTA
+  done
+  [ -z "$conflitos" ] || falha "porta já em uso NO HOST (bind $bind):$conflitos
+  Feche o programa que ocupa a porta e rode de novo. Nada foi criado."
 }
 
 # O override gerado: é o que isola de verdade, independentemente do compose.
