@@ -157,7 +157,7 @@ conferir_portas_internas() {
 # (no Linux, o docker-proxy do root some; no macOS, o de outro usuário). Por isso ele
 # nunca responde sozinho: o complemento é perguntado SEMPRE e entra o que o lsof não
 # viu (mesmo endereço sai uma vez, com o nome que o lsof deu). O complemento vê todos
-# os sockets: `netstat -an -p tcp` no macOS (lá `-p` é protocolo) e `ss` no Linux.
+# os sockets: `netstat -anl -p tcp` no macOS (lá `-p` é protocolo) e `ss` no Linux.
 # Sem lsof, o `ss` responde sozinho, como antes.
 #
 # O endereço sai SEM colchetes nos três ("::1", não "[::1]"): o lsof e o ss escrevem o
@@ -177,7 +177,9 @@ _ouvintes_ss() {
 }
 _ouvintes_netstat() {
   local porta="$1" saida
-  saida="$("$NETSTAT" -an -p tcp 2>/dev/null)" || return 2
+  # -l: endereço IPv6 inteiro. Sem ele o netstat corta o endereço longo para caber na
+  # coluna ("2804:2484:9651:8.57387"), e o cortado não casa com o que o lsof escreveu.
+  saida="$("$NETSTAT" -anl -p tcp 2>/dev/null)" || return 2
   printf '%s\n' "$saida" | awk -v porta="$porta" '
     $NF == "LISTEN" {
       e = $4; p = e; sub(/.*\./, "", p); if (p != porta) next

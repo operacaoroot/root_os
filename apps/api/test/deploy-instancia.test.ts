@@ -956,6 +956,21 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
     expect(s.stderr).toMatch(/porta 4001 \(API_HOST_PORT\) — já ouvindo em \[::1\]:4001: processo de outro usuário/);
   });
 
+  // Sem -l o netstat do macOS corta o endereço IPv6 longo para caber na coluna (visto neste
+  // Mac: "2804:2484:9651:8.57387"), e o endereço cortado não casava com o do lsof. Só pesa com
+  // bind 0.0.0.0, o único em que um IP específico colide.
+  it('macOS: IPv6 longo não sai cortado nem repetido (netstat -l)', () => {
+    const ip = '2804:2484:9651:800:2dec:41e9:1d51:bdb2';
+    const c = caixa();
+    const log = path.join(path.dirname(c.log), 'portas.log');
+    const r = rodar(c, 'instalar', ['--ambiente', 'producao', '--tag', 'v1', '--dominio', 'os.cliente.teste', '--bind-ip', '0.0.0.0', '--sem-llm'],
+      { ROOTOS_ANTHROPIC_API_KEY: '', ...comoSistema('Darwin'), STUB_PORTAS_OCUPADAS: `4000@[${ip}]@node@7`, STUB_PORTAS_SO_NETSTAT: `4000@${ip}`, STUB_LOG_PORTAS: log });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr.match(/porta 4000 \(WEB_HOST_PORT\)/g), r.stderr).toHaveLength(1);
+    expect(r.stderr).toContain(`já ouvindo em [${ip}]:4000: node (pid 7)`);
+    expect(readFileSync(log, 'utf8')).toMatch(/^netstat -anl -p tcp$/m);
+  });
+
   it('Linux com lsof que não enxerga o dono (sem root, docker-proxy do root): o ss complementa e recusa', () => {
     const linux = comoSistema('Linux');
     const c = caixa();
