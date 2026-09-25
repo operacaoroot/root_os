@@ -850,6 +850,22 @@ describe('Mac e VPS: porta já ouvindo no HOST é recusada antes de criar qualqu
     expect(ok.status, ok.stderr).toBe(0);
   });
 
+  it.skipIf(process.platform !== 'darwin')('macOS: o que o lsof sem sudo não vê (outro usuário) o netstat vê, e também recusa', () => {
+    const c = caixa();
+    const log = path.join(path.dirname(c.log), 'portas.log');
+    const r = local(c, { STUB_PORTAS_SO_NETSTAT: '5442@* 6390@127.0.0.1 9010@10.0.0.9', STUB_LOG_PORTAS: log });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/porta 5442 \(DB_PORT\) — já ouvindo em \*:5442: processo de outro usuário/);
+    expect(r.stderr).toMatch(/porta 6390 \(REDIS_PORT\) — já ouvindo em 127\.0\.0\.1:6390/);
+    expect(r.stderr).not.toMatch(/9010/);
+    expect(existsSync(c.base)).toBe(false);
+    // quando o lsof acha o dono, o netstat nem é consultado para aquela porta
+    const d = caixa();
+    const log2 = path.join(path.dirname(d.log), 'portas.log');
+    expect(local(d, { STUB_PORTAS_OCUPADAS: '4000@*@node@1', STUB_LOG_PORTAS: log2 }).status).not.toBe(0);
+    expect(readFileSync(log2, 'utf8').match(/^netstat /gm)?.length).toBe(5);
+  });
+
   it('ss (Linux) quando não há lsof: com e sem o processo visível', () => {
     const c = caixa();
     const r = vps(c, { LSOF: 'lsof-que-nao-existe', STUB_PORTAS_OCUPADAS: '6390@0.0.0.0@redis-server@55 9011@172.16.0.1@x@-' });

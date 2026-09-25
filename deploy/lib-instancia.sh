@@ -38,6 +38,7 @@ AMBIENTES_VALIDOS="producao homologacao"
 # Quem ouve porta no host: lsof no macOS, ss no Linux (usa o que existir, nessa ordem).
 : "${LSOF:=lsof}"
 : "${SS:=ss}"
+: "${NETSTAT:=netstat}"
 
 falha() { printf '\n[%s] ERRO: %s\n\n' "${NOME_DO_SCRIPT:-instancia}" "$1" >&2; exit "${2:-1}"; }
 aviso() { printf '[%s] aviso: %s\n' "${NOME_DO_SCRIPT:-instancia}" "$*" >&2; }
@@ -155,11 +156,22 @@ ouvintes_na_porta() {
   local porta="$1" saida
   if command -v "$LSOF" >/dev/null 2>&1; then
     # -F: saída de máquina (p=pid, c=comando, n=endereço:porta). Exit 1 = ninguém ouvindo.
-    saida="$("$LSOF" -nP -iTCP:"$porta" -sTCP:LISTEN -Fpcn 2>/dev/null)" || return 0
-    printf '%s\n' "$saida" | awk '
-      /^p/ { pid = substr($0, 2) }
-      /^c/ { cmd = substr($0, 2) }
-      /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }'
+    if saida="$("$LSOF" -nP -iTCP:"$porta" -sTCP:LISTEN -Fpcn 2>/dev/null)"; then
+      printf '%s\n' "$saida" | awk '
+        /^p/ { pid = substr($0, 2) }
+        /^c/ { cmd = substr($0, 2) }
+        /^n/ { e = substr($0, 2); sub(/:[0-9]+$/, "", e); print e, pid, cmd }'
+      return 0
+    fi
+    # Sem sudo, o lsof do macOS só enxerga processos do próprio usuário. O netstat do
+    # macOS vê todos (sem dizer quem): é o complemento, só no Darwin, onde `-p tcp`
+    # quer dizer protocolo — no Linux o mesmo `-p` é outra coisa.
+    [ "$(uname -s)" = Darwin ] && command -v "$NETSTAT" >/dev/null 2>&1 || return 0
+    "$NETSTAT" -an -p tcp 2>/dev/null | awk -v porta="$porta" '
+      $NF == "LISTEN" {
+        e = $4; p = e; sub(/.*\./, "", p); if (p != porta) next
+        sub(/\.[0-9]+$/, "", e); print e, "?", "processo de outro usuário (só o netstat vê; sem sudo o lsof não mostra)"
+      }'
   elif command -v "$SS" >/dev/null 2>&1; then
     # Sem root o ss não mostra o processo: sai "?" no lugar, e a porta conta igual.
     saida="$("$SS" -Hltnp "sport = :$porta" 2>/dev/null)" || return 2

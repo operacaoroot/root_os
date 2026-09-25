@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# STUB de `netstat` (macOS) para a suíte hermética: responde `netstat -an -p tcp`.
+# STUB_PORTAS_SO_NETSTAT="porta@endereço ..." simula ouvinte que o lsof sem sudo não
+# enxerga (processo de outro usuário). Padrão: ninguém.
+set -u
+set -f
+[ -n "${STUB_LOG_PORTAS:-}" ] && printf 'netstat %s\n' "$*" >> "$STUB_LOG_PORTAS"
+echo "Active Internet connections (including servers)"
+echo "Proto Recv-Q Send-Q  Local Address          Foreign Address        (state)"
+for item in ${STUB_PORTAS_SO_NETSTAT:-}; do
+  printf 'tcp4       0      0  %s.%s          *.*                    LISTEN\n' "${item#*@}" "${item%%@*}"
+done
+exit 0
