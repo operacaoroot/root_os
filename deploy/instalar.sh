@@ -330,6 +330,27 @@ COMMIT_NO_AR="$(commit_no_ar "http://$BIND_IP:$API/api/health/versao")"
 [ "$COMMIT_NO_AR" = "$COMMIT" ] || falha "a API no ar diz commit '$COMMIT_NO_AR', esperava '$COMMIT'"
 
 passo "10/10 pronto — o que fica À MÃO"
+# A linha do crontab da máquina local. O cron do macOS roda com PATH=/usr/bin:/bin e sem o
+# ambiente do shell: o docker do brew (/opt/homebrew/bin) ou do Docker Desktop (/usr/local/bin)
+# e um DOCKER_HOST do perfil (Colima) ficam de fora, e o backup aborta todo dia em silêncio.
+# Por isso a linha leva o diretório do docker que ESTE instalador usou, o DOCKER_HOST se
+# houver, e a saída num log ao lado dos dumps. Uma linha só: o crontab não junta "\".
+# Valores entre aspas simples; `%` escapado, porque no crontab ele vira quebra de linha.
+para_crontab() { printf "'%s'" "$(printf '%s' "$1" | sed -e "s/'/'\\\\''/g" -e 's/%/\\%/g')"; }
+if [ "$MODO_LOCAL" = 1 ]; then
+  DIR_DO_DOCKER="$(command -v docker 2>/dev/null || command -v "$DOCKER")"; DIR_DO_DOCKER="$(dirname "$DIR_DO_DOCKER")"
+  LINHA_CRON="17 3 * * * PATH=$(para_crontab "$DIR_DO_DOCKER"):/usr/bin:/bin${DOCKER_HOST:+ DOCKER_HOST=$(para_crontab "$DOCKER_HOST")}"
+  LINHA_CRON="$LINHA_CRON BACKUP_DB_CONTAINER=$DB_CONT PGUSER=$DB_USER PGDATABASE=$DB_NAME BACKUP_DIR=$(para_crontab "$DIR_INSTANCIA/backups")"
+  LINHA_CRON="$LINHA_CRON $(para_crontab "$DIR_REPO/deploy/backup-db.sh") >> $(para_crontab "$DIR_INSTANCIA/backups/backup.log") 2>&1"
+  BLOCO_BACKUP="  3. BACKUP diário (crontab -e do usuário desta máquina; a linha inteira, sem quebrar):
+     $LINHA_CRON
+     Prove no ambiente do cron (PATH curto, sem o seu shell) e confira o log:
+     env -i PATH=/usr/bin:/bin HOME=\"\$HOME\" /bin/sh -c \"\$(crontab -l | grep -F $(para_crontab "$DIR_REPO/deploy/backup-db.sh") | head -1 | cut -d' ' -f6-)\"; tail -3 $(para_crontab "$DIR_INSTANCIA/backups/backup.log")"
+else
+  BLOCO_BACKUP="  3. BACKUP diário (crontab do root):
+     BACKUP_DB_CONTAINER=$DB_CONT PGUSER=$DB_USER PGDATABASE=$DB_NAME BACKUP_DIR=$DIR_INSTANCIA/backups \\
+       $DIR_REPO/deploy/backup-db.sh"
+fi
 if [ -n "$PAINEL" ]; then
   carregar_env_da_instancia "$ENV"
   gerar_compose_do_painel "$DIR_INSTANCIA/painel/docker-compose.yml"
@@ -345,9 +366,7 @@ $(if [ -n "$PAINEL" ]; then echo "  1b. ADOTAR NO PAINEL:"; lembrete_do_painel i
   2. SEGREDOS INICIAIS (0600): $DIR_INSTANCIA/segredos-iniciais.txt — guarde e APAGUE.
      (a senha é de admin@marketing-os.local; o admin do cliente entra pelo Google)
 $(if [ -n "$CLIENTE" ]; then echo "  2b. No console do Google, a URI de redirect autorizada tem de ser: $URL_PUBLICA/api/google/callback"; else echo "  2b. Para login com Google mais tarde: ROOTOS_GOOGLE_CLIENT_ID/SECRET no ambiente e GOOGLE_* no .env, depois up -d --no-build api"; fi)
-  3. BACKUP diário ($([ "$MODO_LOCAL" = 1 ] && echo "crontab -e do usuário desta máquina" || echo "crontab do root")):
-     BACKUP_DB_CONTAINER=$DB_CONT PGUSER=$DB_USER PGDATABASE=$DB_NAME BACKUP_DIR=$DIR_INSTANCIA/backups \\
-       $DIR_REPO/deploy/backup-db.sh
+$BLOCO_BACKUP
   4. Atualizar: deploy/atualizar.sh --ambiente $AMBIENTE --tag <tag-nova>
   5. Papel restrito do banco (quando decidir): $DIR_REPO/deploy/papel-app.sh
 

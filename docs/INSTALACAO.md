@@ -85,8 +85,23 @@ ele nunca responde sozinho: em toda porta o instalador pergunta também ao `nets
 `ss` (Linux), que veem todos os ouvintes, e junta as duas respostas. Sem esse complemento
 respondendo, a instalação para — não saber se a porta está livre não conta como livre.
 
-**Backup:** o fim da instalação imprime a linha para o `crontab -e` do usuário. O cron não roda com
-o Mac dormindo; o dump do dia depende de o Mac estar acordado no horário.
+**Backup:** o fim da instalação imprime a linha inteira para o `crontab -e` do usuário (uma linha
+só: o crontab não junta linhas terminadas em `\`). O cron do macOS roda com `PATH=/usr/bin:/bin` e
+sem nada do perfil do shell, e o `docker` do brew (`/opt/homebrew/bin`) ou do Docker Desktop
+(`/usr/local/bin`) fica de fora. Sem ajuste, o `backup-db.sh` aborta todo dia com "docker não está no
+PATH", e o erro vai para o mail local, que ninguém lê. Por isso a linha impressa já vem com:
+
+- `PATH=<diretório do docker que o instalador usou>:/usr/bin:/bin`;
+- `DOCKER_HOST=…`, se ele estava definido na instalação (Colima configurado pelo perfil do shell, e
+  não por `docker context`);
+- a saída em `<base>/<ambiente>/backups/backup.log`, ao lado dos dumps.
+
+Depois de colar a linha, prove no ambiente do cron com o comando que o instalador imprime logo
+abaixo dela (`env -i PATH=/usr/bin:/bin HOME="$HOME" /bin/sh -c "…"`, que roda a própria linha do
+`crontab -l`) e confira `tail -3 <base>/<ambiente>/backups/backup.log`: tem de terminar em
+`[backup] pronto:`. Duas ressalvas continuam valendo. O cron não roda com o Mac dormindo, então o
+dump do dia depende de o Mac estar acordado no horário. E ninguém é avisado quando o backup falha:
+alguém precisa olhar o `backup.log` (ou `deploy/backup-db.sh --listar`) de tempos em tempos.
 
 ## Atualizar
 

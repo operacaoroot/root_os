@@ -822,6 +822,46 @@ describe('Mac: modo máquina local (--bind-ip 127.0.0.1, Colima)', () => {
     expect(existsSync(d.base)).toBe(false);
   });
 
+  // O cron do macOS roda com PATH=/usr/bin:/bin, e o docker do brew (/opt/homebrew/bin) ou do
+  // Docker Desktop (/usr/local/bin) fica de fora: a linha sem PATH abortava todo dia em
+  // "docker não está no PATH", e o erro ia para o mail local. Aqui a linha impressa roda como
+  // o cron a rodaria (env -i, PATH curto, /bin/sh) contra o backup-db.sh DE VERDADE.
+  it('a linha do crontab que o instalador imprime roda no ambiente do cron e grava o dump', () => {
+    const c = caixa();
+    const r = instalarLocal(c, 'producao', [], { DOCKER_HOST: 'unix:///Users/teste/.colima/default/docker.sock' });
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    const bloco = (r.stdout.match(/ 3\. BACKUP diário[^\n]*\n([\s\S]*?)\n {2}4\. /) ?? [])[1] ?? '';
+    const linha = bloco.split('\n').map((l) => l.trim()).find((l) => /^\d+ \d+ \* \* \* /.test(l)) ?? '';
+    // crontab não junta linha terminada em "\": a entrada inteira tem de caber numa linha
+    expect(linha, bloco).toMatch(/^17 3 \* \* \* PATH='[^']+':\/usr\/bin:\/bin /);
+    expect(linha).toContain(`PATH='${path.join(STUBS, 'bin')}':/usr/bin:/bin`);
+    // o Colima configurado por DOCKER_HOST no perfil do shell também não chega ao cron
+    expect(linha).toContain("DOCKER_HOST='unix:///Users/teste/.colima/default/docker.sock'");
+    const backups = path.join(c.base, 'producao', 'backups');
+    expect(linha.endsWith(`>> '${backups}/backup.log' 2>&1`), linha).toBe(true);
+    // a fixture carrega o stub do backup; aqui entra o script real do worktree
+    const repoBackup = `'${path.join(c.base, 'producao', 'repo', 'deploy', 'backup-db.sh')}'`;
+    expect(linha).toContain(repoBackup);
+    const comando = linha.replace(/^(\S+ ){5}/, '').replace(repoBackup, `'${path.join(RAIZ, 'deploy', 'backup-db.sh')}'`);
+    const cron = spawnSync('/usr/bin/env', ['-i', 'PATH=/usr/bin:/bin', `HOME=${process.env.HOME ?? ''}`, `STUB_LOG=${c.log}`, '/bin/sh', '-c', comando], { encoding: 'utf8' });
+    const log = existsSync(path.join(backups, 'backup.log')) ? readFileSync(path.join(backups, 'backup.log'), 'utf8') : '';
+    expect(cron.status, log + cron.stderr).toBe(0);
+    expect(log).toMatch(/\[backup\] pronto: /);
+    expect(readdirSync(path.join(backups, 'diario')).filter((f) => f.endsWith('.sql.gz'))).toHaveLength(1);
+    expect(readdirSync(path.join(backups, 'semanal')).filter((f) => f.endsWith('.sql.gz'))).toHaveLength(1);
+  });
+
+  it('a linha antiga, sem PATH, reproduz o defeito: no PATH do cron o backup aborta', () => {
+    const c = caixa();
+    expect(instalarLocal(c, 'producao').status).toBe(0);
+    const backups = path.join(c.base, 'producao', 'backups');
+    const semPath = `BACKUP_DB_CONTAINER=rootos_prod_db PGUSER=rootos PGDATABASE=rootos_producao BACKUP_DIR='${backups}' '${path.join(RAIZ, 'deploy', 'backup-db.sh')}'`;
+    const cron = spawnSync('/usr/bin/env', ['-i', 'PATH=/usr/bin:/bin', `HOME=${process.env.HOME ?? ''}`, `STUB_LOG=${c.log}`, '/bin/sh', '-c', semPath], { encoding: 'utf8' });
+    expect(cron.status).toBe(1);
+    // o erro agora diz o que pôr na linha
+    expect(cron.stderr).toMatch(/docker não está no PATH.*PATH=<diretório do docker>:\/usr\/bin:\/bin/);
+  });
+
   it.skipIf(existsSync('/srv/root-os'))('sem ROOTOS_BASE a base local é ~/root-os, e o atualizar a acha sozinho', () => {
     const c = caixa();
     const home = mkdtempSync(path.join(tmpdir(), 'p1-home-'));

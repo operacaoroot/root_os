@@ -58,7 +58,20 @@ case "$sub" in
         [ "${STUB_FAIL_PSQL:-0}" = 1 ] && exit 1
         # STUB_APPLIED: "nome" ou "nome:checksum", separados por vírgula
         printf '%s' "${STUB_APPLIED:-}" | tr ',' '\n' | sed -E '/:/! s/$/:/'; echo; exit 0 ;;
-      *pg_dump*) [ "${STUB_FAIL_DUMP:-0}" = 1 ] && exit 1; exit 0 ;;
+      *pg_dump*)
+        [ "${STUB_FAIL_DUMP:-0}" = 1 ] && exit 1
+        # o pg_dump do deploy/backup-db.sh (`pg_dump -w --no-owner`): um dump que passa na
+        # verificação dele — CREATE TABLE, bloco COPY com linha, rodapé e mais de 1 kB no gzip.
+        # Os dados são pseudoaleatórios de semente fixa, para o gzip não os encolher.
+        case " $joined " in *" pg_dump -w --no-owner "*)
+          echo '-- PostgreSQL database dump'
+          echo 'CREATE TABLE public."Org" (id text NOT NULL);'
+          echo 'COPY public."Org" (id) FROM stdin;'
+          awk 'BEGIN { srand(7); for (i = 0; i < 128; i++) { s = ""; for (j = 0; j < 32; j++) s = s sprintf("%x", int(rand() * 16)); print s } }'
+          printf '%s\n' '\.'
+          echo '-- PostgreSQL database dump complete'
+        ;; esac
+        exit 0 ;;
       *"CREATE DATABASE"*|*"DROP DATABASE"*) exit 0 ;;
       *) exit 0 ;;
     esac ;;

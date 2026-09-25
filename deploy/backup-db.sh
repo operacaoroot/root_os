@@ -141,7 +141,8 @@ USA_URL=0
 
 exige_clientes() {
   if [ -n "$DB_CONTAINER" ]; then
-    command -v docker >/dev/null 2>&1 || erro "BACKUP_DB_CONTAINER definido mas docker não está no PATH."
+    # No cron o PATH é curto (no macOS, /usr/bin:/bin): o docker do brew ou do Docker Desktop fica de fora.
+    command -v docker >/dev/null 2>&1 || erro "BACKUP_DB_CONTAINER definido mas docker não está no PATH ($PATH). No crontab, comece a linha com PATH=<diretório do docker>:/usr/bin:/bin (o instalador imprime a linha pronta)."
     docker inspect "$DB_CONTAINER" >/dev/null 2>&1 || erro "container '$DB_CONTAINER' não existe."
     if [ "$USA_URL" = 0 ]; then
       [ -n "${PGUSER:-}" ]     || erro "no modo container sem DATABASE_URL, exporte PGUSER."
