@@ -38,6 +38,8 @@ import {
 const TETO_DE_PENDENTES_DE_RENDER = 20;
 /** A varredura da Derivação para em 5 lotes (100 episódios): o que sobra é o mais antigo, e a leitura a cada 15 min não cresce com os anos. */
 const TETO_DE_LOTES_DA_DERIVACAO = 5;
+/** Onde a peça da semana ainda se edita e o vigia ainda renderiza. */
+const STATUS_QUE_RENDERIZAM = ['derivacao', 'agendado'] as const satisfies readonly PautaEpisodioStatus[];
 
 type LinhaDaDerivacao = {
   id: string;
@@ -101,8 +103,11 @@ export class MidiaService {
   }
 
   /**
-   * Os da Derivação com render pendente, do MAIS NOVO, até 20. Nada tira um
-   * episódio da Derivação sozinho (o MD1 para nela), então a leitura anda em
+   * Os da Derivação e do Agendado com render pendente, do MAIS NOVO, até 20.
+   * A assinatura do lote leva o episódio ao Agendado sozinha (MD8), e ali a
+   * peça ainda se edita e o corte ainda troca de trecho (MD13): sem o Agendado
+   * na fila, o que perdeu a mídia depois da assinatura ficava sem render. O
+   * que já tem a mídia inteira não entra (`renderPendente`). A leitura anda em
    * lotes de 20 até juntar os 20 pendentes: os antigos já renderizados não
    * escondem o da semana. Uma leitura das peças por episódio.
    */
@@ -111,7 +116,7 @@ export class MidiaService {
     let antesDe: number | null = null;
     for (let lote = 0; lote < TETO_DE_LOTES_DA_DERIVACAO; lote++) {
       const rows: LinhaDaDerivacao[] = await this.prisma.pautaEpisodio.findMany({
-        where: { orgId, status: { in: ['derivacao'] }, ...(antesDe === null ? {} : { numero: { lt: antesDe } }) },
+        where: { orgId, status: { in: [...STATUS_QUE_RENDERIZAM] }, ...(antesDe === null ? {} : { numero: { lt: antesDe } }) },
         orderBy: { numero: 'desc' },
         take: TETO_DE_PENDENTES_DE_RENDER,
         select: { id: true, numero: true, titulo: true, status: true, rodadaId: true, midia: true, transcricao: true, statusDesde: true },

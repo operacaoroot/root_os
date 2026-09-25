@@ -488,7 +488,7 @@ describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação',
     });
     const r = await s.midia.pendentes(ORG);
     expect(r.items.map((e) => [e.apelido, e.statusDesde])).toEqual([['ep-05', desde.toISOString()]]);
-    expect(s.listagens[1]).toMatchObject({ where: { orgId: ORG, status: { in: ['derivacao'] } }, orderBy: { numero: 'desc' }, take: 20 });
+    expect(s.listagens[1]).toMatchObject({ where: { orgId: ORG, status: { in: ['derivacao', 'agendado'] } }, orderBy: { numero: 'desc' }, take: 20 });
     // O e2 é da mesma rodada no prisma de mentira, mas as peças são do e1: ele fica de fora.
     expect(r.derivacao).toEqual([
       {
@@ -509,9 +509,42 @@ describe('MD2: a fila diz desde quando e o que falta renderizar na Derivação',
     const r2 = await s2.midia.pendentes(ORG);
     expect(r2.derivacao.map((e) => e.apelido)).toEqual(['ep-01']);
     expect(s2.listagens.slice(1)).toMatchObject([
-      { orderBy: { numero: 'desc' }, take: 20, where: { status: { in: ['derivacao'] } } },
+      { orderBy: { numero: 'desc' }, take: 20, where: { status: { in: ['derivacao', 'agendado'] } } },
       { orderBy: { numero: 'desc' }, take: 20, where: { numero: { lt: 2 } } },
     ]);
+  });
+});
+
+describe('MD8/MD13: o Agendado também entra na fila de render', () => {
+  const SHA = shaDaTranscricao(SEGMENTOS);
+  const noStorage = { arquivo: '/x.mp4', chave: 'pauta/pecas/p/corte-a.mp4', sha256: 'a'.repeat(64), bytes: 1, duracaoSeg: 1, largura: 1080, altura: 1920 };
+  const corte = (id: string, video: unknown, status = 'aprovada'): PecaFalsa => ({
+    id, orgId: ORG, rodadaId: RODADA, canal: 'instagram', formato: 'corte', status, agendadaPara: null,
+    titulo: `t-${id}`, corpo: `c-${id}`, meta: { episodioId: 'e1', itemId: 'c1', itemN: 1, formato: 'corte', transcricaoSha: SHA, imagens: [], video },
+  });
+
+  it('o corte que trocou de trecho no Agendado (sem mp4) volta ao vigia; o que tem a mídia inteira não', async () => {
+    const trocado = servico({
+      episodios: [ep({ id: 'e1', numero: 12, status: 'agendado', transcricao: SEGMENTOS })],
+      pecas: [corte('trocado', null)],
+    });
+    expect((await trocado.midia.pendentes(ORG)).derivacao.map((e) => [e.apelido, e.status, Object.keys(e.precisaDeRender)])).toEqual([
+      ['ep-12', 'agendado', ['corte']],
+    ]);
+
+    const inteiro = servico({
+      episodios: [ep({ id: 'e1', numero: 12, status: 'agendado', transcricao: SEGMENTOS })],
+      pecas: [corte('inteiro', noStorage)],
+    });
+    expect((await inteiro.midia.pendentes(ORG)).derivacao).toEqual([]);
+  });
+
+  it('o Concluído continua fora: ali a peça é o registro do que foi ao ar', async () => {
+    const s = servico({
+      episodios: [ep({ id: 'e1', numero: 12, status: 'concluido', transcricao: SEGMENTOS })],
+      pecas: [corte('sem', null)],
+    });
+    expect((await s.midia.pendentes(ORG)).derivacao).toEqual([]);
   });
 });
 
