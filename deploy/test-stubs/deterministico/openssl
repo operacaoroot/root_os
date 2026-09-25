@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# STUB DETERMINÍSTICO de `openssl`, SÓ para o teste de regressão byte a byte do
+# instalador (apps/api/test/deploy-instancia.test.ts). Fica fora de bin/ de
+# propósito: nas outras suítes os segredos precisam ser aleatórios de verdade
+# (é o que prova que produção e homologação não compartilham senha).
+# `rand -hex N` → 2N caracteres hex, derivados de um contador por execução.
+set -u
+[ "${1:-}" = rand ] && [ "${2:-}" = -hex ] || { echo "stub openssl: só 'rand -hex N'" >&2; exit 1; }
+n="${3:?}"; f="${STUB_OPENSSL_CONTADOR:?}"
+i=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$i" > "$f"
+out=""; while [ "${#out}" -lt $((2 * n)) ]; do out="$out$(printf '%02x' "$i")"; done
+printf '%s\n' "${out:0:$((2 * n))}"

@@ -1,0 +1,38 @@
+# GERADO por deploy/instalar.sh — não edite à mão; a fonte é o .env desta instância.
+# Isola esta instância das irmãs: nomes de container, rede, imagem:tag e portas
+# bindadas SÓ no IP interno (o Traefik alcança; a internet não).
+services:
+  db:
+    container_name: rootos_prod_db
+    ports: !override
+      - "172.16.0.1:5442:5432"
+  redis:
+    container_name: rootos_prod_redis
+    ports: !override
+      - "172.16.0.1:6390:6379"
+  minio:
+    container_name: rootos_prod_minio
+    ports: !override
+      - "172.16.0.1:9010:9000"
+      - "172.16.0.1:9011:9001"
+  api:
+    container_name: rootos_prod_api
+
+    image: rootos-app:v1-<COMMIT12>
+    ports: !override
+      - "172.16.0.1:4001:4001"
+  web:
+    container_name: rootos_prod_web
+    image: rootos-app:v1-<COMMIT12>
+    networks:
+      marketing-os-net: null
+      easypanel:
+        aliases:
+          - root_rootos-prod_web
+    ports: !override
+      - "172.16.0.1:4000:4000"
+networks:
+  marketing-os-net:
+    name: rootos-producao-net
+  easypanel:
+    external: true

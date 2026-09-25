@@ -89,8 +89,12 @@ function caixa(): Caixa {
  * desenvolvedor não pode chegar a instalar.sh/atualizar.sh — e a suíte é o lugar
  * que prova isso. Só PATH (com os stubs na frente), HOME e TMPDIR passam.
  */
+// O alvo inclui o Mac do cliente, cujo /bin/bash é o 3.2 (sem declare -A, mapfile,
+// ${v,,}). Rodar pelo /bin/bash explícito, e não pelo `bash` do PATH (que pode ser
+// um 5.x do Homebrew), é o que faz a suíte provar que os scripts rodam lá.
+const BASH = existsSync('/bin/bash') ? '/bin/bash' : 'bash';
 function rodar(c: Caixa, script: 'instalar' | 'atualizar', args: string[], env: Record<string, string> = {}) {
-  return spawnSync('bash', [path.join(RAIZ, 'deploy', `${script}.sh`), ...args], {
+  return spawnSync(BASH, [path.join(RAIZ, 'deploy', `${script}.sh`), ...args], {
     encoding: 'utf8',
     env: {
       PATH: `${path.join(STUBS, 'bin')}:${process.env.PATH}`,
@@ -619,4 +623,78 @@ describe('Q-005: --painel — a instância nasce com o projeto Compose do easyPa
     expect(s.stdout).not.toMatch(/easyPanel/);
     expect(existsSync(path.join(d.base, 'producao', 'painel'))).toBe(false);
   });
+});
+
+/*
+ * REGRESSÃO DA VPS — escrita ANTES de o instalador ganhar o modo máquina local.
+ * As instalações que já existem (produção e homologação na VPS, bind 172.x, com e
+ * sem --painel) têm de continuar gerando o MESMO .env, o MESMO override.yml e a
+ * MESMA sequência de chamadas ao docker, byte a byte. A referência mora em
+ * test/fixtures/deploy-referencia/ e foi gravada a partir do instalador v0.4.1.
+ *
+ * Determinismo: `openssl` é um stub de contador (deploy/test-stubs/deterministico),
+ * e só quatro coisas variam por execução e são normalizadas: o diretório-base
+ * temporário, o commit da fixture, a data do cabeçalho do .env e o nome do
+ * override temporário que o compose do painel usa (mktemp).
+ * Divergência grava o que saiu em <tmp>/deploy-referencia-atual/ para comparar.
+ */
+describe('Regressão VPS: .env, override e chamadas ao docker iguais aos do v0.4.1', () => {
+  const REFERENCIA = path.join(RAIZ, 'apps', 'api', 'test', 'fixtures', 'deploy-referencia');
+  const DETERMINISTICO = path.join(STUBS, 'deterministico');
+  const GOOGLE = { ROOTOS_GOOGLE_CLIENT_ID: 'id-sintetico', ROOTOS_GOOGLE_CLIENT_SECRET: 'segredo-google-sintetico' };
+  const CENARIOS: { nome: string; amb: 'producao' | 'homologacao'; args: string[]; env: Record<string, string> }[] = [
+    {
+      nome: 'producao-painel-cliente', amb: 'producao',
+      args: ['--tag', 'v1', '--dominio', 'os.cliente.teste', '--bind-ip', '172.16.0.1', '--painel', 'root/rootos-prod', '--cliente', 'acme', '--admin-email', 'dono@acme.com.br'],
+      env: GOOGLE,
+    },
+    {
+      nome: 'homologacao-painel', amb: 'homologacao',
+      args: ['--tag', 'v1', '--dominio', 'homolog.cliente.teste', '--bind-ip', '172.16.0.1', '--painel', 'root/rootos-homologacao', '--sem-llm'],
+      env: { ROOTOS_ANTHROPIC_API_KEY: '' },
+    },
+    {
+      nome: 'producao-bind-padrao', amb: 'producao',
+      args: ['--tag', 'v1', '--dominio', 'os.cliente.teste'],
+      env: { ROOTOS_ANTHROPIC_API_KEY: '', ROOTOS_OPENAI_API_KEY: 'sk-openai-sintetica' },
+    },
+  ];
+  const normalizar = (txt: string, c: Caixa) =>
+    txt
+      .split(c.base).join('<BASE>')
+      .split(c.commits.v1).join('<COMMIT>')
+      .split(c.commits.v1.slice(0, 12)).join('<COMMIT12>')
+      .replace(/^(# ROOT OS — instância '[a-z]+' — gerado por deploy\/instalar\.sh em )\d{4}-\d{2}-\d{2}$/m, '$1<DATA>')
+      .replace(/\S*\/rootos-painel-override\.\S+/g, '<TMP>/rootos-painel-override');
+
+  for (const cen of CENARIOS) {
+    it(`${cen.nome}: byte a byte igual à referência`, () => {
+      const c = caixa();
+      const contador = path.join(path.dirname(c.log), 'openssl.contador');
+      const r = rodar(c, 'instalar', ['--ambiente', cen.amb, ...cen.args], {
+        PATH: `${DETERMINISTICO}:${path.join(STUBS, 'bin')}:${process.env.PATH}`,
+        STUB_OPENSSL_CONTADOR: contador,
+        ...cen.env,
+      });
+      expect(r.status, r.stderr + r.stdout).toBe(0);
+      const inst = path.join(c.base, cen.amb);
+      const saidas: Record<string, string> = {
+        env: normalizar(readFileSync(path.join(inst, '.env'), 'utf8'), c),
+        'override.yml': normalizar(readFileSync(path.join(inst, 'override.yml'), 'utf8'), c),
+        'docker.log': normalizar(lerLog(c), c),
+      };
+      const divergentes: string[] = [];
+      for (const [sufixo, atual] of Object.entries(saidas)) {
+        const ref = path.join(REFERENCIA, `${cen.nome}.${sufixo}`);
+        const esperado = existsSync(ref) ? readFileSync(ref, 'utf8') : null;
+        if (esperado !== atual) {
+          const dir = path.join(tmpdir(), 'deploy-referencia-atual');
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(path.join(dir, `${cen.nome}.${sufixo}`), atual);
+          divergentes.push(`${cen.nome}.${sufixo}${esperado === null ? ' (sem referência)' : ''} → ${dir}`);
+        }
+      }
+      expect(divergentes, 'saída diferente da referência do v0.4.1').toEqual([]);
+    });
+  }
 });
