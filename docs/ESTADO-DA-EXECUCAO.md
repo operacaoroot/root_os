@@ -2747,6 +2747,327 @@ invariante 4 (MD7), e isso conta como afrouxamento: só `POLITICA_CAPACIDADE_NOV
 **Voltar:** a imagem `rollback` não conhece as tabelas novas, mas as migrations são aditivas; a
 política semeada fica (a versão anterior pode ser semeada de novo, assinada).
 
+### Onda MD — a automação da máquina de conteúdo, e o fechamento da frente (25/09/2026)
+
+A onda D do `docs/PLANO-MAQUINA-DE-CONTEUDO.md`: da transcrição ao post no horário, com a aprovação
+humana num ponto por semana. Mesma branch `root-os/maquina-de-conteudo`, por cima do fechamento da
+MC-C (`68df3ae`). **Nada empurrado, nada mesclado, nada na VPS.** A especificação (`b11f7c5`), doze
+fatias, a correção final da revisão (13 commits) e este fechamento; as seções acima (MD1 a MD11,
+MD13 e a "ORDEM DE DEPLOY DA ONDA D") têm o detalhe de cada uma. O uso do dia a dia ficou em
+`docs/GUIA-MAQUINA-DE-CONTEUDO.md`.
+
+| Fatia | Commit | O que entrou | Atrás de interruptor |
+|---|---|---|---|
+| MD1 | `717e327` | Rotina `pauta.encadear`: da transcrição à semana em rascunho com os slots propostos, um passo por passagem, parando em toda decisão humana | a rotina (sem ela, nada anda) |
+| MD2 | `0ee5070` | O vigia do Mac (launchd): acha o bruto do episódio em Gravação, corta, transcreve, manda, renderiza a semana; nunca apaga | `root-midia vigia instalar` |
+| MD3 | `1441749` | A janela `fora_da_janela` da porta no fuso de São Paulo (`POLITICA_FUSO_HORARIO`); o simulador da Régua pergunta a hora ao servidor | não (mudança de comportamento) |
+| MD4 | `d67e521` | JPEG ao lado do PNG, mp4 do corte por stream até 300 MB no storage, URL pública assinada (HMAC, ≤ 1 h) para a Meta | não |
+| MD5 | `3307ef8` | A conta de publicação do Instagram (finalidade `publicacao`, escopos de publicar e comentários) e a Graph v24 | não |
+| MD6 | `ee24c22` | `instagram.post.publicar` (R3), efeito por registro, `PautaPublicacao` e a rotina `pauta.publicar-agendadas` | seed assinado; nota `pauta.publicacao.automatica` |
+| MD7 | `0264c96` | A régua aprende o lote com uso contado (`pauta.semana.aprovar`, R4); a invariante 4 muda | seed com as duas assinaturas |
+| MD8 | `20bc81a` | "Aprovar a semana": o lote com o conteúdo exato, assinado por outra pessoa titular; editar revoga só o item | nota `pauta.publicacao.automatica` |
+| MD9 | `5c064d2` | A fila de quem comentou a palavra (MC18.0), coletor por consulta, @ por 7 dias, pessoa como HMAC | a rotina `pauta.coletar-comentarios` ("liga já") |
+| MD10 | `e228c3f` | YouTube pela API: conector próprio, envio resumable do Mac sempre privado, agendamento pelo OS depois da auditoria | conector desligado até o OAuth; `YOUTUBE_AUDITORIA` |
+| MD13 | `aba6c52` | Três candidatos ao corte por matéria, com nota e motivo; trocar pela tela tira o mp4 e o vigia renderiza de novo | não |
+| MD11 | `e8554da` | A DM automática sob o lote da semana, uma por pessoa, teto por dia, janela de São Paulo | nota `pauta.dm.automatica` (desligada até o App Review) |
+| MD12 | — | TikTok pela caixa de entrada | **em espera** (decisão do Pedro) |
+| Correção final | `2c9da9a` … `ced604c` (13) | Os 11 achados confirmados da revisão, cada um com teste, e 7 dos 10 menores (tabela abaixo) | — |
+| Fechamento | este commit | Bateria completa, ensaio ponta a ponta num banco novo, o guia de uso e esta seção | — |
+
+**Medido no fechamento** (Mac, `marketing_os_test` no container `mktos-mc-db`, pgvector pg16,
+política semeada, 25/09/2026 ~04h40–05h15 de São Paulo):
+
+| Comando | Resultado |
+|---|---|
+| `pnpm typecheck --force` | 7 de 7 tarefas verdes, 0 do cache |
+| `pnpm --filter @mktos/api typecheck:test` | limpo |
+| `pnpm --filter @mktos/api test` direto, com `TEST_DATABASE_URL` | **3063 de 3063** em 74 arquivos |
+| `pnpm --filter @mktos/web test` | **621** em 48 |
+| `pnpm --filter @mktos/policy test` | **97** em 2 |
+| `pnpm --filter @mktos/api test:porta` | **61** |
+| `test:isolamento` com `TENANT_DATABASE_URL` no papel restrito (`mktos_app`/`ci`) | **358** em 1 arquivo |
+| `pnpm --filter @mktos/api db:diff` | `No difference detected.` (57 migrations) |
+| `db:deploy` num banco **novo** (`marketing_os_zero_md`, criado vazio) | **57 de 57** migrations do zero, as 15 da frente inclusive; `db:status` "up to date" |
+| `db:seed:politica` ensaiado como na produção | o banco novo semeado primeiro com o catálogo de `b11f7c5` (antes da onda: **62** capacidades, v1); a HEAD **sem assinatura** → "Nada foi semeado" (as 7 capacidades novas e a invariante removida listadas); **só com** `POLITICA_CAPACIDADE_NOVA_*` → "Nada foi semeado" (falta a do rebaixamento); **com as duas** → v2, "7 criadas, 62 atualizadas, **69** no total", com os 8 itens do afrouxamento assinado |
+| `pnpm --filter @mktos/api build` + `smoke` (contra o banco novo) | **SMOKE OK**, linha de boot `política base v2 carregada DO BANCO (69 capacidades)`, com `SMOKE_ROTAS` das 9 rotas da frente (401) |
+| `tools/root-midia` | `root-midia.test.ts` **125** + `pauta-midia.test.ts` **45** (dentro da suíte da api); `ensaio` OK; `ensaio-thumb` 1280×720; `ensaio-semana` OK (corte e story 1080×1920, carrossel de 4 slides) |
+
+**A onda D contra a linha de base de antes dela** (o fechamento da MC-C, `68df3ae`): api **2595 →
+3063** com banco (+468; 64 → 74 arquivos), web **546 → 621** (+75; 42 → 48 arquivos), policy **74 →
+97** (+23), porta **39 → 61** (+22), isolamento **326 → 358** (+32, as tabelas novas da onda nos alvos do
+isolamento), `root-midia` **110 → 170**
+(root-midia + pauta-midia), capacidades **62 → 69**, migrations **48 → 57**. O fechamento não
+acrescentou caso: os pisos da CI ficam os do `ced604c` (api 2190/66, web 431/39, isolamento 281).
+
+**Ensaio ponta a ponta, local** — do link colado no grupo ao post publicado no dublê do Instagram,
+num banco novo e sem nenhum atalho de semente além de um (o relógio, item 8). API compilada
+(`dist/main.js`, porta 4461) contra `marketing_os_zero_md` (57 migrations do zero, `db:seed` com
+senhas aleatórias, `db:seed:politica` assinado como acima). Dublês locais, nenhuma conta real: LLM
+de Chat Completions (`LLM_PROVIDER=openai`, `OPENAI_BASE_URL` em loopback; o da MD13, com os
+candidatos ao corte sempre dentro dos segmentos que o prompt anuncia), a Meta num servidor só
+(Login do Instagram, publicação baixando cada `image_url`/`video_url` como a Graph faz, comentários e
+respostas privadas; `INSTAGRAM_*_URL` em loopback) e o Google/YouTube (OAuth, envio resumable,
+`videos.list` com `fileDetails`, uploads do canal, thumb). **Storage:** MinIO descartável da imagem
+`minio/minio` já presente, em `127.0.0.1:9461`, removido no fim. Segredos gerados na hora
+(`openssl rand`) num arquivo `chmod 600` do scratchpad. O que rodou, em ordem (05h de São Paulo):
+
+1. **Pessoas:** a segunda conta, titular, criada pela API (`POST /users`, papel `admin_master`), como
+   o Pedro fará em `/regua`.
+2. **Grupo de links:** 4 mensagens pelo webhook do canal (`x-canal-segredo`) → 4 capturas em
+   rascunho, título nulo; sem o segredo → 404.
+3. **Curadoria** (`origens: ['W']`): 4 candidatos com o domínio como título, 2 sugeridos pela IA;
+   marcar os 4 e confirmar → `curada`. **Episódio** `ep-01` → roteiro gerado → Gravação.
+4. **Conexões pelos dublês:** `POST /pauta/instagram/conectar` → a URL do dublê com os três escopos →
+   callback → conta `root.ensaio` com finalidade `publicacao` e os três escopos. De quebra: a
+   primeira tentativa foi com o `state` corrompido por um erro do script (`%22` a mais) e voltou
+   `conexao=expirado`, sem gravar nada. `POST /pauta/youtube/conectar` → callback → `youtube=ok` (troca
+   do código e `channels.list` no dublê).
+5. **Rotinas** criadas por `POST /rotinas` (encadeamento, publicação, comentários), em `planejado`, com
+   `ROTINAS_CRON=off`: cada passagem foi um "Rodar agora".
+6. **Vigia do Mac, uma passagem à mão** (`root-midia vigia`, nunca o launchd; `HOME` e
+   `ROOT_MIDIA_ENV` num diretório descartável, `ROOT_MIDIA_OBS_DIR` numa pasta de teste,
+   `ROOT_MIDIA_TRANSCRICAO_DE_ENSAIO=1`): um bruto sintético de 70 s (1920×1080, o PiP rosa na região
+   do OBS, tom com pausas de 2 s) posto na pasta 1 min depois da entrada em Gravação. A passagem
+   esperou o arquivo parar (60 s), transcreveu, achou 1 tomada errada pela palavra "root, corta",
+   cortou 70,0 → 41,4 s, mandou mídia e transcrição (→ Pacote) e declarou o vídeo final para o
+   YouTube. **sha256 do bruto igual antes e depois.** Não foram exercitados aqui o "ambíguo" nem o
+   "OBS gravando" (cobertos pela suíte e pelo ensaio da MD2).
+7. **Encadeamento:** 5 "Rodar agora" → pacote (3 títulos, 3 thumbs, 1 aviso: a transcrição de ensaio
+   é um segmento só, e a descrição sai sem capítulos) → página montada fora do ar (4 botões) →
+   newsletter em rascunho → **12 peças em rascunho** → **12 slots propostos**; o sexto passou
+   `pulada` ("nenhum episódio com passo a dar"), e o episódio passou a dizer, em
+   `…/encadeamento`, os três pontos humanos (renders, página no ar, aprovação). Zero chamada à Meta
+   ou à Evolution até aqui.
+8. **Pontos humanos:** título 1, página publicada (`root-ep-01`); segunda passagem do vigia → os 4
+   cortes renderizados e **subidos ao MinIO** (sha `0c6256007a49`, 9 MB cada); os stories e os
+   carrosséis **pararam** ("Google Chrome não gravou story.png em 60 s", "node saiu com código 1").
+   Causa: o `HOME` descartável do ensaio — o Chrome e o render da máquina de carrossel (Playwright)
+   procuram perfil e navegadores no `HOME`. Os mesmos comandos, `root-midia stories ep-01` e
+   `carrosseis ep-01`, com o `HOME` real, renderizaram e subiram os 4 stories e os 4 carrosséis de 5
+   slides (PNG e JPEG); `thumbs ep-01` subiu as 3 thumbs. **Não é defeito do código:** o launchd roda
+   o vigia com o `HOME` de quem instalou. Nada foi escrito em `~/.config/root` nem em
+   `~/Library/LaunchAgents` do Mac. Thumb 1 e horário do YouTube (26/09 18h) escolhidos.
+   **O atalho do ensaio (o relógio):** as 12 peças foram aprovadas pelo `PATCH` e reagendadas pelo
+   `PUT …/agenda` para daqui a 7–10 min (uma matéria por minuto), porque o slot proposto começa no
+   dia seguinte. Nenhuma escrita direta no banco.
+9. **"Aprovar a semana":** a prévia sem impedimento, as 12 peças "ok", o YouTube "entra" (só
+   `youtube.video.enviar`, o modo teste) e as 4 regras da DM; `preparar-aprovacao` → lote de **17
+   itens** (12 posts, 1 envio ao YouTube, 4 regras); `pedir-assinatura` → R4 na fila. A titular leu
+   o conteúdo exato em `…/lotes/:id/conteudo` (legenda, mídia com bytes, horário, janela). **Quem
+   montou tentou confirmar → 403** ("Quem propôs a ação não pode aprová-la"); a titular com senha e
+   motivo → lote `ativo`, episódio em Agendado.
+10. **YouTube privado:** terceira passagem do vigia → o dublê recebeu a sessão com
+    `privacyStatus: private` e sem `publishAt`, 1 bloco de 33 MB, a consulta `bytes */total`, o
+    `videos.list` com `fileDetails`, o `thumbnails.set` e a leitura dos uploads do canal
+    (`channels.list` + `playlistItems.list`) → `conferido`, `vid-ensaio-3 (privado)` no detalhe. O
+    sha256 recebido é o do arquivo declarado (`38a4c4fd318a…`). Nenhum `EventLog` com a URI da sessão
+    ou o refresh token.
+11. **Publicação no horário:** com a nota desligada, a rotina de publicação passou `pulada`; o
+    interruptor ligado pela API da tela (`PUT /pauta/automacao/publicacao`, com motivo). Um "Rodar
+    agora" a cada 40 s: às 08:07, 08:08, 08:09 e 08:10 UTC saíram os três formatos de cada matéria;
+    as passagens seguintes, `pulada`. **O dublê recebeu 32 containers e 12 publicações** (4
+    carrosséis de 5 filhos, 4 stories, 4 Reels), cada mídia baixada da URL assinada com 200 (`image/jpeg`
+    ou `video/mp4`); o mp4 do corte chegou com o sha256 do arquivo local (`0c6256007a49`). No RASTRO: 12 `tool.proposta` e 12
+    `tool.resultado` de `instagram.post.publicar` em **R4** (às 05h de SP a janela acende; o lote é
+    R4 e cobre), ator `system`.
+12. **Fila da DM:** três comentários no carrossel 1 (um com ENSAIO1, um sem a palavra, um da própria
+    conta) → a rotina de comentários: "2 post(s), 3 comentário(s) lido(s) · 1 novo(s) na fila ·
+    ignorados: sem a palavra 1, da própria conta 1 · DM automática desligada: a fila segue à mão".
+    A linha trouxe o @, a palavra e o texto com o `/r/` da matéria e a página do episódio;
+    `/api/bio/r/<id>` → 302 para a matéria. "Marquei como respondido" → gravado. **0 respostas
+    privadas no dublê.** Nenhum `EventLog` nem `AuditLog` com o @ ou o id da pessoa.
+13. O dublê de LLM recebeu **8** chamadas, todas reconhecidas (curadoria, roteiro, pacote, newsletter e
+    uma por matéria).
+
+**A 375×812** (`next dev` na porta 4462 com `API_PROXY_TARGET` na API do ensaio; agent-browser sem
+janela; sessão com o token injetado, nenhuma senha digitada): `/atendimento` da titular com o lote
+esperando (os 12 posts, os slides em faixa rolável e o corte), a aba Semana antes e depois da
+publicação (os interruptores, a fila da DM com a linha respondida, as peças "publicada pelo OS"), o
+detalhe do `ep-01` (YouTube "privado e conferido") e `/rotinas`. Em todas, `scrollWidth` 375; os únicos
+elementos além da borda são as miniaturas da faixa de slides do `/atendimento`, que rola por dentro
+(`snap-start`), como deve. A tela mostrou certo o aviso "publicação automática ligada, mas a rotina
+de publicação está calada neste servidor (ROTINAS_CRON=off): nada sai no horário". **Nada consertado
+neste fechamento:** nenhuma suíte, nenhum passo do ensaio e nenhuma tela quebrou.
+
+**O que não rodou:** LLM real, whisper (o vigia usou a transcrição de ensaio, e por isso a transcrição
+final é um segmento só), Meta, Google, YouTube e Evolution reais, o MinIO da VPS, o launchd (só a
+passagem à mão), o papel restrito com a API de pé, o `next build`, a DM automática ligada (coberta
+pelo ensaio da MD11), o agendamento do YouTube com `aprovada` (coberto pelo ensaio da MD10) e o
+vigia sob o `HOME` real renderizando os stories e carrosséis (os comandos avulsos rodaram). O banco
+`marketing_os_zero_md` ficou no container `mktos-mc-db`, como os das ondas anteriores; o MinIO, a
+API, os dublês e o `next dev` foram parados e o MinIO removido.
+
+**Revisão adversarial da onda** (antes deste fechamento): **11 achados confirmados, 2 refutados, os
+11 corrigidos**, cada um com teste que prova o conserto; dos 10 menores, 7 corrigidos, 1 parcial e 2
+recusados.
+
+| Achado | Commit | Teste que prova |
+|---|---|---|
+| Peça editada no Agendado ficava sem render | `2c9da9a` | `pauta-midia` +2 |
+| A linha de quem comentou a palavra nunca era apagada | `fa85ef5` | `pauta-comentarios` +1 (apaga aos 14 dias; com envio de DM, espera o envio vencer) |
+| Slot perdido há mais de 4 h, interruptor sem tela, promessa de horário sem rotina | `2331e07` | api `pauta-lote-da-semana` +1, `pauta-agenda` +3; web +2 |
+| A titular assinava sem ver todos os slides nem o corte | `de67710` | web `pauta-lote-da-semana` +1 |
+| Mudar thumb, horário ou texto da DM revogava a assinatura em silêncio | `784c62c` | web `pauta-youtube` +1, `pauta-dm-automatica` +1 |
+| A conclusão do YouTube conferia só metadados; o token "só de envio" também publica | `8bb1056`, `b14ff10` | `youtube` +3, `pauta-youtube` +1 |
+| Mídia acumulando no storage sem medição | `6a6b410` | `pauta-midia-publica` +4 (`storage:uso`, órfãos só com `--remover-orfaos --confirmar`) |
+| Documentos com 62, 64 e 69 capacidades e sem ordem única de deploy | `d4b003b` | só documentação (a linha de boot do smoke confirmou 69) |
+| Menores: "Publicar agora" avulso antes do slot, Reels depois de "Cancelar a semana", lote assinado sem `PAUTA_MIDIA_PUBLICA_SEGREDO` | `e42a05a` | `pauta-lote-da-semana` +2 |
+| Menores: URLs da Meta aceitavam http; a reconexão pela bio tirava a conta de publicação | `be8528f` | `bio-oauth` +1 (reverte uma recusa registrada na MD5) |
+| Menor: faltas do YouTube diziam "no pacote" | `35217ce` | — |
+| Menores: README da root-midia e a lista "O que fica com o Pedro" | `d4b003b` | — |
+| Menor, **parcial**: reconexão do YouTube com falha no `channels.list` | `8bb1056` | a amarra pela sessão cobre o caso principal; perguntar o canal ao vivo e conferir o `channelId` do vídeo ficaram de fora |
+
+**Recusados:** o `state` dos dois OAuth preso a um cookie do navegador (mexe nos dois conectores e não
+se prova sem OAuth real) e o texto do catálogo da política (mudar entra no hash e pede seed novo). Os
+pisos da CI subiram no `ced604c` (api 2190/66, web 431/39, isolamento 281), com a conta no `ci.yml`.
+
+**ORDEM DE DEPLOY CONSOLIDADA DA FRENTE INTEIRA (A + B + C + D).** Substitui a lista de 12 passos
+do fim da onda MC-C e a "ORDEM DE DEPLOY DA ONDA D" acima como o roteiro único; as duas continuam
+como detalhe. Vale por cima do §3, que segue inteiro (os passos 1–4, a virada do papel restrito e o
+depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §2.3d e §2.3l.
+
+*Antes de tocar no servidor*
+
+1. **Merge** da branch `root-os/maquina-de-conteudo` na `main`, com a CI verde (§3, passos 1–4).
+   Decisão do Pedro; nenhum agente mescla nem empurra.
+2. **Backup do dia** (§3, passo 5) e `docker tag mktos-app:latest mktos-app:rollback`. Deixar à mão
+   a receita A1-volta (§1, onda MC-A): a imagem antiga não lê `aguardando_curadoria` nem `gmail`.
+3. **`db:status` na produção**, que deve mostrar, além das da `main` que faltarem
+   (`20260917010000_esteira_de_clientes`, `20260924010000_onboarding_do_cliente`), as **15 da frente,
+   nesta ordem**: `20260924020000_pauta_fonte_gmail`,
+   `20260924050000_pauta_rodada_aguardando_curadoria`, `20260924060000_pauta_episodio`,
+   `20260924070000_pauta_episodio_palavra_de_corte`, `20260924080000_pauta_pagina_de_links`,
+   `20260924090000_pauta_peca_agenda` (A+B+C) e `20260924100000_pauta_peca_slot_proposto`,
+   `20260924190735_pauta_episodio_status_desde`, `20260924220041_bio_finalidade`,
+   `20260924224733_pauta_publicacao`, `20260924235614_aprovacao_de_lote`,
+   `20260925021740_comentario_com_palavra`, `20260925032020_envio_ao_youtube`,
+   `20260925042725_envio_ao_youtube_em_teste`, `20260925053358_envio_de_resposta` (D). Todas
+   aditivas; as duas primeiras são `ALTER TYPE … ADD VALUE` e não se desfazem.
+4. **Variáveis no `.env` da VPS** (todas já estão no `environment:` do compose; o container não lê
+   arquivo). Com valor antes do deploy: `EVOLUTION_LINKS_JID` e `EVOLUTION_LINKS_ORG_ID` (grupo de
+   links; pré-requisito: o canal de aprovação com `CANAL_APROVACAO_SEGREDO` e
+   `CANAL_APROVACAO_CODIGO_SEGREDO`), `S3_*` (conferir), `PAUTA_MIDIA_PUBLICA_SEGREDO` e
+   `META_WEBHOOK_PESSOA_HMAC_KEY` (32+ caracteres, `openssl rand -base64 48` no terminal da VPS).
+   Quando o YouTube entrar: `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`,
+   com `YOUTUBE_AUDITORIA=pendente`. Vazias em produção: `INSTAGRAM_OAUTH_URL`/`_TOKEN_URL`/`_GRAPH_URL`,
+   `YOUTUBE_API_URL`/`_UPLOAD_URL`/`_OAUTH_URL`, `YOUTUBE_CANAL_DE_TESTE` e `INSTAGRAM_PEDIR_MENSAGENS`
+   (até o App Review). Com padrão: `PAUTA_MIDIA_PUBLICA_ORIGEM` (vazia = `PUBLIC_BIO_ORIGIN`),
+   `PAUTA_VIDEO_MAX_BYTES` e `POLITICA_FUSO_HORARIO` (`America/Sao_Paulo`, a mudança de
+   comportamento da MD3). As do `tools/root-midia` são **só do Mac**.
+5. **A rota até a API sem o `mktos_web`** (Traefik ou domínio próprio, corpo de 300 MB ou mais) e
+   `ROOT_OS_ENVIO_URL` no `~/.config/root/root-midia.env` do Mac: sem ela o mp4 acima de 10 MB não
+   sobe e todo corte fica fora do "Aprovar a semana".
+
+*Construir e provar*
+
+6. **Build das imagens `api` e `web`** (a `web` por causa do prazo de 10 min do proxy, da MC-C, e das
+   telas novas).
+7. **Ensaio das 15 migrations** num banco descartável com o dump da produção.
+8. **Smoke da imagem** com `ROTINAS_CRON=off`, os intervalos em 0 e
+   `SMOKE_ROTAS=/api/pauta/episodios,/api/pauta/episodios/pendentes-midia,/api/pauta/voz,/api/pauta/agenda,/api/pauta/agenda/grade,/api/pauta/rodadas,/api/pauta/episodios/x/encadeamento,/api/pauta/youtube/pendentes,/api/pauta/comentarios`
+   (medido neste fechamento: SMOKE OK, 69 capacidades).
+
+*Seeds e permissões, antes do `up`*
+
+9. **UM `db:seed:politica`, com as duas assinaturas**, da imagem nova contra o banco de produção
+   (`docs/DEPLOY.md` §2.3l): `POLITICA_CAPACIDADE_NOVA_AUTOR`/`_MOTIVO` e
+   `POLITICA_REBAIXAMENTO_AUTOR`/`_MOTIVO`. Sem nenhuma ou com só a primeira: "Nada foi semeado"
+   (ensaiado aqui, abaixo). É o portão humano da D-MD1: sem ele as 7 capacidades valem R5 e nada sai.
+10. **Permissões:** `pnpm --filter @mktos/shared build` → `pnpm --filter @mktos/api db:sync-permissions`
+    (entra `pauta.enviar_ao_youtube`, só no Admin Master) → todo mundo sai e entra. Resolve também o
+    403 da fila pendente desde 12/09/2026.
+
+*Subir e conferir*
+
+11. **`deploy/up.sh --vps --no-build api web`** (as migrations rodam no `command` do container).
+12. **Conferir:** `política base vN carregada DO BANCO (69 capacidades)`; `storage pronto` e
+    `mídia das peças no storage: …` (anotar o total); `entrada do grupo … ligada por
+    EntradaDeLinksService`; `/pauta` abrindo as abas, a Semana com a conta de publicação; o RASTRO.
+13. **Registrar** o que subiu (commit/tag).
+
+*Depois, na ordem em que cada interruptor faz sentido (todos nascem desligados)*
+
+14. **Segunda pessoa titular** (Lucas ou Rodrigo) em `/regua` › Pessoas, papel Admin Master. Sem ela,
+    nenhum lote é ativado; o código não contorna.
+15. **Rotinas** em `/rotinas`: coleta (quinta 22h) → encadeamento (liga o andar sozinho até a semana
+    em rascunho) → publicação (olha os posts no horário) → comentários (liga a fila da DM à mão). Sob
+    o papel restrito (§3, passo 16), nenhuma dispara.
+16. **Mac:** modelo do whisper, arquivo de variáveis com `chmod 600`, `root-midia vigia instalar`
+    (liga o cortar/transcrever/renderizar sozinho).
+17. **Instagram:** painel da Meta e Instagram Tester (MD5), depois "Conectar" na aba Semana.
+18. **Publicação automática:** só depois de 9, 10, 14, 15 e 17, o interruptor da aba Semana, com
+    motivo (grava a nota `pauta.publicacao.automatica`). Liga o post assinado sair no horário.
+19. **YouTube:** OAuth pela aba Episódios; `YOUTUBE_AUDITORIA=teste` só com canal de teste;
+    `aprovada` quando a auditoria sair (recriar o container). Liga o envio privado e, depois, o
+    agendamento.
+20. **DM automática:** só depois do App Review, `INSTAGRAM_PEDIR_MENSAGENS=sim`, reconectar a conta, o
+    teste com conta sem papel no app e o interruptor da aba Semana.
+
+**Voltar:** receita A1-volta antes da imagem `rollback`; as tabelas e colunas da B, da C e da D não
+pedem nada (aditivas); a política semeada fica, e a versão anterior pode ser semeada de novo,
+assinada. A `web` antiga volta aos 30 s de proxy e perde as telas da onda D.
+
+**Tarefas do Pedro, consolidadas da frente inteira** (nenhum agente pode fazer; com o comando e a
+conferência de cada uma no `docs/GUIA-MAQUINA-DE-CONTEUDO.md`, seção "Configurar uma vez"), na ordem
+do que destrava mais:
+
+1. **Merge, push e deploy** pela ordem acima, e a proteção da `main` (§3, passo 4).
+2. **O seed da política com as duas assinaturas**, antes do `up`, e no mesmo dia a nota
+   `09 - Escada de risco R0-R5.md` do vault com o texto novo da invariante 4 (está em
+   `packages/policy/politica-root.json`).
+3. **O 403 da fila** (`shared build` → `db:sync-permissions` → todos saem e entram), pendente desde
+   12/09/2026.
+4. **A segunda pessoa titular** (Lucas ou Rodrigo, Admin Master) em `/regua` › Pessoas.
+5. **A decisão do papel restrito** (§3, passo 16): virado, nenhuma rotina dispara, e nada avisa além
+   da tarja de descoberta cega.
+6. **Segredos no easyPanel:** `PAUTA_MIDIA_PUBLICA_SEGREDO`, `META_WEBHOOK_PESSOA_HMAC_KEY`, `S3_*`
+   conferidas.
+7. **A rota da API sem o web** (300 MB) e `ROOT_OS_ENVIO_URL` no Mac.
+8. **Mac:** o modelo do whisper (D-MC3), `~/.config/root/root-midia.env` com `chmod 600` e a conta do
+   Mac, a skill por link simbólico, `root-midia vigia instalar` e, se o log mostrar `EPERM`, a
+   permissão do node em Privacidade e Segurança.
+9. **Entrada:** o grupo "Root · links" com o webhook e as duas variáveis (D-MC10); o Google e a
+   etiqueta das newsletters; as buscas e os creators no Radar.
+10. **Rotinas** em `/rotinas`: coleta, encadeamento, publicação e comentários.
+11. **A palavra de corte (D-MC2) e a grade da semana (D-MC11)**, se não valerem as padrão.
+12. **Instagram:** o painel da Meta (tipo Business, caso de uso, Standard Access, redirect), o @ da
+    Root como Instagram Tester com o convite aceito, e "Conectar" na aba Semana.
+13. **A publicação automática** ligada na aba Semana, só depois de 2, 3, 4, 10 e 12.
+14. **YouTube:** a conta dona do canal, o projeto no Google Cloud com a API e o cliente OAuth, as
+    variáveis, o canal verificado por telefone, "Conectar o canal", a auditoria e, quando sair,
+    `YOUTUBE_AUDITORIA=aprovada`. Decidir o risco residual do token do Mac (pendência 10 da MD10).
+15. **Privacidade:** o parágrafo de quem comenta em `docs/PRIVACY.md` e na página pública (D-MC9.9).
+16. **DM automática:** a verificação da empresa, UM App Review com as quatro permissões, o app em
+    Live, `INSTAGRAM_PEDIR_MENSAGENS=sim`, a reconexão, o teste com conta sem papel no app e só então
+    o interruptor. Até lá, responder à mão pela fila e anotar o volume da primeira semana.
+17. **O episódio 00 real:** gravar, deixar a máquina andar e revisar tudo o que um modelo real
+    escreveu; medir o tempo humano de cada etapa.
+18. **Em aberto da frente:** D-MC7 (destino da newsletter), D-MC12 (região da tela no corte), o teste
+    cego da voz, o prazo de 10 min da assinatura do lote (o do R4), e os menores listados no fim da
+    MC-C.
+
+**Riscos que a frente deixa** (os da MC-C continuam; os da onda D somam):
+
+- **A primeira escrita pública automática do OS.** Um lote assinado publica a semana sem ninguém
+  olhando na hora. Os portões são o seed assinado, a segunda pessoa, o hash por item (editar revoga)
+  e o interruptor da empresa.
+- **A invariante 4 mudou** (uso contado): um defeito no consumo solta publicação sem assinatura. O
+  consumo é uma instrução só, com teste de corrida; o ensaio publicou 12 e as passagens seguintes não
+  repetiram.
+- **Nenhum prompt viu um modelo real**, e o encadeamento liga todos sem ninguém olhar entre eles. A
+  revisão de segunda é o freio; o teto de custo por empresa e um passo por passagem seguram o gasto.
+- **O papel restrito cala todas as rotinas**, sem erro visível.
+- **Rota pública servindo arquivo** (a mídia da peça), com HMAC de até 1 h conferido antes do banco;
+  a mídia no storage não é apagada (o `storage:uso` mede e separa os órfãos).
+- **O token do Mac para o YouTube**, com a auditoria aprovada, ainda cria vídeo público à parte por
+  cerca de 1 h: a defesa é a permissão só na conta do Mac e o alerta da conclusão.
+- **Os números da Meta e do Google mudam** (versão da Graph, limites, prazo da auditoria, o teto de
+  2.200 caracteres da legenda): cada "a conferir" das fatias vale no primeiro uso real.
+- **O vigia pressupõe um arquivo por episódio e nenhuma pausa maior que 2 min** na gravação.
+- **Uma réplica da API só:** o freio do segundo clique e o token do YouTube moram na memória do
+  processo.
+- **A branch só existe no disco**, o risco nº 1 do plano inteiro.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
@@ -2792,8 +3113,9 @@ ou de **uma pessoa fazendo algo fora do repositório** — e esta execução nã
 > as da `main` que ainda não subiram. A imagem do `web` também muda (o prazo do proxy de `/api`
 > subiu para 10 min em `apps/web/next.config.mjs`): vale só com a imagem reconstruída no passo 9 —
 > `up -d --no-build` com a imagem velha mantém os 30 s e as gerações longas voltam a dar 500.
-> A ordem da frente inteira, numerada de 1 a 12, está no fim da onda MC-C (§1): "ORDEM DE DEPLOY
-> CONSOLIDADA DA FRENTE (A + B + C)".
+> A ordem da frente inteira, com a onda D, está no fim da onda MD (§1): "ORDEM DE DEPLOY
+> CONSOLIDADA DA FRENTE INTEIRA (A + B + C + D)" — 15 migrations, um seed com as duas assinaturas e
+> os interruptores na ordem em que cada um faz sentido. A de 1 a 12 da MC-C ficou como detalhe.
 
 **Este é o item mais importante deste documento.** A ordem cresceu onda a onda e não é a de sempre:
 dois passos são **anteriores** ao que antes era o começo, e nenhum deles dá erro na hora — dá
@@ -2831,7 +3153,7 @@ o que segue é a lista inteira, incluindo o que aconteceu depois daquele texto.
 | # | Passo | Se pular |
 |---|---|---|
 | 12 | `up -d --no-build --vps api web` | Sem `--no-build` sobe uma imagem reconstruída na hora, não a que passou no smoke. **Sem `--vps` o compose base publica em `0.0.0.0`** e expõe banco, redis e MinIO na internet |
-| 13 | Conferir: `docker compose ps`, a linha de boot `política base vN carregada DO BANCO (N capacidades)`, as três superfícies públicas, `/rastro` | Aquela linha de boot é a prova de que o passo 10 pegou. **O N certo:** 62 até a frente A+B+C; **69 com a onda D** (a ordem própria está no fim da MD11, §1: "ORDEM DE DEPLOY DA ONDA D") |
+| 13 | Conferir: `docker compose ps`, a linha de boot `política base vN carregada DO BANCO (N capacidades)`, as três superfícies públicas, `/rastro` | Aquela linha de boot é a prova de que o passo 10 pegou. **O N certo:** 62 até a frente A+B+C; **69 com a onda D** (a ordem da frente inteira está no fim da onda MD, §1) |
 | 14 | Registrar o que subiu (commit/tag) | Enquanto o Syncthing for o transporte, nada no servidor registra isso sozinho |
 
 ### A virada do papel restrito — é outra operação, e tem ordem própria

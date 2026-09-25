@@ -5,6 +5,10 @@
 >
 > Plano vigente do produto: `docs/PLANO-CONTINUIDADE.md`. Este documento é uma frente
 > dele, não um plano concorrente. Prefixo das fatias: **MC**.
+>
+> **Como usar no dia a dia:** [`docs/GUIA-MAQUINA-DE-CONTEUDO.md`](GUIA-MAQUINA-DE-CONTEUDO.md) — o
+> que a máquina faz sozinha, a configuração de uma vez, a semana típica, os interruptores e o que
+> fazer quando algo dá errado.
 
 ## De onde vem
 
@@ -184,19 +188,19 @@ tabela de interruptores está na especificação.
 
 | # | Entrega | Depende | Pronto quando | Atrás de interruptor | Tam | Estado |
 |---|---|---|---|---|---|---|
-| MD1 | **Encadeamento no OS**: da transcrição à semana em rascunho, parando antes de qualquer saída | MC-C, D-MC11 | com a rotina criada, o POST da transcrição leva o episódio a Derivação em até 5 passagens, 12 peças em rascunho com `slotProposto`, zero chamadas a Evolution ou Meta; sem a rotina, nada acontece | rotina `pauta.encadear` | M | a fazer |
-| MD2 | **Vigia do Mac**: launchd dispara o `root-midia` quando aparece gravação nova, sem apagar o bruto | MC9, MC15; D-MC3 | bruto sintético copiado para a pasta vira Pacote com transcrição em até 3 min; `sha256` do bruto igual antes e depois; dois brutos → "ambíguo" e nada enviado | `root-midia vigia instalar` | M | a fazer |
-| MD3 | **Janela da porta no fuso de São Paulo** (`POLITICA_FUSO_HORARIO`) | — | 21:00 UTC não acende `fora_da_janela`, 23:30 e 10:30 UTC acendem, igual com `TZ=UTC` e `TZ=Asia/Tokyo`; `test:porta` ≥ 39 | não (conserto; mudança de comportamento registrada) | P | a fazer |
-| MD4 | **Mídia da peça no OS**: JPEG, mp4 do corte por stream com teto e URL pública assinada (HMAC, ≤ 1 h) | MC15, `S3_*` | 4 mp4 sobem com o sha igual ao local; a URL assinada devolve o arquivo byte a byte; token vencido ou adulterado → 404 sem consulta; 301 MB → 413 | não | M | a fazer |
-| MD5 | **Conexão de publicação do Instagram** (Login do Instagram, finalidade `publicacao`) e Graph v24 | — | a URL de publicação pede os três escopos; callback sem `content_publish` fica como `bio`; a bio de criador segue pedindo só `instagram_business_basic` | não | M | a fazer |
-| MD6 | **Publicador do Instagram**: `instagram.post.publicar` R3, efeito por registro, `PautaPublicacao` e executor `pauta.publicar-agendadas` | MD3, MD4, MD5 | "Publicar agora" fica retido, a segunda conta confirma, o dublê recebe 5 + 1 containers com a URL assinada, a peça fica `publicada` com `externalId`; conector desligado não chama; sem lote, `pulada` | seed assinado; nota `pauta.publicacao.automatica` (desligada) | G | a fazer |
-| MD7 | **A régua aprende o lote com uso contado** (MC18.1 generalizada; invariante 4 muda) | MD6, D-MD1 | policy, api, porta e isolamento verdes; dois consumos simultâneos do mesmo item deixam passar um; seed aceita com as duas assinaturas e recusa sem elas; `publicar-peca.test.ts` idêntico | seed com `POLITICA_CAPACIDADE_NOVA_*` e `POLITICA_REBAIXAMENTO_*` | G | a fazer |
-| MD8 | **"Aprovar a semana"**: o lote com o conteúdo exato das peças, assinado por outra pessoa | MD1, MD4–MD7 | a titular assina com senha e motivo e o executor publica os 11 itens no dublê; editar uma peça revoga só ela; sem assinatura ou com a nota desligada, zero chamadas | nota `pauta.publicacao.automatica` | M | a fazer |
-| MD9 | **DM mínima**: fila "quem comentou e o que responder" com o link rastreado (MC18.0) e coletor por consulta | MD5; MD6 ou MC16 | três comentários no dublê viram uma linha só, com @ e o `/r/`; marcar respondido grava o RASTRO sem @; com 7 dias, o @ some | não ("liga já": só a rotina `pauta.coletar-comentarios`) | M | a fazer |
-| MD10 | **YouTube**: conector próprio, upload resumable pelo Mac, publicação agendada pelo OS | MD7, MD8, D-MC6 | 300 MB em 5 blocos com a conexão derrubada no 3º completam pelo 308; o OS confere o vídeo e define a thumb; com lote ativo e auditoria aprovada manda `publishAt`; sem lote, nada | conector `youtube` desligado até o OAuth; `YOUTUBE_AUDITORIA` (padrão `pendente`) | G | a fazer |
-| MD11 | **DM automática sob o lote**, disparada pelo coletor | MD7, MD8, MD9, App Review | um comentário casado gera um envio com o `/r/`; a mesma pessoa não recebe duas; o 101º do dia é recusado; fora da janela segura até as 08h; com a nota desligada, nada sai | nota `pauta.dm.automatica` (desligada até o App Review) | M | a fazer |
+| MD1 | **Encadeamento no OS**: da transcrição à semana em rascunho, parando antes de qualquer saída | MC-C, D-MC11 | com a rotina criada, o POST da transcrição leva o episódio a Derivação em até 5 passagens, 12 peças em rascunho com `slotProposto`, zero chamadas a Evolution ou Meta; sem a rotina, nada acontece | rotina `pauta.encadear` | M | ✅ 24/09/2026 · `717e327` |
+| MD2 | **Vigia do Mac**: launchd dispara o `root-midia` quando aparece gravação nova, sem apagar o bruto | MC9, MC15; D-MC3 | bruto sintético copiado para a pasta vira Pacote com transcrição em até 3 min; `sha256` do bruto igual antes e depois; dois brutos → "ambíguo" e nada enviado | `root-midia vigia instalar` | M | ✅ 24/09/2026 · `0ee5070` |
+| MD3 | **Janela da porta no fuso de São Paulo** (`POLITICA_FUSO_HORARIO`) | — | 21:00 UTC não acende `fora_da_janela`, 23:30 e 10:30 UTC acendem, igual com `TZ=UTC` e `TZ=Asia/Tokyo`; `test:porta` ≥ 39 | não (conserto; mudança de comportamento registrada) | P | ✅ 24/09/2026 · `1441749` |
+| MD4 | **Mídia da peça no OS**: JPEG, mp4 do corte por stream com teto e URL pública assinada (HMAC, ≤ 1 h) | MC15, `S3_*` | 4 mp4 sobem com o sha igual ao local; a URL assinada devolve o arquivo byte a byte; token vencido ou adulterado → 404 sem consulta; 301 MB → 413 | não | M | ✅ 24/09/2026 · `d67e521` |
+| MD5 | **Conexão de publicação do Instagram** (Login do Instagram, finalidade `publicacao`) e Graph v24 | — | a URL de publicação pede os três escopos; callback sem `content_publish` fica como `bio`; a bio de criador segue pedindo só `instagram_business_basic` | não | M | ✅ 24/09/2026 · `3307ef8` |
+| MD6 | **Publicador do Instagram**: `instagram.post.publicar` R3, efeito por registro, `PautaPublicacao` e executor `pauta.publicar-agendadas` | MD3, MD4, MD5 | "Publicar agora" fica retido, a segunda conta confirma, o dublê recebe 5 + 1 containers com a URL assinada, a peça fica `publicada` com `externalId`; conector desligado não chama; sem lote, `pulada` | seed assinado; nota `pauta.publicacao.automatica` (desligada) | G | ✅ 24/09/2026 · `ee24c22` |
+| MD7 | **A régua aprende o lote com uso contado** (MC18.1 generalizada; invariante 4 muda) | MD6, D-MD1 | policy, api, porta e isolamento verdes; dois consumos simultâneos do mesmo item deixam passar um; seed aceita com as duas assinaturas e recusa sem elas; `publicar-peca.test.ts` idêntico | seed com `POLITICA_CAPACIDADE_NOVA_*` e `POLITICA_REBAIXAMENTO_*` | G | ✅ 24/09/2026 · `0264c96` |
+| MD8 | **"Aprovar a semana"**: o lote com o conteúdo exato das peças, assinado por outra pessoa | MD1, MD4–MD7 | a titular assina com senha e motivo e o executor publica os 11 itens no dublê; editar uma peça revoga só ela; sem assinatura ou com a nota desligada, zero chamadas | nota `pauta.publicacao.automatica` | M | ✅ 24/09/2026 · `20bc81a` |
+| MD9 | **DM mínima**: fila "quem comentou e o que responder" com o link rastreado (MC18.0) e coletor por consulta | MD5; MD6 ou MC16 | três comentários no dublê viram uma linha só, com @ e o `/r/`; marcar respondido grava o RASTRO sem @; com 7 dias, o @ some | não ("liga já": só a rotina `pauta.coletar-comentarios`) | M | ✅ 25/09/2026 · `5c064d2` |
+| MD10 | **YouTube**: conector próprio, upload resumable pelo Mac, publicação agendada pelo OS | MD7, MD8, D-MC6 | 300 MB em 5 blocos com a conexão derrubada no 3º completam pelo 308; o OS confere o vídeo e define a thumb; com lote ativo e auditoria aprovada manda `publishAt`; sem lote, nada | conector `youtube` desligado até o OAuth; `YOUTUBE_AUDITORIA` (padrão `pendente`) | G | ✅ 25/09/2026 · `e228c3f` |
+| MD11 | **DM automática sob o lote**, disparada pelo coletor | MD7, MD8, MD9, App Review | um comentário casado gera um envio com o `/r/`; a mesma pessoa não recebe duas; o 101º do dia é recusado; fora da janela segura até as 08h; com a nota desligada, nada sai | nota `pauta.dm.automatica` (desligada até o App Review) | M | ✅ 25/09/2026 · `e8554da` |
 | MD12 | **TikTok pela caixa de entrada** — **em espera** | MD6, MD8 | — | — | M | em espera (decisão do Pedro) |
-| MD13 | **Corte com nota e motivo** (ideia do OpenShorts, sem código dele) | MD1 | cada matéria sai com 3 candidatos e o de maior nota como padrão; trocar marca novo render | não | P | feito 25/09 (ver ESTADO-DA-EXECUCAO) |
+| MD13 | **Corte com nota e motivo** (ideia do OpenShorts, sem código dele) | MD1 | cada matéria sai com 3 candidatos e o de maior nota como padrão; trocar marca novo render | não | P | ✅ 25/09/2026 · `aba6c52` |
 
 **Decisões da onda D** (do Pedro, 24/09/2026, seguindo as recomendações):
 
@@ -212,6 +216,14 @@ tabela de interruptores está na especificação.
 
 **Ordem:** MD1 → MD2 → MD3 → MD4 → MD5 → MD6 → MD7 → MD8 → MD9 → MD10 → MD13 → MD11. Cada fatia é um
 commit, com as suítes da "Verificação" abaixo verdes e os pisos da CI subidos junto.
+
+**Onda D concluída em 25/09/2026:** 12 fatias (MD1 a MD11 e MD13, de `717e327` a `e8554da`) e a
+correção final da revisão (13 commits, de `2c9da9a` a `ced604c`), mais o fechamento com o ensaio
+ponta a ponta e o guia de uso. **Em espera:** MD12 (TikTok, decisão do Pedro), a DM automática ligada
+(espera o App Review) e o YouTube público (espera a auditoria). Registro, números, ensaio, revisão, a
+ordem de deploy consolidada da frente inteira e os passos manuais do Pedro em
+`docs/ESTADO-DA-EXECUCAO.md` §1, "Onda MD". O uso semanal está no
+[guia](GUIA-MAQUINA-DE-CONTEUDO.md).
 
 ## Esta onda
 
@@ -346,6 +358,10 @@ Em cada etapa, medir o tempo humano gasto. É o número de "horas devolvidas" qu
 Root, e ele sai do ensaio, não de estimativa.
 
 ## Como usar numa semana real
+
+> **Desde a onda D, o roteiro vigente é o [guia de uso](GUIA-MAQUINA-DE-CONTEUDO.md)**, com a
+> publicação no horário, o "Aprovar a semana", o vigia do Mac e a fila da DM. A lista abaixo é a da
+> onda MC-C (tudo à mão) e continua valendo para quem não ligou as automações.
 
 O que o Pedro faz, dia a dia, depois do deploy e das tarefas de configuração (ESTADO §1, onda MC-C).
 Cada passo diz onde se faz.
