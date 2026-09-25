@@ -1,0 +1,15 @@
+docker compose version
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml build api
+docker image inspect rootos-app:v1-<COMMIT12>
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml up -d db redis minio
+docker exec rootos_homolog_db pg_isready -U rootos
+docker exec rootos_homolog_db pg_isready -U rootos
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml run --rm --no-deps api sh -c pnpm exec prisma migrate deploy
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml run --rm --no-deps -e ADMIN_PASSWORD -e MCP_SERVICE_PASSWORD api sh -c pnpm db:seed
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml run --rm --no-deps api sh -c pnpm db:seed:politica
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <BASE>/homologacao/override.yml up -d --no-build
+curl http://172.16.0.1:4101/api/health
+curl http://172.16.0.1:4101/api/health/versao
+curl http://172.16.0.1:4101/api/health/versao
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <TMP>/rootos-painel-override config --no-interpolate
+docker compose -p root_rootos-homologacao --project-directory <BASE>/homologacao/repo --env-file <BASE>/homologacao/.env -f <BASE>/homologacao/repo/docker-compose.yml -f <TMP>/rootos-painel-override config --no-interpolate

@@ -702,6 +702,20 @@ describe('Regressão VPS: .env, override e chamadas ao docker iguais aos do v0.4
       expect(divergentes, 'saída diferente da referência do v0.4.1').toEqual([]);
     });
   }
+
+  // A referência só vale se viaja com o código: arquivo solto no disco de quem gravou
+  // passa aqui e some num checkout limpo (o `*.log` do .gitignore engolia os .docker.log).
+  it('as 9 referências estão no git e nenhuma cai no .gitignore', () => {
+    const esperadas = CENARIOS.flatMap((cen) =>
+      ['env', 'override.yml', 'docker.log'].map((s) => path.relative(RAIZ, path.join(REFERENCIA, `${cen.nome}.${s}`))),
+    );
+    const versionadas = sh('git', ['-C', RAIZ, 'ls-files', '--', path.relative(RAIZ, REFERENCIA)]);
+    expect(versionadas.status, versionadas.stderr).toBe(0);
+    const noGit = new Set(versionadas.stdout.split('\n').filter(Boolean));
+    expect(esperadas.filter((f) => !noGit.has(f)), 'referência fora do git').toEqual([]);
+    const ignoradas = sh('git', ['-C', RAIZ, 'check-ignore', '--no-index', '--', ...esperadas]);
+    expect(ignoradas.stdout.split('\n').filter(Boolean), 'referência que o .gitignore engole').toEqual([]);
+  });
 });
 
 /*

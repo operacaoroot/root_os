@@ -17,6 +17,8 @@ db_data/
 minio_data/
 redis_data/
 *.log
+# referência da regressão da VPS (apps/api/test/deploy-instancia.test.ts): é teste, não log
+!apps/api/test/fixtures/deploy-referencia/*.docker.log
 
 # SO / editor
 .DS_Store
