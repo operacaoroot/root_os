@@ -2992,7 +2992,7 @@ depois). Os comandos com contêiner estão em `docs/DEPLOY.md` §2.0, §2.3b, §
 
 *Depois, na ordem em que cada interruptor faz sentido (todos nascem desligados)*
 
-14. **Segunda pessoa titular** (Lucas ou Rodrigo) em `/regua` › Pessoas, papel Admin Master. Sem ela,
+14. **Segunda pessoa titular** (Lucas ou Rodrigo) em `/regua` › Quem autoriza, papel Admin Master. Sem ela,
     nenhum lote é ativado; o código não contorna.
 15. **Rotinas** em `/rotinas`: coleta (quinta 22h) → encadeamento (liga o andar sozinho até a semana
     em rascunho) → publicação (olha os posts no horário) → comentários (liga a fila da DM à mão). Sob
@@ -3022,7 +3022,7 @@ do que destrava mais:
    `packages/policy/politica-root.json`).
 3. **O 403 da fila** (`shared build` → `db:sync-permissions` → todos saem e entram), pendente desde
    12/09/2026.
-4. **A segunda pessoa titular** (Lucas ou Rodrigo, Admin Master) em `/regua` › Pessoas.
+4. **A segunda pessoa titular** (Lucas ou Rodrigo, Admin Master) em `/regua` › Quem autoriza.
 5. **A decisão do papel restrito** (§3, passo 16): virado, nenhuma rotina dispara, e nada avisa além
    da tarja de descoberta cega.
 6. **Segredos no easyPanel:** `PAUTA_MIDIA_PUBLICA_SEGREDO`, `META_WEBHOOK_PESSOA_HMAC_KEY`, `S3_*`

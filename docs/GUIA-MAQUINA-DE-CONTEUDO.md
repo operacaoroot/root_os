@@ -79,10 +79,10 @@ antes de tudo; o resto pode seguir em qualquer ordem, menos onde o texto avisa.
 
 **Pessoas e permissões**
 
-6. **Segundo titular.** Em `/regua`, aba Pessoas, criar o Lucas ou o Rodrigo com o papel Admin
+6. **Segundo titular.** Em `/regua`, aba Quem autoriza, criar o Lucas ou o Rodrigo com o papel Admin
    Master. O código não contorna a segunda pessoa.
    *Confere:* ele entra, abre `/atendimento` e vê a fila.
-7. **Conta do Mac.** Crie em `/regua`, aba Pessoas, uma conta usada só pelo Mac. Ela precisa de
+7. **Conta do Mac.** Crie em `/regua`, aba Quem autoriza, uma conta usada só pelo Mac. Ela precisa de
    `pauta.editar` e, para mandar o vídeo ao YouTube, de `pauta.enviar_ao_youtube`, que hoje só o
    papel Admin Master tem. Enquanto não houver um perfil próprio mais estreito (pendência 10 da
    MD10), não use essa conta para mais nada: é ela que recebe o token de envio.
