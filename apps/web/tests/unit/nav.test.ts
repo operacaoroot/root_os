@@ -370,3 +370,66 @@ describe('navEmArvore', () => {
     }
   });
 });
+
+/*
+ * O BLOCO MARKETING (MK7, frente MK).
+ *
+ * A decisão do Pedro de 28/09/2026 manda o bloco seguir a organização do app do
+ * Lucas. O que esta suíte guarda não é a aparência do menu — é o desenho que a
+ * decisão fixou, e que se perde calado numa refatoração: o bloco fica sob "O
+ * que sai", a marca NÃO fica dentro dele, e a agenda do mês não vira item
+ * próprio porque a aba Semana da Pauta já é a agenda.
+ */
+describe('o bloco Marketing (MK7)', () => {
+  const item = (k: string) => NAV.find((n) => n.key === k);
+
+  it('o bloco vive em "O que sai", governado pelo módulo pauta', () => {
+    const m = item('marketing');
+    expect(m).toBeDefined();
+    expect(m!.href).toBe('/marketing');
+    expect(m!.secao).toBe('sai');
+    expect(m!.modulo).toBe('pauta');
+    expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
+  });
+
+  it('a estratégia e o relatório do mês penduram no bloco', () => {
+    for (const k of ['marketing-estrategia', 'marketing-relatorio']) {
+      const n = item(k);
+      expect(n, `${k} sumiu do menu`).toBeDefined();
+      expect(n!.pai).toBe('marketing');
+      expect(n!.permission).toBe('pauta.ver');
+    }
+  });
+
+  it('a MARCA não mora no bloco: ela é contexto da empresa', () => {
+    const marca = item('marca');
+    expect(marca).toBeDefined();
+    expect(marca!.pai, 'marca dentro de Marketing a esconde de quem escreve').toBe('contexto');
+    expect(marca!.secao).toBe('central');
+    // A permissão é a da rota da API, e não a do Contexto: quem abre a tela
+    // precisa poder ler a pauta, senão vê um erro em vez do conteúdo.
+    expect(marca!.permission).toBe('pauta.ver');
+  });
+
+  it('a agenda do mês NÃO vira item próprio: a aba Semana da Pauta já é a agenda', () => {
+    const agendaDoBloco = NAV.filter((n) => n.pai === 'marketing').find((n) => /agenda/i.test(n.label));
+    expect(agendaDoBloco, 'duplicar a agenda cria a segunda verdade que a decisão manda evitar').toBeUndefined();
+    expect(item('pauta')!.href).toBe('/pauta');
+  });
+
+  it('quem enxerga a Pauta enxerga o bloco inteiro, e sem o módulo nada aparece', () => {
+    const perms = new Set(['pauta.ver']);
+    const comModulo = navEmArvore(perms, ['pauta']);
+    const sai = comModulo.find((g) => g.secao.key === 'sai');
+    const bloco = sai?.itens.find((i) => i.item.key === 'marketing');
+    expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
+    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual(['marketing-estrategia', 'marketing-relatorio']);
+
+    // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
+    // importa é que o bloco não aparece por nenhum caminho.
+    const semModulo = navEmArvore(perms, []);
+    const todosSemModulo = semModulo.flatMap((g) => g.itens.map((i) => i.item.key));
+    expect(todosSemModulo).not.toContain('marketing');
+    expect(todosSemModulo).not.toContain('marketing-estrategia');
+  });
+});

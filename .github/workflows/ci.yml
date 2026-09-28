@@ -575,7 +575,16 @@ jobs:
       # lote pedem confirmação), `component/pauta-dm-automatica` +1 (o aviso
       # no texto da matéria com regra assinada). Medido: 621 casos em 48
       # arquivos. O piso de CASOS sobe 4 (~15% de folga sobre os 5), para 431.
-      PISO_CASOS_WEB: '431'
+      #
+      # MK7, O BLOCO MARKETING NO MENU (28/09/2026): +5 casos em `nav`, sem
+      # arquivo novo — o bloco em "O que sai" governado pelo módulo pauta, a
+      # estratégia e o relatório pendurados nele, a MARCA que fica no Contexto e
+      # não dentro do bloco, a agenda do mês que NÃO vira item próprio (a aba
+      # Semana da Pauta já é a agenda) e o sumiço do bloco inteiro sem o módulo.
+      # É desenho que a decisão do Pedro fixou e que se perde calado numa
+      # refatoração. Medido: 640 casos em 49 arquivos. O piso de ARQUIVOS fica
+      # onde está (nenhum arquivo novo); o de CASOS sobe 4, para 435.
+      PISO_CASOS_WEB: '435'
       PISO_ARQUIVOS_WEB: '39'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,

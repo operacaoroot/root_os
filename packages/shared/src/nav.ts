@@ -126,7 +126,11 @@ export const NAV: NavItem[] = [
   // existir, que é o defeito que a onda inteira tentou consertar.
   // Segue `parcial` porque as abas Marca e Identidade não entraram; o texto
   // agora diz o que FALTA, e não o que já chegou.
-  { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa está de pé; as abas Marca e Identidade entram nas próximas fatias' },
+  { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa está de pé e a Marca entrou (MK1); a Identidade entra numa próxima fatia' },
+  // MK1/MK7: a marca mora no Contexto, e não dentro do bloco Marketing, porque
+  // é contexto da empresa — ela entra nos pedidos que a pauta faz à IA, e quem
+  // escreve precisa dela à mão. A permissão é a da rota da API (`pauta.ver`).
+  { key: 'marca', label: 'Marca e pilares', href: '/contexto/marca', icon: 'Fingerprint', permission: 'pauta.ver', secao: 'central', pai: 'contexto' },
   { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central' },
   /*
    * A CAIXA PESSOAL (fatia A7) — "o que precisa de mim".
@@ -273,6 +277,14 @@ export const NAV: NavItem[] = [
   { key: 'conteudo', label: 'Conteúdo', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'sai', modulo: 'conteudo' },
   { key: 'pauta', label: 'Pauta', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'pauta' },
+  // MK7 (frente MK): o bloco Marketing na organização do app que virou o modelo
+  // desta frente. Ele fica ABAIXO da Pauta e não no lugar dela: a Pauta é a
+  // máquina que publica, e o Marketing é o que decide o que publicar. A agenda
+  // do mês não vira item aqui porque a aba Semana da Pauta já é a agenda real —
+  // duplicá-la criaria a segunda verdade que a decisão do Pedro manda evitar.
+  { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
+  { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'sai', modulo: 'instagram' },
   { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'sai', modulo: 'bio' },
   { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'sai', modulo: 'metas' },
