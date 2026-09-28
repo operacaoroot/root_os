@@ -10,6 +10,7 @@ import type {
   LlmTurn,
   LlmUsage,
 } from './llm.provider';
+import { saidaDaResposta } from './llm.provider';
 import { custoUsd } from './preco';
 import { env, envOpcional } from './env';
 
@@ -56,7 +57,7 @@ export class OpenAiProvider implements LlmProvider {
     return this.apiKey.length > 0;
   }
 
-  async complete({ system, user }: LlmMessage): Promise<string> {
+  async complete({ system, user, maxTokens }: LlmMessage): Promise<string> {
     if (!this.configured) {
       throw new Error(
         `${this.envDaChave} ausente. Configure a credencial no ambiente da API e reinicie.`,
@@ -73,7 +74,7 @@ export class OpenAiProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.model,
         temperature: 0.3,
-        max_tokens: TETO_SAIDA_RESPOSTA,
+        max_tokens: this.tetoDeSaida({ tipo: 'completa', maxTokens }),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -98,7 +99,7 @@ export class OpenAiProvider implements LlmProvider {
   /** Ver `LlmProvider.tetoDeSaida`. Usa as MESMAS constantes que `complete()` e
    *  `step()` mandam em `max_tokens` — número solto em dois lugares diverge. */
   tetoDeSaida(chamada: ChamadaParaTeto): number {
-    if (chamada.tipo === 'completa') return TETO_SAIDA_RESPOSTA;
+    if (chamada.tipo === 'completa') return saidaDaResposta(TETO_SAIDA_RESPOSTA, chamada.maxTokens);
     return chamada.maxTokens ?? TETO_SAIDA_PASSO;
   }
 

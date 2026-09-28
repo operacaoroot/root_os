@@ -5,10 +5,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { NestFactory } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ZodExceptionFilter } from './common/zod-exception.filter';
 import { LoggerDeCorrelacao } from './common/logger-correlacao';
+import { instalarCorpoDaMidia } from './common/corpo-da-midia';
+import { ehTokenDeSessao } from './auth/jwt-auth.guard';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
 // nunca no repo. Carregadas AQUI sem sobrescrever o .env local da API.
@@ -46,7 +49,18 @@ async function bootstrap() {
   // o mesmo mecanismo e perde a disputa em silêncio para esta linha. Ver
   // common/logger-correlacao.ts.
   app.useLogger(new LoggerDeCorrelacao());
-  app.setGlobalPrefix('api');
+  const prefixo = 'api';
+  app.setGlobalPrefix(prefixo);
+  // O corpo JSON continua com o padrão do Nest (100 kb) em toda a API; só as
+  // duas rotas de mídia do episódio aceitam mais. Tem de vir antes do `listen`.
+  const jwt = app.get(JwtService, { strict: false });
+  instalarCorpoDaMidia(app, prefixo, (token) => {
+    try {
+      return ehTokenDeSessao(jwt.verify(token));
+    } catch {
+      return false;
+    }
+  });
   app.enableCors({
     origin: (process.env.WEB_ORIGIN ?? 'http://localhost:4000').split(','),
     credentials: true,

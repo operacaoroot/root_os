@@ -74,9 +74,78 @@ export interface RotinasList {
    * tarja vermelha em cima de tudo.
    */
   descobertaCega: boolean;
+  /**
+   * Os tipos com executor inscrito e módulo contratado: os únicos que `POST
+   * /rotinas` aceita. Opcional porque web e API sobem em serviços separados, e
+   * a API anterior não manda o campo — faltar só esconde o botão.
+   */
+  tiposDisponiveis?: string[];
   /** O que a última reconciliação não conseguiu fazer. Vazio é o normal. */
   avisos: string[];
   source: { tool: string; generatedAt: string };
+}
+
+/** O executor da coleta de quinta (MC5). */
+export const TIPO_PAUTA_COLETA = 'pauta.coleta';
+
+/** O executor do encadeamento da transcrição à semana em rascunho (MD1). */
+export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
+
+/** O executor que conclui e olha a publicação no Instagram (MD6). */
+export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
+
+/** O executor que monta a fila da DM à mão com quem comentou a palavra-chave (MD9). */
+export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
+
+/** O que `POST /rotinas/:id/rodar` devolve. */
+export interface ResultadoDoRodar {
+  ok: boolean;
+  status: 'ok' | 'erro' | 'pulada';
+  resumo: string;
+}
+
+/** O corpo de `POST /rotinas` para a coleta de quinta. */
+export interface CorpoDaNovaColeta {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_COLETA;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: { horas: number };
+}
+
+/** O corpo de `POST /rotinas` para o encadeamento (MD1): sem `etapas`, todas. */
+export interface CorpoDoNovoEncadeamento {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_ENCADEAR;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: { etapas?: string[] };
+}
+
+/** O corpo de `POST /rotinas` para a publicação (MD6): sem configuração. */
+export interface CorpoDaNovaPublicacao {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_PUBLICAR;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: Record<string, never>;
+}
+
+/** O corpo de `POST /rotinas` para a fila de comentários (MD9): sem configuração. */
+export interface CorpoDaNovaRotinaDeComentarios {
+  nome: string;
+  slug?: string;
+  tipo: typeof TIPO_PAUTA_COMENTARIOS;
+  cron: string;
+  tz: string;
+  estado: EstadoDaRotina;
+  config: Record<string, never>;
 }
 
 /** Os quatro estados, na ordem em que a tela os oferece. */

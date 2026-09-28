@@ -228,6 +228,12 @@ function Capacidade({ c, sobrescrita }: { c: CapacidadeDaRegua; sobrescrita: boo
         )}
         {c.rota && <Etiqueta>{c.rota}</Etiqueta>}
         {c.desfazer && <Etiqueta>desfaz por {c.desfazer}</Etiqueta>}
+        {c.aprovacao?.modo === 'lote' && (
+          <Etiqueta>
+            aprova em lote: até {c.aprovacao.tetoDeItens} itens, por até {c.aprovacao.validadeMaximaDias} dias
+          </Etiqueta>
+        )}
+        {c.aprovacao?.modo === 'sob_lote' && <Etiqueta>sai também por item de lote de {c.aprovacao.lote}</Etiqueta>}
         {!c.validaArgumentos && (
           <span className="rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">
             sem esquema de argumentos

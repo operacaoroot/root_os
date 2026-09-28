@@ -7,6 +7,15 @@ import * as tiktok from './plataformas/tiktok';
 
 const RENOVAR_ANTES_DE_DIAS = 10;
 
+/**
+ * A Graph diz que o token morreu com `"code": 190` (vencido, revogado, senha
+ * trocada). A palavra "OAuthException" não serve de sinal: vem também no limite
+ * de taxa (código 4) e no erro temporário (códigos 1 e 2).
+ */
+export function tokenRecusadoPelaMeta(mensagem: string): boolean {
+  return /"code"\s*:\s*190\b/.test(mensagem);
+}
+
 export interface ResultadoSync {
   contaId: string;
   ok: boolean;
@@ -44,6 +53,12 @@ export class BioSyncService implements OnModuleInit {
       } catch (e) {
         this.log.warn(`sync agendado falhou: ${(e as Error).message}`);
       }
+      try {
+        const r = await this.renovarContasDePublicacao();
+        if (r.length) this.log.log(`contas de publicação: ${r.filter((x) => x.ok).length}/${r.length} renovada(s)`);
+      } catch (e) {
+        this.log.warn(`renovação das contas de publicação falhou: ${(e as Error).message}`);
+      }
     };
     setTimeout(run, 25_000);
     setInterval(run, min * 60_000);
@@ -71,9 +86,10 @@ export class BioSyncService implements OnModuleInit {
     if (conexao.plataforma === 'instagram') {
       // A renovação do Instagram usa só o token — não precisa da credencial do app.
       const novo = await instagram.renovar(token);
+      // Token novo emitido é prova de que a conexão vive: limpa o erro de uma rodada anterior.
       await this.prisma.bioConexao.update({
         where: { id: conexao.id },
-        data: { tokenCifrado: cifrar(novo.token), expiraEm: novo.expiraEm },
+        data: { tokenCifrado: cifrar(novo.token), expiraEm: novo.expiraEm, status: 'ok', ultimoErro: null },
       });
       return novo.token;
     }
@@ -88,6 +104,8 @@ export class BioSyncService implements OnModuleInit {
           tokenCifrado: cifrar(novo.token),
           refreshCifrado: novo.refresh ? cifrar(novo.refresh) : conexao.refreshCifrado,
           expiraEm: novo.expiraEm,
+          status: 'ok',
+          ultimoErro: null,
         },
       });
       return novo.token;
@@ -197,6 +215,42 @@ export class BioSyncService implements OnModuleInit {
       this.log.error(`sync da conta ${contaId} falhou: ${msg}`);
       return { contaId, ok: false, erro: msg };
     }
+  }
+
+  /**
+   * A conta de publicação do Instagram (MD5) não está em desafio nenhum, e o
+   * sync acima só renova token de conta de desafio: sem isto ela morreria em 60
+   * dias. Renova só a que vence em menos de `RENOVAR_ANTES_DE_DIAS` (e por isso
+   * já passou das 24 h que a Meta exige).
+   *
+   * Não filtra por status de propósito: a janela dá umas 40 rodadas, e uma
+   * falha passageira na primeira não pode tirar a conta das outras 39. Só o
+   * código 190 da Graph marca `token_expirado`; o resto (rede, 5xx, limite de
+   * taxa, que também vêm como `OAuthException`) grava o erro e mantém o status.
+   */
+  async renovarContasDePublicacao(): Promise<Array<{ conexaoId: string; ok: boolean; erro?: string }>> {
+    const limite = new Date(Date.now() + RENOVAR_ANTES_DE_DIAS * 86_400_000);
+    const conexoes = await this.prisma.bioConexao.findMany({
+      where: { plataforma: 'instagram', finalidade: 'publicacao', expiraEm: { lt: limite, gt: new Date() } },
+      select: { id: true, orgId: true, plataforma: true, tokenCifrado: true, refreshCifrado: true, expiraEm: true },
+    });
+    const saida: Array<{ conexaoId: string; ok: boolean; erro?: string }> = [];
+    for (const c of conexoes) {
+      try {
+        await this.tokenValido(c);
+        saida.push({ conexaoId: c.id, ok: true });
+      } catch (erro) {
+        const bruto = String(erro);
+        const msg = bruto.slice(0, 400);
+        await this.prisma.bioConexao.update({
+          where: { id: c.id },
+          data: tokenRecusadoPelaMeta(bruto) ? { status: 'token_expirado', ultimoErro: msg } : { ultimoErro: msg },
+        });
+        this.log.error(`renovação da conta de publicação ${c.id} falhou: ${msg}`);
+        saida.push({ conexaoId: c.id, ok: false, erro: msg });
+      }
+    }
+    return saida;
   }
 
   /** Todas as contas conectadas de desafios vigentes (opcionalmente de uma org). */

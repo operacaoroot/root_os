@@ -11,8 +11,18 @@
  * e não num `if` defensivo lá no fundo, depois de gastar a aprovação de alguém.
  *
  * Validador pequeno de propósito: cobre o que o catálogo usa (objeto, campos
- * obrigatórios, tipo primitivo, enum, tamanho mínimo). Schema mais exótico que
- * isso é sinal de capacidade mal desenhada, não de validador incompleto.
+ * obrigatórios, tipo primitivo, enum, tamanho mínimo, padrão de texto, número
+ * com `minimum`/`maximum` e lista com `minItems`/`maxItems`/`items`). Schema
+ * mais exótico que isso é sinal de capacidade mal desenhada, não de validador
+ * incompleto.
+ *
+ * A lista entrou com a MD6: em `instagram.post.publicar`, `midias` é o que
+ * prende a aprovação ao arquivo exato, e a porta tem de recusar a forma errada
+ * ANTES da fila, não o efeito depois de a aprovação ser consumida.
+ *
+ * `minimum`/`maximum` entraram com a MD7: `totalDeItens` de
+ * `pauta.semana.aprovar` tem teto de 60, e um teto que o validador ignorasse
+ * em silêncio seria o mesmo risco que a A8 registrou para `maxItems`.
  */
 
 export interface ErroDeArgumento {
@@ -24,6 +34,12 @@ interface Propriedade {
   type?: string;
   enum?: unknown[];
   minLength?: number;
+  pattern?: string;
+  minimum?: number;
+  maximum?: number;
+  minItems?: number;
+  maxItems?: number;
+  items?: Propriedade & SchemaObjeto;
   description?: string;
 }
 
@@ -102,8 +118,41 @@ export function validarArgs(
     if (p.minLength && typeof valor === 'string' && valor.trim().length < p.minLength) {
       erros.push({ campo: nome, problema: `precisa de ao menos ${p.minLength} caractere(s)` });
     }
+    if (p.pattern && typeof valor === 'string' && !new RegExp(p.pattern).test(valor)) {
+      erros.push({ campo: nome, problema: 'fora do formato esperado' });
+    }
+    if (typeof valor === 'number') erros.push(...errosDoNumero(nome, valor, p));
+    if (Array.isArray(valor)) erros.push(...errosDaLista(nome, valor, p));
   }
 
+  return erros;
+}
+
+function errosDoNumero(nome: string, valor: number, p: Propriedade): ErroDeArgumento[] {
+  const erros: ErroDeArgumento[] = [];
+  if (typeof p.minimum === 'number' && valor < p.minimum) erros.push({ campo: nome, problema: `precisa ser ao menos ${p.minimum}` });
+  if (typeof p.maximum === 'number' && valor > p.maximum) erros.push({ campo: nome, problema: `aceita até ${p.maximum}` });
+  return erros;
+}
+
+function errosDaLista(nome: string, lista: unknown[], p: Propriedade): ErroDeArgumento[] {
+  const erros: ErroDeArgumento[] = [];
+  if (p.minItems !== undefined && lista.length < p.minItems) erros.push({ campo: nome, problema: `precisa de ao menos ${p.minItems} item(ns)` });
+  if (p.maxItems !== undefined && lista.length > p.maxItems) erros.push({ campo: nome, problema: `aceita até ${p.maxItems} item(ns)` });
+  const it = p.items;
+  if (!it || typeof it !== 'object') return erros;
+  lista.forEach((item, i) => {
+    const campo = `${nome}[${i}]`;
+    if (it.type === 'object') {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        erros.push({ campo, problema: `esperava object, veio ${tipoDe(item)}` });
+        return;
+      }
+      for (const e of validarArgs(it, item as Record<string, unknown>)) erros.push({ campo: `${campo}.${e.campo}`, problema: e.problema });
+      return;
+    }
+    if (it.type && !casa(item, it.type)) erros.push({ campo, problema: `esperava ${it.type}, veio ${tipoDe(item)}` });
+  });
   return erros;
 }
 

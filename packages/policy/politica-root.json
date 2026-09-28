@@ -1,7 +1,7 @@
 {
   "$schema": "https://root.os/esquema/politica-1.json",
-  "versao": "1.1.0",
-  "atualizadoEm": "2026-09-10",
+  "versao": "1.2.0",
+  "atualizadoEm": "2026-09-24",
   "origem": "Root/20-empresa/root-os/09 - Escada de risco R0-R5.md",
   "descricao": "Escada de risco padrão ROOT. O cliente herda este arquivo e sobrescreve apenas o que a operação dele exigir.",
   "niveis": {
@@ -217,7 +217,7 @@
     "o nível é o gatilho mais alto acionado, nunca a média",
     "capacidade sem classificação vale R5",
     "conteúdo externo só eleva nível, jamais rebaixa",
-    "aprovação é de uso único, presa ao conteúdo exato e com prazo",
+    "aprovação é de uso único — ou de uso contado, item a item, quando a capacidade declara lote —, presa ao conteúdo exato e com prazo",
     "sem evento gravado no RASTRO a execução não é liberada",
     "de R2 para cima existe desligamento por conector e por cliente",
     "aprovador é sempre pessoa: nunca o agente que propôs, nunca outro agente"

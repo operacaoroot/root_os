@@ -6,7 +6,7 @@ import { combina, parseCron } from '../pauta/cron';
 import { AssinaturaService } from '../billing/assinatura.service';
 import { acessoBloqueado } from '../billing/assinatura';
 import { RotinasService } from './rotinas.service';
-import { ESTADOS_QUE_DISPARAM, LIVRE, TIPO_PAUTA_RODADA, type EstadoDoAgendador } from './rotina.tipos';
+import { ESTADOS_QUE_DISPARAM, LIVRE, TIPOS_DA_PAUTA, type EstadoDoAgendador } from './rotina.tipos';
 import { anunciarAgendadorDeRotinas } from './sinal-do-agendador';
 
 /** O tique. Um minuto, como o do agendador da pauta — é o mesmo relógio. */
@@ -341,7 +341,7 @@ export class RotinasScheduler implements OnModuleInit {
           for (const r of candidatas) {
             const retomada = this.arrendamentoVencido(r, agora);
             if (!retomada && !this.bate(r, agora)) continue;
-            if (this.pautaDesligada && r.tipo === TIPO_PAUTA_RODADA) continue;
+            if (this.pautaDesligada && TIPOS_DA_PAUTA.includes(r.tipo)) continue;
             this.log.log(
               retomada
                 ? `retomando rotina "${r.slug}" (${orgId}): a passagem anterior não terminou`

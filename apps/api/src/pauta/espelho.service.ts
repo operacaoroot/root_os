@@ -533,11 +533,23 @@ export class EspelhoService {
 
   /** Espelha a ficha no destino configurado. Devolve o caminho/id, ou null se off. */
   async espelhar(orgId: string, ficha: FichaEspelhavel): Promise<string | null> {
+    const nome = `${this.slug(ficha.titulo?.trim() || 'ficha')}-${ficha.id.slice(0, 8)}.md`;
+    return this.espelharDocumento(orgId, { nome, conteudo: this.markdown(ficha) });
+  }
+
+  /**
+   * Grava um .md qualquer no destino da empresa — a ficha e o roteiro do
+   * episódio (MC8) passam por aqui, com as mesmas conferências de escape.
+   * `subpastaLocal` só vale no destino local: no Drive a pasta é uma só (o id
+   * configurado), e o nome do arquivo já diz o que ele é.
+   */
+  async espelharDocumento(
+    orgId: string,
+    doc: { nome: string; conteudo: string; subpastaLocal?: string },
+  ): Promise<string | null> {
     const cfg = await this.config(orgId);
     if (cfg.destino === 'off') return null;
-
-    const nome = `${this.slug(ficha.titulo?.trim() || 'ficha')}-${ficha.id.slice(0, 8)}.md`;
-    const conteudo = this.markdown(ficha);
+    const { nome, conteudo } = doc;
 
     if (cfg.destino === 'local') {
       if (!this.vault || !existsSync(this.vault)) {
@@ -547,7 +559,8 @@ export class EspelhoService {
       }
       // resolve + prefixo (dentro de `gravarDocumentoLocal`): garante que nem
       // `dir` nem `nome` escaparam da vault.
-      return gravarDocumentoLocal(this.vault, cfg.dir, nome, conteudo);
+      const noLocal = doc.subpastaLocal ? join(doc.subpastaLocal, nome) : nome;
+      return gravarDocumentoLocal(this.vault, cfg.dir, noLocal, conteudo);
     }
 
     /*

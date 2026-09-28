@@ -66,6 +66,8 @@ export interface BioConexaoRow {
   status: string;
   expiraEm: string | null;
   escopos: string | null;
+  /** MD5: `publicacao` é a conta por onde o OS publica; a tela dela é a aba Semana da Pauta. */
+  finalidade?: 'bio' | 'publicacao';
   ultimoErro: string | null;
   conectadaEm: string;
   _count: { contas: number };

@@ -97,6 +97,7 @@ async function main() {
     'pauta.ver',
     'pauta.editar',
     'pauta.publicar',
+    'pauta.enviar_ao_youtube',
     'aprovacoes.ver',
     'aprovacoes.decidir',
   ];

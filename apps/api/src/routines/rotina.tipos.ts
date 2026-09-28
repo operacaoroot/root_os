@@ -1,4 +1,5 @@
 import { AgentEstado } from '@prisma/client';
+import type { ModuloKey } from '@mktos/shared';
 
 /*
  * O VOCABULÁRIO DAS ROTINAS — RF-N-04.
@@ -64,8 +65,83 @@ export const RENOVACAO_MS = 5 * 60_000;
 /** O executor da rotina da pauta. Ver `executores/pauta.executor.ts`. */
 export const TIPO_PAUTA_RODADA = 'pauta.rodada';
 
+/**
+ * O executor da coleta de quinta (MC5). Ver `executores/pauta-coleta.executor.ts`.
+ *
+ * Não tem espelho em `PautaRotina`: nasce pelo `POST /rotinas`, com origem
+ * `manual`, e a rodada que gera espera a curadoria humana em vez de ser curada.
+ */
+export const TIPO_PAUTA_COLETA = 'pauta.coleta';
+
+/**
+ * O encadeamento (MD1): da transcrição à semana em rascunho, um passo por
+ * episódio por passagem. Ver `executores/pauta-encadear.executor.ts`. A rotina
+ * é o interruptor: sem ela criada em /rotinas, nada anda sozinho. O valor é o
+ * de `PAUTA_TIPO_DA_ROTINA_DE_ENCADEAMENTO` no shared (a tela usa aquele).
+ */
+export const TIPO_PAUTA_ENCADEAR = 'pauta.encadear';
+
+/**
+ * O publicador (MD6): conclui a publicação do Instagram que a Meta ainda
+ * processava e olha as peças aprovadas no horário. Ver
+ * `executores/pauta-publicar.executor.ts`. Publicar sozinha exige a nota
+ * `pauta.publicacao.automatica` ligada e o lote assinado (MD8): sem os dois, a
+ * passagem só registra `pulada`. O valor é o de
+ * `PAUTA_TIPO_DA_ROTINA_DE_PUBLICACAO` no shared.
+ */
+export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
+
+/**
+ * A fila da DM à mão (MD9): lê os comentários dos posts da semana com palavra
+ * pela porta (`instagram.comentario.ler`, só leitura), põe na fila quem comentou
+ * a palavra inteira e apaga o @ que passou dos 7 dias. Ver
+ * `executores/pauta-comentarios.executor.ts`. O valor é o de
+ * `PAUTA_TIPO_DA_ROTINA_DE_COMENTARIOS` no shared.
+ */
+export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
+
+/** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
+export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR, TIPO_PAUTA_PUBLICAR, TIPO_PAUTA_COMENTARIOS];
+
+/**
+ * A variável que cala o tique das rotinas da pauta neste processo, ou `null` —
+ * a mesma leitura que o `RotinasScheduler` faz ao subir. Existe para a tela da
+ * pauta não dizer que a rotina "dispara" com o agendador desligado.
+ */
+export function silencioDoTiqueDaPauta(env: NodeJS.ProcessEnv = process.env): string | null {
+  if ((env.ROTINAS_CRON ?? 'on') === 'off') return 'ROTINAS_CRON=off';
+  if ((env.PAUTA_CRON ?? 'on') === 'off') return 'PAUTA_CRON=off';
+  return null;
+}
+
 /** O agente do roster que representa a rotina da pauta no organograma. */
 export const AGENTE_DA_PAUTA = 'editor-de-pauta';
+
+/**
+ * O agente que representa cada tipo no organograma, para a rotina criada pelo
+ * `POST /rotinas`. Tipo fora daqui nasce sem agente, que a tela mostra como tal.
+ */
+export const AGENTE_DO_TIPO: Readonly<Record<string, string>> = {
+  [TIPO_PAUTA_RODADA]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_COLETA]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_ENCADEAR]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_PUBLICAR]: AGENTE_DA_PAUTA,
+  [TIPO_PAUTA_COMENTARIOS]: AGENTE_DA_PAUTA,
+};
+
+/**
+ * O módulo que a empresa precisa contratar para ter rotina de cada tipo. O
+ * `POST /rotinas` mora na espinha (não passa pelo gate de módulos), então é
+ * aqui que a pauta desligada barra a criação e some da lista de tipos. Tipo
+ * fora daqui não depende de módulo.
+ */
+export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
+  [TIPO_PAUTA_RODADA]: 'pauta',
+  [TIPO_PAUTA_COLETA]: 'pauta',
+  [TIPO_PAUTA_ENCADEAR]: 'pauta',
+  [TIPO_PAUTA_PUBLICAR]: 'pauta',
+  [TIPO_PAUTA_COMENTARIOS]: 'pauta',
+};
 
 /** Como a execução foi disparada. */
 export type OrigemDaExecucao = 'cron' | 'manual';
@@ -217,6 +293,12 @@ export interface RotinasList {
    * podia responder.
    */
   descobertaCega: boolean;
+  /**
+   * Os tipos com executor inscrito neste processo e com o módulo contratado
+   * pela empresa (`MODULO_DO_TIPO`): os únicos que o `POST /rotinas` aceita. A
+   * tela só oferece "Nova rotina de coleta" quando `pauta.coleta` está aqui.
+   */
+  tiposDisponiveis: string[];
   /**
    * O que a última reconciliação desta empresa não conseguiu fazer — colisão de
    * nome, origem que sumiu, espelho que não deu para criar. Vazio é o normal.

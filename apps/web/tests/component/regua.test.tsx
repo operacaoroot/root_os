@@ -161,6 +161,7 @@ const PAINEL = {
     tetoCustoCentavosPorExecucao: 500,
   },
   janelaLegivel: true,
+  fuso: 'America/Sao_Paulo',
   retencao: { rastroDias: 1825 },
   capacidades: [
     {
@@ -340,6 +341,7 @@ const RESULTADO_DO_SERVIDOR = {
   ],
   rastro: ['preparo', 'encaminhadoPara'],
   avisos: [],
+  relogio: { fuso: 'America/Sao_Paulo', horario: '13:00' as string | null },
   politica: { versao: '9.9.9-empresa', atualizadoEm: '2026-09-11', origem: 'sobrescrita desta empresa' },
 };
 
@@ -384,8 +386,8 @@ describe('a tela da Régua', () => {
     expect(screen.getByText('de mão única')).toBeInTheDocument();
     expect(screen.getByText(/Acende quando o pedido foi montado a partir de conteúdo externo/))
       .toBeInTheDocument();
-    // os limites são os DESTA empresa
-    expect(screen.getByText('09:00 – 12:00')).toBeInTheDocument();
+    // os limites são os DESTA empresa, e a janela diz em que fuso é lida (MD3)
+    expect(screen.getByText('09:00 – 12:00 (America/Sao_Paulo)')).toBeInTheDocument();
     // janela legível: nada de alarme
     expect(screen.queryByText(/fica aceso em toda ação/)).not.toBeInTheDocument();
   });
@@ -422,6 +424,26 @@ describe('a tela da Régua', () => {
     // e as que ninguém alcança
     expect(screen.getByText(/nenhum — a porta recusaria/)).toBeInTheDocument();
     expect(screen.getByText(/sem ferramenta/)).toBeInTheDocument();
+  });
+
+  it('mostra o modo de aprovação de lote que o catálogo declara (MD7)', async () => {
+    const [primeira, segunda] = PAINEL.capacidades;
+    apiGet.mockImplementation((path: string) =>
+      path === '/policy/regua'
+        ? Promise.resolve({
+            ...PAINEL,
+            capacidades: [
+              { ...primeira, aprovacao: { modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8 } },
+              { ...segunda, aprovacao: { modo: 'sob_lote', lote: 'pauta.semana.aprovar' } },
+            ],
+          })
+        : Promise.reject(new Error(`rota não esperada: ${path}`)),
+    );
+    render(<ReguaPage />);
+    await irPara('Capacidades');
+
+    expect(screen.getByText('aprova em lote: até 60 itens, por até 8 dias')).toBeInTheDocument();
+    expect(screen.getByText('sai também por item de lote de pauta.semana.aprovar')).toBeInTheDocument();
   });
 
   it('mostra a fatia do catálogo que cada agente declarou, com o degrau que o SERVIDOR deu', async () => {
@@ -540,6 +562,33 @@ describe('o simulador', () => {
     expect(screen.getByText('O que seria exigido de você')).toBeInTheDocument();
     expect(screen.getByText('Motivo escrito')).toBeInTheDocument();
     expect(screen.getByText('O OS não executa')).toBeInTheDocument();
+  });
+
+  it('o botão Agora pede a hora do relógio do servidor e mostra a que ele leu em SP (MD3)', async () => {
+    apiPost.mockResolvedValue({
+      ...RESULTADO_DO_SERVIDOR,
+      relogio: { fuso: 'America/Sao_Paulo', horario: '18:00' },
+    });
+    render(<ReguaPage />);
+    await irPara('Simulador');
+
+    expect(
+      screen.getByLabelText(/Hora da execução no fuso America\/Sao_Paulo/),
+    ).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Hora da execução/), '13:00');
+    await userEvent.click(screen.getByRole('button', { name: 'Agora' }));
+    expect(screen.getByLabelText(/Hora da execução/)).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /^Simular$/ }));
+
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    const [, corpo] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
+    // a hora é a do servidor, a mesma da porta: nem HH:MM nem instante do navegador
+    expect(corpo.agora).toBe(true);
+    expect(corpo.horario).toBeUndefined();
+    expect(corpo.momento).toBeUndefined();
+    expect(
+      await screen.findByText('Hora considerada: 18:00 em America/Sao_Paulo'),
+    ).toBeInTheDocument();
   });
 
   /*

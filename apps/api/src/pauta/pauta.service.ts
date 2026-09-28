@@ -1,13 +1,21 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
-import { Prisma, PautaCapturaStatus, PautaFamilia, PautaObjetivo } from '@prisma/client';
+import {
+  Prisma,
+  PautaCapturaStatus,
+  PautaFamilia,
+  PautaObjetivo,
+  type PautaFonte,
+  type PautaFonteTipo,
+} from '@prisma/client';
 import {
   PAUTA_FAMILIAS,
   PAUTA_OBJETIVOS,
@@ -25,7 +33,31 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ApifyService } from './apify.service';
 import { EspelhoService } from './espelho.service';
+import { hashDaCaptura, normalizarUrlDaCaptura } from './url-da-captura';
+import { comProcedencia } from './links-do-grupo';
+import { ColetaService, type AtorDaColeta, type ResultadoDaColeta } from './coleta.service';
+import { lerEtiqueta, veioDoGmail } from './gmail-da-pauta';
+import {
+  DIAS_DA_JANELA_DA_BUSCA,
+  capturaDoResultado,
+  comProcedenciaDaBusca,
+  custoPorCaptura,
+  lerConsulta,
+  resultadosDaBusca,
+  resultadosPedidos,
+} from './busca-da-pauta';
+import {
+  brutoDoPost,
+  comProcedenciaDoPerfil,
+  lerHandleDoPerfil,
+  plataformaDoPerfil,
+  postsDoPerfil,
+  procedenciaDoPerfil,
+  textoDoPost,
+} from './perfil-da-pauta';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
+import { umaPorVez } from './uma-por-vez';
+import { buscarPaginaPublica } from './pagina-publica';
 
 const EMBED_MODEL = 'text-embedding-3-small';
 // Teto de itens por página. `total` na resposta é a contagem REAL do filtro (não o
@@ -83,8 +115,18 @@ interface FichaGerada {
   [k: string]: unknown;
 }
 
+/**
+ * Quem cadastra ou muda a etiqueta de uma fonte do Gmail decide o que da caixa
+ * da empresa entra na pauta — e a pauta é lida por quem tem só `pauta.ver`.
+ * Por isso a mesma permissão de ler o Gmail pela tela.
+ */
+const PERMISSAO_DA_FONTE_GMAIL = 'gmail.ver';
+
+/** O @perfil e a etiqueta cabem nisso; só a consulta da busca usa o teto maior do schema. */
+const TETO_DO_HANDLE_FORA_DA_BUSCA = 60;
+
 @Injectable()
-export class PautaService {
+export class PautaService implements OnModuleInit {
   private readonly log = new Logger('PautaService');
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
   private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
@@ -95,28 +137,28 @@ export class PautaService {
     private readonly apify: ApifyService,
     private readonly espelho: EspelhoService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    private readonly coleta: ColetaService,
   ) {}
+
+  onModuleInit(): void {
+    // O perfil se inscreve daqui porque o Apify só pode ser importado por este arquivo.
+    this.coleta.registrar(
+      'perfil',
+      (f, ator, opcoes) => this.coletarPerfil(f, ator, opcoes.limite ?? 12),
+      'PautaService',
+    );
+    // A busca também roda no Apify: mesma razão para morar aqui.
+    this.coleta.registrar('busca', (f, ator, opcoes) => this.coletarBusca(f, ator, opcoes.limite), 'PautaService');
+  }
 
   // ---------- utilidades ----------
 
-  /** Normaliza a URL antes do hash: sem UTM, sem barra final, sem fragmento. */
   private normalizarUrl(url: string): string {
-    try {
-      const u = new URL(url.trim());
-      u.hash = '';
-      for (const k of [...u.searchParams.keys()]) {
-        if (/^(utm_|fbclid|gclid|igshid|si$)/i.test(k)) u.searchParams.delete(k);
-      }
-      u.hostname = u.hostname.replace(/^www\./, '').toLowerCase();
-      const s = u.toString();
-      return s.endsWith('/') ? s.slice(0, -1) : s;
-    } catch {
-      return url.trim();
-    }
+    return normalizarUrlDaCaptura(url);
   }
 
   private hash(v: string): string {
-    return createHash('sha256').update(v).digest('hex');
+    return hashDaCaptura(v);
   }
 
   // ---------- captura ----------
@@ -220,7 +262,16 @@ export class PautaService {
 
   /** Puxa o conteúdo bruto da captura. Instagram/TikTok via Apify; resto via fetch. */
   private async coletar(c: { id: string; url: string | null; bruto: unknown }) {
-    if (!c.url) return { texto: this.textoDoBruto(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    // A URL do e-mail é o permalink da caixa de entrada: abrir daria a tela de login.
+    if (!c.url || veioDoGmail(c.bruto)) {
+      return { texto: this.textoDoBruto(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    }
+    // O post do X e do YouTube já foi lido na coleta do perfil (MC4): abrir o link
+    // daria a tela de login do X ou o HTML inteiro do YouTube.
+    const doPerfil = procedenciaDoPerfil(c.bruto);
+    if (doPerfil && (doPerfil.plataforma === 'x' || doPerfil.plataforma === 'youtube')) {
+      return { texto: textoDoPost(c.bruto), runId: null, custoUsd: null, bruto: c.bruto };
+    }
 
     const plataforma = ApifyService.plataformaDaUrl(c.url);
     const precisaApify = plataforma === 'instagram' || plataforma === 'tiktok';
@@ -238,7 +289,7 @@ export class PautaService {
     }
 
     // web: fetch simples + limpeza de tags. Suficiente para artigo/newsletter.
-    const res = await fetch(c.url, {
+    const res = await buscarPaginaPublica(c.url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MarketingOS/1.0)' },
       signal: AbortSignal.timeout(20_000),
     });
@@ -298,9 +349,10 @@ export class PautaService {
   private metricasDoItem(item: Record<string, unknown>): Prisma.InputJsonValue | undefined {
     const n = (k: string) => (typeof item[k] === 'number' ? (item[k] as number) : undefined);
     const m: Record<string, number> = {};
-    const curtidas = n('likesCount') ?? n('diggCount');
-    const comentarios = n('commentsCount');
-    const views = n('videoPlayCount') ?? n('playCount');
+    // Instagram, TikTok, X e YouTube, nesta ordem, em cada linha.
+    const curtidas = n('likesCount') ?? n('diggCount') ?? n('likeCount') ?? n('likes');
+    const comentarios = n('commentsCount') ?? n('commentCount') ?? n('replyCount');
+    const views = n('videoPlayCount') ?? n('playCount') ?? n('viewCount');
     if (curtidas !== undefined) m.curtidas = curtidas;
     if (comentarios !== undefined) m.comentarios = comentarios;
     if (views !== undefined) m.views = views;
@@ -359,8 +411,9 @@ export class PautaService {
       const bruto = (coleta.bruto ?? {}) as Record<string, unknown>;
       const saida = await this.llm.complete({
         system: SYSTEM_FICHA,
+        // Na captura do Gmail a nota é o trecho automático do mesmo corpo, não a voz de alguém.
         user: `Material capturado${c.url ? ` (${c.url})` : ''}:\n\n${coleta.texto}${
-          c.nota ? `\n\nNota de quem capturou: ${c.nota}` : ''
+          c.nota && !veioDoGmail(c.bruto) ? `\n\nNota de quem capturou: ${c.nota}` : ''
         }`,
       });
       const f = this.parseFicha(saida);
@@ -373,7 +426,9 @@ export class PautaService {
         : 'ALC') as PautaObjetivo;
 
       const metricas = this.metricasDoItem(bruto);
-      const publicado = typeof bruto.timestamp === 'string' ? new Date(bruto.timestamp) : null;
+      const quando = typeof bruto.timestamp === 'string' ? bruto.timestamp : bruto.publicadoEm;
+      const publicado = typeof quando === 'string' ? new Date(quando) : null;
+      const doPerfil = procedenciaDoPerfil(c.bruto);
 
       const ref = await this.prisma.pautaReferencia.create({
         data: {
@@ -381,7 +436,7 @@ export class PautaService {
           capturaId: c.id,
           titulo: this.campo(f.titulo, c.titulo ?? 'Sem título'),
           plataforma: c.url ? ApifyService.plataformaDaUrl(c.url) : 'texto',
-          autor: bruto.ownerUsername ? `@${String(bruto.ownerUsername)}` : null,
+          autor: bruto.ownerUsername ? `@${String(bruto.ownerUsername)}` : doPerfil ? `@${doPerfil.handle}` : null,
           url: c.url,
           publicadoEm: publicado && !Number.isNaN(publicado.getTime()) ? publicado : null,
           familia,
@@ -407,9 +462,19 @@ export class PautaService {
         where: { id },
         data: {
           status: 'ficha',
-          bruto: (bruto as Prisma.InputJsonValue) ?? Prisma.DbNull,
-          apifyRunId: coleta.runId,
-          custoUsd: coleta.custoUsd ?? null,
+          // A captura do grupo chega sem título, e o título da captura é o que
+          // a curadoria leva para fora (botão, descrição, newsletter).
+          ...(!c.titulo?.trim() && typeof f.titulo === 'string' && f.titulo.trim()
+            ? { titulo: f.titulo.trim().slice(0, 300) }
+            : {}),
+          bruto: comProcedenciaDoPerfil(
+            c.bruto,
+            comProcedenciaDaBusca(c.bruto, comProcedencia(c.bruto, bruto)),
+          ) as Prisma.InputJsonValue,
+          // A leitura do link pela web não tem run: o custo e o run da coleta
+          // que trouxe a captura (a busca do MC3) continuam valendo.
+          apifyRunId: coleta.runId ?? c.apifyRunId,
+          custoUsd: coleta.custoUsd ?? c.custoUsd,
         },
       });
 
@@ -715,17 +780,44 @@ export class PautaService {
     };
   }
 
-  async criarFonte(orgId: string, actorId: string, input: PautaFonteInput) {
+  /**
+   * `permissoes` é o que o guard da rota já leu do token; `null` só para quem
+   * não é pessoa. Fonte do Gmail pede `gmail.ver` (ver `PERMISSAO_DA_FONTE_GMAIL`).
+   */
+  async criarFonte(
+    orgId: string,
+    actorId: string,
+    input: PautaFonteInput,
+    permissoes: readonly string[] | null = null,
+  ) {
     if (input.tipo === 'rss' && !input.url) throw new BadRequestException('Fonte RSS exige url.');
     if (input.tipo === 'perfil' && !input.handle) throw new BadRequestException('Fonte perfil exige handle.');
+    let handle = input.handle ?? null;
+    let url = input.url ?? null;
+    let plataforma = input.plataforma ?? null;
+    if (input.tipo === 'gmail') {
+      this.exigirPermissaoDoGmail(permissoes);
+      handle = this.etiquetaValida(input.handle);
+      url = null;
+      plataforma = 'gmail';
+    } else if (input.tipo === 'busca') {
+      handle = this.consultaValida(input.handle);
+      url = null;
+      plataforma = 'google';
+    } else if (input.tipo === 'perfil') {
+      // O teto vale para o @ já tirado da URL colada, e a regra de cada rede é mais curta que ele.
+      ({ handle, plataforma } = this.perfilValido(input.plataforma, handle));
+    } else {
+      this.exigirHandleCurto(handle);
+    }
     const f = await this.prisma.pautaFonte.create({
       data: {
         orgId,
         tipo: input.tipo,
         nome: input.nome,
-        url: input.url ?? null,
-        handle: input.handle ?? null,
-        plataforma: input.plataforma ?? null,
+        url,
+        handle,
+        plataforma,
         ativo: input.ativo ?? true,
         intervaloMin: input.intervaloMin ?? 720,
         tetoRunsMes: input.tetoRunsMes ?? 30,
@@ -733,15 +825,94 @@ export class PautaService {
     });
     await this.audit.log({
       orgId, actorId, action: 'pauta.fonte_criada', entityType: 'pauta_fonte', entityId: f.id,
-      after: { tipo: f.tipo, nome: f.nome },
+      after: {
+        tipo: f.tipo,
+        nome: f.nome,
+        ...(f.tipo === 'gmail' ? { etiqueta: f.handle } : {}),
+        ...(f.tipo === 'busca' ? { consulta: f.handle } : {}),
+      },
     });
     return { ok: true, id: f.id };
   }
 
-  async atualizarFonte(orgId: string, id: string, actorId: string, patch: PautaFonteUpdateInput) {
+  private exigirPermissaoDoGmail(permissoes: readonly string[] | null): void {
+    if (permissoes && !permissoes.includes(PERMISSAO_DA_FONTE_GMAIL)) {
+      throw new ForbiddenException(
+        `Fonte do Gmail escolhe o que da caixa da empresa entra na pauta: exige a permissão ${PERMISSAO_DA_FONTE_GMAIL}.`,
+      );
+    }
+  }
+
+  private consultaValida(bruta: string | null | undefined): string {
+    const lida = lerConsulta(bruta);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    return lida.consulta;
+  }
+
+  private exigirHandleCurto(handle: string | null | undefined): void {
+    if (handle && handle.length > TETO_DO_HANDLE_FORA_DA_BUSCA) {
+      throw new BadRequestException(`O handle tem no máximo ${TETO_DO_HANDLE_FORA_DA_BUSCA} caracteres.`);
+    }
+  }
+
+  /** Plataforma entre as quatro do MC4 e o @ que o actor dela aceita, tirado da URL se vier colada. */
+  private perfilValido(
+    plataformaBruta: string | null | undefined,
+    handleBruto: string | null | undefined,
+  ): { plataforma: string; handle: string } {
+    const plataforma = plataformaDoPerfil(plataformaBruta);
+    if (!plataforma) {
+      throw new BadRequestException(
+        `Perfil do "${plataformaBruta}" não é coletado. Plataformas aceitas: instagram, tiktok, x e youtube.`,
+      );
+    }
+    const lido = lerHandleDoPerfil(plataforma, handleBruto);
+    if ('erro' in lido) throw new BadRequestException(lido.erro);
+    return { plataforma, handle: lido.handle };
+  }
+
+  private etiquetaValida(bruta: string | null | undefined): string {
+    const lida = lerEtiqueta(bruta);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    return lida.etiqueta;
+  }
+
+  async atualizarFonte(
+    orgId: string,
+    id: string,
+    actorId: string,
+    patch: PautaFonteUpdateInput,
+    permissoes: readonly string[] | null = null,
+  ) {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
-    await this.prisma.pautaFonte.update({ where: { id }, data: patch });
+    const data: PautaFonteUpdateInput = { ...patch };
+    const tipo: PautaFonteTipo = patch.tipo ?? f.tipo;
+    // Virar Gmail, ou trocar a etiqueta de uma que já é, é o mesmo que criar uma.
+    if (tipo === 'gmail' && (f.tipo !== 'gmail' || patch.handle !== undefined)) {
+      this.exigirPermissaoDoGmail(permissoes);
+      data.handle = this.etiquetaValida(patch.handle !== undefined ? patch.handle : f.handle);
+      data.plataforma = 'gmail';
+    } else if (tipo === 'busca' && (f.tipo !== 'busca' || patch.handle !== undefined)) {
+      data.handle = this.consultaValida(patch.handle !== undefined ? patch.handle : f.handle);
+      data.url = null;
+      data.plataforma = 'google';
+    } else if (tipo !== 'busca') {
+      // Quem sai da busca leva a consulta junto se o corpo não trouxer outro handle.
+      const handle = patch.handle !== undefined ? patch.handle : f.handle;
+      if (f.tipo === 'busca' && patch.plataforma === undefined) data.plataforma = null;
+      const mexeuNoPerfil = f.tipo !== 'perfil' || patch.handle !== undefined || patch.plataforma !== undefined;
+      if (tipo !== 'perfil' || !mexeuNoPerfil) this.exigirHandleCurto(handle);
+      if (tipo === 'perfil' && mexeuNoPerfil) {
+        // Sem plataforma no corpo vale a gravada; vinda de outro tipo, a dele não é de perfil.
+        const plataforma = patch.plataforma !== undefined ? patch.plataforma : f.tipo === 'perfil' ? f.plataforma : null;
+        const valido = this.perfilValido(plataforma, handle);
+        data.handle = valido.handle;
+        if (patch.plataforma !== undefined) data.plataforma = valido.plataforma;
+        else if (f.tipo !== 'perfil') data.plataforma = null;
+      }
+    }
+    await this.prisma.pautaFonte.update({ where: { id }, data });
     await this.audit.log({
       orgId, actorId, action: 'pauta.fonte_editada', entityType: 'pauta_fonte', entityId: id,
     });
@@ -758,59 +929,235 @@ export class PautaService {
     return { ok: true };
   }
 
-  /** Puxa os últimos posts de um perfil vigiado e joga na fila como captura. */
-  async coletarFonte(orgId: string, id: string, actorId: string, limite = 12) {
+  /** "Coletar agora" do Radar: o despacho por tipo mora em `ColetaService`. */
+  coletarFonte(orgId: string, id: string, actorId: string, limite = 12) {
+    return umaPorVez(`pauta-coleta:${orgId}:${id}`, 'A coleta desta fonte', () => this.coletarFonteAgora(orgId, id, actorId, limite));
+  }
+
+  private async coletarFonteAgora(orgId: string, id: string, actorId: string, limite = 12) {
     const f = await this.prisma.pautaFonte.findFirst({ where: { id, orgId } });
     if (!f) throw new NotFoundException('Fonte não encontrada');
-    if (f.tipo !== 'perfil' || !f.handle) {
-      throw new BadRequestException('Coleta automática hoje só para fonte do tipo perfil (onda 1).');
-    }
+    const r = await this.coleta.coletar(f, actorId, { limite });
+    return { ok: true, novas: r.novas, repetidas: r.repetidas, ...(r.aviso ? { aviso: r.aviso } : {}) };
+  }
 
-    // Teto de gasto: o contador zera na virada do mês.
-    const mes = new Date().toISOString().slice(0, 7);
-    const runs = f.mesReferente === mes ? f.runsNoMes : 0;
-    if (runs >= f.tetoRunsMes) {
+  /**
+   * Os últimos posts de um creator (MC4: Instagram, TikTok, X ou YouTube), cada
+   * um como captura com a chave da tela. Como a busca, o perfil entra na coleta
+   * da rodada, e por isso o teto do mês é o freio e não erro: reserva o run
+   * antes de chamar o Apify e, estourado, pula com aviso na fonte.
+   */
+  private async coletarPerfil(f: PautaFonte, ator: AtorDaColeta, limite: number): Promise<ResultadoDaColeta> {
+    const plataforma = plataformaDoPerfil(f.plataforma);
+    if (!plataforma) {
       throw new BadRequestException(
-        `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}". Aumente o teto ou espere virar o mês.`,
+        `"${f.nome}" está gravada com a plataforma "${f.plataforma}", que não é coletada. ` +
+          'Plataformas aceitas: instagram, tiktok, x e youtube.',
+      );
+    }
+    const lido = lerHandleDoPerfil(plataforma, f.handle);
+    if ('erro' in lido) throw new BadRequestException(lido.erro);
+    const { handle } = lido;
+    // Antes de reservar: sem token não há run, e o teto não pode gastar o que não rodou.
+    if (!this.apify.configured) {
+      throw new ServiceUnavailableException(
+        'O perfil vigiado roda no Apify. Defina APIFY_TOKEN no .env (ver .env.example) e reinicie a API.',
       );
     }
 
-    let novas = 0;
-    try {
-      const r = await this.apify.scrapePerfil(f.handle, limite);
-      for (const item of r.items) {
-        const url = typeof item.url === 'string' ? item.url : null;
-        if (!url) continue;
-        const res = await this.capturar(orgId, actorId, {
-          tipo: 'link',
-          url,
-          titulo: typeof item.caption === 'string' ? item.caption.slice(0, 120) : null,
-          nota: null,
-          texto: null,
-          fonteId: f.id,
-        });
-        if (!res.duplicada) {
-          novas++;
-          // já guarda o payload: evita um segundo run do Apify no processamento
-          await this.prisma.pautaCaptura.update({
-            where: { id: res.id },
-            data: { bruto: item as Prisma.InputJsonValue, apifyRunId: r.runId },
-          });
-        }
-      }
-      await this.prisma.pautaFonte.update({
-        where: { id },
-        data: { ultimaLeitura: new Date(), ultimoErro: null, runsNoMes: runs + 1, mesReferente: mes },
-      });
-    } catch (e) {
-      await this.prisma.pautaFonte.update({
-        where: { id },
-        data: { ultimoErro: (e as Error).message.slice(0, 300), runsNoMes: runs + 1, mesReferente: mes },
-      });
-      throw e;
+    const mes = new Date().toISOString().slice(0, 7);
+    if (!(await this.reservarRun(f, mes))) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso:
+          `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}": o perfil foi pulado. ` +
+          'Aumente o teto ou espere virar o mês.',
+      };
     }
 
-    return { ok: true, novas };
+    // O run já está contado: se o Apify falhar daqui em diante, cobrou do mesmo jeito.
+    const r = await this.apify.scrapePerfil(handle, limite, plataforma);
+    const novas: string[] = [];
+    let repetidas = 0;
+    try {
+      // Grava direto, como a busca: `capturar` registraria cada post no RASTRO
+      // como se uma pessoa o tivesse colado, e a rotina não é pessoa. O RASTRO
+      // da coleta é o `pauta.coleta_perfil` abaixo, com o ator de verdade.
+      for (const { post, item } of postsDoPerfil(plataforma, r.items)) {
+        const url = this.normalizarUrl(post.url);
+        const urlHash = this.hash(url);
+        const existe = await this.prisma.pautaCaptura.findUnique({
+          where: { orgId_urlHash: { orgId: f.orgId, urlHash } },
+          select: { id: true },
+        });
+        if (existe) {
+          repetidas++;
+          continue;
+        }
+        try {
+          const criada = await this.prisma.pautaCaptura.create({
+            data: {
+              orgId: f.orgId,
+              fonteId: f.id,
+              tipo: 'link',
+              url,
+              urlHash,
+              titulo: post.titulo,
+              nota: null,
+              // já guarda o post: o processamento do X e do YouTube lê daqui, sem outro run
+              bruto: brutoDoPost(post, item, plataforma, handle) as Prisma.InputJsonValue,
+              apifyRunId: r.runId,
+              capturadoPor: ator.id,
+            },
+            select: { id: true },
+          });
+          novas.push(criada.id);
+        } catch (e) {
+          // A rotina e o "Coletar agora" (ou o grupo de links) gravaram o mesmo post ao mesmo tempo.
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') repetidas++;
+          else throw e;
+        }
+      }
+      const rateio = custoPorCaptura(r.custoUsd, novas.length);
+      if (rateio !== null) {
+        await this.prisma.pautaCaptura.updateMany({ where: { id: { in: novas } }, data: { custoUsd: rateio } });
+      }
+    } finally {
+      await this.audit.log({
+        orgId: f.orgId,
+        actorType: ator.tipo,
+        actorId: ator.id,
+        action: 'pauta.coleta_perfil',
+        entityType: 'pauta_fonte',
+        entityId: f.id,
+        after: { plataforma, handle, runId: r.runId, custoUsd: r.custoUsd, capturas: novas, repetidas },
+      });
+    }
+    return { novas: novas.length, repetidas };
+  }
+
+  /**
+   * A busca salva (MC3): uma consulta no Google do Brasil, última semana, e cada
+   * resultado orgânico vira captura com a chave da tela. O teto do mês NÃO é
+   * erro aqui, como no perfil desde o MC4: a rodada coleta a busca sozinha, e teto
+   * atingido é o freio funcionando — pula com aviso na fonte e a rodada segue.
+   */
+  private async coletarBusca(f: PautaFonte, ator: AtorDaColeta, limite?: number): Promise<ResultadoDaColeta> {
+    // Antes do MC3 o Radar cadastrava "Busca salva" sem consulta. O Radar não
+    // edita a consulta: aviso na fonte, e não erro que suja a conta da rodada.
+    if (!f.handle?.trim()) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso: `"${f.nome}" foi cadastrada sem consulta: remova e cadastre de novo com os termos da busca.`,
+      };
+    }
+    const lida = lerConsulta(f.handle);
+    if ('erro' in lida) throw new BadRequestException(lida.erro);
+    const { consulta } = lida;
+    // Antes de reservar: sem token não há run, e o teto não pode gastar o que não rodou.
+    if (!this.apify.configured) {
+      throw new ServiceUnavailableException(
+        'A busca web roda no Apify. Defina APIFY_TOKEN no .env (ver .env.example) e reinicie a API.',
+      );
+    }
+
+    const agora = new Date();
+    const mes = agora.toISOString().slice(0, 7);
+    if (!(await this.reservarRun(f, mes))) {
+      return {
+        novas: 0,
+        repetidas: 0,
+        pulada: true,
+        aviso:
+          `Teto de ${f.tetoRunsMes} execuções/mês atingido para "${f.nome}": a busca foi pulada. ` +
+          'Aumente o teto ou espere virar o mês.',
+      };
+    }
+
+    // O run já está contado: se o Apify falhar daqui em diante, cobrou do mesmo jeito.
+    const r = await this.apify.buscarNoGoogle(consulta, {
+      resultados: resultadosPedidos(limite),
+      dias: DIAS_DA_JANELA_DA_BUSCA,
+    });
+    const { resultados, foraDaJanela } = resultadosDaBusca(r.items, agora);
+
+    const novas: string[] = [];
+    let repetidas = 0;
+    try {
+      for (const resultado of resultados) {
+        const c = capturaDoResultado(resultado, consulta);
+        const existe = await this.prisma.pautaCaptura.findUnique({
+          where: { orgId_urlHash: { orgId: f.orgId, urlHash: c.urlHash } },
+          select: { id: true },
+        });
+        if (existe) {
+          repetidas++;
+          continue;
+        }
+        try {
+          const criada = await this.prisma.pautaCaptura.create({
+            data: {
+              orgId: f.orgId,
+              fonteId: f.id,
+              tipo: 'link',
+              url: c.url,
+              urlHash: c.urlHash,
+              titulo: c.titulo,
+              nota: c.nota,
+              bruto: c.bruto as Prisma.InputJsonValue,
+              apifyRunId: r.runId,
+              capturadoPor: ator.id,
+            },
+            select: { id: true },
+          });
+          novas.push(criada.id);
+        } catch (e) {
+          // A rotina e o botão do Radar gravaram o mesmo link ao mesmo tempo.
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') repetidas++;
+          else throw e;
+        }
+      }
+
+      const rateio = custoPorCaptura(r.custoUsd, novas.length);
+      if (rateio !== null) {
+        await this.prisma.pautaCaptura.updateMany({ where: { id: { in: novas } }, data: { custoUsd: rateio } });
+      }
+    } finally {
+      // O gasto do run fica no RASTRO mesmo quando nada novo entrou ou a gravação caiu no meio.
+      await this.audit.log({
+        orgId: f.orgId,
+        actorType: ator.tipo,
+        actorId: ator.id,
+        action: 'pauta.coleta_busca',
+        entityType: 'pauta_fonte',
+        entityId: f.id,
+        after: { consulta, runId: r.runId, custoUsd: r.custoUsd, capturas: novas, repetidas, foraDaJanela },
+      });
+    }
+    return { novas: novas.length, repetidas };
+  }
+
+  /**
+   * Reserva o run ANTES de chamar o Apify, numa escrita condicional: a rotina e
+   * o botão do Radar ao mesmo tempo não passam os dois pelo último run do teto,
+   * como passariam lendo `runsNoMes` e somando depois.
+   */
+  private async reservarRun(f: PautaFonte, mes: string): Promise<boolean> {
+    if (f.tetoRunsMes <= 0) return false;
+    const virou = await this.prisma.pautaFonte.updateMany({
+      where: { id: f.id, OR: [{ mesReferente: null }, { mesReferente: { not: mes } }] },
+      data: { runsNoMes: 1, mesReferente: mes },
+    });
+    if (virou.count > 0) return true;
+    const somou = await this.prisma.pautaFonte.updateMany({
+      where: { id: f.id, mesReferente: mes, runsNoMes: { lt: f.tetoRunsMes } },
+      data: { runsNoMes: { increment: 1 } },
+    });
+    return somou.count > 0;
   }
 
   // ---------- espelho ----------

@@ -311,6 +311,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'PolicyVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId NULLABLE: null = política base de todas. Leitura tem de ser orgId = atual OR IS NULL, e escrita só a própria.' },
   { tabela: 'PolicyDecision', escopo: 'tenant', chaveSql: '"id"', nota: 'Cada decisão da escada R0–R5, com motivo e sinais. Diz o que a outra empresa deixa passar.' },
   { tabela: 'Approval', escopo: 'tenant', chaveSql: '"id"', nota: 'Fila de aprovação: resumo do conteúdo a publicar e tokenHash. Ler é ver o que a outra empresa vai postar.' },
+  { tabela: 'AprovacaoDeLote', escopo: 'tenant', chaveSql: '"id"', nota: 'O lote assinado (MD7): o hash da semana, quem assinou e até quando vale. Escrever `estado` na da outra é ATIVAR a semana dela sem assinatura, ou derrubá-la.' },
+  { tabela: 'ItemDoLote', escopo: 'filho', chaveSql: '"id"', nota: 'Cada uso contado do lote (MD7): a janela, o hash do conteúdo e os usos. Escrever `usos` na da outra é gastar ou devolver a publicação dela. Filho do lote, com a empresa conferida pelo gatilho.' },
 
   // ---- teto de custo de IA (fatia 3.6) ----------------------------------
   { tabela: 'TetoDeCustoIa', escopo: 'tenant', chaveSql: '"id"', nota: 'Quanto a empresa pode gastar com modelo por dia. Ler é saber o orçamento dela; escrever é desligar o freio de gasto da outra.' },
@@ -378,6 +380,11 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaRotina', escopo: 'tenant', chaveSql: '"id"', nota: 'Cron rodado pelo scheduler FORA do request HTTP — não terá app.org_id setado.' },
   { tabela: 'PautaRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'Mesma ressalva de execução por scheduler.' },
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
+  { tabela: 'PautaPublicacao', escopo: 'filho', chaveSql: '"id"', nota: 'A publicação da peça no Instagram pelo OS (MD6): o estado, os containers na Meta, o id e o permalink do post. Ler a da outra é saber o que ela vai postar e quando; escrever `estado` é destravar ou derrubar a publicação alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
+  { tabela: 'ComentarioComPalavra', escopo: 'filho', chaveSql: '"id"', nota: 'Quem comentou a palavra-chave num post da semana (MD9): o @ por 7 dias, o HMAC da pessoa e se a DM já foi respondida. Ler a da outra é saber quem pediu o link a ela; escrever `respondidoEm` é sumir com a fila alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
+  { tabela: 'EnvioAoYoutube', escopo: 'filho', chaveSql: '"id"', nota: 'O vídeo do episódio a caminho do YouTube (MD10): o sha256 do vídeo final, a URI da sessão de envio cifrada e o id do vídeo privado. Ler a da outra é saber o que ela vai publicar e onde está o vídeo privado dela; escrever `videoId` ou `estado` é levar o agendamento da outra a um vídeo que não é dela. Filha do episódio, com a empresa conferida pelo gatilho.' },
+  { tabela: 'EnvioDeResposta', escopo: 'filho', chaveSql: '"id"', nota: 'A DM automática de um comentário da fila (MD11): o HMAC da pessoa, o item de lote da regra, se saiu e o id da mensagem na Meta. Ler a da outra é saber a quem ela respondeu e quando; escrever `travaDaPessoa` ou `estado` é fazer a outra mandar de novo, ou nunca mandar, a quem pediu o link. Filha do comentário, com a empresa conferida pelo gatilho.' },
+  { tabela: 'PautaEpisodio', escopo: 'filho', chaveSql: '"id"', nota: 'O episódio da semana (MC7): roteiro, mídia do Mac, transcrição, títulos e a página de links. Ler o da outra é ler o que ela vai publicar antes de publicar; escrever `status` é mover o episódio alheio de etapa. Filho 1:1 da rodada, com a empresa conferida pelo gatilho — e a página de links também.' },
 
   // ---- rotinas (fatia 5.1) ----------------------------------------------
   { tabela: 'Rotina', escopo: 'tenant', chaveSql: '"id"', nota: 'O trabalho que roda sozinho na empresa (RF-N-04). O agendador dispara FORA de requisição e por isso abre o contexto de CADA empresa antes de ler — ver src/routines/rotinas.scheduler.ts. Ler a da outra revela o que ela automatizou e quando; ESCREVER é pior: mudar `estado` para `rodando` liga trabalho na empresa alheia, e mudar o `cron` muda a hora em que o modelo dela é chamado.' },
@@ -666,6 +673,21 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     tokenHash: `token_${suf}`, expiraEm: new Date(Date.now() + 3600_000),
   }));
 
+  // O lote de aprovação (MD7) e um item dele — o item sem orgId: a empresa
+  // vem do lote, pelo gatilho.
+  const loteId = await ins(c, 'AprovacaoDeLote', {
+    id: crypto.randomUUID(), orgId, capabilityId: 'pauta.semana.aprovar', recursoTipo: 'pauta_episodio',
+    recursoId: crypto.randomUUID(), hashConteudo: `lote_${suf}`, estado: 'ativo',
+    validaAte: new Date(Date.now() + 86_400_000), propostoPorId: `pessoa_${suf}`,
+    resumo: `A semana da org ${rotulo} (${MARCA})`, atualizadoEm: new Date(),
+  });
+  reg('AprovacaoDeLote', loteId);
+  s.ref.aprovacaoDeLoteId = loteId;
+  reg('ItemDoLote', await ins(c, 'ItemDoLote', {
+    id: crypto.randomUUID(), loteId, capabilityId: 'instagram.post.publicar', recursoId: crypto.randomUUID(),
+    hashItem: `item_${suf}`, janelaDe: new Date(), janelaAte: new Date(Date.now() + 7_200_000),
+  }));
+
   // --- integrações ---------------------------------------------------------
   const integId = await ins(c, 'IntegrationAccount', {
     id: crypto.randomUUID(), orgId, key: `clickup_${suf}`, label: `ClickUp ${rotulo}`,
@@ -889,7 +911,8 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   const conexaoId = await ins(c, 'BioConexao', {
     id: crypto.randomUUID(), orgId, plataforma: 'instagram', externalId: `ig_${suf}`,
     handle: `@${suf}`, tokenCifrado: `CIFRADO_${suf}`, refreshCifrado: `REFRESH_${suf}`,
-    status: 'ok', atualizadaEm: agora,
+    // MD5: cada empresa com a SUA conta de publicação — o índice parcial é por empresa.
+    status: 'ok', atualizadaEm: agora, finalidade: 'publicacao', escopos: 'instagram_business_basic,instagram_business_content_publish',
   });
   reg('BioConexao', conexaoId);
 
@@ -921,7 +944,7 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }));
 
   reg('BioOauthState', await ins(c, 'BioOauthState', {
-    id: crypto.randomUUID(), estado: `state_${suf}`, orgId, plataforma: 'instagram',
+    id: crypto.randomUUID(), estado: `state_${suf}`, orgId, plataforma: 'instagram', finalidade: 'publicacao',
     verifier: `pkce_${suf}`, expiraEm: new Date(Date.now() + 600_000),
   }));
 
@@ -991,9 +1014,45 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }, { fichasUsadas: 'text[]' });
   reg('PautaRodada', rodadaId);
 
-  reg('PautaPeca', await ins(c, 'PautaPeca', {
+  const pecaId = await ins(c, 'PautaPeca', {
     id: crypto.randomUUID(), orgId, rodadaId, canal: 'whatsapp', formato: 'texto',
     titulo: `Peça ${rotulo}`, corpo: `Texto que vai para o grupo da org ${rotulo}`, status: 'rascunho',
+  });
+  reg('PautaPeca', pecaId);
+  s.ref.pautaPecaId = pecaId;
+
+  // A publicação no Instagram (MD6): filha da peça, a empresa pelo gatilho.
+  reg('PautaPublicacao', await ins(c, 'PautaPublicacao', {
+    id: crypto.randomUUID(), pecaId, rede: 'instagram', estado: 'erro',
+    erro: `Motivo privado da org ${rotulo} ${MARCA}`, atualizadaEm: agora,
+  }));
+
+  // A fila da DM à mão (MD9): filha da peça, a empresa pelo gatilho.
+  const comentarioId = await ins(c, 'ComentarioComPalavra', {
+    id: crypto.randomUUID(), pecaId, commentId: `comentario_${suf}`, midiaId: `midia_${suf}`, palavra: 'AGENTES',
+    pessoaHmac: `hmac_${suf}`, usuario: `pessoa_privada_${suf}`, comentadoEm: agora, expiraEm: new Date(agora.getTime() + 7 * 86_400_000),
+  });
+  reg('ComentarioComPalavra', comentarioId);
+  s.ref.comentarioComPalavraId = comentarioId;
+
+  // A DM automática do comentário (MD11): filha do comentário, a empresa pelo gatilho.
+  reg('EnvioDeResposta', await ins(c, 'EnvioDeResposta', {
+    id: crypto.randomUUID(), comentarioId, loteItemId: `item_${suf}`, pessoaHmac: `hmac_${suf}`,
+    travaDaPessoa: `item_${suf}:hmac_${suf}`, estado: 'enviado', mensagemId: `mensagem_privada_${suf}`,
+    expiraEm: new Date(agora.getTime() + 90 * 86_400_000), atualizadoEm: agora,
+  }));
+
+  // O episódio (MC7): filho 1:1 da rodada, com a página de links da mesma empresa.
+  const episodioId = await ins(c, 'PautaEpisodio', {
+    id: crypto.randomUUID(), orgId, rodadaId, numero: 1, titulo: `Episódio ${rotulo} ${MARCA}`,
+    roteiro: `Roteiro privado da org ${rotulo}`, bioPageId: s.ref.bioPageId, atualizadoEm: agora,
+  });
+  reg('PautaEpisodio', episodioId);
+
+  // O vídeo a caminho do YouTube (MD10): filho do episódio, a empresa pelo gatilho.
+  reg('EnvioAoYoutube', await ins(c, 'EnvioAoYoutube', {
+    id: crypto.randomUUID(), episodioId, sha256: 'a'.repeat(64), bytes: 1024, estado: 'sessao_aberta',
+    sessaoCifrada: `sessao_privada_${suf}`, videoId: `video_privado_${suf}`, atualizadoEm: agora,
   }));
 
   // --- rotinas (fatia 5.1) -------------------------------------------------
@@ -2168,13 +2227,16 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
     const exigidos = [...CAMINHOS_DE_PLATAFORMA_EXIGIDOS];
     const declarados = [...CHAMADORES_DE_PLATAFORMA];
 
-    it('o que a lista EXIGE cobre os sete caminhos do cabeçalho da migration', () => {
+    it('o que a lista EXIGE cobre os caminhos do cabeçalho da migration e os da bio', () => {
       // A lista de exigidos é o contrato. Encurtá-la é afrouxar a trava sem
       // mexer em nenhuma policy — por isso ela é cobrada aqui, nominalmente.
       expect(exigidos.map((c) => c.arquivo).sort()).toEqual(
         [
           'src/auth/auth.service.ts',
           'src/auth/google-login.service.ts',
+          // MD5: o cron e o callback da bio atravessam empresas sem contexto.
+          'src/bio/bio-oauth.controller.ts',
+          'src/bio/bio-sync.service.ts',
           'src/finance/finance.service.ts',
           'src/health/health.controller.ts',
           'src/integrations/clickup.service.ts',
@@ -2964,6 +3026,54 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
   OnboardingMarco: async () => ({
     id: crypto.randomUUID(), trilhoId: sementes.A.ref.onboardingTrilhoId, tipo: 'gatilho', texto: 'marco do teste de derivação',
   }),
+  ItemDoLote: async () => ({
+    id: crypto.randomUUID(), loteId: sementes.A.ref.aprovacaoDeLoteId, capabilityId: 'instagram.post.publicar',
+    recursoId: crypto.randomUUID(), hashItem: `gatilho_${MARCA}`, janelaDe: new Date(), janelaAte: new Date(Date.now() + 60_000),
+  }),
+  PautaPublicacao: async () => ({
+    // (pecaId, rede) é único: a semente já usou `instagram` nesta peça.
+    id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, rede: 'youtube', atualizadaEm: new Date(),
+  }),
+  ComentarioComPalavra: async () => ({
+    id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
+    palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: new Date(), expiraEm: new Date(Date.now() + 86_400_000),
+  }),
+  EnvioDeResposta: async (c) => {
+    // comentarioId é @unique: a semente já usou o comentário de A. Um comentário novo de A.
+    const agora = new Date();
+    const comentario = await ins(c, 'ComentarioComPalavra', {
+      id: crypto.randomUUID(), pecaId: sementes.A.ref.pautaPecaId, commentId: `gatilho_envio_${MARCA}_${crypto.randomUUID()}`, midiaId: 'm',
+      palavra: 'AGENTES', pessoaHmac: 'h', comentadoEm: agora, expiraEm: new Date(agora.getTime() + 86_400_000),
+    });
+    return {
+      id: crypto.randomUUID(), comentarioId: comentario, loteItemId: 'i', pessoaHmac: 'h', estado: 'recusado',
+      expiraEm: new Date(agora.getTime() + 86_400_000), atualizadoEm: agora,
+    };
+  },
+  EnvioAoYoutube: async (c) => {
+    // episodioId é @unique: a semente já usou o episódio de A. Um episódio novo de A.
+    const agora = new Date();
+    const rodada = await ins(c, 'PautaRodada', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, status: 'curada', titulo: `Rodada do envio ${MARCA}`,
+      janelaIni: agora, janelaFim: agora,
+    });
+    const episodio = await ins(c, 'PautaEpisodio', {
+      id: crypto.randomUUID(), rodadaId: rodada, numero: 901, titulo: 'Episódio do envio', atualizadoEm: agora,
+    });
+    return { id: crypto.randomUUID(), episodioId: episodio, sha256: 'b'.repeat(64), bytes: 1, atualizadoEm: agora };
+  },
+  PautaEpisodio: async (c) => {
+    // rodadaId é @unique (uma rodada, um episódio): precisa de uma rodada nova.
+    const agora = new Date();
+    const rodada = await ins(c, 'PautaRodada', {
+      id: crypto.randomUUID(), orgId: sementes.A.orgId, status: 'curada', titulo: `Rodada do gatilho ${MARCA}`,
+      janelaIni: agora, janelaFim: agora,
+    });
+    return {
+      id: crypto.randomUUID(), rodadaId: rodada, numero: 900, titulo: 'Episódio do gatilho',
+      bioPageId: sementes.A.ref.bioPageId, atualizadoEm: agora,
+    };
+  },
 };
 
 /**
@@ -2977,6 +3087,10 @@ const REF_DA_SEMENTE: Record<string, string> = {
   WorkField: 'workFieldId',
   WorkFieldOption: 'workFieldOptionId',
   OnboardingTrilho: 'onboardingTrilhoId',
+  BioPage: 'bioPageId',
+  PautaPeca: 'pautaPecaId',
+  AprovacaoDeLote: 'aprovacaoDeLoteId',
+  ComentarioComPalavra: 'comentarioComPalavraId',
 };
 
 describe('orgId em todo filho de tenant (RF-T-01)', () => {
@@ -2988,9 +3102,12 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     const comProva = Object.keys(LINHA_DE_FILHO).sort();
     expect(comProva, 'FILHOS_COM_ORGID_REDUNDANTE e LINHA_DE_FILHO divergiram.').toEqual(declarados);
     // 10 da migration `orgid_em_todo_filho` + `WorkApontamento` (esteira de
-    // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026).
+    // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
+    // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
+    // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
+    // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(15);
+    expect(declarados.length).toBe(21);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(

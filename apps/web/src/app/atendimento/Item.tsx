@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { CAPACIDADE_DE_APROVAR_A_SEMANA } from '@mktos/shared';
 import { Conteudo } from './Conteudo';
+import { CartaoDoLote } from './CartaoDoLote';
 import { Etiqueta, Selo, esperaLegivel, horaLegivel, inputCls } from './ui';
 import type { ItemDaFila } from './tipos';
 
@@ -57,6 +59,14 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   const emLimbo = item.gaveta === 'confirmada';
   const podeRecusar = (esperando || emLimbo) && euDecido;
   const subiu = item.nivelBase && item.nivelBase !== item.nivel;
+  /*
+   * MD8: o lote da semana guarda só o hash da lista. A titular assina depois de
+   * ver o conteúdo de cada post (o cartão); até ele carregar, não há botão.
+   */
+  const ehLote = item.capacidade === CAPACIDADE_DE_APROVAR_A_SEMANA;
+  const [loteLido, setLoteLido] = useState(false);
+  const aoLerLote = useCallback((ok: boolean) => setLoteLido(ok), []);
+  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido);
 
   return (
     <article className="rounded-xl border border-border bg-surface p-5" data-testid={`item-${item.id}`}>
@@ -98,6 +108,11 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
         <div className="mt-2">
           <Conteudo valor={item.conteudo} oculto={item.conteudoOculto} />
         </div>
+        {ehLote && !item.conteudoOculto && (
+          <div className="mt-3">
+            <CartaoDoLote loteId={item.recurso.id} onPronto={aoLerLote} />
+          </div>
+        )}
         {/*
           "hash gravado", e não "assinatura do conteúdo": o rótulo antigo
           prometia uma verificação que não acontece em lugar nenhum desta tela —
@@ -196,7 +211,24 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
         </p>
       )}
 
-      {item.euPossoAprovar ? (
+      {/* Sem o cartão, não se assina — mas recusar continua ao alcance, para o pedido não ficar na fila até vencer. */}
+      {item.euPossoAprovar && ehLote && !loteLido && (
+        <div className="mt-4 space-y-2 border-t border-border pt-4">
+          <p className="text-xs text-muted" data-testid={`lote-esperando-${item.id}`}>
+            O botão de aprovar aparece quando os posts do lote estiverem na tela: assinar é assinar o que você leu.
+          </p>
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => aoRecusar(item.id)}
+            className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
+            data-testid={`recusar-lote-${item.id}`}
+          >
+            Recusar
+          </button>
+        </div>
+      )}
+      {podeAprovarAgora ? (
         <div className="mt-4 space-y-3 border-t border-border pt-4">
           {item.exigeMotivo && (
             <label className="block text-xs text-muted">
@@ -245,7 +277,7 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
             desfazer por esta tela.
           </p>
         </div>
-      ) : (
+      ) : item.euPossoAprovar ? null : (
         <div className="mt-4 space-y-2 border-t border-border pt-4">
           <p className="text-xs text-muted" data-testid={`porque-nao-${item.id}`}>
             {item.porQueNao}

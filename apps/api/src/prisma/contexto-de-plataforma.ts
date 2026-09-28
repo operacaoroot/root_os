@@ -215,6 +215,23 @@ export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = 
       'gancho da sessão: em `TENANT_MODO=impor` ela lança e a rota de saúde reporta banco fora ' +
       'do ar para sempre.',
   },
+  {
+    arquivo: 'src/bio/bio-sync.service.ts',
+    porQue:
+      'o cron da bio varre as conexões de TODAS as empresas: o sync dos desafios e a renovação ' +
+      'do token de 60 dias da conta de publicação do Instagram (MD5). Sem empresa, em ' +
+      '`TENANT_MODO=impor` a rodada lança e é engolida num aviso; sob `mktos_app` não acha conta ' +
+      'nenhuma. Nos dois casos o token de publicação morre no dia 60 sem alarme. O conserto é ' +
+      'listar as empresas sob a sentinela e renovar dentro de cada uma.',
+  },
+  {
+    arquivo: 'src/bio/bio-oauth.controller.ts',
+    porQue:
+      'o callback público do OAuth lê o `BioOauthState` pelo state ANTES de saber a empresa, e ' +
+      'depois grava a conexão e rebaixa a conta de publicação anterior. A sentinela sozinha não ' +
+      'basta (a policy dela não abre `BioOauthState`): precisa de uma resolução declarada do ' +
+      'state, como a das rotas públicas.',
+  },
 ] as const;
 
 /**

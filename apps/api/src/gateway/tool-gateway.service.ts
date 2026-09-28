@@ -7,9 +7,10 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ActorType, Prisma, RiskLevel, ToolCallStatus } from '@prisma/client';
-import type { Capacidade, Decisao } from '@mktos/policy';
+import { ORDEM_DOS_NIVEIS, type Capacidade, type Decisao, type Nivel } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { comContexto } from '../common/contexto-execucao';
+import { cortarSemPartirCaractere } from '../common/texto';
 import { PolicyService } from '../policy/policy.service';
 import {
   SinaisService,
@@ -22,8 +23,10 @@ import {
   type AprovacaoConsumida,
 } from '../approvals/approvals.service';
 import { TetoDeCustoIaService } from '../llm/teto-diario.service';
+import { LotesService, type ConsumoDoItem } from '../approvals/lotes.service';
+import { modoDeAprovacao, separarItemDeLote } from '../approvals/lotes';
 import { ROTULO_CONECTOR_DESLIGADO, conectorDaCapacidade } from '../integrations/conectores';
-import { EventLogService, type ConteudoDoEvento } from './event-log.service';
+import { EventLogService, semSigilosos, temSigiloso, type ConteudoDoEvento } from './event-log.service';
 import { EfeitosRegistry, type ContextoDoEfeito } from './efeitos.registry';
 import { InterruptoresRegistry } from './interruptores.registry';
 import { mensagemDeErro, validarArgs } from './validacao';
@@ -83,6 +86,12 @@ export interface ExecCtx {
    * ao modelo e ao `ToolCall.erro`; `nivel` é o degrau mais alto que ele alcança.
    */
   tetoDoAgente?: { nivel: RiskLevel; motivo: string } | null;
+  /**
+   * O item de lote que autorizou esta passagem (MD7). Quem preenche é a
+   * PORTA, depois do consumo contado — nunca quem chama: o efeito lê daqui
+   * que saiu pelo lote, sem o campo ter entrado no conteúdo assinado.
+   */
+  loteItemId?: string;
 }
 
 /** Posição do degrau na escada. Índice maior = degrau mais alto. */
@@ -144,7 +153,9 @@ type CausaDeRecusa =
   | 'argumento_invalido'
   | 'teto_de_custo'
   | 'conector_desligado'
-  | 'agente_rebaixado';
+  | 'agente_rebaixado'
+  | 'lote_nao_aceito'
+  | 'lote_recusado';
 
 /*
  * O que fica gravado em `PolicyDecision.motivo`. É texto ESTÁVEL de propósito:
@@ -163,6 +174,8 @@ const ROTULO_DA_RECUSA: Record<CausaDeRecusa, string> = {
   // recusa virariam duas linhas de meia contagem.
   conector_desligado: ROTULO_CONECTOR_DESLIGADO,
   agente_rebaixado: 'recusado na porta: autonomia do agente rebaixada por erro (RF-N-07)',
+  lote_nao_aceito: 'recusado na porta: capacidade não sai por lote',
+  lote_recusado: 'recusado na porta: item de lote não vale',
 };
 
 /*
@@ -266,6 +279,12 @@ export class ToolGateway implements OnModuleInit {
      * em vez de deixar a ação sumir — falha fechada.
      */
     @Optional() private readonly efeitos?: EfeitosRegistry,
+    /*
+     * O CONSUMO CONTADO DO LOTE (MD7). `@Optional()` pelas suítes que montam a
+     * porta à mão; sem ele, todo `loteItemId` é RECUSADO (falha fechada) e o
+     * caminho de sempre segue igual. O arranque recusa subir sem ele.
+     */
+    @Optional() private readonly lotes?: LotesService,
   ) {
     this.log.log(`porta em modo ${this.modo.toUpperCase()}`);
   }
@@ -300,6 +319,12 @@ export class ToolGateway implements OnModuleInit {
           'próprio GatewayModule; se ele não estiver nos providers, a porta não pode subir.',
       );
     }
+    if (!this.lotes) {
+      throw new Error(
+        'ToolGateway subiu sem LotesService: todo item de lote seria recusado e a publicação ' +
+          'aprovada na semana nunca sairia. O serviço vem do ApprovalsModule, que é global.',
+      );
+    }
   }
 
   get modoAtual(): 'impor' | 'observar' {
@@ -307,10 +332,28 @@ export class ToolGateway implements OnModuleInit {
   }
 
   async executar<A extends Record<string, unknown>, R>(
-    req: ToolCallRequest<A>,
+    pedido: ToolCallRequest<A>,
     efeito: (args: A, ctx: ExecCtx) => Promise<R>,
   ): Promise<ToolCallResult<R>> {
     const inicio = Date.now();
+    /*
+     * O `loteItemId` é da PORTA, não do conteúdo (MD7): sai dos argumentos
+     * antes de tudo, e daqui para baixo `req.args` é o conteúdo exato — o que
+     * se valida, o que entra no hash, o que vai ao RASTRO e ao efeito.
+     */
+    const doLote = separarItemDeLote(pedido.args);
+    /*
+     * O `loteItemId` do CONTEXTO também é da porta: um que venha de quem chama
+     * (um efeito que repasse o próprio ctx numa chamada aninhada, um laço que
+     * monte o ExecCtx à mão) diria ao efeito "saiu pelo lote" sem uso contado.
+     * Cai aqui, e só o consumo do passo L o escreve de novo.
+     */
+    const { loteItemId: _doChamador, ...ctxLimpo } = pedido.ctx;
+    const req: ToolCallRequest<A> = {
+      ...pedido,
+      ctx: ctxLimpo,
+      ...(doLote.presente ? { args: doLote.conteudo as A } : {}),
+    };
     const { ctx } = req;
     const cap = req.capabilityId ? this.policy.resolverCapacidade(ctx.orgId, req.capabilityId) : null;
 
@@ -397,6 +440,27 @@ export class ToolGateway implements OnModuleInit {
       }
     }
 
+    /*
+     * 1-ter. O ITEM DE LOTE (MD7) — quem pode trazê-lo, antes de qualquer
+     * registro. Capacidade sem `sob_lote` no catálogo desta empresa recusa o
+     * campo em vez de ignorá-lo: ignorar faria o pedido cair no caminho de
+     * sempre achando que tinha lote. Vir junto com token de aprovação também
+     * recusa — são dois caminhos, e a porta não escolhe um por quem chamou.
+     */
+    if (doLote.presente) {
+      const modo = modoDeAprovacao(cap);
+      const recusa = !cap || modo?.modo !== 'sob_lote'
+        ? `"${req.capabilityId ?? 'ferramenta sem nome'}" não sai por lote nesta empresa: o loteItemId não é aceito. Nada foi enviado.`
+        : !doLote.loteItemId
+          ? 'O loteItemId veio vazio ou fora do formato. Nada foi enviado.'
+          : req.approvalToken
+            ? 'loteItemId e token de aprovação na mesma chamada: são dois caminhos, escolha um. Nada foi enviado.'
+            : !req.resource?.id
+              ? 'O item de lote é de um recurso, e a chamada não disse qual. Nada foi enviado.'
+              : null;
+      if (recusa) return this.recusar(req, cap, 'lote_nao_aceito', recusa, inicio);
+    }
+
     // 1. Argumentos ANTES de classificar. Recusar aqui é o que permite ao
     // modelo corrigir o nome do campo — recusar lá no efeito já custou uma
     // aprovação queimada.
@@ -428,7 +492,8 @@ export class ToolGateway implements OnModuleInit {
      * escolhe. A outra metade da conferência está depois do CONSUMO do token,
      * onde já se sabe se houve gente no caminho.
      */
-    const semTokenNenhum = !req.approvalToken;
+    // O item de lote é uma assinatura de gente (a do lote): conta como token.
+    const semTokenNenhum = !req.approvalToken && !doLote.loteItemId;
     if (this.teto && ctx.actorType === ActorType.ai && semTokenNenhum) {
       const corte = await this.teto.motivoDeCorte(ctx.orgId);
       if (corte) return this.recusar(req, cap, 'teto_de_custo', corte, inicio);
@@ -486,6 +551,7 @@ export class ToolGateway implements OnModuleInit {
         nivel: decisao.nivel,
         motivo: decisao.motivo,
         sinais: decisao.sinaisAcionados,
+        ...(doLote.loteItemId ? { loteItemId: doLote.loteItemId } : {}),
       },
       // O hash que vai amarrar a aprovação já é conhecido aqui: é o mesmo
       // conteúdo que a pessoa vai ver e assinar.
@@ -590,11 +656,27 @@ export class ToolGateway implements OnModuleInit {
     }
 
     /*
+     * CAMINHO L — O USO CONTADO DO LOTE (MD7). Com `loteItemId`, a porta não
+     * propõe nem consome token: consome UM uso do item, numa instrução só
+     * (`LotesService.consumirItem`). Zero linhas é recusa registrada, e NUNCA
+     * cai para o caminho B — um item vencido não vira pedido novo na fila por
+     * conta própria.
+     */
+    let consumo: ConsumoDoItem | null = null;
+    if (doLote.loteItemId) {
+      const r = await this.consumirDoLote(req, cap!, decisao, doLote.loteItemId);
+      if (typeof r === 'string') {
+        return this.recusarDepoisDeRegistrar(req, toolCall.id, decisao, decisionId, 'lote_recusado', r, inicio);
+      }
+      consumo = r;
+    }
+
+    /*
      * CAMINHO B — retenção por aprovação. Vale nos DOIS modos. Sem token, a
      * ação para aqui e vira item na fila; quem executa depois é
      * AcoesService.executarAprovada, com os argumentos GRAVADOS na proposta.
      */
-    if (decisao.exigeAprovacao && !req.approvalToken) {
+    if (decisao.exigeAprovacao && !req.approvalToken && !consumo) {
       const pendente = await this.approvals.propor({
         orgId: ctx.orgId,
         propostoPorId: ctx.actorId ?? 'agente',
@@ -747,7 +829,8 @@ export class ToolGateway implements OnModuleInit {
        * conector, o log. Nenhum parâmetro novo atravessa a cadeia inteira:
        * quem precisar lê de `contextoAtual()`.
        */
-      const resultado = await comContexto({ ...ctx, origem: 'agente' }, () => efeito(req.args, ctx));
+      const ctxDoEfeito: ExecCtx = consumo ? { ...ctx, loteItemId: consumo.itemId } : ctx;
+      const resultado = await comContexto({ ...ctx, origem: 'agente' }, () => efeito(req.args, ctxDoEfeito));
       await this.prisma.toolCall.update({
         where: { id: toolCall.id },
         data: {
@@ -776,9 +859,10 @@ export class ToolGateway implements OnModuleInit {
         decisionId,
         nivel: decisao.nivel as RiskLevel,
         correlationId: ctx.correlationId,
-        payload: { duracaoMs: Date.now() - inicio, ok: true },
-        // O mesmo hash que amarra a aprovação ao conteúdo exato.
-        contentHash: this.hashDaAprovacao(req, cap),
+        payload: { duracaoMs: Date.now() - inicio, ok: true, ...this.referenciaDoLote(consumo) },
+        // O mesmo hash que amarra a aprovação ao conteúdo exato — o da LISTA,
+        // quando a assinatura foi a do lote.
+        contentHash: consumo?.hashConteudo ?? this.hashDaAprovacao(req, cap),
         conteudo: {
           argumentos: req.args,
           resultado: oQueVoltou,
@@ -787,6 +871,7 @@ export class ToolGateway implements OnModuleInit {
           desfazer: cap?.desfazer,
           ...(canal ? { canal, entrega: oQueVoltou } : {}),
           ...this.deQuemAprovou(aprovacao),
+          ...this.doLoteNoRastro(consumo),
         },
         sensibilidade: cap?.efeito.sensibilidade,
       });
@@ -807,7 +892,8 @@ export class ToolGateway implements OnModuleInit {
         toolCallId: toolCall.id,
         decisionId,
         correlationId: ctx.correlationId,
-        payload: { erro: mensagem.slice(0, 300) },
+        payload: { erro: mensagem.slice(0, 300), ...this.referenciaDoLote(consumo) },
+        ...(consumo ? { contentHash: consumo.hashConteudo } : {}),
         /*
          * A FALHA CARREGA O MESMO VOCABULÁRIO DO SUCESSO — mesma disciplina de
          * `acao.falhou` em `acoes.service.ts`. Quem lê o RASTRO procurando "o
@@ -823,6 +909,7 @@ export class ToolGateway implements OnModuleInit {
             ? { canal: conectorDaCapacidade(req.capabilityId), entrega: { ok: false, erro: mensagem.slice(0, 300) } }
             : {}),
           ...this.deQuemAprovou(aprovacao),
+          ...this.doLoteNoRastro(consumo),
         },
         sensibilidade: cap?.efeito.sensibilidade,
       });
@@ -1300,6 +1387,65 @@ export class ToolGateway implements OnModuleInit {
     return canal ? { canal } : {};
   }
 
+  /**
+   * O consumo contado de um item de lote. Devolve o consumo, ou a frase da
+   * recusa — que a porta registra sem chamar efeito.
+   *
+   * Antes da instrução, a conferência que o catálogo já fez e que a política
+   * da EMPRESA pode ter desfeito: o lote apontado existe, é `modo: lote` e o
+   * degrau dele cobre o degrau EFETIVO desta passagem (com os sinais de
+   * agora). Um lote R3 não cobre um post que o dia atípico subiu a R4.
+   */
+  private async consumirDoLote(
+    req: ToolCallRequest<Record<string, unknown>>,
+    cap: Capacidade,
+    decisao: Decisao,
+    loteItemId: string,
+  ): Promise<ConsumoDoItem | string> {
+    const orgId = req.ctx.orgId;
+    const modo = modoDeAprovacao(cap);
+    if (modo?.modo !== 'sob_lote') return 'A capacidade deixou de sair por lote. Nada foi enviado.';
+    const capLote = this.policy.resolverCapacidade(orgId, modo.lote);
+    if (!capLote || modoDeAprovacao(capLote)?.modo !== 'lote') {
+      return `O lote "${modo.lote}" não está no catálogo desta empresa como lote. Nada foi enviado.`;
+    }
+    const nivelDoLote = this.policy.simular(orgId, modo.lote).nivel;
+    if (ORDEM_DOS_NIVEIS.indexOf(nivelDoLote as Nivel) < ORDEM_DOS_NIVEIS.indexOf(decisao.nivel as Nivel)) {
+      return `Esta passagem vale ${decisao.nivel} e o lote "${modo.lote}" foi assinado em ${nivelDoLote}: a assinatura não cobre. Nada foi enviado.`;
+    }
+    if (!this.lotes) return 'A porta está sem o serviço de lotes: nenhum item de lote vale nesta instância. Nada foi enviado.';
+    try {
+      const r = await this.lotes.consumirItem({
+        orgId,
+        loteItemId,
+        capabilityId: cap.id,
+        recursoId: req.resource!.id,
+        hashAtual: canonicalHash(cap.id, req.args ?? {}, this.hashKeysDe(cap.id, orgId)),
+        loteDaCapacidade: modo.lote,
+      });
+      return r.ok ? r : `Item de lote recusado: ${r.motivo}. Nada foi enviado.`;
+    } catch (e) {
+      this.log.error(`[lote] consumo do item ${loteItemId} falhou: ${(e as Error).message}`);
+      return 'Não foi possível conferir o item de lote, e o OS não age sem essa resposta. Nada foi enviado.';
+    }
+  }
+
+  /** O que o RASTRO do item leva do lote: quem assinou a lista e o contador antes e depois. */
+  private doLoteNoRastro(c: ConsumoDoItem | null): ConteudoDoEvento {
+    if (!c) return {};
+    return {
+      aprovador: c.aprovadoPorId,
+      aprovadoEm: c.aprovadoEm,
+      ...(c.motivo ? { motivo: c.motivo } : {}),
+      estadoAnterior: c.estadoAnterior,
+      estadoNovo: c.estadoNovo,
+    };
+  }
+
+  private referenciaDoLote(c: ConsumoDoItem | null): Record<string, unknown> {
+    return c ? { loteItemId: c.itemId, loteId: c.loteId, hashItem: c.hashItem, approvalIdDoLote: c.approvalId } : {};
+  }
+
   private deQuemAprovou(ap: AprovacaoConsumida | null): ConteudoDoEvento {
     if (!ap) return {};
     return {
@@ -1394,22 +1540,15 @@ export class ToolGateway implements OnModuleInit {
   // `Array.from` corta em PONTOS DE CÓDIGO: cada elemento é um caractere
   // inteiro, e nenhum par nasce partido. O teto continua sendo 4000 unidades de
   // 16 bits (o `while` desconta), então o tamanho gravado não cresce.
-  private resumirResultado(r: unknown): Prisma.InputJsonValue {
+  //
+  // E O QUE O RASTRO ESCONDE NÃO FICA CRU AQUI (MD9). Um efeito pode devolver
+  // um campo marcado com `sigiloso(...)` — o @ de quem comentou, o id do
+  // comentário — para quem o chamou gravar onde é governado. O `EventLog` já
+  // trocava a marca pelo resumo; o `ToolCall.resultado` gravava o valor cru.
+  private resumirResultado(bruto: unknown): Prisma.InputJsonValue {
+    const r = temSigiloso(bruto) ? semSigilosos(bruto) : bruto;
     const texto = typeof r === 'string' ? r : JSON.stringify(r ?? null);
     if (texto.length > 4000) return { resumo: cortarSemPartirCaractere(texto, 4000), truncado: true };
     return (r ?? {}) as Prisma.InputJsonValue;
   }
-}
-
-/** Corta em ponto de código, nunca no meio de um par substituto. Ver `resumirResultado`. */
-export function cortarSemPartirCaractere(texto: string, limite: number): string {
-  if (texto.length <= limite) return texto;
-  const pontos = Array.from(texto);
-  let usado = 0;
-  let i = 0;
-  while (i < pontos.length && usado + pontos[i].length <= limite) {
-    usado += pontos[i].length;
-    i++;
-  }
-  return pontos.slice(0, i).join('');
 }

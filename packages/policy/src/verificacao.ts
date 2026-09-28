@@ -1,4 +1,4 @@
-import { classificar, avaliar, type Capacidade, type Decisao } from './escada.js';
+import { classificar, avaliar, escalonar, maior, type Capacidade, type Decisao, type Nivel } from './escada.js';
 import type { Politica } from './esquema.js';
 
 /*
@@ -16,12 +16,74 @@ export interface LinhaVerificacao {
   declarado: string;
   calculado: string;
   ok: boolean;
+  /**
+   * O que o modo de aprovação da capacidade (`lote`/`sob_lote`, MD7) tem de
+   * errado, em frases. Vazio quando não declara modo ou quando está certo.
+   * Qualquer item aqui reprova a linha, mesmo com o nível batendo.
+   */
+  problemas: string[];
+}
+
+/** Maior alcance que ainda NÃO sobe degrau — o mesmo 10 de `classificar()`. */
+const ALCANCE_QUE_NAO_SOBE = 10;
+
+/**
+ * As três regras do lote (MD7), sobre o catálogo inteiro:
+ *
+ *  1. `sob_lote` aponta para uma capacidade que existe e declara `modo: lote`;
+ *  2. o nível do lote é maior ou igual ao de cada `sob_lote` avaliado COM um
+ *     sinal aceso (um degrau acima, teto R4): a assinatura do lote vale para
+ *     o dia atípico também, e um lote abaixo disso seria o desconto de degrau
+ *     que a régua existe para impedir;
+ *  3. `modo: lote` só com `efeito.alcance` acima de 10: aprovar uma lista é
+ *     escrita de alcance, e é o alcance que a sobe de degrau. Lote declarado
+ *     com alcance baixo seria a lista inteira assinada no degrau de um item.
+ */
+function problemasDoLote(pol: Pick<Politica, 'capacidades'>): Map<string, string[]> {
+  const porId = new Map(pol.capacidades.map((c) => [c.id, c]));
+  const problemas = new Map<string, string[]>();
+  const anota = (id: string, frase: string) => problemas.set(id, [...(problemas.get(id) ?? []), frase]);
+  const nivelDe = (c: (typeof pol.capacidades)[number]): Nivel =>
+    maior(c.nivel as Nivel, classificar(c.efeito as Capacidade['efeito']));
+  const ordem: readonly Nivel[] = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5'];
+
+  for (const c of pol.capacidades) {
+    const a = c.aprovacao;
+    if (!a) continue;
+    if (a.modo === 'lote') {
+      if ((c.efeito.alcance ?? 1) <= ALCANCE_QUE_NAO_SOBE) {
+        anota(c.id, `modo lote exige efeito.alcance acima de ${ALCANCE_QUE_NAO_SOBE} (declara ${c.efeito.alcance ?? 1})`);
+      }
+      continue;
+    }
+    const lote = porId.get(a.lote);
+    if (!lote) {
+      anota(c.id, `sob_lote aponta para "${a.lote}", que não existe no catálogo`);
+      continue;
+    }
+    if (lote.aprovacao?.modo !== 'lote') {
+      anota(c.id, `sob_lote aponta para "${a.lote}", que não declara modo lote`);
+      continue;
+    }
+    const comSinal = escalonar(nivelDe(c), ['fonte_nao_confiavel']);
+    const doLote = nivelDe(lote);
+    if (ordem.indexOf(doLote) < ordem.indexOf(comSinal)) {
+      anota(
+        c.id,
+        `o lote "${lote.id}" é ${doLote} e esta capacidade chega a ${comSinal} com um sinal aceso: ` +
+          'a assinatura do lote valeria menos que a do pedido',
+      );
+    }
+  }
+  return problemas;
 }
 
 export function verificarCatalogo(pol: Pick<Politica, 'capacidades'>): LinhaVerificacao[] {
+  const doLote = problemasDoLote(pol);
   return pol.capacidades.map((c) => {
     const calculado = classificar(c.efeito as Capacidade['efeito']);
-    return { id: c.id, declarado: c.nivel, calculado, ok: calculado === c.nivel };
+    const problemas = doLote.get(c.id) ?? [];
+    return { id: c.id, declarado: c.nivel, calculado, ok: calculado === c.nivel && problemas.length === 0, problemas };
   });
 }
 

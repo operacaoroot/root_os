@@ -121,6 +121,10 @@ services:
       # `up -d --no-build api`.
       GATEWAY_MODO: ${GATEWAY_MODO:-observar}
       RASTRO_RETENCAO_DIAS: ${RASTRO_RETENCAO_DIAS:-1825}
+      # Fuso em que a janela horária da política é lida (onda D, MD3). O container
+      # roda em UTC; sem isto a janela 08–20 valia das 05h às 17h de Brasília.
+      # Fuso desconhecido derruba o arranque. Fonte: apps/api/src/policy/limites.ts.
+      POLITICA_FUSO_HORARIO: ${POLITICA_FUSO_HORARIO:-America/Sao_Paulo}
       LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
       # Percentual do teto diário de IA em que o painel alerta (RF-B-03). Lido em
       # `apps/api/src/llm/relatorio-custo.service.ts` e devolvido no payload, para
@@ -166,10 +170,31 @@ services:
       PAUTA_ESPELHO: ${PAUTA_ESPELHO:-off}
       PAUTA_ESPELHO_DIR: ${PAUTA_ESPELHO_DIR:-}
       PAUTA_DRIVE_FOLDER_ID: ${PAUTA_DRIVE_FOLDER_ID:-}
+      # MD4: a mídia da peça (JPEG e mp4 do corte) servida à Meta por URL
+      # assinada de até 1 h. Segredo vazio (ou com menos de 32 caracteres) =
+      # rota pública desligada, sempre 404. A origem padrão é a da bio, que já
+      # leva /api à API. O teto do mp4 que sobe por stream é o do Reels, 300 MB.
+      # Fonte: apps/api/src/pauta/midia-publica.ts e video-do-corte.ts.
+      PAUTA_MIDIA_PUBLICA_SEGREDO: ${PAUTA_MIDIA_PUBLICA_SEGREDO:-}
+      PAUTA_MIDIA_PUBLICA_ORIGEM: ${PAUTA_MIDIA_PUBLICA_ORIGEM:-}
+      PAUTA_VIDEO_MAX_BYTES: ${PAUTA_VIDEO_MAX_BYTES:-314572800}
+      # MD9: a chave do HMAC-SHA256 do id de quem comentou a palavra-chave (a
+      # fila da DM à mão guarda o HMAC, nunca o id; o RASTRO leva só ele). Vazia
+      # ou com menos de 32 caracteres = a rotina pauta.coletar-comentarios não
+      # lê nada. Trocar a chave faz a mesma pessoa virar outra no histórico.
+      # Fonte: apps/api/src/pauta/dm-por-comentario.ts.
+      META_WEBHOOK_PESSOA_HMAC_KEY: ${META_WEBHOOK_PESSOA_HMAC_KEY:-}
       EVOLUTION_URL: ${EVOLUTION_URL:-}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
       EVOLUTION_GRUPO_JID: ${EVOLUTION_GRUPO_JID:-}
+      # Grupo "Root · links" (MC1): link colado lá vira captura em /referencias.
+      # Entra pelo MESMO webhook do canal de aprovação (a Evolution só aceita
+      # uma URL por instância). Vazio = desligado.
+      EVOLUTION_LINKS_JID: ${EVOLUTION_LINKS_JID:-}
+      # A empresa dona do grupo (o id da org). O JID é global e o webhook tem
+      # uma URL por empresa: sem ela, o grupo fica desligado.
+      EVOLUTION_LINKS_ORG_ID: ${EVOLUTION_LINKS_ORG_ID:-}
       # APROVAR PELO WHATSAPP (fatia 5.5, RF-A-06). DESLIGADO É O PADRÃO: sem as
       # duas variáveis abaixo o webhook responde 404, nenhum pedido de aprovação
       # sai e nenhum código é gerado. Precisam estar NESTE bloco — o container não
@@ -237,6 +262,22 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_REDIRECT_URI: ${META_REDIRECT_URI:-http://localhost:4000/api/meta/callback}
+      # MD10: o canal do YouTube, num projeto PRÓPRIO do Google Cloud (outro par
+      # que o GOOGLE_* acima). Sem cliente/segredo, nenhuma empresa conecta o
+      # canal. A redirect tem de bater com a do cliente OAuth no console.
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      YOUTUBE_REDIRECT_URI: ${YOUTUBE_REDIRECT_URI:-http://localhost:4000/api/youtube/callback}
+      # Só para dublê local: vazias valem os endereços do Google.
+      YOUTUBE_API_URL: ${YOUTUBE_API_URL:-}
+      YOUTUBE_UPLOAD_URL: ${YOUTUBE_UPLOAD_URL:-}
+      YOUTUBE_OAUTH_URL: ${YOUTUBE_OAUTH_URL:-}
+      # D-MC6: pendente (padrão) recusa envio e publicação — vídeo de projeto
+      # sem auditoria fica privado para sempre; teste libera só o envio, e só
+      # ao canal de YOUTUBE_CANAL_DE_TESTE (o id UC… dele; vazio recusa); aprovada
+      # libera tudo. O envio é sempre privado.
+      YOUTUBE_AUDITORIA: ${YOUTUBE_AUDITORIA:-pendente}
+      YOUTUBE_CANAL_DE_TESTE: ${YOUTUBE_CANAL_DE_TESTE:-}
       # Link na bio (absorvido do root-bio)
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       # O COFRE (RF-C-01..04). Vazias por padrão, e vazio É um estado válido:
@@ -253,6 +294,15 @@ services:
       PUBLIC_BIO_ORIGIN: ${PUBLIC_BIO_ORIGIN:-https://bio.operacaoroot.com}
       INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
       INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
+      # MD5: só para dublê local; vazias valem os endereços da Meta.
+      INSTAGRAM_OAUTH_URL: ${INSTAGRAM_OAUTH_URL:-}
+      INSTAGRAM_TOKEN_URL: ${INSTAGRAM_TOKEN_URL:-}
+      INSTAGRAM_GRAPH_URL: ${INSTAGRAM_GRAPH_URL:-}
+      # MD11: `sim` faz a conexão de publicação pedir também
+      # instagram_business_manage_messages (a DM automática). Só depois de o
+      # escopo estar no painel do app e no App Review: sem isso a Meta recusa a
+      # tela de conexão inteira. Vazia = não pede (o padrão).
+      INSTAGRAM_PEDIR_MENSAGENS: ${INSTAGRAM_PEDIR_MENSAGENS:-}
       TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:-}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
       BIO_SYNC_INTERVAL_MIN: ${BIO_SYNC_INTERVAL_MIN:-360}

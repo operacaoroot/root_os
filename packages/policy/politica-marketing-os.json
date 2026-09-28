@@ -1,6 +1,6 @@
 {
-  "versao": "1.2.0",
-  "atualizadoEm": "2026-09-11",
+  "versao": "1.7.0",
+  "atualizadoEm": "2026-09-25",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1168,6 +1168,260 @@
       }
     },
     {
+      "id": "instagram.post.publicar",
+      "rota": "POST /pauta/pecas/:id/publicar-instagram",
+      "descricao": "Publica a peça aprovada da semana (carrossel, story ou corte) na conta de publicação do Instagram da empresa, pela Graph: cria os containers com a mídia do OS numa URL assinada e publica. Não existe despublicar pela API; apagar o post é à mão, no Instagram.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pecaId",
+          "formato",
+          "legenda",
+          "midias",
+          "igUserId"
+        ],
+        "properties": {
+          "pecaId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a peça da semana, aprovada"
+          },
+          "formato": {
+            "type": "string",
+            "enum": [
+              "carrossel",
+              "story",
+              "corte"
+            ]
+          },
+          "legenda": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a legenda do post (o texto, no story, que não leva legenda)"
+          },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "chave",
+                "sha256"
+              ],
+              "properties": {
+                "chave": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "description": "a mídia exata, na ordem: [{chave, sha256}] do JPEG de cada slide, do story ou do mp4 do corte"
+          },
+          "igUserId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a conta de publicação do Instagram que recebe o post"
+          },
+          "agendadaPara": {
+            "type": "string",
+            "description": "o slot da agenda, quando a peça tem um (ISO)"
+          }
+        }
+      },
+      "aprovacao": {
+        "modo": "sob_lote",
+        "lote": "pauta.semana.aprovar"
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "instagram.comentario.ler",
+      "rota": "GET /pauta/comentarios",
+      "descricao": "Lê os comentários dos posts da semana com palavra-chave (carrossel e corte dos últimos 7 dias) na conta de publicação do Instagram da empresa, pela Graph, e devolve só quem comentou a palavra inteira: o id do comentário e o @ saem marcados como sigilosos, o id da pessoa sai como HMAC e o texto do comentário nunca sai do efeito. Só leitura: nada é escrito na Meta. Quem lê é a rotina pauta.coletar-comentarios, sem ferramenta de agente (o @ não vai a modelo nenhum). A rota declarada é a da fila que a leitura enche: ela só mostra a fila e nunca dispara a leitura, e está aqui para prender a capacidade ao módulo pauta na Régua.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["igUserId", "midias"],
+        "properties": {
+          "igUserId": { "type": "string", "minLength": 1, "description": "a conta de publicação do Instagram cujos posts são lidos" },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pecaId", "palavra"],
+              "properties": {
+                "pecaId": { "type": "string", "minLength": 1 },
+                "palavra": { "type": "string", "pattern": "^[A-Z0-9]{3,20}$" },
+                "midiaId": { "type": "string", "minLength": 1 },
+                "permalink": { "type": "string", "pattern": "^https://" }
+              }
+            },
+            "description": "as peças publicadas com a palavra do CTA: o id da mídia (publicada pelo OS) ou o permalink colado à mão"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "instagram.resposta_privada.enviar",
+      "rota": "GET /pauta/comentarios",
+      "descricao": "Manda UMA resposta privada da Meta (POST <IG_ID>/messages com recipient.comment_id) a quem comentou a palavra-chave num post da semana, com o texto fixo assinado, que abre avisando que a mensagem é automática e leva o link rastreado da matéria. Só sai por item do lote da semana (pauta.semana.aprovar, R4): a regra de cada matéria é o item, com teto por dia contado no dia de São Paulo e janela de 7 dias. Quem chama é a rotina pauta.coletar-comentarios, com a procedência externa marcada (quem comenta é gente de fora), o que sobe o envio a R4; sem ferramenta de agente. O id do comentário e a pessoa nunca entram nos argumentos: o efeito os lê da linha do envio, presa à correlação da passagem. Não existe desenviar pela API. A rota declarada é a da fila, que mostra o envio e nunca o dispara.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["igUserId", "palavra", "texto", "bioLinkId", "destinoAprovado", "midias"],
+        "properties": {
+          "igUserId": { "type": "string", "minLength": 1, "description": "a conta de publicação do Instagram que manda a mensagem" },
+          "palavra": { "type": "string", "pattern": "^[A-Z0-9]{3,20}$", "description": "a palavra-chave da matéria" },
+          "texto": { "type": "string", "minLength": 1, "description": "o texto exato, com a linha de mensagem automática e o link rastreado (até 1000 bytes)" },
+          "bioLinkId": { "type": "string", "minLength": 1, "description": "o link de campanha campanha:dm:<itemId> da matéria, cujo /r/ vai no texto" },
+          "destinoAprovado": { "type": "string", "minLength": 1, "description": "para onde o link leva, como assinado: o link público da matéria" },
+          "midias": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "as peças da matéria (carrossel e corte) cujos posts valem: o id da peça, porque o id da mídia na Meta só existe depois de publicada"
+          }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false,
+        "alcance": 1
+      }
+    },
+    {
+      "id": "instagram.regra_de_resposta.pausar",
+      "rota": "POST /pauta/dm/regras/:itemId/pausar",
+      "descricao": "Pausa a regra da DM automática de uma matéria: revoga o item dela no lote da semana, com o motivo. Só diminui o alcance do OS, não escreve fora e não produz nada; voltar a mandar é assinar de novo (a regra entra no próximo lote). É R0 e não R1 pelo mesmo motivo da leitura de comentários: R1 com qualquer sinal (o fora_da_janela de toda noite, o volume_atipico do segundo clique da hora) vira R2, e R2 exige outra pessoa, o que prenderia o freio numa fila. Quem clica é uma pessoa, na fila da DM. As pausas automáticas do executor (destino do link mudado, página fora do ar, três recusas seguidas da Meta, falta de Advanced Access) revogam o mesmo item pelo serviço do lote, como a rotina de publicação faz ao desistir de uma peça.",
+      "nivel": "R0",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["regraId", "motivo"],
+        "properties": {
+          "regraId": { "type": "string", "minLength": 1, "description": "o item de lote da regra" },
+          "motivo": { "type": "string", "minLength": 3, "description": "por que a regra vai parar" }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": false,
+        "produzArtefato": false,
+        "reversibilidade": "automatica",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "interna",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "youtube.video.enviar",
+      "rota": "POST /pauta/episodios/:id/youtube/sessao",
+      "descricao": "Abre no YouTube a sessão de envio resumable do vídeo final do episódio, SEMPRE privado e sem publishAt, com o título, a descrição, a categoria e a thumb do pacote; o Mac manda os bytes direto ao YouTube e, no fim, o OS confere que o vídeo está privado e com os metadados assinados e define a thumb (e a playlist, se houver nota). Cada sessão aberta e a conclusão gastam um uso do item. Desfazer seria apagar o vídeo, que é destruição e R5: por isso a reversibilidade é manual, e o OS nunca apaga vídeo.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["episodioId", "sha256", "bytes", "titulo", "descricao", "categoria", "thumbN", "thumbChave", "thumbSha"],
+        "properties": {
+          "episodioId": { "type": "string", "minLength": 1, "description": "o episódio cujo vídeo final sobe" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o sha256 do vídeo final, medido no Mac" },
+          "bytes": { "type": "integer", "minimum": 1, "description": "o tamanho do vídeo final, em bytes" },
+          "titulo": { "type": "string", "minLength": 1, "description": "o título marcado no pacote (até 100 caracteres)" },
+          "descricao": { "type": "string", "minLength": 1, "description": "a descrição do pacote com a página de links no lugar do marcador (até 5.000 bytes)" },
+          "categoria": { "type": "string", "pattern": "^[0-9]{1,3}$", "description": "a categoria do YouTube (o número)" },
+          "thumbN": { "type": "integer", "minimum": 1, "maximum": 3, "description": "a thumb escolhida no pacote" },
+          "thumbChave": { "type": "string", "minLength": 1, "description": "onde o PNG da thumb está no storage do OS" },
+          "thumbSha": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "o sha curto do PNG da thumb (o mesmo do nome no storage)" }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": false,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "youtube.video.publicar",
+      "rota": "PUT /pauta/episodios/:id/pacote/horario",
+      "descricao": "Agenda a publicação do vídeo que já está no YouTube, privado e conferido: relê o vídeo, recusa se o título, a descrição ou a thumb divergem do que foi assinado, garante a thumb e a playlist e manda videos.update só com part=status (privacyStatus private e publishAt no horário do pacote). Daí em diante quem publica é o YouTube. Só vale com a auditoria do projeto aprovada. Quem agenda é a rotina pauta.publicar-agendadas, sem ferramenta de agente; a rota declarada é a do horário do vídeo no pacote, que prende a capacidade ao módulo pauta e nunca dispara o agendamento. Tirar do ar é à mão, no Studio.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["episodioId", "sha256", "bytes", "titulo", "descricao", "categoria", "thumbN", "thumbChave", "thumbSha", "publicarEm"],
+        "properties": {
+          "episodioId": { "type": "string", "minLength": 1, "description": "o episódio cujo vídeo final sobe" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o sha256 do vídeo final, medido no Mac" },
+          "bytes": { "type": "integer", "minimum": 1, "description": "o tamanho do vídeo final, em bytes" },
+          "titulo": { "type": "string", "minLength": 1, "description": "o título marcado no pacote (até 100 caracteres)" },
+          "descricao": { "type": "string", "minLength": 1, "description": "a descrição do pacote com a página de links no lugar do marcador (até 5.000 bytes)" },
+          "categoria": { "type": "string", "pattern": "^[0-9]{1,3}$", "description": "a categoria do YouTube (o número)" },
+          "thumbN": { "type": "integer", "minimum": 1, "maximum": 3, "description": "a thumb escolhida no pacote" },
+          "thumbChave": { "type": "string", "minLength": 1, "description": "onde o PNG da thumb está no storage do OS" },
+          "thumbSha": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "o sha curto do PNG da thumb (o mesmo do nome no storage)" },
+          "publicarEm": { "type": "string", "minLength": 1, "description": "quando o vídeo vai ao ar (o publishAt, ISO)" }
+        }
+      },
+      "aprovacao": { "modo": "sob_lote", "lote": "pauta.semana.aprovar" },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
       "id": "financeiro.lancamento.criar",
       "ferramenta": "financeiro_lancamento_criar",
       "rota": "POST /finance/transactions",
@@ -1294,6 +1548,39 @@
         "sensibilidade": "restrita",
         "destruicao": false,
         "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "pauta.semana.aprovar",
+      "rota": "POST /approvals/lotes/:id/pedir-assinatura",
+      "descricao": "Aprova de uma vez a lista de saídas da semana (os posts do Instagram, e depois o YouTube e a DM): cada item fica valendo um uso contado da capacidade dele, preso ao hash do conteúdo exato, com janela e prazo. O efeito só ativa o lote dentro do OS; o que sai para fora é cada item, pela porta, na hora dele.",
+      "nivel": "R4",
+      "aprovacao": {
+        "modo": "lote",
+        "tetoDeItens": 60,
+        "validadeMaximaDias": 8
+      },
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["loteId", "hashConteudo", "totalDeItens", "validaAte"],
+        "properties": {
+          "loteId": { "type": "string", "minLength": 1, "description": "o lote montado, com a lista de itens" },
+          "hashConteudo": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "o hash canônico da lista ordenada de itens: é o que a assinatura cobre" },
+          "totalDeItens": { "type": "integer", "minimum": 1, "maximum": 60, "description": "quantos itens a lista tem" },
+          "validaAte": { "type": "string", "minLength": 1, "description": "até quando o lote vale (ISO)" }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "publica",
+        "destruicao": false,
+        "obrigacaoLegal": false,
+        "alcance": 60
       }
     }
   ]

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { TransporteDeCanalRegistry } from './transporte.registry';
+import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 import { EnvioDeAprovacaoService } from './envio-de-aprovacao.service';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
 import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
@@ -38,7 +39,10 @@ import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
  *
  *  · `TransporteDeCanalRegistry` — porque quem se INSCREVE mora fora
  *    (`pauta/evolution.service.ts`);
- *  · `EnvioDeAprovacaoService` — porque quem NOTIFICA é `ApprovalsService.propor`.
+ *  · `EnvioDeAprovacaoService` — porque quem NOTIFICA é `ApprovalsService.propor`;
+ *  · `EntradaDeGrupoRegistry` — porque quem trata o grupo de links mora fora
+ *    (`pauta/entrada-de-links.service.ts`, MC1). Ele só recebe mensagem de GRUPO,
+ *    que o canal descarta de qualquer jeito: não oferece caminho até decisão.
  *
  * `CanalDeAprovacaoService` saiu da lista: quem o usa é o controlador daqui, e
  * exportá-lo oferecia a QUALQUER serviço do processo um objeto que decide
@@ -51,7 +55,12 @@ import { CanalDeAprovacaoController } from './canal-de-aprovacao.controller';
 @Global()
 @Module({
   controllers: [CanalDeAprovacaoController],
-  providers: [TransporteDeCanalRegistry, EnvioDeAprovacaoService, CanalDeAprovacaoService],
-  exports: [TransporteDeCanalRegistry, EnvioDeAprovacaoService],
+  providers: [
+    TransporteDeCanalRegistry,
+    EntradaDeGrupoRegistry,
+    EnvioDeAprovacaoService,
+    CanalDeAprovacaoService,
+  ],
+  exports: [TransporteDeCanalRegistry, EntradaDeGrupoRegistry, EnvioDeAprovacaoService],
 })
 export class CanaisModule {}

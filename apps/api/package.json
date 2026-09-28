@@ -31,6 +31,7 @@
     "provisionar": "node dist/scripts/provisionar-tenant.js",
     "relatorio:observar": "node dist/scripts/relatorio-observar.js",
     "expurgo:rastro": "node dist/scripts/expurgar-rastro.js",
+    "storage:uso": "node dist/scripts/storage-uso.js",
     "cofre:inventario": "node dist/cofre/cofre.cli.js inventario",
     "cofre:rotacionar": "node dist/cofre/cofre.cli.js rotacionar",
     "cofre:migrar": "node dist/cofre/cofre.cli.js migrar",

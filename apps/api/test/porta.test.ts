@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { PrismaClient, ActorType, ApprovalState, RiskLevel, ToolCallStatus } from '@prisma/client';
 import { PolicyService } from '../src/policy/policy.service';
 import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
+import {
+  FUSO_DA_POLITICA,
+  foraDaJanela,
+  fusoDaPolitica,
+  fusoValido,
+  horarioNoFuso,
+  minutosNoFuso,
+} from '../src/policy/limites';
+import { PAUTA_FUSO_DA_AGENDA, horaNoFuso, instanteNoFuso } from '@mktos/shared';
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { ApprovalsController } from '../src/approvals/approvals.controller';
 import { EventLogService } from '../src/gateway/event-log.service';
@@ -15,6 +24,7 @@ import { ConectoresService } from '../src/integrations/conectores.service';
 import { ROTULO_CONECTOR_DESLIGADO } from '../src/integrations/conectores';
 import { comContexto } from '../src/common/contexto-execucao';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { LotesService } from '../src/approvals/lotes.service';
 
 /*
  * O roteiro da demo, em teste, contra banco de verdade.
@@ -594,6 +604,38 @@ describe.skipIf(!URL)('a porta', () => {
       expect(r.decisao.nivel).toBe('R1');
       expect(r.decisao.sinaisAcionados).toContain('fora_da_janela');
       expect(r.decisao.motivo).toContain('elevado');
+    }
+  });
+
+  it('a janela é lida no horário de São Paulo, qualquer que seja o TZ do processo (MD3)', async () => {
+    /*
+     * O container roda em UTC. Antes da MD3 a porta lia `getHours()` e a janela
+     * 08–20 valia das 05h às 17h de Brasília: o post das 18h subia um degrau.
+     * O mesmo instante tem que dar o mesmo sinal em UTC, em Tóquio e em SP.
+     */
+    const sinais = new SinaisService(prisma as unknown as PrismaService, policy);
+    const casos = [
+      { instante: '2026-09-01T21:00:00Z', acende: false }, // 18h00 em SP
+      { instante: '2026-09-01T23:30:00Z', acende: true }, // 20h30 em SP
+      { instante: '2026-09-01T10:30:00Z', acende: true }, // 07h30 em SP
+      { instante: '2026-09-01T11:00:00Z', acende: false }, // 08h00 em SP, a borda
+    ];
+    const tzAntes = process.env.TZ;
+    try {
+      for (const tz of ['UTC', 'Asia/Tokyo', 'America/Sao_Paulo']) {
+        process.env.TZ = tz;
+        for (const c of casos) {
+          const acesos = await sinais.calcular({
+            orgId: ORG,
+            capabilityId: 'numeros.painel.ler',
+            agora: new Date(c.instante),
+          });
+          expect(acesos.includes('fora_da_janela'), `${c.instante} com TZ=${tz}`).toBe(c.acende);
+        }
+      }
+    } finally {
+      if (tzAntes === undefined) delete process.env.TZ;
+      else process.env.TZ = tzAntes;
     }
   });
 
@@ -1814,5 +1856,427 @@ describe.skipIf(!URL)('o gancho da porta: interruptor de conector e vocabulário
       where: { orgId: ORG2, tipo: 'teste.colisao' },
     });
     expect((linha.payload as Record<string, unknown>).motivo).toBe('o que o conteudo diz');
+  });
+});
+
+/*
+ * A HORA DA JANELA, sem banco (onda D, MD3). A conta pura que a porta e o
+ * simulador da Régua usam: o mesmo instante dá a mesma hora de São Paulo em
+ * qualquer `TZ` do processo, e fuso desconhecido não cai calado para UTC.
+ */
+describe('a hora da janela é a de São Paulo', () => {
+  const JANELA: [string, string] = ['08:00', '20:00'];
+  let tzAntes: string | undefined;
+  let fusoAntes: string | undefined;
+
+  beforeEach(() => {
+    tzAntes = process.env.TZ;
+    fusoAntes = process.env.POLITICA_FUSO_HORARIO;
+    delete process.env.POLITICA_FUSO_HORARIO;
+  });
+  afterEach(() => {
+    if (tzAntes === undefined) delete process.env.TZ;
+    else process.env.TZ = tzAntes;
+    if (fusoAntes === undefined) delete process.env.POLITICA_FUSO_HORARIO;
+    else process.env.POLITICA_FUSO_HORARIO = fusoAntes;
+  });
+
+  const acende = (iso: string) => foraDaJanela(minutosNoFuso(new Date(iso)), JANELA);
+
+  it('21:00 UTC é 18h em SP e não acende; 23:30 UTC (20h30) e 10:30 UTC (07h30) acendem', () => {
+    expect(acende('2026-09-01T21:00:00Z')).toBe(false);
+    expect(acende('2026-09-01T23:30:00Z')).toBe(true);
+    expect(acende('2026-09-01T10:30:00Z')).toBe(true);
+    expect(horarioNoFuso(new Date('2026-09-01T21:00:00Z'))).toBe('18:00');
+  });
+
+  it('o slot das 18:00 que a agenda da semana propõe é julgado pela porta como 18:00', () => {
+    // Uma conta só: a porta lê a hora com `partesNoFuso`, a mesma da agenda.
+    const slot = instanteNoFuso('2026-09-01', '18:00');
+    process.env.TZ = 'UTC';
+    expect(horarioNoFuso(slot)).toBe(horaNoFuso(slot));
+    expect(horarioNoFuso(slot)).toBe('18:00');
+    expect(FUSO_DA_POLITICA).toBe(PAUTA_FUSO_DA_AGENDA);
+    expect(acende(slot.toISOString())).toBe(false);
+    expect(acende(instanteNoFuso('2026-09-01', '20:30').toISOString())).toBe(true);
+  });
+
+  it('o resultado é o mesmo com TZ=UTC, TZ=Asia/Tokyo e TZ=America/Sao_Paulo', () => {
+    const instantes = [
+      '2026-09-01T21:00:00Z',
+      '2026-09-01T23:30:00Z',
+      '2026-09-01T10:30:00Z',
+      '2026-09-02T02:59:00Z',
+      '2026-09-02T03:00:00Z',
+    ];
+    const medir = () => instantes.map((i) => [minutosNoFuso(new Date(i)), acende(i)]);
+    process.env.TZ = 'America/Sao_Paulo';
+    const emSp = medir();
+    for (const tz of ['UTC', 'Asia/Tokyo']) {
+      process.env.TZ = tz;
+      expect(medir(), `TZ=${tz}`).toEqual(emSp);
+    }
+    // meia-noite é 00:00, não 24:00 — o hourCycle h23 é o que garante
+    expect(horarioNoFuso(new Date('2026-09-02T03:00:00Z'))).toBe('00:00');
+  });
+
+  it('POLITICA_FUSO_HORARIO troca o fuso; vazia volta a São Paulo', () => {
+    expect(fusoDaPolitica({})).toBe(FUSO_DA_POLITICA);
+    expect(fusoDaPolitica({ POLITICA_FUSO_HORARIO: '  ' })).toBe('America/Sao_Paulo');
+    expect(fusoDaPolitica({ POLITICA_FUSO_HORARIO: 'Europe/Lisbon' })).toBe('Europe/Lisbon');
+    process.env.POLITICA_FUSO_HORARIO = 'UTC';
+    expect(horarioNoFuso(new Date('2026-09-01T21:00:00Z'))).toBe('21:00');
+    expect(acende('2026-09-01T21:00:00Z')).toBe(true);
+  });
+
+  it('fuso desconhecido acende o sinal e derruba o arranque da porta', () => {
+    expect(fusoValido('Marte/Olympus')).toBe(false);
+    expect(Number.isNaN(minutosNoFuso(new Date(), 'Marte/Olympus'))).toBe(true);
+    expect(foraDaJanela(minutosNoFuso(new Date(), 'Marte/Olympus'), JANELA)).toBe(true);
+    process.env.POLITICA_FUSO_HORARIO = 'Marte/Olympus';
+    expect(
+      () => new SinaisService({} as unknown as PrismaService, {} as unknown as PolicyService),
+    ).toThrow(/POLITICA_FUSO_HORARIO="Marte\/Olympus" não é um fuso conhecido/);
+    delete process.env.POLITICA_FUSO_HORARIO;
+    expect(
+      () => new SinaisService({} as unknown as PrismaService, {} as unknown as PolicyService),
+    ).not.toThrow();
+  });
+});
+
+/*
+ * MD7: A PORTA E O ITEM DE LOTE (uso contado).
+ *
+ * Com `loteItemId` nos argumentos e a capacidade `sob_lote`, a porta não
+ * propõe nem consome token: consome UM uso do item numa instrução só. Cada
+ * "não" abaixo tem de sair registrado (ToolCall recusado, `tool.recusado` com
+ * a causa) e SEM efeito — nunca como pedido novo na fila.
+ */
+describe.skipIf(!URL)('a porta e o item de lote (MD7)', () => {
+  const ORG_L = 'org-teste-porta-lote';
+  const ORG_OUTRA = 'org-teste-porta-lote-b';
+  const CAP = 'instagram.post.publicar';
+  const LOTE = 'pauta.semana.aprovar';
+  const AGORA = new Date('2026-09-01T14:00:00-03:00');
+  let prisma: PrismaClient;
+  let policy: PolicyService;
+  let lotes: LotesService;
+  let gateway: ToolGateway;
+  let efeitos: Array<{ args: Record<string, unknown>; loteItemId?: string }>;
+
+  const argsDaPeca = (pecaId: string, legenda = `Legenda da ${pecaId}`) => ({
+    pecaId,
+    formato: 'carrossel',
+    legenda,
+    midias: [{ chave: `pauta/${pecaId}/1.jpg`, sha256: 'a'.repeat(64) }],
+    igUserId: 'ig-123',
+    agendadaPara: '2026-09-01T17:00:00.000Z',
+  });
+
+  const ctxL = (orgId = ORG_L): ExecCtx => ({
+    orgId,
+    actorType: ActorType.system,
+    actorId: 'rotina-publicar',
+    agentSlug: null,
+    correlationId: `lote-${Math.random().toString(36).slice(2, 8)}`,
+  });
+
+  /** Um lote montado pelo serviço e ativado à mão (a assinatura tem suíte própria). */
+  const loteAtivo = async (
+    orgId: string,
+    pecas: string[],
+    extra: { janelaDe?: Date; janelaAte?: Date; validaAte?: Date } = {},
+  ) => {
+    const validaAte = extra.validaAte ?? new Date(AGORA.getTime() + 3 * 86_400_000);
+    const m = await lotes.montar({
+      orgId,
+      capabilityId: LOTE,
+      recursoTipo: 'pauta_episodio',
+      recursoId: `ep-${Math.random().toString(36).slice(2, 8)}`,
+      propostoPorId: 'quem-montou',
+      validaAte,
+      agora: AGORA,
+      itens: pecas.map((id) => ({
+        capabilityId: CAP,
+        recursoId: id,
+        args: argsDaPeca(id),
+        janelaDe: extra.janelaDe ?? new Date(AGORA.getTime() - 3600_000),
+        janelaAte: extra.janelaAte ?? new Date(AGORA.getTime() + 3600_000),
+      })),
+    });
+    await prisma.aprovacaoDeLote.update({
+      where: { id: m.loteId },
+      data: { estado: 'ativo', aprovadoPorId: 'titular-da-semana', aprovadoEm: AGORA, motivo: 'semana conferida slide a slide', approvalId: 'ap-do-lote' },
+    });
+    const porRecurso = Object.fromEntries(m.itens.map((i) => [i.recursoId, i.id]));
+    return { ...m, porRecurso };
+  };
+
+  const publicar = (orgId: string, pecaId: string, loteItemId: unknown, args = argsDaPeca(pecaId), capabilityId = CAP) =>
+    gateway.executar(
+      { capabilityId, args: { ...args, loteItemId }, ctx: ctxL(orgId), resource: { type: capabilityId, id: pecaId } },
+      async (a, c) => {
+        efeitos.push({ args: a, loteItemId: c.loteItemId });
+        return { publicado: true, id: `ig-${pecaId}` };
+      },
+    );
+
+  /** A recusa ficou registrada e nada saiu. */
+  const recusadoSemEfeito = async (r: Awaited<ReturnType<typeof publicar>>, trecho: RegExp) => {
+    expect(r.status).toBe('recusado');
+    if (r.status !== 'recusado') return;
+    expect(r.motivo).toMatch(trecho);
+    expect(efeitos).toEqual([]);
+    const tc = await prisma.toolCall.findUnique({ where: { id: r.toolCallId } });
+    expect(tc?.status).toBe(ToolCallStatus.recusado);
+    const ev = await prisma.eventLog.findFirst({ where: { toolCallId: r.toolCallId, tipo: 'tool.recusado' } });
+    expect(ev, 'a recusa precisa estar no RASTRO').toBeTruthy();
+    // E nunca virou pedido na fila.
+    expect(await prisma.approval.count({ where: { orgId: ORG_L, capabilityId: CAP } })).toBe(0);
+  };
+
+  beforeAll(async () => {
+    vi.setSystemTime(AGORA);
+    process.env.GATEWAY_MODO = 'impor';
+    prisma = new PrismaClient({ datasources: { db: { url: URL } } });
+    await prisma.$connect();
+    for (const [id, slug] of [[ORG_L, 'teste-porta-lote'], [ORG_OUTRA, 'teste-porta-lote-b']]) {
+      await prisma.org.upsert({ where: { id }, create: { id, name: slug, slug }, update: {} });
+    }
+    const p = prisma as unknown as PrismaService;
+    policy = new PolicyService(p);
+    await policy.onModuleInit();
+    lotes = new LotesService(p, policy, new AuditService(p));
+    gateway = new ToolGateway(
+      p, policy, new SinaisService(p, policy), new ApprovalsService(p, new AuditService(p)), new EventLogService(p),
+      undefined, undefined, new EfeitosRegistry(), lotes,
+    );
+  });
+
+  beforeEach(() => {
+    efeitos = [];
+  });
+
+  afterAll(async () => {
+    vi.useRealTimers();
+    for (const orgId of [ORG_L, ORG_OUTRA]) {
+      await prisma.$transaction([
+        prisma.$executeRawUnsafe('ALTER TABLE "EventLog" DISABLE RULE eventlog_sem_delete'),
+        prisma.eventLog.deleteMany({ where: { orgId } }),
+        prisma.$executeRawUnsafe('ALTER TABLE "EventLog" ENABLE RULE eventlog_sem_delete'),
+      ]);
+      await prisma.itemDoLote.deleteMany({ where: { orgId } });
+      await prisma.aprovacaoDeLote.deleteMany({ where: { orgId } });
+      await prisma.approval.deleteMany({ where: { orgId } });
+      await prisma.toolCall.deleteMany({ where: { orgId } });
+      await prisma.policyDecision.deleteMany({ where: { orgId } });
+      await prisma.auditLog.deleteMany({ where: { orgId } });
+      await prisma.org.deleteMany({ where: { id: orgId } });
+    }
+    await prisma.$disconnect();
+  });
+
+  it('o item do lote ativo sai uma vez, sem fila, e o RASTRO leva o lote e o contador', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-ok']);
+    const r = await publicar(ORG_L, 'peca-ok', l.porRecurso['peca-ok']);
+    expect(r.status).toBe('executado');
+    // O efeito recebe o conteúdo SEM o loteItemId, e o item pelo contexto.
+    expect(efeitos).toEqual([{ args: argsDaPeca('peca-ok'), loteItemId: l.porRecurso['peca-ok'] }]);
+    expect(await prisma.approval.count({ where: { orgId: ORG_L } })).toBe(0);
+
+    const item = await prisma.itemDoLote.findUnique({ where: { id: l.porRecurso['peca-ok'] } });
+    expect(item).toMatchObject({ usos: 1, estado: 'consumido' });
+    expect((await prisma.aprovacaoDeLote.findUnique({ where: { id: l.loteId } }))?.estado).toBe('encerrado');
+
+    if (r.status !== 'executado') return;
+    const ev = await prisma.eventLog.findFirst({ where: { toolCallId: r.toolCallId, tipo: 'tool.resultado' } });
+    expect(ev?.contentHash).toBe(l.hashConteudo);
+    const payload = ev?.payload as Record<string, unknown> & { rastro: { faltando: string[] } };
+    expect(payload).toMatchObject({
+      aprovador: 'titular-da-semana',
+      motivo: 'semana conferida slide a slide',
+      estadoAnterior: { usos: 0, usoMaximo: 1 },
+      estadoNovo: { usos: 1, usoMaximo: 1 },
+      loteItemId: l.porRecurso['peca-ok'],
+      loteId: l.loteId,
+    });
+    for (const campo of ['hashConteudo', 'aprovador', 'aprovadoEm', 'estadoAnterior', 'estadoNovo']) {
+      expect(payload.rastro.faltando, campo).not.toContain(campo);
+    }
+    // O loteItemId não entrou no conteúdo registrado da chamada.
+    const tc = await prisma.toolCall.findUnique({ where: { id: r.toolCallId } });
+    expect(Object.keys(tc?.args as object)).not.toContain('loteItemId');
+  });
+
+  it('segundo uso do mesmo item é recusado e registrado, sem efeito', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-dupla']);
+    expect((await publicar(ORG_L, 'peca-dupla', l.porRecurso['peca-dupla'])).status).toBe('executado');
+    efeitos = [];
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-dupla', l.porRecurso['peca-dupla']), /o item está consumido|já foi usado/);
+  });
+
+  it('conteúdo diferente do assinado é recusado — e os outros itens seguem valendo', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-editada', 'peca-intacta']);
+    const trocada = argsDaPeca('peca-editada', 'legenda trocada depois da assinatura');
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-editada', l.porRecurso['peca-editada'], trocada), /difere do que foi assinado/);
+    expect((await publicar(ORG_L, 'peca-intacta', l.porRecurso['peca-intacta'])).status).toBe('executado');
+  });
+
+  it('fora da janela do item é recusado', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-cedo'], {
+      janelaDe: new Date(AGORA.getTime() + 3600_000),
+      janelaAte: new Date(AGORA.getTime() + 7200_000),
+    });
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-cedo', l.porRecurso['peca-cedo']), /fora da janela/);
+  });
+
+  it('lote vencido ou revogado é recusado', async () => {
+    const venc = await loteAtivo(ORG_L, ['peca-vencida']);
+    await prisma.aprovacaoDeLote.update({ where: { id: venc.loteId }, data: { validaAte: new Date(AGORA.getTime() - 1000) } });
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-vencida', venc.porRecurso['peca-vencida']), /o lote venceu/);
+
+    const rev = await loteAtivo(ORG_L, ['peca-revogada']);
+    await lotes.revogarLote(ORG_L, rev.loteId, 'semana cancelada no ensaio', 'quem-montou');
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-revogada', rev.porRecurso['peca-revogada']), /o lote está revogado/);
+  });
+
+  it('lote ainda sem assinatura (aguardando) é recusado', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-sem-assinatura']);
+    await prisma.aprovacaoDeLote.update({ where: { id: l.loteId }, data: { estado: 'aguardando' } });
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-sem-assinatura', l.porRecurso['peca-sem-assinatura']), /o lote está aguardando/);
+  });
+
+  it('item de outra empresa é recusado como se não existisse', async () => {
+    const deLa = await loteAtivo(ORG_OUTRA, ['peca-alheia']);
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-alheia', deLa.porRecurso['peca-alheia']), /não existe nesta empresa/);
+    expect((await prisma.itemDoLote.findUnique({ where: { id: deLa.porRecurso['peca-alheia'] } }))?.usos).toBe(0);
+  });
+
+  it('item de outro recurso é recusado — o item é da peça, não de qualquer peça', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-a', 'peca-b']);
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-b', l.porRecurso['peca-a'], argsDaPeca('peca-a')), /outro recurso/);
+  });
+
+  it('loteItemId em capacidade que não é sob_lote é recusado antes da régua, e nada sai', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-zap']);
+    const r = await gateway.executar(
+      {
+        capabilityId: 'whatsapp.mensagem.enviar',
+        args: { titulo: 'x', corpo: 'y', loteItemId: l.porRecurso['peca-zap'] },
+        ctx: ctxL(),
+        resource: { type: 'whatsapp.mensagem.enviar', id: 'grupo-1' },
+      },
+      async () => {
+        efeitos.push({ args: {} });
+        return {};
+      },
+    );
+    expect(r.status).toBe('recusado');
+    if (r.status === 'recusado') {
+      expect(r.motivo).toMatch(/não sai por lote/);
+      expect(r.decisao.motivo).toBe('recusado na porta: capacidade não sai por lote');
+    }
+    expect(efeitos).toEqual([]);
+    expect(await prisma.approval.count({ where: { orgId: ORG_L } })).toBe(0);
+    expect((await prisma.itemDoLote.findUnique({ where: { id: l.porRecurso['peca-zap'] } }))?.usos).toBe(0);
+  });
+
+  it('loteItemId vazio, com token junto ou sem recurso é recusado', async () => {
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-x', ''), /vazio ou fora do formato/);
+    const r = await gateway.executar(
+      { capabilityId: CAP, args: { ...argsDaPeca('peca-x'), loteItemId: 'qualquer' }, ctx: ctxL(), approvalToken: 'tok', resource: { type: CAP, id: 'peca-x' } },
+      async () => ({}),
+    );
+    expect(r.status === 'recusado' && r.motivo).toMatch(/dois caminhos/);
+    const semRecurso = await gateway.executar({ capabilityId: CAP, args: { ...argsDaPeca('peca-x'), loteItemId: 'qualquer' }, ctx: ctxL() }, async () => ({}));
+    expect(semRecurso.status === 'recusado' && semRecurso.motivo).toMatch(/não disse qual/);
+  });
+
+  it('sem loteItemId, a publicação segue o caminho de sempre: vai para a fila', async () => {
+    const r = await gateway.executar(
+      { capabilityId: CAP, args: argsDaPeca('peca-avulsa'), ctx: ctxL(), resource: { type: CAP, id: 'peca-avulsa' } },
+      async () => ({ nunca: true }),
+    );
+    expect(r.status).toBe('aguardando_aprovacao');
+    await prisma.approval.deleteMany({ where: { orgId: ORG_L } });
+  });
+
+  it('porta sem o serviço de lotes recusa todo item (falha fechada)', async () => {
+    const p = prisma as unknown as PrismaService;
+    const semLotes = new ToolGateway(p, policy, new SinaisService(p, policy), new ApprovalsService(p, new AuditService(p)), new EventLogService(p));
+    const l = await loteAtivo(ORG_L, ['peca-sem-servico']);
+    const r = await semLotes.executar(
+      { capabilityId: CAP, args: { ...argsDaPeca('peca-sem-servico'), loteItemId: l.porRecurso['peca-sem-servico'] }, ctx: ctxL(), resource: { type: CAP, id: 'peca-sem-servico' } },
+      async () => {
+        efeitos.push({ args: {} });
+        return {};
+      },
+    );
+    expect(r.status).toBe('recusado');
+    expect(efeitos).toEqual([]);
+    // A trava de ARRANQUE sem o serviço de lotes é provada em teto-custo-ia.test.ts,
+    // com teto e efeitos injetados: aqui o arranque cairia antes, pelo teto.
+  });
+
+  it('item de outra capacidade é recusado, e o uso não conta', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-yt']);
+    const doInstagram = await prisma.itemDoLote.findUniqueOrThrow({ where: { id: l.porRecurso['peca-yt'] } });
+    // Mesmo recurso e mesmo hash: só a capacidade difere, e é ela que a instrução confere.
+    const doYoutube = await prisma.itemDoLote.create({
+      data: {
+        orgId: ORG_L, loteId: l.loteId, capabilityId: 'youtube.video.publicar', recursoId: 'peca-yt',
+        hashItem: doInstagram.hashItem, janelaDe: doInstagram.janelaDe, janelaAte: doInstagram.janelaAte,
+      },
+    });
+    await recusadoSemEfeito(await publicar(ORG_L, 'peca-yt', doYoutube.id), /é de "youtube/);
+    expect((await prisma.itemDoLote.findUnique({ where: { id: doYoutube.id } }))?.usos).toBe(0);
+    expect((await prisma.itemDoLote.findUnique({ where: { id: doInstagram.id } }))?.usos).toBe(0);
+  });
+
+  /*
+   * As duas conferências de catálogo ANTES da instrução. Uma sobrescrita que
+   * baixasse o lote ou o tirasse de `modo: lote` é recusada por
+   * `verificarCatalogo` ao ser gravada; aqui a política RESOLVIDA é forjada
+   * para provar que a porta, sozinha, também não deixa passar.
+   */
+  it('lote que a política da empresa deixou abaixo do degrau efetivo não cobre a passagem', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-degrau']);
+    const simular = policy.simular.bind(policy);
+    const espiao = vi.spyOn(policy, 'simular').mockImplementation((org, id, c) =>
+      id === LOTE ? { ...simular(org, id, c), nivel: 'R2' } : simular(org, id, c),
+    );
+    try {
+      await recusadoSemEfeito(await publicar(ORG_L, 'peca-degrau', l.porRecurso['peca-degrau']), /a assinatura não cobre/);
+    } finally {
+      espiao.mockRestore();
+    }
+    expect((await prisma.itemDoLote.findUnique({ where: { id: l.porRecurso['peca-degrau'] } }))?.usos).toBe(0);
+  });
+
+  it('sob_lote apontando para capacidade que não é lote nesta empresa é recusado', async () => {
+    const l = await loteAtivo(ORG_L, ['peca-sem-lote']);
+    const resolver = policy.resolverCapacidade.bind(policy);
+    const espiao = vi.spyOn(policy, 'resolverCapacidade').mockImplementation((org, id) => {
+      const cap = resolver(org, id);
+      return id === LOTE && cap ? { ...cap, aprovacao: undefined } : cap;
+    });
+    try {
+      await recusadoSemEfeito(await publicar(ORG_L, 'peca-sem-lote', l.porRecurso['peca-sem-lote']), /não está no catálogo desta empresa como lote/);
+    } finally {
+      espiao.mockRestore();
+    }
+    expect((await prisma.itemDoLote.findUnique({ where: { id: l.porRecurso['peca-sem-lote'] } }))?.usos).toBe(0);
+  });
+
+  it('loteItemId forjado no contexto de quem chama não chega ao efeito', async () => {
+    const r = await gateway.executar(
+      { capabilityId: 'numeros.painel.ler', args: {}, ctx: { ...ctxL(), loteItemId: 'item-forjado' } },
+      async (a, c) => {
+        efeitos.push({ args: a, loteItemId: c.loteItemId });
+        return { lido: true };
+      },
+    );
+    expect(r.status).toBe('executado');
+    expect(efeitos).toEqual([{ args: {}, loteItemId: undefined }]);
   });
 });

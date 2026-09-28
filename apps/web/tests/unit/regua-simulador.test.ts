@@ -10,7 +10,12 @@ import {
   resolverPolitica,
   type Politica,
 } from '../../../../packages/policy/src/index.js';
-import { linhaDeLog, paraLog, simularAcao } from '../../../api/src/policy/simulador.js';
+import {
+  PedidoDeSimulacaoSchema,
+  linhaDeLog,
+  paraLog,
+  simularAcao,
+} from '../../../api/src/policy/simulador.js';
 import {
   conferirJanela,
   esquecerAvisosDeJanela,
@@ -187,6 +192,71 @@ describe('a ação escolhida do catálogo, com o momento dela', () => {
     expect(sinal?.origem).toBe('calculado');
     expect(sinal?.porque).toContain('08:00');
     expect(fora.nivel).toBe('R4');
+  });
+
+  it('o instante é lido no fuso de São Paulo, com a mesma conta da porta (MD3)', () => {
+    const em = (momento: string) => simularAcao(BASE, { capabilityId: 'email.enviar', momento });
+
+    // 21:00 UTC são 18h em SP: dentro da janela, qualquer que seja o TZ de quem roda.
+    const tarde = em('2026-09-01T21:00:00Z');
+    expect(tarde.sinais).toEqual([]);
+    expect(tarde.relogio).toEqual({ fuso: 'America/Sao_Paulo', horario: '18:00' });
+
+    const sinal = em('2026-09-01T23:30:00Z').sinais.find((s) => s.id === 'fora_da_janela');
+    expect(sinal?.origem).toBe('calculado');
+    expect(sinal?.porque).toContain('20:30 (America/Sao_Paulo)');
+
+    const cedo = em('2026-09-01T10:30:00Z');
+    expect(cedo.sinais.map((s) => s.id)).toContain('fora_da_janela');
+    expect(cedo.relogio.horario).toBe('07:30');
+
+    // o HH:MM digitado já é hora de parede de SP, e volta como veio
+    const digitado = simularAcao(BASE, { capabilityId: 'email.enviar', horario: '10:00' });
+    expect(digitado.relogio.horario).toBe('10:00');
+    expect(simularAcao(BASE, { capabilityId: 'email.enviar' }).relogio.horario).toBeNull();
+  });
+
+  it('o pedido aceita horário, instante OU agora, e o instante precisa ser ISO', () => {
+    const aceita = (extra: Record<string, unknown>) =>
+      PedidoDeSimulacaoSchema.safeParse({ capabilityId: 'email.enviar', ...extra }).success;
+    expect(aceita({ momento: '2026-09-01T21:00:00Z' })).toBe(true);
+    expect(aceita({ momento: '2026-09-01T18:00:00-03:00' })).toBe(true);
+    expect(aceita({ momento: 'agora' })).toBe(false);
+    expect(aceita({ horario: '10:00', momento: '2026-09-01T21:00:00Z' })).toBe(false);
+    expect(aceita({ agora: true })).toBe(true);
+    expect(aceita({ agora: false })).toBe(false);
+    expect(aceita({ agora: true, horario: '10:00' })).toBe(false);
+    expect(aceita({ agora: true, momento: '2026-09-01T21:00:00Z' })).toBe(false);
+  });
+
+  it('"agora" é o relógio de quem simula, o servidor, lido uma vez só (MD3)', () => {
+    // O navegador não manda hora: se mandasse, um relógio 10 min adiantado
+    // veria 20:05 e R4 enquanto a porta, no mesmo instante, daria 19:55.
+    let leituras = 0;
+    const relogioDoServidor = () => {
+      leituras += 1;
+      return new Date('2026-09-01T22:55:00Z'); // 19:55 em SP
+    };
+    const r = simularAcao(
+      BASE,
+      { capabilityId: 'email.enviar', agora: true },
+      'America/Sao_Paulo',
+      relogioDoServidor,
+    );
+    expect(leituras).toBe(1);
+    expect(r.relogio).toEqual({ fuso: 'America/Sao_Paulo', horario: '19:55' });
+    expect(r.sinais).toEqual([]);
+
+    const tarde = simularAcao(BASE, { capabilityId: 'email.enviar', agora: true }, undefined, () =>
+      new Date('2026-09-01T23:05:00Z'),
+    );
+    expect(tarde.relogio.horario).toBe('20:05');
+    expect(tarde.sinais.map((s) => s.id)).toContain('fora_da_janela');
+
+    // sem `agora`, o relógio nem é consultado
+    leituras = 0;
+    simularAcao(BASE, { capabilityId: 'email.enviar', horario: '10:00' }, undefined, relogioDoServidor);
+    expect(leituras).toBe(0);
   });
 
   it('janela horária ilegível acende o sinal — falha fechada', () => {

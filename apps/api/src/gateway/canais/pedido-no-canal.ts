@@ -1,3 +1,4 @@
+import { FILA_DE_APROVACAO } from '../fila-de-aprovacao';
 import { PREFIXO_DO_CODIGO } from './resposta-de-canal';
 
 /*
@@ -147,7 +148,7 @@ export function textoDoPedido(p: PedidoParaOCanal, conteudo: string): string {
  * Não leva código: sem código não há o que responder, e é assim que o canal
  * recusa sem fingir que aceita.
  */
-export function textoDoAviso(p: Omit<PedidoParaOCanal, 'codigo'>, porque: string): string {
+export function textoDoAviso(p: Omit<PedidoParaOCanal, 'codigo'>, porque: string, fila: string | null = linkDaFila()): string {
   return [
     `*ROOT · aprovação esperando* (${p.nivel})`,
     '',
@@ -156,8 +157,19 @@ export function textoDoAviso(p: Omit<PedidoParaOCanal, 'codigo'>, porque: string
     '',
     porque,
     '',
-    'Abra a fila de aprovações no painel para decidir.',
+    fila ? `Abra a fila de aprovações no painel para decidir: ${fila}` : 'Abra a fila de aprovações no painel para decidir.',
   ].join('\n');
+}
+
+/**
+ * O endereço de /atendimento no painel (MD8: o aviso do lote da semana leva o
+ * link), montado da primeira origem de `WEB_ORIGIN`. Só `https://` ou loopback:
+ * um endereço de outra forma não vai numa mensagem para fora.
+ */
+export function linkDaFila(origem: string | undefined = process.env.WEB_ORIGIN): string | null {
+  const base = (origem ?? '').split(',')[0]?.trim().replace(/\/+$/, '') ?? '';
+  if (!/^https:\/\/[^\s/]+$/i.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base)) return null;
+  return `${base}${FILA_DE_APROVACAO}`;
 }
 
 /** O lembrete do formato, para quem é cadastrado e escreveu quase certo. */

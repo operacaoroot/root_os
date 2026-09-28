@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { apelidoDoEpisodio } from '@mktos/shared';
 import type {
   PautaRodadaDetalhe,
   PautaRodadaList,
@@ -9,8 +10,13 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RodadaService } from './rodada.service';
+import { semPai } from './episodio';
+import { lerCandidatos } from './curadoria-da-rodada';
+import { ehPecaDaSemana, motivoParaNaoAprovarDaSemana } from './derivacao-do-episodio';
 import { proximaOcorrencia, validarCron } from './cron';
 import { agendadorDeRotinasDePe } from '../routines/sinal-do-agendador';
+import { LotesService } from '../approvals/lotes.service';
+import { revogarItemDaPeca } from './lote-da-semana';
 
 /*
  * "O GATILHO ESTÁ MESMO DE PÉ?" — a resposta que a tela de Pauta mostra.
@@ -42,10 +48,14 @@ export function gatilhoDaPautaDePe(): boolean {
 // tela usa.
 @Injectable()
 export class RotinaService {
+  private readonly log = new Logger('RotinaService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly rodadas: RodadaService,
+    /** MD8: mudar o status de uma peça da semana tira o item dela do lote. Global; opcional nas suítes. */
+    @Optional() private readonly lotes?: LotesService,
   ) {}
 
   private assertCron(cron: string, tz: string): void {
@@ -96,7 +106,11 @@ export class RotinaService {
         cron: input.cron,
         tz,
         ativo: input.ativo ?? true,
-        config: { horas: input.horas ?? 72, coletarAntes: input.coletarAntes ?? true },
+        config: {
+          horas: input.horas ?? 72,
+          coletarAntes: input.coletarAntes ?? true,
+          ...(input.origens ? { origens: input.origens } : {}),
+        },
         proximoRun: proximaOcorrencia(input.cron, tz, new Date()),
       },
     });
@@ -115,7 +129,8 @@ export class RotinaService {
     const tz = patch.tz ?? atual.tz;
     if (patch.cron || patch.tz) this.assertCron(cron, tz);
 
-    const cfgAtual = (atual.config ?? {}) as { horas?: number; coletarAntes?: boolean };
+    const cfgAtual = (atual.config ?? {}) as { horas?: number; coletarAntes?: boolean; origens?: string[] };
+    const origens = patch.origens ?? cfgAtual.origens;
     const r = await this.prisma.pautaRotina.update({
       where: { id },
       data: {
@@ -127,6 +142,7 @@ export class RotinaService {
         config: {
           horas: patch.horas ?? cfgAtual.horas ?? 72,
           coletarAntes: patch.coletarAntes ?? cfgAtual.coletarAntes ?? true,
+          ...(origens ? { origens } : {}),
         },
         proximoRun: proximaOcorrencia(cron, tz, new Date()),
       },
@@ -154,10 +170,14 @@ export class RotinaService {
   async rodarAgora(orgId: string, id: string, actorId: string) {
     const r = await this.prisma.pautaRotina.findFirst({ where: { id, orgId } });
     if (!r) throw new NotFoundException('Rotina não encontrada');
-    const cfg = (r.config ?? {}) as { horas?: number; coletarAntes?: boolean };
+    const cfg = (r.config ?? {}) as { horas?: number; coletarAntes?: boolean; origens?: unknown };
 
-    if (cfg.coletarAntes !== false) await this.rodadas.coletarFeeds(orgId, actorId);
-    const rodada = await this.rodadas.gerar(orgId, actorId, { rotinaId: r.id, horas: cfg.horas ?? 72 });
+    if (cfg.coletarAntes !== false) await this.rodadas.coletarFeeds(orgId, actorId, cfg.origens);
+    const rodada = await this.rodadas.gerar(orgId, actorId, {
+      rotinaId: r.id,
+      horas: cfg.horas ?? 72,
+      origens: cfg.origens,
+    });
 
     await this.prisma.pautaRotina.update({
       where: { id },
@@ -173,7 +193,11 @@ export class RotinaService {
       where: { orgId },
       orderBy: { criadaEm: 'desc' },
       take: Math.min(Math.max(limite, 1), 100),
-      include: { _count: { select: { pecas: true } }, rotina: { select: { nome: true } } },
+      include: {
+        _count: { select: { pecas: true } },
+        rotina: { select: { nome: true } },
+        episodio: { select: { id: true, numero: true, status: true } },
+      },
     });
     return {
       items: rows.map((r) => ({
@@ -182,6 +206,10 @@ export class RotinaService {
         status: r.status,
         rotina: r.rotina?.nome ?? null,
         itens: Array.isArray(r.itens) ? (r.itens as unknown[]).length : 0,
+        marcados:
+          r.status === 'aguardando_curadoria' && Array.isArray(r.itens)
+            ? (r.itens as Array<{ marcado?: unknown }>).filter((i) => i?.marcado === true).length
+            : 0,
         pecas: r._count.pecas,
         provider: r.provider,
         model: r.model,
@@ -189,6 +217,7 @@ export class RotinaService {
         janelaIni: r.janelaIni.toISOString(),
         janelaFim: r.janelaFim.toISOString(),
         criadaEm: r.criadaEm.toISOString(),
+        episodio: r.episodio ?? null,
       })),
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
@@ -197,7 +226,11 @@ export class RotinaService {
   async obterRodada(orgId: string, id: string): Promise<PautaRodadaDetalhe> {
     const r = await this.prisma.pautaRodada.findFirst({
       where: { id, orgId },
-      include: { pecas: { orderBy: { criadaEm: 'asc' } }, rotina: { select: { nome: true } } },
+      include: {
+        pecas: { orderBy: { criadaEm: 'asc' } },
+        rotina: { select: { nome: true } },
+        episodio: { select: { id: true, numero: true, status: true } },
+      },
     });
     if (!r) throw new NotFoundException('Rodada não encontrada');
     return {
@@ -206,7 +239,11 @@ export class RotinaService {
       status: r.status,
       rotina: r.rotina?.nome ?? null,
       corpo: r.corpo,
-      itens: (r.itens ?? []) as unknown as PautaRodadaDetalhe['itens'],
+      // Em curadoria, o candidato gravado antes da regra única ganha na leitura a
+      // marca `semLinkPublico`: a tela mostra "só contexto" e não o permalink.
+      itens: (r.status === 'aguardando_curadoria'
+        ? lerCandidatos(r.itens)
+        : (r.itens ?? [])) as unknown as PautaRodadaDetalhe['itens'],
       fichasUsadas: r.fichasUsadas.length,
       provider: r.provider,
       model: r.model,
@@ -227,13 +264,29 @@ export class RotinaService {
         erro: p.erro,
         publicadaEm: p.publicadaEm?.toISOString() ?? null,
       })),
+      episodio: r.episodio ?? null,
     };
   }
 
   async removerRodada(orgId: string, id: string, actorId: string) {
-    const r = await this.prisma.pautaRodada.findFirst({ where: { id, orgId } });
+    const r = await this.prisma.pautaRodada.findFirst({
+      where: { id, orgId },
+      include: { episodio: { select: { numero: true } } },
+    });
     if (!r) throw new NotFoundException('Rodada não encontrada');
-    await this.prisma.pautaRodada.delete({ where: { id } });
+    // A FK do episódio é RESTRICT: sem esta recusa, o banco devolveria 500.
+    if (r.episodio) {
+      throw new ConflictException(
+        `Esta rodada já é o episódio ${apelidoDoEpisodio(r.episodio.numero)} — ela carrega o roteiro e a mídia, e não se apaga.`,
+      );
+    }
+    try {
+      await this.prisma.pautaRodada.delete({ where: { id } });
+    } catch (e) {
+      // O episódio nasceu entre a leitura acima e o delete.
+      if (semPai(e)) throw new ConflictException('Esta rodada acabou de virar episódio — ela não se apaga.');
+      throw e;
+    }
     await this.audit.log({
       orgId, actorId, action: 'pauta.rodada_removida', entityType: 'pauta_rodada', entityId: id,
     });
@@ -252,6 +305,17 @@ export class RotinaService {
     if (patch.status && !['rascunho', 'aprovada', 'descartada'].includes(patch.status)) {
       throw new BadRequestException('Status inválido (publicar é pelo endpoint /publicar).');
     }
+    // A peça da semana (MC15) edita o texto só pelo PUT dela: lá o CTA da
+    // legenda se refaz, o render velho cai e a aprovada volta ao rascunho.
+    if ((patch.titulo !== undefined || patch.corpo !== undefined) && ehPecaDaSemana(p.meta)) {
+      throw new BadRequestException(
+        `Esta peça é da semana de posts do episódio: edite o texto na aba Episódios (PUT /pauta/pecas/${id}/semana). Aqui só muda o status.`,
+      );
+    }
+    if (patch.status === 'aprovada' && ehPecaDaSemana(p.meta)) {
+      const motivo = motivoParaNaoAprovarDaSemana(p.formato, p.meta);
+      if (motivo) throw new BadRequestException(motivo);
+    }
 
     const atualizada = await this.prisma.pautaPeca.update({
       where: { id },
@@ -259,12 +323,21 @@ export class RotinaService {
         ...(patch.titulo !== undefined ? { titulo: patch.titulo.slice(0, 200) } : {}),
         ...(patch.corpo !== undefined ? { corpo: patch.corpo } : {}),
         ...(patch.status ? { status: patch.status as 'rascunho' | 'aprovada' | 'descartada' } : {}),
+        // O slot da semana (MC16) é da peça aprovada: saindo dela, sai da agenda.
+        ...(patch.status && patch.status !== 'aprovada' ? { agendadaPara: null } : {}),
+        // O slot proposto (MD1) nunca vira agenda por aqui; a descartada o devolve à grade.
+        ...(patch.status === 'descartada' ? { slotProposto: null } : {}),
       },
     });
     await this.audit.log({
       orgId, actorId, action: 'pauta.peca_editada', entityType: 'pauta_peca', entityId: id,
-      before: { status: p.status }, after: { status: atualizada.status },
+      before: { status: p.status, ...(p.agendadaPara ? { agendadaPara: p.agendadaPara.toISOString() } : {}) },
+      after: { status: atualizada.status, ...(p.agendadaPara && !atualizada.agendadaPara ? { saiuDaAgenda: true } : {}) },
     });
+    // Aprovar à mão não muda o que o lote cobre (o slot é o mesmo); sair de aprovada ou descartar muda.
+    if (patch.status && patch.status !== p.status && patch.status !== 'aprovada' && ehPecaDaSemana(p.meta)) {
+      await revogarItemDaPeca(this.lotes, this.log, orgId, id, `a peça passou de ${p.status} a ${patch.status}`, actorId);
+    }
     return { ok: true, status: atualizada.status };
   }
 }

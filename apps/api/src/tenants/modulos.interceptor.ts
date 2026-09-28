@@ -89,7 +89,8 @@ function empresaDaRequisicao(req: { user?: { orgId?: unknown } } | undefined): s
  *   - `GET /api/bio/public/page/:handle`, `POST /api/bio/public/track`,
  *     `GET /api/bio/r/:linkId` e `GET /api/bio/avatar/:arquivo` (módulo `bio`);
  *   - `GET /api/conectar/:plataforma/callback` (módulo `bio`) — retorno do
- *     OAuth de Instagram/TikTok, path travado por App Review;
+ *     OAuth de Instagram/TikTok, path travado porque é a redirect cadastrada
+ *     nos consoles (mudar exige recadastrar e refazer as conexões);
  *   - `GET /api/meta/callback` (prefixo `meta`, módulo `instagram`) — retorno
  *     do OAuth do Facebook, na mesma situação e esquecido da primeira versão
  *     desta lista.

@@ -148,6 +148,47 @@ jobs:
       #
       # ONDA 10, ESTABILIZAÇÃO (11/09/2026): remedido, 74 em 2 — inalterado. A
       # onda não tocou no motor puro. Os pisos ficam onde estão.
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): (77) em 2 arquivos —
+      # politica 40 (+3: `instagram.post.publicar` é R3 pelo efeito, sem
+      # desfazer nem ferramenta; um sinal aceso a sobe a R4; o `argsSchema`
+      # fechado, com `midias` conferida item a item), sobrescrita 37 (o caso das
+      # capacidades sem ferramenta foi de 14 a 15, sem caso novo). O piso de
+      # CASOS fica em 60 de propósito: os 3 novos cabem na folga de 17, e perder
+      # o arquivo inteiro de sobrescrita (37) continua reprovando pelo piso de
+      # ARQUIVOS, que fica em 2.
+      #
+      # MD7, A APROVAÇÃO DE LOTE COM USO CONTADO (24/09/2026): (88) em 2
+      # arquivos — politica 49 (+9: o campo `aprovacao` sobrevive a lerPolitica
+      # e lerDelta; modo desconhecido e chave estranha recusados; o catálogo
+      # passa nas três regras do lote; lote com alcance até 10 recusado; lote
+      # abaixo do item com sinal recusado; sob_lote para capacidade inexistente
+      # ou que não é lote; `pauta.semana.aprovar` R4; a publicação continua R3
+      # e o lote a cobre com sinal; o texto novo da invariante 4), sobrescrita
+      # 39 (+2: a invariante 4 reescrita conta como removida; mudar o modo de
+      # aprovação afrouxa). O piso de CASOS fica em 60: os 11 novos cabem na
+      # folga, e o de ARQUIVOS em 2.
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): (90) em 2 arquivos — politica
+      # 51 (+2: `instagram.comentario.ler` é R0 pelo efeito, sem ferramenta, e
+      # com sinal sobe a R1 sem pedir aprovação, enquanto o mesmo efeito como
+      # R1 pediria; o esquema de argumentos fechado), sobrescrita 39 (a conta
+      # das sem ferramenta foi a 17, sem caso novo). Os pisos ficam onde estão.
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): (93) em 2 arquivos — politica
+      # 54 (+3: `youtube.video.enviar` e `youtube.video.publicar` são R3 pelo
+      # efeito com reversibilidade `manual` — `automatica` daria R2 —, o envio
+      # não expõe e a publicação expõe, as duas sob o lote; com sinal sobem a R4
+      # e o lote R4 cobre; os esquemas fechados, a publicação é o envio mais o
+      # horário), sobrescrita 39 (a conta das sem ferramenta foi a 19, sem caso
+      # novo). Os pisos ficam onde estão.
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): (97) em 2 arquivos —
+      # politica 58 (+4: o envio é R3 pelo efeito e só sob o lote; com a
+      # procedência externa vira R4 e o lote R4 cobre; o esquema fechado sem
+      # lugar para o comentário nem a pessoa; pausar é R0 e nem com sinal pede
+      # outra pessoa, contra o R1 que pediria), sobrescrita 39 (a conta das sem
+      # ferramenta foi a 21, sem caso novo). Os pisos ficam onde estão.
       PISO_CASOS_POLICY: '60'
       PISO_ARQUIVOS_POLICY: '2'
       # (132) em 12 arquivos: blocos 7, busca 15, card 4, cta 2, dados 13,
@@ -206,8 +247,336 @@ jobs:
       # coluna, idade e horas no cartão, apontar na gaveta, só o autor apaga,
       # arrastar e soltar, criar pelo modelo). O piso de ARQUIVOS vai a 21; o de
       # CASOS sobe 13 (~18% de folga sobre os 16 novos), para 240.
-      PISO_CASOS_WEB: '240'
-      PISO_ARQUIVOS_WEB: '21'
+      #
+      # MC6, CURADORIA HUMANA (23/09/2026): +14 casos, +1 arquivo, só desta
+      # fatia — `component/pauta-curadoria` (14: todos os candidatos com origem,
+      # link e resumo e nada marcado; o sugerido em destaque com o porquê e a
+      # newsletter como "só contexto"; filtro por origem e "só sugeridos"; a
+      # matéria de duas origens nos dois filtros; abrir na rodada que a aba
+      # Rodadas mandou; a resposta atrasada da rodada anterior descartada;
+      # Confirmar travado sem marcado; só os marcados na confirmação; "Marcar
+      # sugeridos" + Salvar sem confirmar; a marcação salva que volta; Confirmar
+      # travado enquanto o Salvar não volta; o erro da API na caixa da página;
+      # a lista vazia que monta pela API; e sem `pauta.editar` nada se marca).
+      # Medido: 412 casos em 31 arquivos (398 + 14). O piso de ARQUIVOS sobe 1,
+      # para 22; o de CASOS sobe 11 (~20% de folga sobre os 14 novos), para 251.
+      #
+      # MC5, COLETA DE QUINTA (23/09/2026): +8 casos, +1 arquivo, só desta
+      # fatia — `component/rotinas-coleta` (8: o formulário abre com quinta 22h,
+      # São Paulo, 168h e "rodando"; Criar manda o corpo do `POST /rotinas` com
+      # o tipo `pauta.coleta` e fecha; o erro da API aparece dentro do card com
+      # o formulário aberto; cron sem cinco campos ou janela fora de 6–336h trava
+      # o Criar; na tela /rotinas o botão aparece com o tipo oferecido e criar
+      # recarrega a lista; some sem o tipo ou para quem só lê; some quando a
+      # empresa já tem uma coleta e quando a API não manda `tiposDisponiveis`;
+      # "Rodar agora" que volta `pulada` mostra o motivo). Medido: 420 casos em
+      # 32 arquivos (412 + 8). O piso de ARQUIVOS sobe 1, para 23; o de CASOS
+      # sobe 7 (~12% de folga sobre os 8 novos), para 258.
+      #
+      # MC7, O EPISÓDIO VIRA ENTIDADE DO OS (23/09/2026): +16 casos, +1 arquivo,
+      # só desta fatia — `component/pauta-episodios` (16: a lista com número,
+      # título e status do mais novo ao mais velho; a lista vazia que diz de
+      # onde o episódio nasce; abrir o que outra aba mandou e trocar no clique;
+      # a linha do tempo com as sete etapas, a atual destacada e as anteriores
+      # feitas; só os dois vizinhos oferecidos e avançar mandando o próximo;
+      # a lista travada enquanto a escrita corre; voltar mandando o anterior; roteiro sem voltar; a recusa da API na
+      # caixa da página sem mexer na etapa; sem `pauta.editar` nada anda; os
+      # itens mantidos com a origem e a newsletter sem link; renomear; "Criar
+      # episódio" na rodada curada da aba Rodadas; a rodada que já é episódio
+      # mostra o número, abre o episódio e não se remove; o botão no fim da
+      # Curadoria; e a aba Episódios na página). Medido: 436 casos em 33
+      # arquivos (420 + 16). O piso de ARQUIVOS sobe 1, para 24; o de CASOS
+      # sobe 14 (~12% de folga sobre os 16 novos), para 272.
+      #
+      # MC8, O ROTEIRO DO EPISÓDIO (23/09/2026): +21 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-roteiro` (21: o markdown do roteiro
+      # virando elemento, com a URL solta clicável em nova aba, só http(s) como
+      # link e sem HTML cru, a URL com parênteses equilibrados inteira, e o
+      # parágrafo que a linha em branco separa; gerar
+      # mostrando a palavra de corte e avisando a aba; a confirmação antes de
+      # substituir; o motivo quando já passou da gravação; sem
+      # `automacoes.executar` o botão apagado com o porquê; sem `pauta.editar`
+      # editor e palavra travados; a recusa na caixa da página; editar salvando
+      # com a versão lida; exportar pelo `.md` com o token, baixando o Blob com
+      # o nome do episódio, e avisando quando o navegador não deixa baixar; a
+      # palavra do episódio e a volta à da empresa, e trocá-la sem apagar a
+      # edição em curso; a releitura com o mesmo roteiro adotando a versão
+      # nova, e com o roteiro mudado em outra aba avisando e mandando a versão
+      # de onde a edição partiu; o espelho que falha sem esconder o salvo; o
+      # modo de gravação com fonte grande, link, palavra de corte e A+; Esc e
+      # Fechar; sem roteiro não há gravar nem exportar). O mock de
+      # `pauta-episodios` ganhou a rota do painel do roteiro, sem caso novo.
+      # Medido: 457 casos em 34 arquivos (436 + 21). O piso de ARQUIVOS sobe 1,
+      # para 25; o de CASOS sobe 18 (~12% de folga sobre os 21 novos), para 290.
+      #
+      # MC9, A ESTAÇÃO DE MÍDIA NO MAC (23/09/2026): +6 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-midia` (5: gravado e sem mídia dizendo o
+      # comando `/root-midia ep-NN` e que o vídeo fica no Mac; no roteiro sem
+      # comando; em edição o nome do vídeo final com o caminho só no título, as
+      # durações, os cortes por motivo e o que falta; a transcrição com a conta,
+      # o fim e cada trecho com o tempo do final; mídia fora da forma contando
+      # como sem mídia) e +1 em `pauta-episodios` (o detalhe mostra a seção da
+      # mídia). Medido: 463 casos em 35 arquivos (457 + 6). O piso de ARQUIVOS
+      # sobe 1, para 26; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para
+      # 295.
+      #
+      # MC10, A VOZ DO AUTOR (24/09/2026): +13 casos, +1 arquivo, só desta fatia —
+      # `component/pauta-voz` (13: o perfil vigente renderizado com a
+      # procedência, as regras da marca e o histórico; sem perfil, o aviso do
+      # tom da casa; aprender dos episódios marcados e do texto colado, com a
+      # versão nova e a conta do material; texto colado abaixo do mínimo
+      # travando o botão; sem `automacoes.executar` o botão apagado com o
+      # porquê; editar à mão salvando com a versão lida e avisando a palavra
+      # proibida; abrir a edição com a proibida só no "Nunca diz" sem aviso;
+      # com a edição aberta, aprender e trocar a chave travados e o salvar com
+      # a versão e a chave de onde o rascunho partiu, mesmo com o painel
+      # recarregado; a soma dos textos colados com teto; o campo da chave
+      # cabendo 63; sem `pauta.editar` nada escreve; a chave só sob `voz.` e a
+      # recusa na caixa da página; a aba Voz na página). Medido: 476 casos em
+      # 36 arquivos (463 + 13). O piso de ARQUIVOS sobe 1, para 27; o de CASOS
+      # sobe 11 (~15% de folga sobre os 13 novos), para 306.
+      #
+      # MC11, O PACOTE DO YOUTUBE (24/09/2026): +12 casos, +1 arquivo, só desta
+      # fatia — `component/pauta-pacote` (11: antes do Pacote diz de onde o
+      # pacote sai e não oferece gerar; no Pacote gera sem substituir e mostra
+      # o que o sistema ajustou; sem `automacoes.executar` o botão apagado com o
+      # porquê; gerar de novo pede confirmação e mostra o aviso dos capítulos;
+      # os três títulos com o escolhido marcado, escolher manda o número e
+      # desmarcar manda nulo; a descrição com copiar, a conta em bytes, os
+      # capítulos conferidos e o aviso do marcador da página de links; o
+      # capítulo fora da regra com o motivo; a prévia da thumb enviada pela API
+      # com o token e o brief + comando da que falta; agendado trava o título,
+      # o desmarcar e o comando das thumbs; sem `pauta.editar` nada
+      # escreve; a prévia que não carrega vira erro) e +1 em `pauta-episodios`
+      # (o detalhe mostra a seção do pacote). Medido: 488 casos em 37 arquivos
+      # (476 + 12). O piso de ARQUIVOS sobe 1, para 28; o de CASOS sobe 10 (~15%
+      # de folga sobre os 12 novos), para 316.
+      #
+      # MC12, A PÁGINA DE LINKS DO EPISÓDIO (24/09/2026): +7 casos, +1 arquivo,
+      # só desta fatia — `component/pauta-pagina-de-links` (7: sem página explica
+      # o que entra e cria, mostrando a conta e os avisos da montagem; em
+      # rascunho o endereço sem link, os botões com a origem, o tirado riscado e
+      # publicar pelo /publicar; no ar o endereço vira link e dá para tirar do
+      # ar; no ar e sem `bio.editar` montar de novo fica apagado com o porquê;
+      # sem `pauta.publicar` + `bio.editar` publicar apagado, sem
+      # `pauta.editar` montar também; sem o módulo bio a seção não aparece; o
+      # erro da API vai para a tela). Medido: 495 casos em 38 arquivos
+      # (488 + 7). O piso de ARQUIVOS sobe 1, para 29; o de CASOS sobe 6 (~15%
+      # de folga sobre os 7 novos), para 322.
+      #
+      # MC13, A NEWSLETTER A PARTIR DA TRANSCRIÇÃO (24/09/2026): +11 casos, +1
+      # arquivo — `component/pauta-newsletter` (10: sem newsletter explica de
+      # onde sai, diz que o envio é manual (D-MC7) e gera sem substituir,
+      # mostrando a checagem aprovada, as frases ditas e o que falta; reprovada
+      # lista cada apontamento com a regra, o trecho e onde, e avisa a refeita e
+      # a transcrição mudada; gerar de novo pede confirmação; copiar markdown e
+      # HTML (o HTML que a API exporta); com ClipboardItem o HTML vai no clique,
+      # antes de a API responder (Safari), e a falha da API vai para a tela; o
+      # link do vídeo recusa http na tela, salva https e tira com vazio; sem `automacoes.executar` o gerar apagado
+      # com o porquê; sem `pauta.editar` nada escreve e copiar segue; antes do
+      # Pacote não oferece gerar; o erro da API vai para a tela) e +1 em
+      # `pauta-episodios` (o detalhe mostra a seção da newsletter). Medido: 506
+      # casos em 39 arquivos (495 + 11). O piso de ARQUIVOS sobe 1, para 30; o
+      # de CASOS sobe 10 (~15% de folga sobre os 11 novos), para 332.
+      #
+      # MC15, A SEMANA DE POSTS (24/09/2026): +16 casos, +1 arquivo, só desta
+      # fatia — `component/pauta-semana` (14: no Pacote sem peças gera sem
+      # substituir, mostra a conta e os avisos e avisa a página da ida à
+      # Derivação; por matéria os slides em texto com o CTA da palavra, o story
+      # com a chamada e o trecho do corte com os tempos, o estado do render e a
+      # matéria sem link público; gerar de novo pede confirmação; aprovar,
+      # descartar e recuperar pelo PATCH da peça, relendo a semana; editar o
+      # story manda só os campos dele; o corte editado conferido na tela (3 min
+      # trava o salvar); só a legenda do corte editada não manda o trecho (o mp4
+      # fica); depois de agendado sem Editar, e o story avisando a página de
+      # links fora do ar (e calado com ela no ar); o carrossel editado sem o
+      # slide do CTA e a palavra em maiúscula; sem `automacoes.executar` o gerar
+      # apagado com o porquê e a publicada sem botões; sem `pauta.editar` nada
+      # escreve; antes do Pacote não lê a semana; a recusa da API vai para a
+      # tela) e +2 em `pauta-episodios` (o detalhe mostra a seção; na aba
+      # Rodadas a peça da semana sem "Salvar texto" e "Baixar carrossel" só no
+      # carrossel). Medido: 522 casos em 40 arquivos (506 + 16). O piso de
+      # ARQUIVOS sobe 1, para 31; o de CASOS sobe 14 (~12% de folga sobre os 16
+      # novos), para 346.
+      #
+      # MC16, O CALENDÁRIO DA SEMANA (24/09/2026): +18 casos, +1 arquivo, só
+      # desta fatia — `component/pauta-agenda` (17: os sete dias com os slots,
+      # vago, a peça com tipo, matéria e horário, fora da grade e o hoje; anda
+      # de semana; copiar legenda e texto; baixar a mídia do storage com o token,
+      # um botão por slide; o caminho do mp4 no Mac e o comando que falta;
+      # reagendar pelo relógio de São Paulo e tirar da agenda; marcar postada
+      # com o link só https, e a postada pedindo o link; confirmar sem link;
+      # distribuir com e sem "a partir de" e a conta; editar a grade com a
+      # versão lida e a recusa da API; sem `pauta.editar`/`pauta.publicar`; a
+      # recusa numa ação; semana vazia e feriado; a aba na página; o carrossel
+      # que subiu pela metade com "N de M PNG" e sem botão de baixar; o de um
+      # slide com o botão único; a peça de episódio fora da Derivação sem
+      # Reagendar e com o motivo) e +1 em `component/pauta-semana` (a peça na
+      # agenda avisa que editar ou descartar a tira de lá). Medido: 540 casos em
+      # 41 arquivos (522 + 18). O piso de ARQUIVOS sobe 1, para 32; o de CASOS
+      # sobe 15 (~15% de folga sobre os 18 novos), para 361.
+      #
+      # CORREÇÃO FINAL DA FRENTE (24/09/2026): +6 casos, +1 arquivo —
+      # `unit/proxy-da-api` (2: o prazo do proxy de /api acima do Apify e das
+      # gerações longas, e o rewrite que continua indo para a API); em
+      # `component/pauta-agenda` +3 (salvar as imagens pela folha de
+      # compartilhar com o segundo toque, a tela que desce até hoje uma vez só,
+      # a recusa presa no topo da página e fechando) e em
+      # `component/pauta-episodios` +1 (da Edição ao Pacote sem transcrição o
+      # avançar fica apagado com o porquê); o caso do download (agora sem
+      # revogar a URL na hora) e o do botão único do carrossel de um slide
+      # foram reescritos, não somados.
+      # Medido: 546 casos em 42 arquivos (540 + 6). O piso de ARQUIVOS sobe 1,
+      # para 33; o de CASOS sobe 5 (~15% de folga sobre os 6 novos), para 366.
+      #
+      # MD1, O ENCADEAMENTO (24/09/2026): +8 casos, +1 arquivo —
+      # `component/pauta-encadeamento` (o slot proposto em cinza com "proposto,
+      # falta aprovar", sem reagendar nem postar, e a aprovada ainda sem agenda
+      # com "falta distribuir"; quem é proposta; a "Nova rotina de
+      # encadeamento" com os padrões e config vazia, as etapas desmarcadas na
+      # ordem do caminho e nenhuma marcada travando o botão; o botão em
+      # /rotinas só com o tipo disponível; o próximo passo automático no
+      # detalhe, sem consulta antes da transcrição e sumindo depois de
+      # Agendado; o texto parado e o da rotina pausada). Medido: 554 casos em 43
+      # arquivos (546 + 8). O piso de ARQUIVOS sobe 1, para 34; o de CASOS sobe
+      # 7 (~15% de folga sobre os 8 novos), para 373.
+      #
+      # MD1, A REVISÃO (24/09/2026): +1 caso em `component/pauta-encadeamento`
+      # (com o agendador calado por ROTINAS_CRON/PAUTA_CRON a linha diz qual, e
+      # não que a rotina vai andar). Medido: 555 casos em 43 arquivos. O piso de
+      # CASOS sobe 1, para 374; o de ARQUIVOS fica em 34.
+      #
+      # MD2, O VIGIA DO MAC (24/09/2026): +1 caso em `component/pauta-midia`
+      # (o roteiro pede Gravação antes de gravar; a gravação diz quando o
+      # vigia age sozinho). Medido: 556 casos em 43 arquivos. O piso de CASOS
+      # sobe 1, para 375; o de ARQUIVOS fica em 34.
+      #
+      # MD3, A JANELA EM SÃO PAULO (24/09/2026): +4 casos, nenhum arquivo novo.
+      # `unit/regua-simulador` +3 (o instante lido no fuso de SP pela conta da
+      # porta: 21:00 UTC não acende, 23:30 e 10:30 UTC acendem; horário,
+      # instante OU agora, instante em ISO; "agora" é o relógio do servidor,
+      # lido uma vez só) e `component/regua` +1 (o botão Agora pede a hora ao
+      # servidor, trava o campo e mostra a hora que ele leu). Medido: 560 casos
+      # em 43 arquivos. O piso de CASOS sobe 4, para 379; o de ARQUIVOS fica
+      # em 34.
+      #
+      # MD4, A MÍDIA DA PEÇA NO STORAGE (24/09/2026): +3 casos, nenhum arquivo
+      # novo. `component/pauta-agenda` +1 (o corte que subiu ao OS baixa o mp4
+      # com o token em vez do caminho do Mac) e `component/pauta-semana` +2 (o
+      # estado do render com o mp4 no OS ou só no Mac e o JPEG que falta para a
+      # Meta). Medido: 563 casos em 43 arquivos. O piso de CASOS sobe 3, para
+      # 382; o de ARQUIVOS fica em 34.
+      #
+      # MD4, CORREÇÃO DA REVISÃO (24/09/2026): +1 caso, nenhum arquivo novo.
+      # `component/pauta-agenda` +1 (no celular o mp4 vai à folha de
+      # compartilhar, como as imagens, e fica pronto para o segundo toque).
+      # Medido: 564 casos em 43 arquivos. O piso de CASOS sobe 1, para 383; o
+      # de ARQUIVOS fica em 34.
+      #
+      # MD5, A CONTA DE PUBLICAÇÃO DO INSTAGRAM (24/09/2026): +6 casos, +1
+      # arquivo — `component/pauta-conta-de-publicacao` (sem conta: "não
+      # conectada", a frase do App Review e Conectar indo à URL da Meta; com
+      # conta: o @, os escopos, a validade em SP e Reconectar; a conta que não
+      # publica e o botão travado sem credencial; sem as duas permissões não há
+      # botão e a recusa vai à caixa de erro; o aviso de publicar não
+      # concedido; a volta do OAuth abre a Semana com o aviso e limpa o
+      # endereço). Medido: 570 casos em 44 arquivos (564 + 6). O piso de
+      # ARQUIVOS sobe 1, para 35; o de CASOS sobe 5 (~15% de folga sobre os 6
+      # novos), para 388.
+      #
+      # MD5, CORREÇÃO DA REVISÃO (24/09/2026): +1 caso no mesmo arquivo — na
+      # bio, a lixeira da conta de publicação só aparece para quem tem
+      # pauta.publicar. Medido: 571 casos em 44 arquivos. O piso de CASOS sobe
+      # 1, para 389; o de ARQUIVOS fica em 35.
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): +6 casos, sem arquivo
+      # novo — `component/pauta-agenda` +4 ("Publicar agora" pede à porta e
+      # diz que outra pessoa confirma; cada estado da publicação no slot, o
+      # link da publicada e "Voltar ao manual"; o pedido que morreu mostra o
+      # motivo e oferece pedir de novo; sem pauta.publicar, nada) e
+      # `component/pauta-encadeamento` +2 (a nova rotina de publicação e o
+      # botão em /rotinas). Medido: 577 casos em 44 arquivos. O piso de
+      # CASOS sobe 5 (~15% de folga sobre os 6 novos), para 394; o de
+      # ARQUIVOS fica em 35.
+      #
+      # MD7, A APROVAÇÃO DE LOTE (24/09/2026): +1 caso, sem arquivo novo —
+      # `component/regua` (a aba Capacidades mostra "aprova em lote" e "sai
+      # também por item de lote"). Medido: 578 casos em 44 arquivos. O piso de
+      # CASOS sobe 1, para 395; o de ARQUIVOS fica em 35.
+      #
+      # MD8, APROVAR A SEMANA NUM PONTO SÓ (24/09/2026): +7 casos, +1 arquivo.
+      # `component/pauta-lote-da-semana` (7, novo): na aba Semana, o botão por
+      # episódio com o estado da publicação automática e a linha do tempo; a
+      # montagem com o "fica fora" que pede a assinatura em seguida; o
+      # impedimento da semana que desliga o botão; o lote ativo (sem "Publicar
+      # agora", "Cancelar a semana" com confirmação); sem pauta.publicar, nada;
+      # em /atendimento, o cartão do lote com a legenda inteira, o horário em
+      # SP, o @, a mídia e a divergência, e o botão de aprovar só depois de ele
+      # carregar (e nunca, se não carregar). `component/pauta-agenda` e
+      # `component/pauta-semana` mudaram texto, sem caso novo. Medido: 585
+      # casos em 45 arquivos. O piso de ARQUIVOS sobe 1, para 36; o de CASOS
+      # sobe 6 (~15% de folga sobre os 7 novos), para 401.
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): +11 casos, +1 arquivo.
+      # `component/pauta-comentarios` (11, novo): a fila com o @, a palavra, a
+      # peça, o prazo e a última leitura; o perfil em outra aba; copiar o texto
+      # com o /r/; marcar como respondido (e sem pauta.publicar, sem o botão); o
+      # @ apagado depois de 7 dias com o copiar desligado e o motivo; a conta
+      # sem comentários e a rotina que não rodou; o texto da DM por matéria com
+      # os bytes e o "Preparar"; editar contando bytes (acento vale 2) e o
+      # "Voltar ao padrão"; o texto de 1200 bytes que trava o salvar; sem
+      # pauta.editar, nada; e a nova rotina de comentários. Medido: 596 casos
+      # em 46 arquivos. O piso de ARQUIVOS sobe 1, para 37; o de CASOS sobe 9
+      # (~15% de folga sobre os 11 novos), para 410.
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): +8 casos, +1 arquivo.
+      # `component/pauta-youtube` (8, novo): a seção YouTube com a auditoria, o
+      # canal e as faltas, e "Conectar o canal" que leva à URL do Google; a
+      # instrução manual sem credencial e sem pauta.publicar nada; a thumb e o
+      # horário de São Paulo em ISO; o vídeo agendado com o link e os campos
+      # travados; o aviso de Testing e o erro do envio; o vídeo no "Aprovar a
+      # semana" com o "fica fora" e sem ele com a falta (e só o envio no modo
+      # teste); e o vídeo no cartão do lote em /atendimento, com a descrição
+      # inteira e a divergência. Medido: 604 casos em 47 arquivos. O piso de
+      # ARQUIVOS sobe 1, para 38; o de CASOS sobe 7 (~15% de folga sobre os 8
+      # novos), para 417.
+      #
+      # MD10, a correção dos três revisores (25/09/2026): +1 caso, 0 arquivo.
+      # `component/pauta-youtube` (9): o vídeo que já subiu entra só com o
+      # agendamento e a linha avisa a publicação automática desligada; os
+      # casos de antes passaram a conferir a thumb como IMAGEM no cartão do
+      # lote, o texto do modo teste e o aviso do OAuth no topo da aba.
+      # Medido: 605 casos em 47 arquivos. O piso de CASOS sobe 1, para 418.
+      #
+      # MD13, O CORTE COM NOTA E MOTIVO (25/09/2026): +4 casos, 0 arquivo.
+      # `component/pauta-semana` +2: os candidatos ao corte com a nota em
+      # vírgula, o motivo e o "em uso", e "Usar este trecho" que manda só
+      # `{ candidato: n }`; sem pauta.editar, aprovada, publicada, da
+      # transcrição anterior ou com um candidato só, nada de trocar. `component/pauta-encadeamento` +2: o
+      # corte proposto na aba Semana troca de candidato e relê a agenda; no
+      # lote, não. Medido: 609 casos em 47 arquivos. O piso de CASOS sobe 3
+      # (~15% de folga sobre os 4 novos), para 421.
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): +7 casos, +1 arquivo,
+      # `component/pauta-dm-automatica` (novo): as regras no "Aprovar a
+      # semana" com o texto exato, o teto e a nota; o "fica fora" da DM no
+      # pedido; a regra já assinada que não entra de novo; o cartão do lote em
+      # /atendimento com o texto, o destino, os posts e o teto; na fila, a
+      # regra com "enviadas hoje", o Pausar com motivo, o estado automático de
+      # cada linha e a nota desligada. Medido: 616 casos em 48 arquivos. O
+      # piso de ARQUIVOS sobe 1, para 39; o de CASOS sobe 6 (~15% de folga
+      # sobre os 7 novos), para 427.
+      #
+      # CORREÇÃO FINAL DA ONDA D (25/09/2026): +5 casos, nenhum arquivo novo.
+      # `component/pauta-lote-da-semana` +3 (o interruptor com confirmação e
+      # motivo e a DM sem "Ligar"; a nota ligada sem a rotina que não promete o
+      # horário e o slot vencido; todos os slides e o corte assistido antes de
+      # assinar), `component/pauta-youtube` +1 (thumb e horário com o vídeo no
+      # lote pedem confirmação), `component/pauta-dm-automatica` +1 (o aviso
+      # no texto da matéria com regra assinada). Medido: 621 casos em 48
+      # arquivos. O piso de CASOS sobe 4 (~15% de folga sobre os 5), para 431.
+      PISO_CASOS_WEB: '431'
+      PISO_ARQUIVOS_WEB: '39'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
@@ -581,8 +950,943 @@ jobs:
       #     nos dois sentidos e as quatro provas de filho com orgId);
       #   · `rotas-publicas-tenant` com `RLS_NO_TESTE=1`: 53; `cofre`: 97;
       #     `rastro-retencao`: 33 — iguais, a fatia não mexe neles.
-      PISO_CASOS_API: '1251'
-      PISO_ARQUIVOS_API: '39'
+      #
+      # ---------------------------------------------------------------------
+      # MC1, GRUPO DE LINKS DO WHATSAPP (23/09/2026): +45 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `grupo-de-links` (45): a leitura pura do webhook (link único, vários,
+      # sem link, outro grupo, legenda de imagem, URL repetida, citação,
+      # edição, teto; emoji e aspas tipográficas colados, sublinhado do perfil,
+      # vírgula entre links, IP literal e nome interno recusados), a chave de
+      # deduplicação igual à da tela, a procedência que sobrevive ao
+      # processamento, o registro de entrada por grupo, o controlador do canal
+      # desviando SÓ o grupo inscrito (e o canal seguindo recusando qualquer
+      # outro), e o serviço de entrada com prisma de mentira — o mesmo link duas
+      # vezes é 1 captura, renomear a fonte não a duplica, e o arranque avisa
+      # quando o webhook do canal está desligado. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: o conjunto inteiro rodou
+      # nesta sessão com 1835 casos em 48 arquivos com o banco de teste, e 1278
+      # passados / 557 pulados sem ele (1233 + 45). O piso de ARQUIVOS vai a 40;
+      # o de CASOS sobe 37 (~18% de folga sobre os 45 novos), para 1288.
+      #
+      # ---------------------------------------------------------------------
+      # MC2, GMAIL COMO FONTE DA PAUTA (23/09/2026): +42 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-gmail` (42): a etiqueta que vira busca (espaço e aninhada viram
+      # hífen, prefixo label:, aspas/dois-pontos/parênteses e pastas do próprio
+      # Gmail recusados), o permalink como chave sem a normalização da tela, o
+      # corpo HTML/texto que vira nota — sem metade de par substituto (emoji na
+      # fronteira do teto, corpo já cortado pelo conector) e sem o CSS de um
+      # <style> cortado no meio; a coleta com o GoogleService DE VERDADE
+      # pela porta e só o `fetch` trocado por um Gmail de mentira — uma captura
+      # por e-mail da etiqueta, coletar de novo não duplica nem reabre, P2002 é
+      # repetida, a rotina aparece como sistema no RASTRO, Google não conectado /
+      # conector desligado / leitura retida viram erro na fonte, um e-mail que
+      # falha não tranca os outros (e a auditoria sai mesmo assim), a leitura
+      # retida no meio da lista para a coleta, a lista cheia deixa aviso; o
+      # despacho por tipo (a rodada coleta RSS e Gmail e segue quando o Google
+      # falta); e o
+      # PautaService: `gmail.ver` para cadastrar ou trocar a etiqueta, o perfil
+      # inscrito no mesmo despacho contando run, e o processamento que não abre
+      # o permalink. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1877 casos em 49 arquivos
+      # com o banco de teste, e 1320 passados / 557 pulados sem ele (1278 + 42).
+      # O piso de ARQUIVOS vai a 41; o de CASOS sobe 35 (~17% de folga sobre os
+      # 42 novos), para 1323.
+      #
+      # ---------------------------------------------------------------------
+      # MC3, BUSCA WEB DAS NOTÍCIAS DO NICHO (23/09/2026): +44 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-busca` (44): a consulta em uma linha só (quebra de linha seria
+      # outra busca paga no mesmo run; URL, vazia, >200 caracteres e >32
+      # palavras recusadas); a data que o Google escreve de cinco jeitos (ISO,
+      # "há 3 dias", "há 1 mês", "2 days ago", "22 de set. de 2026", "Sep 22,
+      # 2026"); o
+      # dataset do actor que vira resultado — só orgânico, sem endereço interno
+      # do Google, a mesma matéria uma vez por run, data velha descartada e
+      # contada; a captura com a chave da tela e o custo rateado; o input que
+      # sai para o `apify~google-search-scraper` pelo ApifyService DE VERDADE
+      # com o `fetch` trocado; e a coleta no PautaService com um dublê do Apify
+      # — capturas deduplicadas contra a coleta anterior e contra a tela, P2002
+      # como repetida, o gasto no RASTRO mesmo sem nada novo, e o teto: reservado
+      # antes do run (teto 2 = 2 runs em 3 cliques; rotina e botão no último run
+      # = um só chega ao Apify), virada do mês, teto zero, run que falha conta,
+      # sem token não conta, e teto estourado pula com aviso sem derrubar a
+      # rodada nem mexer em `ultimaLeitura`. Da revisão (+6): "há 1 mês" na
+      # descrição cai fora da semana; a procedência da busca atravessa o virar
+      # ficha; a mesma matéria do feed (com www) e da busca chega UMA vez ao
+      # prompt da curadoria, pelo `gerar()` DE VERDADE; a busca salva antiga,
+      # sem consulta, é pulada sem contar erro; e sair da busca sem handle não
+      # leva a consulta para o @perfil. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1921 casos em 50 arquivos
+      # com o banco de teste, e 1364 passados / 557 pulados sem ele (1320 + 44).
+      # O piso de ARQUIVOS vai a 42; o de CASOS sobe 37 (~16% de folga sobre os
+      # 44 novos), para 1360.
+      #
+      # ---------------------------------------------------------------------
+      # MC4, CREATORS NO X E NO YOUTUBE DENTRO DA RODADA (23/09/2026): +48 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-perfil` (48): a plataforma do perfil (sem plataforma é Instagram,
+      # twitter é o X) e o @ tirado da URL colada, com a regra de cada rede,
+      # recusando link de post, página da rede, host de outra rede e /user/ do
+      # YouTube, com o teto de 60 valendo para o @ extraído; o
+      # item de cada actor (Instagram, TikTok, X, YouTube) virando o mesmo
+      # {url, titulo, texto, publicadoEm}, sem o marcador `noResults`, sem URL
+      # que não é http(s), sem repetir URL no run; o bruto com resumo, data e
+      # procedência que atravessa o virar ficha; o actor e o input que saem pelo
+      # ApifyService DE VERDADE com o `fetch` trocado (tweet-scraper,
+      # youtube-scraper, o Instagram de antes, e o link avulso do X/YouTube
+      # seguindo no crawler da web); a coleta no PautaService com dublê do
+      # Apify — capturas com run e custo rateado, RASTRO `pauta.coleta_perfil`,
+      # teto reservado antes do run e pulado com aviso, run que falha conta,
+      # sem token/plataforma inválida/@ inválido não gastam teto, o perfil na
+      # coleta da rodada sem virar pessoa no RASTRO, P2002 contado como
+      # repetido, a rotina ['R', 'N'] sem run de perfil, o post do X processado
+      # sem abrir o link; o cadastro
+      # no Radar; o rótulo de origem (W/N/R/C/L) e as origens pedidas, a mesma
+      # matéria com as letras juntas, o link do grupo com a mensagem de resumo,
+      # a origem da IA descartada, a cota por origem sem post velho de creator; e o
+      # `gerar()` DE VERDADE lendo as cinco origens, sem publicar newsletter, com
+      # `origens: ['R', 'N']` reproduzindo a rodada de antes — pela rotina nova
+      # (executor) e pela tela de Pauta (RotinaService), na coleta e no gerar. Em
+      # `pauta-gmail` o caso do perfil trocou de assunto, e em `pauta-busca` dois
+      # casos trocaram a mensagem do @ comprido (a conta dos dois não muda). Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 1969 casos em 51 arquivos
+      # com o banco de teste, e 1412 passados / 557 pulados sem ele (1364 + 48).
+      # O piso de ARQUIVOS vai a 43; o de CASOS sobe 41 (~15% de folga sobre os
+      # 48 novos), para 1401.
+      #
+      # ---------------------------------------------------------------------
+      # MC6, CURADORIA HUMANA ANTES DO ROTEIRO (23/09/2026): +40 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-curadoria` (40): a captura que vira candidato (id da captura,
+      # origem da fonte, título do link do grupo tirado da mensagem, newsletter
+      # sem link público, as duas letras da mesma matéria, resumo no teto); o
+      # teto de candidatos com a sobra contada por origem; a sugestão da IA que
+      # só acende a marca (número fora da lista, repetido, fracionário ou em
+      # texto ignorado); a marcação do operador (lista inteira, id de outra
+      # rodada recusa tudo, vazia desmarca); o que segue depois de confirmar, o
+      # miolo sem IA e o link publicável que pula a newsletter; os esquemas do
+      # shared que a rota usa; e o `RodadaService` DE VERDADE com prisma de
+      # mentira — a rodada nasce em `aguardando_curadoria` com TODOS os
+      # candidatos, janela da semana, origens pedidas, a origem que enche a
+      # consulta contada inteira na sobra, lista vazia recusada antes de criar
+      # a rodada, um item basta, IA falhando / devolvendo lixo / sem credencial
+      # não trava a lista; salvar e confirmar só nesse status, com escrita
+      # condicionada (corrida entre abas), confirmar exige um marcado e limpa o
+      # aviso de "sem sugestão", e derivar recusa a rodada que aguarda e,
+      # depois de confirmada, manda os itens sem o link da newsletter. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2009 casos em 52 arquivos
+      # com o banco de teste, e 1452 passados / 557 pulados sem ele (1412 + 40).
+      # O piso de ARQUIVOS vai a 44; o de CASOS sobe 34 (~15% de folga sobre os
+      # 40 novos), para 1435.
+      #
+      # ---------------------------------------------------------------------
+      # MC5, ROTINA DE QUINTA 22h QUE COLETA TUDO (23/09/2026): +27 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-coleta-rotina` (27): o executor `pauta.coleta` com dublês —
+      # inscrito uma vez só; todas as origens coletadas como rotina e a rodada
+      # gerada para curadoria com 168h contadas do disparo, `rotinaId` nulo e o
+      # resumo contado por origem; empresa sem o módulo pauta = `pulada` sem
+      # contar fonte, sem Apify e sem IA; a contagem de fontes com o grupo incluído; `config.horas` e
+      # `config.origens` valendo na coleta, na contagem e na rodada; fonte com
+      # erro e pulada na conta da origem sem impedir a rodada; sem fonte =
+      # `pulada` sem coletar nem gerar; janela vazia como erro com a conta da
+      # coleta; origem desconhecida na config; o aviso de sem sugestão; os
+      # resumos só com contagem. A coleta aberta por tipo (fonte que falha não
+      # derruba as outras; tipo→origem; W não se coleta). A leitura do `POST
+      # /rotinas` (padrões, corpo completo, tipo sem executor, cron e fuso,
+      # nome/slug/estado, config por tipo) e o `RotinasService.criar` (rotina
+      # manual rodando com a próxima quinta 22h e auditoria; planejada não
+      # dispara; slug repetido 409 e tipo sem executor 400; `tiposDisponiveis`
+      # na lista; sem o módulo pauta a criação é 400 e a lista não oferece o
+      # tipo; `PAUTA_CRON=off` pulando o tipo novo). E de ponta a ponta, com
+      # o executor, a coleta e o `RodadaService` DE VERDADE: o tique de quinta
+      # 22h dispara (o de quarta não), a rodada fica `aguardando_curadoria` com
+      # W/N/R/C/L e nada marcado, e o "rodar agora" passa pelo mesmo caminho com
+      # a fonte que falha só na conta dela. Sem banco.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2036 casos em 53 arquivos
+      # com o banco de teste, e 1479 passados / 557 pulados sem ele (1452 + 27).
+      # O piso de ARQUIVOS vai a 45; o de CASOS sobe 23 (~15% de folga sobre os
+      # 27 novos), para 1458.
+      #
+      # ---------------------------------------------------------------------
+      # MC7, O EPISÓDIO VIRA ENTIDADE DO OS (23/09/2026): +49 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-episodio` (48): quem anda para onde (um passo à frente em toda
+      # etapa menos a última, um atrás inclusive saindo do concluído, as 49
+      # combinações com só as 12 vizinhas passando, o erro com o nome da
+      # etapa, ficar onde está e status desconhecido recusados, os vizinhos);
+      # número, apelido `ep-NN` e título padrão; os itens mantidos sem a marca
+      # da curadoria, o item de newsletter sem o link privado, `semPai` só
+      # para P2003, a transcrição só com segmentos e o detalhe/resumo; o enum
+      # do Prisma espelhado no shared, a tabela 1:1 numerada por empresa com
+      # RESTRICT, e os esquemas da rota. O `EpisodioService` DE VERDADE com
+      # prisma de mentira: nasce da curada como ep-01 sob o cadeado da empresa
+      # e audita; o número de outra empresa não conta; rodada com episódio é
+      # 409; aguardando curadoria e os outros quatro status são 400; rodada de
+      # outra empresa é 404; P2002 de rodada e de número viram 409; a rodada
+      # apagada no meio da criação (P2003) é 404; transição válida com escrita
+      # condicionada, pulo 400, corrida entre abas 409; título, a lista pedida
+      # por número desc no teto de 100, detalhe; a rodada com episódio não se
+      # apaga (409, também quando o episódio nasce entre a conferência e o
+      # delete) e a sem episódio segue. E COM BANCO (5, pulados sem ele): seis
+      # criações simultâneas saem 1..6, a mesma rodada disputada vira um
+      # episódio só, cada empresa conta do 1 e anda só por transição válida, o
+      # RESTRICT recusa apagar a rodada por fora da API com P2003, e o gatilho
+      # recusa episódio sem rodada com P2003. +1 em `modelos-globais` (o
+      # `it.each` dos filhos ganhou `PautaEpisodio`).
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2085 casos em 54 arquivos
+      # com o banco de teste, e 1523 passados / 562 pulados sem ele (1479 + 44).
+      # O piso de ARQUIVOS vai a 46; o de CASOS sobe 42 (~15% de folga sobre os
+      # 49 novos), para 1500.
+      #
+      # ---------------------------------------------------------------------
+      # MC8, O ROTEIRO DO EPISÓDIO (23/09/2026): +53 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-roteiro` (53): o prompt com a ordem dramática e o bloco de voz
+      # (hoje o tom da casa, o ponto único que o MC10 preenche), o pedido
+      # numerado com origem e link e a newsletter sem link, só http(s) como
+      # link público; a leitura do que o modelo devolve (JSON em cerca, markdown
+      # no lugar de JSON, JSON sem lista/lista/vazio, número fora, repetido,
+      # sem título ou em texto, URL escrita pelo modelo tirada do texto); a
+      # ordem da IA com a esquecida antes do fechamento; o markdown com a
+      # palavra de corte logo abaixo do título, as matérias numeradas, todo
+      # link público e nenhum da caixa de entrada, "na tela" e o gancho, e a
+      # cópia do vault com cabeçalho e nome com o começo do id (o ep-01 de
+      # duas empresas não colide); trocar a palavra reescreve só a linha do
+      # lembrete; a palavra de corte (padrão, prioridade
+      # episódio > empresa > padrão, a nota da memória lida sem marcação,
+      # arquivada/vazia/longa ignorada); quando dá para gerar; a coluna, a
+      # migration e os esquemas. O `RoteiroService` DE VERDADE com dublês:
+      # gera dos itens mantidos com a empresa pagando e vai para a gravação
+      # com escrita condicionada ao status e ao `atualizadoEm`, audita provider,
+      # modelo e ordem, a palavra do episódio/da empresa/memória fora do ar,
+      # markdown no lugar de JSON é 503 sem gravar, já tem roteiro é 409 sem
+      # gastar IA, depois da gravação e rodada vazia são 400, sem credencial é
+      # 503, a edição de outra aba durante a IA é 409, outra empresa 404; o
+      # espelho ligado, desligado e falhando; editar, a versão velha, o vazio
+      # sem espelho, exportar, a palavra do episódio e o painel; trocar a
+      # palavra depois de gerar deixa roteiro, painel, .md e espelho com a
+      # nova, a nota da empresa mudada já sai no painel e no .md, e salvar um
+      # texto com a palavra velha grava com a atual. O controller montado à
+      # mão: os cabeçalhos do .md e o parse dos corpos. E COM BANCO (1, pulado
+      # sem ele): gerar, editar com a versão, a palavra e exportar pela sessão
+      # com empresa.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2138 casos em 55 arquivos
+      # com o banco de teste, e 1575 passados / 563 pulados sem ele (1523 + 52).
+      # O piso de ARQUIVOS vai a 47; o de CASOS sobe 45 (~15% de folga sobre os
+      # 53 novos), para 1545.
+      #
+      # ---------------------------------------------------------------------
+      # MC9, A ESTAÇÃO DE MÍDIA NO MAC (23/09/2026): +80 casos, +2 arquivos
+      # ---------------------------------------------------------------------
+      # `pauta-midia` (34): a fila do Mac é gravação e edição; quem recebe mídia
+      # (gravação, edição) e transcrição (só edição, com a mídia lá), com o
+      # porquê em cada recusa; a transcrição que passa do fim do vídeo final (a
+      # do bruto) recusada; o RASTRO só com o nome do arquivo e a conta por
+      # motivo; a linha da fila com o que falta e a palavra efetiva. Os esquemas:
+      # padrões, corte fora de ordem/sobreposto/invertido/motivo estranho, corte
+      # além do bruto e final mais longo que o bruto, caminho com quebra de
+      # linha/vazio/longo, duração zero/negativa/absurda/NaN, a mídia guardada
+      # lida de volta; segmentos em ordem (10 ms de folga), zero de duração vale,
+      # sem texto/longo/negativo/tetos recusados, caractere de controle (o NUL
+      # derrubaria o Postgres com 500) no idioma, modelo, texto e palavra
+      # recusado, o texto corrido e o tempo do vídeo. O `MidiaService` DE VERDADE com prisma de mentira: a fila (pedido,
+      # ordem, teto, memória lida uma vez e não lida com fila vazia); mídia da
+      # gravação para a edição com escrita condicionada ao status e à versão e
+      # auditada, na edição substituindo e descartando a transcrição velha,
+      # roteiro/pacote/concluído 400, outra empresa 404, corrida 409;
+      # transcrição para o pacote com o texto corrido e auditada, sem mídia ou
+      # fora da edição 400, a do bruto 400, corrida 409, outra empresa 404. O
+      # controller montado à mão (parse, recusa antes do serviço, caminhos e
+      # `pauta.editar`), e a ORDEM dos controllers no módulo (`pendentes-midia`
+      # antes do `:id`). E COM BANCO (1, pulado sem ele): do gravado ao pacote
+      # pela sessão da empresa, com o RASTRO.
+      # `root-midia` (46): as funções puras de `tools/root-midia` — o
+      # silencedetect (negativo, aberto no fim, linha perdida), o miolo de cada
+      # silêncio com margem e as pontas inteiras, a palavra de corte sem acento
+      # nem pontuação levando o segmento anterior e a pausa até a retomada, o
+      # que manter e o que saiu cobrindo o bruto, o filtro trim+concat, quando
+      # dá para cortar sem reencodar, a lista do concat, o codec; o JSON do
+      # whisper em segmentos em ordem que passam no esquema da API; e o cliente
+      # do OS com fetch de mentira (login normal, 401 refaz uma vez, mensagem da
+      # API, ep-NN, corpo grande barrado antes). E o que a revisão pediu: os
+      # cortes enviados saem do `manter` (ajuste à mão vira `manual`, o corte
+      # alargado se parte em dois), o cortes.json de outro bruto recusado, a
+      # transcrição em qualquer forma (lista, whisper-cli; vazia é erro), a
+      # legenda .srt, http fora de loopback recusado, o arquivo de variáveis
+      # com o ambiente vencendo, e a trava do bruto por link simbólico.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2218 casos em 57 arquivos
+      # com o banco de teste, e 1654 passados / 564 pulados sem ele (1575 + 79).
+      # O piso de ARQUIVOS vai a 49; o de CASOS sobe 68 (~15% de folga sobre os
+      # 80 novos), para 1613.
+      #
+      # ---------------------------------------------------------------------
+      # MC10, A VOZ DO AUTOR (24/09/2026): +45 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-voz` (45): o bloco de voz (sem perfil o tom da casa; com perfil
+      # o perfil e as regras da marca, inclusive as do tom da casa que não são
+      # estilo; o escondido neutralizado e o teto; a linha de procedência e o
+      # "sem perfil" de quem chama); as
+      # palavras proibidas sem acento, caixa e conjugadas; a chave presa a
+      # `voz.` e a nota de configuração; o material dividido no teto com a
+      # fonte pequena inteira; o pedido rotulado e neutralizado; o prompt de
+      # destilar; a leitura do JSON (não-JSON, não-objeto, campo faltando,
+      # emoji, repetidos, tetos) e o perfil montado (seções fixas, proibida
+      # fora do que ele ensina, inclusive a frase dos campos de texto, o
+      # "nunca diz" do autor sem repetir a marca, as regras da marca
+      # preservadas com todos os campos no teto); a procedência sem o título
+      # colado; os limites dos esquemas (a soma dos textos cabendo nos 100 kb
+      # do body-parser, a chave de 63). O
+      # `VozService` DE VERDADE com memória de mentira: aprender cria a nota
+      # (definicao, promocao, empresa pagando, RASTRO sem conteúdo), de novo
+      # grava a versão 2 com a 1 no histórico, a chave da empresa, 400/404
+      # antes da IA, 503 sem IA e sem gravar, a nota arquivada que volta; a
+      # edição à mão com a versão lida (409), criando quando não há; o
+      # rascunho de outra chave (409); trocar a chave sem a chave no motivo do
+      # RASTRO; a memória fora nos caminhos de escrita subindo o erro antes da
+      # IA; o bloco com e sem perfil, de outra empresa e com a memória fora.
+      # O PRONTO QUANDO: o roteiro e as peças (SYSTEM_PECAS) com o bloco de voz
+      # quando há perfil; sem perfil, o roteiro no tom da casa e as peças no
+      # prompt de antes. O controller
+      # montado à mão (parse, recusa antes do serviço, caminhos e permissões).
+      # E COM BANCO (1, pulado sem ele): aprender duas vezes e editar pela
+      # sessão da empresa, cada versão com o elo do evento `memoria.item.*`.
+      # Os construtores de `RodadaService`/`RoteiroService` nas suítes vizinhas
+      # ganharam a voz, sem caso novo.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2263 casos em 58 arquivos
+      # com o banco de teste, e 1698 passados / 565 pulados sem ele (1654 + 44).
+      # O piso de ARQUIVOS vai a 50; o de CASOS sobe 38 (~15% de folga sobre os
+      # 45 novos), para 1651.
+      #
+      # ---------------------------------------------------------------------
+      # MC11, O PACOTE DO YOUTUBE (24/09/2026): +67 casos, +1 arquivo
+      # ---------------------------------------------------------------------
+      # `pauta-pacote` (57): os capítulos — mm:ss e hh:mm:ss num formato só, as
+      # regras do YouTube (00:00, pelo menos 3, 10 s cada, ordem crescente, o
+      # último até o fim), a leitura da descrição, o tempo em texto, e o
+      # conserto do que a IA erra (encostar na fala real, ordenar, tirar o
+      # repetido e o que passa do fim, o primeiro para 00:00 ou uma Abertura,
+      # juntar o curto, no máximo 10 juntando o mais curto) com a recusa e o motivo quando nem consertado fecha; os
+      # links (newsletter por L ou sem link público, caixa de entrada, não-http
+      # e `<>` de fora; nunca o permalink do Gmail), a ordem e o repetido; o
+      # pedido ao modelo sem link e a transcrição agrupada no teto com tempos
+      # reais; títulos (100, corte na palavra, URL/emoji/`<>`, proibida,
+      # repetido, menos de 3 = inválido), hashtags, os briefs das thumbs (4
+      # palavras, destaque do texto, frame dentro do vídeo, completar com os
+      # títulos, inclusive os que começam igual, e o aviso quando não chega a
+      # 3), o aviso de ângulo repetido, a descrição na ordem com o marcador e o
+      # teto de 5.000 bytes com a folga da URL da página (e o pior caso de 150
+      # capítulos e 120 links cabendo), o bloco de voz, o pacote inteiro e o
+      # aviso sem capítulos; os limites do
+      # upload (só PNG pela assinatura, 2 MB pelo tamanho ou pelo buffer, 16:9 a
+      # partir de 640, o número 1–3, a chave com o hash, a chave fora do
+      # detalhe); os esquemas e quando dá para gerar. O `PacoteService` DE
+      # VERDADE com dublês de prisma, LLM, memória e storage — o PRONTO QUANDO
+      # com a transcrição de exemplo (3 títulos, capítulos válidos, os links
+      # públicos e nenhum privado, o marcador, 3 briefs, a empresa pagando), a
+      # escrita condicionada e o RASTRO só com contas, 400 antes do Pacote e
+      # sem transcrição, 409 sem confirmar (e as imagens que saem ao
+      # substituir), 503 sem JSON ou com menos de 3 títulos, o aviso do vídeo
+      # curto, a duração pela transcrição, sem credencial e outra empresa, a
+      # marcação durante a IA (409); o título escolhido (um só, nulo, 400/404,
+      # travado depois de agendado); as thumbs (os briefs para o Mac, o PNG no
+      # storage com hash e RASTRO, a imagem de volta, o limite antes do
+      # storage, travada depois de agendado, sem brief, sumida do storage,
+      # corrida 409). O controller montado à mão (parse, a imagem sem
+      # cache, caminhos e permissões). E COM BANCO (1, pulado sem ele): gerar,
+      # escolher e subir a thumb pela sessão da empresa, com o RASTRO.
+      # `root-midia` (+9): o template 1280×720 com os tokens copiados da marca e
+      # sem ler o brand pack, o preenchimento escapado com o destaque, o frame
+      # e o template recusados, os argumentos do ffmpeg e do Chrome, onde
+      # procurar o Chrome, o PNG conferido antes de subir, e o cliente do OS
+      # (a lista inteira, os briefs e o upload multipart). `pauta-episodio`
+      # mudou um caso sem somar: o detalhe agora dá forma a títulos e thumbs.
+      # `pauta-midia` (+1): a mídia nova descarta também o pacote, cujos tempos
+      # eram do vídeo anterior.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2330 casos em 59 arquivos
+      # com o banco de teste, e 1764 passados / 566 pulados sem ele (1698 + 66).
+      # O piso de ARQUIVOS vai a 51; o de CASOS sobe 56 (~15% de folga sobre os
+      # 66 que rodam sem banco), para 1707.
+      #
+      # MC12, A PÁGINA DE LINKS DO EPISÓDIO (24/09/2026): +34 casos, +1 arquivo,
+      # só desta fatia — `pauta-pagina-de-links` (34). A parte pura: o handle
+      # com o slug da empresa e o segundo candidato, todos dentro do
+      # `BIO_HANDLE_RE`, e a URL cabendo na folga da descrição; os links da casa
+      # lidos da nota (formatos, teto de 5, arquivada não vale); o plano (um
+      # botão por matéria pública, sem repetir URL, a newsletter fora com aviso,
+      # a casa depois e em destaque, `javascript:`/URL longa fora, rótulo
+      # cortado, a chave pela URL); a sincronia idempotente (vazia cria tudo, a
+      # mesma não mexe em nada, a que saiu é desativada, o painel vai para
+      # depois, o desativado à mão volta); o detalhe (a ordem, sem o link de
+      # campanha nem ativo, e a descrição só com a URL da página no ar, trocando
+      # um marcador só mesmo com outro vindo de título de fora); o link de
+      # campanha (o `/r/` segue o ativo ou o de campanha, só com a página no ar)
+      # e o destino da peça pela regra da página (nunca o Gmail). Os contratos (o
+      # esquema de publicar, montar `pauta.editar`, publicar `pauta.publicar` +
+      # `bio.editar` como o /bio, o controller passando as permissões). Com
+      # dublês: 403 antes de escrever em página no ar sem `bio.editar`, 403 sem
+      # o módulo bio (montar e publicar), 400 sem link nenhum e sem página,
+      # publicar sem página/sem botão é 400 e com botão passa pelo
+      # `BioService.publicar`; o link da peça sem episódio não procura página
+      # nenhuma, com página em rascunho sai cru e com página no ar vai para ELA.
+      # E COM BANCO (3, pulados sem ele): montar/remontar sem duplicar com o
+      # handle de outra empresa ocupado, o antes de cada botão no RASTRO e o
+      # plano vazio limpando a página existente; publicar, a página pública, o
+      # clique virando PixelEvent e a descrição com a URL; a peça pendurada na
+      # página do episódio como link de campanha, o `/r/` dela caindo na matéria
+      # com o PixelEvent, e, sem episódio, em página nenhuma.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2364 casos em 60 arquivos
+      # com o banco de teste, e 1795 passados / 569 pulados sem ele (1764 + 31).
+      # O piso de ARQUIVOS vai a 52; o de CASOS sobe 26 (~15% de folga sobre os
+      # 31 que rodam sem banco), para 1733.
+      #
+      # MC13, A NEWSLETTER A PARTIR DA TRANSCRIÇÃO (24/09/2026): +53 casos, +1
+      # arquivo, só desta fatia — `pauta-newsletter` (53). A parte pura: a
+      # checagem anti-slop (limpo passa; palavra proibida pela conjugação, sem
+      # acento nem caixa, com onde está; emoji uma vez por bloco, com bandeira e
+      # keycap e sem ©/®/™; o endereço do link não conta; o bloco do sistema
+      # pulado sem mudar a numeração; as frases de abertura de IA; o parágrafo acima de 60 palavras, sem contar título nem
+      # endereço de link; o pedido de reescrita com cada apontamento); a
+      # montagem (título, abertura, uma seção por matéria falada, o link do item
+      # e nunca o da newsletter L nem o do Gmail, a URL do modelo fora, a
+      # chamada final com os marcadores, matéria sem seção e seção sem fala
+      # viram aviso, JSON ruim é inválido, emoji e palavra proibida NÃO são
+      # limpos para a checagem vê-los, link com parêntese e colchete; URL, link
+      # de qualquer esquema e marcador fora também dos TÍTULOS, no markdown e no
+      # HTML; o título do item sem emoji; a checagem só do texto do modelo);
+      # as frases ditas; o prompt com a transcrição e o bloco de voz; os marcadores; a meta
+      # da peça; o HTML escapado (script, aspas, `javascript:`). Os contratos (o
+      # link do vídeo só https, os status que geram). Com dublês, o critério de
+      # pronto com a transcrição de exemplo (as frases ditas, os 3 links, a
+      # checagem aprovada, a peça newsletter/email da rodada com a meta), a
+      # reprovada refeita UMA vez com os apontamentos no pedido, a persistente
+      # gravada com os apontamentos, a reescrita pior ou inválida não entrando,
+      # 400/404/409/503 sem gastar IA, a anterior descartada ao substituir, a
+      # corrida (transcrição refeita, outra newsletter, concluído) = 409, o
+      # link do vídeo salvo no meio relido sob o cadeado, a do miolo descartada
+      # ao gerar (derivar → gerar), o item com emoji/palavra proibida no título
+      # e na URL aprovado numa chamada, o RASTRO com as contas; o painel
+      # conferindo o texto de agora; o link do vídeo; o export md/html com a página no ar; a derivação antiga
+      # convivendo com a da transcrição; o controller (esquemas, cabeçalhos do
+      # anexo e a CSP do HTML, rotas e permissões, nenhuma rota de envio). E COM
+      # BANCO (1, pulado sem ele): gerar, substituir e exportar pela sessão da
+      # empresa.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2417 casos em 61 arquivos
+      # com o banco de teste, e 1847 passados / 570 pulados sem ele (1795 + 52).
+      # O piso de ARQUIVOS vai a 53; o de CASOS sobe 45 (~15% de folga sobre os
+      # 52 que rodam sem banco), para 1778.
+      #
+      # MC-R, OS CONSERTOS DE ROBUSTEZ DAS ONDAS A E B (24/09/2026): +31 casos,
+      # +1 arquivo, só desta fatia — `pauta-robustez` (31), todos sem banco. O
+      # link privado: a regra única (marca, origem L em qualquer das origens,
+      # host de caixa de entrada; http(s) sem `<>`), o texto sem o endereço de
+      # caixa, e a captura L antiga sem a marca fora de todo caminho — destino e
+      # mensagem do WhatsApp, página de links, descrição e pedido do pacote,
+      # newsletter, roteiro (pedido e markdown), miolo da curadoria, pedido e
+      # serviço da derivação, item do episódio, candidato e linha do prompt da
+      # rodada. O teto de saída: `saidaDaResposta`, OpenAI, OpenRouter,
+      # Anthropic (padrão intacto, sem temperature/top_p/top_k; padrão baixado
+      # sobe) e a reserva do envelope. O corpo das rotas de mídia: o parser do
+      # Nest continua instalado, 500 kB passa só na mídia e na transcrição, 2 MB
+      # é 413, as vizinhas seguem em 100 kb, o pior corpo válido cabe com folga,
+      # o `main.ts` instala antes do `listen`. Depois da revisão (+7): o link
+      # colado em `_itálico_`/`*negrito*`/letra, o `()` que não era do link, a
+      # varredura linear com 100 mil espaços, o rótulo "newsletter" só no item
+      # privado, o ClickUp e o carrossel sem o permalink, o GET da rodada em
+      # curadoria com a marca e as newsletters sem fonte que não se fundem. As
+      # asserções de `maxTokens` nos arquivos da pauta não somam caso.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2448 casos em 62 arquivos
+      # com o banco de teste, e 1878 passados / 570 pulados sem ele (1847 + 31).
+      # O piso de ARQUIVOS vai a 54; o de CASOS sobe 26 (~16% de folga sobre os
+      # 31 que rodam sem banco), para 1804.
+      #
+      # MC15, A SEMANA DE POSTS (24/09/2026): +67 casos, +1 arquivo, só desta
+      # fatia — `pauta-semana` (53) e +14 em `root-midia`. A parte pura: o
+      # trecho do corte (a regra comum da API e da tela; de/até pelos números
+      # dos segmentos, com o tempo dos segmentos reais e o que é dito; segmento
+      # que não existe, fora de ordem ou sem número; passou de 3 min encurta,
+      # abaixo de 10 s cresce; o fim nunca passa do vídeo); a palavra-chave
+      # (maiúscula sem acento, reserva do título, única no episódio com o número)
+      # e o CTA do último slide sem segunda pessoa; a resposta do modelo (o CTA
+      # dele trocado, sem link nem emoji, cada formato valendo sozinho, JSON
+      # ruim inválido); o pedido sem URL nenhuma (nem o Gmail do resumo) e a
+      # transcrição numerada que encurta a fala e nunca o número (1.200
+      # segmentos chegam até o último, e sem espaço a fala sai e a lista fica),
+      # o título sem URL; o slide de CTA do modelo, e só ele (a palavra que é o
+      # assunto fica, a curta não casa dentro de outra, no máximo um sai); o
+      # plano de cada formato e a chave da matéria. Os contratos (gerar,
+      # editar, o mp4 do Mac, em que status sai, o PNG da peça). Com dublês, o critério de
+      # pronto com a transcrição de exemplo (3 matérias → 3+3+3, uma chamada por
+      # matéria com a empresa pagando, o episódio em Derivação), nenhum link
+      # privado, gerar de novo sem confirmar = 409 e confirmando no mesmo
+      # registro, a aprovada/publicada intocada e sem IA, a descartada regerada,
+      # a palavra repetida, o corte que não fecha mantendo o anterior, a falha
+      # de uma matéria e de todas (503), a recusa por custo parando o laço,
+      # 400/404/503, a corrida (409 com o RASTRO), o painel, o CTA na legenda do
+      # corte (a palavra do carrossel já aprovado vale), a conta com o formato
+      # firme mantido quando a IA falha; editar (CTA refeito, render descartado,
+      # 409 da palavra, 400 do campo alheio, corte conferido, só a legenda do
+      # corte mantém o mp4 e o trecho novo refaz de/até, travado depois de
+      # agendado), o PNG que chega depois da edição (409), o PNG no storage e o
+      # mp4 que fica no Mac; o PATCH da aba Rodadas só com status; a derivação
+      # antiga e o export do carrossel; o controller. No `root-midia`: a região
+      # do PiP lida do JSON do OBS (a cena real, 1080p, sem caixa, esticada,
+      # erros), a região por argumento e no vídeo de outra resolução, o padrão
+      # que acompanha o --canvas, o filtro do corte vertical, os argumentos do
+      # ffmpeg em lista, o story, os nomes, o `slides.json` da máquina de
+      # carrossel (o tema escapado, e o que ela recusa), o estouro lido do
+      # report.json, onde achar o render, e a semana na conversa com o OS. E COM BANCO (1, pulado sem ele): 9 peças
+      # pela sessão da empresa e de novo sem duplicar.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2515 casos em 63 arquivos
+      # com o banco de teste, e 1944 passados / 571 pulados sem ele (1878 + 66).
+      # O piso de ARQUIVOS vai a 55; o de CASOS sobe 57 (~14% de folga sobre os
+      # 66 que rodam sem banco), para 1861.
+      #
+      # MC16, O CALENDÁRIO DA SEMANA (24/09/2026): +48 casos, +1 arquivo, só
+      # desta fatia — `pauta-agenda` (46) e +2 em `root-midia`. A parte pura: o
+      # relógio de São Paulo (meio-dia = 15h UTC, o dia de volta do instante, a
+      # hora que não existe na virada do horário de verão indo para depois),
+      # a semana começando na segunda, os feriados (Páscoa, Carnaval, Corpus
+      # Christi, os fixos e os da empresa); a grade no texto da nota (o padrão
+      # que volta igual, o jeito de escrever, linha ruim vira aviso com o
+      # número, a nota que não vale cai no padrão, a nota acima do teto não é
+      # lida, a linha longa sem ':' em tempo linear); os slots de um período e o
+      # distribuir (3 matérias, semana cheia, feriado pulado, reagendar
+      # liberando o slot, o que não cabe no horizonte), a mídia (o carrossel
+      # pela metade é `parcial`) e a postagem. Os contratos (reagendar, postada
+      # só https, distribuir, o dia civil de 2000 a 2100, grade, em que status).
+      # Com dublês: distribuir (só aprovada sem data, sem colidir com outro
+      # episódio, "a partir de" e o teto dele, 400/404, a grade da empresa com o
+      # 12/10 no meio, memória fora = 503 sem gravar), reagendar (RASTRO, 409 do mesmo minuto, passado e 90 dias,
+      # rascunho/postada/peça antiga), marcar postada (quem, quando, link; só o
+      # link depois; rascunho e a publicada pelo OS recusados), a semana na tela
+      # (slots, fora da grade, postada sem slot, paraDistribuir, feriado, o
+      # motivo da peça de episódio fora da Derivação, `?de=` fora da faixa), a
+      # grade na memória (criar, versão conferida, arquivada que volta, memória
+      # fora), a peça que sai da agenda no PATCH de status (e a reaprovada volta
+      # sem data), o controller. No
+      # `root-midia`: o pedido da agenda e as linhas do terminal. E COM BANCO
+      # (1, pulado sem ele): distribuir, reagendar e postar pela sessão.
+      #
+      # Só o delta desta fatia. Para quem for remedir: 2563 casos em 64 arquivos
+      # com o banco de teste, e 1991 passados / 572 pulados sem ele (1944 + 47).
+      # O piso de ARQUIVOS vai a 56; o de CASOS sobe 40 (~15% de folga sobre os
+      # 47 que rodam sem banco), para 1901.
+      #
+      # CORREÇÃO FINAL DA FRENTE (24/09/2026): +18 casos, nenhum arquivo novo.
+      # `pauta-perfil` +2 (a URL que o modelo tira do texto de um creator não
+      # vira item nem destino da peça do grupo; sem item que case com captura a
+      # rodada falha); `pauta-curadoria` +2 (a mensagem do grupo não sai no
+      # botão da página, na descrição nem na newsletter; a captura de texto sem
+      # link ainda mostra a nota); `pauta-midia` +2 (a mídia refeita leva as
+      # peças da semana não postadas ao rascunho, fora da agenda e sem render;
+      # a transcrição reenviada só leva as de outra fala); `pauta-semana` +2
+      # (o mp4 e o PNG do story da transcrição antiga são 409; o segundo clique
+      # durante a geração é 409 sem IA); `pauta-robustez` +5 (uma geração por
+      # chave; o corpo grande só com sessão válida; a busca da captura que
+      # recusa endereço interno por 302, DNS e IP literal, e segue o
+      # redirecionamento público à mão); `grupo-de-links` +2 (a mensagem pelo
+      # caminho de outra empresa é ignorada; sem a empresa dona o grupo fica
+      # desligado); `pauta-episodio` +1 (da Edição ao Pacote à mão só com
+      # transcrição); `root-midia` +2 (a peça de outra transcrição não recebe
+      # render; a pasta do --saida criada antes do whisper).
+      #
+      # Para quem for remedir: 2581 casos em 64 arquivos com o banco de teste,
+      # e 2009 passados / 572 pulados sem ele (1991 + 18). O piso de ARQUIVOS
+      # fica em 56; o de CASOS sobe 15 (~15% de folga sobre os 18), para 1916.
+      #
+      # MD1, O ENCADEAMENTO DA TRANSCRIÇÃO À SEMANA EM RASCUNHO (24/09/2026):
+      # +39 casos, +1 arquivo. `pauta-encadeamento` (37: o `proximoPasso` em
+      # cada estado — antes da transcrição e depois de Agendado não mexe, a
+      # ordem pacote → página → newsletter → semana → slots, sem bio/sem título
+      # sem página, sem transcrição para, slots só na Derivação, os motivos da
+      # parada, as etapas da config, a dispensada e a varredura de todas as
+      # combinações provando que nunca publica; as etapas da config e o
+      # `POST /rotinas` do tipo novo; a trava de três erros, o destravar quando
+      # alguém mexe e a dispensa; o desfecho do passo e da passagem; o serviço
+      # com dublês — cinco passagens até a semana com um evento por etapa, teto
+      # de dois episódios, as etapas da config, erro/trava/"Rodar agora", a
+      # página dispensada; o 409 do `umaPorVez` com o `DerivacaoService`, o
+      # `PacoteService` e o `NewsletterService` de verdade como `pulada` sem
+      # IA; o GET do episódio e a trava nele, a permissão da rota; os slots
+      # propostos sem colisão, a peça nova do mesmo episódio, fora da Derivação,
+      # o PATCH que não converte, distribuir no proposto e a semana em cinza; E
+      # COM BANCO, 1, pulado sem ele: dois episódios propondo pela sessão) e
+      # `pauta-midia` +1 (a mídia refeita zera o slot proposto); `root-midia`
+      # +1 (a agenda no terminal diz "proposto, falta aprovar"); em
+      # `pauta-semana` o caso de derivar de novo ganhou a conferência do slot
+      # zerado, sem caso novo.
+      #
+      # Para quem for remedir: 2634 casos em 65 arquivos com o banco de teste
+      # (a base de 2595 inclui o que entrou depois da conta acima). Sem ele,
+      # +38 passados e +1 pulado. O piso de ARQUIVOS sobe 1, para 57; o de
+      # CASOS sobe 33 (~15% de folga sobre os 38 que rodam sem banco), para 1949.
+      #
+      # MD1, A REVISÃO (24/09/2026): +11 casos em `pauta-encadeamento`, todos
+      # sem banco — o descarte da semana e da newsletter e a página apagada no
+      # /bio não voltam sozinhos (puro e no serviço, sem chamar a IA); a
+      # newsletter do miolo aprovada segura a da transcrição (puro e serviço);
+      # a semana pela metade é erro e refaz só a matéria sem peça (puro e
+      # serviço); os 21 parados na Derivação não escondem o episódio novo; o
+      # "Rodar agora" passa por cima da dispensa; o tique calado e a config
+      # ilegível no GET; distribuir sem cair no proposto da irmã em rascunho e
+      # só no proposto que ainda está na grade (grade editada, feriado). Medido:
+      # 2645 casos em 65 arquivos com o banco; sem ele, 2071 passados e 574
+      # pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 9 (~15% de
+      # folga sobre os 11), para 1958.
+      #
+      # MD2, O VIGIA DO MAC (24/09/2026): +23 casos, nenhum arquivo novo.
+      # `root-midia` +18 (o bruto: candidato na raiz com a extensão do OBS e
+      # depois do statusDesde, estável, gravando, ambíguo, anterior à
+      # transição/jovem/vazio, a pasta lida sem descer nem seguir link, só com
+      # um episódio em Gravação, o final que nunca sobrescreve; a trava, os
+      # caminhos, o plist sem senha e com as chaves certas, launchctl e
+      # osascript em lista, a memória que cala a notificação repetida e o
+      # render que já falhou, o log, a transcrição de ensaio; a catraca do
+      # não-apagar em três casos); `pauta-midia` +3 (o que falta renderizar
+      # por formato e a assinatura; a fila com `derivacao` e o `statusDesde`);
+      # `pauta-episodio` +2 (o contrato do gatilho e, COM BANCO, pulado sem
+      # ele: o carimbo em toda troca de status por qualquer caminho e só nela).
+      # Medido: 2668 casos em 65 arquivos com o banco de teste. Sem ele, +22
+      # passados e +1 pulado. O piso de ARQUIVOS fica em 57; o de CASOS sobe 19
+      # (~15% de folga sobre os 22 que rodam sem banco), para 1977.
+      #
+      # MD2, A REVISÃO DO VIGIA (24/09/2026): +15 casos, nenhum arquivo novo,
+      # todos sem banco. `root-midia` +14 (a porta da trava; a metade do bruto
+      # com disco, relógio e cadeia de mentira em 8 caminhos: enviado, ambíguo,
+      # gravando, jovem, sem modelo sem marcar falho, cadeia que falha e bruto
+      # já falho, episódio que mudou, sem pasta/statusDesde/gravação nova; e 5
+      # do que a passagem decide fora dele: não enviar fora de Gravação,
+      # "vários" só com gravação nova, OBS escrevendo segura os renders, o
+      # render que não subiu vira aviso, o instalar só com o arquivo);
+      # `pauta-midia` +1 (21 episódios na Derivação: o da semana aparece).
+      # Medido: 2683 casos em 65 arquivos com o banco; sem ele, 2108 passados
+      # e 575 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe 13 (~15%
+      # de folga sobre os 15), para 1990.
+      #
+      # MD3, A JANELA EM SÃO PAULO (24/09/2026): +6 casos em `porta`, nenhum
+      # arquivo novo. Sem banco, +5 (a hora de SP: 21:00 UTC não acende, 23:30
+      # e 10:30 UTC acendem; o slot das 18:00 da agenda é 18:00 para a porta;
+      # o mesmo resultado com TZ=UTC, Asia/Tokyo e SP, e meia-noite como 00:00;
+      # POLITICA_FUSO_HORARIO troca o fuso e vazia volta a SP; fuso desconhecido
+      # acende e derruba o arranque da porta). COM BANCO, +1 (o SinaisService dá
+      # o mesmo sinal para os quatro instantes nos três TZ). Medido: 2689 casos
+      # em 65 arquivos com o banco, verde também com TZ=UTC; sem ele, 2113
+      # passados e 576 pulados. O piso de ARQUIVOS fica em 57; o de CASOS sobe
+      # 4 (~15% de folga sobre os 5), para 1994.
+      #
+      # MD4, A MÍDIA DA PEÇA NO STORAGE (24/09/2026): +45 casos, +1 arquivo.
+      # `pauta-midia-publica` (24, novo, sem banco: o token assinado — ida e
+      # volta, vencido, segredo errado, adulterado em empresa/peça/chave/prazo/
+      # HMAC, exp acima de 1 h ao assinar e ao conferir, segredo curto e a
+      # origem; o serviço — nulo SEM consulta para token ruim ou rota desligada,
+      # a empresa do token, a chave que deixou de ser da peça, o PNG da prévia,
+      # o módulo desligado, a descartada, as URLs com 8 caracteres do HMAC no
+      # RASTRO, sem mídia 400; as rotas pública e assinada; o JPEG pelo SOF;
+      # o mp4 — cabeçalho 415/411/413/400, faststart em qualquer pedaço, sem
+      # faststart parando no mdat, maior/menor/sha, o moov que aborta cedo; o
+      # storage em partes que conclui e o que aborta sem pendurar; o corpo
+      # video/mp4 que nenhum parser lê); `pauta-semana` +7 (JPEG ao lado do
+      # PNG, JPEG inválido, o mp4 que sobe com o sha e o caminho do Mac, as
+      # recusas no caminho sem gravar, o que se recusa sem ler, o controller com
+      # 413 antes de ler e o carrossel de 11 slides que não aprova);
+      # `root-midia` +9 (48 kHz, sips, o JPEG conferido, as caixas de topo, o
+      # sha que não sobe de novo, ROOT_OS_ENVIO_URL, o envio por stream a um
+      # servidor dublê com o 401 que reabre o arquivo, o JPEG em multipart e a
+      # agenda com o mp4 no OS); `modulos-por-tenant` +1 (o prefixo novo no
+      # gate); `pauta-midia` +1 (o vigia refaz o corte só registrado no Mac e a
+      # imagem sem JPEG); COM BANCO, `rotas-publicas-tenant` +3, pulados sem ele (a rota
+      # pública lê só dentro da empresa do token, sem a sentinela; token ruim
+      # sem consulta nenhuma; token de B com a peça de A não acha). Medido:
+      # 2734 casos em 66 arquivos com o banco; sem ele, 2155 passados e 579
+      # pulados (61 + 5 arquivos). O piso de ARQUIVOS sobe 1, para 58; o de
+      # CASOS sobe 36 (~15% de folga sobre os 42 que rodam sem banco), para 2030.
+      #
+      # MD4, CORREÇÃO DA REVISÃO (24/09/2026): +8 casos, nenhum arquivo novo,
+      # todos sem banco. `pauta-encadeamento` +1 (a mídia pronta do
+      # encadeamento é a régua do vigia: o corte com o mp4 no storage não pede
+      # render, o só registrado no Mac pede); `pauta-midia-publica` +3 (o mdat
+      # com tamanho de 64 bits partido em qualquer byte do cabeçalho; o storage
+      # que falha no meio encerra a resposta e quem desiste destrói a leitura;
+      # só a peça aprovada ganha URL); `pauta-semana` +1 (editar título ou
+      # legenda durante o envio não derruba o mp4, mudar o trecho derruba);
+      # `root-midia` +3 (o mp4 acima de 10 MB pelo proxy do web nem tenta e o
+      # prazo do envio; cada corte falha sozinho e o barrado não apaga o mp4
+      # que já está no OS; o envio que passa do prazo vira erro). Medido: 2742
+      # casos em 66 arquivos com o banco; sem ele, 2163 passados e 579 pulados.
+      # O piso de ARQUIVOS fica em 58; o de CASOS sobe 7 (~15% de folga sobre
+      # os 8), para 2037.
+      #
+      # MD5, A CONTA DE PUBLICAÇÃO DO INSTAGRAM (24/09/2026): +27 casos, +1
+      # arquivo. `bio-oauth` (26, novo): sem banco, 17 — a bio segue pedindo só
+      # instagram_business_basic; a publicação pede os três escopos pela MESMA
+      # redirect; o dublê por ambiente e o vazio que vale a Meta; o enum
+      # espelhado e o índice parcial na migration; os concedidos em texto,
+      # lista em data[] e ausentes, e o corpo sem token; as sete combinações
+      # da finalidade; o state malformado; as rotas com as permissões; o TikTok
+      # recusado; o callback que volta sem tocar no banco. COM BANCO, 9,
+      # pulados sem ele (o state com a finalidade; o callback com publicar
+      # grava `publicacao` e volta na Semana; sem o escopo fica `bio` com o
+      # aviso; a bio do criador como antes; outra empresa não lê; o segundo @
+      # troca o primeiro e o índice segura; a de publicação reconectada pela
+      # bio perde publicar; cancelar gasta o state; o sync renova só a de
+      # publicação). `modulos-por-tenant` +1 (as rotas novas são do módulo
+      # pauta). Medido: 2769 casos em 67 arquivos com o banco; sem ele, 2181
+      # passados e 588 pulados (62 + 5 arquivos). O piso de ARQUIVOS sobe 1,
+      # para 59; o de CASOS sobe 15 (~15% de folga sobre os 18 que rodam sem
+      # banco), para 2052.
+      #
+      # MD5, CORREÇÃO DA REVISÃO (24/09/2026): +6 casos em `bio-oauth`, sem
+      # arquivo novo. Sem banco, 3: a tela lê a credencial por `estado`, sem
+      # decifrar nem pegar do cofre; desconectar a conta de publicação exige
+      # pauta.publicar e o audit guarda a finalidade; só o código 190 da Graph
+      # é token morto. COM BANCO, 3 (o state vencido volta na Semana e é
+      # gasto; a renovação que falha por 5xx ou limite de taxa segue nas
+      # rodadas seguintes e a que dá certo limpa o erro; o 190 marca token
+      # vencido e a rodada seguinte ainda recupera). Medido: 2775 casos em 67
+      # arquivos com o banco; sem ele, 2184 passados e 591 pulados. O piso de
+      # ARQUIVOS fica em 59; o de CASOS sobe 2 (~15% de folga sobre os 3 que
+      # rodam sem banco), para 2054.
+      #
+      # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): +45 casos, +1 arquivo.
+      # `pauta-publicacao-instagram` (34, novo): sem banco, 13 — as mídias do
+      # pedido (5 JPEG na ordem, falta de JPEG/sha/mp4, carrossel de 1 slide);
+      # rascunho, conta, escopo e token morto não pedem; os argumentos do
+      # catálogo e a releitura; a barreira de caixa de entrada na legenda; o
+      # que mudou desde o pedido; cada status_code; o post achado pela legenda;
+      # a decisão da rotina (nota, lote, porta, janela); o desfecho da
+      # passagem; os enums espelhados; o tipo da rotina; as permissões das
+      # rotas. COM BANCO, 21, pulados sem ele (retido e quem clicou não
+      # confirma; 5+1 containers com a URL assinada, publish e permalink; story;
+      # Reels processando e concluído pela rotina na correlação do clique;
+      # ERROR e limite rejeitam a confirmação; resposta perdida sem segundo
+      # post; interruptor na porta e na rotina; rascunho antes da porta; mídia
+      # trocada depois do pedido; segunda execução sem repostar; voltar ao
+      # manual; a rotina sem lote registra pulada uma vez por motivo; a POSSE
+      # — o tique no meio da criação dos containers, no meio do publish e com a
+      # posse vencida —; o publish sem resposta que nunca se repete e vira erro
+      # em 10 min; o pedido novo que acha o post antigo; o pedido vencido ou
+      # recusado chega como erro; a aprovação de pedido antigo não publica; o
+      # 503 antes da fila). `validacao` +2 (a lista com minItems, maxItems e
+      # items), `arquitetura` +4, `escritas-pela-porta` +2,
+      # `modulos-por-tenant` +1, `pauta-agenda` +1, `root-midia` +1 — todos
+      # sem banco. Medido: 2821 casos em 68 arquivos com o banco; sem ele,
+      # 2209 passados e 612 pulados (63 + 5 arquivos). O piso de ARQUIVOS sobe
+      # 1, para 60; o de CASOS sobe 21 (~15% de folga sobre os 25 que rodam
+      # sem banco), para 2075.
+      #
+      # MD7, A APROVAÇÃO DE LOTE COM USO CONTADO (24/09/2026): +33 casos, +1
+      # arquivo. `lotes` (13, novo): sem banco, 4 — o hash da lista não
+      # depende da ordem e muda com qualquer campo; o loteItemId sai do
+      # conteúdo; os enums espelhados e o efeito da capacidade do catálogo; a
+      # frase da recusa. COM BANCO, 9 (a montagem recusa o que a
+      # porta recusaria; o pedido vai à fila como R4, quem montou não assina e
+      # a titular assina com senha e motivo e o efeito ativa; o efeito recusa a
+      # assinatura de quem montou, o pedido antigo e o hash trocado; pedir de
+      # novo mantém o hash; seis consumos simultâneos deixam passar UM; editar
+      # uma peça derruba só o item dela; o teto por dia com a virada em SP e
+      # corrida; o lote de outra empresa; o vencido). `porta` +12 com banco
+      # (o item sai uma vez sem fila e o RASTRO leva o lote e o contador;
+      # segundo uso; conteúdo diferente; fora da janela; vencido e revogado;
+      # aguardando; outra empresa; outro recurso; loteItemId em capacidade
+      # comum; vazio, com token e sem recurso; sem loteItemId vai à fila; porta
+      # sem o serviço recusa). `validacao` +3, `arquitetura` +4 (o consumo e a
+      # ativação têm dono), `modelos-globais` +1 (`ItemDoLote` no it.each dos
+      # filhos), todos sem banco; `teto-custo-ia` ganhou a asserção da porta
+      # sem o serviço de lotes no mesmo caso, e `conector-desligado` só
+      # remediu a conta (64). Medido: 2854 casos em 69 arquivos com o banco;
+      # sem ele, 2221 passados e 633 pulados (64 + 5 arquivos). O piso de
+      # ARQUIVOS sobe 1, para 61; o de CASOS sobe 10 (~15% de folga sobre os 12
+      # que rodam sem banco), para 2085.
+      #
+      # MD7, A REVISÃO (24/09/2026): +8 casos, todos COM BANCO. `lotes` +4 (lote
+      # vencido não vai à fila; confirmada vencida não segura o lote; revogar o
+      # último item encerra o lote; a falha ao encerrar não desfaz o uso) e o
+      # caso do vencido passou a provar a empresa; `porta` +4 (item de outra
+      # capacidade; lote abaixo do degrau efetivo; sob_lote sem lote no
+      # catálogo; loteItemId forjado no contexto não chega ao efeito).
+      # `arquitetura` ganhou a busca de SQL cru no caso que já existia. Medido:
+      # 2862 casos em 69 arquivos com o banco; sem ele, os mesmos 2221 passados
+      # e 641 pulados. Os pisos ficam onde estão: nada novo roda sem banco.
+      #
+      # MD8, APROVAR A SEMANA NUM PONTO SÓ (24/09/2026): +21 casos, +1 arquivo.
+      # `pauta-lote-da-semana` (20, novo): sem banco, 11 — as pré-condições de
+      # cada peça com a frase própria; o que para a semana inteira; o hash do
+      # item muda com legenda, mídia, horário e conta; a janela e a validade;
+      # a divergência; a linha do tempo; o corpo do "fica fora"; as permissões
+      # das rotas; o link da fila no aviso do canal; o fuso (UTC gravado, SP
+      # exibido). COM BANCO, 9 — as pré-condições barram sem gravar; a semana
+      # vira um lote de 11, vai à fila como R4 e nada sai antes da assinatura;
+      # a titular assina e as peças ficam aprovadas no slot com o episódio
+      # Agendado; nota desligada não publica; editar depois de ativo revoga só
+      # o item; o executor publica 10 no dublê da Graph, 3 por passagem, com
+      # um consumo por item e o aprovador no RASTRO; "Cancelar a semana"; a
+      # peça editada antes da assinatura cai na ativação; JPEG, horário e texto
+      # revogam só o item. `root-midia` +1 (o `agenda` diz se a semana está
+      # assinada ou na fila, e avisa a automática desligada), sem banco.
+      # `pauta-publicacao-instagram` e `pauta-semana` mudaram casos, sem caso
+      # novo. Medido: 2883 casos em 70 arquivos com o banco; sem ele, 2233
+      # passados e 650 pulados (65 + 5 arquivos). O piso de ARQUIVOS sobe 1,
+      # para 62; o de CASOS sobe 10 (~15% de folga sobre os 12 que rodam sem
+      # banco), para 2095.
+      #
+      # MD8, correções da revisão: +6 casos em `pauta-lote-da-semana`, sem
+      # arquivo novo. Sem banco, 3 — a segunda candidata do mesmo formato no
+      # mesmo slot; o que a publicação anterior barra e o que a ativação
+      # reabre; "ativo" só com a peça aprovada e fora do manual. COM BANCO, 3 —
+      # o pedido vencido, a linha em erro, a que voltou ao manual e o "Publicar
+      # agora" pedido na fila saem pelo lote, com as puladas fora do teto; a
+      # rotina parada além do lote dá a peça por perdida e revoga o item; o
+      # lote não assinado não tira a aprovada da agenda. Medido: 2889 casos em
+      # 70 arquivos com o banco; sem ele, 2236 passados e 653 pulados. O piso
+      # de CASOS sobe 2 (~15% de folga sobre os 3 sem banco), para 2097.
+      #
+      # MD9, A FILA DA DM À MÃO (25/09/2026): +37 casos, +1 arquivo.
+      # `pauta-comentarios` (29, novo): sem banco, 11 — a palavra INTEIRA
+      # ("AGENTES2" não é "AGENTES"); a triagem (própria conta pelo id e pelo @,
+      # anúncio, resposta e a nota, 7 dias, sem autor, sem palavra); o texto da
+      # DM com o /r/ e a página, sem caixa de entrada; os BYTES (600 "ç" não
+      # passam); o texto editado sem o /r/ ou com slop; o HMAC da pessoa e a
+      # chave curta; o permalink colado à mão e o perfil; a chave do link e o
+      # resumo; a rotina e a capacidade no shared; as permissões; a variável no
+      # compose e no .env.example. COM BANCO, 18 — o PRONTO QUANDO (três
+      # comentários viram UMA linha com o @ e o /r/, paginação pelo cursor);
+      # o RASTRO e o ToolCall sem @ nem id em claro NEM como sha256; a
+      # reentrega na mesma linha; o post marcado à mão achado pelo permalink
+      # (na segunda página das mídias, pelo cursor), com resposta e 8 dias fora
+      # e a nota das respostas; respondido só com o HMAC e 409 na segunda; 7
+      # dias apagam o @; o /r/ vira PixelEvent do link da DM, separado do botão
+      # da página; a newsletter sem link; preparar e editar o texto; o
+      # Instagram desligado sem chamada; fora da janela e com volume atípico,
+      # R1 sem fila de aprovação; sem chave, sem escopo, sem peça; e os seis da
+      # revisão — carrossel e corte da mesma matéria com o MESMO link (e o link
+      # da rotina no RASTRO), a Graph que cai ao listar as mídias como erro e
+      # uma chamada só, o módulo desligado que ainda apaga o @, o teto da fila
+      # que nunca corta a pendente, o texto editado com /r/ morto que volta ao
+      # padrão, e a corrida do texto da DM com o upload sob o cadeado.
+      # `rastro-por-nivel` +1 (o `sigiloso` sem resumo não deixa hash nem
+      # tamanho), `arquitetura` +3 (o cliente de comentários tem dono),
+      # `escritas-pela-porta` +2, `modelos-globais` +1 (o filho novo no
+      # it.each), `root-midia` +1 (a agenda conta os comentários sem @), todos
+      # sem banco; `conector-desligado` só remediu a conta (65, 19 com
+      # interruptor). Medido: 2926 casos em 71 arquivos com o banco; sem ele,
+      # 2255 passados e 671 pulados (66 + 5 arquivos). O piso de ARQUIVOS sobe
+      # 1, para 63; o de CASOS sobe 16 (~15% de folga sobre os 19 que rodam
+      # sem banco), para 2113.
+      #
+      # MD10, O YOUTUBE PELA API (25/09/2026): +51 casos, +2 arquivos.
+      # `youtube` (28, novo, sem banco): a auditoria que nasce pendente e falha
+      # fechada; as faltas; os argumentos dos dois itens (título até 100
+      # CARACTERES, descrição até 5.000 BYTES contados depois de trocar o
+      # marcador, sem < >); as janelas; a conferência do vídeo; as variáveis no
+      # compose e no .env.example; as permissões; o conector contra um dublê
+      # HTTP (o state assinado conferido antes do banco, os dois escopos, o
+      # refresh do cofre, a sessão SEMPRE privada, o update só com
+      # part=status, o Testing na saúde); e o envio do Mac pelo protocolo
+      # resumable (308 com Range, conexão caída no 3º bloco, 5xx, 404 de
+      # sessão, o processo que morre e retoma, a resposta final perdida).
+      # `pauta-youtube` (13, novo, COM BANCO): o PRONTO QUANDO com a porta, o
+      # lote assinado pela titular e um YouTube de mentira — sem lote e com a
+      # auditoria pendente o YouTube não recebe nada; a sessão pelo uso contado,
+      # cifrada, reaproveitada sem gastar uso (e recusada ao pacote mudado),
+      # e o token no RASTRO sem o valor;
+      # o YouTube desligado; o "concluído" que confere e define a thumb; o
+      # modo teste e a nota desligada que pulam; o pacote mudado que não agenda;
+      # e o publishAt uma vez só, com os itens encerrados depois.
+      # `arquitetura` +5 (o YouTube tem o desenho do publicador),
+      # `escritas-pela-porta` +2, `modulos-por-tenant` +1, `modelos-globais` +1
+      # (o filho novo no it.each), `root-midia` +1 (as rotas do YouTube no
+      # cliente do OS), todos sem banco; `conector-desligado` só remediu a
+      # conta (67, 21 com interruptor). Medido: 2977 casos em 73 arquivos com o
+      # banco; sem ele, 2293 passados e 684 pulados (67 + 6 arquivos). O piso de
+      # ARQUIVOS sobe 2, para 65; o de CASOS sobe 32 (~15% de folga sobre os
+      # 38 que rodam sem banco), para 2145.
+      #
+      # MD10, a correção dos três revisores (25/09/2026): +13 casos, 0 arquivo.
+      # `youtube` +10 (sem banco): o `uploadStatus` recusado, o canal de teste,
+      # a playlist sem entrada repetida, o token do Mac pedido só com
+      # `youtube.upload` e guardado à parte, o canal da conexão, o Testing
+      # lembrado pela data da conexão, o `conector.autorizar` no RASTRO e o
+      # 401 do Mac — uma vez, o mesmo token de volta e o que persiste, os dois
+      # que terminam). `pauta-youtube` +3 (COM BANCO): o token largo e o canal
+      # de teste recusados antes da porta, a janela do envio fechada com o
+      # lote de pé, e o modo teste do começo ao fim (e mais de 20 envios
+      # parados no caso da rotina). Medido: 2990 casos em 73 arquivos com o
+      # banco; sem ele, 2303 passados e 687 pulados. O piso de CASOS sobe 8
+      # (~15% de folga sobre os 10 que rodam sem banco), para 2153.
+      #
+      # MD13, O CORTE COM NOTA E MOTIVO (25/09/2026): +10 casos, 0 arquivo,
+      # todos sem banco. `pauta-semana` +8: a nota de 0 a 10 (com vírgula);
+      # 3 candidatos em ordem de nota com o maior como corte; o inválido, o
+      # repetido e o quarto fora, com o porquê; a resposta antiga como um
+      # candidato sem nota e o prompt que pede nota e motivo; o schema do
+      # `candidato`; gerar com os 3 na meta; trocar (trecho e gancho novos, o
+      # mp4 fora da peça e ainda no storage, rascunho, render pendente, o
+      # RASTRO); e as recusas (não existe, story, transcrição refeita).
+      # `pauta-agenda` +1 (os candidatos na peça da agenda), `root-midia` +1
+      # (o candidato no log do render). Da revisão, +5 sem banco:
+      # `pauta-semana` +4 (a legenda do candidato escolhido; trocar e voltar
+      # muda a assinatura do render e o vigia não pula; o mp4 de outro trecho
+      # com a mesma duração dá 409 no PUT e no envio; o cabeçalho do trecho),
+      # `root-midia` +1 (o trecho no PUT e no POST, e o 409 que fica no
+      # corte). Medido: 3005 casos em 73 arquivos com o banco; sem ele, 2318
+      # passados e 687 pulados. O piso de CASOS sobe 12 (~15% de folga sobre
+      # os 15 novos), para 2165.
+      #
+      # MD11, A DM AUTOMÁTICA SOB O LOTE (25/09/2026): +40 casos, +1 arquivo.
+      # `pauta-dm-automatica` (novo, 32): 9 sem banco (o texto com a linha de
+      # mensagem automática e os bytes, os argumentos sem o comentário, o teto
+      # 100/200, a janela de 7 dias, as 08h de São Paulo, as três recusas, o
+      # 100/2534001 e o resultado incerto, as constantes e a rota, a variável
+      # das mensagens) e 23 COM BANCO (o "pronto quando" inteiro, a corrida no
+      # último uso do dia e na virada, o conector desligado, as pausas, a
+      # segurada que perde a regra, o "fica fora" e a ativação que revoga; e,
+      # da revisão, o catálogo sem a capacidade que não derruba a semana, a
+      # trava da matéria que sobrevive à regra assinada de novo, os 41
+      # comentários de matéria sem regra que não tomam as vagas, a Meta que
+      # não responde, o `enviando` preso, a regra vencida e o expurgo de 90
+      # dias também com o módulo desligado).
+      # `arquitetura` +4 e `escritas-pela-porta` +2 (o cliente de mensagens tem
+      # dono e só o efeito o chama; a DM não consome item; o envio marca a
+      # procedência), `root-midia` +1 (a agenda com a DM automática ligada),
+      # `pauta-comentarios` +0 (o caso do link ganhou a rotina que não regrava
+      # o destino). Medido: 3045 casos em 74 arquivos com o banco; sem ele,
+      # 2335 passados e 710 pulados (68 + 6 arquivos). O piso de ARQUIVOS
+      # sobe 1, para 66; o de CASOS sobe 14 (~15% de folga sobre os 17 que
+      # rodam sem banco; os 6 da revisão são todos com banco), para 2179.
+      #
+      # CORREÇÃO FINAL DA ONDA D (25/09/2026): +18 casos, nenhum arquivo novo.
+      # Sem banco (+13): `pauta-midia` +2 (o Agendado na fila de render),
+      # `pauta-agenda` +3 (o interruptor da D-MD1 pela memória, a DM sem App
+      # Review, o motivo e o controller), `youtube` +3 (a consulta da sessão,
+      # `fileDetails` e os uploads do canal, a reconexão sem canal),
+      # `pauta-midia-publica` +4 (o uso do storage, a recusa da remoção, o
+      # listar/remover e a linha do boot, o comando), `bio-oauth` +1 (http fora
+      # da máquina). Com banco (+5): `pauta-comentarios` +1 (a linha apagada
+      # aos 14 dias), `pauta-lote-da-semana` +3 (o slot de 4,5 h, o avulso
+      # antes do slot, o Reels depois do cancelamento), `pauta-youtube` +1 (a
+      # sessão amarra o vídeo ao arquivo). Medido: 3063 casos em 74 arquivos
+      # com o banco; sem ele, 2348 passados e 715 pulados. O piso de CASOS
+      # sobe 11 (~15% de folga sobre os 13 que rodam sem banco), para 2190.
+      PISO_CASOS_API: '2190'
+      PISO_ARQUIVOS_API: '66'
 
     steps:
       - uses: actions/checkout@v4
@@ -634,6 +1938,10 @@ jobs:
       # fora de src/ desloca a saída para dist/src/ e o Dockerfile não acha
       # dist/main.js). Este é o tsconfig que cobre os tipos dos testes.
       - name: Typecheck das suítes da api
+        # A frente MC levou a api a 74 arquivos de teste, e o tsc passou do heap
+        # padrão do Node no runner (OOM em 28/09/2026). 5 GB cabe nos 7 GB da máquina.
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
         run: pnpm --filter @mktos/api typecheck:test
 
       # A trava de cobertura, escrita fora do repositório: é infraestrutura de
@@ -1025,7 +2333,41 @@ jobs:
           # ESTEIRA DE CLIENTES (17/09/2026): **293 casos**. `WorkApontamento`
           # (horas por cliente e por etapa) entrou no registro de alvos e em
           # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 248.
-          PISO_CASOS_ISOLAMENTO: '248'
+          #
+          # MC7, O EPISÓDIO (23/09/2026): **326 casos** (319 medidos antes da
+          # fatia, com o onboarding). `PautaEpisodio` entrou no registro de
+          # alvos e em `FILHOS_COM_ORGID_REDUNDANTE` com DOIS pais conferidos
+          # (a rodada e a página de links): +7 casos. O piso sobe 6, para 254.
+          #
+          # MD6, O PUBLICADOR DO INSTAGRAM (24/09/2026): **332 casos**.
+          # `PautaPublicacao` entrou no registro de alvos e em
+          # `FILHOS_COM_ORGID_REDUNDANTE`: +6 casos. O piso sobe 5, para 259.
+          #
+          # MD7, A APROVAÇÃO DE LOTE (24/09/2026): **340 casos**.
+          # `AprovacaoDeLote` (empresa própria) e `ItemDoLote` (filho do lote,
+          # em `FILHOS_COM_ORGID_REDUNDANTE`) entraram no registro de alvos:
+          # +8 casos. O piso sobe 7, para 266.
+          #
+          # MD9, A FILA DA DM À MÃO (25/09/2026): **346 casos**.
+          # `ComentarioComPalavra` (filha da peça, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 271.
+          #
+          # MD10, O YOUTUBE PELA API (25/09/2026): **352 casos**.
+          # `EnvioAoYoutube` (filha do episódio, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 276.
+          #
+          # MD11, A DM AUTOMÁTICA (25/09/2026): **358 casos**.
+          # `EnvioDeResposta` (filha do comentário, em
+          # `FILHOS_COM_ORGID_REDUNDANTE`) entrou no registro de alvos: +6
+          # casos. O piso sobe 5, para 281.
+          #
+          # CORREÇÃO FINAL DA ONDA D (25/09/2026): **358 casos**, sem tabela
+          # nova. O caso "o catálogo de permissões aceita as chaves REAIS"
+          # pegou a permissão de três segmentos (virou
+          # `pauta.enviar_ao_youtube`). O piso fica.
+          PISO_CASOS_ISOLAMENTO: '281'
         run: |
           pnpm --filter @mktos/api exec vitest run \
             --reporter=default --reporter=json \

@@ -73,7 +73,7 @@ describe.each(CATALOGOS)('%s', (_nome, pol, ids) => {
     const linhas = verificarCatalogo(pol);
     const falhas = linhas.filter((l) => !l.ok);
     expect(
-      falhas.map((f) => `${f.id}: declarado=${f.declarado} calculado=${f.calculado}`),
+      falhas.map((f) => `${f.id}: declarado=${f.declarado} calculado=${f.calculado} ${f.problemas.join('; ')}`.trim()),
     ).toEqual([]);
     expect(linhas.length).toBeGreaterThan(0);
   });
@@ -443,9 +443,18 @@ describe('herança da política', () => {
 });
 
 describe('catálogo do marketing-os', () => {
-  it('cobre as 35 ferramentas MCP, todas em R0', () => {
-    const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0');
-    expect(leituras).toHaveLength(35);
+  it('cobre as 36 ferramentas MCP, todas em R0', () => {
+    // A 36ª é `comunicacao.agenda.periodo` (list_calendar_range), da agenda da
+    // Root (PR #11, 24/09/2026), que chegou sem este número subir.
+    // MD9 (25/09/2026): a 36ª leitura, `instagram.comentario.ler`, é da rotina
+    // da fila da DM e nasce SEM ferramenta — o que ela devolve é o @ de quem
+    // comentou, que vai para a fila e nunca para um modelo.
+    // MD11 (25/09/2026): `instagram.regra_de_resposta.pausar` também é R0 sem
+    // ferramenta — é o freio da DM automática, clicado por gente na fila.
+    const semFerramenta = ['instagram.comentario.ler', 'instagram.regra_de_resposta.pausar'];
+    const leituras = DELTA.capacidades.filter((c) => c.nivel === 'R0' && !semFerramenta.includes(c.id));
+    expect(leituras).toHaveLength(36);
+    for (const id of semFerramenta) expect(DELTA.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     for (const c of leituras) {
       expect(c.ferramenta, `${c.id} sem nome de ferramenta`).toBeTruthy();
       expect(c.efeito.escreveForaDoOS).toBe(false);
@@ -467,9 +476,12 @@ describe('catálogo do marketing-os', () => {
   });
 
   it('toda leitura aponta para o GET que a implementa', () => {
-    for (const c of DELTA.capacidades.filter((x) => x.nivel === 'R0')) {
+    // A exceção declarada (MD11): pausar a regra da DM é R0 por ser só um freio
+    // interno, e não uma leitura — a rota dela é o POST do botão.
+    for (const c of DELTA.capacidades.filter((x) => x.nivel === 'R0' && x.id !== 'instagram.regra_de_resposta.pausar')) {
       expect(c.rota, `${c.id} sem rota`).toMatch(/^GET /);
     }
+    expect(DELTA.capacidades.find((x) => x.id === 'instagram.regra_de_resposta.pausar')?.rota).toBe('POST /pauta/dm/regras/:itemId/pausar');
   });
 
   it('a escrita que sai para fora sem volta nunca é menos que R3', () => {
@@ -478,5 +490,335 @@ describe('catálogo do marketing-os', () => {
         expect(['R3', 'R4', 'R5'], `${c.id} é ${c.nivel}`).toContain(c.nivel);
       }
     }
+  });
+});
+
+/*
+ * MD6 (24/09/2026): a primeira escrita pública automática do OS. O que não pode
+ * mudar sem alguém ver: o degrau (R3, e é o efeito que diz, não a vontade), a
+ * ausência de `desfazer` (apagar post pela API não existe, e seria R5) e a
+ * ausência de `ferramenta` (agente nenhum publica no Instagram da empresa).
+ */
+describe('instagram.post.publicar (MD6)', () => {
+  const c = MKTOS.capacidades.find((x) => x.id === 'instagram.post.publicar');
+
+  it('é R3 pelo efeito, sem desfazer e sem ferramenta', () => {
+    expect(c, 'a capacidade sumiu do catálogo').toBeTruthy();
+    expect(c!.nivel).toBe('R3');
+    expect(classificar(c!.efeito)).toBe('R3');
+    expect(c!.efeito).toMatchObject({ escreveForaDoOS: true, exposicaoExterna: true, reversibilidade: 'manual', sensibilidade: 'publica', destruicao: false });
+    expect(c!.desfazer).toBeUndefined();
+    expect(c!.ferramenta).toBeUndefined();
+    expect(c!.rota).toBe('POST /pauta/pecas/:id/publicar-instagram');
+  });
+
+  it('com qualquer sinal aceso sobe a R4, nunca desce', () => {
+    const cap: Capacidade = { id: c!.id, descricao: c!.descricao, nivel: c!.nivel, efeito: c!.efeito };
+    expect(avaliar(cap, {}).nivel).toBe('R3');
+    expect(avaliar(cap, { sinais: ['fora_da_janela'] }).nivel).toBe('R4');
+  });
+
+  it('o argsSchema é fechado e exige o conteúdo que a aprovação assina', () => {
+    const s = c!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, unknown> };
+    expect(s.additionalProperties).toBe(false);
+    expect([...s.required].sort()).toEqual(['formato', 'igUserId', 'legenda', 'midias', 'pecaId']);
+    expect(Object.keys(s.properties).sort()).toEqual(['agendadaPara', 'formato', 'igUserId', 'legenda', 'midias', 'pecaId']);
+    // A mídia que prende a aprovação ao arquivo é conferida na PORTA, item a item.
+    expect(s.properties.midias).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: { type: 'object', additionalProperties: false, required: ['chave', 'sha256'], properties: { sha256: { pattern: '^[0-9a-f]{64}$' } } },
+    });
+  });
+});
+
+/*
+ * MD7 (24/09/2026): a régua aprende a aprovação de lote com uso contado. O que
+ * não pode mudar sem alguém ver: o campo `aprovacao` chega ao runtime (o Zod
+ * descartaria em silêncio um campo que o esquema não declara), o modo é enum
+ * fechado, o lote só existe com alcance e nunca abaixo do item com sinal, e a
+ * invariante 4 diz as duas formas.
+ */
+describe('aprovação de lote com uso contado (MD7)', () => {
+  const lote = MKTOS.capacidades.find((x) => x.id === 'pauta.semana.aprovar');
+  const publicar = MKTOS.capacidades.find((x) => x.id === 'instagram.post.publicar');
+
+  const EFEITO_DO_LOTE = {
+    escreveForaDoOS: true,
+    produzArtefato: false,
+    reversibilidade: 'nenhuma',
+    exposicaoExterna: true,
+    impactoFinanceiro: 'nenhum',
+    sensibilidade: 'publica',
+    destruicao: false,
+    obrigacaoLegal: false,
+    alcance: 60,
+  } satisfies CapacidadeDoCatalogo['efeito'];
+
+  it('o campo sobrevive a lerPolitica e a lerDelta', () => {
+    expect(lote?.aprovacao).toEqual({ modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8 });
+    expect(publicar?.aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    // Direto no delta, sem a resolução no meio.
+    expect(DELTA.capacidades.find((c) => c.id === 'pauta.semana.aprovar')?.aprovacao?.modo).toBe('lote');
+    // E numa política inteira lida do zero.
+    const bruto = json('politica-root.json');
+    bruto.capacidades = [...bruto.capacidades, { ...lote, efeito: EFEITO_DO_LOTE }];
+    const lida = lerPolitica(bruto, 'teste');
+    expect(lida.capacidades.find((c) => c.id === 'pauta.semana.aprovar')?.aprovacao).toEqual(lote?.aprovacao);
+  });
+
+  it('modo desconhecido é recusado, e chave estranha também — nada some calado', () => {
+    const comModo = (aprovacao: unknown) => {
+      const d = json('politica-marketing-os.json');
+      d.capacidades = d.capacidades.map((c: { id: string }) =>
+        c.id === 'pauta.semana.aprovar' ? { ...c, aprovacao } : c,
+      );
+      return () => lerDelta(d, 'teste');
+    };
+    expect(comModo({ modo: 'alcance', tetoPorDia: 200, validadeMaximaDias: 7 })).toThrow(/aprovacao/);
+    expect(comModo({ modo: 'lote', tetoDeItens: 60, validadeMaximaDias: 8, usoUnico: false })).toThrow(/aprovacao/);
+    expect(comModo({ modo: 'lote', tetoDeItens: 0, validadeMaximaDias: 8 })).toThrow(/tetoDeItens/);
+    expect(comModo({ modo: 'sob_lote' })).toThrow(/lote/);
+  });
+
+  it('o catálogo resolvido passa nas três regras do lote', () => {
+    const doLote = verificarCatalogo(MKTOS).filter((l) => l.problemas.length);
+    expect(doLote).toEqual([]);
+  });
+
+  it('lote com alcance até 10 é recusado', () => {
+    const pol = {
+      capacidades: [
+        cap({ id: 'x.lote.aprovar', nivel: 'R3', efeito: { ...EFEITO_DO_LOTE, alcance: 10 }, aprovacao: { modo: 'lote', tetoDeItens: 5, validadeMaximaDias: 1 } }),
+      ],
+    };
+    const [l] = verificarCatalogo(pol);
+    expect(l.ok).toBe(false);
+    expect(l.problemas.join()).toMatch(/alcance acima de 10/);
+  });
+
+  it('lote abaixo do nível do item com um sinal aceso é recusado', () => {
+    // O item é R3 (post público) e um sinal aceso o leva a R4.
+    const item = cap({
+      id: 'x.post.publicar',
+      nivel: 'R3',
+      efeito: { ...EFEITO_DO_LOTE, alcance: 1, reversibilidade: 'manual' },
+      aprovacao: { modo: 'sob_lote', lote: 'x.lote.aprovar' },
+    });
+    // Lote que a régua deixa em R3: escrita interna reversível (R2) que o alcance sobe um degrau.
+    const loteR3 = cap({
+      id: 'x.lote.aprovar',
+      nivel: 'R3',
+      efeito: { ...EFEITO_INTERNO, alcance: 60 },
+      aprovacao: { modo: 'lote', tetoDeItens: 5, validadeMaximaDias: 1 },
+    });
+    expect(classificar(loteR3.efeito)).toBe('R3');
+    const doItem = verificarCatalogo({ capacidades: [item, loteR3] }).find((l) => l.id === item.id)!;
+    expect(doItem.ok).toBe(false);
+    expect(doItem.problemas.join()).toMatch(/é R3 e esta capacidade chega a R4/);
+
+    // O mesmo item sob um lote R4 passa.
+    const loteR4 = cap({ id: 'x.lote.aprovar', nivel: 'R4', efeito: EFEITO_DO_LOTE, aprovacao: loteR3.aprovacao });
+    expect(verificarCatalogo({ capacidades: [item, loteR4] }).every((l) => l.ok)).toBe(true);
+  });
+
+  it('sob_lote que aponta para capacidade inexistente, ou que não é lote, é recusado', () => {
+    const item = cap({ id: 'x.post.publicar', nivel: 'R3', efeito: { ...EFEITO_DO_LOTE, alcance: 1, reversibilidade: 'manual' }, aprovacao: { modo: 'sob_lote', lote: 'x.nao.existe' } });
+    expect(verificarCatalogo({ capacidades: [item] })[0].problemas.join()).toMatch(/não existe/);
+    const comum = cap({ id: 'x.nao.existe', nivel: 'R4', efeito: EFEITO_DO_LOTE });
+    expect(verificarCatalogo({ capacidades: [item, comum] })[0].problemas.join()).toMatch(/não declara modo lote/);
+  });
+
+  it('pauta.semana.aprovar é R4 pelo alcance: titular, reautenticação, motivo e 600 s', () => {
+    expect(lote!.nivel).toBe('R4');
+    expect(classificar(lote!.efeito)).toBe('R4');
+    const d = avaliar({ id: lote!.id, descricao: lote!.descricao, nivel: lote!.nivel, efeito: lote!.efeito });
+    expect(d).toMatchObject({ nivel: 'R4', exigeAprovacao: true, exigeReautenticacao: true, exigeMotivo: true });
+    expect(d.aprovacao).toMatchObject({ alcadaMinima: 'titular', validadeSegundos: 600 });
+    expect(lote!.ferramenta).toBeUndefined();
+    expect((lote!.argsSchema as { properties: { totalDeItens: unknown } }).properties.totalDeItens).toMatchObject({ maximum: 60 });
+  });
+
+  it('a publicação continua R3 no caminho de sempre, e o lote R4 cobre ela com sinal', () => {
+    expect(publicar!.nivel).toBe('R3');
+    const comSinal = avaliar({ id: publicar!.id, descricao: publicar!.descricao, nivel: publicar!.nivel, efeito: publicar!.efeito }, { sinais: ['fora_da_janela'] });
+    expect(comSinal.nivel).toBe('R4');
+    // O `loteItemId` é da porta, não do conteúdo: o esquema de argumentos não o declara.
+    expect(Object.keys((publicar!.argsSchema as { properties: object }).properties)).not.toContain('loteItemId');
+  });
+
+  it('a invariante 4 diz as duas formas: uso único ou uso contado com lote', () => {
+    expect(ROOT.invariantes[3]).toBe(
+      'aprovação é de uso único — ou de uso contado, item a item, quando a capacidade declara lote —, presa ao conteúdo exato e com prazo',
+    );
+    expect(MKTOS.invariantes).toEqual(ROOT.invariantes);
+  });
+});
+
+/*
+ * MD9 (25/09/2026): a leitura dos comentários para a fila da DM à mão. O que não
+ * pode mudar sem alguém ver: é R0 pelo efeito (nada escreve, nada sai), e é
+ * R0 de propósito — declarada R1, o sinal da noite ou do volume a subiria a R2,
+ * que exige aprovação, e a rotina de 10 em 10 min encheria a fila de pedidos de
+ * LER. Não tem ferramenta: o @ que ela devolve não vai a modelo nenhum.
+ */
+describe('instagram.comentario.ler (MD9)', () => {
+  const c = MKTOS.capacidades.find((x) => x.id === 'instagram.comentario.ler');
+
+  it('é R0 pelo efeito, sem ferramenta e sem desfazer, e com sinal aceso não pede aprovação', () => {
+    expect(c, 'a capacidade sumiu do catálogo').toBeTruthy();
+    expect(c!.nivel).toBe('R0');
+    expect(classificar(c!.efeito)).toBe('R0');
+    expect(c!.efeito).toMatchObject({ escreveForaDoOS: false, produzArtefato: false, exposicaoExterna: false, sensibilidade: 'interna', destruicao: false });
+    expect(c!.ferramenta).toBeUndefined();
+    expect(c!.desfazer).toBeUndefined();
+    const cap: Capacidade = { id: c!.id, descricao: c!.descricao, nivel: c!.nivel, efeito: c!.efeito };
+    const comSinais = avaliar(cap, { sinais: ['fora_da_janela', 'volume_atipico'] });
+    expect(comSinais.nivel).toBe('R1');
+    expect(comSinais.exigeAprovacao).toBe(false);
+    // O contraexemplo que decidiu o degrau: o mesmo efeito com produzArtefato sobe a R2 e pede aprovação.
+    const comoR1: Capacidade = { ...cap, nivel: 'R1', efeito: { ...c!.efeito, produzArtefato: true } };
+    expect(avaliar(comoR1, { sinais: ['fora_da_janela'] }).exigeAprovacao).toBe(true);
+  });
+
+  it('o esquema de argumentos é fechado: a conta e até 30 posts, cada um com a palavra do CTA', () => {
+    const s = c!.argsSchema as unknown as {
+      additionalProperties: boolean;
+      required: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(s.additionalProperties).toBe(false);
+    expect([...s.required].sort()).toEqual(['igUserId', 'midias']);
+    expect(s.properties.midias).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 30,
+      items: { type: 'object', additionalProperties: false, required: ['pecaId', 'palavra'], properties: { palavra: { pattern: '^[A-Z0-9]{3,20}$' } } },
+    });
+  });
+});
+
+/*
+ * MD10 (25/09/2026): o YouTube pela API. O que não pode mudar sem alguém ver:
+ * as duas são R3 pelo efeito, com reversibilidade `manual` — `automatica` daria
+ * R2, mas desfazer o envio seria apagar o vídeo, que é destruição e R5, então
+ * o valor honesto é `manual` —; o envio não expõe (o vídeo é sempre privado) e a
+ * publicação expõe; as duas saem só pelo lote da semana (R4), que cobre o sinal
+ * aceso; e os argumentos prendem a aprovação ao arquivo (sha256 e tamanho), ao
+ * texto, à categoria, à thumb e, na publicação, ao horário.
+ */
+describe('youtube.video.enviar e youtube.video.publicar (MD10)', () => {
+  const enviar = MKTOS.capacidades.find((x) => x.id === 'youtube.video.enviar');
+  const publicar = MKTOS.capacidades.find((x) => x.id === 'youtube.video.publicar');
+  const lote = MKTOS.capacidades.find((x) => x.id === 'pauta.semana.aprovar');
+
+  it('as duas são R3 pelo efeito, sem ferramenta e sem desfazer; o envio não expõe, a publicação expõe', () => {
+    expect(enviar, 'youtube.video.enviar sumiu do catálogo').toBeTruthy();
+    expect(publicar, 'youtube.video.publicar sumiu do catálogo').toBeTruthy();
+    for (const c of [enviar!, publicar!]) {
+      expect(c.nivel).toBe('R3');
+      expect(classificar(c.efeito)).toBe('R3');
+      expect(c.efeito).toMatchObject({ escreveForaDoOS: true, reversibilidade: 'manual', sensibilidade: 'publica', destruicao: false });
+      expect(c.ferramenta).toBeUndefined();
+      expect(c.desfazer).toBeUndefined();
+      expect(c.aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    }
+    expect(enviar!.efeito.exposicaoExterna).toBe(false);
+    expect(publicar!.efeito.exposicaoExterna).toBe(true);
+    // O contraexemplo que decidiu a reversibilidade: `automatica` desceria o envio a R2.
+    expect(classificar({ ...enviar!.efeito, reversibilidade: 'automatica' })).toBe('R2');
+  });
+
+  it('com sinal aceso sobem a R4, e o lote da semana (R4) ainda cobre', () => {
+    for (const c of [enviar!, publicar!]) {
+      const cap: Capacidade = { id: c.id, descricao: c.descricao, nivel: c.nivel, efeito: c.efeito };
+      expect(avaliar(cap, {}).nivel).toBe('R3');
+      expect(avaliar(cap, { sinais: ['fora_da_janela'] }).nivel).toBe('R4');
+    }
+    expect(lote!.nivel).toBe('R4');
+  });
+
+  it('os esquemas são fechados; a publicação é o envio mais o horário', () => {
+    const e = enviar!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, Record<string, unknown>> };
+    const p = publicar!.argsSchema as typeof e;
+    const campos = ['bytes', 'categoria', 'descricao', 'episodioId', 'sha256', 'thumbChave', 'thumbN', 'thumbSha', 'titulo'];
+    expect(e.additionalProperties).toBe(false);
+    expect([...e.required].sort()).toEqual(campos);
+    expect(Object.keys(e.properties).sort()).toEqual(campos);
+    expect(p.additionalProperties).toBe(false);
+    expect([...p.required].sort()).toEqual([...campos, 'publicarEm'].sort());
+    expect(e.properties.sha256).toMatchObject({ pattern: '^[0-9a-f]{64}$' });
+    expect(e.properties.thumbSha).toMatchObject({ pattern: '^[0-9a-f]{12}$' });
+    expect(e.properties.bytes).toMatchObject({ type: 'integer', minimum: 1 });
+    expect(e.properties.thumbN).toMatchObject({ type: 'integer', minimum: 1, maximum: 3 });
+  });
+});
+
+/*
+ * MD11 (25/09/2026): a DM automática sob o lote da semana. O que não pode mudar
+ * sem alguém ver: o envio é R3 pelo efeito (sai do OS, sem volta, exposto, a
+ * uma pessoa) e sobe a R4 com a procedência externa que o executor sempre
+ * marca — e o lote da semana, R4, ainda cobre (a regra do desenho da MC18:
+ * a assinatura é ≥ o envio); o envio só sai pelo lote; o esquema prende o
+ * texto, o link, o destino e as peças, e deixa de FORA o id do comentário e a
+ * pessoa (senão nenhum envio casaria com o item assinado). Pausar é R0, sem
+ * aprovação nem com sinal aceso, porque só diminui o alcance.
+ */
+describe('instagram.resposta_privada.enviar e instagram.regra_de_resposta.pausar (MD11)', () => {
+  const enviar = MKTOS.capacidades.find((x) => x.id === 'instagram.resposta_privada.enviar');
+  const pausar = MKTOS.capacidades.find((x) => x.id === 'instagram.regra_de_resposta.pausar');
+  const lote = MKTOS.capacidades.find((x) => x.id === 'pauta.semana.aprovar');
+
+  it('o envio é R3 pelo efeito, a uma pessoa, sem ferramenta, sem desfazer e só sob o lote da semana', () => {
+    expect(enviar, 'instagram.resposta_privada.enviar sumiu do catálogo').toBeTruthy();
+    expect(enviar!.nivel).toBe('R3');
+    expect(classificar(enviar!.efeito)).toBe('R3');
+    expect(enviar!.efeito).toMatchObject({ escreveForaDoOS: true, reversibilidade: 'nenhuma', exposicaoExterna: true, sensibilidade: 'publica', alcance: 1 });
+    expect(enviar!.ferramenta).toBeUndefined();
+    expect(enviar!.desfazer).toBeUndefined();
+    expect(enviar!.aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    // `restrita` com alcance alto empurraria a R5: é o limite de cima do desenho.
+    expect(classificar({ ...enviar!.efeito, sensibilidade: 'restrita', alcance: 200 })).toBe('R5');
+  });
+
+  it('com a procedência externa o envio vira R4, e o lote da semana (R4) cobre — nunca o contrário', () => {
+    const cap: Capacidade = { id: enviar!.id, descricao: enviar!.descricao, nivel: enviar!.nivel, efeito: enviar!.efeito };
+    expect(avaliar(cap, {}).nivel).toBe('R3');
+    const comSinal = avaliar(cap, { sinais: ['fonte_nao_confiavel'] });
+    expect(comSinal.nivel).toBe('R4');
+    expect(comSinal.aprovacao.alcadaMinima).toBe('titular');
+    expect(lote!.nivel).toBe('R4');
+    expect(verificarCatalogo(MKTOS).find((l) => l.id === enviar!.id)?.problemas).toEqual([]);
+  });
+
+  it('o esquema do envio é fechado e não tem lugar para o comentário nem para a pessoa', () => {
+    const e = enviar!.argsSchema as { additionalProperties: boolean; required: string[]; properties: Record<string, Record<string, unknown>> };
+    const campos = ['bioLinkId', 'destinoAprovado', 'igUserId', 'midias', 'palavra', 'texto'];
+    expect(e.additionalProperties).toBe(false);
+    expect([...e.required].sort()).toEqual(campos);
+    expect(Object.keys(e.properties).sort()).toEqual(campos);
+    expect(Object.keys(e.properties).join()).not.toMatch(/comment|pessoa|usuario|loteItemId/i);
+    expect(e.properties.palavra).toMatchObject({ pattern: '^[A-Z0-9]{3,20}$' });
+    expect(e.properties.midias).toMatchObject({ type: 'array', minItems: 1, maxItems: 6 });
+  });
+
+  it('pausar é R0 (interno, só diminui o alcance): nem com sinal aceso pede outra pessoa; o campo não se chama loteItemId (a porta o tomaria como item de lote)', () => {
+    expect(pausar, 'instagram.regra_de_resposta.pausar sumiu do catálogo').toBeTruthy();
+    expect(pausar!.nivel).toBe('R0');
+    expect(classificar(pausar!.efeito)).toBe('R0');
+    expect(pausar!.efeito).toMatchObject({ escreveForaDoOS: false, produzArtefato: false, sensibilidade: 'interna' });
+    expect(pausar!.aprovacao).toBeUndefined();
+    expect(pausar!.ferramenta).toBeUndefined();
+    const cap: Capacidade = { id: pausar!.id, descricao: pausar!.descricao, nivel: pausar!.nivel, efeito: pausar!.efeito };
+    expect(avaliar(cap, {}).exigeAprovacao).toBe(false);
+    // O motivo de não ser R1: com um sinal, R1 viraria R2 e o freio iria para a fila.
+    for (const sinal of ['fora_da_janela', 'volume_atipico'] as const) {
+      expect(avaliar(cap, { sinais: [sinal] })).toMatchObject({ nivel: 'R1', exigeAprovacao: false });
+      expect(avaliar({ ...cap, nivel: 'R1', efeito: { ...cap.efeito, produzArtefato: true } }, { sinais: [sinal] })).toMatchObject({ nivel: 'R2', exigeAprovacao: true });
+    }
+    const a = pausar!.argsSchema as { required: string[]; properties: Record<string, unknown> };
+    expect([...a.required].sort()).toEqual(['motivo', 'regraId']);
+    expect(Object.keys(a.properties)).not.toContain('loteItemId');
   });
 });
