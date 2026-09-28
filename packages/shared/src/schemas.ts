@@ -3033,6 +3033,69 @@ export const PautaEstrategiaSalvarSchema = z.object({
 });
 export type PautaEstrategiaSalvarInput = z.infer<typeof PautaEstrategiaSalvarSchema>;
 
+// ---------- Pauta: o relatório do mês (MK6) ----------
+// O fechamento de um mês em markdown: o que foi ao ar, o que foi decidido, como
+// rendeu, o que vem e a estratégia que valia. Nota da memória por mês, como a
+// estratégia (MK4) — mesmo motivo e mesmo caminho da ADR-011.
+//
+// OS NÚMEROS SÃO DO SISTEMA, A NARRATIVA É DA IA. O que foi ao ar sai da
+// consulta, não do modelo: relatório é prestação de contas, e número escrito
+// por modelo é número que ninguém pode conferir.
+
+export const PAUTA_PREFIXO_DO_RELATORIO = 'pauta.relatorio.';
+
+export function chaveDoRelatorio(mes: string): string {
+  return `${PAUTA_PREFIXO_DO_RELATORIO}${mes}`;
+}
+
+export function mesDaChaveDoRelatorio(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DO_RELATORIO)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DO_RELATORIO.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+export const PAUTA_SECOES_DO_RELATORIO = [
+  'O que foi ao ar',
+  'O que decidimos',
+  'Como rendeu',
+  'Próximos passos',
+  'A estratégia que valia',
+] as const;
+
+export const PAUTA_TETO_DO_RELATORIO = 12_000;
+
+export interface PautaRelatorioDaIa {
+  /** A leitura do mês em 2 a 4 frases. */
+  leitura: string;
+  decisoes: string[];
+  proximosPassos: string[];
+}
+
+export interface PautaRelatorioPainel {
+  mes: string;
+  documento: string;
+  versao: number | null;
+  atualizadoEm: string | null;
+  origem: string | null;
+  meses: string[];
+  /** Quantas peças o mês publicou — o número que o relatório presta contas. */
+  publicadas: number;
+  /** O que faltou para o relatório ficar completo (performance, estratégia). */
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+/** `PUT /pauta/relatorio/:mes`. */
+export const PautaRelatorioSalvarSchema = z.object({
+  documento: z
+    .string()
+    .trim()
+    .min(1, 'O relatório não pode ficar vazio.')
+    .max(PAUTA_TETO_DO_RELATORIO, `O relatório tem no máximo ${PAUTA_TETO_DO_RELATORIO} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaRelatorioSalvarInput = z.infer<typeof PautaRelatorioSalvarSchema>;
+
 // ---------- Pauta: a newsletter do episódio (MC13) ----------
 // A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
 // novo: uma seção por matéria com o link da matéria, e o fechamento chamando

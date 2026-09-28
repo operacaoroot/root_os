@@ -100,8 +100,23 @@ export const TIPO_PAUTA_PUBLICAR = 'pauta.publicar-agendadas';
  */
 export const TIPO_PAUTA_COMENTARIOS = 'pauta.coletar-comentarios';
 
+/**
+ * O relatório do mês (MK6): no primeiro dia do mês, fecha o mês que passou —
+ * o que foi ao ar sai da consulta, a narrativa sai da IA. Ver
+ * `executores/pauta-relatorio.executor.ts`. **Nasce desligada**, como toda
+ * automação da casa: ela gasta IA sozinha, e quem liga é gente.
+ */
+export const TIPO_PAUTA_RELATORIO = 'pauta.relatorio';
+
 /** Os tipos que `PAUTA_CRON=off` tira do tique — os da pauta, e só eles. */
-export const TIPOS_DA_PAUTA: readonly string[] = [TIPO_PAUTA_RODADA, TIPO_PAUTA_COLETA, TIPO_PAUTA_ENCADEAR, TIPO_PAUTA_PUBLICAR, TIPO_PAUTA_COMENTARIOS];
+export const TIPOS_DA_PAUTA: readonly string[] = [
+  TIPO_PAUTA_RODADA,
+  TIPO_PAUTA_COLETA,
+  TIPO_PAUTA_ENCADEAR,
+  TIPO_PAUTA_PUBLICAR,
+  TIPO_PAUTA_COMENTARIOS,
+  TIPO_PAUTA_RELATORIO,
+];
 
 /**
  * A variável que cala o tique das rotinas da pauta neste processo, ou `null` —
@@ -141,6 +156,7 @@ export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   [TIPO_PAUTA_ENCADEAR]: 'pauta',
   [TIPO_PAUTA_PUBLICAR]: 'pauta',
   [TIPO_PAUTA_COMENTARIOS]: 'pauta',
+  [TIPO_PAUTA_RELATORIO]: 'pauta',
 };
 
 /** Como a execução foi disparada. */

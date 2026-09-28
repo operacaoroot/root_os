@@ -31,6 +31,8 @@ import { ConcorrentesController } from './concorrentes.controller';
 import { ConcorrentesService } from './concorrentes.service';
 import { EstrategiaController } from './estrategia.controller';
 import { EstrategiaService } from './estrategia.service';
+import { RelatorioController } from './relatorio.controller';
+import { RelatorioService } from './relatorio.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -88,6 +90,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     MarcaController,
     ConcorrentesController,
     EstrategiaController,
+    RelatorioController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -132,6 +135,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     ConcorrentesService,
     // MK4: o documento do mês, proposto pela IA e editado por gente.
     EstrategiaService,
+    // MK6: o fechamento do mês — número do sistema, narrativa da IA.
+    RelatorioService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.
@@ -161,6 +166,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
   // PublicacaoInstagramService e ComentariosService, para os executores das
   // rotinas (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService],
+  // MK6: `RelatorioService` sai daqui porque o executor da rotina mensal vive
+  // no RoutinesModule, como o da coleta já fazia com o RodadaService.
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
 })
 export class PautaModule {}

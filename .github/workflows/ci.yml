@@ -1914,8 +1914,19 @@ jobs:
       # Nenhum precisa de banco. Medido sem banco: 2432 passados e 718 pulados,
       # em 77 arquivos. O piso de ARQUIVOS vai a 69, colado no real; o de CASOS
       # sobe 16 (~15% de folga sobre os 19 que rodam sem banco), para 2262.
-      PISO_CASOS_API: '2262'
-      PISO_ARQUIVOS_API: '69'
+      #
+      # MK6, O RELATÓRIO DO MÊS (28/09/2026): +22 casos num arquivo novo,
+      # `pauta-relatorio` — a chave por mês, o documento com as cinco seções, a
+      # prova de que a contagem vem do banco e não do modelo (o caso do modelo
+      # que inventa "47 peças" e a seção segue dizendo 2), a seção de desempenho
+      # que declara a ausência, e a rotina mensal: fecha o mês anterior, pula o
+      # mês que já tem relatório, pula empresa sem o módulo e assina como
+      # sistema. Nenhum precisa de banco. Medido sem banco: 2452 passados e 718
+      # pulados, em 78 arquivos. O piso de ARQUIVOS vai a 70, colado no real; o
+      # de CASOS sobe 18 (~15% de folga sobre os 22 que rodam sem banco), para
+      # 2280.
+      PISO_CASOS_API: '2280'
+      PISO_ARQUIVOS_API: '70'
 
     steps:
       - uses: actions/checkout@v4
