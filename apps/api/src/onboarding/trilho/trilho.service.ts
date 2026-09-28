@@ -151,7 +151,6 @@ export interface PatchDoTrilho {
   imersaoEm?: string | null;
   grupoJid?: string | null;
   cardId?: string | null;
-  empresaId?: string | null;
   proximoPasso?: string | null;
   proximoPassoDono?: string | null;
   proximoPassoEm?: string | null;
@@ -564,7 +563,6 @@ export class TrilhoService {
       ...(patch.kickoffEm !== undefined ? { kickoffEm: dataOuNull(patch.kickoffEm) } : {}),
       ...(patch.imersaoEm !== undefined ? { imersaoEm: dataOuNull(patch.imersaoEm) } : {}),
       ...(patch.grupoJid !== undefined ? { grupoJid: texto(patch.grupoJid, 80) } : {}),
-      ...(patch.empresaId !== undefined ? { empresaId: texto(patch.empresaId, 80) } : {}),
       ...(patch.cardId !== undefined
         ? { card: patch.cardId ? { connect: { id: patch.cardId } } : { disconnect: true } }
         : {}),
