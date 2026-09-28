@@ -27,9 +27,15 @@ rede() { docker inspect mktos_api -f '{{range $k, $v := .NetworkSettings.Network
 dburl() { docker exec mktos_api printenv DATABASE_URL; }
 psql_prod() { docker exec mktos_db psql -U mkt -d marketing_os -At -c "$1"; }
 papeis() { psql_prod 'select r.key, p.key from "_RolePermissions" rp join "Role" r on r.id = rp."B" join "Permission" p on p.id = rp."A" order by 1, 2'; }
+vars_de() { grep -oE '\$\{[A-Z0-9_]+' | tr -d '${' | sort -u; }
+# Só as variáveis que ESTA atualização trouxe e o compose do painel ainda não declara.
+# As que já faltavam antes (portas, por exemplo) não são desta frente.
 faltam_no_painel() {
-  diff <(grep -oE '\$\{[A-Z0-9_]+' "$FONTE/docker-compose.yml" | tr -d '${' | sort -u) \
-       <(grep -oE '\$\{[A-Z0-9_]+' "$PAINEL/docker-compose.yml" | tr -d '${' | sort -u) | sed -n 's/^< //p'
+  local antes
+  antes=$(cat "$DIR/sha-antes" 2>/dev/null || true)
+  [ -n "$antes" ] || { echo "(rode 'codigo' antes: sem o commit anterior não sei o que é novo)" >&2; return 0; }
+  comm -23 <(vars_de < "$FONTE/docker-compose.yml") <(git -C "$FONTE" show "$antes:docker-compose.yml" | vars_de) \
+    | comm -23 - <(vars_de < "$PAINEL/docker-compose.yml")
 }
 
 mkdir -p "$DIR"
@@ -45,7 +51,7 @@ diagnostico)
   echo "== últimas migrations"; psql_prod 'select migration_name from "_prisma_migrations" order by finished_at desc nulls first limit 6'
   echo "== política na boot";   docker logs mktos_api 2>&1 | grep -E 'capacidades' | tail -1 || true
   echo "== variáveis que o repo usa e o painel não (só nomes)"; faltam_no_painel || true
-  echo "== papéis x permissões"; papeis | cut -f1 | sort | uniq -c
+  echo "== permissões por papel"; papeis | cut -d'|' -f1 | sort | uniq -c
   echo "== backups";            ls -t "$BACKUPS" 2>/dev/null | head -3 || echo "nenhum em $BACKUPS"
   ;;
 
@@ -63,13 +69,14 @@ codigo)
   [ -f "$BUNDLE" ] || falha "o bundle não chegou. No Mac: bash deploy/mc/mac.sh enviar"
   git -C "$FONTE" bundle verify "$BUNDLE" >/dev/null || falha "bundle inválido"
   echo "Hoje: $(git -C "$FONTE" log --oneline -1)"
+  git -C "$FONTE" rev-parse HEAD > "$DIR/sha-antes"
   confirma "Atualizar o código em $FONTE a partir do bundle (só avança, nunca reescreve)."
   git -C "$FONTE" pull --ff-only "$BUNDLE" main
   echo "Agora: $(git -C "$FONTE" log --oneline -1)"
   ;;
 
 painel)
-  echo "Variáveis que o código novo usa e o compose do painel ainda não declara:"
+  echo "Variáveis que esta atualização trouxe e o compose do painel ainda não declara:"
   f=$(faltam_no_painel || true)
   if [ -z "$f" ]; then echo "  nenhuma. Siga para: build"; exit 0; fi
   echo "$f" | sed 's/^/  /'
@@ -146,7 +153,11 @@ permissoes)
   ;;
 
 subir)
-  f=$(faltam_no_painel || true); [ -z "$f" ] || falha "o painel ainda não declara: $(echo $f). Rode 'painel'."
+  f=$(faltam_no_painel || true)
+  if [ -n "$f" ]; then
+    echo "Aviso: o painel ainda não declara $(echo $f | tr '\n' ' ')."
+    echo "O código sobe com o padrão de cada uma (recurso desligado) até elas entrarem no easyPanel."
+  fi
   confirma "Trocar api e web pela imagem nova."
   (cd "$PAINEL" && docker compose -p "$PROJETO" up -d --no-build api web)
   echo "Subiu. Em 1 minuto rode: bash /root/mc/vps.sh conferir"
