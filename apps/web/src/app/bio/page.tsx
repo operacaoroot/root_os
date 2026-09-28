@@ -161,6 +161,7 @@ export default function BioPage() {
         <AbaConexoes
           token={token}
           editavel={editavel}
+          podePublicar={can('pauta.publicar')}
           admin={admin}
           aviso={params.get('conexao')}
           onErro={setErro}

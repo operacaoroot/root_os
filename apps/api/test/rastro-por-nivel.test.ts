@@ -335,6 +335,23 @@ describe('conteúdo sensível nunca vai cru para o registro', () => {
     expect(tudoDaLinha(linhas[0])).not.toContain('tok_abcdef');
     expect(linhas[0].payload.motivo).toBe('token queimado');
   });
+
+  it('sigiloso sem resumo (valor de pouca entropia, como um @) não deixa hash nem tamanho no rastro', async () => {
+    await servico.registrar({
+      orgId: 'org-a',
+      tipo: 'tool.resultado',
+      nivel: 'R0',
+      actorType: 'system',
+      capabilityId: 'instagram.comentario.ler',
+      sensibilidade: 'interna',
+      conteudo: { resultado: { casados: [{ usuario: sigiloso('fulano.silva', '@ de quem comentou', { semResumo: true }) }] } },
+    });
+    const linhaInteira = tudoDaLinha(linhas[0]);
+    expect(linhaInteira).not.toContain('fulano.silva');
+    expect(linhaInteira).not.toContain(sha256('fulano.silva'));
+    const r = linhas[0].payload.resultado as unknown as { casados: Array<{ usuario: Record<string, unknown> }> };
+    expect(r.casados[0].usuario).toEqual({ sigiloso: true, rotulo: '@ de quem comentou' });
+  });
 });
 
 describe('a cadeia cobre o que está aninhado', () => {

@@ -63,7 +63,8 @@ export class IntegrationsController {
    * AS ROTAS ANTIGAS CONTINUAM DE PÉ, e isso é decisão, não descuido: elas estão
    * em módulos de outras fatias (`google/`, `meta/`, `obsidian/`) e o callback
    * de OAuth do Google e da Meta é endereço REGISTRADO NA CONSOLA DO
-   * FORNECEDOR — mudar exige App Review novo, cujo prazo não depende de nós.
+   * FORNECEDOR — mudar exige recadastrar lá antes do deploy (a pesquisa da
+   * onda D não achou fonte de que exija App Review novo).
    * O contrato é o caminho ÚNICO para quem chega de fora; o caminho velho é a
    * mesma implementação por outra porta.
    *

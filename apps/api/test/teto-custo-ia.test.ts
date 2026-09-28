@@ -18,6 +18,7 @@ import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import { PolicyService } from '../src/policy/policy.service';
 import { ProcedenciaExterna, SinaisService } from '../src/policy/sinais.service';
 import { ApprovalsService } from '../src/approvals/approvals.service';
+import { LotesService } from '../src/approvals/lotes.service';
 import { AuditService } from '../src/audit/audit.service';
 import { ToolGateway, type ExecCtx } from '../src/gateway/tool-gateway.service';
 import {
@@ -1014,6 +1015,7 @@ describe.skipIf(!URL)('a porta, depois do teto estourado', () => {
       teto,
       undefined,
       new EfeitosRegistry(),
+      new LotesService(p, policy, new AuditService(p)),
     );
   });
 
@@ -1061,6 +1063,11 @@ describe.skipIf(!URL)('a porta, depois do teto estourado', () => {
       teto,
     );
     expect(() => semEfeitos.onModuleInit()).toThrow(/EfeitosRegistry/);
+
+    // O TERCEIRO (MD7): sem o serviço de lotes, todo item de lote seria
+    // recusado e a semana assinada nunca publicaria — o arranque recusa.
+    const semLotes = new ToolGateway(p, policy, new SinaisService(p, policy), approvals, new EventLogService(p), teto, undefined, new EfeitosRegistry());
+    expect(() => semLotes.onModuleInit()).toThrow(/LotesService/);
   });
 
   it('recusa a próxima ação do agente com motivo legível, e o efeito não roda', async () => {

@@ -11,6 +11,7 @@ import type {
   LlmTurn,
   LlmUsage,
 } from './llm.provider';
+import { saidaDaResposta } from './llm.provider';
 import { custoUsd } from './preco';
 import { env, envNumero, envOpcional } from './env';
 
@@ -70,11 +71,11 @@ export class AnthropicProvider implements LlmProvider {
    * do teto de custo e o pedido de verdade nunca possam divergir.
    */
   tetoDeSaida(chamada: ChamadaParaTeto): number {
-    if (chamada.tipo === 'completa') return this.maxTokens;
+    if (chamada.tipo === 'completa') return saidaDaResposta(this.maxTokens, chamada.maxTokens);
     return chamada.maxTokens ?? (chamada.streaming ? TETO_SAIDA_STREAM : this.maxTokens);
   }
 
-  async complete({ system, user }: LlmMessage): Promise<string> {
+  async complete({ system, user, maxTokens }: LlmMessage): Promise<string> {
     if (!this.configured) {
       throw new Error(
         'ANTHROPIC_API_KEY ausente. Defina no .env (ver .env.example) e reinicie a API. ' +
@@ -84,7 +85,7 @@ export class AnthropicProvider implements LlmProvider {
 
     const res = await this.client.beta.messages.create({
       model: this.model,
-      max_tokens: this.maxTokens,
+      max_tokens: this.tetoDeSaida({ tipo: 'completa', maxTokens }),
       // Pensamento adaptativo: o modelo decide quanto pensar por tarefa.
       thinking: { type: 'adaptive' },
       output_config: { effort: this.effort },

@@ -214,7 +214,7 @@ export class BioController {
   @Delete('connections/:id')
   @RequirePermissions('bio.editar')
   disconnect(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.svc.desconectar(user.orgId, id, user.sub);
+    return this.svc.desconectar(user.orgId, id, user.sub, user.permissions ?? []);
   }
 
   @Get('credentials')

@@ -211,6 +211,99 @@ describe('fatia 3.3: o catálogo declara cada escrita migrada', () => {
   });
 });
 
+describe('MD6: a publicação no Instagram é escrita pela porta desde o primeiro dia', () => {
+  it('instagram.post.publicar é R3, pública, com conector e argsSchema fechado', () => {
+    const cap = CATALOGO.find((c) => c.id === 'instagram.post.publicar');
+    expect(cap, 'instagram.post.publicar sumiu de politica-marketing-os.json').toBeDefined();
+    expect(cap!.nivel).toBe('R3');
+    expect(cap!.efeito?.escreveForaDoOS).toBe(true);
+    expect(cap!.efeito?.sensibilidade).toBe('publica');
+    expect(cap!.rota).toBe('POST /pauta/pecas/:id/publicar-instagram');
+    expect(CONECTOR_DA_CAPACIDADE['instagram.post.publicar']).toBe('instagram');
+    expect(cap!.argsSchema!.additionalProperties).toBe(false);
+  });
+
+  it('a rota nova entrega à porta e não conhece a Graph; a rota antiga ficou como estava', () => {
+    const rota = ler('src/pauta/publicacao-instagram.controller.ts');
+    expect(rota).not.toMatch(/plataformas\/instagram|GRAPH_DE_PUBLICACAO/);
+    const servico = ler('src/pauta/publicacao-instagram.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    // A rota antiga (WhatsApp/ClickUp) e a dívida que ela mede não mudaram de lugar.
+    expect(ler('src/pauta/rodada.controller.ts')).toMatch(/'pecas\/:id\/publicar'/);
+  });
+});
+
+describe('MD9: a leitura dos comentários passa pela porta, e a fila não conhece a Graph', () => {
+  it('instagram.comentario.ler é R0, sem ferramenta, com conector e argsSchema fechado', () => {
+    const cap = CATALOGO.find((c) => c.id === 'instagram.comentario.ler');
+    expect(cap, 'instagram.comentario.ler sumiu de politica-marketing-os.json').toBeDefined();
+    expect(cap!.nivel).toBe('R0');
+    expect(cap!.efeito?.escreveForaDoOS).toBe(false);
+    expect((cap as { ferramenta?: string }).ferramenta).toBeUndefined();
+    expect(CONECTOR_DA_CAPACIDADE['instagram.comentario.ler']).toBe('instagram');
+    expect(cap!.argsSchema!.additionalProperties).toBe(false);
+  });
+
+  it('a rotina lê pela porta; as rotas da fila não chamam a Graph nem a porta', () => {
+    const servico = ler('src/pauta/comentarios.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    const rota = ler('src/pauta/comentarios.controller.ts');
+    expect(rota).not.toMatch(/plataformas\/instagram|GRAPH_DE_COMENTARIOS|PortaDoOperador|this\.porta/);
+  });
+});
+
+describe('MD10: o YouTube é escrita pela porta desde o primeiro dia, só pelo lote', () => {
+  it('youtube.video.enviar e youtube.video.publicar são R3, públicas, sob o lote, com conector e argsSchema fechado', () => {
+    for (const id of ['youtube.video.enviar', 'youtube.video.publicar']) {
+      const cap = CATALOGO.find((c) => c.id === id);
+      expect(cap, `${id} sumiu de politica-marketing-os.json`).toBeDefined();
+      expect(cap!.nivel).toBe('R3');
+      expect(cap!.efeito?.escreveForaDoOS).toBe(true);
+      expect(cap!.efeito?.sensibilidade).toBe('publica');
+      expect((cap as { ferramenta?: string }).ferramenta).toBeUndefined();
+      expect((cap as { aprovacao?: unknown }).aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+      expect(CONECTOR_DA_CAPACIDADE[id]).toBe('youtube');
+      expect(cap!.argsSchema!.additionalProperties).toBe(false);
+    }
+  });
+
+  it('as rotas entregam à porta e não conhecem o conector; o retorno do OAuth não toca a porta', () => {
+    const rota = ler('src/pauta/envio-ao-youtube.controller.ts');
+    expect(rota).not.toMatch(/youtube\/youtube\.service|CLIENTE_DO_YOUTUBE|PortaDoOperador|this\.porta/);
+    const servico = ler('src/pauta/envio-ao-youtube.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    const callback = ler('src/youtube/youtube-conexao.controller.ts');
+    expect(callback).not.toMatch(/PortaDoOperador|this\.porta|\.\/youtube\.service/);
+  });
+});
+
+describe('MD11: a DM automática é escrita pela porta, só pelo lote, e pausar também passa por ela', () => {
+  it('instagram.resposta_privada.enviar é R3, pública, sob o lote, com conector; pausar é R0 interno, sem conector', () => {
+    const enviar = CATALOGO.find((c) => c.id === 'instagram.resposta_privada.enviar');
+    expect(enviar, 'instagram.resposta_privada.enviar sumiu de politica-marketing-os.json').toBeDefined();
+    expect(enviar!.nivel).toBe('R3');
+    expect(enviar!.efeito?.escreveForaDoOS).toBe(true);
+    expect((enviar as { ferramenta?: string }).ferramenta).toBeUndefined();
+    expect((enviar as { aprovacao?: unknown }).aprovacao).toEqual({ modo: 'sob_lote', lote: 'pauta.semana.aprovar' });
+    expect(CONECTOR_DA_CAPACIDADE['instagram.resposta_privada.enviar']).toBe('instagram');
+    expect(enviar!.argsSchema!.additionalProperties).toBe(false);
+    const pausar = CATALOGO.find((c) => c.id === 'instagram.regra_de_resposta.pausar');
+    expect(pausar!.nivel).toBe('R0');
+    expect(pausar!.efeito?.escreveForaDoOS).toBe(false);
+    expect(pausar!.rota).toBe('POST /pauta/dm/regras/:itemId/pausar');
+    expect(CONECTOR_DA_CAPACIDADE['instagram.regra_de_resposta.pausar']).toBeNull();
+  });
+
+  it('a rota de pausar e a passagem entregam à porta; o serviço marca a procedência externa em todo envio', () => {
+    const rota = ler('src/pauta/comentarios.controller.ts');
+    expect(rota).not.toMatch(/PortaDoOperador|this\.porta|graph-de-mensagens|plataformas\/instagram/);
+    const servico = ler('src/pauta/dm-automatica.service.ts');
+    expect(servico).toMatch(/this\.porta\.executar\(/);
+    expect(servico).toMatch(/procedenciaExterna: procedencia/);
+    expect(servico).toMatch(/new ProcedenciaExterna\(\)\.marcar\(/);
+  });
+});
+
 describe('fatia 3.3: o caminho HTTP não alcança mais o conector', () => {
   const controlador = ler('src/google/google.controller.ts');
 
@@ -398,6 +491,14 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
       // de produto: sem elas aqui a varredura não veria os três efeitos novos.
       'src/finance/finance.service.ts',
       'src/users/users.service.ts',
+      // MD6: o publicador do Instagram inscreve `instagram.post.publicar`.
+      'src/pauta/publicacao-instagram.service.ts',
+      // MD9: o coletor da fila da DM inscreve `instagram.comentario.ler`.
+      'src/pauta/comentarios.service.ts',
+      // MD10: o envio ao YouTube inscreve `youtube.video.enviar` e `youtube.video.publicar`.
+      'src/pauta/envio-ao-youtube.service.ts',
+      // MD11: a DM automática inscreve `instagram.resposta_privada.enviar` e `instagram.regra_de_resposta.pausar`.
+      'src/pauta/dm-automatica.service.ts',
     ];
 
     /** As chaves de um bloco `this.efeitos.registrar({ 'x.y': …, 'a.b': … })`. */
@@ -421,8 +522,8 @@ describe('fatia 3.3: os registros novos têm catraca de dono', () => {
     const inscritas = QUEM_INSCREVE.flatMap(chavesDe);
     expect(
       inscritas.length,
-      'a varredura achou menos efeitos do que os 24 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
-    ).toBeGreaterThanOrEqual(24);
+      'a varredura achou menos efeitos do que os 28 que existem: ou alguém apagou inscrição, ou o padrão do arquivo mudou',
+    ).toBeGreaterThanOrEqual(28);
 
     const foraDoCatalogo = inscritas.filter((id) => !uniao.has(id));
     expect(

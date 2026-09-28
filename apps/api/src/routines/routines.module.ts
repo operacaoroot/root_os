@@ -3,6 +3,10 @@ import { BillingModule } from '../billing/billing.module';
 import { PautaModule } from '../pauta/pauta.module';
 import { ExecutoresDeRotinaRegistry } from './executores.registry';
 import { ExecutorDePauta } from './executores/pauta.executor';
+import { ExecutorDeColetaDaPauta } from './executores/pauta-coleta.executor';
+import { ExecutorDeEncadeamentoDaPauta } from './executores/pauta-encadear.executor';
+import { ExecutorDePublicacaoDaPauta } from './executores/pauta-publicar.executor';
+import { ExecutorDeComentariosDaPauta } from './executores/pauta-comentarios.executor';
 import { RotinasController } from './rotinas.controller';
 import { RotinasScheduler } from './rotinas.scheduler';
 import { RotinasService } from './rotinas.service';
@@ -40,7 +44,16 @@ import { RotinasService } from './rotinas.service';
 @Module({
   imports: [PautaModule, BillingModule],
   controllers: [RotinasController],
-  providers: [ExecutoresDeRotinaRegistry, ExecutorDePauta, RotinasService, RotinasScheduler],
+  providers: [
+    ExecutoresDeRotinaRegistry,
+    ExecutorDePauta,
+    ExecutorDeColetaDaPauta,
+    ExecutorDeEncadeamentoDaPauta,
+    ExecutorDePublicacaoDaPauta,
+    ExecutorDeComentariosDaPauta,
+    RotinasService,
+    RotinasScheduler,
+  ],
   exports: [RotinasService, ExecutoresDeRotinaRegistry],
 })
 export class RoutinesModule {}

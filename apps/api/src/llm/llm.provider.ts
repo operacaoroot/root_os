@@ -33,6 +33,32 @@ export interface LlmMessage {
    * Ver `teto-diario.service.ts`.
    */
   orgId?: string;
+  /**
+   * O teto de saída que ESTA chamada pede, para as gerações longas (roteiro,
+   * pacote, newsletter, voz, peças). Só sobe o padrão do provider, nunca o
+   * baixa, e para em `TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA` (`saidaDaResposta`).
+   * Ausente, a chamada sai exatamente como antes. A reserva do teto de custo
+   * usa o mesmo número (`tetoDeSaida({ tipo: 'completa', maxTokens })`).
+   */
+  maxTokens?: number;
+}
+
+/**
+ * O maior `max_tokens` que um `complete()` pode pedir. Não é folga arbitrária:
+ * o SDK da Anthropic recusa a chamada SEM streaming cuja saída prevista passe
+ * de 10 minutos (por volta de 21 mil tokens), e `complete()` não usa streaming.
+ */
+export const TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA = 16_000;
+
+/**
+ * O `max_tokens` de um `complete()`: o padrão do provider, ou o que a chamada
+ * pediu quando é maior — limitado ao teto máximo. Pedido inválido (zero,
+ * negativo, não numérico) vale como ausente. Padrão configurado acima do teto
+ * máximo fica como está: a chamada não pode baixar o que o ambiente decidiu.
+ */
+export function saidaDaResposta(padrao: number, pedido: number | undefined): number {
+  if (typeof pedido !== 'number' || !Number.isFinite(pedido) || pedido < 1) return padrao;
+  return Math.max(padrao, Math.min(Math.floor(pedido), TETO_MAXIMO_DE_SAIDA_DA_RESPOSTA));
 }
 
 /** Ferramenta como o modelo a enxerga. O nome NÃO aceita ponto — só [A-Za-z0-9_-]. */
@@ -134,7 +160,7 @@ export interface LlmStepInput {
  * que envelhece em silêncio quando o default do provider muda.
  */
 export type ChamadaParaTeto =
-  | { tipo: 'completa' }
+  | { tipo: 'completa'; maxTokens?: number }
   | { tipo: 'passo'; maxTokens?: number; streaming: boolean };
 
 export interface LlmStepOutput {

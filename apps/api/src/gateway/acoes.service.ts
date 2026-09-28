@@ -412,6 +412,7 @@ export class AcoesService {
       actorId,
       agentSlug: chamada.agentSlug,
       correlationId,
+      approvalId,
     };
 
     /*
@@ -655,8 +656,14 @@ export class AcoesService {
     inicio: number,
     conteudo: { args: Record<string, unknown>; resultado: unknown },
   ): ConteudoDoEvento {
+    // `estadoAnterior`/`estadoNovo` também são redigíveis: ficam na mesma guarda.
     const redigivel: ConteudoDoEvento = cap
-      ? { argumentos: conteudo.args, resultado: conteudo.resultado, entrega: conteudo.resultado }
+      ? {
+          argumentos: conteudo.args,
+          resultado: conteudo.resultado,
+          entrega: conteudo.resultado,
+          ...antesEDepois(conteudo.resultado),
+        }
       : {};
     return {
       aprovador: ap.aprovadoPorId,
@@ -676,4 +683,16 @@ export class AcoesService {
       ...redigivel,
     };
   }
+}
+
+/**
+ * O antes e o depois (R4), quando o EFEITO os devolve — é ele quem enxerga o
+ * registro dos dois lados (ver "O VOCABULÁRIO DO RASTRO" na porta). A ativação
+ * do lote (MD7) é o primeiro efeito que devolve os dois; os outros seguem
+ * declarando a lacuna em `rastro.faltando`, que é a verdade sobre eles.
+ */
+function antesEDepois(resultado: unknown): ConteudoDoEvento {
+  const r = resultado && typeof resultado === 'object' ? (resultado as Record<string, unknown>) : null;
+  if (!r || !('estadoAnterior' in r) || !('estadoNovo' in r)) return {};
+  return { estadoAnterior: r.estadoAnterior, estadoNovo: r.estadoNovo };
 }

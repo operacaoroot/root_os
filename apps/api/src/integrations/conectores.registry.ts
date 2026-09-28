@@ -40,7 +40,7 @@ import {
  * não sobe. A prova de que "conector novo entra sem tocar no núcleo" é ele se
  * registrar em tempo de teste e aparecer no catálogo — não estar nesta lista.
  *
- * Cinco chaves, e elas são UNIDADES DE CREDENCIAL, não superfícies: `google`
+ * Seis chaves desde a MD10, e elas são UNIDADES DE CREDENCIAL, não superfícies: `google`
  * cobre gmail/gcal/gdocs/drive, `meta` cobre instagram.
  */
 const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
@@ -49,6 +49,8 @@ const DEVEM_IMPLEMENTAR: ReadonlyArray<{ chave: string; servico: string }> = [
   { chave: 'obsidian', servico: 'ObsidianService' },
   { chave: 'clickup', servico: 'ClickupService' },
   { chave: 'whatsapp', servico: 'EvolutionService' },
+  // MD10: o canal do YouTube, credencial por empresa num projeto próprio do Google Cloud.
+  { chave: 'youtube', servico: 'YoutubeService' },
 ];
 
 /** A lista cobrada, para a suíte poder afirmar sobre ela. */

@@ -140,6 +140,14 @@ model Org {
   pautaRotinas     PautaRotina[]
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
+  pautaEpisodios   PautaEpisodio[]
+  pautaPublicacoes PautaPublicacao[]
+  /// MD9: quem comentou a palavra-chave num post da semana (a fila da DM à mão).
+  pautaComentarios ComentarioComPalavra[]
+  enviosAoYoutube  EnvioAoYoutube[]
+  enviosDeResposta EnvioDeResposta[]
+  lotesDeAprovacao AprovacaoDeLote[]
+  itensDeLote      ItemDoLote[]
 
   // Os dez filhos que passaram a carregar orgId (ver bloco no topo do arquivo).
   leadEvents            LeadEvent[]
@@ -1188,6 +1196,15 @@ enum BioPlataforma {
   tiktok
 }
 
+// Para que a conexão foi pedida (MD5). `bio` é a do criador que liga a conta à
+// página de links e ao desafio: pede só a leitura. `publicacao` é a conta da
+// própria empresa que o OS vai usar para publicar, com os escopos de publicar e
+// de comentários. Espelho em `BIO_FINALIDADES` (packages/shared).
+enum BioFinalidade {
+  bio
+  publicacao
+}
+
 // Como os posts chegam. "descoberta" (business_discovery) só existe no Instagram:
 // o TikTok não tem equivalente — lá é conectado ou manual.
 enum BioModoColeta {
@@ -1221,6 +1238,7 @@ model BioPage {
   challenges BioChallenge[]
   visits     BioVisit[]
   events     BioEvent[]
+  episodios  PautaEpisodio[]
 
   @@index([orgId])
 }
@@ -1239,8 +1257,14 @@ model BioLink {
   icone    String?
   destaque Boolean     @default(false)
   ativo    Boolean     @default(true)
+  /// Quem montou o link fora do painel, e para quê: `pauta:item:<hash>` e
+  /// `pauta:casa:<hash>` na página de links do episódio (MC12). Nulo = botão do
+  /// painel ou link de campanha. Único por página: é o que faz montar a página
+  /// de novo atualizar o link em vez de duplicá-lo.
+  chave    String?
   criadoEm DateTime    @default(now())
 
+  @@unique([pageId, chave])
   @@index([pageId, ordem])
   @@index([orgId])
 }
@@ -1345,6 +1369,11 @@ model BioConexao {
   refreshCifrado String?
   expiraEm       DateTime?
   escopos        String?
+  /// `publicacao` só quando os escopos concedidos incluem publicar (o callback
+  /// confere). No máximo UMA por empresa e plataforma: índice único parcial
+  /// `BioConexao_publicacao_unica` (migration 20260924220041_bio_finalidade),
+  /// que o Prisma não sabe declarar.
+  finalidade     BioFinalidade  @default(bio)
   status         BioContaStatus @default(ok)
   ultimoErro     String?
   conectadaEm    DateTime       @default(now())
@@ -1379,6 +1408,7 @@ model BioOauthState {
   orgId      String
   org        Org           @relation(fields: [orgId], references: [id])
   plataforma BioPlataforma
+  finalidade BioFinalidade @default(bio)
   verifier   String?
   expiraEm   DateTime
   criadoEm   DateTime      @default(now())
@@ -1463,6 +1493,7 @@ enum PautaFonteTipo {
   perfil
   busca
   manual
+  gmail // MC2: newsletters com uma etiqueta; a etiqueta mora em `handle`
 }
 
 enum PautaCapturaTipo {
@@ -1511,9 +1542,9 @@ model PautaFonte {
   org           Org            @relation(fields: [orgId], references: [id])
   tipo          PautaFonteTipo
   nome          String
-  url           String? // feed RSS ou URL da busca
-  handle        String? // @perfil, quando tipo = perfil
-  plataforma    String? // instagram | tiktok | x | web
+  url           String? // feed RSS
+  handle        String? // @perfil (tipo perfil), a etiqueta do Gmail (tipo gmail) ou a consulta (tipo busca)
+  plataforma    String? // instagram | tiktok | x | youtube | web | gmail | google | whatsapp
   ativo         Boolean        @default(true)
   intervaloMin  Int            @default(720)
   // Teto de gasto do Apify: sem isso um perfil vigiado queima crédito em silêncio.
@@ -1612,6 +1643,8 @@ model PautaReferencia {
 
 enum PautaRodadaStatus {
   coletando
+  // MC6: a lista de candidatos está pronta e espera o operador marcar o que segue.
+  aguardando_curadoria
   curada
   aprovada
   publicada
@@ -1670,7 +1703,9 @@ model PautaRodada {
 
   janelaIni    DateTime
   janelaFim    DateTime
-  // O que a IA selecionou, com fonte e URL de cada item (procedência).
+  // O que a IA selecionou, com fonte e URL de cada item (procedência). Em
+  // `aguardando_curadoria` (MC6) são TODOS os candidatos, com a marcação do
+  // operador; confirmar a curadoria deixa só os marcados.
   itens        Json     @default("[]")
   // Quais fichas campeãs entraram no prompt (auditoria do repertório usado).
   fichasUsadas String[]
@@ -1683,9 +1718,130 @@ model PautaRodada {
 
   criadaEm DateTime @default(now())
 
-  pecas PautaPeca[]
+  pecas    PautaPeca[]
+  episodio PautaEpisodio?
 
   @@index([orgId, status, criadaEm])
+}
+
+// MC7 — o episódio da semana. A coleta e a curadoria são estados da RODADA;
+// daqui em diante quem anda é o episódio, do roteiro ao concluído.
+enum PautaEpisodioStatus {
+  roteiro
+  gravacao
+  edicao
+  pacote
+  derivacao
+  agendado
+  concluido
+}
+
+/// O episódio que nasce de uma rodada curada (MC7). Filho 1:1 da rodada, com
+/// `orgId` redundante conferido pelo banco — ver a migration
+/// `20260924060000_pauta_episodio`.
+model PautaEpisodio {
+  id    String @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaRodada.orgId`.
+  orgId String @default("")
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// Uma rodada vira no máximo um episódio. `Restrict`: apagar a rodada não
+  /// pode levar junto roteiro, mídia e transcrição.
+  rodadaId String              @unique
+  rodada   PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
+  /// Sequencial por empresa (ep-01, ep-02…), dado sob cadeado na criação.
+  numero   Int
+  titulo   String
+  status   PautaEpisodioStatus @default(roteiro)
+  /// MD2: desde quando está no status atual. Quem carimba é o GATILHO
+  /// `PautaEpisodio_statusDesde`, em toda troca de status por qualquer caminho
+  /// (mídia, transcrição, roteiro, semana, o passo à mão). O vigia do Mac só
+  /// aceita bruto do OBS gravado depois da entrada em Gravação.
+  statusDesde DateTime @default(now())
+
+  roteiro          String @default("")
+  /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =
+  /// a da empresa (nota `pauta.palavra-de-corte` da memória) ou "root, corta".
+  palavraDeCorte   String?
+  /// Arquivos locais do Mac, duração, cortes — o que a estação de mídia devolve (MC9).
+  midia            Json   @default("{}")
+  /// Segmentos `{inicio, fim, texto}` em segundos do vídeo final.
+  transcricao      Json   @default("[]")
+  transcricaoTexto String @default("")
+  titulos          Json   @default("[]")
+  thumbs           Json   @default("[]")
+  descricao        String @default("")
+
+  /// A página de links do episódio (MC12). Conferida pelo mesmo gatilho: página
+  /// de outra empresa é recusada.
+  bioPageId String?
+  bioPage   BioPage? @relation(fields: [bioPageId], references: [id], onDelete: SetNull)
+
+  /// MD10: a thumb (1 a 3) que sobe ao YouTube; nula = nenhuma escolhida.
+  thumbEscolhida      Int?
+  /// MD10: quando o vídeo vai ao ar no YouTube (o `publishAt`). Do pacote, como o título.
+  publicarNoYoutubeEm DateTime?
+  envioAoYoutube      EnvioAoYoutube?
+
+  criadoPor    String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, numero])
+  @@index([orgId, status])
+}
+
+/// MD10: o estado do envio do vídeo final ao YouTube. Ver `ENVIO_AO_YOUTUBE_ESTADOS` no shared.
+enum EnvioAoYoutubeEstado {
+  declarado
+  sessao_aberta
+  conferido
+  agendado
+  erro
+}
+
+/// MD10: o vídeo final do episódio a caminho do YouTube. Um por episódio.
+/// O Mac declara o arquivo (sha256 e tamanho) e manda os bytes direto ao
+/// YouTube, numa sessão resumable que o OS abre pela porta; a URI da sessão
+/// fica aqui cifrada e só sai para o Mac. Filha do episódio: sentinela +
+/// gatilho `mktos_orgid_do_pai`.
+model EnvioAoYoutube {
+  id               String               @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaEpisodio.orgId`.
+  orgId            String               @default("")
+  org              Org                  @relation(fields: [orgId], references: [id])
+  episodioId       String               @unique
+  episodio         PautaEpisodio        @relation(fields: [episodioId], references: [id], onDelete: Cascade)
+  sha256           String
+  /// O vídeo pode passar de 2 GB.
+  bytes            BigInt
+  mime             String               @default("video/mp4")
+  estado           EnvioAoYoutubeEstado @default(declarado)
+  /// A URI da sessão resumable, cifrada (`common/crypto.ts`). Nula fora de `sessao_aberta`.
+  sessaoCifrada    String?
+  sessaoAbertaEm   DateTime?
+  /// A sessão do YouTube vale 7 dias.
+  expiraEm         DateTime?
+  sessoes          Int                  @default(0)
+  videoId          String?
+  conferidoEm      DateTime?
+  /// O `sha` curto da thumb que o YouTube recebeu (o mesmo do nome no storage).
+  thumbSha         String?
+  thumbDefinidaEm  DateTime?
+  playlistId       String?
+  playlistItemId   String?
+  /// O `publishAt` que o YouTube aceitou.
+  publicarEm       DateTime?
+  agendadoEm       DateTime?
+  erro             String?
+  /// O último item de lote que agiu sobre esta linha (envio ou publicação).
+  loteItemId       String?
+  /// A sessão foi aberta com `YOUTUBE_AUDITORIA=teste` (o canal de teste): o vídeo fica privado para sempre e não é publicado.
+  enviadoEmTeste   Boolean              @default(false)
+  criadoEm         DateTime             @default(now())
+  atualizadoEm     DateTime             @updatedAt
+
+  @@index([orgId, estado])
 }
 
 model PautaPeca {
@@ -1705,14 +1861,169 @@ model PautaPeca {
   // Link rastreado: o clique volta como BioEvent/PixelEvent e alimenta Metas.
   bioLinkId    String?
   externalId   String?
+  // MC16: publicada vale tanto para a postagem automática (externalId = id na
+  // rede, MC17) quanto para a manual — "Marcar como postada" grava status
+  // publicada, publicadaEm/publicadaPor e deixa externalId nulo.
   publicadaEm  DateTime?
   publicadaPor String?
+  // O endereço público do post (o permalink do Instagram/TikTok), quando há.
+  urlPublicada String?
   erro         String?
+  // MC16: o slot da semana em que a peça aprovada vai ao ar (instante em UTC;
+  // a grade é lida no fuso de São Paulo). Nulo = fora da agenda.
+  agendadaPara DateTime?
+  // MD1: o slot que o encadeamento PROPÔS para a peça em rascunho. Não é agenda:
+  // agendadaPara continua só da peça aprovada, e aprovar não converte um no outro.
+  slotProposto DateTime?
 
   criadaEm DateTime @default(now())
 
+  // MD6: a publicação pelo OS, uma por rede.
+  publicacoes PautaPublicacao[]
+  // MD9: os comentários com a palavra-chave, para a DM à mão.
+  comentarios ComentarioComPalavra[]
+
   @@index([orgId, status])
   @@index([rodadaId])
+  @@index([orgId, agendadaPara])
+  @@index([orgId, slotProposto])
+}
+
+// MD6: a rede em que a peça é publicada pelo OS. Espelhado em PAUTA_REDES
+// (@mktos/shared). Só o Instagram publica nesta onda; o YouTube é a MD10 e o
+// TikTok está em espera (MD12).
+enum PautaRede {
+  instagram
+  youtube
+  tiktok
+}
+
+// MD6: onde a publicação de uma peça está. Espelhado em PAUTA_PUBLICACAO_ESTADOS.
+enum PautaPublicacaoEstado {
+  pendente
+  container_criado
+  processando
+  publicada
+  erro
+  recusada
+}
+
+/// MD6: a publicação de uma peça numa rede, pelo OS. Uma por peça e rede.
+/// Filha de `PautaPeca`: a empresa vem da peça pelo gatilho
+/// `mktos_orgid_do_pai` (migration `20260924224733_pauta_publicacao`).
+model PautaPublicacao {
+  id           String                @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaPeca.orgId`.
+  orgId        String                @default("")
+  org          Org                   @relation(fields: [orgId], references: [id])
+  pecaId       String
+  peca         PautaPeca             @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  rede         PautaRede
+  estado       PautaPublicacaoEstado @default(pendente)
+  /// Os containers criados na Meta e a trilha da aprovação: `{itens, final, criadoEm,
+  /// publicandoEm, legenda, correlacao, aprovadoPor}` (`ContainersGravados` em
+  /// `pauta/publicacao-instagram.ts`).
+  containers   Json                  @default("{}")
+  /// O id da mídia publicada na rede.
+  externalId   String?
+  permalink    String?
+  tentativas   Int                   @default(0)
+  /// Quando a rotina volta a olhar (o status do Reels, uma vez por minuto) e, com a
+  /// linha a caminho, a POSSE: até lá quem a tomou trabalha nela e a rotina não a pega.
+  proximaEm    DateTime?
+  erro         String?
+  /// MD8: o item do lote da semana que autoriza a publicação automática.
+  loteItemId   String?
+  /// A aprovação que a porta consumiu no pedido item a item.
+  approvalId   String?
+  criadaEm     DateTime              @default(now())
+  atualizadaEm DateTime              @updatedAt
+
+  @@unique([pecaId, rede])
+  @@index([orgId, estado, proximaEm])
+}
+
+// MD9: quem comentou a palavra-chave da matéria num post da semana. É a fila
+// "quem comentou e o que responder": a DM sai à mão, por isso o @ existe aqui —
+// e só por 7 dias (`expiraEm`), a janela da Meta; depois a rotina o anula. O
+// TEXTO do comentário nunca é gravado. `pessoaHmac` é o HMAC-SHA256 do id da
+// pessoa no Instagram com META_WEBHOOK_PESSOA_HMAC_KEY: é o que o RASTRO leva.
+model ComentarioComPalavra {
+  id            String    @id @default(uuid())
+  /// Sentinela: o gatilho troca por `PautaPeca.orgId`.
+  orgId         String    @default("")
+  org           Org       @relation(fields: [orgId], references: [id])
+  pecaId        String
+  peca          PautaPeca @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  /// O id do comentário na Graph. Único por empresa: a coleta de 10 em 10 min relê o mesmo comentário.
+  commentId     String
+  /// O id da mídia do Instagram (o post da peça).
+  midiaId       String
+  palavra       String
+  pessoaHmac    String
+  /// O @ de quem comentou; nulo depois de `expiraEm`. A linha inteira (o `commentId` e o HMAC) é apagada 14 dias depois
+  /// do comentário; a que tem `envio`, quando ele vence (90 dias) — `ComentariosService.expurgar`.
+  usuario       String?
+  comentadoEm   DateTime
+  expiraEm      DateTime
+  respondidoEm  DateTime?
+  /// O id de quem marcou como respondido (ou `dm-automatica`, quando a DM saiu sozinha, MD11).
+  respondidoPor String?
+  criadoEm      DateTime  @default(now())
+  /// MD11: a tentativa de DM automática deste comentário, quando houve (uma por comentário).
+  envio         EnvioDeResposta?
+
+  @@unique([orgId, commentId])
+  @@index([pecaId])
+  @@index([orgId, expiraEm])
+}
+
+/// MD11: o que a DM automática fez com um comentário da fila.
+enum EnvioDeRespostaEstado {
+  segurado
+  enviando
+  enviado
+  recusado
+  erro
+  ignorado
+  /// A Meta não respondeu (rede, prazo, 5xx sem corpo) ou a passagem caiu no meio: pode ter saído, e a trava fica.
+  incerto
+}
+
+/// MD11: a DM automática de UM comentário, sob o item de lote da regra da matéria.
+/// Guarda só o HMAC da pessoa (nunca o @ nem o texto do comentário) e vive 90 dias.
+model EnvioDeResposta {
+  id            String                @id @default(uuid())
+  /// Sentinela: o gatilho troca por `ComentarioComPalavra.orgId`.
+  orgId         String                @default("")
+  org           Org                   @relation(fields: [orgId], references: [id])
+  comentarioId  String                @unique
+  comentario    ComentarioComPalavra  @relation(fields: [comentarioId], references: [id], onDelete: Cascade)
+  /// O item de lote da regra (a matéria) que autoriza o envio.
+  loteItemId    String
+  pessoaHmac    String
+  /// `<episodioId>:<itemId>:<pessoaHmac>` (a matéria, não o item do lote) enquanto a tentativa vale (segurada, saindo,
+  /// enviada ou incerta): uma DM por pessoa por regra, também depois de a regra ser assinada de novo.
+  /// Nula quando não saiu, para a mesma pessoa poder receber por outro comentário.
+  travaDaPessoa String?               @unique
+  estado        EnvioDeRespostaEstado
+  /// Fora da janela de horário: sai a partir daqui (a abertura da janela da política, no fuso dela).
+  seguradoAte   DateTime?
+  /// A correlação da passagem que levou o pedido à porta: é por ela que o efeito acha esta linha.
+  correlationId String?
+  mensagemId    String?
+  /// `código/subcódigo` do erro da Meta, quando houve.
+  codigoDoErro  String?
+  motivo        String?
+  enviadoEm     DateTime?
+  /// Retenção de 90 dias (D-MC9.9): a rotina apaga a linha depois disso.
+  expiraEm      DateTime
+  criadoEm      DateTime              @default(now())
+  atualizadoEm  DateTime              @updatedAt
+
+  @@index([orgId, loteItemId, estado])
+  @@index([orgId, estado, seguradoAte])
+  @@index([orgId, expiraEm])
 }
 
 // ---------- Trabalho (gestão de tarefas estilo ClickUp, nativa do mkt-os) ----------
@@ -2233,6 +2544,93 @@ model Approval {
 
   @@index([orgId, status, expiraEm])
   @@index([orgId, criadoEm])
+}
+
+/// MD7: o estado do lote. Espelhado em `LOTE_ESTADOS` (`@mktos/shared`).
+enum LoteEstado {
+  proposta
+  aguardando
+  ativo
+  encerrado
+  vencido
+  revogado
+}
+
+/// MD7: o estado de um item do lote. Espelhado em `ITEM_DO_LOTE_ESTADOS`.
+enum ItemDoLoteEstado {
+  ativo
+  consumido
+  revogado
+}
+
+/// A APROVAÇÃO DE LOTE (MD7) — a segunda forma da invariante 4: uma assinatura
+/// para uma lista, e cada item vale um uso CONTADO da capacidade dele.
+///
+/// A assinatura em si é uma `Approval` comum da capacidade `lote` (hoje
+/// `pauta.semana.aprovar`, R4), com `hashConteudo` nos argumentos. O efeito dela
+/// só ATIVA esta linha; o que sai para fora é cada item, pela porta, com o
+/// consumo atômico de `LotesService.consumirItem`.
+model AprovacaoDeLote {
+  id            String       @id @default(uuid())
+  orgId         String
+  org           Org          @relation(fields: [orgId], references: [id])
+  /// A capacidade `modo: lote` que assina a lista.
+  capabilityId  String
+  /// O dono da lista: `pauta_episodio` e o id do episódio, na semana de posts.
+  recursoTipo   String
+  recursoId     String
+  /// sha256 canônico da lista ORDENADA de itens (capacidade, recurso, hash do
+  /// item, janela, usos): é o que a pessoa assina.
+  hashConteudo  String
+  estado        LoteEstado   @default(proposta)
+  validaAte     DateTime
+  /// A aprovação R4 do pedido de assinatura em curso. Pedir de novo troca a
+  /// aprovação e mantém o hash.
+  approvalId    String?
+  propostoPorId String
+  aprovadoPorId String?
+  aprovadoEm    DateTime?
+  motivo        String?
+  resumo        String       @default("")
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
+  itens         ItemDoLote[]
+
+  @@index([orgId, estado, validaAte])
+  @@index([orgId, recursoTipo, recursoId])
+}
+
+/// Um item do lote: o uso contado de UMA capacidade `sob_lote` para UM recurso.
+model ItemDoLote {
+  id                String           @id @default(uuid())
+  /// Sentinela: o gatilho troca por `AprovacaoDeLote.orgId`.
+  orgId             String           @default("")
+  org               Org              @relation(fields: [orgId], references: [id])
+  loteId            String
+  lote              AprovacaoDeLote  @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  capabilityId      String
+  /// A peça, na publicação; a regra, na DM.
+  recursoId         String
+  /// `canonicalHash` com as hashKeys da capacidade do item: o conteúdo exato.
+  hashItem          String
+  janelaDe          DateTime
+  janelaAte         DateTime
+  /// 1 na publicação: o post sai uma vez.
+  usoMaximo         Int              @default(1)
+  /// A DM do MD11: teto por dia, com a virada em São Paulo dentro da mesma escrita.
+  tetoPorDia        Int?
+  usosNoDia         Int              @default(0)
+  /// `AAAA-MM-DD` em America/Sao_Paulo do último uso contado no dia.
+  diaDoContador     String?
+  usos              Int              @default(0)
+  consumidoEm       DateTime?
+  estado            ItemDoLoteEstado @default(ativo)
+  revogadoEm        DateTime?
+  motivoDaRevogacao String?
+  criadoEm          DateTime         @default(now())
+
+  @@unique([loteId, capabilityId, recursoId])
+  @@index([orgId, capabilityId, recursoId, estado])
 }
 
 /// RASTRO append-only e encadeado por hash.
@@ -3235,7 +3633,8 @@ model Rotina {
   tipo String
 
   /// O que o executor precisa saber. Para `pauta.rodada`: `{ horas,
-  /// coletarAntes }`, espelhado de `PautaRotina.config`.
+  /// coletarAntes }`, espelhado de `PautaRotina.config`. Para `pauta.coleta`
+  /// (MC5): `{ horas?, origens? }`, gravado pelo `POST /rotinas`.
   config Json @default("{}")
 
   /// Cron de 5 campos, avaliado no fuso `tz` (ver `src/pauta/cron.ts`).

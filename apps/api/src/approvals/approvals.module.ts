@@ -2,6 +2,9 @@ import { Global, Module } from '@nestjs/common';
 import { ApprovalsService } from './approvals.service';
 import { ApprovalsController } from './approvals.controller';
 import { ApprovalGuard } from './approval.guard';
+import { LotesService } from './lotes.service';
+import { AssinaturaDeLoteService } from './assinatura-de-lote.service';
+import { LotesController } from './lotes.controller';
 import { AuthModule } from '../auth/auth.module';
 import { CanaisModule } from '../gateway/canais/canais.module';
 
@@ -29,8 +32,12 @@ import { CanaisModule } from '../gateway/canais/canais.module';
 @Global()
 @Module({
   imports: [AuthModule, CanaisModule],
-  controllers: [ApprovalsController],
-  providers: [ApprovalsService, ApprovalGuard],
-  exports: [ApprovalsService, ApprovalGuard],
+  controllers: [ApprovalsController, LotesController],
+  // MD7: o lote de aprovação. `LotesService` não conhece a porta (a porta o
+  // injeta para o consumo contado); `AssinaturaDeLoteService` fala com a porta
+  // e inscreve o efeito que ativa o lote. Os dois globais daqui e do
+  // GatewayModule se enxergam sem import de módulo, e sem ciclo de provider.
+  providers: [ApprovalsService, ApprovalGuard, LotesService, AssinaturaDeLoteService],
+  exports: [ApprovalsService, ApprovalGuard, LotesService],
 })
 export class ApprovalsModule {}

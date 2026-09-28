@@ -1,15 +1,25 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CODIGO_CONECTOR_DESLIGADO } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AbaCuradoria } from './AbaCuradoria';
+import { AbaEpisodios } from './AbaEpisodios';
+import { AbaSemana } from './AbaSemana';
 import { AbaRotinas } from './AbaRotinas';
 import { AbaRodadas } from './AbaRodadas';
+import { AbaVoz } from './AbaVoz';
+import { ContaDePublicacao } from './ContaDePublicacao';
+import { ComentariosComPalavra } from './ComentariosComPalavra';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
 // propósito (repertório dura anos, pauta dura 72h). Ver docs/PAUTA.md §2.
-const ABAS = ['Rodadas', 'Rotinas'] as const;
+// A Curadoria (MC6) é onde o operador marca o que segue antes do roteiro; a
+// rodada curada vira episódio (MC7), que anda do roteiro ao concluído. A Voz
+// (MC10) é o perfil do autor com que o roteiro e as peças são escritos. A
+// Semana (MC16) é o calendário das peças aprovadas, prontas para postar à mão.
+const ABAS = ['Rodadas', 'Curadoria', 'Episódios', 'Semana', 'Voz', 'Rotinas'] as const;
 type Aba = (typeof ABAS)[number];
 
 /** O que a caixa de erro precisa saber: a frase, e se há caminho de conserto. */
@@ -25,7 +35,38 @@ export default function PautaPage() {
   const [aba, setAba] = useState<Aba>('Rodadas');
   const [erro, setErro] = useState<Erro | null>(null);
   const [bump, setBump] = useState(0);
+  const [curadoriaAberta, setCuradoriaAberta] = useState<string | null>(null);
+  const [episodioAberto, setEpisodioAberto] = useState<string | null>(null);
   const recarregar = useCallback(() => setBump((b) => b + 1), []);
+  const [retornoDaConexao, setRetornoDaConexao] = useState<string | null>(null);
+  const [retornoDoYoutube, setRetornoDoYoutube] = useState<string | null>(null);
+
+  /*
+   * A volta do OAuth da conta de publicação (MD5) chega em
+   * `/pauta?aba=semana&conexao=<motivo>`. Lido do endereço uma vez e apagado
+   * dele, para recarregar a página não repetir o aviso.
+   */
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    // MD10: a volta do OAuth do YouTube chega em `/pauta?aba=episodios&youtube=<motivo>`.
+    const doYoutube = q.get('youtube');
+    if (doYoutube) {
+      setAba('Episódios');
+      setRetornoDoYoutube(doYoutube.slice(0, 40));
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+    const motivo = q.get('conexao');
+    if (q.get('aba') !== 'semana' && !motivo) return;
+    setAba('Semana');
+    if (motivo) setRetornoDaConexao(motivo.slice(0, 40));
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
+
+  const abrirEpisodio = useCallback((id: string) => {
+    setEpisodioAberto(id);
+    setAba('Episódios');
+  }, []);
 
   /*
    * A CAIXA DE ERRO PRECISA SABER **QUAL** ERRO — RF-G-06.
@@ -46,22 +87,22 @@ export default function PautaPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm text-muted">
-          A rotina coleta os feeds, cura a janela numa chamada só e deriva uma peça por canal —
-          usando as fichas campeãs de{' '}
-          <a href="/referencias" className="text-brand hover:underline">
-            Referências
-          </a>{' '}
-          como molde.
-        </p>
-      </div>
+      <ol className="list-decimal space-y-0.5 pl-5 text-sm text-muted" aria-label="O caminho da semana">
+        <li>Quinta à noite a rotina coleta as fontes do Radar. Ela não escolhe nada.</li>
+        <li>Curadoria: marcar à mão o que segue; a IA só sugere.</li>
+        <li>Episódio: roteiro, gravação, /root-midia no Mac, pacote do YouTube e semana de posts.</li>
+        <li>Semana: cada slot com a legenda e a mídia para postar à mão.</li>
+      </ol>
 
-      <div className="flex gap-4 border-b border-border">
+      <div className="flex flex-wrap gap-x-4 border-b border-border">
         {ABAS.map((a) => (
           <button
             key={a}
-            onClick={() => setAba(a)}
+            onClick={() => {
+              setCuradoriaAberta(null);
+              setEpisodioAberto(null);
+              setAba(a);
+            }}
             className={`-mb-px border-b-2 px-1 pb-2 text-sm ${
               aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
             }`}
@@ -71,18 +112,34 @@ export default function PautaPage() {
         ))}
       </div>
 
+      {/* Presa no topo da tela: a ação que falha costuma estar no meio da página
+          (Gerar a semana, Confirmar da curadoria, Marcar como postada), e no
+          celular a caixa acima das abas ficava fora da vista — o botão voltava
+          ao normal sem motivo nenhum visível. */}
       {erro && (
-        <div className="space-y-1 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
-          <div>{erro.texto}</div>
-          {erro.conectorDesligado && (
-            <div>
-              Nada foi enviado e a peça continua na fila.{' '}
-              <a href="/conexoes" className="font-medium underline">
-                Abrir Conexões
-              </a>{' '}
-              para religar o conector — depois é só publicar de novo.
+        <div role="alert" className="sticky top-0 z-20 rounded-lg bg-bg">
+          <div className="flex items-start gap-3 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
+            <div className="min-w-0 flex-1 space-y-1">
+              <div>{erro.texto}</div>
+              {erro.conectorDesligado && (
+                <div>
+                  Nada foi enviado e a peça continua na fila.{' '}
+                  <a href="/conexoes" className="font-medium underline">
+                    Abrir Conexões
+                  </a>{' '}
+                  para religar o conector — depois é só publicar de novo.
+                </div>
+              )}
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setErro(null)}
+              className="min-h-[44px] flex-none px-2 text-xs font-medium underline"
+              aria-label="Fechar o aviso de erro"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       )}
 
@@ -96,7 +153,53 @@ export default function PautaPage() {
           onErro={aoErrar}
           bump={bump}
           onMudou={recarregar}
+          onAbrirCuradoria={(id) => {
+            setCuradoriaAberta(id);
+            setAba('Curadoria');
+          }}
+          onAbrirEpisodio={abrirEpisodio}
         />
+      )}
+      {ready && aba === 'Curadoria' && (
+        <AbaCuradoria
+          token={token}
+          editavel={editavel}
+          onErro={aoErrar}
+          bump={bump}
+          onMudou={recarregar}
+          inicial={curadoriaAberta}
+          onAbrirEpisodio={abrirEpisodio}
+        />
+      )}
+      {ready && aba === 'Episódios' && (
+        <AbaEpisodios
+          token={token}
+          editavel={editavel}
+          onErro={aoErrar}
+          bump={bump}
+          onMudou={recarregar}
+          inicial={episodioAberto}
+          podeGastarIa={can('automacoes.executar')}
+          podeMexerNaBio={can('bio.editar')}
+          podePublicarPagina={can('pauta.publicar') && can('bio.editar')}
+          podeConectarYoutube={podePublicar}
+          avisoDoYoutube={retornoDoYoutube}
+        />
+      )}
+      {ready && aba === 'Semana' && (
+        <>
+          <ContaDePublicacao
+            token={token}
+            podeConectar={podePublicar && can('bio.editar')}
+            aviso={retornoDaConexao}
+            onErro={aoErrar}
+          />
+          <ComentariosComPalavra token={token} podeResponder={podePublicar} editavel={editavel} onErro={aoErrar} bump={bump} />
+          <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
+        </>
+      )}
+      {ready && aba === 'Voz' && (
+        <AbaVoz token={token} editavel={editavel} podeGastarIa={can('automacoes.executar')} bump={bump} onErro={aoErrar} />
       )}
       {ready && aba === 'Rotinas' && (
         <AbaRotinas token={token} editavel={editavel} onErro={aoErrar} bump={bump} onMudou={recarregar} />

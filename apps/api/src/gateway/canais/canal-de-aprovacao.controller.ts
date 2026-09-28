@@ -1,9 +1,19 @@
-import { Body, Controller, Headers, Logger, NotFoundException, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  Logger,
+  NotFoundException,
+  Optional,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 
 import { comTenantPublico } from '../../common/tenant-publico';
 import { CABECALHO_DO_SEGREDO, segredoDoCanal } from './configuracao-do-canal';
 import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
+import { EntradaDeGrupoRegistry } from './entrada-de-grupo.registry';
 
 /*
  * ============================================================================
@@ -76,6 +86,16 @@ import { CanalDeAprovacaoService } from './canal-de-aprovacao.service';
  * 404 quando o segredo falha, e não 401/403, pela mesma razão do gate de
  * módulos: do lado de fora, canal desligado tem de ser indistinguível de rota
  * que não existe.
+ *
+ * ----------------------------------------------------------------------------
+ * ESTA ROTA TAMBÉM É A PORTA DO GRUPO DE LINKS (MC1)
+ * ----------------------------------------------------------------------------
+ * A Evolution aceita UMA URL de webhook por instância, e é esta. Mensagem de um
+ * grupo inscrito em `EntradaDeGrupoRegistry` sai para quem se inscreveu (hoje, a
+ * pauta, pelo `EVOLUTION_LINKS_JID`) e NÃO chega ao canal; o resto segue para o
+ * canal como sempre, e o canal continua descartando qualquer outro grupo. O
+ * segredo, a resposta constante e o contexto de empresa valem igual para os
+ * dois caminhos — a triagem acontece depois de tudo isso, em segundo plano.
  */
 @Controller('approvals/canal')
 export class CanalDeAprovacaoController {
@@ -90,7 +110,15 @@ export class CanalDeAprovacaoController {
    */
   trabalhoEmCurso: Promise<void> = Promise.resolve();
 
-  constructor(private readonly canal: CanalDeAprovacaoService) {}
+  constructor(
+    private readonly canal: CanalDeAprovacaoService,
+    /*
+     * `@Optional()` porque a suíte do canal monta este controlador à mão com um
+     * argumento só. Sem o registro, nenhum grupo é desviado — o canal recebe
+     * tudo, como antes do MC1.
+     */
+    @Optional() private readonly grupos?: EntradaDeGrupoRegistry,
+  ) {}
 
   @Post('whatsapp/:orgId')
   async whatsapp(
@@ -127,7 +155,11 @@ export class CanalDeAprovacaoController {
    * processo em Node (`unhandledRejection`), e `receber` chama banco e rede.
    */
   private emSegundoPlano(orgId: string, corpo: unknown): Promise<void> {
-    return comTenantPublico(orgId, () => this.canal.receber(orgId, corpo))
+    return comTenantPublico(orgId, async () => {
+      const doGrupo = await this.grupos?.despachar(orgId, corpo);
+      if (doGrupo != null) return { desfecho: `grupo:${doGrupo}` };
+      return this.canal.receber(orgId, corpo);
+    })
       .then(({ desfecho }) => {
         // O desfecho vai para o log do servidor, nunca para a resposta.
         this.log.debug(`webhook do canal (${orgId}): ${desfecho}`);

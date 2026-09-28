@@ -207,6 +207,30 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   { modelo: 'OnboardingConvite', pai: 'OnboardingTrilho', fk: 'trilhoId' },
   { modelo: 'OnboardingAta', pai: 'OnboardingTrilho', fk: 'trilhoId' },
   { modelo: 'OnboardingMarco', pai: 'OnboardingTrilho', fk: 'trilhoId' },
+  // O episódio da máquina de conteúdo (MC7, 23/09/2026): a empresa é a da
+  // rodada, e a página de links, quando houver, tem de ser da mesma empresa —
+  // migration `20260924060000_pauta_episodio`.
+  {
+    modelo: 'PautaEpisodio',
+    pai: 'PautaRodada',
+    fk: 'rodadaId',
+    paisConferidos: [{ modelo: 'BioPage', fk: 'bioPageId' }],
+  },
+  // A publicação da peça numa rede (MD6, 24/09/2026): a empresa é a da peça —
+  // migration `20260924224733_pauta_publicacao`.
+  { modelo: 'PautaPublicacao', pai: 'PautaPeca', fk: 'pecaId' },
+  // O item do lote de aprovação (MD7, 24/09/2026): a empresa é a do lote —
+  // migration `20260924235614_aprovacao_de_lote`.
+  { modelo: 'ItemDoLote', pai: 'AprovacaoDeLote', fk: 'loteId' },
+  // Quem comentou a palavra-chave num post da semana (MD9, 25/09/2026): a
+  // empresa é a da peça — migration `20260925021740_comentario_com_palavra`.
+  { modelo: 'ComentarioComPalavra', pai: 'PautaPeca', fk: 'pecaId' },
+  // O vídeo do episódio a caminho do YouTube (MD10, 25/09/2026): a empresa é a
+  // do episódio — migration `20260925032020_envio_ao_youtube`.
+  { modelo: 'EnvioAoYoutube', pai: 'PautaEpisodio', fk: 'episodioId' },
+  // A DM automática de um comentário da fila (MD11, 25/09/2026): a empresa é a
+  // do comentário — migration `20260925053358_envio_de_resposta`.
+  { modelo: 'EnvioDeResposta', pai: 'ComentarioComPalavra', fk: 'comentarioId' },
 ] as const;
 
 /**

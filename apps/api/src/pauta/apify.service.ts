@@ -1,4 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import type { PautaPerfilPlataforma } from '@mktos/shared';
+import { postsPedidos } from './perfil-da-pauta';
 
 // Conector Apify — só sob demanda (onda 1). Credencial PRÓPRIA do root
 // (APIFY_TOKEN, já declarado no .env.example). Roda o actor de forma síncrona e
@@ -6,12 +8,63 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 // custo por run, um perfil vigiado queima crédito em silêncio.
 
 // Actors por plataforma. O do Instagram é o mesmo já usado no acervo do vault
-// (dataset_instagram-scraper_*.json em "8 - Referência de Conteúdo").
+// (dataset_instagram-scraper_*.json em "8 - Referência de Conteúdo"). Trocar um
+// id é trocar o formato do item: `postDoItem` (perfil-da-pauta.ts) lê o de cada um.
 const ACTORS: Record<string, string> = {
   instagram: 'apify~instagram-scraper',
   tiktok: 'clockworks~tiktok-scraper',
+  // Creators (MC4): os últimos posts de um @ no X e os últimos vídeos de um canal.
+  x: 'apidojo~tweet-scraper',
+  youtube: 'streamers~youtube-scraper',
   web: 'apify~website-content-crawler',
+  // Busca do Google (MC3): um run = uma página de resultados de uma consulta.
+  busca: 'apify~google-search-scraper',
 };
+
+/** O endereço público do perfil: é o que os actors de Instagram e YouTube recebem. */
+export function urlDoPerfil(plataforma: PautaPerfilPlataforma, handle: string): string {
+  switch (plataforma) {
+    case 'instagram':
+      return `https://www.instagram.com/${handle}/`;
+    case 'tiktok':
+      return `https://www.tiktok.com/@${handle}`;
+    case 'x':
+      return `https://x.com/${handle}`;
+    case 'youtube':
+      return /^UC[A-Za-z0-9_-]{22}$/.test(handle)
+        ? `https://www.youtube.com/channel/${handle}/videos`
+        : `https://www.youtube.com/@${handle}/videos`;
+  }
+}
+
+/**
+ * O input do actor de cada plataforma para os últimos `limite` posts do perfil.
+ * Só post do próprio perfil: nada de comentário, short, live ou vídeo baixado,
+ * que o Apify cobraria à parte.
+ */
+export function inputDoPerfil(
+  plataforma: PautaPerfilPlataforma,
+  handle: string,
+  limite: number | undefined,
+): Record<string, unknown> {
+  const n = postsPedidos(limite);
+  switch (plataforma) {
+    case 'instagram':
+      return { directUrls: [urlDoPerfil('instagram', handle)], resultsType: 'posts', resultsLimit: n, addParentData: false };
+    case 'tiktok':
+      return { profiles: [handle], resultsPerPage: n, shouldDownloadVideos: false, shouldDownloadCovers: false };
+    case 'x':
+      return { twitterHandles: [handle], maxItems: n, sort: 'Latest' };
+    case 'youtube':
+      return { startUrls: [{ url: urlDoPerfil('youtube', handle) }], maxResults: n, maxResultsShorts: 0, maxResultStreams: 0 };
+  }
+}
+
+/** Recorte da busca do Google: país, idioma e janela de dias (`quickDateRange` do actor, `d<N>`). */
+export interface OpcoesDaBusca {
+  resultados: number;
+  dias: number;
+}
 
 export interface ApifyRun {
   runId: string | null;
@@ -39,6 +92,7 @@ export class ApifyService {
       if (h.endsWith('instagram.com')) return 'instagram';
       if (h.endsWith('tiktok.com')) return 'tiktok';
       if (h === 'x.com' || h.endsWith('twitter.com')) return 'x';
+      if (h === 'youtu.be' || h.endsWith('youtube.com')) return 'youtube';
       return 'web';
     } catch {
       return 'web';
@@ -56,21 +110,36 @@ export class ApifyService {
     }
   }
 
-  /** Roda o actor da plataforma para UMA url e devolve os itens do dataset. */
+  /** Roda o actor da plataforma para UMA url e devolve os itens do dataset. Só Instagram e TikTok têm actor de post avulso. */
   async scrapeUrl(url: string): Promise<ApifyRun> {
     const plataforma = ApifyService.plataformaDaUrl(url);
-    const actor = ACTORS[plataforma] ?? ACTORS.web;
+    const actor = plataforma === 'instagram' || plataforma === 'tiktok' ? ACTORS[plataforma] : ACTORS.web;
     return this.run(actor, this.input(plataforma, url));
   }
 
-  /** Últimos posts de um perfil (aba Radar; também serve p/ importar um acervo). */
-  async scrapePerfil(handle: string, limite = 12): Promise<ApifyRun> {
-    const user = handle.replace(/^@/, '').trim();
-    return this.run(ACTORS.instagram, {
-      directUrls: [`https://www.instagram.com/${user}/`],
-      resultsType: 'posts',
-      resultsLimit: Math.min(Math.max(limite, 1), 50),
-      addParentData: false,
+  /**
+   * Últimos posts de um perfil (aba Radar e coleta da rodada). O handle chega
+   * já lido por `lerHandleDoPerfil`; o input de cada actor mora em `inputDoPerfil`.
+   */
+  async scrapePerfil(handle: string, limite = 12, plataforma: PautaPerfilPlataforma = 'instagram'): Promise<ApifyRun> {
+    return this.run(ACTORS[plataforma], inputDoPerfil(plataforma, handle.replace(/^@/, '').trim(), limite));
+  }
+
+  /**
+   * Resultados de UMA consulta no Google do Brasil, em português, só dos últimos
+   * `dias`. Uma página só (`maxPagesPerQuery: 1`): cada página a mais é cobrada,
+   * e o teto de runs da fonte conta runs, não páginas. A consulta chega sem
+   * quebra de linha — no actor, cada linha de `queries` é outra busca paga.
+   */
+  async buscarNoGoogle(consulta: string, opcoes: OpcoesDaBusca): Promise<ApifyRun> {
+    return this.run(ACTORS.busca, {
+      queries: consulta.replace(/\s+/g, ' ').trim(),
+      resultsPerPage: Math.min(Math.max(Math.trunc(opcoes.resultados), 1), 100),
+      maxPagesPerQuery: 1,
+      countryCode: 'br',
+      languageCode: 'pt-BR',
+      quickDateRange: `d${Math.max(Math.trunc(opcoes.dias), 1)}`,
+      mobileResults: false,
     });
   }
 

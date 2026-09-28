@@ -72,3 +72,71 @@ describe('validação de argumentos na porta', () => {
     expect(validarArgs(frouxo, { a: 'x', extra: 1 })).toEqual([]);
   });
 });
+
+/*
+ * MD6: a lista de mídias de `instagram.post.publicar` prende a aprovação ao
+ * arquivo exato. A forma errada tem de parar na porta, antes da fila — no
+ * efeito ela já teria queimado a aprovação de alguém.
+ */
+describe('validação de lista na porta (MD6)', () => {
+  const MIDIAS = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['midias'],
+    properties: {
+      midias: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 2,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['chave', 'sha256'],
+          properties: { chave: { type: 'string', minLength: 1 }, sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
+        },
+      },
+    },
+  };
+  const ok = { chave: 'a.jpg', sha256: 'a'.repeat(64) };
+
+  it('a lista certa passa', () => {
+    expect(validarArgs(MIDIAS, { midias: [ok, ok] })).toEqual([]);
+  });
+
+  it('vazia, longa demais, item fora da forma, campo a mais ou sha fora do padrão: cada um aponta o item', () => {
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [] }))).toContain('midias precisa de ao menos 1');
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [ok, ok, ok] }))).toContain('aceita até 2');
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: ['a.jpg'] }))).toContain('midias[0] esperava object');
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [{ ...ok, extra: 1 }] }))).toContain('midias[0].extra não existe');
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [ok, { chave: 'b.jpg', sha256: 'curto' }] }))).toContain('midias[1].sha256 fora do formato');
+    expect(mensagemDeErro(validarArgs(MIDIAS, { midias: [{ sha256: 'a'.repeat(64) }] }))).toContain('midias[0].chave obrigatório');
+  });
+});
+
+/*
+ * MD7: `totalDeItens` de `pauta.semana.aprovar` tem `minimum` 1 e `maximum`
+ * 60. Antes, o validador ignorava as duas palavras em silêncio — o mesmo
+ * risco que a A8 registrou para `maxItems`.
+ */
+describe('validação de número na porta (MD7)', () => {
+  const LOTE = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['totalDeItens'],
+    properties: { totalDeItens: { type: 'integer', minimum: 1, maximum: 60 } },
+  };
+
+  it('dentro dos limites passa, nas duas pontas', () => {
+    expect(validarArgs(LOTE, { totalDeItens: 1 })).toEqual([]);
+    expect(validarArgs(LOTE, { totalDeItens: 60 })).toEqual([]);
+  });
+
+  it('acima do máximo e abaixo do mínimo são recusados com o limite', () => {
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: 61 }))).toContain('totalDeItens aceita até 60');
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: 0 }))).toContain('totalDeItens precisa ser ao menos 1');
+  });
+
+  it('o limite não vale para texto, e o tipo errado continua sendo o erro', () => {
+    expect(mensagemDeErro(validarArgs(LOTE, { totalDeItens: '999' }))).toBe('argumentos inválidos: totalDeItens esperava integer, veio string');
+  });
+});

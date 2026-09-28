@@ -32,6 +32,7 @@ let falhas = 0;
 for (const l of verificarCatalogo(pol)) {
   if (!l.ok) falhas++;
   console.log(`${l.ok ? 'ok  ' : 'FALHA'} ${l.id.padEnd(32)} declarado=${l.declarado} calculado=${l.calculado}`);
+  for (const p of l.problemas) console.log(`      ${p}`);
 }
 
 // A segunda trava, a mesma que o vitest roda: promessa de volta que ninguém dá.

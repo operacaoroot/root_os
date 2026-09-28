@@ -2,7 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Sinal } from '@mktos/policy';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from './policy.service';
-import { acimaDoTeto, conferirJanela, foraDaJanela } from './limites';
+import {
+  acimaDoTeto,
+  conferirJanela,
+  foraDaJanela,
+  fusoDaPolitica,
+  fusoValido,
+  minutosNoFuso,
+} from './limites';
 
 /*
  * Os seis sinais de escalonamento. O motor puro RECEBE os sinais prontos — ele
@@ -197,7 +204,17 @@ export class SinaisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
-  ) {}
+  ) {
+    // Fuso errado não pode virar UTC calado: foi assim que a janela 08–20 passou
+    // a valer das 05h às 17h de Brasília até a MD3.
+    const fuso = fusoDaPolitica();
+    if (!fusoValido(fuso)) {
+      throw new Error(
+        `POLITICA_FUSO_HORARIO="${fuso}" não é um fuso conhecido. Use o nome IANA ` +
+          '(ex.: America/Sao_Paulo) ou deixe a variável vazia para o padrão.',
+      );
+    }
+  }
 
   async calcular(input: {
     orgId: string;
@@ -227,7 +244,7 @@ export class SinaisService {
     if (procedencia.eExterna) sinais.push('fonte_nao_confiavel');
 
     conferirJanela(input.orgId, limites.janelaHoraria, (m) => this.log.error(m));
-    const minutos = agora.getHours() * 60 + agora.getMinutes();
+    const minutos = minutosNoFuso(agora);
     if (foraDaJanela(minutos, limites.janelaHoraria)) sinais.push('fora_da_janela');
 
     if (acimaDoTeto(input.valorCentavos, limites.tetoCustoCentavosPorExecucao)) {

@@ -23,6 +23,8 @@ import { BioBridgeService } from './bio-bridge.service';
     BioSyncService,
     BioBridgeService,
   ],
-  exports: [BioBridgeService],
+  // BioService sai para a página de links do episódio (MC12) publicar pelo
+  // mesmo método do painel, sem um segundo caminho de publicação.
+  exports: [BioBridgeService, BioService],
 })
 export class BioModule {}

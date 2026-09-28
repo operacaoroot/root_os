@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { PautaFonteList, PautaFonteTipo } from '@mktos/shared';
+import {
+  PAUTA_FONTE_ROTULOS,
+  PAUTA_PERFIL_PLATAFORMAS,
+  PAUTA_PERFIL_PLATAFORMA_ROTULOS,
+  type PautaFonteList,
+  type PautaFonteTipo,
+  type PautaPerfilPlataforma,
+} from '@mktos/shared';
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
 import { Botao, Campo, Card, Chip, inputCls } from './ui';
 
@@ -14,6 +21,13 @@ interface Props {
 }
 
 type Destino = 'off' | 'local' | 'drive';
+
+/** O que o Radar deixa cadastrar. `manual` nasce sozinho (grupo de links do WhatsApp). */
+const TIPOS_CADASTRAVEIS: PautaFonteTipo[] = ['perfil', 'rss', 'gmail', 'busca'];
+/** Os que têm "Coletar agora" — o mesmo despacho que a rodada usa. */
+const TIPOS_COLETAVEIS: PautaFonteTipo[] = ['perfil', 'rss', 'gmail', 'busca'];
+/** Os que gastam run pago (Apify) e por isso têm teto no mês. */
+const TIPOS_COM_TETO: PautaFonteTipo[] = ['perfil', 'busca'];
 
 interface EspelhoEstado {
   destino: Destino;
@@ -33,7 +47,10 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
   const [tipo, setTipo] = useState<PautaFonteTipo>('perfil');
   const [nome, setNome] = useState('');
   const [handle, setHandle] = useState('');
+  const [plataformaDoPerfil, setPlataformaDoPerfil] = useState<PautaPerfilPlataforma>('instagram');
   const [url, setUrl] = useState('');
+  const [etiqueta, setEtiqueta] = useState('');
+  const [consulta, setConsulta] = useState('');
   const [teto, setTeto] = useState(30);
 
   useEffect(() => {
@@ -54,9 +71,17 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
         {
           tipo,
           nome: nome.trim(),
-          handle: tipo === 'perfil' ? handle.trim().replace(/^@/, '') : null,
+          handle:
+            tipo === 'perfil'
+              ? handle.trim().replace(/^@/, '')
+              : tipo === 'gmail'
+                ? etiqueta.trim()
+                : tipo === 'busca'
+                  ? consulta.trim()
+                  : null,
           url: tipo === 'rss' ? url.trim() : null,
-          plataforma: tipo === 'perfil' ? 'instagram' : null,
+          plataforma:
+            tipo === 'perfil' ? plataformaDoPerfil : tipo === 'gmail' ? 'gmail' : tipo === 'busca' ? 'google' : null,
           tetoRunsMes: teto,
         },
         token,
@@ -64,6 +89,8 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
       setNome('');
       setHandle('');
       setUrl('');
+      setEtiqueta('');
+      setConsulta('');
       onMudou();
     } catch (e) {
       onErro((e as Error).message);
@@ -74,8 +101,10 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
     onErro(null);
     setOcupado(id);
     try {
-      const r = await apiPost<{ novas: number }>(`/pauta/fontes/${id}/coletar`, {}, token);
-      onErro(r.novas === 0 ? 'Nada novo nesse perfil — tudo já estava no acervo.' : null);
+      const r = await apiPost<{ novas: number; aviso?: string }>(`/pauta/fontes/${id}/coletar`, {}, token);
+      onErro(
+        r.aviso ?? (r.novas === 0 ? 'Nada novo nessa fonte — tudo já estava na fila ou no acervo.' : null),
+      );
       onMudou();
     } catch (e) {
       onErro((e as Error).message);
@@ -138,7 +167,7 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
     <div className="space-y-4">
       {data && !data.apifyConfigurado && (
         <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-          APIFY_TOKEN não configurado — perfis do Instagram/TikTok não coletam. Defina no{' '}
+          APIFY_TOKEN não configurado — perfis (Instagram, TikTok, X, YouTube) e buscas no Google não coletam. Defina no{' '}
           <code className="text-xs">.env</code> e reinicie a API.
         </div>
       )}
@@ -227,9 +256,11 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
               onChange={(e) => setTipo(e.target.value as PautaFonteTipo)}
               disabled={!editavel}
             >
-              <option value="perfil">Perfil vigiado</option>
-              <option value="rss">Feed RSS</option>
-              <option value="busca">Busca salva</option>
+              {TIPOS_CADASTRAVEIS.map((t) => (
+                <option key={t} value={t}>
+                  {PAUTA_FONTE_ROTULOS[t]}
+                </option>
+              ))}
             </select>
           </Campo>
 
@@ -243,13 +274,60 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
             />
           </Campo>
 
+          {tipo === 'perfil' && (
+            <Campo label="Plataforma">
+              <select
+                className={inputCls}
+                value={plataformaDoPerfil}
+                onChange={(e) => setPlataformaDoPerfil(e.target.value as PautaPerfilPlataforma)}
+                disabled={!editavel}
+              >
+                {PAUTA_PERFIL_PLATAFORMAS.map((p) => (
+                  <option key={p} value={p}>
+                    {PAUTA_PERFIL_PLATAFORMA_ROTULOS[p]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+
           {tipo === 'perfil' ? (
-            <Campo label="@handle">
+            <Campo
+              label="@handle"
+              hint="O @ do creator ou o endereço do perfil. Cada coleta traz os últimos posts e gasta 1 execução do teto."
+            >
               <input
                 className={inputCls}
-                placeholder="@blankschool"
+                placeholder={plataformaDoPerfil === 'youtube' ? '@canal' : '@blankschool'}
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
+                disabled={!editavel}
+              />
+            </Campo>
+          ) : tipo === 'gmail' ? (
+            <Campo
+              label="Etiqueta do Gmail"
+              hint="Os e-mails dos últimos 7 dias com esta etiqueta viram capturas. Precisa do Google conectado em Integrações."
+            >
+              <input
+                className={inputCls}
+                placeholder="newsletters"
+                value={etiqueta}
+                onChange={(e) => setEtiqueta(e.target.value)}
+                disabled={!editavel}
+              />
+            </Campo>
+          ) : tipo === 'busca' ? (
+            <Campo
+              label="Consulta"
+              hint="Os termos, como no Google. Cada coleta traz os resultados da última semana no Google do Brasil e gasta 1 execução do teto."
+            >
+              <input
+                className={inputCls}
+                placeholder="inteligência artificial pequenas empresas"
+                value={consulta}
+                maxLength={200}
+                onChange={(e) => setConsulta(e.target.value)}
                 disabled={!editavel}
               />
             </Campo>
@@ -265,20 +343,32 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
             </Campo>
           )}
 
-          <Campo label="Teto de execuções/mês" hint="Trava de gasto do Apify.">
-            <input
-              type="number"
-              min={0}
-              className={inputCls}
-              value={teto}
-              onChange={(e) => setTeto(Number(e.target.value))}
-              disabled={!editavel}
-            />
-          </Campo>
+          {TIPOS_COM_TETO.includes(tipo) && (
+            <Campo label="Teto de execuções/mês" hint="Trava de gasto do Apify.">
+              <input
+                type="number"
+                min={0}
+                className={inputCls}
+                value={teto}
+                onChange={(e) => setTeto(Number(e.target.value))}
+                disabled={!editavel}
+              />
+            </Campo>
+          )}
         </div>
 
         <div className="mt-3">
-          <Botao tone="brand" onClick={criar} disabled={!editavel || nome.trim().length < 2}>
+          <Botao
+            tone="brand"
+            onClick={criar}
+            disabled={
+              !editavel ||
+              nome.trim().length < 2 ||
+              (tipo === 'perfil' && !handle.trim()) ||
+              (tipo === 'gmail' && !etiqueta.trim()) ||
+              (tipo === 'busca' && !consulta.trim())
+            }
+          >
             Adicionar fonte
           </Botao>
         </div>
@@ -294,16 +384,31 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Chip tone={f.ativo ? 'good' : 'muted'}>{f.ativo ? 'ativa' : 'pausada'}</Chip>
-                  <Chip>{f.tipo}</Chip>
-                  <Chip
-                    tone={f.runsNoMes >= f.tetoRunsMes ? 'bad' : f.runsNoMes > f.tetoRunsMes * 0.7 ? 'warn' : 'muted'}
-                  >
-                    {f.runsNoMes}/{f.tetoRunsMes} runs no mês
-                  </Chip>
+                  <Chip>{PAUTA_FONTE_ROTULOS[f.tipo] ?? f.tipo}</Chip>
+                  {f.tipo === 'perfil' && (
+                    <Chip>
+                      {PAUTA_PERFIL_PLATAFORMA_ROTULOS[(f.plataforma ?? 'instagram') as PautaPerfilPlataforma] ??
+                        f.plataforma}
+                    </Chip>
+                  )}
+                  {TIPOS_COM_TETO.includes(f.tipo) && (
+                    <Chip
+                      tone={f.runsNoMes >= f.tetoRunsMes ? 'bad' : f.runsNoMes > f.tetoRunsMes * 0.7 ? 'warn' : 'muted'}
+                    >
+                      {f.runsNoMes}/{f.tetoRunsMes} runs no mês
+                    </Chip>
+                  )}
                 </div>
                 <p className="mt-1 text-sm">
                   {f.nome}
-                  {f.handle && <span className="text-muted"> · @{f.handle}</span>}
+                  {f.handle && f.tipo === 'gmail' && <span className="text-muted"> · etiqueta {f.handle}</span>}
+                  {f.handle && f.tipo === 'busca' && <span className="text-muted"> · “{f.handle}”</span>}
+                  {f.handle && f.tipo !== 'gmail' && f.tipo !== 'busca' && (
+                    <span className="text-muted"> · @{f.handle}</span>
+                  )}
+                  {f.tipo === 'manual' && f.plataforma === 'whatsapp' && (
+                    <span className="text-muted"> · link colado no grupo entra sozinho; pausar cala o grupo</span>
+                  )}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted">
                   {f.capturas} captura(s)
@@ -314,11 +419,15 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
               </div>
 
               <div className="flex items-center gap-2">
-                {f.tipo === 'perfil' && (
+                {TIPOS_COLETAVEIS.includes(f.tipo) && (
                   <Botao
                     tone="brand"
                     onClick={() => coletar(f.id)}
-                    disabled={!editavel || ocupado === f.id || !data.apifyConfigurado}
+                    disabled={
+                      !editavel ||
+                      ocupado === f.id ||
+                      (TIPOS_COM_TETO.includes(f.tipo) && !data.apifyConfigurado)
+                    }
                   >
                     {ocupado === f.id ? 'Coletando…' : 'Coletar agora'}
                   </Botao>
@@ -326,9 +435,11 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
                 <Botao onClick={() => alternar(f.id, !f.ativo)} disabled={!editavel}>
                   {f.ativo ? 'Pausar' : 'Ativar'}
                 </Botao>
-                <Botao tone="bad" onClick={() => remover(f.id)} disabled={!editavel}>
-                  Remover
-                </Botao>
+                {!(f.tipo === 'manual' && f.plataforma === 'whatsapp') && (
+                  <Botao tone="bad" onClick={() => remover(f.id)} disabled={!editavel}>
+                    Remover
+                  </Botao>
+                )}
               </div>
             </div>
           ))}
@@ -336,8 +447,10 @@ export function AbaRadar({ token, editavel, onErro, bump, onMudou }: Props) {
       )}
 
       <p className="text-xs text-muted">
-        Coleta automática por cron entra na onda 2 (ver <code>docs/PAUTA.md</code>). Por ora o
-        “Coletar agora” é manual — e respeita o teto de execuções do mês.
+        A rotina da pauta coleta sozinha os feeds RSS, as etiquetas do Gmail, as buscas no Google e os
+        perfis vigiados antes de cada rodada — cada busca e cada perfil gasta uma execução do teto do
+        mês e, com o teto no fim, é pulado com aviso; o “Coletar agora” respeita o mesmo teto. Ver{' '}
+        <code>docs/PAUTA.md</code>.
       </p>
     </div>
   );

@@ -344,6 +344,13 @@ const CONECTORES: Record<string, string> = {
   'src/billing/cobranca-asaas.service.ts': 'Asaas (cobrança da assinatura)',
   'src/bio/plataformas/instagram.ts': 'Instagram (bio)',
   'src/bio/plataformas/tiktok.ts': 'TikTok (bio)',
+  /*
+   * MD10: o canal do YouTube, com projeto próprio no Google Cloud — outra
+   * autorização que o Google da empresa, com outros escopos. O endereço
+   * `googleapis.com` é o mesmo do Google; quem o cita aqui é este conector, e a
+   * catraca do MD10 (abaixo) confere que o do YouTube não aparece em outro lugar.
+   */
+  'src/youtube/youtube.service.ts': 'YouTube',
 };
 
 /**
@@ -559,7 +566,11 @@ const EXCECOES: Excecao[] = [
   {
     arquivo: 'src/pauta/pauta.service.ts',
     conector: 'src/pauta/apify.service.ts',
-    motivo: 'Coleta de Instagram/TikTok via Apify direto, sem teto de execuções decidido pela porta.',
+    motivo:
+      'Coleta dos perfis (Instagram/TikTok e, desde o MC4, X/YouTube) e, desde o MC3, a busca do ' +
+      'Google da pauta via Apify direto, sem teto de execuções decidido pela porta. Perfil e busca ' +
+      'reservam o run no teto do mês da fonte ANTES de chamar o Apify, e o gasto de cada run fica ' +
+      'no RASTRO (`pauta.coleta_perfil`, `pauta.coleta_busca`).',
     fatia: 'onda 8 — resto da 3.3',
   },
   {
@@ -630,11 +641,12 @@ const EXCECOES: Excecao[] = [
    *     diferentes, telas de consentimento diferentes, ciclos de renovação
    *     diferentes. Fundir os dois obrigaria uma das duas superfícies a pedir
    *     escopo que ela não usa — o contrário do que a régua quer.
-   *  2. O ENDEREÇO DE RETORNO ESTÁ TRAVADO POR REVISÃO EXTERNA. O callback da
-   *     bio (`/api/conectar/:plataforma/callback`) é a redirect URI registrada
-   *     nos consoles da Meta e do TikTok. Trocá-la exige App Review novo, cujo
-   *     prazo não depende de nós. Pagar esse custo para ganhar um cliente HTTP a
-   *     menos é trocar risco de arquitetura por risco de operação.
+   *  2. O ENDEREÇO DE RETORNO ESTÁ TRAVADO NOS CONSOLES. O callback da bio
+   *     (`/api/conectar/:plataforma/callback`) é a redirect URI registrada nos
+   *     consoles da Meta e do TikTok. Trocá-la obriga a recadastrar nos dois
+   *     consoles e a refazer toda conexão (a pesquisa da onda D não achou fonte
+   *     de que exija App Review novo). Pagar esse custo para ganhar um cliente
+   *     HTTP a menos é trocar risco de arquitetura por risco de operação.
    *  3. O QUE PRECISA CONVERGIR NÃO É O CLIENTE, É O PORTÃO. Dois clientes são
    *     aceitáveis; duas fronteiras, não. As três consequências concretas, que é
    *     o que sobra de dívida aqui:
@@ -922,6 +934,9 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   // TikTok tem dois domínios: o de autorização e o da API aberta.
   { padrao: /https?:\/\/(?:[\w-]+\.)*tiktok\.com/, conector: 'src/bio/plataformas/tiktok.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*tiktokapis\.com/, conector: 'src/bio/plataformas/tiktok.ts' },
+  // MD10: o link de exibição do vídeo também é endereço do YouTube; quem o monta é o conector (`urlDoVideo`).
+  { padrao: /https?:\/\/(?:[\w-]+\.)*youtube\.com/, conector: 'src/youtube/youtube.service.ts' },
+  { padrao: /https?:\/\/(?:[\w-]+\.)*youtu\.be/, conector: 'src/youtube/youtube.service.ts' },
 ];
 
 /*
@@ -1111,7 +1126,18 @@ const CREDENCIAIS: Record<string, string> = {
   META_APP_SECRET: 'src/meta/meta.service.ts',
   META_REDIRECT_URI: 'src/meta/meta.service.ts',
   META_GRAPH_URL: 'src/meta/meta.service.ts',
+  // MD5: só o dublê local as preenche; vazias, valem os endereços da Meta.
+  INSTAGRAM_OAUTH_URL: 'src/bio/plataformas/instagram.ts',
+  INSTAGRAM_TOKEN_URL: 'src/bio/plataformas/instagram.ts',
+  INSTAGRAM_GRAPH_URL: 'src/bio/plataformas/instagram.ts',
   OBSIDIAN_VAULT_PATH: 'src/obsidian/obsidian.service.ts',
+  // MD10: o projeto próprio do YouTube; as três URLs só o dublê preenche.
+  YOUTUBE_CLIENT_ID: 'src/youtube/youtube.service.ts',
+  YOUTUBE_CLIENT_SECRET: 'src/youtube/youtube.service.ts',
+  YOUTUBE_REDIRECT_URI: 'src/youtube/youtube.service.ts',
+  YOUTUBE_API_URL: 'src/youtube/youtube.service.ts',
+  YOUTUBE_UPLOAD_URL: 'src/youtube/youtube.service.ts',
+  YOUTUBE_OAUTH_URL: 'src/youtube/youtube.service.ts',
 };
 
 /*
@@ -1951,5 +1977,247 @@ describe('catraca de arquitetura: mensagem de serviço do canal só sai do canal
       '`CanalDeAprovacaoService.receber` transforma um corpo arbitrário em decisão de ' +
         'aprovação. Quem o alcança contorna o webhook, o segredo e o teto de tentativas.',
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MD6: o publicador do Instagram
+// ---------------------------------------------------------------------------
+
+/*
+ * A primeira escrita pública automática do OS. Três coisas que não podem
+ * escorregar sem ninguém ver:
+ *
+ *   1. O endereço da Graph do Instagram mora num arquivo só, o conector da bio.
+ *      A frente 2 vigia `instagram.com` com o dono errado (a Meta) e pula todo
+ *      arquivo de conector; esta vigia o host exato, em código e em texto.
+ *   2. O publicador recebe o cliente da Graph por injeção, montado no
+ *      `*.module.ts` da pasta do conector (a fiação que a frente 1 permite). O
+ *      token de injeção tem dono: aparece só na declaração, na fiação e no
+ *      publicador. Um quarto arquivo que o injetasse seria outro caminho para a
+ *      Graph sem a porta — é isso que esta catraca impede.
+ *   3. O publicador INSCREVE o efeito e nunca o dispara: quem dispara é a porta.
+ */
+describe('catraca de arquitetura: o publicador do Instagram (MD6)', () => {
+  const CONECTOR = 'src/bio/plataformas/instagram.ts';
+  const TOKEN = 'src/pauta/graph-de-publicacao.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const PUBLICADOR = 'src/pauta/publicacao-instagram.service.ts';
+
+  it('os quatro arquivos existem onde a catraca procura', () => {
+    for (const a of [CONECTOR, TOKEN, FIACAO, PUBLICADOR]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o endereço da Graph do Instagram só aparece no conector', () => {
+    const fora = FONTES.filter((f) => f.arquivo !== CONECTOR && /graph\.instagram\.com/.test(f.codigo)).map((f) => f.arquivo);
+    expect(fora, 'endereço da Graph fora do conector da bio').toEqual([]);
+    expect(FONTES.find((f) => f.arquivo === CONECTOR)!.codigo).toMatch(/graph\.instagram\.com/);
+  });
+
+  it('o cliente de publicação da Graph tem um dono: só a declaração, a fiação e o publicador o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_PUBLICACAO\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, PUBLICADOR].sort());
+    // E a fiação só declara: nenhuma chamada da Graph passa por ela.
+    const fiacao = FONTES.find((f) => f.arquivo === FIACAO)!;
+    expect(fiacao.semTexto).not.toMatch(/\bfetch\s*\(/);
+    expect(fiacao.semTexto).not.toMatch(/\binstagram\.\w+\s*\(/);
+  });
+
+  it('o publicador não importa o conector e só inscreve o efeito — quem dispara é a porta', () => {
+    const imports = REFS.filter((r) => r.arquivo === PUBLICADOR && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o publicador importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === PUBLICADOR)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.post\.publicar'/);
+  });
+});
+
+/*
+ * MD9 — o coletor de comentários tem o mesmo desenho do publicador: o cliente da
+ * Graph chega por injeção, com token próprio e dono próprio, e só é usado
+ * DENTRO do efeito que a porta dispara. O texto do comentário não sai do efeito.
+ */
+describe('catraca de arquitetura: o coletor de comentários (MD9)', () => {
+  const TOKEN = 'src/pauta/graph-de-comentarios.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const COLETOR = 'src/pauta/comentarios.service.ts';
+
+  it('os três arquivos existem onde a catraca procura', () => {
+    for (const a of [TOKEN, FIACAO, COLETOR]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o cliente de comentários da Graph tem um dono: só a declaração, a fiação e o coletor o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_COMENTARIOS\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, COLETOR].sort());
+  });
+
+  it('o coletor não importa o conector, inscreve o efeito e nunca o dispara', () => {
+    const imports = REFS.filter((r) => r.arquivo === COLETOR && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o coletor importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === COLETOR)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.comentario\.ler'/);
+    // A Graph só é chamada dentro do efeito: fora dele, nenhum `this.graph.`.
+    const efeito = fonte.semTexto.slice(fonte.semTexto.indexOf('private async efeito('), fonte.semTexto.indexOf('private async pecasPublicadas('));
+    const total = (fonte.semTexto.match(/this\s*\.\s*graph\s*\./g) ?? []).length;
+    expect(total).toBeGreaterThan(0);
+    expect((efeito.match(/this\s*\.\s*graph\s*\./g) ?? []).length, 'chamada à Graph fora do efeito').toBe(total);
+  });
+});
+
+/*
+ * MD11 — a DM automática tem o mesmo desenho: o cliente de mensagens da Graph
+ * chega por injeção, com token e dono próprios, e só é chamado DENTRO do efeito
+ * de `instagram.resposta_privada.enviar`, que a porta dispara depois de
+ * consumir o uso do item do lote. O id do comentário não passa pelos argumentos.
+ */
+describe('catraca de arquitetura: a DM automática (MD11)', () => {
+  const TOKEN = 'src/pauta/graph-de-mensagens.ts';
+  const FIACAO = 'src/bio/plataformas/publicacao.module.ts';
+  const SERVICO = 'src/pauta/dm-automatica.service.ts';
+
+  it('os três arquivos existem onde a catraca procura', () => {
+    for (const a of [TOKEN, FIACAO, SERVICO]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o cliente de mensagens da Graph tem um dono: só a declaração, a fiação e a DM automática o citam', () => {
+    const citam = FONTES.filter((f) => /\bGRAPH_DE_MENSAGENS\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, SERVICO].sort());
+  });
+
+  it('a DM automática não importa o conector, inscreve o efeito, nunca o dispara, e só fala com a Graph dentro dele', () => {
+    const imports = REFS.filter((r) => r.arquivo === SERVICO && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'a DM automática importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === SERVICO)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'instagram\.resposta_privada\.enviar'/);
+    const efeito = fonte.semTexto.slice(fonte.semTexto.indexOf('private async efeito('), fonte.semTexto.indexOf('private async efeitoDePausar('));
+    const total = (fonte.semTexto.match(/this\s*\.\s*graph\s*\./g) ?? []).length;
+    expect(total).toBeGreaterThan(0);
+    expect((efeito.match(/this\s*\.\s*graph\s*\./g) ?? []).length, 'chamada à Graph fora do efeito').toBe(total);
+  });
+
+  it('o consumo do lote não é chamado pela DM automática: quem consome é a porta', () => {
+    const fonte = FONTES.find((f) => f.arquivo === SERVICO)!;
+    expect(fonte.semTexto).not.toMatch(/consumirItem\s*\(/);
+  });
+});
+
+/*
+ * MD7 — o uso contado do lote tem UM chamador: a porta.
+ *
+ * `LotesService.consumirItem` é o que deixa uma saída acontecer sem aprovação
+ * por pedido. Chamado de qualquer outro lugar, ele gastaria o uso de um item
+ * sem régua, sem sinais e sem RASTRO — e o efeito poderia vir logo depois, pela
+ * porta ou não. A ativação do lote tem dono também: o efeito inscrito por
+ * `AssinaturaDeLoteService`, que a porta dispara depois da assinatura.
+ */
+describe('catraca de arquitetura: o lote de aprovação (MD7)', () => {
+  const PORTA = 'src/gateway/tool-gateway.service.ts';
+  const SERVICO = 'src/approvals/lotes.service.ts';
+  const ASSINATURA = 'src/approvals/assinatura-de-lote.service.ts';
+
+  it('os arquivos existem onde a catraca procura', () => {
+    for (const a of [PORTA, SERVICO, ASSINATURA]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('só a porta consome item de lote', () => {
+    const consomem = FONTES.filter((f) => /\.\s*consumirItem\s*\(/.test(f.semTexto)).map((f) => f.arquivo);
+    expect(consomem, 'consumo de item de lote fora da porta').toEqual([PORTA]);
+  });
+
+  it('só o efeito inscrito ativa o lote, e a inscrição não dispara nada', () => {
+    const ativam = FONTES.filter((f) => /\blotes\s*\.\s*ativar\s*\(/.test(f.semTexto)).map((f) => f.arquivo);
+    expect(ativam).toEqual([ASSINATURA]);
+    const fonte = FONTES.find((f) => f.arquivo === ASSINATURA)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+  });
+
+  it('nada fora do serviço escreve estado de lote ou de item à mão', () => {
+    const escrevem = FONTES.filter(
+      (f) => f.arquivo !== SERVICO && /\b(aprovacaoDeLote|itemDoLote)\s*\.\s*(update|updateMany|create|createMany|upsert|delete|deleteMany)\s*\(/.test(f.semTexto),
+    ).map((f) => f.arquivo);
+    expect(escrevem, 'escrita em lote fora de LotesService').toEqual([]);
+
+    // O SQL cru mora dentro de template: a visão `semTexto` o apaga. Ativar um
+    // lote por fora com `$executeRaw` seria pular a segunda pessoa.
+    const escreveCru = /\b(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"(AprovacaoDeLote|ItemDoLote)"/i;
+    // A régua enxerga o consumo do próprio serviço; sem isso a catraca seria vazia.
+    expect(escreveCru.test(FONTES.find((f) => f.arquivo === SERVICO)!.codigo)).toBe(true);
+    const sqlCru = FONTES.filter((f) => f.arquivo !== SERVICO && escreveCru.test(f.codigo)).map((f) => f.arquivo);
+    expect(sqlCru, 'SQL cru escrevendo em lote fora de LotesService').toEqual([]);
+  });
+});
+
+/*
+ * MD10 — o YouTube tem o mesmo desenho do publicador do Instagram: o HTTP e a
+ * credencial moram no conector, o cliente chega à pauta por injeção (token
+ * com dono), e o que escreve no canal só roda dentro dos efeitos que a porta
+ * dispara. O retorno do OAuth também chega por injeção, e o controlador não
+ * importa o conector — a lista de exceções não cresce.
+ */
+describe('catraca de arquitetura: o YouTube (MD10)', () => {
+  const CONECTOR = 'src/youtube/youtube.service.ts';
+  const TOKEN = 'src/pauta/cliente-do-youtube.ts';
+  const FIACAO = 'src/youtube/youtube.module.ts';
+  const ENVIO = 'src/pauta/envio-ao-youtube.service.ts';
+  const CONEXAO = 'src/youtube/conexao-do-youtube.ts';
+  const CALLBACK = 'src/youtube/youtube-conexao.controller.ts';
+
+  it('os arquivos existem onde a catraca procura', () => {
+    for (const a of [CONECTOR, TOKEN, FIACAO, ENVIO, CONEXAO, CALLBACK]) expect(CAMINHOS, a).toContain(a);
+  });
+
+  it('o endereço do YouTube (a API, o upload e os escopos) só aparece no conector', () => {
+    const doYoutube = /googleapis\.com\/(?:upload\/)?youtube|youtube\.googleapis\.com|auth\/youtube/;
+    const fora = FONTES.filter((f) => f.arquivo !== CONECTOR && doYoutube.test(f.codigo)).map((f) => f.arquivo);
+    expect(fora, 'endereço do YouTube fora do conector').toEqual([]);
+    expect(FONTES.find((f) => f.arquivo === CONECTOR)!.codigo).toMatch(doYoutube);
+    // O `SCOPES` do Google da empresa não pede o canal.
+    expect(FONTES.find((f) => f.arquivo === 'src/google/google.service.ts')!.codigo).not.toMatch(/auth\/youtube/);
+  });
+
+  it('o cliente do YouTube tem um dono: só a declaração, a fiação e o envio o citam', () => {
+    const citam = FONTES.filter((f) => /\bCLIENTE_DO_YOUTUBE\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, TOKEN, ENVIO].sort());
+    const fiacao = FONTES.find((f) => f.arquivo === FIACAO)!;
+    expect(fiacao.semTexto).not.toMatch(/\bfetch\s*\(/);
+  });
+
+  it('o retorno do OAuth chega ao controlador por injeção, e o controlador não importa o conector', () => {
+    const citam = FONTES.filter((f) => /\bCONEXAO_DO_YOUTUBE\b/.test(f.semTexto)).map((f) => f.arquivo).sort();
+    expect(citam).toEqual([FIACAO, CONEXAO, CALLBACK].sort());
+    const imports = REFS.filter((r) => r.arquivo === CALLBACK && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o controlador do OAuth importou um conector').toEqual([]);
+    // A conexão só conclui a autorização: nenhuma chamada do Data API passa por ela.
+    const contrato = FONTES.find((f) => f.arquivo === CONEXAO)!.semTexto;
+    expect(contrato).toMatch(/concluirAutorizacao/);
+    expect(contrato).not.toMatch(/abrirSessao|agendar|definirThumb|inserirNaPlaylist|lerVideo/);
+  });
+
+  it('o envio não importa o conector, inscreve os dois efeitos e nunca os dispara; o que escreve no canal só roda dentro deles', () => {
+    const imports = REFS.filter((r) => r.arquivo === ENVIO && CONECTORES[r.alvo] !== undefined);
+    expect(imports, 'o envio importou um conector').toEqual([]);
+    const fonte = FONTES.find((f) => f.arquivo === ENVIO)!;
+    expect(fonte.semTexto).toMatch(/this\s*\.\s*efeitos\s*\.\s*registrar\s*\(/);
+    expect(fonte.semTexto).not.toMatch(/this\s*\.\s*efeitos\s*\.\s*executar\s*\(/);
+    expect(fonte.codigo).toMatch(/'youtube\.video\.enviar'/);
+    expect(fonte.codigo).toMatch(/'youtube\.video\.publicar'/);
+    const escritas = /this\s*\.\s*youtube\s*\.\s*(abrirSessao|definirThumb|inserirNaPlaylist|agendar)\s*\(/g;
+    const total = (fonte.semTexto.match(escritas) ?? []).length;
+    expect(total).toBeGreaterThanOrEqual(4);
+    const inicio = fonte.semTexto.indexOf('async efeitoDeEnviar(');
+    const fim = fonte.semTexto.indexOf('// ------------------------------------------------------------------ a rotina');
+    // `thumbEPlaylist` é chamado só pelos dois efeitos: ele mora dentro do trecho medido.
+    const trechoDosEfeitos = fonte.semTexto.slice(fonte.semTexto.indexOf('private async thumbEPlaylist('), fim);
+    expect(inicio).toBeGreaterThan(0);
+    expect((trechoDosEfeitos.match(escritas) ?? []).length, 'escrita no YouTube fora dos efeitos').toBe(total);
+    const chamadasDoAjudante = (fonte.semTexto.match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
+    const noTrechoDosEfeitos = (fonte.semTexto.slice(inicio, fim).match(/this\s*\.\s*thumbEPlaylist\s*\(/g) ?? []).length;
+    expect(noTrechoDosEfeitos).toBe(chamadasDoAjudante);
   });
 });

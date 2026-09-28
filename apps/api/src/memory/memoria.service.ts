@@ -85,6 +85,9 @@ import {
  *    o modelo é `context-builder.service.ts`, com cerca, neutralização e marca
  *    de procedência. Esta fatia não abre caminho novo, e é por isso que o
  *    inventário de cercas da suíte adversarial continua com os três de hoje.
+ *    A exceção declarada é a voz do autor (MC10): as notas `voz.*` entram
+ *    como instrução de estilo pelo `pauta/voz-da-pauta.ts` — neutralizadas,
+ *    com procedência e sem cerca. Ver ADR-011, "Fronteiras".
  */
 
 /** O tipo de evento de cada mudança. Um por valor de `ContextChange`. */
@@ -111,7 +114,14 @@ export interface EntradaDeNota {
   motivo?: string | null;
 }
 
-export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & { motivo?: string | null };
+export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & {
+  motivo?: string | null;
+  /**
+   * A versão que quem pede leu. Diferente da atual, a alteração é recusada
+   * (409) — conferida DENTRO do cadeado, onde a leitura vale.
+   */
+  versaoEsperada?: number;
+};
 
 export interface NotaDeContexto {
   id: string;
@@ -741,6 +751,11 @@ export class MemoriaService {
       mudanca: ContextChange.alteracao,
       ator,
       montar: (atual) => {
+        if (mudancas.versaoEsperada !== undefined && atual.versao !== mudancas.versaoEsperada) {
+          throw new ConflictException(
+            `A nota mudou desde a leitura (versão ${mudancas.versaoEsperada}, agora ${atual.versao}) — recarregue e tente de novo.`,
+          );
+        }
         const body = mudancas.body ?? atual.body;
         const title = (mudancas.title ?? atual.title).trim();
         if (!title) throw new BadRequestException('A nota precisa de título.');

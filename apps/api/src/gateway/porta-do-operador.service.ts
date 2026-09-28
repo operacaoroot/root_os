@@ -2,6 +2,8 @@ import { BadRequestException, ForbiddenException, Injectable, Logger } from '@ne
 import { ActorType } from '@prisma/client';
 import { correlacaoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { EfeitosRegistry } from './efeitos.registry';
+import { FILA_DE_APROVACAO } from './fila-de-aprovacao';
+import type { ProcedenciaExterna } from '../policy/sinais.service';
 import { ToolGateway, type ExecCtx } from './tool-gateway.service';
 
 /*
@@ -77,16 +79,8 @@ import { ToolGateway, type ExecCtx } from './tool-gateway.service';
  *                               resultado para não derrubar o laço do agente.
  */
 
-/**
- * Onde a fila de aprovação mora na web.
- *
- * Sai daqui, e não do componente, pelo mesmo motivo do texto do interruptor em
- * `integrations/conectores.ts`: caminho escrito na tela é a forma garantida de
- * os dois lados divergirem na próxima fatia. A tela desta rota ainda é o
- * placeholder do menu — quem a constrói é a fatia 3.10 —, e é justamente por
- * isso que o endereço precisa vir de um lugar só.
- */
-export const FILA_DE_APROVACAO = '/atendimento';
+// Onde a fila de aprovação mora na web: um lugar só (`fila-de-aprovacao.ts`), também lido pelo aviso do canal.
+export { FILA_DE_APROVACAO };
 
 /** O bilhete que a tela recebe quando a ação foi retida para aprovação. */
 export interface AcaoRetida {
@@ -137,12 +131,23 @@ export class PortaDoOperador {
   async executar<R = unknown>(entrada: {
     orgId: string;
     actorId: string;
+    /**
+     * `system` quando não há pessoa por trás — a coleta da rotina da pauta lê o
+     * Gmail (R0) de madrugada, e o RASTRO não pode dizer que alguém clicou.
+     */
+    actorType?: ActorType;
     capabilityId: string;
     args: Record<string, unknown>;
     resource?: { type: string; id: string };
     valorCentavos?: number | null;
     /** Só quando a rota recebeu um `x-approval-token` já confirmado. */
     approvalToken?: string;
+    /**
+     * A marca de conteúdo de fora (RF-G-07), de mão única: quem monta o pedido a
+     * partir do que um estranho escreveu (a DM automática responde a um
+     * comentário, MD11) marca, e o sinal `fonte_nao_confiavel` sobe um degrau.
+     */
+    procedenciaExterna?: ProcedenciaExterna;
   }): Promise<R | AcaoRetida> {
     const { capabilityId } = entrada;
 
@@ -162,7 +167,7 @@ export class PortaDoOperador {
 
     const ctx: ExecCtx = {
       orgId: entrada.orgId,
-      actorType: ActorType.user,
+      actorType: entrada.actorType ?? ActorType.user,
       actorId: entrada.actorId,
       agentSlug: null,
       /*
@@ -171,6 +176,7 @@ export class PortaDoOperador {
        * história só. Sem contexto aberto (script de terminal, cron) cunha-se uma.
        */
       correlationId: correlacaoAtual() ?? novaCorrelacao('operador'),
+      ...(entrada.procedenciaExterna ? { procedenciaExterna: entrada.procedenciaExterna } : {}),
       /*
        * `capacidadesDeclaradas` fica de fora DE PROPÓSITO. A declaração é o
        * escopo de um AGENTE (RF-N-03); uma pessoa é limitada pela permissão de

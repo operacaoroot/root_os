@@ -17,6 +17,17 @@ export interface ContextoDoEfeito {
   actorId?: string | null;
   agentSlug?: string | null;
   correlationId?: string | null;
+  /**
+   * A aprovação que liberou este disparo, quando ele vem da fila
+   * (`AcoesService.executarAprovada`). Não se herda do ambiente: só quem
+   * consumiu a aprovação sabe qual foi.
+   */
+  approvalId?: string | null;
+  /**
+   * O item de lote consumido pela porta nesta passagem (MD7). Só a porta o
+   * escreve; o efeito lê daqui que a saída foi autorizada pelo lote.
+   */
+  loteItemId?: string | null;
 }
 
 /**
@@ -176,6 +187,8 @@ export class EfeitosRegistry {
       actorId: bruto.actorId ?? herdado?.actorId ?? null,
       agentSlug: bruto.agentSlug ?? herdado?.agentSlug ?? null,
       correlationId: bruto.correlationId ?? herdado?.correlationId ?? null,
+      ...(bruto.approvalId ? { approvalId: bruto.approvalId } : {}),
+      ...(bruto.loteItemId ? { loteItemId: bruto.loteItemId } : {}),
     };
   }
 }

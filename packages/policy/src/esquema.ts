@@ -34,6 +34,42 @@ export const EfeitoSchema = z.object({
   alcance: z.number().int().positive().optional(),
 });
 
+/*
+ * O MODO DE APROVAÇÃO da capacidade (MD7, 24/09/2026) — a segunda forma da
+ * invariante 4: "uso único — ou uso contado, item a item, quando a capacidade
+ * declara lote".
+ *
+ *  - `lote`: a capacidade APROVA UMA LISTA. Assinada uma vez, cada item da
+ *    lista vale um uso contado da capacidade dele, preso ao hash do conteúdo,
+ *    com janela e prazo. `tetoDeItens` é o tamanho máximo da lista e
+ *    `validadeMaximaDias` o prazo mais longo que o lote pode pedir.
+ *  - `sob_lote`: a capacidade aceita, além do caminho de sempre (uma aprovação
+ *    por pedido), sair por um item de lote da capacidade `lote` apontada.
+ *
+ * `.strict()` e união discriminada de propósito: o `z.object` do resto do
+ * esquema DESCARTA chave desconhecida em silêncio, e um `modo` digitado errado
+ * ou um campo a mais aqui sumiria no parse sem ninguém ver — a capacidade
+ * continuaria de uso único e o catálogo diria outra coisa. Aqui, modo
+ * desconhecido ou chave estranha é recusa com o caminho do campo.
+ */
+export const AprovacaoDaCapacidadeSchema = z.discriminatedUnion('modo', [
+  z
+    .object({
+      modo: z.literal('lote'),
+      tetoDeItens: z.number().int().positive(),
+      validadeMaximaDias: z.number().int().positive(),
+    })
+    .strict(),
+  z
+    .object({
+      modo: z.literal('sob_lote'),
+      lote: z.string().min(1),
+    })
+    .strict(),
+]);
+
+export type AprovacaoDaCapacidade = z.infer<typeof AprovacaoDaCapacidadeSchema>;
+
 export const CapacidadeSchema = z.object({
   id: z.string().min(1),
   descricao: z.string().min(1),
@@ -54,6 +90,8 @@ export const CapacidadeSchema = z.object({
    * inventa — foi assim que uma aprovação foi queimada em 01/09/2026.
    */
   argsSchema: z.record(z.string(), z.unknown()).optional(),
+  /** Ausente = uso único, como sempre. Ver `AprovacaoDaCapacidadeSchema`. */
+  aprovacao: AprovacaoDaCapacidadeSchema.optional(),
 });
 
 export const AprovacaoSchema = z.object({

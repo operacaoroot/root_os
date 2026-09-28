@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_CANAL_LABEL,
+  PAUTA_ORIGEM_ROTULOS,
+  PAUTA_ORIGENS,
+  apelidoDoEpisodio,
   type PautaCanalEstado,
+  type PautaEpisodioDetalhe,
+  type PautaOrigem,
   type PautaRodadaDetalhe,
   type PautaRodadaList,
 } from '@mktos/shared';
@@ -20,17 +25,41 @@ interface Props {
   onErro: (m: string | null, codigo?: string | null) => void;
   bump: number;
   onMudou: () => void;
+  onAbrirCuradoria?: (rodadaId: string) => void;
+  /** MC7: a rodada curada vira episódio, e a tela vai para ele. */
+  onAbrirEpisodio?: (episodioId: string) => void;
 }
 
 const TOM_RODADA: Record<string, 'muted' | 'good' | 'warn' | 'bad'> = {
   coletando: 'warn',
+  aguardando_curadoria: 'warn',
   curada: 'good',
   aprovada: 'good',
   publicada: 'good',
   falhou: 'bad',
 };
 
-export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudou }: Props) {
+/** A peça da semana de posts do episódio (MC15): tem episódio, matéria e o formato na meta. */
+function ehPecaDaSemana(meta: unknown): boolean {
+  const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : null;
+  return !!m && typeof m.episodioId === 'string' && typeof m.itemId === 'string' && typeof m.formato === 'string';
+}
+
+// O item curado é JSON gravado: a letra só aparece se for uma das cinco.
+function temOrigem(o: unknown): o is PautaOrigem {
+  return typeof o === 'string' && (PAUTA_ORIGENS as readonly string[]).includes(o);
+}
+
+export function AbaRodadas({
+  token,
+  editavel,
+  podePublicar,
+  onErro,
+  bump,
+  onMudou,
+  onAbrirCuradoria,
+  onAbrirEpisodio,
+}: Props) {
   const [data, setData] = useState<PautaRodadaList | null>(null);
   const [canais, setCanais] = useState<{ whatsapp: PautaCanalEstado } | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -77,6 +106,33 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     }
   };
 
+  // A coleta não para por uma fonte: a que falhou vem só contada em `erros`, e
+  // a pulada com aviso (teto do mês da busca), em `puladas`; o motivo dos dois
+  // fica gravado na fonte. Sem este aviso o clique pareceria ter dado certo.
+  const coletar = async () => {
+    const saida: { erros?: number; puladas?: number } = {};
+    await acao('coletar', async () => {
+      const r = await apiPost<{ novas: number; fontes: number; erros: number; puladas?: number }>(
+        '/pauta/feeds/coletar',
+        {},
+        token,
+      );
+      saida.erros = r.erros;
+      saida.puladas = r.puladas;
+    });
+    const partes = [
+      saida.erros ? `${saida.erros} fonte(s) falharam na coleta` : '',
+      saida.puladas ? `${saida.puladas} fonte(s) foram puladas (teto do mês ou consulta faltando)` : '',
+    ].filter(Boolean);
+    if (partes.length) onErro(`${partes.join('; ')} — o motivo está em Referências → Radar.`);
+  };
+
+  const criarEpisodio = (rodadaId: string) =>
+    acao(`ep-${rodadaId}`, async () => {
+      const e = await apiPost<PautaEpisodioDetalhe>('/pauta/episodios', { rodadaId }, token);
+      onAbrirEpisodio?.(e.id);
+    });
+
   const publicar = async (pecaId: string, resumo: string) =>
     acao(`pub-${pecaId}`, () => publicarComAprovacao(pecaId, resumo, token));
 
@@ -84,10 +140,10 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Botao
-          onClick={() => acao('coletar', () => apiPost('/pauta/feeds/coletar', {}, token))}
+          onClick={coletar}
           disabled={!editavel || ocupado === 'coletar'}
         >
-          {ocupado === 'coletar' ? 'Coletando…' : 'Coletar feeds'}
+          {ocupado === 'coletar' ? 'Coletando…' : 'Coletar fontes'}
         </Botao>
         <Botao
           tone="brand"
@@ -127,22 +183,47 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Chip tone={TOM_RODADA[r.status] ?? 'muted'}>{r.status}</Chip>
-                  <Chip>{r.itens} item(ns)</Chip>
+                  <Chip tone={TOM_RODADA[r.status] ?? 'muted'}>{r.status.replace('_', ' ')}</Chip>
+                  {r.status === 'aguardando_curadoria' ? (
+                    <Chip>
+                      {r.marcados} de {r.itens} marcado(s)
+                    </Chip>
+                  ) : (
+                    <Chip>{r.itens} item(ns)</Chip>
+                  )}
                   <Chip tone={r.pecas ? 'brand' : 'muted'}>{r.pecas} peça(s)</Chip>
                   {r.model && <Chip>{r.model}</Chip>}
                   {r.rotina && <Chip tone="brand">{r.rotina}</Chip>}
+                  {r.episodio && <Chip tone="good">{apelidoDoEpisodio(r.episodio.numero)}</Chip>}
                 </div>
                 <p className="mt-1 truncate text-sm">{r.titulo}</p>
                 <p className="mt-0.5 text-[11px] text-muted">
                   {new Date(r.criadaEm).toLocaleString('pt-BR')} · janela de{' '}
                   {Math.round((+new Date(r.janelaFim) - +new Date(r.janelaIni)) / 3600000)}h
                 </p>
-                {r.erro && <p className="mt-0.5 text-xs text-bad">{r.erro}</p>}
+                {r.erro && (
+                  <p className={`mt-0.5 text-xs ${r.status === 'falhou' ? 'text-bad' : 'text-warn'}`}>{r.erro}</p>
+                )}
               </div>
             </button>
 
-            {aberta === r.id && detalhe && (
+            {aberta === r.id && detalhe && detalhe.status === 'aguardando_curadoria' && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3 text-sm text-muted">
+                <span>
+                  {detalhe.itens.length} candidato(s) esperando a curadoria — só o que for marcado segue para as peças.
+                </span>
+                {onAbrirCuradoria && (
+                  <Botao tone="brand" onClick={() => onAbrirCuradoria(r.id)}>
+                    Abrir Curadoria
+                  </Botao>
+                )}
+                <Botao tone="bad" onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))} disabled={!editavel}>
+                  Remover rodada
+                </Botao>
+              </div>
+            )}
+
+            {aberta === r.id && detalhe && detalhe.status !== 'aguardando_curadoria' && (
               <div className="border-t border-border px-4 py-3">
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <Botao
@@ -152,7 +233,27 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   >
                     {ocupado === 'derivar' ? 'Derivando…' : 'Gerar peças'}
                   </Botao>
-                  <Botao tone="bad" onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))} disabled={!editavel}>
+                  {detalhe.status === 'curada' && !detalhe.episodio && (
+                    <Botao
+                      tone="brand"
+                      onClick={() => criarEpisodio(r.id)}
+                      disabled={!editavel || ocupado === `ep-${r.id}`}
+                      title="O episódio nasce no roteiro, com os itens desta rodada"
+                    >
+                      {ocupado === `ep-${r.id}` ? 'Criando…' : 'Criar episódio'}
+                    </Botao>
+                  )}
+                  {detalhe.episodio && onAbrirEpisodio && (
+                    <Botao onClick={() => onAbrirEpisodio(detalhe.episodio!.id)}>
+                      Abrir episódio {apelidoDoEpisodio(detalhe.episodio.numero)}
+                    </Botao>
+                  )}
+                  <Botao
+                    tone="bad"
+                    onClick={() => acao('rm', () => apiDelete(`/pauta/rodadas/${r.id}`, token))}
+                    disabled={!editavel || !!detalhe.episodio}
+                    title={detalhe.episodio ? 'A rodada que virou episódio não se apaga' : undefined}
+                  >
                     Remover rodada
                   </Botao>
                   <span className="text-xs text-muted">
@@ -166,10 +267,24 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   </div>
                 )}
 
+                {detalhe.itens.some((i) => temOrigem(i.origem)) && (
+                  <p className="mb-1.5 text-xs text-muted">
+                    Origem: {PAUTA_ORIGENS.map((o) => `${o} ${PAUTA_ORIGEM_ROTULOS[o].toLowerCase()}`).join(' · ')}
+                  </p>
+                )}
                 {detalhe.itens.length > 0 && (
                   <ul className="mb-4 space-y-1.5">
                     {detalhe.itens.map((i) => (
-                      <li key={i.url} className="text-sm">
+                      <li key={i.id ?? i.url} className="text-sm">
+                        {temOrigem(i.origem) && (
+                          <span
+                            className="mr-1.5 inline-block rounded border border-border px-1 font-mono text-[11px] text-muted"
+                            title={PAUTA_ORIGEM_ROTULOS[i.origem]}
+                            aria-label={`Origem: ${PAUTA_ORIGEM_ROTULOS[i.origem]}`}
+                          >
+                            {i.origem}
+                          </span>
+                        )}
                         <a
                           href={i.url}
                           target="_blank"
@@ -184,99 +299,111 @@ export function AbaRodadas({ token, editavel, podePublicar, onErro, bump, onMudo
                   </ul>
                 )}
 
-                {detalhe.pecas.map((p) => (
-                  <div key={p.id} className="mb-3 rounded-lg border border-border p-3">
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Chip tone="brand">{PAUTA_CANAL_LABEL[p.canal] ?? p.canal}</Chip>
-                      <Chip>{p.formato}</Chip>
-                      <Chip tone={p.status === 'publicada' ? 'good' : p.status === 'descartada' ? 'muted' : 'warn'}>
-                        {p.status}
-                      </Chip>
-                      {p.bioLinkId && <Chip tone="good">link rastreado</Chip>}
-                      <span className="text-sm">{p.titulo}</span>
-                    </div>
+                {detalhe.pecas.map((p) => {
+                  // A semana de posts do episódio (MC15): o texto se edita lá, onde o CTA se refaz e o render velho cai.
+                  const daSemana = ehPecaDaSemana(p.meta);
+                  return (
+                    <div key={p.id} className="mb-3 rounded-lg border border-border p-3">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <Chip tone="brand">{PAUTA_CANAL_LABEL[p.canal] ?? p.canal}</Chip>
+                        <Chip>{p.formato}</Chip>
+                        <Chip tone={p.status === 'publicada' ? 'good' : p.status === 'descartada' ? 'muted' : 'warn'}>
+                          {p.status}
+                        </Chip>
+                        {p.bioLinkId && <Chip tone="good">link rastreado</Chip>}
+                        <span className="text-sm">{p.titulo}</span>
+                      </div>
 
-                    <textarea
-                      className={`${inputCls} min-h-[120px] font-mono text-xs`}
-                      value={rascunho[p.id] ?? p.corpo}
-                      onChange={(e) => setRascunho((r0) => ({ ...r0, [p.id]: e.target.value }))}
-                      disabled={p.status === 'publicada' || !editavel}
-                    />
+                      {daSemana ? (
+                        <p className="text-xs text-muted">
+                          Peça da semana de posts do episódio: o texto se edita na aba Episódios, seção “Semana de posts”.
+                        </p>
+                      ) : (
+                        <textarea
+                          className={`${inputCls} min-h-[120px] font-mono text-xs`}
+                          value={rascunho[p.id] ?? p.corpo}
+                          onChange={(e) => setRascunho((r0) => ({ ...r0, [p.id]: e.target.value }))}
+                          disabled={p.status === 'publicada' || !editavel}
+                        />
+                      )}
 
-                    {p.canal === 'instagram' && Array.isArray((p.meta as { slides?: unknown[] }).slides) && (
-                      <p className="mt-1 text-xs text-muted">
-                        {((p.meta as { slides: unknown[] }).slides ?? []).length} slides prontos — use
-                        “Baixar carrossel” e rode a máquina de carrossel (marca root).
-                      </p>
-                    )}
+                      {!daSemana && p.canal === 'instagram' && Array.isArray((p.meta as { slides?: unknown[] }).slides) && (
+                        <p className="mt-1 text-xs text-muted">
+                          {((p.meta as { slides: unknown[] }).slides ?? []).length} slides prontos — use
+                          “Baixar carrossel” e rode a máquina de carrossel (marca root).
+                        </p>
+                      )}
 
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {p.status !== 'publicada' && (
-                        <>
-                          <Botao
-                            onClick={() =>
-                              acao(`save-${p.id}`, () =>
-                                apiPatch(`/pauta/pecas/${p.id}`, { corpo: rascunho[p.id] ?? p.corpo }, token),
-                              )
-                            }
-                            disabled={!editavel}
-                          >
-                            Salvar texto
-                          </Botao>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {p.status !== 'publicada' && (
+                          <>
+                            {!daSemana && (
+                              <Botao
+                                onClick={() =>
+                                  acao(`save-${p.id}`, () =>
+                                    apiPatch(`/pauta/pecas/${p.id}`, { corpo: rascunho[p.id] ?? p.corpo }, token),
+                                  )
+                                }
+                                disabled={!editavel}
+                              >
+                                Salvar texto
+                              </Botao>
+                            )}
 
-                          {(p.canal === 'whatsapp' || p.canal === 'clickup') && (
+                            {(p.canal === 'whatsapp' || p.canal === 'clickup') && (
+                              <Botao
+                                tone="brand"
+                                onClick={() => publicar(p.id, `Publicar "${p.titulo}" em ${p.canal}`)}
+                                disabled={
+                                  !podePublicar ||
+                                  ocupado === `pub-${p.id}` ||
+                                  (p.canal === 'whatsapp' && !canais?.whatsapp.conectada)
+                                }
+                                title={
+                                  p.canal === 'whatsapp' && !canais?.whatsapp.conectada
+                                    ? (canais?.whatsapp.motivo ?? 'WhatsApp indisponível')
+                                    : 'Passa pela aprovação antes de sair'
+                                }
+                              >
+                                {ocupado === `pub-${p.id}` ? 'Publicando…' : 'Publicar'}
+                              </Botao>
+                            )}
+
+                            {p.canal === 'instagram' && (!p.formato || p.formato === 'carrossel') && (
+                              <a
+                                href={`/api/pauta/pecas/${p.id}/carrossel`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-muted hover:text-text"
+                              >
+                                Baixar carrossel
+                              </a>
+                            )}
+
                             <Botao
-                              tone="brand"
-                              onClick={() => publicar(p.id, `Publicar "${p.titulo}" em ${p.canal}`)}
-                              disabled={
-                                !podePublicar ||
-                                ocupado === `pub-${p.id}` ||
-                                (p.canal === 'whatsapp' && !canais?.whatsapp.conectada)
+                              tone="ghost"
+                              onClick={() =>
+                                acao(`desc-${p.id}`, () =>
+                                  apiPatch(`/pauta/pecas/${p.id}`, { status: 'descartada' }, token),
+                                )
                               }
-                              title={
-                                p.canal === 'whatsapp' && !canais?.whatsapp.conectada
-                                  ? (canais?.whatsapp.motivo ?? 'WhatsApp indisponível')
-                                  : 'Passa pela aprovação antes de sair'
-                              }
+                              disabled={!editavel}
                             >
-                              {ocupado === `pub-${p.id}` ? 'Publicando…' : 'Publicar'}
+                              Descartar
                             </Botao>
-                          )}
-
-                          {p.canal === 'instagram' && (
-                            <a
-                              href={`/api/pauta/pecas/${p.id}/carrossel`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-muted hover:text-text"
-                            >
-                              Baixar carrossel
-                            </a>
-                          )}
-
-                          <Botao
-                            tone="ghost"
-                            onClick={() =>
-                              acao(`desc-${p.id}`, () =>
-                                apiPatch(`/pauta/pecas/${p.id}`, { status: 'descartada' }, token),
-                              )
-                            }
-                            disabled={!editavel}
-                          >
-                            Descartar
-                          </Botao>
-                        </>
-                      )}
-                      {p.status === 'publicada' && p.publicadaEm && (
-                        <span className="text-xs text-muted">
-                          publicada em {new Date(p.publicadaEm).toLocaleString('pt-BR')}
-                          {p.externalId && ` · id ${p.externalId.slice(0, 16)}`}
-                        </span>
-                      )}
-                      {p.erro && <span className="text-xs text-bad">{p.erro}</span>}
+                          </>
+                        )}
+                        {p.status === 'publicada' && p.publicadaEm && (
+                          <span className="text-xs text-muted">
+                            publicada em {new Date(p.publicadaEm).toLocaleString('pt-BR')}
+                            {p.externalId && ` · id ${p.externalId.slice(0, 16)}`}
+                          </span>
+                        )}
+                        {p.erro && <span className="text-xs text-bad">{p.erro}</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

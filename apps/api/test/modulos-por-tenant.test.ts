@@ -512,6 +512,52 @@ describe('o gate de módulos (interceptor)', () => {
     await expect(passou('/api/conectar/instagram/callback', [], null)).resolves.toBe(SEGUIU);
   });
 
+  it('a mídia pública da peça (MD4) é do módulo pauta: anônima passa (quem confere é o serviço); com sessão, sem pauta, 404', async () => {
+    expect(moduloDoCaminho('/api/midia-publica/abc.def')).toBe('pauta');
+    await expect(passou('/api/midia-publica/abc.def', [], null)).resolves.toBe(SEGUIU);
+    await expect(passou('/api/midia-publica/abc.def', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/midia-publica/abc.def', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+  });
+
+  it('o YouTube (MD10) é do módulo pauta: as rotas do Mac somem sem ele, e o retorno do OAuth é público', async () => {
+    for (const c of [
+      '/api/pauta/episodios/e1/youtube',
+      '/api/pauta/episodios/e1/youtube/sessao',
+      '/api/pauta/episodios/e1/youtube/concluido',
+      '/api/pauta/youtube/pendentes',
+      '/api/pauta/youtube/conectar',
+      '/api/youtube/callback',
+    ]) {
+      expect(moduloDoCaminho(c)).toBe('pauta');
+    }
+    await expect(passou('/api/pauta/episodios/e1/youtube/sessao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/episodios/e1/youtube/sessao', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+    // Autenticado numa empresa sem o módulo: o callback também some.
+    expect(await recusa(passou('/api/youtube/callback', ['bio']))).toBeInstanceOf(NotFoundException);
+    // Anônimo (o navegador voltando do Google): passa, e quem confere é o `state` assinado.
+    await expect(passou('/api/youtube/callback', [], null)).resolves.toBe(SEGUIU);
+  });
+
+  it('publicar no Instagram pelo OS (MD6) é do módulo pauta: sem ele, a rota some', async () => {
+    for (const c of ['/api/pauta/pecas/p1/publicar-instagram', '/api/pauta/pecas/p1/publicacao', '/api/pauta/pecas/p1/publicacao/manual']) {
+      expect(moduloDoCaminho(c)).toBe('pauta');
+    }
+    await expect(passou('/api/pauta/pecas/p1/publicacao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/pecas/p1/publicar-instagram', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+  });
+
+  it('a conta de publicação (MD5) é do módulo pauta; o retorno dela é o callback público da bio', async () => {
+    expect(moduloDoCaminho('/api/pauta/instagram/conectar')).toBe('pauta');
+    expect(moduloDoCaminho('/api/pauta/instagram/conexao')).toBe('pauta');
+    await expect(passou('/api/pauta/instagram/conexao', ['pauta'])).resolves.toBe(SEGUIU);
+    const erro = await recusa(passou('/api/pauta/instagram/conectar', ['bio']));
+    expect(erro).toBeInstanceOf(NotFoundException);
+    await expect(passou('/api/conectar/instagram/callback', [], null)).resolves.toBe(SEGUIU);
+  });
+
   /*
    * O CONTRÁRIO DA ROTA PÚBLICA: usuário presente e empresa ausente.
    *

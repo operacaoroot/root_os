@@ -11,6 +11,8 @@
  * impor outra — que é exatamente o defeito que a fatia 2.3 existe para impedir.
  */
 
+import { PAUTA_FUSO_DA_AGENDA, partesNoFuso } from '@mktos/shared';
+
 /** `'08:00'` -> 480. Devolve `NaN` para o que não for `H:MM` ou `HH:MM`. */
 export function minutosDoDia(hhmm: string): number {
   const m = /^(\d{1,2}):([0-5]\d)$/.exec(hhmm.trim());
@@ -18,6 +20,64 @@ export function minutosDoDia(hhmm: string): number {
   const hora = Number(m[1]);
   if (hora > 23) return Number.NaN;
   return hora * 60 + Number(m[2]);
+}
+
+/* ------------------------------------------------------ o fuso da janela --- */
+
+/**
+ * O fuso em que a janela da política é lida (onda D, MD3).
+ *
+ * O documento diz `08:00–20:00` pensando no relógio de quem opera, que é o de
+ * São Paulo. Até a MD3 a porta lia a hora com `getHours()`, que é o fuso do
+ * PROCESSO: o container não define `TZ`, roda em UTC, e a janela valia das 05h
+ * às 17h de Brasília. Post das 18h e DM das 19h subiam um degrau sem motivo, e
+ * das 05h às 08h a janela ficava aberta quando o documento a queria fechada.
+ *
+ * `POLITICA_FUSO_HORARIO` troca o fuso sem mexer no documento, e por isso não
+ * pede seed nem assinatura. A agenda da semana NÃO acompanha a variável: ela lê
+ * a constante `PAUTA_FUSO_DA_AGENDA` (São Paulo). Trocar o fuso daqui sem trocar
+ * o de lá faz a porta julgar os slots propostos em outro relógio.
+ *
+ * Fuso desconhecido derruba o arranque (ver `SinaisService`): cair calado para
+ * UTC repetiria o defeito que isto conserta.
+ */
+export const FUSO_DA_POLITICA = PAUTA_FUSO_DA_AGENDA;
+
+/** O fuso em vigor: `POLITICA_FUSO_HORARIO` quando preenchida, senão São Paulo. */
+export function fusoDaPolitica(env: Record<string, string | undefined> = process.env): string {
+  return env.POLITICA_FUSO_HORARIO?.trim() || FUSO_DA_POLITICA;
+}
+
+/** O Intl conhece este nome de fuso? */
+export function fusoValido(fuso: string): boolean {
+  try {
+    partesNoFuso(new Date(0), fuso);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Minutos desde a meia-noite NO FUSO DA POLÍTICA, qualquer que seja o `TZ` do
+ * processo. Fuso desconhecido devolve `NaN`, e `foraDaJanela()` acende com
+ * `NaN`: se não dá para dizer que hora é, não dá para provar que está dentro.
+ *
+ * A hora de parede vem de `partesNoFuso` do @mktos/shared, a mesma conta que
+ * põe os slots na agenda da semana. Uma segunda conta com o Intl aqui deixaria
+ * a agenda propor 18:00 e a porta julgar outra hora.
+ */
+export function minutosNoFuso(agora: Date, fuso: string = fusoDaPolitica()): number {
+  if (Number.isNaN(agora.getTime()) || !fusoValido(fuso)) return Number.NaN;
+  return minutosDoDia(partesNoFuso(agora, fuso).hora);
+}
+
+/** `minutosNoFuso` em `HH:MM`, para a tela dizer que horas são lá. */
+export function horarioNoFuso(agora: Date, fuso: string = fusoDaPolitica()): string | null {
+  const minutos = minutosNoFuso(agora, fuso);
+  if (Number.isNaN(minutos)) return null;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(Math.floor(minutos / 60))}:${p(minutos % 60)}`;
 }
 
 /** A janela desta empresa dá para comparar com um relógio? */

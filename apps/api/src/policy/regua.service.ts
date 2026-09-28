@@ -15,7 +15,7 @@ import { exigirTenant } from '../common/contexto-execucao';
 import { ModulosService } from '../tenants/modulos.service';
 import { catalogoVisivel } from '../tenants/modulos';
 import { PolicyService } from './policy.service';
-import { janelaLegivel } from './limites';
+import { fusoDaPolitica, janelaLegivel } from './limites';
 import {
   EFEITO_NEUTRO,
   linhaDeLog,
@@ -149,7 +149,9 @@ export class ReguaService {
       },
       fora_da_janela: {
         origem: 'limite da empresa',
-        quando: `a hora da execução cai fora de ${limites.janelaHoraria[0]}–${limites.janelaHoraria[1]}`,
+        quando:
+          `a hora da execução, em ${fusoDaPolitica()}, cai fora de ` +
+          `${limites.janelaHoraria[0]}–${limites.janelaHoraria[1]}`,
         maoUnica: false,
       },
       volume_atipico: {
@@ -228,6 +230,8 @@ export class ReguaService {
         desfazer: c.desfazer ?? null,
         ferramenta: c.ferramenta ?? null,
         rota: c.rota ?? null,
+        /** MD7: `lote` (aprova uma lista) ou `sob_lote` (sai por item de lote); nulo é uso único. */
+        aprovacao: c.aprovacao ?? null,
         validaArgumentos: Boolean(
           c.argsSchema &&
             (c.argsSchema as { properties?: unknown }).properties &&
@@ -478,6 +482,8 @@ export class ReguaService {
        * isso, porque o operador veria um degrau a mais em tudo sem explicação.
        */
       janelaLegivel: janelaLegivel(politica.limitesPadrao.janelaHoraria),
+      /** O fuso em que a janela é lida (`POLITICA_FUSO_HORARIO`, padrão São Paulo). */
+      fuso: fusoDaPolitica(),
       retencao: politica.retencao,
       capacidades: catalogo.capacidades,
       agentes: catalogo.agentes,

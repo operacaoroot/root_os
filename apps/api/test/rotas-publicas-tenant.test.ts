@@ -81,6 +81,9 @@ import {
 } from '../src/events/pixel-tenant.service';
 import { GUC_TENANT, comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { MidiaPublicaService } from '../src/pauta/midia-publica.service';
+import { assinar as assinarMidia } from '../src/pauta/midia-publica';
+import { ModulosService } from '../src/tenants/modulos.service';
 
 // ---------------------------------------------------------------------------
 // Parte pura — roda sempre, sem banco
@@ -759,6 +762,96 @@ describe.skipIf(!URL_BANCO)('as quatro rotas públicas, com a sessão em modo im
     await comoVisitante(() => eventos.track(evento('page_view', { pixel_key: ids.orgA })));
     expect(consultas()).not.toHaveLength(0);
     expect(consultas().every((v) => typeof v.org === 'string' && v.org.trim() !== '')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MD4: a mídia pública da peça — a quinta superfície sem login
+// ---------------------------------------------------------------------------
+
+/*
+ * `GET /api/midia-publica/:token` não resolve a empresa por consulta: ela vem
+ * do token ASSINADO. Por isso esta rota não usa a sentinela nenhuma vez, e o
+ * que ela lê já roda dentro da empresa do token. Token que não confere não
+ * chega ao banco — nem para resolver.
+ */
+describe.skipIf(!URL_BANCO)('a mídia pública da peça (MD4), com a sessão em modo impor', () => {
+  let admin: PrismaClient;
+  let prisma: PrismaClient;
+  let midia: MidiaPublicaService;
+  const segredo = `seg-${MARCA}`.padEnd(40, 'x');
+  const ids = { orgA: '', orgB: '', rodadaA: '', pecaA: '' };
+  const chave = `pauta/pecas/md4-${MARCA}/corte-${'a'.repeat(64)}.mp4`;
+
+  beforeAll(async () => {
+    process.env.PAUTA_MIDIA_PUBLICA_SEGREDO = segredo;
+    admin = new PrismaClient({ datasourceUrl: URL_BANCO });
+    prisma = clienteObservado(URL_BANCO);
+    const orgA = await admin.org.create({ data: { name: `MA ${MARCA}`, slug: `md4a-${MARCA}`, modulos: ['pauta'] } });
+    const orgB = await admin.org.create({ data: { name: `MB ${MARCA}`, slug: `md4b-${MARCA}`, modulos: ['pauta'] } });
+    ids.orgA = orgA.id;
+    ids.orgB = orgB.id;
+    const rodada = await admin.pautaRodada.create({
+      data: { orgId: orgA.id, titulo: 'Semana MD4', janelaIni: new Date(), janelaFim: new Date(), status: 'curada' },
+    });
+    ids.rodadaA = rodada.id;
+    const peca = await admin.pautaPeca.create({
+      data: {
+        orgId: orgA.id,
+        rodadaId: rodada.id,
+        canal: 'instagram',
+        formato: 'corte',
+        status: 'aprovada',
+        titulo: 'Corte',
+        corpo: 'legenda',
+        meta: { episodioId: 'e-md4', itemId: 'i1', formato: 'corte', imagens: [], video: { arquivo: null, duracaoSeg: 60, largura: 1080, altura: 1920, bytes: 3, chave, sha256: 'a'.repeat(64) } },
+      },
+    });
+    ids.pecaA = peca.id;
+    const storageStub = { get: async () => ({ stream: { pipe: (r: unknown) => r }, contentType: 'video/mp4', size: 3 }) };
+    midia = new MidiaPublicaService(prisma as never, { log: async () => undefined } as never, storageStub as never, new ModulosService(prisma as never));
+  });
+
+  afterAll(async () => {
+    delete process.env.PAUTA_MIDIA_PUBLICA_SEGREDO;
+    if (!admin) return;
+    await admin.pautaPeca.deleteMany({ where: { orgId: { in: [ids.orgA, ids.orgB] } } });
+    await admin.pautaRodada.deleteMany({ where: { orgId: { in: [ids.orgA, ids.orgB] } } });
+    await admin.org.deleteMany({ where: { id: { in: [ids.orgA, ids.orgB] } } });
+    await admin.$disconnect();
+    await (prisma as PrismaClient).$disconnect();
+  });
+
+  beforeEach(() => {
+    vistos = [];
+  });
+
+  const visitante = <T>(fn: () => Promise<T>) => comContexto({ orgId: null, correlationId: novaCorrelacao('http'), origem: 'http' }, fn);
+  const token = (o: { org?: string; peca?: string; chave?: string; exp?: number } = {}) =>
+    assinarMidia({ orgId: o.org ?? ids.orgA, pecaId: o.peca ?? ids.pecaA, chave: o.chave ?? chave, exp: o.exp ?? Math.floor(Date.now() / 1000) + 600 }, segredo);
+  const consultas = () => vistos.filter((v) => v.onde !== 'set_config');
+
+  it('token válido: lê DENTRO da empresa do token, sem nenhuma consulta sob a sentinela', async () => {
+    const arquivo = await visitante(() => midia.abrir(token()));
+    expect(arquivo).toMatchObject({ contentType: 'video/mp4', size: 3 });
+    expect(consultas().length).toBeGreaterThan(0);
+    expect(consultas().filter((v) => ehResolucaoPublica(v.org))).toEqual([]);
+    expect(new Set(consultas().map((v) => v.org))).toEqual(new Set([ids.orgA]));
+    expect(consultas().map((v) => v.onde)).toContain('PautaPeca.findFirst');
+  });
+
+  it('token adulterado ou vencido: nenhuma consulta, nem de resolução', async () => {
+    const [payload, mac] = token().split('.');
+    const trocado = `${Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, 'base64url').toString()), o: ids.orgB })).toString('base64url')}.${mac}`;
+    expect(await visitante(() => midia.abrir(trocado))).toBeNull();
+    const vencido = assinarMidia({ orgId: ids.orgA, pecaId: ids.pecaA, chave, exp: 1_000_010 }, segredo, 1_000_000);
+    expect(await visitante(() => midia.abrir(vencido))).toBeNull();
+    expect(consultas()).toEqual([]);
+  });
+
+  it('assinado para a empresa B com a peça de A: dentro de B a peça não existe', async () => {
+    expect(await visitante(() => midia.abrir(token({ org: ids.orgB })))).toBeNull();
+    expect(new Set(consultas().map((v) => v.org))).toEqual(new Set([ids.orgB]));
   });
 });
 
