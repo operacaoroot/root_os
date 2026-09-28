@@ -53,6 +53,7 @@ import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
+import { semMarca } from './marca-de-teste';
 
 /*
  * O ROTEIRO DO EPISÓDIO — MC8.
@@ -449,7 +450,7 @@ function servico(opts: {
   } as unknown as MemoriaService;
 
   return {
-    roteiros: new RoteiroService(prisma, new AuditService(prisma), llm, espelho, memoria, new VozService(prisma, new AuditService(prisma), llm, memoria)),
+    roteiros: new RoteiroService(prisma, new AuditService(prisma), llm, espelho, memoria, new VozService(prisma, new AuditService(prisma), llm, memoria), semMarca),
     lista,
     chamadas,
     condicionais,
@@ -731,7 +732,7 @@ describe.skipIf(!URL)('roteiro com banco: gerar, editar e exportar pela sessão 
     const espelhoDesligado = { espelharDocumento: async () => null } as unknown as EspelhoService;
     // `porChave` só lê o prisma: o livro do RASTRO não entra nesta leitura.
     const memoria = new MemoriaService(app, {} as never);
-    roteiros = new RoteiroService(app, new AuditService(app), llm, espelhoDesligado, memoria, new VozService(app, new AuditService(app), llm, memoria));
+    roteiros = new RoteiroService(app, new AuditService(app), llm, espelhoDesligado, memoria, new VozService(app, new AuditService(app), llm, memoria), semMarca);
     episodios = new EpisodioService(app, new AuditService(app));
     const o = await admin.org.create({ data: { name: `Roteiro ${MARCA}`, slug: `rt-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;

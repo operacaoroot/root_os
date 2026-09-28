@@ -40,6 +40,7 @@ import type { LlmProvider } from '../src/llm/llm.provider';
 import { AuditService } from '../src/audit/audit.service';
 import { destinoDosItens } from '../src/pauta/curadoria-da-rodada';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { semMarca } from './marca-de-teste';
 
 // MC10: sem perfil, as peças recebem o tom da casa.
 const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
@@ -577,7 +578,7 @@ describe('perfil da pauta: a coleta', () => {
       novaFonte({}),
       novaFonte({ id: 'f-rss', tipo: 'rss', url: 'https://feed.exemplo/rss', handle: null, plataforma: null }),
     );
-    const rodadas = new RodadaService(m.prisma, new AuditService(m.prisma), m.coleta, {} as LlmProvider, vozDaCasa);
+    const rodadas = new RodadaService(m.prisma, new AuditService(m.prisma), m.coleta, {} as LlmProvider, vozDaCasa, semMarca);
 
     const r = await rodadas.coletarFeeds(ORG, 'rotina', ['R', 'N']);
 
@@ -877,7 +878,7 @@ describe('rodada: gerar() lê todas as origens', () => {
         return JSON.stringify({ titulo: 'T', itens: escolha, corpo: 'c' });
       },
     } as unknown as LlmProvider;
-    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa);
+    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa, semMarca);
     return { rodadas, consultas, prompts, gravadas, criadas };
   }
 

@@ -1885,8 +1885,18 @@ jobs:
       # sessão amarra o vídeo ao arquivo). Medido: 3063 casos em 74 arquivos
       # com o banco; sem ele, 2348 passados e 715 pulados. O piso de CASOS
       # sobe 11 (~15% de folga sobre os 13 que rodam sem banco), para 2190.
-      PISO_CASOS_API: '2190'
-      PISO_ARQUIVOS_API: '66'
+      #
+      # MK1, A MARCA E OS PILARES (28/09/2026): +35 casos num arquivo novo,
+      # `pauta-marca` — o parser da nota dos pilares, o bloco montado num lugar
+      # só, a tolerância da leitura e a prova de que os CINCO prompts da pauta
+      # levam o bloco ao lado da voz. Nenhum precisa de banco. As 22 construções
+      # à mão das suítes ganharam o dublê `semMarca` (`test/marca-de-teste.ts`,
+      # que não tem caso e não conta como arquivo). Medido sem banco: 2381
+      # passados e 718 pulados, em 75 arquivos. O piso de ARQUIVOS vai a 67,
+      # colado no real; o de CASOS sobe 30 (~15% de folga sobre os 35 que rodam
+      # sem banco), para 2220.
+      PISO_CASOS_API: '2220'
+      PISO_ARQUIVOS_API: '67'
 
     steps:
       - uses: actions/checkout@v4

@@ -53,6 +53,7 @@ import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
+import { semMarca } from './marca-de-teste';
 
 /*
  * A VOZ DO AUTOR — MC10.
@@ -771,7 +772,7 @@ async function gerarRoteiro(perfil: string | null) {
   } as unknown as PrismaService;
   const espelho = { espelharDocumento: async () => null } as unknown as EspelhoService;
   const vozes = new VozService(prisma, new AuditService(prisma), llm, m.memoria);
-  const roteiros = new RoteiroService(prisma, new AuditService(prisma), llm, espelho, m.memoria, vozes);
+  const roteiros = new RoteiroService(prisma, new AuditService(prisma), llm, espelho, m.memoria, vozes, semMarca);
   await roteiros.gerar(ORG, 'e1', PESSOA, { substituir: false });
   return chamadas;
 }
@@ -799,7 +800,7 @@ async function derivarPecas(perfil: string | null) {
     auditLog: { create: async () => ({}) },
   } as unknown as PrismaService;
   const vozes = new VozService(prisma, new AuditService(prisma), llm, m.memoria);
-  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozes);
+  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozes, semMarca);
   await rodadas.derivar(ORG, 'r1', PESSOA);
   expect(criadas).toHaveLength(1);
   return chamadas;

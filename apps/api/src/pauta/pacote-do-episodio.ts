@@ -76,8 +76,9 @@ Regras:
 - Sem segunda pessoa nos títulos ("você", "seu"): a marca fala do que acontece, não para quem lê.`;
 
 /** O prompt do pacote com o bloco de voz da empresa (MC10). */
-export function systemDoPacote(voz: string): string {
-  return `${SYSTEM_PACOTE_BASE}\n\n${voz.trim()}`;
+/** A marca (MK1) antes da voz (MC10), como no roteiro. Marca vazia não muda nada. */
+export function systemDoPacote(voz: string, marca = ''): string {
+  return [SYSTEM_PACOTE_BASE, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 export type Segmento = { inicio: number; fim: number; texto: string };

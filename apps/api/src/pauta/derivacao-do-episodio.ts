@@ -96,8 +96,9 @@ Regras:
 - Sem emoji. Frases curtas, para ler no celular.`;
 
 /** O prompt da derivação com o bloco de voz da empresa (MC10). */
-export function systemDaDerivacao(voz: string): string {
-  return `${SYSTEM_DERIVACAO_BASE}\n\n${voz.trim()}`;
+/** A marca (MK1) antes da voz (MC10), como no roteiro. Marca vazia não muda nada. */
+export function systemDaDerivacao(voz: string, marca = ''): string {
+  return [SYSTEM_DERIVACAO_BASE, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 function umaLinha(v: unknown, teto: number): string {

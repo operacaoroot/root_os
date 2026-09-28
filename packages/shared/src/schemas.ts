@@ -2664,6 +2664,190 @@ export interface PautaVozAprendida extends PautaVozPainel {
   material: { fontes: number; caracteres: number; cortado: boolean };
 }
 
+// ---------- Pauta: a marca e os pilares (MK1) ----------
+// A voz (MC10) diz COMO a casa fala. A marca diz QUEM ela é e sobre O QUE fala:
+// quem somos, como falamos, o que queremos, o que rejeitamos, público e
+// diretrizes; e os pilares, que são os assuntos que se repetem.
+//
+// As duas são NOTA DA MEMÓRIA, como a voz e como a grade da semana
+// (`pauta.semana.grade`): escrita só por `MemoriaService` (caminho da ADR-011,
+// com evento no RASTRO e versão), leitura por `porChave`. Nenhuma tabela nova —
+// isto é configuração que uma pessoa edita e lê, não registro que o sistema
+// acumula. E, como a voz, o corpo é CONTEÚDO EXTERNO: passa por
+// `neutralizarConteudoExterno` antes de chegar ao modelo.
+//
+// Os pilares moram em nota separada da marca de propósito: o perfil da marca é
+// prosa que muda devagar, e os pilares são uma lista que muda com a estratégia
+// do mês (MK4). Juntá-los faria uma edição de rotina reescrever a outra.
+
+/** O perfil da marca: prosa em seções fixas. */
+export const PAUTA_CHAVE_DA_MARCA = 'pauta.marca';
+/** Os pilares: uma linha por pilar. */
+export const PAUTA_CHAVE_DOS_PILARES = 'pauta.marca.pilares';
+
+/** As seções do perfil, na ordem em que o prompt as recebe. */
+export const PAUTA_SECOES_DA_MARCA = [
+  'Quem somos',
+  'Como falamos',
+  'O que queremos',
+  'O que rejeitamos',
+  'Público',
+  'Diretrizes',
+] as const;
+export type PautaSecaoDaMarca = (typeof PAUTA_SECOES_DA_MARCA)[number];
+
+/** Teto do que entra no prompt: a marca é instrução curta, não manual. */
+export const PAUTA_TETO_DO_PERFIL_DA_MARCA = 4_000;
+/** Abaixo disso não é perfil de marca, é um lembrete. */
+export const PAUTA_PISO_DO_PERFIL_DA_MARCA = 80;
+/** Mais que isto não é pilar, é lista de assuntos: o prompt perde o foco. */
+export const PAUTA_TETO_DE_PILARES = 8;
+export const PAUTA_TETO_DO_NOME_DO_PILAR = 40;
+export const PAUTA_TETO_DA_DESCRICAO_DO_PILAR = 240;
+/** A nota inteira, com folga para oito linhas cheias e comentários. */
+export const PAUTA_TETO_DO_TEXTO_DOS_PILARES = 4_000;
+
+/**
+ * As cores que um pilar sem cor declarada recebe, na ordem. São as da marca
+ * ROOT (as mesmas do `:root` do app que virou o modelo desta frente), para a
+ * etiqueta do pilar sair igual no banco de ideias (MK3) e na performance (MK5).
+ */
+export const PAUTA_CORES_DOS_PILARES = [
+  '#9bdb1f',
+  '#ff1f6b',
+  '#1fffa8',
+  '#c4ff2e',
+  '#8aa48f',
+  '#e0a63a',
+  '#5a7344',
+  '#b8d4be',
+] as const;
+
+export interface PautaPilar {
+  /** Como a pessoa escreveu. */
+  nome: string;
+  /** Estável, sem acento e sem caixa: é o que casa pilar de post com pilar da lista. */
+  chave: string;
+  /** `#rrggbb`, sempre em minúscula. */
+  cor: string;
+  descricao: string;
+}
+
+/** A chave estável de um pilar. Acento e caixa não podem criar um pilar novo. */
+export function chaveDoPilar(nome: string): string {
+  return semAcento(String(nome ?? ''))
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, PAUTA_TETO_DO_NOME_DO_PILAR);
+}
+
+const COR_DO_PILAR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** `#abc` vira `#aabbcc`: o resto do sistema compara e guarda uma forma só. */
+function corNormalizada(c: string): string | null {
+  const v = c.trim().toLowerCase();
+  if (!COR_DO_PILAR.test(v)) return null;
+  return v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v;
+}
+
+/**
+ * Lê os pilares da nota. Uma linha por pilar, `Nome | cor | descrição`; a cor e
+ * a descrição são opcionais e a cor sem elas vem da paleta, pela posição.
+ * Linha vazia e linha que começa com `//` são ignoradas (é nota que gente
+ * edita, e gente comenta).
+ *
+ * Nada aqui LANÇA: nota malfeita não pode derrubar a geração de um roteiro. O
+ * que não deu para ler vira aviso, e quem chama decide se mostra ou se cai no
+ * padrão — mesma escolha que `gradeDaNota` faz com a grade da semana.
+ */
+export function lerPilaresDoTexto(texto: string): { pilares: PautaPilar[]; avisos: string[] } {
+  const avisos: string[] = [];
+  const pilares: PautaPilar[] = [];
+  const vistos = new Set<string>();
+  const linhas = String(texto ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('//'));
+
+  for (const linha of linhas) {
+    if (pilares.length >= PAUTA_TETO_DE_PILARES) {
+      avisos.push(`A lista passa de ${PAUTA_TETO_DE_PILARES} pilares: as linhas seguintes ficaram de fora.`);
+      break;
+    }
+    const [bruto = '', corBruta = '', ...resto] = linha.split('|');
+    const nome = bruto.trim().replace(/\s+/g, ' ').slice(0, PAUTA_TETO_DO_NOME_DO_PILAR);
+    if (!nome) {
+      avisos.push(`Uma linha começa sem nome de pilar e ficou de fora: "${linha.slice(0, 60)}".`);
+      continue;
+    }
+    const chave = chaveDoPilar(nome);
+    if (!chave) {
+      avisos.push(`O pilar "${nome}" não tem letra nem número no nome e ficou de fora.`);
+      continue;
+    }
+    if (vistos.has(chave)) {
+      avisos.push(`O pilar "${nome}" aparece mais de uma vez: vale a primeira linha.`);
+      continue;
+    }
+    // Sem "|" nenhum, a linha inteira é o nome — e aí não há cor nem descrição
+    // para ler. Com um "|" só, o segundo campo é cor se parecer cor, senão é a
+    // descrição: quem escreve "Bastidores | como a Root trabalha" quis descrever.
+    let cor = corNormalizada(corBruta);
+    let descricao = resto.join('|').trim();
+    if (!cor && corBruta.trim()) {
+      if (corBruta.trim().startsWith('#')) {
+        avisos.push(`A cor do pilar "${nome}" não é um código hexadecimal (ex.: #9bdb1f): vale a cor da paleta.`);
+      } else {
+        descricao = [corBruta.trim(), descricao].filter(Boolean).join(' ').trim();
+      }
+    }
+    cor = cor ?? PAUTA_CORES_DOS_PILARES[pilares.length % PAUTA_CORES_DOS_PILARES.length];
+    vistos.add(chave);
+    pilares.push({
+      nome,
+      chave,
+      cor,
+      descricao: descricao.replace(/\s+/g, ' ').slice(0, PAUTA_TETO_DA_DESCRICAO_DO_PILAR),
+    });
+  }
+  return { pilares, avisos };
+}
+
+/** `PUT /pauta/marca`: o perfil escrito à mão, com a versão de onde a aba partiu. */
+export const PautaMarcaSalvarSchema = z.object({
+  perfil: z
+    .string()
+    .trim()
+    .min(PAUTA_PISO_DO_PERFIL_DA_MARCA, `O perfil da marca precisa de pelo menos ${PAUTA_PISO_DO_PERFIL_DA_MARCA} caracteres.`)
+    .max(PAUTA_TETO_DO_PERFIL_DA_MARCA, `O perfil da marca tem no máximo ${PAUTA_TETO_DO_PERFIL_DA_MARCA} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaMarcaSalvarInput = z.infer<typeof PautaMarcaSalvarSchema>;
+
+/** `PUT /pauta/marca/pilares`: a nota dos pilares como a pessoa a escreveu. */
+export const PautaPilaresSalvarSchema = z.object({
+  pilares: z
+    .string()
+    .trim()
+    .max(PAUTA_TETO_DO_TEXTO_DOS_PILARES, `A lista de pilares tem no máximo ${PAUTA_TETO_DO_TEXTO_DOS_PILARES} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaPilaresSalvarInput = z.infer<typeof PautaPilaresSalvarSchema>;
+
+export interface PautaMarcaPainel {
+  perfil: string | null;
+  perfilVersao: number | null;
+  perfilAtualizadoEm: string | null;
+  /** O texto cru da nota, que é o que a aba edita. */
+  pilaresTexto: string;
+  pilaresVersao: number | null;
+  pilares: PautaPilar[];
+  /** O que a leitura da nota não entendeu. Vazio quando está tudo lido. */
+  avisos: string[];
+  /** O que os prompts da pauta recebem agora — a prova visível do ponto único. */
+  bloco: string;
+}
+
 // ---------- Pauta: a newsletter do episódio (MC13) ----------
 // A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
 // novo: uma seção por matéria com o link da matéria, e o fechamento chamando

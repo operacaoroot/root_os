@@ -67,6 +67,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
+import { semMarca } from './marca-de-teste';
 
 /*
  * O PACOTE DO YOUTUBE — MC11.
@@ -684,7 +685,7 @@ function servico(opts: {
   const audit = new AuditService(prisma);
 
   return {
-    pacotes: new PacoteService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), storage, new EpisodioService(prisma, audit)),
+    pacotes: new PacoteService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), storage, new EpisodioService(prisma, audit), semMarca),
     lista,
     chamadas,
     condicionais,
@@ -1007,7 +1008,7 @@ describe.skipIf(!URL)('pacote com banco: gerar, escolher e subir a thumb pela se
       get: async (k: string) => ({ stream: Readable.from([guardados[k]]), contentType: 'image/png', size: guardados[k].length }),
     } as unknown as StorageService;
     episodios = new EpisodioService(app, new AuditService(app));
-    pacotes = new PacoteService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), storage, episodios);
+    pacotes = new PacoteService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), storage, episodios, semMarca);
     const o = await admin.org.create({ data: { name: `Pacote ${MARCA}`, slug: `pc-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;
   }, 60_000);

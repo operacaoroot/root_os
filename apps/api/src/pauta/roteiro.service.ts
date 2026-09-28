@@ -22,6 +22,7 @@ import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EspelhoService } from './espelho.service';
 import { itensMantidos } from './episodio';
 import { VozService } from './voz.service';
+import { MarcaService } from './marca.service';
 import {
   RoteiroInvalidoError,
   entradaDoRoteiro,
@@ -80,6 +81,7 @@ export class RoteiroService {
     private readonly espelho: EspelhoService,
     private readonly memoria: MemoriaService,
     private readonly vozes: VozService,
+    private readonly marcas: MarcaService,
   ) {}
 
   private async ler(orgId: string, id: string): Promise<LinhaDoRoteiro> {
@@ -167,7 +169,7 @@ export class RoteiroService {
     const palavra = palavraDeCorteEfetiva(e.palavraDeCorte, daEmpresa);
 
     const saida = await this.llm.complete({
-      system: systemDoRoteiro(await this.vozes.bloco(orgId)),
+      system: systemDoRoteiro(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId)),
       user: entradaDoRoteiro({ apelido, titulo: e.titulo, itens }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,

@@ -54,6 +54,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
 import { exigirBancoDescartavel } from './banco-de-teste';
 import { SAIDA_DA_GERACAO_LONGA } from '../src/pauta/saida-da-geracao';
+import { semMarca } from './marca-de-teste';
 
 /*
  * A NEWSLETTER A PARTIR DA TRANSCRIÇÃO — MC13.
@@ -582,7 +583,7 @@ function servico(opts: {
   const memoria = { porChave: async () => null } as unknown as MemoriaService;
   const audit = new AuditService(prisma);
   return {
-    newsletters: new NewsletterService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), new EpisodioService(prisma, audit)),
+    newsletters: new NewsletterService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), new EpisodioService(prisma, audit), semMarca),
     prisma,
     lista,
     pecas,
@@ -865,7 +866,7 @@ describe('newsletter: a derivação antiga convive com a da transcrição', () =
     } as unknown as LlmProvider;
     const memoria = { porChave: async () => null } as unknown as MemoriaService;
     const audit = new AuditService(prisma);
-    return { rodadas: new RodadaService(prisma, audit, {} as never, llm, new VozService(prisma, audit, llm, memoria)), criadas };
+    return { rodadas: new RodadaService(prisma, audit, {} as never, llm, new VozService(prisma, audit, llm, memoria), semMarca), criadas };
   }
 
   it('a newsletter da transcrição não trava "derivar" e toma o lugar da newsletter do miolo', async () => {
@@ -982,7 +983,7 @@ describe.skipIf(!URL)('newsletter com banco: gerar, substituir e exportar pela s
     const llm = { name: 'dublê', model: 'd', configured: true, supportsTools: false, complete: async () => saida } as unknown as LlmProvider;
     const memoria = new MemoriaService(app, {} as never);
     episodios = new EpisodioService(app, new AuditService(app));
-    newsletters = new NewsletterService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), episodios);
+    newsletters = new NewsletterService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), episodios, semMarca);
     const o = await admin.org.create({ data: { name: `Newsletter ${MARCA}`, slug: `nl-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;
   }, 60_000);

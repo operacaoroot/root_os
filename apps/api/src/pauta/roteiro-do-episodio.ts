@@ -65,8 +65,14 @@ Regras:
 - Não escreva a palavra de corte nem instrução de gravação: o topo do roteiro já as traz.`;
 
 /** O prompt do roteiro com o bloco de voz montado em `voz-da-pauta.ts`. */
-export function systemDoRoteiro(voz: string): string {
-  return `${SYSTEM_ROTEIRO_BASE}\n\n${voz.trim()}`;
+/**
+ * A marca (MK1) entra ANTES da voz (MC10), e as duas depois das regras de
+ * formato, de fonte e de link: primeiro quem é a casa e sobre o que ela fala,
+ * depois como quem apresenta fala. Marca vazia deixa o prompt como era antes
+ * da MK1 — nenhuma linha a mais.
+ */
+export function systemDoRoteiro(voz: string, marca = ''): string {
+  return [SYSTEM_ROTEIRO_BASE, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 /**

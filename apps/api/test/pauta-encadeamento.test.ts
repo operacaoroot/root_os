@@ -57,6 +57,7 @@ import {
 } from '../src/routines/rotina.tipos';
 import { desfechoDaPassagem } from '../src/routines/executores/pauta-encadear.executor';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { semMarca } from './marca-de-teste';
 
 /*
  * O ENCADEAMENTO — MD1: da transcrição à semana em rascunho, parando antes de
@@ -731,7 +732,7 @@ describe('encadeamento: o clique manual no meio vira pulada, sem segunda cobran�
     m.eps[0].bioPageId = 'bp';
     m.pecas.push({ id: 'nl', orgId: ORG, rodadaId: 'r1', canal: 'newsletter', formato: 'email', status: 'rascunho', meta: { origem: 'transcricao', episodioId: 'e1' }, agendadaPara: null, slotProposto: null });
     const { llm, chamadas } = llmEspiao();
-    const real = new DerivacaoService({} as never, {} as never, llm, {} as never, {} as never, {} as never);
+    const real = new DerivacaoService({} as never, {} as never, llm, {} as never, {} as never, {} as never, semMarca);
     (m.svc as unknown as { semana: DerivacaoService }).semana = real;
     segurar(`pauta-semana:${ORG}:e1`);
 
@@ -745,12 +746,12 @@ describe('encadeamento: o clique manual no meio vira pulada, sem segunda cobran�
   it('o pacote e a newsletter também: a chave do clique é a do serviço', async () => {
     const { llm, chamadas } = llmEspiao();
     const m = montar();
-    (m.svc as unknown as { pacotes: PacoteService }).pacotes = new PacoteService({} as never, {} as never, llm, {} as never, {} as never, {} as never);
+    (m.svc as unknown as { pacotes: PacoteService }).pacotes = new PacoteService({} as never, {} as never, llm, {} as never, {} as never, {} as never, semMarca);
     segurar(`pauta-pacote:${ORG}:e1`);
     expect((await m.svc.passar(m.passagem()))[0].resultado).toBe('pulada');
 
     const n = montar({ eps: [epFalso(1, { titulos: [{ texto: 'x' }], descricao: 'd', bioPageId: 'bp' })] });
-    (n.svc as unknown as { newsletters: NewsletterService }).newsletters = new NewsletterService({} as never, {} as never, llm, {} as never, {} as never);
+    (n.svc as unknown as { newsletters: NewsletterService }).newsletters = new NewsletterService({} as never, {} as never, llm, {} as never, {} as never, semMarca);
     segurar(`pauta-newsletter:${ORG}:e1`);
     expect((await n.svc.passar(n.passagem()))[0]).toMatchObject({ etapa: 'newsletter', resultado: 'pulada' });
     expect(chamadas).toEqual([]);
