@@ -1938,6 +1938,10 @@ jobs:
       # fora de src/ desloca a saída para dist/src/ e o Dockerfile não acha
       # dist/main.js). Este é o tsconfig que cobre os tipos dos testes.
       - name: Typecheck das suítes da api
+        # A frente MC levou a api a 74 arquivos de teste, e o tsc passou do heap
+        # padrão do Node no runner (OOM em 28/09/2026). 5 GB cabe nos 7 GB da máquina.
+        env:
+          NODE_OPTIONS: --max-old-space-size=5120
         run: pnpm --filter @mktos/api typecheck:test
 
       # A trava de cobertura, escrita fora do repositório: é infraestrutura de
