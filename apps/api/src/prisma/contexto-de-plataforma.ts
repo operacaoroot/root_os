@@ -152,6 +152,13 @@ export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
       'casa pelo slug para saber em que empresa indexar. Da empresa encontrada em diante o ' +
       'trabalho inteiro roda dentro dela.',
   },
+  {
+    arquivo: 'src/bio/bio-sync.service.ts',
+    porQue:
+      'o cron da bio sincroniza os desafios e renova o token de 60 dias da conta de publicação ' +
+      'do Instagram de todas as empresas: lista as empresas sob a sentinela e trabalha dentro de ' +
+      'cada uma, como o sync do financeiro.',
+  },
 ] as const;
 
 /**
@@ -239,14 +246,9 @@ export const CAMINHOS_DE_PLATAFORMA_EXIGIDOS: readonly ChamadorDePlataforma[] = 
       'nenhuma. Nos dois casos o token de publicação morre no dia 60 sem alarme. O conserto é ' +
       'listar as empresas sob a sentinela e renovar dentro de cada uma.',
   },
-  {
-    arquivo: 'src/bio/bio-oauth.controller.ts',
-    porQue:
-      'o callback público do OAuth lê o `BioOauthState` pelo state ANTES de saber a empresa, e ' +
-      'depois grava a conexão e rebaixa a conta de publicação anterior. A sentinela sozinha não ' +
-      'basta (a policy dela não abre `BioOauthState`): precisa de uma resolução declarada do ' +
-      'state, como a das rotas públicas.',
-  },
+  // O callback público do OAuth da bio (MD5) saiu desta lista em 28/09/2026: a
+  // empresa viaja no `state` e a rota resolve pela sentinela pública, em
+  // `comTenantPublico`, como o retorno da Meta — não abre contexto de plataforma.
 ] as const;
 
 /**

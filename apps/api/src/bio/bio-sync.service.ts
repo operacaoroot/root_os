@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { comContextoDePlataforma, comEmpresaResolvida } from '../prisma/contexto-de-plataforma';
 import { cifrar, decifrar, temChaveDeCriptografia } from '../common/crypto';
 import { BioCredenciaisService } from './bio-credenciais.service';
 import * as instagram from './plataformas/instagram';
@@ -230,40 +231,48 @@ export class BioSyncService implements OnModuleInit {
    */
   async renovarContasDePublicacao(): Promise<Array<{ conexaoId: string; ok: boolean; erro?: string }>> {
     const limite = new Date(Date.now() + RENOVAR_ANTES_DE_DIAS * 86_400_000);
-    const conexoes = await this.prisma.bioConexao.findMany({
-      where: { plataforma: 'instagram', finalidade: 'publicacao', expiraEm: { lt: limite, gt: new Date() } },
-      select: { id: true, orgId: true, plataforma: true, tokenCifrado: true, refreshCifrado: true, expiraEm: true },
-    });
     const saida: Array<{ conexaoId: string; ok: boolean; erro?: string }> = [];
-    for (const c of conexoes) {
-      try {
-        await this.tokenValido(c);
-        saida.push({ conexaoId: c.id, ok: true });
-      } catch (erro) {
-        const bruto = String(erro);
-        const msg = bruto.slice(0, 400);
-        await this.prisma.bioConexao.update({
-          where: { id: c.id },
-          data: tokenRecusadoPelaMeta(bruto) ? { status: 'token_expirado', ultimoErro: msg } : { ultimoErro: msg },
-        });
-        this.log.error(`renovação da conta de publicação ${c.id} falhou: ${msg}`);
-        saida.push({ conexaoId: c.id, ok: false, erro: msg });
+    // As conexões são de cada empresa: lista as empresas sob a sentinela e
+    // renova dentro de cada uma, como o sync do financeiro.
+    for (const empresa of await this.empresasAtivas()) await comEmpresaResolvida(empresa.id, async () => {
+      const conexoes = await this.prisma.bioConexao.findMany({
+        where: { orgId: empresa.id, plataforma: 'instagram', finalidade: 'publicacao', expiraEm: { lt: limite, gt: new Date() } },
+        select: { id: true, orgId: true, plataforma: true, tokenCifrado: true, refreshCifrado: true, expiraEm: true },
+      });
+      for (const c of conexoes) {
+        try {
+          await this.tokenValido(c);
+          saida.push({ conexaoId: c.id, ok: true });
+        } catch (erro) {
+          const bruto = String(erro);
+          const msg = bruto.slice(0, 400);
+          await this.prisma.bioConexao.update({
+            where: { id: c.id },
+            data: tokenRecusadoPelaMeta(bruto) ? { status: 'token_expirado', ultimoErro: msg } : { ultimoErro: msg },
+          });
+          this.log.error(`renovação da conta de publicação ${c.id} falhou: ${msg}`);
+          saida.push({ conexaoId: c.id, ok: false, erro: msg });
+        }
       }
-    }
+    });
     return saida;
   }
 
   /** Todas as contas conectadas de desafios vigentes (opcionalmente de uma org). */
   async sincronizarTudo(orgId?: string): Promise<ResultadoSync[]> {
-    const contas = await this.prisma.bioChallengeAccount.findMany({
-      where: {
-        conexaoId: { not: null },
-        challenge: { fim: { gte: new Date() }, ...(orgId ? { orgId } : {}) },
-      },
-      select: { id: true },
-    });
+    const empresas = orgId ? [{ id: orgId }] : await this.empresasAtivas();
     const resultados: ResultadoSync[] = [];
-    for (const c of contas) resultados.push(await this.sincronizarConta(c.id));
+    for (const empresa of empresas) await comEmpresaResolvida(empresa.id, async () => {
+      const contas = await this.prisma.bioChallengeAccount.findMany({
+        where: { conexaoId: { not: null }, challenge: { fim: { gte: new Date() }, orgId: empresa.id } },
+        select: { id: true },
+      });
+      for (const c of contas) resultados.push(await this.sincronizarConta(c.id));
+    });
     return resultados;
+  }
+
+  private empresasAtivas() {
+    return comContextoDePlataforma(() => this.prisma.org.findMany({ where: { isActive: true }, select: { id: true } }));
   }
 }

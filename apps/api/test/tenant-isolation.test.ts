@@ -2384,8 +2384,7 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
         [
           'src/auth/auth.service.ts',
           'src/auth/google-login.service.ts',
-          // MD5: o cron e o callback da bio atravessam empresas sem contexto.
-          'src/bio/bio-oauth.controller.ts',
+          // MD5: o cron da bio atravessa empresas (o callback do OAuth resolve pela sentinela pública).
           'src/bio/bio-sync.service.ts',
           'src/finance/finance.service.ts',
           'src/health/health.controller.ts',

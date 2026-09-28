@@ -144,7 +144,6 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
   // dois contextos coincidem; aqui o trilho vive numa org isolada do teste, e o
   // passo de provisionar roda como um operador sintético da plataforma.
   let plataformaId = '';
-  let plataformaEraNossa = false;
   const operador = { id: '', papelId: '', nome: 'Operador da plataforma (teste)' };
   const naPlataforma = <T>(fn: () => Promise<T>) =>
     comContexto({ orgId: plataformaId, actorType: 'user', actorId: operador.id, correlationId: `teste-${MARCA}`, origem: 'http' }, fn);
@@ -173,10 +172,9 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
     // Outras suítes deixam uma `root` sintética: não renomear nem apagar a de
     // ninguém — criar só o nosso operador e limpar só os rastros dele.
     let plataforma = await prisma.org.findUnique({ where: { slug: 'root' } });
-    if (!plataforma) {
-      plataforma = await prisma.org.create({ data: { slug: 'root', name: 'Plataforma sintética' } });
-      plataformaEraNossa = true;
-    }
+    // Se for esta suíte a criá-la, ela também fica: outras suítes escrevem na
+    // mesma `root` em paralelo, e apagá-la no fim quebraria a limpeza delas.
+    if (!plataforma) plataforma = await prisma.org.create({ data: { slug: 'root', name: 'Plataforma sintética' } });
     plataformaId = plataforma.id;
     const papel = await prisma.role.create({ data: { orgId: plataformaId, key: `teste-${MARCA}`, name: 'Operador sintético',
       permissions: { connectOrCreate: { where: { key: 'admin.permissoes' }, create: { key: 'admin.permissoes' } } } } });
@@ -217,7 +215,6 @@ describe.skipIf(!URL)('o trilho de onboarding, de ponta a ponta', () => {
       await prisma.user.delete({ where: { id: operador.id } });
       await prisma.role.delete({ where: { id: operador.papelId } });
     }
-    if (plataformaEraNossa) await prisma.org.deleteMany({ where: { id: plataformaId } });
     await prisma.$disconnect();
   });
 

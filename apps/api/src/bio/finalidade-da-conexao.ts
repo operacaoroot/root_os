@@ -33,7 +33,20 @@ export function finalidadeDaConexao(entrada: {
   return { finalidade: 'bio', aviso: null };
 }
 
-/** O `state` que a rota gera tem 32 caracteres base64url; fora disso nem se consulta o banco. */
+/**
+ * O `state` que a rota gera é `<orgId>.<32 caracteres base64url>`. A empresa vem
+ * na frente porque o callback é público e precisa abrir o contexto dela ANTES
+ * de ler o `BioOauthState`: sob o papel restrito, sem empresa, a linha não
+ * aparece. É o desenho do retorno da Meta, cujo `state` é o próprio `orgId`.
+ * Fora deste formato nem se consulta o banco.
+ */
+const FORMATO_DO_ESTADO = /^([A-Za-z0-9-]{1,64})\.[A-Za-z0-9_-]{16,128}$/;
+
 export function estadoBemFormado(estado: unknown): estado is string {
-  return typeof estado === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(estado);
+  return typeof estado === 'string' && FORMATO_DO_ESTADO.test(estado);
+}
+
+/** A empresa que iniciou o fluxo, lida do `state`; `null` fora do formato. */
+export function empresaDoEstado(estado: unknown): string | null {
+  return typeof estado === 'string' ? (FORMATO_DO_ESTADO.exec(estado)?.[1] ?? null) : null;
 }

@@ -4,8 +4,9 @@ import { BioFinalidade, BioPlataforma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { cifrar } from '../common/crypto';
+import { comTenantPublico, resolverOrgDaChave } from '../common/tenant-publico';
 import { BioCredenciaisService } from './bio-credenciais.service';
-import { estadoBemFormado, finalidadeDaConexao } from './finalidade-da-conexao';
+import { empresaDoEstado, estadoBemFormado, finalidadeDaConexao } from './finalidade-da-conexao';
 import * as instagram from './plataformas/instagram';
 import * as tiktok from './plataformas/tiktok';
 
@@ -19,6 +20,11 @@ import * as tiktok from './plataformas/tiktok';
  *
  * A conta de publicação (MD5) volta pelo MESMO endereço: a finalidade viaja no
  * `state`, e o retorno vai para a aba Semana da Pauta em vez da bio.
+ *
+ * A empresa também viaja no `state` (`<orgId>.<aleatório>`): a rota resolve a
+ * org sob a sentinela de resolução pública e faz todo o resto dentro de
+ * `comTenantPublico`, como o retorno da Meta. Um `orgId` trocado não acha a
+ * linha do `state`, que só existe na empresa que iniciou o fluxo.
  */
 @Controller('conectar')
 export class BioOauthController {
@@ -47,21 +53,29 @@ export class BioOauthController {
     if (plataforma !== 'instagram' && plataforma !== 'tiktok') return this.volta(res, 'erro');
     // O state vem de fora: fora do formato que a rota gera, nem chega ao banco.
     const estadoValido = estadoBemFormado(estado);
+    const alvo = estadoValido ? await resolverOrgDaChave(this.prisma, empresaDoEstado(estado)!) : null;
     if (erro) {
       // Usuário clicou "cancelar" na tela da plataforma — não é falha nossa. O
       // state (uso único) é gasto aqui também e diz para qual tela voltar.
-      const pedido = estadoValido
-        ? await this.prisma.bioOauthState.findUnique({ where: { estado }, select: { id: true, finalidade: true } })
+      const pedido = alvo
+        ? await comTenantPublico(alvo.orgId, async () => {
+            const achado = await this.prisma.bioOauthState.findUnique({ where: { estado }, select: { id: true, finalidade: true } });
+            if (achado) await this.prisma.bioOauthState.delete({ where: { id: achado.id } }).catch(() => undefined);
+            return achado;
+          })
         : null;
-      if (pedido) await this.prisma.bioOauthState.delete({ where: { id: pedido.id } }).catch(() => undefined);
       return this.volta(res, erro === 'access_denied' ? 'cancelado' : 'erro', pedido?.finalidade);
     }
     if (!codigo || !estado) return this.volta(res, 'erro');
     if (!estadoValido || typeof codigo !== 'string' || codigo.length > 2048) return this.volta(res, 'expirado');
+    if (!alvo) return this.volta(res, 'expirado');
+    return comTenantPublico(alvo.orgId, () => this.concluir(res, plataforma, codigo, estado, alvo.orgId));
+  }
 
+  private async concluir(res: Response, plataforma: 'instagram' | 'tiktok', codigo: string, estado: string, orgId: string) {
     // O state é uso único e amarra a autorização à org que iniciou o fluxo.
     const registro = await this.prisma.bioOauthState.findUnique({ where: { estado } });
-    if (!registro) return this.volta(res, 'expirado');
+    if (!registro || registro.orgId !== orgId) return this.volta(res, 'expirado');
     if (registro.plataforma !== plataforma || registro.expiraEm < new Date()) {
       // O state existe: gasta e volta para a tela que o pediu, com o motivo.
       await this.prisma.bioOauthState.delete({ where: { id: registro.id } }).catch(() => undefined);

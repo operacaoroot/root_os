@@ -9,7 +9,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { BIO_FINALIDADES, INSTAGRAM_ESCOPO_DE_PUBLICAR } from '@mktos/shared';
 
 import * as instagram from '../src/bio/plataformas/instagram';
-import { estadoBemFormado, finalidadeDaConexao } from '../src/bio/finalidade-da-conexao';
+import { empresaDoEstado, estadoBemFormado, finalidadeDaConexao } from '../src/bio/finalidade-da-conexao';
 import { BioOauthController } from '../src/bio/bio-oauth.controller';
 import { BioService } from '../src/bio/bio.service';
 import { BioCredenciaisService } from '../src/bio/bio-credenciais.service';
@@ -218,10 +218,14 @@ describe('bio-oauth: com que finalidade a conexão fica', () => {
     expect(finalidadeDaConexao({ pedida, anterior, concedidos })).toEqual({ finalidade, aviso });
   });
 
-  it('o state fora do formato não chega ao banco', () => {
-    expect(estadoBemFormado('a'.repeat(32))).toBe(true);
-    for (const ruim of ['', 'curto', 'a'.repeat(200), 'a b'.repeat(10), "'; drop", undefined, 42]) {
+  it('o state fora do formato não chega ao banco, e o bem formado diz de que empresa é', () => {
+    expect(estadoBemFormado(`org-x.${'a'.repeat(32)}`)).toBe(true);
+    expect(empresaDoEstado(`org-x.${'a'.repeat(32)}`)).toBe('org-x');
+    // O formato antigo, sem a empresa na frente, também não passa: o callback
+    // não teria em que empresa procurar a linha.
+    for (const ruim of ['', 'curto', 'a'.repeat(32), `org-x.${'a'.repeat(200)}`, `.${'a'.repeat(32)}`, 'a b'.repeat(10), "'; drop", undefined, 42]) {
       expect(estadoBemFormado(ruim), String(ruim)).toBe(false);
+      expect(empresaDoEstado(ruim), String(ruim)).toBeNull();
     }
   });
 });
@@ -391,6 +395,7 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth com banco: a conexão de publicação 
     const { url } = await na(orgA, () => bioA.iniciarConexao(orgA, 'instagram', 'publicacao'));
     expect(escoposDaUrl(url)).toEqual([...instagram.ESCOPOS_DE_PUBLICACAO]);
     const estado = new URL(url).searchParams.get('state')!;
+    expect(estado.startsWith(`${orgA}.`)).toBe(true);
     expect(await admin.bioOauthState.findUnique({ where: { estado } })).toMatchObject({ orgId: orgA, finalidade: 'publicacao' });
 
     const daBio = await na(orgA, () => bioA.iniciarConexao(orgA, 'instagram'));
@@ -425,6 +430,29 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth com banco: a conexão de publicação 
     expect(r2.volta).toContain('conexao=publicacao_sem_escopo');
     // A conta de publicação que já existia não foi tocada.
     expect((await na(orgA, () => bioA.contaDePublicacao(orgA))).conexao?.handle).toBe(`root${MARCA}`);
+  });
+
+  it('o state com a empresa trocada não acha a linha: volta como expirado e não gasta o state verdadeiro', async () => {
+    const { url } = await na(orgA, () => bioA.iniciarConexao(orgA, 'instagram', 'bio'));
+    const estado = new URL(url).searchParams.get('state')!;
+    const trocado = `${orgB}.${estado.slice(estado.indexOf('.') + 1)}`;
+    const res = new Redirecionamento();
+    await callback.callback('instagram', `trocado${MARCA}:sem`, trocado, '', res as never);
+    expect(res.para).toBe('https://os.exemplo.test/bio?conexao=expirado');
+    expect(await admin.bioOauthState.findUnique({ where: { estado } })).not.toBeNull();
+    expect(await admin.bioConexao.findFirst({ where: { handle: `trocado${MARCA}` } })).toBeNull();
+  });
+
+  it('o callback inteiro roda dentro da empresa: completa com a sessão em modo impor', async () => {
+    const restrita = comTenantNaSessao(cru, { modo: 'impor' }) as unknown as PrismaService;
+    const naEmpresa = new BioOauthController(restrita, new BioCredenciaisService(restrita), new AuditService(restrita));
+    const { url } = await na(orgA, () => bioA.iniciarConexao(orgA, 'instagram', 'bio'));
+    const estado = new URL(url).searchParams.get('state')!;
+    const res = new Redirecionamento();
+    await naEmpresa.callback('instagram', `impor${MARCA}:sem`, estado, '', res as never);
+    expect(res.para).toBe('https://os.exemplo.test/bio?conexao=ok');
+    expect(await admin.bioOauthState.findUnique({ where: { estado } })).toBeNull();
+    expect(await admin.bioConexao.findFirst({ where: { orgId: orgA, handle: `impor${MARCA}` } })).toMatchObject({ finalidade: 'bio' });
   });
 
   it('a bio de um criador continua como antes: só leitura, volta na bio', async () => {

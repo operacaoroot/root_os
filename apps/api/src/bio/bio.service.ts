@@ -408,7 +408,7 @@ export class BioService {
       );
     }
 
-    const estado = randomBytes(24).toString('base64url');
+    const estado = `${orgId}.${randomBytes(24).toString('base64url')}`;
     const verifier = plataforma === 'tiktok' ? tiktok.novoVerifier() : null;
 
     await this.prisma.bioOauthState.create({
