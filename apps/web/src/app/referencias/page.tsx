@@ -6,10 +6,13 @@ import { AbaCaptura } from './AbaCaptura';
 import { AbaFila } from './AbaFila';
 import { AbaAcervo } from './AbaAcervo';
 import { AbaRadar } from './AbaRadar';
+import { AbaConcorrentes } from './AbaConcorrentes';
 
 // Página de coleta de referência (docs/PAUTA.md §6). Quatro abas, uma
 // responsabilidade cada: capturar cru → virar ficha → consultar → automatizar.
-const ABAS = ['Captura', 'Fila', 'Acervo', 'Radar'] as const;
+// MK2: "Concorrentes" fica aqui, e não como tela solta, porque é o mesmo acervo
+// de perfis do Radar ganhando número — a fonte se cadastra e se coleta lá.
+const ABAS = ['Captura', 'Fila', 'Acervo', 'Radar', 'Concorrentes'] as const;
 type Aba = (typeof ABAS)[number];
 
 export default function ReferenciasPage() {
@@ -61,6 +64,9 @@ export default function ReferenciasPage() {
       )}
       {ready && aba === 'Acervo' && (
         <AbaAcervo token={token} editavel={editavel} onErro={setErro} bump={bump} onMudou={recarregar} />
+      )}
+      {ready && aba === 'Concorrentes' && (
+        <AbaConcorrentes token={token} editavel={editavel} onErro={setErro} bump={bump} />
       )}
       {ready && aba === 'Radar' && (
         <AbaRadar token={token} editavel={editavel} onErro={setErro} bump={bump} onMudou={recarregar} />
