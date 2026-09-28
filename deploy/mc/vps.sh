@@ -22,7 +22,7 @@ SMOKE_DB=smoke_mc
 BACKUPS=/root/backups/root-os
 
 falha() { echo "PARADO: $*" >&2; exit 1; }
-confirma() { read -r -p "$1 Digite SIM para seguir: " r; [ "$r" = "SIM" ] || falha "cancelado por você"; }
+confirma() { read -r -p "$1 Digite SIM para seguir: " r; case "$r" in SIM|sim|Sim) ;; *) falha "cancelado por você" ;; esac; }
 rede() { docker inspect mktos_api -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1; }
 dburl() { docker exec mktos_api printenv DATABASE_URL; }
 psql_prod() { docker exec mktos_db psql -U mkt -d marketing_os -At -c "$1"; }

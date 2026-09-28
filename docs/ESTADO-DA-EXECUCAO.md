@@ -3073,6 +3073,37 @@ do que destrava mais:
   processo.
 - **A branch só existe no disco**, o risco nº 1 do plano inteiro.
 
+### Deploy da frente MC na VPS ROOT (28/09/2026)
+
+Mesclada na `main` pelo PR #16 (`e988cbd`), depois do hotfix #9 (`c0567bc`), e subida pelo
+`deploy/mc/vps.sh` no caminho real (easyPanel, bundle, `compose -p root_marketing-os`).
+
+| Etapa | Resultado |
+|---|---|
+| `backup` | dump `rootos-20260928-142743.sql.gz` (5,9 MB, 93 tabelas, conferido) e `mktos-app:rollback-mc` salva em `/root/mc/mktos-app-rollback-mc.tar.gz` (709 MB) |
+| `codigo` | `98d8ed4` → `e988cbd` por bundle, `--ff-only` |
+| `build` | imagem `2a7bb8ed9a4d` |
+| `ensaio` | dump de hoje num banco descartável: as migrations novas aplicaram e o smoke subiu |
+| `seed` | política v4, **71 capacidades**, assinada por Pedro Magnago nas duas categorias |
+| `permissoes` | simulado antes: nada sairia; entrou só `admin_master|pauta.enviar_ao_youtube`. O "403 da fila" não reapareceu: os vínculos já batiam com o catálogo |
+| `subir` | rodado pelo Pedro (o classificador do modo automático barrou a virada para o agente) |
+| `conferir` | `política base v4 carregada DO BANCO (71 capacidades)`, `storage pronto`, nenhum ERROR; `/`, `/pauta`, `/api/health` e a bio em 200 |
+
+**Configurado depois, na sessão da Root:** rotinas `coleta-semanal-da-pauta` (quinta 22h),
+`encadeamento-da-pauta` (5 min) e `publicacao-da-semana` (1 min); a de comentários espera o Instagram.
+Fontes: 8 RSS de IA (OpenAI, Google AI, TechCrunch, The Verge, MIT Tech Review, Hugging Face,
+Tecnoblog, Canaltech) e Gmail com a etiqueta `newsletters`. A primeira coleta manual trouxe 220
+capturas e deixou uma rodada com 200 candidatas aguardando curadoria.
+
+**Achados em produção, fora do código da frente:**
+- **A chave do OpenRouter morreu** (HTTP 401 "User not found"). Com `LLM_PROVIDER=openrouter`, nenhuma
+  função de IA do OS responde, a sugestão da curadoria inclusive. A `OPENAI_API_KEY` responde 200.
+- **WhatsApp não configurado:** `EVOLUTION_*` e `CANAL_APROVACAO_*` vazias. Sem elas não há grupo de
+  links nem canal de aprovação.
+- **Sem `APIFY_TOKEN`:** busca e creators ficam parados; o token não veio da VPS antiga.
+- **As 19 variáveis novas da frente** não estão no compose do painel: valem os padrões do código
+  (recursos desligados) até entrarem no easyPanel.
+
 ---
 
 ## 2. O que NÃO foi feito, e por quê
