@@ -29,6 +29,8 @@ import { MarcaController } from './marca.controller';
 import { MarcaService } from './marca.service';
 import { ConcorrentesController } from './concorrentes.controller';
 import { ConcorrentesService } from './concorrentes.service';
+import { EstrategiaController } from './estrategia.controller';
+import { EstrategiaService } from './estrategia.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -85,6 +87,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     VozController,
     MarcaController,
     ConcorrentesController,
+    EstrategiaController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -127,6 +130,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     MarcaService,
     // MK2: a mediana e o índice dos perfis raspados, e o dossiê por IA.
     ConcorrentesService,
+    // MK4: o documento do mês, proposto pela IA e editado por gente.
+    EstrategiaService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.

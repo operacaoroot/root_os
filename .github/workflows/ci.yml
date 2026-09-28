@@ -1906,8 +1906,16 @@ jobs:
       # banco: 2413 passados e 718 pulados, em 76 arquivos. O piso de ARQUIVOS
       # vai a 68, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
       # que rodam sem banco), para 2246.
-      PISO_CASOS_API: '2246'
-      PISO_ARQUIVOS_API: '68'
+      #
+      # MK4, A ESTRATÉGIA DO MÊS (28/09/2026): +19 casos num arquivo novo,
+      # `pauta-estrategia` — a chave por mês e a virada do ano, o pilar
+      # inventado que é descartado, a resposta sem pilar da casa que é recusada
+      # inteira, as cinco seções fixas, e propor/salvar/reler com dublê de LLM.
+      # Nenhum precisa de banco. Medido sem banco: 2432 passados e 718 pulados,
+      # em 77 arquivos. O piso de ARQUIVOS vai a 69, colado no real; o de CASOS
+      # sobe 16 (~15% de folga sobre os 19 que rodam sem banco), para 2262.
+      PISO_CASOS_API: '2262'
+      PISO_ARQUIVOS_API: '69'
 
     steps:
       - uses: actions/checkout@v4

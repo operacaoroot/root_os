@@ -2954,6 +2954,85 @@ export interface PautaDossieDoConcorrente {
   modelo: string;
 }
 
+// ---------- Pauta: a estratégia do mês (MK4) ----------
+// Um documento por mês: os pilares da vez, a cadência, as metas, as apostas e o
+// que parar. A IA propõe a partir do que a casa é (MK1), do que os concorrentes
+// fizeram (MK2) e do que foi publicado no mês anterior; uma pessoa edita.
+//
+// É NOTA DA MEMÓRIA, uma por mês (`pauta.estrategia.2026-09`), pelo mesmo
+// caminho da voz e da marca. Um mês é um documento que alguém escreve e revisa,
+// não registro que o sistema acumula — e a nota já dá versão, histórico e
+// RASTRO. A chave leva o mês porque o histórico da nota guarda as VERSÕES
+// daquele mês; misturar meses na mesma nota perderia o de antes.
+
+export const PAUTA_PREFIXO_DA_ESTRATEGIA = 'pauta.estrategia.';
+
+/** `AAAA-MM`. O mês é a identidade do documento. */
+export const PautaMesSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'O mês é AAAA-MM (ex.: 2026-09).');
+
+export function chaveDaEstrategia(mes: string): string {
+  return `${PAUTA_PREFIXO_DA_ESTRATEGIA}${mes}`;
+}
+
+/** O mês de uma chave de estratégia, ou nulo quando a chave não é de uma. */
+export function mesDaChaveDaEstrategia(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DA_ESTRATEGIA)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DA_ESTRATEGIA.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+/** As seções do documento, na ordem em que são escritas e lidas. */
+export const PAUTA_SECOES_DA_ESTRATEGIA = [
+  'Pilares da vez',
+  'Cadência',
+  'Metas',
+  'Apostas',
+  'O que parar',
+] as const;
+
+export const PAUTA_TETO_DA_ESTRATEGIA = 6_000;
+export const PAUTA_TETO_DE_ITENS_DA_ESTRATEGIA = 6;
+
+export interface PautaEstrategiaDaIa {
+  pilaresDaVez: string[];
+  cadencia: string;
+  metas: string[];
+  apostas: string[];
+  oQueParar: string[];
+}
+
+export interface PautaEstrategiaDoMes {
+  mes: string;
+  /** O markdown, que é o que a pessoa edita. */
+  documento: string;
+  versao: number | null;
+  atualizadoEm: string | null;
+  /** `operador` quando alguém escreveu à mão, `promocao` quando veio da IA. */
+  origem: string | null;
+}
+
+export interface PautaEstrategiaPainel extends PautaEstrategiaDoMes {
+  /** Os meses que já têm documento, do mais novo para o mais velho. */
+  meses: string[];
+  /** O que faltou para a IA propor (sem marca, sem pilar, sem mês publicado). */
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+/** `PUT /pauta/estrategia/:mes`. */
+export const PautaEstrategiaSalvarSchema = z.object({
+  documento: z
+    .string()
+    .trim()
+    .min(1, 'A estratégia do mês não pode ficar vazia.')
+    .max(PAUTA_TETO_DA_ESTRATEGIA, `A estratégia tem no máximo ${PAUTA_TETO_DA_ESTRATEGIA} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaEstrategiaSalvarInput = z.infer<typeof PautaEstrategiaSalvarSchema>;
+
 // ---------- Pauta: a newsletter do episódio (MC13) ----------
 // A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
 // novo: uma seção por matéria com o link da matéria, e o fechamento chamando
