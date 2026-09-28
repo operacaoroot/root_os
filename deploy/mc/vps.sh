@@ -52,7 +52,7 @@ diagnostico)
   echo "== política na boot";   docker logs mktos_api 2>&1 | grep -E 'capacidades' | tail -1 || true
   echo "== variáveis que o repo usa e o painel não (só nomes)"; faltam_no_painel || true
   echo "== permissões por papel"; papeis | cut -d'|' -f1 | sort | uniq -c
-  echo "== backups";            ls -t "$BACKUPS" 2>/dev/null | head -3 || echo "nenhum em $BACKUPS"
+  echo "== backups";            ls -t "$BACKUPS"/diario 2>/dev/null | head -3 || echo "nenhum em $BACKUPS/diario"
   ;;
 
 backup)
@@ -61,7 +61,7 @@ backup)
   docker tag "$IMG:latest" "$IMG:$VOLTA"
   docker save "$IMG:$VOLTA" | gzip > "$DIR/$IMG-$VOLTA.tar.gz"
   papeis > "$DIR/papeis-antes.tsv"
-  ls -lh "$BACKUPS" | tail -2; ls -lh "$DIR/$IMG-$VOLTA.tar.gz"
+  ls -lht "$BACKUPS"/diario | head -2; ls -lh "$DIR/$IMG-$VOLTA.tar.gz"
   echo "OK: backup, imagem de volta ($IMG:$VOLTA, salva em disco) e foto dos papéis."
   ;;
 
@@ -97,12 +97,13 @@ build)
 
 ensaio)
   NET=$(rede); DB=$(dburl); BASE=${DB%%\?*}; URL="${BASE%/*}/$SMOKE_DB"
-  ULT=$(ls -t "$BACKUPS"/*.sql.gz | head -1) || falha "sem backup em $BACKUPS"
+  ULT=$(ls -t "$BACKUPS"/diario/*.sql.gz 2>/dev/null | head -1)
+  [ -n "$ULT" ] || falha "sem backup em $BACKUPS/diario: rode 'backup' antes"
   echo "Ensaio com o dump $ULT num banco descartável ($SMOKE_DB)."
   docker exec mktos_db psql -U mkt -d marketing_os -q -c "drop database if exists $SMOKE_DB" -c "create database $SMOKE_DB"
   gunzip -c "$ULT" | docker exec -i mktos_db psql -U mkt -d "$SMOKE_DB" -q -v ON_ERROR_STOP=0 >/dev/null 2>"$DIR/ensaio-restore.log" || true
   echo "== migrations novas no banco descartável"
-  docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$URL" "$IMG:latest" npx prisma migrate deploy
+  docker run --rm --network "$NET" -w /app/apps/api -e DATABASE_URL="$URL" "$IMG:latest" pnpm exec prisma migrate deploy
   echo "== smoke da imagem nova contra o banco descartável"
   docker run --rm --network "$NET" -w /app/apps/api \
     -e DATABASE_URL="$URL" -e JWT_SECRET="smoke-descartavel-$(openssl rand -hex 16)" -e ROTINAS_CRON=off \
