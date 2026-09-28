@@ -255,7 +255,14 @@ describe('MD8: as pré-condições de cada peça (puro)', () => {
     expect(linkDaFila('https://os.operacaoroot.com,https://outra')).toBe('https://os.operacaoroot.com/atendimento');
     expect(linkDaFila('http://localhost:4000')).toBe('http://localhost:4000/atendimento');
     expect(linkDaFila('http://os.operacaoroot.com')).toBeNull();
-    expect(linkDaFila(undefined)).toBeNull();
+    // Sem argumento, a origem vem de WEB_ORIGIN: o caso só prova o "sem origem" com ela vazia,
+    // senão reprova em máquina que tem WEB_ORIGIN no apps/api/.env.
+    vi.stubEnv('WEB_ORIGIN', '');
+    try {
+      expect(linkDaFila(undefined)).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
     const p = { resumo: 'Semana de ep-04', nivel: 'R4', capacidade: CAPACIDADE_DE_APROVAR_A_SEMANA, hashCurto: 'abc', expiraEm: new Date(), args: {} };
     expect(textoDoAviso(p, 'porque', 'https://os.x/atendimento')).toContain('para decidir: https://os.x/atendimento');
     expect(textoDoAviso(p, 'porque', null)).toContain('Abra a fila de aprovações no painel para decidir.');
