@@ -1895,8 +1895,19 @@ jobs:
       # passados e 718 pulados, em 75 arquivos. O piso de ARQUIVOS vai a 67,
       # colado no real; o de CASOS sobe 30 (~15% de folga sobre os 35 que rodam
       # sem banco), para 2220.
-      PISO_CASOS_API: '2220'
-      PISO_ARQUIVOS_API: '67'
+      #
+      # MK2, CONCORRENTES COM NÚMEROS (28/09/2026): +31 casos num arquivo novo,
+      # `pauta-concorrentes` — a leitura das métricas por plataforma, a mediana
+      # e o índice contra o próprio perfil, o piso de 5 posts, e o pedido do
+      # dossiê com a legenda dentro da cerca e o número fora. Nenhum precisa de
+      # banco. O `adversarial` ganhou a quarta entrada do inventário de cercas e
+      # passou a normalizar o separador de caminho (no Windows o `join` devolve
+      # `\` e o inventário não casava por isso, não por cerca nova). Medido sem
+      # banco: 2413 passados e 718 pulados, em 76 arquivos. O piso de ARQUIVOS
+      # vai a 68, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
+      # que rodam sem banco), para 2246.
+      PISO_CASOS_API: '2246'
+      PISO_ARQUIVOS_API: '68'
 
     steps:
       - uses: actions/checkout@v4

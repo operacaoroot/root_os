@@ -2848,6 +2848,112 @@ export interface PautaMarcaPainel {
   bloco: string;
 }
 
+// ---------- Pauta: concorrentes com números (MK2) ----------
+// O acervo de referências (`/referencias`) diz o que um perfil publica. O que
+// faltava é o NÚMERO: qual post daquele perfil rendeu, e quanto.
+//
+// A régua é a MEDIANA DO PRÓPRIO PERFIL, nunca um número absoluto nem a
+// comparação entre perfis. Um perfil de 500 mil seguidores e um de 5 mil não se
+// comparam por visualização; o que se compara é cada post contra o que aquele
+// perfil costuma fazer. Mediana e não média porque um viral só move a média e
+// esconde o resto — é justamente o post que se quer achar.
+//
+// Estas contas moram no shared porque a tela mostra o mesmo índice que a API
+// calcula, e duas contas em dois lugares viram dois números.
+
+export interface PautaMetricasDoPost {
+  visualizacoes: number | null;
+  curtidas: number | null;
+  comentarios: number | null;
+  compartilhamentos: number | null;
+  duracaoSeg: number | null;
+}
+
+/** As métricas que ganham mediana e índice. Duração descreve, não mede alcance. */
+export const PAUTA_METRICAS_DO_CONCORRENTE = ['visualizacoes', 'curtidas', 'comentarios', 'compartilhamentos'] as const;
+export type PautaMetricaDoConcorrente = (typeof PAUTA_METRICAS_DO_CONCORRENTE)[number];
+
+/**
+ * Abaixo disto a mediana não diz nada: com três posts, o índice é ruído com
+ * cara de medida. A análise devolve o índice nulo e a tela diz que falta post.
+ */
+export const PAUTA_PISO_DE_POSTS_DO_INDICE = 5;
+
+/** A partir daqui o post estourou para o tamanho daquele perfil. */
+export const PAUTA_INDICE_ESTOUROU = 2;
+export const PAUTA_INDICE_ACIMA = 1.2;
+export const PAUTA_INDICE_ABAIXO = 0.5;
+
+export type PautaFaixaDoIndice = 'estourou' | 'acima' | 'na-media' | 'abaixo';
+
+/** A mediana, ignorando o que não é número. Nulo quando não sobrou nada. */
+export function medianaDe(ns: ReadonlyArray<number | null | undefined>): number | null {
+  const v = ns.filter((n): n is number => typeof n === 'number' && Number.isFinite(n)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const meio = Math.floor(v.length / 2);
+  return v.length % 2 ? v[meio] : (v[meio - 1] + v[meio]) / 2;
+}
+
+/**
+ * Quantas vezes a mediana do próprio perfil o post fez. Mediana zero devolve
+ * nulo em vez de infinito: um perfil cuja mediana é zero não tem régua.
+ */
+export function indiceDoPost(valor: number | null | undefined, mediana: number | null): number | null {
+  if (typeof valor !== 'number' || !Number.isFinite(valor)) return null;
+  if (mediana === null || mediana <= 0) return null;
+  return Math.round((valor / mediana) * 100) / 100;
+}
+
+export function faixaDoIndice(indice: number | null): PautaFaixaDoIndice | null {
+  if (indice === null) return null;
+  if (indice >= PAUTA_INDICE_ESTOUROU) return 'estourou';
+  if (indice >= PAUTA_INDICE_ACIMA) return 'acima';
+  if (indice < PAUTA_INDICE_ABAIXO) return 'abaixo';
+  return 'na-media';
+}
+
+/** Quantos posts do perfil vão ao modelo no dossiê. O prompt lê recorte, não acervo. */
+export const PAUTA_TETO_DE_POSTS_DO_DOSSIE = 20;
+export const PAUTA_TETO_DA_LEGENDA_NO_DOSSIE = 600;
+
+export interface PautaPostDeConcorrente {
+  capturaId: string;
+  url: string;
+  titulo: string;
+  legenda: string;
+  publicadoEm: string | null;
+  metricas: PautaMetricasDoPost;
+  /** Por métrica, quantas vezes a mediana do perfil. Nulo onde não deu para medir. */
+  indices: Record<PautaMetricaDoConcorrente, number | null>;
+  /** A faixa da métrica de referência do perfil (visualizações, ou curtidas quando não há). */
+  faixa: PautaFaixaDoIndice | null;
+}
+
+export interface PautaAnaliseDoConcorrente {
+  fonteId: string;
+  plataforma: string;
+  handle: string;
+  posts: PautaPostDeConcorrente[];
+  medianas: Record<PautaMetricaDoConcorrente, number | null>;
+  /** A métrica pela qual o perfil foi medido; nula quando nenhuma tinha número. */
+  metricaDeReferencia: PautaMetricaDoConcorrente | null;
+  /** Quantos posts entraram na conta, e se deu para medir. */
+  postsContados: number;
+  medivel: boolean;
+  /** O que a leitura não conseguiu: fonte sem post, sem métrica, poucos posts. */
+  avisos: string[];
+}
+
+export interface PautaDossieDoConcorrente {
+  oQueRende: string;
+  aberturas: string[];
+  assuntos: string[];
+  ctas: string[];
+  oQueAproveitar: string[];
+  geradoEm: string;
+  modelo: string;
+}
+
 // ---------- Pauta: a newsletter do episódio (MC13) ----------
 // A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
 // novo: uma seção por matéria com o link da matéria, e o fechamento chamando

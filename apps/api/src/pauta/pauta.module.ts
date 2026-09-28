@@ -27,6 +27,8 @@ import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
 import { MarcaController } from './marca.controller';
 import { MarcaService } from './marca.service';
+import { ConcorrentesController } from './concorrentes.controller';
+import { ConcorrentesService } from './concorrentes.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -82,6 +84,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     RoteiroController,
     VozController,
     MarcaController,
+    ConcorrentesController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -122,6 +125,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     VozService,
     // MK1: a marca e os pilares, que o roteiro e as peças recebem ao lado da voz.
     MarcaService,
+    // MK2: a mediana e o índice dos perfis raspados, e o dossiê por IA.
+    ConcorrentesService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.
