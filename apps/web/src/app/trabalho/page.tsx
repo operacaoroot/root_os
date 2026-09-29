@@ -7,7 +7,7 @@ import type {
   TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe,
 } from '@mktos/shared';
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
+import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 
@@ -49,6 +49,15 @@ function nomeDoAgente(t: {
 const paraInputDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 const deInputDate = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
+function mudarEndereco(listaId: string | null, tarefaId: string | null) {
+  const url = new URL(window.location.href);
+  if (listaId) url.searchParams.set('lista', listaId);
+  else url.searchParams.delete('lista');
+  if (tarefaId) url.searchParams.set('tarefa', tarefaId);
+  else url.searchParams.delete('tarefa');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 export default function TrabalhoPage() {
   const { token, ready, can, user } = useAuth();
   const editable = can('tarefas.editar');
@@ -74,13 +83,32 @@ export default function TrabalhoPage() {
         setEstrutura(e);
         if (!listaId) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
-          const preferida = todas.find((l) => l.externalId === '901327640001') ?? todas[0];
+          const solicitada = new URLSearchParams(window.location.search).get('lista');
+          const preferida = todas.find((l) => l.id === solicitada || l.externalId === solicitada)
+            ?? todas.find((l) => l.externalId === '901328341442') ?? todas[0];
           if (preferida) setListaId(preferida.id);
         }
       })
       .catch((e) => setErro(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, token, bump]);
+
+  // O ID do card é nativo e a API confere a empresa. O painel abre no mesmo
+  // registro mesmo quando a URL traz uma lista antiga após ele ser movido.
+  useEffect(() => {
+    if (!estrutura || !token) return;
+    const tarefaId = new URLSearchParams(window.location.search).get('tarefa');
+    if (!tarefaId || !/^[0-9a-f-]{36}$/i.test(tarefaId)) return;
+    apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${tarefaId}`, token)
+      .then((t) => { setListaId(t.listId); setPainelId(t.id); })
+      .catch((e) => setErro(`Não foi possível abrir a tarefa do link: ${e.message}`));
+  }, [estrutura, token]);
+
+  const selecionarLista = (id: string) => {
+    setListaId(id); setPainelId(null); setFOpcao(''); mudarEndereco(id, null);
+  };
+  const abrirTarefa = (id: string) => { setPainelId(id); mudarEndereco(listaId, id); };
+  const fecharTarefa = () => { setPainelId(null); mudarEndereco(listaId, null); };
 
   const lista: TrabListaDto | null = useMemo(() => {
     if (!estrutura || !listaId) return null;
@@ -119,23 +147,23 @@ export default function TrabalhoPage() {
   }, [tarefas, fAgente]);
 
   return (
-    <div className="flex h-full gap-4">
+    <div className="flex h-full min-w-0 flex-col gap-4 lg:flex-row">
       {/* árvore: pastas → listas */}
-      <aside className="w-52 shrink-0 space-y-3 overflow-y-auto pr-1">
+      <aside className="max-h-44 w-full shrink-0 space-y-3 overflow-y-auto border-b border-border pb-2 pr-1 lg:max-h-none lg:w-52 lg:border-b-0 lg:pb-0">
         {estrutura?.folders.map((f) => (
           <div key={f.id}>
-            <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
+            <div title={f.name} className="break-words px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{f.name}</div>
             <div className="mt-1 space-y-0.5">
               {f.lists.map((l) => (
                 <button
                   key={l.id}
-                  onClick={() => { setListaId(l.id); setFOpcao(''); }}
+                  onClick={() => selecionarLista(l.id)}
                   className={[
                     'flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
                     l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
                   ].join(' ')}
                 >
-                  <span className="truncate">{l.name}</span>
+                  <span title={l.name} className="min-w-0 break-words">{l.name}</span>
                   <span className="ml-1 text-[10px] text-muted">{l.total}</span>
                 </button>
               ))}
@@ -154,7 +182,7 @@ export default function TrabalhoPage() {
               {estrutura.listasSoltas.map((l) => (
                 <button
                   key={l.id}
-                  onClick={() => { setListaId(l.id); setFOpcao(''); }}
+                  onClick={() => selecionarLista(l.id)}
                   className={[
                     'flex w-full items-center justify-between rounded-md px-2 py-1 text-left text-[13px] transition',
                     l.id === listaId ? 'bg-brand/15 text-text' : 'text-muted hover:bg-surface-2 hover:text-text',
@@ -176,7 +204,7 @@ export default function TrabalhoPage() {
           <div>
             <h1 className="text-xl font-semibold">{lista?.name ?? 'Quadro interno'}</h1>
             <p className="text-sm text-muted">
-              {tarefas ? `${tarefas.total} tarefa(s)` : 'Carregando…'} · gestão nativa (fotografia do ClickUp)
+              {tarefas ? `${tarefas.total} tarefa(s)` : 'Carregando…'} · trabalho nativo
               {lista?.externalId && <span className="ml-1 text-[11px]">· lista ClickUp {lista.externalId}</span>}
             </p>
           </div>
@@ -251,18 +279,19 @@ export default function TrabalhoPage() {
           <Board
             lista={lista} tarefas={visiveis} editable={editable} token={token}
             agentes={estrutura?.agentes ?? []}
-            onAbrir={setPainelId} onMudou={refresh} onErro={setErro}
+            onAbrir={abrirTarefa} onMudou={refresh} onErro={setErro}
           />
         )}
         {lista && tarefas && visao === 'tabela' && (
-          <Tabela lista={lista} tarefas={visiveis} campos={camposDaLista.map((c) => c.name)} onAbrir={setPainelId} />
+          <Tabela lista={lista} tarefas={visiveis} campos={camposDaLista.map((c) => c.name)} onAbrir={abrirTarefa} />
         )}
       </div>
 
       {painelId && estrutura && (
         <PainelTarefa
           id={painelId} estrutura={estrutura} editable={editable} token={token} usuarioId={user?.id ?? null}
-          onFechar={() => setPainelId(null)} onMudou={refresh} onErro={setErro}
+          onFechar={fecharTarefa} onMoverLista={(id) => { setListaId(id); mudarEndereco(id, painelId); }}
+          onMudou={refresh} onErro={setErro}
         />
       )}
       {configAberta && lista && (
@@ -621,15 +650,57 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
 
 // ---------- painel da tarefa (drawer): TODO campo editável ----------
 
-function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onMudou, onErro }: {
+function separarAnexos(description: string | null): {
+  texto: string; sufixo: string; anexos: Array<{ nome: string; caminho: string }>;
+} {
+  const original = description ?? '';
+  const marcador = 'Anexos preservados\n';
+  const inicio = original.lastIndexOf(marcador);
+  if (inicio < 0 || (inicio > 0 && !original.slice(0, inicio).endsWith('\n\n'))) {
+    return { texto: original, sufixo: '', anexos: [] };
+  }
+  const linhas = original.slice(inicio + marcador.length).split('\n');
+  const anexos = linhas.map((linha) => {
+    const m = /^- \[([^\]]+)\]\((\/api\/trabalho\/arquivos\/[^/\s)]+\/[^/\s)]+)\)$/.exec(linha);
+    return m ? { nome: m[1], caminho: m[2] } : null;
+  }).filter((a): a is { nome: string; caminho: string } => !!a);
+  return anexos.length === linhas.length
+    ? { texto: original.slice(0, inicio).trimEnd(), sufixo: original.slice(inicio), anexos }
+    : { texto: original, sufixo: '', anexos: [] };
+}
+
+function separarDependencias(description: string): {
+  texto: string; sufixo: string; itens: Array<{ tipo: string; nome: string; href: string | null }>;
+} {
+  const marcador = 'Dependências preservadas\n';
+  const inicio = description.lastIndexOf(marcador);
+  if (inicio < 0 || (inicio > 0 && !description.slice(0, inicio).endsWith('\n\n'))) {
+    return { texto: description, sufixo: '', itens: [] };
+  }
+  const linhas = description.slice(inicio + marcador.length).split('\n');
+  const itens = linhas.map((linha) => {
+    const link = /^- ([^:]+): \[([^\]]+)\]\((\/trabalho\?lista=[^\s)]+&tarefa=[0-9a-f-]{36})\)$/.exec(linha);
+    if (link) return { tipo: link[1], nome: link[2], href: link[3] };
+    const externo = /^- ([^:]+): (tarefa ClickUp .+ fora deste lote)$/.exec(linha);
+    return externo ? { tipo: externo[1], nome: externo[2], href: null } : null;
+  }).filter((item): item is { tipo: string; nome: string; href: string | null } => !!item);
+  return itens.length === linhas.length
+    ? { texto: description.slice(0, inicio).trimEnd(), sufixo: description.slice(inicio), itens }
+    : { texto: description, sufixo: '', itens: [] };
+}
+
+function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onMoverLista, onMudou, onErro }: {
   id: string; estrutura: TrabEstrutura; editable: boolean; token: string | null;
   /** Quem está logado — só o autor de um lançamento de horas vê o botão de apagar. */
   usuarioId: string | null;
-  onFechar: () => void; onMudou: () => void; onErro: (m: string) => void;
+  onFechar: () => void; onMoverLista: (id: string) => void;
+  onMudou: () => void; onErro: (m: string) => void;
 }) {
   const [t, setT] = useState<TrabTarefaDetalhe | null>(null);
   const [comentario, setComentario] = useState('');
   const [novaTag, setNovaTag] = useState('');
+  const [edicaoDescricao, setEdicaoDescricao] = useState(false);
+  useEffect(() => setEdicaoDescricao(false), [id]);
   const recarregar = useCallback(() => {
     apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${id}`, token).then(setT).catch((e) => onErro(e.message));
   }, [id, token, onErro]);
@@ -646,6 +717,25 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
     apiPatch(`/trabalho/tarefas/${id}`, mudanca, token)
       .then(() => { recarregar(); onMudou(); })
       .catch((e) => onErro(e.message));
+
+  const moverLista = (destino: string) => {
+    if (destino === t?.listId) return;
+    apiPatch(`/trabalho/tarefas/${id}`, { listId: destino }, token)
+      .then(() => { onMoverLista(destino); recarregar(); onMudou(); })
+      .catch((e) => onErro(e.message));
+  };
+
+  const baixarAnexo = async (nome: string, caminho: string) => {
+    try {
+      const blob = await apiBlob(caminho.slice('/api'.length), token);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = nome;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) { onErro((e as Error).message); }
+  };
 
   const comentar = () => {
     if (!comentario.trim()) return;
@@ -668,6 +758,12 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
 
   if (!t) return null;
   const ro = !editable;
+  const anexos = separarAnexos(t.description);
+  const dependencias = separarDependencias(anexos.texto);
+  const nomesListas = new Map([
+    ...estrutura.folders.flatMap((f) => f.lists.map((l) => [l.id, `${f.name} / ${l.name}`] as const)),
+    ...estrutura.listasSoltas.map((l) => [l.id, l.name] as const),
+  ]);
 
   return (
     <div className="fixed inset-y-0 right-0 z-40 flex w-[420px] max-w-full flex-col border-l border-border bg-surface shadow-2xl">
@@ -693,9 +789,10 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">
-            <select disabled={ro} value={t.listId} onChange={(e) => salvar({ listId: e.target.value })} className={INP}>
-              {todasListas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            <select disabled={ro} value={t.listId} onChange={(e) => moverLista(e.target.value)} className={INP}>
+              {todasListas.map((l) => <option key={l.id} value={l.id}>{nomesListas.get(l.id)}</option>)}
             </select>
+            {!ro && <p className="mt-1 text-[11px] text-muted">Mover mantém este card; a lista de destino define a primeira etapa.</p>}
           </Campo>
           <Campo rotulo="Status">
             <select disabled={ro} value={t.statusId} onChange={(e) => salvar({ statusId: e.target.value })} className={INP}>
@@ -818,15 +915,51 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
 
         {/* descrição */}
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição</div>
-          <textarea
-            disabled={ro}
-            defaultValue={t.description ?? ''}
-            onBlur={(e) => (e.target.value || null) !== t.description && salvar({ description: e.target.value || null })}
-            rows={3}
-            className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
-            placeholder="—"
-          />
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição e material vigente</div>
+            {!ro && <button type="button" onClick={() => setEdicaoDescricao((v) => !v)} className="text-[11px] text-brand hover:underline">{edicaoDescricao ? 'Concluir edição' : 'Editar texto'}</button>}
+          </div>
+          {edicaoDescricao && !ro ? (
+            <textarea
+              key={`${t.id}:${t.updatedAt}`}
+              defaultValue={dependencias.texto}
+              onBlur={(e) => {
+                const novo = [e.target.value.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
+                if (novo !== t.description) salvar({ description: novo });
+              }}
+              rows={12}
+              className="w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim"
+              placeholder="—"
+            />
+          ) : (
+            <div className="max-h-[480px] overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface-2 px-3 py-2 text-[13px] leading-6">
+              {dependencias.texto || <span className="text-muted">Sem descrição.</span>}
+            </div>
+          )}
+          {dependencias.itens.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border px-3 py-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Dependências ({dependencias.itens.length})</div>
+              <ul className="space-y-1">
+                {dependencias.itens.map((item, i) => <li key={`${item.nome}:${i}`} className="break-words text-[13px]">
+                  <span className="text-muted">{item.tipo}: </span>
+                  {item.href ? <a href={item.href} className="text-brand hover:underline">{item.nome}</a> : item.nome}
+                </li>)}
+              </ul>
+            </div>
+          )}
+          {anexos.anexos.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border px-3 py-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Anexos preservados ({anexos.anexos.length})</div>
+              <div className="space-y-1">
+                {anexos.anexos.map((a) => (
+                  <button key={a.caminho} type="button" onClick={() => void baixarAnexo(a.nome, a.caminho)}
+                    className="block max-w-full break-all text-left text-[13px] text-brand hover:underline">
+                    Baixar {a.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* subtarefas */}

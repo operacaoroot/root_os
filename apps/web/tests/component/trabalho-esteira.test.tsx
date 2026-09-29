@@ -22,6 +22,7 @@ const apiGet = vi.fn();
 const apiPost = vi.fn();
 const apiPatch = vi.fn();
 const apiDelete = vi.fn();
+const apiBlob = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -31,6 +32,7 @@ vi.mock('@/lib/api', async () => {
     apiPost: (...a: unknown[]) => apiPost(...a),
     apiPatch: (...a: unknown[]) => apiPatch(...a),
     apiDelete: (...a: unknown[]) => apiDelete(...a),
+    apiBlob: (...a: unknown[]) => apiBlob(...a),
   };
 });
 
@@ -91,11 +93,11 @@ const ITENS = [
   }),
 ];
 
-function servir(itens = ITENS, detalhe: Record<string, unknown> = {}) {
+function servir(itens = ITENS, detalhe: Record<string, unknown> = {}, listas = [ESTEIRA]) {
   apiGet.mockImplementation((rota: string) => {
     if (rota.startsWith('/trabalho/estrutura')) {
       return Promise.resolve({
-        folders: [PASTA], listasSoltas: [ESTEIRA], camposGlobais: [], tags: [], responsaveis: ['Rodrigo'], agentes: [],
+        folders: [PASTA], listasSoltas: listas, camposGlobais: [], tags: [], responsaveis: ['Rodrigo'], agentes: [],
       });
     }
     if (rota.startsWith('/trabalho/tarefas?')) {
@@ -118,10 +120,77 @@ const coluna = (statusId: string) => document.querySelector(`[data-coluna="${sta
 const cartao = (titulo: string) => screen.getByText(titulo).closest('div.rounded-lg') as HTMLElement;
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/trabalho');
   vi.clearAllMocks();
   apiPost.mockResolvedValue({ ok: true });
   apiPatch.mockResolvedValue({ ok: true });
   apiDelete.mockResolvedValue({ ok: true });
+});
+
+describe('trabalho importado: card único e material preservado', () => {
+  it('abre deeplink nativo e move o mesmo card para outra lista pelo PATCH', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const outra = { ...ESTEIRA, id: 'l-destino', name: 'Design & Gravação' };
+    servir([tarefa({ id, title: 'ROOT-001', externalId: 'root-001' })], {}, [ESTEIRA, outra]);
+    window.history.replaceState({}, '', `/trabalho?lista=l-esteira&tarefa=${id}`);
+    render(<TrabalhoPage />);
+    const painel = await screen.findByDisplayValue('ROOT-001');
+    const gaveta = painel.closest('.fixed') as HTMLElement;
+    await userEvent.selectOptions(within(gaveta).getByLabelText(/^Lista/), 'l-destino');
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${id}`, { listId: 'l-destino' }, 'tok'));
+    expect(apiPost).not.toHaveBeenCalledWith('/trabalho/tarefas', expect.anything(), 'tok');
+    await waitFor(() => expect(window.location.search).toBe(`?lista=l-destino&tarefa=${id}`));
+  });
+
+  it('mostra o pacote legível e baixa anexo preservado com Bearer pela API', async () => {
+    servir([tarefa({ id: 't-1', title: 'ROOT-001' })], {
+      description: 'Pacote v1 aprovado\n\nPróxima ação: gravar.\n\nAnexos preservados\n- [pacote.pdf](/api/trabalho/arquivos/root-001/a1)',
+    });
+    apiBlob.mockResolvedValue(new Blob(['arquivo']));
+    const clique = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:qa') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('ROOT-001'));
+    expect(await screen.findByText(/Pacote v1 aprovado/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Baixar pacote.pdf' }));
+    await waitFor(() => expect(apiBlob).toHaveBeenCalledWith('/trabalho/arquivos/root-001/a1', 'tok'));
+    clique.mockRestore();
+  });
+
+  it('mantém o anexo visível e seu link ao editar descrição inicialmente vazia', async () => {
+    const sufixo = 'Anexos preservados\n- [pacote.pdf](/api/trabalho/arquivos/root-001/a1)';
+    servir([tarefa({ id: 't-1', title: 'ROOT-001' })], { description: sufixo });
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('ROOT-001'));
+    expect(screen.getByRole('button', { name: 'Baixar pacote.pdf' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Editar texto' }));
+    const textarea = document.querySelector('textarea[rows="12"]') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('');
+    fireEvent.change(textarea, { target: { value: 'Pacote vigente' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-1', {
+      description: `Pacote vigente\n\n${sufixo}`,
+    }, 'tok'));
+  });
+
+  it('mostra dependência com link para o card nativo e preserva a relação ao editar texto', async () => {
+    const destino = '11111111-1111-4111-8111-111111111111';
+    const secao = `Dependências preservadas\n- depende de: [ROOT-002](/trabalho?lista=901328341442&tarefa=${destino})`;
+    servir([tarefa({ id: 't-1', title: 'ROOT-001' })], { description: `Contexto\n\n${secao}` });
+    render(<TrabalhoPage />);
+    await userEvent.click(await screen.findByText('ROOT-001'));
+    const link = screen.getByRole('link', { name: 'ROOT-002' });
+    expect(link.getAttribute('href')).toBe(`/trabalho?lista=901328341442&tarefa=${destino}`);
+    await userEvent.click(screen.getByRole('button', { name: 'Editar texto' }));
+    const textarea = document.querySelector('textarea[rows="12"]') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Contexto');
+    fireEvent.change(textarea, { target: { value: 'Contexto atualizado' } });
+    fireEvent.blur(textarea);
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith('/trabalho/tarefas/t-1', {
+      description: `Contexto atualizado\n\n${secao}`,
+    }, 'tok'));
+  });
 });
 
 /* ------------------------------------------------------------- 1. limite -- */

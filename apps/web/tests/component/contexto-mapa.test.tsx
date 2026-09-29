@@ -391,7 +391,7 @@ describe('o clique do mouse no mapa', () => {
     servir();
     render(<ContextoPage />);
 
-    const ponto = await screen.findByRole('button', { name: /Desconto só com aprovação/ });
+    const ponto = await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Desconto só com aprovação/ });
     cliqueDeMouse(ponto);
 
     const gaveta = await screen.findByRole('complementary', { name: 'Registro selecionado' });
@@ -402,7 +402,7 @@ describe('o clique do mouse no mapa', () => {
     servir();
     render(<ContextoPage />);
 
-    const ponto = await screen.findByRole('button', { name: /Desconto só com aprovação/ });
+    const ponto = await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Desconto só com aprovação/ });
     disparar(ponto, evento('pointerdown', { pointerId: 7, clientX: 10, clientY: 10 }));
 
     // A catraca: com a captura ativa, o `pointerup` é redirecionado para quem
@@ -414,7 +414,7 @@ describe('o clique do mouse no mapa', () => {
     servir();
     render(<ContextoPage />);
 
-    const ponto = await screen.findByRole('button', { name: /Desconto só com aprovação/ });
+    const ponto = await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Desconto só com aprovação/ });
     const svg = screen.getByRole('group', { name: 'Mapa do contexto' });
 
     disparar(ponto, evento('pointerdown', { pointerId: PONTEIRO, clientX: 10, clientY: 10 }));
@@ -436,13 +436,24 @@ describe('o clique do mouse no mapa', () => {
 /* ------------------------------------------------------------------ tela -- */
 
 describe('a tela do mapa', () => {
+  it('permite encontrar e abrir o registro pelo diretório sem depender do desenho', async () => {
+    servir();
+    render(<ContextoPage />);
+    const diretorio = await screen.findByRole('region', { name: 'Diretório do contexto' });
+    await userEvent.type(within(diretorio).getByRole('textbox', { name: 'Buscar no diretório' }), 'desconto');
+    const item = within(diretorio).getByRole('button', { name: /Desconto só com aprovação/ });
+    expect(within(diretorio).queryByRole('button', { name: /Analista de pauta/ })).not.toBeInTheDocument();
+    await userEvent.click(item);
+    expect(await screen.findByRole('complementary', { name: 'Registro selecionado' })).toBeInTheDocument();
+  });
+
   it('desenha um ponto por registro que a API devolveu, e nenhum a mais', async () => {
     servir();
     render(<ContextoPage />);
 
-    expect(await screen.findByRole('button', { name: /Desconto só com aprovação/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Analista de pauta/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Pauta semanal/ })).toBeInTheDocument();
+    expect(await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Desconto só com aprovação/ })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Mapa do contexto' })).getByRole('button', { name: /Analista de pauta/ })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Mapa do contexto' })).getByRole('button', { name: /Pauta semanal/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Obsidian —/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Pedro Magnago —/ })).toBeInTheDocument();
   });
@@ -460,7 +471,7 @@ describe('a tela do mapa', () => {
     servir();
     render(<ContextoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /Desconto só com aprovação/ }));
+    await userEvent.click(await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Desconto só com aprovação/ }));
 
     const gaveta = await screen.findByRole('complementary', { name: 'Registro selecionado' });
     // O corpo é o do registro ABERTO (`GET /memoria/:id`), não o da listagem.
@@ -477,7 +488,7 @@ describe('a tela do mapa', () => {
     servir();
     render(<ContextoPage />);
 
-    await userEvent.click(await screen.findByRole('button', { name: /Analista de pauta/ }));
+    await userEvent.click(await within(await screen.findByRole('group', { name: 'Mapa do contexto' })).findByRole('button', { name: /Analista de pauta/ }));
 
     const gaveta = await screen.findByRole('complementary', { name: 'Registro selecionado' });
     expect(within(gaveta).getByText('Lê os feeds e propõe a pauta da semana.')).toBeInTheDocument();
@@ -565,7 +576,7 @@ describe('a tela do mapa', () => {
     const legenda = await screen.findByRole('complementary', { name: 'Legenda do mapa' });
     expect(within(legenda).getByText('12')).toBeInTheDocument();
     // Só dois pontos foram desenhados — e o total continua sendo 12.
-    expect(screen.getByRole('button', { name: /Desconto só com aprovação/ })).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Mapa do contexto' })).getByRole('button', { name: /Desconto só com aprovação/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Segunda —/ })).toBeInTheDocument();
   });
 
