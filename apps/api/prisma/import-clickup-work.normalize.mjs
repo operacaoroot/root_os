@@ -3,7 +3,7 @@
 // Gera duas variantes de path do mesmo conteúdo; jamais conecta ao banco.
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const ROOT = '/private/tmp/root-os-migration-20260929';
 const VAULT = '/vault/90-OS/migrations/marketing-20260929';
@@ -16,13 +16,17 @@ const ORG = '63cdd80e-0435-488d-98b5-c2653d235e50';
 
 function args() {
   const opts = { tasks: join(ROOT, 'raw-tasks.json'), lists: join(ROOT, 'raw-lists.json'),
-    files: join(ROOT, 'files.json'), outputDir: ROOT };
-  const keys = { '--raw-tasks': 'tasks', '--raw-lists': 'lists', '--files': 'files', '--output-dir': 'outputDir' };
+    files: join(ROOT, 'files.json'), outputDir: ROOT, expectedFiles: 20, expectedTasks: 70 };
+  const keys = { '--raw-tasks': 'tasks', '--raw-lists': 'lists', '--files': 'files', '--output-dir': 'outputDir', '--expected-files': 'expectedFiles', '--expected-tasks': 'expectedTasks' };
   for (let i = 2; i < process.argv.length; i++) {
     const key = keys[process.argv[i]];
     if (!key || !process.argv[i + 1]) throw new Error(`Argumento inválido: ${process.argv[i]}`);
     opts[key] = process.argv[++i];
   }
+  opts.expectedFiles = Number(opts.expectedFiles);
+  opts.expectedTasks = Number(opts.expectedTasks);
+  if (!Number.isSafeInteger(opts.expectedFiles) || opts.expectedFiles < 0) throw new Error('Contagem esperada de arquivos inválida');
+  if (!Number.isSafeInteger(opts.expectedTasks) || opts.expectedTasks < 0) throw new Error('Contagem esperada de tarefas inválida');
   return opts;
 }
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
@@ -56,7 +60,7 @@ function main() {
   const lists = json(opt.lists);
   const files = json(opt.files);
   if (!Array.isArray(tasks) || !Array.isArray(lists) || !Array.isArray(files)) falhar('Export esperado: três arrays JSON');
-  if (tasks.length !== 70 || lists.length !== 7 || files.length !== 20) {
+  if (tasks.length !== opt.expectedTasks || lists.length !== 7 || files.length !== opt.expectedFiles) {
     falhar(`Cardinalidade mudou: ${tasks.length} tarefas, ${lists.length} listas, ${files.length} anexos`);
   }
   semRepetidos(tasks.map((t) => t.id), 'tarefas');
@@ -65,7 +69,7 @@ function main() {
   if (JSON.stringify(lists.map((l) => l.id).sort()) !== JSON.stringify([...IDS].sort())) falhar('Listas fora da allowlist fixa');
   const listMap = new Map(lists.map((l) => [l.id, l]));
   const taskIds = new Set(tasks.map((t) => t.id));
-  const fileMap = new Map(files.map((f) => [fileKey(f.taskId, f.id), { ...f, relativePath: validarArquivo(f, ROOT) }]));
+  const fileMap = new Map(files.map((f) => [fileKey(f.taskId, f.id), { ...f, relativePath: validarArquivo(f, dirname(resolve(opt.files))) }]));
   const usados = new Set();
   const gaps = [];
   const counters = new Map();

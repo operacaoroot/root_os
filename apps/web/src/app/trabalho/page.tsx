@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { Archive, Bot, Clock, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
 import { MODELOS_DE_LISTA } from '@mktos/shared';
 import type {
@@ -64,6 +65,7 @@ export default function TrabalhoPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [estrutura, setEstrutura] = useState<TrabEstrutura | null>(null);
   const [listaId, setListaId] = useState<string | null>(null);
+  const [listaDoLinkAusente, setListaDoLinkAusente] = useState(false);
   const [visao, setVisao] = useState<'board' | 'tabela'>('board');
   const [tarefas, setTarefas] = useState<TrabTarefaLista | null>(null);
   const [painelId, setPainelId] = useState<string | null>(null);
@@ -84,8 +86,10 @@ export default function TrabalhoPage() {
         if (!listaId) {
           const todas = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas];
           const solicitada = new URLSearchParams(window.location.search).get('lista');
-          const preferida = todas.find((l) => l.id === solicitada || l.externalId === solicitada)
-            ?? todas.find((l) => l.externalId === '901328341442') ?? todas[0];
+          const preferida = solicitada
+            ? todas.find((l) => l.id === solicitada || l.externalId === solicitada)
+            : todas.find((l) => l.externalId === '901328341442') ?? todas[0];
+          setListaDoLinkAusente(!!solicitada && !preferida);
           if (preferida) setListaId(preferida.id);
         }
       })
@@ -100,12 +104,12 @@ export default function TrabalhoPage() {
     const tarefaId = new URLSearchParams(window.location.search).get('tarefa');
     if (!tarefaId || !/^[0-9a-f-]{36}$/i.test(tarefaId)) return;
     apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${tarefaId}`, token)
-      .then((t) => { setListaId(t.listId); setPainelId(t.id); })
+      .then((t) => { setListaDoLinkAusente(false); setListaId(t.listId); setPainelId(t.id); })
       .catch((e) => setErro(`Não foi possível abrir a tarefa do link: ${e.message}`));
   }, [estrutura, token]);
 
   const selecionarLista = (id: string) => {
-    setListaId(id); setPainelId(null); setFOpcao(''); mudarEndereco(id, null);
+    setListaDoLinkAusente(false); setListaId(id); setPainelId(null); setFOpcao(''); mudarEndereco(id, null);
   };
   const abrirTarefa = (id: string) => { setPainelId(id); mudarEndereco(listaId, id); };
   const fecharTarefa = () => { setPainelId(null); mudarEndereco(listaId, null); };
@@ -202,20 +206,20 @@ export default function TrabalhoPage() {
       <div className="min-w-0 flex-1 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{lista?.name ?? 'Quadro interno'}</h1>
+            <h1 className="text-xl font-semibold">{lista?.name ?? 'Trabalho'}</h1>
             <p className="text-sm text-muted">
-              {tarefas ? `${tarefas.total} tarefa(s)` : 'Carregando…'} · trabalho nativo
-              {lista?.externalId && <span className="ml-1 text-[11px]">· lista ClickUp {lista.externalId}</span>}
+              {!listaId && estrutura ? 'Selecione uma lista para ver as tarefas.' : tarefas ? `${tarefas.total} ${tarefas.total === 1 ? 'tarefa' : 'tarefas'}` : 'Carregando…'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input
+              aria-label="Buscar tarefas"
               value={fBusca}
               onChange={(e) => setFBusca(e.target.value)}
               placeholder="Buscar…"
               className="w-40 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
             />
-            <select value={fAssignee} onChange={(e) => setFAssignee(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+            <select aria-label="Filtrar por responsável" value={fAssignee} onChange={(e) => setFAssignee(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
               <option value="">Todos os responsáveis</option>
               {estrutura?.responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
@@ -225,7 +229,7 @@ export default function TrabalhoPage() {
               a tem NA MÃO. Um seletor só faria as duas perguntas parecerem a
               mesma — e é a confusão que a fatia existe para desfazer.
             */}
-            <select value={fAgente} onChange={(e) => setFAgente(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
+            <select aria-label="Filtrar por agente" value={fAgente} onChange={(e) => setFAgente(e.target.value)} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none">
               <option value="">Todos os agentes</option>
               <option value="livres">Sem agente (livres)</option>
               {estrutura?.agentes.map((a) => (
@@ -237,6 +241,7 @@ export default function TrabalhoPage() {
             {camposDaLista.filter((c) => c.type === 'drop_down' && c.options.length > 0).map((c) => (
               <select
                 key={c.id}
+                aria-label={`Filtrar por ${c.name}`}
                 value={c.options.some((o) => o.id === fOpcao) ? fOpcao : ''}
                 onChange={(e) => setFOpcao(e.target.value)}
                 className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
@@ -250,16 +255,17 @@ export default function TrabalhoPage() {
                 <button
                   key={v}
                   onClick={() => setVisao(v)}
+                  aria-pressed={visao === v}
                   className={`px-3 py-1.5 text-sm capitalize ${visao === v ? 'bg-brand/15 text-text' : 'bg-surface text-muted hover:text-text'}`}
                 >
-                  {v}
+                  {v === 'board' ? 'Quadro' : 'Tabela'}
                 </button>
               ))}
             </div>
             {editable && lista && (
               <button
                 onClick={() => setConfigAberta(true)}
-                title="Configurar lista (statuses e campos)"
+                title="Configurar lista (etapas e campos)"
                 className="rounded-lg border border-border bg-surface p-2 text-muted hover:text-text"
               >
                 <Settings2 size={15} />
@@ -268,6 +274,7 @@ export default function TrabalhoPage() {
           </div>
         </div>
 
+        {listaDoLinkAusente && <p role="status" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">A lista deste link ainda não está disponível no seu quadro. Escolha uma das listas disponíveis.</p>}
         {erro && (
           <div className="flex items-center justify-between rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
             <span>{erro}</span>
@@ -621,7 +628,7 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
         <tbody>
           {tarefas.map((t) => (
             <tr key={t.id} onClick={() => onAbrir(t.id)} className="cursor-pointer border-b border-border/50 hover:bg-surface-2/50">
-              <td className="px-3 py-2">{t.title}</td>
+              <td className="px-3 py-2"><button onClick={(e) => { e.stopPropagation(); onAbrir(t.id); }} className="text-left hover:text-brand focus-visible:outline-brand">{t.title}</button></td>
               <td className="px-3 py-2">
                 <span className="rounded px-1.5 py-0.5 text-[11px] capitalize" style={{ background: `${t.statusColor}26`, color: t.statusColor }}>
                   {t.statusName}
@@ -700,6 +707,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   const [comentario, setComentario] = useState('');
   const [novaTag, setNovaTag] = useState('');
   const [edicaoDescricao, setEdicaoDescricao] = useState(false);
+  const focoAnterior = useRef<HTMLElement | null>(null);
+  const fecharRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { focoAnterior.current = document.activeElement as HTMLElement; }, []);
   useEffect(() => setEdicaoDescricao(false), [id]);
   const recarregar = useCallback(() => {
     apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${id}`, token).then(setT).catch((e) => onErro(e.message));
@@ -766,9 +776,24 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   ]);
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-[420px] max-w-full flex-col border-l border-border bg-surface shadow-2xl">
+    <Dialog.Root open onOpenChange={(aberto) => { if (!aberto) onFechar(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          onOpenAutoFocus={(e) => { e.preventDefault(); fecharRef.current?.focus(); }}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            const destino = focoAnterior.current;
+            if (destino?.isConnected && destino !== document.body) destino.focus();
+            else document.getElementById('root-os-main')?.focus();
+          }}
+          className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-full flex-col border-l border-border bg-surface shadow-2xl"
+        >
+      <Dialog.Title className="sr-only">Detalhes da tarefa</Dialog.Title>
       <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
         <input
+          aria-label="Título da tarefa"
           defaultValue={t.title}
           disabled={ro}
           onBlur={(e) => e.target.value !== t.title && salvar({ title: e.target.value })}
@@ -780,7 +805,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
               <Archive size={15} />
             </button>
           )}
-          <button onClick={onFechar} className="p-1 text-muted hover:text-text"><X size={16} /></button>
+          <button ref={fecharRef} aria-label="Fechar tarefa" onClick={onFechar} className="grid min-h-11 min-w-11 place-items-center text-muted hover:text-text focus-visible:outline-brand"><X size={16} /></button>
         </div>
       </div>
 
@@ -1029,7 +1054,9 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
           <div>criada {new Date(t.createdAt).toLocaleString('pt-BR')} · atualizada {new Date(t.updatedAt).toLocaleString('pt-BR')}</div>
         </div>
       </div>
-    </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileS
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
-import { SnapshotSchema, canonical, idNativo, validarSnapshot } from '../prisma/import-clickup-work.contract';
+import { SnapshotSchema, canonical, idNativo, raizPermitidaDoAnexo, validarSnapshot } from '../prisma/import-clickup-work.contract';
 import { inventariar } from '../prisma/import-clickup-work.plan';
 import { classificarRollback, fingerprintImportado, planejar, reverterLote, verificarArquivos } from '../prisma/import-clickup-work';
 
@@ -63,6 +63,14 @@ function fakeDb(rows: Map<string, Record<string, unknown>>) {
 }
 
 describe('importação segura ClickUp → Work', () => {
+  it('resolve a raiz do refresh para conferir bytes no dry-run, sem aceitar prefixos semelhantes', () => {
+    const path = '/private/tmp/root-os-migration-20260929-refresh/files/root-001/a1';
+    expect(raizPermitidaDoAnexo(path)).toBe('/private/tmp/root-os-migration-20260929-refresh/files/');
+    expect(raizPermitidaDoAnexo('/private/tmp/root-os-migration-20260929-refresh/files-outside/a1')).toBeUndefined();
+    const s = fixture();
+    s.tasks[0].attachments[0].localPath = path;
+    expect(validarSnapshot(s).erros).toEqual([]);
+  });
   it('confere bytes, tamanho, arquivo regular e limite do vault antes do apply', async () => {
     const raiz = mkdtempSync(join(tmpdir(), 'clickup-work-attachments-'));
     const fora = mkdtempSync(join(tmpdir(), 'clickup-work-outside-'));

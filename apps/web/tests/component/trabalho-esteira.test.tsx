@@ -128,6 +128,33 @@ beforeEach(() => {
 });
 
 describe('trabalho importado: card único e material preservado', () => {
+  it('avisa quando a lista do link está ausente, sem abrir outra lista por engano', async () => {
+    servir();
+    window.history.replaceState({}, '', '/trabalho?lista=901328341450');
+    render(<TrabalhoPage />);
+    expect(await screen.findByText(/A lista deste link ainda não está disponível/)).toBeTruthy();
+    expect(apiGet.mock.calls.some(([rota]) => String(rota).startsWith('/trabalho/tarefas?'))).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: /Esteira de clientes/ }));
+    expect(await screen.findByText('ProMedical')).toBeTruthy();
+    expect(screen.queryByText(/A lista deste link ainda não está disponível/)).toBeNull();
+  });
+
+  it('mantém o foco no painel e devolve ao card quando Escape fecha', async () => {
+    servir([tarefa({ id: 't-1', title: 'ROOT-001' })]);
+    render(<TrabalhoPage />);
+    const abrir = await screen.findByRole('button', { name: 'ROOT-001' });
+    await userEvent.click(abrir);
+    const painel = await screen.findByRole('dialog', { name: 'Detalhes da tarefa' });
+    await waitFor(() => expect(document.activeElement).toBe(within(painel).getByRole('button', { name: 'Fechar tarefa' })));
+    const ultimo = within(painel).getByRole('button', { name: 'Enviar' });
+    ultimo.focus();
+    await userEvent.tab();
+    expect(painel.contains(document.activeElement)).toBe(true);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(abrir));
+  });
+
   it('abre deeplink nativo e move o mesmo card para outra lista pelo PATCH', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
     const outra = { ...ESTEIRA, id: 'l-destino', name: 'Design & Gravação' };

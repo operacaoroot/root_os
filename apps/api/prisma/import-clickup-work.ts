@@ -2,7 +2,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { SnapshotSchema, canonical, sha256, validarSnapshot } from './import-clickup-work.contract';
+import { SnapshotSchema, VPS_FILES_ROOT, canonical, raizPermitidaDoAnexo, sha256, validarSnapshot } from './import-clickup-work.contract';
 import { inventariar, type Spec } from './import-clickup-work.plan';
 
 // Uso e garantias: ver import-clickup-work.md. Esta CLI não é chamada pelo runtime.
@@ -84,9 +84,8 @@ export async function verificarArquivos(
     const path = a.localPath;
     if (!path) continue; // o validador de contrato já acusa ausência
     try {
-      const raizDeste = raiz ?? (path.startsWith('/private/tmp/root-os-migration-20260929/files/')
-        ? '/private/tmp/root-os-migration-20260929/files/'
-        : '/vault/90-OS/migrations/marketing-20260929/files/');
+      const raizDeste = raiz ?? raizPermitidaDoAnexo(path);
+      if (!raizDeste) throw new Error('fora do vault permitido');
       const s = lstatSync(path);
       if (!s.isFile() || s.isSymbolicLink()) throw new Error('não é arquivo regular');
       if (!realpathSync(path).startsWith(`${realpathSync(raizDeste).replace(/\/$/, '')}/`)) throw new Error('fora do vault permitido');
@@ -270,7 +269,7 @@ async function main() {
   const snapshot = SnapshotSchema.parse(JSON.parse(raw));
   const validacao = validarSnapshot(snapshot);
   if (opt['--apply'] && !opt['--rollback'] && snapshot.tasks.some((t) => t.attachments.some((a) =>
-    !a.localPath?.startsWith('/vault/90-OS/migrations/marketing-20260929/files/')))) {
+    !a.localPath?.startsWith(VPS_FILES_ROOT)))) {
     validacao.erros.push('apply exige binários no caminho persistente /vault/90-OS/migrations/marketing-20260929/files/');
   }
   const orgId = typeof opt['--org-id'] === 'string' ? opt['--org-id'] : null;

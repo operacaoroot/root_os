@@ -61,6 +61,14 @@ export const SnapshotSchema = z.object({
 export type ClickupSnapshot = z.infer<typeof SnapshotSchema>;
 export type ClickupTask = ClickupSnapshot['tasks'][number];
 export type ClickupList = ClickupSnapshot['lists'][number];
+export const VPS_FILES_ROOT = '/vault/90-OS/migrations/marketing-20260929/files/';
+export const LOCAL_FILES_ROOTS = [
+  '/private/tmp/root-os-migration-20260929/files/',
+  '/private/tmp/root-os-migration-20260929-refresh/files/',
+] as const;
+export function raizPermitidaDoAnexo(path: string): string | undefined {
+  return [VPS_FILES_ROOT, ...LOCAL_FILES_ROOTS].find((raiz) => path.startsWith(raiz));
+}
 
 // IDs conferidos com a hierarquia do espaço ROOT; nunca inferir por nomes repetidos.
 export const MARKETING_LIST_IDS: readonly string[] = [
@@ -184,8 +192,7 @@ export function validarSnapshot(snapshot: ClickupSnapshot): { erros: string[]; a
       if (a.url !== esperado) erros.push(`anexo ${t.id}/${a.id} sem URL interna estável ${esperado}`);
       if (!a.sha256 || !/^[0-9a-f]{64}$/i.test(a.sha256)) erros.push(`anexo ${t.id}/${a.id} sem SHA-256 dos bytes`);
       if (!a.localPath ||
-          !(a.localPath.startsWith('/vault/90-OS/migrations/marketing-20260929/files/') ||
-            a.localPath.startsWith('/private/tmp/root-os-migration-20260929/files/')) ||
+          !raizPermitidaDoAnexo(a.localPath) ||
           a.localPath.includes('..')) {
         erros.push(`anexo ${t.id}/${a.id} sem caminho permitido no vault ou staging local`);
       }
