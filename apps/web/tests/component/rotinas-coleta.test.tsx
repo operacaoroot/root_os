@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /*
@@ -95,11 +95,12 @@ describe('nova rotina de coleta: o formulário', () => {
     renderForm();
     await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
 
-    expect(screen.getByLabelText(/Quando/)).toHaveValue('0 22 * * 4');
+    expect(screen.getByLabelText('Dia da semana')).toHaveValue('4');
+    expect(screen.getByLabelText(/^Horário/)).toHaveValue('22:00');
     expect(screen.getByLabelText(/Fuso/)).toHaveValue('America/Sao_Paulo');
     expect(screen.getByLabelText(/Janela/)).toHaveValue(168);
     expect(screen.getByLabelText(/Estado/)).toHaveValue('rodando');
-    expect(screen.getByText(/toda quinta às 22h/)).toBeInTheDocument();
+    expect(screen.getByText(/Quinta-feira, às 22:00/)).toBeInTheDocument();
   });
 
   it('criar manda o corpo do POST /rotinas com o tipo da coleta, fecha e avisa a página', async () => {
@@ -143,6 +144,7 @@ describe('nova rotina de coleta: o formulário', () => {
   it('cron sem os cinco campos ou janela fora de 6 a 336h trava o Criar', async () => {
     renderForm();
     await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
+    await userEvent.selectOptions(screen.getByLabelText('Como definir o horário'), 'avancado');
     const cron = screen.getByLabelText(/Quando/);
     await userEvent.clear(cron);
     await userEvent.type(cron, '0 22 * *');
@@ -207,5 +209,58 @@ describe('nova rotina de coleta: na tela /rotinas', () => {
       'Não rodou: nenhuma fonte ativa nas origens W, N — nada a coletar',
     );
     expect(apiPost).toHaveBeenCalledWith('/rotinas/r-coleta/rodar', {}, 'tok');
+  });
+});
+
+
+describe('horário simples da coleta', () => {
+  it('envia domingo à meia-noite com o fuso informado, sem converter para o fuso do navegador', async () => {
+    apiPost.mockResolvedValue({ id: 'r1' });
+    renderForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
+    await userEvent.selectOptions(screen.getByLabelText('Dia da semana'), '0');
+    const hora = screen.getByLabelText(/^Horário/);
+    fireEvent.change(hora, { target: { value: '00:00' } });
+    const fuso = screen.getByLabelText('Fuso');
+    await userEvent.clear(fuso);
+    await userEvent.type(fuso, 'Europe/Lisbon');
+    await userEvent.click(screen.getByRole('button', { name: 'Criar rotina' }));
+    expect(apiPost).toHaveBeenCalledWith('/rotinas', expect.objectContaining({ cron: '0 0 * * 0', tz: 'Europe/Lisbon' }), 'tok');
+  });
+
+  it('preserva dia e horário ao alternar os modos', async () => {
+    renderForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
+    await userEvent.selectOptions(screen.getByLabelText('Dia da semana'), '6');
+    fireEvent.change(screen.getByLabelText(/^Horário/), { target: { value: '23:59' } });
+    await userEvent.selectOptions(screen.getByLabelText('Como definir o horário'), 'avancado');
+    expect(screen.getByLabelText(/Quando/)).toHaveValue('59 23 * * 6');
+    fireEvent.change(screen.getByLabelText(/Quando/), { target: { value: '15 8 * * 1' } });
+    await userEvent.selectOptions(screen.getByLabelText('Como definir o horário'), 'simples');
+    expect(screen.getByLabelText('Dia da semana')).toHaveValue('1');
+    expect(screen.getByLabelText(/^Horário/)).toHaveValue('08:15');
+  });
+
+  it('mantém cron com frequência avançada e avisa em vez de substituí-lo', async () => {
+    apiPost.mockResolvedValue({ id: 'r1' });
+    renderForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
+    await userEvent.selectOptions(screen.getByLabelText('Como definir o horário'), 'avancado');
+    fireEvent.change(screen.getByLabelText(/Quando/), { target: { value: '0 9 * * 1-5' } });
+    await userEvent.selectOptions(screen.getByLabelText('Como definir o horário'), 'simples');
+    expect(screen.getByRole('alert')).toHaveTextContent(/não representa/);
+    expect(screen.getByLabelText('Como definir o horário')).toHaveValue('avancado');
+    expect(screen.getByLabelText(/Quando/)).toHaveValue('0 9 * * 1-5');
+    await userEvent.click(screen.getByRole('button', { name: 'Criar rotina' }));
+    expect(apiPost).toHaveBeenCalledWith('/rotinas', expect.objectContaining({ cron: '0 9 * * 1-5' }), 'tok');
+  });
+
+  it('não cria quando falta horário e cancelar não envia nada', async () => {
+    renderForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Nova rotina de coleta' }));
+    fireEvent.change(screen.getByLabelText(/^Horário/), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Criar rotina' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(apiPost).not.toHaveBeenCalled();
   });
 });
