@@ -55,9 +55,8 @@ const DESTINOS: Destino[] = [
   {
     titulo: 'Performance',
     o_que: 'O desempenho da conta e de cada post contra a mediana da própria casa.',
-    href: null,
+    href: '/marketing/performance',
     onde: 'Marketing',
-    falta: 'MK5',
   },
   {
     titulo: 'Relatório do mês',

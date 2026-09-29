@@ -1945,8 +1945,17 @@ jobs:
       # banco: 2485 passados e 718 pulados, em 79 arquivos. O piso de ARQUIVOS
       # vai a 71, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
       # que rodam sem banco), para 2306.
-      PISO_CASOS_API: '2306'
-      PISO_ARQUIVOS_API: '71'
+      #
+      # MK5, A PERFORMANCE DA CASA (29/09/2026): +17 casos num arquivo novo,
+      # `pauta-performance` — o snapshot com a régua da MK2, o piso de 5
+      # medidos, o post sem número que fica na lista com o motivo, a fotografia
+      # datada, a leitura indo pela porta com a capacidade do catálogo, a porta
+      # que retém sem gravar metade, e o efeito com dublê da Graph. Nenhum
+      # precisa de banco. Medido sem banco: 2503 passados e 718 pulados, em 80
+      # arquivos. O piso de ARQUIVOS vai a 72, colado no real; o de CASOS sobe
+      # 14 (~15% de folga sobre os 17 que rodam sem banco), para 2320.
+      PISO_CASOS_API: '2320'
+      PISO_ARQUIVOS_API: '72'
 
     steps:
       - uses: actions/checkout@v4

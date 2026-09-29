@@ -5708,3 +5708,80 @@ export const PautaIdeiasProporSchema = z.object({
   quantas: z.number().int().min(1).max(PAUTA_TETO_DE_IDEIAS_PROPOSTAS).default(3),
 });
 export type PautaIdeiasProporInput = z.infer<typeof PautaIdeiasProporSchema>;
+
+// ---------- Pauta: a performance da casa (MK5) ----------
+// A MK2 mede o perfil dos outros; esta mede o nosso, com a MESMA régua e as
+// mesmas funções: a mediana da própria casa e o índice de cada post contra ela.
+// Duas contas diferentes para "o que rendeu" dariam dois números para a mesma
+// pergunta — e o de dentro sempre pareceria melhor.
+//
+// O snapshot é do MÊS e é uma fotografia: os números da Graph mudam com o tempo
+// (um post velho continua somando visualização), e comparar meses exige que
+// cada mês guarde o que viu quando viu. Nota da memória por mês, como a
+// estratégia (MK4) e o relatório (MK6).
+
+export const PAUTA_PREFIXO_DA_PERFORMANCE = 'pauta.performance.';
+
+export function chaveDaPerformance(mes: string): string {
+  return `${PAUTA_PREFIXO_DA_PERFORMANCE}${mes}`;
+}
+
+export function mesDaChaveDaPerformance(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DA_PERFORMANCE)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DA_PERFORMANCE.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+/** As métricas dos NOSSOS posts. Salvamento entra aqui e não na MK2: é o que a casa persegue. */
+export const PAUTA_METRICAS_DA_CASA = [
+  'visualizacoes',
+  'curtidas',
+  'comentarios',
+  'salvamentos',
+  'compartilhamentos',
+] as const;
+export type PautaMetricaDaCasa = (typeof PAUTA_METRICAS_DA_CASA)[number];
+
+export interface PautaNumerosDoPost {
+  visualizacoes: number | null;
+  curtidas: number | null;
+  comentarios: number | null;
+  salvamentos: number | null;
+  compartilhamentos: number | null;
+}
+
+export interface PautaPostMedido {
+  pecaId: string;
+  titulo: string;
+  formato: string;
+  publicadaEm: string | null;
+  urlPublicada: string | null;
+  numeros: PautaNumerosDoPost;
+  indices: Record<PautaMetricaDaCasa, number | null>;
+  faixa: PautaFaixaDoIndice | null;
+  /** Por que este post ficou sem número, quando ficou. */
+  semNumero: string | null;
+}
+
+export interface PautaSnapshotDaPerformance {
+  mes: string;
+  /** Quando a fotografia foi tirada. É o que torna dois meses comparáveis. */
+  coletadoEm: string;
+  seguidores: number | null;
+  posts: PautaPostMedido[];
+  medianas: Record<PautaMetricaDaCasa, number | null>;
+  metricaDeReferencia: PautaMetricaDaCasa | null;
+  medidos: number;
+  publicados: number;
+  avisos: string[];
+}
+
+export interface PautaPerformancePainel {
+  mes: string;
+  snapshot: PautaSnapshotDaPerformance | null;
+  meses: string[];
+  /** Falso quando não há conta do Instagram conectada — a tela diz como conectar. */
+  conectado: boolean;
+  /** O que falta para medir, em português. Vazio quando dá para coletar. */
+  comoConectar: string | null;
+}

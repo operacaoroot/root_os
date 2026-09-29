@@ -285,6 +285,7 @@ export const NAV: NavItem[] = [
   { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
   { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
+  { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'sai', modulo: 'instagram' },
   { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'sai', modulo: 'bio' },

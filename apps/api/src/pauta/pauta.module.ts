@@ -35,6 +35,8 @@ import { RelatorioController } from './relatorio.controller';
 import { RelatorioService } from './relatorio.service';
 import { IdeiasController } from './ideias.controller';
 import { IdeiasService } from './ideias.service';
+import { PerformanceController } from './performance.controller';
+import { PerformanceService } from './performance.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -94,6 +96,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     EstrategiaController,
     RelatorioController,
     IdeiasController,
+    PerformanceController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -142,6 +145,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     RelatorioService,
     // MK3: o banco de ideias; a aprovada vira peça da semana, sem rodada.
     IdeiasService,
+    // MK5: o snapshot do mês — a Graph pela porta, a régua da MK2.
+    PerformanceService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.

@@ -392,8 +392,8 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('o banco de ideias, a estratégia e o relatório do mês penduram no bloco', () => {
-    for (const k of ['marketing-ideias', 'marketing-estrategia', 'marketing-relatorio']) {
+  it('os quatro itens do bloco penduram nele', () => {
+    for (const k of ['marketing-ideias', 'marketing-estrategia', 'marketing-performance', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
       expect(n!.pai).toBe('marketing');
@@ -426,6 +426,7 @@ describe('o bloco Marketing (MK7)', () => {
     expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
       'marketing-estrategia',
       'marketing-ideias',
+      'marketing-performance',
       'marketing-relatorio',
     ]);
 
