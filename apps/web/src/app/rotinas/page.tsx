@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Card, Chip, inputCls } from '../referencias/ui';
+import { InsumosDaColeta } from './InsumosDaColeta';
 import { NovaRotinaDeColeta } from './NovaRotinaDeColeta';
 import { NovaRotinaDeEncadeamento } from './NovaRotinaDeEncadeamento';
 import { NovaRotinaDePublicacao } from './NovaRotinaDePublicacao';
@@ -180,15 +181,7 @@ export default function RotinasPage() {
         declarado e um histórico — e só dispara quando o estado e o interruptor concordam.
       </p>
 
-      <section aria-label="Como alimentar a produção de conteúdo" className="rounded-root border border-brand/30 bg-surface p-4">
-        <h2 className="font-semibold">O que entra na rotina de conteúdo?</h2>
-        <p className="mt-2 text-sm text-muted">Escolha as fontes no Radar. A coleta reúne referências para você conferir; roteiros e materiais já produzidos continuam no quadro de trabalho.</p>
-        <div className="mt-3 flex flex-wrap gap-4 text-sm text-brand">
-          {can('pauta.ver') && <><a href="/referencias#radar" className="underline">Configurar fontes de entrada</a><a href="/referencias#captura" className="underline">Enviar link, texto ou imagem</a><a href="/pauta" className="underline">Conferir a rodada coletada</a></>}
-          {can('tarefas.ver') && <a href="/trabalho?lista=901328341450" className="underline">Continuar a produção editorial</a>}
-        </div>
-        <p className="mt-3 text-xs text-muted">A última execução aparece em cada rotina. Uma coleta concluída ainda precisa de curadoria; aprovação e publicação são etapas separadas.</p>
-      </section>
+      <InsumosDaColeta />
 
       {erro && (
         <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>

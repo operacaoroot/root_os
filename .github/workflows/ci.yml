@@ -584,8 +584,10 @@ jobs:
       # É desenho que a decisão do Pedro fixou e que se perde calado numa
       # refatoração. Medido: 640 casos em 49 arquivos. O piso de ARQUIVOS fica
       # onde está (nenhum arquivo novo); o de CASOS sobe 4, para 435.
-      PISO_CASOS_WEB: '435'
-      PISO_ARQUIVOS_WEB: '39'
+      # Insumos/horário simples (29/09): +14 casos, um arquivo novo.
+      # Gates por sessão/módulo/permissão, estados de fontes e cron sem perda.
+      PISO_CASOS_WEB: '447'
+      PISO_ARQUIVOS_WEB: '40'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
       # modelos-globais 20, modulos-por-tenant 97, politica-por-tenant 27,
