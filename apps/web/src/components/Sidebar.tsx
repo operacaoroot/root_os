@@ -46,24 +46,20 @@ function lerFechadas(): Set<string> {
   } catch {
     /* localStorage bloqueado ou JSON estragado: começa com tudo aberto */
   }
-  return new Set();
+  return new Set(['automacoes', 'controle']);
 }
 
 function ehAtivo(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
 }
 
-/**
- * Um item do menu. `filho` muda só o desenho: recua no menu largo e diminui o
- * ícone no trilho estreito, onde não há recuo possível. O resto — a barra do
- * ativo, o selo de parcial, o title — é igual, porque filho é item como
- * qualquer outro (ver `NavItem.pai`, em packages/shared/src/nav.ts).
- */
+/** Filho recua visualmente; permissão, módulo e destino continuam individuais. */
 function ItemDoMenu({
   n,
   ativo,
   filho,
   selo,
+  aoNavegar,
 }: {
   n: NavItem;
   ativo: boolean;
@@ -75,6 +71,7 @@ function ItemDoMenu({
    * e vitória não precisa de selo (a tela diz "nada esperando por você").
    */
   selo?: { texto: string | null; titulo: string };
+  aoNavegar?: () => void;
 }) {
   const Icon = (Icons[n.icon as IconName] ?? Icons.Circle) as React.ElementType;
   return (
@@ -82,22 +79,17 @@ function ItemDoMenu({
       href={n.href}
       title={n.label}
       aria-current={ativo ? 'page' : undefined}
+      onClick={aoNavegar}
       className={[
-        'group relative flex w-full items-center gap-[10px] py-[7px] text-[11.5px] transition-colors duration-150',
-        'justify-center min-[820px]:justify-start',
-        filho ? 'px-[9px] min-[820px]:pl-[28px]' : 'px-[9px]',
+        'group relative flex min-h-11 w-full items-center gap-[10px] py-2 text-[12px] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand',
+        filho ? 'pl-[28px] pr-[9px]' : 'px-[9px]',
         ativo ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-surface-2 hover:text-text',
       ].join(' ')}
     >
       {/* barra de 2px à esquerda do item ativo — .nav.on::before do protótipo */}
       {ativo && <span aria-hidden className="absolute bottom-0 left-0 top-0 w-[2px] bg-brand" />}
-      <Icon size={filho ? 11 : 13} className="shrink-0" />
-      <span className="hidden flex-1 truncate min-[820px]:block">{n.label}</span>
-      {/*
-        O SELO APARECE NOS DOIS TAMANHOS — inclusive no trilho de 60px, onde não
-        há rótulo. É lá que ele mais serve: quem trabalha com a barra recolhida
-        precisa ver que algo espera sem abrir tela nenhuma.
-      */}
+      <Icon size={16} aria-hidden className="shrink-0" />
+      <span className="min-w-0 flex-1 leading-snug">{n.label}</span>
       {selo?.texto && (
         <span
           title={selo.titulo}
@@ -110,9 +102,9 @@ function ItemDoMenu({
       {n.estado === 'parcial' && (
         <span
           title={n.parcial ?? 'esta tela ainda está incompleta'}
-          className="ml-auto hidden bg-surface-3 px-[5px] py-px text-[9px] font-bold uppercase tracking-[0.08em] text-muted min-[820px]:block"
+          className="ml-auto bg-surface-3 px-[5px] py-px text-[9px] font-bold uppercase tracking-[0.08em] text-muted"
         >
-          parcial
+          {n.key === 'fluxos' ? 'em preparação' : 'parcial'}
         </span>
       )}
     </Link>
@@ -125,13 +117,19 @@ export function Sidebar() {
   const caixa = useCaixa();
   const pathname = usePathname();
   const [tema, setTema] = useState<TemaOs>('dark');
-  const [fechadas, setFechadas] = useState<Set<string>>(new Set());
+  const [fechadas, setFechadas] = useState<Set<string>>(new Set(['automacoes', 'controle']));
+  const [abertaNoMovel, setAbertaNoMovel] = useState(false);
+  const botaoAbrir = useRef<HTMLButtonElement>(null);
+  const botaoFechar = useRef<HTMLButtonElement>(null);
   // O primeiro efeito de tema roda com o estado inicial 'dark', antes do
   // estado lido do localStorage chegar. Sem esta guarda ele gravaria 'dark'
   // por cima da escolha do usuário se o componente desmontasse no meio.
   const primeiraPintura = useRef(true);
 
   const perms = new Set(user?.permissions ?? []);
+  // /painel/custo-ia pertence a Resultados; /painel não deve ficar ativo junto.
+  const itemAtivo = NAV.filter((n) => ehAtivo(pathname, n.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
 
   /*
    * O agrupamento e os DOIS filtros — permissão e módulo contratado — vêm do
@@ -172,9 +170,7 @@ export function Sidebar() {
       itens: avulsos.map((item) => ({ item, filhos: [] })),
     });
 
-  // A régua de 1px separa a espinha do OS dos módulos de domínio. É a única
-  // pista visual de que são dois eixos e não uma lista de 27 coisas.
-  const primeiroModulo = grupos.findIndex((g) => g.tipo === 'modulo');
+  const primeiroApoio = grupos.findIndex((g) => g.tipo === 'apoio');
 
   /*
    * O selo da CAIXA, calculado UMA vez e entregue ao item cuja chave é `caixa`
@@ -205,6 +201,76 @@ export function Sidebar() {
   }
 
   useEffect(() => {
+    setAbertaNoMovel(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!abertaNoMovel) return;
+    const overflowBody = document.body.style.overflow;
+    const overflowHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    // A barra parte de visibility:hidden. Em movimento reduzido, focar logo
+    // após o clique pode ocorrer antes de ela ficar visível e o foco falha.
+    let timerDoFoco: number;
+    function focarQuandoVisivel() {
+      const botao = botaoFechar.current;
+      if (botao && getComputedStyle(botao).visibility === 'visible') botao.focus();
+      else timerDoFoco = window.setTimeout(focarQuandoVisivel, 16);
+    }
+    timerDoFoco = window.setTimeout(focarQuandoVisivel, 0);
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setAbertaNoMovel(false);
+        botaoAbrir.current?.focus();
+      } else if (e.key === 'Tab') {
+        const dialogo = document.getElementById('root-os-nav');
+        const controles = Array.from(
+          dialogo?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? [],
+        ).filter((el) => el.getClientRects().length > 0);
+        if (!controles.length) return;
+        const primeiro = controles[0];
+        const ultimo = controles[controles.length - 1];
+        if (e.shiftKey && document.activeElement === primeiro) {
+          e.preventDefault();
+          ultimo.focus();
+        } else if (!e.shiftKey && document.activeElement === ultimo) {
+          e.preventDefault();
+          primeiro.focus();
+        }
+      }
+    }
+    window.addEventListener('keydown', aoTeclar);
+    return () => {
+      window.removeEventListener('keydown', aoTeclar);
+      window.clearTimeout(timerDoFoco);
+      document.body.style.overflow = overflowBody;
+      document.documentElement.style.overflow = overflowHtml;
+    };
+  }, [abertaNoMovel]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 820px)');
+    function aoMudarLargura(e: MediaQueryListEvent) {
+      const focoNaBarra = document.getElementById('root-os-nav')?.contains(document.activeElement);
+      setAbertaNoMovel(false);
+      if (abertaNoMovel || focoNaBarra) {
+        if (e.matches) document.getElementById('root-os-main')?.focus();
+        else botaoAbrir.current?.focus();
+      }
+    }
+    desktop.addEventListener('change', aoMudarLargura);
+    return () => desktop.removeEventListener('change', aoMudarLargura);
+  }, [abertaNoMovel]);
+
+  function aoNavegar() {
+    if (!abertaNoMovel) return;
+    setAbertaNoMovel(false);
+    requestAnimationFrame(() => document.getElementById('root-os-main')?.focus());
+  }
+
+  useEffect(() => {
     document.documentElement.setAttribute('data-os-theme', tema);
     if (primeiraPintura.current) {
       primeiraPintura.current = false;
@@ -218,9 +284,38 @@ export function Sidebar() {
   }, [tema]);
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[60px] shrink-0 flex-col border-r border-border bg-bg2 font-os-mono min-[820px]:w-[216px]">
+    <>
+      <button
+        ref={botaoAbrir}
+        type="button"
+        aria-label="Abrir navegação"
+        aria-controls="root-os-nav"
+        aria-expanded={abertaNoMovel}
+        onClick={() => setAbertaNoMovel(true)}
+        className="fixed left-1 top-1 z-40 grid h-11 w-11 place-items-center text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"
+      >
+        <Icons.Menu size={20} aria-hidden />
+      </button>
+      {abertaNoMovel && (
+        <button
+          type="button"
+          aria-label="Fechar navegação"
+          onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }}
+          className="fixed inset-0 z-40 bg-black/70 min-[820px]:hidden"
+        />
+      )}
+      <aside
+        id="root-os-nav"
+        role={abertaNoMovel ? 'dialog' : undefined}
+        aria-modal={abertaNoMovel ? true : undefined}
+        aria-label="Navegação do ROOT OS"
+        className={[
+          'fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(288px,calc(100vw-48px))] flex-col border-r border-border bg-bg2 font-os-mono transition-transform duration-200 min-[820px]:sticky min-[820px]:h-screen min-[820px]:w-[252px] min-[820px]:shrink-0 min-[820px]:translate-x-0',
+          abertaNoMovel ? 'translate-x-0 visible' : '-translate-x-full invisible min-[820px]:visible',
+        ].join(' ')}
+      >
       {/* marca */}
-      <div className="flex items-center justify-center gap-[10px] border-b border-border px-[14px] pb-[13px] pt-[15px] min-[820px]:justify-start">
+      <div className="flex min-h-[56px] items-center gap-[10px] border-b border-border px-[14px]">
         <span
           aria-hidden
           className="inline-block text-[16px] font-extrabold italic leading-none tracking-[-0.05em] text-brand"
@@ -228,7 +323,7 @@ export function Sidebar() {
         >
           R
         </span>
-        <span className="hidden min-w-0 leading-[1.25] min-[820px]:block">
+        <span className="min-w-0 flex-1 leading-[1.25]">
           <span className="block text-[12px] font-bold tracking-[-0.02em] text-text">
             ROOT OS
           </span>
@@ -236,32 +331,33 @@ export function Sidebar() {
             operação root
           </span>
         </span>
+        <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
       </div>
 
       {/* módulos, agrupados por seção — a lista já vem filtrada por permissão */}
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-[7px]">
+      <nav aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-[7px]">
         {grupos.map((g, i) => {
           // A seção que contém a tela aberta fica ABERTA, mesmo que a pessoa a
           // tenha fechado antes: menu que esconde onde você está não orienta,
           // desorienta. A preferência dela continua guardada e volta a valer
           // quando sair daqui.
-          const temAtivo = g.itens.some(
-            (no) =>
-              ehAtivo(pathname, no.item.href) || no.filhos.some((f) => ehAtivo(pathname, f.href)),
+          const temAtivo = g.itens.some((no) =>
+            no.item.key === itemAtivo?.key || no.filhos.some((f) => f.key === itemAtivo?.key),
           );
           const fechada = fechadas.has(g.chave) && !temAtivo;
           return (
             <section key={g.chave} aria-label={g.titulo}>
-              {i === primeiroModulo && i > 0 && (
+              {i === primeiroApoio && i > 0 && (
                 <div aria-hidden className="mx-2 mb-1 mt-4 border-t border-border" />
               )}
-              <h2 className="hidden min-[820px]:block">
+              <h2>
                 <button
                   type="button"
                   onClick={() => alternarSecao(g.chave)}
                   aria-expanded={!fechada}
+                  aria-controls={`nav-grupo-${g.chave}`}
                   title={g.dica}
-                  className="flex w-full items-center gap-[5px] px-2 pb-[5px] pt-3 text-[9px] font-normal uppercase tracking-[0.2em] text-dim transition-colors duration-150 hover:text-muted"
+                  className="flex min-h-11 w-full cursor-pointer items-center gap-[5px] px-2 pt-2 text-left text-[10px] font-normal uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
                 >
                   <Icons.ChevronRight
                     size={9}
@@ -273,28 +369,23 @@ export function Sidebar() {
                   <span className="truncate">{g.titulo}</span>
                 </button>
               </h2>
-              {/*
-                FECHAR VALE SÓ NO MENU LARGO. Abaixo de 820px a barra é um
-                trilho de ícones e o cabeçalho da seção não é desenhado — sem
-                ele não há como reabrir, e esconder o que não se pode trazer de
-                volta é sumir com tela que a pessoa tem. O trilho estreito já é
-                o modo compacto; comprimir o compacto não sobra nada.
-              */}
-              <div className={fechada ? 'hidden max-[819px]:block' : undefined}>
+              <div id={`nav-grupo-${g.chave}`} className={fechada ? 'hidden' : undefined}>
                 {g.itens.map((no) => (
                   <div key={no.item.key}>
                     <ItemDoMenu
                       n={no.item}
-                      ativo={ehAtivo(pathname, no.item.href)}
+                      ativo={no.item.key === itemAtivo?.key}
                       selo={no.item.key === 'caixa' ? seloDaCaixa : undefined}
+                      aoNavegar={aoNavegar}
                     />
                     {no.filhos.map((f) => (
                       <ItemDoMenu
                         key={f.key}
                         n={f}
-                        ativo={ehAtivo(pathname, f.href)}
+                        ativo={f.key === itemAtivo?.key}
                         filho
                         selo={f.key === 'caixa' ? seloDaCaixa : undefined}
+                        aoNavegar={aoNavegar}
                       />
                     ))}
                   </div>
@@ -320,7 +411,7 @@ export function Sidebar() {
               onClick={() => setTema(t.id)}
               aria-pressed={on}
               className={[
-                'flex-1 border py-[5px] font-os-mono text-[9px] uppercase tracking-[0.12em] transition-colors duration-150',
+                'min-h-11 flex-1 cursor-pointer border py-[5px] font-os-mono text-[9px] uppercase tracking-[0.12em] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:min-h-0',
                 on
                   ? 'border-brand bg-brand text-ink'
                   : 'border-border text-muted hover:border-border-strong hover:text-text',
@@ -331,6 +422,7 @@ export function Sidebar() {
           );
         })}
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

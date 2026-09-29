@@ -1,38 +1,16 @@
 import type { Permission } from './permissions.js';
 
-// Navegação do ROOT OS. Fonte única da sidebar do web e do placeholder de
-// módulo em apps/web/src/app/[...slug]/page.tsx.
-//
-// A organização tem DOIS EIXOS, e é isso que resolve a confusão antiga de
-// "27 módulos de um sistema de marketing":
-//
-//   ESPINHA (tipo 'os')     — fala do sistema: o que ele sabe, quem trabalha,
-//                             o que ele pode fazer, o que aconteceu, o que
-//                             está ligado, quem autoriza. Sempre presente.
-//   MÓDULOS (tipo 'modulo') — falam do negócio: leads, dinheiro, conteúdo.
-//                             Habilitáveis por empresa (o gate na API entra
-//                             junto com o catálogo de capacidades).
-//
-// Nenhum dos dois substitui o outro. O protótipo já dizia isso e ninguém
-// reparou: root-os.html:1435 lista 14 módulos liga/desliga que são exatamente
-// os módulos de domínio deste painel, vistos de dentro da lógica do OS.
-//
-// REGRA: nenhum módulo pode ficar inalcançável. Página que sai do menu tem
-// destino declarado em ROTAS_ABSORVIDAS e redirect em apps/web/rotas-antigas.mjs.
-
+// A navegação agrupa destinos pela intenção do operador. A posição de uma rota
+// não altera a permissão nem o módulo que governa seu acesso.
 export const SECOES = [
-  // ── espinha do OS ────────────────────────────────────────────────────────
-  { key: 'central', label: 'A central', hint: 'o pulso e o contexto', tipo: 'os' },
-  { key: 'trabalha', label: 'Quem trabalha', hint: 'agentes, rotinas e processos', tipo: 'os' },
-  { key: 'controle', label: 'O controle', hint: 'o que precisa de gente e a régua', tipo: 'os' },
-  { key: 'existe', label: 'O que existe', hint: 'ferramentas e conexões ligadas', tipo: 'os' },
-  // ── módulos de domínio ───────────────────────────────────────────────────
-  { key: 'execucao', label: 'A execução', hint: 'quadro, tarefas e entregas', tipo: 'modulo' },
-  { key: 'entra', label: 'O que entra', hint: 'demanda, tráfego e conversão', tipo: 'modulo' },
-  { key: 'sai', label: 'O que sai', hint: 'conteúdo publicado e presença', tipo: 'modulo' },
-  { key: 'dinheiro', label: 'O dinheiro', hint: 'caixa, resultado e conciliação', tipo: 'modulo' },
-  // ── a conta ──────────────────────────────────────────────────────────────
-  { key: 'conta', label: 'A conta', hint: 'organização e preferências', tipo: 'os' },
+  { key: 'dia', label: 'Dia a dia', hint: 'pendências, decisões e agenda', tipo: 'principal' },
+  { key: 'empresa', label: 'Empresa', hint: 'conhecimento e equipe', tipo: 'principal' },
+  { key: 'trabalho', label: 'Trabalho', hint: 'tarefas e implantação', tipo: 'principal' },
+  { key: 'conteudo', label: 'Conteúdo', hint: 'temas e produção', tipo: 'principal' },
+  { key: 'comercial', label: 'Comercial', hint: 'leads e campanhas', tipo: 'principal' },
+  { key: 'resultados', label: 'Resultados', hint: 'relatórios, metas e custos', tipo: 'principal' },
+  { key: 'automacoes', label: 'Automações', hint: 'agentes, rotinas e processos', tipo: 'apoio' },
+  { key: 'controle', label: 'Configuração e controle', hint: 'ferramentas, acesso e histórico', tipo: 'apoio' },
 ] as const;
 
 export type Secao = (typeof SECOES)[number];
@@ -117,187 +95,48 @@ export interface NavItem {
 }
 
 export const NAV: NavItem[] = [
-  // ── A central ────────────────────────────────────────────────────────────
-  { key: 'console', label: 'Console', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'central' },
-  // O MAPA CHEGOU na onda 10 (fatia 4.4): `/contexto` deixou de ser lista de
-  // notas e virou o contexto do negócio desenhado, com cada ponto abrindo o
-  // registro real. Enquanto ele não existia, este item anunciava ao cliente que
-  // a tela principal estava por vir — e continuou anunciando depois de ela
-  // existir, que é o defeito que a onda inteira tentou consertar.
-  // Segue `parcial` porque as abas Marca e Identidade não entraram; o texto
-  // agora diz o que FALTA, e não o que já chegou.
-  { key: 'contexto', label: 'Contexto', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'central', estado: 'parcial', parcial: 'o mapa está de pé; as abas Marca e Identidade entram nas próximas fatias' },
-  { key: 'sessoes', label: 'Sessões', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'central' },
-  /*
-   * A CAIXA PESSOAL (fatia A7) — "o que precisa de mim".
-   *
-   * Item de PRIMEIRO NÍVEL em "A central", como o plano pede: ela não é
-   * sub-item de nada porque não é a outra leitura de uma tela existente (o caso
-   * da Linha do tempo sob o Rastro) — é a única tela do OS que responde por
-   * PESSOA e não por empresa.
-   *
-   * `dashboard.ver` e não `aprovacoes.ver`: toda pessoa que entra tem uma caixa,
-   * inclusive quem não acompanha a fila de aprovação — pedir a chave da fila
-   * tiraria dela também as tarefas paradas, que são o outro eixo. É a mesma
-   * permissão da rota (`GET /api/caixa`), e item de menu pedindo uma permissão
-   * com a API respondendo a outra é o 403 que a fila já pagou uma vez. Cada eixo
-   * tem a permissão dele DENTRO da tela, e eixo sem permissão diz "sem acesso"
-   * em vez de sumir com a tela inteira.
-   *
-   * Sem `estado: 'parcial'`: os dois eixos que contam (aprovação e tarefa) estão
-   * de pé. O terceiro — conversa no quadro — é entregue dizendo na tela o que
-   * ele é e o que ele NÃO é (menção não existe como dado neste produto), e
-   * marcar a tela como parcial por causa de um dado que o sistema não tem
-   * avisaria ao cliente que algo aqui está pela metade quando está inteiro.
-   */
-  { key: 'caixa', label: 'Caixa', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'central' },
-  /*
-   * A AGENDA (24/09/2026) — o calendário do `operacao.root@gmail.com` desenhado
-   * pelo padrão de nomenclatura da casa, e o lugar de marcar reunião.
-   *
-   * Fica em "A central", e não em "O que existe", porque ela não é a tela de uma
-   * CONEXÃO — `/conexoes` é quem cuida do OAuth do Google. Esta é o compromisso
-   * da semana, ao lado da Caixa: as duas respondem "o que me espera".
-   *
-   * `dashboard.ver` para VER (é a mesma chave da leitura da agenda na API) e
-   * `agenda.editar` para marcar, cobrada dentro da tela — quem só acompanha vê
-   * o mês inteiro e não vê o formulário.
-   */
-  { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'central' },
+  // O trabalho do dia: /caixa continua lendo o quadro interno e não vira a entrada padrão.
+  { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia' },
+  { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
+  { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
+  { key: 'console', label: 'Visão geral', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
 
-  // ── Quem trabalha ────────────────────────────────────────────────────────
-  { key: 'agentes', label: 'Agentes', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'trabalha' },
-  /*
-   * CUSTOS ENTRA COMO SUB-ITEM DE AGENTES (fatia A3), e APONTA PARA A TELA QUE
-   * JÁ EXISTE — `/painel/custo-ia`, no ar desde a fatia 6.4.
-   *
-   * Não há tela nova, e a decisão é essa: uma segunda tela de custo de IA seria
-   * uma segunda versão dos mesmos números, e é exatamente o defeito que a outra
-   * metade desta fatia foi consertar nas horas devolvidas. O que a A3 fez foi
-   * acrescentar àquela tela o eixo que faltava (orçamento mensal por agente) e
-   * trazer a porta dela para onde a pergunta nasce: o menu de quem trabalha.
-   *
-   * `secao: 'trabalha'` e não `'central'` porque o pai precisa estar NA MESMA
-   * SEÇÃO — `navEmArvore` trata filho de outra seção como órfão e o promove a
-   * primeiro nível, o que o faria aparecer fora do lugar. O href continua sob
-   * `/painel/` e isso é de propósito: mover a rota quebraria o link que a pílula
-   * do Console já publica.
-   *
-   * `dashboard.ver` é a mesma permissão da rota (`GET /dashboard/custo-ia`) e a
-   * mesma do Console. Item de menu pedindo uma permissão e API respondendo a
-   * outra é o 403 que a fila de aprovação já pagou uma vez.
-   */
-  { key: 'custo-ia', label: 'Custos', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'trabalha', pai: 'agentes' },
-  // DEIXOU DE SER PARCIAL NA ONDA 10 (fatia 5.6). A tela lê dado real desde a
-  // 5.1 — estado declarado, histórico de cada passagem — e agora mostra também
-  // as HORAS DEVOLVIDAS por semana, medidas do log de passagens contra a linha
-  // de base declarada. Era o último pedaço que faltava do que esta tela promete.
-  //
-  // CRIAR ROTINA continua nascendo na tela de Pauta, e isso NÃO é buraco desta
-  // tela: criar uma exige escolher o executor, que é decisão de produto ainda
-  // não tomada. Marcar a tela como parcial por causa de uma decisão que não é
-  // dela avisava ao cliente que algo aqui está pela metade quando não está.
-  { key: 'rotinas', label: 'Rotinas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'trabalha' },
-  { key: 'fluxos', label: 'Fluxos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'trabalha', estado: 'parcial', parcial: 'editor de processo, com o vazamento declarado' },
-  // Deixou de ser parcial na onda 9: `GET /organograma` entrou no ar e a tela lê
-  // a fonte boa — toda a gente da empresa, com papel e estado, e não só quem é
-  // dono de agente. O desvio pelo roster continua no código como rede de
-  // segurança, e hoje só acorda se alguém tirar a rota outra vez.
-  { key: 'organograma', label: 'Organograma', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'trabalha' },
+  { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa funciona; as abas Marca e Identidade ainda não estão disponíveis' },
+  { key: 'organograma', label: 'Equipe', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'empresa' },
 
-  // ── O controle ───────────────────────────────────────────────────────────
-  // A FILA DE APROVAÇÃO, e a permissão que ela passou a exigir (fatia 3.10).
-  //
-  // Era `whatsapp.enviar`, enquanto `approvals.controller.ts` exigia
-  // `mcp.executar`: o item aparecia para o Admin Master (o único perfil com
-  // `whatsapp.enviar`) e a API respondia a outro público. Agora os dois lados
-  // pedem `aprovacoes.ver` — chave própria, criada nesta fatia.
-  //
-  // NÃO É `mcp.executar` de propósito: ela mora nas duas contas de serviço da IA
-  // (`ia_servico`, read-only por desenho, e `ia_acao`), e esta tela mostra o
-  // CONTEÚDO EXATO de toda ação retida. E não é `whatsapp.enviar` porque a fila
-  // não é de um canal: ela retém qualquer capacidade R2+ do catálogo.
-  //
-  // O rótulo mudou junto. "Atendimento" prometia caixa de entrada; o que existe
-  // hoje é a fila de decisão. A entrada por WhatsApp continua declarada em
-  // `parcial`, e `/whatsapp` segue redirecionando para cá (rotas-antigas.mjs).
-  { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'controle', estado: 'parcial', parcial: 'a fila de aprovação está de pé; a caixa de entrada por WhatsApp vem do FinOps depois' },
-  // A Régua pede `mcp.ver`, e não `admin.usuarios`, desde que a fatia 2.3
-  // fechou. É painel de LEITURA — níveis, sinais, catálogo, sobrescritas e um
-  // simulador que não executa nada —, e a convenção da casa para painel de
-  // leitura é a permissão de ver do assunto dele: `mcp.ver` é a mesma de
-  // Agentes, Sessões e Ferramentas, que é o eixo que a régua governa.
-  // `admin.usuarios` só existe no Admin Master (nem o Diretor tem), e o
-  // critério da fatia fala em "um operador submete uma ação hipotética".
-  // A aba "Quem autoriza" (a antiga tela de usuários) continua exigindo
-  // `admin.usuarios`, pelas rotas dela: users.controller.ts pede isso nas
-  // quatro, e a tela esconde a aba de quem não tem.
-  { key: 'regua', label: 'Régua', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
-  { key: 'rastro', label: 'Rastro', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'controle' },
-  /*
-   * A LINHA DO TEMPO (fatia A9) — sub-item do Rastro, e é a mesma fonte.
-   *
-   * As duas telas leem o MESMO `EventLog`. O que muda é a pergunta: o Rastro é
-   * PROVA (evento cru, cadeia de hash, verificação) e a Linha do tempo é
-   * HISTÓRIA (por dia, com ator e objeto legíveis, filtrável por agente e por
-   * tipo). Aninhar diz isso na forma do menu: não é um segundo registro, é a
-   * outra leitura do primeiro.
-   *
-   * `auditoria.ver`, a MESMA do pai e a mesma da rota — item de menu pedindo uma
-   * permissão e API respondendo a outra é o 403 que a fila de aprovação já pagou
-   * uma vez. E ser a mesma do pai tem consequência benigna aqui: quem não a tem
-   * perde as duas, que é o certo, porque quem não pode ver a prova não tem por
-   * que ver a narrativa dela.
-   */
-  { key: 'linha-do-tempo', label: 'Linha do tempo', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'controle', pai: 'rastro' },
+  // As duas listas têm fontes e ações próprias; nenhuma é submenu da outra.
+  { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
 
-  // ── O que existe ─────────────────────────────────────────────────────────
-  { key: 'ferramentas', label: 'Ferramentas', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'existe', estado: 'parcial', parcial: 'o catálogo das 35 ferramentas entra na fatia 7' },
-  { key: 'conexoes', label: 'Conexões', href: '/conexoes', icon: 'Cable', permission: 'dashboard.ver', secao: 'existe' },
+  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'conteudo' },
+  { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
+  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
+  { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'conteudo', modulo: 'instagram' },
+  { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
 
-  // ── A execução ───────────────────────────────────────────────────────────
-  { key: 'trabalho', label: 'Trabalho', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho' },
-  { key: 'tarefas', label: 'Tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
-  // O trilho de onboarding (23/09/2026): a esteira de entrega em cinco fases com
-  // portão. Filho do Trabalho porque é a esteira de clientes vista de dentro.
-  { key: 'onboarding', label: 'Onboarding', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
-  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'execucao', modulo: 'relatorios' },
+  { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
+  { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'comercial', modulo: 'campanhas' },
+  { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'comercial', modulo: 'pixels' },
 
-  // ── O que entra ──────────────────────────────────────────────────────────
-  { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'entra', modulo: 'leads' },
-  { key: 'funil', label: 'Funil', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'entra', modulo: 'leads', pai: 'leads' },
-  { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'entra', modulo: 'campanhas' },
-  { key: 'pixels', label: 'Pixels e eventos', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'entra', modulo: 'pixels' },
+  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'resultados', modulo: 'relatorios' },
+  { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'resultados', modulo: 'metas' },
+  { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'resultados', modulo: 'financeiro' },
+  { key: 'custo-ia', label: 'Custos de IA', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'resultados' },
 
-  // ── O que sai ────────────────────────────────────────────────────────────
-  { key: 'conteudo', label: 'Conteúdo', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'sai', modulo: 'conteudo' },
-  { key: 'pauta', label: 'Pauta', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
-  { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'pauta' },
-  { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'sai', modulo: 'instagram' },
-  { key: 'bio', label: 'Link na bio', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'sai', modulo: 'bio' },
-  { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'sai', modulo: 'metas' },
+  { key: 'agentes', label: 'Agentes de IA', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'automacoes' },
+  { key: 'rotinas', label: 'Rotinas automáticas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'automacoes' },
+  { key: 'sessoes', label: 'Sessões de IA', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'automacoes' },
+  { key: 'fluxos', label: 'Processos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'automacoes', estado: 'parcial', parcial: 'em preparação: esta rota ainda não oferece um editor de processos' },
 
-  // ── O dinheiro ───────────────────────────────────────────────────────────
-  { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'dinheiro', modulo: 'financeiro' },
-
-  // ── A conta ──────────────────────────────────────────────────────────────
-  // A ASSINATURA ENTROU NA ONDA 11 (fatia 6.2, RF-O-03), e o item existe por um
-  // motivo prático antes de qualquer outro: sem ele, a tela que explica a
-  // suspensão só era alcançada digitando o endereço. Quem entrava suspenso caía
-  // no console, levava recusa em tudo e não tinha como descobrir por quê.
-  //
-  // `dashboard.ver` e não `admin.usuarios`: TODO usuário precisa poder chegar à
-  // tela que diz por que o produto parou de responder — inclusive quem não
-  // administra a conta, que é justamente quem não tem como adivinhar. O que a
-  // tela deixa MUDAR (registrar plano, guardar credencial, conferir, reativar)
-  // exige `admin.usuarios` na API e some da tela de quem não tem.
-  //
-  // ESPINHA, sem `modulo`: é o contrato que sustenta todos os módulos, e um
-  // módulo "cobrança" que a empresa pudesse não contratar seria um contrato
-  // opcional sobre o próprio contrato. (Mesma decisão do lado da API, em
-  // `apps/api/src/tenants/modulos.ts`.)
-  { key: 'assinatura', label: 'Assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'conta' },
-  { key: 'config', label: 'Configurações', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'conta' },
+  { key: 'ferramentas', label: 'Ferramentas disponíveis', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'controle', estado: 'parcial', parcial: 'o catálogo completo de ferramentas ainda não está disponível nesta tela' },
+  { key: 'conexoes', label: 'Integrações', href: '/conexoes', icon: 'Cable', permission: 'dashboard.ver', secao: 'controle' },
+  { key: 'regua', label: 'Regras e permissões', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
+  { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'controle' },
+  { key: 'linha-do-tempo', label: 'Atividade', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'controle', pai: 'rastro' },
+  { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle' },
+  { key: 'config', label: 'Configurações da conta', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'controle' },
 ];
 
 // Páginas que saíram do menu e CONTINUAM VIVAS. Não são rotas mortas: a demo do
@@ -406,8 +245,7 @@ export function navEmArvore(
       }
 
       // Segunda passada: pendura cada filho no pai, na ordem do NAV. Só há um
-      // nível — filho de filho pendura no avô, porque menu de três níveis não
-      // cabe numa barra de 216px e ninguém pediu isso.
+      // nível para manter a navegação legível também na gaveta móvel.
       for (const item of itens) {
         if (!item.pai) continue;
         const pai = porChave.get(item.pai) ?? porChave.get(presentes.get(item.pai)?.pai ?? '');

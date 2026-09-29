@@ -60,10 +60,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ModulosProvider>
       <CaixaProvider>
         <div data-os-app className="flex min-h-screen">
+          <a
+            href="#root-os-main"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:bg-brand focus:px-4 focus:py-3 focus:text-ink"
+          >
+            Pular para o conteúdo
+          </a>
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar />
-            <main className="flex-1 p-6">
+            <main id="root-os-main" tabIndex={-1} className="flex-1 min-w-0 p-4 min-[820px]:p-6">
               <PortaDaAssinatura>
                 <PortaDoModulo>{children}</PortaDoModulo>
               </PortaDaAssinatura>
@@ -201,7 +207,7 @@ function PortaDoModulo({ children }: { children: React.ReactNode }) {
         href="/painel"
         className="mt-4 inline-block border border-border px-3 py-[6px] text-[10px] uppercase tracking-[0.12em] text-muted hover:border-border-strong hover:text-text"
       >
-        voltar ao console
+        voltar à visão geral
       </a>
     </div>
   );

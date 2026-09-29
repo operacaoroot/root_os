@@ -83,7 +83,7 @@ export default function OnboardingPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Onboarding</h1>
+          <h1 className="text-xl font-semibold">Implantação de clientes</h1>
           <p className="text-sm text-muted">A esteira de entrega em cinco fases, com portão entre elas. O trilho não deixa avançar sem o portão cumprido.</p>
         </div>
         <Link href="/trabalho" className="text-sm text-muted underline underline-offset-2 hover:text-text">esteira de clientes (Trabalho)</Link>

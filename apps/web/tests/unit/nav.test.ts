@@ -173,6 +173,23 @@ describe('não se perdeu funcionalidade', () => {
 });
 
 describe('NAV — estrutura', () => {
+  it('mantém o inventário completo das 33 rotas atuais', () => {
+    const hrefsEsperados = new Set([
+      '/caixa', '/atendimento', '/agenda', '/painel',
+      '/contexto', '/organograma',
+      '/tarefas', '/trabalho', '/onboarding',
+      '/conteudo', '/pauta', '/referencias', '/instagram', '/bio',
+      '/leads', '/funil', '/campanhas', '/pixels',
+      '/relatorios', '/metas', '/financeiro', '/painel/custo-ia',
+      '/agentes', '/rotinas', '/sessoes', '/fluxos',
+      '/ferramentas', '/conexoes', '/regua', '/rastro',
+      '/linha-do-tempo', '/assinatura', '/config',
+    ]);
+    expect(hrefsEsperados.size).toBe(33);
+    expect(NAV).toHaveLength(33);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(hrefsEsperados);
+  });
+
   it('não repete chave nem rota', () => {
     expect(new Set(NAV.map((n) => n.key)).size).toBe(NAV.length);
     expect(new Set(NAV.map((n) => n.href)).size).toBe(NAV.length);
@@ -195,15 +212,15 @@ describe('NAV — estrutura', () => {
     }
   });
 
-  it('a espinha do OS não tem módulo, e todo módulo mora numa seção de módulo', () => {
-    const tipoDaSecao = new Map(SECOES.map((s) => [s.key, s.tipo]));
-    for (const n of NAV) {
-      if (tipoDaSecao.get(n.secao) === 'os') {
-        expect(n.modulo, `${n.key} é espinha e não pode ser desligável`).toBeUndefined();
-      } else {
-        expect(n.modulo, `${n.key} está numa seção de módulo e não declara qual`).toBeDefined();
-      }
-    }
+  it('agrupamento visual não altera a declaração individual dos módulos', () => {
+    const modulosEsperados = new Map([
+      ['tarefas', 'trabalho'], ['trabalho', 'trabalho'], ['onboarding', 'trabalho'],
+      ['conteudo', 'conteudo'], ['pauta', 'pauta'], ['referencias', 'pauta'],
+      ['instagram', 'instagram'], ['bio', 'bio'], ['leads', 'leads'],
+      ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
+      ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
+    ]);
+    for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
 
   it('as rotas de detalhe herdam a permissão do módulo pai', () => {
@@ -233,14 +250,10 @@ describe('navPorSecao', () => {
     );
   });
 
-  it('a espinha vem antes dos módulos', () => {
+  it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    const ultimoOs = tipos.lastIndexOf('os');
-    const primeiroModulo = tipos.indexOf('modulo');
-    // 'A conta' é espinha e fecha o menu — por isso a comparação é com o
-    // primeiro bloco de módulo, não com o último bloco de OS.
-    expect(primeiroModulo).toBeGreaterThan(tipos.indexOf('os'));
-    expect(ultimoOs).toBeGreaterThan(primeiroModulo); // a conta, no fim
+    expect(tipos.slice(0, 6)).toEqual(Array(6).fill('principal'));
+    expect(tipos.slice(6)).toEqual(['apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -250,7 +263,7 @@ describe('navPorSecao', () => {
   it('mostra só o que a permissão libera e descarta a seção vazia', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
     expect(grupos).toHaveLength(1);
-    expect(grupos[0].secao.key).toBe('entra');
+    expect(grupos[0].secao.key).toBe('comercial');
     expect(grupos[0].itens.map((i) => i.key)).toEqual(['leads']);
   });
 
@@ -320,11 +333,10 @@ describe('navEmArvore', () => {
   });
 
   it('o filho vem dentro do pai, e não no topo da seção', () => {
-    const execucao = navEmArvore(todas).find((g) => g.secao.key === 'execucao')!;
-    expect(execucao.itens.map((no) => no.item.key)).not.toContain('tarefas');
-    const trabalho = execucao.itens.find((no) => no.item.key === 'trabalho')!;
-    // `onboarding` entrou como filho do Trabalho em 23/09/2026 (o trilho de entrega).
-    expect(trabalho.filhos.map((f) => f.key)).toEqual(['tarefas', 'onboarding']);
+    const conteudo = navEmArvore(todas).find((g) => g.secao.key === 'conteudo')!;
+    expect(conteudo.itens.map((no) => no.item.key)).not.toContain('referencias');
+    const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
+    expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
   });
 
   /*
@@ -335,9 +347,9 @@ describe('navEmArvore', () => {
    */
   it('filho cujo pai foi filtrado sobe para o primeiro nível, e não desaparece', () => {
     const grupos = navEmArvore(new Set(['dashboard.ver']));
-    const entra = grupos.find((g) => g.secao.key === 'entra')!;
-    expect(entra.itens.map((no) => no.item.key)).toContain('funil');
-    expect(entra.itens.every((no) => no.filhos.length === 0)).toBe(true);
+    const comercial = grupos.find((g) => g.secao.key === 'comercial')!;
+    expect(comercial.itens.map((no) => no.item.key)).toContain('funil');
+    expect(comercial.itens.every((no) => no.filhos.length === 0)).toBe(true);
   });
 
   it('módulo desligado tira pai e filho juntos', () => {
@@ -348,11 +360,11 @@ describe('navEmArvore', () => {
   });
 
   it('preserva a ordem do NAV dentro de cada seção', () => {
-    const sai = navEmArvore(todas).find((g) => g.secao.key === 'sai')!;
-    const pauta = sai.itens.find((no) => no.item.key === 'pauta')!;
+    const conteudo = navEmArvore(todas).find((g) => g.secao.key === 'conteudo')!;
+    const pauta = conteudo.itens.find((no) => no.item.key === 'pauta')!;
     expect(pauta.filhos.map((f) => f.key)).toEqual(['referencias']);
-    expect(sai.itens.map((no) => no.item.key)).toEqual(
-      NAV.filter((n) => n.secao === 'sai' && !n.pai).map((n) => n.key),
+    expect(conteudo.itens.map((no) => no.item.key)).toEqual(
+      NAV.filter((n) => n.secao === 'conteudo' && !n.pai).map((n) => n.key),
     );
   });
 

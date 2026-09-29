@@ -1,23 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-/*
- * O MENU EM DOIS NÍVEIS — fatia A1 de docs/PLANO-CONTROLE-DE-AGENTES.md.
- *
- * A forma vem do painel do Paperclip: seções que abrem e fecham, com sub-itens
- * dentro do item que os abriga. `nav.test.ts` cobra o DADO (quem é filho de
- * quem, e que ninguém desaparece); esta suíte cobra a TELA, que é onde as duas
- * coisas que custam acesso acontecem:
- *
- *  1. O filho é desenhado DENTRO do pai — se ele voltar para o topo, o submenu
- *     virou enfeite e a barra volta a ser uma lista de 27 coisas.
- *  2. FECHAR É CSS, e só vale no menu largo. Abaixo de 820px a barra é um
- *     trilho de ícones sem cabeçalho de seção: se o fechar apagasse os itens do
- *     DOM, quem estivesse no trilho perderia telas sem ter como reabrir.
- *  3. A seção da tela ABERTA nunca fica fechada, mesmo que a pessoa a tenha
- *     fechado antes. Menu que esconde onde você está desorienta.
- */
+/* A sidebar preserva a hierarquia declarada, o acesso e a seção ativa. */
 
 let PERMISSOES: string[] = [];
 let CAMINHO = '/painel';
@@ -68,11 +53,58 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe('o submenu da barra lateral', () => {
-  it('desenha Tarefas dentro de Trabalho, e não no topo da seção', () => {
+describe('a barra lateral', () => {
+  it('abre a gaveta móvel com nomes visíveis e fecha com Escape', async () => {
+    const user = userEvent.setup();
     render(<Sidebar />);
-    const trabalho = link('/trabalho')!;
-    const tarefas = link('/tarefas')!;
+    const abrir = screen.getByRole('button', { name: 'Abrir navegação' });
+    expect(abrir).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(abrir);
+    expect(abrir).toHaveAttribute('aria-expanded', 'true');
+    const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
+    expect(gaveta).toHaveTextContent('Pendências');
+    expect(gaveta).toHaveTextContent('Quadro interno');
+
+    await user.keyboard('{Escape}');
+    expect(abrir).toHaveAttribute('aria-expanded', 'false');
+    expect(abrir).toHaveFocus();
+  });
+
+  it('bloqueia scroll do fundo e encerra o modo modal ao passar para desktop', async () => {
+    const ouvintes = new Set<(e: MediaQueryListEvent) => void>();
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      media: '(min-width: 820px)',
+      addEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => ouvintes.add(fn),
+      removeEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => ouvintes.delete(fn),
+    }));
+    try {
+      const user = userEvent.setup();
+      render(<><main id="root-os-main" tabIndex={-1} /><Sidebar /></>);
+      const abrir = screen.getByRole('button', { name: 'Abrir navegação' });
+      await user.click(abrir);
+      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.documentElement.style.overflow).toBe('hidden');
+      await waitFor(() => expect(document.querySelector('#root-os-nav button[aria-label="Fechar navegação"]')).toHaveFocus());
+
+      act(() => {
+        for (const fn of ouvintes) fn({ matches: true } as MediaQueryListEvent);
+      });
+      expect(abrir).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(document.getElementById('root-os-main')).toHaveFocus();
+      expect(document.body.style.overflow).toBe('');
+      expect(document.documentElement.style.overflow).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('desenha Referências dentro de Produção de conteúdo, e não no topo da seção', () => {
+    render(<Sidebar />);
+    const trabalho = link('/pauta')!;
+    const tarefas = link('/referencias')!;
     expect(trabalho).toBeInTheDocument();
     // o mesmo invólucro: é isso que faz o filho andar junto com o pai
     expect(trabalho.parentElement).toBe(tarefas.parentElement);
@@ -83,26 +115,33 @@ describe('o submenu da barra lateral', () => {
   it('fechar a seção esconde por CSS e guarda a escolha — sem apagar do DOM', async () => {
     const user = userEvent.setup();
     render(<Sidebar />);
-    const cabecalho = screen.getByRole('button', { name: /a execução/i });
+    const cabecalho = screen.getByRole('button', { name: /trabalho/i });
     expect(cabecalho).toHaveAttribute('aria-expanded', 'true');
 
     await user.click(cabecalho);
 
     expect(cabecalho).toHaveAttribute('aria-expanded', 'false');
-    // O item CONTINUA no DOM: no trilho de ícones ele segue clicável.
+    // O item permanece no DOM para restaurar a escolha ao reabrir.
     expect(link('/trabalho')).toBeInTheDocument();
     expect(link('/trabalho')!.parentElement!.parentElement).toHaveClass('hidden');
-    expect(JSON.parse(localStorage.getItem(CHAVE_MENU)!)).toContain('execucao');
+    expect(JSON.parse(localStorage.getItem(CHAVE_MENU)!)).toContain('trabalho');
   });
 
   it('a seção da tela aberta ignora o fechamento guardado', () => {
-    localStorage.setItem(CHAVE_MENU, JSON.stringify(['execucao']));
+    localStorage.setItem(CHAVE_MENU, JSON.stringify(['trabalho']));
     CAMINHO = '/tarefas';
     render(<Sidebar />);
-    expect(screen.getByRole('button', { name: /a execução/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /trabalho/i })).toHaveAttribute(
       'aria-expanded',
       'true',
     );
+  });
+
+  it('marca apenas Custos de IA quando a rota está dentro de /painel', () => {
+    CAMINHO = '/painel/custo-ia';
+    render(<Sidebar />);
+    expect(link('/painel/custo-ia')).toHaveAttribute('aria-current', 'page');
+    expect(link('/painel')).not.toHaveAttribute('aria-current');
   });
 
   /*

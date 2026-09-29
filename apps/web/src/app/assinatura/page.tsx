@@ -328,7 +328,7 @@ export default function AssinaturaPage() {
     <div className="mx-auto flex max-w-[860px] flex-col gap-4">
       <header>
         <h1 className="font-os-mono text-[13px] font-bold uppercase tracking-[0.16em] text-text">
-          Assinatura
+          Plano e assinatura
         </h1>
         <p className="mt-1 text-[12px] text-muted">
           O contrato desta empresa com a ROOT: plano, cobranças e estado do acesso.

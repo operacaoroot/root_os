@@ -286,9 +286,13 @@ describe('tenant novo, sem módulo nenhum', () => {
     const grupos = navPorSecao(perms, []);
     const itens = grupos.flatMap((g) => g.itens);
     expect(itens.every((n) => n.modulo === undefined)).toBe(true);
-    // As quatro seções do tipo 'os' mais 'A conta' continuam de pé.
-    const secoesOs = SECOES.filter((s) => s.tipo === 'os').map((s) => s.key);
-    expect(grupos.map((g) => g.secao.key)).toEqual(secoesOs);
+    // Com a navegação por intenção, rotas da espinha e de módulos dividem
+    // grupos visuais. Permanecem só os grupos que contêm ao menos uma rota
+    // sem gate de módulo.
+    const secoesDaEspinha = SECOES.filter((s) =>
+      NAV.some((n) => n.secao === s.key && n.modulo === undefined),
+    ).map((s) => s.key);
+    expect(grupos.map((g) => g.secao.key)).toEqual(secoesDaEspinha);
   });
 });
 

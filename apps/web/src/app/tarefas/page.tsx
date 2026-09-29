@@ -40,7 +40,7 @@ function TasksInner() {
       <div className="flex items-end justify-between">
         <div>
           <p className="text-sm text-muted">
-            {data ? `${data.total} tarefa(s)` : 'Carregando…'} · {data?.overdue ?? 0} atrasada(s) · ClickUp/Asana unificados (conector na Fase 3).
+            {data ? `${data.total} tarefa(s) · ${data.overdue} atrasada(s)` : 'Carregando…'} · lista de tarefas registrada no OS, separada do quadro interno.
           </p>
         </div>
         <div className="flex gap-2 text-sm">
