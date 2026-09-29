@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { AbaCaptura } from './AbaCaptura';
 import { AbaFila } from './AbaFila';
@@ -16,6 +16,16 @@ export default function ReferenciasPage() {
   const { token, ready, can } = useAuth();
   const editavel = can('pauta.editar');
   const [aba, setAba] = useState<Aba>('Captura');
+  useEffect(() => {
+    const sync = () => {
+      const requested = window.location.hash.slice(1);
+      const tab = ABAS.find((a) => a.toLowerCase() === requested.toLowerCase());
+      if (tab) setAba(tab);
+    };
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
   const [erro, setErro] = useState<string | null>(null);
   const [bump, setBump] = useState(0);
 
@@ -35,7 +45,7 @@ export default function ReferenciasPage() {
         {ABAS.map((a) => (
           <button
             key={a}
-            onClick={() => setAba(a)}
+            onClick={() => { setAba(a); window.history.replaceState(null, '', `#${a.toLowerCase()}`); }}
             className={`-mb-px border-b-2 px-1 pb-2 text-sm ${
               aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
             }`}

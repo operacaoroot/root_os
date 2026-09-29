@@ -114,6 +114,8 @@ export function Mapa({
   const arrasto = useRef<ArrastoEmCurso | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
+  const conexoesSelecionadas = selecionado ? new Set([selecionado, ...mapa.arestas.filter((a) => a.tipo === 'relacao' && (a.de === selecionado || a.para === selecionado)).flatMap((a) => [a.de, a.para])]) : null;
+  const focados = destaque ?? conexoesSelecionadas;
   const visivel = (familia: FamiliaKey) => !ocultos.has(familia);
   const nos = mapa.nos.filter((n) => visivel(n.familia));
   const desenhadosPorEixo = new Map(mapa.eixos.map((e) => [e.key, e.mostrados]));
@@ -232,7 +234,7 @@ export function Mapa({
                   fill="none"
                   className={a.tipo === 'relacao' ? 'text-brand' : 'text-border-strong'}
                   stroke="currentColor"
-                  strokeOpacity={a.tipo === 'relacao' ? 0.5 : 0.55}
+                  strokeOpacity={conexoesSelecionadas && !(conexoesSelecionadas.has(a.de) && conexoesSelecionadas.has(a.para)) ? 0.08 : a.tipo === 'relacao' ? 0.8 : 0.55}
                   strokeWidth={a.tipo === 'relacao' ? 1.6 : 1}
                   strokeDasharray={a.tipo === 'relacao' ? '5 4' : undefined}
                 />
@@ -273,8 +275,8 @@ export function Mapa({
                 key={no.id}
                 no={no}
                 selecionado={selecionado === no.id}
-                marcado={destaque !== null && destaque.has(no.id)}
-                apagado={destaque !== null && !destaque.has(no.id)}
+                marcado={focados !== null && focados.has(no.id)}
+                apagado={focados !== null && !focados.has(no.id)}
                 sempreComRotulo={(desenhadosPorEixo.get(no.familia) ?? 0) <= LIMITE_DE_ROTULO_SEMPRE}
                 onSelecionar={() => onSelecionar(no)}
               />

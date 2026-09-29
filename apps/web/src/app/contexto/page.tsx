@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
 import { Mapa } from './Mapa';
+import { Diretorio } from './Diretorio';
 import {
   eixosIncertos,
   estadoDaEmpresa,
@@ -270,6 +271,15 @@ export default function ContextoPage() {
 
   return (
     <div className="space-y-4">
+      <section className="rounded-root border border-border bg-surface p-4" aria-label="Do conhecimento ao trabalho">
+        <h2 className="font-semibold">Do conhecimento ao trabalho</h2>
+        <p className="mt-1 text-sm text-muted">Explore as fontes e quem responde por elas. Abra um processo para acompanhar o que ele recebe e o que precisa entregar.</p>
+        <nav aria-label="Caminhos de trabalho" className="mt-3 flex flex-wrap gap-4 text-sm text-brand">
+          {can('tarefas.ver') && <a className="underline" href="/trabalho">Projetos e tarefas</a>}
+          {can('pauta.ver') && <><a className="underline" href="/referencias#radar">Fontes de conteúdo</a><a className="underline" href="/pauta">Produção de conteúdo</a></>}
+          {can('automacoes.ver') && <a className="underline" href="/rotinas">Rotinas e resultados</a>}
+        </nav>
+      </section>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[260px] flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -330,6 +340,7 @@ export default function ContextoPage() {
               <Legenda mapa={mapa} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
             )}
           </div>
+          <Diretorio mapa={mapa} onAbrir={abrirItem} />
         </>
       )}
     </div>

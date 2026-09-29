@@ -203,7 +203,7 @@ describe('A4: o quadro mostra qual agente está com a tarefa', () => {
     render(<TrabalhoPage />);
     await waitFor(() => cartao('Fechar o mês'));
 
-    await userEvent.click(screen.getByRole('button', { name: 'tabela' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Tabela' }));
     /*
      * As duas colunas ao mesmo tempo é o caso: uma coluna só faria "quem
      * responde" e "quem executa" parecerem a mesma pergunta.
