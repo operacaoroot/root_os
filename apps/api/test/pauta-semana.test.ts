@@ -68,6 +68,7 @@ import { chaveDoRender, rendersAFazer } from '../../../tools/root-midia/lib/vigi
 import { shaDaTranscricao } from '../src/pauta/newsletter-do-episodio';
 import { jpegDeTeste, mp4DeTeste, sha256 } from './mp4-de-teste';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { semMarca } from './marca-de-teste';
 
 /*
  * A SEMANA DE POSTS — MC15: a derivação por notícia.
@@ -610,7 +611,7 @@ function servico(opts: {
   const memoria = { porChave: async () => null } as unknown as MemoriaService;
   const audit = new AuditService(prisma);
   return {
-    semana: new DerivacaoService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), storage, new EpisodioService(prisma, audit)),
+    semana: new DerivacaoService(prisma, audit, llm, new VozService(prisma, audit, llm, memoria), storage, new EpisodioService(prisma, audit), semMarca),
     prisma,
     lista,
     pecas,
@@ -1458,7 +1459,7 @@ describe('semana: convive com a derivação antiga e com o export do carrossel',
       complete: async () => JSON.stringify({ whatsapp: { titulo: 'w', corpo: 'w' }, clickup: { titulo: 'c', corpo: 'c' } }),
     } as unknown as LlmProvider;
     const audit = new AuditService(prisma);
-    const rodadas = new RodadaService(prisma, audit, {} as never, llm, new VozService(prisma, audit, llm, { porChave: async () => null } as never));
+    const rodadas = new RodadaService(prisma, audit, {} as never, llm, new VozService(prisma, audit, llm, { porChave: async () => null } as never), semMarca);
     await rodadas.derivar(ORG, 'r1', PESSOA);
     expect(criadas.map((c) => c.canal)).toEqual(['whatsapp', 'clickup']);
   });
@@ -1558,7 +1559,7 @@ describe.skipIf(!URL)('semana com banco: 3 matérias viram 9 peças pela sessão
     } as unknown as LlmProvider;
     const memoria = new MemoriaService(app, {} as never);
     episodios = new EpisodioService(app, new AuditService(app));
-    semana = new DerivacaoService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), {} as never, episodios);
+    semana = new DerivacaoService(app, new AuditService(app), llm, new VozService(app, new AuditService(app), llm, memoria), {} as never, episodios, semMarca);
     const o = await admin.org.create({ data: { name: `Semana ${MARCA}`, slug: `sm-${MARCA}`, modulos: ['pauta'] } });
     orgId = o.id;
   }, 60_000);

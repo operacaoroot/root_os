@@ -132,6 +132,7 @@ model Org {
   pautaRotinas     PautaRotina[]
   pautaRodadas     PautaRodada[]
   pautaPecas       PautaPeca[]
+  pautaIdeias      PautaIdeia[]
   pautaEpisodios   PautaEpisodio[]
   pautaPublicacoes PautaPublicacao[]
   /// MD9: quem comentou a palavra-chave num post da semana (a fila da DM à mão).
@@ -1420,6 +1421,75 @@ enum PautaPecaStatus {
   descartada
 }
 
+/// O BANCO DE IDEIAS (MK3, frente MK).
+///
+/// A máquina de conteúdo (frente MC) parte do que o mundo publicou: captura,
+/// curadoria, episódio, semana. O banco de ideias parte do contrário — do que a
+/// casa quer dizer. Ideia aprovada vira `PautaPeca` e cai na MESMA agenda e na
+/// mesma aprovação da semana, porque quem posta não deveria ter dois lugares
+/// para olhar.
+enum PautaIdeiaStatus {
+  ideia
+  em_producao
+  aprovada
+  descartada
+}
+
+enum PautaIdeiaPrioridade {
+  baixa
+  media
+  alta
+}
+
+model PautaIdeia {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  /// A CHAVE do pilar, não uma FK: pilar é configuração em nota da memória
+  /// (`pauta.marca.pilares`, MK1), e não tabela. Pilar renomeado na nota deixa
+  /// a ideia órfã de propósito — a tela mostra a chave crua e alguém decide,
+  /// que é melhor que apagar a ideia ou inventar um pilar que não existe mais.
+  pilar String
+
+  titulo     String
+  /// O que se fala nos primeiros segundos, e o que aparece escrito na tela: no
+  /// vídeo curto são duas frentes diferentes e a de tela costuma ser esquecida.
+  ganchoFala String @default("")
+  ganchoTela String @default("")
+  roteiro    String @default("")
+  legenda    String @default("")
+  cta        String @default("")
+  /// Por que esta ideia merece existir. Campo obrigatório de propósito no
+  /// formulário: ideia sem porquê é assunto, não pauta.
+  porque     String @default("")
+  /// De onde ela saiu: dossiê de concorrente, captura, conversa. Só rótulo e
+  /// link, nunca texto de terceiro — esse já passou pela cerca na MK2.
+  fontes     Json   @default("[]")
+  /// `carrossel`, `story` ou `corte` — os formatos que a semana entende.
+  formato    String
+
+  prioridade PautaIdeiaPrioridade @default(media)
+  status     PautaIdeiaStatus     @default(ideia)
+  /// Cada troca de status, com quem e quando. É o histórico que a tela mostra.
+  hist       Json                 @default("[]")
+
+  /// A peça que a ideia virou. `SetNull` porque a peça pode ser descartada sem
+  /// que a ideia deixe de ter existido — perder o registro seria perder a
+  /// memória de que aquilo já foi tentado.
+  pecaId String?    @unique
+  peca   PautaPeca? @relation(fields: [pecaId], references: [id], onDelete: SetNull)
+
+  /// `operador` ou `ia`: quem propôs. A IA propõe, gente aprova.
+  origem    String   @default("operador")
+  criadaEm  DateTime @default(now())
+  criadaPor String?
+  atualizadaEm DateTime @updatedAt
+
+  @@index([orgId, status])
+  @@index([orgId, pilar])
+}
+
 model PautaRotina {
   id     String  @id @default(uuid())
   orgId  String
@@ -1603,8 +1673,16 @@ model PautaPeca {
   id       String          @id @default(uuid())
   orgId    String
   org      Org             @relation(fields: [orgId], references: [id])
-  rodadaId String
-  rodada   PautaRodada     @relation(fields: [rodadaId], references: [id], onDelete: Cascade)
+  /// NULO É A PEÇA QUE NASCEU DE IDEIA (MK3), e não de uma rodada de curadoria.
+  /// Toda peça da máquina de conteúdo continua tendo rodada — o `onDelete:
+  /// Cascade` segue valendo para elas, e apagar a rodada segue levando as peças
+  /// dela. A peça de ideia não pertence a rodada nenhuma e sobrevive sozinha;
+  /// ela não tem episódio, então nunca entra nas operações que varrem por
+  /// `rodadaId` (mídia refeita, newsletter vigente, distribuir slots do
+  /// episódio). O `orgId` dela vem do insert, como sempre — `PautaPeca` não tem
+  /// gatilho que derive a empresa do pai.
+  rodadaId String?
+  rodada   PautaRodada?    @relation(fields: [rodadaId], references: [id], onDelete: Cascade)
   canal    PautaCanal
   formato  String // texto | carrossel | reels | email | tema
   titulo   String
@@ -1637,6 +1715,8 @@ model PautaPeca {
   publicacoes PautaPublicacao[]
   // MD9: os comentários com a palavra-chave, para a DM à mão.
   comentarios ComentarioComPalavra[]
+  // MK3: a ideia que virou esta peça, quando ela veio do banco de ideias.
+  ideia       PautaIdeia?
 
   @@index([orgId, status])
   @@index([rodadaId])

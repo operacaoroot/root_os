@@ -575,7 +575,16 @@ jobs:
       # lote pedem confirmação), `component/pauta-dm-automatica` +1 (o aviso
       # no texto da matéria com regra assinada). Medido: 621 casos em 48
       # arquivos. O piso de CASOS sobe 4 (~15% de folga sobre os 5), para 431.
-      PISO_CASOS_WEB: '431'
+      #
+      # MK7, O BLOCO MARKETING NO MENU (28/09/2026): +5 casos em `nav`, sem
+      # arquivo novo — o bloco em "O que sai" governado pelo módulo pauta, a
+      # estratégia e o relatório pendurados nele, a MARCA que fica no Contexto e
+      # não dentro do bloco, a agenda do mês que NÃO vira item próprio (a aba
+      # Semana da Pauta já é a agenda) e o sumiço do bloco inteiro sem o módulo.
+      # É desenho que a decisão do Pedro fixou e que se perde calado numa
+      # refatoração. Medido: 640 casos em 49 arquivos. O piso de ARQUIVOS fica
+      # onde está (nenhum arquivo novo); o de CASOS sobe 4, para 435.
+      PISO_CASOS_WEB: '435'
       PISO_ARQUIVOS_WEB: '39'
       # (388) em 15 arquivos: alcada-reautenticacao 32, arquitetura 21,
       # contexto-aprovacao 10, contexto-execucao 40, env 7, llm-step 10,
@@ -1885,8 +1894,68 @@ jobs:
       # sessão amarra o vídeo ao arquivo). Medido: 3063 casos em 74 arquivos
       # com o banco; sem ele, 2348 passados e 715 pulados. O piso de CASOS
       # sobe 11 (~15% de folga sobre os 13 que rodam sem banco), para 2190.
-      PISO_CASOS_API: '2190'
-      PISO_ARQUIVOS_API: '66'
+      #
+      # MK1, A MARCA E OS PILARES (28/09/2026): +35 casos num arquivo novo,
+      # `pauta-marca` — o parser da nota dos pilares, o bloco montado num lugar
+      # só, a tolerância da leitura e a prova de que os CINCO prompts da pauta
+      # levam o bloco ao lado da voz. Nenhum precisa de banco. As 22 construções
+      # à mão das suítes ganharam o dublê `semMarca` (`test/marca-de-teste.ts`,
+      # que não tem caso e não conta como arquivo). Medido sem banco: 2381
+      # passados e 718 pulados, em 75 arquivos. O piso de ARQUIVOS vai a 67,
+      # colado no real; o de CASOS sobe 30 (~15% de folga sobre os 35 que rodam
+      # sem banco), para 2220.
+      #
+      # MK2, CONCORRENTES COM NÚMEROS (28/09/2026): +31 casos num arquivo novo,
+      # `pauta-concorrentes` — a leitura das métricas por plataforma, a mediana
+      # e o índice contra o próprio perfil, o piso de 5 posts, e o pedido do
+      # dossiê com a legenda dentro da cerca e o número fora. Nenhum precisa de
+      # banco. O `adversarial` ganhou a quarta entrada do inventário de cercas e
+      # passou a normalizar o separador de caminho (no Windows o `join` devolve
+      # `\` e o inventário não casava por isso, não por cerca nova). Medido sem
+      # banco: 2413 passados e 718 pulados, em 76 arquivos. O piso de ARQUIVOS
+      # vai a 68, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
+      # que rodam sem banco), para 2246.
+      #
+      # MK4, A ESTRATÉGIA DO MÊS (28/09/2026): +19 casos num arquivo novo,
+      # `pauta-estrategia` — a chave por mês e a virada do ano, o pilar
+      # inventado que é descartado, a resposta sem pilar da casa que é recusada
+      # inteira, as cinco seções fixas, e propor/salvar/reler com dublê de LLM.
+      # Nenhum precisa de banco. Medido sem banco: 2432 passados e 718 pulados,
+      # em 77 arquivos. O piso de ARQUIVOS vai a 69, colado no real; o de CASOS
+      # sobe 16 (~15% de folga sobre os 19 que rodam sem banco), para 2262.
+      #
+      # MK6, O RELATÓRIO DO MÊS (28/09/2026): +22 casos num arquivo novo,
+      # `pauta-relatorio` — a chave por mês, o documento com as cinco seções, a
+      # prova de que a contagem vem do banco e não do modelo (o caso do modelo
+      # que inventa "47 peças" e a seção segue dizendo 2), a seção de desempenho
+      # que declara a ausência, e a rotina mensal: fecha o mês anterior, pula o
+      # mês que já tem relatório, pula empresa sem o módulo e assina como
+      # sistema. Nenhum precisa de banco. Medido sem banco: 2452 passados e 718
+      # pulados, em 78 arquivos. O piso de ARQUIVOS vai a 70, colado no real; o
+      # de CASOS sobe 18 (~15% de folga sobre os 22 que rodam sem banco), para
+      # 2280.
+      #
+      # MK3, O BANCO DE IDEIAS (29/09/2026): +31 casos num arquivo novo,
+      # `pauta-ideias` — a máquina de estados (aprovada é fim de linha), o que
+      # impede uma ideia de virar peça, a leitura do que a IA propõe (descarta
+      # incompleta e palavra proibida), e o miolo da fatia: a peça nascida de
+      # ideia É peça da semana e NUNCA casa quando se pergunta pelas peças de um
+      # episódio. Nenhum precisa de banco — a tabela nova é coberta pelo job de
+      # isolamento, que passou 360/360 com a semente de `PautaIdeia`. Medido sem
+      # banco: 2485 passados e 718 pulados, em 79 arquivos. O piso de ARQUIVOS
+      # vai a 71, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
+      # que rodam sem banco), para 2306.
+      #
+      # MK5, A PERFORMANCE DA CASA (29/09/2026): +17 casos num arquivo novo,
+      # `pauta-performance` — o snapshot com a régua da MK2, o piso de 5
+      # medidos, o post sem número que fica na lista com o motivo, a fotografia
+      # datada, a leitura indo pela porta com a capacidade do catálogo, a porta
+      # que retém sem gravar metade, e o efeito com dublê da Graph. Nenhum
+      # precisa de banco. Medido sem banco: 2503 passados e 718 pulados, em 80
+      # arquivos. O piso de ARQUIVOS vai a 72, colado no real; o de CASOS sobe
+      # 14 (~15% de folga sobre os 17 que rodam sem banco), para 2320.
+      PISO_CASOS_API: '2320'
+      PISO_ARQUIVOS_API: '72'
 
     steps:
       - uses: actions/checkout@v4

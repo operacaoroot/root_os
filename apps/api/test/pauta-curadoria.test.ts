@@ -29,6 +29,7 @@ import { TOM_DA_CASA } from '../src/pauta/voz-da-pauta';
 import { AuditService } from '../src/audit/audit.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { semMarca } from './marca-de-teste';
 
 // MC10: sem perfil, as peças recebem o tom da casa.
 const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
@@ -355,7 +356,7 @@ function servico(opts: {
     ...opts.llm,
   } as unknown as LlmProvider;
 
-  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa);
+  const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa, semMarca);
   return { rodadas, prompts, criadas, gravadas, condicionais, auditoria, contagens, atual: () => rodada };
 }
 

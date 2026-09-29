@@ -31,6 +31,7 @@ import {
   type EstadoDoAgendador,
 } from '../src/routines/rotina.tipos';
 import { auditoriaFalsa, prismaDeRotinas, rotinaFalsa, type EstadoDoBancoFalso } from './prisma-de-rotinas';
+import { semMarca } from './marca-de-teste';
 
 // MC10: sem perfil, as peças recebem o tom da casa.
 const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
@@ -412,7 +413,7 @@ function montarPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = [], opts: 
   coleta.registrar('busca', async (f) => porFonte(f), 'teste');
   coleta.registrar('perfil', async (f) => porFonte(f), 'teste');
   const llm = { name: 'falso', model: 'falso-1', configured: false } as unknown as LlmProvider;
-  const rodadas = new RodadaService(banco.prisma, new AuditService(banco.prisma), coleta, llm, vozDaCasa);
+  const rodadas = new RodadaService(banco.prisma, new AuditService(banco.prisma), coleta, llm, vozDaCasa, semMarca);
   return { ...banco, coleta, rodadas };
 }
 

@@ -49,7 +49,7 @@ import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { EpisodioService } from './episodio.service';
 import { itensMantidos } from './episodio';
-import { candidatosParaATela, ehPecaDaSemana, lerMetaDaSemana } from './derivacao-do-episodio';
+import { candidatosParaATela, ehPecaDaSemana, ehPecaDeIdeia, lerMetaDaSemana } from './derivacao-do-episodio';
 import { chaveDoSlot, distribuir, gradeDaNota, midiaDaPeca, postagemDaPeca, slotsDoPeriodo, type Distribuida } from './agenda-da-semana';
 import { publicacoesParaATela } from './publicacao-instagram.service';
 import { LotesService, type ItemVivo } from '../approvals/lotes.service';
@@ -226,7 +226,8 @@ export class AgendaService {
   ): PautaPecaNaAgenda {
     const m = lerMetaDaSemana(p.meta);
     const formato = p.formato as PautaFormatoDaSemana;
-    const apelido = e ? apelidoDoEpisodio(e.numero) : 'ep-??';
+    // MK3: peça de ideia não tem episódio, e dizer "ep-??" faria parecer defeito.
+    const apelido = e ? apelidoDoEpisodio(e.numero) : ehPecaDeIdeia(p.meta) ? 'do banco' : 'ep-??';
     const itens = e ? itensMantidos(e.rodada?.itens) : [];
     const em = p.agendadaPara ?? p.publicadaEm ?? p.slotProposto ?? new Date(0);
     return {

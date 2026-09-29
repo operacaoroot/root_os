@@ -45,6 +45,7 @@ import { TetoIlegivelError } from '../llm/teto-diario.service';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EpisodioService } from './episodio.service';
 import { VozService } from './voz.service';
+import { MarcaService } from './marca.service';
 import { lerTranscricao } from './episodio';
 import { linkPublicoDoItem, semLinksDeCaixaDeEntrada } from './link-publico';
 import { shaDaTranscricao } from './newsletter-do-episodio';
@@ -156,6 +157,8 @@ export class DerivacaoService {
     private readonly vozes: VozService,
     private readonly storage: StorageService,
     private readonly episodios: EpisodioService,
+    /** MK1: a marca e os pilares, ao lado da voz no mesmo prompt. */
+    private readonly marcas: MarcaService,
     /** MD8: mexer na peça depois do lote da semana revoga o item dela. Global; opcional nas suítes. */
     @Optional() private readonly lotes?: LotesService,
   ) {}
@@ -292,7 +295,9 @@ export class DerivacaoService {
 
     const sha = shaDaTranscricao(e.transcricao);
     const duracaoSeg = duracaoDoEpisodio(e);
-    const system = aFazer.length ? systemDaDerivacao(await this.vozes.bloco(orgId)) : '';
+    const system = aFazer.length
+      ? systemDaDerivacao(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId))
+      : '';
     const porMateria: Array<Record<string, string | number | boolean>> = [];
     let corrida: ConflictException | null = null;
 

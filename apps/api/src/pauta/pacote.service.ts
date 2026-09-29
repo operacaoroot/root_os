@@ -29,6 +29,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EpisodioService } from './episodio.service';
 import { VozService } from './voz.service';
+import { MarcaService } from './marca.service';
 import { itensMantidos, lerTranscricao } from './episodio';
 import {
   PacoteInvalidoError,
@@ -89,6 +90,8 @@ export class PacoteService {
     private readonly vozes: VozService,
     private readonly storage: StorageService,
     private readonly episodios: EpisodioService,
+    /** MK1: a marca e os pilares, ao lado da voz no mesmo prompt. */
+    private readonly marcas: MarcaService,
   ) {}
 
   private async ler(orgId: string, id: string): Promise<LinhaDoPacote> {
@@ -133,7 +136,7 @@ export class PacoteService {
     const itens = itensMantidos(e.rodada.itens);
     const duracaoSeg = this.duracao(e);
     const saida = await this.llm.complete({
-      system: systemDoPacote(await this.vozes.bloco(orgId)),
+      system: systemDoPacote(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId)),
       user: entradaDoPacote({ apelido, titulo: e.titulo, itens, segmentos, duracaoSeg }),
       // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,

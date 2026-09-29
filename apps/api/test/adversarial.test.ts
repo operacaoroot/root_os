@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { Logger } from '@nestjs/common';
 import {
   ActorType,
@@ -572,14 +572,26 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
      *                       RESULTADO DE FERRAMENTA executado, que é a porta
      *                       que o próprio modelo abre.
      */
+    /*
+     * O QUARTO, 28/09/2026 (MK2, concorrentes com números):
+     *   · concorrentes-da-pauta — a LEGENDA RASPADA de um perfil de terceiro no
+     *     pedido do dossiê. É texto que chega do Apify sem passar por olho
+     *     humano, escrito por quem não trabalha aqui: dado, nunca ordem. O
+     *     número de cada post fica FORA da cerca de propósito — ele é nosso,
+     *     calculado da captura, e cercá-lo junto mandaria o modelo duvidar do
+     *     único dado confiável do pedido.
+     */
     const ESPERADO: Record<string, number> = {
       'src/agents/context-builder.service.ts': 1,
       'src/agents/agent-runtime.service.ts': 2,
+      'src/pauta/concorrentes-da-pauta.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};
     for (const c of chamadasDeBlocoExterno()) {
-      const rel = c.arquivo.slice(RAIZ_DA_API.length + 1);
+      // Barra, sempre: no Windows o `join` devolve `\`, e o inventário passaria
+      // a não casar por causa do separador, não por causa de uma cerca nova.
+      const rel = c.arquivo.slice(RAIZ_DA_API.length + 1).split(sep).join('/');
       porArquivo[rel] = (porArquivo[rel] ?? 0) + 1;
     }
 
