@@ -6,10 +6,13 @@ import { AbaCaptura } from './AbaCaptura';
 import { AbaFila } from './AbaFila';
 import { AbaAcervo } from './AbaAcervo';
 import { AbaRadar } from './AbaRadar';
+import { AbaConcorrentes } from './AbaConcorrentes';
 
-// Página de coleta de referência (docs/PAUTA.md §6). Quatro abas, uma
+// Página de coleta de referência (docs/PAUTA.md §6). Cinco abas, uma
 // responsabilidade cada: capturar cru → virar ficha → consultar → automatizar.
-const ABAS = ['Captura', 'Fila', 'Acervo', 'Radar'] as const;
+// MK2: "Concorrentes" fica aqui, e não como tela solta, porque é o mesmo acervo
+// de perfis do Radar ganhando número — a fonte se cadastra e se coleta lá.
+const ABAS = ['Captura', 'Fila', 'Acervo', 'Radar', 'Concorrentes'] as const;
 type Aba = (typeof ABAS)[number];
 
 export default function ReferenciasPage() {
@@ -41,10 +44,11 @@ export default function ReferenciasPage() {
         </p>
       </div>
 
-      <div className="flex gap-4 border-b border-border">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 border-b border-border">
         {ABAS.map((a) => (
           <button
             key={a}
+            aria-pressed={aba === a}
             onClick={() => { setAba(a); window.history.replaceState(null, '', `#${a.toLowerCase()}`); }}
             className={`-mb-px border-b-2 px-1 pb-2 text-sm ${
               aba === a ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'
@@ -71,6 +75,9 @@ export default function ReferenciasPage() {
       )}
       {ready && aba === 'Acervo' && (
         <AbaAcervo token={token} editavel={editavel} onErro={setErro} bump={bump} onMudou={recarregar} />
+      )}
+      {ready && aba === 'Concorrentes' && (
+        <AbaConcorrentes token={token} editavel={editavel} onErro={setErro} bump={bump} />
       )}
       {ready && aba === 'Radar' && (
         <AbaRadar token={token} editavel={editavel} onErro={setErro} bump={bump} onMudou={recarregar} />

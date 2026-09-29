@@ -246,6 +246,16 @@ revisão e o que falta em `docs/ESTADO-DA-EXECUCAO.md` §1, "Fatia MC16".
 `docs/especificacoes/MC18-dm-por-palavra-chave.md`. Nenhum código; as decisões D-MC9.1 a D-MC9.10
 estão lá, com recomendação, e as fatias MC18.0 a MC18.5 com o "pronto quando" de cada uma.
 
+**MK0, 28/09/2026 (só especificação) — abre a frente MK:** o módulo de marketing do ROOT OS em
+[`docs/especificacoes/MK-modulo-de-marketing.md`](especificacoes/MK-modulo-de-marketing.md) — o
+inventário do app do Lucas (cada tela e cada dado: já existe no OS, entra, ou fica de fora), o mapa
+da nova navegação e os três pontos que ficam em aberto para o MK7. Nenhum código. A frente MK não
+substitui a máquina de conteúdo: encaixa nela (ideia aprovada vira `PautaPeca` na mesma agenda e na
+mesma aprovação da semana; a marca entra nos prompts ao lado da voz). Passagem do Pedro em
+`docs/especificacoes/HANDOFF-MK-modulo-de-marketing.md`; fatias MK1 a MK7 na branch
+`root-os/marketing-interno`. **Nada do OS é apagado sem a lista de telas repetidas aprovada pelo
+Pedro** (entrega do MK7).
+
 **Onda MC-C, concluída em 24/09/2026 — fecha a frente:** MC-R (`edb44ac`), MC15 (`c2b6190`),
 MC16 (`4b8b538`) e MC18 (`1ac517c`, só especificação), a correção final da revisão da branch (15
 commits, de `3449d39` a `168ca2c`) e o conserto do fechamento (`ab3e5bc`). Conferida de ponta a

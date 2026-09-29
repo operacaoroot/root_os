@@ -56,6 +56,7 @@ import type { PrismaService } from '../src/prisma/prisma.service';
 import type { EvolutionService } from '../src/pauta/evolution.service';
 import type { ClickupService } from '../src/integrations/clickup.service';
 import type { MemoriaService } from '../src/memory/memoria.service';
+import { semMarca } from './marca-de-teste';
 
 /*
  * MC-R — os três consertos de robustez achados nas ondas A e B:
@@ -294,7 +295,7 @@ describe('MC-R 1: a regra única do link público', () => {
     } as unknown as PrismaService;
     const memoria = { porChave: async () => null } as unknown as MemoriaService;
     const vozes = new VozService(prisma, new AuditService(prisma), llm, memoria);
-    await new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozes).derivar(ORG, 'r1', PESSOA);
+    await new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozes, semMarca).derivar(ORG, 'r1', PESSOA);
     expect(chamadas).toHaveLength(1);
     semGmail(chamadas[0].user);
     expect(chamadas[0].maxTokens).toBe(SAIDA_DA_GERACAO_LONGA);

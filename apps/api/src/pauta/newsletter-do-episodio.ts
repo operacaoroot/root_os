@@ -69,8 +69,9 @@ Regras:
   texto de IA: comece pelo que aconteceu.`;
 
 /** O prompt da newsletter com o bloco de voz da empresa (MC10). */
-export function systemDaNewsletter(voz: string): string {
-  return `${SYSTEM_NEWSLETTER_BASE}\n\n${voz.trim()}`;
+/** A marca (MK1) antes da voz (MC10), como no roteiro. Marca vazia não muda nada. */
+export function systemDaNewsletter(voz: string, marca = ''): string {
+  return [SYSTEM_NEWSLETTER_BASE, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 function umaLinha(v: unknown, teto: number): string {

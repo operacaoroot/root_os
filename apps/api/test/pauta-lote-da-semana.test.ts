@@ -59,6 +59,7 @@ import type { ContaParaPublicar } from '../src/pauta/publicacao-instagram';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { semMarca } from './marca-de-teste';
 
 /*
  * MD8 — APROVAR A SEMANA NUM PONTO SÓ.
@@ -478,7 +479,7 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
     rotinas = new RotinaService(p, audit, {} as never, lotes);
     const episodios = new EpisodioService(p, audit);
     const storage = { put: async () => undefined } as never;
-    derivacao = new DerivacaoService(p, audit, {} as never, {} as never, storage, episodios, lotes);
+    derivacao = new DerivacaoService(p, audit, {} as never, {} as never, storage, episodios, semMarca, lotes);
     agenda = new AgendaService(p, audit, memoria, episodios, lotes);
   });
 

@@ -40,6 +40,7 @@ import {
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { VozService } from './voz.service';
+import { MarcaService } from './marca.service';
 import { ehNewsletterDaTranscricao } from './newsletter-do-episodio';
 import { ehPecaDaSemana } from './derivacao-do-episodio';
 import { umaPorVez } from './uma-por-vez';
@@ -114,8 +115,12 @@ Regras: português do Brasil, sem emoji, sem inventar dado. Se o repertório ind
 anti-padrão, respeite-o explicitamente.`;
 
 /** As peças com o bloco de voz (MC10). Sem perfil o bloco vem vazio e o prompt é o de antes. */
-export function systemDasPecas(voz: string): string {
-  return voz.trim() ? `${SYSTEM_PECAS}\n\n${voz.trim()}` : SYSTEM_PECAS;
+/**
+ * Como no roteiro: a marca (MK1) antes da voz (MC10). Sem marca e sem voz, o
+ * `SYSTEM_PECAS` de antes, sem nenhuma linha a mais.
+ */
+export function systemDasPecas(voz: string, marca = ''): string {
+  return [SYSTEM_PECAS, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 interface ItemCurado {
@@ -146,6 +151,7 @@ export class RodadaService {
     private readonly coleta: ColetaService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly vozes: VozService,
+    private readonly marcas: MarcaService,
   ) {}
 
   // ---------- coleta do insumo ----------
@@ -615,7 +621,7 @@ export class RodadaService {
       : '(acervo sem fichas campeãs — escreva no tom direto da ROOT)';
 
     const saida = await this.llm.complete({
-      system: systemDasPecas(await this.vozes.bloco(orgId, '')),
+      system: systemDasPecas(await this.vozes.bloco(orgId, ''), await this.marcas.bloco(orgId)),
       user: entradaDasPecas({ titulo: rodada.titulo, corpo: rodada.corpo, itens: rodada.itens, repertorio }),
       maxTokens: SAIDA_DA_GERACAO_LONGA,
       // De quem é o gasto (RF-G-05). Ver o comentário em `gerar`.

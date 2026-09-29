@@ -173,7 +173,7 @@ describe('não se perdeu funcionalidade', () => {
 });
 
 describe('NAV — estrutura', () => {
-  it('mantém o inventário completo das 33 rotas atuais', () => {
+  it('preserva as 33 rotas e acrescenta somente os seis destinos da frente MK', () => {
     const hrefsEsperados = new Set([
       '/caixa', '/atendimento', '/agenda', '/painel',
       '/contexto', '/organograma',
@@ -186,8 +186,10 @@ describe('NAV — estrutura', () => {
       '/linha-do-tempo', '/assinatura', '/config',
     ]);
     expect(hrefsEsperados.size).toBe(33);
-    expect(NAV).toHaveLength(33);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(hrefsEsperados);
+    const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
+      '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
+    expect(NAV).toHaveLength(39);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK]));
   });
 
   it('não repete chave nem rota', () => {
@@ -219,6 +221,8 @@ describe('NAV — estrutura', () => {
       ['instagram', 'instagram'], ['bio', 'bio'], ['leads', 'leads'],
       ['funil', 'leads'], ['campanhas', 'campanhas'], ['pixels', 'pixels'],
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
+      ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
+      ['marketing-estrategia', 'pauta'], ['marketing-performance', 'pauta'], ['marketing-relatorio', 'pauta'],
     ]);
     for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
@@ -380,5 +384,75 @@ describe('navEmArvore', () => {
       expect(pai!.secao, `'${n.key}' e o pai dele estão em seções diferentes`).toBe(n.secao);
       expect(pai!.pai, `menu é de dois níveis: '${n.pai}' não pode ser filho`).toBeUndefined();
     }
+  });
+});
+
+/*
+ * O BLOCO MARKETING (MK7, frente MK).
+ *
+ * A decisão do Pedro de 28/09/2026 manda o bloco seguir a organização do app do
+ * Lucas. O que esta suíte guarda não é a aparência do menu — é o desenho que a
+ * decisão fixou, e que se perde calado numa refatoração: o bloco fica em
+ * Conteúdo, a marca fica em Empresa, e a agenda do mês não vira item
+ * próprio porque a aba Semana da Pauta já é a agenda.
+ */
+describe('o bloco Marketing (MK7)', () => {
+  const item = (k: string) => NAV.find((n) => n.key === k);
+
+  it('o bloco vive em Conteúdo, governado pelo módulo pauta', () => {
+    const m = item('marketing');
+    expect(m).toBeDefined();
+    expect(m!.href).toBe('/marketing');
+    expect(m!.secao).toBe('conteudo');
+    expect(m!.modulo).toBe('pauta');
+    expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
+  });
+
+  it('os quatro itens do bloco penduram nele', () => {
+    for (const k of ['marketing-ideias', 'marketing-estrategia', 'marketing-performance', 'marketing-relatorio']) {
+      const n = item(k);
+      expect(n, `${k} sumiu do menu`).toBeDefined();
+      expect(n!.pai).toBe('marketing');
+      expect(n!.permission).toBe('pauta.ver');
+    }
+  });
+
+  it('a MARCA não mora no bloco: ela é contexto da empresa', () => {
+    const marca = item('marca');
+    expect(marca).toBeDefined();
+    expect(marca!.pai, 'marca dentro de Marketing a esconde de quem escreve').toBe('contexto');
+    expect(marca!.secao).toBe('empresa');
+    expect(marca!.modulo).toBe('pauta');
+    // A permissão é a da rota da API, e não a do Contexto: quem abre a tela
+    // precisa poder ler a pauta, senão vê um erro em vez do conteúdo.
+    expect(marca!.permission).toBe('pauta.ver');
+  });
+
+  it('a agenda do mês NÃO vira item próprio: a aba Semana da Pauta já é a agenda', () => {
+    const agendaDoBloco = NAV.filter((n) => n.pai === 'marketing').find((n) => /agenda/i.test(n.label));
+    expect(agendaDoBloco, 'duplicar a agenda cria a segunda verdade que a decisão manda evitar').toBeUndefined();
+    expect(item('pauta')!.href).toBe('/pauta');
+  });
+
+  it('quem enxerga a Pauta enxerga o bloco inteiro, e sem o módulo nada aparece', () => {
+    const perms = new Set(['pauta.ver']);
+    const comModulo = navEmArvore(perms, ['pauta']);
+    const conteudo = comModulo.find((g) => g.secao.key === 'conteudo');
+    const bloco = conteudo?.itens.find((i) => i.item.key === 'marketing');
+    expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
+    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
+      'marketing-estrategia',
+      'marketing-ideias',
+      'marketing-performance',
+      'marketing-relatorio',
+    ]);
+
+    // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
+    // importa é que o bloco não aparece por nenhum caminho.
+    const semModulo = navEmArvore(perms, []);
+    const todosSemModulo = semModulo.flatMap((g) => g.itens.map((i) => i.item.key));
+    expect(todosSemModulo).not.toContain('marketing');
+    expect(todosSemModulo).not.toContain('marketing-estrategia');
+    expect(todosSemModulo).not.toContain('marca');
   });
 });

@@ -23,6 +23,7 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { EpisodioService } from './episodio.service';
 import { VozService } from './voz.service';
+import { MarcaService } from './marca.service';
 import { lerTranscricao } from './episodio';
 import {
   NewsletterInvalidaError,
@@ -77,6 +78,8 @@ export class NewsletterService {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly vozes: VozService,
     private readonly episodios: EpisodioService,
+    /** MK1: a marca e os pilares, ao lado da voz no mesmo prompt. */
+    private readonly marcas: MarcaService,
   ) {}
 
   /** As newsletters da transcrição ainda valendo (não descartadas), da mais nova para a mais velha. */
@@ -160,7 +163,7 @@ export class NewsletterService {
     }
 
     const ctx = { tituloDoEpisodio: e.titulo, itens: e.itens, segmentos: e.transcricao };
-    const system = systemDaNewsletter(await this.vozes.bloco(orgId));
+    const system = systemDaNewsletter(await this.vozes.bloco(orgId), await this.marcas.bloco(orgId));
     const user = entradaDaNewsletter({ apelido: e.apelido, titulo: e.titulo, itens: e.itens, segmentos: e.transcricao });
     // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
     const primeira = await this.llm.complete({ system, user, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });

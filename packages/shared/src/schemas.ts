@@ -2664,6 +2664,438 @@ export interface PautaVozAprendida extends PautaVozPainel {
   material: { fontes: number; caracteres: number; cortado: boolean };
 }
 
+// ---------- Pauta: a marca e os pilares (MK1) ----------
+// A voz (MC10) diz COMO a casa fala. A marca diz QUEM ela é e sobre O QUE fala:
+// quem somos, como falamos, o que queremos, o que rejeitamos, público e
+// diretrizes; e os pilares, que são os assuntos que se repetem.
+//
+// As duas são NOTA DA MEMÓRIA, como a voz e como a grade da semana
+// (`pauta.semana.grade`): escrita só por `MemoriaService` (caminho da ADR-011,
+// com evento no RASTRO e versão), leitura por `porChave`. Nenhuma tabela nova —
+// isto é configuração que uma pessoa edita e lê, não registro que o sistema
+// acumula. E, como a voz, o corpo é CONTEÚDO EXTERNO: passa por
+// `neutralizarConteudoExterno` antes de chegar ao modelo.
+//
+// Os pilares moram em nota separada da marca de propósito: o perfil da marca é
+// prosa que muda devagar, e os pilares são uma lista que muda com a estratégia
+// do mês (MK4). Juntá-los faria uma edição de rotina reescrever a outra.
+
+/** O perfil da marca: prosa em seções fixas. */
+export const PAUTA_CHAVE_DA_MARCA = 'pauta.marca';
+/** Os pilares: uma linha por pilar. */
+export const PAUTA_CHAVE_DOS_PILARES = 'pauta.marca.pilares';
+
+/** As seções do perfil, na ordem em que o prompt as recebe. */
+export const PAUTA_SECOES_DA_MARCA = [
+  'Quem somos',
+  'Como falamos',
+  'O que queremos',
+  'O que rejeitamos',
+  'Público',
+  'Diretrizes',
+] as const;
+export type PautaSecaoDaMarca = (typeof PAUTA_SECOES_DA_MARCA)[number];
+
+/** Teto do que entra no prompt: a marca é instrução curta, não manual. */
+export const PAUTA_TETO_DO_PERFIL_DA_MARCA = 4_000;
+/** Abaixo disso não é perfil de marca, é um lembrete. */
+export const PAUTA_PISO_DO_PERFIL_DA_MARCA = 80;
+/** Mais que isto não é pilar, é lista de assuntos: o prompt perde o foco. */
+export const PAUTA_TETO_DE_PILARES = 8;
+export const PAUTA_TETO_DO_NOME_DO_PILAR = 40;
+export const PAUTA_TETO_DA_DESCRICAO_DO_PILAR = 240;
+/** A nota inteira, com folga para oito linhas cheias e comentários. */
+export const PAUTA_TETO_DO_TEXTO_DOS_PILARES = 4_000;
+
+/**
+ * As cores que um pilar sem cor declarada recebe, na ordem. São as da marca
+ * ROOT (as mesmas do `:root` do app que virou o modelo desta frente), para a
+ * etiqueta do pilar sair igual no banco de ideias (MK3) e na performance (MK5).
+ */
+export const PAUTA_CORES_DOS_PILARES = [
+  '#9bdb1f',
+  '#ff1f6b',
+  '#1fffa8',
+  '#c4ff2e',
+  '#8aa48f',
+  '#e0a63a',
+  '#5a7344',
+  '#b8d4be',
+] as const;
+
+export interface PautaPilar {
+  /** Como a pessoa escreveu. */
+  nome: string;
+  /** Estável, sem acento e sem caixa: é o que casa pilar de post com pilar da lista. */
+  chave: string;
+  /** `#rrggbb`, sempre em minúscula. */
+  cor: string;
+  descricao: string;
+}
+
+/** A chave estável de um pilar. Acento e caixa não podem criar um pilar novo. */
+export function chaveDoPilar(nome: string): string {
+  return semAcento(String(nome ?? ''))
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, PAUTA_TETO_DO_NOME_DO_PILAR);
+}
+
+const COR_DO_PILAR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** `#abc` vira `#aabbcc`: o resto do sistema compara e guarda uma forma só. */
+function corNormalizada(c: string): string | null {
+  const v = c.trim().toLowerCase();
+  if (!COR_DO_PILAR.test(v)) return null;
+  return v.length === 4 ? `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}` : v;
+}
+
+/**
+ * Lê os pilares da nota. Uma linha por pilar, `Nome | cor | descrição`; a cor e
+ * a descrição são opcionais e a cor sem elas vem da paleta, pela posição.
+ * Linha vazia e linha que começa com `//` são ignoradas (é nota que gente
+ * edita, e gente comenta).
+ *
+ * Nada aqui LANÇA: nota malfeita não pode derrubar a geração de um roteiro. O
+ * que não deu para ler vira aviso, e quem chama decide se mostra ou se cai no
+ * padrão — mesma escolha que `gradeDaNota` faz com a grade da semana.
+ */
+export function lerPilaresDoTexto(texto: string): { pilares: PautaPilar[]; avisos: string[] } {
+  const avisos: string[] = [];
+  const pilares: PautaPilar[] = [];
+  const vistos = new Set<string>();
+  const linhas = String(texto ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('//'));
+
+  for (const linha of linhas) {
+    if (pilares.length >= PAUTA_TETO_DE_PILARES) {
+      avisos.push(`A lista passa de ${PAUTA_TETO_DE_PILARES} pilares: as linhas seguintes ficaram de fora.`);
+      break;
+    }
+    const [bruto = '', corBruta = '', ...resto] = linha.split('|');
+    const nome = bruto.trim().replace(/\s+/g, ' ').slice(0, PAUTA_TETO_DO_NOME_DO_PILAR);
+    if (!nome) {
+      avisos.push(`Uma linha começa sem nome de pilar e ficou de fora: "${linha.slice(0, 60)}".`);
+      continue;
+    }
+    const chave = chaveDoPilar(nome);
+    if (!chave) {
+      avisos.push(`O pilar "${nome}" não tem letra nem número no nome e ficou de fora.`);
+      continue;
+    }
+    if (vistos.has(chave)) {
+      avisos.push(`O pilar "${nome}" aparece mais de uma vez: vale a primeira linha.`);
+      continue;
+    }
+    // Sem "|" nenhum, a linha inteira é o nome — e aí não há cor nem descrição
+    // para ler. Com um "|" só, o segundo campo é cor se parecer cor, senão é a
+    // descrição: quem escreve "Bastidores | como a Root trabalha" quis descrever.
+    let cor = corNormalizada(corBruta);
+    let descricao = resto.join('|').trim();
+    if (!cor && corBruta.trim()) {
+      if (corBruta.trim().startsWith('#')) {
+        avisos.push(`A cor do pilar "${nome}" não é um código hexadecimal (ex.: #9bdb1f): vale a cor da paleta.`);
+      } else {
+        descricao = [corBruta.trim(), descricao].filter(Boolean).join(' ').trim();
+      }
+    }
+    cor = cor ?? PAUTA_CORES_DOS_PILARES[pilares.length % PAUTA_CORES_DOS_PILARES.length];
+    vistos.add(chave);
+    pilares.push({
+      nome,
+      chave,
+      cor,
+      descricao: descricao.replace(/\s+/g, ' ').slice(0, PAUTA_TETO_DA_DESCRICAO_DO_PILAR),
+    });
+  }
+  return { pilares, avisos };
+}
+
+/** `PUT /pauta/marca`: o perfil escrito à mão, com a versão de onde a aba partiu. */
+export const PautaMarcaSalvarSchema = z.object({
+  perfil: z
+    .string()
+    .trim()
+    .min(PAUTA_PISO_DO_PERFIL_DA_MARCA, `O perfil da marca precisa de pelo menos ${PAUTA_PISO_DO_PERFIL_DA_MARCA} caracteres.`)
+    .max(PAUTA_TETO_DO_PERFIL_DA_MARCA, `O perfil da marca tem no máximo ${PAUTA_TETO_DO_PERFIL_DA_MARCA} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaMarcaSalvarInput = z.infer<typeof PautaMarcaSalvarSchema>;
+
+/** `PUT /pauta/marca/pilares`: a nota dos pilares como a pessoa a escreveu. */
+export const PautaPilaresSalvarSchema = z.object({
+  pilares: z
+    .string()
+    .trim()
+    .max(PAUTA_TETO_DO_TEXTO_DOS_PILARES, `A lista de pilares tem no máximo ${PAUTA_TETO_DO_TEXTO_DOS_PILARES} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaPilaresSalvarInput = z.infer<typeof PautaPilaresSalvarSchema>;
+
+export interface PautaMarcaPainel {
+  perfil: string | null;
+  perfilVersao: number | null;
+  perfilAtualizadoEm: string | null;
+  /** O texto cru da nota, que é o que a aba edita. */
+  pilaresTexto: string;
+  pilaresVersao: number | null;
+  pilares: PautaPilar[];
+  /** O que a leitura da nota não entendeu. Vazio quando está tudo lido. */
+  avisos: string[];
+  /** O que os prompts da pauta recebem agora — a prova visível do ponto único. */
+  bloco: string;
+}
+
+// ---------- Pauta: concorrentes com números (MK2) ----------
+// O acervo de referências (`/referencias`) diz o que um perfil publica. O que
+// faltava é o NÚMERO: qual post daquele perfil rendeu, e quanto.
+//
+// A régua é a MEDIANA DO PRÓPRIO PERFIL, nunca um número absoluto nem a
+// comparação entre perfis. Um perfil de 500 mil seguidores e um de 5 mil não se
+// comparam por visualização; o que se compara é cada post contra o que aquele
+// perfil costuma fazer. Mediana e não média porque um viral só move a média e
+// esconde o resto — é justamente o post que se quer achar.
+//
+// Estas contas moram no shared porque a tela mostra o mesmo índice que a API
+// calcula, e duas contas em dois lugares viram dois números.
+
+export interface PautaMetricasDoPost {
+  visualizacoes: number | null;
+  curtidas: number | null;
+  comentarios: number | null;
+  compartilhamentos: number | null;
+  duracaoSeg: number | null;
+}
+
+/** As métricas que ganham mediana e índice. Duração descreve, não mede alcance. */
+export const PAUTA_METRICAS_DO_CONCORRENTE = ['visualizacoes', 'curtidas', 'comentarios', 'compartilhamentos'] as const;
+export type PautaMetricaDoConcorrente = (typeof PAUTA_METRICAS_DO_CONCORRENTE)[number];
+
+/**
+ * Abaixo disto a mediana não diz nada: com três posts, o índice é ruído com
+ * cara de medida. A análise devolve o índice nulo e a tela diz que falta post.
+ */
+export const PAUTA_PISO_DE_POSTS_DO_INDICE = 5;
+
+/** A partir daqui o post estourou para o tamanho daquele perfil. */
+export const PAUTA_INDICE_ESTOUROU = 2;
+export const PAUTA_INDICE_ACIMA = 1.2;
+export const PAUTA_INDICE_ABAIXO = 0.5;
+
+export type PautaFaixaDoIndice = 'estourou' | 'acima' | 'na-media' | 'abaixo';
+
+/** A mediana, ignorando o que não é número. Nulo quando não sobrou nada. */
+export function medianaDe(ns: ReadonlyArray<number | null | undefined>): number | null {
+  const v = ns.filter((n): n is number => typeof n === 'number' && Number.isFinite(n)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const meio = Math.floor(v.length / 2);
+  return v.length % 2 ? v[meio] : (v[meio - 1] + v[meio]) / 2;
+}
+
+/**
+ * Quantas vezes a mediana do próprio perfil o post fez. Mediana zero devolve
+ * nulo em vez de infinito: um perfil cuja mediana é zero não tem régua.
+ */
+export function indiceDoPost(valor: number | null | undefined, mediana: number | null): number | null {
+  if (typeof valor !== 'number' || !Number.isFinite(valor)) return null;
+  if (mediana === null || mediana <= 0) return null;
+  return Math.round((valor / mediana) * 100) / 100;
+}
+
+export function faixaDoIndice(indice: number | null): PautaFaixaDoIndice | null {
+  if (indice === null) return null;
+  if (indice >= PAUTA_INDICE_ESTOUROU) return 'estourou';
+  if (indice >= PAUTA_INDICE_ACIMA) return 'acima';
+  if (indice < PAUTA_INDICE_ABAIXO) return 'abaixo';
+  return 'na-media';
+}
+
+/** Quantos posts do perfil vão ao modelo no dossiê. O prompt lê recorte, não acervo. */
+export const PAUTA_TETO_DE_POSTS_DO_DOSSIE = 20;
+export const PAUTA_TETO_DA_LEGENDA_NO_DOSSIE = 600;
+
+export interface PautaPostDeConcorrente {
+  capturaId: string;
+  url: string;
+  titulo: string;
+  legenda: string;
+  publicadoEm: string | null;
+  metricas: PautaMetricasDoPost;
+  /** Por métrica, quantas vezes a mediana do perfil. Nulo onde não deu para medir. */
+  indices: Record<PautaMetricaDoConcorrente, number | null>;
+  /** A faixa da métrica de referência do perfil (visualizações, ou curtidas quando não há). */
+  faixa: PautaFaixaDoIndice | null;
+}
+
+export interface PautaAnaliseDoConcorrente {
+  fonteId: string;
+  plataforma: string;
+  handle: string;
+  posts: PautaPostDeConcorrente[];
+  medianas: Record<PautaMetricaDoConcorrente, number | null>;
+  /** A métrica pela qual o perfil foi medido; nula quando nenhuma tinha número. */
+  metricaDeReferencia: PautaMetricaDoConcorrente | null;
+  /** Quantos posts entraram na conta, e se deu para medir. */
+  postsContados: number;
+  medivel: boolean;
+  /** O que a leitura não conseguiu: fonte sem post, sem métrica, poucos posts. */
+  avisos: string[];
+}
+
+export interface PautaDossieDoConcorrente {
+  oQueRende: string;
+  aberturas: string[];
+  assuntos: string[];
+  ctas: string[];
+  oQueAproveitar: string[];
+  geradoEm: string;
+  modelo: string;
+}
+
+// ---------- Pauta: a estratégia do mês (MK4) ----------
+// Um documento por mês: os pilares da vez, a cadência, as metas, as apostas e o
+// que parar. A IA propõe a partir do que a casa é (MK1), do que os concorrentes
+// fizeram (MK2) e do que foi publicado no mês anterior; uma pessoa edita.
+//
+// É NOTA DA MEMÓRIA, uma por mês (`pauta.estrategia.2026-09`), pelo mesmo
+// caminho da voz e da marca. Um mês é um documento que alguém escreve e revisa,
+// não registro que o sistema acumula — e a nota já dá versão, histórico e
+// RASTRO. A chave leva o mês porque o histórico da nota guarda as VERSÕES
+// daquele mês; misturar meses na mesma nota perderia o de antes.
+
+export const PAUTA_PREFIXO_DA_ESTRATEGIA = 'pauta.estrategia.';
+
+/** `AAAA-MM`. O mês é a identidade do documento. */
+export const PautaMesSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'O mês é AAAA-MM (ex.: 2026-09).');
+
+export function chaveDaEstrategia(mes: string): string {
+  return `${PAUTA_PREFIXO_DA_ESTRATEGIA}${mes}`;
+}
+
+/** O mês de uma chave de estratégia, ou nulo quando a chave não é de uma. */
+export function mesDaChaveDaEstrategia(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DA_ESTRATEGIA)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DA_ESTRATEGIA.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+/** As seções do documento, na ordem em que são escritas e lidas. */
+export const PAUTA_SECOES_DA_ESTRATEGIA = [
+  'Pilares da vez',
+  'Cadência',
+  'Metas',
+  'Apostas',
+  'O que parar',
+] as const;
+
+export const PAUTA_TETO_DA_ESTRATEGIA = 6_000;
+export const PAUTA_TETO_DE_ITENS_DA_ESTRATEGIA = 6;
+
+export interface PautaEstrategiaDaIa {
+  pilaresDaVez: string[];
+  cadencia: string;
+  metas: string[];
+  apostas: string[];
+  oQueParar: string[];
+}
+
+export interface PautaEstrategiaDoMes {
+  mes: string;
+  /** O markdown, que é o que a pessoa edita. */
+  documento: string;
+  versao: number | null;
+  atualizadoEm: string | null;
+  /** `operador` quando alguém escreveu à mão, `promocao` quando veio da IA. */
+  origem: string | null;
+}
+
+export interface PautaEstrategiaPainel extends PautaEstrategiaDoMes {
+  /** Os meses que já têm documento, do mais novo para o mais velho. */
+  meses: string[];
+  /** O que faltou para a IA propor (sem marca, sem pilar, sem mês publicado). */
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+/** `PUT /pauta/estrategia/:mes`. */
+export const PautaEstrategiaSalvarSchema = z.object({
+  documento: z
+    .string()
+    .trim()
+    .min(1, 'A estratégia do mês não pode ficar vazia.')
+    .max(PAUTA_TETO_DA_ESTRATEGIA, `A estratégia tem no máximo ${PAUTA_TETO_DA_ESTRATEGIA} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaEstrategiaSalvarInput = z.infer<typeof PautaEstrategiaSalvarSchema>;
+
+// ---------- Pauta: o relatório do mês (MK6) ----------
+// O fechamento de um mês em markdown: o que foi ao ar, o que foi decidido, como
+// rendeu, o que vem e a estratégia que valia. Nota da memória por mês, como a
+// estratégia (MK4) — mesmo motivo e mesmo caminho da ADR-011.
+//
+// OS NÚMEROS SÃO DO SISTEMA, A NARRATIVA É DA IA. O que foi ao ar sai da
+// consulta, não do modelo: relatório é prestação de contas, e número escrito
+// por modelo é número que ninguém pode conferir.
+
+export const PAUTA_PREFIXO_DO_RELATORIO = 'pauta.relatorio.';
+
+export function chaveDoRelatorio(mes: string): string {
+  return `${PAUTA_PREFIXO_DO_RELATORIO}${mes}`;
+}
+
+export function mesDaChaveDoRelatorio(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DO_RELATORIO)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DO_RELATORIO.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+export const PAUTA_SECOES_DO_RELATORIO = [
+  'O que foi ao ar',
+  'O que decidimos',
+  'Como rendeu',
+  'Próximos passos',
+  'A estratégia que valia',
+] as const;
+
+export const PAUTA_TETO_DO_RELATORIO = 12_000;
+
+export interface PautaRelatorioDaIa {
+  /** A leitura do mês em 2 a 4 frases. */
+  leitura: string;
+  decisoes: string[];
+  proximosPassos: string[];
+}
+
+export interface PautaRelatorioPainel {
+  mes: string;
+  documento: string;
+  versao: number | null;
+  atualizadoEm: string | null;
+  origem: string | null;
+  meses: string[];
+  /** Quantas peças o mês publicou — o número que o relatório presta contas. */
+  publicadas: number;
+  /** O que faltou para o relatório ficar completo (performance, estratégia). */
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+/** `PUT /pauta/relatorio/:mes`. */
+export const PautaRelatorioSalvarSchema = z.object({
+  documento: z
+    .string()
+    .trim()
+    .min(1, 'O relatório não pode ficar vazio.')
+    .max(PAUTA_TETO_DO_RELATORIO, `O relatório tem no máximo ${PAUTA_TETO_DO_RELATORIO} caracteres.`),
+  versao: z.number().int().positive().optional(),
+});
+export type PautaRelatorioSalvarInput = z.infer<typeof PautaRelatorioSalvarSchema>;
+
 // ---------- Pauta: a newsletter do episódio (MC13) ----------
 // A newsletter sai do que foi DITO no vídeo (a transcrição), não de um texto
 // novo: uma seção por matéria com o link da matéria, e o fechamento chamando
@@ -5142,4 +5574,214 @@ export interface CaixaContador {
   tarefas: number;
   /** Quando esta contagem foi medida. O selo da casca não mente sobre isso. */
   medidoEm: string;
+}
+
+// ---------- Pauta: o banco de ideias (MK3) ----------
+// A máquina de conteúdo parte do que o mundo publicou. O banco parte do
+// contrário: do que a casa quer dizer. Ideia aprovada vira `PautaPeca` e cai na
+// MESMA agenda e na mesma aprovação da semana — quem posta não deveria ter dois
+// lugares para olhar.
+//
+// Os enums são espelho do schema do Prisma. Duas listas em dois lugares é como
+// a contagem de ferramentas do MCP passou anos dizendo 10 quando eram 35.
+
+export const PAUTA_IDEIA_STATUS = ['ideia', 'em_producao', 'aprovada', 'descartada'] as const;
+export type PautaIdeiaStatus = (typeof PAUTA_IDEIA_STATUS)[number];
+
+export const PAUTA_IDEIA_PRIORIDADES = ['baixa', 'media', 'alta'] as const;
+export type PautaIdeiaPrioridade = (typeof PAUTA_IDEIA_PRIORIDADES)[number];
+
+/**
+ * O que cada status alcança. A ideia anda para frente e volta para trás um
+ * passo, como o episódio (`transicaoDoEpisodio`) — e `descartada` é alcançável
+ * de qualquer lugar, porque desistir de uma ideia nunca precisa de cerimônia.
+ *
+ * `aprovada` é o fim da linha AQUI: dali em diante quem manda é a peça, e o
+ * status dela é que diz se foi ao ar. Deixar a ideia voltar de `aprovada`
+ * deixaria dois donos para a mesma verdade.
+ */
+const DE_PARA_DA_IDEIA: Record<PautaIdeiaStatus, readonly PautaIdeiaStatus[]> = {
+  ideia: ['em_producao', 'descartada'],
+  em_producao: ['ideia', 'aprovada', 'descartada'],
+  aprovada: [],
+  descartada: ['ideia'],
+};
+
+export function transicaoDaIdeia(de: PautaIdeiaStatus, para: PautaIdeiaStatus): boolean {
+  return DE_PARA_DA_IDEIA[de].includes(para);
+}
+
+/** Por que a ideia não pode virar peça ainda, ou nulo quando pode. */
+export function motivoParaNaoAprovarIdeia(i: {
+  status: PautaIdeiaStatus;
+  titulo: string;
+  legenda: string;
+  formato: string;
+}): string | null {
+  if (i.status === 'aprovada') return 'Esta ideia já virou peça.';
+  if (i.status === 'descartada') return 'Ideia descartada: reabra antes de aprovar.';
+  if (!i.titulo.trim()) return 'A ideia precisa de título.';
+  // A peça vai para a agenda e alguém vai postar a partir dela: sem legenda,
+  // aprovar só empurra o trabalho para a hora do post, que é a pior hora.
+  if (!i.legenda.trim()) return 'A ideia precisa de legenda antes de virar peça — é ela que vai ao ar.';
+  if (!(PAUTA_FORMATOS_DA_SEMANA as readonly string[]).includes(i.formato)) {
+    return `Formato inválido: a semana entende ${PAUTA_FORMATOS_DA_SEMANA.join(', ')}.`;
+  }
+  return null;
+}
+
+export const PAUTA_TETO_DO_TITULO_DA_IDEIA = 200;
+export const PAUTA_TETO_DO_TEXTO_DA_IDEIA = 6_000;
+/** Quantas ideias a IA propõe de uma vez. Mais que isto ninguém tria. */
+export const PAUTA_TETO_DE_IDEIAS_PROPOSTAS = 5;
+
+export interface PautaFonteDaIdeia {
+  rotulo: string;
+  url?: string;
+}
+
+export interface PautaIdeiaHist {
+  em: string;
+  de: PautaIdeiaStatus;
+  para: PautaIdeiaStatus;
+  por: string;
+}
+
+export interface PautaIdeiaNaLista {
+  id: string;
+  pilar: string;
+  titulo: string;
+  ganchoFala: string;
+  ganchoTela: string;
+  roteiro: string;
+  legenda: string;
+  cta: string;
+  porque: string;
+  fontes: PautaFonteDaIdeia[];
+  formato: string;
+  prioridade: PautaIdeiaPrioridade;
+  status: PautaIdeiaStatus;
+  hist: PautaIdeiaHist[];
+  pecaId: string | null;
+  origem: string;
+  criadaEm: string;
+  atualizadaEm: string;
+}
+
+export interface PautaIdeiasPainel {
+  ideias: PautaIdeiaNaLista[];
+  /** Os pilares da marca (MK1), para a tela oferecer e para a IA escolher. */
+  pilares: PautaPilar[];
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+const textoDaIdeia = (max = PAUTA_TETO_DO_TEXTO_DA_IDEIA) => z.string().trim().max(max).default('');
+
+/** `POST /pauta/ideias` e `PUT /pauta/ideias/:id`. */
+export const PautaIdeiaSalvarSchema = z.object({
+  pilar: z.string().trim().min(1, 'Escolha um pilar.').max(PAUTA_TETO_DO_NOME_DO_PILAR),
+  titulo: z.string().trim().min(1, 'A ideia precisa de título.').max(PAUTA_TETO_DO_TITULO_DA_IDEIA),
+  ganchoFala: textoDaIdeia(600),
+  ganchoTela: textoDaIdeia(300),
+  roteiro: textoDaIdeia(),
+  legenda: textoDaIdeia(),
+  cta: textoDaIdeia(300),
+  porque: textoDaIdeia(1_000),
+  fontes: z
+    .array(z.object({ rotulo: z.string().trim().min(1).max(200), url: z.string().trim().url().max(500).optional() }))
+    .max(10)
+    .default([]),
+  formato: z.enum(PAUTA_FORMATOS_DA_SEMANA),
+  prioridade: z.enum(PAUTA_IDEIA_PRIORIDADES).default('media'),
+});
+export type PautaIdeiaSalvarInput = z.infer<typeof PautaIdeiaSalvarSchema>;
+
+/** `PATCH /pauta/ideias/:id/status`. */
+export const PautaIdeiaStatusSchema = z.object({ status: z.enum(PAUTA_IDEIA_STATUS) });
+export type PautaIdeiaStatusInput = z.infer<typeof PautaIdeiaStatusSchema>;
+
+/** `POST /pauta/ideias/propor`: a IA propõe para um pilar. */
+export const PautaIdeiasProporSchema = z.object({
+  pilar: z.string().trim().min(1, 'Escolha um pilar.').max(PAUTA_TETO_DO_NOME_DO_PILAR),
+  formato: z.enum(PAUTA_FORMATOS_DA_SEMANA).default('carrossel'),
+  quantas: z.number().int().min(1).max(PAUTA_TETO_DE_IDEIAS_PROPOSTAS).default(3),
+});
+export type PautaIdeiasProporInput = z.infer<typeof PautaIdeiasProporSchema>;
+
+// ---------- Pauta: a performance da casa (MK5) ----------
+// A MK2 mede o perfil dos outros; esta mede o nosso, com a MESMA régua e as
+// mesmas funções: a mediana da própria casa e o índice de cada post contra ela.
+// Duas contas diferentes para "o que rendeu" dariam dois números para a mesma
+// pergunta — e o de dentro sempre pareceria melhor.
+//
+// O snapshot é do MÊS e é uma fotografia: os números da Graph mudam com o tempo
+// (um post velho continua somando visualização), e comparar meses exige que
+// cada mês guarde o que viu quando viu. Nota da memória por mês, como a
+// estratégia (MK4) e o relatório (MK6).
+
+export const PAUTA_PREFIXO_DA_PERFORMANCE = 'pauta.performance.';
+
+export function chaveDaPerformance(mes: string): string {
+  return `${PAUTA_PREFIXO_DA_PERFORMANCE}${mes}`;
+}
+
+export function mesDaChaveDaPerformance(chave: string): string | null {
+  if (!chave.startsWith(PAUTA_PREFIXO_DA_PERFORMANCE)) return null;
+  const mes = chave.slice(PAUTA_PREFIXO_DA_PERFORMANCE.length);
+  return PautaMesSchema.safeParse(mes).success ? mes : null;
+}
+
+/** As métricas dos NOSSOS posts. Salvamento entra aqui e não na MK2: é o que a casa persegue. */
+export const PAUTA_METRICAS_DA_CASA = [
+  'visualizacoes',
+  'curtidas',
+  'comentarios',
+  'salvamentos',
+  'compartilhamentos',
+] as const;
+export type PautaMetricaDaCasa = (typeof PAUTA_METRICAS_DA_CASA)[number];
+
+export interface PautaNumerosDoPost {
+  visualizacoes: number | null;
+  curtidas: number | null;
+  comentarios: number | null;
+  salvamentos: number | null;
+  compartilhamentos: number | null;
+}
+
+export interface PautaPostMedido {
+  pecaId: string;
+  titulo: string;
+  formato: string;
+  publicadaEm: string | null;
+  urlPublicada: string | null;
+  numeros: PautaNumerosDoPost;
+  indices: Record<PautaMetricaDaCasa, number | null>;
+  faixa: PautaFaixaDoIndice | null;
+  /** Por que este post ficou sem número, quando ficou. */
+  semNumero: string | null;
+}
+
+export interface PautaSnapshotDaPerformance {
+  mes: string;
+  /** Quando a fotografia foi tirada. É o que torna dois meses comparáveis. */
+  coletadoEm: string;
+  seguidores: number | null;
+  posts: PautaPostMedido[];
+  medianas: Record<PautaMetricaDaCasa, number | null>;
+  metricaDeReferencia: PautaMetricaDaCasa | null;
+  medidos: number;
+  publicados: number;
+  avisos: string[];
+}
+
+export interface PautaPerformancePainel {
+  mes: string;
+  snapshot: PautaSnapshotDaPerformance | null;
+  meses: string[];
+  /** Falso quando não há conta do Instagram conectada — a tela diz como conectar. */
+  conectado: boolean;
+  /** O que falta para medir, em português. Vazio quando dá para coletar. */
+  comoConectar: string | null;
 }

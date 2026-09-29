@@ -96,8 +96,9 @@ Regras:
 - Sem emoji. Frases curtas, para ler no celular.`;
 
 /** O prompt da derivação com o bloco de voz da empresa (MC10). */
-export function systemDaDerivacao(voz: string): string {
-  return `${SYSTEM_DERIVACAO_BASE}\n\n${voz.trim()}`;
+/** A marca (MK1) antes da voz (MC10), como no roteiro. Marca vazia não muda nada. */
+export function systemDaDerivacao(voz: string, marca = ''): string {
+  return [SYSTEM_DERIVACAO_BASE, marca.trim(), voz.trim()].filter(Boolean).join('\n\n');
 }
 
 function umaLinha(v: unknown, teto: number): string {
@@ -737,9 +738,33 @@ function lerCandidatos(v: unknown): CandidatoGravado[] | undefined {
 /** Esta peça é da semana de posts (deste episódio, quando dito). A derivação antiga não tem `episodioId`. */
 export function ehPecaDaSemana(meta: unknown, episodioId?: string): boolean {
   const m = objeto(meta);
-  if (!m || typeof m.episodioId !== 'string' || typeof m.itemId !== 'string') return false;
+  if (!m) return false;
   if (!(PAUTA_FORMATOS_DA_SEMANA as readonly unknown[]).includes(m.formato)) return false;
-  return episodioId === undefined || m.episodioId === episodioId;
+
+  // A peça derivada de um episódio (MC15): tem episódio e matéria.
+  if (typeof m.episodioId === 'string' && typeof m.itemId === 'string') {
+    return episodioId === undefined || m.episodioId === episodioId;
+  }
+
+  /*
+   * A peça nascida de uma IDEIA (MK3). Ela é peça da semana — vai ao mesmo
+   * slot, à mesma aprovação e ao mesmo "marcar como postada" — mas NÃO vem de
+   * episódio nenhum, e por isso nunca casa quando alguém pergunta pelas peças
+   * de um episódio. É o que impede a ideia de entrar, por engano, nas operações
+   * que varrem um episódio: mídia refeita, transcrição nova, distribuir slots.
+   *
+   * Pôr um `episodioId` falso na meta faria a peça aparecer aqui de graça — e
+   * envenenaria tudo que lê episódio depois. Por isso a ausência é explícita.
+   */
+  if (typeof m.ideiaId === 'string' && m.ideiaId) return episodioId === undefined;
+
+  return false;
+}
+
+/** A peça veio do banco de ideias (MK3), e não de um episódio. */
+export function ehPecaDeIdeia(meta: unknown): boolean {
+  const m = objeto(meta);
+  return Boolean(m && typeof m.ideiaId === 'string' && m.ideiaId && typeof m.episodioId !== 'string');
 }
 
 /** A meta gravada, com o que faltar preenchido. */

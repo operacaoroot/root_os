@@ -207,6 +207,56 @@ export async function midiasDesde(token: string, desde: Date, tetoPaginas = 20) 
   return posts
 }
 
+/**
+ * Os seguidores da conta (MK5). Número da CONTA, não do post — é o que muda de
+ * mês para mês e o que o snapshot guarda como linha de base.
+ */
+export async function seguidores(token: string): Promise<number | null> {
+  const p = new URLSearchParams({ fields: 'followers_count', access_token: token })
+  const r = await fetch(`${GRAPH()}/me?${p}`)
+  if (!r.ok) throw new Error(`seguidores falharam: ${r.status} ${await r.text()}`)
+  const d = (await r.json()) as { followers_count?: unknown }
+  return typeof d.followers_count === 'number' && Number.isFinite(d.followers_count) ? d.followers_count : null
+}
+
+/** O que a Graph devolve por post, já com os nossos nomes. */
+export type NumerosDaMidia = {
+  externalId: string
+  visualizacoes: number | null
+  curtidas: number | null
+  comentarios: number | null
+  salvamentos: number | null
+  compartilhamentos: number | null
+}
+
+const METRICAS_DA_MIDIA = ['views', 'likes', 'comments', 'saved', 'shares'] as const
+
+/**
+ * Os números de UM post (MK5). A Graph devolve `data: [{name, values:[{value}]}]`,
+ * e cada conta concede um subconjunto das métricas — a que não veio fica NULA em
+ * vez de zero. Zero e "não medido" são coisas diferentes: zero entra na mediana
+ * e a puxa para baixo; nulo fica de fora, que é o que a MK2 já decidiu.
+ */
+export async function insightsDaMidia(token: string, midiaId: string): Promise<NumerosDaMidia> {
+  const p = new URLSearchParams({ metric: METRICAS_DA_MIDIA.join(','), access_token: token })
+  const r = await fetch(`${GRAPH()}/${encodeURIComponent(midiaId)}/insights?${p}`)
+  if (!r.ok) throw new Error(`insights falharam: ${r.status} ${await r.text()}`)
+  const d = (await r.json()) as { data?: Array<{ name?: unknown; values?: Array<{ value?: unknown }> }> }
+  const achar = (nome: string): number | null => {
+    const linha = (d.data ?? []).find((x) => x.name === nome)
+    const v = linha?.values?.[0]?.value
+    return typeof v === 'number' && Number.isFinite(v) ? v : null
+  }
+  return {
+    externalId: midiaId,
+    visualizacoes: achar('views'),
+    curtidas: achar('likes'),
+    comentarios: achar('comments'),
+    salvamentos: achar('saved'),
+    compartilhamentos: achar('shares'),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Publicação (MD6): container → status → publish, na conta de publicação.
 // ---------------------------------------------------------------------------

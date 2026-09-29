@@ -25,6 +25,18 @@ import { MidiaController } from './midia.controller';
 import { MidiaService } from './midia.service';
 import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
+import { MarcaController } from './marca.controller';
+import { MarcaService } from './marca.service';
+import { ConcorrentesController } from './concorrentes.controller';
+import { ConcorrentesService } from './concorrentes.service';
+import { EstrategiaController } from './estrategia.controller';
+import { EstrategiaService } from './estrategia.service';
+import { RelatorioController } from './relatorio.controller';
+import { RelatorioService } from './relatorio.service';
+import { IdeiasController } from './ideias.controller';
+import { IdeiasService } from './ideias.service';
+import { PerformanceController } from './performance.controller';
+import { PerformanceService } from './performance.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -79,6 +91,12 @@ import { DmAutomaticaService } from './dm-automatica.service';
     EpisodioController,
     RoteiroController,
     VozController,
+    MarcaController,
+    ConcorrentesController,
+    EstrategiaController,
+    RelatorioController,
+    IdeiasController,
+    PerformanceController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -117,6 +135,18 @@ import { DmAutomaticaService } from './dm-automatica.service';
     MidiaService,
     // MC10: o perfil de voz do autor, que o roteiro e as peças recebem.
     VozService,
+    // MK1: a marca e os pilares, que o roteiro e as peças recebem ao lado da voz.
+    MarcaService,
+    // MK2: a mediana e o índice dos perfis raspados, e o dossiê por IA.
+    ConcorrentesService,
+    // MK4: o documento do mês, proposto pela IA e editado por gente.
+    EstrategiaService,
+    // MK6: o fechamento do mês — número do sistema, narrativa da IA.
+    RelatorioService,
+    // MK3: o banco de ideias; a aprovada vira peça da semana, sem rodada.
+    IdeiasService,
+    // MK5: o snapshot do mês — a Graph pela porta, a régua da MK2.
+    PerformanceService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.
@@ -146,6 +176,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // whatsapp.mensagem.enviar ao envio real. EncadeamentoService e
   // PublicacaoInstagramService e ComentariosService, para os executores das
   // rotinas (RoutinesModule).
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService],
+  // MK6: `RelatorioService` sai daqui porque o executor da rotina mensal vive
+  // no RoutinesModule, como o da coleta já fazia com o RodadaService.
+  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
 })
 export class PautaModule {}

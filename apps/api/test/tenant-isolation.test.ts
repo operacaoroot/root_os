@@ -380,6 +380,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'PautaRotina', escopo: 'tenant', chaveSql: '"id"', nota: 'Cron rodado pelo scheduler FORA do request HTTP — não terá app.org_id setado.' },
   { tabela: 'PautaRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'Mesma ressalva de execução por scheduler.' },
   { tabela: 'PautaPeca', escopo: 'tenant', chaveSql: '"id"', nota: 'orgId precisa bater com o da rodada-mãe.' },
+  { tabela: 'PautaIdeia', escopo: 'tenant', chaveSql: '"id"', nota: 'O banco de ideias (MK3): título, gancho de fala e de tela, roteiro, legenda e o porquê do que a casa ainda NÃO publicou. Ler a da outra empresa é ler a pauta dela antes de ela ir ao ar — e o gancho é justamente a parte que se copia. É raiz da empresa, não filha: a ideia não pende de rodada nem de episódio, e o orgId dela vem do insert.' },
   { tabela: 'PautaPublicacao', escopo: 'filho', chaveSql: '"id"', nota: 'A publicação da peça no Instagram pelo OS (MD6): o estado, os containers na Meta, o id e o permalink do post. Ler a da outra é saber o que ela vai postar e quando; escrever `estado` é destravar ou derrubar a publicação alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'ComentarioComPalavra', escopo: 'filho', chaveSql: '"id"', nota: 'Quem comentou a palavra-chave num post da semana (MD9): o @ por 7 dias, o HMAC da pessoa e se a DM já foi respondida. Ler a da outra é saber quem pediu o link a ela; escrever `respondidoEm` é sumir com a fila alheia. Filha da peça, com a empresa conferida pelo gatilho.' },
   { tabela: 'EnvioAoYoutube', escopo: 'filho', chaveSql: '"id"', nota: 'O vídeo do episódio a caminho do YouTube (MD10): o sha256 do vídeo final, a URI da sessão de envio cifrada e o id do vídeo privado. Ler a da outra é saber o que ela vai publicar e onde está o vídeo privado dela; escrever `videoId` ou `estado` é levar o agendamento da outra a um vídeo que não é dela. Filha do episódio, com a empresa conferida pelo gatilho.' },
@@ -1020,6 +1021,13 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   });
   reg('PautaPeca', pecaId);
   s.ref.pautaPecaId = pecaId;
+
+  // O banco de ideias (MK3): raiz da empresa, sem rodada e sem episódio.
+  reg('PautaIdeia', await ins(c, 'PautaIdeia', {
+    id: crypto.randomUUID(), orgId, pilar: 'bastidores', titulo: `Ideia ${rotulo}`,
+    ganchoFala: `Gancho falado da org ${rotulo} ${MARCA}`, formato: 'carrossel',
+    porque: `Por que a org ${rotulo} quer dizer isto ${MARCA}`, atualizadaEm: agora,
+  }));
 
   // A publicação no Instagram (MD6): filha da peça, a empresa pelo gatilho.
   reg('PautaPublicacao', await ins(c, 'PautaPublicacao', {

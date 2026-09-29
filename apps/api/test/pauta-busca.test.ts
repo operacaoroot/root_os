@@ -25,6 +25,7 @@ import { ApifyService, type ApifyRun, type OpcoesDaBusca } from '../src/pauta/ap
 import type { RssService } from '../src/pauta/rss.service';
 import { AuditService } from '../src/audit/audit.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
+import { semMarca } from './marca-de-teste';
 
 // MC10: sem perfil, as peças recebem o tom da casa.
 const vozDaCasa = { bloco: async () => TOM_DA_CASA } as unknown as VozService;
@@ -753,7 +754,7 @@ describe('busca da pauta: a rodada e o cadastro', () => {
         return JSON.stringify({ titulo: 'T', itens: [{ titulo: 'IA nas PMEs', url: capturas[0].url }], corpo: '' });
       },
     } as unknown as LlmProvider;
-    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa);
+    const rodadas = new RodadaService(prisma, new AuditService(prisma), {} as never, llm, vozDaCasa, semMarca);
 
     await rodadas.gerar(ORG, PESSOA);
 
