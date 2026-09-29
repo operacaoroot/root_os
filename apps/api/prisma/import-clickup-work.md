@@ -49,7 +49,9 @@ O exportador salva os **bytes** dos anexos fora deste JSON, calcula SHA-256 e us
 
 ```sh
 # A partir da raiz do repositório: normalizar raw-tasks/raw-lists/files em dois snapshots:
-node apps/api/prisma/import-clickup-work.normalize.mjs
+node apps/api/prisma/import-clickup-work.normalize.mjs --capture-status /caminho/privado/capture-status.json
+# O manifesto exige stable/usableForNormalization/paginationComplete verdadeiros,
+# recheck sem diferenças, capturedAt ISO e hashes dos três arquivos de origem.
 # Um novo ponto de corte exige contagens conferidas explicitamente:
 # --raw-tasks ... --raw-lists ... --files ... --output-dir ...
 # --expected-tasks CONTAGEM_CONFERIDA --expected-files CONTAGEM_CONFERIDA
@@ -81,3 +83,5 @@ Se o banco concluir a transação de criação e o processo cair antes de escrev
 Nativo: listas em pasta plana com caminho completo, status por lista, tarefa e subtarefa com ID externo, título, descrição, prioridade, primeiro responsável textual, datas, URL de origem, etiquetas, campos e comentários com autor/data originais (`authorId` local nulo). O PATCH já move o **mesmo** card entre listas, atribuindo a primeira etapa da lista de destino.
 
 Somente snapshot/manifesto: hierarquia real de pastas, responsáveis adicionais, checklists, dependências, metadados históricos e anexos físicos. As dependências aparecem no card com direção e link para o ID nativo da outra tarefa do lote; não há relação nativa no banco. Links internos estáveis de anexos aparecem na descrição e são baixados pela UI com Bearer pela rota autenticada. `statusDesde` nativo é carimbado pelo banco no momento do import; não representa a data histórica de entrada na etapa. O relatório de dry-run enumera avisos e lacunas; nenhuma dessas capacidades é apresentada como nativa completa.
+
+A normalização exige `--capture-status`: o manifesto precisa atestar estabilidade e paginação, conter o instante do corte e amarrar por SHA-256 os arquivos de tarefas, listas e anexos. Contagens, listas e diferenças do recheck também são conferidas. A data do snapshot vem desse manifesto, não da modificação do arquivo no disco. Uma captura marcada como instável não pode virar um snapshot válido só pela escolha das contagens. O diretório de saída e arquivos preexistentes precisam ser privados; links simbólicos e permissões de grupo/outros são recusados.

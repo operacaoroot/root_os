@@ -2,8 +2,8 @@
 // Converte o export read-only ClickUp do lote ROOT Marketing para o contrato v1.
 // Gera duas variantes de path do mesmo conteúdo; jamais conecta ao banco.
 import { createHash } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 const ROOT = '/private/tmp/root-os-migration-20260929';
 const VAULT = '/vault/90-OS/migrations/marketing-20260929';
@@ -16,14 +16,15 @@ const ORG = '63cdd80e-0435-488d-98b5-c2653d235e50';
 
 function args() {
   const opts = { tasks: join(ROOT, 'raw-tasks.json'), lists: join(ROOT, 'raw-lists.json'),
-    files: join(ROOT, 'files.json'), outputDir: ROOT, expectedFiles: 20, expectedTasks: 70 };
-  const keys = { '--raw-tasks': 'tasks', '--raw-lists': 'lists', '--files': 'files', '--output-dir': 'outputDir', '--expected-files': 'expectedFiles', '--expected-tasks': 'expectedTasks' };
+    files: join(ROOT, 'files.json'), captureStatus: null, outputDir: ROOT, expectedFiles: 20, expectedTasks: 70 };
+  const keys = { '--raw-tasks': 'tasks', '--raw-lists': 'lists', '--files': 'files', '--capture-status': 'captureStatus', '--output-dir': 'outputDir', '--expected-files': 'expectedFiles', '--expected-tasks': 'expectedTasks' };
   for (let i = 2; i < process.argv.length; i++) {
     const key = keys[process.argv[i]];
     if (!key || !process.argv[i + 1]) throw new Error(`Argumento inválido: ${process.argv[i]}`);
     opts[key] = process.argv[++i];
   }
   opts.expectedFiles = Number(opts.expectedFiles);
+  if (!opts.captureStatus) throw new Error('--capture-status é obrigatório: informe o manifesto da captura estável');
   opts.expectedTasks = Number(opts.expectedTasks);
   if (!Number.isSafeInteger(opts.expectedFiles) || opts.expectedFiles < 0) throw new Error('Contagem esperada de arquivos inválida');
   if (!Number.isSafeInteger(opts.expectedTasks) || opts.expectedTasks < 0) throw new Error('Contagem esperada de tarefas inválida');
@@ -56,6 +57,19 @@ function validarArquivo(file, root) {
 
 function main() {
   const opt = args();
+  const capture = json(opt.captureStatus);
+  if (capture.stable !== true || capture.usableForNormalization !== true || capture.paginationComplete !== true) {
+    falhar('Captura não confirmada como estável e completamente paginada');
+  }
+  if (typeof capture.capturedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(capture.capturedAt) ||
+      !Number.isFinite(Date.parse(capture.capturedAt))) falhar('capturedAt do manifesto deve ser uma data ISO válida');
+  for (const campo of ['added', 'missing', 'updated']) {
+    if (!Array.isArray(capture.finalRecheck?.[campo]) || capture.finalRecheck[campo].length) falhar(`Recheck da captura não fechou: ${campo}`);
+  }
+  for (const path of [opt.tasks, opt.lists, opt.files]) {
+    const hash = createHash('sha256').update(readFileSync(path)).digest('hex');
+    if (capture.sha256?.[basename(path)] !== hash) falhar(`SHA-256 da captura diverge: ${basename(path)}`);
+  }
   const tasks = json(opt.tasks);
   const lists = json(opt.lists);
   const files = json(opt.files);
@@ -63,6 +77,8 @@ function main() {
   if (tasks.length !== opt.expectedTasks || lists.length !== 7 || files.length !== opt.expectedFiles) {
     falhar(`Cardinalidade mudou: ${tasks.length} tarefas, ${lists.length} listas, ${files.length} anexos`);
   }
+  if (capture.taskCount !== tasks.length || capture.listCount !== lists.length || capture.filesCount !== files.length ||
+      JSON.stringify([...(capture.listIds ?? [])].sort()) !== JSON.stringify([...IDS].sort())) falhar('Contagens ou listas divergem do manifesto da captura');
   semRepetidos(tasks.map((t) => t.id), 'tarefas');
   semRepetidos(lists.map((l) => l.id), 'listas');
   semRepetidos(files.map((f) => fileKey(f.taskId, f.id)), 'anexos');
@@ -159,7 +175,8 @@ function main() {
     return { base, rawAttachments: t.attachments };
   });
   const snapshot = (environment) => ({
-    schemaVersion: 1, source: 'clickup', capturedAt: statSync(opt.tasks).mtime.toISOString(), spaceId: SPACE,
+    schemaVersion: 1, source: 'clickup', capturedAt: new Date(capture.capturedAt).toISOString(), spaceId: SPACE,
+    captureEvidence: { manifestSha256: createHash('sha256').update(readFileSync(opt.captureStatus)).digest('hex'), sourceHashes: capture.sha256 },
     scope: { folderPath: ['Demandas internas', 'Marketing'], listIds: IDS },
     completeness: { allLists: true, allTasks: true, includeClosed: true, paginationComplete: true },
     extractionGaps: gaps,
@@ -186,6 +203,15 @@ function main() {
   const vps = snapshot('vps');
   if (usados.size !== files.length || gaps.length) falhar(`Export incompleto: ${gaps.join('; ') || 'arquivo sem tarefa'}`);
   mkdirSync(opt.outputDir, { recursive: true, mode: 0o700 });
+  const dir = lstatSync(opt.outputDir);
+  if (!dir.isDirectory() || dir.isSymbolicLink() || (dir.mode & 0o077)) falhar('Diretório de saída deve ser privado (0700) e não ser link');
+  for (const name of ['marketing.local.snapshot.json', 'marketing.vps.snapshot.json', 'attachments-index.json']) {
+    const path = join(opt.outputDir, name);
+    if (existsSync(path)) {
+      const file = lstatSync(path);
+      if (!file.isFile() || file.isSymbolicLink() || (file.mode & 0o077)) falhar(`Saída existente deve ser arquivo privado (0600): ${name}`);
+    }
+  }
   for (const [name, data] of [['marketing.local.snapshot.json', local], ['marketing.vps.snapshot.json', vps]]) {
     writeFileSync(join(opt.outputDir, name), JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
   }
