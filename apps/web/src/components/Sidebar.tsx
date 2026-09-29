@@ -301,7 +301,7 @@ export function Sidebar() {
           type="button"
           aria-label="Fechar navegação"
           onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }}
-          className="fixed inset-0 z-40 bg-black/70 min-[820px]:hidden"
+          className="fixed inset-0 z-[45] bg-black/70 min-[820px]:hidden"
         />
       )}
       <aside
