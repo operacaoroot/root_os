@@ -42,9 +42,14 @@ afterEach(() => cleanup());
 describe('projeções do mesmo card Work', () => {
   it('usa limites locais inclusive/exclusivo na virada de dia e de mês', () => {
     const range = intervaloDaGrade([new Date(2026, 7, 30), new Date(2026, 9, 10)]);
-    expect(range).toEqual({ dueFrom: '2026-08-30T03:00:00.000Z', dueTo: '2026-10-11T03:00:00.000Z' });
-    expect(chaveDoDia(new Date('2026-10-01T02:59:59.000Z'))).toBe('2026-09-30');
-    expect(chaveDoDia(new Date('2026-10-01T03:00:00.000Z'))).toBe('2026-10-01');
+    const inicio = new Date(range.dueFrom);
+    const fim = new Date(range.dueTo);
+    expect([inicio.getFullYear(), inicio.getMonth(), inicio.getDate(), inicio.getHours()])
+      .toEqual([2026, 7, 30, 0]);
+    expect([fim.getFullYear(), fim.getMonth(), fim.getDate(), fim.getHours()])
+      .toEqual([2026, 9, 11, 0]);
+    expect(chaveDoDia(new Date(2026, 9, 1, 0, 0, 0, -1))).toBe('2026-09-30');
+    expect(chaveDoDia(new Date(2026, 9, 1, 0, 0, 0))).toBe('2026-10-01');
   });
 
   it('Agenda busca também a página depois do item 500', async () => {
