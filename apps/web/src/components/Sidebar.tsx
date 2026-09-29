@@ -206,15 +206,29 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!abertaNoMovel) return;
-    botaoFechar.current?.focus();
+    const overflowBody = document.body.style.overflow;
+    const overflowHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    // A barra parte de visibility:hidden. Em movimento reduzido, focar logo
+    // após o clique pode ocorrer antes de ela ficar visível e o foco falha.
+    let timerDoFoco: number;
+    function focarQuandoVisivel() {
+      const botao = botaoFechar.current;
+      if (botao && getComputedStyle(botao).visibility === 'visible') botao.focus();
+      else timerDoFoco = window.setTimeout(focarQuandoVisivel, 16);
+    }
+    timerDoFoco = window.setTimeout(focarQuandoVisivel, 0);
     function aoTeclar(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setAbertaNoMovel(false);
         botaoAbrir.current?.focus();
       } else if (e.key === 'Tab') {
         const dialogo = document.getElementById('root-os-nav');
-        const controles = dialogo?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])');
-        if (!controles?.length) return;
+        const controles = Array.from(
+          dialogo?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? [],
+        ).filter((el) => el.getClientRects().length > 0);
+        if (!controles.length) return;
         const primeiro = controles[0];
         const ultimo = controles[controles.length - 1];
         if (e.shiftKey && document.activeElement === primeiro) {
@@ -227,7 +241,27 @@ export function Sidebar() {
       }
     }
     window.addEventListener('keydown', aoTeclar);
-    return () => window.removeEventListener('keydown', aoTeclar);
+    return () => {
+      window.removeEventListener('keydown', aoTeclar);
+      window.clearTimeout(timerDoFoco);
+      document.body.style.overflow = overflowBody;
+      document.documentElement.style.overflow = overflowHtml;
+    };
+  }, [abertaNoMovel]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const desktop = window.matchMedia('(min-width: 820px)');
+    function aoMudarLargura(e: MediaQueryListEvent) {
+      const focoNaBarra = document.getElementById('root-os-nav')?.contains(document.activeElement);
+      setAbertaNoMovel(false);
+      if (abertaNoMovel || focoNaBarra) {
+        if (e.matches) document.getElementById('root-os-main')?.focus();
+        else botaoAbrir.current?.focus();
+      }
+    }
+    desktop.addEventListener('change', aoMudarLargura);
+    return () => desktop.removeEventListener('change', aoMudarLargura);
   }, [abertaNoMovel]);
 
   function aoNavegar() {

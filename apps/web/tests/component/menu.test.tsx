@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /* A sidebar preserva a hierarquia declarada, o acesso e a seção ativa. */
@@ -69,6 +69,36 @@ describe('a barra lateral', () => {
     await user.keyboard('{Escape}');
     expect(abrir).toHaveAttribute('aria-expanded', 'false');
     expect(abrir).toHaveFocus();
+  });
+
+  it('bloqueia scroll do fundo e encerra o modo modal ao passar para desktop', async () => {
+    const ouvintes = new Set<(e: MediaQueryListEvent) => void>();
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      media: '(min-width: 820px)',
+      addEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => ouvintes.add(fn),
+      removeEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => ouvintes.delete(fn),
+    }));
+    try {
+      const user = userEvent.setup();
+      render(<><main id="root-os-main" tabIndex={-1} /><Sidebar /></>);
+      const abrir = screen.getByRole('button', { name: 'Abrir navegação' });
+      await user.click(abrir);
+      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.documentElement.style.overflow).toBe('hidden');
+      await waitFor(() => expect(document.querySelector('#root-os-nav button[aria-label="Fechar navegação"]')).toHaveFocus());
+
+      act(() => {
+        for (const fn of ouvintes) fn({ matches: true } as MediaQueryListEvent);
+      });
+      expect(abrir).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(document.getElementById('root-os-main')).toHaveFocus();
+      expect(document.body.style.overflow).toBe('');
+      expect(document.documentElement.style.overflow).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('desenha Referências dentro de Produção de conteúdo, e não no topo da seção', () => {

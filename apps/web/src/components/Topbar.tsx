@@ -115,7 +115,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
         {h1}
       </h1>
       {sub && (
-        <span className="hidden truncate text-[10px] uppercase tracking-[0.12em] text-muted min-[900px]:inline">
+        <span className="hidden truncate text-[10px] uppercase tracking-[0.12em] text-muted min-[1280px]:inline">
           {sub}
         </span>
       )}
@@ -144,11 +144,6 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
           ⌘K
         </kbd>
       </div>
-
-      {/* indicador à direita — herdou a marca de estágio que ficava no pé da lateral */}
-      <span className="hidden whitespace-nowrap text-[10px] uppercase tracking-[0.1em] text-muted min-[1100px]:inline">
-        fase 1 · <b className="font-medium text-brand">stack isolado</b>
-      </span>
 
       <div className="flex items-center gap-[10px]">
         <div className="hidden text-right leading-[1.25] min-[560px]:block">
