@@ -5575,3 +5575,136 @@ export interface CaixaContador {
   /** Quando esta contagem foi medida. O selo da casca não mente sobre isso. */
   medidoEm: string;
 }
+
+// ---------- Pauta: o banco de ideias (MK3) ----------
+// A máquina de conteúdo parte do que o mundo publicou. O banco parte do
+// contrário: do que a casa quer dizer. Ideia aprovada vira `PautaPeca` e cai na
+// MESMA agenda e na mesma aprovação da semana — quem posta não deveria ter dois
+// lugares para olhar.
+//
+// Os enums são espelho do schema do Prisma. Duas listas em dois lugares é como
+// a contagem de ferramentas do MCP passou anos dizendo 10 quando eram 35.
+
+export const PAUTA_IDEIA_STATUS = ['ideia', 'em_producao', 'aprovada', 'descartada'] as const;
+export type PautaIdeiaStatus = (typeof PAUTA_IDEIA_STATUS)[number];
+
+export const PAUTA_IDEIA_PRIORIDADES = ['baixa', 'media', 'alta'] as const;
+export type PautaIdeiaPrioridade = (typeof PAUTA_IDEIA_PRIORIDADES)[number];
+
+/**
+ * O que cada status alcança. A ideia anda para frente e volta para trás um
+ * passo, como o episódio (`transicaoDoEpisodio`) — e `descartada` é alcançável
+ * de qualquer lugar, porque desistir de uma ideia nunca precisa de cerimônia.
+ *
+ * `aprovada` é o fim da linha AQUI: dali em diante quem manda é a peça, e o
+ * status dela é que diz se foi ao ar. Deixar a ideia voltar de `aprovada`
+ * deixaria dois donos para a mesma verdade.
+ */
+const DE_PARA_DA_IDEIA: Record<PautaIdeiaStatus, readonly PautaIdeiaStatus[]> = {
+  ideia: ['em_producao', 'descartada'],
+  em_producao: ['ideia', 'aprovada', 'descartada'],
+  aprovada: [],
+  descartada: ['ideia'],
+};
+
+export function transicaoDaIdeia(de: PautaIdeiaStatus, para: PautaIdeiaStatus): boolean {
+  return DE_PARA_DA_IDEIA[de].includes(para);
+}
+
+/** Por que a ideia não pode virar peça ainda, ou nulo quando pode. */
+export function motivoParaNaoAprovarIdeia(i: {
+  status: PautaIdeiaStatus;
+  titulo: string;
+  legenda: string;
+  formato: string;
+}): string | null {
+  if (i.status === 'aprovada') return 'Esta ideia já virou peça.';
+  if (i.status === 'descartada') return 'Ideia descartada: reabra antes de aprovar.';
+  if (!i.titulo.trim()) return 'A ideia precisa de título.';
+  // A peça vai para a agenda e alguém vai postar a partir dela: sem legenda,
+  // aprovar só empurra o trabalho para a hora do post, que é a pior hora.
+  if (!i.legenda.trim()) return 'A ideia precisa de legenda antes de virar peça — é ela que vai ao ar.';
+  if (!(PAUTA_FORMATOS_DA_SEMANA as readonly string[]).includes(i.formato)) {
+    return `Formato inválido: a semana entende ${PAUTA_FORMATOS_DA_SEMANA.join(', ')}.`;
+  }
+  return null;
+}
+
+export const PAUTA_TETO_DO_TITULO_DA_IDEIA = 200;
+export const PAUTA_TETO_DO_TEXTO_DA_IDEIA = 6_000;
+/** Quantas ideias a IA propõe de uma vez. Mais que isto ninguém tria. */
+export const PAUTA_TETO_DE_IDEIAS_PROPOSTAS = 5;
+
+export interface PautaFonteDaIdeia {
+  rotulo: string;
+  url?: string;
+}
+
+export interface PautaIdeiaHist {
+  em: string;
+  de: PautaIdeiaStatus;
+  para: PautaIdeiaStatus;
+  por: string;
+}
+
+export interface PautaIdeiaNaLista {
+  id: string;
+  pilar: string;
+  titulo: string;
+  ganchoFala: string;
+  ganchoTela: string;
+  roteiro: string;
+  legenda: string;
+  cta: string;
+  porque: string;
+  fontes: PautaFonteDaIdeia[];
+  formato: string;
+  prioridade: PautaIdeiaPrioridade;
+  status: PautaIdeiaStatus;
+  hist: PautaIdeiaHist[];
+  pecaId: string | null;
+  origem: string;
+  criadaEm: string;
+  atualizadaEm: string;
+}
+
+export interface PautaIdeiasPainel {
+  ideias: PautaIdeiaNaLista[];
+  /** Os pilares da marca (MK1), para a tela oferecer e para a IA escolher. */
+  pilares: PautaPilar[];
+  avisos: string[];
+  iaConfigurada: boolean;
+}
+
+const textoDaIdeia = (max = PAUTA_TETO_DO_TEXTO_DA_IDEIA) => z.string().trim().max(max).default('');
+
+/** `POST /pauta/ideias` e `PUT /pauta/ideias/:id`. */
+export const PautaIdeiaSalvarSchema = z.object({
+  pilar: z.string().trim().min(1, 'Escolha um pilar.').max(PAUTA_TETO_DO_NOME_DO_PILAR),
+  titulo: z.string().trim().min(1, 'A ideia precisa de título.').max(PAUTA_TETO_DO_TITULO_DA_IDEIA),
+  ganchoFala: textoDaIdeia(600),
+  ganchoTela: textoDaIdeia(300),
+  roteiro: textoDaIdeia(),
+  legenda: textoDaIdeia(),
+  cta: textoDaIdeia(300),
+  porque: textoDaIdeia(1_000),
+  fontes: z
+    .array(z.object({ rotulo: z.string().trim().min(1).max(200), url: z.string().trim().url().max(500).optional() }))
+    .max(10)
+    .default([]),
+  formato: z.enum(PAUTA_FORMATOS_DA_SEMANA),
+  prioridade: z.enum(PAUTA_IDEIA_PRIORIDADES).default('media'),
+});
+export type PautaIdeiaSalvarInput = z.infer<typeof PautaIdeiaSalvarSchema>;
+
+/** `PATCH /pauta/ideias/:id/status`. */
+export const PautaIdeiaStatusSchema = z.object({ status: z.enum(PAUTA_IDEIA_STATUS) });
+export type PautaIdeiaStatusInput = z.infer<typeof PautaIdeiaStatusSchema>;
+
+/** `POST /pauta/ideias/propor`: a IA propõe para um pilar. */
+export const PautaIdeiasProporSchema = z.object({
+  pilar: z.string().trim().min(1, 'Escolha um pilar.').max(PAUTA_TETO_DO_NOME_DO_PILAR),
+  formato: z.enum(PAUTA_FORMATOS_DA_SEMANA).default('carrossel'),
+  quantas: z.number().int().min(1).max(PAUTA_TETO_DE_IDEIAS_PROPOSTAS).default(3),
+});
+export type PautaIdeiasProporInput = z.infer<typeof PautaIdeiasProporSchema>;

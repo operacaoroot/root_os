@@ -1934,8 +1934,19 @@ jobs:
       # pulados, em 78 arquivos. O piso de ARQUIVOS vai a 70, colado no real; o
       # de CASOS sobe 18 (~15% de folga sobre os 22 que rodam sem banco), para
       # 2280.
-      PISO_CASOS_API: '2280'
-      PISO_ARQUIVOS_API: '70'
+      #
+      # MK3, O BANCO DE IDEIAS (29/09/2026): +31 casos num arquivo novo,
+      # `pauta-ideias` — a máquina de estados (aprovada é fim de linha), o que
+      # impede uma ideia de virar peça, a leitura do que a IA propõe (descarta
+      # incompleta e palavra proibida), e o miolo da fatia: a peça nascida de
+      # ideia É peça da semana e NUNCA casa quando se pergunta pelas peças de um
+      # episódio. Nenhum precisa de banco — a tabela nova é coberta pelo job de
+      # isolamento, que passou 360/360 com a semente de `PautaIdeia`. Medido sem
+      # banco: 2485 passados e 718 pulados, em 79 arquivos. O piso de ARQUIVOS
+      # vai a 71, colado no real; o de CASOS sobe 26 (~15% de folga sobre os 31
+      # que rodam sem banco), para 2306.
+      PISO_CASOS_API: '2306'
+      PISO_ARQUIVOS_API: '71'
 
     steps:
       - uses: actions/checkout@v4

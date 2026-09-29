@@ -33,6 +33,8 @@ import { EstrategiaController } from './estrategia.controller';
 import { EstrategiaService } from './estrategia.service';
 import { RelatorioController } from './relatorio.controller';
 import { RelatorioService } from './relatorio.service';
+import { IdeiasController } from './ideias.controller';
+import { IdeiasService } from './ideias.service';
 import { PacoteController } from './pacote.controller';
 import { PacoteService } from './pacote.service';
 import { BioModule } from '../bio/bio.module';
@@ -91,6 +93,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     ConcorrentesController,
     EstrategiaController,
     RelatorioController,
+    IdeiasController,
     PacoteController,
     PaginaDeLinksController,
     NewsletterController,
@@ -137,6 +140,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     EstrategiaService,
     // MK6: o fechamento do mês — número do sistema, narrativa da IA.
     RelatorioService,
+    // MK3: o banco de ideias; a aprovada vira peça da semana, sem rodada.
+    IdeiasService,
     // MC11: o pacote do YouTube (títulos, descrição com capítulos, thumbs).
     PacoteService,
     // MC12: a página de links do episódio na bio.

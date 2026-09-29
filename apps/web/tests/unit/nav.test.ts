@@ -392,8 +392,8 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('a estratégia e o relatório do mês penduram no bloco', () => {
-    for (const k of ['marketing-estrategia', 'marketing-relatorio']) {
+  it('o banco de ideias, a estratégia e o relatório do mês penduram no bloco', () => {
+    for (const k of ['marketing-ideias', 'marketing-estrategia', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
       expect(n!.pai).toBe('marketing');
@@ -423,7 +423,11 @@ describe('o bloco Marketing (MK7)', () => {
     const sai = comModulo.find((g) => g.secao.key === 'sai');
     const bloco = sai?.itens.find((i) => i.item.key === 'marketing');
     expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
-    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual(['marketing-estrategia', 'marketing-relatorio']);
+    expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
+      'marketing-estrategia',
+      'marketing-ideias',
+      'marketing-relatorio',
+    ]);
 
     // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
     // importa é que o bloco não aparece por nenhum caminho.

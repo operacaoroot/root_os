@@ -37,9 +37,8 @@ const DESTINOS: Destino[] = [
   {
     titulo: 'Banco de ideias',
     o_que: 'As ideias por pilar, com gancho, roteiro e legenda. Aprovada, vira peça na agenda da semana.',
-    href: null,
+    href: '/marketing/ideias',
     onde: 'Marketing',
-    falta: 'MK3',
   },
   {
     titulo: 'Agenda do mês',

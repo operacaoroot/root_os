@@ -283,6 +283,7 @@ export const NAV: NavItem[] = [
   // do mês não vira item aqui porque a aba Semana da Pauta já é a agenda real —
   // duplicá-la criaria a segunda verdade que a decisão do Pedro manda evitar.
   { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta' },
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'sai', modulo: 'pauta', pai: 'marketing' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'sai', modulo: 'instagram' },

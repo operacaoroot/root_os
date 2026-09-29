@@ -105,9 +105,23 @@ export class PublicacaoService {
 
     switch (peca.canal) {
       case 'whatsapp':
-        return this.publicarWhatsapp(orgId, peca, actorId);
-      case 'clickup':
-        return this.publicarClickup(orgId, peca, actorId);
+      case 'clickup': {
+        /*
+         * MK3: a peça nascida no banco de ideias não tem rodada, e estes dois
+         * canais montam a mensagem a partir do título e dos itens DELA. Barrar
+         * aqui, com o motivo, é melhor que deixar um `null` estourar lá dentro
+         * — e melhor ainda que inventar um título para preencher o buraco.
+         */
+        if (!peca.rodada) {
+          throw new BadRequestException(
+            'Esta peça veio do banco de ideias e não pertence a uma rodada: ela vai ao ar pela agenda da Semana, não por este canal.',
+          );
+        }
+        const comRodada = { ...peca, rodada: peca.rodada };
+        return peca.canal === 'whatsapp'
+          ? this.publicarWhatsapp(orgId, comRodada, actorId)
+          : this.publicarClickup(orgId, comRodada, actorId);
+      }
       case 'instagram':
       case 'newsletter':
       default:
