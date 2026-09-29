@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Video, MapPin, Users, AlertTriangle } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useModulos } from '@/components/modulos';
+import { intervaloDaGrade, prazosDeTrabalho, trabalhoHref } from '@/lib/work-projection';
+import type { TrabTarefaResumo } from '@mktos/shared';
 import { Botao, Card, Chip } from '../referencias/ui';
 import { MarcarReuniao } from './MarcarReuniao';
 import {
@@ -20,7 +23,7 @@ import {
  * A AGENDA DA ROOT — o Google Calendar de operacao.root@gmail.com, aqui dentro
  * ============================================================================
  *
- * Esta tela NÃO tem banco. Não existe tabela de reunião no OS, e é de propósito:
+ * A camada de REUNIÕES não tem banco. Não existe tabela de reunião no OS:
  * a agenda de verdade é a do Google, aquela que toca o celular dos sócios e
  * manda o convite para o cliente. Uma cópia local seria uma segunda verdade para
  * divergir da primeira no primeiro evento que alguém mexer pelo telefone.
@@ -35,7 +38,8 @@ import {
  *     morre em duas semanas.
  *  3. MARCAR JÁ SAI NO PADRÃO, porque o formulário não tem campo de título.
  *
- * FUSO: tudo é desenhado no relógio de quem está olhando. Evento de dia inteiro
+ * A camada de PRAZOS consulta WorkTask, sem criar evento no Google. FUSO: tudo
+ * é desenhado no relógio de quem está olhando. Evento de dia inteiro
  * chega como data pura e é tratado como string (ver `diaDoEvento`) — convertê-lo
  * jogaria o compromisso para o dia anterior em Brasília.
  */
@@ -60,12 +64,16 @@ type Filtro = 'tudo' | 'cliente' | 'interna' | 'fora';
 
 export default function AgendaPage() {
   const { token, ready, can } = useAuth();
+  const { modulos } = useModulos();
+  const podeVerTrabalho = ready && !!token && can('tarefas.ver') && modulos?.includes('trabalho') === true;
   const [mes, setMes] = useState(() => primeiroDoMes(new Date()));
   const [eventos, setEventos] = useState<EventoDaAgenda[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [diaAberto, setDiaAberto] = useState<string>(() => chaveDoDia(new Date()));
   const [filtro, setFiltro] = useState<Filtro>('tudo');
   const [trilhos, setTrilhos] = useState<string[]>([]);
+  const [prazos, setPrazos] = useState<TrabTarefaResumo[] | null>(null);
+  const [erroPrazos, setErroPrazos] = useState<string | null>(null);
 
   const grade = useMemo(() => gradeDoMes(mes), [mes]);
 
@@ -84,6 +92,17 @@ export default function AgendaPage() {
   }, [token, grade]);
 
   useEffect(() => { if (ready && token) carregar(); }, [ready, token, carregar]);
+
+  useEffect(() => {
+    if (!podeVerTrabalho || !token) { setPrazos(null); setErroPrazos(null); return; }
+    let ativo = true;
+    setPrazos(null);
+    setErroPrazos(null);
+    prazosDeTrabalho(token, intervaloDaGrade(grade))
+      .then((items) => { if (ativo) setPrazos(items); })
+      .catch((e) => { if (ativo) setErroPrazos(e.message); });
+    return () => { ativo = false; };
+  }, [podeVerTrabalho, token, grade]);
 
   // Os nomes de cliente que o OS já conhece, para o datalist do formulário. Sem
   // permissão de tarefas o pedido nem sai — o campo continua sendo texto livre.
@@ -108,6 +127,16 @@ export default function AgendaPage() {
     }
     return m;
   }, [eventos, filtro]);
+
+  const prazosPorDia = useMemo(() => {
+    const dias = new Map<string, TrabTarefaResumo[]>();
+    for (const tarefa of prazos ?? []) {
+      if (!tarefa.dueDate) continue;
+      const dia = chaveDoDia(new Date(tarefa.dueDate));
+      dias.set(dia, [...(dias.get(dia) ?? []), tarefa]);
+    }
+    return dias;
+  }, [prazos]);
 
   const clientesConhecidos = useMemo(() => {
     const s = new Set<string>(trilhos);
@@ -184,6 +213,7 @@ export default function AgendaPage() {
             const chave = chaveDoDia(d);
             const doMes = d.getMonth() === mes.getMonth();
             const lista = porDia.get(chave) ?? [];
+            const quantidadeDePrazos = prazosPorDia.get(chave)?.length ?? 0;
             return (
               <button
                 key={chave}
@@ -211,6 +241,11 @@ export default function AgendaPage() {
                     );
                   })}
                 </div>
+                {podeVerTrabalho && quantidadeDePrazos > 0 && (
+                  <div className="mt-1 truncate rounded bg-brand/10 px-1 py-0.5 text-[10px] text-brand">
+                    {quantidadeDePrazos} prazo{quantidadeDePrazos === 1 ? '' : 's'} de trabalho
+                  </div>
+                )}
               </button>
             );
           })}
@@ -277,6 +312,27 @@ export default function AgendaPage() {
           </ul>
         )}
       </Card>
+
+      {podeVerTrabalho && (
+        <Card titulo="Prazos de trabalho">
+          <p className="mb-2 text-xs text-muted">Prazos dos cards no Trabalho; não são reuniões nem publicações agendadas.</p>
+          {erroPrazos && <p role="alert" className="text-sm text-bad">Não foi possível carregar os prazos: {erroPrazos}</p>}
+          {!prazos && !erroPrazos && <p className="text-sm text-muted">Carregando prazos…</p>}
+          {prazos && (prazosPorDia.get(diaAberto) ?? []).length === 0 && (
+            <p className="text-sm text-muted">Nenhum prazo de trabalho neste dia.</p>
+          )}
+          {prazos && (
+            <ul className="divide-y divide-border">
+              {(prazosPorDia.get(diaAberto) ?? []).map((t) => (
+                <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 text-sm">
+                  <a href={trabalhoHref(t.id)} className="min-w-0 font-medium text-brand underline">{t.title}</a>
+                  <span className="text-xs text-muted">{t.statusName} · {t.dueDate ? new Date(t.dueDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       <p className="text-[11px] text-muted">
         Padrão da casa: <span className="font-os-mono">Reunião Online|Presencial - Cliente - Responsável</span> para

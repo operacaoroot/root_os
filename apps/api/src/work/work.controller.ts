@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
+import { parseWorkTaskQuery } from './work-task-query';
 
 // Módulo TRABALHO (ClickUp-like). Escritas são INTERNAS ao mkt-os (sem efeito
 // externo), então ficam fora do fluxo de approvals — o gate é o RBAC
@@ -156,18 +157,9 @@ export class WorkController {
   @RequirePermissions('tarefas.ver')
   tarefas(
     @CurrentUser() u: JwtUser,
-    @Query('listId') listId?: string,
-    @Query('statusId') statusId?: string,
-    @Query('assignee') assignee?: string,
-    @Query('tagId') tagId?: string,
-    @Query('q') q?: string,
-    @Query('opcao') opcao?: string,
-    @Query('arquivadas') arquivadas?: string,
+    @Query() query?: Record<string, unknown>,
   ) {
-    return this.svc.tarefas(u.orgId, {
-      listId, statusId, assignee, tagId, q, opcao,
-      arquivadas: arquivadas === '1' || arquivadas === 'true',
-    });
+    return this.svc.tarefas(u.orgId, parseWorkTaskQuery(query ?? {}));
   }
 
   @Get('tarefas/:id')

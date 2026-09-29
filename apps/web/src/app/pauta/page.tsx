@@ -11,6 +11,8 @@ import { AbaRodadas } from './AbaRodadas';
 import { AbaVoz } from './AbaVoz';
 import { ContaDePublicacao } from './ContaDePublicacao';
 import { ComentariosComPalavra } from './ComentariosComPalavra';
+import { ProducaoAutoral } from './ProducaoAutoral';
+import { useModulos } from '@/components/modulos';
 
 // Painel da pauta (ondas 2 e 3): o gatilho e o que ele produz.
 // O acervo de referência fica em /referencias — são coisas diferentes de
@@ -30,6 +32,8 @@ interface Erro {
 
 export default function PautaPage() {
   const { token, ready, can } = useAuth();
+  const { modulos } = useModulos();
+  const podeVerTrabalho = ready && !!token && can('tarefas.ver') && modulos?.includes('trabalho') === true;
   const editavel = can('pauta.editar');
   const podePublicar = can('pauta.publicar');
   const [aba, setAba] = useState<Aba>('Rodadas');
@@ -91,11 +95,12 @@ export default function PautaPage() {
         <h2 className="font-semibold">Continue de onde o conteúdo está</h2>
         <p className="mt-2 text-sm text-muted">Roteiros, gravações e peças da operação editorial ficam no quadro de trabalho. Abaixo, acompanhe as referências coletadas, a curadoria e os episódios derivados.</p>
         <div className="mt-3 flex flex-wrap gap-4 text-sm text-brand">
-          {can('tarefas.ver') && <a href="/trabalho?lista=901328341450" className="underline">Abrir produção editorial</a>}
+          {podeVerTrabalho && <a href="/trabalho?lista=901328341450" className="underline">Abrir produção editorial</a>}
           <a href="/referencias#radar" className="underline">Configurar fontes da coleta</a>
           <a href="/referencias#captura" className="underline">Enviar uma referência</a>
         </div>
       </section>
+      {podeVerTrabalho && <ProducaoAutoral token={token} />}
       <ol className="list-decimal space-y-0.5 pl-5 text-sm text-muted" aria-label="O caminho da semana">
         <li>Quinta à noite a rotina coleta as fontes do Radar. Ela não escolhe nada.</li>
         <li>Curadoria: marcar à mão o que segue; a IA só sugere.</li>

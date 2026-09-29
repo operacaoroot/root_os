@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
+import type { WorkTaskQuery } from './work-task-query';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Hierarquia pastas → listas → tarefas; statuses POR LISTA; campos personalizados
@@ -333,21 +334,33 @@ export class WorkService {
 
   async tarefas(
     orgId: string,
-    f: { listId?: string; statusId?: string; assignee?: string; tagId?: string; q?: string; arquivadas?: boolean; opcao?: string },
+    f: WorkTaskQuery,
   ): Promise<TrabTarefaLista> {
+    const page = f.page ?? 1;
+    const limit = f.limit ?? 500;
     const where: Prisma.WorkTaskWhereInput = { orgId, archived: f.arquivadas ? undefined : false };
     if (f.listId) where.listId = f.listId;
+    if (f.listIds) where.listId = { in: f.listIds };
+    if (f.listExternalIds) where.list = { orgId, externalId: { in: f.listExternalIds } };
     if (f.statusId) where.statusId = f.statusId;
     if (f.assignee) where.assignee = f.assignee;
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
     if (f.opcao) where.values = { some: { optionId: f.opcao } }; // filtro por opção de campo
-    const rows = await this.prisma.workTask.findMany({
-      where,
-      include: TASK_INCLUDE,
-      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-      take: 500,
-    });
+    if (f.dueFrom || f.dueTo) where.dueDate = {
+      ...(f.dueFrom ? { gte: f.dueFrom } : {}),
+      ...(f.dueTo ? { lt: f.dueTo } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.workTask.findMany({
+        where,
+        include: TASK_INCLUDE,
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.workTask.count({ where }),
+    ]);
     const now = new Date();
     /*
      * UMA consulta para todos os donos, depois da lista — não uma por tarefa.
@@ -358,7 +371,7 @@ export class WorkService {
     const minutos = await this.minutosPorTarefa(orgId, rows.map((t) => t.id));
     return {
       items: rows.map((t) => this.mapTask(t, now, agentes, minutos)),
-      total: rows.length,
+      total,
       source: { tool: 'trabalho-interno', generatedAt: now.toISOString() },
     };
   }
