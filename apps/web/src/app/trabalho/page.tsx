@@ -174,7 +174,7 @@ export default function TrabalhoPage() {
       <div className="min-w-0 flex-1 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">{lista?.name ?? 'Trabalho'}</h1>
+            <h1 className="text-xl font-semibold">{lista?.name ?? 'Quadro interno'}</h1>
             <p className="text-sm text-muted">
               {tarefas ? `${tarefas.total} tarefa(s)` : 'Carregando…'} · gestão nativa (fotografia do ClickUp)
               {lista?.externalId && <span className="ml-1 text-[11px]">· lista ClickUp {lista.externalId}</span>}

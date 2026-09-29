@@ -27,8 +27,12 @@ export default async function ModulePlaceholder({
         </div>
 
         <p className="mt-4 text-[13px] leading-[1.7] text-text">
-          <span className="text-brand">{item?.label ?? href}</span> já existe como rota, como
-          permissão e como lugar no menu. O que falta é o conector que traz o dado.
+          {item?.key === 'fluxos' ? (
+            <>Processos estão em preparação. Esta rota ainda não oferece um editor nem executa processos.</>
+          ) : (
+            <><span className="text-brand">{item?.label ?? href}</span> já existe como rota,
+            permissão e lugar no menu. A tela ainda não entrega todas as funções.</>
+          )}
         </p>
 
         <p className="mt-3 text-[11px] leading-[1.7] text-muted">
@@ -50,7 +54,7 @@ export default async function ModulePlaceholder({
         href="/painel"
         className="mt-4 inline-flex items-center gap-1 rounded-root border border-border px-4 py-2 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-text"
       >
-        <ArrowLeft size={13} /> voltar ao console
+        <ArrowLeft size={13} /> voltar à visão geral
       </Link>
     </div>
   );

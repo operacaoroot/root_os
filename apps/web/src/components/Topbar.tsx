@@ -15,46 +15,41 @@ import { Paleta } from './Paleta';
  */
 const BUSCA_ATIVA: boolean = true;
 
-/*
- * Subtítulo por módulo, na chave do NAV (packages/shared/src/nav.ts:43) — e não
- * no rótulo, que a migração renomeou (Painel→Console, Obsidian→Contexto,
- * WhatsApp→Atendimento, Auditoria→Rastro...). Os módulos que herdaram um slot
- * do protótipo herdaram junto a linha dele (root-os.html:1322-1327).
- * Módulo que entrar no NAV sem verbete aqui cai no hint da própria seção.
- */
+/* O subtítulo descreve a função atual da tela, sem prometer uma integração futura. */
 const SUBTITULOS: Record<string, string> = {
-  // a espinha do OS
-  console: 'o pulso da operação',
-  contexto: 'o mapa do que a empresa sabe',
-  sessoes: 'as trocas, organizadas',
-  caixa: 'o que precisa de você',
-  agentes: 'quem trabalha na central',
-  rotinas: 'o que roda sozinho',
-  fluxos: 'onde o trabalho vaza',
-  organograma: 'gente e agentes',
-  atendimento: 'o que precisa de gente',
-  regua: 'o que a IA pode fazer, e quem define',
-  rastro: 'tudo que aconteceu',
-  'linha-do-tempo': 'a mesma história, em ordem',
-  ferramentas: 'o que a central já sabe fazer',
-  conexoes: 'o que alimenta a central',
-  // os módulos de domínio
-  trabalho: 'o quadro de quem faz',
-  tarefas: 'o que está aberto',
-  relatorios: 'o que dá para mandar pra fora',
-  leads: 'quem chegou e em que pé está',
-  funil: 'onde o lead trava',
-  campanhas: 'o que está no ar e quanto custa',
-  pixels: 'o que o site registra',
-  conteudo: 'o que já foi publicado',
-  pauta: 'o que entra na fila',
-  referencias: 'o que serve de modelo',
-  instagram: 'o que a conta devolve',
-  bio: 'a página que recebe o clique',
-  metas: 'onde está a régua do mês',
-  financeiro: 'entra, sai e o que sobra',
-  // a conta
-  config: 'como o sistema se comporta',
+  caixa: 'aprovações e tarefas do quadro que pedem sua atenção',
+  atendimento: 'fila de decisões que exigem aprovação',
+  agenda: 'compromissos e reuniões',
+  console: 'indicadores da operação',
+  contexto: 'regras, fontes e decisões da empresa',
+  organograma: 'pessoas e agentes da empresa',
+  tarefas: 'lista separada do quadro interno',
+  trabalho: 'quadro de tarefas nativo do OS',
+  onboarding: 'esteira de clientes em cinco fases',
+  conteudo: 'temas da lista Gestão de Temas',
+  pauta: 'curadoria, episódios e semana de posts',
+  referencias: 'repertório para a produção',
+  instagram: 'dados da conta',
+  bio: 'links da página pública',
+  leads: 'contatos comerciais',
+  funil: 'etapas dos leads',
+  campanhas: 'campanhas e gastos',
+  pixels: 'eventos registrados pelo site',
+  relatorios: 'relatórios disponíveis',
+  metas: 'metas do período',
+  financeiro: 'entradas, saídas e saldos',
+  'custo-ia': 'uso e orçamento por agente',
+  agentes: 'agentes configurados',
+  rotinas: 'rotinas e execuções',
+  sessoes: 'registro das conversas com a IA',
+  fluxos: 'em preparação; sem editor de processos',
+  ferramentas: 'capacidades disponíveis nesta empresa',
+  conexoes: 'conectores e estado das integrações',
+  regua: 'níveis de risco e quem pode autorizar',
+  rastro: 'eventos registrados e verificação',
+  'linha-do-tempo': 'eventos em ordem cronológica',
+  assinatura: 'situação do plano',
+  config: 'organização, perfil e integrações',
 };
 
 const HINT_DA_SECAO = new Map<string, string>(SECOES.map((s) => [s.key, s.hint]));
@@ -115,7 +110,7 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   }, []);
 
   return (
-    <header className="flex h-[46px] flex-none items-center gap-[13px] border-b border-border bg-bg2 px-4 font-os-mono">
+    <header className="flex h-[52px] flex-none items-center gap-[13px] border-b border-border bg-bg2 pl-14 pr-4 font-os-mono min-[820px]:h-[46px] min-[820px]:pl-4">
       <h1 className="m-0 truncate text-[12.5px] font-bold uppercase tracking-[0.02em] text-text">
         {h1}
       </h1>

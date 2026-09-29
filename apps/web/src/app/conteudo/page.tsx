@@ -44,8 +44,8 @@ export default function ConteudoPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted">
-            {data ? `${data.total} tema(s)` : 'Carregando…'} · pipeline sincronizado do ClickUp
-            (Gestão de Temas). Sincronize em{' '}
+            {data ? `${data.total} tema(s) na lista` : 'Carregando…'} · temas importados da lista
+            Gestão de Temas do ClickUp. Gerencie a conexão em{' '}
             <a href="/conexoes" className="text-brand hover:underline">Integrações</a>.
           </p>
         </div>
