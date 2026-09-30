@@ -11,6 +11,7 @@ import type {
   RotinaDoMapa,
 } from './tipos';
 import { rotuloDaNatureza } from './tipos';
+import { SECOES } from '@mktos/shared';
 
 /*
  * ============================================================================
@@ -56,6 +57,34 @@ import { rotuloDaNatureza } from './tipos';
 
 export type FamiliaKey = 'memoria' | 'agentes' | 'rotinas' | 'conexoes' | 'gente';
 export type Tom = 'brand' | 'good' | 'warn' | 'bad' | 'muted' | 'info';
+export type AreaKey = (typeof SECOES)[number]['key'];
+export type FiltroDeArea = AreaKey | 'sem-area' | '';
+export const AREAS = SECOES.map(({ key, label }) => ({ key, rotulo: label }));
+const CHAVES_DE_AREA = new Set<string>(AREAS.map((area) => area.key));
+
+/** Somente executores inscritos e conhecidos recebem área por tipo. */
+export const AREA_DO_EXECUTOR: Readonly<Record<string, AreaKey>> = {
+  'pauta.rodada': 'conteudo',
+  'pauta.coleta': 'conteudo',
+  'pauta.encadear': 'conteudo',
+  'pauta.publicar-agendadas': 'conteudo',
+  'pauta.coletar-comentarios': 'conteudo',
+  'pauta.relatorio': 'conteudo',
+};
+
+export function rotuloDaArea(chave: AreaKey): string {
+  return AREAS.find((area) => area.key === chave)?.rotulo ?? chave;
+}
+
+export function areasDaNota(tags: readonly string[]): AreaKey[] {
+  const encontradas = new Set<AreaKey>();
+  for (const tag of tags) {
+    if (!tag.startsWith('area:')) continue;
+    const chave = tag.slice(5);
+    if (CHAVES_DE_AREA.has(chave)) encontradas.add(chave as AreaKey);
+  }
+  return AREAS.map((area) => area.key).filter((chave) => encontradas.has(chave));
+}
 
 /** O lado do `viewBox`. Quadrado: o desenho é radial e não tem lado privilegiado. */
 export const LADO = 1000;
@@ -248,6 +277,9 @@ export interface ItemDoEixo {
   /** A segunda linha: natureza, estado, papel. O que distingue este ponto. */
   sub: string;
   tom: Tom;
+  areas: AreaKey[];
+  /** De onde veio a classificação; nulo significa que nada foi declarado. */
+  origemDaArea: string | null;
   registro: RegistroDoNo;
 }
 
@@ -277,6 +309,8 @@ export interface EixoDoMapa extends DescricaoDeFamilia {
   mostrados: number;
   /** O total que A API declarou. `null` quando a fonte não respondeu. */
   total: number | null;
+  /** Quantos registros carregados passam pelos filtros locais. */
+  totalNoRecorte: number;
   excedente: number;
   estado: EstadoDoEixo;
   erro: string | null;
@@ -436,12 +470,15 @@ function conexaoEstaEmUso(c: ConexaoDoMapa): boolean {
 }
 
 function notaParaNo(n: NotaDeContexto): ItemDoEixo {
+  const areas = areasDaNota(n.tags);
   return {
     id: `nota:${n.id}`,
     familia: 'memoria',
     rotulo: n.title,
     sub: `${rotuloDaNatureza(n.kind)} · ${n.procedencia}`,
     tom: tomDaNota(n),
+    areas,
+    origemDaArea: areas.length ? `etiquetas ${areas.map((area) => `area:${area}`).join(', ')}` : null,
     registro: { familia: 'memoria', nota: n },
   };
 }
@@ -454,17 +491,22 @@ function agenteParaNo(a: AgenteDoMapa): ItemDoEixo {
     rotulo: a.nome,
     sub: rebaixado ? `${a.estado} · autonomia rebaixada` : a.estado,
     tom: rebaixado ? 'warn' : tomDoEstado(a.estado),
+    areas: [],
+    origemDaArea: null,
     registro: { familia: 'agentes', agente: a },
   };
 }
 
 function rotinaParaNo(r: RotinaDoMapa): ItemDoEixo {
+  const area = AREA_DO_EXECUTOR[r.tipo];
   return {
     id: `rotina:${r.id}`,
     familia: 'rotinas',
     rotulo: r.nome,
     sub: r.dispara ? `${r.estado} · ${r.cron}` : `${r.estado} · não dispara`,
     tom: r.ultimoStatus === 'erro' ? 'bad' : tomDoEstado(r.estado),
+    areas: area ? [area] : [],
+    origemDaArea: area ? `tipo do executor: ${r.tipo}` : null,
     registro: { familia: 'rotinas', rotina: r },
   };
 }
@@ -477,6 +519,8 @@ function conexaoParaNo(c: ConexaoDoMapa): ItemDoEixo {
     rotulo: c.label,
     sub: c.desligado ? 'desligada por decisão' : saude.replace(/_/g, ' '),
     tom: tomDaConexao(c),
+    areas: [],
+    origemDaArea: null,
     registro: { familia: 'conexoes', conexao: c },
   };
 }
@@ -489,6 +533,8 @@ function pessoaParaNo(p: PessoaDoMapa): ItemDoEixo {
     rotulo: p.nome,
     sub: papeis,
     tom: p.ativo === false ? 'muted' : 'info',
+    areas: [],
+    origemDaArea: null,
     registro: { familia: 'gente', pessoa: p },
   };
 }
@@ -508,6 +554,26 @@ function estadoDoEixo(fonte: Fonte<unknown>, quantidade: number): EstadoDoEixo {
   if (fonte.erro) return 'erro';
   if (!fonte.dado) return 'carregando';
   return quantidade > 0 ? 'ok' : 'vazio';
+}
+
+function relacoesPresentes(nos: NoDoMapa[]): ArestaDoMapa[] {
+  const existe = new Set(nos.map((no) => no.id));
+  const relacoes: ArestaDoMapa[] = [];
+  for (const no of nos) {
+    if (no.registro.familia === 'agentes' && no.registro.agente.dono) {
+      const dono = `pessoa:${no.registro.agente.dono.id}`;
+      if (existe.has(dono)) relacoes.push({ id: `r:${no.id}-${dono}`, de: no.id, para: dono, tipo: 'relacao' });
+    }
+    if (no.registro.familia === 'rotinas' && no.registro.rotina.agenteSlug) {
+      const agente = `agente:${no.registro.rotina.agenteSlug}`;
+      if (existe.has(agente)) relacoes.push({ id: `r:${no.id}-${agente}`, de: no.id, para: agente, tipo: 'relacao' });
+    }
+    if (no.registro.familia === 'memoria' && no.registro.nota.supersedesId) {
+      const anterior = `nota:${no.registro.nota.supersedesId}`;
+      if (existe.has(anterior)) relacoes.push({ id: `r:${no.id}-${anterior}`, de: no.id, para: anterior, tipo: 'relacao' });
+    }
+  }
+  return relacoes;
 }
 
 /**
@@ -572,6 +638,7 @@ export function montarMapa(fontes: FontesDoMapa): Mapa {
       y: eixo.y,
       mostrados: desenhados.length,
       total: totais[familia.key],
+      totalNoRecorte: candidatos.length,
       excedente,
       estado: estadoDoEixo(fontePor[familia.key], candidatos.length),
       erro: fontePor[familia.key].erro ?? null,
@@ -593,27 +660,7 @@ export function montarMapa(fontes: FontesDoMapa): Mapa {
    * desenhar uma relação que ninguém declarou — e num mapa a linha entre dois
    * pontos é lida como fato.
    */
-  const existe = new Set(nos.map((n) => n.id));
-  for (const no of nos) {
-    if (no.registro.familia === 'agentes' && no.registro.agente.dono) {
-      const dono = `pessoa:${no.registro.agente.dono.id}`;
-      if (existe.has(dono)) {
-        arestas.push({ id: `r:${no.id}-${dono}`, de: no.id, para: dono, tipo: 'relacao' });
-      }
-    }
-    if (no.registro.familia === 'rotinas' && no.registro.rotina.agenteSlug) {
-      const agente = `agente:${no.registro.rotina.agenteSlug}`;
-      if (existe.has(agente)) {
-        arestas.push({ id: `r:${no.id}-${agente}`, de: no.id, para: agente, tipo: 'relacao' });
-      }
-    }
-    if (no.registro.familia === 'memoria' && no.registro.nota.supersedesId) {
-      const anterior = `nota:${no.registro.nota.supersedesId}`;
-      if (existe.has(anterior)) {
-        arestas.push({ id: `r:${no.id}-${anterior}`, de: no.id, para: anterior, tipo: 'relacao' });
-      }
-    }
-  }
+  arestas.push(...relacoesPresentes(nos));
 
   const registros = FAMILIAS.reduce((s, f) => s + porFamilia[f.key].length, 0);
   const registrosDeContexto = EIXOS_DE_CONTEXTO.reduce((s, k) => s + porFamilia[k].length, 0);
@@ -627,6 +674,48 @@ export function montarMapa(fontes: FontesDoMapa): Mapa {
     registros,
     registrosDeContexto,
   };
+}
+
+export interface RecorteDoMapa {
+  area: FiltroDeArea;
+  familia: FamiliaKey | '';
+  busca: string;
+  idsDaBusca?: ReadonlySet<string> | null;
+}
+
+function normalizarBusca(valor: string): string {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+}
+
+/** Reposiciona só os registros do recorte; IDs, fontes e estados ficam intactos. */
+export function recortarMapa(base: Mapa, filtro: RecorteDoMapa): Mapa {
+  if (!filtro.area && !filtro.familia && !filtro.busca.trim()) return base;
+  const busca = normalizarBusca(filtro.busca.trim());
+  const catalogo = {} as Record<FamiliaKey, ItemDoEixo[]>;
+  const eixos: EixoDoMapa[] = [];
+  const nos: NoDoMapa[] = [];
+  const arestas: ArestaDoMapa[] = [];
+
+  for (const eixo of base.eixos) {
+    const itens = base.catalogo[eixo.key].filter((item) =>
+      (!filtro.familia || item.familia === filtro.familia) &&
+      (!filtro.area || (filtro.area === 'sem-area' ? item.areas.length === 0 : item.areas.includes(filtro.area))) &&
+      (!busca || normalizarBusca(`${item.rotulo} ${item.sub}`).includes(busca) || !!filtro.idsDaBusca?.has(item.id)));
+    catalogo[eixo.key] = itens;
+    const desenhados = itens.slice(0, TETO_POR_EIXO);
+    const posicoes = posicoesDoSetor(eixo.anguloGraus, desenhados.length);
+    eixos.push({ ...eixo, mostrados: desenhados.length, totalNoRecorte: itens.length,
+      excedente: Math.max(itens.length - desenhados.length, 0) });
+    arestas.push({ id: `e:nucleo-${eixo.key}`, de: 'nucleo', para: `eixo:${eixo.key}`, tipo: 'estrutura' });
+    desenhados.forEach((item, i) => {
+      nos.push({ ...item, x: posicoes[i].x, y: posicoes[i].y });
+      arestas.push({ id: `e:${eixo.key}-${item.id}`, de: `eixo:${eixo.key}`, para: item.id, tipo: 'estrutura' });
+    });
+  }
+  arestas.push(...relacoesPresentes(nos));
+  return { ...base, eixos, nos, catalogo, arestas,
+    registros: FAMILIAS.reduce((total, familia) => total + catalogo[familia.key].length, 0),
+    registrosDeContexto: EIXOS_DE_CONTEXTO.reduce((total, key) => total + catalogo[key].length, 0) };
 }
 
 /**

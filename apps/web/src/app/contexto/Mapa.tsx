@@ -94,16 +94,18 @@ interface ArrastoEmCurso {
 
 export interface PropsDoMapa {
   mapa: MapaDados;
+  recorteAtivo?: boolean;
   selecionado: string | null;
   /** `null` = nenhuma busca ativa. Vazio = busca que não achou nada. */
   destaque: Set<string> | null;
   ocultos: Set<FamiliaKey>;
-  onSelecionar: (no: NoDoMapa) => void;
-  onAbrirEixo: (eixo: EixoDoMapa) => void;
+  onSelecionar: (no: NoDoMapa, origem?: Element) => void;
+  onAbrirEixo: (eixo: EixoDoMapa, origem?: Element) => void;
 }
 
 export function Mapa({
   mapa,
+  recorteAtivo = false,
   selecionado,
   destaque,
   ocultos,
@@ -213,7 +215,7 @@ export function Mapa({
         viewBox={`0 0 ${LADO} ${LADO}`}
         role="group"
         aria-label="Mapa do contexto"
-        className="h-[clamp(420px,62vh,760px)] w-full touch-none select-none"
+        className="h-[320px] w-full touch-none select-none sm:h-[clamp(420px,62vh,760px)]"
         onPointerDown={iniciarArrasto}
         onPointerMove={moverArrasto}
         onPointerUp={soltarArrasto}
@@ -265,8 +267,9 @@ export function Mapa({
               <EixoDesenhado
                 key={eixo.key}
                 eixo={eixo}
+                recorteAtivo={recorteAtivo}
                 apagado={!visivel(eixo.key)}
-                onAbrir={() => onAbrirEixo(eixo)}
+                onAbrir={(origem) => onAbrirEixo(eixo, origem)}
               />
             ))}
 
@@ -278,7 +281,7 @@ export function Mapa({
                 marcado={focados !== null && focados.has(no.id)}
                 apagado={focados !== null && !focados.has(no.id)}
                 sempreComRotulo={(desenhadosPorEixo.get(no.familia) ?? 0) <= LIMITE_DE_ROTULO_SEMPRE}
-                onSelecionar={() => onSelecionar(no)}
+                onSelecionar={(origem) => onSelecionar(no, origem)}
               />
             ))}
           </g>
@@ -303,7 +306,7 @@ function BotaoDaVista({
       aria-label={rotulo}
       title={rotulo}
       onClick={onClick}
-      className="rounded-root border border-border bg-surface-2 p-1.5 text-muted hover:border-brand/40 hover:text-text"
+      className="min-h-11 min-w-11 cursor-pointer rounded-root border border-border bg-surface-2 p-2 text-muted hover:border-brand/40 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
     >
       {children}
     </button>
@@ -319,15 +322,17 @@ function BotaoDaVista({
  */
 function EixoDesenhado({
   eixo,
+  recorteAtivo,
   apagado,
   onAbrir,
 }: {
   eixo: EixoDoMapa;
+  recorteAtivo: boolean;
   apagado: boolean;
-  onAbrir: () => void;
+  onAbrir: (origem: Element) => void;
 }) {
   const excedente = posicaoDoExcedente(eixo.anguloGraus);
-  const numero = eixo.total === null ? '—' : String(eixo.total);
+  const numero = eixo.total === null ? '—' : String(recorteAtivo ? eixo.totalNoRecorte : eixo.total);
 
   return (
     <g opacity={apagado ? 0.2 : 1}>
@@ -335,12 +340,12 @@ function EixoDesenhado({
         role="button"
         tabIndex={0}
         aria-label={`${eixo.rotulo}: ${numero} — ${eixo.descricao}`}
-        className="cursor-pointer text-muted focus:outline-none"
-        onClick={onAbrir}
+        className="group cursor-pointer text-muted focus:outline-none"
+        onClick={(evento) => onAbrir(evento.currentTarget)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            onAbrir();
+            onAbrir(e.currentTarget);
           }
         }}
       >
@@ -353,6 +358,8 @@ function EixoDesenhado({
           stroke="currentColor"
           strokeOpacity={0.5}
         />
+        <circle cx={eixo.x} cy={eixo.y} r={RAIO_DO_EIXO + 5} fill="none" stroke="currentColor"
+          strokeWidth={2} className="opacity-0 group-focus-visible:opacity-100" />
         <text
           x={eixo.x}
           y={eixo.y + 4}
@@ -376,12 +383,12 @@ function EixoDesenhado({
           role="button"
           tabIndex={0}
           aria-label={`Ver os ${eixo.excedente} registros de ${eixo.rotulo} que não cabem no desenho`}
-          className="cursor-pointer text-muted focus:outline-none"
-          onClick={onAbrir}
+          className="group cursor-pointer text-muted focus:outline-none"
+          onClick={(evento) => onAbrir(evento.currentTarget)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onAbrir();
+              onAbrir(e.currentTarget);
             }
           }}
         >
@@ -430,7 +437,7 @@ function PontoDoMapa({
   marcado: boolean;
   apagado: boolean;
   sempreComRotulo: boolean;
-  onSelecionar: () => void;
+  onSelecionar: (origem: Element) => void;
 }) {
   const rotuloFixo = sempreComRotulo || selecionado || marcado;
   return (
@@ -440,11 +447,11 @@ function PontoDoMapa({
       aria-label={`${no.rotulo} — ${no.sub}`}
       className={`group cursor-pointer focus:outline-none ${TOM_CLS[no.tom]}`}
       opacity={apagado ? 0.22 : 1}
-      onClick={onSelecionar}
+      onClick={(evento) => onSelecionar(evento.currentTarget)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onSelecionar();
+          onSelecionar(e.currentTarget);
         }
       }}
     >
@@ -469,12 +476,14 @@ function PontoDoMapa({
         stroke="currentColor"
         strokeOpacity={0.75}
       />
+      <circle cx={no.x} cy={no.y} r={RAIO_DO_NO + 6} fill="none" stroke="currentColor"
+        strokeWidth={2} className="opacity-0 group-focus-visible:opacity-100" />
       <text
         x={no.x}
         y={no.y + DESLOCAMENTO_DO_ROTULO}
         textAnchor="middle"
         className={`pointer-events-none fill-current font-os-mono text-[10px] ${
-          rotuloFixo ? '' : 'opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100'
+          rotuloFixo ? '' : 'opacity-0 motion-safe:transition-opacity group-hover:opacity-100 group-focus:opacity-100'
         }`}
       >
         {curto(no.rotulo)}

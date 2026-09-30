@@ -67,10 +67,11 @@ let PERMISSOES: string[] = [
   'automacoes.ver',
   'dashboard.ver',
 ];
+let TOKEN = 'tok';
 
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
-    token: 'tok',
+    token: TOKEN,
     ready: true,
     user: { id: 'u1', name: 'Pedro', email: 'p@x.com', roles: [], permissions: PERMISSOES },
     can: (p: string) => PERMISSOES.includes(p),
@@ -91,6 +92,8 @@ import ContextoPage from '@/app/contexto/page';
 // eslint-disable-next-line import/first
 import {
   montarMapa,
+  recortarMapa,
+  areasDaNota,
   estadoDaEmpresa,
   DESCIDA_DO_ROTULO,
   DESLOCAMENTO_DO_ROTULO,
@@ -382,6 +385,7 @@ beforeEach(() => {
   captura.elemento = null;
   captura.ponteiro = undefined;
   PERMISSOES = ['obsidian.ver', 'obsidian.editar', 'mcp.ver', 'automacoes.ver', 'dashboard.ver'];
+  TOKEN = 'tok';
 });
 
 /* ------------------------------------------------------- o clique de mouse -- */
@@ -440,7 +444,7 @@ describe('a tela do mapa', () => {
     servir();
     render(<ContextoPage />);
     const diretorio = await screen.findByRole('region', { name: 'Diretório do contexto' });
-    await userEvent.type(within(diretorio).getByRole('textbox', { name: 'Buscar no diretório' }), 'desconto');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Buscar no mapa e no diretório' }), 'desconto');
     const item = within(diretorio).getByRole('button', { name: /Desconto só com aprovação/ });
     expect(within(diretorio).queryByRole('button', { name: /Analista de pauta/ })).not.toBeInTheDocument();
     await userEvent.click(item);
@@ -647,7 +651,7 @@ describe('a busca', () => {
     );
     render(<ContextoPage />);
 
-    await userEvent.type(await screen.findByLabelText('Procurar no contexto'), 'politica');
+    await userEvent.type(await screen.findByLabelText('Buscar no mapa e no diretório'), 'politica');
 
     const aviso = await screen.findByText(/1 resultado\(s\) do índice da vault sem nota correspondente/);
     expect(aviso).toBeInTheDocument();
@@ -662,7 +666,7 @@ describe('a busca', () => {
     );
     render(<ContextoPage />);
 
-    await userEvent.type(await screen.findByLabelText('Procurar no contexto'), 'politica');
+    await userEvent.type(await screen.findByLabelText('Buscar no mapa e no diretório'), 'politica');
 
     expect(await screen.findByText(/divergência entre as duas chaves/)).toBeInTheDocument();
     expect(screen.queryByText(/sem nota correspondente nesta listagem/)).not.toBeInTheDocument();
@@ -678,7 +682,7 @@ describe('a busca', () => {
     apiPost.mockResolvedValue({ ok: true, notes: 3 });
     render(<ContextoPage />);
 
-    await userEvent.type(await screen.findByLabelText('Procurar no contexto'), 'desconto', {
+    await userEvent.type(await screen.findByLabelText('Buscar no mapa e no diretório'), 'desconto', {
       delay: null,
     });
     const buscas = () =>
@@ -922,5 +926,143 @@ describe('o grafo', () => {
     };
     const mapa = montarMapa(fontes({ organograma: { dado: org } as never }));
     expect(mapa.nos.filter((n) => n.familia === 'gente')).toHaveLength(1);
+  });
+});
+
+/* -------------------------------------------------------- áreas P15 -- */
+
+describe('áreas explícitas e recorte único', () => {
+  it('aceita tags reconhecidas sem duplicar ID e deixa títulos, pessoas e tipos desconhecidos sem área', () => {
+    expect(areasDaNota(['area:trabalho', 'area:conteudo', 'area:conteudo', 'area:desconhecida', 'comercial']))
+      .toEqual(['trabalho', 'conteudo']);
+    const mapa = montarMapa(fontes({
+      memoria: { dado: { itens: [
+        nota({ id: 'n1', title: 'Conteúdo e tarefas', tags: ['area:conteudo', 'area:trabalho'] }),
+        nota({ id: 'n2', title: 'Comercial sem tag', tags: ['comercial'] }),
+      ], total: 2, comVetor: 0 } } as never,
+      agentes: { dado: { items: [agente()], kpis: { rodando: 1, horasSemana: 0, semLinhaDeBase: 0, semProcedimento: 0 } } } as never,
+      rotinas: { dado: { items: [rotina({ id: 'r1', tipo: 'pauta.coleta' }), rotina({ id: 'r2', tipo: 'tipo.desconhecido' })], agendadorAtivo: true, descobertaCega: false } } as never,
+      organograma: { dado: organograma() } as never,
+    }));
+    expect(mapa.catalogo.memoria.find((i) => i.id === 'nota:n1')?.areas).toEqual(['trabalho', 'conteudo']);
+    expect(mapa.catalogo.memoria.find((i) => i.id === 'nota:n2')?.areas).toEqual([]);
+    expect(mapa.catalogo.rotinas.find((i) => i.id === 'rotina:r1')?.origemDaArea).toBe('tipo do executor: pauta.coleta');
+    expect(mapa.catalogo.rotinas.find((i) => i.id === 'rotina:r2')?.areas).toEqual([]);
+    expect(mapa.catalogo.agentes[0].areas).toEqual([]);
+    expect(mapa.catalogo.gente[0].areas).toEqual([]);
+    expect(mapa.arestas.filter((a) => a.tipo === 'relacao')).toHaveLength(3);
+
+    const conteudo = recortarMapa(mapa, { area: 'conteudo', familia: '', busca: '' });
+    expect(conteudo.nos.map((i) => i.id)).toEqual(['nota:n1', 'rotina:r1']);
+    expect(conteudo.catalogo.memoria.map((i) => i.id)).toEqual(['nota:n1']);
+    expect(conteudo.arestas.filter((a) => a.tipo === 'relacao')).toHaveLength(0);
+    const semArea = recortarMapa(mapa, { area: 'sem-area', familia: '', busca: '' });
+    expect(semArea.catalogo.memoria.map((i) => i.id)).toEqual(['nota:n2']);
+    expect(semArea.catalogo.rotinas.map((i) => i.id)).toEqual(['rotina:r2']);
+    expect(semArea.catalogo.agentes).toHaveLength(1);
+    expect(semArea.catalogo.gente).toHaveLength(1);
+    expect(semArea.arestas.filter((a) => a.tipo === 'relacao')).toHaveLength(2);
+    expect(recortarMapa(mapa, { area: 'trabalho', familia: '', busca: '' }).catalogo.memoria[0].id)
+      .toBe('nota:n1');
+  });
+
+  it('aplica área, tipo e busca ao desenho e ao diretório sem declarar fonte sem acesso como vazia', async () => {
+    PERMISSOES = ['obsidian.ver', 'automacoes.ver'];
+    servir({
+      '/memoria': { itens: [nota({ tags: ['area:conteudo', 'area:trabalho'] }),
+        nota({ id: 'n2', title: 'Outra regra', tags: [] })], total: 2, comVetor: 0 },
+      '/rotinas': { items: [rotina({ tipo: 'pauta.coleta' })], agendadorAtivo: true, descobertaCega: false },
+    });
+    render(<ContextoPage />);
+    const desenho = await screen.findByRole('group', { name: 'Mapa do contexto' });
+    const lista = screen.getByRole('region', { name: 'Diretório do contexto' });
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Área' }), 'conteudo');
+    expect(within(desenho).getByRole('button', { name: /Desconto só com aprovação/ })).toBeInTheDocument();
+    expect(within(desenho).getByRole('button', { name: /Pauta semanal/ })).toBeInTheDocument();
+    expect(within(desenho).queryByRole('button', { name: /Outra regra/ })).not.toBeInTheDocument();
+    expect(within(lista).queryByRole('button', { name: /Outra regra/ })).not.toBeInTheDocument();
+    expect(within(lista).getByRole('status')).toHaveTextContent('fontes sem acesso');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Tipo de registro' }), 'memoria');
+    expect(within(desenho).queryByRole('button', { name: /Pauta semanal/ })).not.toBeInTheDocument();
+    expect(within(lista).queryByRole('button', { name: /Pauta semanal/ })).not.toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Buscar no mapa e no diretório' }), 'inexistente');
+    expect(within(desenho).queryByRole('button', { name: /Desconto só com aprovação/ })).not.toBeInTheDocument();
+    expect(within(lista).queryByRole('button', { name: /Desconto só com aprovação/ })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Área' }), 'sem-area');
+    expect(within(lista).getByRole('status')).toHaveTextContent('0 registros carregados neste recorte');
+  });
+
+  it('foca a gaveta e devolve foco ao botão do diretório após Escape', async () => {
+    servir();
+    render(<ContextoPage />);
+    const lista = await screen.findByRole('region', { name: 'Diretório do contexto' });
+    const botao = within(lista).getByRole('button', { name: /Desconto só com aprovação/ });
+    await userEvent.click(botao);
+    const gaveta = await screen.findByRole('complementary', { name: 'Registro selecionado' });
+    expect(within(gaveta).getByRole('button', { name: 'Fechar o registro' })).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(botao).toHaveFocus());
+    expect(screen.queryByRole('complementary', { name: 'Registro selecionado' })).not.toBeInTheDocument();
+  });
+
+  it('descarta respostas e seleção da sessão anterior ao trocar token', async () => {
+    let entregarAntigo: ((valor: unknown) => void) | undefined;
+    const antigo = new Promise((resolve) => { entregarAntigo = resolve; });
+    apiGet.mockImplementation((caminho: string, token: string) => {
+      if (caminho === '/memoria' && token === 'tok') return antigo;
+      if (caminho === '/memoria') return Promise.resolve({ itens: [nota({ id: 'novo', title: 'Nota nova' })], total: 1, comVetor: 0 });
+      if (caminho === '/agents') return Promise.resolve({ items: [], kpis: { rodando: 0, horasSemana: 0, semLinhaDeBase: 0, semProcedimento: 0 } });
+      if (caminho === '/rotinas') return Promise.resolve({ items: [], agendadorAtivo: true, descobertaCega: false });
+      if (caminho === CONEXOES) return Promise.resolve({ items: [] });
+      if (caminho === '/organograma') return Promise.resolve(organograma([]));
+      return Promise.resolve({ itens: [], items: [] });
+    });
+    const tela = render(<ContextoPage />);
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/memoria', 'tok'));
+    TOKEN = 'outro-token';
+    tela.rerender(<ContextoPage />);
+    const desenho = await screen.findByRole('group', { name: 'Mapa do contexto' });
+    expect(await within(desenho).findByRole('button', { name: /Nota nova/ })).toBeInTheDocument();
+    await act(async () => { entregarAntigo?.({ itens: [nota({ id: 'antigo', title: 'Nota antiga' })], total: 1, comVetor: 0 }); });
+    expect(within(desenho).queryByRole('button', { name: /Nota antiga/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Área' })).toHaveValue('');
+  });
+
+  it.each(['barra', 'caminho de carga', 'primeira nota'])('não recarrega dados antigos quando POST da %s termina após troca de sessão', async (origem) => {
+    let concluirPost: ((valor: unknown) => void) | undefined;
+    apiPost.mockReturnValue(new Promise((resolve) => { concluirPost = resolve; }));
+    servir(origem === 'barra' ? {} : primeiroDia);
+    const responder = apiGet.getMockImplementation()!;
+    apiGet.mockImplementation((caminho: string, token: string) => {
+      if (token === 'outro-token' && caminho === '/memoria') {
+        return Promise.resolve({ itens: [nota({ id: 'novo', title: 'Registro da sessão nova' })], total: 1, comVetor: 0 });
+      }
+      return responder(caminho, token);
+    });
+    const tela = render(<ContextoPage />);
+    if (origem === 'primeira nota') {
+      await userEvent.click(await screen.findByRole('button', { name: /escrever a primeira nota/ }));
+      await userEvent.type(screen.getByLabelText('Título da nota'), 'Nota da sessão antiga');
+      await userEvent.type(screen.getByLabelText('Corpo da nota'), 'Texto da sessão antiga.');
+      await userEvent.type(screen.getByLabelText('Procedência da nota'), 'ensaio');
+      await userEvent.click(screen.getByRole('button', { name: /gravar a nota/ }));
+      expect(apiPost).toHaveBeenCalledWith('/memoria', expect.anything(), 'tok');
+    } else {
+      const botao = origem === 'barra'
+        ? await screen.findByRole('button', { name: /^reler a vault$/ })
+        : await screen.findByRole('button', { name: /reler a vault agora/ });
+      await userEvent.click(botao);
+      expect(apiPost).toHaveBeenCalledWith('/knowledge/reindex', {}, 'tok');
+    }
+
+    TOKEN = 'outro-token';
+    tela.rerender(<ContextoPage />);
+    const desenho = await screen.findByRole('group', { name: 'Mapa do contexto' });
+    expect(await within(desenho).findByRole('button', { name: /Registro da sessão nova/ })).toBeInTheDocument();
+    const leiturasAntigas = apiGet.mock.calls.filter(([, token]) => token === 'tok').length;
+    await act(async () => { concluirPost?.({ ok: true, notes: 7 }); });
+    expect(apiGet.mock.calls.filter(([, token]) => token === 'tok')).toHaveLength(leiturasAntigas);
+    expect(within(desenho).getByRole('button', { name: /Registro da sessão nova/ })).toBeInTheDocument();
+    expect(screen.queryByText(/7 nota\(s\) lida\(s\) da vault/)).not.toBeInTheDocument();
   });
 });

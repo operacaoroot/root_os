@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, X } from 'lucide-react';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import type { EixoDoMapa, ItemDoEixo, Tom } from './grafo';
+import { rotuloDaArea, type EixoDoMapa, type ItemDoEixo, type Tom } from './grafo';
 import {
   dia,
   emHoras,
@@ -66,11 +66,15 @@ export function Gaveta({
 }: {
   alvo: AlvoDaGaveta;
   onFechar: () => void;
-  onAbrirItem: (item: ItemDoEixo) => void;
+  onAbrirItem: (item: ItemDoEixo, origem?: Element) => void;
 }) {
+  const botaoFechar = useRef<HTMLButtonElement>(null);
+  const chaveAlvo = alvo.tipo === 'registro' ? alvo.item.id : `eixo:${alvo.eixo.key}`;
+  useEffect(() => { botaoFechar.current?.focus(); }, [chaveAlvo]);
   return (
     <aside
       aria-label="Registro selecionado"
+      onKeyDown={(evento) => { if (evento.key === 'Escape') { evento.stopPropagation(); onFechar(); } }}
       className="flex max-h-[clamp(420px,62vh,760px)] flex-col overflow-hidden rounded-root border border-border bg-surface"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
@@ -83,10 +87,11 @@ export function Gaveta({
           </h2>
         </div>
         <button
+          ref={botaoFechar}
           type="button"
           onClick={onFechar}
           aria-label="Fechar o registro"
-          className="rounded-root border border-border p-1 text-muted hover:text-text"
+          className="min-h-11 min-w-11 cursor-pointer rounded-root border border-border p-2 text-muted hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
         >
           <X size={14} />
         </button>
@@ -96,7 +101,15 @@ export function Gaveta({
         {alvo.tipo === 'eixo' ? (
           <ListaDoEixo eixo={alvo.eixo} itens={alvo.itens} onAbrirItem={onAbrirItem} />
         ) : (
-          <Registro item={alvo.item} />
+          <>
+            <div className="mb-3 rounded-root border border-border bg-surface-2 p-2 text-xs text-muted">
+              <span className="block font-medium text-text">{alvo.item.areas.length
+                ? alvo.item.areas.map(rotuloDaArea).join(', ')
+                : 'Sem área definida'}</span>
+              <span className="block">{alvo.item.origemDaArea ?? 'Nenhuma área declarada neste registro.'}</span>
+            </div>
+            <Registro item={alvo.item} />
+          </>
         )}
       </div>
     </aside>
@@ -119,7 +132,7 @@ function ListaDoEixo({
 }: {
   eixo: EixoDoMapa;
   itens: ItemDoEixo[];
-  onAbrirItem: (item: ItemDoEixo) => void;
+  onAbrirItem: (item: ItemDoEixo, origem?: Element) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -138,8 +151,8 @@ function ListaDoEixo({
           <button
             key={i.id}
             type="button"
-            onClick={() => onAbrirItem(i)}
-            className="flex w-full items-start gap-2 py-2 text-left hover:bg-surface-2"
+            onClick={(evento) => onAbrirItem(i, evento.currentTarget)}
+            className="flex min-h-11 w-full cursor-pointer items-start gap-2 py-2 text-left hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
           >
             <span
               aria-hidden

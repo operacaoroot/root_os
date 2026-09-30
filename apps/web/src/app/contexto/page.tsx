@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -13,6 +13,9 @@ import {
   estadoDaEmpresa,
   familiaPorChave,
   montarMapa,
+  recortarMapa,
+  AREAS,
+  type FiltroDeArea,
   type DescricaoDeFamilia,
   type EixoDoMapa,
   type FamiliaKey,
@@ -147,8 +150,18 @@ export default function ContextoPage() {
   const [organograma, setOrganograma] = useState<Fonte<Organograma>>({ dado: null });
 
   const [alvo, setAlvo] = useState<AlvoDaGaveta | null>(null);
+  const [sessao, setSessao] = useState<string | null>(null);
+  const identidadeAtual = useRef({ token, ready, numero: 0 });
+  if (identidadeAtual.current.token !== token || identidadeAtual.current.ready !== ready) {
+    identidadeAtual.current = { token, ready, numero: identidadeAtual.current.numero + 1 };
+  }
+  const numeroDaSessao = identidadeAtual.current.numero;
+  const geracao = useRef(0);
+  const origemDaGaveta = useRef<Element | null>(null);
   const [ocultos, setOcultos] = useState<Set<FamiliaKey>>(new Set());
   const [termo, setTermo] = useState('');
+  const [area, setArea] = useState<FiltroDeArea>('');
+  const [familiaFiltrada, setFamiliaFiltrada] = useState<FamiliaKey | ''>('');
   const [bruto, setBruto] = useState<BrutoDaBusca | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [erroDaBusca, setErroDaBusca] = useState<string | null>(null);
@@ -156,7 +169,8 @@ export default function ContextoPage() {
   const [recado, setRecado] = useState<string | null>(null);
 
   const carregar = useCallback(() => {
-    if (!token) return;
+    if (!token || !ready || identidadeAtual.current.numero !== numeroDaSessao) return;
+    const ciclo = ++geracao.current;
 
     const puxar = <T,>(key: FamiliaKey, aplicar: (f: Fonte<T>) => void) => {
       const familia: DescricaoDeFamilia = familiaPorChave(key);
@@ -165,8 +179,8 @@ export default function ContextoPage() {
         return;
       }
       apiGet<T>(familia.consulta, token)
-        .then((dado) => aplicar({ dado }))
-        .catch((e: unknown) => aplicar(porQueNaoVeio<T>(e)));
+        .then((dado) => { if (ciclo === geracao.current) aplicar({ dado }); })
+        .catch((e: unknown) => { if (ciclo === geracao.current) aplicar(porQueNaoVeio<T>(e)); });
     };
 
     puxar<MemoriaList>('memoria', setMemoria);
@@ -175,13 +189,30 @@ export default function ContextoPage() {
     puxar<CatalogoDeConexoes>('conexoes', setConexoes);
     puxar<Organograma>('gente', setOrganograma);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, ready, numeroDaSessao]);
 
   useEffect(() => {
+    ++geracao.current;
+    setMemoria({ dado: null });
+    setAgentes({ dado: null });
+    setRotinas({ dado: null });
+    setConexoes({ dado: null });
+    setOrganograma({ dado: null });
+    setAlvo(null);
+    setArea('');
+    setFamiliaFiltrada('');
+    setTermo('');
+    setBruto(null);
+    setRelendo(false);
+    setRecado(null);
+    setOcultos(new Set());
+    origemDaGaveta.current = null;
+    setSessao(ready ? token : null);
     if (ready && token) carregar();
+    return () => { ++geracao.current; };
   }, [ready, token, carregar]);
 
-  const mapa = useMemo(
+  const mapaBase = useMemo(
     () => montarMapa({ memoria, agentes, rotinas, conexoes, organograma }),
     [memoria, agentes, rotinas, conexoes, organograma],
   );
@@ -189,7 +220,7 @@ export default function ContextoPage() {
   /* A busca, disparada com folga para não pedir uma consulta por tecla. */
   useEffect(() => {
     const alvoDaBusca = termo.trim();
-    if (!token || alvoDaBusca.length < 2) {
+    if (!token || sessao !== token || alvoDaBusca.length < 2) {
       setBruto(null);
       setBuscando(false);
       setErroDaBusca(null);
@@ -216,30 +247,63 @@ export default function ContextoPage() {
       vivo = false;
       clearTimeout(id);
     };
-  }, [termo, token]);
+  }, [termo, token, sessao]);
 
   /* A junção é derivada: ela refaz quando o mapa muda, sem pedir nada de novo. */
+  const resultadoAtual = bruto?.termo === termo.trim() ? bruto : null;
   const juncao = useMemo(
-    () => (bruto ? juntar(bruto, mapa.catalogo.memoria) : null),
-    [bruto, mapa.catalogo.memoria],
+    () => (resultadoAtual ? juntar(resultadoAtual, mapaBase.catalogo.memoria) : null),
+    [resultadoAtual, mapaBase.catalogo.memoria],
   );
+
+  const recorteAtivo = !!(area || familiaFiltrada || termo.trim());
+  const mapa = useMemo(() => recortarMapa(mapaBase, {
+    area, familia: familiaFiltrada, busca: termo,
+    idsDaBusca: juncao?.ids,
+  }), [mapaBase, area, familiaFiltrada, termo, juncao]);
 
   const relerAVault = () => {
     if (!token) return;
+    const sessaoDoPedido = numeroDaSessao;
+    const vigente = () => identidadeAtual.current.numero === sessaoDoPedido;
     setRelendo(true);
     setRecado(null);
     apiPost<{ ok: boolean; notes: number }>('/knowledge/reindex', {}, token)
       .then((r) => {
+        if (!vigente()) return;
         setRecado(`${r.notes} nota(s) lida(s) da vault.`);
         carregar();
       })
-      .catch((e: Error) => setRecado(e.message))
-      .finally(() => setRelendo(false));
+      .catch((e: Error) => { if (vigente()) setRecado(e.message); })
+      .finally(() => { if (vigente()) setRelendo(false); });
   };
 
-  const abrirItem = (item: ItemDoEixo) => setAlvo({ tipo: 'registro', item });
-  const abrirEixo = (eixo: EixoDoMapa) =>
+  const lembrarOrigem = (origem?: Element) => {
+    if (origem && !origem.closest('[aria-label="Registro selecionado"]')) origemDaGaveta.current = origem;
+  };
+  const abrirItem = (item: ItemDoEixo, origem?: Element) => {
+    lembrarOrigem(origem);
+    setAlvo({ tipo: 'registro', item });
+  };
+  const abrirEixo = (eixo: EixoDoMapa, origem?: Element) => {
+    lembrarOrigem(origem);
     setAlvo({ tipo: 'eixo', eixo, itens: mapa.catalogo[eixo.key] });
+  };
+  const fecharGaveta = () => {
+    setAlvo(null);
+    requestAnimationFrame(() => {
+      const origem = origemDaGaveta.current;
+      if (origem?.isConnected && 'focus' in origem) (origem as HTMLElement).focus();
+      else document.getElementById('busca-do-contexto')?.focus();
+      origemDaGaveta.current = null;
+    });
+  };
+
+  useEffect(() => {
+    if (alvo?.tipo === 'registro' && !Object.values(mapa.catalogo).some((itens) => itens.some((item) => item.id === alvo.item.id))) {
+      setAlvo(null);
+    }
+  }, [mapa, alvo]);
 
   /*
    * A LISTA DE UM EIXO É REMONTADA A CADA DESENHO, e não a guardada no clique.
@@ -263,10 +327,10 @@ export default function ContextoPage() {
       return novo;
     });
 
-  if (!ready) return <p className="text-sm text-muted">Carregando…</p>;
+  if (!ready || sessao !== token) return <p className="text-sm text-muted">Carregando…</p>;
 
-  const estado = estadoDaEmpresa(mapa);
-  const incertos = eixosIncertos(mapa);
+  const estado = estadoDaEmpresa(mapaBase);
+  const incertos = eixosIncertos(mapaBase);
   const memoriaVazia = memoria.dado !== null && memoria.dado.total === 0;
 
   return (
@@ -284,10 +348,11 @@ export default function ContextoPage() {
         <div className="relative min-w-[260px] flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
+            id="busca-do-contexto"
             value={termo}
-            onChange={(e) => setTermo(e.target.value)}
-            placeholder="Procurar no contexto (ex.: política de desconto)"
-            aria-label="Procurar no contexto"
+            onChange={(e) => { setTermo(e.target.value); setAlvo(null); }}
+            placeholder="Buscar no mapa e no diretório"
+            aria-label="Buscar no mapa e no diretório"
             className="w-full rounded-root border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-dim"
           />
         </div>
@@ -299,6 +364,30 @@ export default function ContextoPage() {
             className="inline-flex items-center gap-2 rounded-root border border-border px-3 py-2 text-sm text-muted hover:bg-surface-2 hover:text-text disabled:opacity-60"
           >
             <RefreshCw size={14} className={relendo ? 'animate-spin' : ''} /> reler a vault
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-root border border-border bg-surface p-3" aria-label="Filtros do mapa e do diretório">
+        <label className="min-w-[180px] flex-1 text-xs text-muted">Área
+          <select value={area} onChange={(evento) => { setArea(evento.target.value as FiltroDeArea); setAlvo(null); }}
+            className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+            <option value="">Todas as áreas</option>
+            {AREAS.map((opcao) => <option key={opcao.key} value={opcao.key}>{opcao.rotulo}</option>)}
+            <option value="sem-area">Sem área definida</option>
+          </select>
+        </label>
+        <label className="min-w-[180px] flex-1 text-xs text-muted">Tipo de registro
+          <select value={familiaFiltrada} onChange={(evento) => { setFamiliaFiltrada(evento.target.value as FamiliaKey | ''); setAlvo(null); }}
+            className="mt-1 block min-h-11 w-full rounded-root border border-border bg-bg px-2 text-sm text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+            <option value="">Todos os tipos</option>
+            {mapaBase.eixos.map((eixo) => <option key={eixo.key} value={eixo.key}>{eixo.rotulo}</option>)}
+          </select>
+        </label>
+        {recorteAtivo && (
+          <button type="button" onClick={() => { setArea(''); setFamiliaFiltrada(''); setTermo(''); setAlvo(null); }}
+            className="min-h-11 cursor-pointer rounded-root border border-border px-3 py-2 text-sm text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+            Limpar filtros
           </button>
         )}
       </div>
@@ -319,28 +408,36 @@ export default function ContextoPage() {
       {estado === 'carregando' ? (
         <p className="text-sm text-muted">Montando o mapa…</p>
       ) : estado === 'desconhecida' ? (
-        <CaminhoDeCarga mapa={mapa} incertos={incertos} onCarregou={carregar} />
+        <CaminhoDeCarga mapa={mapaBase} incertos={incertos} onCarregou={carregar} />
       ) : estado === 'vazia' ? (
-        <CaminhoDeCarga mapa={mapa} onCarregou={carregar} />
+        <CaminhoDeCarga mapa={mapaBase} onCarregou={carregar} />
       ) : (
         <>
-          {memoriaVazia && <CaminhoDeCarga mapa={mapa} compacto onCarregou={carregar} />}
+          {memoriaVazia && <CaminhoDeCarga mapa={mapaBase} compacto onCarregou={carregar} />}
+          <p className="text-xs text-muted" role="status">
+            {mapa.registros} {mapa.registros === 1 ? 'registro carregado' : 'registros carregados'}{recorteAtivo ? ' no recorte' : ''}.
+            Área organiza a visualização; linhas tracejadas representam apenas vínculos declarados.
+          </p>
+          <a href="#diretorio-do-contexto" className="w-fit text-sm text-brand underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand sm:hidden">
+            Ir ao diretório de registros
+          </a>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr),360px]">
             <Mapa
               mapa={mapa}
+              recorteAtivo={recorteAtivo}
               selecionado={alvo?.tipo === 'registro' ? alvo.item.id : null}
-              destaque={juncao?.ids ?? null}
+              destaque={termo.trim() ? null : juncao?.ids ?? null}
               ocultos={ocultos}
               onSelecionar={abrirItem}
               onAbrirEixo={abrirEixo}
             />
             {alvoAtual ? (
-              <Gaveta alvo={alvoAtual} onFechar={() => setAlvo(null)} onAbrirItem={abrirItem} />
+              <Gaveta alvo={alvoAtual} onFechar={fecharGaveta} onAbrirItem={abrirItem} />
             ) : (
-              <Legenda mapa={mapa} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
+              <Legenda mapa={mapa} recorteAtivo={recorteAtivo} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
             )}
           </div>
-          <Diretorio mapa={mapa} onAbrir={abrirItem} />
+          <Diretorio mapa={mapa} recorteAtivo={recorteAtivo} onAbrir={abrirItem} />
         </>
       )}
     </div>
@@ -463,7 +560,7 @@ function Resultados({
   erro: string | null;
   modo: string | null;
   catalogo: ItemDoEixo[];
-  onAbrir: (item: ItemDoEixo) => void;
+  onAbrir: (item: ItemDoEixo, origem?: Element) => void;
 }) {
   const porId = new Map(catalogo.map((i) => [i.id, i]));
   return (
@@ -501,7 +598,7 @@ function Resultados({
                 key={r.id}
                 type="button"
                 disabled={!item}
-                onClick={() => item && onAbrir(item)}
+                onClick={(evento) => item && onAbrir(item, evento.currentTarget)}
                 title={r.sub}
                 className="rounded-root border border-border px-2 py-1 text-xs text-muted hover:border-brand/40 hover:text-text disabled:opacity-50"
               >
@@ -524,14 +621,16 @@ function Resultados({
  */
 function Legenda({
   mapa,
+  recorteAtivo,
   ocultos,
   onAlternar,
   onAbrirEixo,
 }: {
   mapa: MapaDados;
+  recorteAtivo: boolean;
   ocultos: Set<FamiliaKey>;
   onAlternar: (key: FamiliaKey) => void;
-  onAbrirEixo: (eixo: EixoDoMapa) => void;
+  onAbrirEixo: (eixo: EixoDoMapa, origem?: Element) => void;
 }) {
   return (
     <aside aria-label="Legenda do mapa" className="space-y-2 rounded-root border border-border bg-surface p-4">
@@ -545,19 +644,19 @@ function Legenda({
                 type="button"
                 onClick={() => onAlternar(eixo.key)}
                 aria-label={oculto ? `Mostrar ${eixo.rotulo} no mapa` : `Esconder ${eixo.rotulo} do mapa`}
-                className="mt-0.5 text-dim hover:text-text"
+                className="mt-0.5 min-h-11 min-w-11 cursor-pointer text-dim hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
               >
                 {oculto ? <EyeOff size={13} /> : <Eye size={13} />}
               </button>
               <button
                 type="button"
-                onClick={() => onAbrirEixo(eixo)}
-                className="min-w-0 flex-1 text-left"
+                onClick={(evento) => onAbrirEixo(eixo, evento.currentTarget)}
+                className="min-h-11 min-w-0 flex-1 cursor-pointer text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
               >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="text-sm text-text">{eixo.rotulo}</span>
                   <span className="font-os-mono text-sm tabular-nums text-muted">
-                    {rotuloDoTotal(eixo)}
+                    {rotuloDoTotal(eixo, recorteAtivo)}
                   </span>
                 </span>
                 <span className="block text-[11px] leading-snug text-muted">{eixo.descricao}</span>
@@ -575,9 +674,9 @@ function Legenda({
   );
 }
 
-function rotuloDoTotal(eixo: EixoDoMapa): string {
+function rotuloDoTotal(eixo: EixoDoMapa, recorteAtivo: boolean): string {
   if (eixo.estado === 'sem_permissao') return 'sem acesso';
   if (eixo.estado === 'erro') return 'falhou';
   if (eixo.estado === 'carregando') return '…';
-  return String(eixo.total ?? 0);
+  return recorteAtivo ? `${eixo.totalNoRecorte} de ${eixo.total ?? 0}` : String(eixo.total ?? 0);
 }
