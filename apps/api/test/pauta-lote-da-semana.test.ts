@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { JwtService } from '@nestjs/jwt';
@@ -346,9 +347,11 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
   const rotina = (c: string) => comContexto({ orgId: ORG, correlationId: c, origem: 'cron' }, () => publicacao.olharOHorario(ORG, c));
   const publishes = () => graph.chamadas.filter((c) => c.caminho.endsWith('/media_publish')).length;
 
-  async function novaPeca(chave: string, formato: 'carrossel' | 'story' | 'corte', slot: Date, extra: { semJpeg?: boolean } = {}) {
+  async function novaPeca(chave: string, formato: 'carrossel' | 'story' | 'corte', slot: Date, extra: { semJpeg?: boolean; id?: string; criadaEm?: Date } = {}) {
     const p = await prisma.pautaPeca.create({
       data: {
+        ...(extra.id ? { id: extra.id } : {}),
+        ...(extra.criadaEm ? { criadaEm: extra.criadaEm } : {}),
         orgId: ORG,
         rodadaId: id.rodada,
         canal: 'instagram',
@@ -770,8 +773,12 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
     const comErro = await aprovadaEm('erro-2', 'story', DIA2('11:10'));
     const manual = await aprovadaEm('manual-3', 'corte', DIA2('11:20'));
     const noMeio = await aprovadaEm('meio-4', 'carrossel', DIA2('11:30'));
-    const dupA = await novaPeca('dup-a', 'story', DIA2('11:40'));
-    const dupB = await novaPeca('dup-b', 'story', DIA2('11:40'));
+    // Mesmo timestamp e slot, mas o ID da peça criada depois vem primeiro.
+    // Sem desempate no SELECT, a ordem do banco poderia atribuir o problema a qualquer uma.
+    const sufixo = randomUUID().slice(1);
+    const criadaEm = new Date('2026-09-01T10:00:00.000Z');
+    const dupA = await novaPeca('dup-a', 'story', DIA2('11:40'), { id: `f${sufixo}`, criadaEm });
+    const dupB = await novaPeca('dup-b', 'story', DIA2('11:40'), { id: `0${sufixo}`, criadaEm });
     const antes = todasMenos(vencido, comErro, manual, noMeio, dupA, dupB);
 
     const r3 = (await naEmpresa(() => publicacao.pedir(ORG, vencido, id.proponente))) as AcaoRetida;
@@ -782,8 +789,9 @@ describe.skipIf(!URL)('MD8: a semana assinada por outra pessoa sai no horário, 
     // O "Publicar agora" vivo na fila e a segunda peça do mesmo formato no mesmo slot barram a montagem, e a aba já os mostra.
     const e = await naEmpresa(() => semana.estado(ORG, id.episodio, id.proponente));
     expect(e.pecas.find((x) => x.id === vencido)?.problema).toMatch(/Publicar agora.*esperando na fila/);
-    expect(e.pecas.find((x) => x.id === dupA)?.problema).toBeNull();
-    expect(e.pecas.find((x) => x.id === dupB)?.problema).toMatch(/mesmo formato nesse horário/);
+    expect(e.pecas.filter((x) => x.id === dupA || x.id === dupB).map((x) => x.id)).toEqual([dupB, dupA]);
+    expect(e.pecas.find((x) => x.id === dupB)?.problema).toBeNull();
+    expect(e.pecas.find((x) => x.id === dupA)?.problema).toMatch(/mesmo formato nesse horário/);
     expect(e.pecas.find((x) => x.id === comErro)?.problema).toBeNull();
     expect(e.pecas.find((x) => x.id === manual)?.problema).toBeNull();
     await expect(naEmpresa(() => semana.preparar(ORG, id.episodio, id.proponente, [...antes, dupA]))).rejects.toThrow(/Publicar agora.*esperando na fila/);
