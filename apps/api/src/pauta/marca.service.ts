@@ -5,6 +5,10 @@ import {
   PAUTA_CHAVE_DOS_PILARES,
   PAUTA_SECOES_DA_MARCA,
   type PautaMarcaPainel,
+  type PautaMarcaAplicarInput,
+  type PautaMarcaDestino,
+  type PautaMarcaPrevia,
+  type PautaMarcaVinculo,
   type PautaMarcaSalvarInput,
   type PautaPilar,
   type PautaPilaresSalvarInput,
@@ -12,9 +16,11 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { blocoDeMarca, marcaDaNota, pilaresDaNota, procedenciaDaMarca } from './marca-da-pauta';
+import { lerReferenciaDaProjecao, proporMarcaDaFonte, referenciaDaProjecao } from './marca-projecao';
 
 const TITULO_DA_MARCA = 'Marca (pauta)';
 const TITULO_DOS_PILARES = 'Pilares de conteúdo (pauta)';
+const CHAVE_DA_FONTE = 'editorial:marca:Root/40-marca-e-conteudo/root-fundamentos-da-marca-e-guia-de-expressao.md';
 
 /*
  * A MARCA E OS PILARES (MK1). Duas notas da memória, lidas por `porChave` e
@@ -69,8 +75,15 @@ export class MarcaService {
     ]);
     const { perfil } = marcaDaNota(notaMarca);
     const { pilares } = pilaresDaNota(notaPilares);
+    const [vinculoMarca, vinculoPilares] = await Promise.all([
+      this.vinculoDaNota(orgId, notaMarca), this.vinculoDaNota(orgId, notaPilares),
+    ]);
     return blocoDeMarca(perfil, pilares, {
-      procedencia: notaMarca && perfil ? procedenciaDaMarca(notaMarca) : undefined,
+      procedencia: notaMarca && perfil ? procedenciaDaMarca({
+        ...notaMarca, sourceRef: vinculoMarca?.atual ? notaMarca.sourceRef : null,
+      }) : undefined,
+      procedenciaPilares: notaPilares && pilares.length && vinculoPilares?.atual
+        ? procedenciaDaMarca(notaPilares) : undefined,
     });
   }
 
@@ -81,6 +94,9 @@ export class MarcaService {
     ]);
     const m = marcaDaNota(notaMarca);
     const p = pilaresDaNota(notaPilares);
+    const [vinculoMarca, vinculoPilares] = await Promise.all([
+      this.vinculoDaNota(orgId, notaMarca), this.vinculoDaNota(orgId, notaPilares),
+    ]);
     return {
       perfil: m.perfil,
       perfilVersao: m.versao,
@@ -90,9 +106,110 @@ export class MarcaService {
       pilares: p.pilares,
       avisos: [...m.avisos, ...p.avisos],
       bloco: blocoDeMarca(m.perfil, p.pilares, {
-        procedencia: notaMarca && m.perfil ? procedenciaDaMarca(notaMarca) : undefined,
+        procedencia: notaMarca && m.perfil ? procedenciaDaMarca({
+          ...notaMarca, sourceRef: vinculoMarca?.atual ? notaMarca.sourceRef : null,
+        }) : undefined,
+        procedenciaPilares: notaPilares && p.pilares.length && vinculoPilares?.atual
+          ? procedenciaDaMarca(notaPilares) : undefined,
       }),
+      projecoes: { perfil: vinculoMarca, pilares: vinculoPilares },
     };
+  }
+
+  /** A última projeção permanece visível após edição manual, mas deixa de ser a versão vigente. */
+  private async vinculoDaNota(orgId: string, nota: NotaDeContexto | null): Promise<PautaMarcaVinculo | null> {
+    if (!nota) return null;
+    try {
+      const historico = await this.memoria.historico(orgId, nota.id);
+      const projetada = historico.find((v) => v.motivo?.startsWith('projeção revisada do guia') &&
+        !!lerReferenciaDaProjecao(v.sourceRef));
+      const ref = lerReferenciaDaProjecao(projetada?.sourceRef ?? null);
+      if (!projetada || !ref) return null;
+      return {
+        versaoDestino: projetada.versao, fonteContextItemId: ref.id,
+        fonteChave: ref.chave, fonteVersao: ref.versao, fonteHash: ref.hash,
+        secoesUsadas: ref.secoes,
+        atual: !nota.arquivadoEm && nota.versao === projetada.versao && nota.sourceRef === projetada.sourceRef,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Prévia sem escrita: a pessoa confere trechos, destino e texto antes de aplicar. */
+  async previa(orgId: string, destino: PautaMarcaDestino): Promise<PautaMarcaPrevia> {
+    const chaveDestino = destino === 'perfil' ? PAUTA_CHAVE_DA_MARCA : PAUTA_CHAVE_DOS_PILARES;
+    const [fonte, nota] = await Promise.all([
+      this.memoria.porChave(orgId, CHAVE_DA_FONTE),
+      this.memoria.porChave(orgId, chaveDestino),
+    ]);
+    const base: PautaMarcaPrevia = {
+      destino, fonteContextItemId: fonte?.id ?? null, fonteChave: CHAVE_DA_FONTE,
+      fonteVersao: fonte?.versao ?? null, fonteHash: fonte?.contentHash ?? null,
+      secoesUsadas: [], textoProposto: '',
+      destinoContextItemId: nota?.id ?? null, destinoVersao: nota?.versao ?? null,
+      destinoHash: nota?.contentHash ?? null, textoAtual: nota?.body ?? '',
+      diferenca: false, estado: 'pronto', aviso: null,
+    };
+    if (!fonte) return { ...base, estado: 'fonte_ausente', aviso: 'O guia de marca não está na Memória desta empresa.' };
+    if (fonte.arquivadoEm) return { ...base, estado: 'fonte_arquivada', aviso: 'O guia foi arquivado; a projeção está indisponível.' };
+    const proposta = proporMarcaDaFonte(fonte.body, destino);
+    const resposta: PautaMarcaPrevia = {
+      ...base, secoesUsadas: proposta.secoesUsadas, textoProposto: proposta.texto,
+      diferenca: proposta.texto !== (nota?.body ?? ''),
+      estado: proposta.erro ? 'excede_limite' : 'pronto', aviso: proposta.erro,
+    };
+    if (nota?.arquivadoEm) return { ...resposta, estado: 'destino_alterado', aviso: 'O destino foi arquivado. Restaure-o explicitamente na Memória.' };
+    if (proposta.erro || !nota) return resposta;
+    const vinculo = await this.vinculoDaNota(orgId, nota);
+    if (vinculo?.atual && (vinculo.fonteContextItemId !== fonte.id || vinculo.fonteVersao !== fonte.versao || vinculo.fonteHash !== fonte.contentHash)) {
+      return { ...resposta, estado: 'fonte_alterada', aviso: 'O guia mudou desde a última projeção. Revise a diferença antes de aplicar.' };
+    }
+    if (vinculo?.atual && !resposta.diferenca) return { ...resposta, estado: 'ja_aplicado' };
+    if (vinculo && !vinculo.atual) {
+      return { ...resposta, estado: 'destino_alterado', aviso: 'Houve edição manual depois da projeção. Aplicar criará uma nova versão.' };
+    }
+    return resposta;
+  }
+
+  /** Cada destino é aplicado sozinho. Fonte e destino são conferidos de novo na transação da Memória. */
+  async aplicar(orgId: string, destino: PautaMarcaDestino, pedido: PautaMarcaAplicarInput): Promise<PautaMarcaPainel> {
+    const fonte = await this.memoria.porChave(orgId, CHAVE_DA_FONTE);
+    if (!fonte || fonte.arquivadoEm) throw new ConflictException('O guia não está ativo. Refaça a prévia.');
+    const proposta = proporMarcaDaFonte(fonte.body, destino);
+    if (!proposta.texto || !proposta.secoesUsadas.length) {
+      throw new ConflictException(`${proposta.erro ?? 'A fonte não tem os trechos necessários.'} Refaça a prévia.`);
+    }
+    if (fonte.id !== pedido.fonteContextItemId || fonte.versao !== pedido.fonteVersao ||
+        fonte.contentHash !== pedido.fonteHash || JSON.stringify(proposta.secoesUsadas) !== JSON.stringify(pedido.secoesUsadas)) {
+      throw new ConflictException('A fonte ou os trechos mudaram. Refaça a prévia.');
+    }
+    const corpo = pedido.textoFinal.replace(/\r\n?/g, '\n').trim();
+    if (destino === 'perfil') {
+      if (corpo.length < 80 || corpo.length > 4_000) {
+        throw new ConflictException(`O perfil deve ter de 80 a 4.000 caracteres; recebeu ${corpo.length}.`);
+      }
+    } else {
+      const esperado = pilaresDaNota({ body: proposta.texto }).pilares.map((p) => p.chave);
+      const lido = pilaresDaNota({ body: corpo });
+      if (corpo.length > 4_000 || lido.avisos.length ||
+          JSON.stringify(lido.pilares.map((p) => p.chave)) !== JSON.stringify(esperado)) {
+        throw new ConflictException('Os pilares devem preservar os cinco territórios válidos da fonte. Revise o texto.');
+      }
+    }
+    const chaveDestino = destino === 'perfil' ? PAUTA_CHAVE_DA_MARCA : PAUTA_CHAVE_DOS_PILARES;
+    await this.memoria.projetarCondicionado(orgId, {
+      fonte: { id: fonte.id, chave: CHAVE_DA_FONTE, versao: fonte.versao, hash: fonte.contentHash },
+      destino: {
+        id: pedido.destinoContextItemId, chave: chaveDestino,
+        versao: pedido.destinoVersao, hash: pedido.destinoHash,
+      },
+      title: destino === 'perfil' ? TITULO_DA_MARCA : TITULO_DOS_PILARES,
+      body: corpo, tags: destino === 'perfil' ? ['pauta', 'marca'] : ['pauta', 'marca', 'pilares'],
+      sourceRef: referenciaDaProjecao(fonte, proposta.secoesUsadas),
+      motivo: `projeção revisada do guia para ${chaveDestino}; trechos e hashes na referência da fonte`,
+    });
+    return this.painel(orgId);
   }
 
   /** A edição à mão do perfil. `versao` velha é outra aba mexendo junto (409). */
