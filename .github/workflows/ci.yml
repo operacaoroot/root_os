@@ -1958,8 +1958,12 @@ jobs:
       # precisa de banco. Medido sem banco: 2503 passados e 718 pulados, em 80
       # arquivos. O piso de ARQUIVOS vai a 72, colado no real; o de CASOS sobe
       # 14 (~15% de folga sobre os 17 que rodam sem banco), para 2320.
+      # P09/P10 editorial (30/09/2026): `editorial-version.test.ts` acrescenta
+      # sete casos de entrada HTTP, replay, versões, SQL e manifesto. Dois rodam
+      # sem banco; os demais exigem o Postgres descartável do ensaio. O piso de
+      # arquivos sobe um, sem reduzir o piso de casos.
       PISO_CASOS_API: '2320'
-      PISO_ARQUIVOS_API: '72'
+      PISO_ARQUIVOS_API: '73'
 
     steps:
       - uses: actions/checkout@v4

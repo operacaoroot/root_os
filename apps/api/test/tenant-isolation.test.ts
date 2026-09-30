@@ -344,6 +344,10 @@ const ALVOS: Alvo[] = [
   { tabela: 'KnowledgeNote', escopo: 'tenant', chaveSql: '"id"', nota: 'Conteúdo do vault + embedding vector(1536). Vaza também por similaridade.' },
   { tabela: 'ContextItem', escopo: 'tenant', chaveSql: '"id"', nota: 'A MEMÓRIA (fatia 4.1+4.2, RF-M-01): as regras da casa, o dicionário de dados e as decisões desta empresa, em texto, MAIS embedding vector(1536). Vaza pela leitura E por similaridade — um KNN sem filtro entrega o conteúdo do vizinho sem nem precisar ler a linha. Escrever nela é pior: é ditar a "verdade da casa" que o agente da outra empresa vai usar como contexto.' },
   { tabela: 'ContextItemVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'O histórico da MEMÓRIA — a projeção de cada mudança, com o corpo daquela versão e o motivo. Tem orgId próprio (não deriva do pai) porque a consulta de histórico é quente. Ler o da outra empresa é ler o que ela DECIDIU e por quê, inclusive o que ela já revogou.' },
+  { tabela: 'EditorialArtifact', escopo: 'tenant', chaveSql: '"id"', nota: 'Identidade editorial no card: ponteiro e origem por empresa.' },
+  { tabela: 'EditorialVersion', escopo: 'tenant', chaveSql: '"id"', nota: 'Texto histórico imutável, hash, autoria e chave de replay.' },
+  { tabela: 'EditorialFile', escopo: 'tenant', chaveSql: '"id"', nota: 'Metadados e localização opaca de arquivo editorial privado.' },
+  { tabela: 'EditorialVersionFile', escopo: 'tenant', chaveSql: `"versionId" || '|' || "fileId"`, nota: 'Manifesto histórico que liga versão e arquivo do mesmo card e tenant.' },
   { tabela: 'ContentItem', escopo: 'tenant', chaveSql: '"id"', nota: 'Espelho do ClickUp.' },
   { tabela: 'Report', escopo: 'tenant', chaveSql: '"id"', nota: 'data Json guarda snapshot das métricas do tenant.' },
 
@@ -1186,6 +1190,34 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('WorkTask', tarefaId);
   s.ref.workTaskId = tarefaId;
 
+  // P09: a versão ainda não foi promovida ao inserir o vínculo; depois da
+  // promoção, o gatilho sela o manifesto contra INSERT tardio.
+  const artifactId = await ins(c, 'EditorialArtifact', {
+    id: crypto.randomUUID(), orgId, workTaskId: tarefaId, tipo: 'roteiro',
+    createKey: `iso-artifact-${suf}`, requestHash: 'a'.repeat(64),
+  });
+  reg('EditorialArtifact', artifactId);
+  const versionId = await ins(c, 'EditorialVersion', {
+    id: crypto.randomUUID(), orgId, artifactId, workTaskId: tarefaId, numero: 1,
+    body: `Texto editorial privado da org ${rotulo} (${MARCA}).`, contentHash: 'b'.repeat(64),
+    idempotencyKey: `iso-version-${suf}`, requestHash: 'c'.repeat(64), authorType: 'user', authorId: userId,
+  });
+  reg('EditorialVersion', versionId);
+  const fileId = await ins(c, 'EditorialFile', {
+    id: crypto.randomUUID(), orgId, workTaskId: tarefaId, uploadKey: `iso-upload-${suf}`,
+    requestHash: 'd'.repeat(64), state: 'verified', displayName: `prova-${rotulo}.txt`,
+    mimeDetected: 'text/plain', sizeBytes: 3, sha256: 'e'.repeat(64),
+    storageKey: `qa/iso-${suf}`, authorType: 'user', authorId: userId, verifiedAt: agora,
+  });
+  reg('EditorialFile', fileId);
+  await c.query('INSERT INTO "EditorialVersionFile" ("orgId", "workTaskId", "versionId", "fileId", "position", "sha256AtLink", "sizeAtLink", "mimeAtLink") VALUES ($1,$2,$3,$4,1,$5,3,$6)',
+    [orgId, tarefaId, versionId, fileId, 'e'.repeat(64), 'text/plain']);
+  reg('EditorialVersionFile', `${versionId}|${fileId}`);
+  await c.query('UPDATE "EditorialArtifact" SET "currentVersionId"=$1 WHERE id=$2', [versionId, artifactId]);
+  s.ref.editorialArtifactId = artifactId;
+  s.ref.editorialVersionId = versionId;
+  s.ref.editorialFileId = fileId;
+
   reg('WorkFieldValue', await ins(c, 'WorkFieldValue', {
     id: crypto.randomUUID(), orgId, taskId: tarefaId, fieldId: campoId, optionId: opcaoId,
   }));
@@ -1521,6 +1553,22 @@ afterAll(async () => {
   const c = await admin.connect();
   try {
     await c.query('BEGIN');
+    // As versões e manifestos editoriais são imutáveis em produção. Só a
+    // limpeza cirúrgica desta suíte, pelo dono do banco descartável, suspende
+    // seus gatilhos dentro da transação e restaura-os antes do COMMIT.
+    const editorialTriggers = [
+      ['EditorialArtifact', 'EditorialArtifact_guard'],
+      ['EditorialVersion', 'EditorialVersion_immutable'],
+      ['EditorialVersionFile', 'EditorialVersionFile_immutable'],
+      ['EditorialFile', 'EditorialFile_guard'],
+    ] as const;
+    for (const [table, trigger] of editorialTriggers) {
+      await c.query(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
+    }
+    const artifactIds = [...(sementes.A.chaves.EditorialArtifact ?? []), ...(sementes.B.chaves.EditorialArtifact ?? [])];
+    if (artifactIds.length) {
+      await c.query('UPDATE "EditorialArtifact" SET "currentVersionId"=NULL WHERE id=ANY($1::text[])', [artifactIds]);
+    }
     for (const tabela of [...ORDEM_LIMPEZA].reverse()) {
       const chaves = [...(sementes.A.chaves[tabela] ?? []), ...(sementes.B.chaves[tabela] ?? [])];
       if (tabela === 'Permission') {
@@ -1562,9 +1610,17 @@ afterAll(async () => {
           const [a, b] = k.split('|');
           await c.query(`DELETE FROM "${tabela}" WHERE "A" = $1 AND "B" = $2`, [a, b]);
         }
+      } else if (tabela === 'EditorialVersionFile') {
+        for (const key of chaves) {
+          const [versionId, fileId] = key.split('|');
+          await c.query('DELETE FROM "EditorialVersionFile" WHERE "versionId"=$1 AND "fileId"=$2', [versionId, fileId]);
+        }
       } else {
         await c.query(`DELETE FROM "${tabela}" WHERE "id" = ANY($1::text[])`, [chaves]);
       }
+    }
+    for (const [table, trigger] of editorialTriggers) {
+      await c.query(`ALTER TABLE "${table}" ENABLE TRIGGER "${trigger}"`);
     }
     await c.query('COMMIT');
   } catch (e) {

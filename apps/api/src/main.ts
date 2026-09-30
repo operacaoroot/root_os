@@ -11,6 +11,7 @@ import { AppModule } from './app.module';
 import { ZodExceptionFilter } from './common/zod-exception.filter';
 import { LoggerDeCorrelacao } from './common/logger-correlacao';
 import { instalarCorpoDaMidia } from './common/corpo-da-midia';
+import { instalarCorpoEditorial } from './common/corpo-editorial';
 import { ehTokenDeSessao } from './auth/jwt-auth.guard';
 
 // Credenciais PRÓPRIAS do root (isolamento): ficam em ~/.config/root/*.env,
@@ -51,16 +52,18 @@ async function bootstrap() {
   app.useLogger(new LoggerDeCorrelacao());
   const prefixo = 'api';
   app.setGlobalPrefix(prefixo);
-  // O corpo JSON continua com o padrão do Nest (100 kb) em toda a API; só as
-  // duas rotas de mídia do episódio aceitam mais. Tem de vir antes do `listen`.
+  // O corpo JSON segue em 100 kb no restante da API. Mídia e versão editorial
+  // têm limites próprios, registrados antes do parser padrão do Nest.
   const jwt = app.get(JwtService, { strict: false });
-  instalarCorpoDaMidia(app, prefixo, (token) => {
+  const ehSessaoValida = (token: string) => {
     try {
       return ehTokenDeSessao(jwt.verify(token));
     } catch {
       return false;
     }
-  });
+  };
+  instalarCorpoDaMidia(app, prefixo, ehSessaoValida);
+  instalarCorpoEditorial(app, prefixo, ehSessaoValida);
   app.enableCors({
     origin: (process.env.WEB_ORIGIN ?? 'http://localhost:4000').split(','),
     credentials: true,

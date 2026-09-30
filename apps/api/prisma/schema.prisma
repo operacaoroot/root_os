@@ -81,6 +81,9 @@ model Org {
   leadSources  LeadSource[]
   reports      Report[]
   contentItems ContentItem[]
+  editorialArtifacts EditorialArtifact[]
+  editorialVersions EditorialVersion[]
+  editorialFiles EditorialFile[]
   knowledge    KnowledgeNote[]
   google       GoogleAccount?
   meta         MetaAccount?
@@ -2072,10 +2075,13 @@ model WorkTask {
   values   WorkFieldValue[]
   comments WorkComment[]
   apontamentos WorkApontamento[]
+  editorialArtifacts EditorialArtifact[]
+  editorialFiles EditorialFile[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
 
   @@unique([orgId, externalId])
+  @@unique([id, orgId])
   @@index([orgId, listId, statusId])
   @@index([orgId, archived, dueDate])
   /// "O que este agente tem na mão" e "o que está travado desde quando" — as
@@ -4284,4 +4290,105 @@ model OnboardingMarco {
   em    DateTime @default(now())
 
   @@index([orgId, trilhoId, em])
+}
+
+// P09: identidade do material editorial vinculado ao card. As FKs compostas,
+// o ponteiro monotônico e a imutabilidade ficam na migration SQL.
+model EditorialArtifact {
+  id               String   @id @default(uuid())
+  orgId            String
+  workTaskId       String
+  tipo             String
+  originSystem     String?
+  originRef        String?
+  createKey        String
+  requestHash      String   @db.Char(64)
+  currentVersionId String?
+  createdAt        DateTime @default(now())
+  org              Org      @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  workTask         WorkTask @relation(fields: [workTaskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versions         EditorialVersion[] @relation("ArtifactVersions")
+  currentVersion   EditorialVersion? @relation("CurrentEditorialVersion", fields: [currentVersionId, id, workTaskId, orgId], references: [id, artifactId, workTaskId, orgId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([id, workTaskId, orgId])
+  @@unique([orgId, createKey])
+  @@unique([orgId, originSystem, originRef])
+  @@index([orgId, workTaskId])
+}
+
+model EditorialVersion {
+  id             String   @id @default(uuid())
+  orgId          String
+  artifactId     String
+  workTaskId     String
+  numero         Int
+  baseVersionId  String?
+  body           String   @db.Text
+  sourceRefs     Json     @default("[]")
+  contentHash    String   @db.Char(64)
+  idempotencyKey String
+  requestHash    String   @db.Char(64)
+  authorType     ActorType
+  authorId       String?
+  createdAt      DateTime @default(now())
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  artifact       EditorialArtifact @relation("ArtifactVersions", fields: [artifactId, workTaskId, orgId], references: [id, workTaskId, orgId], onDelete: Restrict, onUpdate: Restrict)
+  currentFor     EditorialArtifact[] @relation("CurrentEditorialVersion")
+  base           EditorialVersion? @relation("EditorialVersionBase", fields: [baseVersionId, artifactId, workTaskId, orgId], references: [id, artifactId, workTaskId, orgId], onDelete: Restrict, onUpdate: Restrict)
+  children       EditorialVersion[] @relation("EditorialVersionBase")
+  files          EditorialVersionFile[]
+
+  @@unique([id, artifactId, workTaskId, orgId])
+  @@unique([id, workTaskId, orgId])
+  @@unique([artifactId, numero])
+  @@unique([orgId, idempotencyKey])
+  @@index([orgId, artifactId, createdAt])
+}
+
+model EditorialFile {
+  id           String   @id @default(uuid())
+  orgId        String
+  workTaskId   String
+  uploadKey    String
+  requestHash  String   @db.Char(64)
+  state        String   @default("pending")
+  displayName  String
+  mimeDeclared String?
+  mimeDetected String?
+  sizeBytes    BigInt?
+  sha256       String?  @db.Char(64)
+  storageKey   String
+  originSystem String?
+  originRef    String?
+  authorType   ActorType
+  authorId     String?
+  createdAt    DateTime @default(now())
+  verifiedAt   DateTime?
+  failedAt     DateTime?
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  workTask     WorkTask @relation(fields: [workTaskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versions     EditorialVersionFile[]
+
+  @@unique([id, workTaskId, orgId])
+  @@unique([orgId, uploadKey])
+  @@unique([orgId, storageKey])
+  @@unique([orgId, originSystem, originRef])
+  @@index([orgId, workTaskId, state])
+}
+
+model EditorialVersionFile {
+  orgId        String
+  workTaskId   String
+  versionId    String
+  fileId       String
+  position     Int
+  sha256AtLink String @db.Char(64)
+  sizeAtLink   BigInt
+  mimeAtLink   String
+  version      EditorialVersion @relation(fields: [versionId, workTaskId, orgId], references: [id, workTaskId, orgId], onDelete: Restrict, onUpdate: Restrict)
+  file         EditorialFile @relation(fields: [fileId, workTaskId, orgId], references: [id, workTaskId, orgId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@id([versionId, fileId])
+  @@unique([versionId, position])
+  @@index([orgId, fileId])
 }

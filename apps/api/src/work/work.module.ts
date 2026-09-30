@@ -5,6 +5,8 @@ import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { AuditModule } from '../audit/audit.module';
 import { WorkFilesController } from './work-files.controller';
 import { WorkFilesService } from './work-files.service';
+import { EditorialController } from './editorial.controller';
+import { EditorialService } from './editorial.service';
 
 /**
  * O CHECKOUT É EXPORTADO, e a exportação é a fatia A4 pela metade.
@@ -26,8 +28,8 @@ import { WorkFilesService } from './work-files.service';
  */
 @Module({
   imports: [AuditModule],
-  controllers: [WorkController, WorkFilesController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService],
+  controllers: [WorkController, WorkFilesController, EditorialController],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, EditorialService],
   exports: [CheckoutDeTarefaService],
 })
 export class WorkModule {}
