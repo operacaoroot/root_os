@@ -228,6 +228,33 @@ describe('perfil da pauta: o item de cada actor vira post', () => {
 // ---------------------------------------------------------------------------
 
 describe('perfil da pauta: o actor de cada plataforma no Apify', () => {
+  it('classifica só os hosts das plataformas e seus subdomínios reais', () => {
+    for (const [host, plataforma] of [
+      ['instagram.com', 'instagram'],
+      ['www.instagram.com', 'instagram'],
+      ['m.instagram.com', 'instagram'],
+      ['tiktok.com', 'tiktok'],
+      ['www.tiktok.com', 'tiktok'],
+      ['m.tiktok.com', 'tiktok'],
+      ['x.com', 'x'],
+      ['twitter.com', 'x'],
+      ['mobile.twitter.com', 'x'],
+      ['youtu.be', 'youtube'],
+      ['youtube.com', 'youtube'],
+      ['m.youtube.com', 'youtube'],
+      ['fakeinstagram.com', 'web'],
+      ['faketiktok.com', 'web'],
+      ['faketwitter.com', 'web'],
+      ['fakeyoutube.com', 'web'],
+      ['instagram.com.evil.test', 'web'],
+      ['tiktok.com.evil.test', 'web'],
+      ['twitter.com.evil.test', 'web'],
+      ['youtube.com.evil.test', 'web'],
+    ] as const) {
+      expect(ApifyService.plataformaDaUrl(`https://${host}/post`)).toBe(plataforma);
+    }
+    expect(ApifyService.plataformaDaUrl('url inválida')).toBe('web');
+  });
   const tokenAntes = process.env.APIFY_TOKEN;
   afterEach(() => {
     vi.unstubAllGlobals();
