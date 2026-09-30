@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plug, Trash2 } from 'lucide-react';
 import { apiDelete, apiGet, apiPost } from '@/lib/api';
 import type { BioConexaoRow, BioCredencialRow, Lista } from './tipos';
@@ -27,36 +27,102 @@ export function AbaConexoes({
   aviso: string | null;
   onErro: (m: string) => void;
 }) {
-  const [conexoes, setConexoes] = useState<BioConexaoRow[]>([]);
-  const [credenciais, setCredenciais] = useState<BioCredencialRow[]>([]);
+  const [conexoes, setConexoes] = useState<{ versao: number; items: BioConexaoRow[] } | null>(null);
+  const [credenciais, setCredenciais] = useState<{ versao: number; items: BioCredencialRow[] } | null>(null);
+  const [resultado, setResultado] = useState<{ versao: number; texto: string } | null>(null);
   const [bump, setBump] = useState(0);
+  const montado = useRef(false);
+  const sessao = useRef({ token, admin, editavel, podePublicar, versao: 0 });
+  if (
+    sessao.current.token !== token || sessao.current.admin !== admin ||
+    sessao.current.editavel !== editavel || sessao.current.podePublicar !== podePublicar
+  ) {
+    sessao.current = { token, admin, editavel, podePublicar, versao: sessao.current.versao + 1 };
+  }
+  const atual = (versao: number) => montado.current && sessao.current.versao === versao;
+
+  useEffect(() => {
+    montado.current = true;
+    return () => {
+      montado.current = false;
+      sessao.current.versao += 1;
+    };
+  }, []);
+
+  useEffect(() => setResultado(null), [token, admin]);
 
   useEffect(() => {
     if (!token) return;
+    const versao = sessao.current.versao;
+    let vivo = true;
     apiGet<Lista<BioConexaoRow>>('/bio/connections', token)
-      .then((r) => setConexoes(r.items))
-      .catch((e: Error) => onErro(e.message));
+      .then((r) => { if (vivo && atual(versao)) setConexoes({ versao, items: r.items }); })
+      .catch((e: Error) => { if (vivo && atual(versao)) onErro(e.message); });
     if (admin) {
       apiGet<Lista<BioCredencialRow>>('/bio/credentials', token)
-        .then((r) => setCredenciais(r.items))
-        .catch(() => undefined);
+        .then((r) => { if (vivo && atual(versao)) setCredenciais({ versao, items: r.items }); })
+        .catch((e: Error) => { if (vivo && atual(versao)) onErro(e.message); });
     }
-  }, [token, admin, bump, onErro]);
+    return () => { vivo = false; };
+  }, [token, admin, editavel, podePublicar, bump, onErro]);
 
-  const conectar = (plataforma: string) =>
+  const conectar = (plataforma: string) => {
+    const versao = sessao.current.versao;
     apiGet<{ url: string }>(`/bio/connections/${plataforma}/start`, token)
       .then((r) => {
-        window.location.href = r.url;
+        if (atual(versao)) window.location.href = r.url;
       })
-      .catch((e: Error) => onErro(e.message));
+      .catch((e: Error) => { if (atual(versao)) onErro(e.message); });
+  };
+
+  const desconectar = (id: string) => {
+    const versao = sessao.current.versao;
+    apiDelete(`/bio/connections/${id}`, token)
+      .then(() => { if (atual(versao)) setBump((b) => b + 1); })
+      .catch((e: Error) => { if (atual(versao)) onErro(e.message); });
+  };
+
+  const salvar = async (plataforma: string, appId: string, segredo: string, global: boolean) => {
+    const versao = sessao.current.versao;
+    setResultado(null);
+    try {
+      await apiPost(`/bio/credentials/${plataforma}`, { appId, segredo, global }, token);
+      if (!atual(versao)) return false;
+      setResultado({ versao, texto: `Cadastro do app ${plataforma} ${global ? 'compartilhado' : 'desta empresa'} salvo. Faça o login na plataforma para autorizar o novo app.` });
+      setBump((b) => b + 1);
+      return true;
+    } catch (e) {
+      if (atual(versao)) onErro((e as Error).message);
+      return false;
+    }
+  };
+
+  const remover = async (plataforma: string, global: boolean) => {
+    const versao = sessao.current.versao;
+    setResultado(null);
+    try {
+      await apiDelete(`/bio/credentials/${plataforma}${global ? '?global=true' : ''}`, token);
+      if (!atual(versao)) return false;
+      setResultado({ versao, texto: `App ${plataforma} ${global ? 'compartilhado' : 'desta empresa'} removido.` });
+      setBump((b) => b + 1);
+      return true;
+    } catch (e) {
+      if (atual(versao)) onErro((e as Error).message);
+      return false;
+    }
+  };
+
+  const conexoesAtuais = conexoes?.versao === sessao.current.versao ? conexoes.items : [];
+  const credenciaisAtuais = admin && credenciais?.versao === sessao.current.versao ? credenciais.items : [];
 
   return (
     <div className="space-y-5">
       {aviso && <MensagemDeRetorno motivo={aviso} />}
+      {resultado?.versao === sessao.current.versao && <p role="status" className="rounded-lg border border-good/40 bg-good/10 px-4 py-3 text-sm text-good">{resultado.texto}</p>}
 
       <Card titulo="Contas conectadas">
         <div className="space-y-2">
-          {conexoes.map((c) => (
+          {conexoesAtuais.map((c) => (
             <div
               key={c.id}
               className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2"
@@ -77,11 +143,7 @@ export function AbaConexoes({
                 <button
                   type="button"
                   title="Desconectar"
-                  onClick={() =>
-                    apiDelete(`/bio/connections/${c.id}`, token)
-                      .then(() => setBump((b) => b + 1))
-                      .catch((e: Error) => onErro(e.message))
-                  }
+                  onClick={() => desconectar(c.id)}
                   className="text-muted hover:text-bad"
                 >
                   <Trash2 size={14} />
@@ -89,7 +151,7 @@ export function AbaConexoes({
               )}
             </div>
           ))}
-          {conexoes.length === 0 && <p className="text-xs text-muted">Nenhuma conta conectada.</p>}
+          {conexoesAtuais.length === 0 && <p className="text-xs text-muted">Nenhuma conta conectada.</p>}
         </div>
 
         {editavel && (
@@ -112,20 +174,12 @@ export function AbaConexoes({
       {admin && (
         <Card titulo="Credenciais dos apps">
           <div className="space-y-3">
-            {credenciais.map((c) => (
+            {credenciaisAtuais.map((c) => (
               <LinhaCredencial
-                key={c.plataforma}
+                key={`${token}:${c.plataforma}`}
                 cred={c}
-                onSalvar={(appId, segredo) =>
-                  apiPost(`/bio/credentials/${c.plataforma}`, { appId, segredo, global: true }, token)
-                    .then(() => setBump((b) => b + 1))
-                    .catch((e: Error) => onErro(e.message))
-                }
-                onRemover={() =>
-                  apiDelete(`/bio/credentials/${c.plataforma}?global=true`, token)
-                    .then(() => setBump((b) => b + 1))
-                    .catch((e: Error) => onErro(e.message))
-                }
+                onSalvar={(appId, segredo, global) => salvar(c.plataforma, appId, segredo, global)}
+                onRemover={(global) => remover(c.plataforma, global)}
               />
             ))}
           </div>
@@ -141,16 +195,43 @@ function LinhaCredencial({
   onRemover,
 }: {
   cred: BioCredencialRow;
-  onSalvar: (appId: string, segredo: string) => void;
-  onRemover: () => void;
+  onSalvar: (appId: string, segredo: string, global: boolean) => Promise<boolean>;
+  onRemover: (global: boolean) => Promise<boolean>;
 }) {
   const [appId, setAppId] = useState('');
   const [segredo, setSegredo] = useState('');
   const [abrir, setAbrir] = useState(false);
+  const [escopo, setEscopo] = useState<'empresa' | 'global'>('empresa');
+  const [confirmar, setConfirmar] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+
+  const salvar = async () => {
+    if (!appId.trim() || !segredo.trim() || ocupado) return;
+    setOcupado(true);
+    try {
+      if (await onSalvar(appId.trim(), segredo.trim(), escopo === 'global')) {
+        setAppId('');
+        setSegredo('');
+        setAbrir(false);
+      }
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const remover = async () => {
+    if (!confirmar || ocupado) return;
+    setOcupado(true);
+    try {
+      if (await onRemover(true)) setConfirmar(false);
+    } finally {
+      setOcupado(false);
+    }
+  };
 
   return (
-    <div className="rounded-lg border border-border bg-surface-2 p-3">
-      <div className="flex items-center gap-2">
+    <div role="group" aria-label={`Credencial ${cred.plataforma}`} className="rounded-lg border border-border bg-surface-2 p-3">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm capitalize">{cred.plataforma}</span>
         {cred.configurada ? (
           <Chip tone="good">{cred.origem}</Chip>
@@ -158,43 +239,73 @@ function LinhaCredencial({
           <Chip tone="warn">não configurada</Chip>
         )}
         {cred.appIdParcial && <span className="text-[11px] text-muted">{cred.appIdParcial}</span>}
-        <div className="ml-auto flex gap-2">
-          <button type="button" onClick={() => setAbrir((a) => !a)} className="text-[11px] text-brand hover:underline">
-            {abrir ? 'cancelar' : cred.temGlobal ? 'substituir' : 'configurar'}
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => { setAbrir((a) => !a); setConfirmar(false); setEscopo('empresa'); }}
+            className="text-[11px] text-brand hover:underline disabled:opacity-50"
+          >
+            {abrir ? 'cancelar edição' : 'configurar app'}
           </button>
           {cred.temGlobal && (
-            <button type="button" onClick={onRemover} className="text-[11px] text-muted hover:text-bad">
-              remover
+            <button type="button" disabled={ocupado} onClick={() => { setConfirmar(true); setAbrir(false); }} className="text-[11px] text-muted hover:text-bad disabled:opacity-50">
+              remover app compartilhado
             </button>
           )}
         </div>
       </div>
 
+      <p className="mt-2 text-[11px] text-muted">
+        {cred.origem === 'perfil'
+          ? 'App desta empresa cadastrado.'
+          : cred.origem === 'global'
+            ? 'App compartilhado disponível nesta empresa.'
+            : cred.origem === 'ambiente'
+              ? 'App do ambiente disponível nesta empresa.'
+              : 'Nenhum app disponível nesta empresa.'}
+        {cred.temDoPerfil && cred.temGlobal && ' O app compartilhado só é considerado quando não há app da empresa; editá-lo não troca o cadastro da empresa.'}
+      </p>
+
+      {confirmar && (
+        <div className="mt-3 rounded-lg border border-bad/40 bg-bad/5 p-3 text-xs">
+          <p>Remover o app compartilhado? A conta conectada permanece, mas novas autorizações podem precisar de outro app.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Botao tone="bad" disabled={ocupado} onClick={remover}>Confirmar remoção do compartilhado</Botao>
+            <Botao disabled={ocupado} onClick={() => setConfirmar(false)}>Cancelar</Botao>
+          </div>
+        </div>
+      )}
+
       {abrir && (
         <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <Campo label="Onde salvar o app">
+            <select className={inputCls} value={escopo} disabled={ocupado} onChange={(e) => setEscopo(e.target.value as 'empresa' | 'global')}>
+              <option value="empresa">Desta empresa</option>
+              <option value="global">Compartilhado entre empresas</option>
+            </select>
+          </Campo>
+          <p className="self-end text-[11px] text-muted sm:col-span-2">{escopo === 'global' && cred.temDoPerfil ? 'O app desta empresa continuará cadastrado. O compartilhado só será considerado quando não houver app da empresa.' : 'Salvar o app não reconecta a conta. Depois, faça o login na plataforma.'}</p>
           <Campo label={cred.plataforma === 'instagram' ? 'App ID' : 'Client key'}>
-            <input className={inputCls} value={appId} onChange={(e) => setAppId(e.target.value)} />
+            <input className={inputCls} value={appId} disabled={ocupado} onChange={(e) => setAppId(e.target.value)} />
           </Campo>
           <Campo label={cred.plataforma === 'instagram' ? 'App secret' : 'Client secret'}>
             <input
               type="password"
+              autoComplete="new-password"
               className={inputCls}
               value={segredo}
+              disabled={ocupado}
               onChange={(e) => setSegredo(e.target.value)}
             />
           </Campo>
           <div className="flex items-end">
             <Botao
               tone="brand"
-              onClick={() => {
-                if (!appId.trim() || !segredo.trim()) return;
-                onSalvar(appId.trim(), segredo.trim());
-                setAppId('');
-                setSegredo('');
-                setAbrir(false);
-              }}
+              disabled={ocupado || !appId.trim() || !segredo.trim()}
+              onClick={salvar}
             >
-              Salvar
+              {ocupado ? 'Salvando…' : `Salvar app ${escopo === 'empresa' ? 'desta empresa' : 'compartilhado'}`}
             </Botao>
           </div>
         </div>

@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
+const apiDelete = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const real = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -17,9 +18,28 @@ vi.mock('@/lib/api', async () => {
     ...real,
     apiGet: (...a: unknown[]) => apiGet(...a),
     apiPost: (...a: unknown[]) => apiPost(...a),
+    apiDelete: (...a: unknown[]) => apiDelete(...a),
     apiPut: vi.fn(),
     apiBlob: vi.fn(),
   };
+});
+
+const credencial = (over: Record<string, unknown> = {}) => ({
+  plataforma: 'instagram', configurada: true, origem: 'perfil', appIdParcial: 'app123…',
+  atualizadaEm: '2026-09-30T12:00:00.000Z', temGlobal: true, temDoPerfil: true, ...over,
+});
+
+function prepararBio(estado = credencial()) {
+  apiGet.mockImplementation(async (path: string) =>
+    path === '/bio/credentials'
+      ? { items: [estado], total: 1 }
+      : { items: [], total: 0 },
+  );
+}
+
+const bioProps = (over: Record<string, unknown> = {}) => ({
+  token: 'tok', editavel: true, podePublicar: false, admin: true, aviso: null,
+  onErro: vi.fn(), ...over,
 });
 
 let permissoes = ['pauta.ver', 'pauta.editar', 'pauta.publicar', 'bio.editar'];
@@ -148,6 +168,103 @@ describe('o cartão da conta de publicação', () => {
     expect(await screen.findByText('@root.os')).toBeInTheDocument();
     expect(screen.getAllByTitle('Desconectar')).toHaveLength(1);
     rerender(<AbaConexoes {...props} podePublicar />);
-    expect(screen.getAllByTitle('Desconectar')).toHaveLength(2);
+    await waitFor(() => expect(screen.getAllByTitle('Desconectar')).toHaveLength(2));
+  });
+});
+
+describe('credenciais de apps na Bio', () => {
+  beforeEach(() => {
+    prepararBio();
+    apiPost.mockResolvedValue({ ok: true });
+    apiDelete.mockResolvedValue({ ok: true });
+  });
+
+  it('mostra a precedência e salva o app da empresa como escolha inicial', async () => {
+    render(<AbaConexoes {...bioProps()} />);
+    const linha = await screen.findByRole('group', { name: 'Credencial instagram' });
+    expect(linha).toHaveTextContent('App desta empresa cadastrado.');
+    expect(linha).toHaveTextContent('O app compartilhado só é considerado quando não há app da empresa');
+    await userEvent.click(within(linha).getByRole('button', { name: 'configurar app' }));
+    expect(within(linha).getByRole('combobox', { name: 'Onde salvar o app' })).toHaveValue('empresa');
+    await userEvent.type(within(linha).getByRole('textbox', { name: 'App ID' }), 'id-teste');
+    await userEvent.type(within(linha).getByLabelText('App secret'), 'segredo-falso');
+    await userEvent.click(within(linha).getByRole('button', { name: 'Salvar app desta empresa' }));
+    expect(apiPost).toHaveBeenCalledWith('/bio/credentials/instagram', {
+      appId: 'id-teste', segredo: 'segredo-falso', global: false,
+    }, 'tok');
+    expect(await screen.findByRole('status')).toHaveTextContent('Cadastro do app instagram desta empresa salvo');
+    expect(screen.getByRole('status')).toHaveTextContent('Faça o login na plataforma');
+  });
+
+  it('mantém o app compartilhado como escolha separada e avisa que não substitui o da empresa', async () => {
+    render(<AbaConexoes {...bioProps()} />);
+    const linha = await screen.findByRole('group', { name: 'Credencial instagram' });
+    await userEvent.click(within(linha).getByRole('button', { name: 'configurar app' }));
+    await userEvent.selectOptions(within(linha).getByRole('combobox', { name: 'Onde salvar o app' }), 'global');
+    expect(linha).toHaveTextContent('O app desta empresa continuará cadastrado');
+    await userEvent.type(within(linha).getByRole('textbox', { name: 'App ID' }), 'global-teste');
+    await userEvent.type(within(linha).getByLabelText('App secret'), 'segredo-falso');
+    await userEvent.click(within(linha).getByRole('button', { name: 'Salvar app compartilhado' }));
+    expect(apiPost).toHaveBeenCalledWith('/bio/credentials/instagram', {
+      appId: 'global-teste', segredo: 'segredo-falso', global: true,
+    }, 'tok');
+  });
+
+  it('confirma a remoção do app compartilhado antes da chamada', async () => {
+    render(<AbaConexoes {...bioProps()} />);
+    const linha = await screen.findByRole('group', { name: 'Credencial instagram' });
+    expect(within(linha).queryByRole('button', { name: 'remover app da empresa' })).toBeNull();
+    await userEvent.click(within(linha).getByRole('button', { name: 'remover app compartilhado' }));
+    expect(apiDelete).not.toHaveBeenCalled();
+    await userEvent.click(within(linha).getByRole('button', { name: 'Cancelar' }));
+    expect(apiDelete).not.toHaveBeenCalled();
+    await userEvent.click(within(linha).getByRole('button', { name: 'remover app compartilhado' }));
+    await userEvent.click(within(linha).getByRole('button', { name: 'Confirmar remoção do compartilhado' }));
+    expect(apiDelete).toHaveBeenCalledWith('/bio/credentials/instagram?global=true', 'tok');
+  });
+
+  it('espera a resposta, e uma falha mantém o rascunho sem mensagem de sucesso', async () => {
+    let rejeitar!: (erro: Error) => void;
+    apiPost.mockReturnValue(new Promise((_resolve, reject) => { rejeitar = reject; }));
+    const onErro = vi.fn();
+    render(<AbaConexoes {...bioProps({ onErro })} />);
+    const linha = await screen.findByRole('group', { name: 'Credencial instagram' });
+    await userEvent.click(within(linha).getByRole('button', { name: 'configurar app' }));
+    await userEvent.type(within(linha).getByRole('textbox', { name: 'App ID' }), 'rascunho');
+    await userEvent.type(within(linha).getByLabelText('App secret'), 'segredo-falso');
+    await userEvent.click(within(linha).getByRole('button', { name: 'Salvar app desta empresa' }));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(within(linha).getByRole('button', { name: 'Salvando…' })).toBeDisabled();
+    rejeitar(new Error('Falhou ao salvar'));
+    await waitFor(() => expect(onErro).toHaveBeenCalledWith('Falhou ao salvar'));
+    expect(within(linha).getByRole('textbox', { name: 'App ID' })).toHaveValue('rascunho');
+    expect(within(linha).getByLabelText('App secret')).toHaveValue('segredo-falso');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('descarta o POST da sessão anterior e não mostra editor sem permissão', async () => {
+    let concluir!: (valor: unknown) => void;
+    apiPost.mockReturnValue(new Promise((resolve) => { concluir = resolve; }));
+    apiGet.mockImplementation(async (path: string, token: string) =>
+      path === '/bio/credentials'
+        ? { items: [credencial({ appIdParcial: token === 'nova' ? 'novo12…' : 'antigo…' })] }
+        : { items: [] },
+    );
+    const onErro = vi.fn();
+    const props = bioProps({ token: 'antiga', onErro });
+    const { rerender } = render(<AbaConexoes {...props} />);
+    const linha = await screen.findByRole('group', { name: 'Credencial instagram' });
+    await userEvent.click(within(linha).getByRole('button', { name: 'configurar app' }));
+    await userEvent.type(within(linha).getByRole('textbox', { name: 'App ID' }), 'id-antigo');
+    await userEvent.type(within(linha).getByLabelText('App secret'), 'segredo-falso');
+    await userEvent.click(within(linha).getByRole('button', { name: 'Salvar app desta empresa' }));
+    rerender(<AbaConexoes {...props} token="nova" />);
+    expect(await screen.findByText('novo12…')).toBeInTheDocument();
+    concluir({ ok: true });
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/bio/credentials', 'nova'));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(onErro).not.toHaveBeenCalled();
+    rerender(<AbaConexoes {...props} token="nova" admin={false} />);
+    expect(screen.queryByRole('group', { name: 'Credencial instagram' })).toBeNull();
   });
 });
