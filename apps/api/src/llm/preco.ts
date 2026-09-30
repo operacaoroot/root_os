@@ -33,7 +33,7 @@ export const PRECO_USD_MTOK: Record<string, PrecoModelo> = {
 export function precoDe(modelo: string): PrecoModelo | null {
   if (PRECO_USD_MTOK[modelo]) return PRECO_USD_MTOK[modelo];
   const chave = Object.keys(PRECO_USD_MTOK)
-    .filter((k) => modelo.startsWith(k) && /^-\d{8}$/.test(modelo.slice(k.length)))
+    .filter((k) => modelo.startsWith(k) && /^-(?:\d{8}|\d{4}-\d{2}-\d{2})$/.test(modelo.slice(k.length)))
     .sort((a, b) => b.length - a.length)[0];
   return chave ? PRECO_USD_MTOK[chave] : null;
 }

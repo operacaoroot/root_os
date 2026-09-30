@@ -23,6 +23,7 @@ describe('preço', () => {
   it('casa o modelo com data no nome com a entrada da tabela', () => {
     expect(precoDe('claude-opus-5')).toBe(PRECO_USD_MTOK['claude-opus-5']);
     expect(precoDe('claude-opus-5-20260101')).toBe(PRECO_USD_MTOK['claude-opus-5']);
+    expect(precoDe('gpt-4o-2024-08-06')).toBe(PRECO_USD_MTOK['gpt-4o']);
     expect(precoDe('claude-haiku-4-5-20251001')).toBe(PRECO_USD_MTOK['claude-haiku-4-5']);
     expect(precoDe('claude-opus-5-preview')).toBeNull();
   });
