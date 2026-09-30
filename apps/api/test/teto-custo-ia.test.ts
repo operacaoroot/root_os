@@ -310,6 +310,31 @@ describe.skipIf(!URL)('teto de custo de IA por empresa e por dia', () => {
     expect(linha?.cortes).toBe(0);
   });
 
+  it('reserva Sonnet 5.5 com preço conhecido e mantém o corte antes da chamada quando não cabe', async () => {
+    class Sonnet55 extends ModeloEspiao {
+      readonly model = 'anthropic/claude-sonnet-5.5';
+    }
+    await configurar(ORG_A, { tetoUsd: 0.03 });
+    const permitido = new Sonnet55();
+    await naEmpresa(ORG_A, () =>
+      new ProviderComTeto(permitido, teto).step({ ...passo(), orgId: ORG_A }),
+    );
+    expect(permitido.chamadas).toBe(1);
+    expect((await dia(ORG_A))?.cortes).toBe(0);
+
+    await configurar(ORG_A, { tetoUsd: 0.01 });
+    const recusado = new Sonnet55();
+    const erro = await naEmpresa(ORG_A, () =>
+      new ProviderComTeto(recusado, teto)
+        .step({ ...passo(), orgId: ORG_A })
+        .then(() => null)
+        .catch((e: unknown) => e as TetoDiarioEstouradoError),
+    );
+    expect(erro).toBeInstanceOf(TetoDiarioEstouradoError);
+    expect(erro?.detalhe.causa).toBe('chamada_maior_que_o_teto');
+    expect(recusado.chamadas).toBe(0);
+  });
+
   it('a estimativa reservada é MAIOR que o custo real — é ela que permite cortar antes', () => {
     expect(ESTIMATIVA_DO_PASSO.medivel).toBe(true);
     expect(ESTIMATIVA_DO_PASSO.usd).toBeGreaterThan(0.0123);
