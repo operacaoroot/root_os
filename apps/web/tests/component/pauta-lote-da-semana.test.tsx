@@ -294,6 +294,7 @@ describe('MD8: o lote da semana em /atendimento', () => {
     expect(screen.getByTestId('lote-esperando-ap-lote')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aprovar e executar' })).toBeNull();
 
+    await waitFor(() => expect(apiGet).toHaveBeenCalledWith('/pauta/lotes/lote-1/conteudo', 'tok'));
     soltar(CONTEUDO);
     // Folga no tempo: com a suíte inteira em paralelo, o cartão chegou a passar de 1 s.
     const cartao = await screen.findByTestId('cartao-do-lote', {}, { timeout: 4000 });
