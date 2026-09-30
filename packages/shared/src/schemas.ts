@@ -2834,6 +2834,50 @@ export const PautaPilaresSalvarSchema = z.object({
 });
 export type PautaPilaresSalvarInput = z.infer<typeof PautaPilaresSalvarSchema>;
 
+export const PautaMarcaDestinoSchema = z.enum(['perfil', 'pilares']);
+export type PautaMarcaDestino = z.infer<typeof PautaMarcaDestinoSchema>;
+export interface PautaMarcaSecaoUsada { titulo: string; hash: string }
+
+/** A prévia e o pedido carregam o estado exato que a memória deve reencontrar sob lock. */
+export const PautaMarcaAplicarSchema = z.object({
+  fonteContextItemId: z.string().uuid(),
+  fonteVersao: z.number().int().positive(),
+  fonteHash: z.string().regex(/^[a-f0-9]{64}$/),
+  destinoContextItemId: z.string().uuid().nullable(),
+  destinoVersao: z.number().int().positive().nullable(),
+  destinoHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  secoesUsadas: z.array(z.object({ titulo: z.string(), hash: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(8),
+  textoFinal: z.string().max(PAUTA_TETO_DO_PERFIL_DA_MARCA),
+});
+export type PautaMarcaAplicarInput = z.infer<typeof PautaMarcaAplicarSchema>;
+
+export interface PautaMarcaPrevia {
+  destino: PautaMarcaDestino;
+  fonteContextItemId: string | null;
+  fonteChave: string;
+  fonteVersao: number | null;
+  fonteHash: string | null;
+  secoesUsadas: PautaMarcaSecaoUsada[];
+  textoProposto: string;
+  destinoContextItemId: string | null;
+  destinoVersao: number | null;
+  destinoHash: string | null;
+  textoAtual: string;
+  diferenca: boolean;
+  estado: 'pronto' | 'fonte_ausente' | 'fonte_arquivada' | 'excede_limite' | 'destino_alterado' | 'fonte_alterada' | 'ja_aplicado';
+  aviso: string | null;
+}
+
+export interface PautaMarcaVinculo {
+  versaoDestino: number;
+  fonteContextItemId: string;
+  fonteChave: string;
+  fonteVersao: number;
+  fonteHash: string;
+  secoesUsadas: PautaMarcaSecaoUsada[];
+  atual: boolean;
+}
+
 export interface PautaMarcaPainel {
   perfil: string | null;
   perfilVersao: number | null;
@@ -2846,6 +2890,8 @@ export interface PautaMarcaPainel {
   avisos: string[];
   /** O que os prompts da pauta recebem agora — a prova visível do ponto único. */
   bloco: string;
+  /** Último vínculo aplicado por destino; atual=false após edição ou arquivamento. */
+  projecoes: { perfil: PautaMarcaVinculo | null; pilares: PautaMarcaVinculo | null };
 }
 
 // ---------- Pauta: concorrentes com números (MK2) ----------

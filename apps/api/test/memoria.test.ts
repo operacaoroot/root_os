@@ -631,6 +631,57 @@ describe.skipIf(!URL)('duas alterações concorrentes não perdem a do meio', ()
 
     expect(await prismaA.contextItem.count({ where: { orgId: ORG_A, chave } })).toBe(1);
   }, 30_000);
+
+  it('duas aplicações do mesmo preview criam uma versão só; edição posterior impede replay', async () => {
+    const fonte = await naEmpresa(ORG_A, () => memoriaA.criar(ORG_A, {
+      chave: `guia/${MARCA}`, title: 'Guia', body: 'Guia v1',
+      sourceType: ContextSource.operador, sourceRef: 'suite',
+    }));
+    const chave = `marca-projetada/${MARCA}`;
+    const pedido = {
+      fonte: { id: fonte.id, chave: fonte.chave, versao: fonte.versao, hash: fonte.contentHash },
+      destino: { id: null, chave, versao: null, hash: null },
+      title: 'Marca', body: 'Texto revisto da marca', tags: ['marca'],
+      sourceRef: `projecao:${fonte.id}:v1`, motivo: 'projeção revisada do guia',
+    };
+    const [a, b] = await Promise.all([
+      naEmpresa(ORG_A, () => memoriaA.projetarCondicionado(ORG_A, pedido)),
+      naEmpresa(ORG_A, () => memoriaB.projetarCondicionado(ORG_A, pedido)),
+    ]);
+    expect(a.id).toBe(b.id);
+    expect(a.versao).toBe(1);
+    expect(b.versao).toBe(1);
+    expect(await prismaA.contextItemVersion.count({ where: { orgId: ORG_A, itemId: a.id } })).toBe(1);
+
+    await naEmpresa(ORG_A, () => memoriaA.alterar(ORG_A, a.id, {
+      body: 'Edição manual', sourceRef: 'manual', versaoEsperada: 1,
+    }));
+    await expect(naEmpresa(ORG_A, () => memoriaB.projetarCondicionado(ORG_A, pedido)))
+      .rejects.toMatchObject({ status: 409 });
+    expect((await naEmpresa(ORG_A, () => memoriaA.obter(ORG_A, a.id)))?.body).toBe('Edição manual');
+  }, 30_000);
+
+  it('fonte alterada ou arquivada entre prévia e gravação é recusada sob lock', async () => {
+    const fonte = await naEmpresa(ORG_A, () => memoriaA.criar(ORG_A, {
+      chave: `guia-mudou/${MARCA}`, title: 'Guia', body: 'Guia v1',
+      sourceType: ContextSource.operador, sourceRef: 'suite',
+    }));
+    const pedido = {
+      fonte: { id: fonte.id, chave: fonte.chave, versao: fonte.versao, hash: fonte.contentHash },
+      destino: { id: null, chave: `marca-da-fonte/${MARCA}`, versao: null, hash: null },
+      title: 'Marca', body: 'Texto da fonte', tags: ['marca'],
+      sourceRef: `projecao:${fonte.id}:v1`, motivo: 'projeção revisada do guia',
+    };
+    await naEmpresa(ORG_A, () => memoriaA.alterar(ORG_A, fonte.id, { body: 'Guia v2', versaoEsperada: 1 }));
+    await expect(naEmpresa(ORG_A, () => memoriaB.projetarCondicionado(ORG_A, pedido)))
+      .rejects.toMatchObject({ status: 409 });
+    const atual = await naEmpresa(ORG_A, () => memoriaA.obter(ORG_A, fonte.id));
+    await naEmpresa(ORG_A, () => memoriaA.arquivar(ORG_A, fonte.id));
+    await expect(naEmpresa(ORG_A, () => memoriaB.projetarCondicionado(ORG_A, {
+      ...pedido, fonte: { ...pedido.fonte, versao: atual!.versao, hash: atual!.contentHash },
+    }))).rejects.toMatchObject({ status: 409 });
+    expect(await prismaA.contextItem.count({ where: { orgId: ORG_A, chave: pedido.destino.chave } })).toBe(0);
+  }, 30_000);
 });
 
 // ===========================================================================

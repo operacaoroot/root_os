@@ -8,6 +8,7 @@ import {
   type PautaPilar,
 } from '@mktos/shared';
 import { neutralizarConteudoExterno } from '../agents/context-builder.service';
+import { lerReferenciaDaProjecao } from './marca-projecao';
 
 /*
  * ============================================================================
@@ -42,7 +43,9 @@ const CABECALHO_DOS_PILARES =
   'provavelmente não é da casa.';
 
 /** "marca v3 · operador · 28/09/2026": de onde veio o que o modelo vai seguir. */
-export function procedenciaDaMarca(n: { versao: number; sourceType: string; atualizadoEm: string | Date }): string {
+export function procedenciaDaMarca(n: { versao: number; sourceType: string; sourceRef?: string | null; atualizadoEm: string | Date }): string {
+  const projecao = lerReferenciaDaProjecao(n.sourceRef ?? null);
+  if (projecao) return `marca v${n.versao} · guia v${projecao.versao} · sha256:${projecao.hash.slice(0, 12)}`;
   const d = new Date(n.atualizadoEm);
   const dia = Number.isNaN(d.getTime())
     ? ''
@@ -60,6 +63,11 @@ function linhaDoPilar(p: PautaPilar): string {
   return d ? `- ${p.nome} — ${d}` : `- ${p.nome}`;
 }
 
+/** Mede o mesmo texto neutralizado que o bloco entregará ao prompt. */
+export function perfilParaPrompt(perfil: string): string {
+  return neutralizarConteudoExterno(perfil.trim()).texto.trim();
+}
+
 /**
  * O bloco de marca que os prompts da pauta recebem: o perfil, e a lista de
  * pilares quando houver. Sem perfil e sem pilar, string vazia.
@@ -67,16 +75,18 @@ function linhaDoPilar(p: PautaPilar): string {
 export function blocoDeMarca(
   perfil?: string | null,
   pilares: PautaPilar[] = [],
-  opcoes: { procedencia?: string } = {},
+  opcoes: { procedencia?: string; procedenciaPilares?: string } = {},
 ): string {
-  const p = neutralizarConteudoExterno((perfil ?? '').trim()).texto.trim();
+  const p = perfilParaPrompt(perfil ?? '');
   const partes: string[] = [];
   if (p) {
     const origem = opcoes.procedencia ? ` (${opcoes.procedencia.replace(/[\r\n]+/g, ' ').slice(0, 120)})` : '';
     partes.push(`${CABECALHO_DA_MARCA}${origem}\n${p.slice(0, PAUTA_TETO_DO_PERFIL_DA_MARCA)}`);
   }
   if (pilares.length) {
-    partes.push([CABECALHO_DOS_PILARES, ...pilares.map(linhaDoPilar)].join('\n'));
+    const origem = opcoes.procedenciaPilares
+      ? ` (${opcoes.procedenciaPilares.replace(/[\r\n]+/g, ' ').slice(0, 120)})` : '';
+    partes.push([`${CABECALHO_DOS_PILARES}${origem}`, ...pilares.map(linhaDoPilar)].join('\n'));
   }
   return partes.join('\n\n');
 }

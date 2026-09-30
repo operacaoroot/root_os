@@ -117,6 +117,17 @@ export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & {
   versaoEsperada?: number;
 };
 
+/** Escrita de uma nota derivada de outra, validando as duas no mesmo cadeado. */
+export interface ProjecaoCondicionada {
+  fonte: { id: string; chave: string; versao: number; hash: string };
+  destino: { id: string | null; chave: string; versao: number | null; hash: string | null };
+  title: string;
+  body: string;
+  tags: string[];
+  sourceRef: string;
+  motivo: string;
+}
+
 export interface NotaDeContexto {
   id: string;
   chave: string;
@@ -534,6 +545,120 @@ export class MemoriaService {
     }
 
     return (await this.obter(orgId, id)) as NotaDeContexto;
+  }
+
+  /**
+   * A fonte e o destino são relidos após o advisory lock da empresa. Prévia
+   * antiga não pode publicar uma fonte arquivada nem apagar edição de outra aba.
+   * Mantém a mesma sequência item → versão → evento usada por criar/alterar.
+   */
+  async projetarCondicionado(orgId: string, pedido: ProjecaoCondicionada): Promise<NotaDeContexto> {
+    if (!pedido.title.trim() || !pedido.body.trim()) throw new BadRequestException('A projeção precisa de título e corpo.');
+    if (pedido.sourceRef.length > 1_000) throw new BadRequestException('A referência da fonte passou de 1.000 caracteres.');
+    const ator = this.ator();
+    const hash = hashDoCorpo(pedido.body);
+    let gravada: {
+      item: LinhaDaNota;
+      anterior: LinhaDaNota | null;
+      versao: { id: string; versao: number } | null;
+      mudanca: ContextChange;
+    };
+    try {
+      gravada = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        const fonte = await tx.contextItem.findFirst({
+          where: { orgId, chave: pedido.fonte.chave }, select: SELECAO_DA_NOTA,
+        });
+        if (!fonte || fonte.id !== pedido.fonte.id || fonte.arquivadoEm ||
+            fonte.versao !== pedido.fonte.versao || fonte.contentHash !== pedido.fonte.hash) {
+          throw new ConflictException('A fonte mudou, foi arquivada ou deixou de existir. Refaça a prévia.');
+        }
+        const atual = await tx.contextItem.findFirst({
+          where: { orgId, chave: pedido.destino.chave }, select: SELECAO_DA_NOTA,
+        });
+        if (atual?.arquivadoEm) throw new ConflictException('O destino está arquivado. Restaure-o explicitamente na Memória antes de aplicar.');
+
+        // Replay só é inofensivo quando ESTA foi a última versão criada a
+        // partir do estado esperado. Uma edição manual intermediária muda a
+        // versão ou a referência e não pode ser ignorada.
+        const versaoRepetida = (pedido.destino.versao ?? 0) + 1;
+        if (atual && (atual.id === pedido.destino.id || pedido.destino.id === null) &&
+            atual.versao === versaoRepetida &&
+            atual.contentHash === hash && atual.sourceRef === pedido.sourceRef &&
+            atual.body === pedido.body && atual.title === pedido.title.trim()) {
+          const ultimaVersao = await tx.contextItemVersion.findFirst({
+            where: { orgId, itemId: atual.id }, orderBy: { versao: 'desc' },
+            select: { versao: true, motivo: true, sourceRef: true },
+          });
+          if (ultimaVersao?.versao === atual.versao && ultimaVersao.motivo === pedido.motivo &&
+              ultimaVersao.sourceRef === pedido.sourceRef) {
+            return { item: atual, anterior: null, versao: null, mudanca: ContextChange.alteracao };
+          }
+        }
+        if ((atual?.id ?? null) !== pedido.destino.id || (atual?.versao ?? null) !== pedido.destino.versao ||
+            (atual?.contentHash ?? null) !== pedido.destino.hash) {
+          throw new ConflictException('O perfil ou os pilares mudaram desde a prévia. Recarregue antes de aplicar.');
+        }
+
+        if (!atual) {
+          const item = await tx.contextItem.create({
+            data: {
+              orgId, chave: pedido.destino.chave, kind: ContextKind.definicao,
+              title: pedido.title.trim(), body: pedido.body, tags: pedido.tags,
+              sourceType: ContextSource.operador, sourceRef: pedido.sourceRef,
+              contentHash: hash, versao: 1, criadoPor: ator.actorId, atualizadoPor: ator.actorId,
+            },
+            select: SELECAO_DA_NOTA,
+          });
+          const versao = await tx.contextItemVersion.create({
+            data: {
+              orgId, itemId: item.id, versao: 1, mudanca: ContextChange.criacao,
+              kind: item.kind, title: item.title, body: item.body,
+              sourceType: item.sourceType, sourceRef: item.sourceRef,
+              contentHash: item.contentHash, motivo: pedido.motivo,
+              autorTipo: ator.actorType, autorId: ator.actorId,
+            },
+            select: { id: true, versao: true },
+          });
+          return { item, anterior: null, versao, mudanca: ContextChange.criacao };
+        }
+
+        const ultima = await tx.contextItemVersion.findFirst({
+          where: { orgId, itemId: atual.id }, orderBy: { versao: 'desc' }, select: { versao: true },
+        });
+        const proxima = Math.max(atual.versao, ultima?.versao ?? 0) + 1;
+        const item = await tx.contextItem.update({
+          where: { id: atual.id },
+          data: {
+            kind: ContextKind.definicao, title: pedido.title.trim(), body: pedido.body,
+            tags: pedido.tags, sourceType: ContextSource.operador, sourceRef: pedido.sourceRef,
+            contentHash: hash, versao: proxima, atualizadoPor: ator.actorId,
+          },
+          select: SELECAO_DA_NOTA,
+        });
+        const versao = await tx.contextItemVersion.create({
+          data: {
+            orgId, itemId: item.id, versao: proxima, mudanca: ContextChange.alteracao,
+            kind: item.kind, title: item.title, body: item.body,
+            sourceType: item.sourceType, sourceRef: item.sourceRef,
+            contentHash: item.contentHash, motivo: pedido.motivo,
+            autorTipo: ator.actorType, autorId: ator.actorId,
+          },
+          select: { id: true, versao: true },
+        });
+        return { item, anterior: atual, versao, mudanca: ContextChange.alteracao };
+      });
+    } catch (e) {
+      throw this.traduzirChaveRepetida(e, pedido.destino.chave);
+    }
+    if (gravada.versao) {
+      await this.registrarMudanca({
+        orgId, mudanca: gravada.mudanca, item: gravada.item,
+        versaoId: gravada.versao.id, versaoNumero: gravada.versao.versao,
+        motivo: pedido.motivo, anterior: gravada.anterior,
+      });
+    }
+    return (await this.obter(orgId, gravada.item.id)) as NotaDeContexto;
   }
 
   /**
