@@ -46,6 +46,8 @@ export default function MarcaPage() {
   sessao.current = identidade;
   const [identidadeDoEstado, setIdentidadeDoEstado] = useState(identidade);
   const revisaoPrevia = useRef<Record<PautaMarcaDestino, number>>({ perfil: 0, pilares: 0 });
+  const revisaoPainel = useRef(0);
+  const escritaEmCurso = useRef<symbol | null>(null);
   const [painel, setPainel] = useState<PautaMarcaPainel | null>(null);
   const [perfil, setPerfil] = useState('');
   const [pilares, setPilares] = useState('');
@@ -57,6 +59,8 @@ export default function MarcaPage() {
 
   useEffect(() => {
     let cancelada = false;
+    const leitura = ++revisaoPainel.current;
+    escritaEmCurso.current = null;
     setPainel(null);
     setPerfil('');
     setPilares('');
@@ -71,7 +75,7 @@ export default function MarcaPage() {
     if (!ready || !token) return;
     apiGet<PautaMarcaPainel>('/pauta/marca', token)
       .then((p) => {
-        if (cancelada || sessao.current !== identidade) return;
+        if (cancelada || sessao.current !== identidade || revisaoPainel.current !== leitura) return;
         setPainel(p);
         setPerfil(p.perfil ?? '');
         setPilares(p.pilaresTexto);
@@ -96,7 +100,11 @@ export default function MarcaPage() {
 
   async function aplicar(qual: PautaMarcaDestino) {
     const p = previas[qual];
-    if (!podeAplicar || !p || !token || !p.fonteContextItemId || !p.fonteVersao || !p.fonteHash || !p.secoesUsadas.length) return;
+    if (!podeAplicar || !painel || !p || !token || escritaEmCurso.current ||
+        !p.fonteContextItemId || !p.fonteVersao || !p.fonteHash || !p.secoesUsadas.length) return;
+    const escrita = Symbol('aplicar');
+    escritaEmCurso.current = escrita;
+    ++revisaoPainel.current;
     setAplicando(qual);
     setErro(null);
     const corpo: PautaMarcaAplicarInput = {
@@ -108,17 +116,24 @@ export default function MarcaPage() {
       const novo = await apiPost<PautaMarcaPainel>(`/pauta/marca/projecao/${qual}`, corpo, token);
       if (sessao.current !== identidade) return;
       setPainel(novo);
-      setPerfil(novo.perfil ?? '');
-      setPilares(novo.pilaresTexto);
+      if (qual === 'perfil') setPerfil(novo.perfil ?? '');
+      else setPilares(novo.pilaresTexto);
       await carregarPrevia(qual);
     } catch (e) {
       if (sessao.current === identidade) setErro(`${(e as Error).message} Atualize a prévia antes de tentar novamente.`);
     } finally {
-      if (sessao.current === identidade) setAplicando(null);
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) {
+        escritaEmCurso.current = null;
+        setAplicando(null);
+      }
     }
   }
 
   async function salvar(qual: 'perfil' | 'pilares') {
+    if (!editavel || !painel || !token || escritaEmCurso.current) return;
+    const escrita = Symbol('salvar');
+    escritaEmCurso.current = escrita;
+    ++revisaoPainel.current;
     setSalvando(qual);
     setErro(null);
     try {
@@ -130,13 +145,16 @@ export default function MarcaPage() {
       const p = await apiPut<PautaMarcaPainel>(caminho, corpo, token);
       if (sessao.current !== identidade) return;
       setPainel(p);
-      setPerfil(p.perfil ?? '');
-      setPilares(p.pilaresTexto);
+      if (qual === 'perfil') setPerfil(p.perfil ?? '');
+      else setPilares(p.pilaresTexto);
       if (podeLerFonte) await carregarPrevia(qual);
     } catch (e) {
       if (sessao.current === identidade) setErro((e as Error).message);
     } finally {
-      if (sessao.current === identidade) setSalvando(null);
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) {
+        escritaEmCurso.current = null;
+        setSalvando(null);
+      }
     }
   }
 
@@ -230,12 +248,12 @@ export default function MarcaPage() {
                               revisaoPrevia.current[qual]++;
                               setTextos((v) => ({ ...v, [qual]: e.target.value }));
                             }}
-                            disabled={!podeAplicar || aplicando !== null} rows={qual === 'perfil' ? 14 : 8}
+                            disabled={!podeAplicar || aplicando !== null || salvando !== null} rows={qual === 'perfil' ? 14 : 8}
                             className={areaCls} />
                           <p className="font-os-mono text-xs text-muted">{textos[qual].length} / {PAUTA_TETO_DO_PERFIL_DA_MARCA} caracteres</p>
                           {podeAplicar && (
                             <button type="button" onClick={() => aplicar(qual)}
-                              disabled={!aplicavel || aplicando !== null || salvando !== null}
+                              disabled={!painel || !aplicavel || aplicando !== null || salvando !== null}
                               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-not-allowed disabled:opacity-50">
                               {aplicando === qual ? 'Aplicando…' : `Aplicar somente ${titulo.toLowerCase()}`}
                             </button>
@@ -261,9 +279,10 @@ export default function MarcaPage() {
           </span>
         </div>
         <textarea
+          aria-label="Perfil da marca"
           value={perfil}
           onChange={(e) => setPerfil(e.target.value)}
-          disabled={!editavel}
+          disabled={!editavel || !painel || salvando !== null || aplicando !== null}
           rows={16}
           placeholder={MODELO}
           className={areaCls}
@@ -272,7 +291,7 @@ export default function MarcaPage() {
           {editavel && (
             <button
               onClick={() => salvar('perfil')}
-              disabled={salvando !== null || !perfil.trim()}
+              disabled={!painel || salvando !== null || aplicando !== null || !perfil.trim()}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {salvando === 'perfil' ? 'Salvando…' : 'Salvar o perfil'}
@@ -308,9 +327,10 @@ export default function MarcaPage() {
           </span>
         </div>
         <textarea
+          aria-label="Pilares de conteúdo"
           value={pilares}
           onChange={(e) => setPilares(e.target.value)}
-          disabled={!editavel}
+          disabled={!editavel || !painel || salvando !== null || aplicando !== null}
           rows={8}
           placeholder={EXEMPLO_DE_PILARES}
           className={areaCls}
@@ -339,7 +359,7 @@ export default function MarcaPage() {
           <div className="mt-3">
             <button
               onClick={() => salvar('pilares')}
-              disabled={salvando !== null}
+              disabled={!painel || salvando !== null || aplicando !== null}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {salvando === 'pilares' ? 'Salvando…' : 'Salvar os pilares'}

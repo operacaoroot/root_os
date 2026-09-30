@@ -63,6 +63,11 @@ function linhaDoPilar(p: PautaPilar): string {
   return d ? `- ${p.nome} — ${d}` : `- ${p.nome}`;
 }
 
+/** Mede o mesmo texto neutralizado que o bloco entregará ao prompt. */
+export function perfilParaPrompt(perfil: string): string {
+  return neutralizarConteudoExterno(perfil.trim()).texto.trim();
+}
+
 /**
  * O bloco de marca que os prompts da pauta recebem: o perfil, e a lista de
  * pilares quando houver. Sem perfil e sem pilar, string vazia.
@@ -72,7 +77,7 @@ export function blocoDeMarca(
   pilares: PautaPilar[] = [],
   opcoes: { procedencia?: string; procedenciaPilares?: string } = {},
 ): string {
-  const p = neutralizarConteudoExterno((perfil ?? '').trim()).texto.trim();
+  const p = perfilParaPrompt(perfil ?? '');
   const partes: string[] = [];
   if (p) {
     const origem = opcoes.procedencia ? ` (${opcoes.procedencia.replace(/[\r\n]+/g, ' ').slice(0, 120)})` : '';

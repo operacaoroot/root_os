@@ -4,13 +4,15 @@ import userEvent from '@testing-library/user-event';
 import type { PautaMarcaPainel, PautaMarcaPrevia } from '@mktos/shared';
 
 const apiGet = vi.fn();
+const apiPost = vi.fn();
+const apiPut = vi.fn();
 let token = 'sessao-a';
 let permissoes = ['pauta.ver', 'pauta.editar', 'obsidian.ver'];
 
 vi.mock('@/lib/api', () => ({
   apiGet: (...args: unknown[]) => apiGet(...args),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
+  apiPost: (...args: unknown[]) => apiPost(...args),
+  apiPut: (...args: unknown[]) => apiPut(...args),
 }));
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ token, ready: true, can: (p: string) => permissoes.includes(p) }),
@@ -43,10 +45,38 @@ beforeEach(() => {
   token = 'sessao-a';
   permissoes = ['pauta.ver', 'pauta.editar', 'obsidian.ver'];
   apiGet.mockReset();
+  apiPost.mockReset();
+  apiPut.mockReset();
   apiGet.mockImplementation((url: string) => url === '/pauta/marca' ? Promise.resolve(painel) : Promise.resolve(previa));
 });
 
 describe('projeção da marca no contexto', () => {
+  it('não deixa salvar outro destino enquanto a aplicação ainda espera resposta', async () => {
+    const pessoa = userEvent.setup();
+    const respostaDaAplicacao = pendente<PautaMarcaPainel>();
+    apiPost.mockReturnValue(respostaDaAplicacao.promessa);
+    apiPut.mockResolvedValue(painel);
+    apiGet.mockImplementation((url: string) => url === '/pauta/marca'
+      ? Promise.resolve(painel)
+      : Promise.resolve({ ...previa, textoProposto: 'A'.repeat(100) }));
+    render(<MarcaPage />);
+    const salvarPilares = await screen.findByRole('button', { name: 'Salvar os pilares' });
+    await waitFor(() => expect(salvarPilares).toBeEnabled());
+    const campoPilares = screen.getByRole('textbox', { name: 'Pilares de conteúdo' });
+    await pessoa.type(campoPilares, 'Rascunho de outro destino');
+    await pessoa.click(screen.getByRole('button', { name: 'Conferir guia de perfil' }));
+    await pessoa.click(await screen.findByRole('button', { name: 'Aplicar somente perfil' }));
+    expect(salvarPilares).toBeDisabled();
+    await pessoa.click(salvarPilares);
+    expect(apiPut).not.toHaveBeenCalled();
+    respostaDaAplicacao.resolver({ ...painel, perfil: 'A'.repeat(100), perfilVersao: 1, pilaresTexto: 'Estado antigo do servidor' });
+    await waitFor(() => expect(salvarPilares).toBeEnabled());
+    expect(campoPilares).toHaveValue('Rascunho de outro destino');
+    await pessoa.click(salvarPilares);
+    expect(apiPut).toHaveBeenCalledTimes(1);
+    expect(apiPut).toHaveBeenCalledWith('/pauta/marca/pilares', { pilares: 'Rascunho de outro destino', versao: undefined }, 'sessao-a');
+  });
+
   it('não troca uma revisão digitada pela resposta antiga de Atualizar prévia', async () => {
     const pessoa = userEvent.setup();
     render(<MarcaPage />);

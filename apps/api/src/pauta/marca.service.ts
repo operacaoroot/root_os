@@ -15,7 +15,7 @@ import {
 } from '@mktos/shared';
 import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
-import { blocoDeMarca, marcaDaNota, pilaresDaNota, procedenciaDaMarca } from './marca-da-pauta';
+import { blocoDeMarca, marcaDaNota, pilaresDaNota, perfilParaPrompt, procedenciaDaMarca } from './marca-da-pauta';
 import { lerReferenciaDaProjecao, proporMarcaDaFonte, referenciaDaProjecao } from './marca-projecao';
 
 const TITULO_DA_MARCA = 'Marca (pauta)';
@@ -154,13 +154,17 @@ export class MarcaService {
     if (!fonte) return { ...base, estado: 'fonte_ausente', aviso: 'O guia de marca não está na Memória desta empresa.' };
     if (fonte.arquivadoEm) return { ...base, estado: 'fonte_arquivada', aviso: 'O guia foi arquivado; a projeção está indisponível.' };
     const proposta = proporMarcaDaFonte(fonte.body, destino);
+    const tamanhoEfetivo = destino === 'perfil' ? perfilParaPrompt(proposta.texto).length : 0;
+    const erroDaProposta = proposta.erro ?? (tamanhoEfetivo > 4_000
+      ? `Após a neutralização, a proposta tem ${tamanhoEfetivo.toLocaleString('pt-BR')} caracteres no prompt; o limite é 4.000. Revise antes de aplicar.`
+      : null);
     const resposta: PautaMarcaPrevia = {
       ...base, secoesUsadas: proposta.secoesUsadas, textoProposto: proposta.texto,
       diferenca: proposta.texto !== (nota?.body ?? ''),
-      estado: proposta.erro ? 'excede_limite' : 'pronto', aviso: proposta.erro,
+      estado: erroDaProposta ? 'excede_limite' : 'pronto', aviso: erroDaProposta,
     };
     if (nota?.arquivadoEm) return { ...resposta, estado: 'destino_alterado', aviso: 'O destino foi arquivado. Restaure-o explicitamente na Memória.' };
-    if (proposta.erro || !nota) return resposta;
+    if (erroDaProposta || !nota) return resposta;
     const vinculo = await this.vinculoDaNota(orgId, nota);
     if (vinculo?.atual && (vinculo.fonteContextItemId !== fonte.id || vinculo.fonteVersao !== fonte.versao || vinculo.fonteHash !== fonte.contentHash)) {
       return { ...resposta, estado: 'fonte_alterada', aviso: 'O guia mudou desde a última projeção. Revise a diferença antes de aplicar.' };
@@ -188,6 +192,10 @@ export class MarcaService {
     if (destino === 'perfil') {
       if (corpo.length < 80 || corpo.length > 4_000) {
         throw new ConflictException(`O perfil deve ter de 80 a 4.000 caracteres; recebeu ${corpo.length}.`);
+      }
+      const tamanhoEfetivo = perfilParaPrompt(corpo).length;
+      if (tamanhoEfetivo > 4_000) {
+        throw new ConflictException(`Após a neutralização, o perfil teria ${tamanhoEfetivo.toLocaleString('pt-BR')} caracteres no prompt; o limite é 4.000. Revise o texto antes de aplicar.`);
       }
     } else {
       const esperado = pilaresDaNota({ body: proposta.texto }).pilares.map((p) => p.chave);
