@@ -10,10 +10,22 @@ describe('preço', () => {
     })).toEqual({ custoUsd: 0.006525, custoEstimado: true });
   });
 
+  it('precifica o identificador exato Sonnet 5.5, inclusive cache, pela rota Standard do OpenRouter', () => {
+    expect(precoDe('anthropic/claude-sonnet-5.5')).toEqual({
+      entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5,
+    });
+    expect(custoUsd('anthropic/claude-sonnet-5.5', {
+      entrada: 1000, saida: 200, cacheLeitura: 500, cacheEscrita: 100,
+    })).toEqual({ custoUsd: 0.00435, custoEstimado: true });
+    expect(precoDe('anthropic/claude-sonnet-5.55')).toBeNull();
+  });
+
   it('casa o modelo com data no nome com a entrada da tabela', () => {
     expect(precoDe('claude-opus-5')).toBe(PRECO_USD_MTOK['claude-opus-5']);
     expect(precoDe('claude-opus-5-20260101')).toBe(PRECO_USD_MTOK['claude-opus-5']);
+    expect(precoDe('gpt-4o-2024-08-06')).toBe(PRECO_USD_MTOK['gpt-4o']);
     expect(precoDe('claude-haiku-4-5-20251001')).toBe(PRECO_USD_MTOK['claude-haiku-4-5']);
+    expect(precoDe('claude-opus-5-preview')).toBeNull();
   });
 
   it('modelo fora da tabela devolve custo 0 MARCADO como não medido', () => {

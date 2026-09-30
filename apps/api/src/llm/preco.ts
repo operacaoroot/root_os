@@ -18,17 +18,22 @@ export const PRECO_USD_MTOK: Record<string, PrecoModelo> = {
   // Tarifa base; contexto longo e roteamento regional podem custar mais.
   // OpenRouterProvider prioriza usage.cost (valor real) sobre esta estimativa.
   'anthropic/claude-sonnet-4.5': { entrada: 3, saida: 15, cacheLeitura: 0.3, cacheEscrita: 3.75 },
+  // OpenRouter, 30/09/2026: cinco endpoints da rota Standard em US$ 2/10
+  // por milhão, cache 0,20/2,50. Três endpoints fora dela cobram 2,20/11;
+  // cache de escrita de 1h custa 4 e não tem faixa própria nesta tabela.
+  // https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-5.5/endpoints
+  'anthropic/claude-sonnet-5.5': { entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5 },
   'claude-opus-5': { entrada: 5, saida: 25, cacheLeitura: 0.5, cacheEscrita: 6.25 },
   'claude-sonnet-5': { entrada: 2, saida: 10, cacheLeitura: 0.2, cacheEscrita: 2.5 },
   'claude-haiku-4-5': { entrada: 1, saida: 5, cacheLeitura: 0.1, cacheEscrita: 1.25 },
   'gpt-4o': { entrada: 2.5, saida: 10, cacheLeitura: 1.25, cacheEscrita: 2.5 },
 };
 
-/** Casa `claude-opus-5-20260101` com a entrada `claude-opus-5`. */
+/** Casa `claude-opus-5-20260101` com `claude-opus-5`, sem aceitar outro modelo por prefixo. */
 export function precoDe(modelo: string): PrecoModelo | null {
   if (PRECO_USD_MTOK[modelo]) return PRECO_USD_MTOK[modelo];
   const chave = Object.keys(PRECO_USD_MTOK)
-    .filter((k) => modelo.startsWith(k))
+    .filter((k) => modelo.startsWith(k) && /^-(?:\d{8}|\d{4}-\d{2}-\d{2})$/.test(modelo.slice(k.length)))
     .sort((a, b) => b.length - a.length)[0];
   return chave ? PRECO_USD_MTOK[chave] : null;
 }
