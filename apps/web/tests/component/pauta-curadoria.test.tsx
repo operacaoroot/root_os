@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /*
@@ -60,10 +60,10 @@ const DETALHE = {
   ],
 };
 
-function respostas(opts: { rodadas?: unknown[]; detalhe?: unknown } = {}) {
+function respostas(opts: { rodadas?: unknown[]; detalhe?: unknown; fontes?: unknown[] } = {}) {
   apiGet.mockImplementation(async (path: string) => {
     if (path === '/pauta/fontes') return {
-      items: [
+      items: opts.fontes ?? [
         { id: 'rss-a', nome: 'Feed A', tipo: 'rss', ativo: true, url: 'https://a.exemplo/rss' },
         { id: 'rss-b', nome: 'Feed B', tipo: 'rss', ativo: true, url: 'https://b.exemplo/rss' },
         { id: 'rss-pausado', nome: 'Pausado', tipo: 'rss', ativo: false, url: 'https://p.exemplo/rss' },
@@ -78,13 +78,14 @@ function respostas(opts: { rodadas?: unknown[]; detalhe?: unknown } = {}) {
   });
 }
 
-function renderAba(over: Partial<{ editavel: boolean; inicial: string }> = {}) {
+function renderAba(over: Partial<{ editavel: boolean; podeExecutarColeta: boolean; inicial: string }> = {}) {
   const onErro = vi.fn();
   const onMudou = vi.fn();
   render(
     <AbaCuradoria
       token="tok"
       editavel={over.editavel ?? true}
+      podeExecutarColeta={over.podeExecutarColeta ?? true}
       onErro={onErro}
       bump={0}
       onMudou={onMudou}
@@ -96,10 +97,12 @@ function renderAba(over: Partial<{ editavel: boolean; inicial: string }> = {}) {
 
 function adiado<T>() {
   let resolver!: (v: T) => void;
-  const promessa = new Promise<T>((r) => {
+  let rejeitar!: (e: Error) => void;
+  const promessa = new Promise<T>((r, j) => {
     resolver = r;
+    rejeitar = j;
   });
-  return { promessa, resolver };
+  return { promessa, resolver, rejeitar };
 }
 
 const DETALHE_R2 = {
@@ -314,6 +317,87 @@ describe('sem rodada aguardando e sem permissão', () => {
 });
 
 describe('P05a: escolha explícita de RSS na curadoria', () => {
+  it('descarta coleta antiga após troca de token mesmo quando a nova resposta chega primeiro', async () => {
+    const user = userEvent.setup();
+    const antiga = adiado<{ novas: number; repetidas: number; erros: number; fonteIds: string[] }>();
+    respostas({ rodadas: [] });
+    apiPost.mockImplementation((path: string, _body: unknown, token: string) => {
+      if (path !== '/pauta/feeds/coletar') throw new Error(`POST inesperado: ${path}`);
+      return token === 'tok-antigo' ? antiga.promessa : Promise.resolve({ novas: 2, repetidas: 0, erros: 0, fonteIds: ['rss-b'] });
+    });
+    const onMudou = vi.fn();
+    const onErro = vi.fn();
+    const painel = (token: string) => <AbaCuradoria key={token} token={token} editavel podeExecutarColeta onErro={onErro} bump={0} onMudou={onMudou} />;
+    const { rerender } = render(painel('tok-antigo'));
+    await user.click(screen.getByRole('radio', { name: 'Feeds RSS escolhidos' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Feed A' }));
+    await user.click(screen.getByRole('button', { name: 'Coletar feeds escolhidos' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/feeds/coletar', { fonteIds: ['rss-a'] }, 'tok-antigo'));
+
+    rerender(painel('tok-novo'));
+    await user.click(screen.getByRole('radio', { name: 'Feeds RSS escolhidos' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Feed B' }));
+    await user.click(screen.getByRole('button', { name: 'Coletar feeds escolhidos' }));
+    expect(await screen.findByText(/2 capturas novas de 1 feed escolhido/)).toBeInTheDocument();
+    expect(onMudou).toHaveBeenCalledTimes(1);
+
+    await act(async () => { antiga.resolver({ novas: 9, repetidas: 0, erros: 0, fonteIds: ['rss-a'] }); await antiga.promessa; });
+    expect(onMudou).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/2 capturas novas de 1 feed escolhido/)).toBeInTheDocument();
+    expect(screen.queryByText(/9 capturas novas/)).not.toBeInTheDocument();
+  });
+
+  it('não mostra erro da lista antiga no tenant novo depois de uma montagem nova', async () => {
+    const user = userEvent.setup();
+    const antiga = adiado<{ id: string }>();
+    respostas({ rodadas: [] });
+    apiPost.mockImplementation((path: string, _body: unknown, token: string) => {
+      if (path !== '/pauta/rodadas/curadoria') throw new Error(`POST inesperado: ${path}`);
+      return token === 'tok-antigo' ? antiga.promessa : Promise.resolve({ id: 'nova' });
+    });
+    const onMudou = vi.fn();
+    const onErro = vi.fn();
+    const painel = (token: string) => <AbaCuradoria key={token} token={token} editavel podeExecutarColeta onErro={onErro} bump={0} onMudou={onMudou} />;
+    const { rerender } = render(painel('tok-antigo'));
+    await user.click(screen.getByRole('button', { name: 'Montar lista para curadoria' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/rodadas/curadoria', { horas: 168 }, 'tok-antigo'));
+
+    rerender(painel('tok-novo'));
+    await user.click(screen.getByRole('button', { name: 'Montar lista para curadoria' }));
+    await waitFor(() => expect(onMudou).toHaveBeenCalledTimes(1));
+    await act(async () => { antiga.rejeitar(new Error('Erro do tenant antigo')); await antiga.promessa.catch(() => {}); });
+    expect(onMudou).toHaveBeenCalledTimes(1);
+    expect(onErro).not.toHaveBeenCalledWith('Erro do tenant antigo');
+  });
+
+  it('sem automacoes.executar, mostra a razão e desabilita coleta e montagem sem bloquear a leitura', async () => {
+    const user = userEvent.setup();
+    respostas();
+    renderAba({ editavel: true, podeExecutarColeta: false });
+    expect(await screen.findByText('Matéria do feed')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Feeds RSS escolhidos' }));
+    expect(await screen.findByText(/exige a permissão de executar automações/)).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Feed A' }));
+    expect(screen.getByRole('button', { name: 'Coletar feeds escolhidos' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeDisabled();
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it('marca até 50 feeds e avisa o teto antes do servidor recusar o 51º', async () => {
+    const user = userEvent.setup();
+    const fontes = Array.from({ length: 51 }, (_, i) => ({
+      id: `rss-${i + 1}`, nome: `Feed ${i + 1}`, tipo: 'rss', ativo: true, url: `https://feed${i + 1}.exemplo/rss`,
+    }));
+    respostas({ rodadas: [], fontes });
+    renderAba();
+    await user.click(screen.getByRole('radio', { name: 'Feeds RSS escolhidos' }));
+    const caixas = await screen.findAllByRole('checkbox');
+    for (const caixa of caixas.slice(0, 50)) fireEvent.click(caixa);
+    expect(screen.getByText('50 de 50 feeds permitidos nesta seleção.')).toBeInTheDocument();
+    expect(caixas[50]).toBeDisabled();
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
   it('usa a mesma seleção na coleta e na lista, sem incluir feed pausado nem outra origem', async () => {
     const user = userEvent.setup();
     respostas({ rodadas: [] });

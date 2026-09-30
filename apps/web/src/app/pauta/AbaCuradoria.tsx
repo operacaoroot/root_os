@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_HORAS_DA_CURADORIA,
@@ -25,6 +25,7 @@ import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 interface Props {
   token: string | null;
   editavel: boolean;
+  podeExecutarColeta: boolean;
   onErro: (m: string | null) => void;
   bump: number;
   onMudou: () => void;
@@ -55,7 +56,8 @@ function mesmoConjunto(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial = null, onAbrirEpisodio }: Props) {
+export function AbaCuradoria({ token, editavel, podeExecutarColeta, onErro, bump, onMudou, inicial = null, onAbrirEpisodio }: Props) {
+  const geracaoDaSessao = useRef(0);
   const [pendentes, setPendentes] = useState<PautaRodadaList['items'] | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(inicial);
   const [detalhe, setDetalhe] = useState<PautaRodadaDetalhe | null>(null);
@@ -71,6 +73,11 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [confirmada, setConfirmada] = useState<string | null>(null);
+
+  useEffect(() => {
+    geracaoDaSessao.current++;
+    return () => { geracaoDaSessao.current++; };
+  }, [token, editavel, podeExecutarColeta]);
 
   useEffect(() => {
     if (!token) return;
@@ -139,13 +146,16 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const sugeridos = candidatos.filter((c) => c.sugerido);
   const rssAtivos = (fontes ?? []).filter((f) => f.tipo === 'rss' && f.ativo && !!f.url?.trim());
   const idsValidos = rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.id);
+  const noTetoDeFeeds = fonteIds.size >= 50;
   const selecaoColetada = !!coletadosFonteIds && mesmoConjunto(new Set(idsValidos), coletadosFonteIds);
   const sujo = !mesmoConjunto(marcados, salvos);
   // Uma escrita de cada vez: Salvar atrasado terminando depois de Confirmar
   // devolveria "saiu da curadoria" ao lado do aviso de sucesso.
   const escrevendo = ocupado !== null;
 
-  const acao = async (nome: string, fn: () => Promise<void>) => {
+  const acao = async (nome: string, fn: (atual: () => boolean) => Promise<void>) => {
+    const geracao = geracaoDaSessao.current;
+    const atual = () => geracaoDaSessao.current === geracao;
     onErro(null);
     // Criar o episódio não apaga o aviso: se der erro, o botão continua ali.
     if (nome !== 'episodio') {
@@ -154,11 +164,11 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     }
     setOcupado(nome);
     try {
-      await fn();
+      await fn(atual);
     } catch (e) {
-      onErro((e as Error).message);
+      if (atual()) onErro((e as Error).message);
     } finally {
-      setOcupado(null);
+      if (atual()) setOcupado(null);
     }
   };
 
@@ -171,22 +181,24 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     });
 
   const gerar = () =>
-    acao('gerar', async () => {
+    acao('gerar', async (atual) => {
       const r = await apiPost<{ id: string; fontesSelecionadas?: Array<{ id: string; nome: string }> }>(
         '/pauta/rodadas/curadoria',
         somenteRss ? { horas, fonteIds: idsValidos } : { horas },
         token,
       );
+      if (!atual()) return;
       setSelecionada(r.id);
       if (r.fontesSelecionadas) setAviso(`Lista montada com ${r.fontesSelecionadas.map((f) => f.nome).join(', ')}. São candidatos para revisão, sem sugestão da IA.`);
       onMudou();
     });
 
   const coletarSelecionadas = () =>
-    acao('coletar-rss', async () => {
+    acao('coletar-rss', async (atual) => {
       const r = await apiPost<{ novas: number; repetidas: number; colisoes?: number; erros: number; fonteIds: string[] }>(
         '/pauta/feeds/coletar', { fonteIds: idsValidos }, token,
       );
+      if (!atual()) return;
       setColetadosFonteIds(new Set(r.fonteIds));
       const repetidas = r.repetidas ?? 0;
       const colisoes = r.colisoes ?? 0;
@@ -197,21 +209,23 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     });
 
   const salvar = () =>
-    acao('salvar', async () => {
+    acao('salvar', async (atual) => {
       if (!selecionada) return;
       await apiPut(`/pauta/rodadas/${selecionada}/curadoria`, { marcados: [...marcados] }, token);
+      if (!atual()) return;
       setSalvos(new Set(marcados));
       setAviso('Marcação salva.');
     });
 
   const confirmar = () =>
-    acao('confirmar', async () => {
+    acao('confirmar', async (atual) => {
       if (!selecionada) return;
       const r = await apiPost<{ itens: number }>(
         `/pauta/rodadas/${selecionada}/curadoria/confirmar`,
         { marcados: [...marcados] },
         token,
       );
+      if (!atual()) return;
       setAviso(
         `Curadoria confirmada: ${r.itens} ${r.itens === 1 ? 'matéria segue' : 'matérias seguem'}. Próximo passo: criar o episódio.`,
       );
@@ -221,9 +235,10 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     });
 
   const criarEpisodio = () =>
-    acao('episodio', async () => {
+    acao('episodio', async (atual) => {
       if (!confirmada) return;
       const e = await apiPost<{ id: string }>('/pauta/episodios', { rodadaId: confirmada }, token);
+      if (!atual()) return;
       onMudou();
       onAbrirEpisodio?.(e.id);
     });
@@ -242,11 +257,12 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
         </label>
         {somenteRss && <div className="mt-2">
           <p className="text-muted">Escolha os feeds, colete e monte a lista. Esta lista não chama a IA. Uma URL já capturada por outro feed não vira candidata do feed escolhido.</p>
+          {editavel && !podeExecutarColeta && <p className="mt-2 text-warn">Coletar e montar a lista exige a permissão de executar automações.</p>}
           {fontes === null ? <p className="mt-2">Consultando feeds…</p> : rssAtivos.length === 0 ?
             <p className="mt-2">Nenhum feed RSS ativo com URL. Confira o Radar.</p> :
             <div className="mt-2 grid gap-1 sm:grid-cols-2">
               {rssAtivos.map((f) => <label key={f.id} className="flex min-h-11 items-center gap-2 rounded border border-border px-3 py-2">
-                <input type="checkbox" checked={fonteIds.has(f.id)} disabled={escrevendo || !editavel}
+                <input type="checkbox" checked={fonteIds.has(f.id)} disabled={escrevendo || !editavel || (!fonteIds.has(f.id) && noTetoDeFeeds)}
                   onChange={(e) => setFonteIds((atual) => {
                     const proximo = new Set(atual);
                     if (e.target.checked) proximo.add(f.id); else proximo.delete(f.id);
@@ -256,8 +272,9 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
               </label>)}
             </div>}
           <p className="mt-2 text-muted">Seleção efetiva: {rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.nome).join(', ') || 'nenhum feed'}.</p>
+          <p className="mt-1 text-muted">{fonteIds.size} de 50 feeds permitidos nesta seleção.</p>
           {idsValidos.length > 0 && !selecaoColetada && <p className="mt-1 text-muted">Colete esta seleção antes de montar a lista.</p>}
-          <Botao onClick={coletarSelecionadas} disabled={!editavel || escrevendo || idsValidos.length === 0}>
+          <Botao onClick={coletarSelecionadas} disabled={!editavel || !podeExecutarColeta || escrevendo || idsValidos.length === 0}>
             {ocupado === 'coletar-rss' ? 'Coletando feeds…' : 'Coletar feeds escolhidos'}
           </Botao>
         </div>}
@@ -276,7 +293,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
             </option>
           ))}
         </select>
-        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo || (somenteRss && !selecaoColetada)}>
+        <Botao tone="brand" onClick={gerar} disabled={!editavel || !podeExecutarColeta || escrevendo || (somenteRss && !selecaoColetada)}>
           {ocupado === 'gerar' ? 'Montando a lista…' : 'Montar lista para curadoria'}
         </Botao>
         {pendentes && pendentes.length > 1 && (

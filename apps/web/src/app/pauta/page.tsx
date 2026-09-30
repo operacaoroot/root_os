@@ -179,6 +179,7 @@ export default function PautaPage() {
           key={token ?? 'sem-sessao'}
           token={token}
           editavel={editavel}
+          podeExecutarColeta={can('automacoes.executar')}
           onErro={aoErrar}
           bump={bump}
           onMudou={recarregar}
