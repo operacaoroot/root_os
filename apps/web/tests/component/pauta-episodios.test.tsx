@@ -401,7 +401,7 @@ describe('o episódio nasce da rodada curada', () => {
       path === '/pauta/episodios' ? { id: 'ep-da-curadoria' } : { ok: true, status: 'curada', itens: 1 },
     );
     const onAbrirEpisodio = vi.fn();
-    render(<AbaCuradoria token="tok" editavel onErro={vi.fn()} bump={0} onMudou={vi.fn()} onAbrirEpisodio={onAbrirEpisodio} />);
+    render(<AbaCuradoria token="tok" editavel podeExecutarColeta onErro={vi.fn()} bump={0} onMudou={vi.fn()} onAbrirEpisodio={onAbrirEpisodio} />);
     await userEvent.click(await screen.findByRole('button', { name: 'Confirmar (1)' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Criar episódio desta rodada' }));
     expect(apiPost).toHaveBeenLastCalledWith('/pauta/episodios', { rodadaId: 'r2' }, 'tok');

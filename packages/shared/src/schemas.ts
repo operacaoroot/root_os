@@ -1535,10 +1535,24 @@ export const PAUTA_TETO_DE_CANDIDATOS = 200;
 /** Janela padrão da rodada para curadoria: a semana do episódio. */
 export const PAUTA_HORAS_DA_CURADORIA = 168;
 
+const PautaFonteIdsRssSchema = z.array(z.string().uuid()).min(1).max(50).refine(
+  (ids) => new Set(ids).size === ids.length,
+  'Selecione cada fonte RSS uma vez.',
+);
+
+/** Seleção manual de RSS; sem `fonteIds` a coleta continua como antes. */
+export const PautaColetarFeedsSchema = z.object({
+  fonteIds: PautaFonteIdsRssSchema.optional(),
+});
+
 export const PautaGerarCuradoriaSchema = z.object({
   horas: z.number().int().min(6).max(336).optional(),
   origens: z.array(z.enum(PAUTA_ORIGENS)).min(1).max(PAUTA_ORIGENS.length).optional(),
-});
+  fonteIds: PautaFonteIdsRssSchema.optional(),
+}).refine(
+  (input) => !input.fonteIds || !input.origens || (input.origens.length === 1 && input.origens[0] === 'R'),
+  { message: 'A seleção de fontes RSS aceita apenas a origem R.', path: ['origens'] },
+);
 export type PautaGerarCuradoriaInput = z.infer<typeof PautaGerarCuradoriaSchema>;
 
 const idDoCandidato = z.string().min(1).max(64);

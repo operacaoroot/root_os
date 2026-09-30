@@ -176,8 +176,10 @@ export default function PautaPage() {
       )}
       {ready && aba === 'Curadoria' && (
         <AbaCuradoria
+          key={token ?? 'sem-sessao'}
           token={token}
           editavel={editavel}
+          podeExecutarColeta={can('automacoes.executar')}
           onErro={aoErrar}
           bump={bump}
           onMudou={recarregar}

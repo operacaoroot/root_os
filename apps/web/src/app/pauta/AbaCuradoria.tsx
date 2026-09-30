@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   PAUTA_HORAS_DA_CURADORIA,
   PAUTA_ORIGEM_ROTULOS,
   PAUTA_ORIGENS,
   type PautaItemCurado,
+  type PautaFonteList,
   type PautaOrigem,
   type PautaRodadaDetalhe,
   type PautaRodadaList,
@@ -24,6 +25,7 @@ import { Botao, Card, Chip, inputCls } from '../referencias/ui';
 interface Props {
   token: string | null;
   editavel: boolean;
+  podeExecutarColeta: boolean;
   onErro: (m: string | null) => void;
   bump: number;
   onMudou: () => void;
@@ -54,7 +56,8 @@ function mesmoConjunto(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial = null, onAbrirEpisodio }: Props) {
+export function AbaCuradoria({ token, editavel, podeExecutarColeta, onErro, bump, onMudou, inicial = null, onAbrirEpisodio }: Props) {
+  const geracaoDaSessao = useRef(0);
   const [pendentes, setPendentes] = useState<PautaRodadaList['items'] | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(inicial);
   const [detalhe, setDetalhe] = useState<PautaRodadaDetalhe | null>(null);
@@ -63,19 +66,40 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [soSugeridos, setSoSugeridos] = useState(false);
   const [horas, setHoras] = useState<number>(PAUTA_HORAS_DA_CURADORIA);
+  const [fontes, setFontes] = useState<PautaFonteList['items'] | null>(null);
+  const [somenteRss, setSomenteRss] = useState(false);
+  const [fonteIds, setFonteIds] = useState<Set<string>>(new Set());
+  const [coletadosFonteIds, setColetadosFonteIds] = useState<Set<string> | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [confirmada, setConfirmada] = useState<string | null>(null);
 
   useEffect(() => {
+    geracaoDaSessao.current++;
+    return () => { geracaoDaSessao.current++; };
+  }, [token, editavel, podeExecutarColeta]);
+
+  useEffect(() => {
     if (!token) return;
+    let vivo = true;
+    apiGet<PautaFonteList>('/pauta/fontes', token)
+      .then((resposta) => { if (vivo) setFontes(resposta.items); })
+      .catch((e: Error) => { if (vivo) onErro(e.message); });
+    return () => { vivo = false; };
+  }, [token, bump, onErro]);
+
+  useEffect(() => {
+    if (!token) return;
+    let vivo = true;
     apiGet<PautaRodadaList>('/pauta/rodadas?limite=100', token)
       .then((d) => {
+        if (!vivo) return;
         const lista = d.items.filter((r) => r.status === 'aguardando_curadoria');
         setPendentes(lista);
         setSelecionada((atual) => (atual && lista.some((r) => r.id === atual) ? atual : (lista[0]?.id ?? null)));
       })
-      .catch((e: Error) => onErro(e.message));
+      .catch((e: Error) => { if (vivo) onErro(e.message); });
+    return () => { vivo = false; };
   }, [token, bump, onErro]);
 
   useEffect(() => {
@@ -120,12 +144,18 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     (c) => (filtro === 'todas' || origensDe(c).includes(filtro)) && (!soSugeridos || c.sugerido),
   );
   const sugeridos = candidatos.filter((c) => c.sugerido);
+  const rssAtivos = (fontes ?? []).filter((f) => f.tipo === 'rss' && f.ativo && !!f.url?.trim());
+  const idsValidos = rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.id);
+  const noTetoDeFeeds = fonteIds.size >= 50;
+  const selecaoColetada = !!coletadosFonteIds && mesmoConjunto(new Set(idsValidos), coletadosFonteIds);
   const sujo = !mesmoConjunto(marcados, salvos);
   // Uma escrita de cada vez: Salvar atrasado terminando depois de Confirmar
   // devolveria "saiu da curadoria" ao lado do aviso de sucesso.
   const escrevendo = ocupado !== null;
 
-  const acao = async (nome: string, fn: () => Promise<void>) => {
+  const acao = async (nome: string, fn: (atual: () => boolean) => Promise<void>) => {
+    const geracao = geracaoDaSessao.current;
+    const atual = () => geracaoDaSessao.current === geracao;
     onErro(null);
     // Criar o episódio não apaga o aviso: se der erro, o botão continua ali.
     if (nome !== 'episodio') {
@@ -134,11 +164,11 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     }
     setOcupado(nome);
     try {
-      await fn();
+      await fn(atual);
     } catch (e) {
-      onErro((e as Error).message);
+      if (atual()) onErro((e as Error).message);
     } finally {
-      setOcupado(null);
+      if (atual()) setOcupado(null);
     }
   };
 
@@ -151,28 +181,51 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     });
 
   const gerar = () =>
-    acao('gerar', async () => {
-      const r = await apiPost<{ id: string }>('/pauta/rodadas/curadoria', { horas }, token);
+    acao('gerar', async (atual) => {
+      const r = await apiPost<{ id: string; fontesSelecionadas?: Array<{ id: string; nome: string }> }>(
+        '/pauta/rodadas/curadoria',
+        somenteRss ? { horas, fonteIds: idsValidos } : { horas },
+        token,
+      );
+      if (!atual()) return;
       setSelecionada(r.id);
+      if (r.fontesSelecionadas) setAviso(`Lista montada com ${r.fontesSelecionadas.map((f) => f.nome).join(', ')}. São candidatos para revisão, sem sugestão da IA.`);
+      onMudou();
+    });
+
+  const coletarSelecionadas = () =>
+    acao('coletar-rss', async (atual) => {
+      const r = await apiPost<{ novas: number; repetidas: number; colisoes?: number; erros: number; fonteIds: string[] }>(
+        '/pauta/feeds/coletar', { fonteIds: idsValidos }, token,
+      );
+      if (!atual()) return;
+      setColetadosFonteIds(new Set(r.fonteIds));
+      const repetidas = r.repetidas ?? 0;
+      const colisoes = r.colisoes ?? 0;
+      setAviso(`${r.novas} ${r.novas === 1 ? 'captura nova' : 'capturas novas'} de ${r.fonteIds.length} ${r.fonteIds.length === 1 ? 'feed escolhido' : 'feeds escolhidos'}. ` +
+        `${repetidas} ${repetidas === 1 ? 'URL repetida' : 'URLs repetidas'}; ${colisoes} ${colisoes === 1 ? 'colisão' : 'colisões'} com outra fonte, sem nova atribuição.` +
+        (r.erros ? ` ${r.erros} feed(s) falharam; veja o erro no Radar.` : ''));
       onMudou();
     });
 
   const salvar = () =>
-    acao('salvar', async () => {
+    acao('salvar', async (atual) => {
       if (!selecionada) return;
       await apiPut(`/pauta/rodadas/${selecionada}/curadoria`, { marcados: [...marcados] }, token);
+      if (!atual()) return;
       setSalvos(new Set(marcados));
       setAviso('Marcação salva.');
     });
 
   const confirmar = () =>
-    acao('confirmar', async () => {
+    acao('confirmar', async (atual) => {
       if (!selecionada) return;
       const r = await apiPost<{ itens: number }>(
         `/pauta/rodadas/${selecionada}/curadoria/confirmar`,
         { marcados: [...marcados] },
         token,
       );
+      if (!atual()) return;
       setAviso(
         `Curadoria confirmada: ${r.itens} ${r.itens === 1 ? 'matéria segue' : 'matérias seguem'}. Próximo passo: criar o episódio.`,
       );
@@ -182,15 +235,50 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     });
 
   const criarEpisodio = () =>
-    acao('episodio', async () => {
+    acao('episodio', async (atual) => {
       if (!confirmada) return;
       const e = await apiPost<{ id: string }>('/pauta/episodios', { rodadaId: confirmada }, token);
+      if (!atual()) return;
       onMudou();
       onAbrirEpisodio?.(e.id);
     });
 
   return (
     <div className="space-y-4">
+      <fieldset className="rounded-lg border border-border p-3 text-sm">
+        <legend className="px-1 font-medium">Fontes da próxima lista</legend>
+        <label className="mr-4 inline-flex min-h-11 items-center gap-2">
+          <input type="radio" name="fontes-curadoria" checked={!somenteRss} onChange={() => setSomenteRss(false)} disabled={escrevendo} />
+          Todas as origens da janela
+        </label>
+        <label className="inline-flex min-h-11 items-center gap-2">
+          <input type="radio" name="fontes-curadoria" checked={somenteRss} onChange={() => setSomenteRss(true)} disabled={escrevendo} />
+          Feeds RSS escolhidos
+        </label>
+        {somenteRss && <div className="mt-2">
+          <p className="text-muted">Escolha os feeds, colete e monte a lista. Esta lista não chama a IA. Uma URL já capturada por outro feed não vira candidata do feed escolhido.</p>
+          {editavel && !podeExecutarColeta && <p className="mt-2 text-warn">Coletar e montar a lista exige a permissão de executar automações.</p>}
+          {fontes === null ? <p className="mt-2">Consultando feeds…</p> : rssAtivos.length === 0 ?
+            <p className="mt-2">Nenhum feed RSS ativo com URL. Confira o Radar.</p> :
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              {rssAtivos.map((f) => <label key={f.id} className="flex min-h-11 items-center gap-2 rounded border border-border px-3 py-2">
+                <input type="checkbox" checked={fonteIds.has(f.id)} disabled={escrevendo || !editavel || (!fonteIds.has(f.id) && noTetoDeFeeds)}
+                  onChange={(e) => setFonteIds((atual) => {
+                    const proximo = new Set(atual);
+                    if (e.target.checked) proximo.add(f.id); else proximo.delete(f.id);
+                    return proximo;
+                  })} />
+                <span>{f.nome}</span>
+              </label>)}
+            </div>}
+          <p className="mt-2 text-muted">Seleção efetiva: {rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.nome).join(', ') || 'nenhum feed'}.</p>
+          <p className="mt-1 text-muted">{fonteIds.size} de 50 feeds permitidos nesta seleção.</p>
+          {idsValidos.length > 0 && !selecaoColetada && <p className="mt-1 text-muted">Colete esta seleção antes de montar a lista.</p>}
+          <Botao onClick={coletarSelecionadas} disabled={!editavel || !podeExecutarColeta || escrevendo || idsValidos.length === 0}>
+            {ocupado === 'coletar-rss' ? 'Coletando feeds…' : 'Coletar feeds escolhidos'}
+          </Botao>
+        </div>}
+      </fieldset>
       <div className="flex flex-wrap items-center gap-2">
         <select
           className={`${inputCls} w-auto`}
@@ -205,7 +293,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
             </option>
           ))}
         </select>
-        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo}>
+        <Botao tone="brand" onClick={gerar} disabled={!editavel || !podeExecutarColeta || escrevendo || (somenteRss && !selecaoColetada)}>
           {ocupado === 'gerar' ? 'Montando a lista…' : 'Montar lista para curadoria'}
         </Botao>
         {pendentes && pendentes.length > 1 && (
@@ -239,8 +327,8 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
       {pendentes && pendentes.length === 0 && !detalhe && (
         <Card>
           <p className="text-sm text-muted">
-            Nenhuma rodada aguardando curadoria. Monte a lista: entram todos os itens coletados na janela, a IA
-            sugere os que levaria, e só o que você marcar segue para o roteiro.
+            Nenhuma rodada aguardando curadoria. Monte a lista com os itens coletados na janela;
+            só o que você marcar segue para o roteiro. Na lista de todas as origens, a IA pode sugerir itens.
           </p>
         </Card>
       )}

@@ -9,6 +9,8 @@ import { ColetorGmailService } from './coletor-gmail.service';
 export interface ResultadoDaColeta {
   novas: number;
   repetidas: number;
+  /** A URL já pertence a uma captura de outra fonte (ou sem fonte). */
+  colisoes?: number;
   /** A coleta rodou, mas algo ficou de fora: vai para `ultimoErro`, que é o que o Radar mostra. */
   aviso?: string;
   /** Não leu nada (teto do mês, consulta faltando): `ultimaLeitura` fica como estava. */
@@ -21,6 +23,8 @@ export interface ResultadoDaColetaDaRodada {
   erros: number;
   /** Puladas com aviso, sem ser erro: o motivo fica na fonte, no Radar. */
   puladas: number;
+  repetidas?: number;
+  colisoes?: number;
 }
 
 /** A mesma conta, separada por tipo de fonte: a rotina de coleta (MC5) resume por origem. */
@@ -37,7 +41,7 @@ export interface AtorDaColeta {
 export type Coletor = (
   fonte: PautaFonte,
   ator: AtorDaColeta,
-  opcoes: { limite?: number },
+  opcoes: { limite?: number; relatarColisoes?: boolean },
 ) => Promise<ResultadoDaColeta>;
 
 /**
@@ -82,7 +86,7 @@ export class ColetaService {
     private readonly rss: RssService,
     private readonly gmail: ColetorGmailService,
   ) {
-    this.registrar('rss', (f, ator) => this.coletarRss(f, ator), 'ColetaService');
+    this.registrar('rss', (f, ator, opcoes) => this.coletarRss(f, ator, opcoes.relatarColisoes), 'ColetaService');
     this.registrar('gmail', (f, ator) => this.gmail.coletar(f, ator), 'ColetorGmailService');
   }
 
@@ -96,11 +100,27 @@ export class ColetaService {
     return this.coletores.has(tipo);
   }
 
+  /** A seleção explícita é resolvida antes de qualquer leitura de feed. */
+  async validarFontesRss(orgId: string, ids: readonly string[]): Promise<PautaFonte[]> {
+    if (!ids.length || ids.length > 50 || new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Selecione de 1 a 50 fontes RSS, sem repetir IDs.');
+    }
+    const fontes = await this.prisma.pautaFonte.findMany({
+      where: { orgId, id: { in: [...ids] } },
+    });
+    const porId = new Map(fontes.map((f) => [f.id, f]));
+    const selecionadas = ids.map((id) => porId.get(id));
+    if (selecionadas.some((f) => !f || !f.ativo || f.tipo !== 'rss' || !f.url?.trim())) {
+      throw new BadRequestException('Seleção inválida: cada fonte deve ser RSS, ativa, ter URL e pertencer à organização.');
+    }
+    return selecionadas as PautaFonte[];
+  }
+
   /**
    * Coleta UMA fonte. O erro fica na fonte E sobe: quem clicou precisa vê-lo,
    * e a rodada, que não pode parar por uma fonte, o engole em `coletarDaRodada`.
    */
-  async coletar(fonte: PautaFonte, actorId: string, opcoes: { limite?: number } = {}): Promise<ResultadoDaColeta> {
+  async coletar(fonte: PautaFonte, actorId: string, opcoes: { limite?: number; relatarColisoes?: boolean } = {}): Promise<ResultadoDaColeta> {
     const inscrito = this.coletores.get(fonte.tipo);
     if (!inscrito) {
       throw new BadRequestException(
@@ -132,8 +152,9 @@ export class ColetaService {
     orgId: string,
     actorId = 'sistema',
     tipos: readonly PautaFonteTipo[] = TIPOS_DA_COLETA_DA_RODADA,
+    fonteIds?: readonly string[],
   ): Promise<ResultadoDaColetaDaRodada> {
-    return (await this.coletarDaRodadaPorTipo(orgId, actorId, tipos)).total;
+    return (await this.coletarDaRodadaPorTipo(orgId, actorId, tipos, fonteIds)).total;
   }
 
   /** `coletarDaRodada` com a conta aberta por tipo de fonte. */
@@ -141,12 +162,17 @@ export class ColetaService {
     orgId: string,
     actorId = 'sistema',
     tipos: readonly PautaFonteTipo[] = TIPOS_DA_COLETA_DA_RODADA,
+    fonteIds?: readonly string[],
   ): Promise<ColetaDaRodadaPorTipo> {
     const total: ResultadoDaColetaDaRodada = { novas: 0, fontes: 0, erros: 0, puladas: 0 };
+    if (fonteIds) total.repetidas = 0;
     const porTipo: ColetaDaRodadaPorTipo['porTipo'] = {};
     const pedidos = TIPOS_DA_COLETA_DA_RODADA.filter((t) => tipos.includes(t));
+    if (fonteIds && (pedidos.length !== 1 || pedidos[0] !== 'rss')) {
+      throw new BadRequestException('A seleção de fontes RSS aceita apenas a origem R.');
+    }
     if (!pedidos.length) return { total, porTipo };
-    const fontes = await this.prisma.pautaFonte.findMany({
+    const fontes = fonteIds ? await this.validarFontesRss(orgId, fonteIds) : await this.prisma.pautaFonte.findMany({
       where: { orgId, ativo: true, tipo: { in: pedidos } },
       orderBy: { criadaEm: 'asc' },
     });
@@ -156,9 +182,11 @@ export class ColetaService {
       doTipo.fontes++;
       total.fontes++;
       try {
-        const r = await this.coletar(f, actorId);
+        const r = await this.coletar(f, actorId, { relatarColisoes: !!fonteIds });
         doTipo.novas += r.novas;
         total.novas += r.novas;
+        if (fonteIds) total.repetidas = (total.repetidas ?? 0) + r.repetidas;
+        if (fonteIds && r.colisoes) total.colisoes = (total.colisoes ?? 0) + r.colisoes;
         if (r.pulada) {
           doTipo.puladas++;
           total.puladas++;
@@ -178,20 +206,22 @@ export class ColetaService {
    * novas contra as já gravadas. O MC5 manteve assim, porque a curadoria já junta
    * a mesma matéria antes da lista (ver `url-da-captura.ts`).
    */
-  private async coletarRss(f: PautaFonte, ator: AtorDaColeta): Promise<ResultadoDaColeta> {
+  private async coletarRss(f: PautaFonte, ator: AtorDaColeta, relatarColisoes = false): Promise<ResultadoDaColeta> {
     if (!f.url) throw new BadRequestException('Fonte RSS sem url.');
     const itens = await this.rss.ler(f.url);
     let novas = 0;
     let repetidas = 0;
+    let colisoes = 0;
     for (const item of itens) {
       const urlNorm = item.url.replace(/[?#].*$/, '').replace(/\/$/, '');
       const urlHash = createHash('sha256').update(urlNorm).digest('hex');
       const existe = await this.prisma.pautaCaptura.findUnique({
         where: { orgId_urlHash: { orgId: f.orgId, urlHash } },
-        select: { id: true },
+        select: { id: true, fonteId: true },
       });
       if (existe) {
         repetidas++;
+        if (existe.fonteId !== f.id) colisoes++;
         continue;
       }
       await this.prisma.pautaCaptura.create({
@@ -213,6 +243,6 @@ export class ColetaService {
       });
       novas++;
     }
-    return { novas, repetidas };
+    return { novas, repetidas, ...(relatarColisoes && colisoes ? { colisoes } : {}) };
   }
 }

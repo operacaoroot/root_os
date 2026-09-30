@@ -14,6 +14,7 @@ import {
 import {
   PautaCuradoriaConfirmacaoSchema,
   PautaCuradoriaMarcacaoSchema,
+  PautaColetarFeedsSchema,
   PautaGerarCuradoriaSchema,
   PautaRotinaSchema,
   PautaRotinaUpdateSchema,
@@ -76,8 +77,9 @@ export class RodadaController {
 
   @Post('feeds/coletar')
   @RequirePermissions('pauta.editar', 'automacoes.executar')
-  coletarFeeds(@CurrentUser() user: JwtUser) {
-    return this.rodadas.coletarFeeds(user.orgId, user.sub);
+  coletarFeeds(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    const { fonteIds } = PautaColetarFeedsSchema.parse(body ?? {});
+    return this.rodadas.coletarFeeds(user.orgId, user.sub, undefined, fonteIds);
   }
 
   @Get('rodadas')
@@ -103,8 +105,8 @@ export class RodadaController {
   @Post('rodadas/curadoria')
   @RequirePermissions('pauta.editar', 'automacoes.executar')
   gerarParaCuradoria(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    const { horas, origens } = PautaGerarCuradoriaSchema.parse(body ?? {});
-    return this.rodadas.gerarParaCuradoria(user.orgId, user.sub, { horas, origens });
+    const { horas, origens, fonteIds } = PautaGerarCuradoriaSchema.parse(body ?? {});
+    return this.rodadas.gerarParaCuradoria(user.orgId, user.sub, { horas, origens, fonteIds });
   }
 
   @Put('rodadas/:id/curadoria')
