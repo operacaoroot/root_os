@@ -327,10 +327,17 @@ describe('P05a: escolha explícita de RSS na curadoria', () => {
     expect(screen.queryByRole('checkbox', { name: 'Pausado' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'Feed B' }));
     expect(screen.getByText('Seleção efetiva: Feed B.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Coletar feeds escolhidos' }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/feeds/coletar', { fonteIds: ['rss-b'] }, 'tok'));
     expect(await screen.findByText(/1 URL repetida; 1 colisão com outra fonte/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeEnabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Feed A' }));
+    expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Feed A' }));
+    expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Montar lista para curadoria' }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/rodadas/curadoria', { horas: 168, fonteIds: ['rss-b'] }, 'tok'));

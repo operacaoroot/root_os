@@ -67,6 +67,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const [fontes, setFontes] = useState<PautaFonteList['items'] | null>(null);
   const [somenteRss, setSomenteRss] = useState(false);
   const [fonteIds, setFonteIds] = useState<Set<string>>(new Set());
+  const [coletadosFonteIds, setColetadosFonteIds] = useState<Set<string> | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [confirmada, setConfirmada] = useState<string | null>(null);
@@ -138,6 +139,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const sugeridos = candidatos.filter((c) => c.sugerido);
   const rssAtivos = (fontes ?? []).filter((f) => f.tipo === 'rss' && f.ativo && !!f.url?.trim());
   const idsValidos = rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.id);
+  const selecaoColetada = !!coletadosFonteIds && mesmoConjunto(new Set(idsValidos), coletadosFonteIds);
   const sujo = !mesmoConjunto(marcados, salvos);
   // Uma escrita de cada vez: Salvar atrasado terminando depois de Confirmar
   // devolveria "saiu da curadoria" ao lado do aviso de sucesso.
@@ -185,6 +187,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
       const r = await apiPost<{ novas: number; repetidas: number; colisoes?: number; erros: number; fonteIds: string[] }>(
         '/pauta/feeds/coletar', { fonteIds: idsValidos }, token,
       );
+      setColetadosFonteIds(new Set(r.fonteIds));
       const repetidas = r.repetidas ?? 0;
       const colisoes = r.colisoes ?? 0;
       setAviso(`${r.novas} ${r.novas === 1 ? 'captura nova' : 'capturas novas'} de ${r.fonteIds.length} ${r.fonteIds.length === 1 ? 'feed escolhido' : 'feeds escolhidos'}. ` +
@@ -253,6 +256,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
               </label>)}
             </div>}
           <p className="mt-2 text-muted">Seleção efetiva: {rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.nome).join(', ') || 'nenhum feed'}.</p>
+          {idsValidos.length > 0 && !selecaoColetada && <p className="mt-1 text-muted">Colete esta seleção antes de montar a lista.</p>}
           <Botao onClick={coletarSelecionadas} disabled={!editavel || escrevendo || idsValidos.length === 0}>
             {ocupado === 'coletar-rss' ? 'Coletando feeds…' : 'Coletar feeds escolhidos'}
           </Botao>
@@ -272,7 +276,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
             </option>
           ))}
         </select>
-        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo || (somenteRss && idsValidos.length === 0)}>
+        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo || (somenteRss && !selecaoColetada)}>
           {ocupado === 'gerar' ? 'Montando a lista…' : 'Montar lista para curadoria'}
         </Botao>
         {pendentes && pendentes.length > 1 && (
