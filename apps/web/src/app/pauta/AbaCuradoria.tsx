@@ -7,6 +7,7 @@ import {
   PAUTA_ORIGEM_ROTULOS,
   PAUTA_ORIGENS,
   type PautaItemCurado,
+  type PautaFonteList,
   type PautaOrigem,
   type PautaRodadaDetalhe,
   type PautaRodadaList,
@@ -63,19 +64,34 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [soSugeridos, setSoSugeridos] = useState(false);
   const [horas, setHoras] = useState<number>(PAUTA_HORAS_DA_CURADORIA);
+  const [fontes, setFontes] = useState<PautaFonteList['items'] | null>(null);
+  const [somenteRss, setSomenteRss] = useState(false);
+  const [fonteIds, setFonteIds] = useState<Set<string>>(new Set());
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [confirmada, setConfirmada] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
+    let vivo = true;
+    apiGet<PautaFonteList>('/pauta/fontes', token)
+      .then((resposta) => { if (vivo) setFontes(resposta.items); })
+      .catch((e: Error) => { if (vivo) onErro(e.message); });
+    return () => { vivo = false; };
+  }, [token, bump, onErro]);
+
+  useEffect(() => {
+    if (!token) return;
+    let vivo = true;
     apiGet<PautaRodadaList>('/pauta/rodadas?limite=100', token)
       .then((d) => {
+        if (!vivo) return;
         const lista = d.items.filter((r) => r.status === 'aguardando_curadoria');
         setPendentes(lista);
         setSelecionada((atual) => (atual && lista.some((r) => r.id === atual) ? atual : (lista[0]?.id ?? null)));
       })
-      .catch((e: Error) => onErro(e.message));
+      .catch((e: Error) => { if (vivo) onErro(e.message); });
+    return () => { vivo = false; };
   }, [token, bump, onErro]);
 
   useEffect(() => {
@@ -120,6 +136,8 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
     (c) => (filtro === 'todas' || origensDe(c).includes(filtro)) && (!soSugeridos || c.sugerido),
   );
   const sugeridos = candidatos.filter((c) => c.sugerido);
+  const rssAtivos = (fontes ?? []).filter((f) => f.tipo === 'rss' && f.ativo && !!f.url?.trim());
+  const idsValidos = rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.id);
   const sujo = !mesmoConjunto(marcados, salvos);
   // Uma escrita de cada vez: Salvar atrasado terminando depois de Confirmar
   // devolveria "saiu da curadoria" ao lado do aviso de sucesso.
@@ -152,8 +170,26 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
 
   const gerar = () =>
     acao('gerar', async () => {
-      const r = await apiPost<{ id: string }>('/pauta/rodadas/curadoria', { horas }, token);
+      const r = await apiPost<{ id: string; fontesSelecionadas?: Array<{ id: string; nome: string }> }>(
+        '/pauta/rodadas/curadoria',
+        somenteRss ? { horas, fonteIds: idsValidos } : { horas },
+        token,
+      );
       setSelecionada(r.id);
+      if (r.fontesSelecionadas) setAviso(`Lista montada com ${r.fontesSelecionadas.map((f) => f.nome).join(', ')}. São candidatos para revisão, sem sugestão da IA.`);
+      onMudou();
+    });
+
+  const coletarSelecionadas = () =>
+    acao('coletar-rss', async () => {
+      const r = await apiPost<{ novas: number; repetidas: number; colisoes?: number; erros: number; fonteIds: string[] }>(
+        '/pauta/feeds/coletar', { fonteIds: idsValidos }, token,
+      );
+      const repetidas = r.repetidas ?? 0;
+      const colisoes = r.colisoes ?? 0;
+      setAviso(`${r.novas} ${r.novas === 1 ? 'captura nova' : 'capturas novas'} de ${r.fonteIds.length} ${r.fonteIds.length === 1 ? 'feed escolhido' : 'feeds escolhidos'}. ` +
+        `${repetidas} ${repetidas === 1 ? 'URL repetida' : 'URLs repetidas'}; ${colisoes} ${colisoes === 1 ? 'colisão' : 'colisões'} com outra fonte, sem nova atribuição.` +
+        (r.erros ? ` ${r.erros} feed(s) falharam; veja o erro no Radar.` : ''));
       onMudou();
     });
 
@@ -191,6 +227,37 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
 
   return (
     <div className="space-y-4">
+      <fieldset className="rounded-lg border border-border p-3 text-sm">
+        <legend className="px-1 font-medium">Fontes da próxima lista</legend>
+        <label className="mr-4 inline-flex min-h-11 items-center gap-2">
+          <input type="radio" name="fontes-curadoria" checked={!somenteRss} onChange={() => setSomenteRss(false)} disabled={escrevendo} />
+          Todas as origens da janela
+        </label>
+        <label className="inline-flex min-h-11 items-center gap-2">
+          <input type="radio" name="fontes-curadoria" checked={somenteRss} onChange={() => setSomenteRss(true)} disabled={escrevendo} />
+          Feeds RSS escolhidos
+        </label>
+        {somenteRss && <div className="mt-2">
+          <p className="text-muted">Escolha os feeds, colete e monte a lista. Esta lista não chama a IA. Uma URL já capturada por outro feed não vira candidata do feed escolhido.</p>
+          {fontes === null ? <p className="mt-2">Consultando feeds…</p> : rssAtivos.length === 0 ?
+            <p className="mt-2">Nenhum feed RSS ativo com URL. Confira o Radar.</p> :
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              {rssAtivos.map((f) => <label key={f.id} className="flex min-h-11 items-center gap-2 rounded border border-border px-3 py-2">
+                <input type="checkbox" checked={fonteIds.has(f.id)} disabled={escrevendo || !editavel}
+                  onChange={(e) => setFonteIds((atual) => {
+                    const proximo = new Set(atual);
+                    if (e.target.checked) proximo.add(f.id); else proximo.delete(f.id);
+                    return proximo;
+                  })} />
+                <span>{f.nome}</span>
+              </label>)}
+            </div>}
+          <p className="mt-2 text-muted">Seleção efetiva: {rssAtivos.filter((f) => fonteIds.has(f.id)).map((f) => f.nome).join(', ') || 'nenhum feed'}.</p>
+          <Botao onClick={coletarSelecionadas} disabled={!editavel || escrevendo || idsValidos.length === 0}>
+            {ocupado === 'coletar-rss' ? 'Coletando feeds…' : 'Coletar feeds escolhidos'}
+          </Botao>
+        </div>}
+      </fieldset>
       <div className="flex flex-wrap items-center gap-2">
         <select
           className={`${inputCls} w-auto`}
@@ -205,7 +272,7 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
             </option>
           ))}
         </select>
-        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo}>
+        <Botao tone="brand" onClick={gerar} disabled={!editavel || escrevendo || (somenteRss && idsValidos.length === 0)}>
           {ocupado === 'gerar' ? 'Montando a lista…' : 'Montar lista para curadoria'}
         </Botao>
         {pendentes && pendentes.length > 1 && (
@@ -239,8 +306,8 @@ export function AbaCuradoria({ token, editavel, onErro, bump, onMudou, inicial =
       {pendentes && pendentes.length === 0 && !detalhe && (
         <Card>
           <p className="text-sm text-muted">
-            Nenhuma rodada aguardando curadoria. Monte a lista: entram todos os itens coletados na janela, a IA
-            sugere os que levaria, e só o que você marcar segue para o roteiro.
+            Nenhuma rodada aguardando curadoria. Monte a lista com os itens coletados na janela;
+            só o que você marcar segue para o roteiro. Na lista de todas as origens, a IA pode sugerir itens.
           </p>
         </Card>
       )}

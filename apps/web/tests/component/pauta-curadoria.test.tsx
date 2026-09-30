@@ -62,6 +62,14 @@ const DETALHE = {
 
 function respostas(opts: { rodadas?: unknown[]; detalhe?: unknown } = {}) {
   apiGet.mockImplementation(async (path: string) => {
+    if (path === '/pauta/fontes') return {
+      items: [
+        { id: 'rss-a', nome: 'Feed A', tipo: 'rss', ativo: true, url: 'https://a.exemplo/rss' },
+        { id: 'rss-b', nome: 'Feed B', tipo: 'rss', ativo: true, url: 'https://b.exemplo/rss' },
+        { id: 'rss-pausado', nome: 'Pausado', tipo: 'rss', ativo: false, url: 'https://p.exemplo/rss' },
+        { id: 'busca', nome: 'Busca', tipo: 'busca', ativo: true, url: null },
+      ],
+    };
     if (path.startsWith('/pauta/rodadas?')) {
       return { items: opts.rodadas ?? [RESUMO('r1'), RESUMO('velha', 'curada')], source: { tool: 't', generatedAt: '' } };
     }
@@ -302,5 +310,30 @@ describe('sem rodada aguardando e sem permissão', () => {
     expect(caixa('Link do grupo')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Marcar sugeridos' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Montar lista para curadoria' })).toBeDisabled();
+  });
+});
+
+describe('P05a: escolha explícita de RSS na curadoria', () => {
+  it('usa a mesma seleção na coleta e na lista, sem incluir feed pausado nem outra origem', async () => {
+    const user = userEvent.setup();
+    respostas({ rodadas: [] });
+    apiPost.mockImplementation(async (path: string) => path === '/pauta/feeds/coletar'
+      ? { novas: 1, fontes: 1, erros: 0, repetidas: 1, colisoes: 1, fonteIds: ['rss-b'] }
+      : { id: 'nova', fontesSelecionadas: [{ id: 'rss-b', nome: 'Feed B' }] });
+    renderAba();
+
+    await user.click(screen.getByRole('radio', { name: 'Feeds RSS escolhidos' }));
+    expect(await screen.findByRole('checkbox', { name: 'Feed B' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Pausado' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Feed B' }));
+    expect(screen.getByText('Seleção efetiva: Feed B.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Coletar feeds escolhidos' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/feeds/coletar', { fonteIds: ['rss-b'] }, 'tok'));
+    expect(await screen.findByText(/1 URL repetida; 1 colisão com outra fonte/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Montar lista para curadoria' }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/pauta/rodadas/curadoria', { horas: 168, fonteIds: ['rss-b'] }, 'tok'));
+    expect(await screen.findByText(/Lista montada com Feed B/)).toBeInTheDocument();
   });
 });

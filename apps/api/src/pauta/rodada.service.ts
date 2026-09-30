@@ -165,9 +165,16 @@ export class RodadaService {
    * `origens` é a mesma da rotina: sem ela, todas; `['R', 'N']` coleta só feed e
    * busca, como antes do MC4, e não gasta run do Apify com perfil.
    */
-  async coletarFeeds(orgId: string, actorId = 'sistema', origens?: unknown): Promise<ResultadoDaColetaDaRodada> {
+  async coletarFeeds(orgId: string, actorId = 'sistema', origens?: unknown, fonteIds?: readonly string[]): Promise<ResultadoDaColetaDaRodada & { fonteIds?: readonly string[] }> {
     const lidas = lerOrigensDaRodada(origens);
     if ('erro' in lidas) throw new BadRequestException(lidas.erro);
+    if (fonteIds) {
+      if (origens !== undefined && (lidas.origens.length !== 1 || lidas.origens[0] !== 'R')) {
+        throw new BadRequestException('A seleção de fontes RSS aceita apenas a origem R.');
+      }
+      const resultado = await this.coleta.coletarDaRodada(orgId, actorId, ['rss'], fonteIds);
+      return { ...resultado, fonteIds: [...fonteIds] };
+    }
     return this.coleta.coletarDaRodada(orgId, actorId, tiposDaColetaDasOrigens(lidas.origens));
   }
 
@@ -312,20 +319,21 @@ export class RodadaService {
     }
   }
 
-  private whereDaJanela(orgId: string, fonte: ReturnType<typeof filtroDasOrigens>[number], janelaIni: Date) {
+  private whereDaJanela(orgId: string, fonte: ReturnType<typeof filtroDasOrigens>[number], janelaIni: Date, fonteIds?: readonly string[]) {
     return {
       orgId,
       capturadoEm: { gte: janelaIni },
       status: { in: ['rascunho' as const, 'ficha' as const] },
       fonte,
+      ...(fonteIds ? { fonteId: { in: [...fonteIds] } } : {}),
     };
   }
 
-  private capturasDaJanela(orgId: string, origens: readonly PautaOrigem[], janelaIni: Date, take: number) {
+  private capturasDaJanela(orgId: string, origens: readonly PautaOrigem[], janelaIni: Date, take: number, fonteIds?: readonly string[]) {
     return Promise.all(
       filtroDasOrigens(origens).map((fonte) =>
         this.prisma.pautaCaptura.findMany({
-          where: this.whereDaJanela(orgId, fonte, janelaIni),
+          where: this.whereDaJanela(orgId, fonte, janelaIni, fonteIds),
           orderBy: { capturadoEm: 'desc' },
           take,
           include: { fonte: { select: { nome: true, tipo: true, plataforma: true, handle: true } } },
@@ -350,7 +358,7 @@ export class RodadaService {
   gerarParaCuradoria(
     orgId: string,
     actorId: string,
-    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown } = {},
+    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown; fonteIds?: readonly string[] } = {},
   ) {
     return umaPorVez(`pauta-curadoria:${orgId}`, 'A rodada para curadoria', () => this.gerarParaCuradoriaAgora(orgId, actorId, opts));
   }
@@ -358,18 +366,22 @@ export class RodadaService {
   private async gerarParaCuradoriaAgora(
     orgId: string,
     actorId: string,
-    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown } = {},
+    opts: { rotinaId?: string | null; horas?: number; desde?: Date; origens?: unknown; fonteIds?: readonly string[] } = {},
   ) {
     const lidas = lerOrigensDaRodada(opts.origens);
     if ('erro' in lidas) throw new BadRequestException(lidas.erro);
-    const { origens } = lidas;
+    if (opts.fonteIds && opts.origens !== undefined && (lidas.origens.length !== 1 || lidas.origens[0] !== 'R')) {
+      throw new BadRequestException('A seleção de fontes RSS aceita apenas a origem R.');
+    }
+    const fontesSelecionadas = opts.fonteIds ? await this.coleta.validarFontesRss(orgId, opts.fonteIds) : null;
+    const origens: readonly PautaOrigem[] = fontesSelecionadas ? ['R'] : lidas.origens;
 
     const horas = opts.horas ?? PAUTA_HORAS_DA_CURADORIA;
     const janelaFim = new Date();
     const janelaIni = opts.desde ?? new Date(janelaFim.getTime() - horas * 3600_000);
     const teto = PAUTA_TETO_DE_CANDIDATOS;
 
-    const porOrigem = await this.capturasDaJanela(orgId, origens, janelaIni, teto);
+    const porOrigem = await this.capturasDaJanela(orgId, origens, janelaIni, teto, opts.fonteIds);
     const { escolhidas, deFora } = insumoDaRodadaComSobra(porOrigem, { janelaIni, teto });
     // A consulta de cada origem já para no teto: o que passou dele nela nem chega
     // ao corte acima. Para a sobra não sair subestimada, a origem que encheu a
@@ -379,7 +391,7 @@ export class RodadaService {
     const alemDaConsulta = await Promise.all(
       origensNoTeto.map(async (o) => {
         const total = await this.prisma.pautaCaptura.count({
-          where: this.whereDaJanela(orgId, filtros[origens.indexOf(o)], janelaIni),
+          where: this.whereDaJanela(orgId, filtros[origens.indexOf(o)], janelaIni, opts.fonteIds),
         });
         return [o, Math.max(0, total - teto)] as const;
       }),
@@ -421,9 +433,9 @@ export class RodadaService {
       let aviso: string | null = null;
       let usouIa = false;
 
-      if (!this.llm.configured) {
+      if (!fontesSelecionadas && !this.llm.configured) {
         aviso = `Sem sugestão da IA: falta a credencial do provider "${this.llm.name}".`;
-      } else {
+      } else if (!fontesSelecionadas) {
         try {
           const lista = escolhidas
             .map((c, i) => linhaDoInsumo(c, i + 1, RESUMO_NO_PROMPT_DE_SUGESTAO))
@@ -470,10 +482,14 @@ export class RodadaService {
           origensNoTeto,
           teto,
           semSugestao: aviso,
+          ...(fontesSelecionadas ? { sugestaoDesativada: true } : {}),
+          ...(fontesSelecionadas ? { fonteIds: fontesSelecionadas.map((f) => f.id) } : {}),
         },
       });
 
-      return atualizada;
+      return fontesSelecionadas
+        ? { ...atualizada, fontesSelecionadas: fontesSelecionadas.map((f) => ({ id: f.id, nome: f.nome })) }
+        : atualizada;
     } catch (e) {
       const msg = (e as Error).message ?? 'falha desconhecida';
       await this.prisma.pautaRodada.update({

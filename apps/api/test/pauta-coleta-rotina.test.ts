@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { AgentEstado, type PautaFonte, type PautaFonteTipo } from '@prisma/client';
-import { PAUTA_HORAS_DA_CURADORIA, PAUTA_ORIGENS } from '@mktos/shared';
+import { PAUTA_HORAS_DA_CURADORIA, PAUTA_ORIGENS, PautaColetarFeedsSchema, PautaGerarCuradoriaSchema } from '@mktos/shared';
 
 import { ColetaService } from '../src/pauta/coleta.service';
 import { RodadaService } from '../src/pauta/rodada.service';
@@ -318,10 +318,10 @@ function bancoDaPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = []) {
   const auditoria: Array<Record<string, unknown>> = [];
   const casaFonte = (f: PautaFonte, w: { tipo?: unknown; plataforma?: unknown }) =>
     (w.tipo === undefined || f.tipo === w.tipo) && (w.plataforma === undefined || f.plataforma === w.plataforma);
-  type OndeCaptura = { where: { orgId: string; capturadoEm: { gte: Date }; fonte: { tipo: string; plataforma?: string } } };
+  type OndeCaptura = { where: { orgId: string; capturadoEm: { gte: Date }; fonte: { tipo: string; plataforma?: string }; fonteId?: { in: string[] } } };
   const daJanela = ({ where }: OndeCaptura) =>
     capturas
-      .filter((c) => c.orgId === where.orgId && c.capturadoEm >= where.capturadoEm.gte)
+      .filter((c) => c.orgId === where.orgId && c.capturadoEm >= where.capturadoEm.gte && (!where.fonteId || (c.fonteId !== null && where.fonteId.in.includes(c.fonteId))))
       .map((c) => ({ ...c, fonte: fontes.find((f) => f.id === c.fonteId) ?? null }))
       .filter((c) => c.fonte && casaFonte(c.fonte, where.fonte))
       .sort((a, b) => b.capturadoEm.getTime() - a.capturadoEm.getTime());
@@ -331,8 +331,9 @@ function bancoDaPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = []) {
     pautaFonte: {
       count: async ({ where }: { where: { orgId: string; ativo: boolean; OR: Array<{ tipo?: string; plataforma?: string }> } }) =>
         fontes.filter((f) => f.orgId === where.orgId && f.ativo === where.ativo && where.OR.some((w) => casaFonte(f, w))).length,
-      findMany: async ({ where }: { where: { orgId: string; ativo: boolean; tipo: { in: string[] } } }) =>
-        fontes.filter((f) => f.orgId === where.orgId && f.ativo && where.tipo.in.includes(f.tipo)),
+      findMany: async ({ where }: { where: { orgId: string; ativo?: boolean; tipo?: { in: string[] }; id?: { in: string[] } } }) =>
+        fontes.filter((f) => f.orgId === where.orgId && (where.ativo === undefined || f.ativo === where.ativo) &&
+          (!where.tipo || where.tipo.in.includes(f.tipo)) && (!where.id || where.id.in.includes(f.id))),
       update: async ({ where, data }: { where: { id: string }; data: Partial<PautaFonte> }) => {
         const f = fontes.find((x) => x.id === where.id)!;
         Object.assign(f, data);
@@ -394,12 +395,12 @@ function capturar(banco: ReturnType<typeof bancoDaPauta>, f: PautaFonte, n: numb
   return { novas: n, repetidas: 0 };
 }
 
-function montarPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = [], opts: { falhar?: string[] } = {}) {
+function montarPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = [], opts: { falhar?: string[]; urlCompartilhada?: boolean; llmConfigurada?: boolean } = {}) {
   const banco = bancoDaPauta(fontes, capturas);
   const rss = {
     ler: async (url: string) => {
       if (opts.falhar?.some((id) => url.includes(id))) throw new Error('feed fora do ar');
-      return [{ titulo: 'Notícia do feed', url: `${url.replace('/rss', '')}/materia-1`, publicadoEm: null, resumo: 'r' }];
+      return [{ titulo: 'Notícia do feed', url: opts.urlCompartilhada ? 'https://noticia.exemplo/mesma-url' : `${url.replace('/rss', '')}/materia-1`, publicadoEm: null, resumo: 'r' }];
     },
   } as unknown as RssService;
   const gmail = {
@@ -412,7 +413,10 @@ function montarPauta(fontes: PautaFonte[], capturas: CapturaFalsa[] = [], opts: 
   };
   coleta.registrar('busca', async (f) => porFonte(f), 'teste');
   coleta.registrar('perfil', async (f) => porFonte(f), 'teste');
-  const llm = { name: 'falso', model: 'falso-1', configured: false } as unknown as LlmProvider;
+  const llm = {
+    name: 'falso', model: 'falso-1', configured: opts.llmConfigurada ?? false,
+    complete: async () => { throw new Error('Chamada de IA proibida neste ensaio'); },
+  } as unknown as LlmProvider;
   const rodadas = new RodadaService(banco.prisma, new AuditService(banco.prisma), coleta, llm, vozDaCasa, semMarca);
   return { ...banco, coleta, rodadas };
 }
@@ -477,6 +481,57 @@ describe('coleta de quinta: a coleta aberta por tipo', () => {
     expect(r.total).toEqual({ novas: 2, fontes: 2, erros: 0, puladas: 0 });
     expect(Object.keys(r.porOrigem)).toEqual(['R']);
     await expect(m.rodadas.coletarPorOrigem(ORG, 'rotina', ['Z'])).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('P05a: seleção explícita de fontes RSS', () => {
+  it('o corpo aceita IDs únicos e não aceita lista vazia, repetida ou origem alheia a RSS', () => {
+    const id = 'f6f28730-4abc-4d11-8999-4119ab997701';
+    expect(PautaColetarFeedsSchema.parse({ fonteIds: [id] })).toEqual({ fonteIds: [id] });
+    expect(PautaColetarFeedsSchema.parse({})).toEqual({});
+    expect(PautaColetarFeedsSchema.safeParse({ fonteIds: [] }).success).toBe(false);
+    expect(PautaColetarFeedsSchema.safeParse({ fonteIds: [id, id] }).success).toBe(false);
+    expect(PautaGerarCuradoriaSchema.safeParse({ fonteIds: [id], origens: ['N'] }).success).toBe(false);
+  });
+
+  it('coleta só o feed pedido e só suas capturas viram candidatas, sem chamar IA configurada', async () => {
+    const m = montarPauta(FONTES_DAS_CINCO(), [], { llmConfigurada: true });
+    const coleta = await m.rodadas.coletarFeeds(ORG, PESSOA, undefined, ['feed-b']);
+    expect(coleta).toEqual({ novas: 1, fontes: 1, erros: 0, puladas: 0, repetidas: 0, fonteIds: ['feed-b'] });
+    expect(m.capturas.map((c) => c.fonteId)).toEqual(['feed-b']);
+
+    const rodada = await m.rodadas.gerarParaCuradoria(ORG, PESSOA, { fonteIds: ['feed-b'] });
+    expect(rodada).toMatchObject({ status: 'aguardando_curadoria', fontesSelecionadas: [{ id: 'feed-b', nome: 'feed-b' }] });
+    expect((m.gravadas[0].itens as Candidato[]).map((c) => c.fonte)).toEqual(['feed-b']);
+    expect(m.gravadas[0].provider).toBeUndefined();
+    expect(m.auditoria.at(-1)).toMatchObject({ after: { fonteIds: ['feed-b'] } });
+  });
+
+  it('rejeita fonte de outro tenant, inativa, de outro tipo, sem URL, desconhecida ou lista vazia antes de coletar', async () => {
+    const casos = [
+      fonte({ id: 'outra-org', tipo: 'rss', orgId: 'outro-tenant' }),
+      fonte({ id: 'pausada', tipo: 'rss', ativo: false }),
+      fonte({ id: 'busca', tipo: 'busca' }),
+      fonte({ id: 'sem-url', tipo: 'rss', url: null }),
+    ];
+    const m = montarPauta(casos);
+    for (const ids of [['outra-org'], ['pausada'], ['busca'], ['sem-url'], ['ausente'], []]) {
+      await expect(m.rodadas.coletarFeeds(ORG, PESSOA, undefined, ids)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(m.rodadas.gerarParaCuradoria(ORG, PESSOA, { fonteIds: ids })).rejects.toBeInstanceOf(BadRequestException);
+    }
+    expect(m.capturas).toHaveLength(0);
+    expect(m.gravadas).toHaveLength(0);
+  });
+
+  it('mesma URL em dois feeds conta colisão, sem atribuir a captura antiga ao segundo', async () => {
+    const m = montarPauta([fonte({ id: 'feed-a', tipo: 'rss' }), fonte({ id: 'feed-b', tipo: 'rss' })], [], { urlCompartilhada: true, llmConfigurada: true });
+    expect(await m.rodadas.coletarFeeds(ORG, PESSOA, undefined, ['feed-a'])).toMatchObject({ novas: 1, fontes: 1 });
+    const segunda = await m.rodadas.coletarFeeds(ORG, PESSOA, undefined, ['feed-b']);
+    expect(segunda).toMatchObject({ novas: 0, fontes: 1, colisoes: 1 });
+    expect(m.capturas).toHaveLength(1);
+    expect(m.capturas[0].fonteId).toBe('feed-a');
+    await expect(m.rodadas.gerarParaCuradoria(ORG, PESSOA, { fonteIds: ['feed-b'] })).rejects.toThrow(/Nenhum item coletado/);
+    expect(m.gravadas).toHaveLength(0);
   });
 });
 

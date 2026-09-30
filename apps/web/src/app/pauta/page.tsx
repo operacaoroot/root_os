@@ -176,6 +176,7 @@ export default function PautaPage() {
       )}
       {ready && aba === 'Curadoria' && (
         <AbaCuradoria
+          key={token ?? 'sem-sessao'}
           token={token}
           editavel={editavel}
           onErro={aoErrar}
