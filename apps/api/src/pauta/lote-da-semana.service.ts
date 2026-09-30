@@ -146,7 +146,9 @@ export class LoteDaSemanaService implements OnModuleInit {
   ): Promise<LinhaDaPeca[]> {
     const pecas = (await db.pautaPeca.findMany({
       where: { orgId, rodadaId: e.rodadaId, canal: 'instagram', formato: { in: [...PAUTA_FORMATOS_DA_SEMANA] } },
-      orderBy: { criadaEm: 'asc' },
+      // Várias peças podem receber o mesmo timestamp no banco. O desempate
+      // mantém a mesma candidata como primeira entre leituras da semana.
+      orderBy: [{ criadaEm: 'asc' }, { id: 'asc' }],
       select: DA_PECA,
     })) as LinhaDaPeca[];
     return pecas
