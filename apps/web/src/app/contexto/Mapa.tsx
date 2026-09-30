@@ -215,7 +215,7 @@ export function Mapa({
         viewBox={`0 0 ${LADO} ${LADO}`}
         role="group"
         aria-label="Mapa do contexto"
-        className="h-[clamp(420px,62vh,760px)] w-full touch-none select-none"
+        className="h-[320px] w-full touch-none select-none sm:h-[clamp(420px,62vh,760px)]"
         onPointerDown={iniciarArrasto}
         onPointerMove={moverArrasto}
         onPointerUp={soltarArrasto}

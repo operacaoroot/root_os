@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, Check, RefreshCw } from 'lucide-react';
 import { apiPost } from '@/lib/api';
@@ -76,6 +76,8 @@ export function CaminhoDeCarga({
   const [erro, setErro] = useState<string | null>(null);
   const [recado, setRecado] = useState<string | null>(null);
   const [abrindoFormulario, setAbrindoFormulario] = useState(false);
+  const geracao = useRef(0);
+  useEffect(() => () => { geracao.current++; }, [token]);
 
   const notas = totalDe(mapa, 'memoria');
   const conexoes = totalDe(mapa, 'conexoes');
@@ -83,18 +85,21 @@ export function CaminhoDeCarga({
 
   const reindexar = () => {
     if (!token) return;
+    const pedido = geracao.current;
+    const vigente = () => pedido === geracao.current;
     setOcupado('reindex');
     setErro(null);
     setRecado(null);
     apiPost<{ ok: boolean; notes: number }>('/knowledge/reindex', {}, token)
       .then((r) => {
+        if (!vigente()) return;
         setRecado(
           `${r.notes} nota(s) lida(s) da vault. O que mudou virou versão nova na memória; o que já estava igual não foi reescrito.`,
         );
         onCarregou();
       })
-      .catch((e) => setErro(e.message))
-      .finally(() => setOcupado(null));
+      .catch((e) => { if (vigente()) setErro(e.message); })
+      .finally(() => { if (vigente()) setOcupado(null); });
   };
 
   return (
@@ -190,17 +195,20 @@ export function CaminhoDeCarga({
                 ocupado={ocupado === 'nota'}
                 onEnviar={(dados) => {
                   if (!token) return;
+                  const pedido = geracao.current;
+                  const vigente = () => pedido === geracao.current;
                   setOcupado('nota');
                   setErro(null);
                   setRecado(null);
                   apiPost('/memoria', dados, token)
                     .then(() => {
+                      if (!vigente()) return;
                       setRecado('Nota gravada. Ela já está no mapa, com a versão 1 no histórico.');
                       setAbrindoFormulario(false);
                       onCarregou();
                     })
-                    .catch((e) => setErro(e.message))
-                    .finally(() => setOcupado(null));
+                    .catch((e) => { if (vigente()) setErro(e.message); })
+                    .finally(() => { if (vigente()) setOcupado(null); });
                 }}
                 onCancelar={() => setAbrindoFormulario(false)}
               />

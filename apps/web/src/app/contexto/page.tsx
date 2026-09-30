@@ -151,6 +151,11 @@ export default function ContextoPage() {
 
   const [alvo, setAlvo] = useState<AlvoDaGaveta | null>(null);
   const [sessao, setSessao] = useState<string | null>(null);
+  const identidadeAtual = useRef({ token, ready, numero: 0 });
+  if (identidadeAtual.current.token !== token || identidadeAtual.current.ready !== ready) {
+    identidadeAtual.current = { token, ready, numero: identidadeAtual.current.numero + 1 };
+  }
+  const numeroDaSessao = identidadeAtual.current.numero;
   const geracao = useRef(0);
   const origemDaGaveta = useRef<Element | null>(null);
   const [ocultos, setOcultos] = useState<Set<FamiliaKey>>(new Set());
@@ -164,7 +169,7 @@ export default function ContextoPage() {
   const [recado, setRecado] = useState<string | null>(null);
 
   const carregar = useCallback(() => {
-    if (!token) return;
+    if (!token || !ready || identidadeAtual.current.numero !== numeroDaSessao) return;
     const ciclo = ++geracao.current;
 
     const puxar = <T,>(key: FamiliaKey, aplicar: (f: Fonte<T>) => void) => {
@@ -184,7 +189,7 @@ export default function ContextoPage() {
     puxar<CatalogoDeConexoes>('conexoes', setConexoes);
     puxar<Organograma>('gente', setOrganograma);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, ready, numeroDaSessao]);
 
   useEffect(() => {
     ++geracao.current;
@@ -198,6 +203,8 @@ export default function ContextoPage() {
     setFamiliaFiltrada('');
     setTermo('');
     setBruto(null);
+    setRelendo(false);
+    setRecado(null);
     setOcultos(new Set());
     origemDaGaveta.current = null;
     setSessao(ready ? token : null);
@@ -257,15 +264,18 @@ export default function ContextoPage() {
 
   const relerAVault = () => {
     if (!token) return;
+    const sessaoDoPedido = numeroDaSessao;
+    const vigente = () => identidadeAtual.current.numero === sessaoDoPedido;
     setRelendo(true);
     setRecado(null);
     apiPost<{ ok: boolean; notes: number }>('/knowledge/reindex', {}, token)
       .then((r) => {
+        if (!vigente()) return;
         setRecado(`${r.notes} nota(s) lida(s) da vault.`);
         carregar();
       })
-      .catch((e: Error) => setRecado(e.message))
-      .finally(() => setRelendo(false));
+      .catch((e: Error) => { if (vigente()) setRecado(e.message); })
+      .finally(() => { if (vigente()) setRelendo(false); });
   };
 
   const lembrarOrigem = (origem?: Element) => {
@@ -408,6 +418,9 @@ export default function ContextoPage() {
             {mapa.registros} {mapa.registros === 1 ? 'registro carregado' : 'registros carregados'}{recorteAtivo ? ' no recorte' : ''}.
             Área organiza a visualização; linhas tracejadas representam apenas vínculos declarados.
           </p>
+          <a href="#diretorio-do-contexto" className="w-fit text-sm text-brand underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand sm:hidden">
+            Ir ao diretório de registros
+          </a>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr),360px]">
             <Mapa
               mapa={mapa}

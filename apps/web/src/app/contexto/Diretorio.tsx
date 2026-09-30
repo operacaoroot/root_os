@@ -16,7 +16,7 @@ export function Diretorio({ mapa, recorteAtivo, onAbrir }: {
   const carregando = mapa.eixos.filter((eixo) => eixo.estado === 'carregando').length;
 
   return (
-    <section aria-label="Diretório do contexto" className="rounded-root border border-border bg-surface p-4">
+    <section id="diretorio-do-contexto" aria-label="Diretório do contexto" className="rounded-root border border-border bg-surface p-4">
       <h2 className="font-semibold">Registros no diretório</h2>
       <p className="mt-1 text-sm text-muted">Abra o registro pelo nome. A lista inclui o que não coube no desenho.</p>
       <p className="my-3 text-xs text-muted" role="status">

@@ -1027,4 +1027,42 @@ describe('áreas explícitas e recorte único', () => {
     expect(within(desenho).queryByRole('button', { name: /Nota antiga/ })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Área' })).toHaveValue('');
   });
+
+  it.each(['barra', 'caminho de carga', 'primeira nota'])('não recarrega dados antigos quando POST da %s termina após troca de sessão', async (origem) => {
+    let concluirPost: ((valor: unknown) => void) | undefined;
+    apiPost.mockReturnValue(new Promise((resolve) => { concluirPost = resolve; }));
+    servir(origem === 'barra' ? {} : primeiroDia);
+    const responder = apiGet.getMockImplementation()!;
+    apiGet.mockImplementation((caminho: string, token: string) => {
+      if (token === 'outro-token' && caminho === '/memoria') {
+        return Promise.resolve({ itens: [nota({ id: 'novo', title: 'Registro da sessão nova' })], total: 1, comVetor: 0 });
+      }
+      return responder(caminho, token);
+    });
+    const tela = render(<ContextoPage />);
+    if (origem === 'primeira nota') {
+      await userEvent.click(await screen.findByRole('button', { name: /escrever a primeira nota/ }));
+      await userEvent.type(screen.getByLabelText('Título da nota'), 'Nota da sessão antiga');
+      await userEvent.type(screen.getByLabelText('Corpo da nota'), 'Texto da sessão antiga.');
+      await userEvent.type(screen.getByLabelText('Procedência da nota'), 'ensaio');
+      await userEvent.click(screen.getByRole('button', { name: /gravar a nota/ }));
+      expect(apiPost).toHaveBeenCalledWith('/memoria', expect.anything(), 'tok');
+    } else {
+      const botao = origem === 'barra'
+        ? await screen.findByRole('button', { name: /^reler a vault$/ })
+        : await screen.findByRole('button', { name: /reler a vault agora/ });
+      await userEvent.click(botao);
+      expect(apiPost).toHaveBeenCalledWith('/knowledge/reindex', {}, 'tok');
+    }
+
+    TOKEN = 'outro-token';
+    tela.rerender(<ContextoPage />);
+    const desenho = await screen.findByRole('group', { name: 'Mapa do contexto' });
+    expect(await within(desenho).findByRole('button', { name: /Registro da sessão nova/ })).toBeInTheDocument();
+    const leiturasAntigas = apiGet.mock.calls.filter(([, token]) => token === 'tok').length;
+    await act(async () => { concluirPost?.({ ok: true, notes: 7 }); });
+    expect(apiGet.mock.calls.filter(([, token]) => token === 'tok')).toHaveLength(leiturasAntigas);
+    expect(within(desenho).getByRole('button', { name: /Registro da sessão nova/ })).toBeInTheDocument();
+    expect(screen.queryByText(/7 nota\(s\) lida\(s\) da vault/)).not.toBeInTheDocument();
+  });
 });
