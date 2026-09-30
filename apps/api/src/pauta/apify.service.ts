@@ -89,10 +89,10 @@ export class ApifyService {
   static plataformaDaUrl(url: string): string {
     try {
       const h = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
-      if (h.endsWith('instagram.com')) return 'instagram';
-      if (h.endsWith('tiktok.com')) return 'tiktok';
-      if (h === 'x.com' || h.endsWith('twitter.com')) return 'x';
-      if (h === 'youtu.be' || h.endsWith('youtube.com')) return 'youtube';
+      if (h === 'instagram.com' || h.endsWith('.instagram.com')) return 'instagram';
+      if (h === 'tiktok.com' || h.endsWith('.tiktok.com')) return 'tiktok';
+      if (h === 'x.com' || h === 'twitter.com' || h.endsWith('.twitter.com')) return 'x';
+      if (h === 'youtu.be' || h === 'youtube.com' || h.endsWith('.youtube.com')) return 'youtube';
       return 'web';
     } catch {
       return 'web';
