@@ -433,8 +433,8 @@ describe.skipIf(!URL)('a memória versiona, guarda procedência e registra no ra
     const deA = await criar(ORG_A, { chave: 'regras/a', body: 'regra da casa A' });
     const deB = await criar(ORG_B, { chave: 'regras/b', body: 'regra da casa B' });
     // O vetor de B é o MAIS PRÓXIMO da consulta: sem filtro, ele viria em 1º.
-    await memoria.gravarVetor(ORG_A, deA.id, vetor(10));
-    await memoria.gravarVetor(ORG_B, deB.id, vetor(1));
+    await memoria.gravarVetor(ORG_A, deA.id, vetor(10), deA.contentHash);
+    await memoria.gravarVetor(ORG_B, deB.id, vetor(1), deB.contentHash);
 
     const achados = await naEmpresa(ORG_A, () => memoria.buscar(ORG_A, 'regra', 10, vetor(1)));
     expect(achados.modo).toBe('semantica');

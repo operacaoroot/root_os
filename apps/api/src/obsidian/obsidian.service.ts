@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative, dirname, sep } from 'node:path';
@@ -13,6 +20,7 @@ import {
   RegistroDeConectores,
 } from '../integrations/conectores.registry';
 import { MemoriaService } from '../memory/memoria.service';
+import { chaveDaVault } from '../memory/procedencia';
 import { env } from '../llm/env';
 import {
   FalhaDeEmbedding,
@@ -688,8 +696,12 @@ export class ObsidianService implements OnModuleInit {
    *   ganhando um jeito novo de achar tags, por exemplo. O reaproveitamento
    *   abaixo é por data de modificação do arquivo, e um arquivo que não mudou
    *   continua com a leitura antiga até alguém pedir o contrário.
+   *
+   * Só a empresa da casa reindexa — ver `exigirEmpresaDaCasa`, que roda antes
+   * de qualquer leitura.
    */
   async reindex(orgId: string, completo = false): Promise<number> {
+    await this.exigirEmpresaDaCasa(orgId);
     if (!this.configured) {
       throw new ServiceUnavailableException(
         this.fonte === 'drive'
@@ -892,6 +904,36 @@ export class ObsidianService implements OnModuleInit {
   }
 
   /**
+   * A VAULT É DA CASA, E SÓ A CASA A REINDEXA (C2 da ROOT-05).
+   *
+   * A pasta é do processo: toda empresa enxerga o mesmo `OBSIDIAN_VAULT_PATH`, ou
+   * a mesma pasta do Drive. O laço do `onModuleInit` sempre reindexou só a casa,
+   * mas as duas portas que chegam aqui por requisição — `POST /knowledge/reindex`
+   * e o verbo `sincronizar` do contrato — conferem permissão de PAPEL, e o admin
+   * de um cliente tem as mesmas permissões que o da casa. Por elas, uma empresa
+   * cliente apagava o próprio índice (o espelho do onboarding mora nele) e o
+   * enchia com a vault da casa, que ainda virava memória versionada dela. Com o
+   * fornecedor fora do ar a cópia acontecia do mesmo jeito (S4 da ROOT-05ab-REV).
+   *
+   * A pergunta é a do `SessaoDaPlataformaGuard`: o id da PRÓPRIA empresa e o slug
+   * fixo na mesma consulta, que devolve a própria linha ou nada e não enxerga
+   * outra empresa, com ou sem policy de linha. Roda antes de tudo: nada é lido da
+   * vault, nada sai do índice desta empresa e nenhum pedido vai ao fornecedor.
+   */
+  private async exigirEmpresaDaCasa(orgId: string): Promise<void> {
+    const daCasa = await this.prisma.org.findFirst({
+      where: { id: orgId, slug: SLUG_DA_CASA },
+      select: { id: true },
+    });
+    if (!daCasa) {
+      throw new ForbiddenException(
+        'A vault do Obsidian pertence à empresa da casa, e só ela reindexa. Nada foi lido da ' +
+          'vault nem gravado nesta empresa; as notas que já são dela continuam na busca.',
+      );
+    }
+  }
+
+  /**
    * A VAULT VIRA MEMÓRIA VERSIONADA — fatia 4.1+4.2, RF-M-01.
    *
    * `KnowledgeNote` é ÍNDICE: a reindexação apaga tudo e recria, porque a vault é
@@ -947,8 +989,20 @@ export class ObsidianService implements OnModuleInit {
       );
     }
 
+    /*
+     * AS NOTAS DESTA VAULT FICAM FORA DA FILA DA MEMÓRIA NESTA VOLTA (R2 da
+     * ROOT-05ab-REV). Quem dá vetor a elas é o índice, pela projeção acima. Com um
+     * lote do índice falhando e o fornecedor respondendo logo depois, a fila
+     * pagava agora os textos que o índice pede de novo na volta seguinte: 35 de 60
+     * pagos duas vezes na sonda S3. A nota que ficou sem vetor no índice volta a
+     * ser pedida por ele na próxima volta e chega à memória pela projeção; a fila
+     * segue com o que só ela alcança — a nota digitada na tela, a resposta
+     * promovida e a da vault que saiu da pasta sem ser arquivada.
+     */
     try {
-      await this.vetorizarPendentesDaMemoria(orgId);
+      await this.vetorizarPendentesDaMemoria(orgId, {
+        excetoChaves: notes.map((n) => chaveDaVault(n.path)),
+      });
     } catch (e) {
       this.log.warn(
         `empresa ${orgId}: a memória está versionada, mas a VETORIZAÇÃO das notas pendentes ` +
@@ -978,11 +1032,23 @@ export class ObsidianService implements OnModuleInit {
    * O TETO DE 100 POR VOLTA é o freio: um envio grande não pode virar uma conta
    * de embedding inesperada numa única passada do cron. O resto entra na volta
    * seguinte, meia hora depois.
+   *
+   * O VETOR VOLTA PARA O CORPO QUE FOI LIDO, e só para ele. Cada pendente traz o
+   * `contentHash` da leitura, e `gravarVetor` só grava se a nota ainda tem esse
+   * hash: editada durante o pedido, o vetor do texto antigo é descartado e a
+   * nota, sem vetor, entra numa volta seguinte com o corpo novo.
+   *
+   * `excetoChaves` são as notas que outro caminho vetoriza nesta mesma volta —
+   * ver o fim de `projetarNaMemoria`.
    */
-  async vetorizarPendentesDaMemoria(orgId: string): Promise<void> {
+  async vetorizarPendentesDaMemoria(
+    orgId: string,
+    opcoes: { excetoChaves?: readonly string[] } = {},
+  ): Promise<void> {
     if (!this.openaiKey) return;
-    const pendentes = await this.memoria.semVetor(orgId, 100);
+    const pendentes = await this.memoria.semVetor(orgId, 100, { excetoChaves: opcoes.excetoChaves });
     if (!pendentes.length) return;
+    let descartados = 0;
     // As 100 da volta iam num pedido só, até 800 kB; agora vão em lotes com teto.
     const r = await vetorizarEmLotes(
       pendentes.map((n) => `${n.title}\n\n${n.body}`),
@@ -990,12 +1056,20 @@ export class ObsidianService implements OnModuleInit {
       {
         gravar: async (indices, vetores) => {
           for (let k = 0; k < indices.length; k++) {
-            await this.memoria.gravarVetor(orgId, pendentes[indices[k]].id, vetores[k]);
+            const nota = pendentes[indices[k]];
+            const gravadas = await this.memoria.gravarVetor(orgId, nota.id, vetores[k], nota.contentHash);
+            if (gravadas === 0) descartados++;
           }
         },
       },
     );
-    this.log.log(`memória da empresa ${orgId}: ${descreverVetorizacao(r)}.`);
+    this.log.log(
+      `memória da empresa ${orgId}: ${descreverVetorizacao(r)}` +
+        (descartados
+          ? `; ${descartados} vetor(es) descartado(s): a nota mudou durante o pedido e o ` +
+            'vetor era do texto anterior.'
+          : '.'),
+    );
     // Quem chama registra o aviso; o que foi gravado fica, e o resto volta na próxima.
     if (r.semVetor) throw new Error(descreverVetorizacao(r));
   }

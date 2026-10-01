@@ -214,6 +214,11 @@ function indiceEmMemoria() {
   let linhas: Linha[] = [];
   let seq = 0;
   const prisma = {
+    // Desde a ROOT-05c só a empresa da casa (slug `root`) reindexa; ORG faz esse papel aqui.
+    org: {
+      findFirst: async ({ where }: { where: { id: string; slug: string } }) =>
+        where.id === ORG && where.slug === 'root' ? { id: ORG } : null,
+    },
     knowledgeNote: {
       findMany: async ({ where }: { where: { orgId: string } }) =>
         linhas.filter((l) => l.orgId === where.orgId).map(({ vetor: _v, ...l }) => ({ ...l })),
@@ -1060,6 +1065,15 @@ describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa
     const fornecedor = dubleDoFornecedor(DIM, () => (foraDoAr ? 503 : null));
     vi.stubGlobal('fetch', fornecedor.buscar);
     const svc = montarObsidian(memoria, prisma);
+    /*
+     * A empresa da casa tem o slug fixo `root`, único no banco, e as suítes rodam
+     * em paralelo; A faz o papel da casa só nesta suíte. A guarda em si é medida
+     * com o slug de verdade em `obsidian-reindex-tenant.test.ts`.
+     */
+    vi.spyOn(svc as unknown as { exigirEmpresaDaCasa(orgId: string): Promise<void> }, 'exigirEmpresaDaCasa')
+      .mockImplementation(async (orgId) => {
+        if (orgId !== A) throw new Error(`só ${A} faz o papel da casa nesta suíte`);
+      });
     avisosDe(svc);
     const contar = async () => ({
       itens: await prisma.contextItem.count({ where: { orgId: A } }),

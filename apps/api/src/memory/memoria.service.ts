@@ -495,7 +495,7 @@ export class MemoriaService {
      * evento, e sem derrubar: o vetor é recuperável na volta seguinte
      * (`semVetor`), o evento não.
      */
-    await this.gravarVetorSemDerrubar(orgId, item.id, entrada.embedding);
+    await this.gravarVetorSemDerrubar(orgId, item.id, item.contentHash, entrada.embedding);
 
     return (await this.obter(orgId, item.id)) as NotaDeContexto;
   }
@@ -543,6 +543,28 @@ export class MemoriaService {
           motivo: mudancas.motivo ?? null,
         };
       },
+      /*
+       * CORPO NOVO TIRA O VETOR DO CORPO ANTERIOR, NA MESMA TRANSAÇÃO (V1 da
+       * ROOT-05ab-REV). Antes o vetor só era trocado quando vinha um novo, e o
+       * do texto anterior ficava: a edição na tela e a nota da vault alterada
+       * numa volta sem fornecedor guardavam um vetor que já não descreve o
+       * corpo, e `semVetor` nunca mais as listava. Vetor velho não deixa marca
+       * que permita achá-lo depois.
+       *
+       * Na transação porque o corpo e o vetor têm de mudar juntos. Com um
+       * UPDATE depois do commit, uma queda do processo entre os dois deixaria o
+       * corpo novo com o vetor velho para sempre; aqui, a transação desfeita
+       * leva junto o NULL, e o vetor só sai quando o corpo de fato mudou. O
+       * vetor novo, quando vem, entra depois do evento, pela regra de baixo.
+       */
+      noCadeado: async (tx, antes, depois) => {
+        if (depois.contentHash === antes.contentHash) return;
+        await tx.$executeRawUnsafe(
+          'UPDATE "ContextItem" SET embedding = NULL WHERE id = $1 AND "orgId" = $2',
+          depois.id,
+          orgId,
+        );
+      },
     });
 
     await this.registrarMudanca({
@@ -563,9 +585,13 @@ export class MemoriaService {
      * A comparação é entre o que a TRANSAÇÃO leu e o que ela gravou, não entre
      * uma leitura antiga e o pedido: sob concorrência, as duas respondem
      * diferente e só a primeira responde sobre a mudança que de fato aconteceu.
+     *
+     * Com o hash trocado, a coluna já saiu da transação vazia (`noCadeado`
+     * acima). O vetor que veio no pedido é gravado condicionado ao hash novo:
+     * sem vetor, ou com um que o banco recuse, a nota fica em `semVetor`.
      */
     if (item.contentHash !== anterior.contentHash) {
-      await this.gravarVetorSemDerrubar(orgId, id, mudancas.embedding);
+      await this.gravarVetorSemDerrubar(orgId, id, item.contentHash, mudancas.embedding);
     }
 
     return (await this.obter(orgId, id)) as NotaDeContexto;
@@ -660,6 +686,14 @@ export class MemoriaService {
           },
           select: SELECAO_DA_NOTA,
         });
+        // O vetor do texto anterior sai na mesma transação, como em `alterar` (V1).
+        if (item.contentHash !== atual.contentHash) {
+          await tx.$executeRawUnsafe(
+            'UPDATE "ContextItem" SET embedding = NULL WHERE id = $1 AND "orgId" = $2',
+            item.id,
+            orgId,
+          );
+        }
         const versao = await tx.contextItemVersion.create({
           data: {
             orgId, itemId: item.id, versao: proxima, mudanca: ContextChange.alteracao,
@@ -944,7 +978,7 @@ export class MemoriaService {
       // tela antes de haver chave de embedding): esse é o único caso em que
       // ainda vale gravar alguma coisa.
       if (nota.embedding?.length && !existente.temVetor) {
-        await this.gravarVetorSemDerrubar(orgId, existente.id, nota.embedding);
+        await this.gravarVetorSemDerrubar(orgId, existente.id, hash, nota.embedding);
       }
       resumo.inalteradas++;
       return;
@@ -967,37 +1001,60 @@ export class MemoriaService {
     }
   }
 
-  /** As notas desta empresa que ainda não têm vetor. Quem as vetoriza é o conector. */
+  /**
+   * As notas desta empresa que ainda não têm vetor. Quem as vetoriza é o conector.
+   *
+   * O `contentHash` vai junto porque o vetor só pode ser gravado sobre o corpo
+   * que foi lido aqui: entre esta leitura e a volta do fornecedor alguém pode
+   * editar a nota, e `gravarVetor` confere o hash para não pôr o vetor do texto
+   * antigo em cima do novo.
+   *
+   * `excetoChaves` tira da fila as notas que outro caminho já vetoriza nesta
+   * volta (as da vault, que recebem o vetor do índice — R2 da ROOT-05ab-REV). O
+   * corte é na consulta, antes do `LIMIT`: filtrar depois deixaria nota da vault
+   * ocupando as vagas das que só esta fila alcança.
+   */
   async semVetor(
     orgId: string,
     limite = 100,
-  ): Promise<Array<{ id: string; title: string; body: string }>> {
+    opcoes: { excetoChaves?: readonly string[] } = {},
+  ): Promise<Array<{ id: string; title: string; body: string; contentHash: string }>> {
     return this.prisma.$queryRawUnsafe(
-      `SELECT id, title, body
+      `SELECT id, title, body, "contentHash"
          FROM "ContextItem"
         WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL
+          AND NOT (chave = ANY($3::text[]))
         ORDER BY "atualizadoEm" DESC
         LIMIT $2`,
       orgId,
       limite,
+      [...(opcoes.excetoChaves ?? [])],
     );
   }
 
   /**
-   * Grava o vetor de uma nota.
+   * Grava o vetor de uma nota, se ela ainda tem o corpo de onde o vetor saiu.
    *
    * `$executeRawUnsafe` porque `vector` é `Unsupported` no Prisma — o mesmo
    * caminho que `ObsidianService.reindex` e `PautaService` já usam. O `AND
    * "orgId"` não é redundância com a policy: é a primeira tranca, e é ela que
    * transforma um id trocado num zero-linhas em vez de numa escrita em empresa
    * alheia.
+   *
+   * O `AND "contentHash"` é a mesma tranca contra o tempo. O vetor é calculado
+   * fora daqui, às vezes um minuto depois da leitura; se a nota mudou nesse
+   * meio-tempo, gravar seria pôr o significado do texto antigo no texto novo, sem
+   * nada que permita achar isso depois. Devolve as linhas alteradas: zero quer
+   * dizer que o corpo mudou (ou que a nota não é desta empresa) e o vetor foi
+   * descartado.
    */
-  async gravarVetor(orgId: string, id: string, vetor: number[]): Promise<void> {
-    await this.prisma.$executeRawUnsafe(
-      'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3',
+  async gravarVetor(orgId: string, id: string, vetor: number[], contentHash: string): Promise<number> {
+    return this.prisma.$executeRawUnsafe(
+      'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3 AND "contentHash" = $4',
       `[${vetor.join(',')}]`,
       id,
       orgId,
+      contentHash,
     );
   }
 
@@ -1009,15 +1066,24 @@ export class MemoriaService {
    * seguinte o hash bate e a nota conta como inalterada. Então uma falha de
    * vetor não pode, em hipótese nenhuma, impedir que o evento seja escrito — e
    * era exatamente isso que acontecia quando esta gravação vinha antes dele.
+   *
+   * `contentHash` é o do corpo de onde o vetor saiu, e a gravação é condicionada
+   * a ele: se outra mudança passou na frente, ela é a dona da coluna e esta não
+   * mexe em nada. Quem chama garante que, sem gravar, a coluna fica vazia (a
+   * nota nova nasce sem vetor, a projeção só chega aqui com `!temVetor` e
+   * `alterar` esvazia a coluna na transação que troca o corpo). É isso que torna
+   * verdade o "volta na próxima passada": com o vetor velho no lugar, nenhuma
+   * passada a encontraria.
    */
   private async gravarVetorSemDerrubar(
     orgId: string,
     id: string,
+    contentHash: string,
     vetor?: number[] | null,
   ): Promise<void> {
     if (!vetor?.length) return;
     try {
-      await this.gravarVetor(orgId, id, vetor);
+      await this.gravarVetor(orgId, id, vetor, contentHash);
     } catch (e) {
       this.log.warn(
         `empresa ${orgId}: a nota ${id} mudou e foi registrada, mas o vetor não gravou ` +
@@ -1219,6 +1285,11 @@ export class MemoriaService {
    *
    * `montar` pode LANÇAR (é onde moram "já está arquivada" e "precisa de
    * título"): a recusa acontece com o estado certo em mãos e desfaz a transação.
+   *
+   * `noCadeado` é a escrita que precisa acontecer junto com a do item e fora do
+   * alcance do Prisma (a coluna `vector` é `Unsupported`). Roda depois do item e
+   * da versão, na mesma transação: lançar ali desfaz tudo. Hoje só `alterar` o
+   * usa, para tirar o vetor do corpo anterior.
    */
   private async gravarVersao(args: {
     orgId: string;
@@ -1229,12 +1300,13 @@ export class MemoriaService {
       dados: Prisma.ContextItemUpdateInput;
       motivo: string | null;
     };
+    noCadeado?: (tx: Prisma.TransactionClient, antes: LinhaDaNota, depois: LinhaDaNota) => Promise<void>;
   }): Promise<{
     item: LinhaDaNota;
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, montar } = args;
+    const { orgId, id, mudanca, ator, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
 
@@ -1290,6 +1362,7 @@ export class MemoriaService {
         },
         select: { id: true, versao: true },
       });
+      await noCadeado?.(tx, atual, item);
       return { item, anterior: atual, versao };
     });
   }

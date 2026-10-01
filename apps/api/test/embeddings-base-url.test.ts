@@ -226,6 +226,11 @@ describe('a reindexação da vault com OPENAI_BASE_URL vazia', () => {
     let seq = 0;
     const vetorizadas: string[] = [];
     const prisma = {
+      // Desde a ROOT-05c só a empresa da casa (slug `root`) reindexa; ORG faz esse papel aqui.
+      org: {
+        findFirst: async ({ where }: { where: { id: string; slug: string } }) =>
+          where.id === ORG && where.slug === 'root' ? { id: ORG } : null,
+      },
       knowledgeNote: {
         findMany: async () => linhas.map((l) => ({ ...l })),
         deleteMany: async () => {
