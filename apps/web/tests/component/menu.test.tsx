@@ -20,7 +20,7 @@ vi.mock('@/components/modulos', () => ({
   useModulos: () => ({ modulos: null, ligado: () => true }),
 }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => CAMINHO }));
+vi.mock('next/navigation', () => ({ usePathname: () => CAMINHO, useRouter: () => ({ push: vi.fn() }) }));
 
 vi.mock('next/link', () => ({
   __esModule: true,
@@ -42,8 +42,15 @@ vi.mock('next/link', () => ({
 
 // eslint-disable-next-line import/first
 import { Sidebar, CHAVE_MENU } from '@/components/Sidebar';
+// eslint-disable-next-line import/first
+import { Paleta } from '@/components/Paleta';
+// eslint-disable-next-line import/first
+import { Topbar } from '@/components/Topbar';
+// eslint-disable-next-line import/first
+import { NAV } from '@mktos/shared';
 
 const TODAS = ['dashboard.ver', 'tarefas.ver', 'pauta.ver', 'leads.ver', 'mcp.ver'];
+const TODAS_DO_NAV = [...new Set(NAV.map((n) => n.permission))];
 
 const link = (href: string) => document.querySelector(`a[href="${href}"]`);
 
@@ -154,5 +161,75 @@ describe('a barra lateral', () => {
     render(<Sidebar />);
     expect(link('/leads')).toBeNull();
     expect(link('/funil')).toBeInTheDocument();
+  });
+
+  it('a gaveta móvel mostra os nomes das seções novas e o filho órfão promovido', async () => {
+    PERMISSOES = ['dashboard.ver'];
+    const user = userEvent.setup();
+    render(<Sidebar />);
+    await user.click(screen.getByRole('button', { name: 'Abrir navegação' }));
+    const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
+    expect(gaveta).toHaveTextContent('Motor Comercial');
+    // sem leads.ver o Funil não some: sobe ao primeiro nível da seção
+    const funil = gaveta.querySelector('a[href="/funil"]')!;
+    expect(funil).toBeInTheDocument();
+    expect(funil.className).not.toContain('pl-[28px]');
+  });
+
+  it('desenha as seções na ordem do contrato e Registros dentro de Configurações', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Sidebar />);
+    const titulos = Array.from(document.querySelectorAll('nav[aria-label="Destinos"] h2')).map((h) =>
+      h.textContent?.trim(),
+    );
+    expect(titulos).toEqual([
+      'Dia a dia', 'Contexto', 'Trabalho', 'Motor de Marketing', 'Motor Comercial',
+      'Motor Financeiro', 'Motor de IA', 'Resultados', 'Configurações da empresa', 'Registros',
+      'Configurações da conta',
+    ]);
+    const registros = screen.getByRole('button', { name: /^registros$/i });
+    expect(registros.className).toContain('pl-5');
+    // só as seções de apoio começam fechadas
+    expect(screen.getByRole('button', { name: /configurações da empresa/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /motor de ia/i })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('preferência de seção fechada com chave antiga é ignorada sem erro', async () => {
+    localStorage.setItem(CHAVE_MENU, JSON.stringify(['secao-que-nao-existe-mais', 'trabalho', 42]));
+    const user = userEvent.setup();
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: /^trabalho$/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /motor de marketing/i })).toHaveAttribute('aria-expanded', 'true');
+    // o próximo clique regrava a preferência já sem a chave morta
+    await user.click(screen.getByRole('button', { name: /motor de marketing/i }));
+    expect(JSON.parse(localStorage.getItem(CHAVE_MENU)!)).toEqual(['trabalho', 'conteudo']);
+  });
+
+  it('JSON estragado na preferência cai no padrão, sem erro', () => {
+    localStorage.setItem(CHAVE_MENU, '{não é json');
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: /^trabalho$/i })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('/assinatura não aparece na barra, mesmo com todas as permissões', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Sidebar />);
+    expect(link('/assinatura')).toBeNull();
+    expect(link('/config')).toBeInTheDocument();
+  });
+
+  it('/assinatura não aparece na paleta, e o título da Topbar continua resolvendo', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Paleta aberto fechar={() => {}} />);
+    const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
+    expect(dialogo).not.toHaveTextContent('Plano e assinatura');
+    expect(dialogo).toHaveTextContent('Configurações da conta');
+  });
+
+  it('a Topbar de /assinatura ainda mostra o título do item oculto', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/assinatura';
+    render(<Topbar />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Plano e assinatura');
   });
 });

@@ -11,6 +11,7 @@ import {
   type RoleKey,
 } from '@mktos/shared';
 import { ROTAS_ANTIGAS } from '../../rotas-antigas.mjs';
+import { areasDaNota } from '@/app/contexto/grafo';
 
 /*
  * Trava de não-regressão da reorganização do painel na lógica do ROOT OS.
@@ -239,25 +240,27 @@ describe('NAV — estrutura', () => {
 describe('navPorSecao', () => {
   const todas = new Set(NAV.map((n) => n.permission));
 
-  it('com todas as permissões devolve todos os itens, sem repetir', () => {
+  const visiveis = NAV.filter((n) => !n.oculto);
+
+  it('com todas as permissões devolve todos os itens visíveis, sem repetir', () => {
     const itens = navPorSecao(todas).flatMap((g) => g.itens);
-    expect(itens).toHaveLength(NAV.length);
-    expect(new Set(itens.map((i) => i.key)).size).toBe(NAV.length);
+    expect(itens).toHaveLength(visiveis.length);
+    expect(new Set(itens.map((i) => i.key)).size).toBe(visiveis.length);
   });
 
   it('preserva a ordem das seções e a ordem do NAV dentro de cada uma', () => {
-    const ordem = SECOES.map((s) => s.key).filter((k) => NAV.some((n) => n.secao === k));
+    const ordem = SECOES.map((s) => s.key).filter((k) => visiveis.some((n) => n.secao === k));
     const grupos = navPorSecao(todas);
     expect(grupos.map((g) => g.secao.key)).toEqual(ordem);
     expect(grupos.flatMap((g) => g.itens.map((i) => i.key))).toEqual(
-      ordem.flatMap((k) => NAV.filter((n) => n.secao === k).map((n) => n.key)),
+      ordem.flatMap((k) => visiveis.filter((n) => n.secao === k).map((n) => n.key)),
     );
   });
 
   it('destinos de apoio vêm depois dos grupos principais', () => {
     const tipos = navPorSecao(todas).map((g) => g.secao.tipo);
-    expect(tipos.slice(0, 6)).toEqual(Array(6).fill('principal'));
-    expect(tipos.slice(6)).toEqual(['apoio', 'apoio']);
+    expect(tipos.slice(0, 8)).toEqual(Array(8).fill('principal'));
+    expect(tipos.slice(8)).toEqual(['apoio', 'apoio', 'apoio']);
   });
 
   it('sem permissão nenhuma não devolve seção nenhuma', () => {
@@ -392,14 +395,14 @@ describe('navEmArvore', () => {
  *
  * A decisão do Pedro de 28/09/2026 manda o bloco seguir a organização do app do
  * Lucas. O que esta suíte guarda não é a aparência do menu — é o desenho que a
- * decisão fixou, e que se perde calado numa refatoração: o bloco fica em
- * Conteúdo, a marca fica em Empresa, e a agenda do mês não vira item
+ * decisão fixou, e que se perde calado numa refatoração: o bloco fica no
+ * Motor de Marketing (chave `conteudo`), a marca fica em Contexto (chave `empresa`), e a agenda do mês não vira item
  * próprio porque a aba Semana da Pauta já é a agenda.
  */
 describe('o bloco Marketing (MK7)', () => {
   const item = (k: string) => NAV.find((n) => n.key === k);
 
-  it('o bloco vive em Conteúdo, governado pelo módulo pauta', () => {
+  it('o bloco vive no Motor de Marketing, governado pelo módulo pauta', () => {
     const m = item('marketing');
     expect(m).toBeDefined();
     expect(m!.href).toBe('/marketing');
@@ -408,12 +411,21 @@ describe('o bloco Marketing (MK7)', () => {
     expect(m!.pai, 'o bloco é raiz, não filho da Pauta').toBeUndefined();
   });
 
-  it('os quatro itens do bloco penduram nele', () => {
-    for (const k of ['marketing-ideias', 'marketing-estrategia', 'marketing-performance', 'marketing-relatorio']) {
+  it('Performance e Relatório do mês penduram no bloco; Ideias e Estratégia moram em Trabalho', () => {
+    for (const k of ['marketing-performance', 'marketing-relatorio']) {
       const n = item(k);
       expect(n, `${k} sumiu do menu`).toBeDefined();
       expect(n!.pai).toBe('marketing');
+      expect(n!.secao).toBe('conteudo');
       expect(n!.permission).toBe('pauta.ver');
+    }
+    for (const k of ['marketing-ideias', 'marketing-estrategia']) {
+      const n = item(k);
+      expect(n, `${k} sumiu do menu`).toBeDefined();
+      expect(n!.secao, `${k}: documento 38 manda para Trabalho`).toBe('trabalho');
+      expect(n!.pai, `${k}: o pai estaria em outra seção`).toBeUndefined();
+      expect(n!.permission).toBe('pauta.ver');
+      expect(n!.modulo).toBe('pauta');
     }
   });
 
@@ -421,7 +433,7 @@ describe('o bloco Marketing (MK7)', () => {
     const marca = item('marca');
     expect(marca).toBeDefined();
     expect(marca!.pai, 'marca dentro de Marketing a esconde de quem escreve').toBe('contexto');
-    expect(marca!.secao).toBe('empresa');
+    expect(marca!.secao).toBe('empresa'); // seção Contexto
     expect(marca!.modulo).toBe('pauta');
     // A permissão é a da rota da API, e não a do Contexto: quem abre a tela
     // precisa poder ler a pauta, senão vê um erro em vez do conteúdo.
@@ -441,11 +453,13 @@ describe('o bloco Marketing (MK7)', () => {
     const bloco = conteudo?.itens.find((i) => i.item.key === 'marketing');
     expect(bloco, 'o bloco não apareceu para quem tem pauta.ver').toBeDefined();
     expect(bloco!.filhos.map((f) => f.key).sort()).toEqual([
-      'marketing-estrategia',
-      'marketing-ideias',
       'marketing-performance',
       'marketing-relatorio',
     ]);
+    const trabalho = comModulo.find((g) => g.secao.key === 'trabalho');
+    expect(trabalho?.itens.map((i) => i.item.key)).toEqual(
+      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
+    );
 
     // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
     // importa é que o bloco não aparece por nenhum caminho.
@@ -454,5 +468,140 @@ describe('o bloco Marketing (MK7)', () => {
     expect(todosSemModulo).not.toContain('marketing');
     expect(todosSemModulo).not.toContain('marketing-estrategia');
     expect(todosSemModulo).not.toContain('marca');
+  });
+});
+
+
+/*
+ * A ORGANIZAÇÃO DA ROOT-07 (C-16): agrupamento, ordem, seção, hub e marca de
+ * oculto. Nenhuma rota, permissão, módulo ou rótulo de item mudou — as tabelas
+ * abaixo são a prova, copiadas da base 43b034d e da matriz-nav-empresa.json
+ * (SHA256 626bf1a4…819e).
+ */
+describe('organização da navegação (ROOT-07)', () => {
+  /** Permissão de cada item na base. Fixa: reorganizar não toca o acesso. */
+  const PERMISSAO_DA_BASE: Record<string, string> = {
+    caixa: 'dashboard.ver', atendimento: 'aprovacoes.ver', agenda: 'dashboard.ver', console: 'dashboard.ver',
+    contexto: 'obsidian.ver', marca: 'pauta.ver', organograma: 'dashboard.ver',
+    tarefas: 'tarefas.ver', trabalho: 'tarefas.ver', onboarding: 'tarefas.ver',
+    conteudo: 'dashboard.ver', pauta: 'pauta.ver', referencias: 'pauta.ver', marketing: 'pauta.ver',
+    'marketing-ideias': 'pauta.ver', 'marketing-estrategia': 'pauta.ver', 'marketing-performance': 'pauta.ver',
+    'marketing-relatorio': 'pauta.ver', instagram: 'instagram.ver', bio: 'bio.ver',
+    leads: 'leads.ver', funil: 'dashboard.ver', campanhas: 'campanhas.ver', pixels: 'dashboard.ver',
+    relatorios: 'relatorios.ver', metas: 'dashboard.ver', financeiro: 'financeiro.ver', 'custo-ia': 'dashboard.ver',
+    agentes: 'mcp.ver', rotinas: 'automacoes.ver', sessoes: 'mcp.ver', fluxos: 'automacoes.ver',
+    ferramentas: 'mcp.ver', conexoes: 'dashboard.ver', regua: 'mcp.ver', rastro: 'auditoria.ver',
+    'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
+  };
+
+  /** Rótulo de cada item na base: a ROOT-08 é quem os muda, não esta fatia. */
+  const ROTULO_DA_BASE: Record<string, string> = {
+    caixa: 'Pendências', atendimento: 'Aprovações', agenda: 'Agenda', console: 'Visão geral',
+    contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
+    tarefas: 'Lista de tarefas', trabalho: 'Quadro interno', onboarding: 'Implantação de clientes',
+    conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
+    'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
+    'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
+    instagram: 'Instagram', bio: 'Página de links', leads: 'Leads', funil: 'Funil de vendas',
+    campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
+    financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
+    rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',
+    ferramentas: 'Ferramentas disponíveis', conexoes: 'Integrações', regua: 'Regras e permissões',
+    rastro: 'Registro de ações', 'linha-do-tempo': 'Atividade', assinatura: 'Plano e assinatura',
+    config: 'Configurações da conta',
+  };
+
+  /** matriz-nav-empresa.json: href → grupo proposto, traduzido para a chave da seção. */
+  const SECAO_DA_MATRIZ: Record<string, string> = {
+    '/caixa': 'dia', '/atendimento': 'dia', '/agenda': 'dia', '/painel': 'dia',
+    '/contexto': 'empresa', '/contexto/marca': 'empresa',
+    '/organograma': 'controle',
+    '/tarefas': 'trabalho', '/trabalho': 'trabalho', '/onboarding': 'trabalho', '/conteudo': 'trabalho',
+    '/marketing/ideias': 'trabalho', '/marketing/estrategia': 'trabalho',
+    '/pauta': 'conteudo', '/referencias': 'conteudo', '/marketing': 'conteudo',
+    '/marketing/performance': 'conteudo', '/marketing/relatorio': 'conteudo',
+    '/instagram': 'conteudo', '/bio': 'conteudo', '/campanhas': 'conteudo', '/pixels': 'conteudo',
+    '/leads': 'comercial', '/funil': 'comercial',
+    '/relatorios': 'resultados', '/metas': 'resultados',
+    '/financeiro': 'financeiro',
+    '/painel/custo-ia': 'automacoes', '/agentes': 'automacoes', '/rotinas': 'automacoes',
+    '/sessoes': 'automacoes', '/fluxos': 'automacoes',
+    '/ferramentas': 'controle', '/conexoes': 'controle', '/regua': 'controle',
+    '/rastro': 'registros', '/linha-do-tempo': 'registros',
+    '/assinatura': 'controle', // "Oculto na navegação interna": a seção é só a casa do dado
+    '/config': 'conta',
+  };
+
+  it('os 39 destinos mantêm chave, rótulo e permissão da base', () => {
+    expect(NAV).toHaveLength(39);
+    expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
+    for (const n of NAV) {
+      expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
+      expect(n.label, `${n.key}: rótulo é da ROOT-08`).toBe(ROTULO_DA_BASE[n.key]);
+    }
+  });
+
+  it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
+    expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
+    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
+  });
+
+  it('SECOES: ordem, rótulos e tipos do contrato C-16', () => {
+    expect(SECOES.map((s) => [s.key, s.label, s.tipo])).toEqual([
+      ['dia', 'Dia a dia', 'principal'],
+      ['empresa', 'Contexto', 'principal'],
+      ['trabalho', 'Trabalho', 'principal'],
+      ['conteudo', 'Motor de Marketing', 'principal'],
+      ['comercial', 'Motor Comercial', 'principal'],
+      ['financeiro', 'Motor Financeiro', 'principal'],
+      ['automacoes', 'Motor de IA', 'principal'],
+      ['resultados', 'Resultados', 'principal'],
+      ['controle', 'Configurações da empresa', 'apoio'],
+      ['registros', 'Registros', 'apoio'],
+      ['conta', 'Configurações da conta', 'apoio'],
+    ]);
+    const secaoDe = (k: string) => SECOES.find((s) => s.key === k) as { dentroDe?: string } | undefined;
+    expect(secaoDe('registros')?.dentroDe, 'Registros fica dentro de Configurações').toBe('controle');
+    expect(SECOES.filter((s) => 'dentroDe' in s)).toHaveLength(1);
+  });
+
+  it('filho na seção do pai, ou de primeiro nível', () => {
+    for (const n of NAV.filter((i) => i.pai)) {
+      expect(NAV.find((i) => i.key === n.pai)?.secao, n.key).toBe(n.secao);
+    }
+    const trabalho = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'trabalho')!;
+    expect(trabalho.itens.map((no) => no.item.key)).toEqual(
+      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
+    );
+  });
+
+  it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
+    const a = NAV.find((n) => n.key === 'assinatura')!;
+    expect(a.oculto).toBe(true);
+    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['assinatura']);
+    const todas = new Set(NAV.map((n) => n.permission));
+    expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
+    expect(
+      navEmArvore(todas).flatMap((g) => g.itens.flatMap((no) => [no.item.key, ...no.filhos.map((f) => f.key)])),
+    ).not.toContain('assinatura');
+    expect(navPorSecao(todas, MODULOS).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
+    // a rota segue com dono: permissão e módulo preservados
+    expect(a.href).toBe('/assinatura');
+    expect(a.permission).toBe('dashboard.ver');
+    expect(a.modulo).toBeUndefined();
+  });
+
+  /*
+   * B1 (ROOT-06-REV): toda tag `area:<chave>` publicada na base continua
+   * resolvendo para uma área do mapa. As chaves antigas ficaram e só mudaram de
+   * rótulo; as novas somam.
+   */
+  it('as tags area:<chave> da base continuam resolvendo no mapa', () => {
+    for (const chave of ['empresa', 'conteudo', 'comercial', 'automacoes', 'dia', 'trabalho', 'resultados', 'controle']) {
+      expect(areasDaNota([`area:${chave}`]), `area:${chave} ficou sem área`).toEqual([chave]);
+    }
+    expect(areasDaNota(['area:empresa', 'area:conteudo', 'area:comercial', 'area:automacoes']))
+      .toEqual(['empresa', 'conteudo', 'comercial', 'automacoes']);
+    expect(areasDaNota(['area:nao-existe'])).toEqual([]);
   });
 });

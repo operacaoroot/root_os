@@ -20,6 +20,9 @@ export const CHAVE_MENU = 'root-os:menu-fechado';
 
 const CHAVES_DE_SECAO = new Set<string>(SECOES.map((s) => s.key));
 
+/** Sem preferência guardada, só as seções de apoio começam fechadas. */
+const FECHADAS_POR_PADRAO = SECOES.filter((s) => s.tipo === 'apoio').map((s) => s.key);
+
 const TEMAS: { id: TemaOs; rotulo: string }[] = [
   { id: 'dark', rotulo: 'escuro' },
   { id: 'light', rotulo: 'papel' },
@@ -41,12 +44,14 @@ function lerFechadas(): Set<string> {
     const v = localStorage.getItem(CHAVE_MENU);
     if (v) {
       const lista = JSON.parse(v);
-      if (Array.isArray(lista)) return new Set(lista.filter((x) => typeof x === 'string'));
+      // Chave que não é mais seção (menu antigo) é descartada: sem isso ela
+      // ficaria no localStorage para sempre, reescrita a cada clique.
+      if (Array.isArray(lista)) return new Set(lista.filter((x) => CHAVES_DE_SECAO.has(x)));
     }
   } catch {
     /* localStorage bloqueado ou JSON estragado: começa com tudo aberto */
   }
-  return new Set(['automacoes', 'controle']);
+  return new Set(FECHADAS_POR_PADRAO);
 }
 
 function ehAtivo(pathname: string, href: string): boolean {
@@ -117,7 +122,7 @@ export function Sidebar() {
   const caixa = useCaixa();
   const pathname = usePathname();
   const [tema, setTema] = useState<TemaOs>('dark');
-  const [fechadas, setFechadas] = useState<Set<string>>(new Set(['automacoes', 'controle']));
+  const [fechadas, setFechadas] = useState<Set<string>>(new Set(FECHADAS_POR_PADRAO));
   const [abertaNoMovel, setAbertaNoMovel] = useState(false);
   const botaoAbrir = useRef<HTMLButtonElement>(null);
   const botaoFechar = useRef<HTMLButtonElement>(null);
@@ -147,17 +152,25 @@ export function Sidebar() {
    * menu em vez de sumir calado. O tipo `secao` impede isso em compilação, mas
    * o NAV também é lido por JS não tipado (testes, scripts).
    */
-  const grupos: { chave: string; titulo: string; dica?: string; tipo: string; itens: NoDeNav[] }[] =
+  const grupos: {
+    chave: string;
+    titulo: string;
+    dica?: string;
+    tipo: string;
+    dentroDe?: string;
+    itens: NoDeNav[];
+  }[] =
     navEmArvore(perms, modulos ?? undefined).map((g) => ({
       chave: g.secao.key,
       titulo: g.secao.label,
       dica: g.secao.hint,
       tipo: g.secao.tipo,
+      dentroDe: 'dentroDe' in g.secao ? g.secao.dentroDe : undefined,
       itens: g.itens,
     }));
 
   const avulsos = NAV.filter(
-    (n) => perms.has(n.permission) && ligado(n.modulo) && !CHAVES_DE_SECAO.has(n.secao),
+    (n) => !n.oculto && perms.has(n.permission) && ligado(n.modulo) && !CHAVES_DE_SECAO.has(n.secao),
   );
   if (avulsos.length > 0)
     grupos.push({
@@ -347,7 +360,7 @@ export function Sidebar() {
           const fechada = fechadas.has(g.chave) && !temAtivo;
           return (
             <section key={g.chave} aria-label={g.titulo}>
-              {i === primeiroApoio && i > 0 && (
+              {i === primeiroApoio && i > 0 && !g.dentroDe && (
                 <div aria-hidden className="mx-2 mb-1 mt-4 border-t border-border" />
               )}
               <h2>
@@ -357,7 +370,10 @@ export function Sidebar() {
                   aria-expanded={!fechada}
                   aria-controls={`nav-grupo-${g.chave}`}
                   title={g.dica}
-                  className="flex min-h-11 w-full cursor-pointer items-center gap-[5px] px-2 pt-2 text-left text-[10px] font-normal uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+                  className={[
+                    'flex min-h-11 w-full cursor-pointer items-center gap-[5px] pt-2 text-left text-[10px] font-normal uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand',
+                    g.dentroDe ? 'pl-5 pr-2' : 'px-2',
+                  ].join(' ')}
                 >
                   <Icons.ChevronRight
                     size={9}
