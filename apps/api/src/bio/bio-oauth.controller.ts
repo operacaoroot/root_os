@@ -62,12 +62,17 @@ export class BioOauthController {
     // O state é uso único e amarra a autorização à org que iniciou o fluxo.
     const registro = await this.prisma.bioOauthState.findUnique({ where: { estado } });
     if (!registro) return this.volta(res, 'expirado');
-    if (registro.plataforma !== plataforma || registro.expiraEm < new Date()) {
-      // O state existe: gasta e volta para a tela que o pediu, com o motivo.
-      await this.prisma.bioOauthState.delete({ where: { id: registro.id } }).catch(() => undefined);
+    // Gastar o state é apagar a linha, e só um pedido consegue: dois retornos
+    // com o mesmo state podem ler a linha juntos, mas o `count` dá 1 para um
+    // só. O outro para aqui, antes da troca do código e de qualquer gravação.
+    // O vencido e o de outra plataforma também são gastos e voltam para a tela
+    // que os pediu. Sem `.catch` de propósito: erro do banco derruba o pedido
+    // em vez de seguir sem saber se o state foi gasto. Se a plataforma falhar
+    // depois, o state continua gasto: devolvê-lo reabriria a repetição.
+    const { count: apagados } = await this.prisma.bioOauthState.deleteMany({ where: { id: registro.id } });
+    if (apagados !== 1 || registro.plataforma !== plataforma || registro.expiraEm < new Date()) {
       return this.volta(res, 'expirado', registro.finalidade);
     }
-    await this.prisma.bioOauthState.delete({ where: { id: registro.id } }).catch(() => undefined);
     const pedida = registro.finalidade;
 
     const cred = await this.credenciais.resolver(plataforma as BioPlataforma, registro.orgId);
