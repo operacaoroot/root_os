@@ -453,6 +453,7 @@ export class WorkService {
     if (!list.statuses.some((s) => s.id === statusId)) {
       throw new BadRequestException('Status não pertence à lista.');
     }
+    await this.conferirPaiEEtiquetas(orgId, input);
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
       const task = await this.prisma.workTask.create({
         data: {
@@ -475,18 +476,20 @@ export class WorkService {
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
 
+    if (input.listId) await this.achar(this.prisma.workList, orgId, input.listId, 'Lista');
     const listId = input.listId ?? antes.listId;
     let statusId = input.statusId;
     if (input.listId && input.listId !== antes.listId && !statusId) {
       // mover de lista sem status novo → cai no primeiro status da lista destino
-      const primeiro = await this.prisma.workStatus.findFirst({ where: { listId }, orderBy: { order: 'asc' } });
+      const primeiro = await this.prisma.workStatus.findFirst({ where: { listId, orgId }, orderBy: { order: 'asc' } });
       if (!primeiro) throw new BadRequestException('Lista destino sem statuses.');
       statusId = primeiro.id;
     }
     if (statusId) {
-      const ok = await this.prisma.workStatus.findFirst({ where: { id: statusId, listId } });
+      const ok = await this.prisma.workStatus.findFirst({ where: { id: statusId, listId, orgId } });
       if (!ok) throw new BadRequestException('Status não pertence à lista da tarefa.');
     }
+    await this.conferirPaiEEtiquetas(orgId, input);
 
     const depois = await this.prisma.workTask.update({
       where: { id },
@@ -514,6 +517,23 @@ export class WorkService {
       after: { status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority },
     });
     return this.tarefa(orgId, id);
+  }
+
+  /**
+   * Pai e etiquetas vêm do corpo do pedido e só valem desta empresa. A chave
+   * estrangeira confere apenas que o id existe, e a conexão dona das tabelas
+   * atravessa o isolamento por linha: sem esta conferência, a tarefa daqui
+   * viraria filha de tarefa de outra empresa e apareceria no detalhe dela. Id
+   * de outra empresa recebe o mesmo 404 de um id que não existe; etiqueta
+   * repetida conta uma vez, como o Prisma grava.
+   */
+  private async conferirPaiEEtiquetas(orgId: string, input: { parentId?: string | null; tagIds?: string[] }) {
+    if (input.parentId) await this.achar(this.prisma.workTask, orgId, input.parentId, 'Tarefa pai');
+    if (input.tagIds?.length) {
+      const pedidas = new Set(input.tagIds);
+      const daEmpresa = await this.prisma.workTag.count({ where: { orgId, id: { in: [...pedidas] } } });
+      if (daEmpresa !== pedidas.size) throw new NotFoundException('Etiqueta não encontrada');
+    }
   }
 
   /** Grava valores de campos personalizados; dropdown valida a opção do campo. */
