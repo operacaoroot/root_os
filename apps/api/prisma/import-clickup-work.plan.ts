@@ -1,5 +1,6 @@
+import { valorMonetarioCanonico } from '@mktos/shared';
 import type { ClickupSnapshot, ClickupTask } from './import-clickup-work.contract';
-import { descricaoNativa, idNativo, prioridade, sha256 } from './import-clickup-work.contract';
+import { descricaoNativa, idNativo, prioridade, sha256, tipoNativoDoStatus } from './import-clickup-work.contract';
 
 type Tipo = 'folder' | 'list' | 'status' | 'field' | 'option' | 'tag' | 'task' | 'value' | 'comment';
 export interface Spec {
@@ -17,6 +18,14 @@ function data(v: string | null | undefined): Date | null { return v ? new Date(v
 function dataIso(v: string | null | undefined): string | null { return v ? new Date(v).toISOString() : null; }
 function textoValor(v: string | number | boolean | null | undefined): string | null {
   return v == null ? null : String(v);
+}
+/** `validarSnapshot` já recusou o que não converte; lançar aqui é defesa para quem chamar sem ele. */
+function canonicoDoValor(
+  taskId: string, f: ClickupSnapshot['lists'][number]['fields'][number], v: string | number | boolean | null | undefined,
+): string {
+  const r = valorMonetarioCanonico(v, f.moeda ?? '', f.casas ?? Number.NaN);
+  if (r.motivo !== undefined) throw new Error(`valor do campo ${f.id} da tarefa ${taskId}: ${r.motivo}`);
+  return r.valor;
 }
 
 function ordenarTarefas(tasks: ClickupTask[]): ClickupTask[] {
@@ -64,10 +73,12 @@ export function inventariar(snapshot: ClickupSnapshot, orgId: string, caminhos: 
   for (const l of snapshot.lists) {
     for (const s of l.statuses) {
       const sid = id('status', `${l.id}:${s.id}`);
+      const type = tipoNativoDoStatus(s.type);
+      if (!type) throw new Error(`status ${l.id}/${s.id}: tipo ${s.type} sem mapeamento nativo`);
       specs.push({
         tipo: 'status', chave: `status:${l.id}:${s.id}`, id: sid, origemHash: sha256(s),
-        conferir: { orgId, listId: id('list', l.id), name: s.name, type: s.type, color: s.color, order: s.order },
-        dados: { orgId, listId: id('list', l.id), name: s.name, type: s.type, color: s.color, order: s.order },
+        conferir: { orgId, listId: id('list', l.id), name: s.name, type, color: s.color, order: s.order },
+        dados: { orgId, listId: id('list', l.id), name: s.name, type, color: s.color, order: s.order },
       });
     }
     for (const f of l.fields) {
@@ -140,7 +151,9 @@ export function inventariar(snapshot: ClickupSnapshot, orgId: string, caminhos: 
       if (!f || (v.optionId && !f.options.some((o) => o.id === v.optionId))) continue;
       const fieldId = id('field', `${l.id}:${f.id}`);
       const optionId = v.optionId ? id('option', `${l.id}:${f.id}:${v.optionId}`) : null;
-      const value = textoValor(v.value);
+      // `moeda` grava o canônico; o `origemHash` segue sobre o valor da origem,
+      // então `"1500.50"` e `1500.5` dão o mesmo valor no banco sem conflito falso.
+      const value = f.type === 'moeda' ? canonicoDoValor(t.id, f, v.value) : textoValor(v.value);
       specs.push({
         tipo: 'value', chave: `value:${t.id}:${v.fieldId}`, id: id('value', `${t.id}:${v.fieldId}`), origemHash: sha256(v),
         conferir: { orgId, taskId: id('task', t.id), fieldId, optionId, value },

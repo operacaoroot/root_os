@@ -1887,6 +1887,9 @@ enum WorkFieldType {
   data
   checkbox
   url
+  // Valor em `WorkFieldValue.value` como texto canônico "BRL 1500.00": código
+  // ISO 4217, espaço e decimal com 2 casas (packages/shared/src/valor-monetario.ts).
+  moeda
 }
 
 model WorkFolder {

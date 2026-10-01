@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Archive, Bot, Clock, ExternalLink, Flag, Hourglass, MessageSquare, Plus, Settings2, Unlock, X } from 'lucide-react';
-import { MODELOS_DE_LISTA } from '@mktos/shared';
+import {
+  MODELOS_DE_LISTA, MOEDA_PADRAO, ehValorMonetarioCanonico, formatarValorMonetario, lerValorDigitadoPtBr,
+  moedaDoValor, paraDigitarPtBr,
+} from '@mktos/shared';
 import type {
   TrabAgenteDto, TrabEstrutura, TrabListaDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe,
@@ -661,7 +664,8 @@ function Tabela({ lista, tarefas, campos, onAbrir }: {
               <td className={`px-3 py-2 ${t.overdue ? 'text-bad' : ''}`}>{dataBR(t.dueDate)}</td>
               {campos.map((c) => {
                 const v = t.values.find((x) => x.fieldName === c);
-                return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? v?.value ?? '—'}</td>;
+                const valor = v?.type === 'moeda' && v.value ? formatarValorMonetario(v.value) : v?.value;
+                return <td key={c} className="px-3 py-2 text-muted">{v?.optionName ?? valor ?? '—'}</td>;
               })}
             </tr>
           ))}
@@ -925,6 +929,45 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
                         onBlur={(e) => e.target.value !== dia && salvar({ campos: { [c.id]: { value: e.target.value || null } } })}
                         className={INP}
                       />
+                    </Campo>
+                  );
+                }
+                if (c.type === 'moeda') {
+                  // A gaveta mostra o canônico como se digita (`BRL 1500.00` vira
+                  // `1.500,00`) e só vai à API com valor que mudou: texto igual ao
+                  // da abertura ou a mesma quantia escrita de outro jeito não é
+                  // edição. Digitação que não lê volta ao texto de antes, sem PATCH.
+                  const gravado = v?.value ?? null;
+                  const moeda = moedaDoValor(gravado) ?? MOEDA_PADRAO;
+                  const inicial = ehValorMonetarioCanonico(gravado) ? paraDigitarPtBr(gravado) : (gravado ?? '');
+                  return (
+                    <Campo key={c.id} rotulo={c.name}>
+                      <span className="flex items-center gap-1">
+                        <span className="text-[11px] text-muted">{moeda}</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          disabled={ro}
+                          defaultValue={inicial}
+                          onBlur={(e) => {
+                            const texto = e.target.value;
+                            if (texto === inicial) return;
+                            if (texto.trim() === '') {
+                              if (gravado !== null) void salvar({ campos: { [c.id]: { value: null } } });
+                              return;
+                            }
+                            const lido = lerValorDigitadoPtBr(texto, moeda);
+                            if (lido.motivo !== undefined) {
+                              e.target.value = inicial;
+                              onErro(`${c.name}: ${lido.motivo}. Nada foi gravado.`);
+                              return;
+                            }
+                            e.target.value = paraDigitarPtBr(lido.valor);
+                            if (lido.valor !== gravado) void salvar({ campos: { [c.id]: { value: lido.valor } } });
+                          }}
+                          className={INP}
+                        />
+                      </span>
                     </Campo>
                   );
                 }

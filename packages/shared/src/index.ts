@@ -12,5 +12,10 @@ export * from './horas-devolvidas.js';
 // desmonta o MESMO título — ver o cabeçalho de `agenda.ts`.
 export * from './agenda.js';
 
+// A regra do valor monetário do Trabalho mora aqui porque a tela, a API e o
+// importador do ClickUp convertem e conferem o MESMO texto canônico — ver o
+// cabeçalho de `valor-monetario.ts`.
+export * from './valor-monetario.js';
+
 // Nome padrão; cada app pode sobrescrever via seu próprio env (APP_NAME).
 export const DEFAULT_APP_NAME = 'Marketing OS';

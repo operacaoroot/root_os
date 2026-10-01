@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { MODELOS_DE_LISTA } from '@mktos/shared';
+import { MODELOS_DE_LISTA, ehValorMonetarioCanonico } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
@@ -36,6 +36,19 @@ const TASK_INCLUDE = {
 } satisfies Prisma.WorkTaskInclude;
 
 type TaskRow = Prisma.WorkTaskGetPayload<{ include: typeof TASK_INCLUDE }>;
+
+type ValorDoCampo = { optionId?: string | null; value?: string | null };
+type CampoConferido = { field: Prisma.WorkFieldGetPayload<{ include: { options: true } }>; v: ValorDoCampo };
+
+/**
+ * `true` quando o pedido apaga o valor do campo. Num `moeda` só o valor decide:
+ * o campo não tem opção, e `optionId` preenchido já é recusado antes.
+ */
+function apagaOValor(tipo: WorkFieldType, v: ValorDoCampo): boolean {
+  const semValor = v.value === null || v.value === undefined;
+  if (tipo === WorkFieldType.moeda) return semValor;
+  return v.optionId === null || (v.optionId === undefined && semValor);
+}
 
 /**
  * O dia de HOJE no fuso de Brasília, como AAAA-MM-DD.
@@ -454,20 +467,24 @@ export class WorkService {
       throw new BadRequestException('Status não pertence à lista.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
-      const task = await this.prisma.workTask.create({
-        data: {
-          orgId, listId: list.id, statusId,
-          title: input.title, description: input.description ?? null,
-          priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
-          assignee: input.assignee ?? null,
-          dueDate: input.dueDate ? new Date(input.dueDate) : null,
-          startDate: input.startDate ? new Date(input.startDate) : null,
-          parentId: input.parentId ?? null,
-          tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
-        },
+      const task = await this.prisma.$transaction(async (tx) => {
+        const criada = await tx.workTask.create({
+          data: {
+            orgId, listId: list.id, statusId,
+            title: input.title, description: input.description ?? null,
+            priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
+            assignee: input.assignee ?? null,
+            dueDate: input.dueDate ? new Date(input.dueDate) : null,
+            startDate: input.startDate ? new Date(input.startDate) : null,
+            parentId: input.parentId ?? null,
+            tags: input.tagIds ? { connect: input.tagIds.map((id) => ({ id })) } : undefined,
+          },
+        });
+        await this.gravarCampos(tx, criada.id, campos);
+        return criada;
       });
-      if (input.campos) await this.gravarCampos(orgId, task.id, task.listId, input.campos);
       return this.tarefa(orgId, task.id);
     });
   }
@@ -490,31 +507,43 @@ export class WorkService {
       if (!ok) throw new BadRequestException('Status não pertence à lista da tarefa.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    const campos = input.campos ? await this.conferirCampos(orgId, listId, input.campos) : [];
 
-    const depois = await this.prisma.workTask.update({
-      where: { id },
-      data: {
-        listId: input.listId,
-        statusId,
-        title: input.title,
-        description: input.description === undefined ? undefined : input.description,
-        priority: input.priority as WorkPriority | undefined,
-        assignee: input.assignee === undefined ? undefined : input.assignee,
-        dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
-        startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
-        parentId: input.parentId === undefined ? undefined : input.parentId,
-        archived: input.archived,
-        order: input.order,
-        tags: input.tagIds ? { set: input.tagIds.map((tid) => ({ id: tid })) } : undefined,
-      },
-      include: { status: true },
+    const { depois, camposAntes, camposDepois } = await this.prisma.$transaction(async (tx) => {
+      const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
+      const depois = await tx.workTask.update({
+        where: { id },
+        data: {
+          listId: input.listId,
+          statusId,
+          title: input.title,
+          description: input.description === undefined ? undefined : input.description,
+          priority: input.priority as WorkPriority | undefined,
+          assignee: input.assignee === undefined ? undefined : input.assignee,
+          dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
+          startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
+          parentId: input.parentId === undefined ? undefined : input.parentId,
+          archived: input.archived,
+          order: input.order,
+          tags: input.tagIds ? { set: input.tagIds.map((tid) => ({ id: tid })) } : undefined,
+        },
+        include: { status: true },
+      });
+      await this.gravarCampos(tx, id, campos);
+      const camposDepois = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
+      return { depois, camposAntes, camposDepois };
     });
-    if (input.campos) await this.gravarCampos(orgId, id, listId, input.campos);
 
     await this.audit.log({
       orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
-      before: { status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority },
-      after: { status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority },
+      before: {
+        status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority,
+        ...(camposAntes ? { campos: camposAntes } : {}),
+      },
+      after: {
+        status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority,
+        ...(camposDepois ? { campos: camposDepois } : {}),
+      },
     });
     return this.tarefa(orgId, id);
   }
@@ -536,30 +565,68 @@ export class WorkService {
     }
   }
 
-  /** Grava valores de campos personalizados; dropdown valida a opção do campo. */
-  private async gravarCampos(
-    orgId: string, taskId: string, listId: string,
-    campos: Record<string, { optionId?: string | null; value?: string | null }>,
-  ) {
-    for (const [fieldId, v] of Object.entries(campos)) {
-      const field = await this.prisma.workField.findFirst({
-        where: { id: fieldId, orgId, OR: [{ listId }, { listId: null }] },
-        include: { options: true },
-      });
+  /**
+   * Confere TODOS os campos do pedido antes da primeira escrita (ROOT-06a, E1):
+   * o campo vale para a lista, a opção do `drop_down` é dele e o valor do
+   * `moeda` é canônico. Conferir enquanto grava deixava a tarefa criada (e a
+   * nova tentativa a duplicava) ou o texto do PATCH gravado ao lado de um 400.
+   * A escrita da tarefa e dos valores vai depois, numa transação só.
+   */
+  private async conferirCampos(
+    orgId: string, listId: string, campos: Record<string, ValorDoCampo>,
+  ): Promise<CampoConferido[]> {
+    if (Object.keys(campos).length === 0) return [];
+    const fields = await this.prisma.workField.findMany({
+      where: { id: { in: Object.keys(campos) }, orgId, OR: [{ listId }, { listId: null }] },
+      include: { options: true },
+    });
+    const porId = new Map(fields.map((f) => [f.id, f]));
+    return Object.entries(campos).map(([fieldId, v]) => {
+      const field = porId.get(fieldId);
       if (!field) throw new BadRequestException(`Campo ${fieldId} não vale para esta lista.`);
-      if (v.optionId === null || (v.optionId === undefined && (v.value === null || v.value === undefined))) {
-        await this.prisma.workFieldValue.deleteMany({ where: { taskId, fieldId } });
-        continue;
-      }
-      if (v.optionId && !field.options.some((o) => o.id === v.optionId)) {
+      if (field.type === WorkFieldType.moeda) {
+        if (v.optionId || (!apagaOValor(field.type, v) && !ehValorMonetarioCanonico(v.value))) {
+          throw new BadRequestException(`Valor de ${field.name} fora do formato monetário (exemplo: BRL 1500.00).`);
+        }
+      } else if (!apagaOValor(field.type, v) && v.optionId && !field.options.some((o) => o.id === v.optionId)) {
         throw new BadRequestException(`Opção não pertence ao campo ${field.name}.`);
       }
-      await this.prisma.workFieldValue.upsert({
-        where: { taskId_fieldId: { taskId, fieldId } },
-        update: { optionId: v.optionId ?? null, value: v.value ?? null },
-        create: { taskId, fieldId, optionId: v.optionId ?? null, value: v.value ?? null },
+      return { field, v };
+    });
+  }
+
+  /** Grava os valores já conferidos por `conferirCampos`, dentro da transação de quem chama. */
+  private async gravarCampos(db: Prisma.TransactionClient, taskId: string, campos: CampoConferido[]) {
+    for (const { field, v } of campos) {
+      if (apagaOValor(field.type, v)) {
+        await db.workFieldValue.deleteMany({ where: { taskId, fieldId: field.id } });
+        continue;
+      }
+      const valor = field.type === WorkFieldType.moeda
+        ? { optionId: null, value: v.value ?? null }
+        : { optionId: v.optionId ?? null, value: v.value ?? null };
+      await db.workFieldValue.upsert({
+        where: { taskId_fieldId: { taskId, fieldId: field.id } },
+        update: valor,
+        create: { taskId, fieldId: field.id, ...valor },
       });
     }
+  }
+
+  /**
+   * O valor de cada campo do pedido, para a auditoria de `work.task.update`
+   * (ROOT-06a, A4): sem isto, trocar um valor monetário não deixava rastro.
+   */
+  private async retratoDosCampos(db: Prisma.TransactionClient, taskId: string, campos: CampoConferido[]) {
+    const linhas = await db.workFieldValue.findMany({
+      where: { taskId, fieldId: { in: campos.map((c) => c.field.id) } },
+      include: { option: true },
+    });
+    const porCampo = new Map(linhas.map((l) => [l.fieldId, l]));
+    return Object.fromEntries(campos.map(({ field }) => {
+      const l = porCampo.get(field.id);
+      return [field.id, { campo: field.name, tipo: field.type, opcao: l?.option?.name ?? null, valor: l?.value ?? null }];
+    }));
   }
 
   async comentar(orgId: string, actorId: string, taskId: string, text: string) {

@@ -5070,7 +5070,9 @@ export type WorkStatusTypeDto = z.infer<typeof WorkStatusTypeSchema>;
 export const WorkPrioritySchema = z.enum(['urgente', 'alta', 'normal', 'baixa']);
 export type WorkPriorityDto = z.infer<typeof WorkPrioritySchema>;
 
-export const WorkFieldTypeSchema = z.enum(['drop_down', 'texto', 'numero', 'data', 'checkbox', 'url']);
+// `moeda` guarda o texto canônico `BRL 1500.00` e não tem opções; quem confere
+// o formato é o serviço, com a regra de `valor-monetario.ts`.
+export const WorkFieldTypeSchema = z.enum(['drop_down', 'texto', 'numero', 'data', 'checkbox', 'url', 'moeda']);
 export type WorkFieldTypeDto = z.infer<typeof WorkFieldTypeSchema>;
 
 const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'cor em hex, ex.: #6bc950');
