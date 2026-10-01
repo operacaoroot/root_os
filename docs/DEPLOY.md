@@ -820,8 +820,9 @@ fatia própria, e a tela não promete o que não cumpre.
 
 **O teto de custo recusa modelo fora da tabela de preço — mudança de comportamento visível.** Com
 `TetoDeCustoIa.ativo` ligado para uma empresa, uma chamada cujo modelo não esteja em
-`apps/api/src/llm/preco.ts` é **recusada**, não estimada em zero. Isso atinge em cheio o provider
-`openrouter`, cujo modelo padrão (`anthropic/claude-sonnet-4.5`) não casa com a tabela. Empresa
+`apps/api/src/llm/preco.ts` é **recusada**, não estimada em zero. No provider `openrouter`, o
+modelo padrão (`anthropic/claude-sonnet-5.5`) está na tabela e passa. A recusa pega quem sobrescreve
+`OPENROUTER_MODEL` com um modelo fora dela (causa `modelo_sem_preco`). Empresa
 **sem** linha de teto e empresa com o teto **desligado** seguem passando: o regime novo é o preço de
 ter ligado o teto, não um padrão imposto a todo mundo. Conserto: cadastre o preço do modelo, ou
 desligue o teto daquela empresa.
