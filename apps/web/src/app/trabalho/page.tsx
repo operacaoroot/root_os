@@ -50,6 +50,25 @@ function nomeDoAgente(t: {
 const paraInputDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '');
 const deInputDate = (v: string) => (v ? new Date(`${v}T12:00:00`).toISOString() : null);
 
+/**
+ * O dia que o `<input type="date">` de um campo personalizado `data` mostra.
+ *
+ * O valor chega em dois formatos: `AAAA-MM-DD`, gravado por esta gaveta, e o
+ * instante ISO inteiro do importador do ClickUp (`2026-10-01T03:00:00.000Z`).
+ * O input só aceita o primeiro e mostra VAZIO para o resto, e a gaveta, que
+ * mandava ao sair o que estava no input, apagava a data importada sem ninguém
+ * mexer. O dia sai pela regra de Início e Prazo (`paraInputDate`); o que nem
+ * assim é um dia válido para o input vira vazio, para que vazio ao sair
+ * continue querendo dizer "não mexi". O `Date.parse` só confere o calendário
+ * (30/02 não passa), em UTC nas duas pontas: não converte fuso.
+ */
+function diaDoCampoData(valor: string | null): string {
+  const dia = paraInputDate(valor);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia.startsWith('0000')) return '';
+  const t = Date.parse(dia);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === dia ? dia : '';
+}
+
 function mudarEndereco(listaId: string | null, tarefaId: string | null) {
   const url = new URL(window.location.href);
   if (listaId) url.searchParams.set('lista', listaId);
@@ -857,11 +876,17 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
               onMudou={() => { recarregar(); onMudou(); }} onErro={onErro}
             />
           </Campo>
+          {/*
+            Sem mudança de dia, nada vai à API. Reenviar o mesmo dia como
+            meio-dia local trocava o instante importado (em São Paulo, 03:00Z
+            virava 15:00Z) e, com ele, a hora em que a tarefa passa a contar
+            como vencida.
+          */}
           <Campo rotulo="Início">
-            <input type="date" disabled={ro} defaultValue={paraInputDate(t.startDate)} onBlur={(e) => salvar({ startDate: deInputDate(e.target.value) })} className={INP} />
+            <input type="date" disabled={ro} defaultValue={paraInputDate(t.startDate)} onBlur={(e) => e.target.value !== paraInputDate(t.startDate) && salvar({ startDate: deInputDate(e.target.value) })} className={INP} />
           </Campo>
           <Campo rotulo="Prazo">
-            <input type="date" disabled={ro} defaultValue={paraInputDate(t.dueDate)} onBlur={(e) => salvar({ dueDate: deInputDate(e.target.value) })} className={INP} />
+            <input type="date" disabled={ro} defaultValue={paraInputDate(t.dueDate)} onBlur={(e) => e.target.value !== paraInputDate(t.dueDate) && salvar({ dueDate: deInputDate(e.target.value) })} className={INP} />
           </Campo>
         </div>
 
@@ -887,11 +912,27 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
                     </Campo>
                   );
                 }
+                if (c.type === 'data') {
+                  // Só o dia que mudou vai à API, no `AAAA-MM-DD` de sempre;
+                  // alterar e voltar ao dia gravado antes de sair não é edição.
+                  const dia = diaDoCampoData(v?.value ?? null);
+                  return (
+                    <Campo key={c.id} rotulo={c.name}>
+                      <input
+                        type="date"
+                        disabled={ro}
+                        defaultValue={dia}
+                        onBlur={(e) => e.target.value !== dia && salvar({ campos: { [c.id]: { value: e.target.value || null } } })}
+                        className={INP}
+                      />
+                    </Campo>
+                  );
+                }
                 return (
                   <Campo key={c.id} rotulo={c.name}>
                     <input
                       disabled={ro}
-                      type={c.type === 'numero' ? 'number' : c.type === 'data' ? 'date' : 'text'}
+                      type={c.type === 'numero' ? 'number' : 'text'}
                       defaultValue={v?.value ?? ''}
                       onBlur={(e) => salvar({ campos: { [c.id]: { value: e.target.value || null } } })}
                       className={INP}
