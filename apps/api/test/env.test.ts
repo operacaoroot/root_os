@@ -66,6 +66,12 @@ describe('OpenRouterProvider com o ambiente que a produção entrega', () => {
     expect(p.name).toBe('openrouter');
   });
 
+  it('OPENROUTER_MODEL preenchido vence o padrão do código', () => {
+    process.env.OPENROUTER_MODEL = 'openai/modelo-escolhido-no-deploy';
+    process.env.OPENROUTER_API_KEY = 'sk-or-teste';
+    expect(new OpenRouterProvider().model).toBe('openai/modelo-escolhido-no-deploy');
+  });
+
   it('sem chave, `configured` é falso e a falha vem clara no uso', async () => {
     process.env.OPENROUTER_API_KEY = '';
     const p = new OpenRouterProvider();
