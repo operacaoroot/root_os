@@ -16,7 +16,7 @@ import { env, envOpcional } from './env';
  *    não uma estimativa da minha tabela — e por isso ele ganha do fallback.
  *    Sem ele, cai na tabela, e modelo desconhecido vira "não medido".
  *
- * O modelo aqui tem prefixo de fornecedor: `anthropic/claude-sonnet-4.5`.
+ * O modelo aqui tem prefixo de fornecedor: `anthropic/claude-sonnet-5.5`.
  */
 @Injectable()
 export class OpenRouterProvider extends OpenAiProvider {
@@ -26,7 +26,7 @@ export class OpenRouterProvider extends OpenAiProvider {
   protected readonly baseUrl = (
     env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
   ).replace(/\/$/, '');
-  readonly model = env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-4.5');
+  readonly model = env('OPENROUTER_MODEL', 'anthropic/claude-sonnet-5.5');
 
   protected get envDaChave(): string {
     return 'OPENROUTER_API_KEY';

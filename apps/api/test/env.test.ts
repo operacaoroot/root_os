@@ -60,7 +60,7 @@ describe('OpenRouterProvider com o ambiente que a produção entrega', () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-teste';
     const p = new OpenRouterProvider();
     expect(p.configured).toBe(true);
-    expect(p.model).toBe('anthropic/claude-sonnet-4.5');
+    expect(p.model).toBe('anthropic/claude-sonnet-5.5');
     // se isto voltar a ser '', a chamada morre com "Failed to parse URL"
     expect(p['baseUrl']).toBe('https://openrouter.ai/api/v1');
     expect(p.name).toBe('openrouter');

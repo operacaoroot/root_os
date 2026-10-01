@@ -321,7 +321,7 @@ export class TetoDeCustoIaService implements OnModuleInit, OnModuleDestroy {
        * A alternativa era deixar passar, e ela não fecha: chamada sem preço não
        * soma nada, então uma empresa cujo tráfego seja TODO de modelo fora da
        * tabela passaria para sempre — e esse é o estado do provider
-       * `openrouter`, cujo modelo padrão (`anthropic/claude-sonnet-4.5`) não
+       * `openrouter`, cujo modelo padrão (`anthropic/claude-sonnet-5.5`) não
        * casa com `preco.ts`. A segunda condição da cláusula de reserva não
        * salva: ela só morde depois de o dia ter sido fechado por gasto MEDIDO, e
        * aqui nunca há gasto medido.
