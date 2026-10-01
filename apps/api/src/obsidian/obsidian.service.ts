@@ -13,6 +13,7 @@ import {
   RegistroDeConectores,
 } from '../integrations/conectores.registry';
 import { MemoriaService } from '../memory/memoria.service';
+import { env } from '../llm/env';
 import {
   type ConectorDoContrato,
   type ContextoDoVerbo,
@@ -70,7 +71,7 @@ export class ObsidianService implements OnModuleInit {
   private readonly log = new Logger('ObsidianService');
   private readonly vault = process.env.OBSIDIAN_VAULT_PATH ?? '';
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
-  private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+  private readonly openaiBase = env('OPENAI_BASE_URL', 'https://api.openai.com/v1').replace(/\/$/, '');
 
   /*
    * DE ONDE VEM A VAULT — pasta montada ou Google Drive.

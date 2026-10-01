@@ -55,6 +55,7 @@ import {
   procedenciaDoPerfil,
   textoDoPost,
 } from './perfil-da-pauta';
+import { env } from '../llm/env';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { umaPorVez } from './uma-por-vez';
 import { buscarPaginaPublica } from './pagina-publica';
@@ -129,7 +130,7 @@ const TETO_DO_HANDLE_FORA_DA_BUSCA = 60;
 export class PautaService implements OnModuleInit {
   private readonly log = new Logger('PautaService');
   private readonly openaiKey = process.env.OPENAI_API_KEY ?? '';
-  private readonly openaiBase = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, '');
+  private readonly openaiBase = env('OPENAI_BASE_URL', 'https://api.openai.com/v1').replace(/\/$/, '');
 
   constructor(
     private readonly prisma: PrismaService,
