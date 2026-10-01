@@ -56,6 +56,16 @@ import {
   textoDoPost,
 } from './perfil-da-pauta';
 import { env } from '../llm/env';
+import {
+  FalhaDeEmbedding,
+  PRAZO_DA_BUSCA_MS,
+  PRAZO_DO_LOTE_MS,
+  cortarParaEmbedding,
+  descreverVetorizacao,
+  mesclarComTextuais,
+  vetoresDaResposta,
+  vetorizarEmLotes,
+} from '../obsidian/embeddings-lotes';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { umaPorVez } from './uma-por-vez';
 import { buscarPaginaPublica } from './pagina-publica';
@@ -504,15 +514,41 @@ export class PautaService implements OnModuleInit {
 
   // ---------- acervo ----------
 
-  private async embed(textos: string[]): Promise<number[][]> {
-    const res = await fetch(`${this.openaiBase}/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
-      body: JSON.stringify({ model: EMBED_MODEL, input: textos.map((t) => t.slice(0, 8000)) }),
-    });
-    if (!res.ok) throw new Error(`OpenAI embeddings HTTP ${res.status}`);
-    const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-    return json.data.map((d) => d.embedding);
+  /** Um pedido ao fornecedor, com o mesmo corte, prazo e conferência do `embed` da vault. */
+  private async embed(textos: string[], prazoMs = PRAZO_DO_LOTE_MS): Promise<number[][]> {
+    if (!textos.length) return [];
+    const input = textos.map((t) => cortarParaEmbedding(t));
+    try {
+      const res = await fetch(`${this.openaiBase}/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
+        body: JSON.stringify({ model: EMBED_MODEL, input }),
+        signal: AbortSignal.timeout(prazoMs),
+      });
+      if (!res.ok) throw new FalhaDeEmbedding(`OpenAI embeddings HTTP ${res.status}`, res.status);
+      return vetoresDaResposta(await res.json(), input.length);
+    } catch (e) {
+      if (e instanceof FalhaDeEmbedding) throw e;
+      throw new FalhaDeEmbedding(`OpenAI embeddings sem resposta utilizável (${(e as Error).message})`);
+    }
+  }
+
+  /** O texto que vira o vetor da ficha: o mesmo em `indexar` e em `reindexar`. */
+  private textoDaFicha(r: {
+    titulo: string;
+    materiaPrima: string;
+    tensaoCentral: string;
+    emocaoAlvo: string;
+    motorPsicologico: string;
+    formulaHeadline: string;
+    estruturaCorpo: string;
+    prova: string;
+    teoriaImplicita: string | null;
+  }): string {
+    return [
+      r.titulo, r.materiaPrima, r.tensaoCentral, r.emocaoAlvo,
+      r.motorPsicologico, r.formulaHeadline, r.estruturaCorpo, r.prova, r.teoriaImplicita ?? '',
+    ].join('\n');
   }
 
   /** Gera o embedding da ficha (busca semântica). Silencioso se não há chave. */
@@ -520,10 +556,7 @@ export class PautaService implements OnModuleInit {
     if (!this.openaiKey) return;
     const r = await this.prisma.pautaReferencia.findUnique({ where: { id: referenciaId } });
     if (!r) return;
-    const texto = [
-      r.titulo, r.materiaPrima, r.tensaoCentral, r.emocaoAlvo,
-      r.motorPsicologico, r.formulaHeadline, r.estruturaCorpo, r.prova, r.teoriaImplicita ?? '',
-    ].join('\n');
+    const texto = this.textoDaFicha(r);
     try {
       const [v] = await this.embed([texto]);
       await this.prisma.$executeRawUnsafe(
@@ -590,32 +623,6 @@ export class PautaService implements OnModuleInit {
     orgId: string,
     filtro: { familia?: string; objetivo?: string; campea?: boolean; q?: string },
   ): Promise<PautaReferenciaList> {
-    // Busca semântica quando há pergunta em linguagem natural e chave de embedding.
-    if (filtro.q && this.openaiKey) {
-      try {
-        const [qv] = await this.embed([filtro.q]);
-        const rows = await this.prisma.$queryRawUnsafe<Array<Record<string, any>>>(
-          `SELECT *, 1 - (embedding <=> $1::vector) AS similaridade
-             FROM "PautaReferencia"
-            WHERE "orgId" = $2 AND embedding IS NOT NULL
-            ORDER BY embedding <=> $1::vector
-            LIMIT ${BUSCA_LIMITE}`,
-          `[${qv.join(',')}]`,
-          orgId,
-        );
-        const facetas = await this.facetas(orgId);
-        return {
-          // aqui total = o que a busca trouxe (é um ranking por similaridade, não uma página)
-          items: rows.map((r) => ({ ...this.mapRef(r), similaridade: Number(r.similaridade) })),
-          total: rows.length,
-          ...facetas,
-          source: { tool: 'busca-semantica', generatedAt: new Date().toISOString() },
-        };
-      } catch (e) {
-        this.log.warn(`busca semântica falhou (${(e as Error).message}); caindo para texto`);
-      }
-    }
-
     const where: Prisma.PautaReferenciaWhereInput = { orgId };
     if (filtro.familia) where.familia = filtro.familia as PautaFamilia;
     if (filtro.objetivo) where.objetivo = filtro.objetivo as PautaObjetivo;
@@ -627,6 +634,70 @@ export class PautaService implements OnModuleInit {
         { materiaPrima: { contains: filtro.q, mode: 'insensitive' } },
         { autor: { contains: filtro.q, mode: 'insensitive' } },
       ];
+    }
+
+    // Busca semântica quando há pergunta em linguagem natural e chave de embedding.
+    if (filtro.q && this.openaiKey) {
+      try {
+        const [qv] = await this.embed([filtro.q], PRAZO_DA_BUSCA_MS);
+        /*
+         * Só `id` e similaridade. O `SELECT *` de antes trazia a coluna
+         * `embedding`, que o Prisma não lê ("Failed to deserialize column of
+         * type 'vector'"): com qualquer ficha vetorizada a consulta lançava e
+         * a busca caía para texto. E os filtros da tela agora valem também
+         * nesta metade, que os ignorava.
+         */
+        const parametros: unknown[] = [`[${qv.join(',')}]`, orgId];
+        const filtros: string[] = [];
+        if (filtro.familia) filtros.push(`AND familia::text = $${parametros.push(filtro.familia)}`);
+        if (filtro.objetivo) filtros.push(`AND objetivo::text = $${parametros.push(filtro.objetivo)}`);
+        if (filtro.campea !== undefined) filtros.push(`AND campea = $${parametros.push(filtro.campea)}`);
+        const achadas = await this.prisma.$queryRawUnsafe<Array<{ id: string; similaridade: number }>>(
+          `SELECT id, 1 - (embedding <=> $1::vector) AS similaridade
+             FROM "PautaReferencia"
+            WHERE "orgId" = $2 AND embedding IS NOT NULL ${filtros.join(' ')}
+            ORDER BY embedding <=> $1::vector
+            LIMIT ${BUSCA_LIMITE}`,
+          ...parametros,
+        );
+        /*
+         * Sem nenhuma achada (cobertura zero, ou nenhuma vetorizada dentro do
+         * filtro) cai para o texto abaixo. Com achadas, a ficha SEM vetor que
+         * tem o texto entra pela mescla, como nas buscas da vault e da memória.
+         */
+        if (achadas.length) {
+          const semVetor = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+            'SELECT id FROM "PautaReferencia" WHERE "orgId" = $1 AND embedding IS NULL',
+            orgId,
+          );
+          const [linhas, textuais, facetas] = await Promise.all([
+            this.prisma.pautaReferencia.findMany({ where: { orgId, id: { in: achadas.map((a) => a.id) } } }),
+            semVetor.length
+              ? this.prisma.pautaReferencia.findMany({
+                  where: { ...where, id: { in: semVetor.map((s) => s.id) } },
+                  orderBy: { criadaEm: 'desc' },
+                  take: BUSCA_LIMITE,
+                })
+              : Promise.resolve([]),
+            this.facetas(orgId),
+          ]);
+          const porId = new Map(linhas.map((l) => [l.id, l]));
+          const semanticas = achadas.flatMap((a) => {
+            const l = porId.get(a.id);
+            return l ? [{ ...this.mapRef(l), similaridade: Number(a.similaridade) }] : [];
+          });
+          const items = mesclarComTextuais(semanticas, textuais.map((r) => this.mapRef(r)), BUSCA_LIMITE);
+          return {
+            // aqui total = o que a busca trouxe (é um ranking por similaridade, não uma página)
+            items,
+            total: items.length,
+            ...facetas,
+            source: { tool: 'busca-semantica', generatedAt: new Date().toISOString() },
+          };
+        }
+      } catch (e) {
+        this.log.warn(`busca semântica falhou (${(e as Error).message}); caindo para texto`);
+      }
     }
 
     const [rows, facetas, total] = await Promise.all([
@@ -740,15 +811,42 @@ export class PautaService implements OnModuleInit {
     return { ok: true };
   }
 
-  /** Reindexa tudo que está sem embedding (usar depois de importar acervo). */
-  async reindexar(orgId: string): Promise<{ indexadas: number }> {
+  /**
+   * Reindexa tudo que está sem embedding (usar depois de importar acervo).
+   *
+   * `indexadas` é o que foi GRAVADO. Antes era um pedido por ficha, com a falha
+   * engolida por `indexar`, e a resposta devolvia quantas foram tentadas: com o
+   * fornecedor fora do ar, 500 pedidos falhavam e a resposta dizia "500
+   * indexadas". Agora vai em lotes com teto, a primeira falha do fornecedor
+   * para a reposição, e `falhas`/`motivo` dizem quantas ficaram sem vetor e por quê.
+   */
+  async reindexar(orgId: string): Promise<{ indexadas: number; falhas: number; motivo: string | null }> {
     if (!this.openaiKey) throw new ServiceUnavailableException('OPENAI_API_KEY ausente.');
     const pend = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
       'SELECT id FROM "PautaReferencia" WHERE "orgId" = $1 AND embedding IS NULL LIMIT 500',
       orgId,
     );
-    for (const p of pend) await this.indexar(p.id);
-    return { indexadas: pend.length };
+    const fichas = pend.length
+      ? await this.prisma.pautaReferencia.findMany({ where: { orgId, id: { in: pend.map((p) => p.id) } } })
+      : [];
+    const r = await vetorizarEmLotes(
+      fichas.map((f) => this.textoDaFicha(f)),
+      (lote) => this.embed(lote),
+      {
+        gravar: async (indices, vetores) => {
+          for (let k = 0; k < indices.length; k++) {
+            await this.prisma.$executeRawUnsafe(
+              'UPDATE "PautaReferencia" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3',
+              `[${vetores[k].join(',')}]`,
+              fichas[indices[k]].id,
+              orgId,
+            );
+          }
+        },
+      },
+    );
+    if (r.semVetor) this.log.warn(`reposição do acervo da empresa ${orgId}: ${descreverVetorizacao(r)}.`);
+    return { indexadas: r.vetorizados, falhas: r.semVetor, motivo: r.motivo };
   }
 
   // ---------- fontes (Radar) ----------

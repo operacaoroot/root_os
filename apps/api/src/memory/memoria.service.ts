@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
 import { EventLogService, sigiloso } from '../gateway/event-log.service';
+import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   chaveDaVault,
@@ -328,7 +329,7 @@ export class MemoriaService {
     if (vetorDaBusca?.length && q) {
       try {
         const vec = `[${vetorDaBusca.join(',')}]`;
-        linhas = await this.prisma.$queryRawUnsafe(
+        const semanticas: Array<Record<string, unknown> & { id: string }> = await this.prisma.$queryRawUnsafe(
           `SELECT ${COLUNAS_DA_NOTA},
                   (embedding IS NOT NULL) AS "temVetor",
                   1 - (embedding <=> $1::vector) AS score
@@ -340,7 +341,30 @@ export class MemoriaService {
           orgId,
           take,
         );
-        modo = 'semantica';
+        /*
+         * O KNN só vê nota COM vetor: sem nenhuma, a busca voltava vazia como
+         * "semântica"; com parte delas, a nota sem vetor não aparecia nem
+         * contendo o texto pedido. Sem semântica cai no textual abaixo; com ela,
+         * as notas SEM vetor que têm o texto entram pela mescla, a mesma regra
+         * da busca da vault (`mesclarComTextuais`).
+         */
+        if (semanticas.length) {
+          const semVetor: Array<Record<string, unknown> & { id: string }> = await this.prisma.$queryRawUnsafe(
+            `SELECT ${COLUNAS_DA_NOTA},
+                    (embedding IS NOT NULL) AS "temVetor",
+                    0 AS score
+               FROM "ContextItem"
+              WHERE "orgId" = $2 AND "arquivadoEm" IS NULL AND embedding IS NULL
+                AND (title ILIKE $1 OR body ILIKE $1)
+              ORDER BY "atualizadoEm" DESC
+              LIMIT $3`,
+            `%${q}%`,
+            orgId,
+            take,
+          );
+          linhas = mesclarComTextuais(semanticas, semVetor, take);
+          modo = 'semantica';
+        }
       } catch (e) {
         this.log.warn(
           `busca semântica na memória falhou (${(e as Error).message}); usando busca textual`,

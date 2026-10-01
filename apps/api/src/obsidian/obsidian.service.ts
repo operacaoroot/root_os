@@ -15,6 +15,17 @@ import {
 import { MemoriaService } from '../memory/memoria.service';
 import { env } from '../llm/env';
 import {
+  FalhaDeEmbedding,
+  PRAZO_DA_BUSCA_MS,
+  PRAZO_DO_LOTE_MS,
+  cortarParaEmbedding,
+  descreverVetorizacao,
+  mesclarComTextuais,
+  vetoresDaResposta,
+  vetorizarEmLotes,
+  type ResultadoDaVetorizacao,
+} from './embeddings-lotes';
+import {
   type ConectorDoContrato,
   type ContextoDoVerbo,
   type ResultadoDeAutorizacao,
@@ -483,6 +494,12 @@ export class ObsidianService implements OnModuleInit {
               `Obsidian reindex: empresa "${SLUG_DA_CASA}" não encontrada — nada a indexar.`,
             );
           } else {
+            /*
+             * O erro da casa fica na casa. `reindex` lança também quando a
+             * vetorização sai incompleta, DEPOIS de indexar e projetar; sem este
+             * `catch`, o lançamento pulava o laço abaixo e a memória das outras
+             * empresas ficava sem vetorizar nesta volta.
+             */
             await comContexto(
               {
                 orgId: casa.id,
@@ -491,7 +508,7 @@ export class ObsidianService implements OnModuleInit {
                 origem: 'cron',
               },
               async () => this.log.log(`Obsidian reindex: ${await this.reindex(casa.id)} nota(s)`),
-            );
+            ).catch((e: unknown) => this.log.warn(`Obsidian reindex falhou: ${(e as Error).message}`));
           }
         }
 
@@ -641,15 +658,28 @@ export class ObsidianService implements OnModuleInit {
     };
   }
 
-  private async embed(texts: string[]): Promise<number[][]> {
-    const res = await fetch(`${this.openaiBase}/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
-      body: JSON.stringify({ model: EMBED_MODEL, input: texts.map((t) => t.slice(0, 8000)) }),
-    });
-    if (!res.ok) throw new Error(`OpenAI embeddings HTTP ${res.status}`);
-    const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-    return json.data.map((d) => d.embedding);
+  /**
+   * UM pedido ao fornecedor. Quem decide quantos textos vão nele é
+   * `vetorizarEmLotes`; aqui cada texto é cortado em bytes, o pedido tem prazo
+   * e a resposta é conferida antes de virar vetor. Toda falha sai como
+   * `FalhaDeEmbedding`, com o status HTTP quando houve um.
+   */
+  private async embed(texts: string[], prazoMs = PRAZO_DO_LOTE_MS): Promise<number[][]> {
+    if (!texts.length) return [];
+    const input = texts.map((t) => cortarParaEmbedding(t));
+    try {
+      const res = await fetch(`${this.openaiBase}/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.openaiKey}` },
+        body: JSON.stringify({ model: EMBED_MODEL, input }),
+        signal: AbortSignal.timeout(prazoMs),
+      });
+      if (!res.ok) throw new FalhaDeEmbedding(`OpenAI embeddings HTTP ${res.status}`, res.status);
+      return vetoresDaResposta(await res.json(), input.length);
+    } catch (e) {
+      if (e instanceof FalhaDeEmbedding) throw e;
+      throw new FalhaDeEmbedding(`OpenAI embeddings sem resposta utilizável (${(e as Error).message})`);
+    }
   }
 
   /**
@@ -785,6 +815,7 @@ export class ObsidianService implements OnModuleInit {
      * modelo de embedding muda de versão sem avisar.
      */
     const vetorPorCaminho = new Map<string, number[]>();
+    let vetorizacao: ResultadoDaVetorizacao | null = null;
 
     // embeddings (se houver chave) — em lote, e SÓ do que não tem vetor guardado
     if (this.openaiKey && notes.length) {
@@ -813,18 +844,50 @@ export class ObsidianService implements OnModuleInit {
         semVetor.push(r);
       }
 
+      /*
+       * EM LOTES COM TETO, e o que falha não segura o resto. Antes ia tudo num
+       * pedido só (em 01/10/2026, 399 textos e 1.772.124 caracteres), e
+       * qualquer falha lançava daqui, antes da projeção, deixando a memória
+       * parada junto com o índice. Cada lote é gravado assim que volta; o que não voltou fica sem
+       * vetor, entra na projeção com `embedding: null` e é pedido de novo na
+       * próxima volta, que reaproveita o que já foi gravado.
+       */
       if (semVetor.length) {
-        const vectors = await this.embed(semVetor.map((r) => `${r.title}\n\n${r.content}`));
-        for (let i = 0; i < semVetor.length; i++) {
-          const vec = `[${vectors[i].join(',')}]`;
-          await this.prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2', vec, semVetor[i].id);
-          vetorPorCaminho.set(semVetor[i].path, vectors[i]);
-        }
-        this.log.log(`Obsidian reindex: ${semVetor.length} nota(s) vetorizadas (de ${rows.length}).`);
+        vetorizacao = await vetorizarEmLotes(
+          semVetor.map((r) => `${r.title}\n\n${r.content}`),
+          (lote) => this.embed(lote),
+          {
+            gravar: async (indices, vetores) => {
+              for (let k = 0; k < indices.length; k++) {
+                const r = semVetor[indices[k]];
+                const vec = `[${vetores[k].join(',')}]`;
+                await this.prisma.$executeRawUnsafe('UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2', vec, r.id);
+                vetorPorCaminho.set(r.path, vetores[k]);
+              }
+            },
+          },
+        );
+        this.log.log(`Obsidian reindex: ${descreverVetorizacao(vetorizacao)} (de ${rows.length} nota(s)).`);
       }
     }
 
     await this.projetarNaMemoria(orgId, notes, vetorPorCaminho);
+
+    /*
+     * O RECIBO NÃO DIZ QUE DEU CERTO QUANDO NÃO DEU. Índice e projeção já
+     * rodaram; o que faltou foi vetor. A rota e o verbo `sincronizar` só têm
+     * "terminou" e "lançou", e terminar aqui viraria `{ ok: true }` na tela com
+     * nota sem vetor. Lançar depois do trabalho feito é o que deixa a falha à
+     * vista sem desfazer nada.
+     */
+    if (vetorizacao?.semVetor) {
+      const incompleta =
+        `A vault foi relida (${notes.length} nota(s)) e projetada na memória, mas a vetorização ` +
+        `ficou incompleta: ${descreverVetorizacao(vetorizacao)}. As notas sem vetor continuam ` +
+        'encontráveis pela busca textual e entram na próxima volta.';
+      this.log.warn(`empresa ${orgId}: ${incompleta}`);
+      throw new ServiceUnavailableException(incompleta);
+    }
     return notes.length;
   }
 
@@ -920,11 +983,21 @@ export class ObsidianService implements OnModuleInit {
     if (!this.openaiKey) return;
     const pendentes = await this.memoria.semVetor(orgId, 100);
     if (!pendentes.length) return;
-    const vetores = await this.embed(pendentes.map((n) => `${n.title}\n\n${n.body}`));
-    for (let i = 0; i < pendentes.length; i++) {
-      await this.memoria.gravarVetor(orgId, pendentes[i].id, vetores[i]);
-    }
-    this.log.log(`memória da empresa ${orgId}: ${pendentes.length} nota(s) vetorizada(s).`);
+    // As 100 da volta iam num pedido só, até 800 kB; agora vão em lotes com teto.
+    const r = await vetorizarEmLotes(
+      pendentes.map((n) => `${n.title}\n\n${n.body}`),
+      (lote) => this.embed(lote),
+      {
+        gravar: async (indices, vetores) => {
+          for (let k = 0; k < indices.length; k++) {
+            await this.memoria.gravarVetor(orgId, pendentes[indices[k]].id, vetores[k]);
+          }
+        },
+      },
+    );
+    this.log.log(`memória da empresa ${orgId}: ${descreverVetorizacao(r)}.`);
+    // Quem chama registra o aviso; o que foi gravado fica, e o resto volta na próxima.
+    if (r.semVetor) throw new Error(descreverVetorizacao(r));
   }
 
   // ---------- leitura ----------
@@ -964,9 +1037,9 @@ export class ObsidianService implements OnModuleInit {
 
     if (this.openaiKey && q) {
       try {
-        const [qv] = await this.embed([q]);
+        const [qv] = await this.embed([q], PRAZO_DA_BUSCA_MS);
         const vec = `[${qv.join(',')}]`;
-        rows = await this.prisma.$queryRawUnsafe(
+        const semanticas: Array<any> = await this.prisma.$queryRawUnsafe(
           `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content,
                   1 - (embedding <=> $1::vector) AS score
              FROM "KnowledgeNote"
@@ -975,7 +1048,25 @@ export class ObsidianService implements OnModuleInit {
             LIMIT $3`,
           vec, orgId, take,
         );
-        mode = 'semantic';
+        /*
+         * O KNN só enxerga nota COM vetor. Sem nenhuma, a resposta era vazia e
+         * marcada como semântica; agora cai para o texto logo abaixo. Com parte
+         * delas, a nota sem vetor que tem o texto pedido entra pela mescla (ver
+         * `mesclarComTextuais`). Com todas vetorizadas, a consulta de texto
+         * volta vazia e o resultado é o semântico de antes.
+         */
+        if (semanticas.length) {
+          const semVetor: Array<any> = await this.prisma.$queryRawUnsafe(
+            `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content, 0 AS score
+               FROM "KnowledgeNote"
+              WHERE "orgId" = $2 AND embedding IS NULL AND (title ILIKE $1 OR content ILIKE $1)
+              ORDER BY "fileTime" DESC
+              LIMIT $3`,
+            `%${q}%`, orgId, take,
+          );
+          rows = mesclarComTextuais(semanticas, semVetor, take);
+          mode = 'semantic';
+        }
       } catch (e) {
         this.log.warn(`busca semântica falhou (${(e as Error).message}); usando keyword`);
       }
