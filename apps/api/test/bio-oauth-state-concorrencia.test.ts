@@ -9,7 +9,7 @@ import { BioOauthController } from '../src/bio/bio-oauth.controller';
 import { BioService } from '../src/bio/bio.service';
 import { BioCredenciaisService } from '../src/bio/bio-credenciais.service';
 import { AuditService } from '../src/audit/audit.service';
-import { cifrar, decifrar } from '../src/common/crypto';
+import { chaveDoPacote, cifrar, decifrar } from '../src/common/crypto';
 import { comContexto } from '../src/common/contexto-execucao';
 import { comTenantNaSessao } from '../src/prisma/sessao-de-banco';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -123,7 +123,15 @@ async function redeDoTeste(entrada: string | URL | Request, init?: RequestInit):
   throw new Error(`rede externa bloqueada no teste: ${url.host}`);
 }
 
-const AMBIENTE = ['INSTAGRAM_TOKEN_URL', 'INSTAGRAM_GRAPH_URL', 'WEB_ORIGIN', 'PUBLIC_BIO_ORIGIN', 'ENCRYPTION_KEY'] as const;
+const AMBIENTE = [
+  'INSTAGRAM_TOKEN_URL',
+  'INSTAGRAM_GRAPH_URL',
+  'WEB_ORIGIN',
+  'PUBLIC_BIO_ORIGIN',
+  'ENCRYPTION_KEY',
+  'COFRE_CHAVES',
+  'COFRE_CHAVE_ATUAL',
+] as const;
 const antes: Partial<Record<(typeof AMBIENTE)[number], string | undefined>> = {};
 
 beforeAll(async () => {
@@ -173,6 +181,12 @@ beforeAll(async () => {
   process.env.WEB_ORIGIN = 'https://os.exemplo.test';
   process.env.PUBLIC_BIO_ORIGIN = 'https://bio.exemplo.test';
   process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString('base64');
+  // Credencial e token desta suíte saem cifrados com uma chave própria, e não
+  // com a de ambiente: `cofre.test.ts` conta no banco inteiro as linhas da bio
+  // cifradas com `env`, e as desta suíte, gravadas e apagadas em paralelo,
+  // mudavam aquela conta no meio do caso (3 falhas em 12 rodadas, medido).
+  process.env.COFRE_CHAVES = `cx2:${Buffer.alloc(32, 11).toString('base64')}`;
+  process.env.COFRE_CHAVE_ATUAL = 'cx2';
 
   vi.spyOn(globalThis, 'fetch').mockImplementation(redeDoTeste);
 });
@@ -506,6 +520,7 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth: o state do retorno é gasto uma vez s
       const c = await admin.bioConexao.findFirstOrThrow({ where: { handle: conta } });
       expect(c).toMatchObject({ orgId: orgA, finalidade, status: 'ok', externalId: `id-${conta}` });
       expect(decifrar(c.tokenCifrado)).toBe(`longo-curto-${conta}`);
+      expect(chaveDoPacote(c.tokenCifrado), 'fora da conta de herdadas `env` do cofre.test.ts').toBe('cx2');
     },
   );
 
@@ -525,6 +540,7 @@ describe.skipIf(!URL_DO_BANCO)('bio-oauth: o state do retorno é gasto uma vez s
     const c = await admin.bioConexao.findFirstOrThrow({ where: { handle: conta } });
     expect(c).toMatchObject({ orgId: orgA, plataforma: 'tiktok', finalidade: 'bio', externalId: `open-${conta}` });
     expect(decifrar(c.refreshCifrado!)).toBe(`rf-${conta}`);
+    expect([chaveDoPacote(c.tokenCifrado), chaveDoPacote(c.refreshCifrado!)]).toEqual(['cx2', 'cx2']);
   });
 
   it('o state vencido é recusado e gasto, sem chamar a plataforma', async () => {
