@@ -153,6 +153,30 @@ export function eventoIdDaDecisao(orgId: string, leadId: string, decisao: LeadDe
   return uuidDe([orgId, `lead-evento-${decisao}`, leadId, condicoesHash]);
 }
 
+/**
+ * A decisão (aceite ou recusa) mais recente já registrada para estas condições,
+ * ou nulo. O id do evento é por `(decisão, hash)`, então cada decisão existe uma
+ * vez por conjunto de condições; "mais recente" é o último instante entre as que
+ * existem. Num empate de instante (o banco guarda milissegundos) vale a ordem em
+ * que os eventos chegaram.
+ */
+export function decisaoMaisRecenteDasCondicoes(
+  eventos: { id: string; type: string; occurredAt: Date; payload: unknown }[],
+  condicoesHash: string,
+): { eventoId: string; decisao: LeadDecisao; registradaEm: Date } | null {
+  const doHash = eventos.filter(
+    (e) => (TIPOS_DE_DECISAO as readonly string[]).includes(e.type) && (e.payload as { condicoesHash?: string } | null)?.condicoesHash === condicoesHash,
+  );
+  const ultimo = [...doHash].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime()).at(-1);
+  return ultimo ? { eventoId: ultimo.id, decisao: ultimo.type as LeadDecisao, registradaEm: ultimo.occurredAt } : null;
+}
+
+/** A frase do 409 de decisão superada. A data é o dia em São Paulo, onde o time lê. */
+export function mensagemDeDecisaoSuperada(decisaoAtual: LeadDecisao, registradaEm: Date): string {
+  const dia = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(registradaEm);
+  return `A decisão mais recente para estas condições é ${decisaoAtual === 'recusa' ? 'a recusa' : 'o aceite'}, registrada em ${dia}.`;
+}
+
 export function hashDaEvidencia(evidencia: LeadEvidencia): string {
   return sha256(evidencia);
 }

@@ -391,17 +391,18 @@ function PropostaEAceite({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, leadId, podeCondicoes]);
 
-  const enviar = async (caminho: string, corpo: unknown, depois: string) => {
+  const enviar = async (caminho: string, corpo: unknown, depois: string | ((resposta: { replayed?: boolean; evidenciaIgual?: boolean } | undefined) => string)) => {
     if (!token) return;
     setBusy(true);
     setAviso(null);
     try {
-      await apiPost(`/leads/${leadId}/${caminho}`, corpo, token);
-      setAviso(depois);
+      const resposta = await apiPost<{ replayed?: boolean; evidenciaIgual?: boolean } | undefined>(`/leads/${leadId}/${caminho}`, corpo, token);
+      setAviso(typeof depois === 'function' ? depois(resposta) : depois);
       await carregar(cardId.trim() || undefined);
       onChanged();
     } catch (e) {
-      // 409: o card mudou desde o que a tela mostrou — relê para a pessoa ver o que vale agora, e só então mostra o motivo (a leitura limpa o erro).
+      // 409: o card mudou desde o que a tela mostrou, ou a decisão pedida foi superada pela outra (`decisao_superada`) — relê para a
+      // pessoa ver o que vale agora, e só então mostra a frase da API (a leitura limpa o erro). Nenhum dos dois é "registrado".
       if (e instanceof ErroDaApi && e.status === 409) await carregar(cardId.trim() || undefined);
       setErro(e instanceof Error ? e.message : 'Erro ao registrar');
     } finally {
@@ -431,7 +432,11 @@ function PropostaEAceite({
     void enviar(
       'aceite',
       { decisao, evidencia: ev, condicoesHash: cond.hash, condicoesVistas: cond.condicoes, ...(motivo.trim() ? { motivo: motivo.trim() } : {}) },
-      decisao === 'aceite' ? 'Aceite registrado. Nada foi enviado ao cliente.' : 'Recusa registrada.',
+      (r) => {
+        // `replayed`: a decisão já estava registrada e é a mais recente; a API não gravou nada. Não é um aceite novo.
+        if (r?.replayed) return `Decisão já registrada. Nada foi gravado de novo.${r.evidenciaIgual === false ? ' A evidência enviada agora é diferente da que ficou gravada.' : ''}`;
+        return decisao === 'aceite' ? 'Aceite registrado. Nada foi enviado ao cliente.' : 'Recusa registrada.';
+      },
     );
   };
 
@@ -556,7 +561,7 @@ function PropostaEAceite({
               <button type="button" onClick={registrarDecisao} disabled={busy || !evidencia() || !cond?.hash || !!cond?.motivo || cond?.propostaVigente === false} className={botao}>
                 {decisao === 'aceite' ? 'Registrar aceite' : 'Registrar recusa'}
               </button>
-              {decidido && <div className="text-xs text-muted">Já há uma decisão registrada; uma nova fica na linha do tempo ao lado da anterior.</div>}
+              {decidido && <div className="text-xs text-muted">Já há uma decisão registrada. Cada decisão (aceite ou recusa) vale uma vez por conjunto de condições; repetir uma que já existe não grava nada.</div>}
             </div>
           )}
           <p className="text-[11px] text-muted">Registrar não envia nada ao cliente: sem e-mail, cobrança ou assinatura. Mover o card para fechado também não registra aceite.</p>

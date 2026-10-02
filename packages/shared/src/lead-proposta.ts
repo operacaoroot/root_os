@@ -213,6 +213,22 @@ export interface LeadDecisaoResposta {
   condicoesHash: string;
 }
 
+/** O `code` do 409 de uma decisão que já existe mas foi superada por outra decisão sobre as mesmas condições. */
+export const CODIGO_DECISAO_SUPERADA = 'decisao_superada';
+
+/**
+ * Corpo do 409 quando a decisão pedida já está registrada para estas condições,
+ * mas não é a mais recente: depois dela veio a outra (aceite, recusa, aceite).
+ * Nada é gravado; a tela mostra a frase e o estado de agora.
+ */
+export interface LeadDecisaoSuperadaCorpo {
+  code: typeof CODIGO_DECISAO_SUPERADA;
+  message: string;
+  /** A decisão que vale hoje para as condições do pedido. */
+  decisaoAtual: LeadDecisao;
+  eventoAtualId: string;
+}
+
 /** Corpo do 409 quando as condições do card mudaram desde o que a pessoa viu. */
 export interface LeadCondicoesMudaramCorpo {
   message: string;

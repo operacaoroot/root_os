@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  CODIGO_DECISAO_SUPERADA,
   LEAD_ORIGENS_DA_PAUTA,
   type LeadCondicoes,
   type LeadCondicoesLeitura,
@@ -7,6 +8,7 @@ import {
   type LeadDecisaoInput,
   type LeadDecisaoResposta,
   type LeadDecisaoResumo,
+  type LeadDecisaoSuperadaCorpo,
   type LeadDiferencaDaEntrada,
   type LeadEntradaInput,
   type LeadEntradaResposta,
@@ -37,6 +39,7 @@ import {
   TIPOS_DE_DECISAO,
   TIPO_DO_EVENTO_DE_PROPOSTA,
   condicoesDoCard,
+  decisaoMaisRecenteDasCondicoes,
   diferencaDasCondicoes,
   estadoDaProposta,
   eventoIdDaDecisao,
@@ -45,6 +48,7 @@ import {
   hashDaEvidencia,
   hashDasCondicoes,
   hashDoRegistroDaProposta,
+  mensagemDeDecisaoSuperada,
   motivoDeCondicoesInsuficientes,
   origemDoLink,
 } from './proposta-comercial';
@@ -622,7 +626,9 @@ export class LeadsService {
    *
    * O id do evento é `(lead, decisão, hash das condições)`: reenviar a mesma
    * decisão é no-op e responde antes de reler o card (se o card mudou depois,
-   * a repetição segue sendo repetição). Decisão nova com hash que não é o do
+   * a repetição segue sendo repetição) — desde que ela ainda seja a decisão mais
+   * recente para estas condições. Se depois dela veio a outra (aceite, recusa,
+   * aceite), a resposta é 409 `decisao_superada`, sem gravar. Decisão nova com hash que não é o do
    * card agora é 409 com a diferença, e só vale sobre uma proposta registrada
    * com essas mesmas condições.
    */
@@ -635,18 +641,32 @@ export class LeadsService {
     await this.exigirLead(orgId, id);
     const evidenciaHash = hashDaEvidencia(input.evidencia);
     const eventoId = eventoIdDaDecisao(orgId, id, input.decisao, input.condicoesHash);
-    const deReplay = (p: PayloadDaDecisao): LeadDecisaoResposta => ({
-      id,
-      eventoId,
-      decisao: input.decisao,
-      replayed: true,
-      evidenciaIgual: p.evidenciaHash === evidenciaHash,
-      propostaEventoId: p.propostaEventoId,
-      condicoesHash: input.condicoesHash,
-    });
+    // A decisão pedida já existe. Se é a mais recente para estas condições, é repetição (200, nada gravado); se depois dela
+    // veio a outra (aceite, recusa, aceite), repetir seria dizer "registrado" sobre algo que não vale mais: 409, nada gravado.
+    const jaExiste = async (p: PayloadDaDecisao): Promise<LeadDecisaoResposta> => {
+      const atual = decisaoMaisRecenteDasCondicoes(await this.eventosDaProposta(id), input.condicoesHash);
+      if (atual && atual.eventoId !== eventoId) {
+        const corpo: LeadDecisaoSuperadaCorpo = {
+          code: CODIGO_DECISAO_SUPERADA,
+          message: mensagemDeDecisaoSuperada(atual.decisao, atual.registradaEm),
+          decisaoAtual: atual.decisao,
+          eventoAtualId: atual.eventoId,
+        };
+        throw new ConflictException(corpo);
+      }
+      return {
+        id,
+        eventoId,
+        decisao: input.decisao,
+        replayed: true,
+        evidenciaIgual: p.evidenciaHash === evidenciaHash,
+        propostaEventoId: p.propostaEventoId,
+        condicoesHash: input.condicoesHash,
+      };
+    };
 
     const jaGravado = await this.prisma.leadEvent.findFirst({ where: { id: eventoId, leadId: id }, select: { payload: true } });
-    if (jaGravado) return deReplay(jaGravado.payload as unknown as PayloadDaDecisao);
+    if (jaGravado) return jaExiste(jaGravado.payload as unknown as PayloadDaDecisao);
 
     const eventos = await this.eventosDaProposta(id);
     const propostas = eventos.filter((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
@@ -710,7 +730,7 @@ export class LeadsService {
       // A mesma decisão, simultânea: a outra chamada gravou primeiro.
       const gravado = await this.prisma.leadEvent.findFirst({ where: { id: eventoId, leadId: id }, select: { payload: true } });
       if (!gravado) throw new ConflictException('Conflito ao registrar a decisão; tente de novo');
-      return deReplay(gravado.payload as unknown as PayloadDaDecisao);
+      return jaExiste(gravado.payload as unknown as PayloadDaDecisao);
     }
     return {
       id,

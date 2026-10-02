@@ -243,6 +243,71 @@ describe('ROOT-49: Proposta e aceite na tela do lead', () => {
     await waitFor(() => expect(apiGet.mock.calls.filter(([p]) => String(p).includes('/condicoes')).length).toBeGreaterThan(leiturasAntes));
   });
 
+  it('409 decisao_superada: mostra a frase da API e o estado de agora, sem dizer "Aceite registrado"', async () => {
+    const RECUSA_VIGENTE: LeadPropostaLeitura = {
+      ...COM_PROPOSTA,
+      estado: 'recusa_registrada',
+      decisao: {
+        eventoId: 'ev-r',
+        decisao: 'recusa',
+        propostaEventoId: 'ev-p',
+        condicoesHash: HASH,
+        evidencia: { tipo: 'link', url: 'https://drive.exemplo/recusa' },
+        motivo: null,
+        registradaEm: '2026-10-02T15:00:00.000Z',
+        ator: 'u-eu',
+      },
+    };
+    servir(RECUSA_VIGENTE, { ...CONDICOES, propostaVigente: true });
+    const frase = 'A decisão mais recente para estas condições é a recusa, registrada em 02/10/2026.';
+    apiPost.mockRejectedValue(new ErroDaApi(frase, 409, null));
+    render(<LeadDetailPage />);
+    const user = userEvent.setup();
+    expect(await screen.findByText('Recusa registrada')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Link da evidência'), 'https://drive.exemplo/aceite');
+    const leiturasAntes = apiGet.mock.calls.filter(([p]) => String(p) === '/leads/lead-1/proposta').length;
+    await user.click(screen.getByRole('button', { name: 'Registrar aceite' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(frase);
+    // Relê a proposta para mostrar o estado de agora; o estado segue na recusa.
+    await waitFor(() => expect(apiGet.mock.calls.filter(([p]) => String(p) === '/leads/lead-1/proposta').length).toBeGreaterThan(leiturasAntes));
+    expect(screen.getByText('Recusa registrada')).toBeInTheDocument();
+    expect(screen.queryByText(/Aceite registrado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Decisão já registrada/)).not.toBeInTheDocument();
+  });
+
+  it('replayed: a resposta de uma decisão repetida diz "Decisão já registrada", não "Aceite registrado"', async () => {
+    servir(COM_PROPOSTA, { ...CONDICOES, propostaVigente: true });
+    apiPost.mockResolvedValue({ id: 'lead-1', decisao: 'aceite', replayed: true, evidenciaIgual: true });
+    render(<LeadDetailPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Link da evidência'), 'https://drive.exemplo/aceite');
+    await user.click(screen.getByRole('button', { name: 'Registrar aceite' }));
+    expect(await screen.findByText(/^Decisão já registrada\. Nada foi gravado de novo\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Aceite registrado\. Nada foi enviado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/evidência enviada agora é diferente/)).not.toBeInTheDocument();
+  });
+
+  it('replayed com outra evidência: avisa que a gravada é diferente', async () => {
+    servir(COM_PROPOSTA, { ...CONDICOES, propostaVigente: true });
+    apiPost.mockResolvedValue({ id: 'lead-1', decisao: 'aceite', replayed: true, evidenciaIgual: false });
+    render(<LeadDetailPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Link da evidência'), 'https://drive.exemplo/outra');
+    await user.click(screen.getByRole('button', { name: 'Registrar aceite' }));
+    expect(await screen.findByText(/Decisão já registrada\. Nada foi gravado de novo\. A evidência enviada agora é diferente da que ficou gravada\./)).toBeInTheDocument();
+  });
+
+  it('decisão nova (replayed false) segue dizendo "Aceite registrado" e "Recusa registrada"', async () => {
+    servir(COM_PROPOSTA, { ...CONDICOES, propostaVigente: true });
+    apiPost.mockResolvedValue({ id: 'lead-1', replayed: false });
+    render(<LeadDetailPage />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Link da evidência'), 'https://drive.exemplo/aceite');
+    await user.click(screen.getByRole('button', { name: 'Registrar aceite' }));
+    expect(await screen.findByText('Aceite registrado. Nada foi enviado ao cliente.')).toBeInTheDocument();
+    expect(screen.queryByText(/Decisão já registrada\. Nada/)).not.toBeInTheDocument();
+  });
+
   it('aceite registrado: mostra a decisão e a evidência (sem o texto da mensagem na tela)', async () => {
     servir(
       {

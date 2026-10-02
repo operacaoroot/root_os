@@ -14,6 +14,7 @@ import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of } from 'rxjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  CODIGO_DECISAO_SUPERADA,
   LeadCondicoesSchema,
   LeadDecisaoSchema,
   LeadEntradaSchema,
@@ -21,12 +22,14 @@ import {
   type LeadCondicoes,
   type LeadCondicoesMudaramCorpo,
   type LeadDecisaoInput,
+  type LeadDecisaoSuperadaCorpo,
   type LeadPropostaRegistroInput,
 } from '@mktos/shared';
 import { LeadsController } from '../src/leads/leads.controller';
 import { LeadsService, type AtorDaEntrada } from '../src/leads/leads.service';
 import {
   condicoesDoCard,
+  decisaoMaisRecenteDasCondicoes,
   diferencaDasCondicoes,
   estadoDaProposta,
   eventoIdDaDecisao,
@@ -35,6 +38,7 @@ import {
   hashDaEvidencia,
   hashDasCondicoes,
   hashDoRegistroDaProposta,
+  mensagemDeDecisaoSuperada,
   motivoDeCondicoesInsuficientes,
   origemDoLink,
   type ValorDeCampoDoCard,
@@ -181,6 +185,28 @@ describe('ROOT-49: a identidade dos eventos (puro)', () => {
 
   it('aceite e recusa das mesmas condições têm ids diferentes (a recusa não engole o aceite)', () => {
     expect(eventoIdDaDecisao('o', 'l', 'recusa', hex('a'))).not.toBe(eventoIdDaDecisao('o', 'l', 'aceite', hex('a')));
+  });
+
+  it('a decisão mais recente é a última entre as do mesmo hash; outro hash, proposta e entrada não contam', () => {
+    const t = (n: number) => new Date(2026, 9, 2, 10, 0, n);
+    const ev = (id: string, type: string, n: number, hash: string | null = hex('a')) => ({ id, type, occurredAt: t(n), payload: hash ? { condicoesHash: hash } : null });
+    expect(decisaoMaisRecenteDasCondicoes([], hex('a'))).toBeNull();
+    expect(decisaoMaisRecenteDasCondicoes([ev('p', 'proposta', 1)], hex('a'))).toBeNull();
+    const aceiteERecusa = [ev('p', 'proposta', 1), ev('a', 'aceite', 2), ev('r', 'recusa', 3)];
+    expect(decisaoMaisRecenteDasCondicoes(aceiteERecusa, hex('a'))).toEqual({ eventoId: 'r', decisao: 'recusa', registradaEm: t(3) });
+    // A ordem de chegada não manda: vale o instante.
+    expect(decisaoMaisRecenteDasCondicoes([...aceiteERecusa].reverse(), hex('a'))?.eventoId).toBe('r');
+    expect(decisaoMaisRecenteDasCondicoes([ev('r', 'recusa', 2), ev('a', 'aceite', 3)], hex('a'))?.decisao).toBe('aceite');
+    // Outro conjunto de condições é outra conta, e payload sem hash não casa com nada.
+    expect(decisaoMaisRecenteDasCondicoes([...aceiteERecusa, ev('a2', 'aceite', 4, hex('b'))], hex('a'))?.eventoId).toBe('r');
+    expect(decisaoMaisRecenteDasCondicoes([ev('x', 'aceite', 5, null)], hex('a'))).toBeNull();
+  });
+
+  it('a frase da decisão superada diz qual vale e o dia (em São Paulo)', () => {
+    // 03/10/2026 01:30 UTC ainda é 02/10 em São Paulo.
+    const quando = new Date('2026-10-03T01:30:00.000Z');
+    expect(mensagemDeDecisaoSuperada('recusa', quando)).toBe('A decisão mais recente para estas condições é a recusa, registrada em 02/10/2026.');
+    expect(mensagemDeDecisaoSuperada('aceite', quando)).toBe('A decisão mais recente para estas condições é o aceite, registrada em 02/10/2026.');
   });
 
   it('a proposta é o conteúdo: o mesmo documento nas mesmas condições cai no mesmo id', () => {
@@ -375,6 +401,18 @@ function casosContraOBanco(modoRls: boolean) {
   const em = <T>(orgId: string, fn: () => Promise<T>) => comContexto({ orgId, correlationId: novaCorrelacao() }, fn);
   const eventos = (leadId: string, type: string) => admin.leadEvent.findMany({ where: { leadId, type }, orderBy: { occurredAt: 'asc' } });
   const auditorias = (leadId: string, action: string) => admin.auditLog.count({ where: { entityId: leadId, action } });
+  const todasAsAuditorias = (leadId: string) => admin.auditLog.count({ where: { entityId: leadId } });
+  /** O instante do evento tem milissegundos: um respiro entre duas decisões deixa a ordem sem empate. */
+  const respiro = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+  /** Espera o 409 de decisão superada e devolve o corpo que a tela recebe. */
+  async function superada(pedido: Promise<unknown>): Promise<LeadDecisaoSuperadaCorpo> {
+    const erro = await pedido.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(erro).toBeInstanceOf(ConflictException);
+    return (erro as ConflictException).getResponse() as LeadDecisaoSuperadaCorpo;
+  }
 
   /** Um lead novo da empresa A, de origem manual (sem card ligado) ou de origem clickup (card pelo externalId). */
   async function novoLead(origem: { tipo: 'manual' | 'clickup'; ref: string }, orgId = ORG_A): Promise<string> {
@@ -737,23 +775,95 @@ function casosContraOBanco(modoRls: boolean) {
     expect(await decidir(lead, aceite(volta.hash!))).toMatchObject({ replayed: false, propostaEventoId: p1.eventoId });
   });
 
-  it('D1 (comportamento atual, PENDENTE DE DECISÃO do Pedro e do Rodrigo): aceite, recusa e aceite de novo devolve replayed e o estado fica na recusa', async () => {
-    // Não é a regra desejada: é o que o código faz hoje, registrado para que a troca de decisão seja uma escolha e não um acidente.
-    // Quando a regra mudar (409 "a decisão mais recente é a recusa", ou id que inclua a decisão anterior), este caso muda junto.
+  it('D1: aceite, recusa e aceite de novo é 409 decisao_superada (a mais recente é a recusa), sem gravar nada', async () => {
     const { lead } = await leadClickup();
     const p = await registrar(lead, PROPOSTA());
     const a1 = await decidir(lead, aceite(p.condicoesHash));
     expect(a1).toMatchObject({ decisao: 'aceite', replayed: false });
+    await respiro();
     const r = await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa', motivo: 'Voltou atrás' }));
     expect(r).toMatchObject({ decisao: 'recusa', replayed: false });
     expect((await proposta(lead)).estado).toBe('recusa_registrada');
+    const auditoriasAntes = await todasAsAuditorias(lead);
 
-    const a2 = await decidir(lead, aceite(p.condicoesHash));
-    expect(a2).toMatchObject({ decisao: 'aceite', replayed: true, eventoId: a1.eventoId });
+    const corpo = await superada(decidir(lead, aceite(p.condicoesHash)));
+    const [recusaGravada] = await eventos(lead, 'recusa');
+    expect(corpo).toEqual({
+      code: CODIGO_DECISAO_SUPERADA,
+      message: mensagemDeDecisaoSuperada('recusa', recusaGravada.occurredAt),
+      decisaoAtual: 'recusa',
+      eventoAtualId: r.eventoId,
+    });
+    expect(corpo.message).toMatch(/^A decisão mais recente para estas condições é a recusa, registrada em \d{2}\/\d{2}\/\d{4}\.$/);
+    // Nada foi gravado: os mesmos dois eventos, nenhuma auditoria nova, o estado onde estava.
     expect(await eventos(lead, 'aceite')).toHaveLength(1);
     expect(await eventos(lead, 'recusa')).toHaveLength(1);
     expect(await auditorias(lead, 'lead.aceite')).toBe(1);
+    expect(await auditorias(lead, 'lead.recusa')).toBe(1);
+    expect(await todasAsAuditorias(lead)).toBe(auditoriasAntes);
     expect((await proposta(lead)).estado).toBe('recusa_registrada');
+    // O 409 não é replay: o segundo pedido também recebe o 409, e a recusa que vale segue repetível.
+    expect((await superada(decidir(lead, aceite(p.condicoesHash)))).eventoAtualId).toBe(r.eventoId);
+    expect(await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa' }))).toMatchObject({ replayed: true, eventoId: r.eventoId });
+  });
+
+  it('D1, no sentido inverso: recusa, aceite e recusa de novo é 409 decisao_superada (a mais recente é o aceite)', async () => {
+    const { lead } = await leadClickup();
+    const p = await registrar(lead, PROPOSTA());
+    const rec1 = await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa', motivo: 'Achou caro' }));
+    await respiro();
+    const ace = await decidir(lead, aceite(p.condicoesHash));
+    expect(ace).toMatchObject({ decisao: 'aceite', replayed: false });
+    expect((await proposta(lead)).estado).toBe('aceite_registrado');
+    const auditoriasAntes = await todasAsAuditorias(lead);
+
+    const corpo = await superada(decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa', motivo: 'Achou caro' })));
+    const [aceiteGravado] = await eventos(lead, 'aceite');
+    expect(corpo).toEqual({
+      code: CODIGO_DECISAO_SUPERADA,
+      message: mensagemDeDecisaoSuperada('aceite', aceiteGravado.occurredAt),
+      decisaoAtual: 'aceite',
+      eventoAtualId: ace.eventoId,
+    });
+    expect(corpo.message).toMatch(/é o aceite, registrada em/);
+    expect(rec1.eventoId).not.toBe(ace.eventoId);
+    expect(await eventos(lead, 'recusa')).toHaveLength(1);
+    expect(await eventos(lead, 'aceite')).toHaveLength(1);
+    expect(await todasAsAuditorias(lead)).toBe(auditoriasAntes);
+    expect((await proposta(lead)).estado).toBe('aceite_registrado');
+  });
+
+  it('o replay legítimo continua: a decisão repetida que ainda é a mais recente devolve replayed, sem evento nem auditoria novos', async () => {
+    const { lead } = await leadClickup();
+    const p = await registrar(lead, PROPOSTA());
+    const a1 = await decidir(lead, aceite(p.condicoesHash));
+    expect(await decidir(lead, aceite(p.condicoesHash))).toMatchObject({ decisao: 'aceite', replayed: true, eventoId: a1.eventoId, evidenciaIgual: true });
+    // Depois de uma troca, a decisão que vale hoje também é repetível; a outra, não.
+    await respiro();
+    const r = await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa' }));
+    expect(await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa' }))).toMatchObject({ decisao: 'recusa', replayed: true, eventoId: r.eventoId });
+    expect((await superada(decidir(lead, aceite(p.condicoesHash)))).decisaoAtual).toBe('recusa');
+    expect(await eventos(lead, 'aceite')).toHaveLength(1);
+    expect(await eventos(lead, 'recusa')).toHaveLength(1);
+    expect(await auditorias(lead, 'lead.aceite')).toBe(1);
+    expect(await auditorias(lead, 'lead.recusa')).toBe(1);
+  });
+
+  it('a decisão superada é por conjunto de condições: com o card mudado e a proposta nova, o aceite das condições novas grava', async () => {
+    const lead = await novoLead({ tipo: 'manual', ref: 'superada-por-hash' });
+    const card = await criarCard(ORG_A, listaA, statusAbertoA, { valor: 'BRL 5000.00', periodicidade: 'Mensal' });
+    const p1 = await registrar(lead, PROPOSTA({ cardId: card }));
+    await decidir(lead, aceite(p1.condicoesHash));
+    await respiro();
+    await decidir(lead, aceite(p1.condicoesHash, { decisao: 'recusa' }));
+    await mudarValor(card, 'BRL 5500.00');
+    const p2 = await registrar(lead, PROPOSTA({ cardId: card }));
+    expect(p2.condicoesHash).not.toBe(p1.condicoesHash);
+    // Outro hash: o aceite das condições novas é decisão nova (a recusa antiga é de outras condições).
+    expect(await decidir(lead, aceite(p2.condicoesHash))).toMatchObject({ decisao: 'aceite', replayed: false, propostaEventoId: p2.eventoId });
+    expect((await proposta(lead)).estado).toBe('aceite_registrado');
+    // E o aceite antigo, sobre as condições velhas, continua superado pela recusa velha: o card já não é o de então, mas a resposta é a mesma.
+    expect((await superada(decidir(lead, aceite(p1.condicoesHash)))).decisaoAtual).toBe('recusa');
   });
 
   it('aceite antes de existir proposta é 409; condicoesVistas que não bate com o hash é 400', async () => {
@@ -895,4 +1005,5 @@ function casosContraOBanco(modoRls: boolean) {
 
 describe.skipIf(!URL)('ROOT-49: proposta e aceite contra o Postgres descartável (conexão dona)', () => casosContraOBanco(false));
 
+// Por `if` e não por `describe.skipIf`: a seção que não roda some do relatório em vez de contar como caso pulado, e a CI reprova pulado.
 if (URL && URL_TENANT && RLS) describe('ROOT-49: os mesmos casos sob RLS (mktos_app, TENANT_MODO=impor)', () => casosContraOBanco(true));
