@@ -632,6 +632,74 @@ describe('metas do mês no serviço', () => {
       expect(m).toMatchObject({ estado: 'parcial', valor: 1500, pct: 30 });
     });
 
+    describe('a foto de performance tem data de coleta (B1)', () => {
+      const SET = '2026-09';
+      const foto = (coletadoEm: string, posts: Array<{ publicadaEm: string; visualizacoes: number | null }>) => ({
+        mes: SET,
+        coletadoEm,
+        posts: posts.map((p) => ({ publicadaEm: p.publicadaEm, numeros: { visualizacoes: p.visualizacoes } })),
+      });
+      const medir = async (f: ReturnType<typeof foto>, agora: Date) => {
+        const memoria = new MemoriaFalsa();
+        await memoria.criar(A, { chave: chaveDaPerformance(SET), body: JSON.stringify(f) });
+        const { svc } = servico({}, memoria);
+        await salvar(svc, A, [{ indicador: 'instagram.visualizacoes', alvo: 5000 }], {}, TUDO, SET);
+        return (await svc.metasDoMes(A, SET, TUDO, agora)).metas[0];
+      };
+      const POSTS = [
+        { publicadaEm: '2026-09-03T15:00:00.000Z', visualizacoes: 100 },
+        { publicadaEm: '2026-09-08T15:00:00.000Z', visualizacoes: 50 },
+      ];
+
+      it('foto de 10/09 lida em 05/10: as semanas depois da coleta ficam sem dado, nunca 0, e o mês é parcial', async () => {
+        const m = await medir(foto('2026-09-10T15:00:00.000Z', POSTS), new Date('2026-10-05T12:00:00.000Z'));
+        expect(m.semanas.map((s) => [s.semana, s.estado, s.valor])).toEqual([
+          ['2026-W36', 'com_dado', 100],
+          ['2026-W37', 'com_dado', 50],
+          ['2026-W38', 'sem_dado', null],
+          ['2026-W39', 'sem_dado', null],
+          ['2026-W40', 'sem_dado', null],
+        ]);
+        expect(m).toMatchObject({ estado: 'parcial', valor: 150, pct: 3 });
+        expect(m.motivo).toContain('foto de performance');
+        expect(m.motivo).toContain('10/09/2026');
+      });
+
+      it('a semana que contém a coleta e não tem post na foto não afirma zero', async () => {
+        const m = await medir(
+          foto('2026-09-10T15:00:00.000Z', [{ publicadaEm: '2026-09-03T15:00:00.000Z', visualizacoes: 100 }]),
+          new Date('2026-10-05T12:00:00.000Z'),
+        );
+        expect(m.semanas.map((s) => [s.estado, s.valor])).toEqual([
+          ['com_dado', 100],
+          ['sem_dado', null], // W37: a foto foi tirada no meio dela
+          ['sem_dado', null],
+          ['sem_dado', null],
+          ['sem_dado', null],
+        ]);
+        expect(m.estado).toBe('parcial');
+      });
+
+      it('foto colhida depois do fim do mês cobre o mês inteiro: toda semana com dado e o zero é zero', async () => {
+        const m = await medir(foto('2026-10-02T09:00:00.000Z', POSTS), new Date('2026-10-05T12:00:00.000Z'));
+        expect(m.semanas.map((s) => [s.estado, s.valor])).toEqual([
+          ['com_dado', 100],
+          ['com_dado', 50],
+          ['com_dado', 0],
+          ['com_dado', 0],
+          ['com_dado', 0],
+        ]);
+        expect(m).toMatchObject({ estado: 'com_dado', valor: 150 });
+        expect(m.motivo).toContain('02/10/2026');
+      });
+
+      it('coletadoEm ilegível não prova zero em semana nenhuma', async () => {
+        const m = await medir(foto('ontem', POSTS), new Date('2026-10-05T12:00:00.000Z'));
+        expect(m.semanas.map((s) => s.valor)).toEqual([100, 50, null, null, null]);
+        expect(m.estado).toBe('parcial');
+      });
+    });
+
     it('sem a permissão da fonte: "sem acesso", nenhum número e NENHUMA consulta à fonte', async () => {
       const { svc, chamadas } = servico({ leads: LEADS_DE_OUTUBRO, bio: [{ orgId: A, nome: 'link_click', ocorridoEm: new Date('2026-10-06T12:00:00.000Z') }] });
       await salvar(svc, A, [
@@ -651,6 +719,25 @@ describe('metas do mês no serviço', () => {
       expect(p.catalogo.find((i) => i.chave === 'leads.novos')?.permitido).toBe(false);
       expect(p.catalogo.find((i) => i.chave === 'bio.cliques')?.permitido).toBe(true);
     });
+  });
+
+  it('sem leads.ver, a meta por campanha não consulta Lead nem mostra o nome da campanha (N2)', async () => {
+    const memoria = new MemoriaFalsa();
+    await memoria.criar(A, {
+      chave: chaveDasMetasDoMes(MES),
+      body: JSON.stringify({ metas: [{ indicador: 'leads.por_campanha', alvo: 5, campanhaId: 'camp-seed' }] }),
+    });
+    const { svc, chamadas } = servico(
+      {
+        campanhas: [{ orgId: A, id: 'camp-seed', name: 'Black Friday — Tráfego' }],
+        leads: [lead(A, '2026-10-02T12:00:00.000Z', { campaignId: 'camp-seed' })],
+      },
+      memoria,
+    );
+    const semLeads = TUDO.filter((p) => p !== 'leads.ver');
+    const m = (await svc.metasDoMes(A, MES, semLeads, AGORA_DEPOIS_DO_MES)).metas[0];
+    expect(m).toMatchObject({ estado: 'sem_acesso', valor: null, campanhaNome: null });
+    expect(chamadas.filter((c) => c.startsWith('lead.') || c.startsWith('campaign.'))).toEqual([]);
   });
 
   describe('a semente fica fora', () => {

@@ -3,7 +3,7 @@ import { ContextKind, ContextSource } from '@prisma/client';
 import {
   GOAL_CENARIOS, GOAL_ESCADA, GOAL_FASE, GOAL_INPUTS, GOAL_MARCOS, GOAL_TAXAS,
   METAS_CATALOGO, MetasDoMesSalvarSchema, chaveDaEstrategia, chaveDaPerformance, chaveDasMetasDoMes,
-  indicadorDeMeta, lerOrigemDaEstrategia, mesDaChaveDasMetas,
+  diaNoFuso, indicadorDeMeta, lerOrigemDaEstrategia, mesDaChaveDasMetas,
   type Farol, type GoalPanel, type GoalTaxaLive, type GoalWeekInput,
   type IndicadorDeMeta, type MetaDoMes, type MetaMedida, type MetasDoMesPainel,
   type MetasDoMesSalvarInput, type MetasMedidaDaSemana,
@@ -13,7 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { MetaService } from '../meta/meta.service';
 import { MemoriaService } from '../memory/memoria.service';
 import {
-  corpoDaNotaDeMetas, ehNomeDeCampanhaDeSemente, estadoDaSemana, janelasDoMes,
+  coletadoEmDaFoto, corpoDaNotaDeMetas, ehNomeDeCampanhaDeSemente, estadoDaSemana, janelasDoMes,
   lerFotoDePerformance, lerMetasDaNota, linhasDeMetaDaEstrategia, linhasParaATela, medirSemanas,
   ondeLeadNaoESemente, percentualDoAlvo, resumirSemanas, temPermissoesDaFonte, visualizacoesPorSemana,
   type JanelaDaSemana,
@@ -140,7 +140,12 @@ export class GoalsService {
     const lida = nota && !nota.arquivadoEm ? lerMetasDaNota(nota.body) : { metas: [], avisos: [] };
     const janelas = janelasDoMes(mes);
 
-    const campanhas = await this.campanhasDasMetas(orgId, lida.metas);
+    // N2: a campanha só é resolvida para quem pode ler a fonte da meta — sem a
+    // permissão, nem consulta nem nome de campanha no cartão.
+    const campanhas = await this.campanhasDasMetas(
+      orgId,
+      lida.metas.filter((m) => temPermissoesDaFonte(indicadorDeMeta(m.indicador) as IndicadorDeMeta, permissoes)),
+    );
     const leitor = new LeitorDeFontes(this.prisma, this.memoria, orgId, mes);
     const metas: MetaMedida[] = [];
     for (const m of lida.metas) {
@@ -372,6 +377,24 @@ export class GoalsService {
         );
       }
       semanas = medirSemanas(janelas, visualizacoesPorSemana(foto, janelas), janelas[0].de, agora);
+      const { estado: estadoIg, valor: valorIg } = resumirSemanas(semanas);
+      // A leitura é de uma FOTO: a tela precisa dizer de quando, porque o que foi
+      // publicado depois da coleta não está nela (B1).
+      const coleta = coletadoEmDaFoto(foto);
+      const quando = coleta ? diaNoFuso(coleta).split('-').reverse().join('/') : 'data ilegível';
+      return {
+        ...base,
+        estado: estadoIg,
+        motivo:
+          estadoIg === 'sem_dado'
+            ? `A foto de performance (coletada em ${quando}) não traz número para as semanas deste mês.`
+            : estadoIg === 'parcial'
+              ? `Leitura da foto de performance coletada em ${quando}: as semanas que ela ainda não enxergava ficam sem dado até uma nova coleta (Marketing › Performance).`
+              : `Leitura da foto de performance coletada em ${quando}.`,
+        valor: valorIg,
+        pct: percentualDoAlvo(valorIg, m.alvo),
+        semanas,
+      };
     } else {
       const primeiro = await leitor.primeiroRegistro(ind.fonte);
       const valores: Array<number | null> = [];

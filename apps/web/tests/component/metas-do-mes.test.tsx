@@ -193,6 +193,21 @@ describe('a medição na tela', () => {
   });
 });
 
+describe('o mês de abertura (N5)', () => {
+  it('é o mês de São Paulo, não o do relógio do navegador', async () => {
+    // 01/11 02:00 em UTC ainda é 31/10 23:00 em São Paulo.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-01T02:00:00.000Z') });
+    try {
+      servir(painel());
+      render(<MetasDoMes />);
+      await screen.findByText(/Semana de segunda a domingo/);
+      expect(apiGet).toHaveBeenCalledWith('/goals/month/2026-10', 'tok');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('a revisão', () => {
   it('quem não pode gerar relatório só lê: sem botão de revisar', async () => {
     permissoes = ['dashboard.ver'];

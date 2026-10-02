@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import {
   METAS_ESTADO_ROTULO,
+  METAS_FUSO,
+  partesNoFuso,
   type MetaMedida,
   type MetasDoMesPainel,
   type MetasLinhaDaEstrategia,
@@ -30,9 +32,10 @@ const ESTADO_COR: Record<string, string> = {
   sem_acesso: 'bg-surface-2 text-muted border-border',
 };
 
+// O mês é o de São Paulo, não o do relógio do navegador: quem abre a tela de
+// outro fuso no último dia do mês cairia no mês errado.
 function mesAtual(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return partesNoFuso(new Date(), METAS_FUSO).dia.slice(0, 7);
 }
 
 const diaMes = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;

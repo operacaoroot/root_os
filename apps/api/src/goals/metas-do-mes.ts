@@ -367,20 +367,35 @@ export function lerFotoDePerformance(corpo: string | null | undefined): PautaSna
 }
 
 /**
+ * O instante em que a foto foi tirada, ou nulo quando o campo falta ou não é
+ * uma data. Sem ele não há como provar que uma semana sem post foi zero.
+ */
+export function coletadoEmDaFoto(foto: PautaSnapshotDaPerformance): Date | null {
+  const t = new Date(foto.coletadoEm);
+  return Number.isNaN(t.getTime()) ? null : t;
+}
+
+/**
  * As visualizações por semana, dos posts PUBLICADOS nela (dia civil de São
  * Paulo). Post sem número entre os da semana não vira zero: se a semana só tem
  * posts sem número, ela fica sem dado; se tem alguns com número, soma os que
- * têm. Semana sem nenhum post publicado vale zero — a foto cobre o mês inteiro,
- * então "nenhum post" é um fato, não uma falta de leitura.
+ * têm.
+ *
+ * "NENHUM POST" SÓ É ZERO QUANDO A FOTO JÁ ENXERGAVA A SEMANA INTEIRA. A foto é
+ * uma fotografia (`coletadoEm`): o que foi publicado depois dela não está lá, e
+ * isso não é zero visualização, é ausência de leitura. Semana sem post na foto
+ * vale zero só se a coleta veio depois do fim dela; a semana que contém a
+ * coleta, as seguintes e a foto com data ilegível ficam sem dado (nulo).
  */
 export function visualizacoesPorSemana(foto: PautaSnapshotDaPerformance, janelas: JanelaDaSemana[]): Array<number | null> {
+  const coleta = coletadoEmDaFoto(foto);
   return janelas.map((j) => {
     const dosDaSemana = foto.posts.filter((p) => {
       if (!p.publicadaEm) return false;
       const dia = diaNoFuso(new Date(p.publicadaEm));
       return dia >= j.primeiroDia && dia <= j.ultimoDia;
     });
-    if (!dosDaSemana.length) return 0;
+    if (!dosDaSemana.length) return coleta && coleta.getTime() >= j.ate.getTime() ? 0 : null;
     const medidos = dosDaSemana.filter((p) => typeof p.numeros?.visualizacoes === 'number');
     if (!medidos.length) return null;
     return medidos.reduce((a, p) => a + (p.numeros.visualizacoes as number), 0);
