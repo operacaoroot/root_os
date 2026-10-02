@@ -1,10 +1,22 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   LEAD_ORIGENS_DA_PAUTA,
+  type LeadCondicoes,
+  type LeadCondicoesLeitura,
+  type LeadCondicoesMudaramCorpo,
+  type LeadDecisaoInput,
+  type LeadDecisaoResposta,
+  type LeadDecisaoResumo,
   type LeadDiferencaDaEntrada,
   type LeadEntradaInput,
   type LeadEntradaResposta,
+  type LeadEvidencia,
   type LeadList,
+  type LeadPropostaDocumento,
+  type LeadPropostaLeitura,
+  type LeadPropostaRegistroInput,
+  type LeadPropostaResposta,
+  type LeadPropostaResumo,
   type LeadTrocaDeDonoInput,
   type UpdateLeadInput,
 } from '@mktos/shared';
@@ -21,6 +33,21 @@ import {
   nomeDeReserva,
   type CamposDoLead,
 } from './entrada-de-lead';
+import {
+  TIPOS_DE_DECISAO,
+  TIPO_DO_EVENTO_DE_PROPOSTA,
+  condicoesDoCard,
+  diferencaDasCondicoes,
+  estadoDaProposta,
+  eventoIdDaDecisao,
+  eventoIdDaProposta,
+  evidenciaParaORastro,
+  hashDaEvidencia,
+  hashDasCondicoes,
+  hashDoRegistroDaProposta,
+  motivoDeCondicoesInsuficientes,
+  origemDoLink,
+} from './proposta-comercial';
 
 /** Quem pede a entrada: a empresa e as permissões vêm do token, nunca do corpo. */
 export interface AtorDaEntrada {
@@ -31,6 +58,30 @@ export interface AtorDaEntrada {
 
 const TIPO_DO_EVENTO_DE_ENTRADA = 'entrada';
 const TIPO_DO_EVENTO_DE_DONO = 'dono';
+
+/** Payloads dos eventos da proposta e da decisão (ROOT-49). As condições NÃO entram: só o hash delas. */
+interface PayloadDaProposta {
+  documento: LeadPropostaDocumento;
+  cardId: string;
+  condicoesHash: string;
+  registroHash: string;
+  ator: string;
+}
+interface PayloadDaDecisao {
+  propostaEventoId: string;
+  cardId: string;
+  condicoesHash: string;
+  evidencia: LeadEvidencia;
+  evidenciaHash: string;
+  motivo: string | null;
+  ator: string;
+}
+interface EventoLido {
+  id: string;
+  type: string;
+  payload: unknown;
+  occurredAt: Date;
+}
 
 function ehViolacaoDeUnico(erro: unknown): boolean {
   return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002';
@@ -386,5 +437,287 @@ export class LeadsService {
       });
     });
     return { ok: true, mudou: true, ownerId: input.ownerId };
+  }
+
+  // ---------- Proposta e aceite comercial (ROOT-49, C-03, P-b) ----------
+
+  /** Aceite e proposta cruzam dois módulos (E15): o prefixo `leads` o gate já viu; o `trabalho` se confere aqui. */
+  private async exigirTrabalho(orgId: string): Promise<void> {
+    if (!(await this.modulos.modulosDaOrg(orgId)).has('trabalho')) throw new NotFoundException('Não encontrado');
+  }
+
+  private async exigirLead(orgId: string, id: string): Promise<void> {
+    const lead = await this.prisma.lead.findFirst({ where: { id, orgId }, select: { id: true } });
+    if (!lead) throw new NotFoundException('Lead não encontrado');
+  }
+
+  /** A timeline que interessa à proposta, do mais antigo ao mais novo. */
+  private eventosDaProposta(leadId: string): Promise<EventoLido[]> {
+    return this.prisma.leadEvent.findMany({
+      where: { leadId, type: { in: ['entrada', TIPO_DO_EVENTO_DE_PROPOSTA, ...TIPOS_DE_DECISAO] } },
+      orderBy: { occurredAt: 'asc' },
+      select: { id: true, type: true, payload: true, occurredAt: true },
+    });
+  }
+
+  /**
+   * O card comercial do lead. Vale, nesta ordem: o `cardId` do pedido; o card da
+   * última proposta; o card de origem `clickup` (o `externalId` do card é a
+   * origem do lead). Card de outra empresa é 404, como um id que não existe.
+   */
+  private async resolverCard(orgId: string, eventos: EventoLido[], cardIdPedido?: string) {
+    const selecao = {
+      id: true,
+      title: true,
+      startDate: true,
+      dueDate: true,
+      values: { select: { fieldId: true, value: true, field: { select: { name: true, type: true } }, option: { select: { name: true } } } },
+    } as const;
+    if (cardIdPedido) {
+      const card = await this.prisma.workTask.findFirst({ where: { id: cardIdPedido, orgId }, select: selecao });
+      if (!card) throw new NotFoundException('Card não encontrado');
+      return { card, motivo: null };
+    }
+    const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    if (ultimaProposta) {
+      const cardId = (ultimaProposta.payload as PayloadDaProposta).cardId;
+      const card = await this.prisma.workTask.findFirst({ where: { id: cardId, orgId }, select: selecao });
+      if (card) return { card, motivo: null };
+      return { card: null, motivo: 'O card da proposta não existe mais; informe o card e registre a proposta de novo' };
+    }
+    const entrada = eventos.find((e) => e.type === TIPO_DO_EVENTO_DE_ENTRADA);
+    const origem = (entrada?.payload as { origem?: { tipo: string; ref: string } } | null)?.origem;
+    if (origem?.tipo === 'clickup') {
+      const card = await this.prisma.workTask.findFirst({ where: { orgId, externalId: origem.ref }, select: selecao });
+      if (card) return { card, motivo: null };
+      return { card: null, motivo: 'O card do ClickUp deste lead ainda não foi importado para o Trabalho' };
+    }
+    return { card: null, motivo: 'Este lead não tem card comercial ligado; informe o card da proposta' };
+  }
+
+  private condicoesDe(card: NonNullable<Awaited<ReturnType<LeadsService['resolverCard']>>['card']>): LeadCondicoes {
+    return condicoesDoCard(
+      card,
+      card.values.map((v) => ({
+        campoId: v.fieldId,
+        campoNome: v.field.name,
+        campoTipo: v.field.type,
+        valor: v.value,
+        opcao: v.option?.name ?? null,
+      })),
+    );
+  }
+
+  /** O estado e o que foi registrado. Não lê o card: `leads.ver` basta. */
+  async lerProposta(orgId: string, id: string): Promise<LeadPropostaLeitura> {
+    await this.exigirLead(orgId, id);
+    const eventos = await this.eventosDaProposta(id);
+    const estado = estadoDaProposta(eventos);
+    const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    const proposta: LeadPropostaResumo | null = ultimaProposta
+      ? {
+          eventoId: ultimaProposta.id,
+          documento: (ultimaProposta.payload as PayloadDaProposta).documento,
+          cardId: (ultimaProposta.payload as PayloadDaProposta).cardId,
+          condicoesHash: (ultimaProposta.payload as PayloadDaProposta).condicoesHash,
+          registradaEm: ultimaProposta.occurredAt.toISOString(),
+          ator: (ultimaProposta.payload as PayloadDaProposta).ator ?? null,
+        }
+      : null;
+    let decisao: LeadDecisaoResumo | null = null;
+    if (estado === 'aceite_registrado' || estado === 'recusa_registrada') {
+      const tipo = estado === 'aceite_registrado' ? 'aceite' : 'recusa';
+      const ev = [...eventos].reverse().find((e) => e.type === tipo)!;
+      const p = ev.payload as PayloadDaDecisao;
+      decisao = {
+        eventoId: ev.id,
+        decisao: tipo,
+        propostaEventoId: p.propostaEventoId,
+        condicoesHash: p.condicoesHash,
+        evidencia: p.evidencia,
+        motivo: p.motivo ?? null,
+        registradaEm: ev.occurredAt.toISOString(),
+        ator: p.ator ?? null,
+      };
+    }
+    return { estado, proposta, decisao };
+  }
+
+  /** As condições do card, lidas agora e nunca guardadas. `leads.ver` + `tarefas.ver` (a rota confere). */
+  async lerCondicoes(orgId: string, id: string, cardIdPedido?: string): Promise<LeadCondicoesLeitura> {
+    await this.exigirTrabalho(orgId);
+    await this.exigirLead(orgId, id);
+    const eventos = await this.eventosDaProposta(id);
+    const alvo = await this.resolverCard(orgId, eventos, cardIdPedido);
+    if (!alvo.card) return { card: null, motivo: alvo.motivo, condicoes: null, hash: null, propostaVigente: null };
+    const condicoes = this.condicoesDe(alvo.card);
+    const hash = hashDasCondicoes(condicoes);
+    const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    return {
+      card: { id: alvo.card.id, titulo: alvo.card.title },
+      motivo: motivoDeCondicoesInsuficientes(condicoes),
+      condicoes,
+      hash,
+      propostaVigente: ultimaProposta ? (ultimaProposta.payload as PayloadDaProposta).condicoesHash === hash : null,
+    };
+  }
+
+  /**
+   * Registra a proposta: o documento (link + sha256) e o hash das condições do
+   * card NESTE instante. O mesmo documento nas mesmas condições é o mesmo
+   * evento (`replayed`); condições novas são uma proposta nova. Não cria
+   * `Contract` nem lançamento: a ponte para o Financeiro (C-04) é outro caminho.
+   */
+  async registrarProposta(ator: AtorDaEntrada, id: string, input: LeadPropostaRegistroInput): Promise<LeadPropostaResposta> {
+    const { orgId } = ator;
+    await this.exigirTrabalho(orgId);
+    await this.exigirLead(orgId, id);
+    const eventos = await this.eventosDaProposta(id);
+    const alvo = await this.resolverCard(orgId, eventos, input.cardId);
+    if (!alvo.card) throw new ConflictException(alvo.motivo);
+    const condicoes = this.condicoesDe(alvo.card);
+    const insuficiente = motivoDeCondicoesInsuficientes(condicoes);
+    if (insuficiente) throw new ConflictException(insuficiente);
+    const condicoesHash = hashDasCondicoes(condicoes);
+    const registroHash = hashDoRegistroDaProposta({ documento: input.documento, cardId: alvo.card.id, condicoesHash });
+    const eventoId = eventoIdDaProposta(orgId, id, registroHash);
+    const resposta = (replayed: boolean): LeadPropostaResposta => ({ id, eventoId, replayed, cardId: alvo.card!.id, condicoesHash });
+
+    if (await this.prisma.leadEvent.findFirst({ where: { id: eventoId, leadId: id }, select: { id: true } })) return resposta(true);
+    const payload: PayloadDaProposta = { documento: input.documento, cardId: alvo.card.id, condicoesHash, registroHash, ator: ator.sub };
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.leadEvent.create({ data: { id: eventoId, leadId: id, type: TIPO_DO_EVENTO_DE_PROPOSTA, payload: payload as unknown as Prisma.InputJsonValue } });
+        await tx.auditLog.create({
+          data: {
+            orgId,
+            actorId: ator.sub,
+            action: 'lead.proposta',
+            entityType: 'lead',
+            entityId: id,
+            // Nível do RASTRO: ids e resumos. O endereço do documento fica só no evento (pode levar token de acesso).
+            after: {
+              eventoId,
+              cardId: alvo.card!.id,
+              condicoesHash,
+              documento: { tipo: input.documento.tipo, sha256: input.documento.sha256, origem: origemDoLink(input.documento.url) },
+            },
+          },
+        });
+      });
+    } catch (erro) {
+      if (ehViolacaoDeUnico(erro)) return resposta(true);
+      throw erro;
+    }
+    return resposta(false);
+  }
+
+  /**
+   * Registra a decisão do cliente — aceite ou recusa — com a evidência e o hash
+   * das condições que ele viu. Mover o card para "fechado" NÃO passa por aqui:
+   * só esta rota grava `aceite`. Nada sai do OS (sem assinatura, cobrança ou
+   * e-mail).
+   *
+   * O id do evento é `(lead, decisão, hash das condições)`: reenviar a mesma
+   * decisão é no-op e responde antes de reler o card (se o card mudou depois,
+   * a repetição segue sendo repetição). Decisão nova com hash que não é o do
+   * card agora é 409 com a diferença, e só vale sobre uma proposta registrada
+   * com essas mesmas condições.
+   */
+  async decidir(ator: AtorDaEntrada, id: string, input: LeadDecisaoInput): Promise<LeadDecisaoResposta> {
+    const { orgId } = ator;
+    if (input.condicoesVistas && hashDasCondicoes(input.condicoesVistas) !== input.condicoesHash) {
+      throw new BadRequestException('condicoesVistas não corresponde ao condicoesHash enviado');
+    }
+    await this.exigirTrabalho(orgId);
+    await this.exigirLead(orgId, id);
+    const evidenciaHash = hashDaEvidencia(input.evidencia);
+    const eventoId = eventoIdDaDecisao(orgId, id, input.decisao, input.condicoesHash);
+    const deReplay = (p: PayloadDaDecisao): LeadDecisaoResposta => ({
+      id,
+      eventoId,
+      decisao: input.decisao,
+      replayed: true,
+      evidenciaIgual: p.evidenciaHash === evidenciaHash,
+      propostaEventoId: p.propostaEventoId,
+      condicoesHash: input.condicoesHash,
+    });
+
+    const jaGravado = await this.prisma.leadEvent.findFirst({ where: { id: eventoId, leadId: id }, select: { payload: true } });
+    if (jaGravado) return deReplay(jaGravado.payload as unknown as PayloadDaDecisao);
+
+    const eventos = await this.eventosDaProposta(id);
+    const propostas = eventos.filter((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    if (propostas.length === 0) throw new ConflictException('Registre a proposta antes de registrar o aceite ou a recusa');
+    const alvo = await this.resolverCard(orgId, eventos);
+    if (!alvo.card) throw new ConflictException(alvo.motivo);
+    const atual = this.condicoesDe(alvo.card);
+    const insuficiente = motivoDeCondicoesInsuficientes(atual);
+    if (insuficiente) throw new ConflictException(insuficiente);
+    const atualHash = hashDasCondicoes(atual);
+    if (atualHash !== input.condicoesHash) {
+      const corpo: LeadCondicoesMudaramCorpo = {
+        message: 'As condições do card mudaram desde o que foi visto; releia as condições e registre de novo',
+        atualHash,
+        atual,
+        diferenca: input.condicoesVistas ? diferencaDasCondicoes(input.condicoesVistas, atual) : null,
+      };
+      throw new ConflictException(corpo);
+    }
+    const proposta = [...propostas].reverse().find((e) => {
+      const p = e.payload as PayloadDaProposta;
+      return p.condicoesHash === atualHash && p.cardId === atual.cardId;
+    });
+    if (!proposta) {
+      throw new ConflictException('A proposta registrada foi feita com outras condições; registre a proposta de novo antes da decisão');
+    }
+
+    const payload: PayloadDaDecisao = {
+      propostaEventoId: proposta.id,
+      cardId: atual.cardId,
+      condicoesHash: atualHash,
+      evidencia: input.evidencia,
+      evidenciaHash,
+      motivo: input.motivo ?? null,
+      ator: ator.sub,
+    };
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.leadEvent.create({ data: { id: eventoId, leadId: id, type: input.decisao, payload: payload as unknown as Prisma.InputJsonValue } });
+        await tx.auditLog.create({
+          data: {
+            orgId,
+            actorId: ator.sub,
+            action: `lead.${input.decisao}`,
+            entityType: 'lead',
+            entityId: id,
+            // Nível do RASTRO: ids, hashes e o tipo da evidência — nunca o texto da mensagem nem o link inteiro.
+            after: {
+              eventoId,
+              propostaEventoId: proposta.id,
+              cardId: atual.cardId,
+              condicoesHash: atualHash,
+              evidencia: evidenciaParaORastro(input.evidencia),
+              comMotivo: Boolean(input.motivo),
+            },
+          },
+        });
+      });
+    } catch (erro) {
+      if (!ehViolacaoDeUnico(erro)) throw erro;
+      // A mesma decisão, simultânea: a outra chamada gravou primeiro.
+      const gravado = await this.prisma.leadEvent.findFirst({ where: { id: eventoId, leadId: id }, select: { payload: true } });
+      if (!gravado) throw new ConflictException('Conflito ao registrar a decisão; tente de novo');
+      return deReplay(gravado.payload as unknown as PayloadDaDecisao);
+    }
+    return {
+      id,
+      eventoId,
+      decisao: input.decisao,
+      replayed: false,
+      evidenciaIgual: true,
+      propostaEventoId: proposta.id,
+      condicoesHash: atualHash,
+    };
   }
 }

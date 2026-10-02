@@ -24,3 +24,5 @@ export const DEFAULT_APP_NAME = 'Marketing OS';
 // A entrada idempotente de lead (ROOT-48, C-01): a tela, a API e o teste leem o
 // MESMO pedido — ver o cabeçalho de `lead-entrada.ts`.
 export * from './lead-entrada.js';
+// A proposta e o aceite comercial (ROOT-49, C-03): ver o cabeçalho de `lead-proposta.ts`.
+export * from './lead-proposta.js';
