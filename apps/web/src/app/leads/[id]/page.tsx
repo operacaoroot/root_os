@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { LEAD_STATUS } from '@mktos/shared';
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { StatusChip } from '@/components/StatusChip';
 
@@ -17,6 +17,9 @@ interface LeadDetail {
   status: string;
   score: number | null;
   nextAction: string | null;
+  owner: { id: string; name: string } | null;
+  origem: { tipo: string; ref: string } | null;
+  avisos?: { possivelMesmaPessoa: string[] };
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
@@ -26,6 +29,13 @@ interface LeadDetail {
   campaign: { name: string } | null;
   events: { id: string; type: string; occurredAt: string }[];
 }
+
+const ORIGEM_ROTULO: Record<string, string> = {
+  clickup: 'ClickUp',
+  'pauta-comentario': 'Comentário na Pauta',
+  pixel: 'Pixel do site',
+  manual: 'Entrada manual',
+};
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -37,7 +47,8 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function LeadDetailPage() {
-  const { token, ready, can } = useAuth();
+  const { token, ready, can, user } = useAuth();
+  const meuId = user?.id ?? null;
   const params = useParams<{ id: string }>();
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +92,29 @@ export default function LeadDetailPage() {
           <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-surface p-5 md:grid-cols-3">
             <Field label="Telefone" value={lead.phone} />
             <Field label="Origem" value={lead.source?.name} />
+            <Field label="Como entrou" value={lead.origem ? (ORIGEM_ROTULO[lead.origem.tipo] ?? lead.origem.tipo) : null} />
+            <Field label="Dono" value={lead.owner?.name ?? 'Sem dono'} />
             <Field label="Campanha" value={lead.campaign?.name} />
             <Field label="UTM source" value={lead.utmSource} />
             <Field label="UTM medium" value={lead.utmMedium} />
             <Field label="UTM campaign" value={lead.utmCampaign} />
             <Field label="Entrada" value={new Date(lead.enteredAt).toLocaleString('pt-BR')} />
           </div>
+
+          {(lead.avisos?.possivelMesmaPessoa.length ?? 0) > 0 && (
+            <div className="rounded-xl border border-warn/40 bg-warn/10 p-4 text-sm">
+              Possível mesma pessoa em outro comentário:{' '}
+              {lead.avisos!.possivelMesmaPessoa.map((id, i) => (
+                <span key={id}>
+                  {i > 0 && ', '}
+                  <Link href={`/leads/${id}`} className="underline">lead {i + 1}</Link>
+                </span>
+              ))}
+              . É só um aviso: nada foi unido.
+            </div>
+          )}
+
+          {can('leads.editar') && <DonoDoLead lead={lead} token={token} meuId={meuId} podeEscolher={can('admin.usuarios')} onSaved={load} onError={setError} />}
 
           {can('leads.editar') && (
             <LeadActions
@@ -186,6 +214,74 @@ function LeadActions({
           {busy ? 'Salvando…' : 'Salvar'}
         </button>
         {saved && <span className="text-xs text-good">Salvo ✓</span>}
+      </div>
+    </div>
+  );
+}
+
+function DonoDoLead({
+  lead,
+  token,
+  meuId,
+  podeEscolher,
+  onSaved,
+  onError,
+}: {
+  lead: LeadDetail;
+  token: string | null;
+  meuId: string | null;
+  podeEscolher: boolean;
+  onSaved: () => void;
+  onError: (m: string) => void;
+}) {
+  const [usuarios, setUsuarios] = useState<{ id: string; name: string; isActive: boolean }[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!token || !podeEscolher) return;
+    apiGet<{ items: { id: string; name: string; isActive: boolean }[] }>('/users', token)
+      .then((r) => setUsuarios(r.items.filter((u) => u.isActive)))
+      .catch(() => setUsuarios([]));
+  }, [token, podeEscolher]);
+
+  const trocar = (ownerId: string | null) => {
+    if (!token) return;
+    setBusy(true);
+    apiPut('/leads/' + lead.id + '/dono', { ownerId }, token)
+      .then(onSaved)
+      .catch((e) => onError(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Dono</h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm">{lead.owner?.name ?? 'Sem dono'}</span>
+        {meuId && lead.owner?.id !== meuId && (
+          <button onClick={() => trocar(meuId)} disabled={busy} className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-surface-2 disabled:opacity-50">
+            Assumir
+          </button>
+        )}
+        {lead.owner && (
+          <button onClick={() => trocar(null)} disabled={busy} className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-surface-2 disabled:opacity-50">
+            Tirar o dono
+          </button>
+        )}
+        {podeEscolher && usuarios.length > 0 && (
+          <select
+            value={lead.owner?.id ?? ''}
+            disabled={busy}
+            onChange={(e) => e.target.value && trocar(e.target.value)}
+            aria-label="Escolher o dono"
+            className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim"
+          >
+            <option value="">Escolher…</option>
+            {usuarios.map((u) => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   );

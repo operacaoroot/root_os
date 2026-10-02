@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import {
   ENVIO_DE_RESPOSTA_ESTADO_ROTULO,
@@ -14,6 +15,7 @@ import {
   type PautaComentarioNaFila,
   type PautaDmAutomaticaNaFila,
   type PautaFilaDeComentarios,
+  type LeadEntradaResposta,
   type PautaTextoDaDm,
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPut } from '@/lib/api';
@@ -42,6 +44,8 @@ interface Props {
   podeResponder: boolean;
   /** `pauta.editar`: preparar e editar o texto da DM. */
   editavel: boolean;
+  /** ROOT-48: `leads.editar` e o módulo `leads` da empresa. Sem eles o botão "Passar ao Comercial" não aparece. */
+  podePassarAoComercial?: boolean;
   onErro: (m: string | null) => void;
   bump: number;
 }
@@ -63,14 +67,65 @@ function ehFila(x: unknown): x is PautaFilaDeComentarios {
   return !!x && typeof x === 'object' && Array.isArray((x as PautaFilaDeComentarios).linhas) && Array.isArray((x as PautaFilaDeComentarios).textos);
 }
 
+/**
+ * ROOT-48: passa o comentário ao Comercial como lead (`POST /leads/entrada`).
+ * O @ só vai junto com o clique na caixa — é ele que estende a retenção da MD9
+ * (o lead guarda o @ depois dos 7 dias). Sem o @, o lead leva só a palavra, o
+ * post e a data. Repetir o clique devolve o mesmo lead.
+ */
+function PassarAoComercial({ linha, token, onErro }: { linha: PautaComentarioNaFila; token: string | null; onErro: (m: string | null) => void }) {
+  const [levarUsuario, setLevarUsuario] = useState(false);
+  const [feito, setFeito] = useState<LeadEntradaResposta | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (feito) {
+    return (
+      <span className="inline-flex min-h-[44px] items-center gap-2 text-sm">
+        <Chip tone="good">{feito.replayed ? 'já estava no Comercial' : 'no Comercial'}</Chip>
+        <Link href={`/leads/${feito.id}`} className="underline">abrir lead</Link>
+      </span>
+    );
+  }
+  const passar = () => {
+    setBusy(true);
+    onErro(null);
+    apiPost<LeadEntradaResposta>(
+      '/leads/entrada',
+      { origem: { tipo: 'pauta-comentario', ref: linha.id }, ...(levarUsuario ? { incluirUsuario: true } : {}) },
+      token,
+    )
+      .then(setFeito)
+      .catch((e: Error) => onErro(e.message))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <Botao onClick={passar} disabled={busy}>
+        Passar ao Comercial
+      </Botao>
+      {linha.usuario && (
+        <label className="inline-flex min-h-[44px] items-center gap-1.5 text-xs text-muted">
+          <input type="checkbox" checked={levarUsuario} onChange={(e) => setLevarUsuario(e.target.checked)} />
+          levar o @ junto
+        </label>
+      )}
+    </span>
+  );
+}
+
 function LinhaDaFila({
   linha,
+  token,
+  onErro,
+  podePassarAoComercial,
   podeResponder,
   ocupado,
   onCopiar,
   onResponder,
 }: {
   linha: PautaComentarioNaFila;
+  token: string | null;
+  onErro: (m: string | null) => void;
+  podePassarAoComercial: boolean;
   podeResponder: boolean;
   ocupado: boolean;
   onCopiar: (texto: string) => void;
@@ -121,6 +176,7 @@ function LinhaDaFila({
             Marquei como respondido
           </Botao>
         )}
+        {podePassarAoComercial && <PassarAoComercial linha={linha} token={token} onErro={onErro} />}
       </div>
     </li>
   );
@@ -303,7 +359,7 @@ function DmAutomatica({
   );
 }
 
-export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, bump }: Props) {
+export function ComentariosComPalavra({ token, podeResponder, editavel, podePassarAoComercial = false, onErro, bump }: Props) {
   const [fila, setFila] = useState<PautaFilaDeComentarios | null>(null);
   const [falhou, setFalhou] = useState(false);
   const [ocupado, setOcupado] = useState(false);
@@ -401,6 +457,9 @@ export function ComentariosComPalavra({ token, podeResponder, editavel, onErro, 
             <LinhaDaFila
               key={l.id}
               linha={l}
+              token={token}
+              onErro={onErro}
+              podePassarAoComercial={podePassarAoComercial}
               podeResponder={podeResponder}
               ocupado={ocupado}
               onCopiar={(t) => void aoCopiar(t)}

@@ -62,6 +62,7 @@ function LeadsInner() {
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Origem</th>
+                <th className="px-4 py-3 font-medium">Dono</th>
                 <th className="px-4 py-3 font-medium">Campanha</th>
                 <th className="px-4 py-3 font-medium">Score</th>
                 <th className="px-4 py-3 font-medium">Entrada</th>
@@ -78,6 +79,7 @@ function LeadsInner() {
                   </td>
                   <td className="px-4 py-3"><StatusChip status={l.status} /></td>
                   <td className="px-4 py-3 text-muted">{l.source ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted">{l.owner ?? 'sem dono'}</td>
                   <td className="px-4 py-3 text-muted">{l.campaign ?? '—'}</td>
                   <td className="px-4 py-3">{l.score ?? '—'}</td>
                   <td className="px-4 py-3 text-muted">
@@ -87,7 +89,7 @@ function LeadsInner() {
               ))}
               {data && data.items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-muted">
+                  <td colSpan={7} className="px-4 py-10 text-center text-muted">
                     Nenhum lead para este filtro.
                   </td>
                 </tr>

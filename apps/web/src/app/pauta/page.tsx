@@ -210,7 +210,14 @@ export default function PautaPage() {
             aviso={retornoDaConexao}
             onErro={aoErrar}
           />
-          <ComentariosComPalavra token={token} podeResponder={podePublicar} editavel={editavel} onErro={aoErrar} bump={bump} />
+          <ComentariosComPalavra
+            token={token}
+            podeResponder={podePublicar}
+            editavel={editavel}
+            podePassarAoComercial={can('leads.editar') && modulos?.includes('leads') === true}
+            onErro={aoErrar}
+            bump={bump}
+          />
           <AbaSemana token={token} editavel={editavel} podePostar={podePublicar} onErro={aoErrar} bump={bump} />
         </>
       )}

@@ -19,3 +19,7 @@ export * from './valor-monetario.js';
 
 // Nome padrão; cada app pode sobrescrever via seu próprio env (APP_NAME).
 export const DEFAULT_APP_NAME = 'Marketing OS';
+
+// A entrada idempotente de lead (ROOT-48, C-01): a tela, a API e o teste leem o
+// MESMO pedido — ver o cabeçalho de `lead-entrada.ts`.
+export * from './lead-entrada.js';
