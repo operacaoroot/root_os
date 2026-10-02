@@ -1419,12 +1419,16 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
     });
 
   it('a credencial da bio aparece no inventário, na coluna `herdadas`', async () => {
-    const { antes, depois } = await noMesmoInstantaneo(async (rot, tx) => {
+    const { antes, depois, invNoInstantaneo } = await noMesmoInstantaneo(async (rot, tx) => {
       const antes = await envHerdadas(rot);
       await plantarHerdada(tx);
-      return { antes, depois: await envHerdadas(rot) };
+      return { antes, depois: await envHerdadas(rot), invNoInstantaneo: await rot.inventario() };
     });
     expect(depois).toBe(antes + 1);
+    // No mesmo instantâneo, o inventário tem de dar exatamente o que `herdadas()`
+    // contou. Fora dele só cabem `>= 1` e a soma do total, e as duas continuam
+    // verdadeiras com as herdadas somadas em dobro.
+    expect(invNoInstantaneo.env.herdadas).toBe(depois);
 
     const inv = await rotacao.inventario();
     expect(inv.env.herdadas).toBeGreaterThanOrEqual(1);
@@ -1500,6 +1504,11 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
      * mentira por outra.
      */
     await plantarHerdada();
+    // A linha plantada, lida antes da migração, para conferir pelo `id` depois.
+    const origem = await prisma.bioConexao.findFirstOrThrow({
+      where: { orgId: ORG_H },
+      select: { id: true, tokenCifrado: true },
+    });
     comChaveiro({ env: CHAVE_ENV, chaves: `k2:${CHAVE_K2}`, atual: 'k2' });
 
     // A migração roda DENTRO do instantâneo, com o cliente da transação: é o que
@@ -1520,6 +1529,15 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
     expect(m.migrados.length).toBeGreaterThanOrEqual(1);
 
     expect(depois).toBe(antes);
+    // `depois` só enxerga o que passou pelo cliente da transação. A coluna de
+    // origem desta empresa, relida pela conexão de fora depois do commit, mostra o
+    // que qualquer conexão tenha escrito nela: migrar copia, e ela fica como foi
+    // plantada.
+    const agora = await prisma.bioConexao.findUniqueOrThrow({
+      where: { id: origem.id },
+      select: { tokenCifrado: true },
+    });
+    expect(agora.tokenCifrado).toBe(origem.tokenCifrado);
     await expect(rotacao.rotacionar({ orgId: ORG_H })).rejects.toThrow(/FORA do cofre/);
   });
 });
