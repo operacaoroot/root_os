@@ -74,7 +74,7 @@ export default function DashboardPage() {
           <section>
             <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Operação e alertas</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-              <KpiCard label="Tarefas atrasadas" value={data.overdueTasks} href="/tarefas" tone={data.overdueTasks > 0 ? 'warn' : 'default'} icon="Clock" />
+              <KpiCard label="Tarefas atrasadas" value={data.overdueTasks} href="/trabalho" tone={data.overdueTasks > 0 ? 'warn' : 'default'} icon="Clock" />
               <KpiCard label="Campanhas ativas" value={data.activeCampaigns} href="/campanhas" icon="Megaphone" />
               <KpiCard label="Campanhas em risco" value={data.campaignsAtRisk} href="/campanhas?status=problema" tone={data.campaignsAtRisk > 0 ? 'bad' : 'default'} icon="AlertTriangle" />
               <KpiCard label="Alertas críticos" value={data.criticalAlerts} href="/campanhas?status=problema" tone={data.criticalAlerts > 0 ? 'bad' : 'default'} icon="Siren" />

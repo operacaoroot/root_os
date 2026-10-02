@@ -40,7 +40,8 @@ function TasksInner() {
       <div className="flex items-end justify-between">
         <div>
           <p className="text-sm text-muted">
-            {data ? `${data.total} tarefa(s) · ${data.overdue} atrasada(s)` : 'Carregando…'} · lista de tarefas registrada no OS, separada do quadro interno.
+            {data ? `${data.total} tarefa(s) · ${data.overdue} atrasada(s)` : 'Carregando…'} · visão em lista, para consulta. O trabalho do dia a dia, com as tarefas migradas do ClickUp, está no{' '}
+            <Link href="/trabalho" className="text-brand hover:underline">Quadro interno</Link>.
           </p>
         </div>
         <div className="flex gap-2 text-sm">

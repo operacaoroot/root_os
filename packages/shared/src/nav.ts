@@ -180,6 +180,10 @@ export const NAV: NavItem[] = [
 // Páginas que saíram do menu e CONTINUAM VIVAS. Não são rotas mortas: a demo do
 // pixel usa /vendas, e /google é o destino do callback OAuth. O destino aqui é
 // onde a funcionalidade delas passa a ser alcançada pelo menu.
+// /conteudo (espelho ContentItem do ClickUp) e /tarefas (lista paralela ao quadro)
+// são itens vivos do NAV: não entram aqui, e nenhum destino abaixo pode ser um
+// deles — a fonte migrada do ClickUp é o Quadro interno (/trabalho). Apagar ou
+// absorver essas telas é decisão de produto do Pedro (MK7-telas-repetidas §3.1).
 export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }[] = [
   { href: '/vendas', destino: '/pixels', porque: 'é o manual de instalação do pixel.js mais uma página demo, não um módulo' },
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },

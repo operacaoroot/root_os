@@ -163,6 +163,18 @@ describe('não se perdeu funcionalidade', () => {
     }
   });
 
+  it('nenhuma rota absorvida aponta para fila duplicada: a fonte migrada do ClickUp é o Quadro interno', () => {
+    const filasDuplicadas = new Set(['/tarefas', '/conteudo']);
+    const hrefsNovos = new Set(NAV.map((n) => n.href));
+    expect(hrefsNovos.has('/trabalho')).toBe(true);
+    for (const r of ROTAS_ABSORVIDAS) {
+      expect(filasDuplicadas.has(r.destino), `${r.href} → ${r.destino} é fila duplicada`).toBe(false);
+    }
+    for (const h of filasDuplicadas) {
+      expect(ROTAS_ABSORVIDAS.some((r) => r.href === h), `${h} é item vivo do NAV, não rota absorvida`).toBe(false);
+    }
+  });
+
   it('redirect e página não disputam a mesma rota', () => {
     const hrefsNovos = new Set(NAV.map((n) => n.href));
     for (const r of ROTAS_ANTIGAS as { de: string }[]) {
