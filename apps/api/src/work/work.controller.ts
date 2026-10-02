@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
+  TrabEspacoCreateSchema, TrabEspacoUpdateSchema,
   TrabPastaCreateSchema, TrabPastaUpdateSchema, TrabListaCreateSchema, TrabListaUpdateSchema,
   TrabStatusCreateSchema, TrabStatusUpdateSchema, TrabCampoCreateSchema, TrabCampoUpdateSchema,
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
@@ -30,6 +31,25 @@ export class WorkController {
   @RequirePermissions('tarefas.ver')
   estrutura(@CurrentUser() u: JwtUser) {
     return this.svc.estrutura(u.orgId);
+  }
+
+  // ---- espaços ----
+  @Post('espacos')
+  @RequirePermissions('tarefas.editar')
+  criarEspaco(@CurrentUser() u: JwtUser, @Body() body: unknown) {
+    return this.svc.criarEspaco(u.orgId, u.sub, TrabEspacoCreateSchema.parse(body));
+  }
+
+  @Patch('espacos/:id')
+  @RequirePermissions('tarefas.editar')
+  editarEspaco(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.svc.editarEspaco(u.orgId, u.sub, id, TrabEspacoUpdateSchema.parse(body));
+  }
+
+  @Delete('espacos/:id')
+  @RequirePermissions('tarefas.editar')
+  apagarEspaco(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.svc.apagarEspaco(u.orgId, u.sub, id);
   }
 
   // ---- pastas ----

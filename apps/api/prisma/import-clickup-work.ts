@@ -201,26 +201,54 @@ function ordenar(value: unknown): unknown {
 
 /** Abrange filhos e relações locais: rollback recusa edição, comentário ou task nova. */
 async function capturar(db: Db, specs: Spec[]) {
+  /*
+   * F-a (ROOT-16, contrato C-15): a captura lê as colunas que os 11 modelos tinham
+   * em `1194a49`, quando o lote de 30/09 entrou, e não "todas as colunas". Assim
+   * coluna nova (espaço, pasta-mãe, e as de qualquer fatia seguinte) não muda o
+   * fingerprint gravado no manifesto, e o rollback automático do lote continua
+   * valendo. O preço: edição só em coluna nova não bloqueia o rollback. Mudar
+   * qualquer coluna desta lista numa linha do lote ainda bloqueia.
+   */
+  const PASTA = { id: true, orgId: true, name: true, order: true, createdAt: true, updatedAt: true } as const;
+  const LISTA = { id: true, orgId: true, folderId: true, name: true, order: true, externalId: true, createdAt: true, updatedAt: true } as const;
+  const ETAPA = { id: true, orgId: true, listId: true, name: true, type: true, color: true, order: true, limite: true } as const;
+  const CAMPO = { id: true, orgId: true, listId: true, name: true, type: true, order: true } as const;
+  const OPCAO = { id: true, orgId: true, fieldId: true, name: true, color: true, order: true } as const;
+  const ETIQUETA = { id: true, orgId: true, name: true, color: true } as const;
+  const TAREFA = {
+    id: true, orgId: true, listId: true, statusId: true, title: true, description: true, priority: true,
+    assignee: true, agenteId: true, agenteEm: true, statusDesde: true, dueDate: true, startDate: true,
+    parentId: true, externalId: true, externalUrl: true, archived: true, order: true, createdAt: true, updatedAt: true,
+  } as const;
+  const VALOR = { id: true, orgId: true, taskId: true, fieldId: true, optionId: true, value: true } as const;
+  const COMENTARIO = { id: true, orgId: true, taskId: true, authorId: true, authorName: true, text: true, createdAt: true } as const;
+  const APONTAMENTO = {
+    id: true, orgId: true, taskId: true, autorId: true, autorNome: true, minutos: true, dia: true, etapa: true, nota: true, createdAt: true,
+  } as const;
+  const AUDITORIA = {
+    id: true, orgId: true, actorType: true, actorId: true, action: true, entityType: true, entityId: true,
+    before: true, after: true, ip: true, metadata: true, createdAt: true,
+  } as const;
   const ids = (tipo: Spec['tipo']) => specs.filter((s) => s.tipo === tipo).map((s) => s.id);
-  const folders = await db.workFolder.findMany({ where: { id: { in: ids('folder') } }, include: { lists: { select: { id: true } } } });
-  const lists = await db.workList.findMany({ where: { id: { in: ids('list') } }, include: {
-    statuses: { select: { id: true } }, fields: { select: { id: true } }, tasks: { select: { id: true } },
+  const folders = await db.workFolder.findMany({ where: { id: { in: ids('folder') } }, select: { ...PASTA, lists: { select: { id: true } } } });
+  const lists = await db.workList.findMany({ where: { id: { in: ids('list') } }, select: {
+    ...LISTA, statuses: { select: { id: true } }, fields: { select: { id: true } }, tasks: { select: { id: true } },
   } });
-  const statuses = await db.workStatus.findMany({ where: { id: { in: ids('status') } } });
-  const fields = await db.workField.findMany({ where: { id: { in: ids('field') } }, include: {
-    options: { select: { id: true } }, values: { select: { id: true } },
+  const statuses = await db.workStatus.findMany({ where: { id: { in: ids('status') } }, select: ETAPA });
+  const fields = await db.workField.findMany({ where: { id: { in: ids('field') } }, select: {
+    ...CAMPO, options: { select: { id: true } }, values: { select: { id: true } },
   } });
-  const options = await db.workFieldOption.findMany({ where: { id: { in: ids('option') } } });
-  const tags = await db.workTag.findMany({ where: { id: { in: ids('tag') } }, include: { tasks: { select: { id: true } } } });
-  const tasks = await db.workTask.findMany({ where: { id: { in: ids('task') } }, include: {
-    tags: { select: { id: true } }, values: true, comments: true, subtasks: { select: { id: true } },
-    apontamentos: true, onboardingTrilhos: { select: { id: true } },
+  const options = await db.workFieldOption.findMany({ where: { id: { in: ids('option') } }, select: OPCAO });
+  const tags = await db.workTag.findMany({ where: { id: { in: ids('tag') } }, select: { ...ETIQUETA, tasks: { select: { id: true } } } });
+  const tasks = await db.workTask.findMany({ where: { id: { in: ids('task') } }, select: {
+    ...TAREFA, tags: { select: { id: true } }, values: { select: VALOR }, comments: { select: COMENTARIO },
+    subtasks: { select: { id: true } }, apontamentos: { select: APONTAMENTO }, onboardingTrilhos: { select: { id: true } },
   } });
-  const values = await db.workFieldValue.findMany({ where: { id: { in: ids('value') } } });
-  const comments = await db.workComment.findMany({ where: { id: { in: ids('comment') } } });
+  const values = await db.workFieldValue.findMany({ where: { id: { in: ids('value') } }, select: VALOR });
+  const comments = await db.workComment.findMany({ where: { id: { in: ids('comment') } }, select: COMENTARIO });
   const audit = await db.auditLog.findMany({ where: {
     orgId: specs[0]?.conferir.orgId as string, entityType: 'work_task', entityId: { in: ids('task') },
-  } });
+  }, select: AUDITORIA });
   return ordenar({ folders, lists, statuses, fields, options, tags, tasks, values, comments, audit });
 }
 

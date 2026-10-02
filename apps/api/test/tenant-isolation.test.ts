@@ -403,7 +403,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'AcessoDeSuporte', escopo: 'tenant', chaveSql: '"id"', nota: 'A autorização de suporte (fatia 6.3): a linha é da empresa CLIENTE, que é quem autoriza, vê e revoga. É a tabela que decide se um operador da plataforma entra na casa de alguém — ler a da outra empresa revela quem a ROOT está atendendo e por quê (o `motivo` é texto escrito pelo cliente); ESCREVER é conceder a si mesmo acesso à casa alheia, que é a fatia inteira ao contrário. Sem semente, o caso "A não lê linha de B" rodaria contra tabela vazia e passaria com qualquer policy — foi exatamente por não estar aqui que a primeira versão da fatia deixou a catraca VERMELHA.' },
 
   // ---- trabalho ---------------------------------------------------------
-  { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da hierarquia pastas → listas → tarefas.' },
+  { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
+  { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Pasta de topo de um espaço ou pasta dentro de pasta; o pai é conferido pela chave composta com orgId.' },
   { tabela: 'WorkList', escopo: 'tenant', chaveSql: '"id"', nota: 'Pai de WorkStatus, que não tem orgId.' },
   { tabela: 'WorkStatus', escopo: 'filho', chaveSql: '"id"', nota: 'Referenciada por WorkTask.statusId: as duas empresas têm de bater.' },
   { tabela: 'WorkTag', escopo: 'tenant', chaveSql: '"id"', nota: 'Etiquetas do espaço.' },
@@ -1156,7 +1157,10 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   }));
 
   // --- trabalho ------------------------------------------------------------
-  const pastaId = await ins(c, 'WorkFolder', { id: crypto.randomUUID(), orgId, name: `Pasta ${rotulo} ${MARCA}`, updatedAt: agora });
+  const espacoId = await ins(c, 'WorkSpace', { id: crypto.randomUUID(), orgId, name: `Espaço ${rotulo} ${MARCA}`, updatedAt: agora });
+  reg('WorkSpace', espacoId);
+
+  const pastaId = await ins(c, 'WorkFolder', { id: crypto.randomUUID(), orgId, spaceId: espacoId, name: `Pasta ${rotulo} ${MARCA}`, updatedAt: agora });
   reg('WorkFolder', pastaId);
 
   const listaId = await ins(c, 'WorkList', {

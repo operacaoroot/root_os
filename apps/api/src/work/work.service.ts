@@ -1,9 +1,13 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { MODELOS_DE_LISTA, ehValorMonetarioCanonico } from '@mktos/shared';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico,
+} from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
   TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
+  TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
+  TrabListaCreateInput, TrabListaUpdateInput,
 } from '@mktos/shared';
 import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -39,6 +43,14 @@ type TaskRow = Prisma.WorkTaskGetPayload<{ include: typeof TASK_INCLUDE }>;
 
 type ValorDoCampo = { optionId?: string | null; value?: string | null };
 type CampoConferido = { field: Prisma.WorkFieldGetPayload<{ include: { options: true } }>; v: ValorDoCampo };
+
+/** O pai imediato de cada nó da árvore; os dois nulos = fora de espaço. */
+type PaiDaPasta = { spaceId: string | null; parentId: string | null };
+type PaiDaLista = { folderId: string | null; spaceId: string | null };
+
+const NOME_DE_PASTA_REPETIDO = 'Já existe uma pasta com esse nome neste lugar.';
+const NOME_DE_ESPACO_REPETIDO = 'Já existe um espaço com esse nome.';
+const PASTA_EM_CICLO = 'A pasta não pode ficar dentro dela mesma nem de uma pasta que está dentro dela.';
 
 /**
  * `true` quando o pedido apaga o valor do campo. Num `moeda` só o valor decide:
@@ -91,8 +103,9 @@ export class WorkService {
   }
 
   async estrutura(orgId: string): Promise<TrabEstrutura> {
-    const [folders, lists, fields, tags, counts, byStatus, users, agentes] = await Promise.all([
-      this.prisma.workFolder.findMany({ where: { orgId }, orderBy: { order: 'asc' } }),
+    const [spaces, folders, lists, fields, tags, counts, byStatus, users, agentes] = await Promise.all([
+      this.prisma.workSpace.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
+      this.prisma.workFolder.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
       this.prisma.workList.findMany({
         where: { orgId },
         orderBy: { order: 'asc' },
@@ -121,7 +134,7 @@ export class WorkService {
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
 
     const toLista = (l: (typeof lists)[number]): TrabListaDto => ({
-      id: l.id, name: l.name, order: l.order, externalId: l.externalId,
+      id: l.id, name: l.name, order: l.order, externalId: l.externalId, spaceId: l.spaceId,
       total: porLista.get(l.id) ?? 0,
       statuses: l.statuses.map((s) => ({
         id: s.id, name: s.name, type: s.type, color: s.color, order: s.order,
@@ -131,8 +144,10 @@ export class WorkService {
     });
 
     return {
+      espacos: spaces.map((s) => ({ id: s.id, name: s.name, order: s.order, externalId: s.externalId })),
       folders: folders.map((fo) => ({
         id: fo.id, name: fo.name, order: fo.order,
+        spaceId: fo.spaceId, parentId: fo.parentId, externalId: fo.externalId,
         lists: lists.filter((l) => l.folderId === fo.id).map(toLista),
       })),
       listasSoltas: lists.filter((l) => !l.folderId).map(toLista),
@@ -143,25 +158,80 @@ export class WorkService {
     };
   }
 
+  // ---------- espaços ----------
+
+  criarEspaco(orgId: string, actorId: string, input: TrabEspacoCreateInput) {
+    return this.logado(orgId, actorId, 'work.space.create', 'work_space', null, () =>
+      this.semNomeRepetido(NOME_DE_ESPACO_REPETIDO, () =>
+        this.prisma.workSpace.create({ data: { orgId, name: input.name } })),
+    );
+  }
+
+  async editarEspaco(orgId: string, actorId: string, id: string, input: TrabEspacoUpdateInput) {
+    await this.acharEspaco(orgId, id);
+    return this.logado(orgId, actorId, 'work.space.update', 'work_space', id, () =>
+      this.semNomeRepetido(NOME_DE_ESPACO_REPETIDO, () =>
+        this.prisma.workSpace.update({ where: { id }, data: { name: input.name, order: input.order } })),
+    );
+  }
+
+  async apagarEspaco(orgId: string, actorId: string, id: string) {
+    await this.acharEspaco(orgId, id);
+    const [pastas, listas] = await Promise.all([
+      this.prisma.workFolder.count({ where: { orgId, spaceId: id } }),
+      this.prisma.workList.count({ where: { orgId, spaceId: id } }),
+    ]);
+    if (pastas + listas > 0) throw new BadRequestException('Espaço tem pastas ou listas — mova ou apague antes.');
+    return this.logado(orgId, actorId, 'work.space.delete', 'work_space', id, () =>
+      this.prisma.workSpace.delete({ where: { id } }),
+    );
+  }
+
   // ---------- pastas ----------
 
-  criarPasta(orgId: string, actorId: string, input: { name: string }) {
+  async criarPasta(orgId: string, actorId: string, input: TrabPastaCreateInput) {
+    const pai = await this.paiDaPasta(orgId, input);
     return this.logado(orgId, actorId, 'work.folder.create', 'work_folder', null, () =>
-      this.prisma.workFolder.create({ data: { orgId, name: input.name } }),
+      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () =>
+        this.prisma.workFolder.create({ data: { orgId, name: input.name, ...pai } })),
     );
   }
 
-  async editarPasta(orgId: string, actorId: string, id: string, input: { name?: string; order?: number }) {
-    await this.achar(this.prisma.workFolder, orgId, id, 'Pasta');
+  /**
+   * Renomeia, reordena e MOVE (`spaceId`/`parentId`, ver `TrabPastaUpdateSchema`).
+   * Pôr dentro de outra pasta confere o ciclo sob o cadeado da árvore da empresa:
+   * sem ele, "A para dentro de B" e "B para dentro de A" ao mesmo tempo passariam
+   * cada um na sua conferência e fechariam o ciclo juntos.
+   */
+  async editarPasta(orgId: string, actorId: string, id: string, input: TrabPastaUpdateInput) {
+    const antes = await this.prisma.workFolder.findFirst({ where: { id, orgId }, select: { spaceId: true, parentId: true } });
+    if (!antes) throw new NotFoundException('Pasta não encontrada');
+    const move = input.spaceId !== undefined || input.parentId !== undefined;
+    const pai = move ? await this.paiDaPasta(orgId, input) : null;
+    const data = { name: input.name, order: input.order, ...pai };
     return this.logado(orgId, actorId, 'work.folder.update', 'work_folder', id, () =>
-      this.prisma.workFolder.update({ where: { id }, data: input }),
+      this.semNomeRepetido(NOME_DE_PASTA_REPETIDO, () => {
+        if (!pai?.parentId) return this.prisma.workFolder.update({ where: { id }, data });
+        const mae = pai.parentId;
+        return this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
+          await this.conferirSemCiclo(tx, orgId, id, mae);
+          return tx.workFolder.update({ where: { id }, data });
+        });
+      }),
+      pai ? { before: antes, after: pai } : undefined,
     );
   }
 
+  /** Pasta com lista ou com pasta dentro não se apaga; as duas contagens só olham esta empresa. */
   async apagarPasta(orgId: string, actorId: string, id: string) {
     await this.achar(this.prisma.workFolder, orgId, id, 'Pasta');
-    const listas = await this.prisma.workList.count({ where: { folderId: id } });
+    const [listas, filhas] = await Promise.all([
+      this.prisma.workList.count({ where: { orgId, folderId: id } }),
+      this.prisma.workFolder.count({ where: { orgId, parentId: id } }),
+    ]);
     if (listas > 0) throw new BadRequestException('Pasta tem listas — mova ou apague antes.');
+    if (filhas > 0) throw new BadRequestException('Pasta tem pastas dentro — mova ou apague antes.');
     return this.logado(orgId, actorId, 'work.folder.delete', 'work_folder', id, () =>
       this.prisma.workFolder.delete({ where: { id } }),
     );
@@ -169,10 +239,11 @@ export class WorkService {
 
   // ---------- listas ----------
 
-  async criarLista(orgId: string, actorId: string, input: { folderId?: string | null; name: string }) {
+  async criarLista(orgId: string, actorId: string, input: TrabListaCreateInput) {
+    const pai = await this.paiDaLista(orgId, input);
     return this.logado(orgId, actorId, 'work.list.create', 'work_list', null, async () => {
       const list = await this.prisma.workList.create({
-        data: { orgId, folderId: input.folderId ?? null, name: input.name },
+        data: { orgId, ...pai, name: input.name },
       });
       // toda lista nasce com um pipeline mínimo (padrão ClickUp: open → custom → closed)
       const padrao = [
@@ -185,10 +256,15 @@ export class WorkService {
     });
   }
 
-  async editarLista(orgId: string, actorId: string, id: string, input: { folderId?: string | null; name?: string; order?: number }) {
-    await this.achar(this.prisma.workList, orgId, id, 'Lista');
+  /** Mover lista troca só a linha da lista: as tarefas e os IDs delas ficam onde estão. */
+  async editarLista(orgId: string, actorId: string, id: string, input: TrabListaUpdateInput) {
+    const antes = await this.prisma.workList.findFirst({ where: { id, orgId }, select: { folderId: true, spaceId: true } });
+    if (!antes) throw new NotFoundException('Lista não encontrada');
+    const move = input.folderId !== undefined || input.spaceId !== undefined;
+    const pai = move ? await this.paiDaLista(orgId, input) : null;
     return this.logado(orgId, actorId, 'work.list.update', 'work_list', id, () =>
-      this.prisma.workList.update({ where: { id }, data: input }),
+      this.prisma.workList.update({ where: { id }, data: { name: input.name, order: input.order, ...pai } }),
+      pai ? { before: antes, after: pai } : undefined,
     );
   }
 
@@ -258,7 +334,10 @@ export class WorkService {
   }
 
   async criarOpcao(orgId: string, actorId: string, fieldId: string, input: { name: string; color?: string }) {
-    await this.achar(this.prisma.workField, orgId, fieldId, 'Campo');
+    const campo = (await this.achar(this.prisma.workField, orgId, fieldId, 'Campo')) as { type: WorkFieldType };
+    // O2 da ROOT-06a-IMPL: a opção ficaria sem efeito, porque o valor `moeda`
+    // recusa `optionId` e o importador recusa campo `moeda` com opções.
+    if (campo.type === WorkFieldType.moeda) throw new BadRequestException('Campo moeda não tem opções.');
     const max = await this.prisma.workFieldOption.aggregate({ where: { fieldId }, _max: { order: true } });
     return this.logado(orgId, actorId, 'work.option.create', 'work_field_option', null, () =>
       this.prisma.workFieldOption.create({
@@ -728,10 +807,10 @@ export class WorkService {
    */
   async criarListaDoModelo(orgId: string, actorId: string, input: TrabListaDoModeloInput) {
     const modelo: ModeloDeLista = MODELOS_DE_LISTA[input.modelo];
-    if (input.folderId) await this.achar(this.prisma.workFolder, orgId, input.folderId, 'Pasta');
+    const pai = await this.paiDaLista(orgId, input);
     return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, async () => {
       const list = await this.prisma.workList.create({
-        data: { orgId, folderId: input.folderId ?? null, name: input.name ?? modelo.nome },
+        data: { orgId, ...pai, name: input.name ?? modelo.nome },
       });
       await this.prisma.workStatus.createMany({
         data: modelo.etapas.map((e, i) => ({
@@ -765,15 +844,63 @@ export class WorkService {
     return achado;
   }
 
+  private async acharEspaco(orgId: string, id: string) {
+    const espaco = await this.prisma.workSpace.findFirst({ where: { id, orgId } });
+    if (!espaco) throw new NotFoundException('Espaço não encontrado');
+    return espaco;
+  }
+
+  /**
+   * O pai da pasta e o da lista, conferidos NA EMPRESA antes de gravar (resíduo
+   * T3 da ROOT-12a). Id de outra empresa recebe o mesmo 404 de um id que não
+   * existe; a chave composta do banco também recusaria, mas com um 500 mudo.
+   */
+  private async paiDaPasta(orgId: string, input: { spaceId?: string | null; parentId?: string | null }): Promise<PaiDaPasta> {
+    if (input.spaceId && input.parentId) throw new BadRequestException(TRAB_PASTA_COM_DOIS_PAIS);
+    if (input.spaceId) await this.acharEspaco(orgId, input.spaceId);
+    if (input.parentId) await this.achar(this.prisma.workFolder, orgId, input.parentId, 'Pasta');
+    return { spaceId: input.spaceId ?? null, parentId: input.parentId ?? null };
+  }
+
+  private async paiDaLista(orgId: string, input: { folderId?: string | null; spaceId?: string | null }): Promise<PaiDaLista> {
+    if (input.folderId && input.spaceId) throw new BadRequestException(TRAB_LISTA_COM_DOIS_PAIS);
+    if (input.folderId) await this.achar(this.prisma.workFolder, orgId, input.folderId, 'Pasta');
+    if (input.spaceId) await this.acharEspaco(orgId, input.spaceId);
+    return { folderId: input.folderId ?? null, spaceId: input.spaceId ?? null };
+  }
+
+  /** Recusa a pasta dentro dela mesma ou de uma descendente, subindo pelas mães a partir do destino. */
+  private async conferirSemCiclo(db: Prisma.TransactionClient, orgId: string, pastaId: string, maeId: string) {
+    const pastas = await db.workFolder.findMany({ where: { orgId }, select: { id: true, parentId: true } });
+    const maeDe = new Map(pastas.map((p) => [p.id, p.parentId]));
+    const vistas = new Set<string>();
+    for (let atual: string | null = maeId; atual && !vistas.has(atual); atual = maeDe.get(atual) ?? null) {
+      if (atual === pastaId) throw new BadRequestException(PASTA_EM_CICLO);
+      vistas.add(atual);
+    }
+  }
+
+  /** Nome repetido entre irmãs é 409 com a frase da tela, e não o 500 do índice único. */
+  private async semNomeRepetido<T>(frase: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException(frase);
+      throw e;
+    }
+  }
+
   /** executa a escrita e registra na auditoria (entityId do resultado quando criar). */
   private async logado<T extends { id?: string }>(
     orgId: string, actorId: string, action: string, entityType: string, entityId: string | null,
     fn: () => Promise<T>,
+    trilha?: { before?: Prisma.InputJsonValue; after?: Prisma.InputJsonValue },
   ): Promise<T> {
     const res = await fn();
     await this.audit.log({
       orgId, actorId, action, entityType,
       entityId: entityId ?? res.id ?? undefined,
+      ...trilha,
     });
     return res;
   }

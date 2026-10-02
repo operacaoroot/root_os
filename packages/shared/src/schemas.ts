@@ -5095,21 +5095,55 @@ export type WorkFieldTypeDto = z.infer<typeof WorkFieldTypeSchema>;
 
 const corHex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'cor em hex, ex.: #6bc950');
 
-export const TrabPastaCreateSchema = z.object({ name: z.string().min(1).max(80) });
+/*
+ * A ÁRVORE: espaço → pastas aninhadas → listas (ROOT-16). Cada nó tem UM pai:
+ * a pasta fica no topo de um espaço (`spaceId`) ou dentro de outra pasta
+ * (`parentId`); a lista fica numa pasta (`folderId`) ou solta no espaço
+ * (`spaceId`). Sem nenhum dos dois, o nó fica fora de espaço, como tudo o que
+ * existia antes da fatia.
+ *
+ * No PATCH, mandar qualquer uma das duas chaves é MOVER, e o destino é o par
+ * inteiro: a chave ausente vale nulo. `{ parentId: X }` põe a pasta dentro de X;
+ * `{ spaceId: Y }` leva ao topo de Y; `{ parentId: null }` tira do espaço.
+ */
+export const TrabEspacoCreateSchema = z.object({ name: z.string().min(1).max(80) });
+export const TrabEspacoUpdateSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  order: z.number().int().min(0).optional(),
+});
+export type TrabEspacoCreateInput = z.infer<typeof TrabEspacoCreateSchema>;
+export type TrabEspacoUpdateInput = z.infer<typeof TrabEspacoUpdateSchema>;
+
+export const TRAB_PASTA_COM_DOIS_PAIS = 'A pasta fica no topo de um espaço ou dentro de outra pasta, não nos dois.';
+export const TRAB_LISTA_COM_DOIS_PAIS = 'A lista fica numa pasta ou solta no espaço, não nos dois.';
+
+export const TrabPastaCreateSchema = z.object({
+  name: z.string().min(1).max(80),
+  spaceId: z.string().uuid().nullish(),
+  parentId: z.string().uuid().nullish(),
+}).refine((p) => !(p.spaceId && p.parentId), TRAB_PASTA_COM_DOIS_PAIS);
 export const TrabPastaUpdateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   order: z.number().int().min(0).optional(),
-});
+  spaceId: z.string().uuid().nullish(),
+  parentId: z.string().uuid().nullish(),
+}).refine((p) => !(p.spaceId && p.parentId), TRAB_PASTA_COM_DOIS_PAIS);
+export type TrabPastaCreateInput = z.infer<typeof TrabPastaCreateSchema>;
+export type TrabPastaUpdateInput = z.infer<typeof TrabPastaUpdateSchema>;
 
 export const TrabListaCreateSchema = z.object({
   folderId: z.string().uuid().nullish(),
+  spaceId: z.string().uuid().nullish(),
   name: z.string().min(1).max(80),
-});
+}).refine((l) => !(l.folderId && l.spaceId), TRAB_LISTA_COM_DOIS_PAIS);
 export const TrabListaUpdateSchema = z.object({
   folderId: z.string().uuid().nullish().optional(),
+  spaceId: z.string().uuid().nullish(),
   name: z.string().min(1).max(80).optional(),
   order: z.number().int().min(0).optional(),
-});
+}).refine((l) => !(l.folderId && l.spaceId), TRAB_LISTA_COM_DOIS_PAIS);
+export type TrabListaCreateInput = z.infer<typeof TrabListaCreateSchema>;
+export type TrabListaUpdateInput = z.infer<typeof TrabListaUpdateSchema>;
 
 /**
  * Limite de trabalho em andamento da etapa (o WIP do kanban). `null` apaga o
@@ -5280,9 +5314,10 @@ export type ChaveDeModeloDeLista = keyof typeof MODELOS_DE_LISTA;
 export const TrabListaDoModeloSchema = z.object({
   modelo: z.enum(Object.keys(MODELOS_DE_LISTA) as [ChaveDeModeloDeLista, ...ChaveDeModeloDeLista[]]),
   folderId: z.string().uuid().nullish(),
+  spaceId: z.string().uuid().nullish(),
   /** Ausente = o nome do modelo. */
   name: z.string().min(1).max(80).optional(),
-});
+}).refine((l) => !(l.folderId && l.spaceId), TRAB_LISTA_COM_DOIS_PAIS);
 export type TrabListaDoModeloInput = z.infer<typeof TrabListaDoModeloSchema>;
 
 /* ----------------------------------------------------------------------------
@@ -5320,9 +5355,20 @@ export interface TrabStatusDto {
 }
 export interface TrabListaDto {
   id: string; name: string; order: number; externalId: string | null; total: number;
+  /** Só na lista solta no espaço; a que está numa pasta herda o espaço dela. */
+  spaceId: string | null;
   statuses: TrabStatusDto[]; fields: TrabCampoDto[];
 }
-export interface TrabPastaDto { id: string; name: string; order: number; lists: TrabListaDto[] }
+/**
+ * `folders` traz TODAS as pastas, de qualquer nível, numa lista só: quem quiser
+ * a árvore monta por `spaceId` e `parentId`, e quem só junta as listas (o quadro
+ * de hoje) continua achando todas em `folders[].lists` e `listasSoltas`.
+ */
+export interface TrabPastaDto {
+  id: string; name: string; order: number; lists: TrabListaDto[];
+  spaceId: string | null; parentId: string | null; externalId: string | null;
+}
+export interface TrabEspacoDto { id: string; name: string; order: number; externalId: string | null }
 export interface TrabTagDto { id: string; name: string; color: string }
 /**
  * Um agente, como o quadro de Trabalho precisa vê-lo (fatia A4).
@@ -5343,6 +5389,7 @@ export interface TrabAgenteDto {
 }
 
 export interface TrabEstrutura {
+  espacos: TrabEspacoDto[];
   folders: TrabPastaDto[];
   listasSoltas: TrabListaDto[];
   camposGlobais: TrabCampoDto[];

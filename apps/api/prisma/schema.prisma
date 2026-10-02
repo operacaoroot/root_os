@@ -112,6 +112,7 @@ model Org {
   contracts           Contract[]
   transactionSplits   TransactionSplit[]
 
+  workSpaces  WorkSpace[]
   workFolders WorkFolder[]
   workLists   WorkList[]
   workTags    WorkTag[]
@@ -1892,18 +1893,62 @@ enum WorkFieldType {
   moeda
 }
 
-model WorkFolder {
-  id        String   @id @default(uuid())
-  orgId     String
-  org       Org      @relation(fields: [orgId], references: [id])
-  name      String
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// ESPAÇO — o topo da árvore espaço → pastas aninhadas → listas (ROOT-16, C-15).
+///
+/// Cada nó guarda só o PAI IMEDIATO: a pasta de topo aponta o espaço, a pasta
+/// aninhada aponta a pasta-mãe e deixa `spaceId` nulo, e a lista aponta a pasta
+/// OU, quando solta no espaço, o próprio espaço. Mover uma pasta com tudo o que
+/// tem dentro é trocar uma linha só; copiar o espaço em cada nó obrigaria a
+/// reescrever a subárvore inteira a cada movimento. Os CHECK da migration
+/// `20261002110000_trabalho_hierarquia` recusam pasta e lista com dois pais.
+///
+/// O que existia antes da fatia fica com `spaceId` e `parentId` nulos: pasta e
+/// lista "fora de espaço", como sempre estiveram, com os mesmos IDs.
+///
+/// As chaves estrangeiras de espaço, pasta-mãe e pasta da lista são COMPOSTAS
+/// com `orgId` (como as da PR35): o banco recusa pendurar nó de uma empresa em
+/// nó de outra, e não só o serviço.
+model WorkSpace {
+  id         String   @id @default(uuid())
+  orgId      String
+  org        Org      @relation(fields: [orgId], references: [id])
+  name       String
+  order      Int      @default(0)
+  externalId String? // id do espaço no ClickUp
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  lists WorkList[]
+  folders WorkFolder[]
+  lists   WorkList[]
 
   @@unique([orgId, name])
+  @@unique([orgId, externalId])
+  @@unique([id, orgId])
+}
+
+model WorkFolder {
+  id         String      @id @default(uuid())
+  orgId      String
+  org        Org         @relation(fields: [orgId], references: [id])
+  spaceId    String?
+  space      WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  parentId   String?
+  parent     WorkFolder? @relation("PastaDentroDePasta", fields: [parentId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  name       String
+  order      Int         @default(0)
+  externalId String? // id da pasta no ClickUp
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  children WorkFolder[] @relation("PastaDentroDePasta")
+  lists    WorkList[]
+
+  /// Nome único entre IRMÃS: no banco o índice é NULLS NOT DISTINCT, então duas
+  /// pastas de topo sem espaço continuam sem poder ter o mesmo nome, como na
+  /// unicidade antiga `(orgId, name)`, e homônimas em ramos diferentes passam.
+  @@unique([orgId, spaceId, parentId, name])
+  @@unique([orgId, externalId])
+  @@unique([id, orgId])
 }
 
 model WorkList {
@@ -1911,7 +1956,11 @@ model WorkList {
   orgId      String
   org        Org         @relation(fields: [orgId], references: [id])
   folderId   String?
-  folder     WorkFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  /// RESTRICT, não mais SET NULL: pasta com lista não se apaga (o serviço já
+  /// recusava), e a chave composta não poderia anular `orgId` junto.
+  folder     WorkFolder? @relation(fields: [folderId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  spaceId    String?
+  space      WorkSpace?  @relation(fields: [spaceId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   name       String
   order      Int         @default(0)
   externalId String? // id da lista no ClickUp (ex.: Gestão de Temas = 901327640001)
@@ -1922,6 +1971,7 @@ model WorkList {
   fields   WorkField[]
   tasks    WorkTask[]
 
+  @@unique([orgId, externalId])
   @@index([orgId, folderId])
 }
 

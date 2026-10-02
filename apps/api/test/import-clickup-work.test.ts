@@ -1,13 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { SnapshotSchema, canonical, idNativo, raizPermitidaDoAnexo, validarSnapshot } from '../prisma/import-clickup-work.contract';
-import { inventariar } from '../prisma/import-clickup-work.plan';
+import { inventariar, type Spec } from '../prisma/import-clickup-work.plan';
 import { classificarRollback, fingerprintImportado, planejar, reverterLote, verificarArquivos } from '../prisma/import-clickup-work';
+import { exigirBancoDescartavel } from './banco-de-teste';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const LISTAS = ['901328341442', '901328341443', '901328341445', '901328341450',
@@ -447,5 +448,128 @@ describe('importação ClickUp → Work: moeda e etapa done (ROOT-06a)', () => {
       expect(ruim.relatorio.errors).toEqual([`valor do campo ${CAMPO_VALOR} da tarefa lead-1: mais casas que a precisão 2`]);
       expect(ruim.stdout).not.toContain('1500.555');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+/*
+ * O FINGERPRINT DO LOTE ATRAVESSA A MIGRATION DA HIERARQUIA (ROOT-16, F-a do C-15).
+ *
+ * O lote abaixo é sintético e determinístico: IDs nativos, datas e carimbos
+ * fixos, e trabalho nativo nos 11 modelos que a captura lê inteiros (auditoria,
+ * horas, agente, comentário e trilho, este só pelo id). `FINGERPRINT_NA_BASE` foi
+ * medido rodando ESTE bloco na base `e765f00`, com o schema de lá e a captura
+ * completa de lá (todas as colunas, `include`), num Postgres descartável; o
+ * comando e a saída estão no relatório da ROOT-16. Aqui, com o schema novo e a
+ * captura de colunas fixas, o hash tem de dar o mesmo: é a prova de que o
+ * rollback do lote de 30/09 continua valendo depois da migration.
+ */
+const FINGERPRINT_NA_BASE = '337de5f3ca42f605ac6cc1bc8c5991c9c87fba15540cddd623ee445865c9be14';
+const URL_DO_TESTE = process.env.TEST_DATABASE_URL;
+const ORG_DO_LOTE = '16161616-1616-4161-8161-161616161616';
+const QUANDO = new Date('2026-09-30T12:00:00.000Z');
+
+async function criarLoteDeterministico(db: PrismaClient, specs: Spec[]) {
+  for (const s of specs) {
+    const carimbo = s.tipo === 'folder' || s.tipo === 'list' ? { createdAt: QUANDO, updatedAt: QUANDO }
+      : s.tipo === 'task' ? { createdAt: QUANDO, updatedAt: QUANDO, statusDesde: QUANDO } : {};
+    const data = { id: s.id, ...s.dados, ...carimbo } as never;
+    switch (s.tipo) {
+      case 'folder': await db.workFolder.create({ data }); break;
+      case 'list': await db.workList.create({ data }); break;
+      case 'status': await db.workStatus.create({ data }); break;
+      case 'field': await db.workField.create({ data }); break;
+      case 'option': await db.workFieldOption.create({ data }); break;
+      case 'tag': await db.workTag.create({ data }); break;
+      case 'task': await db.workTask.create({ data }); break;
+      case 'value': await db.workFieldValue.create({ data }); break;
+      case 'comment': await db.workComment.create({ data }); break;
+    }
+  }
+  const tarefa = (origem: string) => specs.find((x) => x.chave === `task:${origem}`)!.id;
+  await db.agent.create({ data: { id: 'agente-lote-16', orgId: ORG_DO_LOTE, slug: 'lote16', nome: 'Agente do lote', missao: 'teste' } });
+  await db.workTask.update({ where: { id: tarefa('root-001') }, data: { agenteId: 'agente-lote-16', agenteEm: QUANDO, updatedAt: QUANDO } });
+  await db.workComment.create({ data: { id: 'comentario-nativo-16', orgId: ORG_DO_LOTE, taskId: tarefa('root-001'), authorName: 'Pessoa', text: 'nativo', createdAt: QUANDO } });
+  await db.workApontamento.create({ data: {
+    id: 'hora-nativa-16', orgId: ORG_DO_LOTE, taskId: tarefa('lead-1'), autorNome: 'Pessoa', minutos: 45,
+    dia: new Date('2026-09-29T00:00:00.000Z'), etapa: 'fechado', nota: 'nativa', createdAt: QUANDO,
+  } });
+  for (const [n, t] of [tarefa('root-001'), tarefa('lead-1')].entries()) {
+    await db.auditLog.create({ data: {
+      id: `auditoria-16-${n}`, orgId: ORG_DO_LOTE, actorId: 'u-16', action: 'work.task.update', entityType: 'work_task', entityId: t,
+      before: { title: `antes ${n}` }, after: { title: `depois ${n}`, campos: { v: { valor: 'BRL 1.00' } } },
+      ip: '127.0.0.1', metadata: { n }, createdAt: QUANDO,
+    } });
+  }
+  await db.onboardingTrilho.create({ data: { id: 'trilho-16', orgId: ORG_DO_LOTE, cliente: 'Cliente 16', slug: 'cliente-16-lote', cardId: tarefa('lead-1'), atualizadoEm: QUANDO } });
+}
+
+async function limparLote(db: PrismaClient) {
+  const org = { orgId: ORG_DO_LOTE };
+  await db.onboardingTrilho.deleteMany({ where: org });
+  await db.auditLog.deleteMany({ where: org });
+  await db.workTask.deleteMany({ where: org });
+  await db.agent.deleteMany({ where: org });
+  await db.workField.deleteMany({ where: org });
+  await db.workTag.deleteMany({ where: org });
+  await db.workList.deleteMany({ where: org });
+  await db.workFolder.deleteMany({ where: org });
+}
+
+exigirBancoDescartavel(URL_DO_TESTE ?? '', 'ESCREVE nele (uma empresa com o lote sintético e trabalho nativo)');
+
+describe.skipIf(!URL_DO_TESTE)('importação ClickUp → Work: fingerprint com a hierarquia (ROOT-16)', () => {
+  let db: PrismaClient;
+  const s = fixtureComercial();
+  const specs = inventariar(s, ORG_DO_LOTE, validarSnapshot(s).caminhos).specs;
+
+  beforeAll(async () => {
+    db = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });
+    await db.org.upsert({ where: { id: ORG_DO_LOTE }, create: { id: ORG_DO_LOTE, name: 'lote 16', slug: 'lote-16' }, update: {} });
+    await limparLote(db);
+    await criarLoteDeterministico(db, specs);
+  });
+
+  afterAll(async () => {
+    if (!db) return;
+    await limparLote(db);
+    await db.org.deleteMany({ where: { id: ORG_DO_LOTE } });
+    await db.$disconnect();
+  });
+
+  it('a captura de colunas fixas no schema novo dá o hash da captura completa no schema da base', async () => {
+    expect(await fingerprintImportado(db, specs)).toBe(FINGERPRINT_NA_BASE);
+  });
+
+  it('depois da migration o dry-run continua igual e o rollback do lote continua pronto', async () => {
+    const records = Object.fromEntries(specs.map((sp) => [sp.chave, { id: sp.id, origemHash: sp.origemHash }]));
+    const acoes = await planejar(db, specs, records);
+    expect(acoes.filter((a) => a.estado !== 'igual')).toEqual([]);
+    expect(acoes).toHaveLength(specs.length);
+    const run = { preFingerprint: 'antes-do-lote', postFingerprint: FINGERPRINT_NA_BASE };
+    expect(classificarRollback(await fingerprintImportado(db, specs), run)).toBe('pronto');
+  });
+
+  /*
+   * O limite da F-a, para a ROOT-17: coluna NOVA escrita por SQL não muda o hash;
+   * a mesma mudança pela tela passa pelo Prisma, que grava `updatedAt` (coluna
+   * da base), e aposenta o rollback; nome da pasta (coluna da base) também.
+   */
+  it('coluna nova por SQL não muda o hash; pelo Prisma o updatedAt muda, e coluna da base também muda', async () => {
+    const pasta = specs.find((x) => x.tipo === 'folder')!.id;
+    try {
+      await db.$executeRaw`INSERT INTO "WorkSpace" ("id", "orgId", "name", "updatedAt") VALUES ('espaco-lote-16', ${ORG_DO_LOTE}, 'ROOT', ${QUANDO})`;
+      await db.$executeRaw`UPDATE "WorkFolder" SET "spaceId" = 'espaco-lote-16' WHERE "id" = ${pasta}`;
+      expect(await fingerprintImportado(db, specs)).toBe(FINGERPRINT_NA_BASE);
+      await db.$executeRaw`UPDATE "WorkFolder" SET "name" = 'Marketing' WHERE "id" = ${pasta}`;
+      expect(await fingerprintImportado(db, specs)).not.toBe(FINGERPRINT_NA_BASE);
+      await db.$executeRaw`UPDATE "WorkFolder" SET "name" = 'Demandas internas / Marketing', "spaceId" = NULL WHERE "id" = ${pasta}`;
+      expect(await fingerprintImportado(db, specs)).toBe(FINGERPRINT_NA_BASE);
+      await db.workFolder.update({ where: { id: pasta }, data: { spaceId: 'espaco-lote-16' } });
+      expect(await fingerprintImportado(db, specs)).not.toBe(FINGERPRINT_NA_BASE);
+    } finally {
+      await db.$executeRaw`UPDATE "WorkFolder" SET "spaceId" = NULL, "updatedAt" = ${QUANDO} WHERE "id" = ${pasta}`;
+      await db.$executeRaw`DELETE FROM "WorkSpace" WHERE "orgId" = ${ORG_DO_LOTE}`;
+    }
+    expect(await fingerprintImportado(db, specs)).toBe(FINGERPRINT_NA_BASE);
   });
 });
