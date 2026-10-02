@@ -5,6 +5,7 @@ import { RefreshCw, Plus } from 'lucide-react';
 import type { GoalPanel } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { MetasDoMes } from './MetasDoMes';
 
 const FAROL: Record<string, string> = {
   verde: 'bg-good/15 text-good border-good/30',
@@ -18,7 +19,33 @@ const FAROL_LABEL: Record<string, string> = { verde: 'verde', amarelo: 'amarelo'
 const nf = (n: number) => n.toLocaleString('pt-BR');
 const compact = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1).replace('.', ',')}M` : n >= 1000 ? `${(n / 1000).toFixed(1).replace('.', ',')}k` : String(n));
 
+// O painel do desafio de 365 dias, exatamente como era. As metas do mês (ROOT-53a)
+// entram como outra aba e não tocam em nada daqui.
+type Aba = 'desafio' | 'mes';
+
 export default function MetasPage() {
+  const [aba, setAba] = useState<Aba>('desafio');
+  return (
+    <div className="space-y-6">
+      <div role="tablist" aria-label="Metas" className="flex gap-1 border-b border-border">
+        {([['desafio', 'Desafio 365 dias'], ['mes', 'Metas do mês']] as const).map(([k, label]) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={aba === k}
+            onClick={() => setAba(k)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${aba === k ? 'border-brand text-text' : 'border-transparent text-muted hover:text-text'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {aba === 'desafio' ? <PainelDoDesafio /> : <MetasDoMes />}
+    </div>
+  );
+}
+
+function PainelDoDesafio() {
   const { token, ready, can } = useAuth();
   const [p, setP] = useState<GoalPanel | null>(null);
   const [error, setError] = useState<string | null>(null);
