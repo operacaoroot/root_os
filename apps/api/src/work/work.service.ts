@@ -800,10 +800,11 @@ export class WorkService {
    * clientes): etapas com cor, tipo e limite, e campos com opções.
    *
    * Sem transação interativa, como `criarLista`: a sessão de banco carimba a
-   * empresa por consulta (`prisma/sessao-de-banco.ts`), e nenhum outro caminho do
-   * código abre `$transaction(async ...)` sob ela. Se falhar no meio, sobra uma
-   * lista incompleta — visível, editável e apagável pela tela, que é um estado
-   * melhor que um caminho de transação que ninguém mais exercita.
+   * empresa por consulta (`prisma/sessao-de-banco.ts`). Este caminho ficou sem
+   * `$transaction(async ...)` por escolha, não porque seja o único que a evita:
+   * `criarTarefa` e `editarTarefa` já abrem uma sob a mesma sessão. Se falhar no
+   * meio, sobra uma lista incompleta, visível, editável e apagável pela tela, que
+   * é um estado aceito para uma criação em lote que o usuário refaz com um clique.
    */
   async criarListaDoModelo(orgId: string, actorId: string, input: TrabListaDoModeloInput) {
     const modelo: ModeloDeLista = MODELOS_DE_LISTA[input.modelo];

@@ -97,9 +97,12 @@ export class ObsidianService implements OnModuleInit {
    *
    * `pasta` é o desenho original: um caminho no sistema de arquivos do
    * container. Ele pressupõe que a vault esteja montada ali, e nesta instalação
-   * isso nunca foi verdade: `OBSIDIAN_VAULT_PATH=/vault` aponta para
-   * `/srv/marketing-os/vault`, uma pasta VAZIA desde 13/07/2026. A vault real
-   * vive no Google Drive, que é onde ela sempre esteve.
+   * isso nem sempre foi verdade: `OBSIDIAN_VAULT_PATH=/vault` apontou para
+   * `/srv/marketing-os/vault`, uma pasta VAZIA desde 13/07/2026. Desde
+   * 17/09/2026 esse caminho aponta para o clone da root-base, e a vault lida
+   * por `pasta` é esse clone. Se a vault da casa passa a ser lida do Google
+   * Drive em vez do clone é decisão em aberto (D1, com o Pedro); este texto não
+   * a antecipa.
    *
    * `drive` lê a vault direto do Drive, pela pasta que `OBSIDIAN_DRIVE_FOLDER_ID`
    * apontar — do mesmo jeito que o Obsidian pede uma pasta para ser a vault. O
@@ -722,9 +725,10 @@ export class ObsidianService implements OnModuleInit {
      * daquela origem — uma versão e um evento por nota, e outro par quando a
      * pasta voltasse. O índice é descartável; o histórico não vence nunca.
      *
-     * NESTA INSTALAÇÃO ISSO NÃO É HIPÓTESE: o `OBSIDIAN_VAULT_HOST` da VPS
-     * aponta para `/srv/marketing-os/vault`, que a documentação do projeto diz
-     * não ser a vault real.
+     * NESTA INSTALAÇÃO ISSO JÁ ACONTECEU: o `OBSIDIAN_VAULT_HOST` da VPS
+     * apontou para `/srv/marketing-os/vault`, que esteve vazia e não era a vault
+     * real. Desde 17/09/2026 ele aponta para o clone da root-base, que é a vault
+     * lida hoje; a decisão sobre o Drive está em aberto.
      *
      * A recusa vem ANTES de qualquer escrita, e diz o que fazer. Esvaziar a
      * base de propósito continua possível: desligue o conector em Conexões.

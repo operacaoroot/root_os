@@ -230,11 +230,26 @@ Três consequências que são parte da decisão, não efeito colateral:
   vem vazia e há notas vivas daquela origem, e recusa o arquivamento quando ele passa de 20% das
   notas vivas (com piso de 5). `ObsidianService.reindex` recusa antes, na origem, quando a pasta
   existe e não tem nenhum `.md`. O motivo é concreto: `configured` só pergunta se o caminho existe,
-  e o `OBSIDIAN_VAULT_HOST` da VPS aponta para uma pasta que a documentação do projeto diz não ser a
-  vault real. Antes desta fatia o estrago seria um índice descartável; agora seria o histórico.
+  e o `OBSIDIAN_VAULT_HOST` da VPS apontou para uma pasta vazia que não era a vault real. Desde
+  17/09/2026 `/srv/marketing-os/vault` aponta para o clone da root-base: a vault lida é esse clone, e
+  a decisão sobre passar a lê-la do Google Drive está em aberto. Antes desta fatia o estrago seria um
+  índice descartável; agora seria o histórico.
 - **O vetor não é reconstruído.** A migração do que já existe (`KnowledgeNote`) **copia** a coluna
   `embedding`, em SQL, sem chamar fornecedor nenhum. Vetor é caro e a contagem antes/depois é o
   critério de aceite, não a leitura do código.
+- **O vetor nunca descreve um corpo que não é o da nota, e só a casa reindexa.** Quatro invariantes
+  fecham o assunto, e cada uma nasceu de um defeito achado na revisão. Primeira: o corpo trocado
+  anula o vetor na mesma transação, no gancho `noCadeado` de `MemoriaService.alterar`, porque uma
+  queda entre o commit e um `UPDATE` posterior deixaria o corpo novo com o vetor velho sem marca que
+  permita achá-lo. Segunda: `MemoriaService.gravarVetor` exige o hash do conteúdo e só grava quando o
+  `contentHash` da nota ainda é aquele, para que o vetor de um texto antigo, devolvido pelo
+  fornecedor depois de uma edição, não caia sobre o texto novo. Terceira: a fila de pendentes da
+  casa (`MemoriaService.semVetor`, com `excetoChaves`) deixa de fora as notas da vault listadas na
+  mesma volta, porque elas recebem o vetor do índice e, filtradas só depois do `LIMIT`, tomariam as
+  vagas das notas que só essa fila alcança. Quarta: só a empresa da casa reindexa, por
+  `ObsidianService.exigirEmpresaDaCasa`, que responde 403 nas duas rotas de reindexação (a do `ObsidianController` e a de
+  `knowledge/reindex` do `IntegrationsController`) antes de ler a vault ou tocar no índice; indexá-la para outra empresa copiaria o contexto da ROOT para dentro do
+  cliente. Vetorizar a memória própria de cada empresa continua sendo de toda empresa.
 - **Desfazer a migração não apaga histórico.** `desfazer-migracao` só alcança nota que NASCEU na
   cópia e que ninguém encostou desde então: origem `vault`, chave com o prefixo, **versão 1**,
   histórico de **uma** linha marcada `semEventoPorque = 'migracao'` e **nenhum** elo com o RASTRO. O

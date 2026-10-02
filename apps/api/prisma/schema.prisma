@@ -2151,7 +2151,7 @@ model WorkFieldValue {
   field    WorkField        @relation(fields: [fieldId], references: [id], onDelete: Cascade)
   optionId String?
   option   WorkFieldOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  value    String? // tipos não-dropdown (texto/número/data/checkbox/url)
+  value    String? // tipos não-dropdown (texto/número/data/checkbox/url/moeda; moeda em texto canônico "BRL 1500.00")
 
   @@unique([taskId, fieldId])
   @@index([orgId])

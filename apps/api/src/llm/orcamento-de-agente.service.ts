@@ -290,9 +290,10 @@ export class OrcamentoDeAgenteService {
      * A alternativa era deixar passar, e ela não fecha: passo sem preço grava
      * custo 0 (por falta de dado, não por ser grátis), então um agente cujo
      * tráfego seja TODO de modelo fora da tabela nunca somaria nada e passaria
-     * para sempre — e esse é o estado do provider `openrouter`, cujo modelo
-     * padrão não casa com `preco.ts`. Falha fechada, com o mesmo argumento da
-     * régua para capacidade sem classificação.
+     * para sempre. O modelo padrão do `openrouter`
+     * (`anthropic/claude-sonnet-5.5`) está na tabela e passa; a recusa vale só
+     * para quem sobrescreve o modelo por um fora de `preco.ts`. Falha fechada,
+     * com o mesmo argumento da régua para capacidade sem classificação.
      */
     if (!est.medivel) {
       await this.recusar(p, agente, mes, orcamento, 0, est, 'modelo_sem_preco');
