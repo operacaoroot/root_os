@@ -132,7 +132,7 @@ export function Sidebar() {
   const primeiraPintura = useRef(true);
 
   const perms = new Set(user?.permissions ?? []);
-  // /painel/custo-ia pertence a Resultados; /painel não deve ficar ativo junto.
+  // /painel/custo-ia pertence a Motor de IA; /painel não deve ficar ativo junto.
   const itemAtivo = NAV.filter((n) => ehAtivo(pathname, n.href))
     .sort((a, b) => b.href.length - a.href.length)[0];
 

@@ -16,8 +16,13 @@ vi.mock('@/lib/auth', () => ({
   }),
 }));
 
+let MODULOS_LIGADOS: string[] | null = null;
+
 vi.mock('@/components/modulos', () => ({
-  useModulos: () => ({ modulos: null, ligado: () => true }),
+  useModulos: () => ({
+    modulos: MODULOS_LIGADOS,
+    ligado: (m: string) => !MODULOS_LIGADOS || MODULOS_LIGADOS.includes(m),
+  }),
 }));
 
 vi.mock('next/navigation', () => ({ usePathname: () => CAMINHO, useRouter: () => ({ push: vi.fn() }) }));
@@ -57,6 +62,7 @@ const link = (href: string) => document.querySelector(`a[href="${href}"]`);
 beforeEach(() => {
   PERMISSOES = [...TODAS];
   CAMINHO = '/painel';
+  MODULOS_LIGADOS = null;
   localStorage.clear();
 });
 
@@ -224,6 +230,79 @@ describe('a barra lateral', () => {
     const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
     expect(dialogo).not.toHaveTextContent('Plano e assinatura');
     expect(dialogo).toHaveTextContent('Configurações da conta');
+  });
+
+  it('a paleta só lista o que as permissões e os módulos liberam, e nada sem acesso aparece como ação', async () => {
+    PERMISSOES = ['dashboard.ver'];
+    render(<Paleta aberto fechar={() => {}} />);
+    const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
+    expect(dialogo).toHaveTextContent('Visão geral da empresa');
+    // sem as demais permissões, nenhuma outra tela do NAV é oferecida
+    const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
+    const semAcesso = NAV.filter((n) => !PERMISSOES.includes(n.permission)).map((n) => n.label);
+    expect(oferecidas.filter((r) => semAcesso.includes(r ?? ''))).toEqual([]);
+    expect(oferecidas).toEqual(
+      NAV.filter((n) => PERMISSOES.includes(n.permission) && !n.oculto).map((n) => n.label),
+    );
+  });
+
+  it('a paleta não oferece tela de módulo desligado', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    MODULOS_LIGADOS = ['trabalho'];
+    render(<Paleta aberto fechar={() => {}} />);
+    const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
+    expect(dialogo).toHaveTextContent('Quadro interno');
+    const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
+    for (const n of NAV.filter((i) => i.modulo && i.modulo !== 'trabalho')) {
+      expect(oferecidas, n.key).not.toContain(n.label);
+    }
+  });
+
+  it('busca por função que não existe devolve vazio, e não um item inventado', async () => {
+    const user = userEvent.setup();
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Paleta aberto fechar={() => {}} />);
+    const campo = screen.getByPlaceholderText('ir para…');
+    for (const termo of ['proposta', 'assinar contrato', 'whatsapp', 'editor de processos']) {
+      await user.clear(campo);
+      await user.type(campo, termo);
+      expect(screen.queryAllByRole('button'), termo).toHaveLength(0);
+      expect(screen.getByText('Nenhuma tela do menu tem esse nome.'), termo).toBeInTheDocument();
+    }
+  });
+
+  it('a busca casa com o nome da tela e da seção, e marca a tela que ainda está em preparação', async () => {
+    const user = userEvent.setup();
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Paleta aberto fechar={() => {}} />);
+    const campo = screen.getByPlaceholderText('ir para…');
+    await user.type(campo, 'motor de ia');
+    expect(screen.getByRole('button', { name: /Agentes de IA/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Processos.*em preparação/ })).toBeInTheDocument();
+    await user.clear(campo);
+    await user.type(campo, 'contratos'); // palavra só do texto de apoio da seção
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('sem nenhuma permissão a paleta diz que nada está liberado', () => {
+    PERMISSOES = [];
+    render(<Paleta aberto fechar={() => {}} />);
+    expect(screen.getByText('Nenhuma tela do menu está liberada para o seu acesso.')).toBeInTheDocument();
+  });
+
+  it('o subtítulo das telas de Marketing não herda o texto de apoio de Trabalho', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/marketing/ideias';
+    render(<Topbar />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Banco de ideias');
+    expect(document.body.textContent).toContain('ideias da casa antes de virar peça');
+  });
+
+  it('a Topbar de /painel usa o mesmo rótulo do menu', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/painel';
+    render(<Topbar />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Visão geral da empresa');
   });
 
   it('a Topbar de /assinatura ainda mostra o título do item oculto', () => {

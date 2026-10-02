@@ -15,6 +15,9 @@ interface Comando {
   dica: string;
   icone: string;
   ir: string;
+  secao: string;
+  /** Estado declarado no NAV: a busca não anuncia como pronta a tela que ainda não está. */
+  estado?: { texto: string; porque: string };
 }
 
 /*
@@ -35,7 +38,7 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
 
   const comandos = useMemo<Comando[]>(() => {
     const perms = new Set(user?.permissions ?? []);
-    const dicaDaSecao = new Map(SECOES.map((s) => [s.key, s.hint]));
+    const secaoDe = new Map<string, string>(SECOES.map((s) => [s.key, s.label]));
     // Os mesmos dois filtros da sidebar — permissão e módulo contratado.
     // A paleta navega, e não pode navegar para tela que a API vai recusar.
     return navPorSecao(perms, modulos ?? undefined)
@@ -43,17 +46,27 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
       .map((n) => ({
         chave: n.key,
         rotulo: n.label,
-        dica: dicaDaSecao.get(n.secao) ?? '',
+        dica: secaoDe.get(n.secao) ?? '',
         icone: n.icon,
         ir: n.href,
+        secao: secaoDe.get(n.secao) ?? '',
+        estado:
+          n.estado === 'parcial'
+            ? {
+                texto: n.key === 'fluxos' ? 'em preparação' : 'parcial',
+                porque: n.parcial ?? 'esta tela ainda está incompleta',
+              }
+            : undefined,
       }));
   }, [user, modulos]);
 
   const filtrados = useMemo(() => {
     const termo = q.trim().toLowerCase();
     if (!termo) return comandos;
+    // Casa só com o nome da tela e o da seção. O texto de apoio da seção descreve
+    // o conjunto e não prova que a tela faz aquilo, então não entra na busca.
     return comandos.filter(
-      (c) => c.rotulo.toLowerCase().includes(termo) || c.dica.toLowerCase().includes(termo),
+      (c) => c.rotulo.toLowerCase().includes(termo) || c.secao.toLowerCase().includes(termo),
     );
   }, [q, comandos]);
 
@@ -108,7 +121,11 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
         />
         <ul className="max-h-[52vh] overflow-y-auto py-1">
           {filtrados.length === 0 && (
-            <li className="px-4 py-3 text-[12px] text-muted">Nada com esse nome no menu.</li>
+            <li className="px-4 py-3 text-[12px] text-muted">
+              {comandos.length === 0
+                ? 'Nenhuma tela do menu está liberada para o seu acesso.'
+                : 'Nenhuma tela do menu tem esse nome.'}
+            </li>
           )}
           {filtrados.map((c, k) => {
             const Icone = (Icons[c.icone as IconName] ?? Icons.Circle) as React.ElementType;
@@ -123,6 +140,14 @@ export function Paleta({ aberto, fechar }: { aberto: boolean; fechar: () => void
                   <Icone size={13} className="flex-none" />
                   <span className="text-[12.5px]">{c.rotulo}</span>
                   <span className="truncate font-os-mono text-[9.5px] text-dim">{c.dica}</span>
+                  {c.estado && (
+                    <span
+                      title={c.estado.porque}
+                      className="flex-none rounded-sm border border-border px-1 font-os-mono text-[9px] uppercase tracking-[0.08em] text-dim"
+                    >
+                      {c.estado.texto}
+                    </span>
+                  )}
                 </button>
               </li>
             );

@@ -494,7 +494,7 @@ describe('organização da navegação (ROOT-07)', () => {
     'linha-do-tempo': 'auditoria.ver', assinatura: 'dashboard.ver', config: 'dashboard.ver',
   };
 
-  /** Rótulo de cada item na base: a ROOT-08 é quem os muda, não esta fatia. */
+  /** Rótulo de cada item na base (e5 765f00). A ROOT-08 muda um só: `console`, abaixo. */
   const ROTULO_DA_BASE: Record<string, string> = {
     caixa: 'Pendências', atendimento: 'Aprovações', agenda: 'Agenda', console: 'Visão geral',
     contexto: 'Conhecimento da empresa', marca: 'Marca e pilares', organograma: 'Equipe',
@@ -537,8 +537,36 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
     for (const n of NAV) {
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
-      expect(n.label, `${n.key}: rótulo é da ROOT-08`).toBe(ROTULO_DA_BASE[n.key]);
+      expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
     }
+  });
+
+  /*
+   * ROOT-08: o que mudou de rótulo, e por quê. Doc 38 ("Dia a dia"): "A visão da
+   * empresa continua disponível conforme permissão", ao lado das entradas da
+   * pessoa. O rótulo diz de quem é a visão. Os outros 38 já coincidiam com o doc
+   * 22 §4 e o doc 38; "Lista de tarefas" fica porque /tarefas lê `Task` nativa
+   * (o doc 38 proíbe anunciá-la como ClickUp ou como outra visão do quadro).
+   */
+  const ROTULOS_DA_ROOT_08: Record<string, string> = { console: 'Visão geral da empresa' };
+
+  it('rótulos conforme a matriz da ROOT-08: um item muda, o resto fica, nada promete função ausente', () => {
+    expect(Object.keys(ROTULOS_DA_ROOT_08)).toEqual(['console']);
+    expect(NAV.find((n) => n.key === 'console')?.label).toBe('Visão geral da empresa');
+    // "Minhas pendências/aprovações/agenda" só entram com o filtro pessoal pronto (doc 38).
+    for (const n of NAV) expect(n.label, n.key).not.toMatch(/^minh[ao]s?\b/i);
+    // nenhum rótulo anuncia a fonte ClickUp na tela que lê tarefa nativa
+    expect(NAV.find((n) => n.key === 'tarefas')?.label).toBe('Lista de tarefas');
+    // as telas ainda não entregues dizem isso no próprio item
+    expect(NAV.find((n) => n.key === 'fluxos')).toMatchObject({ label: 'Processos', estado: 'parcial' });
+    // rótulo de item não repete o de uma seção (a barra leria duas vezes a mesma palavra)
+    const rotulosDeSecao = new Set<string>(SECOES.map((s) => s.label));
+    const repetidos = NAV.filter((n) => rotulosDeSecao.has(n.label)).map((n) => n.key);
+    expect(repetidos).toEqual(['config']); // "Configurações da conta": a seção tem um item só, o mesmo destino
+  });
+
+  it('o texto de apoio de Trabalho cita as ideias e a estratégia que agora moram lá', () => {
+    expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
   });
 
   it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
