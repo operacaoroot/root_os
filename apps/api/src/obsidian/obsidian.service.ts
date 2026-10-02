@@ -6,9 +6,9 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { join, relative, dirname, sep } from 'node:path';
+import type { Prisma } from '@prisma/client';
 import { GoogleService } from '../google/google.service';
 import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
@@ -19,8 +19,23 @@ import {
   PRAZO_DA_CHAMADA_DE_SONDA_MS,
   RegistroDeConectores,
 } from '../integrations/conectores.registry';
-import { MemoriaService } from '../memory/memoria.service';
+import { sigiloso } from '../gateway/event-log.service';
+import { MemoriaService, resumoVazio, VaultSuspeitaError } from '../memory/memoria.service';
 import { chaveDaVault } from '../memory/procedencia';
+import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
+import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
+import { descobrirNaPasta } from './disco-da-vault';
+import { lerRepositorioDaVault, marcaDoRepositorio } from './estado-do-git';
+import { classificarAVault, type PertencaDaVault } from './pertenca-da-vault';
+import {
+  assinaturaDoRecibo,
+  caminhosSigilosos,
+  COLECAO,
+  deveRegistrar,
+  linhaDoRecibo,
+  resultadoDaVolta,
+  type ReciboDaVault,
+} from './recibo-da-vault';
 import { env } from '../llm/env';
 import {
   FalhaDeEmbedding,
@@ -44,6 +59,7 @@ import {
   erroDeConector,
   frasedoErro,
   naoConfigurado,
+  naoVerificado,
 } from '../integrations/contrato-de-conector';
 
 /**
@@ -60,16 +76,12 @@ const SLUG_DA_CASA = 'root';
 // busca SEMÂNTICA (KNN por cosseno) com fallback keyword. Só leitura.
 const EMBED_MODEL = 'text-embedding-3-small';
 
-interface ParsedNote {
-  path: string;
-  folder: string | null;
-  title: string;
-  tags: string[];
-  content: string;
-  links: string[];
-  wordCount: number;
-  fileTime: Date;
-}
+/**
+ * Uma nota da vault pronta para o índice e a projeção. `cabecalho` ausente é
+ * nota reaproveitada pela data na fonte Drive, que não relê o arquivo: a
+ * projeção deixa `kind`, validade e substituição como estão.
+ */
+type ParsedNote = Omit<NotaLida, 'cabecalho'> & { fileTime: Date; cabecalho?: CabecalhoDaNota };
 
 /**
  * Um arquivo da vault, do jeito que a reindexação precisa dele — e igual nas
@@ -260,6 +272,21 @@ export class ObsidianService implements OnModuleInit {
        * seja esta, que diz o que fazer.
        */
       saude: async (ctx: ContextoDoVerbo): Promise<SaudeDeConector> => {
+        /*
+         * A VAULT É DA EMPRESA DA CASA (C19-06, regra 5; E-20.7).
+         *
+         * Outra empresa ouve o estado de fato: a base de conhecimento dela vem do
+         * onboarding e das notas da tela. "Não configurado" mandaria rodar
+         * "sincronizar", que devolve 403, e "erro" acusaria uma falha que não
+         * houve. `nao_verificado` porque a pasta não é sondada para quem não a
+         * usa. A guarda de `reindex` continua como está.
+         */
+        if (!(await this.ehDaCasa(ctx.orgId))) {
+          return naoVerificado(
+            'A vault é da empresa da casa; a base de conhecimento desta empresa vem do onboarding ' +
+              'e das notas da tela.',
+          );
+        }
         /*
          * "NINGUÉM APONTOU NADA" — e SÓ isso.
          *
@@ -557,37 +584,23 @@ export class ObsidianService implements OnModuleInit {
   }
 
   // ---------- ingestão ----------
-  private walk(dir: string, acc: string[] = []): string[] {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.')) continue; // .obsidian, .trash, etc.
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) this.walk(full, acc);
-      else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) acc.push(full);
-    }
-    return acc;
-  }
 
   /*
-   * A VAULT, VISTA IGUAL PELAS DUAS FONTES.
+   * A VAULT NO DRIVE — a fonte que segue como era (B2 aberto).
    *
    * Cada arquivo chega como caminho, data de modificação e uma função que
-   * BUSCA o conteúdo — e a função é preguiçosa de propósito. No filesystem ler
-   * é barato; no Drive é uma chamada de rede por arquivo. Devolver o conteúdo
-   * junto obrigaria a baixar 152 notas a cada meia hora para descobrir que
-   * nenhuma mudou.
+   * BUSCA o conteúdo — e a função é preguiçosa de propósito: no Drive é uma
+   * chamada de rede por arquivo. Devolver o conteúdo junto obrigaria a baixar
+   * 152 notas a cada meia hora para descobrir que nenhuma mudou.
    *
    * `modificadoEm` vem de graça na listagem do Drive, e é isso que deixa a
    * reindexação pular o que não mudou — ver `reindex`.
+   *
+   * O Drive não tem índice do git: a pertença por rastreamento (C19-03) vale
+   * para a `root-base` lida da pasta. A coleção do Drive tem pertença e recibo
+   * próprios, que são da ROOT-22, depois da decisão de D1 (B2).
    */
-  private async listarArquivos(orgId: string): Promise<ArquivoDaVault[]> {
-    if (this.fonte === 'pasta') {
-      return this.walk(this.vault).map((full) => ({
-        caminho: relative(this.vault, full).split(sep).join('/'),
-        modificadoEm: statSync(full).mtime,
-        ler: async () => readFileSync(full, 'utf8'),
-      }));
-    }
-
+  private async listarNoDrive(orgId: string): Promise<ArquivoDaVault[]> {
     /*
      * As duas recusas abaixo existem porque o retorno delas seria uma lista
      * VAZIA, e lista vazia é o estado que apaga índice e arquiva memória. A
@@ -609,64 +622,10 @@ export class ObsidianService implements OnModuleInit {
 
     const arquivos = await this.google.listarVaultNoDrive(orgId, this.pastaNoDrive);
     return arquivos.map((a) => ({
-      caminho: a.caminho,
+      caminho: a.caminho.normalize('NFC'),
       modificadoEm: a.modificadoEm,
       ler: async () => this.google!.baixarTextoDoDrive(orgId, a.id),
     }));
-  }
-
-  /** A leitura do filesystem. O que interpreta é `parseConteudo`, que as duas fontes dividem. */
-  private parse(full: string): ParsedNote {
-    return this.parseConteudo(relative(this.vault, full), readFileSync(full, 'utf8'), statSync(full).mtime);
-  }
-
-  /*
-   * A INTERPRETAÇÃO, e ela não sabe de onde o texto veio.
-   *
-   * Separada de `parse` quando a fonte Drive entrou: sem isso, ler do Drive
-   * significaria uma segunda implementação de frontmatter, tags e wikilinks —
-   * e duas implementações da mesma leitura divergem na primeira nota estranha,
-   * com a busca semântica achando a nota por uma fonte e não pela outra.
-   *
-   * `caminhoRelativo` usa `/` e é relativo à raiz da vault, nas DUAS fontes: é
-   * a chave da nota no índice e na memória. Trocar de fonte com a mesma vault
-   * precisa gerar as mesmas chaves, senão a reindexação lê tudo como nota nova
-   * e arquiva a memória da origem anterior inteira.
-   */
-  private parseConteudo(caminhoRelativo: string, raw: string, modificadoEm: Date): ParsedNote {
-    const rel = caminhoRelativo;
-    const folderRel = dirname(rel);
-    const st = { mtime: modificadoEm };
-
-    let body = raw;
-    const tags = new Set<string>();
-    // frontmatter YAML simples
-    const fm = raw.match(/^---\n([\s\S]*?)\n---\n?/);
-    if (fm) {
-      body = raw.slice(fm[0].length);
-      const inline = fm[1].match(/^tags:\s*\[([^\]]*)\]/m);
-      if (inline) inline[1].split(',').forEach((t) => t.trim() && tags.add(t.trim().replace(/['"]/g, '')));
-      const block = fm[1].match(/^tags:\s*\n((?:\s*-\s*.+\n?)+)/m);
-      if (block) block[1].split('\n').forEach((l) => { const m = l.match(/-\s*(.+)/); if (m) tags.add(m[1].trim()); });
-    }
-    // #tags inline
-    for (const m of body.matchAll(/(?:^|\s)#([a-z0-9_\-/]{2,})/gi)) tags.add(m[1]);
-    // wikilinks
-    const links = [...body.matchAll(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)].map((m) => m[1].trim());
-    // título: 1º # ou nome do arquivo
-    const h1 = body.match(/^#\s+(.+)$/m);
-    const title = (h1?.[1] ?? rel.replace(/\.md$/i, '').split('/').pop() ?? rel).trim();
-
-    return {
-      path: rel,
-      folder: folderRel === '.' ? null : folderRel,
-      title,
-      tags: [...tags],
-      content: body.trim(),
-      links: [...new Set(links)],
-      wordCount: body.split(/\s+/).filter(Boolean).length,
-      fileTime: st.mtime,
-    };
   }
 
   /**
@@ -695,13 +654,22 @@ export class ObsidianService implements OnModuleInit {
 
   /**
    * @param completo Refaz a leitura e a vetorização de TODA nota, mesmo as que
-   *   não mudaram. É o que se usa quando a INTERPRETAÇÃO muda — `parseConteudo`
-   *   ganhando um jeito novo de achar tags, por exemplo. O reaproveitamento
-   *   abaixo é por data de modificação do arquivo, e um arquivo que não mudou
-   *   continua com a leitura antiga até alguém pedir o contrário.
+   *   não mudaram. É o que se usa quando a INTERPRETAÇÃO muda — a leitura do
+   *   cabeçalho ganhando um campo novo, por exemplo. O reaproveitamento abaixo é
+   *   por data de modificação do arquivo, e um arquivo que não mudou continua
+   *   com a leitura antiga até alguém pedir o contrário.
    *
    * Só a empresa da casa reindexa — ver `exigirEmpresaDaCasa`, que roda antes
    * de qualquer leitura.
+   *
+   * ----------------------------------------------------------------------------
+   * O RECIBO SAI DE UM `finally` (C19-08, R-9)
+   * ----------------------------------------------------------------------------
+   * Toda volta da casa termina com o recibo — inclusive a que lança e a que a
+   * projeção falhou —, e ele diz `falhou` ou `parcial` quando for o caso. A
+   * empresa que não é a da casa não chega aqui (`exigirEmpresaDaCasa` lança
+   * antes) e não gera recibo: a sonda dela responde o estado direto (C19-06,
+   * regra 5).
    */
   async reindex(orgId: string, completo = false): Promise<number> {
     await this.exigirEmpresaDaCasa(orgId);
@@ -712,50 +680,63 @@ export class ObsidianService implements OnModuleInit {
           : 'OBSIDIAN_VAULT_PATH não configurado.',
       );
     }
-    const files = await this.listarArquivos(orgId);
-
-    /*
-     * VAULT QUE EXISTE E ESTÁ VAZIA NÃO É VAULT — É PONTO DE MONTAGEM CAÍDO.
-     *
-     * `configured` só pergunta se o caminho EXISTE, e um bind mount que morreu,
-     * uma variável apontando para a pasta errada ou um volume ainda não montado
-     * deixam para trás um diretório vazio que passa nessa pergunta. O que vinha
-     * depois era destrutivo em dois níveis: `deleteMany` zerava o índice desta
-     * empresa e, desde a fatia 4.1+4.2, a projeção arquivava a MEMÓRIA inteira
-     * daquela origem — uma versão e um evento por nota, e outro par quando a
-     * pasta voltasse. O índice é descartável; o histórico não vence nunca.
-     *
-     * NESTA INSTALAÇÃO ISSO JÁ ACONTECEU: o caminho `/srv/marketing-os/vault`,
-     * para onde o `OBSIDIAN_VAULT_HOST` da VPS continua apontando, esteve vazio e
-     * não era a vault real. Desde 17/09/2026 ele aponta para o clone da
-     * root-base, que é a vault lida hoje; a decisão sobre o Drive está em aberto.
-     *
-     * A recusa vem ANTES de qualquer escrita, e diz o que fazer. Esvaziar a
-     * base de propósito continua possível: desligue o conector em Conexões.
-     */
-    if (files.length === 0) {
-      throw new ServiceUnavailableException(
-        `A vault (${this.origemLegivel}) existe mas não tem NENHUM arquivo .md. Isso é ponto de ` +
-          'montagem caído, pasta errada ou pasta não compartilhada muito mais vezes do que é ' +
-          'vault vazia de propósito — e reindexar apagaria o índice desta empresa e arquivaria ' +
-          'a memória inteira que veio dela. Nada foi tocado. Confira a origem na API; para ' +
-          'esvaziar a base de propósito, DESLIGUE o conector em Conexões.',
-      );
+    const recibo: ReciboDaVault = {
+      colecao: COLECAO,
+      fonte: this.fonte,
+      inicioEm: new Date().toISOString(),
+      fimEm: null,
+      montante:
+        this.fonte === 'drive'
+          ? { naoSeAplica: 'fonte drive: a coleção do Drive tem recibo próprio (ROOT-22, depois de D1)' }
+          : { naoSeAplica: 'a volta parou antes de ler o .git da vault' },
+      descoberta:
+        this.fonte === 'drive'
+          ? { naoSeAplica: 'fonte drive: sem índice do git, a pertença por rastreamento não se aplica' }
+          : { naoSeAplica: 'a volta parou antes de classificar os arquivos da vault' },
+      leitura: { lidos: 0, reaproveitados: 0, falhas: 0 },
+      indexacao: null,
+      vetorizacao: null,
+      projecao: null,
+      falha: null,
+    };
+    const lancadasDeProposito = new Set<unknown>();
+    const foraDaColecao: PertencaDaVault['foraDaColecao'] = [];
+    let conversaoProvavel = false;
+    try {
+      return await this.reindexar(orgId, completo, recibo, lancadasDeProposito, foraDaColecao, (v) => {
+        conversaoProvavel = v;
+      });
+    } catch (e) {
+      if (!lancadasDeProposito.has(e)) recibo.falha = frasedoErro(e);
+      throw e;
+    } finally {
+      recibo.fimEm = new Date().toISOString();
+      await this.publicarRecibo(orgId, recibo, foraDaColecao, conversaoProvavel);
     }
+  }
 
+  private async reindexar(
+    orgId: string,
+    completo: boolean,
+    recibo: ReciboDaVault,
+    lancadasDeProposito: Set<unknown>,
+    foraDaColecao: PertencaDaVault['foraDaColecao'],
+    marcarConversao: (v: boolean) => void,
+  ): Promise<number> {
     /*
      * O QUE JÁ ESTÁ INDEXADO — e por que ele é lido ANTES de apagar.
      *
      * Sem isto, toda passada relê a vault inteira e vetoriza a vault inteira.
-     * No filesystem isso é lento; no Drive é uma chamada de rede por arquivo, a
-     * cada meia hora, para descobrir que nada mudou. E a vetorização é dinheiro
-     * de verdade: a vault real tem ~1.500 notas, o relógio bate 48 vezes por
-     * dia, e esse gasto NÃO passa pelo teto de IA por empresa — quem chama o
-     * fornecedor de embedding é este arquivo, direto.
+     * No Drive é uma chamada de rede por arquivo, a cada meia hora, para
+     * descobrir que nada mudou. E a vetorização é dinheiro de verdade: a vault
+     * real tem ~400 notas, o relógio bate 48 vezes por dia, e esse gasto NÃO
+     * passa pelo teto de IA por empresa — quem chama o fornecedor de embedding
+     * é este arquivo, direto.
      *
-     * A semântica não muda: o índice continua sendo SUBSTITUÍDO, porque a vault
-     * é a fonte da verdade dele. O que muda é que uma nota intocada volta com o
-     * texto e o vetor que já tinha, em vez de ser baixada e vetorizada de novo.
+     * SÓ AS LINHAS DA VAULT. O espelho do onboarding mora no mesmo índice
+     * (`onboarding/<slug>.md`, `onboarding/indice.ts`) e não é desta coleção:
+     * nem é lido como "já indexado", nem apagado, nem vetorizado aqui (C19-06,
+     * regra 7).
      *
      * A comparação é por SEGUNDO, não por milissegundo: `modifiedTime` do Drive
      * e `mtime` do filesystem não têm a mesma precisão, e uma diferença de
@@ -763,50 +744,138 @@ export class ObsidianService implements OnModuleInit {
      * que é exatamente o custo que este bloco existe para evitar.
      */
     const emSegundos = (d: Date): number => Math.floor(d.getTime() / 1000);
-    const anteriores = completo
-      ? []
-      : await this.prisma.knowledgeNote.findMany({
-          where: { orgId },
-          select: {
-            path: true, folder: true, title: true, tags: true,
-            content: true, links: true, wordCount: true, fileTime: true,
-          },
-        });
+    const daVault = { orgId, NOT: { path: { startsWith: `${PASTA_DO_ONBOARDING}/` } } };
+    const anteriores = await this.prisma.knowledgeNote.findMany({
+      where: daVault,
+      select: {
+        path: true, folder: true, title: true, tags: true,
+        content: true, links: true, wordCount: true, fileTime: true,
+      },
+    });
     const jaIndexado = new Map(anteriores.map((n) => [n.path, n]));
-
     const vetoresAnteriores = new Map<string, number[]>();
-    if (!completo && anteriores.length) {
+    if (anteriores.length) {
       const linhas = await this.prisma.$queryRaw<Array<{ path: string; vetor: string | null }>>`
         SELECT "path", embedding::text AS vetor
           FROM "KnowledgeNote"
          WHERE "orgId" = ${orgId} AND embedding IS NOT NULL`;
       for (const l of linhas) {
-        if (!l.vetor) continue;
+        if (!l.vetor || l.path.startsWith(`${PASTA_DO_ONBOARDING}/`)) continue;
         vetoresAnteriores.set(l.path, l.vetor.replace(/^\[|\]$/g, '').split(',').map(Number));
       }
     }
 
     const notes: ParsedNote[] = [];
-    const reaproveitadas: string[] = [];
-    for (const f of files) {
-      const antiga = jaIndexado.get(f.caminho);
-      if (antiga && emSegundos(antiga.fileTime) === emSegundos(f.modificadoEm)) {
-        notes.push({ ...antiga, folder: antiga.folder ?? null });
-        reaproveitadas.push(f.caminho);
-        continue;
+    const reaproveitadas = new Set<string>();
+    /** Caminhos que ficaram fora por anomalia e que a projeção conta como vistos (R-3). */
+    let vistos: string[] = [];
+    /** Desses, os que mantêm a linha antiga no índice: a última versão projetada fica. */
+    const mantidosNoIndice = new Set<string>();
+    let marcaAntes: ReturnType<typeof marcaDoRepositorio> | null = null;
+
+    if (this.fonte === 'pasta') {
+      const passeio = descobrirNaPasta(this.vault);
+      if (passeio.mdNoDisco === 0) throw this.vaultVazia();
+      // O `.git` primeiro, os arquivos depois: um `pull` no meio deixa arquivo
+      // novo sem blob no índice velho (fica de fora) em vez do contrário.
+      const repositorio = lerRepositorioDaVault(this.vault, passeio.atributos);
+      marcaAntes = repositorio.marca;
+      recibo.montante = { ...repositorio.montante, mudouNoMeio: false };
+
+      const ilegiveis = passeio.ilegiveis.map((i) => i.caminho.toString('utf8').normalize('NFC'));
+      recibo.leitura.falhas = ilegiveis.length;
+      for (const i of passeio.ilegiveis) {
+        this.log.warn(`não consegui ler ${i.caminho.toString('utf8')} da vault (${i.motivo})`);
       }
-      notes.push(this.parseConteudo(f.caminho, await f.ler(), f.modificadoEm));
+      const arquivos = passeio.arquivos;
+      const pertenca = classificarAVault({
+        arquivos,
+        indice: repositorio.indice?.ok ? repositorio.indice.entradas : null,
+        naoVerificavel: repositorio.naoVerificavel,
+      });
+      recibo.descoberta = {
+        ...pertenca.contagens,
+        mdNoDisco: passeio.mdNoDisco,
+        rastreamento: pertenca.rastreamento,
+        avisos: pertenca.avisos,
+      };
+      foraDaColecao.push(...pertenca.foraDaColecao);
+      marcarConversao(pertenca.avisos.length > 0);
+
+      if (pertenca.rastreamento !== 'ok') {
+        /*
+         * RASTREAMENTO NÃO VERIFICÁVEL: nenhuma criação, alteração ou
+         * arquivamento nesta volta — nem no índice, nem na memória (C19-03).
+         * O índice e a memória continuam como a última volta boa os deixou, e
+         * o recibo diz `falhou` com o motivo.
+         */
+        const e = new ServiceUnavailableException(
+          `rastreamento não verificável na vault (${pertenca.rastreamento}). Nada foi criado, ` +
+            'alterado nem arquivado: o índice e a memória continuam como a última volta boa os deixou.',
+        );
+        lancadasDeProposito.add(e);
+        throw e;
+      }
+
+      for (const m of pertenca.membros) {
+        const antiga = jaIndexado.get(m.caminho);
+        const nota: ParsedNote = { ...m.nota, fileTime: m.modificadoEm };
+        if (
+          !completo &&
+          antiga &&
+          emSegundos(antiga.fileTime) === emSegundos(m.modificadoEm) &&
+          antiga.content === nota.content &&
+          antiga.title === nota.title
+        ) {
+          reaproveitadas.add(m.caminho);
+        } else {
+          recibo.leitura.lidos++;
+        }
+        notes.push(nota);
+      }
+      vistos = [...pertenca.vistos, ...ilegiveis];
+      for (const f of pertenca.foraDaColecao) {
+        if (f.situacao === 'alterado_fora_do_git' || f.situacao === 'apagado_fora_do_git' || f.situacao === 'nao_verificavel') {
+          mantidosNoIndice.add(f.caminho);
+        }
+      }
+      for (const c of ilegiveis) mantidosNoIndice.add(c);
+    } else {
+      const files = await this.listarNoDrive(orgId);
+      if (files.length === 0) throw this.vaultVazia();
+      for (const f of files) {
+        const antiga = jaIndexado.get(f.caminho);
+        if (!completo && antiga && emSegundos(antiga.fileTime) === emSegundos(f.modificadoEm)) {
+          // Reaproveitada pela data: o arquivo não é baixado, e o cabeçalho fica como está.
+          notes.push({ ...antiga, folder: antiga.folder ?? null, cabecalho: undefined });
+          reaproveitadas.add(f.caminho);
+          continue;
+        }
+        const lida = lerNotaDaVault(f.caminho, await f.ler());
+        recibo.leitura.lidos++;
+        // A página do gerador fica de fora também no Drive: é o eco (R-7).
+        if (lida.cabecalho.geradoPeloOs) continue;
+        notes.push({ ...lida, fileTime: f.modificadoEm });
+      }
     }
-    if (reaproveitadas.length) {
+    recibo.leitura.reaproveitados = reaproveitadas.size;
+    if (reaproveitadas.size) {
       this.log.log(
-        `Obsidian reindex: ${reaproveitadas.length} de ${files.length} nota(s) intocadas — ` +
-          'não foram relidas nem vetorizadas de novo.',
+        `Obsidian reindex: ${reaproveitadas.size} de ${notes.length} nota(s) intocadas — ` +
+          'não foram vetorizadas de novo.',
       );
     }
 
-    // substitui o índice do org (a vault é a fonte da verdade)
-    await this.prisma.knowledgeNote.deleteMany({ where: { orgId } });
-    for (const n of notes) {
+    /*
+     * SUBSTITUI o índice da coleção (a vault é a fonte da verdade dele), menos
+     * duas coisas: o espelho do onboarding, que não é da vault, e a linha antiga
+     * do arquivo que ficou fora por anomalia (alterado ou apagado fora do git,
+     * entrada não verificável) — a última versão projetada fica, no índice como
+     * na memória.
+     */
+    const preservadas = anteriores.filter((n) => mantidosNoIndice.has(n.path));
+    await this.prisma.knowledgeNote.deleteMany({ where: daVault });
+    for (const n of [...notes, ...preservadas.map((p) => ({ ...p, folder: p.folder ?? null }))]) {
       await this.prisma.knowledgeNote.create({
         data: {
           orgId,
@@ -821,6 +890,7 @@ export class ObsidianService implements OnModuleInit {
         },
       });
     }
+    recibo.indexacao = { gravadas: notes.length, preservadas: preservadas.length, espelhoDoOnboardingPreservado: null };
 
     /*
      * O VETOR DE CADA NOTA, guardado pelo CAMINHO e não pela ordem do `findMany`.
@@ -832,10 +902,11 @@ export class ObsidianService implements OnModuleInit {
      */
     const vetorPorCaminho = new Map<string, number[]>();
     let vetorizacao: ResultadoDaVetorizacao | null = null;
+    const devolverVetor = new Set([...reaproveitadas, ...preservadas.map((p) => p.path)]);
 
     // embeddings (se houver chave) — em lote, e SÓ do que não tem vetor guardado
-    if (this.openaiKey && notes.length) {
-      const rows = await this.prisma.knowledgeNote.findMany({ where: { orgId }, select: { id: true, path: true, title: true, content: true } });
+    if (this.openaiKey && (notes.length || preservadas.length)) {
+      const rows = await this.prisma.knowledgeNote.findMany({ where: daVault, select: { id: true, path: true, title: true, content: true } });
 
       /*
        * A NOTA INTOCADA VOLTA COM O VETOR QUE JÁ TINHA.
@@ -848,7 +919,7 @@ export class ObsidianService implements OnModuleInit {
       const semVetor: typeof rows = [];
       for (const r of rows) {
         const guardado = vetoresAnteriores.get(r.path);
-        if (guardado && jaIndexado.has(r.path) && reaproveitadas.includes(r.path)) {
+        if (guardado && jaIndexado.has(r.path) && devolverVetor.has(r.path)) {
           await this.prisma.$executeRawUnsafe(
             'UPDATE "KnowledgeNote" SET embedding = $1::vector WHERE id = $2',
             `[${guardado.join(',')}]`,
@@ -886,8 +957,22 @@ export class ObsidianService implements OnModuleInit {
         this.log.log(`Obsidian reindex: ${descreverVetorizacao(vetorizacao)} (de ${rows.length} nota(s)).`);
       }
     }
+    recibo.vetorizacao = vetorizacao
+      ? {
+          pedidos: vetorizacao.pedidos,
+          comVetor: vetorizacao.vetorizados,
+          semVetor: vetorizacao.semVetor,
+          descricao: descreverVetorizacao(vetorizacao),
+        }
+      : null;
 
-    await this.projetarNaMemoria(orgId, notes, vetorPorCaminho);
+    recibo.projecao = await this.projetarNaMemoria(orgId, notes, vetorPorCaminho, vistos);
+
+    if (marcaAntes && 'commit' in recibo.montante) {
+      const depois = marcaDoRepositorio(this.vault);
+      recibo.montante.mudouNoMeio =
+        depois.head !== marcaAntes.head || depois.indiceModificadoEm !== marcaAntes.indiceModificadoEm;
+    }
 
     /*
      * O RECIBO NÃO DIZ QUE DEU CERTO QUANDO NÃO DEU. Índice e projeção já
@@ -902,9 +987,40 @@ export class ObsidianService implements OnModuleInit {
         `ficou incompleta: ${descreverVetorizacao(vetorizacao)}. As notas sem vetor continuam ` +
         'encontráveis pela busca textual e entram na próxima volta.';
       this.log.warn(`empresa ${orgId}: ${incompleta}`);
-      throw new ServiceUnavailableException(incompleta);
+      const e = new ServiceUnavailableException(incompleta);
+      lancadasDeProposito.add(e);
+      throw e;
     }
     return notes.length;
+  }
+
+  /*
+   * VAULT QUE EXISTE E ESTÁ VAZIA NÃO É VAULT — É PONTO DE MONTAGEM CAÍDO.
+   *
+   * `configured` só pergunta se o caminho EXISTE, e um bind mount que morreu,
+   * uma variável apontando para a pasta errada ou um volume ainda não montado
+   * deixam para trás um diretório vazio que passa nessa pergunta. O que vinha
+   * depois era destrutivo em dois níveis: `deleteMany` zerava o índice desta
+   * empresa e, desde a fatia 4.1+4.2, a projeção arquivava a MEMÓRIA inteira
+   * daquela origem — uma versão e um evento por nota, e outro par quando a
+   * pasta voltasse. O índice é descartável; o histórico não vence nunca.
+   *
+   * NESTA INSTALAÇÃO ISSO JÁ ACONTECEU: o caminho `/srv/marketing-os/vault`,
+   * para onde o `OBSIDIAN_VAULT_HOST` da VPS continua apontando, esteve vazio e
+   * não era a vault real. Desde 17/09/2026 ele aponta para o clone da
+   * root-base, que é a vault lida hoje; a decisão sobre o Drive está em aberto.
+   *
+   * A recusa vem ANTES de qualquer escrita, e diz o que fazer. Esvaziar a
+   * base de propósito continua possível: desligue o conector em Conexões.
+   */
+  private vaultVazia(): ServiceUnavailableException {
+    return new ServiceUnavailableException(
+      `A vault (${this.origemLegivel}) existe mas não tem NENHUM arquivo .md. Isso é ponto de ` +
+        'montagem caído, pasta errada ou pasta não compartilhada muito mais vezes do que é ' +
+        'vault vazia de propósito — e reindexar apagaria o índice desta empresa e arquivaria ' +
+        'a memória inteira que veio dela. Nada foi tocado. Confira a origem na API; para ' +
+        'esvaziar a base de propósito, DESLIGUE o conector em Conexões.',
+    );
   }
 
   /**
@@ -925,16 +1041,21 @@ export class ObsidianService implements OnModuleInit {
    * vault, nada sai do índice desta empresa e nenhum pedido vai ao fornecedor.
    */
   private async exigirEmpresaDaCasa(orgId: string): Promise<void> {
-    const daCasa = await this.prisma.org.findFirst({
-      where: { id: orgId, slug: SLUG_DA_CASA },
-      select: { id: true },
-    });
-    if (!daCasa) {
+    if (!(await this.ehDaCasa(orgId))) {
       throw new ForbiddenException(
         'A vault do Obsidian pertence à empresa da casa, e só ela reindexa. Nada foi lido da ' +
           'vault nem gravado nesta empresa; as notas que já são dela continuam na busca.',
       );
     }
+  }
+
+  /** A empresa é a da casa? Mesma consulta da guarda: a própria linha ou nada. */
+  private async ehDaCasa(orgId: string): Promise<boolean> {
+    const daCasa = await this.prisma.org.findFirst({
+      where: { id: orgId, slug: SLUG_DA_CASA },
+      select: { id: true },
+    });
+    return Boolean(daCasa);
   }
 
   /**
@@ -953,20 +1074,24 @@ export class ObsidianService implements OnModuleInit {
    *
    * FALHA AQUI NÃO DERRUBA A REINDEXAÇÃO. O índice já foi gravado; perder a
    * projeção é perder o versionamento desta volta, não a busca. Sai como aviso
-   * porque uma memória que para de acompanhar a vault em silêncio é pior do que
-   * uma que para com barulho no log.
+   * no log — e, desde a ROOT-20, como `falhou` no recibo da volta (R-9): uma
+   * memória que para de acompanhar a vault em silêncio é pior do que uma que
+   * para com barulho.
    */
   private async projetarNaMemoria(
     orgId: string,
     notes: ParsedNote[],
     vetorPorCaminho: Map<string, number[]>,
-  ): Promise<void> {
+    vistos: string[],
+  ): Promise<ReciboDaVault['projecao']> {
     /*
      * DOIS PASSOS, DOIS TRATAMENTOS. Um `try` só em volta dos dois fazia a
      * mensagem culpar sempre a PROJEÇÃO — inclusive quando quem falhava era a
      * vetorização (chave da OpenAI vencida, cota estourada, dimensão errada), e
      * aí quem lê o log vai procurar defeito na memória em vez de no fornecedor.
      */
+    let projecao: ReciboDaVault['projecao'];
+    const caminhos = new Set(notes.map((n) => n.path));
     try {
       const resumo = await this.memoria.projetarDaVault(
         orgId,
@@ -976,13 +1101,23 @@ export class ObsidianService implements OnModuleInit {
           body: n.content,
           tags: n.tags,
           embedding: vetorPorCaminho.get(n.path) ?? null,
+          cabecalho: n.cabecalho
+            ? {
+                kind: n.cabecalho.kind,
+                validFrom: n.cabecalho.validFrom,
+                validUntil: n.cabecalho.validUntil,
+                substitui: this.substituiResolvido(n, caminhos),
+              }
+            : undefined,
         })),
+        { vistos },
       );
-      if (resumo.criadas || resumo.alteradas || resumo.arquivadas || resumo.falhas) {
+      projecao = { ...resumo, falhou: null };
+      if (resumo.criadas || resumo.alteradas || resumo.arquivadas || resumo.falhas || resumo.movidas) {
         this.log.log(
           `memória da empresa ${orgId}: ${resumo.criadas} nota(s) nova(s), ` +
             `${resumo.alteradas} alterada(s), ${resumo.arquivadas} arquivada(s), ` +
-            `${resumo.inalteradas} sem mudança, ${resumo.falhas} com falha.`,
+            `${resumo.movidas} movida(s), ${resumo.inalteradas} sem mudança, ${resumo.falhas} com falha.`,
         );
       }
     } catch (e) {
@@ -991,6 +1126,7 @@ export class ObsidianService implements OnModuleInit {
           `(${(e as Error).message}). A busca continua funcionando pelo índice; o que esta ` +
           'volta perdeu foi o versionamento.',
       );
+      projecao = { ...(e instanceof VaultSuspeitaError && e.resumo ? e.resumo : resumoVazio()), falhou: (e as Error).message };
     }
 
     /*
@@ -1014,6 +1150,138 @@ export class ObsidianService implements OnModuleInit {
           'As notas continuam encontráveis pela busca textual e entram na volta seguinte.',
       );
     }
+    return projecao;
+  }
+
+  /** O caminho que `substitui:` aponta, normalizado (R-8); sem resolução vira aviso na projeção. */
+  private substituiResolvido(n: ParsedNote, caminhos: ReadonlySet<string>): string | null {
+    const valor = n.cabecalho?.substitui;
+    if (!valor) return null;
+    const { caminho } = resolverSubstitui(valor, n.path, caminhos);
+    // Sem caminho (fora da raiz, nome ambíguo) a projeção recebe o valor cru e o
+    // conta como "sem alvo", com o aviso no recibo.
+    return caminho ?? valor;
+  }
+
+  /*
+   * ============================================================================
+   * O RECIBO, O FRESCOR E A SONDA — C19-08 e R-9
+   * ============================================================================
+   *
+   * Toda volta atualiza `IntegrationHealth` da conta `obsidian` da casa:
+   * `checkedAt` é a última execução, `lastSyncAt` a última volta `ok` (o índice
+   * de fato atualizado), `status` `ok`/`degraded`/`down` e `lastError` os motivos
+   * quando não é `ok`. É o que a ROOT-21 lê para dizer "fonte desatualizada
+   * desde <data>" sem confundir "rodou" com "atualizou".
+   *
+   * O evento do RASTRO sai só quando algo muda ou falha, mais a batida diária
+   * (opção (ii) da R-9) — ver `recibo-da-vault.ts`.
+   *
+   * NUNCA DERRUBA A VOLTA: recibo que não grava vira aviso no log. Uma volta que
+   * deu certo não pode passar a lançar porque o registro dela falhou.
+   */
+  private async publicarRecibo(
+    orgId: string,
+    recibo: ReciboDaVault,
+    foraDaColecao: PertencaDaVault['foraDaColecao'],
+    conversaoProvavel: boolean,
+  ): Promise<void> {
+    try {
+      if (recibo.indexacao) {
+        recibo.indexacao.espelhoDoOnboardingPreservado = await this.prisma.knowledgeNote.count({
+          where: { orgId, path: { startsWith: `${PASTA_DO_ONBOARDING}/` } },
+        });
+      }
+      const resultado = resultadoDaVolta(recibo);
+      const assinatura = assinaturaDoRecibo(recibo, resultado);
+      await this.gravarFrescor(orgId, recibo, resultado);
+      const anterior = await this.memoria.ultimoReciboDaVault(orgId);
+      const decisao = deveRegistrar({ anterior, assinatura, recibo, agora: new Date() });
+      if (!decisao.registrar) return;
+      const projecao = recibo.projecao
+        ? {
+            ...recibo.projecao,
+            pares: recibo.projecao.pares.map((p) => ({
+              de: sigiloso(p.de, 'caminho de origem do movimento'),
+              para: sigiloso(p.para, 'caminho de destino do movimento'),
+              situacao: p.situacao,
+            })),
+            avisos: recibo.projecao.avisos.map((a) => sigiloso(a, 'aviso da projeção (cita caminho)')),
+          }
+        : null;
+      /*
+       * IDA E VOLTA EM JSON, e não é capricho: o hash da cadeia do RASTRO é
+       * calculado sobre o objeto em memória e conferido depois sobre o que o
+       * banco devolveu. Um `undefined` aninhado entra no primeiro como `null` e
+       * some do segundo, e a cadeia quebraria nesta linha. A ida e volta tira
+       * `undefined`, troca data por texto e mantém a marca de `sigiloso`, que
+       * é um objeto comum com `__sigiloso: true`.
+       */
+      const payload = JSON.parse(
+        JSON.stringify({
+          assinatura,
+          resultado: resultado.resultado,
+          motivos: resultado.motivos,
+          commit: 'commit' in recibo.montante ? recibo.montante.commit : null,
+          liberacaoUsada: recibo.projecao?.liberacaoUsada ?? null,
+          recibo: {
+            colecao: recibo.colecao,
+            fonte: recibo.fonte,
+            inicioEm: recibo.inicioEm,
+            fimEm: recibo.fimEm,
+            montante: recibo.montante,
+            descoberta: recibo.descoberta,
+            leitura: recibo.leitura,
+            indexacao: recibo.indexacao,
+            vetorizacao: recibo.vetorizacao,
+            projecao,
+            foraDaColecao: caminhosSigilosos(foraDaColecao, conversaoProvavel),
+            falha: recibo.falha,
+          },
+        }),
+      ) as Prisma.InputJsonValue;
+      await this.memoria.registrarReciboDaVault(orgId, {
+        payload,
+        resumo: linhaDoRecibo(recibo, resultado),
+        motivo: decisao.porque,
+      });
+    } catch (e) {
+      this.log.warn(`empresa ${orgId}: o recibo desta volta da vault não foi gravado (${(e as Error).message}).`);
+    }
+  }
+
+  /** `IntegrationHealth` da conta `obsidian` da casa — o frescor de toda volta (R-9). */
+  private async gravarFrescor(
+    orgId: string,
+    recibo: ReciboDaVault,
+    resultado: { resultado: 'ok' | 'parcial' | 'falhou'; motivos: string[] },
+  ): Promise<void> {
+    const agora = new Date();
+    const status = resultado.resultado === 'ok' ? 'ok' : resultado.resultado === 'parcial' ? 'degraded' : 'down';
+    const conta =
+      (await this.prisma.integrationAccount.findFirst({ where: { orgId, key: 'obsidian' }, select: { id: true } })) ??
+      (await this.prisma.integrationAccount.create({
+        data: { orgId, key: 'obsidian', label: 'Obsidian (vault da casa)', status: 'connected', connectedAt: agora },
+        select: { id: true },
+      }));
+    await this.prisma.integrationAccount.update({
+      where: { id: conta.id },
+      data: { status: resultado.resultado === 'falhou' ? 'error' : 'connected' },
+    });
+    const minutos = Number(process.env.OBSIDIAN_REINDEX_MIN ?? 30);
+    const dados = {
+      status: status as 'ok' | 'degraded' | 'down',
+      checkedAt: agora,
+      nextSyncAt: minutos > 0 ? new Date(agora.getTime() + minutos * 60_000) : null,
+      lastError: resultado.resultado === 'ok' ? null : linhaDoRecibo(recibo, resultado).slice(0, 2000),
+      latencyMs: recibo.fimEm ? Date.parse(recibo.fimEm) - Date.parse(recibo.inicioEm) : null,
+      ...(resultado.resultado === 'ok' ? { lastSyncAt: agora } : {}),
+    };
+    await this.prisma.integrationHealth.upsert({
+      where: { accountId: conta.id },
+      update: dados,
+      create: { accountId: conta.id, ...dados },
+    });
   }
 
   /**

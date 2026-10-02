@@ -119,3 +119,29 @@ export function exigirBancoDescartavel(url: string, oQueAsuiteFaz: string): void
       `ou defina ${DESTRAVE}=1 conscientemente.`,
   );
 }
+
+/*
+ * A EMPRESA DA CASA É UMA SÓ NO BANCO (slug `root`), E REINDEXÁ-LA É EXCLUSIVO.
+ *
+ * `ObsidianService.reindex` substitui o índice da vault da casa inteiro e a
+ * projeção arquiva o item da vault que não está no disco. Duas suítes
+ * reindexando a casa ao mesmo tempo — a da 05c e a da ROOT-20, que o vitest roda
+ * em paralelo no mesmo banco — apagariam o índice uma da outra e arquivariam a
+ * memória uma da outra. A trava é consultiva, do Postgres, numa conexão só dela
+ * (`connection_limit=1`, porque a trava de sessão é da conexão): quem chega
+ * depois espera no `beforeAll`, e soltar é desconectar.
+ */
+export async function travarACasa(url: string): Promise<() => Promise<void>> {
+  const { PrismaClient } = await import('@prisma/client');
+  const separador = url.includes('?') ? '&' : '?';
+  const cliente = new PrismaClient({ datasources: { db: { url: `${url}${separador}connection_limit=1` } } });
+  await cliente.$connect();
+  await cliente.$executeRaw`SELECT pg_advisory_lock(hashtext('suite:empresa-da-casa:reindex'))`;
+  return async () => {
+    try {
+      await cliente.$executeRaw`SELECT pg_advisory_unlock(hashtext('suite:empresa-da-casa:reindex'))`;
+    } finally {
+      await cliente.$disconnect();
+    }
+  };
+}

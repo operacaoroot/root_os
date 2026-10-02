@@ -995,14 +995,23 @@ describe('sincronizar exige a permissão que o conector declara', () => {
 // SEÇÃO 12 — o Obsidian: a pasta abre, mas a empresa tem índice?
 // ---------------------------------------------------------------------------
 
-function montarObsidian(vault: string | null, notas: number) {
+function montarObsidian(vault: string | null, notas: number, daCasa = true) {
   const antes = process.env.OBSIDIAN_VAULT_PATH;
   if (vault) process.env.OBSIDIAN_VAULT_PATH = vault;
   else delete process.env.OBSIDIAN_VAULT_PATH;
 
   const prisma = {
     knowledgeNote: { count: async () => notas },
-    org: { findUnique: async () => null },
+    /*
+     * Desde a ROOT-20 a sonda pergunta primeiro se a empresa é a da casa — a
+     * mesma consulta da guarda de `reindex` (id e slug juntos). Nos casos de
+     * sempre ela é; o caso da empresa cliente está logo abaixo (E-20.7).
+     */
+    org: {
+      findUnique: async () => null,
+      findFirst: async ({ where }: { where: { id: string; slug: string } }) =>
+        daCasa && where.id === EMPRESA && where.slug === 'root' ? { id: EMPRESA } : null,
+    },
   } as unknown as PrismaService;
 
   const contrato = new RegistroDeConectores();
@@ -1070,6 +1079,18 @@ describe('Obsidian: verde só com índice desta empresa', () => {
     const s = await contrato.sondar({ orgId: EMPRESA, chave: 'obsidian', prazoMs: 2_000 });
     expect(s.estado).toBe('erro');
     expect(s.mensagem).toContain(sumida);
+  });
+
+  it('E-20.7: empresa que não é a da casa ouve o estado de fato — nem "não configurado", nem "erro"', async () => {
+    for (const vaultDaEmpresa of [vault, null]) {
+      const { contrato } = montarObsidian(vaultDaEmpresa, 0, false);
+      const s = await contrato.sondar({ orgId: EMPRESA, chave: 'obsidian', prazoMs: 2_000, semMemoria: true });
+      expect(s.estado).toBe('nao_verificado');
+      expect(s.mensagem).toBe(
+        'A vault é da empresa da casa; a base de conhecimento desta empresa vem do onboarding e das notas da tela.',
+      );
+      expect(s.mensagem).not.toMatch(/sincronizar/);
+    }
   });
 
   it('sem vault apontada = não configurado, e a pergunta é do operador', async () => {

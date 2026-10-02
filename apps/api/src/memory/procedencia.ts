@@ -22,14 +22,29 @@ import { ContextSource } from '@prisma/client';
 export const PREFIXO_DA_VAULT = 'vault:';
 
 /**
- * A chave estável de uma nota da vault: `vault:<caminho relativo>`.
+ * A chave estável de uma nota da vault: `vault:<caminho relativo em NFC>`.
  *
  * É ela que faz a reindexação ser IDEMPOTENTE. Sem chave estável, cada volta do
  * cron criaria notas novas para os mesmos arquivos e o "histórico de versões"
  * viraria um monte de notas com uma versão cada — o oposto do que RF-M-01 pede.
+ *
+ * NFC AQUI E NO PONTO ONDE O CAMINHO NASCE (C19-02). O mesmo nome com acento
+ * pode chegar do disco em NFD (arquivo criado no macOS e versionado sem
+ * `core.precomposeunicode`) e em NFC; sem normalizar, viraria duas notas. Caixa
+ * não é dobrada: o git e o disco da VPS diferenciam. Medido na árvore da base
+ * que produção lê: 0 caminho fora de NFC, então nenhuma chave viva muda.
  */
 export function chaveDaVault(caminhoRelativo: string): string {
-  return `${PREFIXO_DA_VAULT}${caminhoRelativo}`;
+  return `${PREFIXO_DA_VAULT}${caminhoRelativo.normalize('NFC')}`;
+}
+
+/**
+ * A chave é da coleção `vault:`? Sem diferenciar caixa nem espaço na frente: a
+ * reserva do prefixo (C19-06, regra 3) recusa também `Vault:x` e ` vault:x`,
+ * que a tela aparava ou que só um olho cansado distingue do de verdade.
+ */
+export function ehChaveDaVault(chave: string | null | undefined): boolean {
+  return String(chave ?? '').normalize('NFC').trim().toLowerCase().startsWith(PREFIXO_DA_VAULT);
 }
 
 /**
@@ -67,10 +82,14 @@ export function rotuloDeProcedencia(
  * como mudança faria a nota versionar sozinha para sempre.
  */
 export function hashDoCorpo(corpo: string): string {
-  const normalizado = String(corpo ?? '')
+  return createHash('sha256').update(corpoNormalizado(corpo)).digest('hex');
+}
+
+/** O texto que `hashDoCorpo` resume: `\r\n` vira `\n` e as pontas são aparadas. */
+export function corpoNormalizado(corpo: string): string {
+  return String(corpo ?? '')
     .replace(/\r\n/g, '\n')
     .trim();
-  return createHash('sha256').update(normalizado).digest('hex');
 }
 
 /**

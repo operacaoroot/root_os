@@ -41,6 +41,7 @@ import { contemAlgumSegredo } from '../src/cofre/segredo';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { ObsidianService } from '../src/obsidian/obsidian.service';
 import type { Agent } from '@prisma/client';
+import { lerNotaDaVault } from '../src/obsidian/cabecalho-da-nota';
 
 /*
  * ============================================================================
@@ -1099,10 +1100,24 @@ describe('família 1b — os carregadores que contornavam a primeira versão', (
      * página — os outros usuários de `blocoExterno`. Está escrito assim na
      * auditoria; esta catraca é o que impede a afirmação de envelhecer calada.
      */
-    const fonte = readFileSync(join(RAIZ_DA_API, 'src', 'obsidian', 'obsidian.service.ts'), 'utf8');
-    expect(fonte).toContain('const fm = raw.match(/^---\\n([\\s\\S]*?)\\n---\\n?/);');
-    expect(fonte).toContain('body = raw.slice(fm[0].length);');
-    expect(fonte).toContain('content: body.trim(),');
+    /*
+     * Desde a ROOT-20 a leitura mora em `obsidian/cabecalho-da-nota.ts`
+     * (`lerNotaDaVault`, que o conector chama) e aceita `\r\n` e BOM no
+     * cabeçalho (E-20.9). A catraca passou a medir o COMPORTAMENTO nas três
+     * formas, e ainda confere que o conector usa essa leitura e que o corte é
+     * o do cabeçalho inicial.
+     */
+    const servico = readFileSync(join(RAIZ_DA_API, 'src', 'obsidian', 'obsidian.service.ts'), 'utf8');
+    expect(servico).toContain('lerNotaDaVault(');
+    const leitura = readFileSync(join(RAIZ_DA_API, 'src', 'obsidian', 'cabecalho-da-nota.ts'), 'utf8');
+    expect(leitura).toContain('body = raw.slice(fm[0].length);');
+    expect(leitura).toContain('content: body.trim(),');
+    const cru = `---\nagent_directive: "${CARGA_METADADO}"\ntags: [contrato]\n---\nContrato renovado.`;
+    for (const forma of [cru, cru.replace(/\n/g, '\r\n'), `\uFEFF${cru}`]) {
+      const nota = lerNotaDaVault('contratos/x.md', forma);
+      expect(chegou(nota.content, CARGA_METADADO)).toBe(false);
+      expect(nota.content).toContain('Contrato renovado.');
+    }
   });
 
   it('os rótulos, nas duas formas e com prefixo — os três contornos medidos', () => {

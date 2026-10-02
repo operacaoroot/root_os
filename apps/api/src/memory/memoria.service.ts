@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -18,9 +19,11 @@ import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   chaveDaVault,
+  corpoNormalizado,
   exigirProcedencia,
   formaDoCorpo,
   hashDoCorpo,
+  PREFIXO_DA_VAULT,
   referenciaDaVersao,
   rotuloDeProcedencia,
   SEM_EVENTO,
@@ -103,6 +106,11 @@ export interface EntradaDeNota {
   sourceRef?: string | null;
   validFrom?: Date | null;
   validUntil?: Date | null;
+  /**
+   * A nota que esta substitui (RF-M-08). Hoje só a projeção da vault preenche,
+   * a partir do `substitui:` do cabeçalho (C19-05); a tela não o recebe.
+   */
+  supersedesId?: string | null;
   confidence?: number;
   /** O vetor, quando quem chama já o tem. Ver "o que este serviço não faz". */
   embedding?: number[] | null;
@@ -188,12 +196,14 @@ export interface ResultadoDeBusca {
   fonte: { tool: 'memoria'; generatedAt: string };
 }
 
-/** O que uma volta de projeção da vault mexeu. É o que a sonda e o CLI mostram. */
+/** O que uma volta de projeção da vault mexeu. É o que a sonda, o CLI e o recibo mostram. */
 export interface ResumoDaProjecao {
   criadas: number;
   alteradas: number;
   inalteradas: number;
   arquivadas: number;
+  /** Itens arquivados que voltaram porque o arquivo voltou a existir. */
+  restauradas: number;
   /** Notas que falharam NESTA VOLTA. Uma nota ruim não derruba as outras. */
   falhas: number;
   /**
@@ -201,6 +211,50 @@ export interface ResumoDaProjecao {
    * arquivo apagado. Diferente de zero é incidente, não estatística.
    */
   arquivamentoRecusado: number;
+  /** Arquivos movidos com o mesmo `itemId` (C19-04). */
+  movidas: number;
+  /** Pares de movimento segurados pela guarda: acima do teto, nada novo nasce e nada antigo é arquivado. */
+  movimentosRecusados: number;
+  /** Pares que não se formaram, e por quê: aí vale o comportamento de antes (arquiva A, cria B). */
+  movimentosDescartados: { ambiguos: number; curtos: number };
+  /** Os pares da volta, com o caminho de origem e de destino (o recibo os põe sob `sigiloso`). */
+  pares: Array<{ de: string; para: string; situacao: 'movido' | 'segurado' | 'falhou' }>;
+  /**
+   * O conjunto exato que cada guarda segurou, como resumo criptográfico das
+   * chaves em ordem. É o que o comando de liberação assina (R-6): a liberação
+   * vale só para ESTE conjunto, e uma vault que mudou de novo pede outra.
+   */
+  guardas: {
+    arquivamento: { quantidade: number; conjunto: string | null };
+    movimentos: { quantidade: number; conjunto: string | null };
+  };
+  /** O evento de liberação que esta volta consumiu, quando consumiu. */
+  liberacaoUsada: string | null;
+  /** `substitui:` resolvidos e sem alvo; o sem alvo fica nulo e vai ao recibo como aviso. */
+  substituicoes: { resolvidas: number; semAlvo: number };
+  avisos: string[];
+}
+
+/** Uma nota da vault como a projeção a recebe. */
+export interface NotaDaVaultParaProjetar {
+  caminho: string;
+  title: string;
+  body: string;
+  tags?: string[];
+  embedding?: number[] | null;
+  /**
+   * O cabeçalho lido (C19-05). Ausente = desconhecido nesta volta (a fonte Drive
+   * reaproveita a nota pela data e não relê o arquivo): os campos do item ficam
+   * como estão. Presente, ele é a verdade, inclusive para voltar a `nota` e a
+   * validade vazia.
+   */
+  cabecalho?: {
+    kind: ContextKind;
+    validFrom: Date | null;
+    validUntil: Date | null;
+    /** O caminho (NFC) que `substitui:` aponta, já normalizado; `null` quando não há. */
+    substitui: string | null;
+  };
 }
 
 /**
@@ -209,8 +263,24 @@ export interface ResumoDaProjecao {
  * Não é erro de leitura de disco — é resposta VÁLIDA e suspeita: a lista veio
  * vazia enquanto a memória tem notas daquela origem. Ver a guarda em
  * `projetarDaVault`.
+ *
+ * Leva o resumo da volta: é dele que o recibo tira o conjunto segurado, e é esse
+ * conjunto que o comando de liberação assina (R-6).
  */
-export class VaultSuspeitaError extends Error {}
+export class VaultSuspeitaError extends Error {
+  constructor(
+    mensagem: string,
+    readonly resumo?: ResumoDaProjecao,
+  ) {
+    super(mensagem);
+  }
+}
+
+/** O tipo do evento do recibo de uma volta da vault (C19-08). */
+export const TIPO_DO_RECIBO = 'memoria.vault.recibo';
+
+/** A coleção `vault:` da root-base, como o recibo a nomeia. */
+export const COLECAO_DA_VAULT = 'vault:root-base';
 
 /**
  * ABAIXO DISTO, PROPORÇÃO NÃO DIZ NADA. Com três notas na memória, arquivar uma
@@ -229,6 +299,61 @@ const PISO_DE_ARQUIVAMENTO = 5;
  * pasta voltar.
  */
 const TETO_DE_ARQUIVAMENTO = 0.2;
+
+/**
+ * O MENOR CORPO QUE FORMA PAR DE MOVIMENTO (C19-04, R-4), em caracteres do corpo
+ * normalizado (o mesmo texto que vira `contentHash`).
+ *
+ * De onde saiu o número: a medida Q-CURTOS do contrato, feita sobre a árvore da
+ * root-base que produção lia (`e2a2178`, 397 `.md` rastreados) e sobre o `main`
+ * de 02/10/2026 (`4bd6e1b`, 403), com a mesma leitura de corpo do OS: nenhum
+ * corpo vazio, nenhum abaixo de 200 caracteres, o menor com 282. Duzentos deixa
+ * toda nota de hoje apta a formar par e corta o que tem cara de esboço ou
+ * modelo — corpo curto é o que mais se repete entre notas sem relação. A mesma
+ * medida achou 4 grupos de corpo idêntico (8 notas): esses nunca formam par,
+ * pela regra de unicidade logo abaixo, não pelo piso. Em produção a Q-CURTOS do
+ * pacote de deploy (E-20.11) repete a medida no banco.
+ */
+export const PISO_DO_PAR = 200;
+
+/** O evento com que uma pessoa libera, pelo comando, um conjunto que a guarda segurou (R-6). */
+export const TIPO_DA_LIBERACAO = 'memoria.vault.guarda_liberada';
+
+/** Até quando uma liberação vale, se a volta não a consumir antes. */
+const VALIDADE_DA_LIBERACAO_MS = 24 * 60 * 60 * 1000;
+
+/** O comando que as frases das guardas mandam rodar (R-6). */
+export const COMANDO_DE_LIBERACAO =
+  'node dist/scripts/liberar-guarda-da-vault.js --como <seu e-mail> --motivo "<por quê>"';
+
+/** O resumo de uma volta que não mexeu em nada — o ponto de partida de toda projeção. */
+export function resumoVazio(): ResumoDaProjecao {
+  return {
+    criadas: 0,
+    alteradas: 0,
+    inalteradas: 0,
+    arquivadas: 0,
+    restauradas: 0,
+    falhas: 0,
+    arquivamentoRecusado: 0,
+    movidas: 0,
+    movimentosRecusados: 0,
+    movimentosDescartados: { ambiguos: 0, curtos: 0 },
+    pares: [],
+    guardas: {
+      arquivamento: { quantidade: 0, conjunto: null },
+      movimentos: { quantidade: 0, conjunto: null },
+    },
+    liberacaoUsada: null,
+    substituicoes: { resolvidas: 0, semAlvo: 0 },
+    avisos: [],
+  };
+}
+
+/** O resumo criptográfico de um conjunto de chaves, na ordem: é o que a liberação assina. */
+export function conjuntoDaGuarda(chaves: readonly string[]): string {
+  return createHash('sha256').update([...chaves].sort().join('\n')).digest('hex');
+}
 
 @Injectable()
 export class MemoriaService {
@@ -442,6 +567,7 @@ export class MemoriaService {
             sourceRef: entrada.sourceRef ?? null,
             validFrom: entrada.validFrom ?? null,
             validUntil: entrada.validUntil ?? null,
+            supersedesId: entrada.supersedesId ?? null,
             confidence: entrada.confidence ?? 1,
             contentHash,
             versao: 1,
@@ -536,6 +662,7 @@ export class MemoriaService {
             sourceRef: mudancas.sourceRef === undefined ? atual.sourceRef : mudancas.sourceRef,
             validFrom: mudancas.validFrom === undefined ? atual.validFrom : mudancas.validFrom,
             validUntil: mudancas.validUntil === undefined ? atual.validUntil : mudancas.validUntil,
+            supersedesId: mudancas.supersedesId === undefined ? atual.supersedesId : mudancas.supersedesId,
             confidence: mudancas.confidence ?? atual.confidence,
             contentHash: hashDoCorpo(body),
             atualizadoPor: ator.actorId,
@@ -854,47 +981,159 @@ export class MemoriaService {
    *  · arquivamento em MASSA (acima de `TETO_DE_ARQUIVAMENTO`, com piso): faz as
    *    criações e alterações — que são aditivas e reversíveis — e deixa o
    *    arquivamento para uma decisão humana, com o número no log.
+   * A decisão humana é o comando de liberação (R-6), que assina o conjunto exato
+   * que a guarda segurou: a tela não arquiva item da vault (E4 da ROOT-05-REV).
+   *
+   * ----------------------------------------------------------------------------
+   * MOVER SEM PERDER O `itemId` (C19-04, R-4)
+   * ----------------------------------------------------------------------------
+   * Um item vivo cuja chave A sumiu e um membro novo B com o MESMO corpo formam
+   * par quando o `contentHash` é único em TODA a coleção — itens vivos e
+   * membros desta volta juntos, não só entre sumidos e novos: um arquivo novo
+   * igual a uma terceira nota viva também é ambíguo — e o corpo tem pelo menos
+   * `PISO_DO_PAR` caracteres. B não pode existir na empresa, nem arquivado.
+   *
+   * OS PARES SÃO CALCULADOS ANTES DE QUALQUER CRIAÇÃO. Antes, a criação de B vinha
+   * no laço e só depois se sabia que A tinha sumido: a nota nascia de novo e a
+   * antiga era arquivada, com outro `itemId`. Agora o par move a mesma linha
+   * (uma versão `alteracao` com `sourceRef` B e o motivo dizendo de onde para
+   * onde) e só então o laço passa por B, onde mudança de cabeçalho entra como
+   * alteração comum.
+   *
+   * Movimentos acima do mesmo teto da guarda de arquivamento ficam SEGURADOS por
+   * inteiro: nada nasce em B e nada é arquivado em A. O par tem o mesmo corpo,
+   * então segurar não perde conteúdo, e cair no comportamento antigo duplicaria
+   * a nota. Movimento não entra na conta da guarda de arquivamento — só o que
+   * sumiu sem par —, e uma reorganização de pastas deixa de parecer vault
+   * sumida.
+   *
+   * `vistos` são os caminhos que ficaram fora da coleção por anomalia do clone
+   * (alterado ou apagado fora do git, entrada não verificável, colisão de NFC):
+   * o item deles não é arquivado nem alterado nesta volta (R-3).
    */
   async projetarDaVault(
     orgId: string,
-    notas: Array<{
-      caminho: string;
-      title: string;
-      body: string;
-      tags?: string[];
-      embedding?: number[] | null;
-    }>,
+    notas: NotaDaVaultParaProjetar[],
+    opcoes: { vistos?: readonly string[] } = {},
   ): Promise<ResumoDaProjecao> {
-    const resumo: ResumoDaProjecao = {
-      criadas: 0,
-      alteradas: 0,
-      inalteradas: 0,
-      arquivadas: 0,
-      falhas: 0,
-      arquivamentoRecusado: 0,
-    };
-    const vistas = new Set<string>();
+    const resumo = resumoVazio();
+    const membros = new Map<string, NotaDaVaultParaProjetar>();
+    for (const n of notas) membros.set(chaveDaVault(n.caminho), n);
+    const vistosExtras = new Set((opcoes.vistos ?? []).map((c) => chaveDaVault(c)));
 
-    const vivas = await this.prisma.contextItem.count({
-      where: { orgId, sourceType: ContextSource.vault, arquivadoEm: null },
+    const itens = await this.prisma.contextItem.findMany({
+      where: { orgId, sourceType: ContextSource.vault },
+      select: { id: true, chave: true, contentHash: true, arquivadoEm: true },
     });
+    const vivos = itens.filter((i) => !i.arquivadoEm);
+    const vivas = vivos.length;
+    const teto = Math.max(PISO_DE_ARQUIVAMENTO, Math.ceil(vivas * TETO_DE_ARQUIVAMENTO));
+    const sumidos = vivos.filter((i) => !membros.has(i.chave) && !vistosExtras.has(i.chave));
+    const liberacao = await this.liberacaoDaVault(orgId);
+    const caminhoDe = (chave: string) => chave.slice(PREFIXO_DA_VAULT.length);
 
-    if (notas.length === 0 && vivas > 0) {
-      throw new VaultSuspeitaError(
-        `a vault respondeu VAZIA e esta empresa tem ${vivas} nota(s) de origem "vault" na ` +
-          'memória. Nada foi arquivado: uma pasta que existe e não tem nenhum arquivo é ponto ' +
-          'de montagem caído ou caminho errado muito mais vezes do que é vault esvaziada de ' +
-          'propósito — e o arquivamento em massa custaria uma versão e um evento por nota, ' +
-          'mais outro par quando a pasta voltasse. Para esvaziar de verdade, arquive na tela ' +
-          'ou rode `memoria.cli.js desfazer-migracao`.',
-      );
+    if (notas.length === 0 && sumidos.length > 0) {
+      const conjunto = conjuntoDaGuarda(sumidos.map((s) => s.chave));
+      if (liberacao?.arquivamento !== conjunto) {
+        resumo.arquivamentoRecusado = sumidos.length;
+        resumo.guardas.arquivamento = { quantidade: sumidos.length, conjunto };
+        throw new VaultSuspeitaError(
+          `a vault respondeu VAZIA e esta empresa tem ${vivas} nota(s) de origem "vault" na ` +
+            'memória. Nada foi arquivado: uma pasta que existe e não tem nenhum arquivo é ponto ' +
+            'de montagem caído ou caminho errado muito mais vezes do que é vault esvaziada de ' +
+            'propósito — e o arquivamento em massa custaria uma versão e um evento por nota, ' +
+            'mais outro par quando a pasta voltasse. Se esvaziar for de verdade, quem decide ' +
+            `libera este conjunto pelo comando \`${COMANDO_DE_LIBERACAO}\` e a volta seguinte ` +
+            'arquiva; a tela não arquiva nota da vault.',
+          resumo,
+        );
+      }
     }
 
-    for (const nota of notas) {
-      const chave = chaveDaVault(nota.caminho);
-      vistas.add(chave);
+    // ---- os pares, antes de qualquer criação --------------------------------
+    const existentes = new Set(
+      (
+        await this.prisma.contextItem.findMany({
+          where: { orgId, chave: { in: [...membros.keys()] } },
+          select: { chave: true },
+        })
+      ).map((i) => i.chave),
+    );
+    const contagem = new Map<string, number>();
+    const somar = (h: string) => contagem.set(h, (contagem.get(h) ?? 0) + 1);
+    for (const v of vivos) somar(v.contentHash);
+    const hashDoMembro = new Map<string, string>();
+    for (const [chave, n] of membros) {
+      const h = hashDoCorpo(n.body);
+      hashDoMembro.set(chave, h);
+      somar(h);
+    }
+    const novosPorHash = new Map<string, string[]>();
+    for (const chave of membros.keys()) {
+      if (existentes.has(chave)) continue;
+      const h = hashDoMembro.get(chave)!;
+      novosPorHash.set(h, [...(novosPorHash.get(h) ?? []), chave]);
+    }
+    const pares: Array<{ de: { id: string; chave: string }; para: string }> = [];
+    for (const s of sumidos) {
+      const candidatos = novosPorHash.get(s.contentHash) ?? [];
+      if (!candidatos.length) continue;
+      if (candidatos.length !== 1 || contagem.get(s.contentHash) !== 2) {
+        resumo.movimentosDescartados.ambiguos++;
+        continue;
+      }
+      if (Array.from(corpoNormalizado(membros.get(candidatos[0])!.body)).length < PISO_DO_PAR) {
+        resumo.movimentosDescartados.curtos++;
+        continue;
+      }
+      pares.push({ de: { id: s.id, chave: s.chave }, para: candidatos[0] });
+    }
+
+    const conjuntoDosMovimentos = conjuntoDaGuarda(pares.map((p) => `${p.de.chave}\u0000${p.para}`));
+    const segurados = new Set<string>();
+    const movidos = new Set<string>();
+    if (pares.length > teto && liberacao?.movimentos !== conjuntoDosMovimentos) {
+      resumo.movimentosRecusados = pares.length;
+      resumo.guardas.movimentos = { quantidade: pares.length, conjunto: conjuntoDosMovimentos };
+      for (const p of pares) {
+        segurados.add(p.de.chave);
+        segurados.add(p.para);
+        resumo.pares.push({ de: caminhoDe(p.de.chave), para: caminhoDe(p.para), situacao: 'segurado' });
+      }
+      this.log.error(
+        `empresa ${orgId}: a volta da vault moveria ${pares.length} nota(s), acima do teto de ${teto} ` +
+          'para uma volta só. NADA foi movido, criado no destino nem arquivado na origem (o corpo é ' +
+          'o mesmo dos dois lados, então nada se perde esperando). Se a reorganização for real, ' +
+          `quem decide libera este conjunto com \`${COMANDO_DE_LIBERACAO}\`.`,
+      );
+    } else {
+      if (pares.length > teto) resumo.liberacaoUsada = liberacao!.eventoId;
+      for (const p of pares) {
+        const de = caminhoDe(p.de.chave);
+        const para = caminhoDe(p.para);
+        try {
+          await this.mover(orgId, p.de.id, p.para, para, `o arquivo foi movido na vault (${de} → ${para}, corpo idêntico)`);
+          movidos.add(p.de.chave);
+          resumo.movidas++;
+          resumo.pares.push({ de, para, situacao: 'movido' });
+        } catch (e) {
+          // O par que não fechou volta ao comportamento de antes: A arquiva, B nasce.
+          resumo.falhas++;
+          resumo.pares.push({ de, para, situacao: 'falhou' });
+          this.log.warn(`empresa ${orgId}: não consegui mover "${de}" para "${para}" (${(e as Error).message}).`);
+        }
+      }
+    }
+
+    // ---- o laço: quem não aponta substituição primeiro --------------------------
+    const ordem = [...membros.entries()]
+      .filter(([chave]) => !segurados.has(chave))
+      .sort(([, a], [, b]) => Number(Boolean(a.cabecalho?.substitui)) - Number(Boolean(b.cabecalho?.substitui)));
+    const adiados: Array<[string, NotaDaVaultParaProjetar]> = [];
+    for (const [chave, nota] of ordem) {
       try {
-        await this.projetarUmaNota(orgId, chave, nota, resumo);
+        const supersedesId = await this.alvoDaSubstituicao(orgId, chave, nota, membros, resumo, adiados);
+        await this.projetarUmaNota(orgId, chave, nota, resumo, supersedesId);
       } catch (e) {
         /*
          * UMA NOTA RUIM NÃO DERRUBA A VOLTA. Antes, um corpo que o banco
@@ -909,24 +1148,48 @@ export class MemoriaService {
         );
       }
     }
+    // A substituição cujo alvo nasceu nesta mesma volta, depois de quem o aponta.
+    for (const [chave, nota] of adiados) {
+      try {
+        const alvo = await this.porChave(orgId, chaveDaVault(nota.cabecalho!.substitui!));
+        const item = await this.porChave(orgId, chave);
+        if (!alvo || !item) {
+          resumo.substituicoes.semAlvo++;
+          resumo.avisos.push(`${nota.caminho}: substitui "${nota.cabecalho!.substitui}" sem nota correspondente`);
+          continue;
+        }
+        resumo.substituicoes.resolvidas++;
+        if (item.supersedesId !== alvo.id) {
+          await this.alterar(orgId, item.id, {
+            supersedesId: alvo.id,
+            motivo: 'substitui: a nota apontada nasceu nesta mesma volta da vault',
+          });
+          resumo.alteradas++;
+        }
+      } catch (e) {
+        resumo.falhas++;
+        this.log.warn(`empresa ${orgId}: a substituição de "${nota.caminho}" falhou (${(e as Error).message}).`);
+      }
+    }
 
-    const orfas = await this.prisma.contextItem.findMany({
-      where: { orgId, sourceType: ContextSource.vault, arquivadoEm: null },
-      select: { id: true, chave: true },
-    });
-    const sumidas = orfas.filter((o) => !vistas.has(o.chave));
-    const teto = Math.max(PISO_DE_ARQUIVAMENTO, Math.ceil(vivas * TETO_DE_ARQUIVAMENTO));
-
+    // ---- o arquivamento: só o que sumiu sem par ------------------------------
+    const sumidas = sumidos.filter((s) => !movidos.has(s.chave) && !segurados.has(s.chave));
+    const conjuntoDoArquivamento = conjuntoDaGuarda(sumidas.map((s) => s.chave));
     if (sumidas.length > teto) {
-      resumo.arquivamentoRecusado = sumidas.length;
-      this.log.error(
-        `empresa ${orgId}: a volta da vault sumiu com ${sumidas.length} de ${vivas} nota(s) ` +
-          `vivas, acima do teto de ${teto} para uma volta só. NADA foi arquivado — isto tem ` +
-          'cara de vault montada no lugar errado, e arquivar em massa é caro de desfazer ' +
-          '(uma versão e um evento por nota, nos dois sentidos). Confira o caminho da vault; ' +
-          'se a remoção for real, arquive na tela.',
-      );
-      return resumo;
+      if (liberacao?.arquivamento !== conjuntoDoArquivamento) {
+        resumo.arquivamentoRecusado = sumidas.length;
+        resumo.guardas.arquivamento = { quantidade: sumidas.length, conjunto: conjuntoDoArquivamento };
+        this.log.error(
+          `empresa ${orgId}: a volta da vault sumiu com ${sumidas.length} de ${vivas} nota(s) ` +
+            `vivas, acima do teto de ${teto} para uma volta só. NADA foi arquivado — isto tem ` +
+            'cara de vault montada no lugar errado, e arquivar em massa é caro de desfazer ' +
+            '(uma versão e um evento por nota, nos dois sentidos). Confira o caminho da vault; ' +
+            `se a remoção for real, quem decide libera este conjunto com \`${COMANDO_DE_LIBERACAO}\` ` +
+            'e a volta seguinte arquiva. A tela não arquiva nota da vault.',
+        );
+        return resumo;
+      }
+      resumo.liberacaoUsada = liberacao.eventoId;
     }
 
     for (const orfa of sumidas) {
@@ -944,25 +1207,60 @@ export class MemoriaService {
     return resumo;
   }
 
+  /**
+   * O `supersedesId` de uma nota, a partir do `substitui:` já normalizado.
+   * `undefined` = o cabeçalho não foi lido nesta volta, e o campo fica como está.
+   */
+  private async alvoDaSubstituicao(
+    orgId: string,
+    chave: string,
+    nota: NotaDaVaultParaProjetar,
+    membros: Map<string, NotaDaVaultParaProjetar>,
+    resumo: ResumoDaProjecao,
+    adiados: Array<[string, NotaDaVaultParaProjetar]>,
+  ): Promise<string | null | undefined> {
+    if (!nota.cabecalho) return undefined;
+    const substitui = nota.cabecalho.substitui;
+    if (!substitui) return null;
+    const chaveDoAlvo = chaveDaVault(substitui);
+    const alvo = await this.porChave(orgId, chaveDoAlvo);
+    if (alvo) {
+      resumo.substituicoes.resolvidas++;
+      return alvo.id;
+    }
+    if (membros.has(chaveDoAlvo) && chaveDoAlvo !== chave) {
+      adiados.push([chave, nota]);
+      return null;
+    }
+    resumo.substituicoes.semAlvo++;
+    resumo.avisos.push(`${nota.caminho}: substitui "${substitui}" sem nota correspondente`);
+    return null;
+  }
+
   /** Uma nota da vault, projetada. Separado para que a falha seja POR NOTA. */
   private async projetarUmaNota(
     orgId: string,
     chave: string,
-    nota: { caminho: string; title: string; body: string; tags?: string[]; embedding?: number[] | null },
+    nota: NotaDaVaultParaProjetar,
     resumo: ResumoDaProjecao,
+    supersedesId: string | null | undefined,
   ): Promise<void> {
     const existente = await this.porChave(orgId, chave);
     const hash = hashDoCorpo(nota.body);
+    const cab = nota.cabecalho;
 
     if (!existente) {
       await this.criar(orgId, {
         chave,
-        kind: ContextKind.nota,
+        kind: cab?.kind ?? ContextKind.nota,
         title: nota.title,
         body: nota.body,
         tags: nota.tags ?? [],
         sourceType: ContextSource.vault,
         sourceRef: nota.caminho,
+        validFrom: cab?.validFrom ?? null,
+        validUntil: cab?.validUntil ?? null,
+        supersedesId: supersedesId ?? null,
         embedding: nota.embedding ?? null,
         motivo: 'indexação da vault do Obsidian',
       });
@@ -974,8 +1272,21 @@ export class MemoriaService {
       hash !== existente.contentHash ||
       nota.title !== existente.title ||
       !mesmasTags(nota.tags ?? [], existente.tags);
+    /*
+     * O CABEÇALHO TAMBÉM VERSIONA (C19-05, R-8). `kind`, `valido_de`,
+     * `valido_ate` e `substitui` contam como mudança: um `valido_ate` novo é
+     * como a base aposenta uma regra, e sem versão a regra seguiria valendo para
+     * o agente. O histórico desses três campos vai no EVENTO (`estadoDaNota`),
+     * sem coluna nova em `ContextItemVersion`.
+     */
+    const mudouCabecalho =
+      (cab !== undefined &&
+        (cab.kind !== existente.kind ||
+          iso(cab.validFrom) !== existente.validFrom ||
+          iso(cab.validUntil) !== existente.validUntil)) ||
+      (supersedesId !== undefined && supersedesId !== existente.supersedesId);
 
-    if (!mudouTexto && !existente.arquivadoEm) {
+    if (!mudouTexto && !mudouCabecalho && !existente.arquivadoEm) {
       // Nada mudou no arquivo. O vetor pode estar faltando (nota criada na
       // tela antes de haver chave de embedding): esse é o único caso em que
       // ainda vale gravar alguma coisa.
@@ -988,19 +1299,179 @@ export class MemoriaService {
 
     if (existente.arquivadoEm) {
       await this.restaurar(orgId, existente.id, 'o arquivo voltou a existir na vault');
+      resumo.restauradas++;
     }
-    if (mudouTexto) {
+    if (mudouTexto || mudouCabecalho) {
       await this.alterar(orgId, existente.id, {
         title: nota.title,
         body: nota.body,
         tags: nota.tags ?? [],
         sourceType: ContextSource.vault,
         sourceRef: nota.caminho,
+        ...(cab ? { kind: cab.kind, validFrom: cab.validFrom, validUntil: cab.validUntil } : {}),
+        ...(supersedesId !== undefined ? { supersedesId } : {}),
         embedding: nota.embedding ?? null,
-        motivo: 'o arquivo mudou na vault do Obsidian',
+        motivo: mudouTexto
+          ? 'o arquivo mudou na vault do Obsidian'
+          : 'o cabeçalho do arquivo mudou na vault do Obsidian (kind, validade ou substitui)',
       });
       resumo.alteradas++;
     }
+  }
+
+  /**
+   * O MOVIMENTO (C19-04): a mesma linha troca de chave, com uma versão
+   * `alteracao` que guarda `sourceRef` novo e o motivo de onde para onde. A
+   * versão anterior continua com o caminho antigo, e o evento sai com `vault:A`
+   * no estado anterior e `vault:B` no novo, pelo caminho que já existe.
+   *
+   * O destino é conferido DENTRO do cadeado: entre o cálculo do par e aqui, só
+   * a própria projeção cria chave `vault:` (a borda HTTP recusa o prefixo), mas
+   * a conferência é barata e o índice único `(orgId, chave)` é a segunda tranca.
+   */
+  private async mover(
+    orgId: string,
+    id: string,
+    novaChave: string,
+    novoCaminho: string,
+    motivo: string,
+  ): Promise<void> {
+    const ator = this.ator();
+    const { item, anterior, versao } = await this.gravarVersao({
+      orgId,
+      id,
+      mudanca: ContextChange.alteracao,
+      ator,
+      conferir: async (tx, atual) => {
+        if (atual.arquivadoEm) throw new ConflictException('a nota de origem foi arquivada no meio da volta');
+        const ocupada = await tx.contextItem.findFirst({ where: { orgId, chave: novaChave }, select: { id: true } });
+        if (ocupada) throw this.conflitoDeChave(novaChave);
+      },
+      montar: () => ({
+        dados: { chave: novaChave, sourceType: ContextSource.vault, sourceRef: novoCaminho, atualizadoPor: ator.actorId },
+        motivo,
+      }),
+    });
+    await this.registrarMudanca({
+      orgId,
+      mudanca: ContextChange.alteracao,
+      item,
+      versaoId: versao.id,
+      versaoNumero: versao.versao,
+      motivo,
+      anterior,
+    });
+  }
+
+  // ==========================================================================
+  // O RECIBO E A LIBERAÇÃO DAS GUARDAS — C19-08 e R-6
+  // ==========================================================================
+
+  /**
+   * O recibo de uma volta da vault, no RASTRO. Quem monta é o conector
+   * (`obsidian/recibo-da-vault.ts`), que sabe de montante, descoberta, leitura,
+   * índice e vetor; aqui é só a escrita, pelo mesmo `EventLogService` das
+   * mudanças da memória, com a correlação da volta — a mesma dos eventos
+   * `memoria.item.*` que ela produziu.
+   */
+  async registrarReciboDaVault(
+    orgId: string,
+    recibo: { payload: Prisma.InputJsonValue; resumo: string; motivo: string },
+  ): Promise<{ id: string; seq: bigint }> {
+    const ator = this.ator();
+    return this.eventos.registrar({
+      orgId,
+      tipo: TIPO_DO_RECIBO,
+      actorType: (ator.actorType as ActorType) ?? ActorType.system,
+      actorId: ator.actorId,
+      correlationId: ator.correlationId,
+      payload: recibo.payload,
+      conteudo: { resumo: recibo.resumo, fontes: [COLECAO_DA_VAULT], motivo: recibo.motivo },
+      sensibilidade: 'interna',
+    });
+  }
+
+  /** O último recibo da vault desta empresa: a assinatura e quando. */
+  async ultimoReciboDaVault(orgId: string): Promise<{ assinatura: string | null; ocorreuEm: Date } | null> {
+    const ultimo = await this.prisma.eventLog.findFirst({
+      where: { orgId, tipo: TIPO_DO_RECIBO },
+      orderBy: { seq: 'desc' },
+      select: { ocorreuEm: true, payload: true },
+    });
+    if (!ultimo) return null;
+    const assinatura = (ultimo.payload as { assinatura?: unknown } | null)?.assinatura;
+    return { assinatura: typeof assinatura === 'string' ? assinatura : null, ocorreuEm: ultimo.ocorreuEm };
+  }
+
+  /**
+   * A LIBERAÇÃO DE UMA GUARDA, por gente (R-6).
+   *
+   * Grava o evento que a projeção lê na volta seguinte: o conjunto exato que a
+   * guarda segurou (resumo das chaves), quem liberou e por quê. Só vale para
+   * aquele conjunto e por 24 horas; consumida, não vale de novo. Recusa ator que
+   * não seja pessoa: liberar arquivamento em massa é decisão de alguém com nome.
+   */
+  async liberarGuardaDaVault(
+    orgId: string,
+    pedido: {
+      reciboId: string;
+      arquivamento: { conjunto: string; quantidade: number } | null;
+      movimentos: { conjunto: string; quantidade: number } | null;
+      motivo: string;
+    },
+  ): Promise<{ id: string; seq: bigint }> {
+    const ator = this.ator();
+    if (ator.actorType !== ActorType.user || !ator.actorId) {
+      throw new BadRequestException('A liberação da guarda da vault é de uma pessoa: o ator precisa ser um usuário.');
+    }
+    const motivo = (pedido.motivo ?? '').trim();
+    if (motivo.length < 10) throw new BadRequestException('Diga por que a guarda está sendo liberada (motivo com 10+ caracteres).');
+    if (!pedido.arquivamento && !pedido.movimentos) throw new BadRequestException('Nada a liberar: o recibo não tem conjunto segurado.');
+    return this.eventos.registrar({
+      orgId,
+      tipo: TIPO_DA_LIBERACAO,
+      actorType: ActorType.user,
+      actorId: ator.actorId,
+      correlationId: ator.correlationId,
+      payload: {
+        reciboId: pedido.reciboId,
+        conjuntos: {
+          arquivamento: pedido.arquivamento?.conjunto ?? null,
+          movimentos: pedido.movimentos?.conjunto ?? null,
+        },
+      },
+      conteudo: {
+        resumo:
+          `liberação da guarda da vault: ${pedido.arquivamento?.quantidade ?? 0} arquivamento(s) e ` +
+          `${pedido.movimentos?.quantidade ?? 0} movimento(s) do recibo ${pedido.reciboId}`,
+        motivo,
+        fontes: [COLECAO_DA_VAULT],
+      },
+      sensibilidade: 'interna',
+    });
+  }
+
+  /** A liberação que ainda vale: a mais recente, de até 24 h, que nenhum recibo consumiu. */
+  async liberacaoDaVault(
+    orgId: string,
+  ): Promise<{ eventoId: string; arquivamento: string | null; movimentos: string | null } | null> {
+    const ev = await this.prisma.eventLog.findFirst({
+      where: { orgId, tipo: TIPO_DA_LIBERACAO },
+      orderBy: { seq: 'desc' },
+      select: { id: true, seq: true, ocorreuEm: true, payload: true },
+    });
+    if (!ev || Date.now() - ev.ocorreuEm.getTime() > VALIDADE_DA_LIBERACAO_MS) return null;
+    const consumida = await this.prisma.eventLog.findFirst({
+      where: { orgId, tipo: TIPO_DO_RECIBO, seq: { gt: ev.seq }, payload: { path: ['liberacaoUsada'], equals: ev.id } },
+      select: { id: true },
+    });
+    if (consumida) return null;
+    const conjuntos = (ev.payload as { conjuntos?: { arquivamento?: unknown; movimentos?: unknown } } | null)?.conjuntos;
+    return {
+      eventoId: ev.id,
+      arquivamento: typeof conjuntos?.arquivamento === 'string' ? conjuntos.arquivamento : null,
+      movimentos: typeof conjuntos?.movimentos === 'string' ? conjuntos.movimentos : null,
+    };
   }
 
   /**
@@ -1292,14 +1763,19 @@ export class MemoriaService {
    * alcance do Prisma (a coluna `vector` é `Unsupported`). Roda depois do item e
    * da versão, na mesma transação: lançar ali desfaz tudo. Hoje só `alterar` o
    * usa, para tirar o vetor do corpo anterior.
+   *
+   * `conferir` é a pergunta que precisa do banco ANTES de montar, ainda sob o
+   * cadeado — o movimento da vault o usa para conferir que a chave de destino
+   * continua livre.
    */
   private async gravarVersao(args: {
     orgId: string;
     id: string;
     mudanca: ContextChange;
     ator: { actorType: string; actorId: string | null };
+    conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
-      dados: Prisma.ContextItemUpdateInput;
+      dados: Prisma.ContextItemUncheckedUpdateInput;
       motivo: string | null;
     };
     noCadeado?: (tx: Prisma.TransactionClient, antes: LinhaDaNota, depois: LinhaDaNota) => Promise<void>;
@@ -1308,7 +1784,7 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, montar, noCadeado } = args;
+    const { orgId, id, mudanca, ator, conferir, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
 
@@ -1318,6 +1794,7 @@ export class MemoriaService {
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
 
+      await conferir?.(tx, atual);
       const { dados, motivo } = montar(atual);
 
       const ultima = await tx.contextItemVersion.findFirst({
@@ -1734,6 +2211,16 @@ function estadoDaNota(l: LinhaDaNota): Record<string, unknown> {
     contentHash: l.contentHash,
     procedencia: rotuloDeProcedencia(l.sourceType, l.sourceRef),
     arquivada: Boolean(l.arquivadoEm),
+    /*
+     * VALIDADE E SUBSTITUIÇÃO, no antes e no depois (R-8). `ContextItemVersion`
+     * não tem essas colunas, e acrescentá-las seria migration com gate; o evento
+     * já é a fonte da memória (ADR-011), então é nele que o histórico dos três
+     * campos mora. A versão que sobreviver ao expurgo do evento perde esse
+     * histórico — está escrito no ADR para ninguém prometer mais do que isso.
+     */
+    validFrom: iso(l.validFrom),
+    validUntil: iso(l.validUntil),
+    supersedesId: l.supersedesId ?? null,
   };
 }
 

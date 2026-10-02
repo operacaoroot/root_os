@@ -259,3 +259,56 @@ Três consequências que são parte da decisão, não efeito colateral:
   "origem `vault` e chave com prefixo", que alcançava nota editada depois, nota criada pela projeção
   da vault (que nunca passou pelo comando) e o histórico das duas — contra a consequência 2 deste
   próprio documento.
+
+## A coleção `vault:` (ROOT-20, 02/10/2026)
+
+Contrato: `relatorios/ROOT-19/contrato.md` (C19-01 a C19-08), com as condições R-1 a R-10 da
+revisão ROOT-19-REV. Só a parte `vault:`: o Drive, os aliases `drive:` e a troca de fonte esperam a
+decisão de D1 (B2 aberto).
+
+- **Pertença pelo índice do git.** Um `.md` da vault entra na memória quando o caminho está no
+  `.git/index` (estágio 0, sem `skip-worktree` nem `intent-to-add`, modo de arquivo comum), quando
+  os bytes do disco dão o blob que o índice registra e quando o cabeçalho não traz
+  `gerado_por: root-os`. O leitor do formato `DIRC` é puro (`src/obsidian/indice-do-git.ts`) porque
+  a imagem da API não tem o binário do git. Índice ilegível, `.git` ausente, objetos SHA-256,
+  `core.autocrlf`, `.gitattributes` com conversão ou índice dividido: a volta não cria, não altera e
+  não arquiva nada, e o recibo diz `falhou`. O arquivo rastreado que ficou fora por anomalia
+  (alterado ou apagado fora do git, entrada não verificável, colisão de NFC) entra no conjunto de
+  vistos: o item dele não é arquivado nem alterado. Resíduo declarado: o índice não é o `HEAD`, e um
+  `git add` sem commit na VPS faz o arquivo contar como membro.
+- **NFC só na identidade.** A pertença e a leitura usam o caminho do disco em bytes; o NFC monta a
+  chave (`chaveDaVault`) e o rótulo. A colisão de NFC é conferida entre membros, depois da pertença.
+- **O recibo vai ao RASTRO quando há o que registrar.** `memoria.vault.recibo` sai quando a
+  projeção escreve na memória, quando o estado da coleção muda (commit, contagens, resultado,
+  conjunto segurado pela guarda) e numa batida diária; toda volta, mesmo sem evento, grava o frescor
+  em `IntegrationHealth` da conta `obsidian` da casa (`checkedAt` é a última execução, `lastSyncAt`
+  a última volta `ok`, `lastError` o motivo). A opção de um recibo por volta (48 por dia) pedia
+  mudar `EventLogService.verificar`, que confere só os primeiros 5.000 eventos da empresa: os
+  recibos sozinhos encheriam essa janela em uns 104 dias. Com a opção escolhida o volume cai para
+  algo na casa de um evento por mudança na base mais um por dia; a janela de `verificar` continua
+  sendo uma limitação dela, agora sem um gerador fixo de 48 eventos diários. O recibo sai de um
+  `finally`: a volta que lança, e a que teve a projeção falhando, também deixam recibo.
+- **Busca que falha zera o `FETCH_HEAD`.** Medido com o git 2.50.1 (E-20.2): a busca que falha
+  trunca o arquivo e atualiza a data dele. O recibo separa `ultimaBuscaEm` (a última que trouxe o
+  remoto) de `ultimaBuscaFalhouEm`, e a segunda deixa a montante como parada.
+- **Movimento com o mesmo `itemId`.** Um item sumido e um membro novo com o mesmo `contentHash`
+  formam par quando o hash é único entre itens vivos e membros da volta e o corpo tem pelo menos
+  `PISO_DO_PAR` caracteres. O par vira uma versão `alteracao` com o `sourceRef` novo; o evento
+  publica `vault:A` no estado anterior e `vault:B` no novo. Acima do teto da guarda de arquivamento,
+  a volta segura os pares inteiros (nada nasce no destino, nada é arquivado na origem).
+- **A saída humana das guardas é um comando.** `node dist/scripts/liberar-guarda-da-vault.js`
+  grava `memoria.vault.guarda_liberada` com autor e motivo, valendo por 24 horas para o conjunto
+  exato (resumo das chaves) que o último recibo mostrou segurado; a volta seguinte consome a
+  liberação e o recibo diz qual. As frases das duas guardas apontam para ele.
+- **A recusa mora na borda HTTP.** `MemoriaController` recusa alterar, arquivar e restaurar item
+  da vault (E4 da ROOT-05-REV) e recusa criar ou promover com chave `vault:` ou origem `vault`.
+  `MemoriaService` segue aceitando esses pedidos, porque é por ele que a projeção escreve.
+- **Cabeçalho vira campo, e o histórico dele vai no evento.** `kind`, `valido_de`, `valido_ate` e
+  `substitui` contam como mudança. `ContextItemVersion` não ganhou colunas (seria migration); o
+  evento leva `validFrom`, `validUntil` e `supersedesId` no estado anterior e no novo. Quando o
+  evento vencer pela retenção, a versão continua legível sem o histórico desses três campos. O
+  `kind` só é lido depois da exclusão da página gerada, e por isso o eco que `documentacao.ts`
+  fechava ao não emitir `nota` continua fechado.
+- **Custo da primeira volta em produção.** Na árvore que produção lia (`e2a2178`), 395 das 397
+  notas da coleção mudam na primeira volta com o cabeçalho lido (218 pelo `kind`, e 392 trazem
+  `valido_de`): 395 versões e 395 eventos de uma vez, mais as páginas que o gerador emitir depois.

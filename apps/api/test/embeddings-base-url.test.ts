@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObsidianService } from '../src/obsidian/obsidian.service';
 import { PautaService } from '../src/pauta/pauta.service';
+import { versionarVault } from './vault-com-git';
 
 /*
  * OPENAI_BASE_URL VAZIA NÃO PODE VIRAR ENDEREÇO VAZIO NOS EMBEDDINGS.
@@ -202,6 +203,8 @@ describe('a reindexação da vault com OPENAI_BASE_URL vazia', () => {
     writeFileSync(path.join(vault, 'pasta', 'nova.md'), '# Nova\n\nChegou depois da última projeção.');
     utimesSync(path.join(vault, 'antiga.md'), MTIME, MTIME);
     utimesSync(path.join(vault, 'pasta', 'nova.md'), MTIME, MTIME);
+    // Desde a ROOT-20 só o que o git rastreia pertence à coleção: versionar é o `pull`.
+    versionarVault(vault);
     process.env.OBSIDIAN_VAULT_PATH = vault;
   });
 

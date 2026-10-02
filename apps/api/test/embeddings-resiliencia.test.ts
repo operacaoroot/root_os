@@ -21,6 +21,7 @@ import { ObsidianService } from '../src/obsidian/obsidian.service';
 import { PautaService } from '../src/pauta/pauta.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { versionarVault } from './vault-com-git';
 
 /*
  * P1b — LOTES, PROJEÇÃO E BUSCA QUANDO A VETORIZAÇÃO FALHA OU NÃO COBRE TUDO.
@@ -171,6 +172,13 @@ function prosa(semente: number, caracteres: number): string {
   return s.slice(0, caracteres);
 }
 
+/**
+ * Prazo dos casos que montam vault: desde a ROOT-20 ela é versionada pelo git (só o
+ * rastreado pertence à coleção), e `git add` de 399 notas sob a carga da suíte
+ * paralela passa dos 5 s padrão do vitest.
+ */
+const TEMPO_COM_GIT = 60_000;
+
 function criarVault(notas: Array<{ caminho: string; texto: string }>): string {
   const raiz = mkdtempSync(path.join(os.tmpdir(), 'vault-resiliencia-'));
   vaults.push(raiz);
@@ -180,6 +188,8 @@ function criarVault(notas: Array<{ caminho: string; texto: string }>): string {
     writeFileSync(arquivo, n.texto);
     utimesSync(arquivo, MTIME, MTIME);
   }
+  // Desde a ROOT-20 só o que o git rastreia pertence à coleção: versionar é o `pull`.
+  versionarVault(raiz);
   process.env.OBSIDIAN_VAULT_PATH = raiz;
   return raiz;
 }
@@ -458,7 +468,7 @@ describe('reindexar 399 notas sem pedido de embedding ilimitado', () => {
       const titulo = nota.body.match(/^#\s+(.+)$/m)?.[1] ?? '';
       expect(nota.vetor, nota.caminho).toEqual(vetorDoTexto(cortarParaEmbedding(`${titulo}\n\n${nota.body}`)));
     }
-  });
+  }, TEMPO_COM_GIT);
 });
 
 describe('a projeção na memória quando a vetorização falha', () => {
@@ -480,7 +490,7 @@ describe('a projeção na memória quando a vetorização falha', () => {
     }).toEqual({ projecoes: [{ notas: 5, comVetor: 0 }], pedidos: 1, vetoresGravados: 0 });
     expect(resultado).toEqual({ erro: expect.stringMatching(/0 de 5 .*HTTP 503.*busca textual/s) });
     expect(avisos().join('\n')).toMatch(/0 de 5/);
-  });
+  }, TEMPO_COM_GIT);
 
   it('um lote falha no meio: o que chegou é gravado e projetado, o resto fica para a próxima volta', async () => {
     criarVault(notasDeTamanhoFixo(60));
@@ -499,7 +509,7 @@ describe('a projeção na memória quando a vetorização falha', () => {
       vetoresGravados: indice.comVetor(),
     }).toEqual({ pedidos: [25, 25], projecoes: [{ notas: 60, comVetor: 25 }], vetoresGravados: 25 });
     expect(resultado).toEqual({ erro: expect.stringMatching(/25 de 60 .*HTTP 500/s) });
-  });
+  }, TEMPO_COM_GIT);
 
   it('a volta seguinte pede só o que faltou, e a terceira não pede nada nem muda o que vai à memória', async () => {
     criarVault(notasDeTamanhoFixo(60));
@@ -540,7 +550,7 @@ describe('a projeção na memória quando a vetorização falha', () => {
     const [, segundaProjecao, terceiraProjecao] = memoria.projecoes;
     expect(segundaProjecao.every((n) => n.vetor)).toBe(true);
     expect(terceiraProjecao).toEqual(segundaProjecao);
-  });
+  }, TEMPO_COM_GIT);
 
   it('sem chave de embedding nada é pedido, a projeção roda e a volta termina como antes', async () => {
     delete process.env.OPENAI_API_KEY;
@@ -554,7 +564,7 @@ describe('a projeção na memória quando a vetorização falha', () => {
     await expect(svc.reindex(ORG)).resolves.toBe(3);
     expect(fornecedor.pedidos).toHaveLength(0);
     expect(memoria.projecoes).toHaveLength(1);
-  });
+  }, TEMPO_COM_GIT);
 });
 
 describe('as notas pendentes da memória em lotes', () => {
@@ -1113,5 +1123,5 @@ describe.skipIf(!URL)('com Postgres e pgvector: busca híbrida, filtros, empresa
     });
     expect(await prisma.contextItemVersion.count({ where: { itemId: vizinha.id } })).toBe(1);
     expect(await prisma.knowledgeNote.count({ where: { orgId: B } })).toBe(0);
-  });
+  }, TEMPO_COM_GIT);
 });

@@ -14,7 +14,8 @@ import { MemoriaService } from '../src/memory/memoria.service';
 import { ObsidianController } from '../src/obsidian/obsidian.controller';
 import { ObsidianService } from '../src/obsidian/obsidian.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
-import { exigirBancoDescartavel } from './banco-de-teste';
+import { exigirBancoDescartavel, travarACasa } from './banco-de-teste';
+import { versionarVault } from './vault-com-git';
 
 /*
  * ROOT-05c — A REINDEXAÇÃO DA VAULT, PONTA A PONTA, COM A EMPRESA DA CASA DE VERDADE.
@@ -106,10 +107,15 @@ function criarVault(notas: Array<{ nome: string; texto: string; mtime?: Date }>)
   const raiz = mkdtempSync(path.join(os.tmpdir(), 'r05c-vault-'));
   pastas.push(raiz);
   for (const n of notas) escrever(raiz, { caminho: `${MARCA}/${n.nome}`, texto: n.texto, mtime: n.mtime ?? T0 });
+  // Desde a ROOT-20 só o que o git rastreia pertence à coleção: versionar é o `pull`.
+  versionarVault(raiz);
   process.env.OBSIDIAN_VAULT_PATH = raiz;
   return {
     raiz,
-    editar: (nome: string, texto: string, mtime: Date) => escrever(raiz, { caminho: `${MARCA}/${nome}`, texto, mtime }),
+    editar: (nome: string, texto: string, mtime: Date) => {
+      escrever(raiz, { caminho: `${MARCA}/${nome}`, texto, mtime });
+      versionarVault(raiz);
+    },
   };
 }
 
@@ -246,7 +252,11 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
     }
   }
 
+  let soltarACasa: (() => Promise<void>) | null = null;
+
   beforeAll(async () => {
+    // A suíte da ROOT-20 (`vault-colecao.test.ts`) também reindexa a casa: uma de cada vez.
+    soltarACasa = await travarACasa(URL!);
     prisma = new PrismaClient({ datasources: { db: { url: URL } } });
     await prisma.$connect();
     CASA = await acharOuCriarACasa();
@@ -263,12 +273,17 @@ describe.skipIf(!URL)('reindexar a vault: só a casa, uma vez por texto, vetor d
     }
     await prisma.org.upsert({ where: { id: B }, create: { id: B, name: `Cliente ${MARCA}`, slug: `cliente-${MARCA}` }, update: {} });
     memoria = new MemoriaService(prisma as unknown as PrismaService, new EventLogService(prisma as never));
-  }, TEMPO);
+    // A espera pela trava da casa é a duração da outra suíte, não desta.
+  }, 10 * TEMPO);
 
   afterAll(async () => {
-    if (!prisma) return;
-    await limpar();
-    await prisma.$disconnect();
+    try {
+      if (!prisma) return;
+      await limpar();
+      await prisma.$disconnect();
+    } finally {
+      await soltarACasa?.();
+    }
   }, TEMPO);
 
   beforeEach(async () => {
