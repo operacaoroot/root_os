@@ -895,4 +895,4 @@ function casosContraOBanco(modoRls: boolean) {
 
 describe.skipIf(!URL)('ROOT-49: proposta e aceite contra o Postgres descartável (conexão dona)', () => casosContraOBanco(false));
 
-describe.skipIf(!URL || !URL_TENANT || !RLS)('ROOT-49: os mesmos casos sob RLS (mktos_app, TENANT_MODO=impor)', () => casosContraOBanco(true));
+if (URL && URL_TENANT && RLS) describe('ROOT-49: os mesmos casos sob RLS (mktos_app, TENANT_MODO=impor)', () => casosContraOBanco(true));
