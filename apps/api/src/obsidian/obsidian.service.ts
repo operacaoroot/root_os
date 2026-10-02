@@ -725,10 +725,10 @@ export class ObsidianService implements OnModuleInit {
      * daquela origem — uma versão e um evento por nota, e outro par quando a
      * pasta voltasse. O índice é descartável; o histórico não vence nunca.
      *
-     * NESTA INSTALAÇÃO ISSO JÁ ACONTECEU: o `OBSIDIAN_VAULT_HOST` da VPS
-     * apontou para `/srv/marketing-os/vault`, que esteve vazia e não era a vault
-     * real. Desde 17/09/2026 ele aponta para o clone da root-base, que é a vault
-     * lida hoje; a decisão sobre o Drive está em aberto.
+     * NESTA INSTALAÇÃO ISSO JÁ ACONTECEU: o caminho `/srv/marketing-os/vault`,
+     * para onde o `OBSIDIAN_VAULT_HOST` da VPS continua apontando, esteve vazio e
+     * não era a vault real. Desde 17/09/2026 ele aponta para o clone da
+     * root-base, que é a vault lida hoje; a decisão sobre o Drive está em aberto.
      *
      * A recusa vem ANTES de qualquer escrita, e diz o que fazer. Esvaziar a
      * base de propósito continua possível: desligue o conector em Conexões.
