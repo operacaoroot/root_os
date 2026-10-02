@@ -200,6 +200,26 @@ describe('a barra lateral', () => {
     expect(screen.getByRole('button', { name: /motor de ia/i })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('Registros fica recuada dentro da mãe quando ela está visível', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: /^registros$/i }).className).toContain('pl-5');
+  });
+
+  it('Registros vira seção de primeiro nível, com a divisória do apoio, quando a mãe não está visível', () => {
+    PERMISSOES = ['aprovacoes.ver', 'auditoria.ver'];
+    render(<Sidebar />);
+    const titulos = Array.from(document.querySelectorAll('nav[aria-label="Destinos"] h2')).map((h) =>
+      h.textContent?.trim(),
+    );
+    expect(titulos).toEqual(['Dia a dia', 'Registros']);
+    const botao = screen.getByRole('button', { name: /^registros$/i });
+    expect(botao.className).not.toContain('pl-5');
+    expect(botao.className).toContain('px-2');
+    const secao = document.querySelector('section[aria-label="Registros"]')!;
+    expect(secao.querySelector('div[aria-hidden].border-t')).not.toBeNull();
+  });
+
   it('preferência de seção fechada com chave antiga é ignorada sem erro', async () => {
     localStorage.setItem(CHAVE_MENU, JSON.stringify(['secao-que-nao-existe-mais', 'trabalho', 42]));
     const user = userEvent.setup();

@@ -183,6 +183,13 @@ export function Sidebar() {
       itens: avulsos.map((item) => ({ item, filhos: [] })),
     });
 
+  // `dentroDe` é só desenho e só vale com a seção-mãe visível: sem ela, a
+  // seção sobe a primeiro nível em vez de ficar recuada sob nada.
+  const chavesVisiveis = new Set(grupos.map((g) => g.chave));
+  for (const g of grupos) {
+    if (g.dentroDe && !chavesVisiveis.has(g.dentroDe)) g.dentroDe = undefined;
+  }
+
   const primeiroApoio = grupos.findIndex((g) => g.tipo === 'apoio');
 
   /*

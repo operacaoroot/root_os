@@ -41,7 +41,8 @@ const scriptTema = `(function(){try{var t=localStorage.getItem("root-os:tema");i
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${jetbrains.variable} ${spaceGrotesk.variable}`}>
+    // O script de tema escreve data-os-theme no <html> antes da hidratação.
+    <html lang="pt-BR" suppressHydrationWarning className={`${jetbrains.variable} ${spaceGrotesk.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: scriptTema }} />
       </head>
