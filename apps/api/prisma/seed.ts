@@ -137,39 +137,55 @@ async function main() {
     envPassword: process.env.MCP_ACTION_PASSWORD,
   });
 
-  // 5) Limpa dados de exemplo do org (idempotência) e recria
-  await prisma.leadEvent.deleteMany({ where: { lead: { orgId: org.id } } });
-  await prisma.lead.deleteMany({ where: { orgId: org.id } });
-  await prisma.pixelEvent.deleteMany({ where: { orgId: org.id } });
-  await prisma.task.deleteMany({ where: { orgId: org.id } });
-  await prisma.campaign.deleteMany({ where: { orgId: org.id } });
-  await prisma.leadSource.deleteMany({ where: { orgId: org.id } });
+  // 5) Dados demonstrativos — só ACRESCENTA, nunca apaga
+  //
+  // Este bloco já apagou LeadEvent, Lead, PixelEvent, Task, Campaign e LeadSource
+  // da empresa inteira e recriou a demonstração, o que levava o funil real junto
+  // quando o seed rodava contra um banco em uso. Agora cada linha da semente é
+  // procurada pela assinatura dela e só se cria o que falta: duas execuções
+  // seguidas deixam o banco igual, e linha existente (da semente ou de gente)
+  // fica como está, mesmo depois de editada.
+  //
+  // Limite: a assinatura não separa uma linha real que a repita por inteiro; ela
+  // passa a valer como a da semente e não se duplica. Separar instalação nova de
+  // demonstração é fatia à parte (E9, ROOT-SEED1).
 
-  // 5a) Fontes de lead
+  // 5a) Fontes de lead — (orgId, key) é único no schema.
   const sources = await Promise.all(
     [
       { key: 'instagram', name: 'Instagram', channel: 'social' },
       { key: 'sales_page', name: 'Página de vendas', channel: 'site' },
       { key: 'indicacao', name: 'Indicação', channel: 'organico' },
     ].map((s) =>
-      prisma.leadSource.create({ data: { orgId: org.id, ...s } }),
+      prisma.leadSource.upsert({
+        where: { orgId_key: { orgId: org.id, key: s.key } },
+        update: {},
+        create: { orgId: org.id, ...s },
+      }),
     ),
   );
 
-  // 5b) Campanhas
-  const [camp1, camp2] = await Promise.all([
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Black Friday — Tráfego', objective: 'leads', channel: 'meta_ads', budget: '5000.00', spend: '3200.00', status: 'ativa', startAt: daysAgo(20) },
-    }),
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Lançamento Curso', objective: 'vendas', channel: 'meta_ads', budget: '8000.00', spend: '1200.00', status: 'ativa', startAt: daysAgo(6) },
-    }),
-    prisma.campaign.create({
-      data: { orgId: org.id, name: 'Remarketing Q3', objective: 'vendas', channel: 'meta_ads', budget: '2000.00', spend: '1980.00', status: 'problema', startAt: daysAgo(40) },
-    }),
-  ]);
+  // 5b) Campanhas — sem chave única: assinatura = nome + objetivo + canal.
+  // Orçamento, gasto e status ficam fora porque mudam com o uso.
+  const campaignSeed = [
+    { name: 'Black Friday — Tráfego', objective: 'leads', channel: 'meta_ads', budget: '5000.00', spend: '3200.00', status: 'ativa', days: 20 },
+    { name: 'Lançamento Curso', objective: 'vendas', channel: 'meta_ads', budget: '8000.00', spend: '1200.00', status: 'ativa', days: 6 },
+    { name: 'Remarketing Q3', objective: 'vendas', channel: 'meta_ads', budget: '2000.00', spend: '1980.00', status: 'problema', days: 40 },
+  ];
+  const campaigns = [];
+  for (const { days, ...c } of campaignSeed) {
+    const existing = await prisma.campaign.findFirst({
+      where: { orgId: org.id, name: c.name, objective: c.objective, channel: c.channel },
+      orderBy: { createdAt: 'asc' },
+    });
+    campaigns.push(
+      existing ?? (await prisma.campaign.create({ data: { orgId: org.id, ...c, startAt: daysAgo(days) } })),
+    );
+  }
+  const [camp1, camp2] = campaigns;
 
-  // 5c) Leads (distribuídos no tempo p/ hoje/semana/mês)
+  // 5c) Leads (distribuídos no tempo p/ hoje/semana/mês) — assinatura = orgId +
+  // e-mail + nome. O evento `created` nasce junto com o lead e só com ele.
   const leadSeed: Array<{ name: string; status: LeadStatus; days: number; sIdx: number; cId?: string; score: number }> = [
     { name: 'Ana Prado', status: 'novo', days: 0, sIdx: 0, cId: camp1.id, score: 40 },
     { name: 'Bruno Lima', status: 'qualificado', days: 0, sIdx: 1, cId: camp2.id, score: 72 },
@@ -182,11 +198,13 @@ async function main() {
     { name: 'Iara Melo', status: 'ganho', days: 25, sIdx: 1, cId: camp2.id, score: 95 },
   ];
   for (const l of leadSeed) {
+    const email = `${l.name.toLowerCase().replace(/\s+/g, '.')}@exemplo.com`;
+    if (await prisma.lead.findFirst({ where: { orgId: org.id, email, name: l.name }, select: { id: true } })) continue;
     await prisma.lead.create({
       data: {
         orgId: org.id,
         name: l.name,
-        email: `${l.name.toLowerCase().replace(/\s+/g, '.')}@exemplo.com`,
+        email,
         phone: '+55 21 99999-0000',
         sourceId: sources[l.sIdx].id,
         campaignId: l.cId,
@@ -201,12 +219,14 @@ async function main() {
     });
   }
 
-  // 5d) Pixel events (funil da página de vendas)
+  // 5d) Pixel events (funil da página de vendas) — `eventId` é único no schema;
+  // o que já existe, de qualquer empresa, não é recriado.
   const pixelNames = ['page_view', 'page_view', 'page_view', 'scroll_50', 'click_cta', 'form_submit', 'purchase'];
-  for (let i = 0; i < 40; i++) {
-    const name = pixelNames[i % pixelNames.length];
-    await prisma.pixelEvent.create({
-      data: {
+  await prisma.pixelEvent.createMany({
+    skipDuplicates: true,
+    data: Array.from({ length: 40 }, (_, i) => {
+      const name = pixelNames[i % pixelNames.length];
+      return {
         orgId: org.id,
         eventId: `seed-evt-${i}`,
         sessionId: `sess-${i % 12}`,
@@ -217,11 +237,13 @@ async function main() {
         utmCampaign: i % 2 ? 'black-friday' : 'lancamento',
         value: name === 'purchase' ? '497.00' : null,
         occurredAt: daysAgo(i % 7),
-      },
-    });
-  }
+      };
+    }),
+  });
 
-  // 5e) Tarefas (algumas atrasadas)
+  // 5e) Tarefas (algumas atrasadas) — assinatura = título + ferramenta +
+  // responsável 'Equipe' + externalId nulo. Só o título não basta: tarefa
+  // espelhada de um sistema externo pode ter o mesmo título e traz externalId.
   const tasks: Array<{ title: string; status: TaskStatus; due: number; tool: string }> = [
     { title: 'Aprovar criativo Black Friday', status: 'aberta', due: -2, tool: 'clickup' },
     { title: 'Responder lead quente (Bruno)', status: 'aberta', due: -1, tool: 'interno' },
@@ -230,14 +252,13 @@ async function main() {
     { title: 'Agendar posts da semana', status: 'concluida', due: -5, tool: 'asana' },
   ];
   for (const t of tasks) {
+    const signature = { orgId: org.id, title: t.title, tool: t.tool, assignee: 'Equipe', externalId: null };
+    if (await prisma.task.findFirst({ where: signature, select: { id: true } })) continue;
     await prisma.task.create({
       data: {
-        orgId: org.id,
-        tool: t.tool,
-        title: t.title,
+        ...signature,
         status: t.status,
         priority: t.due < 0 ? 'alta' : 'normal',
-        assignee: 'Equipe',
         dueDate: daysAgo(t.due), // due<0 => futuro; due>0 => passado (atrasada)
       },
     });
