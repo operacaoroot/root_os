@@ -90,6 +90,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const busca = useRef<HTMLInputElement>(null);
+  const lupa = useRef<HTMLButtonElement>(null);
+  const abertaPelaLupa = useRef(false);
   const [paleta, setPaleta] = useState(false);
 
   const rotulo = rotuloDaRota(pathname);
@@ -129,7 +131,21 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
       <span className="flex-1" />
 
       {/* Busca global (stub — Fase 5) */}
-      <div className="relative hidden w-[220px] min-[900px]:block">
+      <button
+        ref={lupa}
+        type="button"
+        onClick={() => {
+          abertaPelaLupa.current = true;
+          setPaleta(true);
+        }}
+        aria-label="Buscar no menu"
+        title="Buscar no menu"
+        className="grid h-[26px] w-[26px] flex-none place-items-center border border-border text-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[1024px]:hidden"
+      >
+        <Search size={13} />
+      </button>
+
+      <div className="relative hidden w-[220px] min-[1024px]:block">
         <Search
           size={13}
           className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-dim"
@@ -171,7 +187,17 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
           <LogOut size={13} />
         </button>
       </div>
-      <Paleta aberto={paleta} fechar={() => setPaleta(false)} />
+      <Paleta
+        aberto={paleta}
+        fechar={() => {
+          setPaleta(false);
+          // devolve o foco só a quem abriu pela lupa; o campo "ir para…" reabriria a paleta ao receber foco
+          if (abertaPelaLupa.current) {
+            abertaPelaLupa.current = false;
+            lupa.current?.focus();
+          }
+        }}
+      />
     </header>
   );
 }

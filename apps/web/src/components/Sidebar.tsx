@@ -423,7 +423,7 @@ export function Sidebar() {
       <div
         role="group"
         aria-label="Tema da interface"
-        className="flex flex-col items-stretch gap-[6px] border-t border-border px-3 py-[9px] min-[820px]:flex-row min-[820px]:items-center"
+        className="flex flex-row items-center gap-[6px] border-t border-border px-3 py-[9px]"
       >
         {TEMAS.map((t) => {
           const on = tema === t.id;
