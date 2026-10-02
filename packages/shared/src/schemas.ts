@@ -808,6 +808,24 @@ export const CreateContractSchema = z.object({
 });
 export type CreateContractInput = z.infer<typeof CreateContractSchema>;
 
+// Gerar o lançamento de um contrato leva o vencimento que quem chama viu na
+// lista. É ele que separa a repetição de um pedido cuja resposta se perdeu de
+// um pedido novo para a parcela seguinte.
+export const GerarContratoSchema = z.object({
+  vencimento: z.string().datetime({ offset: true }),
+});
+export type GerarContratoInput = z.infer<typeof GerarContratoSchema>;
+
+// `replayed: true`: o lançamento daquele vencimento já existia e nada foi
+// gravado agora; a resposta é a mesma da chamada que o gerou.
+export const GerarContratoRespostaSchema = z.object({
+  ok: z.literal(true),
+  transactionId: z.string(),
+  proximoVencimento: z.string(),
+  replayed: z.boolean(),
+});
+export type GerarContratoResposta = z.infer<typeof GerarContratoRespostaSchema>;
+
 // Item de conta a pagar/receber (lançamento previsto, com vencido/dias)
 export const PayableRowSchema = z.object({
   id: z.string(),

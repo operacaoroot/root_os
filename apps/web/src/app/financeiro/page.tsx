@@ -12,7 +12,9 @@ import type {
   ChartAccountList,
   Dre,
   PartnerList,
+  Contract,
   ContractList,
+  GerarContratoResposta,
   Payables,
   Conciliacao,
   Kpis,
@@ -575,6 +577,7 @@ function ApAr(props: {
     tipo: 'saida', descricao: '', valor: '', diaVencimento: '5', periodicidade: 'mensal',
     partnerId: '', accountId: '', chartAccountId: '', dataInicio: today(),
   });
+  const [gerando, setGerando] = useState<string | null>(null);
   const lancaveis = (chart?.items ?? []).filter((c) => c.permiteLancamento && c.ativo);
 
   const doApprove = (id: string, aprovar: boolean) =>
@@ -583,9 +586,20 @@ function ApAr(props: {
   const baixar = (id: string) =>
     apiPatch(`/finance/transactions/${id}`, { status: 'realizado' }, token)
       .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e.message));
-  const gerar = (id: string) =>
-    apiPost(`/finance/contracts/${id}/gerar`, {}, token)
-      .then(() => { onFlash('Lançamento gerado a partir do contrato.'); onChange(); }).catch((e) => onError(e.message));
+  // O vencimento vai no pedido: repetir o mesmo devolve o lançamento já gravado
+  // (`replayed`) em vez de gerar a parcela seguinte.
+  const gerar = (c: Contract) => {
+    setGerando(c.id);
+    apiPost<GerarContratoResposta>(`/finance/contracts/${c.id}/gerar`, { vencimento: c.proximoVencimento }, token)
+      .then((r) => {
+        onFlash(r.replayed
+          ? 'Este vencimento já tinha sido gerado. Nenhum lançamento novo.'
+          : 'Lançamento gerado a partir do contrato.');
+        onChange();
+      })
+      .catch((e) => onError(e.message))
+      .finally(() => setGerando(null));
+  };
   const addPartner = () => {
     if (!pForm.razaoSocial) { onError('Informe a razão social.'); return; }
     apiPost('/finance/partners', pForm, token)
@@ -693,7 +707,11 @@ function ApAr(props: {
                 <span className={c.tipo === 'saida' ? 'text-bad' : 'text-good'}>{c.tipo === 'saida' ? 'pagar' : 'receber'}</span> · {c.descricao} · {brl(c.valor)} / {c.periodicidade}
                 <span className="ml-2 text-[11px] text-muted">próx.: {dateBR(c.proximoVencimento)}</span>
               </span>
-              {canEdit && <button onClick={() => gerar(c.id)} className="rounded border border-border px-2 py-1 text-[11px] hover:bg-surface-2">Gerar lançamento</button>}
+              {canEdit && (
+                <button onClick={() => gerar(c)} disabled={gerando !== null} className="rounded border border-border px-2 py-1 text-[11px] hover:bg-surface-2 disabled:opacity-60">
+                  {gerando === c.id ? 'Gerando…' : 'Gerar lançamento'}
+                </button>
+              )}
             </li>
           ))}
         </ul>

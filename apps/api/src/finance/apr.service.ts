@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma, FinanceTxType } from '@prisma/client';
 import type {
   PartnerList, DimensionList, ContractList, Payables, PayableRow,
   CreatePartnerInput, CreateDimensionInput, CreateContractInput,
+  GerarContratoInput, GerarContratoResposta,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -65,6 +67,30 @@ export async function conferirReferencias(prisma: PrismaService, orgId: string, 
     }
   }
 }
+
+/**
+ * Id do lançamento que a geração grava para um vencimento do contrato.
+ *
+ * O mesmo contrato e o mesmo vencimento dão sempre o mesmo id: o pedido
+ * repetido acha o lançamento que o primeiro gravou, e a chave primária recusa
+ * um segundo. O vencimento entra pelo ISO em UTC, então duas grafias do mesmo
+ * instante dão o mesmo id. A construção é a de `idNativo` no importador do
+ * ClickUp (`prisma/import-clickup-work.contract.ts`): 16 bytes do sha256 com os
+ * bits de versão e variante de UUID.
+ */
+export function idDoLancamentoDeContrato(orgId: string, contractId: string, vencimento: Date): string {
+  const bytes = createHash('sha256')
+    .update(`${orgId}\0lancamento-de-contrato\0${contractId}\0${vencimento.toISOString()}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const h = bytes.toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+const VENCIMENTO_NAO_E_O_PROXIMO = 'O vencimento pedido não é o próximo deste contrato. Atualize a lista antes de gerar.';
+const CONTRATO_MUDOU = 'O contrato mudou durante a geração. Atualize a lista e tente de novo.';
 
 // AP/AR (contas a pagar/receber): fornecedores/clientes, dimensões de rateio,
 // contratos recorrentes e o fluxo de aprovação por limite. Enxerto do FinOps5.0.
@@ -165,57 +191,79 @@ export class AprService {
   }
 
   /**
-   * Gera o lançamento previsto do vencimento atual do contrato e avança o vencimento.
+   * Gera o lançamento previsto de um vencimento do contrato e avança o vencimento.
+   *
+   * Quem chama diz qual vencimento quer, e o lançamento dele tem id fixo
+   * (`idDoLancamentoDeContrato`). Se esse lançamento já existe, a resposta é a
+   * mesma da chamada que o gerou, com `replayed: true`, sem escrita nem
+   * auditoria nova: é o caso da resposta que se perdeu depois do commit e do
+   * segundo clique. Vencimento que não é o próximo do contrato e não tem
+   * lançamento recebe 409.
    *
    * Avançar, criar o lançamento e auditar vão numa transação só, e o avanço só
    * acontece se a linha do contrato ainda é a que foi lida: mesmo vencimento,
-   * ativo, sem outra alteração no meio. Duas chamadas que leram o mesmo
-   * vencimento disputam a mesma linha; a segunda espera a primeira terminar,
-   * não acha mais o que leu e ouve 409 sem gravar nada. Falha em qualquer passo
-   * desfaz os três.
-   *
-   * O 409 não deve ser repetido automaticamente: a rota não tem chave de
-   * idempotência, e uma chamada nova gera o vencimento seguinte.
+   * ativo, sem outra alteração no meio. Duas chamadas pelo mesmo vencimento
+   * disputam a mesma linha; a segunda espera a primeira terminar, não acha mais
+   * o que leu e devolve o lançamento que a primeira gravou. Falha em qualquer
+   * passo desfaz os três.
    */
-  async gerarContrato(orgId: string, id: string, actorId: string) {
+  async gerarContrato(orgId: string, id: string, input: GerarContratoInput, actorId: string): Promise<GerarContratoResposta> {
+    const venc = new Date(input.vencimento);
+    if (isNaN(venc.getTime())) throw new BadRequestException('vencimento inválido');
     const c = await this.prisma.contract.findFirst({ where: { id, orgId } });
     if (!c) throw new NotFoundException('Contrato não encontrado');
+
+    const transactionId = idDoLancamentoDeContrato(orgId, c.id, venc);
+    const next = addMonths(venc, PERIOD_MONTHS[c.periodicidade] ?? 1);
+    const resposta = { ok: true as const, transactionId, proximoVencimento: next.toISOString() };
+    // Antes das conferências de status e conta: o lançamento gravado continua
+    // valendo mesmo que o contrato tenha sido pausado depois.
+    if (await this.jaGerado(orgId, transactionId)) return { ...resposta, replayed: true };
+    if (venc.getTime() !== c.proximoVencimento.getTime()) throw new ConflictException(VENCIMENTO_NAO_E_O_PROXIMO);
     if (c.status !== 'ativo') throw new BadRequestException('Contrato não está ativo');
     if (!c.accountId) throw new BadRequestException('Contrato sem conta bancária definida');
     // Contrato gravado antes desta conferência pode apontar para cadastro de outra empresa.
     await conferirReferencias(this.prisma, orgId, { conta: c.accountId, plano: c.chartAccountId, parceiro: c.partnerId });
 
     const accountId = c.accountId;
-    const venc = c.proximoVencimento;
-    const next = addMonths(venc, PERIOD_MONTHS[c.periodicidade] ?? 1);
     const requiresApproval = c.tipo === 'saida' && num(c.valor) > APPROVAL_LIMIT();
-    const tx = await this.prisma.$transaction(async (db) => {
-      const avancou = await db.contract.updateMany({
-        where: { id: c.id, orgId, status: 'ativo', proximoVencimento: venc, updatedAt: c.updatedAt },
-        data: { proximoVencimento: next },
+    try {
+      const gerou = await this.prisma.$transaction(async (db) => {
+        const avancou = await db.contract.updateMany({
+          where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
+          data: { proximoVencimento: next },
+        });
+        if (avancou.count !== 1) return false;
+        await db.financeTransaction.create({
+          data: {
+            id: transactionId, orgId, accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
+            type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
+            amount: c.valor, date: venc, dueDate: venc, source: 'manual',
+            approvalStatus: requiresApproval ? 'aguardando' : 'nao_requer',
+          },
+        });
+        // A mesma linha que `AuditService.log` grava, mas pelo cliente da
+        // transação: fora dela, uma falha aqui deixaria lançamento sem auditoria.
+        await db.auditLog.create({
+          data: {
+            orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
+            after: { transactionId, vencimento: venc.toISOString() },
+          },
+        });
+        return true;
       });
-      if (avancou.count !== 1) {
-        throw new ConflictException('Este vencimento do contrato já foi gerado por outra chamada. Atualize a lista antes de gerar o próximo.');
-      }
-      const lancamento = await db.financeTransaction.create({
-        data: {
-          orgId, accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
-          type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
-          amount: c.valor, date: venc, dueDate: venc, source: 'manual',
-          approvalStatus: requiresApproval ? 'aguardando' : 'nao_requer',
-        },
-      });
-      // A mesma linha que `AuditService.log` grava, mas pelo cliente da
-      // transação: fora dela, uma falha aqui deixaria lançamento sem auditoria.
-      await db.auditLog.create({
-        data: {
-          orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
-          after: { transactionId: lancamento.id, vencimento: venc.toISOString() },
-        },
-      });
-      return lancamento;
-    });
-    return { ok: true, transactionId: tx.id, proximoVencimento: next.toISOString() };
+      if (gerou) return { ...resposta, replayed: false };
+    } catch (e) {
+      // Chave primária repetida: outra chamada gravou este vencimento entre a conferência e o INSERT.
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+    }
+    // Quem perde a corrida pelo mesmo vencimento acha aqui o lançamento de quem ganhou.
+    if (await this.jaGerado(orgId, transactionId)) return { ...resposta, replayed: true };
+    throw new ConflictException(CONTRATO_MUDOU);
+  }
+
+  private async jaGerado(orgId: string, transactionId: string): Promise<boolean> {
+    return (await this.prisma.financeTransaction.count({ where: { id: transactionId, orgId } })) > 0;
   }
 
   // ---------- Contas a pagar / receber (previstos) ----------
