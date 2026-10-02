@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { SnapshotSchema, idNativo, validarSnapshot } from '../prisma/import-clickup-work.contract';
 import { arvoreDoLote, inventariar, type Spec } from '../prisma/import-clickup-work.plan';
 import {
@@ -30,6 +30,9 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *  5. Rollback apaga as linhas do lote e a posição; os nós da árvore ficam.
  *     Reimportar e refazer a árvore dá os mesmos IDs, duas vezes.
  *  6. Nada atravessa empresa, e plano velho não grava.
+ *  7. Escrita de outra sessão comitada enquanto a CLI espera o lock entra na
+ *     conferência: a árvore recusa sem criar nada e o rollback recusa sem
+ *     apagar nada (A-1 da ROOT-17-REV).
  */
 
 const LISTAS = ['901328341442', '901328341443', '901328341445', '901328341450',
@@ -117,6 +120,10 @@ const CASA = '17171717-1717-4171-8171-171717171717';
 const VIZINHA = '17171717-1717-4171-8171-17171717171b';
 const QUANDO = new Date('2026-09-30T12:00:00.000Z');
 const ESPACO = 'Espaço QA17';
+// Sessão da CLI nos casos de concorrência: o nome a acha em pg_stat_activity, e o schema do
+// vínculo de teste fica só no search_path dela, fora do catálogo das suítes que rodam em paralelo.
+const NOME_DA_CLI = 'qa17-cli';
+const SCHEMA_DO_VINCULO = 'qa17_concorrencia';
 
 async function criarLote(db: PrismaClient, specs: Spec[]) {
   for (const s of specs) {
@@ -152,6 +159,8 @@ exigirBancoDescartavel(URL_DO_TESTE ?? '', 'ESCREVE nele (duas empresas com o lo
 
 describe.skipIf(!URL_DO_TESTE)('árvore do lote no banco (ROOT-17)', () => {
   let db: PrismaClient;
+  let sessaoX: PrismaClient;
+  let sessaoDaCli: PrismaClient;
   const s = fixture();
   const lote = (orgId: string) => inventariar(s, orgId, validarSnapshot(s).caminhos).specs;
   const specs = lote(CASA);
@@ -171,6 +180,11 @@ describe.skipIf(!URL_DO_TESTE)('árvore do lote no banco (ROOT-17)', () => {
 
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });
+    sessaoX = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });
+    const daCli = new URL(URL_DO_TESTE!);
+    daCli.searchParams.set('application_name', NOME_DA_CLI);
+    daCli.searchParams.set('options', `-c search_path=${SCHEMA_DO_VINCULO},public`);
+    sessaoDaCli = new PrismaClient({ datasources: { db: { url: daCli.toString() } } });
     for (const [id, slug] of [[CASA, 'qa17-casa'], [VIZINHA, 'qa17-vizinha']]) {
       await db.org.upsert({ where: { id }, create: { id, name: slug, slug }, update: {} });
       await limpar(db, id);
@@ -188,6 +202,8 @@ describe.skipIf(!URL_DO_TESTE)('árvore do lote no banco (ROOT-17)', () => {
     if (!db) return;
     for (const id of [CASA, VIZINHA]) await limpar(db, id);
     await db.org.deleteMany({ where: { id: { in: [CASA, VIZINHA] } } });
+    await sessaoX?.$disconnect();
+    await sessaoDaCli?.$disconnect();
     await db.$disconnect();
   });
 
@@ -366,4 +382,100 @@ describe.skipIf(!URL_DO_TESTE)('árvore do lote no banco (ROOT-17)', () => {
     expect(await db.workSpace.count({ where: { orgId: CASA } })).toBe(2);
     expect(await db.workFolder.count({ where: { orgId: CASA, externalId: 'demandas' } })).toBe(1);
   });
+
+  /*
+   * A-1 da ROOT-17-REV: a sessão X escreve e segura a transação; a CLI pede o lock e fica
+   * esperando a X; só então a X faz COMMIT. `espera` diz em que instrução a CLI esperou a X.
+   */
+  async function comCommitDuranteOLock<T>(
+    escrever: (x: Prisma.TransactionClient) => Promise<unknown>,
+    rodarCli: (cli: PrismaClient) => Promise<T>,
+  ): Promise<{ espera: string; resultado: PromiseSettledResult<T> }> {
+    let soltar = () => {};
+    const portao = new Promise<void>((r) => { soltar = r; });
+    let avisar: (pid: number) => void = () => {};
+    const escreveu = new Promise<number>((r) => { avisar = r; });
+    const x = sessaoX.$transaction(async (t) => {
+      await escrever(t);
+      const [{ pid }] = await t.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+      avisar(pid);
+      await portao;
+    }, { timeout: 60000 });
+    const pidDaX = await Promise.race([escreveu, x.then(() => -1)]);
+    const resultado = Promise.allSettled([rodarCli(sessaoDaCli)]).then(([r]) => r);
+    let espera = '';
+    for (const ate = Date.now() + 10000; !espera && Date.now() < ate;) {
+      const linhas = await db.$queryRaw<Array<{ instrucao: string }>>`
+        SELECT split_part(query, ' ', 1) || ' ' || split_part(query, ' ', 2) AS instrucao FROM pg_stat_activity
+         WHERE application_name = ${NOME_DA_CLI} AND ${pidDaX}::int = ANY(pg_blocking_pids(pid))`;
+      espera = linhas[0]?.instrucao ?? '';
+      if (!espera) await new Promise((r) => setTimeout(r, 20));
+    }
+    soltar();
+    await x;
+    return { espera, resultado: await resultado };
+  }
+  const recusa = (r: PromiseSettledResult<unknown>) => (r.status === 'rejected' ? (r.reason as Error).message : 'gravou');
+  const tarefasDoLote = specs.filter((x) => x.tipo === 'task').length;
+
+  it('árvore: título de tarefa do lote comitado por outra sessão durante a espera do lock faz recusar, e nada nasce (A-1)', async () => {
+    const daVizinhaArvore = arvoreDoLote(s, VIZINHA, ESPACO);
+    const pastaDaVizinha = daVizinha.find((x) => x.tipo === 'folder')!.id;
+    const tarefa = daVizinha.find((x) => x.tipo === 'task')!.id;
+    const { title } = await db.workTask.findUniqueOrThrow({ where: { id: tarefa }, select: { title: true } });
+    const f0Vizinha = await fingerprintImportado(db, daVizinha);
+    const plano = await planejarArvore(db, daVizinhaArvore, daVizinha);
+    expect([...plano.nos, ...plano.posicoes].map((x) => x.estado)).toEqual(['criar', 'criar', 'mover']);
+    try {
+      const { espera, resultado } = await comCommitDuranteOLock(
+        (x) => x.$executeRaw`UPDATE "WorkTask" SET "title" = 'QA17 título concorrente' WHERE "id" = ${tarefa}`,
+        (cli) => transformarEmArvore(cli, daVizinha, daVizinhaArvore, { fingerprint: f0Vizinha, plano }));
+      expect(recusa(resultado)).toContain('Banco mudou durante o planejamento');
+      expect(espera).toBe('LOCK TABLE');
+      expect(await db.workSpace.count({ where: { orgId: VIZINHA } })).toBe(0);
+      expect(await db.workFolder.findUniqueOrThrow({ where: { id: pastaDaVizinha } }))
+        .toMatchObject({ spaceId: null, parentId: null, externalId: null });
+    } finally {
+      await db.$executeRaw`UPDATE "WorkTask" SET "title" = ${title} WHERE "id" = ${tarefa}`;
+    }
+    expect(await fingerprintImportado(db, daVizinha)).toBe(f0Vizinha);
+  }, 30000);
+
+  // A tabela do vínculo vem do catálogo; o lock dela também tem de vir antes do snapshot (mutante R4 da revisão).
+  it('rollback: vínculo externo comitado por outra sessão durante a espera do lock faz recusar, e nada é apagado (A-1)', async () => {
+    const tarefa = specs.find((x) => x.tipo === 'task')!.id;
+    const vinculo = `"${SCHEMA_DO_VINCULO}"."R17VinculoConcorrente"`;
+    await db.$executeRawUnsafe(`CREATE SCHEMA "${SCHEMA_DO_VINCULO}"`);
+    try {
+      await db.$executeRawUnsafe(`CREATE TABLE ${vinculo} ("id" TEXT PRIMARY KEY,
+        "workTaskId" TEXT NOT NULL REFERENCES "WorkTask"("id") ON DELETE RESTRICT)`);
+      expect(await fingerprintImportado(sessaoDaCli, specs)).toBe(f0);
+      const { espera, resultado } = await comCommitDuranteOLock(
+        (x) => x.$executeRawUnsafe(`INSERT INTO ${vinculo} ("id", "workTaskId") VALUES ('v1', $1)`, tarefa),
+        (cli) => reverterLote(cli, specs, criados, f0));
+      expect(recusa(resultado)).toContain('Rollback recusado');
+      expect(espera).toBe('LOCK TABLE');
+      expect(await db.workTask.count({ where: { orgId: CASA } })).toBe(tarefasDoLote);
+    } finally {
+      await db.$executeRawUnsafe(`DROP SCHEMA "${SCHEMA_DO_VINCULO}" CASCADE`);
+    }
+    expect(await fingerprintImportado(sessaoDaCli, specs)).toBe(f0);
+  }, 30000);
+
+  it('rollback: auditoria de tarefa do lote comitada por outra sessão durante a espera do lock faz recusar, e nada é apagado (A-1)', async () => {
+    const tarefa = specs.find((x) => x.tipo === 'task')!.id;
+    try {
+      const { espera, resultado } = await comCommitDuranteOLock(
+        (x) => x.auditLog.create({ data: {
+          id: 'qa17-auditoria-concorrente', orgId: CASA, action: 'work.task.update', entityType: 'work_task', entityId: tarefa,
+        } }),
+        (cli) => reverterLote(cli, specs, criados, f0));
+      expect(recusa(resultado)).toContain('Rollback recusado');
+      expect(espera).toBe('LOCK TABLE');
+      expect(await db.workTask.count({ where: { orgId: CASA } })).toBe(tarefasDoLote);
+    } finally {
+      await db.auditLog.deleteMany({ where: { id: 'qa17-auditoria-concorrente' } });
+    }
+    expect(await fingerprintImportado(db, specs)).toBe(f0);
+  }, 30000);
 });

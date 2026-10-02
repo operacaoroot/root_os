@@ -210,7 +210,7 @@ describe('importação segura ClickUp → Work', () => {
     const db = { $transaction: async (fn: (client: PrismaClient) => Promise<void>) => {
       taskRows[0].comments.push({ id: 'comentario-nativo-posterior' });
       return fn(tx);
-    } } as unknown as PrismaClient;
+    }, $queryRaw: async () => [] } as unknown as PrismaClient;
     await expect(reverterLote(db, specs, { task: [task.id] }, before)).rejects.toThrow('Rollback recusado');
     expect(locked).toBe(true);
     expect(deletes).toBe(0);
@@ -423,7 +423,7 @@ describe('importação ClickUp → Work: moeda e etapa done (ROOT-06a)', () => {
     const db = { $transaction: async (fn: (client: PrismaClient) => Promise<void>) => {
       valores[0].value = 'BRL 2000.00';
       return fn(tx);
-    } } as unknown as PrismaClient;
+    }, $queryRaw: async () => [] } as unknown as PrismaClient;
     await expect(reverterLote(db, specs, { value: [valor.id] }, depoisDoImport)).rejects.toThrow('Rollback recusado');
     expect(locked).toBe(true);
     expect(deletes).toBe(0);

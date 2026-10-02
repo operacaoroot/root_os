@@ -371,13 +371,17 @@ async function apagarCriados(db: Db, created: Record<string, string[]>) {
   await db.workTag.deleteMany({ where: { id: { in: created.tag ?? [] } } });
 }
 
+async function tabelasExternas(db: Db): Promise<string[]> {
+  return [...new Set((await chavesExternas(db)).map((fk) => identificador(fk.tabela)))];
+}
+
 /**
  * Rollback é raro e destrutivo: bloqueia escritas que alterariam fingerprint/cascade até o COMMIT.
  * As tabelas dos vínculos externos entram também, senão um vínculo criado entre a captura e
  * o DELETE passaria sem ser visto.
  */
-async function trancarTabelasWork(tx: Prisma.TransactionClient) {
-  const externas = [...new Set((await chavesExternas(tx)).map((fk) => identificador(fk.tabela)))];
+async function trancarTabelasWork(tx: Prisma.TransactionClient, externas: string[]) {
+  // O catálogo é lido antes da transação para este LOCK ser a primeira instrução: o snapshot serializável nasce depois de todos os locks (A-1).
   await tx.$executeRawUnsafe(`LOCK TABLE "WorkFolder", "WorkList", "WorkStatus", "WorkField",
     "WorkFieldOption", "WorkTag", "WorkTask", "WorkFieldValue", "WorkComment",
     "WorkApontamento", "_WorkTaskTags", "OnboardingTrilho", "AuditLog"${externas.map((t) => `, ${t}`).join('')}
@@ -391,8 +395,9 @@ export async function fingerprintImportado(db: Db, specs: Spec[]): Promise<strin
 export async function reverterLote(
   db: PrismaClient, specs: Spec[], created: Record<string, string[]>, postFingerprint: string,
 ): Promise<void> {
+  const externas = await tabelasExternas(db);
   await db.$transaction(async (tx) => {
-    await trancarTabelasWork(tx);
+    await trancarTabelasWork(tx, externas);
     const atual = await fingerprintImportado(tx, specs);
     if (atual !== postFingerprint) throw new Error('Rollback recusado: houve edição ou novo vínculo nativo após o import');
     await apagarCriados(tx, created);
@@ -475,8 +480,9 @@ export async function transformarEmArvore(
   db: PrismaClient, specs: Spec[], arvore: ArvoreDoLote, esperado: { fingerprint: string; plano: PlanoDaArvore },
 ): Promise<{ criados: ArvoreRun['criados']; movidas: ArvoreRun['movidas']; fingerprint: string }> {
   const orgId = specs[0]?.conferir.orgId as string;
+  const externas = await tabelasExternas(db);
   return db.$transaction(async (tx) => {
-    await trancarTabelasWork(tx);
+    await trancarTabelasWork(tx, externas);
     // O mesmo cadeado que o serviço toma para mover pasta para dentro de outra (ciclo).
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`work-arvore:${orgId}`}))`;
     if (await fingerprintImportado(tx, specs) !== esperado.fingerprint) {
