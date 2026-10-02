@@ -437,6 +437,8 @@ function PropostaEAceite({
 
   const estado = leitura?.estado ?? 'sem_proposta';
   const temProposta = estado !== 'sem_proposta';
+  // O documento mostrado é o que a decisão vai citar: a proposta vigente para as condições de agora, e só sem ela a última registrada.
+  const propostaMostrada = cond?.propostaVigenteResumo ?? leitura?.proposta ?? null;
   const decidido = estado === 'aceite_registrado' || estado === 'recusa_registrada';
 
   return (
@@ -449,13 +451,13 @@ function PropostaEAceite({
       {erro && <div className="mb-3 text-sm text-bad" role="alert">{erro}</div>}
       {aviso && <div className="mb-3 text-sm text-good">{aviso}</div>}
 
-      {leitura?.proposta && (
+      {propostaMostrada && (
         <div className="mb-3 text-sm">
           <div className="text-xs text-muted">Documento da proposta</div>
-          <a href={leitura.proposta.documento.url} target="_blank" rel="noreferrer noopener" className="underline">
-            {leitura.proposta.documento.titulo ?? leitura.proposta.documento.url}
+          <a href={propostaMostrada.documento.url} target="_blank" rel="noreferrer noopener" className="underline">
+            {propostaMostrada.documento.titulo ?? propostaMostrada.documento.url}
           </a>
-          <span className="ml-2 text-xs text-muted">sha256 {leitura.proposta.documento.sha256.slice(0, 12)}… · registrada em {dataCurta(leitura.proposta.registradaEm)}</span>
+          <span className="ml-2 text-xs text-muted">sha256 {propostaMostrada.documento.sha256.slice(0, 12)}… · registrada em {dataCurta(propostaMostrada.registradaEm)}</span>
         </div>
       )}
 

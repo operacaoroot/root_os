@@ -69,6 +69,7 @@ const CONDICOES: LeadCondicoesLeitura = {
   motivo: null,
   hash: HASH,
   propostaVigente: null,
+  propostaVigenteResumo: null,
   condicoes: {
     cardId: 'card-1',
     inicio: null,
@@ -210,6 +211,26 @@ describe('ROOT-49: Proposta e aceite na tela do lead', () => {
     expect(screen.getByRole('button', { name: 'Registrar aceite' })).toBeDisabled();
   });
 
+  it('card que voltou às condições de uma proposta antiga: o aceite abre e a proposta mostrada é a vigente, não a última', async () => {
+    const H2 = 'c'.repeat(64);
+    const v1 = COM_PROPOSTA.proposta!;
+    const v2 = { ...v1, eventoId: 'ev-p2', documento: { ...v1.documento, url: 'https://drive.exemplo/proposta-v2', titulo: 'Proposta v2' }, condicoesHash: H2, registradaEm: '2026-10-03T10:00:00.000Z' };
+    // A última registrada (v2) é de outras condições; o card voltou às da v1, que é a que a decisão vai citar.
+    servir({ ...COM_PROPOSTA, proposta: v2 }, { ...CONDICOES, propostaVigente: true, propostaVigenteResumo: v1 });
+    apiPost.mockResolvedValue({ id: 'lead-1', replayed: false });
+    render(<LeadDetailPage />);
+    const user = userEvent.setup();
+    expect(await screen.findByRole('link', { name: 'Proposta v1' })).toHaveAttribute('href', 'https://drive.exemplo/proposta-v1');
+    expect(screen.queryByRole('link', { name: 'Proposta v2' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/O card mudou depois da última proposta/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Link da evidência'), 'https://drive.exemplo/aceite');
+    const botao = screen.getByRole('button', { name: 'Registrar aceite' });
+    expect(botao).toBeEnabled();
+    await user.click(botao);
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+    expect(apiPost.mock.calls[0][1]).toMatchObject({ decisao: 'aceite', condicoesHash: HASH });
+  });
+
   it('409 (as condições mudaram): mostra a mensagem da API e relê as condições', async () => {
     servir(COM_PROPOSTA, { ...CONDICOES, propostaVigente: true });
     apiPost.mockRejectedValue(new ErroDaApi('As condições do card mudaram desde o que foi visto; releia as condições e registre de novo', 409, 'Conflict'));
@@ -248,7 +269,7 @@ describe('ROOT-49: Proposta e aceite na tela do lead', () => {
   });
 
   it('lead sem card ligado: mostra o motivo e deixa escolher o card pelo id para ler as condições', async () => {
-    servir(SEM_PROPOSTA, { card: null, motivo: 'Este lead não tem card comercial ligado; informe o card da proposta', condicoes: null, hash: null, propostaVigente: null });
+    servir(SEM_PROPOSTA, { card: null, motivo: 'Este lead não tem card comercial ligado; informe o card da proposta', condicoes: null, hash: null, propostaVigente: null, propostaVigenteResumo: null });
     render(<LeadDetailPage />);
     expect(await screen.findByText(/não tem card comercial ligado/)).toBeInTheDocument();
     const user = userEvent.setup();

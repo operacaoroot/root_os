@@ -187,8 +187,10 @@ export interface LeadCondicoesLeitura {
   motivo: string | null;
   condicoes: LeadCondicoes | null;
   hash: string | null;
-  /** A última proposta foi feita com estas mesmas condições? Nulo sem proposta ou sem condições. */
+  /** Alguma proposta registrada foi feita com estas mesmas condições (o critério da decisão)? Nulo sem proposta ou sem condições. */
   propostaVigente: boolean | null;
+  /** A proposta mais recente feita com estas condições: a que a decisão vai citar. Nulo quando nenhuma vale. */
+  propostaVigenteResumo: LeadPropostaResumo | null;
 }
 
 export interface LeadPropostaResposta {

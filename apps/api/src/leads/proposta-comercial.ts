@@ -90,8 +90,13 @@ export function condicoesDoCard(card: CardParaCondicoes, valores: ValorDeCampoDo
   };
 }
 
+/**
+ * A identidade de cada campo é `campoId`, `tipo` e `valor`. O nome vai para a
+ * tela e para a diferença, mas fica fora do hash: corrigir a grafia de um campo
+ * no ClickUp não pode invalidar a proposta nem o aceite.
+ */
 export function hashDasCondicoes(condicoes: LeadCondicoes): string {
-  return sha256(condicoes);
+  return sha256({ ...condicoes, campos: condicoes.campos.map(({ nome, ...resto }) => resto) });
 }
 
 /**

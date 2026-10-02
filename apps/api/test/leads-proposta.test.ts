@@ -123,6 +123,19 @@ describe('ROOT-49: as condições lidas do card (puro)', () => {
     expect(hashDasCondicoes(condicoesDoCard(card({ dueDate: new Date('2026-12-01T00:00:00Z') }), [f1, f2]))).not.toBe(h);
     expect(hashDasCondicoes(condicoesDoCard(card({ id: 'card-2' }), [f1, f2]))).not.toBe(h);
     expect(hashDasCondicoes(condicoesDoCard(card(), [f1, { ...f2, opcao: 'Anual' }]))).not.toBe(h);
+
+    // Mora no campoId, não no nome: renomear (inclusive corrigir a grafia da lista real) não muda o hash...
+    const renomeado = condicoesDoCard(card(), [valor({ campoNome: 'Valor em negociação' }), f2]);
+    const grafiaAntiga = condicoesDoCard(card(), [valor({ campoNome: 'Valor em negocição' }), f2]);
+    expect(hashDasCondicoes(grafiaAntiga)).toBe(h);
+    expect(hashDasCondicoes(renomeado)).toBe(hashDasCondicoes(grafiaAntiga));
+    expect(hashDasCondicoes(condicoesDoCard(card(), [f1, { ...f2, campoNome: 'PERIODICIDADE' }]))).toBe(h);
+    // ...mas o nome continua nas condições devolvidas à tela...
+    expect(renomeado.campos.find((c) => c.campoId === 'f-valor')?.nome).toBe('Valor em negociação');
+    expect(grafiaAntiga.campos.find((c) => c.campoId === 'f-valor')?.nome).toBe('Valor em negocição');
+    // ...e a identidade é o campoId e o tipo: outro campo com o mesmo nome e valor, ou o mesmo campo em outro tipo, é outra condição.
+    expect(hashDasCondicoes(condicoesDoCard(card(), [valor({ campoId: 'f-outro' }), f2]))).not.toBe(h);
+    expect(hashDasCondicoes(condicoesDoCard(card(), [valor({ campoTipo: 'data' }), f2]))).not.toBe(h);
   });
 
   it('sem valor em negociação (ou fora do formato canônico) as condições não servem', () => {
@@ -145,6 +158,12 @@ describe('ROOT-49: as condições lidas do card (puro)', () => {
     ]);
     expect(diferencaDasCondicoes(vistas, vistas)).toEqual([]);
     expect(diferencaDasCondicoes(vistas, { ...vistas, cardId: 'outro' })[0]).toMatchObject({ chave: 'card' });
+    // O nome é só rótulo: o campo renomeado não aparece na diferença, e o rótulo de um campo que mudou é o nome de agora.
+    const renomeadas = condicoesDoCard(card(), [valor({ campoNome: 'Valor negociado' }), valor({ campoId: 'f-per', campoNome: 'Periodicidade', campoTipo: 'drop_down', valor: null, opcao: 'Mensal' })]);
+    expect(diferencaDasCondicoes(vistas, renomeadas)).toEqual([]);
+    expect(diferencaDasCondicoes(vistas, condicoesDoCard(card(), [valor({ campoNome: 'Valor negociado', valor: 'BRL 1600.00' }), valor({ campoId: 'f-per', campoNome: 'Periodicidade', campoTipo: 'drop_down', valor: null, opcao: 'Mensal' })]))).toEqual([
+      { chave: 'campo:f-valor', rotulo: 'Valor negociado', vista: 'BRL 1500.00', atual: 'BRL 1600.00' },
+    ]);
   });
 });
 
@@ -664,6 +683,77 @@ function casosContraOBanco(modoRls: boolean) {
     const volta = await decidir(lead, aceite(p1.condicoesHash));
     expect(volta).toMatchObject({ replayed: false, propostaEventoId: p1.eventoId });
     expect(await eventos(lead, 'aceite')).toHaveLength(2);
+  });
+
+  it('renomear o campo (corrigir a grafia da lista real) não muda o hash: a proposta segue vigente e o aceite com o hash antigo passa', async () => {
+    const { lead, card: cardDoLead } = await leadClickup();
+    const NOME = 'Valor em negociação';
+    const GRAFIA_ANTIGA = 'Valor em negocição';
+    try {
+      await admin.workField.update({ where: { id: campoValorA }, data: { name: GRAFIA_ANTIGA } });
+      const antes = await condicoes(lead);
+      expect(antes.condicoes!.campos.find((c) => c.campoId === campoValorA)?.nome).toBe(GRAFIA_ANTIGA);
+      const p = await registrar(lead, PROPOSTA());
+      expect(p.condicoesHash).toBe(antes.hash);
+
+      await admin.workField.update({ where: { id: campoValorA }, data: { name: NOME } });
+      const depois = await condicoes(lead);
+      // O nome novo aparece para a pessoa, o hash e a vigência não se mexem.
+      expect(depois.condicoes!.campos.find((c) => c.campoId === campoValorA)?.nome).toBe(NOME);
+      expect(depois.hash).toBe(antes.hash);
+      expect(depois.propostaVigente).toBe(true);
+      expect(diferencaDasCondicoes(antes.condicoes!, depois.condicoes!)).toEqual([]);
+
+      const r = await decidir(lead, aceite(p.condicoesHash, { condicoesVistas: antes.condicoes }));
+      expect(r).toMatchObject({ decisao: 'aceite', replayed: false, propostaEventoId: p.eventoId });
+      expect(await eventos(lead, 'aceite')).toHaveLength(1);
+      // Registrar de novo o mesmo documento depois da renomeação é o mesmo registro, não uma proposta nova.
+      expect(await registrar(lead, PROPOSTA())).toMatchObject({ replayed: true, eventoId: p.eventoId, cardId: cardDoLead });
+      expect(await eventos(lead, 'proposta')).toHaveLength(1);
+    } finally {
+      await admin.workField.update({ where: { id: campoValorA }, data: { name: NOME } });
+    }
+  });
+
+  it('D3: qualquer proposta registrada com as condições de agora vale (o critério da decisão), e a leitura aponta qual', async () => {
+    const lead = await novoLead({ tipo: 'manual', ref: 'vigente-qualquer' });
+    const card = await criarCard(ORG_A, listaA, statusAbertoA, { valor: 'BRL 4000.00', periodicidade: 'Mensal' });
+    const p1 = await registrar(lead, PROPOSTA({ cardId: card }));
+    await mudarValor(card, 'BRL 4500.00');
+    const meio = await condicoes(lead);
+    expect(meio).toMatchObject({ propostaVigente: false, propostaVigenteResumo: null });
+    const p2 = await registrar(lead, PROPOSTA({ cardId: card }));
+    expect(p2.condicoesHash).not.toBe(p1.condicoesHash);
+    expect((await condicoes(lead))).toMatchObject({ propostaVigente: true, propostaVigenteResumo: { eventoId: p2.eventoId } });
+
+    // O card volta ao valor da v1: a última registrada é a v2, mas a vigente é a v1.
+    await mudarValor(card, 'BRL 4000.00');
+    const volta = await condicoes(lead);
+    expect(volta.hash).toBe(p1.condicoesHash);
+    expect(volta.propostaVigente).toBe(true);
+    expect(volta.propostaVigenteResumo).toMatchObject({ eventoId: p1.eventoId, condicoesHash: p1.condicoesHash, cardId: card });
+    expect((await proposta(lead)).proposta?.eventoId).toBe(p2.eventoId);
+    // E é a v1 que a decisão cita, como a tela mostra.
+    expect(await decidir(lead, aceite(volta.hash!))).toMatchObject({ replayed: false, propostaEventoId: p1.eventoId });
+  });
+
+  it('D1 (comportamento atual, PENDENTE DE DECISÃO do Pedro e do Rodrigo): aceite, recusa e aceite de novo devolve replayed e o estado fica na recusa', async () => {
+    // Não é a regra desejada: é o que o código faz hoje, registrado para que a troca de decisão seja uma escolha e não um acidente.
+    // Quando a regra mudar (409 "a decisão mais recente é a recusa", ou id que inclua a decisão anterior), este caso muda junto.
+    const { lead } = await leadClickup();
+    const p = await registrar(lead, PROPOSTA());
+    const a1 = await decidir(lead, aceite(p.condicoesHash));
+    expect(a1).toMatchObject({ decisao: 'aceite', replayed: false });
+    const r = await decidir(lead, aceite(p.condicoesHash, { decisao: 'recusa', motivo: 'Voltou atrás' }));
+    expect(r).toMatchObject({ decisao: 'recusa', replayed: false });
+    expect((await proposta(lead)).estado).toBe('recusa_registrada');
+
+    const a2 = await decidir(lead, aceite(p.condicoesHash));
+    expect(a2).toMatchObject({ decisao: 'aceite', replayed: true, eventoId: a1.eventoId });
+    expect(await eventos(lead, 'aceite')).toHaveLength(1);
+    expect(await eventos(lead, 'recusa')).toHaveLength(1);
+    expect(await auditorias(lead, 'lead.aceite')).toBe(1);
+    expect((await proposta(lead)).estado).toBe('recusa_registrada');
   });
 
   it('aceite antes de existir proposta é 409; condicoesVistas que não bate com o hash é 400', async () => {

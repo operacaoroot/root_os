@@ -83,6 +83,11 @@ interface EventoLido {
   occurredAt: Date;
 }
 
+function resumoDaProposta(ev: EventoLido): LeadPropostaResumo {
+  const p = ev.payload as PayloadDaProposta;
+  return { eventoId: ev.id, documento: p.documento, cardId: p.cardId, condicoesHash: p.condicoesHash, registradaEm: ev.occurredAt.toISOString(), ator: p.ator ?? null };
+}
+
 function ehViolacaoDeUnico(erro: unknown): boolean {
   return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002';
 }
@@ -514,16 +519,7 @@ export class LeadsService {
     const eventos = await this.eventosDaProposta(id);
     const estado = estadoDaProposta(eventos);
     const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
-    const proposta: LeadPropostaResumo | null = ultimaProposta
-      ? {
-          eventoId: ultimaProposta.id,
-          documento: (ultimaProposta.payload as PayloadDaProposta).documento,
-          cardId: (ultimaProposta.payload as PayloadDaProposta).cardId,
-          condicoesHash: (ultimaProposta.payload as PayloadDaProposta).condicoesHash,
-          registradaEm: ultimaProposta.occurredAt.toISOString(),
-          ator: (ultimaProposta.payload as PayloadDaProposta).ator ?? null,
-        }
-      : null;
+    const proposta: LeadPropostaResumo | null = ultimaProposta ? resumoDaProposta(ultimaProposta) : null;
     let decisao: LeadDecisaoResumo | null = null;
     if (estado === 'aceite_registrado' || estado === 'recusa_registrada') {
       const tipo = estado === 'aceite_registrado' ? 'aceite' : 'recusa';
@@ -549,16 +545,22 @@ export class LeadsService {
     await this.exigirLead(orgId, id);
     const eventos = await this.eventosDaProposta(id);
     const alvo = await this.resolverCard(orgId, eventos, cardIdPedido);
-    if (!alvo.card) return { card: null, motivo: alvo.motivo, condicoes: null, hash: null, propostaVigente: null };
+    if (!alvo.card) return { card: null, motivo: alvo.motivo, condicoes: null, hash: null, propostaVigente: null, propostaVigenteResumo: null };
     const condicoes = this.condicoesDe(alvo.card);
     const hash = hashDasCondicoes(condicoes);
-    const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    const propostas = eventos.filter((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
+    // O mesmo critério de `decidir`: vale a proposta mais recente feita com estas condições, não só a última registrada.
+    const vigente = [...propostas].reverse().find((e) => {
+      const p = e.payload as PayloadDaProposta;
+      return p.condicoesHash === hash && p.cardId === condicoes.cardId;
+    });
     return {
       card: { id: alvo.card.id, titulo: alvo.card.title },
       motivo: motivoDeCondicoesInsuficientes(condicoes),
       condicoes,
       hash,
-      propostaVigente: ultimaProposta ? (ultimaProposta.payload as PayloadDaProposta).condicoesHash === hash : null,
+      propostaVigente: propostas.length > 0 ? !!vigente : null,
+      propostaVigenteResumo: vigente ? resumoDaProposta(vigente) : null,
     };
   }
 
