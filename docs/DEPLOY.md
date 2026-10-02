@@ -477,9 +477,9 @@ estoura com esta chamada)" e duas chamadas simultâneas podem passar juntas. Con
 mensal isso é ruído; o teto por empresa e por dia, que TEM reserva, continua valendo por cima.
 
 **Com o orçamento valendo, modelo fora de `apps/api/src/llm/preco.ts` é RECUSADO** — a mesma trava
-do teto da empresa: controle que não sabe medir não é controle. Isso atinge o provider `openrouter`,
-cujo modelo padrão não está na tabela. Se você ligar orçamento num agente que roda por `openrouter`,
-ele para.
+do teto da empresa: controle que não sabe medir não é controle. Isso atinge o provider `openrouter`
+quando `OPENROUTER_MODEL` aponta para modelo fora da tabela (o padrão, `anthropic/claude-sonnet-5.5`, está nela).
+Se você ligar orçamento num agente que roda por `openrouter` com esse override, ele para.
 
 **Vetorização (embeddings) continua fora de todo número desta fatia.** Ela passa por `fetch` próprio
 em `obsidian.service.ts` e `pauta.service.ts`, fora do `LlmProvider`, e a tela de Custos já declara
