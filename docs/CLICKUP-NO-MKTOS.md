@@ -11,7 +11,7 @@
 
 | Ponto do pedido | Modelo (Prisma) | API (rotas) | Tela | MCP |
 |---|---|---|---|---|
-| Hierarquia pastas → listas | `WorkFolder`, `WorkList` | `GET /trabalho/estrutura` · `POST/PATCH/DELETE /trabalho/pastas[/:id]` · `/trabalho/listas[/:id]` | `/trabalho` (árvore à esquerda, "+ nova lista") | `trabalho_estrutura` |
+| Hierarquia espaço → pastas aninhadas → listas | `WorkSpace`, `WorkFolder` (`spaceId` ou `parentId`, só o pai imediato), `WorkList` (`folderId` ou `spaceId`) | `GET /trabalho/estrutura` · `POST/PATCH/DELETE /trabalho/espacos[/:id]` · `/trabalho/pastas[/:id]` · `/trabalho/listas[/:id]` | `/trabalho` (árvore à esquerda, "+ nova lista"; a tela ainda mostra pasta aninhada sem recuo) | `trabalho_estrutura` |
 | Statuses por lista (pipeline, cor, tipo) | `WorkStatus` (`open/custom/closed` + cor hex) | `POST /trabalho/listas/:id/statuses` · `PATCH/DELETE /trabalho/statuses/:id` | board (colunas coloridas) + modal ⚙ "Configurar lista" | idem |
 | **Campos personalizados** | `WorkField` (tipos `drop_down/texto/numero/data/checkbox/url/moeda`, este com o valor canônico `BRL 1500.00`; `listId` nulo = espaço todo) + `WorkFieldOption` (opções com cor) + `WorkFieldValue` (valor por tarefa) | `POST /trabalho/campos` · `PATCH/DELETE /trabalho/campos/:id` · `POST /trabalho/campos/:id/opcoes` · `PATCH/DELETE /trabalho/opcoes/:id` · valores via `PATCH /trabalho/tarefas/:id {campos}` | painel da tarefa (seção "Campos personalizados") + modal ⚙ (CRUD de campos e opções) + filtros por opção no topo | `trabalho_tarefas` (traz valores) |
 | **Etiquetas** (tags do espaço) | `WorkTag` (nome + cor, por org) | `GET`(na estrutura) · `POST /trabalho/tags` · `PATCH/DELETE /trabalho/tags/:id` · anexar via `PATCH tarefa {tagIds}` | painel da tarefa (chips "+ etiqueta" cria e anexa na hora) | idem |
@@ -69,6 +69,18 @@
 **Coletor pronto**: `tools/clickup-inventario.py` (token via env/`.env`/
 `~/.config/root/clickup.env`) puxa tudo isso da API v2. Depois, reconciliação
 usa `WorkTask.externalId`/`WorkList.externalId`.
+
+## O lote Marketing importado (30/09/2026) e a árvore
+
+O lote da pasta `Demandas internas / Marketing` entrou pelo importador
+`apps/api/prisma/import-clickup-work.ts` (contrato e uso em
+`apps/api/prisma/import-clickup-work.md`), numa pasta plana com o caminho no
+nome. Desde a ROOT-17, `--arvore` cria o espaço e a pasta `Demandas internas`
+com o id do ClickUp em `externalId` e pendura a pasta do lote nela, sem mudar
+nome, listas, tarefas nem IDs, e sem aposentar o rollback automático do lote.
+O nome curto `Marketing` só vem com a alternativa F-b (backup novo,
+restauração ensaiada e registro no manifesto). Aplicar em produção depende do
+gate G-MIG-16.
 
 ## Decisões de desenho
 

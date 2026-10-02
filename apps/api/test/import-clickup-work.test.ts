@@ -204,6 +204,7 @@ describe('importação segura ClickUp → Work', () => {
         'workTag', 'workFieldValue', 'workComment', 'auditLog'].map((name) => [name, empty])),
       workTask: { ...empty, findMany: async () => taskRows },
       $executeRawUnsafe: async () => { locked = true; return 0; },
+      $queryRaw: async () => [],
     } as unknown as PrismaClient;
     const before = await fingerprintImportado(tx, specs);
     const db = { $transaction: async (fn: (client: PrismaClient) => Promise<void>) => {
@@ -416,6 +417,7 @@ describe('importação ClickUp → Work: moeda e etapa done (ROOT-06a)', () => {
         'workTag', 'workTask', 'workComment', 'auditLog'].map((name) => [name, empty])),
       workFieldValue: { ...empty, findMany: async () => valores },
       $executeRawUnsafe: async () => { locked = true; return 0; },
+      $queryRaw: async () => [],
     } as unknown as PrismaClient;
     const depoisDoImport = await fingerprintImportado(tx, specs);
     const db = { $transaction: async (fn: (client: PrismaClient) => Promise<void>) => {

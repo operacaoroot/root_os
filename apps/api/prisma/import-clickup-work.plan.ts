@@ -172,3 +172,66 @@ export function inventariar(snapshot: ClickupSnapshot, orgId: string, caminhos: 
   }
   return { specs, avisos };
 }
+
+/*
+ * A ÁRVORE DO LOTE (ROOT-17, C-15). `inventariar` continua igual: a pasta do lote
+ * nasce plana, com o caminho inteiro no nome, porque é isso que o fingerprint gravado
+ * no manifesto de 30/09 conhece. A árvore é o que falta em volta dela: o espaço e as
+ * pastas-mãe da origem, com `idNativo` de `kind` `space` e `folder`, e a posição da
+ * pasta do lote, que mora só em colunas novas (`spaceId`, `parentId`, `externalId`).
+ * Nenhum nó da árvore é linha do lote: o rollback não os apaga.
+ */
+export interface NoDaArvore {
+  tipo: 'space' | 'folder';
+  chave: string;
+  id: string;
+  externalId: string;
+  dados: { orgId: string; name: string; externalId: string; order: number; spaceId?: string | null; parentId?: string | null };
+}
+/** Pai imediato da pasta do lote: só um dos dois é preenchido, como pede o CHECK `WorkFolder_um_pai_so`. */
+export interface PosicaoDaPasta { chave: string; id: string; externalId: string; spaceId: string | null; parentId: string | null }
+export type ArvoreDoLote = { nos: NoDaArvore[]; posicoes: PosicaoDaPasta[] };
+
+export function arvoreDoLote(snapshot: ClickupSnapshot, orgId: string, nomeDoEspaco: string): ArvoreDoLote {
+  const nome = nomeDoEspaco.trim();
+  if (!nome) throw new Error('nome do espaço vazio');
+  const id = (tipo: string, origem: string) => idNativo(orgId, snapshot.spaceId, tipo, origem);
+  const espaco: NoDaArvore = {
+    tipo: 'space', chave: `space:${snapshot.spaceId}`, id: id('space', snapshot.spaceId), externalId: snapshot.spaceId,
+    dados: { orgId, name: nome, externalId: snapshot.spaceId, order: 0 },
+  };
+  const folderPorId = new Map(snapshot.folders.map((f) => [f.id, f]));
+  const pai = (parentId: string | null) => parentId
+    ? { spaceId: null, parentId: id('folder', parentId) }
+    : { spaceId: espaco.id, parentId: null };
+  const folhas = [...new Set(snapshot.lists.map((l) => l.folderId!))];
+  // Cada cadeia vem do topo para baixo, então a mãe sempre entra antes da filha.
+  const maes: string[] = [];
+  for (const folha of folhas) {
+    const cadeia: string[] = [];
+    const vistas = new Set([folha]);
+    let atual = folderPorId.get(folha)?.parentId ?? null;
+    while (atual) {
+      if (vistas.has(atual)) throw new Error(`ciclo na pasta ${atual}`);
+      vistas.add(atual);
+      const f = folderPorId.get(atual);
+      if (!f) throw new Error(`pasta ${atual} ausente do snapshot`);
+      cadeia.unshift(atual);
+      atual = f.parentId;
+    }
+    for (const fid of cadeia) if (!folhas.includes(fid) && !maes.includes(fid)) maes.push(fid);
+  }
+  const nos: NoDaArvore[] = [espaco, ...maes.map((fid): NoDaArvore => {
+    const f = folderPorId.get(fid)!;
+    return {
+      tipo: 'folder', chave: `folder:${fid}`, id: id('folder', fid), externalId: fid,
+      dados: { orgId, name: f.name, externalId: fid, order: 0, ...pai(f.parentId) },
+    };
+  })];
+  const posicoes = folhas.map((fid): PosicaoDaPasta => {
+    const f = folderPorId.get(fid);
+    if (!f) throw new Error(`pasta ${fid} ausente do snapshot`);
+    return { chave: `folder:${fid}`, id: id('folder', fid), externalId: fid, ...pai(f.parentId) };
+  });
+  return { nos, posicoes };
+}
