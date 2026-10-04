@@ -2,14 +2,14 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { SnapshotSchema, VPS_FILES_ROOT, canonical, raizPermitidaDoAnexo, sha256, validarSnapshot } from './import-clickup-work.contract';
+import { SnapshotSchema, VPS_FILES_ROOT, canonical, idNativo, raizPermitidaDoAnexo, sha256, validarSnapshot } from './import-clickup-work.contract';
 import { arvoreDoLote, inventariar, type ArvoreDoLote, type NoDaArvore, type PosicaoDaPasta, type Spec } from './import-clickup-work.plan';
 
 // Uso e garantias: ver import-clickup-work.md. Esta CLI não é chamada pelo runtime.
 type Db = PrismaClient | Prisma.TransactionClient;
 type Acao = { spec: Spec; estado: 'criar' | 'igual' | 'conflito'; motivo?: string };
 type Registro = { id: string; origemHash: string };
-type Run = { at: string; snapshotFile: string; snapshotSha256: string; backupFile: string; created: Record<string, string[]>; preFingerprint: string; postFingerprint: string; rolledBackAt?: string };
+type Run = { at: string; snapshotFile: string; snapshotSha256: string; backupFile: string; created: Record<string, string[]>; preFingerprint: string; postFingerprint: string; rolledBackAt?: string; postFingerprintDoImport?: string };
 type Posicao = { spaceId: string | null; parentId: string | null; externalId: string | null };
 /** Registro da transformação em árvore. Os nós criados aqui não são do lote: o rollback não os apaga. */
 type ArvoreRun = {
@@ -18,11 +18,18 @@ type ArvoreRun = {
   movidas: Array<{ id: string; antes: Posicao; depois: Posicao }>;
   fingerprint: string;
 };
+type Reconciliado = { title: string | null; descricao: { caracteres: number; sha256: string } };
+type Reconciliacao = {
+  chave: string; externalId: string; at: string; snapshotSha256: string; snapshotFile: string; backupFile: string | null;
+  deOrigemHash: string; paraOrigemHash: string; antes: Reconciliado; depois: Reconciliado; conferirDepois: Record<string, unknown>;
+  auditId: string; preFingerprint: string | null; postFingerprint: string | null; recoveredWithoutRollback?: boolean;
+};
 type Manifesto = {
   schemaVersion: 1; source: 'clickup'; orgId: string; spaceId: string; scopeListIds: string[];
   records: Record<string, Registro>;
   attachments: Record<string, Array<{ id: string; name: string; url: string | null; sha256: string | null; localPath: string | null; mimeType: string | null; size: number | null }>>;
   runs: Run[];
+  reconciliations?: Reconciliacao[];
   recoveredAt?: string;
   arvore?: ArvoreRun[];
 };
@@ -45,7 +52,7 @@ export function classificarRollback(
 function args() {
   const out: Record<string, string | boolean> = {};
   const flags = new Set(['--apply', '--rollback', '--arvore', '--offline', '--help']);
-  const valores = new Set(['--snapshot', '--org-id', '--manifest-dir', '--nome-do-espaco']);
+  const valores = new Set(['--snapshot', '--org-id', '--manifest-dir', '--nome-do-espaco', '--reconciliar']);
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
     if (flags.has(arg)) out[arg] = true;
@@ -59,9 +66,10 @@ function args() {
 }
 
 function mensagemDeUso(): string {
-  return `Uso: pnpm --filter @mktos/api exec tsx prisma/import-clickup-work.ts --snapshot arquivo.json [--org-id UUID] [--manifest-dir DIR] [--offline] [--apply] [--rollback] [--arvore --nome-do-espaco NOME]\n` +
+  return `Uso: pnpm --filter @mktos/api exec tsx prisma/import-clickup-work.ts --snapshot arquivo.json [--org-id UUID] [--manifest-dir DIR] [--offline] [--apply] [--rollback] [--arvore --nome-do-espaco NOME] [--reconciliar ID_NATIVO_CLICKUP]\n` +
     `Padrão: dry-run, sem escrita. --offline valida contrato sem conectar ao banco. --apply exige org-id e manifest-dir. --rollback sem --apply só confere; --rollback --apply reverte o último lote intocado. ` +
-    `--arvore sem --apply só confere; --arvore --apply põe a pasta do lote ativo dentro do espaço e das pastas-mãe da origem, sem mudar o fingerprint do lote.`;
+    `--arvore sem --apply só confere; --arvore --apply põe a pasta do lote ativo dentro do espaço e das pastas-mãe da origem, sem mudar o fingerprint do lote.\n` +
+    `--reconciliar ID (com --org-id e --manifest-dir): reconcilia UMA tarefa já importada; mostra antes/depois sem escrever e só grava com --apply.`;
 }
 
 function uuid(v: string): boolean { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v); }
@@ -577,6 +585,224 @@ async function passoDaArvore(
   });
 }
 
+/*
+ * RECONCILIAÇÃO EXPLÍCITA DE UMA TAREFA (ROOT-11, P4).
+ *
+ * O importador só cria. Quando o ClickUp reaproveita um cartão depois do apply
+ * (86ak8h6kq: o "filme conceitual reservado" virou o "Post 1"), o lote inteiro
+ * é recusado e não existe caminho sem mexer à mão no banco. `--reconciliar ID`
+ * é esse caminho, estreito de propósito:
+ *  - vale para UM ID nativo do ClickUp, escrito por quem opera; nada em massa;
+ *  - só toca título, descrição e o `updatedAt` de origem da linha;
+ *  - só age se a linha ainda é IDÊNTICA à versão importada (a do último lote,
+ *    lida do snapshot que o manifesto guardou, ou a da reconciliação anterior);
+ *  - qualquer edição local, mudança concorrente, outro conflito do lote ou
+ *    diferença fora de título/descrição recusa tudo, sem escrita;
+ *  - o AuditLog (RASTRO da tarefa), a troca da linha e o novo fingerprint saem
+ *    na mesma transação serializável; o `origemHash` do manifesto depois dela.
+ */
+export const CAMPOS_RECONCILIAVEIS = ['title', 'description'] as const;
+export const ACAO_RECONCILIACAO = 'work.task.reconciliar_origem';
+const ID_EXPLICITO = /^[A-Za-z0-9_-]{1,64}$/;
+
+type Recorte = { title: string | null; description: string | null };
+type Reconciliavel = {
+  estado: 'reconciliar' | 'recuperar-manifesto'; chave: string; spec: Spec; auditId: string;
+  antes: Recorte; depois: Recorte; camposAlterados: string[]; deOrigemHash: string; paraOrigemHash: string;
+  conferirDepois: Record<string, unknown>; updatedAtDeOrigem: Date | null;
+};
+export type Avaliacao = { estado: 'recusada'; motivos: string[] } | { estado: 'igual'; chave: string } | Reconciliavel;
+export type EntradaDaAvaliacao = {
+  externalId: string; orgId: string; spaceId: string; novos: Spec[]; base: Spec[]; manifest: Manifesto;
+};
+
+const recusa = (...motivos: string[]): Avaliacao => ({ estado: 'recusada', motivos });
+const camposDiferentes = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+  [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => canonical(a[k] ?? null) !== canonical(b[k] ?? null)).sort();
+const ultimoLoteAtivo = (m: Manifesto) => [...m.runs].reverse().find((r) => !r.rolledBackAt);
+export const idDoRastroDaReconciliacao = (orgId: string, spaceId: string, externalId: string, origemHash: string) =>
+  idNativo(orgId, spaceId, 'rastro-reconciliacao', `${externalId}:${origemHash}`);
+
+/** O que o manifesto sabe sobre "a versão importada": a reconciliação anterior, se ela é a vigente, ou o snapshot do lote. */
+function baseDaTarefa(e: EntradaDaAvaliacao, chave: string, record: Registro): Record<string, unknown> | string {
+  const anterior = (e.manifest.reconciliations ?? []).filter((r) => r.chave === chave).at(-1);
+  if (anterior && anterior.paraOrigemHash === record.origemHash) return anterior.conferirDepois;
+  const base = e.base.find((s) => s.chave === chave);
+  if (!base || base.origemHash !== record.origemHash) {
+    return 'o manifesto não corresponde ao snapshot do último lote; sem a versão importada não há como provar que o registro está intacto';
+  }
+  return base.conferir;
+}
+
+export async function avaliarReconciliacao(db: Db, e: EntradaDaAvaliacao): Promise<Avaliacao> {
+  if (!ID_EXPLICITO.test(e.externalId)) return recusa('ID inválido: informe um único ID nativo do ClickUp (letras, números, "-" ou "_")');
+  const chave = `task:${e.externalId}`;
+  const alvos = e.novos.filter((s) => s.chave === chave);
+  if (alvos.length === 0) return recusa(`ID ${e.externalId} ausente do snapshot`);
+  if (alvos.length > 1) return recusa(`ID ${e.externalId} ambíguo no snapshot`);
+  const spec = alvos[0];
+  const noBanco = await db.workTask.findMany({ where: { orgId: e.orgId, externalId: e.externalId }, select: { id: true } });
+  if (noBanco.length === 0) return recusa(`ID ${e.externalId} ausente do banco desta empresa`);
+  if (noBanco.length > 1 || noBanco[0].id !== spec.id) return recusa(`ID ${e.externalId} ambíguo no banco: mais de uma linha ou identidade nativa diferente da determinística`);
+  const record = e.manifest.records[chave];
+  if (!record) return recusa(`${chave} não consta do manifesto; --reconciliar só vale para registro que um lote já importou`);
+  if (record.id !== spec.id) return recusa(`${chave}: o manifesto aponta outro UUID nativo`);
+  if (!ultimoLoteAtivo(e.manifest)) return recusa('nenhum lote ativo no manifesto');
+
+  const motivos: string[] = [];
+  let resultado: Avaliacao | null = null;
+  const baseOuErro = baseDaTarefa(e, chave, record);
+  const row = await linha(db, spec);
+  if (typeof baseOuErro === 'string') motivos.push(baseOuErro);
+  else if (!row) motivos.push(`${chave}: linha nativa ausente`);
+  else if (row.orgId !== e.orgId) motivos.push(`${chave}: id pertence a outra empresa`);
+  else {
+    const atual = projeção(row, spec);
+    const auditId = idDoRastroDaReconciliacao(e.orgId, e.spaceId, e.externalId, spec.origemHash);
+    if (record.origemHash === spec.origemHash) {
+      const dif = camposDiferentes(atual, spec.conferir);
+      if (dif.length) motivos.push(`${chave}: edição local depois da reconciliação (${dif.join(', ')}); nada foi alterado`);
+      else resultado = { estado: 'igual', chave };
+    } else {
+      const local = camposDiferentes(atual, baseOuErro);
+      const fora = camposDiferentes(baseOuErro, spec.conferir).filter((c) => !(CAMPOS_RECONCILIAVEIS as readonly string[]).includes(c));
+      const alterados = camposDiferentes(baseOuErro, spec.conferir);
+      const doAlvo = (r: Record<string, unknown>): Recorte => ({ title: (r.title as string | null) ?? null, description: (r.description as string | null) ?? null });
+      const montar = (estado: 'reconciliar' | 'recuperar-manifesto'): Avaliacao => ({
+        estado, chave, spec, auditId, antes: doAlvo(atual), depois: doAlvo(spec.conferir), camposAlterados: alterados,
+        deOrigemHash: record.origemHash, paraOrigemHash: spec.origemHash, conferirDepois: spec.conferir,
+        updatedAtDeOrigem: (spec.dados.updatedAt as Date | undefined) ?? null,
+      });
+      if (local.length) {
+        const igualAoNovo = camposDiferentes(atual, spec.conferir).length === 0;
+        const rastro = igualAoNovo
+          ? await db.auditLog.findFirst({ where: { id: auditId, orgId: e.orgId, entityId: spec.id, action: ACAO_RECONCILIACAO }, select: { id: true } })
+          : null;
+        if (rastro) resultado = montar('recuperar-manifesto');
+        else motivos.push(`${chave}: edição local (${local.join(', ')} difere da versão importada); nada foi alterado`);
+      } else if (fora.length) motivos.push(`${chave}: a origem mudou também fora de título/descrição (${fora.join(', ')}); o --reconciliar não toca nesses campos`);
+      else if (!alterados.length) motivos.push(`${chave}: sem diferença em título/descrição; a origem mudou só em campos que o --reconciliar não toca`);
+      else resultado = montar('reconciliar');
+    }
+  }
+  const outros = (await planejar(db, e.novos, e.manifest.records))
+    .filter((a) => a.estado === 'conflito' && a.spec.chave !== chave)
+    .map((a) => `${a.spec.chave}: ${a.motivo}`);
+  if (outros.length) motivos.push(`conflitos fora da lista explícita (${outros.length}): ${outros.slice(0, 20).join('; ')}`);
+  return motivos.length || !resultado ? recusa(...motivos) : resultado;
+}
+
+const resumoDaAvaliacao = (a: Avaliacao) => a.estado === 'reconciliar' || a.estado === 'recuperar-manifesto'
+  ? { estado: a.estado, chave: a.chave, antes: a.antes, depois: a.depois, de: a.deOrigemHash, para: a.paraOrigemHash } : a;
+
+export async function aplicarReconciliacao(
+  db: PrismaClient, e: EntradaDaAvaliacao, avaliacao: Reconciliavel, preFingerprint: string,
+  extra: { snapshotSha256: string; snapshotFile: string },
+): Promise<{ postFingerprint: string; auditId: string }> {
+  return db.$transaction(async (tx) => {
+    // Relê tudo dentro da transação: o que foi planejado fora dela não vale como prova.
+    const agora = await avaliarReconciliacao(tx, e);
+    if (canonical(resumoDaAvaliacao(agora)) !== canonical(resumoDaAvaliacao(avaliacao))) {
+      throw new Error('Banco ou manifesto mudou durante o planejamento; rode o dry-run outra vez');
+    }
+    if (await fingerprintImportado(tx, e.base) !== preFingerprint) {
+      throw new Error('Banco mudou após o backup; rode o dry-run outra vez');
+    }
+    const { spec, antes, depois } = avaliacao;
+    const r = await tx.workTask.updateMany({
+      where: { id: spec.id, orgId: e.orgId, title: antes.title ?? undefined, description: antes.description },
+      data: { title: depois.title ?? undefined, description: depois.description, ...(avaliacao.updatedAtDeOrigem ? { updatedAt: avaliacao.updatedAtDeOrigem } : {}) },
+    });
+    if (r.count !== 1) throw new Error('A linha mudou durante a escrita; nada foi gravado');
+    await tx.auditLog.create({ data: {
+      id: avaliacao.auditId, orgId: e.orgId, actorType: 'system', actorId: null, action: ACAO_RECONCILIACAO,
+      entityType: 'work_task', entityId: spec.id,
+      before: { title: antes.title, description: antes.description, origemHash: avaliacao.deOrigemHash },
+      after: { title: depois.title, description: depois.description, origemHash: avaliacao.paraOrigemHash },
+      metadata: { fonte: 'import-clickup-work', externalId: e.externalId, campos: avaliacao.camposAlterados,
+        snapshotSha256: extra.snapshotSha256, preFingerprint },
+    } });
+    return { postFingerprint: await fingerprintImportado(tx, e.base), auditId: avaliacao.auditId };
+  }, { isolationLevel: 'Serializable', timeout: 120000 });
+}
+
+const trecho = (v: string | null) => ({ caracteres: v?.length ?? 0, sha256: createHash('sha256').update(v ?? '').digest('hex'), inicio: (v ?? '').slice(0, 160) });
+const retrato = (r: Recorte) => ({ title: r.title, descricao: trecho(r.description) });
+const retratoDoManifesto = (r: Recorte): Reconciliado => ({ title: r.title, descricao: { caracteres: r.description?.length ?? 0, sha256: trecho(r.description).sha256 } });
+
+/** O snapshot do último lote ativo, conferido por hash: é a única prova do que foi importado. */
+function carregarBase(manifest: Manifesto, dir: string, orgId: string): Spec[] | string {
+  const run = ultimoLoteAtivo(manifest);
+  if (!run) return 'nenhum lote ativo no manifesto';
+  try {
+    const arquivo = join(dir, basename(run.snapshotFile));
+    const bruto = readFileSync(arquivo, 'utf8');
+    if (createHash('sha256').update(bruto).digest('hex') !== run.snapshotSha256) return 'o snapshot guardado do último lote não confere com o hash do manifesto';
+    const antigo = SnapshotSchema.parse(JSON.parse(bruto));
+    const v = validarSnapshot(antigo);
+    if (v.erros.length) return `o snapshot guardado do último lote não valida: ${v.erros.join('; ')}`;
+    return inventariar(antigo, orgId, v.caminhos).specs;
+  } catch (err) { return `snapshot do último lote ilegível em ${basename(run.snapshotFile)}: ${(err as Error).message}`; }
+}
+
+export async function reconciliarTarefa(db: PrismaClient, c: {
+  externalId: string; orgId: string; snapshot: ReturnType<typeof SnapshotSchema.parse>; raw: string; novos: Spec[];
+  dir: string; manifestPath: string; manifest: Manifesto; apply: boolean; raizDosAnexos?: string;
+}): Promise<Record<string, unknown> & { recusada?: boolean }> {
+  const sha = createHash('sha256').update(c.raw).digest('hex');
+  const base = carregarBase(c.manifest, c.dir, c.orgId);
+  const cabecalho = { mode: c.apply ? 'reconciliar-apply' : 'reconciliar-dry-run', externalId: c.externalId, snapshotSha256: sha };
+  if (typeof base === 'string') return { ...cabecalho, estado: 'recusada', recusada: true, motivos: [base] };
+  const entrada: EntradaDaAvaliacao = { externalId: c.externalId, orgId: c.orgId, spaceId: c.snapshot.spaceId, novos: c.novos, base, manifest: c.manifest };
+  const av = await avaliarReconciliacao(db, entrada);
+  const arquivos = await verificarArquivos(c.snapshot.tasks.filter((t) => t.id === c.externalId), c.raizDosAnexos);
+  if (av.estado === 'recusada' || arquivos.length) {
+    return { ...cabecalho, estado: 'recusada', recusada: true, motivos: [...(av.estado === 'recusada' ? av.motivos : []), ...arquivos.map((m) => `anexo não confere: ${m}`)] };
+  }
+  if (av.estado === 'igual') return { ...cabecalho, estado: 'igual', noOp: true, chave: av.chave };
+  const plano = { ...cabecalho, estado: av.estado, chave: av.chave, nativeId: av.spec.id, camposAlterados: av.camposAlterados,
+    origemHash: { de: av.deOrigemHash, para: av.paraOrigemHash }, antes: retrato(av.antes), depois: retrato(av.depois), rastroId: av.auditId };
+  if (!c.apply) return plano;
+
+  validarDiretorio(c.dir);
+  return trancar(c.manifestPath, async () => {
+    if (canonical(lerManifesto(c.manifestPath)) !== canonical(c.manifest)) {
+      throw new Error('Manifesto mudou durante o planejamento; rode o dry-run outra vez');
+    }
+    const snapshotFile = join(c.dir, `clickup-work-${sha}.snapshot.json`);
+    const entrada0 = { chave: av.chave, externalId: c.externalId, at: new Date().toISOString(), snapshotSha256: sha, snapshotFile,
+      deOrigemHash: av.deOrigemHash, paraOrigemHash: av.paraOrigemHash, antes: retratoDoManifesto(av.antes),
+      depois: retratoDoManifesto(av.depois), conferirDepois: av.conferirDepois, auditId: av.auditId };
+    const proximo: Manifesto = structuredClone(c.manifest);
+    proximo.records[av.chave] = { id: av.spec.id, origemHash: av.paraOrigemHash };
+    const tarefa = c.snapshot.tasks.find((t) => t.id === c.externalId)!;
+    proximo.attachments[tarefa.id] = tarefa.attachments.map((a) => ({
+      id: a.id, name: a.name, url: a.url ?? null, sha256: a.sha256 ?? null, localPath: a.localPath ?? null, mimeType: a.mimeType ?? null, size: a.size ?? null,
+    }));
+    if (av.estado === 'recuperar-manifesto') {
+      // O banco já foi reconciliado e a queda veio antes do manifesto. Sem prova do que mais mudou, o rollback automático do lote não é reaberto.
+      (proximo.reconciliations ??= []).push({ ...entrada0, backupFile: null, preFingerprint: null, postFingerprint: null, recoveredWithoutRollback: true });
+      arquivoNovo(snapshotFile, c.raw);
+      salvarAtomico(c.manifestPath, proximo);
+      return { ...plano, manifestRecuperado: true, manifestPath: c.manifestPath, snapshotFile };
+    }
+    arquivoNovo(snapshotFile, c.raw);
+    const antes = await capturar(db, base);
+    const preFingerprint = sha256(antes);
+    const backupFile = join(c.dir, `clickup-work-reconciliar-${Date.now()}-${sha.slice(0, 12)}.pre-apply.json`);
+    arquivoNovo(backupFile, JSON.stringify({ orgId: c.orgId, chave: av.chave, snapshotSha256: sha, capturedAt: new Date().toISOString(),
+      plan: { antes: av.antes, depois: av.depois, camposAlterados: av.camposAlterados }, before: antes, previousManifest: c.manifest }, null, 2) + '\n');
+    const { postFingerprint, auditId } = await aplicarReconciliacao(db, entrada, av, preFingerprint, { snapshotSha256: sha, snapshotFile });
+    (proximo.reconciliations ??= []).push({ ...entrada0, backupFile, preFingerprint, postFingerprint });
+    // O rastro e a troca da linha mudam o fingerprint do lote; sem registrar o novo, o rollback do lote passaria a recusar por causa desta reconciliação autorizada.
+    const run = ultimoLoteAtivo(proximo)!;
+    run.postFingerprintDoImport ??= run.postFingerprint;
+    run.postFingerprint = postFingerprint;
+    salvarAtomico(c.manifestPath, proximo);
+    return { ...plano, rastroId: auditId, manifestPath: c.manifestPath, snapshotFile, backupFile, preFingerprint, postFingerprint };
+  });
+}
+
 async function main() {
   const opt = args();
   if (opt['--help']) { console.log(mensagemDeUso()); return; }
@@ -584,6 +810,7 @@ async function main() {
   if (opt['--offline'] && (opt['--apply'] || opt['--rollback'] || opt['--arvore'])) throw new Error('--offline só vale para dry-run');
   if (opt['--arvore'] && opt['--rollback']) throw new Error('--arvore e --rollback são passos separados');
   if (Boolean(opt['--arvore']) !== (typeof opt['--nome-do-espaco'] === 'string')) throw new Error('--arvore e --nome-do-espaco andam juntos');
+  if (opt['--reconciliar'] !== undefined && (opt['--rollback'] || opt['--offline'])) throw new Error('--reconciliar não combina com --rollback nem com --offline');
   const raw = readFileSync(resolve(opt['--snapshot']), 'utf8');
   const snapshot = SnapshotSchema.parse(JSON.parse(raw));
   const validacao = validarSnapshot(snapshot);
@@ -636,6 +863,15 @@ async function main() {
   }
   const db = new PrismaClient();
   try {
+    if (typeof opt['--reconciliar'] === 'string') {
+      const org = await db.org.findUnique({ where: { id: orgId }, select: { id: true } });
+      if (!org) throw new Error('Org inexistente; nenhuma escrita feita');
+      const r = await reconciliarTarefa(db, { externalId: opt['--reconciliar'], orgId, snapshot, raw, novos: inventario!.specs,
+        dir, manifestPath, manifest, apply: !!opt['--apply'] });
+      console.log(JSON.stringify(r, null, 2));
+      if (r.recusada) process.exitCode = 2;
+      return;
+    }
     // Arquivos externos podem desaparecer depois do apply. Isso não deve impedir rollback do
     // banco, nem a árvore, que não toca em anexo.
     const errosArquivos = opt['--rollback'] || opt['--arvore'] ? [] : await verificarArquivos(snapshot.tasks);
