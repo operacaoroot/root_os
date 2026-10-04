@@ -9,7 +9,12 @@ import { arvoreDoLote, inventariar, type ArvoreDoLote, type NoDaArvore, type Pos
 type Db = PrismaClient | Prisma.TransactionClient;
 type Acao = { spec: Spec; estado: 'criar' | 'igual' | 'conflito'; motivo?: string };
 type Registro = { id: string; origemHash: string };
-type Run = { at: string; snapshotFile: string; snapshotSha256: string; backupFile: string; created: Record<string, string[]>; preFingerprint: string; postFingerprint: string; rolledBackAt?: string; postFingerprintDoImport?: string };
+type Run = {
+  at: string; snapshotFile: string; snapshotSha256: string; backupFile: string; created: Record<string, string[]>; preFingerprint: string; postFingerprint: string;
+  rolledBackAt?: string; postFingerprintDoImport?: string;
+  // Gravado só por reconciliação feita com o lote intacto: o estado que o rollback deixa, com o RASTRO dela.
+  fingerprintAposRollback?: string;
+};
 type Posicao = { spaceId: string | null; parentId: string | null; externalId: string | null };
 /** Registro da transformação em árvore. Os nós criados aqui não são do lote: o rollback não os apaga. */
 type ArvoreRun = {
@@ -23,6 +28,7 @@ type Reconciliacao = {
   chave: string; externalId: string; at: string; snapshotSha256: string; snapshotFile: string; backupFile: string | null;
   deOrigemHash: string; paraOrigemHash: string; antes: Reconciliado; depois: Reconciliado; conferirDepois: Record<string, unknown>;
   auditId: string; preFingerprint: string | null; postFingerprint: string | null; recoveredWithoutRollback?: boolean;
+  rollbackDoLote?: 'pronto' | 'bloqueado';
 };
 type Manifesto = {
   schemaVersion: 1; source: 'clickup'; orgId: string; spaceId: string; scopeListIds: string[];
@@ -42,10 +48,11 @@ export type PlanoDaArvore = { nos: EstadoDoNo[]; posicoes: EstadoDaPosicao[] };
 const TIPOS = ['folder', 'list', 'status', 'field', 'option', 'tag', 'task', 'value', 'comment'] as const;
 
 export function classificarRollback(
-  atual: string, run: Pick<Run, 'preFingerprint' | 'postFingerprint'>,
+  atual: string, run: Pick<Run, 'preFingerprint' | 'postFingerprint' | 'fingerprintAposRollback'>,
 ): 'pronto' | 'ja-revertido' | 'divergente' {
   if (atual === run.postFingerprint) return 'pronto';
-  if (atual === run.preFingerprint) return 'ja-revertido';
+  // Depois de uma reconciliação o rollback não volta ao estado anterior ao lote: o RASTRO dela fica.
+  if (atual === (run.fingerprintAposRollback ?? run.preFingerprint)) return 'ja-revertido';
   return 'divergente';
 }
 
@@ -412,6 +419,31 @@ export async function reverterLote(
   }, { isolationLevel: 'Serializable', timeout: 120000 });
 }
 
+type SimulacaoDoRollback = { fingerprint: string } | { falha: string };
+
+/**
+ * Mede o estado que o rollback do lote deixaria agora, sem gravar: a mesma exclusão
+ * do `reverterLote`, num savepoint desfeito antes de sair. Exclusão recusada (uma
+ * subpasta nativa fica fora do fingerprint e a FK barra a pasta do lote) quer dizer
+ * que o rollback real também falharia: volta o motivo. Se o desfazer não devolver o
+ * fingerprint de antes da simulação, a transação inteira aborta.
+ */
+async function simularRollback(tx: Prisma.TransactionClient, specs: Spec[], created: Record<string, string[]>): Promise<SimulacaoDoRollback> {
+  const antes = await fingerprintImportado(tx, specs);
+  await tx.$executeRawUnsafe('SAVEPOINT simular_rollback_do_lote');
+  let simulacao: SimulacaoDoRollback;
+  try {
+    await apagarCriados(tx, created);
+    simulacao = { fingerprint: await fingerprintImportado(tx, specs) };
+  } catch (err) {
+    simulacao = { falha: (err as Error).message.trim().split('\n').at(-1) ?? 'erro sem mensagem' };
+  }
+  await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT simular_rollback_do_lote');
+  await tx.$executeRawUnsafe('RELEASE SAVEPOINT simular_rollback_do_lote');
+  if (await fingerprintImportado(tx, specs) !== antes) throw new Error('A simulação do rollback não foi desfeita; nada foi gravado');
+  return simulacao;
+}
+
 /*
  * A TRANSFORMAÇÃO EM ÁRVORE (ROOT-17, decisão F-a estendida).
  *
@@ -697,8 +729,8 @@ const resumoDaAvaliacao = (a: Avaliacao) => a.estado === 'reconciliar' || a.esta
 
 export async function aplicarReconciliacao(
   db: PrismaClient, e: EntradaDaAvaliacao, avaliacao: Reconciliavel, preFingerprint: string,
-  extra: { snapshotSha256: string; snapshotFile: string },
-): Promise<{ postFingerprint: string; auditId: string }> {
+  extra: { snapshotSha256: string; snapshotFile: string; simularRollbackDe?: Record<string, string[]> },
+): Promise<{ postFingerprint: string; auditId: string; simulacao: SimulacaoDoRollback | null }> {
   return db.$transaction(async (tx) => {
     // Relê tudo dentro da transação: o que foi planejado fora dela não vale como prova.
     const agora = await avaliarReconciliacao(tx, e);
@@ -722,9 +754,18 @@ export async function aplicarReconciliacao(
       metadata: { fonte: 'import-clickup-work', externalId: e.externalId, campos: avaliacao.camposAlterados,
         snapshotSha256: extra.snapshotSha256, preFingerprint },
     } });
-    return { postFingerprint: await fingerprintImportado(tx, e.base), auditId: avaliacao.auditId };
+    const postFingerprint = await fingerprintImportado(tx, e.base);
+    const simulacao = extra.simularRollbackDe ? await simularRollback(tx, e.base, extra.simularRollbackDe) : null;
+    return { postFingerprint, auditId: avaliacao.auditId, simulacao };
   }, { isolationLevel: 'Serializable', timeout: 120000 });
 }
+
+type SituacaoDoRollback = { estado: 'pronto' | 'bloqueado'; motivo: string };
+const ROLLBACK_PREVISTO: SituacaoDoRollback = { estado: 'pronto', motivo: 'o lote está intacto; o apply mede o rollback do lote na mesma transação e confirma' };
+const ROLLBACK_PRONTO: SituacaoDoRollback = { estado: 'pronto', motivo: 'o lote estava intacto; o rollback do lote segue disponível com o snapshot exato do lote' };
+const ROLLBACK_BLOQUEADO: SituacaoDoRollback = { estado: 'bloqueado', motivo: 'o lote já não confere com o fingerprint gravado na execução (mudança nativa no OS ou reconciliação recuperada sem o manifesto); a reconciliação não reabre o rollback do lote, que continua recusado' };
+const ROLLBACK_BLOQUEADO_NA_RECUPERACAO: SituacaoDoRollback = { estado: 'bloqueado', motivo: 'a reconciliação já estava no banco sem o manifesto; sem prova do estado intermediário, o rollback do lote continua recusado' };
+const rollbackQueFalharia = (falha: string): SituacaoDoRollback => ({ estado: 'bloqueado', motivo: `a exclusão do rollback do lote falharia agora (${falha}); a reconciliação não o reabre, e ele continua recusado` });
 
 const trecho = (v: string | null) => ({ caracteres: v?.length ?? 0, sha256: createHash('sha256').update(v ?? '').digest('hex'), inicio: (v ?? '').slice(0, 160) });
 const retrato = (r: Recorte) => ({ title: r.title, descricao: trecho(r.description) });
@@ -762,7 +803,11 @@ export async function reconciliarTarefa(db: PrismaClient, c: {
   if (av.estado === 'igual') return { ...cabecalho, estado: 'igual', noOp: true, chave: av.chave };
   const plano = { ...cabecalho, estado: av.estado, chave: av.chave, nativeId: av.spec.id, camposAlterados: av.camposAlterados,
     origemHash: { de: av.deOrigemHash, para: av.paraOrigemHash }, antes: retrato(av.antes), depois: retrato(av.depois), rastroId: av.auditId };
-  if (!c.apply) return plano;
+  if (!c.apply) {
+    const rollbackDoLote = av.estado === 'recuperar-manifesto' ? ROLLBACK_BLOQUEADO_NA_RECUPERACAO
+      : await fingerprintImportado(db, base) === ultimoLoteAtivo(c.manifest)!.postFingerprint ? ROLLBACK_PREVISTO : ROLLBACK_BLOQUEADO;
+    return { ...plano, rollbackDoLote };
+  }
 
   validarDiretorio(c.dir);
   return trancar(c.manifestPath, async () => {
@@ -781,10 +826,10 @@ export async function reconciliarTarefa(db: PrismaClient, c: {
     }));
     if (av.estado === 'recuperar-manifesto') {
       // O banco já foi reconciliado e a queda veio antes do manifesto. Sem prova do que mais mudou, o rollback automático do lote não é reaberto.
-      (proximo.reconciliations ??= []).push({ ...entrada0, backupFile: null, preFingerprint: null, postFingerprint: null, recoveredWithoutRollback: true });
+      (proximo.reconciliations ??= []).push({ ...entrada0, backupFile: null, preFingerprint: null, postFingerprint: null, recoveredWithoutRollback: true, rollbackDoLote: 'bloqueado' });
       arquivoNovo(snapshotFile, c.raw);
       salvarAtomico(c.manifestPath, proximo);
-      return { ...plano, manifestRecuperado: true, manifestPath: c.manifestPath, snapshotFile };
+      return { ...plano, rollbackDoLote: ROLLBACK_BLOQUEADO_NA_RECUPERACAO, manifestRecuperado: true, manifestPath: c.manifestPath, snapshotFile };
     }
     arquivoNovo(snapshotFile, c.raw);
     const antes = await capturar(db, base);
@@ -792,14 +837,23 @@ export async function reconciliarTarefa(db: PrismaClient, c: {
     const backupFile = join(c.dir, `clickup-work-reconciliar-${Date.now()}-${sha.slice(0, 12)}.pre-apply.json`);
     arquivoNovo(backupFile, JSON.stringify({ orgId: c.orgId, chave: av.chave, snapshotSha256: sha, capturedAt: new Date().toISOString(),
       plan: { antes: av.antes, depois: av.depois, camposAlterados: av.camposAlterados }, before: antes, previousManifest: c.manifest }, null, 2) + '\n');
-    const { postFingerprint, auditId } = await aplicarReconciliacao(db, entrada, av, preFingerprint, { snapshotSha256: sha, snapshotFile });
-    (proximo.reconciliations ??= []).push({ ...entrada0, backupFile, preFingerprint, postFingerprint });
-    // O rastro e a troca da linha mudam o fingerprint do lote; sem registrar o novo, o rollback do lote passaria a recusar por causa desta reconciliação autorizada.
+    // A troca da linha e o RASTRO mudam o fingerprint do lote. Com o lote intacto (o fingerprint de antes é o
+    // que a execução gravou), o novo valor e o estado que o rollback deixaria vão para a execução; sem isso o
+    // rollback recusaria por causa desta reconciliação autorizada. Com mudança nativa, a execução fica como
+    // está: mover o fingerprint apagaria, num rollback depois, o comentário, a hora ou o vínculo criado no OS.
     const run = ultimoLoteAtivo(proximo)!;
-    run.postFingerprintDoImport ??= run.postFingerprint;
-    run.postFingerprint = postFingerprint;
+    const intacto = preFingerprint === run.postFingerprint;
+    const { postFingerprint, auditId, simulacao } = await aplicarReconciliacao(db, entrada, av, preFingerprint,
+      { snapshotSha256: sha, snapshotFile, ...(intacto ? { simularRollbackDe: run.created } : {}) });
+    const rollbackDoLote = !simulacao ? ROLLBACK_BLOQUEADO : 'falha' in simulacao ? rollbackQueFalharia(simulacao.falha) : ROLLBACK_PRONTO;
+    (proximo.reconciliations ??= []).push({ ...entrada0, backupFile, preFingerprint, postFingerprint, rollbackDoLote: rollbackDoLote.estado });
+    if (simulacao && 'fingerprint' in simulacao) {
+      run.postFingerprintDoImport ??= run.postFingerprint;
+      run.postFingerprint = postFingerprint;
+      run.fingerprintAposRollback = simulacao.fingerprint;
+    }
     salvarAtomico(c.manifestPath, proximo);
-    return { ...plano, rastroId: auditId, manifestPath: c.manifestPath, snapshotFile, backupFile, preFingerprint, postFingerprint };
+    return { ...plano, rollbackDoLote, rastroId: auditId, manifestPath: c.manifestPath, snapshotFile, backupFile, preFingerprint, postFingerprint };
   });
 }
 
@@ -811,6 +865,8 @@ async function main() {
   if (opt['--arvore'] && opt['--rollback']) throw new Error('--arvore e --rollback são passos separados');
   if (Boolean(opt['--arvore']) !== (typeof opt['--nome-do-espaco'] === 'string')) throw new Error('--arvore e --nome-do-espaco andam juntos');
   if (opt['--reconciliar'] !== undefined && (opt['--rollback'] || opt['--offline'])) throw new Error('--reconciliar não combina com --rollback nem com --offline');
+  // Sem a empresa, o dry-run cairia no resumo genérico e sairia 0 sem ter conferido o cartão.
+  if (opt['--reconciliar'] !== undefined && typeof opt['--org-id'] !== 'string') throw new Error('--reconciliar exige --org-id e --manifest-dir; nada foi conferido');
   const raw = readFileSync(resolve(opt['--snapshot']), 'utf8');
   const snapshot = SnapshotSchema.parse(JSON.parse(raw));
   const validacao = validarSnapshot(snapshot);
