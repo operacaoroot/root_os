@@ -232,8 +232,8 @@ Três consequências que são parte da decisão, não efeito colateral:
   existe e não tem nenhum `.md`. O motivo é concreto: `configured` só pergunta se o caminho existe,
   e o `OBSIDIAN_VAULT_HOST` da VPS apontou para uma pasta vazia que não era a vault real. Desde
   17/09/2026 `/srv/marketing-os/vault` aponta para o clone da root-base: a vault lida é esse
-  clone, e a decisão sobre passar a lê-la do Google Drive está em aberto. Antes desta fatia o
-  estrago seria um índice descartável; agora seria o histórico.
+  clone. D1 (04/10/2026) decidiu que o Drive entra na root-base e a root-base continua a fonte.
+  Antes desta fatia o estrago seria um índice descartável; agora seria o histórico.
 - **O vetor não é reconstruído.** A migração do que já existe (`KnowledgeNote`) **copia** a coluna
   `embedding`, em SQL, sem chamar fornecedor nenhum. Vetor é caro e a contagem antes/depois é o
   critério de aceite, não a leitura do código.
@@ -263,8 +263,9 @@ Três consequências que são parte da decisão, não efeito colateral:
 ## A coleção `vault:` (ROOT-20, 02/10/2026)
 
 Contrato: `relatorios/ROOT-19/contrato.md` (C19-01 a C19-08), com as condições R-1 a R-10 da
-revisão ROOT-19-REV. Só a parte `vault:`: o Drive, os aliases `drive:` e a troca de fonte esperam a
-decisão de D1 (B2 aberto).
+revisão ROOT-19-REV. Só a parte `vault:`. D1 foi decidida em 04/10/2026 e fecha o B2: o Drive entra
+na root-base, a root-base continua a fonte, as chaves `vault:` ficam e não há migração para
+`drive:<fileId>`. O que a ROOT-22 fizer com o Drive, e os aliases de C19-09, ficam fora desta fatia.
 
 - **Pertença pelo índice do git.** Um `.md` da vault entra na memória quando o caminho está no
   `.git/index` (estágio 0, sem `skip-worktree` nem `intent-to-add`, modo de arquivo comum), quando

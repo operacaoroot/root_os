@@ -47,8 +47,14 @@ import { git, versionarVault } from './vault-com-git';
  *
  * A EMPRESA DA CASA (slug `root`) é uma só no banco e a suíte da 05c também a
  * reindexa: as duas tomam a mesma trava (`travarACasa`) e uma espera a outra.
- * Todo dado desta suíte mora sob o prefixo da marca; o RASTRO não se apaga (é
- * append-only), e por isso os recibos são achados pela correlação da volta.
+ * Todo caminho e toda chave que esta suíte grava levam a MARCA da execução,
+ * inclusive os arquivos na raiz da vault (`90-OS/`, `onboarding/`), e a limpeza
+ * apaga pela marca em qualquer posição e sem diferenciar caixa. Sobra derruba a
+ * execução seguinte: a pré-condição da suíte da 05c recusa a casa com linha que
+ * não é dela. Foi o que aconteceu depois do mutante M5 da ROOT-20, quando o
+ * pedido com a chave `Vault:<marca>/x.md` (V maiúsculo) passou e escapou da
+ * limpeza por prefixo exato. O RASTRO não se apaga (é append-only), e por isso
+ * os recibos são achados pela correlação da volta.
  */
 
 const URL = process.env.TEST_DATABASE_URL;
@@ -160,14 +166,13 @@ function casosContraOBanco(modoRls: boolean) {
     admin.knowledgeNote.findMany({ where: { orgId: CASA, path: { startsWith: MARCA } }, orderBy: { path: 'asc' } });
   const versoes = (itemId: string) => admin.contextItemVersion.findMany({ where: { itemId }, orderBy: { versao: 'asc' } });
 
+  /** Tudo desta execução: a marca em qualquer posição do caminho ou da chave, com a caixa que for. */
+  const daExecucao = { contains: MARCA, mode: 'insensitive' as const };
+
   async function limpar() {
-    await admin.knowledgeNote.deleteMany({
-      where: { orgId: CASA, OR: [{ path: { startsWith: MARCA } }, { path: { startsWith: `onboarding/${MARCA}` } }] },
-    });
-    await admin.contextItem.updateMany({ where: { orgId: CASA, chave: { startsWith: `vault:${MARCA}` } }, data: { supersedesId: null } });
-    await admin.contextItem.deleteMany({
-      where: { orgId: CASA, OR: [{ chave: { startsWith: `vault:${MARCA}` } }, { chave: { startsWith: MARCA } }] },
-    });
+    await admin.knowledgeNote.deleteMany({ where: { orgId: CASA, path: daExecucao } });
+    await admin.contextItem.updateMany({ where: { orgId: CASA, chave: daExecucao }, data: { supersedesId: null } });
+    await admin.contextItem.deleteMany({ where: { orgId: CASA, chave: daExecucao } });
     await admin.knowledgeNote.deleteMany({ where: { orgId: B } });
     await admin.contextItem.deleteMany({ where: { orgId: B } });
   }
@@ -284,7 +289,7 @@ function casosContraOBanco(modoRls: boolean) {
         'alterada.md': nota('alterada', { de: '2026-09-15' }),
         'gerada.md': `---\ngerado_por: root-os\ngerado_para: root\nkind: regra\n---\n${corpo('gerada')}`,
       },
-      { '90-OS/anexo.md': corpo('dado do OS') },
+      { [`90-OS/${MARCA}-anexo.md`]: corpo('dado do OS') },
     );
     const { svc } = montar();
     const v1 = await volta(svc);
@@ -790,7 +795,12 @@ function casosContraOBanco(modoRls: boolean) {
     expect({
       inalteradas: seguinte.payload?.recibo.projecao?.inalteradas ?? 'sem recibo: nada mudou',
       versao: (await item('da-base.md'))!.versao,
-      criadosPelaTela: await admin.contextItem.count({ where: { orgId: CASA, OR: [{ chave: { contains: '/x.md' } }, { chave: `${MARCA}/y` }] } }),
+      // O que esta execução tem na casa além da nota da base e da nota comum da tela: os
+      // três pedidos com chave ou origem reservada (x.md, y e z.md) não gravaram nada, em
+      // caixa nenhuma. Sobra de outra execução não é desta tela e não entra na conta.
+      criadosPelaTela: await admin.contextItem.count({
+        where: { orgId: CASA, chave: daExecucao, NOT: { chave: { in: [`vault:${MARCA}/da-base.md`, `${MARCA}/da-tela`] } } },
+      }),
     }).toEqual({ inalteradas: 'sem recibo: nada mudou', versao: 1, criadosPelaTela: 0 });
 
     const comum = {
@@ -903,13 +913,13 @@ function casosContraOBanco(modoRls: boolean) {
         content: 'ritual de fechamento da casa', links: [], wordCount: 5, fileTime: new Date('2026-09-30T12:00:00Z'),
       },
     });
-    criarVault({ 'a.md': nota('a') }, { 'onboarding/da-base.md': corpo('pasta com o nome reservado') });
+    criarVault({ 'a.md': nota('a') }, { [`onboarding/${MARCA}-da-base.md`]: corpo('pasta com o nome reservado') });
     const { svc } = montar();
     const r = await volta(svc);
     expect({
       volta: r.r,
       espelho: (await admin.knowledgeNote.findFirst({ where: { orgId: CASA, path: `onboarding/${MARCA}-tema.md` } }))?.content,
-      daBaseNoIndice: await admin.knowledgeNote.count({ where: { orgId: CASA, path: 'onboarding/da-base.md' } }),
+      daBaseNoIndice: await admin.knowledgeNote.count({ where: { orgId: CASA, path: `onboarding/${MARCA}-da-base.md` } }),
       foraDaColecao: r.payload?.recibo.descoberta.pastasForaDaColecao,
       espelhoPreservado: r.payload?.recibo.indexacao.espelhoDoOnboardingPreservado,
     }).toEqual({

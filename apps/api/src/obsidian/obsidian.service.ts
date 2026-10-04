@@ -112,9 +112,9 @@ export class ObsidianService implements OnModuleInit {
    * isso nem sempre foi verdade: `OBSIDIAN_VAULT_PATH=/vault` apontou para
    * `/srv/marketing-os/vault`, uma pasta VAZIA desde 13/07/2026. Desde
    * 17/09/2026 esse caminho aponta para o clone da root-base, e a vault lida
-   * por `pasta` é esse clone. Se a vault da casa passa a ser lida do Google
-   * Drive em vez do clone é decisão em aberto (D1, com o Pedro); este texto não
-   * a antecipa.
+   * por `pasta` é esse clone. D1 foi decidida em 04/10/2026: o Drive entra na
+   * root-base e a root-base continua a fonte, então a casa segue lida por
+   * `pasta` e as chaves `vault:` não mudam.
    *
    * `drive` lê a vault direto do Drive, pela pasta que `OBSIDIAN_DRIVE_FOLDER_ID`
    * apontar — do mesmo jeito que o Obsidian pede uma pasta para ser a vault. O
@@ -597,8 +597,9 @@ export class ObsidianService implements OnModuleInit {
    * reindexação pular o que não mudou — ver `reindex`.
    *
    * O Drive não tem índice do git: a pertença por rastreamento (C19-03) vale
-   * para a `root-base` lida da pasta. A coleção do Drive tem pertença e recibo
-   * próprios, que são da ROOT-22, depois da decisão de D1 (B2).
+   * para a `root-base` lida da pasta. D1 (04/10/2026) manteve a root-base como
+   * fonte; uma coleção do Drive, se a ROOT-22 a criar, terá pertença e recibo
+   * próprios.
    */
   private async listarNoDrive(orgId: string): Promise<ArquivoDaVault[]> {
     /*

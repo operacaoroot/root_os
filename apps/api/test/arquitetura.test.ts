@@ -614,10 +614,10 @@ const EXCECOES: Excecao[] = [
     conector: 'src/google/google.service.ts',
     motivo:
       'A METADE DA LEITURA DO MESMO CASO DO ESPELHO, e aceita pelo mesmo argumento. O espelho ' +
-      'ESCREVE no Drive da casa por rotina; este lê. A vault do Obsidian nunca esteve montada ' +
-      'nesta instalação — `OBSIDIAN_VAULT_PATH=/vault` aponta para uma pasta VAZIA desde ' +
-      '13/07/2026, e a vault real sempre morou no Google Drive. Com `OBSIDIAN_FONTE=drive` o ' +
-      'conector lê a pasta que `OBSIDIAN_DRIVE_FOLDER_ID` aponta. ' +
+      'ESCREVE no Drive da casa por rotina; este lê. Produção lê a vault pela pasta: desde ' +
+      '17/09/2026 `OBSIDIAN_VAULT_PATH=/vault` é o clone da root-base, e D1 (04/10/2026) manteve ' +
+      'a root-base como fonte, com o Drive entrando nela. O modo `OBSIDIAN_FONTE=drive`, ' +
+      'desligado, lê a pasta que `OBSIDIAN_DRIVE_FOLDER_ID` aponta. ' +
       'OS DOIS MÉTODOS SÃO DE DESTINO FIXO: `listarVaultNoDrive(orgId, folderId)` e ' +
       '`baixarTextoDoDrive(orgId, fileId)` recebem pasta e arquivo, NUNCA URL nem método — o ' +
       'passa-tudo `api()` segue privado desde a fatia 3.3, e mover este import não moveria ' +

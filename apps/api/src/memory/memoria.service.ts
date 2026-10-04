@@ -969,8 +969,8 @@ export class MemoriaService {
    * NÃO É HIPOTÉTICO NESTA INSTALAÇÃO. O caminho `/srv/marketing-os/vault`,
    * para onde o `OBSIDIAN_VAULT_HOST` da VPS continua apontando, esteve vazio e
    * não era a vault real; desde 17/09/2026 ele aponta para o clone da
-   * root-base, que é a vault lida hoje (a decisão sobre o Drive está em
-   * aberto). Antes desta fatia o estrago era um índice descartável
+   * root-base, que é a vault lida hoje (D1, decidida em 04/10/2026, manteve a
+   * root-base como fonte). Antes desta fatia o estrago era um índice descartável
    * (`KnowledgeNote` é recriado a cada volta). Agora é o histórico, que não
    * vence nunca.
    *
