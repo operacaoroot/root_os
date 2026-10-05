@@ -11,6 +11,7 @@ import { CheckoutDeTarefaService } from '../src/work/checkout-de-tarefa.service'
 import { WorkService } from '../src/work/work.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { travarSuiteDoImportador } from './trava-do-importador';
 
 /*
  * ==========================================================================
@@ -178,6 +179,11 @@ describe.skipIf(!URL_DO_TESTE)('árvore do lote no banco (ROOT-17)', () => {
   const estados = async (lista: Spec[]) => (await planejar(db, lista, registros(lista))).map((a) => a.estado);
   const todosIguais = async (lista: Spec[]) => (await estados(lista)).every((e) => e === 'igual');
 
+  // Uma suíte da CLI do importador por vez no banco (trava-do-importador.ts). Os ganchos "after"
+  // rodam em pilha no vitest, então a trava só sai depois da limpeza abaixo.
+  let soltarTrava: () => Promise<void> = async () => {};
+  beforeAll(async () => { soltarTrava = await travarSuiteDoImportador(URL_DO_TESTE!); }, 300_000);
+  afterAll(async () => { await soltarTrava(); });
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });
     sessaoX = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });

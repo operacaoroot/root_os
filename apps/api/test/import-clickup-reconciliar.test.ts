@@ -11,6 +11,7 @@ import {
   ACAO_RECONCILIACAO, aplicarReconciliacao, avaliarReconciliacao, classificarRollback, fingerprintImportado, reconciliarTarefa, reverterLote,
 } from '../prisma/import-clickup-work';
 import { exigirBancoDescartavel } from './banco-de-teste';
+import { travarSuiteDoImportador } from './trava-do-importador';
 
 /*
  * ROOT-11, P4: `--reconciliar 86ak8h6kq`. O cartão foi reaproveitado no ClickUp
@@ -151,6 +152,11 @@ describe.skipIf(!URL_DO_TESTE)('importador ClickUp → Work: --reconciliar (ROOT
     } finally { await tirarGatilhoDeSono(); }
   }
 
+  // Uma suíte da CLI do importador por vez no banco (trava-do-importador.ts). Os ganchos "after"
+  // rodam em pilha no vitest, então a trava só sai depois da limpeza abaixo.
+  let soltarTrava: () => Promise<void> = async () => {};
+  beforeAll(async () => { soltarTrava = await travarSuiteDoImportador(URL_DO_TESTE!); }, 300_000);
+  afterAll(async () => { await soltarTrava(); });
   beforeAll(async () => {
     db = new PrismaClient({ datasources: { db: { url: URL_DO_TESTE } } });
     await db.org.upsert({ where: { id: ORG }, create: { id: ORG, name: 'reconciliar', slug: 'reconciliar-p4' }, update: {} });
