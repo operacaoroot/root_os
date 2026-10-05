@@ -25,7 +25,7 @@ import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
 import { descobrirNaPasta } from './disco-da-vault';
-import { lerRepositorioDaVault, marcaDoRepositorio } from './estado-do-git';
+import { atributosConvertem, lerRepositorioDaVault, marcaDoRepositorio } from './estado-do-git';
 import { classificarAVault, type PertencaDaVault } from './pertenca-da-vault';
 import {
   assinaturaDoRecibo,
@@ -775,13 +775,21 @@ export class ObsidianService implements OnModuleInit {
     let marcaAntes: ReturnType<typeof marcaDoRepositorio> | null = null;
 
     if (this.fonte === 'pasta') {
-      const passeio = descobrirNaPasta(this.vault);
-      if (passeio.mdNoDisco === 0) throw this.vaultVazia();
-      // O `.git` primeiro, os arquivos depois: um `pull` no meio deixa arquivo
-      // novo sem blob no índice velho (fica de fora) em vez do contrário.
-      const repositorio = lerRepositorioDaVault(this.vault, passeio.atributos);
+      /*
+       * O `.git` PRIMEIRO, OS ARQUIVOS DEPOIS (R-2). O `pull` grava os arquivos,
+       * depois o índice, depois o `HEAD`; lidos nesta ordem, um `pull` no meio só
+       * deixa o disco À FRENTE do índice lido. Arquivo novo fica de fora como não
+       * rastreado; o mexido e o que saiu do disco ficam "fora do git", que a
+       * projeção conta como vistos (R-3), e a origem de um movimento continua
+       * viva para a volta seguinte mover com o mesmo `itemId`. Na ordem contrária
+       * a origem saía como não rastreada e era arquivada (C-1 da FUL-33). A marca
+       * de antes é a desta leitura, e a conferência no fim da volta acusa o `pull`.
+       */
+      const repositorio = lerRepositorioDaVault(this.vault, []);
       marcaAntes = repositorio.marca;
       recibo.montante = { ...repositorio.montante, mudouNoMeio: false };
+      const passeio = descobrirNaPasta(this.vault);
+      if (passeio.mdNoDisco === 0) throw this.vaultVazia();
 
       const ilegiveis = passeio.ilegiveis.map((i) => i.caminho.toString('utf8').normalize('NFC'));
       recibo.leitura.falhas = ilegiveis.length;
@@ -792,7 +800,7 @@ export class ObsidianService implements OnModuleInit {
       const pertenca = classificarAVault({
         arquivos,
         indice: repositorio.indice?.ok ? repositorio.indice.entradas : null,
-        naoVerificavel: repositorio.naoVerificavel,
+        naoVerificavel: repositorio.naoVerificavel ?? conversaoNosAtributos(passeio.atributos),
       });
       recibo.descoberta = {
         ...pertenca.contagens,
@@ -1450,4 +1458,18 @@ function snippet(content: string, q: string): string {
   if (idx < 0) return text.slice(0, 180);
   const start = Math.max(0, idx - 70);
   return (start > 0 ? '…' : '') + text.slice(start, start + 180) + '…';
+}
+
+/**
+ * Os `.gitattributes` que o passeio achou ligam conversão? É a regra e a frase de
+ * `lerRepositorioDaVault`, aplicadas depois do passeio porque o `.git` é lido
+ * antes dele (R-2). O que o disco não deixou ler chega como `* filter=ilegivel`
+ * e conta como conversão: a volta para sem escrever (C19-03).
+ */
+function conversaoNosAtributos(atributos: Array<{ caminho: string; texto: string }>): string | null {
+  for (const a of atributos) {
+    const linha = atributosConvertem(a.texto);
+    if (linha) return `${a.caminho} liga conversão de conteúdo (${linha}), e o disco deixa de ser o blob`;
+  }
+  return null;
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,6 +56,28 @@ import { git, versionarVault } from './vault-com-git';
  * limpeza por prefixo exato. O RASTRO não se apaga (é append-only), e por isso
  * os recibos são achados pela correlação da volta.
  */
+
+/*
+ * O `pull` NO MEIO DA VOLTA (R-2, C-1 da FUL-33). `descobrirNaPasta` é a função
+ * com que o serviço lê os `.md`; aqui ela ganha um gancho logo antes e outro
+ * logo depois do passeio, armados por um caso para a volta seguinte e
+ * desarmados ao rodar. Sem gancho armado, é a função de sempre.
+ */
+const noPasseio = vi.hoisted(() => ({}) as { antes?: () => void; depois?: () => void });
+vi.mock('../src/obsidian/disco-da-vault', async (original) => {
+  const real = await original<typeof import('../src/obsidian/disco-da-vault')>();
+  return {
+    ...real,
+    descobrirNaPasta: (raiz: string) => {
+      const { antes, depois } = noPasseio;
+      noPasseio.antes = noPasseio.depois = undefined;
+      antes?.();
+      const passeio = real.descobrirNaPasta(raiz);
+      depois?.();
+      return passeio;
+    },
+  };
+});
 
 const URL = process.env.TEST_DATABASE_URL;
 const URL_TENANT = process.env.TENANT_DATABASE_URL;
@@ -259,6 +281,7 @@ function casosContraOBanco(modoRls: boolean) {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    noPasseio.antes = noPasseio.depois = undefined;
     for (const v of VARIAVEIS) {
       if (salvas[v] === undefined) delete process.env[v];
       else process.env[v] = salvas[v];
@@ -1008,6 +1031,215 @@ function casosContraOBanco(modoRls: boolean) {
       depois: antes,
       resultado: 'falhou',
       saude: 'down',
+    });
+  }, TEMPO);
+
+  // -------------------------------------------------------------------------
+  // O `pull` no meio da volta (R-2, C-1 da FUL-33)
+  // -------------------------------------------------------------------------
+
+  /** O que a volta escreveu na memória; os pares ficam de fora (vão sob `sigiloso`). */
+  const escritas = (payload: Record<string, any> | null) => {
+    const p = payload?.recibo.projecao;
+    return p ? { criadas: p.criadas, alteradas: p.alteradas, arquivadas: p.arquivadas, movidas: p.movidas } : null;
+  };
+  const semMarca = (caminho: string) => caminho.slice(MARCA.length + 1);
+  const estado = async () => ({
+    indice: (await indice()).map((n) => n.path),
+    itens: (await itens()).map((i) => [i.chave, i.versao, i.arquivadoEm]),
+  });
+
+  /** Uma volta boa, uma com o `pull` de `b.md → c.md` armado no passeio, e a seguinte. */
+  async function moverNoMeio(lado: 'antes' | 'depois') {
+    const v = criarVault({ 'a.md': nota('a'), 'b.md': nota('b') });
+    const { svc } = montar();
+    await volta(svc);
+    const origem = (await item('b.md'))!;
+    const headAntes = git(v.raiz, 'rev-parse', 'HEAD').trim();
+    noPasseio[lado] = () => {
+      v.mover('b.md', 'c.md');
+      v.commit();
+    };
+    const meio = await volta(svc);
+    const headDepois = git(v.raiz, 'rev-parse', 'HEAD').trim();
+    const noMeio = {
+      origem: await item('b.md'),
+      destino: await item('c.md'),
+      indice: (await indice()).map((n) => semMarca(n.path)),
+    };
+    const seguinte = await volta(svc);
+    const destino = await item('c.md');
+    return {
+      origem,
+      headAntes,
+      headDepois,
+      meio,
+      noMeio,
+      seguinte,
+      depois: {
+        origem: await item('b.md'),
+        destino,
+        versoes: destino && (await versoes(destino.id)).map((h) => [h.versao, h.mudanca, semMarca(h.sourceRef ?? '')]),
+        indice: (await indice()).map((n) => semMarca(n.path)),
+      },
+    };
+  }
+
+  /** A volta seguinte de `moverNoMeio`, como ela deve sair nas duas janelas. */
+  const seguinteDoMovimento = (c: Awaited<ReturnType<typeof moverNoMeio>>) => ({
+    observado: {
+      volta: c.seguinte.r,
+      mudouNoMeio: c.seguinte.payload?.recibo.montante.mudouNoMeio,
+      commit: c.seguinte.payload?.recibo.montante.commit,
+      resultado: c.seguinte.payload?.resultado,
+      escritas: escritas(c.seguinte.payload),
+      origem: c.depois.origem,
+      destino: c.depois.destino && [c.depois.destino.id, c.depois.destino.arquivadoEm],
+      versoes: c.depois.versoes,
+      indice: c.depois.indice,
+    },
+    esperado: {
+      volta: { ok: 2 },
+      mudouNoMeio: false,
+      commit: c.headDepois,
+      resultado: 'ok',
+      escritas: { criadas: 0, alteradas: 0, arquivadas: 0, movidas: 1 },
+      origem: null,
+      destino: [c.origem.id, null],
+      versoes: [
+        [1, 'criacao', 'b.md'],
+        [2, 'alteracao', 'c.md'],
+      ],
+      indice: ['a.md', 'c.md'],
+    },
+  });
+
+  it('R-2 (C-1): pull com movimento logo DEPOIS do passeio — a volta sai marcada, com o commit que leu, sem arquivar a origem; a seguinte move com o mesmo itemId', async () => {
+    const c = await moverNoMeio('depois');
+    const seguinte = seguinteDoMovimento(c);
+    expect({
+      pull: c.headDepois !== c.headAntes,
+      meio: {
+        volta: c.meio.r,
+        mudouNoMeio: c.meio.payload?.recibo.montante.mudouNoMeio,
+        commit: c.meio.payload?.recibo.montante.commit,
+        resultado: c.meio.payload?.resultado,
+        motivos: c.meio.payload?.motivos,
+        escritas: escritas(c.meio.payload),
+        origem: c.noMeio.origem && [c.noMeio.origem.id, c.noMeio.origem.arquivadoEm],
+        destino: c.noMeio.destino,
+        indice: c.noMeio.indice,
+      },
+      seguinte: seguinte.observado,
+    }).toEqual({
+      pull: true,
+      meio: {
+        volta: { ok: 2 },
+        mudouNoMeio: true,
+        commit: c.headAntes,
+        resultado: 'parcial',
+        motivos: ['o HEAD ou o índice do git mudaram no meio da volta'],
+        escritas: { criadas: 0, alteradas: 0, arquivadas: 0, movidas: 0 },
+        origem: [c.origem.id, null],
+        destino: null,
+        indice: ['a.md', 'b.md'],
+      },
+      seguinte: seguinte.esperado,
+    });
+  }, TEMPO);
+
+  it('R-2 (C-1): pull com movimento entre a leitura do .git e o passeio — a origem fica como vista e no índice; a seguinte move com o mesmo itemId', async () => {
+    const c = await moverNoMeio('antes');
+    const seguinte = seguinteDoMovimento(c);
+    expect({
+      pull: c.headDepois !== c.headAntes,
+      meio: {
+        volta: c.meio.r,
+        mudouNoMeio: c.meio.payload?.recibo.montante.mudouNoMeio,
+        commit: c.meio.payload?.recibo.montante.commit,
+        resultado: c.meio.payload?.resultado,
+        motivos: c.meio.payload?.motivos,
+        descoberta: c.meio.payload?.recibo.descoberta,
+        escritas: escritas(c.meio.payload),
+        origem: c.noMeio.origem && [c.noMeio.origem.id, c.noMeio.origem.arquivadoEm],
+        destino: c.noMeio.destino,
+        indice: c.noMeio.indice,
+      },
+      seguinte: seguinte.observado,
+    }).toEqual({
+      pull: true,
+      meio: {
+        volta: { ok: 1 },
+        mudouNoMeio: true,
+        commit: c.headAntes,
+        resultado: 'parcial',
+        motivos: ['o HEAD ou o índice do git mudaram no meio da volta', '1 arquivo(s) rastreado(s) apagado(s) do disco fora do git'],
+        descoberta: expect.objectContaining({
+          mdNoDisco: 2,
+          rastreados: 1,
+          naoRastreados: 1,
+          apagadosForaDoGit: 1,
+          membros: 1,
+          rastreamento: 'ok',
+        }),
+        escritas: { criadas: 0, alteradas: 0, arquivadas: 0, movidas: 0 },
+        origem: [c.origem.id, null],
+        destino: null,
+        indice: ['a.md', 'b.md'],
+      },
+      seguinte: seguinte.esperado,
+    });
+  }, TEMPO);
+
+  it('R-2 e C19-03: .gitattributes que converte, trazido por um pull entre a leitura do .git e o passeio, segura a volta inteira', async () => {
+    const v = criarVault({ 'a.md': nota('a'), 'b.md': nota('b') });
+    const { svc } = montar();
+    await volta(svc);
+    const antes = await estado();
+    noPasseio.antes = () => {
+      v.escrever('.gitattributes', '*.md text eol=crlf\n');
+      v.escrever('c.md', nota('c'));
+      v.apagar('b.md');
+      v.commit();
+    };
+    const r = await volta(svc);
+    expect({
+      volta: r.r,
+      depois: await estado(),
+      resultado: r.payload?.resultado,
+      rastreamento: r.payload?.recibo.descoberta.rastreamento,
+    }).toEqual({
+      volta: { erro: expect.stringMatching(/rastreamento não verificável.*\.gitattributes liga conversão.*Nada foi criado/), status: 503 },
+      depois: antes,
+      resultado: 'falhou',
+      rastreamento: `${MARCA}/.gitattributes liga conversão de conteúdo ("*.md text eol=crlf"), e o disco deixa de ser o blob`,
+    });
+  }, TEMPO);
+
+  it('C19-03: .gitattributes que o disco não deixa ler conta como conversão também com o .git lido antes do passeio', async () => {
+    const v = criarVault({ 'a.md': nota('a'), 'b.md': nota('b') });
+    const { svc } = montar();
+    await volta(svc);
+    const antes = await estado();
+    v.escrever('c.md', nota('c'));
+    v.apagar('b.md');
+    v.commit();
+    // Legível, esta linha não converteria nada: o que segura a volta é só a leitura que falha.
+    const atributos = path.join(v.raiz, MARCA, '.gitattributes');
+    writeFileSync(atributos, '*.png binary\n');
+    chmodSync(atributos, 0o000);
+    expect(() => readFileSync(atributos), 'a prova pede usuário sem privilégio: como root, chmod 000 não impede a leitura').toThrow();
+    const r = await volta(svc);
+    expect({
+      volta: r.r,
+      depois: await estado(),
+      resultado: r.payload?.resultado,
+      rastreamento: r.payload?.recibo.descoberta.rastreamento,
+    }).toEqual({
+      volta: { erro: expect.stringMatching(/rastreamento não verificável.*\.gitattributes liga conversão.*Nada foi criado/), status: 503 },
+      depois: antes,
+      resultado: 'falhou',
+      rastreamento: `${MARCA}/.gitattributes liga conversão de conteúdo ("* filter=ilegivel"), e o disco deixa de ser o blob`,
     });
   }, TEMPO);
 }
