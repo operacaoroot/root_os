@@ -538,7 +538,7 @@ fs.renameSync = function (de, para) {
     expect(await rastros()).toHaveLength(0);
   }, 120000);
 
-  it('subpasta nativa dentro da pasta do lote (fora do fingerprint): a exclusão do rollback falharia, então a reconciliação aplica e o rollback fica recusado com o motivo', async () => {
+  it('subpasta nativa dentro da pasta do lote (no fingerprint desde a ROOT-17, senão barrada pela exclusão simulada): a reconciliação aplica e o rollback fica recusado com o motivo', async () => {
     await db.workFolder.create({ data: { orgId: ORG, parentId: idDe('folder:marketing'), name: 'Subpasta do OS' } });
     const importado = manifesto().runs.at(-1);
     const rec = cli(['--reconciliar', ALVO, '--apply'], gravar('v2', V2()));
@@ -552,7 +552,8 @@ fs.renameSync = function (de, para) {
     expect(await rastros()).toHaveLength(1);
     const saida = JSON.parse(rec.stdout);
     expect(saida).toMatchObject({ estado: 'reconciliar', rollbackDoLote: { estado: 'bloqueado' } });
-    expect(saida.rollbackDoLote.motivo).toContain('a exclusão do rollback do lote falharia agora');
+    // Com a ROOT-17 a subpasta já muda o fingerprint e a simulação nem roda; sem ela, a FK barraria a exclusão simulada.
+    expect(saida.rollbackDoLote.motivo).toMatch(/o lote já não confere com o fingerprint gravado na execução|a exclusão do rollback do lote falharia agora/);
     expect(manifesto().reconciliations.at(-1)).toMatchObject({ rollbackDoLote: 'bloqueado' });
   }, 120000);
 
@@ -723,6 +724,28 @@ fs.renameSync = function (de, para) {
     expect(semPasta.status).toBe(1);
     expect(semPasta.stderr).toContain('--manifest-dir é obrigatório');
     expect(await estado()).toBe(antes);
+    expect(readdirSync(dir).sort()).toEqual(arquivos);
+  }, 120000);
+
+  it('--reconciliar com --arvore recusa com exit 1 no dry-run e no apply, antes de ler o snapshot, sem reconciliar nem montar a árvore', async () => {
+    const antes = await estado();
+    const arquivos = readdirSync(dir).sort();
+    const manifestoAntes = readFileSync(manifestPath(), 'utf8');
+    const pastas = () => db.workFolder.findMany({ where: { orgId: ORG }, orderBy: { id: 'asc' } });
+    const pastasAntes = JSON.stringify(await pastas());
+    const v2 = gravar('v2', V2());
+    const juntos = ['--reconciliar', ALVO, '--arvore', '--nome-do-espaco', 'Espaço do teste'];
+    for (const r of [cli(juntos, v2), cli([...juntos, '--apply'], v2), cli([...juntos, '--apply'], join(dir, '..', `nao-existe-${process.pid}.json`))]) {
+      expect(r.status, r.stderr).toBe(1);
+      expect(r.stderr).toContain('--reconciliar não combina com --arvore');
+      expect(r.stdout).toBe('');
+    }
+    expect(await estado()).toBe(antes);
+    expect(JSON.stringify(await pastas())).toBe(pastasAntes);
+    expect(await db.workSpace.count({ where: { orgId: ORG } })).toBe(0);
+    expect((await linhaDoAlvo()).title).toBe(TITULO_V1);
+    expect(await rastros()).toHaveLength(0);
+    expect(readFileSync(manifestPath(), 'utf8')).toBe(manifestoAntes);
     expect(readdirSync(dir).sort()).toEqual(arquivos);
   }, 120000);
 });

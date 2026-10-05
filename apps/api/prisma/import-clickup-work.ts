@@ -423,9 +423,11 @@ type SimulacaoDoRollback = { fingerprint: string } | { falha: string };
 
 /**
  * Mede o estado que o rollback do lote deixaria agora, sem gravar: a mesma exclusão
- * do `reverterLote`, num savepoint desfeito antes de sair. Exclusão recusada (uma
- * subpasta nativa fica fora do fingerprint e a FK barra a pasta do lote) quer dizer
- * que o rollback real também falharia: volta o motivo. Se o desfazer não devolver o
+ * do `reverterLote`, num savepoint desfeito antes de sair. Exclusão recusada quer dizer
+ * que o rollback real também falharia: volta o motivo. Desde a ROOT-17 a subpasta nativa
+ * dentro da pasta do lote entra no fingerprint: o lote deixa de estar intacto e esta
+ * simulação nem roda. Ela fica como segunda barreira, para o que muda durante a própria
+ * transação (uma escrita concorrente, por exemplo). Se o desfazer não devolver o
  * fingerprint de antes da simulação, a transação inteira aborta.
  */
 async function simularRollback(tx: Prisma.TransactionClient, specs: Spec[], created: Record<string, string[]>): Promise<SimulacaoDoRollback> {
@@ -865,6 +867,8 @@ async function main() {
   if (opt['--arvore'] && opt['--rollback']) throw new Error('--arvore e --rollback são passos separados');
   if (Boolean(opt['--arvore']) !== (typeof opt['--nome-do-espaco'] === 'string')) throw new Error('--arvore e --nome-do-espaco andam juntos');
   if (opt['--reconciliar'] !== undefined && (opt['--rollback'] || opt['--offline'])) throw new Error('--reconciliar não combina com --rollback nem com --offline');
+  // Juntas, só a reconciliação rodaria (o ramo dela vem antes) e a árvore sairia sem efeito; cada passo roda sozinho.
+  if (opt['--reconciliar'] !== undefined && opt['--arvore']) throw new Error('--reconciliar não combina com --arvore; rode um passo de cada vez');
   // Sem a empresa, o dry-run cairia no resumo genérico e sairia 0 sem ter conferido o cartão.
   if (opt['--reconciliar'] !== undefined && typeof opt['--org-id'] !== 'string') throw new Error('--reconciliar exige --org-id e --manifest-dir; nada foi conferido');
   const raw = readFileSync(resolve(opt['--snapshot']), 'utf8');
