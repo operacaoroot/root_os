@@ -20,7 +20,7 @@ import {
   RegistroDeConectores,
 } from '../integrations/conectores.registry';
 import { sigiloso } from '../gateway/event-log.service';
-import { MemoriaService, resumoVazio, VaultSuspeitaError } from '../memory/memoria.service';
+import { MemoriaService, resumoVazio, VaultSuspeitaError, type NotaDaVaultParaProjetar } from '../memory/memoria.service';
 import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
@@ -1110,14 +1110,7 @@ export class ObsidianService implements OnModuleInit {
           body: n.content,
           tags: n.tags,
           embedding: vetorPorCaminho.get(n.path) ?? null,
-          cabecalho: n.cabecalho
-            ? {
-                kind: n.cabecalho.kind,
-                validFrom: n.cabecalho.validFrom,
-                validUntil: n.cabecalho.validUntil,
-                substitui: this.substituiResolvido(n, caminhos),
-              }
-            : undefined,
+          cabecalho: this.cabecalhoParaProjecao(n, caminhos),
         })),
         { vistos },
       );
@@ -1162,14 +1155,19 @@ export class ObsidianService implements OnModuleInit {
     return projecao;
   }
 
-  /** O caminho que `substitui:` aponta, normalizado (R-8); sem resolução vira aviso na projeção. */
-  private substituiResolvido(n: ParsedNote, caminhos: ReadonlySet<string>): string | null {
-    const valor = n.cabecalho?.substitui;
-    if (!valor) return null;
-    const { caminho } = resolverSubstitui(valor, n.path, caminhos);
-    // Sem caminho (fora da raiz, nome ambíguo) a projeção recebe o valor cru e o
-    // conta como "sem alvo", com o aviso no recibo.
-    return caminho ?? valor;
+  /** Preserva os avisos do leitor e impede que um alvo recusado seja buscado pelo valor cru. */
+  private cabecalhoParaProjecao(n: ParsedNote, caminhos: ReadonlySet<string>): NotaDaVaultParaProjetar['cabecalho'] {
+    const cab = n.cabecalho;
+    if (!cab) return undefined;
+    const alvo = cab.substitui !== null ? resolverSubstitui(cab.substitui, n.path, caminhos) : null;
+    return {
+      kind: cab.kind,
+      validFrom: cab.validFrom,
+      validUntil: cab.validUntil,
+      substitui: alvo?.caminho ?? null,
+      avisos: [...cab.avisos, ...(alvo?.aviso ? [alvo.aviso] : [])],
+      substituicaoRecusada: alvo !== null && alvo.caminho === null,
+    };
   }
 
   /*

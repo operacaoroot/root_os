@@ -254,6 +254,10 @@ export interface NotaDaVaultParaProjetar {
     validUntil: Date | null;
     /** O caminho (NFC) que `substitui:` aponta, já normalizado; `null` quando não há. */
     substitui: string | null;
+    /** Avisos do leitor, com valores privados; o recibo os marca como sigilosos. */
+    avisos?: string[];
+    /** Havia `substitui`, mas o leitor recusou o alvo antes da busca na memória. */
+    substituicaoRecusada?: boolean;
   };
 }
 
@@ -1220,9 +1224,19 @@ export class MemoriaService {
     adiados: Array<[string, NotaDaVaultParaProjetar]>,
   ): Promise<string | null | undefined> {
     if (!nota.cabecalho) return undefined;
+    for (const aviso of nota.cabecalho.avisos ?? []) resumo.avisos.push(`${nota.caminho}: ${aviso}`);
+    if (nota.cabecalho.substituicaoRecusada) {
+      resumo.substituicoes.semAlvo++;
+      return null;
+    }
     const substitui = nota.cabecalho.substitui;
     if (!substitui) return null;
     const chaveDoAlvo = chaveDaVault(substitui);
+    if (chaveDoAlvo === chave) {
+      resumo.substituicoes.semAlvo++;
+      resumo.avisos.push(`${nota.caminho}: substitui "${substitui}" aponta para a própria nota`);
+      return null;
+    }
     const alvo = await this.porChave(orgId, chaveDoAlvo);
     if (alvo) {
       resumo.substituicoes.resolvidas++;

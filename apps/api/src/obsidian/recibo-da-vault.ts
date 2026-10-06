@@ -153,6 +153,8 @@ export function assinaturaDoRecibo(r: ReciboDaVault, resultado: { resultado: Res
     guardas: r.projecao?.guardas ?? null,
     falhasDaProjecao: r.projecao?.falhas ?? null,
     substituicoesSemAlvo: r.projecao?.substituicoes.semAlvo ?? null,
+    // O valor privado não entra no estado público; mudanças nos avisos também geram recibo.
+    avisosDaProjecao: r.projecao?.avisos.map((a) => createHash('sha256').update(a).digest('hex')) ?? null,
   };
   return createHash('sha256').update(canonizar(estado)).digest('hex');
 }
