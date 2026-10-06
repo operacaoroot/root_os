@@ -91,7 +91,30 @@ export class ReportsService {
     const periodEnd = new Date(data.trafego.janela.until);
 
     // UUIDs ficam no snapshot persistido; o modelo recebe os totais e exemplos.
-    const promptData = { ...data, dashboard: { ...data.dashboard, taskIds: undefined }, tarefas: { ...data.tarefas, ids: undefined } };
+    const promptData = {
+      ...data,
+      dashboard: {
+        leadsToday: data.dashboard.leadsToday,
+        leadsWeek: data.dashboard.leadsWeek,
+        leadsMonth: data.dashboard.leadsMonth,
+        conversions: data.dashboard.conversions,
+        sales: data.dashboard.sales,
+        revenue: data.dashboard.revenue,
+        conversionRate: data.dashboard.conversionRate,
+        cpl: data.dashboard.cpl,
+        overdueTasks: data.dashboard.overdueTasks,
+        activeCampaigns: data.dashboard.activeCampaigns,
+        campaignsAtRisk: data.dashboard.campaignsAtRisk,
+        criticalAlerts: data.dashboard.criticalAlerts,
+        taskSource: data.dashboard.taskSource,
+        taskTotal: data.dashboard.taskTotal,
+        source: { tool: data.dashboard.source.tool },
+      },
+      tarefas: {
+        source: { tool: data.tarefas.source.tool },
+        total: data.tarefas.total,
+      },
+    };
     const user = `Data de referência: ${periodEnd.toISOString().slice(0, 10)}.
 Dados (JSON):
 ${JSON.stringify(promptData)}`;
