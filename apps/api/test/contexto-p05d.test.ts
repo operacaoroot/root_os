@@ -39,8 +39,11 @@ function bancada() {
   const alterar = vi.spyOn(memoria, 'alterar').mockImplementation(async (orgId, id, n) => {
     const item = itens.get(id)!;
     expect(item.orgId).toBe(orgId);
-    Object.assign(item, n, { validFrom: n.validFrom?.toISOString() ?? null,
-      validUntil: n.validUntil?.toISOString() ?? null, versao: item.versao + 1 });
+    Object.assign(item, n, {
+      ...('validFrom' in n ? { validFrom: n.validFrom?.toISOString() ?? null } : {}),
+      ...('validUntil' in n ? { validUntil: n.validUntil?.toISOString() ?? null } : {}),
+      versao: item.versao + 1,
+    });
     return item;
   });
   const obsidian = new ObsidianService(prisma, new ConectoresConfiguradosRegistry(),
@@ -100,6 +103,45 @@ describe('P-05d: autoalvo e avisos entre coletor, projeção e recibo', () => {
     expect(item).toMatchObject(antes);
     expect(r.alteradas).toBe(1);
     expect(r.avisos).toHaveLength(1);
+  });
+
+  // R1 do revisor: mesmo input de cache, com datas preservadas pelo dublê.
+  it('limpa autoalvo persistido com cabeçalho reaproveitado e a segunda volta é idempotente', async () => {
+    const b = bancada();
+    const lida = { ...lerNotaDaVault('privado/n.md',
+      '---\nkind: regra\nvalido_de: 2026-09-15\nvalido_ate: 2026-12-31\n---\nCorpo persistido'), fileTime: new Date(0) };
+    await b.obsidian['projetarNaMemoria']('casa', [lida], new Map(), []);
+    const item = [...b.itens.values()][0];
+    item.supersedesId = item.id;
+    const { supersedesId: _autoalvo, versao, ...preservado } = { ...item };
+    b.alterar.mockClear();
+    const vetor = vi.spyOn(b.memoria, 'gravarVetor').mockResolvedValue(1);
+    const cache = { ...lida, cabecalho: undefined };
+    const p = await b.obsidian['projetarNaMemoria']('casa', [cache], new Map(), []);
+    expect.soft(item.supersedesId).toBeNull();
+    expect.soft(p!.alteradas).toBe(1);
+    expect.soft(p!.avisos).toHaveLength(1);
+    expect(item).toMatchObject(preservado);
+    expect(item.versao).toBe(versao + 1);
+    expect(b.alterar).toHaveBeenCalledTimes(1);
+    const mudanca = b.alterar.mock.calls[0][2];
+    expect(mudanca).not.toHaveProperty('kind');
+    expect(mudanca).not.toHaveProperty('validFrom');
+    expect(mudanca).not.toHaveProperty('validUntil');
+    const exportado = await publicar(b, recibo(p));
+    expect(exportado.payload.recibo.projecao.avisos[0].valor).toMatch(/própria nota/);
+    for (const privado of [item.id, lida.path, lida.content]) {
+      expect(exportado.publico).not.toContain(privado);
+      expect(exportado.entrada.resumo).not.toContain(privado);
+    }
+    const aposCorrecao = { ...item };
+    const segunda = await b.obsidian['projetarNaMemoria']('casa', [cache], new Map(), []);
+    expect(item).toEqual(aposCorrecao);
+    expect(segunda!.alteradas).toBe(0);
+    expect(segunda!.inalteradas).toBe(1);
+    expect(segunda!.avisos).toEqual([]);
+    expect(b.alterar).toHaveBeenCalledTimes(1);
+    expect(vetor).not.toHaveBeenCalled();
   });
 
   it('mantém alvo diferente da mesma organização, inclusive criado na mesma volta', async () => {
@@ -189,7 +231,9 @@ describe('P-05d: autoalvo e avisos entre coletor, projeção e recibo', () => {
 
   it('cabeçalho não relido conserva a referência válida e não cria versão', async () => {
     const b = bancada();
-    const notas = [nota('a.md', 'b.md'), nota('b.md', null)];
+    const notas = [{ ...nota('a.md', 'b.md'), cabecalho: { kind: ContextKind.regra,
+      validFrom: new Date('2026-09-15'), validUntil: new Date('2026-12-31'), substitui: 'b.md' } },
+      nota('b.md', null)];
     await b.memoria.projetarDaVault('casa', notas);
     b.alterar.mockClear();
     const antes = { ...(await b.memoria.porChave('casa', 'vault:a.md'))! };
@@ -197,6 +241,33 @@ describe('P-05d: autoalvo e avisos entre coletor, projeção e recibo', () => {
     expect(await b.memoria.porChave('casa', 'vault:a.md')).toEqual(antes);
     expect(r.inalteradas).toBe(2);
     expect(b.alterar).not.toHaveBeenCalled();
+  });
+
+  it('publica recibo quando o aviso muda e deduplica sua repetição', async () => {
+    const b = bancada();
+    const r = recibo({ criadas: 0, alteradas: 0, inalteradas: 1, arquivadas: 0,
+      restauradas: 0, falhas: 0, arquivamentoRecusado: 0, movidas: 0, movimentosRecusados: 0,
+      movimentosDescartados: { ambiguos: 0, curtos: 0 }, pares: [],
+      guardas: { arquivamento: { quantidade: 0, conjunto: null }, movimentos: { quantidade: 0, conjunto: null } },
+      liberacaoUsada: null, substituicoes: { resolvidas: 0, semAlvo: 0 }, avisos: [], falhou: null });
+    vi.spyOn(b.obsidian as never, 'gravarFrescor').mockResolvedValue(undefined as never);
+    let anterior = { assinatura: assinaturaDoRecibo(r, resultadoDaVolta(r)), ocorreuEm: new Date() };
+    vi.spyOn(b.memoria, 'ultimoReciboDaVault').mockImplementation(async () => anterior);
+    const registrar = vi.spyOn(b.memoria, 'registrarReciboDaVault').mockImplementation(async (_org, entrada) => {
+      anterior = { assinatura: (entrada.payload as { assinatura: string }).assinatura, ocorreuEm: new Date() };
+      return { id: 'recibo-fixture', seq: 1n };
+    });
+    r.projecao!.avisos = ['privado/n.md: substituição persistida aponta para a própria nota'];
+    await b.obsidian['publicarRecibo']('casa', r, [], false);
+    expect(registrar).toHaveBeenCalledTimes(1);
+    await b.obsidian['publicarRecibo']('casa', r, [], false);
+    expect(registrar).toHaveBeenCalledTimes(1);
+    // A retirada do aviso após a limpeza também muda a assinatura uma vez.
+    r.projecao!.avisos = [];
+    await b.obsidian['publicarRecibo']('casa', r, [], false);
+    expect(registrar).toHaveBeenCalledTimes(2);
+    await b.obsidian['publicarRecibo']('casa', r, [], false);
+    expect(registrar).toHaveBeenCalledTimes(2);
   });
 
   it('aviso alterado muda a assinatura e gera recibo mesmo sem nova versão', () => {

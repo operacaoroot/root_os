@@ -1213,7 +1213,8 @@ export class MemoriaService {
 
   /**
    * O `supersedesId` de uma nota, a partir do `substitui:` já normalizado.
-   * `undefined` = o cabeçalho não foi lido nesta volta, e o campo fica como está.
+   * `undefined` = o cabeçalho não foi lido; a projeção preserva o campo,
+   * exceto pelo autoalvo já conhecido no registro autorizado.
    */
   private async alvoDaSubstituicao(
     orgId: string,
@@ -1280,6 +1281,14 @@ export class MemoriaService {
       });
       resumo.criadas++;
       return;
+    }
+
+    // O cache não relê o cabeçalho, mas o registro autorizado já revela o
+    // autoalvo antigo. Corrigir só esse campo usa o versionamento existente.
+    if (supersedesId === undefined && existente.supersedesId === existente.id) {
+      supersedesId = null;
+      resumo.substituicoes.semAlvo++;
+      resumo.avisos.push(`${nota.caminho}: substituição persistida aponta para a própria nota`);
     }
 
     const mudouTexto =
