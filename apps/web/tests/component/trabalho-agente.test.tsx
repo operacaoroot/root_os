@@ -165,6 +165,7 @@ const cartao = (titulo: string) =>
   screen.getByText(titulo).closest('div.rounded-lg') as HTMLElement;
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/trabalho');
   vi.clearAllMocks();
   PERMISSOES = ['tarefas.ver', 'tarefas.editar'];
   apiPost.mockResolvedValue({ ok: true });
