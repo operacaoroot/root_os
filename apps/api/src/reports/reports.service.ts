@@ -1,10 +1,14 @@
 import {
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { DailyReport, ReportList } from '@mktos/shared';
+import { WorkService } from '../work/work.service';
+import type { WorkTaskQuery } from '../work/work-task-query';
+import { selectedTaskSnapshot } from '../work/selected-work-tasks';
 import { PrismaService } from '../prisma/prisma.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { FunnelService } from '../funnel/funnel.service';
@@ -34,22 +38,25 @@ export class ReportsService {
     private readonly funnel: FunnelService,
     private readonly events: EventsService,
     private readonly tasks: TasksService,
+    private readonly work: WorkService,
     private readonly campaigns: CampaignsService,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
   ) {}
 
   /** Coleta os números do dia (mesma fonte do dashboard/painéis). */
-  private async gather(orgId: string) {
+  private async gather(orgId: string, selection?: WorkTaskQuery) {
+    const canonical = selection ? await selectedTaskSnapshot(this.work, orgId, selection) : undefined;
     const [dash, funnel, events, overdue, campaigns] = await Promise.all([
-      this.dashboard.summary(orgId),
+      this.dashboard.summary(orgId, selection, canonical),
       this.funnel.metrics(orgId),
       this.events.summary(orgId, 7),
-      this.tasks.list(orgId, { overdue: true }),
+      canonical ? Promise.resolve({ overdue: canonical.items.filter((t) => t.overdue).length, items: canonical.items.filter((t) => t.overdue) }) : this.tasks.list(orgId, { overdue: true }),
       this.campaigns.list(orgId),
     ]);
 
     return {
       dashboard: dash,
+      tarefas: canonical ? { source: canonical.source, selection, total: canonical.total, ids: canonical.items.map((t) => t.id) } : { source: { tool: 'tarefas-legadas' } },
       funil: funnel.stages.map((s) => ({
         etapa: s.label,
         total: s.count,
@@ -72,20 +79,22 @@ export class ReportsService {
     };
   }
 
-  async generateDaily(orgId: string): Promise<DailyReport> {
+  async generateDaily(orgId: string, selection?: WorkTaskQuery): Promise<DailyReport> {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(
         `IA não configurada: falta a credencial do provider "${this.llm.name}". ` +
           `Configure ~/.config/root/${this.llm.name}.env e reinicie a API.`,
       );
     }
-    const data = await this.gather(orgId);
+    const data = await this.gather(orgId, selection);
     const periodStart = new Date(data.trafego.janela.since);
     const periodEnd = new Date(data.trafego.janela.until);
 
+    // UUIDs ficam no snapshot persistido; o modelo recebe os totais e exemplos.
+    const promptData = { ...data, dashboard: { ...data.dashboard, taskIds: undefined }, tarefas: { ...data.tarefas, ids: undefined } };
     const user = `Data de referência: ${periodEnd.toISOString().slice(0, 10)}.
 Dados (JSON):
-${JSON.stringify(data)}`;
+${JSON.stringify(promptData)}`;
 
     this.log.log(`Gerando resumo diário via ${this.llm.name}/${this.llm.model} (org ${orgId})`);
     // `orgId` explícito diz de quem é o gasto para o teto de custo de IA por
@@ -110,15 +119,15 @@ ${JSON.stringify(data)}`;
     return this.toDto(row);
   }
 
-  async latest(orgId: string): Promise<DailyReport | null> {
+  async latest(orgId: string, canReadTasks = true): Promise<DailyReport | null> {
     const row = await this.prisma.report.findFirst({
       where: { orgId, type: 'daily' },
       orderBy: { createdAt: 'desc' },
     });
-    return row ? this.toDto(row) : null;
+    return row ? this.toDto(row, canReadTasks) : null;
   }
 
-  async list(orgId: string, limit = 30): Promise<ReportList> {
+  async list(orgId: string, limit = 30, canReadTasks = true): Promise<ReportList> {
     const take = Math.min(Math.max(limit, 1), 100);
     const [rows, total] = await Promise.all([
       this.prisma.report.findMany({
@@ -129,13 +138,14 @@ ${JSON.stringify(data)}`;
       this.prisma.report.count({ where: { orgId, type: 'daily' } }),
     ]);
     return {
-      items: rows.map((r) => this.toDto(r)),
+      items: rows.map((r) => this.toDto(r, canReadTasks)),
       total,
       source: { tool: 'banco-interno', generatedAt: new Date().toISOString() },
     };
   }
 
   private toDto(r: {
+    data?: unknown;
     id: string;
     title: string;
     summary: string;
@@ -144,8 +154,11 @@ ${JSON.stringify(data)}`;
     periodStart: Date;
     periodEnd: Date;
     createdAt: Date;
-  }): DailyReport {
+  }, canReadTasks = true): DailyReport & { taskScope?: unknown } {
+    const taskScope = (r.data as { tarefas?: { ids?: string[] } } | null)?.tarefas;
+    if (taskScope?.ids && !canReadTasks) throw new ForbiddenException('Permissão insuficiente');
     return {
+      taskScope,
       id: r.id,
       type: 'daily',
       title: r.title,
