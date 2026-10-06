@@ -24,7 +24,7 @@ const SUBTITULOS: Record<string, string> = {
   contexto: 'regras, fontes e decisões da empresa',
   marca: 'quem a empresa é e sobre o que fala',
   organograma: 'pessoas e agentes da empresa',
-  tarefas: 'lista de tarefas, separada do quadro interno',
+  tarefas: 'tarefas da lista selecionada',
   trabalho: 'quadro de tarefas nativo do OS',
   onboarding: 'esteira de clientes em cinco fases',
   conteudo: 'espelho dos temas do ClickUp',

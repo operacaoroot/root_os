@@ -123,7 +123,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
       setFStatus(p.get('statusId') ?? ''); setFArquivadas(p.get('arquivadas') === '1');
       setFAtrasadas(p.get('overdue') === '1');
       setVisao(p.get('visao') === 'board' ? 'board' : p.get('visao') === 'tabela' ? 'tabela' : visaoInicial);
-      setListaId(null); setPainelId(null); setUrlPronta(true);
+      listaAtual.current = null; setListaId(null); setPainelId(null); setUrlPronta(true);
       setBump((b) => b + 1);
     };
     ler(); window.addEventListener('popstate', ler);
@@ -135,6 +135,18 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
     if (valor) url.searchParams.set(chave, valor); else url.searchParams.delete(chave);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   };
+
+  // Status e opção pertencem à lista; os demais filtros continuam ativos.
+  const trocarLista = useCallback((id: string, anterior = listaAtual.current) => {
+    if (anterior && anterior !== id) {
+      setFOpcao(''); setFStatus('');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('opcao'); url.searchParams.delete('statusId');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    listaAtual.current = id;
+    setListaId(id);
+  }, []);
 
   // estrutura (árvore, statuses, campos, tags, responsáveis)
   useEffect(() => {
@@ -151,12 +163,12 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
             ? todas.find((l) => l.id === solicitada || l.externalId === solicitada)
             : todas.find((l) => l.externalId === '901328341442') ?? todas[0];
           setListaDoLinkAusente(!!solicitada && !preferida);
-          if (preferida) setListaId(preferida.id);
+          if (preferida) trocarLista(preferida.id);
         }
       })
       .catch((e) => { if (ativa) setErro(e.message); });
     return () => { ativa = false; };
-  }, [ready, token, readable, urlPronta, bump]);
+  }, [ready, token, readable, urlPronta, bump, trocarLista]);
 
   // O ID do card é nativo e a API confere a empresa. O painel abre no mesmo
   // registro mesmo quando a URL traz uma lista antiga após ele ser movido.
@@ -166,13 +178,18 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
     if (!tarefaId || !/^[0-9a-f-]{36}$/i.test(tarefaId)) return;
     let ativa = true;
     apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${tarefaId}`, token)
-      .then((t) => { if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return; setListaDoLinkAusente(false); setListaId(t.listId); setPainelId(t.id); })
+      .then((t) => {
+        if (!ativa || new URLSearchParams(window.location.search).get('tarefa') !== tarefaId) return;
+        setListaDoLinkAusente(false);
+        trocarLista(t.listId, listaAtual.current ?? new URLSearchParams(window.location.search).get('lista'));
+        setPainelId(t.id); mudarEndereco(t.listId, t.id);
+      })
       .catch((e) => { if (ativa && new URLSearchParams(window.location.search).get('tarefa') === tarefaId) setErro(`Não foi possível abrir a tarefa do link: ${e.message}`); });
     return () => { ativa = false; };
-  }, [estrutura, token, readable]);
+  }, [estrutura, token, readable, trocarLista]);
 
   const selecionarLista = (id: string) => {
-    setListaDoLinkAusente(false); setListaId(id); setPainelId(null); setFOpcao(''); setFStatus(''); filtroNoEndereco('opcao', ''); filtroNoEndereco('statusId', ''); mudarEndereco(id, null);
+    setListaDoLinkAusente(false); trocarLista(id); setPainelId(null); mudarEndereco(id, null);
   };
   const abrirTarefa = (id: string) => { setPainelId(id); mudarEndereco(listaId, id); };
   const fecharTarefa = () => { setPainelId(null); mudarEndereco(listaId, null); };
@@ -367,7 +384,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
       {painelId && estrutura && (
         <PainelTarefa
           key={`${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable} token={token} usuarioId={user?.id ?? null}
-          onFechar={fecharTarefa} onMoverLista={(id) => { setListaId(id); mudarEndereco(id, painelId); }}
+          onFechar={fecharTarefa} onMoverLista={(id) => { trocarLista(id); mudarEndereco(id, painelId); }}
           onMudou={refresh} onErro={setErro}
         />
       )}
