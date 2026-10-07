@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import {
   METAS_ESTADO_ROTULO,
@@ -59,34 +59,40 @@ const deMeta = (m: MetaMedida): LinhaEditavel => ({
 export function MetasDoMes() {
   const { token, ready, can } = useAuth();
   const [mes, setMes] = useState(mesAtual());
-  const [p, setP] = useState<MetasDoMesPainel | null>(null);
+  const [painel, setP] = useState<MetasDoMesPainel | null>(null);
+  const p = painel?.mes === mes ? painel : null;
+  const geracao = useRef(0);
   const [erro, setErro] = useState<string | null>(null);
   const [linhas, setLinhas] = useState<LinhaEditavel[] | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const podeEditar = can('relatorios.gerar');
 
-  const carregar = useCallback(() => {
-    if (!token) return;
-    setErro(null);
-    apiGet<MetasDoMesPainel>(`/goals/month/${mes}`, token)
-      .then(setP)
-      .catch((e: Error) => setErro(e.message));
-  }, [token, mes]);
-
   useEffect(() => {
+    const pedido = ++geracao.current;
+    const mesPedido = mes;
+    setP(null);
+    setLinhas(null);
+    setErro(null);
+    setAviso(null);
+    setSalvando(false);
     if (ready && token) {
-      setP(null);
-      setLinhas(null);
-      carregar();
+      apiGet<MetasDoMesPainel>(`/goals/month/${mesPedido}`, token)
+        .then((novo) => {
+          if (geracao.current === pedido && novo.mes === mesPedido) setP(novo);
+        })
+        .catch((e: Error) => { if (geracao.current === pedido) setErro(e.message); });
     }
-  }, [ready, token, mes, carregar]);
+    return () => { geracao.current++; };
+  }, [ready, token, mes]);
 
   const catalogo = p?.catalogo ?? [];
   const indicador = (chave: string) => catalogo.find((i) => i.chave === chave);
 
   const salvar = () => {
-    if (!token || !linhas) return;
+    if (!token || !linhas || !p) return;
+    const mesPedido = mes;
+    const pedido = geracao.current;
     setAviso(null);
     const metas = [];
     for (const l of linhas) {
@@ -104,13 +110,15 @@ export function MetasDoMes() {
       });
     }
     setSalvando(true);
-    apiPut<MetasDoMesPainel>(`/goals/month/${mes}`, { metas, versao: p?.nota?.versao }, token)
+    apiPut<MetasDoMesPainel>(`/goals/month/${mesPedido}`, { metas, versao: p.nota?.versao }, token)
       .then((novo) => {
-        setP(novo);
-        setLinhas(null);
+        if (geracao.current === pedido && novo.mes === mesPedido) {
+          setP(novo);
+          setLinhas(null);
+        }
       })
-      .catch((e: Error) => setAviso(e.message))
-      .finally(() => setSalvando(false));
+      .catch((e: Error) => { if (geracao.current === pedido) setAviso(e.message); })
+      .finally(() => { if (geracao.current === pedido) setSalvando(false); });
   };
 
   const mudar = (i: number, campo: keyof LinhaEditavel, valor: string) =>

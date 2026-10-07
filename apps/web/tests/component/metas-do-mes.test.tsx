@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { METAS_CATALOGO, type MetaMedida, type MetasDoMesPainel } from '@mktos/shared';
 
@@ -352,5 +352,81 @@ describe('a aba na página de Metas', () => {
     expect(screen.getByRole('tab', { name: 'Metas do mês' })).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByText('Leads novos')).toBeInTheDocument();
     expect(apiGet.mock.calls.some(([p]) => String(p).startsWith('/goals/month/'))).toBe(true);
+  });
+});
+
+
+describe('isolamento de respostas por mês', () => {
+  function pendente<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((ok, fail) => { resolve = ok; reject = fail; });
+    return { promise, resolve, reject };
+  }
+
+  it.each(['inversa', 'direta'])('preserva setembro ao resolver os GETs na ordem %s e salva alvo 200', async (ordem) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-07T12:00:00Z') });
+    try {
+      const outubro = pendente<MetasDoMesPainel>();
+      const setembro = pendente<MetasDoMesPainel>();
+      apiGet.mockImplementation((path: string) => path.endsWith('2026-10') ? outubro.promise : setembro.promise);
+      apiPut.mockResolvedValue(painel({ mes: '2026-09', nota: { id: 'setembro', versao: 1, atualizadoEm: '2026-10-07T12:00:00Z' }, metas: [meta({ alvo: 200 })] }));
+      render(<MetasDoMes />);
+      expect(apiGet).toHaveBeenCalledWith('/goals/month/2026-10', 'tok');
+      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2026-09' } });
+      expect(apiGet).toHaveBeenCalledWith('/goals/month/2026-09', 'tok');
+      const antigo = () => outubro.resolve(painel({ nota: { id: 'outubro', versao: 1, atualizadoEm: '2026-10-07T12:00:00Z' }, metas: [meta({ alvo: 900 })] }));
+      const atual = () => setembro.resolve(painel({ mes: '2026-09', nota: { id: 'setembro', versao: 1, atualizadoEm: '2026-10-07T12:00:00Z' }, metas: [meta({ alvo: 200 })] }));
+      for (const resolver of ordem === 'inversa' ? [atual, antigo] : [antigo, atual]) {
+        await act(async () => { resolver(); });
+      }
+      expect(screen.getByLabelText('Mês')).toHaveValue('2026-09');
+      fireEvent.click(screen.getByRole('button', { name: 'Revisar as metas do mês' }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar revisão' })); });
+      expect(apiPut).toHaveBeenCalledWith('/goals/month/2026-09', {
+        versao: 1,
+        metas: [{ indicador: 'leads.novos', alvo: 200, campanhaId: null, origem: null, observacao: null }],
+      }, 'tok');
+      expect(screen.getByText(/\/ 200 leads/)).toBeInTheDocument();
+      expect(screen.queryByText(/\/ 900 leads/)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('ignora erro de GET do mês abandonado', async () => {
+    const antigo = pendente<MetasDoMesPainel>();
+    apiGet.mockReturnValueOnce(antigo.promise).mockResolvedValue(painel({ mes: '2026-09' }));
+    render(<MetasDoMes />);
+    fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2026-09' } });
+    await screen.findByText('Leads novos');
+    await act(async () => { antigo.reject(new Error('erro do mês anterior')); });
+    expect(screen.queryByText(/erro do mês anterior/)).toBeNull();
+    expect(screen.getByText('Leads novos')).toBeInTheDocument();
+  });
+
+  it.each(['sucesso', 'erro'])('preserva a revisão atual quando o PUT anterior termina com %s', async (resultado) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-07T12:00:00Z') });
+    try {
+      const gravacao = pendente<MetasDoMesPainel>();
+      apiPut.mockReturnValueOnce(gravacao.promise);
+      apiGet.mockImplementation(async (path: string) => painel({ mes: path.split('/').at(-1), metas: [meta({ alvo: 200 })] }));
+      render(<MetasDoMes />);
+      await screen.findByText('Leads novos');
+      fireEvent.click(screen.getByRole('button', { name: 'Revisar as metas do mês' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar revisão' }));
+      expect(apiPut.mock.calls[0][0]).toBe('/goals/month/2026-10');
+      fireEvent.change(screen.getByLabelText('Mês'), { target: { value: '2026-09' } });
+      await screen.findByText('Leads novos');
+      fireEvent.click(screen.getByRole('button', { name: 'Revisar as metas do mês' }));
+      fireEvent.change(screen.getByLabelText('Alvo da meta 1'), { target: { value: '250' } });
+      await act(async () => {
+        if (resultado === 'sucesso') gravacao.resolve(painel({ nota: { id: 'outubro', versao: 1, atualizadoEm: '2026-10-07T12:00:00Z' }, metas: [meta({ alvo: 900 })] }));
+        else gravacao.reject(new Error('erro de gravação de outubro'));
+      });
+      expect(screen.getByText('Revisão de 2026-09')).toBeInTheDocument();
+      expect(screen.getByLabelText('Alvo da meta 1')).toHaveValue('250');
+      expect(screen.getByRole('button', { name: 'Salvar revisão' })).toBeEnabled();
+      expect(screen.queryByText(/erro de gravação de outubro/)).toBeNull();
+      expect(screen.queryByText(/\/ 900 leads/)).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
 });
