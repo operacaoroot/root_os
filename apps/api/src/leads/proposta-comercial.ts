@@ -157,8 +157,8 @@ export function eventoIdDaDecisao(orgId: string, leadId: string, decisao: LeadDe
  * A decisão (aceite ou recusa) mais recente já registrada para estas condições,
  * ou nulo. O id do evento é por `(decisão, hash)`, então cada decisão existe uma
  * vez por conjunto de condições; "mais recente" é o último instante entre as que
- * existem. Num empate de instante (o banco guarda milissegundos) vale a ordem em
- * que os eventos chegaram.
+ * existem. Decisões opostas no mesmo instante são conflito: o banco não
+ * registra uma ordem de chegada que permita decidir qual delas vale.
  */
 export function decisaoMaisRecenteDasCondicoes(
   eventos: { id: string; type: string; occurredAt: Date; payload: unknown }[],
@@ -167,7 +167,7 @@ export function decisaoMaisRecenteDasCondicoes(
   const doHash = eventos.filter(
     (e) => (TIPOS_DE_DECISAO as readonly string[]).includes(e.type) && (e.payload as { condicoesHash?: string } | null)?.condicoesHash === condicoesHash,
   );
-  const ultimo = [...doHash].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime()).at(-1);
+  const ultimo = ultimoEventoSemConflito(doHash);
   return ultimo ? { eventoId: ultimo.id, decisao: ultimo.type as LeadDecisao, registradaEm: ultimo.occurredAt } : null;
 }
 
@@ -206,17 +206,31 @@ export interface EventoDeProposta {
   occurredAt: Date;
 }
 
+export class DecisoesEmpatadasError extends Error {
+  constructor() {
+    super('Há aceite e recusa registrados no mesmo instante; não é possível determinar a decisão mais recente.');
+  }
+}
+
+function ultimoEventoSemConflito<T extends EventoDeProposta>(eventos: T[]): T | undefined {
+  if (!eventos.length) return undefined;
+  const instante = Math.max(...eventos.map((e) => e.occurredAt.getTime()));
+  const empatados = eventos.filter((e) => e.occurredAt.getTime() === instante);
+  const decisoes = empatados.filter((e) => (TIPOS_DE_DECISAO as readonly string[]).includes(e.type));
+  if (new Set(decisoes.map((e) => e.type)).size > 1) throw new DecisoesEmpatadasError();
+  // Decisão prevalece sobre proposta no mesmo instante. IDs só estabilizam
+  // eventos do mesmo tipo; nunca escolhem entre aceite e recusa.
+  return (decisoes.length ? decisoes : empatados).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).at(-1);
+}
+
 /**
  * O estado é o último fato da timeline entre proposta, aceite e recusa. Num
  * empate de instante, a decisão vale sobre a proposta (a decisão é sempre
- * posterior ao registro que ela decide).
+ * posterior ao registro que ela decide). Aceite e recusa empatados são conflito.
  */
 export function estadoDaProposta(eventos: EventoDeProposta[]): LeadPropostaEstado {
-  const peso = (tipo: string) => (tipo === TIPO_DO_EVENTO_DE_PROPOSTA ? 0 : 1);
-  const ultimo = eventos
-    .filter((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA || (TIPOS_DE_DECISAO as readonly string[]).includes(e.type))
-    .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || peso(a.type) - peso(b.type))
-    .at(-1);
+  const ultimo = ultimoEventoSemConflito(eventos
+    .filter((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA || (TIPOS_DE_DECISAO as readonly string[]).includes(e.type)));
   if (!ultimo) return 'sem_proposta';
   if (ultimo.type === 'aceite') return 'aceite_registrado';
   if (ultimo.type === 'recusa') return 'recusa_registrada';

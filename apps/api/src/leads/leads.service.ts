@@ -36,6 +36,7 @@ import {
   type CamposDoLead,
 } from './entrada-de-lead';
 import {
+  DecisoesEmpatadasError,
   TIPOS_DE_DECISAO,
   TIPO_DO_EVENTO_DE_PROPOSTA,
   condicoesDoCard,
@@ -94,6 +95,16 @@ function resumoDaProposta(ev: EventoLido): LeadPropostaResumo {
 
 function ehViolacaoDeUnico(erro: unknown): boolean {
   return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002';
+}
+
+/** Um empate sem ordem persistida não pode confirmar uma decisão nem um replay. */
+function semEmpateDeDecisoes<T>(ler: () => T): T {
+  try {
+    return ler();
+  } catch (erro) {
+    if (erro instanceof DecisoesEmpatadasError) throw new ConflictException(erro.message);
+    throw erro;
+  }
 }
 
 @Injectable()
@@ -521,7 +532,7 @@ export class LeadsService {
   async lerProposta(orgId: string, id: string): Promise<LeadPropostaLeitura> {
     await this.exigirLead(orgId, id);
     const eventos = await this.eventosDaProposta(id);
-    const estado = estadoDaProposta(eventos);
+    const estado = semEmpateDeDecisoes(() => estadoDaProposta(eventos));
     const ultimaProposta = [...eventos].reverse().find((e) => e.type === TIPO_DO_EVENTO_DE_PROPOSTA);
     const proposta: LeadPropostaResumo | null = ultimaProposta ? resumoDaProposta(ultimaProposta) : null;
     let decisao: LeadDecisaoResumo | null = null;
@@ -644,7 +655,8 @@ export class LeadsService {
     // A decisão pedida já existe. Se é a mais recente para estas condições, é repetição (200, nada gravado); se depois dela
     // veio a outra (aceite, recusa, aceite), repetir seria dizer "registrado" sobre algo que não vale mais: 409, nada gravado.
     const jaExiste = async (p: PayloadDaDecisao): Promise<LeadDecisaoResposta> => {
-      const atual = decisaoMaisRecenteDasCondicoes(await this.eventosDaProposta(id), input.condicoesHash);
+      const eventos = await this.eventosDaProposta(id);
+      const atual = semEmpateDeDecisoes(() => decisaoMaisRecenteDasCondicoes(eventos, input.condicoesHash));
       if (atual && atual.eventoId !== eventoId) {
         const corpo: LeadDecisaoSuperadaCorpo = {
           code: CODIGO_DECISAO_SUPERADA,

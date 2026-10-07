@@ -844,7 +844,7 @@ export class ObsidianService implements OnModuleInit {
       }
       vistos = [...pertenca.vistos, ...ilegiveis];
       for (const f of pertenca.foraDaColecao) {
-        if (f.situacao === 'alterado_fora_do_git' || f.situacao === 'apagado_fora_do_git' || f.situacao === 'nao_verificavel') {
+        if (f.situacao === 'alterado_fora_do_git' || f.situacao === 'apagado_fora_do_git' || f.situacao === 'nao_verificavel' || f.situacao === 'colisao_nfc') {
           mantidosNoIndice.add(f.caminho);
         }
       }
@@ -879,7 +879,7 @@ export class ObsidianService implements OnModuleInit {
      * SUBSTITUI o índice da coleção (a vault é a fonte da verdade dele), menos
      * duas coisas: o espelho do onboarding, que não é da vault, e a linha antiga
      * do arquivo que ficou fora por anomalia (alterado ou apagado fora do git,
-     * entrada não verificável) — a última versão projetada fica, no índice como
+     * entrada não verificável ou colisão NFC) — a última versão projetada fica, no índice como
      * na memória.
      */
     const preservadas = anteriores.filter((n) => mantidosNoIndice.has(n.path));
