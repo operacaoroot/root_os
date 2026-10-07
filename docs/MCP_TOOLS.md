@@ -70,8 +70,10 @@ a exigida pelo endpoint da API que a tool chama.
 | `list_tasks` | `GET /tasks` | `tarefas.ver` | `overdue`, `status` |
 | `get_overdue_tasks` | `GET /tasks?overdue=1` | `tarefas.ver` | — |
 | `trabalho_estrutura` | `GET /trabalho/estrutura` | `tarefas.ver` | — |
-| `trabalho_tarefas` | `GET /trabalho/tarefas` | `tarefas.ver` | `list_id`, `status_id`, `assignee`, `q` |
+| `trabalho_tarefas` | `GET /trabalho/tarefas` | `tarefas.ver` | `list_id`, `status_id`, `assignee`, `q`, `page`, `limit` |
 | `trabalho_tarefa` | `GET /trabalho/tarefas/:id` | `tarefas.ver` | `task_id` |
+
+`trabalho_tarefas` retorna uma página por chamada, sem percorrer as páginas seguintes. `total` é o total retornado pela API para a seleção, não a quantidade de itens da página. Os parâmetros opcionais `page` (inteiro de 1 a 100000) e `limit` (inteiro de 1 a 500) são encaminhados ao endpoint; quando omitidos, permanecem ausentes da query e prevalecem os defaults da API. O endpoint rejeita offsets `(page - 1) * limit` acima de 10.000.000.
 
 ### Conteúdo
 | Tool | Endpoint | Permissão | Argumentos |

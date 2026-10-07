@@ -12,5 +12,17 @@ export * from './horas-devolvidas.js';
 // desmonta o MESMO título — ver o cabeçalho de `agenda.ts`.
 export * from './agenda.js';
 
+// A regra do valor monetário do Trabalho mora aqui porque a tela, a API e o
+// importador do ClickUp convertem e conferem o MESMO texto canônico — ver o
+// cabeçalho de `valor-monetario.ts`.
+export * from './valor-monetario.js';
+export * from './metas-do-mes.js';
+
 // Nome padrão; cada app pode sobrescrever via seu próprio env (APP_NAME).
 export const DEFAULT_APP_NAME = 'Marketing OS';
+
+// A entrada idempotente de lead (ROOT-48, C-01): a tela, a API e o teste leem o
+// MESMO pedido — ver o cabeçalho de `lead-entrada.ts`.
+export * from './lead-entrada.js';
+// A proposta e o aceite comercial (ROOT-49, C-03): ver o cabeçalho de `lead-proposta.ts`.
+export * from './lead-proposta.js';

@@ -246,3 +246,55 @@ describe('a rotina que monta a fila', () => {
     );
   });
 });
+
+describe('ROOT-48: passar ao Comercial', () => {
+  const montarComercial = (props: Partial<{ podePassarAoComercial: boolean }> = {}) => {
+    const onErro = vi.fn();
+    render(<ComentariosComPalavra token="tok" podeResponder editavel onErro={onErro} bump={0} {...props} />);
+    return { onErro };
+  };
+
+  it('sem a permissão (ou sem o módulo leads) o botão não aparece', async () => {
+    apiGet.mockResolvedValue(fila());
+    montarComercial();
+    const item = await within(secao()).findByRole('listitem', { name: 'Comentário de @fulano.silva' });
+    expect(within(item).queryByRole('button', { name: 'Passar ao Comercial' })).not.toBeInTheDocument();
+  });
+
+  it('o clique manda só a origem; o @ só vai com a caixa marcada, e o lead vira link', async () => {
+    apiGet.mockResolvedValue(fila());
+    apiPost.mockResolvedValue({ id: 'lead-1', criado: true, replayed: false, diferenca: null, eventoId: 'ev-1' });
+    montarComercial({ podePassarAoComercial: true });
+    const item = await within(secao()).findByRole('listitem', { name: 'Comentário de @fulano.silva' });
+    await userEvent.click(within(item).getByRole('button', { name: 'Passar ao Comercial' }));
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/leads/entrada', { origem: { tipo: 'pauta-comentario', ref: 'l1' } }, 'tok'),
+    );
+    expect(await within(item).findByText('no Comercial')).toBeInTheDocument();
+    expect(within(item).getByRole('link', { name: 'abrir lead' })).toHaveAttribute('href', '/leads/lead-1');
+  });
+
+  it('com a caixa "levar o @ junto" marcada o pedido leva incluirUsuario; replay avisa que já estava lá', async () => {
+    apiGet.mockResolvedValue(fila());
+    apiPost.mockResolvedValue({ id: 'lead-1', criado: false, replayed: true, diferenca: null, eventoId: 'ev-1' });
+    montarComercial({ podePassarAoComercial: true });
+    const item = await within(secao()).findByRole('listitem', { name: 'Comentário de @fulano.silva' });
+    await userEvent.click(within(item).getByRole('checkbox', { name: /levar o @ junto/ }));
+    await userEvent.click(within(item).getByRole('button', { name: 'Passar ao Comercial' }));
+    await waitFor(() =>
+      expect(apiPost).toHaveBeenCalledWith('/leads/entrada', { origem: { tipo: 'pauta-comentario', ref: 'l1' }, incluirUsuario: true }, 'tok'),
+    );
+    expect(await within(item).findByText('já estava no Comercial')).toBeInTheDocument();
+  });
+
+  it('o @ já apagado não oferece a caixa, e o erro da API sobe sem trocar o botão', async () => {
+    apiGet.mockResolvedValue(fila({ linhas: [linha({ usuario: null })] }));
+    apiPost.mockRejectedValue(new Error('Comentário não encontrado'));
+    const { onErro } = montarComercial({ podePassarAoComercial: true });
+    const item = await within(secao()).findByRole('listitem', { name: 'Comentário de pessoa apagada' });
+    expect(within(item).queryByRole('checkbox')).not.toBeInTheDocument();
+    await userEvent.click(within(item).getByRole('button', { name: 'Passar ao Comercial' }));
+    await waitFor(() => expect(onErro).toHaveBeenCalledWith('Comentário não encontrado'));
+    expect(within(item).getByRole('button', { name: 'Passar ao Comercial' })).toBeInTheDocument();
+  });
+});

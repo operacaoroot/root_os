@@ -4,6 +4,7 @@ import { AgentsService } from './agents.service';
 import { AgentRuntime } from './agent-runtime.service';
 import { SessionService } from './session.service';
 import { ContextBuilder } from './context-builder.service';
+import { VaultVersionadaService } from './vault-versionada.service';
 import { EfeitosService } from './efeitos.service';
 import { ObsidianModule } from '../obsidian/obsidian.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
@@ -32,7 +33,7 @@ import { WorkModule } from '../work/work.module';
     WorkModule,
   ],
   controllers: [AgentsController],
-  providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, EfeitosService],
+  providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

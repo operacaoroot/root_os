@@ -266,7 +266,8 @@ e `automacoes.executar` para rodar rotina fora de hora.
 ```bash
 # 1. banco (precisa do Postgres de pé)
 pnpm --filter @mktos/api db:deploy      # aplica a migration add_pauta
-pnpm --filter @mktos/api db:seed        # registra as permissões pauta.* nos perfis
+pnpm --filter @mktos/shared build       # o script lê o catálogo do dist/ do pacote
+pnpm --filter @mktos/api db:sync-permissions   # registra as permissões pauta.* nos perfis; quem já está logado sai e entra de novo
 
 # 2. acervo existente → 432 fichas, 119 marcadas campeãs
 PAUTA_IMPORT_DIR="$HOME/Library/CloudStorage/GoogleDrive-pedro.magnago@fullbpo.com/Meu Drive/Obsidian/Cerebro-Conteudo" \

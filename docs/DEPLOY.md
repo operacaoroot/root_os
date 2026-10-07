@@ -477,9 +477,9 @@ estoura com esta chamada)" e duas chamadas simultâneas podem passar juntas. Con
 mensal isso é ruído; o teto por empresa e por dia, que TEM reserva, continua valendo por cima.
 
 **Com o orçamento valendo, modelo fora de `apps/api/src/llm/preco.ts` é RECUSADO** — a mesma trava
-do teto da empresa: controle que não sabe medir não é controle. Isso atinge o provider `openrouter`,
-cujo modelo padrão não está na tabela. Se você ligar orçamento num agente que roda por `openrouter`,
-ele para.
+do teto da empresa: controle que não sabe medir não é controle. Isso atinge o provider `openrouter`
+quando `OPENROUTER_MODEL` aponta para modelo fora da tabela (o padrão, `anthropic/claude-sonnet-5.5`, está nela).
+Se você ligar orçamento num agente que roda por `openrouter` com esse override, ele para.
 
 **Vetorização (embeddings) continua fora de todo número desta fatia.** Ela passa por `fetch` próprio
 em `obsidian.service.ts` e `pauta.service.ts`, fora do `LlmProvider`, e a tela de Custos já declara
@@ -820,8 +820,9 @@ fatia própria, e a tela não promete o que não cumpre.
 
 **O teto de custo recusa modelo fora da tabela de preço — mudança de comportamento visível.** Com
 `TetoDeCustoIa.ativo` ligado para uma empresa, uma chamada cujo modelo não esteja em
-`apps/api/src/llm/preco.ts` é **recusada**, não estimada em zero. Isso atinge em cheio o provider
-`openrouter`, cujo modelo padrão (`anthropic/claude-sonnet-4.5`) não casa com a tabela. Empresa
+`apps/api/src/llm/preco.ts` é **recusada**, não estimada em zero. No provider `openrouter`, o
+modelo padrão (`anthropic/claude-sonnet-5.5`) está na tabela e passa. A recusa pega quem sobrescreve
+`OPENROUTER_MODEL` com um modelo fora dela (causa `modelo_sem_preco`). Empresa
 **sem** linha de teto e empresa com o teto **desligado** seguem passando: o regime novo é o preço de
 ter ligado o teto, não um padrão imposto a todo mundo. Conserto: cadastre o preço do modelo, ou
 desligue o teto daquela empresa.

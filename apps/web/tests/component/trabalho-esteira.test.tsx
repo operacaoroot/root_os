@@ -158,7 +158,13 @@ describe('trabalho importado: card único e material preservado', () => {
   it('abre deeplink nativo e move o mesmo card para outra lista pelo PATCH', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
     const outra = { ...ESTEIRA, id: 'l-destino', name: 'Design & Gravação' };
-    servir([tarefa({ id, title: 'ROOT-001', externalId: 'root-001' })], {}, [ESTEIRA, outra]);
+    const card = tarefa({ id, title: 'ROOT-001', externalId: 'root-001' });
+    servir([card], {}, [ESTEIRA, outra]);
+    // A leitura após o PATCH deve refletir a lista persistida.
+    apiPatch.mockImplementation((_rota: string, mudanca: Record<string, unknown>) => {
+      Object.assign(card, mudanca);
+      return Promise.resolve(card);
+    });
     window.history.replaceState({}, '', `/trabalho?lista=l-esteira&tarefa=${id}`);
     render(<TrabalhoPage />);
     const painel = await screen.findByDisplayValue('ROOT-001');

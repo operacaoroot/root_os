@@ -332,8 +332,6 @@ describe.skipIf(!URL_BANCO)('as quatro rotas públicas, com a sessão em modo im
   const handleRascunho = `hpr${MARCA}`;
   const slugA = `orga-${MARCA}`;
   const rid = `rid_${MARCA}`;
-  /** A empresa padrão já existia neste banco? Se sim, não é nossa para apagar. */
-  let padraoEraNossa = false;
 
   beforeAll(async () => {
     admin = new PrismaClient({ datasourceUrl: URL_BANCO });
@@ -350,18 +348,34 @@ describe.skipIf(!URL_BANCO)('as quatro rotas públicas, com a sessão em modo im
     ids.orgA = orgA.id;
     ids.orgB = orgB.id;
 
-    // A empresa padrão do pixel é a que recebe evento sem chave. Ela existe em
-    // qualquer base semeada; aqui criamos se faltar, e só apagamos o que criamos.
-    const existente = await admin.org.findUnique({ where: { slug: ORG_LEGADA_DO_PIXEL } });
-    if (existente) {
-      ids.orgPadrao = existente.id;
-    } else {
-      padraoEraNossa = true;
-      const nova = await admin.org.create({
-        data: { name: 'padrão do pixel', slug: ORG_LEGADA_DO_PIXEL, modulos: [] },
-      });
-      ids.orgPadrao = nova.id;
-    }
+    /*
+     * A EMPRESA PADRÃO DO PIXEL É ESTADO DE BASE DO BANCO.
+     *
+     * Ela recebe o evento sem chave, e o slug dela, `root`, é também o da
+     * empresa da plataforma (`SLUG_DA_PLATAFORMA`). O `prisma/seed.ts` a cria
+     * em toda base semeada; num banco de teste sem semente, quem a cria é esta
+     * suíte. Na mesma rodada, o `ProvisionamentoService` de `onboarding.test.ts`
+     * e `onboarding-trilho-e2e.test.ts` acha a `root` pelo slug e grava nela a
+     * intenção (`EventLog`, que não se apaga) e a auditoria de cada empresa que
+     * provisiona. Essas linhas são das vizinhas.
+     *
+     * Por isso a `root` não se apaga aqui. A exclusão no fim tinha dois
+     * desfechos, os dois medidos em 01/10/2026 (ROOT-64a): com linha da vizinha
+     * já gravada, o `deleteMany` desta suíte esbarrava em `AuditLog_orgId_fkey`;
+     * sem linha ainda, a exclusão passava e o provisionamento da vizinha, que já
+     * tinha lido o id, caía em `EventLog_orgId_fkey`. Conferir antes de apagar
+     * não fecha o segundo caso.
+     *
+     * O `upsert` pelo slug cria a empresa quando ela falta e, com `update`
+     * vazio, não mexe na que já existe. O que esta suíte grava nela, o evento
+     * sem chave, leva a MARCA no `event_id` e sai no `afterAll`.
+     */
+    const padrao = await admin.org.upsert({
+      where: { slug: ORG_LEGADA_DO_PIXEL },
+      update: {},
+      create: { name: 'padrão do pixel', slug: ORG_LEGADA_DO_PIXEL, modulos: [] },
+    });
+    ids.orgPadrao = padrao.id;
 
     const pageA = await admin.bioPage.create({
       data: { orgId: orgA.id, handle: handleA, titulo: 'Página A', publicada: true },
@@ -454,7 +468,7 @@ describe.skipIf(!URL_BANCO)('as quatro rotas públicas, com a sessão em modo im
       },
     });
     await admin.org.deleteMany({ where: { id: { in: [ids.orgA, ids.orgB] } } });
-    if (padraoEraNossa) await admin.org.deleteMany({ where: { id: ids.orgPadrao } });
+    // A `root` fica no banco: as suítes vizinhas gravam nela (ver o `beforeAll`).
     await admin.$disconnect();
     await (prisma as PrismaClient).$disconnect();
   });

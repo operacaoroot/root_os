@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { DashboardSummary } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
+import { SelectedTaskScope } from '@/components/SelectedTaskScope';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
 import { PilulaCustoIa } from './custo-ia/Pilula';
@@ -13,17 +14,22 @@ const brl = (n: number) =>
 export default function DashboardPage() {
   const { token, ready, user } = useAuth();
   const [data, setData] = useState<DashboardSummary | null>(null);
+  const [listId, setListId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready || !token) return;
-    apiGet<DashboardSummary>('/dashboard/summary', token)
-      .then(setData)
-      .catch((e) => setError(e.message));
-  }, [ready, token]);
+    let active = true;
+    setData(null); setError(null);
+    apiGet<DashboardSummary>(`/dashboard/summary${listId ? '?listId=' + encodeURIComponent(listId) : ''}`, token)
+      .then((value) => { if (active) setData(value); })
+      .catch((e) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [ready, token, listId]);
 
   return (
     <div className="space-y-6">
+      <SelectedTaskScope surface="dashboard" listId={listId} onSelect={setListId} />
       {/* A Topbar já diz "Console · o pulso da operação" — aqui vai só o que
           ela não tem: de quem é a sessão e o que a tela faz. Sem emoji e sem
           segunda pessoa: a voz da ROOT é de terminal, não de assistente. */}
@@ -74,7 +80,7 @@ export default function DashboardPage() {
           <section>
             <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Operação e alertas</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-              <KpiCard label="Tarefas atrasadas" value={data.overdueTasks} href="/tarefas" tone={data.overdueTasks > 0 ? 'warn' : 'default'} icon="Clock" />
+              <KpiCard label="Tarefas atrasadas" value={data.overdueTasks} href={listId ? `/trabalho?lista=${encodeURIComponent(listId)}` : '/trabalho'} tone={data.overdueTasks > 0 ? 'warn' : 'default'} icon="Clock" />
               <KpiCard label="Campanhas ativas" value={data.activeCampaigns} href="/campanhas" icon="Megaphone" />
               <KpiCard label="Campanhas em risco" value={data.campaignsAtRisk} href="/campanhas?status=problema" tone={data.campaignsAtRisk > 0 ? 'bad' : 'default'} icon="AlertTriangle" />
               <KpiCard label="Alertas críticos" value={data.criticalAlerts} href="/campanhas?status=problema" tone={data.criticalAlerts > 0 ? 'bad' : 'default'} icon="Siren" />

@@ -60,10 +60,16 @@ describe('OpenRouterProvider com o ambiente que a produção entrega', () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-teste';
     const p = new OpenRouterProvider();
     expect(p.configured).toBe(true);
-    expect(p.model).toBe('anthropic/claude-sonnet-4.5');
+    expect(p.model).toBe('anthropic/claude-sonnet-5.5');
     // se isto voltar a ser '', a chamada morre com "Failed to parse URL"
     expect(p['baseUrl']).toBe('https://openrouter.ai/api/v1');
     expect(p.name).toBe('openrouter');
+  });
+
+  it('OPENROUTER_MODEL preenchido vence o padrão do código', () => {
+    process.env.OPENROUTER_MODEL = 'openai/modelo-escolhido-no-deploy';
+    process.env.OPENROUTER_API_KEY = 'sk-or-teste';
+    expect(new OpenRouterProvider().model).toBe('openai/modelo-escolhido-no-deploy');
   });
 
   it('sem chave, `configured` é falso e a falha vem clara no uso', async () => {

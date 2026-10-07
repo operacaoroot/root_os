@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import type { DashboardSummary } from '@mktos/shared';
+import { WorkService } from '../work/work.service';
+import type { WorkTaskQuery } from '../work/work-task-query';
+import { selectedTaskSnapshot } from '../work/selected-work-tasks';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly work: WorkService) {}
 
-  async summary(orgId: string): Promise<DashboardSummary> {
+  async summary(orgId: string, selection?: WorkTaskQuery, snapshot?: Awaited<ReturnType<typeof selectedTaskSnapshot>>): Promise<DashboardSummary & { taskSource: string; taskTotal?: number; taskIds?: string[] }> {
+    const canonical = selection ? snapshot ?? await selectedTaskSnapshot(this.work, orgId, selection) : undefined;
     const now = new Date();
     const startToday = new Date(now);
     startToday.setHours(0, 0, 0, 0);
@@ -34,7 +38,7 @@ export class DashboardService {
         where: { orgId, eventName: 'purchase' },
         select: { value: true },
       }),
-      this.prisma.task.count({
+      canonical ? Promise.resolve(canonical.items.filter((t) => t.overdue).length) : this.prisma.task.count({
         where: { orgId, dueDate: { lt: now }, status: { not: 'concluida' } },
       }),
       this.prisma.campaign.count({ where: { orgId, status: 'ativa' } }),
@@ -49,6 +53,8 @@ export class DashboardService {
     const cpl = leadsMonth > 0 ? spend / leadsMonth : null;
 
     return {
+      taskSource: canonical ? 'trabalho-interno' : 'tarefas-legadas',
+      ...(canonical ? { taskTotal: canonical.total, taskIds: canonical.items.map((t) => t.id) } : {}),
       leadsToday,
       leadsWeek,
       leadsMonth,

@@ -37,7 +37,10 @@ const semRepetidos = (values, label) => {
   if (new Set(values).size !== values.length) falhar(`${label}: IDs repetidos`);
 };
 const prioridade = (v) => ({ urgent: 'urgente', high: 'alta', normal: 'normal', low: 'baixa' })[v?.priority] ?? null;
-const tipoCampo = (v) => ({ date: 'data', drop_down: 'drop_down', text: 'texto', number: 'numero', checkbox: 'checkbox', url: 'url' })[v];
+const tipoCampo = (v) => ({ date: 'data', drop_down: 'drop_down', text: 'texto', number: 'numero', checkbox: 'checkbox', url: 'url', currency: 'moeda' })[v];
+// O normalizador só transcreve o valor monetário; a conversão para o canônico
+// acontece uma vez, no TypeScript do importador, com a mesma regra da API.
+const vazioMonetario = (v) => v === null || v === undefined || v === '';
 const fileKey = (taskId, id) => `${taskId}\0${id}`;
 
 function validarArquivo(file, root) {
@@ -116,12 +119,20 @@ function main() {
     const statuses = l.statuses.map((s) => {
       if (nomesStatus.has(s.status)) falhar(`Status ambíguo em ${l.id}: ${s.status}`);
       nomesStatus.add(s.status);
-      if (!['open', 'custom', 'closed'].includes(s.type)) falhar(`Tipo de status desconhecido ${s.type}`);
+      if (!['open', 'custom', 'done', 'closed'].includes(s.type)) falhar(`Tipo de status desconhecido ${s.type}`);
       return { id: s.id, name: s.status, type: s.type, color: s.color, order: s.orderindex, raw: s };
     });
     const fields = l.fields.map((f, order) => {
       const type = tipoCampo(f.type);
       if (!type) falhar(`Tipo de campo desconhecido ${l.id}/${f.id}: ${f.type}`);
+      if (type === 'moeda') {
+        const moeda = f.type_config?.currency_type;
+        const casas = f.type_config?.precision;
+        if (typeof moeda !== 'string' || !/^[A-Z]{3}$/.test(moeda) || !Number.isInteger(casas) || casas < 0 || casas > 2) {
+          falhar(`Campo currency ${l.id}/${f.id} sem moeda ISO de três letras ou com precisão fora de 0 a 2`);
+        }
+        return { id: f.id, name: f.name, type, moeda, casas, order, options: [], raw: f };
+      }
       return { id: f.id, name: f.name, type, order,
         options: (f.type_config?.options ?? []).map((o) => ({ id: o.id, name: o.name,
           color: o.color, order: o.orderindex, raw: o })), raw: f };
@@ -147,6 +158,10 @@ function main() {
         values.push({ fieldId: f.id, optionId: option.id, value: null });
       } else if (f.type === 'date') {
         values.push({ fieldId: f.id, optionId: null, value: iso(f.value) });
+      } else if (f.type === 'currency') {
+        if (vazioMonetario(f.value)) continue;
+        if (typeof f.value !== 'string' && typeof f.value !== 'number') { gaps.push(`${t.id}: valor do campo ${f.id} sem texto nem número`); continue; }
+        values.push({ fieldId: f.id, optionId: null, value: f.value });
       } else values.push({ fieldId: f.id, optionId: null, value: String(f.value) });
     }
     const deps = t.dependencies.map((d) => {

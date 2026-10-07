@@ -230,11 +230,28 @@ Três consequências que são parte da decisão, não efeito colateral:
   vem vazia e há notas vivas daquela origem, e recusa o arquivamento quando ele passa de 20% das
   notas vivas (com piso de 5). `ObsidianService.reindex` recusa antes, na origem, quando a pasta
   existe e não tem nenhum `.md`. O motivo é concreto: `configured` só pergunta se o caminho existe,
-  e o `OBSIDIAN_VAULT_HOST` da VPS aponta para uma pasta que a documentação do projeto diz não ser a
-  vault real. Antes desta fatia o estrago seria um índice descartável; agora seria o histórico.
+  e o `OBSIDIAN_VAULT_HOST` da VPS apontou para uma pasta vazia que não era a vault real. Desde
+  17/09/2026 `/srv/marketing-os/vault` aponta para o clone da root-base: a vault lida é esse
+  clone. D1 (04/10/2026) decidiu que o Drive entra na root-base e a root-base continua a fonte.
+  Antes desta fatia o estrago seria um índice descartável; agora seria o histórico.
 - **O vetor não é reconstruído.** A migração do que já existe (`KnowledgeNote`) **copia** a coluna
   `embedding`, em SQL, sem chamar fornecedor nenhum. Vetor é caro e a contagem antes/depois é o
   critério de aceite, não a leitura do código.
+- **O vetor nunca descreve um corpo que não é o da nota, e só a casa reindexa.** São quatro,
+  e cada uma nasceu de um defeito achado na revisão. Primeira: o corpo trocado
+  anula o vetor na mesma transação, no gancho `noCadeado` de `MemoriaService.alterar`, porque uma
+  queda entre o commit e um `UPDATE` posterior deixaria o corpo novo com o vetor velho sem marca que
+  permita achá-lo. Segunda: `MemoriaService.gravarVetor` exige o hash do conteúdo e só grava quando o
+  `contentHash` da nota ainda é aquele, para que o vetor de um texto antigo, devolvido pelo
+  fornecedor depois de uma edição, não caia sobre o texto novo. Terceira: a fila de pendentes da
+  casa (`MemoriaService.semVetor`, com `excetoChaves`) deixa de fora as notas da vault listadas na
+  mesma volta, porque elas recebem o vetor do índice e, filtradas só depois do `LIMIT`, tomariam as
+  vagas das notas que só essa fila alcança. Quarta: só a empresa da casa reindexa, por
+  `ObsidianService.exigirEmpresaDaCasa`, que responde 403 nas duas portas de reindexação:
+  `POST /knowledge/reindex` (`ObsidianController`) e o verbo `sincronizar` do contrato
+  (`POST /integrations/:chave/sincronizacao`, `IntegrationsController`). A recusa vem antes de ler
+  a vault ou tocar no índice, porque indexá-la para outra empresa copiaria o contexto da ROOT para
+  dentro do cliente. Vetorizar a memória própria de cada empresa continua sendo de toda empresa.
 - **Desfazer a migração não apaga histórico.** `desfazer-migracao` só alcança nota que NASCEU na
   cópia e que ninguém encostou desde então: origem `vault`, chave com o prefixo, **versão 1**,
   histórico de **uma** linha marcada `semEventoPorque = 'migracao'` e **nenhum** elo com o RASTRO. O
@@ -242,3 +259,57 @@ Três consequências que são parte da decisão, não efeito colateral:
   "origem `vault` e chave com prefixo", que alcançava nota editada depois, nota criada pela projeção
   da vault (que nunca passou pelo comando) e o histórico das duas — contra a consequência 2 deste
   próprio documento.
+
+## A coleção `vault:` (ROOT-20, 02/10/2026)
+
+Contrato: `relatorios/ROOT-19/contrato.md` (C19-01 a C19-08), com as condições R-1 a R-10 da
+revisão ROOT-19-REV. Só a parte `vault:`. D1 foi decidida em 04/10/2026 e fecha o B2: o Drive entra
+na root-base, a root-base continua a fonte, as chaves `vault:` ficam e não há migração para
+`drive:<fileId>`. O que a ROOT-22 fizer com o Drive, e os aliases de C19-09, ficam fora desta fatia.
+
+- **Pertença pelo índice do git.** Um `.md` da vault entra na memória quando o caminho está no
+  `.git/index` (estágio 0, sem `skip-worktree` nem `intent-to-add`, modo de arquivo comum), quando
+  os bytes do disco dão o blob que o índice registra e quando o cabeçalho não traz
+  `gerado_por: root-os`. O leitor do formato `DIRC` é puro (`src/obsidian/indice-do-git.ts`) porque
+  a imagem da API não tem o binário do git. Índice ilegível, `.git` ausente, objetos SHA-256,
+  `core.autocrlf`, `.gitattributes` com conversão ou índice dividido: a volta não cria, não altera e
+  não arquiva nada, e o recibo diz `falhou`. O arquivo rastreado que ficou fora por anomalia
+  (alterado ou apagado fora do git, entrada não verificável, colisão de NFC) entra no conjunto de
+  vistos: o item dele não é arquivado nem alterado. Resíduo declarado: o índice não é o `HEAD`, e um
+  `git add` sem commit na VPS faz o arquivo contar como membro.
+- **NFC só na identidade.** A pertença e a leitura usam o caminho do disco em bytes; o NFC monta a
+  chave (`chaveDaVault`) e o rótulo. A colisão de NFC é conferida entre membros, depois da pertença.
+- **O recibo vai ao RASTRO quando há o que registrar.** `memoria.vault.recibo` sai quando a
+  projeção escreve na memória, quando o estado da coleção muda (commit, contagens, resultado,
+  conjunto segurado pela guarda) e numa batida diária; toda volta, mesmo sem evento, grava o frescor
+  em `IntegrationHealth` da conta `obsidian` da casa (`checkedAt` é a última execução, `lastSyncAt`
+  a última volta `ok`, `lastError` o motivo). A opção de um recibo por volta (48 por dia) pedia
+  mudar `EventLogService.verificar`, que confere só os primeiros 5.000 eventos da empresa: os
+  recibos sozinhos encheriam essa janela em uns 104 dias. Com a opção escolhida o volume cai para
+  algo na casa de um evento por mudança na base mais um por dia; a janela de `verificar` continua
+  sendo uma limitação dela, agora sem um gerador fixo de 48 eventos diários. O recibo sai de um
+  `finally`: a volta que lança, e a que teve a projeção falhando, também deixam recibo.
+- **Busca que falha zera o `FETCH_HEAD`.** Medido com o git 2.50.1 (E-20.2): a busca que falha
+  trunca o arquivo e atualiza a data dele. O recibo separa `ultimaBuscaEm` (a última que trouxe o
+  remoto) de `ultimaBuscaFalhouEm`, e a segunda deixa a montante como parada.
+- **Movimento com o mesmo `itemId`.** Um item sumido e um membro novo com o mesmo `contentHash`
+  formam par quando o hash é único entre itens vivos e membros da volta e o corpo tem pelo menos
+  `PISO_DO_PAR` caracteres. O par vira uma versão `alteracao` com o `sourceRef` novo; o evento
+  publica `vault:A` no estado anterior e `vault:B` no novo. Acima do teto da guarda de arquivamento,
+  a volta segura os pares inteiros (nada nasce no destino, nada é arquivado na origem).
+- **A saída humana das guardas é um comando.** `node dist/scripts/liberar-guarda-da-vault.js`
+  grava `memoria.vault.guarda_liberada` com autor e motivo, valendo por 24 horas para o conjunto
+  exato (resumo das chaves) que o último recibo mostrou segurado; a volta seguinte consome a
+  liberação e o recibo diz qual. As frases das duas guardas apontam para ele.
+- **A recusa mora na borda HTTP.** `MemoriaController` recusa alterar, arquivar e restaurar item
+  da vault (E4 da ROOT-05-REV) e recusa criar ou promover com chave `vault:` ou origem `vault`.
+  `MemoriaService` segue aceitando esses pedidos, porque é por ele que a projeção escreve.
+- **Cabeçalho vira campo, e o histórico dele vai no evento.** `kind`, `valido_de`, `valido_ate` e
+  `substitui` contam como mudança. `ContextItemVersion` não ganhou colunas (seria migration); o
+  evento leva `validFrom`, `validUntil` e `supersedesId` no estado anterior e no novo. Quando o
+  evento vencer pela retenção, a versão continua legível sem o histórico desses três campos. O
+  `kind` só é lido depois da exclusão da página gerada, e por isso o eco que `documentacao.ts`
+  fechava ao não emitir `nota` continua fechado.
+- **Custo da primeira volta em produção.** Na árvore que produção lia (`e2a2178`), 395 das 397
+  notas da coleção mudam na primeira volta com o cabeçalho lido (218 pelo `kind`, e 392 trazem
+  `valido_de`): 395 versões e 395 eventos de uma vez, mais as páginas que o gerador emitir depois.

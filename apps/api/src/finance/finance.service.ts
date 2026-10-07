@@ -19,7 +19,7 @@ import { PluggyService } from './pluggy.service';
 import { AsaasService } from './asaas.service';
 import type { BankConnection as BankConnectionRow } from '@prisma/client';
 import { parseOfx } from './ofx';
-import { APPROVAL_LIMIT } from './apr.service';
+import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
 
 // status que efetivamente movem o caixa (contam no saldo)
 const EFFECTIVE: FinanceTxStatus[] = ['realizado', 'conciliado'];
@@ -235,23 +235,18 @@ export class FinanceService implements OnModuleInit {
   }
 
   async createTransaction(orgId: string, input: CreateFinanceTransactionInput, actorId: string) {
-    const account = await this.prisma.financeAccount.findFirst({ where: { id: input.accountId, orgId } });
-    if (!account) throw new NotFoundException('Conta não encontrada');
-    if (input.categoryId) {
-      const cat = await this.prisma.financeCategory.findFirst({ where: { id: input.categoryId, orgId } });
-      if (!cat) throw new NotFoundException('Categoria não encontrada');
-    }
-    if (input.chartAccountId) {
-      const ca = await this.prisma.chartAccount.findFirst({ where: { id: input.chartAccountId, orgId } });
-      if (!ca) throw new NotFoundException('Conta do plano de contas não encontrada');
-    }
-    if (input.partnerId) {
-      const p = await this.prisma.partner.findFirst({ where: { id: input.partnerId, orgId } });
-      if (!p) throw new NotFoundException('Parceiro (fornecedor/cliente) não encontrado');
-    }
+    const splits = input.splits ?? [];
+    await conferirReferencias(this.prisma, orgId, {
+      conta: input.accountId,
+      categoria: input.categoryId,
+      plano: [input.chartAccountId, ...splits.map((s) => s.chartAccountId)],
+      parceiro: input.partnerId,
+      contrato: input.contractId,
+      departamento: [input.departamentoId, ...splits.map((s) => s.departamentoId)],
+      projeto: [input.projetoId, ...splits.map((s) => s.projetoId)],
+    });
     const status = (input.status ?? 'realizado') as FinanceTxStatus;
     // rateio: soma dos splits deve bater com o valor
-    const splits = input.splits ?? [];
     if (splits.length) {
       const sum = splits.reduce((s, x) => s + x.valor, 0);
       if (Math.abs(sum - input.amount) > 0.01) {

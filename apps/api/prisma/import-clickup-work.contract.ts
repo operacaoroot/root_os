@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { MOEDA_PADRAO, motivoDaMoedaECasas, valorMonetarioCanonico } from '@mktos/shared';
 
 const id = z.string().min(1);
 const nome = z.string().min(1);
@@ -15,6 +16,8 @@ const opcao = z.object({ id, name: nome, color: cor, order: z.number().int() }).
 const campo = z.object({
   id, name: nome, type: z.string().min(1),
   order: z.number().int(), options: z.array(opcao),
+  // Só no tipo `moeda`: o `currency_type` e a `precision` do ClickUp.
+  moeda: z.string().optional(), casas: z.number().optional(),
 }).passthrough();
 const lista = z.object({
   id, name: nome, folderId: id.nullable(), order: z.number().int(),
@@ -81,6 +84,18 @@ export const MARKETING_LIST_IDS: readonly string[] = [
   '901328341451', // Demandas gerais
 ];
 
+/**
+ * Tipo da etapa na origem → tipo nativo (ROOT-06a, S1). `done` vira `closed`
+ * porque prazo vencido, Caixa e idade do cartão tratam `closed` como encerrada;
+ * o `done` continua no snapshot e no `origemHash` da etapa.
+ */
+export const TIPO_NATIVO_DO_STATUS = { open: 'open', custom: 'custom', done: 'closed', closed: 'closed' } as const;
+export function tipoNativoDoStatus(tipo: string): 'open' | 'custom' | 'closed' | undefined {
+  return Object.hasOwn(TIPO_NATIVO_DO_STATUS, tipo)
+    ? TIPO_NATIVO_DO_STATUS[tipo as keyof typeof TIPO_NATIVO_DO_STATUS]
+    : undefined;
+}
+
 /** Hash estável mesmo que o exportador mude a ordem das chaves de objeto. */
 export function canonical(value: unknown): string {
   if (value instanceof Date) return JSON.stringify(value.toISOString());
@@ -142,13 +157,26 @@ export function validarSnapshot(snapshot: ClickupSnapshot): { erros: string[]; a
     distintos(l.fields.map((f) => f.id), `campo da lista ${l.id}`, erros);
     distintos(l.fields.map((f) => f.name), `nome de campo da lista ${l.id}`, erros);
     for (const s of l.statuses) {
-      if (!['open', 'custom', 'closed'].includes(s.type)) erros.push(`status ${l.id}/${s.id}: tipo ${s.type} sem mapeamento nativo`);
+      if (!tipoNativoDoStatus(s.type)) erros.push(`status ${l.id}/${s.id}: tipo ${s.type} sem mapeamento nativo`);
+      else if (s.type === 'done') {
+        const nela = snapshot.tasks.filter((t) => t.listId === l.id && t.statusId === s.id).length;
+        avisos.push(`lista ${l.id}: etapa ${s.id} (${s.name}) é done na origem e será gravada como closed; ${nela} tarefa(s) nela`);
+      }
     }
     for (const f of l.fields) {
       distintos(f.options.map((o) => o.id), `opção ${l.id}/${f.id}`, erros);
       distintos(f.options.map((o) => o.name), `nome de opção ${l.id}/${f.id}`, erros);
-      if (!['drop_down', 'texto', 'numero', 'data', 'checkbox', 'url'].includes(f.type)) {
+      if (!['drop_down', 'texto', 'numero', 'data', 'checkbox', 'url', 'moeda'].includes(f.type)) {
         erros.push(`campo ${l.id}/${f.id}: tipo ${f.type} sem mapeamento nativo`);
+      }
+      if (f.type === 'moeda') {
+        if (f.moeda === undefined || f.casas === undefined) erros.push(`campo ${l.id}/${f.id}: tipo moeda exige moeda e casas`);
+        else {
+          const motivo = motivoDaMoedaECasas(f.moeda, f.casas);
+          if (motivo) erros.push(`campo ${l.id}/${f.id}: ${motivo}`);
+          else if (f.moeda !== MOEDA_PADRAO) avisos.push(`campo ${l.id}/${f.id}: moeda ${f.moeda}; sem valor gravado, a tela propõe ${MOEDA_PADRAO} para valor novo`);
+        }
+        if (f.options.length) erros.push(`campo ${l.id}/${f.id}: tipo moeda não tem opções`);
       }
     }
     if (!l.folderId) { erros.push(`lista ${l.id} sem folderId; este lote requer caminho completo`); continue; }
@@ -178,7 +206,14 @@ export function validarSnapshot(snapshot: ClickupSnapshot): { erros: string[]; a
       for (const v of t.fieldValues) {
         const f = l.fields.find((item) => item.id === v.fieldId);
         if (!f) avisos.push(`campo ${v.fieldId} da tarefa ${t.id} fica apenas no snapshot`);
-        else if (v.optionId && !f.options.some((o) => o.id === v.optionId)) avisos.push(`opção ${v.optionId} da tarefa ${t.id} fica apenas no snapshot`);
+        else if (f.type === 'moeda') {
+          // O motivo nunca traz o valor: o relatório do dry-run circula fora do banco.
+          if (v.optionId) erros.push(`valor do campo ${f.id} da tarefa ${t.id}: tipo moeda não aceita optionId`);
+          else if (f.moeda !== undefined && f.casas !== undefined && !motivoDaMoedaECasas(f.moeda, f.casas)) {
+            const r = valorMonetarioCanonico(v.value, f.moeda, f.casas);
+            if (r.motivo) erros.push(`valor do campo ${f.id} da tarefa ${t.id}: ${r.motivo}`);
+          }
+        } else if (v.optionId && !f.options.some((o) => o.id === v.optionId)) avisos.push(`opção ${v.optionId} da tarefa ${t.id} fica apenas no snapshot`);
       }
     }
     if (t.parentId && !tarefas.has(t.parentId)) avisos.push(`pai ${t.parentId} da subtarefa ${t.id} fora do lote; relação fica apenas no snapshot`);

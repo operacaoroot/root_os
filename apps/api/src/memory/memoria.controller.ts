@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -12,6 +13,7 @@ import {
 import { ContextKind, ContextSource } from '@prisma/client';
 import { z } from 'zod';
 import { MemoriaService } from './memoria.service';
+import { ehChaveDaVault } from './procedencia';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
@@ -90,10 +92,49 @@ const PromoverSchema = z
 
 const MotivoSchema = z.object({ motivo: z.string().max(2000).nullish() }).strict();
 
+/*
+ * ============================================================================
+ * A COLEÇÃO `vault:` É DA PROJEÇÃO — e a recusa mora AQUI, na borda (R-5)
+ * ============================================================================
+ *
+ * Duas regras de C19-06, e as duas são recusas para GENTE:
+ *
+ *  · E4 da ROOT-05-REV (regra 2): nota da vault não se altera, não se arquiva
+ *    e não se restaura pela tela. Arquivar pela tela durava meia hora — a volta
+ *    seguinte da projeção restaurava com "o arquivo voltou a existir na vault" —
+ *    e alterar era desfeito do mesmo jeito. A fonte da nota é a base, pelo git.
+ *  · Reserva do prefixo (regra 3): criar ou promover com chave `vault:…`, criar
+ *    com origem `vault` e trocar a origem para `vault` são recusados. Uma nota
+ *    digitada assim seria alterada pela projeção, se o arquivo existisse, ou
+ *    arquivada como órfã, se não existisse.
+ *
+ * NÃO EM `MemoriaService`, de propósito: é por ele que a projeção cria, altera,
+ * restaura e arquiva item `vault:` a cada volta, e é com ele que a suíte da
+ * memória monta notas da vault. A recusa no serviço quebraria os dois; aqui ela
+ * alcança exatamente quem a regra quer alcançar — a requisição de uma pessoa.
+ */
+const FRASE_DA_VAULT =
+  'Esta nota vem da vault da casa (a root-base) e só a projeção mexe nela. Edite o arquivo na ' +
+  'base, pelo git: a memória acompanha na volta seguinte, e o que a projeção fez fica no recibo ' +
+  'da vault (evento memoria.vault.recibo no RASTRO).';
+
+const FRASE_DO_PREFIXO =
+  'A chave "vault:" e a origem "vault" são reservadas à projeção da vault da casa: uma nota ' +
+  'digitada com elas seria alterada ou arquivada pela volta seguinte. Use outra chave e outra ' +
+  'origem (operador, upload, promocao ou conector).';
+
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('memoria')
 export class MemoriaController {
   constructor(private readonly memoria: MemoriaService) {}
+
+  /** A nota existe e é da vault? Então a pessoa não mexe nela (E4). Inexistente segue para o 404 do serviço. */
+  private async exigirForaDaVault(orgId: string, id: string): Promise<void> {
+    const nota = await this.memoria.obter(orgId, id);
+    if (nota && (ehChaveDaVault(nota.chave) || nota.sourceType === ContextSource.vault)) {
+      throw new ForbiddenException(FRASE_DA_VAULT);
+    }
+  }
 
   @Get()
   @RequirePermissions('obsidian.ver')
@@ -171,6 +212,9 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const dados = CriarSchema.parse(body);
+    if (ehChaveDaVault(dados.chave) || dados.sourceType === ContextSource.vault) {
+      throw new ForbiddenException(FRASE_DO_PREFIXO);
+    }
     return this.memoria.criar(user.orgId, dados);
   }
 
@@ -179,13 +223,16 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   promover(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const dados = PromoverSchema.parse(body);
+    if (ehChaveDaVault(dados.chave)) throw new ForbiddenException(FRASE_DO_PREFIXO);
     return this.memoria.promover(user.orgId, dados);
   }
 
   @Patch(':id')
   @RequirePermissions('obsidian.editar')
-  alterar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+  async alterar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const dados = AlterarSchema.parse(body);
+    await this.exigirForaDaVault(user.orgId, id);
+    if (dados.sourceType === ContextSource.vault) throw new ForbiddenException(FRASE_DO_PREFIXO);
     return this.memoria.alterar(user.orgId, id, dados);
   }
 
@@ -196,15 +243,17 @@ export class MemoriaController {
    */
   @Post(':id/arquivar')
   @RequirePermissions('obsidian.editar')
-  arquivar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+  async arquivar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const { motivo } = MotivoSchema.parse(body ?? {});
+    await this.exigirForaDaVault(user.orgId, id);
     return this.memoria.arquivar(user.orgId, id, motivo);
   }
 
   @Post(':id/restaurar')
   @RequirePermissions('obsidian.editar')
-  restaurar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+  async restaurar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const { motivo } = MotivoSchema.parse(body ?? {});
+    await this.exigirForaDaVault(user.orgId, id);
     return this.memoria.restaurar(user.orgId, id, motivo);
   }
 }

@@ -7,6 +7,7 @@ import {
   EstadoDeAgente,
   AgentTipo,
   BioPlataforma,
+  Prisma,
   PrismaClient,
   RiskLevel,
   SessionCanal,
@@ -1371,9 +1372,9 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
   });
 
   /** Uma credencial da bio como ela existe HOJE: cifrada com a chave de ambiente. */
-  async function plantarHerdada(): Promise<void> {
+  async function plantarHerdada(db: Pick<PrismaClient, 'bioConexao'> = prisma): Promise<void> {
     comChaveiro({ env: CHAVE_ENV });
-    await prisma.bioConexao.create({
+    await db.bioConexao.create({
       data: {
         orgId: ORG_H,
         plataforma: 'instagram',
@@ -1385,17 +1386,49 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
     });
   }
 
-  const envHerdadas = async () =>
-    (await rotacao.herdadas())
+  const envHerdadas = async (r: RotacaoDeChaveService = rotacao) =>
+    (await r.herdadas())
       .filter((h) => h.chaveId === 'env')
       .reduce((s, h) => s + h.quantas, 0);
 
-  it('a credencial da bio aparece no inventário, na coluna `herdadas`', async () => {
-    const antes = await envHerdadas();
-    await plantarHerdada();
+  /*
+   * O ANTES E O DEPOIS NO MESMO INSTANTÂNEO DO BANCO.
+   *
+   * `herdadas()` conta o banco INTEIRO, e tem de contar: "posso aposentar a
+   * chave?" é pergunta do cofre todo, e um recorte por empresa aqui deixaria de
+   * provar a função que o roteiro usa. Só que os arquivos da suíte rodam em
+   * PARALELO no mesmo banco (`test/banco-de-teste.ts`), e as suítes da bio e da
+   * pauta gravam e apagam, ao longo dos casos delas, conexão cifrada com a chave
+   * de ambiente. Duas contagens feitas em momentos diferentes mediam o trabalho
+   * delas junto. Medido em 01/10/2026: com essas suítes em laço, `depois` saiu
+   * `antes` e `antes + 2`; com gravação e exclusão em laço apertado noutra
+   * empresa, a recusa da rotação também mudou de lado entre a conferência e a
+   * chamada.
+   *
+   * Numa transação `REPEATABLE READ`, toda leitura vê o banco como ele estava
+   * na primeira, mais o que a própria transação escreveu (o mesmo recurso de
+   * `llm/relatorio-custo.service.ts`). A diferença entre duas contagens feitas
+   * ali dentro é o que o caso fez, e a conta continua sendo a de produção, sem
+   * `where`. Não há trava: as vizinhas seguem gravando; só não entram na conta.
+   */
+  const noMesmoInstantaneo = <T>(
+    fn: (rot: RotacaoDeChaveService, tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> =>
+    prisma.$transaction((tx) => fn(new RotacaoDeChaveService(tx as unknown as PrismaClient), tx), {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
 
-    const depois = await envHerdadas();
+  it('a credencial da bio aparece no inventário, na coluna `herdadas`', async () => {
+    const { antes, depois, invNoInstantaneo } = await noMesmoInstantaneo(async (rot, tx) => {
+      const antes = await envHerdadas(rot);
+      await plantarHerdada(tx);
+      return { antes, depois: await envHerdadas(rot), invNoInstantaneo: await rot.inventario() };
+    });
     expect(depois).toBe(antes + 1);
+    // No mesmo instantâneo, o inventário tem de dar exatamente o que `herdadas()`
+    // contou. Fora dele só cabem `>= 1` e a soma do total, e as duas continuam
+    // verdadeiras com as herdadas somadas em dobro.
+    expect(invNoInstantaneo.env.herdadas).toBe(depois);
 
     const inv = await rotacao.inventario();
     expect(inv.env.herdadas).toBeGreaterThanOrEqual(1);
@@ -1444,17 +1477,21 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
      * A condição é conferida em vez de presumida porque a suíte da api roda os
      * arquivos EM PARALELO contra o mesmo banco: outra suíte pode ter plantado
      * conexão de bio, e afirmar "não há nenhuma" seria afirmar sobre o trabalho
-     * dela.
+     * dela. A conferência e a rotação leem o MESMO instantâneo: em leituras
+     * separadas, uma conexão gravada ou apagada no meio fazia o caso esperar um
+     * ramo e a rotação decidir pelo outro.
      */
     comChaveiro({ env: CHAVE_ENV, chaves: `k2:${CHAVE_K2}`, atual: 'k2' });
-    if ((await envHerdadas()) === 0) {
-      const r = await rotacao.rotacionar({ orgId: ORG_H });
-      expect(r.paraChaveId).toBe('k2');
-      expect(r.falhas).toEqual([]);
-    } else {
-      // Há herdada de outra suíte: então o que se prova aqui é a recusa.
-      await expect(rotacao.rotacionar({ orgId: ORG_H })).rejects.toThrow(/FORA do cofre/);
-    }
+    await noMesmoInstantaneo(async (rot) => {
+      if ((await envHerdadas(rot)) === 0) {
+        const r = await rot.rotacionar({ orgId: ORG_H });
+        expect(r.paraChaveId).toBe('k2');
+        expect(r.falhas).toEqual([]);
+      } else {
+        // Há herdada de outra suíte: então o que se prova aqui é a recusa.
+        await expect(rot.rotacionar({ orgId: ORG_H })).rejects.toThrow(/FORA do cofre/);
+      }
+    });
   });
 
   it('depois de MIGRAR, a herdada continua contando — porque a coluna continua lá', async () => {
@@ -1467,17 +1504,40 @@ describe.skipIf(!URL)('o inventário conta o que a rotação NÃO alcança', () 
      * mentira por outra.
      */
     await plantarHerdada();
-    const antes = await envHerdadas();
-
-    const cofre = new CofreService(
-      prisma as unknown as PrismaService,
-      new EventLogService(prisma as never),
-    );
+    // A linha plantada, lida antes da migração, para conferir pelo `id` depois.
+    const origem = await prisma.bioConexao.findFirstOrThrow({
+      where: { orgId: ORG_H },
+      select: { id: true, tokenCifrado: true },
+    });
     comChaveiro({ env: CHAVE_ENV, chaves: `k2:${CHAVE_K2}`, atual: 'k2' });
-    const m = await migrarCredenciaisParaOCofre(prisma, cofre, { orgId: ORG_H });
+
+    // A migração roda DENTRO do instantâneo, com o cliente da transação: é o que
+    // deixa a contagem de depois ver o que ela fez sem ver o que as vizinhas
+    // fizeram no mesmo intervalo. O RASTRO vai pela conexão de fora, porque
+    // `EventLogService` abre a própria transação.
+    const { antes, depois, m } = await noMesmoInstantaneo(async (rot, tx) => {
+      const antes = await envHerdadas(rot);
+      const cofre = new CofreService(
+        tx as unknown as PrismaService,
+        new EventLogService(prisma as never),
+      );
+      const m = await migrarCredenciaisParaOCofre(tx as unknown as PrismaClient, cofre, {
+        orgId: ORG_H,
+      });
+      return { antes, depois: await envHerdadas(rot), m };
+    });
     expect(m.migrados.length).toBeGreaterThanOrEqual(1);
 
-    expect(await envHerdadas()).toBe(antes);
+    expect(depois).toBe(antes);
+    // `depois` só enxerga o que passou pelo cliente da transação. A coluna de
+    // origem desta empresa, relida pela conexão de fora depois do commit, mostra o
+    // que qualquer conexão tenha escrito nela: migrar copia, e ela fica como foi
+    // plantada.
+    const agora = await prisma.bioConexao.findUniqueOrThrow({
+      where: { id: origem.id },
+      select: { tokenCifrado: true },
+    });
+    expect(agora.tokenCifrado).toBe(origem.tokenCifrado);
     await expect(rotacao.rotacionar({ orgId: ORG_H })).rejects.toThrow(/FORA do cofre/);
   });
 });

@@ -122,6 +122,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
       TEST_DATABASE_URL: postgresql://mkt:mkt@localhost:5432/marketing_os_test
+      # Banco próprio do P-05d; as guards exigem este IP e prefixo literalmente.
+      P05D_OWNER_DATABASE_URL: postgresql://mkt:mkt@127.0.0.1:5432/ctx_p05d_ci
+      P05D_APP_DATABASE_URL: postgresql://ctx_probe:ci@127.0.0.1:5432/ctx_p05d_ci
       # Fixado de propósito: se esta variável vazar com outro valor, o vitest da
       # api troca o conjunto de arquivos e roda só o isolamento. Aqui ela é
       # sempre `padrao`, e o piso de casos abaixo pega qualquer desvio.
@@ -1998,6 +2001,34 @@ jobs:
       - name: Aplicar as migrations no banco da CI
         run: pnpm --filter @mktos/api db:deploy
 
+      - name: Preparar o banco próprio e o papel restrito do P-05d
+        env:
+          PGPASSWORD: mkt
+        run: |
+          psql -h 127.0.0.1 -U mkt -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE ctx_p05d_ci'
+          DATABASE_URL="$P05D_OWNER_DATABASE_URL" pnpm --filter @mktos/api db:deploy
+          # Como no job isolamento: a migration cria mktos_app; a senha é
+          # sintética e dura somente neste runner. ctx_probe herda esse papel.
+          psql -h 127.0.0.1 -U mkt -d ctx_p05d_ci -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mktos_app') THEN
+              RAISE EXCEPTION 'mktos_app não foi criado pelas migrations';
+            END IF;
+            IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'mktos_app') THEN
+              RAISE EXCEPTION 'mktos_app não é restrito';
+            END IF;
+            IF (SELECT count(*) FROM app_rls_estado()
+                WHERE tabela IN ('ContextItem','ContextItemVersion','EventLog','KnowledgeNote')
+                  AND rls AND force AND policies > 0) <> 4 THEN
+              RAISE EXCEPTION 'P-05d exige as quatro tabelas com RLS FORCE e policies';
+            END IF;
+          END $$;
+          CREATE ROLE ctx_probe LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+            NOREPLICATION NOBYPASSRLS PASSWORD 'ci';
+          GRANT mktos_app TO ctx_probe;
+          SQL
+
       # A régua como DADO. O seed é idempotente e recusa rebaixar nível; se o
       # catálogo divergir do classificador ele sai com código 1 e reprova aqui,
       # que é exatamente onde essa divergência tem que aparecer.
@@ -2181,6 +2212,18 @@ jobs:
         run: |
           node "$RUNNER_TEMP/conferir-suite.mjs" "$RUNNER_TEMP/resumo-api.json" \
             "$PISO_CASOS_API" "$PISO_ARQUIVOS_API" api
+
+      - name: Limpar o banco e o papel temporários do P-05d
+        if: ${{ always() }}
+        env:
+          PGPASSWORD: mkt
+        run: |
+          # Nomes fixos apenas no serviço descartável deste job; mktos_app é
+          # compartilhado com marketing_os_test e não deve ser removido.
+          psql -h 127.0.0.1 -U mkt -d postgres -v ON_ERROR_STOP=1 \
+            -c 'DROP DATABASE IF EXISTS ctx_p05d_ci WITH (FORCE)'
+          psql -h 127.0.0.1 -U mkt -d postgres -v ON_ERROR_STOP=1 \
+            -c 'DROP ROLE IF EXISTS ctx_probe'
 
   # ---------------------------------------------------------------------------
   # 2. Isolamento entre tenants — job próprio, fora do `pnpm test`.

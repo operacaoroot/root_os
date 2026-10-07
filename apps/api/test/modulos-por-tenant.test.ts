@@ -248,7 +248,8 @@ describe('tenant com tudo habilitado', () => {
     const comFiltro = navPorSecao(perms, MODULOS);
     const semFiltro = navPorSecao(perms);
     expect(chaves(comFiltro)).toEqual(chaves(semFiltro));
-    expect(chaves(comFiltro).length).toBe(NAV.length);
+    // /assinatura é item oculto (ROOT-07): fica no NAV, fora do menu.
+    expect(chaves(comFiltro).length).toBe(NAV.filter((n) => !n.oculto).length);
   });
 });
 
@@ -334,7 +335,8 @@ describe('desligar um módulo de cada vez', () => {
 
       it('a espinha do OS não se mexe', () => {
         const perms = NAV.map((n) => n.permission);
-        const daEspinha = (itens: NavItem[]) => itens.filter((n) => !n.modulo).map((n) => n.key);
+        const daEspinha = (itens: NavItem[]) =>
+          itens.filter((n) => !n.modulo && !n.oculto).map((n) => n.key);
         expect(daEspinha(navPorSecao(perms, [...ligados]).flatMap((g) => g.itens))).toEqual(
           daEspinha(NAV),
         );

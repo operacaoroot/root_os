@@ -44,9 +44,17 @@ export default function ConteudoPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted">
-            {data ? `${data.total} tema(s) na lista` : 'Carregando…'} · temas importados da lista
-            Gestão de Temas do ClickUp. Gerencie a conexão em{' '}
+            {data ? `${data.total} tema(s) na lista` : 'Carregando…'} · espelho da lista Gestão de
+            Temas do ClickUp. Gerencie a conexão em{' '}
             <a href="/conexoes" className="text-brand hover:underline">Integrações</a>.
+          </p>
+          <p className="mt-1 text-xs text-muted" data-testid="conteudo-orientacao">
+            O destino das tarefas do ClickUp é o{' '}
+            <a href="/trabalho" className="text-brand hover:underline">Quadro interno</a>. Produção e
+            curadoria ficam em{' '}
+            <a href="/pauta" className="text-brand hover:underline">Produção de conteúdo</a>, e as
+            ideias da casa, no{' '}
+            <a href="/marketing/ideias" className="text-brand hover:underline">Banco de ideias</a>.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

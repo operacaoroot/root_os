@@ -22,13 +22,19 @@ const SUBTITULOS: Record<string, string> = {
   agenda: 'compromissos e reuniões',
   console: 'indicadores da operação',
   contexto: 'regras, fontes e decisões da empresa',
+  marca: 'quem a empresa é e sobre o que fala',
   organograma: 'pessoas e agentes da empresa',
-  tarefas: 'lista separada do quadro interno',
+  tarefas: 'tarefas da lista selecionada',
   trabalho: 'quadro de tarefas nativo do OS',
   onboarding: 'esteira de clientes em cinco fases',
-  conteudo: 'temas da lista Gestão de Temas',
+  conteudo: 'espelho dos temas do ClickUp',
   pauta: 'curadoria, episódios e semana de posts',
   referencias: 'repertório para a produção',
+  marketing: 'onde cada parte do marketing mora',
+  'marketing-ideias': 'ideias da casa antes de virar peça',
+  'marketing-estrategia': 'pilares, cadência e metas do mês',
+  'marketing-performance': 'números da conta contra a própria mediana',
+  'marketing-relatorio': 'fechamento do mês',
   instagram: 'dados da conta',
   bio: 'links da página pública',
   leads: 'contatos comerciais',
@@ -84,6 +90,8 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const busca = useRef<HTMLInputElement>(null);
+  const lupa = useRef<HTMLButtonElement>(null);
+  const abertaPelaLupa = useRef(false);
   const [paleta, setPaleta] = useState(false);
 
   const rotulo = rotuloDaRota(pathname);
@@ -123,7 +131,21 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
       <span className="flex-1" />
 
       {/* Busca global (stub — Fase 5) */}
-      <div className="relative hidden w-[220px] min-[900px]:block">
+      <button
+        ref={lupa}
+        type="button"
+        onClick={() => {
+          abertaPelaLupa.current = true;
+          setPaleta(true);
+        }}
+        aria-label="Buscar no menu"
+        title="Buscar no menu"
+        className="grid h-[26px] w-[26px] flex-none place-items-center border border-border text-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[1024px]:hidden"
+      >
+        <Search size={13} />
+      </button>
+
+      <div className="relative hidden w-[220px] min-[1024px]:block">
         <Search
           size={13}
           className="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-dim"
@@ -165,7 +187,17 @@ export function Topbar({ titulo, subtitulo }: { titulo?: string; subtitulo?: str
           <LogOut size={13} />
         </button>
       </div>
-      <Paleta aberto={paleta} fechar={() => setPaleta(false)} />
+      <Paleta
+        aberto={paleta}
+        fechar={() => {
+          setPaleta(false);
+          // devolve o foco só a quem abriu pela lupa; o campo "ir para…" reabriria a paleta ao receber foco
+          if (abertaPelaLupa.current) {
+            abertaPelaLupa.current = false;
+            lupa.current?.focus();
+          }
+        }}
+      />
     </header>
   );
 }

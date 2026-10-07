@@ -69,11 +69,10 @@ async function main() {
   // 1) Pastas e listas
   const listaPorNome = new Map<string, string>(); // "pasta/lista" → id
   for (const [pi, p] of ESTRUTURA.entries()) {
-    const folder = await prisma.workFolder.upsert({
-      where: { orgId_name: { orgId, name: p.pasta } },
-      update: { order: pi },
-      create: { orgId, name: p.pasta, order: pi },
-    });
+    const existente = await prisma.workFolder.findFirst({ where: { orgId, spaceId: null, parentId: null, name: p.pasta } });
+    const folder = existente
+      ? await prisma.workFolder.update({ where: { id: existente.id }, data: { order: pi } })
+      : await prisma.workFolder.create({ data: { orgId, name: p.pasta, order: pi } });
     for (const [li, l] of p.listas.entries()) {
       let list = await prisma.workList.findFirst({ where: { orgId, folderId: folder.id, name: l.nome } });
       if (!list) {
@@ -173,7 +172,7 @@ async function main() {
   // 5) Tarefas operacionais (Task tool=clickup) → lista "realocar"
   let realocar = await prisma.workList.findFirst({ where: { orgId, name: LISTA_REALOCAR } });
   if (!realocar) {
-    const projMkt = await prisma.workFolder.findUnique({ where: { orgId_name: { orgId, name: 'Projeto Mkt' } } });
+    const projMkt = await prisma.workFolder.findFirst({ where: { orgId, spaceId: null, parentId: null, name: 'Projeto Mkt' } });
     realocar = await prisma.workList.create({ data: { orgId, folderId: projMkt!.id, name: LISTA_REALOCAR, order: 99 } });
     for (const [si, s] of STATUSES_PADRAO.entries()) {
       await prisma.workStatus.create({ data: { listId: realocar.id, name: s.name, type: s.type, color: s.color, order: si } });

@@ -28,6 +28,6 @@ import { WorkFilesService } from './work-files.service';
   imports: [AuditModule],
   controllers: [WorkController, WorkFilesController],
   providers: [WorkService, CheckoutDeTarefaService, WorkFilesService],
-  exports: [CheckoutDeTarefaService],
+  exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}

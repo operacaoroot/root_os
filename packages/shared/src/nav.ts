@@ -2,20 +2,41 @@ import type { Permission } from './permissions.js';
 
 // A navegação agrupa destinos pela intenção do operador. A posição de uma rota
 // não altera a permissão nem o módulo que governa seu acesso.
+//
+// AS CHAVES SÃO PUBLICADAS. `area:<chave>` é a tag que as notas do vault usam
+// para cair numa área do mapa de /contexto (apps/web/src/app/contexto/grafo.ts
+// deriva as áreas daqui). Por isso as oito chaves de antes (dia, empresa,
+// trabalho, conteudo, comercial, resultados, automacoes, controle) continuam
+// existindo e só mudaram de rótulo, de ordem e de tipo; o que entrou de novo
+// (financeiro, registros, conta) soma chaves. Trocar ou tirar uma chave deixa a
+// nota com a tag antiga sem área, calada: o teste de nav.test.ts cobra a lista.
+//
+// `dentroDe` é só desenho: a seção aparece recuada sob a outra. Não muda
+// permissão, módulo nem o filtro por área.
 export const SECOES = [
   { key: 'dia', label: 'Dia a dia', hint: 'pendências, decisões e agenda', tipo: 'principal' },
-  { key: 'empresa', label: 'Empresa', hint: 'conhecimento e equipe', tipo: 'principal' },
-  { key: 'trabalho', label: 'Trabalho', hint: 'tarefas e implantação', tipo: 'principal' },
-  { key: 'conteudo', label: 'Conteúdo', hint: 'temas e produção', tipo: 'principal' },
-  { key: 'comercial', label: 'Comercial', hint: 'leads e campanhas', tipo: 'principal' },
-  { key: 'resultados', label: 'Resultados', hint: 'relatórios, metas e custos', tipo: 'principal' },
-  { key: 'automacoes', label: 'Automações', hint: 'agentes, rotinas e processos', tipo: 'apoio' },
-  { key: 'controle', label: 'Configuração e controle', hint: 'ferramentas, acesso e histórico', tipo: 'apoio' },
+  { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
+  { key: 'trabalho', label: 'Trabalho', hint: 'tarefas, quadro, ideias e implantação', tipo: 'principal' },
+  { key: 'conteudo', label: 'Motor de Marketing', hint: 'conteúdo, campanhas e medição', tipo: 'principal' },
+  { key: 'comercial', label: 'Motor Comercial', hint: 'leads e funil de vendas', tipo: 'principal' },
+  { key: 'financeiro', label: 'Motor Financeiro', hint: 'ferramentas e contratos financeiros', tipo: 'principal' },
+  { key: 'automacoes', label: 'Motor de IA', hint: 'agentes, rotinas, sessões e custos', tipo: 'principal' },
+  { key: 'resultados', label: 'Resultados', hint: 'relatórios e metas', tipo: 'principal' },
+  { key: 'controle', label: 'Configurações da empresa', hint: 'equipe, ferramentas, integrações e regras', tipo: 'apoio' },
+  { key: 'registros', label: 'Registros', hint: 'registro de ações e atividade', tipo: 'apoio', dentroDe: 'controle' },
+  { key: 'conta', label: 'Configurações da conta', hint: 'perfil e preferências', tipo: 'apoio' },
 ] as const;
 
-export type Secao = (typeof SECOES)[number];
-export type SecaoKey = Secao['key'];
-export type SecaoTipo = Secao['tipo'];
+export type SecaoKey = (typeof SECOES)[number]['key'];
+export type SecaoTipo = 'principal' | 'apoio';
+export interface Secao {
+  key: SecaoKey;
+  label: string;
+  hint: string;
+  tipo: SecaoTipo;
+  /** Seção que abriga esta no desenho. Ausente = seção de primeiro nível. */
+  dentroDe?: SecaoKey;
+}
 
 // Módulos habilitáveis por empresa. A chave é o que a tela de Ferramentas
 // liga/desliga, o que a coluna `Org.modulos` guarda e o que o gate da API
@@ -92,6 +113,13 @@ export interface NavItem {
    */
   estado?: 'pleno' | 'parcial';
   parcial?: string;
+  /**
+   * Fora da sidebar e da paleta, mas dentro do NAV. O item continua sendo o
+   * dono da rota: o título da Topbar, `moduloDaRotaDoWeb` e os testes que leem
+   * o NAV por chave seguem enxergando-o. Esconder a entrada não muda cobrança,
+   * permissão nem dado (documento 38, "Organização da plataforma").
+   */
+  oculto?: boolean;
 }
 
 export const NAV: NavItem[] = [
@@ -99,55 +127,63 @@ export const NAV: NavItem[] = [
   { key: 'caixa', label: 'Pendências', href: '/caixa', icon: 'Inbox', permission: 'dashboard.ver', secao: 'dia' },
   { key: 'atendimento', label: 'Aprovações', href: '/atendimento', icon: 'MessagesSquare', permission: 'aprovacoes.ver', secao: 'dia', estado: 'parcial', parcial: 'a fila de aprovação funciona; a caixa de entrada por WhatsApp ainda não está disponível' },
   { key: 'agenda', label: 'Agenda', href: '/agenda', icon: 'CalendarDays', permission: 'dashboard.ver', secao: 'dia' },
-  { key: 'console', label: 'Visão geral', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
+  { key: 'console', label: 'Visão geral da empresa', href: '/painel', icon: 'SquareTerminal', permission: 'dashboard.ver', secao: 'dia' },
 
   { key: 'contexto', label: 'Conhecimento da empresa', href: '/contexto', icon: 'Network', permission: 'obsidian.ver', secao: 'empresa', estado: 'parcial', parcial: 'o mapa e a página de Marca estão disponíveis; a aba Identidade ainda não está disponível' },
   { key: 'marca', label: 'Marca e pilares', href: '/contexto/marca', icon: 'Fingerprint', permission: 'pauta.ver', secao: 'empresa', modulo: 'pauta', pai: 'contexto' },
-  { key: 'organograma', label: 'Equipe', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'empresa' },
 
   // As duas listas têm fontes e ações próprias; nenhuma é submenu da outra.
+  // Ideias e Estratégia do mês entram aqui e abrem os editores atuais (documento 38).
   { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo' },
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
 
-  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'conteudo' },
   { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
   { key: 'marketing', label: 'Marketing', href: '/marketing', icon: 'Megaphone', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
-  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-performance', label: 'Performance', href: '/marketing/performance', icon: 'TrendingUp', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
   { key: 'marketing-relatorio', label: 'Relatório do mês', href: '/marketing/relatorio', icon: 'FileBarChart', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'marketing' },
   { key: 'instagram', label: 'Instagram', href: '/instagram', icon: 'Instagram', permission: 'instagram.ver', secao: 'conteudo', modulo: 'instagram' },
   { key: 'bio', label: 'Página de links', href: '/bio', icon: 'Link2', permission: 'bio.ver', secao: 'conteudo', modulo: 'bio' },
+  { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
+  { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
 
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
-  { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'comercial', modulo: 'campanhas' },
-  { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'comercial', modulo: 'pixels' },
 
-  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'resultados', modulo: 'relatorios' },
-  { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'resultados', modulo: 'metas' },
-  { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'resultados', modulo: 'financeiro' },
-  { key: 'custo-ia', label: 'Custos de IA', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'resultados' },
+  { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
 
   { key: 'agentes', label: 'Agentes de IA', href: '/agentes', icon: 'Users', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'rotinas', label: 'Rotinas automáticas', href: '/rotinas', icon: 'Repeat', permission: 'automacoes.ver', secao: 'automacoes' },
   { key: 'sessoes', label: 'Sessões de IA', href: '/sessoes', icon: 'Bot', permission: 'mcp.ver', secao: 'automacoes' },
   { key: 'fluxos', label: 'Processos', href: '/fluxos', icon: 'Workflow', permission: 'automacoes.ver', secao: 'automacoes', estado: 'parcial', parcial: 'em preparação: esta rota ainda não oferece um editor de processos' },
+  { key: 'custo-ia', label: 'Custos de IA', href: '/painel/custo-ia', icon: 'DollarSign', permission: 'dashboard.ver', secao: 'automacoes' },
 
+  { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'resultados', modulo: 'relatorios' },
+  { key: 'metas', label: 'Metas', href: '/metas', icon: 'Target', permission: 'dashboard.ver', secao: 'resultados', modulo: 'metas' },
+
+  { key: 'organograma', label: 'Equipe', href: '/organograma', icon: 'Share2', permission: 'dashboard.ver', secao: 'controle' },
   { key: 'ferramentas', label: 'Ferramentas disponíveis', href: '/ferramentas', icon: 'Wrench', permission: 'mcp.ver', secao: 'controle', estado: 'parcial', parcial: 'o catálogo completo de ferramentas ainda não está disponível nesta tela' },
   { key: 'conexoes', label: 'Integrações', href: '/conexoes', icon: 'Cable', permission: 'dashboard.ver', secao: 'controle' },
   { key: 'regua', label: 'Regras e permissões', href: '/regua', icon: 'Shield', permission: 'mcp.ver', secao: 'controle' },
-  { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'controle' },
-  { key: 'linha-do-tempo', label: 'Atividade', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'controle', pai: 'rastro' },
-  { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle' },
-  { key: 'config', label: 'Configurações da conta', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'controle' },
+  { key: 'assinatura', label: 'Plano e assinatura', href: '/assinatura', icon: 'CreditCard', permission: 'dashboard.ver', secao: 'controle', oculto: true },
+
+  { key: 'rastro', label: 'Registro de ações', href: '/rastro', icon: 'Footprints', permission: 'auditoria.ver', secao: 'registros' },
+  { key: 'linha-do-tempo', label: 'Atividade', href: '/linha-do-tempo', icon: 'History', permission: 'auditoria.ver', secao: 'registros', pai: 'rastro' },
+
+  { key: 'config', label: 'Configurações da conta', href: '/config', icon: 'Settings', permission: 'dashboard.ver', secao: 'conta' },
 ];
 
 // Páginas que saíram do menu e CONTINUAM VIVAS. Não são rotas mortas: a demo do
 // pixel usa /vendas, e /google é o destino do callback OAuth. O destino aqui é
 // onde a funcionalidade delas passa a ser alcançada pelo menu.
+// /conteudo (espelho ContentItem do ClickUp) e /tarefas (lista paralela ao quadro)
+// são itens vivos do NAV: não entram aqui, e nenhum destino abaixo pode ser um
+// deles — a fonte migrada do ClickUp é o Quadro interno (/trabalho). Apagar ou
+// absorver essas telas é decisão de produto do Pedro (MK7-telas-repetidas §3.1).
 export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }[] = [
   { href: '/vendas', destino: '/pixels', porque: 'é o manual de instalação do pixel.js mais uma página demo, não um módulo' },
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },
@@ -192,6 +228,7 @@ export function navPorSecao(
     itens: NAV.filter(
       (n) =>
         n.secao === secao.key &&
+        !n.oculto &&
         perms.has(n.permission) &&
         (!mods || !n.modulo || mods.has(n.modulo)),
     ),

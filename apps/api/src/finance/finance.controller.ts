@@ -11,6 +11,7 @@ import {
   CreatePartnerSchema,
   CreateDimensionSchema,
   CreateContractSchema,
+  GerarContratoSchema,
   ApproveSchema,
   MatchConciliacaoSchema,
 } from '@mktos/shared';
@@ -124,8 +125,8 @@ export class FinanceController {
 
   @Post('contracts/:id/gerar')
   @RequirePermissions('financeiro.editar')
-  gerarContrato(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.apr.gerarContrato(user.orgId, id, user.sub);
+  gerarContrato(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.apr.gerarContrato(user.orgId, id, GerarContratoSchema.parse(body), user.sub);
   }
 
   @Get('payables')

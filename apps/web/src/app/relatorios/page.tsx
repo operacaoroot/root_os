@@ -4,12 +4,16 @@ import { useEffect, useState } from 'react';
 import { Sparkles, RefreshCw } from 'lucide-react';
 import type { DailyReport, ReportList } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
+import { SelectedTaskScope } from '@/components/SelectedTaskScope';
 import { useAuth } from '@/lib/auth';
+
+type ScopedReport = DailyReport & { taskScope?: { source: { tool: string }; total?: number; selection?: { listId?: string } } };
 
 export default function RelatoriosPage() {
   const { token, ready, can } = useAuth();
-  const [latest, setLatest] = useState<DailyReport | null>(null);
+  const [latest, setLatest] = useState<ScopedReport | null>(null);
   const [history, setHistory] = useState<ReportList | null>(null);
+  const [listId, setListId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
@@ -18,7 +22,7 @@ export default function RelatoriosPage() {
   const load = () => {
     if (!token) return;
     Promise.all([
-      apiGet<{ report: DailyReport | null }>('/reports/daily/latest', token),
+      apiGet<{ report: ScopedReport | null }>('/reports/daily/latest', token),
       apiGet<ReportList>('/reports/daily?limit=30', token),
     ])
       .then(([l, h]) => { setLatest(l.report); setHistory(h); setError(null); })
@@ -35,7 +39,7 @@ export default function RelatoriosPage() {
     if (!token) return;
     setGenerating(true);
     setError(null);
-    apiPost<DailyReport>('/reports/daily/generate', {}, token)
+    apiPost<ScopedReport>(`/reports/daily/generate${listId ? '?listId=' + encodeURIComponent(listId) : ''}`, {}, token)
       .then((r) => { setLatest(r); load(); })
       .catch((e) => setError(e.message))
       .finally(() => setGenerating(false));
@@ -43,6 +47,7 @@ export default function RelatoriosPage() {
 
   return (
     <div className="space-y-6">
+      <SelectedTaskScope surface="reports" listId={listId} onSelect={setListId} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted">
@@ -76,6 +81,7 @@ export default function RelatoriosPage() {
               {latest.provider}/{latest.model} · {new Date(latest.createdAt).toLocaleString('pt-BR')}
             </span>
           </div>
+          <p className="mb-3 text-sm text-muted">Fonte de tarefas deste resumo: {latest.taskScope?.source.tool ?? 'tarefas-legadas'}{latest.taskScope?.total !== undefined && ` · ${latest.taskScope.total} tarefas`}{latest.taskScope?.selection?.listId && ` · lista ${latest.taskScope.selection.listId}`}.</p>
           <Markdown text={latest.summary} />
         </article>
       ) : (

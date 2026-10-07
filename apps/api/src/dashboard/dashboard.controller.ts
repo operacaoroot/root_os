@@ -1,8 +1,10 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
+import { selectedWorkTasks } from '../work/selected-work-tasks';
+import { WorkService } from '../work/work.service';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { RelatorioDeCustoIaService } from '../llm/relatorio-custo.service';
 
@@ -11,13 +13,22 @@ import { RelatorioDeCustoIaService } from '../llm/relatorio-custo.service';
 export class DashboardController {
   constructor(
     private readonly svc: DashboardService,
+    private readonly work: WorkService,
     private readonly custoIa: RelatorioDeCustoIaService,
   ) {}
 
+  @Get('tarefas')
+  @RequirePermissions('dashboard.ver', 'tarefas.ver')
+  tarefas(@CurrentUser() user: JwtUser, @Query() raw: Record<string, unknown> = {}) {
+    const query = selectedWorkTasks(user, raw);
+    if (!query) throw new BadRequestException('Selecione uma lista');
+    return this.work.tarefas(user.orgId, query);
+  }
+
   @Get('summary')
   @RequirePermissions('dashboard.ver')
-  summary(@CurrentUser() user: JwtUser) {
-    return this.svc.summary(user.orgId);
+  summary(@CurrentUser() user: JwtUser, @Query() query: Record<string, unknown> = {}) {
+    return this.svc.summary(user.orgId, selectedWorkTasks(user, query));
   }
 
   /**
