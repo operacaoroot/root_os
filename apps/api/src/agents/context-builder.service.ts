@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Agent } from '@prisma/client';
 import { ObsidianService } from '../obsidian/obsidian.service';
 import { ProcedenciaExterna } from '../policy/sinais.service';
+import { VaultVersionadaService, type CitacaoDeVault } from './vault-versionada.service';
 
 export interface FonteContexto {
   /**
@@ -15,6 +16,7 @@ export interface FonteContexto {
   id: string;
   titulo: string;
   ref?: string;
+  citacao?: CitacaoDeVault;
   score?: number;
   /** O que a neutralização encontrou e desarmou nesta fonte (RF-G-07). */
   neutralizado?: string[];
@@ -780,7 +782,7 @@ export function blocoExterno(itens: ItemExterno[], opcoes: OpcoesDeBloco = {}): 
  * A declaração que o modelo lê varia só pelo MOTIVO, que é um enum deste
  * arquivo.
  */
-export type MotivoDaAusencia = 'nada_na_base' | 'notas_sem_corpo' | 'busca_indisponivel';
+export type MotivoDaAusencia = 'nada_na_base' | 'notas_sem_corpo' | 'busca_indisponivel' | 'acesso_negado';
 
 export interface AusenciaDeDado {
   motivo: MotivoDaAusencia;
@@ -799,6 +801,7 @@ const REGRA_DA_AUSENCIA =
   '- Todo número que você escrever tem de vir de uma fonte citada nesta sessão.';
 
 const PRIMEIRA_LINHA: Record<MotivoDaAusencia, string> = {
+  acesso_negado: 'O acesso à coleção vault foi negado para este pedido. Nenhum conteúdo da coleção entrou nesta conversa.',
   nada_na_base:
     'A busca na base de conhecimento desta empresa não trouxe NENHUM trecho sobre este pedido.',
   notas_sem_corpo:
@@ -958,7 +961,16 @@ export class ContextBuilder {
 
   private readonly log = new Logger('ContextBuilder');
 
-  constructor(private readonly obsidian: ObsidianService) {}
+  constructor(private readonly obsidian: ObsidianService,
+    @Optional() private readonly vaultVersionada?: VaultVersionadaService) {}
+
+  /** Entrada local explícita; a ativação no runtime exige revisão separada. */
+  async montarVaultVersionada(orgId: string, pedido: string, agent: Agent, solicitanteId?: string | null) {
+    if (!this.vaultVersionada) throw new Error('Leitor da vault versionada não disponível.');
+    const leitor = this.vaultVersionada;
+    const busca = { search: () => leitor.search({ orgId, agentId: agent.id, solicitanteId }, pedido) };
+    return new ContextBuilder(busca as unknown as ObsidianService).montar(orgId, pedido, agent);
+  }
 
   async montar(
     orgId: string,
@@ -1012,7 +1024,9 @@ export class ContextBuilder {
 
     try {
       const busca = await this.obsidian.search(orgId, pedido, 5);
-      const notas = (busca as { items?: Array<Record<string, unknown>> }).items ?? [];
+      const acessoNegado = (busca as { acessoNegado?: string }).acessoNegado;
+      if (acessoNegado) ausencia = { motivo: 'acesso_negado', detalhe: acessoNegado };
+      const notas = acessoNegado ? [] : (busca as { items?: Array<Record<string, unknown>> }).items ?? [];
       if (notas.length) {
         const itens: ItemExterno[] = [];
         const pendentes: FonteContexto[] = [];
@@ -1040,15 +1054,18 @@ export class ContextBuilder {
            */
           const corpo = String(n.content ?? n.snippet ?? '').slice(0, ContextBuilder.TRECHO);
           if (!corpo) continue;
-          if (orcamento - corpo.length < 0) break;
-          orcamento -= corpo.length;
           const ref = String(n.path ?? '');
-          itens.push({ origem: `vault:${ref || titulo}`, titulo, conteudo: corpo });
+          const citacao = n.citacao as CitacaoDeVault | undefined;
+          const conteudo = citacao ? `Citação da versão: ${JSON.stringify(citacao)}\n${corpo}` : corpo;
+          if (orcamento - conteudo.length < 0) break;
+          orcamento -= conteudo.length;
+          itens.push({ origem: `vault:${ref || titulo}`, titulo, conteudo });
           pendentes.push({
             tipo: 'nota',
             id: String(n.id ?? titulo),
             titulo,
             ref,
+            ...(citacao ? { citacao } : {}),
             score: typeof n.score === 'number' ? Number(n.score.toFixed(3)) : undefined,
           });
         }
