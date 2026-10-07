@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { filtroDeLeitura } from '../memory/acesso-memoria';
 import { hashDoCorpo } from '../memory/procedencia';
 
 export interface PedidoDeVault {
@@ -46,8 +47,8 @@ export class VaultVersionadaService {
     const acessoNegado = await this.recusa(p);
     if (acessoNegado) return { items: [], acessoNegado };
     const rows = await this.prisma.contextItem.findMany({
-      where: { orgId: p.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null,
-        OR: [{ title: { contains: query, mode: 'insensitive' } }, { body: { contains: query, mode: 'insensitive' } }] },
+      where: { orgId: p.orgId, ...filtroDeLeitura(p.solicitanteId), sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null,
+        AND: { OR: [{ title: { contains: query, mode: 'insensitive' } }, { body: { contains: query, mode: 'insensitive' } }] } },
       take: Number.isFinite(limit) ? Math.min(20, Math.max(1, Math.floor(limit))) : 5,
       orderBy: { id: 'asc' },
     });
@@ -57,18 +58,23 @@ export class VaultVersionadaService {
       if (item) items.push(item);
     }
     // Confere de novo depois da leitura; não guarda autorização em cache.
+    const elegiveis = await this.prisma.contextItem.findMany({
+      where: { orgId: p.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, id: { in: items.map((i) => i.id) }, ...filtroDeLeitura(p.solicitanteId), arquivadoEm: null }, select: { id: true },
+    });
+    const permitidos = new Set(elegiveis.map((i) => i.id));
     const recusaFinal = await this.recusa(p);
-    return recusaFinal ? { items: [], acessoNegado: recusaFinal } : { items };
+    return recusaFinal ? { items: [], acessoNegado: recusaFinal } : { items: items.filter((i) => permitidos.has(i.id)) };
   }
 
   async get(p: PedidoDeVault, itemId: string) {
     if (await this.recusa(p)) return null;
     const row = await this.prisma.contextItem.findFirst({
-      where: { id: itemId, orgId: p.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null },
+      where: { id: itemId, orgId: p.orgId, ...filtroDeLeitura(p.solicitanteId), sourceType: 'vault', chave: { startsWith: 'vault:' }, arquivadoEm: null },
     });
     if (!row) return null;
     const item = await this.lerVersao(p, row);
-    return (await this.recusa(p)) ? null : item;
+    const atual = await this.prisma.contextItem.findFirst({ where: { id: itemId, orgId: p.orgId, sourceType: 'vault', chave: { startsWith: 'vault:' }, ...filtroDeLeitura(p.solicitanteId), arquivadoEm: null } });
+    return (await this.recusa(p)) || !atual ? null : item;
   }
 
   private async lerVersao(p: PedidoDeVault, row: { id: string; chave: string; versao: number; contentHash: string; body: string }) {

@@ -430,7 +430,7 @@ export class LeituraDaAtaService {
       ? await this.prisma.contextItem.findMany({
           where: {
             orgId,
-            arquivadoEm: null,
+            arquivadoEm: null, acessoRestrito: false,
             OR: [
               { title: { contains: nome, mode: 'insensitive' } },
               { body: { contains: nome, mode: 'insensitive' } },

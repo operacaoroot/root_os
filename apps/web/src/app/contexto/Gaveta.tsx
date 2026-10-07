@@ -4,17 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, X } from 'lucide-react';
 import { apiGet } from '@/lib/api';
+import { NotaAberta } from './NotaAberta';
 import { useAuth } from '@/lib/auth';
 import { rotuloDaArea, type EixoDoMapa, type ItemDoEixo, type Tom } from './grafo';
 import {
-  dia,
   emHoras,
   quando,
   rotuloDaNatureza,
   type AgenteDoMapa,
   type DetalheDeAgente,
-  type NotaDeContexto,
-  type VersaoDeNota,
 } from './tipos';
 
 /*
@@ -63,10 +61,12 @@ export function Gaveta({
   alvo,
   onFechar,
   onAbrirItem,
+  onFonteIndisponivel,
 }: {
   alvo: AlvoDaGaveta;
   onFechar: () => void;
   onAbrirItem: (item: ItemDoEixo, origem?: Element) => void;
+  onFonteIndisponivel?: () => void;
 }) {
   const botaoFechar = useRef<HTMLButtonElement>(null);
   const chaveAlvo = alvo.tipo === 'registro' ? alvo.item.id : `eixo:${alvo.eixo.key}`;
@@ -108,7 +108,7 @@ export function Gaveta({
                 : 'Sem área definida'}</span>
               <span className="block">{alvo.item.origemDaArea ?? 'Nenhuma área declarada neste registro.'}</span>
             </div>
-            <Registro item={alvo.item} />
+            <Registro item={alvo.item} onFonteIndisponivel={onFonteIndisponivel} />
           </>
         )}
       </div>
@@ -170,9 +170,9 @@ function ListaDoEixo({
   );
 }
 
-function Registro({ item }: { item: ItemDoEixo }) {
+function Registro({ item, onFonteIndisponivel }: { item: ItemDoEixo; onFonteIndisponivel?: () => void }) {
   const r = item.registro;
-  if (r.familia === 'memoria') return <NotaAberta nota={r.nota} />;
+  if (r.familia === 'memoria') return <NotaAberta notaId={r.nota.id} onIndisponivel={onFonteIndisponivel} />;
   if (r.familia === 'agentes') return <AgenteAberto agente={r.agente} />;
 
   if (r.familia === 'rotinas') {
@@ -390,107 +390,6 @@ function AgenteAberto({ agente }: { agente: AgenteDoMapa }) {
  * também é o que garante que a gaveta mostre o estado de agora, e não o de
  * quando a tela carregou.
  */
-function NotaAberta({ nota }: { nota: NotaDeContexto }) {
-  const { token } = useAuth();
-  const [atual, setAtual] = useState<NotaDeContexto>(nota);
-  const [versoes, setVersoes] = useState<VersaoDeNota[] | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAtual(nota);
-    setVersoes(null);
-    setErro(null);
-    if (!token) return;
-    let vivo = true;
-    apiGet<NotaDeContexto>(`/memoria/${nota.id}`, token)
-      .then((n) => vivo && setAtual(n))
-      .catch((e) => vivo && setErro(e.message));
-    apiGet<VersaoDeNota[]>(`/memoria/${nota.id}/versoes`, token)
-      .then((v) => vivo && setVersoes(v))
-      .catch((e) => vivo && setErro(e.message));
-    return () => {
-      vivo = false;
-    };
-  }, [nota, token]);
-
-  return (
-    <div className="space-y-3">
-      {erro && <p className="text-xs text-bad">{erro}</p>}
-
-      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
-        <Linha rotulo="natureza" valor={rotuloDaNatureza(atual.kind)} />
-        <Linha rotulo="procedência" valor={atual.procedencia} />
-        <Linha rotulo="chave" valor={atual.chave} />
-        <Linha rotulo="versão" valor={`v${atual.versao}`} />
-        <Linha rotulo="confiança" valor={`${Math.round(atual.confidence * 100)}%`} />
-        <Linha
-          rotulo="validade"
-          valor={
-            atual.validFrom || atual.validUntil
-              ? `${dia(atual.validFrom)} → ${atual.validUntil ? dia(atual.validUntil) : 'sem fim'}`
-              : 'sem prazo declarado'
-          }
-        />
-        <Linha rotulo="busca semântica" valor={atual.temVetor ? 'indexada' : 'só por palavra'} />
-        <Linha rotulo="atualizada" valor={quando(atual.atualizadoEm)} />
-        {atual.arquivadoEm && <Linha rotulo="arquivada" valor={quando(atual.arquivadoEm)} />}
-      </dl>
-
-      {atual.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {atual.tags.map((t) => (
-            <span key={t} className="rounded-root bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted">
-              #{t}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <pre className="whitespace-pre-wrap break-words rounded-root bg-surface-2 p-3 font-os-sans text-[13px] leading-relaxed text-muted">
-        {atual.body}
-      </pre>
-
-      <div>
-        <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-dim">histórico</div>
-        {versoes === null ? (
-          <p className="text-xs text-muted">carregando o histórico…</p>
-        ) : versoes.length === 0 ? (
-          <p className="text-xs text-muted">sem versões registradas.</p>
-        ) : (
-          <ol className="space-y-1.5">
-            {versoes.map((v) => (
-              <li key={v.id} className="border-l border-border pl-2 text-xs">
-                <div className="text-text">
-                  v{v.versao} · {v.mudanca} · {quando(v.criadoEm)}
-                </div>
-                <div className="text-muted">
-                  {v.motivo ?? 'sem motivo declarado'} · por {v.autorTipo}
-                </div>
-                <div className="text-dim">{elo(v)}</div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * O elo com o RASTRO, dito pelos três casos que ele tem.
- *
- * Sem separar `migracao` de `falha_ao_registrar`, uma nota trazida do acervo
- * teria a mesma cara de uma versão cujo evento falhou — e é justamente essa
- * distinção que a conferência de integridade usa para chamar uma de normal e a
- * outra de suspeita.
- */
-function elo(v: VersaoDeNota): string {
-  if (v.eventoSeq) return `evento #${v.eventoSeq} no rastro`;
-  if (v.semEventoPorque === 'migracao') return 'sem evento: veio da migração do acervo';
-  if (v.semEventoPorque === 'falha_ao_registrar') return 'sem evento: o registro no rastro falhou';
-  return 'sem elo com o rastro';
-}
-
 function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
   return (
     <>

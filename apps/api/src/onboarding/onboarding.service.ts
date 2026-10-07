@@ -272,7 +272,7 @@ export class OnboardingService {
        * mesma pergunta para sempre, e o tema pendente para sempre. O conserto
        * está em `responder`: quem responde um tema arquivado o RESTAURA.
        */
-      where: { orgId, chave: { in: chaves }, arquivadoEm: null },
+      where: { orgId, chave: { in: chaves }, arquivadoEm: null, acessoRestrito: false },
       select: { chave: true, body: true, versao: true },
     });
     const gravadas: RespostaGravada[] = notas.map((n) => ({
@@ -422,7 +422,7 @@ export class OnboardingService {
 
     const chaves = TEMAS_DA_CARGA.map((t) => chaveDoTema(t.id));
     const notas = await this.prisma.contextItem.findMany({
-      where: { orgId, chave: { in: chaves }, arquivadoEm: null },
+      where: { orgId, chave: { in: chaves }, arquivadoEm: null, acessoRestrito: false },
       select: {
         id: true,
         chave: true,

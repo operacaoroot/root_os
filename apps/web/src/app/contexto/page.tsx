@@ -6,6 +6,7 @@ import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
+import { NotaAberta } from './NotaAberta';
 import { Mapa } from './Mapa';
 import { Diretorio } from './Diretorio';
 import {
@@ -150,6 +151,22 @@ export default function ContextoPage() {
   const [organograma, setOrganograma] = useState<Fonte<Organograma>>({ dado: null });
 
   const [alvo, setAlvo] = useState<AlvoDaGaveta | null>(null);
+  const [fonteDoEndereco, setFonteDoEndereco] = useState<{ notaId: string; versionId: string | null } | null>(null);
+  useEffect(() => {
+    const ler = () => {
+      const p = new URLSearchParams(window.location.search);
+      const notaId = p.get('nota');
+      setFonteDoEndereco(notaId ? { notaId, versionId: p.get('versao') } : null);
+    };
+    ler(); window.addEventListener('popstate', ler);
+    return () => window.removeEventListener('popstate', ler);
+  }, []);
+  const limparFonteDoEndereco = () => {
+    setFonteDoEndereco(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('nota'); url.searchParams.delete('versao');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  };
   const [sessao, setSessao] = useState<string | null>(null);
   const identidadeAtual = useRef({ token, ready, numero: 0 });
   if (identidadeAtual.current.token !== token || identidadeAtual.current.ready !== ready) {
@@ -157,6 +174,7 @@ export default function ContextoPage() {
   }
   const numeroDaSessao = identidadeAtual.current.numero;
   const geracao = useRef(0);
+  const acessoDaBusca = useRef(0);
   const origemDaGaveta = useRef<Element | null>(null);
   const [ocultos, setOcultos] = useState<Set<FamiliaKey>>(new Set());
   const [termo, setTermo] = useState('');
@@ -229,15 +247,16 @@ export default function ContextoPage() {
     setBuscando(true);
     setErroDaBusca(null);
     let vivo = true;
+    const acessoDoPedido = acessoDaBusca.current;
     const id = setTimeout(() => {
       procurar(alvoDaBusca, token)
         .then((r) => {
-          if (!vivo) return;
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current) return;
           setBruto(r);
           setBuscando(false);
         })
         .catch((e: Error) => {
-          if (!vivo) return;
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current) return;
           setBruto(null);
           setErroDaBusca(e.message);
           setBuscando(false);
@@ -278,18 +297,28 @@ export default function ContextoPage() {
       .finally(() => { if (vigente()) setRelendo(false); });
   };
 
+  const fonteIndisponivel = () => {
+    ++acessoDaBusca.current;
+    setAlvo(null); setMemoria({ dado: null }); setBruto(null); setTermo('');
+    setRecado('Fonte não disponível para esta conta.');
+    carregar();
+  };
+
   const lembrarOrigem = (origem?: Element) => {
     if (origem && !origem.closest('[aria-label="Registro selecionado"]')) origemDaGaveta.current = origem;
   };
   const abrirItem = (item: ItemDoEixo, origem?: Element) => {
+    limparFonteDoEndereco();
     lembrarOrigem(origem);
     setAlvo({ tipo: 'registro', item });
   };
   const abrirEixo = (eixo: EixoDoMapa, origem?: Element) => {
+    limparFonteDoEndereco();
     lembrarOrigem(origem);
     setAlvo({ tipo: 'eixo', eixo, itens: mapa.catalogo[eixo.key] });
   };
   const fecharGaveta = () => {
+    limparFonteDoEndereco();
     setAlvo(null);
     requestAnimationFrame(() => {
       const origem = origemDaGaveta.current;
@@ -335,6 +364,10 @@ export default function ContextoPage() {
 
   return (
     <div className="space-y-4">
+      {fonteDoEndereco && <aside aria-label="Fonte usada na tarefa" className="space-y-3 rounded-root border border-border bg-surface p-4">
+        <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">Fonte usada na tarefa</h2><button type="button" className="text-sm text-brand underline" onClick={limparFonteDoEndereco}>Fechar fonte usada</button></div>
+        <NotaAberta notaId={fonteDoEndereco.notaId} versaoInicial={fonteDoEndereco.versionId} onIndisponivel={fonteIndisponivel} />
+      </aside>}
       <section className="rounded-root border border-border bg-surface p-4" aria-label="Do conhecimento ao trabalho">
         <h2 className="font-semibold">Do conhecimento ao trabalho</h2>
         <p className="mt-1 text-sm text-muted">Explore as fontes e quem responde por elas. Abra um processo para acompanhar o que ele recebe e o que precisa entregar.</p>
@@ -432,7 +465,7 @@ export default function ContextoPage() {
               onAbrirEixo={abrirEixo}
             />
             {alvoAtual ? (
-              <Gaveta alvo={alvoAtual} onFechar={fecharGaveta} onAbrirItem={abrirItem} />
+              <Gaveta alvo={alvoAtual} onFechar={fecharGaveta} onAbrirItem={abrirItem} onFonteIndisponivel={fonteIndisponivel} />
             ) : (
               <Legenda mapa={mapa} recorteAtivo={recorteAtivo} ocultos={ocultos} onAlternar={alternarEixo} onAbrirEixo={abrirEixo} />
             )}

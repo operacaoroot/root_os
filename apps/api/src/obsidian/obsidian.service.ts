@@ -21,6 +21,7 @@ import {
 } from '../integrations/conectores.registry';
 import { sigiloso } from '../gateway/event-log.service';
 import { MemoriaService, resumoVazio, VaultSuspeitaError, type NotaDaVaultParaProjetar } from '../memory/memoria.service';
+import { leitorAutorizado, leitorDoContexto } from '../memory/acesso-memoria';
 import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
@@ -1354,15 +1355,28 @@ export class ObsidianService implements OnModuleInit {
   }
 
   // ---------- leitura ----------
-  async list(orgId: string): Promise<KnowledgeList> {
-    const rows = await this.prisma.knowledgeNote.findMany({
-      where: { orgId },
+  /** O índice legado acompanha a restrição local pela chave/path, nunca pelo hash. */
+  private async caminhosNegados(orgId: string, solicitanteId: string | null): Promise<string[]> {
+    const leitor = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    const negadas = await this.prisma.contextItem.findMany({
+      where: { orgId, acessoRestrito: true, ...(leitor ? { NOT: { leitores: { has: leitor } } } : {}) },
+      select: { chave: true },
+    });
+    return negadas.map((n) => n.chave.startsWith('vault:') ? n.chave.slice('vault:'.length) : n.chave);
+  }
+
+  async list(orgId: string, solicitanteId: string | null = leitorDoContexto()): Promise<KnowledgeList> {
+    const negados = await this.caminhosNegados(orgId, solicitanteId);
+    let rows = await this.prisma.knowledgeNote.findMany({
+      where: { orgId, path: { notIn: negados } },
       orderBy: { fileTime: 'desc' },
       select: { id: true, path: true, folder: true, title: true, tags: true, links: true, wordCount: true, fileTime: true },
     });
+    const negadosDepois = new Set(await this.caminhosNegados(orgId, solicitanteId));
+    rows = rows.filter((r) => !negadosDepois.has(r.path));
     const withEmb = await this.prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      'SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE "orgId" = $1 AND embedding IS NOT NULL',
-      orgId,
+      'SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE "orgId" = $1 AND embedding IS NOT NULL AND NOT (path = ANY($2::text[]))',
+      orgId, [...negadosDepois],
     );
     return {
       items: rows.map((r) => ({ ...r, fileTime: r.fileTime.toISOString() })),
@@ -1373,8 +1387,10 @@ export class ObsidianService implements OnModuleInit {
     };
   }
 
-  async get(orgId: string, id: string): Promise<NoteDetail | null> {
-    const r = await this.prisma.knowledgeNote.findFirst({ where: { id, orgId } });
+  async get(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NoteDetail | null> {
+    const negados = await this.caminhosNegados(orgId, solicitanteId);
+    const r = await this.prisma.knowledgeNote.findFirst({ where: { id, orgId, path: { notIn: negados } } });
+    if (r && (await this.caminhosNegados(orgId, solicitanteId)).includes(r.path)) return null;
     if (!r) return null;
     return {
       id: r.id, path: r.path, folder: r.folder, title: r.title, tags: r.tags, links: r.links,
@@ -1382,7 +1398,8 @@ export class ObsidianService implements OnModuleInit {
     };
   }
 
-  async search(orgId: string, query: string, limit = 8): Promise<SearchResult> {
+  async search(orgId: string, query: string, limit = 8, solicitanteId: string | null = leitorDoContexto()): Promise<SearchResult> {
+    const negados = await this.caminhosNegados(orgId, solicitanteId);
     const q = query.trim();
     const take = Math.min(Math.max(limit, 1), 20);
     let mode: 'semantic' | 'keyword' = 'keyword';
@@ -1396,10 +1413,10 @@ export class ObsidianService implements OnModuleInit {
           `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content,
                   1 - (embedding <=> $1::vector) AS score
              FROM "KnowledgeNote"
-            WHERE "orgId" = $2 AND embedding IS NOT NULL
+            WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector
             LIMIT $3`,
-          vec, orgId, take,
+          vec, orgId, take, negados,
         );
         /*
          * O KNN só enxerga nota COM vetor. Sem nenhuma, a resposta era vazia e
@@ -1412,10 +1429,10 @@ export class ObsidianService implements OnModuleInit {
           const semVetor: Array<any> = await this.prisma.$queryRawUnsafe(
             `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content, 0 AS score
                FROM "KnowledgeNote"
-              WHERE "orgId" = $2 AND embedding IS NULL AND (title ILIKE $1 OR content ILIKE $1)
+              WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND embedding IS NULL AND (title ILIKE $1 OR content ILIKE $1)
               ORDER BY "fileTime" DESC
               LIMIT $3`,
-            `%${q}%`, orgId, take,
+            `%${q}%`, orgId, take, negados,
           );
           rows = mesclarComTextuais(semanticas, semVetor, take);
           mode = 'semantic';
@@ -1428,12 +1445,14 @@ export class ObsidianService implements OnModuleInit {
       rows = await this.prisma.$queryRawUnsafe(
         `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content, 0 AS score
            FROM "KnowledgeNote"
-          WHERE "orgId" = $2 AND (title ILIKE $1 OR content ILIKE $1)
+          WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND (title ILIKE $1 OR content ILIKE $1)
           LIMIT $3`,
-        `%${q}%`, orgId, take,
+        `%${q}%`, orgId, take, negados,
       );
     }
 
+    const negadosDepois = new Set(await this.caminhosNegados(orgId, solicitanteId));
+    rows = rows.filter((r) => !negadosDepois.has(r.path));
     return {
       query: q,
       mode,

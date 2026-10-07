@@ -5921,3 +5921,43 @@ export interface PautaPerformancePainel {
   /** O que falta para medir, em português. Vazio quando dá para coletar. */
   comoConectar: string | null;
 }
+
+// Uso humano de uma versão de Contexto, com repetição identificada pelo pedido.
+export const ContextoTarefaCreateSchema = z.object({
+  requestId: z.string().uuid(),
+  versionId: z.string().uuid(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedItemVersion: z.number().int().min(1),
+  listId: z.string().uuid(),
+  statusId: z.string().uuid().optional(),
+  title: z.string().trim().min(1).max(300),
+  assigneeUserId: z.string().uuid().nullish(),
+}).strict();
+export type ContextoTarefaCreateInput = z.infer<typeof ContextoTarefaCreateSchema>;
+
+export interface ContextoFonteUtilizadaDto {
+  id: string;
+  itemId: string;
+  versionId: string;
+  chave: string;
+  versao: number;
+  contentHash: string;
+  sourceType: string;
+  sourceRef: string | null;
+  title: string;
+  body: string;
+  procedencia: string;
+  criadoEm: string;
+  utilizadaEm: string;
+  versaoAtual: number;
+  arquivada: boolean;
+}
+export interface ContextoTarefaCreateResponse {
+  taskId: string;
+  listId: string;
+  replayed: boolean;
+  fonte: ContextoFonteUtilizadaDto;
+}
+export interface ContextoFontesDaTarefaResponse {
+  fontes: ContextoFonteUtilizadaDto[];
+}

@@ -207,7 +207,7 @@ describe('P-05d: autoalvo e avisos entre coletor, projeção e recibo', () => {
     const memoria = new MemoriaService({ contextItem: { findFirst } } as unknown as PrismaService, {} as EventLogService);
     expect(await memoria.porChave('casa', 'vault:restrita.md')).toBeNull();
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { orgId: 'casa', chave: 'vault:restrita.md' },
+      where: { orgId: 'casa', chave: 'vault:restrita.md', OR: [{ acessoRestrito: false }] },
     }));
   });
 

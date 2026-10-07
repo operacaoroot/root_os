@@ -15,6 +15,7 @@ import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
 import { resumirAtividade } from '@/lib/work-activity';
+import { FontesDaTarefa } from './FontesDaTarefa';
 import { ResponsavelDaTarefa, SeletorResponsavel, rotuloDaPessoa } from './ResponsavelDaTarefa';
 import { diasDesde, formatarHoras, hojeEmBrasilia, minutosDeTexto } from '@/lib/horas';
 
@@ -1005,6 +1006,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
           <button className="underline" onClick={async () => { const atual = await recarregar(); if (atual) { setEdicaoDescricao(false); setConflito((c) => c ? { ...c, recarregado: true } : c); if (atual.listId !== t.listId) onMoverLista(atual.listId); onMudou(); } }}>Recarregar tarefa</button>
         </div>}
         <LinkDoTrilho taskId={t.id} token={token} />
+        <FontesDaTarefa taskId={t.id} />
         {/* linha de propriedades — tudo editável */}
         <div className="grid grid-cols-2 gap-2">
           <Campo rotulo="Lista">

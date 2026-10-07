@@ -1,3 +1,5 @@
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
+import { ContextoTrabalhoService } from '../memory/contexto-trabalho.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   TrabEspacoCreateSchema, TrabEspacoUpdateSchema,
@@ -23,6 +25,7 @@ import { parseWorkTaskQuery } from './work-task-query';
 export class WorkController {
   constructor(
     private readonly svc: WorkService,
+    private readonly fontesContexto: ContextoTrabalhoService,
     private readonly checkout: CheckoutDeTarefaService,
   ) {}
 
@@ -180,6 +183,13 @@ export class WorkController {
     @Query() query?: Record<string, unknown>,
   ) {
     return this.svc.tarefas(u.orgId, parseWorkTaskQuery(query ?? {}));
+  }
+
+  @Get('tarefas/:id/fontes')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('tarefas.ver', 'obsidian.ver')
+  fontesDaTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.fontesContexto.fontes(u.orgId, u.sub, id);
   }
 
   @Get('tarefas/:id')

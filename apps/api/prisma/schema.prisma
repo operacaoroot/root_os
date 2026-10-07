@@ -2129,10 +2129,12 @@ model WorkTask {
   tags     WorkTag[]        @relation("WorkTaskTags")
   values   WorkFieldValue[]
   comments WorkComment[]
+  fontesContexto WorkContextSource[]
   apontamentos WorkApontamento[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
 
+  @@unique([id, orgId])
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
   @@index([orgId, assigneeUserId, archived])
@@ -3389,9 +3391,14 @@ model ContextItem {
   atualizadoEm DateTime @updatedAt
   atualizadoPor String?
 
+  /// Restrição local por pessoa; lista vazia em fonte restrita nega todos.
+  acessoRestrito Boolean @default(false)
+  leitores String[] @default([])
+  fontesDeTrabalho WorkContextSource[]
   versoes ContextItemVersion[]
 
   /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
+  @@unique([id, orgId])
   @@unique([orgId, chave])
   @@index([orgId, kind])
   @@index([orgId, arquivadoEm])
@@ -3471,6 +3478,9 @@ model ContextItemVersion {
 
   criadoEm DateTime @default(now())
 
+  fontesDeTrabalho WorkContextSource[]
+
+  @@unique([id, orgId, itemId])
   @@unique([itemId, versao])
   @@index([orgId, itemId])
   @@index([orgId, criadoEm])
@@ -4343,4 +4353,30 @@ model OnboardingMarco {
   em    DateTime @default(now())
 
   @@index([orgId, trilhoId, em])
+}
+
+
+/// Versão efetivamente usada ao criar uma tarefa. Pedido e citação não se editam.
+model WorkContextSource {
+  id String @id @default(uuid())
+  orgId String
+  taskId String @unique
+  task WorkTask @relation(fields: [taskId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  itemId String
+  item ContextItem @relation(fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versionId String
+  version ContextItemVersion @relation(fields: [versionId, orgId, itemId], references: [id, orgId, itemId], onDelete: Restrict, onUpdate: Restrict)
+  requestId String
+  fingerprint String
+  actorId String
+  chave String
+  versao Int
+  contentHash String
+  sourceType ContextSource
+  sourceRef String?
+  title String
+  createdAt DateTime @default(now())
+  @@unique([orgId, requestId])
+  @@index([orgId, taskId])
+  @@index([orgId, itemId])
 }

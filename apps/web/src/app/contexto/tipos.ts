@@ -84,6 +84,7 @@ export interface VersaoDeNota {
   mudanca: 'criacao' | 'alteracao' | 'arquivamento' | 'restauracao';
   kind: NaturezaDaNota;
   title: string;
+  body: string;
   sourceType: ProcedenciaDaNota;
   sourceRef: string | null;
   procedencia: string;

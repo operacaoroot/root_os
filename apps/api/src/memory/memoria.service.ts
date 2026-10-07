@@ -14,6 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
+import { filtroDeLeitura, leitorDoContexto, leitorAutorizado } from './acesso-memoria';
 import { EventLogService, sigiloso } from '../gateway/event-log.service';
 import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -104,6 +105,8 @@ export interface EntradaDeNota {
   tags?: string[];
   sourceType: ContextSource;
   sourceRef?: string | null;
+  acessoRestrito?: boolean;
+  leitores?: string[];
   validFrom?: Date | null;
   validUntil?: Date | null;
   /**
@@ -375,17 +378,21 @@ export class MemoriaService {
   async listar(
     orgId: string,
     opcoes: { kind?: ContextKind; incluirArquivadas?: boolean } = {},
+    solicitanteId: string | null = leitorDoContexto(),
   ): Promise<{ itens: NotaDeContexto[]; total: number; comVetor: number }> {
-    const linhas = await this.prisma.contextItem.findMany({
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    let linhas = await this.prisma.contextItem.findMany({
       where: {
         orgId,
+        ...filtroDeLeitura(solicitanteId),
         ...(opcoes.kind ? { kind: opcoes.kind } : {}),
         ...(opcoes.incluirArquivadas ? {} : { arquivadoEm: null }),
       },
       orderBy: { atualizadoEm: 'desc' },
       select: SELECAO_DA_NOTA,
     });
-    const comVetor = await this.contarComVetor(orgId);
+    linhas = await this.reconferirLeitura(orgId, linhas, solicitanteId);
+    const comVetor = await this.contarComVetor(orgId, solicitanteId);
     return {
       itens: await this.comVetor(orgId, linhas),
       total: linhas.length,
@@ -393,22 +400,26 @@ export class MemoriaService {
     };
   }
 
-  async obter(orgId: string, id: string): Promise<NotaDeContexto | null> {
+  async obter(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
     const linha = await this.prisma.contextItem.findFirst({
-      where: { id, orgId },
+      where: { id, orgId, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    return (await this.comVetor(orgId, [linha]))[0];
+    const nota = (await this.comVetor(orgId, [linha]))[0];
+    return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
-  async porChave(orgId: string, chave: string): Promise<NotaDeContexto | null> {
+  async porChave(orgId: string, chave: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
     const linha = await this.prisma.contextItem.findFirst({
-      where: { orgId, chave },
+      where: { orgId, chave, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    return (await this.comVetor(orgId, [linha]))[0];
+    const nota = (await this.comVetor(orgId, [linha]))[0];
+    return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
   /**
@@ -418,13 +429,16 @@ export class MemoriaService {
    * o elo com o evento do RASTRO que a produziu: é por ele que se prova, no
    * `GET /audit/verificar`, que a versão não foi escrita por fora.
    */
-  async historico(orgId: string, id: string): Promise<VersaoDeNota[]> {
-    const existe = await this.prisma.contextItem.count({ where: { id, orgId } });
+  async historico(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<VersaoDeNota[]> {
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    const existe = await this.prisma.contextItem.count({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
     if (!existe) throw new NotFoundException('Nota não encontrada nesta empresa.');
     const linhas = await this.prisma.contextItemVersion.findMany({
       where: { orgId, itemId: id },
       orderBy: { versao: 'desc' },
     });
+    const leitorFinal = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (!await this.prisma.contextItem.count({ where: { id, orgId, ...filtroDeLeitura(leitorFinal) } })) throw new NotFoundException('Nota não encontrada nesta empresa.');
     return linhas.map(paraVersao);
   }
 
@@ -449,7 +463,9 @@ export class MemoriaService {
     query: string,
     limite = 8,
     vetorDaBusca?: number[] | null,
+    solicitanteId: string | null = leitorDoContexto(),
   ): Promise<ResultadoDeBusca> {
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
     const q = (query ?? '').trim();
     const take = Math.min(Math.max(limite, 1), 20);
     let modo: 'semantica' | 'textual' = 'textual';
@@ -463,12 +479,14 @@ export class MemoriaService {
                   (embedding IS NOT NULL) AS "temVetor",
                   1 - (embedding <=> $1::vector) AS score
              FROM "ContextItem"
-            WHERE "orgId" = $2 AND "arquivadoEm" IS NULL AND embedding IS NOT NULL
+            WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores")) AND embedding IS NOT NULL
             ORDER BY embedding <=> $1::vector
             LIMIT $3`,
           vec,
           orgId,
           take,
+          solicitanteId,
         );
         /*
          * O KNN só vê nota COM vetor: sem nenhuma, a busca voltava vazia como
@@ -483,13 +501,15 @@ export class MemoriaService {
                     (embedding IS NOT NULL) AS "temVetor",
                     0 AS score
                FROM "ContextItem"
-              WHERE "orgId" = $2 AND "arquivadoEm" IS NULL AND embedding IS NULL
+              WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores")) AND embedding IS NULL
                 AND (title ILIKE $1 OR body ILIKE $1)
               ORDER BY "atualizadoEm" DESC
               LIMIT $3`,
             `%${q}%`,
             orgId,
             take,
+            solicitanteId,
           );
           linhas = mesclarComTextuais(semanticas, semVetor, take);
           modo = 'semantica';
@@ -508,15 +528,18 @@ export class MemoriaService {
                 0 AS score
            FROM "ContextItem"
           WHERE "orgId" = $2 AND "arquivadoEm" IS NULL
+              AND ("acessoRestrito" = false OR $4::text = ANY("leitores"))
             AND (title ILIKE $1 OR body ILIKE $1)
           ORDER BY "atualizadoEm" DESC
           LIMIT $3`,
         `%${q}%`,
         orgId,
         take,
+        solicitanteId,
       );
     }
 
+    linhas = await this.reconferirLeitura(orgId, linhas as Array<Record<string, unknown> & { id: string; acessoRestrito?: boolean }>, solicitanteId);
     return {
       query: q,
       modo,
@@ -538,6 +561,7 @@ export class MemoriaService {
     if (!(entrada.title ?? '').trim()) throw new BadRequestException('A nota precisa de título.');
     const sourceType = this.exigirProcedencia(entrada.sourceType);
 
+    await this.conferirLeitores(this.prisma, orgId, entrada.leitores);
     const contentHash = hashDoCorpo(entrada.body ?? '');
     const ator = this.ator();
 
@@ -569,6 +593,8 @@ export class MemoriaService {
             tags: entrada.tags ?? [],
             sourceType,
             sourceRef: entrada.sourceRef ?? null,
+            acessoRestrito: entrada.acessoRestrito ?? false,
+            leitores: entrada.leitores ?? [],
             validFrom: entrada.validFrom ?? null,
             validUntil: entrada.validUntil ?? null,
             supersedesId: entrada.supersedesId ?? null,
@@ -632,6 +658,7 @@ export class MemoriaService {
 
   async alterar(orgId: string, id: string, mudancas: MudancaDeNota): Promise<NotaDeContexto> {
     const ator = this.ator();
+    await this.conferirLeitores(this.prisma, orgId, mudancas.leitores);
 
     /*
      * O QUE MUDA É MONTADO A PARTIR DO ESTADO LIDO DENTRO DO CADEADO — ver o
@@ -664,6 +691,8 @@ export class MemoriaService {
             tags: mudancas.tags ?? atual.tags,
             sourceType,
             sourceRef: mudancas.sourceRef === undefined ? atual.sourceRef : mudancas.sourceRef,
+            ...(mudancas.acessoRestrito === undefined ? {} : { acessoRestrito: mudancas.acessoRestrito }),
+            ...(mudancas.leitores === undefined ? {} : { leitores: mudancas.leitores }),
             validFrom: mudancas.validFrom === undefined ? atual.validFrom : mudancas.validFrom,
             validUntil: mudancas.validUntil === undefined ? atual.validUntil : mudancas.validUntil,
             supersedesId: mudancas.supersedesId === undefined ? atual.supersedesId : mudancas.supersedesId,
@@ -747,15 +776,16 @@ export class MemoriaService {
     try {
       gravada = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        const leitor = await leitorAutorizado(tx, orgId, leitorDoContexto());
         const fonte = await tx.contextItem.findFirst({
-          where: { orgId, chave: pedido.fonte.chave }, select: SELECAO_DA_NOTA,
+          where: { orgId, chave: pedido.fonte.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
         });
         if (!fonte || fonte.id !== pedido.fonte.id || fonte.arquivadoEm ||
             fonte.versao !== pedido.fonte.versao || fonte.contentHash !== pedido.fonte.hash) {
           throw new ConflictException('A fonte mudou, foi arquivada ou deixou de existir. Refaça a prévia.');
         }
         const atual = await tx.contextItem.findFirst({
-          where: { orgId, chave: pedido.destino.chave }, select: SELECAO_DA_NOTA,
+          where: { orgId, chave: pedido.destino.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
         });
         if (atual?.arquivadoEm) throw new ConflictException('O destino está arquivado. Restaure-o explicitamente na Memória antes de aplicar.');
 
@@ -1518,7 +1548,7 @@ export class MemoriaService {
     return this.prisma.$queryRawUnsafe(
       `SELECT id, title, body, "contentHash"
          FROM "ContextItem"
-        WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL
+        WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL AND "acessoRestrito" = false
           AND NOT (chave = ANY($3::text[]))
         ORDER BY "atualizadoEm" DESC
         LIMIT $2`,
@@ -1620,6 +1650,7 @@ export class MemoriaService {
    * só então, "ninguém assumiu esta linha".
    */
   async conferirElos(orgId: string, limite = 5000): Promise<ResultadoDaConferencia> {
+    const leitor = await leitorAutorizado(this.prisma, orgId, leitorDoContexto());
     const [versoes, eventos] = await Promise.all([
       /*
        * OS DOIS LADOS PEGAM AS MAIS RECENTES, e a simetria importa: com o teto
@@ -1627,7 +1658,7 @@ export class MemoriaService {
        * explicação" em massa só porque o evento ficou de fora da consulta.
        */
       this.prisma.contextItemVersion.findMany({
-        where: { orgId },
+        where: { orgId, item: filtroDeLeitura(leitor) },
         orderBy: { criadoEm: 'desc' },
         take: limite,
         select: {
@@ -1733,10 +1764,11 @@ export class MemoriaService {
     return 'sem_explicacao';
   }
 
-  async contarComVetor(orgId: string): Promise<number> {
+  async contarComVetor(orgId: string, solicitanteId: string | null = leitorDoContexto()): Promise<number> {
+    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
     const r = await this.prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      'SELECT count(*)::bigint AS n FROM "ContextItem" WHERE "orgId" = $1 AND embedding IS NOT NULL',
-      orgId,
+      'SELECT count(*)::bigint AS n FROM "ContextItem" WHERE "orgId" = $1 AND embedding IS NOT NULL AND ("acessoRestrito" = false OR $2::text = ANY("leitores"))',
+      orgId, solicitanteId,
     );
     return Number(r[0]?.n ?? 0);
   }
@@ -1811,8 +1843,9 @@ export class MemoriaService {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
 
+      const leitor = await leitorAutorizado(tx, orgId, leitorDoContexto());
       const atual = await tx.contextItem.findFirst({
-        where: { id, orgId },
+        where: { id, orgId, ...filtroDeLeitura(leitor) },
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
@@ -2036,6 +2069,25 @@ export class MemoriaService {
   }
 
   /** Preenche `temVetor` sem trazer 1536 números por linha para a memória do processo. */
+  private async conferirLeitores(db: Pick<Prisma.TransactionClient, 'user'>, orgId: string, leitores?: string[]): Promise<void> {
+    if (leitores === undefined) return;
+    if (new Set(leitores).size !== leitores.length ||
+      await db.user.count({ where: { orgId, id: { in: leitores } } }) !== leitores.length)
+      throw new BadRequestException('As pessoas concedidas precisam pertencer a esta empresa e não podem se repetir.');
+  }
+
+  private async reconferirLeitura<T extends { id: string; acessoRestrito?: boolean }>(
+    orgId: string, linhas: T[], solicitanteId: string | null,
+  ): Promise<T[]> {
+    if (!linhas.some((l) => l.acessoRestrito)) return linhas;
+    const leitor = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    const permitidas = await this.prisma.contextItem.findMany({
+      where: { orgId, id: { in: linhas.map((l) => l.id) }, ...filtroDeLeitura(leitor) }, select: { id: true },
+    });
+    const ids = new Set(permitidas.map((p) => p.id));
+    return linhas.filter((l) => ids.has(l.id));
+  }
+
   private async comVetor(orgId: string, linhas: LinhaDaNota[]): Promise<NotaDeContexto[]> {
     if (linhas.length === 0) return [];
     const comVetor = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
@@ -2057,7 +2109,7 @@ export class MemoriaService {
  * nota é encontrável por similaridade?") por um custo constante.
  */
 const SELECAO_DA_NOTA = {
-  id: true,
+  id: true, acessoRestrito: true, leitores: true,
   chave: true,
   kind: true,
   title: true,
@@ -2078,7 +2130,7 @@ const SELECAO_DA_NOTA = {
 
 /** As mesmas colunas, para as consultas cruas (busca vetorial e textual). */
 const COLUNAS_DA_NOTA = [
-  'id',
+  'id', '"acessoRestrito"', 'leitores',
   'chave',
   'kind',
   'title',
@@ -2099,6 +2151,8 @@ const COLUNAS_DA_NOTA = [
 
 interface LinhaDaNota {
   id: string;
+  acessoRestrito?: boolean;
+  leitores?: string[];
   chave: string;
   kind: ContextKind;
   title: string;

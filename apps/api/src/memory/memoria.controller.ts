@@ -15,7 +15,9 @@ import { z } from 'zod';
 import { MemoriaService } from './memoria.service';
 import { ehChaveDaVault } from './procedencia';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from './acesso-atual.guard';
+import { ContextoTrabalhoService } from './contexto-trabalho.service';
+import { ContextoTarefaCreateSchema } from '@mktos/shared';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -55,6 +57,8 @@ const CriarSchema = z
     // procedência é nota que não sustenta resposta nenhuma.
     sourceType: ProcedenciaSchema,
     sourceRef: z.string().max(1000).nullish(),
+    acessoRestrito: z.boolean().optional(),
+    leitores: z.array(z.string().uuid()).max(100).optional(),
     validFrom: z.coerce.date().nullish(),
     validUntil: z.coerce.date().nullish(),
     confidence: z.number().min(0).max(1).optional(),
@@ -70,10 +74,13 @@ const AlterarSchema = z
     tags: z.array(z.string().min(1)).max(50).optional(),
     sourceType: ProcedenciaSchema.optional(),
     sourceRef: z.string().max(1000).nullish(),
+    acessoRestrito: z.boolean().optional(),
+    leitores: z.array(z.string().uuid()).max(100).optional(),
     validFrom: z.coerce.date().nullish(),
     validUntil: z.coerce.date().nullish(),
     confidence: z.number().min(0).max(1).optional(),
     motivo: z.string().max(2000).nullish(),
+    versaoEsperada: z.number().int().min(1).optional(),
   })
   .strict();
 
@@ -123,14 +130,15 @@ const FRASE_DO_PREFIXO =
   'digitada com elas seria alterada ou arquivada pela volta seguinte. Use outra chave e outra ' +
   'origem (operador, upload, promocao ou conector).';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, AcessoAtualGuard)
 @Controller('memoria')
 export class MemoriaController {
-  constructor(private readonly memoria: MemoriaService) {}
+  constructor(private readonly memoria: MemoriaService, private readonly trabalho: ContextoTrabalhoService) {}
 
   /** A nota existe e é da vault? Então a pessoa não mexe nela (E4). Inexistente segue para o 404 do serviço. */
-  private async exigirForaDaVault(orgId: string, id: string): Promise<void> {
-    const nota = await this.memoria.obter(orgId, id);
+  private async exigirForaDaVault(orgId: string, id: string, solicitanteId: string): Promise<void> {
+    const nota = await this.memoria.obter(orgId, id, solicitanteId);
+    if (!nota) throw new NotFoundException('Nota não encontrada.');
     if (nota && (ehChaveDaVault(nota.chave) || nota.sourceType === ContextSource.vault)) {
       throw new ForbiddenException(FRASE_DA_VAULT);
     }
@@ -147,7 +155,7 @@ export class MemoriaController {
     return this.memoria.listar(user.orgId, {
       kind: natureza.success ? natureza.data : undefined,
       incluirArquivadas: arquivadas === '1' || arquivadas === 'true',
-    });
+    }, user.sub);
   }
 
   /**
@@ -161,7 +169,7 @@ export class MemoriaController {
   @Get('buscar')
   @RequirePermissions('obsidian.ver')
   buscar(@CurrentUser() user: JwtUser, @Query('q') q?: string, @Query('limite') limite?: string) {
-    return this.memoria.buscar(user.orgId, q ?? '', limite ? Number(limite) : 8);
+    return this.memoria.buscar(user.orgId, q ?? '', limite ? Number(limite) : 8, undefined, user.sub);
   }
 
   /**
@@ -196,7 +204,7 @@ export class MemoriaController {
   @Get(':id')
   @RequirePermissions('obsidian.ver')
   async obter(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    const nota = await this.memoria.obter(user.orgId, id);
+    const nota = await this.memoria.obter(user.orgId, id, user.sub);
     if (!nota) throw new NotFoundException('Nota não encontrada.');
     return nota;
   }
@@ -205,7 +213,13 @@ export class MemoriaController {
   @Get(':id/versoes')
   @RequirePermissions('obsidian.ver')
   historico(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.memoria.historico(user.orgId, id);
+    return this.memoria.historico(user.orgId, id, user.sub);
+  }
+
+  @Post(':id/tarefas')
+  @RequirePermissions('obsidian.ver', 'tarefas.editar')
+  criarTarefaDaVersao(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.trabalho.criar(user.orgId, user.sub, id, ContextoTarefaCreateSchema.parse(body));
   }
 
   @Post()
@@ -231,7 +245,7 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   async alterar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const dados = AlterarSchema.parse(body);
-    await this.exigirForaDaVault(user.orgId, id);
+    await this.exigirForaDaVault(user.orgId, id, user.sub);
     if (dados.sourceType === ContextSource.vault) throw new ForbiddenException(FRASE_DO_PREFIXO);
     return this.memoria.alterar(user.orgId, id, dados);
   }
@@ -245,7 +259,7 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   async arquivar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const { motivo } = MotivoSchema.parse(body ?? {});
-    await this.exigirForaDaVault(user.orgId, id);
+    await this.exigirForaDaVault(user.orgId, id, user.sub);
     return this.memoria.arquivar(user.orgId, id, motivo);
   }
 
@@ -253,7 +267,7 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   async restaurar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
     const { motivo } = MotivoSchema.parse(body ?? {});
-    await this.exigirForaDaVault(user.orgId, id);
+    await this.exigirForaDaVault(user.orgId, id, user.sub);
     return this.memoria.restaurar(user.orgId, id, motivo);
   }
 }
