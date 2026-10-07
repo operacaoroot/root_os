@@ -154,7 +154,7 @@ services:
       # OpenRouter: mesma API de Chat Completions, com nome e custo próprios.
       # O custo vem de `usage.cost` do próprio provedor — medição, não estimativa.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-5.5}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
       # O RELÓGIO DO PRODUTO (RF-N-04). `off` mantém o módulo de rotinas montado
       # e só cala o tique — é o que a receita de smoke do docs/DEPLOY.md usa.
