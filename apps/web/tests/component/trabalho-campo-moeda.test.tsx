@@ -49,6 +49,7 @@ const TAREFA = '7d1c2a10-5b0e-4c55-9f3a-0a1b2c3d4e5f';
 const LISTA = '2f6b1e44-8c1d-4f0a-9b7e-3c5d6e7f8a90';
 const VALOR = '0b6c1b8e-1d2e-4f3a-8b4c-5d6e7f8a9b11';
 const ROTA = `/trabalho/tarefas/${TAREFA}`;
+const VERSAO = '2026-09-30T14:00:00.000Z';
 const ROTULO = 'Valor em negocição';
 
 const CAMPOS = [{ id: VALOR, listId: LISTA, name: ROTULO, type: 'moeda', order: 0, options: [] }];
@@ -91,7 +92,7 @@ function servir(inicial: string | null) {
     if (rota === ROTA) {
       return Promise.resolve({
         ...tarefa(), description: null, listName: 'Gestão de Leads',
-        createdAt: '2026-09-30T14:00:00.000Z', updatedAt: '2026-09-30T14:00:00.000Z',
+        createdAt: '2026-09-30T14:00:00.000Z', updatedAt: VERSAO,
         comentarios: [], atividade: [], filhos: [], apontamentos: [], minutosPorEtapa: [],
       });
     }
@@ -163,7 +164,7 @@ describe('campo moeda: o que vai à API', () => {
     servir('BRL 1500.00');
     const campo = await abrirGaveta();
     digitarESair(campo, '2.000,5');
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [VALOR]: { value: 'BRL 2000.50' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [VALOR]: { value: 'BRL 2000.50' } } } }]);
     expect(campo.value).toBe('2.000,50');
     await assentar();
     expect(campo.defaultValue).toBe('2.000,50');
@@ -192,7 +193,7 @@ describe('campo moeda: o que vai à API', () => {
     servir('BRL 1500.00');
     const campo = await abrirGaveta();
     digitarESair(campo, '');
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [VALOR]: { value: null } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [VALOR]: { value: null } } } }]);
     await assentar();
     expect(gravado).toBeNull();
   });
@@ -201,7 +202,7 @@ describe('campo moeda: o que vai à API', () => {
     servir(null);
     const campo = await abrirGaveta();
     digitarESair(campo, '1.234,56');
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [VALOR]: { value: 'BRL 1234.56' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [VALOR]: { value: 'BRL 1234.56' } } } }]);
   });
 
   it('a moeda do valor gravado é a do valor novo', async () => {
@@ -210,7 +211,7 @@ describe('campo moeda: o que vai à API', () => {
     expect(campo.value).toBe('12,34');
     expect(campo.closest('label')?.textContent).toContain('USD');
     digitarESair(campo, '20');
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [VALOR]: { value: 'USD 20.00' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [VALOR]: { value: 'USD 20.00' } } } }]);
   });
 
   it('valor gravado fora do canônico aparece como está e só sai com edição', async () => {
@@ -221,6 +222,6 @@ describe('campo moeda: o que vai à API', () => {
     await userEvent.tab();
     expect(patches()).toEqual([]);
     digitarESair(campo, '15.000,00');
-    expect(patches()).toEqual([{ rota: ROTA, corpo: { campos: { [VALOR]: { value: 'BRL 15000.00' } } } }]);
+    expect(patches()).toEqual([{ rota: ROTA, corpo: { expectedUpdatedAt: VERSAO, campos: { [VALOR]: { value: 'BRL 15000.00' } } } }]);
   });
 });

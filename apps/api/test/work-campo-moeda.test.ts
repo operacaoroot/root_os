@@ -56,12 +56,13 @@ const CAMPOS_FALSOS = [
 function servicoFalso(valoresIniciais: Record<string, { optionId: string | null; value: string | null }> = {}) {
   const valores = new Map(Object.entries(valoresIniciais));
   const chamadas = { create: 0, update: 0, upsert: [] as unknown[], deleteMany: [] as unknown[] };
-  const tarefa = { id: TAREFA, orgId: ORG, listId: LISTA, title: 'Lead', assignee: null, priority: 'normal', status: { name: 'oportunidade' }, tags: [] };
+  const tarefa = { id: TAREFA, orgId: ORG, listId: LISTA, title: 'Lead', assignee: null, assigneeUserId: null, updatedAt: new Date('2026-10-07T00:00:00.000Z'), priority: 'normal', status: { name: 'oportunidade' }, tags: [] };
   const prisma: Record<string, unknown> = {
     workList: { findFirst: async () => ({ id: LISTA, orgId: ORG, statuses: [{ id: 'st-1' }] }) },
     workTask: {
-      findFirst: async () => tarefa,
+      findFirst: async () => ({ ...tarefa, status: { ...tarefa.status } }),
       create: async () => { chamadas.create++; return { id: TAREFA, listId: LISTA }; },
+      updateMany: async ({ data }: { data: Record<string, unknown> }) => { chamadas.update++; for (const [key, value] of Object.entries(data)) if (value !== undefined) Object.assign(tarefa, { [key]: value }); return { count: 1 }; },
       update: async ({ data }: { data: { title?: string } }) => { chamadas.update++; return { ...tarefa, title: data.title ?? tarefa.title }; },
     },
     workField: {
@@ -189,16 +190,16 @@ describe('campo moeda: a auditoria guarda o valor (A4)', () => {
         'c-valor': { campo: 'Valor em negocição', tipo: 'moeda', opcao: null, valor: 'BRL 2000.00' },
         'c-perfil': { campo: 'Perfil', tipo: 'drop_down', opcao: 'P1', valor: null },
       } }),
-    }));
+    }), expect.anything());
   });
 
   it('PATCH sem campos não ganha a chave campos na auditoria', async () => {
     const { svc, audit } = servicoFalso();
     await svc.editarTarefa(ORG, 'eu', TAREFA, { title: 'Só o título' });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
-      before: { status: 'oportunidade', title: 'Lead', assignee: null, priority: 'normal' },
-      after: { status: 'oportunidade', title: 'Só o título', assignee: null, priority: 'normal' },
-    }));
+      before: { status: 'oportunidade', title: 'Lead', assignee: null, assigneeUserId: null, priority: 'normal' },
+      after: { status: 'oportunidade', title: 'Só o título', assignee: null, assigneeUserId: null, priority: 'normal' },
+    }), expect.anything());
   });
 });
 

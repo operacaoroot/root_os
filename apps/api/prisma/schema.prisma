@@ -230,10 +230,12 @@ model User {
 
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
+  workTasksResponsavel WorkTask[] @relation("WorkTaskResponsavel")
 
   agentesQueDono Agent[]           @relation("AgentDono")
   identidades    ChannelIdentity[]
 
+  @@unique([id, orgId])
   @@index([orgId])
 }
 
@@ -2070,6 +2072,9 @@ model WorkTask {
   /// faria "atribuir a alguém" e "travar para execução" virarem a mesma
   /// escrita — e é justamente essa segunda que precisa ser atômica.
   assignee    String?
+  /// Conta responsável, independente do texto importado e do agente executor.
+  assigneeUserId String?
+  assigneeUser User? @relation("WorkTaskResponsavel", fields: [assigneeUserId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
   /// AGENTE EXECUTOR — o DONO ÚNICO da tarefa, conquistado por checkout
   /// atômico (fatia A4, `src/work/checkout-de-tarefa.service.ts`).
   ///
@@ -2130,6 +2135,7 @@ model WorkTask {
 
   @@unique([orgId, externalId])
   @@index([orgId, listId, statusId])
+  @@index([orgId, assigneeUserId, archived])
   @@index([orgId, archived, dueDate])
   /// "O que este agente tem na mão" e "o que está travado desde quando" — as
   /// duas perguntas da tela de A4, e a de soltar tudo quando o agente é pausado

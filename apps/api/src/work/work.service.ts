@@ -34,6 +34,7 @@ import type { WorkTaskQuery } from './work-task-query';
  */
 const TASK_INCLUDE = {
   status: true,
+  assigneeUser: { select: { id: true, name: true, email: true, isActive: true } },
   tags: true,
   values: { include: { field: true, option: true } },
   _count: { select: { subtasks: true, comments: true } },
@@ -103,7 +104,7 @@ export class WorkService {
   }
 
   async estrutura(orgId: string): Promise<TrabEstrutura> {
-    const [spaces, folders, lists, fields, tags, counts, byStatus, users, agentes] = await Promise.all([
+    const [spaces, folders, lists, fields, tags, counts, byStatus, users, agentes, pessoas] = await Promise.all([
       this.prisma.workSpace.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
       this.prisma.workFolder.findMany({ where: { orgId }, orderBy: [{ order: 'asc' }, { name: 'asc' }] }),
       this.prisma.workList.findMany({
@@ -129,6 +130,10 @@ export class WorkService {
        * vazio no primeiro instante.
        */
       this.checkout.agentesParaEscolher(orgId),
+      this.prisma.user.findMany({
+        where: { orgId }, select: { id: true, name: true, email: true, isActive: true },
+        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+      }),
     ]);
     const porLista = new Map(counts.map((c) => [c.listId, c._count]));
     const porStatus = new Map(byStatus.map((c) => [c.statusId, c._count]));
@@ -155,6 +160,7 @@ export class WorkService {
       tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
       responsaveis: users.map((u) => u.assignee!).sort(),
       agentes,
+      pessoas,
     };
   }
 
@@ -407,6 +413,11 @@ export class WorkService {
       id: t.id, listId: t.listId, title: t.title,
       statusId: t.statusId, statusName: t.status.name, statusType: t.status.type, statusColor: t.status.color,
       priority: t.priority, assignee: t.assignee,
+      assigneeUserId: t.assigneeUserId,
+      assigneeUserName: t.assigneeUser?.name ?? null,
+      assigneeUserEmail: t.assigneeUser?.email ?? null,
+      assigneeUserIsActive: t.assigneeUser?.isActive ?? null,
+      updatedAt: t.updatedAt.toISOString(),
       agenteId: t.agenteId, agenteSlug: agente?.slug ?? null, agenteNome: agente?.nome ?? null,
       agenteEm: t.agenteEm?.toISOString() ?? null,
       statusDesde: t.statusDesde?.toISOString() ?? null,
@@ -436,6 +447,8 @@ export class WorkService {
     if (f.listExternalIds) where.list = { orgId, externalId: { in: f.listExternalIds } };
     if (f.statusId) where.statusId = f.statusId;
     if (f.assignee) where.assignee = f.assignee;
+    if (f.assigneeUserId) where.assigneeUserId = f.assigneeUserId;
+    if (f.semResponsavel) where.assigneeUserId = null;
     if (f.tagId) where.tags = { some: { id: f.tagId } };
     if (f.q) where.title = { contains: f.q, mode: 'insensitive' };
     if (f.opcao) where.values = { some: { optionId: f.opcao } }; // filtro por opção de campo
@@ -546,6 +559,7 @@ export class WorkService {
       throw new BadRequestException('Status não pertence à lista.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    await this.conferirResponsavel(orgId, input.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, list.id, input.campos) : [];
     return this.logado(orgId, actorId, 'work.task.create', 'work_task', null, async () => {
       const task = await this.prisma.$transaction(async (tx) => {
@@ -555,6 +569,7 @@ export class WorkService {
             title: input.title, description: input.description ?? null,
             priority: (input.priority as WorkPriority) ?? WorkPriority.normal,
             assignee: input.assignee ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
             dueDate: input.dueDate ? new Date(input.dueDate) : null,
             startDate: input.startDate ? new Date(input.startDate) : null,
             parentId: input.parentId ?? null,
@@ -571,12 +586,17 @@ export class WorkService {
   async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput) {
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
+    const conflito = () => new ConflictException({
+      code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
+    });
+    if (input.expectedUpdatedAt !== undefined && new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
+      throw conflito();
+    }
 
     if (input.listId) await this.achar(this.prisma.workList, orgId, input.listId, 'Lista');
     const listId = input.listId ?? antes.listId;
     let statusId = input.statusId;
     if (input.listId && input.listId !== antes.listId && !statusId) {
-      // mover de lista sem status novo → cai no primeiro status da lista destino
       const primeiro = await this.prisma.workStatus.findFirst({ where: { listId, orgId }, orderBy: { order: 'asc' } });
       if (!primeiro) throw new BadRequestException('Lista destino sem statuses.');
       statusId = primeiro.id;
@@ -586,45 +606,59 @@ export class WorkService {
       if (!ok) throw new BadRequestException('Status não pertence à lista da tarefa.');
     }
     await this.conferirPaiEEtiquetas(orgId, input);
+    await this.conferirResponsavel(orgId, input.assigneeUserId, antes.assigneeUserId);
     const campos = input.campos ? await this.conferirCampos(orgId, listId, input.campos) : [];
+    const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime() + 1));
 
-    const { depois, camposAntes, camposDepois } = await this.prisma.$transaction(async (tx) => {
-      const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
-      const depois = await tx.workTask.update({
-        where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      // A instrução condicional trava a linha antes de etiquetas, campos e auditoria.
+      const claim = await tx.workTask.updateMany({
+        where: { id, orgId, updatedAt: antes.updatedAt },
         data: {
-          listId: input.listId,
-          statusId,
-          title: input.title,
-          description: input.description === undefined ? undefined : input.description,
+          listId: input.listId, statusId, title: input.title,
+          description: input.description,
           priority: input.priority as WorkPriority | undefined,
-          assignee: input.assignee === undefined ? undefined : input.assignee,
+          assignee: input.assignee,
+          assigneeUserId: input.assigneeUserId,
           dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
           startDate: input.startDate === undefined ? undefined : input.startDate ? new Date(input.startDate) : null,
-          parentId: input.parentId === undefined ? undefined : input.parentId,
-          archived: input.archived,
-          order: input.order,
-          tags: input.tagIds ? { set: input.tagIds.map((tid) => ({ id: tid })) } : undefined,
+          parentId: input.parentId, archived: input.archived, order: input.order, updatedAt,
         },
-        include: { status: true },
       });
+      if (claim.count !== 1) throw conflito();
+      const camposAntes = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
+      if (input.tagIds !== undefined) {
+        await tx.workTask.update({
+          where: { id }, data: { tags: { set: input.tagIds.map((tid) => ({ id: tid })) }, updatedAt },
+        });
+      }
       await this.gravarCampos(tx, id, campos);
       const camposDepois = campos.length ? await this.retratoDosCampos(tx, id, campos) : null;
-      return { depois, camposAntes, camposDepois };
-    });
-
-    await this.audit.log({
-      orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
-      before: {
-        status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority,
-        ...(camposAntes ? { campos: camposAntes } : {}),
-      },
-      after: {
-        status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority,
-        ...(camposDepois ? { campos: camposDepois } : {}),
-      },
+      const depois = await tx.workTask.findFirst({ where: { id, orgId }, include: { status: true } });
+      if (!depois) throw new NotFoundException('Tarefa não encontrada');
+      await this.audit.log({
+        orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
+        before: {
+          status: antes.status.name, title: antes.title, assignee: antes.assignee,
+          assigneeUserId: antes.assigneeUserId, priority: antes.priority,
+          ...(camposAntes ? { campos: camposAntes } : {}),
+        },
+        after: {
+          status: depois.status.name, title: depois.title, assignee: depois.assignee,
+          assigneeUserId: depois.assigneeUserId, priority: depois.priority,
+          ...(camposDepois ? { campos: camposDepois } : {}),
+        },
+      }, tx);
     });
     return this.tarefa(orgId, id);
+  }
+
+  /** Um vínculo existente inativo pode permanecer; uma nova atribuição exige conta ativa desta empresa. */
+  private async conferirResponsavel(orgId: string, pedido: string | null | undefined, atual?: string | null) {
+    if (pedido == null || pedido === atual) return;
+    const pessoa = await this.prisma.user.findFirst({ where: { id: pedido, orgId }, select: { id: true, isActive: true } });
+    if (!pessoa) throw new NotFoundException('Pessoa não encontrada');
+    if (!pessoa.isActive) throw new BadRequestException('Pessoa inativa não recebe nova atribuição.');
   }
 
   /**

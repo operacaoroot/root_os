@@ -42,6 +42,7 @@ const lista = {
 };
 const estrutura = { espacos: [], folders: [], listasSoltas: [lista], camposGlobais: [], tags: [], responsaveis: [], agentes: [] };
 const tarefa = {
+  updatedAt: '2026-10-07T19:00:00.000Z',
   id: '11111111-1111-4111-8111-111111111111', listId: lista.id, title: 'Tarefa',
   statusId: 'aberta', statusName: 'Aberta', statusType: 'open', statusColor: '#87909e', priority: 'normal',
   assignee: null, dueDate: null, startDate: null, overdue: false, archived: false,
@@ -102,7 +103,7 @@ describe('texto de orientação das telas legadas', () => {
     const etapa = await screen.findByTitle('Mover etapa');
     expect(etapa).toHaveValue('aberta');
     fireEvent.change(etapa, { target: { value: 'feita' } });
-    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${tarefa.id}`, { statusId: 'feita' }, 'tok'));
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledWith(`/trabalho/tarefas/${tarefa.id}`, { statusId: 'feita', expectedUpdatedAt: tarefa.updatedAt }, 'tok'));
     expect(document.body.textContent).not.toContain('para consulta');
     expect(document.body.textContent?.toLowerCase()).not.toContain('somente leitura');
   });

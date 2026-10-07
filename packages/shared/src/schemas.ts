@@ -5198,6 +5198,7 @@ export const TrabTarefaCreateSchema = z.object({
   statusId: z.string().uuid().optional(), // default: primeiro status da lista
   priority: WorkPrioritySchema.optional(),
   assignee: z.string().max(120).nullish(),
+  assigneeUserId: z.string().uuid().nullish(),
   dueDate: z.string().datetime().nullish(),
   startDate: z.string().datetime().nullish(),
   parentId: z.string().uuid().nullish(),
@@ -5212,6 +5213,8 @@ export const TrabTarefaUpdateSchema = z.object({
   statusId: z.string().uuid().optional(),
   priority: WorkPrioritySchema.optional(),
   assignee: z.string().max(120).nullish().optional(),
+  assigneeUserId: z.string().uuid().nullish().optional(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
   dueDate: z.string().datetime().nullish().optional(),
   startDate: z.string().datetime().nullish().optional(),
   parentId: z.string().uuid().nullish().optional(),
@@ -5388,6 +5391,8 @@ export interface TrabAgenteDto {
   tarefas: number;
 }
 
+export interface TrabPessoaDto { id: string; name: string; email: string; isActive: boolean }
+
 export interface TrabEstrutura {
   espacos: TrabEspacoDto[];
   folders: TrabPastaDto[];
@@ -5396,6 +5401,8 @@ export interface TrabEstrutura {
   tags: TrabTagDto[];
   /** Os responsáveis HUMANOS que aparecem nas tarefas (texto livre). */
   responsaveis: string[];
+  /** Contas desta empresa para associação explícita, incluindo vínculos inativos. */
+  pessoas?: TrabPessoaDto[];
   /** Os agentes desta empresa — a quem a tarefa pode ser entregue. */
   agentes: TrabAgenteDto[];
 }
@@ -5411,6 +5418,12 @@ export interface TrabTarefaResumo {
   priority: WorkPriorityDto;
   /** O responsável HUMANO (texto livre). Não é quem executa. */
   assignee: string | null;
+  /** Vínculo por conta. O texto legado permanece separado. */
+  assigneeUserId?: string | null;
+  assigneeUserName?: string | null;
+  assigneeUserEmail?: string | null;
+  assigneeUserIsActive?: boolean | null;
+  updatedAt?: string;
   /**
    * O AGENTE EXECUTOR que tem a tarefa na mão, ou nulo quando ela está livre
    * (fatia A4).
@@ -5614,7 +5627,7 @@ export interface CaixaTarefa {
   status: string;
   statusCor: string;
   prioridade: string;
-  /** O texto gravado em `assignee` — o nome que casou com você. */
+  /** Texto legado preservado; a responsabilidade usa o ID da conta. */
   responsavel: string | null;
   prazo: string | null;
   atualizadaEm: string;
@@ -5630,11 +5643,7 @@ export interface CaixaEixoTarefas {
   itens: CaixaTarefa[];
   truncado: boolean;
   teto: number;
-  /**
-   * Por quais nomes a caixa procurou você. `WorkTask.assignee` é TEXTO LIVRE
-   * herdado do ClickUp, não ponteiro para `User`: o casamento é por nome e a
-   * tela publica o critério, porque casamento por nome erra nas duas direções.
-   */
+  /** Campo mantido por compatibilidade; nomes não atribuem responsabilidade. */
   identidades: string[];
   diasSemMovimento: number;
   horasPresa: number;
