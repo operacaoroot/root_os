@@ -28,6 +28,7 @@ interface Destino {
 }
 
 const DESTINOS: Destino[] = [
+  { titulo: "Contas e preparação", o_que: "Dono, operadores, versão aprovada e horário para cada destino.", href: "/marketing/preparacao", onde: "Marketing" },
   {
     titulo: 'Marca e pilares',
     o_que: 'Quem a casa é e sobre o que fala. Entra nos pedidos que a pauta faz à IA, ao lado da voz.',

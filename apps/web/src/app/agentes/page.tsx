@@ -8,6 +8,8 @@ import { KpiCard } from '@/components/KpiCard';
 import { Procedimento } from './Procedimento';
 import { ControleDoAgente } from './ControleDoAgente';
 import { Orcamento } from './Orcamento';
+import { CriarAgente } from './CriarAgente';
+import { ExecucaoLocal } from './ExecucaoLocal';
 import type { EstadoDeAgente, SituacaoDeAgente } from './estado';
 
 /*
@@ -108,11 +110,12 @@ interface Roster {
 }
 
 export default function AgentesPage() {
-  const { token, ready, can } = useAuth();
+  const { token, ready, can, user } = useAuth();
   const [data, setData] = useState<Roster | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   const [minutos, setMinutos] = useState('');
+  const [criandoAgente, setCriandoAgente] = useState(false);
   const [procedimentoDe, setProcedimentoDe] = useState<string | null>(null);
 
   const carregar = () => {
@@ -138,6 +141,9 @@ export default function AgentesPage() {
         Cada um com uma missão, um dono humano e as ferramentas que declarou. Fora da declaração, a
         régua recusa.
       </p>
+
+      {can('automacoes.executar') && can('admin.usuarios') && <button type="button" onClick={() => setCriandoAgente(true)} className="rounded bg-brand px-3 py-2 text-sm text-ink">Criar agente</button>}
+      {criandoAgente && user && <CriarAgente token={token} pessoaId={user.id} aoFechar={() => setCriandoAgente(false)} aoCriar={() => { setCriandoAgente(false); carregar(); }} />}
 
       {erro && <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>}
 
@@ -385,11 +391,12 @@ export default function AgentesPage() {
               agente rodar (`EXECUTAR_AGENTE` no controlador). As duas aqui são
               cortesia de tela: quem recusa de verdade é a API.
             */}
+            {a.slug.startsWith('procedimento-') && user && <ExecucaoLocal slug={a.slug} token={token} pessoaId={user.id} podeExecutar={can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} />}
             <ControleDoAgente
               agente={a}
               token={token}
               podeComandar={can('admin.usuarios')}
-              podeInvocar={can('mcp.executar') && can('admin.usuarios')}
+              podeInvocar={!a.slug.startsWith('procedimento-') && can('mcp.executar') && can('admin.usuarios')}
               aoMudar={carregar}
             />
           </div>

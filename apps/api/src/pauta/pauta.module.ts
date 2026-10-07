@@ -1,3 +1,6 @@
+import { EditorialController } from './editorial.controller';
+import { EditorialService } from './editorial.service';
+import { WorkFilesService } from '../work/work-files.service';
 import { Module } from '@nestjs/common';
 import { StorageModule } from '../storage/storage.module';
 import { GoogleModule } from '../google/google.module';
@@ -85,6 +88,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // MidiaController ANTES do EpisodioController: `GET pendentes-midia` tem de
   // casar antes do `GET :id` de lá (Express casa na ordem de registro).
   controllers: [
+    EditorialController,
     PautaController,
     RodadaController,
     MidiaController,
@@ -113,6 +117,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     EnvioAoYoutubeController,
   ],
   providers: [
+    EditorialService,
+    WorkFilesService,
     PautaService,
     ApifyService,
     EspelhoService,
@@ -178,6 +184,6 @@ import { DmAutomaticaService } from './dm-automatica.service';
   // rotinas (RoutinesModule).
   // MK6: `RelatorioService` sai daqui porque o executor da rotina mensal vive
   // no RoutinesModule, como o da coleta já fazia com o RodadaService.
-  exports: [PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
+  exports: [EditorialService, PautaService, RodadaService, EvolutionService, EncadeamentoService, PublicacaoInstagramService, ComentariosService, EnvioAoYoutubeService, DmAutomaticaService, RelatorioService],
 })
 export class PautaModule {}

@@ -4380,3 +4380,120 @@ model WorkContextSource {
   @@index([orgId, taskId])
   @@index([orgId, itemId])
 }
+
+model EditorialMaterial {
+  id String @id
+  orgId String
+  taskId String
+  title String
+  releaseStatusId String
+  selectedVersionId String?
+  revision Int @default(1)
+  requestId String
+  actorId String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, taskId])
+  @@unique([orgId, requestId])
+}
+model EditorialVersion {
+  id String @id
+  orgId String
+  materialId String
+  number Int
+  title String
+  body String
+  files Json @default("[]")
+  sourceRef String
+  contentHash String
+  requestId String
+  actorId String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, materialId, number])
+  @@unique([orgId, requestId])
+}
+model EditorialDecision {
+  id String @id
+  orgId String
+  versionId String
+  state String
+  reason String
+  minimumAuthority String @default("responsavel")
+  authority String
+  requestId String
+  actorId String
+  fingerprint String
+  revokedAt DateTime?
+  revokedBy String?
+  revokedReason String?
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+  @@unique([orgId, versionId])
+}
+model EditorialProduction {
+  id String @id
+  orgId String
+  taskId String
+  materialId String
+  versionId String
+  decisionId String
+  title String
+  body String
+  files Json @default("[]")
+  sourceRef String
+  contentHash String
+  requestId String
+  actorId String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+  @@index([orgId, taskId])
+}
+
+model MarketingAccountConfig {
+  id String @id
+  orgId String
+  connectionId String
+  externalId String
+  handle String
+  ownerId String
+  operators String[] @default([])
+  revision Int @default(1)
+  active Boolean @default(true)
+  requestId String
+  actorId String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, connectionId])
+  @@unique([orgId, requestId])
+}
+
+model MarketingPreparation {
+  id String @id
+  orgId String
+  accountId String
+  accountRevision Int
+  connectionId String
+  externalId String
+  handle String
+  taskId String
+  versionId String
+  decisionId String
+  contentHash String
+  scheduledAt DateTime
+  timezone String
+  state String @default("prepared")
+  requestId String
+  actorId String
+  fingerprint String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+  @@index([orgId, accountId])
+}

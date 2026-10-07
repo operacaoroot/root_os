@@ -14,6 +14,8 @@ import { TasksModule } from '../tasks/tasks.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 import { PautaModule } from '../pauta/pauta.module';
 import { WorkModule } from '../work/work.module';
+import { ModeloLocalService } from './modelo-local.service';
+import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
 
 @Module({
   imports: [
@@ -33,7 +35,7 @@ import { WorkModule } from '../work/work.module';
     WorkModule,
   ],
   controllers: [AgentsController],
-  providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
+  providers: [ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

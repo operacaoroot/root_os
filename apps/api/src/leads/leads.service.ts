@@ -459,6 +459,11 @@ export class LeadsService {
     return { ok: true, mudou: true, ownerId: input.ownerId };
   }
 
+  private async recusarFatoRealEmExercicio(orgId: string, leadId: string) {
+    if (await this.prisma.leadEvent.findFirst({ where: { orgId, leadId, type: 'comercial_qa_entrada' }, select: { id: true } }))
+      throw new ConflictException('Esta oportunidade é de exercício. Use a proposta e o aceite de exercício.');
+  }
+
   // ---------- Proposta e aceite comercial (ROOT-49, C-03, P-b) ----------
 
   /** Aceite e proposta cruzam dois módulos (E15): o prefixo `leads` o gate já viu; o `trabalho` se confere aqui. */
@@ -586,6 +591,7 @@ export class LeadsService {
    * `Contract` nem lançamento: a ponte para o Financeiro (C-04) é outro caminho.
    */
   async registrarProposta(ator: AtorDaEntrada, id: string, input: LeadPropostaRegistroInput): Promise<LeadPropostaResposta> {
+    await this.recusarFatoRealEmExercicio(ator.orgId, id);
     const { orgId } = ator;
     await this.exigirTrabalho(orgId);
     await this.exigirLead(orgId, id);
@@ -644,6 +650,7 @@ export class LeadsService {
    * com essas mesmas condições.
    */
   async decidir(ator: AtorDaEntrada, id: string, input: LeadDecisaoInput): Promise<LeadDecisaoResposta> {
+    await this.recusarFatoRealEmExercicio(ator.orgId, id);
     const { orgId } = ator;
     if (input.condicoesVistas && hashDasCondicoes(input.condicoesVistas) !== input.condicoesHash) {
       throw new BadRequestException('condicoesVistas não corresponde ao condicoesHash enviado');

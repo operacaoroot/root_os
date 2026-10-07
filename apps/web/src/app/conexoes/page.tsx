@@ -300,6 +300,7 @@ export default function IntegracoesPage() {
 
   return (
     <div className="space-y-6">
+      <a href="/marketing/preparacao" className="underline">Dono e operadores das contas de Marketing</a>
       <div>
         <p className="text-sm text-muted">
           {data

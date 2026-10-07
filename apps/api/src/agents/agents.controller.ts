@@ -22,6 +22,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { AgentsService } from './agents.service';
 import { AgentRuntime, type SessionResumo } from './agent-runtime.service';
 import { SessionService } from './session.service';
+import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
 
 const PedidoSchema = z.object({
   pedido: z.string().min(1).max(4000),
@@ -118,12 +119,43 @@ export class AgentsController {
     private readonly agentes: AgentsService,
     private readonly runtime: AgentRuntime,
     private readonly sessoes: SessionService,
+    private readonly procedimento: ProcedimentoDoAgenteService,
   ) {}
 
   @Get('agents')
   @RequirePermissions('mcp.ver')
   roster(@CurrentUser() user: JwtUser) {
     return this.agentes.roster(user.orgId);
+  }
+
+  @Get('agents/configuracao')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  configuracao(@CurrentUser() user: JwtUser) {
+    return this.procedimento.configuracao(user.orgId, user.sub);
+  }
+
+  @Post('agents')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.procedimento.criar(user.orgId, user.sub, body);
+  }
+
+  @Get('agents/:slug/procedimento/fontes')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  fontesDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.procedimento.fontes(user.orgId, user.sub, slug);
+  }
+
+  @Post('agents/:slug/procedimento/executar')
+  @RequirePermissions(...EXECUTAR_AGENTE, 'mcp.ver', 'obsidian.ver')
+  executarProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.procedimento.executar(user.orgId, user.sub, slug, body);
+  }
+
+  @Get('agents/:slug/procedimento/execucoes/:id')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  execucaoDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('id') id: string) {
+    return this.procedimento.detalhe(user.orgId, user.sub, slug, id);
   }
 
   @Get('agents/:slug')

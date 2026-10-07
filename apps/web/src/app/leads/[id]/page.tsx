@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
@@ -16,6 +16,7 @@ import {
 import { ErroDaApi, apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { StatusChip } from '@/components/StatusChip';
+import { ComercialExercicio } from '../ComercialExercicio';
 
 interface LeadDetail {
   id: string;
@@ -61,14 +62,18 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const ciclo = useRef(0);
   const load = () => {
     if (!token) return;
-    apiGet<LeadDetail>(`/leads/${params.id}`, token).then(setLead).catch((e) => setError(e.message));
+    const rodada = ++ciclo.current;
+    apiGet<LeadDetail>(`/leads/${params.id}`, token).then((r) => { if (rodada === ciclo.current) { setLead(r); setError(null); } }).catch((e) => { if (rodada === ciclo.current) { setLead(null); setError(e.message); } });
   };
 
   useEffect(() => {
+    setLead(null); setError(null);
     if (!ready || !token) return;
     load();
+    return () => { ++ciclo.current; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, token, params.id]);
 
@@ -124,7 +129,7 @@ export default function LeadDetailPage() {
 
           {can('leads.editar') && <DonoDoLead lead={lead} token={token} meuId={meuId} podeEscolher={can('admin.usuarios')} onSaved={load} onError={setError} />}
 
-          {can('leads.editar') && (
+          {can('leads.editar') && !lead.events.some((e) => e.type === 'comercial_qa_entrada') && (
             <LeadActions
               lead={lead}
               token={token}
@@ -133,13 +138,13 @@ export default function LeadDetailPage() {
             />
           )}
 
-          <PropostaEAceite
+          {lead.events.some((e) => e.type === 'comercial_qa_entrada') ? <ComercialExercicio key={`${token}:${lead.id}`} leadId={lead.id} onChanged={load} onIndisponivel={() => { ++ciclo.current; setLead(null); setError('Oportunidade de exercício indisponível para esta conta.'); }} /> : <PropostaEAceite
             leadId={lead.id}
             token={token}
             podeCondicoes={can('tarefas.ver')}
             podeRegistrar={can('leads.editar') && can('tarefas.ver')}
             onChanged={load}
-          />
+          />}
 
           <div className="rounded-xl border border-border bg-surface p-5">
             <h2 className="mb-3 font-os-mono text-[10px] uppercase tracking-[0.16em] font-medium text-muted">Histórico de interações</h2>
@@ -147,7 +152,7 @@ export default function LeadDetailPage() {
               {lead.events.map((ev) => (
                 <li key={ev.id} className="flex items-center gap-3 text-sm">
                   <span className="h-2 w-2 rounded-full bg-brand" />
-                  <span className="capitalize">{ev.type}</span>
+                  <span className="capitalize">{ev.type.startsWith('comercial_qa_') ? `${ev.type.replace('comercial_qa_','')} de exercício (QA)` : ev.type}</span>
                   <span className="ml-auto text-xs text-muted">
                     {new Date(ev.occurredAt).toLocaleString('pt-BR')}
                   </span>
@@ -160,7 +165,7 @@ export default function LeadDetailPage() {
           </div>
 
           <p className="text-[11px] text-muted">
-            Resumo por IA disponível via Telegram (MCP). Mudanças de etapa entram na timeline e na auditoria.
+            Mudanças e decisões aparecem no histórico. Registros de exercício são identificados como QA.
           </p>
         </>
       )}

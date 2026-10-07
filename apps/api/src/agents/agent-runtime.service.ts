@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ActorType,
   Prisma,
@@ -37,6 +37,7 @@ import { EventLogService } from '../gateway/event-log.service';
 import { type MotivoDeHeartbeat, heartbeatLigado, pedidoDoHeartbeat } from './heartbeat';
 import { ORDEM_DOS_NIVEIS, type CapacidadeCatalogo, type Nivel } from '@mktos/policy';
 import { montarSop } from './sop';
+import { REF_PROCEDIMENTO_LOCAL } from './procedimento-do-agente.service';
 import { paraFerramentas, paraModelo, resumirArgs, resumirResultado } from './tool-adapter';
 
 export interface ExecutarPedido {
@@ -364,6 +365,13 @@ export class AgentRuntime {
   async executar(p: ExecutarPedido): Promise<SessionResumo> {
     const inicio = Date.now();
     const emitir = p.onEvento ?? (() => {});
+    // O procedimento local tem fontes e autorização próprias; não entra no histórico legado.
+    if (p.agentSlug.startsWith('procedimento-')) throw new BadRequestException('Este agente usa o procedimento local, com modelo e fontes próprios.');
+    if (p.canalRef?.startsWith(REF_PROCEDIMENTO_LOCAL)) throw new BadRequestException('Use o procedimento local para conferir esta execução.');
+    if (p.sessionId) {
+      const anterior = await this.prisma.session.findFirst({ where: { id: p.sessionId, orgId: p.orgId }, select: { canalRef: true } });
+      if (anterior?.canalRef?.startsWith(REF_PROCEDIMENTO_LOCAL)) throw new BadRequestException('Use o procedimento local para conferir esta execução.');
+    }
 
     const agent = await this.prisma.agent.findFirst({
       where: { orgId: p.orgId, slug: p.agentSlug },

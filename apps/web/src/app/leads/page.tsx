@@ -7,6 +7,7 @@ import type { LeadList } from '@mktos/shared';
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { StatusChip } from '@/components/StatusChip';
+import { NovaOportunidadeExercicio } from './NovaOportunidadeExercicio';
 
 const PERIOD_LABEL: Record<string, string> = {
   today: 'hoje',
@@ -42,6 +43,7 @@ function LeadsInner() {
 
   return (
     <div className="space-y-5">
+      <NovaOportunidadeExercicio />
       <div>
         <p className="text-sm text-muted">
           {data ? `${data.total} lead(s)` : 'Carregando…'} {subtitle && `— ${subtitle}`}
