@@ -25,8 +25,16 @@ import DashboardPage from '@/app/painel/page';
 describe('painel: cartão "Tarefas atrasadas"', () => {
   beforeEach(() => {
     apiGet.mockReset();
-    const resumo = new Proxy({} as Record<string, unknown>, { get: (_t, k) => (k === 'then' ? undefined : 0) });
-    apiGet.mockResolvedValue(resumo);
+    const resumo = new Proxy({} as Record<string, unknown>, {
+      get: (_t, k) => k === 'then' ? undefined : k === 'source' ? { tool: 'fixture', generatedAt: '2026-10-07T12:00:00Z' } : 0,
+    });
+    apiGet.mockImplementation(async (rota: string) => {
+      if (rota === '/dashboard/summary') return resumo;
+      if (rota === '/trabalho/estrutura') return {
+        espacos: [], folders: [], listasSoltas: [], camposGlobais: [], tags: [], responsaveis: [], agentes: [],
+      };
+      throw new Error(`Rota sem fixture: ${rota}`);
+    });
   });
 
   it('leva ao Quadro interno, não à lista paralela /tarefas', async () => {
