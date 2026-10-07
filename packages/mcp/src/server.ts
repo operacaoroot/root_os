@@ -616,18 +616,20 @@ export function buildServer(): McpServer {
     'trabalho_tarefas',
     {
       description:
-        'Tarefas do módulo Trabalho com status real da lista, prioridade, responsável, prazo, etiquetas e valores dos campos personalizados (Formato/Eixo/Tipo/Fonte na Gestão de Temas). Filtros: list_id, status_id, assignee, busca por título. [read_only]',
+        'Tarefas do módulo Trabalho com status real da lista, prioridade, responsável, prazo, etiquetas e valores dos campos personalizados (Formato/Eixo/Tipo/Fonte na Gestão de Temas). Filtros: list_id, status_id, assignee, busca por título. Cada chamada retorna uma página; total é o total da API para a seleção. page e limit omitidos usam os defaults da API. O endpoint rejeita offsets (page - 1) * limit acima de 10.000.000. [read_only]',
       inputSchema: {
         list_id: z.string().optional().describe('ID da lista (ver trabalho_estrutura)'),
         status_id: z.string().optional().describe('ID do status'),
         assignee: z.string().optional().describe('Responsável (nome exato)'),
         q: z.string().optional().describe('Busca no título'),
+        page: z.number().int().min(1).max(100_000).optional().describe('Página (inteiro de 1 a 100000); omitida usa o default da API'),
+        limit: z.number().int().min(1).max(500).optional().describe('Tarefas por página (inteiro de 1 a 500); omitido usa o default da API'),
       },
       annotations: { title: 'Trabalho: tarefas', ...READ_ONLY },
     },
-    async ({ list_id, status_id, assignee, q }) => {
+    async ({ list_id, status_id, assignee, q, page, limit }) => {
       try {
-        return ok(await apiGet(`/trabalho/tarefas${qs({ listId: list_id, statusId: status_id, assignee, q })}`));
+        return ok(await apiGet(`/trabalho/tarefas${qs({ listId: list_id, statusId: status_id, assignee, q, page, limit })}`));
       } catch (e) {
         return fail(e);
       }
