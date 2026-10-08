@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContextoTarefaCreateSchema, type ContextoTarefaCreateInput, type ContextoTarefaCreateResponse, type ContextoFontesDaTarefaResponse, type ContextoFonteUtilizadaDto } from '@mktos/shared';
-import { Prisma, type ContextItem, type ContextItemVersion, type WorkContextSource } from '@prisma/client';
+import { Prisma, type ContextItemVersion, type WorkContextSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { exigirAcessoAtual, filtroDeLeitura } from './acesso-memoria';
 import { hashDoCorpo, rotuloDeProcedencia } from './procedencia';
+import { construirFonteAutorizada, reconferirFontesAtuais, type FonteAtual } from './fonte-autorizada';
 
 function conflito(code: string, message: string): never { throw new ConflictException({ code, message }); }
 function indisponivel(): never { throw new NotFoundException('Fonte não encontrada.'); }
@@ -31,7 +32,7 @@ function conferirVersao(v: ContextItemVersion, itemId: string, hash: string): vo
   if (v.itemId !== itemId || v.contentHash !== hash || hashDoCorpo(v.body) !== hash)
     conflito('contexto_fonte_inconsistente', 'A versão da fonte não pôde ser conferida.');
 }
-function dto(link: WorkContextSource, v: ContextItemVersion, item: ContextItem): ContextoFonteUtilizadaDto {
+function dto(link: WorkContextSource, v: ContextItemVersion, item: FonteAtual): ContextoFonteUtilizadaDto {
   return {
     id: link.id, itemId: link.itemId, versionId: link.versionId, chave: link.chave,
     versao: link.versao, contentHash: link.contentHash, sourceType: link.sourceType,
@@ -39,6 +40,8 @@ function dto(link: WorkContextSource, v: ContextItemVersion, item: ContextItem):
     procedencia: rotuloDeProcedencia(link.sourceType, link.sourceRef),
     criadoEm: v.criadoEm.toISOString(), utilizadaEm: link.createdAt.toISOString(),
     versaoAtual: item.versao, arquivada: !!item.arquivadoEm,
+    retratoFonte: construirFonteAutorizada({ item, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
+      novoUsoPermitido: !item.arquivadoEm && item.sourceType === v.sourceType && item.sourceRef === v.sourceRef, chaveConsumida: link.chave }),
   };
 }
 
@@ -65,8 +68,8 @@ export class ContextoTrabalhoService {
         conferirVersao(v, itemId, anterior.contentHash);
         if (v.versao !== anterior.versao || v.title !== anterior.title || v.sourceType !== anterior.sourceType || v.sourceRef !== anterior.sourceRef)
           conflito('contexto_fonte_inconsistente', 'A versão da fonte não pôde ser conferida.');
-        await exigirAcessoAtual(tx, orgId, actorId, ['obsidian.ver', 'tarefas.editar']);
-        return { taskId: task.id, listId: task.listId, replayed: true, fonte: dto(anterior, v, item) };
+        const final = await this.conferirFinal(tx, orgId, actorId, itemId, ['obsidian.ver', 'tarefas.editar']);
+        return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: true, fonte: dto(anterior, v, final) };
       }
       if (item.versao !== p.expectedItemVersion || item.arquivadoEm)
         conflito('contexto_fonte_alterada', 'A fonte mudou. Confira a versão atual antes de criar a tarefa.');
@@ -97,9 +100,34 @@ export class ContextoTrabalhoService {
         orgId, actorId, action: 'work.task.create.contexto', entityType: 'work_task', entityId: task.id,
         after: { listId: list.id, requestId: p.requestId, itemId, versionId: v.id, versao: v.versao, contentHash: v.contentHash },
       }, tx);
-      await exigirAcessoAtual(tx, orgId, actorId, ['obsidian.ver', 'tarefas.editar']);
-      return { taskId: task.id, listId: task.listId, replayed: false, fonte: dto(link, v, item) };
+      const final = await this.conferirFinal(tx, orgId, actorId, itemId, ['obsidian.ver', 'tarefas.editar']);
+      return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: false, fonte: dto(link, v, final) };
     });
+  }
+
+  private async conferirFinal(db: Pick<Prisma.TransactionClient, 'user' | 'contextItem' | '$queryRawUnsafe'>, orgId: string, actorId: string, itemId: string,
+    permissoes = ['obsidian.ver', 'tarefas.ver']): Promise<FonteAtual> {
+    const item = await db.contextItem.findFirst({ where: { id: itemId, orgId, ...filtroDeLeitura(actorId) } });
+    await exigirAcessoAtual(db, orgId, actorId, permissoes);
+    const final = await reconferirFontesAtuais(db, orgId, actorId, permissoes, [itemId]);
+    if (!item || !final.fontes[0]) indisponivel();
+    return final.fontes[0];
+  }
+
+  async porPedido(orgId: string, actorId: string, itemId: string, requestId: string): Promise<ContextoTarefaCreateResponse> {
+    const id = ContextoTarefaCreateSchema.shape.requestId.safeParse(requestId);
+    if (!id.success) throw new BadRequestException('Pedido inválido.');
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'tarefas.ver']);
+    const link = await this.prisma.workContextSource.findUnique({ where: { orgId_requestId: { orgId, requestId: id.data.toLowerCase() } } });
+    if (!link || link.actorId !== actorId || link.itemId !== itemId) indisponivel();
+    const v = await this.prisma.contextItemVersion.findFirst({ where: { id: link.versionId, itemId, orgId } });
+    const task = await this.prisma.workTask.findFirst({ where: { id: link.taskId, orgId }, select: { id: true, listId: true } });
+    if (!v || !task) indisponivel();
+    conferirVersao(v, itemId, link.contentHash);
+    if (v.versao !== link.versao || v.title !== link.title || v.sourceType !== link.sourceType || v.sourceRef !== link.sourceRef)
+      conflito('contexto_fonte_inconsistente', 'A versão da fonte não pôde ser conferida.');
+    const item = await this.conferirFinal(this.prisma, orgId, actorId, itemId);
+    return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: true, fonte: dto(link, v, item) };
   }
 
   async fontes(orgId: string, actorId: string, taskId: string): Promise<ContextoFontesDaTarefaResponse> {
@@ -107,7 +135,7 @@ export class ContextoTrabalhoService {
     const task = await this.prisma.workTask.findFirst({ where: { id: taskId, orgId }, select: { id: true } });
     if (!task) throw new NotFoundException('Tarefa não encontrada.');
     const links = await this.prisma.workContextSource.findMany({ where: { orgId, taskId }, orderBy: { createdAt: 'asc' } });
-    const fontes: ContextoFonteUtilizadaDto[] = [];
+    const selecionadas: Array<{ link: WorkContextSource; v: ContextItemVersion }> = [];
     for (const link of links) {
       const item = await this.prisma.contextItem.findFirst({ where: { id: link.itemId, orgId, ...filtroDeLeitura(actorId) } });
       if (!item) indisponivel();
@@ -116,13 +144,21 @@ export class ContextoTrabalhoService {
       conferirVersao(v, link.itemId, link.contentHash);
       if (v.versao !== link.versao || v.title !== link.title || v.sourceType !== link.sourceType || v.sourceRef !== link.sourceRef)
         conflito('contexto_fonte_inconsistente', 'A versão da fonte não pôde ser conferida.');
-      fontes.push(dto(link, v, item));
+      selecionadas.push({ link, v });
     }
     // Uma revogação ocorrida durante a leitura não entrega os dados consultados.
     await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'tarefas.ver']);
     for (const link of links) {
       if (!await this.prisma.contextItem.findFirst({ where: { id: link.itemId, orgId, ...filtroDeLeitura(actorId) }, select: { id: true } })) indisponivel();
     }
-    return { fontes };
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'tarefas.ver']);
+    const final = await reconferirFontesAtuais(this.prisma, orgId, actorId, ['obsidian.ver', 'tarefas.ver'], links.map((l) => l.itemId));
+    const atuais = new Map(final.fontes.map((f) => [f.id, f]));
+    const fontes = selecionadas.map(({ link, v }) => {
+      const item = atuais.get(link.itemId);
+      if (!item) indisponivel();
+      return dto(link, v, item);
+    });
+    return { escopo: { orgId, userId: actorId }, fontes };
   }
 }

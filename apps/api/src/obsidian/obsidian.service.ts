@@ -884,22 +884,16 @@ export class ObsidianService implements OnModuleInit {
      * na memória.
      */
     const preservadas = anteriores.filter((n) => mantidosNoIndice.has(n.path));
-    await this.prisma.knowledgeNote.deleteMany({ where: daVault });
-    for (const n of [...notes, ...preservadas.map((p) => ({ ...p, folder: p.folder ?? null }))]) {
-      await this.prisma.knowledgeNote.create({
-        data: {
-          orgId,
-          path: n.path,
-          folder: n.folder,
-          title: n.title,
-          tags: n.tags,
-          content: n.content,
-          links: n.links,
-          wordCount: n.wordCount,
-          fileTime: n.fileTime,
-        },
-      });
-    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`obsidian-index:${orgId}`}))`;
+      await tx.knowledgeNote.deleteMany({ where: daVault });
+      for (const n of [...notes, ...preservadas.map((p) => ({ ...p, folder: p.folder ?? null }))]) {
+        await tx.knowledgeNote.create({ data: {
+          orgId, path: n.path, folder: n.folder, title: n.title, tags: n.tags,
+          content: n.content, links: n.links, wordCount: n.wordCount, fileTime: n.fileTime,
+        } });
+      }
+    });
     recibo.indexacao = { gravadas: notes.length, preservadas: preservadas.length, espelhoDoOnboardingPreservado: null };
 
     /*

@@ -8,7 +8,7 @@ import { FontesDaTarefa } from '@/components/trabalho/FontesDaTarefa';
 const get = vi.fn(); const post = vi.fn();
 let token = 'qa-contexto-token';
 let permissions = ['obsidian.ver', 'tarefas.ver', 'tarefas.editar'];
-vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a) }));
+vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => Promise.resolve(get(...a)).then((r) => dtosPara(a[0] as string, r)), apiPost: (...a: unknown[]) => Promise.resolve(post(...a)).then((r) => ({ ...r, escopo: escopoAtual(), fonte: fonteCompleta(r.fonte ?? fonte) })) }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token, ready: true, user: { id: token === 'qa-contexto-token' ? 'qa-eu' : 'qa-outro', name: 'Pessoa QA' }, can: (p: string) => permissions.includes(p) }) }));
 
 const itemId = '11111111-1111-4111-8111-111111111111';
@@ -24,7 +24,19 @@ const versoes = [
 ];
 const estrutura = { folders: [], listasSoltas: [{ id: listId, name: 'Lista destino QA' }], pessoas: [{ id: 'qa-eu', name: 'Pessoa QA', email: 'eu@qa.local', isActive: true }, { id: 'qa-homonimo', name: 'Pessoa QA', email: 'outra@qa.local', isActive: true }, { id: 'qa-inativo', name: 'Inativa QA', email: 'inativa@qa.local', isActive: false }] };
 const fonte = { id: 'qa-vinculo', itemId, versionId: v1id, title: 'Fonte QA anterior', versao: 1, procedencia: 'operador:origem anterior QA', utilizadaEm: data, versaoAtual: 2, arquivada: false };
+let atualParaDto = nota;
+function escopoAtual() { return { orgId: 'org-qa', userId: token === 'qa-contexto-token' ? 'qa-eu' : 'qa-outro' }; }
+function retrato(v: any, n: any = nota) { return { itemId, chave: n.chave, colecao: 'manual_local', identidadeCanonica: { documentId: itemId, origemDaIdentidade: 'item_existente' }, versao: { versionId: v.id, numero: v.versao, contentHash: v.contentHash }, title: v.title, body: v.body, versaoAtual: n.versao, arquivada: !!n.arquivadoEm, registradaEm: v.criadoEm ?? data, atualizadaNaMemoriaEm: n.atualizadoEm, origem: { tipo: 'operador', referencia: v.sourceRef ?? null }, estado: { coleta: 'nao_verificada', indexacao: 'nao_verificada', projecao: 'nao_verificada', ultimoReciboId: null }, acesso: { modelo: 'local_por_pessoa', verificadoEm: data, novoUsoPermitido: !n.arquivadoEm }, citacao: { chave: n.chave, itemId, versao: v.versao, versionId: v.id, contentHash: v.contentHash } }; }
+function fonteCompleta(f: any) { const v = versoes.find((v) => v.id === f.versionId)!; return { ...v, ...f, chave: nota.chave, itemId, versionId: f.versionId, contentHash: v.contentHash, body: v.body, retratoFonte: retrato(v) }; }
+function dtosPara(path: string, r: any) {
+  if (path.includes('/tarefas/pedidos/')) return { ...r, escopo: escopoAtual(), fonte: fonteCompleta(r.fonte ?? fonte) };
+  if (path === `/memoria/${itemId}`) { atualParaDto = r; return { ...r, escopo: escopoAtual(), retratoFonte: retrato({ ...r, id: versoes.find((v) => v.versao === r.versao)?.id ?? v2id }, r) }; }
+  if (path.endsWith('/versoes')) return r.map((v: any) => ({ ...v, escopo: escopoAtual(), retratoFonte: retrato(v, atualParaDto) }));
+  if (path.endsWith('/fontes')) return { ...r, escopo: escopoAtual(), fontes: r.fontes.map(fonteCompleta) };
+  return r;
+}
 function servir(path: string) {
+  if (path.includes('/tarefas/pedidos/')) return Promise.resolve({ taskId, listId, replayed: true, fonte });
   if (path === `/memoria/${itemId}`) return Promise.resolve(nota);
   if (path === `/memoria/${itemId}/versoes`) return Promise.resolve(versoes);
   if (path === '/trabalho/estrutura') return Promise.resolve(estrutura);
@@ -39,7 +51,7 @@ async function preencher() {
   fireEvent.change(screen.getByLabelText('Título da nova tarefa'), { target: { value: 'Entrega com fonte QA' } });
   fireEvent.change(screen.getByLabelText('Lista de destino'), { target: { value: listId } });
 }
-beforeEach(() => { cleanup(); window.history.replaceState({}, '', '/contexto'); localStorage.clear(); token = 'qa-contexto-token'; permissions = ['obsidian.ver', 'tarefas.ver', 'tarefas.editar']; get.mockReset(); post.mockReset(); get.mockImplementation(servir); post.mockResolvedValue({ taskId, listId, replayed: false }); });
+beforeEach(() => { cleanup(); window.history.replaceState({}, '', '/contexto'); localStorage.clear(); atualParaDto = nota; token = 'qa-contexto-token'; permissions = ['obsidian.ver', 'tarefas.ver', 'tarefas.editar']; get.mockReset(); post.mockReset(); get.mockImplementation(servir); post.mockResolvedValue({ taskId, listId, replayed: false }); });
 
 describe('fonte versionada usada em Trabalho', () => {
   it('abre a versão histórica do vínculo e distingue a versão corrente, com corpo como texto', async () => {
@@ -73,29 +85,18 @@ describe('fonte versionada usada em Trabalho', () => {
     expect(post).toHaveBeenCalledTimes(1);
     await act(async () => resolver({ taskId, listId, replayed: false }));
   });
-  it('reusa o ID após resposta perdida e nova abertura com o mesmo pedido', async () => {
+  it('reusa o ID após resposta perdida consultando tarefa confirmada sem segundo POST', async () => {
     post.mockRejectedValueOnce(new Error('Resposta perdida QA'));
-    const tela = render(<NotaAberta notaId={itemId} />); await preencher();
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
-    await screen.findByRole('alert'); const id = post.mock.calls[0][1].requestId;
-    tela.unmount(); render(<NotaAberta notaId={itemId} />); await preencher();
-    post.mockResolvedValue({ taskId, listId, replayed: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Conferir criação' }));
-    await screen.findByRole('link', { name: 'Abrir tarefa criada' });
-    expect(post.mock.calls[1][1].requestId).toBe(id);
-    expect(screen.getByRole('status')).toHaveTextContent('já estava criada');
+    const tela = render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
+    await screen.findByRole('alert'); const id = post.mock.calls[0][1].requestId; tela.unmount(); render(<NotaAberta notaId={itemId} />);
+    await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(get).toHaveBeenCalledWith(`/memoria/${itemId}/tarefas/pedidos/${id}`, token); expect(post).toHaveBeenCalledTimes(1); expect(screen.getByRole('status')).toHaveTextContent('já estava criada');
   });
-  it('409 conserva título e lista e pede releitura sem repetir a escrita sozinho', async () => {
+  it('409 conserva intenção em memória e recarregar não libera nova escrita incerta', async () => {
     post.mockRejectedValue(Object.assign(new Error('Mudou QA'), { status: 409 }));
-    render(<NotaAberta notaId={itemId} />); await preencher();
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Recarregue a fonte');
-    expect(screen.getByLabelText('Título da nova tarefa')).toHaveValue('Entrega com fonte QA');
-    expect(screen.getByLabelText('Lista de destino')).toHaveValue(listId);
-    expect(screen.getByRole('button', { name: 'Conferir criação' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Recarregar fonte' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Criar tarefa' })).toBeEnabled());
-    expect(post).toHaveBeenCalledTimes(1);
+    const originalGet = servir; get.mockImplementation((p: string) => p.includes('/tarefas/pedidos/') ? Promise.reject(Object.assign(new Error('Sem confirmação QA'), { status: 404 })) : originalGet(p));
+    render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
+    await screen.findByRole('alert'); expect(screen.getByLabelText('Título da nova tarefa')).toHaveValue('Entrega com fonte QA'); expect(screen.getByLabelText('Lista de destino')).toHaveValue(listId); expect(screen.getByRole('button', { name: 'Conferir criação' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recarregar fonte' })); await screen.findByText('Fonte não disponível para esta conta.'); expect(screen.queryByRole('button', { name: 'Criar tarefa' })).not.toBeInTheDocument(); expect(screen.getByRole('status')).toHaveTextContent('Pedido sem confirmação'); expect(post).toHaveBeenCalledTimes(1);
   });
   it.each([403, 404])('recusa %s após abrir remove corpo, versões e resultado', async (status) => {
     post.mockRejectedValue(Object.assign(new Error('Recusa QA'), { status }));
@@ -113,23 +114,11 @@ describe('fonte versionada usada em Trabalho', () => {
     expect(screen.queryByRole('button', { name: 'Criar tarefa usando esta versão' })).not.toBeInTheDocument();
     expect(screen.getByText('v2 · fonte arquivada')).toBeInTheDocument();
   });
-  it('confere pedido próprio pendente após arquivar a fonte, com dados congelados e payload original', async () => {
+  it('confere resultado próprio após arquivar a fonte sem reconstruir o payload', async () => {
     post.mockRejectedValueOnce(new Error('Resposta perdida após criar QA'));
-    const tela = render(<NotaAberta notaId={itemId} />); await preencher();
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
-    await screen.findByRole('alert'); const original = { ...post.mock.calls[0][1] }; tela.unmount();
+    const tela = render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' })); await screen.findByRole('alert'); const original = { ...post.mock.calls[0][1] }; tela.unmount();
     get.mockImplementation((path: string) => path === `/memoria/${itemId}` ? Promise.resolve({ ...nota, arquivadoEm: data, versao: 3 }) : path === `/memoria/${itemId}/versoes` ? Promise.resolve([{ ...versoes[0], id: '66666666-6666-4666-8666-666666666666', versao: 3, mudanca: 'arquivamento' }, ...versoes]) : servir(path));
-    render(<NotaAberta notaId={itemId} versaoInicial={v1id} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Conferir pedido anterior' }));
-    expect(await screen.findByLabelText('Título da nova tarefa')).toHaveValue('Entrega com fonte QA');
-    expect(screen.getByLabelText('Título da nova tarefa')).toBeDisabled();
-    expect(screen.getByLabelText('Lista de destino')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Abrir versão v2' })).toBeDisabled();
-    post.mockResolvedValue({ taskId, listId, replayed: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Conferir criação' }));
-    expect(await screen.findByRole('link', { name: 'Abrir tarefa criada' })).toHaveAttribute('href', `/trabalho?lista=${listId}&tarefa=${taskId}`);
-    expect(post).toHaveBeenCalledTimes(2); expect(post.mock.calls[1][1]).toEqual(original);
-    expect(screen.queryByRole('button', { name: 'Criar tarefa' })).not.toBeInTheDocument();
+    render(<NotaAberta notaId={itemId} versaoInicial={v1id} />); const link = await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(link).toHaveAttribute('href', `/trabalho?lista=${listId}&tarefa=${taskId}`); expect(post).toHaveBeenCalledTimes(1); expect(post.mock.calls[0][1]).toEqual(original); expect(get).toHaveBeenCalledWith(`/memoria/${itemId}/tarefas/pedidos/${original.requestId}`, token);
   });
   it.each(['pedido inválido', 'pedido de outra pessoa'])('fonte arquivada não oferece nova criação com %s no armazenamento', async (caso) => {
     const chave = caso === 'pedido de outra pessoa' ? `root_contexto_pedido:qa-outra:${itemId}` : `root_contexto_pedido:qa-eu:${itemId}`;
@@ -155,24 +144,12 @@ describe('fonte versionada usada em Trabalho', () => {
     permissions = ['tarefas.ver']; render(<NotaAberta notaId={itemId} />);
     expect(screen.getByText('Fonte não disponível para esta conta.')).toBeInTheDocument(); expect(get).not.toHaveBeenCalled();
   });
-  it('pedido ambíguo congela os dados e recupera a observação original após atualizar a fonte', async () => {
+  it('pedido ambíguo congela intenção em memória e após atualizar encontra a versão original', async () => {
     post.mockRejectedValueOnce(new Error('Resposta perdida QA'));
-    const tela = render(<NotaAberta notaId={itemId} />); await preencher();
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
-    await screen.findByRole('alert'); const original = { ...post.mock.calls[0][1] };
-    expect(screen.getByLabelText('Título da nova tarefa')).toBeDisabled();
-    expect(screen.getByLabelText('Lista de destino')).toBeDisabled();
-    tela.unmount();
+    const tela = render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' })); await screen.findByRole('alert'); const original = { ...post.mock.calls[0][1] };
+    expect(screen.getByLabelText('Título da nova tarefa')).toBeDisabled(); expect(screen.getByLabelText('Lista de destino')).toBeDisabled(); tela.unmount();
     get.mockImplementation((path: string) => path === `/memoria/${itemId}` ? Promise.resolve({ ...nota, versao: 3 }) : path === `/memoria/${itemId}/versoes` ? Promise.resolve([{ ...versoes[0], id: '66666666-6666-4666-8666-666666666666', versao: 3 }, ...versoes]) : servir(path));
-    render(<NotaAberta notaId={itemId} />);
-    await screen.findByRole('button', { name: 'Criar tarefa usando esta versão' });
-    fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa usando esta versão' }));
-    expect(await screen.findByLabelText('Título da nova tarefa')).toHaveValue('Entrega com fonte QA');
-    post.mockResolvedValue({ taskId, listId, replayed: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Conferir criação' }));
-    await screen.findByRole('link', { name: 'Abrir tarefa criada' });
-    expect(post.mock.calls[1][1]).toEqual(original);
-    expect(post.mock.calls[1][1].expectedItemVersion).toBe(2);
+    render(<NotaAberta notaId={itemId} />); await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(post).toHaveBeenCalledTimes(1); expect(original.expectedItemVersion).toBe(2); expect(screen.getByRole('status')).toHaveTextContent('já estava criada');
   });
   it('recusa notifica o mapa para remover título e metadados já carregados', async () => {
     const indisponivel = vi.fn();
@@ -209,7 +186,7 @@ describe('fonte versionada usada em Trabalho', () => {
     const link = await screen.findByRole('link', { name: 'Abrir versão usada' });
     expect(link).toHaveAttribute('href', `/contexto?nota=${itemId}&versao=${v1id}`);
     expect(screen.getByText('Fonte QA anterior · v1')).toBeInTheDocument();
-    expect(screen.getByText(/versão atual v2/)).toBeInTheDocument();
+    expect(screen.getByText('versão atual').nextElementSibling).toHaveTextContent('v2');
   });
   it('reconferência de acesso recusada limpa a citação já carregada', async () => {
     render(<FontesDaTarefa taskId={taskId} />); await screen.findByRole('link', { name: 'Abrir versão usada' });

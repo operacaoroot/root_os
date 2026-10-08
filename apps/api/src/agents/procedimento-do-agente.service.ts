@@ -6,6 +6,8 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirAcessoAtual, filtroDeLeitura } from '../memory/acesso-memoria';
 import { hashDoCorpo } from '../memory/procedencia';
+import { construirFonteAutorizada, construirCapacidadesExecutor, reconferirFontesAtuais } from '../memory/fonte-autorizada';
+import type { ModeloLocalEstado } from './modelo-local.service';
 import { AgenteIdentidadeSchema } from './agents.service';
 import { blocoExterno } from './context-builder.service';
 import { FormatoDaSopInvalido, validarProcedimento } from './sop';
@@ -47,12 +49,14 @@ export class ProcedimentoDoAgenteService {
       this.prisma.user.findMany({ where: { orgId, isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       this.modelo.estado(),
     ]);
-    return { pessoas, modelo: estado, capacidades: ['contexto.memoria.buscar'],
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, CONFIGURAR);
+    return { escopo: { orgId, userId: pessoaId }, pessoas, modelo: estado, capacidades: ['contexto.memoria.buscar'],
       procedimentoSuportado: 'Ler uma versão de fonte, sintetizar com modelo local e registrar o resultado. Sem ferramentas externas.' };
   }
 
   async criar(orgId: string, pessoaId: string, entrada: unknown) {
     const input = CriarProcedimentoSchema.parse(entrada);
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, CONFIGURAR);
     const estado = await this.modelo.estado();
     const slug = `procedimento-${input.requestId}`;
     return this.prisma.$transaction(async (tx) => {
@@ -68,7 +72,8 @@ export class ProcedimentoDoAgenteService {
       if (existente) {
         const log = await tx.auditLog.findFirst({ where: { orgId, entityId: existente.id, action: 'agent.procedimento.create' }, select: { metadata: true } });
         if ((log?.metadata as { fingerprint?: string } | null)?.fingerprint !== assinatura) throw new ConflictException('Este pedido já criou um agente com outra configuração ou pessoa.');
-        return { ...existente, repetido: true };
+        await exigirAcessoAtual(tx, orgId, pessoaId, CONFIGURAR);
+        return { ...existente, repetido: true, escopo: { orgId, userId: pessoaId, agentId: existente.id, agentSlug: existente.slug } };
       }
       if (input.modelo && (!estado.disponivel || input.modelo !== estado.modelo)) throw new ConflictException('O modelo escolhido não está disponível. Confira a configuração.');
       const agente = await tx.agent.create({ data: {
@@ -81,31 +86,78 @@ export class ProcedimentoDoAgenteService {
       }, select: { id: true, slug: true } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.create', entityType: 'agent', entityId: agente.id,
         metadata: { requestId: input.requestId, fingerprint: assinatura, modo: 'sintese_local_sem_ferramentas' } }, tx);
-      return { ...agente, repetido: false };
+      await exigirAcessoAtual(tx, orgId, pessoaId, CONFIGURAR);
+      return { ...agente, repetido: false, escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug } };
     });
+  }
+
+  async criacaoPorPedido(orgId: string, pessoaId: string, requestId: string) {
+    if (!z.string().uuid().safeParse(requestId).success) throw new BadRequestException('Pedido inválido.');
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, CONFIGURAR);
+    const slug = `procedimento-${requestId}`;
+    const agente = await this.prisma.agent.findFirst({ where: { orgId, slug }, select: { id: true, slug: true } });
+    if (!agente) throw new NotFoundException('Pedido indisponível.');
+    const logs = await this.prisma.auditLog.findMany({ where: { orgId, actorId: pessoaId, action: 'agent.procedimento.create',
+      entityType: 'agent', entityId: agente.id, metadata: { path: ['requestId'], equals: requestId } }, take: 2, select: { id: true } });
+    if (!logs.length) throw new NotFoundException('Pedido indisponível.');
+    if (logs.length !== 1) throw new ConflictException('O pedido não pôde ser conferido.');
+    const atual = await this.prisma.agent.findFirst({ where: { id: agente.id, orgId, slug }, select: { id: true, slug: true } });
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, CONFIGURAR);
+    if (!atual) throw new NotFoundException('Pedido indisponível.');
+    return { ...atual, repetido: true, escopo: { orgId, userId: pessoaId, agentId: atual.id, agentSlug: atual.slug } };
+  }
+
+  private async capacidades(orgId: string, pessoaId: string, slug: string, modelo: ModeloLocalEstado) {
+    const agente = await this.prisma.agent.findFirst({ where: { orgId, slug }, include: { sop: true } });
+    if (!agente) throw new NotFoundException('Agente indisponível.');
+    const dono = await this.prisma.user.findFirst({ where: { orgId, id: agente.donoId ?? '', isActive: true }, select: { id: true } });
+    const pessoa = await this.prisma.user.findFirst({ where: { orgId, id: pessoaId, isActive: true },
+      select: { roles: { where: { orgId }, select: { permissions: { select: { key: true } } } } } });
+    const permissoes = new Set(pessoa?.roles.flatMap((r) => r.permissions.map((p) => p.key)) ?? []);
+    return { agente, capacidadesExecutor: construirCapacidadesExecutor({ agente, procedimentoVersao: agente.sop?.versao ?? null,
+      responsavelDisponivel: !!dono, permissaoExecutarAtual: !!pessoa && EXECUTAR.every((p) => permissoes.has(p)), estadoModelo: modelo }) };
   }
 
   async fontes(orgId: string, pessoaId: string, slug: string) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const agente = await this.prisma.agent.findFirst({ where: { orgId, slug }, select: { id: true } });
-    if (!agente) throw new NotFoundException('Agente indisponível.');
+    if (!await this.prisma.agent.findFirst({ where: { orgId, slug }, select: { id: true } })) throw new NotFoundException('Agente indisponível.');
     const rows = await this.prisma.contextItem.findMany({ where: { orgId, ...filtroDeLeitura(pessoaId), arquivadoEm: null },
-      take: 100, orderBy: { title: 'asc' }, select: { id: true, title: true, chave: true, versao: true,
-        versoes: { orderBy: { versao: 'desc' }, select: { id: true, title: true, versao: true, contentHash: true, sourceType: true, sourceRef: true } } } });
+      take: 100, orderBy: { title: 'asc' }, include: { versoes: { orderBy: { versao: 'desc' } } } });
     const modelo = await this.modelo.estado();
+    const { agente, capacidadesExecutor } = await this.capacidades(orgId, pessoaId, slug, modelo);
+    const atuais = await this.prisma.contextItem.findMany({ where: { orgId, ...filtroDeLeitura(pessoaId), arquivadoEm: null, id: { in: rows.map((r) => r.id) } } });
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const atuais = await this.prisma.contextItem.findMany({ where: { orgId, ...filtroDeLeitura(pessoaId), arquivadoEm: null, id: { in: rows.map((r) => r.id) } }, select: { id: true } });
-    const ids = new Set(atuais.map((r) => r.id));
-    return { items: rows.filter((r) => ids.has(r.id)), modelo };
+    const final = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, atuais.map((r) => r.id), false);
+    const porId = new Map(final.fontes.map((r) => [r.id, r]));
+    const verificadoEm = new Date();
+    const items = rows.filter((r) => porId.has(r.id)).map((r) => {
+      const atual = porId.get(r.id)!;
+      return { id: r.id, title: atual.title, chave: atual.chave, versao: atual.versao,
+        versoes: r.versoes.map((v) => ({ id: v.id, title: v.title, versao: v.versao, contentHash: v.contentHash, sourceType: v.sourceType, sourceRef: v.sourceRef,
+          retratoFonte: construirFonteAutorizada({ item: atual, versaoSelecionada: v, incluirCorpo: false, acessoVerificadoEm: verificadoEm,
+            novoUsoPermitido: !atual.arquivadoEm && atual.sourceType === v.sourceType && atual.sourceRef === v.sourceRef }) })) };
+    });
+    return { items, modelo, escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug }, capacidadesExecutor };
   }
 
-  private async fonte(db: Pick<Prisma.TransactionClient, 'contextItem' | 'contextItemVersion'>,
+  private async fonte(db: Pick<Prisma.TransactionClient, 'contextItem' | 'contextItemVersion' | 'user' | '$queryRawUnsafe'>,
     orgId: string, pessoaId: string, pedido: Pedido, anterior?: Registro['fonte'], permitirArquivada = false) {
-    const item = await db.contextItem.findFirst({ where: { id: pedido.itemId, orgId, ...filtroDeLeitura(pessoaId), ...(permitirArquivada ? {} : { arquivadoEm: null }) } });
+    let item = await db.contextItem.findFirst({ where: { id: pedido.itemId, orgId, ...filtroDeLeitura(pessoaId), ...(permitirArquivada ? {} : { arquivadoEm: null }) } });
     if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
     const v = await db.contextItemVersion.findFirst({ where: { id: pedido.versionId, itemId: item.id, orgId } });
     if (!v || v.versao > item.versao || v.contentHash !== pedido.contentHash || hashDoCorpo(v.body) !== v.contentHash) throw new ConflictException('A versão da fonte não corresponde ao pedido.');
+    item = await db.contextItem.findFirst({ where: { id: pedido.itemId, orgId, ...filtroDeLeitura(pessoaId), ...(permitirArquivada ? {} : { arquivadoEm: null }) } });
+    if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
+    if (v.versao > item.versao) throw new ConflictException('A versão da fonte não corresponde ao pedido.');
+    await exigirAcessoAtual(db, orgId, pessoaId, LER);
+    const final = await reconferirFontesAtuais(db, orgId, pessoaId, LER, [item.id], permitirArquivada);
+    if (!final.fontes[0]) throw new NotFoundException('Fonte indisponível para esta conta.');
+    item = { ...item, ...final.fontes[0] };
+    if (v.versao > item.versao) throw new ConflictException('A versão da fonte não corresponde ao pedido.');
     if (anterior) {
+      if (anterior.itemId !== pedido.itemId || anterior.itemId !== item.id || anterior.versionId !== pedido.versionId || anterior.versionId !== v.id
+        || anterior.versao !== v.versao || anterior.contentHash !== pedido.contentHash || anterior.contentHash !== v.contentHash || anterior.title !== v.title)
+        throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão registrada da fonte não pôde ser conferida.' });
       if (v.sourceType !== anterior.sourceType || v.sourceRef !== anterior.sourceRef || item.chave !== anterior.chave || item.sourceType !== anterior.sourceType || item.sourceRef !== anterior.sourceRef) throw new ConflictException('A origem da fonte mudou.');
     } else if (item.versao !== pedido.expectedItemVersion || v.sourceType !== item.sourceType || v.sourceRef !== item.sourceRef) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
     return { item, v };
@@ -204,18 +256,51 @@ export class ProcedimentoDoAgenteService {
     const agente = await this.prisma.agent.findFirst({ where: { orgId, slug, estado: 'ativo', ativo: true }, select: { id: true } });
     if (!agente) throw new Error('Agente pausado ou encerrado. Nenhum novo efeito foi produzido.');
     await this.fonte(this.prisma, orgId, pessoaId, input, registro.fonte);
+    const final = await this.prisma.agent.findFirst({ where: { orgId, slug, estado: 'ativo', ativo: true }, select: { id: true } });
+    if (!final) throw new Error('Agente pausado ou encerrado. Nenhum novo efeito foi produzido.');
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
+    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, EXECUTAR, [input.itemId], false, slug);
+    if (!atual.agenteDisponivel) throw new ConflictException('Agente pausado ou indisponível.');
+    const item = atual.fontes[0];
+    if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
+    if (item.chave !== registro.fonte.chave || item.sourceType !== registro.fonte.sourceType || item.sourceRef !== registro.fonte.sourceRef
+      || item.versao !== input.expectedItemVersion) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
+  }
+
+  async porPedido(orgId: string, pessoaId: string, slug: string, requestId: string) {
+    if (!z.string().uuid().safeParse(requestId).success) throw new BadRequestException('Pedido inválido.');
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
+    const sessions = await this.prisma.session.findMany({ where: { orgId, canal: 'web', canalRef: `${REF_PROCEDIMENTO_LOCAL}${requestId}`,
+      solicitanteId: pessoaId, agent: { orgId, slug } }, take: 2, include: { steps: { where: { ordem: 1 } } } });
+    if (!sessions.length) throw new NotFoundException('Execução indisponível.');
+    if (sessions.length !== 1) throw new ConflictException('O pedido não pôde ser conferido.');
+    const session = sessions[0], registro = session.steps[0]?.payload as unknown as Registro | undefined;
+    const entrada = ExecutarProcedimentoSchema.safeParse(registro?.entrada);
+    if (!entrada.success || registro?.tipo !== 'procedimento_local' || registro.requestId !== requestId
+      || entrada.data.requestId !== requestId || registro.fingerprint !== fingerprint({ pessoaId, slug, input: entrada.data }))
+      throw new ConflictException('O pedido não pôde ser conferido.');
+    return this.detalhe(orgId, pessoaId, slug, session.id);
   }
 
   async detalhe(orgId: string, pessoaId: string, slug: string, sessionId: string) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
     const session = await this.prisma.session.findFirst({ where: { id: sessionId, orgId, solicitanteId: pessoaId,
-      canalRef: { startsWith: REF_PROCEDIMENTO_LOCAL }, agent: { slug } }, include: { steps: { where: { ordem: 1 } } } });
+      canal: 'web', canalRef: { startsWith: REF_PROCEDIMENTO_LOCAL }, agent: { orgId, slug } }, include: { steps: { where: { ordem: 1 } } } });
     if (!session) throw new NotFoundException('Execução indisponível.');
     const registro = session.steps[0]?.payload as unknown as Registro;
     if (registro?.tipo !== 'procedimento_local') throw new NotFoundException('Execução indisponível.');
-    await this.fonte(this.prisma, orgId, pessoaId, registro.entrada, registro.fonte, true);
+    const modelo = await this.modelo.estado();
+    const { agente, capacidadesExecutor } = await this.capacidades(orgId, pessoaId, slug, modelo);
+    const { item, v } = await this.fonte(this.prisma, orgId, pessoaId, registro.entrada, registro.fonte, true);
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    return { id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
+    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, [item.id]);
+    const fonteFinal = atual.fontes[0];
+    if (!fonteFinal) throw new NotFoundException('Fonte indisponível para esta conta.');
+    if (fonteFinal.chave !== registro.fonte.chave || fonteFinal.sourceType !== registro.fonte.sourceType || fonteFinal.sourceRef !== registro.fonte.sourceRef)
+      throw new ConflictException('A origem da fonte mudou.');
+    const retratoFonte = construirFonteAutorizada({ item: fonteFinal, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
+      novoUsoPermitido: !fonteFinal.arquivadoEm && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
+    return { escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug }, retratoFonte, capacidadesExecutor, id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
       pessoaId, pedido: registro.entrada.pedido, procedimento: registro.procedimento,
       fonte: registro.fonte, resposta: registro.saida?.texto ?? null,
       modeloConfigurado: registro.modeloConfigurado, modeloUsado: registro.observado?.modelo ?? null, provider: 'llama.cpp-local',

@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
+import type { M05EscopoDto, M05FonteAutorizadaDto } from '@mktos/shared';
+import { construirFonteAutorizada } from './fonte-autorizada';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,7 +17,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
-import { filtroDeLeitura, leitorDoContexto, leitorAutorizado } from './acesso-memoria';
+import { exigirAcessoAtual, filtroDeLeitura, leitorDoContexto, leitorAutorizado } from './acesso-memoria';
 import { EventLogService, sigiloso } from '../gateway/event-log.service';
 import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -141,6 +144,8 @@ export interface ProjecaoCondicionada {
 }
 
 export interface NotaDeContexto {
+  escopo?: M05EscopoDto;
+  retratoFonte?: M05FonteAutorizadaDto;
   id: string;
   chave: string;
   kind: ContextKind;
@@ -164,6 +169,8 @@ export interface NotaDeContexto {
 }
 
 export interface VersaoDeNota {
+  escopo?: M05EscopoDto;
+  retratoFonte?: M05FonteAutorizadaDto;
   id: string;
   versao: number;
   mudanca: ContextChange;
@@ -380,7 +387,7 @@ export class MemoriaService {
     opcoes: { kind?: ContextKind; incluirArquivadas?: boolean } = {},
     solicitanteId: string | null = leitorDoContexto(),
   ): Promise<{ itens: NotaDeContexto[]; total: number; comVetor: number }> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     let linhas = await this.prisma.contextItem.findMany({
       where: {
         orgId,
@@ -391,34 +398,38 @@ export class MemoriaService {
       orderBy: { atualizadoEm: 'desc' },
       select: SELECAO_DA_NOTA,
     });
-    linhas = await this.reconferirLeitura(orgId, linhas, solicitanteId);
-    const comVetor = await this.contarComVetor(orgId, solicitanteId);
+    await this.contarComVetor(orgId, solicitanteId);
+    const notas = await this.comVetor(orgId, linhas);
+    const final = await this.leituraAtual(orgId, solicitanteId, linhas.map((l) => l.id));
+    const ids = new Set(final.ids);
     return {
-      itens: await this.comVetor(orgId, linhas),
-      total: linhas.length,
-      comVetor,
+      itens: notas.filter((n) => ids.has(n.id)),
+      total: ids.size,
+      comVetor: Number(final.comVetor),
     };
   }
 
   async obter(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const linha = await this.prisma.contextItem.findFirst({
       where: { id, orgId, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    const nota = (await this.comVetor(orgId, [linha]))[0];
+    let nota = (await this.comVetor(orgId, [linha]))[0];
+    if (solicitanteId) nota = await this.retratoAtual(orgId, nota, solicitanteId);
     return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
   async porChave(orgId: string, chave: string, solicitanteId: string | null = leitorDoContexto()): Promise<NotaDeContexto | null> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const linha = await this.prisma.contextItem.findFirst({
       where: { orgId, chave, ...filtroDeLeitura(solicitanteId) },
       select: SELECAO_DA_NOTA,
     });
     if (!linha) return null;
-    const nota = (await this.comVetor(orgId, [linha]))[0];
+    let nota = (await this.comVetor(orgId, [linha]))[0];
+    if (solicitanteId) nota = await this.retratoAtual(orgId, nota, solicitanteId);
     return (await this.reconferirLeitura(orgId, [linha], solicitanteId)).length ? nota : null;
   }
 
@@ -430,16 +441,23 @@ export class MemoriaService {
    * `GET /audit/verificar`, que a versão não foi escrita por fora.
    */
   async historico(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<VersaoDeNota[]> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const existe = await this.prisma.contextItem.count({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
     if (!existe) throw new NotFoundException('Nota não encontrada nesta empresa.');
     const linhas = await this.prisma.contextItemVersion.findMany({
       where: { orgId, itemId: id },
       orderBy: { versao: 'desc' },
     });
-    const leitorFinal = await leitorAutorizado(this.prisma, orgId, solicitanteId);
-    if (!await this.prisma.contextItem.count({ where: { id, orgId, ...filtroDeLeitura(leitorFinal) } })) throw new NotFoundException('Nota não encontrada nesta empresa.');
-    return linhas.map(paraVersao);
+    const item = await this.prisma.contextItem.findFirst({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
+    if (!item) throw new NotFoundException('Nota não encontrada nesta empresa.');
+    const verificadoEm = new Date();
+    const resultado = linhas.map((v) => ({ ...paraVersao(v), ...(solicitanteId ? {
+      escopo: { orgId, userId: solicitanteId },
+      retratoFonte: construirFonteAutorizada({ item, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: verificadoEm,
+        novoUsoPermitido: !item.arquivadoEm && v.sourceType === item.sourceType && v.sourceRef === item.sourceRef }),
+    } : {}) }));
+    if (!(await this.reconferirLeitura(orgId, [item], solicitanteId)).length) throw new NotFoundException('Nota não encontrada nesta empresa.');
+    return resultado;
   }
 
   // ==========================================================================
@@ -465,7 +483,7 @@ export class MemoriaService {
     vetorDaBusca?: number[] | null,
     solicitanteId: string | null = leitorDoContexto(),
   ): Promise<ResultadoDeBusca> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
     const q = (query ?? '').trim();
     const take = Math.min(Math.max(limite, 1), 20);
     let modo: 'semantica' | 'textual' = 'textual';
@@ -1019,27 +1037,10 @@ export class MemoriaService {
    * que a guarda segurou: a tela não arquiva item da vault (E4 da ROOT-05-REV).
    *
    * ----------------------------------------------------------------------------
-   * MOVER SEM PERDER O `itemId` (C19-04, R-4)
-   * ----------------------------------------------------------------------------
-   * Um item vivo cuja chave A sumiu e um membro novo B com o MESMO corpo formam
-   * par quando o `contentHash` é único em TODA a coleção — itens vivos e
-   * membros desta volta juntos, não só entre sumidos e novos: um arquivo novo
-   * igual a uma terceira nota viva também é ambíguo — e o corpo tem pelo menos
-   * `PISO_DO_PAR` caracteres. B não pode existir na empresa, nem arquivado.
-   *
-   * OS PARES SÃO CALCULADOS ANTES DE QUALQUER CRIAÇÃO. Antes, a criação de B vinha
-   * no laço e só depois se sabia que A tinha sumido: a nota nascia de novo e a
-   * antiga era arquivada, com outro `itemId`. Agora o par move a mesma linha
-   * (uma versão `alteracao` com `sourceRef` B e o motivo dizendo de onde para
-   * onde) e só então o laço passa por B, onde mudança de cabeçalho entra como
-   * alteração comum.
-   *
-   * Movimentos acima do mesmo teto da guarda de arquivamento ficam SEGURADOS por
-   * inteiro: nada nasce em B e nada é arquivado em A. O par tem o mesmo corpo,
-   * então segurar não perde conteúdo, e cair no comportamento antigo duplicaria
-   * a nota. Movimento não entra na conta da guarda de arquivamento — só o que
-   * sumiu sem par —, e uma reorganização de pastas deixa de parecer vault
-   * sumida.
+   * IDENTIDADE DO DOCUMENTO
+   * Hash confere conteúdo. Um caminho novo sem vínculo explícito cria outro
+   * item, mesmo com corpo igual. Não inferimos movimento nem alias nesta volta.
+   * Movimento explícito com rastro atômico pertence a outro contrato.
    *
    * `vistos` são os caminhos que ficaram fora da coleção por anomalia do clone
    * (alterado ou apagado fora do git, entrada não verificável, colisão de NFC):
@@ -1084,80 +1085,9 @@ export class MemoriaService {
       }
     }
 
-    // ---- os pares, antes de qualquer criação --------------------------------
-    const existentes = new Set(
-      (
-        await this.prisma.contextItem.findMany({
-          where: { orgId, chave: { in: [...membros.keys()] } },
-          select: { chave: true },
-        })
-      ).map((i) => i.chave),
-    );
-    const contagem = new Map<string, number>();
-    const somar = (h: string) => contagem.set(h, (contagem.get(h) ?? 0) + 1);
-    for (const v of vivos) somar(v.contentHash);
-    const hashDoMembro = new Map<string, string>();
-    for (const [chave, n] of membros) {
-      const h = hashDoCorpo(n.body);
-      hashDoMembro.set(chave, h);
-      somar(h);
-    }
-    const novosPorHash = new Map<string, string[]>();
-    for (const chave of membros.keys()) {
-      if (existentes.has(chave)) continue;
-      const h = hashDoMembro.get(chave)!;
-      novosPorHash.set(h, [...(novosPorHash.get(h) ?? []), chave]);
-    }
-    const pares: Array<{ de: { id: string; chave: string }; para: string }> = [];
-    for (const s of sumidos) {
-      const candidatos = novosPorHash.get(s.contentHash) ?? [];
-      if (!candidatos.length) continue;
-      if (candidatos.length !== 1 || contagem.get(s.contentHash) !== 2) {
-        resumo.movimentosDescartados.ambiguos++;
-        continue;
-      }
-      if (Array.from(corpoNormalizado(membros.get(candidatos[0])!.body)).length < PISO_DO_PAR) {
-        resumo.movimentosDescartados.curtos++;
-        continue;
-      }
-      pares.push({ de: { id: s.id, chave: s.chave }, para: candidatos[0] });
-    }
-
-    const conjuntoDosMovimentos = conjuntoDaGuarda(pares.map((p) => `${p.de.chave}\u0000${p.para}`));
+    // Um caminho novo não herda identidade por igualdade de conteúdo.
     const segurados = new Set<string>();
     const movidos = new Set<string>();
-    if (pares.length > teto && liberacao?.movimentos !== conjuntoDosMovimentos) {
-      resumo.movimentosRecusados = pares.length;
-      resumo.guardas.movimentos = { quantidade: pares.length, conjunto: conjuntoDosMovimentos };
-      for (const p of pares) {
-        segurados.add(p.de.chave);
-        segurados.add(p.para);
-        resumo.pares.push({ de: caminhoDe(p.de.chave), para: caminhoDe(p.para), situacao: 'segurado' });
-      }
-      this.log.error(
-        `empresa ${orgId}: a volta da vault moveria ${pares.length} nota(s), acima do teto de ${teto} ` +
-          'para uma volta só. NADA foi movido, criado no destino nem arquivado na origem (o corpo é ' +
-          'o mesmo dos dois lados, então nada se perde esperando). Se a reorganização for real, ' +
-          `quem decide libera este conjunto com \`${COMANDO_DE_LIBERACAO}\`.`,
-      );
-    } else {
-      if (pares.length > teto) resumo.liberacaoUsada = liberacao!.eventoId;
-      for (const p of pares) {
-        const de = caminhoDe(p.de.chave);
-        const para = caminhoDe(p.para);
-        try {
-          await this.mover(orgId, p.de.id, p.para, para, `o arquivo foi movido na vault (${de} → ${para}, corpo idêntico)`);
-          movidos.add(p.de.chave);
-          resumo.movidas++;
-          resumo.pares.push({ de, para, situacao: 'movido' });
-        } catch (e) {
-          // O par que não fechou volta ao comportamento de antes: A arquiva, B nasce.
-          resumo.falhas++;
-          resumo.pares.push({ de, para, situacao: 'falhou' });
-          this.log.warn(`empresa ${orgId}: não consegui mover "${de}" para "${para}" (${(e as Error).message}).`);
-        }
-      }
-    }
 
     // ---- o laço: quem não aponta substituição primeiro --------------------------
     const ordem = [...membros.entries()]
@@ -1765,12 +1695,9 @@ export class MemoriaService {
   }
 
   async contarComVetor(orgId: string, solicitanteId: string | null = leitorDoContexto()): Promise<number> {
-    solicitanteId = await leitorAutorizado(this.prisma, orgId, solicitanteId);
-    const r = await this.prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      'SELECT count(*)::bigint AS n FROM "ContextItem" WHERE "orgId" = $1 AND embedding IS NOT NULL AND ("acessoRestrito" = false OR $2::text = ANY("leitores"))',
-      orgId, solicitanteId,
-    );
-    return Number(r[0]?.n ?? 0);
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+    const final = await this.leituraAtual(orgId, solicitanteId, []);
+    return Number(final.comVetor);
   }
 
   // ==========================================================================
@@ -2079,13 +2006,50 @@ export class MemoriaService {
   private async reconferirLeitura<T extends { id: string; acessoRestrito?: boolean }>(
     orgId: string, linhas: T[], solicitanteId: string | null,
   ): Promise<T[]> {
-    if (!linhas.some((l) => l.acessoRestrito)) return linhas;
-    const leitor = await leitorAutorizado(this.prisma, orgId, solicitanteId);
-    const permitidas = await this.prisma.contextItem.findMany({
-      where: { orgId, id: { in: linhas.map((l) => l.id) }, ...filtroDeLeitura(leitor) }, select: { id: true },
-    });
-    const ids = new Set(permitidas.map((p) => p.id));
+    const final = await this.leituraAtual(orgId, solicitanteId, linhas.map((l) => l.id));
+    const ids = new Set(final.ids);
     return linhas.filter((l) => ids.has(l.id));
+  }
+
+  /** Pessoa, ACL da fonte e contador são conferidos no mesmo retrato do banco. */
+  private async leituraAtual(
+    orgId: string, solicitanteId: string | null, itemIds: string[],
+  ): Promise<{ autorizado: boolean; ids: string[]; comVetor: bigint }> {
+    const linhas = await this.prisma.$queryRawUnsafe<Array<{ autorizado: boolean; ids: string[]; comVetor: bigint }>>(`
+      WITH acesso AS (
+        SELECT ($2::text IS NULL OR EXISTS (
+          SELECT 1 FROM "User" u
+          JOIN "_UserRoles" ur ON ur."B" = u.id
+          JOIN "Role" r ON r.id = ur."A" AND r."orgId" = u."orgId"
+          JOIN "_RolePermissions" rp ON rp."B" = r.id
+          JOIN "Permission" p ON p.id = rp."A"
+          WHERE u.id = $2 AND u."orgId" = $1 AND u."isActive" = true AND p.key = 'obsidian.ver'
+        )) AS autorizado
+      ), permitidas AS (
+        SELECT c.id, (c.embedding IS NOT NULL) AS "temVetor" FROM "ContextItem" c
+        WHERE c."orgId" = $1
+          AND (c."acessoRestrito" = false OR $2::text = ANY(c.leitores))
+          AND (SELECT autorizado FROM acesso)
+      )
+      SELECT a.autorizado,
+        ARRAY(SELECT id FROM permitidas WHERE id = ANY($3::text[])) AS ids,
+        (SELECT count(*)::bigint FROM permitidas WHERE "temVetor") AS "comVetor"
+      FROM acesso a
+    `, orgId, solicitanteId, itemIds);
+    const final = linhas[0];
+    if (!final?.autorizado) throw new ForbiddenException('Acesso insuficiente.');
+    return final;
+  }
+
+  private async retratoAtual(orgId: string, nota: NotaDeContexto, pessoaId: string): Promise<NotaDeContexto> {
+    const v = await this.prisma.contextItemVersion.findFirst({ where: { orgId, itemId: nota.id, versao: nota.versao } });
+    if (!v || v.body !== nota.body || v.title !== nota.title || v.contentHash !== nota.contentHash
+      || v.sourceType !== nota.sourceType || v.sourceRef !== nota.sourceRef)
+      throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão da fonte não pôde ser conferida.' });
+    return { ...nota, escopo: { orgId, userId: pessoaId }, retratoFonte: construirFonteAutorizada({
+      item: { ...nota, orgId, arquivadoEm: nota.arquivadoEm, atualizadoEm: nota.atualizadoEm }, versaoSelecionada: v,
+      incluirCorpo: true, acessoVerificadoEm: new Date(), novoUsoPermitido: !nota.arquivadoEm,
+    }) };
   }
 
   private async comVetor(orgId: string, linhas: LinhaDaNota[]): Promise<NotaDeContexto[]> {

@@ -27,3 +27,4 @@ export * from './lead-entrada.js';
 // A proposta e o aceite comercial (ROOT-49, C-03): ver o cabeçalho de `lead-proposta.ts`.
 export * from './lead-proposta.js';
 export * from './comercial-exercicio';
+export * from './fonte-autorizada.js';

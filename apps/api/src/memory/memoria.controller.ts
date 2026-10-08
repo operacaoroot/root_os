@@ -216,6 +216,12 @@ export class MemoriaController {
     return this.memoria.historico(user.orgId, id, user.sub);
   }
 
+  @Get(':id/tarefas/pedidos/:requestId')
+  @RequirePermissions('obsidian.ver', 'tarefas.ver')
+  pedidoDeTarefa(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('requestId') requestId: string) {
+    return this.trabalho.porPedido(user.orgId, user.sub, id, requestId);
+  }
+
   @Post(':id/tarefas')
   @RequirePermissions('obsidian.ver', 'tarefas.editar')
   criarTarefaDaVersao(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {

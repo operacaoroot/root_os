@@ -134,6 +134,12 @@ export class AgentsController {
     return this.procedimento.configuracao(user.orgId, user.sub);
   }
 
+  @Get('agents/pedidos/:requestId')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  pedidoDeCriacao(@CurrentUser() user: JwtUser, @Param('requestId') requestId: string) {
+    return this.procedimento.criacaoPorPedido(user.orgId, user.sub, requestId);
+  }
+
   @Post('agents')
   @RequirePermissions(...CONFIGURAR_AGENTE)
   criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
@@ -150,6 +156,12 @@ export class AgentsController {
   @RequirePermissions(...EXECUTAR_AGENTE, 'mcp.ver', 'obsidian.ver')
   executarProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
     return this.procedimento.executar(user.orgId, user.sub, slug, body);
+  }
+
+  @Get('agents/:slug/procedimento/pedidos/:requestId')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  pedidoDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('requestId') requestId: string) {
+    return this.procedimento.porPedido(user.orgId, user.sub, slug, requestId);
   }
 
   @Get('agents/:slug/procedimento/execucoes/:id')

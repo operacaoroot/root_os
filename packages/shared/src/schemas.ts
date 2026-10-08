@@ -1,3 +1,4 @@
+import type { M05EscopoDto, M05FonteAutorizadaDto } from './fonte-autorizada.js';
 import { z } from 'zod';
 
 // --- Auth ---
@@ -5972,13 +5973,16 @@ export interface ContextoFonteUtilizadaDto {
   utilizadaEm: string;
   versaoAtual: number;
   arquivada: boolean;
+  retratoFonte?: M05FonteAutorizadaDto;
 }
 export interface ContextoTarefaCreateResponse {
+  escopo?: M05EscopoDto;
   taskId: string;
   listId: string;
   replayed: boolean;
   fonte: ContextoFonteUtilizadaDto;
 }
 export interface ContextoFontesDaTarefaResponse {
+  escopo?: M05EscopoDto;
   fontes: ContextoFonteUtilizadaDto[];
 }
