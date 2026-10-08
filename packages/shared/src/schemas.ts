@@ -839,6 +839,7 @@ export const PayableRowSchema = z.object({
   approvalStatus: z.string(),
   vencido: z.boolean(),
   diasAtraso: z.number().int(),
+  exercicioFinanceiro: z.boolean().optional(),
 });
 export type PayableRow = z.infer<typeof PayableRowSchema>;
 

@@ -8,6 +8,8 @@ import type {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { exigirPessoaFinanceiraAtual, travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
 const num = (d: Prisma.Decimal | number | null | undefined): number => (d == null ? 0 : Number(d));
 export const APPROVAL_LIMIT = (): number => Number(process.env.FINANCE_APPROVAL_LIMIT ?? 5000);
@@ -267,15 +269,19 @@ export class AprService {
   }
 
   // ---------- Contas a pagar / receber (previstos) ----------
-  async payables(orgId: string, tipo?: string): Promise<Payables> {
+  async payables(orgId: string, tipo?: string, actorId?: string): Promise<Payables> {
+    if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
+    const ocultos = actorId ? [] : await this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } });
     const now = new Date();
-    const where: Prisma.FinanceTransactionWhereInput = { orgId, status: 'previsto' };
+    const where: Prisma.FinanceTransactionWhereInput = { orgId, status: 'previsto', ...(actorId ? {} : { id: { notIn: ocultos.map(o => o.transactionId) } }) };
     if (tipo === 'pagar') where.type = 'saida';
     if (tipo === 'receber') where.type = 'entrada';
     const rows = await this.prisma.financeTransaction.findMany({
       where, orderBy: [{ dueDate: 'asc' }, { date: 'asc' }], take: 500,
       include: { partner: { select: { razaoSocial: true } }, chartAccount: { select: { codigo: true } } },
     });
+    const inscritos = await this.prisma.financeExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } });
+    const exercicios = new Set(inscritos.map(o => o.transactionId));
     let aPagar = 0, aReceber = 0, vencidoPagar = 0, vencidoReceber = 0, aguardando = 0;
     const items: PayableRow[] = rows.map((r) => {
       const v = num(r.amount);
@@ -288,9 +294,10 @@ export class AprService {
       return {
         id: r.id, tipo: r.type, description: r.description, partnerName: r.partner?.razaoSocial ?? null,
         chartCodigo: r.chartAccount?.codigo ?? null, amount: v, dueDate: due.toISOString(),
-        status: r.status, approvalStatus: r.approvalStatus, vencido, diasAtraso: dias,
+        status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id), vencido, diasAtraso: dias,
       };
     });
+    if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
     return {
       items, total: rows.length,
       totals: { aPagar, aReceber, vencidoPagar, vencidoReceber, aguardandoAprovacao: aguardando },
@@ -301,17 +308,28 @@ export class AprService {
 
   // ---------- Aprovação ----------
   async approve(orgId: string, id: string, aprovar: boolean, actorId: string) {
-    const tx = await this.prisma.financeTransaction.findFirst({ where: { id, orgId } });
-    if (!tx) throw new NotFoundException('Lançamento não encontrado');
-    if (tx.approvalStatus !== 'aguardando') throw new BadRequestException('Lançamento não está aguardando aprovação');
-    const updated = await this.prisma.financeTransaction.update({
-      where: { id },
-      data: { approvalStatus: aprovar ? 'aprovado' : 'rejeitado', approvedById: actorId, approvedAt: new Date() },
-    });
-    await this.audit.log({
-      orgId, actorId, action: aprovar ? 'finance.approve' : 'finance.reject',
-      entityType: 'finance_transaction', entityId: id, after: { approvalStatus: updated.approvalStatus },
-    });
-    return { ok: true, approvalStatus: updated.approvalStatus };
+    return this.prisma.$transaction(async db => {
+      await exigirPessoaFinanceiraAtual(db, orgId, actorId, true);
+      await travarFinanceiro(db, orgId);
+      await travarLancamentoFinanceiro(db, orgId, id);
+      await exigirNaoExercicio(db, orgId, id);
+      const tx = await db.financeTransaction.findFirst({ where: { id, orgId } });
+      if (!tx) throw new NotFoundException('Lançamento não encontrado');
+      if (tx.status !== 'previsto' || tx.paidAt || tx.reconciledAt || tx.approvalStatus !== 'aguardando')
+        throw new BadRequestException('Lançamento não está aguardando aprovação prevista');
+      const now = new Date();
+      const approvalStatus = aprovar ? 'aprovado' : 'rejeitado';
+      const changed = await db.financeTransaction.updateMany({
+        where: { id, orgId, updatedAt: tx.updatedAt, approvalStatus: 'aguardando', status: 'previsto' },
+        data: { approvalStatus, approvedById: actorId, approvedAt: now },
+      });
+      if (changed.count !== 1) throw new ConflictException('O lançamento mudou durante a decisão.');
+      await this.audit.log({
+        orgId, actorId, action: aprovar ? 'finance.approve' : 'finance.reject',
+        entityType: 'finance_transaction', entityId: id, after: { approvalStatus },
+      }, db);
+      await exigirPessoaFinanceiraAtual(db, orgId, actorId, true);
+      return { ok: true, approvalStatus };
+    }, { timeout: 30000 });
   }
 }

@@ -772,6 +772,7 @@ model FinanceTransaction {
   @@index([accountId])
   @@index([chartAccountId])
   @@index([partnerId])
+  @@unique([id, orgId])
 }
 
 // ---------- FinOps AP/AR: fornecedores/clientes, rateio, contratos, aprovação ----------
@@ -865,6 +866,7 @@ model Contract {
   transactions FinanceTransaction[]
 
   @@index([orgId, status])
+  @@unique([id, orgId])
 }
 
 // Rateio de um lançamento (lancamento_rateios): divide o valor por conta/dep/projeto.
@@ -4496,4 +4498,41 @@ model MarketingPreparation {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@index([orgId, accountId])
+}
+
+// Exercício local: inscrição explícita e histórico imutável.
+model FinanceExerciseObligation {
+  id String @id @default(uuid())
+  orgId String
+  transactionId String
+  contractId String
+  versionId String
+  contentHash String
+  snapshot Json
+  createdById String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, transactionId])
+  @@unique([orgId, versionId])
+  @@unique([id, orgId, versionId, contentHash])
+}
+
+model FinanceExerciseDecision {
+  id String @id @default(uuid())
+  orgId String
+  obligationId String
+  requestId String
+  actorId String
+  fingerprint String
+  versionId String
+  contentHash String
+  aprovar Boolean
+  motivo String
+  alcada String
+  expectedUpdatedAt DateTime
+  response Json
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+  @@unique([orgId, obligationId])
 }
