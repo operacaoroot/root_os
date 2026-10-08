@@ -14,7 +14,7 @@ import type {
 import { apiBlob, apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { tarefasDeTrabalho } from '@/lib/work-projection';
-import { resumirAtividade } from '@/lib/work-activity';
+import { AtividadeDaTarefa } from './AtividadeDaTarefa';
 import { EditorialTaskLink } from './EditorialTaskLink';
 import { OrigemComercialDaTarefa } from '@/app/leads/OrigemComercialDaTarefa';
 import { FontesDaTarefa } from './FontesDaTarefa';
@@ -88,10 +88,10 @@ function mudarEndereco(listaId: string | null, tarefaId: string | null) {
 }
 
 export function TrabalhoView({ visaoInicial = 'board' }: { visaoInicial?: 'board' | 'tabela' }) {
-  const { token, ready, can } = useAuth();
+  const { token, ready, can, user } = useAuth();
   if (!ready) return <p className="text-muted">Carregando…</p>;
   if (!token || !can('tarefas.ver')) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
-  return <TrabalhoConteudo key={token} visaoInicial={visaoInicial} />;
+  return <TrabalhoConteudo key={`${user?.id ?? ''}:${token}`} visaoInicial={visaoInicial} />;
 }
 
 function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }) {
@@ -450,7 +450,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
 
       {painelId && estrutura && (
         <PainelTarefa
-          key={`${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable && !conflitoEtapa} token={token} usuarioId={user?.id ?? null}
+          key={`${user?.id ?? ''}:${token}:${painelId}`} id={painelId} estrutura={estrutura} editable={editable && !conflitoEtapa} token={token} usuarioId={user?.id ?? null}
           onFechar={fecharTarefa} onMoverLista={(id) => { trocarLista(id); mudarEndereco(id, painelId); }}
           onMudou={refresh} onErro={setErro}
         />
@@ -866,19 +866,30 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   const [descricaoRascunho, setDescricaoRascunho] = useState('');
   const [salvando, setSalvando] = useState(false);
   const escrita = useRef(false);
-  const [conflito, setConflito] = useState<{ mudanca: Record<string, unknown>; recarregado: boolean; gravado?: boolean } | null>(null);
+  const [conflito, setConflito] = useState<{ mudanca: Record<string, unknown>; recarregado: boolean; gravado?: boolean; indeterminado?: boolean } | null>(null);
   const focoAnterior = useRef<HTMLElement | null>(null);
   const fecharRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => { focoAnterior.current = document.activeElement as HTMLElement; }, []);
   useEffect(() => setEdicaoDescricao(false), [id]);
-  const leitura = useRef(0);
-  const recarregar = useCallback(() => {
+  const leitura = useRef(0), operacao = useRef(0), ativo = useRef(true);
+  const vigente = (epoch: number) => ativo.current && operacao.current === epoch;
+  const recarregar = useCallback((epoch = operacao.current) => {
+    if (!ativo.current || operacao.current !== epoch) return Promise.resolve(null);
     const atual = ++leitura.current;
     return apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${id}`, token)
-      .then((t) => { if (atual === leitura.current) { setT(t); return t; } return null; })
-      .catch((e) => { if (atual === leitura.current) onErro(e.message); return null; });
+      .then((t) => { if (ativo.current && operacao.current === epoch && atual === leitura.current) { setT(t); return t; } return null; })
+      .catch((e) => {
+        if (ativo.current && operacao.current === epoch && atual === leitura.current) {
+          if ([401, 403, 404].includes(e?.status)) setT(null);
+          onErro(e.message);
+        }
+        return null;
+      });
   }, [id, token, onErro]);
-  useEffect(() => { recarregar(); return () => { leitura.current += 1; }; }, [recarregar]);
+  useEffect(() => {
+    ativo.current = true; void recarregar();
+    return () => { ativo.current = false; leitura.current += 1; operacao.current += 1; };
+  }, [recarregar]);
 
   const todasListas = useMemo(
     () => [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas],
@@ -888,24 +899,38 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   const campos = [...(lista?.fields ?? []), ...estrutura.camposGlobais];
 
   const salvar = async (mudanca: Record<string, unknown>) => {
-    if (!t || !editable || escrita.current || (conflito && !conflito.recarregado)) return false;
-    if (!t.updatedAt) { onErro('Recarregue a tarefa antes de editar: a versão não está disponível.'); return false; }
+    if (!ativo.current || !t || !editable || escrita.current || (conflito && !conflito.recarregado)) return false;
+    if (!t.updatedAt || !Number.isFinite(Date.parse(t.updatedAt)) || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(t.updatedAt)) { onErro('Recarregue a tarefa antes de editar: a versão não está disponível.'); return false; }
+    const epoch = ++operacao.current;
     escrita.current = true; setSalvando(true);
     try {
       await apiPatch(`/trabalho/tarefas/${id}`, { ...mudanca, expectedUpdatedAt: t.updatedAt }, token);
-      const atual = await recarregar();
+      if (!vigente(epoch)) return false;
+      const atual = await recarregar(epoch);
+      if (!vigente(epoch)) return false;
       if (!atual) { setConflito({ mudanca, recarregado: false, gravado: true }); onMudou(); return false; }
       setConflito(null); onMudou(); return true;
     } catch (e) {
-      if ((e as { status?: number }).status === 409) setConflito((c) => ({ mudanca: { ...c?.mudanca, ...mudanca }, recarregado: false }));
-      else onErro((e as Error).message);
+      if (!vigente(epoch)) return false;
+      const status = (e as { status?: number } | null)?.status;
+      if (status === 409) setConflito((c) => ({ mudanca: { ...c?.mudanca, ...mudanca }, recarregado: false }));
+      else {
+        if (status && [401, 403, 404].includes(status)) setT(null);
+        else if (status === undefined || status >= 500) setConflito({ mudanca, recarregado: false, indeterminado: true });
+        onErro(e instanceof Error ? e.message : 'Não foi possível concluir a alteração.');
+      }
       return false;
-    } finally { escrita.current = false; setSalvando(false); }
+    } finally { if (vigente(epoch)) { escrita.current = false; setSalvando(false); } }
   };
 
   const moverLista = (destino: string) => {
     if (destino === t?.listId) return;
-    void salvar({ listId: destino }).then((salvo) => { if (salvo) onMoverLista(destino); });
+    const epoch = operacao.current + 1;
+    void salvar({ listId: destino }).then((salvo) => { if (salvo && vigente(epoch)) onMoverLista(destino); });
+  };
+  const arquivar = async () => {
+    const epoch = operacao.current + 1;
+    if (await salvar({ archived: true }) && vigente(epoch)) onFechar();
   };
 
   const baixarAnexo = async (nome: string, caminho: string) => {
@@ -949,8 +974,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
   ]);
 
   const rascunho = conflito ? Object.entries(conflito.mudanca).map(([campo, valor]) => {
-    const rotulos: Record<string, string> = { title: 'Título', description: 'Descrição', statusId: 'Etapa', listId: 'Lista', assigneeUserId: 'Responsável', priority: 'Prioridade', dueDate: 'Prazo', startDate: 'Início', tagIds: 'Etiquetas', campos: 'Campos da tarefa' };
-    let texto = valor == null ? 'Sem valor' : String(valor);
+    const rotulos: Record<string, string> = { title: 'Título', description: 'Descrição', statusId: 'Etapa', listId: 'Lista', assigneeUserId: 'Responsável', priority: 'Prioridade', dueDate: 'Prazo', startDate: 'Início', tagIds: 'Etiquetas', campos: 'Campos da tarefa', archived: 'Arquivamento' };
+    let texto = campo === 'archived' ? valor ? 'Arquivar tarefa' : 'Restaurar tarefa' : valor == null ? 'Sem valor' : String(valor);
     if (campo === 'assigneeUserId') { const pessoa = estrutura.pessoas?.find((p) => p.id === valor); texto = valor == null ? 'Sem vínculo de pessoa' : pessoa ? rotuloDaPessoa(pessoa) : 'Pessoa indisponível'; }
     if (campo === 'statusId') texto = lista?.statuses.find((st) => st.id === valor)?.name ?? 'Etapa indisponível';
     if (campo === 'listId') texto = nomesListas.get(String(valor)) ?? 'Lista indisponível';
@@ -989,8 +1014,8 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
           className="w-full bg-transparent text-sm font-semibold outline-none focus:text-brand"
         />
         <div className="flex shrink-0 items-center gap-1">
-          {!ro && (
-            <button title="Arquivar" onClick={() => { void apiDelete(`/trabalho/tarefas/${t.id}`, token).then(() => { onMudou(); onFechar(); }); }} className="p-1 text-muted hover:text-bad">
+          {editable && !t.archived && (
+            <button title="Arquivar" aria-label="Arquivar tarefa" disabled={ro} onClick={() => void arquivar()} className="p-1 text-muted hover:text-bad disabled:opacity-50">
               <Archive size={15} />
             </button>
           )}
@@ -1000,12 +1025,15 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
 
       <div key={t.updatedAt} className="flex-1 space-y-4 overflow-y-auto px-4 py-3 text-sm">
         {conflito && <div role="alert" className="space-y-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm">
-          <p>{conflito.gravado
+          <p>{conflito.indeterminado
+            ? conflito.recarregado ? 'A versão atual foi carregada. Confira o resultado antes de decidir sobre a alteração abaixo.' : 'Não foi possível confirmar a alteração. Recarregue a tarefa antes de tentar novamente.'
+            : conflito.gravado
             ? conflito.recarregado ? 'A versão atual foi carregada. A alteração gravada continua abaixo.' : 'A alteração foi gravada, mas não conseguimos ler a versão atual. Recarregue a tarefa antes de editar novamente.'
             : conflito.recarregado ? 'Confira a versão atual antes de editar novamente. Seu rascunho continua abaixo.' : 'Esta tarefa mudou desde que você abriu. Sua alteração não foi gravada.'}</p>
-          <p className="font-medium">{conflito.gravado ? 'Alteração gravada' : 'Alteração não salva'}</p>
+          <p className="font-medium">{conflito.indeterminado ? 'Alteração a conferir' : conflito.gravado ? 'Alteração gravada' : 'Alteração não salva'}</p>
           <dl className="space-y-1 text-xs">{rascunho.map((r) => <div key={r.campo}><dt className="font-medium">{r.rotulo}</dt><dd className="whitespace-pre-wrap break-words">{r.texto}</dd></div>)}</dl>
-          <button className="underline" onClick={async () => { const atual = await recarregar(); if (atual) { setEdicaoDescricao(false); setConflito((c) => c ? { ...c, recarregado: true } : c); if (atual.listId !== t.listId) onMoverLista(atual.listId); onMudou(); } }}>Recarregar tarefa</button>
+          <button className="underline disabled:opacity-50" disabled={salvando} onClick={async () => { const epoch = operacao.current; const atual = await recarregar(epoch); if (atual && vigente(epoch)) { setEdicaoDescricao(false); setConflito((c) => c ? { ...c, recarregado: true } : c); if (atual.listId !== t.listId) onMoverLista(atual.listId); onMudou(); } }}>Recarregar tarefa</button>
+          <button className="ml-3 underline disabled:opacity-50" disabled={salvando || !conflito.recarregado} onClick={() => setConflito(null)}>Descartar alteração</button>
         </div>}
         <LinkDoTrilho taskId={t.id} token={token} />
         <FontesDaTarefa taskId={t.id} />
@@ -1200,7 +1228,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Descrição e material vigente</div>
-            {!ro && <button type="button" onClick={async () => {
+            {(edicaoDescricao || !ro) && <button type="button" disabled={ro} onClick={async () => {
               if (!edicaoDescricao) { setDescricaoRascunho(dependencias.texto); setEdicaoDescricao(true); return; }
               const novo = [descricaoRascunho.trimEnd(), dependencias.sufixo, anexos.sufixo].filter(Boolean).join('\n\n') || null;
               if (novo === t.description || await salvar({ description: novo })) setEdicaoDescricao(false);
@@ -1294,19 +1322,7 @@ function PainelTarefa({ id, estrutura, editable, token, usuarioId, onFechar, onM
           </div>
         </div>
 
-        {/* atividade (auditoria) */}
-        {t.atividade.length > 0 && (
-          <div>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Atividade</div>
-            <div className="space-y-1">
-              {t.atividade.map((a) => (
-                <div key={a.id} className="text-[11px] text-muted">
-                  {new Date(a.createdAt).toLocaleString('pt-BR')} · {a.actorName ?? a.actorType} · {resumirAtividade(a)}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <AtividadeDaTarefa taskId={t.id} token={token} userId={usuarioId} />
 
         {/* identidade (ids) */}
         <div className="rounded-lg border border-border/60 px-2.5 py-2 text-[11px] text-muted">

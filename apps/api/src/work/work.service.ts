@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico,
+  MODELOS_DE_LISTA, TRAB_LISTA_COM_DOIS_PAIS, TRAB_PASTA_COM_DOIS_PAIS, ehValorMonetarioCanonico, TrabTarefaUpdateHttpSchema,
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
-  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
+  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput, TrabTarefaUpdateHttpInput, TrabAtividadePagina,
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
   TrabListaCreateInput, TrabListaUpdateInput,
@@ -15,6 +15,8 @@ import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
 import type { WorkTaskQuery } from './work-task-query';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { activityCursor, activityDto, activityNames, activityPoint, activityWhere, parseActivityQuery } from './work-activity-page';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
 // Hierarquia pastas → listas → tarefas; statuses POR LISTA; campos personalizados
@@ -481,7 +483,27 @@ export class WorkService {
     };
   }
 
-  async tarefa(orgId: string, id: string): Promise<TrabTarefaDetalhe> {
+  async atividade(orgId: string, actorId: string, id: string, rawQuery: Record<string, unknown> = {}): Promise<TrabAtividadePagina> {
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.ver']);
+    const scope = { orgId, taskId: id, userId: actorId };
+    const query = parseActivityQuery(rawQuery, scope);
+    const task = await this.prisma.workTask.findFirst({ where: { id, orgId }, select: { id: true } });
+    if (!task) throw new NotFoundException('Tarefa não encontrada');
+    const rows = await this.prisma.auditLog.findMany({
+      where: activityWhere(orgId, id, query), orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.limit + 1,
+    });
+    const page = rows.slice(0, query.limit);
+    const anchor = query.anchor ?? (page.length ? activityPoint(page[0]) : null);
+    const hasMore = rows.length > query.limit;
+    const names = await activityNames(this.prisma, orgId, page);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.ver']);
+    return { escopo: scope, consultadoEm: new Date().toISOString(), limit: query.limit,
+      items: page.map(row => activityDto(row, names)), anchor, hasMore,
+      nextCursor: hasMore && anchor ? activityCursor(scope, query.limit, anchor, activityPoint(page[page.length - 1])) : null };
+  }
+
+  async tarefa(orgId: string, id: string, solicitanteId?: string): Promise<TrabTarefaDetalhe> {
+    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
     const t = await this.prisma.workTask.findFirst({
       where: { id, orgId },
       include: {
@@ -494,15 +516,10 @@ export class WorkService {
     if (!t) throw new NotFoundException('Tarefa não encontrada');
     const atividade = await this.prisma.auditLog.findMany({
       where: { orgId, entityType: 'work_task', entityId: id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 50,
     });
-    // AuditLog não tem relação com User (actorId é livre) → resolve nomes à parte
-    const actorIds = [...new Set(atividade.map((a) => a.actorId).filter((x): x is string => !!x))];
-    const atores = actorIds.length
-      ? await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
-      : [];
-    const nomePorAtor = new Map(atores.map((u) => [u.id, u.name]));
+    const nomePorAtor = await activityNames(this.prisma, orgId, atividade);
     const now = new Date();
     const [agentes, apontamentos, porEtapa] = await Promise.all([
       agentesDaCasa(this.prisma, orgId, [t.agenteId]),
@@ -524,6 +541,7 @@ export class WorkService {
       }),
     ]);
     const minutosDaTarefa = porEtapa.reduce((soma, g) => soma + (g._sum.minutos ?? 0), 0);
+    if (solicitanteId !== undefined) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['tarefas.ver']);
     return {
       ...this.mapTask(t, now, agentes, new Map([[t.id, minutosDaTarefa]])),
       description: t.description, listName: t.list.name,
@@ -532,10 +550,7 @@ export class WorkService {
         id: c.id, authorId: c.authorId, authorName: c.authorName, text: c.text,
         createdAt: c.createdAt.toISOString(),
       })),
-      atividade: atividade.map((a) => ({
-        id: a.id, actorType: a.actorType, actorName: (a.actorId && nomePorAtor.get(a.actorId)) ?? null, action: a.action,
-        before: a.before, after: a.after, createdAt: a.createdAt.toISOString(),
-      })),
+      atividade: atividade.map(a => activityDto(a, nomePorAtor)),
       filhos: t.subtasks.map((s) => ({
         id: s.id, title: s.title, statusName: s.status.name, statusColor: s.status.color,
       })),
@@ -583,11 +598,22 @@ export class WorkService {
     });
   }
 
+  /** Compatibilidade interna: versão opcional; não representa o contrato HTTP. */
   async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput) {
+    return this.aplicarEdicaoTarefa(orgId, actorId, id, input, false);
+  }
+
+  async editarTarefaHttp(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    const validado = TrabTarefaUpdateHttpSchema.parse(input);
+    return this.aplicarEdicaoTarefa(orgId, actorId, id, validado, true);
+  }
+
+  private async aplicarEdicaoTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput, acessoHttp: boolean) {
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
     const conflito = () => new ConflictException({
-      code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
+      error: 'work_task_conflict', code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
     });
     if (input.expectedUpdatedAt !== undefined && new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
       throw conflito();
@@ -611,6 +637,7 @@ export class WorkService {
     const updatedAt = new Date(Math.max(Date.now(), antes.updatedAt.getTime() + 1));
 
     await this.prisma.$transaction(async (tx) => {
+      if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
       // A instrução condicional trava a linha antes de etiquetas, campos e auditoria.
       const claim = await tx.workTask.updateMany({
         where: { id, orgId, updatedAt: antes.updatedAt },
@@ -649,8 +676,11 @@ export class WorkService {
           ...(camposDepois ? { campos: camposDepois } : {}),
         },
       }, tx);
+      if (acessoHttp) await exigirAcessoAtual(tx, orgId, actorId, ['tarefas.editar']);
     });
-    return this.tarefa(orgId, id);
+    const detail = await this.tarefa(orgId, id);
+    if (acessoHttp) await exigirAcessoAtual(this.prisma, orgId, actorId, ['tarefas.editar']);
+    return detail;
   }
 
   /** Um vínculo existente inativo pode permanecer; uma nova atribuição exige conta ativa desta empresa. */

@@ -5224,6 +5224,16 @@ export const TrabTarefaUpdateSchema = z.object({
   tagIds: z.array(z.string().uuid()).optional(),
   campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
 });
+// HTTP de WorkTask exige a versão lida; o contrato interno conserva compatibilidade.
+export const TrabTarefaUpdateHttpSchema = TrabTarefaUpdateSchema.extend({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+});
+export const TrabTarefaArchiveHttpSchema = z.object({
+  expectedUpdatedAt: z.string().datetime({ offset: true }),
+}).strict();
+export type TrabTarefaUpdateHttpInput = z.infer<typeof TrabTarefaUpdateHttpSchema>;
+export type TrabTarefaArchiveHttpInput = z.infer<typeof TrabTarefaArchiveHttpSchema>;
+
 export type TrabTarefaCreateInput = z.infer<typeof TrabTarefaCreateSchema>;
 export type TrabTarefaUpdateInput = z.infer<typeof TrabTarefaUpdateSchema>;
 
@@ -5456,6 +5466,16 @@ export interface TrabComentarioDto {
 export interface TrabAtividadeDto {
   id: string; actorType: string; actorName: string | null; action: string;
   before: unknown; after: unknown; createdAt: string;
+}
+/** Atividade ordenada dentro da âncora da primeira consulta. */
+export interface TrabAtividadePagina {
+  escopo: { orgId: string; taskId: string; userId: string };
+  consultadoEm: string;
+  items: TrabAtividadeDto[];
+  limit: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+  anchor: { createdAt: string; id: string } | null;
 }
 export interface TrabApontamentoDto {
   id: string; autorId: string | null; autorNome: string;
