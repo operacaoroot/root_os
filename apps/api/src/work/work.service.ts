@@ -4,7 +4,7 @@ import {
 } from '@mktos/shared';
 import type {
   TrabEstrutura, TrabListaDto, TrabCampoDto, TrabTarefaLista, TrabTarefaResumo,
-  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput, TrabTarefaUpdateHttpInput, TrabAtividadePagina,
+  TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateHttpInput, TrabAtividadePagina,
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
   TrabListaCreateInput, TrabListaUpdateInput,
@@ -598,8 +598,8 @@ export class WorkService {
     });
   }
 
-  /** Compatibilidade interna: versão opcional; não representa o contrato HTTP. */
-  async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput) {
+  /** Escritores internos também precisam da versão usada para preparar a edição. */
+  async editarTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput) {
     return this.aplicarEdicaoTarefa(orgId, actorId, id, input, false);
   }
 
@@ -609,13 +609,17 @@ export class WorkService {
     return this.aplicarEdicaoTarefa(orgId, actorId, id, validado, true);
   }
 
-  private async aplicarEdicaoTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateInput, acessoHttp: boolean) {
+  private async aplicarEdicaoTarefa(orgId: string, actorId: string, id: string, input: TrabTarefaUpdateHttpInput, acessoHttp: boolean) {
+    const versao = TrabTarefaUpdateHttpSchema.shape.expectedUpdatedAt.safeParse(input?.expectedUpdatedAt);
+    if (!versao.success) {
+      throw new BadRequestException('Informe uma versão válida da tarefa antes de editar.');
+    }
     const antes = await this.prisma.workTask.findFirst({ where: { id, orgId }, include: { status: true, tags: true } });
     if (!antes) throw new NotFoundException('Tarefa não encontrada');
     const conflito = () => new ConflictException({
       error: 'work_task_conflict', code: 'work_task_conflict', message: 'A tarefa mudou. Confira a versão atual antes de salvar.',
     });
-    if (input.expectedUpdatedAt !== undefined && new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
+    if (new Date(input.expectedUpdatedAt).getTime() !== antes.updatedAt.getTime()) {
       throw conflito();
     }
 

@@ -383,9 +383,9 @@ describe.skipIf(!url)('M02 HTTP e Postgres próprios', () => {
         expect(await state(f.id)).toEqual(before);
       } finally { afterAudit = null; }
     });
-    it('N13 compatibilidade interna opcional permanece explícita', async () => {
+    it('N13 edição interna exige a versão preparada', async () => {
       const f = await fixture();
-      const result = await svc.editarTarefa(orgId, actorId, f.id, { title: 'Interno permitido' });
+      const result = await svc.editarTarefa(orgId, actorId, f.id, { title: 'Interno permitido', expectedUpdatedAt: f.updatedAt.toISOString() });
       expect(result.title).toBe('Interno permitido');
       expect(new Date(result.updatedAt).getTime()).toBeGreaterThan(f.updatedAt.getTime());
     });

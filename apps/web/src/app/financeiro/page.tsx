@@ -16,6 +16,7 @@ import type {
   ContractList,
   GerarContratoResposta,
   Payables,
+  PontePayableRef,
   Conciliacao,
   Kpis,
   Cashflow,
@@ -666,7 +667,9 @@ function ApAr(props: {
           </thead>
           <tbody>
             {payables?.items.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
-            {payables?.items.map((r) => (
+            {payables?.items.map((row) => {
+              const r = row as typeof row & Partial<PontePayableRef>;
+              return (
               <tr key={r.id} className="border-t border-border">
                 <td className="px-3 py-2"><span className={r.tipo === 'saida' ? 'text-bad' : 'text-good'}>{r.tipo === 'saida' ? 'pagar' : 'receber'}</span></td>
                 <td className="px-3 py-2">{r.description}{r.chartCodigo && <span className="ml-1 text-[10px] text-muted">[{r.chartCodigo}]</span>}</td>
@@ -674,11 +677,13 @@ function ApAr(props: {
                 <td className="px-3 py-2 whitespace-nowrap">
                   {dateBR(r.dueDate)}{r.vencido && <span className="ml-1 text-[10px] text-warn">({r.diasAtraso}d atraso)</span>}
                 </td>
-                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{r.exercicioFinanceiro === true ? <span className="text-xs text-muted">Conferir valor e moeda no detalhe</span> : brl(r.amount)}</td>
+                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{r.exercicioFinanceiro === true || r.exercicioComercial === true ? <span className="text-xs text-muted">Conferir valor e moeda no detalhe</span> : brl(r.amount)}</td>
                 <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${APPROVAL_CLS[r.approvalStatus] ?? ''}`}>{r.approvalStatus.replace('_', ' ')}</span></td>
-                {(canEdit || r.exercicioFinanceiro === true) && (
+                {(canEdit || r.exercicioFinanceiro === true || r.exercicioComercial === true) && (
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {r.exercicioFinanceiro === true ? (
+                    {r.exercicioComercial === true ? (
+                      r.exercicioComercialHref === '/finance/exercicio/comercial/obrigacoes/' + r.id ? <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id) + '?origem=comercial'} className="text-brand underline">Conferir obrigação comercial</a> : <span className="text-xs text-muted">Vínculo comercial indisponível</span>
+                    ) : r.exercicioFinanceiro === true ? (
                       <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id)} className="text-brand underline">Conferir obrigação</a>
                     ) : r.approvalStatus === 'aguardando' ? (
                       <>
@@ -690,9 +695,9 @@ function ApAr(props: {
                     ) : null}
                   </td>
                 )}
-                {!canEdit && r.exercicioFinanceiro !== true && <td />}
+                {!canEdit && r.exercicioFinanceiro !== true && r.exercicioComercial !== true && <td />}
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>

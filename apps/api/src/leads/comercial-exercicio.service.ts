@@ -5,7 +5,7 @@ import { z } from 'zod';
 import {
   ComercialEntradaExercicioSchema, ComercialPropostaExercicioSchema, ComercialAceiteExercicioSchema,
   ComercialEntregaExercicioSchema, ComercialAcompanhamentoExercicioSchema, ComercialCondicoesExercicioSchema,
-  ComercialDocumentoExercicioSchema, ComercialEvidenciaExercicioSchema,
+  ComercialDocumentoExercicioSchema, ComercialEvidenciaExercicioSchema, PonteConfiguracaoSchema,
   type ComercialExercicioLeitura, type ComercialExercicioResposta, type ComercialPropostaExercicioDto,
   type ComercialAceiteExercicioDto, type ComercialEntregaExercicioDto,
 } from '@mktos/shared';
@@ -212,6 +212,7 @@ export class ComercialExercicioService {
       const aceite = ats.find((a) => a.id === p.aceiteId && a.propostaId === proposta.id && a.condicoesHash === proposta.condicoesHash);
       if (!aceite) conflito('comercial_aceite_ausente','Esta versão precisa de um aceite de exercício antes da entrega.');
       if ((await this.entregas(db,a.orgId,id,s.es,ats)).some((d) => d.aceiteId === aceite.id)) conflito('comercial_entrega_ja_aberta','Este aceite já tem uma entrega em Trabalho.');
+      if(await db.commercialExerciseProject.findFirst({where:{orgId:a.orgId,aceiteId:aceite.id},select:{id:true}})) conflito('comercial_entrega_ja_aberta','Este aceite já possui um projeto de exercício em Trabalho. Abra a ponte na oportunidade para conferir o vínculo.');
       if (!await db.workList.findFirst({ where: { id: p.listId, orgId: a.orgId }, select: { id: true } })) throw new NotFoundException('Lista não encontrada.');
       const status = await db.workStatus.findFirst({ where: { listId: p.listId, orgId: a.orgId, ...(p.statusId ? { id: p.statusId } : { type: 'open' }) }, orderBy: { order: 'asc' }, select: { id: true } });
       if (!status) throw new NotFoundException('Etapa não encontrada na lista.');
@@ -226,6 +227,21 @@ export class ComercialExercicioService {
   async origemDaEntrega(a: AtorComercial, taskId: string) {
     await this.ambiente(a.orgId);
     await this.pessoa(this.prisma,a,['leads.ver','tarefas.ver']);
+    const ponte=await this.prisma.commercialExerciseProject.findFirst({where:{orgId:a.orgId,taskId}});
+    if(ponte){
+      const s=await this.exercicio(this.prisma,a.orgId,ponte.leadId);
+      const origem=lerOrigemComercialPonte(s.es.map(({e})=>e),a.orgId,ponte.leadId,ponte.propostaId,ponte.aceiteId,true).origem;
+      const config=PonteConfiguracaoSchema.safeParse(ponte.configuration);
+      const flat={leadId:ponte.leadId,aceiteId:ponte.aceiteId,propostaId:ponte.propostaId,propostaVersao:ponte.propostaVersao,documentoHash:ponte.documentoHash,condicoesHash:ponte.condicoesHash};
+      if(!config.success||hashComercial(origem)!==hashComercial(flat)||ponte.id!==idComercial([a.orgId,'comercial-ponte-exercicio-v1','projeto',ponte.aceiteId])||taskId!==idComercial([a.orgId,CONTRATO,'entrega',ponte.aceiteId]))conflito('comercial_registro_inconsistente','O vínculo do projeto de exercício está inconsistente.');
+      const {leadId:_,propostaVersao,...refs}=origem;
+      const fingerprint=hashComercial({dominio:'comercial-ponte-exercicio-v1',orgId:a.orgId,action:'projeto',entityId:ponte.leadId,config:{...refs,expectedPropostaVersion:propostaVersao,...config.data}});
+      if(fingerprint!==ponte.creationFingerprint||!await this.prisma.workTask.findFirst({where:{id:taskId,orgId:a.orgId},select:{id:true}}))conflito('comercial_entrega_indisponivel','A origem do projeto de exercício não está disponível.');
+      const atual=await this.prisma.user.findFirst({where:{id:a.sub,orgId:a.orgId,isActive:true,org:{isActive:true}},select:{roles:{where:{orgId:a.orgId},select:{key:true,permissions:{select:{key:true}}}}}});
+      const permissions=new Set(atual?.roles.flatMap(r=>r.permissions.map(p=>p.key))??[]);
+      if(!atual||!permissions.has('leads.ver')||!permissions.has('tarefas.ver')||temPapelDeMaquina(atual.roles.map(r=>r.key)))throw new ForbiddenException('Acesso insuficiente.');
+      return {modo:'exercicio' as const,leadId:s.lead.id,leadNome:s.lead.name,aceiteId:ponte.aceiteId,propostaVersao:ponte.propostaVersao};
+    }
     const eventos = await this.prisma.leadEvent.findMany({ where: { orgId: a.orgId, type: PREFIXO+'entrega',
       payload: { path: ['dados','taskId'], equals: taskId } }, select: { leadId: true }, take: 2 });
     if (eventos.length === 0) return null;
@@ -256,4 +272,47 @@ export class ComercialExercicioService {
       podeAceitar: atendeAlcada('responsavel',pessoa.alcada) && pessoa.permissoes.has('leads.editar') && pessoa.permissoes.has('tarefas.ver'),
       podeEntregar: pessoa.permissoes.has('leads.editar') && pessoa.permissoes.has('tarefas.ver') && pessoa.permissoes.has('tarefas.editar') };
   }
+}
+
+// Parser interno para a ponte QA. Não devolve corpo de proposta na API financeira.
+export function lerOrigemComercialPonte(es:(Evento & {orgId:string})[],orgId:string,leadId:string,propostaId:string,aceiteId:string,historica=false) {
+  if(es.some(e=>e.orgId!==orgId))conflito('ponte_origem_invalida','Origem de outra empresa.');
+  const records=es.map(e=>({e,r:lerRecibo(e)}));
+  if(records.some(({e})=>e.leadId!==leadId)||!records.some(({r})=>r.acao==='entrada'))conflito('ponte_origem_invalida','Origem de exercício não encontrada.');
+  const propostas=records.filter(({r})=>r.acao==='proposta').map(({e,r})=>{
+    const s=z.object({versao:z.number().int().positive(),documento:ComercialDocumentoExercicioSchema.extend({hash}),condicoes:ComercialCondicoesExercicioSchema,condicoesHash:hash}).strict().safeParse(r.dados);
+    if(!s.success||hashComercial({titulo:s.data.documento.titulo,corpo:s.data.documento.corpo})!==s.data.documento.hash||hashComercial(s.data.condicoes)!==s.data.condicoesHash)conflito('ponte_origem_invalida','A proposta de exercício está inconsistente.');
+    return {e,d:s.data};
+  }).sort((a,b)=>a.d.versao-b.d.versao);
+  if(propostas.some((p,i)=>p.d.versao!==i+1))conflito('ponte_origem_invalida','Histórico de propostas inconsistente.');
+  const p=propostas.find(p=>p.e.id===propostaId),a=records.find(({e,r})=>e.id===aceiteId&&r.acao==='aceite');
+  if(!p||!a||!historica&&propostas.at(-1)?.e.id!==propostaId)conflito('ponte_acordo_alterado','A proposta ou o aceite mudaram.');
+  const v=z.object({propostaId:uuid,propostaVersao:z.number().int().positive(),condicoesHash:hash,evidencia:ComercialEvidenciaExercicioSchema,
+    alcada:z.object({minima:z.literal('responsavel'),verificada:z.enum(['responsavel','titular'])}).strict()}).strict().safeParse(a.r.dados);
+  if(!v.success||v.data.propostaId!==p.e.id||v.data.propostaVersao!==p.d.versao||v.data.condicoesHash!==p.d.condicoesHash||!p.d.condicoes.valorCanonico)conflito('ponte_origem_invalida','Aceite de exercício não corresponde à proposta.');
+  const entradas=records.filter(({r})=>r.acao==='entrada');
+  for(const {r} of entradas){const entrada=z.object({origemRef:uuid,nome:z.string().min(1),ownerId:uuid}).strict().safeParse(r.dados);
+    if(!entrada.success||leadIdDaEntrada(orgId,{tipo:'manual',ref:entrada.data.origemRef})!==leadId)conflito('ponte_origem_invalida','Identidade da origem de exercício divergente.');}
+  return {origem:{leadId,aceiteId,propostaId,propostaVersao:p.d.versao,documentoHash:p.d.documento.hash,condicoesHash:p.d.condicoesHash},valorCanonico:p.d.condicoes.valorCanonico};
+}
+export function conferirAdocaoEntregaPonte(es:(Evento & {orgId:string})[],orgId:string,leadId:string,origem:{aceiteId:string;propostaId:string;propostaVersao:number;condicoesHash:string},config:{listId:string;statusId:string;title:string;assigneeUserId:string|null}):boolean {
+  if(es.some(e=>e.orgId!==orgId||e.leadId!==leadId))conflito('ponte_adocao_incomprovavel','Entrega de outra origem.');
+  const candidates=es.map(e=>({e,r:lerRecibo(e)})).filter(({r})=>(r.dados as {aceiteId?:string})?.aceiteId===origem.aceiteId);
+  if(!candidates.length)return false;
+  if(candidates.length!==1)conflito('ponte_adocao_incomprovavel','Há mais de uma entrega para o aceite.');
+  const {e,r}=candidates[0];
+  const d=z.object({taskId:uuid,listId:uuid,title:z.string().min(1),aceiteId:uuid,propostaId:uuid,propostaVersao:z.number().int().positive(),condicoesHash:hash}).strict().safeParse(r.dados);
+  const taskId=idComercial([orgId,CONTRATO,'entrega',origem.aceiteId]);
+  if(!d.success||e.leadId!==leadId||r.acao!=='entrega'||d.data.taskId!==taskId||r.resposta.taskId!==taskId||d.data.listId!==config.listId||d.data.title!==config.title||d.data.propostaId!==origem.propostaId||d.data.propostaVersao!==origem.propostaVersao||d.data.condicoesHash!==origem.condicoesHash)conflito('ponte_adocao_incomprovavel','Não foi possível comprovar a configuração original da entrega.');
+  const pedido=ComercialEntregaExercicioSchema.parse({requestId:r.requestId,aceiteId:origem.aceiteId,propostaId:origem.propostaId,expectedPropostaVersion:origem.propostaVersao,condicoesHash:origem.condicoesHash,...config});
+  const fp=hashComercial({orgId,actorId:r.atorId,acao:'entrega',leadId,pedido});
+  if(fp!==r.fingerprint)conflito('ponte_adocao_incomprovavel','Etapa ou responsável original não podem ser comprovados. Abra a entrega já existente.');
+  return true;
+}
+
+export function conferirEntradaComercialPonte(es:(Evento & {orgId:string})[],orgId:string,leadId:string) {
+  const entradas=es.filter(e=>e.type===PREFIXO+'entrada');
+  if(!entradas.length)throw new NotFoundException('Oportunidade de exercício não encontrada.');
+  for(const e of entradas){const r=lerRecibo(e),v=z.object({origemRef:uuid,nome:z.string().min(1),ownerId:uuid}).strict().safeParse(r.dados);
+    if(e.orgId!==orgId||e.leadId!==leadId||!v.success||leadIdDaEntrada(orgId,{tipo:'manual',ref:v.data.origemRef})!==leadId)conflito('ponte_origem_invalida','Identidade da entrada de exercício divergente.');}
 }

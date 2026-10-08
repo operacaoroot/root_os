@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { FalhaSinteseLocal, ecoDoInvolucro, fimObservado, tokenObservado, type FimSinteseLocal, type ObservacaoLocal } from './sintese-local';
 
 export interface ModeloLocalEstado {
   disponivel: boolean;
@@ -11,6 +12,7 @@ export interface ResultadoLocal {
   modelo: string;
   tokensIn: number | null;
   tokensOut: number | null;
+  finishReason?: FimSinteseLocal;
 }
 
 /** Transporte restrito ao servidor local. Não aceita credencial ou fallback remoto. */
@@ -51,12 +53,19 @@ export class ModeloLocalService {
         messages: [{ role: 'system', content: system }, { role: 'user', content: pedido }] }),
     });
     if (!r.ok) throw new Error('A chamada do modelo local falhou. Confira o servidor antes de criar outro pedido.');
-    const body = await r.json() as { model?: unknown; choices?: { message?: { content?: unknown; tool_calls?: unknown[] }; finish_reason?: string }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
-    const message = body.choices?.[0]?.message;
-    if (message?.tool_calls?.length) throw new Error('Ferramenta não permitida neste procedimento. Nenhuma ferramenta foi executada.');
-    if (body.model !== modelo) throw new Error('O modelo servido difere do modelo escolhido. Confira a configuração.');
-    if (typeof message?.content !== 'string' || !message.content.trim()) throw new Error('O modelo não produziu texto.');
-    const tokens = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : null;
-    return { texto: message.content, modelo, tokensIn: tokens(body.usage?.prompt_tokens), tokensOut: tokens(body.usage?.completion_tokens) };
+    const body = await r.json() as { model?: unknown; choices?: { message?: { content?: unknown; tool_calls?: unknown[] }; finish_reason?: unknown }[]; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } };
+    const choice = body.choices?.[0];
+    const message = choice?.message;
+    const finishReason = fimObservado(choice?.finish_reason);
+    const observado: ObservacaoLocal = {
+      modelo: body.model === modelo ? modelo : null,
+      tokensIn: tokenObservado(body.usage?.prompt_tokens), tokensOut: tokenObservado(body.usage?.completion_tokens), finishReason,
+    };
+    if (message?.tool_calls?.length) throw new FalhaSinteseLocal('ferramenta_solicitada', observado);
+    if (body.model !== modelo) throw new FalhaSinteseLocal('modelo_divergente', observado);
+    if (finishReason !== 'stop') throw new FalhaSinteseLocal(finishReason === 'length' ? 'fim_incompleto' : 'fim_nao_confirmado', observado);
+    if (typeof message?.content !== 'string' || !message.content.trim()) throw new FalhaSinteseLocal('texto_ausente', observado);
+    if (ecoDoInvolucro(message.content)) throw new FalhaSinteseLocal('eco_do_involucro', observado);
+    return { texto: message.content, modelo, tokensIn: observado.tokensIn, tokensOut: observado.tokensOut, finishReason };
   }
 }

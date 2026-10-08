@@ -28,3 +28,6 @@ export * from './lead-entrada.js';
 export * from './lead-proposta.js';
 export * from './comercial-exercicio';
 export * from './fonte-autorizada.js';
+
+export * from './comercial-ponte-exercicio.js';
+export * from './catalogo-de-colecao.js';

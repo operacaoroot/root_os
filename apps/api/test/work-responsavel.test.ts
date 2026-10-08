@@ -105,8 +105,8 @@ describe.skipIf(!URL)('rotina Trabalho no Postgres descartável', () => {
   });
   it('vincular e limpar conservam texto legado, material, tags e comentário', async () => {
     const before = await estado();
-    await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: homonimo, expectedUpdatedAt: before.row.updatedAt.toISOString() });
-    await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: null });
+    const vinculada = await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: homonimo, expectedUpdatedAt: before.row.updatedAt.toISOString() });
+    await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: null, expectedUpdatedAt: vinculada.updatedAt });
     const after = await estado();
     const preservado = (s: typeof before) => ({ id: s.row.id, assignee: s.row.assignee, description: s.row.description, externalId: s.row.externalId, externalUrl: s.row.externalUrl, agenteId: s.row.agenteId, tags: s.row.tags, values: s.row.values, comments: s.row.comments, statusId: s.row.statusId });
     expect(preservado(after)).toEqual(preservado(before));
@@ -115,14 +115,14 @@ describe.skipIf(!URL)('rotina Trabalho no Postgres descartável', () => {
   });
   it('outra empresa ou nova pessoa inativa recebem recusa sem qualquer gravação', async () => {
     const before = await estado();
-    expect(await statusDe(svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: outraPessoa, title: 'Indevido' }))).toBe(404);
-    expect(await statusDe(svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: inativo, title: 'Indevido' }))).toBe(400);
+    expect(await statusDe(svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: outraPessoa, title: 'Indevido', expectedUpdatedAt: before.row.updatedAt.toISOString() }))).toBe(404);
+    expect(await statusDe(svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: inativo, title: 'Indevido', expectedUpdatedAt: before.row.updatedAt.toISOString() }))).toBe(400);
     expect(await estado()).toEqual(before);
   });
   it('vínculo inativo existente persiste com omissão ou mesmo ID', async () => {
-    await db.workTask.update({ where: { id: taskId }, data: { assigneeUserId: inativo } });
-    await svc.editarTarefa(orgId, eu, taskId, { title: 'Mudança permitida' });
-    await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: inativo });
+    const inativada = await db.workTask.update({ where: { id: taskId }, data: { assigneeUserId: inativo } });
+    const renomeada = await svc.editarTarefa(orgId, eu, taskId, { title: 'Mudança permitida', expectedUpdatedAt: inativada.updatedAt.toISOString() });
+    await svc.editarTarefa(orgId, eu, taskId, { assigneeUserId: inativo, expectedUpdatedAt: renomeada.updatedAt });
     const task = await svc.tarefa(orgId, taskId);
     expect(task.assigneeUserId).toBe(inativo);
     expect(task.assigneeUserIsActive).toBe(false);
@@ -158,16 +158,16 @@ describe.skipIf(!URL)('rotina Trabalho no Postgres descartável', () => {
     expect(final.row.values[0].value).toBe(final.row.title);
     expect(final.logs).toHaveLength(1);
   });
-  it('escrita sem versão mantém compatibilidade e faz a versão avançar', async () => {
+  it('escrita com versão explícita faz a versão avançar', async () => {
     const before = (await estado()).row.updatedAt.getTime();
-    await svc.editarTarefa(orgId, eu, taskId, { title: 'Legado' });
+    await svc.editarTarefa(orgId, eu, taskId, { title: 'Legado', expectedUpdatedAt: new Date(before).toISOString() });
     expect((await estado()).row.updatedAt.getTime()).toBeGreaterThan(before);
   });
   it('falha de auditoria reverte card, etiquetas e material', async () => {
     const before = await estado();
     const p = db as unknown as PrismaService;
     const falha = new WorkService(p, { log: async () => { throw new Error('audit indisponível'); } } as unknown as AuditService, {} as CheckoutDeTarefaService);
-    await expect(falha.editarTarefa(orgId, eu, taskId, { title: 'Não gravar', tagIds: [], campos: { [fieldId]: { value: 'Não gravar' } } })).rejects.toThrow('audit indisponível');
+    await expect(falha.editarTarefa(orgId, eu, taskId, { title: 'Não gravar', tagIds: [], campos: { [fieldId]: { value: 'Não gravar' } }, expectedUpdatedAt: before.row.updatedAt.toISOString() })).rejects.toThrow('audit indisponível');
     expect(await estado()).toEqual(before);
   });
   it('Caixa, conversa e contador seguem a mesma conta e não excluem o recado do homônimo', async () => {

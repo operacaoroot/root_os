@@ -46,7 +46,11 @@ export class ConciliacaoService {
 
   private async loadOpen(orgId: string, accountId?: string): Promise<{ movs: Mov[]; tits: Tit[] }> {
     const accFilter = accountId ? { accountId } : {};
-    const inscritos = await this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } });
+    const [legados, comerciais] = await Promise.all([
+      this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+      this.prisma.commercialExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+    ]);
+    const inscritos = [...legados, ...comerciais];
     const idsExercicio = inscritos.map(o => o.transactionId);
     const [movRows, titRows] = await Promise.all([
       this.prisma.financeTransaction.findMany({

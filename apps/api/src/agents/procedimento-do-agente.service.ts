@@ -9,7 +9,7 @@ import { hashDoCorpo } from '../memory/procedencia';
 import { construirFonteAutorizada, construirCapacidadesExecutor, reconferirFontesAtuais } from '../memory/fonte-autorizada';
 import type { ModeloLocalEstado } from './modelo-local.service';
 import { AgenteIdentidadeSchema } from './agents.service';
-import { blocoExterno } from './context-builder.service';
+import { FalhaSinteseLocal, promptSinteseLocal, type ObservacaoLocal } from './sintese-local';
 import { FormatoDaSopInvalido, validarProcedimento } from './sop';
 import { ModeloLocalService, type ResultadoLocal } from './modelo-local.service';
 
@@ -32,7 +32,7 @@ interface Registro {
   procedimento: { versao: number; proposito: string; passos: string[]; definicaoDePronto: string };
   fonte: { itemId: string; versionId: string; contentHash: string; versao: number; chave: string; sourceType: string; sourceRef: string | null; title: string };
   saida?: ResultadoLocal;
-  observado?: Omit<ResultadoLocal, 'texto'>;
+  observado?: ObservacaoLocal;
   modeloConfigurado: string | null;
 }
 const fingerprint = (valor: unknown) => createHash('sha256').update(JSON.stringify(valor)).digest('hex');
@@ -203,7 +203,7 @@ export class ProcedimentoDoAgenteService {
     });
     if (claim.repetido || claim.causa) return this.detalhe(orgId, pessoaId, slug, claim.sessionId);
     let saida: ResultadoLocal | undefined;
-    let observado: Omit<ResultadoLocal, 'texto'> | undefined;
+    let observado: ObservacaoLocal | undefined;
     let motivo: string | null = null;
     let status: SessionStatus = SessionStatus.respondida;
     try {
@@ -211,13 +211,14 @@ export class ProcedimentoDoAgenteService {
       const estado = await this.modelo.estado();
       if (!estado.disponivel || !claim.modelo || estado.modelo !== claim.modelo) { status = SessionStatus.recusada; throw new Error(estado.motivo ?? 'O modelo configurado não está disponível. Configure um agente com o modelo local disponível.'); }
       await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro);
-      const contexto = blocoExterno([{ origem: claim.registro.fonte.chave, titulo: claim.registro.fonte.title,
-        conteudo: `${JSON.stringify(claim.registro.fonte)}\n${claim.body}` }]).texto;
-      const instrucoes = `Você prepara uma síntese de uma fonte para uma pessoa. Não use ferramentas nem execute ações. Cite a versão da fonte.\nPropósito: ${claim.registro.procedimento.proposito}\nPassos solicitados: ${claim.registro.procedimento.passos.join('\n')}\nResultado esperado: ${claim.registro.procedimento.definicaoDePronto}`;
-      saida = await this.modelo.resumir(claim.modelo, instrucoes, `${input.pedido}\n\n${contexto}`);
-      observado = { modelo: saida.modelo, tokensIn: saida.tokensIn, tokensOut: saida.tokensOut };
+      const prompt = promptSinteseLocal({ pedido: input.pedido, body: claim.body, versao: claim.registro.fonte.versao,
+        procedimento: claim.registro.procedimento });
+      saida = await this.modelo.resumir(claim.modelo, prompt.system, prompt.user);
+      observado = { modelo: saida.modelo, tokensIn: saida.tokensIn, tokensOut: saida.tokensOut,
+        ...(saida.finishReason === undefined ? {} : { finishReason: saida.finishReason }) };
       await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro);
     } catch (e) {
+      if (e instanceof FalhaSinteseLocal) observado = e.observado;
       const negado = e instanceof NotFoundException || e instanceof ConflictException || (e as { getStatus?: () => number })?.getStatus?.() === 403 || (e instanceof Error && e.message.startsWith('Agente pausado'));
       if (status === SessionStatus.respondida) status = negado ? SessionStatus.recusada : SessionStatus.falhou;
       const mensagem = e instanceof Error ? e.message : '';
@@ -239,11 +240,11 @@ export class ProcedimentoDoAgenteService {
       await tx.sessionStep.update({ where: { sessionId_ordem: { sessionId: claim.sessionId, ordem: 1 } },
         data: { payload: { ...claim.registro, ...(saida ? { saida } : {}), ...(observado ? { observado } : {}) } as unknown as Prisma.InputJsonValue } });
       await tx.sessionStep.create({ data: { orgId, sessionId: claim.sessionId, ordem: 2, tipo: observado ? 'modelo' : 'erro',
-        gatilhos: [], provider: 'llama.cpp-local', modelo: observado?.modelo ?? claim.modelo,
-        tokensIn: observado?.tokensIn, tokensOut: observado?.tokensOut, erro: motivo, custoEstimado: false } });
+        gatilhos: [], provider: 'llama.cpp-local', modelo: observado ? observado.modelo : claim.modelo,
+        tokensIn: observado?.tokensIn, tokensOut: observado?.tokensOut, stopReason: observado?.finishReason ?? null, erro: motivo, custoEstimado: false } });
       await tx.session.update({ where: { id: claim.sessionId }, data: { status, motivo, resposta: saida ? 'Resultado disponível no procedimento local.' : '',
         encerradaEm: new Date(), ultimaAtividadeEm: new Date(), passos: 2, duracaoMs: Date.now() - inicio,
-        tokensIn: observado?.tokensIn ?? 0, tokensOut: observado?.tokensOut ?? 0, modelo: observado?.modelo ?? claim.modelo } });
+        tokensIn: observado?.tokensIn ?? 0, tokensOut: observado?.tokensOut ?? 0, modelo: observado ? observado.modelo : claim.modelo } });
       await tx.agent.updateMany({ where: { orgId, slug }, data: { ultimaExecucaoEm: new Date(), ultimoStatus: status, ...(observado ? { execucoes: { increment: 1 } } : {}), ...(status === SessionStatus.falhou ? { falhas: { increment: 1 } } : {}) } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.result', entityType: 'session', entityId: claim.sessionId,
         metadata: { status, semEfeitosExternos: true } }, tx);

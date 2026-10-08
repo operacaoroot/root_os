@@ -39,7 +39,8 @@ export async function travarLancamentoFinanceiro(db: Db, orgId: string, id: stri
   await db.$queryRaw`SELECT "id" FROM "FinanceTransaction" WHERE "orgId"=${orgId} AND "id"=${id} FOR UPDATE`;
 }
 export async function exigirNaoExercicio(db: Db, orgId: string, transactionId: string) {
-  if (await db.financeExerciseObligation.findFirst({ where: { orgId, transactionId }, select: { id: true } })) {
+  if (await db.financeExerciseObligation.findFirst({ where: { orgId, transactionId }, select: { id: true } }) ||
+      await db.commercialExerciseObligation.findFirst({ where: { orgId, transactionId }, select: { id: true } })) {
     conflitoFinanceiro('financeiro_exercicio_alterado', 'Abra o detalhe do exercício para conferir a decisão; o registro não aceita esta alteração.');
   }
 }

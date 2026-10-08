@@ -173,6 +173,8 @@ model Org {
   // ADR-011). Mesma regra das de cima: só o outro lado da relação mora aqui.
   contextItems    ContextItem[]
   contextVersions ContextItemVersion[]
+  contextCollectionSelections ContextCollectionSelection[]
+  contextCollectionMembers ContextCollectionMember[]
 
   // Fatia 5.1 — ROTINAS POR EMPRESA, RF-N-04 (bloco no fim do arquivo). Mesma
   // regra das de cima: só o outro lado da relação mora aqui, porque é o que o
@@ -385,6 +387,7 @@ model Lead {
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
   @@index([anonymousId])
+  @@unique([id, orgId])
 }
 
 model LeadEvent {
@@ -400,6 +403,7 @@ model LeadEvent {
 
   @@index([leadId])
   @@index([orgId, occurredAt])
+  @@unique([id, orgId])
 }
 
 // ---------- Campanhas ----------
@@ -3397,6 +3401,7 @@ model ContextItem {
   acessoRestrito Boolean @default(false)
   leitores String[] @default([])
   fontesDeTrabalho WorkContextSource[]
+  membrosDeColecao ContextCollectionMember[] @relation("MembroItem")
   versoes ContextItemVersion[]
 
   /// Uma nota por (empresa, chave). É o que torna a reindexação idempotente.
@@ -3481,8 +3486,10 @@ model ContextItemVersion {
   criadoEm DateTime @default(now())
 
   fontesDeTrabalho WorkContextSource[]
+  membrosDeColecao ContextCollectionMember[] @relation("MembroVersao")
 
   @@unique([id, orgId, itemId])
+  @@unique([id, orgId, itemId, versao])
   @@unique([itemId, versao])
   @@index([orgId, itemId])
   @@index([orgId, criadoEm])
@@ -4535,4 +4542,116 @@ model FinanceExerciseDecision {
   @@unique([id, orgId])
   @@unique([orgId, requestId])
   @@unique([orgId, obligationId])
+}
+
+// Ponte local QA: projeto operacional, obrigação manual e decisões imutáveis.
+model CommercialExerciseProject {
+  id String @id
+  orgId String
+  leadId String
+  aceiteId String
+  propostaId String
+  propostaVersao Int
+  documentoHash String
+  condicoesHash String
+  taskId String
+  configuration Json
+  creationFingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, aceiteId])
+  @@unique([orgId, taskId])
+}
+model CommercialExerciseObligation {
+  id String @id
+  orgId String
+  projectId String
+  transactionId String
+  versionId String
+  contentHash String
+  snapshot Json
+  creationFingerprint String
+  createdById String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, projectId])
+  @@unique([orgId, transactionId])
+  @@unique([orgId, versionId])
+  @@unique([id, orgId, versionId, contentHash])
+}
+model CommercialExerciseRequest {
+  id String @id
+  orgId String
+  requestId String
+  actorId String
+  action String
+  entityId String
+  fingerprint String
+  response Json
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+}
+model CommercialExerciseDecision {
+  id String @id
+  orgId String
+  obligationId String
+  requestId String
+  actorId String
+  fingerprint String
+  versionId String
+  contentHash String
+  expectedUpdatedAt DateTime
+  aprovar Boolean
+  motivo String
+  alcada String
+  response Json
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, requestId])
+  @@unique([orgId, obligationId])
+}
+
+// Catálogo da seleção produzida pelo integrador Obsidian. Não autoriza movimento.
+model ContextCollectionSelection {
+  id String @id @default(uuid())
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  collectionId String
+  sourceKind String @default("vault_pasta")
+  generation BigInt
+  marcaAntes Json
+  marcaDepois Json?
+  membershipDigest String?
+  estado String
+  criadoEm DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
+  verificadaEm DateTime?
+  membros ContextCollectionMember[]
+  @@unique([id, orgId])
+  @@unique([orgId, collectionId, generation])
+}
+model ContextCollectionMember {
+  id String @id @default(uuid())
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  selectionId String
+  selection ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  chave String
+  caminhoBytes Bytes
+  blobGit String
+  hashArquivo String
+  contentHash String
+  metadataHash String
+  metadata Json
+  itemId String?
+  item ContextItem? @relation("MembroItem", fields: [itemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  versionId String?
+  version ContextItemVersion? @relation("MembroVersao", fields: [versionId, orgId, itemId, versao], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
+  versao Int?
+  estado String
+  @@unique([id, orgId])
+  @@unique([selectionId, caminhoBytes])
+  @@unique([selectionId, chave])
+  @@index([orgId, itemId])
 }

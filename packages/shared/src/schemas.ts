@@ -5225,7 +5225,7 @@ export const TrabTarefaUpdateSchema = z.object({
   tagIds: z.array(z.string().uuid()).optional(),
   campos: z.record(z.string().uuid(), TrabCampoValorSchema).optional(),
 });
-// HTTP de WorkTask exige a versão lida; o contrato interno conserva compatibilidade.
+// HTTP e escritores de WorkTask usam o schema com versão obrigatória; o schema-base permanece exportado.
 export const TrabTarefaUpdateHttpSchema = TrabTarefaUpdateSchema.extend({
   expectedUpdatedAt: z.string().datetime({ offset: true }),
 });

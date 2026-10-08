@@ -1,3 +1,4 @@
+import { ComercialPonteExercicioModule } from './comercial-ponte-exercicio.module';
 import { Module } from '@nestjs/common';
 import { MemoryModule } from '../memory/memoria.module';
 import { ComercialExercicioService } from './comercial-exercicio.service';
@@ -7,7 +8,7 @@ import { LeadsService } from './leads.service';
 
 @Module({
   // `ModulosService`: a entrada com origem da Pauta confere o módulo `pauta` (o gate de prefixo só vê `leads`).
-  imports: [TenantsModule, MemoryModule],
+  imports: [ComercialPonteExercicioModule, TenantsModule, MemoryModule],
   controllers: [LeadsController],
   providers: [LeadsService, ComercialExercicioService],
   // exportado para o AgentsModule ligar a capacidade ao efeito

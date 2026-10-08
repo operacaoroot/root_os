@@ -7,6 +7,7 @@ const get = vi.fn(),post = vi.fn(),push = vi.fn();
 const userId = randomUUID(),leadId = randomUUID(),propId = randomUUID(),aceId = randomUUID(),taskId = randomUUID(),listId = randomUUID();
 let permissions: string[] = [];
 vi.mock('next/navigation',() => ({ useRouter: () => ({ push: (...a: unknown[]) => push(...a) }) }));
+vi.mock('@/app/leads/PonteComercial',() => ({ PonteComercial: () => null }));
 vi.mock('@/lib/api',async () => { const m = await vi.importActual<typeof import('@/lib/api')>('@/lib/api'); return { ...m,apiGet: (...a: unknown[]) => get(...a),apiPost: (...a: unknown[]) => post(...a) }; });
 vi.mock('@/lib/auth',() => ({ useAuth: () => ({ token: 'qa',ready: true,user: { id: userId },can: (p: string) => permissions.includes(p) }) }));
 import { ComercialExercicio } from '@/app/leads/ComercialExercicio';
@@ -57,6 +58,7 @@ describe('Comercial QA na interface',() => {
   const cache = localStorage.getItem(`root_comercial_pedido:${userId}:${leadId}:propostas`)!; expect(cache).not.toContain('Corpo da nova'); expect(cache).not.toContain('BRL 100.00');
  });
  it('resposta perdida reutiliza identidade da entrega e abre o mesmo cartão confirmado',async () => {
+  permissions = permissions.filter(p => p !== 'tarefas.ver'); // Modo legado sem acesso à ponte nova.
   estado = aceitado(); const u = userEvent.setup(); montar(); await screen.findByText(/Alçada verificada: responsavel/);
   await u.click(screen.getByRole('button',{ name: 'Escolher destino da entrega' })); await screen.findByLabelText('Lista da entrega');
   await u.selectOptions(screen.getByLabelText('Lista da entrega'),listId); await u.type(screen.getByLabelText('Título da entrega'),'Entrega QA');

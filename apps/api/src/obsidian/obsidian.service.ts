@@ -28,6 +28,7 @@ import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida 
 import { descobrirNaPasta } from './disco-da-vault';
 import { atributosConvertem, lerRepositorioDaVault, marcaDoRepositorio } from './estado-do-git';
 import { classificarAVault, type PertencaDaVault } from './pertenca-da-vault';
+import { CatalogoDeColecaoService, marcaDoCatalogo, prepararCapturaDoCatalogo, type CapturaDoCatalogo } from './catalogo-de-colecao.service';
 import {
   assinaturaDoRecibo,
   caminhosSigilosos,
@@ -186,6 +187,7 @@ export class ObsidianService implements OnModuleInit {
      * é o estado que apaga índice.
      */
     @Optional() private readonly google?: GoogleService,
+    @Optional() private readonly catalogo?: CatalogoDeColecaoService,
   ) {}
 
   get configured(): boolean {
@@ -704,12 +706,17 @@ export class ObsidianService implements OnModuleInit {
     const lancadasDeProposito = new Set<unknown>();
     const foraDaColecao: PertencaDaVault['foraDaColecao'] = [];
     let conversaoProvavel = false;
+    let selecaoCatalogoId: string | null = null;
     try {
       return await this.reindexar(orgId, completo, recibo, lancadasDeProposito, foraDaColecao, (v) => {
         conversaoProvavel = v;
-      });
+      }, (id) => { selecaoCatalogoId = id; });
     } catch (e) {
       if (!lancadasDeProposito.has(e)) recibo.falha = frasedoErro(e);
+      if (this.catalogo && this.fonte === 'pasta') {
+        if (selecaoCatalogoId) await this.catalogo.falhar(orgId, selecaoCatalogoId);
+        else await this.catalogo.registrarFalha(orgId);
+      }
       throw e;
     } finally {
       recibo.fimEm = new Date().toISOString();
@@ -724,6 +731,7 @@ export class ObsidianService implements OnModuleInit {
     lancadasDeProposito: Set<unknown>,
     foraDaColecao: PertencaDaVault['foraDaColecao'],
     marcarConversao: (v: boolean) => void,
+    registrarSelecao: (id: string) => void,
   ): Promise<number> {
     /*
      * O QUE JÁ ESTÁ INDEXADO — e por que ele é lido ANTES de apagar.
@@ -774,6 +782,8 @@ export class ObsidianService implements OnModuleInit {
     /** Desses, os que mantêm a linha antiga no índice: a última versão projetada fica. */
     const mantidosNoIndice = new Set<string>();
     let marcaAntes: ReturnType<typeof marcaDoRepositorio> | null = null;
+    let capturaCatalogo: CapturaDoCatalogo | null = null;
+    let selecaoCatalogoId: string | null = null;
 
     if (this.fonte === 'pasta') {
       /*
@@ -786,6 +796,7 @@ export class ObsidianService implements OnModuleInit {
        * a origem saía como não rastreada e era arquivada (C-1 da FUL-33). A marca
        * de antes é a desta leitura, e a conferência no fim da volta acusa o `pull`.
        */
+      const marcaCatalogoAntes = marcaDoCatalogo(this.vault);
       const repositorio = lerRepositorioDaVault(this.vault, []);
       marcaAntes = repositorio.marca;
       recibo.montante = { ...repositorio.montante, mudouNoMeio: false };
@@ -803,6 +814,9 @@ export class ObsidianService implements OnModuleInit {
         indice: repositorio.indice?.ok ? repositorio.indice.entradas : null,
         naoVerificavel: repositorio.naoVerificavel ?? conversaoNosAtributos(passeio.atributos),
       });
+      capturaCatalogo = prepararCapturaDoCatalogo({ pertenca, arquivos,
+        indice: repositorio.indice?.ok ? repositorio.indice.entradas : null,
+        marcaAntes: marcaCatalogoAntes, marcaDepois: marcaDoCatalogo(this.vault), ilegiveis: passeio.ilegiveis.length });
       recibo.descoberta = {
         ...pertenca.contagens,
         mdNoDisco: passeio.mdNoDisco,
@@ -893,7 +907,11 @@ export class ObsidianService implements OnModuleInit {
           content: n.content, links: n.links, wordCount: n.wordCount, fileTime: n.fileTime,
         } });
       }
+      if (this.catalogo && this.fonte === 'pasta') {
+        selecaoCatalogoId = await this.catalogo.persistirNoIndice(tx, orgId, capturaCatalogo);
+      }
     });
+    if (selecaoCatalogoId) registrarSelecao(selecaoCatalogoId);
     recibo.indexacao = { gravadas: notes.length, preservadas: preservadas.length, espelhoDoOnboardingPreservado: null };
 
     /*
@@ -972,6 +990,7 @@ export class ObsidianService implements OnModuleInit {
 
     recibo.projecao = await this.projetarNaMemoria(orgId, notes, vetorPorCaminho, vistos);
 
+
     if (marcaAntes && 'commit' in recibo.montante) {
       const depois = marcaDoRepositorio(this.vault);
       recibo.montante.mudouNoMeio =
@@ -995,6 +1014,24 @@ export class ObsidianService implements OnModuleInit {
       lancadasDeProposito.add(e);
       throw e;
     }
+    if (this.catalogo && selecaoCatalogoId && capturaCatalogo) {
+      if (!recibo.projecao || recibo.projecao.falhou || recibo.projecao.falhas) {
+        await this.catalogo.falhar(orgId, selecaoCatalogoId);
+      } else {
+        await this.catalogo.confirmar(orgId, selecaoCatalogoId, capturaCatalogo, () => {
+          const antes = marcaDoCatalogo(this.vault);
+          const repo = lerRepositorioDaVault(this.vault, []);
+          const passeio = descobrirNaPasta(this.vault);
+          const pertenca = classificarAVault({ arquivos: passeio.arquivos,
+            indice: repo.indice?.ok ? repo.indice.entradas : null,
+            naoVerificavel: repo.naoVerificavel ?? conversaoNosAtributos(passeio.atributos) });
+          return prepararCapturaDoCatalogo({ pertenca, arquivos: passeio.arquivos,
+            indice: repo.indice?.ok ? repo.indice.entradas : null,
+            marcaAntes: antes, marcaDepois: marcaDoCatalogo(this.vault), ilegiveis: passeio.ilegiveis.length });
+        });
+      }
+    }
+
     return notes.length;
   }
 

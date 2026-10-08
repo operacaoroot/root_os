@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import type { ActorType, Prisma, PrismaClient } from '@prisma/client';
 import { MODULOS, PERMISSIONS, ROLES, type ModuloKey, type RoleKey } from '@mktos/shared';
 
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { SemTenantError } from '../common/contexto-execucao';
 import { ehModulo, modulosConhecidos } from './modulos';
 
@@ -380,10 +381,10 @@ function exigirEmail(bruto: string): string {
  */
 async function acharOrg(prisma: PrismaClient, slug: string) {
   try {
-    return await prisma.org.findUnique({
+    return await comContextoDePlataforma(() => prisma.org.findUnique({
       where: { slug },
       select: { id: true, name: true, modulos: true, isActive: true },
-    });
+    }));
   } catch (e) {
     if (e instanceof SemTenantError) throw new ProvisionamentoSemPlataformaError(e.message);
     throw e;

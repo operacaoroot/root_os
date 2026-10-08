@@ -271,7 +271,8 @@ export class AprService {
   // ---------- Contas a pagar / receber (previstos) ----------
   async payables(orgId: string, tipo?: string, actorId?: string): Promise<Payables> {
     if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
-    const ocultos = actorId ? [] : await this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } });
+    const ocultos = actorId ? [] : [...await this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+      ...await this.prisma.commercialExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } })];
     const now = new Date();
     const where: Prisma.FinanceTransactionWhereInput = { orgId, status: 'previsto', ...(actorId ? {} : { id: { notIn: ocultos.map(o => o.transactionId) } }) };
     if (tipo === 'pagar') where.type = 'saida';
@@ -282,6 +283,7 @@ export class AprService {
     });
     const inscritos = await this.prisma.financeExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } });
     const exercicios = new Set(inscritos.map(o => o.transactionId));
+    const comerciais = new Set((await this.prisma.commercialExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } })).map(o => o.transactionId));
     let aPagar = 0, aReceber = 0, vencidoPagar = 0, vencidoReceber = 0, aguardando = 0;
     const items: PayableRow[] = rows.map((r) => {
       const v = num(r.amount);
@@ -294,7 +296,8 @@ export class AprService {
       return {
         id: r.id, tipo: r.type, description: r.description, partnerName: r.partner?.razaoSocial ?? null,
         chartCodigo: r.chartAccount?.codigo ?? null, amount: v, dueDate: due.toISOString(),
-        status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id), vencido, diasAtraso: dias,
+        status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id),
+        ...{ exercicioComercial: comerciais.has(r.id), exercicioComercialHref: comerciais.has(r.id) ? `/finance/exercicio/comercial/obrigacoes/${r.id}` : null }, vencido, diasAtraso: dias,
       };
     });
     if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);

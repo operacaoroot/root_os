@@ -6,6 +6,7 @@ import { ComercialAceiteExercicioSchema, ComercialAcompanhamentoExercicioSchema,
 import { apiGet,apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { pedidoDeExercicio } from './pedido-exercicio';
+import { PonteComercial } from './PonteComercial';
 const INP = 'mt-1 block w-full rounded-lg border border-border bg-surface-2 p-2 text-sm';
 const BTN = 'rounded-lg bg-brand px-3 py-2 text-sm text-ink disabled:opacity-50';
 export function ComercialExercicio({ leadId,onChanged,onIndisponivel }: { leadId: string; onChanged: () => void; onIndisponivel: () => void }) {
@@ -60,6 +61,7 @@ export function ComercialExercicio({ leadId,onChanged,onIndisponivel }: { leadId
   const atual = proposta?.versao === dados.versaoAtual;
   const aceite = dados.aceites.find((a) => a.propostaId === proposta?.id);
   const entrega = dados.entregas.find((d) => d.aceiteId === aceite?.id);
+  const ponteDisponivel = !!proposta && !!aceite && can('leads.ver') && can('tarefas.ver');
   return <section className="space-y-5 rounded-xl border border-border bg-surface p-5">
     <div><h2 className="font-medium">Comercial — exercício de QA</h2><p className="text-sm text-muted">Proposta local e aceite de exercício. Não representam aceite de cliente, assinatura ou cobrança.</p>
       <p className="mt-2 text-xs text-muted">Origem manual única: {dados.origem.ref}</p></div>
@@ -95,7 +97,7 @@ export function ComercialExercicio({ leadId,onChanged,onIndisponivel }: { leadId
         <label className="flex gap-2 text-sm"><input aria-label="Confirmo que é um exercício" type="checkbox" checked={confirmado} onChange={(e) => setConfirmado(e.target.checked)} />Confirmo que é um exercício, sem aceite real do cliente.</label>
         <button type="button" className={BTN} disabled={!confirmado || evidencia.trim().length < 10 || !proposta.condicoes.valorCanonico} onClick={() => void enviar('aceites',{ propostaId: proposta.id,expectedPropostaVersion: proposta.versao,condicoesHash: proposta.condicoesHash,evidencia: { tipo: 'exercicio',texto: evidencia.trim() },confirmacaoExercicio: true },(v) => ComercialAceiteExercicioSchema.parse(v),'Aceite de exercício registrado.')}>Registrar aceite de exercício</button>
       </fieldset>}</>}
-      {entrega ? <div className="rounded-lg border border-border p-3 text-sm"><p>Entrega ligada ao aceite de exercício da proposta v{entrega.propostaVersao}.</p><Link className="text-brand underline" href={`/trabalho?lista=${entrega.listId}&tarefa=${entrega.taskId}`}>Abrir entrega em Trabalho: {entrega.title}</Link></div> : aceite && atual && dados.podeEntregar && <fieldset className="space-y-3 rounded-lg border border-border p-3" disabled={busy}><legend>Entrega em Trabalho</legend>
+      {entrega ? <div className="rounded-lg border border-border p-3 text-sm"><p>Entrega ligada ao aceite de exercício da proposta v{entrega.propostaVersao}.</p><Link className="text-brand underline" href={`/trabalho?lista=${entrega.listId}&tarefa=${entrega.taskId}`}>Abrir entrega em Trabalho: {entrega.title}</Link></div> : aceite && atual && dados.podeEntregar && !ponteDisponivel && <fieldset className="space-y-3 rounded-lg border border-border p-3" disabled={busy}><legend>Entrega em Trabalho</legend>
         {!estrutura && <button type="button" className="text-sm underline" onClick={() => void abrirListas()}>Escolher destino da entrega</button>}
         {estrutura && <><label className="block text-sm">Lista da entrega<select aria-label="Lista da entrega" className={INP} value={listaId} onChange={(e) => setListaId(e.target.value)}><option value="">Selecione a lista</option>{listas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
         <label className="block text-sm">Título da entrega<input aria-label="Título da entrega" className={INP} value={entregaTitulo} onChange={(e) => setEntregaTitulo(e.target.value)} /></label>
@@ -103,6 +105,7 @@ export function ComercialExercicio({ leadId,onChanged,onIndisponivel }: { leadId
         <button type="button" className={BTN} disabled={!listaId || !entregaTitulo.trim()} onClick={() => void enviar('entrega',{ aceiteId: aceite.id,propostaId: proposta.id,expectedPropostaVersion: proposta.versao,condicoesHash: proposta.condicoesHash,listId: listaId,title: entregaTitulo.trim(),assigneeUserId: pessoaId || null },(v) => ComercialEntregaExercicioSchema.parse(v),'Entrega de exercício aberta em Trabalho.')}>Abrir entrega de exercício</button></>}
       </fieldset>}
     </div>}
-    <div className="rounded-lg border border-warn/40 p-3 text-sm"><h3>Pendências financeiras do exercício</h3><ul className="mt-2 list-disc pl-5">{dados.financeiro.pendencias.map((p) => <li key={p}>{p}</li>)}</ul><p className="mt-2 text-muted">Não há contrato financeiro ou obrigação vinculados por este percurso.</p></div>
+    {ponteDisponivel && proposta && aceite && <PonteComercial leadId={leadId} proposta={proposta} aceite={aceite} onIndisponivel={privar} />}
+    {!ponteDisponivel && <div className="rounded-lg border border-warn/40 p-3 text-sm"><h3>Pendências financeiras do exercício</h3><ul className="mt-2 list-disc pl-5">{dados.financeiro.pendencias.map((p) => <li key={p}>{p}</li>)}</ul><p className="mt-2 text-muted">O percurso de proposta e aceite não gera obrigação automaticamente. Confira o vínculo na seção do projeto.</p></div>}
   </section>;
 }

@@ -1,3 +1,4 @@
+import { ComercialPonteExercicioModule } from '../leads/comercial-ponte-exercicio.module';
 import { Module } from '@nestjs/common';
 import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { FinanceiroExercicioController } from './financeiro-exercicio.controller';
@@ -11,6 +12,7 @@ import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
 
 @Module({
+  imports: [ComercialPonteExercicioModule],
   controllers: [FinanceController, FinanceiroExercicioController],
   providers: [AcessoAtualGuard, FinanceiroExercicioService, FinanceService, PluggyService, AsaasService, FinopsService, AprService, ConciliacaoService],
   exports: [FinanceService, FinopsService, AprService, ConciliacaoService],
