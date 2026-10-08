@@ -13,6 +13,17 @@ const LIMITE_POR_AREA = 9;
 const ICONES: Record<FamiliaKey, LucideIcon> = { memoria: BookOpen, agentes: Bot, rotinas: Workflow, conexoes: Cable, gente: UserRound };
 const TONS: Record<Tom, string> = { brand: 'text-brand', good: 'text-good', warn: 'text-warn', bad: 'text-bad', info: 'text-info', muted: 'text-muted' };
 const curto = (v: string, max = 16) => v.length > max ? `${v.slice(0, max - 1)}…` : v;
+const linhasDoRotulo = (rotulo: string) => {
+  const exibido = rotulo.replace(/^Configurações\b/, 'Config.');
+  const palavras = exibido.split(' ');
+  if (exibido.length <= 14 || palavras.length < 2) return [exibido];
+  let corte = 1;
+  for (let i = 2; i < palavras.length; i++) {
+    const diferenca = (n: number) => Math.abs(palavras.slice(0, n).join(' ').length - palavras.slice(n).join(' ').length);
+    if (diferenca(i) < diferenca(corte)) corte = i;
+  }
+  return [palavras.slice(0, corte).join(' '), palavras.slice(corte).join(' ')];
+};
 const polar = (angulo: number, raio: number) => ({ x: CENTRO.x + Math.cos(angulo) * raio, y: CENTRO.y + Math.sin(angulo) * raio });
 const AREAS_DO_DESENHO = [...AREAS, { key: 'sem-area' as const, rotulo: 'Sem área definida' }];
 
@@ -126,14 +137,13 @@ export function MapaDaEmpresa({ mapa, recorteAtivo = false, selecionado, destaqu
           <g transform={`translate(${CENTRO.x} ${CENTRO.y})`} className="text-brand">
             <circle r="78" fill="currentColor" fillOpacity="0.05" stroke="currentColor" strokeOpacity="0.15" />
             <circle r="65" fill="currentColor" fillOpacity="0.09" stroke="currentColor" strokeOpacity="0.55" />
-            <Building2 x="-12" y="-28" size={24} aria-hidden="true" />
-            <text y="13" textAnchor="middle" className="fill-current font-os-mono text-[16px] font-semibold">{curto(mapa.nucleo.rotulo, 20)}</text>
-            <text y="34" textAnchor="middle" className="fill-current font-os-mono text-[10px] uppercase tracking-widest">Contexto</text>
+            <Building2 x="-14" y="-40" size={28} aria-hidden="true" />
+            <text y="14" textAnchor="middle" className="fill-current font-os-mono text-[26px] font-semibold">{curto(mapa.nucleo.rotulo, 20)}</text>
+            <text y="43" textAnchor="middle" className="fill-current font-os-mono text-[16px] uppercase tracking-widest">Contexto</text>
           </g>
           {desenho.areas.map((area) => {
             const selecionada = areaSelecionada === area.key;
-            const palavras = area.rotulo.split(' ');
-            const linhas = area.rotulo.length <= 23 ? [area.rotulo] : [palavras.slice(0, -1).join(' '), palavras.at(-1)!];
+            const linhas = linhasDoRotulo(area.rotulo);
             return <g key={area.key} transform={`translate(${area.x} ${area.y})`} role="button" tabIndex={0}
               aria-label={`${area.rotulo}: ${area.membros.length} registros carregados${incertas ? '; algumas fontes ainda não puderam ser consultadas' : ''}`}
               aria-pressed={selecionada} className={`group cursor-pointer focus:outline-none ${selecionada ? 'text-brand' : 'text-muted'}`}
@@ -143,10 +153,10 @@ export function MapaDaEmpresa({ mapa, recorteAtivo = false, selecionado, destaqu
               <circle r="36" fill="rgb(var(--os-bg))" stroke="currentColor" strokeOpacity={selecionada ? 0.95 : 0.45}
                 strokeWidth={selecionada ? 2 : 1} strokeDasharray={area.membros.length ? undefined : '3 4'} />
               <circle r="43" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-0 group-focus-visible:opacity-100" />
-              <Folder x="-9" y="-19" size={18} aria-hidden="true" />
-              <text y="17" textAnchor="middle" className="fill-current font-os-mono text-[16px] font-semibold tabular-nums">{area.membros.length || (incertas ? '—' : '0')}</text>
-              {linhas.map((linha, indice) => <text key={indice} y={55 + indice * 16} textAnchor="middle" className="pointer-events-none fill-current font-os-mono text-[12px]">{linha}</text>)}
-              {area.excedente > 0 && <text y={55 + linhas.length * 16} textAnchor="middle" className="fill-current font-os-mono text-[10px]">+{area.excedente} no diretório</text>}
+              <Folder x="-12" y="-28" size={24} aria-hidden="true" />
+              <text y="24" textAnchor="middle" className="fill-current font-os-mono text-[24px] font-semibold tabular-nums">{area.membros.length || (incertas ? '—' : '0')}</text>
+              {linhas.map((linha, indice) => <text key={indice} y={65 + indice * 26} textAnchor="middle" className="pointer-events-none fill-current font-os-mono text-[22px]">{linha}</text>)}
+              {area.excedente > 0 && <text y={65 + linhas.length * 26} textAnchor="middle" className="fill-current font-os-mono text-[18px]">+{area.excedente} no diretório</text>}
             </g>;
           })}
           {desenho.nos.map((no) => {
@@ -163,8 +173,8 @@ export function MapaDaEmpresa({ mapa, recorteAtivo = false, selecionado, destaqu
               <circle r="19" fill="rgb(var(--os-bg))" stroke="currentColor" strokeWidth={escolhido ? 2 : 1.1} strokeOpacity="0.85" />
               {(escolhido || destacado) && <circle r="25" fill="none" stroke="currentColor" strokeWidth="1.4" />}
               <circle r="26" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-0 group-focus-visible:opacity-100" />
-              <Icone x="-8" y="-8" size={16} aria-hidden="true" />
-              <text y="37" textAnchor="middle" className={`pointer-events-none fill-current font-os-mono text-[12px] ${desenho.nos.length <= 8 || escolhido || destacado ? '' : 'opacity-0 group-hover:opacity-100 group-focus:opacity-100'}`}>{curto(no.rotulo, 15)}</text>
+              <Icone x="-10" y="-10" size={20} aria-hidden="true" />
+              <text y="43" textAnchor="middle" className={`pointer-events-none fill-current font-os-mono text-[20px] ${escolhido || destacado ? '' : `opacity-0 group-hover:opacity-100 group-focus:opacity-100 ${desenho.nos.length <= 8 ? 'lg:opacity-100' : ''}`}`}>{curto(no.rotulo, 15)}</text>
             </g>;
           })}
         </g>
