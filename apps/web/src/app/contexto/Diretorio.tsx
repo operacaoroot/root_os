@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { FAMILIAS, rotuloDaArea, type ItemDoEixo, type Mapa } from './grafo';
 
-export function Diretorio({ mapa, recorteAtivo, onAbrir }: {
+export function Diretorio({ mapa, recorteAtivo, onAbrir, compacto = false }: {
   mapa: Mapa;
   recorteAtivo: boolean;
+  compacto?: boolean;
   onAbrir: (item: ItemDoEixo, origem?: Element) => void;
 }) {
   const [limite, setLimite] = useState(30);
@@ -16,16 +17,16 @@ export function Diretorio({ mapa, recorteAtivo, onAbrir }: {
   const carregando = mapa.eixos.filter((eixo) => eixo.estado === 'carregando').length;
 
   return (
-    <section id="diretorio-do-contexto" aria-label="Diretório do contexto" className="rounded-root border border-border bg-surface p-4">
-      <h2 className="font-semibold">Registros no diretório</h2>
-      <p className="mt-1 text-sm text-muted">Abra o registro pelo nome. A lista inclui o que não coube no desenho.</p>
+    <section id="diretorio-do-contexto" aria-label="Diretório do contexto" className={compacto ? "border-t border-border px-4 py-3" : "rounded-root border border-border bg-surface p-4"}>
+      <h2 className={compacto ? "font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted" : "font-semibold"}>Registros no diretório</h2>
+      {!compacto && <p className="mt-1 text-sm text-muted">Abra o registro pelo nome. A lista inclui o que não coube no desenho.</p>}
       <p className="my-3 text-xs text-muted" role="status">
         {itens.length} {itens.length === 1 ? 'registro carregado' : 'registros carregados'}{recorteAtivo ? ' neste recorte' : ''}
         {semAcesso > 0 ? ` · ${semAcesso} ${semAcesso === 1 ? 'fonte sem acesso' : 'fontes sem acesso'}` : ''}
         {falhas > 0 ? ` · ${falhas} ${falhas === 1 ? 'fonte falhou' : 'fontes falharam'}` : ''}
         {carregando > 0 ? ` · ${carregando} ${carregando === 1 ? 'fonte carregando' : 'fontes carregando'}` : ''}
       </p>
-      <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      <ul className={compacto ? "grid gap-2" : "grid gap-2 md:grid-cols-2 xl:grid-cols-3"}>
         {itens.slice(0, limite).map((item) => (
           <li key={item.id}>
             <button type="button" onClick={(evento) => onAbrir(item, evento.currentTarget)}
