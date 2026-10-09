@@ -248,12 +248,14 @@ export default function MarcaPage() {
   }
 
   async function desativarLivro() {
-    if (!token || !podeGravarLivro || !livroAtivo || !confirmaDesativar || escritaEmCurso.current) return;
+    if (!token || !podeGravarLivro || !livro || livro.versao === null || livroArquivado ||
+      !livroAtivo || !confirmaDesativar || escritaEmCurso.current) return;
+    const versaoEsperada = livro.versao;
     const escrita = Symbol('desativar-livro'); escritaEmCurso.current = escrita;
     setOperacaoLivro('Desativando livro…'); setErroLivro(null);
     ++leituraDoLivro.current; ++revisaoPainel.current;
     try {
-      const novo = await apiPost<BrandbookPainel>('/pauta/marca/brandbook/desativar', { versaoEsperada: livro.versao }, token);
+      const novo = await apiPost<BrandbookPainel>('/pauta/marca/brandbook/desativar', { versaoEsperada }, token);
       if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
       setLivro(novo); setVersaoBase(novo.versao); setPreviaLivro(null); setAprovado(false); setConfirmaDesativar(false);
       setVisaoDoLivro('rascunho');
