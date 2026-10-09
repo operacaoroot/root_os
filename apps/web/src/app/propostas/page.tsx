@@ -23,9 +23,10 @@ import {
  * do console da plataforma. Só leitura: as páginas e o rastreio moram no serviço
  * de propostas (proposta.operacaoroot.com); o pagamento confirmado mora no Asaas.
  *
- * Sem item de menu, como o console: o endereço /propostas é digitado. O menu é
- * filtrado por permissão, não por "ser a plataforma", e um item aqui apareceria
- * no menu de toda empresa cliente.
+ * Fica fora do NAV, que é filtrado por permissão, não por "ser a plataforma":
+ * um item lá apareceria no menu de toda empresa cliente. O menu mostra esta tela
+ * no grupo ROOT só quando a API confirma a sessão da plataforma (ver
+ * `ITENS_DA_ROOT` em components/Sidebar.tsx e `useEhPlataforma`).
  */
 
 const BASE = '/tenants/plataforma/propostas';

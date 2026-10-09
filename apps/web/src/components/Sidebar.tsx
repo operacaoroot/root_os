@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { NAV, SECOES, navEmArvore, type NavItem, type NoDeNav } from '@mktos/shared';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useEhPlataforma } from '@/lib/plataforma';
 import { useModulos } from './modulos';
 import { textoDoSelo, tituloDoSelo, useCaixa } from './caixa';
 
@@ -53,6 +54,17 @@ function lerFechadas(): Set<string> {
   }
   return new Set(FECHADAS_POR_PADRAO);
 }
+
+/*
+ * Telas da ROOT, fora do NAV: o NAV é filtrado por permissão, e um item dele
+ * apareceria no menu de toda empresa cliente. Estas só entram no menu quando a
+ * API confirma que a sessão é da plataforma (`useEhPlataforma`); a rota também
+ * recusa qualquer outra sessão com 403. `secao` e `permission` só cumprem o tipo:
+ * o grupo da ROOT é montado aqui, não pelo `navEmArvore`.
+ */
+const ITENS_DA_ROOT: NavItem[] = [
+  { key: 'propostas', label: 'Propostas', href: '/propostas', icon: 'Handshake', permission: 'dashboard.ver', secao: 'comercial' },
+];
 
 function ehAtivo(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
@@ -131,9 +143,12 @@ export function Sidebar() {
   // por cima da escolha do usuário se o componente desmontasse no meio.
   const primeiraPintura = useRef(true);
 
+  const ehPlataforma = useEhPlataforma();
+  const daRoot = ehPlataforma ? ITENS_DA_ROOT : [];
+
   const perms = new Set(user?.permissions ?? []);
   // /painel/custo-ia pertence a Motor de IA; /painel não deve ficar ativo junto.
-  const itemAtivo = NAV.filter((n) => ehAtivo(pathname, n.href))
+  const itemAtivo = [...NAV, ...daRoot].filter((n) => ehAtivo(pathname, n.href))
     .sort((a, b) => b.href.length - a.href.length)[0];
 
   /*
@@ -182,6 +197,18 @@ export function Sidebar() {
       // de um defeito que este bloco existe para DENUNCIAR.
       itens: avulsos.map((item) => ({ item, filhos: [] })),
     });
+
+  // O grupo da ROOT entra antes das seções de apoio, junto das telas de trabalho.
+  if (daRoot.length > 0) {
+    const antesDoApoio = grupos.findIndex((g) => g.tipo === 'apoio');
+    grupos.splice(antesDoApoio < 0 ? grupos.length : antesDoApoio, 0, {
+      chave: '__root',
+      titulo: 'ROOT',
+      dica: 'telas da equipe ROOT; empresas clientes não veem',
+      tipo: 'principal',
+      itens: daRoot.map((item) => ({ item, filhos: [] })),
+    });
+  }
 
   // `dentroDe` é só desenho e só vale com a seção-mãe visível: sem ela, a
   // seção sobe a primeiro nível em vez de ficar recuada sob nada.
