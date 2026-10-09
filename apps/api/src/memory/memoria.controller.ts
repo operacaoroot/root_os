@@ -17,7 +17,7 @@ import { ehChaveDaVault } from './procedencia';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AcessoAtualGuard } from './acesso-atual.guard';
 import { ContextoTrabalhoService } from './contexto-trabalho.service';
-import { ContextoTarefaCreateSchema } from '@mktos/shared';
+import { BRANDBOOK_CHAVE, ContextoTarefaCreateSchema } from '@mktos/shared';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -139,6 +139,7 @@ export class MemoriaController {
   private async exigirForaDaVault(orgId: string, id: string, solicitanteId: string): Promise<void> {
     const nota = await this.memoria.obter(orgId, id, solicitanteId);
     if (!nota) throw new NotFoundException('Nota não encontrada.');
+    if (nota.chave === BRANDBOOK_CHAVE) throw new ForbiddenException('Altere o livro da marca pelo criador do brandbook.');
     if (nota && (ehChaveDaVault(nota.chave) || nota.sourceType === ContextSource.vault)) {
       throw new ForbiddenException(FRASE_DA_VAULT);
     }
@@ -232,6 +233,7 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const dados = CriarSchema.parse(body);
+    if (dados.chave.trim() === BRANDBOOK_CHAVE) throw new ForbiddenException('Crie o livro da marca pelo criador do brandbook.');
     if (ehChaveDaVault(dados.chave) || dados.sourceType === ContextSource.vault) {
       throw new ForbiddenException(FRASE_DO_PREFIXO);
     }
@@ -243,6 +245,7 @@ export class MemoriaController {
   @RequirePermissions('obsidian.editar')
   promover(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const dados = PromoverSchema.parse(body);
+    if (dados.chave.trim() === BRANDBOOK_CHAVE) throw new ForbiddenException('Crie o livro da marca pelo criador do brandbook.');
     if (ehChaveDaVault(dados.chave)) throw new ForbiddenException(FRASE_DO_PREFIXO);
     return this.memoria.promover(user.orgId, dados);
   }

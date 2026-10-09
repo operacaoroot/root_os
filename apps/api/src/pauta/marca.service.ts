@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ContextKind, ContextSource } from '@prisma/client';
 import {
   PAUTA_CHAVE_DA_MARCA,
+  lerPilaresDoTexto,
   PAUTA_CHAVE_DOS_PILARES,
   PAUTA_SECOES_DA_MARCA,
   type PautaMarcaPainel,
@@ -17,19 +18,17 @@ import { AuditService } from '../audit/audit.service';
 import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
 import { blocoDeMarca, marcaDaNota, pilaresDaNota, perfilParaPrompt, procedenciaDaMarca } from './marca-da-pauta';
 import { lerReferenciaDaProjecao, proporMarcaDaFonte, referenciaDaProjecao } from './marca-projecao';
+import { BrandbookService } from './brandbook.service';
+import { textoDosPilares } from './brandbook-documento';
 
 const TITULO_DA_MARCA = 'Marca (pauta)';
 const TITULO_DOS_PILARES = 'Pilares de conteúdo (pauta)';
 const CHAVE_DA_FONTE = 'editorial:marca:Root/40-marca-e-conteudo/root-fundamentos-da-marca-e-guia-de-expressao.md';
 
 /*
- * A MARCA E OS PILARES (MK1). Duas notas da memória, lidas por `porChave` e
- * escritas SÓ por `MemoriaService` (criar/alterar/restaurar), que é o caminho da
- * ADR-011: evento no RASTRO, versão nova, a anterior no histórico. Nada aqui
- * toca `ContextItem` direto — mesma regra que a voz (MC10) segue.
- *
- * `bloco` é o que os prompts da pauta consomem, e é o ÚNICO lugar onde texto de
- * marca é montado para o modelo.
+ * O brandbook aprovado tem precedência. Sem ativo, preserva as duas notas
+ * legadas; falha, acesso restrito ou arquivo inválido do livro interrompem a
+ * leitura. O bloco mantém a neutralização e os consumidores existentes da Pauta.
  */
 @Injectable()
 export class MarcaService {
@@ -38,6 +37,7 @@ export class MarcaService {
   constructor(
     private readonly audit: AuditService,
     private readonly memoria: MemoriaService,
+    private readonly brandbooks: BrandbookService,
   ) {}
 
   /**
@@ -56,11 +56,15 @@ export class MarcaService {
 
   /** O perfil da marca vigente, ou nulo. */
   async perfil(orgId: string): Promise<string | null> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) return ativo.documento.perfilParaPauta;
     return marcaDaNota(await this.nota(orgId, PAUTA_CHAVE_DA_MARCA)).perfil;
   }
 
   /** Os pilares vigentes. Lista vazia quando não há nota ou nenhuma linha vale. */
   async pilares(orgId: string): Promise<PautaPilar[]> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) return lerPilaresDoTexto(textoDosPilares(ativo.documento)).pilares;
     return pilaresDaNota(await this.nota(orgId, PAUTA_CHAVE_DOS_PILARES)).pilares;
   }
 
@@ -69,6 +73,11 @@ export class MarcaService {
    * nem pilar: nesse caso o prompt fica exatamente como era antes da MK1.
    */
   async bloco(orgId: string): Promise<string> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) {
+      const procedencia = `brandbook aprovado · sha256:${ativo.draftHash.slice(0, 12)}`;
+      return blocoDeMarca(ativo.documento.perfilParaPauta, lerPilaresDoTexto(textoDosPilares(ativo.documento)).pilares, { procedencia, procedenciaPilares: procedencia });
+    }
     const [notaMarca, notaPilares] = await Promise.all([
       this.nota(orgId, PAUTA_CHAVE_DA_MARCA),
       this.nota(orgId, PAUTA_CHAVE_DOS_PILARES),
@@ -88,6 +97,17 @@ export class MarcaService {
   }
 
   async painel(orgId: string): Promise<PautaMarcaPainel> {
+    const livro = await this.brandbooks.painelParaPauta(orgId);
+    if (livro.ativo) {
+      const d = livro.ativo.documento;
+      const pilaresTexto = textoDosPilares(d);
+      const pilares = lerPilaresDoTexto(pilaresTexto).pilares;
+      const procedencia = `brandbook aprovado · sha256:${livro.ativo.draftHash.slice(0, 12)}`;
+      return { perfil: d.perfilParaPauta, perfilVersao: livro.versao, perfilAtualizadoEm: livro.ativo.aprovadoEm,
+        pilaresTexto, pilaresVersao: livro.versao, pilares, avisos: [],
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }),
+        projecoes: { perfil: null, pilares: null } };
+    }
     const [notaMarca, notaPilares] = await Promise.all([
       this.nota(orgId, PAUTA_CHAVE_DA_MARCA),
       this.nota(orgId, PAUTA_CHAVE_DOS_PILARES),
@@ -138,6 +158,7 @@ export class MarcaService {
 
   /** Prévia sem escrita: a pessoa confere trechos, destino e texto antes de aplicar. */
   async previa(orgId: string, destino: PautaMarcaDestino): Promise<PautaMarcaPrevia> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const chaveDestino = destino === 'perfil' ? PAUTA_CHAVE_DA_MARCA : PAUTA_CHAVE_DOS_PILARES;
     const [fonte, nota] = await Promise.all([
       this.memoria.porChave(orgId, CHAVE_DA_FONTE),
@@ -178,6 +199,7 @@ export class MarcaService {
 
   /** Cada destino é aplicado sozinho. Fonte e destino são conferidos de novo na transação da Memória. */
   async aplicar(orgId: string, destino: PautaMarcaDestino, pedido: PautaMarcaAplicarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const fonte = await this.memoria.porChave(orgId, CHAVE_DA_FONTE);
     if (!fonte || fonte.arquivadoEm) throw new ConflictException('O guia não está ativo. Refaça a prévia.');
     const proposta = proporMarcaDaFonte(fonte.body, destino);
@@ -222,6 +244,7 @@ export class MarcaService {
 
   /** A edição à mão do perfil. `versao` velha é outra aba mexendo junto (409). */
   async salvarPerfil(orgId: string, actorId: string, entrada: PautaMarcaSalvarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const corpo = entrada.perfil.replace(/\r\n?/g, '\n').trim();
     const nota = await this.gravar(orgId, PAUTA_CHAVE_DA_MARCA, {
       titulo: TITULO_DA_MARCA,
@@ -250,6 +273,7 @@ export class MarcaService {
    * ela quis dizer.
    */
   async salvarPilares(orgId: string, actorId: string, entrada: PautaPilaresSalvarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const corpo = entrada.pilares.replace(/\r\n?/g, '\n').trim();
     const nota = await this.gravar(orgId, PAUTA_CHAVE_DOS_PILARES, {
       titulo: TITULO_DOS_PILARES,

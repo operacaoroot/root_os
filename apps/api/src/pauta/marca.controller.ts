@@ -5,7 +5,7 @@ import {
 } from '@mktos/shared';
 import { MarcaService } from './marca.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -13,7 +13,7 @@ import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 // As duas notas têm chave fixa (`pauta.marca` e `pauta.marca.pilares`) — ao
 // contrário da voz, aqui não há chave configurável, então `pauta.editar` nunca
 // alcança outra nota da memória por esta porta.
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, AcessoAtualGuard)
 @Controller('pauta/marca')
 export class MarcaController {
   constructor(private readonly marcas: MarcaService) {}

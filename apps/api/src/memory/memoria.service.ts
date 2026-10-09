@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES } from '@mktos/shared';
+import { ESCRITA_DO_BRANDBOOK, BrandbookEnvelopeSchema } from './brandbook-escrita';
 import type { M05EscopoDto, M05FonteAutorizadaDto } from '@mktos/shared';
 import { construirFonteAutorizada } from './fonte-autorizada';
 import {
@@ -573,8 +575,31 @@ export class MemoriaService {
   // ESCRITA — sempre evento + projeção
   // ==========================================================================
 
-  async criar(orgId: string, entrada: EntradaDeNota): Promise<NotaDeContexto> {
+  private conferirEscritorDaMarca(chave: string, autorizacao?: symbol): void {
+    if (chave.trim() === BRANDBOOK_CHAVE && autorizacao !== ESCRITA_DO_BRANDBOOK) {
+      throw new ForbiddenException('Altere o livro da marca pelo criador do brandbook.');
+    }
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && chave.trim() !== BRANDBOOK_CHAVE) {
+      throw new ForbiddenException('A autorização do brandbook vale somente para sua nota.');
+    }
+  }
+
+  private async conferirMarcaLegadaNoCadeado(tx: Prisma.TransactionClient, orgId: string, chave: string): Promise<void> {
+    if (chave.trim() !== PAUTA_CHAVE_DA_MARCA && chave.trim() !== PAUTA_CHAVE_DOS_PILARES) return;
+    const livro = await tx.contextItem.findFirst({ where: { orgId, chave: BRANDBOOK_CHAVE }, select: { body: true, arquivadoEm: true, acessoRestrito: true } });
+    if (!livro) return;
+    if (livro.acessoRestrito) throw new ForbiddenException('O acesso ao brandbook precisa ser revisto antes de alterar a marca.');
+    if (livro.arquivadoEm) throw new ConflictException('O brandbook está arquivado. Revise sua situação no criador.');
+    let envelope: ReturnType<typeof BrandbookEnvelopeSchema.parse>;
+    try { envelope = BrandbookEnvelopeSchema.parse(JSON.parse(livro.body)); }
+    catch { throw new ConflictException('O brandbook armazenado está inválido. Revise-o antes de alterar a marca.'); }
+    if (envelope.ativo) throw new ConflictException('Há um brandbook ativo. Edite e aprove um rascunho no criador de marca.');
+  }
+
+  async criar(orgId: string, entrada: EntradaDeNota, autorizacao?: symbol): Promise<NotaDeContexto> {
     const chave = (entrada.chave ?? '').trim();
+    this.conferirEscritorDaMarca(chave, autorizacao);
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (entrada.acessoRestrito || entrada.leitores?.length)) throw new ForbiddenException('O brandbook deve ser uma nota aberta da empresa.');
     if (!chave) throw new BadRequestException('A nota precisa de uma chave estável.');
     if (!(entrada.title ?? '').trim()) throw new BadRequestException('A nota precisa de título.');
     const sourceType = this.exigirProcedencia(entrada.sourceType);
@@ -595,6 +620,7 @@ export class MemoriaService {
     try {
       criacao = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
         const jaExiste = await tx.contextItem.findFirst({
           where: { orgId, chave },
           select: { id: true },
@@ -674,7 +700,11 @@ export class MemoriaService {
     return (await this.obter(orgId, item.id)) as NotaDeContexto;
   }
 
-  async alterar(orgId: string, id: string, mudancas: MudancaDeNota): Promise<NotaDeContexto> {
+  async alterar(orgId: string, id: string, mudancas: MudancaDeNota, autorizacao?: symbol): Promise<NotaDeContexto> {
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (!Number.isSafeInteger(mudancas.versaoEsperada) || (mudancas.versaoEsperada ?? 0) < 1)) {
+      throw new BadRequestException('Informe a versão esperada do brandbook.');
+    }
+    if (autorizacao === ESCRITA_DO_BRANDBOOK && (mudancas.acessoRestrito || mudancas.leitores?.length)) throw new ForbiddenException('O brandbook deve continuar aberto à empresa.');
     const ator = this.ator();
     await this.conferirLeitores(this.prisma, orgId, mudancas.leitores);
 
@@ -689,6 +719,7 @@ export class MemoriaService {
       id,
       mudanca: ContextChange.alteracao,
       ator,
+      autorizacao,
       montar: (atual) => {
         if (mudancas.versaoEsperada !== undefined && atual.versao !== mudancas.versaoEsperada) {
           throw new ConflictException(
@@ -781,6 +812,7 @@ export class MemoriaService {
    * Mantém a mesma sequência item → versão → evento usada por criar/alterar.
    */
   async projetarCondicionado(orgId: string, pedido: ProjecaoCondicionada): Promise<NotaDeContexto> {
+    this.conferirEscritorDaMarca(pedido.destino.chave);
     if (!pedido.title.trim() || !pedido.body.trim()) throw new BadRequestException('A projeção precisa de título e corpo.');
     if (pedido.sourceRef.length > 1_000) throw new BadRequestException('A referência da fonte passou de 1.000 caracteres.');
     const ator = this.ator();
@@ -794,6 +826,7 @@ export class MemoriaService {
     try {
       gravada = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, pedido.destino.chave);
         const leitor = await leitorAutorizado(tx, orgId, leitorDoContexto());
         const fonte = await tx.contextItem.findFirst({
           where: { orgId, chave: pedido.fonte.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
@@ -1755,6 +1788,7 @@ export class MemoriaService {
     id: string;
     mudanca: ContextChange;
     ator: { actorType: string; actorId: string | null };
+    autorizacao?: symbol;
     conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
       dados: Prisma.ContextItemUncheckedUpdateInput;
@@ -1766,7 +1800,7 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, conferir, montar, noCadeado } = args;
+    const { orgId, id, mudanca, ator, autorizacao, conferir, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
 
@@ -1776,9 +1810,19 @@ export class MemoriaService {
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
+      this.conferirEscritorDaMarca(atual.chave, autorizacao);
+      await this.conferirMarcaLegadaNoCadeado(tx, orgId, atual.chave);
+      if (atual.chave === BRANDBOOK_CHAVE && (atual.arquivadoEm || atual.acessoRestrito)) {
+        throw new ConflictException('O brandbook foi arquivado ou teve o acesso alterado. Recarregue antes de continuar.');
+      }
 
       await conferir?.(tx, atual);
       const { dados, motivo } = montar(atual);
+      const destino = typeof dados.chave === 'string' ? dados.chave : dados.chave?.set;
+      if (destino !== undefined) {
+        this.conferirEscritorDaMarca(destino, autorizacao);
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, destino);
+      }
 
       const ultima = await tx.contextItemVersion.findFirst({
         where: { orgId, itemId: atual.id },

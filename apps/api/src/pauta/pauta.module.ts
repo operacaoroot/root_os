@@ -30,6 +30,9 @@ import { VozController } from './voz.controller';
 import { VozService } from './voz.service';
 import { MarcaController } from './marca.controller';
 import { MarcaService } from './marca.service';
+import { BrandbookController } from './brandbook.controller';
+import { BrandbookService } from './brandbook.service';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { ConcorrentesController } from './concorrentes.controller';
 import { ConcorrentesService } from './concorrentes.service';
 import { EstrategiaController } from './estrategia.controller';
@@ -96,6 +99,7 @@ import { DmAutomaticaService } from './dm-automatica.service';
     RoteiroController,
     VozController,
     MarcaController,
+    BrandbookController,
     ConcorrentesController,
     EstrategiaController,
     RelatorioController,
@@ -143,6 +147,8 @@ import { DmAutomaticaService } from './dm-automatica.service';
     VozService,
     // MK1: a marca e os pilares, que o roteiro e as peças recebem ao lado da voz.
     MarcaService,
+    BrandbookService,
+    AcessoAtualGuard,
     // MK2: a mediana e o índice dos perfis raspados, e o dossiê por IA.
     ConcorrentesService,
     // MK4: o documento do mês, proposto pela IA e editado por gente.
