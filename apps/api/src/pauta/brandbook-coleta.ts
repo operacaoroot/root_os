@@ -39,7 +39,7 @@ function pedir(u: URL, address: string, prazo: number): Promise<{ status: number
   return new Promise((resolve, reject) => {
     const executar = u.protocol === 'https:' ? httpsRequest : httpRequest;
     const req = executar(u, {
-      method: 'GET', agent: false, family: 4, autoSelectFamily: false,
+      method: 'GET', agent: false, family: 4,
       // O socket usa o IP conferido. Host e validação TLS continuam vinculados ao nome original.
       lookup: (_host, _options, callback) => callback(null, address, 4),
       headers: { 'User-Agent': 'ROOT-Brandbook/1.0', Accept: 'text/html,text/plain', 'Accept-Encoding': 'identity' },
