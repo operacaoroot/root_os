@@ -80,7 +80,7 @@ const AlterarSchema = z
     validUntil: z.coerce.date().nullish(),
     confidence: z.number().min(0).max(1).optional(),
     motivo: z.string().max(2000).nullish(),
-    versaoEsperada: z.number().int().min(1).optional(),
+    versaoEsperada: z.number({ required_error: 'Informe a versão esperada da nota.' }).int().min(1),
   })
   .strict();
 

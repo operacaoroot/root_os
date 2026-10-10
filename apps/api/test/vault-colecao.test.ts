@@ -802,13 +802,13 @@ function casosContraOBanco(modoRls: boolean) {
     );
 
     const recusas = {
-      alterar: await comoPessoa(() => rota.alterar(quem, daBase.id, { body: 'editado na tela' })),
+      alterar: await comoPessoa(() => rota.alterar(quem, daBase.id, { body: 'editado na tela', versaoEsperada: daBase.versao })),
       arquivar: await comoPessoa(() => rota.arquivar(quem, daBase.id, {})),
       restaurar: await comoPessoa(() => rota.restaurar(quem, daBase.id, {})),
       criarComPrefixo: await comoPessoa(() => rota.criar(quem, { chave: ` Vault:${MARCA}/x.md`, title: 'x', body: 'x', sourceType: 'operador' })),
       criarComOrigem: await comoPessoa(() => rota.criar(quem, { chave: `${MARCA}/y`, title: 'y', body: 'y', sourceType: 'vault' })),
       promoverComPrefixo: await comoPessoa(() => rota.promover(quem, { chave: `vault:${MARCA}/z.md`, title: 'z', body: 'z' })),
-      trocarOrigem: await comoPessoa(() => rota.alterar(quem, daTela.id, { sourceType: 'vault' })),
+      trocarOrigem: await comoPessoa(() => rota.alterar(quem, daTela.id, { sourceType: 'vault', versaoEsperada: daTela.versao })),
     };
     for (const [nome, r] of Object.entries(recusas)) expect(r, nome).toMatch(/^403 /);
     expect(recusas.alterar).toMatch(/^403 Esta nota vem da vault da casa/);
@@ -827,7 +827,7 @@ function casosContraOBanco(modoRls: boolean) {
     }).toEqual({ inalteradas: 'sem recibo: nada mudou', versao: 1, criadosPelaTela: 0 });
 
     const comum = {
-      alterar: await comoPessoa(() => rota.alterar(quem, daTela.id, { body: 'nota digitada e corrigida' })),
+      alterar: await comoPessoa(() => rota.alterar(quem, daTela.id, { body: 'nota digitada e corrigida', versaoEsperada: daTela.versao })),
       arquivar: await comoPessoa(() => rota.arquivar(quem, daTela.id, {})),
       restaurar: await comoPessoa(() => rota.restaurar(quem, daTela.id, {})),
     };
