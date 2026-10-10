@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { PautaEstrategiaHumanoPainelSchema, type PautaEstrategiaHumanoPainel, type PautaEstrategiaSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ContextKind, ContextSource } from '@prisma/client';
 import {
   chaveDaEstrategia,
@@ -67,6 +68,27 @@ export class EstrategiaService {
       this.log.warn(`meses da estratégia de ${orgId}: ${(e as Error).message}`);
       return [];
     }
+  }
+
+
+  async painelHumano(orgId: string, actorId: string, mes: string): Promise<PautaEstrategiaHumanoPainel> {
+    const leitura = { tipo: 'estrategia' as const, mes };
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, leitura);
+    const painel = await this.painel(orgId, mes); const n = r.notas.documento;
+    painel.documento = n && !n.arquivadoEm ? n.body : ''; painel.versao = n?.versao ?? null;
+    painel.atualizadoEm = n?.atualizadoEm ?? null; painel.origem = n?.sourceType ?? null;
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, leitura, r);
+    return PautaEstrategiaHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, mes, painel, destinos: r.destinos });
+  }
+  async salvarHumano(orgId: string, actorId: string, mes: string, entrada: PautaEstrategiaSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    if (mes !== entrada.mesEsperado) throw new ConflictException('O mês mudou desde a leitura.');
+    const corpo = entrada.documento.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_estrategia', mes }, entrada,
+      { kind: ContextKind.definicao, title: `Estratégia de ${mes}`, body: corpo, tags: ['pauta', 'estrategia'], sourceType: ContextSource.operador,
+        sourceRef: `pauta.estrategia · ${mes}`, motivo: 'estratégia do mês editada à mão' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.estrategia_salva', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { mes, versao: r.edicao.versao, caracteres: corpo.length } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
   }
 
   async painel(orgId: string, mes: string): Promise<PautaEstrategiaPainel> {

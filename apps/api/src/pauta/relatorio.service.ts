@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { PautaRelatorioHumanoPainelSchema, type PautaRelatorioHumanoPainel, type PautaRelatorioSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
+import { ConflictException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ActorType, ContextKind, ContextSource } from '@prisma/client';
 import {
   chaveDaEstrategia,
@@ -92,6 +93,27 @@ export class RelatorioService {
     } catch {
       return '';
     }
+  }
+
+
+  async painelHumano(orgId: string, actorId: string, mes: string): Promise<PautaRelatorioHumanoPainel> {
+    const leitura = { tipo: 'relatorio' as const, mes };
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, leitura);
+    const painel = await this.painel(orgId, mes); const n = r.notas.documento;
+    painel.documento = n && !n.arquivadoEm ? n.body : ''; painel.versao = n?.versao ?? null;
+    painel.atualizadoEm = n?.atualizadoEm ?? null; painel.origem = n?.sourceType ?? null;
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, leitura, r);
+    return PautaRelatorioHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, mes, painel, destinos: r.destinos });
+  }
+  async salvarHumano(orgId: string, actorId: string, mes: string, entrada: PautaRelatorioSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    if (mes !== entrada.mesEsperado) throw new ConflictException('O mês mudou desde a leitura.');
+    const corpo = entrada.documento.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_relatorio', mes }, entrada,
+      { kind: ContextKind.definicao, title: `Relatório de ${mes}`, body: corpo, tags: ['pauta', 'relatorio'], sourceType: ContextSource.operador,
+        sourceRef: `pauta.relatorio · ${mes}`, motivo: 'relatório do mês editado à mão' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.relatorio_salvo', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { mes, versao: r.edicao.versao, caracteres: corpo.length } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
   }
 
   async painel(orgId: string, mes: string): Promise<PautaRelatorioPainel> {

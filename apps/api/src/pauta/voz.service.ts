@@ -1,3 +1,4 @@
+import { PautaVozHumanoPainelSchema, type PautaVozHumanoPainel, type PautaVozSalvarHumanoInput, type PautaVozChaveHumanaInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
 import {
   BadRequestException,
   ConflictException,
@@ -102,6 +103,35 @@ export class VozService {
   async bloco(orgId: string, semPerfil: string = TOM_DA_CASA): Promise<string> {
     const nota = await this.vigente(orgId);
     return blocoDeVoz(nota?.body, { procedencia: nota ? procedenciaDoPerfil(nota) : undefined, semPerfil });
+  }
+
+
+  async painelHumano(orgId: string, actorId: string): Promise<PautaVozHumanoPainel> {
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'voz' });
+    if (!r.configuracao) throw new ConflictException('A configuração da voz não pôde ser conferida.');
+    const n = r.notas.perfil; const painel = await this.painel(orgId);
+    painel.chave = r.configuracao.chaveEfetiva; painel.origemDaChave = r.configuracao.origemEfetiva;
+    painel.perfil = n ? { id: n.id, corpo: n.body, versao: n.versao, procedencia: n.procedencia,
+      sourceType: n.sourceType, sourceRef: n.sourceRef, atualizadoEm: n.atualizadoEm, arquivado: !!n.arquivadoEm } : null;
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'voz' }, r);
+    return PautaVozHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, painel, destinos: r.destinos, configuracao: r.configuracao });
+  }
+  async salvarHumano(orgId: string, actorId: string, entrada: PautaVozSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const corpo = entrada.perfil.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_voz', chaveVozEsperada: entrada.chaveVozEsperada }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DO_PERFIL, body: corpo, tags: ['pauta', 'voz'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.voz · edição manual', motivo: entrada.motivo || 'perfil de voz editado à mão' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.voz_editada', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, caracteres: corpo.length } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
+  async definirChaveHumana(orgId: string, actorId: string, entrada: PautaVozChaveHumanaInput): Promise<PautaEscritaHumanaResultado> {
+    const chave = PautaChaveDaVozSchema.parse(entrada.chave);
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'mudar_chave_voz', chaveEfetivaEsperada: entrada.chaveEfetivaEsperada }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DA_CHAVE, body: chave, tags: ['pauta', 'voz'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.voz · chave', motivo: 'a voz da pauta passa a ler outra chave (MC10)' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.voz_chave', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { mudou: chave !== entrada.chaveEfetivaEsperada, versao: r.edicao.versao } }); return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
   }
 
   async painel(orgId: string): Promise<PautaVozPainel> {

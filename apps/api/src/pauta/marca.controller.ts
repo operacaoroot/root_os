@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import {
   PautaMarcaAplicarSchema, PautaMarcaDestinoSchema,
-  PautaMarcaSalvarSchema, PautaPilaresSalvarSchema,
+  PautaMarcaSalvarHumanoSchema, PautaPilaresSalvarHumanoSchema,
 } from '@mktos/shared';
 import { MarcaService } from './marca.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -19,9 +19,9 @@ export class MarcaController {
   constructor(private readonly marcas: MarcaService) {}
 
   @Get()
-  @RequirePermissions('pauta.ver')
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
   painel(@CurrentUser() user: JwtUser) {
-    return this.marcas.painel(user.orgId);
+    return this.marcas.painelHumano(user.orgId, user.sub);
   }
 
   @Get('projecao/:destino')
@@ -37,14 +37,14 @@ export class MarcaController {
   }
 
   @Put()
-  @RequirePermissions('pauta.editar')
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    return this.marcas.salvarPerfil(user.orgId, user.sub, PautaMarcaSalvarSchema.parse(body ?? {}));
+    return this.marcas.salvarPerfilHumano(user.orgId, user.sub, PautaMarcaSalvarHumanoSchema.parse(body ?? {}));
   }
 
   @Put('pilares')
-  @RequirePermissions('pauta.editar')
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvarPilares(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    return this.marcas.salvarPilares(user.orgId, user.sub, PautaPilaresSalvarSchema.parse(body ?? {}));
+    return this.marcas.salvarPilaresHumano(user.orgId, user.sub, PautaPilaresSalvarHumanoSchema.parse(body ?? {}));
   }
 }

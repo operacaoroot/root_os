@@ -50,3 +50,5 @@ export {
 } from './demonstracao-sintetica';
 
 export * from './procedimento-local';
+
+export * from './pauta-edicao-humana.js';

@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { OnboardingTemaHumanoPainelSchema, OnboardingRespostaHumanaResultadoSchema, normalizarRespostaHumanaDaCarga, type OnboardingTemaHumanoPainel, type OnboardingRespostaHumanaInput, type OnboardingRespostaHumanaResultado } from '@mktos/shared';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, SessionCanal } from '@prisma/client';
 
 import { AgentRuntime } from '../agents/agent-runtime.service';
@@ -7,6 +8,7 @@ import {
   SLUG_DO_ASSISTENTE,
   TEMAS_DA_CARGA,
   chaveDoTema,
+  temaPorId,
   precisaSemear,
   semearRoster,
   type ResumoDoRoster,
@@ -25,6 +27,7 @@ import {
 import {
   estadoDaCarga,
   notaDoTema,
+  normalizar,
   type EstadoDaCarga,
   type NotaDaCarga,
   type RespostaGravada,
@@ -298,6 +301,29 @@ export class OnboardingService {
    * o caminho é `alterar`, que produz uma versão nova com motivo próprio
    * (RF-M-01). É o que faz a carga poder ser reaberta sem sujar a memória.
    */
+
+  async temaHumano(orgId: string, actorId: string, temaId: string): Promise<OnboardingTemaHumanoPainel> {
+    const tema = temaPorId(temaId); if (!tema) throw new BadRequestException('Tema desconhecido.');
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'tema_carga', tema: temaId });
+    const n = r.notas.tema;
+    const carga = estadoDaCarga(n && !n.arquivadoEm ? [{ temaId, corpo: n.body, versao: n.versao }] : []);
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'tema_carga', tema: temaId }, r);
+    return OnboardingTemaHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, tema: temaId, rotulo: { titulo: tema.titulo, pergunta: tema.pergunta }, destino: r.destinos.tema,
+      usoNaCarga: { contaComoRespondido: carga.respondidos.includes(temaId), precisaAprofundar: carga.proxima?.temaId === temaId && carga.proxima.modo === 'aprofundar' } });
+  }
+  async responderHumano(orgId: string, actorId: string, entrada: OnboardingRespostaHumanaInput): Promise<OnboardingRespostaHumanaResultado> {
+    const nota = notaDoTema(entrada.tema, entrada.resposta);
+    const normalizada = normalizar(entrada.resposta);
+    if (nota.corpo !== normalizada || normalizada !== normalizarRespostaHumanaDaCarga(entrada.resposta)) {
+      throw new BadRequestException('A resposta tem no máximo 4.000 pontos de código. Encurte o texto antes de salvar.');
+    }
+    const resultado = await this.memoria.gravarTemaHumano(orgId, actorId, entrada.tema, entrada,
+      { title: nota.titulo, body: nota.corpo, kind: nota.kind, tags: nota.tags, sourceType: nota.sourceType,
+        sourceRef: nota.sourceRef, motivo: `${nota.motivo} (resposta revista)` });
+    return OnboardingRespostaHumanaResultadoSchema.parse({ resultado, tema: entrada.tema, estado: null, espelho: 'nao_conferido' });
+  }
+
   async responder(
     orgId: string,
     temaId: string,

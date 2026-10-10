@@ -1,3 +1,5 @@
+import { OnboardingRespostaHumanaSchema } from '@mktos/shared';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import {
   BadRequestException,
   Body,
@@ -7,6 +9,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -310,13 +313,20 @@ export class OnboardingController {
    * e é a certa: o que esta rota faz é escrever nota de contexto. Usar uma
    * permissão própria criaria uma segunda porta para a mesma escrita.
    */
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, AcessoAtualGuard)
+  @Get('carga/temas/:tema')
+  @RequirePermissions('obsidian.ver')
+  temaHumano(@CurrentUser() user: JwtUser, @Param('tema') tema: string) {
+    return this.svc.temaHumano(user.orgId, user.sub, tema);
+  }
+
+  @UseGuards(JwtAuthGuard, AcessoAtualGuard)
   @Post('carga/resposta')
-  @RequirePermissions('obsidian.editar')
+  @RequirePermissions('obsidian.ver', 'obsidian.editar')
   async responder(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    const { tema, resposta } = RespostaSchema.parse(body);
+    const entrada = OnboardingRespostaHumanaSchema.parse(body);
     try {
-      return await this.svc.responder(user.orgId, tema, resposta);
+      return await this.svc.responderHumano(user.orgId, user.sub, entrada);
     } catch (e) {
       if (e instanceof TemaDesconhecidoError || e instanceof RespostaVaziaError) {
         throw new BadRequestException((e as Error).message);

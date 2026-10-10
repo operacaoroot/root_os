@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES } from '@mktos/shared';
+import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES,
+  PAUTA_CHAVE_DA_GRADE, PAUTA_CHAVE_DA_AUTOMACAO, PAUTA_CHAVE_DA_CHAVE_DA_VOZ,
+  PAUTA_CHAVE_DA_VOZ_PADRAO, chaveDaEstrategia, chaveDoRelatorio, PautaMesSchema,
+  PautaChaveDaVozSchema, PautaEscritaHumanaBaseSchema, PautaEscritaHumanaResultadoSchema,
+  type PautaEscritaHumanaBase, type PautaEscritaHumanaResultado, type PautaDestinoFisico, type PautaAutomacao,
+} from '@mktos/shared';
+import { chaveDoTema, temaPorId } from '../agents/roster/carregador-de-contexto';
+import type { z } from 'zod';
+type BrandbookEnvelope = z.infer<typeof BrandbookEnvelopeSchema>;
 import { ESCRITA_DO_BRANDBOOK, BrandbookEnvelopeSchema } from './brandbook-escrita';
 import type { M05EscopoDto, M05FonteAutorizadaDto } from '@mktos/shared';
 import { construirFonteAutorizada } from './fonte-autorizada';
@@ -19,7 +27,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
-import { exigirAcessoAtual, filtroDeLeitura, leitorDoContexto, leitorAutorizado } from './acesso-memoria';
+import { exigirAcessoAtual, filtroDeLeitura, leitorDoContexto, leitorAutorizado, podeLerFonte } from './acesso-memoria';
 import { EventLogService, sigiloso } from '../gateway/event-log.service';
 import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
@@ -135,7 +143,23 @@ export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & {
   versaoEsperada?: number;
 };
 
-type IntencaoHumanaDaNota = { actorId: string; versaoEsperada: number };
+type IntencaoHumanaDaNota = { actorId: string; versaoEsperada: number; produtor?: 'pauta_editar' | 'pauta_publicar' | 'carga' };
+export type LeituraHumanaDoDestino = { tipo: 'marca' | 'voz' | 'grade' } | { tipo: 'estrategia' | 'relatorio'; mes: string }
+  | { tipo: 'interruptor'; qual: PautaAutomacao } | { tipo: 'tema_carga'; tema: string };
+export type CausaHumanaDoProdutor = { acao: 'salvar_perfil_marca' | 'salvar_pilares' | 'salvar_grade' }
+  | { acao: 'salvar_estrategia' | 'salvar_relatorio'; mes: string } | { acao: 'mudar_interruptor'; qual: PautaAutomacao }
+  | { acao: 'salvar_voz'; chaveVozEsperada: string } | { acao: 'mudar_chave_voz'; chaveEfetivaEsperada: string }
+  | { acao: 'responder_tema'; tema: string };
+export type DadosDoProdutorHumano = Pick<EntradaDeNota, 'title' | 'body' | 'kind' | 'tags' | 'sourceType' | 'sourceRef' | 'motivo'>;
+export interface DestinosHumanos {
+  escopo: { orgId: string; actorId: string };
+  autoridade: { ler: true; editar: boolean; verificadaEm: string };
+  observadoEm: string;
+  notas: Record<string, NotaDeContexto | null>;
+  destinos: Record<string, PautaDestinoFisico>;
+  configuracao: { chaveEfetiva: string; origemEfetiva: 'empresa' | 'padrao' } | null;
+  livro: { id: string; versao: number; ativo: BrandbookEnvelope['ativo'] } | null;
+}
 
 /** Escrita de uma nota derivada de outra, validando as duas no mesmo cadeado. */
 export interface ProjecaoCondicionada {
@@ -1800,6 +1824,233 @@ export class MemoriaService {
     }
   }
 
+  /** Leitura humana física: recusa atual nunca vira ausência. */
+  async lerDestinosHumanos(orgId: string, actorId: string, leitura: LeituraHumanaDoDestino): Promise<DestinosHumanos> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    const permissoes = leitura.tipo === 'tema_carga' ? ['obsidian.ver'] : ['obsidian.ver', 'pauta.ver'];
+    const retrato = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      const keys = await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+      const notas: Record<string, NotaDeContexto | null> = {};
+      const destinos: Record<string, PautaDestinoFisico> = {};
+      let livro: { id: string; versao: number; ativo: BrandbookEnvelope['ativo'] } | null = null;
+      let configuracao: { chaveEfetiva: string; origemEfetiva: 'empresa' | 'padrao' } | null = null;
+      const ler = async (nome: string, chave: string) => {
+        const linha = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, chave);
+        notas[nome] = linha ? paraNota(linha, false) : null;
+        destinos[nome] = this.destinoFisicoDoProdutor(chave, linha);
+      };
+      switch (leitura.tipo) {
+        case 'marca': {
+          await ler('perfil', PAUTA_CHAVE_DA_MARCA); await ler('pilares', PAUTA_CHAVE_DOS_PILARES);
+          const l = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, BRANDBOOK_CHAVE);
+          if (l) {
+            if (l.arquivadoEm || l.acessoRestrito) throw new ConflictException('O brandbook foi arquivado ou teve o acesso alterado.');
+            let envelope: BrandbookEnvelope;
+            try { envelope = BrandbookEnvelopeSchema.parse(JSON.parse(l.body)); }
+            catch { throw new ConflictException('O brandbook está inválido. Confira o livro antes de continuar.'); }
+            livro = { id: l.id, versao: l.versao, ativo: envelope.ativo };
+          }
+          break;
+        }
+        case 'voz': {
+          const { chaveDaVozDaNota } = await import('../pauta/voz-da-pauta');
+          await ler('configuracao', PAUTA_CHAVE_DA_CHAVE_DA_VOZ);
+          const chave = chaveDaVozDaNota(notas.configuracao);
+          configuracao = { chaveEfetiva: chave ?? PAUTA_CHAVE_DA_VOZ_PADRAO, origemEfetiva: chave ? 'empresa' : 'padrao' };
+          await ler('perfil', configuracao.chaveEfetiva); break;
+        }
+        case 'estrategia': await ler('documento', chaveDaEstrategia(PautaMesSchema.parse(leitura.mes))); break;
+        case 'relatorio': await ler('documento', chaveDoRelatorio(PautaMesSchema.parse(leitura.mes))); break;
+        case 'grade': await ler('grade', PAUTA_CHAVE_DA_GRADE); break;
+        case 'interruptor': await ler('interruptor', PAUTA_CHAVE_DA_AUTOMACAO[leitura.qual]); break;
+        case 'tema_carga': {
+          if (!temaPorId(leitura.tema)) throw new BadRequestException('Tema desconhecido.');
+          await ler('tema', chaveDoTema(leitura.tema)); break;
+        }
+      }
+      await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+      const editar = keys.has(leitura.tipo === 'tema_carga' ? 'obsidian.editar' : leitura.tipo === 'interruptor' ? 'pauta.publicar' : 'pauta.editar');
+      const observadoEm = new Date().toISOString();
+      return { escopo: { orgId, actorId }, autoridade: { ler: true as const, editar, verificadaEm: observadoEm },
+        observadoEm, notas, destinos, livro, configuracao };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirAtorDoProdutor(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, permissoes);
+    return retrato;
+  }
+
+  async reconferirDestinosHumanos(orgId: string, actorId: string, leitura: LeituraHumanaDoDestino, anterior: DestinosHumanos): Promise<DestinosHumanos> {
+    const atual = await this.lerDestinosHumanos(orgId, actorId, leitura);
+    if (JSON.stringify([atual.destinos, atual.configuracao, atual.livro]) !== JSON.stringify([anterior.destinos, anterior.configuracao, anterior.livro])) {
+      throw new ConflictException('O contexto mudou durante a leitura. Recarregue antes de editar.');
+    }
+    return atual;
+  }
+
+  async gravarPautaHumana(orgId: string, actorId: string, causa: CausaHumanaDoProdutor,
+    entrada: PautaEscritaHumanaBase, dados: DadosDoProdutorHumano): Promise<PautaEscritaHumanaResultado> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    const base = PautaEscritaHumanaBaseSchema.parse({ escopoEsperado: entrada.escopoEsperado,
+      baseEsperada: entrada.baseEsperada, versaoEsperada: entrada.versaoEsperada, reativar: entrada.reativar });
+    if (base.escopoEsperado.orgId !== orgId || base.escopoEsperado.actorId !== actorId) throw new ForbiddenException('O escopo mudou. Reabra a edição.');
+    const produtor = causa.acao === 'responder_tema' ? 'carga' : causa.acao === 'mudar_interruptor' ? 'pauta_publicar' : 'pauta_editar';
+    const permissoes = this.permissoesDoProdutor(produtor);
+    const motivo = dados.motivo ?? null;
+    let compromisso: { edicao: { itemId: string; versionId: string; versao: number };
+      reativacao: PautaEscritaHumanaResultado['reativacao']; item: LinhaDaNota;
+      eventos: Array<{ item: LinhaDaNota; anterior: LinhaDaNota | null; versao: { id: string; versao: number }; mudanca: ContextChange }> };
+    try {
+      compromisso = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+        const chave = await this.chaveDoProdutorNoTx(tx, orgId, actorId, causa);
+        if (chave !== base.baseEsperada.chave) throw new ConflictException('O destino mudou desde a leitura.');
+        const atual = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, chave, true);
+        this.conferirBaseDoProdutor(atual, base);
+        if (ehChaveDaVault(chave) || atual?.sourceType === ContextSource.vault || dados.sourceType === ContextSource.vault) {
+          throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+        }
+        this.conferirEscritorDaMarca(chave);
+        await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
+        if (atual?.leitores?.length) await tx.$queryRaw`
+          SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...new Set(atual.leitores)].sort())}) ORDER BY id FOR SHARE`;
+        await this.conferirLeitores(tx, orgId, atual?.leitores);
+        if (!dados.title.trim()) throw new BadRequestException('A nota precisa de título.');
+        this.exigirProcedencia(dados.sourceType);
+        const ator = { actorType: ActorType.user, actorId };
+        const eventos: typeof compromisso.eventos = [];
+        let item: LinhaDaNota;
+        let versao: { id: string; versao: number };
+        if (!atual) {
+          item = await tx.contextItem.create({ data: { orgId, chave, body: dados.body, sourceType: dados.sourceType,
+            title: dados.title.trim(), kind: dados.kind ?? ContextKind.nota, tags: dados.tags ?? [],
+            sourceRef: dados.sourceRef ?? null, contentHash: hashDoCorpo(dados.body), versao: 1,
+            criadoPor: actorId, atualizadoPor: actorId }, select: SELECAO_DA_NOTA });
+          versao = await this.versaoCriadaDoProdutorNoTx(tx, orgId, item, ator, motivo);
+          eventos.push({ item, anterior: null, versao, mudanca: ContextChange.criacao });
+        } else {
+          const e = await this.gravarVersaoNoTx(tx, { orgId, id: atual.id, mudanca: ContextChange.alteracao, ator,
+            intencaoHumana: { actorId, versaoEsperada: atual.versao, produtor },
+            montar: () => ({ dados: { kind: dados.kind ?? atual.kind, title: dados.title.trim(), body: dados.body,
+              tags: dados.tags ?? atual.tags, sourceType: dados.sourceType, sourceRef: dados.sourceRef ?? null,
+              contentHash: hashDoCorpo(dados.body), atualizadoPor: actorId }, motivo }),
+            noCadeado: async (db, antes, depois) => {
+              if (antes.contentHash !== depois.contentHash) await db.$executeRaw`
+                UPDATE "ContextItem" SET embedding=NULL WHERE id=${depois.id} AND "orgId"=${orgId}`;
+            } });
+          item = e.item; versao = e.versao;
+          eventos.push({ ...e, mudanca: ContextChange.alteracao });
+        }
+        const edicao = { itemId: item.id, versionId: versao.id, versao: versao.versao };
+        let reativacao: PautaEscritaHumanaResultado['reativacao'] = { solicitada: false, estado: 'nao_solicitada', versao: null, versionId: null };
+        if (base.reativar) {
+          const r = await this.gravarVersaoNoTx(tx, { orgId, id: item.id, mudanca: ContextChange.restauracao, ator,
+            intencaoHumana: { actorId, versaoEsperada: versao.versao, produtor },
+            montar: (linha) => {
+              if (!linha.arquivadoEm) throw new ConflictException('Esta nota não está arquivada.');
+              return { dados: { arquivadoEm: null, arquivadoPor: null, atualizadoPor: actorId }, motivo };
+            } });
+          item = r.item; eventos.push({ ...r, mudanca: ContextChange.restauracao });
+          reativacao = { solicitada: true, estado: 'concluida', versao: r.versao.versao, versionId: r.versao.id };
+        }
+        await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+        this.exigirAtorDoProdutor(orgId, actorId);
+        return { edicao, reativacao, item, eventos };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (e) { throw this.traduzirChaveRepetida(e, base.baseEsperada.chave); }
+    for (const e of compromisso.eventos) await this.registrarMudanca({ orgId, mudanca: e.mudanca,
+      item: e.item, anterior: e.anterior, versaoId: e.versao.id, versaoNumero: e.versao.versao, motivo });
+    const r = { escopo: { orgId, actorId }, acao: causa.acao,
+      baseAplicada: { baseEsperada: base.baseEsperada, versaoEsperada: base.versaoEsperada },
+      edicao: compromisso.edicao, reativacao: compromisso.reativacao, resultado: 'concluido' as const, atomicidade: 'commit_unico' as const,
+      destinoFinal: this.destinoFisicoDoProdutor(compromisso.item.chave, compromisso.item), registroMudanca: 'nao_conferido' as const };
+    return this.reconferirResultadoHumanoDoProdutor(orgId, actorId, PautaEscritaHumanaResultadoSchema.parse(r));
+  }
+
+  async reconferirResultadoHumanoDoProdutor(orgId: string, actorId: string, resultado: PautaEscritaHumanaResultado): Promise<PautaEscritaHumanaResultado> {
+    this.exigirAtorDoProdutor(orgId, actorId);
+    if (resultado.escopo.orgId !== orgId || resultado.escopo.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+    const produtor = resultado.acao === 'responder_tema' ? 'carga' : resultado.acao === 'mudar_interruptor' ? 'pauta_publicar' : 'pauta_editar';
+    const permissoes = this.permissoesDoProdutor(produtor);
+    const final = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await this.travarAutoridadeDoProdutorNoTx(tx, orgId, actorId, permissoes);
+      const linha = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, resultado.baseAplicada.baseEsperada.chave);
+      if (!linha || linha.id !== resultado.edicao.itemId) throw new ConflictException('A nota gravada não pôde ser conferida.');
+      return this.destinoFisicoDoProdutor(linha.chave, linha);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirAtorDoProdutor(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, permissoes);
+    return PautaEscritaHumanaResultadoSchema.parse({ ...resultado, destinoFinal: final });
+  }
+
+  async gravarTemaHumano(orgId: string, actorId: string, tema: string,
+    entrada: PautaEscritaHumanaBase, dados: DadosDoProdutorHumano): Promise<PautaEscritaHumanaResultado> {
+    return this.gravarPautaHumana(orgId, actorId, { acao: 'responder_tema', tema }, entrada, dados);
+  }
+
+  private exigirAtorDoProdutor(orgId: string, actorId: string): void {
+    const ctx = contextoAtual();
+    if (!orgId || !actorId || ctx?.actorType !== ActorType.user || ctx.orgId !== orgId || ctx.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+  }
+  private permissoesDoProdutor(produtor?: IntencaoHumanaDaNota['produtor']): string[] {
+    return ['obsidian.ver', produtor === 'pauta_editar' ? 'pauta.editar' : produtor === 'pauta_publicar' ? 'pauta.publicar' : 'obsidian.editar'];
+  }
+  private async notaFisicaDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, chave: string, escrita = false): Promise<LinhaDaNota | null> {
+    if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${chave} FOR UPDATE`;
+    else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${chave} FOR SHARE`;
+    const linha = await tx.contextItem.findFirst({ where: { orgId, chave }, select: SELECAO_DA_NOTA });
+    if (!linha) return null;
+    if (!podeLerFonte(linha, actorId)) throw new ForbiddenException('Acesso à nota insuficiente.');
+    const ultima = await tx.contextItemVersion.findFirst({ where: { orgId, itemId: linha.id }, orderBy: { versao: 'desc' }, select: { versao: true } });
+    if (!ultima || linha.versao !== ultima.versao || !Number.isSafeInteger(linha.versao) || linha.versao < 1) throw new ConflictException('A versão da nota diverge do histórico.');
+    return linha;
+  }
+  private destinoFisicoDoProdutor(chave: string, linha: LinhaDaNota | null): PautaDestinoFisico {
+    if (!linha) return { estado: 'ausente', tipo: 'nota_memoria', chave, itemId: null, versao: null, kind: null, arquivada: null, origem: null, conteudo: null };
+    return { estado: 'existente', tipo: 'nota_memoria', chave: linha.chave, itemId: linha.id, versao: linha.versao, kind: linha.kind,
+      arquivada: !!linha.arquivadoEm, origem: { tipo: linha.sourceType, referencia: linha.sourceRef }, conteudo: { titulo: linha.title, corpo: linha.body } };
+  }
+  private conferirBaseDoProdutor(atual: LinhaDaNota | null, entrada: PautaEscritaHumanaBase): void {
+    const b = entrada.baseEsperada;
+    if (b.estado === 'ausente') {
+      if (atual) throw new ConflictException('A nota foi criada desde a leitura. Confira a versão atual.');
+      return;
+    }
+    if (!atual || atual.id !== b.itemId || atual.chave !== b.chave || atual.versao !== entrada.versaoEsperada || atual.kind !== b.kind ||
+      !!atual.arquivadoEm !== b.arquivada || atual.sourceType !== b.origem.tipo || atual.sourceRef !== b.origem.referencia) {
+      throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+    }
+  }
+  private async chaveDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, causa: CausaHumanaDoProdutor): Promise<string> {
+    switch (causa.acao) {
+      case 'salvar_perfil_marca': return PAUTA_CHAVE_DA_MARCA;
+      case 'salvar_pilares': return PAUTA_CHAVE_DOS_PILARES;
+      case 'salvar_grade': return PAUTA_CHAVE_DA_GRADE;
+      case 'mudar_interruptor': return PAUTA_CHAVE_DA_AUTOMACAO[causa.qual];
+      case 'salvar_estrategia': return chaveDaEstrategia(PautaMesSchema.parse(causa.mes));
+      case 'salvar_relatorio': return chaveDoRelatorio(PautaMesSchema.parse(causa.mes));
+      case 'responder_tema':
+        if (!temaPorId(causa.tema)) throw new BadRequestException('Tema desconhecido.');
+        return chaveDoTema(causa.tema);
+      case 'salvar_voz': case 'mudar_chave_voz': {
+        const { chaveDaVozDaNota } = await import('../pauta/voz-da-pauta');
+        const configuracao = await this.notaFisicaDoProdutorNoTx(tx, orgId, actorId, PAUTA_CHAVE_DA_CHAVE_DA_VOZ);
+        const efetiva = chaveDaVozDaNota(configuracao) ?? PAUTA_CHAVE_DA_VOZ_PADRAO;
+        const esperada = causa.acao === 'salvar_voz' ? causa.chaveVozEsperada : causa.chaveEfetivaEsperada;
+        if (efetiva !== PautaChaveDaVozSchema.parse(esperada)) throw new ConflictException('A chave da voz mudou desde a leitura.');
+        return causa.acao === 'salvar_voz' ? efetiva : PAUTA_CHAVE_DA_CHAVE_DA_VOZ;
+      }
+    }
+  }
+  private async versaoCriadaDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, item: LinhaDaNota,
+    ator: { actorType: string; actorId: string }, motivo: string | null): Promise<{ id: string; versao: number }> {
+    return tx.contextItemVersion.create({ data: { orgId, itemId: item.id, versao: 1, mudanca: ContextChange.criacao,
+      kind: item.kind, title: item.title, body: item.body, sourceType: item.sourceType, sourceRef: item.sourceRef,
+      contentHash: item.contentHash, motivo, autorTipo: ator.actorType, autorId: ator.actorId }, select: { id: true, versao: true } });
+  }
+
   private exigirIntencaoHumana(orgId: string, actorId: string, versaoEsperada: number): IntencaoHumanaDaNota {
     if (!Number.isSafeInteger(versaoEsperada) || versaoEsperada < 1) {
       throw new BadRequestException('Informe a versão esperada da nota.');
@@ -1814,14 +2065,19 @@ export class MemoriaService {
   /** Somente concessões cujas linhas foram travadas satisfazem a escrita humana. */
   private async travarAcessoHumano(tx: Prisma.TransactionClient, orgId: string, intencao: IntencaoHumanaDaNota): Promise<void> {
     this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    await this.travarAutoridadeDoProdutorNoTx(tx, orgId, intencao.actorId, this.permissoesDoProdutor(intencao.produtor));
+  }
+
+  private async travarAutoridadeDoProdutorNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, permissoes: string[]): Promise<Set<string>> {
+    this.exigirAtorDoProdutor(orgId, actorId);
     const orgs = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
     const pessoas = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "User" WHERE id=${intencao.actorId} AND "orgId"=${orgId} AND "isActive" ORDER BY id FOR SHARE`;
+      SELECT id FROM "User" WHERE id=${actorId} AND "orgId"=${orgId} AND "isActive" ORDER BY id FOR SHARE`;
     if (orgs.length !== 1 || pessoas.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
     const vinculos = await tx.$queryRaw<Array<{ roleId: string }>>`
       SELECT ur."A" AS "roleId" FROM "_UserRoles" ur JOIN "Role" r ON r.id=ur."A"
-      WHERE ur."B"=${intencao.actorId} AND r."orgId"=${orgId} ORDER BY ur."A",ur."B" FOR SHARE OF ur`;
+      WHERE ur."B"=${actorId} AND r."orgId"=${orgId} ORDER BY ur."A",ur."B" FOR SHARE OF ur`;
     const roleIds = [...new Set(vinculos.map((v) => v.roleId))].sort();
     if (!roleIds.length) throw new ForbiddenException('Acesso insuficiente.');
     const roles = await tx.$queryRaw<Array<{ id: string }>>`
@@ -1832,13 +2088,14 @@ export class MemoriaService {
       WHERE rp."B" IN (${Prisma.join(roleIds)}) ORDER BY rp."B",rp."A" FOR SHARE OF rp`;
     const permissionIds = [...new Set(concessoes.map((c) => c.permissionId))].sort();
     if (!permissionIds.length) throw new ForbiddenException('Acesso insuficiente.');
-    const permissoes = await tx.$queryRaw<Array<{ id: string; key: string }>>`
+    const linhasPermissoes = await tx.$queryRaw<Array<{ id: string; key: string }>>`
       SELECT id,key FROM "Permission" WHERE id IN (${Prisma.join(permissionIds)}) ORDER BY id FOR SHARE`;
-    const keys = new Set(permissoes.map((p) => p.key));
-    if (permissoes.length !== permissionIds.length || !keys.has('obsidian.ver') || !keys.has('obsidian.editar')) {
+    const keys = new Set(linhasPermissoes.map((p) => p.key));
+    if (linhasPermissoes.length !== permissionIds.length || !permissoes.every((p) => keys.has(p))) {
       throw new ForbiddenException('Acesso insuficiente.');
     }
-    await exigirAcessoAtual(tx, orgId, intencao.actorId, ['obsidian.ver', 'obsidian.editar']);
+    await exigirAcessoAtual(tx, orgId, actorId, permissoes);
+    return keys;
   }
 
   private async entregarAoHumano(orgId: string, id: string, intencao: IntencaoHumanaDaNota): Promise<NotaDeContexto> {
@@ -1916,10 +2173,31 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, conferir, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${args.orgId}`}))`;
+      return this.gravarVersaoNoTx(tx, args);
+    }, args.intencaoHumana ? { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } : undefined);
+  }
 
+  private async gravarVersaoNoTx(tx: Prisma.TransactionClient, args: {
+    orgId: string;
+    id: string;
+    mudanca: ContextChange;
+    ator: { actorType: string; actorId: string | null };
+    autorizacao?: symbol;
+    intencaoHumana?: IntencaoHumanaDaNota;
+    conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
+    montar: (atual: LinhaDaNota) => {
+      dados: Prisma.ContextItemUncheckedUpdateInput;
+      motivo: string | null;
+    };
+    noCadeado?: (tx: Prisma.TransactionClient, antes: LinhaDaNota, depois: LinhaDaNota) => Promise<void>;
+  }): Promise<{
+    item: LinhaDaNota;
+    anterior: LinhaDaNota;
+    versao: { id: string; versao: number };
+  }> {
+    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, conferir, montar, noCadeado } = args;
       if (intencaoHumana) {
         await this.travarAcessoHumano(tx, orgId, intencaoHumana);
         await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${id} AND "orgId"=${orgId} FOR UPDATE`;
@@ -2012,10 +2290,9 @@ export class MemoriaService {
       await noCadeado?.(tx, atual, item);
       if (intencaoHumana) {
         this.exigirIntencaoHumana(orgId, intencaoHumana.actorId, intencaoHumana.versaoEsperada);
-        await exigirAcessoAtual(tx, orgId, intencaoHumana.actorId, ['obsidian.ver', 'obsidian.editar']);
+        await exigirAcessoAtual(tx, orgId, intencaoHumana.actorId, this.permissoesDoProdutor(intencaoHumana.produtor));
       }
       return { item, anterior: atual, versao };
-    }, intencaoHumana ? { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } : undefined);
   }
 
   /** A recusa amigável de chave repetida, num lugar só. */

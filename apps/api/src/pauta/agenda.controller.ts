@@ -1,17 +1,18 @@
 import { Body, Controller, Get, NotFoundException, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import {
   PAUTA_AUTOMACOES,
-  PautaAutomacaoSalvarSchema,
+  PautaAutomacaoSalvarHumanoSchema,
   PautaDiaCivilSchema,
   type PautaAutomacao,
   PautaDistribuirSchema,
-  PautaGradeSalvarSchema,
+  PautaGradeSalvarHumanoSchema,
   PautaMarcarPostadaSchema,
   PautaReagendarSchema,
 } from '@mktos/shared';
 import { AgendaService } from './agenda.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -32,23 +33,34 @@ export class AgendaController {
   }
 
   @Get('agenda/grade')
-  @RequirePermissions('pauta.ver')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
   grade(@CurrentUser() user: JwtUser) {
-    return this.agenda.grade(user.orgId);
+    return this.agenda.gradeHumana(user.orgId, user.sub);
   }
 
   @Put('agenda/grade')
-  @RequirePermissions('pauta.editar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvarGrade(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    return this.agenda.salvarGrade(user.orgId, user.sub, PautaGradeSalvarSchema.parse(body ?? {}));
+    return this.agenda.salvarGradeHumano(user.orgId, user.sub, PautaGradeSalvarHumanoSchema.parse(body ?? {}));
+  }
+
+  @Get('automacao/:qual')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
+  automacao(@CurrentUser() user: JwtUser, @Param('qual') qual: string) {
+    if (!(PAUTA_AUTOMACOES as readonly string[]).includes(qual)) throw new NotFoundException('Interruptor desconhecido: é publicacao ou dm.');
+    return this.agenda.automacaoHumana(user.orgId, user.sub, qual as PautaAutomacao);
   }
 
   /** D-MD1: liga ou desliga a publicação ou a DM automática da empresa (a nota da memória), com motivo. */
   @Put('automacao/:qual')
-  @RequirePermissions('pauta.publicar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.publicar', 'obsidian.ver')
   ligarAutomacao(@CurrentUser() user: JwtUser, @Param('qual') qual: string, @Body() body: unknown) {
     if (!(PAUTA_AUTOMACOES as readonly string[]).includes(qual)) throw new NotFoundException('Interruptor desconhecido: é publicacao ou dm.');
-    return this.agenda.ligarAutomacao(user.orgId, user.sub, qual as PautaAutomacao, PautaAutomacaoSalvarSchema.parse(body ?? {}));
+    return this.agenda.ligarAutomacaoHumano(user.orgId, user.sub, qual as PautaAutomacao, PautaAutomacaoSalvarHumanoSchema.parse(body ?? {}));
   }
 
   @Post('episodios/:id/agenda/distribuir')

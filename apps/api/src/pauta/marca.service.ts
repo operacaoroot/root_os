@@ -1,3 +1,4 @@
+import { PautaMarcaHumanoPainelSchema, type PautaMarcaHumanoPainel, type PautaMarcaSalvarHumanoInput, type PautaPilaresSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ContextKind, ContextSource } from '@prisma/client';
 import {
@@ -94,6 +95,55 @@ export class MarcaService {
       procedenciaPilares: notaPilares && pilares.length && vinculoPilares?.atual
         ? procedenciaDaMarca(notaPilares) : undefined,
     });
+  }
+
+
+  async painelHumano(orgId: string, actorId: string): Promise<PautaMarcaHumanoPainel> {
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'marca' });
+    const notaMarca = r.notas.perfil; const notaPilares = r.notas.pilares;
+    let painel: PautaMarcaPainel;
+    if (r.livro?.ativo) {
+      const d = r.livro.ativo.documento; const texto = textoDosPilares(d);
+      const pilares = lerPilaresDoTexto(texto).pilares;
+      const procedencia = `brandbook aprovado · sha256:${r.livro.ativo.draftHash.slice(0, 12)}`;
+      painel = { perfil: d.perfilParaPauta, perfilVersao: r.livro.versao, perfilAtualizadoEm: r.livro.ativo.aprovadoEm,
+        pilaresTexto: texto, pilaresVersao: r.livro.versao, pilares, avisos: [],
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }), projecoes: { perfil: null, pilares: null } };
+    } else {
+      const m = marcaDaNota(notaMarca); const p = pilaresDaNota(notaPilares);
+      const [perfil, pilares] = await Promise.all([this.vinculoDaNota(orgId, notaMarca), this.vinculoDaNota(orgId, notaPilares)]);
+      painel = { perfil: m.perfil, perfilVersao: m.versao, perfilAtualizadoEm: notaMarca?.atualizadoEm ?? null,
+        pilaresTexto: p.texto, pilaresVersao: p.versao, pilares: p.pilares, avisos: [...m.avisos, ...p.avisos],
+        bloco: blocoDeMarca(m.perfil, p.pilares, { procedencia: notaMarca && m.perfil
+          ? procedenciaDaMarca({ ...notaMarca, sourceRef: perfil?.atual ? notaMarca.sourceRef : null }) : undefined,
+          procedenciaPilares: notaPilares && p.pilares.length && pilares?.atual ? procedenciaDaMarca(notaPilares) : undefined }),
+        projecoes: { perfil, pilares } };
+    }
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'marca' }, r);
+    return PautaMarcaHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, painel, destinos: r.destinos, origemEfetiva: r.livro?.ativo
+        ? { tipo: 'brandbook', brandbook: { id: r.livro.id, versao: r.livro.versao, draftHash: r.livro.ativo.draftHash } }
+        : { tipo: 'legado', brandbook: null } });
+  }
+
+  async salvarPerfilHumano(orgId: string, actorId: string, entrada: PautaMarcaSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const corpo = entrada.perfil.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_perfil_marca' }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DA_MARCA, body: corpo, tags: ['pauta', 'marca'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.marca · edição manual', motivo: 'perfil da marca editado à mão (MK1)' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.marca_salva', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, caracteres: corpo.length } });
+    return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
+  async salvarPilaresHumano(orgId: string, actorId: string, entrada: PautaPilaresSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const corpo = entrada.pilares.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_pilares' }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DOS_PILARES, body: corpo, tags: ['pauta', 'marca', 'pilares'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.marca.pilares · edição manual', motivo: 'pilares de conteúdo editados à mão (MK1)' });
+    const p = lerPilaresDoTexto(corpo);
+    await this.audit.log({ orgId, actorId, action: 'pauta.pilares_salvos', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, pilares: p.pilares.map((v) => v.chave), avisos: p.avisos.length } });
+    return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
   }
 
   async painel(orgId: string): Promise<PautaMarcaPainel> {

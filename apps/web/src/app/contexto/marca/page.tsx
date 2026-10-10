@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  BrandbookDocumentoSchema,
+  PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES, BrandbookDocumentoSchema, PautaMarcaHumanoPainelSchema, PautaMarcaSalvarHumanoSchema, PautaPilaresSalvarHumanoSchema,
   type BrandbookDocumento,
   type BrandbookPainel,
   type BrandbookPrevia,
@@ -22,6 +22,7 @@ import { BookOpen, Plus, Pencil } from 'lucide-react';
 import { LivroDaMarca } from './LivroDaMarca';
 import { CriadorDoBrandbook } from './CriadorDoBrandbook';
 import { aplicarColeta, copiarBrandbook, novoBrandbook } from './brandbook-formulario';
+import { useEdicaoHumana, ConferenciaEdicaoHumana } from '../../pauta/InterruptorDaAutomacao';
 
 /* Perfil e pilares existentes permanecem separados. O livro aprovado tem
  * preferência na Pauta; o criador salva rascunho e exige uma prévia revisada. */
@@ -51,9 +52,12 @@ export default function MarcaPage() {
   const revisaoPrevia = useRef<Record<PautaMarcaDestino, number>>({ perfil: 0, pilares: 0 });
   const revisaoPainel = useRef(0);
   const escritaEmCurso = useRef<symbol | null>(null);
-  const [painel, setPainel] = useState<PautaMarcaPainel | null>(null);
-  const [perfil, setPerfil] = useState('');
-  const [pilares, setPilares] = useState('');
+  const perfilEditor = useEdicaoHumana({ token, path: '/pauta/marca', schema: PautaMarcaHumanoPainelSchema,
+    destino: p => p.destinos.perfil, texto: p => p.destinos.perfil.estado === 'existente' ? p.destinos.perfil.conteudo.corpo : '', conferir: p => p.destinos.perfil.chave === PAUTA_CHAVE_DA_MARCA && p.destinos.pilares.chave === PAUTA_CHAVE_DOS_PILARES });
+  const pilaresEditor = useEdicaoHumana({ token, path: '/pauta/marca', schema: PautaMarcaHumanoPainelSchema,
+    destino: p => p.destinos.pilares, texto: p => p.destinos.pilares.estado === 'existente' ? p.destinos.pilares.conteudo.corpo : '', conferir: p => p.destinos.perfil.chave === PAUTA_CHAVE_DA_MARCA && p.destinos.pilares.chave === PAUTA_CHAVE_DOS_PILARES });
+  const legadoVisivel = perfilEditor.visivel && pilaresEditor.visivel && perfilEditor.atual?.escopo.orgId === pilaresEditor.atual?.escopo.orgId && perfilEditor.atual?.escopo.actorId === pilaresEditor.atual?.escopo.actorId;
+  const painel = legadoVisivel ? perfilEditor.atual?.painel ?? null : null;
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState<'perfil' | 'pilares' | null>(null);
   const [previas, setPrevias] = useState<Record<PautaMarcaDestino, PautaMarcaPrevia | null>>({ perfil: null, pilares: null });
@@ -80,9 +84,11 @@ export default function MarcaPage() {
   localAtual.current = documentoLocal;
   const livroArquivado = livro?.estado === 'arquivado';
   const livroAtivo = livro && !livroArquivado ? livro.ativo : null;
-  const editavel = podeEditarPauta && livroCarregado && !livroAtivo && !livroArquivado;
+  const perfil = legadoVisivel ? livroAtivo ? painel?.perfil ?? '' : perfilEditor.texto : '';
+  const pilares = legadoVisivel ? livroAtivo ? painel?.pilaresTexto ?? '' : pilaresEditor.texto : '';
+  const editavel = podeEditarPauta && legadoVisivel && livroCarregado && !livroAtivo && !livroArquivado && perfilEditor.atual?.origemEfetiva.tipo === 'legado';
   const podeAplicar = editavel && can('obsidian.ver');
-  const ocupado = operacaoLivro !== null || salvando !== null || aplicando !== null;
+  const ocupado = operacaoLivro !== null || salvando !== null || aplicando !== null || perfilEditor.ocupado || pilaresEditor.ocupado;
   const alterado = documentoLocal !== null && (!livro?.rascunho ||
     JSON.stringify(documentoLocal) !== JSON.stringify(livro.rascunho));
   const documentoDoLivro = livroArquivado ? livro?.rascunho ?? livro?.ativo?.documento ?? null :
@@ -91,31 +97,17 @@ export default function MarcaPage() {
 
 
   useEffect(() => {
-    let cancelada = false;
-    const leitura = ++revisaoPainel.current;
     escritaEmCurso.current = null;
-    setPainel(null);
-    setPerfil('');
-    setPilares('');
-    setPrevias({ perfil: null, pilares: null });
-    setTextos({ perfil: '', pilares: '' });
-    setErro(null);
-    setSalvando(null);
-    setAplicando(null);
-    revisaoPrevia.current.perfil++;
-    revisaoPrevia.current.pilares++;
+    setPrevias({ perfil: null, pilares: null }); setTextos({ perfil: '', pilares: '' });
+    setErro(null); setSalvando(null); setAplicando(null);
+    revisaoPrevia.current.perfil++; revisaoPrevia.current.pilares++;
     setIdentidadeDoEstado(identidade);
-    if (!ready || !token || !podeLerLivro) return;
-    apiGet<PautaMarcaPainel>('/pauta/marca', token)
-      .then((p) => {
-        if (cancelada || sessao.current !== identidade || revisaoPainel.current !== leitura) return;
-        setPainel(p);
-        setPerfil(p.perfil ?? '');
-        setPilares(p.pilaresTexto);
-      })
-      .catch((e: Error) => { if (!cancelada && sessao.current === identidade) setErro(e.message); });
-    return () => { cancelada = true; };
-  }, [ready, token, podeLerFonte, identidade, podeLerLivro]);
+  }, [identidade]);
+  useEffect(() => {
+    if (!perfilEditor.privado && !pilaresEditor.privado) return;
+    revisaoPrevia.current.perfil++; revisaoPrevia.current.pilares++;
+    setPrevias({ perfil: null, pilares: null }); setTextos({ perfil: '', pilares: '' }); setErro(null);
+  }, [perfilEditor.privado, pilaresEditor.privado]);
 
   useEffect(() => {
     const leitura = ++leituraDoLivro.current;
@@ -168,16 +160,8 @@ export default function MarcaPage() {
   }
 
   async function atualizarPautaAposLivro() {
-    if (!token || !podeLerLivro) return;
-    const leitura = ++revisaoPainel.current;
-    try {
-      const p = await apiGet<PautaMarcaPainel>('/pauta/marca', token);
-      if (sessao.current !== identidade || revisaoPainel.current !== leitura) return;
-      setPainel(p); setPerfil(p.perfil ?? ''); setPilares(p.pilaresTexto);
-      setPrevias({ perfil: null, pilares: null }); setTextos({ perfil: '', pilares: '' });
-    } catch (e) {
-      if (sessao.current === identidade) setErro(`O livro foi atualizado, mas a leitura da Pauta falhou: ${(e as Error).message}`);
-    }
+    // Atualiza somente a observação. O texto e a base dos editores humanos permanecem fixos.
+    await Promise.all([perfilEditor.conferir(), pilaresEditor.conferir()]);
   }
 
   async function salvarLivro() {
@@ -314,7 +298,10 @@ export default function MarcaPage() {
       setPrevias((v) => ({ ...v, [qual]: p }));
       setTextos((v) => ({ ...v, [qual]: p.textoProposto }));
     } catch (e) {
-      if (sessao.current === identidade && revisaoPrevia.current[qual] === sequencia) setErro((e as Error).message);
+      if (sessao.current === identidade && revisaoPrevia.current[qual] === sequencia) {
+        if (e instanceof ErroDaApi && [401, 403].includes(e.status)) { perfilEditor.invalidar(e); pilaresEditor.invalidar(e); }
+        else setErro((e as Error).message);
+      }
     }
   }
 
@@ -333,11 +320,9 @@ export default function MarcaPage() {
       destinoHash: p.destinoHash, secoesUsadas: p.secoesUsadas, textoFinal: textos[qual],
     };
     try {
-      const novo = await apiPost<PautaMarcaPainel>(`/pauta/marca/projecao/${qual}`, corpo, token);
-      if (sessao.current !== identidade) return;
-      setPainel(novo);
-      if (qual === 'perfil') setPerfil(novo.perfil ?? '');
-      else setPilares(novo.pilaresTexto);
+      const editor = qual === 'perfil' ? perfilEditor : pilaresEditor;
+      const novo = await editor.executarExterno(() => apiPost<PautaMarcaPainel>(`/pauta/marca/projecao/${qual}`, corpo, token));
+      if (sessao.current !== identidade || !novo) return;
       await carregarPrevia(qual);
     } catch (e) {
       if (sessao.current === identidade) setErro(`${(e as Error).message} Atualize a prévia antes de tentar novamente.`);
@@ -349,32 +334,20 @@ export default function MarcaPage() {
     }
   }
 
-  async function salvar(qual: 'perfil' | 'pilares') {
+  async function salvar(qual: 'perfil' | 'pilares', reativar = false) {
     if (!editavel || !painel || !token || escritaEmCurso.current) return;
-    const escrita = Symbol('salvar');
-    escritaEmCurso.current = escrita;
-    ++revisaoPainel.current;
-    setSalvando(qual);
-    setErro(null);
+    const escrita = Symbol('salvar'); escritaEmCurso.current = escrita;
+    setSalvando(qual); setErro(null);
+    const editor = qual === 'perfil' ? perfilEditor : pilaresEditor;
     try {
-      const corpo =
-        qual === 'perfil'
-          ? { perfil, versao: painel?.perfilVersao ?? undefined }
-          : { pilares, versao: painel?.pilaresVersao ?? undefined };
-      const caminho = qual === 'perfil' ? '/pauta/marca' : '/pauta/marca/pilares';
-      const p = await apiPut<PautaMarcaPainel>(caminho, corpo, token);
-      if (sessao.current !== identidade) return;
-      setPainel(p);
-      if (qual === 'perfil') setPerfil(p.perfil ?? '');
-      else setPilares(p.pilaresTexto);
+      const r = await editor.enviar({ path: qual === 'perfil' ? '/pauta/marca' : '/pauta/marca/pilares',
+        schema: qual === 'perfil' ? PautaMarcaSalvarHumanoSchema : PautaPilaresSalvarHumanoSchema,
+        campos: qual === 'perfil' ? { perfil } : { pilares },
+        acao: qual === 'perfil' ? 'salvar_perfil_marca' : 'salvar_pilares', reativar });
+      if (sessao.current !== identidade || !r) return;
       if (podeLerFonte) await carregarPrevia(qual);
-    } catch (e) {
-      if (sessao.current === identidade) setErro((e as Error).message);
     } finally {
-      if (sessao.current === identidade && escritaEmCurso.current === escrita) {
-        escritaEmCurso.current = null;
-        setSalvando(null);
-      }
+      if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setSalvando(null); }
     }
   }
 
@@ -421,7 +394,7 @@ export default function MarcaPage() {
           Confira os trechos do guia e edite o texto curto antes de aplicar. Perfil e pilares são
           versões separadas; cada botão grava apenas o destino indicado.
         </p>
-        {!podeLerFonte ? (
+        {!podeLerFonte || !legadoVisivel ? (
           <p className="mt-3 text-sm text-muted">Para consultar a fonte, sua conta precisa de acesso à Pauta e à Memória.</p>
         ) : (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -509,28 +482,30 @@ export default function MarcaPage() {
             {perfil.length} / {PAUTA_TETO_DO_PERFIL_DA_MARCA}
           </span>
         </div>
-        <textarea
+        <ConferenciaEdicaoHumana editor={legadoVisivel ? perfilEditor : { ...perfilEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: perfilEditor.privado ? perfilEditor.mensagem : null }} />
+        {legadoVisivel && <textarea
           aria-label="Perfil da marca"
           value={perfil}
-          onChange={(e) => setPerfil(e.target.value)}
+          onChange={(e) => perfilEditor.alterar(e.target.value)}
           disabled={!editavel || !painel || ocupado}
           rows={16}
           placeholder={MODELO}
           className={areaCls}
-        />
+        />}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {editavel && (
             <button
               onClick={() => salvar('perfil')}
-              disabled={!painel || ocupado || !perfil.trim()}
+              disabled={!painel || ocupado || !perfil.trim() || !perfilEditor.editavel}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {salvando === 'perfil' ? 'Salvando…' : 'Salvar o perfil'}
+              {salvando === 'perfil' ? 'Salvando…' : perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar o perfil'}
             </button>
           )}
+          {editavel && perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada && <button type="button" onClick={() => void salvar('perfil', true)} disabled={ocupado || !perfilEditor.editavel || !perfil.trim()} className="rounded border border-brand px-3 py-1.5 text-sm text-brand disabled:opacity-50">Salvar e reativar</button>}
           {editavel && !perfil.trim() && (
             <button
-              onClick={() => setPerfil(MODELO)}
+              onClick={() => perfilEditor.alterar(MODELO)}
               className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm hover:border-brand-dim"
             >
               Começar pelas seções
@@ -557,15 +532,16 @@ export default function MarcaPage() {
             {painel?.pilares.length ?? 0} / {PAUTA_TETO_DE_PILARES}
           </span>
         </div>
-        <textarea
+        <ConferenciaEdicaoHumana editor={legadoVisivel ? pilaresEditor : { ...pilaresEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: pilaresEditor.privado ? pilaresEditor.mensagem : null }} />
+        {legadoVisivel && <textarea
           aria-label="Pilares de conteúdo"
           value={pilares}
-          onChange={(e) => setPilares(e.target.value)}
+          onChange={(e) => pilaresEditor.alterar(e.target.value)}
           disabled={!editavel || !painel || ocupado}
           rows={8}
           placeholder={EXEMPLO_DE_PILARES}
           className={areaCls}
-        />
+        />}
         {painel?.pilares.length ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {painel.pilares.map((p) => (
@@ -590,11 +566,12 @@ export default function MarcaPage() {
           <div className="mt-3">
             <button
               onClick={() => salvar('pilares')}
-              disabled={!painel || ocupado}
+              disabled={!painel || ocupado || !pilaresEditor.editavel}
               className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-bg hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {salvando === 'pilares' ? 'Salvando…' : 'Salvar os pilares'}
+              {salvando === 'pilares' ? 'Salvando…' : pilaresEditor.destinoBase?.estado === 'existente' && pilaresEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar os pilares'}
             </button>
+            {pilaresEditor.destinoBase?.estado === 'existente' && pilaresEditor.destinoBase.arquivada && <button type="button" onClick={() => void salvar('pilares', true)} disabled={ocupado || !pilaresEditor.editavel} className="ml-2 rounded border border-brand px-3 py-1.5 text-sm text-brand disabled:opacity-50">Salvar e reativar</button>}
           </div>
         )}
       </section>
