@@ -7,7 +7,7 @@ const texto = (max: number) => z.string().min(1).max(max);
 const keys = ['nota-aviso', 'nota-conteudo', 'nota-financeiro', 'espaco', 'lista', 'tarefa', 'agente',
   'material', 'oportunidade', 'conta', 'classificacao', 'contraparte', 'contrato'] as const;
 const key = z.enum(keys);
-const limitada = <T extends z.ZodTypeAny>(schema: T) => schema.superRefine((v, ctx) => {
+const limitada = <T extends z.ZodTypeAny>(schema: T): z.ZodEffects<T, z.output<T>, z.input<T>> => schema.superRefine((v, ctx) => {
   if (new TextEncoder().encode(JSON.stringify(v)).length > 65536)
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'O documento excede 64 KiB.' });
 });

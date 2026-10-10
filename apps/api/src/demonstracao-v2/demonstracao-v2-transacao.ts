@@ -234,7 +234,8 @@ async function criar(tx: Tx, audit: AuditService, m: M, fontes: Fontes, sources:
   const editorial=EditorialCreateSchema.parse({requestId:req('material'),taskId:i.task,releaseStatusId:i.closed,
     title:'DEMO — Texto com fonte preservada',body:'Rascunho sintético para revisão interna.\n\n'+s.version.body,
     files:[],sourceRef:`contexto:${s.item.id}@${s.version.id}`});
-  const editorialFp=editorialFingerprint(orgId,actorId,'material',editorial), editorialHash=editorialContentHash(editorial);
+  exigir(editorial.files.length===0,'demo_anexos_nao_previstos');
+  const editorialFp=editorialFingerprint(orgId,actorId,'material',editorial), editorialHash=editorialContentHash({...editorial,files:[]});
   const commercial=ComercialEntradaExercicioSchema.parse({requestId:req('oportunidade'),origemRef:objeto(m,'oportunidade').logicalId,
     nome:'DEMO — Empresa fictícia',ownerId:actorId});
   const commercialFp=hashComercial({orgId,actorId,acao:'entrada',leadId:i.lead,pedido:commercial});

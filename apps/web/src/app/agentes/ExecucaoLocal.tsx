@@ -15,6 +15,7 @@ interface Execucao { id: string; requestId: string; pedido?: string; status: str
   consumo: { tokensIn: number | null; tokensOut: number | null; custoExternoUsd: number; custoMaquinaMedido: boolean } }
 const campo = 'mt-1 w-full rounded border border-border bg-bg px-2 py-2 text-sm';
 const recusada = (e: unknown) => [401, 403, 404].includes((e as { status?: number }).status ?? 0);
+const terminalLocal = (status: string) => ['respondida', 'falhou', 'recusada'].includes(status);
 type Props = { slug: string; token: string | null; pessoaId: string; podeExecutar: boolean };
 export function ExecucaoLocal(props: Props) { return <ExecucaoAutorizada key={`${props.token}:${props.pessoaId}:${props.slug}`} {...props} />; }
 function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
@@ -43,7 +44,10 @@ function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
     if (!escopoConfere(r.escopo, pessoaId, escopo.current, slug) || !capacidadesConferem(r.capacidadesExecutor, r.escopo) || r.requestId !== id.requestId
       || !r.id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(r.requestId) || !r.fonte || !retratoConfere(r.retratoFonte, r.fonte)
       || (original && (r.fonte.itemId !== original.itemId || r.fonte.versionId !== original.versionId || r.fonte.contentHash !== original.contentHash))) { privar(); return false; }
-    setExecucao(r); setPendente(null); input.current = null; setConflito(false); setErro(null); return true;
+    setExecucao(r);
+    if (terminalLocal(r.status)) { setPendente(null); input.current = null; }
+    else setPendente(id);
+    setConflito(false); setErro(null); return true;
   }
   function sessaoAnterior(e: M05EscopoDto): string | null {
     const chave = `${chaveDoPedido(e, 'procedimento')}:sessao`, antiga = `rootos:execucao-agente:${pessoaId}:${slug}:ultima`;
@@ -66,7 +70,11 @@ function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
       if (r.id !== sessionId || !escopo.current) { privar(); return; }
       const id: IdentificadorDePedido = { ...escopo.current, requestId: r.requestId, operation: 'procedimento' };
       if (aceitarExecucao(r, id)) {
-        guardarIdentificador(chaveDoPedido(escopo.current, 'procedimento'), id);
+        if (!guardarIdentificador(chaveDoPedido(escopo.current, 'procedimento'), id)) {
+          setPendente(id);
+          setErro('Não foi possível guardar o identificador. A pista da execução anterior foi mantida.');
+          return;
+        }
         removerIdentificador(`${chaveDoPedido(escopo.current, 'procedimento')}:sessao`); setAnteriorPendente(null);
       }
     } catch (e) { if (generation.current !== atual) return; if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); } else setErro((e as Error).message); }
@@ -102,9 +110,28 @@ function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
   async function conferirExecucao() {
     if (!execucao || !escopo.current) return; const atual = generation.current; setOcupado(true); setErro(null);
     const id: IdentificadorDePedido = { ...escopo.current, requestId: execucao.requestId, operation: 'procedimento' };
-    try { const r = await apiGet<Execucao>(`/agents/${encodeURIComponent(slug)}/procedimento/execucoes/${encodeURIComponent(execucao.id)}`, token); if (generation.current === atual) aceitarExecucao(r, id); }
-    catch (e) { if (generation.current !== atual) return; if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); } else { setExecucao(null); setErro((e as Error).message); } }
+    try { const r = await apiGet<Execucao>(`/agents/${encodeURIComponent(slug)}/procedimento/execucoes/${encodeURIComponent(execucao.id)}`, token); if (generation.current === atual && !aceitarExecucao(r, id)) setPendente(id); }
+    catch (e) { if (generation.current !== atual) return; setPendente(id); if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); } else { setExecucao(null); setErro((e as Error).message); } }
     finally { if (generation.current === atual) setOcupado(false); }
+  }
+  function prepararNovoPedido() {
+    if (!podeExecutar || !token || !escopo.current || ocupado || escrita.current || pendente || anteriorPendente
+      || !execucao || !terminalLocal(execucao.status) || !escopoConfere(execucao.escopo, pessoaId, escopo.current, slug)) return;
+    try {
+      const chave = chaveDoPedido(escopo.current, 'procedimento');
+      const guardado = lerIdentificador(chave, escopo.current, 'procedimento');
+      if (guardado && guardado.requestId !== execucao.requestId) {
+        setPendente(guardado); setErro('Há outro pedido guardado. Confira esse pedido antes de preparar outro.'); return;
+      }
+      const anterior = sessaoAnterior(escopo.current);
+      if (anterior) { void conferirAnterior(anterior); return; }
+      removerIdentificador(chave);
+      const restante = lerIdentificador(chave, escopo.current, 'procedimento');
+      if (restante) {
+        setPendente(restante); setErro('Não foi possível retirar o identificador. Confira o pedido guardado.'); return;
+      }
+      setPendente(null); setExecucao(null); setPedido(''); setItemId(''); setVersionId('');
+    } catch (e) { setErro(e instanceof Error ? e.message : 'Não foi possível conferir os pedidos guardados.'); }
   }
   async function atualizarFonte() {
     const atual = ++generation.current; escrita.current = false; setOcupado(true); setErro(null);
@@ -131,7 +158,7 @@ function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
       {capacidades && <div className="space-y-1 text-sm"><p>Estado do agente: {capacidades.agente.estado}</p><p>Modelo disponível: {capacidades.modelo.disponivel ? capacidades.modelo.modelo : capacidades.modelo.motivo ?? 'indisponível'}</p><p>Capacidades: leitura de versão, síntese local e registro do resultado.</p><p>Ferramentas externas e agenda indisponíveis. Pausar impede novo uso; uma inferência já enviada pode ter consumido tokens.</p>{!capacidades.novasExecucoesPermitidas && <p>{capacidades.impedimento ?? 'Novas execuções indisponíveis.'}</p>}</div>}
       {erro && <p role="alert" className="text-bad">{erro}</p>}
       {anteriorPendente && <div className="space-y-2"><p role="status">Execução anterior sem confirmação. Confira o registro antes de iniciar outro pedido.</p><button type="button" className="text-brand" disabled={ocupado} onClick={() => void conferirAnterior(anteriorPendente)}>Conferir execução anterior</button></div>}
-      {pendente && <div className="space-y-2"><p role="status" className="text-sm">Pedido sem confirmação. Confira o pedido original antes de iniciar outro.</p><button type="button" disabled={ocupado} className="text-sm text-brand" onClick={() => void conferirPedido(pendente)}>Conferir pedido anterior</button>{input.current && !conflito && <button type="button" disabled={ocupado || !podeExecutar} className="ml-3 text-sm text-brand" onClick={() => void executar(true)}>Reenviar mesmo pedido</button>}</div>}
+      {pendente && <div className="space-y-2"><p role="status" className="text-sm">{execucao?.status === 'rodando' ? 'Execução em andamento. Confira este pedido antes de preparar outro.' : execucao ? terminalLocal(execucao.status) ? 'Identificador ainda pendente de conferência. Confira o pedido guardado.' : 'Situação ainda não reconhecida. Confira este pedido antes de preparar outro.' : 'Pedido sem confirmação. Confira o pedido original antes de iniciar outro.'}</p><button type="button" disabled={ocupado} className="text-sm text-brand" onClick={() => void conferirPedido(pendente)}>Conferir pedido anterior</button>{!execucao && input.current && !conflito && <button type="button" disabled={ocupado || !podeExecutar} className="ml-3 text-sm text-brand" onClick={() => void executar(true)}>Reenviar mesmo pedido</button>}</div>}
       <fieldset className="space-y-2" disabled={ocupado || !!pendente || !!anteriorPendente || !!execucao || !podeExecutar || !fontes}>
         <label className="block">Fonte do procedimento<select className={campo} value={itemId} onChange={(e) => { setItemId(e.target.value); setVersionId(''); }}><option value="">Escolha uma fonte</option>{fontes?.items.map((i) => <option key={i.id} value={i.id}>{i.title}</option>)}</select></label>
         <label className="block">Versão da fonte<select className={campo} value={versionId} onChange={(e) => setVersionId(e.target.value)}><option value="">Escolha uma versão</option>{fonte?.versoes.map((v) => <option key={v.id} value={v.id}>v{v.versao} · {v.title}</option>)}</select></label>
@@ -140,7 +167,7 @@ function ExecucaoAutorizada({ slug, token, pessoaId, podeExecutar }: Props) {
       {versao && !execucao && <RetratoDaFonte fonte={versao.retratoFonte} />}
       {fontes && <button type="button" className="text-sm text-brand" disabled={ocupado} onClick={() => void atualizarFonte()}>{conflito ? 'Atualizar fonte e conferir pedido' : 'Conferir fontes e acesso'}</button>}
       {podeExecutar && !pendente && !anteriorPendente && <button type="button" disabled={ocupado || !!execucao || conflito || !fonte || !versao || !pedido.trim() || !capacidades?.novasExecucoesPermitidas || !versao.retratoFonte.acesso.novoUsoPermitido} className="rounded bg-brand px-3 py-2 text-sm text-ink disabled:opacity-50" onClick={() => void executar()}>Iniciar procedimento local</button>}
-      {execucao && podeExecutar && <button type="button" onClick={() => { if (!escopo.current) return; const chave = chaveDoPedido(escopo.current, 'procedimento'); removerIdentificador(chave); setPendente(lerIdentificador(chave, escopo.current, 'procedimento')); setExecucao(null); setPedido(''); setItemId(''); setVersionId(''); const anterior = sessaoAnterior(escopo.current); if (anterior) void conferirAnterior(anterior); }} className="text-sm text-brand">Preparar novo pedido</button>}
+      {execucao && terminalLocal(execucao.status) && podeExecutar && !pendente && !anteriorPendente && <button type="button" disabled={ocupado || escrita.current} onClick={prepararNovoPedido} className="text-sm text-brand disabled:opacity-50">Preparar novo pedido</button>}
       {execucao && <div className="space-y-2 rounded border border-border p-3" aria-label="Resultado do procedimento">
         <p>Execução: <span className="font-os-mono">{execucao.id}</span></p><p>Situação: {execucao.status}</p>{execucao.motivo && <p>{execucao.motivo}</p>}{execucao.resposta && <p className="whitespace-pre-wrap">{execucao.resposta}</p>}
         <RetratoDaFonte fonte={execucao.retratoFonte} usada />

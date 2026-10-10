@@ -157,7 +157,8 @@ export class ProcedimentoDoAgenteService {
   }
 
   private async fonte(db: Pick<Prisma.TransactionClient, 'contextItem' | 'contextItemVersion' | 'user' | '$queryRawUnsafe'>,
-    orgId: string, pessoaId: string, pedido: Pedido, anterior?: Registro['fonte'], permitirArquivada = false) {
+    orgId: string, pessoaId: string, pedido: Pedido, anterior?: Registro['fonte'], modo: 'novo_efeito' | 'historico' = 'novo_efeito') {
+    const permitirArquivada = modo === 'historico';
     let item = await db.contextItem.findFirst({ where: { id: pedido.itemId, orgId, ...filtroDeLeitura(pessoaId), ...(permitirArquivada ? {} : { arquivadoEm: null }) } });
     if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
     const v = await db.contextItemVersion.findFirst({ where: { id: pedido.versionId, itemId: item.id, orgId } });
@@ -174,7 +175,8 @@ export class ProcedimentoDoAgenteService {
       if (anterior.itemId !== pedido.itemId || anterior.itemId !== item.id || anterior.versionId !== pedido.versionId || anterior.versionId !== v.id
         || anterior.versao !== v.versao || anterior.contentHash !== pedido.contentHash || anterior.contentHash !== v.contentHash || anterior.title !== v.title)
         throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão registrada da fonte não pôde ser conferida.' });
-      if (v.sourceType !== anterior.sourceType || v.sourceRef !== anterior.sourceRef || item.chave !== anterior.chave || item.sourceType !== anterior.sourceType || item.sourceRef !== anterior.sourceRef) throw new ConflictException('A origem da fonte mudou.');
+      if (v.sourceType !== anterior.sourceType || v.sourceRef !== anterior.sourceRef) throw new ConflictException('A origem registrada da fonte não pôde ser conferida.');
+      if (modo === 'novo_efeito' && (item.chave !== anterior.chave || item.sourceType !== anterior.sourceType || item.sourceRef !== anterior.sourceRef)) throw new ConflictException('A origem da fonte mudou.');
     } else if (item.versao !== pedido.expectedItemVersion || v.sourceType !== item.sourceType || v.sourceRef !== item.sourceRef) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
     return { item, v };
   }
@@ -192,7 +194,7 @@ export class ProcedimentoDoAgenteService {
       if (existente) {
         const registro = existente.steps[0]?.payload as unknown as Registro | null;
         if (!registro || registro.fingerprint !== assinatura || existente.solicitanteId !== pessoaId) throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
-        await this.fonte(tx, orgId, pessoaId, input, registro.fonte, true);
+        await this.fonte(tx, orgId, pessoaId, input, registro.fonte, 'historico');
         return { sessionId: existente.id, repetido: true as const };
       }
       const agente = await tx.agent.findFirst({ where: { orgId, slug }, include: { sop: true } });
@@ -308,15 +310,13 @@ export class ProcedimentoDoAgenteService {
     if (registro?.tipo !== 'procedimento_local') throw new NotFoundException('Execução indisponível.');
     const modelo = await this.modelo.estado();
     const { agente, capacidadesExecutor } = await this.capacidades(orgId, pessoaId, slug, modelo);
-    const { item, v } = await this.fonte(this.prisma, orgId, pessoaId, registro.entrada, registro.fonte, true);
+    const { item, v } = await this.fonte(this.prisma, orgId, pessoaId, registro.entrada, registro.fonte, 'historico');
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, [item.id]);
+    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, [item.id], true);
     const fonteFinal = atual.fontes[0];
     if (!fonteFinal) throw new NotFoundException('Fonte indisponível para esta conta.');
-    if (fonteFinal.chave !== registro.fonte.chave || fonteFinal.sourceType !== registro.fonte.sourceType || fonteFinal.sourceRef !== registro.fonte.sourceRef)
-      throw new ConflictException('A origem da fonte mudou.');
     const retratoFonte = construirFonteAutorizada({ item: fonteFinal, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
-      novoUsoPermitido: !fonteFinal.arquivadoEm && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
+      novoUsoPermitido: !fonteFinal.arquivadoEm && fonteFinal.chave === registro.fonte.chave && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
     return { escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug }, retratoFonte, capacidadesExecutor, id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
       pessoaId, pedido: registro.entrada.pedido, procedimento: registro.procedimento,
       fonte: registro.fonte, resposta: registro.saida?.texto ?? null,

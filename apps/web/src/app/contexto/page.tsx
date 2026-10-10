@@ -60,7 +60,7 @@ import type {
  * `estadoDaEmpresa` (em `grafo.ts`) separa as quatro respostas possíveis, e a
  * tela diz "não deu para ver" quando é isso que está acontecendo.
  *
- * RECUSA POR PERMISSÃO NÃO É FALHA. O 403 do servidor vira `semPermissao`, e
+ * RECUSA POR ACESSO NÃO É FALHA. O 401/403 do servidor vira `semPermissao`, e
  * não a caixa vermelha de erro: as duas palavras dizem coisas diferentes para
  * quem está olhando, e culpar o sistema por uma decisão de papel é a única das
  * três frases desta tela que seria mentira.
@@ -162,12 +162,12 @@ export default function ContextoPage() {
     ler(); window.addEventListener('popstate', ler);
     return () => window.removeEventListener('popstate', ler);
   }, []);
-  const limparFonteDoEndereco = () => {
+  const limparFonteDoEndereco = useCallback(() => {
     setFonteDoEndereco(null);
     const url = new URL(window.location.href);
     url.searchParams.delete('nota'); url.searchParams.delete('versao');
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
-  };
+  }, []);
   const [sessao, setSessao] = useState<string | null>(null);
   const identidadeAtual = useRef({ token, ready, numero: 0 });
   if (identidadeAtual.current.token !== token || identidadeAtual.current.ready !== ready) {
@@ -189,19 +189,44 @@ export default function ContextoPage() {
   const [relendo, setRelendo] = useState(false);
   const [recado, setRecado] = useState<string | null>(null);
 
+  const privarConhecimento = useCallback(() => {
+    ++acessoDaBusca.current;
+    setMemoria({ dado: null, semPermissao: true });
+    setBruto(null);
+    setBuscando(false);
+    setErroDaBusca('Conhecimento não disponível para esta conta.');
+    setRecado(null);
+    setAlvo((atual) => {
+      const deMemoria = atual?.tipo === 'registro'
+        ? atual.item.registro.familia === 'memoria'
+        : atual?.tipo === 'eixo' && atual.eixo.key === 'memoria';
+      return deMemoria ? null : atual;
+    });
+    limparFonteDoEndereco();
+  }, [limparFonteDoEndereco]);
+
   const carregar = useCallback(() => {
     if (!token || !ready || identidadeAtual.current.numero !== numeroDaSessao) return;
     const ciclo = ++geracao.current;
 
     const puxar = <T,>(key: FamiliaKey, aplicar: (f: Fonte<T>) => void) => {
       const familia: DescricaoDeFamilia = familiaPorChave(key);
+      const acessoDoPedido = acessoDaBusca.current;
+      const vigente = () => ciclo === geracao.current
+        && identidadeAtual.current.numero === numeroDaSessao
+        && (key !== 'memoria' || acessoDoPedido === acessoDaBusca.current);
       if (!can(familia.permissao)) {
-        aplicar({ dado: null, semPermissao: true });
+        if (key === 'memoria') privarConhecimento();
+        else aplicar({ dado: null, semPermissao: true });
         return;
       }
       apiGet<T>(familia.consulta, token)
-        .then((dado) => { if (ciclo === geracao.current) aplicar({ dado }); })
-        .catch((e: unknown) => { if (ciclo === geracao.current) aplicar(porQueNaoVeio<T>(e)); });
+        .then((dado) => { if (vigente()) aplicar({ dado }); })
+        .catch((e: unknown) => {
+          if (!vigente()) return;
+          if (key === 'memoria' && acessoRecusado(e)) privarConhecimento();
+          else aplicar(porQueNaoVeio<T>(e));
+        });
     };
 
     puxar<MemoriaList>('memoria', setMemoria);
@@ -210,10 +235,11 @@ export default function ContextoPage() {
     puxar<CatalogoDeConexoes>('conexoes', setConexoes);
     puxar<Organograma>('gente', setOrganograma);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ready, numeroDaSessao]);
+  }, [token, ready, numeroDaSessao, privarConhecimento]);
 
   useEffect(() => {
     ++geracao.current;
+    ++acessoDaBusca.current;
     setMemoria({ dado: null });
     setAgentes({ dado: null });
     setRotinas({ dado: null });
@@ -231,7 +257,7 @@ export default function ContextoPage() {
     posicaoDoDiretorio.current = 0;
     setSessao(ready ? token : null);
     if (ready && token) carregar();
-    return () => { ++geracao.current; };
+    return () => { ++geracao.current; ++acessoDaBusca.current; };
   }, [ready, token, carregar]);
 
   const mapaBase = useMemo(
@@ -255,14 +281,20 @@ export default function ContextoPage() {
     const id = setTimeout(() => {
       procurar(alvoDaBusca, token)
         .then((r) => {
-          if (!vivo || acessoDoPedido !== acessoDaBusca.current) return;
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current
+            || identidadeAtual.current.numero !== numeroDaSessao) return;
           setBruto(r);
           setBuscando(false);
         })
-        .catch((e: Error) => {
-          if (!vivo || acessoDoPedido !== acessoDaBusca.current) return;
+        .catch((e: unknown) => {
+          if (!vivo || acessoDoPedido !== acessoDaBusca.current
+            || identidadeAtual.current.numero !== numeroDaSessao) return;
+          if (acessoRecusado(e)) {
+            privarConhecimento();
+            return;
+          }
           setBruto(null);
-          setErroDaBusca(e.message);
+          setErroDaBusca(e instanceof Error ? e.message : 'A busca não respondeu. Tente de novo.');
           setBuscando(false);
         });
     }, 300);
@@ -270,7 +302,7 @@ export default function ContextoPage() {
       vivo = false;
       clearTimeout(id);
     };
-  }, [termo, token, sessao]);
+  }, [termo, token, sessao, numeroDaSessao, privarConhecimento]);
 
   /* A junção é derivada: ela refaz quando o mapa muda, sem pedir nada de novo. */
   const resultadoAtual = bruto?.termo === termo.trim() ? bruto : null;
@@ -469,36 +501,33 @@ export default function ContextoPage() {
   );
 }
 
-/**
- * Por que o eixo não veio — e a diferença entre recusa e falha.
- *
- * 403 é decisão de papel: quem está olhando não tem a permissão daquela rota. A
- * tela diz "sem acesso". Qualquer outra coisa é o sistema não tendo respondido,
- * e aí a frase é "falhou", com a mensagem que veio. Enquanto o `catch` jogava
- * tudo num campo só, uma recusa de permissão aparecia em vermelho culpando o
- * sistema por uma decisão que ele tomou de propósito.
- */
+/** Recusa 401/403 retira os dados; outros erros mantêm o motivo da falha. */
 function porQueNaoVeio<T>(e: unknown): Fonte<T> {
-  if (e instanceof ErroDaApi && e.status === 403) return { dado: null, semPermissao: true };
+  if (acessoRecusado(e)) return { dado: null, semPermissao: true };
   return { dado: null, erro: e instanceof Error ? e.message : 'a fonte não respondeu' };
 }
 
+function acessoRecusado(e: unknown): e is ErroDaApi {
+  return e instanceof ErroDaApi && (e.status === 401 || e.status === 403);
+}
+
 /**
- * Dispara as duas buscas e devolve o que cada uma respondeu, SEM cruzar nada.
- *
- * A falha de UMA não derruba a outra: o índice fora do ar degrada a busca para o
- * que a memória sabe responder sozinha, que é o que RNF-04 pede. Se as duas
- * falharem, quem chamou recebe o erro.
+ * Falha operacional de uma busca permite usar a outra. Recusa 401/403 encerra
+ * a busca e retira o conhecimento anterior; não pode virar resposta parcial.
  */
 async function procurar(termo: string, token: string): Promise<BrutoDaBusca> {
+  const falhaOperacional = (e: unknown) => {
+    if (acessoRecusado(e)) throw e;
+    return null;
+  };
   const naMemoria = apiGet<ResultadoDeBusca>(
     `/memoria/buscar?q=${encodeURIComponent(termo)}&limite=20`,
     token,
-  ).catch(() => null);
+  ).catch(falhaOperacional);
   const noIndice = apiGet<{ items: AchadoDoIndice[]; mode: string }>(
     `/knowledge/search?q=${encodeURIComponent(termo)}&limit=20`,
     token,
-  ).catch(() => null);
+  ).catch(falhaOperacional);
 
   const [memoria, indice] = await Promise.all([naMemoria, noIndice]);
   if (!memoria && !indice) throw new Error('A busca não respondeu. Tente de novo.');
