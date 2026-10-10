@@ -15,6 +15,7 @@ export function PonteComercial(props: Props) {
   return <Ponte key={user.id+':'+token+':'+props.leadId+':'+props.aceite.id} {...props} token={token} userId={user.id} />;
 }
 function Ponte({ leadId,proposta,aceite,onIndisponivel,token,userId }: Props & { token: string; userId: string }) {
+  const { can } = useAuth();
   const base = '/leads/'+encodeURIComponent(leadId)+'/exercicio';
   const p = usePedidoPonte({token,userId,entityId:leadId,path:base+'/ponte',recoveryPath:base+'/ponte/pedidos',actions:['projeto','obrigacao'],alvo:{leadId},onIndisponivel});
   const [catalogos,setCatalogos] = useState<PonteCatalogos | null>(null), [catalogError,setCatalogError] = useState<string | null>(null);
