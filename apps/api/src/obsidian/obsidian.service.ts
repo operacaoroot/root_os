@@ -504,6 +504,10 @@ export class ObsidianService implements OnModuleInit {
      */
     if (!this.configured && !this.openaiKey) return;
     const min = Number(process.env.OBSIDIAN_REINDEX_MIN ?? 30);
+    if (!Number.isFinite(min) || min <= 0) {
+      this.log.log('Captura automática do Obsidian desligada.');
+      return;
+    }
     /*
      * A REINDEXAÇÃO É UM CAMINHO DE PLATAFORMA — RF-T-02, RF-T-04.
      *

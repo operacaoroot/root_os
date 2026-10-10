@@ -36,3 +36,4 @@ export * from './financeiro-exercicio-inscricao.js';
 export * from './marketing-recuperacao.js';
 export * from './prontidao-local';
 export * from './agent-sop-edicao';
+export * from './conexoes-declarativas';
