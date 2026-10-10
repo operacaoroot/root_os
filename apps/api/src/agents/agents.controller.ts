@@ -152,6 +152,12 @@ export class AgentsController {
     return this.procedimento.criar(user.orgId, user.sub, body);
   }
 
+  @Get('agents/:slug/procedimento/painel')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  painelDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.procedimento.painel(user.orgId, user.sub, slug);
+  }
+
   @Get('agents/:slug/procedimento/fontes')
   @RequirePermissions('mcp.ver', 'obsidian.ver')
   fontesDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {

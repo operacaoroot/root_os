@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ProntidaoAgentesSchema, type ProntidaoAgentes } from '@mktos/shared';
+import { ProntidaoAgentesSchema, ProcedimentoLocalPedidoSchema, ProcedimentoLocalPainelSchema, ProcedimentoLocalFontesSchema, ProcedimentoLocalExecucaoSchema, ProcedimentoLocalRecuperacaoSchema,
+  type ProntidaoAgentes, type ProcedimentoLocalPedido, type ProcedimentoLocalPainel, type ProcedimentoLocalExecucao } from '@mktos/shared';
 import { createHash } from 'node:crypto';
 import { Prisma, RiskLevel, SessionStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -7,8 +8,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirAcessoAtual, filtroDeLeitura } from '../memory/acesso-memoria';
 import { hashDoCorpo } from '../memory/procedencia';
-import { construirFonteAutorizada, construirCapacidadesExecutor, reconferirFontesAtuais } from '../memory/fonte-autorizada';
-import type { ModeloLocalEstado } from './modelo-local.service';
+import { construirFonteAutorizada, reconferirFontesAtuais } from '../memory/fonte-autorizada';
 import { AgenteIdentidadeSchema } from './agents.service';
 import { FalhaSinteseLocal, promptSinteseLocal, type ObservacaoLocal } from './sintese-local';
 import { FormatoDaSopInvalido, validarProcedimento } from './sop';
@@ -21,22 +21,46 @@ const LER = ['mcp.ver', 'obsidian.ver'];
 export const CriarProcedimentoSchema = AgenteIdentidadeSchema.required().extend({
   requestId: z.string().uuid(), modelo: z.string().min(1).max(200).nullable(), procedimento: z.unknown(),
 }).strict();
-export const ExecutarProcedimentoSchema = z.object({
+export const ExecutarProcedimentoSchema = ProcedimentoLocalPedidoSchema;
+// O leitor V1 mantém exatamente a forma e a ordem usadas pelo fingerprint antigo.
+const EntradaHistoricaV1Schema = z.object({
   requestId: z.string().uuid(), pedido: z.string().trim().min(1).max(2000),
   itemId: z.string().uuid(), versionId: z.string().uuid(), contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   expectedItemVersion: z.number().int().positive(),
 }).strict();
-
-type Pedido = z.infer<typeof ExecutarProcedimentoSchema>;
-interface Registro {
-  tipo: 'procedimento_local'; fingerprint: string; requestId: string; entrada: Pedido;
-  procedimento: { versao: number; proposito: string; passos: string[]; definicaoDePronto: string };
-  fonte: { itemId: string; versionId: string; contentHash: string; versao: number; chave: string; sourceType: string; sourceRef: string | null; title: string };
-  saida?: ResultadoLocal;
-  observado?: ObservacaoLocal;
-  modeloConfigurado: string | null;
-}
+type EntradaFonte = z.infer<typeof EntradaHistoricaV1Schema>;
+type Pedido = ProcedimentoLocalPedido;
+const fim = z.enum(['stop', 'length', 'content_filter', 'tool_calls', 'function_call', 'ausente', 'desconhecido']);
+const tokens = z.number().int().nonnegative().nullable();
+const RegistroSchema = z.object({
+  tipo: z.literal('procedimento_local'), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), requestId: z.string().uuid(),
+  entradaContrato: z.literal(2).optional(), entrada: z.unknown(),
+  procedimento: z.object({ versao: z.number().int().nonnegative(), proposito: z.string(), passos: z.array(z.string()), definicaoDePronto: z.string() }).strict(),
+  fonte: z.object({ itemId: z.string().uuid(), versionId: z.string().uuid(), contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    versao: z.number().int().positive(), chave: z.string(), sourceType: z.string(), sourceRef: z.string().nullable(), title: z.string() }).strict(),
+  saida: z.object({ texto: z.string(), modelo: z.string(), tokensIn: tokens, tokensOut: tokens, finishReason: fim.optional() }).strict().optional(),
+  observado: z.object({ modelo: z.string().nullable(), tokensIn: tokens, tokensOut: tokens, finishReason: fim.optional() }).strict().optional(),
+  modeloConfigurado: z.string().nullable(),
+}).strict();
+type Registro = Omit<z.infer<typeof RegistroSchema>, 'entrada'> & { entrada: EntradaFonte | Pedido };
 const fingerprint = (valor: unknown) => createHash('sha256').update(JSON.stringify(valor)).digest('hex');
+function lerRegistro(payload: unknown, pessoaId: string, slug: string, requestId: string) {
+  const base = RegistroSchema.safeParse(payload);
+  if (!base.success) throw new ConflictException('O pedido não pôde ser conferido.');
+  const entrada = base.data.entradaContrato === 2
+    ? ProcedimentoLocalPedidoSchema.safeParse(base.data.entrada) : EntradaHistoricaV1Schema.safeParse(base.data.entrada);
+  if (!entrada.success || base.data.requestId !== requestId || entrada.data.requestId !== requestId
+    || base.data.fingerprint !== fingerprint({ pessoaId, slug, input: entrada.data }))
+    throw new ConflictException('O pedido não pôde ser conferido.');
+  if (base.data.entradaContrato === 2 && (!('expectedSopVersion' in entrada.data) || base.data.procedimento.versao < 1
+    || base.data.procedimento.versao !== entrada.data.expectedSopVersion))
+    throw new ConflictException('A versão do procedimento registrada não corresponde ao pedido.');
+  const registro: Registro = { ...base.data, entrada: entrada.data };
+  const entradaConfirmada = base.data.entradaContrato === 2
+    ? { contrato: 2 as const, input: ProcedimentoLocalPedidoSchema.parse(base.data.entrada) }
+    : { contrato: 1 as const, input: EntradaHistoricaV1Schema.parse(base.data.entrada) };
+  return { registro, entradaConfirmada };
+}
 
 /** Procedimento de leitura → síntese local → registro. Não executa ferramentas externas. */
 @Injectable()
@@ -123,15 +147,36 @@ export class ProcedimentoDoAgenteService {
     return { ...atual, repetido: true, escopo: { orgId, userId: pessoaId, agentId: atual.id, agentSlug: atual.slug } };
   }
 
-  private async capacidades(orgId: string, pessoaId: string, slug: string, modelo: ModeloLocalEstado) {
-    const agente = await this.prisma.agent.findFirst({ where: { orgId, slug }, include: { sop: true } });
+  private async painelNoTx(db: Prisma.TransactionClient, orgId: string, pessoaId: string, slug: string): Promise<ProcedimentoLocalPainel> {
+    await exigirAcessoAtual(db, orgId, pessoaId, LER);
+    const agente = await db.agent.findFirst({ where: { orgId, slug }, include: { sop: true } });
     if (!agente) throw new NotFoundException('Agente indisponível.');
-    const dono = await this.prisma.user.findFirst({ where: { orgId, id: agente.donoId ?? '', isActive: true }, select: { id: true } });
-    const pessoa = await this.prisma.user.findFirst({ where: { orgId, id: pessoaId, isActive: true },
+    const dono = await db.user.findFirst({ where: { orgId, id: agente.donoId ?? '', isActive: true }, select: { id: true } });
+    const pessoa = await db.user.findFirst({ where: { orgId, id: pessoaId, isActive: true },
       select: { roles: { where: { orgId }, select: { permissions: { select: { key: true } } } } } });
     const permissoes = new Set(pessoa?.roles.flatMap((r) => r.permissions.map((p) => p.key)) ?? []);
-    return { agente, capacidadesExecutor: construirCapacidadesExecutor({ agente, procedimentoVersao: agente.sop?.versao ?? null,
-      responsavelDisponivel: !!dono, permissaoExecutarAtual: !!pessoa && EXECUTAR.every((p) => permissoes.has(p)), estadoModelo: modelo }) };
+    if (!pessoa || !LER.every((p) => permissoes.has(p))) throw new ForbiddenException('Acesso insuficiente.');
+    const iniciar = EXECUTAR.every((p) => permissoes.has(p));
+    const declaracao = this.modelo.prontidao();
+    const impedimentosLocais: string[] = [];
+    if (!iniciar) impedimentosLocais.push('Acesso insuficiente para iniciar outro pedido.');
+    if (agente.estado !== 'ativo' || !agente.ativo) impedimentosLocais.push(`Agente ${agente.estado}. Retome antes de criar outro pedido.`);
+    if (!dono) impedimentosLocais.push('Responsável indisponível nesta empresa.');
+    if (!agente.sop || agente.sop.orgId !== orgId || agente.sop.agentId !== agente.id || agente.sop.versao < 1) impedimentosLocais.push('Defina o procedimento antes de iniciar.');
+    if (!agente.capacidades.includes('contexto.memoria.buscar') || agente.capacidades.some((c) => c !== 'contexto.memoria.buscar')) impedimentosLocais.push('Ferramenta não permitida neste procedimento.');
+    if (!agente.modelo || declaracao.estado !== 'declarado_sem_verificacao') impedimentosLocais.push('Modelo local não configurado para este agente.');
+    await exigirAcessoAtual(db, orgId, pessoaId, LER);
+    return ProcedimentoLocalPainelSchema.parse({ escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug },
+      autoridade: { ler: true, iniciar, editarSop: CONFIGURAR.every((p) => permissoes.has(p)), verificadaEm: new Date().toISOString() },
+      agente: { estado: agente.estado, ativo: agente.ativo, responsavelDisponivel: !!dono },
+      procedimento: agente.sop ? { versao: agente.sop.versao, proposito: agente.sop.proposito, passos: agente.sop.passos, definicaoDePronto: agente.sop.definicaoDePronto } : null,
+      modelo: { configurado: agente.modelo, declaracao },
+      executor: { modo: 'sintese_local_sem_ferramentas', ferramentasExternas: false, agendamento: false, cancelarInferencia: false },
+      inicioLocal: { permitido: impedimentosLocais.length === 0, impedimentosLocais, verificacaoModelo: 'somente_apos_pedido' } });
+  }
+
+  async painel(orgId: string, pessoaId: string, slug: string) {
+    return this.painelNoTx(this.prisma, orgId, pessoaId, slug);
   }
 
   async fontes(orgId: string, pessoaId: string, slug: string) {
@@ -139,11 +184,8 @@ export class ProcedimentoDoAgenteService {
     if (!await this.prisma.agent.findFirst({ where: { orgId, slug }, select: { id: true } })) throw new NotFoundException('Agente indisponível.');
     const rows = await this.prisma.contextItem.findMany({ where: { orgId, ...filtroDeLeitura(pessoaId), arquivadoEm: null },
       take: 100, orderBy: { title: 'asc' }, include: { versoes: { orderBy: { versao: 'desc' } } } });
-    const modelo = await this.modelo.estado();
-    const { agente, capacidadesExecutor } = await this.capacidades(orgId, pessoaId, slug, modelo);
-    const atuais = await this.prisma.contextItem.findMany({ where: { orgId, ...filtroDeLeitura(pessoaId), arquivadoEm: null, id: { in: rows.map((r) => r.id) } } });
-    await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const final = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, atuais.map((r) => r.id), false);
+    const painel = await this.painelNoTx(this.prisma, orgId, pessoaId, slug);
+    const final = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, rows.map((r) => r.id), false);
     const porId = new Map(final.fontes.map((r) => [r.id, r]));
     const verificadoEm = new Date();
     const items = rows.filter((r) => porId.has(r.id)).map((r) => {
@@ -153,11 +195,28 @@ export class ProcedimentoDoAgenteService {
           retratoFonte: construirFonteAutorizada({ item: atual, versaoSelecionada: v, incluirCorpo: false, acessoVerificadoEm: verificadoEm,
             novoUsoPermitido: !atual.arquivadoEm && atual.sourceType === v.sourceType && atual.sourceRef === v.sourceRef }) })) };
     });
-    return { items, modelo, escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug }, capacidadesExecutor };
+    return ProcedimentoLocalFontesSchema.parse({ items, painel, escopo: painel.escopo });
+  }
+
+  private async sopDoCompromisso(tx: Prisma.TransactionClient, orgId: string, pessoaId: string, slug: string, input: Pedido) {
+    // A ordem Agent→agent-sop é a mesma do editor humano. Sop FOR SHARE cobre o writer CAS do roster.
+    await tx.$queryRaw`SELECT "id" FROM "Agent" WHERE "orgId"=${orgId} AND "slug"=${slug} FOR UPDATE`;
+    const identidade = await tx.agent.findFirst({ where: { orgId, slug }, select: { id: true } });
+    if (!identidade) throw new NotFoundException('Agente indisponível.');
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agent-sop:${orgId}:${identidade.id}`}))`;
+    await tx.$queryRaw`SELECT "id" FROM "Sop" WHERE "orgId"=${orgId} AND "agentId"=${identidade.id} FOR SHARE`;
+    const agente = await tx.agent.findFirst({ where: { id: identidade.id, orgId, slug }, include: { sop: true } });
+    if (!agente) throw new NotFoundException('Agente indisponível.');
+    if (!agente.sop || agente.sop.orgId !== orgId || agente.sop.agentId !== agente.id || agente.sop.versao !== input.expectedSopVersion)
+      throw new ConflictException({ code: 'agente_procedimento_sop_alterado', message: 'O procedimento mudou. Confira a versão antes de iniciar ou reenviar o pedido.' });
+    if (agente.donoId) await tx.$queryRaw`SELECT "id" FROM "User" WHERE "orgId"=${orgId} AND "id"=${agente.donoId} FOR SHARE`;
+    const dono = await tx.user.findFirst({ where: { id: agente.donoId ?? '', orgId, isActive: true }, select: { id: true } });
+    await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
+    return { agente, sop: agente.sop, dono };
   }
 
   private async fonte(db: Pick<Prisma.TransactionClient, 'contextItem' | 'contextItemVersion' | 'user' | '$queryRawUnsafe'>,
-    orgId: string, pessoaId: string, pedido: Pedido, anterior?: Registro['fonte'], modo: 'novo_efeito' | 'historico' = 'novo_efeito') {
+    orgId: string, pessoaId: string, pedido: EntradaFonte, anterior?: Registro['fonte'], modo: 'novo_efeito' | 'historico' = 'novo_efeito') {
     const permitirArquivada = modo === 'historico';
     let item = await db.contextItem.findFirst({ where: { id: pedido.itemId, orgId, ...filtroDeLeitura(pessoaId), ...(permitirArquivada ? {} : { arquivadoEm: null }) } });
     if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
@@ -176,6 +235,7 @@ export class ProcedimentoDoAgenteService {
         || anterior.versao !== v.versao || anterior.contentHash !== pedido.contentHash || anterior.contentHash !== v.contentHash || anterior.title !== v.title)
         throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão registrada da fonte não pôde ser conferida.' });
       if (v.sourceType !== anterior.sourceType || v.sourceRef !== anterior.sourceRef) throw new ConflictException('A origem registrada da fonte não pôde ser conferida.');
+      if (modo === 'novo_efeito' && item.versao !== pedido.expectedItemVersion) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
       if (modo === 'novo_efeito' && (item.chave !== anterior.chave || item.sourceType !== anterior.sourceType || item.sourceRef !== anterior.sourceRef)) throw new ConflictException('A origem da fonte mudou.');
     } else if (item.versao !== pedido.expectedItemVersion || v.sourceType !== item.sourceType || v.sourceRef !== item.sourceRef) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
     return { item, v };
@@ -186,29 +246,33 @@ export class ProcedimentoDoAgenteService {
     const assinatura = fingerprint({ pessoaId, slug, input });
     const canalRef = `${REF_PROCEDIMENTO_LOCAL}${input.requestId}`;
     const inicio = Date.now();
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
     const claim = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${input.requestId}`}))`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
       await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
-      const existente = await tx.session.findFirst({ where: { orgId, canal: 'web', canalRef }, include: { steps: { where: { ordem: 1 } } } });
+      const existentes = await tx.session.findMany({ where: { orgId, canal: 'web', canalRef }, take: 2, include: { steps: { where: { ordem: 1 } } } });
+      if (existentes.length > 1) throw new ConflictException('O pedido não pôde ser conferido.');
+      const existente = existentes[0];
       if (existente) {
-        const registro = existente.steps[0]?.payload as unknown as Registro | null;
-        if (!registro || registro.fingerprint !== assinatura || existente.solicitanteId !== pessoaId) throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
+        if (existente.solicitanteId !== pessoaId || !await tx.agent.findFirst({ where: { id: existente.agentId, orgId, slug }, select: { id: true } }))
+          throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
+        const { registro } = lerRegistro(existente.steps[0]?.payload, pessoaId, slug, input.requestId);
+        if (registro.entradaContrato !== 2 || registro.fingerprint !== assinatura) throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
         await this.fonte(tx, orgId, pessoaId, input, registro.fonte, 'historico');
+        await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
         return { sessionId: existente.id, repetido: true as const };
       }
-      const agente = await tx.agent.findFirst({ where: { orgId, slug }, include: { sop: true } });
-      if (!agente) throw new NotFoundException('Agente indisponível.');
+      const { agente, sop, dono } = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
       const { item, v } = await this.fonte(tx, orgId, pessoaId, input);
-      const dono = await tx.user.findFirst({ where: { id: agente.donoId ?? '', orgId, isActive: true }, select: { id: true } });
       const causa = agente.estado !== 'ativo' || !agente.ativo ? `Agente ${agente.estado}. Retome antes de criar outro pedido.`
         : !dono ? 'Responsável indisponível nesta empresa.'
         : !agente.sop ? 'Defina o procedimento antes de iniciar.'
         : !agente.capacidades.includes('contexto.memoria.buscar') || agente.capacidades.some((c) => c !== 'contexto.memoria.buscar')
           ? 'Ferramenta não permitida neste procedimento. Nenhuma ferramenta foi executada.' : null;
-      const registro: Registro = { tipo: 'procedimento_local', fingerprint: assinatura, requestId: input.requestId, entrada: input,
+      const registro: Registro = { tipo: 'procedimento_local', entradaContrato: 2, fingerprint: assinatura, requestId: input.requestId, entrada: input,
         modeloConfigurado: agente.modelo,
-        procedimento: { versao: agente.sop?.versao ?? 0, proposito: agente.sop?.proposito ?? '', passos: agente.sop?.passos ?? [], definicaoDePronto: agente.sop?.definicaoDePronto ?? '' },
+        procedimento: { versao: sop.versao, proposito: sop.proposito, passos: sop.passos, definicaoDePronto: sop.definicaoDePronto },
         fonte: { itemId: item.id, versionId: v.id, contentHash: v.contentHash, versao: v.versao, chave: item.chave, sourceType: v.sourceType, sourceRef: v.sourceRef, title: v.title } };
       const session = await tx.session.create({ data: { orgId, agentId: agente.id, canal: 'web', canalRef,
         solicitanteId: pessoaId, solicitanteRotulo: 'Operador do procedimento local', pedido: 'Procedimento local de síntese de fonte',
@@ -217,8 +281,9 @@ export class ProcedimentoDoAgenteService {
         steps: { create: { orgId, ordem: 1, tipo: 'pedido', gatilhos: [], payload: registro as unknown as Prisma.InputJsonValue } } }, select: { id: true } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.request', entityType: 'session', entityId: session.id,
         metadata: { requestId: input.requestId, agenteId: agente.id, semEfeitosExternos: true } }, tx);
+      await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
       return { sessionId: session.id, repetido: false as const, registro, modelo: agente.modelo, causa, body: v.body, nome: agente.nome };
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     if (claim.repetido || claim.causa) return this.detalhe(orgId, pessoaId, slug, claim.sessionId);
     let saida: ResultadoLocal | undefined;
     let observado: ObservacaoLocal | undefined;
@@ -252,8 +317,12 @@ export class ProcedimentoDoAgenteService {
       const agente = await tx.agent.findFirst({ where: { orgId, slug }, select: { estado: true, ativo: true } });
       if (saida && (!agente || agente.estado !== 'ativo' || !agente.ativo)) { saida = undefined; status = SessionStatus.recusada; motivo = 'Agente pausado ou encerrado antes de registrar o resultado.'; }
       if (saida) {
-        try { await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR); await this.fonte(tx, orgId, pessoaId, input, claim.registro.fonte); }
-        catch { saida = undefined; status = SessionStatus.recusada; motivo = 'Acesso à fonte revogado antes de registrar o resultado.'; }
+        try {
+          const atual = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
+          if (!atual.dono || atual.agente.estado !== 'ativo' || !atual.agente.ativo) throw new ConflictException('Agente pausado ou responsável indisponível.');
+          await this.fonte(tx, orgId, pessoaId, input, claim.registro.fonte);
+          await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
+        } catch { saida = undefined; status = SessionStatus.recusada; motivo = 'O acesso, a fonte ou o procedimento mudou antes de registrar o resultado.'; }
       }
       await tx.sessionStep.update({ where: { sessionId_ordem: { sessionId: claim.sessionId, ordem: 1 } },
         data: { payload: { ...claim.registro, ...(saida ? { saida } : {}), ...(observado ? { observado } : {}) } as unknown as Prisma.InputJsonValue } });
@@ -266,63 +335,81 @@ export class ProcedimentoDoAgenteService {
       await tx.agent.updateMany({ where: { orgId, slug }, data: { ultimaExecucaoEm: new Date(), ultimoStatus: status, ...(observado ? { execucoes: { increment: 1 } } : {}), ...(status === SessionStatus.falhou ? { falhas: { increment: 1 } } : {}) } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.result', entityType: 'session', entityId: claim.sessionId,
         metadata: { status, semEfeitosExternos: true } }, tx);
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     return this.detalhe(orgId, pessoaId, slug, claim.sessionId);
   }
 
   private async conferirAntesDaChamada(orgId: string, pessoaId: string, slug: string, input: Pedido, registro: Registro) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
-    const agente = await this.prisma.agent.findFirst({ where: { orgId, slug, estado: 'ativo', ativo: true }, select: { id: true } });
-    if (!agente) throw new Error('Agente pausado ou encerrado. Nenhum novo efeito foi produzido.');
-    await this.fonte(this.prisma, orgId, pessoaId, input, registro.fonte);
-    const final = await this.prisma.agent.findFirst({ where: { orgId, slug, estado: 'ativo', ativo: true }, select: { id: true } });
-    if (!final) throw new Error('Agente pausado ou encerrado. Nenhum novo efeito foi produzido.');
-    await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
-    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, EXECUTAR, [input.itemId], false, slug);
-    if (!atual.agenteDisponivel) throw new ConflictException('Agente pausado ou indisponível.');
-    const item = atual.fontes[0];
-    if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
-    if (item.chave !== registro.fonte.chave || item.sourceType !== registro.fonte.sourceType || item.sourceRef !== registro.fonte.sourceRef
-      || item.versao !== input.expectedItemVersion) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${input.requestId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      const { agente, dono, sop } = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
+      if (agente.estado !== 'ativo' || !agente.ativo || !dono) throw new ConflictException('Agente pausado ou responsável indisponível.');
+      if (sop.versao !== registro.procedimento.versao || sop.proposito !== registro.procedimento.proposito
+        || JSON.stringify(sop.passos) !== JSON.stringify(registro.procedimento.passos) || sop.definicaoDePronto !== registro.procedimento.definicaoDePronto)
+        throw new ConflictException({ code: 'agente_procedimento_sop_alterado', message: 'O procedimento mudou antes do novo efeito.' });
+      await this.fonte(tx, orgId, pessoaId, input, registro.fonte);
+      await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
+      const atual = await reconferirFontesAtuais(tx, orgId, pessoaId, EXECUTAR, [input.itemId], false, slug);
+      if (!atual.agenteDisponivel) throw new ConflictException('Agente pausado ou indisponível.');
+      const item = atual.fontes[0];
+      if (!item) throw new NotFoundException('Fonte indisponível para esta conta.');
+      if (item.chave !== registro.fonte.chave || item.sourceType !== registro.fonte.sourceType || item.sourceRef !== registro.fonte.sourceRef
+        || item.versao !== input.expectedItemVersion) throw new ConflictException('A fonte mudou. Confira a versão antes de iniciar outro pedido.');
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   async porPedido(orgId: string, pessoaId: string, slug: string, requestId: string) {
     if (!z.string().uuid().safeParse(requestId).success) throw new BadRequestException('Pedido inválido.');
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const sessions = await this.prisma.session.findMany({ where: { orgId, canal: 'web', canalRef: `${REF_PROCEDIMENTO_LOCAL}${requestId}`,
-      solicitanteId: pessoaId, agent: { orgId, slug } }, take: 2, include: { steps: { where: { ordem: 1 } } } });
-    if (!sessions.length) throw new NotFoundException('Execução indisponível.');
-    if (sessions.length !== 1) throw new ConflictException('O pedido não pôde ser conferido.');
-    const session = sessions[0], registro = session.steps[0]?.payload as unknown as Registro | undefined;
-    const entrada = ExecutarProcedimentoSchema.safeParse(registro?.entrada);
-    if (!entrada.success || registro?.tipo !== 'procedimento_local' || registro.requestId !== requestId
-      || entrada.data.requestId !== requestId || registro.fingerprint !== fingerprint({ pessoaId, slug, input: entrada.data }))
-      throw new ConflictException('O pedido não pôde ser conferido.');
-    return this.detalhe(orgId, pessoaId, slug, session.id);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${requestId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await exigirAcessoAtual(tx, orgId, pessoaId, LER);
+      const agente = await tx.agent.findFirst({ where: { orgId, slug }, select: { id: true, slug: true } });
+      if (!agente) throw new NotFoundException('Agente indisponível.');
+      const escopo = { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug };
+      const sessions = await tx.session.findMany({ where: { orgId, canal: 'web', canalRef: `${REF_PROCEDIMENTO_LOCAL}${requestId}` }, take: 2 });
+      if (!sessions.length) {
+        await exigirAcessoAtual(tx, orgId, pessoaId, LER);
+        return ProcedimentoLocalRecuperacaoSchema.parse({ estado: 'ausencia_conferida', escopo, requestId });
+      }
+      if (sessions.length !== 1 || sessions[0].solicitanteId !== pessoaId || sessions[0].agentId !== agente.id)
+        throw new ConflictException('O pedido não pôde ser conferido para esta pessoa e agente.');
+      const execucao = await this.detalheNoTx(tx, orgId, pessoaId, slug, sessions[0].id);
+      if (execucao.requestId !== requestId) throw new ConflictException('O pedido não pôde ser conferido.');
+      await exigirAcessoAtual(tx, orgId, pessoaId, LER);
+      return ProcedimentoLocalRecuperacaoSchema.parse({ estado: 'confirmado', escopo, requestId, execucao });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
-  async detalhe(orgId: string, pessoaId: string, slug: string, sessionId: string) {
-    await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const session = await this.prisma.session.findFirst({ where: { id: sessionId, orgId, solicitanteId: pessoaId,
+  private async detalheNoTx(db: Prisma.TransactionClient, orgId: string, pessoaId: string, slug: string, sessionId: string): Promise<ProcedimentoLocalExecucao> {
+    await exigirAcessoAtual(db, orgId, pessoaId, LER);
+    const session = await db.session.findFirst({ where: { id: sessionId, orgId, solicitanteId: pessoaId,
       canal: 'web', canalRef: { startsWith: REF_PROCEDIMENTO_LOCAL }, agent: { orgId, slug } }, include: { steps: { where: { ordem: 1 } } } });
-    if (!session) throw new NotFoundException('Execução indisponível.');
-    const registro = session.steps[0]?.payload as unknown as Registro;
-    if (registro?.tipo !== 'procedimento_local') throw new NotFoundException('Execução indisponível.');
-    const modelo = await this.modelo.estado();
-    const { agente, capacidadesExecutor } = await this.capacidades(orgId, pessoaId, slug, modelo);
-    const { item, v } = await this.fonte(this.prisma, orgId, pessoaId, registro.entrada, registro.fonte, 'historico');
-    await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    const atual = await reconferirFontesAtuais(this.prisma, orgId, pessoaId, LER, [item.id], true);
+    if (!session?.canalRef) throw new NotFoundException('Execução indisponível.');
+    const requestId = session.canalRef.slice(REF_PROCEDIMENTO_LOCAL.length);
+    const { registro, entradaConfirmada } = lerRegistro(session.steps[0]?.payload, pessoaId, slug, requestId);
+    const { item, v } = await this.fonte(db, orgId, pessoaId, registro.entrada, registro.fonte, 'historico');
+    const painelAtual = await this.painelNoTx(db, orgId, pessoaId, slug);
+    const atual = await reconferirFontesAtuais(db, orgId, pessoaId, LER, [item.id], true);
     const fonteFinal = atual.fontes[0];
     if (!fonteFinal) throw new NotFoundException('Fonte indisponível para esta conta.');
     const retratoFonte = construirFonteAutorizada({ item: fonteFinal, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
       novoUsoPermitido: !fonteFinal.arquivadoEm && fonteFinal.chave === registro.fonte.chave && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
-    return { escopo: { orgId, userId: pessoaId, agentId: agente.id, agentSlug: agente.slug }, retratoFonte, capacidadesExecutor, id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
+    return ProcedimentoLocalExecucaoSchema.parse({ escopo: painelAtual.escopo, retratoFonte, painelAtual,
+      procedimentoAtual: painelAtual.procedimento, entradaConfirmada, id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
       pessoaId, pedido: registro.entrada.pedido, procedimento: registro.procedimento,
       fonte: registro.fonte, resposta: registro.saida?.texto ?? null,
       modeloConfigurado: registro.modeloConfigurado, modeloUsado: registro.observado?.modelo ?? null, provider: 'llama.cpp-local',
       consumo: { tokensIn: registro.observado?.tokensIn ?? null, tokensOut: registro.observado?.tokensOut ?? null,
         origem: registro.observado ? 'resposta_do_servidor_local' : 'nenhuma_chamada_concluida', custoExternoUsd: 0, custoMaquinaMedido: false },
-      criadaEm: session.criadaEm.toISOString(), encerradaEm: session.encerradaEm?.toISOString() ?? null };
+      criadaEm: session.criadaEm.toISOString(), encerradaEm: session.encerradaEm?.toISOString() ?? null });
+  }
+
+  async detalhe(orgId: string, pessoaId: string, slug: string, sessionId: string) {
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
+    return this.detalheNoTx(this.prisma, orgId, pessoaId, slug, sessionId);
   }
 }

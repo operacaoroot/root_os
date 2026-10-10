@@ -48,3 +48,5 @@ export {
   type DemonstracaoSinteticaRecibo,
   type DemonstracaoSinteticaResultado,
 } from './demonstracao-sintetica';
+
+export * from './procedimento-local';
