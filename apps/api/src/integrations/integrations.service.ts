@@ -153,7 +153,7 @@ export class IntegrationsService {
       const offRows = await tx.conectorDesligado.findMany({ where: { orgId }, select: { conector: true, desligadoEm: true } });
       const desligados = new Map(offRows.map(a => [a.conector, a]));
       const doContrato = this.contrato.listar();
-      const templates = CONNECTORS.map(c => ({ ...c }));
+      const templates: Array<Pick<IntegrationCatalogRow, 'key' | 'label' | 'category' | 'phase' | 'authType' | 'requires'>> = CONNECTORS.map(c => ({ ...c }));
       const listed = new Set(templates.map(c => c.key));
       for (const c of doContrato) for (const key of this.linhasDe(c)) {
         if (listed.has(key)) continue;
