@@ -80,7 +80,7 @@ const AlterarSchema = z
     validUntil: z.coerce.date().nullish(),
     confidence: z.number().min(0).max(1).optional(),
     motivo: z.string().max(2000).nullish(),
-    versaoEsperada: z.number({ required_error: 'Informe a versão esperada da nota.' }).int().min(1),
+    versaoEsperada: z.number({ required_error: 'Informe a versão esperada da nota.' }).int().min(1).safe(),
   })
   .strict();
 
@@ -97,7 +97,10 @@ const PromoverSchema = z
   })
   .strict();
 
-const MotivoSchema = z.object({ motivo: z.string().max(2000).nullish() }).strict();
+const EstadoHumanoSchema = z.object({
+  versaoEsperada: z.number({ required_error: 'Informe a versão esperada da nota.' }).int().min(1).safe(),
+  motivo: z.string().max(2000).nullish(),
+}).strict();
 
 /*
  * ============================================================================
@@ -256,7 +259,7 @@ export class MemoriaController {
     const dados = AlterarSchema.parse(body);
     await this.exigirForaDaVault(user.orgId, id, user.sub);
     if (dados.sourceType === ContextSource.vault) throw new ForbiddenException(FRASE_DO_PREFIXO);
-    return this.memoria.alterar(user.orgId, id, dados);
+    return this.memoria.alterarHumano(user.orgId, user.sub, id, dados);
   }
 
   /*
@@ -267,16 +270,16 @@ export class MemoriaController {
   @Post(':id/arquivar')
   @RequirePermissions('obsidian.editar')
   async arquivar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    const { motivo } = MotivoSchema.parse(body ?? {});
+    const dados = EstadoHumanoSchema.parse(body);
     await this.exigirForaDaVault(user.orgId, id, user.sub);
-    return this.memoria.arquivar(user.orgId, id, motivo);
+    return this.memoria.arquivarHumano(user.orgId, user.sub, id, dados);
   }
 
   @Post(':id/restaurar')
   @RequirePermissions('obsidian.editar')
   async restaurar(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    const { motivo } = MotivoSchema.parse(body ?? {});
+    const dados = EstadoHumanoSchema.parse(body);
     await this.exigirForaDaVault(user.orgId, id, user.sub);
-    return this.memoria.restaurar(user.orgId, id, motivo);
+    return this.memoria.restaurarHumano(user.orgId, user.sub, id, dados);
   }
 }

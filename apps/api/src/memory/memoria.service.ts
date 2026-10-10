@@ -27,6 +27,7 @@ import {
   chaveDaVault,
   corpoNormalizado,
   exigirProcedencia,
+  ehChaveDaVault,
   formaDoCorpo,
   hashDoCorpo,
   PREFIXO_DA_VAULT,
@@ -133,6 +134,8 @@ export type MudancaDeNota = Partial<Omit<EntradaDeNota, 'chave'>> & {
    */
   versaoEsperada?: number;
 };
+
+type IntencaoHumanaDaNota = { actorId: string; versaoEsperada: number };
 
 /** Escrita de uma nota derivada de outra, validando as duas no mesmo cadeado. */
 export interface ProjecaoCondicionada {
@@ -701,12 +704,26 @@ export class MemoriaService {
   }
 
   async alterar(orgId: string, id: string, mudancas: MudancaDeNota, autorizacao?: symbol): Promise<NotaDeContexto> {
+    return this.alterarNoFluxo(orgId, id, mudancas, autorizacao);
+  }
+
+  async alterarHumano(
+    orgId: string, actorId: string, id: string, mudancas: MudancaDeNota & { versaoEsperada: number },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, mudancas.versaoEsperada);
+    if (mudancas.sourceType === ContextSource.vault) throw new ForbiddenException('A origem vault é reservada à projeção.');
+    return this.alterarNoFluxo(orgId, id, mudancas, undefined, intencao);
+  }
+
+  private async alterarNoFluxo(
+    orgId: string, id: string, mudancas: MudancaDeNota, autorizacao?: symbol, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
     if (autorizacao === ESCRITA_DO_BRANDBOOK && (!Number.isSafeInteger(mudancas.versaoEsperada) || (mudancas.versaoEsperada ?? 0) < 1)) {
       throw new BadRequestException('Informe a versão esperada do brandbook.');
     }
     if (autorizacao === ESCRITA_DO_BRANDBOOK && (mudancas.acessoRestrito || mudancas.leitores?.length)) throw new ForbiddenException('O brandbook deve continuar aberto à empresa.');
     const ator = this.ator();
-    await this.conferirLeitores(this.prisma, orgId, mudancas.leitores);
+    if (!intencaoHumana) await this.conferirLeitores(this.prisma, orgId, mudancas.leitores);
 
     /*
      * O QUE MUDA É MONTADO A PARTIR DO ESTADO LIDO DENTRO DO CADEADO — ver o
@@ -720,6 +737,13 @@ export class MemoriaService {
       mudanca: ContextChange.alteracao,
       ator,
       autorizacao,
+      intencaoHumana,
+      conferir: intencaoHumana ? async (tx) => {
+        if (mudancas.leitores?.length) await tx.$queryRaw`
+          SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...new Set(mudancas.leitores)].sort())})
+          ORDER BY id FOR SHARE`;
+        await this.conferirLeitores(tx, orgId, mudancas.leitores);
+      } : undefined,
       montar: (atual) => {
         if (mudancas.versaoEsperada !== undefined && atual.versao !== mudancas.versaoEsperada) {
           throw new ConflictException(
@@ -803,7 +827,8 @@ export class MemoriaService {
       await this.gravarVetorSemDerrubar(orgId, id, item.contentHash, mudancas.embedding);
     }
 
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   /**
@@ -939,12 +964,26 @@ export class MemoriaService {
    * fazia assim em março".
    */
   async arquivar(orgId: string, id: string, motivo?: string | null): Promise<NotaDeContexto> {
+    return this.arquivarNoFluxo(orgId, id, motivo);
+  }
+
+  async arquivarHumano(
+    orgId: string, actorId: string, id: string, input: { versaoEsperada: number; motivo?: string | null },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, input.versaoEsperada);
+    return this.arquivarNoFluxo(orgId, id, input.motivo, intencao);
+  }
+
+  private async arquivarNoFluxo(
+    orgId: string, id: string, motivo?: string | null, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
     const ator = this.ator();
     const { item, anterior, versao } = await this.gravarVersao({
       orgId,
       id,
       mudanca: ContextChange.arquivamento,
       ator,
+      intencaoHumana,
       montar: (atual) => {
         // A recusa também mora aqui dentro: fora do cadeado, dois arquivamentos
         // simultâneos passavam os dois e gravavam duas versões de arquivar.
@@ -969,16 +1008,31 @@ export class MemoriaService {
       motivo: motivo ?? null,
       anterior,
     });
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   async restaurar(orgId: string, id: string, motivo?: string | null): Promise<NotaDeContexto> {
+    return this.restaurarNoFluxo(orgId, id, motivo);
+  }
+
+  async restaurarHumano(
+    orgId: string, actorId: string, id: string, input: { versaoEsperada: number; motivo?: string | null },
+  ): Promise<NotaDeContexto> {
+    const intencao = this.exigirIntencaoHumana(orgId, actorId, input.versaoEsperada);
+    return this.restaurarNoFluxo(orgId, id, input.motivo, intencao);
+  }
+
+  private async restaurarNoFluxo(
+    orgId: string, id: string, motivo?: string | null, intencaoHumana?: IntencaoHumanaDaNota,
+  ): Promise<NotaDeContexto> {
     const ator = this.ator();
     const { item, anterior, versao } = await this.gravarVersao({
       orgId,
       id,
       mudanca: ContextChange.restauracao,
       ator,
+      intencaoHumana,
       montar: (atual) => {
         if (!atual.arquivadoEm) throw new ConflictException('Esta nota não está arquivada.');
         return {
@@ -997,7 +1051,8 @@ export class MemoriaService {
       motivo: motivo ?? null,
       anterior,
     });
-    return (await this.obter(orgId, id)) as NotaDeContexto;
+    return intencaoHumana ? this.entregarAoHumano(orgId, id, intencaoHumana)
+      : (await this.obter(orgId, id)) as NotaDeContexto;
   }
 
   /**
@@ -1745,6 +1800,66 @@ export class MemoriaService {
     }
   }
 
+  private exigirIntencaoHumana(orgId: string, actorId: string, versaoEsperada: number): IntencaoHumanaDaNota {
+    if (!Number.isSafeInteger(versaoEsperada) || versaoEsperada < 1) {
+      throw new BadRequestException('Informe a versão esperada da nota.');
+    }
+    const ctx = contextoAtual();
+    if (!orgId || !actorId || ctx?.actorType !== ActorType.user || ctx.orgId !== orgId || ctx.actorId !== actorId) {
+      throw new ForbiddenException('Acesso insuficiente.');
+    }
+    return { actorId, versaoEsperada };
+  }
+
+  /** Somente concessões cujas linhas foram travadas satisfazem a escrita humana. */
+  private async travarAcessoHumano(tx: Prisma.TransactionClient, orgId: string, intencao: IntencaoHumanaDaNota): Promise<void> {
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    const orgs = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+    const pessoas = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "User" WHERE id=${intencao.actorId} AND "orgId"=${orgId} AND "isActive" ORDER BY id FOR SHARE`;
+    if (orgs.length !== 1 || pessoas.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
+    const vinculos = await tx.$queryRaw<Array<{ roleId: string }>>`
+      SELECT ur."A" AS "roleId" FROM "_UserRoles" ur JOIN "Role" r ON r.id=ur."A"
+      WHERE ur."B"=${intencao.actorId} AND r."orgId"=${orgId} ORDER BY ur."A",ur."B" FOR SHARE OF ur`;
+    const roleIds = [...new Set(vinculos.map((v) => v.roleId))].sort();
+    if (!roleIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const roles = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Role" WHERE "orgId"=${orgId} AND id IN (${Prisma.join(roleIds)}) ORDER BY id FOR SHARE`;
+    if (roles.length !== roleIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const concessoes = await tx.$queryRaw<Array<{ permissionId: string }>>`
+      SELECT rp."A" AS "permissionId" FROM "_RolePermissions" rp
+      WHERE rp."B" IN (${Prisma.join(roleIds)}) ORDER BY rp."B",rp."A" FOR SHARE OF rp`;
+    const permissionIds = [...new Set(concessoes.map((c) => c.permissionId))].sort();
+    if (!permissionIds.length) throw new ForbiddenException('Acesso insuficiente.');
+    const permissoes = await tx.$queryRaw<Array<{ id: string; key: string }>>`
+      SELECT id,key FROM "Permission" WHERE id IN (${Prisma.join(permissionIds)}) ORDER BY id FOR SHARE`;
+    const keys = new Set(permissoes.map((p) => p.key));
+    if (permissoes.length !== permissionIds.length || !keys.has('obsidian.ver') || !keys.has('obsidian.editar')) {
+      throw new ForbiddenException('Acesso insuficiente.');
+    }
+    await exigirAcessoAtual(tx, orgId, intencao.actorId, ['obsidian.ver', 'obsidian.editar']);
+  }
+
+  private async entregarAoHumano(orgId: string, id: string, intencao: IntencaoHumanaDaNota): Promise<NotaDeContexto> {
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    await exigirAcessoAtual(this.prisma, orgId, intencao.actorId, ['obsidian.ver', 'obsidian.editar']);
+    const nota = await this.obter(orgId, id, intencao.actorId);
+    const linhas = await this.prisma.$queryRaw<Array<{ autorizado: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM "ContextItem" c JOIN "Org" o ON o.id=c."orgId" AND o."isActive"
+        JOIN "User" u ON u.id=${intencao.actorId} AND u."orgId"=o.id AND u."isActive"
+        JOIN "_UserRoles" ur ON ur."B"=u.id JOIN "Role" r ON r.id=ur."A" AND r."orgId"=u."orgId"
+        JOIN "_RolePermissions" rp ON rp."B"=r.id JOIN "Permission" p ON p.id=rp."A"
+        WHERE c.id=${id} AND c."orgId"=${orgId} AND (NOT c."acessoRestrito" OR u.id=ANY(c.leitores))
+          AND p.key IN ('obsidian.ver','obsidian.editar')
+        GROUP BY c.id HAVING count(DISTINCT p.key)=2
+      ) AS autorizado`;
+    if (!nota || !linhas[0]?.autorizado) throw new ForbiddenException('Acesso à nota insuficiente.');
+    this.exigirIntencaoHumana(orgId, intencao.actorId, intencao.versaoEsperada);
+    return nota;
+  }
+
   /** Ator da operação, herdado do contexto de execução. */
   private ator(): { actorType: string; actorId: string | null; correlationId: string | null } {
     const ctx = contextoAtual();
@@ -1789,6 +1904,7 @@ export class MemoriaService {
     mudanca: ContextChange;
     ator: { actorType: string; actorId: string | null };
     autorizacao?: symbol;
+    intencaoHumana?: IntencaoHumanaDaNota;
     conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
       dados: Prisma.ContextItemUncheckedUpdateInput;
@@ -1800,16 +1916,26 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, autorizacao, conferir, montar, noCadeado } = args;
+    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, conferir, montar, noCadeado } = args;
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
 
-      const leitor = await leitorAutorizado(tx, orgId, leitorDoContexto());
+      if (intencaoHumana) {
+        await this.travarAcessoHumano(tx, orgId, intencaoHumana);
+        await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${id} AND "orgId"=${orgId} FOR UPDATE`;
+      }
+      const leitor = intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
       const atual = await tx.contextItem.findFirst({
         where: { id, orgId, ...filtroDeLeitura(leitor) },
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
+      if (intencaoHumana && (ehChaveDaVault(atual.chave) || atual.sourceType === ContextSource.vault)) {
+        throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+      }
+      if (intencaoHumana && atual.versao !== intencaoHumana.versaoEsperada) {
+        throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+      }
       this.conferirEscritorDaMarca(atual.chave, autorizacao);
       await this.conferirMarcaLegadaNoCadeado(tx, orgId, atual.chave);
       if (atual.chave === BRANDBOOK_CHAVE && (atual.arquivadoEm || atual.acessoRestrito)) {
@@ -1836,6 +1962,9 @@ export class MemoriaService {
        * fora, e a numeração segue pelo MAIOR dos dois para não reaproveitar um
        * número já usado — o índice único (itemId, versao) recusaria.
        */
+      if (intencaoHumana && atual.versao !== maiorDoHistorico) {
+        throw new ConflictException('A versão da nota diverge do histórico. Confira a integridade antes de continuar.');
+      }
       if (atual.versao !== maiorDoHistorico) {
         this.log.error(
           `empresa ${orgId}: a nota ${atual.id} diz estar na versão ${atual.versao} e o ` +
@@ -1845,11 +1974,23 @@ export class MemoriaService {
       }
       const proxima = Math.max(atual.versao, maiorDoHistorico) + 1;
 
-      const item = await tx.contextItem.update({
-        where: { id: atual.id },
-        data: { ...dados, versao: proxima },
-        select: SELECAO_DA_NOTA,
-      });
+      let item: LinhaDaNota;
+      if (intencaoHumana) {
+        const alteracao = await tx.contextItem.updateMany({
+          where: { id: atual.id, orgId, versao: intencaoHumana.versaoEsperada },
+          data: { ...dados, versao: proxima },
+        });
+        if (alteracao.count !== 1) throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
+        const gravado = await tx.contextItem.findFirst({ where: { id: atual.id, orgId }, select: SELECAO_DA_NOTA });
+        if (!gravado) throw new ConflictException('A nota gravada não pôde ser conferida.');
+        item = gravado;
+      } else {
+        item = await tx.contextItem.update({
+          where: { id: atual.id },
+          data: { ...dados, versao: proxima },
+          select: SELECAO_DA_NOTA,
+        });
+      }
       const versao = await tx.contextItemVersion.create({
         data: {
           orgId,
@@ -1869,8 +2010,12 @@ export class MemoriaService {
         select: { id: true, versao: true },
       });
       await noCadeado?.(tx, atual, item);
+      if (intencaoHumana) {
+        this.exigirIntencaoHumana(orgId, intencaoHumana.actorId, intencaoHumana.versaoEsperada);
+        await exigirAcessoAtual(tx, orgId, intencaoHumana.actorId, ['obsidian.ver', 'obsidian.editar']);
+      }
       return { item, anterior: atual, versao };
-    });
+    }, intencaoHumana ? { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } : undefined);
   }
 
   /** A recusa amigável de chave repetida, num lugar só. */
