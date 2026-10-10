@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ProntidaoAgentesSchema, type ProntidaoAgentes } from '@mktos/shared';
 import { createHash } from 'node:crypto';
 import { Prisma, RiskLevel, SessionStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -42,6 +43,21 @@ const fingerprint = (valor: unknown) => createHash('sha256').update(JSON.stringi
 export class ProcedimentoDoAgenteService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService,
     private readonly modelo: ModeloLocalService) {}
+
+  async prontidao(orgId: string, pessoaId: string): Promise<ProntidaoAgentes> {
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['mcp.ver']);
+    const modelo = this.modelo.prontidao();
+    let consultaPermitida = false;
+    try {
+      await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['mcp.ver', 'obsidian.ver']);
+      consultaPermitida = true;
+    } catch (e) {
+      if (!(e instanceof ForbiddenException)) throw e;
+      await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['mcp.ver']);
+    }
+    return ProntidaoAgentesSchema.parse({ escopo: { orgId, userId: pessoaId }, modelo,
+      fontes: { consultaPermitida, quantidade: null } });
+  }
 
   async configuracao(orgId: string, pessoaId: string) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, CONFIGURAR);

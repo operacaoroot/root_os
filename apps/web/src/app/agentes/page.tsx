@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { KpiCard } from '@/components/KpiCard';
+import { ProntidaoLocal } from '@/components/ProntidaoLocal';
 import { Procedimento } from './Procedimento';
 import { ControleDoAgente } from './ControleDoAgente';
 import { Orcamento } from './Orcamento';
@@ -141,6 +142,8 @@ export default function AgentesPage() {
         Cada um com uma missão, um dono humano e as ferramentas que declarou. Fora da declaração, a
         régua recusa.
       </p>
+
+      <ProntidaoLocal tipo="agentes" />
 
       {can('automacoes.executar') && can('admin.usuarios') && <button type="button" onClick={() => setCriandoAgente(true)} className="rounded bg-brand px-3 py-2 text-sm text-ink">Criar agente</button>}
       {criandoAgente && user && <CriarAgente token={token} pessoaId={user.id} aoFechar={() => setCriandoAgente(false)} aoCriar={() => { setCriandoAgente(false); carregar(); }} />}

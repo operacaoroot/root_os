@@ -128,6 +128,12 @@ export class AgentsController {
     return this.agentes.roster(user.orgId);
   }
 
+  @Get('agents/prontidao')
+  @RequirePermissions('mcp.ver')
+  prontidao(@CurrentUser() user: JwtUser) {
+    return this.procedimento.prontidao(user.orgId, user.sub);
+  }
+
   @Get('agents/configuracao')
   @RequirePermissions(...CONFIGURAR_AGENTE)
   configuracao(@CurrentUser() user: JwtUser) {

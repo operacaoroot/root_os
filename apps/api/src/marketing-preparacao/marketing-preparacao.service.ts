@@ -6,7 +6,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { EditorialService } from '../pauta/editorial.service';
-import { editorialFingerprint } from '../pauta/editorial-contrato';
+import { editorialContentHash, editorialFingerprint, type EditorialVersionRow } from '../pauta/editorial-contrato';
+import { MarketingContaRecuperacaoSchema, MarketingPreparoRecuperacaoSchema, MarketingPedidoEscopoSchema,
+  type MarketingContaRecuperacao, type MarketingPreparoRecuperacao, type MarketingPedidoEscopo } from '@mktos/shared';
 import type { MarketingAccountSchema, MarketingPrepareSchema } from './marketing-preparacao.controller';
 
 type Db = Prisma.TransactionClient;
@@ -86,6 +88,89 @@ export class MarketingPreparacaoService {
       return { account: await this.account(db, orgId, id), replayed: false };
     });
   }
+  async escopoDeConta(orgId: string, actorId: string): Promise<MarketingPedidoEscopo> {
+    return this.run(orgId, actorId, CONFIG, async () => MarketingPedidoEscopoSchema.parse({ orgId, actorId }));
+  }
+
+  async escopoDePreparo(orgId: string, actorId: string): Promise<MarketingPedidoEscopo> {
+    return this.run(orgId, actorId, ['pauta.ver', 'tarefas.ver'], async () => MarketingPedidoEscopoSchema.parse({ orgId, actorId }));
+  }
+
+  async contaPorPedido(orgId: string, actorId: string, requestId: string): Promise<MarketingContaRecuperacao> {
+    const id = z.string().uuid().parse(requestId);
+    return this.run(orgId, actorId, CONFIG, async db => {
+      const a = (await db.$queryRaw<Account[]>`SELECT * FROM "MarketingAccountConfig"
+        WHERE "orgId"=${orgId} AND "requestId"=${id} FOR SHARE`)[0];
+      if (!a) return MarketingContaRecuperacaoSchema.parse({
+        estado: 'ausencia_conferida', tipo: 'configuracao_conta', orgId, actorId, requestId: id,
+      });
+      if (a.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+      const expected = editorialFingerprint(orgId, actorId, 'marketing.account', {
+        requestId: a.requestId, connectionId: a.connectionId, ownerId: a.ownerId, operators: a.operators,
+      });
+      if (a.fingerprint !== expected) throw new ConflictException('O recibo da configuração precisa ser conferido.');
+      const connection = await this.connection(db, orgId, a);
+      return MarketingContaRecuperacaoSchema.parse({
+        estado: 'confirmado', tipo: 'configuracao_conta', orgId, actorId, requestId: id,
+        conta: { id: a.id, connectionId: a.connectionId, handle: a.handle, ownerId: a.ownerId,
+          operators: a.operators, revision: a.revision, active: a.active },
+        disponibilidadeAtual: { contaAtiva: a.active, conexaoCorrespondente: connection.matches,
+          conexaoAptaPorRegistroLocal: connection.valid, verificacaoExternaAgora: false },
+      });
+    });
+  }
+
+  async preparoPorPedido(orgId: string, actorId: string, requestId: string): Promise<MarketingPreparoRecuperacao> {
+    const id = z.string().uuid().parse(requestId);
+    return this.run(orgId, actorId, ['pauta.ver', 'tarefas.ver'], async db => {
+      const p = (await db.$queryRaw<Preparation[]>`SELECT * FROM "MarketingPreparation"
+        WHERE "orgId"=${orgId} AND "requestId"=${id} FOR SHARE`)[0];
+      if (!p) return MarketingPreparoRecuperacaoSchema.parse({
+        estado: 'ausencia_conferida', tipo: 'preparo', orgId, actorId, requestId: id,
+      });
+      if (p.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
+      await db.$queryRaw`SELECT "id" FROM "MarketingAccountConfig" WHERE "orgId"=${orgId} AND "id"=${p.accountId} FOR SHARE`;
+      const a = await this.account(db, orgId, p.accountId, actorId);
+      if (p.connectionId !== a.connectionId || p.externalId !== a.externalId || p.handle !== a.handle) {
+        throw new ConflictException('O destino preservado do preparo precisa ser conferido.');
+      }
+      // O mesmo lock da escrita editorial mantém a seleção/decisão estáveis durante a consulta.
+      await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'editorial:' + orgId}, 0))`;
+      await db.$queryRaw`SELECT "id" FROM "WorkTask" WHERE "orgId"=${orgId} AND "id"=${p.taskId} FOR SHARE`;
+      const task = await db.workTask.findFirst({ where: { id: p.taskId, orgId }, select: { id: true, statusId: true, archived: true } });
+      const v = (await db.$queryRaw<EditorialVersionRow[]>`SELECT * FROM "EditorialVersion"
+        WHERE "orgId"=${orgId} AND "id"=${p.versionId}`)[0];
+      const materiais = v ? await db.$queryRaw<Array<{ taskId: string; selectedVersionId: string | null; releaseStatusId: string }>>`
+        SELECT "taskId","selectedVersionId","releaseStatusId" FROM "EditorialMaterial"
+        WHERE "orgId"=${orgId} AND "id"=${v.materialId}` : [];
+      const m = materiais[0];
+      const d = (await db.$queryRaw<Array<{ id: string; versionId: string; state: string; revokedAt: Date | null }>>`
+        SELECT "id","versionId","state","revokedAt" FROM "EditorialDecision"
+        WHERE "orgId"=${orgId} AND "id"=${p.decisionId}`)[0];
+      if (!task || !v || !m || !d) throw new NotFoundException('Material do preparo não disponível.');
+      if (m.taskId !== task.id || d.versionId !== v.id || d.state !== 'approved' ||
+          v.contentHash !== p.contentHash || editorialContentHash(v) !== p.contentHash || p.state !== 'prepared') {
+        throw new ConflictException('Os vínculos e o conteúdo preservado do preparo precisam ser conferidos.');
+      }
+      const last = (await db.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "EditorialDecision"
+        WHERE "orgId"=${orgId} AND "versionId"=${v.id} ORDER BY "createdAt" DESC,"id" DESC LIMIT 1`)[0];
+      const connection = await this.connection(db, orgId, a);
+      // Recibo histórico: não relê arquivos, não autoriza outro preparo e não chama provedor.
+      return MarketingPreparoRecuperacaoSchema.parse({
+        estado: 'confirmado', tipo: 'preparo', orgId, actorId, requestId: id,
+        preparo: { id: p.id, accountId: p.accountId, accountRevision: p.accountRevision,
+          connectionId: p.connectionId, handle: p.handle, taskId: p.taskId, versionId: p.versionId,
+          decisionId: p.decisionId, contentHash: p.contentHash, scheduledAt: new Date(p.scheduledAt).toISOString(),
+          timezone: p.timezone, state: 'prepared' },
+        disponibilidadeAtual: { contaAtiva: a.active, conexaoAptaPorRegistroLocal: connection.valid,
+          materialNaVersaoSelecionada: m.selectedVersionId === v.id && !task.archived && task.statusId === m.releaseStatusId,
+          decisaoPreservadaAprovada: !d.revokedAt && last?.id === d.id,
+          novaPreparacaoVerificada: false, verificacaoExternaAgora: false },
+        publicationAvailable: false, metricsAvailable: false, externalEffect: false,
+      });
+    });
+  }
+
   async disponibilidade(orgId: string, actorId: string, id: string, input: { active: boolean; expectedRevision: number }) {
     return this.run(orgId, actorId, CONFIG, async (db) => {
       const a = await this.account(db, orgId, id);

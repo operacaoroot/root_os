@@ -33,3 +33,5 @@ export * from './comercial-ponte-exercicio.js';
 export * from './catalogo-de-colecao.js';
 export * from './brandbook.js';
 export * from './financeiro-exercicio-inscricao.js';
+export * from './marketing-recuperacao.js';
+export * from './prontidao-local';

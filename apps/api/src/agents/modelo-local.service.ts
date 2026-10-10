@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ProntidaoModeloLocalSchema, type ProntidaoModeloLocal } from '@mktos/shared';
 import { FalhaSinteseLocal, ecoDoInvolucro, fimObservado, tokenObservado, type FimSinteseLocal, type ObservacaoLocal } from './sintese-local';
 
 export interface ModeloLocalEstado {
@@ -27,6 +28,14 @@ export class ModeloLocalService {
         || u.username || u.password || u.search || u.hash || !['', '/'].includes(u.pathname)) return null;
       return u.origin;
     } catch { return null; }
+  }
+
+  prontidao(): ProntidaoModeloLocal {
+    const declarado = process.env.ROOTOS_LOCAL_MODEL_URL;
+    return ProntidaoModeloLocalSchema.parse({
+      estado: !declarado ? 'nao_configurado' : this.endpoint() ? 'declarado_sem_verificacao' : 'configuracao_invalida',
+      provider: 'llama.cpp-local', disponivel: null, modelo: null, verificadoAgora: false,
+    });
   }
 
   async estado(): Promise<ModeloLocalEstado> {

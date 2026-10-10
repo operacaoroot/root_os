@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, EyeOff, RefreshCw, Search } from 'lucide-react';
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { ProntidaoLocal } from '@/components/ProntidaoLocal';
 import { CaminhoDeCarga } from './CaminhoDeCarga';
 import { Gaveta, type AlvoDaGaveta } from './Gaveta';
 import { NotaAberta } from './NotaAberta';
@@ -448,6 +449,8 @@ export default function ContextoPage() {
           </aside>
         </div>
       </section>
+
+      <ProntidaoLocal tipo="contexto" />
 
       {estado !== 'carregando' && (memoriaVazia || estado === 'vazia' || estado === 'desconhecida') && <details className="rounded-sm border border-border bg-surface">
         <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">

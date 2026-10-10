@@ -16,6 +16,12 @@ export class ObsidianController {
     return this.svc.list(user.orgId, user.sub);
   }
 
+  @Get('prontidao')
+  @RequirePermissions('obsidian.ver')
+  prontidao(@CurrentUser() user: JwtUser) {
+    return this.svc.prontidao(user.orgId, user.sub);
+  }
+
   @Get('search')
   @RequirePermissions('obsidian.ver')
   search(@CurrentUser() user: JwtUser, @Query('q') q?: string, @Query('limit') limit?: string) {

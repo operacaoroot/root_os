@@ -31,6 +31,22 @@ export class MarketingPreparacaoController {
   @Get('configuracao')
   @RequirePermissions('bio.editar', 'admin.usuarios')
   configuracao(@CurrentUser() user: JwtUser) { return this.service.configuracao(user.orgId, user.sub); }
+  @Get('contas/escopo')
+  @RequirePermissions('bio.editar', 'admin.usuarios')
+  escopoDeConta(@CurrentUser() user: JwtUser) { return this.service.escopoDeConta(user.orgId, user.sub); }
+  @Get('escopo')
+  @RequirePermissions('pauta.ver', 'tarefas.ver')
+  escopoDePreparo(@CurrentUser() user: JwtUser) { return this.service.escopoDePreparo(user.orgId, user.sub); }
+  @Get('contas/pedidos/:requestId')
+  @RequirePermissions('bio.editar', 'admin.usuarios')
+  contaPorPedido(@CurrentUser() user: JwtUser, @Param('requestId') requestId: string) {
+    return this.service.contaPorPedido(user.orgId, user.sub, uuid.parse(requestId));
+  }
+  @Get('pedidos/:requestId')
+  @RequirePermissions('pauta.ver', 'tarefas.ver')
+  preparoPorPedido(@CurrentUser() user: JwtUser, @Param('requestId') requestId: string) {
+    return this.service.preparoPorPedido(user.orgId, user.sub, uuid.parse(requestId));
+  }
   @Post('contas')
   @RequirePermissions('bio.editar', 'admin.usuarios')
   configurar(@CurrentUser() user: JwtUser, @Body() body: unknown) {

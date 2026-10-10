@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import type { Prisma } from '@prisma/client';
 import { GoogleService } from '../google/google.service';
-import type { KnowledgeList, NoteDetail, SearchResult } from '@mktos/shared';
+import { ProntidaoContextoSchema, type ProntidaoContexto, type KnowledgeList, type NoteDetail, type SearchResult } from '@mktos/shared';
 import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,7 +21,7 @@ import {
 } from '../integrations/conectores.registry';
 import { sigiloso } from '../gateway/event-log.service';
 import { MemoriaService, resumoVazio, VaultSuspeitaError, type NotaDaVaultParaProjetar } from '../memory/memoria.service';
-import { leitorAutorizado, leitorDoContexto } from '../memory/acesso-memoria';
+import { exigirAcessoAtual, leitorAutorizado, leitorDoContexto } from '../memory/acesso-memoria';
 import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
@@ -189,6 +189,25 @@ export class ObsidianService implements OnModuleInit {
     @Optional() private readonly google?: GoogleService,
     @Optional() private readonly catalogo?: CatalogoDeColecaoService,
   ) {}
+
+  async prontidao(orgId: string, pessoaId: string): Promise<ProntidaoContexto> {
+    return this.prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await exigirAcessoAtual(tx, orgId, pessoaId, ['obsidian.ver']);
+      const casa = await tx.org.findFirst({ where: { id: orgId, slug: SLUG_DA_CASA }, select: { id: true } });
+      // As linhas legíveis ficam bloqueadas para leitura; nenhum conteúdo sai desta consulta.
+      const itens = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "ContextItem"
+        WHERE "orgId"=${orgId} AND "arquivadoEm" IS NULL
+          AND ("acessoRestrito"=false OR ${pessoaId}=ANY("leitores")) FOR SHARE`;
+      const declarada = (this.fonte === 'drive' ? this.pastaNoDrive : this.vault).trim().length > 0;
+      const fonte = casa
+        ? { estado: declarada ? 'declarada_sem_verificacao' : 'nao_configurada', tipo: this.fonte, verificadaAgora: false }
+        : { estado: 'nao_se_aplica', tipo: null, verificadaAgora: false };
+      await exigirAcessoAtual(tx, orgId, pessoaId, ['obsidian.ver']);
+      return ProntidaoContextoSchema.parse({ escopo: { orgId, userId: pessoaId }, fonte,
+        memoria: { estado: itens.length ? 'com_contexto' : 'vazia_confirmada', quantidade: itens.length } });
+    }, { timeout: 20000 });
+  }
 
   get configured(): boolean {
     if (this.fonte === 'drive') return this.pastaNoDrive.length > 0;
