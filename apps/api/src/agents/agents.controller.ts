@@ -179,7 +179,7 @@ export class AgentsController {
   @Get('agents/:slug')
   @RequirePermissions('mcp.ver')
   detalhe(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
-    return this.agentes.detalhe(user.orgId, slug);
+    return this.agentes.detalheParaPessoa(user.orgId, slug, user.sub);
   }
 
   @Post('agents/:slug/linha-de-base')
@@ -218,31 +218,11 @@ export class AgentsController {
     return this.agentes.definirOrcamento(user.orgId, slug, input, user.sub);
   }
 
-  /*
-   * O PROCEDIMENTO (RF-N-01, RF-N-02) — os sete campos, com formato fixo.
-   *
-   * A validação e a gravação existiam desde a fatia 5.2 e ficaram SEM ROTA: o
-   * arquivo era vetado para ela (alterado na onda 1, e a onda 10 volta aqui), e
-   * duas mãos no mesmo controller custam mais do que uma tela em desvio por uma
-   * onda. Consequência medida enquanto isso: o botão de salvar devolvia "não
-   * encontrado" e a tela precisou aprender a distinguir a frase do roteador do
-   * 404 legítimo (`apps/web/src/app/agentes/rota-ausente.ts`).
-   *
-   * PUT e não POST: o procedimento é UM por agente e a gravação o substitui
-   * inteiro — `salvarSop` faz `upsert` na chave `agentId`. Mandar o mesmo corpo
-   * duas vezes deixa o mesmo estado (a versão sobe, que é o registro de quem
-   * mexeu, não um segundo procedimento).
-   *
-   * PERMISSÃO: `CONFIGURAR_AGENTE`, a mesma da linha de base — escrever o método
-   * de operação da empresa é configuração do agente, não execução dele. Nenhuma
-   * chave nova entra: as duas já estão no catálogo, e por isso esta ligação NÃO
-   * pede o ritual de três passos (construir o pacote, sincronizar o catálogo,
-   * todo mundo sair e entrar).
-   *
-   * O corpo não é validado aqui de propósito: quem valida é `validarProcedimento`
-   * (`agents/sop.ts`), que devolve os sete campos faltantes de uma vez e recusa
-   * cabeçalho fixo contrabandeado em campo livre. Um Zod a mais nesta camada
-   * duplicaria a regra e um dia divergiria dela.
+  /**
+   * Grava o procedimento pela versão que a pessoa leu. O envelope exige
+   * expectedSopVersion e procedimento; validarProcedimento conserva as regras
+   * dos sete campos e os textos fixos. Versão antiga recusa409, sem sobrescrita.
+   * CONFIGURAR_AGENTE permanece a permissão de configuração.
    */
   @Put('agents/:slug/sop')
   @RequirePermissions(...CONFIGURAR_AGENTE)

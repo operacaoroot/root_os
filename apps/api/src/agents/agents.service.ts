@@ -6,13 +6,14 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { ActorType, EstadoDeAgente, SessionStatus } from '@prisma/client';
-import { DIAS_DA_JANELA, emHorasDecimais, totalDaSemana } from '@mktos/shared';
+import { ActorType, EstadoDeAgente, Prisma, SessionStatus } from '@prisma/client';
+import { AgentSopEdicaoSchema, AgentSopSalvaSchema, DIAS_DA_JANELA, emHorasDecimais, totalDaSemana } from '@mktos/shared';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EventLogService } from '../gateway/event-log.service';
 import { contextoAtual } from '../common/contexto-execucao';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { donosDaCasa } from './donos-da-casa';
 import { CheckoutDeTarefaService } from '../work/checkout-de-tarefa.service';
 import { soltarPorCausaDoEstado } from '../work/checkout-de-tarefa';
@@ -405,6 +406,13 @@ export class AgentsService {
    * leitura no web é convertida à força pelo genérico do `apiGet`. Correção de
    * 11/09/2026.
    */
+  async detalheParaPessoa(orgId: string, slug: string, userId: string) {
+    await exigirAcessoAtual(this.prisma, orgId, userId, ['mcp.ver']);
+    const detalhe = await this.detalhe(orgId, slug);
+    await exigirAcessoAtual(this.prisma, orgId, userId, ['mcp.ver']);
+    return detalhe;
+  }
+
   async detalhe(orgId: string, slug: string) {
     const a = await this.prisma.agent.findFirst({
       where: { orgId, slug },
@@ -919,84 +927,82 @@ export class AgentsService {
   }
 
   /**
-   * Grava o procedimento — RF-N-02, o formato fixo com os sete campos.
-   *
-   * Recusa antes de tocar no banco quando falta qualquer um dos sete, quando a
-   * entrada tenta carregar um campo que não é editável (escalação à frente) ou
-   * quando um campo livre abre linha com um dos cabeçalhos do sistema.
-   *
-   * A versão sobe a cada gravação e o autor fica registrado: procedimento é o
-   * método de operação da empresa, e saber quem mudou o quê é metade do valor.
+   * Grava pela versão lida, com validação dos sete campos e dos textos fixos.
+   * SOP e auditoria usam a mesma transação; conflito conserva a versão atual.
    */
   async salvarSop(orgId: string, slug: string, entrada: unknown, userId: string) {
-    const agente = await this.prisma.agent.findFirst({
-      where: { orgId, slug },
-      select: { id: true, donoId: true, pilar: true, sop: true },
-    });
-    if (!agente) throw new NotFoundException(`agente "${slug}" não existe`);
-
-    // O dono conferido contra ESTA empresa — ver o cabeçalho de `donosDesta`.
-    // Ponteiro atravessado não é dono, e procedimento sem dono é recusado.
-    const donos = await this.donosDesta(orgId, [agente.donoId]);
-    const donoDaCasa = (agente.donoId && donos.get(agente.donoId)?.id) || null;
-
-    let dados;
-    try {
-      dados = validarProcedimento(entrada, { donoId: donoDaCasa, pilar: agente.pilar });
-    } catch (e) {
-      if (e instanceof FormatoDaSopInvalido) {
-        throw new BadRequestException({
-          error: 'ValidationError',
-          message: e.message,
-          issues: e.problemas.map((p) => ({ path: p.campo, message: p.motivo })),
-        });
+    const input = AgentSopEdicaoSchema.parse(entrada);
+    const permissoes = ['automacoes.executar', 'admin.usuarios'];
+    await exigirAcessoAtual(this.prisma, orgId, userId, permissoes);
+    return this.prisma.$transaction(async tx => {
+      await exigirAcessoAtual(tx, orgId, userId, permissoes);
+      const ids = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Agent"
+        WHERE "orgId"=${orgId} AND "slug"=${slug} FOR UPDATE`;
+      if (!ids[0]) throw new NotFoundException(`agente "${slug}" não existe`);
+      const agentId = ids[0].id;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`agent-sop:${orgId}:${agentId}`}))`;
+      const agente = await tx.agent.findFirst({ where: { orgId, id: agentId, slug },
+        select: { id: true, donoId: true, pilar: true, sop: true } });
+      if (!agente) throw new NotFoundException(`agente "${slug}" não existe`);
+      const antes = agente.sop;
+      if (antes && (antes.orgId !== orgId || antes.agentId !== agente.id)) {
+        throw new ConflictException('O vínculo do procedimento precisa ser conferido.');
       }
-      throw e;
-    }
-
-    const antes = agente.sop;
-    const comum = {
-      proposito: dados.proposito,
-      gatilho: dados.gatilho,
-      passos: dados.passos,
-      definicaoDePronto: dados.definicaoDePronto,
-      observacoes: dados.observacoes ?? null,
-      atualizadoPor: userId,
-    };
-
-    const sop = await this.prisma.sop.upsert({
-      where: { agentId: agente.id },
-      create: { orgId, agentId: agente.id, ...comum },
-      update: { ...comum, versao: { increment: 1 } },
-    });
-
-    /*
-     * O RASTRO administrativo. É `AuditService` e não `EventLogService` porque
-     * isto é escrita INTERNA, sem efeito fora do OS — mesma família de
-     * `user.create` e do módulo Trabalho. Se um dia editar procedimento passar a
-     * exigir aprovação (a pergunta aberta desta fatia), é aqui que a porta entra.
-     */
-    await this.audit.log({
-      orgId,
-      actorId: userId,
-      action: antes ? 'agent.sop.update' : 'agent.sop.create',
-      entityType: 'agent',
-      entityId: agente.id,
-      before: antes
-        ? {
-            proposito: antes.proposito,
-            gatilho: antes.gatilho,
-            passos: antes.passos,
-            definicaoDePronto: antes.definicaoDePronto,
-            observacoes: antes.observacoes,
-            versao: antes.versao,
+      if ((antes?.versao ?? null) !== input.expectedSopVersion) {
+        throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
+      }
+      // O bloqueio da pessoa conserva o dono ativo até o compromisso da escrita.
+      const donos = agente.donoId ? await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "User"
+        WHERE "orgId"=${orgId} AND "id"=${agente.donoId} AND "isActive"=true FOR SHARE` : [];
+      const donoDaCasa = donos[0]?.id ?? null;
+      let dados;
+      try {
+        dados = validarProcedimento(input.procedimento, { donoId: donoDaCasa, pilar: agente.pilar });
+      } catch (e) {
+        if (e instanceof FormatoDaSopInvalido) throw new BadRequestException({
+          error: 'ValidationError', message: e.message,
+          issues: e.problemas.map(p => ({ path: p.campo, message: p.motivo })),
+        });
+        throw e;
+      }
+      if (!donoDaCasa) throw new BadRequestException('O dono do agente deve continuar ativo nesta empresa.');
+      const comum = { proposito: dados.proposito, gatilho: dados.gatilho, passos: dados.passos,
+        definicaoDePronto: dados.definicaoDePronto, observacoes: dados.observacoes ?? null,
+        atualizadoPor: userId };
+      let versao: number;
+      if (antes) {
+        const esperada = input.expectedSopVersion;
+        if (esperada === null) throw new ConflictException('O procedimento já possui uma versão. Recarregue e confira seu rascunho.');
+        const atualizada = await tx.sop.updateMany({
+          where: { id: antes.id, orgId, agentId: agente.id, versao: esperada },
+          data: { ...comum, versao: { increment: 1 } },
+        });
+        if (atualizada.count !== 1) throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
+        const atual = await tx.sop.findFirst({ where: { id: antes.id, orgId, agentId: agente.id }, select: { versao: true } });
+        if (!atual || atual.versao !== antes.versao + 1) throw new ConflictException('A versão gravada do procedimento precisa ser conferida.');
+        versao = atual.versao;
+      } else {
+        try {
+          const criada = await tx.sop.create({ data: { orgId, agentId: agente.id, ...comum }, select: { versao: true } });
+          versao = criada.versao;
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            throw new ConflictException('O procedimento mudou. Recarregue a versão atual e confira seu rascunho.');
           }
-        : undefined,
-      after: { ...comum, versao: sop.versao },
-      metadata: { slug },
-    });
-
-    return { ok: true as const, versao: sop.versao };
+          throw e;
+        }
+      }
+      await this.audit.log({ orgId, actorId: userId,
+        action: antes ? 'agent.sop.update' : 'agent.sop.create', entityType: 'agent', entityId: agente.id,
+        before: antes ? { proposito: antes.proposito, gatilho: antes.gatilho, passos: antes.passos,
+          definicaoDePronto: antes.definicaoDePronto, observacoes: antes.observacoes, versao: antes.versao } : undefined,
+        after: { ...comum, versao }, metadata: { slug, expectedSopVersion: input.expectedSopVersion },
+      }, tx);
+      await exigirAcessoAtual(tx, orgId, userId, permissoes);
+      const donoAtual = await tx.user.findFirst({ where: { id: donoDaCasa, orgId, isActive: true }, select: { id: true } });
+      if (!donoAtual) throw new BadRequestException('O dono do agente deve continuar ativo nesta empresa.');
+      return AgentSopSalvaSchema.parse({ ok: true, versao });
+    }, { timeout: 20000 });
   }
 
   /**

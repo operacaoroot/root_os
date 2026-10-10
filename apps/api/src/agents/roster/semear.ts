@@ -241,17 +241,24 @@ export async function semearRoster(
       continue;
     }
 
-    await prisma.sop.update({
-      where: { agentId },
+    const atualizacao = await prisma.sop.updateMany({
+      where: {
+        id: sopAtual.id,
+        orgId,
+        agentId,
+        versao: sopAtual.versao,
+        atualizadoPor: null,
+      },
       data: {
         proposito: procedimento.proposito,
         gatilho: procedimento.gatilho,
         passos: [...procedimento.passos],
         definicaoDePronto: procedimento.definicaoDePronto,
         observacoes: procedimento.observacoes ?? null,
+        versao: { increment: 1 },
       },
     });
-    resumo.procedimentos.push(semente.slug);
+    if (atualizacao.count === 1) resumo.procedimentos.push(semente.slug);
   }
 
   return resumo;

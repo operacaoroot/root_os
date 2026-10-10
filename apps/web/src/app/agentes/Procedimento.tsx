@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AgentSopEdicaoSchema, AgentSopSalvaSchema } from '@mktos/shared';
 import { Lock, Plus, X } from 'lucide-react';
-import { apiGet, apiPut } from '@/lib/api';
+import { apiGet, apiPut, ErroDaApi } from '@/lib/api';
 import { rotaNaoExiste } from './rota-ausente';
 
 /*
@@ -60,93 +61,215 @@ const rotulo =
 const caixa =
   'mt-1 w-full rounded-root border border-border bg-bg px-2.5 py-2 text-[12px] leading-[1.6] text-text outline-none focus:border-brand';
 
-export function Procedimento({
-  slug,
-  token,
-  podeEditar,
-  aoFechar,
-  aoSalvar,
-}: {
+type ProcedimentoProps = {
   slug: string;
   token: string | null;
   podeEditar: boolean;
   aoFechar: () => void;
   aoSalvar: () => void;
-}) {
+};
+
+function camposDaSop(sop: ProcedimentoDetalhe['sop']) {
+  return sop
+    ? {
+        proposito: sop.proposito,
+        gatilho: sop.gatilho,
+        passos: sop.passos.length ? [...sop.passos] : [''],
+        definicaoDePronto: sop.definicaoDePronto,
+        observacoes: sop.observacoes ?? '',
+      }
+    : { ...VAZIO, passos: [''] };
+}
+
+function conferirDetalhe(r: ProcedimentoDetalhe | null, slug: string) {
+  if (!r || r.slug !== slug || r.sop === undefined ||
+    (r.sop !== null && (!Number.isInteger(r.sop.versao) || r.sop.versao < 1))) {
+    throw new Error('A versão do procedimento não pôde ser conferida.');
+  }
+  return r;
+}
+
+export function Procedimento(props: ProcedimentoProps) {
+  return <EditorProcedimento key={JSON.stringify([props.slug, props.token])} {...props} />;
+}
+
+function EditorProcedimento({ slug, token, podeEditar, aoFechar, aoSalvar }: ProcedimentoProps) {
   const [d, setD] = useState<ProcedimentoDetalhe | null>(null);
   const [form, setForm] = useState(VAZIO);
+  const [formInicial, setFormInicial] = useState(JSON.stringify(VAZIO));
+  const [versaoLida, setVersaoLida] = useState<number | null | undefined>(undefined);
   const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [conferindo, setConferindo] = useState(false);
+  const [estadoEnvio, setEstadoEnvio] = useState<'edicao' | 'conflito' | 'incerto'>('edicao');
+  const [conferencia, setConferencia] = useState<ProcedimentoDetalhe | null>(null);
+  const ocupado = useRef(false);
+  const vivo = useRef(true);
+  const geracao = useRef(0);
+  const permissaoAtual = useRef(podeEditar);
+  permissaoAtual.current = podeEditar;
+
+  function privar() {
+    setD(null);
+    setForm({ ...VAZIO, passos: [''] });
+    setFormInicial(JSON.stringify(VAZIO));
+    setVersaoLida(undefined);
+    setConferencia(null);
+    setAviso(null);
+  }
 
   useEffect(() => {
-    let vivo = true;
-    apiGet<ProcedimentoDetalhe>(`/agents/${slug}`, token)
-      .then((r) => {
-        if (!vivo) return;
-        setD(r);
-        setForm(
-          r.sop
-            ? {
-                proposito: r.sop.proposito,
-                gatilho: r.sop.gatilho,
-                passos: r.sop.passos.length ? r.sop.passos : [''],
-                definicaoDePronto: r.sop.definicaoDePronto,
-                observacoes: r.sop.observacoes ?? '',
-              }
-            : VAZIO,
-        );
-      })
-      .catch((e) => vivo && setErro((e as Error).message));
+    vivo.current = true;
+    const rodada = ++geracao.current;
+    if (!token) {
+      setErro('Entre novamente para consultar o procedimento.');
+    } else {
+      apiGet<ProcedimentoDetalhe | null>(`/agents/${slug}`, token)
+        .then((r) => {
+          if (!vivo.current || rodada !== geracao.current) return;
+          const detalhe = conferirDetalhe(r, slug);
+          const campos = camposDaSop(detalhe.sop);
+          setD(detalhe);
+          setForm(campos);
+          setFormInicial(JSON.stringify(campos));
+          // Null vem somente de uma leitura autorizada que retornou sop:null.
+          setVersaoLida(detalhe.sop === null ? null : detalhe.sop.versao);
+        })
+        .catch((e) => {
+          if (vivo.current && rodada === geracao.current) setErro((e as Error).message);
+        });
+    }
     return () => {
-      vivo = false;
+      vivo.current = false;
+      geracao.current++;
     };
   }, [slug, token]);
 
-  // Os dois campos que moram no agente: sem eles a API recusa, e dizer isso
-  // ANTES é mais honesto do que deixar escrever e recusar no fim.
   const faltaNoAgente = (d?.formato.faltando ?? []).filter((c) => c === 'dono' || c === 'pilar');
+  const podeMudarCampos = podeEditar && !salvando && !conferindo;
+
+  function fechar() {
+    const alterado = JSON.stringify(form) !== formInicial;
+    if ((alterado || estadoEnvio !== 'edicao' || ocupado.current) &&
+      !window.confirm(ocupado.current
+        ? 'Há uma consulta ou envio em andamento. Fechar não cancela o envio. Fechar esta edição?'
+        : 'Fechar esta edição e descartar o rascunho local?')) return;
+    aoFechar();
+  }
 
   async function salvar() {
+    if (!token || !d || versaoLida === undefined || !permissaoAtual.current ||
+      ocupado.current || estadoEnvio !== 'edicao') return;
+    const input = AgentSopEdicaoSchema.safeParse({
+      expectedSopVersion: versaoLida,
+      procedimento: {
+        proposito: form.proposito,
+        gatilho: form.gatilho,
+        passos: form.passos.map((p) => p.trim()).filter(Boolean),
+        definicaoDePronto: form.definicaoDePronto,
+        observacoes: form.observacoes.trim() || null,
+      },
+    });
+    if (!input.success) {
+      setErro(input.error.issues.map((i) => i.message).join(' · '));
+      return;
+    }
+    const rodada = geracao.current;
+    const vigente = () => vivo.current && rodada === geracao.current;
+    ocupado.current = true;
     setErro(null);
+    setAviso(null);
+    setConferencia(null);
     setSalvando(true);
     try {
-      await apiPut(
-        `/agents/${slug}/sop`,
-        {
-          proposito: form.proposito,
-          gatilho: form.gatilho,
-          passos: form.passos.map((p) => p.trim()).filter(Boolean),
-          definicaoDePronto: form.definicaoDePronto,
-          observacoes: form.observacoes.trim() || null,
-        },
-        token,
-      );
+      const raw = await apiPut<unknown>(`/agents/${slug}/sop`, input.data, token);
+      if (!vigente()) return;
+      const resposta = AgentSopSalvaSchema.safeParse(raw);
+      if (!resposta.success || resposta.data.versao !== (versaoLida ?? 0) + 1) {
+        throw new Error('A resposta da gravação não pôde ser conferida.');
+      }
+      if (!permissaoAtual.current) {
+        setEstadoEnvio('incerto');
+        setErro('A permissão mudou durante o envio. Confira o estado atual antes de continuar.');
+        return;
+      }
       aoSalvar();
       aoFechar();
     } catch (e) {
-      /*
-       * A rota EXISTE desde a estabilização da onda 9. Este ramo ficou como rede
-       * de segurança: se ela sumir outra vez, dizer isso com todas as letras
-       * evita meia hora de caça ao erro errado — mas só quando a causa for mesmo
-       * a ausência de rota. Um 404 de "agente não existe" tem de aparecer como
-       * ele é. Ver `rota-ausente.ts`.
-       */
-      if (rotaNaoExiste(e, 'PUT', `/agents/${slug}/sop`)) {
-        setErro(
-          'a rota PUT /agents/' +
-            slug +
-            '/sop não está ligada nesta API — a validação e a gravação existem no serviço, falta a rota no controller de agentes',
-        );
+      if (!vigente()) return;
+      if (e instanceof ErroDaApi && [401, 403].includes(e.status)) {
+        privar();
+        setErro('Acesso ao procedimento recusado. Entre novamente ou confira suas permissões.');
+      } else if (e instanceof ErroDaApi && e.status === 409) {
+        setEstadoEnvio('conflito');
+        setErro('O procedimento mudou. Seu rascunho e a versão lida foram preservados. Confira a versão atual antes de continuar.');
+      } else if (e instanceof ErroDaApi && e.status === 400) {
+        setErro(e.message);
       } else {
-        setErro((e as Error).message);
+        setEstadoEnvio('incerto');
+        setErro(rotaNaoExiste(e, 'PUT', `/agents/${slug}/sop`)
+          ? 'A rota de gravação não está disponível. O rascunho foi preservado; confira o estado atual.'
+          : 'A gravação não foi confirmada. O rascunho foi preservado; confira o estado atual antes de outro envio.');
       }
     } finally {
-      setSalvando(false);
+      if (vigente()) {
+        ocupado.current = false;
+        setSalvando(false);
+      }
     }
   }
 
+  async function conferirAtual() {
+    if (!token || !d || ocupado.current) return;
+    const rodada = geracao.current;
+    const vigente = () => vivo.current && rodada === geracao.current;
+    ocupado.current = true;
+    setConferindo(true);
+    setConferencia(null);
+    try {
+      const atual = await apiGet<ProcedimentoDetalhe | null>(`/agents/${slug}`, token);
+      if (!vigente()) return;
+      if (atual === null) {
+        privar();
+        setErro('O agente não foi localizado na consulta atual. O acesso foi retirado desta tela.');
+        return;
+      }
+      setConferencia(conferirDetalhe(atual, slug));
+    } catch (e) {
+      if (!vigente()) return;
+      if (e instanceof ErroDaApi && [401, 403, 404].includes(e.status)) privar();
+      setErro(e instanceof ErroDaApi && [401, 403, 404].includes(e.status)
+        ? 'O procedimento não está disponível para esta sessão. O acesso foi retirado desta tela.'
+        : 'A consulta atual falhou. Seu rascunho e a versão lida continuam preservados.');
+    } finally {
+      if (vigente()) {
+        ocupado.current = false;
+        setConferindo(false);
+      }
+    }
+  }
+
+  function retomarEdicao(usarAtual: boolean) {
+    if (!conferencia || ocupado.current || !permissaoAtual.current) return;
+    const base = conferencia.sop === null ? null : conferencia.sop.versao;
+    const nomeDaBase = base === null ? 'ausência de procedimento' : `versão ${base}`;
+    if (!window.confirm(usarAtual
+      ? `Descartar seu rascunho e usar o procedimento conferido (${nomeDaBase})? Nenhuma gravação será feita agora.`
+      : `Retomar seu rascunho contra ${nomeDaBase}? A consulta não confirma a autoria do envio anterior. Nenhuma gravação será feita agora.`)) return;
+    const camposAtuais = camposDaSop(conferencia.sop);
+    if (usarAtual) setForm(camposAtuais);
+    setFormInicial(JSON.stringify(camposAtuais));
+    setD(conferencia);
+    setVersaoLida(base);
+    setConferencia(null);
+    setEstadoEnvio('edicao');
+    setErro(null);
+    setAviso(`Edição retomada após sua conferência: ${nomeDaBase}. Salvar fará uma nova verificação dessa versão.`);
+  }
+
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={aoFechar}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={fechar}>
       <div
         className="h-full w-full max-w-[560px] overflow-y-auto border-l border-border bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
@@ -158,7 +281,7 @@ export function Procedimento({
             </p>
             <h2 className="mt-1 text-[15px] font-medium text-text">{d?.nome ?? slug}</h2>
           </div>
-          <button type="button" onClick={aoFechar} className="text-muted hover:text-text">
+          <button type="button" onClick={fechar} className="text-muted hover:text-text">
             <X size={16} />
           </button>
         </div>
@@ -166,6 +289,46 @@ export function Procedimento({
         {erro && (
           <div className="mt-4 rounded-root border border-bad/40 bg-bad/10 p-3 text-[12px] leading-[1.6] text-bad">
             {erro}
+          </div>
+        )}
+
+        {aviso && <p className="mt-4 text-[12px] leading-[1.6] text-muted" role="status">{aviso}</p>}
+
+        {d && estadoEnvio !== 'edicao' && (
+          <div className="mt-4 space-y-3 rounded-root border border-warn/40 bg-warn/10 p-3 text-[12px] leading-[1.6]">
+            <p className="text-warn">
+              Rascunho iniciado com {versaoLida === null ? 'ausência de procedimento' : `versão ${versaoLida}`}.
+              Nenhum envio será repetido automaticamente.
+            </p>
+            <button type="button" disabled={salvando || conferindo} onClick={conferirAtual}
+              className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-brand disabled:opacity-50">
+              {conferindo ? 'conferindo…' : 'conferir versão atual'}
+            </button>
+            {conferencia && (
+              <div className="space-y-3 border-t border-warn/30 pt-3">
+                <p className="text-text">
+                  Estado atual conferido: {conferencia.sop === null ? 'sem procedimento' : `versão ${conferencia.sop.versao}`}.
+                  Essa leitura não confirma a autoria do envio anterior.
+                </p>
+                {conferencia.sop && (
+                  <dl className="space-y-2 whitespace-pre-wrap text-muted">
+                    <div><dt className="font-medium text-text">Propósito</dt><dd>{conferencia.sop.proposito}</dd></div>
+                    <div><dt className="font-medium text-text">Gatilho</dt><dd>{conferencia.sop.gatilho}</dd></div>
+                    <div><dt className="font-medium text-text">Passos</dt><dd>{conferencia.sop.passos.map((passo, i) => `${i + 1}. ${passo}`).join('\n')}</dd></div>
+                    <div><dt className="font-medium text-text">Definição de pronto</dt><dd>{conferencia.sop.definicaoDePronto}</dd></div>
+                    <div><dt className="font-medium text-text">Observações</dt><dd>{conferencia.sop.observacoes ?? 'Sem observações.'}</dd></div>
+                  </dl>
+                )}
+                {podeEditar && (
+                  <div className="flex flex-wrap gap-3">
+                    <button type="button" onClick={() => retomarEdicao(false)}
+                      className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-brand">retomar com meu rascunho</button>
+                    <button type="button" onClick={() => retomarEdicao(true)}
+                      className="font-os-mono text-[10px] uppercase tracking-[0.1em] text-muted">usar procedimento atual</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -181,7 +344,7 @@ export function Procedimento({
               <textarea
                 id="proposito"
                 rows={2}
-                disabled={!podeEditar}
+                disabled={!podeMudarCampos}
                 value={form.proposito}
                 onChange={(e) => setForm({ ...form, proposito: e.target.value })}
                 placeholder="para que este agente existe"
@@ -211,7 +374,7 @@ export function Procedimento({
               </label>
               <input
                 id="gatilho"
-                disabled={!podeEditar}
+                disabled={!podeMudarCampos}
                 value={form.gatilho}
                 onChange={(e) => setForm({ ...form, gatilho: e.target.value })}
                 placeholder="o que faz este agente começar"
@@ -227,7 +390,7 @@ export function Procedimento({
                   <div key={i} className="flex items-center gap-2">
                     <span className="font-os-mono text-[10px] text-dim">{i + 1}.</span>
                     <input
-                      disabled={!podeEditar}
+                      disabled={!podeMudarCampos}
                       value={p}
                       onChange={(e) => {
                         const passos = [...form.passos];
@@ -239,6 +402,7 @@ export function Procedimento({
                     {podeEditar && form.passos.length > 1 && (
                       <button
                         type="button"
+                        disabled={!podeMudarCampos}
                         aria-label={`remover passo ${i + 1}`}
                         onClick={() =>
                           setForm({ ...form, passos: form.passos.filter((_, j) => j !== i) })
@@ -254,6 +418,7 @@ export function Procedimento({
               {podeEditar && (
                 <button
                   type="button"
+                  disabled={!podeMudarCampos}
                   onClick={() => setForm({ ...form, passos: [...form.passos, ''] })}
                   className="mt-2 inline-flex items-center gap-1 font-os-mono text-[9.5px] uppercase tracking-[0.16em] text-brand hover:underline"
                 >
@@ -270,7 +435,7 @@ export function Procedimento({
               <textarea
                 id="pronto"
                 rows={2}
-                disabled={!podeEditar}
+                disabled={!podeMudarCampos}
                 value={form.definicaoDePronto}
                 onChange={(e) => setForm({ ...form, definicaoDePronto: e.target.value })}
                 placeholder="como se sabe que terminou bem"
@@ -310,7 +475,7 @@ export function Procedimento({
               <textarea
                 id="observacoes"
                 rows={2}
-                disabled={!podeEditar}
+                disabled={!podeMudarCampos}
                 value={form.observacoes}
                 onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
                 className={caixa}
@@ -344,7 +509,7 @@ export function Procedimento({
               {podeEditar ? (
                 <button
                   type="button"
-                  disabled={salvando}
+                  disabled={salvando || conferindo || versaoLida === undefined || estadoEnvio !== 'edicao'}
                   onClick={salvar}
                   className="rounded-root bg-brand px-3 py-1.5 font-os-mono text-[10px] uppercase tracking-[0.1em] text-ink disabled:opacity-50"
                 >
@@ -358,7 +523,7 @@ export function Procedimento({
               <span className="flex-1" />
               {d.sop && (
                 <p className="font-os-mono text-[9.5px] text-dim">
-                  versão {d.sop.versao} · {new Date(d.sop.atualizadoEm).toLocaleString('pt-BR')}
+                  versão lida {versaoLida} · {new Date(d.sop.atualizadoEm).toLocaleString('pt-BR')}
                 </p>
               )}
             </div>
