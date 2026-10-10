@@ -37,3 +37,14 @@ export * from './marketing-recuperacao.js';
 export * from './prontidao-local';
 export * from './agent-sop-edicao';
 export * from './conexoes-declarativas';
+
+export {
+  DemonstracaoSinteticaManifestoSchema,
+  DemonstracaoSinteticaFontesSchema,
+  DemonstracaoSinteticaReciboSchema,
+  DemonstracaoSinteticaResultadoSchema,
+  type DemonstracaoSinteticaManifesto,
+  type DemonstracaoSinteticaFontes,
+  type DemonstracaoSinteticaRecibo,
+  type DemonstracaoSinteticaResultado,
+} from './demonstracao-sintetica';

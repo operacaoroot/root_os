@@ -81,6 +81,8 @@ export class ContextoTrabalhoService {
       if (!v) indisponivel();
       conferirVersao(v, itemId, p.contentHash);
       if (v.versao > item.versao) conflito('contexto_fonte_inconsistente', 'A versão escolhida ainda não é uma versão utilizável da fonte.');
+      if (v.sourceType !== item.sourceType || v.sourceRef !== item.sourceRef)
+        conflito('contexto_fonte_alterada', 'A origem da fonte mudou. Confira uma versão da origem atual antes de criar a tarefa.');
       const list = await tx.workList.findFirst({ where: { id: p.listId, orgId }, include: { statuses: { orderBy: { order: 'asc' } } } });
       if (!list) throw new NotFoundException('Lista não encontrada.');
       const status = p.statusId ? list.statuses.find((s) => s.id === p.statusId && s.orgId === orgId) : list.statuses.find((s) => s.orgId === orgId);
@@ -101,6 +103,8 @@ export class ContextoTrabalhoService {
         after: { listId: list.id, requestId: p.requestId, itemId, versionId: v.id, versao: v.versao, contentHash: v.contentHash },
       }, tx);
       const final = await this.conferirFinal(tx, orgId, actorId, itemId, ['obsidian.ver', 'tarefas.editar']);
+      if (final.arquivadoEm || final.versao !== p.expectedItemVersion || final.sourceType !== v.sourceType || final.sourceRef !== v.sourceRef)
+        conflito('contexto_fonte_alterada', 'A fonte mudou. Confira a versão atual antes de criar a tarefa.');
       return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: false, fonte: dto(link, v, final) };
     });
   }

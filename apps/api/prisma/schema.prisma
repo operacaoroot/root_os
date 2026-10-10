@@ -77,6 +77,7 @@ model Org {
   tasks        Task[]
   pixelEvents  PixelEvent[]
   auditLogs    AuditLog[]
+  demoInstallations DemoInstallation[]
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
   reports      Report[]
@@ -233,6 +234,7 @@ model User {
   roles      Role[] @relation("UserRoles")
   ownedLeads Lead[] @relation("LeadOwner")
   workTasksResponsavel WorkTask[] @relation("WorkTaskResponsavel")
+  demoInstallations DemoInstallation[]
 
   agentesQueDono Agent[]           @relation("AgentDono")
   identidades    ChannelIdentity[]
@@ -4633,6 +4635,7 @@ model ContextCollectionSelection {
   criadoEm DateTime @default(dbgenerated("(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')"))
   verificadaEm DateTime?
   membros ContextCollectionMember[]
+  demoInstallations DemoInstallation[]
   @@unique([id, orgId])
   @@unique([orgId, collectionId, generation])
 }
@@ -4659,4 +4662,27 @@ model ContextCollectionMember {
   @@unique([selectionId, caminhoBytes])
   @@unique([selectionId, chave])
   @@index([orgId, itemId])
+}
+
+/// Recibo imutável de instalação sintética; objetos normais podem mudar depois.
+model DemoInstallation {
+  id String @id
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorId String
+  actor User @relation(fields: [actorId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  dataset String
+  requestId String
+  manifestHash String
+  sourceHash String
+  inputFingerprint String
+  destinationSignatureHash String
+  selectionId String
+  selection ContextCollectionSelection @relation(fields: [selectionId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  receipt Json
+  receiptHash String
+  createdAt DateTime @default(now())
+  @@unique([id, orgId])
+  @@unique([orgId, dataset])
+  @@unique([orgId, requestId])
 }

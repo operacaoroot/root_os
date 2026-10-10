@@ -69,7 +69,7 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
       if (rodada !== ciclo.current) return false;
       if (!user || nota.id !== notaId || !escopoConfere(nota.escopo, user.id, escopo.current) || !retratoConfere(nota.retratoFonte, { itemId: notaId, chave: nota.chave, versao: nota.versao, contentHash: nota.contentHash, title: nota.title, body: nota.body })
         || !Array.isArray(historico) || historico.some((v) => !escopoConfere(v.escopo, user.id, nota.escopo) || !retratoConfere(v.retratoFonte, { itemId: notaId, versionId: v.id, versao: v.versao, contentHash: v.contentHash, title: v.title, body: v.body }))) { privar(); return false; }
-      escopo.current = nota.escopo; setAtual(nota); setVersoes(historico);
+      escopo.current = nota.escopo; setAtual(nota); setVersoes(historico); setConflito(false);
       const migrado = migrarPedidoLegado(`root_contexto_pedido:${user.id}:${notaId}`, chaveDoPedido(nota.escopo, 'tarefa', notaId), nota.escopo, 'tarefa', notaId);
       const id = lerIdentificador(chaveDoPedido(nota.escopo, 'tarefa', notaId), nota.escopo, 'tarefa', notaId) ?? migrado;
       if (id) { setPendente(id); await conferir(id, rodada); }
@@ -83,25 +83,61 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
   useEffect(() => { void carregar(); return () => { ++ciclo.current; }; }, [carregar]);
   const selecionada = versoes?.find((v) => selecionadaId ? v.id === selecionadaId : v.versao === atual?.versao) ?? null;
   const historica = !!selecionada && selecionada.versao !== atual?.versao;
+  const novoUsoSelecionado = !!atual && !!selecionada && !atual.arquivadoEm
+    && selecionada.retratoFonte.acesso.novoUsoPermitido === true && !selecionada.retratoFonte.arquivada
+    && selecionada.retratoFonte.versaoAtual === atual.versao && selecionada.retratoFonte.chave === atual.chave
+    && selecionada.sourceType === atual.sourceType && selecionada.sourceRef === atual.sourceRef;
   const listas = useMemo(() => estrutura ? [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas] : [], [estrutura]);
   const abrirFormulario = async () => {
-    if (!podeCriar || !atual || !selecionada || atual.arquivadoEm || pendente || resultado || !selecionada.retratoFonte.acesso.novoUsoPermitido) return;
+    if (!podeCriar || !novoUsoSelecionado || pendente || resultado) return;
     setFormulario(true); setErro(null); const rodada = ciclo.current;
     try { const e = await apiGet<TrabEstrutura>('/trabalho/estrutura', token); if (rodada === ciclo.current) setEstrutura(e); }
     catch (e) { if (rodada !== ciclo.current) return; if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); } else setErro((e as Error).message); }
   };
   const criarTarefa = async (repetir = false) => {
-    if (!user || !token || !escopo.current || !podeCriar || escrita.current || resultado || conflito) return;
-    if (!repetir && (!atual || !selecionada || atual.arquivadoEm || !listaId || !titulo.trim() || pendente)) return;
-    const dados = repetir ? input.current : { requestId: crypto.randomUUID(), versionId: selecionada!.id, contentHash: selecionada!.contentHash, expectedItemVersion: atual!.versao, listId: listaId, title: titulo.trim(), assigneeUserId: pessoaId || null };
-    if (!dados) return;
-    const id: IdentificadorDePedido = { ...escopo.current, requestId: dados.requestId, operation: 'tarefa', itemId: notaId };
-    if (!guardarIdentificador(chaveDoPedido(escopo.current, 'tarefa', notaId), id)) { setErro('Não foi possível guardar o identificador. O pedido não foi enviado.'); return; }
-    input.current = dados; setPendente(id); escrita.current = true; setSalvando(true); setErro(null); const rodada = ciclo.current;
-    try { const r = await apiPost<ContextoTarefaCreateResponse>(`/memoria/${encodeURIComponent(notaId)}/tarefas`, dados, token); if (rodada === ciclo.current) aceitar(r, dados); }
-    catch (e) {
+    const escopoDoPedido = escopo.current;
+    if (!user || !token || !escopoDoPedido || !podeCriar || escrita.current || resultado || conflito) return;
+    if (!repetir && (!atual || !selecionada || !novoUsoSelecionado || !listaId || !titulo.trim() || pendente)) return;
+    if (repetir && !input.current) return;
+    const rodada = ciclo.current;
+    escrita.current = true; setSalvando(true); setErro(null);
+    try {
+      let dados: ContextoTarefaCreateInput | null = repetir ? input.current : null;
+      if (!repetir) {
+        // A conferência protege o envio novo; o replay conserva o pedido original.
+        if (!atual || !selecionada) return;
+        const [nota, historico] = await Promise.all([
+          apiGet<Nota>(`/memoria/${encodeURIComponent(notaId)}`, token),
+          apiGet<Versao[]>(`/memoria/${encodeURIComponent(notaId)}/versoes`, token),
+        ]);
+        if (rodada !== ciclo.current) return;
+        if (nota.id !== notaId || !escopoConfere(nota.escopo, user.id, escopoDoPedido)
+          || !retratoConfere(nota.retratoFonte, { itemId: notaId, chave: nota.chave, versao: nota.versao, contentHash: nota.contentHash, title: nota.title, body: nota.body })
+          || !Array.isArray(historico) || historico.some((v) => !escopoConfere(v.escopo, user.id, nota.escopo)
+            || !retratoConfere(v.retratoFonte, { itemId: notaId, versionId: v.id, versao: v.versao, contentHash: v.contentHash, title: v.title, body: v.body }))) { privar(); return; }
+        const escolhida = historico.find((v) => v.id === selecionada.id);
+        setAtual(nota); setVersoes(historico);
+        if (nota.versao !== atual.versao || nota.chave !== atual.chave || nota.contentHash !== atual.contentHash
+          || nota.sourceType !== atual.sourceType || nota.sourceRef !== atual.sourceRef || nota.arquivadoEm
+          || nota.retratoFonte.acesso.novoUsoPermitido !== true || !escolhida
+          || escolhida.contentHash !== selecionada.contentHash || escolhida.versao !== selecionada.versao
+          || escolhida.sourceType !== nota.sourceType || escolhida.sourceRef !== nota.sourceRef
+          || escolhida.retratoFonte.chave !== nota.chave || escolhida.retratoFonte.versaoAtual !== nota.versao
+          || escolhida.retratoFonte.arquivada || escolhida.retratoFonte.acesso.novoUsoPermitido !== true)
+          throw Object.assign(new Error('A fonte ou a versão escolhida mudou. Confira a fonte antes de criar a tarefa. Seu rascunho foi preservado.'), { status: 409 });
+        dados = { requestId: crypto.randomUUID(), versionId: escolhida.id, contentHash: escolhida.contentHash,
+          expectedItemVersion: nota.versao, listId: listaId, title: titulo.trim(), assigneeUserId: pessoaId || null };
+      }
+      if (!dados || rodada !== ciclo.current) return;
+      const id: IdentificadorDePedido = { ...escopoDoPedido, requestId: dados.requestId, operation: 'tarefa', itemId: notaId };
+      if (!guardarIdentificador(chaveDoPedido(escopoDoPedido, 'tarefa', notaId), id)) { setErro('Não foi possível guardar o identificador. O pedido não foi enviado.'); return; }
+      input.current = dados; setPendente(id);
+      const r = await apiPost<ContextoTarefaCreateResponse>(`/memoria/${encodeURIComponent(notaId)}/tarefas`, dados, token);
+      if (rodada === ciclo.current) aceitar(r, dados);
+    } catch (e) {
       if (rodada !== ciclo.current) return;
-      if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); } else { setErro((e as Error).message); if ((e as { status?: number }).status === 409) setConflito(true); }
+      if (recusada(e) || e instanceof RecuperacaoIndisponivel) { privar(); if (e instanceof RecuperacaoIndisponivel) setErro(e.message); }
+      else { setErro((e as Error).message); if ((e as { status?: number }).status === 409) setConflito(true); }
     } finally { if (rodada === ciclo.current) { escrita.current = false; setSalvando(false); } }
   };
   const confirmacao = pendente && <div className="space-y-2 rounded-root border border-border p-3">
@@ -126,8 +162,9 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
     </dl>
     {historica && <p className="rounded-root bg-surface-2 p-2 text-xs text-muted">Você está lendo a versão v{selecionada!.versao}. A memória já está na v{atual.versao}.</p>}
     {selecionada ? <pre className="whitespace-pre-wrap break-words rounded-root bg-surface-2 p-3 font-os-sans text-[13px] leading-relaxed text-muted">{selecionada.body}</pre> : <p role="alert" className="text-sm text-muted">A versão do vínculo não está disponível. O conteúdo atual não substitui essa versão.</p>}
-    {!formulario && podeCriar && selecionada && !atual.arquivadoEm && !pendente && !resultado && selecionada.retratoFonte.acesso.novoUsoPermitido && <button type="button" className="rounded-root border border-border px-3 py-2 text-sm text-brand" onClick={() => void abrirFormulario()}>Criar tarefa usando esta versão</button>}
-    {formulario && <form aria-label="Criar tarefa com fonte" className="space-y-2 rounded-root border border-border p-3" onSubmit={(e) => { e.preventDefault(); void criarTarefa(); }}>
+    {!formulario && podeCriar && novoUsoSelecionado && !pendente && !resultado && <button type="button" className="rounded-root border border-border px-3 py-2 text-sm text-brand" onClick={() => void abrirFormulario()}>Criar tarefa usando esta versão</button>}
+    {formulario && !novoUsoSelecionado && !pendente && !resultado && <div className="space-y-2 text-sm text-muted"><p role="status">Esta versão não permite criar uma nova tarefa. Seu rascunho foi preservado. Escolha uma versão disponível ou confira a fonte.</p><button type="button" disabled={salvando} className="text-brand underline" onClick={() => void carregar()}>Conferir fonte</button></div>}
+    {formulario && novoUsoSelecionado && <form aria-label="Criar tarefa com fonte" className="space-y-2 rounded-root border border-border p-3" onSubmit={(e) => { e.preventDefault(); void criarTarefa(); }}>
       <p className="text-sm font-medium">Criar tarefa com a versão v{selecionada?.versao}</p>
       <label className="block text-xs">Título da nova tarefa<input className={INP} maxLength={300} value={titulo} disabled={salvando || !!pendente || !!resultado} onChange={(e) => setTitulo(e.target.value)} /></label>
       <label className="block text-xs">Lista de destino<select className={INP} value={listaId} disabled={salvando || !!pendente || !!resultado} onChange={(e) => setListaId(e.target.value)}><option value="">Escolha a lista</option>{listas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>

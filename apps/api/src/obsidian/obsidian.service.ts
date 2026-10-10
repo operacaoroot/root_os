@@ -11,7 +11,7 @@ import { readdir } from 'node:fs/promises';
 import type { Prisma } from '@prisma/client';
 import { GoogleService } from '../google/google.service';
 import { ProntidaoContextoSchema, type ProntidaoContexto, type KnowledgeList, type NoteDetail, type SearchResult } from '@mktos/shared';
-import { comContexto, novaCorrelacao } from '../common/contexto-execucao';
+import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
@@ -21,7 +21,7 @@ import {
 } from '../integrations/conectores.registry';
 import { sigiloso } from '../gateway/event-log.service';
 import { MemoriaService, resumoVazio, VaultSuspeitaError, type NotaDaVaultParaProjetar } from '../memory/memoria.service';
-import { exigirAcessoAtual, leitorAutorizado, leitorDoContexto } from '../memory/acesso-memoria';
+import { exigirAcessoAtual, leitorDoContexto } from '../memory/acesso-memoria';
 import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
@@ -1409,13 +1409,21 @@ export class ObsidianService implements OnModuleInit {
   }
 
   // ---------- leitura ----------
+  private async conferirLeitorAtual(orgId: string, solicitanteId: string | null): Promise<void> {
+    const contexto = contextoAtual();
+    if (contexto?.actorType === 'user' && (!contexto.actorId || contexto.orgId !== orgId || contexto.actorId !== solicitanteId))
+      throw new ForbiddenException('Acesso insuficiente.');
+    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+  }
+
   /** O índice legado acompanha a restrição local pela chave/path, nunca pelo hash. */
   private async caminhosNegados(orgId: string, solicitanteId: string | null): Promise<string[]> {
-    const leitor = await leitorAutorizado(this.prisma, orgId, solicitanteId);
+    await this.conferirLeitorAtual(orgId, solicitanteId);
     const negadas = await this.prisma.contextItem.findMany({
-      where: { orgId, acessoRestrito: true, ...(leitor ? { NOT: { leitores: { has: leitor } } } : {}) },
+      where: { orgId, acessoRestrito: true, ...(solicitanteId ? { NOT: { leitores: { has: solicitanteId } } } : {}) },
       select: { chave: true },
     });
+    await this.conferirLeitorAtual(orgId, solicitanteId);
     return negadas.map((n) => n.chave.startsWith('vault:') ? n.chave.slice('vault:'.length) : n.chave);
   }
 
@@ -1432,6 +1440,7 @@ export class ObsidianService implements OnModuleInit {
       'SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE "orgId" = $1 AND embedding IS NOT NULL AND NOT (path = ANY($2::text[]))',
       orgId, [...negadosDepois],
     );
+    await this.conferirLeitorAtual(orgId, solicitanteId);
     return {
       items: rows.map((r) => ({ ...r, fileTime: r.fileTime.toISOString() })),
       total: rows.length,
@@ -1444,8 +1453,8 @@ export class ObsidianService implements OnModuleInit {
   async get(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NoteDetail | null> {
     const negados = await this.caminhosNegados(orgId, solicitanteId);
     const r = await this.prisma.knowledgeNote.findFirst({ where: { id, orgId, path: { notIn: negados } } });
-    if (r && (await this.caminhosNegados(orgId, solicitanteId)).includes(r.path)) return null;
-    if (!r) return null;
+    const negadosDepois = await this.caminhosNegados(orgId, solicitanteId);
+    if (!r || negadosDepois.includes(r.path)) return null;
     return {
       id: r.id, path: r.path, folder: r.folder, title: r.title, tags: r.tags, links: r.links,
       wordCount: r.wordCount, fileTime: r.fileTime.toISOString(), content: r.content,
@@ -1492,6 +1501,7 @@ export class ObsidianService implements OnModuleInit {
           mode = 'semantic';
         }
       } catch (e) {
+        if (e instanceof ForbiddenException) throw e;
         this.log.warn(`busca semântica falhou (${(e as Error).message}); usando keyword`);
       }
     }
