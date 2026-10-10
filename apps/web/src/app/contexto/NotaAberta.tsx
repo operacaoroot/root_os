@@ -5,6 +5,7 @@ import type { TrabEstrutura, ContextoTarefaCreateInput, ContextoTarefaCreateResp
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { dia, quando, rotuloDaNatureza, type NotaDeContexto, type VersaoDeNota } from './tipos';
+import { CatalogoDaColecao } from './CatalogoDaColecao';
 import { RetratoDaFonte, RecuperacaoIndisponivel, escopoConfere, retratoConfere, chaveDoPedido, lerIdentificador, guardarIdentificador, removerIdentificador, migrarPedidoLegado, type IdentificadorDePedido } from './RetratoDaFonte';
 
 const INP = 'mt-1 w-full rounded-root border border-border bg-surface-2 px-2 py-2 text-sm text-text disabled:opacity-60';
@@ -116,6 +117,7 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
     {erro && <div role="alert" className="space-y-2 rounded-root border border-warn/40 p-2 text-sm"><p>{erro}</p>{conflito && <button type="button" className="underline" onClick={() => void carregar()}>Recarregar fonte</button>}</div>}
     {confirmacao}{entrega}
     {selecionada && <RetratoDaFonte fonte={selecionada.retratoFonte} />}
+    {selecionada && <CatalogoDaColecao notaId={notaId} versionId={selecionada.id} versao={selecionada.versao} contentHash={selecionada.contentHash} onIndisponivel={privar} />}
     <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
       <dt className="text-dim">natureza</dt><dd>{rotuloDaNatureza(selecionada?.kind ?? atual.kind)}</dd>
       <dt className="text-dim">procedência</dt><dd className="break-words">{selecionada?.procedencia ?? atual.procedencia}</dd>

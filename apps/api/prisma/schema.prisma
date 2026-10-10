@@ -4518,9 +4518,14 @@ model FinanceExerciseObligation {
   snapshot Json
   createdById String
   createdAt DateTime @default(now())
+  // Recibo da geração explícita. Inscrições anteriores conservam os três nulos.
+  requestId String?
+  creationFingerprint String?
+  generationResponse Json?
   @@unique([id, orgId])
   @@unique([orgId, transactionId])
   @@unique([orgId, versionId])
+  @@unique([orgId, requestId])
   @@unique([id, orgId, versionId, contentHash])
 }
 

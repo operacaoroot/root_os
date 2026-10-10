@@ -118,6 +118,9 @@ export default function PreparacaoMarketingPage() {
   const visible = loadedFor === identity ? catalog : null;
   const selected = visible?.accounts.find((a) => a.id === accountId);
   const completeSource = ['taskId', 'versionId', 'decisionId', 'contentHash'].every((k) => query.get(k));
+  const sourceTaskId = query.get('taskId');
+  const sourceVersionId = query.get('versionId');
+  const sourceHref = sourceTaskId ? '/pauta/producao?taskId=' + encodeURIComponent(sourceTaskId) + (sourceVersionId ? '&versionId=' + encodeURIComponent(sourceVersionId) : '') : '/trabalho';
   return <div className="space-y-5">
     <h1 className="text-xl font-semibold">Contas e preparação de Marketing</h1>
     <p>Escolha a conta e o horário para uma versão aprovada. O preparo fica salvo; publicar exige a integração e a autorização da ação.</p>
@@ -127,7 +130,7 @@ export default function PreparacaoMarketingPage() {
     {loadedFor !== identity && !error && <p>Carregando contas…</p>}
     {visible && <section aria-label="Contas disponíveis" className="space-y-2">
       <h2 className="font-semibold">Contas disponíveis</h2>
-      {!visible.accounts.length && <p>Nenhuma conta foi concedida à sua pessoa.</p>}
+      {!visible.accounts.length && <><p>Nenhuma conta foi concedida à sua pessoa.</p><p className="text-sm text-muted">{mayConfigure ? 'Confira as conexões disponíveis e defina dono e operadores na seção abaixo.' : 'Uma pessoa com acesso de configuração precisa conceder o destino à sua conta.'}</p></>}
       {visible.accounts.map((a) => <div className="rounded border border-border p-3" key={a.id}>
         <p>@{a.handle} · {a.canPrepare ? 'disponível para preparar' : 'preparo indisponível'}</p>
         <p className="text-sm">{a.pending}</p>
@@ -135,6 +138,7 @@ export default function PreparacaoMarketingPage() {
     </section>}
     {mayConfigure && loadedFor === identity && config && <section aria-label="Configurar dono e operadores" className="space-y-2">
       <h2 className="font-semibold">Dono e operadores da conexão</h2>
+      {!config.connections.length && <p className="text-sm text-muted">Não há conexões Instagram disponíveis para configurar. Primeiro é necessária uma conexão autorizada; o cadastro de dono e operadores não conecta o provedor.</p>}
       <label className="block">Conexão Instagram<select aria-label="Conexão Instagram" className={inputClass} value={connection} onChange={(e) => setConnection(e.target.value)} disabled={!!configPending || busy}>
         <option value="">Selecione</option>{config.connections.map((c) => <option key={c.id} value={c.id}>@{c.handle}</option>)}
       </select></label>
@@ -159,10 +163,16 @@ export default function PreparacaoMarketingPage() {
       <button type="submit" className={buttonClass} disabled={busy || (!pending && (!selected?.canPrepare || !when))}>{pending ? 'Conferir preparo anterior' : 'Salvar preparo'}</button>
       {conflict && <button type="button" className={buttonClass} onClick={() => { localStorage.removeItem(storageKey); setPending(null); setConflict(false); void load(); }}>Revisar preparo após conflito</button>}
     </form>}
-    {visible && !completeSource && !pending && <p>Abra a versão aprovada na <Link href="/pauta/producao" className="underline">Produção</Link> para escolher seu destino.</p>}
+    {visible && !completeSource && !pending && <section aria-label="Escolher versão para o preparo" className="space-y-3 rounded-lg border border-border p-4">
+      <h2 className="font-semibold">Comece pela versão aprovada</h2>
+      <p className="text-sm text-muted">Abra o material de uma tarefa, confira a aprovação e escolha “Preparar conta e horário”. Esse caminho traz a tarefa, a versão e a decisão corretas.</p>
+      {can('tarefas.ver') ? <Link href={sourceHref} className="inline-flex min-h-11 items-center rounded border border-brand-dim px-3 text-sm text-brand">{sourceTaskId ? 'Abrir material da tarefa' : 'Escolher tarefa em Trabalho'}</Link> : <p className="text-sm text-muted">Sua conta também precisa de acesso a Trabalho para escolher a tarefa.</p>}
+    </section>}
+    {visible && !mayPrepare && <p className="text-sm text-muted">Sua conta pode consultar os preparos. Salvar um preparo exige acesso para editar e publicar na Pauta e editar a tarefa.</p>}
     {loadedFor === identity && result && <p role="status">Preparo salvo para @{result.handle}. Publicação ainda não executada.</p>}
     {visible && <section aria-label="Preparos salvos" className="space-y-2">
       <h2 className="font-semibold">Preparos salvos</h2>
+      {!visible.preparations.length && <p className="text-sm text-muted">Nenhum preparo salvo está disponível para sua conta.</p>}
       {visible.preparations.map((p) => <article key={p.id} className="rounded border border-border p-3">
         <p>@{p.handle} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: p.timezone }).format(new Date(p.scheduledAt))} · {p.timezone}</p>
         <p>Preparado. Publicação e métricas externas pendentes.</p>

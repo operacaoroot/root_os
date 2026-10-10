@@ -1,9 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Prisma } from '@prisma/client';
-import type { CatalogoDeColecaoDto } from '@mktos/shared';
+import type { CatalogoDaVersaoDto, CatalogoDeColecaoDto } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashDoCorpo, chaveDaVault } from '../memory/procedencia';
 import { marcaDoRepositorio } from './estado-do-git';
@@ -160,6 +160,38 @@ export class CatalogoDeColecaoService {
       await tx.$executeRawUnsafe(`UPDATE "ContextCollectionSelection" SET estado='projetado',"marcaDepois"=$1::jsonb,"verificadaEm"=(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
         WHERE id=$2 AND "orgId"=$3 AND estado='classificado'`, JSON.stringify(depois.marca), selectionId, orgId);
     });
+  }
+
+  /** Os IDs recebidos precisam formar a relação real da versão com o item desta empresa. */
+  async porVersao(orgId: string, pessoaId: string, notaId: string, versionId: string): Promise<CatalogoDaVersaoDto> {
+    const conferir = async () => {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ autorizado: boolean; itemId: string | null;
+        versao: number | null; contentHash: string | null }>>(`
+        WITH acesso AS (SELECT EXISTS (
+          SELECT 1 FROM "User" u JOIN "_UserRoles" ur ON ur."B"=u.id
+          JOIN "Role" r ON r.id=ur."A" AND r."orgId"=u."orgId"
+          JOIN "_RolePermissions" rp ON rp."B"=r.id JOIN "Permission" p ON p.id=rp."A"
+          WHERE u.id=$2 AND u."orgId"=$1 AND u."isActive" AND p.key='obsidian.ver') AS autorizado)
+        SELECT a.autorizado,v."itemId",v.versao,v."contentHash"
+        FROM acesso a LEFT JOIN "ContextItem" c ON a.autorizado AND c."orgId"=$1 AND c.id=$3
+          AND (NOT c."acessoRestrito" OR $2=ANY(c.leitores))
+        LEFT JOIN "ContextItemVersion" v ON v."orgId"=c."orgId" AND v."itemId"=c.id AND v.id=$4`,
+        orgId, pessoaId, notaId, versionId);
+      const row = rows[0];
+      if (!row?.autorizado) throw new ForbiddenException('Acesso insuficiente.');
+      if (!row.itemId || row.versao === null || !row.contentHash) throw new NotFoundException('Versão da fonte não encontrada.');
+      return { itemId: row.itemId, versao: row.versao, contentHash: row.contentHash, origem: 'context_item_version' as const };
+    };
+    const associacao = await conferir();
+    const catalogo = await this.porItem(orgId, pessoaId, associacao.itemId);
+    const final = await conferir();
+    if (JSON.stringify(final) !== JSON.stringify(associacao)) {
+      throw new ConflictException('A associação da versão mudou. Confira novamente.');
+    }
+    const membro = catalogo.selecaoVerificada?.membro;
+    const capturaCorrespondeAVersaoEscolhida = !!membro && membro.itemId === final.itemId
+      && membro.versionId === versionId && membro.versao === final.versao && membro.contentHash === final.contentHash;
+    return { notaId, versionId, associacao: final, capturaCorrespondeAVersaoEscolhida, catalogo };
   }
 
   /** Uma única consulta reconfirma pessoa/permissão/ACL e todos os metadados retornados. */

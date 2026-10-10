@@ -32,3 +32,4 @@ export * from './fonte-autorizada.js';
 export * from './comercial-ponte-exercicio.js';
 export * from './catalogo-de-colecao.js';
 export * from './brandbook.js';
+export * from './financeiro-exercicio-inscricao.js';

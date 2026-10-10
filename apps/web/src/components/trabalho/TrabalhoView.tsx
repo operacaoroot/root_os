@@ -106,6 +106,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
   const [tarefas, setTarefas] = useState<TrabTarefaLista | null>(null);
   const [painelId, setPainelId] = useState<string | null>(null);
   const [configAberta, setConfigAberta] = useState(false);
+  const [novaListaAberta, setNovaListaAberta] = useState(false);
   const [fAssignee, setFAssignee] = useState('');
   const [fPessoa, setFPessoa] = useState('');
   const [todasListas, setTodasListas] = useState(false);
@@ -279,6 +280,8 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
       (!fAgente || (fAgente === 'livres' ? !t.agenteId : t.agenteSlug === fAgente)));
   }, [tarefas, fAgente, fAtrasadas]);
 
+  const semListas = estrutura !== null && estrutura.folders.every((f) => f.lists.length === 0) && estrutura.listasSoltas.length === 0;
+
   if (ready && !readable) return <p className="text-muted">Sem permissão para ver tarefas.</p>;
 
   return (
@@ -330,7 +333,7 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
             </div>
           </div>
         )}
-        {editable && estrutura && <NovaLista folders={estrutura.folders} token={token} onDone={refresh} onErro={setErro} />}
+        {editable && estrutura && <NovaLista folders={estrutura.folders} token={token} aberto={novaListaAberta} onAbrir={() => setNovaListaAberta(true)} onFechar={() => setNovaListaAberta(false)} onDone={refresh} onErro={setErro} />}
       </aside>
 
       {/* miolo */}
@@ -420,6 +423,17 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: 'board' | 'tabela' }
             )}
           </div>
         </div>
+
+        {semListas && !erro && <section aria-label="Começar em Trabalho" className="space-y-3 rounded-lg border border-border bg-surface p-4">
+          <h2 className="font-semibold">Comece por uma lista</h2>
+          <p className="text-sm text-muted">Não há listas disponíveis para sua conta. Uma lista organiza as etapas e recebe as tarefas.</p>
+          {editable ? <><p className="text-sm text-muted">Crie uma lista ou escolha um modelo. Depois, adicione uma tarefa na etapa inicial.</p><button type="button" onClick={() => setNovaListaAberta(true)} className="min-h-11 rounded-lg border border-brand-dim px-3 text-sm text-brand">Criar primeira lista</button></> : <p className="text-sm text-muted">Peça a uma pessoa com acesso de edição para criar ou disponibilizar uma lista.</p>}
+        </section>}
+        {estrutura && can('pauta.ver') && <details className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+          <summary className="cursor-pointer font-medium">Conteúdo a partir de uma tarefa</summary>
+          <p className="mt-2 text-muted">Abra uma tarefa e escolha “Abrir material e Produção”. Ali você vincula o material, confere a versão e segue as decisões permitidas à sua conta. Após a aprovação, “Preparar conta e horário” leva ao Marketing.</p>
+          {can('obsidian.ver') && <a href="/contexto" className="mt-2 inline-block text-brand underline">Criar tarefa usando uma fonte do Contexto</a>}
+        </details>}
 
         {listaDoLinkAusente && <p role="status" className="rounded-lg border border-border bg-surface p-3 text-sm text-muted">A lista deste link ainda não está disponível no seu quadro. Escolha uma das listas disponíveis.</p>}
         {erro && (
@@ -1470,22 +1484,23 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 
 // ---------- nova lista (na árvore) ----------
 
-function NovaLista({ folders, token, onDone, onErro }: {
-  folders: TrabEstrutura['folders']; token: string | null; onDone: () => void; onErro: (m: string) => void;
+function NovaLista({ folders, token, aberto, onAbrir, onFechar, onDone, onErro }: {
+  folders: TrabEstrutura['folders']; token: string | null; aberto: boolean; onAbrir: () => void; onFechar: () => void; onDone: () => void; onErro: (m: string) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const nomeInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (aberto) nomeInput.current?.focus(); }, [aberto]);
   const [nome, setNome] = useState('');
   const [pasta, setPasta] = useState(folders[0]?.id ?? '');
   if (!aberto) {
     return (
-      <button onClick={() => setAberto(true)} className="flex items-center gap-1 px-2 text-[12px] text-muted hover:text-brand">
+      <button onClick={() => onAbrir()} className="flex items-center gap-1 px-2 text-[12px] text-muted hover:text-brand">
         <Plus size={12} /> nova lista
       </button>
     );
   }
   return (
     <div className="space-y-1.5 rounded-lg border border-border p-2">
-      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da lista" className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none" />
+      <input ref={nomeInput} aria-label="Nome da nova lista" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da lista" className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none" />
       <select value={pasta} onChange={(e) => setPasta(e.target.value)} className="w-full rounded border border-border bg-surface-2 px-2 py-1 text-xs outline-none">
         {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
         <option value="">Sem pasta</option>
@@ -1495,14 +1510,14 @@ function NovaLista({ folders, token, onDone, onErro }: {
           onClick={() =>
             nome.trim() &&
             apiPost('/trabalho/listas', { folderId: pasta || null, name: nome.trim() }, token)
-              .then(() => { setNome(''); setAberto(false); onDone(); })
+              .then(() => { setNome(''); onFechar(); onDone(); })
               .catch((e) => onErro(e.message))
           }
           className="rounded bg-brand/15 px-2 py-1 text-xs text-brand"
         >
           Criar
         </button>
-        <button onClick={() => setAberto(false)} className="px-2 py-1 text-xs text-muted">Cancelar</button>
+        <button onClick={() => onFechar()} className="px-2 py-1 text-xs text-muted">Cancelar</button>
       </div>
       {/*
         OU A PARTIR DE UM MODELO: etapas, limites e campos prontos. O nome
@@ -1516,7 +1531,7 @@ function NovaLista({ folders, token, onDone, onErro }: {
             title={m.descricao}
             onClick={() =>
               apiPost('/trabalho/listas/modelo', { modelo: m.chave, folderId: pasta || null, name: nome.trim() || undefined }, token)
-                .then(() => { setNome(''); setAberto(false); onDone(); })
+                .then(() => { setNome(''); onFechar(); onDone(); })
                 .catch((e) => onErro(e.message))
             }
             className="block w-full rounded px-1.5 py-1 text-left text-xs text-brand hover:bg-brand/10"

@@ -26,6 +26,7 @@ import { useAuth } from '@/lib/auth';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
+import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -701,6 +702,8 @@ function ApAr(props: {
           </tbody>
         </table>
       </div>
+
+      {canEdit && <NovaInscricaoFinanceira contracts={contracts} onAtualizar={onChange} onError={onError} />}
 
       {/* Contratos recorrentes */}
       <div className="rounded-xl border border-border bg-surface p-4">

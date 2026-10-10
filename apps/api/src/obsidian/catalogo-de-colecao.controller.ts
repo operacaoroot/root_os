@@ -9,6 +9,11 @@ import { CatalogoDeColecaoService } from './catalogo-de-colecao.service';
 @Controller('knowledge/colecao')
 export class CatalogoDeColecaoController {
   constructor(private readonly catalogo: CatalogoDeColecaoService) {}
+  @Get('notas/:notaId/versoes/:versionId')
+  @RequirePermissions('obsidian.ver')
+  porVersao(@CurrentUser() user: JwtUser, @Param('notaId') notaId: string, @Param('versionId') versionId: string) {
+    return this.catalogo.porVersao(user.orgId, user.sub, notaId, versionId);
+  }
   @Get('itens/:itemId')
   @RequirePermissions('obsidian.ver')
   porItem(@CurrentUser() user: JwtUser, @Param('itemId') itemId: string) {

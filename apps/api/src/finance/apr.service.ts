@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { Prisma, FinanceTxType } from '@prisma/client';
+import { Prisma, FinanceTxType, type Contract, type ApprovalStatus } from '@prisma/client';
 import type {
   PartnerList, DimensionList, ContractList, Payables, PayableRow,
   CreatePartnerInput, CreateDimensionInput, CreateContractInput,
@@ -89,6 +89,33 @@ export function idDoLancamentoDeContrato(orgId: string, contractId: string, venc
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const h = bytes.toString('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+export function proximoVencimentoDoContrato(vencimento: Date, periodicidade: string): Date {
+  return addMonths(vencimento, PERIOD_MONTHS[periodicidade] ?? 1);
+}
+
+/** Composição interna: a transação do chamador também pode inscrever o exercício. */
+export async function gerarPrevistoDeContratoNoTx(db: Prisma.TransactionClient, orgId: string, c: Contract,
+  vencimento: Date, actorId: string, approvalStatus: ApprovalStatus): Promise<boolean> {
+  if (c.orgId !== orgId) throw new NotFoundException('Contrato não encontrado');
+  const transactionId = idDoLancamentoDeContrato(orgId, c.id, vencimento);
+  const avancou = await db.contract.updateMany({
+    where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
+    data: { proximoVencimento: proximoVencimentoDoContrato(vencimento, c.periodicidade) },
+  });
+  if (avancou.count !== 1) return false;
+  if (!c.accountId) throw new BadRequestException('Contrato sem conta bancária definida');
+  await db.financeTransaction.create({ data: {
+    id: transactionId, orgId, accountId: c.accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
+    type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
+    amount: c.valor, date: vencimento, dueDate: vencimento, source: 'manual', approvalStatus,
+  } });
+  await db.auditLog.create({ data: {
+    orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
+    after: { transactionId, vencimento: vencimento.toISOString() },
+  } });
+  return true;
 }
 
 const VENCIMENTO_NAO_E_O_PROXIMO = 'O vencimento pedido não é o próximo deste contrato. Atualize a lista antes de gerar.';
@@ -216,7 +243,7 @@ export class AprService {
     if (!c) throw new NotFoundException('Contrato não encontrado');
 
     const transactionId = idDoLancamentoDeContrato(orgId, c.id, venc);
-    const next = addMonths(venc, PERIOD_MONTHS[c.periodicidade] ?? 1);
+    const next = proximoVencimentoDoContrato(venc, c.periodicidade);
     const resposta = { ok: true as const, transactionId, proximoVencimento: next.toISOString() };
     // Antes das conferências de status e conta: o lançamento gravado continua
     // valendo mesmo que o contrato tenha sido pausado depois.
@@ -227,33 +254,11 @@ export class AprService {
     // Contrato gravado antes desta conferência pode apontar para cadastro de outra empresa.
     await conferirReferencias(this.prisma, orgId, { conta: c.accountId, plano: c.chartAccountId, parceiro: c.partnerId });
 
-    const accountId = c.accountId;
     const requiresApproval = c.tipo === 'saida' && num(c.valor) > APPROVAL_LIMIT();
     try {
-      const gerou = await this.prisma.$transaction(async (db) => {
-        const avancou = await db.contract.updateMany({
-          where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
-          data: { proximoVencimento: next },
-        });
-        if (avancou.count !== 1) return false;
-        await db.financeTransaction.create({
-          data: {
-            id: transactionId, orgId, accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
-            type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
-            amount: c.valor, date: venc, dueDate: venc, source: 'manual',
-            approvalStatus: requiresApproval ? 'aguardando' : 'nao_requer',
-          },
-        });
-        // A mesma linha que `AuditService.log` grava, mas pelo cliente da
-        // transação: fora dela, uma falha aqui deixaria lançamento sem auditoria.
-        await db.auditLog.create({
-          data: {
-            orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
-            after: { transactionId, vencimento: venc.toISOString() },
-          },
-        });
-        return true;
-      });
+      const gerou = await this.prisma.$transaction(db => gerarPrevistoDeContratoNoTx(
+        db, orgId, c, venc, actorId, requiresApproval ? 'aguardando' : 'nao_requer',
+      ));
       if (gerou) return { ...resposta, replayed: false };
     } catch (e) {
       // Chave primária repetida: outra chamada gravou este vencimento entre a conferência e o INSERT.
