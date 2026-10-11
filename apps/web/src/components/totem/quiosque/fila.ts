@@ -7,7 +7,7 @@ import {
 } from '@mktos/shared';
 
 import { ErroDaApi } from '@/lib/api';
-import { ehSemRede, ehTotemDesativado } from '@/lib/totem/api-publica';
+import { ehTotemDesativado } from '@/lib/totem/api-publica';
 import type { Armazem } from './armazem';
 
 /*
@@ -78,24 +78,32 @@ export function criarFila(armazem: Armazem): FilaDeEventos {
 
   function acrescentar(novos: readonly TotemEventoQuiosque[]): void {
     const ids = new Set(eventos.map((e) => e.id));
-    eventos = [...eventos, ...novos.filter((e) => !ids.has(e.id))].slice(-TOTEM_FILA_MAXIMA);
+    const entram: TotemEventoQuiosque[] = [];
+    for (const e of novos) {
+      if (ids.has(e.id)) continue;
+      ids.add(e.id);
+      entram.push(e);
+    }
+    eventos = [...eventos, ...entram].slice(-TOTEM_FILA_MAXIMA);
   }
 
   async function enviarTudo(enviar: EnviarEventos): Promise<number> {
     let enviados = 0;
     while (eventos.length) {
       const lote = eventos.slice(0, TOTEM_EVENTOS_POR_LOTE);
+      let aceito = true;
       try {
         await enviar(lote);
       } catch (e) {
         if (ehTotemDesativado(e)) throw e;
         // 400 é lote que a API nunca vai aceitar: descartar destrava a fila.
         // Qualquer outra falha (sem rede, 429, 5xx) guarda o lote para depois.
-        if (ehSemRede(e) || !(e instanceof ErroDaApi && e.status === 400)) break;
+        if (!(e instanceof ErroDaApi && e.status === 400)) break;
+        aceito = false;
       }
       const ids = new Set(lote.map((ev) => ev.id));
       eventos = eventos.filter((ev) => !ids.has(ev.id));
-      enviados += lote.length;
+      if (aceito) enviados += lote.length;
       await salvar();
     }
     return enviados;
