@@ -1,12 +1,12 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import {
   BRANDBOOK_CHAVE,
   type BrandbookAtivo, type BrandbookAtivarInput, type BrandbookPainel, type BrandbookPrevia,
   type BrandbookReferenciaRoot, type BrandbookSalvarInput,
 } from '@mktos/shared';
-import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
+import { MemoriaService, type NotaDeContexto, type IdentidadeDaDerivacao, type LeitorFisicoDaDerivacao, type DescritorFisicoDaFonte } from '../memory/memoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { contextoAtual } from '../common/contexto-execucao';
 import { exigirAcessoAtual } from '../memory/acesso-memoria';
@@ -16,6 +16,7 @@ import referenciaRoot from './assets/brandbook-root.json';
 
 type Envelope = z.infer<typeof BrandbookEnvelopeSchema>;
 type Leitura = { nota: NotaDeContexto | null; documento: Envelope | null };
+export interface BrandbookDaGeracao { fisica: DescritorFisicoDaFonte; envelope: Envelope | null; ativo: BrandbookAtivo | null }
 
 @Injectable()
 export class BrandbookService {
@@ -49,8 +50,14 @@ export class BrandbookService {
     if (!nota || !depois || nota.id !== depois.id || nota.versao !== depois.versao || nota.contentHash !== depois.contentHash || (nota.arquivadoEm ?? null) !== (depois.arquivadoEm?.toISOString() ?? null)) {
       throw new ConflictException('O brandbook mudou durante a leitura. Recarregue a página.');
     }
+    const documento = this.conferirEnvelopeArmazenado(nota.body);
+    await this.conferirLeitor(orgId);
+    return { nota, documento };
+  }
+
+  private conferirEnvelopeArmazenado(body: string): Envelope {
     let documento: Envelope;
-    try { documento = BrandbookEnvelopeSchema.parse(JSON.parse(nota.body)); }
+    try { documento = BrandbookEnvelopeSchema.parse(JSON.parse(body)); }
     catch { throw new ConflictException('O brandbook armazenado está inválido. Revise a nota antes de continuar.'); }
     if (documento.ativo) {
       conferirLogo(documento.ativo.documento.visual.logoDataUrl);
@@ -59,8 +66,28 @@ export class BrandbookService {
         throw new ConflictException('A marca ativa armazenada está inválida. Revise o brandbook.');
       }
     }
-    await this.conferirLeitor(orgId);
-    return { nota, documento };
+    return documento;
+  }
+
+  /** Reader interno de uma geração; usa o mesmo tx e a chave aberta fixa. */
+  async lerParaGeracaoNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    lerFonte: LeitorFisicoDaDerivacao): Promise<BrandbookDaGeracao> {
+    const conferir = async () => {
+      const c = contextoAtual(); const ator = identidade.tipo === 'humano'
+        ? { actorType: 'user', actorId: identidade.actorId, correlationId: identidade.correlationId }
+        : { ...identidade.ator, correlationId: identidade.ctx.correlationId };
+      if (c?.orgId !== orgId || c.actorType !== ator.actorType || (c.actorId ?? null) !== ator.actorId
+        || !ator.correlationId || c.correlationId !== ator.correlationId) throw new ForbiddenException('Acesso insuficiente.');
+      if (ator.actorType === 'user') await exigirAcessoAtual(tx, orgId, ator.actorId, ['pauta.ver']);
+    };
+    await conferir();
+    const fisica = await lerFonte({ chave: BRANDBOOK_CHAVE });
+    if (fisica.estado === 'ausente_fisico') { await conferir(); return { fisica, envelope: null, ativo: null }; }
+    if (fisica.nota.acessoRestrito) throw new ForbiddenException('O brandbook tem acesso restrito. Revise a configuração de acesso.');
+    if (fisica.nota.arquivadoEm) throw new ConflictException('O brandbook foi arquivado. Revise sua situação no criador.');
+    const envelope = this.conferirEnvelopeArmazenado(fisica.nota.body);
+    await conferir();
+    return { fisica, envelope, ativo: envelope.ativo };
   }
 
   private resposta(l: Leitura): BrandbookPainel {

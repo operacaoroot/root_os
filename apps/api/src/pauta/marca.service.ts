@@ -1,6 +1,6 @@
 import { PautaMarcaHumanoPainelSchema, type PautaMarcaHumanoPainel, type PautaMarcaSalvarHumanoInput, type PautaPilaresSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import {
   PAUTA_CHAVE_DA_MARCA,
   lerPilaresDoTexto,
@@ -16,15 +16,23 @@ import {
   type PautaPilaresSalvarInput,
 } from '@mktos/shared';
 import { AuditService } from '../audit/audit.service';
-import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
+import { MemoriaService, type NotaDeContexto, type IdentidadeDaDerivacao, type LeitorFisicoDaDerivacao, type DescritorFisicoDaFonte } from '../memory/memoria.service';
 import { blocoDeMarca, marcaDaNota, pilaresDaNota, perfilParaPrompt, procedenciaDaMarca } from './marca-da-pauta';
 import { lerReferenciaDaProjecao, proporMarcaDaFonte, referenciaDaProjecao } from './marca-projecao';
 import { BrandbookService } from './brandbook.service';
+import type { BrandbookDaGeracao } from './brandbook.service';
 import { textoDosPilares } from './brandbook-documento';
 
 const TITULO_DA_MARCA = 'Marca (pauta)';
 const TITULO_DOS_PILARES = 'Pilares de conteúdo (pauta)';
 const CHAVE_DA_FONTE = 'editorial:marca:Root/40-marca-e-conteudo/root-fundamentos-da-marca-e-guia-de-expressao.md';
+
+export interface MarcaParaGeracao {
+  origem: 'brandbook' | 'legado'; perfil: string | null; pilares: PautaPilar[]; bloco: string;
+  descritores: { livro: BrandbookDaGeracao; perfil?: DescritorFisicoDaFonte; pilares?: DescritorFisicoDaFonte;
+    projecaoPerfil?: { motivo: string | null; sourceRef: string | null } | null;
+    projecaoPilares?: { motivo: string | null; sourceRef: string | null } | null };
+}
 
 /*
  * O brandbook aprovado tem precedência. Sem ativo, preserva as duas notas
@@ -97,6 +105,43 @@ export class MarcaService {
     });
   }
 
+
+  /** Marca e pilares da mesma observação física, sem os fallbacks dos readers legados. */
+  async paraGeracaoNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    lerFonte: LeitorFisicoDaDerivacao): Promise<MarcaParaGeracao> {
+    const livro = await this.brandbooks.lerParaGeracaoNoTx(tx, orgId, identidade, lerFonte);
+    if (livro.ativo) {
+      const d = livro.ativo.documento; const pilares = lerPilaresDoTexto(textoDosPilares(d)).pilares;
+      const procedencia = `brandbook aprovado · sha256:${livro.ativo.draftHash.slice(0, 12)}`;
+      return { origem: 'brandbook', perfil: d.perfilParaPauta, pilares,
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }), descritores: { livro } };
+    }
+    const perfilFisico = await lerFonte({ chave: PAUTA_CHAVE_DA_MARCA });
+    const pilaresFisicos = await lerFonte({ chave: PAUTA_CHAVE_DOS_PILARES });
+    const n = perfilFisico.estado === 'existente' ? perfilFisico.nota : null;
+    const p = pilaresFisicos.estado === 'existente' ? pilaresFisicos.nota : null;
+    const perfil = marcaDaNota(n).perfil; const pilares = pilaresDaNota(p).pilares;
+    const projecaoPerfil = await this.projecaoCorrenteNoTx(tx, orgId, perfilFisico);
+    const projecaoPilares = await this.projecaoCorrenteNoTx(tx, orgId, pilaresFisicos);
+    const atual = (x: { motivo: string | null; sourceRef: string | null } | null) =>
+      !!x?.motivo?.startsWith('projeção revisada do guia') && !!lerReferenciaDaProjecao(x.sourceRef);
+    return { origem: 'legado', perfil, pilares,
+      bloco: blocoDeMarca(perfil, pilares, {
+        procedencia: n && perfil ? procedenciaDaMarca({ ...n, sourceRef: atual(projecaoPerfil) ? n.sourceRef : null }) : undefined,
+        procedenciaPilares: p && pilares.length && atual(projecaoPilares) ? procedenciaDaMarca(p) : undefined,
+      }), descritores: { livro, perfil: perfilFisico, pilares: pilaresFisicos, projecaoPerfil, projecaoPilares } };
+  }
+
+  private async projecaoCorrenteNoTx(tx: Prisma.TransactionClient, orgId: string, fonte: DescritorFisicoDaFonte) {
+    if (fonte.estado === 'ausente_fisico') return null;
+    const v = await tx.contextItemVersion.findFirst({ where: { id: fonte.versao.id, orgId,
+      itemId: fonte.nota.id, versao: fonte.nota.versao }, select: { body: true, kind: true, title: true,
+        sourceType: true, sourceRef: true, contentHash: true, motivo: true } });
+    if (!v || v.body !== fonte.versao.body || v.kind !== fonte.versao.kind || v.title !== fonte.versao.title
+      || v.sourceType !== fonte.versao.sourceType || v.sourceRef !== fonte.versao.sourceRef
+      || v.contentHash !== fonte.versao.contentHash) throw new ConflictException('A versão da marca não pôde ser conferida.');
+    return { motivo: v.motivo, sourceRef: v.sourceRef };
+  }
 
   async painelHumano(orgId: string, actorId: string): Promise<PautaMarcaHumanoPainel> {
     const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'marca' });

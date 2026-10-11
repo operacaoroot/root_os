@@ -2,13 +2,14 @@ import { PautaVozHumanoPainelSchema, type PautaVozHumanoPainel, type PautaVozSal
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { Prisma, ContextKind, ContextSource } from '@prisma/client';
 import {
   PAUTA_CHAVE_DA_CHAVE_DA_VOZ,
   PAUTA_CHAVE_DA_VOZ_PADRAO,
@@ -22,7 +23,10 @@ import {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
+import { MemoriaService, type NotaDeContexto, type IdentidadeDaDerivacao, type PlanoInternoDeFontesDaDerivacao, type LeitorFisicoDaDerivacao, type CompromissoDaDerivacao } from '../memory/memoria.service';
+import { contextoAtual } from '../common/contexto-execucao';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { rotuloDeProcedencia } from '../memory/procedencia';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import {
@@ -45,6 +49,12 @@ const TITULO_DO_PERFIL = 'Voz do autor (pauta)';
 const TITULO_DA_CHAVE = 'Chave da voz da pauta';
 const HISTORICO_NO_PAINEL = 10;
 const EPISODIOS_NO_PAINEL = 30;
+
+interface MaterialEscolhidoDaVoz {
+  chave: string; origem: 'empresa' | 'padrao'; material: ReturnType<typeof materialDaVoz>;
+  apelidos: string[]; textos: number; texto: string; provider: string; model: string; configured: boolean;
+}
+interface SelecaoDaVoz { episodioIds: string[] }
 
 /*
  * A VOZ DO AUTOR (MC10). O perfil é uma nota da memória — lida por `porChave`
@@ -187,90 +197,115 @@ export class VozService {
   }
 
   private async aprenderAgora(orgId: string, actorId: string, entrada: PautaVozAprenderInput): Promise<PautaVozAprendida> {
-    if (!this.llm.configured) {
-      throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
-    }
-
-    const ids = [...new Set(entrada.episodios)];
-    const eps = ids.length
-      ? await this.prisma.pautaEpisodio.findMany({
-          where: { orgId, id: { in: ids } },
-          select: { id: true, numero: true, titulo: true, transcricaoTexto: true },
-          orderBy: { numero: 'asc' },
-        })
-      : [];
-    if (eps.length !== ids.length) throw new NotFoundException('Episódio não encontrado');
-    const semTexto = eps.find((e) => !e.transcricaoTexto.trim());
-    if (semTexto) {
-      throw new BadRequestException(
-        `${apelidoDoEpisodio(semTexto.numero)} ainda não tem transcrição — a voz aprende do que foi dito.`,
-      );
-    }
-
-    const fontes: FonteDaVoz[] = [
-      ...eps.map((e) => ({ rotulo: `episódio ${apelidoDoEpisodio(e.numero)} · ${e.titulo}`, texto: e.transcricaoTexto })),
-      ...entrada.textos.map((t, i) => ({ rotulo: `texto colado ${i + 1}${t.titulo ? ` · ${t.titulo}` : ''}`, texto: t.texto })),
-    ];
-    const material = materialDaVoz(fontes);
-    // Antes da IA: memória fora do ar não gasta chamada, e a chave lida é a que recebe o perfil.
+    const identidade = this.identidadeHumana(orgId, actorId);
+    if (!this.llm.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
+    const pedido = structuredClone(entrada);
+    // Esta leitura é apenas pista; o plano confere a configuração física no tx.
     const { chave } = await this.chave(orgId);
-
-    const saida = await this.llm.complete({
-      system: SYSTEM_VOZ,
-      user: entradaDaVoz(material),
-      // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
-      orgId,
-      maxTokens: SAIDA_DA_GERACAO_LONGA,
-    });
-
+    const observada = await this.prisma.$transaction(async (tx) => {
+      const r = await this.memoria.observarDestinoDaDerivacaoNoTx(tx, orgId, identidade,
+        { tipo: 'A4-VOZ', chave }, this.planoDaVoz(orgId, chave, pedido));
+      const existente = await tx.contextItem.findFirst({ where: { orgId, chave }, select: { id: true } });
+      return { ...r, criarComTags: !existente };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    const m = observada.material;
+    this.identidadeHumana(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'pauta.editar', 'automacoes.executar']);
+    this.conferirModeloEscolhido(m);
+    const saida = await this.llm.complete({ system: SYSTEM_VOZ, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let corpo: string;
-    try {
-      corpo = montarPerfil(lerPerfilDaIa(saida));
-    } catch (err) {
-      if (err instanceof VozInvalidaError) {
-        this.log.warn(`voz de ${orgId}: ${err.message}`);
-        throw new ServiceUnavailableException(err.message);
-      }
+    try { corpo = montarPerfil(lerPerfilDaIa(saida)); }
+    catch (err) {
+      if (err instanceof VozInvalidaError) { this.log.warn(`voz de ${orgId}: ${err.message}`); throw new ServiceUnavailableException(err.message); }
       throw err;
     }
+    const compromisso = await this.prisma.$transaction((tx) => this.memoria.aplicarDerivacaoCondicionadaNoTx(tx,
+      observada.capsula, { kind: ContextKind.definicao, title: TITULO_DO_PERFIL, body: corpo,
+        ...(observada.criarComTags ? { tags: ['pauta', 'voz'] } : {}), sourceType: ContextSource.promocao,
+        sourceRef: procedenciaDaVoz({ episodios: m.apelidos, textos: m.textos, provider: m.provider,
+          model: m.model, cortado: m.material.cortado }), motivo: 'perfil de voz aprendido pela IA (MC10)' }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    await this.audit.log({ orgId, actorId, action: 'pauta.voz_aprendida', entityType: 'context_item', entityId: compromisso.aplicada.itemId,
+      after: { versao: compromisso.aplicada.versao, versionId: compromisso.aplicada.versionId,
+        contentHash: compromisso.aplicada.contentHash, episodios: m.apelidos, textos: m.textos,
+        caracteres: m.material.caracteres, cortado: m.material.cortado, provider: m.provider, model: m.model } });
+    return this.painelDaVozConfirmada(orgId, m, compromisso);
+  }
 
-    const apelidos = eps.map((e) => apelidoDoEpisodio(e.numero));
-    const nota = await this.gravar(orgId, chave, {
-      titulo: TITULO_DO_PERFIL,
-      corpo,
-      sourceType: ContextSource.promocao,
-      sourceRef: procedenciaDaVoz({
-        episodios: apelidos,
-        textos: entrada.textos.length,
-        provider: this.llm.name,
-        model: this.llm.model,
-        cortado: material.cortado,
-      }),
-      motivo: 'perfil de voz aprendido pela IA (MC10)',
-    });
+  private identidadeHumana(orgId: string, actorId: string): Extract<IdentidadeDaDerivacao, { tipo: 'humano' }> {
+    const c = contextoAtual();
+    if (!actorId || c?.orgId !== orgId || c.actorType !== 'user' || c.actorId !== actorId || !c.correlationId)
+      throw new ForbiddenException('Acesso insuficiente.');
+    return { tipo: 'humano', actorId, correlationId: c.correlationId };
+  }
 
-    await this.audit.log({
-      orgId,
-      actorId,
-      action: 'pauta.voz_aprendida',
-      entityType: 'context_item',
-      entityId: nota.id,
-      after: {
-        versao: nota.versao,
-        episodios: apelidos,
-        textos: entrada.textos.length,
-        caracteres: material.caracteres,
-        cortado: material.cortado,
-        provider: this.llm.name,
-        model: this.llm.model,
-      },
-    });
+  private conferirModeloEscolhido(m: Readonly<MaterialEscolhidoDaVoz>) {
+    if (!m.configured || this.llm.configured !== m.configured || this.llm.name !== m.provider || this.llm.model !== m.model)
+      throw new ConflictException('A configuração da geração mudou. Confira a base antes de gerar novamente.');
+  }
 
-    const painel = await this.painel(orgId);
+  private planoDaVoz(orgId: string, chave: string, entrada: PautaVozAprenderInput): PlanoInternoDeFontesDaDerivacao<MaterialEscolhidoDaVoz, SelecaoDaVoz> {
     return {
-      ...painel,
-      material: { fontes: material.fontes.length, caracteres: material.caracteres, cortado: material.cortado },
+      observar: async (tx, lerFonte) => {
+        const ids = [...new Set(entrada.episodios)];
+        const eps = ids.length ? await tx.pautaEpisodio.findMany({ where: { orgId, id: { in: ids } },
+          select: { id: true }, orderBy: { numero: 'asc' } }) : [];
+        if (eps.length !== ids.length) throw new NotFoundException('Episódio não encontrado');
+        const selecao = { episodioIds: eps.map((e) => e.id) };
+        return { ...await this.relerVozNoTx(tx, orgId, chave, entrada, selecao, lerFonte), selecao };
+      },
+      reconferir: (tx, lerFonte, selecao) => this.relerVozNoTx(tx, orgId, chave, entrada, selecao, lerFonte),
     };
+  }
+
+  private async relerVozNoTx(tx: Prisma.TransactionClient, orgId: string, chave: string, entrada: PautaVozAprenderInput,
+    selecao: Readonly<SelecaoDaVoz>, lerFonte: LeitorFisicoDaDerivacao) {
+    const configuracao = await lerFonte({ chave: PAUTA_CHAVE_DA_CHAVE_DA_VOZ });
+    let efetiva: string = PAUTA_CHAVE_DA_VOZ_PADRAO; let origem: 'empresa' | 'padrao' = 'padrao';
+    if (configuracao.estado === 'existente') {
+      const primeira = configuracao.nota.body.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
+      const r = PautaChaveDaVozSchema.safeParse(primeira);
+      if (!r.success) throw new ConflictException('A configuração da voz está inválida. Revise antes de aprender.');
+      efetiva = r.data; origem = 'empresa';
+    }
+    if (efetiva !== chave) throw new ConflictException('A chave da voz mudou. Confira a base antes de aprender.');
+    const ids = [...selecao.episodioIds];
+    if (ids.length) await tx.$queryRaw`SELECT id FROM "PautaEpisodio" WHERE "orgId"=${orgId}
+      AND id IN (${Prisma.join([...ids].sort())}) ORDER BY id FOR SHARE`;
+    const rows = ids.length ? await tx.pautaEpisodio.findMany({ where: { orgId, id: { in: ids } } }) : [];
+    if (rows.length !== ids.length) throw new ConflictException('Os episódios escolhidos mudaram durante o aprendizado.');
+    const porId = new Map(rows.map((e) => [e.id, e]));
+    const eps = ids.map((id) => { const e = porId.get(id);
+      if (!e) throw new ConflictException('Os episódios escolhidos mudaram durante o aprendizado.'); return e; });
+    const semTexto = eps.find((e) => !e.transcricaoTexto.trim());
+    if (semTexto) throw new BadRequestException(`${apelidoDoEpisodio(semTexto.numero)} ainda não tem transcrição — a voz aprende do que foi dito.`);
+    const fontes: FonteDaVoz[] = [ ...eps.map((e) => ({ rotulo: `episódio ${apelidoDoEpisodio(e.numero)} · ${e.titulo}`, texto: e.transcricaoTexto })),
+      ...entrada.textos.map((t, i) => ({ rotulo: `texto colado ${i + 1}${t.titulo ? ` · ${t.titulo}` : ''}`, texto: t.texto })) ];
+    const material = materialDaVoz(fontes);
+    return { material: { chave, origem, material, apelidos: eps.map((e) => apelidoDoEpisodio(e.numero)), textos: entrada.textos.length,
+      texto: entradaDaVoz(material), provider: this.llm.name, model: this.llm.model, configured: this.llm.configured },
+      descritores: { configuracao, episodios: eps, textos: entrada.textos } };
+  }
+
+  private async painelDaVozConfirmada(orgId: string, m: Readonly<MaterialEscolhidoDaVoz>, compromisso: CompromissoDaDerivacao): Promise<PautaVozAprendida> {
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    const a = compromisso.aplicada;
+    const v = await this.prisma.contextItemVersion.findFirst({ where: { id: a.versionId, orgId, itemId: a.itemId, versao: a.versao } });
+    if (!v || v.body !== a.body || v.contentHash !== a.contentHash || v.sourceType !== a.sourceType || v.sourceRef !== a.sourceRef)
+      throw new ConflictException('A versão aplicada da voz não pôde ser conferida.');
+    const historico = (await this.memoria.historico(orgId, a.itemId)).slice(0, HISTORICO_NO_PAINEL);
+    const episodios = await this.prisma.$queryRaw<Array<{ id: string; numero: number; titulo: string; caracteres: number }>>`
+      SELECT id,numero,titulo,length("transcricaoTexto")::int AS caracteres FROM "PautaEpisodio"
+      WHERE "orgId"=${orgId} AND "transcricaoTexto"<>'' ORDER BY numero DESC LIMIT ${EPISODIOS_NO_PAINEL}`;
+    const final = await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    return { chave: a.chave, origemDaChave: m.origem,
+      perfil: { id: a.itemId, corpo: a.body, versao: a.versao, procedencia: rotuloDeProcedencia(a.sourceType, a.sourceRef),
+        sourceType: a.sourceType, sourceRef: a.sourceRef, atualizadoEm: v.criadoEm.toISOString(), arquivado: final.disponibilidadeAtual.arquivada },
+      historico: historico.map((h) => ({ versao: h.versao, mudanca: h.mudanca, procedencia: h.procedencia, motivo: h.motivo, criadoEm: h.criadoEm })),
+      regrasDaMarca: PAUTA_VOZ_REGRAS_DA_MARCA,
+      episodios: episodios.map((e) => ({ id: e.id, apelido: apelidoDoEpisodio(Number(e.numero)), titulo: e.titulo, caracteres: Number(e.caracteres) })),
+      iaConfigurada: this.llm.configured, material: { fontes: m.material.fontes.length, caracteres: m.material.caracteres, cortado: m.material.cortado } };
   }
 
   /**

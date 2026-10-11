@@ -56,12 +56,9 @@ export class ExecutorDoRelatorioDaPauta implements OnModuleInit {
     // virada. Sem ele, o mês a fechar é o anterior ao do tique.
     const mes = typeof cfg.mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(cfg.mes) ? cfg.mes : mesAFechar(ctx.agora);
 
-    const antes = await this.relatorios.painel(ctx.orgId, mes);
-    if (antes.documento.trim()) {
-      return { status: 'pulada', resumo: `${mes} já tem relatório — refazer é pelo botão, para não apagar edição` };
-    }
-
-    const painel = await this.relatorios.gerar(ctx.orgId, ctx.rotinaId, mes, true);
+    const resultado = await this.relatorios.gerarPorRotina(ctx, mes);
+    if (resultado.status === 'pulada') return resultado;
+    const painel = resultado.painel;
     return {
       status: 'ok',
       resumo: `relatório de ${mes} gerado · ${painel.publicadas} peça(s) publicada(s) no mês`,

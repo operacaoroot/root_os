@@ -1,6 +1,6 @@
 import { PautaEstrategiaHumanoPainelSchema, type PautaEstrategiaHumanoPainel, type PautaEstrategiaSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Prisma, ContextKind, ContextSource } from '@prisma/client';
 import {
   chaveDaEstrategia,
   mesDaChaveDaEstrategia,
@@ -9,7 +9,9 @@ import {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { MemoriaService } from '../memory/memoria.service';
+import { MemoriaService, type IdentidadeDaDerivacao, type PlanoInternoDeFontesDaDerivacao, type LeitorFisicoDaDerivacao, type CompromissoDaDerivacao } from '../memory/memoria.service';
+import { contextoAtual } from '../common/contexto-execucao';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { MarcaService } from './marca.service';
@@ -23,6 +25,12 @@ import {
   montarEstrategia,
 } from './estrategia-da-pauta';
 import { umaPorVez } from './uma-por-vez';
+
+interface MaterialEscolhidoDaEstrategia {
+  insumo: Parameters<typeof entradaDaEstrategia>[0]; origemMarca: 'brandbook' | 'legado';
+  texto: string; provider: string; model: string; configured: boolean;
+}
+interface SelecaoDaEstrategia { perfilIds: string[]; pecaIds: string[]; origemMarca: 'brandbook' | 'legado' }
 
 /** O mês anterior a `AAAA-MM`. */
 export function mesAnterior(mes: string): string {
@@ -141,67 +149,119 @@ export class EstrategiaService {
   }
 
   private async gerarAgora(orgId: string, actorId: string, mes: string): Promise<PautaEstrategiaPainel> {
-    if (!this.llm.configured) {
-      throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
-    }
-    const pilares = await this.marcas.pilares(orgId);
-    if (!pilares.length) {
-      // Priorizar é escolher entre pilares. Sem lista, o modelo inventaria a
-      // lista e a estratégia deixaria de casar com qualquer peça.
-      throw new BadRequestException(
-        'Sem pilar cadastrado não há o que priorizar: escreva os pilares na tela de Marca antes.',
-      );
-    }
-
-    const [marca, dossies, publicado] = await Promise.all([
-      this.marcas.bloco(orgId),
-      this.dossies(orgId),
-      this.publicadoNoMes(orgId, mesAnterior(mes)),
-    ]);
-
-    const saida = await this.llm.complete({
-      system: SYSTEM_ESTRATEGIA,
-      user: entradaDaEstrategia({ mes, marca, pilares, dossies, publicado }),
-      // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
-      orgId,
-      maxTokens: SAIDA_DA_GERACAO_LONGA,
-    });
-
+    const identidade = this.identidadeHumana(orgId, actorId);
+    if (!this.llm.configured) throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
+    const observada = await this.prisma.$transaction(async (tx) => {
+      const r = await this.memoria.observarDestinoDaDerivacaoNoTx(tx, orgId, identidade,
+        { tipo: 'A4-ESTRATEGIA', mes }, this.planoDaEstrategia(orgId, identidade, mes));
+      const existente = await tx.contextItem.findFirst({ where: { orgId, chave: chaveDaEstrategia(mes) }, select: { id: true } });
+      return { ...r, criarComTags: !existente };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    const m = observada.material;
+    this.identidadeHumana(orgId, actorId);
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['obsidian.ver', 'pauta.editar', 'automacoes.executar', 'pauta.ver']);
+    this.conferirModeloEscolhido(m);
+    const saida = await this.llm.complete({ system: SYSTEM_ESTRATEGIA, user: m.texto, orgId, maxTokens: SAIDA_DA_GERACAO_LONGA });
     let documento: string;
-    try {
-      documento = montarEstrategia(mes, lerEstrategiaDaIa(saida, pilares));
-    } catch (err) {
-      if (err instanceof EstrategiaInvalidaError) {
-        this.log.warn(`estratégia de ${mes} em ${orgId}: ${err.message}`);
-        throw new ServiceUnavailableException(err.message);
-      }
+    try { documento = montarEstrategia(mes, lerEstrategiaDaIa(saida, m.insumo.pilares)); }
+    catch (err) {
+      if (err instanceof EstrategiaInvalidaError) { this.log.warn(`estratégia de ${mes} em ${orgId}: ${err.message}`); throw new ServiceUnavailableException(err.message); }
       throw err;
     }
+    const compromisso = await this.prisma.$transaction((tx) => this.memoria.aplicarDerivacaoCondicionadaNoTx(tx,
+      observada.capsula, { kind: ContextKind.definicao, title: `Estratégia de ${mes}`, body: documento,
+        ...(observada.criarComTags ? { tags: ['pauta', 'estrategia'] } : {}), sourceType: ContextSource.promocao,
+        sourceRef: `pauta.estrategia · ${mes}`, motivo: 'estratégia do mês proposta pela IA (MK4)' }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    await this.audit.log({ orgId, actorId, action: 'pauta.estrategia_gerada', entityType: 'context_item', entityId: compromisso.aplicada.itemId,
+      after: { mes, versao: compromisso.aplicada.versao, versionId: compromisso.aplicada.versionId, contentHash: compromisso.aplicada.contentHash,
+        pilares: m.insumo.pilares.length, dossies: m.insumo.dossies.length, publicadoNoMesAnterior: m.insumo.publicado.length,
+        provider: m.provider, model: m.model } });
+    return this.painelDaEstrategiaConfirmada(orgId, mes, m, compromisso);
+  }
 
-    const nota = await this.gravar(
-      orgId,
-      mes,
-      documento,
-      ContextSource.promocao,
-      'estratégia do mês proposta pela IA (MK4)',
-    );
-    await this.audit.log({
-      orgId,
-      actorId,
-      action: 'pauta.estrategia_gerada',
-      entityType: 'context_item',
-      entityId: nota.id,
-      after: {
-        mes,
-        versao: nota.versao,
-        pilares: pilares.length,
-        dossies: dossies.length,
-        publicadoNoMesAnterior: publicado.length,
-        provider: this.llm.name,
-        model: this.llm.model,
+  private identidadeHumana(orgId: string, actorId: string): Extract<IdentidadeDaDerivacao, { tipo: 'humano' }> {
+    const c = contextoAtual();
+    if (!actorId || c?.orgId !== orgId || c.actorType !== 'user' || c.actorId !== actorId || !c.correlationId)
+      throw new ForbiddenException('Acesso insuficiente.');
+    return { tipo: 'humano', actorId, correlationId: c.correlationId };
+  }
+  private conferirModeloEscolhido(m: Readonly<MaterialEscolhidoDaEstrategia>) {
+    if (!m.configured || this.llm.configured !== m.configured || this.llm.name !== m.provider || this.llm.model !== m.model)
+      throw new ConflictException('A configuração da geração mudou. Confira a base antes de gerar novamente.');
+  }
+
+  private planoDaEstrategia(orgId: string, identidade: IdentidadeDaDerivacao, mes: string): PlanoInternoDeFontesDaDerivacao<MaterialEscolhidoDaEstrategia, SelecaoDaEstrategia> {
+    return {
+      observar: async (tx, lerFonte) => {
+        const { de, ate } = janelaDoMes(mesAnterior(mes));
+        const perfis = await tx.pautaFonte.findMany({ where: { orgId, tipo: 'perfil' }, select: { id: true }, orderBy: { nome: 'asc' } });
+        const pecas = await tx.pautaPeca.findMany({ where: { orgId, status: 'publicada', publicadaEm: { gte: de, lt: ate } },
+          select: { id: true }, orderBy: { publicadaEm: 'asc' }, take: 60 });
+        const ids = { perfilIds: perfis.map((p) => p.id), pecaIds: pecas.map((p) => p.id) };
+        const r = await this.relerEstrategiaNoTx(tx, orgId, identidade, mes, ids, lerFonte);
+        return { ...r, selecao: { ...ids, origemMarca: r.material.origemMarca } };
       },
-    });
-    return this.painel(orgId, mes);
+      reconferir: (tx, lerFonte, selecao) => this.relerEstrategiaNoTx(tx, orgId, identidade, mes, selecao, lerFonte, selecao.origemMarca),
+    };
+  }
+
+  private async relerEstrategiaNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao, mes: string,
+    selecao: Readonly<Pick<SelecaoDaEstrategia, 'perfilIds' | 'pecaIds'>>, lerFonte: LeitorFisicoDaDerivacao,
+    origemEsperada?: 'brandbook' | 'legado') {
+    const marca = await this.marcas.paraGeracaoNoTx(tx, orgId, identidade, lerFonte);
+    if (origemEsperada && marca.origem !== origemEsperada) throw new ConflictException('A origem da marca mudou durante a geração.');
+    if (!marca.pilares.length) throw new BadRequestException('Sem pilar cadastrado não há o que priorizar: escreva os pilares na tela de Marca antes.');
+    const ids = [...selecao.perfilIds];
+    if (ids.length) await tx.$queryRaw`SELECT id FROM "PautaFonte" WHERE "orgId"=${orgId} AND tipo='perfil'
+      AND id IN (${Prisma.join([...ids].sort())}) ORDER BY id FOR SHARE`;
+    const fontes = ids.length ? await tx.pautaFonte.findMany({ where: { orgId, tipo: 'perfil', id: { in: ids } } }) : [];
+    if (fontes.length !== ids.length) throw new ConflictException('Os perfis escolhidos mudaram durante a geração.');
+    const porFonte = new Map(fontes.map((p) => [p.id, p]));
+    const perfis = ids.map((id) => { const p = porFonte.get(id); if (!p) throw new ConflictException('Os perfis escolhidos mudaram durante a geração.'); return p; });
+    const dossies: MaterialEscolhidoDaEstrategia['insumo']['dossies'] = [];
+    for (const perfil of perfis) {
+      const n = await lerFonte({ chave: `pauta.concorrente.${perfil.id}` });
+      if (n.estado === 'ausente_fisico' || !n.nota.body.trim()) continue;
+      dossies.push({ handle: perfil.handle ?? '', ...this.lerInsumoDoDossie(n.nota.body) });
+    }
+    const pids = [...selecao.pecaIds];
+    if (pids.length) await tx.$queryRaw`SELECT id FROM "PautaPeca" WHERE "orgId"=${orgId}
+      AND id IN (${Prisma.join([...pids].sort())}) ORDER BY id FOR SHARE`;
+    const { de, ate } = janelaDoMes(mesAnterior(mes));
+    const rows = pids.length ? await tx.pautaPeca.findMany({ where: { orgId, id: { in: pids }, status: 'publicada', publicadaEm: { gte: de, lt: ate } } }) : [];
+    if (rows.length !== pids.length) throw new ConflictException('As peças escolhidas mudaram durante a geração.');
+    const porPeca = new Map(rows.map((p) => [p.id, p]));
+    const pecas = pids.map((id) => { const p = porPeca.get(id); if (!p) throw new ConflictException('As peças escolhidas mudaram durante a geração.'); return p; });
+    const insumo = { mes, marca: marca.bloco, pilares: marca.pilares, dossies,
+      publicado: pecas.map((p) => ({ titulo: p.titulo, formato: p.formato, em: p.publicadaEm?.toISOString() ?? null })) };
+    return { material: { insumo, origemMarca: marca.origem, texto: entradaDaEstrategia(insumo),
+      provider: this.llm.name, model: this.llm.model, configured: this.llm.configured },
+      descritores: { marca: marca.descritores, perfis, pecas } };
+  }
+
+  private lerInsumoDoDossie(body: string): { oQueRende: string; oQueAproveitar: string[] } {
+    let d: unknown;
+    try { d = JSON.parse(body); } catch { throw new ConflictException('O dossiê escolhido está inválido.'); }
+    if (!d || typeof d !== 'object' || Array.isArray(d) || !('oQueRende' in d) || typeof d.oQueRende !== 'string'
+      || !('oQueAproveitar' in d) || !Array.isArray(d.oQueAproveitar)) throw new ConflictException('O dossiê escolhido está inválido.');
+    const valores: unknown[] = d.oQueAproveitar;
+    const oQueAproveitar = valores.map((v) => { if (typeof v !== 'string') throw new ConflictException('O dossiê escolhido está inválido.'); return v; });
+    return { oQueRende: d.oQueRende, oQueAproveitar };
+  }
+
+  private async painelDaEstrategiaConfirmada(orgId: string, mes: string, m: Readonly<MaterialEscolhidoDaEstrategia>, compromisso: CompromissoDaDerivacao): Promise<PautaEstrategiaPainel> {
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    const a = compromisso.aplicada;
+    const v = await this.prisma.contextItemVersion.findFirst({ where: { id: a.versionId, orgId, itemId: a.itemId, versao: a.versao } });
+    if (!v || v.body !== a.body || v.contentHash !== a.contentHash || v.sourceType !== a.sourceType || v.sourceRef !== a.sourceRef)
+      throw new ConflictException('A versão aplicada da estratégia não pôde ser conferida.');
+    const meses = await this.meses(orgId); const avisos = avisosDaEstrategia(a.body);
+    if (!m.insumo.pilares.length) avisos.push('Sem pilar cadastrado, a IA não tem o que priorizar: escreva os pilares na tela de Marca.');
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    return { mes, documento: a.body, versao: a.versao, atualizadoEm: v.criadoEm.toISOString(), origem: a.sourceType,
+      meses, avisos, iaConfigurada: this.llm.configured };
   }
 
   /** O que rende em cada perfil observado que já tem dossiê. */
