@@ -1,32 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { apiGet } from '@/lib/api';
+import { apiGet, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { SessaoHistoricaConsultaSchema, SessaoHistoricaListaSchema, type SessaoHistoricaLista } from '@mktos/shared';
 import { KpiCard } from '@/components/KpiCard';
-
-interface Sessao {
-  id: string;
-  agente: { slug: string; nome: string; iniciais: string };
-  canal: string;
-  solicitante: string;
-  pedido: string;
-  status: string;
-  nivelMax: string | null;
-  passos: number;
-  custoUsd: number;
-  custoEstimado: boolean;
-  duracaoMs: number;
-  semProcedencia: boolean;
-  criadaEm: string;
-}
-
-interface Lista {
-  items: Sessao[];
-  total: number;
-  kpis: { sessoes: number; custoUsd: number; custoParcial: boolean; semProcedencia: number };
-}
 
 const CANAIS = ['web', 'telegram', 'whatsapp', 'rotina', 'terminal', 'mcp'];
 
@@ -40,50 +19,91 @@ const CORES: Record<string, string> = {
 };
 
 export default function SessoesPage() {
-  const { token, ready } = useAuth();
-  const [data, setData] = useState<Lista | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-  const [canal, setCanal] = useState<string>('');
-  const [agente, setAgente] = useState<string>('');
+  const { token, ready, user } = useAuth();
+  const [data, setData] = useState<{ token: string; versao: number; actorId: string; consulta: string; valor: SessaoHistoricaLista } | null>(null);
+  const [erro, setErro] = useState<{ token: string; versao: number; actorId: string; consulta: string; mensagem: string } | null>(null);
+  const [canal, setCanal] = useState('');
+  const [agente, setAgente] = useState('');
+  const consulta = SessaoHistoricaConsultaSchema.safeParse({ ...(canal ? { canal } : {}), ...(agente ? { agente } : {}) });
+  const chave = consulta.success ? JSON.stringify(consulta.data) : 'consulta_invalida';
+  const identidade = useRef<{ token: string | null; actorId: string | null; orgId: string | null }>({ token: null, actorId: null, orgId: null });
+  const atual = useRef({ token, user, actorId: user?.id ?? null, ready, chave, versao: 0 });
+  if (atual.current.user !== user || atual.current.token !== token || atual.current.actorId !== (user?.id ?? null)
+    || atual.current.ready !== ready || atual.current.chave !== chave)
+    atual.current = { token, user, actorId: user?.id ?? null, ready, chave, versao: atual.current.versao + 1 };
+  const versao = atual.current.versao;
+  if (!ready || identidade.current.token !== token || identidade.current.actorId !== (user?.id ?? null))
+    identidade.current = { token, actorId: user?.id ?? null, orgId: null };
+  const geracao = useRef(0);
 
   useEffect(() => {
-    if (!ready || !token) return;
+    const n = ++geracao.current;
+    setData(null); setErro(null);
+    const actorId = user?.id;
+    if (!ready || !token || !actorId) return;
+    const pedido = SessaoHistoricaConsultaSchema.safeParse({ ...(canal ? { canal } : {}), ...(agente ? { agente } : {}) });
+    const vigente = () => geracao.current === n && atual.current.versao === versao && atual.current.ready && atual.current.token === token
+      && atual.current.user === user && atual.current.actorId === actorId && atual.current.chave === chave;
+    if (!pedido.success) {
+      setErro({ token, versao, actorId, consulta: chave, mensagem: 'Confira os filtros de sessões.' });
+      return;
+    }
     const q = new URLSearchParams();
-    if (canal) q.set('canal', canal);
-    if (agente) q.set('agente', agente);
-    apiGet<Lista>(`/sessions?${q}`, token).then(setData).catch((e) => setErro(e.message));
-  }, [ready, token, canal, agente]);
+    if (pedido.data.canal !== null) q.set('canal', pedido.data.canal);
+    if (pedido.data.agente !== null) q.set('agente', pedido.data.agente);
+    void apiGet<unknown>(`/sessions?${q}`, token).then((raw) => {
+      if (!vigente()) return;
+      const resposta = SessaoHistoricaListaSchema.safeParse(raw);
+      if (!resposta.success || resposta.data.escopo.actorId !== actorId
+        || JSON.stringify(resposta.data.consulta) !== JSON.stringify(pedido.data)) throw new Error('resposta_invalida');
+      const org = identidade.current.orgId;
+      if (org !== null && org !== resposta.data.escopo.orgId) throw new Error('escopo_invalido');
+      if (!vigente()) return;
+      identidade.current.orgId = resposta.data.escopo.orgId;
+      setData({ token, versao, actorId, consulta: chave, valor: resposta.data });
+    }).catch((e: unknown) => {
+      if (!vigente()) return;
+      setData(null);
+      setErro({ token, versao, actorId, consulta: chave, mensagem: e instanceof ErroDaApi && [401, 403].includes(e.status)
+        ? 'Acesso às sessões indisponível. Entre novamente ou confira sua permissão.' : 'Não foi possível conferir as sessões.' });
+    });
+    return () => { if (geracao.current === n) geracao.current++; };
+  }, [ready, token, user, canal, agente, chave, versao]);
 
+  const d = ready && token && user && data && data.token === token && data.versao === versao && data.actorId === user.id && data.consulta === chave
+    && data.valor.escopo.orgId === identidade.current.orgId ? data.valor : null;
+  const erroAtual = ready && token && user && erro && erro.token === token && erro.versao === versao && erro.actorId === user.id && erro.consulta === chave ? erro.mensagem : null;
+
+  if (!ready || !token || !user) return <p className="text-sm text-muted">Entre para consultar as sessões.</p>;
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted">
-        Cada troca com a central vira uma sessão, com o traço do que entrou, do que foi chamado e do
-        que a régua decidiu. Clique para abrir.
+        Consulte os metadados das sessões. Fontes e conteúdo privado permanecem omitidos neste histórico.
       </p>
 
-      {erro && (
-        <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erro}</div>
+      {erroAtual && (
+        <div className="rounded-root border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erroAtual}</div>
       )}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <KpiCard label="Sessões no filtro" value={data?.kpis.sessoes ?? '—'} icon="Bot" />
+        <KpiCard label="Sessões no filtro" value={d?.kpis.sessoes ?? '—'} icon="Bot" />
         <KpiCard
           label="Custo somado"
           value={
-            !data
+            !d
               ? '—'
-              : data.kpis.custoUsd > 0
-                ? `US$ ${data.kpis.custoUsd.toFixed(4)}`
+              : d.kpis.custoUsd > 0
+                ? `US$ ${d.kpis.custoUsd.toFixed(4)}`
                 : 'não medido'
           }
-          hint={data?.kpis.custoParcial ? 'parcial: há sessão com custo não medido' : undefined}
+          hint={d?.kpis.custoParcial ? 'parcial: há sessão com custo não medido' : undefined}
           icon="Coins"
         />
         <KpiCard
           label="Sem procedência"
-          value={data?.kpis.semProcedencia ?? '—'}
+          value={d?.kpis.semProcedencia ?? '—'}
           hint="resposta com número e sem fonte"
-          tone={data && data.kpis.semProcedencia > 0 ? 'warn' : 'default'}
+          tone={d && d.kpis.semProcedencia > 0 ? 'warn' : 'default'}
           icon="ShieldAlert"
         />
       </div>
@@ -118,16 +138,16 @@ export default function SessoesPage() {
       </div>
 
       <div className="rounded-root border border-border bg-surface">
-        {!data && !erro && <p className="p-4 text-sm text-muted">Carregando…</p>}
-        {data?.items.length === 0 && (
+        {!d && !erroAtual && <p className="p-4 text-sm text-muted">Carregando as sessões…</p>}
+        {d?.items.length === 0 && (
           <p className="p-4 text-sm text-muted">
-            Nenhuma sessão ainda. Abra o balão no canto e pergunte alguma coisa.
+            {d.total === 0 ? 'Nenhuma sessão neste filtro.' : 'A contagem registrou sessões, mas esta leitura não retornou itens. Selecione o filtro novamente para conferir.'}
           </p>
         )}
-        {data?.items.map((s) => (
+        {d?.items.map((s) => (
           <Link
             key={s.id}
-            href={`/sessoes/${s.id}`}
+            href={`/sessoes/${encodeURIComponent(s.id)}`}
             className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border p-3 last:border-0 hover:bg-surface-2"
           >
             <span className="font-os-mono text-[9.5px] uppercase tracking-[0.1em] text-dim">
@@ -137,10 +157,10 @@ export default function SessoesPage() {
               {s.canal}
             </span>
             <span className="text-[11px] text-muted">
-              {s.solicitante} → {s.agente.nome}
+              {s.solicitante} → {s.agente?.nome ?? 'Referência do agente não conferida'}
             </span>
             <span className="min-w-0 flex-1 basis-full truncate text-[12.5px] text-text sm:basis-auto">
-              {s.pedido}
+              {s.pedido ?? 'Conteúdo histórico não conferido'}
             </span>
             <span className="font-os-mono text-[9.5px] text-dim">
               {s.passos} passo{s.passos === 1 ? '' : 's'} · {(s.duracaoMs / 1000).toFixed(1)}s ·{' '}
@@ -154,6 +174,7 @@ export default function SessoesPage() {
             <span className={`font-os-mono text-[9.5px] uppercase tracking-[0.1em] ${CORES[s.status] ?? 'text-muted'}`}>
               {s.status}
             </span>
+            {s.vinculos.estado === 'parciais' && <span className="text-[10px] text-warn">referências parciais</span>}
             {s.semProcedencia && (
               <span className="font-os-mono text-[9px] uppercase tracking-[0.1em] text-warn">
                 sem fonte

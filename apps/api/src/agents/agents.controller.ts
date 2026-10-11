@@ -4,6 +4,7 @@ import {
   Get,
   HttpException,
   HttpStatus,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -24,7 +25,7 @@ import { AgentRuntime, type SessionResumo } from './agent-runtime.service';
 import { SessionService } from './session.service';
 import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
 import { AgendaLocalService } from './agenda-local.service';
-import { AgentEstadoHumanoSchema, AgendaLocalListaConsultaSchema, AgendaLocalRecuperacaoConsultaSchema } from '@mktos/shared';
+import { AgentEstadoHumanoSchema, AgendaLocalListaConsultaSchema, AgendaLocalRecuperacaoConsultaSchema, SessaoHistoricaConsultaSchema } from '@mktos/shared';
 
 const PedidoSchema = z.object({
   pedido: z.string().min(1).max(4000),
@@ -549,26 +550,17 @@ export class AgentsController {
 
   @Get('sessions')
   @RequirePermissions('mcp.ver')
-  listar(
-    @CurrentUser() user: JwtUser,
-    @Query('canal') canal?: string,
-    @Query('agente') agente?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const canalValido =
-      canal && (Object.values(SessionCanal) as string[]).includes(canal)
-        ? (canal as SessionCanal)
-        : undefined;
-    return this.sessoes.listar(user.orgId, {
-      canal: canalValido,
-      agentSlug: agente,
-      limit: limit ? Number(limit) : undefined,
-    });
+  listar(@CurrentUser() user: JwtUser, @Query() query: unknown) {
+    const consulta = SessaoHistoricaConsultaSchema.parse(query);
+    return this.sessoes.listar(user.orgId, user.sub, consulta);
   }
 
   @Get('sessions/:id')
   @RequirePermissions('mcp.ver')
-  traco(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.sessoes.traco(user.orgId, id);
+  async traco(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const sessionId = z.string().min(1).parse(id);
+    const traco = await this.sessoes.traco(user.orgId, user.sub, sessionId);
+    if (traco === null) throw new NotFoundException('Execução indisponível.');
+    return traco;
   }
 }
