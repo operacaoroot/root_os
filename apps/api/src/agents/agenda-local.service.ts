@@ -89,6 +89,8 @@ export class AgendaLocalService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${requestId}`}))`;
   }
   async lookupNoTx(tx: Prisma.TransactionClient, orgId: string, requestId: string): Promise<Lookup> {
+    if (await tx.agentLocalToolReceipt.findFirst({ where: { orgId, requestId }, select: { id: true } }))
+      throw new ConflictException('O pedido pertence a outra operação local.');
     const operation = await tx.agentLocalOperation.findFirst({ where: { orgId, requestId } });
     const sessions = await tx.session.findMany({ where: { orgId, canal: 'web', canalRef: `procedimento-local:${requestId}` },
       take: 2, select: { id: true, agentId: true, solicitanteId: true } });

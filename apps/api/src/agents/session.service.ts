@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ForbiddenException, Injectable, InternalServerErrorException } from '@nestjs/common';
@@ -119,13 +120,15 @@ export class SessionService {
   async retomar(orgId: string, canal: SessionCanal, canalRef: string) {
     const limite = new Date(Date.now() - SessionService.TTL_MIN * 60_000);
     return this.prisma.session.findFirst({
-      where: { orgId, canal, canalRef, ultimaAtividadeEm: { gt: limite } },
+      where: { orgId, canal, canalRef, ultimaAtividadeEm: { gt: limite }, toolReceipts: { none: {} } },
       orderBy: { ultimaAtividadeEm: 'desc' },
       select: { id: true },
     });
   }
 
   async passo(orgId: string, sessionId: string, p: PassoInput): Promise<void> {
+    if (await this.prisma.agentLocalToolReceipt.findFirst({ where: { orgId, sessionId }, select: { id: true } }))
+      throw new ConflictException('A execução de ferramenta local já está encerrada.');
     // A ordem sai do banco, não de um contador em memória: dois passos
     // concorrentes na mesma sessão não podem colidir na chave única.
     const ultimo = await this.prisma.sessionStep.findFirst({
@@ -191,6 +194,8 @@ export class SessionService {
       duracaoMs?: number;
     },
   ): Promise<void> {
+    if (await this.prisma.agentLocalToolReceipt.findFirst({ where: { sessionId }, select: { id: true } }))
+      throw new ConflictException('A execução de ferramenta local já está encerrada.');
     await this.prisma.session.update({
       where: { id: sessionId },
       data: { ...dados, encerradaEm: new Date() },
@@ -361,6 +366,9 @@ export class SessionService {
 
   private classificarFormatoDaSessao(s: Session, agente: AgenteHistorico | null, steps: StepHistorico[]): FormatoHistorico | LocalConferido {
     const primeira = steps.filter((p) => p.ordem === 1);
+    if (primeira.some((p) => p.payload !== null && typeof p.payload === 'object' && !Array.isArray(p.payload)
+      && (p.payload.tipo === 'procedimento_ferramenta_local' || p.payload.entradaContrato === 3)))
+      return { estado: 'nao_conferido', motivo: 'origem_historica_insuficiente', prova: null };
     const marcador = s.canalRef?.startsWith(REF_LOCAL) || primeira.some((p) =>
       p.payload !== null && typeof p.payload === 'object' && !Array.isArray(p.payload) && p.payload.tipo === 'procedimento_local');
     if (!marcador) return { estado: 'nao_conferido', motivo: 'origem_historica_insuficiente', prova: null };

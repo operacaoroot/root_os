@@ -226,6 +226,7 @@ model Org {
   localAgendaDispatches AgentLocalAgendaDispatch[]
   localOperations AgentLocalOperation[]
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptOrg")
 }
 
 model User {
@@ -258,6 +259,7 @@ model User {
   localAgendaDispatchesAuthored AgentLocalAgendaDispatch[] @relation("LocalDispatchActor")
   localOperationsAuthored AgentLocalOperation[] @relation("LocalOperationActor")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptActor")
 }
 
 model Role {
@@ -2763,6 +2765,7 @@ model Agent {
   localOperations AgentLocalOperation[] @relation("LocalOperationAgent")
   @@unique([id,orgId], map: "Agent_id_orgId_key")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptAgent")
 }
 
 /// RF-N-02: formato fixo. A ESCALAÇÃO e as regras da casa NÃO moram aqui —
@@ -2787,6 +2790,8 @@ model Sop {
   localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSop")
   @@unique([id,orgId,agentId], map: "Sop_id_orgId_agentId_key")
 
+  ferramentaLocal Json?
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptSop")
 }
 
 enum SessionCanal {
@@ -2870,6 +2875,7 @@ model Session {
   localOperations AgentLocalOperation[] @relation("LocalOperationSession")
   @@unique([id,orgId,agentId], map: "Session_id_orgId_agentId_key")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptSession")
 }
 
 enum SessionStepTipo {
@@ -2941,6 +2947,9 @@ model SessionStep {
   @@unique([sessionId, ordem])
   @@index([sessionId, ordem])
   @@index([orgId, criadoEm])
+  toolPedidoReceipts AgentLocalToolReceipt[] @relation("ToolReceiptPedidoStep")
+  toolFinalReceipts AgentLocalToolReceipt[] @relation("ToolReceiptFinalStep")
+  @@unique([id,orgId,sessionId], map:"SessionStep_id_org_session_unique")
 }
 
 /// Quem é a pessoa do outro lado do canal.
@@ -3462,6 +3471,7 @@ model ContextItem {
 
   espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingItem")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptItem")
 }
 
 /// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
@@ -3554,6 +3564,7 @@ model ContextItemVersion {
 
   espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingVersao")
 
+  toolReceipts AgentLocalToolReceipt[] @relation("ToolReceiptVersion")
 }
 
 // ===========================================================================
@@ -5039,4 +5050,54 @@ model AgentLocalOperation {
   @@unique([id,orgId], map: "Operation_id_org_unique")
   @@unique([orgId,requestId], map: "Operation_request_global_unique")
   @@unique([orgId,requestId,actorId,agentId,tipo,inputFingerprint], map: "Operation_cause_unique")
+}
+
+/// Recibo imutável da busca literal local, ligado a versões e passos reais.
+model AgentLocalToolReceipt {
+  id String @id @default(uuid())
+  orgId String
+  actorId String
+  agentId String
+  agentSlug String
+  requestId String
+  sessionId String
+  entradaContrato Int @default(3)
+  capacidade String
+  modo String
+  status String
+  inputCanonico String
+  entrada Json
+  inputFingerprint String
+  sopId String
+  sopVersion Int
+  sopSnapshot Json
+  toolConfigHash String
+  itemId String
+  versionId String
+  versionNo Int
+  contentHash String
+  sourceSnapshot Json
+  passoPedidoId String
+  passoFinalId String
+  auditIds String[]
+  resultadoCanonico String?
+  resultado Json?
+  resultHash String?
+  receiptCanonico String
+  receipt Json
+  receiptHash String
+  criadaEm DateTime @db.Timestamp(3)
+  encerradaEm DateTime @db.Timestamp(3)
+  org Org @relation("ToolReceiptOrg", fields:[orgId], references:[id], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_org_fk")
+  actor User @relation("ToolReceiptActor", fields:[actorId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_actor_fk")
+  agent Agent @relation("ToolReceiptAgent", fields:[agentId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_agent_fk")
+  sop Sop @relation("ToolReceiptSop", fields:[sopId,orgId,agentId], references:[id,orgId,agentId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_sop_fk")
+  session Session @relation("ToolReceiptSession", fields:[sessionId,orgId,agentId], references:[id,orgId,agentId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_session_fk")
+  item ContextItem @relation("ToolReceiptItem", fields:[itemId,orgId], references:[id,orgId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_item_fk")
+  version ContextItemVersion @relation("ToolReceiptVersion", fields:[versionId,orgId,itemId,versionNo], references:[id,orgId,itemId,versao], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_version_fk")
+  pedidoStep SessionStep @relation("ToolReceiptPedidoStep", fields:[passoPedidoId,orgId,sessionId], references:[id,orgId,sessionId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_step1_fk")
+  finalStep SessionStep @relation("ToolReceiptFinalStep", fields:[passoFinalId,orgId,sessionId], references:[id,orgId,sessionId], onDelete:Restrict, onUpdate:Restrict, map:"ToolReceipt_step2_fk")
+  @@unique([orgId,requestId], map:"ToolReceipt_org_request_unique")
+  @@unique([orgId,sessionId], map:"ToolReceipt_org_session_unique")
+  @@unique([id,orgId], map:"ToolReceipt_id_org_unique")
 }

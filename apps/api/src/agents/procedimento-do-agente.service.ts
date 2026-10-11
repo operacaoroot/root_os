@@ -508,6 +508,8 @@ export class ProcedimentoDoAgenteService {
   }
 
   private async detalheNoTx(db: Prisma.TransactionClient, orgId: string, pessoaId: string, slug: string, sessionId: string): Promise<ProcedimentoLocalExecucao> {
+    if (await db.agentLocalToolReceipt.findFirst({ where: { orgId, sessionId }, select: { id: true } }))
+      throw new ConflictException('A execução pertence a outro procedimento local.');
     await exigirAcessoAtual(db, orgId, pessoaId, LER);
     const session = await db.session.findFirst({ where: { id: sessionId, orgId, solicitanteId: pessoaId,
       canal: 'web', canalRef: { startsWith: REF_PROCEDIMENTO_LOCAL }, agent: { orgId, slug } }, include: { steps: { where: { ordem: 1 } } } });

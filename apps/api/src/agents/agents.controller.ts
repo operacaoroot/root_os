@@ -1,3 +1,4 @@
+import { ProcedimentoFerramentaLocalService } from './procedimento-ferramenta-local.service';
 import {
   Body,
   Controller,
@@ -122,6 +123,7 @@ export class AgentsController {
     private readonly sessoes: SessionService,
     private readonly procedimento: ProcedimentoDoAgenteService,
     private readonly agenda: AgendaLocalService,
+    private readonly ferramentaLocal: ProcedimentoFerramentaLocalService,
   ) {}
 
   @Get('agents')
@@ -152,6 +154,36 @@ export class AgentsController {
   @RequirePermissions(...CONFIGURAR_AGENTE)
   criar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     return this.procedimento.criar(user.orgId, user.sub, body);
+  }
+
+  @Get('agents/:slug/procedimento/ferramenta/painel')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  painelDaFerramenta(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.ferramentaLocal.painel(user.orgId, user.sub, slug);
+  }
+
+  @Put('agents/:slug/procedimento/ferramenta/configuracao')
+  @RequirePermissions(...CONFIGURAR_AGENTE)
+  configurarFerramenta(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.ferramentaLocal.configurar(user.orgId, user.sub, slug, body);
+  }
+
+  @Post('agents/:slug/procedimento/ferramenta/executar')
+  @RequirePermissions('mcp.ver', 'mcp.executar', 'admin.usuarios', 'obsidian.ver')
+  executarFerramenta(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.ferramentaLocal.executar(user.orgId, user.sub, slug, body);
+  }
+
+  @Get('agents/:slug/procedimento/ferramenta/pedidos/:requestId')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  recuperarFerramenta(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('requestId') requestId: string) {
+    return this.ferramentaLocal.porPedido(user.orgId, user.sub, slug, requestId);
+  }
+
+  @Get('agents/:slug/procedimento/ferramenta/execucoes/:sessionId')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  detalheDaFerramenta(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('sessionId') sessionId: string) {
+    return this.ferramentaLocal.detalhe(user.orgId, user.sub, slug, sessionId);
   }
 
   @Get('agents/:slug/procedimento/painel')
