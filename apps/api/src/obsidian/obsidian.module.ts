@@ -3,6 +3,7 @@ import { ObsidianController } from './obsidian.controller';
 import { ObsidianService } from './obsidian.service';
 import { CatalogoDeColecaoService } from './catalogo-de-colecao.service';
 import { CatalogoDeColecaoController } from './catalogo-de-colecao.controller';
+import { ContextoMovimentoExplicitoService } from './contexto-movimento-explicito.service';
 import { MemoryModule } from '../memory/memoria.module';
 import { GoogleModule } from '../google/google.module';
 
@@ -31,7 +32,7 @@ import { GoogleModule } from '../google/google.module';
 @Module({
   imports: [MemoryModule, forwardRef(() => GoogleModule)],
   controllers: [CatalogoDeColecaoController, ObsidianController],
-  providers: [ObsidianService, CatalogoDeColecaoService],
+  providers: [ObsidianService, CatalogoDeColecaoService, ContextoMovimentoExplicitoService],
   // exportado para o AgentsModule ligar a capacidade ao efeito
   exports: [ObsidianService],
 })

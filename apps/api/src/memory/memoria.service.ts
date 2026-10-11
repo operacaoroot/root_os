@@ -1,3 +1,4 @@
+import { consultaMovimentoPendente, exigirNovoUsoSemMovimentoPendente, exigirColecaoSemMovimentoPendente, travarAutoridadeDoMovimento } from './contexto-movimento-namespace';
 import { createHash } from 'node:crypto';
 import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES,
   PAUTA_CHAVE_DA_GRADE, PAUTA_CHAVE_DA_AUTOMACAO, PAUTA_CHAVE_DA_CHAVE_DA_VOZ,
@@ -28,7 +29,7 @@ import {
 } from '@prisma/client';
 import { contextoAtual } from '../common/contexto-execucao';
 import { exigirAcessoAtual, filtroDeLeitura, leitorDoContexto, leitorAutorizado, podeLerFonte } from './acesso-memoria';
-import { EventLogService, sigiloso } from '../gateway/event-log.service';
+import { EventLogService, sigiloso, type PreparoEventoNoTx } from '../gateway/event-log.service';
 import { mesclarComTextuais } from '../obsidian/embeddings-lotes';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -323,6 +324,7 @@ export class VaultSuspeitaError extends Error {
 export const TIPO_DO_RECIBO = 'memoria.vault.recibo';
 
 /** A coleção `vault:` da root-base, como o recibo a nomeia. */
+const ESCRITA_DE_MOVIMENTO = Symbol('movimento-explicito');
 export const COLECAO_DA_VAULT = 'vault:root-base';
 
 /**
@@ -428,7 +430,8 @@ export class MemoriaService {
       select: SELECAO_DA_NOTA,
     });
     await this.contarComVetor(orgId, solicitanteId);
-    const notas = await this.comVetor(orgId, linhas);
+    let notas = await this.comVetor(orgId, linhas);
+    if (solicitanteId) notas = await Promise.all(notas.map((n) => this.retratoAtual(orgId, n, solicitanteId)));
     const final = await this.leituraAtual(orgId, solicitanteId, linhas.map((l) => l.id));
     const ids = new Set(final.ids);
     return {
@@ -480,10 +483,11 @@ export class MemoriaService {
     const item = await this.prisma.contextItem.findFirst({ where: { id, orgId, ...filtroDeLeitura(solicitanteId) } });
     if (!item) throw new NotFoundException('Nota não encontrada nesta empresa.');
     const verificadoEm = new Date();
+    const pendente = await consultaMovimentoPendente(this.prisma, orgId, id);
     const resultado = linhas.map((v) => ({ ...paraVersao(v), ...(solicitanteId ? {
       escopo: { orgId, userId: solicitanteId },
       retratoFonte: construirFonteAutorizada({ item, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: verificadoEm,
-        novoUsoPermitido: !item.arquivadoEm && v.sourceType === item.sourceType && v.sourceRef === item.sourceRef }),
+        novoUsoPermitido: !pendente && !item.arquivadoEm && v.sourceType === item.sourceType && v.sourceRef === item.sourceRef }),
     } : {}) }));
     if (!(await this.reconferirLeitura(orgId, [item], solicitanteId)).length) throw new NotFoundException('Nota não encontrada nesta empresa.');
     return resultado;
@@ -587,13 +591,17 @@ export class MemoriaService {
     }
 
     linhas = await this.reconferirLeitura(orgId, linhas as Array<Record<string, unknown> & { id: string; acessoRestrito?: boolean }>, solicitanteId);
+    const itens = await Promise.all(linhas.map(async (l) => {
+      const nota = paraNota(l as never, Boolean(l.temVetor));
+      return { ...(solicitanteId ? await this.retratoAtual(orgId, nota, solicitanteId) : nota),
+        score: Math.round(Number(l.score ?? 0) * 1000) / 1000 };
+    }));
+    const final = await this.leituraAtual(orgId, solicitanteId, itens.map((n) => n.id));
+    const ids = new Set(final.ids);
     return {
       query: q,
       modo,
-      itens: linhas.map((l) => ({
-        ...paraNota(l as never, Boolean(l.temVetor)),
-        score: Math.round(Number(l.score ?? 0) * 1000) / 1000,
-      })),
+      itens: itens.filter((n) => ids.has(n.id)),
       fonte: { tool: 'memoria', generatedAt: new Date().toISOString() },
     };
   }
@@ -647,6 +655,9 @@ export class MemoriaService {
     try {
       criacao = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+        if (sourceType === ContextSource.vault || chave.startsWith('vault:')) await exigirColecaoSemMovimentoPendente(tx, orgId);
+        const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, key: chave } });
+        if (claim && claim.tipo !== 'canonical') throw new ConflictException('A chave está reservada ou identifica um alias. Use o movimento explícito da fonte.');
         await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
         const jaExiste = await tx.contextItem.findFirst({
           where: { orgId, chave },
@@ -884,9 +895,11 @@ export class MemoriaService {
             fonte.versao !== pedido.fonte.versao || fonte.contentHash !== pedido.fonte.hash) {
           throw new ConflictException('A fonte mudou, foi arquivada ou deixou de existir. Refaça a prévia.');
         }
+        await exigirNovoUsoSemMovimentoPendente(tx, orgId, fonte.id);
         const atual = await tx.contextItem.findFirst({
           where: { orgId, chave: pedido.destino.chave, ...filtroDeLeitura(leitor) }, select: SELECAO_DA_NOTA,
         });
+        if (atual) await exigirNovoUsoSemMovimentoPendente(tx, orgId, atual.id);
         if (atual?.arquivadoEm) throw new ConflictException('O destino está arquivado. Restaure-o explicitamente na Memória antes de aplicar.');
 
         // Replay só é inofensivo quando ESTA foi a última versão criada a
@@ -1592,6 +1605,8 @@ export class MemoriaService {
          FROM "ContextItem"
         WHERE "orgId" = $1 AND "arquivadoEm" IS NULL AND embedding IS NULL AND "acessoRestrito" = false
           AND NOT (chave = ANY($3::text[]))
+          AND NOT EXISTS (SELECT 1 FROM "ContextMovementIntent" i WHERE i."orgId"=$1 AND i.estado='pendente'
+            AND (i."itemId"="ContextItem".id OR (i."collectionId"='vault:root-base' AND ("sourceType"::text='vault' OR chave LIKE 'vault:%'))))
         ORDER BY "atualizadoEm" DESC
         LIMIT $2`,
       orgId,
@@ -1617,13 +1632,14 @@ export class MemoriaService {
    * descartado.
    */
   async gravarVetor(orgId: string, id: string, vetor: number[], contentHash: string): Promise<number> {
-    return this.prisma.$executeRawUnsafe(
-      'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3 AND "contentHash" = $4',
-      `[${vetor.join(',')}]`,
-      id,
-      orgId,
-      contentHash,
-    );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      if (await consultaMovimentoPendente(tx, orgId, id)) return 0;
+      return tx.$executeRawUnsafe(
+        'UPDATE "ContextItem" SET embedding = $1::vector WHERE id = $2 AND "orgId" = $3 AND "contentHash" = $4',
+        `[${vetor.join(',')}]`, id, orgId, contentHash,
+      );
+    });
   }
 
   /**
@@ -2179,6 +2195,37 @@ export class MemoriaService {
     }, args.intencaoHumana ? { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted } : undefined);
   }
 
+  async alterarCaminhoPorMovimentoNoTx(tx: Prisma.TransactionClient,
+    input: { orgId: string; actorId: string; intentId: string; expectedItemVersion: number }, preparo: PreparoEventoNoTx) {
+    const intent = await tx.contextMovementIntent.findFirst({ where: { id: input.intentId, orgId: input.orgId,
+      actorId: input.actorId, estado: 'pendente', revision: 1 } });
+    if (!intent || intent.expectedItemVersion !== input.expectedItemVersion || intent.destinationKey.length > 1400)
+      throw new ConflictException('A intenção de movimento não corresponde à versão escolhida.');
+    const resultado = await this.gravarVersaoNoTx(tx, { orgId: input.orgId, id: intent.itemId,
+      mudanca: ContextChange.alteracao, ator: { actorType: 'user', actorId: input.actorId },
+      movimento: { autorizacao: ESCRITA_DE_MOVIMENTO, actorId: input.actorId, versaoEsperada: input.expectedItemVersion },
+      conferir: async (_tx, atual) => {
+        if (atual.chave !== intent.originKey || atual.sourceType !== 'vault' || atual.sourceRef !== intent.originSourceRef
+          || atual.contentHash !== intent.currentContentHash || atual.arquivadoEm)
+          throw new ConflictException('A origem da fonte mudou.');
+      },
+      montar: () => ({ dados: { chave: intent.destinationKey, sourceRef: intent.destinationSourceRef, atualizadoPor: input.actorId }, motivo: intent.motivo }),
+    });
+    const { item, anterior, versao } = resultado;
+    const evento = await this.eventos.registrarNoTx(tx, { orgId: input.orgId, tipo: 'memoria.item.alterado', actorType: ActorType.user,
+      actorId: input.actorId, correlationId: contextoAtual()?.correlationId ?? null, contentHash: item.contentHash,
+      payload: { itemId: item.id, versaoId: versao.id, versao: versao.versao, mudanca: ContextChange.alteracao },
+      conteudo: { argumentos: { chave: sigiloso(item.chave, 'chave da nota'), kind: item.kind },
+        resumo: `${ContextChange.alteracao} · versão ${versao.versao} · ${formaDoCorpo(item.body, item.contentHash)}`,
+        fontes: [rotuloDeProcedencia(item.sourceType, item.sourceRef)], motivo: intent.motivo,
+        estadoAnterior: estadoDaNota(anterior), estadoNovo: estadoDaNota(item), resultado: { versao: versao.versao },
+        desfazer: 'memoria.item.alterar (a versão anterior continua no histórico)', referencia: referenciaDaVersao(versao.id) },
+      sensibilidade: 'interna',
+    }, preparo);
+    await tx.contextItemVersion.update({ where: { id: versao.id }, data: { eventoId: evento.id, eventoSeq: evento.seq } });
+    return { ...resultado, evento };
+  }
+
   private async gravarVersaoNoTx(tx: Prisma.TransactionClient, args: {
     orgId: string;
     id: string;
@@ -2186,6 +2233,7 @@ export class MemoriaService {
     ator: { actorType: string; actorId: string | null };
     autorizacao?: symbol;
     intencaoHumana?: IntencaoHumanaDaNota;
+    movimento?: { autorizacao: symbol; actorId: string; versaoEsperada: number };
     conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
       dados: Prisma.ContextItemUncheckedUpdateInput;
@@ -2197,21 +2245,25 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, conferir, montar, noCadeado } = args;
-      if (intencaoHumana) {
-        await this.travarAcessoHumano(tx, orgId, intencaoHumana);
+    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, movimento, conferir, montar, noCadeado } = args;
+      if (movimento && movimento.autorizacao !== ESCRITA_DE_MOVIMENTO) throw new ForbiddenException('Movimento não autorizado.');
+      const versaoEsperada = intencaoHumana?.versaoEsperada ?? movimento?.versaoEsperada;
+      if (movimento) await travarAutoridadeDoMovimento(tx, orgId, movimento.actorId, true);
+      if (intencaoHumana || movimento) {
+        if (intencaoHumana) await this.travarAcessoHumano(tx, orgId, intencaoHumana);
         await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${id} AND "orgId"=${orgId} FOR UPDATE`;
       }
-      const leitor = intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
+      const leitor = movimento?.actorId ?? intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
       const atual = await tx.contextItem.findFirst({
         where: { id, orgId, ...filtroDeLeitura(leitor) },
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
+      if (!movimento) await exigirNovoUsoSemMovimentoPendente(tx, orgId, atual.id);
       if (intencaoHumana && (ehChaveDaVault(atual.chave) || atual.sourceType === ContextSource.vault)) {
         throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
       }
-      if (intencaoHumana && atual.versao !== intencaoHumana.versaoEsperada) {
+      if (versaoEsperada !== undefined && atual.versao !== versaoEsperada) {
         throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
       }
       this.conferirEscritorDaMarca(atual.chave, autorizacao);
@@ -2240,7 +2292,7 @@ export class MemoriaService {
        * fora, e a numeração segue pelo MAIOR dos dois para não reaproveitar um
        * número já usado — o índice único (itemId, versao) recusaria.
        */
-      if (intencaoHumana && atual.versao !== maiorDoHistorico) {
+      if (versaoEsperada !== undefined && atual.versao !== maiorDoHistorico) {
         throw new ConflictException('A versão da nota diverge do histórico. Confira a integridade antes de continuar.');
       }
       if (atual.versao !== maiorDoHistorico) {
@@ -2253,9 +2305,9 @@ export class MemoriaService {
       const proxima = Math.max(atual.versao, maiorDoHistorico) + 1;
 
       let item: LinhaDaNota;
-      if (intencaoHumana) {
+      if (versaoEsperada !== undefined) {
         const alteracao = await tx.contextItem.updateMany({
-          where: { id: atual.id, orgId, versao: intencaoHumana.versaoEsperada },
+          where: { id: atual.id, orgId, versao: versaoEsperada },
           data: { ...dados, versao: proxima },
         });
         if (alteracao.count !== 1) throw new ConflictException('A nota mudou desde a leitura. Confira a versão atual antes de continuar.');
@@ -2512,9 +2564,10 @@ export class MemoriaService {
     if (!v || v.body !== nota.body || v.title !== nota.title || v.contentHash !== nota.contentHash
       || v.sourceType !== nota.sourceType || v.sourceRef !== nota.sourceRef)
       throw new ConflictException({ code: 'contexto_fonte_inconsistente', message: 'A versão da fonte não pôde ser conferida.' });
+    const pendente = await consultaMovimentoPendente(this.prisma, orgId, nota.id);
     return { ...nota, escopo: { orgId, userId: pessoaId }, retratoFonte: construirFonteAutorizada({
       item: { ...nota, orgId, arquivadoEm: nota.arquivadoEm, atualizadoEm: nota.atualizadoEm }, versaoSelecionada: v,
-      incluirCorpo: true, acessoVerificadoEm: new Date(), novoUsoPermitido: !nota.arquivadoEm,
+      incluirCorpo: true, acessoVerificadoEm: new Date(), novoUsoPermitido: !pendente && !nota.arquivadoEm,
     }) };
   }
 

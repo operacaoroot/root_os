@@ -1,3 +1,4 @@
+import { exigirNovoUsoSemMovimentoPendente } from '../memory/contexto-movimento-namespace';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ProntidaoAgentesSchema, ProcedimentoLocalPedidoSchema, ProcedimentoLocalPainelSchema, ProcedimentoLocalFontesSchema, ProcedimentoLocalExecucaoSchema, ProcedimentoLocalRecuperacaoSchema,
   type ProntidaoAgentes, type ProcedimentoLocalPedido, type ProcedimentoLocalPainel, type ProcedimentoLocalExecucao } from '@mktos/shared';
@@ -193,7 +194,7 @@ export class ProcedimentoDoAgenteService {
       return { id: r.id, title: atual.title, chave: atual.chave, versao: atual.versao,
         versoes: r.versoes.map((v) => ({ id: v.id, title: v.title, versao: v.versao, contentHash: v.contentHash, sourceType: v.sourceType, sourceRef: v.sourceRef,
           retratoFonte: construirFonteAutorizada({ item: atual, versaoSelecionada: v, incluirCorpo: false, acessoVerificadoEm: verificadoEm,
-            novoUsoPermitido: !atual.arquivadoEm && atual.sourceType === v.sourceType && atual.sourceRef === v.sourceRef }) })) };
+            novoUsoPermitido: !atual.movimentoPendente && !atual.arquivadoEm && atual.sourceType === v.sourceType && atual.sourceRef === v.sourceRef }) })) };
     });
     return ProcedimentoLocalFontesSchema.parse({ items, painel, escopo: painel.escopo });
   }
@@ -229,6 +230,7 @@ export class ProcedimentoDoAgenteService {
     const final = await reconferirFontesAtuais(db, orgId, pessoaId, LER, [item.id], permitirArquivada);
     if (!final.fontes[0]) throw new NotFoundException('Fonte indisponível para esta conta.');
     item = { ...item, ...final.fontes[0] };
+    if (modo === 'novo_efeito') await exigirNovoUsoSemMovimentoPendente(db, orgId, item.id);
     if (v.versao > item.versao) throw new ConflictException('A versão da fonte não corresponde ao pedido.');
     if (anterior) {
       if (anterior.itemId !== pedido.itemId || anterior.itemId !== item.id || anterior.versionId !== pedido.versionId || anterior.versionId !== v.id
@@ -397,7 +399,7 @@ export class ProcedimentoDoAgenteService {
     const fonteFinal = atual.fontes[0];
     if (!fonteFinal) throw new NotFoundException('Fonte indisponível para esta conta.');
     const retratoFonte = construirFonteAutorizada({ item: fonteFinal, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
-      novoUsoPermitido: !fonteFinal.arquivadoEm && fonteFinal.chave === registro.fonte.chave && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
+      novoUsoPermitido: !fonteFinal.movimentoPendente && !fonteFinal.arquivadoEm && fonteFinal.chave === registro.fonte.chave && fonteFinal.sourceType === v.sourceType && fonteFinal.sourceRef === v.sourceRef, chaveConsumida: registro.fonte.chave });
     return ProcedimentoLocalExecucaoSchema.parse({ escopo: painelAtual.escopo, retratoFonte, painelAtual,
       procedimentoAtual: painelAtual.procedimento, entradaConfirmada, id: session.id, requestId: registro.requestId, status: session.status, motivo: session.motivo,
       pessoaId, pedido: registro.entrada.pedido, procedimento: registro.procedimento,

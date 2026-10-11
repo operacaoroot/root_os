@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { colecaoComMovimentoPendente, exigirColecaoSemMovimentoPendente, travarAutoridadeDoMovimento } from '../memory/contexto-movimento-namespace';
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
@@ -31,7 +33,7 @@ export function marcaDoCatalogo(raiz: string): MarcaDoCatalogo | null {
 }
 const mesmaMarca = (a: MarcaDoCatalogo | null, b: MarcaDoCatalogo | null): boolean =>
   a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b);
-function hashMetadata(m: MembroCapturado['metadata']): string {
+export function hashMetadata(m: MembroCapturado['metadata']): string {
   return sha(JSON.stringify({ title: m.title, kind: m.kind, tags: [...m.tags].sort(),
     validFrom: m.validFrom, validUntil: m.validUntil, sourceRef: m.sourceRef }));
 }
@@ -87,15 +89,34 @@ function corresponde(m: MembroCapturado, item: ItemConferido): boolean {
 export class CatalogoDeColecaoService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async locks(tx: Db, orgId: string): Promise<void> {
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `obsidian-index:${orgId}`);
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `memoria:${orgId}`);
+  }
+
+  async persistirCapturaHumanaNoTx(tx: Prisma.TransactionClient, orgId: string, actorId: string, intentId: string, captura: CapturaDoCatalogo): Promise<string> {
+    await this.locks(tx, orgId);
+    await travarAutoridadeDoMovimento(tx, orgId, actorId, true);
+    const intent = await tx.contextMovementIntent.findFirst({ where: { id: intentId, orgId, actorId, collectionId: COLECAO, estado: 'pendente', revision: 1 } });
+    if (!intent) throw new ConflictException('Intenção de movimento indisponível.');
+    return this.persistirCaptura(tx, orgId, captura, intent.id);
+  }
+
   /** Chamado no mesmo tx que substitui KnowledgeNote, já sob o lock do índice. */
   async persistirNoIndice(tx: Db, orgId: string, captura: CapturaDoCatalogo | null): Promise<string> {
+    await this.locks(tx, orgId);
+    await exigirColecaoSemMovimentoPendente(tx, orgId);
+    return this.persistirCaptura(tx, orgId, captura, null);
+  }
+
+  private async persistirCaptura(tx: Db, orgId: string, captura: CapturaDoCatalogo | null, intentId: string | null): Promise<string> {
     const id = randomUUID();
     await tx.$executeRawUnsafe(`INSERT INTO "ContextCollectionSelection"
-      (id,"orgId","collectionId","sourceKind",generation,"marcaAntes","membershipDigest",estado)
-      SELECT $1,$2,$3,'vault_pasta',COALESCE(MAX(generation),0)+1,$4::jsonb,$5,$6
+      (id,"orgId","collectionId","sourceKind",generation,"marcaAntes","membershipDigest",estado,"movementIntentId")
+      SELECT $1,$2,$3,'vault_pasta',COALESCE(MAX(generation),0)+1,$4::jsonb,$5,$6,$7
       FROM "ContextCollectionSelection" WHERE "orgId"=$2 AND "collectionId"=$3`,
       id, orgId, COLECAO, JSON.stringify(captura?.marca ?? null), captura?.membershipDigest ?? null,
-      captura ? 'classificado' : 'falhou');
+      captura ? 'classificado' : 'falhou', intentId);
     for (const m of captura?.membros ?? []) {
       await tx.$executeRawUnsafe(`INSERT INTO "ContextCollectionMember"
         (id,"orgId","selectionId",chave,"caminhoBytes","blobGit","hashArquivo","contentHash","metadataHash",metadata,estado)
@@ -114,8 +135,12 @@ export class CatalogoDeColecaoService {
   }
 
   async falhar(orgId: string, selectionId: string): Promise<void> {
-    await this.prisma.$executeRawUnsafe(`UPDATE "ContextCollectionSelection" SET estado='falhou'
-      WHERE id=$1 AND "orgId"=$2 AND estado='classificado'`, selectionId, orgId);
+    await this.prisma.$transaction(async (tx) => {
+      await this.locks(tx, orgId);
+      await exigirColecaoSemMovimentoPendente(tx, orgId);
+      await tx.$executeRawUnsafe(`UPDATE "ContextCollectionSelection" SET estado='falhou'
+        WHERE id=$1 AND "orgId"=$2 AND estado='classificado' AND "movementIntentId" IS NULL`, selectionId, orgId);
+    });
   }
 
   /** A captura é relida sem fornecedor e deve coincidir inteira antes do commit. */
@@ -124,6 +149,7 @@ export class CatalogoDeColecaoService {
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `obsidian-index:${orgId}`);
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `memoria:${orgId}`);
+      await exigirColecaoSemMovimentoPendente(tx, orgId);
       const selecoes = await tx.$queryRawUnsafe<Array<{ id: string; estado: string }>>(`SELECT id,estado
         FROM "ContextCollectionSelection" WHERE "orgId"=$1 AND "collectionId"=$2 ORDER BY generation DESC LIMIT 1 FOR UPDATE`, orgId, COLECAO);
       if (selecoes[0]?.id !== selectionId || selecoes[0].estado !== 'classificado') {
@@ -162,6 +188,32 @@ export class CatalogoDeColecaoService {
     });
   }
 
+  async projetarCapturaHumanaNoTx(tx: Prisma.TransactionClient, orgId: string, intentId: string,
+    selectionId: string, captura: CapturaDoCatalogo): Promise<void> {
+    const selecao = await tx.contextCollectionSelection.findFirst({ where: { id: selectionId, orgId, collectionId: COLECAO,
+      movementIntentId: intentId, estado: 'classificado' } });
+    if (!selecao || selecao.membershipDigest !== captura.membershipDigest) throw new ConflictException('A captura não corresponde à intenção.');
+    for (const m of captura.membros) {
+      const itens = await tx.$queryRawUnsafe<ItemConferido[]>(`SELECT c.id,c.chave,c.versao,c.title,c.kind::text,
+        c.tags,c."validFrom",c."validUntil",c.body,c."contentHash",c."sourceType"::text,c."sourceRef",c."arquivadoEm",
+        v.id AS "versionId",v.title AS "versionTitle",v.kind::text AS "versionKind",v.body AS "versionBody",
+        v."contentHash" AS "versionHash",v."sourceType"::text AS "versionSource",v."sourceRef" AS "versionRef"
+        FROM "ContextItem" c JOIN "ContextItemVersion" v ON v."orgId"=c."orgId" AND v."itemId"=c.id AND v.versao=c.versao
+        WHERE c."orgId"=$1 AND c.chave=$2 FOR SHARE OF c,v`, orgId, m.chave);
+      const membros = await tx.contextCollectionMember.findMany({ where: { orgId, selectionId, chave: m.chave, estado: 'classificado' } });
+      if (itens.length !== 1 || membros.length !== 1 || !corresponde(m, itens[0])) throw new ConflictException('A coleção mudou antes de confirmar a captura.');
+      const membro = membros[0];
+      if (!Buffer.from(membro.caminhoBytes).equals(m.caminhoBytes) || membro.blobGit !== m.blobGit || membro.hashArquivo !== m.hashArquivo
+        || membro.contentHash !== m.contentHash || membro.metadataHash !== m.metadataHash) throw new ConflictException('A prova da captura mudou.');
+      const atualizado = await tx.contextCollectionMember.updateMany({ where: { id: membro.id, orgId, selectionId, estado: 'classificado' },
+        data: { itemId: itens[0].id, versionId: itens[0].versionId, versao: itens[0].versao, estado: 'projetado' } });
+      if (atualizado.count !== 1) throw new ConflictException('A prova da captura mudou.');
+    }
+    const resultado = await tx.contextCollectionSelection.updateMany({ where: { id: selectionId, orgId, movementIntentId: intentId, estado: 'classificado' },
+      data: { estado: 'projetado', marcaDepois: { ...captura.marca }, verificadaEm: new Date() } });
+    if (resultado.count !== 1) throw new ConflictException('A captura mudou antes da projeção.');
+  }
+
   /** Os IDs recebidos precisam formar a relação real da versão com o item desta empresa. */
   async porVersao(orgId: string, pessoaId: string, notaId: string, versionId: string): Promise<CatalogoDaVersaoDto> {
     const conferir = async () => {
@@ -196,7 +248,11 @@ export class CatalogoDeColecaoService {
 
   /** Uma única consulta reconfirma pessoa/permissão/ACL e todos os metadados retornados. */
   async porItem(orgId: string, pessoaId: string, itemId: string): Promise<CatalogoDeColecaoDto> {
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ autorizado: boolean; itemId: string | null; atual: boolean | null;
+    return this.prisma.$transaction(async (tx) => {
+    await this.locks(tx, orgId);
+    const keys = await travarAutoridadeDoMovimento(tx, orgId, pessoaId, false);
+    await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${itemId} AND "orgId"=${orgId} FOR SHARE`;
+    const rows = await tx.$queryRawUnsafe<Array<{ autorizado: boolean; itemId: string | null; atual: boolean | null;
       ultima: CatalogoDeColecaoDto['ultimaCaptura']; selecao: CatalogoDeColecaoDto['selecaoVerificada'];
       interno: null | { item: ItemConferido; metadata: MembroCapturado['metadata']; metadataHash: string; contentHash: string } }>>(`
       WITH acesso AS (SELECT EXISTS (
@@ -244,7 +300,39 @@ export class CatalogoDeColecaoService {
         caminhoBytes: Buffer.alloc(0), blobGit: '', hashArquivo: '', metadata: i.metadata,
         metadataHash: i.metadataHash, contentHash: i.contentHash }, i.item);
     }
-    return { itemId, capturaExternaAgora: false, movimentoDisponivel: false,
-      selecaoVerificada: r.selecao, ultimaCaptura: r.ultima };
+    const item = await tx.contextItem.findFirst({ where: { id: itemId, orgId, OR: [{ acessoRestrito: false }, { leitores: { has: pessoaId } }] } });
+    const versao = item && await tx.contextItemVersion.findFirst({ where: { orgId, itemId, versao: item.versao } });
+    const maximo = await tx.contextItemVersion.findFirst({ where: { orgId, itemId }, orderBy: { versao: 'desc' } });
+    if (!item || !versao || !maximo || maximo.versao !== item.versao || versao.body !== item.body || versao.title !== item.title
+      || versao.kind !== item.kind || versao.contentHash !== item.contentHash || hashDoCorpo(versao.body) !== item.contentHash
+      || versao.sourceType !== item.sourceType || versao.sourceRef !== item.sourceRef) throw new ConflictException('A versão vigente da fonte não pôde ser conferida.');
+    const bloqueada = await colecaoComMovimentoPendente(tx, orgId);
+    const intent = await tx.contextMovementIntent.findFirst({ where: { orgId, itemId, estado: 'pendente' } });
+    const propria = intent?.actorId === pessoaId;
+    const movimentoPendente = intent ? { intentId: intent.id, itemId: intent.itemId, colecaoId: intent.collectionId, revision: 1 as const,
+      iniciadaPorAtorAtual: propria, requestId: propria ? intent.requestId : null, intentMark: propria ? intent.intentMarkHash : null,
+      criadaEm: intent.criadoEm.toISOString() } : null;
+    const membro = r.selecao && await tx.contextCollectionMember.findFirst({ where: { id: r.selecao.membro.id, orgId, selectionId: r.selecao.id } });
+    const selecao = r.selecao && await tx.contextCollectionSelection.findFirst({ where: { id: r.selecao.id, orgId } });
+    const marcaSchema = z.object({ repositorioId: z.string().regex(/^[a-f0-9]{64}$/), head: z.string().regex(/^[a-f0-9]{40}$/),
+      indiceHash: z.string().regex(/^[a-f0-9]{64}$/), indiceModificadoEm: z.number().finite().nonnegative() }).strict();
+    const marca = marcaSchema.safeParse(selecao?.marcaDepois);
+    const bytes = membro && Buffer.from(membro.caminhoBytes);
+    const utf8 = bytes?.toString('utf8');
+    const provaPersistida = membro && bytes && utf8 && Buffer.from(utf8).equals(bytes) && bytes.length <= 4096 && utf8.length <= 1000
+      ? { caminhoUtf8: utf8, caminhoBytesHex: bytes.toString('hex'), blobGit: membro.blobGit, hashArquivo: membro.hashArquivo, metadataHash: membro.metadataHash } : null;
+    const atual = { versionId: versao.id, versao: item.versao, contentHash: item.contentHash, chave: item.chave,
+      sourceType: item.sourceType, sourceRef: item.sourceRef, arquivada: !!item.arquivadoEm };
+    const verificada = r.selecao ? { ...r.selecao, atual: r.selecao.atual && !bloqueada, marcaPersistida: marca.success ? marca.data : null,
+      membro: { ...r.selecao.membro, provaPersistida } } : null;
+    const movimentoDisponivel = !!verificada?.atual && !!verificada.marcaPersistida && !!provaPersistida && item.sourceType === 'vault'
+      && !item.arquivadoEm && !bloqueada && r.ultima?.id === verificada.id && r.ultima.estado === 'projetado'
+      && verificada.membro.versionId === versao.id && verificada.membro.versao === item.versao && verificada.membro.contentHash === item.contentHash;
+    await travarAutoridadeDoMovimento(tx, orgId, pessoaId, false);
+    return { escopo: { orgId, actorId: pessoaId }, itemId, capturaExternaAgora: false, movimentoDisponivel,
+      autoridadeDoMovimento: { registrarIntencao: keys.has('obsidian.editar'), verificadaEm: new Date().toISOString() },
+      colecaoBloqueadaPorMovimento: bloqueada, movimentoPendente, atual,
+      selecaoVerificada: verificada, ultimaCaptura: bloqueada && !intent ? null : r.ultima };
+    }, { isolationLevel: 'ReadCommitted' });
   }
 }

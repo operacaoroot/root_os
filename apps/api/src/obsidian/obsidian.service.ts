@@ -1,3 +1,4 @@
+import { exigirColecaoSemMovimentoPendente, MovimentoPendenteError } from '../memory/contexto-movimento-namespace';
 import {
   ForbiddenException,
   Injectable,
@@ -698,6 +699,20 @@ export class ObsidianService implements OnModuleInit {
    * antes) e não gera recibo: a sonda dela responde o estado direto (C19-06,
    * regra 5).
    */
+  async capturarDaPastaParaMovimento(tx: Prisma.TransactionClient, orgId: string) {
+    const org = await tx.org.findFirst({ where: { id: orgId, slug: SLUG_DA_CASA, isActive: true }, select: { id: true } });
+    if (!org || this.fonte !== 'pasta' || !this.configured) throw new ForbiddenException('A fonte local elegível não está configurada para esta empresa.');
+    const antes = marcaDoCatalogo(this.vault);
+    const repositorio = lerRepositorioDaVault(this.vault, []);
+    const passeio = descobrirNaPasta(this.vault);
+    const pertenca = classificarAVault({ arquivos: passeio.arquivos, indice: repositorio.indice?.ok ? repositorio.indice.entradas : null,
+      naoVerificavel: repositorio.naoVerificavel ?? conversaoNosAtributos(passeio.atributos) });
+    const captura = prepararCapturaDoCatalogo({ pertenca, arquivos: passeio.arquivos,
+      indice: repositorio.indice?.ok ? repositorio.indice.entradas : null, marcaAntes: antes, marcaDepois: marcaDoCatalogo(this.vault), ilegiveis: passeio.ilegiveis.length });
+    if (!captura) throw new ServiceUnavailableException('A captura física da coleção não pôde ser conferida.');
+    return { captura, notas: pertenca.membros.map((m) => ({ ...m.nota, fileTime: m.modificadoEm })) };
+  }
+
   async reindex(orgId: string, completo = false): Promise<number> {
     await this.exigirEmpresaDaCasa(orgId);
     if (!this.configured) {
@@ -731,14 +746,18 @@ export class ObsidianService implements OnModuleInit {
     let conversaoProvavel = false;
     let selecaoCatalogoId: string | null = null;
     try {
+      await exigirColecaoSemMovimentoPendente(this.prisma, orgId);
       return await this.reindexar(orgId, completo, recibo, lancadasDeProposito, foraDaColecao, (v) => {
         conversaoProvavel = v;
       }, (id) => { selecaoCatalogoId = id; });
     } catch (e) {
       if (!lancadasDeProposito.has(e)) recibo.falha = frasedoErro(e);
-      if (this.catalogo && this.fonte === 'pasta') {
-        if (selecaoCatalogoId) await this.catalogo.falhar(orgId, selecaoCatalogoId);
-        else await this.catalogo.registrarFalha(orgId);
+      if (e instanceof MovimentoPendenteError) recibo.movimentoPendente = true;
+      if (this.catalogo && this.fonte === 'pasta' && !(e instanceof MovimentoPendenteError)) {
+        try {
+          if (selecaoCatalogoId) await this.catalogo.falhar(orgId, selecaoCatalogoId);
+          else await this.catalogo.registrarFalha(orgId);
+        } catch (barreira) { if (!(barreira instanceof MovimentoPendenteError)) throw barreira; recibo.movimentoPendente = true; }
       }
       throw e;
     } finally {
@@ -923,6 +942,8 @@ export class ObsidianService implements OnModuleInit {
     const preservadas = anteriores.filter((n) => mantidosNoIndice.has(n.path));
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`obsidian-index:${orgId}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await exigirColecaoSemMovimentoPendente(tx, orgId);
       await tx.knowledgeNote.deleteMany({ where: daVault });
       for (const n of [...notes, ...preservadas.map((p) => ({ ...p, folder: p.folder ?? null }))]) {
         await tx.knowledgeNote.create({ data: {
@@ -950,6 +971,7 @@ export class ObsidianService implements OnModuleInit {
     const devolverVetor = new Set([...reaproveitadas, ...preservadas.map((p) => p.path)]);
 
     // embeddings (se houver chave) — em lote, e SÓ do que não tem vetor guardado
+    await exigirColecaoSemMovimentoPendente(this.prisma, orgId);
     if (this.openaiKey && (notes.length || preservadas.length)) {
       const rows = await this.prisma.knowledgeNote.findMany({ where: daVault, select: { id: true, path: true, title: true, content: true } });
 
@@ -1156,6 +1178,7 @@ export class ObsidianService implements OnModuleInit {
      */
     let projecao: ReciboDaVault['projecao'];
     const caminhos = new Set(notes.map((n) => n.path));
+    await exigirColecaoSemMovimentoPendente(this.prisma, orgId);
     try {
       const resumo = await this.memoria.projetarDaVault(
         orgId,

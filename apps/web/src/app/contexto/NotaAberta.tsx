@@ -69,6 +69,8 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
       if (rodada !== ciclo.current) return false;
       if (!user || nota.id !== notaId || !escopoConfere(nota.escopo, user.id, escopo.current) || !retratoConfere(nota.retratoFonte, { itemId: notaId, chave: nota.chave, versao: nota.versao, contentHash: nota.contentHash, title: nota.title, body: nota.body })
         || !Array.isArray(historico) || historico.some((v) => !escopoConfere(v.escopo, user.id, nota.escopo) || !retratoConfere(v.retratoFonte, { itemId: notaId, versionId: v.id, versao: v.versao, contentHash: v.contentHash, title: v.title, body: v.body }))) { privar(); return false; }
+      const versaoAberta = historico.find((v) => v.id === nota.retratoFonte.versao.versionId && v.versao === nota.versao && v.contentHash === nota.contentHash);
+      setSelecionadaId((id) => id ?? versaoAberta?.id ?? null);
       escopo.current = nota.escopo; setAtual(nota); setVersoes(historico); setConflito(false);
       const migrado = migrarPedidoLegado(`root_contexto_pedido:${user.id}:${notaId}`, chaveDoPedido(nota.escopo, 'tarefa', notaId), nota.escopo, 'tarefa', notaId);
       const id = lerIdentificador(chaveDoPedido(nota.escopo, 'tarefa', notaId), nota.escopo, 'tarefa', notaId) ?? migrado;
@@ -84,9 +86,17 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
   const selecionada = versoes?.find((v) => selecionadaId ? v.id === selecionadaId : v.versao === atual?.versao) ?? null;
   const historica = !!selecionada && selecionada.versao !== atual?.versao;
   const novoUsoSelecionado = !!atual && !!selecionada && !atual.arquivadoEm
+    && atual.retratoFonte.acesso.novoUsoPermitido === true
     && selecionada.retratoFonte.acesso.novoUsoPermitido === true && !selecionada.retratoFonte.arquivada
     && selecionada.retratoFonte.versaoAtual === atual.versao && selecionada.retratoFonte.chave === atual.chave
     && selecionada.sourceType === atual.sourceType && selecionada.sourceRef === atual.sourceRef;
+  const fonteConferida = useCallback((nota: Nota, historico: Versao[]) => {
+    if (!user || nota.id !== notaId || !escopoConfere(nota.escopo, user.id, escopo.current)
+      || !retratoConfere(nota.retratoFonte, { itemId: notaId, chave: nota.chave, versao: nota.versao, contentHash: nota.contentHash, title: nota.title, body: nota.body })
+      || historico.some((v) => !escopoConfere(v.escopo, user.id, nota.escopo)
+        || !retratoConfere(v.retratoFonte, { itemId: notaId, versionId: v.id, versao: v.versao, contentHash: v.contentHash, title: v.title, body: v.body }))) { privar(); return; }
+    setAtual(nota); setVersoes(historico);
+  }, [notaId, pessoaAtual, privar]);
   const listas = useMemo(() => estrutura ? [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas] : [], [estrutura]);
   const abrirFormulario = async () => {
     if (!podeCriar || !novoUsoSelecionado || pendente || resultado) return;
@@ -153,7 +163,7 @@ function NotaAutorizada({ notaId, versaoInicial, onIndisponivel }: { notaId: str
     {erro && <div role="alert" className="space-y-2 rounded-root border border-warn/40 p-2 text-sm"><p>{erro}</p>{conflito && <button type="button" className="underline" onClick={() => void carregar()}>Recarregar fonte</button>}</div>}
     {confirmacao}{entrega}
     {selecionada && <RetratoDaFonte fonte={selecionada.retratoFonte} />}
-    {selecionada && <CatalogoDaColecao notaId={notaId} versionId={selecionada.id} versao={selecionada.versao} contentHash={selecionada.contentHash} onIndisponivel={privar} />}
+    {selecionada && <CatalogoDaColecao notaId={notaId} versionId={selecionada.id} versao={selecionada.versao} contentHash={selecionada.contentHash} escopo={atual.escopo} atual={atual} escolhida={selecionada} onFonteConferida={fonteConferida} onIndisponivel={privar} />}
     <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
       <dt className="text-dim">natureza</dt><dd>{rotuloDaNatureza(selecionada?.kind ?? atual.kind)}</dd>
       <dt className="text-dim">procedência</dt><dd className="break-words">{selecionada?.procedencia ?? atual.procedencia}</dd>

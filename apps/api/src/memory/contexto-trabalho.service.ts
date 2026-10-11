@@ -1,3 +1,4 @@
+import { exigirNovoUsoSemMovimentoPendente } from './contexto-movimento-namespace';
 import { createHash } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContextoTarefaCreateSchema, type ContextoTarefaCreateInput, type ContextoTarefaCreateResponse, type ContextoFontesDaTarefaResponse, type ContextoFonteUtilizadaDto } from '@mktos/shared';
@@ -41,7 +42,7 @@ function dto(link: WorkContextSource, v: ContextItemVersion, item: FonteAtual): 
     criadoEm: v.criadoEm.toISOString(), utilizadaEm: link.createdAt.toISOString(),
     versaoAtual: item.versao, arquivada: !!item.arquivadoEm,
     retratoFonte: construirFonteAutorizada({ item, versaoSelecionada: v, incluirCorpo: true, acessoVerificadoEm: new Date(),
-      novoUsoPermitido: !item.arquivadoEm && item.sourceType === v.sourceType && item.sourceRef === v.sourceRef, chaveConsumida: link.chave }),
+      novoUsoPermitido: !item.movimentoPendente && !item.arquivadoEm && item.sourceType === v.sourceType && item.sourceRef === v.sourceRef, chaveConsumida: link.chave }),
   };
 }
 
@@ -71,6 +72,7 @@ export class ContextoTrabalhoService {
         const final = await this.conferirFinal(tx, orgId, actorId, itemId, ['obsidian.ver', 'tarefas.editar']);
         return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: true, fonte: dto(anterior, v, final) };
       }
+      await exigirNovoUsoSemMovimentoPendente(tx, orgId, itemId);
       if (item.versao !== p.expectedItemVersion || item.arquivadoEm)
         conflito('contexto_fonte_alterada', 'A fonte mudou. Confira a versão atual antes de criar a tarefa.');
       const corrente = await tx.contextItemVersion.findFirst({ where: { orgId, itemId, versao: item.versao } });
@@ -103,6 +105,7 @@ export class ContextoTrabalhoService {
         after: { listId: list.id, requestId: p.requestId, itemId, versionId: v.id, versao: v.versao, contentHash: v.contentHash },
       }, tx);
       const final = await this.conferirFinal(tx, orgId, actorId, itemId, ['obsidian.ver', 'tarefas.editar']);
+      await exigirNovoUsoSemMovimentoPendente(tx, orgId, itemId);
       if (final.arquivadoEm || final.versao !== p.expectedItemVersion || final.sourceType !== v.sourceType || final.sourceRef !== v.sourceRef)
         conflito('contexto_fonte_alterada', 'A fonte mudou. Confira a versão atual antes de criar a tarefa.');
       return { escopo: { orgId, userId: actorId }, taskId: task.id, listId: task.listId, replayed: false, fonte: dto(link, v, final) };

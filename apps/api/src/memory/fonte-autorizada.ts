@@ -56,7 +56,7 @@ export function construirCapacidadesExecutor(input: {
     modelo: { ...m, provider: 'llama.cpp-local' }, novasExecucoesPermitidas: impedimento === null, impedimento };
 }
 
-export type FonteAtual = Pick<ContextItem, 'id' | 'orgId' | 'chave' | 'title' | 'versao' | 'sourceType' | 'sourceRef' | 'arquivadoEm' | 'atualizadoEm'>;
+export type FonteAtual = Pick<ContextItem, 'id' | 'orgId' | 'chave' | 'title' | 'versao' | 'sourceType' | 'sourceRef' | 'arquivadoEm' | 'atualizadoEm'> & { movimentoPendente: boolean };
 
 /** Última consulta: identidade ativa, permissões e fontes usam o mesmo snapshot. */
 export async function reconferirFontesAtuais(
@@ -80,7 +80,10 @@ export async function reconferirFontesAtuais(
         SELECT 1 FROM "Agent" a WHERE a."orgId" = $1 AND a.slug = $6 AND a.estado = 'ativo' AND a.ativo = true
       )) AS "agenteDisponivel"
     )
-    SELECT a.autorizado, a."agenteDisponivel", c.id, c."orgId", c.chave, c.title, c.versao,
+    SELECT a.autorizado, a."agenteDisponivel", EXISTS (
+      SELECT 1 FROM "ContextMovementIntent" i WHERE i."orgId"=$1 AND i.estado='pendente'
+        AND (i."itemId"=c.id OR (i."collectionId"='vault:root-base' AND (c."sourceType"::text='vault' OR c.chave LIKE 'vault:%')))
+    ) AS "movimentoPendente", c.id, c."orgId", c.chave, c.title, c.versao,
       c."sourceType"::text AS "sourceType", c."sourceRef", c."arquivadoEm", c."atualizadoEm"
     FROM acesso a LEFT JOIN "ContextItem" c
       ON a.autorizado AND c."orgId" = $1 AND c.id = ANY($3::text[])

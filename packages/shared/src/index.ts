@@ -52,3 +52,5 @@ export {
 export * from './procedimento-local';
 
 export * from './pauta-edicao-humana.js';
+
+export * from './contexto-movimento-explicito.js';

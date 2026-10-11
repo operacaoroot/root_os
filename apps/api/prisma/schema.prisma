@@ -216,6 +216,11 @@ model Org {
   onboardingConvites OnboardingConvite[]
   onboardingAtas     OnboardingAta[]
   onboardingMarcos   OnboardingMarco[]
+  backContextMovementIntent_org_fk ContextMovementIntent[] @relation("ContextMovementIntent_org_fk")
+  backContextKeyClaim_org_fk ContextKeyClaim[] @relation("ContextKeyClaim_org_fk")
+  backContextMovementCandidate_org_fk ContextMovementCandidate[] @relation("ContextMovementCandidate_org_fk")
+  backContextAlias_org_fk ContextAlias[] @relation("ContextAlias_org_fk")
+  backContextMovementReceipt_org_fk ContextMovementReceipt[] @relation("ContextMovementReceipt_org_fk")
 }
 
 model User {
@@ -241,6 +246,7 @@ model User {
 
   @@unique([id, orgId])
   @@index([orgId])
+  backIntent_actor_fk ContextMovementIntent[] @relation("Intent_actor_fk")
 }
 
 model Role {
@@ -3414,6 +3420,9 @@ model ContextItem {
   /// "quem substituiu esta regra?" — a consulta de RF-M-08. Índice comum desde
   /// que a aresta virou muitos-para-um: sem `@unique` não sobra índice de graça.
   @@index([supersedesId])
+  backIntent_item_fk ContextMovementIntent[] @relation("Intent_item_fk")
+  backClaim_item_fk ContextKeyClaim[] @relation("Claim_item_fk")
+  backAlias_item_fk ContextAlias[] @relation("Alias_item_fk")
 }
 
 /// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
@@ -3498,6 +3507,10 @@ model ContextItemVersion {
   /// O `SET NULL` do expurgo procura por aqui. Sem índice, apagar uma faixa de
   /// rastro varreria a tabela inteira de versões por linha apagada.
   @@index([eventoId])
+  backIntent_current_version_fk ContextMovementIntent[] @relation("Intent_current_version_fk")
+  backIntent_selected_version_fk ContextMovementIntent[] @relation("Intent_selected_version_fk")
+  backReceipt_new_version_fk ContextMovementReceipt[] @relation("Receipt_new_version_fk")
+  backReceipt_cancel_version_fk ContextMovementReceipt[] @relation("Receipt_cancel_version_fk")
 }
 
 // ===========================================================================
@@ -4638,6 +4651,11 @@ model ContextCollectionSelection {
   demoInstallations DemoInstallation[]
   @@unique([id, orgId])
   @@unique([orgId, collectionId, generation])
+  movementIntentId String?
+  @@unique([id, orgId, collectionId, movementIntentId], map: "Selection_movement_identity_u")
+  backIntent_old_selection_fk ContextMovementIntent[] @relation("Intent_old_selection_fk")
+  backCandidate_selection_fk ContextMovementCandidate[] @relation("Candidate_selection_fk")
+  linkSelection_intent_fk ContextMovementIntent? @relation("Selection_intent_fk", fields: [movementIntentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
 }
 model ContextCollectionMember {
   id String @id @default(uuid())
@@ -4662,6 +4680,11 @@ model ContextCollectionMember {
   @@unique([selectionId, caminhoBytes])
   @@unique([selectionId, chave])
   @@index([orgId, itemId])
+  @@unique([id, orgId, selectionId], map: "Member_selection_identity_u")
+  @@unique([id, orgId, selectionId, itemId, versionId, versao], map: "Member_version_identity_u")
+  backIntent_old_member_version_fk ContextMovementIntent[] @relation("Intent_old_member_version_fk")
+  backReceipt_new_member_version_fk ContextMovementReceipt[] @relation("Receipt_new_member_version_fk")
+  backReceipt_cancel_member_fk ContextMovementReceipt[] @relation("Receipt_cancel_member_fk")
 }
 
 /// Recibo imutável de instalação sintética; objetos normais podem mudar depois.
@@ -4685,4 +4708,165 @@ model DemoInstallation {
   @@unique([id, orgId])
   @@unique([orgId, dataset])
   @@unique([orgId, requestId])
+}
+
+
+model ContextMovementIntent {
+  id String @id @default(uuid())
+  orgId String
+  actorId String
+  itemId String
+  collectionId String
+  requestId String
+  inputFingerprint String
+  serverMarkHash String
+  intentMarkHash String
+  currentVersionId String
+  currentVersionNo Int
+  expectedItemVersion Int
+  currentContentHash String
+  selectedVersionId String
+  selectedVersionNo Int
+  selectedContentHash String
+  oldSelectionId String
+  oldMemberId String
+  oldGeneration BigInt
+  oldMembershipDigest String
+  oldMarca Json
+  originKey String
+  originPathBytes Bytes
+  originSourceRef String
+  destinationKey String
+  destinationPathBytes Bytes
+  destinationSourceRef String
+  motivo String
+  creationAuditIds String[]
+  estado String
+  revision Int
+  terminalReceiptId String?
+  criadoEm DateTime @default(now())
+  encerradoEm DateTime?
+  @@unique([id, orgId], map: "ContextMovementIntent_u0")
+  @@unique([orgId, requestId], map: "ContextMovementIntent_u1")
+  @@unique([id, orgId, actorId, itemId, collectionId], map: "ContextMovementIntent_u2")
+  @@unique([id, orgId, actorId, itemId, requestId], map: "ContextMovementIntent_u3")
+  linkContextMovementIntent_org_fk Org @relation("ContextMovementIntent_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_actor_fk User @relation("Intent_actor_fk", fields: [actorId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_item_fk ContextItem @relation("Intent_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_current_version_fk ContextItemVersion @relation("Intent_current_version_fk", fields: [currentVersionId, orgId, itemId, currentVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_selected_version_fk ContextItemVersion @relation("Intent_selected_version_fk", fields: [selectedVersionId, orgId, itemId, selectedVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_old_selection_fk ContextCollectionSelection @relation("Intent_old_selection_fk", fields: [oldSelectionId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_old_member_version_fk ContextCollectionMember @relation("Intent_old_member_version_fk", fields: [oldMemberId, orgId, oldSelectionId, itemId, currentVersionId, currentVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkIntent_terminal_receipt_fk ContextMovementReceipt? @relation("Intent_terminal_receipt_fk", fields: [terminalReceiptId, orgId, id, actorId, itemId, requestId, estado], references: [id, orgId, intentId, actorId, itemId, requestId, tipo], onDelete: NoAction, onUpdate: NoAction)
+  backClaim_intent_fk ContextKeyClaim[] @relation("Claim_intent_fk")
+  backCandidate_scope_fk ContextMovementCandidate[] @relation("Candidate_scope_fk")
+  backAlias_intent_fk ContextAlias[] @relation("Alias_intent_fk")
+  backReceipt_intent_scope_fk ContextMovementReceipt[] @relation("Receipt_intent_scope_fk")
+  backSelection_intent_fk ContextCollectionSelection[] @relation("Selection_intent_fk")
+}
+
+model ContextKeyClaim {
+  id String @id @default(uuid())
+  orgId String
+  key String
+  itemId String
+  tipo String
+  intentId String?
+  criadoEm DateTime @default(now())
+  @@unique([id, orgId], map: "ContextKeyClaim_u0")
+  @@unique([orgId, key], map: "ContextKeyClaim_u1")
+  @@unique([id, orgId, key, itemId], map: "ContextKeyClaim_u2")
+  linkContextKeyClaim_org_fk Org @relation("ContextKeyClaim_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkClaim_item_fk ContextItem @relation("Claim_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkClaim_intent_fk ContextMovementIntent? @relation("Claim_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  backAlias_claim_fk ContextAlias[] @relation("Alias_claim_fk")
+}
+
+model ContextMovementCandidate {
+  id String @id @default(uuid())
+  orgId String
+  intentId String
+  actorId String
+  itemId String
+  collectionId String
+  selectionId String
+  purpose String
+  captureFingerprint String
+  captureMarkHash String
+  membershipDigest String
+  marca Json
+  auditIds String[]
+  criadoEm DateTime @default(now())
+  @@unique([id, orgId], map: "ContextMovementCandidate_u0")
+  @@unique([id, orgId, intentId, selectionId], map: "ContextMovementCandidate_u1")
+  @@unique([selectionId, orgId], map: "ContextMovementCandidate_u2")
+  @@unique([orgId, intentId, purpose, captureFingerprint], map: "ContextMovementCandidate_u3")
+  linkContextMovementCandidate_org_fk Org @relation("ContextMovementCandidate_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkCandidate_scope_fk ContextMovementIntent @relation("Candidate_scope_fk", fields: [intentId, orgId, actorId, itemId, collectionId], references: [id, orgId, actorId, itemId, collectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkCandidate_selection_fk ContextCollectionSelection @relation("Candidate_selection_fk", fields: [selectionId, orgId, collectionId, intentId], references: [id, orgId, collectionId, movementIntentId], onDelete: NoAction, onUpdate: NoAction)
+  backReceipt_candidate_fk ContextMovementReceipt[] @relation("Receipt_candidate_fk")
+  backReceipt_cancel_candidate_fk ContextMovementReceipt[] @relation("Receipt_cancel_candidate_fk")
+}
+
+model ContextAlias {
+  id String @id @default(uuid())
+  orgId String
+  collectionId String
+  aliasKey String
+  aliasPathBytes Bytes
+  itemId String
+  claimId String
+  intentId String
+  criadoEm DateTime @default(now())
+  @@unique([id, orgId], map: "ContextAlias_u0")
+  @@unique([orgId, collectionId, aliasKey], map: "ContextAlias_u1")
+  @@unique([orgId, claimId], map: "ContextAlias_u2")
+  @@unique([orgId, intentId], map: "ContextAlias_u3")
+  linkContextAlias_org_fk Org @relation("ContextAlias_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_item_fk ContextItem @relation("Alias_item_fk", fields: [itemId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_intent_fk ContextMovementIntent @relation("Alias_intent_fk", fields: [intentId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  linkAlias_claim_fk ContextKeyClaim @relation("Alias_claim_fk", fields: [claimId, orgId, aliasKey, itemId], references: [id, orgId, key, itemId], onDelete: NoAction, onUpdate: NoAction)
+  backReceipt_alias_fk ContextMovementReceipt[] @relation("Receipt_alias_fk")
+}
+
+model ContextMovementReceipt {
+  id String @id @default(uuid())
+  orgId String
+  actorId String
+  itemId String
+  intentId String
+  requestId String
+  tipo String
+  inputFingerprint String
+  commitFingerprint String
+  candidateId String
+  newSelectionId String?
+  newMemberId String?
+  newVersionId String?
+  newVersionNo Int?
+  aliasId String?
+  cancelSelectionId String?
+  cancelMemberId String?
+  cancelVersionId String?
+  cancelVersionNo Int?
+  cancelContentHash String?
+  eventSnapshot Json?
+  auditIds String[]
+  receipt Json
+  receiptHash String
+  criadoEm DateTime @default(now())
+  @@unique([id, orgId], map: "ContextMovementReceipt_u0")
+  @@unique([orgId, requestId], map: "ContextMovementReceipt_u1")
+  @@unique([orgId, intentId], map: "ContextMovementReceipt_u2")
+  @@unique([id, orgId, intentId, actorId, itemId, requestId, tipo], map: "ContextMovementReceipt_u3")
+  linkContextMovementReceipt_org_fk Org @relation("ContextMovementReceipt_org_fk", fields: [orgId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_intent_scope_fk ContextMovementIntent @relation("Receipt_intent_scope_fk", fields: [intentId, orgId, actorId, itemId, requestId], references: [id, orgId, actorId, itemId, requestId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_candidate_fk ContextMovementCandidate? @relation("Receipt_candidate_fk", fields: [candidateId, orgId, intentId, newSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_candidate_fk ContextMovementCandidate? @relation("Receipt_cancel_candidate_fk", fields: [candidateId, orgId, intentId, cancelSelectionId], references: [id, orgId, intentId, selectionId], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_new_version_fk ContextItemVersion? @relation("Receipt_new_version_fk", fields: [newVersionId, orgId, itemId, newVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_new_member_version_fk ContextCollectionMember? @relation("Receipt_new_member_version_fk", fields: [newMemberId, orgId, newSelectionId, itemId, newVersionId, newVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_member_fk ContextCollectionMember? @relation("Receipt_cancel_member_fk", fields: [cancelMemberId, orgId, cancelSelectionId, itemId, cancelVersionId, cancelVersionNo], references: [id, orgId, selectionId, itemId, versionId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_cancel_version_fk ContextItemVersion? @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
+  linkReceipt_alias_fk ContextAlias? @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
+  backIntent_terminal_receipt_fk ContextMovementIntent[] @relation("Intent_terminal_receipt_fk")
 }
