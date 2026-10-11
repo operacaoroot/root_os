@@ -1,19 +1,31 @@
 import type { Metadata } from 'next';
+import { TotemCodigoEtiquetaSchema } from '@mktos/shared';
+import { ConteudoDaPrivacidade } from './ConteudoDaPrivacidade';
 
 export const metadata: Metadata = {
   title: 'Política de privacidade do totem',
   robots: { index: false, follow: false },
+  // O `?e=` traz o código da etiqueta; sem referer, ele não sai desta página.
+  referrer: 'no-referrer',
 };
 
-// Página provisória da base; a frente D a substitui pelo texto da política (docs/totem/CONTRATO.md, seção 7).
-export default function PaginaDaPrivacidadeDoTotem() {
+/**
+ * `/totem/privacidade` (frente D). Aberta pelo QR, recebe o código da etiqueta
+ * em `?e=`; no quiosque, usa o token guardado no aparelho. Nos dois casos a
+ * credencial vai à API em cabeçalho, nunca na URL da chamada.
+ */
+export default async function PaginaDaPrivacidadeDoTotem({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { e } = await searchParams;
+  const etiqueta = TotemCodigoEtiquetaSchema.safeParse(typeof e === 'string' ? e : undefined);
   return (
-    <main className="mx-auto min-h-screen max-w-2xl bg-white px-6 py-12 text-neutral-800">
-      <h1 className="text-2xl font-semibold">Política de privacidade do totem</h1>
-      <p className="mt-4 text-base">
-        O texto da política de privacidade está em revisão. Enquanto isso, o cadastro pelo totem e pelo QR da
-        etiqueta fica fechado.
-      </p>
+    <main className="min-h-screen px-6 py-12" style={{ backgroundColor: '#F5F3EC', color: '#28371D' }}>
+      <div className="mx-auto max-w-2xl">
+        <ConteudoDaPrivacidade etiqueta={etiqueta.success ? etiqueta.data : null} />
+      </div>
     </main>
   );
 }
