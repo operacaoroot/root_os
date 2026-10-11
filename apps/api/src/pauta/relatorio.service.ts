@@ -220,7 +220,7 @@ export class RelatorioService {
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     await this.memoria.concluirEntregaDaDerivacao(compromisso);
     const ator = this.conferirIdentidade(orgId, identidade);
-    await this.audit.log({ orgId, actorId: ator.actorId, actorType: ator.actorType,
+    await this.audit.log({ orgId, actorId: ator.actorId ?? undefined, actorType: ator.actorType,
       action: 'pauta.relatorio_gerado', entityType: 'context_item', entityId: compromisso.aplicada.itemId,
       after: { mes, versao: compromisso.aplicada.versao, versionId: compromisso.aplicada.versionId, contentHash: compromisso.aplicada.contentHash,
         publicadas: m.dados.pecas.length, comEstrategia: Boolean(m.dados.estrategia), provider: m.provider, model: m.model,
