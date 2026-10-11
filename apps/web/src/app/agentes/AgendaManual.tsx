@@ -432,9 +432,9 @@ export function AgendaManual({ slug, token, pessoaId, podeLer, podeConfigurar, p
     });
   }
   async function reenviar(p: PistaDaOperacaoLocal) {
-    const a = op.causa(p.requestId); if (!a || a.expectativa.tipo === 'agente_estado' || !op.escopo || op.privada) return;
+    const a = op.causa(p.requestId); if (!a) return;
+    const e = a.expectativa; if (e.tipo === 'agente_estado' || !op.escopo || op.privada) return;
     await op.agir(async c => {
-      const e = a.expectativa;
       if (e.tipo !== 'agenda_disparar') {
         if (!podeConfigurar) return;
         const recentes = await lerEscolhas(c); if (!recentes || !op.vigente(c)) return;
