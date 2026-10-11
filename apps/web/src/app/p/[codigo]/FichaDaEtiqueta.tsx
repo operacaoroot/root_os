@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import {
   TOTEM_ROTULO_DO_SELO,
   totemLoteDataBR,
@@ -109,7 +109,17 @@ function Ficha({ ficha, codigo }: { ficha: TotemFichaDaEtiqueta; codigo: string 
   const porcao = textoDaPorcao(produto.porcaoG, produto.porcaoDescricao);
 
   return (
-    <main className="min-h-screen" style={{ backgroundColor: fundo, color: primaria }}>
+    <main
+      className="min-h-screen"
+      style={
+        {
+          backgroundColor: fundo,
+          color: primaria,
+          '--totem-cor-primaria': primaria,
+          '--totem-cor-fundo': fundo,
+        } as CSSProperties
+      }
+    >
       <div className="mx-auto max-w-md space-y-5 px-4 pb-12 pt-6">
         <header className="flex items-center justify-between gap-3">
           {config.logoUrl ? (

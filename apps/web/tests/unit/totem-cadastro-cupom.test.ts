@@ -27,7 +27,7 @@ import {
   formatarCpfDigitando,
   mensagemDoErroDoCadastro,
 } from '@/components/totem/CadastroCupom';
-import { buscarPolitica, credencialDaPagina } from '@/app/totem/privacidade/buscar-politica';
+import { buscarPolitica, credencialDaPagina, lerTokenGuardado } from '@/app/totem/privacidade/buscar-politica';
 
 const CPF_VALIDO = '52998224725';
 const CELULAR_VALIDO = '11987654321';
@@ -166,6 +166,29 @@ describe('credencialDaPagina', () => {
   it('sem nenhuma das duas no formato, não há credencial', () => {
     expect(credencialDaPagina(null, null)).toBeNull();
     expect(credencialDaPagina('', 'curto')).toBeNull();
+  });
+});
+
+describe('lerTokenGuardado', () => {
+  afterEach(() => localStorage.clear());
+
+  it('acha o token dentro do registro do aparelho que o quiosque grava', () => {
+    localStorage.setItem(
+      'totem.aparelho',
+      JSON.stringify({
+        token: TOKEN,
+        dispositivo: { id: 'd1', nome: 'Totem da entrada' },
+        loja: { id: 'l1', nome: 'Loja 1' },
+        ativadoEm: '2026-10-11T12:00:00.000Z',
+      }),
+    );
+    expect(lerTokenGuardado()).toBe(TOKEN);
+  });
+
+  it('sem registro do aparelho, ou com registro quebrado, não há token', () => {
+    expect(lerTokenGuardado()).toBeNull();
+    localStorage.setItem('totem.aparelho', '{quebrado');
+    expect(lerTokenGuardado()).toBeNull();
   });
 });
 

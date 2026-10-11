@@ -688,6 +688,31 @@ cuja lista padrão passou a incluir `/api/caixa`.
   é `claude-opus-5` (o desenho); com `openrouter`, é `OPENROUTER_MODEL`, e PDF não é lido
   (só o provider da Anthropic lê anexo) — cole a transcrição como texto.
 
+### 2.3m O MÓDULO TOTEM (11/10/2026) — migration aditiva, permissões novas e uma variável
+
+O desenho inteiro está em `docs/totem/CONTRATO.md`; aqui fica só o que muda na subida.
+
+- Migration `20261011120000_totem`: 15 tabelas novas, todas com RLS e `orgId` gravado pelo
+  serviço. **Aditiva**: não altera nem converte dado existente.
+- **Permissões novas** (`totem.*`) e quatro papéis `totem_*`: rodar o roteiro da 2.3d
+  (`shared build`, `db:sync-permissions`, login de novo) antes de abrir o painel.
+- **`TOTEM_CPF_PEPPER`** no bloco `environment:` do `api` (já está no `docker-compose.yml`).
+  São 32 bytes aleatórios em hex (`openssl rand -hex 32`, 64 caracteres; o mínimo aceito é
+  32). Gere uma vez por instalação e guarde junto do backup do `.env`: trocar a chave depois
+  do primeiro cadastro faz o mesmo CPF virar outro cliente. Sem ela a API sobe e só o
+  cadastro responde **503**; o resto do totem funciona.
+- A empresa precisa do módulo: `provisionar <slug> --modulos totem` na criação, ou a
+  semente `db:seed:totem` (CONTRATO.md, seção 13), que acrescenta `totem` a `Org.modulos`.
+- O cadastro nasce **desligado** (`cadastroLigado=false`). Só ligar no painel, em
+  Totem › Configuração, depois de a Sr. aGranel confirmar a razão social do controlador e de
+  a política passar por revisão jurídica.
+- A etiqueta imprime o QR com o endereço do painel que a imprime: imprimir sempre pelo
+  domínio oficial da instalação, nunca por `localhost`.
+- Conferir depois de subir: `GET /api/totem-gestao/resumo` sem token → **401**;
+  `GET /api/totem-etiqueta/x` → **400** (código fora do formato);
+  `GET /api/totem-publico/catalogo` sem `X-Totem-Token` → **401**; `/totem/quiosque` no web
+  abre a tela de ativação.
+
 ### 2.4 Subir
 
 ```bash

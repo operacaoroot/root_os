@@ -38,6 +38,12 @@ function gravarLocal(a: AparelhoAtivado | null): void {
   }
 }
 
+/** Só o token, sem o IndexedDB: a página da política, aberta no iframe do quiosque, acha a credencial por aqui. */
+export function lerTokenLocal(): string | null {
+  const local = AparelhoSchema.safeParse(lerLocal());
+  return local.success ? local.data.token : null;
+}
+
 export async function lerAparelho(armazem: Armazem): Promise<AparelhoAtivado | null> {
   const local = AparelhoSchema.safeParse(lerLocal());
   if (local.success) {

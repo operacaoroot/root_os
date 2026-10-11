@@ -5,6 +5,7 @@ import {
   type TotemPolitica,
   type TotemPoliticaResposta,
 } from '@mktos/shared';
+import { lerTokenLocal } from '@/components/totem/quiosque/credencial';
 import { totemApi, type TotemCredencial } from '@/lib/totem/api-publica';
 
 /*
@@ -15,9 +16,6 @@ import { totemApi, type TotemCredencial } from '@/lib/totem/api-publica';
  * mesmo texto aqui, com os dados da empresa marcados "(a confirmar)": a
  * política nunca fica em branco, porque é ela que a pessoa aceita no cadastro.
  */
-
-/** Onde o quiosque guarda o token do aparelho no `localStorage`. */
-export const TOTEM_CHAVE_TOKEN_LOCAL = 'totem.token';
 
 export interface PoliticaNaTela {
   politica: TotemPolitica;
@@ -37,12 +35,9 @@ export function credencialDaPagina(
   return null;
 }
 
+/** O token que o quiosque (frente B) guardou no registro do aparelho. */
 export function lerTokenGuardado(): string | null {
-  try {
-    return window.localStorage.getItem(TOTEM_CHAVE_TOKEN_LOCAL);
-  } catch {
-    return null;
-  }
+  return lerTokenLocal();
 }
 
 export async function buscarPolitica(credencial: TotemCredencial | null): Promise<PoliticaNaTela> {

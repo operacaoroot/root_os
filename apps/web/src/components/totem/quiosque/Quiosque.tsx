@@ -27,6 +27,12 @@ const FONTES = {
   '--q-fonte-texto': 'var(--fonte-montserrat), system-ui, sans-serif',
 };
 
+// O CadastroCupom (frente D) lê as cores destes dois nomes, e não dos --q-*.
+const CORES_DO_CADASTRO = {
+  '--totem-cor-primaria': 'var(--q-primaria)',
+  '--totem-cor-fundo': 'var(--q-fundo)',
+} as CSSProperties;
+
 function Aviso({ children }: { children: React.ReactNode }) {
   return (
     <main className="grid h-full place-items-center px-6 text-center text-[color:var(--q-sobre-fundo)]">
@@ -141,7 +147,7 @@ export function Quiosque({ classeDasFontes = '' }: { classeDasFontes?: string })
         {produto && <FichaDoProduto produto={produto} aoVoltar={() => setProduto(null)} />}
         {cadastroAberto && catalogo.config.cadastroLigado && (
           <div className="fixed inset-0 z-40 overflow-y-auto bg-[color:var(--q-fundo)] p-6">
-            <div className="mx-auto max-w-[900px]">
+            <div className="mx-auto max-w-[900px]" style={CORES_DO_CADASTRO}>
               <CadastroCupom
                 origem="totem"
                 credencial={{ token: q.aparelho.token }}
