@@ -3,6 +3,8 @@ import { AuthModule } from '../auth/auth.module';
 import { AcessoDeSuporteService } from './acesso-de-suporte.service';
 import { ConsoleDaPlataformaService } from './console.service';
 import { PlataformaController, SuporteDoClienteController } from './plataforma.controller';
+import { PropostasController } from './propostas.controller';
+import { PropostasService } from './propostas.service';
 import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
 
 /*
@@ -25,7 +27,7 @@ import { SessaoDaPlataformaGuard } from './sessao-da-plataforma.guard';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [PlataformaController, SuporteDoClienteController],
-  providers: [ConsoleDaPlataformaService, AcessoDeSuporteService, SessaoDaPlataformaGuard],
+  controllers: [PlataformaController, SuporteDoClienteController, PropostasController],
+  providers: [ConsoleDaPlataformaService, AcessoDeSuporteService, SessaoDaPlataformaGuard, PropostasService],
 })
 export class PlataformaModule {}
