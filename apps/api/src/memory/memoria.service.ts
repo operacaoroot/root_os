@@ -2,11 +2,12 @@ import { consultaMovimentoPendente, exigirNovoUsoSemMovimentoPendente, exigirCol
 import { createHash } from 'node:crypto';
 import { BRANDBOOK_CHAVE, PAUTA_CHAVE_DA_MARCA, PAUTA_CHAVE_DOS_PILARES,
   PAUTA_CHAVE_DA_GRADE, PAUTA_CHAVE_DA_AUTOMACAO, PAUTA_CHAVE_DA_CHAVE_DA_VOZ,
-  PAUTA_CHAVE_DA_VOZ_PADRAO, chaveDaEstrategia, chaveDoRelatorio, PautaMesSchema,
+  PAUTA_CHAVE_DA_VOZ_PADRAO, chaveDaEstrategia, chaveDoRelatorio, chaveDaPerformance, PautaMesSchema,
   PautaChaveDaVozSchema, PautaEscritaHumanaBaseSchema, PautaEscritaHumanaResultadoSchema,
   type PautaEscritaHumanaBase, type PautaEscritaHumanaResultado, type PautaDestinoFisico, type PautaAutomacao,
 } from '@mktos/shared';
-import { chaveDoTema, temaPorId } from '../agents/roster/carregador-de-contexto';
+import { chaveDoTema, temaPorId, CHAVE_DO_RETRATO } from '../agents/roster/carregador-de-contexto';
+import { estadoDispara, TIPO_PAUTA_RELATORIO, type ContextoDaRotina } from '../routines/rotina.tipos';
 import type { z } from 'zod';
 type BrandbookEnvelope = z.infer<typeof BrandbookEnvelopeSchema>;
 import { ESCRITA_DO_BRANDBOOK, BrandbookEnvelopeSchema } from './brandbook-escrita';
@@ -161,6 +162,38 @@ export interface DestinosHumanos {
   configuracao: { chaveEfetiva: string; origemEfetiva: 'empresa' | 'padrao' } | null;
   livro: { id: string; versao: number; ativo: BrandbookEnvelope['ativo'] } | null;
 }
+
+const TOKEN_DA_DERIVACAO = Symbol('derivacao-observada');
+const TOKEN_DO_COMPROMISSO_DERIVADO = Symbol('derivacao-aplicada');
+export type CapsulaDaDerivacao = Readonly<{ [TOKEN_DA_DERIVACAO]: true }>;
+export type CompromissoDaDerivacao = Readonly<{ [TOKEN_DO_COMPROMISSO_DERIVADO]: true; aplicada: VersaoAplicadaDaDerivacao }>;
+export type IdentidadeDaDerivacao = { tipo: 'humano'; actorId: string; correlationId: string }
+  | { tipo: 'rotina'; ctx: ContextoDaRotina; ator: { actorType: 'user'; actorId: string } | { actorType: 'system'; actorId: null } };
+export type CausaDaDerivacao = { tipo: 'A4-PERF' | 'A4-ESTRATEGIA' | 'A4-RELATORIO-HUMANO' | 'A4-RELATORIO-ROTINA'; mes: string }
+  | { tipo: 'A4-DOSSIE'; fonteId: string } | { tipo: 'A4-VOZ'; chave: string } | { tipo: 'A4-ONBOARDING-FECHAR' };
+export type DadosDerivadosDaNota = DadosDoProdutorHumano;
+type LinhaFisicaDaDerivacao = Prisma.ContextItemGetPayload<{ select: typeof SELECAO_FISICA_DA_DERIVACAO }>;
+const SELECAO_DA_VERSAO_DERIVADA = { id: true, orgId: true, itemId: true, versao: true, kind: true, title: true,
+  body: true, sourceType: true, sourceRef: true, contentHash: true } as const;
+type VersaoFisicaDaDerivacao = Prisma.ContextItemVersionGetPayload<{ select: typeof SELECAO_DA_VERSAO_DERIVADA }>;
+export type DescritorFisicoDaFonte = { estado: 'ausente_fisico'; orgId: string; chave: string }
+  | { estado: 'existente'; orgId: string; chave: string; nota: LinhaFisicaDaDerivacao; versao: VersaoFisicaDaDerivacao };
+export type LeitorFisicoDaDerivacao = (seletor: { chave: string } | { itemId: string }) => Promise<DescritorFisicoDaFonte>;
+export interface PlanoInternoDeFontesDaDerivacao<TMaterial, TSelecao> {
+  observar(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao): Promise<{ material: TMaterial; selecao: TSelecao; descritores: unknown }>;
+  reconferir(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao, selecao: Readonly<TSelecao>): Promise<{ material: TMaterial; descritores: unknown }>;
+}
+export interface ObservacaoDaDerivacao<TMaterial> { capsula: CapsulaDaDerivacao; material: Readonly<TMaterial> }
+export interface VersaoAplicadaDaDerivacao { orgId: string; itemId: string; versionId: string; versao: number;
+  chave: string; kind: ContextKind; title: string; body: string; contentHash: string; sourceType: ContextSource; sourceRef: string | null }
+export interface ResultadoDaDerivacao { aplicada: VersaoAplicadaDaDerivacao;
+  disponibilidadeAtual: { legivel: true; arquivada: boolean; versaoAtual: number; estaVersaoAindaCorrente: boolean };
+  registroMudanca: 'nao_conferido' }
+interface EstadoDaCapsulaDerivada { orgId: string; identidade: IdentidadeDaDerivacao; causa: CausaDaDerivacao;
+  chave: string; base: DescritorFisicoDaFonte; autoridade: string; fontes: string; notasConsumidas: DescritorFisicoDaFonte[];
+  reler(tx: Prisma.TransactionClient, lerFonte: LeitorFisicoDaDerivacao): Promise<{ material: unknown; descritores: unknown }> }
+interface EstadoDoCompromissoDerivado { capsula: EstadoDaCapsulaDerivada; aplicada: VersaoAplicadaDaDerivacao;
+  item: LinhaDaNota; anterior: LinhaDaNota | null; motivo: string | null; rastroIniciado: boolean }
 
 /** Escrita de uma nota derivada de outra, validando as duas no mesmo cadeado. */
 export interface ProjecaoCondicionada {
@@ -403,6 +436,8 @@ export function conjuntoDaGuarda(chaves: readonly string[]): string {
 @Injectable()
 export class MemoriaService {
   private readonly log = new Logger('Memoria');
+  private readonly capsulasDeDerivacao = new WeakMap<CapsulaDaDerivacao, EstadoDaCapsulaDerivada>();
+  private readonly compromissosDeDerivacao = new WeakMap<CompromissoDaDerivacao, EstadoDoCompromissoDerivado>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2006,6 +2041,268 @@ export class MemoriaService {
     return this.gravarPautaHumana(orgId, actorId, { acao: 'responder_tema', tema }, entrada, dados);
   }
 
+
+  async observarDestinoDaDerivacaoNoTx<TMaterial, TSelecao>(tx: Prisma.TransactionClient, orgId: string,
+    identidade: IdentidadeDaDerivacao, causa: CausaDaDerivacao, plano: PlanoInternoDeFontesDaDerivacao<TMaterial, TSelecao>): Promise<ObservacaoDaDerivacao<TMaterial>> {
+    await this.travarCadeadoDaDerivacaoNoTx(tx, orgId);
+    const autoria = clonarDerivacao(identidade); const causaFixada = clonarDerivacao(causa);
+    const autoridade = await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, autoria, causaFixada);
+    const chave = this.chaveDaDerivacao(causaFixada);
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, autoria, { chave });
+    this.conferirDestinoDaDerivacao(base);
+    await this.conferirMarcaLegadaNoCadeado(tx, orgId, chave);
+    const notas = new Map<string, DescritorFisicoDaFonte>();
+    const ler = this.leitorFisicoDaDerivacao(tx, orgId, autoria, notas);
+    const entrada = await plano.observar(tx, ler);
+    const selecao = clonarDerivacao(entrada.selecao); const reconferir = plano.reconferir;
+    const reler = (db: Prisma.TransactionClient, reader: LeitorFisicoDaDerivacao) => reconferir(db, reader, clonarDerivacao(selecao));
+    const fontes = assinaturaFisicaDaDerivacao({ material: entrada.material, descritores: entrada.descritores, notas: this.ordenarNotasDaDerivacao(notas) });
+    const estado: EstadoDaCapsulaDerivada = { orgId, identidade: autoria, causa: causaFixada, chave,
+      base: clonarDerivacao(base), autoridade, fontes, notasConsumidas: clonarDerivacao(this.ordenarNotasDaDerivacao(notas)), reler };
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    this.exigirMesmoRetratoDaDerivacao(base, await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, autoria, { chave }));
+    if (autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, autoria, causaFixada)) throw this.derivacaoAlterada();
+    const capsula: CapsulaDaDerivacao = Object.freeze({ [TOKEN_DA_DERIVACAO]: true as const });
+    this.capsulasDeDerivacao.set(capsula, estado);
+    return Object.freeze({ capsula, material: clonarDerivacao(entrada.material) });
+  }
+
+  async aplicarDerivacaoCondicionadaNoTx(tx: Prisma.TransactionClient, capsula: CapsulaDaDerivacao, dados: DadosDerivadosDaNota): Promise<CompromissoDaDerivacao> {
+    const estado = this.capsulasDeDerivacao.get(capsula);
+    if (!estado) throw new ForbiddenException('Observação de derivação inválida.');
+    const { orgId, identidade, causa, chave } = estado;
+    await this.travarCadeadoDaDerivacaoNoTx(tx, orgId);
+    if (estado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, identidade, causa)) throw this.derivacaoAlterada();
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, { chave }, true);
+    this.exigirMesmoRetratoDaDerivacao(estado.base, base); this.conferirDestinoDaDerivacao(base);
+    const entrada = clonarDerivacao({ title: dados.title, body: dados.body, sourceType: dados.sourceType,
+      kind: dados.kind ?? (base.estado === 'existente' ? base.nota.kind : ContextKind.nota),
+      tags: dados.tags ?? (base.estado === 'existente' ? base.nota.tags : []), sourceRef: dados.sourceRef ?? null, motivo: dados.motivo ?? null });
+    if (!entrada.title.trim()) throw new BadRequestException('A nota precisa de título.');
+    this.exigirProcedencia(entrada.sourceType);
+    if (entrada.sourceType === ContextSource.vault) throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+    const ator = this.atorDaDerivacao(identidade);
+    const motivo = entrada.motivo ?? null;
+    let gravada: { item: LinhaDaNota; anterior: LinhaDaNota | null; versao: { id: string; versao: number } };
+    try {
+      if (base.estado === 'ausente_fisico') gravada = await this.criarDerivacaoNoTx(tx, estado, entrada);
+      else gravada = await this.gravarVersaoNoTx(tx, { orgId, id: base.nota.id, mudanca: ContextChange.alteracao, ator, derivacao: capsula,
+        montar: () => ({ dados: { kind: entrada.kind ?? base.nota.kind, title: entrada.title.trim(), body: entrada.body,
+          tags: entrada.tags ?? base.nota.tags, sourceType: entrada.sourceType, sourceRef: entrada.sourceRef ?? null,
+          contentHash: hashDoCorpo(entrada.body), atualizadoPor: ator.actorId }, motivo }),
+        noCadeado: async (db, antes, depois) => {
+          if (antes.contentHash !== depois.contentHash) await db.$executeRaw`UPDATE "ContextItem" SET embedding=NULL WHERE id=${depois.id} AND "orgId"=${orgId}`;
+        } });
+    } catch (e) { throw this.traduzirChaveRepetida(e, chave); }
+    const depois = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, { itemId: gravada.item.id });
+    if (depois.estado !== 'existente' || depois.versao.id !== gravada.versao.id || depois.nota.versao !== gravada.versao.versao) throw this.derivacaoAlterada();
+    await this.reconferirFontesDaDerivacaoNoTx(tx, estado);
+    if (estado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, identidade, causa)) throw this.derivacaoAlterada();
+    const aplicada: VersaoAplicadaDaDerivacao = { orgId, itemId: depois.nota.id, versionId: depois.versao.id, versao: depois.versao.versao,
+      chave: depois.chave, kind: depois.versao.kind, title: depois.versao.title, body: depois.versao.body,
+      contentHash: depois.versao.contentHash, sourceType: depois.versao.sourceType, sourceRef: depois.versao.sourceRef };
+    const compromisso: CompromissoDaDerivacao = Object.freeze({ [TOKEN_DO_COMPROMISSO_DERIVADO]: true as const, aplicada: clonarDerivacao(aplicada) });
+    this.compromissosDeDerivacao.set(compromisso, { capsula: estado, aplicada: clonarDerivacao(aplicada),
+      item: clonarDerivacao(gravada.item), anterior: gravada.anterior ? clonarDerivacao(gravada.anterior) : null, motivo, rastroIniciado: false });
+    return compromisso;
+  }
+
+  async concluirEntregaDaDerivacao(compromisso: CompromissoDaDerivacao): Promise<ResultadoDaDerivacao> {
+    const c = this.compromissosDeDerivacao.get(compromisso);
+    if (!c) throw new ForbiddenException('Compromisso de derivação inválido.');
+    // A consulta fora de uma nova TX recusa uma versão ainda não comprometida.
+    this.exigirIdentidadeDaDerivacao(c.capsula.orgId, c.capsula.identidade, c.capsula.causa);
+    const comprometida = await this.prisma.contextItemVersion.findFirst({ where: { orgId: c.aplicada.orgId,
+      itemId: c.aplicada.itemId, id: c.aplicada.versionId, versao: c.aplicada.versao }, select: { id: true } });
+    if (!comprometida) throw new ConflictException('A versão aplicada ainda não foi comprometida.');
+    await this.conferirEntregaDaDerivacao(c);
+    if (!c.rastroIniciado) {
+      c.rastroIniciado = true;
+      this.exigirIdentidadeDaDerivacao(c.capsula.orgId, c.capsula.identidade, c.capsula.causa);
+      await this.registrarMudanca({ orgId: c.capsula.orgId, mudanca: c.anterior ? ContextChange.alteracao : ContextChange.criacao,
+        item: c.item, anterior: c.anterior, versaoId: c.aplicada.versionId, versaoNumero: c.aplicada.versao, motivo: c.motivo });
+    }
+    const disponibilidadeAtual = await this.conferirEntregaDaDerivacao(c);
+    return clonarDerivacao({ aplicada: c.aplicada, disponibilidadeAtual, registroMudanca: 'nao_conferido' as const });
+  }
+
+  private async travarCadeadoDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string) {
+    const rows = await tx.$queryRaw<Array<{ isolamento: string }>>`SELECT current_setting('transaction_isolation') AS isolamento`;
+    if (rows.length !== 1 || rows[0].isolamento !== 'read committed') throw new ConflictException('A derivação exige uma transação ReadCommitted.');
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+  }
+
+  private async conferirEntregaDaDerivacao(c: EstadoDoCompromissoDerivado): Promise<ResultadoDaDerivacao['disponibilidadeAtual']> {
+    const e = c.capsula; const p = c.aplicada;
+    const r = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${e.orgId}`}))`;
+      await this.travarAutoridadeDaDerivacaoNoTx(tx, e.orgId, e.identidade, e.causa);
+      const atual = await this.observarFonteFisicaDaDerivacaoNoTx(tx, e.orgId, e.identidade, { itemId: p.itemId }, false, true);
+      const v = await tx.contextItemVersion.findFirst({ where: { orgId: p.orgId, itemId: p.itemId, id: p.versionId, versao: p.versao }, select: SELECAO_DA_VERSAO_DERIVADA });
+      if (atual.estado !== 'existente' || !v || v.kind !== p.kind || v.title !== p.title || v.body !== p.body
+        || v.contentHash !== p.contentHash || hashDoCorpo(v.body) !== p.contentHash || v.sourceType !== p.sourceType || v.sourceRef !== p.sourceRef) throw this.derivacaoAlterada();
+      for (const fonte of e.notasConsumidas) if (fonte.estado === 'existente') await this.observarFonteFisicaDaDerivacaoNoTx(tx,
+        e.orgId, e.identidade, { itemId: fonte.nota.id }, false, true);
+      await this.travarAutoridadeDaDerivacaoNoTx(tx, e.orgId, e.identidade, e.causa);
+      return { legivel: true as const, arquivada: !!atual.nota.arquivadoEm, versaoAtual: atual.nota.versao,
+        estaVersaoAindaCorrente: atual.versao.id === p.versionId && atual.nota.chave === p.chave };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    this.exigirIdentidadeDaDerivacao(e.orgId, e.identidade, e.causa);
+    const ator = this.atorDaDerivacao(e.identidade);
+
+    const ids = [...new Set([p.itemId, ...e.notasConsumidas.flatMap((f) => f.estado === 'existente' ? [f.nota.id] : [])])].sort();
+    const permissoes = this.permissoesDaDerivacao(e.identidade, e.causa);
+    const final = await this.prisma.$queryRaw<Array<{ autorizado: boolean }>>`
+      SELECT EXISTS (SELECT 1 FROM "Org" WHERE id=${e.orgId} AND "isActive"
+        AND (${e.identidade.tipo !== 'rotina'} OR 'pauta'=ANY(modulos)))
+      AND (${ator.actorId}::text IS NULL OR EXISTS (
+        SELECT 1 FROM "User" u JOIN "_UserRoles" ur ON ur."B"=u.id JOIN "Role" r ON r.id=ur."A" AND r."orgId"=u."orgId"
+        JOIN "_RolePermissions" rp ON rp."B"=r.id JOIN "Permission" p ON p.id=rp."A"
+        WHERE u.id=${ator.actorId} AND u."orgId"=${e.orgId} AND u."isActive" AND p.key IN (${Prisma.join(permissoes)})
+        GROUP BY u.id HAVING count(DISTINCT p.key)=${permissoes.length}
+      )) AND (SELECT count(*) FROM "ContextItem" WHERE "orgId"=${e.orgId} AND id IN (${Prisma.join(ids)})
+        AND (NOT "acessoRestrito" OR ${ator.actorId}::text=ANY(leitores)))=${ids.length} AS autorizado`;
+    if (final.length !== 1 || !final[0].autorizado) throw new ForbiddenException('Acesso à nota insuficiente.');
+    this.exigirIdentidadeDaDerivacao(e.orgId, e.identidade, e.causa);
+    return r;
+  }
+
+  private async criarDerivacaoNoTx(tx: Prisma.TransactionClient, e: EstadoDaCapsulaDerivada, dados: DadosDerivadosDaNota) {
+    const base = await this.observarFonteFisicaDaDerivacaoNoTx(tx, e.orgId, e.identidade, { chave: e.chave }, true);
+    this.exigirMesmoRetratoDaDerivacao(e.base, base);
+    if (base.estado !== 'ausente_fisico') throw this.derivacaoAlterada();
+    this.conferirEscritorDaMarca(e.chave); await this.conferirMarcaLegadaNoCadeado(tx, e.orgId, e.chave);
+    const ator = this.atorDaDerivacao(e.identidade);
+    const item = await tx.contextItem.create({ data: { orgId: e.orgId, chave: e.chave, title: dados.title.trim(), body: dados.body,
+      kind: dados.kind ?? ContextKind.nota, tags: dados.tags ?? [], sourceType: dados.sourceType, sourceRef: dados.sourceRef ?? null,
+      contentHash: hashDoCorpo(dados.body), versao: 1, criadoPor: ator.actorId, atualizadoPor: ator.actorId }, select: SELECAO_DA_NOTA });
+    const versao = await tx.contextItemVersion.create({ data: { orgId: e.orgId, itemId: item.id, versao: 1, mudanca: ContextChange.criacao,
+      kind: item.kind, title: item.title, body: item.body, sourceType: item.sourceType, sourceRef: item.sourceRef,
+      contentHash: item.contentHash, motivo: dados.motivo ?? null, autorTipo: ator.actorType, autorId: ator.actorId }, select: { id: true, versao: true } });
+    return { item, anterior: null, versao };
+  }
+
+  private async observarFonteFisicaDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    seletor: { chave: string } | { itemId: string }, escrita = false, historico = false): Promise<DescritorFisicoDaFonte> {
+    const where = 'chave' in seletor ? { orgId, chave: seletor.chave } : { orgId, id: seletor.itemId };
+    if ('chave' in seletor) {
+      if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${seletor.chave} FOR UPDATE`;
+      else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND chave=${seletor.chave} FOR SHARE`;
+    } else {
+      if (escrita) await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND id=${seletor.itemId} FOR UPDATE`;
+      else await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE "orgId"=${orgId} AND id=${seletor.itemId} FOR SHARE`;
+    }
+    const nota = await tx.contextItem.findFirst({ where, select: SELECAO_FISICA_DA_DERIVACAO });
+    const chave = nota?.chave ?? ('chave' in seletor ? seletor.chave : null);
+    if (!chave) throw new NotFoundException('Fonte indisponível.');
+    const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, chave } });
+    if (!nota) {
+      if (claim) throw new ConflictException('A chave está reservada ou identifica outra fonte.');
+      return { estado: 'ausente_fisico', orgId, chave };
+    }
+    const leitor = this.atorDaDerivacao(identidade).actorId;
+    if (!podeLerFonte(nota, leitor)) throw new ForbiddenException('Acesso à nota insuficiente.');
+    if (!claim || claim.tipo !== 'canonical' || claim.itemId !== nota.id) throw this.derivacaoAlterada();
+    if (!historico) {
+      if (nota.arquivadoEm) throw new ConflictException('A fonte está arquivada. Confira sua situação antes de gerar.');
+      await exigirNovoUsoSemMovimentoPendente(tx, orgId, nota.id);
+    }
+    if (nota.leitores.length) await tx.$queryRaw`SELECT id FROM "User" WHERE "orgId"=${orgId} AND id IN (${Prisma.join([...nota.leitores].sort())}) ORDER BY id FOR SHARE`;
+    await this.conferirLeitores(tx, orgId, nota.leitores);
+    const versao = await tx.contextItemVersion.findFirst({ where: { orgId, itemId: nota.id }, orderBy: { versao: 'desc' }, select: SELECAO_DA_VERSAO_DERIVADA });
+    if (!versao || !Number.isSafeInteger(nota.versao) || nota.versao < 1
+      || versao.orgId !== orgId || versao.itemId !== nota.id || versao.versao !== nota.versao
+      || versao.kind !== nota.kind || versao.title !== nota.title || versao.body !== nota.body
+      || versao.sourceType !== nota.sourceType || versao.sourceRef !== nota.sourceRef || versao.contentHash !== nota.contentHash
+      || hashDoCorpo(nota.body) !== nota.contentHash) throw new ConflictException('A versão da nota diverge do histórico.');
+    return { estado: 'existente', orgId, chave, nota: { ...nota, leitores: [...nota.leitores].sort() }, versao };
+  }
+
+  private leitorFisicoDaDerivacao(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    notas: Map<string, DescritorFisicoDaFonte>): LeitorFisicoDaDerivacao {
+    return async (seletor) => {
+      const r = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, identidade, seletor);
+      notas.set(r.chave, clonarDerivacao(r)); return clonarDerivacao(r);
+    };
+  }
+  private ordenarNotasDaDerivacao(notas: Map<string, DescritorFisicoDaFonte>) {
+    return [...notas.values()].sort((a, b) => a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0);
+  }
+  private async reconferirFontesDaDerivacaoNoTx(tx: Prisma.TransactionClient, e: EstadoDaCapsulaDerivada) {
+    const notas = new Map<string, DescritorFisicoDaFonte>();
+    const atual = await e.reler(tx, this.leitorFisicoDaDerivacao(tx, e.orgId, e.identidade, notas));
+    if (e.fontes !== assinaturaFisicaDaDerivacao({ ...atual, notas: this.ordenarNotasDaDerivacao(notas) })) throw this.derivacaoAlterada();
+  }
+  private exigirMesmoRetratoDaDerivacao(a: DescritorFisicoDaFonte, b: DescritorFisicoDaFonte) {
+    if (assinaturaFisicaDaDerivacao(a) !== assinaturaFisicaDaDerivacao(b)) throw this.derivacaoAlterada();
+  }
+  private conferirDestinoDaDerivacao(base: DescritorFisicoDaFonte) {
+    if (ehChaveDaVault(base.chave) || base.estado === 'existente' && base.nota.sourceType === ContextSource.vault)
+      throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
+    if (base.estado === 'existente' && base.nota.versao >= 2147483647) throw new ConflictException('A numeração da nota atingiu o limite.');
+    this.conferirEscritorDaMarca(base.chave);
+  }
+  private derivacaoAlterada() { return new ConflictException('A fonte, o destino ou a configuração mudou durante a geração. Confira a base antes de gerar novamente.'); }
+  private chaveDaDerivacao(c: CausaDaDerivacao): string {
+    switch (c.tipo) {
+      case 'A4-PERF': return chaveDaPerformance(PautaMesSchema.parse(c.mes));
+      case 'A4-ESTRATEGIA': return chaveDaEstrategia(PautaMesSchema.parse(c.mes));
+      case 'A4-RELATORIO-HUMANO': case 'A4-RELATORIO-ROTINA': return chaveDoRelatorio(PautaMesSchema.parse(c.mes));
+      case 'A4-DOSSIE':
+        if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(c.fonteId)) throw new BadRequestException('Fonte de dossiê inválida.');
+        return `pauta.concorrente.${c.fonteId}`;
+      case 'A4-VOZ': return PautaChaveDaVozSchema.parse(c.chave);
+      case 'A4-ONBOARDING-FECHAR': return CHAVE_DO_RETRATO;
+      default: throw new BadRequestException('Causa de derivação inválida.');
+    }
+  }
+  private atorDaDerivacao(i: IdentidadeDaDerivacao): { actorType: string; actorId: string | null } {
+    return i.tipo === 'humano' ? { actorType: ActorType.user, actorId: i.actorId } : i.ator;
+  }
+  private permissoesDaDerivacao(i: IdentidadeDaDerivacao, c: CausaDaDerivacao): string[] {
+    if (i.tipo === 'rotina') return ['automacoes.executar', 'obsidian.ver'];
+    return c.tipo === 'A4-ONBOARDING-FECHAR' ? ['obsidian.ver', 'obsidian.editar'] : ['obsidian.ver', 'pauta.editar', 'automacoes.executar'];
+  }
+  private exigirIdentidadeDaDerivacao(orgId: string, i: IdentidadeDaDerivacao, c: CausaDaDerivacao) {
+    const ctx = contextoAtual(); const ator = this.atorDaDerivacao(i);
+    const correlationId = i.tipo === 'humano' ? i.correlationId : i.ctx.correlationId;
+    if (!orgId || !correlationId || ctx?.orgId !== orgId || ctx.actorType !== ator.actorType || (ctx.actorId ?? null) !== ator.actorId
+      || ctx.correlationId !== correlationId || ator.actorType === ActorType.user && !ator.actorId) throw new ForbiddenException('Acesso insuficiente.');
+    if ((c.tipo === 'A4-RELATORIO-ROTINA') !== (i.tipo === 'rotina')) throw new ForbiddenException('A identidade da causa não pôde ser conferida.');
+    if (i.tipo === 'rotina' && (i.ctx.orgId !== orgId || !Number.isFinite(i.ctx.agora.getTime())
+      || i.ctx.origem === 'cron' && (ator.actorType !== ActorType.system || ator.actorId !== null)
+      || i.ctx.origem === 'manual' && (ator.actorType !== ActorType.user || !ator.actorId)
+      || i.ctx.origem !== 'cron' && i.ctx.origem !== 'manual')) throw new ForbiddenException('A identidade da rotina não pôde ser conferida.');
+  }
+  private async travarAutoridadeDaDerivacaoNoTx(tx: Prisma.TransactionClient, orgId: string, i: IdentidadeDaDerivacao, c: CausaDaDerivacao): Promise<string> {
+    this.exigirIdentidadeDaDerivacao(orgId, i, c);
+    const ator = this.atorDaDerivacao(i);
+    if (ator.actorId) await this.travarAutoridadeDoProdutorNoTx(tx, orgId, ator.actorId, this.permissoesDaDerivacao(i, c));
+    else await tx.$queryRaw`SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+    const org = await tx.org.findFirst({ where: { id: orgId, isActive: true }, select: { id: true, name: true, slug: true, modulos: true, isActive: true } });
+    if (!org) throw new ForbiddenException('Acesso insuficiente.');
+    if (i.tipo === 'humano') return assinaturaFisicaDaDerivacao(org);
+    if (!org.modulos.includes('pauta')) throw new ForbiddenException('O módulo pauta está desligado.');
+    await tx.$queryRaw`SELECT id FROM "Rotina" WHERE id=${i.ctx.rotinaId} AND "orgId"=${orgId} FOR SHARE`;
+    const r = await tx.rotina.findFirst({ where: { id: i.ctx.rotinaId, orgId }, select: { id: true, orgId: true, slug: true, tipo: true,
+      config: true, ativo: true, estado: true, origem: true, refExterna: true, cron: true, tz: true, agenteSlug: true } });
+    if (!r || r.tipo !== TIPO_PAUTA_RELATORIO || r.slug !== i.ctx.slug || r.refExterna !== i.ctx.refExterna
+      || assinaturaFisicaDaDerivacao(r.config) !== assinaturaFisicaDaDerivacao(i.ctx.config)
+      || i.ctx.origem === 'cron' && (!r.ativo || !estadoDispara(r.estado))) throw this.derivacaoAlterada();
+    let espelho: unknown = null;
+    if (r.origem === 'pauta') {
+      if (!r.refExterna) throw this.derivacaoAlterada();
+      await tx.$queryRaw`SELECT id FROM "PautaRotina" WHERE id=${r.refExterna} AND "orgId"=${orgId} FOR SHARE`;
+      const origem = await tx.pautaRotina.findFirst({ where: { id: r.refExterna, orgId }, select: { id: true, orgId: true, slug: true,
+        config: true, ativo: true, cron: true, tz: true } });
+      if (!origem || i.ctx.origem === 'cron' && !origem.ativo) throw this.derivacaoAlterada();
+      espelho = origem;
+    }
+    this.exigirIdentidadeDaDerivacao(orgId, i, c);
+    return assinaturaFisicaDaDerivacao({ org, rotina: r, espelho });
+  }
+
   private exigirAtorDoProdutor(orgId: string, actorId: string): void {
     const ctx = contextoAtual();
     if (!orgId || !actorId || ctx?.actorType !== ActorType.user || ctx.orgId !== orgId || ctx.actorId !== actorId) throw new ForbiddenException('Acesso insuficiente.');
@@ -2234,6 +2531,7 @@ export class MemoriaService {
     autorizacao?: symbol;
     intencaoHumana?: IntencaoHumanaDaNota;
     movimento?: { autorizacao: symbol; actorId: string; versaoEsperada: number };
+    derivacao?: CapsulaDaDerivacao;
     conferir?: (tx: Prisma.TransactionClient, atual: LinhaDaNota) => Promise<void>;
     montar: (atual: LinhaDaNota) => {
       dados: Prisma.ContextItemUncheckedUpdateInput;
@@ -2245,22 +2543,34 @@ export class MemoriaService {
     anterior: LinhaDaNota;
     versao: { id: string; versao: number };
   }> {
-    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, movimento, conferir, montar, noCadeado } = args;
+    const { orgId, id, mudanca, ator, autorizacao, intencaoHumana, movimento, derivacao, conferir, montar, noCadeado } = args;
+    const estadoDerivado = derivacao ? this.capsulasDeDerivacao.get(derivacao) : undefined;
+    if (derivacao && (!estadoDerivado || estadoDerivado.orgId !== orgId || estadoDerivado.base.estado !== 'existente'
+      || estadoDerivado.base.nota.id !== id || intencaoHumana || movimento || autorizacao || mudanca !== ContextChange.alteracao
+      || ator.actorType !== this.atorDaDerivacao(estadoDerivado.identidade).actorType
+      || ator.actorId !== this.atorDaDerivacao(estadoDerivado.identidade).actorId)) throw new ForbiddenException('Derivação não autorizada.');
+    if (estadoDerivado) {
+      if (estadoDerivado.autoridade !== await this.travarAutoridadeDaDerivacaoNoTx(tx, orgId, estadoDerivado.identidade, estadoDerivado.causa)) throw this.derivacaoAlterada();
+      const fisica = await this.observarFonteFisicaDaDerivacaoNoTx(tx, orgId, estadoDerivado.identidade, { itemId: id }, true);
+      this.exigirMesmoRetratoDaDerivacao(estadoDerivado.base, fisica); this.conferirDestinoDaDerivacao(fisica);
+    }
       if (movimento && movimento.autorizacao !== ESCRITA_DE_MOVIMENTO) throw new ForbiddenException('Movimento não autorizado.');
-      const versaoEsperada = intencaoHumana?.versaoEsperada ?? movimento?.versaoEsperada;
+      const versaoEsperada = intencaoHumana?.versaoEsperada ?? movimento?.versaoEsperada
+        ?? (estadoDerivado?.base.estado === 'existente' ? estadoDerivado.base.nota.versao : undefined);
       if (movimento) await travarAutoridadeDoMovimento(tx, orgId, movimento.actorId, true);
-      if (intencaoHumana || movimento) {
+      if (intencaoHumana || movimento || estadoDerivado) {
         if (intencaoHumana) await this.travarAcessoHumano(tx, orgId, intencaoHumana);
         await tx.$queryRaw`SELECT id FROM "ContextItem" WHERE id=${id} AND "orgId"=${orgId} FOR UPDATE`;
       }
-      const leitor = movimento?.actorId ?? intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
+      const leitor = estadoDerivado ? this.atorDaDerivacao(estadoDerivado.identidade).actorId
+        : movimento?.actorId ?? intencaoHumana?.actorId ?? await leitorAutorizado(tx, orgId, leitorDoContexto());
       const atual = await tx.contextItem.findFirst({
         where: { id, orgId, ...filtroDeLeitura(leitor) },
         select: SELECAO_DA_NOTA,
       });
       if (!atual) throw new NotFoundException('Nota não encontrada nesta empresa.');
       if (!movimento) await exigirNovoUsoSemMovimentoPendente(tx, orgId, atual.id);
-      if (intencaoHumana && (ehChaveDaVault(atual.chave) || atual.sourceType === ContextSource.vault)) {
+      if ((intencaoHumana || estadoDerivado) && (ehChaveDaVault(atual.chave) || atual.sourceType === ContextSource.vault)) {
         throw new ForbiddenException('Esta nota vem da vault. Edite o arquivo na base, pelo git.');
       }
       if (versaoEsperada !== undefined && atual.versao !== versaoEsperada) {
@@ -2611,6 +2921,8 @@ const SELECAO_DA_NOTA = {
   atualizadoEm: true,
 } as const;
 
+const SELECAO_FISICA_DA_DERIVACAO = { ...SELECAO_DA_NOTA, orgId: true, criadoPor: true, atualizadoPor: true, arquivadoPor: true } as const;
+
 /** As mesmas colunas, para as consultas cruas (busca vetorial e textual). */
 const COLUNAS_DA_NOTA = [
   'id', '"acessoRestrito"', 'leitores',
@@ -2652,6 +2964,37 @@ interface LinhaDaNota {
   arquivadoEm: Date | null;
   criadoEm: Date;
   atualizadoEm: Date;
+}
+
+function assinaturaFisicaDaDerivacao(valor: unknown): string {
+  const vistos = new WeakSet<object>();
+  const normalizar = (v: unknown): unknown => {
+    if (v === null || typeof v === 'string' || typeof v === 'boolean') return v;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (v instanceof Date && Number.isFinite(v.getTime())) return v.toISOString();
+    if (typeof v !== 'object' || !v || vistos.has(v)) throw new BadRequestException('Descritor físico inválido.');
+    vistos.add(v);
+    let r: unknown;
+    if (Array.isArray(v)) r = v.map(normalizar);
+    else {
+      if (Object.getPrototypeOf(v) !== Object.prototype && Object.getPrototypeOf(v) !== null) throw new BadRequestException('Descritor físico inválido.');
+      r = Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, x]) => [k, normalizar(x)]));
+    }
+    vistos.delete(v); return r;
+  };
+  const texto = JSON.stringify(normalizar(valor));
+  if (typeof texto !== 'string') throw new BadRequestException('Descritor físico inválido.');
+  return texto;
+}
+function clonarDerivacao<T>(valor: T): T {
+  assinaturaFisicaDaDerivacao(valor);
+  const clone = structuredClone(valor);
+  const congelar = (v: unknown): void => {
+    if (!v || typeof v !== 'object' || Object.isFrozen(v)) return;
+    for (const x of Object.values(v)) congelar(x);
+    Object.freeze(v);
+  };
+  congelar(clone); return clone;
 }
 
 function iso(d: Date | string | null | undefined): string | null {
