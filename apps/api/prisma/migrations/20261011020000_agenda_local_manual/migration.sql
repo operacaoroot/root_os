@@ -52,7 +52,7 @@ CREATE TABLE "AgentLocalAgendaRevision" (
     AND "configuracaoSnapshot"->'fonte'->'versao'=to_jsonb("sourceVersionNumber")
     AND "configuracaoSnapshot"->'fonte'->>'contentHash'="sourceHash"
     AND "configuracaoSnapshot"->'fonte'->'expectedItemVersion'=to_jsonb("expectedItemVersion"),false)),
-  CONSTRAINT "Revision_snapshot_hash" CHECK ("snapshotHash"=encode(digest(public.app_json_canonico("configuracaoSnapshot"),'sha256'),'hex')),
+  CONSTRAINT "Revision_snapshot_hash" CHECK ("snapshotHash"=encode(sha256(convert_to(public.app_json_canonico("configuracaoSnapshot"),'UTF8')),'hex')),
   CONSTRAINT "Revision_id_org_unique" UNIQUE ("id","orgId"),
   CONSTRAINT "Revision_agenda_number_unique" UNIQUE ("orgId","agendaId","numero"),
   CONSTRAINT "Revision_request_unique" UNIQUE ("orgId","requestId"),
@@ -91,7 +91,7 @@ CREATE TABLE "AgentLocalOperation" (
     AND "receipt"->'escopo'->>'agentId'="agentId"
     AND "receipt"->'auditIds'=to_jsonb("auditIds") AND "receipt"->'eventSnapshot'="eventSnapshot"
     AND "receipt"->>'confirmadoEm'=to_char("criadaEm",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),false)),
-  CONSTRAINT "Operation_receipt_hash" CHECK ("receiptHash"=encode(digest(public.app_json_canonico("receipt"),'sha256'),'hex')),
+  CONSTRAINT "Operation_receipt_hash" CHECK ("receiptHash"=encode(sha256(convert_to(public.app_json_canonico("receipt"),'UTF8')),'hex')),
   CONSTRAINT "Operation_records_present" CHECK (cardinality("auditIds")>0 AND COALESCE(jsonb_typeof("eventSnapshot")='array' AND jsonb_array_length("eventSnapshot")>0,false))
 );
 
@@ -191,11 +191,11 @@ BEGIN
     SELECT * INTO a FROM "Agent" WHERE "id"=NEW."agentId" AND "orgId"=NEW."orgId";
     x=NEW."receipt"->'anterior';
     IF x->'escopo'->>'orgId' IS DISTINCT FROM NEW."orgId" OR x->'escopo'->>'actorId' IS DISTINCT FROM NEW."actorId" OR x->'escopo'->>'agentId' IS DISTINCT FROM NEW."agentId"
-      OR NEW."receipt"->>'marcaAnterior' IS DISTINCT FROM encode(digest(public.app_json_canonico(jsonb_build_object('escopo',x->'escopo','base',x->'base')),'sha256'),'hex') THEN
+      OR NEW."receipt"->>'marcaAnterior' IS DISTINCT FROM encode(sha256(convert_to(public.app_json_canonico(jsonb_build_object('escopo',x->'escopo','base',x->'base')),'UTF8')),'hex') THEN
       RAISE EXCEPTION 'Agente: marca anterior divergente' USING ERRCODE='P0001'; END IF;
     x=NEW."receipt"->'posterior';
     IF x->'escopo'->>'orgId' IS DISTINCT FROM NEW."orgId" OR x->'escopo'->>'actorId' IS DISTINCT FROM NEW."actorId" OR x->'escopo'->>'agentId' IS DISTINCT FROM NEW."agentId"
-      OR NEW."receipt"->>'marcaNova' IS DISTINCT FROM encode(digest(public.app_json_canonico(jsonb_build_object('escopo',x->'escopo','base',x->'base')),'sha256'),'hex') THEN
+      OR NEW."receipt"->>'marcaNova' IS DISTINCT FROM encode(sha256(convert_to(public.app_json_canonico(jsonb_build_object('escopo',x->'escopo','base',x->'base')),'UTF8')),'hex') THEN
       RAISE EXCEPTION 'Agente: marca posterior divergente' USING ERRCODE='P0001'; END IF;
     IF a."id" IS NULL OR x->'escopo'->>'agentSlug' IS DISTINCT FROM a."slug"
       OR x->'base'->>'estado' IS DISTINCT FROM a."estado"::text OR x->'base'->'ativo' IS DISTINCT FROM to_jsonb(a."ativo")
