@@ -23,7 +23,7 @@ interface ItemDoPainel {
 const ITENS: ItemDoPainel[] = [
   { href: '/totem-gestao', rotulo: 'Resumo', permissoes: ['totem.ver'] },
   { href: '/totem-gestao/lojas', rotulo: 'Lojas', permissoes: ['totem.lojas', 'totem.rede'] },
-  { href: '/totem-gestao/produtos', rotulo: 'Produtos', permissoes: ['totem.produtos'] },
+  { href: '/totem-gestao/produtos', rotulo: 'Produtos', permissoes: ['totem.ver', 'totem.produtos'] },
   { href: '/totem-gestao/dispositivos', rotulo: 'Totens', permissoes: ['totem.dispositivos'] },
   { href: '/totem-gestao/lotes', rotulo: 'Lotes', permissoes: ['totem.lotes'] },
   { href: '/totem-gestao/remessas', rotulo: 'Remessas', permissoes: ['totem.lotes', 'totem.reposicao'] },
