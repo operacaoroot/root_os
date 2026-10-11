@@ -1,8 +1,45 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Agent } from '@prisma/client';
-import { ObsidianService } from '../obsidian/obsidian.service';
+import { ObsidianService, type BuscaIndiceRuntimeComSolicitante } from '../obsidian/obsidian.service';
+import type { SearchResult, BuscaIndiceInternaSemSolicitante } from '@mktos/shared';
+import { contextoAtual } from '../common/contexto-execucao';
+import { conferirIdentidadeDoIndice, identidadeHttpDoIndice, pessoaDoIndice, type IdentidadeIndice, type IdentidadeIndiceRuntime } from '../onboarding/indice-protegido';
 import { ProcedenciaExterna } from '../policy/sinais.service';
 import { VaultVersionadaService, type CitacaoDeVault } from './vault-versionada.service';
+
+type ResultadoRealDaVaultVersionada = Awaited<ReturnType<VaultVersionadaService['search']>>;
+type BuscaDoContexto =
+  | { tipo: 'indice_http'; resultado: SearchResult }
+  | { tipo: 'indice_runtime'; resultado: BuscaIndiceRuntimeComSolicitante }
+  | { tipo: 'indice_interno_sem_solicitante'; resultado: BuscaIndiceInternaSemSolicitante }
+  | { tipo: 'vault_versionada'; resultado: ResultadoRealDaVaultVersionada; leitura: IdentidadeIndice };
+interface MaterialDoContexto { id: string; title: string; trecho: string; ref: string; citacao?: CitacaoDeVault; score?: number }
+function materialDoContexto(orgId: string, busca: BuscaDoContexto): MaterialDoContexto[] {
+  if (busca.tipo === 'vault_versionada') {
+    if (busca.leitura.orgId !== orgId || busca.resultado.acessoNegado) throw new ForbiddenException('Acesso insuficiente.');
+    return busca.resultado.items.map((n) => ({ id: n.id, title: n.title, trecho: n.content, ref: n.path, citacao: n.citacao }));
+  }
+  if (busca.tipo === 'indice_interno_sem_solicitante') {
+    if (busca.resultado.orgId !== orgId) throw new ForbiddenException('Acesso insuficiente.');
+    return busca.resultado.items.map((n) => ({ id: n.id, title: n.title, trecho: n.snippet, ref: n.path, score: n.score }));
+  }
+  const r = busca.tipo === 'indice_runtime' ? busca.resultado.resultado : busca.resultado;
+  if (r.escopo.orgId !== orgId) throw new ForbiddenException('Acesso insuficiente.');
+  if (busca.tipo === 'indice_runtime') {
+    conferirIdentidadeDoIndice(orgId, busca.resultado.leitura);
+    if (r.escopo.userId !== busca.resultado.leitura.solicitanteId) throw new ForbiddenException('Acesso insuficiente.');
+  } else {
+    const c = contextoAtual();
+    if (!c || c.actorType !== 'user' || c.orgId !== orgId || c.actorId !== r.escopo.userId) throw new ForbiddenException('Acesso insuficiente.');
+  }
+  return r.items.map((n) => {
+    const f = n.fonteCanonica;
+    if (f && f.orgId !== orgId) throw new ForbiddenException('Acesso insuficiente.');
+    const citacao: CitacaoDeVault | undefined = f ? { chave: f.chave, itemId: f.itemId,
+      versionId: f.versionId, versao: f.versao, contentHash: f.contentHash } : undefined;
+    return { id: n.id, title: n.title, trecho: n.snippet, ref: f?.chave ?? n.path, score: n.score, ...(citacao ? { citacao } : {}) };
+  });
+}
 
 export interface FonteContexto {
   /**
@@ -950,6 +987,7 @@ export interface ContextoMontado {
    * mensagem de exceção do provedor de busca e o traço é lido na tela.
    */
   ausencia: AusenciaDeDado | null;
+  limitesDaLeitura: string[];
 }
 
 @Injectable()
@@ -964,184 +1002,89 @@ export class ContextBuilder {
   constructor(private readonly obsidian: ObsidianService,
     @Optional() private readonly vaultVersionada?: VaultVersionadaService) {}
 
-  /** Entrada local explícita; a ativação no runtime exige revisão separada. */
-  async montarVaultVersionada(orgId: string, pedido: string, agent: Agent, solicitanteId?: string | null) {
+  /** Leitura explícita da vault versionada; nenhuma ativação do runtime ocorre aqui. */
+  async montarVaultVersionada(orgId: string, pedido: string, agent: Agent, solicitanteId?: string | null,
+    identidadeRuntime?: IdentidadeIndiceRuntime): Promise<ContextoMontado> {
     if (!this.vaultVersionada) throw new Error('Leitor da vault versionada não disponível.');
-    const leitor = this.vaultVersionada;
-    const busca = { search: () => leitor.search({ orgId, agentId: agent.id, solicitanteId }, pedido) };
-    return new ContextBuilder(busca as unknown as ObsidianService).montar(orgId, pedido, agent);
+    if (!solicitanteId) throw new ForbiddenException('Acesso insuficiente.');
+    const leitura = identidadeRuntime ?? identidadeHttpDoIndice(orgId, solicitanteId);
+    if (leitura.orgId !== orgId || pessoaDoIndice(leitura) !== solicitanteId) throw new ForbiddenException('Acesso insuficiente.');
+    await this.obsidian.conferirPessoaDaLeituraAtual(orgId, leitura);
+    const resultado = await this.vaultVersionada.search({ orgId, agentId: agent.id, solicitanteId }, pedido, 5);
+    if (resultado.acessoNegado) throw new ForbiddenException('Acesso insuficiente.');
+    await this.obsidian.conferirPessoaDaLeituraAtual(orgId, leitura);
+    const montado = await this.montarComBusca(orgId, pedido, agent, { tipo: 'vault_versionada', resultado, leitura }, {});
+    await this.obsidian.conferirPessoaDaLeituraAtual(orgId, leitura);
+    return montado;
   }
 
-  async montar(
-    orgId: string,
-    pedido: string,
-    agent: Agent,
-    opcoes: {
-      /**
-       * O PEDIDO veio de fora (mensagem de WhatsApp, e-mail, página)? Quem sabe
-       * disso é o canal, não este serviço. `SessionCanal` já carrega a resposta
-       * e o runtime é quem a tem na mão — ver o relatório da fatia 3.8.
-       */
-      pedidoExterno?: { origem: string };
-    } = {},
-  ): Promise<ContextoMontado> {
-    const fontes: FonteContexto[] = [];
-    const partes: string[] = [];
-    const procedencia = new ProcedenciaExterna();
-    /*
-     * COMEÇA EM AUSENTE, e isto é a decisão de desenho da fatia 4.3: a ausência
-     * é o ESTADO PADRÃO, e só um trecho de dado que de fato entrou no bloco
-     * cercado a desliga. O contrário — começar em "tem dado" e tentar detectar a
-     * falta — erra fechado para o lado errado: todo caminho novo que esqueça de
-     * marcar passa a alegar procedência que não tem.
-     */
-    let ausencia: AusenciaDeDado | null = {
-      motivo: 'nada_na_base',
-      detalhe: 'a busca na base de conhecimento não devolveu nenhum trecho',
-    };
-
-    if (opcoes.pedidoExterno) {
-      procedencia.marcar(`pedido de origem externa (${opcoes.pedidoExterno.origem})`);
+  async montar(orgId: string, pedido: string, agent: Agent,
+    opcoes: { pedidoExterno?: { origem: string }; leitura?: IdentidadeIndice } = {}): Promise<ContextoMontado> {
+    let busca: BuscaDoContexto;
+    const leitura = opcoes.leitura;
+    if (leitura?.tipo === 'runtime_com_solicitante') {
+      busca = { tipo: 'indice_runtime', resultado: await this.obsidian.searchParaRuntimeComSolicitante(orgId, pedido, 5, leitura) };
+    } else if (leitura?.tipo === 'http_humano') {
+      conferirIdentidadeDoIndice(orgId, leitura);
+      busca = { tipo: 'indice_http', resultado: await this.obsidian.search(orgId, pedido, 5, leitura.userId) };
+    } else {
+      if (contextoAtual()?.actorType === 'user') throw new ForbiddenException('Acesso insuficiente.');
+      busca = { tipo: 'indice_interno_sem_solicitante', resultado: await this.obsidian.buscarIndiceInternoSemSolicitante(orgId, pedido, 5) };
     }
+    const montado = await this.montarComBusca(orgId, pedido, agent, busca, opcoes);
+    if (leitura) await this.obsidian.conferirPessoaDaLeituraAtual(orgId, leitura);
+    return montado;
+  }
 
-    // As regras da casa deste agente entram SEMPRE, e primeiro: são a "regra
-    // do que é verdade", e o lugar dela é dentro do pedido.
-    //
-    // Elas NÃO passam pela neutralização — são regra, não dado, e desfigurar
-    // um rótulo dentro delas deixaria o agente sem a regra. O que elas levam é
-    // o escape da cerca: uma regra que contivesse o marcador de fechamento
-    // encerraria o bloco de dado que vem depois, e o resto da nota passaria a
-    // parecer prompt. (Que `contextoFixo` seja texto carregado pelo cliente e
-    // vire regra da casa sem validação é o item aberto de LLM04 — está na
-    // auditoria, e o conserto é validar na escrita, não aqui.)
+  private async montarComBusca(orgId: string, _pedido: string, agent: Agent, busca: BuscaDoContexto,
+    opcoes: { pedidoExterno?: { origem: string } }): Promise<ContextoMontado> {
+    const material = materialDoContexto(orgId, busca);
+    const limitesDaLeitura = busca.tipo === 'indice_interno_sem_solicitante'
+      ? ['O onboarding não foi conferido: esta execução não identifica uma pessoa autorizada a ler essas notas. A busca usou somente o índice nativo elegível.'] : [];
+    const fontes: FonteContexto[] = [], partes: string[] = [];
+    const procedencia = new ProcedenciaExterna();
+    let ausencia: AusenciaDeDado | null = { motivo: 'nada_na_base', detalhe: 'a busca autorizada não devolveu nenhum trecho' };
+    if (opcoes.pedidoExterno) procedencia.marcar(`pedido de origem externa (${opcoes.pedidoExterno.origem})`);
     if (agent.contextoFixo.length > 0) {
       const regras = agent.contextoFixo.map((c) => escaparCerca(c).texto);
       partes.push('O QUE VALE NESTA EMPRESA:\n' + regras.map((c) => `- ${c}`).join('\n'));
-      regras.forEach((c, i) =>
-        fontes.push({ tipo: 'regra', id: `regra-${i}`, titulo: c.slice(0, 80) }),
-      );
+      regras.forEach((c, i) => fontes.push({ tipo: 'regra', id: `regra-${i}`, titulo: c.slice(0, 80) }));
     }
-
-    try {
-      const busca = await this.obsidian.search(orgId, pedido, 5);
-      const acessoNegado = (busca as { acessoNegado?: string }).acessoNegado;
-      if (acessoNegado) ausencia = { motivo: 'acesso_negado', detalhe: acessoNegado };
-      const notas = acessoNegado ? [] : (busca as { items?: Array<Record<string, unknown>> }).items ?? [];
-      if (notas.length) {
-        const itens: ItemExterno[] = [];
-        const pendentes: FonteContexto[] = [];
-        /*
-         * A DECLARAÇÃO DE AUSÊNCIA ENTRA NA CONTA AQUI, e não depois: ver
-         * `RESERVA_DA_DECLARACAO`. Sem o desconto, o único bloco deste arquivo
-         * que é acrescentado fora do laço escapava do teto.
-         */
-        let orcamento =
-          ContextBuilder.MAX_CHARS - partes.join('\n').length - RESERVA_DA_DECLARACAO;
-        for (const n of notas) {
-          const titulo = String(n.title ?? n.path ?? 'nota');
-          /*
-           * `snippet` ANTES de `content`, e isto é conserto, não gosto.
-           *
-           * `ObsidianService.search` devolve `snippet` e NÃO devolve `content`
-           * (só `get()` devolve). Este laço lia `n.content`, então o corpo saía
-           * sempre vazio: o bloco `DA BASE DE CONHECIMENTO` chegava ao modelo
-           * com títulos e mais nada, e o teto de 400 caracteres por trecho
-           * nunca teve o que cortar. O bloco 02 do traço existia sem conteúdo.
-           *
-           * Consertar ABRE a superfície de injeção indireta de verdade — é por
-           * isso que o conserto vem junto da neutralização e da marca, e não
-           * antes delas.
-           */
-          const corpo = String(n.content ?? n.snippet ?? '').slice(0, ContextBuilder.TRECHO);
-          if (!corpo) continue;
-          const ref = String(n.path ?? '');
-          const citacao = n.citacao as CitacaoDeVault | undefined;
-          const conteudo = citacao ? `Citação da versão: ${JSON.stringify(citacao)}\n${corpo}` : corpo;
-          if (orcamento - conteudo.length < 0) break;
-          orcamento -= conteudo.length;
-          itens.push({ origem: `vault:${ref || titulo}`, titulo, conteudo });
-          pendentes.push({
-            tipo: 'nota',
-            id: String(n.id ?? titulo),
-            titulo,
-            ref,
-            ...(citacao ? { citacao } : {}),
-            score: typeof n.score === 'number' ? Number(n.score.toFixed(3)) : undefined,
-          });
-        }
-
-        if (itens.length) {
-          const bloco = blocoExterno(itens);
-          partes.push('DA BASE DE CONHECIMENTO:\n' + bloco.texto);
-          pendentes.forEach((f, i) => {
-            const achados = bloco.achadosPorItem[i] ?? [];
-            fontes.push(achados.length ? { ...f, neutralizado: achados } : f);
-            if (achados.length) {
-              this.log.warn(
-                `empresa ${orgId}: a nota "${f.ref || f.titulo}" trazia conteúdo escondido — ` +
-                  `${achados.join('; ')}. Entrou no contexto como DADO, neutralizada, e a ação ` +
-                  'derivada sobe um degrau na régua.',
-              );
-            }
-          });
-          /*
-           * A MARCA SOBE AQUI, e não lá em cima junto da busca: o que torna a
-           * conversa "de procedência externa" é conteúdo de terceiro ter
-           * ENTRADO no contexto, não a busca ter sido tentada. Busca que não
-           * devolve nada não eleva nível nenhum — e uma marca que subisse
-           * sempre viraria ruído, que é como um controle morre.
-           */
-          procedencia.marcar(
-            `${itens.length} trecho(s) da base de conhecimento: ` +
-              itens.map((i) => i.origem).join(', '),
-          );
-          // Entrou DADO. É a única coisa que desliga a declaração de ausência.
-          ausencia = null;
-        } else {
-          /*
-           * Achou título e não achou texto. Parece detalhe e não é: até a fatia
-           * 3.8 o laço lia `n.content`, que a busca não devolve, e TODA nota caía
-           * aqui — o bloco 02 chegava ao modelo com títulos e mais nada. Se um
-           * dia o formato do trecho mudar de novo, o sintoma volta; e agora ele
-           * tem nome no traço em vez de virar um contexto vazio silencioso.
-           */
-          ausencia = {
-            motivo: 'notas_sem_corpo',
-            detalhe:
-              `${notas.length} nota(s) casaram a busca, mas nenhuma trouxe corpo — ` +
-              'só título entrou no contexto',
-          };
-        }
-      }
-    } catch (e) {
-      // Busca indisponível não pode derrubar a sessão: o agente responde com
-      // as ferramentas e a resposta sai marcada como sem procedência.
-      //
-      // "NÃO DEU PARA OLHAR" NÃO É "NÃO EXISTE", e era assim que saía daqui: o
-      // `catch` vazio fazia a falha de infraestrutura ficar indistinguível de
-      // uma base que não tem o assunto. Quem lê a resposta merece saber a
-      // diferença, e o modelo também — ver `PRIMEIRA_LINHA.busca_indisponivel`.
-      ausencia = {
-        motivo: 'busca_indisponivel',
-        detalhe: `a busca na base falhou: ${(e as Error)?.message ?? 'erro sem mensagem'}`,
-      };
+    const itens: ItemExterno[] = [], pendentes: FonteContexto[] = [];
+    let orcamento = ContextBuilder.MAX_CHARS - partes.join('\n').length - RESERVA_DA_DECLARACAO
+      - limitesDaLeitura.join('\n').length - 80;
+    for (const n of material) {
+      const corpo = n.trecho.slice(0, ContextBuilder.TRECHO);
+      if (!corpo) continue;
+      const conteudo = n.citacao ? `Citação da versão: ${JSON.stringify(n.citacao)}\n${corpo}` : corpo;
+      if (orcamento - conteudo.length < 0) break;
+      orcamento -= conteudo.length;
+      itens.push({ origem: `vault:${n.ref || n.title}`, titulo: n.title, conteudo });
+      pendentes.push({ tipo: 'nota', id: n.id, titulo: n.title, ref: n.ref,
+        ...(n.citacao ? { citacao: n.citacao } : {}),
+        ...(n.score !== undefined ? { score: Number(n.score.toFixed(3)) } : {}) });
     }
-
-    /*
-     * A DECLARAÇÃO ENTRA POR ÚLTIMO, depois das regras da casa e no lugar dos
-     * trechos que não vieram. Ela é a única coisa neste arquivo que fala com o
-     * modelo sobre o que NÃO está aqui.
-     */
+    if (itens.length) {
+      const bloco = blocoExterno(itens);
+      partes.push('DA BASE DE CONHECIMENTO:\n' + bloco.texto);
+      pendentes.forEach((f, i) => {
+        const achados = bloco.achadosPorItem[i] ?? [];
+        fontes.push(achados.length ? { ...f, neutralizado: achados } : f);
+        if (achados.length) this.log.warn(`empresa ${orgId}: conteúdo oculto neutralizado na fonte "${f.ref || f.titulo}".`);
+      });
+      procedencia.marcar(`${itens.length} trecho(s) da base de conhecimento: ` + itens.map((i) => i.origem).join(', '));
+      ausencia = null;
+    } else if (material.length) {
+      ausencia = { motivo: 'notas_sem_corpo', detalhe: 'a leitura encontrou notas, mas nenhum trecho entrou no contexto' };
+    }
+    if (limitesDaLeitura.length) partes.push('LIMITES DESTA LEITURA:\n' + limitesDaLeitura.join('\n'));
     if (ausencia) {
-      partes.push(declaracaoDeAusencia(ausencia.motivo));
-      this.log.warn(
-        `empresa ${orgId}, agente ${agent.slug}: nenhuma fonte de dado entrou no contexto ` +
-          `(${ausencia.detalhe}). O pedido segue com a declaração de ausência — resposta que ` +
-          'afirmar número sem citar fonte é defeito, e acende sinal nas ações seguintes ' +
-          'deste agente (ver SinaisService).',
-      );
+      if (limitesDaLeitura.length) {
+        ausencia = { motivo: 'busca_indisponivel', detalhe: 'nenhum trecho nativo entrou; o alcance do onboarding não foi conferido' };
+        partes.push('SEM TRECHO NESTA LEITURA:\nNenhum trecho das notas nativas consultadas entrou no contexto. O onboarding não foi conferido.\n' + REGRA_DA_AUSENCIA);
+      } else partes.push(declaracaoDeAusencia(ausencia.motivo));
+      this.log.warn(`empresa ${orgId}, agente ${agent.slug}: ${ausencia.detalhe}.`);
     }
-
-    return { blocos: partes.join('\n\n'), fontes, procedencia, ausencia };
+    return { blocos: partes.join('\n\n'), fontes, procedencia, ausencia, limitesDaLeitura };
   }
 }

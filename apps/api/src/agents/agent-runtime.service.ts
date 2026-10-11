@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import type { IdentidadeIndiceRuntime } from '../onboarding/indice-protegido';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ActorType,
   Prisma,
@@ -486,7 +487,17 @@ export class AgentRuntime {
     inicio: number,
   ): Promise<SessionResumo> {
     // 2. O contexto que entra junto — bloco 02 do traço.
-    const montado = await this.contexto.montar(p.orgId, p.pedido, agent);
+    let leitura: IdentidadeIndiceRuntime | undefined;
+    if (p.solicitanteId) {
+      if (ctxExec.orgId !== p.orgId || ctxExec.actorType !== ActorType.ai || ctxExec.actorId !== p.solicitanteId
+        || ctxExec.agentSlug !== agent.slug || ctxExec.correlationId !== sessionId)
+        throw new ForbiddenException('Acesso insuficiente.');
+      leitura = { tipo: 'runtime_com_solicitante', orgId: p.orgId, solicitanteId: p.solicitanteId,
+        contextoExecucao: { actorType: 'ai', actorId: ctxExec.actorId,
+          agentSlug: ctxExec.agentSlug, correlationId: ctxExec.correlationId } };
+    }
+    // O solicitante vem do pedido do servidor; a identidade AI da execução não muda.
+    const montado = await this.contexto.montar(p.orgId, p.pedido, agent, leitura ? { leitura } : {});
     const { blocos, fontes } = montado;
     /*
      * A SEGUNDA PORTA DA MARCA: o construtor de contexto acende a dele quando

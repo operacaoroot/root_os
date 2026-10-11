@@ -341,12 +341,12 @@ export class OnboardingController {
    * É a PRIMEIRA RESPOSTA do produto, e ela não tem como sair sem fonte —
    * `retrato.ts` explica por que ela é construída em vez de pedida ao modelo.
    */
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, AcessoAtualGuard)
   @Post('carga/fechar')
-  @RequirePermissions('obsidian.editar')
+  @RequirePermissions('obsidian.ver', 'obsidian.editar')
   async fechar(@CurrentUser() user: JwtUser) {
     try {
-      return await this.svc.fechar(user.orgId);
+      return await this.svc.fecharHumano(user.orgId, user.sub);
     } catch (e) {
       /*
        * A SEGUNDA EXCEÇÃO QUE SUBIA COMO 500. Pedir o retrato sem nota nenhuma

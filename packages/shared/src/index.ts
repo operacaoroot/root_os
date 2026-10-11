@@ -57,3 +57,4 @@ export * from './contexto-movimento-explicito.js';
 export * from './agent-estado-humano';
 export * from './agenda-local';
 export * from './sessao-leitura-historica';
+export * from './onboarding-indice.js';

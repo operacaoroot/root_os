@@ -1,5 +1,6 @@
 import { exigirColecaoSemMovimentoPendente, MovimentoPendenteError } from '../memory/contexto-movimento-namespace';
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -9,9 +10,9 @@ import {
 } from '@nestjs/common';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { GoogleService } from '../google/google.service';
-import { ProntidaoContextoSchema, type ProntidaoContexto, type KnowledgeList, type NoteDetail, type SearchResult } from '@mktos/shared';
+import { ProntidaoContextoSchema, KnowledgeListSchema, NoteDetailSchema, SearchResultSchema, BuscaIndiceInternaSemSolicitanteSchema, type BuscaIndiceInternaSemSolicitante, type SearchHit, type ProntidaoContexto, type KnowledgeList, type NoteDetail, type SearchResult } from '@mktos/shared';
 import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,9 +23,10 @@ import {
 } from '../integrations/conectores.registry';
 import { sigiloso } from '../gateway/event-log.service';
 import { MemoriaService, resumoVazio, VaultSuspeitaError, type NotaDaVaultParaProjetar } from '../memory/memoria.service';
-import { exigirAcessoAtual, leitorDoContexto } from '../memory/acesso-memoria';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { chaveDaVault } from '../memory/procedencia';
 import { PASTA_DO_ONBOARDING } from '../onboarding/indice';
+import { identidadeHttpDoIndice, conferirIdentidadeDoIndice, pessoaDoIndice, travarIndiceEMemoriaNoTx, travarLeitorDoIndiceNoTx, lerPopulacaoDoIndiceNoTx, lerNativasNoTx, type IdentidadeIndice, type IdentidadeIndiceRuntime, type LinhaDoIndice } from '../onboarding/indice-protegido';
 import { lerNotaDaVault, resolverSubstitui, type CabecalhoDaNota, type NotaLida } from './cabecalho-da-nota';
 import { descobrirNaPasta } from './disco-da-vault';
 import { atributosConvertem, lerRepositorioDaVault, marcaDoRepositorio } from './estado-do-git';
@@ -361,31 +363,9 @@ export class ObsidianService implements OnModuleInit {
             Date.now() - comecou,
           );
         }
-        /*
-         * A PARTE POR EMPRESA. O disco é do processo; o índice é do cliente.
-         *
-         * ZERO NOTA NÃO É VERDE, e a primeira versão desta fatia dizia o
-         * contrário de si mesma aqui: escrevia que responder "a pasta abre" seria
-         * verde verdadeiro sobre a pergunta errada — o mesmo defeito do Google —
-         * e em seguida devolvia verde com zero nota indexada, mudando só a
-         * mensagem. A pergunta desta sonda é "ESTA EMPRESA consegue usar a base
-         * de conhecimento AGORA?", e com o índice vazio a resposta é não.
-         *
-         * `nao_configurado` e não `erro`: nada falhou. Falta rodar a indexação —
-         * e o botão que faz isso está na mesma linha da tela.
-         */
-        const notas = await this.prisma.knowledgeNote.count({ where: { orgId: ctx.orgId } });
-        if (notas === 0) {
-          return naoConfigurado(
-            `A vault abre (${arquivos} entrada(s) na raiz), mas NENHUMA nota está indexada para ` +
-              'esta empresa — a base de conhecimento responde vazia a qualquer busca. Rode ' +
-              '"sincronizar" nesta linha para indexar.',
-          );
-        }
         return conectado(
           Date.now() - comecou,
-          `vault legível (${arquivos} entrada(s) na raiz) · ${notas} nota(s) indexada(s) para ` +
-            'esta empresa.',
+          `Vault legível (${arquivos} entrada(s) na raiz). O acesso ao contexto e as contagens do onboarding não foram conferidos nesta sonda.`,
         );
       },
 
@@ -1273,9 +1253,8 @@ export class ObsidianService implements OnModuleInit {
   ): Promise<void> {
     try {
       if (recibo.indexacao) {
-        recibo.indexacao.espelhoDoOnboardingPreservado = await this.prisma.knowledgeNote.count({
-          where: { orgId, path: { startsWith: `${PASTA_DO_ONBOARDING}/` } },
-        });
+        // Esta volta não identifica uma pessoa para conferir o espelho protegido.
+        recibo.indexacao.espelhoDoOnboardingPreservado = null;
       }
       const resultado = resultadoDaVolta(recibo);
       const assinatura = assinaturaDoRecibo(recibo, resultado);
@@ -1432,127 +1411,153 @@ export class ObsidianService implements OnModuleInit {
   }
 
   // ---------- leitura ----------
-  private async conferirLeitorAtual(orgId: string, solicitanteId: string | null): Promise<void> {
-    const contexto = contextoAtual();
-    if (contexto?.actorType === 'user' && (!contexto.actorId || contexto.orgId !== orgId || contexto.actorId !== solicitanteId))
-      throw new ForbiddenException('Acesso insuficiente.');
-    if (solicitanteId) await exigirAcessoAtual(this.prisma, orgId, solicitanteId, ['obsidian.ver']);
+  async conferirPessoaDaLeituraAtual(orgId: string, leitura: IdentidadeIndice): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await travarIndiceEMemoriaNoTx(tx, orgId);
+      await travarLeitorDoIndiceNoTx(tx, orgId, leitura);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
-  /** O índice legado acompanha a restrição local pela chave/path, nunca pelo hash. */
-  private async caminhosNegados(orgId: string, solicitanteId: string | null): Promise<string[]> {
-    await this.conferirLeitorAtual(orgId, solicitanteId);
-    const negadas = await this.prisma.contextItem.findMany({
-      where: { orgId, acessoRestrito: true, ...(solicitanteId ? { NOT: { leitores: { has: solicitanteId } } } : {}) },
-      select: { chave: true },
+  private async comIndiceAutorizado<T>(orgId: string, leitura: IdentidadeIndice,
+    montar: (tx: Prisma.TransactionClient, populacao: LinhaDoIndice[]) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await travarIndiceEMemoriaNoTx(tx, orgId);
+      await travarLeitorDoIndiceNoTx(tx, orgId, leitura);
+      const populacao = await lerPopulacaoDoIndiceNoTx(tx, orgId, leitura);
+      const resultado = await montar(tx, populacao);
+      const final = await lerPopulacaoDoIndiceNoTx(tx, orgId, leitura);
+      if (fotografiaDoIndice(populacao) !== fotografiaDoIndice(final))
+        throw new ConflictException('O índice mudou durante a leitura. Confira novamente.');
+      await travarLeitorDoIndiceNoTx(tx, orgId, leitura);
+      return resultado;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+
+  async list(orgId: string, solicitanteId: string): Promise<KnowledgeList> {
+    const leitura = identidadeHttpDoIndice(orgId, solicitanteId);
+    return this.comIndiceAutorizado(orgId, leitura, async (_tx, populacao) => {
+      const rows = [...populacao].sort((a, b) => b.fileTime.getTime() - a.fileTime.getTime() || a.id.localeCompare(b.id));
+      return KnowledgeListSchema.parse({ escopo: { orgId, userId: solicitanteId }, items: rows.map(linhaPublicaDoIndice),
+        total: rows.length, folders: [...new Set(rows.flatMap((r) => r.folder ? [r.folder] : []))].sort(),
+        indexedNotes: rows.filter((r) => r.comVetor).length, source: fonteDoIndice() });
     });
-    await this.conferirLeitorAtual(orgId, solicitanteId);
-    return negadas.map((n) => n.chave.startsWith('vault:') ? n.chave.slice('vault:'.length) : n.chave);
   }
 
-  async list(orgId: string, solicitanteId: string | null = leitorDoContexto()): Promise<KnowledgeList> {
-    const negados = await this.caminhosNegados(orgId, solicitanteId);
-    let rows = await this.prisma.knowledgeNote.findMany({
-      where: { orgId, path: { notIn: negados } },
-      orderBy: { fileTime: 'desc' },
-      select: { id: true, path: true, folder: true, title: true, tags: true, links: true, wordCount: true, fileTime: true },
+  async get(orgId: string, id: string, solicitanteId: string): Promise<NoteDetail | null> {
+    const leitura = identidadeHttpDoIndice(orgId, solicitanteId);
+    return this.comIndiceAutorizado(orgId, leitura, async (_tx, populacao) => {
+      const r = populacao.find((n) => n.id === id);
+      return r ? NoteDetailSchema.parse({ ...linhaPublicaDoIndice(r), content: r.content,
+        escopo: { orgId, userId: solicitanteId } }) : null;
     });
-    const negadosDepois = new Set(await this.caminhosNegados(orgId, solicitanteId));
-    rows = rows.filter((r) => !negadosDepois.has(r.path));
-    const withEmb = await this.prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-      'SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE "orgId" = $1 AND embedding IS NOT NULL AND NOT (path = ANY($2::text[]))',
-      orgId, [...negadosDepois],
-    );
-    await this.conferirLeitorAtual(orgId, solicitanteId);
-    return {
-      items: rows.map((r) => ({ ...r, fileTime: r.fileTime.toISOString() })),
-      total: rows.length,
-      folders: [...new Set(rows.map((r) => r.folder).filter(Boolean) as string[])].sort(),
-      indexedNotes: Number(withEmb[0]?.n ?? 0),
-      source: { tool: 'obsidian', generatedAt: new Date().toISOString() },
-    };
   }
 
-  async get(orgId: string, id: string, solicitanteId: string | null = leitorDoContexto()): Promise<NoteDetail | null> {
-    const negados = await this.caminhosNegados(orgId, solicitanteId);
-    const r = await this.prisma.knowledgeNote.findFirst({ where: { id, orgId, path: { notIn: negados } } });
-    const negadosDepois = await this.caminhosNegados(orgId, solicitanteId);
-    if (!r || negadosDepois.includes(r.path)) return null;
-    return {
-      id: r.id, path: r.path, folder: r.folder, title: r.title, tags: r.tags, links: r.links,
-      wordCount: r.wordCount, fileTime: r.fileTime.toISOString(), content: r.content,
-    };
+  async search(orgId: string, query: string, limit = 8, solicitanteId: string): Promise<SearchResult> {
+    return this.buscarParaPessoa(orgId, query, limit, identidadeHttpDoIndice(orgId, solicitanteId));
   }
 
-  async search(orgId: string, query: string, limit = 8, solicitanteId: string | null = leitorDoContexto()): Promise<SearchResult> {
-    const negados = await this.caminhosNegados(orgId, solicitanteId);
-    const q = query.trim();
-    const take = Math.min(Math.max(limit, 1), 20);
-    let mode: 'semantic' | 'keyword' = 'keyword';
-    let rows: Array<any> = [];
+  async searchParaRuntimeComSolicitante(orgId: string, query: string, limit: number,
+    leitura: IdentidadeIndiceRuntime): Promise<BuscaIndiceRuntimeComSolicitante> {
+    const resultado = await this.buscarParaPessoa(orgId, query, limit, leitura);
+    conferirIdentidadeDoIndice(orgId, leitura);
+    return { natureza: 'indice_runtime_com_solicitante', leitura, resultado };
+  }
 
-    if (this.openaiKey && q) {
-      try {
-        const [qv] = await this.embed([q], PRAZO_DA_BUSCA_MS);
-        const vec = `[${qv.join(',')}]`;
-        const semanticas: Array<any> = await this.prisma.$queryRawUnsafe(
-          `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content,
-                  1 - (embedding <=> $1::vector) AS score
-             FROM "KnowledgeNote"
-            WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND embedding IS NOT NULL
-            ORDER BY embedding <=> $1::vector
-            LIMIT $3`,
-          vec, orgId, take, negados,
-        );
-        /*
-         * O KNN só enxerga nota COM vetor. Sem nenhuma, a resposta era vazia e
-         * marcada como semântica; agora cai para o texto logo abaixo. Com parte
-         * delas, a nota sem vetor que tem o texto pedido entra pela mescla (ver
-         * `mesclarComTextuais`). Com todas vetorizadas, a consulta de texto
-         * volta vazia e o resultado é o semântico de antes.
-         */
-        if (semanticas.length) {
-          const semVetor: Array<any> = await this.prisma.$queryRawUnsafe(
-            `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content, 0 AS score
-               FROM "KnowledgeNote"
-              WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND embedding IS NULL AND (title ILIKE $1 OR content ILIKE $1)
-              ORDER BY "fileTime" DESC
-              LIMIT $3`,
-            `%${q}%`, orgId, take, negados,
-          );
-          rows = mesclarComTextuais(semanticas, semVetor, take);
-          mode = 'semantic';
-        }
-      } catch (e) {
-        if (e instanceof ForbiddenException) throw e;
-        this.log.warn(`busca semântica falhou (${(e as Error).message}); usando keyword`);
-      }
+  private async vetorDaConsulta(query: string): Promise<string | null> {
+    if (!this.openaiKey || !query) return null;
+    // Somente a falha do embedding permite busca textual. Recusas e erros do banco seguem para o caller.
+    try {
+      const [vetor] = await this.embed([query], PRAZO_DA_BUSCA_MS);
+      return vetor?.length && vetor.every(Number.isFinite) ? `[${vetor.join(',')}]` : null;
+    } catch {
+      this.log.warn('Embedding da consulta indisponível; usando busca textual.');
+      return null;
     }
-    if (mode === 'keyword') {
-      rows = await this.prisma.$queryRawUnsafe(
-        `SELECT id, path, folder, title, tags, links, "wordCount", "fileTime", content, 0 AS score
-           FROM "KnowledgeNote"
-          WHERE "orgId" = $2 AND NOT (path = ANY($4::text[])) AND (title ILIKE $1 OR content ILIKE $1)
-          LIMIT $3`,
-        `%${q}%`, orgId, take, negados,
-      );
-    }
-
-    const negadosDepois = new Set(await this.caminhosNegados(orgId, solicitanteId));
-    rows = rows.filter((r) => !negadosDepois.has(r.path));
-    return {
-      query: q,
-      mode,
-      items: rows.map((r) => ({
-        id: r.id, path: r.path, folder: r.folder, title: r.title,
-        tags: r.tags ?? [], links: r.links ?? [], wordCount: r.wordCount,
-        fileTime: new Date(r.fileTime).toISOString(),
-        score: Math.round(Number(r.score) * 1000) / 1000,
-        snippet: snippet(r.content, q),
-      })),
-      source: { tool: 'obsidian', generatedAt: new Date().toISOString() },
-    };
   }
+
+  private async buscarParaPessoa(orgId: string, query: string, limit: number, leitura: IdentidadeIndice): Promise<SearchResult> {
+    await this.conferirPessoaDaLeituraAtual(orgId, leitura);
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    return this.comIndiceAutorizado(orgId, leitura, async (tx, populacao) => {
+      const busca = await ranquearIndiceNoTx(tx, orgId, populacao, q, take, vetor);
+      return SearchResultSchema.parse({ escopo: { orgId, userId: pessoaDoIndice(leitura) }, query: q,
+        mode: busca.mode, items: busca.items, source: fonteDoIndice() });
+    });
+  }
+
+  /** Fachada interna sem pessoa identificada; não é um envelope de leitura humana. */
+  async buscarIndiceInternoSemSolicitante(orgId: string, query: string, limit = 8): Promise<BuscaIndiceInternaSemSolicitante> {
+    conferirContextoInternoDoIndice(orgId);
+    await this.prisma.$transaction(async (tx) => {
+      await travarIndiceEMemoriaNoTx(tx, orgId);
+      const org = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+      if (org.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
+      conferirContextoInternoDoIndice(orgId);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    const q = query.trim(), take = limiteDaBusca(limit), vetor = await this.vetorDaConsulta(q);
+    return this.prisma.$transaction(async (tx) => {
+      await travarIndiceEMemoriaNoTx(tx, orgId);
+      conferirContextoInternoDoIndice(orgId);
+      const org = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Org" WHERE id=${orgId} AND "isActive" FOR SHARE`;
+      if (org.length !== 1) throw new ForbiddenException('Acesso insuficiente.');
+      // O predicado nativo exclui todo onboarding antes de ler corpo, contar ou ordenar.
+      const populacao = await lerNativasNoTx(tx, orgId, null);
+      const busca = await ranquearIndiceNoTx(tx, orgId, populacao, q, take, vetor);
+      const final = await lerNativasNoTx(tx, orgId, null);
+      if (fotografiaDoIndice(populacao) !== fotografiaDoIndice(final))
+        throw new ConflictException('O índice mudou durante a leitura. Confira novamente.');
+      conferirContextoInternoDoIndice(orgId);
+      return BuscaIndiceInternaSemSolicitanteSchema.parse({ natureza: 'indice_interno_sem_solicitante', orgId,
+        query: q, mode: busca.mode, items: busca.items, source: fonteDoIndice(),
+        alcanceOnboarding: { estado: 'nao_conferida', total: null, comVetor: null,
+          motivo: 'solicitante_nao_identificado', observadoEm: new Date().toISOString() } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
+}
+
+export interface BuscaIndiceRuntimeComSolicitante {
+  natureza: 'indice_runtime_com_solicitante'; leitura: IdentidadeIndiceRuntime; resultado: SearchResult;
+}
+function conferirContextoInternoDoIndice(orgId: string): void {
+  const c = contextoAtual();
+  if (!c || c.orgId !== orgId || c.actorType === 'user' || !c.actorType || !c.correlationId)
+    throw new ForbiddenException('Leitura interna indisponível.');
+}
+function fonteDoIndice() { return { tool: 'obsidian', generatedAt: new Date().toISOString() }; }
+function limiteDaBusca(limit: number): number { return Number.isFinite(limit) ? Math.min(20, Math.max(1, Math.floor(limit))) : 8; }
+function linhaPublicaDoIndice(r: LinhaDoIndice) {
+  return { id: r.id, path: r.path, folder: r.folder, title: r.title, tags: r.tags, links: r.links,
+    wordCount: r.wordCount, fileTime: r.fileTime.toISOString(), fonteCanonica: r.fonteCanonica };
+}
+function fotografiaDoIndice(rows: LinhaDoIndice[]): string {
+  return JSON.stringify([...rows].sort((a, b) => a.id.localeCompare(b.id)));
+}
+async function ranquearIndiceNoTx(tx: Prisma.TransactionClient, orgId: string, populacao: LinhaDoIndice[],
+  q: string, take: number, vetor: string | null): Promise<{ mode: 'semantic' | 'keyword'; items: SearchHit[] }> {
+  if (!populacao.length) return { mode: 'keyword', items: [] };
+  const ids = populacao.map((r) => r.id);
+  let mode: 'semantic' | 'keyword' = 'keyword', scores: Array<{ id: string; score: number }> = [];
+  if (vetor) {
+    const sem = await tx.$queryRaw<Array<{ id: string; score: number }>>`SELECT id,1-(embedding<=>${vetor}::vector) AS score
+      FROM "KnowledgeNote" WHERE "orgId"=${orgId} AND id IN (${Prisma.join(ids)}) AND embedding IS NOT NULL
+      ORDER BY embedding<=>${vetor}::vector,id LIMIT ${take}`;
+    if (sem.length) {
+      const texto = await tx.$queryRaw<Array<{ id: string; score: number }>>`SELECT id,0::float8 AS score FROM "KnowledgeNote"
+        WHERE "orgId"=${orgId} AND id IN (${Prisma.join(ids)}) AND embedding IS NULL
+          AND (title ILIKE ${`%${q}%`} OR content ILIKE ${`%${q}%`}) ORDER BY "fileTime" DESC,id LIMIT ${take}`;
+      scores = mesclarComTextuais(sem, texto, take); mode = 'semantic';
+    }
+  }
+  if (mode === 'keyword') scores = await tx.$queryRaw<Array<{ id: string; score: number }>>`SELECT id,0::float8 AS score
+    FROM "KnowledgeNote" WHERE "orgId"=${orgId} AND id IN (${Prisma.join(ids)})
+      AND (title ILIKE ${`%${q}%`} OR content ILIKE ${`%${q}%`}) ORDER BY "fileTime" DESC,id LIMIT ${take}`;
+  const items: SearchHit[] = [];
+  for (const s of scores) {
+    const n = populacao.find((r) => r.id === s.id);
+    if (!n || !Number.isFinite(Number(s.score))) throw new ConflictException('Resultado da busca mudou. Confira novamente.');
+    items.push({ ...linhaPublicaDoIndice(n), score: Math.round(Number(s.score) * 1000) / 1000, snippet: snippet(n.content, q) });
+  }
+  return { mode, items };
 }
 
 function snippet(content: string, q: string): string {

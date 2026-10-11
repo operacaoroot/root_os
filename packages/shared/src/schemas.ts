@@ -1,5 +1,6 @@
 import type { M05EscopoDto, M05FonteAutorizadaDto } from './fonte-autorizada.js';
 import { z } from 'zod';
+import { IndiceEscopoHumanoSchema, EspelhoOnboardingFonteSchema } from './onboarding-indice.js';
 
 // --- Auth ---
 export const LoginSchema = z.object({
@@ -409,42 +410,61 @@ export type ContentStats = z.infer<typeof ContentStatsSchema>;
 
 // --- Base de conhecimento (Obsidian) ---
 export const NoteRowSchema = z.object({
-  id: z.string(),
-  path: z.string(),
-  folder: z.string().nullable(),
-  title: z.string(),
-  tags: z.array(z.string()),
-  links: z.array(z.string()),
-  wordCount: z.number().int(),
-  fileTime: z.string(), // ISO
+  id: z.string(), path: z.string(), folder: z.string().nullable(),
+  title: z.string(), tags: z.array(z.string()), links: z.array(z.string()),
+  wordCount: z.number().int(), fileTime: z.string(),
+  fonteCanonica: EspelhoOnboardingFonteSchema.nullable(),
+}).strict();
+// Null somente em nota nativa autorizada. SQL/producer recusam onboarding sem vínculo;
+// parser não descobre identidade ou permissão a partir do path, hash ou null.
+const Detail = NoteRowSchema.extend({ content: z.string(), escopo: IndiceEscopoHumanoSchema });
+export const NoteDetailSchema = Detail.superRefine((r, c) => {
+  if (r.fonteCanonica && r.fonteCanonica.orgId !== r.escopo.orgId)
+    c.addIssue({ code: z.ZodIssueCode.custom, message: 'A fonte pertence a outra empresa.' });
+});
+export const SearchHitSchema = NoteRowSchema.extend({ score: z.number(), snippet: z.string() });
+const Lista = z.object({
+  escopo: IndiceEscopoHumanoSchema, items: z.array(NoteRowSchema),
+  total: z.number().int().nonnegative().safe(), folders: z.array(z.string()),
+  indexedNotes: z.number().int().nonnegative().safe(), source: SourceMetaSchema,
+}).strict();
+export const KnowledgeListSchema = Lista.superRefine((r, c) => {
+  if (r.indexedNotes > r.total || r.items.length > r.total)
+    c.addIssue({ code: z.ZodIssueCode.custom, message: 'Confira a população usada na contagem.' });
+  r.items.forEach((item, i) => {
+    if (item.fonteCanonica && item.fonteCanonica.orgId !== r.escopo.orgId)
+      c.addIssue({ code: z.ZodIssueCode.custom, path: ['items', i, 'fonteCanonica'], message: 'A fonte pertence a outra empresa.' });
+  });
+});
+const Busca = z.object({
+  escopo: IndiceEscopoHumanoSchema, query: z.string(),
+  mode: z.enum(['semantic', 'keyword']), items: z.array(SearchHitSchema), source: SourceMetaSchema,
+}).strict();
+export const SearchResultSchema = Busca.superRefine((r, c) => {
+  r.items.forEach((item, i) => {
+    if (item.fonteCanonica && item.fonteCanonica.orgId !== r.escopo.orgId)
+      c.addIssue({ code: z.ZodIssueCode.custom, path: ['items', i, 'fonteCanonica'], message: 'A fonte pertence a outra empresa.' });
+  });
 });
 export type NoteRow = z.infer<typeof NoteRowSchema>;
-
-export const NoteDetailSchema = NoteRowSchema.extend({ content: z.string() });
 export type NoteDetail = z.infer<typeof NoteDetailSchema>;
-
-export const KnowledgeListSchema = z.object({
-  items: z.array(NoteRowSchema),
-  total: z.number().int(),
-  folders: z.array(z.string()),
-  indexedNotes: z.number().int(),
-  source: SourceMetaSchema,
-});
 export type KnowledgeList = z.infer<typeof KnowledgeListSchema>;
-
-export const SearchHitSchema = NoteRowSchema.extend({
-  score: z.number(), // similaridade (0..1) na busca semântica; 0 no keyword
-  snippet: z.string(),
-});
 export type SearchHit = z.infer<typeof SearchHitSchema>;
-
-export const SearchResultSchema = z.object({
-  query: z.string(),
-  mode: z.enum(['semantic', 'keyword']),
-  items: z.array(SearchHitSchema),
-  source: SourceMetaSchema,
-});
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+// Não aplicar este envelope público a callers sem pessoa. Contrato interno distinto,
+// com alcanceOnboarding:nao_conferido e sem espelho, antes de adaptar efeitos/saúde.
+// Cada consumidor público confere escopo/geração atual; schema não substitui autoridade.
+
+// Fachada interna sem pessoa: nunca retorna o envelope humano.
+const HitNativoInterno = SearchHitSchema.omit({ fonteCanonica: true }).extend({ fonteCanonica: z.null() });
+export const BuscaIndiceInternaSemSolicitanteSchema = z.object({
+ natureza: z.literal('indice_interno_sem_solicitante'), orgId: z.string().uuid(),
+ query: z.string(), mode: z.enum(['semantic', 'keyword']), items: z.array(HitNativoInterno),
+ source: SourceMetaSchema,
+ alcanceOnboarding: z.object({ estado: z.literal('nao_conferida'), total: z.null(), comVetor: z.null(),
+  motivo: z.literal('solicitante_nao_identificado'), observadoEm: z.string().datetime() }).strict(),
+}).strict();
+export type BuscaIndiceInternaSemSolicitante = z.infer<typeof BuscaIndiceInternaSemSolicitanteSchema>;
 
 // --- Financeiro (FinOps: contas, lançamentos, categorias, bancos) ---
 export const FINANCE_ACCOUNT_TYPES = ['corrente', 'poupanca', 'caixa', 'cartao', 'investimento'] as const;

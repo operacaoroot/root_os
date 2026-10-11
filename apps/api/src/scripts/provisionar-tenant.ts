@@ -174,7 +174,7 @@ async function main() {
       console.log(`                   sobrescrita própria em vigor: v${r.politica.sobrescritaPropria}`);
     }
     console.log(
-      `  contexto ....... ${r.contexto.vazio ? 'vazio' : `${r.contexto.notas} nota(s) já carregada(s)`}`,
+      '  contexto ....... não conferido: leitura do tenant não identificada',
     );
     console.log(
       `  rastro ......... intenção ${r.rastro.intencao ? `#${r.rastro.intencao}` : '—'} · ` +

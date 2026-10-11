@@ -579,21 +579,32 @@ model GoalWeek {
 
 // ---------- Base de conhecimento (Obsidian → embeddings/pgvector) ----------
 model KnowledgeNote {
-  id        String                       @id @default(uuid())
+  id        String @id @default(uuid())
   orgId     String
-  org       Org                          @relation(fields: [orgId], references: [id])
-  path      String // caminho relativo à vault
+  org       Org @relation(fields: [orgId], references: [id])
+  path      String
   folder    String?
   title     String
   tags      String[]
-  content   String // markdown (sem o frontmatter)
-  links     String[] // wikilinks [[...]]
-  wordCount Int                          @default(0)
-  fileTime  DateTime // mtime do arquivo
-  indexedAt DateTime                     @default(now())
-  embedding Unsupported("vector(1536)")? // OpenAI text-embedding-3-small
+  content   String
+  links     String[]
+  wordCount Int @default(0)
+  fileTime  DateTime
+  indexedAt DateTime @default(now())
+  embedding Unsupported("vector(1536)")?
 
+  mirrorOrigin String?
+  canonicalItemId String?
+  canonicalVersionId String?
+  canonicalVersion Int?
+  canonicalKey String?
+  canonicalSourceType ContextSource?
+  canonicalSourceRef String?
+  canonicalContentHash String?
+  canonicalItem ContextItem? @relation("EspelhoOnboardingItem", fields: [canonicalItemId, orgId], references: [id, orgId], onDelete: Restrict, onUpdate: Restrict)
+  canonicalSnapshot ContextItemVersion? @relation("EspelhoOnboardingVersao", fields: [canonicalVersionId, orgId, canonicalItemId, canonicalVersion], references: [id, orgId, itemId, versao], onDelete: Restrict, onUpdate: Restrict)
   @@unique([orgId, path])
+  @@unique([orgId, canonicalItemId])
   @@index([orgId])
 }
 
@@ -3449,6 +3460,8 @@ model ContextItem {
   backAlias_item_fk ContextAlias[] @relation("Alias_item_fk")
   localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionItem")
 
+  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingItem")
+
 }
 
 /// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
@@ -3538,6 +3551,8 @@ model ContextItemVersion {
   backReceipt_new_version_fk ContextMovementReceipt[] @relation("Receipt_new_version_fk")
   backReceipt_cancel_version_fk ContextMovementReceipt[] @relation("Receipt_cancel_version_fk")
   localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSourceVersion")
+
+  espelhosOnboarding KnowledgeNote[] @relation("EspelhoOnboardingVersao")
 
 }
 
