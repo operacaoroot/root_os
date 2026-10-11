@@ -1,0 +1,20 @@
+{
+  "id": "/totem/quiosque",
+  "name": "Totem de consulta",
+  "short_name": "Totem",
+  "description": "Consulta de produtos da loja: ingredientes, tabela nutricional, lote e validade.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/totem/quiosque",
+  "scope": "/totem/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#F5F3EC",
+  "theme_color": "#28371D",
+  "icons": [
+    { "src": "/totem/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/totem/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/totem/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/totem/selo-sr-agranel-150.jpg", "sizes": "150x150", "type": "image/jpeg", "purpose": "any" }
+  ]
+}
