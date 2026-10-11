@@ -78,7 +78,7 @@ export class AgendaLocalService {
       if (typeof v === 'string') { const n = sizes.get(v); if (n === undefined) throw new ConflictException('Orçamento não conferido.'); return n; }
       if (typeof v !== 'object') return Buffer.byteLength(JSON.stringify(v), 'utf8');
       if (slot in v) return v[slot];
-      if (Array.isArray(v)) return 2 + v.reduce((a, x) => a + medir(x), 0) + Math.max(0, v.length - 1) * 2;
+      if (Array.isArray(v)) return 2 + v.reduce<number>((a, x) => a + medir(x), 0) + Math.max(0, v.length - 1) * 2;
       const entries = Object.entries(v);
       return 2 + entries.reduce((a, [k, x]) => a + medir(k) + 2 + medir(x), 0) + Math.max(0, entries.length - 1) * 2;
     };
