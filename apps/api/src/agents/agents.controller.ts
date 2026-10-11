@@ -23,6 +23,8 @@ import { AgentsService } from './agents.service';
 import { AgentRuntime, type SessionResumo } from './agent-runtime.service';
 import { SessionService } from './session.service';
 import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
+import { AgendaLocalService } from './agenda-local.service';
+import { AgentEstadoHumanoSchema, AgendaLocalListaConsultaSchema, AgendaLocalRecuperacaoConsultaSchema } from '@mktos/shared';
 
 const PedidoSchema = z.object({
   pedido: z.string().min(1).max(4000),
@@ -75,9 +77,7 @@ const CONFIGURAR_AGENTE = ['automacoes.executar', 'admin.usuarios'] as const;
 const COMANDAR_AGENTE = ['admin.usuarios'] as const;
 
 /** Pausar não pede motivo (freio tem de ser rápido); encerrar pede — e a API cobra. */
-const MudancaDeEstadoSchema = z.object({
-  motivo: z.string().trim().max(500).optional(),
-});
+const MudancaDeEstadoSchema = AgentEstadoHumanoSchema;
 
 /*
  * O "Invocar" — o pedido é MONTADO pelo servidor, não digitado.
@@ -120,6 +120,7 @@ export class AgentsController {
     private readonly runtime: AgentRuntime,
     private readonly sessoes: SessionService,
     private readonly procedimento: ProcedimentoDoAgenteService,
+    private readonly agenda: AgendaLocalService,
   ) {}
 
   @Get('agents')
@@ -180,6 +181,69 @@ export class AgentsController {
   @RequirePermissions('mcp.ver', 'obsidian.ver')
   execucaoDoProcedimento(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('id') id: string) {
     return this.procedimento.detalhe(user.orgId, user.sub, slug, id);
+  }
+
+  @Get('agents/:slug/agendas-locais/configuracao')
+  @RequirePermissions('automacoes.executar', 'admin.usuarios', 'mcp.ver', 'obsidian.ver')
+  configuracaoAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.agenda.configuracao(user.orgId, user.sub, slug);
+  }
+
+  @Get('agents/:slug/agendas-locais')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  agendasLocais(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Query() query: unknown) {
+    const consulta = AgendaLocalListaConsultaSchema.parse(query ?? {});
+    return this.procedimento.listarAgendas(user.orgId, user.sub, slug, consulta.cursorId);
+  }
+
+  @Get('agents/:slug/agendas-locais/:agendaId/pedidos/:requestId')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  pedidoDaAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('agendaId') agendaId: string,
+    @Param('requestId') requestId: string, @Query() query: unknown) {
+    return this.procedimento.operacaoLocalPorPedido(user.orgId, user.sub, slug, requestId,
+      AgendaLocalRecuperacaoConsultaSchema.parse(query), z.string().uuid().parse(agendaId));
+  }
+
+  // O tipo strict seleciona o gate atual dentro do serviço: agenda ou estado humano.
+  @Get('agents/:slug/operacoes-locais/:requestId')
+  operacaoLocal(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('requestId') requestId: string, @Query() query: unknown) {
+    return this.procedimento.operacaoLocalPorPedido(user.orgId, user.sub, slug, requestId, AgendaLocalRecuperacaoConsultaSchema.parse(query));
+  }
+
+  @Get('agents/:slug/agendas-locais/:agendaId')
+  @RequirePermissions('mcp.ver', 'obsidian.ver')
+  detalheAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('agendaId') agendaId: string) {
+    return this.procedimento.obterAgenda(user.orgId, user.sub, slug, z.string().uuid().parse(agendaId));
+  }
+
+  @Post('agents/:slug/agendas-locais')
+  @RequirePermissions('automacoes.executar', 'admin.usuarios', 'mcp.ver', 'obsidian.ver')
+  criarAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
+    return this.procedimento.criarAgenda(user.orgId, user.sub, slug, body);
+  }
+
+  @Put('agents/:slug/agendas-locais/:agendaId')
+  @RequirePermissions('automacoes.executar', 'admin.usuarios', 'mcp.ver', 'obsidian.ver')
+  editarAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('agendaId') agendaId: string, @Body() body: unknown) {
+    return this.procedimento.editarAgenda(user.orgId, user.sub, slug, z.string().uuid().parse(agendaId), body);
+  }
+
+  @Post('agents/:slug/agendas-locais/:agendaId/estado')
+  @RequirePermissions('automacoes.executar', 'admin.usuarios', 'mcp.ver', 'obsidian.ver')
+  estadoDaAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('agendaId') agendaId: string, @Body() body: unknown) {
+    return this.procedimento.definirEstadoDaAgenda(user.orgId, user.sub, slug, z.string().uuid().parse(agendaId), body);
+  }
+
+  @Post('agents/:slug/agendas-locais/:agendaId/disparar')
+  @RequirePermissions('mcp.ver', 'mcp.executar', 'admin.usuarios', 'obsidian.ver')
+  dispararAgenda(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Param('agendaId') agendaId: string, @Body() body: unknown) {
+    return this.procedimento.executarDeAgenda(user.orgId, user.sub, slug, z.string().uuid().parse(agendaId), body);
+  }
+
+  @Get('agents/:slug/estado-humano')
+  @RequirePermissions(...COMANDAR_AGENTE)
+  estadoHumano(@CurrentUser() user: JwtUser, @Param('slug') slug: string) {
+    return this.agentes.estadoHumano(user.orgId, user.sub, slug);
   }
 
   @Get('agents/:slug')
@@ -291,20 +355,20 @@ export class AgentsController {
   @Post('agents/:slug/pausar')
   @RequirePermissions(...COMANDAR_AGENTE)
   pausar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
-    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    const input = MudancaDeEstadoSchema.parse(body);
     return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.pausado, {
       userId: user.sub,
-      motivo,
+      ...input,
     });
   }
 
   @Post('agents/:slug/retomar')
   @RequirePermissions(...COMANDAR_AGENTE)
   retomar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
-    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    const input = MudancaDeEstadoSchema.parse(body);
     return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.ativo, {
       userId: user.sub,
-      motivo,
+      ...input,
     });
   }
 
@@ -323,10 +387,10 @@ export class AgentsController {
   @Post('agents/:slug/encerrar')
   @RequirePermissions(...COMANDAR_AGENTE)
   encerrar(@CurrentUser() user: JwtUser, @Param('slug') slug: string, @Body() body: unknown) {
-    const { motivo } = MudancaDeEstadoSchema.parse(body ?? {});
+    const input = MudancaDeEstadoSchema.parse(body);
     return this.agentes.definirEstado(user.orgId, slug, EstadoDeAgente.encerrado, {
       userId: user.sub,
-      motivo,
+      ...input,
     });
   }
 

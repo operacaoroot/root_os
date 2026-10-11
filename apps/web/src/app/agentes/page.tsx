@@ -11,6 +11,7 @@ import { ControleDoAgente } from './ControleDoAgente';
 import { Orcamento } from './Orcamento';
 import { CriarAgente } from './CriarAgente';
 import { ExecucaoLocal } from './ExecucaoLocal';
+import { AgendaManual } from './AgendaManual';
 import type { EstadoDeAgente, SituacaoDeAgente } from './estado';
 
 /*
@@ -395,13 +396,15 @@ export default function AgentesPage() {
               cortesia de tela: quem recusa de verdade é a API.
             */}
             {a.slug.startsWith('procedimento-') && user && <ExecucaoLocal slug={a.slug} token={token} pessoaId={user.id} podeExecutar={can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} />}
-            <ControleDoAgente
+            {a.slug.startsWith('procedimento-') && user && can('mcp.ver') && can('obsidian.ver') && <AgendaManual slug={a.slug} token={token} pessoaId={user.id} podeLer={can('mcp.ver') && can('obsidian.ver')} podeConfigurar={can('automacoes.executar') && can('admin.usuarios') && can('mcp.ver') && can('obsidian.ver')} podeExecutar={can('mcp.ver') && can('mcp.executar') && can('admin.usuarios') && can('obsidian.ver')} aoMudar={carregar} />}
+            {user && <ControleDoAgente
               agente={a}
               token={token}
+              pessoaId={user.id}
               podeComandar={can('admin.usuarios')}
               podeInvocar={!a.slug.startsWith('procedimento-') && can('mcp.executar') && can('admin.usuarios')}
               aoMudar={carregar}
-            />
+            />}
           </div>
         ))}
       </div>

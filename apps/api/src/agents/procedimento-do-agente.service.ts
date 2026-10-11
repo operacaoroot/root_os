@@ -5,6 +5,8 @@ import { ProntidaoAgentesSchema, ProcedimentoLocalPedidoSchema, ProcedimentoLoca
 import { createHash } from 'node:crypto';
 import { Prisma, RiskLevel, SessionStatus } from '@prisma/client';
 import { z } from 'zod';
+import { AgendaLocalService, type LeitoresAgendaNoTx, type OrigemAgenda, type EscopoAgenda } from './agenda-local.service';
+import { AgendaLocalCriarSchema, AgendaLocalEditarSchema, AgendaLocalEstadoSchema, AgendaLocalDispararSchema, type AgendaLocalDisparar, type AgendaLocalRecuperacaoConsulta } from '@mktos/shared';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { exigirAcessoAtual, filtroDeLeitura } from '../memory/acesso-memoria';
@@ -36,6 +38,7 @@ const tokens = z.number().int().nonnegative().nullable();
 const RegistroSchema = z.object({
   tipo: z.literal('procedimento_local'), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), requestId: z.string().uuid(),
   entradaContrato: z.literal(2).optional(), entrada: z.unknown(),
+  origemAgenda: z.object({ agendaId: z.string().uuid(), revisionId: z.string().uuid(), snapshotHash: z.string().regex(/^[a-f0-9]{64}$/), numero: z.number().int().positive().safe() }).strict().optional(),
   procedimento: z.object({ versao: z.number().int().nonnegative(), proposito: z.string(), passos: z.array(z.string()), definicaoDePronto: z.string() }).strict(),
   fonte: z.object({ itemId: z.string().uuid(), versionId: z.string().uuid(), contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     versao: z.number().int().positive(), chave: z.string(), sourceType: z.string(), sourceRef: z.string().nullable(), title: z.string() }).strict(),
@@ -67,7 +70,7 @@ function lerRegistro(payload: unknown, pessoaId: string, slug: string, requestId
 @Injectable()
 export class ProcedimentoDoAgenteService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService,
-    private readonly modelo: ModeloLocalService) {}
+    private readonly modelo: ModeloLocalService, private readonly agenda: AgendaLocalService) {}
 
   async prontidao(orgId: string, pessoaId: string): Promise<ProntidaoAgentes> {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['mcp.ver']);
@@ -243,65 +246,155 @@ export class ProcedimentoDoAgenteService {
     return { item, v };
   }
 
+  private leitoresAgendaNoTx(): LeitoresAgendaNoTx {
+    return { painelNoTx: (tx, org, actor, slug) => this.painelNoTx(tx, org, actor, slug),
+      detalheNoTx: (tx, org, actor, slug, id) => this.detalheNoTx(tx, org, actor, slug, id),
+      fonteNoTx: (tx, org, actor, input, anterior, modo) => this.fonte(tx, org, actor, input, anterior, modo) };
+  }
+  listarAgendas(orgId: string, actorId: string, slug: string, cursorId?: string) {
+    return this.agenda.listar(orgId, actorId, slug, this.leitoresAgendaNoTx(), cursorId);
+  }
+  obterAgenda(orgId: string, actorId: string, slug: string, agendaId: string) {
+    return this.agenda.obter(orgId, actorId, slug, agendaId, this.leitoresAgendaNoTx());
+  }
+  operacaoLocalPorPedido(orgId: string, actorId: string, slug: string, requestId: string, query: AgendaLocalRecuperacaoConsulta, agendaId?: string) {
+    return this.agenda.porOperacao(orgId, actorId, slug, requestId, query.tipoEsperado, agendaId, this.leitoresAgendaNoTx());
+  }
+  async criarAgenda(orgId: string, actorId: string, slug: string, entrada: unknown) {
+    const input = AgendaLocalCriarSchema.parse(entrada);
+    await this.agenda.configurar(orgId, actorId, slug, input, this.leitoresAgendaNoTx());
+    return this.operacaoLocalPorPedido(orgId, actorId, slug, input.requestId, { tipoEsperado: 'agenda_criar' });
+  }
+  async editarAgenda(orgId: string, actorId: string, slug: string, agendaId: string, entrada: unknown) {
+    const input = AgendaLocalEditarSchema.parse(entrada);
+    await this.agenda.configurar(orgId, actorId, slug, input, this.leitoresAgendaNoTx(), agendaId);
+    return this.operacaoLocalPorPedido(orgId, actorId, slug, input.requestId, { tipoEsperado: 'agenda_editar' }, agendaId);
+  }
+  async definirEstadoDaAgenda(orgId: string, actorId: string, slug: string, agendaId: string, entrada: unknown) {
+    const input = AgendaLocalEstadoSchema.parse(entrada);
+    await this.agenda.definirEstado(orgId, actorId, slug, agendaId, input, this.leitoresAgendaNoTx());
+    return this.operacaoLocalPorPedido(orgId, actorId, slug, input.requestId, { tipoEsperado: 'agenda_estado' }, agendaId);
+  }
+  async executarDeAgenda(orgId: string, actorId: string, slug: string, agendaId: string, entrada: unknown) {
+    const input = AgendaLocalDispararSchema.parse(entrada);
+    return this.executarLocal(orgId, actorId, slug, undefined, { agendaId, input });
+  }
   async executar(orgId: string, pessoaId: string, slug: string, entrada: unknown) {
-    const input = ExecutarProcedimentoSchema.parse(entrada);
-    const assinatura = fingerprint({ pessoaId, slug, input });
-    const canalRef = `${REF_PROCEDIMENTO_LOCAL}${input.requestId}`;
+    return this.executarLocal(orgId, pessoaId, slug, entrada);
+  }
+  private async conferirVinculoAgendaNoTx(tx: Prisma.TransactionClient, scope: EscopoAgenda, requestId: string, origem: OrigemAgenda, input: Pedido) {
+    const look = await this.agenda.lookupNoTx(tx, scope.orgId, requestId);
+    const op = this.agenda.conferirCausa(look, scope, requestId, 'agenda_disparar', undefined, origem.agendaId);
+    if (!op || op.revisionId !== origem.revisionId) throw new ConflictException('A causa do disparo não pôde ser conferida.');
+    const receipt = await this.agenda.recebidoNoTx(tx, op);
+    if (receipt.tipo !== 'agenda_disparar' || receipt.snapshotHash !== origem.snapshotHash || receipt.agendaVersion !== origem.numero
+      || JSON.stringify(receipt.entradaConfirmada) !== JSON.stringify(input)) throw new ConflictException('O pedido do disparo não pôde ser conferido.');
+  }
+  private async executarLocal(orgId: string, pessoaId: string, slug: string, entrada: unknown,
+    origemPedido?: { agendaId: string; input: AgendaLocalDisparar }) {
+    const direto = origemPedido ? null : ExecutarProcedimentoSchema.parse(entrada);
+    const requestId = origemPedido?.input.requestId ?? direto?.requestId;
+    if (!requestId) throw new BadRequestException('Pedido inválido.');
+    const canalRef = `${REF_PROCEDIMENTO_LOCAL}${requestId}`;
     const inicio = Date.now();
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
+    const preparo = origemPedido ? await this.agenda.preparar('agenda_disparar') : null;
     const claim = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${input.requestId}`}))`;
+      await this.agenda.travarClaimNoTx(tx, orgId, requestId);
+      const look = await this.agenda.lookupNoTx(tx, orgId, requestId);
+      if (!origemPedido && look.operation) throw new ConflictException('O pedido pertence a outra operação local.');
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
-      await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
+      const identity = await this.agenda.travarAgenteNoTx(tx, orgId, slug);
+      const scope = this.agenda.escopo(orgId, pessoaId, identity);
+      await this.agenda.travarAutoridadeHumanaNoTx(tx, orgId, pessoaId, 'EXECUTAR');
+      let revision: Awaited<ReturnType<AgendaLocalService['revisaoNoTx']>> | undefined;
+      let origem: OrigemAgenda | undefined;
+      let assinaturaAgenda: string | undefined;
+      let op = origemPedido ? this.agenda.conferirCausa(look, scope, requestId, 'agenda_disparar', undefined, origemPedido.agendaId) : null;
+      if (origemPedido) {
+        const row = op ? await tx.agentLocalAgendaRevision.findFirst({ where: { id: op.revisionId ?? '', orgId, agentId: identity.id, agendaId: origemPedido.agendaId } })
+          : await this.agenda.ultimaNoTx(tx, scope, origemPedido.agendaId);
+        if (!row) throw new ConflictException('A revisão do disparo não pôde ser conferida.');
+        revision = await this.agenda.revisaoNoTx(tx, row);
+        origem = { agendaId: revision.agendaId, revisionId: revision.revisionId, snapshotHash: revision.snapshotHash, numero: revision.numero };
+      }
+      const input = direto ?? ExecutarProcedimentoSchema.parse({ requestId, ...revision?.configuracao.pedido });
+      const assinatura = fingerprint({ pessoaId, slug, input });
+      if (origemPedido && revision) {
+        assinaturaAgenda = await this.agenda.assinaturaNoTx(tx, scope, requestId, 'agenda_disparar',
+          { expectedAgendaVersion: origemPedido.input.expectedAgendaVersion, expectedSopVersion: origemPedido.input.expectedSopVersion },
+          { agendaId: revision.agendaId, revisionId: revision.revisionId, snapshotHash: revision.snapshotHash, pedidoConfirmado: input });
+        op = this.agenda.conferirCausa(look, scope, requestId, 'agenda_disparar', assinaturaAgenda, origemPedido.agendaId);
+      }
       const existentes = await tx.session.findMany({ where: { orgId, canal: 'web', canalRef }, take: 2, include: { steps: { where: { ordem: 1 } } } });
       if (existentes.length > 1) throw new ConflictException('O pedido não pôde ser conferido.');
       const existente = existentes[0];
       if (existente) {
-        if (existente.solicitanteId !== pessoaId || !await tx.agent.findFirst({ where: { id: existente.agentId, orgId, slug }, select: { id: true } }))
+        if (existente.solicitanteId !== pessoaId || existente.agentId !== identity.id || origemPedido && (!op || op.sessionId !== existente.id))
           throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
-        const { registro } = lerRegistro(existente.steps[0]?.payload, pessoaId, slug, input.requestId);
+        const { registro } = lerRegistro(existente.steps[0]?.payload, pessoaId, slug, requestId);
         if (registro.entradaContrato !== 2 || registro.fingerprint !== assinatura) throw new ConflictException('Este pedido pertence a outra execução, conteúdo ou pessoa.');
         await this.fonte(tx, orgId, pessoaId, input, registro.fonte, 'historico');
+        if (origem && op) await this.conferirVinculoAgendaNoTx(tx, scope, requestId, origem, input);
         await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
-        return { sessionId: existente.id, repetido: true as const };
+        return { sessionId: existente.id, repetido: true as const, input, origem, scope };
+      }
+      if (op) throw new ConflictException('A sessão do disparo não pôde ser conferida.');
+      if (origemPedido && revision) {
+        await this.agenda.conferirFonteHistoricaDaAgendaNoTx(tx, scope, revision, requestId, this.leitoresAgendaNoTx());
+        await this.agenda.conferirDisparoNoTx(tx, scope, revision, origemPedido.input);
+        const cfg = revision.configuracao;
+        const reais = await this.agenda.conferirConfiguracaoNoTx(tx, scope, identity, { nome: cfg.nome, previstoPara: cfg.previstoPara,
+          responsavelId: cfg.responsavelId, modeloConfiguradoEsperado: cfg.modeloConfigurado, pedido: cfg.pedido }, this.leitoresAgendaNoTx());
+        const sopAtual = this.agenda.snapshot(scope, revision.agendaId, { nome: cfg.nome, previstoPara: cfg.previstoPara,
+          responsavelId: cfg.responsavelId, modeloConfiguradoEsperado: cfg.modeloConfigurado, pedido: cfg.pedido }, reais).procedimento;
+        if (await this.agenda.hashNoTx(tx, sopAtual) !== await this.agenda.hashNoTx(tx, cfg.procedimento)) throw new ConflictException('O procedimento consumido pela agenda mudou.');
       }
       const { agente, sop, dono } = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
-      const { item, v } = await this.fonte(tx, orgId, pessoaId, input);
+      const { item, v } = await this.fonte(tx, orgId, pessoaId, input, revision?.configuracao.fonte);
       const causa = agente.estado !== 'ativo' || !agente.ativo ? `Agente ${agente.estado}. Retome antes de criar outro pedido.`
         : !dono ? 'Responsável indisponível nesta empresa.'
-        : !agente.sop ? 'Defina o procedimento antes de iniciar.'
         : !agente.capacidades.includes('contexto.memoria.buscar') || agente.capacidades.some((c) => c !== 'contexto.memoria.buscar')
           ? 'Ferramenta não permitida neste procedimento. Nenhuma ferramenta foi executada.' : null;
-      const registro: Registro = { tipo: 'procedimento_local', entradaContrato: 2, fingerprint: assinatura, requestId: input.requestId, entrada: input,
-        modeloConfigurado: agente.modelo,
+      if (origemPedido && causa) throw new ConflictException(causa);
+      if (revision) await this.agenda.orcamentoDisparoNoTx(tx, scope, revision, input, await this.painelNoTx(tx, orgId, pessoaId, slug), agente);
+      const registro: Registro = { tipo: 'procedimento_local', entradaContrato: 2, fingerprint: assinatura, requestId, entrada: input, ...(origem ? { origemAgenda: origem } : {}), modeloConfigurado: agente.modelo,
         procedimento: { versao: sop.versao, proposito: sop.proposito, passos: sop.passos, definicaoDePronto: sop.definicaoDePronto },
         fonte: { itemId: item.id, versionId: v.id, contentHash: v.contentHash, versao: v.versao, chave: item.chave, sourceType: v.sourceType, sourceRef: v.sourceRef, title: v.title } };
       const session = await tx.session.create({ data: { orgId, agentId: agente.id, canal: 'web', canalRef,
         solicitanteId: pessoaId, solicitanteRotulo: 'Operador do procedimento local', pedido: 'Procedimento local de síntese de fonte',
-        status: causa ? SessionStatus.recusada : SessionStatus.rodando, motivo: causa,
-        encerradaEm: causa ? new Date() : null, provider: 'llama.cpp-local', modelo: agente.modelo, custoEstimado: false,
+        status: causa ? SessionStatus.recusada : SessionStatus.rodando, motivo: causa, encerradaEm: causa ? new Date() : null,
+        provider: 'llama.cpp-local', modelo: agente.modelo, custoEstimado: false,
         steps: { create: { orgId, ordem: 1, tipo: 'pedido', gatilhos: [], payload: registro as unknown as Prisma.InputJsonValue } } }, select: { id: true } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.request', entityType: 'session', entityId: session.id,
-        metadata: { requestId: input.requestId, agenteId: agente.id, semEfeitosExternos: true } }, tx);
+        metadata: { requestId, agenteId: agente.id, semEfeitosExternos: true } }, tx);
+      if (revision && preparo && assinaturaAgenda) {
+        const operation = await this.agenda.registrarDispatchNoTx(tx, scope, revision, input, session.id, assinaturaAgenda, preparo);
+        await this.agenda.recuperarNoTx(tx, scope, agente, operation, this.leitoresAgendaNoTx());
+        await this.agenda.painelNoTx(tx, scope, agente, await this.agenda.ultimaNoTx(tx, scope, revision.agendaId), this.leitoresAgendaNoTx());
+      }
       await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
-      return { sessionId: session.id, repetido: false as const, registro, modelo: agente.modelo, causa, body: v.body, nome: agente.nome };
+      return { sessionId: session.id, repetido: false as const, registro, modelo: agente.modelo, causa, body: v.body, nome: agente.nome, input, origem, scope };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    if (claim.repetido || claim.causa) return this.detalhe(orgId, pessoaId, slug, claim.sessionId);
+    const input = claim.input;
+    if (claim.repetido || claim.causa) return origemPedido
+      ? this.operacaoLocalPorPedido(orgId, pessoaId, slug, requestId, { tipoEsperado: 'agenda_disparar' }, origemPedido.agendaId)
+      : this.detalhe(orgId, pessoaId, slug, claim.sessionId);
     let saida: ResultadoLocal | undefined;
     let observado: ObservacaoLocal | undefined;
     let motivo: string | null = null;
     let status: SessionStatus = SessionStatus.respondida;
     try {
-      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro);
+      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro, claim.origem);
       const estado = await this.modelo.estado();
       if (!estado.disponivel || !claim.modelo || estado.modelo !== claim.modelo) { status = SessionStatus.recusada; throw new Error(estado.motivo ?? 'O modelo configurado não está disponível. Configure um agente com o modelo local disponível.'); }
-      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro);
+      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro, claim.origem);
       const prompt = promptSinteseLocal({ pedido: input.pedido, body: claim.body, versao: claim.registro.fonte.versao,
         procedimento: claim.registro.procedimento });
       saida = await this.modelo.resumir(claim.modelo, prompt.system, prompt.user);
       observado = { modelo: saida.modelo, tokensIn: saida.tokensIn, tokensOut: saida.tokensOut,
         ...(saida.finishReason === undefined ? {} : { finishReason: saida.finishReason }) };
-      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro);
+      await this.conferirAntesDaChamada(orgId, pessoaId, slug, input, claim.registro, claim.origem);
     } catch (e) {
       if (e instanceof FalhaSinteseLocal) observado = e.observado;
       const negado = e instanceof NotFoundException || e instanceof ConflictException || (e as { getStatus?: () => number })?.getStatus?.() === 403 || (e instanceof Error && e.message.startsWith('Agente pausado'));
@@ -311,7 +404,13 @@ export class ProcedimentoDoAgenteService {
       saida = undefined;
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${input.requestId}`}))`;
+      await this.agenda.travarClaimNoTx(tx, orgId, input.requestId);
+      if (claim.origem) await this.conferirVinculoAgendaNoTx(tx, claim.scope, input.requestId, claim.origem, input);
+      else await this.agenda.exigirPedidoDiretoNoTx(tx, orgId, input.requestId);
+      const anteriorSession = await tx.session.findFirst({ where: { id: claim.sessionId, orgId, agentId: claim.scope.agentId,
+        solicitanteId: pessoaId, canal: 'web', canalRef }, include: { steps: { where: { ordem: 1 } } } });
+      if (!anteriorSession || lerRegistro(anteriorSession.steps[0]?.payload, pessoaId, slug, input.requestId).registro.fingerprint !== fingerprint({ pessoaId, slug, input }))
+        throw new ConflictException('A observação não corresponde à execução confirmada.');
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
       // Serializa o registro com a pausa: uma pausa já confirmada vence; uma
       // pausa concorrente só confirma depois desta gravação atômica.
@@ -321,11 +420,14 @@ export class ProcedimentoDoAgenteService {
       if (saida) {
         try {
           const atual = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
+          if (claim.origem) await this.agenda.conferirAgendaParaNovoEfeitoNoTx(tx, claim.scope, claim.origem);
+          await this.agenda.travarAutoridadeHumanaNoTx(tx, orgId, pessoaId, 'EXECUTAR');
           if (!atual.dono || atual.agente.estado !== 'ativo' || !atual.agente.ativo) throw new ConflictException('Agente pausado ou responsável indisponível.');
           await this.fonte(tx, orgId, pessoaId, input, claim.registro.fonte);
           await exigirAcessoAtual(tx, orgId, pessoaId, EXECUTAR);
         } catch { saida = undefined; status = SessionStatus.recusada; motivo = 'O acesso, a fonte ou o procedimento mudou antes de registrar o resultado.'; }
       }
+      RegistroSchema.parse({ ...claim.registro, ...(saida ? { saida } : {}), ...(observado ? { observado } : {}) });
       await tx.sessionStep.update({ where: { sessionId_ordem: { sessionId: claim.sessionId, ordem: 1 } },
         data: { payload: { ...claim.registro, ...(saida ? { saida } : {}), ...(observado ? { observado } : {}) } as unknown as Prisma.InputJsonValue } });
       await tx.sessionStep.create({ data: { orgId, sessionId: claim.sessionId, ordem: 2, tipo: observado ? 'modelo' : 'erro',
@@ -337,16 +439,34 @@ export class ProcedimentoDoAgenteService {
       await tx.agent.updateMany({ where: { orgId, slug }, data: { ultimaExecucaoEm: new Date(), ultimoStatus: status, ...(observado ? { execucoes: { increment: 1 } } : {}), ...(status === SessionStatus.falhou ? { falhas: { increment: 1 } } : {}) } });
       await this.audit.log({ orgId, actorId: pessoaId, action: 'agent.procedimento.result', entityType: 'session', entityId: claim.sessionId,
         metadata: { status, semEfeitosExternos: true } }, tx);
+      if (saida) {
+        await this.detalheNoTx(tx, orgId, pessoaId, slug, claim.sessionId);
+        if (claim.origem) {
+          const look = await this.agenda.lookupNoTx(tx, orgId, input.requestId);
+          const op = this.agenda.conferirCausa(look, claim.scope, input.requestId, 'agenda_disparar', undefined, claim.origem.agendaId);
+          const a = await tx.agent.findFirst({ where: { id: claim.scope.agentId, orgId } });
+          if (!op || !a) throw new ConflictException('A causa final do disparo não pôde ser conferida.');
+          await this.agenda.recuperarNoTx(tx, claim.scope, a, op, this.leitoresAgendaNoTx());
+        }
+      }
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
-    return this.detalhe(orgId, pessoaId, slug, claim.sessionId);
+    return origemPedido ? this.operacaoLocalPorPedido(orgId, pessoaId, slug, requestId, { tipoEsperado: 'agenda_disparar' }, origemPedido.agendaId)
+      : this.detalhe(orgId, pessoaId, slug, claim.sessionId);
   }
 
-  private async conferirAntesDaChamada(orgId: string, pessoaId: string, slug: string, input: Pedido, registro: Registro) {
+  private async conferirAntesDaChamada(orgId: string, pessoaId: string, slug: string, input: Pedido, registro: Registro, origem?: OrigemAgenda) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, EXECUTAR);
     await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${input.requestId}`}))`;
+      await this.agenda.travarClaimNoTx(tx, orgId, input.requestId);
+      if (!origem) await this.agenda.exigirPedidoDiretoNoTx(tx, orgId, input.requestId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
       const { agente, dono, sop } = await this.sopDoCompromisso(tx, orgId, pessoaId, slug, input);
+      const scope = this.agenda.escopo(orgId, pessoaId, agente);
+      if (origem) {
+        await this.conferirVinculoAgendaNoTx(tx, scope, input.requestId, origem, input);
+        await this.agenda.conferirAgendaParaNovoEfeitoNoTx(tx, scope, origem);
+      }
+      await this.agenda.travarAutoridadeHumanaNoTx(tx, orgId, pessoaId, 'EXECUTAR');
       if (agente.estado !== 'ativo' || !agente.ativo || !dono) throw new ConflictException('Agente pausado ou responsável indisponível.');
       if (sop.versao !== registro.procedimento.versao || sop.proposito !== registro.procedimento.proposito
         || JSON.stringify(sop.passos) !== JSON.stringify(registro.procedimento.passos) || sop.definicaoDePronto !== registro.procedimento.definicaoDePronto)
@@ -366,7 +486,8 @@ export class ProcedimentoDoAgenteService {
     if (!z.string().uuid().safeParse(requestId).success) throw new BadRequestException('Pedido inválido.');
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`procedimento:${orgId}:${requestId}`}))`;
+      await this.agenda.travarClaimNoTx(tx, orgId, requestId);
+      await this.agenda.exigirPedidoDiretoNoTx(tx, orgId, requestId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
       await exigirAcessoAtual(tx, orgId, pessoaId, LER);
       const agente = await tx.agent.findFirst({ where: { orgId, slug }, select: { id: true, slug: true } });
@@ -393,6 +514,12 @@ export class ProcedimentoDoAgenteService {
     if (!session?.canalRef) throw new NotFoundException('Execução indisponível.');
     const requestId = session.canalRef.slice(REF_PROCEDIMENTO_LOCAL.length);
     const { registro, entradaConfirmada } = lerRegistro(session.steps[0]?.payload, pessoaId, slug, requestId);
+    if (registro.origemAgenda) {
+      if (entradaConfirmada.contrato !== 2) throw new ConflictException('A origem da execução não pôde ser conferida.');
+      const agente = await db.agent.findFirst({ where: { id: session.agentId, orgId, slug }, select: { id: true, slug: true } });
+      if (!agente) throw new NotFoundException('Execução indisponível.');
+      await this.conferirVinculoAgendaNoTx(db, this.agenda.escopo(orgId, pessoaId, agente), requestId, registro.origemAgenda, entradaConfirmada.input);
+    } else await this.agenda.exigirPedidoDiretoNoTx(db, orgId, requestId);
     const { item, v } = await this.fonte(db, orgId, pessoaId, registro.entrada, registro.fonte, 'historico');
     const painelAtual = await this.painelNoTx(db, orgId, pessoaId, slug);
     const atual = await reconferirFontesAtuais(db, orgId, pessoaId, LER, [item.id], true);
@@ -412,6 +539,18 @@ export class ProcedimentoDoAgenteService {
 
   async detalhe(orgId: string, pessoaId: string, slug: string, sessionId: string) {
     await exigirAcessoAtual(this.prisma, orgId, pessoaId, LER);
-    return this.detalheNoTx(this.prisma, orgId, pessoaId, slug, sessionId);
+    const identity = await this.prisma.session.findFirst({ where: { id: sessionId, orgId, solicitanteId: pessoaId,
+      canal: 'web', canalRef: { startsWith: REF_PROCEDIMENTO_LOCAL }, agent: { orgId, slug } }, select: { canalRef: true } });
+    if (!identity?.canalRef) throw new NotFoundException('Execução indisponível.');
+    const requestId = identity.canalRef.slice(REF_PROCEDIMENTO_LOCAL.length);
+    if (!z.string().uuid().safeParse(requestId).success) throw new ConflictException('O pedido não pôde ser conferido.');
+    return this.prisma.$transaction(async (tx) => {
+      await this.agenda.travarClaimNoTx(tx, orgId, requestId);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`memoria:${orgId}`}))`;
+      await this.agenda.travarAgenteNoTx(tx, orgId, slug, false);
+      await this.agenda.travarAutoridadeHumanaNoTx(tx, orgId, pessoaId, 'LER');
+      const result = await this.detalheNoTx(tx, orgId, pessoaId, slug, sessionId);
+      await exigirAcessoAtual(tx, orgId, pessoaId, LER); return result;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 }

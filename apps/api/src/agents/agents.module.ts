@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AgentsController } from './agents.controller';
+import { AgendaLocalService } from './agenda-local.service';
 import { AgentsService } from './agents.service';
 import { AgentRuntime } from './agent-runtime.service';
 import { SessionService } from './session.service';
@@ -35,7 +36,7 @@ import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
     WorkModule,
   ],
   controllers: [AgentsController],
-  providers: [ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
+  providers: [AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

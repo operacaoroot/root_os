@@ -221,6 +221,11 @@ model Org {
   backContextMovementCandidate_org_fk ContextMovementCandidate[] @relation("ContextMovementCandidate_org_fk")
   backContextAlias_org_fk ContextAlias[] @relation("ContextAlias_org_fk")
   backContextMovementReceipt_org_fk ContextMovementReceipt[] @relation("ContextMovementReceipt_org_fk")
+  localAgendas AgentLocalAgenda[]
+  localAgendaRevisions AgentLocalAgendaRevision[]
+  localAgendaDispatches AgentLocalAgendaDispatch[]
+  localOperations AgentLocalOperation[]
+
 }
 
 model User {
@@ -247,6 +252,12 @@ model User {
   @@unique([id, orgId])
   @@index([orgId])
   backIntent_actor_fk ContextMovementIntent[] @relation("Intent_actor_fk")
+  localAgendasCreated AgentLocalAgenda[] @relation("LocalAgendaCreator")
+  localAgendaRevisionsAuthored AgentLocalAgendaRevision[] @relation("LocalRevisionActor")
+  localAgendaRevisionsResponsible AgentLocalAgendaRevision[] @relation("LocalRevisionResponsible")
+  localAgendaDispatchesAuthored AgentLocalAgendaDispatch[] @relation("LocalDispatchActor")
+  localOperationsAuthored AgentLocalOperation[] @relation("LocalOperationActor")
+
 }
 
 model Role {
@@ -2735,6 +2746,12 @@ model Agent {
   @@unique([orgId, slug])
   @@index([orgId, estado])
   @@index([ativo, cron])
+  localAgendas AgentLocalAgenda[] @relation("LocalAgendaAgent")
+  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionAgent")
+  localAgendaDispatches AgentLocalAgendaDispatch[] @relation("LocalDispatchAgent")
+  localOperations AgentLocalOperation[] @relation("LocalOperationAgent")
+  @@unique([id,orgId], map: "Agent_id_orgId_key")
+
 }
 
 /// RF-N-02: formato fixo. A ESCALAÇÃO e as regras da casa NÃO moram aqui —
@@ -2756,6 +2773,9 @@ model Sop {
   atualizadoPor String?
   atualizadoEm  DateTime @updatedAt
   criadoEm      DateTime @default(now())
+  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSop")
+  @@unique([id,orgId,agentId], map: "Sop_id_orgId_agentId_key")
+
 }
 
 enum SessionCanal {
@@ -2835,6 +2855,10 @@ model Session {
   /// acima são por `criadaEm`; este filtro é por `semProcedencia` +
   /// `encerradaEm`, e sem ele a consulta varre a tabela de sessões inteira.
   @@index([orgId, semProcedencia, encerradaEm])
+  localAgendaDispatches AgentLocalAgendaDispatch[] @relation("LocalDispatchSession")
+  localOperations AgentLocalOperation[] @relation("LocalOperationSession")
+  @@unique([id,orgId,agentId], map: "Session_id_orgId_agentId_key")
+
 }
 
 enum SessionStepTipo {
@@ -3423,6 +3447,8 @@ model ContextItem {
   backIntent_item_fk ContextMovementIntent[] @relation("Intent_item_fk")
   backClaim_item_fk ContextKeyClaim[] @relation("Claim_item_fk")
   backAlias_item_fk ContextAlias[] @relation("Alias_item_fk")
+  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionItem")
+
 }
 
 /// UMA LINHA POR MUDANÇA — a projeção do evento `memoria.item.*`.
@@ -3511,6 +3537,8 @@ model ContextItemVersion {
   backIntent_selected_version_fk ContextMovementIntent[] @relation("Intent_selected_version_fk")
   backReceipt_new_version_fk ContextMovementReceipt[] @relation("Receipt_new_version_fk")
   backReceipt_cancel_version_fk ContextMovementReceipt[] @relation("Receipt_cancel_version_fk")
+  localAgendaRevisions AgentLocalAgendaRevision[] @relation("LocalRevisionSourceVersion")
+
 }
 
 // ===========================================================================
@@ -4869,4 +4897,131 @@ model ContextMovementReceipt {
   linkReceipt_cancel_version_fk ContextItemVersion? @relation("Receipt_cancel_version_fk", fields: [cancelVersionId, orgId, itemId, cancelVersionNo], references: [id, orgId, itemId, versao], onDelete: NoAction, onUpdate: NoAction)
   linkReceipt_alias_fk ContextAlias? @relation("Receipt_alias_fk", fields: [aliasId, orgId], references: [id, orgId], onDelete: NoAction, onUpdate: NoAction)
   backIntent_terminal_receipt_fk ContextMovementIntent[] @relation("Intent_terminal_receipt_fk")
+}
+
+// Agenda manual: CHECKs, triggers append-only e FKs DEFERRABLE ficam na migration SQL.
+
+model AgentLocalAgenda {
+  id String @id @default(uuid())
+  orgId String
+  agentId String
+  criadaPorId String
+  criacaoRequestId String
+  criacaoFingerprint String
+  criacaoTipo String @default("agenda_criar")
+  criadaEm DateTime @default(now()) @db.Timestamp(3)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_org_fk")
+  agent Agent @relation("LocalAgendaAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_agent_tenant_fk")
+  criadaPor User @relation("LocalAgendaCreator", fields: [criadaPorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_actor_tenant_fk")
+  creationOperation AgentLocalOperation @relation("AgendaCreationCause", fields: [orgId,criacaoRequestId,criadaPorId,agentId,criacaoTipo,criacaoFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Agenda_creation_cause_fk")
+  revisions AgentLocalAgendaRevision[] @relation("RevisionAgenda")
+  dispatches AgentLocalAgendaDispatch[] @relation("DispatchAgenda")
+  operations AgentLocalOperation[] @relation("OperationAgenda")
+  @@unique([id,orgId], map: "Agenda_id_org_unique")
+  @@unique([id,orgId,agentId], map: "Agenda_id_org_agent_unique")
+  @@unique([orgId,criacaoRequestId], map: "Agenda_creation_request_unique")
+  @@index([orgId,agentId,criadaEm,id], map: "Agenda_org_agent_created_idx")
+}
+
+model AgentLocalAgendaRevision {
+  id String @id @default(uuid())
+  orgId String
+  agendaId String
+  agentId String
+  numero Int
+  estado String
+  tipo String
+  nome String
+  previstoPara DateTime? @db.Timestamp(3)
+  pedido String
+  itemId String
+  versionId String
+  sourceVersionNumber Int
+  sourceHash String
+  expectedItemVersion Int
+  sopId String
+  sopVersion Int
+  responsavelId String
+  modeloConfigurado String?
+  configuracaoSnapshot Json
+  snapshotHash String
+  motivo String?
+  actorId String
+  requestId String
+  inputFingerprint String
+  criadaEm DateTime @default(now()) @db.Timestamp(3)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Revision_org_fk")
+  agent Agent @relation("LocalRevisionAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agent_tenant_fk")
+  actor User @relation("LocalRevisionActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_actor_tenant_fk")
+  responsavel User @relation("LocalRevisionResponsible", fields: [responsavelId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_responsible_tenant_fk")
+  agenda AgentLocalAgenda @relation("RevisionAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_agenda_agent_fk")
+  item ContextItem @relation("LocalRevisionItem", fields: [itemId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_item_tenant_fk")
+  version ContextItemVersion @relation("LocalRevisionSourceVersion", fields: [versionId,orgId,itemId,sourceVersionNumber], references: [id,orgId,itemId,versao], onDelete: Restrict, onUpdate: Restrict, map: "Revision_version_full_fk")
+  sop Sop @relation("LocalRevisionSop", fields: [sopId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Revision_sop_agent_fk")
+  operation AgentLocalOperation @relation("RevisionCause", fields: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Revision_operation_cause_fk")
+  dispatches AgentLocalAgendaDispatch[] @relation("DispatchRevision")
+  operations AgentLocalOperation[] @relation("OperationRevision")
+  @@unique([id,orgId], map: "Revision_id_org_unique")
+  @@unique([orgId,agendaId,numero], map: "Revision_agenda_number_unique")
+  @@unique([orgId,requestId], map: "Revision_request_unique")
+  @@unique([id,orgId,agendaId,agentId], map: "Revision_full_identity_unique")
+}
+
+model AgentLocalAgendaDispatch {
+  id String @id @default(uuid())
+  orgId String
+  agendaId String
+  agentId String
+  revisionId String
+  actorId String
+  requestId String
+  inputFingerprint String
+  tipo String @default("agenda_disparar")
+  sessionId String
+  criadaEm DateTime @default(now()) @db.Timestamp(3)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_org_fk")
+  agent Agent @relation("LocalDispatchAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agent_tenant_fk")
+  actor User @relation("LocalDispatchActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_actor_tenant_fk")
+  agenda AgentLocalAgenda @relation("DispatchAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_agenda_agent_fk")
+  revision AgentLocalAgendaRevision @relation("DispatchRevision", fields: [revisionId,orgId,agendaId,agentId], references: [id,orgId,agendaId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_revision_full_fk")
+  session Session @relation("LocalDispatchSession", fields: [sessionId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_session_agent_fk")
+  operation AgentLocalOperation @relation("DispatchCause", fields: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], references: [orgId,requestId,actorId,agentId,tipo,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Dispatch_operation_cause_fk")
+  operations AgentLocalOperation[] @relation("OperationDispatch")
+  @@unique([id,orgId], map: "Dispatch_id_org_unique")
+  @@unique([orgId,requestId], map: "Dispatch_request_unique")
+  @@unique([orgId,sessionId], map: "Dispatch_session_unique")
+  @@unique([id,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], map: "Dispatch_operation_identity_unique")
+  @@index([orgId,agendaId,criadaEm], map: "Dispatch_org_agenda_idx")
+}
+
+model AgentLocalOperation {
+  id String @id @default(uuid())
+  orgId String
+  actorId String
+  agentId String
+  requestId String
+  tipo String
+  inputFingerprint String
+  agendaId String?
+  revisionId String?
+  sessionId String?
+  dispatchId String?
+  receipt Json
+  receiptHash String
+  auditIds String[]
+  eventSnapshot Json
+  criadaEm DateTime @default(now()) @db.Timestamp(3)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "Operation_org_fk")
+  actor User @relation("LocalOperationActor", fields: [actorId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_actor_tenant_fk")
+  agent Agent @relation("LocalOperationAgent", fields: [agentId,orgId], references: [id,orgId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agent_tenant_fk")
+  agenda AgentLocalAgenda? @relation("OperationAgenda", fields: [agendaId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_agenda_agent_fk")
+  revision AgentLocalAgendaRevision? @relation("OperationRevision", fields: [revisionId,orgId,agendaId,agentId], references: [id,orgId,agendaId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_revision_full_fk")
+  session Session? @relation("LocalOperationSession", fields: [sessionId,orgId,agentId], references: [id,orgId,agentId], onDelete: Restrict, onUpdate: Restrict, map: "Operation_session_agent_fk")
+  dispatch AgentLocalAgendaDispatch? @relation("OperationDispatch", fields: [dispatchId,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], references: [id,orgId,agendaId,agentId,revisionId,sessionId,requestId,actorId,inputFingerprint], onDelete: Restrict, onUpdate: Restrict, map: "Operation_dispatch_full_fk")
+  creationHeaders AgentLocalAgenda[] @relation("AgendaCreationCause")
+  writtenRevisions AgentLocalAgendaRevision[] @relation("RevisionCause")
+  claimedDispatches AgentLocalAgendaDispatch[] @relation("DispatchCause")
+  @@unique([id,orgId], map: "Operation_id_org_unique")
+  @@unique([orgId,requestId], map: "Operation_request_global_unique")
+  @@unique([orgId,requestId,actorId,agentId,tipo,inputFingerprint], map: "Operation_cause_unique")
 }
