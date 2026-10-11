@@ -401,6 +401,10 @@ export default function ContextoPage() {
 
   return (
     <div className="space-y-4">
+      <div className="max-w-3xl">
+        <h2 className="text-xl font-semibold text-text">O contexto da empresa</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">Explore uma área do mapa ou busque no diretório. Abra um registro para consultar sua fonte, versão e vínculos com o trabalho. O livro da marca e seu criador ficam na aba Marca e brandbook.</p>
+      </div>
       {fonteDoEndereco && <aside aria-label="Fonte usada na tarefa" className="space-y-3 rounded-root border border-border bg-surface p-4">
         <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">Fonte usada na tarefa</h2><button type="button" className="text-sm text-brand underline" onClick={limparFonteDoEndereco}>Fechar fonte usada</button></div>
         <NotaAberta notaId={fonteDoEndereco.notaId} versaoInicial={fonteDoEndereco.versionId} onIndisponivel={fonteIndisponivel} />
@@ -421,7 +425,7 @@ export default function ContextoPage() {
           </div>
           {can('obsidian.editar') && <button type="button" onClick={relerAVault} disabled={relendo}
             className="inline-flex min-h-11 items-center gap-2 rounded-root border border-border px-3 text-xs text-muted hover:bg-surface-2 hover:text-text disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
-            <RefreshCw size={14} className={relendo ? 'animate-spin' : ''} /> Reler a vault
+            <RefreshCw size={14} className={relendo ? 'animate-spin' : ''} /> Atualizar conhecimento
           </button>}
         </header>
         {recado && <p className="border-b border-border px-4 py-2 text-xs text-muted" role="status">{recado}</p>}
@@ -482,7 +486,10 @@ export default function ContextoPage() {
         </div>
       </section>
 
-      <ProntidaoLocal tipo="contexto" />
+      <details className="rounded-sm border border-border bg-surface">
+        <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Fontes e disponibilidade do conhecimento</summary>
+        <div className="border-t border-border p-3"><ProntidaoLocal tipo="contexto" /></div>
+      </details>
 
       {estado !== 'carregando' && (memoriaVazia || estado === 'vazia' || estado === 'desconhecida') && <details className="rounded-sm border border-border bg-surface">
         <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">

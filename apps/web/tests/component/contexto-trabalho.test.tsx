@@ -8,7 +8,7 @@ import { FontesDaTarefa } from '@/components/trabalho/FontesDaTarefa';
 const get = vi.fn(); const post = vi.fn();
 let token = 'qa-contexto-token';
 let permissions = ['obsidian.ver', 'tarefas.ver', 'tarefas.editar'];
-vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => Promise.resolve(get(...a)).then((r) => dtosPara(a[0] as string, r)), apiPost: (...a: unknown[]) => Promise.resolve(post(...a)).then((r) => ({ ...r, escopo: escopoAtual(), fonte: fonteCompleta(r.fonte ?? fonte) })) }));
+vi.mock('@/lib/api', async () => ({ ...await vi.importActual<typeof import('@/lib/api')>('@/lib/api'), apiGet: (...a: unknown[]) => Promise.resolve(get(...a)).then((r) => dtosPara(a[0] as string, r)), apiPost: (...a: unknown[]) => Promise.resolve(post(...a)).then((r) => ({ ...r, escopo: escopoAtual(), fonte: fonteCompleta(r.fonte ?? fonte) })) }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token, ready: true, user: { id: token === 'qa-contexto-token' ? 'qa-eu' : 'qa-outro', name: 'Pessoa QA' }, can: (p: string) => permissions.includes(p) }) }));
 
 const itemId = '11111111-1111-4111-8111-111111111111';
@@ -20,7 +20,7 @@ const data = '2026-10-07T19:00:00.000Z';
 const nota = { id: itemId, chave: 'qa:fonte', title: 'Fonte QA atual', kind: 'nota', body: 'Corpo atual v2 QA', sourceType: 'operador', sourceRef: 'ensaio QA', procedencia: 'operador:ensaio QA', contentHash: 'b'.repeat(64), versao: 2, tags: [], validFrom: null, validUntil: null, confidence: 1, temVetor: false, arquivadoEm: null, criadoEm: data, atualizadoEm: data };
 const versoes = [
   { id: v2id, title: nota.title, body: nota.body, kind: 'nota', versao: 2, contentHash: nota.contentHash, procedencia: nota.procedencia, sourceType: 'operador', sourceRef: 'ensaio QA', mudanca: 'alteracao', criadoEm: data, autorTipo: 'user', motivo: 'Atualização QA', eventoSeq: '2' },
-  { id: v1id, title: 'Fonte QA anterior', body: 'Corpo consumido v1 QA <script>perigo()</script>', kind: 'nota', versao: 1, contentHash: 'a'.repeat(64), procedencia: 'operador:origem anterior QA', sourceType: 'operador', sourceRef: 'origem anterior QA', mudanca: 'criacao', criadoEm: data, autorTipo: 'user', motivo: 'Criação QA', eventoSeq: '1' },
+  { id: v1id, title: 'Fonte QA anterior', body: 'Corpo consumido v1 QA <script>perigo()</script>', kind: 'nota', versao: 1, contentHash: 'a'.repeat(64), procedencia: 'operador:origem anterior QA', sourceType: 'operador', sourceRef: 'ensaio QA', mudanca: 'criacao', criadoEm: data, autorTipo: 'user', motivo: 'Criação QA', eventoSeq: '1' },
 ];
 const estrutura = { folders: [], listasSoltas: [{ id: listId, name: 'Lista destino QA' }], pessoas: [{ id: 'qa-eu', name: 'Pessoa QA', email: 'eu@qa.local', isActive: true }, { id: 'qa-homonimo', name: 'Pessoa QA', email: 'outra@qa.local', isActive: true }, { id: 'qa-inativo', name: 'Inativa QA', email: 'inativa@qa.local', isActive: false }] };
 const fonte = { id: 'qa-vinculo', itemId, versionId: v1id, title: 'Fonte QA anterior', versao: 1, procedencia: 'operador:origem anterior QA', utilizadaEm: data, versaoAtual: 2, arquivada: false };
@@ -36,6 +36,8 @@ function dtosPara(path: string, r: any) {
   return r;
 }
 function servir(path: string) {
+  // Estes casos exercitam tarefa/fonte; a consulta independente de catálogo fica pendente.
+  if (path.startsWith('/knowledge/colecao/')) return new Promise(() => {});
   if (path.includes('/tarefas/pedidos/')) return Promise.resolve({ taskId, listId, replayed: true, fonte });
   if (path === `/memoria/${itemId}`) return Promise.resolve(nota);
   if (path === `/memoria/${itemId}/versoes`) return Promise.resolve(versoes);
@@ -82,14 +84,14 @@ describe('fonte versionada usada em Trabalho', () => {
     render(<NotaAberta notaId={itemId} />); await preencher();
     const form = screen.getByRole('form', { name: 'Criar tarefa com fonte' });
     fireEvent.submit(form); fireEvent.submit(form);
-    expect(post).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     await act(async () => resolver({ taskId, listId, replayed: false }));
   });
   it('reusa o ID após resposta perdida consultando tarefa confirmada sem segundo POST', async () => {
     post.mockRejectedValueOnce(new Error('Resposta perdida QA'));
     const tela = render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
     await screen.findByRole('alert'); const id = post.mock.calls[0][1].requestId; tela.unmount(); render(<NotaAberta notaId={itemId} />);
-    await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(get).toHaveBeenCalledWith(`/memoria/${itemId}/tarefas/pedidos/${id}`, token); expect(post).toHaveBeenCalledTimes(1); expect(screen.getByRole('status')).toHaveTextContent('já estava criada');
+    await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(get).toHaveBeenCalledWith(`/memoria/${itemId}/tarefas/pedidos/${id}`, token); expect(post).toHaveBeenCalledTimes(1); expect(screen.getByText(/A tarefa deste pedido já estava criada/)).toBeInTheDocument();
   });
   it('409 conserva intenção em memória e recarregar não libera nova escrita incerta', async () => {
     post.mockRejectedValue(Object.assign(new Error('Mudou QA'), { status: 409 }));
@@ -102,7 +104,7 @@ describe('fonte versionada usada em Trabalho', () => {
     post.mockRejectedValue(Object.assign(new Error('Recusa QA'), { status }));
     render(<NotaAberta notaId={itemId} />); await preencher();
     fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Fonte não disponível');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Fonte não disponível'));
     expect(screen.queryByText(versoes[1].body)).not.toBeInTheDocument();
     expect(screen.queryByText(nota.title)).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Histórico da fonte' })).not.toBeInTheDocument();
@@ -149,7 +151,7 @@ describe('fonte versionada usada em Trabalho', () => {
     const tela = render(<NotaAberta notaId={itemId} />); await preencher(); fireEvent.click(screen.getByRole('button', { name: 'Criar tarefa' })); await screen.findByRole('alert'); const original = { ...post.mock.calls[0][1] };
     expect(screen.getByLabelText('Título da nova tarefa')).toBeDisabled(); expect(screen.getByLabelText('Lista de destino')).toBeDisabled(); tela.unmount();
     get.mockImplementation((path: string) => path === `/memoria/${itemId}` ? Promise.resolve({ ...nota, versao: 3 }) : path === `/memoria/${itemId}/versoes` ? Promise.resolve([{ ...versoes[0], id: '66666666-6666-4666-8666-666666666666', versao: 3 }, ...versoes]) : servir(path));
-    render(<NotaAberta notaId={itemId} />); await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(post).toHaveBeenCalledTimes(1); expect(original.expectedItemVersion).toBe(2); expect(screen.getByRole('status')).toHaveTextContent('já estava criada');
+    render(<NotaAberta notaId={itemId} />); await screen.findByRole('link', { name: 'Abrir tarefa criada' }); expect(post).toHaveBeenCalledTimes(1); expect(original.expectedItemVersion).toBe(2); expect(screen.getByText(/A tarefa deste pedido já estava criada/)).toBeInTheDocument();
   });
   it('recusa notifica o mapa para remover título e metadados já carregados', async () => {
     const indisponivel = vi.fn();

@@ -193,7 +193,7 @@ function nota(over: Record<string, unknown> = {}) {
     validUntil: null,
     supersedesId: null,
     confidence: 1,
-    contentHash: 'abc123',
+    contentHash: 'a'.repeat(64),
     versao: 2,
     temVetor: true,
     arquivadoEm: null,
@@ -328,7 +328,7 @@ function servir(over: Record<string, unknown> = {}) {
     '/organograma': organograma(),
     ...over,
   };
-  apiGet.mockImplementation((caminho: string) => {
+  const responder = (caminho: string) => {
     if (caminho in tabela) {
       const v = tabela[caminho];
       return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
@@ -347,7 +347,7 @@ function servir(over: Record<string, unknown> = {}) {
           sourceType: 'operador',
           sourceRef: 'reunião de 10/09',
           procedencia: 'operador:reunião de 10/09',
-          contentHash: 'abc123',
+          contentHash: 'a'.repeat(64),
           motivo: 'o dono subiu o teto para 10%',
           autorTipo: 'usuario',
           autorId: 'u1',
@@ -360,6 +360,30 @@ function servir(over: Record<string, unknown> = {}) {
     }
     if (caminho.startsWith('/memoria/')) return Promise.resolve(nota({ body: 'Corpo vindo do registro aberto.' }));
     return Promise.reject(new Error(`rota não prevista no teste: ${caminho}`));
+  };
+  // O detalhe atual exige pessoa, empresa, versão e retrato autorizado.
+  apiGet.mockImplementation(async (caminho: string) => {
+    const r = await responder(caminho);
+    const autorizado = (v: any, historica = false) => {
+      const base = nota();
+      const d = { ...v, body: v.body ?? 'Corpo vindo do registro aberto.' };
+      const versionId = historica ? d.id : 'v2';
+      const retratoFonte = {
+        itemId: base.id, chave: base.chave, colecao: 'manual_local',
+        identidadeCanonica: { documentId: base.id, origemDaIdentidade: 'item_existente' },
+        versao: { versionId, numero: d.versao, contentHash: d.contentHash },
+        title: d.title, body: d.body, versaoAtual: 2, arquivada: false,
+        registradaEm: AGORA, atualizadaNaMemoriaEm: AGORA,
+        origem: { tipo: d.sourceType, referencia: d.sourceRef },
+        estado: { coleta: 'nao_verificada', indexacao: 'nao_verificada', projecao: 'nao_verificada', ultimoReciboId: null },
+        acesso: { modelo: 'local_por_pessoa', verificadoEm: AGORA, novoUsoPermitido: true },
+        citacao: { chave: base.chave, itemId: base.id, versao: d.versao, versionId, contentHash: d.contentHash },
+      };
+      return { ...d, escopo: { orgId: 'org-qa', userId: 'u1' }, retratoFonte };
+    };
+    if (caminho === '/memoria/n1') return autorizado(r);
+    if (caminho === '/memoria/n1/versoes') return (r as any[]).map((v) => autorizado(v, true));
+    return r;
   });
 }
 
@@ -430,7 +454,7 @@ describe('o clique do mouse no mapa', () => {
 
     soltarEClicar(ponto, 60);
 
-    expect(svg.firstElementChild?.getAttribute('transform')).toContain('translate(50 0)');
+    expect(svg.querySelector('g[transform]')?.getAttribute('transform')).toContain('translate(50 0)');
     expect(screen.queryByRole('complementary', { name: 'Registro selecionado' })).not.toBeInTheDocument();
     // E solta ao terminar: captura esquecida prende o ponteiro da página.
     expect(captura.elemento).toBeNull();
@@ -513,8 +537,9 @@ describe('a tela do mapa', () => {
 
     expect(await screen.findByText(/Este mapa ainda não tem o que desenhar/)).toBeInTheDocument();
     expect(screen.getByText(/0 nota\(s\) na memória/)).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Mapa do contexto' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('complementary', { name: 'Legenda do mapa' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Mapa do contexto' })).toBeInTheDocument();
+    // Áreas vazias orientam a primeira carga; não inventam registros de memória.
+    expect(within(screen.getByRole('group', { name: 'Mapa do contexto' })).queryByRole('button', { name: /Desconto só com aprovação/ })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /reler a vault agora/ }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith('/knowledge/reindex', {}, 'tok'));
@@ -689,7 +714,7 @@ describe('a busca', () => {
       apiGet.mock.calls.filter((c) => String(c[0]).startsWith('/memoria/buscar')).length;
     await waitFor(() => expect(buscas()).toBe(1));
 
-    await userEvent.click(screen.getByRole('button', { name: /reler a vault/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Atualizar conhecimento/ }));
     await waitFor(() => expect(apiPost).toHaveBeenCalled());
     // Tempo de sobra para um redisparo com espera de 300ms aparecer.
     await new Promise((r) => setTimeout(r, 500));
@@ -1049,7 +1074,7 @@ describe('áreas explícitas e recorte único', () => {
       expect(apiPost).toHaveBeenCalledWith('/memoria', expect.anything(), 'tok');
     } else {
       const botao = origem === 'barra'
-        ? await screen.findByRole('button', { name: /^reler a vault$/ })
+        ? await screen.findByRole('button', { name: /^Atualizar conhecimento$/ })
         : await screen.findByRole('button', { name: /reler a vault agora/ });
       await userEvent.click(botao);
       expect(apiPost).toHaveBeenCalledWith('/knowledge/reindex', {}, 'tok');

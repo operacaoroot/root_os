@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { NAV, SECOES, navEmArvore, type NavItem, type NoDeNav } from '@mktos/shared';
+import { modulosDeNavegacao, destinoDaRota, areaDoDestino } from './navegacao-modulos';
 import * as Icons from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useEhPlataforma } from '@/lib/plataforma';
@@ -16,13 +16,8 @@ export type TemaOs = 'dark' | 'light' | 'mono';
 
 export const CHAVE_TEMA = 'root-os:tema';
 
-/** As seções que a pessoa fechou. Preferência de desenho, por navegador. */
+// Mantida para não quebrar importações; o menu por áreas não usa o estado antigo.
 export const CHAVE_MENU = 'root-os:menu-fechado';
-
-const CHAVES_DE_SECAO = new Set<string>(SECOES.map((s) => s.key));
-
-/** Sem preferência guardada, só as seções de apoio começam fechadas. */
-const FECHADAS_POR_PADRAO = SECOES.filter((s) => s.tipo === 'apoio').map((s) => s.key);
 
 const TEMAS: { id: TemaOs; rotulo: string }[] = [
   { id: 'dark', rotulo: 'escuro' },
@@ -40,101 +35,12 @@ export function lerTema(): TemaOs {
   return 'dark';
 }
 
-function lerFechadas(): Set<string> {
-  try {
-    const v = localStorage.getItem(CHAVE_MENU);
-    if (v) {
-      const lista = JSON.parse(v);
-      // Chave que não é mais seção (menu antigo) é descartada: sem isso ela
-      // ficaria no localStorage para sempre, reescrita a cada clique.
-      if (Array.isArray(lista)) return new Set(lista.filter((x) => CHAVES_DE_SECAO.has(x)));
-    }
-  } catch {
-    /* localStorage bloqueado ou JSON estragado: começa com tudo aberto */
-  }
-  return new Set(FECHADAS_POR_PADRAO);
-}
-
-/*
- * Telas da ROOT, fora do NAV: o NAV é filtrado por permissão, e um item dele
- * apareceria no menu de toda empresa cliente. Estas só entram no menu quando a
- * API confirma que a sessão é da plataforma (`useEhPlataforma`); a rota também
- * recusa qualquer outra sessão com 403. `secao` e `permission` só cumprem o tipo:
- * o grupo da ROOT é montado aqui, não pelo `navEmArvore`.
- */
-const ITENS_DA_ROOT: NavItem[] = [
-  { key: 'propostas', label: 'Propostas', href: '/propostas', icon: 'Handshake', permission: 'dashboard.ver', secao: 'comercial' },
-];
-
-function ehAtivo(pathname: string, href: string): boolean {
-  return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
-}
-
-/** Filho recua visualmente; permissão, módulo e destino continuam individuais. */
-function ItemDoMenu({
-  n,
-  ativo,
-  filho,
-  selo,
-  aoNavegar,
-}: {
-  n: NavItem;
-  ativo: boolean;
-  filho?: boolean;
-  /**
-   * O contador da CAIXA (fatia A7). Genérico de propósito — o item não sabe que
-   * é a caixa, sabe que tem um número e uma frase que o explica. `texto` nulo
-   * não desenha nada, e nulo inclui o "ainda não sei" e o zero: zero é vitória,
-   * e vitória não precisa de selo (a tela diz "nada esperando por você").
-   */
-  selo?: { texto: string | null; titulo: string };
-  aoNavegar?: () => void;
-}) {
-  const Icon = (Icons[n.icon as IconName] ?? Icons.Circle) as React.ElementType;
-  return (
-    <Link
-      href={n.href}
-      title={n.label}
-      aria-current={ativo ? 'page' : undefined}
-      onClick={aoNavegar}
-      className={[
-        'group relative flex min-h-11 w-full items-center gap-[10px] py-2 text-[12px] transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand',
-        filho ? 'pl-[28px] pr-[9px]' : 'px-[9px]',
-        ativo ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-surface-2 hover:text-text',
-      ].join(' ')}
-    >
-      {/* barra de 2px à esquerda do item ativo — .nav.on::before do protótipo */}
-      {ativo && <span aria-hidden className="absolute bottom-0 left-0 top-0 w-[2px] bg-brand" />}
-      <Icon size={16} aria-hidden className="shrink-0" />
-      <span className="min-w-0 flex-1 leading-snug">{n.label}</span>
-      {selo?.texto && (
-        <span
-          title={selo.titulo}
-          aria-label={selo.titulo}
-          className="ml-auto min-w-[16px] bg-brand px-[4px] py-px text-center text-[9px] font-bold leading-[1.5] text-ink"
-        >
-          {selo.texto}
-        </span>
-      )}
-      {n.estado === 'parcial' && (
-        <span
-          title={n.parcial ?? 'esta tela ainda está incompleta'}
-          className="ml-auto bg-surface-3 px-[5px] py-px text-[9px] font-bold uppercase tracking-[0.08em] text-muted"
-        >
-          {n.key === 'fluxos' ? 'em preparação' : 'parcial'}
-        </span>
-      )}
-    </Link>
-  );
-}
-
 export function Sidebar() {
   const { user } = useAuth();
-  const { modulos, ligado } = useModulos();
+  const { modulos } = useModulos();
   const caixa = useCaixa();
   const pathname = usePathname();
   const [tema, setTema] = useState<TemaOs>('dark');
-  const [fechadas, setFechadas] = useState<Set<string>>(new Set(FECHADAS_POR_PADRAO));
   const [abertaNoMovel, setAbertaNoMovel] = useState(false);
   const botaoAbrir = useRef<HTMLButtonElement>(null);
   const botaoFechar = useRef<HTMLButtonElement>(null);
@@ -144,108 +50,12 @@ export function Sidebar() {
   const primeiraPintura = useRef(true);
 
   const ehPlataforma = useEhPlataforma();
-  const daRoot = ehPlataforma ? ITENS_DA_ROOT : [];
-
-  const perms = new Set(user?.permissions ?? []);
-  // /painel/custo-ia pertence a Motor de IA; /painel não deve ficar ativo junto.
-  const itemAtivo = [...NAV, ...daRoot].filter((n) => ehAtivo(pathname, n.href))
-    .sort((a, b) => b.href.length - a.href.length)[0];
-
-  /*
-   * O agrupamento e os DOIS filtros — permissão e módulo contratado — vêm do
-   * pacote compartilhado (packages/shared/src/nav.ts): a sidebar só desenha o
-   * que ele devolve, na ordem em que devolve.
-   *
-   * `modulos ?? undefined` traduz o "ainda não sei" do provedor no "todos
-   * ligados" que o navPorSecao entende. Quem de fato recusa a rota é a API
-   * (apps/api/src/tenants/); esconder aqui é para não mostrar porta que não
-   * abre, e esconder por FALTA de resposta seria sumir com tela que a pessoa
-   * tem — ver o cabeçalho de `modulos.tsx`.
-   *
-   * O "avulsos" abaixo é rede de segurança: se um módulo entrar no NAV
-   * apontando para uma seção que não existe em SECOES, ele aparece no fim do
-   * menu em vez de sumir calado. O tipo `secao` impede isso em compilação, mas
-   * o NAV também é lido por JS não tipado (testes, scripts).
-   */
-  const grupos: {
-    chave: string;
-    titulo: string;
-    dica?: string;
-    tipo: string;
-    dentroDe?: string;
-    itens: NoDeNav[];
-  }[] =
-    navEmArvore(perms, modulos ?? undefined).map((g) => ({
-      chave: g.secao.key,
-      titulo: g.secao.label,
-      dica: g.secao.hint,
-      tipo: g.secao.tipo,
-      dentroDe: 'dentroDe' in g.secao ? g.secao.dentroDe : undefined,
-      itens: g.itens,
-    }));
-
-  const avulsos = NAV.filter(
-    (n) => !n.oculto && perms.has(n.permission) && ligado(n.modulo) && !CHAVES_DE_SECAO.has(n.secao),
-  );
-  if (avulsos.length > 0)
-    grupos.push({
-      chave: '__avulsos',
-      titulo: 'Outros',
-      tipo: 'modulo',
-      // Sem aninhar de propósito: item que caiu aqui é item cuja seção não
-      // existe, e adivinhar hierarquia para ele seria inventar desenho em cima
-      // de um defeito que este bloco existe para DENUNCIAR.
-      itens: avulsos.map((item) => ({ item, filhos: [] })),
-    });
-
-  // O grupo da ROOT entra antes das seções de apoio, junto das telas de trabalho.
-  if (daRoot.length > 0) {
-    const antesDoApoio = grupos.findIndex((g) => g.tipo === 'apoio');
-    grupos.splice(antesDoApoio < 0 ? grupos.length : antesDoApoio, 0, {
-      chave: '__root',
-      titulo: 'ROOT',
-      dica: 'telas da equipe ROOT; empresas clientes não veem',
-      tipo: 'principal',
-      itens: daRoot.map((item) => ({ item, filhos: [] })),
-    });
-  }
-
-  // `dentroDe` é só desenho e só vale com a seção-mãe visível: sem ela, a
-  // seção sobe a primeiro nível em vez de ficar recuada sob nada.
-  const chavesVisiveis = new Set(grupos.map((g) => g.chave));
-  for (const g of grupos) {
-    if (g.dentroDe && !chavesVisiveis.has(g.dentroDe)) g.dentroDe = undefined;
-  }
-
-  const primeiroApoio = grupos.findIndex((g) => g.tipo === 'apoio');
-
-  /*
-   * O selo da CAIXA, calculado UMA vez e entregue ao item cuja chave é `caixa`
-   * — inclusive quando ele aparecer como filho de alguém, porque o menu pode
-   * mudar de forma e um selo que só existe no primeiro nível somiria em
-   * silêncio. As duas frases (o número e o title) moram em `caixa.tsx`: é lá que
-   * está escrito por que "não sei" não pode virar zero.
-   */
+  const destino = destinoDaRota(pathname, ehPlataforma);
+  const areaAtiva = destino && areaDoDestino(destino)?.key;
+  const areas = modulosDeNavegacao(user?.permissions ?? [], modulos ?? undefined, ehPlataforma);
   const seloDaCaixa = { texto: textoDoSelo(caixa), titulo: tituloDoSelo(caixa) };
 
-  useEffect(() => {
-    setTema(lerTema());
-    setFechadas(lerFechadas());
-  }, []);
-
-  function alternarSecao(chave: string) {
-    setFechadas((antes) => {
-      const depois = new Set(antes);
-      if (depois.has(chave)) depois.delete(chave);
-      else depois.add(chave);
-      try {
-        localStorage.setItem(CHAVE_MENU, JSON.stringify([...depois]));
-      } catch {
-        /* sem persistência: vale só para esta aba */
-      }
-      return depois;
-    });
-  }
+  useEffect(() => { setTema(lerTema()); }, []);
 
   useEffect(() => {
     setAbertaNoMovel(false);
@@ -381,68 +191,20 @@ export function Sidebar() {
         <button ref={botaoFechar} type="button" aria-label="Fechar navegação" onClick={() => { setAbertaNoMovel(false); botaoAbrir.current?.focus(); }} className="grid h-11 w-11 place-items-center text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand min-[820px]:hidden"><Icons.X size={18} aria-hidden /></button>
       </div>
 
-      {/* módulos, agrupados por seção — a lista já vem filtrada por permissão */}
-      <nav aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-[7px]">
-        {grupos.map((g, i) => {
-          // A seção que contém a tela aberta fica ABERTA, mesmo que a pessoa a
-          // tenha fechado antes: menu que esconde onde você está não orienta,
-          // desorienta. A preferência dela continua guardada e volta a valer
-          // quando sair daqui.
-          const temAtivo = g.itens.some((no) =>
-            no.item.key === itemAtivo?.key || no.filhos.some((f) => f.key === itemAtivo?.key),
-          );
-          const fechada = fechadas.has(g.chave) && !temAtivo;
-          return (
-            <section key={g.chave} aria-label={g.titulo}>
-              {i === primeiroApoio && i > 0 && !g.dentroDe && (
-                <div aria-hidden className="mx-2 mb-1 mt-4 border-t border-border" />
-              )}
-              <h2>
-                <button
-                  type="button"
-                  onClick={() => alternarSecao(g.chave)}
-                  aria-expanded={!fechada}
-                  aria-controls={`nav-grupo-${g.chave}`}
-                  title={g.dica}
-                  className={[
-                    'flex min-h-11 w-full cursor-pointer items-center gap-[5px] pt-2 text-left text-[10px] font-normal uppercase tracking-[0.14em] text-muted transition-colors duration-150 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand',
-                    g.dentroDe ? 'pl-5 pr-2' : 'px-2',
-                  ].join(' ')}
-                >
-                  <Icons.ChevronRight
-                    size={9}
-                    aria-hidden
-                    className={['shrink-0 transition-transform', fechada ? '' : 'rotate-90'].join(
-                      ' ',
-                    )}
-                  />
-                  <span className="truncate">{g.titulo}</span>
-                </button>
-              </h2>
-              <div id={`nav-grupo-${g.chave}`} className={fechada ? 'hidden' : undefined}>
-                {g.itens.map((no) => (
-                  <div key={no.item.key}>
-                    <ItemDoMenu
-                      n={no.item}
-                      ativo={no.item.key === itemAtivo?.key}
-                      selo={no.item.key === 'caixa' ? seloDaCaixa : undefined}
-                      aoNavegar={aoNavegar}
-                    />
-                    {no.filhos.map((f) => (
-                      <ItemDoMenu
-                        key={f.key}
-                        n={f}
-                        ativo={f.key === itemAtivo?.key}
-                        filho
-                        selo={f.key === 'caixa' ? seloDaCaixa : undefined}
-                        aoNavegar={aoNavegar}
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </section>
-          );
+      <nav aria-label="Destinos" className="min-h-0 flex-1 overflow-y-auto px-2 py-4">
+        <p className="px-3 pb-3 text-[10px] uppercase tracking-[0.14em] text-muted">Áreas da empresa</p>
+        {areas.map((area) => {
+          const Icon = (Icons[area.icon as IconName] ?? Icons.Circle) as React.ElementType;
+          const ativo = area.key === areaAtiva;
+          return <Link key={area.key} href={area.entrada.href} onClick={aoNavegar}
+            aria-current={ativo ? 'true' : undefined}
+            className={`relative mb-1 flex min-h-11 items-center gap-3 rounded-root px-3 py-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'bg-brand/10 font-semibold text-brand' : 'text-muted hover:bg-surface-2 hover:text-text'}`}>
+            <Icon size={18} aria-hidden className="shrink-0" />
+            <span className="flex-1">{area.label}</span>
+            {area.key === 'dia' && area.itens.some((item) => item.key === 'caixa') && seloDaCaixa.texto &&
+              <span aria-label={seloDaCaixa.titulo} title={seloDaCaixa.titulo} className="bg-brand px-1.5 py-0.5 text-[10px] font-bold text-ink">{seloDaCaixa.texto}</span>}
+            {ativo && <Icons.ChevronRight size={14} aria-hidden />}
+          </Link>;
         })}
       </nav>
 

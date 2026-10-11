@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, FileText, Globe, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
-import { type BrandbookDocumento, type BrandbookPrevia } from '@mktos/shared';
+import { type BrandbookDocumento, type BrandbookPrevia, type BrandbookColeta } from '@mktos/shared';
 import { lerDocumentoLocal, linhas, normalizarLogo, perfilDasRespostas } from './brandbook-formulario';
 import { LivroDaMarca } from './LivroDaMarca';
 
@@ -20,6 +20,9 @@ type Props = {
   conflito: boolean;
   erro: string | null;
   avisosDaColeta: string[];
+  coletaPendente: BrandbookColeta | null;
+  onAplicarColeta: () => void;
+  onDescartarColeta: () => void;
   onAlterar: (d: BrandbookDocumento) => void;
   onColetar: (url: string) => Promise<void>;
   onSalvar: () => Promise<void>;
@@ -35,6 +38,7 @@ export function CriadorDoBrandbook(p: Props) {
   const [lendoArquivo, setLendoArquivo] = useState(false);
   const [erroLocal, setErroLocal] = useState<string | null>(null);
   const [notaLocal, setNotaLocal] = useState<string | null>(null);
+  const [arquivoPendente, setArquivoPendente] = useState<Awaited<ReturnType<typeof lerDocumentoLocal>> | null>(null);
   const leitura = useRef(0);
   const montado = useRef(true);
   const revisao = useRef(0);
@@ -54,12 +58,9 @@ export function CriadorDoBrandbook(p: Props) {
       if (typeof resultado === 'string') {
         alterar({ ...d, origem: { ...d.origem, tipo: d.origem.tipo === 'do_zero' ? 'logo' : d.origem.tipo, arquivoNome: arquivo.name }, visual: { ...d.visual, logoDataUrl: resultado } });
         setNotaLocal('Logo reduzido localmente. Nenhum arquivo foi enviado; ele será guardado com o rascunho ao salvar.');
-      } else if (resultado.documento) {
-        alterar({ ...resultado.documento, origem: { ...resultado.documento.origem, tipo: 'documento', arquivoNome: arquivo.name, url: null } });
-        setNotaLocal('Brandbook JSON carregado no formulário. Revise antes de salvar.');
       } else {
-        alterar({ ...d, origem: { tipo: 'documento', arquivoNome: arquivo.name, url: null, texto: resultado.texto ?? '' } });
-        setNotaLocal('Texto carregado como referência. Preencha as perguntas com o que conferir no documento.');
+        setArquivoPendente(resultado);
+        setNotaLocal('Arquivo lido. Confira a substituição abaixo antes de aplicar ao rascunho.');
       }
     } catch (e) {
       if (montado.current && leitura.current === id) setErroLocal((e as Error).message);
@@ -88,6 +89,12 @@ export function CriadorDoBrandbook(p: Props) {
     {(p.erro || erroLocal) && <p role="alert" className="m-4 border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erroLocal || p.erro}</p>}
     {notaLocal && <p role="status" className="m-4 text-sm text-muted">{notaLocal}</p>}
     {p.conflito && <div role="alert" className="m-4 space-y-2 border border-warn/40 bg-warn/10 p-3 text-sm"><p>Outra versão foi salva. Seu rascunho continua neste formulário. Atualize a versão de destino antes de salvar novamente e confira o livro atual abaixo.</p><button type="button" disabled={ocupado} onClick={() => void p.onAtualizarVersao()} className={botaoCls}>Atualizar versão sem descartar meu texto</button></div>}
+    {arquivoPendente && <section className="m-4 space-y-3 border border-border p-4" aria-label="Importação de documento"><h3 className="font-medium">Conferir documento antes de importar</h3><p className="text-sm">{arquivoPendente.nome}</p><p className="text-sm text-muted">{arquivoPendente.documento ? 'O JSON substituirá todos os campos deste rascunho local. O livro salvo e a versão ativa só mudam quando você salvar e aprovar.' : 'O texto substituirá a referência de origem. Os demais campos do rascunho serão preservados.'}</p><div className="flex gap-2"><button type="button" disabled={ocupado} className={botaoCls} onClick={() => {
+      const r = arquivoPendente;
+      alterar(r.documento ? { ...r.documento, origem: { ...r.documento.origem, tipo: 'documento', arquivoNome: r.nome, url: null } } : { ...d, origem: { tipo: 'documento', arquivoNome: r.nome, url: null, texto: r.texto ?? '' } });
+      setArquivoPendente(null); setNotaLocal('Documento aplicado ao rascunho local. Salve para conservar esta versão.');
+    }}>Importar para o rascunho</button><button type="button" disabled={ocupado} className={botaoCls} onClick={() => setArquivoPendente(null)}>Cancelar importação</button></div></section>}
+    {p.coletaPendente && <section className="m-4 space-y-3 border border-border p-4" aria-label="Proposta do site"><h3 className="font-medium">Conferir coleta antes de usar</h3><p className="text-sm">{p.coletaPendente.titulo || 'Página sem título'} · {p.coletaPendente.cores.length} cores · {p.coletaPendente.fontes.length} fontes</p><p className="text-sm text-muted">O nome, a descrição, as cores e as fontes já preenchidos serão preservados. Novas cores e fontes entram como propostas, até o limite do formulário. O texto de referência será substituído pelo texto desta página.</p><p className="max-h-40 overflow-auto whitespace-pre-wrap text-sm">{p.coletaPendente.texto.slice(0, 2000)}</p><div className="flex gap-2"><button type="button" disabled={ocupado} onClick={p.onAplicarColeta} className={botaoCls}>Usar coleta no rascunho</button><button type="button" disabled={ocupado} onClick={p.onDescartarColeta} className={botaoCls}>Descartar coleta</button></div></section>}
     <fieldset disabled={ocupado} className="min-w-0 space-y-5 p-5 disabled:opacity-70">
       <legend className="sr-only">{PASSOS[passo]}</legend>
       {passo === 0 && <>

@@ -37,6 +37,8 @@ vi.mock('next/link', () => ({
 
 // eslint-disable-next-line import/first
 import { Sidebar } from '@/components/Sidebar';
+import { NavegacaoDoModulo } from '@/components/NavegacaoDoModulo';
+import { Paleta } from '@/components/Paleta';
 
 const titulos = () =>
   Array.from(document.querySelectorAll('nav[aria-label="Destinos"] h2')).map((h) => h.textContent?.trim());
@@ -49,24 +51,23 @@ describe('grupo ROOT do menu', () => {
   });
 
   it('empresa cliente não vê o grupo nem o link de Propostas', () => {
-    render(<Sidebar />);
+    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
     expect(titulos()).not.toContain('ROOT');
     expect(document.querySelector('a[href="/propostas"]')).toBeNull();
   });
 
-  it('a sessão da plataforma vê Propostas no grupo ROOT, antes das seções de apoio', () => {
+  it('a sessão da plataforma encontra Propostas dentro de Comercial e na busca', () => {
     EH_PLATAFORMA = true;
-    render(<Sidebar />);
-    const lista = titulos();
-    expect(lista).toContain('ROOT');
-    expect(lista.indexOf('ROOT')).toBe(lista.indexOf('Configurações da empresa') - 1);
-    expect(screen.getByRole('link', { name: 'Propostas' }).getAttribute('href')).toBe('/propostas');
+    CAMINHO = '/leads';
+    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    expect(screen.getByRole('link', { name: 'Propostas' })).toHaveAttribute('href', '/propostas');
+    expect(screen.getByRole('button', { name: /Propostas.*Comercial/ })).toBeInTheDocument();
   });
 
   it('em /propostas o item fica marcado como a tela aberta', () => {
     EH_PLATAFORMA = true;
     CAMINHO = '/propostas';
-    render(<Sidebar />);
+    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
     expect(screen.getByRole('link', { name: 'Propostas' }).getAttribute('aria-current')).toBe('page');
   });
 });

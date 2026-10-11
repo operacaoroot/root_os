@@ -6,6 +6,8 @@ import userEvent from '@testing-library/user-event';
 
 const PERMISSOES = ['dashboard.ver', 'tarefas.ver', 'pauta.ver', 'leads.ver', 'mcp.ver'];
 
+vi.mock('@/lib/plataforma', () => ({ useEhPlataforma: () => false }));
+
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',

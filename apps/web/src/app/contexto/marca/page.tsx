@@ -76,6 +76,7 @@ export default function MarcaPage() {
   const [conflitoLivro, setConflitoLivro] = useState(false);
   const [operacaoLivro, setOperacaoLivro] = useState<string | null>(null);
   const [avisosDaColeta, setAvisosDaColeta] = useState<string[]>([]);
+  const [coletaPendente, setColetaPendente] = useState<BrandbookColeta | null>(null);
   const [visaoDoLivro, setVisaoDoLivro] = useState<'ativo' | 'rascunho'>('ativo');
   const [confirmaDesativar, setConfirmaDesativar] = useState(false);
   const leituraDoLivro = useRef(0);
@@ -94,6 +95,14 @@ export default function MarcaPage() {
   const documentoDoLivro = livroArquivado ? livro?.rascunho ?? livro?.ativo?.documento ?? null :
     visaoDoLivro === 'rascunho' && livro?.rascunho ? livro.rascunho : livroAtivo?.documento ?? livro?.rascunho ?? referencia?.documento ?? null;
   const mostrandoReferencia = !!documentoDoLivro && !livroArquivado && !livroAtivo && !livro?.rascunho;
+
+
+  useEffect(() => {
+    if (!alterado) return;
+    const avisar = (evento: BeforeUnloadEvent) => { evento.preventDefault(); evento.returnValue = ''; };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [alterado]);
 
 
   useEffect(() => {
@@ -116,7 +125,7 @@ export default function MarcaPage() {
     setLivro(null); setReferencia(null); setLivroCarregado(false); setErroLivro(null);
     setCriadorAberto(false); setDocumentoLocal(null); setVersaoBase(null);
     setPreviaLivro(null); setAprovado(false); setConflitoLivro(false); setOperacaoLivro(null);
-    setAvisosDaColeta([]); setVisaoDoLivro('ativo'); setConfirmaDesativar(false);
+    setAvisosDaColeta([]); setColetaPendente(null); setVisaoDoLivro('ativo'); setConfirmaDesativar(false);
     if (!ready || !token || !podeLerLivro) return;
     const valida = () => !cancelada && sessao.current === identidade && leituraDoLivro.current === leitura;
     (async () => {
@@ -137,12 +146,13 @@ export default function MarcaPage() {
 
   function iniciarCriador(base?: BrandbookDocumento) {
     if (!podeGravarLivro || !livroCarregado || livroArquivado || ocupado || escritaEmCurso.current) return;
+    if (base !== undefined && localAtual.current && alterado && !window.confirm('Substituir o rascunho local por outra base? Salve antes se quiser conservar estas alterações.')) return;
     revisaoLocal.current++;
     const preservando = base === undefined && localAtual.current !== null;
     setDocumentoLocal(copiarBrandbook(base ?? localAtual.current ?? livro?.rascunho ?? livroAtivo?.documento ?? novoBrandbook()));
     setVersaoBase(livro?.versao ?? null); setPreviaLivro(null); setAprovado(false);
     setErroLivro(null); if (!preservando) setConflitoLivro(false); setAvisosDaColeta([]);
-    setCriadorId((n) => n + 1); setCriadorAberto(true);
+    setColetaPendente(null); setCriadorId((n) => n + 1); setCriadorAberto(true);
   }
 
   function alterarLivro(d: BrandbookDocumento) {
@@ -259,7 +269,11 @@ export default function MarcaPage() {
     try {
       const novo = await apiGet<BrandbookPainel>('/pauta/marca/brandbook', token);
       if (sessao.current !== identidade || escritaEmCurso.current !== escrita) return;
-      setLivro(novo); setVersaoBase(novo.versao); setConflitoLivro(false); setPreviaLivro(null); setAprovado(false);
+      setLivro(novo); setLivroCarregado(true); setVersaoBase(novo.versao); setConflitoLivro(false); setPreviaLivro(null); setAprovado(false);
+      if (!novo.rascunho && !novo.ativo && novo.estado !== 'arquivado') {
+        const base = await apiGet<BrandbookReferenciaRoot>('/pauta/marca/brandbook/referencia-root', token);
+        if (sessao.current === identidade && escritaEmCurso.current === escrita) setReferencia(base);
+      } else setReferencia(null);
     } catch (e) {
       if (sessao.current === identidade) erroDoLivro(e);
     } finally {
@@ -271,21 +285,23 @@ export default function MarcaPage() {
     if (!token || !podeEditarPauta || !podeGravarLivro || livroArquivado || !localAtual.current || escritaEmCurso.current) return;
     const escrita = Symbol('coletar-site'); escritaEmCurso.current = escrita;
     const revisao = revisaoLocal.current;
-    const documento = localAtual.current;
-    setOperacaoLivro('Coletando site…'); setErroLivro(null); setAvisosDaColeta([]);
+    setOperacaoLivro('Coletando site…'); setErroLivro(null); setAvisosDaColeta([]); setColetaPendente(null);
     try {
       const coleta = await apiPost<BrandbookColeta>('/pauta/marca/brandbook/coletar-site', { url }, token);
       if (sessao.current !== identidade || escritaEmCurso.current !== escrita || revisaoLocal.current !== revisao) return;
-      const proposto = aplicarColeta(documento, coleta);
-      const validado = BrandbookDocumentoSchema.safeParse(proposto);
-      if (!validado.success) throw new Error(`A coleta não cabe no rascunho: ${validado.error.issues.map((i) => i.message).join(' · ')}`);
-      revisaoLocal.current++;
-      setDocumentoLocal(validado.data); setPreviaLivro(null); setAprovado(false); setAvisosDaColeta(coleta.avisos);
+      setColetaPendente(coleta); setAvisosDaColeta(coleta.avisos);
     } catch (e) {
       if (sessao.current === identidade) setErroLivro((e as Error).message);
     } finally {
       if (sessao.current === identidade && escritaEmCurso.current === escrita) { escritaEmCurso.current = null; setOperacaoLivro(null); }
     }
+  }
+
+  function aplicarColetaPendente() {
+    if (!coletaPendente || !localAtual.current || ocupado || escritaEmCurso.current || !podeGravarLivro) return;
+    const validado = BrandbookDocumentoSchema.safeParse(aplicarColeta(localAtual.current, coletaPendente));
+    if (!validado.success) { setErroLivro(`A coleta não cabe no rascunho: ${validado.error.issues.map((i) => i.message).join(' · ')}`); return; }
+    alterarLivro(validado.data); setColetaPendente(null);
   }
 
   async function carregarPrevia(qual: PautaMarcaDestino) {
@@ -357,24 +373,25 @@ export default function MarcaPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="font-os-mono text-[10px] uppercase tracking-[0.15em] text-muted">Contexto / Marca</p><h1 className="mt-1 text-xl font-semibold">Marca</h1><p className="mt-1 text-sm text-muted">Livro da marca, identidade visual e orientações de escrita.</p></div>
+        <div><p className="font-os-mono text-[10px] uppercase tracking-[0.15em] text-muted">Contexto / Marca</p><h1 className="mt-1 text-xl font-semibold">Marca</h1><p className="mt-1 text-sm text-muted">Consulte o livro da marca ou crie uma versão com identidade, público, voz e visual. Salve o rascunho e aprove quando estiver pronto.</p></div>
         {podeGravarLivro && livroCarregado && !livroArquivado && <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={ocupado || criadorAberto} onClick={() => iniciarCriador(novoBrandbook())} className="inline-flex min-h-11 items-center gap-2 border border-brand-dim px-3 text-sm text-brand hover:bg-brand/10 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"><Plus size={15} /> Criar do zero</button>
+          <button type="button" disabled={ocupado || criadorAberto} onClick={() => iniciarCriador(novoBrandbook())} className="inline-flex min-h-11 items-center gap-2 border border-brand-dim px-3 text-sm text-brand hover:bg-brand/10 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"><Plus size={15} /> Criar brandbook</button>
           {(documentoLocal || livro?.rascunho || livroAtivo) && <button type="button" disabled={ocupado || criadorAberto} onClick={() => iniciarCriador()} className="inline-flex min-h-11 items-center gap-2 border border-border px-3 text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-50"><Pencil size={15} /> {documentoLocal && alterado ? 'Retomar rascunho local' : 'Editar rascunho'}</button>}
         </div>}
       </div>
       {!podeLerLivro ? <p className="text-sm text-muted">Sua conta precisa de acesso à Pauta para consultar o livro da marca.</p> : <>
-        {erroLivro && !criadorAberto && <p role="alert" className="border border-bad/40 bg-bad/10 p-3 text-sm text-bad">{erroLivro}</p>}
+        {erroLivro && !criadorAberto && <div role="alert" className="border border-bad/40 bg-bad/10 p-3 text-sm"><p className="text-bad">{erroLivro}</p><button type="button" disabled={ocupado} onClick={() => void atualizarVersaoDoLivro()} className="mt-2 min-h-11 border border-border px-3">Tentar carregar o livro novamente</button></div>}
         {!livroCarregado && !erroLivro && <p role="status" className="text-sm text-muted">Carregando livro da marca…</p>}
         {mostrandoReferencia && <div className="flex items-start gap-3 border border-border bg-surface p-4 text-sm"><BookOpen size={18} className="mt-0.5 shrink-0 text-brand" /><div><p className="font-medium">Referência ROOT</p><p className="mt-1 text-muted">Guia canônico, somente leitura. Esta referência ainda não é o livro ativo desta empresa.</p></div></div>}
         {livroArquivado && <p role="status" className="border border-warn/40 bg-warn/10 p-4 text-sm">Livro arquivado. Consulta disponível; criação, edição e ativação estão bloqueadas.</p>}
         {livroAtivo && <div className="space-y-3 border border-good/30 bg-good/5 p-4 text-sm"><p className="font-medium text-good">Livro aprovado em uso na Pauta</p><p className="text-muted">Aprovado por {livroAtivo.aprovadoPor} em {new Date(livroAtivo.aprovadoEm).toLocaleString('pt-BR')}. Perfil e pilares abaixo usam esta fonte enquanto o livro estiver ativo.</p>{podeGravarLivro && <details><summary className="cursor-pointer text-xs text-muted">Desativar uso na Pauta</summary><label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmaDesativar} disabled={ocupado} onChange={(e) => setConfirmaDesativar(e.target.checked)} /><span>Quero desativar o livro e voltar aos campos separados de perfil e pilares.</span></label><button type="button" disabled={ocupado || !confirmaDesativar} onClick={() => void desativarLivro()} className="mt-3 min-h-11 border border-border px-3 text-sm disabled:opacity-50">Desativar livro</button></details>}</div>}
         {livroAtivo && livro?.rascunho && <div className="flex flex-wrap gap-2" role="group" aria-label="Versão do livro exibida">{(['ativo', 'rascunho'] as const).map((v) => <button key={v} type="button" aria-pressed={visaoDoLivro === v} onClick={() => setVisaoDoLivro(v)} className={`min-h-11 border px-3 text-sm ${visaoDoLivro === v ? 'border-brand-dim text-brand' : 'border-border text-muted'}`}>{v === 'ativo' ? 'Livro ativo' : 'Rascunho salvo'}</button>)}</div>}
-        {criadorAberto && documentoLocal && podeGravarLivro && !livroArquivado && <CriadorDoBrandbook key={`${identidade}:${criadorId}`} documento={documentoLocal} ocupado={ocupado} operacao={operacaoLivro} alterado={alterado} versao={versaoBase} previa={previaLivro} aprovado={aprovado} conflito={conflitoLivro} erro={erroLivro} avisosDaColeta={avisosDaColeta} onAlterar={alterarLivro} onColetar={coletarSite} onSalvar={salvarLivro} onPrevia={conferirLivro} onAtivar={ativarLivro} onAprovar={setAprovado} onAtualizarVersao={atualizarVersaoDoLivro} onFechar={() => { if (!alterado || window.confirm('Fechar o criador? Seu texto local ficará nesta página para retomar. Recarregar ou sair da página pode perdê-lo.')) setCriadorAberto(false); }} />}
+        {criadorAberto && documentoLocal && podeGravarLivro && !livroArquivado && <CriadorDoBrandbook key={`${identidade}:${criadorId}`} documento={documentoLocal} ocupado={ocupado} operacao={operacaoLivro} alterado={alterado} versao={versaoBase} previa={previaLivro} aprovado={aprovado} conflito={conflitoLivro} erro={erroLivro} avisosDaColeta={avisosDaColeta} coletaPendente={coletaPendente} onAplicarColeta={aplicarColetaPendente} onDescartarColeta={() => setColetaPendente(null)} onAlterar={alterarLivro} onColetar={coletarSite} onSalvar={salvarLivro} onPrevia={conferirLivro} onAtivar={ativarLivro} onAprovar={setAprovado} onAtualizarVersao={atualizarVersaoDoLivro} onFechar={() => { if (!alterado || window.confirm('Fechar o criador? Seu texto local ficará nesta página para retomar. Recarregar ou sair da página pode perdê-lo.')) setCriadorAberto(false); }} />}
         {documentoDoLivro && <LivroDaMarca key={`${identidade}:${mostrandoReferencia ? 'referencia' : visaoDoLivro}`} documento={documentoDoLivro} fonteCompleta={mostrandoReferencia ? referencia!.fonte.texto : undefined} origem={mostrandoReferencia ? referencia!.fonte.nome : livroArquivado ? 'Livro arquivado — somente consulta' : visaoDoLivro === 'rascunho' || !livroAtivo ? 'Rascunho salvo da empresa — ainda não aprovado' : 'Livro ativo da empresa'} versao={mostrandoReferencia ? referencia!.fonte.versao : visaoDoLivro === 'ativo' && livroAtivo ? null : livro?.versao} hash={mostrandoReferencia ? referencia!.fonte.hash : visaoDoLivro === 'ativo' && livroAtivo ? livroAtivo.draftHash : livro?.hash} onUsarBase={mostrandoReferencia && podeGravarLivro && !ocupado && !criadorAberto ? () => iniciarCriador(referencia!.documento) : undefined} />}
         {livroCarregado && !livroArquivado && !documentoDoLivro && !erroLivro && <p className="text-sm text-muted">Nenhum livro próprio salvo. Você pode criar um brandbook do zero.</p>}
       </>}
-      <div className="border-t border-border pt-5"><h2 className="text-lg font-semibold">Perfil e pilares da Pauta</h2><p className="mt-1 text-sm text-muted">{livroArquivado ? 'Livro arquivado. A edição do perfil e dos pilares está bloqueada.' : livroAtivo ? 'Leitura da fonte ativa. Desative o livro para editar os campos separados.' : 'Configuração existente dos pedidos de conteúdo. O criador do brandbook fica acima.'}</p></div>
+      <details className="border-t border-border pt-5"><summary className="cursor-pointer text-sm font-medium">Configurações anteriores de perfil e pilares</summary>
+      <div className="mt-4"><h2 className="text-lg font-semibold">Perfil e pilares da Pauta</h2><p className="mt-1 text-sm text-muted">{livroArquivado ? 'Livro arquivado. A edição do perfil e dos pilares está bloqueada.' : livroAtivo ? 'Leitura da fonte ativa. Desative o livro para editar os campos separados.' : 'Configuração existente dos pedidos de conteúdo. O criador do brandbook fica acima.'}</p></div>
 
       {erro && (
         <div role="alert" className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">{erro}</div>
@@ -591,6 +608,7 @@ export default function MarcaPage() {
           </p>
         )}
       </section>
+      </details>
     </div>
   );
 }

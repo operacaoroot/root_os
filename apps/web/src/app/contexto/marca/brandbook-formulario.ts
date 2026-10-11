@@ -34,8 +34,8 @@ export function aplicarColeta(d: BrandbookDocumento, coleta: BrandbookColeta): B
     origem: { tipo: 'site', url: coleta.url, arquivoNome: null, texto: coleta.texto },
     identidade: { ...d.identidade, nome: d.identidade.nome || coleta.titulo, descricao: d.identidade.descricao || coleta.descricao },
     visual: { ...d.visual,
-      cores: coleta.cores.length ? coleta.cores : d.visual.cores,
-      fontes: coleta.fontes.length ? coleta.fontes : d.visual.fontes },
+      cores: [...d.visual.cores, ...coleta.cores.filter((c) => !d.visual.cores.some((atual) => atual.hex.toLowerCase() === c.hex.toLowerCase()))].slice(0, 16),
+      fontes: [...d.visual.fontes, ...coleta.fontes.filter((f) => !d.visual.fontes.some((atual) => atual.familia.toLowerCase() === f.familia.toLowerCase()))].slice(0, 8) },
   };
 }
 

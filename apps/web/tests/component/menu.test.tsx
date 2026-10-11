@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 /* A sidebar preserva a hierarquia declarada, o acesso e a seção ativa. */
@@ -17,6 +17,8 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 let MODULOS_LIGADOS: string[] | null = null;
+
+vi.mock('@/lib/plataforma', () => ({ useEhPlataforma: () => false }));
 
 vi.mock('@/components/modulos', () => ({
   useModulos: () => ({
@@ -53,6 +55,8 @@ import { Paleta } from '@/components/Paleta';
 import { Topbar } from '@/components/Topbar';
 // eslint-disable-next-line import/first
 import { NAV } from '@mktos/shared';
+import { NavegacaoDoModulo } from '@/components/NavegacaoDoModulo';
+import { modulosDeNavegacao, rotuloDoDestino } from '@/components/navegacao-modulos';
 
 const TODAS = ['dashboard.ver', 'tarefas.ver', 'pauta.ver', 'leads.ver', 'mcp.ver'];
 const TODAS_DO_NAV = [...new Set(NAV.map((n) => n.permission))];
@@ -76,8 +80,8 @@ describe('a barra lateral', () => {
     await user.click(abrir);
     expect(abrir).toHaveAttribute('aria-expanded', 'true');
     const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
-    expect(gaveta).toHaveTextContent('Pendências');
-    expect(gaveta).toHaveTextContent('Quadro interno');
+    expect(gaveta).toHaveTextContent('Dia a dia');
+    expect(gaveta).toHaveTextContent('Trabalho');
 
     await user.keyboard('{Escape}');
     expect(abrir).toHaveAttribute('aria-expanded', 'false');
@@ -114,132 +118,92 @@ describe('a barra lateral', () => {
     }
   });
 
-  it('desenha Referências dentro de Produção de conteúdo, e não no topo da seção', () => {
-    render(<Sidebar />);
-    const trabalho = link('/pauta')!;
-    const tarefas = link('/referencias')!;
-    expect(trabalho).toBeInTheDocument();
-    // o mesmo invólucro: é isso que faz o filho andar junto com o pai
-    expect(trabalho.parentElement).toBe(tarefas.parentElement);
-    // e o pai vem primeiro
-    expect(trabalho.compareDocumentPosition(tarefas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('fechar a seção esconde por CSS e guarda a escolha — sem apagar do DOM', async () => {
-    const user = userEvent.setup();
-    render(<Sidebar />);
-    const cabecalho = screen.getByRole('button', { name: /trabalho/i });
-    expect(cabecalho).toHaveAttribute('aria-expanded', 'true');
-
-    await user.click(cabecalho);
-
-    expect(cabecalho).toHaveAttribute('aria-expanded', 'false');
-    // O item permanece no DOM para restaurar a escolha ao reabrir.
-    expect(link('/trabalho')).toBeInTheDocument();
-    expect(link('/trabalho')!.parentElement!.parentElement).toHaveClass('hidden');
-    expect(JSON.parse(localStorage.getItem(CHAVE_MENU)!)).toContain('trabalho');
-  });
-
-  it('a seção da tela aberta ignora o fechamento guardado', () => {
-    localStorage.setItem(CHAVE_MENU, JSON.stringify(['trabalho']));
-    CAMINHO = '/tarefas';
-    render(<Sidebar />);
-    expect(screen.getByRole('button', { name: /trabalho/i })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
-  });
-
-  it('marca apenas Custos de IA quando a rota está dentro de /painel', () => {
-    CAMINHO = '/painel/custo-ia';
-    render(<Sidebar />);
-    expect(link('/painel/custo-ia')).toHaveAttribute('aria-current', 'page');
-    expect(link('/painel')).not.toHaveAttribute('aria-current');
-  });
-
-  /*
-   * O caso real: `funil` pede `dashboard.ver` e o pai dele, `leads`, pede
-   * `leads.ver`. Quem opera sem `leads.ver` TEM o Funil — e ele precisa
-   * aparecer, no primeiro nível, e não sumir com o pai.
-   */
-  it('filho sem o pai aparece no primeiro nível', () => {
-    PERMISSOES = ['dashboard.ver'];
-    render(<Sidebar />);
-    expect(link('/leads')).toBeNull();
-    expect(link('/funil')).toBeInTheDocument();
-  });
-
-  it('a gaveta móvel mostra os nomes das seções novas e o filho órfão promovido', async () => {
-    PERMISSOES = ['dashboard.ver'];
-    const user = userEvent.setup();
-    render(<Sidebar />);
-    await user.click(screen.getByRole('button', { name: 'Abrir navegação' }));
-    const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
-    expect(gaveta).toHaveTextContent('Motor Comercial');
-    // sem leads.ver o Funil não some: sobe ao primeiro nível da seção
-    const funil = gaveta.querySelector('a[href="/funil"]')!;
-    expect(funil).toBeInTheDocument();
-    expect(funil.className).not.toContain('pl-[28px]');
-  });
-
-  it('desenha as seções na ordem do contrato e Registros dentro de Configurações', () => {
+  it('mostra nove áreas em vez de todos os destinos na lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Sidebar />);
-    const titulos = Array.from(document.querySelectorAll('nav[aria-label="Destinos"] h2')).map((h) =>
-      h.textContent?.trim(),
-    );
-    expect(titulos).toEqual([
-      'Dia a dia', 'Contexto', 'Trabalho', 'Motor de Marketing', 'Motor Comercial',
-      'Motor Financeiro', 'Motor de IA', 'Resultados', 'Configurações da empresa', 'Registros',
-      'Configurações da conta',
+    const destinos = within(screen.getByRole('navigation', { name: 'Destinos' }));
+    expect(destinos.getAllByRole('link').map((el) => el.textContent)).toEqual([
+      'Dia a dia', 'Contexto', 'Trabalho', 'Marketing', 'Comercial', 'Financeiro',
+      'IA e automações', 'Resultados', 'Configurações',
     ]);
-    const registros = screen.getByRole('button', { name: /^registros$/i });
-    expect(registros.className).toContain('pl-5');
-    // só as seções de apoio começam fechadas
-    expect(screen.getByRole('button', { name: /configurações da empresa/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /motor de ia/i })).toHaveAttribute('aria-expanded', 'true');
+    expect(link('/contexto/marca')).toBeNull();
+    expect(link('/referencias')).toBeNull();
   });
 
-  it('Registros fica recuada dentro da mãe quando ela está visível', () => {
+  it('Marca é uma aba de Contexto e seleciona o módulo, preservando URL', () => {
     PERMISSOES = TODAS_DO_NAV;
-    render(<Sidebar />);
-    expect(screen.getByRole('button', { name: /^registros$/i }).className).toContain('pl-5');
+    CAMINHO = '/contexto/marca';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Contexto' })).toHaveAttribute('aria-current', 'true');
+    const abas = screen.getByRole('navigation', { name: 'Abas de Contexto' });
+    expect(within(abas).getByRole('link', { name: 'Mapa da empresa' })).toHaveAttribute('href', '/contexto');
+    expect(within(abas).getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('Registros vira seção de primeiro nível, com a divisória do apoio, quando a mãe não está visível', () => {
-    PERMISSOES = ['aprovacoes.ver', 'auditoria.ver'];
-    render(<Sidebar />);
-    const titulos = Array.from(document.querySelectorAll('nav[aria-label="Destinos"] h2')).map((h) =>
-      h.textContent?.trim(),
-    );
-    expect(titulos).toEqual(['Dia a dia', 'Registros']);
-    const botao = screen.getByRole('button', { name: /^registros$/i });
-    expect(botao.className).not.toContain('pl-5');
-    expect(botao.className).toContain('px-2');
-    const secao = document.querySelector('section[aria-label="Registros"]')!;
-    expect(secao.querySelector('div[aria-hidden].border-t')).not.toBeNull();
+  it('quem só pode ver Marca entra em Contexto sem ganhar acesso ao mapa', () => {
+    PERMISSOES = ['pauta.ver'];
+    CAMINHO = '/contexto/marca';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Contexto' })).toHaveAttribute('href', '/contexto/marca');
+    expect(screen.queryByRole('link', { name: 'Mapa da empresa' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Marca e brandbook' })).toHaveAttribute('href', '/contexto/marca');
   });
 
-  it('preferência de seção fechada com chave antiga é ignorada sem erro', async () => {
-    localStorage.setItem(CHAVE_MENU, JSON.stringify(['secao-que-nao-existe-mais', 'trabalho', 42]));
-    const user = userEvent.setup();
-    render(<Sidebar />);
-    expect(screen.getByRole('button', { name: /^trabalho$/i })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: /motor de marketing/i })).toHaveAttribute('aria-expanded', 'true');
-    // o próximo clique regrava a preferência já sem a chave morta
-    await user.click(screen.getByRole('button', { name: /motor de marketing/i }));
-    expect(JSON.parse(localStorage.getItem(CHAVE_MENU)!)).toEqual(['trabalho', 'conteudo']);
+  it('Marca desaparece quando Pauta está desligada, sem esconder mapa permitido', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    MODULOS_LIGADOS = ['trabalho'];
+    CAMINHO = '/contexto';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Mapa da empresa' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Marca e brandbook' })).toBeNull();
   });
 
-  it('JSON estragado na preferência cai no padrão, sem erro', () => {
+  it('nas subrotas de custo só IA e a aba correta ficam ativas', () => {
+    CAMINHO = '/painel/custo-ia';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'IA e automações' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('link', { name: 'Dia a dia' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Custos de IA' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('filho permitido continua acessível sem a permissão do pai', () => {
+    PERMISSOES = ['dashboard.ver'];
+    CAMINHO = '/funil';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Comercial' })).toHaveAttribute('href', '/funil');
+    expect(screen.getByRole('link', { name: 'Funil de vendas' })).toHaveAttribute('aria-current', 'page');
+    expect(link('/leads')).toBeNull();
+  });
+
+  it('Configurações reúne conta, empresa e registros em abas distintas', () => {
+    PERMISSOES = TODAS_DO_NAV;
+    CAMINHO = '/config';
+    render(<NavegacaoDoModulo />);
+    const abas = screen.getByRole('navigation', { name: 'Abas de Configurações' });
+    for (const nome of ['Equipe', 'Integrações', 'Regras e permissões', 'Registro de ações', 'Atividade', 'Configurações da conta']) {
+      expect(within(abas).getByRole('link', { name: nome })).toBeInTheDocument();
+    }
+    expect(link('/assinatura')).toBeNull();
+  });
+
+  it('Registros tem entrada mesmo quando nenhuma outra configuração foi liberada', () => {
+    PERMISSOES = ['auditoria.ver'];
+    CAMINHO = '/rastro';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
+    expect(screen.getByRole('link', { name: 'Configurações' })).toHaveAttribute('href', '/rastro');
+    expect(screen.getByRole('link', { name: 'Registro de ações' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('as preferências antigas não escondem áreas nem causam erro', () => {
     localStorage.setItem(CHAVE_MENU, '{não é json');
     render(<Sidebar />);
-    expect(screen.getByRole('button', { name: /^trabalho$/i })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('link', { name: 'Trabalho' })).toBeInTheDocument();
   });
 
-  it('/assinatura não aparece na barra, mesmo com todas as permissões', () => {
+  it('/assinatura permanece fora da lateral e das abas', () => {
     PERMISSOES = TODAS_DO_NAV;
-    render(<Sidebar />);
+    CAMINHO = '/config';
+    render(<><Sidebar /><NavegacaoDoModulo /></>);
     expect(link('/assinatura')).toBeNull();
     expect(link('/config')).toBeInTheDocument();
   });
@@ -262,7 +226,7 @@ describe('a barra lateral', () => {
     const semAcesso = NAV.filter((n) => !PERMISSOES.includes(n.permission)).map((n) => n.label);
     expect(oferecidas.filter((r) => semAcesso.includes(r ?? ''))).toEqual([]);
     expect(oferecidas).toEqual(
-      NAV.filter((n) => PERMISSOES.includes(n.permission) && !n.oculto).map((n) => n.label),
+      modulosDeNavegacao(PERMISSOES).flatMap((area) => area.itens.map(rotuloDoDestino)),
     );
   });
 
@@ -302,6 +266,24 @@ describe('a barra lateral', () => {
     await user.clear(campo);
     await user.type(campo, 'contratos'); // palavra só do texto de apoio da seção
     expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('a paleta busca brandbook, mantém foco dentro do diálogo e fecha com Escape no resultado', async () => {
+    const user = userEvent.setup();
+    const fechar = vi.fn();
+    PERMISSOES = TODAS_DO_NAV;
+    render(<Paleta aberto fechar={fechar} />);
+    const campo = screen.getByPlaceholderText('ir para…');
+    await user.type(campo, 'brandbook');
+    const resultado = screen.getByRole('button', { name: /Marca e brandbook.*Contexto/ });
+    await user.tab();
+    expect(resultado).toHaveFocus();
+    await user.tab();
+    expect(campo).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(resultado).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(fechar).toHaveBeenCalledOnce();
   });
 
   it('sem nenhuma permissão a paleta diz que nada está liberado', () => {
