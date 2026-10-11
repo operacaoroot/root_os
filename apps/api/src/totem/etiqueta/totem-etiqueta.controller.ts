@@ -1,8 +1,10 @@
-import { Controller, Get, Header, NotImplementedException, Param, Req } from '@nestjs/common';
-import { TotemCodigoEtiquetaSchema } from '@mktos/shared';
+import { Controller, Get, Header, Param, Req } from '@nestjs/common';
+import { TotemCodigoEtiquetaSchema, type TotemFichaDaEtiqueta } from '@mktos/shared';
 
 import { enderecoDeOrigem, type RequisicaoComEndereco } from '../../auth/endereco-de-origem';
+import { PrismaService } from '../../prisma/prisma.service';
 import { conferirTeto, tetoDoTotem } from '../comum/teto';
+import { fichaDaEtiqueta } from './ficha';
 
 /**
  * `/api/totem-etiqueta/:codigo` — os dados públicos de `/p/<codigo>` (frente C).
@@ -16,11 +18,13 @@ import { conferirTeto, tetoDoTotem } from '../comum/teto';
 export class TotemEtiquetaController {
   private readonly teto = tetoDoTotem('etiqueta');
 
+  constructor(private readonly prisma: PrismaService) {}
+
   @Get(':codigo')
   @Header('Cache-Control', 'no-store')
-  ficha(@Param('codigo') codigo: string, @Req() req?: RequisicaoComEndereco): never {
+  ficha(@Param('codigo') codigo: string, @Req() req?: RequisicaoComEndereco): Promise<TotemFichaDaEtiqueta> {
     conferirTeto(this.teto, enderecoDeOrigem(req));
-    TotemCodigoEtiquetaSchema.parse(codigo);
-    throw new NotImplementedException('Em construção.');
+    const normalizado = TotemCodigoEtiquetaSchema.parse(codigo);
+    return fichaDaEtiqueta(this.prisma, normalizado);
   }
 }
