@@ -49,7 +49,7 @@ export class AgendaLocalService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService, private readonly eventos: EventLogService) {}
 
   async hashNoTx(tx: Prisma.TransactionClient, value: unknown): Promise<string> {
-    const rows = await tx.$queryRaw<Array<{ hash: string }>>`SELECT encode(digest(public.app_json_canonico(${JSON.stringify(value)}::jsonb),'sha256'),'hex') AS hash`;
+    const rows = await tx.$queryRaw<Array<{ hash: string }>>`SELECT encode(sha256(convert_to(public.app_json_canonico(${JSON.stringify(value)}::jsonb),'UTF8')),'hex') AS hash`;
     if (rows.length !== 1 || !/^[a-f0-9]{64}$/.test(rows[0].hash)) throw new ConflictException('A assinatura da operação não pôde ser conferida.');
     return rows[0].hash;
   }
