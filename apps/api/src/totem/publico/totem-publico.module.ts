@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { TotemLoteModule } from '../lote/totem-lote.module';
 import { TotemPublicoController } from './totem-publico.controller';
+import { TotemPublicoService } from './totem-publico.service';
 
 /**
  * O QUIOSQUE (frente B): ativação, catálogo, eventos em lote e batimento.
@@ -13,5 +14,6 @@ import { TotemPublicoController } from './totem-publico.controller';
 @Module({
   imports: [TotemLoteModule],
   controllers: [TotemPublicoController],
+  providers: [TotemPublicoService],
 })
 export class TotemPublicoModule {}
