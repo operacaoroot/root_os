@@ -148,8 +148,8 @@ BEGIN
   OR s.provider IS NOT NULL OR s.modelo IS NOT NULL OR s."tokensIn"<>0 OR s."tokensOut"<>0 OR s.passos<>2 OR s."custoUsd"<>0
   OR p.ordem<>1 OR p.tipo::text<>'pedido' OR p.payload IS DISTINCT FROM payload OR p.args IS NOT NULL
   OR p.fontes IS DISTINCT FROM '[]'::jsonb OR p.texto IS NOT NULL
-  OR f.ordem<>2 OR f.tipo::text IS DISTINCT FROM CASE WHEN NEW.status='executada' THEN 'ferramenta' ELSE 'resultado' END
-  OR f.capacidade IS DISTINCT FROM CASE WHEN NEW.status='executada' THEN 'contexto.memoria.buscar' ELSE NULL END
+  OR f.ordem<>2 OR f.tipo::text IS DISTINCT FROM (CASE WHEN NEW.status='executada' THEN 'ferramenta' ELSE 'resultado' END)
+  OR f.capacidade IS DISTINCT FROM (CASE WHEN NEW.status='executada' THEN 'contexto.memoria.buscar' ELSE NULL END)
   OR f."argsResumo" IS DISTINCT FROM 'Consulta literal local' OR f."resultadoResumo" IS DISTINCT FROM 'Recibo disponível no procedimento de ferramenta local.'
   OR f.payload IS DISTINCT FROM jsonb_build_object('receiptId',NEW.id,'resultado',COALESCE(NEW.resultado,'null'::jsonb))
   OR f.args IS DISTINCT FROM NEW.entrada OR f.fontes IS DISTINCT FROM '[]'::jsonb
@@ -161,7 +161,7 @@ BEGIN
   OR item."sourceType" IS DISTINCT FROM v."sourceType" OR item."sourceRef" IS DISTINCT FROM v."sourceRef"
   OR octet_length(v.body)>262144
   OR NEW."sourceSnapshot"->>'chave' IS DISTINCT FROM item.chave
-  OR NEW."sourceSnapshot"->>'colecao' IS DISTINCT FROM CASE WHEN v."sourceType"::text='vault' THEN 'vault_canonica' ELSE 'manual_local' END
+  OR NEW."sourceSnapshot"->>'colecao' IS DISTINCT FROM (CASE WHEN v."sourceType"::text='vault' THEN 'vault_canonica' ELSE 'manual_local' END)
   OR NEW."toolConfigHash" IS DISTINCT FROM encode(sha256(convert_to(public.tool_local_config_text(sop."ferramentaLocal"),'UTF8')),'hex')
   OR sop.versao IS DISTINCT FROM NEW."sopVersion" OR NEW."sopSnapshot" IS DISTINCT FROM jsonb_build_object('id',sop.id,
   'versao',sop.versao,'proposito',sop.proposito,'gatilho',sop.gatilho,'passos',to_jsonb(sop.passos),
@@ -265,8 +265,8 @@ BEGIN
     AND cv.title=c.title AND cv.kind=c.kind;
   IF membro.id IS NULL OR membro.metadata->>'sourceRef' IS DISTINCT FROM c."sourceRef" OR membro.metadata->>'title' IS DISTINCT FROM c.title
    OR membro.metadata->>'kind' IS DISTINCT FROM c.kind::text OR membro.metadata->'tags' IS DISTINCT FROM to_jsonb(c.tags)
-   OR membro.metadata->>'validFrom' IS DISTINCT FROM CASE WHEN c."validFrom" IS NULL THEN NULL ELSE to_char(c."validFrom",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END
-   OR membro.metadata->>'validUntil' IS DISTINCT FROM CASE WHEN c."validUntil" IS NULL THEN NULL ELSE to_char(c."validUntil",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END THEN
+   OR membro.metadata->>'validFrom' IS DISTINCT FROM (CASE WHEN c."validFrom" IS NULL THEN NULL ELSE to_char(c."validFrom",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END)
+   OR membro.metadata->>'validUntil' IS DISTINCT FROM (CASE WHEN c."validUntil" IS NULL THEN NULL ELSE to_char(c."validUntil",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') END) THEN
    RAISE EXCEPTION 'Captura local corrente divergente' USING ERRCODE='23514'; END IF;
   IF NOT EXISTS (SELECT 1 FROM "ContextCollectionMember" m JOIN "ContextCollectionSelection" s ON s.id=m."selectionId" AND s."orgId"=m."orgId"
    WHERE m."orgId"=NEW."orgId" AND m."itemId"=v."itemId" AND m."versionId"=v.id AND m.versao=v.versao AND m.estado='projetado'
