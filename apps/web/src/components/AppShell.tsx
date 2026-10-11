@@ -24,7 +24,11 @@ import { CaixaProvider } from './caixa';
 // A regra abaixo casa `'/'` SÓ com a raiz: `pathname === '/'` é verdade apenas
 // para ela, e `startsWith('//')` não acontece em caminho normalizado. Nenhuma
 // outra tela vira pública por causa desta linha.
-const PUBLICAS = ['/', '/entrar', '/login', '/b', '/central', '/termos', '/privacidade', '/e'];
+//
+// `'/totem'` (o quiosque da loja) e `'/p'` (a ficha aberta pela etiqueta)
+// entraram com o módulo Totem. Pelo mesmo casamento, `/totem` não abre
+// `/totem-gestao`, que continua atrás do login.
+const PUBLICAS = ['/', '/entrar', '/login', '/b', '/central', '/termos', '/privacidade', '/e', '/totem', '/p'];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();

@@ -41,6 +41,10 @@ import { LinhaDoTempoModule } from './linha-do-tempo/linha-do-tempo.module';
 import { CaixaModule } from './caixa/caixa.module';
 import { ConectorModule } from './conector/conector.module';
 import { FerramentasModule } from './ferramentas/ferramentas.module';
+import { TotemCadastroModule } from './totem/cadastro/totem-cadastro.module';
+import { TotemGestaoModule } from './totem/gestao/totem-gestao.module';
+import { TotemLoteModule } from './totem/lote/totem-lote.module';
+import { TotemPublicoModule } from './totem/publico/totem-publico.module';
 
 @Module({
   imports: [
@@ -167,6 +171,13 @@ import { FerramentasModule } from './ferramentas/ferramentas.module';
     // NADA ACUSA — mesmo silêncio da linha do tempo, e é por isso que a rota
     // está na lista padrão do smoke.
     CaixaModule,
+    // O TOTEM DO SR. AGRANEL (11/10/2026): painel, quiosque, lote e etiqueta,
+    // cadastro e cupom, um módulo por frente (`docs/totem/CONTRATO.md`). Os
+    // seis prefixos estão no smoke: módulo fora daqui responde 404 calado.
+    TotemGestaoModule,
+    TotemLoteModule,
+    TotemPublicoModule,
+    TotemCadastroModule,
   ],
   controllers: [HealthController],
 })

@@ -397,3 +397,89 @@ export async function resolverTenantDoConvite(
       }
     : null;
 }
+
+/*
+ * AS TRÊS RESOLUÇÕES DO TOTEM (11/10/2026, docs/totem/CONTRATO.md).
+ *
+ * O quiosque e o QR da etiqueta não têm login: a empresa sai do aparelho (pelo
+ * hash do código de ativação ou do token) ou da etiqueta (pelo código impresso).
+ * Mesma forma das resoluções acima. A policy de LEITURA de `TotemDispositivo` e
+ * `TotemEtiqueta` aceita a sentinela por causa destas três funções; a de
+ * escrita não. Quem chama ainda confere `exigirModuloTotem` dentro da empresa
+ * resolvida, porque o gate de módulos deixa a requisição anônima passar.
+ */
+
+/** O aparelho que está trocando o código de ativação pelo token. */
+export async function resolverTenantDaAtivacao(
+  prisma: PrismaClient,
+  codigoHash: string,
+): Promise<{
+  dispositivoId: string;
+  orgId: string;
+  lojaId: string;
+  ativacaoExpiraEm: Date | null;
+  revogadoEm: Date | null;
+} | null> {
+  const d = await sobASentinela(() =>
+    prisma.totemDispositivo.findUnique({
+      where: { codigoAtivacaoHash: codigoHash },
+      select: { id: true, orgId: true, lojaId: true, ativacaoExpiraEm: true, revogadoEm: true },
+    }),
+  );
+  return d
+    ? {
+        dispositivoId: d.id,
+        orgId: d.orgId,
+        lojaId: d.lojaId,
+        ativacaoExpiraEm: d.ativacaoExpiraEm,
+        revogadoEm: d.revogadoEm,
+      }
+    : null;
+}
+
+/** O aparelho dono do token mandado em `X-Totem-Token`. Revogado decide o 401. */
+export async function resolverTenantDoTotem(
+  prisma: PrismaClient,
+  tokenHash: string,
+): Promise<{ dispositivoId: string; orgId: string; lojaId: string; revogadoEm: Date | null } | null> {
+  const d = await sobASentinela(() =>
+    prisma.totemDispositivo.findUnique({
+      where: { tokenHash },
+      select: { id: true, orgId: true, lojaId: true, revogadoEm: true },
+    }),
+  );
+  return d ? { dispositivoId: d.id, orgId: d.orgId, lojaId: d.lojaId, revogadoEm: d.revogadoEm } : null;
+}
+
+/**
+ * A etiqueta do QR. O código já chega normalizado (`totemNormalizarCodigo`) e
+ * validado pelo schema de `@mktos/shared`; ele é aleatório e não deriva de id.
+ */
+export async function resolverTenantDaEtiqueta(
+  prisma: PrismaClient,
+  codigo: string,
+): Promise<{
+  etiquetaId: string;
+  orgId: string;
+  lojaId: string;
+  produtoId: string;
+  loteId: string | null;
+  revogadaEm: Date | null;
+} | null> {
+  const e = await sobASentinela(() =>
+    prisma.totemEtiqueta.findUnique({
+      where: { codigo },
+      select: { id: true, orgId: true, lojaId: true, produtoId: true, loteId: true, revogadaEm: true },
+    }),
+  );
+  return e
+    ? {
+        etiquetaId: e.id,
+        orgId: e.orgId,
+        lojaId: e.lojaId,
+        produtoId: e.produtoId,
+        loteId: e.loteId,
+        revogadaEm: e.revogadaEm,
+      }
+    : null;
+}

@@ -667,16 +667,27 @@ describe('schema e migration', () => {
     expect(sql).toMatch(/ADD COLUMN "modulos" TEXT\[\] NOT NULL/);
   });
 
-  it('o backfill da migration é EXATAMENTE o catálogo de MODULOS', () => {
+  /*
+   * Módulos que nasceram DEPOIS desta migration. O backfill deu a quem já
+   * existia o que essa empresa via em 11/09/2026; módulo novo não entra nele
+   * (migration aplicada não se edita, e ligar o módulo novo em toda empresa
+   * antiga seria decisão comercial tomada por SQL). Quem o recebe é o
+   * provisionamento. A lista só cresce, e cada entrada tem de existir em MODULOS.
+   */
+  const NASCIDOS_DEPOIS_DO_BACKFILL: readonly string[] = ['totem'];
+
+  it('o backfill da migration é EXATAMENTE o catálogo de MODULOS daquela data', () => {
     // SQL não importa TypeScript: a lista aparece lá uma segunda vez, e esta é
     // a única defesa honesta contra ela divergir. Acrescentou módulo no
-    // nav.ts e esqueceu a migration? Reprova aqui.
+    // nav.ts? Ou ele estava no backfill, ou entra em NASCIDOS_DEPOIS_DO_BACKFILL.
     const sql = readFileSync(sqlPath, 'utf8');
     const array = /UPDATE "Org"[\s\S]*?ARRAY\[([\s\S]*?)\]::TEXT\[\]/.exec(sql)?.[1];
     expect(array, 'não achei o UPDATE de backfill na migration').toBeTruthy();
     const doSql = [...array!.matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    expect([...doSql].sort()).toEqual([...MODULOS].sort());
-    expect(doSql.length).toBe(MODULOS.length);
+    const daquelaData = MODULOS.filter((m) => !NASCIDOS_DEPOIS_DO_BACKFILL.includes(m));
+    expect([...doSql].sort()).toEqual([...daquelaData].sort());
+    expect(doSql.length).toBe(daquelaData.length);
+    expect(NASCIDOS_DEPOIS_DO_BACKFILL.filter((m) => !(MODULOS as readonly string[]).includes(m))).toEqual([]);
   });
 
   it('a cronologia das migrations é única e a nossa é a mais nova das duas conhecidas', () => {

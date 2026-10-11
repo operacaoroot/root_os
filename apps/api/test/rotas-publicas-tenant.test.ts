@@ -213,11 +213,17 @@ describe('a sentinela da resolução pública', () => {
     expect(exportado.filter((k) => k.startsWith('resolver')).sort()).toEqual([
       'resolverOrgDaChave',
       'resolverOrgDoSlugInterno',
+      // O totem (11/10/2026): o aparelho pelo hash do código de ativação.
+      'resolverTenantDaAtivacao',
+      // O totem: a etiqueta do QR pelo código impresso.
+      'resolverTenantDaEtiqueta',
       'resolverTenantDaPage',
       // O link público do onboarding (23/09/2026): acha a empresa pelo hash do token.
       'resolverTenantDoConvite',
       'resolverTenantDoHandle',
       'resolverTenantDoLink',
+      // O totem: o aparelho pelo hash do token.
+      'resolverTenantDoTotem',
     ]);
   });
 });

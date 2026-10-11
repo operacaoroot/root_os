@@ -29,6 +29,7 @@
     "typecheck:test": "node ../../tools/ferramentas/build-hook.mjs && tsc -p tsconfig.test.json",
     "test:isolamento": "node ../../tools/ferramentas/build-hook.mjs && MKTOS_CONJUNTO_DE_TESTES=isolamento vitest run",
     "db:seed:politica": "tsx prisma/seed-politica.ts",
+    "db:seed:totem": "tsx prisma/seed-totem.ts",
     "test:porta": "vitest run test/porta.test.ts",
     "db:seed:tripulacao": "tsx prisma/seed-tripulacao.ts",
     "smoke": "node scripts/smoke-boot.mjs",

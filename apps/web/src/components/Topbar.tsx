@@ -53,6 +53,7 @@ const SUBTITULOS: Record<string, string> = {
   bio: 'a página que recebe o clique',
   metas: 'onde está a régua do mês',
   financeiro: 'entra, sai e o que sobra',
+  totem: 'as lojas, os lotes e o que o cliente consulta',
   // a conta
   config: 'como o sistema se comporta',
 };

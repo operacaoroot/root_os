@@ -463,6 +463,27 @@ const ALVOS: Alvo[] = [
   { tabela: 'OnboardingAta', escopo: 'filho', chaveSql: '"id"', nota: 'O registro da leitura da ata: hash, tamanho, quantos segredos foram mascarados, custo. Não guarda a transcrição — mas diz que houve reunião, quando e quanto custou.' },
   { tabela: 'OnboardingMarco', escopo: 'filho', chaveSql: '"id"', nota: 'A linha do tempo do trilho, com as mensagens prontas de lembrete (o link dentro). Ler a alheia é ler o link do cliente da outra.' },
 
+  // ---- módulo Totem (11/10/2026, docs/totem/CONTRATO.md) -----------------
+  // Todas com orgId próprio, gravado pelo serviço, sem gatilho: o pai (loja,
+  // produto, lote, remessa, campanha, cliente) é conferido no serviço dentro
+  // do tenant antes de gravar o filho. A policy protege leitura e escrita da
+  // linha; não protege a FK que aponta para o pai de outra empresa.
+  { tabela: 'TotemConfig', escopo: 'tenant', chaveSql: '"id"', nota: 'A identidade do totem e o controlador LGPD da empresa (nome, documento, encarregado). ESCREVER a alheia troca o nome e a política que o cliente da outra empresa lê antes de dar o CPF.' },
+  { tabela: 'TotemLoja', escopo: 'tenant', chaveSql: '"id"', nota: 'As lojas da rede. Ler a alheia é ler a rede do concorrente; o pai dos dispositivos, remessas, reposições e etiquetas é conferido no serviço.' },
+  { tabela: 'TotemUsuarioLoja', escopo: 'tenant', chaveSql: '"id"', nota: 'O vínculo que restringe gerente e operador às lojas deles. ESCREVER a alheia dá a um usuário acesso a loja de outra empresa; o par (usuário, loja) é conferido no serviço.' },
+  { tabela: 'TotemDispositivo', escopo: 'tenant', chaveSql: '"id"', nota: 'O aparelho e o hash do token dele. A LEITURA aceita a sentinela pública (é por ela que o token acha a empresa); a escrita não. ESCREVER a alheia revoga ou sequestra o totem de outra loja.' },
+  { tabela: 'TotemProduto', escopo: 'tenant', chaveSql: '"id"', nota: 'O catálogo com ficha nutricional e preço. Ler o alheio é ler o preço do concorrente, que nem o totem dele mostra quando o preço está desligado.' },
+  { tabela: 'TotemLote', escopo: 'tenant', chaveSql: '"id"', nota: 'Lote e validade, que é o que o fiscal cobra. O produto-pai é conferido no serviço; ESCREVER a validade alheia faz o totem de outra empresa mostrar data errada ao cliente.' },
+  { tabela: 'TotemRemessa', escopo: 'tenant', chaveSql: '"id"', nota: 'O envio do centro de distribuição para a loja. A loja-pai é conferida no serviço; marcar como recebida a remessa alheia muda o lote vigente da outra rede.' },
+  { tabela: 'TotemRemessaItem', escopo: 'tenant', chaveSql: '"id"', nota: 'Os lotes de cada remessa. Remessa, lote e produto são conferidos no serviço, porque a FK sozinha aceita um lote de outra empresa.' },
+  { tabela: 'TotemReposicao', escopo: 'tenant', chaveSql: '"id"', nota: 'Qual lote foi para a gôndola e quando: é a primeira fonte do lote vigente. Loja, produto e lote são conferidos no serviço.' },
+  { tabela: 'TotemEtiqueta', escopo: 'tenant', chaveSql: '"id"', nota: 'O código impresso que abre /p/[codigo]. A LEITURA aceita a sentinela pública (é por ela que o QR acha a empresa); a escrita não. Loja, produto e lote são conferidos no serviço.' },
+  { tabela: 'TotemCampanha', escopo: 'tenant', chaveSql: '"id"', nota: 'O benefício oferecido em troca do cadastro. Ler a alheia é ler a estratégia comercial da outra rede; ESCREVER muda o desconto que ela dá.' },
+  { tabela: 'TotemCliente', escopo: 'tenant', chaveSql: '"id"', nota: 'Dado pessoal: hash do CPF, CPF mascarado e telefone. É a tabela que a LGPD olha primeiro; vazar para outra empresa é incidente a comunicar.' },
+  { tabela: 'TotemConsentimento', escopo: 'tenant', chaveSql: '"id"', nota: 'A prova do consentimento (versão da política, finalidades, canal, data). O cliente-pai é conferido no serviço; ESCREVER a alheia forja ou apaga a prova de outra empresa.' },
+  { tabela: 'TotemCupom', escopo: 'tenant', chaveSql: '"id"', nota: 'O cupom emitido no cadastro. Campanha e cliente são conferidos no serviço; ESCREVER `status` no alheio dá baixa em cupom que ninguém usou.' },
+  { tabela: 'TotemEvento', escopo: 'tenant', chaveSql: '"id"', nota: 'O que o cliente buscou e viu no totem, por loja. Sem FK de propósito (é registro de uso); ler o alheio é ler a demanda da outra rede.' },
+
   // ---- junções implícitas do Prisma (não têm id) ------------------------
   { tabela: '_UserRoles', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Role.id, B=User.id. Sem policy dá para conceder Role de outra org — escalação cross-tenant.' },
   { tabela: '_RolePermissions', escopo: 'juncao', chaveSql: `"A" || '|' || "B"`, nota: 'A=Permission.id (GLOBAL), B=Role.id (TENANT). A policy vai em B, nunca em A.' },
@@ -1337,6 +1358,72 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     dados: JSON.stringify({}),
   }, { dados: 'jsonb' }));
 
+  // Módulo Totem (11/10/2026): uma linha de cada uma das 15 tabelas, com o pai
+  // da mesma empresa. Os códigos globalmente únicos (hash do token, etiqueta)
+  // levam o sufixo da rodada para não colidir entre as duas orgs.
+  reg('TotemConfig', await ins(c, 'TotemConfig', {
+    id: crypto.randomUUID(), orgId, nomeExibicao: `Totem ${rotulo}`, corPrimaria: '#1F5132', corFundo: '#FFFFFF',
+    controladorNome: `Controlador ${rotulo} ${MARCA}`, politicaVersao: '2026-10-11', atualizadoEm: agora,
+  }));
+  const totemLojaId = await ins(c, 'TotemLoja', {
+    id: crypto.randomUUID(), orgId, codigo: `L${rotulo}`, nome: `Loja ${rotulo} ${MARCA}`, atualizadoEm: agora,
+  });
+  reg('TotemLoja', totemLojaId);
+  const totemProdutoId = await ins(c, 'TotemProduto', {
+    id: crypto.randomUUID(), orgId, codigo: `P${rotulo}`, nome: `Granola ${rotulo}`, nomeBusca: `granola ${rotulo.toLowerCase()}`,
+    nutricional: JSON.stringify([{ nutriente: 'Valor energético', quantidade: 120, unidade: 'kcal', vd: 6 }]),
+    selos: ['integral'], precoCentavos: rotulo === 'A' ? 4590 : 3990, unidadePreco: 'kg', atualizadoEm: agora,
+  }, { nutricional: 'jsonb', selos: 'text[]' });
+  reg('TotemProduto', totemProdutoId);
+  reg('TotemUsuarioLoja', await ins(c, 'TotemUsuarioLoja', {
+    id: crypto.randomUUID(), orgId, userId, lojaId: totemLojaId,
+  }));
+  reg('TotemDispositivo', await ins(c, 'TotemDispositivo', {
+    id: crypto.randomUUID(), orgId, lojaId: totemLojaId, nome: `Totem da entrada ${rotulo}`,
+    tokenHash: crypto.createHash('sha256').update(`token_${suf}`).digest('hex'), ativadoEm: agora, atualizadoEm: agora,
+  }));
+  const totemLoteId = await ins(c, 'TotemLote', {
+    id: crypto.randomUUID(), orgId, produtoId: totemProdutoId, codigo: `LT${rotulo}`,
+    validadeEm: new Date(agora.getTime() + 90 * 86_400_000), atualizadoEm: agora,
+  });
+  reg('TotemLote', totemLoteId);
+  const totemRemessaId = await ins(c, 'TotemRemessa', {
+    id: crypto.randomUUID(), orgId, lojaId: totemLojaId, atualizadoEm: agora,
+  });
+  reg('TotemRemessa', totemRemessaId);
+  reg('TotemRemessaItem', await ins(c, 'TotemRemessaItem', {
+    id: crypto.randomUUID(), orgId, remessaId: totemRemessaId, loteId: totemLoteId, produtoId: totemProdutoId,
+    quantidade: 12.5, unidade: 'kg',
+  }));
+  reg('TotemReposicao', await ins(c, 'TotemReposicao', {
+    id: crypto.randomUUID(), orgId, lojaId: totemLojaId, produtoId: totemProdutoId, loteId: totemLoteId, origem: 'manual',
+  }));
+  reg('TotemEtiqueta', await ins(c, 'TotemEtiqueta', {
+    id: crypto.randomUUID(), orgId, lojaId: totemLojaId, produtoId: totemProdutoId, loteId: totemLoteId,
+    codigo: `ET_${suf}`, atualizadoEm: agora,
+  }));
+  const totemCampanhaId = await ins(c, 'TotemCampanha', {
+    id: crypto.randomUUID(), orgId, nome: `Campanha ${rotulo}`, chamada: 'Ganhe um desconto', tipoBeneficio: 'percentual',
+    valorBeneficio: rotulo === 'A' ? 10 : 15, validadeDias: 30, atualizadoEm: agora,
+  });
+  reg('TotemCampanha', totemCampanhaId);
+  const totemClienteId = await ins(c, 'TotemCliente', {
+    id: crypto.randomUUID(), orgId, cpfHash: `cpf_${suf}`, cpfMascarado: '***.456.789-**',
+    telefone: rotulo === 'A' ? '+5527999990001' : '+5527999990002', canalOrigem: 'totem', atualizadoEm: agora,
+  });
+  reg('TotemCliente', totemClienteId);
+  reg('TotemConsentimento', await ins(c, 'TotemConsentimento', {
+    id: crypto.randomUUID(), orgId, clienteId: totemClienteId, politicaVersao: '2026-10-11',
+    finalidades: ['cupom'], canal: 'totem', lojaId: totemLojaId, atualizadoEm: agora,
+  }, { finalidades: 'text[]' }));
+  reg('TotemCupom', await ins(c, 'TotemCupom', {
+    id: crypto.randomUUID(), orgId, campanhaId: totemCampanhaId, clienteId: totemClienteId, codigo: `CP${rotulo}00000`,
+    validoAte: new Date(agora.getTime() + 30 * 86_400_000), atualizadoEm: agora,
+  }));
+  reg('TotemEvento', await ins(c, 'TotemEvento', {
+    id: crypto.randomUUID(), orgId, lojaId: totemLojaId, tipo: 'busca', termo: `granola ${rotulo.toLowerCase()}`,
+  }));
+
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
   reg('_WorkTaskTags', `${tagId}|${tarefaId}`);
 
@@ -1971,7 +2058,7 @@ describe('o catálogo do banco (a catraca que alcança tabela nova)', () => {
       onde: 'Org, leitura, com as duas sentinelas (é ela que resolve a empresa do pedido)',
     },
     { expressao: comPlataforma(E_PADRAO), onde: 'User e Role — leitura sob a sentinela de plataforma (o login)' },
-    { expressao: comPublica(E_PADRAO), onde: 'BioPage e BioLink — leitura sob a sentinela pública (o contrato da fatia 1.4)' },
+    { expressao: comPublica(E_PADRAO), onde: 'BioPage e BioLink — leitura sob a sentinela pública (o contrato da fatia 1.4); TotemDispositivo e TotemEtiqueta, pelo mesmo caminho (o token do totem e o QR da etiqueta)' },
     { expressao: E_GLOBAL_OPCIONAL, onde: 'BioCredencialApp — leitura, com a linha global' },
     { expressao: comPlataforma(E_GLOBAL_OPCIONAL), onde: 'PolicyVersion — leitura, com a base no arranque' },
     { expressao: E_USER_ROLES, onde: '_UserRoles — escrita (os dois pais na empresa)' },

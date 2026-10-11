@@ -106,6 +106,23 @@ export const PERMISSIONS = [
   'pauta.enviar_ao_youtube',
   'aprovacoes.ver',
   'aprovacoes.decidir',
+  /*
+   * Módulo Totem (Sr. aGranel, 11/10/2026): o painel da rede de lojas. O que
+   * cada chave libera está em docs/totem/CONTRATO.md, seção 5. `totem.rede` é a
+   * que tira o limite de loja: sem ela, o painel mostra só as lojas vinculadas
+   * à pessoa em `TotemUsuarioLoja`.
+   */
+  'totem.ver',
+  'totem.rede',
+  'totem.lojas',
+  'totem.produtos',
+  'totem.dispositivos',
+  'totem.lotes',
+  'totem.reposicao',
+  'totem.etiquetas',
+  'totem.campanhas',
+  'totem.clientes',
+  'totem.cupons',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -156,6 +173,9 @@ export const ROLES = {
       // Alçada `titular`: é a assinatura que R4 e R5 exigem. Sem estas duas, o
       // único perfil capaz de liberar os degraus altos não alcançava a fila.
       'aprovacoes.ver', 'aprovacoes.decidir',
+      'totem.ver', 'totem.rede', 'totem.lojas', 'totem.produtos', 'totem.dispositivos',
+      'totem.lotes', 'totem.reposicao', 'totem.etiquetas', 'totem.campanhas',
+      'totem.clientes', 'totem.cupons',
     ] as Permission[],
   },
   // Perfil dedicado ao Financeiro (FinOps): opera contas, lançamentos e bancos.
@@ -240,6 +260,34 @@ export const ROLES = {
       'tarefas.ver', 'tarefas.editar', 'gmail.responder', 'agenda.editar', 'drive.editar',
       'mcp.ver', 'mcp.executar',
     ] as Permission[],
+  },
+  /*
+   * Os quatro papéis do módulo Totem (docs/totem/CONTRATO.md, seção 5). Nenhum
+   * deles recebe chave fora de `totem.*`: quem opera a loja não precisa ver o
+   * resto do OS. O limite por loja de gerente e operador não está aqui, está em
+   * `TotemUsuarioLoja` (ver `apps/api/src/totem/comum/escopo.ts`).
+   */
+  totem_rede: {
+    name: 'Totem — Rede',
+    permissions: [
+      'totem.ver', 'totem.rede', 'totem.lojas', 'totem.produtos', 'totem.dispositivos',
+      'totem.lotes', 'totem.reposicao', 'totem.etiquetas', 'totem.campanhas',
+      'totem.clientes', 'totem.cupons',
+    ] as Permission[],
+  },
+  totem_cd: {
+    name: 'Totem — Centro de distribuição',
+    permissions: ['totem.ver', 'totem.lotes', 'totem.etiquetas', 'totem.rede'] as Permission[],
+  },
+  totem_gerente: {
+    name: 'Totem — Gerente de loja',
+    permissions: [
+      'totem.ver', 'totem.dispositivos', 'totem.reposicao', 'totem.etiquetas', 'totem.cupons',
+    ] as Permission[],
+  },
+  totem_operador: {
+    name: 'Totem — Operador de loja',
+    permissions: ['totem.ver', 'totem.reposicao', 'totem.cupons'] as Permission[],
   },
 } as const;
 

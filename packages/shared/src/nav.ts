@@ -56,6 +56,7 @@ export const MODULOS = [
   'bio',
   'metas',
   'financeiro',
+  'totem',
 ] as const;
 export type ModuloKey = (typeof MODULOS)[number];
 
@@ -262,6 +263,9 @@ export const NAV: NavItem[] = [
   // portão. Filho do Trabalho porque é a esteira de clientes vista de dentro.
   { key: 'onboarding', label: 'Onboarding', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'execucao', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'relatorios', label: 'Relatórios', href: '/relatorios', icon: 'BarChart3', permission: 'relatorios.ver', secao: 'execucao', modulo: 'relatorios' },
+  // O painel da rede de lojas do totem de consulta (11/10/2026). As telas
+  // públicas (/totem na loja, /p/[codigo] na etiqueta) não entram no menu.
+  { key: 'totem', label: 'Totem', href: '/totem-gestao', icon: 'MonitorSmartphone', permission: 'totem.ver', secao: 'execucao', modulo: 'totem' },
 
   // ── O que entra ──────────────────────────────────────────────────────────
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'entra', modulo: 'leads' },

@@ -12,5 +12,14 @@ export * from './horas-devolvidas.js';
 // desmonta o MESMO título — ver o cabeçalho de `agenda.ts`.
 export * from './agenda.js';
 
+// O módulo Totem (docs/totem/CONTRATO.md). Um arquivo por frente, para que as
+// quatro construam em paralelo sem editar o mesmo lugar.
+export * from './totem/comum.js';
+export * from './totem/gestao.js';
+export * from './totem/publico.js';
+export * from './totem/lote.js';
+export * from './totem/cadastro.js';
+export * from './totem/politica.js';
+
 // Nome padrão; cada app pode sobrescrever via seu próprio env (APP_NAME).
 export const DEFAULT_APP_NAME = 'Marketing OS';

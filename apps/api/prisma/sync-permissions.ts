@@ -40,7 +40,7 @@ const prisma = new PrismaClient();
  * QUEM ADICIONAR CHAVE NOVA TROCA A SONDA por ela — senão a trava continua
  * pegando só `dist/` anterior a 11/09/2026.
  */
-const SONDA = 'aprovacoes.decidir';
+const SONDA = 'totem.cupons';
 
 async function main() {
   if (!(PERMISSIONS as readonly string[]).includes(SONDA)) {
@@ -100,6 +100,8 @@ async function main() {
     'pauta.enviar_ao_youtube',
     'aprovacoes.ver',
     'aprovacoes.decidir',
+    'totem.ver',
+    'totem.rede',
   ];
   for (const key of conferir) {
     const p = await prisma.permission.findUnique({

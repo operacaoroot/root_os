@@ -106,6 +106,16 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   conectar: 'bio',
   goals: 'metas',
   finance: 'financeiro',
+  // O módulo Totem (docs/totem/CONTRATO.md, seção 6). Os três primeiros são o
+  // painel, com sessão; os três últimos são públicos (o totem da loja, a
+  // etiqueta e o cadastro do cliente), e como o gate deixa anônimo passar, o
+  // serviço deles confere o módulo por conta própria (`exigirModuloTotem`).
+  'totem-gestao': 'totem',
+  'totem-lotes': 'totem',
+  'totem-campanhas': 'totem',
+  'totem-publico': 'totem',
+  'totem-etiqueta': 'totem',
+  'totem-cadastro': 'totem',
 };
 
 /**

@@ -327,6 +327,13 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
       S3_BUCKET: ${S3_BUCKET:-marketing-os}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:4000}
+      # Módulo Totem (docs/totem/CONTRATO.md, seção 12). O pepper é a chave do HMAC
+      # do CPF: sem ele a API sobe e só o cadastro do totem responde 503. Trocá-lo
+      # depois do primeiro cadastro desfaz a deduplicação por CPF. As outras duas
+      # só servem à semente `db:seed:totem`, rodada à mão dentro do container.
+      TOTEM_CPF_PEPPER: ${TOTEM_CPF_PEPPER:-}
+      TOTEM_ORG_SLUG: ${TOTEM_ORG_SLUG:-}
+      TOTEM_SEED_SAIDA: ${TOTEM_SEED_SAIDA:-}
     volumes:
       # Vault Obsidian montada READ-ONLY (base de conhecimento).
       #

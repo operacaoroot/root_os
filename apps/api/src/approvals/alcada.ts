@@ -89,6 +89,12 @@ const AUTORIDADE_POR_PAPEL: Record<RoleKey, AutoridadeDoPapel> = {
   social_media: { gente: true, alcada: 'operador' },
   // Gente, sem autoridade: o perfil só lê (ver o cabeçalho).
   consulta_limitada: { gente: true, alcada: null },
+  // Os papéis do módulo Totem são gente que opera loja e não aprova ação de
+  // agente: nenhuma chave deles toca a fila de aprovação.
+  totem_rede: { gente: true, alcada: null },
+  totem_cd: { gente: true, alcada: null },
+  totem_gerente: { gente: true, alcada: null },
+  totem_operador: { gente: true, alcada: null },
   // Contas de máquina. Não é "alçada baixa", é "não é gente".
   ia_servico: { gente: false },
   ia_acao: { gente: false },

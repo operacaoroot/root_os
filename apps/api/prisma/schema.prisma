@@ -219,6 +219,24 @@ model Org {
   onboardingConvites OnboardingConvite[]
   onboardingAtas     OnboardingAta[]
   onboardingMarcos   OnboardingMarco[]
+
+  // O MÓDULO TOTEM (bloco no fim do arquivo, 11/10/2026). Mesma regra das de
+  // cima: só o outro lado da relação mora aqui.
+  totemConfig         TotemConfig?
+  totemLojas          TotemLoja[]
+  totemUsuariosLoja   TotemUsuarioLoja[]
+  totemDispositivos   TotemDispositivo[]
+  totemProdutos       TotemProduto[]
+  totemLotes          TotemLote[]
+  totemRemessas       TotemRemessa[]
+  totemRemessaItens   TotemRemessaItem[]
+  totemReposicoes     TotemReposicao[]
+  totemEtiquetas      TotemEtiqueta[]
+  totemCampanhas      TotemCampanha[]
+  totemClientes       TotemCliente[]
+  totemConsentimentos TotemConsentimento[]
+  totemCupons         TotemCupom[]
+  totemEventos        TotemEvento[]
 }
 
 model User {
@@ -241,6 +259,9 @@ model User {
 
   agentesQueDono Agent[]           @relation("AgentDono")
   identidades    ChannelIdentity[]
+
+  /// As lojas do módulo Totem a que este usuário está limitado.
+  totemLojas TotemUsuarioLoja[]
 
   @@index([orgId])
 }
@@ -4451,4 +4472,424 @@ model OnboardingMarco {
   em    DateTime @default(now())
 
   @@index([orgId, trilhoId, em])
+}
+
+// ============================================================================
+// O MÓDULO TOTEM — consulta de produto, lote e cupom na loja (11/10/2026)
+// ============================================================================
+//
+// Desenho em `docs/totem/CONTRATO.md`. Quinze tabelas, todas da empresa dona
+// da rede de lojas (o primeiro cliente é o Sr. aGranel). TODAS têm `orgId`
+// PRÓPRIO, obrigatório e sem default, gravado pelo serviço: nenhuma usa a
+// sentinela `''` nem o gatilho `mktos_orgid_do_pai`, e nenhuma entra em
+// `FILHOS_COM_ORGID_REDUNDANTE`. O cruzamento de empresa que a FK sozinha não
+// pega (um lote de A pendurado em produto de B) é barrado no serviço, que lê o
+// pai pelo id com a RLS ligada antes de gravar o filho.
+//
+// As colunas `*Id` sem `@relation` (`lojaOrigemId`, `usadoLojaId`, os ids de
+// `TotemConsentimento` e `TotemEvento`) são referência histórica: não seguram
+// apagamento de nada e não precisam existir para a linha fazer sentido.
+// Loja e produto não se apagam, se desativam; o histórico de lote fica.
+
+/// A aparência e as chaves do totem da empresa. Uma linha por empresa.
+model TotemConfig {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  nomeExibicao   String
+  corPrimaria    String
+  corFundo       String
+  logoUrl        String?
+  /// Desligado, nenhuma resposta pública leva preço.
+  precoLigado    Boolean @default(false)
+  cadastroLigado Boolean @default(true)
+  tempoOciosoSeg Int     @default(60)
+
+  /// O controlador dos dados do cadastro (LGPD). A Root é a operadora.
+  controladorNome      String
+  controladorDocumento String?
+  controladorEndereco  String?
+  encarregadoNome      String?
+  encarregadoContato   String?
+  politicaVersao       String
+  mensagemBoasVindas   String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([orgId])
+}
+
+model TotemLoja {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  codigo   String
+  nome     String
+  cidade   String?
+  endereco String?
+  ativa    Boolean @default(true)
+  /// Criada pela semente de demonstração; a tela marca e permite remover.
+  exemplo  Boolean @default(false)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  usuarios     TotemUsuarioLoja[]
+  dispositivos TotemDispositivo[]
+  remessas     TotemRemessa[]
+  reposicoes   TotemReposicao[]
+  etiquetas    TotemEtiqueta[]
+
+  @@unique([orgId, codigo])
+  @@index([orgId])
+}
+
+/// O vínculo que limita gerente e operador às lojas deles. Quem tem
+/// `totem.rede` não precisa de linha aqui.
+model TotemUsuarioLoja {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  userId String
+  user   User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  lojaId String
+  loja   TotemLoja @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  criadoEm DateTime @default(now())
+
+  @@unique([orgId, userId, lojaId])
+  @@index([orgId])
+  @@index([orgId, userId])
+}
+
+/// Um aparelho de consulta numa loja. Código de ativação e token só existem
+/// aqui como SHA-256; o valor em claro aparece uma vez e não volta.
+model TotemDispositivo {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  lojaId String
+  loja   TotemLoja @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  nome               String
+  codigoAtivacaoHash String?   @unique
+  ativacaoExpiraEm   DateTime?
+  tokenHash          String?   @unique
+  ativadoEm          DateTime?
+  revogadoEm         DateTime?
+  vistoEm            DateTime?
+  versaoApp          String?
+  catalogoVersao     String?
+  userAgent          String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, lojaId])
+}
+
+model TotemProduto {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  codigo             String
+  /// O código do produto no Director (ERP/PDV), para o ingestor futuro.
+  codigoDirector     String?
+  nome               String
+  /// `normalizarBusca(nome)`, mantido pelo serviço.
+  nomeBusca          String
+  categoria          String?
+  composicao         String?
+  beneficios         String?
+  alergenicos        String?
+  porcaoG            Decimal? @db.Decimal(10, 2)
+  porcaoDescricao    String?
+  /// Lista de `{ nutriente, quantidade, unidade, vd }` (`TotemNutricionalSchema`).
+  nutricional        Json     @default("[]")
+  selos              String[] @default([])
+  validadeDiasPadrao Int?
+  precoCentavos      Int?
+  /// `kg` · `100g` · `un`.
+  unidadePreco       String?
+  imagemUrl          String?
+  ativo              Boolean  @default(true)
+  exemplo            Boolean  @default(false)
+  fonteNutricional   String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  lotes        TotemLote[]
+  remessaItens TotemRemessaItem[]
+  reposicoes   TotemReposicao[]
+  etiquetas    TotemEtiqueta[]
+
+  @@unique([orgId, codigo])
+  @@index([orgId])
+  @@index([orgId, nomeBusca])
+}
+
+model TotemLote {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  produtoId String
+  produto   TotemProduto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+
+  codigo       String
+  fabricadoEm  DateTime?
+  validadeEm   DateTime
+  /// `producao_central` · `manual_loja`.
+  origem       String    @default("producao_central")
+  /// A loja que registrou o lote quando a origem é `manual_loja`.
+  lojaOrigemId String?
+  observacao   String?
+  criadoPor    String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  remessaItens TotemRemessaItem[]
+  reposicoes   TotemReposicao[]
+  etiquetas    TotemEtiqueta[]
+
+  @@unique([orgId, produtoId, codigo])
+  @@index([orgId])
+  @@index([orgId, validadeEm])
+}
+
+model TotemRemessa {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  lojaId String
+  loja   TotemLoja @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  /// `enviada` · `recebida` · `cancelada`.
+  status      String    @default("enviada")
+  enviadaEm   DateTime  @default(now())
+  recebidaEm  DateTime?
+  recebidaPor String?
+  observacao  String?
+  criadoPor   String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  itens TotemRemessaItem[]
+
+  @@index([orgId])
+  @@index([orgId, lojaId, status])
+}
+
+model TotemRemessaItem {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  remessaId String
+  remessa   TotemRemessa @relation(fields: [remessaId], references: [id], onDelete: Cascade)
+  loteId    String
+  lote      TotemLote    @relation(fields: [loteId], references: [id], onDelete: Restrict)
+  produtoId String
+  produto   TotemProduto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+
+  quantidade Decimal? @db.Decimal(12, 3)
+  unidade    String?
+
+  criadoEm DateTime @default(now())
+
+  @@index([orgId])
+  @@index([orgId, remessaId])
+  @@index([orgId, produtoId])
+}
+
+/// A loja confirmou que pôs este lote na gôndola. Só cresce.
+model TotemReposicao {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  lojaId    String
+  loja      TotemLoja    @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  produtoId String
+  produto   TotemProduto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  loteId    String
+  lote      TotemLote    @relation(fields: [loteId], references: [id], onDelete: Restrict)
+
+  repostoEm     DateTime @default(now())
+  /// `remessa` · `manual`.
+  origem        String
+  registradoPor String?
+
+  criadoEm DateTime @default(now())
+
+  @@index([orgId])
+  @@index([orgId, lojaId, produtoId, repostoEm])
+}
+
+/// A etiqueta com QR. O código é aleatório e não deriva de id nenhum.
+model TotemEtiqueta {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  lojaId    String
+  loja      TotemLoja    @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  produtoId String
+  produto   TotemProduto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  loteId    String?
+  lote      TotemLote?   @relation(fields: [loteId], references: [id], onDelete: Restrict)
+
+  codigo     String    @unique
+  impressaEm DateTime?
+  quantidade Int       @default(1)
+  revogadaEm DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, lojaId])
+}
+
+model TotemCampanha {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  nome               String
+  chamada            String
+  /// `percentual` · `valor` · `brinde`.
+  tipoBeneficio      String
+  valorBeneficio     Decimal?  @db.Decimal(12, 2)
+  descricaoBeneficio String?
+  /// Quantos dias o cupom vale a partir da emissão.
+  validadeDias       Int
+  inicioEm           DateTime  @default(now())
+  fimEm              DateTime?
+  ativa              Boolean   @default(true)
+  /// Vazio = todas as lojas.
+  lojaIds            String[]  @default([])
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  cupons TotemCupom[]
+
+  @@index([orgId])
+}
+
+/// O cliente do cadastro. O CPF em claro nunca é gravado: só o HMAC e a
+/// máscara.
+model TotemCliente {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  cpfHash         String
+  cpfMascarado    String
+  /// E.164: `+55DDNNNNNNNNN`.
+  telefone        String
+  nome            String?
+  lojaOrigemId    String?
+  /// `totem` · `qr`.
+  canalOrigem     String
+  aceitaCampanhas Boolean   @default(false)
+  anonimizadoEm   DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  consentimentos TotemConsentimento[]
+  cupons         TotemCupom[]
+
+  @@unique([orgId, cpfHash])
+  @@index([orgId])
+}
+
+/// A prova do consentimento: qual versão da política, para quê e por onde.
+model TotemConsentimento {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  clienteId String
+  cliente   TotemCliente @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+
+  politicaVersao String
+  /// `cupom` · `campanhas`.
+  finalidades    String[]
+  canal          String
+  lojaId         String?
+  dispositivoId  String?
+  aceitoEm       DateTime  @default(now())
+  revogadoEm     DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([orgId, clienteId])
+}
+
+/// Um cupom por cliente por campanha.
+model TotemCupom {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  campanhaId String
+  campanha   TotemCampanha @relation(fields: [campanhaId], references: [id], onDelete: Restrict)
+  clienteId  String
+  cliente    TotemCliente  @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+
+  codigo      String
+  /// `emitido` · `usado` · `expirado` · `cancelado`.
+  status      String    @default("emitido")
+  emitidoEm   DateTime  @default(now())
+  validoAte   DateTime
+  usadoEm     DateTime?
+  usadoLojaId String?
+  usadoPor    String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([orgId, codigo])
+  @@unique([orgId, campanhaId, clienteId])
+  @@index([orgId])
+  @@index([orgId, clienteId])
+}
+
+/// O que acontece no totem e na etiqueta, para o painel contar. Só cresce, e
+/// não guarda nada que identifique o cliente.
+model TotemEvento {
+  id    String @id @default(uuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  lojaId        String?
+  dispositivoId String?
+  /// `busca` · `busca_sem_resultado` · `ver_produto` · `cadastro` ·
+  /// `sincronizou` · `qr_aberto`.
+  tipo          String
+  produtoId     String?
+  /// O que foi digitado, até 80 caracteres.
+  termo         String?
+  ocorridoEm    DateTime @default(now())
+
+  criadoEm DateTime @default(now())
+
+  @@index([orgId])
+  @@index([orgId, ocorridoEm])
 }

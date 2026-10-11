@@ -66,7 +66,13 @@ const ROTAS = (
   // 404 na tela — sem nada acusar, porque nenhum outro componente o espera. Na
   // caixa o silêncio é ainda mais fácil de não notar: o selo da barra lateral
   // simplesmente não aparece, e barra sem selo é indistinguível de caixa vazia.
-  '/api/memoria,/api/rotinas,/api/organograma,/api/linha-do-tempo,/api/caixa'
+  //
+  // As seis do módulo Totem (11/10/2026) são uma por prefixo. As três últimas
+  // são públicas e não exigem sessão: sem credencial respondem 401 ou 400, o
+  // que basta para provar que o controller está no grafo.
+  '/api/memoria,/api/rotinas,/api/organograma,/api/linha-do-tempo,/api/caixa,' +
+    '/api/totem-gestao/resumo,/api/totem-lotes/pendencias,/api/totem-campanhas,' +
+    '/api/totem-publico/catalogo,/api/totem-etiqueta/x,/api/totem-cadastro/politica'
 )
   .split(',')
   .map((r) => r.trim())
