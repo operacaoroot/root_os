@@ -2196,14 +2196,16 @@ export class MemoriaService {
     const nota = await tx.contextItem.findFirst({ where, select: SELECAO_FISICA_DA_DERIVACAO });
     const chave = nota?.chave ?? ('chave' in seletor ? seletor.chave : null);
     if (!chave) throw new NotFoundException('Fonte indisponível.');
-    const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, chave } });
+    const claim = await tx.contextKeyClaim.findFirst({ where: { orgId, key: chave } });
     if (!nota) {
       if (claim) throw new ConflictException('A chave está reservada ou identifica outra fonte.');
       return { estado: 'ausente_fisico', orgId, chave };
     }
     const leitor = this.atorDaDerivacao(identidade).actorId;
     if (!podeLerFonte(nota, leitor)) throw new ForbiddenException('Acesso à nota insuficiente.');
-    if (!claim || claim.tipo !== 'canonical' || claim.itemId !== nota.id) throw this.derivacaoAlterada();
+    if (chave.startsWith('vault:')) {
+      if (!claim || claim.tipo !== 'canonical' || claim.itemId !== nota.id) throw this.derivacaoAlterada();
+    } else if (claim) throw this.derivacaoAlterada();
     if (!historico) {
       if (nota.arquivadoEm) throw new ConflictException('A fonte está arquivada. Confira sua situação antes de gerar.');
       await exigirNovoUsoSemMovimentoPendente(tx, orgId, nota.id);
