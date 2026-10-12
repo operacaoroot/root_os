@@ -4514,6 +4514,8 @@ model TotemConfig {
   encarregadoContato   String?
   politicaVersao       String
   mensagemBoasVindas   String?
+  /// O aviso de alergênicos da ficha de todo produto que não tem o seu.
+  alergenicosPadrao    String?
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
@@ -4608,6 +4610,8 @@ model TotemProduto {
   categoria          String?
   composicao         String?
   beneficios         String?
+  /// Sugestão de consumo ("acompanha iogurte e frutas").
+  sugestoes          String?
   alergenicos        String?
   porcaoG            Decimal? @db.Decimal(10, 2)
   porcaoDescricao    String?
@@ -4769,12 +4773,22 @@ model TotemCampanha {
 
   nome               String
   chamada            String
-  /// `percentual` · `valor` · `brinde`.
-  tipoBeneficio      String
+  /// O que o botão do banner faz: `cadastro` (cupom em troca do cadastro) ·
+  /// `produtos` (abre os produtos de `produtoIds`) · `nenhuma` (só divulga).
+  acao               String    @default("cadastro")
+  textoApoio         String?
+  textoBotao         String?
+  /// Caminho da imagem servida por `/api/totem-publico/midia`.
+  imagemUrl          String?
+  produtoIds         String[]  @default([])
+  /// Menor primeiro no carrossel do totem.
+  ordem              Int       @default(0)
+  /// `percentual` · `valor` · `brinde`. Obrigatório só na ação `cadastro`.
+  tipoBeneficio      String?
   valorBeneficio     Decimal?  @db.Decimal(12, 2)
   descricaoBeneficio String?
-  /// Quantos dias o cupom vale a partir da emissão.
-  validadeDias       Int
+  /// Quantos dias o cupom vale a partir da emissão. Obrigatório só na ação `cadastro`.
+  validadeDias       Int?
   inicioEm           DateTime  @default(now())
   fimEm              DateTime?
   ativa              Boolean   @default(true)

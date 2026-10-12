@@ -1,16 +1,23 @@
 'use client';
 
-import { useCallback, useState, type CSSProperties } from 'react';
+import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
-import { TOTEM_TEMPO_OCIOSO_PADRAO_SEG, type TotemCatalogoProduto } from '@mktos/shared';
+import {
+  TOTEM_TEMPO_OCIOSO_PADRAO_SEG,
+  type TotemCatalogoCampanha,
+  type TotemCatalogoProduto,
+} from '@mktos/shared';
 
 import { CadastroCupom } from '../CadastroCupom';
 import { FichaDoProduto } from './FichaDoProduto';
 import { temaDoQuiosque } from './formato';
 import { aplicarGuardas, useGuardasDoQuiosque, useOciosidade, useServiceWorkerDoQuiosque } from './guardas';
+import { ListaDaCampanha } from './ListaDaCampanha';
+import { Juta } from './Marca';
 import { TelaDeAtivacao } from './TelaDeAtivacao';
 import { TelaDeManutencao } from './TelaDeManutencao';
-import { TelaInicial } from './TelaInicial';
+import { TelaDeEspera } from './TelaDeEspera';
+import { boasVindasDaLoja, TelaInicial } from './TelaInicial';
 import { useQuiosque } from './useQuiosque';
 
 /*
@@ -18,7 +25,8 @@ import { useQuiosque } from './useQuiosque';
  * telas e as guardas de quiosque. Tudo o que o cliente abre (ficha, cadastro,
  * política de privacidade, manutenção) é uma camada por cima da tela inicial,
  * nunca outra página: assim a volta por inatividade fecha tudo de uma vez e o
- * totem não fica preso fora de `/totem`.
+ * totem não fica preso fora de `/totem`. Parado, o totem entra no descanso de
+ * tela com os banners da loja; um toque devolve a tela inicial limpa.
  */
 
 const FONTES = {
@@ -33,7 +41,7 @@ const CORES_DO_CADASTRO = {
   '--totem-cor-fundo': 'var(--q-fundo)',
 } as CSSProperties;
 
-function Aviso({ children }: { children: React.ReactNode }) {
+function Aviso({ children }: { children: ReactNode }) {
   return (
     <main className="grid h-full place-items-center px-6 text-center text-[color:var(--q-sobre-fundo)]">
       <div className="max-w-[900px] space-y-6">{children}</div>
@@ -44,17 +52,21 @@ function Aviso({ children }: { children: React.ReactNode }) {
 export function Quiosque({ classeDasFontes = '' }: { classeDasFontes?: string }) {
   const q = useQuiosque();
   const [produto, setProduto] = useState<TotemCatalogoProduto | null>(null);
+  const [campanhaAberta, setCampanhaAberta] = useState<TotemCatalogoCampanha | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
+  const [espera, setEspera] = useState(false);
   const [manutencao, setManutencao] = useState(false);
   const [privacidade, setPrivacidade] = useState<string | null>(null);
   const [rodada, setRodada] = useState(0);
 
   const voltarAoInicio = useCallback(() => {
     setProduto(null);
+    setCampanhaAberta(null);
     setCadastroAberto(false);
     setManutencao(false);
     setPrivacidade(null);
     setRodada((r) => r + 1);
+    setEspera(true);
   }, []);
 
   const ocioso = (q.catalogo?.config.tempoOciosoSeg ?? TOTEM_TEMPO_OCIOSO_PADRAO_SEG) * 1000;
@@ -72,6 +84,15 @@ export function Quiosque({ classeDasFontes = '' }: { classeDasFontes?: string })
   function abrirProduto(p: TotemCatalogoProduto) {
     setProduto(p);
     q.registrar('ver_produto', { produtoId: p.id });
+  }
+
+  function tocarCampanha(c: TotemCatalogoCampanha) {
+    q.registrar('campanha_tocada', { termo: c.nome });
+    if (c.acao === 'cadastro') {
+      if (q.catalogo?.config.cadastroLigado) setCadastroAberto(true);
+    } else if (c.acao === 'produtos') {
+      setCampanhaAberta(c);
+    }
   }
 
   // A política abre num iframe da mesma origem; as guardas e o relógio de
@@ -100,7 +121,7 @@ export function Quiosque({ classeDasFontes = '' }: { classeDasFontes?: string })
     WebkitTapHighlightColor: 'transparent',
   } as CSSProperties;
 
-  let tela: React.ReactNode;
+  let tela: ReactNode;
   if (q.fase === 'carregando') {
     tela = (
       <Aviso>
@@ -143,19 +164,45 @@ export function Quiosque({ classeDasFontes = '' }: { classeDasFontes?: string })
           aoAbrirProduto={abrirProduto}
           aoRegistrar={q.registrar}
           aoAbrirCadastro={() => setCadastroAberto(true)}
+          aoTocarCampanha={tocarCampanha}
         />
-        {produto && <FichaDoProduto produto={produto} aoVoltar={() => setProduto(null)} />}
+        {campanhaAberta && (
+          <ListaDaCampanha
+            campanha={campanhaAberta}
+            produtos={catalogo.produtos}
+            aoAbrirProduto={abrirProduto}
+            aoVoltar={() => setCampanhaAberta(null)}
+          />
+        )}
+        {produto && <FichaDoProduto produto={produto} config={catalogo.config} aoVoltar={() => setProduto(null)} />}
         {cadastroAberto && catalogo.config.cadastroLigado && (
-          <div className="fixed inset-0 z-40 overflow-y-auto bg-[color:var(--q-fundo)] p-6">
-            <div className="mx-auto max-w-[900px]" style={CORES_DO_CADASTRO}>
-              <CadastroCupom
-                origem="totem"
-                credencial={{ token: q.aparelho.token }}
-                aoConcluir={() => setCadastroAberto(false)}
-                aoCancelar={() => setCadastroAberto(false)}
-              />
+          <div className="fixed inset-0 z-40 flex flex-col bg-[color:var(--q-fundo)]">
+            {/* Sem "Voltar" aqui: o "Cancelar" do formulário fica travado enquanto o cadastro é enviado. */}
+            <div className="relative shrink-0 overflow-hidden border-b-4 border-[#CB8139] bg-[color:var(--q-primaria)] px-6 py-7">
+              <Juta />
+              <p className="relative text-center font-[family-name:var(--q-fonte-chamada)] text-[24px] font-medium uppercase tracking-[.14em] text-[color:var(--q-primaria-rotulo)]">
+                Cupom de desconto
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 py-10">
+              <div className="mx-auto flex min-h-full max-w-[960px] flex-col justify-center" style={CORES_DO_CADASTRO}>
+                <CadastroCupom
+                  origem="totem"
+                  credencial={{ token: q.aparelho.token }}
+                  aoConcluir={() => setCadastroAberto(false)}
+                  aoCancelar={() => setCadastroAberto(false)}
+                />
+              </div>
             </div>
           </div>
+        )}
+        {espera && (
+          <TelaDeEspera
+            catalogo={catalogo}
+            online={q.online}
+            boasVindas={boasVindasDaLoja(catalogo)}
+            aoSair={() => setEspera(false)}
+          />
         )}
       </>
     );

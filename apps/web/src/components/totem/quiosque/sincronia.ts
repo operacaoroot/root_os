@@ -19,7 +19,7 @@ import type { Armazem } from './armazem';
  */
 
 /** Sobe junto com `VERSAO` de `public/totem/sw.js` quando o quiosque muda. */
-export const TOTEM_VERSAO_DO_QUIOSQUE = '1.0.0';
+export const TOTEM_VERSAO_DO_QUIOSQUE = '2.0.0';
 
 const CHAVE_CATALOGO = 'totem.catalogo';
 const TEMPO_LIMITE_MS = 20_000;

@@ -1,8 +1,11 @@
 import {
+  TOTEM_BOTAO_PADRAO,
   TotemCampanhaCriarSchema,
+  type TotemAcaoCampanha,
   type TotemCampanhaCriar,
   type TotemCampanhaResumo,
   type TotemLojaDoEscopo,
+  type TotemProdutoDaCampanha,
   type TotemTipoBeneficio,
 } from '@mktos/shared';
 
@@ -19,6 +22,17 @@ import {
 export interface FormularioDaCampanha {
   nome: string;
   chamada: string;
+  acao: TotemAcaoCampanha;
+  textoApoio: string;
+  /** Vazio usa o texto padrão da ação. */
+  textoBotao: string;
+  /** Endereço da imagem enviada, ou vazio. */
+  imagemUrl: string;
+  /** Na ordem em que aparecem no totem. */
+  produtos: TotemProdutoDaCampanha[];
+  /** Vazio deixa a API decidir. */
+  ordem: string;
+  /** O benefício e a validade só valem na ação `cadastro`. */
   tipoBeneficio: TotemTipoBeneficio;
   valor: string;
   descricao: string;
@@ -41,6 +55,12 @@ export function formularioVazio(): FormularioDaCampanha {
   return {
     nome: '',
     chamada: '',
+    acao: 'cadastro',
+    textoApoio: '',
+    textoBotao: '',
+    imagemUrl: '',
+    produtos: [],
+    ordem: '',
     tipoBeneficio: 'percentual',
     valor: '',
     descricao: '',
@@ -70,10 +90,16 @@ export function formularioDaCampanha(c: TotemCampanhaResumo): FormularioDaCampan
   return {
     nome: c.nome,
     chamada: c.chamada,
-    tipoBeneficio: c.tipoBeneficio,
+    acao: c.acao,
+    textoApoio: c.textoApoio ?? '',
+    textoBotao: c.textoBotao ?? '',
+    imagemUrl: c.imagemUrl ?? '',
+    produtos: [...c.produtos],
+    ordem: String(c.ordem),
+    tipoBeneficio: c.tipoBeneficio ?? 'percentual',
     valor: numeroNoFormulario(c.valorBeneficio),
     descricao: c.descricaoBeneficio ?? '',
-    validadeDias: String(c.validadeDias),
+    validadeDias: c.validadeDias == null ? '30' : String(c.validadeDias),
     inicio: diaEmBrasilia(c.inicioEm),
     fim: c.fimEm ? diaEmBrasilia(c.fimEm) : '',
     ativa: c.ativa,
@@ -100,18 +126,30 @@ export function corpoDaCampanha(
   podeEscolherTodas: boolean,
 ): { corpo: TotemCampanhaCriar } | { problema: string } {
   if (f.lojaIds.length === 0 && !podeEscolherTodas) return { problema: 'Escolha pelo menos uma loja.' };
-  const valor = f.tipoBeneficio === 'brinde' ? null : numeroDigitado(f.valor);
-  if (f.tipoBeneficio !== 'brinde' && f.valor.trim() && valor === null) {
+  const comCupom = f.acao === 'cadastro';
+  const comValor = comCupom && f.tipoBeneficio !== 'brinde';
+  const valor = comValor ? numeroDigitado(f.valor) : null;
+  if (comValor && f.valor.trim() && valor === null) {
     return { problema: 'Digite o valor do benefício só com números, como 10 ou 15,50.' };
   }
-  const validade = Number(f.validadeDias.trim());
+  const ordem = f.ordem.trim() ? Number(f.ordem.trim()) : undefined;
+  if (ordem !== undefined && !Number.isInteger(ordem)) {
+    return { problema: 'A ordem é um número inteiro, de 0 a 999.' };
+  }
   const r = TotemCampanhaCriarSchema.safeParse({
     nome: f.nome,
     chamada: f.chamada,
-    tipoBeneficio: f.tipoBeneficio,
+    acao: f.acao,
+    textoApoio: f.textoApoio,
+    textoBotao: f.textoBotao,
+    imagemUrl: f.imagemUrl || null,
+    // A lista só serve à ação `produtos`; trocar a ação limpa o que ficou escolhido.
+    produtoIds: f.acao === 'produtos' ? f.produtos.map((p) => p.id) : [],
+    ordem,
+    tipoBeneficio: comCupom ? f.tipoBeneficio : null,
     valorBeneficio: valor,
-    descricaoBeneficio: f.descricao.trim() || null,
-    validadeDias: f.validadeDias.trim() ? validade : Number.NaN,
+    descricaoBeneficio: comCupom ? f.descricao.trim() || null : null,
+    validadeDias: !comCupom ? null : f.validadeDias.trim() ? Number(f.validadeDias.trim()) : Number.NaN,
     inicioEm: f.inicio ? `${f.inicio}T00:00:00-03:00` : undefined,
     fimEm: f.fim ? `${f.fim}T23:59:59-03:00` : null,
     ativa: f.ativa,
@@ -122,7 +160,30 @@ export function corpoDaCampanha(
   if (issue?.path[0] === 'validadeDias' && issue.code === 'invalid_type') {
     return { problema: 'Digite em quantos dias o cupom vence, de 1 a 365.' };
   }
+  if (issue?.path[0] === 'ordem') return { problema: 'A ordem é um número inteiro, de 0 a 999.' };
   return { problema: issue?.message ?? 'Confira os campos da campanha.' };
+}
+
+/** O texto que o botão do banner mostra, ou `null` quando a campanha só divulga. */
+export function textoDoBotao(f: Pick<FormularioDaCampanha, 'acao' | 'textoBotao'>): string | null {
+  if (f.acao === 'nenhuma') return f.textoBotao.trim() || null;
+  return f.textoBotao.trim() || TOTEM_BOTAO_PADRAO[f.acao];
+}
+
+/** O que a campanha faz, para a coluna da lista. */
+export function textoDaAcao(
+  c: Pick<TotemCampanhaResumo, 'acao' | 'beneficio' | 'validadeDias' | 'produtos'>,
+): { principal: string; detalhe: string | null } {
+  if (c.acao === 'produtos') {
+    const n = c.produtos.length;
+    return { principal: n === 1 ? 'Mostra 1 produto' : `Mostra ${n} produtos`, detalhe: null };
+  }
+  if (c.acao === 'nenhuma') return { principal: 'Só divulga', detalhe: null };
+  const dias = c.validadeDias ?? 0;
+  return {
+    principal: c.beneficio ?? 'Cupom no cadastro',
+    detalhe: `Cupom vale ${dias} ${dias === 1 ? 'dia' : 'dias'}`,
+  };
 }
 
 export type TomDaSituacao = 'good' | 'brand' | 'muted' | 'warn';

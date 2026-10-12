@@ -67,10 +67,10 @@ export function textoDaPorcao(porcaoG: number | null, descricao: string | null):
   return descricao ? `${gramas} (${descricao})` : gramas;
 }
 
-/** `12,5 g` e `6%` de uma linha da tabela nutricional. */
+/** `12,5 g` e `6%` de uma linha da tabela nutricional; sem VD estabelecido, `**` (IN 75/2020), como no totem. */
 export function linhaNutricional(n: TotemNutriente): { quantidade: string; vd: string } {
   return {
     quantidade: `${numero.format(n.quantidade)} ${n.unidade}`,
-    vd: n.vd == null ? '—' : `${numero.format(n.vd)}%`,
+    vd: n.vd == null ? '**' : `${numero.format(n.vd)}%`,
   };
 }

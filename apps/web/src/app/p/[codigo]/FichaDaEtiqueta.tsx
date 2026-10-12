@@ -12,6 +12,7 @@ import { CadastroCupom } from '@/components/totem/CadastroCupom';
 import { ErroDaApi } from '@/lib/api';
 import { ehNaoEncontrado, ehSemRede, totemApi } from '@/lib/totem/api-publica';
 import { codigoLegivel, linhaNutricional, precoDaFicha, textoDaPorcao, textoDaValidade } from '../formato';
+import { semRotuloDeAlergenicos } from '@/components/totem/quiosque/vitrine';
 
 /*
  * A FICHA QUE O CLIENTE ABRE PELO QR DA ETIQUETA (CONTRATO.md, seção 7).
@@ -192,7 +193,7 @@ function Ficha({ ficha, codigo }: { ficha: TotemFichaDaEtiqueta; codigo: string 
               {produto.alergenicos && (
                 <p>
                   <span className="font-semibold">Alergênicos: </span>
-                  {produto.alergenicos}
+                  {semRotuloDeAlergenicos(produto.alergenicos)}
                 </p>
               )}
             </div>
@@ -223,6 +224,7 @@ function Ficha({ ficha, codigo }: { ficha: TotemFichaDaEtiqueta; codigo: string 
                 })}
               </tbody>
             </table>
+            {produto.nutricional.some((n) => n.vd == null) && <p className="mt-2 text-xs opacity-80">** VD não estabelecido.</p>}
             {produto.fonteNutricional && <p className="mt-2 text-xs opacity-80">Fonte: {produto.fonteNutricional}</p>}
           </Bloco>
         )}

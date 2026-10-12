@@ -85,7 +85,7 @@ describe('porção e tabela nutricional', () => {
       quantidade: '12,5 g',
       vd: '17%',
     });
-    expect(linhaNutricional({ nutriente: 'Açúcares', quantidade: 0, unidade: 'g', vd: null }).vd).toBe('—');
+    expect(linhaNutricional({ nutriente: 'Açúcares', quantidade: 0, unidade: 'g', vd: null }).vd).toBe('**');
   });
 });
 

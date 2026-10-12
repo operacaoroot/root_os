@@ -92,6 +92,8 @@ export const TOTEM_TETOS_POR_HORA = {
   etiqueta: 600,
   catalogo: 1200,
   eventos: 1200,
+  // A pré-carga de um quiosque novo baixa as fotos do catálogo inteiro de uma vez.
+  midia: 20000,
 } as const;
 export type TotemTeto = keyof typeof TOTEM_TETOS_POR_HORA;
 
@@ -106,6 +108,7 @@ export const TOTEM_SELOS = [
   'integral',
   'sem_acucar',
   'sem_conservantes',
+  'nao_transgenico',
 ] as const;
 export const TotemSeloSchema = z.enum(TOTEM_SELOS);
 export type TotemSelo = z.infer<typeof TotemSeloSchema>;
@@ -119,7 +122,79 @@ export const TOTEM_ROTULO_DO_SELO: Record<TotemSelo, string> = {
   integral: 'Integral',
   sem_acucar: 'Sem açúcar',
   sem_conservantes: 'Sem conservantes',
+  nao_transgenico: 'Não transgênico',
 };
+
+// --- Imagens (foto do produto, banner da campanha) ---
+
+/*
+ * O bucket é privado: a imagem sai pela própria API, numa rota pública que
+ * entrega só o que casa com `TOTEM_MIDIA_ARQUIVO_RE`. O nome do arquivo é o
+ * hash do conteúdo, então o mesmo endereço nunca muda de imagem e o quiosque
+ * pode guardar para sempre. O painel reduz a foto no navegador antes de enviar;
+ * o servidor só confere tipo, assinatura e tamanho.
+ */
+export const TOTEM_MIDIA_TIPOS = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+} as const;
+export type TotemMidiaTipo = keyof typeof TOTEM_MIDIA_TIPOS;
+export const TOTEM_MIDIA_MAX_BYTES = 2 * 1024 * 1024;
+/** O lado maior da imagem depois de reduzida no navegador. */
+export const TOTEM_MIDIA_LADO_MAXIMO = 1600;
+export const TOTEM_MIDIA_ARQUIVO_RE = /^[a-f0-9]{32}\.(jpg|png|webp)$/;
+export const TOTEM_MIDIA_PREFIXO_URL = '/api/totem-publico/midia/';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function totemUrlDaMidia(orgId: string, arquivo: string): string {
+  return `${TOTEM_MIDIA_PREFIXO_URL}${orgId}/${arquivo}`;
+}
+
+/** O caminho que a rota de mídia serve: `/api/totem-publico/midia/<orgId>/<hash>.<ext>`. */
+export function totemEhUrlDeMidia(url: string): boolean {
+  if (!url.startsWith(TOTEM_MIDIA_PREFIXO_URL)) return false;
+  const [orgId, arquivo, ...resto] = url.slice(TOTEM_MIDIA_PREFIXO_URL.length).split('/');
+  return resto.length === 0 && !!orgId && UUID_RE.test(orgId) && !!arquivo && TOTEM_MIDIA_ARQUIVO_RE.test(arquivo);
+}
+
+/**
+ * Imagem que o painel aceita: a enviada pelo próprio painel ou um endereço https
+ * (http deixaria o totem com conteúdo misto). `''` vira `null`.
+ */
+export const TotemUrlDeImagemSchema = z
+  .string()
+  .trim()
+  .max(500, 'O endereço da imagem é longo demais.')
+  .nullable()
+  .optional()
+  .transform((v) => (v === '' ? null : v))
+  .refine(
+    (v) => v == null || totemEhUrlDeMidia(v) || /^https:\/\/\S+$/.test(v),
+    'Envie a imagem pelo painel ou informe um endereço que comece com https://.',
+  );
+
+// --- Campanhas ---
+
+export const TOTEM_ACOES_CAMPANHA = ['cadastro', 'produtos', 'nenhuma'] as const;
+export const TotemAcaoCampanhaSchema = z.enum(TOTEM_ACOES_CAMPANHA);
+export type TotemAcaoCampanha = z.infer<typeof TotemAcaoCampanhaSchema>;
+
+export const TOTEM_ROTULO_DA_ACAO: Record<TotemAcaoCampanha, string> = {
+  cadastro: 'Cadastro com cupom',
+  produtos: 'Mostrar produtos',
+  nenhuma: 'Só divulgar',
+};
+
+/** O texto do botão quando a campanha não define um. */
+export const TOTEM_BOTAO_PADRAO: Record<TotemAcaoCampanha, string | null> = {
+  cadastro: 'Quero meu cupom',
+  produtos: 'Ver produtos',
+  nenhuma: null,
+};
+
+export const TOTEM_PRODUTOS_POR_CAMPANHA = 60;
 
 // --- Ficha nutricional ---
 
@@ -174,6 +249,7 @@ export const TOTEM_TIPOS_EVENTO = [
   'cadastro',
   'sincronizou',
   'qr_aberto',
+  'campanha_tocada',
 ] as const;
 export const TotemTipoEventoSchema = z.enum(TOTEM_TIPOS_EVENTO);
 export type TotemTipoEvento = z.infer<typeof TotemTipoEventoSchema>;

@@ -36,6 +36,7 @@ import {
   totemGestaoTopTermos,
   type TotemGestaoEntradaDoResumo,
 } from '../src/totem/gestao/resumo';
+import { TotemGestaoContaController } from '../src/totem/gestao/totem-gestao-conta.controller';
 import { TotemGestaoDispositivosController } from '../src/totem/gestao/totem-gestao-dispositivos.controller';
 import { TotemGestaoLojasController } from '../src/totem/gestao/totem-gestao-lojas.controller';
 import { TotemGestaoProdutosController } from '../src/totem/gestao/totem-gestao-produtos.controller';
@@ -374,6 +375,7 @@ describe('guardas e permissões das rotas', () => {
 
   it('todo controller do painel exige JWT e permissão', () => {
     for (const c of [
+      TotemGestaoContaController,
       TotemGestaoController,
       TotemGestaoLojasController,
       TotemGestaoDispositivosController,
@@ -393,6 +395,7 @@ describe('guardas e permissões das rotas', () => {
     }
     expect(permissao(TotemGestaoProdutosController, 'configuracao')).toEqual(['totem.ver']);
     expect(permissao(TotemGestaoProdutosController, 'salvarConfiguracao')).toEqual(['totem.lojas']);
+    expect(permissao(TotemGestaoContaController, 'trocarSenha')).toEqual(['totem.ver']);
   });
 
   it('totens pedem totem.dispositivos; escrever produto pede totem.produtos', () => {

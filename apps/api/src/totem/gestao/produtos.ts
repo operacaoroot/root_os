@@ -56,6 +56,7 @@ export async function totemGestaoListarProdutos(
   const where: Prisma.TotemProdutoWhereInput = {
     orgId,
     ...(q.situacao === 'ativos' ? { ativo: true } : q.situacao === 'inativos' ? { ativo: false } : {}),
+    ...(q.falta === 'foto' ? { imagemUrl: null } : q.falta === 'tabela' ? { nutricional: { equals: [] } } : {}),
     ...(palavras.length
       ? {
           OR: [
@@ -157,6 +158,7 @@ export async function totemGestaoObterConfig(tx: ClienteDosProdutos, orgId: stri
     encarregadoContato: c.encarregadoContato,
     politicaVersao: c.politicaVersao,
     mensagemBoasVindas: c.mensagemBoasVindas,
+    alergenicosPadrao: c.alergenicosPadrao,
     atualizadoEm: c.atualizadoEm.toISOString(),
   };
 }
@@ -184,6 +186,7 @@ export async function totemGestaoSalvarConfig(
     encarregadoNome: dados.encarregadoNome ?? null,
     encarregadoContato: dados.encarregadoContato ?? null,
     mensagemBoasVindas: dados.mensagemBoasVindas ?? null,
+    alergenicosPadrao: dados.alergenicosPadrao ?? null,
   };
   await tx.totemConfig.upsert({
     where: { orgId },

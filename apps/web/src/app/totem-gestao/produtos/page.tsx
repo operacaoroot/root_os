@@ -10,6 +10,7 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { Miniatura } from '@/components/totem/Miniatura';
 import { Botao, Card, Chip, inputCls } from '../../referencias/ui';
 import { dataBR, precoBR } from '../lojas/apoio';
 import { FichaDoProduto } from './FichaDoProduto';
@@ -23,6 +24,7 @@ import { FichaDoProduto } from './FichaDoProduto';
 
 const POR_PAGINA = 25;
 type Situacao = 'ativos' | 'inativos' | 'todos';
+type Falta = '' | 'foto' | 'tabela';
 
 export default function PaginaDosProdutos() {
   const { token, ready, can } = useAuth();
@@ -31,10 +33,12 @@ export default function PaginaDosProdutos() {
   const [texto, setTexto] = useState('');
   const [busca, setBusca] = useState('');
   const [situacao, setSituacao] = useState<Situacao>('todos');
+  const [falta, setFalta] = useState<Falta>('');
   const [pagina, setPagina] = useState(1);
   const [dados, setDados] = useState<TotemGestaoProdutosPagina | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aberto, setAberto] = useState<TotemGestaoProduto | 'novo' | null>(null);
+  const [modelo, setModelo] = useState<TotemGestaoProduto | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,13 +53,14 @@ export default function PaginaDosProdutos() {
     if (!token) return;
     const q = new URLSearchParams({ situacao, pagina: String(pagina), porPagina: String(POR_PAGINA) });
     if (busca) q.set('busca', busca);
+    if (falta) q.set('falta', falta);
     apiGet<TotemGestaoProdutosPagina>(`/totem-gestao/produtos?${q.toString()}`, token)
       .then((d) => {
         setDados(d);
         setErro(null);
       })
       .catch((e: Error) => setErro(e.message));
-  }, [token, busca, situacao, pagina]);
+  }, [token, busca, situacao, falta, pagina]);
 
   useEffect(() => {
     if (ready && pode) carregar();
@@ -68,8 +73,16 @@ export default function PaginaDosProdutos() {
       ? await apiPatch<TotemGestaoProdutoResposta>(`/totem-gestao/produtos/${atual.id}`, corpo, token)
       : await apiPost<TotemGestaoProdutoResposta>('/totem-gestao/produtos', corpo, token);
     setAberto(null);
+    setModelo(null);
     setAviso(`${r.produto.nome} foi ${atual ? 'atualizado' : 'cadastrado'}.`);
     carregar();
+  }
+
+  function abrir(p: TotemGestaoProduto | 'novo', copiaDe: TotemGestaoProduto | null = null) {
+    setAviso(null);
+    setModelo(copiaDe);
+    setAberto(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   if (!ready) return null;
@@ -89,13 +102,7 @@ export default function PaginaDosProdutos() {
           </p>
         </div>
         {editavel && aberto === null && (
-          <Botao
-            tone="brand"
-            onClick={() => {
-              setAviso(null);
-              setAberto('novo');
-            }}
-          >
+          <Botao tone="brand" onClick={() => abrir('novo')}>
             Novo produto
           </Botao>
         )}
@@ -107,12 +114,18 @@ export default function PaginaDosProdutos() {
 
       {aberto !== null && (
         <FichaDoProduto
-          key={aberto === 'novo' ? 'novo' : aberto.id}
+          key={aberto === 'novo' ? `novo-${modelo?.id ?? ''}` : aberto.id}
           produto={aberto === 'novo' ? null : aberto}
+          modelo={modelo}
           editavel={editavel}
           avisoPreco={dados?.avisoPreco ?? null}
+          token={token}
           aoSalvar={salvar}
-          aoFechar={() => setAberto(null)}
+          aoDuplicar={aberto !== 'novo' ? () => abrir('novo', aberto) : undefined}
+          aoFechar={() => {
+            setAberto(null);
+            setModelo(null);
+          }}
         />
       )}
 
@@ -137,51 +150,71 @@ export default function PaginaDosProdutos() {
           <option value="ativos">Só os ativos</option>
           <option value="inativos">Só os inativos</option>
         </select>
+        <select
+          className={`${inputCls} w-auto`}
+          value={falta}
+          onChange={(e) => {
+            setFalta(e.target.value as Falta);
+            setPagina(1);
+          }}
+          aria-label="O que falta no produto"
+        >
+          <option value="">Com ou sem foto e tabela</option>
+          <option value="foto">Só os sem foto</option>
+          <option value="tabela">Só os sem tabela nutricional</option>
+        </select>
       </div>
 
       <Card titulo={`Produtos · ${dados?.total ?? 0}`}>
         {!dados ? (
           <p className="text-[12px] text-muted">Carregando o catálogo…</p>
         ) : dados.itens.length === 0 ? (
-          <p className="text-[12px] text-muted">{busca ? `Nenhum produto encontrado para "${busca}".` : 'Nenhum produto cadastrado.'}</p>
+          <p className="text-[12px] text-muted">
+            {busca
+              ? `Nenhum produto encontrado para "${busca}".`
+              : falta === 'foto'
+                ? 'Todos os produtos desta lista têm foto.'
+                : falta === 'tabela'
+                  ? 'Todos os produtos desta lista têm tabela nutricional.'
+                  : 'Nenhum produto cadastrado.'}
+          </p>
         ) : (
           <ul className="space-y-2">
             {dados.itens.map((p) => (
               <li key={p.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setAviso(null);
-                    setAberto(p);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="w-full rounded-lg border border-border bg-surface-2 p-3 text-left hover:border-brand/40"
+                  onClick={() => abrir(p)}
+                  className="flex w-full gap-3 rounded-lg border border-border bg-surface-2 p-3 text-left hover:border-brand/40"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-medium">
-                        {p.nome} <span className="font-os-mono text-[11px] text-muted">{p.codigo}</span>
-                      </p>
-                      <p className="text-[12px] text-muted">
-                        {[p.categoria, precoBR(p.precoCentavos, p.unidadePreco)].filter(Boolean).join(' · ')}
-                      </p>
+                  <Miniatura url={p.imagemUrl} tamanho="h-14 w-14" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {p.nome} <span className="font-os-mono text-[11px] text-muted">{p.codigo}</span>
+                        </p>
+                        <p className="text-[12px] text-muted">
+                          {[p.categoria, precoBR(p.precoCentavos, p.unidadePreco)].filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        {!p.ativo && <Chip tone="muted">Inativo</Chip>}
+                        {p.exemplo && <Chip tone="warn">Exemplo</Chip>}
+                        {p.nutricional.length === 0 && <Chip tone="warn">Sem tabela nutricional</Chip>}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap justify-end gap-1">
-                      {!p.ativo && <Chip tone="muted">Inativo</Chip>}
-                      {p.exemplo && <Chip tone="warn">Exemplo</Chip>}
-                      {p.nutricional.length === 0 && <Chip tone="warn">Sem tabela nutricional</Chip>}
-                    </div>
+                    {p.selos.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {p.selos.map((s) => (
+                          <Chip key={s} tone="good">
+                            {TOTEM_ROTULO_DO_SELO[s]}
+                          </Chip>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-1 text-[11px] text-muted">Alterado em {dataBR(p.atualizadoEm)}.</p>
                   </div>
-                  {p.selos.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {p.selos.map((s) => (
-                        <Chip key={s} tone="good">
-                          {TOTEM_ROTULO_DO_SELO[s]}
-                        </Chip>
-                      ))}
-                    </div>
-                  )}
-                  <p className="mt-1 text-[11px] text-muted">Alterado em {dataBR(p.atualizadoEm)}.</p>
                 </button>
               </li>
             ))}

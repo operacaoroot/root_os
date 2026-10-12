@@ -1,4 +1,9 @@
-import { normalizarBusca, type TotemCatalogo, type TotemCatalogoProduto } from '@mktos/shared';
+import {
+  normalizarBusca,
+  type TotemCatalogo,
+  type TotemCatalogoCampanha,
+  type TotemCatalogoProduto,
+} from '@mktos/shared';
 
 /* Produtos e catálogo de exemplo para as suítes do quiosque. */
 
@@ -13,6 +18,7 @@ export function produtoDeExemplo(campos: Partial<TotemCatalogoProduto> & { nome:
     categoria: null,
     composicao: null,
     beneficios: null,
+    sugestoes: null,
     alergenicos: null,
     porcaoG: null,
     porcaoDescricao: null,
@@ -37,12 +43,29 @@ export function catalogoDeExemplo(campos: Partial<TotemCatalogo> = {}): TotemCat
       corFundo: null,
       logoUrl: null,
       mensagemBoasVindas: null,
+      alergenicosPadrao: null,
       tempoOciosoSeg: 60,
       precoLigado: false,
       cadastroLigado: false,
     },
     campanha: null,
+    campanhas: [],
     produtos: [produtoDeExemplo({ nome: 'Castanha-do-pará', categoria: 'Castanhas' })],
+    ...campos,
+  };
+}
+
+export function campanhaDeExemplo(campos: Partial<TotemCatalogoCampanha> & { nome: string }): TotemCatalogoCampanha {
+  sequencia += 1;
+  return {
+    id: `10000000-0000-4000-8000-${String(sequencia).padStart(12, '0')}`,
+    chamada: campos.nome.toUpperCase(),
+    textoApoio: null,
+    imagemUrl: null,
+    acao: 'nenhuma',
+    textoBotao: null,
+    produtoIds: [],
+    beneficio: null,
     ...campos,
   };
 }

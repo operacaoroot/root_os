@@ -269,6 +269,21 @@ describe.skipIf(!URL)('painel do totem com banco', () => {
       expect(linha.nomeBusca).toBe('castanha de caju');
     });
 
+    it('a fila do que falta: só os sem foto, ou só os sem tabela nutricional', async () => {
+      const foto = `/api/totem-publico/midia/${orgA}/${'a'.repeat(32)}.webp`;
+      const tabela = [{ nutriente: 'Sódio', quantidade: 12, unidade: 'mg' as const, vd: null }];
+      const completo = await totemGestaoCriarProduto(prisma, orgA, { codigo: `FC-${MARCA}`, nome: `Fila ${MARCA} completo`, imagemUrl: foto, nutricional: tabela });
+      const semFoto = await totemGestaoCriarProduto(prisma, orgA, { codigo: `FF-${MARCA}`, nome: `Fila ${MARCA} sem foto`, nutricional: tabela });
+      const semTabela = await totemGestaoCriarProduto(prisma, orgA, { codigo: `FT-${MARCA}`, nome: `Fila ${MARCA} sem tabela`, imagemUrl: foto });
+      const listar = (falta?: 'foto' | 'tabela') =>
+        totemGestaoListarProdutos(prisma, orgA, { busca: `fila ${MARCA}`, situacao: 'todos', falta, pagina: 1, porPagina: 25 }).then((r) =>
+          r.itens.map((p) => p.id).sort(),
+        );
+      expect(await listar()).toEqual([completo, semFoto, semTabela].map((c) => c.produto.id).sort());
+      expect(await listar('foto')).toEqual([semFoto.produto.id]);
+      expect(await listar('tabela')).toEqual([semTabela.produto.id]);
+    });
+
     it('preço sem unidade é recusado e código repetido é conflito', async () => {
       await expect(
         totemGestaoCriarProduto(prisma, orgA, { codigo: `SU-${MARCA}`, nome: 'Sem unidade', precoCentavos: 100 }),

@@ -149,6 +149,10 @@ const BOTAO_PRINCIPAL =
   'rounded-2xl bg-[color:var(--cor-p)] font-semibold text-[color:var(--cor-f)] disabled:cursor-not-allowed disabled:opacity-50';
 const BOTAO_SECUNDARIO =
   'rounded-2xl border-2 border-[color:var(--cor-p)] font-semibold disabled:cursor-not-allowed disabled:opacity-50';
+// Só o quiosque usa os --q-*: ele é o único que monta o cadastro com origem "totem".
+const TITULO_DO_QUIOSQUE = 'font-[family-name:var(--q-fonte-display)] text-[52px] font-semibold leading-[1.08]';
+const TECLA_DO_QUIOSQUE =
+  'h-24 select-none portrait:h-[120px] rounded-[14px] border border-[color:var(--q-linha)] bg-[color:var(--q-cartao)] font-semibold text-[color:var(--q-tinta)] shadow-[0_1px_2px_rgba(31,43,23,0.10)] active:translate-y-px active:bg-[color:var(--q-afundado)]';
 const ENTRADA_DO_CELULAR =
   'h-12 w-full rounded-xl border-2 border-[color:var(--cor-p-25)] bg-white px-3 text-lg outline-none focus:border-[color:var(--cor-p)]';
 
@@ -224,25 +228,27 @@ export function CadastroCupom({ origem, credencial, aoConcluir, aoCancelar }: Ca
     );
   }
 
-  const altura = quiosque ? 'h-16 text-xl' : 'h-12 text-base';
+  const altura = quiosque ? 'h-20 text-[26px]' : 'h-12 text-base';
 
   return (
     <div
       role="dialog"
       aria-label="Cadastro"
       style={CORES}
-      className={`relative mx-auto w-full max-w-xl space-y-5 bg-[color:var(--cor-f)] p-5 text-[color:var(--cor-p)] ${
-        quiosque ? 'text-xl' : 'text-base'
+      className={`relative mx-auto w-full bg-[color:var(--cor-f)] text-[color:var(--cor-p)] ${
+        quiosque ? 'space-y-8 text-[24px]' : 'max-w-xl space-y-5 p-5 text-base'
       }`}
     >
-      <header className="space-y-1">
-        <h2 className={quiosque ? 'text-3xl font-semibold' : 'text-2xl font-semibold'}>Cadastre-se e ganhe um cupom</h2>
-        <p className="opacity-80">Informe o CPF e o celular. O cupom aparece na tela assim que o cadastro termina.</p>
+      <header className={quiosque ? 'space-y-3' : 'space-y-1'}>
+        <h2 className={quiosque ? TITULO_DO_QUIOSQUE : 'text-2xl font-semibold'}>Cadastre-se e ganhe um cupom</h2>
+        <p className={quiosque ? 'leading-snug text-[color:var(--q-tinta-suave)]' : 'opacity-80'}>
+          Informe o CPF e o celular. O cupom aparece na tela assim que o cadastro termina.
+        </p>
       </header>
 
-      <form onSubmit={enviar} noValidate className="space-y-5">
+      <form onSubmit={enviar} noValidate className={quiosque ? 'space-y-8' : 'space-y-5'}>
         {quiosque ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <CampoDoQuiosque
               rotulo="CPF"
               valor={formatarCpfDigitando(cpf)}
@@ -266,9 +272,7 @@ export function CadastroCupom({ origem, credencial, aoConcluir, aoCancelar }: Ca
                   type="button"
                   onClick={() => teclar(t)}
                   aria-label={t === 'apagar' ? 'Apagar o último número' : t === 'limpar' ? 'Limpar o campo' : t}
-                  className={`h-20 rounded-2xl border-2 border-[color:var(--cor-p-25)] bg-white font-semibold active:bg-[color:var(--cor-p-10)] ${
-                    t === 'apagar' || t === 'limpar' ? 'text-lg' : 'text-3xl'
-                  }`}
+                  className={`${TECLA_DO_QUIOSQUE} ${t === 'apagar' || t === 'limpar' ? 'text-[24px]' : 'text-[40px]'}`}
                 >
                   {t === 'apagar' ? 'Apagar' : t === 'limpar' ? 'Limpar' : t}
                 </button>
@@ -318,7 +322,7 @@ export function CadastroCupom({ origem, credencial, aoConcluir, aoCancelar }: Ca
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className={quiosque ? 'space-y-5' : 'space-y-3'}>
           <div className={`flex items-start gap-3 ${problema?.campo === 'aceite' ? 'font-semibold' : ''}`}>
             <input
               id="cadastro-aceite"
@@ -329,7 +333,7 @@ export function CadastroCupom({ origem, credencial, aoConcluir, aoCancelar }: Ca
                 setAceitePolitica(e.target.checked);
               }}
               aria-invalid={problema?.campo === 'aceite'}
-              className={`mt-1 shrink-0 accent-[color:var(--cor-p)] ${quiosque ? 'h-8 w-8' : 'h-5 w-5'}`}
+              className={`mt-1 shrink-0 accent-[color:var(--cor-p)] ${quiosque ? 'h-10 w-10' : 'h-5 w-5'}`}
             />
             <p>
               <label htmlFor="cadastro-aceite">Li e aceito a </label>
@@ -351,7 +355,7 @@ export function CadastroCupom({ origem, credencial, aoConcluir, aoCancelar }: Ca
               type="checkbox"
               checked={aceitaCampanhas}
               onChange={(e) => setAceitaCampanhas(e.target.checked)}
-              className={`mt-1 shrink-0 accent-[color:var(--cor-p)] ${quiosque ? 'h-8 w-8' : 'h-5 w-5'}`}
+              className={`mt-1 shrink-0 accent-[color:var(--cor-p)] ${quiosque ? 'h-10 w-10' : 'h-5 w-5'}`}
             />
             <label htmlFor="cadastro-campanhas">
               Quero receber campanhas e ofertas <span className="opacity-70">(opcional)</span>
@@ -395,17 +399,25 @@ function CampoDoQuiosque({
   comProblema: boolean;
   aoTocar: () => void;
 }) {
-  const borda = comProblema ? 'border-red-700' : ativo ? 'border-[color:var(--cor-p)]' : 'border-[color:var(--cor-p-25)]';
+  const borda = comProblema
+    ? 'border-[color:var(--q-perigo)]'
+    : ativo
+      ? 'border-[color:var(--cor-p)] shadow-[0_6px_18px_rgba(31,43,23,0.12)]'
+      : 'border-[color:var(--q-linha)]';
   return (
     <button
       type="button"
       onClick={aoTocar}
       aria-pressed={ativo}
       aria-label={`${rotulo}: ${valor || 'vazio'}`}
-      className={`block w-full rounded-2xl border-4 bg-white px-4 py-3 text-left ${borda}`}
+      className={`block w-full rounded-[14px] border-[3px] bg-[color:var(--q-cartao)] px-6 py-4 text-left ${borda}`}
     >
-      <span className="block text-base opacity-70">{rotulo}</span>
-      <span className={`block font-mono text-3xl tracking-wide ${valor ? '' : 'opacity-30'}`}>{valor || exemplo}</span>
+      <span className="block font-[family-name:var(--q-fonte-chamada)] text-[20px] font-medium uppercase tracking-[.08em] text-[color:var(--q-tinta-suave)]">
+        {rotulo}
+      </span>
+      <span className={`block font-mono text-[44px] tracking-wide text-[color:var(--q-tinta)] ${valor ? '' : 'opacity-30'}`}>
+        {valor || exemplo}
+      </span>
     </button>
   );
 }
@@ -428,14 +440,14 @@ function Resultado({
   quiosque: boolean;
   aoConcluir: () => void;
 }) {
-  const botao = `${BOTAO_PRINCIPAL} w-full ${quiosque ? 'h-16 text-xl' : 'h-12 text-base'}`;
+  const botao = `${BOTAO_PRINCIPAL} w-full ${quiosque ? 'h-20 text-[26px]' : 'h-12 text-base'}`;
   if (!resposta.cupom) {
     return (
-      <div className="mx-auto max-w-xl space-y-5 p-5 text-center">
-        <h2 className="text-3xl font-semibold">
+      <div className={quiosque ? 'space-y-8 text-center' : 'mx-auto max-w-xl space-y-5 p-5 text-center'}>
+        <h2 className={quiosque ? TITULO_DO_QUIOSQUE : 'text-3xl font-semibold'}>
           {resposta.motivoSemCupom === 'consulte_atendente' ? 'Fale com um atendente.' : 'Seu cadastro está feito.'}
         </h2>
-        <p className={quiosque ? 'text-xl' : 'text-lg'}>{MENSAGEM_SEM_CUPOM[resposta.motivoSemCupom ?? 'sem_campanha']}</p>
+        <p className={quiosque ? 'text-[26px] leading-snug' : 'text-lg'}>{MENSAGEM_SEM_CUPOM[resposta.motivoSemCupom ?? 'sem_campanha']}</p>
         <button type="button" onClick={aoConcluir} className={botao}>
           Pronto
         </button>
@@ -457,22 +469,36 @@ function CupomNaTela({
   botao: string;
 }) {
   return (
-    <div className="mx-auto max-w-xl space-y-5 p-5 text-center">
-      <p className="text-lg opacity-80">{cupom.chamada}</p>
-      <div className="space-y-2 rounded-3xl border-4 border-dashed border-[color:var(--cor-p)] bg-white px-4 py-6">
-        <p className="text-base font-medium uppercase tracking-widest opacity-70">Seu cupom</p>
+    <div className={quiosque ? 'space-y-8 text-center' : 'mx-auto max-w-xl space-y-5 p-5 text-center'}>
+      <p className={quiosque ? TITULO_DO_QUIOSQUE : 'text-lg opacity-80'}>{cupom.chamada}</p>
+      <div
+        className={
+          quiosque
+            ? 'space-y-4 rounded-[18px] border-4 border-dashed border-[#CB8139] bg-[color:var(--q-cartao)] px-6 py-10 text-[color:var(--q-tinta)]'
+            : 'space-y-2 rounded-3xl border-4 border-dashed border-[color:var(--cor-p)] bg-white px-4 py-6'
+        }
+      >
         <p
-          className={`font-mono font-bold tracking-[0.15em] ${quiosque ? 'text-6xl' : 'select-all text-5xl'}`}
+          className={
+            quiosque
+              ? 'font-[family-name:var(--q-fonte-chamada)] text-[24px] font-medium uppercase tracking-[.14em] text-[color:var(--q-tinta-suave)]'
+              : 'text-base font-medium uppercase tracking-widest opacity-70'
+          }
+        >
+          Seu cupom
+        </p>
+        <p
+          className={`font-mono font-bold tracking-[0.15em] ${quiosque ? 'text-[96px] leading-none' : 'select-all text-5xl'}`}
           aria-label={`Código do cupom: ${cupom.codigo.split('').join(' ')}`}
         >
           {formatarCodigoDoCupom(cupom.codigo)}
         </p>
-        <p className="text-2xl font-semibold">{cupom.beneficio}</p>
-        {cupom.detalhe && <p className="text-lg">{cupom.detalhe}</p>}
-        <p className="text-lg">Vale até {dataDoCupom(cupom.validoAte)}.</p>
+        <p className={quiosque ? 'text-[36px] font-semibold' : 'text-2xl font-semibold'}>{cupom.beneficio}</p>
+        {cupom.detalhe && <p className={quiosque ? 'text-[24px]' : 'text-lg'}>{cupom.detalhe}</p>}
+        <p className={quiosque ? 'text-[24px]' : 'text-lg'}>Vale até {dataDoCupom(cupom.validoAte)}.</p>
       </div>
-      <p className="text-2xl font-semibold">Mostre este código no caixa.</p>
-      <p className="text-base opacity-80">
+      <p className={quiosque ? 'text-[32px] font-semibold' : 'text-2xl font-semibold'}>Mostre este código no caixa.</p>
+      <p className={quiosque ? 'text-[22px] text-[color:var(--q-tinta-suave)]' : 'text-base opacity-80'}>
         {quiosque
           ? 'Tire uma foto desta tela com o celular ou anote o código antes de sair.'
           : 'Tire um print desta tela para não perder o código.'}

@@ -12,6 +12,7 @@ import {
   ehLinkDaPrivacidade,
   linkPermitido,
   temaDoQuiosque,
+  textoDaPorcao,
   textoDoPreco,
   TOTEM_CORES_DA_MARCA,
 } from '@/components/totem/quiosque/formato';
@@ -62,6 +63,14 @@ describe('formatos', () => {
     expect(semEspacoFixo(textoDoPreco(8990, 'kg'))).toBe('R$ 89,90 o quilo');
     expect(semEspacoFixo(textoDoPreco(450, '100g'))).toBe('R$ 4,50 a cada 100 g');
     expect(semEspacoFixo(textoDoPreco(123456, 'un'))).toBe('R$ 1.234,56 a unidade');
+  });
+
+  it('porção mantém os gramas quando tem descrição caseira', () => {
+    expect(textoDaPorcao(30, '1/2 fatia média')).toBe('Porção de 30 g (1/2 fatia média)');
+    expect(textoDaPorcao(12.5, null)).toBe('Porção de 12,5 g');
+    expect(textoDaPorcao(40, '   ')).toBe('Porção de 40 g');
+    expect(textoDaPorcao(null, '1 colher de sopa')).toBe('Porção: 1 colher de sopa');
+    expect(textoDaPorcao(null, null)).toBeNull();
   });
 });
 

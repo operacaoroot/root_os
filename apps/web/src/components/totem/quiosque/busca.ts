@@ -12,7 +12,13 @@ import { normalizarBusca, TOTEM_ROTULO_DO_SELO, type TotemCatalogoProduto } from
  * precisa vir certa, senão "pao" acharia "pão", "pó" e "pá".
  *
  * Quem casa pelo nome vem antes de quem casa só pela categoria ou pelo selo.
+ *
+ * O catálogo da loja passa de 900 produtos e o totem é um aparelho modesto:
+ * a busca roda a cada letra, então a conta de erro usa uma tabela só, guardada
+ * entre as chamadas, e a ordem alfabética usa um Collator único.
  */
+
+const ORDEM_ALFABETICA = new Intl.Collator('pt-BR');
 
 const PALAVRAS_VAZIAS = new Set(['a', 'o', 'e', 'de', 'da', 'do', 'das', 'dos']);
 
@@ -44,21 +50,54 @@ export function distanciaDeEdicao(a: string, b: string, teto = Infinity): number
   return linhas[a.length]![b.length]!;
 }
 
+let tabela = new Int32Array(0);
+
 /**
  * Quanto `termo` se afasta de `palavra`: 0 igual, 1 começo de palavra,
  * 2 em diante com erro de digitação; `null` quando não casa.
+ *
+ * Vale a menor distância entre o termo e a palavra inteira ou o começo dela
+ * (palavra ainda pela metade e com erro), de um tamanho a menos a um a mais
+ * que o termo. Todas saem da última linha de uma tabela só: a coluna `n` é a
+ * distância até os `n` primeiros caracteres da palavra.
  */
 export function casamento(termo: string, palavra: string): number | null {
   if (termo === palavra) return 0;
   if (palavra.startsWith(termo)) return 1;
   const tolerancia = toleranciaDe(termo);
   if (tolerancia === 0) return null;
-  let melhor = distanciaDeEdicao(termo, palavra, tolerancia);
-  // Palavra ainda pela metade e com erro: compara com o começo da palavra do
-  // produto, de um tamanho a menos a um a mais que o termo.
-  for (let n = termo.length - 1; n <= termo.length + 1 && melhor > 1; n++) {
-    if (n < 1 || n >= palavra.length) continue;
-    melhor = Math.min(melhor, distanciaDeEdicao(termo, palavra.slice(0, n), tolerancia));
+
+  const a = termo.length;
+  const b = Math.min(palavra.length, a + tolerancia);
+  const largura = b + 1;
+  if (tabela.length < (a + 1) * largura) tabela = new Int32Array((a + 1) * largura * 2);
+  const d = tabela;
+  for (let j = 0; j <= b; j++) d[j] = j;
+  for (let i = 1; i <= a; i++) {
+    const linha = i * largura;
+    d[linha] = i;
+    let menorDaLinha = i;
+    for (let j = 1; j <= b; j++) {
+      const custo = termo.charCodeAt(i - 1) === palavra.charCodeAt(j - 1) ? 0 : 1;
+      let v = Math.min(d[linha - largura + j]! + 1, d[linha + j - 1]! + 1, d[linha - largura + j - 1]! + custo);
+      if (
+        i > 1 &&
+        j > 1 &&
+        termo.charCodeAt(i - 1) === palavra.charCodeAt(j - 2) &&
+        termo.charCodeAt(i - 2) === palavra.charCodeAt(j - 1)
+      ) {
+        v = Math.min(v, d[linha - 2 * largura + j - 2]! + 1);
+      }
+      d[linha + j] = v;
+      if (v < menorDaLinha) menorDaLinha = v;
+    }
+    if (menorDaLinha > tolerancia) return null;
+  }
+
+  const ultima = a * largura;
+  let melhor = palavra.length <= b ? d[ultima + palavra.length]! : Infinity;
+  for (let n = Math.max(1, a - 1); n <= a + 1 && n <= b; n++) {
+    if (n < palavra.length) melhor = Math.min(melhor, d[ultima + n]!);
   }
   return melhor <= tolerancia ? 2 + melhor : null;
 }
@@ -127,18 +166,18 @@ export function buscarProdutos(indice: readonly ItemDoIndice[], consulta: string
     achados.push({ produto: item.produto, pontos: pontos + (soPeloNome ? 0 : 100) });
   }
   return achados
-    .sort((a, b) => a.pontos - b.pontos || a.produto.nome.localeCompare(b.produto.nome, 'pt-BR'))
+    .sort((a, b) => a.pontos - b.pontos || ORDEM_ALFABETICA.compare(a.produto.nome, b.produto.nome))
     .map((a) => a.produto);
 }
 
 export function categoriasDoCatalogo(produtos: readonly TotemCatalogoProduto[]): string[] {
   const vistas = new Set<string>();
   for (const p of produtos) if (p.categoria?.trim()) vistas.add(p.categoria.trim());
-  return [...vistas].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return [...vistas].sort(ORDEM_ALFABETICA.compare);
 }
 
 export function produtosEmOrdem(produtos: readonly TotemCatalogoProduto[], categoria: string | null): TotemCatalogoProduto[] {
   return produtos
     .filter((p) => !categoria || p.categoria?.trim() === categoria)
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    .sort((a, b) => ORDEM_ALFABETICA.compare(a.nome, b.nome));
 }

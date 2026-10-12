@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../../auth/auth.module';
+import { AppConfigModule } from '../../config/config.module';
+import { StorageModule } from '../../storage/storage.module';
 import { TotemLoteModule } from '../lote/totem-lote.module';
+import { TotemGestaoContaController } from './totem-gestao-conta.controller';
 import { TotemGestaoDispositivosController } from './totem-gestao-dispositivos.controller';
 import { TotemGestaoLojasController } from './totem-gestao-lojas.controller';
+import { TotemGestaoMidiaController } from './totem-gestao-midia.controller';
 import { TotemGestaoProdutosController } from './totem-gestao-produtos.controller';
 import { TotemGestaoController } from './totem-gestao.controller';
 import { TotemGestaoService } from './totem-gestao.service';
@@ -17,12 +21,14 @@ import { TotemGestaoService } from './totem-gestao.service';
  * vigente de cada produto pela mesma regra do quiosque e da etiqueta.
  */
 @Module({
-  imports: [AuthModule, TotemLoteModule],
+  imports: [AuthModule, AppConfigModule, StorageModule, TotemLoteModule],
   controllers: [
     TotemGestaoController,
     TotemGestaoLojasController,
     TotemGestaoDispositivosController,
     TotemGestaoProdutosController,
+    TotemGestaoMidiaController,
+    TotemGestaoContaController,
   ],
   providers: [TotemGestaoService],
 })

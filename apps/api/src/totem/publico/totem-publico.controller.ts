@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Req,
   Res,
@@ -22,6 +23,10 @@ import {
 import type { Response } from 'express';
 
 import { enderecoDeOrigem, type RequisicaoComEndereco } from '../../auth/endereco-de-origem';
+import { comTenantPublico } from '../../common/tenant-publico';
+import { StorageService } from '../../storage/storage.service';
+import { chaveDaMidia, midiaPedidaValida } from '../comum/midia';
+import { totemNaoEncontrado } from '../comum/modulo';
 import { conferirTeto, tetoDoTotem, type TetoPorOrigem } from '../comum/teto';
 import { etagCasa } from './catalogo';
 import { TOTEM_REATIVAR, TotemPublicoService, type AparelhoResolvido } from './totem-publico.service';
@@ -46,8 +51,12 @@ export class TotemPublicoController {
   private readonly tetoDoCatalogoPorAparelho = tetoDoTotem('catalogo');
   private readonly tetoDosEventosPorOrigem = tetoDoTotem('eventos');
   private readonly tetoDosEventosPorAparelho = tetoDoTotem('eventos');
+  private readonly tetoDaMidia = tetoDoTotem('midia');
 
-  constructor(private readonly svc: TotemPublicoService) {}
+  constructor(
+    private readonly svc: TotemPublicoService,
+    private readonly storage: StorageService,
+  ) {}
 
   private async aparelho(
     token: string | undefined,
@@ -118,5 +127,45 @@ export class TotemPublicoController {
     const a = await this.aparelho(token, req, this.tetoDosEventosPorOrigem, this.tetoDosEventosPorAparelho);
     const { versaoApp, catalogoVersao } = TotemBatimentoSchema.parse(body);
     await this.svc.batimento(a, versaoApp, catalogoVersao);
+  }
+
+  /**
+   * A foto do produto e o banner da campanha. Sem token: a `<img>` do quiosque
+   * não manda cabeçalho, e a imagem não é segredo de ninguém (o nome é o hash
+   * do conteúdo, impossível de adivinhar). O bucket é privado, então o arquivo
+   * sai por aqui, como o avatar da bio.
+   *
+   * Não consulta o banco. A empresa vem da própria URL e entra no contexto só
+   * para o log levar `org=`; o que garante que a imagem é dela é a chave no
+   * bucket, que tem o `orgId` no caminho e só nasce pelo envio do painel, com
+   * o módulo ligado. Pedido fora do formato responde a 404 pública sem tocar
+   * no bucket.
+   */
+  @Get('midia/:orgId/:arquivo')
+  async midia(
+    @Param('orgId') orgId: string,
+    @Param('arquivo') arquivo: string,
+    @Res() res: Response,
+    @Req() req?: RequisicaoComEndereco,
+  ): Promise<void> {
+    conferirTeto(this.tetoDaMidia, enderecoDeOrigem(req));
+    if (!midiaPedidaValida(orgId, arquivo)) throw totemNaoEncontrado();
+
+    await comTenantPublico(orgId, async () => {
+      let midia: Awaited<ReturnType<StorageService['get']>>;
+      try {
+        midia = await this.storage.get(chaveDaMidia(orgId, arquivo));
+      } catch {
+        throw totemNaoEncontrado();
+      }
+      res.setHeader('Content-Type', midia.contentType);
+      res.setHeader('Content-Length', midia.size);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // O cabeçalho de correlação é por requisição e esta resposta fica um ano
+      // em cache: guardado junto com a imagem, serviria a todos (ver o avatar da bio).
+      res.removeHeader('x-correlation-id');
+      midia.stream.pipe(res);
+    });
   }
 }

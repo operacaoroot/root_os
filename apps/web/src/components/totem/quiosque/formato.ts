@@ -47,6 +47,15 @@ export function numeroBr(n: number): string {
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 }
 
+/** `Porção de 30 g (1/2 fatia média)`, no mesmo formato da página pública do produto. Sem porção, `null`. */
+export function textoDaPorcao(porcaoG: number | null, descricao: string | null): string | null {
+  const texto = descricao?.trim() || null;
+  if (porcaoG == null && !texto) return null;
+  if (porcaoG == null) return `Porção: ${texto}`;
+  const gramas = `Porção de ${numeroBr(porcaoG)} g`;
+  return texto ? `${gramas} (${texto})` : gramas;
+}
+
 const CAMINHOS_DO_TOTEM = ['/totem', '/totem/quiosque', '/totem/privacidade'];
 
 /**
@@ -85,6 +94,9 @@ export const TOTEM_CORES_DA_MARCA = {
   claro: '#F5F3EC',
   destaque: '#CB8139',
   destaqueTinta: '#9A5A1C',
+  destaqueClaro: '#E39A5E',
+  creme: '#EEEAC4',
+  musgoClaro: '#C9CBB5',
   sucesso: '#3F6B2A',
   sucessoFundo: '#E3EBD8',
   atencao: '#93551A',
@@ -117,6 +129,12 @@ export function temaDoQuiosque(config: Pick<TotemCatalogoConfig, 'corPrimaria' |
   return {
     '--q-primaria': primaria,
     '--q-sobre-primaria': ehCorEscura(primaria) ? m.claro : m.tinta,
+    // Os tons de apoio sobre a primária: a chamada laranja e o creme dos posts
+    // da marca só funcionam sobre cor escura.
+    '--q-primaria-chamada': ehCorEscura(primaria) ? m.destaque : m.tinta,
+    '--q-primaria-apoio': ehCorEscura(primaria) ? m.creme : m.tinta,
+    '--q-primaria-rotulo': ehCorEscura(primaria) ? m.destaqueClaro : m.destaqueTinta,
+    '--q-primaria-suave': ehCorEscura(primaria) ? m.musgoClaro : m.tintaSuave,
     '--q-fundo': fundo,
     '--q-sobre-fundo': ehCorEscura(fundo) ? m.claro : m.tinta,
     '--q-sobre-fundo-suave': ehCorEscura(fundo) ? m.linha : m.tintaSuave,

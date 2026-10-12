@@ -68,11 +68,36 @@ function mesmasFinalidades(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((f) => b.includes(f));
 }
 
-export function beneficioDa(c: Pick<CampanhaDoCupom, 'tipoBeneficio' | 'valorBeneficio' | 'descricaoBeneficio'>): TotemBeneficio {
+/**
+ * Campanha que já emitiu cupom não perde o benefício (`editarCampanha` barra a
+ * troca), então o tipo nulo só aparece em campanha sem cupom, e lá vira brinde.
+ */
+export function beneficioDa(
+  c: Pick<CampanhaDoCupom, 'valorBeneficio' | 'descricaoBeneficio'> & { tipoBeneficio: string | null },
+): TotemBeneficio {
   return {
-    tipoBeneficio: c.tipoBeneficio,
+    tipoBeneficio: c.tipoBeneficio ?? 'brinde',
     valorBeneficio: c.valorBeneficio == null ? null : Number(c.valorBeneficio),
     descricaoBeneficio: c.descricaoBeneficio,
+  };
+}
+
+type CampanhaComBeneficioOpcional = Omit<CampanhaDoCupom, 'tipoBeneficio' | 'validadeDias'> & {
+  acao: string;
+  tipoBeneficio: string | null;
+  validadeDias: number | null;
+};
+
+/** Só a campanha de cadastro emite cupom; nas outras o benefício guardado fica de lado. */
+export function campanhaDoCupom(c: CampanhaComBeneficioOpcional): CampanhaDoCupom | null {
+  if (c.acao !== 'cadastro' || c.tipoBeneficio == null || c.validadeDias == null) return null;
+  return {
+    id: c.id,
+    chamada: c.chamada,
+    tipoBeneficio: c.tipoBeneficio,
+    valorBeneficio: c.valorBeneficio,
+    descricaoBeneficio: c.descricaoBeneficio,
+    validadeDias: c.validadeDias,
   };
 }
 
@@ -89,17 +114,23 @@ export function filtroDeCampanhaVigente(orgId: string, lojaId: string, agora: Da
   };
 }
 
-/** Com mais de uma valendo, a que começou por último. */
-export function campanhaVigenteDaLoja(
+/** A campanha de cadastro da loja; com mais de uma valendo, a que começou por último. */
+export async function campanhaVigenteDaLoja(
   tx: Pick<Tx, 'totemCampanha'>,
   orgId: string,
   lojaId: string,
   agora: Date = new Date(),
-) {
-  return tx.totemCampanha.findFirst({
-    where: filtroDeCampanhaVigente(orgId, lojaId, agora),
+): Promise<CampanhaDoCupom | null> {
+  const c = await tx.totemCampanha.findFirst({
+    where: {
+      ...filtroDeCampanhaVigente(orgId, lojaId, agora),
+      acao: 'cadastro',
+      tipoBeneficio: { not: null },
+      validadeDias: { not: null },
+    },
     orderBy: [{ inicioEm: 'desc' }, { criadoEm: 'desc' }],
   });
+  return c ? campanhaDoCupom(c) : null;
 }
 
 function cupomEmitido(cupom: { codigo: string; validoAte: Date }, campanha: CampanhaDoCupom): TotemCupomEmitido {

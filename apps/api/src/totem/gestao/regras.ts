@@ -140,6 +140,7 @@ export interface TotemGestaoDadosDoProduto {
   categoria?: string | null;
   composicao?: string | null;
   beneficios?: string | null;
+  sugestoes?: string | null;
   alergenicos?: string | null;
   porcaoG?: number | null;
   porcaoDescricao?: string | null;
@@ -166,6 +167,7 @@ export function totemGestaoDadosDoProduto(entrada: Partial<TotemGestaoProdutoCri
     'categoria',
     'composicao',
     'beneficios',
+    'sugestoes',
     'alergenicos',
     'porcaoG',
     'porcaoDescricao',
@@ -197,6 +199,7 @@ export interface TotemGestaoProdutoDoBanco {
   categoria: string | null;
   composicao: string | null;
   beneficios: string | null;
+  sugestoes: string | null;
   alergenicos: string | null;
   porcaoG: Prisma.Decimal | number | null;
   porcaoDescricao: string | null;
@@ -226,6 +229,7 @@ export function totemGestaoProdutoParaTela(p: TotemGestaoProdutoDoBanco): TotemG
     categoria: p.categoria,
     composicao: p.composicao,
     beneficios: p.beneficios,
+    sugestoes: p.sugestoes,
     alergenicos: p.alergenicos,
     porcaoG: p.porcaoG == null ? null : Number(p.porcaoG),
     porcaoDescricao: p.porcaoDescricao,
@@ -272,6 +276,7 @@ export function totemGestaoConfigPadrao(): TotemGestaoConfig {
     encarregadoContato: null,
     politicaVersao: TOTEM_POLITICA_VERSAO,
     mensagemBoasVindas: null,
+    alergenicosPadrao: null,
     atualizadoEm: null,
   };
 }

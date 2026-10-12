@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Boxes,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -52,6 +53,8 @@ const ICONES: Record<string, LucideIcon> = {
   UserCog,
   Settings,
 };
+
+const MINHA_CONTA = '/totem-gestao/minha-conta';
 
 const PAPEIS: Record<string, string> = {
   totem_rede: 'rede',
@@ -107,7 +110,15 @@ export function LateralSrAgranel() {
       <div className="flex-none border-t border-border px-4 py-4">
         <div className="truncate text-[14px] font-semibold text-text">{user?.name}</div>
         <div className="truncate text-[12px] text-muted">{papeisLegiveis(user?.roles)}</div>
-        <button type="button" onClick={logout} className="sg-btn sg-btn-secundario mt-3 w-full">
+        <Link
+          href={MINHA_CONTA}
+          aria-current={pathname === MINHA_CONTA ? 'page' : undefined}
+          className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg px-3 text-[14px] font-medium text-text hover:bg-surface-2"
+        >
+          <KeyRound size={16} aria-hidden />
+          Trocar senha
+        </Link>
+        <button type="button" onClick={logout} className="sg-btn sg-btn-secundario mt-2 w-full">
           <LogOut size={16} aria-hidden />
           Sair
         </button>
@@ -120,7 +131,7 @@ export function TopoSrAgranel() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const itens = useItensVisiveis();
-  const titulo = itemDaRotaDoTotem(pathname)?.rotulo ?? 'Painel';
+  const titulo = pathname === MINHA_CONTA ? 'Minha conta' : (itemDaRotaDoTotem(pathname)?.rotulo ?? 'Painel');
 
   return (
     <>
@@ -144,6 +155,14 @@ export function TopoSrAgranel() {
           <div className="truncate text-[14px] font-semibold text-[#f5f3ec]">{user?.name}</div>
           <div className="sg-meta truncate">{papeisLegiveis(user?.roles)}</div>
         </div>
+        <Link
+          href={MINHA_CONTA}
+          aria-label="Trocar senha"
+          title="Trocar senha"
+          className="grid h-11 w-11 flex-none place-items-center rounded-lg border border-[#c9cbb5]/40 text-[#f5f3ec] transition-colors hover:bg-[#31422a] min-[820px]:hidden"
+        >
+          <KeyRound size={18} aria-hidden />
+        </Link>
         <button
           type="button"
           onClick={logout}

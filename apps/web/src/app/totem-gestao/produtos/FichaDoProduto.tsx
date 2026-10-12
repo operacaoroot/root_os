@@ -11,6 +11,7 @@ import {
   type TotemSelo,
   type TotemUnidadePreco,
 } from '@mktos/shared';
+import { EnvioDeImagem } from '@/components/totem/EnvioDeImagem';
 import { Botao, Campo, Card, inputCls } from '../../referencias/ui';
 import { ROTULO_UNIDADE, centavosDoTexto, textoDosCentavos } from '../lojas/apoio';
 
@@ -21,6 +22,9 @@ import { ROTULO_UNIDADE, centavosDoTexto, textoDosCentavos } from '../lojas/apoi
  * para a pessoa poder apagar e redigitar sem o campo pular. Linha da tabela
  * nutricional sem quantidade não é salva: a tabela padrão vem com as linhas da
  * rotulagem e quem preenche só completa o que o rótulo traz.
+ *
+ * Duplicar abre uma ficha nova com tudo copiado menos os códigos, para o
+ * produto que só muda de tamanho ou de sabor não ser digitado do zero.
  */
 
 type UnidadeNutriente = TotemNutriente['unidade'];
@@ -53,6 +57,7 @@ interface Rascunho {
   categoria: string;
   composicao: string;
   beneficios: string;
+  sugestoes: string;
   alergenicos: string;
   porcaoG: string;
   porcaoDescricao: string;
@@ -76,6 +81,7 @@ function paraRascunho(p: TotemGestaoProduto | null): Rascunho {
     categoria: p?.categoria ?? '',
     composicao: p?.composicao ?? '',
     beneficios: p?.beneficios ?? '',
+    sugestoes: p?.sugestoes ?? '',
     alergenicos: p?.alergenicos ?? '',
     porcaoG: numeroEmTexto(p?.porcaoG),
     porcaoDescricao: p?.porcaoDescricao ?? '',
@@ -138,6 +144,7 @@ function paraEnvio(r: Rascunho): { corpo: TotemGestaoProdutoCriar } | { erro: st
       categoria: r.categoria,
       composicao: r.composicao,
       beneficios: r.beneficios,
+      sugestoes: r.sugestoes,
       alergenicos: r.alergenicos,
       porcaoG,
       porcaoDescricao: r.porcaoDescricao,
@@ -153,20 +160,32 @@ function paraEnvio(r: Rascunho): { corpo: TotemGestaoProdutoCriar } | { erro: st
   };
 }
 
+/** A ficha nova a partir de outro produto: tudo igual, menos os códigos, que são únicos. */
+function copiaDoRascunho(modelo: TotemGestaoProduto): Rascunho {
+  return { ...paraRascunho(modelo), codigo: '', codigoDirector: '', ativo: true };
+}
+
 export function FichaDoProduto({
   produto,
+  modelo,
   editavel,
   avisoPreco,
+  token,
   aoSalvar,
+  aoDuplicar,
   aoFechar,
 }: {
   produto: TotemGestaoProduto | null;
+  /** Na ficha nova, o produto de onde os campos vêm copiados. */
+  modelo?: TotemGestaoProduto | null;
   editavel: boolean;
   avisoPreco: string | null;
+  token: string | null;
   aoSalvar: (corpo: TotemGestaoProdutoCriar) => Promise<void>;
+  aoDuplicar?: () => void;
   aoFechar: () => void;
 }) {
-  const [r, setR] = useState<Rascunho>(() => paraRascunho(produto));
+  const [r, setR] = useState<Rascunho>(() => (!produto && modelo ? copiaDoRascunho(modelo) : paraRascunho(produto)));
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -192,25 +211,69 @@ export function FichaDoProduto({
     }
   }
 
-  const titulo = produto ? (editavel ? `Editar ${produto.nome}` : produto.nome) : 'Novo produto';
+  const titulo = produto
+    ? editavel
+      ? `Editar ${produto.nome}`
+      : produto.nome
+    : modelo
+      ? `Novo produto, copiado de ${modelo.nome}`
+      : 'Novo produto';
 
   return (
-    <Card titulo={titulo} acao={<Botao tone="ghost" onClick={aoFechar}>Fechar</Botao>}>
+    <Card
+      titulo={titulo}
+      acao={
+        <div className="flex gap-2">
+          {produto && editavel && aoDuplicar && (
+            <Botao onClick={aoDuplicar} disabled={enviando} title="Abre uma ficha nova com os mesmos dados, para um produto parecido">
+              Duplicar
+            </Botao>
+          )}
+          <Botao tone="ghost" onClick={aoFechar}>
+            Fechar
+          </Botao>
+        </div>
+      }
+    >
       <form onSubmit={salvar} className="space-y-5">
         <fieldset disabled={!editavel || enviando} className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Campo label="Código do produto">
-              <input className={inputCls} required maxLength={40} value={r.codigo} onChange={(e) => campo('codigo', e.target.value)} />
-            </Campo>
-            <Campo label="Código no Director" hint="O código do sistema da loja, se for diferente.">
-              <input className={inputCls} maxLength={40} value={r.codigoDirector} onChange={(e) => campo('codigoDirector', e.target.value)} />
-            </Campo>
-            <Campo label="Nome">
-              <input className={inputCls} required minLength={2} maxLength={160} value={r.nome} onChange={(e) => campo('nome', e.target.value)} />
-            </Campo>
-            <Campo label="Categoria">
-              <input className={inputCls} maxLength={80} value={r.categoria} onChange={(e) => campo('categoria', e.target.value)} />
-            </Campo>
+          {modelo && !produto && (
+            <p className="rounded-lg border border-border bg-surface-2 p-3 text-[12px] text-muted">
+              Os dados vieram de {modelo.nome}. Informe o código do produto novo e ajuste o que for diferente antes de cadastrar.
+            </p>
+          )}
+          <div className="grid gap-5 md:grid-cols-[10rem_1fr]">
+            <EnvioDeImagem
+              rotulo="Foto do produto"
+              dica="Quadrada, com fundo claro. A foto grande é reduzida antes do envio."
+              valor={r.imagemUrl}
+              aoMudar={(url) => campo('imagemUrl', url)}
+              destino="produto"
+              token={token}
+              formato="quadrado"
+              desligado={!editavel || enviando}
+            />
+            <div className="grid content-start gap-3 sm:grid-cols-2">
+              <Campo label="Código do produto">
+                <input
+                  className={inputCls}
+                  required
+                  maxLength={40}
+                  autoFocus={!!modelo && !produto}
+                  value={r.codigo}
+                  onChange={(e) => campo('codigo', e.target.value)}
+                />
+              </Campo>
+              <Campo label="Código no Director" hint="O código do sistema da loja, se for diferente.">
+                <input className={inputCls} maxLength={40} value={r.codigoDirector} onChange={(e) => campo('codigoDirector', e.target.value)} />
+              </Campo>
+              <Campo label="Nome">
+                <input className={inputCls} required minLength={2} maxLength={160} value={r.nome} onChange={(e) => campo('nome', e.target.value)} />
+              </Campo>
+              <Campo label="Categoria">
+                <input className={inputCls} maxLength={80} value={r.categoria} onChange={(e) => campo('categoria', e.target.value)} />
+              </Campo>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -220,11 +283,11 @@ export function FichaDoProduto({
             <Campo label="Benefícios">
               <textarea className={inputCls} rows={3} maxLength={2000} value={r.beneficios} onChange={(e) => campo('beneficios', e.target.value)} />
             </Campo>
-            <Campo label="Alergênicos" hint="Como está no rótulo, por exemplo: Contém castanha-do-pará. Pode conter amendoim.">
-              <textarea className={inputCls} rows={2} maxLength={1000} value={r.alergenicos} onChange={(e) => campo('alergenicos', e.target.value)} />
+            <Campo label="Sugestões de uso" hint="Como consumir: no iogurte, na salada, no preparo de bolos.">
+              <textarea className={inputCls} rows={3} maxLength={2000} value={r.sugestoes} onChange={(e) => campo('sugestoes', e.target.value)} />
             </Campo>
-            <Campo label="Endereço da foto" hint="Precisa começar com https://.">
-              <input className={inputCls} type="url" maxLength={500} value={r.imagemUrl} onChange={(e) => campo('imagemUrl', e.target.value)} />
+            <Campo label="Alergênicos" hint="Como está no rótulo, por exemplo: Contém castanha-do-pará. Pode conter amendoim.">
+              <textarea className={inputCls} rows={3} maxLength={1000} value={r.alergenicos} onChange={(e) => campo('alergenicos', e.target.value)} />
             </Campo>
           </div>
 

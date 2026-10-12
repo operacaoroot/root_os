@@ -29,13 +29,14 @@ import {
   type TotemCupomLinha,
   type TotemLojaDoEscopo,
   type TotemLojaRef,
+  type TotemAcaoCampanha,
   type TotemTipoBeneficio,
 } from '@mktos/shared';
 
 import type { JwtUser } from '../../auth/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { escopoDeLojas, exigirLojaNoEscopo, type TotemEscopoDeLojas } from '../comum/escopo';
-import { beneficioDa } from './cadastrar';
+import { beneficioDa, campanhaDoCupom } from './cadastrar';
 import { anonimizarCliente, anonimizarInativos, revogarCampanhas } from './clientes';
 import { hashDoCpf, lerPepper } from './cpf';
 import {
@@ -109,18 +110,33 @@ export class TotemCampanhasService {
           _count: { _all: true },
         })
       : [];
+    const produtoIds = [...new Set(campanhas.flatMap((c) => c.produtoIds))];
+    const produtos = produtoIds.length
+      ? await this.prisma.totemProduto.findMany({
+          where: { orgId, id: { in: produtoIds } },
+          select: { id: true, codigo: true, nome: true, imagemUrl: true },
+        })
+      : [];
+    const produtoPorId = new Map(produtos.map((p) => [p.id, p]));
     const agora = new Date();
     return campanhas.map((c) => {
       const daCampanha = contagem.filter((g) => g.campanhaId === c.id);
-      const b = beneficioDa(c);
+      const doCupom = campanhaDoCupom(c);
       return {
         id: c.id,
         nome: c.nome,
         chamada: c.chamada,
-        tipoBeneficio: c.tipoBeneficio as TotemTipoBeneficio,
-        valorBeneficio: b.valorBeneficio,
+        acao: c.acao as TotemAcaoCampanha,
+        textoApoio: c.textoApoio,
+        textoBotao: c.textoBotao,
+        imagemUrl: c.imagemUrl,
+        produtoIds: c.produtoIds,
+        produtos: c.produtoIds.flatMap((pid) => produtoPorId.get(pid) ?? []),
+        ordem: c.ordem,
+        tipoBeneficio: c.tipoBeneficio as TotemTipoBeneficio | null,
+        valorBeneficio: beneficioDa(c).valorBeneficio,
         descricaoBeneficio: c.descricaoBeneficio,
-        beneficio: totemTextoDoBeneficio(b),
+        beneficio: doCupom ? totemTextoDoBeneficio(beneficioDa(doCupom)) : null,
         validadeDias: c.validadeDias,
         inicioEm: c.inicioEm.toISOString(),
         fimEm: iso(c.fimEm),
@@ -142,7 +158,7 @@ export class TotemCampanhasService {
         orgId: user.orgId,
         ...(escopo === 'todas' ? {} : { OR: [{ lojaIds: { isEmpty: true } }, { lojaIds: { hasSome: escopo } }] }),
       },
-      orderBy: [{ ativa: 'desc' }, { inicioEm: 'desc' }],
+      orderBy: [{ ativa: 'desc' }, { ordem: 'asc' }, { inicioEm: 'desc' }],
     });
     return this.resumos(user.orgId, campanhas);
   }
@@ -163,6 +179,17 @@ export class TotemCampanhasService {
     return unicas;
   }
 
+  /** Produto de outra empresa ou apagado responde 400; a ordem escolhida é mantida. */
+  private async conferirProdutosDaCampanha(orgId: string, produtoIds: readonly string[]): Promise<string[]> {
+    const unicos = [...new Set(produtoIds)];
+    if (unicos.length === 0) return unicos;
+    const achados = await this.prisma.totemProduto.count({ where: { orgId, id: { in: unicos } } });
+    if (achados !== unicos.length) {
+      throw new BadRequestException('Algum produto escolhido não existe mais. Recarregue a página e escolha de novo.');
+    }
+    return unicos;
+  }
+
   private async campanhaParaMexer(user: JwtUser, id: string): Promise<{ campanha: CampanhaDoBanco; escopo: TotemEscopoDeLojas }> {
     const escopo = await escopoDeLojas(this.prisma, user);
     const campanha = await this.prisma.totemCampanha.findFirst({ where: { id, orgId: user.orgId } });
@@ -177,15 +204,22 @@ export class TotemCampanhasService {
     const c = TotemCampanhaCriarSchema.parse(corpo);
     const escopo = await escopoDeLojas(this.prisma, user);
     const lojaIds = await this.conferirLojasDaCampanha(user, escopo, c.lojaIds ?? []);
+    const produtoIds = await this.conferirProdutosDaCampanha(user.orgId, c.produtoIds ?? []);
     const criada = await this.prisma.totemCampanha.create({
       data: {
         orgId: user.orgId,
         nome: c.nome,
         chamada: c.chamada,
-        tipoBeneficio: c.tipoBeneficio,
-        valorBeneficio: c.tipoBeneficio === 'brinde' ? null : (c.valorBeneficio ?? null),
+        acao: c.acao,
+        textoApoio: c.textoApoio ?? null,
+        textoBotao: c.textoBotao ?? null,
+        imagemUrl: c.imagemUrl ?? null,
+        produtoIds,
+        ordem: c.ordem ?? 0,
+        tipoBeneficio: c.tipoBeneficio ?? null,
+        valorBeneficio: !c.tipoBeneficio || c.tipoBeneficio === 'brinde' ? null : (c.valorBeneficio ?? null),
         descricaoBeneficio: c.descricaoBeneficio || null,
-        validadeDias: c.validadeDias,
+        validadeDias: c.validadeDias ?? null,
         ...(c.inicioEm ? { inicioEm: new Date(c.inicioEm) } : {}),
         fimEm: c.fimEm ? new Date(c.fimEm) : null,
         ativa: c.ativa ?? true,
@@ -200,17 +234,33 @@ export class TotemCampanhasService {
     const c = TotemCampanhaEditarSchema.parse(corpo);
     const { campanha, escopo } = await this.campanhaParaMexer(user, id);
 
-    const tipoBeneficio = c.tipoBeneficio ?? campanha.tipoBeneficio;
-    const valorBeneficio = c.valorBeneficio !== undefined ? c.valorBeneficio : beneficioDa(campanha).valorBeneficio;
+    const acao = c.acao ?? (campanha.acao as TotemAcaoCampanha);
+    const tipoBeneficio = c.tipoBeneficio !== undefined ? c.tipoBeneficio : campanha.tipoBeneficio;
+    const valorAntigo = campanha.valorBeneficio == null ? null : Number(campanha.valorBeneficio);
+    const valorBeneficio = c.valorBeneficio !== undefined ? c.valorBeneficio : valorAntigo;
     const descricaoBeneficio = c.descricaoBeneficio !== undefined ? c.descricaoBeneficio : campanha.descricaoBeneficio;
+    const validadeDias = c.validadeDias !== undefined ? c.validadeDias : campanha.validadeDias;
+    const produtoIds =
+      c.produtoIds !== undefined && c.produtoIds !== null
+        ? await this.conferirProdutosDaCampanha(user.orgId, c.produtoIds)
+        : campanha.produtoIds;
     const inicioEm = c.inicioEm ? new Date(c.inicioEm) : campanha.inicioEm;
     const fimEm = c.fimEm !== undefined ? (c.fimEm ? new Date(c.fimEm) : null) : campanha.fimEm;
-    const problema = totemProblemaDaCampanha({ tipoBeneficio, valorBeneficio, descricaoBeneficio, inicioEm, fimEm });
+    const problema = totemProblemaDaCampanha({
+      acao,
+      tipoBeneficio,
+      valorBeneficio,
+      descricaoBeneficio,
+      validadeDias,
+      produtoIds,
+      inicioEm,
+      fimEm,
+    });
     if (problema) throw new BadRequestException(problema);
 
     const mudaBeneficio =
-      tipoBeneficio !== campanha.tipoBeneficio ||
-      (tipoBeneficio !== 'brinde' && (valorBeneficio ?? null) !== beneficioDa(campanha).valorBeneficio) ||
+      (tipoBeneficio ?? null) !== campanha.tipoBeneficio ||
+      (tipoBeneficio !== 'brinde' && (valorBeneficio ?? null) !== valorAntigo) ||
       (tipoBeneficio === 'brinde' && (descricaoBeneficio ?? null) !== campanha.descricaoBeneficio);
     if (mudaBeneficio) {
       const cupons = await this.prisma.totemCupom.count({ where: { orgId: user.orgId, campanhaId: id } });
@@ -227,10 +277,16 @@ export class TotemCampanhasService {
       data: {
         ...(c.nome !== undefined ? { nome: c.nome } : {}),
         ...(c.chamada !== undefined ? { chamada: c.chamada } : {}),
-        tipoBeneficio,
-        valorBeneficio: tipoBeneficio === 'brinde' ? null : (valorBeneficio ?? null),
+        acao,
+        ...(c.textoApoio !== undefined ? { textoApoio: c.textoApoio } : {}),
+        ...(c.textoBotao !== undefined ? { textoBotao: c.textoBotao } : {}),
+        ...(c.imagemUrl !== undefined ? { imagemUrl: c.imagemUrl } : {}),
+        produtoIds,
+        ...(c.ordem !== undefined && c.ordem !== null ? { ordem: c.ordem } : {}),
+        tipoBeneficio: tipoBeneficio ?? null,
+        valorBeneficio: !tipoBeneficio || tipoBeneficio === 'brinde' ? null : (valorBeneficio ?? null),
         descricaoBeneficio: descricaoBeneficio || null,
-        ...(c.validadeDias !== undefined ? { validadeDias: c.validadeDias } : {}),
+        validadeDias: validadeDias ?? null,
         inicioEm,
         fimEm,
         ...(c.ativa !== undefined ? { ativa: c.ativa } : {}),

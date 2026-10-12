@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
-import { TotemTipoBeneficioSchema, type TotemStatusCupom, type TotemTipoBeneficio } from './comum.js';
+import {
+  TOTEM_PRODUTOS_POR_CAMPANHA,
+  TotemAcaoCampanhaSchema,
+  TotemTipoBeneficioSchema,
+  TotemUrlDeImagemSchema,
+  type TotemAcaoCampanha,
+  type TotemStatusCupom,
+  type TotemTipoBeneficio,
+} from './comum.js';
 import type { TotemPolitica } from './politica.js';
 
 /*
@@ -207,6 +215,19 @@ export const TOTEM_ROTULO_DO_STATUS_CUPOM: Record<TotemStatusCupom, string> = {
 
 const dataHora = z.string().datetime({ offset: true, message: 'Data inválida.' });
 
+const textoOpcional = (max: number, mensagem: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, mensagem)
+    .nullish()
+    .transform((v) => (v === '' ? null : v));
+
+/*
+ * A campanha é um banner da tela inicial do totem. A ação diz o que o botão faz:
+ * `cadastro` abre o cadastro e emite cupom (só ela tem benefício e validade),
+ * `produtos` abre a lista escolhida e `nenhuma` só divulga.
+ */
 const TotemCampanhaCampos = z.object({
   nome: z.string().trim().min(2, 'Dê um nome à campanha.').max(80, 'O nome pode ter até 80 letras.'),
   chamada: z
@@ -214,14 +235,26 @@ const TotemCampanhaCampos = z.object({
     .trim()
     .min(2, 'Escreva a chamada que o cliente vê no totem.')
     .max(140, 'A chamada pode ter até 140 letras.'),
-  tipoBeneficio: TotemTipoBeneficioSchema,
+  acao: TotemAcaoCampanhaSchema.default('cadastro'),
+  textoApoio: textoOpcional(240, 'O texto de apoio pode ter até 240 letras.'),
+  textoBotao: textoOpcional(30, 'O texto do botão pode ter até 30 letras.'),
+  imagemUrl: TotemUrlDeImagemSchema,
+  produtoIds: z
+    .array(z.string().uuid('Produto inválido.'))
+    .max(TOTEM_PRODUTOS_POR_CAMPANHA, `Escolha no máximo ${TOTEM_PRODUTOS_POR_CAMPANHA} produtos.`)
+    .optional()
+    .transform((v) => (v ? [...new Set(v)] : v)),
+  /** Menor aparece primeiro no carrossel. */
+  ordem: z.number().int('A ordem é um número inteiro.').min(0).max(999).optional(),
+  tipoBeneficio: TotemTipoBeneficioSchema.nullish(),
   valorBeneficio: z.number().positive('O valor do benefício tem de ser maior que zero.').max(100_000).nullish(),
   descricaoBeneficio: z.string().trim().max(200, 'A descrição pode ter até 200 letras.').nullish(),
   validadeDias: z
     .number()
     .int('A validade é um número inteiro de dias.')
     .min(1, 'O cupom vale pelo menos 1 dia.')
-    .max(365, 'O cupom vale no máximo 365 dias.'),
+    .max(365, 'O cupom vale no máximo 365 dias.')
+    .nullish(),
   inicioEm: dataHora.optional(),
   fimEm: dataHora.nullish(),
   ativa: z.boolean().optional(),
@@ -230,25 +263,46 @@ const TotemCampanhaCampos = z.object({
 });
 
 /**
- * A regra que liga os campos entre si: percentual entre 0 e 100, valor maior
- * que zero, brinde com descrição, fim depois do início. Fica fora do schema
- * porque a edição é parcial e a API confere a campanha já mesclada.
+ * A regra que liga os campos entre si: a de cadastro tem benefício e validade
+ * (percentual entre 0 e 100, valor maior que zero, brinde com descrição), a de
+ * produtos tem pelo menos um produto, e o fim vem depois do início. Fica fora
+ * do schema porque a edição é parcial e a API confere a campanha já mesclada.
  */
 export function totemProblemaDaCampanha(c: {
-  tipoBeneficio: string;
+  acao?: string | null;
+  tipoBeneficio?: string | null;
   valorBeneficio?: number | null;
   descricaoBeneficio?: string | null;
+  validadeDias?: number | null;
+  produtoIds?: readonly string[] | null;
   inicioEm?: string | Date | null;
   fimEm?: string | Date | null;
 }): string | null {
+  const acao = c.acao ?? 'cadastro';
+  if (acao === 'cadastro') {
+    const problema = problemaDoBeneficio(c);
+    if (problema) return problema;
+  }
+  if (acao === 'produtos' && !c.produtoIds?.length) return 'Escolha pelo menos um produto para a campanha mostrar.';
+  if (c.inicioEm && c.fimEm && new Date(c.fimEm).getTime() <= new Date(c.inicioEm).getTime()) {
+    return 'O fim da campanha tem de vir depois do início.';
+  }
+  return null;
+}
+
+function problemaDoBeneficio(c: {
+  tipoBeneficio?: string | null;
+  valorBeneficio?: number | null;
+  descricaoBeneficio?: string | null;
+  validadeDias?: number | null;
+}): string | null {
+  if (!c.tipoBeneficio) return 'Na campanha de cadastro, escolha o benefício do cupom.';
+  if (c.validadeDias == null) return 'Na campanha de cadastro, informe por quantos dias o cupom vale.';
   if (c.tipoBeneficio === 'percentual' && (c.valorBeneficio == null || c.valorBeneficio > 100)) {
     return 'No desconto em percentual, informe um valor entre 1 e 100.';
   }
   if (c.tipoBeneficio === 'valor' && c.valorBeneficio == null) return 'No desconto em reais, informe o valor.';
   if (c.tipoBeneficio === 'brinde' && !c.descricaoBeneficio?.trim()) return 'Descreva o brinde.';
-  if (c.inicioEm && c.fimEm && new Date(c.fimEm).getTime() <= new Date(c.inicioEm).getTime()) {
-    return 'O fim da campanha tem de vir depois do início.';
-  }
   return null;
 }
 
@@ -261,15 +315,32 @@ export type TotemCampanhaCriar = z.infer<typeof TotemCampanhaCriarSchema>;
 export const TotemCampanhaEditarSchema = TotemCampanhaCampos.partial();
 export type TotemCampanhaEditar = z.infer<typeof TotemCampanhaEditarSchema>;
 
+/** O produto da lista de uma campanha, com o que a tela precisa para mostrá-lo. */
+export interface TotemProdutoDaCampanha {
+  id: string;
+  codigo: string;
+  nome: string;
+  imagemUrl: string | null;
+}
+
 export interface TotemCampanhaResumo {
   id: string;
   nome: string;
   chamada: string;
-  tipoBeneficio: TotemTipoBeneficio;
+  acao: TotemAcaoCampanha;
+  textoApoio: string | null;
+  textoBotao: string | null;
+  imagemUrl: string | null;
+  produtoIds: string[];
+  /** Os mesmos produtos, na ordem escolhida; o que foi apagado do catálogo some daqui. */
+  produtos: TotemProdutoDaCampanha[];
+  ordem: number;
+  tipoBeneficio: TotemTipoBeneficio | null;
   valorBeneficio: number | null;
   descricaoBeneficio: string | null;
-  beneficio: string;
-  validadeDias: number;
+  /** Só na ação `cadastro`. */
+  beneficio: string | null;
+  validadeDias: number | null;
   inicioEm: string;
   fimEm: string | null;
   ativa: boolean;

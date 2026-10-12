@@ -15,13 +15,14 @@ import { dataHoraBR } from '../lojas/apoio';
  * cadastro depende do controlador dos dados preenchido para a política.
  */
 
-type Rascunho = Omit<TotemGestaoConfigEntrada, 'logoUrl' | 'controladorDocumento' | 'controladorEndereco' | 'encarregadoNome' | 'encarregadoContato' | 'mensagemBoasVindas'> & {
+type Rascunho = Omit<TotemGestaoConfigEntrada, 'logoUrl' | 'controladorDocumento' | 'controladorEndereco' | 'encarregadoNome' | 'encarregadoContato' | 'mensagemBoasVindas' | 'alergenicosPadrao'> & {
   logoUrl: string;
   controladorDocumento: string;
   controladorEndereco: string;
   encarregadoNome: string;
   encarregadoContato: string;
   mensagemBoasVindas: string;
+  alergenicosPadrao: string;
 };
 
 function paraRascunho(c: TotemGestaoConfig): Rascunho {
@@ -39,6 +40,7 @@ function paraRascunho(c: TotemGestaoConfig): Rascunho {
     encarregadoNome: c.encarregadoNome ?? '',
     encarregadoContato: c.encarregadoContato ?? '',
     mensagemBoasVindas: c.mensagemBoasVindas ?? '',
+    alergenicosPadrao: c.alergenicosPadrao ?? '',
   };
 }
 
@@ -142,6 +144,18 @@ export default function PaginaDaConfiguracao() {
               ligado={r.cadastroLigado}
               aoMudar={(v) => campo('cadastroLigado', v)}
             />
+            <Campo
+              label="Aviso de alergênicos padrão"
+              hint="Aparece na ficha de todo produto que não tem aviso próprio. Por exemplo: pode conter trigo, amendoim e leite."
+            >
+              <textarea
+                className={inputCls}
+                rows={3}
+                maxLength={1000}
+                value={r.alergenicosPadrao}
+                onChange={(e) => campo('alergenicosPadrao', e.target.value)}
+              />
+            </Campo>
           </div>
         </Card>
 

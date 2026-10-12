@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto';
 
 import {
+  TOTEM_BOTAO_PADRAO,
   TOTEM_TEMPO_OCIOSO_PADRAO_SEG,
+  TotemAcaoCampanhaSchema,
   TotemNutrienteSchema,
   TotemSeloSchema,
   TotemUnidadePrecoSchema,
   totemSituacaoDaValidade,
+  totemTextoDoBeneficio,
   type TotemCatalogo,
+  type TotemCatalogoCampanha,
   type TotemCatalogoConfig,
   type TotemCatalogoLote,
   type TotemCatalogoProduto,
@@ -36,6 +40,7 @@ export interface ProdutoDoCatalogo {
   categoria: string | null;
   composicao: string | null;
   beneficios: string | null;
+  sugestoes: string | null;
   alergenicos: string | null;
   porcaoG: number | null;
   porcaoDescricao: string | null;
@@ -49,8 +54,19 @@ export interface ProdutoDoCatalogo {
 }
 
 export interface CampanhaDoCatalogo {
+  id: string;
   nome: string;
   chamada: string;
+  acao: string;
+  textoApoio: string | null;
+  textoBotao: string | null;
+  imagemUrl: string | null;
+  produtoIds: readonly string[];
+  ordem: number;
+  tipoBeneficio: string | null;
+  valorBeneficio: number | null;
+  descricaoBeneficio: string | null;
+  validadeDias: number | null;
   ativa: boolean;
   inicioEm: Date;
   fimEm: Date | null;
@@ -75,6 +91,7 @@ export interface ConfigDoCatalogo {
   tempoOciosoSeg: number;
   precoLigado: boolean;
   cadastroLigado: boolean;
+  alergenicosPadrao: string | null;
 }
 
 /**
@@ -90,6 +107,7 @@ export const CONFIG_PADRAO_DO_CATALOGO: ConfigDoCatalogo = {
   tempoOciosoSeg: TOTEM_TEMPO_OCIOSO_PADRAO_SEG,
   precoLigado: false,
   cadastroLigado: false,
+  alergenicosPadrao: null,
 };
 
 const COR = /^#[0-9A-Fa-f]{6}$/;
@@ -106,6 +124,7 @@ function configPublica(c: ConfigDoCatalogo): TotemCatalogoConfig {
     tempoOciosoSeg: Math.max(TEMPO_OCIOSO_MINIMO_SEG, tempo),
     precoLigado: c.precoLigado,
     cadastroLigado: c.cadastroLigado,
+    alergenicosPadrao: c.alergenicosPadrao,
   };
 }
 
@@ -155,6 +174,7 @@ function produtoDoCatalogo(
     categoria: p.categoria,
     composicao: p.composicao,
     beneficios: p.beneficios,
+    sugestoes: p.sugestoes,
     alergenicos: p.alergenicos,
     porcaoG: p.porcaoG != null && Number.isFinite(p.porcaoG) && p.porcaoG >= 0 ? p.porcaoG : null,
     porcaoDescricao: p.porcaoDescricao,
@@ -174,11 +194,26 @@ function produtoDoCatalogo(
   return produto;
 }
 
+function vigenteNaLoja(c: CampanhaDoCatalogo, lojaId: string, agora: Date): boolean {
+  return (
+    c.ativa &&
+    c.inicioEm.getTime() <= agora.getTime() &&
+    (c.fimEm === null || c.fimEm.getTime() > agora.getTime()) &&
+    (c.lojaIds.length === 0 || c.lojaIds.includes(lojaId))
+  );
+}
+
+/** A de cadastro só emite cupom com benefício e validade, e só com o cadastro ligado. */
+function emiteCupom(c: CampanhaDoCatalogo, cadastroLigado: boolean): boolean {
+  return cadastroLigado && c.acao === 'cadastro' && c.tipoBeneficio != null && c.validadeDias != null;
+}
+
 /**
- * A campanha que a loja mostra agora: ativa, já começada, sem fim ou com fim
- * no futuro, e com a loja na lista (lista vazia vale para todas). Havendo
- * mais de uma, a que começou por último. Sem cadastro ligado não há onde
- * resgatar o cupom, então a chamada não aparece.
+ * A campanha de cadastro que a loja mostra agora: ativa, já começada, sem fim
+ * ou com fim no futuro, e com a loja na lista (lista vazia vale para todas).
+ * Havendo mais de uma, a que começou por último, que é a mesma que o cadastro
+ * usa para emitir o cupom. Sem cadastro ligado não há onde resgatar o cupom,
+ * então a chamada não aparece.
  */
 export function campanhaDaLoja(
   campanhas: readonly CampanhaDoCatalogo[],
@@ -186,18 +221,61 @@ export function campanhaDaLoja(
   cadastroLigado: boolean,
   agora: Date,
 ): { nome: string; chamada: string } | null {
-  if (!cadastroLigado) return null;
   const vigentes = campanhas
-    .filter(
-      (c) =>
-        c.ativa &&
-        c.inicioEm.getTime() <= agora.getTime() &&
-        (c.fimEm === null || c.fimEm.getTime() > agora.getTime()) &&
-        (c.lojaIds.length === 0 || c.lojaIds.includes(lojaId)),
-    )
+    .filter((c) => emiteCupom(c, cadastroLigado) && vigenteNaLoja(c, lojaId, agora))
     .sort((a, b) => b.inicioEm.getTime() - a.inicioEm.getTime());
   const c = vigentes[0];
   return c ? { nome: c.nome, chamada: c.chamada } : null;
+}
+
+/**
+ * Os banners do quiosque, na ordem do painel. A de cadastro entra só quando
+ * emite cupom, e só a que `campanhaDaLoja` escolheu, para o banner não
+ * prometer um benefício diferente do cupom que sai. A de produtos leva só os
+ * que estão no catálogo; sem nenhum, vira banner sem botão.
+ */
+export function campanhasDaLoja(
+  campanhas: readonly CampanhaDoCatalogo[],
+  lojaId: string,
+  cadastroLigado: boolean,
+  idsNoCatalogo: ReadonlySet<string>,
+  agora: Date,
+): TotemCatalogoCampanha[] {
+  const doCadastro = campanhas
+    .filter((c) => emiteCupom(c, cadastroLigado) && vigenteNaLoja(c, lojaId, agora))
+    .sort((a, b) => b.inicioEm.getTime() - a.inicioEm.getTime())[0];
+  const saida: TotemCatalogoCampanha[] = [];
+  const ordenadas = campanhas
+    .filter((c) => vigenteNaLoja(c, lojaId, agora))
+    .sort((a, b) => a.ordem - b.ordem || b.inicioEm.getTime() - a.inicioEm.getTime() || a.id.localeCompare(b.id));
+  for (const c of ordenadas) {
+    const lida = TotemAcaoCampanhaSchema.safeParse(c.acao);
+    if (!lida.success) continue;
+    let acao = lida.data;
+    if (acao === 'cadastro' && c !== doCadastro) continue;
+    const produtoIds = acao === 'produtos' ? c.produtoIds.filter((id) => idsNoCatalogo.has(id)) : [];
+    if (acao === 'produtos' && produtoIds.length === 0) acao = 'nenhuma';
+    const padrao = TOTEM_BOTAO_PADRAO[acao];
+    saida.push({
+      id: c.id,
+      nome: c.nome,
+      chamada: c.chamada,
+      textoApoio: c.textoApoio,
+      imagemUrl: c.imagemUrl,
+      acao,
+      textoBotao: padrao === null ? null : c.textoBotao?.trim() || padrao,
+      produtoIds,
+      beneficio:
+        acao === 'cadastro' && c.tipoBeneficio
+          ? totemTextoDoBeneficio({
+              tipoBeneficio: c.tipoBeneficio,
+              valorBeneficio: c.valorBeneficio,
+              descricaoBeneficio: c.descricaoBeneficio,
+            })
+          : null,
+    });
+  }
+  return saida;
 }
 
 export function montarCatalogo(
@@ -216,6 +294,13 @@ export function montarCatalogo(
     dispositivo: { id: dados.dispositivo.id, nome: dados.dispositivo.nome },
     config: cfg,
     campanha: campanhaDaLoja(dados.campanhas, dados.loja.id, cfg.cadastroLigado, agora),
+    campanhas: campanhasDaLoja(
+      dados.campanhas,
+      dados.loja.id,
+      cfg.cadastroLigado,
+      new Set(produtos.map((p) => p.id)),
+      agora,
+    ),
     produtos,
   };
   const versao = createHash('sha256').update(JSON.stringify(corpo), 'utf8').digest('hex').slice(0, 32);

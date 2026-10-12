@@ -59,7 +59,8 @@ describe('FichaDoProduto', () => {
     expect(screen.getByText('Porção de 40 g')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '%VD*' })).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Valor energético 168 kcal 8%/ })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /Açúcares adicionados 4,5 g —/ })).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Açúcares adicionados 4,5 g \*\*/ })).toBeInTheDocument();
+    expect(screen.getByText('** VD não estabelecido.')).toBeInTheDocument();
   });
 
   it('lote vencido manda consultar um atendente', () => {
@@ -138,9 +139,10 @@ describe('TelaInicial', () => {
     expect(screen.getByText(/Sem internet: mostrando o catálogo guardado/)).toBeInTheDocument();
   });
 
-  it('o teclado de tela vem ligado, busca e registra o termo depois da pausa', () => {
+  it('o teclado de tela abre no toque do campo, busca e registra o termo depois da pausa', () => {
     vi.useFakeTimers();
     const { aoRegistrar } = telaInicial(true);
+    fireEvent.click(screen.getByRole('searchbox'));
     const teclado = screen.getByRole('group', { name: 'Teclado' });
 
     for (const letra of 'GRANILA') fireEvent.click(within(teclado).getByRole('button', { name: letra }));

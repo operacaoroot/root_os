@@ -112,6 +112,7 @@ export class TotemPublicoService {
           tempoOciosoSeg: true,
           precoLigado: true,
           cadastroLigado: true,
+          alergenicosPadrao: true,
         },
       });
       const produtos = await this.prisma.totemProduto.findMany({
@@ -124,6 +125,7 @@ export class TotemPublicoService {
           categoria: true,
           composicao: true,
           beneficios: true,
+          sugestoes: true,
           alergenicos: true,
           porcaoG: true,
           porcaoDescricao: true,
@@ -138,7 +140,25 @@ export class TotemPublicoService {
       });
       const campanhas = await this.prisma.totemCampanha.findMany({
         where: { orgId: a.orgId, ativa: true, inicioEm: { lte: agora } },
-        select: { nome: true, chamada: true, ativa: true, inicioEm: true, fimEm: true, lojaIds: true },
+        select: {
+          id: true,
+          nome: true,
+          chamada: true,
+          acao: true,
+          textoApoio: true,
+          textoBotao: true,
+          imagemUrl: true,
+          produtoIds: true,
+          ordem: true,
+          tipoBeneficio: true,
+          valorBeneficio: true,
+          descricaoBeneficio: true,
+          validadeDias: true,
+          ativa: true,
+          inicioEm: true,
+          fimEm: true,
+          lojaIds: true,
+        },
       });
       const lotes = await this.lotes.porProduto(
         loja.id,
@@ -151,7 +171,10 @@ export class TotemPublicoService {
           dispositivo: aparelho,
           produtos: produtos.map((p) => ({ ...p, porcaoG: p.porcaoG == null ? null : Number(p.porcaoG) })),
           lotes,
-          campanhas,
+          campanhas: campanhas.map((c) => ({
+            ...c,
+            valorBeneficio: c.valorBeneficio == null ? null : Number(c.valorBeneficio),
+          })),
         },
         config,
         agora,

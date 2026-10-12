@@ -7,6 +7,7 @@ import {
   TotemSeloSchema,
   TotemTipoEventoSchema,
   TotemUnidadePrecoSchema,
+  TotemUrlDeImagemSchema,
   type TotemNutriente,
   type TotemSelo,
   type TotemTipoEvento,
@@ -30,15 +31,7 @@ const textoLivre = (max: number) =>
     .optional()
     .transform((v) => (v === '' ? null : v));
 
-/** Endereço de imagem: só https, para o totem não carregar conteúdo misto. */
-const urlDeImagem = z
-  .string()
-  .trim()
-  .max(500, 'O endereço da imagem é longo demais.')
-  .nullable()
-  .optional()
-  .transform((v) => (v === '' ? null : v))
-  .refine((v) => v == null || /^https:\/\/\S+$/.test(v), 'O endereço da imagem precisa começar com https://.');
+const urlDeImagem = TotemUrlDeImagemSchema;
 
 const corHex = z
   .string()
@@ -189,6 +182,7 @@ const produtoBase = z.object({
   categoria: textoLivre(80),
   composicao: textoLivre(2000),
   beneficios: textoLivre(2000),
+  sugestoes: textoLivre(2000),
   alergenicos: textoLivre(1000),
   porcaoG: z.number().positive('A porção precisa ser maior que zero.').max(100_000).nullable().optional(),
   porcaoDescricao: textoLivre(120),
@@ -229,6 +223,8 @@ export type TotemGestaoProdutoEditar = z.infer<typeof TotemGestaoProdutoEditarSc
 export const TotemGestaoProdutosQuerySchema = z.object({
   busca: z.string().trim().max(TOTEM_TERMO_MAXIMO).optional(),
   situacao: z.enum(['ativos', 'inativos', 'todos']).default('todos'),
+  /** Só os produtos sem foto, ou só os sem tabela nutricional: a fila de quem completa o catálogo. */
+  falta: z.enum(['foto', 'tabela']).optional(),
   ...paginacao(25, 100),
 });
 export type TotemGestaoProdutosQuery = z.infer<typeof TotemGestaoProdutosQuerySchema>;
@@ -242,6 +238,7 @@ export interface TotemGestaoProduto {
   categoria: string | null;
   composicao: string | null;
   beneficios: string | null;
+  sugestoes: string | null;
   alergenicos: string | null;
   porcaoG: number | null;
   porcaoDescricao: string | null;
@@ -295,6 +292,8 @@ export const TotemGestaoConfigSchema = z.object({
   encarregadoNome: textoLivre(120),
   encarregadoContato: textoLivre(160),
   mensagemBoasVindas: textoLivre(240),
+  /** Vale para a ficha de todo produto que não tem aviso de alergênicos próprio. */
+  alergenicosPadrao: textoLivre(1000),
 });
 export type TotemGestaoConfigEntrada = z.infer<typeof TotemGestaoConfigSchema>;
 
@@ -315,6 +314,7 @@ export interface TotemGestaoConfig {
   encarregadoContato: string | null;
   politicaVersao: string;
   mensagemBoasVindas: string | null;
+  alergenicosPadrao: string | null;
   atualizadoEm: string | null;
 }
 
@@ -408,6 +408,7 @@ export const TOTEM_GESTAO_ROTULO_EVENTO: Record<TotemTipoEvento, string> = {
   cadastro: 'Cadastro',
   sincronizou: 'Sincronização',
   qr_aberto: 'QR da etiqueta aberto',
+  campanha_tocada: 'Campanha tocada',
 };
 
 export interface TotemGestaoEvento {

@@ -28,10 +28,13 @@ import {
   numeroDigitado,
   podeMexerNaCampanha,
   situacaoDaCampanha,
+  textoDaAcao,
   textoDasLojas,
+  textoDoBotao,
   textoDoPeriodo,
   type FormularioDaCampanha,
 } from '@/app/totem-gestao/campanhas/campanha-na-tela';
+import { enderecoDaImagem, ladosReduzidos } from '@/components/totem/imagem';
 import {
   rotuloDoCanal,
   textoDasFinalidades,
@@ -42,6 +45,9 @@ import {
 const LOJA_A = '11111111-1111-4111-8111-111111111111';
 const LOJA_B = '22222222-2222-4222-8222-222222222222';
 const LOJA_C = '33333333-3333-4333-8333-333333333333';
+const MIDIA = `/api/totem-publico/midia/${LOJA_A}/${'a'.repeat(32)}.webp`;
+const PRODUTO_1 = { id: '44444444-4444-4444-8444-444444444444', codigo: '101', nome: 'Granola', imagemUrl: null };
+const PRODUTO_2 = { id: '55555555-5555-4555-8555-555555555555', codigo: '102', nome: 'Castanha', imagemUrl: null };
 
 const LOJAS: TotemLojaDoEscopo[] = [
   { id: LOJA_A, codigo: 'centro', nome: 'Centro', ativa: true },
@@ -171,6 +177,11 @@ describe('o formulário da campanha', () => {
       corpo: {
         nome: 'Inauguração',
         chamada: 'Cadastre-se e ganhe 10%',
+        acao: 'cadastro',
+        textoApoio: null,
+        textoBotao: null,
+        imagemUrl: null,
+        produtoIds: [],
         tipoBeneficio: 'percentual',
         valorBeneficio: 10,
         descricaoBeneficio: null,
@@ -229,6 +240,13 @@ describe('o formulário da campanha', () => {
       id: 'c1',
       nome: 'Inauguração',
       chamada: 'Cadastre-se e ganhe',
+      acao: 'cadastro',
+      textoApoio: 'Só nesta semana',
+      textoBotao: null,
+      imagemUrl: MIDIA,
+      produtoIds: [],
+      produtos: [],
+      ordem: 2,
       tipoBeneficio: 'valor',
       valorBeneficio: 15.5,
       descricaoBeneficio: null,
@@ -244,6 +262,12 @@ describe('o formulário da campanha', () => {
     expect(f).toEqual({
       nome: 'Inauguração',
       chamada: 'Cadastre-se e ganhe',
+      acao: 'cadastro',
+      textoApoio: 'Só nesta semana',
+      textoBotao: '',
+      imagemUrl: MIDIA,
+      produtos: [],
+      ordem: '2',
       tipoBeneficio: 'valor',
       valor: '15,5',
       descricao: '',
@@ -256,6 +280,82 @@ describe('o formulário da campanha', () => {
     expect(corpoDaCampanha(f, false)).toMatchObject({
       corpo: { valorBeneficio: 15.5, inicioEm: '2026-10-11T00:00:00-03:00', fimEm: null },
     });
+  });
+
+  it('na ação de produtos, manda a lista na ordem escolhida e sem cupom', () => {
+    const r = corpoDaCampanha(
+      preenchido({ acao: 'produtos', produtos: [PRODUTO_2, PRODUTO_1], valor: '', validadeDias: '' }),
+      false,
+    );
+    expect(r).toMatchObject({
+      corpo: {
+        acao: 'produtos',
+        produtoIds: [PRODUTO_2.id, PRODUTO_1.id],
+        tipoBeneficio: null,
+        valorBeneficio: null,
+        descricaoBeneficio: null,
+        validadeDias: null,
+      },
+    });
+    expect(corpoDaCampanha(preenchido({ acao: 'produtos', produtos: [] }), false)).toEqual({
+      problema: 'Escolha pelo menos um produto para a campanha mostrar.',
+    });
+  });
+
+  it('a campanha que só divulga vai sem cupom e sem produtos, mesmo com lista escolhida antes', () => {
+    const r = corpoDaCampanha(preenchido({ acao: 'nenhuma', produtos: [PRODUTO_1], descricao: 'sobra' }), false);
+    expect(r).toMatchObject({
+      corpo: { acao: 'nenhuma', produtoIds: [], tipoBeneficio: null, valorBeneficio: null, descricaoBeneficio: null },
+    });
+  });
+
+  it('a ordem é opcional e só aceita inteiro de 0 a 999', () => {
+    expect(corpoDaCampanha(preenchido({ ordem: '' }), false)).not.toHaveProperty('corpo.ordem', expect.anything());
+    expect(corpoDaCampanha(preenchido({ ordem: '5' }), false)).toMatchObject({ corpo: { ordem: 5 } });
+    expect(corpoDaCampanha(preenchido({ ordem: '1000' }), false)).toEqual({
+      problema: 'A ordem é um número inteiro, de 0 a 999.',
+    });
+    expect(corpoDaCampanha(preenchido({ ordem: '2,5' }), false)).toEqual({
+      problema: 'A ordem é um número inteiro, de 0 a 999.',
+    });
+  });
+
+  it('a imagem e os textos do banner seguem como digitados', () => {
+    const r = corpoDaCampanha(
+      preenchido({ imagemUrl: MIDIA, textoApoio: ' Até domingo ', textoBotao: 'Pegar' }),
+      false,
+    );
+    expect(r).toMatchObject({
+      corpo: { imagemUrl: MIDIA, textoApoio: 'Até domingo', textoBotao: 'Pegar' },
+    });
+    expect(corpoDaCampanha(preenchido({ imagemUrl: 'javascript:alert(1)' }), false)).toHaveProperty('problema');
+  });
+
+  it('o botão usa o texto padrão da ação e some quando a campanha só divulga', () => {
+    expect(textoDoBotao({ acao: 'cadastro', textoBotao: '' })).toBe('Quero meu cupom');
+    expect(textoDoBotao({ acao: 'produtos', textoBotao: '  ' })).toBe('Ver produtos');
+    expect(textoDoBotao({ acao: 'produtos', textoBotao: 'Ver ofertas' })).toBe('Ver ofertas');
+    expect(textoDoBotao({ acao: 'nenhuma', textoBotao: '' })).toBeNull();
+  });
+
+  it('descreve o que a campanha faz na lista', () => {
+    const base = { beneficio: null, validadeDias: null, produtos: [] };
+    expect(textoDaAcao({ ...base, acao: 'cadastro', beneficio: '10% de desconto', validadeDias: 30 })).toEqual({
+      principal: '10% de desconto',
+      detalhe: 'Cupom vale 30 dias',
+    });
+    expect(textoDaAcao({ ...base, acao: 'cadastro', beneficio: 'Brinde', validadeDias: 1 })).toEqual({
+      principal: 'Brinde',
+      detalhe: 'Cupom vale 1 dia',
+    });
+    expect(textoDaAcao({ ...base, acao: 'produtos', produtos: [PRODUTO_1] })).toEqual({
+      principal: 'Mostra 1 produto',
+      detalhe: null,
+    });
+    expect(textoDaAcao({ ...base, acao: 'produtos', produtos: [PRODUTO_1, PRODUTO_2] }).principal).toBe(
+      'Mostra 2 produtos',
+    );
+    expect(textoDaAcao({ ...base, acao: 'nenhuma' })).toEqual({ principal: 'Só divulga', detalhe: null });
   });
 
   it('mostra em que pé a campanha está', () => {
@@ -347,5 +447,19 @@ describe('o cliente no painel', () => {
       anonimizado: true,
     });
     expect(b).not.toHaveProperty('consentimentos');
+  });
+});
+
+describe('a imagem antes do envio', () => {
+  it('reduz pelo lado maior, sem aumentar foto pequena', () => {
+    expect(ladosReduzidos(4000, 3000, 1600)).toEqual({ largura: 1600, altura: 1200 });
+    expect(ladosReduzidos(1080, 1920, 1600)).toEqual({ largura: 900, altura: 1600 });
+    expect(ladosReduzidos(800, 600, 1600)).toEqual({ largura: 800, altura: 600 });
+    expect(ladosReduzidos(10000, 1, 1600)).toEqual({ largura: 1600, altura: 1 });
+  });
+
+  it('o endereço da imagem enviada passa pela API; endereço externo fica igual', () => {
+    expect(enderecoDaImagem('https://exemplo.com/foto.jpg')).toBe('https://exemplo.com/foto.jpg');
+    expect(enderecoDaImagem(MIDIA).endsWith(MIDIA)).toBe(true);
   });
 });

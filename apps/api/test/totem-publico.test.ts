@@ -12,6 +12,7 @@ import {
 import type { TotemLoteVigente } from '../src/totem/lote/lote-vigente';
 import {
   campanhaDaLoja,
+  campanhasDaLoja,
   etagCasa,
   montarCatalogo,
   type CampanhaDoCatalogo,
@@ -42,6 +43,7 @@ function produto(parcial: Partial<ProdutoDoCatalogo> & { id: string; nome: strin
     categoria: 'Castanhas',
     composicao: null,
     beneficios: null,
+    sugestoes: null,
     alergenicos: null,
     porcaoG: 30,
     porcaoDescricao: '1 colher de sopa',
@@ -78,6 +80,7 @@ const CONFIG: ConfigDoCatalogo = {
   tempoOciosoSeg: 60,
   precoLigado: false,
   cadastroLigado: true,
+  alergenicosPadrao: null,
 };
 
 function dados(parcial: Partial<DadosDoCatalogo> = {}): DadosDoCatalogo {
@@ -235,15 +238,31 @@ describe('montarCatalogo — o resto do retrato', () => {
   });
 });
 
-describe('campanhaDaLoja', () => {
-  const base: CampanhaDoCatalogo = {
+function campanha(parcial: Partial<CampanhaDoCatalogo> = {}): CampanhaDoCatalogo {
+  return {
+    id: 'camp-1',
     nome: 'Boas-vindas',
     chamada: 'Ganhe 10% na primeira compra',
+    acao: 'cadastro',
+    textoApoio: null,
+    textoBotao: null,
+    imagemUrl: null,
+    produtoIds: [],
+    ordem: 0,
+    tipoBeneficio: 'percentual',
+    valorBeneficio: 10,
+    descricaoBeneficio: null,
+    validadeDias: 30,
     ativa: true,
     inicioEm: dia(-10),
     fimEm: null,
     lojaIds: [],
+    ...parcial,
   };
+}
+
+describe('campanhaDaLoja', () => {
+  const base = campanha();
 
   it('lista vazia vale para todas as lojas; lista preenchida só para as dela', () => {
     expect(campanhaDaLoja([base], 'loja-1', true, AGORA)).toEqual({ nome: base.nome, chamada: base.chamada });
@@ -261,6 +280,76 @@ describe('campanhaDaLoja', () => {
   it('com duas vigentes, fica a que começou por último', () => {
     const nova = { ...base, nome: 'Outubro', inicioEm: dia(-1) };
     expect(campanhaDaLoja([base, nova], 'loja-1', true, AGORA)?.nome).toBe('Outubro');
+  });
+
+  it('só conta a campanha de cadastro com benefício e validade', () => {
+    const vitrine = campanha({ nome: 'Vitrine', acao: 'produtos', inicioEm: dia(-1) });
+    expect(campanhaDaLoja([base, vitrine], 'loja-1', true, AGORA)?.nome).toBe('Boas-vindas');
+    expect(campanhaDaLoja([campanha({ tipoBeneficio: null })], 'loja-1', true, AGORA)).toBeNull();
+    expect(campanhaDaLoja([campanha({ validadeDias: null })], 'loja-1', true, AGORA)).toBeNull();
+  });
+});
+
+describe('campanhasDaLoja — os banners do quiosque', () => {
+  const ids = new Set(['p1', 'p2']);
+
+  it('a de produtos leva só os que estão no catálogo, na ordem escolhida', () => {
+    const c = campanha({ id: 'v', acao: 'produtos', produtoIds: ['p2', 'sumiu', 'p1'] });
+    const [b] = campanhasDaLoja([c], 'loja-1', true, ids, AGORA);
+    expect(b).toMatchObject({ acao: 'produtos', produtoIds: ['p2', 'p1'], textoBotao: 'Ver produtos', beneficio: null });
+  });
+
+  it('a de produtos sem nenhum produto no catálogo vira banner sem botão', () => {
+    const c = campanha({ id: 'v', acao: 'produtos', produtoIds: ['sumiu'], textoBotao: 'Confira' });
+    const [b] = campanhasDaLoja([c], 'loja-1', true, ids, AGORA);
+    expect(b).toMatchObject({ acao: 'nenhuma', produtoIds: [], textoBotao: null });
+  });
+
+  it('a de cadastro entra com o texto do benefício e some com o cadastro desligado', () => {
+    const [b] = campanhasDaLoja([campanha()], 'loja-1', true, ids, AGORA);
+    expect(b).toMatchObject({ acao: 'cadastro', textoBotao: 'Quero meu cupom' });
+    expect(b?.beneficio).toBeTruthy();
+    expect(campanhasDaLoja([campanha()], 'loja-1', false, ids, AGORA)).toEqual([]);
+  });
+
+  it('com duas de cadastro, só a que o cupom usa vira banner', () => {
+    const velha = campanha({ id: 'a', nome: 'Velha' });
+    const nova = campanha({ id: 'b', nome: 'Nova', inicioEm: dia(-1) });
+    const nomes = campanhasDaLoja([velha, nova], 'loja-1', true, ids, AGORA).map((b) => b.nome);
+    expect(nomes).toEqual(['Nova']);
+  });
+
+  it('respeita a ordem do painel, o botão próprio e a ação sem botão', () => {
+    const lista = [
+      campanha({ id: 'c', nome: 'Terceira', acao: 'nenhuma', ordem: 3, textoBotao: 'Ignorado' }),
+      campanha({ id: 'a', nome: 'Primeira', acao: 'produtos', ordem: 1, produtoIds: ['p1'], textoBotao: ' Veja já ' }),
+      campanha({ id: 'b', nome: 'Segunda', ordem: 2 }),
+    ];
+    const banners = campanhasDaLoja(lista, 'loja-1', true, ids, AGORA);
+    expect(banners.map((b) => b.nome)).toEqual(['Primeira', 'Segunda', 'Terceira']);
+    expect(banners.map((b) => b.textoBotao)).toEqual(['Veja já', 'Quero meu cupom', null]);
+  });
+
+  it('ignora a encerrada, a de outra loja e a de ação desconhecida', () => {
+    const lista = [
+      campanha({ id: 'a', acao: 'nenhuma', fimEm: dia(-1) }),
+      campanha({ id: 'b', acao: 'nenhuma', lojaIds: ['loja-2'] }),
+      campanha({ id: 'c', acao: 'sorteio' }),
+    ];
+    expect(campanhasDaLoja(lista, 'loja-1', true, ids, AGORA)).toEqual([]);
+  });
+
+  it('as campanhas entram no catálogo, mudam a versão e passam no contrato', () => {
+    const sem = montarCatalogo(dados(), CONFIG, AGORA);
+    const com = montarCatalogo(
+      dados({ campanhas: [campanha({ acao: 'produtos', produtoIds: ['p1'], imagemUrl: '/api/totem-publico/midia/x/y.webp' })] }),
+      CONFIG,
+      AGORA,
+    );
+    expect(sem.campanhas).toEqual([]);
+    expect(com.campanhas).toHaveLength(1);
+    expect(com.versao).not.toBe(sem.versao);
+    expect(TotemCatalogoSchema.safeParse(com).success).toBe(true);
   });
 });
 

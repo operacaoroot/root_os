@@ -8,16 +8,21 @@
  *   · /_next/static/** e arquivos de /totem/: cache primeiro (o nome muda a
  *     cada build, então nunca ficam velhos);
  *   · páginas de /totem/: rede primeiro, com a cópia guardada se a rede falhar;
- *   · /api/** (catálogo, eventos, /api/totem-gestao, /api/auth) e qualquer
- *     pedido com credencial: nunca passam por aqui.
+ *   · fotos e banners (/api/totem-publico/midia/<org>/<hash>.<ext>): cache
+ *     primeiro, num cache que sobrevive à troca de VERSAO. O nome é o hash do
+ *     arquivo, então a foto guardada nunca fica velha; a página manda aparar o
+ *     que saiu do catálogo depois de cada sincronia;
+ *   · o resto de /api/** (catálogo, eventos, /api/totem-gestao, /api/auth) e
+ *     qualquer pedido com credencial: nunca passam por aqui.
  *
  * Mudou este arquivo? Suba VERSAO junto com TOTEM_VERSAO_DO_QUIOSQUE
  * (components/totem/quiosque/sincronia.ts).
  */
 
-const VERSAO = 'totem-v1';
+const VERSAO = 'totem-v2';
 const ESTATICO = `${VERSAO}-estatico`;
 const PAGINAS = `${VERSAO}-paginas`;
+const MIDIA = 'totem-midia';
 const CASCA = '/totem/quiosque';
 const PAGINAS_GUARDADAS = [CASCA, '/totem/privacidade'];
 const ARQUIVOS_GUARDADOS = [
@@ -27,6 +32,8 @@ const ARQUIVOS_GUARDADOS = [
   '/totem/icone-512.png',
 ];
 const MAXIMO_DE_ESTATICOS = 300;
+const MAXIMO_DE_MIDIAS = 2000;
+const CAMINHO_DA_MIDIA = /^\/api\/totem-publico\/midia\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[a-f0-9]{32}\.(jpg|png|webp)$/;
 const PRAZO_DA_REDE_MS = 4000;
 const PEDACOS = /["'](\/_next\/static\/[^"'\s\\]+)/g;
 
@@ -88,12 +95,51 @@ self.addEventListener('activate', (evento) => {
     (async () => {
       const nomes = await caches.keys();
       await Promise.all(
-        nomes.filter((n) => n.startsWith('totem-') && !n.startsWith(`${VERSAO}-`)).map((n) => caches.delete(n)),
+        nomes
+          .filter((n) => n.startsWith('totem-') && n !== MIDIA && !n.startsWith(`${VERSAO}-`))
+          .map((n) => caches.delete(n)),
       );
       await self.clients.claim();
     })(),
   );
 });
+
+function ehMidia(pedido, url) {
+  return (
+    pedido.method === 'GET' &&
+    url.origin === self.location.origin &&
+    !url.search &&
+    CAMINHO_DA_MIDIA.test(url.pathname) &&
+    !pedido.headers.has('authorization') &&
+    !pedido.headers.has('x-totem-token')
+  );
+}
+
+async function midiaAntes(url) {
+  const cache = await caches.open(MIDIA);
+  const guardada = await cache.match(url.pathname, { ignoreVary: true });
+  if (guardada) return guardada;
+  try {
+    const res = await fetch(url.pathname, { credentials: 'omit' });
+    if (res.status === 200 && res.type === 'basic') await cache.put(url.pathname, res.clone());
+    return res;
+  } catch {
+    // Sem rede e sem cópia: a página troca a foto pela inicial do produto.
+    return Response.error();
+  }
+}
+
+async function apararMidia(manter) {
+  const cache = await caches.open(MIDIA);
+  const chaves = await cache.keys();
+  const ficam = [];
+  for (const pedido of chaves) {
+    if (manter.has(new URL(pedido.url).pathname)) ficam.push(pedido);
+    else await cache.delete(pedido);
+  }
+  const sobra = ficam.length - MAXIMO_DE_MIDIAS;
+  for (let i = 0; i < sobra; i++) await cache.delete(ficam[i]);
+}
 
 function deFora(pedido, url) {
   return (
@@ -155,6 +201,10 @@ async function redeAntes(pedido, url) {
 self.addEventListener('fetch', (evento) => {
   const pedido = evento.request;
   const url = new URL(pedido.url);
+  if (ehMidia(pedido, url)) {
+    evento.respondWith(midiaAntes(url));
+    return;
+  }
   if (deFora(pedido, url)) return;
 
   if (url.pathname.startsWith('/_next/static/')) {
@@ -170,8 +220,25 @@ self.addEventListener('fetch', (evento) => {
   evento.respondWith(cacheAntes(pedido));
 });
 
+function caminhosDeMidia(lista) {
+  const caminhos = new Set();
+  for (const u of lista) {
+    try {
+      const url = new URL(u, self.location.origin);
+      if (url.origin === self.location.origin && CAMINHO_DA_MIDIA.test(url.pathname)) caminhos.add(url.pathname);
+    } catch {
+      /* entrada inválida: fica de fora */
+    }
+  }
+  return caminhos;
+}
+
 self.addEventListener('message', (evento) => {
   const dados = evento.data;
+  if (dados && dados.tipo === 'aparar-midia' && Array.isArray(dados.manter)) {
+    evento.waitUntil(apararMidia(caminhosDeMidia(dados.manter.slice(0, MAXIMO_DE_MIDIAS * 2))));
+    return;
+  }
   if (!dados || dados.tipo !== 'guardar' || !Array.isArray(dados.urls)) return;
   const urls = dados.urls.filter((u) => {
     try {

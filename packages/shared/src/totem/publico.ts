@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   TOTEM_TERMO_MAXIMO,
+  TotemAcaoCampanhaSchema,
   TotemCodigoAtivacaoSchema,
   TotemNutrienteSchema,
   TotemSeloSchema,
@@ -62,6 +63,8 @@ export const TotemCatalogoProdutoSchema = z.object({
   categoria: z.string().nullable(),
   composicao: z.string().nullable(),
   beneficios: z.string().nullable(),
+  /** O `default` deixa o aparelho ler o catálogo que guardou antes do campo existir. */
+  sugestoes: z.string().nullable().default(null),
   alergenicos: z.string().nullable(),
   porcaoG: z.number().nonnegative().nullable(),
   porcaoDescricao: z.string().nullable(),
@@ -84,11 +87,33 @@ export const TotemCatalogoConfigSchema = z.object({
   corFundo: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable(),
   logoUrl: z.string().nullable(),
   mensagemBoasVindas: z.string().nullable(),
+  /** O aviso de alergênicos da ficha de todo produto que não tem o seu. */
+  alergenicosPadrao: z.string().nullable().default(null),
   tempoOciosoSeg: z.number().int().positive(),
   precoLigado: z.boolean(),
   cadastroLigado: z.boolean(),
 });
 export type TotemCatalogoConfig = z.infer<typeof TotemCatalogoConfigSchema>;
+
+/**
+ * Banner do carrossel da tela inicial. Só entram as vigentes na loja, já na
+ * ordem de exibição; a de cadastro só entra com o cadastro ligado.
+ */
+export const TotemCatalogoCampanhaSchema = z.object({
+  id: z.string().min(1),
+  nome: z.string(),
+  chamada: z.string(),
+  textoApoio: z.string().nullable(),
+  imagemUrl: z.string().nullable(),
+  acao: TotemAcaoCampanhaSchema,
+  /** Já resolvido com o padrão da ação; `null` é banner sem botão. */
+  textoBotao: z.string().nullable(),
+  /** Na ação `produtos`: só os que estão neste catálogo, na ordem escolhida. */
+  produtoIds: z.array(z.string()),
+  /** Na ação `cadastro`: "10% de desconto", "um brinde: …". */
+  beneficio: z.string().nullable(),
+});
+export type TotemCatalogoCampanha = z.infer<typeof TotemCatalogoCampanhaSchema>;
 
 export const TotemCatalogoSchema = z.object({
   /** Hash do conteúdo; é também o ETag da resposta. */
@@ -97,7 +122,9 @@ export const TotemCatalogoSchema = z.object({
   loja: z.object({ id: z.string().min(1), nome: z.string(), cidade: z.string().nullable() }),
   dispositivo: z.object({ id: z.string().min(1), nome: z.string() }),
   config: TotemCatalogoConfigSchema,
+  /** A campanha do cadastro com cupom; `null` com o cadastro desligado. */
   campanha: z.object({ nome: z.string(), chamada: z.string() }).nullable(),
+  campanhas: z.array(TotemCatalogoCampanhaSchema).default([]),
   produtos: z.array(TotemCatalogoProdutoSchema),
 });
 export type TotemCatalogo = z.infer<typeof TotemCatalogoSchema>;

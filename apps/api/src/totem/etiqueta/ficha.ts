@@ -14,6 +14,7 @@ import {
 import { comTenantPublico, resolverTenantDaEtiqueta } from '../../common/tenant-publico';
 import { exigirModuloTotem, totemNaoEncontrado } from '../comum/modulo';
 import { loteVigentePorProduto, type TotemLoteVigente } from '../lote/lote-vigente';
+import { filtroDeCampanhaVigente } from '../cadastro/cadastrar';
 
 /*
  * A FICHA PÚBLICA DA ETIQUETA (`GET /api/totem-etiqueta/:codigo`, página `/p`).
@@ -188,17 +189,15 @@ export async function fichaDaEtiqueta(
         lote = { id: vigente.loteId, codigo: vigente.codigo, fabricadoEm: vigente.fabricadoEm, validadeEm: vigente.validadeEm };
       }
 
+      // A mesma campanha que o cadastro usa para emitir o cupom (campanhaVigenteDaLoja).
       const campanha = await tx.totemCampanha.findFirst({
         where: {
-          orgId,
-          ativa: true,
-          inicioEm: { lte: agora },
-          AND: [
-            { OR: [{ fimEm: null }, { fimEm: { gt: agora } }] },
-            { OR: [{ lojaIds: { isEmpty: true } }, { lojaIds: { has: lojaId } }] },
-          ],
+          ...filtroDeCampanhaVigente(orgId, lojaId, agora),
+          acao: 'cadastro',
+          tipoBeneficio: { not: null },
+          validadeDias: { not: null },
         },
-        orderBy: { inicioEm: 'desc' },
+        orderBy: [{ inicioEm: 'desc' }, { criadoEm: 'desc' }],
         select: { chamada: true, descricaoBeneficio: true },
       });
 
