@@ -47,6 +47,7 @@ export default function PaginaDosCupons() {
   const campo = useRef<HTMLInputElement>(null);
 
   const podeConsultar = can('totem.cupons');
+  const podeCancelar = can('totem.campanhas');
 
   useEffect(() => {
     if (!ready || !token || !podeConsultar) return;
@@ -273,7 +274,7 @@ export default function PaginaDosCupons() {
                 <button type="button" onClick={recomecar} className={BOTAO_SECUNDARIO}>
                   Consultar outro cupom
                 </button>
-                {cupom.status === 'emitido' && (
+                {podeCancelar && cupom.status === 'emitido' && (
                   <button
                     type="button"
                     onClick={cancelar}

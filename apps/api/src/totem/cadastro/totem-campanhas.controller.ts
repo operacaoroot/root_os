@@ -138,9 +138,10 @@ export class TotemCampanhasController {
     return this.svc.darBaixa(user, codigo, body);
   }
 
+  // Cancelar é decisão de quem cuida da campanha, não do caixa.
   @Post('cupons/:codigo/cancelar')
   @HttpCode(200)
-  @RequirePermissions('totem.cupons')
+  @RequirePermissions('totem.campanhas')
   cancelar(@CurrentUser() user: JwtUser, @Param('codigo') codigo: string): Promise<TotemCupomDetalhe> {
     return this.svc.cancelar(user, codigo);
   }

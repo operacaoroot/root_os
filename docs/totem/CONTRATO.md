@@ -119,9 +119,12 @@ apagam.
   registrado em log. Sem `TOTEM_CPF_PEPPER` no ambiente a API sobe, e o cadastro
   responde 503 com mensagem clara.
 - **Telefone**: celular brasileiro, normalizado para `+55DDNNNNNNNNN`.
-- **Cupom**: um por cliente por campanha. Cadastro repetido com o mesmo CPF
-  devolve o mesmo cupom se ainda vale, sem mostrar telefone nem dado guardado.
-  Código sem caracteres ambíguos.
+- **Cupom**: um por cliente por campanha. Cadastro repetido com o mesmo CPF e
+  o mesmo celular devolve o mesmo cupom se ainda vale, sem mostrar telefone nem
+  dado guardado. Com o mesmo CPF e outro celular, nada é gravado nem trocado e a
+  resposta é sempre `motivoSemCupom: 'consulte_atendente'`, sem dizer se o
+  cupom do titular vale, foi usado, venceu ou foi cancelado. A troca de celular
+  passa pelo encarregado de dados. Código sem caracteres ambíguos.
 - **Consentimento**: caixa de seleção explícita e desmarcada para a política.
   Campanhas é uma segunda caixa, opcional. Sem a primeira, nada é gravado.
 - **Escopo do gerente**: quem tem `totem.rede` vê todas as lojas; os demais veem
@@ -149,9 +152,9 @@ Em `packages/shared/src/permissions.ts`, no formato `dominio.acao`:
 | `totem.lotes` | lotes e remessas (CD) |
 | `totem.reposicao` | confirmar recebimento, registrar reposição e lote manual na loja |
 | `totem.etiquetas` | gerar e imprimir etiquetas |
-| `totem.campanhas` | campanhas |
+| `totem.campanhas` | campanhas e cancelamento de cupom (só nas campanhas cujas lojas estão todas no escopo) |
 | `totem.clientes` | ver clientes e consentimentos (dado pessoal) |
-| `totem.cupons` | consultar e dar baixa em cupom |
+| `totem.cupons` | consultar e dar baixa em cupom; cancelar exige `totem.campanhas` |
 
 Papéis novos em `ROLES`: `totem_rede` (todas as `totem.*`), `totem_cd`
 (`ver`, `lotes`, `etiquetas`, `rede`), `totem_gerente` (`ver`, `dispositivos`,

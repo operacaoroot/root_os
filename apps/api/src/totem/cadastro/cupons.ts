@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { totemStatusEfetivoDoCupom } from '@mktos/shared';
 
@@ -84,7 +84,11 @@ export async function darBaixaNoCupom(tx: Pick<Tx, 'totemCupom'>, p: PedidoDeBai
   if (r.count === 0) throw new ConflictException('Este cupom acabou de ser usado em outro caixa.');
 }
 
-/** Cancela um cupom que ainda vale. Usado, vencido ou já cancelado responde 409. */
+/**
+ * Cancela um cupom que ainda vale. Usado, vencido ou já cancelado responde 409.
+ * Cancelar é mexer na campanha: quem só vê a campanha consulta e dá baixa, mas
+ * não cancela.
+ */
 export async function cancelarCupom(
   tx: Pick<Tx, 'totemCupom'>,
   p: Omit<PedidoDeBaixa, 'lojaId' | 'usuarioId'>,
@@ -96,6 +100,9 @@ export async function cancelarCupom(
   });
   if (!cupom || !campanhaVisivel(p.escopo, cupom.campanha.lojaIds)) {
     throw new NotFoundException(MENSAGEM_CUPOM_NAO_ENCONTRADO);
+  }
+  if (!campanhaGerenciavel(p.escopo, cupom.campanha.lojaIds)) {
+    throw new ForbiddenException('Só quem gerencia a campanha pode cancelar um cupom dela.');
   }
   const status = totemStatusEfetivoDoCupom(cupom.status, cupom.validoAte, agora);
   if (status !== 'emitido') throw recusaDoStatus(status, cupom);

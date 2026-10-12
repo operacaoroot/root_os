@@ -473,6 +473,18 @@ describe.skipIf(!URL)('lote e etiqueta no banco', () => {
       expect(depois).toBe(antes);
     });
 
+    it('loja desativada fecha a ficha das etiquetas dela com a mesma 404', async () => {
+      const [e] = await gerarEtiquetas(prisma, gerente(), { lojaId: ids.loja1, produtoId: ids.p3, quantidade: 1 });
+      await fichaDaEtiqueta(prisma, e.codigo, agora);
+      await prisma.totemLoja.update({ where: { id: ids.loja1 }, data: { ativa: false } });
+      try {
+        await expect(fichaDaEtiqueta(prisma, e.codigo, agora)).rejects.toBeInstanceOf(NotFoundException);
+      } finally {
+        await prisma.totemLoja.update({ where: { id: ids.loja1 }, data: { ativa: true } });
+      }
+      await expect(fichaDaEtiqueta(prisma, e.codigo, agora)).resolves.toBeTruthy();
+    });
+
     it('código que não existe e empresa sem o módulo respondem a mesma 404', async () => {
       await expect(fichaDaEtiqueta(prisma, 'ZZZZZZZZZZ', agora)).rejects.toBeInstanceOf(NotFoundException);
       const loja = await prisma.totemLoja.create({ data: { orgId: SEM_MODULO, codigo: 'X', nome: 'Loja X' } });

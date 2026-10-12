@@ -21,13 +21,15 @@ import { gerarCodigo } from '../comum/segredos';
  * Regras (CONTRATO.md, seção 4):
  *   · um cliente por CPF na empresa (`@@unique([orgId, cpfHash])`);
  *   · um cupom por cliente por campanha (`@@unique([orgId, campanhaId, clienteId])`).
- *     O cadastro repetido devolve o mesmo cupom enquanto ele vale, e nada do
- *     que está guardado volta na resposta;
+ *     O cadastro repetido com o mesmo celular devolve o mesmo cupom enquanto
+ *     ele vale, e nada do que está guardado volta na resposta;
  *   · sem campanha valendo na loja, o cadastro é gravado e o cupom vem `null`.
  *
  * Quem repete o cadastro com o mesmo CPF e OUTRO celular não troca o celular
- * gravado: o totem não tem como saber se é o dono do CPF. A troca passa pelo
- * encarregado de dados, que confere a pessoa antes.
+ * gravado nem recebe cupom: o totem não tem como saber se é o dono do CPF. A
+ * resposta é uma só (`consulte_atendente`), esteja o cupom valendo, usado,
+ * vencido ou cancelado, para não contar nada sobre o titular a quem só tem o
+ * CPF dele. A troca passa pelo encarregado de dados, que confere a pessoa antes.
  */
 
 type Tx = Prisma.TransactionClient;
@@ -168,6 +170,9 @@ export async function cadastrarCliente(tx: ClienteDoCadastro, e: EntradaDoCadast
     });
     await registrarConsentimento(cliente.id);
   } else {
+    // Vale também sem consentimento ativo: quem revogou não abre a porta para
+    // outra pessoa gravar o celular dela no CPF do titular.
+    if (cliente.telefone !== e.telefone) return { cupom: null, motivoSemCupom: 'consulte_atendente' };
     const ativos = await tx.totemConsentimento.findMany({
       where: { orgId: e.orgId, clienteId: cliente.id, revogadoEm: null },
       select: { finalidades: true, politicaVersao: true },
@@ -175,10 +180,10 @@ export async function cadastrarCliente(tx: ClienteDoCadastro, e: EntradaDoCadast
     if (ativos.length === 0) {
       await tx.totemCliente.update({
         where: { id: cliente.id },
-        data: { telefone: e.telefone, aceitaCampanhas: e.aceitaCampanhas, ...(e.nome ? { nome: e.nome } : {}) },
+        data: { aceitaCampanhas: e.aceitaCampanhas, ...(e.nome ? { nome: e.nome } : {}) },
       });
       await registrarConsentimento(cliente.id);
-    } else if (cliente.telefone === e.telefone) {
+    } else {
       const igual = ativos.some(
         (c) => c.politicaVersao === e.politicaVersao && mesmasFinalidades(c.finalidades, finalidades),
       );

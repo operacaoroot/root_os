@@ -23,6 +23,9 @@ import { TotemCadastroService, type CredencialDoCadastro } from './totem-cadastr
 @Controller('totem-cadastro')
 export class TotemCadastroController {
   private readonly teto = tetoDoTotem('cadastro');
+  // Mesmo teto, balde separado: cada abertura do formulário lê a política, e
+  // isso não pode consumir as tentativas de cadastro de quem está na loja.
+  private readonly tetoDaPolitica = tetoDoTotem('cadastro');
 
   constructor(private readonly svc: TotemCadastroService) {}
 
@@ -41,7 +44,7 @@ export class TotemCadastroController {
     @Headers(TOTEM_CABECALHO_ETIQUETA) etiqueta?: string,
     @Req() req?: RequisicaoComEndereco,
   ): Promise<TotemPoliticaResposta> {
-    conferirTeto(this.teto, enderecoDeOrigem(req));
+    conferirTeto(this.tetoDaPolitica, enderecoDeOrigem(req));
     return this.svc.politica(this.credencial(token, etiqueta));
   }
 

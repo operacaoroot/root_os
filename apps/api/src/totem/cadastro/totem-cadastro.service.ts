@@ -71,10 +71,20 @@ export class TotemCadastroService {
     return { orgId: e.orgId, lojaId: e.lojaId, dispositivoId: null, canal: 'qr' };
   }
 
+  /** Loja desativada fecha o cadastro dela pelo totem e pelo QR, como já fecha o catálogo. */
+  private async exigirLojaAtiva(origem: OrigemDoCadastro): Promise<void> {
+    const loja = await this.prisma.totemLoja.findFirst({
+      where: { id: origem.lojaId, orgId: origem.orgId, ativa: true },
+      select: { id: true },
+    });
+    if (!loja) throw totemNaoEncontrado();
+  }
+
   async politica(cred: CredencialDoCadastro): Promise<TotemPoliticaResposta> {
     const origem = await this.resolver(cred);
     return comTenantPublico(origem.orgId, async () => {
       await exigirModuloTotem(this.prisma, origem.orgId);
+      await this.exigirLojaAtiva(origem);
       const config = await this.prisma.totemConfig.findUnique({
         where: { orgId: origem.orgId },
         select: {
@@ -101,6 +111,7 @@ export class TotemCadastroService {
 
     return comTenantPublico(origem.orgId, async () => {
       await exigirModuloTotem(this.prisma, origem.orgId);
+      await this.exigirLojaAtiva(origem);
       const config = await this.prisma.totemConfig.findUnique({
         where: { orgId: origem.orgId },
         select: { cadastroLigado: true },

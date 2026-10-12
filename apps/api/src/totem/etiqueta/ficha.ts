@@ -158,7 +158,10 @@ export async function fichaDaEtiqueta(
         where: { id: produtoId, orgId },
         select: CAMPOS_DO_PRODUTO_PUBLICO,
       });
-      const loja = await tx.totemLoja.findFirst({ where: { id: lojaId, orgId }, select: { nome: true, cidade: true } });
+      const loja = await tx.totemLoja.findFirst({
+        where: { id: lojaId, orgId, ativa: true },
+        select: { nome: true, cidade: true },
+      });
       if (!produto || !produto.ativo || !loja) throw totemNaoEncontrado();
 
       const config = await tx.totemConfig.findUnique({

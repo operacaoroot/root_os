@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   TOTEM_ALFABETO_CROCKFORD,
@@ -406,6 +406,60 @@ describe.skipIf(!URL)('cadastro e cupom contra o Postgres', () => {
     expect((await clienteDoCpf(cpf))!.telefone).toBe(TELEFONE);
   });
 
+  describe('o mesmo CPF com outro celular', () => {
+    const OUTRO = '+5511912345678';
+    const generica = { cupom: null, motivoSemCupom: 'consulte_atendente' };
+
+    it('não recebe o cupom que vale do titular, e o titular continua recebendo', async () => {
+      const cpf = cpfDe('100000031');
+      const dono = await cadastrar(entrada(cpf, { nome: 'Titular' }));
+      expect(dono.cupom?.codigo).toBeTruthy();
+
+      const outro = await cadastrar(entrada(cpf, { telefone: OUTRO, nome: 'Outra pessoa', aceitaCampanhas: true }));
+      expect(outro).toEqual(generica);
+      expect(JSON.stringify(outro)).not.toContain(dono.cupom!.codigo);
+
+      const cliente = (await clienteDoCpf(cpf))!;
+      expect(cliente).toMatchObject({ telefone: TELEFONE, nome: 'Titular', aceitaCampanhas: false });
+      expect(await prisma.totemConsentimento.count({ where: { clienteId: cliente.id } })).toBe(1);
+      expect((await cadastrar(entrada(cpf))).cupom?.codigo).toBe(dono.cupom!.codigo);
+    });
+
+    it('não cria cupom no nome do titular que ainda não tinha', async () => {
+      const cpf = cpfDe('100000032');
+      expect(await cadastrar(entrada(cpf, { lojaId: loja2 }))).toEqual({ cupom: null, motivoSemCupom: 'sem_campanha' });
+
+      expect(await cadastrar(entrada(cpf, { telefone: OUTRO }))).toEqual(generica);
+      const cliente = (await clienteDoCpf(cpf))!;
+      expect(await prisma.totemCupom.count({ where: { clienteId: cliente.id } })).toBe(0);
+    });
+
+    it('responde igual com o cupom usado, sem contar que o titular já usou', async () => {
+      const cpf = cpfDe('100000033');
+      const r = await cadastrar(entrada(cpf));
+      await naEmpresa(ORG, (tx) =>
+        darBaixaNoCupom(tx, { orgId: ORG, codigo: r.cupom!.codigo, lojaId: loja1, usuarioId: 'u-caixa', escopo: 'todas' }),
+      );
+      expect(await cadastrar(entrada(cpf, { telefone: OUTRO }))).toEqual(generica);
+      expect(await cadastrar(entrada(cpf))).toEqual({ cupom: null, motivoSemCupom: 'cupom_usado' });
+    });
+
+    it('com o consentimento revogado, não grava o celular nem um consentimento novo', async () => {
+      const cpf = cpfDe('100000034');
+      await cadastrar(entrada(cpf));
+      const cliente = (await clienteDoCpf(cpf))!;
+      await prisma.totemConsentimento.updateMany({ where: { clienteId: cliente.id }, data: { revogadoEm: new Date() } });
+
+      expect(await cadastrar(entrada(cpf, { telefone: OUTRO, aceitaCampanhas: true }))).toEqual(generica);
+      expect((await clienteDoCpf(cpf))!.telefone).toBe(TELEFONE);
+      expect(await prisma.totemConsentimento.count({ where: { clienteId: cliente.id, revogadoEm: null } })).toBe(0);
+
+      // O titular, com o celular dele, volta a consentir e recebe o cupom de sempre.
+      expect((await cadastrar(entrada(cpf))).cupom?.codigo).toBeTruthy();
+      expect(await prisma.totemConsentimento.count({ where: { clienteId: cliente.id, revogadoEm: null } })).toBe(1);
+    });
+  });
+
   it('versão nova da política revoga o consentimento antigo e grava outro', async () => {
     const cpf = cpfDe('100000005');
     await cadastrar(entrada(cpf, { politicaVersao: '2026-01-01' }));
@@ -453,6 +507,23 @@ describe.skipIf(!URL)('cadastro e cupom contra o Postgres', () => {
     const gravado = await prisma.totemCupom.findUnique({ where: { orgId_codigo: { orgId: ORG, codigo } } });
     expect(gravado).toMatchObject({ status: 'emitido', usadoEm: null });
     expect(await cadastrar(entrada(cpf))).toEqual({ cupom: null, motivoSemCupom: 'cupom_vencido' });
+  });
+
+  it('cancelar exige gerir todas as lojas da campanha; quem só vê a campanha não cancela', async () => {
+    const codigo = (await cadastrar(entrada(cpfDe('100000035')))).cupom!.codigo;
+    const cancelar = (escopo: string[]) => naEmpresa(ORG, (tx) => cancelarCupom(tx, { orgId: ORG, codigo, escopo }));
+
+    await prisma.totemCampanha.update({ where: { id: campanha }, data: { lojaIds: [loja1, loja2] } });
+    try {
+      await expect(cancelar([loja1])).rejects.toBeInstanceOf(ForbiddenException);
+    } finally {
+      await prisma.totemCampanha.update({ where: { id: campanha }, data: { lojaIds: [loja1] } });
+    }
+    await expect(cancelar([loja2])).rejects.toBeInstanceOf(NotFoundException);
+    expect((await prisma.totemCupom.findUnique({ where: { orgId_codigo: { orgId: ORG, codigo } } }))?.status).toBe('emitido');
+
+    await cancelar([loja1]);
+    expect((await prisma.totemCupom.findUnique({ where: { orgId_codigo: { orgId: ORG, codigo } } }))?.status).toBe('cancelado');
   });
 
   it('o cupom não vale em loja fora da campanha, e fora do escopo do caixa nem aparece', async () => {

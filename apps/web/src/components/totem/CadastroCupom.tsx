@@ -128,6 +128,8 @@ export const MENSAGEM_SEM_CUPOM: Record<TotemMotivoSemCupom, string> = {
   cupom_usado: 'O cupom desta campanha já foi usado. Cada CPF recebe um cupom por campanha.',
   cupom_vencido: 'O cupom desta campanha venceu antes de ser usado. Cada CPF recebe um cupom por campanha.',
   cupom_cancelado: 'O cupom desta campanha foi cancelado. Se achar que é engano, fale com um atendente.',
+  consulte_atendente:
+    'Não conseguimos emitir o cupom com estes dados. Se você já tem cadastro com outro celular, fale com um atendente da loja.',
 };
 
 // --- Tela ---
@@ -430,7 +432,9 @@ function Resultado({
   if (!resposta.cupom) {
     return (
       <div className="mx-auto max-w-xl space-y-5 p-5 text-center">
-        <h2 className="text-3xl font-semibold">Seu cadastro está feito.</h2>
+        <h2 className="text-3xl font-semibold">
+          {resposta.motivoSemCupom === 'consulte_atendente' ? 'Fale com um atendente.' : 'Seu cadastro está feito.'}
+        </h2>
         <p className={quiosque ? 'text-xl' : 'text-lg'}>{MENSAGEM_SEM_CUPOM[resposta.motivoSemCupom ?? 'sem_campanha']}</p>
         <button type="button" onClick={aoConcluir} className={botao}>
           Pronto

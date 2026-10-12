@@ -118,11 +118,18 @@ export interface TotemCupomEmitido {
 }
 
 /**
- * Por que o cadastro foi gravado sem cupom: nenhuma campanha valendo na loja,
- * ou o cupom desta campanha já foi usado, venceu ou foi cancelado (é um por
- * cliente por campanha).
+ * Por que o cadastro voltou sem cupom: nenhuma campanha valendo na loja, ou o
+ * cupom desta campanha já foi usado, venceu ou foi cancelado (é um por cliente
+ * por campanha). `consulte_atendente` é o CPF já cadastrado com outro celular:
+ * nada é gravado e a resposta não diz em que pé está o cupom do titular.
  */
-export const TOTEM_MOTIVOS_SEM_CUPOM = ['sem_campanha', 'cupom_usado', 'cupom_vencido', 'cupom_cancelado'] as const;
+export const TOTEM_MOTIVOS_SEM_CUPOM = [
+  'sem_campanha',
+  'cupom_usado',
+  'cupom_vencido',
+  'cupom_cancelado',
+  'consulte_atendente',
+] as const;
 export type TotemMotivoSemCupom = (typeof TOTEM_MOTIVOS_SEM_CUPOM)[number];
 
 export interface TotemCadastroResposta {
