@@ -49,6 +49,12 @@ ENV ROOTOS_COMMIT=${ROOTOS_COMMIT}
 ARG NEXT_PUBLIC_CENTRAL_PIXEL_KEY=
 ENV NEXT_PUBLIC_CENTRAL_PIXEL_KEY=${NEXT_PUBLIC_CENTRAL_PIXEL_KEY}
 
+# A marca da instância (apps/web/src/lib/marca.ts). Vazia é a ROOT; `sragranel`
+# troca login, casca, título e favicon pela identidade do Sr. aGranel. Mesmo
+# motivo da chave acima: só funciona como build arg.
+ARG NEXT_PUBLIC_MARCA=
+ENV NEXT_PUBLIC_MARCA=${NEXT_PUBLIC_MARCA}
+
 # Copia o monorepo (o .dockerignore já exclui node_modules/dist/.next/.env).
 COPY . .
 

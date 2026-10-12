@@ -10,6 +10,8 @@ import { Topbar } from './Topbar';
 import { ChatFlutuante } from './ChatFlutuante';
 import { ModulosProvider, useModulos } from './modulos';
 import { CaixaProvider } from './caixa';
+import { LateralSrAgranel, TopoSrAgranel } from './marca/CascaSrAgranel';
+import { EH_SRAGRANEL, HOME } from '@/lib/marca';
 
 // Superfícies que NÃO passam pelo shell autenticado: o login e tudo que é
 // público por natureza (página da bio, a Central da comunidade e os textos
@@ -30,22 +32,34 @@ import { CaixaProvider } from './caixa';
 // `/totem-gestao`, que continua atrás do login.
 const PUBLICAS = ['/', '/entrar', '/login', '/b', '/central', '/termos', '/privacidade', '/e', '/totem', '/p'];
 
+// Na instância com a marca do Sr. aGranel (lib/marca.ts) só o painel do Totem
+// existe para quem está logado; as outras telas do ROOT OS mandam para ele. A
+// assinatura fica liberada porque a PortaDaAssinatura redireciona para lá, e
+// sem ela as duas portas ficariam se mandando uma para a outra.
+const DA_MARCA = ['/totem-gestao', '/assinatura'];
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const publica = PUBLICAS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const foraDaMarca =
+    EH_SRAGRANEL && !publica && !DA_MARCA.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   useEffect(() => {
     if (ready && !user && !publica) router.replace('/login');
   }, [ready, user, publica, router]);
+
+  useEffect(() => {
+    if (ready && user && foraDaMarca) router.replace(HOME);
+  }, [ready, user, foraDaMarca, router]);
 
   if (publica) return <>{children}</>;
 
   // O data-os-app já vale aqui: é ele que traz a fonte de corpo, a seleção e
   // o anel de foco do ROOT OS (globals.css). Sem isso o "Carregando…" pisca
   // com a tipografia do sistema antes da casca montar.
-  if (!ready || !user) {
+  if (!ready || !user || foraDaMarca) {
     return (
       <div data-os-app className="grid min-h-screen place-items-center font-os-mono text-[11px] uppercase tracking-[0.16em] text-muted">
         carregando…
@@ -60,6 +74,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // motivo: ele depende do token, e nas superfícies públicas não há sessão nem
   // caixa pessoal para medir. Ele alimenta o selo da barra lateral e a própria
   // tela `/caixa` — as duas lendo o mesmo número, medido uma vez por navegação.
+  if (EH_SRAGRANEL) {
+    return (
+      <ModulosProvider>
+        <CaixaProvider>
+          <div data-os-app className="flex min-h-screen">
+            <LateralSrAgranel />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <TopoSrAgranel />
+              <main className="flex-1 p-4 min-[820px]:p-6">
+                <PortaDaAssinatura>
+                  <PortaDoModulo>{children}</PortaDoModulo>
+                </PortaDaAssinatura>
+              </main>
+            </div>
+          </div>
+        </CaixaProvider>
+      </ModulosProvider>
+    );
+  }
+
   return (
     <ModulosProvider>
       <CaixaProvider>
@@ -202,10 +236,10 @@ function PortaDoModulo({ children }: { children: React.ReactNode }) {
         a conta pode habilitá-lo.
       </p>
       <a
-        href="/painel"
+        href={HOME}
         className="mt-4 inline-block border border-border px-3 py-[6px] text-[10px] uppercase tracking-[0.12em] text-muted hover:border-border-strong hover:text-text"
       >
-        voltar ao console
+        {EH_SRAGRANEL ? 'voltar ao início' : 'voltar ao console'}
       </a>
     </div>
   );

@@ -70,6 +70,8 @@ services:
         # Trocar esta chave exige RECONSTRUIR a imagem (`--build`), não basta
         # reiniciar o container.
         NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ${NEXT_PUBLIC_CENTRAL_PIXEL_KEY:-}
+        # Marca da instância (lib/marca.ts); vazia é a ROOT.
+        NEXT_PUBLIC_MARCA: ${NEXT_PUBLIC_MARCA:-}
     # O instalador usa tag imutável por release/commit. O default preserva o
     # fluxo local e a instalação histórica.
     image: ${ROOTOS_IMAGE:-mktos-app}

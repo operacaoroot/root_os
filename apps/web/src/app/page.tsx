@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { EH_SRAGRANEL } from '@/lib/marca';
 
 /*
  * ============================================================================
@@ -68,12 +70,16 @@ const API = process.env.API_INTERNAL_URL ?? 'http://localhost:4001';
  */
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'ROOT OS — o mapa da nossa operação, ao vivo',
-  description:
-    'Quantas pessoas usam a sua conta de IA hoje, e você consegue dizer o que cada uma fez nela? ' +
-    'Este é o mapa da operação da ROOT, servido do banco do próprio sistema.',
-};
+// Na instância com a marca do Sr. aGranel a raiz não tem página: vai direto ao
+// login (ver EntradaPublica), e o título fica o do layout raiz.
+export const metadata: Metadata = EH_SRAGRANEL
+  ? {}
+  : {
+      title: 'ROOT OS — o mapa da nossa operação, ao vivo',
+      description:
+        'Quantas pessoas usam a sua conta de IA hoje, e você consegue dizer o que cada uma fez nela? ' +
+        'Este é o mapa da operação da ROOT, servido do banco do próprio sistema.',
+    };
 
 /* ------------------------------------------------------------------ contrato */
 
@@ -486,6 +492,8 @@ function Lista({ mapa }: { mapa: MapaPublico }) {
 /* ----------------------------------------------------------------- a página */
 
 export default async function EntradaPublica() {
+  if (EH_SRAGRANEL) redirect('/login');
+
   const mapa = await buscarMapa();
   const temMapa = mapa !== null && (mapa.nucleo !== null || mapa.eixos.length > 0);
 

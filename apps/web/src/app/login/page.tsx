@@ -4,9 +4,12 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { API_BASE, apiGet } from '@/lib/api';
+import { EH_SRAGRANEL, HOME, SELO_SRAGRANEL } from '@/lib/marca';
 
 const ERROS: Record<string, string> = {
-  'nao-autorizado': 'Esta conta Google não tem acesso ao ROOT OS.',
+  'nao-autorizado': EH_SRAGRANEL
+    ? 'Esta conta Google não tem acesso ao painel.'
+    : 'Esta conta Google não tem acesso ao ROOT OS.',
   'estado-invalido': 'O pedido de login expirou. Clique em entrar de novo.',
   falhou: 'Não deu para entrar com o Google. Tente de novo.',
 };
@@ -26,7 +29,7 @@ function GoogleG() {
 export default function LoginPage() {
   const { login, loginWithToken, user, ready } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState('admin@marketing-os.local');
+  const [email, setEmail] = useState(EH_SRAGRANEL ? '' : 'admin@marketing-os.local');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +47,7 @@ export default function LoginPage() {
       window.history.replaceState(null, '', window.location.pathname);
       setLoading(true);
       loginWithToken(t)
-        .then(() => router.replace('/painel'))
+        .then(() => router.replace(HOME))
         .catch((err) => setError((err as Error).message))
         .finally(() => setLoading(false));
       return;
@@ -63,7 +66,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && user) router.replace('/painel');
+    if (ready && user) router.replace(HOME);
   }, [ready, user, router]);
 
   async function submit(e: FormEvent) {
@@ -72,12 +75,29 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/painel');
+      router.replace(HOME);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (EH_SRAGRANEL) {
+    return (
+      <LoginSrAgranel
+        googleOn={googleOn}
+        mostrarSenha={mostrarSenha}
+        onMostrarSenha={() => setMostrarSenha(true)}
+        error={error}
+        loading={loading}
+        email={email}
+        password={password}
+        onEmail={setEmail}
+        onPassword={setPassword}
+        onSubmit={submit}
+      />
+    );
   }
 
   return (
@@ -170,6 +190,105 @@ export default function LoginPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+interface PropsDoLoginSrAgranel {
+  googleOn: boolean;
+  mostrarSenha: boolean;
+  onMostrarSenha: () => void;
+  error: string | null;
+  loading: boolean;
+  email: string;
+  password: string;
+  onEmail: (v: string) => void;
+  onPassword: (v: string) => void;
+  onSubmit: (e: FormEvent) => void;
+}
+
+/*
+ * O login da instância com a marca do Sr. aGranel (lib/marca.ts): a mesma
+ * lógica de cima, com o cabeçalho do design system dele (verde-mata, filete
+ * laranja, selo de 56px) e nenhuma menção à ROOT. É a primeira tela que se vê
+ * no domínio, porque a raiz manda direto para cá.
+ */
+function LoginSrAgranel(p: PropsDoLoginSrAgranel) {
+  return (
+    <div data-os-app className="grid min-h-screen place-items-center bg-bg px-4 py-8">
+      <main className="sg-cartao w-full max-w-[400px] overflow-hidden">
+        <header className="sg-cabecalho flex items-center gap-4 px-6 py-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={SELO_SRAGRANEL} alt="" width={56} height={56} className="sg-selo h-14 w-14" />
+          <div className="min-w-0">
+            <div className="sg-rotulo">Painel das lojas</div>
+            <h1 className="sg-titulo text-[28px] leading-[34px]">Senhor aGranel</h1>
+          </div>
+        </header>
+
+        <div className="space-y-4 px-6 pb-6 pt-5">
+          {p.googleOn && (
+            <a href={`${API_BASE}/auth/google/start`} className="sg-btn sg-btn-secundario w-full">
+              <GoogleG />
+              Entrar com o Google
+            </a>
+          )}
+
+          {p.error && (
+            <div role="alert" className="rounded-lg border border-bad/30 bg-bad/5 px-3 py-2 text-sm text-bad">
+              {p.error}
+            </div>
+          )}
+
+          {p.googleOn && !p.mostrarSenha && (
+            <button
+              type="button"
+              onClick={p.onMostrarSenha}
+              className="w-full text-center text-[13px] text-muted underline-offset-2 hover:underline"
+            >
+              Entrar com e-mail e senha
+            </button>
+          )}
+
+          {(!p.googleOn || p.mostrarSenha) && (
+            <form onSubmit={p.onSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="login-email" className="mb-1.5 block text-[13px] font-semibold text-text">
+                  E-mail
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="username"
+                  value={p.email}
+                  onChange={(e) => p.onEmail(e.target.value)}
+                  className="sg-campo"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="login-senha" className="mb-1.5 block text-[13px] font-semibold text-text">
+                  Senha
+                </label>
+                <input
+                  id="login-senha"
+                  type="password"
+                  autoComplete="current-password"
+                  value={p.password}
+                  onChange={(e) => p.onPassword(e.target.value)}
+                  className="sg-campo"
+                  required
+                />
+              </div>
+              <button type="submit" disabled={p.loading} className="sg-btn sg-btn-primario w-full">
+                {p.loading ? 'Entrando…' : 'Entrar'}
+              </button>
+            </form>
+          )}
+
+          <p className="pt-1 text-center text-[13px] text-dim">Acesso da equipe do Sr. a Granel.</p>
+        </div>
+      </main>
     </div>
   );
 }

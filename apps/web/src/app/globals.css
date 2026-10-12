@@ -104,6 +104,39 @@
   --os-logo-shadow: none;
 }
 
+/* Instância com a marca do Sr. aGranel (lib/marca.ts): o layout raiz fixa
+   este tema no <html> e não lê o tema guardado no navegador. Cores do design
+   system v0.1 do cliente: creme no fundo, verde-mata na tinta e no botão
+   primário, chapéu (laranja) só como filete e realce. Estado segue a escala
+   do design system (sucesso, atenção, perigo), e o --os-cy, que aqui não tem
+   par, vira o chapéu escuro. */
+:root[data-os-theme='sragranel'] {
+  color-scheme: light;
+  --os-bg: 245 243 236;
+  --os-bg2: 251 250 245;
+  --os-s1: 251 250 245;
+  --os-s2: 231 228 216;
+  --os-s3: 220 217 203;
+  --os-line: 207 207 194;
+  --os-line-strong: 126 131 114;
+  --os-tx: 40 55 29;
+  --os-tx2: 90 100 80;
+  --os-tx3: 126 131 114;
+  --os-ac: 40 55 29;
+  --os-ac2: 49 66 42;
+  --os-ac-dim: 201 203 181;
+  --os-ac-ink: 245 243 236;
+  --os-mag: 179 54 26;
+  --os-cy: 154 90 28;
+  --os-ok: 63 107 42;
+  --os-warn: 147 85 26;
+  --os-err: 179 54 26;
+  --os-grid: transparent;
+  --os-logo-shadow: none;
+  --os-mono: var(--fonte-montserrat, 'Montserrat'), ui-sans-serif, system-ui, sans-serif;
+  --os-sans: var(--fonte-montserrat, 'Montserrat'), ui-sans-serif, system-ui, sans-serif;
+}
+
 /* O fallback interno do var() é obrigatório: sem ele, se --font-jetbrains
    não estiver definida a declaração font-family inteira é descartada em
    tempo de valor computado — e não cai na próxima da lista. */
@@ -145,6 +178,119 @@ body {
   [data-os-app] * {
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Sr. aGranel: o design system pede cantos de 10px (campo, botão) e 18px
+   (cartão), e a escala do tailwind deste repo é a da ROOT, de 2 a 4px. A
+   troca fica no tema, e as telas do Totem não precisam saber da marca. */
+:root[data-os-theme='sragranel'] body {
+  font-family: var(--os-sans);
+  font-feature-settings: normal;
+}
+[data-os-theme='sragranel'] [data-os-app] {
+  font-variant-numeric: tabular-nums;
+}
+[data-os-theme='sragranel'] [data-os-app] .rounded-sm {
+  border-radius: 4px;
+}
+[data-os-theme='sragranel'] [data-os-app] .rounded,
+[data-os-theme='sragranel'] [data-os-app] .rounded-md,
+[data-os-theme='sragranel'] [data-os-app] .rounded-lg,
+[data-os-theme='sragranel'] [data-os-app] .rounded-root {
+  border-radius: 10px;
+}
+[data-os-theme='sragranel'] [data-os-app] .rounded-xl,
+[data-os-theme='sragranel'] [data-os-app] .rounded-2xl {
+  border-radius: 18px;
+}
+[data-os-theme='sragranel'] :focus-visible {
+  outline: 3px solid #9a5a1c;
+  outline-offset: 2px;
+}
+
+/* Peças do design system do Sr. aGranel (components/CabecalhoPainel e
+   botões do bundle.css), usadas no login e na casca da instância dele. */
+.sg-cabecalho {
+  background: #28371d;
+  color: #f5f3ec;
+  border-bottom: 4px solid #cb8139;
+}
+.sg-selo {
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.sg-rotulo {
+  font-family: var(--fonte-montserrat, 'Montserrat'), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e39a5e;
+}
+.sg-titulo {
+  font-family: var(--fonte-fraunces, 'Fraunces'), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sg-meta {
+  font-family: var(--fonte-montserrat, 'Montserrat'), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: #c9cbb5;
+}
+.sg-cartao {
+  background: #fbfaf5;
+  border: 1px solid #cfcfc2;
+  border-radius: 18px;
+  box-shadow:
+    0 1px 2px rgba(31, 43, 23, 0.1),
+    0 6px 18px rgba(31, 43, 23, 0.08);
+}
+.sg-campo {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid #cfcfc2;
+  border-radius: 10px;
+  background: #fbfaf5;
+  padding: 0 14px;
+  font-size: 15px;
+  color: #28371d;
+}
+.sg-campo::placeholder {
+  color: #7e8372;
+}
+.sg-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 0 18px;
+  font-family: var(--fonte-montserrat, 'Montserrat'), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  transition: background-color 0.15s;
+}
+.sg-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.sg-btn-primario {
+  background: #28371d;
+  color: #f5f3ec;
+}
+.sg-btn-primario:hover:not(:disabled) {
+  background: #31422a;
+}
+.sg-btn-secundario {
+  background: #fbfaf5;
+  color: #28371d;
+  border: 1px solid #cfcfc2;
+}
+.sg-btn-secundario:hover:not(:disabled) {
+  background: #e7e4d8;
 }
 
 /* Textos legais da bio (públicos, identidade ROOT) */
