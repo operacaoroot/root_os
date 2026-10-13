@@ -1,0 +1,172 @@
+# Ambiente de HOMOLOGAÇÃO do módulo comercial (cockpit do lead) no Predator.
+# Projeto próprio: nada aqui compartilha rede, volume ou porta com outro projeto
+# da máquina. Subir:
+#   docker compose -p rootos-comercial -f homolog/docker-compose.comercial.yml --env-file homolog/.env.homolog up -d --build
+# Derrubar sem perder dados:  ... down       | zerar:  ... down -v
+name: rootos-comercial
+
+x-portas: &publicar
+  # Publica em loopback e no Tailscale da máquina (Rodrigo testa do Mac e do celular).
+  # Docker no Windows aceita IP específico no mapeamento.
+  BIND_LOCAL: "127.0.0.1"
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rootos_comercial_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rootos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD em homolog/.env.homolog}
+      POSTGRES_DB: ${DB_NAME:-rootos_comercial}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5440}:5432"
+    volumes:
+      - rootos_comercial_db:/var/lib/postgresql/data
+    networks: [rootos-comercial-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rootos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rootos_comercial_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6391}:6379"
+    networks: [rootos-comercial-net]
+
+  minio:
+    image: minio/minio
+    container_name: rootos_comercial_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9012}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9013}:9001"
+    volumes:
+      - rootos_comercial_minio:/data
+    networks: [rootos-comercial-net]
+
+  # Dublês: emulam só os endpoints que as portas usam e têm página de "simular"
+  # (pagar o Pix, assinar o documento) que dispara o webhook para a API.
+  asaas-mock:
+    build: ./mocks/asaas
+    container_name: rootos_comercial_asaas_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
+      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-homolog}
+    ports:
+      - "127.0.0.1:${ASAAS_MOCK_PORT:-4011}:4011"
+      - "${TAILSCALE_IP:-100.95.41.124}:${ASAAS_MOCK_PORT:-4011}:4011"
+    networks: [rootos-comercial-net]
+
+  zapsign-mock:
+    build: ./mocks/zapsign
+    container_name: rootos_comercial_zapsign_mock
+    restart: unless-stopped
+    environment:
+      WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
+      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-homolog}
+      PUBLIC_URL: http://${TAILSCALE_IP:-100.95.41.124}:${ZAPSIGN_MOCK_PORT:-4012}
+    ports:
+      - "127.0.0.1:${ZAPSIGN_MOCK_PORT:-4012}:4012"
+      - "${TAILSCALE_IP:-100.95.41.124}:${ZAPSIGN_MOCK_PORT:-4012}:4012"
+    networks: [rootos-comercial-net]
+
+  api:
+    build:
+      context: ..
+      args:
+        NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ""
+    image: rootos-comercial-app
+    container_name: rootos_comercial_api
+    working_dir: /app/apps/api
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-rootos}:${DB_PASSWORD}@db:5432/${DB_NAME:-rootos_comercial}
+      TENANT_MODO: ${TENANT_MODO:-observar}
+      API_PORT: "4001"
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://100.95.41.124:3010}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://100.95.41.124:3010}
+      GATEWAY_MODO: ${GATEWAY_MODO:-impor}
+      RASTRO_RETENCAO_DIAS: "1825"
+      POLITICA_FUSO_HORARIO: America/Sao_Paulo
+      ROTINAS_CRON: "on"
+      PAUTA_CRON: "off"
+      ONBOARDING_ABERTO: ${ONBOARDING_ABERTO:-nao}
+      # Inteligência: stub (determinístico) | ponte (claude CLI no host) | anthropic (chave válida)
+      LLM_PROVIDER: ${LLM_PROVIDER:-stub}
+      PONTE_MODELO_URL: ${PONTE_MODELO_URL:-http://host.docker.internal:4099}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-fable-5-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Dinheiro e assinatura apontam para os dublês por padrão
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-$$aact_hmlg_dublê}
+      ASAAS_BASE_URL: ${ASAAS_BASE_URL:-http://asaas-mock:4011/v3}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-homolog}
+      ZAPSIGN_API_TOKEN: ${ZAPSIGN_API_TOKEN:-dublê}
+      ZAPSIGN_BASE_URL: ${ZAPSIGN_BASE_URL:-http://zapsign-mock:4012/api/v1}
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-homolog}
+      # WhatsApp por porta: simulado | evolution | meta
+      WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-simulado}
+      EVOLUTION_URL: ${EVOLUTION_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCIA: ${EVOLUTION_INSTANCIA:-}
+      # Interruptores do cockpit (padrão = regra vigente; a homologação liga no seed)
+      COMERCIAL_SEED_DEMONSTRACAO: ${COMERCIAL_SEED_DEMONSTRACAO:-sim}
+      OBSIDIAN_VAULT_PATH: /vault
+      OBSIDIAN_FONTE: pasta
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - rootos_comercial_vault:/vault
+    ports:
+      - "127.0.0.1:${API_PORT:-4010}:4001"
+      - "${TAILSCALE_IP:-100.95.41.124}:${API_PORT:-4010}:4001"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+      asaas-mock: { condition: service_started }
+      zapsign-mock: { condition: service_started }
+    networks: [rootos-comercial-net]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: rootos-comercial-app
+    container_name: rootos_comercial_web
+    working_dir: /app/apps/web
+    command: sh -c "pnpm exec next start -p 4000"
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: http://api:4001
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3010}:4000"
+      - "${TAILSCALE_IP:-100.95.41.124}:${WEB_PORT:-3010}:4000"
+    depends_on:
+      api: { condition: service_started }
+    networks: [rootos-comercial-net]
+
+volumes:
+  rootos_comercial_db:
+  rootos_comercial_minio:
+  rootos_comercial_vault:
+
+networks:
+  rootos-comercial-net:
+    name: rootos-comercial-net

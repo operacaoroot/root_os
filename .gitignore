@@ -24,3 +24,6 @@ redis_data/
 .idea/
 _finops_import/
 *.tsbuildinfo
+
+# homologação do cockpit comercial: o exemplo de env viaja, o preenchido não
+!homolog/.env.homolog.example
