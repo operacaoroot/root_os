@@ -136,6 +136,24 @@ export function horaDoVigia(agora: Date, fuso: string = fusoDaPolitica()): { pas
   return { passou: !Number.isNaN(minutos) && minutos >= HORA_DO_VIGIA_MIN, dia: partesNoFuso(agora, fuso).dia };
 }
 
+/**
+ * E-22: a passagem gravada já é a das 08:00 de hoje? Uma passagem manual
+ * (`POST /comercial/torre/vigia`) feita antes das 08:00 tem o mesmo dia e não
+ * cala a das 08:00. Passagem sem instante legível não conta (o vigia passa).
+ */
+export function passagemDasOitoDeHoje(ultima: { dia: string; em: string } | null, dia: string, fuso: string = fusoDaPolitica()): boolean {
+  if (!ultima || ultima.dia !== dia) return false;
+  const em = new Date(ultima.em);
+  if (Number.isNaN(em.getTime())) return false;
+  const h = horaDoVigia(em, fuso);
+  return h.passou && h.dia === dia;
+}
+
+/** E-23: o lead em que a decisão de uma premissa quebrada se pendura (o primeiro pela ordem, estável no dia). */
+export function leadDaDecisao(leads: readonly string[]): string | null {
+  return leads.length ? [...leads].sort()[0] : null;
+}
+
 function premissa(chave: string, automacao: ComercialAutomacao | null, texto: string, ok: boolean | null, detalhe: string, leads: string[] = []): PremissaDoVigia {
   return { chave, automacao, premissa: texto, ok, detalhe, leads };
 }
@@ -171,7 +189,7 @@ export class VigiaService implements OnModuleInit {
     const marca = `${orgId}:${h.dia}`;
     if (this.passouHoje.has(marca)) return 0;
     const ultima = await this.ultimaPassagem(orgId);
-    if (ultima?.dia === h.dia) {
+    if (passagemDasOitoDeHoje(ultima, h.dia)) {
       this.passouHoje.add(marca);
       return 0;
     }
@@ -193,25 +211,33 @@ export class VigiaService implements OnModuleInit {
     let decisoesAbertas = 0;
     for (const p of premissas) {
       if (p.ok !== false) continue;
+      // O fato vai ao fio de cada lead (o fio é a história do lead).
       for (const leadId of p.leads) {
         await this.fio.registrar(orgId, leadId, 'vigia.premissa', `${p.chave}:${dia}`, { automacao: p.automacao ?? 'funil', premissa: p.premissa, ok: false, detalhe: p.detalhe }, { em: agora });
-        const d = await this.decisoes.abrir({
-          orgId,
-          leadId,
-          tipo: 'excecao_do_vigia',
-          chave: `${p.chave}:${dia}`,
-          titulo: `Vigia: ${p.premissa}`,
-          contexto: `${p.detalhe} Conferido às 08:00 de ${dia}. O vigia só avisa: quem conserta é gente.`,
-          opcoes: [
-            { chave: 'ciente', rotulo: 'ciente', efeito: 'fica registrado; o vigia confere de novo amanhã' },
-            { chave: 'vou_resolver', rotulo: 'vou resolver', efeito: 'fica registrado com o seu nome; o vigia confere de novo amanhã' },
-          ],
-          padrao: 'ciente',
-          dados: { premissa: p.chave, automacao: p.automacao },
-          agora,
-        });
-        if (d.nova) decisoesAbertas++;
       }
+      // E-23: a decisão é UMA por premissa por dia, com a lista de leads; 200 leads no mesmo defeito não
+      // viram 200 decisões. Ela se pendura no primeiro lead da lista (a fila pede um lead), sempre o mesmo no dia.
+      const ancora = leadDaDecisao(p.leads);
+      if (!ancora) continue;
+      const leads = [...p.leads].sort();
+      const nomes = await this.prisma.lead.findMany({ where: { id: { in: leads.slice(0, 10) }, orgId }, select: { name: true } });
+      const quais = nomes.map((l) => l.name).join(', ');
+      const d = await this.decisoes.abrir({
+        orgId,
+        leadId: ancora,
+        tipo: 'excecao_do_vigia',
+        chave: `${p.chave}:${dia}`,
+        titulo: `Vigia: ${p.premissa}${leads.length > 1 ? ` (${leads.length} leads)` : ''}`,
+        contexto: `${p.detalhe} Conferido às 08:00 de ${dia}. ${leads.length === 1 ? 'Lead' : `${leads.length} leads`}: ${quais}${leads.length > 10 ? ` e mais ${leads.length - 10}` : ''}. O vigia só avisa: quem conserta é gente.`,
+        opcoes: [
+          { chave: 'ciente', rotulo: 'ciente', efeito: 'fica registrado; o vigia confere de novo amanhã' },
+          { chave: 'vou_resolver', rotulo: 'vou resolver', efeito: 'fica registrado com o seu nome; o vigia confere de novo amanhã' },
+        ],
+        padrao: 'ciente',
+        dados: { premissa: p.chave, automacao: p.automacao, leads },
+        agora,
+      });
+      if (d.nova) decisoesAbertas++;
     }
     const c = contarPremissas(premissas);
     const passagem: PassagemDoVigia = { dia, em: agora.toISOString(), ...c, premissas, decisoesAbertas };
