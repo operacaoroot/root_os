@@ -70,7 +70,8 @@ describe('torre (tela 12)', () => {
     expect(screen.getByText('97%')).toBeInTheDocument();
     expect(screen.getByText('A3')).toBeInTheDocument();
     expect(screen.getByText('nunca')).toBeInTheDocument();
-    expect(screen.getAllByText('ausente').length).toBeGreaterThanOrEqual(2); // custo e acerto do leitor
+    expect(screen.getByText('sem medida')).toBeInTheDocument(); // C-5: custo sem livro-caixa
+    expect(screen.getAllByText('ausente').length).toBeGreaterThanOrEqual(1); // acerto do leitor
     expect(screen.getByText('08:00')).toBeInTheDocument();
   });
 });

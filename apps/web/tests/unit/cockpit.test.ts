@@ -6,6 +6,8 @@ import {
   AUSENTE,
   agruparFunil,
   contarParcelas,
+  custoDaTorre,
+  decisaoSemPrazo,
   dataDoDia,
   descricaoJaDizQuando,
   diaHoraSP,
@@ -21,6 +23,7 @@ import {
   percentual,
   prazoDaDecisao,
   quandoRoda,
+  quandoSP,
   reaisOuAusente,
   rotuloDoPadrao,
   segundos,
@@ -73,6 +76,29 @@ describe('cockpit — tempo em São Paulo', () => {
     expect(prazoDaDecisao('2026-10-13T15:35:00.000Z', agora)).toEqual({ texto: 'expira em 35 min', vencido: false });
     expect(prazoDaDecisao('2026-10-13T14:00:00.000Z', agora)).toEqual({ texto: 'venceu às 11:00', vencido: true });
     expect(prazoDaDecisao('lixo', agora).texto).toBe('prazo ausente');
+    // C-6: o que venceu em outro dia diz o dia.
+    expect(prazoDaDecisao('2026-10-11T14:00:00.000Z', agora)).toEqual({ texto: 'venceu 11/10 11:00', vencido: true });
+  });
+
+  it('C-2: a sentinela do prazo desligado é "sem prazo", nunca uma duração', () => {
+    const agora = new Date('2026-10-13T15:00:00.000Z');
+    expect(decisaoSemPrazo('9999-12-31T23:59:59.000Z')).toBe(true);
+    expect(decisaoSemPrazo('2026-10-13T19:00:00.000Z')).toBe(false);
+    expect(prazoDaDecisao('9999-12-31T23:59:59.000Z', agora)).toEqual({ texto: 'sem prazo', vencido: false });
+  });
+
+  it('C-6: hora quando é hoje, dia e hora quando não é', () => {
+    const agora = new Date('2026-10-13T15:00:00.000Z');
+    expect(quandoSP('2026-10-13T17:02:00.000Z', agora)).toBe('14:02');
+    expect(quandoSP('2026-10-08T17:02:00.000Z', agora)).toBe('08/10 14:02');
+  });
+
+  it('C-5: o custo da torre mostra o dólar medido e "sem medida" para stub, ponte e empresa sem livro', () => {
+    expect(custoDaTorre({ custoDeIaHojeCentavos: null, custoDesconhecido: false, custoDeIaHojeUsd: 0.42, provedorDeIa: 'anthropic' }).valor).toBe('US$ 0,42');
+    expect(custoDaTorre({ custoDeIaHojeCentavos: 0, custoDesconhecido: true, custoDeIaHojeUsd: 0, provedorDeIa: 'ponte' }).valor).toBe('sem medida');
+    expect(custoDaTorre({ custoDeIaHojeCentavos: 0, custoDesconhecido: true, custoDeIaHojeUsd: 0, provedorDeIa: 'stub' }).valor).toBe('sem medida');
+    expect(custoDaTorre({ custoDeIaHojeCentavos: null, custoDesconhecido: true, custoDeIaHojeUsd: null, provedorDeIa: 'anthropic' }).valor).toBe('sem medida');
+    expect(custoDaTorre({ custoDeIaHojeCentavos: 0, custoDesconhecido: false, custoDeIaHojeUsd: 0, provedorDeIa: 'anthropic' }).valor).toBe(reaisOuAusente(0));
   });
 
   it('quando roda a próxima ação', () => {
@@ -126,7 +152,9 @@ describe('cockpit — decisão, porta e 501', () => {
 
   it('o rascunho na porta é "aguardando aprovação"', () => {
     expect(explicarRascunho('na_porta').aguardaAprovacao).toBe(true);
-    expect(explicarRascunho('na_fila').aguardaAprovacao).toBe(true);
+    // C-3: na fila de decisões do comercial, não na porta.
+    expect(explicarRascunho('na_fila').aguardaAprovacao).toBe(false);
+    expect(explicarRascunho('na_fila').naFilaDeDecisoes).toBe(true);
     expect(explicarRascunho('publicada').aguardaAprovacao).toBe(false);
     expect(explicarRascunho('agendada', '2026-10-13T21:00:00.000Z').rotulo).toBe('agendada: vai à porta às 18:00');
   });

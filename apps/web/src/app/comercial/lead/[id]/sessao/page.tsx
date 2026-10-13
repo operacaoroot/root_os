@@ -280,6 +280,15 @@ function Proposta({ leadId, s, aoMudar }: { leadId: string; s: Sessao; aoMudar: 
           </h3>
           <p className="text-[13px]">Estado: <span className="font-semibold">{estado.rotulo}</span></p>
           {estado.aguardaAprovacao && <AguardandoAprovacao approvalId={p.approvalId} oQue="A publicação da proposta foi à porta (R3)." />}
+          {estado.naFilaDeDecisoes && (
+            <Aviso>
+              O revisor apontou algo ou a proposta saiu da tabela: ela espera uma decisão na{' '}
+              <Link href={p.decisaoId ? `/comercial#dec-${p.decisaoId}` : '/comercial'} className={`underline ${FOCO}`}>
+                fila de decisões do comercial
+              </Link>
+              , não em /atendimento.
+            </Aviso>
+          )}
           {p.conteudo.descontoPct != null && <p className="text-[12.5px] text-muted">desconto aprovado de {p.conteudo.descontoPct}%</p>}
           <p className="text-[12.5px] text-muted">{p.conteudo.descricao}</p>
           {p.conteudo.comoEDiferente && <p className="text-[12.5px]"><span className="text-muted">como é diferente:</span> {p.conteudo.comoEDiferente}</p>}

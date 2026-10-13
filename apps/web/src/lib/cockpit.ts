@@ -70,12 +70,57 @@ export function duracao(ms: number): string {
   return `${Math.round(h / 24)} dias`;
 }
 
-/** O prazo de uma decisão: "expira em 4 h" ou "venceu às 16:58". */
+/**
+ * A decisão nasceu sem prazo? Com `decisaoExpiraHoras` desligado ([a decidir]),
+ * a API grava a sentinela 9999-12-31: ela não é prazo, e o padrão nunca vale
+ * sozinho (C-2 da revisão).
+ */
+export function decisaoSemPrazo(expiraEm: string | null | undefined): boolean {
+  if (!expiraEm) return true;
+  const t = new Date(expiraEm).getTime();
+  return !Number.isNaN(t) && new Date(t).getUTCFullYear() >= 9999;
+}
+
+/** Hora de São Paulo quando o instante é de hoje; dia e hora quando é de outro dia (C-6). */
+export function quandoSP(iso: string | null | undefined, agora: Date = new Date()): string {
+  if (!iso) return '';
+  return diaSP(iso) === diaSP(agora.toISOString()) ? horaSP(iso) : diaHoraSP(iso);
+}
+
+/**
+ * O custo de IA do dia na torre (C-5): reais quando a API mediu em reais; o
+ * dólar quando só há dólar (sem câmbio decidido); "sem medida" para o stub, a
+ * ponte (que gasta a assinatura do host) e a empresa sem livro-caixa.
+ */
+export function custoDaTorre(t: {
+  custoDeIaHojeCentavos: number | null;
+  custoDesconhecido: boolean;
+  custoDeIaHojeUsd?: number | null;
+  provedorDeIa?: string;
+}): { valor: string; legenda: string } {
+  const provedor = t.provedorDeIa ? ` · provedor ${t.provedorDeIa}` : '';
+  if (t.provedorDeIa === 'stub' || t.provedorDeIa === 'ponte') {
+    return { valor: 'sem medida', legenda: `custo de IA hoje${provedor}, sem preço conhecido` };
+  }
+  const parte = t.custoDesconhecido ? ', parte sem preço conhecido' : '';
+  if (t.custoDeIaHojeCentavos != null) return { valor: reaisOuAusente(t.custoDeIaHojeCentavos), legenda: `custo de IA hoje${provedor}${parte}` };
+  if (t.custoDeIaHojeUsd != null) {
+    const usd = t.custoDeIaHojeUsd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    return { valor: `US$ ${usd}`, legenda: `custo de IA hoje em dólar (câmbio [a decidir])${provedor}${parte}` };
+  }
+  return { valor: 'sem medida', legenda: `custo de IA hoje${provedor}: empresa sem teto, o gasto não é medido` };
+}
+
+/** O prazo de uma decisão: "expira em 4 h", "venceu às 16:58" (ou "venceu 12/10 16:58") ou "sem prazo". */
 export function prazoDaDecisao(expiraEm: string, agora: Date = new Date()): { texto: string; vencido: boolean } {
+  if (decisaoSemPrazo(expiraEm)) return { texto: 'sem prazo', vencido: false };
   const t = new Date(expiraEm).getTime();
   if (Number.isNaN(t)) return { texto: 'prazo ausente', vencido: false };
   const falta = t - agora.getTime();
-  if (falta <= 0) return { texto: `venceu às ${horaSP(expiraEm)}`, vencido: true };
+  if (falta <= 0) {
+    const quando = quandoSP(expiraEm, agora);
+    return { texto: quando.includes('/') ? `venceu ${quando}` : `venceu às ${quando}`, vencido: true };
+  }
   return { texto: `expira em ${duracao(falta)}`, vencido: false };
 }
 
@@ -227,16 +272,21 @@ export function fioPorDia(fio: LinhaDoFio[]): { dia: number; linhas: LinhaDoFio[
   return grupos;
 }
 
-/** O estado do rascunho da proposta (tela 06), dito para quem olha. */
-export function explicarRascunho(estado: string, publicarEm?: string | null): { rotulo: string; aguardaAprovacao: boolean } {
+/**
+ * O estado do rascunho da proposta (tela 06), dito para quem olha. `na_porta`
+ * espera aprovação em /atendimento; `na_fila` espera a fila de decisões do
+ * comercial (laudo com apontamento ou fora da tabela), em /comercial (C-3).
+ */
+export function explicarRascunho(estado: string, publicarEm?: string | null): { rotulo: string; aguardaAprovacao: boolean; naFilaDeDecisoes?: boolean } {
   switch (estado) {
     case 'pronta':
       return { rotulo: 'pronta, esperando liberar', aguardaAprovacao: false };
     case 'agendada':
       return { rotulo: publicarEm ? `agendada: vai à porta às ${horaSP(publicarEm)}` : 'agendada', aguardaAprovacao: false };
     case 'na_porta':
-    case 'na_fila':
       return { rotulo: 'aguardando aprovação de outra pessoa', aguardaAprovacao: true };
+    case 'na_fila':
+      return { rotulo: 'na fila de decisões do comercial', aguardaAprovacao: false, naFilaDeDecisoes: true };
     case 'segurada':
       return { rotulo: 'segurada: só sai se alguém liberar', aguardaAprovacao: false };
     case 'publicada':

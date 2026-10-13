@@ -46,7 +46,7 @@ function Contrato({ c }: { c: ContratoVivo }) {
         />
         <Numero valor={`${p.pagas}/${p.total}`} legenda="parcelas pagas" tom={p.atrasadas ? 'ruim' : undefined} />
         <Numero valor={c.faseDaImplantacao ? `fase ${c.faseDaImplantacao.atual} de ${c.faseDaImplantacao.total}` : 'ausente'} legenda="na implantação" />
-        <Numero valor={numeroOuAusente(c.saude)} legenda="saúde: uso, respostas, prazos" />
+        <Numero valor={numeroOuAusente(c.saude)} legenda="saúde (fórmula [a decidir] pela mesa)" />
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">

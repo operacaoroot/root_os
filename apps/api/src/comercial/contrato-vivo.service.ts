@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DecisoesService } from './decisoes.service';
 import { hojeEmSP } from './dinheiro.service';
 import { FioService } from './fio.service';
+import { saudeDoLead } from './proxima-acao';
 import { RelogioComercialRegistry } from './relogio.registry';
 
 /*
@@ -209,7 +210,8 @@ export class ContratoVivoService implements OnModuleInit {
         { texto: 'kickoff marcado', feito: !!ficha?.kickoffEm },
       ],
       primeiroValorEm: marcoValor?.occurredAt.toISOString() ?? null,
-      saude: ficha?.saude ?? null,
+      // C-7: nenhum código escreve a saúde; até a fórmula existir ([a decidir]), a mesma leitura do funil.
+      saude: saudeDoLead(),
       faseDaImplantacao: trilho ? { atual: Math.max(1, fases.indexOf(trilho.fase) + 1), total: 5 } : null,
       marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? (await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, select: { occurredAt: true } }))?.occurredAt ?? null),
       aditivos: 0,

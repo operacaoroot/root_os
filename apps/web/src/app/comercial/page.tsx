@@ -6,7 +6,7 @@ import type { DecisaoNaFila, FilaDeDecisoes } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, horaSP, instantesLegiveis, prazoDaDecisao, rotuloDoPadrao } from '@/lib/cockpit';
+import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, decisaoSemPrazo, horaSP, instantesLegiveis, prazoDaDecisao, quandoSP, rotuloDoPadrao } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
 
@@ -143,7 +143,15 @@ function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Prom
         ))}
       </ul>
       <p className="text-[12px] text-muted">
-        Se ninguém responder até {horaSP(d.expiraEm)}, vale o padrão: <span className="text-text">{rotuloDoPadrao(d)}</span>.
+        {decisaoSemPrazo(d.expiraEm) ? (
+          <>
+            Sem prazo configurado: a decisão só sai com uma resposta. O padrão escrito é <span className="text-text">{rotuloDoPadrao(d)}</span>.
+          </>
+        ) : (
+          <>
+            Se ninguém responder até {quandoSP(d.expiraEm)}, vale o padrão: <span className="text-text">{rotuloDoPadrao(d)}</span>.
+          </>
+        )}
       </p>
       {feito && <Aviso tom="bom">{feito}</Aviso>}
       <Erro erro={erro} />

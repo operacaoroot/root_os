@@ -19,7 +19,7 @@ const PERIODOS = [7, 30, 90];
 
 export default function RelatorioPage() {
   const { token } = useAuth();
-  const [dias, setDias] = useState(30);
+  const [dias, setDias] = useState(7);
   const { dados: r, erro, carregando, recarregar } = useCarregar<RelatorioDaSemana>(`/comercial/relatorio/semana?dias=${dias}`);
   const [erroDaAcao, setErroDaAcao] = useState<unknown>(null);
   const [gerando, setGerando] = useState(false);
@@ -28,7 +28,7 @@ export default function RelatorioPage() {
     setGerando(true);
     setErroDaAcao(null);
     try {
-      await apiPost('/comercial/relatorio/semana/gerar', {}, token);
+      await apiPost('/comercial/relatorio/semana/gerar', { dias }, token);
       await recarregar();
     } catch (e) {
       setErroDaAcao(e);
@@ -118,7 +118,9 @@ export default function RelatorioPage() {
           <section className={CARTAO} aria-label="leitura">
             <Rotulo>leitura da semana</Rotulo>
             <p className="mt-2 whitespace-pre-line text-[13px]">{r.narrativa ?? 'ausente: o relator ainda não escreveu a leitura deste período.'}</p>
-            <p className="mt-2 text-[11.5px] text-dim">gerado em {diaHoraSP(r.geradoEm)}</p>
+            <p className="mt-2 text-[11.5px] text-dim">
+              {r.origem === 'ao_vivo' ? `números ao vivo de ${diaHoraSP(r.geradoEm)}, sem leitura gerada para este recorte` : `gerado em ${diaHoraSP(r.geradoEm)}`}
+            </p>
           </section>
         </>
       )}
