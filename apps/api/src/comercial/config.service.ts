@@ -159,7 +159,8 @@ export class ConfigComercialService {
     if (quem && antes) {
       const a = antes as unknown as Record<string, unknown>;
       const d = depois as unknown as Record<string, unknown>;
-      const mudou = Object.keys(d).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(d[k]));
+      // O carimbo da linha muda a cada escrita: não é campo que alguém mudou.
+      const mudou = Object.keys(d).filter((k) => k !== 'atualizadoEm' && k !== 'gravada' && JSON.stringify(a[k]) !== JSON.stringify(d[k]));
       if (mudou.length) {
         await this.audit?.log({
           orgId,
