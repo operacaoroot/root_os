@@ -73,6 +73,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
   const prisma = new PrismaClient({ datasources: { db: { url: URL } } });
   const p = prisma as unknown as PrismaService;
   let ORG = '';
+  let socia = { id: '', name: '' };
   let fio: FioService;
   let fichas: FichaService;
   let config: ConfigComercialService;
@@ -104,7 +105,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     const org = await prisma.org.create({ data: { name: `Fase2 ${MARCA}`, slug: `fase2-${MARCA}` } });
     ORG = org.id;
     const papel = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin Master' } });
-    await prisma.user.create({ data: { orgId: ORG, name: 'Sócia', email: `socia.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: papel.id } } } });
+    socia = await prisma.user.create({ data: { orgId: ORG, name: 'Sócia', email: `socia.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: papel.id } } }, select: { id: true, name: true } });
 
     reacoes = new ReacoesRegistry();
     fio = new FioService(p, reacoes);
@@ -203,9 +204,18 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     }
   });
 
+  it('o sócio da conta volta com o id da pessoa quando a ata foi subida por alguém da empresa', async () => {
+    const lead = (await prisma.lead.findFirst({ where: { orgId: ORG, phone: { startsWith: '55329' } }, select: { id: true } }))!;
+    await fichas.registrarAta(ORG, lead.id, { texto: 'Ata da conversa. '.repeat(20), fonte: 'texto' }, { id: socia.id, nome: socia.name });
+    const f = await fichas.projecao(ORG, lead.id);
+    expect(f.socioDaConta).toEqual({ id: socia.id, nome: 'Sócia' });
+    expect(f.fio.find((l) => l.type === 'ata.chegou')!.resumo).toMatch(/^ata recebida · \d+ caracteres · texto$/);
+  });
+
   it('o vigia acha o status renomeado de propósito, grava o fato e abre a exceção uma vez por dia', async () => {
     const lead = (await prisma.lead.findFirst({ where: { orgId: ORG, phone: { startsWith: '55329' } }, select: { id: true } }))!;
     // A falha simulada da prova de pronto da onda 5: o status muda por fora da etapa.
+    const statusCerto = (await prisma.lead.findFirst({ where: { id: lead.id }, select: { status: true } }))!.status;
     await prisma.lead.update({ where: { id: lead.id }, data: { status: 'ganho' } });
 
     const agora = new Date();
@@ -232,7 +242,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     expect(memoria.notas.get('comercial.vigia')!.versao).toBe(versaoDaNota + 1);
 
     // O status volta: a premissa volta a valer.
-    await prisma.lead.update({ where: { id: lead.id }, data: { status: 'novo' } });
+    await prisma.lead.update({ where: { id: lead.id }, data: { status: statusCerto } });
     const p3 = await vigia.conferir(ORG, agora);
     expect(p3.find((x) => x.chave === 'status_segue_etapa')!.ok).toBe(true);
   });

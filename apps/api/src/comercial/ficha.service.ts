@@ -465,6 +465,9 @@ export class FichaService {
     const proxima = etapa === 'sessao' ? avancarDepoisDaSessao(estado).para ?? 'diagnostico' : proximaEtapa(etapa);
     const itens = portoesDaEtapa(estado);
     const nomes = await this.nomesDeUsuarios(orgId, [ficha.donoId]);
+    const socio = ficha.socioDaConta
+      ? await this.prisma.user.findFirst({ where: { orgId, name: ficha.socioDaConta }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+      : null;
 
     return {
       leadId,
@@ -480,7 +483,9 @@ export class FichaService {
       sistemaErp: ficha.sistemaErp,
       baseDados: ficha.baseDados,
       dono: ficha.donoId ? { id: ficha.donoId, nome: nomes.get(ficha.donoId) ?? ficha.donoId } : null,
-      socioDaConta: ficha.socioDaConta ? { id: ficha.socioDaConta, nome: ficha.socioDaConta } : null,
+      // A ficha guarda o NOME de quem conduziu a sessão (o `por` da ata). Com uma pessoa
+      // da empresa com esse nome, o id é o dela; sem ela, o id repete o nome (achado da lane F).
+      socioDaConta: ficha.socioDaConta ? { id: socio?.id ?? ficha.socioDaConta, nome: ficha.socioDaConta } : null,
       produto: (ficha.produto as ComercialProduto | null) ?? null,
       valorCentavos: ficha.valorCentavos,
       parcelas: ficha.parcelas,
