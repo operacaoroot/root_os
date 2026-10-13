@@ -397,6 +397,32 @@ export class PropostaService implements OnModuleInit {
   }
 
   /**
+   * O que quem libera o R3 lê em /atendimento (revisão E-7): o conteúdo inteiro
+   * da versão (desconto, validade, quadro de custos, "o que ouvimos", a frase de
+   * "como é diferente"), o laudo, e o hash RECALCULADO agora. `confere` só é
+   * verdadeiro quando o hash de agora é o gravado e o que a aprovação prende
+   * (`hashAssinado`): divergente, o efeito recusaria de qualquer jeito.
+   */
+  async conteudoParaLiberar(orgId: string, leadId: string, versao: number, hashAssinado: string | null) {
+    const r = await this.daVersao(orgId, leadId, versao);
+    if (!r) throw new NotFoundException(`A v${versao} não existe.`);
+    const hashDeAgora = hashDaVersao(r.conteudo);
+    const confere = hashDeAgora === r.hash && (hashAssinado === null || hashAssinado === hashDeAgora);
+    return {
+      leadId,
+      versao,
+      estado: r.estado,
+      conteudo: r.conteudo,
+      laudo: r.laudo,
+      dentroDaTabela: r.dentroDaTabela,
+      hashGravado: r.hash,
+      hashDeAgora,
+      hashAssinado,
+      confere,
+    };
+  }
+
+  /**
    * O EFEITO de `comercial.proposta.publicar`: só a porta chama, depois da
    * liberação. Relê o rascunho, confere o hash contra o que foi aprovado e
    * grava `proposta.publicada`. Segurada depois da aprovação não sai.

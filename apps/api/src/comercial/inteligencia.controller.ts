@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -93,6 +93,20 @@ export class InteligenciaController {
   @RequirePermissions('leads.editar')
   publicarProposta(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.propostas.liberar(user.orgId, id, { id: user.sub });
+  }
+
+  /**
+   * Revisão E-7: o cartão de /atendimento da proposta. Quem libera o R3 lê o
+   * conteúdo que o hash prende, com o hash recalculado agora. Só para quem decide
+   * a fila (`aprovacoes.decidir`), como o conteúdo do lote da pauta.
+   * `?hash=` é o que a aprovação prende: diferente do de agora, `confere: false`.
+   */
+  @Get('lead/:id/proposta/v/:versao/conteudo')
+  @RequirePermissions('aprovacoes.decidir')
+  conteudoDaProposta(@CurrentUser() user: JwtUser, @Param('id') id: string, @Param('versao') versao: string, @Query('hash') hash?: string) {
+    const n = Number(versao);
+    if (!Number.isInteger(n) || n < 1) throw new BadRequestException('versão inválida');
+    return this.propostas.conteudoParaLiberar(user.orgId, id, n, typeof hash === 'string' && hash ? hash : null);
   }
 
   /** "Segurar": tira a proposta da agenda e da fila de liberação. */

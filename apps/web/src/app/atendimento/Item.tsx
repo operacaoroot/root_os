@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { CAPACIDADE_DE_APROVAR_A_SEMANA } from '@mktos/shared';
 import { Conteudo } from './Conteudo';
 import { CartaoDoLote } from './CartaoDoLote';
+import { CAPACIDADE_DA_PROPOSTA, CartaoDaProposta } from './CartaoDaProposta';
 import { Etiqueta, Selo, esperaLegivel, horaLegivel, inputCls } from './ui';
 import type { ItemDaFila } from './tipos';
 
@@ -66,7 +67,16 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
   const ehLote = item.capacidade === CAPACIDADE_DE_APROVAR_A_SEMANA;
   const [loteLido, setLoteLido] = useState(false);
   const aoLerLote = useCallback((ok: boolean) => setLoteLido(ok), []);
-  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido);
+  /*
+   * E-7: a proposta do comercial guarda nos argumentos só produto, valor,
+   * parcelas e o hash. O cartão mostra a versão inteira que o hash prende; sem
+   * ele carregado e conferido, não há botão.
+   */
+  const ehProposta = item.capacidade === CAPACIDADE_DA_PROPOSTA;
+  const [propostaLida, setPropostaLida] = useState(false);
+  const aoLerProposta = useCallback((ok: boolean) => setPropostaLida(ok), []);
+  const hashDaProposta = typeof item.conteudo?.hash === 'string' ? item.conteudo.hash : null;
+  const podeAprovarAgora = item.euPossoAprovar && (!ehLote || loteLido) && (!ehProposta || propostaLida);
 
   return (
     <article className="rounded-xl border border-border bg-surface p-5" data-testid={`item-${item.id}`}>
@@ -111,6 +121,11 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
         {ehLote && !item.conteudoOculto && (
           <div className="mt-3">
             <CartaoDoLote loteId={item.recurso.id} onPronto={aoLerLote} />
+          </div>
+        )}
+        {ehProposta && !item.conteudoOculto && (
+          <div className="mt-3">
+            <CartaoDaProposta recursoId={item.recurso.id} hashAssinado={hashDaProposta} onPronto={aoLerProposta} />
           </div>
         )}
         {/*
@@ -223,6 +238,22 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
             onClick={() => aoRecusar(item.id)}
             className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
             data-testid={`recusar-lote-${item.id}`}
+          >
+            Recusar
+          </button>
+        </div>
+      )}
+      {item.euPossoAprovar && ehProposta && !propostaLida && (
+        <div className="mt-4 space-y-2 border-t border-border pt-4">
+          <p className="text-xs text-muted" data-testid={`proposta-esperando-${item.id}`}>
+            O botão de aprovar aparece quando a proposta inteira estiver na tela e conferir com o hash da aprovação.
+          </p>
+          <button
+            type="button"
+            disabled={ocupado}
+            onClick={() => aoRecusar(item.id)}
+            className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text disabled:opacity-50"
+            data-testid={`recusar-proposta-${item.id}`}
           >
             Recusar
           </button>

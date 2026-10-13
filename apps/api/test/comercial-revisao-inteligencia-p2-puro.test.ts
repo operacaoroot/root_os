@@ -13,6 +13,8 @@ import type { SalaService } from '../src/comercial/sala.service';
 import { DiagnosticoService } from '../src/comercial/diagnostico.service';
 import type { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { InteligenciaController } from '../src/comercial/inteligencia.controller';
+import { hashDaVersao, type VersaoDaProposta } from '../src/comercial/proposta-construtor';
+import { PropostaService, type Rascunho } from '../src/comercial/proposta.service';
 import { RelatorioDaSemanaService } from '../src/comercial/relatorio-da-semana.service';
 import type { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { VigiaService } from '../src/comercial/vigia.service';
@@ -176,5 +178,32 @@ describe('revisão E-12: premissa que nada confere sai não conferida', () => {
     expect(await achar(v, 'chave_do_modelo')).toMatchObject({ ok: false, detalhe: expect.stringMatching(/3 falha/) });
     v.lerSaudeDaPonte = async () => { throw new Error('ECONNREFUSED'); };
     expect((await achar(v, 'chave_do_modelo')).ok).toBe(false);
+  });
+});
+
+describe('revisão E-7: quem libera o R3 lê o que o hash prende', () => {
+  const versao = {
+    leadId: 'lead', versao: 1, produto: 'operacao', rotulo: 'Operação ROOT', valorCentavos: 1_079_730, parcelas: 3, parcelaCentavos: 359_910,
+    ultimaParcelaCentavos: 359_910, formas: ['pix'], descricao: 'd', descontoPct: 10, descontoDecisaoId: 'dec', alternativa: null,
+    ouvimos: ['fechamento leva 12 dias'], comoEDiferente: 'frase', quadroDeCustos: null, validaAte: '2026-10-21T21:00:00.000Z', tabelaData: '2026-10-04',
+  } as unknown as VersaoDaProposta;
+  function svc(conteudo: VersaoDaProposta, hashGravado: string) {
+    const s = Object.create(PropostaService.prototype) as PropostaService;
+    s.daVersao = async () => ({ versao: 1, estado: 'na_porta', conteudo, hash: hashGravado, laudo: { ok: true, apontamentos: [], notas: [] }, dentroDaTabela: true } as unknown as Rascunho);
+    return s;
+  }
+
+  it('a rota do cartão pede aprovacoes.decidir', () => {
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, InteligenciaController.prototype.conteudoDaProposta)).toEqual(['aprovacoes.decidir']);
+  });
+
+  it('devolve o conteúdo inteiro e confere o hash de agora contra o que a aprovação prende', async () => {
+    const h = hashDaVersao(versao);
+    const ok = await svc(versao, h).conteudoParaLiberar('org', 'lead', 1, h);
+    expect(ok).toMatchObject({ confere: true, hashDeAgora: h, conteudo: { descontoPct: 10, ouvimos: ['fechamento leva 12 dias'], comoEDiferente: 'frase' } });
+    // A aprovação prende outro hash: não confere.
+    expect((await svc(versao, h).conteudoParaLiberar('org', 'lead', 1, 'f'.repeat(64))).confere).toBe(false);
+    // O rascunho mudou por baixo do hash gravado: não confere.
+    expect((await svc({ ...versao, descontoPct: 30 } as VersaoDaProposta, h).conteudoParaLiberar('org', 'lead', 1, h)).confere).toBe(false);
   });
 });
