@@ -13,6 +13,7 @@ import {
   type PremissaDoVigia,
 } from '@mktos/shared';
 
+import { RegistroDeConectores } from '../integrations/conectores.registry';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MemoriaService } from '../memory/memoria.service';
 import { fusoDaPolitica, minutosNoFuso } from '../policy/limites';
@@ -49,8 +50,10 @@ import { MENSAGENS } from './mensagens';
  *     de 04/10 e toda proposta publicada como "dentro da tabela" nos últimos 30
  *     dias tem o preço da linha;
  *   · fupeiro · "textos M5 e M6 aprovados": os dois textos existem no catálogo;
- *   · assinador · "ZapSign API responde 200": a sonda mora em Conexões e o vigia
- *     não sai da casa nesta fase: não conferida (`null`), pendência registrada;
+ *   · assinador · "ZapSign API responde 200": a MESMA sonda da tela de Conexões
+ *     (`RegistroDeConectores.sondar`, chave `zapsign`). Conector desligado não é
+ *     sondado (sondar é sair da casa, e o botão de emergência impede): fica não
+ *     conferida, como fica sem o registro (a suíte que monta à mão);
  *   · cobrador · "webhook do Asaas chegando": parcela vencida há mais de
  *     `cobrancaSemWebhookDias` sem pagamento nem aviso de atraso. Sem o número
  *     ([a decidir]), não conferida;
@@ -144,6 +147,7 @@ export class VigiaService implements OnModuleInit {
     private readonly relogio: RelogioComercialRegistry,
     private readonly memoria: MemoriaService,
     @Optional() @Inject(LLM_PROVIDER) private readonly llm?: LlmProvider,
+    @Optional() private readonly conectores?: RegistroDeConectores,
   ) {}
 
   onModuleInit(): void {
@@ -228,7 +232,21 @@ export class VigiaService implements OnModuleInit {
     ].join('\n');
   }
 
-  /** Confere todas as premissas (só lê). */
+  private async premissaDaZapsign(orgId: string): Promise<PremissaDoVigia> {
+    const texto = PREMISSA_DA_AUTOMACAO.assinador;
+    if (!this.conectores) return premissa('zapsign_responde', 'assinador', texto, null, 'sem o registro de conectores neste processo: não conferida.');
+    const desligado = await this.prisma.conectorDesligado.findFirst({ where: { orgId, conector: 'zapsign' }, select: { motivo: true } }).catch(() => null);
+    const saude = await this.conectores.sondar({
+      orgId,
+      chave: 'zapsign',
+      desligadoPorque: desligado ? `A ZapSign está desligada nesta empresa${desligado.motivo ? ` (${desligado.motivo})` : ''}.` : null,
+    });
+    if (saude.estado === 'conectado') return premissa('zapsign_responde', 'assinador', texto, true, `a ZapSign respondeu${saude.latenciaMs != null ? ` em ${saude.latenciaMs} ms` : ''}.`);
+    if (saude.estado === 'nao_verificado') return premissa('zapsign_responde', 'assinador', texto, null, saude.mensagem ?? 'não verificada.');
+    return premissa('zapsign_responde', 'assinador', texto, false, `a ZapSign não respondeu como devia: ${saude.mensagem ?? saude.estado}.`);
+  }
+
+  /** Confere todas as premissas (só lê; a sonda da ZapSign é a de Conexões). */
   async conferir(orgId: string, agora: Date): Promise<PremissaDoVigia[]> {
     const cfg = await this.config.ler(orgId);
     const desde = new Date(agora.getTime() - JANELA_MS);
@@ -280,8 +298,8 @@ export class VigiaService implements OnModuleInit {
     out.push(premissa('textos_m5_m6', 'fupeiro', PREMISSA_DA_AUTOMACAO.fupeiro, faltam.length === 0,
       faltam.length ? `${faltam.join(' e ')} sem texto aprovado com versão e data no catálogo.` : `M5 v${MENSAGENS.M5.versao} e M6 v${MENSAGENS.M6.versao} no catálogo de ${MENSAGENS.M5.data}.`));
 
-    // --- assinador: a sonda mora em Conexões ---
-    out.push(premissa('zapsign_responde', 'assinador', PREMISSA_DA_AUTOMACAO.assinador, null, 'a sonda da ZapSign mora em Conexões; o vigia não sai da casa nesta fase (pendência).'));
+    // --- assinador: a mesma sonda da tela de Conexões, que respeita o conector desligado ---
+    out.push(await this.premissaDaZapsign(orgId));
 
     // --- cobrador: webhook do Asaas chegando ---
     if (cfg.cobrancaSemWebhookDias == null) {

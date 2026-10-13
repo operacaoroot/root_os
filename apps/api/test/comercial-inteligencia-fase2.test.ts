@@ -68,7 +68,8 @@ function memoriaDeTeste() {
   return m;
 }
 
-describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', () => {
+// Com a suíte inteira rodando junto (o mesmo banco), o vigia passa de 5 s: o prazo de cada caso é 30 s.
+describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { timeout: 30_000 }, () => {
   const prisma = new PrismaClient({ datasources: { db: { url: URL } } });
   const p = prisma as unknown as PrismaService;
   let ORG = '';
@@ -143,6 +144,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', () =
       await prisma.leadEvent.deleteMany({ where: { leadId: { in: leads } } });
       await prisma.lead.deleteMany({ where: { orgId: ORG } });
       await prisma.rotina.deleteMany({ where: { orgId: ORG } });
+      await prisma.conectorDesligado.deleteMany({ where: { orgId: ORG } });
       await prisma.comercialConfig.deleteMany({ where: { orgId: ORG } });
       await prisma.user.deleteMany({ where: { orgId: ORG } });
       await prisma.role.deleteMany({ where: { orgId: ORG } });
@@ -243,6 +245,30 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', () =
     expect(cob.leads).toEqual([lead.id]);
     await prisma.comercialCobranca.deleteMany({ where: { externoId: `pay_${MARCA}` } });
     await config.gravar(ORG, { cobrancaSemWebhookDias: null });
+  });
+
+  it('a premissa do assinador é a sonda de Conexões: erro quebra, conector desligado não é sondado', async () => {
+    const pedidos: { chave: string; desligadoPorque?: string | null }[] = [];
+    let estado: 'conectado' | 'erro' = 'erro';
+    const registro = {
+      sondar: async (e: { orgId: string; chave: string; desligadoPorque?: string | null }) => {
+        pedidos.push(e);
+        if (e.desligadoPorque) return { estado: 'nao_verificado', mensagem: `${e.desligadoPorque} Nada foi chamado.`, apuracao: 'nao_verificado', verificadoEm: new Date().toISOString(), latenciaMs: null };
+        return { estado, mensagem: estado === 'erro' ? 'HTTP 402: plano de API não contratado' : null, apuracao: 'tentativa', verificadoEm: new Date().toISOString(), latenciaMs: 12 };
+      },
+    };
+    const comSonda = new VigiaService(p, fio, new DecisoesService(p, fio, config, new DecisoesRegistry()), config, new RelogioComercialRegistry(), memoria as unknown as MemoriaService, llm, registro as never);
+    const zap = async () => (await comSonda.conferir(ORG, new Date())).find((x) => x.chave === 'zapsign_responde')!;
+    expect(await zap()).toMatchObject({ ok: false, automacao: 'assinador' });
+    expect((await zap()).detalhe).toContain('402');
+    estado = 'conectado';
+    expect((await zap()).ok).toBe(true);
+    expect(pedidos.every((x) => x.chave === 'zapsign')).toBe(true);
+    await prisma.conectorDesligado.create({ data: { orgId: ORG, conector: 'zapsign', motivo: 'teste do vigia' } });
+    const desligada = await zap();
+    expect(desligada.ok).toBeNull();
+    expect(pedidos.at(-1)!.desligadoPorque).toContain('teste do vigia');
+    await prisma.conectorDesligado.deleteMany({ where: { orgId: ORG } });
   });
 
   it('o vigia do relógio só passa a partir das 08:00 de São Paulo e uma vez por dia', async () => {
