@@ -76,6 +76,8 @@ export default function FunilVivoPage() {
       </header>
 
       <Erro erro={erro} />
+      {/* C-20: acima do teto de leitura a API corta os mais antigos na etapa e diz quantos ficaram de fora. */}
+      {dados?.aviso && <Aviso>{dados.aviso}</Aviso>}
       {carregando && !dados && <Carregando />}
       {bloqueio && (
         <div className="flex items-start gap-2" aria-live="polite">

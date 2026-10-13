@@ -248,6 +248,14 @@ describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10
   });
 });
 
+describe('funil vivo: o corte acima do teto aparece (C-20)', () => {
+  it('o aviso da API sai na tela', async () => {
+    RESPOSTAS['/comercial/funil?filtro=todos'] = { colunas: [], total: 1200, aviso: 'Mostrando 1000 de 1200 leads: os 200 parados há mais tempo na etapa ficaram de fora.' };
+    render(<FunilPage />);
+    expect(await screen.findByText(/Mostrando 1000 de 1200 leads/)).toBeInTheDocument();
+  });
+});
+
 describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', () => {
   it('a torre lista a premissa quebrada com os leads, o degrau sugerido e diz que acerto é rodou sem erro', async () => {
     const t: TorreDasAutomacoes = {
