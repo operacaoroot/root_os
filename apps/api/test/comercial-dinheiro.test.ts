@@ -494,7 +494,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
 
     // Segunda passada com a linha "caída no meio" (estado e escritas apagados): reaproveita tudo.
     await prisma.comercialFechamento.updateMany({ where: { leadId }, data: { estado: 'erro', escritas: [] } });
-    const a = await dinheiro.aceiteDoLead(leadId);
+    const a = await dinheiro.aceiteDoLead(ORG, leadId);
     const segunda = await naEmpresa(() => fechamento.executar(ORG, leadId, a!));
     expect(segunda.estado).toBe('concluido');
     expect(segunda.escritas.every((e) => e.estado === 'reaproveitado')).toBe(true);
@@ -546,7 +546,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
       // e o documento assinado tem o hash do contrato da v1.
       await prisma.comercialCobranca.create({ data: { leadId: id, provedor: 'asaas', externoId: `pay-${id}`, parcela: 1, parcelas: 10, valorCentavos: 29_700, forma: 'cartao', vence: new Date(), estado: 'paga', pagaEm: new Date() } });
       await fio.registrar(ORG, id, 'cobranca.criada', `cob-${id}-v1`, { provedor: 'asaas', externoId: `pay-${id}`, parcelas: 10, forma: 'cartao', valorCentavos: 297_000, primeiraVence: '2026-10-13' }, { semReacoes: true });
-      const aceite = (await dinheiro.aceiteDoLead(id))!;
+      const aceite = (await dinheiro.aceiteDoLead(ORG, id))!;
       await prisma.comercialDocumento.create({ data: { leadId: id, provedor: 'zapsign', externoId: `doc-${id}`, estado: 'assinado', hashConteudo: dinheiro.contratoDoAceite(aceite).hash, assinadoClienteEm: new Date(), assinadoRootEm: new Date() } });
       await fio.registrar(ORG, id, 'pix.pago', `pay-${id}`, { provedor: 'asaas', externoId: `pay-${id}`, parcela: 1, valorCentavos: 29_700, pagoEm: new Date().toISOString() });
       await fio.registrar(ORG, id, 'contrato.assinado_cliente', `doc-${id}`, { provedor: 'zapsign', externoId: `doc-${id}`, em: new Date().toISOString() });

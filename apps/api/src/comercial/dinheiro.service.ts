@@ -174,10 +174,10 @@ export class DinheiroService implements OnModuleInit {
   // O aceite, lido do fio
   // -------------------------------------------------------------------------
 
-  async aceiteDoLead(leadId: string): Promise<AceiteDoLead | null> {
+  async aceiteDoLead(orgId: string, leadId: string): Promise<AceiteDoLead | null> {
     const [aceita, dados] = await Promise.all([
-      this.prisma.leadEvent.findFirst({ where: { leadId, type: 'proposta.aceita' }, orderBy: { occurredAt: 'desc' } }),
-      this.prisma.leadEvent.findFirst({ where: { leadId, type: 'aceite.dados' }, orderBy: { occurredAt: 'desc' } }),
+      this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'proposta.aceita' }, orderBy: { occurredAt: 'desc' } }),
+      this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'aceite.dados' }, orderBy: { occurredAt: 'desc' } }),
     ]);
     if (!aceita || !dados) return null;
     const a = (aceita.payload ?? {}) as P;
@@ -211,9 +211,9 @@ export class DinheiroService implements OnModuleInit {
    * anterior à cobrança. Cobrança criada antes do conserto (fato sem `devedor`)
    * usa esse mesmo `aceite.dados` anterior a ela. Sem cobrança: nulo.
    */
-  async aceiteDaCobrancaAprovada(leadId: string, a: AceiteDoLead): Promise<AceiteDoLead | null> {
+  async aceiteDaCobrancaAprovada(orgId: string, leadId: string, a: AceiteDoLead): Promise<AceiteDoLead | null> {
     // O lead tem uma cobrança só (o efeito reaproveita pelo lead): o primeiro fato com devedor é o dela.
-    const criadas = await this.prisma.leadEvent.findMany({ where: { leadId, type: 'cobranca.criada' }, orderBy: { occurredAt: 'asc' }, select: { payload: true, occurredAt: true } });
+    const criadas = await this.prisma.leadEvent.findMany({ where: { leadId, orgId, type: 'cobranca.criada' }, orderBy: { occurredAt: 'asc' }, select: { payload: true, occurredAt: true } });
     let quando: Date | null = criadas[0]?.occurredAt ?? null;
     let devedor: DevedorDaCobranca | null = null;
     for (const c of criadas) {
@@ -226,11 +226,11 @@ export class DinheiroService implements OnModuleInit {
     }
     if (!quando) {
       // Linhas da cobrança sem o fato (o processo caiu entre as duas escritas): a hora da primeira linha.
-      const linha = await this.prisma.comercialCobranca.findFirst({ where: { leadId }, orderBy: { criadoEm: 'asc' }, select: { criadoEm: true } });
+      const linha = await this.prisma.comercialCobranca.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'asc' }, select: { criadoEm: true } });
       quando = linha?.criadoEm ?? null;
     }
     if (!quando) return null;
-    const dados = await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'aceite.dados', occurredAt: { lte: quando } }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+    const dados = await this.prisma.leadEvent.findFirst({ where: { leadId, orgId, type: 'aceite.dados', occurredAt: { lte: quando } }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
     if (!dados && !devedor) return null;
     const d = (dados?.payload ?? {}) as P;
     const base: DadosDoAceite = {
@@ -298,7 +298,7 @@ export class DinheiroService implements OnModuleInit {
     const automatico = ator.tipo === ActorType.system;
     const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { etapa: true } });
     if (ficha && ehSaida(ficha.etapa as ComercialEtapa)) return { pulado: 'lead em saída' };
-    const a = await this.aceiteDoLead(leadId);
+    const a = await this.aceiteDoLead(orgId, leadId);
     if (!a) return { pulado: 'o aceite ainda não tem os dados conferidos e a proposta aceita' };
     const approvalIds: string[] = [];
 
@@ -348,9 +348,9 @@ export class DinheiroService implements OnModuleInit {
   // -------------------------------------------------------------------------
 
   /** Confere o pedido contra o aceite de AGORA: mudou = nada sai. */
-  private async aceiteConferido(args: P, campos: string[]): Promise<AceiteDoLead> {
+  private async aceiteConferido(orgId: string, args: P, campos: string[]): Promise<AceiteDoLead> {
     const leadId = String(args.leadId ?? '');
-    const a = await this.aceiteDoLead(leadId);
+    const a = await this.aceiteDoLead(orgId, leadId);
     if (!a) throw new Error('o lead não tem aceite com dados: nada foi feito');
     if (a.versao !== Number(args.versao)) throw new Error('a versão aceita mudou depois do pedido: nada foi feito');
     for (const c of campos) {
@@ -360,7 +360,7 @@ export class DinheiroService implements OnModuleInit {
   }
 
   private async efeitoDeCobranca(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
-    const a = await this.aceiteConferido(args, ['hash', 'valorCentavos', 'parcelas', 'forma']);
+    const a = await this.aceiteConferido(orgId, args, ['hash', 'valorCentavos', 'parcelas', 'forma']);
     // D-2: o devedor assinado é o dos argumentos. Pedido sem ele (anterior ao conserto) ou aceite de
     // agora com outro devedor: nada sai para o Asaas.
     const doc = args.devedorDocumento;
@@ -483,7 +483,7 @@ export class DinheiroService implements OnModuleInit {
 
   private async efeitoDeContrato(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
     const leadId = String(args.leadId ?? '');
-    const a = await this.aceiteConferido(args, []);
+    const a = await this.aceiteConferido(orgId, args, []);
     const doc = this.contratoDoAceite(a);
     if (doc.hash !== String(args.hash)) throw new Error('o conteúdo do contrato mudou depois do pedido: nada foi enviado');
     if (a.dados.email.toLowerCase() !== String(args.signatarioEmail ?? '').toLowerCase()) throw new Error('o signatário mudou depois do pedido: nada foi enviado');

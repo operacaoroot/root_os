@@ -79,7 +79,7 @@ describe('revisão P3 do dinheiro', () => {
     const t0 = new Date(Date.now() - 3_600_000);
     await fio.registrar(ORG, leadId, 'aceite.dados', 'dados', { cnpj, razaoSocial: `Empresa ${cnpj}`, endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'fulana@exemplo.com' } as never, { em: t0 });
     await fio.registrar(ORG, leadId, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma, hash: HASH_V1 } as never, { em: new Date(t0.getTime() + 1000) });
-    const a = (await dinheiro.aceiteDoLead(leadId))!;
+    const a = (await dinheiro.aceiteDoLead(ORG, leadId))!;
     await dinheiro.criarCobrancaDoAceite(ORG, leadId, a);
     const primeira = await prisma.comercialCobranca.findFirstOrThrow({ where: { leadId, parcela: 1 } });
     const doc = dinheiro.contratoDoAceite(a);
@@ -149,7 +149,7 @@ describe('revisão P3 do dinheiro', () => {
       let tipos = await tiposDoLead(leadId);
       expect(tipos).toContain('boleto.pago');
       expect(tipos).not.toContain('pix.pago');
-      expect(await fechamento.prontidao(ORG, leadId, (await dinheiro.aceiteDoLead(leadId))!)).toEqual({ pronto: true, falta: [] });
+      expect(await fechamento.prontidao(ORG, leadId, (await dinheiro.aceiteDoLead(ORG, leadId))!)).toEqual({ pronto: true, falta: [] });
 
       const estorno = { id: `evt-estorno-${MARCA}`, event: 'PAYMENT_CHARGEBACK_REQUESTED', payment: { id: primeira, value: 3999 } };
       expect(await dinheiro.webhookDoAsaas(SEGREDO, estorno)).toMatchObject({ gravados: 1 });
@@ -218,7 +218,25 @@ describe('revisão P3 do dinheiro', () => {
       expect(await fechamento.prontidao(ORG, leadId, a)).toEqual({ pronto: true, falta: [] });
       const outra = await fechamento.prontidao(`org-outra-${MARCA}`, leadId, a);
       expect(outra.pronto).toBe(false);
-      expect(outra.falta).toEqual(expect.arrayContaining(['contrato da versão 1 gerado']));
+      // Com a empresa também nos fatos do fio, a outra empresa para antes: nenhum dos três fatos é dela.
+      expect(outra.falta).toEqual(prontoParaFechar(new Set()).falta);
+    });
+
+    it('o aceite, o aceite da cobrança aprovada, os fatos do fio e o manifesto lidos com outra empresa não acham o lead', async () => {
+      const { leadId, a, primeira } = await leadAssinado(`8${Date.now().toString().slice(-13)}`, 'pix');
+      await dinheiro.webhookDoAsaas(SEGREDO, { id: `evt-a7b-${MARCA}`, event: 'PAYMENT_RECEIVED', payment: { id: primeira, value: 3999, paymentDate: '2026-10-13' } });
+      await prisma.comercialFicha.update({ where: { leadId }, data: { sistemaErp: 'ERP do teste' } });
+      const OUTRA = `org-outra-${MARCA}`;
+
+      expect(await dinheiro.aceiteDoLead(ORG, leadId)).toMatchObject({ versao: 1, hash: HASH_V1 });
+      expect(await dinheiro.aceiteDoLead(OUTRA, leadId)).toBeNull();
+      expect(await dinheiro.aceiteDaCobrancaAprovada(ORG, leadId, a)).not.toBeNull();
+      expect(await dinheiro.aceiteDaCobrancaAprovada(OUTRA, leadId, a)).toBeNull();
+      // Os fatos do fio (tiposNoFio) de outra empresa: nenhum, então falta o que o fio prova.
+      expect((await fechamento.prontidao(OUTRA, leadId, a)).falta).toEqual(prontoParaFechar(new Set()).falta);
+      const manifesto = (o: string) => (fechamento as unknown as { manifesto: (o: string, l: string, a: AceiteDoLead) => Promise<string> }).manifesto(o, leadId, a);
+      expect(await manifesto(ORG)).toContain('Sistema: ERP do teste.');
+      expect(await manifesto(OUTRA)).not.toContain('Sistema:');
     });
   });
 });

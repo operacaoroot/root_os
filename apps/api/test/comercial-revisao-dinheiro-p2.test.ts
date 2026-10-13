@@ -101,7 +101,7 @@ describe('revisão P2 do dinheiro', () => {
     const t0 = new Date(Date.now() - 3_600_000);
     await fio.registrar(ORG, leadId, 'aceite.dados', 'dados', { cnpj, razaoSocial: `Empresa ${cnpj}`, endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'fulana@exemplo.com' } as never, { em: t0 });
     await fio.registrar(ORG, leadId, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: HASH_V1 } as never, { em: new Date(t0.getTime() + 1000) });
-    const a = (await dinheiro.aceiteDoLead(leadId))!;
+    const a = (await dinheiro.aceiteDoLead(ORG, leadId))!;
     await dinheiro.criarCobrancaDoAceite(ORG, leadId, a);
     const primeira = await prisma.comercialCobranca.findFirstOrThrow({ where: { leadId, parcela: 1 } });
     await prisma.comercialCobranca.update({ where: { id: primeira.id }, data: { estado: 'paga', pagaEm: new Date() } });
@@ -224,7 +224,7 @@ describe('revisão P2 do dinheiro', () => {
       const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Lead da cobrança', phone: '5532988887777' } });
       await fio.registrar(ORG, lead.id, 'aceite.dados', 'dados', { cnpj: '11222333000181', razaoSocial: 'Empresa Cobrança', endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'fulana@exemplo.com' } as never);
       await fio.registrar(ORG, lead.id, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: HASH_V1 } as never);
-      const a = (await dinheiro.aceiteDoLead(lead.id))!;
+      const a = (await dinheiro.aceiteDoLead(ORG, lead.id))!;
       const antes = cobrancasCriadas.length;
       atrasoDaCobranca = 300;
       let r: PromiseSettledResult<unknown>[];

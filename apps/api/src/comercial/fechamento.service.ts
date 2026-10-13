@@ -185,12 +185,12 @@ export class FechamentoService implements OnModuleInit {
     let f = 0;
     for (const { leadId } of aceites) {
       try {
-        const tipos = await this.tiposNoFio(leadId);
+        const tipos = await this.tiposNoFio(orgId, leadId);
         if (tipos.has('cliente.ativo')) continue;
         const r = await this.dinheiro.proporAceite(orgId, leadId, { id: ATOR, tipo: ActorType.system }, agora);
         if ('approvalIds' in r && r.approvalIds.length) a++;
         if (!prontoParaFechar(tipos).pronto) continue;
-        const ac = await this.dinheiro.aceiteDoLead(leadId);
+        const ac = await this.dinheiro.aceiteDoLead(orgId, leadId);
         if (!ac) continue;
         if (!(await this.prontidao(orgId, leadId, ac)).pronto) continue;
         const chave = chaveDoFechamento(leadId, ac.versao);
@@ -213,9 +213,9 @@ export class FechamentoService implements OnModuleInit {
   // Quando fechar
   // -------------------------------------------------------------------------
 
-  private async tiposNoFio(leadId: string): Promise<Set<string>> {
+  private async tiposNoFio(orgId: string, leadId: string): Promise<Set<string>> {
     const evs = await this.prisma.leadEvent.findMany({
-      where: { leadId, type: { in: [...COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, 'contrato.assinado_cliente', 'contrato.assinado_root', 'cliente.ativo'] } },
+      where: { leadId, orgId, type: { in: [...COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, 'contrato.assinado_cliente', 'contrato.assinado_root', 'cliente.ativo'] } },
       select: { type: true },
     });
     return new Set(evs.map((e) => e.type));
@@ -228,7 +228,7 @@ export class FechamentoService implements OnModuleInit {
    * resposta diz o que falta.
    */
   async prontidao(orgId: string, leadId: string, a: AceiteDoLead | null): Promise<{ pronto: boolean; falta: string[] }> {
-    const base = prontoParaFechar(await this.tiposNoFio(leadId));
+    const base = prontoParaFechar(await this.tiposNoFio(orgId, leadId));
     if (!base.pronto) return base;
     if (!a) return { pronto: false, falta: ['aceite com dados'] };
     const referencia = `cob-${leadId}-v${a.versao}`;
@@ -244,7 +244,7 @@ export class FechamentoService implements OnModuleInit {
       cobrancaDaVersao = { primeiraPaga: !!primeira && primeira.parcela === 1 && (!!primeira.pagaEm || primeira.estado === 'paga') };
     }
     const hashes = [this.dinheiro.contratoDoAceite(a).hash];
-    const aprovado = cobrancaDaVersao ? await this.dinheiro.aceiteDaCobrancaAprovada(leadId, a) : null;
+    const aprovado = cobrancaDaVersao ? await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, a) : null;
     if (aprovado) hashes.push(this.dinheiro.contratoDoAceite(aprovado).hash);
     const falta = faltaDaVersao({ versao: a.versao, hashesDoContrato: hashes, documentos, cobrancaDaVersao, haCobranca: haCobranca > 0 });
     return { pronto: falta.length === 0, falta };
@@ -262,11 +262,11 @@ export class FechamentoService implements OnModuleInit {
 
   /** Reação aos três fatos: quando os três estão no fio, propõe (ou abre a janela de veto). */
   async talvezFechar(orgId: string, leadId: string, agora: Date = new Date()): Promise<unknown> {
-    const tipos = await this.tiposNoFio(leadId);
+    const tipos = await this.tiposNoFio(orgId, leadId);
     if (tipos.has('cliente.ativo')) return { pulado: 'cliente já ativo' };
     const { pronto, falta } = prontoParaFechar(tipos);
     if (!pronto) return { pulado: `falta: ${falta.join(', ')}` };
-    const a = await this.dinheiro.aceiteDoLead(leadId);
+    const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
     if (!a) return { pulado: 'sem aceite com dados' };
     const daVersao = await this.prontidao(orgId, leadId, a);
     if (!daVersao.pronto) return { pulado: `falta: ${daVersao.falta.join(', ')}` };
@@ -276,7 +276,7 @@ export class FechamentoService implements OnModuleInit {
     const cfg = await this.config.ler(orgId);
     if (cfg.fechamentoAutomatico && cfg.janelaDeVetoMinutos) {
       const expiraEm = new Date(agora.getTime() + cfg.janelaDeVetoMinutos * 60_000);
-      const lead = await this.prisma.lead.findUniqueOrThrow({ where: { id: leadId }, select: { name: true } });
+      const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true } });
       const d = await this.decisoes.abrir({
         orgId,
         leadId,
@@ -315,7 +315,7 @@ export class FechamentoService implements OnModuleInit {
    * reação; na rota "rodar de novo", a pessoa que clicou.
    */
   async propor(orgId: string, leadId: string, ator: { id: string; tipo: ActorType }, agora: Date = new Date()): Promise<{ estado: string; approvalId?: string; chave: string } | { pulado: string }> {
-    const a = await this.dinheiro.aceiteDoLead(leadId);
+    const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
     if (!a) return { pulado: 'sem aceite com dados' };
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido') return { estado: 'concluido', chave: linha.chave };
@@ -346,7 +346,7 @@ export class FechamentoService implements OnModuleInit {
   private async efeitoDoFechamento(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
     const leadId = String(args.leadId ?? '');
     const chave = String(args.chave ?? '');
-    const a = await this.dinheiro.aceiteDoLead(leadId);
+    const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
     if (!a) throw new Error('o lead não tem aceite com dados: nada foi feito');
     if (a.hash !== String(args.propostaHash)) throw new Error('a proposta aceita mudou depois do pedido: nada foi feito');
     if (chave !== chaveDoFechamento(leadId, a.versao)) throw new Error('a chave do fechamento não é a da versão aceita: nada foi feito');
@@ -380,7 +380,7 @@ export class FechamentoService implements OnModuleInit {
     // D-2: o devedor é o da cobrança que a titular aprovou (gravado no `cobranca.criada`), nunca o aceite
     // mais novo: o cliente da sala não troca o CNPJ do Partner depois da assinatura. Sem cobrança aprovada,
     // nem o cliente nem a cobrança são escritos aqui.
-    const aprovado = await this.dinheiro.aceiteDaCobrancaAprovada(leadId, aceiteDeAgora);
+    const aprovado = await this.dinheiro.aceiteDaCobrancaAprovada(orgId, leadId, aceiteDeAgora);
     const a = aprovado ?? aceiteDeAgora;
     const SEM_COBRANCA_APROVADA = 'a cobrança aprovada pela titular ainda não existe: o fechamento não escreve cliente nem cobrança com dados que ela não viu';
     const escritas: EscritaDoFechamento[] = [];
@@ -470,7 +470,7 @@ export class FechamentoService implements OnModuleInit {
         if (t) return { estado: 'reaproveitado', detalhe: `trilho na fase ${FASES_DO_TRILHO.indexOf(t.fase) + 1} de 5`, ref: t.id };
       }
       if (!this.trilhos) throw new Error('o serviço do trilho não está disponível nesta instância');
-      const manifesto = await this.manifesto(leadId, a);
+      const manifesto = await this.manifesto(orgId, leadId, a);
       const t = await this.trilhos.criar(
         orgId,
         {
@@ -540,8 +540,8 @@ export class FechamentoService implements OnModuleInit {
   }
 
   /** O manifesto do kit: o que o comercial sabe, copiado (nada redigitado). */
-  private async manifesto(leadId: string, a: AceiteDoLead): Promise<string> {
-    const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId }, select: { ataHash: true, diagnostico: true, sistemaErp: true } });
+  private async manifesto(orgId: string, leadId: string, a: AceiteDoLead): Promise<string> {
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { ataHash: true, diagnostico: true, sistemaErp: true } });
     const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
     const linhas = [
       `Fechamento comercial ${chaveDoFechamento(leadId, a.versao)}.`,
@@ -591,7 +591,7 @@ export class FechamentoService implements OnModuleInit {
     if (!lead) throw new NotFoundException('Lead não encontrado.');
     const linha = await this.prisma.comercialFechamento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
     if (!linha) {
-      const a = await this.dinheiro.aceiteDoLead(leadId);
+      const a = await this.dinheiro.aceiteDoLead(orgId, leadId);
       return {
         chave: a ? chaveDoFechamento(leadId, a.versao) : '',
         versao: a?.versao ?? 0,
