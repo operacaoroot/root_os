@@ -266,3 +266,21 @@ export function contarParcelas(parcelas: { estado: string }[]): { pagas: number;
     atrasadas: parcelas.filter((p) => p.estado === 'atrasada').length,
   };
 }
+
+const ISO_NO_TEXTO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})/g;
+const DIAS_DA_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/**
+ * Um resumo do fio que traz um instante cru ("escolheu 2026-10-12T14:11:25-03:00")
+ * vira legível em São Paulo ("escolheu seg 12/10 14:11"). Só troca o que é ISO
+ * com fuso; o resto do texto fica como a API escreveu.
+ */
+export function instantesLegiveis(texto: string): string {
+  return texto.replace(ISO_NO_TEXTO, (iso) => {
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return iso;
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: FUSO, weekday: 'short' }).format(t);
+    const semana = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(f);
+    return `${DIAS_DA_SEMANA[semana] ?? ''} ${diaHoraSP(iso)}`.trim();
+  });
+}

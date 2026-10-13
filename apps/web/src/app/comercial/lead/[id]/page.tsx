@@ -9,7 +9,7 @@ import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { localSPParaIso } from '@/lib/sala-do-cliente';
-import { AUSENTE, ROTULO_DA_FONTE, ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaSP, fioPorDia, horaSP, numeroOuAusente, quandoRoda, reaisOuAusente } from '@/lib/cockpit';
+import { AUSENTE, ROTULO_DA_FONTE, ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaSP, fioPorDia, horaSP, instantesLegiveis, numeroOuAusente, quandoRoda, reaisOuAusente } from '@/lib/cockpit';
 
 import { AbasDoLead, Aviso, BarraDaSaude, BOTAO, CARTAO, Carregando, Chip, Erro, FOCO, INPUT, Rotulo, useCarregar } from '../../_ui';
 
@@ -85,7 +85,7 @@ function Ficha({ f, aoMudar }: { f: FichaDoLead; aoMudar: () => Promise<void> })
                     <li key={l.eventoId} className="grid grid-cols-[44px_58px_minmax(0,1fr)] gap-2 py-1.5 text-[12.5px]">
                       <span className="font-os-mono text-muted">{horaSP(l.em)}</span>
                       <span className="font-os-mono text-[11px] text-info">{ROTULO_DA_FONTE[l.fonte] ?? l.fonte}</span>
-                      <span className="min-w-0 break-words" title={l.type}>{l.resumo}</span>
+                      <span className="min-w-0 break-words" title={l.type}>{instantesLegiveis(l.resumo)}</span>
                     </li>
                   ))}
                 </ul>

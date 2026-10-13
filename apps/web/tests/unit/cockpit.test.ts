@@ -148,3 +148,12 @@ describe('cockpit — decisão, porta e 501', () => {
     expect(contarParcelas([{ estado: 'paga' }, { estado: 'pendente' }, { estado: 'atrasada' }])).toEqual({ pagas: 1, total: 3, atrasadas: 1 });
   });
 });
+
+describe('cockpit — instantes legíveis no fio', () => {
+  it('troca o ISO com fuso pelo dia e hora de São Paulo e deixa o resto', async () => {
+    const { instantesLegiveis } = await import('@/lib/cockpit');
+    expect(instantesLegiveis('escolheu 2026-10-12T14:11:25-03:00')).toBe('escolheu seg 12/10 14:11');
+    expect(instantesLegiveis('kickoff 2026-10-16T13:00:00.000Z · ok')).toBe('kickoff sex 16/10 10:00 · ok');
+    expect(instantesLegiveis('M3 enviada')).toBe('M3 enviada');
+  });
+});

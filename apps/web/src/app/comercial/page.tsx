@@ -6,7 +6,7 @@ import type { DecisaoNaFila, FilaDeDecisoes } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, horaSP, prazoDaDecisao, rotuloDoPadrao } from '@/lib/cockpit';
+import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, horaSP, instantesLegiveis, prazoDaDecisao, rotuloDoPadrao } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
 
@@ -65,7 +65,7 @@ export default function FilaDeDecisoesPage() {
                     <span className="font-os-mono text-muted">{horaSP(r.em)}</span>
                     <span className="font-os-mono text-[11px] text-info">{ROTULO_DA_FONTE[r.fonte] ?? r.fonte}</span>
                     <Link href={`/comercial/lead/${r.leadId}`} className={`min-w-0 truncate hover:text-brand ${FOCO}`} title={r.resumo}>
-                      {r.resumo}
+                      {instantesLegiveis(r.resumo)}
                     </Link>
                   </li>
                 ))}
