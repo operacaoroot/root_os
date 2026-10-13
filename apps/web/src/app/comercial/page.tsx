@@ -6,7 +6,7 @@ import type { DecisaoNaFila, FilaDeDecisoes } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, decisaoSemPrazo, horaSP, instantesLegiveis, prazoDaDecisao, quandoSP, rotuloDoPadrao } from '@/lib/cockpit';
+import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, decisaoSemPrazo, ehContrapropostaProvisoria, horaSP, instantesLegiveis, prazoDaDecisao, quandoSP, rotuloDoPadrao } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
 
@@ -137,6 +137,7 @@ function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Prom
               >
                 {enviando === o.chave ? 'enviando…' : o.rotulo}
                 {ehPadrao && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">padrão</span>}
+                {ehContrapropostaProvisoria(d, o.chave) && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">provisória</span>}
               </button>
             );
           })}
@@ -146,6 +147,9 @@ function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Prom
         {d.opcoes.filter((o) => o.efeito).map((o) => (
           <li key={o.chave}>
             <span className="text-text">{o.rotulo}:</span> {o.efeito}
+            {ehContrapropostaProvisoria(d, o.chave) && (
+              <span className="text-warn"> Contraproposta provisória [a decidir]: a metade do pedido é número do sistema, sem base no mapa de preço.</span>
+            )}
           </li>
         ))}
       </ul>

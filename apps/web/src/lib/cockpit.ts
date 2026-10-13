@@ -162,6 +162,25 @@ export function segundos(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
 }
 
+/**
+ * E-26: no pedido de ajuste, a opção de desconto MENOR que o pedido (a metade)
+ * é número do sistema que o mapa não dá: contraproposta provisória, [a decidir]
+ * pela mesa. A tela marca a opção; o pedido do cliente e "manter" não.
+ */
+export function ehContrapropostaProvisoria(d: { tipo: string; opcoes: { chave: string }[] }, chave: string): boolean {
+  if (d.tipo !== 'pedido_de_ajuste') return false;
+  const pct = (c: string) => {
+    const m = /^desconto:(\d+(?:\.\d+)?)$/.exec(c);
+    return m ? Number(m[1]) : null;
+  };
+  const esta = pct(chave);
+  if (esta == null) return false;
+  return d.opcoes.some((o) => {
+    const outra = pct(o.chave);
+    return outra != null && outra > esta;
+  });
+}
+
 /** O rótulo de uma linha do funil do relatório (C-14): a etapa pelo rótulo da casa; o que não é etapa fica como veio. */
 export function rotuloDaLinhaDoFunil(etapa: string): string {
   return (COMERCIAL_ROTULO_DA_ETAPA as Record<string, string>)[etapa] ?? etapa;

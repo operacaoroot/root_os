@@ -209,3 +209,15 @@ describe('cockpit — funil do relatório (C-14)', () => {
     expect(rotuloDaLinhaDoFunil('entraram')).toBe('entraram');
   });
 });
+
+describe('cockpit — a metade do ajuste (E-26)', () => {
+  it('só a opção de desconto menor que o pedido é contraproposta provisória', async () => {
+    const { ehContrapropostaProvisoria } = await import('@/lib/cockpit');
+    const d = { tipo: 'pedido_de_ajuste', opcoes: [{ chave: 'desconto:4' }, { chave: 'desconto:8' }, { chave: 'manter' }] };
+    expect(ehContrapropostaProvisoria(d, 'desconto:4')).toBe(true);
+    expect(ehContrapropostaProvisoria(d, 'desconto:8')).toBe(false);
+    expect(ehContrapropostaProvisoria(d, 'manter')).toBe(false);
+    expect(ehContrapropostaProvisoria({ ...d, tipo: 'lead_parado' }, 'desconto:4')).toBe(false);
+    expect(ehContrapropostaProvisoria({ tipo: 'pedido_de_ajuste', opcoes: [{ chave: 'desconto:1' }, { chave: 'manter' }] }, 'desconto:1')).toBe(false);
+  });
+});

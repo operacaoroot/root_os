@@ -143,6 +143,7 @@ describe('fila de decisões (tela 03)', () => {
     expect(await screen.findByText('Construtora Alicerce pediu 8% de desconto')).toBeInTheDocument();
     expect(screen.getByText('expira em 4 h')).toBeInTheDocument();
     expect(screen.getByText(/Se ninguém responder até/).textContent).toContain('Manter o preço');
+    expect(screen.queryByText(/Contraproposta provisória/)).toBeNull(); // E-26: o pedido do cliente não é provisório
     await userEvent.setup().click(screen.getByRole('button', { name: /Aprovar 8%/ }));
     await waitFor(() => expect(posts).toEqual([{ caminho: '/comercial/decisoes/d1/responder', corpo: { escolha: 'desconto:8' } }]));
   });
@@ -329,5 +330,29 @@ describe('botões desligados durante o envio (C-18)', () => {
     expect(posts).toHaveLength(1);
     soltar({ linkAssinatura: null, assinadoRootEm: null });
     expect(await screen.findByText(/ainda não chegou do provedor/)).toBeInTheDocument();
+  });
+});
+
+describe('fila: a metade do ajuste (E-26)', () => {
+  it('a opção da metade aparece como contraproposta provisória [a decidir]', async () => {
+    const fila: FilaDeDecisoes = {
+      resumo: { decisoes: 1, acoesAutomaticasHoje: 0, leadsVivos: 1, automacoesComErro: 0 },
+      decisoes: [{
+        id: 'd1', leadId: 'l1', leadNome: 'Construtora Alicerce', tipo: 'pedido_de_ajuste', titulo: 'pediu 8%', contexto: 'x',
+        opcoes: [
+          { chave: 'desconto:4', rotulo: 'Aprovar 4%', efeito: 'nova versão da proposta com este desconto, à liberação (R3)' },
+          { chave: 'desconto:8', rotulo: 'Aprovar 8%', efeito: 'nova versão da proposta com este desconto, à liberação (R3)' },
+          { chave: 'manter', rotulo: 'Manter o preço', efeito: 'nada muda' },
+        ],
+        padrao: 'manter', expiraEm: new Date(Date.now() + 3600_000).toISOString(), criadaEm: new Date().toISOString(),
+        estado: 'aberta', escolha: null, decididoPor: null, canal: null,
+      }],
+      rodouSozinhoHoje: [],
+    };
+    RESPOSTAS['/comercial/fila'] = fila;
+    render(<FilaPage />);
+    expect(await screen.findByRole('button', { name: /Aprovar 4%.*provisória/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aprovar 8%' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Contraproposta provisória \[a decidir\]/)).toHaveLength(1);
   });
 });
