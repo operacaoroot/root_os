@@ -30,3 +30,6 @@ _finops_import/
 
 # área de trabalho temporária da homologação (logs, extrações)
 homolog/.tmp/
+
+# bytecode do Python dos roteiros de prova
+__pycache__/
