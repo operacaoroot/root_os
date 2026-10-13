@@ -115,7 +115,7 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
 
   it('rodar duas vezes (a segunda com outro relógio) deixa as mesmas contagens', async () => {
     const esperadoEventos = montarRoteiros({ orgId: ORG, agora: agora1, dono, decisaoExpiraHoras: 4, validadePropostaDias: 8 }).reduce((s, r) => s + r.eventos.length, 0);
-    expect(primeira.contagens).toEqual({ leads: 8, eventos: esperadoEventos, fichas: 8, salas: 8, decisoes: 2, cobrancas: 3, documentos: 1 });
+    expect(primeira.contagens).toEqual({ leads: 8, eventos: esperadoEventos, fichas: 8, salas: 8, decisoes: 6, cobrancas: 3, documentos: 1 });
     expect(segunda.contagens).toEqual(primeira.contagens);
     expect(await contar(prisma, leadIds)).toEqual(primeira.contagens);
     expect(primeira.salas.every((s) => s.nova)).toBe(true);
@@ -183,21 +183,29 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
     for (const p of passagens) {
       const antes = projetarLead(eventos.filter((e) => e.occurredAt.getTime() < p.occurredAt.getTime()), lead.enteredAt);
       const proposta = [...eventos].reverse().find((e) => e.type === 'proposta.publicada' && e.occurredAt.getTime() < p.occurredAt.getTime());
-      const laudo = proposta ? Boolean(((proposta.payload ?? {}) as { laudo?: { ok?: boolean } }).laudo?.ok) : null;
+      // A regra do portão desde a revisão E-3: laudo limpo, ou levado à liberação por uma pessoa na decisão.
+      const l = proposta ? ((proposta.payload ?? {}) as { laudo?: { ok?: boolean; liberadoNaDecisao?: unknown } }).laudo : undefined;
+      const laudo = proposta ? l?.ok === true || typeof l?.liberadoNaDecisao === 'string' : null;
       const estado = estadoDaFicha(antes.ficha as never, { name: lead.name, phone: lead.phone }, laudo);
       expect(faltaParaSair(estado), `saindo de ${antes.ficha.etapa} para ${(p.payload as { para: string }).para}`).toEqual([]);
     }
   });
 
-  it('toda proposta publicada tem o preço da tabela de 04/10, parcelas que fecham e laudo limpo', async () => {
+  it('toda proposta publicada tem o preço da tabela de 04/10, parcelas que fecham, e o quadro de exemplo foi levado à liberação por uma pessoa', async () => {
     const pubs = await prisma.leadEvent.findMany({ where: { leadId: { in: leadIds }, type: 'proposta.publicada' } });
     expect(pubs.length).toBe(4); // Alicerce, Rede Pão Bom, Mercado Bom Preço, Auto Peças Sul
     for (const e of pubs) {
-      const p = e.payload as { produto: ComercialProduto; valorCentavos: number; parcelas: number; parcelaCentavos: number; dentroDaTabela: boolean; laudo: { ok: boolean }; quadroDeExemplo: boolean };
+      const p = e.payload as { produto: ComercialProduto; valorCentavos: number; parcelas: number; parcelaCentavos: number; dentroDaTabela: boolean; laudo: { ok: boolean; apontamentos: string[]; liberadoNaDecisao?: string }; quadroDeExemplo: boolean; hash: string };
       expect(precoNaTabela(p.produto, p.valorCentavos)).toBe(true);
       expect(parcelasFecham(p.valorCentavos, p.parcelas, p.parcelaCentavos)).toBe(true);
       expect(p.dentroDaTabela).toBe(true);
-      expect(p.laudo.ok).toBe(true);
+      // Revisão E-3: o quadro de exemplo é apontamento; a decisão tomada por gente é sobre este hash.
+      expect(p.laudo.ok).toBe(false);
+      expect(p.laudo.apontamentos.join(' ')).toMatch(/exemplo/i);
+      const d = await prisma.comercialDecisao.findUniqueOrThrow({ where: { id: p.laudo.liberadoNaDecisao! } });
+      expect(d).toMatchObject({ tipo: 'proposta_fora_da_tabela', estado: 'tomada', escolha: 'liberar', leadId: e.leadId });
+      expect((d.dados as { hash: string }).hash).toBe(p.hash);
+      expect(d.decididoEm!.getTime()).toBeLessThan(e.occurredAt.getTime());
       expect(p.quadroDeExemplo).toBe(true);
     }
     expect(TABELA_DE_PRECO.imersao).toMatchObject({ valorCentavos: 297_000, parcelas: 10, parcelaCentavos: 29_700 });
@@ -208,7 +216,7 @@ describe.skipIf(!URL)('a semente das empresas de demonstração, contra o banco'
   });
 
   it('as duas decisões abertas: padrão entre as opções, prazo da config e evento de abertura no fio', async () => {
-    const ds = await prisma.comercialDecisao.findMany({ where: { leadId: { in: leadIds } }, include: { lead: { select: { name: true } } } });
+    const ds = await prisma.comercialDecisao.findMany({ where: { leadId: { in: leadIds }, estado: 'aberta' }, include: { lead: { select: { name: true } } } });
     expect(ds.map((d) => `${d.tipo}:${d.lead.name}`).sort()).toEqual(['ponto_zero:Studio Lume', 'pedido_de_ajuste:Marina Duarte'].sort());
     for (const d of ds) {
       const chaves = (d.opcoes as { chave: string }[]).map((o) => o.chave);

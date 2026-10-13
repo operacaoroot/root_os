@@ -66,6 +66,8 @@ export interface DecisaoSemeada {
   expiraEm: Date;
   dados: Record<string, unknown>;
   eventoAberturaId: string;
+  /** Presente quando a decisão já foi tomada no fio semeado. */
+  tomada?: { escolha: string; por: string; canal: string; em: Date; eventoDecisaoId: string };
 }
 
 export interface CobrancaSemeada {
@@ -121,6 +123,8 @@ export interface ContextoDoRoteiro {
 
 class Fio {
   readonly eventos: EventoSemeado[] = [];
+  /** Decisões já tomadas no caminho do fio (a da proposta com quadro de exemplo). */
+  readonly decisoes: DecisaoSemeada[] = [];
 
   constructor(
     readonly orgId: string,
@@ -306,6 +310,10 @@ function publicar(f: Fio, ctx: ContextoDoRoteiro, p: Proposta): { id: string; va
   });
   const laudo = revisarProposta(v);
   const hash = hashDaVersao(v);
+  // Revisão E-3: o quadro de custos de EXEMPLO é apontamento do revisor. A versão
+  // só sai porque uma pessoa da mesa a levou à liberação na decisão
+  // `proposta_fora_da_tabela`, sobre ESTE hash; o laudo publicado cita a decisão.
+  const liberadoNaDecisao = laudo.ok ? null : decisaoQueLiberou(f, ctx, v.produto, laudo.apontamentos, hash, p.em);
   const id = f.add(
     'proposta.publicada',
     'v1',
@@ -318,7 +326,7 @@ function publicar(f: Fio, ctx: ContextoDoRoteiro, p: Proposta): { id: string; va
       formas: v.formas,
       validaAte: v.validaAte,
       dentroDaTabela: dentroDaTabela(v),
-      laudo: { ok: laudo.ok, apontamentos: laudo.apontamentos },
+      laudo: { ok: laudo.ok, apontamentos: laudo.apontamentos, ...(liberadoNaDecisao ? { liberadoNaDecisao } : {}) },
       descontoPct: v.descontoPct,
       hash,
       quadroDeCustos: { mesNormalCentavos: QUADRO_DE_EXEMPLO.mesNormalCentavos, piorMesCentavos: QUADRO_DE_EXEMPLO.piorMesCentavos },
@@ -332,13 +340,45 @@ function publicar(f: Fio, ctx: ContextoDoRoteiro, p: Proposta): { id: string; va
       liberadaPor: null,
       approvalId: null,
     },
-    p.em,
+    seg(p.em, 2),
   );
-  f.mudou('diagnostico', 'proposta', { tipo: 'proposta.publicada', id }, seg(p.em, 1));
+  f.mudou('diagnostico', 'proposta', { tipo: 'proposta.publicada', id }, seg(p.em, 3));
   const m4 = textoDe('M4', { nome: p.tratamento, linkDaSala: '/s/…', validade: (v.validaAte ?? '').slice(8, 10) + '/' + (v.validaAte ?? '').slice(5, 7) });
   f.add('whats.enviada', 'M4', { template: 'M4', texto: m4, provedor: 'simulado', mensagemDbId: null, aprovadaPor: null }, seg(p.em, 60));
   return { id, validaAte: v.validaAte, hash, valorCentavos: v.valorCentavos, parcelas: v.parcelas, formas: v.formas };
 }
+
+/**
+ * A decisão `proposta_fora_da_tabela` aberta pelo revisor e tomada pela mesa
+ * ("Levar à liberação assim"), como o `PropostaService` e o `DecisoesService`
+ * gravam. Aberta no instante da proposta pronta, tomada um segundo depois.
+ */
+function decisaoQueLiberou(f: Fio, ctx: ContextoDoRoteiro, produto: ComercialProduto, apontamentos: string[], hash: string, em: Date): string {
+  const linha = TABELA_DE_PRECO[produto]!;
+  const d = abrirDecisao(f, ctx, {
+    tipo: 'proposta_fora_da_tabela',
+    chave: `fora-da-tabela:${f.leadId}:v1:${hash}`,
+    titulo: 'Proposta v1 com laudo sujo',
+    contexto: [
+      `${linha.rotulo}: ${linha.parcelas}× de ${(linha.parcelaCentavos / 100).toFixed(2)} (total ${(linha.valorCentavos / 100).toFixed(2)}).`,
+      `O revisor apontou: ${apontamentos.join('; ') || 'nada'}.`,
+    ].join(' '),
+    opcoes: [
+      { chave: 'liberar', rotulo: 'Levar à liberação assim', efeito: 'vai à porta (R3): outra pessoa libera em /atendimento' },
+      { chave: 'segurar', rotulo: 'Segurar', efeito: 'a proposta fica parada até alguém refazer' },
+    ],
+    padrao: 'segurar',
+    dados: { versao: 1, hash },
+    criadaEm: em,
+  });
+  const tomadaEm = seg(em, 1);
+  const eventoDecisaoId = f.add('decisao.tomada', d.id, { decisaoId: d.id, tipo: d.tipo, escolha: 'liberar', por: MESA_DA_SEMENTE, canal: 'tela' }, tomadaEm);
+  f.decisoes.push({ ...d, tomada: { escolha: 'liberar', por: MESA_DA_SEMENTE, canal: 'tela', em: tomadaEm, eventoDecisaoId } });
+  return d.id;
+}
+
+/** Quem toma, na semente, a decisão de levar a proposta com o quadro de exemplo à liberação. */
+const MESA_DA_SEMENTE = 'Mesa · responsável (homologação)';
 
 function lerProposta(f: Fio, bloco: string, visita: number, em: Date, primeira: boolean): void {
   const id = f.add('proposta.lida', `v1:${bloco}:${visita}`, { versao: 1, bloco, visita }, em);
@@ -552,7 +592,7 @@ function alicerce(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
     ...b,
     entrada,
     eventos: f.fechar(),
-    decisoes: [decisao],
+    decisoes: [...f.decisoes, decisao],
     cobrancas: [],
     documentos: [],
     overlay: { saude: 86, proximaAcao: { tipo: 'm6', quando: new Date(agora.getTime() + 3 * D), descricao: 'se não houver resposta em 3 dias: M6 com um caso parecido' } },
@@ -638,7 +678,7 @@ function redePaoBom(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
     ...b,
     entrada,
     eventos: f.fechar(),
-    decisoes: [],
+    decisoes: [...f.decisoes],
     cobrancas: [],
     documentos: [],
     overlay: { saude: null, proximaAcao: { tipo: 'm6', quando: new Date(agora.getTime() + 2 * D), descricao: 'leu e sumiu · M6 em 2 dias' } },
@@ -694,7 +734,7 @@ function mercadoBomPreco(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
     ...b,
     entrada,
     eventos: f.fechar(),
-    decisoes: [],
+    decisoes: [...f.decisoes],
     cobrancas: Array.from({ length: prop.parcelas }, (_, i) => ({
       externoId: `semente-${slug}-p${i + 1}`,
       parcela: i + 1,
@@ -785,7 +825,7 @@ function autoPecasSul(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
     ...b,
     entrada,
     eventos: f.fechar(),
-    decisoes: [],
+    decisoes: [...f.decisoes],
     cobrancas: [],
     documentos: [],
     overlay: { saude: null, proximaAcao: null },

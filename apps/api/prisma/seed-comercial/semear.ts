@@ -147,7 +147,10 @@ async function gravarFio(prisma: PrismaClient, orgId: string, r: RoteiroDoLead):
         opcoes: d.opcoes as unknown as Prisma.InputJsonValue,
         padrao: d.padrao,
         expiraEm: d.expiraEm,
-        estado: 'aberta',
+        estado: d.tomada ? 'tomada' : 'aberta',
+        ...(d.tomada
+          ? { escolha: d.tomada.escolha, decididoPor: d.tomada.por, decididoEm: d.tomada.em, canal: d.tomada.canal, eventoDecisaoId: d.tomada.eventoDecisaoId }
+          : {}),
         eventoAberturaId: d.eventoAberturaId,
         dados: d.dados as Prisma.InputJsonValue,
         criadoEm: d.criadaEm,
