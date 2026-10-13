@@ -16,8 +16,9 @@ const posts: { caminho: string; corpo: unknown }[] = [];
 
 let PERMISSOES: string[] | null = null;
 let PARAMS: Record<string, string> = {};
+let USUARIO: { id: string } | null = null;
 
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: null, can: (p: string) => PERMISSOES === null || PERMISSOES.includes(p) }) }));
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: USUARIO, can: (p: string) => PERMISSOES === null || PERMISSOES.includes(p) }) }));
 vi.mock('next/navigation', () => ({ useParams: () => PARAMS, usePathname: () => '/comercial', useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('next/link', () => ({
   __esModule: true,
@@ -50,6 +51,7 @@ beforeEach(() => {
   posts.length = 0;
   PERMISSOES = null;
   PARAMS = {};
+  USUARIO = null;
 });
 
 describe('torre (tela 12)', () => {
@@ -136,6 +138,35 @@ describe('fila de decisões (tela 03)', () => {
     expect(screen.getByText(/Se ninguém responder até/).textContent).toContain('Manter o preço');
     await userEvent.setup().click(screen.getByRole('button', { name: /Aprovar 8%/ }));
     await waitFor(() => expect(posts).toEqual([{ caminho: '/comercial/decisoes/d1/responder', corpo: { escolha: 'desconto:8' } }]));
+  });
+
+  it('C-12: a decisão que a própria pessoa propôs não mostra botões; sem aprovacoes.decidir também não', async () => {
+    const base = {
+      leadId: 'l1', leadNome: 'Construtora Alicerce', tipo: 'pedido_de_ajuste' as const, contexto: 'x',
+      opcoes: [{ chave: 'manter', rotulo: 'Manter o preço' }], padrao: 'manter',
+      expiraEm: new Date(Date.now() + 3600_000).toISOString(), criadaEm: new Date().toISOString(),
+      estado: 'aberta' as const, escolha: null, decididoPor: null, canal: null,
+    };
+    const fila: FilaDeDecisoes = {
+      resumo: { decisoes: 2, acoesAutomaticasHoje: 0, leadsVivos: 1, automacoesComErro: 0 },
+      decisoes: [
+        { ...base, id: 'd1', titulo: 'Proposta minha', propostoPor: 'eu' },
+        { ...base, id: 'd2', titulo: 'Proposta de outro', propostoPor: 'outro' },
+      ],
+      rodouSozinhoHoje: [],
+    };
+    USUARIO = { id: 'eu' };
+    RESPOSTAS['/comercial/fila'] = fila;
+    const { unmount } = render(<FilaPage />);
+    expect(await screen.findByText(/Você propôs esta decisão/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Manter o preço/ })).toHaveLength(1);
+    expect(screen.getByText('decisões na fila')).toBeInTheDocument();
+    unmount();
+
+    PERMISSOES = ['leads.ver', 'leads.editar'];
+    render(<FilaPage />);
+    expect((await screen.findAllByText(/pede a permissão de decidir aprovações/)).length).toBe(1);
+    expect(screen.queryByRole('button', { name: /Manter o preço/ })).toBeNull();
   });
 });
 

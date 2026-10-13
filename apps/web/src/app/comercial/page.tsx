@@ -41,7 +41,7 @@ export default function FilaDeDecisoesPage() {
       {dados && (
         <>
           <section aria-label="resumo" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Numero valor={String(dados.resumo.decisoes)} legenda={dados.resumo.decisoes === 1 ? 'decisão sua' : 'decisões suas'} tom="brand" />
+            <Numero valor={String(dados.resumo.decisoes)} legenda={dados.resumo.decisoes === 1 ? 'decisão na fila' : 'decisões na fila'} tom="brand" />
             <Numero valor={String(dados.resumo.acoesAutomaticasHoje)} legenda="ações automáticas hoje" />
             <Numero valor={String(dados.resumo.leadsVivos)} legenda="leads vivos" />
             <Numero valor={String(dados.resumo.automacoesComErro)} legenda="automações com erro" tom={dados.resumo.automacoesComErro ? 'ruim' : undefined} />
@@ -84,7 +84,10 @@ export default function FilaDeDecisoesPage() {
 }
 
 function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Promise<void> }) {
-  const { token } = useAuth();
+  const { token, user, can } = useAuth();
+  // C-12: quem propôs não responde (a API devolve 403), e responder pede aprovacoes.decidir.
+  const propostaMinha = !!user?.id && !!d.propostoPor && d.propostoPor === user.id;
+  const podeResponder = can('aprovacoes.decidir') && !propostaMinha;
   const [enviando, setEnviando] = useState<string | null>(null);
   const [erro, setErro] = useState<unknown>(null);
   const [feito, setFeito] = useState<string | null>(null);
@@ -117,24 +120,28 @@ function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Prom
         <h3 id={`dec-${d.id}`} className="text-[15px] font-semibold">{d.titulo}</h3>
         <p className="mt-1 text-[13px] text-muted">{d.contexto}</p>
       </div>
-      <div className="flex flex-wrap gap-2">
-        {d.opcoes.map((o) => {
-          const ehPadrao = o.chave === d.padrao;
-          return (
-            <button
-              key={o.chave}
-              type="button"
-              disabled={!!enviando || d.estado !== 'aberta'}
-              onClick={() => void responder(o.chave, o.rotulo)}
-              className={ehPadrao ? BOTAO_PRIMARIO : BOTAO}
-              title={o.efeito}
-            >
-              {enviando === o.chave ? 'enviando…' : o.rotulo}
-              {ehPadrao && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">padrão</span>}
-            </button>
-          );
-        })}
-      </div>
+      {propostaMinha && <Aviso>Você propôs esta decisão. Outra pessoa da mesa responde.</Aviso>}
+      {!propostaMinha && !can('aprovacoes.decidir') && <Aviso>Responder pede a permissão de decidir aprovações. Quem tem a permissão responde por aqui.</Aviso>}
+      {podeResponder && (
+        <div className="flex flex-wrap gap-2">
+          {d.opcoes.map((o) => {
+            const ehPadrao = o.chave === d.padrao;
+            return (
+              <button
+                key={o.chave}
+                type="button"
+                disabled={!!enviando || d.estado !== 'aberta'}
+                onClick={() => void responder(o.chave, o.rotulo)}
+                className={ehPadrao ? BOTAO_PRIMARIO : BOTAO}
+                title={o.efeito}
+              >
+                {enviando === o.chave ? 'enviando…' : o.rotulo}
+                {ehPadrao && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">padrão</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <ul className="space-y-0.5 text-[12px] text-muted">
         {d.opcoes.filter((o) => o.efeito).map((o) => (
           <li key={o.chave}>
