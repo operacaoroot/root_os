@@ -61,7 +61,8 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *   lead entra pelo simulador → M1 com formulário (R3) → formulário na sala →
  *   M2 com horários (R3) → horário escolhido → M3 da véspera pelo relógio (R3)
  *   → confirmação de véspera no fio → ata da sessão → diagnóstico com stub →
- *   sócio aprova → proposta da tabela, laudo limpo, porta (R3) → M4 (R3) →
+ *   sócio aprova → proposta da tabela com o quadro de exemplo, decisão de um
+ *   toque, porta (R3) → M4 (R3) →
  *   leitura por bloco → pedido de ajuste na fila → decisão de um toque →
  *   aceite → cobrança e contrato (R4) → Pix pago e contrato assinado nos
  *   dublês → webhooks → fechamento (R4, 5 escritas) → contrato vivo → funil.
@@ -79,6 +80,8 @@ process.env.ENCRYPTION_KEY ??= 'chave-de-teste-da-sala-0123456789abcdef';
 process.env.GATEWAY_MODO = 'impor';
 
 const RAIZ = path.resolve(__dirname, '../../..');
+// Como a homologação (`homolog/.env.homolog`): o quadro de custos é o EXEMPLO do mapa, e o revisor o aponta.
+process.env.QUADRO_DE_CUSTOS_EXEMPLO = path.join(RAIZ, 'homolog/fixtures/quadro-de-custos-exemplo.json');
 const ATA = readFileSync(path.join(RAIZ, 'homolog/fixtures/ata-alicerce.md'), 'utf8');
 const MARCA = `jn${Date.now().toString(36).slice(-6)}`;
 const SENHA = 'senha-da-jornada-de-ponta-a-ponta';
@@ -106,14 +109,20 @@ const CNPJ = `5${Date.now().toString().slice(-13)}`;
  *       depende do relógio de verdade (o `criadoEm` do ToolCall é do banco);
  *     · aprovar o diagnóstico (1): o portão de E5 pede "diagnóstico aprovado
  *       por sócio" e só ele solta a proposta;
+ *     · levar à liberação a proposta com o quadro de EXEMPLO (1, revisão E-3):
+ *       não há dado real de custos de terceiros; o quadro do mapa vem marcado
+ *       exemplo, o revisor aponta e a versão cai na decisão
+ *       `proposta_fora_da_tabela`. Antes da revisão o exemplo era nota e o
+ *       laudo saía limpo, e era assim que o número de exemplo chegava a todo
+ *       cliente. Com o dado real escrito, esse toque some;
  *     · liberar a publicação da proposta (1): `comercial.proposta.publicar` R3;
  *     · assinar a cobrança e o contrato (2): R4, titular com senha e motivo
  *       (obrigação financeira; a proposta de lote único da lane D reduziria os
  *       três R4 a um, e não foi executada);
  *     · assinar o fechamento (1): `comercial.fechamento.executar` R4.
- *   Total: 3 do desenho + 9 da régua = 12.
+ *   Total: 3 do desenho + 10 da régua = 13.
  */
-const TOQUES_MEDIDOS = 12;
+const TOQUES_MEDIDOS = 13;
 
 async function portaLivre(): Promise<number> {
   return new Promise((ok, falha) => {
@@ -406,13 +415,18 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     expect(await etapa()).toBe('diagnostico');
   });
 
-  it('5 · o sócio aprova; a proposta da tabela, com laudo limpo, vai à porta (R3) e outra pessoa libera; a M4 avisa (R3)', async () => {
+  it('5 · o sócio aprova; a proposta com o quadro de EXEMPLO cai na decisão, o sócio a leva à porta (R3) e outra pessoa libera; a M4 avisa (R3)', async () => {
     aos('2026-10-14T11:00:00-03:00');
     await naEmpresa(() => diagnosticos.aprovar(ORG, leadId, { id: socio.id, nome: socio.nome }));
     tocar('diagnostico', socio, 'aprova o diagnóstico', 'portão de E5: diagnóstico aprovado por sócio solta a proposta');
+    const [rascunho] = await propostas.rascunhos(ORG, leadId);
+    expect(rascunho).toMatchObject({ versao: 1, estado: 'na_fila', dentroDaTabela: true });
+    expect(rascunho.laudo.apontamentos).toEqual([expect.stringMatching(/VALORES DE EXEMPLO/)]);
+    const fora = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId, tipo: 'proposta_fora_da_tabela', estado: 'aberta' } });
+    await naEmpresa(() => decisoes.responder(ORG, fora.id, 'liberar', { id: socio.id, nome: socio.nome }, 'tela'));
+    tocar('quadro', socio, 'leva à liberação a proposta com o quadro de exemplo', 'o revisor aponta número de exemplo (E-3): uma pessoa decide, um toque');
     const [v1] = await propostas.rascunhos(ORG, leadId);
-    expect(v1).toMatchObject({ versao: 1, estado: 'na_porta', dentroDaTabela: true });
-    expect(v1.laudo.ok, v1.laudo.apontamentos.join('; ')).toBe(true);
+    expect(v1).toMatchObject({ versao: 1, estado: 'na_porta' });
     const chamada = await prisma.toolCall.findFirstOrThrow({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } });
     expect(chamada.status).toBe('aguardando_aprovacao');
     await confirmar('proposta', v1.approvalId!, 'a proposta sai para o cliente (R3)');
@@ -429,6 +443,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     for (const bloco of ['ouvimos', 'recomendada', 'alternativa', 'custos', 'validade'] as const) e = await sala.propostaLida(token, { bloco, versao: 1 });
     doCliente.push('lê os cinco blocos da proposta');
     expect(e.proposta?.blocosLidos).toHaveLength(5);
+    expect(e.proposta?.custosDeTerceiros).toMatchObject({ exemplo: true });
     expect(await etapa()).toBe('follow_up');
     e = await sala.ajuste(token, { pedido: 'Consegue 8% de desconto à vista?', descontoPct: 8 });
     doCliente.push('pede 8% de desconto');
@@ -497,10 +512,10 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     expect((await sala.estado(token)).estagio).toBe('comeco');
   });
 
-  it(`10 · os toques humanos medidos: ${TOQUES_MEDIDOS} (3 do desenho + 9 da régua de hoje)`, () => {
+  it(`10 · os toques humanos medidos: ${TOQUES_MEDIDOS} (3 do desenho + 10 da régua de hoje)`, () => {
     console.info(`[jornada] ${toques.length} toques humanos:\n${toques.map((t) => `  ${t.n}. ${t.quem} · ${t.acao} · ${t.porque}`).join('\n')}`);
     console.info(`[jornada] ${doCliente.length} ações do cliente: ${doCliente.join('; ')}`);
-    expect(toques.map((t) => t.chave)).toEqual(['M1', 'M2', 'M3', 'sessao', 'diagnostico', 'proposta', 'M4', 'ajuste', 'cobranca', 'contrato', 'root', 'fechamento']);
+    expect(toques.map((t) => t.chave)).toEqual(['M1', 'M2', 'M3', 'sessao', 'diagnostico', 'quadro', 'proposta', 'M4', 'ajuste', 'cobranca', 'contrato', 'root', 'fechamento']);
     // Os R4 do dinheiro são sempre da titular, com senha e motivo.
     for (const t of toques.filter((x) => ['cobranca', 'contrato', 'fechamento'].includes(x.chave))) expect(t).toMatchObject({ quem: titular.nome, acao: expect.stringMatching(/^assina .* \(R4\)$/) });
     expect(toques).toHaveLength(TOQUES_MEDIDOS);

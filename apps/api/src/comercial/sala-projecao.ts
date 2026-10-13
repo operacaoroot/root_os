@@ -143,7 +143,8 @@ function custosDe(v: unknown): PropostaNaSala['custosDeTerceiros'] {
   const normal = num(q.mesNormalCentavos);
   const pior = num(q.piorMesCentavos);
   if (normal === null && pior === null) return null;
-  return { mesNormalCentavos: normal, piorMesCentavos: pior };
+  // Número de exemplo só aparece com a marca (revisão E-3).
+  return { mesNormalCentavos: normal, piorMesCentavos: pior, ...(q.exemplo === true ? { exemplo: true } : {}) };
 }
 
 /** O que o lead contou no formulário, em frases curtas (tela 02). */

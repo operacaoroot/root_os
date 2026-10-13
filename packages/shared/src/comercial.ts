@@ -579,7 +579,8 @@ export interface PropostaNaSala {
   ouvimos: string[];
   recomendada: OfertaNaSala;
   alternativa: OfertaNaSala | null;
-  custosDeTerceiros: { mesNormalCentavos: number | null; piorMesCentavos: number | null } | null;
+  /** `exemplo`: valores de exemplo da homologação; a sala mostra a marca (revisão E-3). */
+  custosDeTerceiros: { mesNormalCentavos: number | null; piorMesCentavos: number | null; exemplo?: boolean } | null;
   blocosLidos: SalaBlocoDaProposta[];
   ajustePendente: boolean;
   /** As dúvidas que o lead mandou desta versão, com a resposta quando houver (Lane B; a resposta é da Lane E). */

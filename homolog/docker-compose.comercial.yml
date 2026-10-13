@@ -122,6 +122,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-fable-5-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Quadro de custos de EXEMPLO (só homologação; sem a variável a proposta sai sem quadro e o revisor aponta)
+      QUADRO_DE_CUSTOS_EXEMPLO: ${QUADRO_DE_CUSTOS_EXEMPLO:-}
       # Dinheiro e assinatura apontam para os dublês por padrão
       ASAAS_API_KEY: ${ASAAS_API_KEY:-$$aact_hmlg_dublê}
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-http://asaas-mock:4011/v3}

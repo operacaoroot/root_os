@@ -189,6 +189,16 @@ export function camposDoEvento(type: string, payload: unknown, em: Date, ficha: 
   }
 }
 
+/**
+ * O laudo abre o portão de E6 quando saiu limpo, ou quando uma pessoa levou a
+ * versão à liberação na decisão `proposta_fora_da_tabela` (revisão E-3: o
+ * quadro de exemplo é apontamento, e quem decide é gente).
+ */
+function laudoQueAbreOPortao(payload: unknown): boolean {
+  const l = ((payload ?? {}) as { laudo?: { ok?: boolean; liberadoNaDecisao?: unknown } }).laudo;
+  return l?.ok === true || typeof l?.liberadoNaDecisao === 'string';
+}
+
 /** O que o portão olha, montado da ficha, do lead e do laudo da última proposta. */
 export function estadoDaFicha(
   ficha: Ficha,
@@ -459,7 +469,7 @@ export class FichaService {
     const cfg = await this.config.ler(orgId);
     const agora = new Date();
     const ultimaProposta = [...eventos].reverse().find((e) => e.type === 'proposta.publicada');
-    const laudo = ultimaProposta ? Boolean(((ultimaProposta.payload ?? {}) as { laudo?: { ok?: boolean } }).laudo?.ok) : null;
+    const laudo = ultimaProposta ? laudoQueAbreOPortao(ultimaProposta.payload) : null;
     const estado = estadoDaFicha(ficha, lead, laudo);
     const etapa = ficha.etapa as ComercialEtapa;
     const proxima = etapa === 'sessao' ? avancarDepoisDaSessao(estado).para ?? 'diagnostico' : proximaEtapa(etapa);
@@ -565,7 +575,7 @@ export class FichaService {
     if (!versao) return null;
     const ev = await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'proposta.publicada' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
     if (!ev) return null;
-    return Boolean(((ev.payload ?? {}) as { laudo?: { ok?: boolean } }).laudo?.ok);
+    return laudoQueAbreOPortao(ev.payload);
   }
 
   private async nomesDeUsuarios(orgId: string, ids: (string | null)[]): Promise<Map<string, string>> {

@@ -18,7 +18,7 @@ import { FichaService } from '../src/comercial/ficha.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { RESPOSTA_DE_SEGURANCA } from '../src/comercial/inteligencia-prompts';
 import { hashDaVersao } from '../src/comercial/proposta-construtor';
-import { CAPACIDADE_DA_PROPOSTA, PropostaService } from '../src/comercial/proposta.service';
+import { CAPACIDADE_DA_PROPOSTA, PropostaService, quadroDeExemplo } from '../src/comercial/proposta.service';
 import { ReacoesDaEspinha } from '../src/comercial/reacoes-da-espinha';
 import { RelogioDaEspinha } from '../src/comercial/relogio-da-espinha';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
@@ -137,6 +137,8 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     diagnosticos = new DiagnosticoService(p, fio, reacoes, llm);
     diagnosticos.inscrever();
     propostas = new PropostaService(p, fio, reacoes, decisoes, aoDecidir, config, efeitos, porta, relogioComercial, llm);
+    // O quadro "escrito por alguém": o de exemplo vira apontamento (revisão E-3), e tem caso próprio abaixo.
+    propostas.fonteDoQuadro = () => ({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: false, origem: 'escrito pelo sócio da conta (suíte)' });
     propostas.inscrever();
     new AssistenteService(p, reacoes, sala, llm).inscrever();
 
@@ -214,7 +216,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     expect(v1.conteudo).toMatchObject({ produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, parcelaCentavos: 399_900, alternativa: 'imersao', validaAte: '2026-10-21T23:59:59-03:00' });
     expect(v1.conteudo.ouvimos).toHaveLength(4);
     expect(v1.conteudo.comoEDiferente).toMatch(/fica junto até ele rodar sozinho/);
-    expect(v1.conteudo.quadroDeCustos).toMatchObject({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: true });
+    expect(v1.conteudo.quadroDeCustos).toMatchObject({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: false });
     expect(v1.hash).toBe(hashDaVersao(v1.conteudo));
 
     const chamada = await prisma.toolCall.findFirstOrThrow({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } });
@@ -332,6 +334,38 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
       await config.gravar(ORG, { validadePropostaDias: 8 });
     }
   });
+  it('quadro de EXEMPLO (só com a variável): o revisor aponta, uma pessoa leva à liberação, e a sala mostra a marca', async () => {
+    aos('15:45');
+    const fonte = propostas.fonteDoQuadro;
+    const antes = process.env.QUADRO_DE_CUSTOS_EXEMPLO;
+    process.env.QUADRO_DE_CUSTOS_EXEMPLO = join(RAIZ, 'homolog/fixtures/quadro-de-custos-exemplo.json');
+    propostas.fonteDoQuadro = quadroDeExemplo;
+    try {
+      const outro = await novoLeadComAta(`+55339${SUFIXO}`, 'Construtora Alicerce Exemplo');
+      const chamadasAntes = await prisma.toolCall.count({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } });
+      await naEmpresa(() => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }));
+      const [v1] = await propostas.rascunhos(ORG, outro);
+      expect(v1).toMatchObject({ versao: 1, estado: 'na_fila', dentroDaTabela: true });
+      expect(v1.conteudo.quadroDeCustos).toMatchObject({ mesNormalCentavos: 18_000, exemplo: true });
+      expect(v1.laudo.apontamentos.join(' ')).toMatch(/VALORES DE EXEMPLO/);
+      expect(await prisma.toolCall.count({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } })).toBe(chamadasAntes);
+
+      const d = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId: outro, tipo: 'proposta_fora_da_tabela' } });
+      expect(d.contexto).toMatch(/VALORES DE EXEMPLO/);
+      await naEmpresa(() => decisoes.responder(ORG, d.id, 'liberar', { id: socia.id, nome: socia.name }, 'tela'));
+      const naPorta = await propostas.daVersao(ORG, outro, 1);
+      expect(naPorta?.estado).toBe('na_porta');
+      expect((await liberar(naPorta!.approvalId!, lucas)).status).toBe('executado');
+      const [pub] = await eventos(outro, 'proposta.publicada');
+      expect(pub.payload).toMatchObject({ quadroDeCustos: { mesNormalCentavos: 18_000, exemplo: true }, laudo: { ok: false } });
+      expect((await sala.estadoDoLead(ORG, outro))?.proposta?.custosDeTerceiros).toEqual({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: true });
+    } finally {
+      propostas.fonteDoQuadro = fonte;
+      if (antes === undefined) delete process.env.QUADRO_DE_CUSTOS_EXEMPLO;
+      else process.env.QUADRO_DE_CUSTOS_EXEMPLO = antes;
+    }
+  });
+
   it('silêncio aprova (K08-3) só agenda: a versão espera a hora de SP, o relógio a leva à porta e o R3 continua retendo', async () => {
     aos('16:00');
     await config.gravar(ORG, { silencioAprova: true, horaPublicacaoProposta: 18 });

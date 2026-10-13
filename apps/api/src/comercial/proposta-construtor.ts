@@ -17,11 +17,12 @@ import { hashDoConteudo } from './eventos';
  * e formas são da linha da tabela; desconto só entra quando uma DECISÃO o
  * aprovou (`descontoAprovado`); a validade é `validadePropostaDias` da config;
  * o quadro de custos de terceiros é o que alguém escreveu (em homologação, o
- * exemplo do mapa, marcado como tal). "O que ouvimos" são as dores do
- * diagnóstico, que o parser já conferiu contra a ata.
+ * exemplo do mapa, marcado como tal, que o revisor aponta). "O que ouvimos"
+ * são as dores do diagnóstico, que o parser já conferiu contra a ata.
  *
  * O revisor confere o que o mapa pede (C04, E6): as parcelas fecham o total,
- * o preço bate a tabela (ou o desconto foi aprovado), o quadro está presente,
+ * o preço bate a tabela (ou o desconto foi aprovado), o quadro está presente
+ * e não é de exemplo,
  * a validade está escrita. Laudo com apontamento NÃO vai à porta: vira a
  * decisão `proposta_fora_da_tabela`.
  */
@@ -168,7 +169,8 @@ export function revisarProposta(v: VersaoDaProposta): Laudo {
   if (!v.quadroDeCustos || (v.quadroDeCustos.mesNormalCentavos == null && v.quadroDeCustos.piorMesCentavos == null)) {
     apontamentos.push('quadro de custos de terceiros ausente');
   } else if (v.quadroDeCustos.exemplo) {
-    notas.push(`quadro de custos presente com VALORES DE EXEMPLO (${v.quadroDeCustos.origem}): [a decidir] com o dado real do cliente`);
+    // Apontamento, não nota (revisão E-3): número de exemplo não chega ao cliente sem uma pessoa decidir.
+    apontamentos.push(`quadro de custos com VALORES DE EXEMPLO (${v.quadroDeCustos.origem}): não é dado do cliente, [a decidir] com o dado real`);
   } else notas.push('quadro de custos presente');
 
   if (!v.validaAte) apontamentos.push('validade não escrita (validadePropostaDias está [a decidir] na config)');

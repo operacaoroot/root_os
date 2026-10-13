@@ -357,6 +357,7 @@ function Proposta({ estado, base, agir, ocupado, erroDe }: { estado: EstadoDaSal
           <p className="mt-1 text-[13.5px]">
             mês normal {reais(p.custosDeTerceiros.mesNormalCentavos)} · pior mês {reais(p.custosDeTerceiros.piorMesCentavos)}
           </p>
+          {p.custosDeTerceiros.exemplo && <p className="mt-1 text-[12px] text-muted">valores de exemplo, ainda não são os da sua empresa</p>}
         </div>
       )}
       <div ref={ler('validade')} className={`${CARTAO} flex flex-wrap items-center justify-between gap-2`}>

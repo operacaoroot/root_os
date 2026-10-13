@@ -71,8 +71,13 @@ import { RelogioComercialRegistry } from './relogio.registry';
  * própria (`ComercialProposta`) com migration.
  *
  * O QUADRO DE CUSTOS de terceiros NÃO TEM DADO REAL. Em homologação vem do
- * exemplo do mapa (`homolog/fixtures/quadro-de-custos-exemplo.json`, marcado
- * `exemplo: true`); sem o arquivo, o quadro fica ausente e o revisor aponta.
+ * exemplo do mapa, só com `QUADRO_DE_CUSTOS_EXEMPLO` apontando o arquivo
+ * (`homolog/fixtures/quadro-de-custos-exemplo.json`), sempre marcado
+ * `exemplo: true`; sem a variável, o quadro fica ausente. Nos dois casos o
+ * revisor APONTA (revisão E-3): a versão vai à decisão
+ * `proposta_fora_da_tabela`, e só uma pessoa a leva à liberação. A fonte do
+ * quadro é `fonteDoQuadro` (a fase 2 troca pela fonte real; a suíte põe ali o
+ * quadro "escrito por alguém").
  */
 
 export const CAPACIDADE_DA_PROPOSTA = 'comercial.proposta.publicar';
@@ -107,25 +112,27 @@ function ehRetida(r: unknown): r is { status: 'aguardando_aprovacao'; approvalId
   return Boolean(r && typeof r === 'object' && (r as P).status === 'aguardando_aprovacao' && typeof (r as P).approvalId === 'string');
 }
 
-/** O quadro de exemplo da homologação, ou `null` quando não há arquivo (não há dado real). */
+/**
+ * O quadro de exemplo da homologação, ou `null` (não há dado real).
+ *
+ * SÓ com a variável `QUADRO_DE_CUSTOS_EXEMPLO` escrita (o caminho do arquivo).
+ * Não há caminho padrão: a imagem leva o repositório inteiro, e procurar o
+ * arquivo do mapa sem condição punha R$ 180 / R$ 340 em toda proposta de
+ * produção (revisão E-3). O que vem dela é SEMPRE exemplo, diga o arquivo o
+ * que disser, e o revisor aponta (laudo sujo, decisão de gente).
+ */
 export function quadroDeExemplo(): QuadroDeCustos | null {
   const configurado = process.env.QUADRO_DE_CUSTOS_EXEMPLO?.trim();
-  const candidatos = configurado
-    ? [resolve(configurado)]
-    : [
-        resolve(process.cwd(), 'homolog/fixtures/quadro-de-custos-exemplo.json'),
-        resolve(process.cwd(), '../../homolog/fixtures/quadro-de-custos-exemplo.json'),
-        '/app/homolog/fixtures/quadro-de-custos-exemplo.json',
-      ];
-  const arquivo = candidatos.find((c) => existsSync(c));
-  if (!arquivo) return null;
+  if (!configurado) return null;
+  const arquivo = resolve(configurado);
+  if (!existsSync(arquivo)) return null;
   const q = JSON.parse(readFileSync(arquivo, 'utf8')) as P;
   const n = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
   return {
     mesNormalCentavos: n(q.mesNormalCentavos),
     piorMesCentavos: n(q.piorMesCentavos),
-    exemplo: q.exemplo !== false,
-    origem: typeof q.origem === 'string' ? q.origem : 'exemplo de homologação, a decidir',
+    exemplo: true,
+    origem: typeof q.origem === 'string' ? q.origem.slice(0, 200) : 'exemplo de homologação, a decidir',
   };
 }
 
@@ -166,6 +173,9 @@ export class PropostaService implements OnModuleInit {
     private readonly relogio: RelogioComercialRegistry,
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
   ) {}
+
+  /** De onde vem o quadro de custos de terceiros (ver o cabeçalho). */
+  fonteDoQuadro: () => QuadroDeCustos | null = quadroDeExemplo;
 
   onModuleInit(): void {
     this.inscrever();
@@ -291,7 +301,7 @@ export class PropostaService implements OnModuleInit {
       produto,
       dores,
       comoEDiferente,
-      quadro: quadroDeExemplo(),
+      quadro: this.fonteDoQuadro(),
       validadeDias: cfg.validadePropostaDias,
       agora,
       descontoAprovado: o.descontoAprovado ?? null,
@@ -402,6 +412,8 @@ export class PropostaService implements OnModuleInit {
 
     const c = r.conteudo;
     const em = new Date();
+    // Laudo sujo só chega aqui por "levar à liberação assim": a decisão tomada por uma pessoa sobre ESTE hash.
+    const liberadoNaDecisao = r.laudo.ok ? null : await this.decisaoQueLiberou(orgId, r);
     const payload: PayloadDe<'proposta.publicada'> & P = {
       versao,
       produto: c.produto,
@@ -411,10 +423,12 @@ export class PropostaService implements OnModuleInit {
       formas: c.formas,
       validaAte: c.validaAte,
       dentroDaTabela: r.dentroDaTabela,
-      laudo: { ok: r.laudo.ok, apontamentos: r.laudo.apontamentos },
+      laudo: { ok: r.laudo.ok, apontamentos: r.laudo.apontamentos, ...(liberadoNaDecisao ? { liberadoNaDecisao } : {}) },
       descontoPct: c.descontoPct,
       hash: r.hash,
-      quadroDeCustos: c.quadroDeCustos ? { mesNormalCentavos: c.quadroDeCustos.mesNormalCentavos, piorMesCentavos: c.quadroDeCustos.piorMesCentavos } : null,
+      quadroDeCustos: c.quadroDeCustos
+        ? { mesNormalCentavos: c.quadroDeCustos.mesNormalCentavos, piorMesCentavos: c.quadroDeCustos.piorMesCentavos, ...(c.quadroDeCustos.exemplo ? { exemplo: true } : {}) }
+        : null,
       // Acréscimos da lane E: o que a sala e a tela 06 mostram além do contrato do evento.
       alternativa: c.alternativa,
       ouvimos: c.ouvimos,
@@ -429,6 +443,13 @@ export class PropostaService implements OnModuleInit {
     const ev = await this.fio.registrar(orgId, leadId, 'proposta.publicada', `v${versao}`, payload as PayloadDe<'proposta.publicada'>, { em });
     await this.mudarEstado(orgId, leadId, versao, ['na_porta', 'pronta', 'agendada'], 'publicada');
     return { leadId, versao, eventoId: ev.eventoId };
+  }
+
+  /** O id da decisão `proposta_fora_da_tabela` que uma pessoa respondeu "liberar" para este hash, ou `null`. */
+  private async decisaoQueLiberou(orgId: string, r: Rascunho): Promise<string | null> {
+    if (!r.decisaoId) return null;
+    const d = await this.prisma.comercialDecisao.findFirst({ where: { id: r.decisaoId, orgId, tipo: 'proposta_fora_da_tabela', estado: 'tomada', escolha: 'liberar' } });
+    return d && ((d.dados ?? {}) as P).hash === r.hash ? d.id : null;
   }
 
   // -------------------------------------------------------------------------
@@ -541,7 +562,12 @@ export class PropostaService implements OnModuleInit {
   private async aplicarForaDaTabela(d: DecisaoResolvida): Promise<unknown> {
     const versao = Number(d.dados.versao);
     if (d.escolha === 'segurar') return this.mudarEstado(d.orgId, d.leadId, versao, ['na_fila'], 'segurada');
-    if (d.escolha === 'liberar') return this.proporAPorta(d.orgId, d.leadId, versao, null, ['na_fila']);
+    if (d.escolha === 'liberar') {
+      // A pessoa decidiu sobre um hash: se a versão mudou depois, a decisão não vale para a nova.
+      const atual = await this.daVersao(d.orgId, d.leadId, versao);
+      if (!atual || atual.hash !== d.dados.hash) return { obsoleta: 'a versão mudou depois da decisão: nada foi à porta' };
+      return this.proporAPorta(d.orgId, d.leadId, versao, null, ['na_fila']);
+    }
     return { ignorado: d.escolha };
   }
 }

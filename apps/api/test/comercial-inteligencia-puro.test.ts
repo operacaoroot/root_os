@@ -44,7 +44,9 @@ import { StubProvider, StubSemRespostaError } from '../src/llm/stub.provider';
 const RAIZ = resolve(__dirname, '../../..');
 const PASTA_DO_STUB = join(RAIZ, 'homolog/fixtures/stub');
 const ATA = readFileSync(join(RAIZ, 'homolog/fixtures/ata-alicerce.md'), 'utf8');
-const QUADRO: QuadroDeCustos = { mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: true, origem: 'exemplo do mapa (tela 07), a decidir' };
+// O quadro "escrito por alguém" (dado do cliente). O de exemplo é apontamento do revisor (revisão E-3).
+const QUADRO: QuadroDeCustos = { mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: false, origem: 'escrito pelo sócio da conta' };
+const QUADRO_DE_EXEMPLO: QuadroDeCustos = { mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: true, origem: 'exemplo do mapa (tela 07), a decidir' };
 const AGORA = new Date('2026-10-13T14:00:00-03:00');
 
 describe('o provedor stub', () => {
@@ -174,8 +176,14 @@ describe('o construtor e o revisor da proposta', () => {
     expect(v).toMatchObject({ valorCentavos: 1_199_700, parcelas: 3, parcelaCentavos: 399_900, ultimaParcelaCentavos: 399_900, alternativa: 'imersao', validaAte: '2026-10-21T23:59:59-03:00' });
     const laudo = revisarProposta(v);
     expect(laudo.ok, laudo.apontamentos.join('; ')).toBe(true);
-    expect(laudo.notas.join(' ')).toMatch(/VALORES DE EXEMPLO/);
+    expect(laudo.notas.join(' ')).toMatch(/quadro de custos presente/);
     expect(hashDaVersao(v)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('quadro de EXEMPLO é apontamento: o laudo não sai limpo', () => {
+    const laudo = revisarProposta(montarProposta({ ...base, quadro: QUADRO_DE_EXEMPLO }));
+    expect(laudo.ok).toBe(false);
+    expect(laudo.apontamentos.join(' ')).toMatch(/VALORES DE EXEMPLO/);
   });
 
   it('sem validade e sem quadro, o revisor aponta os dois', () => {

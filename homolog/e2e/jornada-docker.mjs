@@ -13,8 +13,9 @@
  *   libera) → formulário respondido na sala → M2 com horários (R3) → horário
  *   escolhido → M3 da véspera pelo relógio (R3) → confirmação de véspera no fio
  *   → ata da sessão (o sócio conduz e sobe) → diagnóstico com stub (4 falas com
- *   minuto) → sócio aprova → proposta pela tabela, laudo limpo, publicada pela
- *   porta (R3) → M4 (R3) → leitura por bloco na sala → pedido de ajuste na
+ *   minuto) → sócio aprova → proposta pela tabela, quadro de exemplo apontado
+ *   pelo revisor e levado à porta por um toque (E-3), publicada pela porta
+ *   (R3) → M4 (R3) → leitura por bloco na sala → pedido de ajuste na
  *   fila de decisões → decisão de um toque → aceite (dados, pagamento,
  *   contrato) → cobrança e contrato nos dublês (R4: titular assina com senha e
  *   motivo) → Pix pago no dublê do Asaas e contrato assinado no da ZapSign
@@ -335,12 +336,27 @@ async function main() {
   await api('POST', `/comercial/lead/${leadId}/diagnostico/aprovar`, como('socioDaConta'));
   toque('socioDaConta', 'aprova o diagnóstico', 'portão de E5: diagnóstico aprovado por sócio solta a proposta');
 
-  passo('10. a proposta pela tabela, revisor com laudo limpo, publicada pela porta (R3)');
+  passo('10. a proposta pela tabela; o quadro de EXEMPLO é apontamento do revisor (E-3): decisão de um toque, depois a porta (R3)');
+  const propostaV1 = await esperar('a proposta v1 na fila de decisões', async () => {
+    const r = await api('GET', `/comercial/lead/${leadId}/sessao`, como('mesa'));
+    return r.proposta?.estado === 'na_fila' || r.proposta?.approvalId ? r.proposta : null;
+  });
+  if (propostaV1.estado === 'na_fila') {
+    conferir((propostaV1.laudo?.apontamentos ?? []).some((a) => /VALORES DE EXEMPLO/.test(a)), `o revisor devia apontar o quadro de exemplo: ${(propostaV1.laudo?.apontamentos ?? []).join('; ')}`, propostaV1);
+    const fora = await esperar('a decisão proposta_fora_da_tabela aberta na fila', async () => {
+      const d = await api('GET', '/comercial/decisoes?estado=aberta', como('mesa'));
+      const itens = Array.isArray(d) ? d : d.itens ?? d.decisoes ?? [];
+      return itens.find((x) => x.leadId === leadId && x.tipo === 'proposta_fora_da_tabela') ?? null;
+    });
+    await api('POST', `/comercial/decisoes/${fora.id}/responder`, { ...como('socioDaConta'), corpo: { escolha: 'liberar' } });
+    toque('socioDaConta', 'leva à liberação a proposta com o quadro de exemplo', 'o revisor aponta número de exemplo (E-3): uma pessoa decide, um toque');
+  } else {
+    conferir(propostaV1.laudo?.ok === true, `sem decisão, o laudo do revisor devia vir limpo: ${(propostaV1.laudo?.apontamentos ?? []).join('; ')}`, propostaV1);
+  }
   const v1 = await esperar('a proposta v1 na porta', async () => {
     const r = await api('GET', `/comercial/lead/${leadId}/sessao`, como('mesa'));
     return r.proposta?.approvalId ? r.proposta : null;
   });
-  conferir(v1.laudo?.ok === true, `o laudo do revisor devia vir limpo: ${(v1.laudo?.apontamentos ?? []).join('; ')}`, v1);
   conferir(v1.dentroDaTabela === true && v1.estado === 'na_porta', `a v1 devia estar na porta e dentro da tabela (estado ${v1.estado})`, v1);
   await confirmar(v1.approvalId, 'a proposta sai para o cliente (R3: publicação externa)');
   resumo.proposta = { versao: v1.versao, produto: v1.conteudo?.produto, valorCentavos: v1.conteudo?.valorCentavos, parcelas: v1.conteudo?.parcelas, validaAte: v1.conteudo?.validaAte, laudo: v1.laudo };
