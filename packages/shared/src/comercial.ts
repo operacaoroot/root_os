@@ -316,7 +316,7 @@ export type ComercialTemplate = (typeof COMERCIAL_TEMPLATES)[number];
 export const COMERCIAL_PROVEDORES_DE_WHATSAPP = ['simulado', 'evolution', 'meta'] as const;
 export type ComercialProvedorDeWhatsapp = (typeof COMERCIAL_PROVEDORES_DE_WHATSAPP)[number];
 
-export const COMERCIAL_ESTADOS_DE_MENSAGEM = ['rascunho', 'na_fila', 'em_veto', 'enviada', 'vetada', 'recebida', 'falhou'] as const;
+export const COMERCIAL_ESTADOS_DE_MENSAGEM = ['rascunho', 'na_fila', 'em_veto', 'enviando', 'enviada', 'vetada', 'recebida', 'falhou'] as const;
 export type ComercialEstadoDeMensagem = (typeof COMERCIAL_ESTADOS_DE_MENSAGEM)[number];
 
 // ---------------------------------------------------------------------------

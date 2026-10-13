@@ -188,4 +188,17 @@ describe('revisão: o canal do comercial e a régua', () => {
     expect(espiao.destinos).not.toContain('5511999990000');
     expect(original).toBeTruthy();
   });
+  it('B-7 · duas liberações da mesma mensagem ao mesmo tempo mandam uma vez só', async () => {
+    const tel = `+55327${Date.now().toString().slice(-8)}`;
+    const { leadId } = await naEmpresa(() => whats.receberEntrada(ORG, { telefone: tel, texto: 'Oi', nome: 'Marina Duarte', mensagemId: `${MARCA}-b7` }));
+    const m1 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId, template: 'M1' } });
+    expect(m1.estado, m1.erro ?? '').toBe('na_fila');
+    const antes = espiao.textos.length;
+    const args = { leadId, mensagemId: m1.id, texto: m1.texto, template: 'M1', destino: 'lead' };
+    const efeito = (whats as unknown as { efeitoDeEnvio: (a: Record<string, unknown>, o: string, c: object) => Promise<unknown> }).efeitoDeEnvio.bind(whats);
+    const r = await Promise.allSettled([naEmpresa(() => efeito(args, ORG, {})), naEmpresa(() => efeito(args, ORG, {}))]);
+    expect(espiao.textos.length - antes).toBe(1);
+    expect(r.filter((x) => x.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
+    expect((await prisma.comercialMensagem.findUniqueOrThrow({ where: { id: m1.id } })).estado).toBe('enviada');
+  });
 });

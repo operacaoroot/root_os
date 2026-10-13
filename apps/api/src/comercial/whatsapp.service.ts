@@ -455,6 +455,14 @@ export class WhatsappComercialService implements OnModuleInit {
     if (m.leadId !== args.leadId || (m.destino === 'grupo' ? 'grupo' : 'lead') !== (args.destino ?? 'lead')) {
       throw new Error('o destino mudou depois do pedido: nada foi enviado');
     }
+    // B-7 da revisão: toma a mensagem antes do provedor. Duas liberações juntas
+    // (dois pedidos para a mesma mensagem) não mandam duas vezes: quem não tomar não envia.
+    const tomada = await this.prisma.comercialMensagem.updateMany({ where: { id: m.id, orgId, estado: m.estado }, data: { estado: 'enviando' } });
+    if (tomada.count === 0) {
+      const agora = await this.prisma.comercialMensagem.findFirst({ where: { id: m.id, orgId }, select: { estado: true, mensagemExternaId: true } });
+      if (agora?.estado === 'enviada') return { mensagemId: m.id, mensagemExternaId: agora.mensagemExternaId, jaEnviada: true };
+      throw new Error('outra liberação já está enviando esta mensagem: nada foi enviado');
+    }
     const para = await this.destinoDe(m);
     // O texto ENTREGUE: o marcador vira o link decifrado agora, e esse texto não é
     // gravado em lugar nenhum (nem na linha, nem no fato, nem no resultado).

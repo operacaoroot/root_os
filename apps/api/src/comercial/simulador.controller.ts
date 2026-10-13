@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  CanActivate,
   Body,
   Controller,
   Get,
+  Injectable,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -79,7 +81,22 @@ function paraCelular(m: {
 
 const NovidadeSchema = z.object({ novidade: z.string().trim().min(10).max(400) }).strict();
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+/**
+ * B-4 da revisão: o simulador só existe com o provedor `simulado`. Com
+ * Evolution ou Meta, escrever "como o lead" gravaria no fio um fato
+ * indistinguível de uma resposta verdadeira: as rotas respondem 404.
+ */
+@Injectable()
+export class SoComOSimulado implements CanActivate {
+  constructor(private readonly whats: WhatsappComercialService) {}
+
+  canActivate(): boolean {
+    if (this.whats.porta.provedor !== 'simulado') throw new NotFoundException('O simulador só existe com o provedor de WhatsApp simulado.');
+    return true;
+  }
+}
+
+@UseGuards(JwtAuthGuard, PermissionsGuard, SoComOSimulado)
 @Controller('comercial/simulador')
 export class SimuladorController {
   constructor(
@@ -229,7 +246,7 @@ export class SimuladorController {
 
   /** A mesa toca num botão de uma decisão: o mesmo caminho da tela 03, canal `simulado`. */
   @Post('mesa/responder')
-  @RequirePermissions('leads.editar')
+  @RequirePermissions('leads.editar', 'aprovacoes.decidir')
   async mesaResponder(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const r = SimuladorMesaRespostaSchema.safeParse(body ?? {});
     if (!r.success) throw new BadRequestException(r.error.issues.map((i) => `${i.path.join('.') || 'corpo'}: ${i.message}`).join('; '));
