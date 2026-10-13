@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { JwtService } from '@nestjs/jwt';
 import { ActorType, PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
+import { ReauthService } from '../src/auth/reauth.service';
 import { comContexto } from '../src/common/contexto-execucao';
 import { AssistenteService } from '../src/comercial/assistente.service';
 import { ConfigComercialService } from '../src/comercial/config.service';
@@ -56,6 +59,7 @@ const RAIZ = resolve(__dirname, '../../..');
 const ATA = readFileSync(join(RAIZ, 'homolog/fixtures/ata-alicerce.md'), 'utf8');
 const MARCA = `ie${Date.now().toString(36).slice(-6)}`;
 const SUFIXO = Date.now().toString().slice(-8);
+const SENHA_DA_SOCIA = 'senha-da-socia-da-lane-e';
 type P = Record<string, unknown>;
 
 describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', () => {
@@ -78,9 +82,18 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
 
   const naEmpresa = <T>(fn: () => Promise<T>): Promise<T> => comContexto({ orgId: ORG, correlationId: `intel-${MARCA}`, origem: 'http' }, fn);
   const eventos = (lead: string, type: string) => prisma.leadEvent.findMany({ where: { leadId: lead, type }, orderBy: { occurredAt: 'asc' } });
+  /*
+   * Libera pela mesma confirmação de /atendimento. O sinal `volume_atipico` da
+   * régua compara os pedidos da última hora (pelo `criadoEm` do BANCO, relógio
+   * de verdade) com o `agora` desta suíte (relógio parado em 13/10 14h): conforme
+   * a hora em que a suíte roda, o mesmo pedido sai R3 ou R4. Quando a régua sobe
+   * a R4, quem assina é a titular, com senha e motivo; nada é afrouxado.
+   */
   const liberar = async (approvalId: string, quem: { id: string; papeis: string[] }) => {
-    await naEmpresa(() => approvals.confirm(ORG, approvalId, quem));
-    return naEmpresa(() => acoes.executarAprovada(ORG, approvalId, quem.id));
+    const a = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId } });
+    const assina = a.alcadaMinima === 'titular' ? { id: socia.id, papeis: ['admin_master'], reauth: { senha: SENHA_DA_SOCIA } } : quem;
+    await naEmpresa(() => approvals.confirm(ORG, approvalId, assina, a.exigeReauth ? 'conferi a versão e o desconto aprovado' : undefined));
+    return naEmpresa(() => acoes.executarAprovada(ORG, approvalId, assina.id));
   };
 
   beforeAll(async () => {
@@ -91,14 +104,14 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     ORG = org.id;
     const admin = await prisma.role.create({ data: { orgId: ORG, key: 'admin_master', name: 'Admin Master' } });
     const gestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor de Marketing' } });
-    socia = await prisma.user.create({ data: { orgId: ORG, name: 'Sócia da conta', email: `socia.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: admin.id } } }, select: { id: true, name: true } });
+    socia = await prisma.user.create({ data: { orgId: ORG, name: 'Sócia da conta', email: `socia.${MARCA}@root.local`, passwordHash: await bcrypt.hash(SENHA_DA_SOCIA, 4), roles: { connect: { id: admin.id } } }, select: { id: true, name: true } });
     lucas.id = (await prisma.user.create({ data: { orgId: ORG, name: 'Lucas', email: `lucas.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: gestor.id } } } })).id;
     rodrigo.id = (await prisma.user.create({ data: { orgId: ORG, name: 'Rodrigo', email: `rodrigo.${MARCA}@root.local`, passwordHash: 'x', roles: { connect: { id: gestor.id } } } })).id;
 
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
-    approvals = new ApprovalsService(p, audit);
+    approvals = new ApprovalsService(p, audit, new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit));
     const log = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
