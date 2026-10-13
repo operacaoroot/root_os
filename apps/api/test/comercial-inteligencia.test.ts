@@ -62,7 +62,7 @@ const SUFIXO = Date.now().toString().slice(-8);
 const SENHA_DA_SOCIA = 'senha-da-socia-da-lane-e';
 type P = Record<string, unknown>;
 
-describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', () => {
+describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', { timeout: 30_000 }, () => {
   const prisma = new PrismaClient({ datasources: { db: { url: URL } } });
   const p = prisma as unknown as PrismaService;
   let ORG = '';

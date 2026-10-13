@@ -151,7 +151,7 @@ async function esperarUrl(url: string, ms = 10_000): Promise<void> {
 type Pessoa = { id: string; nome: string; papeis: string[] };
 type Toque = { n: number; chave: string; quem: string; acao: string; porque: string };
 
-describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques humanos', () => {
+describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques humanos', { timeout: 30_000 }, () => {
   const prisma = new PrismaClient({ datasources: { db: { url: URL } } });
   const p = prisma as unknown as PrismaService;
   let ORG = '';

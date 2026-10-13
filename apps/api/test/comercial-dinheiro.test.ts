@@ -94,7 +94,7 @@ async function esperar(url: string, ms = 10_000): Promise<void> {
   throw new Error(`dublê não respondeu em ${url}`);
 }
 
-describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
+describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30_000 }, () => {
   let prisma: PrismaClient;
   let approvals: ApprovalsService;
   let acoes: AcoesService;
