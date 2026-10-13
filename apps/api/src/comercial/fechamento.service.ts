@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { DinheiroService, type AceiteDoLead } from './dinheiro.service';
-import { uuidDe } from './eventos';
+import { eventoIdComercial, uuidDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
 import { WhatsappComercialService } from './whatsapp.service';
@@ -92,6 +92,44 @@ export function prontoParaFechar(tipos: ReadonlySet<string>): { pronto: boolean;
   return { pronto: falta.length === 0, falta };
 }
 
+/**
+ * D-4: as provas da VERSÃO ACEITA. Os três fatos no fio não bastam: depois de
+ * uma versão nova aceita, o Pix e as assinaturas no fio podem ser da versão
+ * velha. O documento assinado pelos dois tem de ter o hash do contrato da
+ * versão aceita, e a 1ª parcela paga tem de ser da cobrança dessa versão
+ * (referência `cob-<lead>-v<n>`).
+ */
+export interface ProvasDaVersao {
+  versao: number;
+  /**
+   * Os hashes do contrato desta versão: montado com os dados de agora e com os
+   * da cobrança aprovada (os dois levam a versão e o hash da proposta no texto).
+   */
+  hashesDoContrato: string[];
+  documentos: { hashConteudo: string; assinadoClienteEm: Date | null; assinadoRootEm: Date | null }[];
+  /** A cobrança criada com a referência desta versão (nula se não há). */
+  cobrancaDaVersao: { primeiraPaga: boolean } | null;
+  /** Há cobrança no lead (de qualquer versão)? Só muda a frase. */
+  haCobranca: boolean;
+}
+
+export function faltaDaVersao(p: ProvasDaVersao): string[] {
+  const falta: string[] = [];
+  const doc = p.documentos.find((d) => p.hashesDoContrato.includes(d.hashConteudo));
+  if (!doc) {
+    falta.push(p.documentos.length ? `contrato da versão ${p.versao} (o documento que existe é de outra versão)` : `contrato da versão ${p.versao} gerado`);
+  } else {
+    if (!doc.assinadoClienteEm) falta.push(`contrato da versão ${p.versao} assinado pelo cliente`);
+    if (!doc.assinadoRootEm) falta.push(`contrato da versão ${p.versao} assinado pela Root`);
+  }
+  if (!p.cobrancaDaVersao) {
+    falta.push(p.haCobranca ? `cobrança da versão ${p.versao} (a cobrança que existe é de outra versão)` : `cobrança da versão ${p.versao} criada`);
+  } else if (!p.cobrancaDaVersao.primeiraPaga) {
+    falta.push(`1ª parcela da cobrança da versão ${p.versao} paga`);
+  }
+  return falta;
+}
+
 @Injectable()
 export class FechamentoService implements OnModuleInit {
   private readonly log = new Logger('ComercialFechamento');
@@ -145,6 +183,7 @@ export class FechamentoService implements OnModuleInit {
         if (!prontoParaFechar(tipos).pronto) continue;
         const ac = await this.dinheiro.aceiteDoLead(leadId);
         if (!ac) continue;
+        if (!(await this.prontidao(orgId, leadId, ac)).pronto) continue;
         const chave = chaveDoFechamento(leadId, ac.versao);
         const linha = await this.prisma.comercialFechamento.findUnique({ where: { chave }, select: { estado: true, vetadoEm: true, agendadoPara: true } });
         if (linha?.vetadoEm || linha?.estado === 'concluido') continue;
@@ -173,6 +212,35 @@ export class FechamentoService implements OnModuleInit {
     return new Set(evs.map((e) => e.type));
   }
 
+  /**
+   * Pronto para fechar? Os três fatos no fio E as provas da versão aceita
+   * (D-4): o documento assinado pelos dois com o hash do contrato desta versão
+   * e a 1ª parcela paga da cobrança desta versão. Sem isso nada vai à fila, e a
+   * resposta diz o que falta.
+   */
+  async prontidao(orgId: string, leadId: string, a: AceiteDoLead | null): Promise<{ pronto: boolean; falta: string[] }> {
+    const base = prontoParaFechar(await this.tiposNoFio(leadId));
+    if (!base.pronto) return base;
+    if (!a) return { pronto: false, falta: ['aceite com dados'] };
+    const referencia = `cob-${leadId}-v${a.versao}`;
+    const [documentos, criada, haCobranca] = await Promise.all([
+      this.prisma.comercialDocumento.findMany({ where: { leadId }, select: { hashConteudo: true, assinadoClienteEm: true, assinadoRootEm: true } }),
+      this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'cobranca.criada', referencia) }, select: { payload: true, leadId: true } }),
+      this.prisma.comercialCobranca.count({ where: { leadId } }),
+    ]);
+    let cobrancaDaVersao: ProvasDaVersao['cobrancaDaVersao'] = null;
+    if (criada && criada.leadId === leadId) {
+      const externoId = String(((criada.payload ?? {}) as P).externoId ?? '');
+      const primeira = externoId ? await this.prisma.comercialCobranca.findFirst({ where: { leadId, externoId }, select: { parcela: true, pagaEm: true, estado: true } }) : null;
+      cobrancaDaVersao = { primeiraPaga: !!primeira && primeira.parcela === 1 && (!!primeira.pagaEm || primeira.estado === 'paga') };
+    }
+    const hashes = [this.dinheiro.contratoDoAceite(a).hash];
+    const aprovado = cobrancaDaVersao ? await this.dinheiro.aceiteDaCobrancaAprovada(leadId, a) : null;
+    if (aprovado) hashes.push(this.dinheiro.contratoDoAceite(aprovado).hash);
+    const falta = faltaDaVersao({ versao: a.versao, hashesDoContrato: hashes, documentos, cobrancaDaVersao, haCobranca: haCobranca > 0 });
+    return { pronto: falta.length === 0, falta };
+  }
+
   /** A linha do fechamento (criada pendente se ainda não existe). */
   private async garantirLinha(orgId: string, leadId: string, a: AceiteDoLead) {
     const chave = chaveDoFechamento(leadId, a.versao);
@@ -191,6 +259,8 @@ export class FechamentoService implements OnModuleInit {
     if (!pronto) return { pulado: `falta: ${falta.join(', ')}` };
     const a = await this.dinheiro.aceiteDoLead(leadId);
     if (!a) return { pulado: 'sem aceite com dados' };
+    const daVersao = await this.prontidao(orgId, leadId, a);
+    if (!daVersao.pronto) return { pulado: `falta: ${daVersao.falta.join(', ')}` };
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido' || linha.vetadoEm) return { pulado: `fechamento ${linha.estado}${linha.vetadoEm ? ' (vetado)' : ''}` };
 
@@ -241,7 +311,7 @@ export class FechamentoService implements OnModuleInit {
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido') return { estado: 'concluido', chave: linha.chave };
     // Nem a pessoa pede fechamento antes da hora: sem a 1ª parcela paga e as duas assinaturas, nada vai à fila.
-    const pronto = prontoParaFechar(await this.tiposNoFio(leadId));
+    const pronto = await this.prontidao(orgId, leadId, a);
     if (!pronto.pronto) return { pulado: `falta: ${pronto.falta.join(', ')}` };
     const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave, agora);
     if (viva) return { estado: 'na_fila', approvalId: viva.id, chave: linha.chave };
@@ -271,7 +341,7 @@ export class FechamentoService implements OnModuleInit {
     if (!a) throw new Error('o lead não tem aceite com dados: nada foi feito');
     if (a.hash !== String(args.propostaHash)) throw new Error('a proposta aceita mudou depois do pedido: nada foi feito');
     if (chave !== chaveDoFechamento(leadId, a.versao)) throw new Error('a chave do fechamento não é a da versão aceita: nada foi feito');
-    const pronto = prontoParaFechar(await this.tiposNoFio(leadId));
+    const pronto = await this.prontidao(orgId, leadId, a);
     if (!pronto.pronto) throw new Error(`o fechamento ainda não pode rodar (falta: ${pronto.falta.join(', ')}): nada foi feito`);
     return this.executar(orgId, leadId, a);
   }

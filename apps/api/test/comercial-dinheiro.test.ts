@@ -542,6 +542,12 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     await naEmpresa(async () => {
       await fio.registrar(ORG, id, 'aceite.dados', 'dados', { cnpj, razaoSocial: `${nome} Ltda`, endereco: 'Rua B, 2', quemAssina: nome, email: `${cnpj}@cliente.test` });
       await fio.registrar(ORG, id, 'proposta.aceita', 'v1', { versao: 1, produto: 'imersao', valorCentavos: 297_000, parcelas: 10, forma: 'cartao', hash });
+      // D-4: o fechamento confere a versão. A cobrança é a da v1 (referência cob-<lead>-v1) com a 1ª parcela paga,
+      // e o documento assinado tem o hash do contrato da v1.
+      await prisma.comercialCobranca.create({ data: { leadId: id, provedor: 'asaas', externoId: `pay-${id}`, parcela: 1, parcelas: 10, valorCentavos: 29_700, forma: 'cartao', vence: new Date(), estado: 'paga', pagaEm: new Date() } });
+      await fio.registrar(ORG, id, 'cobranca.criada', `cob-${id}-v1`, { provedor: 'asaas', externoId: `pay-${id}`, parcelas: 10, forma: 'cartao', valorCentavos: 297_000, primeiraVence: '2026-10-13' }, { semReacoes: true });
+      const aceite = (await dinheiro.aceiteDoLead(id))!;
+      await prisma.comercialDocumento.create({ data: { leadId: id, provedor: 'zapsign', externoId: `doc-${id}`, estado: 'assinado', hashConteudo: dinheiro.contratoDoAceite(aceite).hash, assinadoClienteEm: new Date(), assinadoRootEm: new Date() } });
       await fio.registrar(ORG, id, 'pix.pago', `pay-${id}`, { provedor: 'asaas', externoId: `pay-${id}`, parcela: 1, valorCentavos: 29_700, pagoEm: new Date().toISOString() });
       await fio.registrar(ORG, id, 'contrato.assinado_cliente', `doc-${id}`, { provedor: 'zapsign', externoId: `doc-${id}`, em: new Date().toISOString() });
       await fio.registrar(ORG, id, 'contrato.assinado_root', `doc-${id}`, { provedor: 'zapsign', externoId: `doc-${id}`, em: new Date().toISOString(), por: null });
@@ -579,11 +585,19 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
   });
   it('o relógio devolve à fila o R4 que venceu sem assinatura (uma vez por hora) e nunca o que a titular recusou', async () => {
     const id = await leadQueFechou('Otica Vista', `4${Date.now().toString().slice(-13)}`);
-    const doLead = (cap: string) => prisma.approval.findMany({ where: { orgId: ORG, capabilityId: cap, resourceId: { contains: id } }, orderBy: { criadoEm: 'asc' } });
+    const doLead = (cap: string, lead = id) => prisma.approval.findMany({ where: { orgId: ORG, capabilityId: cap, resourceId: { contains: lead } }, orderBy: { criadoEm: 'asc' } });
     const [cob] = await doLead(CAP_COBRANCA);
     expect(cob.status).toBe('pendente');
     expect(await doLead(CAP_CONTRATO)).toHaveLength(1);
     expect(await doLead(CAP_FECHAMENTO)).toHaveLength(1);
+    // Um lead que só aceitou (sem documento nem cobrança): o contrato dele também vence sem assinatura.
+    const tel = `+55327${Date.now().toString().slice(-8)}`;
+    const so = (await naEmpresa(() => whats.receberEntrada(ORG, { telefone: tel, texto: 'Oi', nome: 'Otica Aceite', mensagemId: `${MARCA}-otica-aceite` }))).leadId;
+    await naEmpresa(async () => {
+      await fio.registrar(ORG, so, 'aceite.dados', 'dados', { cnpj: `5${Date.now().toString().slice(-13)}`, razaoSocial: 'Otica Aceite Ltda', endereco: 'Rua C, 3', quemAssina: 'Otica', email: 'otica@cliente.test' });
+      await fio.registrar(ORG, so, 'proposta.aceita', 'v1', { versao: 1, produto: 'imersao', valorCentavos: 297_000, parcelas: 10, forma: 'cartao', hash: hashDoConteudo({ lead: so, v: 1 }) });
+    });
+    expect(await doLead(CAP_CONTRATO, so)).toHaveLength(1);
     // A titular recusa a cobrança; as outras duas vencem sem ninguém assinar.
     await naEmpresa(() => approvals.reject(ORG, cob.id, { id: titularId, papeis: ['admin_master'] }));
 
@@ -593,12 +607,15 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     const r1 = await naEmpresa(() => fechamento.repropor(ORG, depois));
     expect(r1.fechamentos).toBeGreaterThanOrEqual(1); // os outros leads da suíte que esperam a titular também voltam
     expect(await doLead(CAP_COBRANCA)).toHaveLength(1); // recusada: máquina não refaz
-    expect(await doLead(CAP_CONTRATO)).toHaveLength(2);
+    // D-4: o lead que fechou já tem o documento assinado da v1, então o contrato dele não volta à fila;
+    // o do lead que só aceitou volta.
+    expect(await doLead(CAP_CONTRATO)).toHaveLength(1);
+    expect(await doLead(CAP_CONTRATO, so)).toHaveLength(2);
     expect(await doLead(CAP_FECHAMENTO)).toHaveLength(2);
     // A mesma passagem de novo: as novas estão vivas, nada se repete.
     await naEmpresa(() => fechamento.repropor(ORG, depois));
     vi.useRealTimers();
-    expect(await doLead(CAP_CONTRATO)).toHaveLength(2);
+    expect(await doLead(CAP_CONTRATO, so)).toHaveLength(2);
     expect(await doLead(CAP_FECHAMENTO)).toHaveLength(2);
   });
 });
