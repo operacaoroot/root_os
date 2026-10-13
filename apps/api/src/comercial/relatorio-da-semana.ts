@@ -46,6 +46,8 @@ import { numeroPorExtenso } from './inteligencia-prompts';
 
 export const DIAS_PADRAO_DO_RELATORIO = 7;
 export const DIAS_MAXIMOS_DO_RELATORIO = 90;
+/** Os recortes que a tela 13 oferece (a torre procura o relator por eles). */
+export const RECORTES_DA_TELA: readonly number[] = [DIAS_PADRAO_DO_RELATORIO, 30, 90];
 export const PREVISAO_PENDENTE = 'a fórmula da previsão é [a decidir] pela mesa: o mapa mostra a frase e não dá a taxa.';
 const DIA_MS = 86_400_000;
 

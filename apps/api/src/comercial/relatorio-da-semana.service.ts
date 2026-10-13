@@ -5,9 +5,11 @@ import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MemoriaService } from '../memory/memoria.service';
 import { fusoDaPolitica, minutosNoFuso } from '../policy/limites';
 import { PrismaService } from '../prisma/prisma.service';
-import { corpoComDado, dadoDaNota, gravarNota, PREFIXO_DO_RELATORIO } from './notas-do-comercial';
+import { chaveDoRelatorio, chavesDoRelatorio, corpoComDado, dadoDaNota, gravarNota } from './notas-do-comercial';
 import {
+  DIAS_PADRAO_DO_RELATORIO,
   PREVISAO_PENDENTE,
+  RECORTES_DA_TELA,
   alcanceDoLead,
   contarAcoes,
   diasDoPedido,
@@ -26,9 +28,11 @@ import { RelogioComercialRegistry } from './relogio.registry';
  *
  * `numeros()` conta tudo no banco (as regras em `relatorio-da-semana.ts`);
  * `gerar()` pede ao modelo SÓ a leitura, limpa a narrativa de qualquer número e
- * guarda o relatório como nota da memória (`comercial.relatorio.semana.<dia>`).
- * O relógio comercial chama `talvezGerar` a cada minuto: na quinta, a partir
- * das 18:00 do fuso da política, gera uma vez (antes da mesa das 19h30).
+ * guarda o relatório como nota da memória (`comercial.relatorio.semana.<dia>.<N>d`,
+ * uma por dia e recorte: revisão E-11). O relógio comercial chama `talvezGerar`
+ * a cada minuto: na quinta, a partir das 18:00 do fuso da política, gera uma
+ * vez o de 7 dias (antes da mesa das 19h30), mesmo que alguém já tenha gerado
+ * outro recorte no dia.
  *
  * Modelo fora do ar ou sem resposta não derruba o relatório: os números saem,
  * a narrativa fica nula com o aviso. Toda chamada leva `orgId` para o teto.
@@ -65,11 +69,11 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     if (p.diaDaSemana !== 'qui' || Number.isNaN(minutos) || minutos < HORA_DO_RELATOR_MIN) return 0;
     const marca = `${orgId}:${p.dia}`;
     if (this.geradoNoDia.has(marca)) return 0;
-    if (await this.memoria.porChave(orgId, `${PREFIXO_DO_RELATORIO}${p.dia}`)) {
+    if (await this.relatorioDoDia(orgId, p.dia, DIAS_PADRAO_DO_RELATORIO)) {
       this.geradoNoDia.add(marca);
       return 0;
     }
-    await this.gerar(orgId, { agora, origem: 'relogio' });
+    await this.gerar(orgId, { agora, dias: DIAS_PADRAO_DO_RELATORIO, origem: 'relogio' });
     this.geradoNoDia.add(marca);
     return 1;
   }
@@ -168,8 +172,8 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     }
     const final: RelatorioDaSemana = { ...r, narrativa, narrativaAvisos: avisos, origem: opcoes.origem ?? 'pessoa' };
     const dia = partesNoFuso(agora, fusoDaPolitica()).dia;
-    await gravarNota(this.memoria, orgId, `${PREFIXO_DO_RELATORIO}${dia}`, {
-      title: `Relatório da semana · ${dia}`,
+    await gravarNota(this.memoria, orgId, chaveDoRelatorio(dia, final.periodoDias), {
+      title: `Relatório da semana · ${dia} · ${final.periodoDias} dias`,
       body: corpoComDado(markdownDoRelatorio(final), final),
       motivo: `relatório da semana gerado (${final.origem}), últimos ${final.periodoDias} dias`,
       tags: ['comercial', 'relatorio'],
@@ -178,15 +182,28 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     return final;
   }
 
-  /** Quando o relator gerou pela última vez (últimos 8 dias), para a torre. */
-  async ultimaGeracaoEm(orgId: string, agora: Date = new Date()): Promise<Date | null> {
-    const hoje = partesNoFuso(agora, fusoDaPolitica()).dia;
-    for (let i = 0; i <= 7; i++) {
-      const nota = await this.memoria.porChave(orgId, `${PREFIXO_DO_RELATORIO}${somarDias(hoje, -i)}`);
+  /** O relatório gravado de um dia com o recorte pedido (a chave nova, ou a antiga se o dado for do mesmo recorte). */
+  private async relatorioDoDia(orgId: string, dia: string, periodoDias: number): Promise<RelatorioDaSemana | null> {
+    for (const chave of chavesDoRelatorio(dia, periodoDias)) {
+      const nota = await this.memoria.porChave(orgId, chave);
       const dado = nota ? dadoDaNota<RelatorioDaSemana>(nota.body) : null;
-      if (dado?.geradoEm) return new Date(dado.geradoEm);
+      if (dado && dado.periodoDias === periodoDias) return dado;
     }
     return null;
+  }
+
+  /** Quando o relator gerou pela última vez (últimos 8 dias, nos recortes da tela 13), para a torre. */
+  async ultimaGeracaoEm(orgId: string, agora: Date = new Date()): Promise<Date | null> {
+    const hoje = partesNoFuso(agora, fusoDaPolitica()).dia;
+    let ultima: Date | null = null;
+    for (let i = 0; i <= 7 && !ultima; i++) {
+      for (const recorte of RECORTES_DA_TELA) {
+        const dado = await this.relatorioDoDia(orgId, somarDias(hoje, -i), recorte);
+        const em = dado?.geradoEm ? new Date(dado.geradoEm) : null;
+        if (em && (!ultima || em.getTime() > ultima.getTime())) ultima = em;
+      }
+    }
+    return ultima;
   }
 
   /** Tela 13: o último relatório gerado nos últimos 7 dias com o mesmo recorte; sem ele, os números ao vivo. */
@@ -194,9 +211,8 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     const periodoDias = diasDoPedido(diasPedidos);
     const hoje = partesNoFuso(agora, fusoDaPolitica()).dia;
     for (let i = 0; i <= 7; i++) {
-      const nota = await this.memoria.porChave(orgId, `${PREFIXO_DO_RELATORIO}${somarDias(hoje, -i)}`);
-      const dado = nota ? dadoDaNota<RelatorioDaSemana>(nota.body) : null;
-      if (dado && dado.periodoDias === periodoDias) return dado;
+      const dado = await this.relatorioDoDia(orgId, somarDias(hoje, -i), periodoDias);
+      if (dado) return dado;
     }
     return this.numeros(orgId, periodoDias, agora);
   }

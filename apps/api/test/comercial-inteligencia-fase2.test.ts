@@ -342,7 +342,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     expect(await relatorios.talvezGerar(ORG, new Date('2026-10-15T17:59:00-03:00'))).toBe(0);
     expect(await relatorios.talvezGerar(ORG, new Date('2026-10-15T18:00:00-03:00'))).toBe(1);
     expect(await relatorios.talvezGerar(ORG, new Date('2026-10-15T18:30:00-03:00'))).toBe(0);
-    expect(memoria.notas.has('comercial.relatorio.semana.2026-10-15')).toBe(true);
+    expect(memoria.notas.has('comercial.relatorio.semana.2026-10-15.7d')).toBe(true);
   });
 
   it('a torre lê o nível, a última vez, o acerto, a premissa do vigia e o custo do stub', async () => {

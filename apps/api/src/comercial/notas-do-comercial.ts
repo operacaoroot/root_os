@@ -11,7 +11,10 @@ import type { MemoriaService } from '../memory/memoria.service';
  *
  *   · `comercial.vigia` — UMA nota; cada passagem é uma versão nova. O histórico
  *     da nota é o histórico do vigia;
- *   · `comercial.relatorio.semana.AAAA-MM-DD` — uma nota por dia de geração.
+ *   · `comercial.relatorio.semana.AAAA-MM-DD.<N>d` — uma nota por dia de geração
+ *     E por recorte (revisão E-11): o de 30 dias gerado à tarde não ocupa o
+ *     lugar do de 7 da quinta, e gerar um recorte não versiona o outro. A chave
+ *     antiga, sem recorte, ainda é lida (`chavesDoRelatorio`).
  *
  * O corpo é markdown para gente ler, com o dado estruturado num bloco
  * ```json no fim, que a torre e a tela 13 relêem (`dadoDaNota`).
@@ -19,6 +22,16 @@ import type { MemoriaService } from '../memory/memoria.service';
 
 export const CHAVE_DO_VIGIA = 'comercial.vigia';
 export const PREFIXO_DO_RELATORIO = 'comercial.relatorio.semana.';
+
+/** A chave do relatório de um dia com um recorte (E-11). */
+export function chaveDoRelatorio(dia: string, dias: number): string {
+  return `${PREFIXO_DO_RELATORIO}${dia}.${dias}d`;
+}
+
+/** As chaves a procurar para um dia e um recorte: a nova, e a antiga sem recorte (o dado confere o recorte). */
+export function chavesDoRelatorio(dia: string, dias: number): string[] {
+  return [chaveDoRelatorio(dia, dias), `${PREFIXO_DO_RELATORIO}${dia}`];
+}
 
 const BLOCO_JSON = /```json\n([\s\S]*?)\n```\s*$/;
 

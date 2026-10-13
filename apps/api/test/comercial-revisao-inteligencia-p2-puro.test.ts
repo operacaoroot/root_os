@@ -13,7 +13,10 @@ import type { SalaService } from '../src/comercial/sala.service';
 import { DiagnosticoService } from '../src/comercial/diagnostico.service';
 import type { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { InteligenciaController } from '../src/comercial/inteligencia.controller';
+import { RelatorioDaSemanaService } from '../src/comercial/relatorio-da-semana.service';
+import type { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import type { LlmProvider } from '../src/llm/llm.provider';
+import type { MemoriaService } from '../src/memory/memoria.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
 
 /*
@@ -93,5 +96,49 @@ describe('revisão E-15: o assistente da proposta tem freio na torre', () => {
     expect(abertas).toHaveLength(1);
     expect(abertas[0]).toMatchObject({ tipo: 'aprovacao_de_envio', padrao: 'responder_por_fora' });
     expect(r).toMatchObject({ doModelo: false, levadaAoSocio: true, decisaoId: 'dec-1', nivel: 'A0' });
+  });
+});
+
+describe('revisão E-11: o relatório guarda o recorte na chave', () => {
+  function relator() {
+    const notas = new Map<string, { id: string; chave: string; body: string; versao: number; arquivadoEm: null }>();
+    let seq = 0;
+    const memoria = {
+      porChave: async (_o: string, chave: string) => notas.get(chave) ?? null,
+      criar: async (_o: string, e: { chave: string; body: string }) => {
+        const n = { id: `n${++seq}`, chave: e.chave, body: e.body, versao: 1, arquivadoEm: null as null };
+        notas.set(n.chave, n);
+        return n;
+      },
+      alterar: async (_o: string, id: string, e: { body: string }) => {
+        const n = [...notas.values()].find((x) => x.id === id)!;
+        n.body = e.body;
+        n.versao += 1;
+        return n;
+      },
+    } as unknown as MemoriaService;
+    const llm = { name: 'stub', model: 'stub', complete: async () => 'A semana teve leitura sem número.' } as unknown as LlmProvider;
+    const svc = new RelatorioDaSemanaService({} as PrismaService, memoria, { inscrever: () => undefined } as unknown as RelogioComercialRegistry, llm);
+    // Os números do banco não são o assunto aqui: o dublê devolve o recorte pedido.
+    svc.numeros = async (_o: string, dias?: unknown, agora: Date = new Date()) =>
+      ({
+        periodoDias: Number(dias) || 7, leads: 0, fechados: 0, medianaDiasDoOiAoPix: null, acoes: { automaticas: 0, humanas: 0 },
+        funil: [], perdasPorMotivo: [], previsao: null, leadsEmPropostaAgora: 0, propostasVencendo: [],
+        geradoEm: agora.toISOString(), narrativa: null, origem: 'ao_vivo',
+      });
+    return { svc, notas };
+  }
+
+  it('o de 30 dias gerado na quinta à tarde não impede o de 7 das 18:00, e cada recorte lê o seu', async () => {
+    const { svc, notas } = relator();
+    await svc.gerar('org', { dias: 30, agora: new Date('2026-10-15T17:00:00-03:00'), origem: 'pessoa' });
+    expect(await svc.talvezGerar('org', new Date('2026-10-15T18:00:00-03:00'))).toBe(1);
+    expect([...notas.keys()].sort()).toEqual(['comercial.relatorio.semana.2026-10-15.30d', 'comercial.relatorio.semana.2026-10-15.7d']);
+    expect(await svc.ler('org', 7, new Date('2026-10-15T19:00:00-03:00'))).toMatchObject({ periodoDias: 7, origem: 'relogio' });
+    expect(await svc.ler('org', 30, new Date('2026-10-15T19:00:00-03:00'))).toMatchObject({ periodoDias: 30, origem: 'pessoa' });
+    // Gerar de novo o de 30 versiona só a nota do de 30.
+    await svc.gerar('org', { dias: 30, agora: new Date('2026-10-15T19:10:00-03:00'), origem: 'pessoa' });
+    expect(notas.get('comercial.relatorio.semana.2026-10-15.7d')!.versao).toBe(1);
+    expect(notas.get('comercial.relatorio.semana.2026-10-15.30d')!.versao).toBe(2);
   });
 });
