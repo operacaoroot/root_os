@@ -13,7 +13,7 @@ Do primeiro contato do lead à gestão do contrato, com o mínimo de ação huma
 - **Sala do cliente.** `/s/<token>`, pública, o mesmo token do primeiro contato ao kickoff. Token só em hash (e cifrado para reescrever o link). Rotas `/api/sala/:token/*` com limite por origem. Depois do aceite, os dados do contratante e o pedido de ajuste deixam de ser aceitos.
 - **WhatsApp por porta.** `simulado` (padrão na homologação, com a tela `/comercial/simulador`), `evolution` e o esqueleto `meta`. Textos M1 a M8 versionados em `comercial/textos-das-mensagens.ts`. O link da sala nunca fica em claro no texto guardado nem nos argumentos assinados (vai um marcador; só o provedor recebe o link).
 - **Inteligência.** `LLM_PROVIDER` `stub` (testes e seed), `ponte` (CLI do Claude Code no host, só demonstração) ou `anthropic`. Leitor de ata para diagnóstico com minuto, construtor e revisor de proposta (preço só da tabela de 04/10), assistente da dúvida (só responde ao cliente o que é literal da proposta; o resto vai a uma pessoa), relator e vigia.
-- **Dinheiro e assinatura por porta.** Cobrança (`asaas`) e assinatura (`zapsign`), com dublês na homologação. A cobrança leva o devedor nos argumentos assinados. O link de assinar pela Root só existe cifrado e só sai ao signatário titular cadastrado, com a senha.
+- **Dinheiro e assinatura por porta.** Cobrança (`asaas`) e assinatura (`zapsign`), com dublês na homologação. A cobrança leva o devedor nos argumentos assinados. O pagamento da 1ª parcela vira `pix.pago`, `boleto.pago` ou `cartao.pago` conforme a forma; estorno e chargeback tiram a parcela de paga (`parcela.estornada`) e seguram o fechamento. O link de assinar pela Root só existe cifrado e só sai ao signatário titular cadastrado, com a senha.
 - **Fechamento.** `fechamento.service.ts` com chave `fech-<leadId>-v<n>`: cliente, contrato, cobrança, kit e trilho do onboarding, grupo do WhatsApp com M8. Rodar de novo reaproveita e não duplica. Só vai à fila com a 1ª parcela paga e as duas assinaturas.
 - **Leituras.** Contrato vivo (tela 11), torre das automações (tela 12, com autonomia A0 a A3 por automação), relatório da semana (tela 13).
 
@@ -31,6 +31,8 @@ Do primeiro contato do lead à gestão do contrato, com o mínimo de ação huma
 | 12 torre | `/comercial/torre` |
 | 13 relatório | `/comercial/relatorio` |
 | 02, 07, 08 sala do cliente | `/s/[token]` |
+
+Variáveis da API no ambiente (nos dois lugares, `docker-compose.yml` e `.env`): `ASAAS_WEBHOOK_TOKEN`, `ZAPSIGN_API_TOKEN`, `ZAPSIGN_BASE_URL`, `ZAPSIGN_WEBHOOK_TOKEN`, `WHATSAPP_PROVEDOR` (padrão `simulado`). `PONTE_MODELO_*` e `QUADRO_DE_CUSTOS_EXEMPLO` são só da homologação e não entram no compose de produção.
 
 Prefixos de API `comercial` e `sala`, governados pelo módulo `leads`. Permissões existentes: `leads.ver`, `leads.editar`, `aprovacoes.ver`, `aprovacoes.decidir`. Nenhuma permissão nova.
 
@@ -59,7 +61,7 @@ Em `ComercialConfig`, por empresa. Mudar pede `aprovacoes.decidir`, recusa conta
 | `fechamentoAutomatico` (K08-2) | falso | o fechamento vai à porta no fim da janela de veto, salvo veto; o R4 continua |
 | `silencioAprova` (K08-3) | falso | proposta dentro da tabela com laudo limpo é agendada; a ida à porta continua R3 |
 | `autonomia` por automação | degrau vigente | A0 pula e registra; A3 roda e só avisa quebra; R3 e R4 param em A2 |
-| números da régua | nulo = `[a decidir]` = desligado | a homologação preenche no seed com `valoresDeHomologacao` |
+| números da régua (inclui `geladeiraVoltaDias`) | nulo = `[a decidir]` = desligado | a homologação preenche no seed com `valoresDeHomologacao`; sem `geladeiraVoltaDias`, a geladeira decidida pela fila pede a data de volta a uma pessoa |
 
 ## O que depende da mesa (K08)
 

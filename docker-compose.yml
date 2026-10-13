@@ -258,6 +258,14 @@ services:
       ASAAS_API_KEY: ${ASAAS_API_KEY:-}
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-}
       ASAAS_SYNC_INTERVAL_MIN: ${ASAAS_SYNC_INTERVAL_MIN:-360}
+      # Comercial (cockpit do lead, D-9 da revisão): segredo do webhook do Asaas,
+      # ZapSign e o provedor de WhatsApp do comercial. Sem os segredos dos
+      # webhooks, o pagamento e a assinatura não voltam ao OS (falha fechada).
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
+      ZAPSIGN_API_TOKEN: ${ZAPSIGN_API_TOKEN:-}
+      ZAPSIGN_BASE_URL: ${ZAPSIGN_BASE_URL:-}
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-}
+      WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-simulado}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
