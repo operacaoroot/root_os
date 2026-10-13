@@ -8,3 +8,5 @@
 !**/.env.example
 *.log
 data/
+homolog/.tmp
+homolog/provas

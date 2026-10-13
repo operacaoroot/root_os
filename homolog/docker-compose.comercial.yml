@@ -38,7 +38,11 @@ services:
       - "127.0.0.1:${REDIS_PORT:-6391}:6379"
     networks: [rootos-comercial-net]
 
+  # MinIO fica num perfil: o pull do quay.io e do docker.io foi recusado nesta
+  # máquina em 13/10/2026, e o comercial não usa storage (a API só liga o
+  # StorageService com S3_ACCESS_KEY). Subir com `--profile storage` quando houver imagem.
   minio:
+    profiles: ["storage"]
     image: quay.io/minio/minio
     container_name: rootos_comercial_minio
     restart: unless-stopped
@@ -62,6 +66,9 @@ services:
     environment:
       WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
       WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-homolog}
+      PUBLIC_URL: http://${TAILSCALE_IP:-100.95.41.124}:${ASAAS_MOCK_PORT:-4011}
+    volumes:
+      - rootos_comercial_asaas:/data
     ports:
       - "127.0.0.1:${ASAAS_MOCK_PORT:-4011}:4011"
       - "${TAILSCALE_IP:-100.95.41.124}:${ASAAS_MOCK_PORT:-4011}:4011"
@@ -75,6 +82,8 @@ services:
       WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
       WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-homolog}
       PUBLIC_URL: http://${TAILSCALE_IP:-100.95.41.124}:${ZAPSIGN_MOCK_PORT:-4012}
+    volumes:
+      - rootos_comercial_zapsign:/data
     ports:
       - "127.0.0.1:${ZAPSIGN_MOCK_PORT:-4012}:4012"
       - "${TAILSCALE_IP:-100.95.41.124}:${ZAPSIGN_MOCK_PORT:-4012}:4012"
@@ -163,6 +172,8 @@ services:
     networks: [rootos-comercial-net]
 
 volumes:
+  rootos_comercial_asaas:
+  rootos_comercial_zapsign:
   rootos_comercial_db:
   rootos_comercial_minio:
   rootos_comercial_vault:
