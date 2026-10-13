@@ -60,6 +60,8 @@ export function periodoDoLeadParado(etapa: string, etapaDesde: Date, agora: Date
 export class RelogioDaEspinha implements OnModuleInit {
   private readonly log = new Logger('RelogioComercial');
   private readonly garantidas = new Set<string>();
+  /** Os pulos de autonomia (A0) já registrados hoje, por empresa e tarefa. */
+  private readonly pulosAvisados = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -124,6 +126,7 @@ export class RelogioDaEspinha implements OnModuleInit {
     const feitos: string[] = [];
     const falhas: string[] = [];
     const puladas: string[] = [];
+    let novosPulos = 0;
     for (const [nome, fn] of this.tarefas.inscritas()) {
       try {
         // A autonomia (lane E): tarefa de automação em A0 não roda, e o pulo vai ao resumo.
@@ -131,6 +134,12 @@ export class RelogioDaEspinha implements OnModuleInit {
         const v = guarda ? await guarda(orgId, nome) : { roda: true as const };
         if (!v.roda) {
           puladas.push(`${nome} (${v.automacao} em ${v.nivel})`);
+          // O pulo vira linha de histórico UMA vez por dia e tarefa: a passagem é de minuto em minuto.
+          const marca = `${orgId}:${nome}:${agora.toISOString().slice(0, 10)}`;
+          if (!this.pulosAvisados.has(marca)) {
+            this.pulosAvisados.add(marca);
+            novosPulos++;
+          }
           continue;
         }
         const r = await fn(orgId, agora);
@@ -144,7 +153,11 @@ export class RelogioDaEspinha implements OnModuleInit {
     }
     if (falhas.length) return { status: 'erro', resumo: `falharam ${falhas.length}: ${falhas.join(' · ')}${feitos.length ? ` · feitas: ${feitos.join(', ')}` : ''}` };
     const seguradas = puladas.length ? ` · seguradas pela autonomia: ${puladas.join(', ')}` : '';
-    if (!feitos.length) return { status: 'pulada', resumo: `nada a fazer no relógio comercial.${seguradas}` };
+    if (!feitos.length) {
+      // Pulo de autonomia novo no dia: a passagem fica no histórico (`ok`), para o A0 deixar rastro.
+      if (novosPulos) return { status: 'ok', resumo: `nada feito.${seguradas}` };
+      return { status: 'pulada', resumo: `nada a fazer no relógio comercial.${seguradas}` };
+    }
     return { status: 'ok', resumo: `${feitos.join(', ')}${seguradas}` };
   }
 

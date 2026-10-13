@@ -175,6 +175,10 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     const r = await relogio.passagem(ORG, new Date());
     expect(fupRodou).toBe(0);
     expect(r.resumo).toContain('whats.fup (fupeiro em A0)');
+    // O primeiro pulo do dia fica no histórico da rotina; os seguintes, não (a passagem é de minuto em minuto).
+    expect(r.status).toBe('ok');
+    const r2 = await relogio.passagem(ORG, new Date());
+    expect(r2.status).toBe('pulada');
   });
 
   it('A1 ou acima roda como hoje (a porta continua decidindo o toque)', async () => {
