@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import {
   COMERCIAL_AUTOMACOES,
   ComercialConfigSchema,
@@ -8,6 +8,8 @@ import {
 } from '@mktos/shared';
 import { Prisma } from '@prisma/client';
 
+import { temPapelDeMaquina } from '../approvals/alcada';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { nivelDe } from './autonomia';
 
@@ -120,15 +122,25 @@ export function configDaLinha(linha: LinhaDeConfig | null): ConfigComercial {
 
 @Injectable()
 export class ConfigComercialService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly audit?: AuditService,
+  ) {}
 
   async ler(orgId: string): Promise<ConfigComercial> {
     const linha = await this.prisma.comercialConfig.findUnique({ where: { orgId } });
     return configDaLinha(linha);
   }
 
-  /** Grava o que veio no corpo, validado. Devolve a configuração inteira depois da escrita. */
-  async gravar(orgId: string, corpo: unknown): Promise<ConfigComercial> {
+  /**
+   * Grava o que veio no corpo, validado. Devolve a configuração inteira depois da escrita.
+   *
+   * Pela tela (A-1 da revisão), `quem` vem preenchido: conta de máquina não
+   * mexe nos interruptores da mesa nem na autonomia, e a escrita vai ao RASTRO
+   * com o antes e o depois de cada campo que mudou.
+   */
+  async gravar(orgId: string, corpo: unknown, quem?: { id: string; papeis: readonly string[]; ip?: string }): Promise<ConfigComercial> {
+    if (quem && temPapelDeMaquina(quem.papeis)) throw new ForbiddenException('Conta de serviço não muda os interruptores nem a autonomia do comercial.');
     const r = ComercialConfigSchema.safeParse(corpo ?? {});
     if (!r.success) {
       throw new BadRequestException({
@@ -137,12 +149,31 @@ export class ConfigComercialService {
       });
     }
     const dados = this.dadosDaEscrita(r.data);
+    const antes = quem ? await this.ler(orgId) : null;
     await this.prisma.comercialConfig.upsert({
       where: { orgId },
       create: { orgId, ...dados },
       update: dados,
     });
-    return this.ler(orgId);
+    const depois = await this.ler(orgId);
+    if (quem && antes) {
+      const a = antes as unknown as Record<string, unknown>;
+      const d = depois as unknown as Record<string, unknown>;
+      const mudou = Object.keys(d).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(d[k]));
+      if (mudou.length) {
+        await this.audit?.log({
+          orgId,
+          actorId: quem.id,
+          action: 'comercial.config.alterada',
+          entityType: 'comercial.config',
+          entityId: orgId,
+          ip: quem.ip,
+          before: Object.fromEntries(mudou.map((k) => [k, a[k] ?? null])) as Prisma.InputJsonValue,
+          after: Object.fromEntries(mudou.map((k) => [k, d[k] ?? null])) as Prisma.InputJsonValue,
+        });
+      }
+    }
+    return depois;
   }
 
   private dadosDaEscrita(c: ComercialConfigInput): Omit<Prisma.ComercialConfigUncheckedCreateInput, 'orgId'> {

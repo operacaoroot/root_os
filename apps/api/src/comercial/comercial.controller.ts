@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Ip, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { COMERCIAL_ESTADOS_DE_DECISAO, ComercialDecisaoRespostaSchema, type ComercialEstadoDeDecisao } from '@mktos/shared';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
@@ -107,9 +107,13 @@ export class ComercialController {
     return this.configSvc.ler(user.orgId);
   }
 
+  /**
+   * Os interruptores da mesa (K08) e a autonomia são decisão de mesa (A-1): pede
+   * `aprovacoes.decidir`, recusa conta de máquina e grava no RASTRO.
+   */
   @Put('config')
-  @RequirePermissions('leads.editar')
-  salvarConfig(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    return this.configSvc.gravar(user.orgId, body);
+  @RequirePermissions('aprovacoes.decidir')
+  salvarConfig(@CurrentUser() user: JwtUser, @Body() body: unknown, @Ip() ip: string) {
+    return this.configSvc.gravar(user.orgId, body, { id: user.sub, papeis: user.roles ?? [], ip });
   }
 }
