@@ -35,6 +35,8 @@ export class PonteProvider implements LlmProvider {
   private readonly url = env('PONTE_MODELO_URL', 'http://127.0.0.1:4099').replace(/\/$/, '');
   private readonly prazoMs = envNumero('PONTE_MODELO_PRAZO_MS', PRAZO_PADRAO_MS);
   readonly model = env('PONTE_MODELO', 'claude-fable-5-1');
+  /** O token compartilhado com a ponte (E-1): sem ele a ponte recusa com 401 e a chamada cai no stub com aviso. */
+  private readonly token = env('PONTE_MODELO_TOKEN', '');
 
   constructor(private readonly stub: StubProvider) {}
 
@@ -53,7 +55,7 @@ export class PonteProvider implements LlmProvider {
     try {
       const r = await fetch(`${this.url}/complete`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(this.token ? { 'x-ponte-token': this.token } : {}) },
         body: JSON.stringify({ system: input.system, user: input.user, maxTokens: input.maxTokens }),
         signal: controle.signal,
       });

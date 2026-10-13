@@ -118,6 +118,7 @@ services:
       # Inteligência: stub (determinístico) | ponte (claude CLI no host) | anthropic (chave válida)
       LLM_PROVIDER: ${LLM_PROVIDER:-stub}
       PONTE_MODELO_URL: ${PONTE_MODELO_URL:-http://host.docker.internal:4099}
+      PONTE_MODELO_TOKEN: ${PONTE_MODELO_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-fable-5-1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
