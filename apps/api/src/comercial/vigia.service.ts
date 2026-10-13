@@ -24,7 +24,7 @@ import { DecisoesService, SEM_PRAZO } from './decisoes.service';
 import { FioService } from './fio.service';
 import { CHAVE_DO_VIGIA, corpoComDado, dadoDaNota, gravarNota } from './notas-do-comercial';
 import { proximaAcaoDoLead } from './proxima-acao';
-import { RelogioComercialRegistry } from './relogio.registry';
+import { MarcasDoDia, RelogioComercialRegistry } from './relogio.registry';
 import { MENSAGENS } from './mensagens';
 
 /*
@@ -161,7 +161,7 @@ function premissa(chave: string, automacao: ComercialAutomacao | null, texto: st
 @Injectable()
 export class VigiaService implements OnModuleInit {
   private readonly log = new Logger('VigiaComercial');
-  private readonly passouHoje = new Set<string>();
+  private readonly passouHoje = new MarcasDoDia();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -186,15 +186,15 @@ export class VigiaService implements OnModuleInit {
   async talvezPassar(orgId: string, agora: Date): Promise<number> {
     const h = horaDoVigia(agora);
     if (!h.passou) return 0;
-    const marca = `${orgId}:${h.dia}`;
-    if (this.passouHoje.has(marca)) return 0;
+    // E-19: as marcas do processo guardam só o dia corrente.
+    if (this.passouHoje.tem(h.dia, orgId)) return 0;
     const ultima = await this.ultimaPassagem(orgId);
     if (passagemDasOitoDeHoje(ultima, h.dia)) {
-      this.passouHoje.add(marca);
+      this.passouHoje.marcar(h.dia, orgId);
       return 0;
     }
     await this.passar(orgId, agora);
-    this.passouHoje.add(marca);
+    this.passouHoje.marcar(h.dia, orgId);
     return 1;
   }
 

@@ -1,6 +1,6 @@
 import { COMERCIAL_ROTULO_DA_ETAPA, ehSaida, type ComercialEtapa, type ComercialProximaAcao } from '@mktos/shared';
 
-import { isoEmSP } from './agenda-de-homologacao';
+import { proximaHoraNoFuso } from './hora-da-politica';
 
 /*
  * A PRÓXIMA AÇÃO E A SAÚDE DO LEAD (lane E, fase 2, 13/10/2026) — a parte pura.
@@ -78,10 +78,9 @@ const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() 
 const mais = (d: Date, dias: number): Date => new Date(d.getTime() + dias * DIA_MS);
 
 /** A próxima hora cheia `hora` de São Paulo a partir de `agora` (a de hoje, se ainda não passou). */
-export function proximaHoraEmSP(agora: Date, hora: number): Date {
-  const local = new Date(agora.getTime() - 3 * 3_600_000);
-  const hoje = new Date(isoEmSP(local.getUTCFullYear(), local.getUTCMonth() + 1, local.getUTCDate(), hora));
-  return hoje.getTime() > agora.getTime() ? hoje : mais(hoje, 1);
+export function proximaHoraEmSP(agora: Date, hora: number, fuso?: string): Date {
+  // E-17: pelo fuso da política, não por -3 h fixo.
+  return proximaHoraNoFuso(agora, hora, fuso);
 }
 
 function acao(tipo: string, descricao: string, quando: Date | null = null): ComercialProximaAcao {

@@ -21,7 +21,7 @@ import {
   perdasPorMotivo,
   promptDoRelatorio,
 } from './relatorio-da-semana';
-import { RelogioComercialRegistry } from './relogio.registry';
+import { MarcasDoDia, RelogioComercialRegistry } from './relogio.registry';
 
 /*
  * O RELATOR DA QUINTA (lane E, fase 2, 13/10/2026). Tela 13.
@@ -44,7 +44,7 @@ const DIA_MS = 86_400_000;
 @Injectable()
 export class RelatorioDaSemanaService implements OnModuleInit {
   private readonly log = new Logger('RelatorComercial');
-  private readonly geradoNoDia = new Set<string>();
+  private readonly geradoNoDia = new MarcasDoDia();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -67,14 +67,14 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     const p = partesNoFuso(agora, fuso);
     const minutos = minutosNoFuso(agora, fuso);
     if (p.diaDaSemana !== 'qui' || Number.isNaN(minutos) || minutos < HORA_DO_RELATOR_MIN) return 0;
-    const marca = `${orgId}:${p.dia}`;
-    if (this.geradoNoDia.has(marca)) return 0;
+    // E-19: as marcas do processo guardam só o dia corrente.
+    if (this.geradoNoDia.tem(p.dia, orgId)) return 0;
     if (await this.relatorioDoDia(orgId, p.dia, DIAS_PADRAO_DO_RELATORIO)) {
-      this.geradoNoDia.add(marca);
+      this.geradoNoDia.marcar(p.dia, orgId);
       return 0;
     }
     await this.gerar(orgId, { agora, dias: DIAS_PADRAO_DO_RELATORIO, origem: 'relogio' });
-    this.geradoNoDia.add(marca);
+    this.geradoNoDia.marcar(p.dia, orgId);
     return 1;
   }
 

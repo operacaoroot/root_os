@@ -3,11 +3,13 @@ import {
   TABELA_DE_PRECO_DATA,
   formatarReais,
   precoNaTabela,
+  somarDias,
   type ComercialFormaDePagamento,
   type ComercialProduto,
 } from '@mktos/shared';
 
 import { hashDoConteudo } from './eventos';
+import { diaNaPolitica, fimDoDiaComDesvio } from './hora-da-politica';
 
 /*
  * O CONSTRUTOR E O REVISOR DE PROPOSTA — a parte pura (lane E, 13/10/2026).
@@ -83,11 +85,10 @@ export function valorComDesconto(valorCentavos: number, pct: number): number {
 }
 
 /** A data da validade: o fim do dia em São Paulo, `dias` depois de `agora`. */
-export function validadeAte(agora: Date, dias: number | null): string | null {
+export function validadeAte(agora: Date, dias: number | null, fuso?: string): string | null {
   if (!dias || dias < 1) return null;
-  const sp = new Date(agora.getTime() - 3 * 3_600_000);
-  const alvo = new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate() + dias));
-  return `${alvo.toISOString().slice(0, 10)}T23:59:59-03:00`;
+  // E-17: o dia e o desvio vêm do fuso da política, não de -3 h fixo.
+  return fimDoDiaComDesvio(somarDias(diaNaPolitica(agora, fuso), dias), fuso);
 }
 
 /** A alternativa da tela 07: quem recebe a Operação vê a Imersão; o resto não tem alternativa. */

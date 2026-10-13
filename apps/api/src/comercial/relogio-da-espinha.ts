@@ -11,7 +11,8 @@ import { DecisoesService } from './decisoes.service';
 import { FichaService } from './ficha.service';
 import { etapaDeVolta } from './portoes';
 import { FioService } from './fio.service';
-import { RelogioComercialRegistry } from './relogio.registry';
+import { diaNaPolitica } from './hora-da-politica';
+import { MarcasDoDia, RelogioComercialRegistry } from './relogio.registry';
 
 /*
  * O RELÓGIO COMERCIAL (lane A, 13/10/2026) — a rotina `comercial.relogio`.
@@ -61,7 +62,7 @@ export class RelogioDaEspinha implements OnModuleInit {
   private readonly log = new Logger('RelogioComercial');
   private readonly garantidas = new Set<string>();
   /** Os pulos de autonomia (A0) já registrados hoje, por empresa e tarefa. */
-  private readonly pulosAvisados = new Set<string>();
+  private readonly pulosAvisados = new MarcasDoDia();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -135,9 +136,11 @@ export class RelogioDaEspinha implements OnModuleInit {
         if (!v.roda) {
           puladas.push(`${nome} (${v.automacao} em ${v.nivel})`);
           // O pulo vira linha de histórico UMA vez por dia e tarefa: a passagem é de minuto em minuto.
-          const marca = `${orgId}:${nome}:${agora.toISOString().slice(0, 10)}`;
-          if (!this.pulosAvisados.has(marca)) {
-            this.pulosAvisados.add(marca);
+          // E-18: o dia é o do fuso da política (o dia UTC virava às 21h de São Paulo). E-19: as marcas não crescem.
+          const dia = diaNaPolitica(agora);
+          const marca = `${orgId}:${nome}`;
+          if (!this.pulosAvisados.tem(dia, marca)) {
+            this.pulosAvisados.marcar(dia, marca);
             novosPulos++;
           }
           continue;

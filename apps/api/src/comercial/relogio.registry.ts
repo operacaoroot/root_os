@@ -19,6 +19,39 @@ import type { GuardaDaAutonomia } from './fio.service';
 
 export type TarefaDoRelogio = (orgId: string, agora: Date) => Promise<unknown>;
 
+/**
+ * E-19 (revisão): as marcas "já feito no dia" das tarefas do relógio, que
+ * crescem com empresa × dia × tarefa enquanto o processo vive. Aqui só fica o
+ * dia mais novo visto: quando ele vira, as marcas dos dias anteriores saem.
+ * Marca de dia mais velho que o corrente não fica guardada (vale como "não
+ * feito", e quem chama confere no banco, como já fazia ao subir o processo).
+ */
+export class MarcasDoDia {
+  private dia = '';
+  private readonly marcas = new Set<string>();
+
+  tem(dia: string, marca: string): boolean {
+    this.virar(dia);
+    return dia === this.dia && this.marcas.has(marca);
+  }
+
+  marcar(dia: string, marca: string): void {
+    this.virar(dia);
+    if (dia === this.dia) this.marcas.add(marca);
+  }
+
+  get tamanho(): number {
+    return this.marcas.size;
+  }
+
+  private virar(dia: string): void {
+    if (dia > this.dia) {
+      this.dia = dia;
+      this.marcas.clear();
+    }
+  }
+}
+
 @Injectable()
 export class RelogioComercialRegistry {
   private readonly tarefas = new Map<string, TarefaDoRelogio>();

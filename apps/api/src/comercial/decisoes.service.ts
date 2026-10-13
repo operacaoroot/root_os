@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { resumoDoEvento, uuidDe } from './eventos';
 import { FioService, type EventoGravado } from './fio.service';
+import { inicioDoDiaNoFuso } from './hora-da-politica';
 
 /*
  * A FILA DE DECISÕES (lane A, 13/10/2026) — K01 "a tela principal é a das exceções".
@@ -402,8 +403,7 @@ export class DecisoesService {
   }
 }
 
-/** Meia-noite de São Paulo (UTC-3, sem horário de verão desde 2019) do dia de `agora`. */
-export function inicioDoDiaEmSaoPaulo(agora: Date): Date {
-  const sp = new Date(agora.getTime() - 3 * 3_600_000);
-  return new Date(Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate()) + 3 * 3_600_000);
+/** Meia-noite do dia de `agora` no fuso da política (E-17: nunca -3 h fixo). */
+export function inicioDoDiaEmSaoPaulo(agora: Date, fuso?: string): Date {
+  return inicioDoDiaNoFuso(agora, fuso);
 }

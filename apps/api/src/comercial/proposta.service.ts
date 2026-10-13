@@ -24,6 +24,7 @@ import {
   type QuadroDeCustos,
   type VersaoDaProposta,
 } from './proposta-construtor';
+import { proximaHoraNoFuso } from './hora-da-politica';
 import { RelogioComercialRegistry } from './relogio.registry';
 
 /*
@@ -137,11 +138,9 @@ export function quadroDeExemplo(): QuadroDeCustos | null {
 }
 
 /** A próxima vez em que o relógio de São Paulo passa da `hora` (0 a 23), a partir de `agora`. */
-export function proximaHoraSP(agora: Date, hora: number): Date {
-  const sp = new Date(agora.getTime() - 3 * 3_600_000);
-  let alvo = Date.UTC(sp.getUTCFullYear(), sp.getUTCMonth(), sp.getUTCDate(), hora) + 3 * 3_600_000;
-  if (alvo <= agora.getTime()) alvo += 86_400_000;
-  return new Date(alvo);
+export function proximaHoraSP(agora: Date, hora: number, fuso?: string): Date {
+  // E-17: pelo fuso da política, não por -3 h fixo.
+  return proximaHoraNoFuso(agora, hora, fuso);
 }
 
 /** As opções do pedido de ajuste: o que o lead pediu, a metade (contraproposta provisória) e manter. */
