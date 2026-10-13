@@ -1,6 +1,6 @@
 # RESULTADO · Cockpit do lead (módulo comercial) · homologação no Predator
 
-> Estado: **FINAL da rodada 5**, escrito às 19:30 de 13/10/2026. Branch `comercial/cockpit-homolog`, tag `comercial-entrega-20261013`, base `main` 5260924. Bundle em `C:\Users\User\dev\rootos-comercial.bundle` (`main..comercial/cockpit-homolog`).
+> Estado: **FINAL da rodada 5**, escrito às 19:30 e atualizado às 20:25 de 13/10/2026 (depois dos P3). Branch `comercial/cockpit-homolog`, tag `comercial-entrega-20261013`, base `main` 5260924. Bundle em `C:\Users\User\dev\rootos-comercial.bundle` (`main..comercial/cockpit-homolog`).
 > Registro linha a linha em `homolog/progresso.md`. Laudos da revisão adversarial em `homolog/revisao/lane-*.md`. Como subir e operar: `homolog/README.md`. O que o módulo é: `docs/comercial/COCKPIT.md`.
 
 ## 1. O que funciona
@@ -46,7 +46,7 @@
 
 Sequência:
 
-1. Entre como `mesa@root.homolog`. `/comercial`: Studio Lume (ponto zero) e Construtora Alicerce (pedido de 8%), mais a decisão de lead parado que o relógio abriu sozinho.
+1. Entre como `mesa@root.homolog`. `/comercial`: a fila de decisões. As duas decisões da semente (Studio Lume, ponto zero; Construtora Alicerce, pedido de 8%) já venceram em 4 h (valor de homologação) e o relógio aplicou o padrão escrito, que aparece no fio de cada lead. Para ver a fila com decisões abertas, rode a jornada do passo 4 (ela abre e responde as suas) ou semeie num banco zerado com `COMERCIAL_SEED_DECISAO_HORAS=72`.
 2. `/comercial/funil`: as empresas por etapa. Tente arrastar um cartão: o portão diz o que falta.
 3. Abra a Construtora Alicerce: o fio do primeiro contato à proposta lida, com a decisão que levou à liberação a proposta com o quadro de exemplo.
 4. No terminal: `node homolog/e2e/jornada-docker.mjs` (10 a 90 s). Um lead novo percorre do "oi" ao contrato vivo e o roteiro imprime cada toque humano.
@@ -55,7 +55,7 @@ Sequência:
 
 ## 3. Números do e2e (rodada 5, imagem final, `homolog/provas/jornada-docker.json`)
 
-- **13 toques humanos**, 10 ações do cliente, 29 de 53 fatos automáticos (15 sozinhos pelas reações e pelo relógio, 14 efeitos liberados por uma pessoa), funil +1 fechado por execução, **9,2 s** (até 90 s quando a véspera espera o tique de 1 min do relógio).
+- **13 toques humanos**, 10 ações do cliente, 29 de 53 fatos automáticos (15 sozinhos pelas reações e pelo relógio, 14 efeitos liberados por uma pessoa), funil +1 fechado por execução. Tempo: 9,2 s a 104 s (o maior valor é a véspera esperando o tique de 1 min do relógio). Última execução na imagem final: 104,3 s, funil 7 → 8.
 - Os 13 toques:
   1. mesa libera a M1 (R3);
   2. titular assina a M2 (R4 pelo sinal `volume_atipico`, várias jornadas na mesma hora);
@@ -103,12 +103,14 @@ Todos com prova em teste e commit próprio (a lista completa com hora está em `
 
 - **P1:** B-1, B-2, D-3 (rodadas anteriores); **D-1/C-1** link de assinar pela Root só cifrado e só ao signatário titular com senha; **D-2** devedor nos argumentos da cobrança; **E-1** ponte sem shell, sem ferramentas, sem MCP e com token (ensaio contra o CLI real: a injeção não roda e o prompt de sistema chega inteiro); **E-2** a resposta da dúvida só vai direto quando é frase do sistema tirada da proposta, o resto vai a uma pessoa pela decisão `aprovacao_de_envio`; **E-3** quadro de exemplo só com a variável de homologação e como apontamento.
 - **P2:** A-1, A-2, B-3, B-4, B-5, B-6, B-7, C-2 a C-9, D-4, D-5, D-6, D-7, E-4 a E-13, E-15. E-14 resolvido pelo A-2.
-- **P3 não tratados:** A-3 a A-7, B-8 a B-13, C-10 a C-23, D-8 a D-12, E-17 a E-26 (detalhe nos laudos).
+- **P3 consertados (depois das 19:30):** A-3, A-4 (régua ganhou `geladeiraVoltaDias`, nulo = [a decidir]: a próxima ação pede a data a uma pessoa), A-5, A-7 (onde a empresa está à mão), B-10, B-11, C-10 a C-18, C-19, C-20 (API e tela), C-23, D-10 (estorno e chargeback; o fato da 1ª parcela tem o nome da forma: `pix.pago`, `boleto.pago`, `cartao.pago`), D-12, E-17 a E-20, E-22, E-23, E-24, E-26. Migration nova `20261013300000_comercial_geladeira_volta` (uma coluna anulável), aplicada nos três bancos.
+- **P3 não tratados:** A-6 (ficou coberto por E-24), B-8 (teto por origem atrás do Traefik: medir), B-9 e B-12 (texto aprovado do M3 e o glifo da sala: decisão da mesa), B-13 (registro), C-21 (dois funis no menu: decisão de produto), C-22 (fins de linha: registro), D-8, D-9 (variáveis do compose de produção), D-11, E-21 (coberto por C-5), E-25 (teto da ponte já entrou no E-1); A-7 ainda sem empresa em `aceiteDoLead`, `aceiteDaCobrancaAprovada`, `tiposNoFio` e `manifesto`; B-11 ainda escreve no GET para visita de gente (a página não tem POST de visita); B-10 sem teto de data do kickoff ([a decidir]).
 
 ## 7. Pendências com estado exato
 
 - **Testes vermelhos do baseline** neste Windows, iguais aos da `main` 5260924, não consertados: `documentacao`, `import-clickup-normalize`, `import-clickup-reconciliar`, `import-clickup-work`, `pauta-episodio`, `root-midia`, `vault-colecao`, `vault-pertenca` (permissão de arquivo, link simbólico, git).
-- **Suíte inteira da API** (841 arquivos, 4202 casos): 4120 verdes, 5 pulados (os de sempre), vermelhos = baseline + três que estouram prazo só sob carga (`comercial-inteligencia`, `pauta-dm-automatica`, `pauta-lote-da-semana`; passam sozinhos, 72/72). Web 846/846, política 101/101, isolamento 412/412 com o papel restrito, `db:diff` limpo, typecheck limpo, smoke OK.
+- **Suíte inteira da API, rodada sozinha na máquina às 20:17** (863 arquivos, 4228 casos): **4152 verdes, 5 pulados (os de sempre), 71 vermelhos, todos do baseline acima**. Com outra carga na máquina (build da imagem, outra suíte), casos longos estouram prazo: as três suítes do comercial que percorrem a jornada ganharam prazo de 30 s; `pauta-lote-da-semana` e `pauta-dm-automatica` (fora do comercial) ainda podem cair sob carga e passam sozinhas. Web 65 arquivos 857/857, política 101/101, isolamento 412/412 com o papel restrito, `db:diff` sem diferença, `typecheck` e `typecheck:test` limpos, smoke OK (a primeira tentativa do smoke caiu com o código de falha 0xC0000409 do Windows; a segunda passou limpa).
+- **Relatório da semana** regenerado na imagem final: 7 dias, 13 leads e 8 fechados; 30 dias, 17 leads e 8 fechados. Vigia: 13 premissas conferidas, 0 quebradas.
 - **Comentário desatualizado** em `apps/api/src/integrations/conectores.ts:247-251`: diz que o grupo sai por `comercial.whatsapp.enviar`; hoje ele sai no efeito do fechamento, consultando o interruptor do WhatsApp (D-6).
 - **v2 aceita sobre cobrança da v1:** `criarCobrancaDoAceite` responde "reaproveitada"; o D-4 impede o fechamento errado, mas esse lead não fecha até alguém tratar na mesa.
 - **Trava da cobrança (D-7):** a transação que a segura fica aberta enquanto o Asaas responde, até 180 s.
@@ -119,7 +121,7 @@ Todos com prova em teste e commit próprio (a lista completa com hora está em `
 - **A jornada em Docker** depende de horário: a M3 só sai na véspera (rode depois das 10h de São Paulo num dia que antecede dia útil).
 - **Commit `aa06b49`**: é o commit automático do lançador quando o limite da conta cortou uma lane; a mensagem diz D-1/C-1, mas o conteúdo é o E-15 em curso, completado depois em `42fb604`. O histórico não foi reescrito.
 - **Worktree temporária** `C:/Users/User/dev/mos-d2wt` (lane D-2) ficou na máquina; `git worktree remove C:/Users/User/dev/mos-d2wt` a remove (não apagada pela regra da casa).
-- **Screenshots** em `homolog/provas/` são da rodada 3 (lane C); as telas mudaram pouco nos consertos (textos de prazo, custo, fila de decisões, aprovação da mesa, cartão da proposta em /atendimento) e não foram refotografadas.
+- **Screenshots** em `homolog/provas/` refeitos às 20:20 contra a imagem final em Docker (33 arquivos: escuro, claro e 390 px). As telas 06c e 06d (sessão exercida pela tela) são da rodada 3.
 
 ## 8. Falta do Rodrigo
 
