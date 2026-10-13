@@ -1,7 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
 import { ehSaida, TABELA_DE_PRECO, type ComercialEtapa, type ComercialProduto } from '@mktos/shared';
 import { ActorType, ApprovalState } from '@prisma/client';
 
+import { alcadaDe, atendeAlcada, temPapelDeMaquina } from '../approvals/alcada';
+import { AuditService } from '../audit/audit.service';
+import { lerAprovador } from '../auth/aprovador';
+import { ReauthService } from '../auth/reauth.service';
 import { comTenantPublico, resolverTenantDaCobranca, resolverTenantDoDocumento } from '../common/tenant-publico';
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
@@ -9,8 +13,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-modelo';
 import { uuidDe, type PayloadDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
+import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
 import { PORTA_DE_ASSINATURA, type PortaDeAssinatura } from './portas/assinatura.port';
 import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PortaDeCobranca } from './portas/cobranca.port';
+import { segredoDoAmbiente } from './sala-token';
 import { WhatsappComercialService } from './whatsapp.service';
 
 /*
@@ -96,6 +102,8 @@ export class DinheiroService implements OnModuleInit {
     @Inject(PORTA_DE_COBRANCA) readonly cobranca: PortaDeCobranca,
     @Inject(PORTA_DE_ASSINATURA) readonly assinatura: PortaDeAssinatura,
     @Optional() private readonly whats?: WhatsappComercialService,
+    @Optional() private readonly reauth?: ReauthService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   onModuleInit(): void {
@@ -371,8 +379,11 @@ export class DinheiroService implements OnModuleInit {
     const linkCliente = criado.signatarios.find((s) => s.papel === 'cliente')?.link ?? null;
     const linkRoot = criado.signatarios.find((s) => s.papel === 'root')?.link ?? null;
     const id = uuidDe([orgId, 'comercial-documento', this.assinatura.provedor, criado.externoId]);
+    // D-1: o link que assina PELA ROOT só é guardado cifrado (sem chave no ambiente, não é guardado).
+    const segredo = segredoDoAmbiente();
+    const linkRootGuardado = linkRoot && segredo ? cifrarLinkDaRoot(linkRoot, segredo, id) : null;
     await this.prisma.comercialDocumento.createMany({
-      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot }],
+      data: [{ id, leadId, provedor: this.assinatura.provedor, externoId: criado.externoId, estado: 'enviado', hashConteudo: doc.hash, linkCliente, linkRoot: linkRootGuardado }],
       skipDuplicates: true,
     });
     const payload = {
@@ -395,6 +406,61 @@ export class DinheiroService implements OnModuleInit {
       }
     }
     return { documentoId: id, externoId: criado.externoId, reaproveitado: false, lacunas: doc.lacunas.length };
+  }
+
+  // -------------------------------------------------------------------------
+  // O link de assinatura da Root (D-1)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Entrega o link que assina o contrato PELA ROOT. A assinatura obriga a
+   * empresa, então o link só sai para quem: (1) é gente (conta de máquina não);
+   * (2) é usuário ativo com alçada TITULAR relida no banco agora; (3) é o
+   * signatário cadastrado no documento (o mesmo e-mail que o `contrato.gerado`
+   * registrou); e (4) confirmou a própria senha agora (a mesma conferência do
+   * confirm de R4, com o teto de tentativas). Sem verificador de senha nesta
+   * instância, recusa. O RASTRO registra a entrega, nunca o link.
+   */
+  async linkParaAssinarPelaRoot(
+    orgId: string,
+    leadId: string,
+    quem: { id: string; papeis: readonly string[]; ip?: string },
+    senha: string | undefined,
+  ): Promise<{ externoId: string; estado: string; linkAssinatura: string | null; assinadoRootEm: string | null }> {
+    if (temPapelDeMaquina(quem.papeis)) throw new ForbiddenException('Conta de serviço não assina pela Root.');
+    const doBanco = await lerAprovador(this.prisma, quem.id, orgId);
+    if (!doBanco || !doBanco.ativo) throw new ForbiddenException('Quem assina pela Root precisa ser um usuário ativo desta empresa.');
+    if (!atendeAlcada('titular', alcadaDe(doBanco.papeis))) throw new ForbiddenException('Assinar pela Root pede alçada titular.');
+
+    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
+    if (!doc) throw new NotFoundException('O contrato deste lead ainda não foi gerado.');
+    const base = { externoId: doc.externoId, estado: doc.estado, assinadoRootEm: doc.assinadoRootEm?.toISOString() ?? null };
+    if (doc.assinadoRootEm) return { ...base, linkAssinatura: null };
+
+    const gerados = await this.prisma.leadEvent.findMany({ where: { leadId, orgId, type: 'contrato.gerado' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+    const gerado = gerados.find((g) => String(((g.payload ?? {}) as P).externoId ?? '') === doc.externoId);
+    const cadastrado = String(((gerado?.payload ?? {}) as P).assinaPelaRoot ?? '').trim().toLowerCase();
+    const eu = await this.prisma.user.findFirst({ where: { id: quem.id, orgId }, select: { email: true } });
+    if (!cadastrado || !eu || eu.email.trim().toLowerCase() !== cadastrado) {
+      throw new ForbiddenException('Este contrato foi cadastrado para outra pessoa assinar pela Root: só o signatário cadastrado recebe o link.');
+    }
+
+    if (!this.reauth) throw new ForbiddenException('Assinar pela Root exige confirmar a senha, e o verificador não está disponível nesta instância.');
+    const prova = await this.reauth.conferir({ userId: quem.id, orgId, aprovacaoId: `assinatura-root:${doc.id}`, prova: { senha: senha ?? '' }, ip: quem.ip });
+    if (!atendeAlcada('titular', alcadaDe(prova.papeis))) throw new ForbiddenException('Assinar pela Root pede alçada titular.');
+
+    const segredo = segredoDoAmbiente();
+    const link = doc.linkRoot && segredo ? decifrarLinkDaRoot(doc.linkRoot, segredo, doc.id) : null;
+    await this.audit?.log({
+      orgId,
+      actorId: quem.id,
+      action: 'comercial.contrato.link_da_root_entregue',
+      entityType: 'comercial.documento',
+      entityId: doc.id,
+      ip: quem.ip,
+      after: { leadId, externoId: doc.externoId, entregue: Boolean(link), reautenticadoEm: prova.em.toISOString() },
+    });
+    return { ...base, linkAssinatura: link };
   }
 
   // -------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { ROTULO_DO_PRODUTO, contarParcelas, dataDoDia, diaHoraSP, diaSP, numeroOuAusente, reaisOuAusente } from '@/lib/cockpit';
 
-import { AbasDoLead, BOTAO, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../../_ui';
+import { AbasDoLead, BOTAO, CARTAO, Carregando, Chip, Erro, FOCO, INPUT, Numero, Rotulo, useCarregar } from '../../_ui';
 
 /*
  * TELA 11 · O CONTRATO VIVO (lane C). A gestão depois do sim: parcelas e a
@@ -107,20 +107,28 @@ function Contrato({ c }: { c: ContratoVivo }) {
 function AssinaturaDaRoot({ leadId }: { leadId: string }) {
   const { token } = useAuth();
   const [r, setR] = useState<{ linkAssinatura: string | null; assinadoRootEm: string | null } | null>(null);
+  const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<unknown>(null);
   return (
     <section className={CARTAO} aria-label="assinatura da Root">
       <Rotulo>assinatura da Root</Rotulo>
-      <p className="mt-1 text-[12.5px] text-muted">O botão só consulta o documento; a assinatura volta pelo provedor e entra no fio.</p>
+      <p className="mt-1 text-[12.5px] text-muted">Só o sócio titular cadastrado para assinar recebe o link, depois de confirmar a senha. A assinatura volta pelo provedor e entra no fio.</p>
+      <label className="mt-2 block text-[12.5px]">
+        sua senha
+        <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className={`mt-1 ${INPUT}`} />
+      </label>
       <button
         type="button"
         className={`mt-2 ${BOTAO}`}
+        disabled={!senha}
         onClick={async () => {
           setErro(null);
           try {
-            setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, {}, token));
+            setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token));
           } catch (e) {
             setErro(e);
+          } finally {
+            setSenha('');
           }
         }}
       >

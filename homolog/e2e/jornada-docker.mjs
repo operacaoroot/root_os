@@ -420,7 +420,8 @@ async function main() {
   await esperar('contrato.assinado_cliente no fio', async () => (await api('GET', `/comercial/lead/${leadId}/fio`, como('mesa'))).fio.find((l) => l.type === 'contrato.assinado_cliente'));
 
   passo('19. o sócio assina pela Root');
-  const pelaRoot = await api('POST', `/comercial/contratos/${leadId}/assinar-pela-root`, como('socioDaConta'));
+  // D-1: o link de assinar pela Root só sai para o signatário cadastrado (titular), com a senha conferida.
+  const pelaRoot = await api('POST', `/comercial/contratos/${leadId}/assinar-pela-root`, { ...como('socioDaConta'), corpo: { senha: SENHA } });
   const tokRoot = /\/assinar\/([\w-]+)/.exec(pelaRoot.linkAssinatura ?? '')?.[1];
   conferir(tokRoot, 'a rota não devolveu o link de assinatura da Root', pelaRoot);
   const assinouRoot = await http('POST', `${ZAPSIGN}/simular/assinar/${tokRoot}`);

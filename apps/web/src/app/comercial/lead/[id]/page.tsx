@@ -152,20 +152,27 @@ function Ficha({ f, aoMudar }: { f: FichaDoLead; aoMudar: () => Promise<void> })
 function AssinarPelaRoot({ leadId }: { leadId: string }) {
   const { token } = useAuth();
   const [r, setR] = useState<{ linkAssinatura: string | null; assinadoRootEm: string | null; estado: string } | null>(null);
+  const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<unknown>(null);
   async function pedir() {
     setErro(null);
     try {
-      setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, {}, token));
+      setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token));
     } catch (e) {
       setErro(e);
+    } finally {
+      setSenha('');
     }
   }
   return (
     <section className={CARTAO} aria-label="assinar pela Root">
       <Rotulo>contrato · assinatura da Root</Rotulo>
-      <p className="mt-2 text-[12.5px] text-muted">Um sócio assina pela Root. O botão só busca o link; a assinatura volta pelo provedor e entra no fio.</p>
-      <button type="button" className={`mt-2 ${BOTAO}`} onClick={() => void pedir()}>assinar pela Root</button>
+      <p className="mt-2 text-[12.5px] text-muted">Só o sócio titular cadastrado para assinar recebe o link, depois de confirmar a senha. A assinatura volta pelo provedor e entra no fio.</p>
+      <label className="mt-2 block text-[12.5px]">
+        sua senha
+        <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className={`mt-1 ${INPUT}`} />
+      </label>
+      <button type="button" className={`mt-2 ${BOTAO}`} disabled={!senha} onClick={() => void pedir()}>assinar pela Root</button>
       {r && (
         <p className="mt-2 text-[12.5px]">
           {r.assinadoRootEm ? `Assinado pela Root em ${diaSP(r.assinadoRootEm)} ${horaSP(r.assinadoRootEm)}.` : r.linkAssinatura ? (

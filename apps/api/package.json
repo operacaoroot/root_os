@@ -22,6 +22,7 @@
     "db:seed:trabalho": "tsx prisma/seed-trabalho.ts",
     "db:seed:comercial": "tsx prisma/seed-comercial.ts",
     "db:conserto:link-da-sala": "tsx prisma/conserto-link-da-sala.ts",
+    "db:conserto:link-da-root": "tsx prisma/conserto-link-da-root.ts",
     "test": "vitest run",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test:isolamento": "MKTOS_CONJUNTO_DE_TESTES=isolamento vitest run",

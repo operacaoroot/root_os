@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Ip, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
 import { ActorType } from '@prisma/client';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
@@ -63,17 +63,19 @@ export class DinheiroController {
   }
 
   /**
-   * Um sócio assina pela Root (um toque): devolve o link de assinatura do
-   * signatário da casa. Nada é escrito aqui; a assinatura volta pelo webhook.
+   * O signatário da Root pede o link para assinar (D-1): só o signatário
+   * cadastrado no documento, titular relido no banco, com a senha conferida
+   * agora (`{ senha }` no corpo). Nada é escrito no provedor aqui; a assinatura
+   * volta pelo webhook.
    */
   @Post('contratos/:leadId/assinar-pela-root')
   @HttpCode(200)
   @RequirePermissions('leads.editar')
-  async assinarPelaRoot(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string) {
+  async assinarPelaRoot(@CurrentUser() user: JwtUser, @Param('leadId') leadId: string, @Body() body: unknown, @Ip() ip: string) {
     await this.exigirLead(user.orgId, leadId);
-    const doc = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId: user.orgId }, orderBy: { criadoEm: 'desc' } });
-    if (!doc) throw new NotFoundException('O contrato deste lead ainda não foi gerado.');
-    return { externoId: doc.externoId, estado: doc.estado, linkAssinatura: doc.linkRoot, assinadoRootEm: doc.assinadoRootEm?.toISOString() ?? null };
+    const b = (body ?? {}) as { senha?: unknown };
+    const senha = typeof b.senha === 'string' ? b.senha : undefined;
+    return this.dinheiro.linkParaAssinarPelaRoot(user.orgId, leadId, { id: user.sub, papeis: user.roles ?? [], ip }, senha);
   }
 
   /** Tela 11: o contrato vivo, com parcelas, régua de cobrança, entregas, saúde e marcos. */

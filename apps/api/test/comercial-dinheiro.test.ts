@@ -106,6 +106,8 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
   let decisoesSvc: DecisoesService;
   let fio: FioService;
   let titularId = '';
+  let gestorId = '';
+  let outroTitularId = '';
   let estado = '';
   let portaAsaas = 0;
   let portaZap = 0;
@@ -180,12 +182,27 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
         select: { id: true },
       })
     ).id;
+    // D-1: quem tem leads.editar sem ser titular, e um segundo titular que não é o signatário cadastrado.
+    const gestor = await prisma.role.create({ data: { orgId: ORG, key: 'gestor_marketing', name: 'Gestor' }, select: { id: true } });
+    gestorId = (
+      await prisma.user.create({
+        data: { orgId: ORG, email: `gestor-${MARCA}@dinheiro.teste`, name: 'Mesa', passwordHash: await bcrypt.hash(SENHA, 4), roles: { connect: { id: gestor.id } } },
+        select: { id: true },
+      })
+    ).id;
+    outroTitularId = (
+      await prisma.user.create({
+        data: { orgId: ORG, email: `outro-${MARCA}@dinheiro.teste`, name: 'Outro titular', passwordHash: await bcrypt.hash(SENHA, 4), roles: { connect: { id: admin.id } }, createdAt: new Date(Date.now() + 60_000) },
+        select: { id: true },
+      })
+    ).id;
 
     const p = prisma as unknown as PrismaService;
     const audit = new AuditService(p);
     const policy = new PolicyService(p);
     await policy.onModuleInit();
-    approvals = new ApprovalsService(p, audit, new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit));
+    const reauth = new ReauthService(p, new JwtService({ secret: `segredo-${MARCA}` }), audit);
+    approvals = new ApprovalsService(p, audit, reauth);
     const eventos = new EventLogService(p);
     const efeitos = new EfeitosRegistry();
     const interruptores = new InterruptoresRegistry();
@@ -207,7 +224,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     decisoesSvc = decisoes;
     const asaas = new AsaasService(new ConectoresConfiguradosRegistry());
     const zapsign = new ZapsignService();
-    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats);
+    dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats, reauth, audit);
     dinheiro.onModuleInit();
     const trilhos = new TrilhoService(p, undefined as never, eventos, undefined as never);
     fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, registroDeDecisoes, trilhos, whats, relogio);
@@ -324,7 +341,9 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     const doc = await prisma.comercialDocumento.findFirstOrThrow({ where: { leadId } });
     expect(doc.hashConteudo).toMatch(/^[0-9a-f]{64}$/);
     expect(doc.linkCliente).toContain(`127.0.0.1:${portaZap}/assinar/`);
-    expect(doc.linkRoot).toContain(`127.0.0.1:${portaZap}/assinar/`);
+    // D-1: o link que assina pela Root só existe cifrado.
+    expect(doc.linkRoot).toMatch(/^v1\./);
+    expect(doc.linkRoot).not.toContain('/assinar/');
     const tipos = (await prisma.leadEvent.findMany({ where: { leadId }, select: { type: true } })).map((e) => e.type);
     expect(tipos).toEqual(expect.arrayContaining(['cobranca.criada', 'contrato.gerado']));
     // A M7 (link de assinatura) foi preparada e espera a fila do WhatsApp (R3).
@@ -386,7 +405,20 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     await assinar(doc.linkCliente!);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.assinado_cliente' } })).toBe(1);
     expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO } })).toBe(0);
-    await assinar(doc.linkRoot!);
+
+    // D-1: o link de assinar pela Root só sai para o signatário cadastrado, titular, com a senha certa.
+    const pedir = (id: string, papeis: string[], senha?: string) => naEmpresa(() => dinheiro.linkParaAssinarPelaRoot(ORG, leadId, { id, papeis }, senha));
+    await expect(pedir(gestorId, ['gestor_marketing'], SENHA)).rejects.toMatchObject({ status: 403 });
+    await expect(pedir(titularId, ['admin_master', 'ia_acao'], SENHA)).rejects.toMatchObject({ status: 403 });
+    await expect(pedir(outroTitularId, ['admin_master'], SENHA)).rejects.toMatchObject({ status: 403 });
+    await expect(pedir(titularId, ['admin_master'])).rejects.toMatchObject({ status: 401 });
+    await expect(pedir(titularId, ['admin_master'], 'senha-errada')).rejects.toMatchObject({ status: 401 });
+    const pelaRoot = await pedir(titularId, ['admin_master'], SENHA);
+    expect(pelaRoot.linkAssinatura).toContain(`127.0.0.1:${portaZap}/assinar/`);
+    const entregas = await prisma.auditLog.findMany({ where: { orgId: ORG, action: 'comercial.contrato.link_da_root_entregue' } });
+    expect(entregas).toHaveLength(1);
+    expect(JSON.stringify(entregas[0])).not.toContain('/assinar/');
+    await assinar(pelaRoot.linkAssinatura!);
     expect(recebidos.filter((x) => x.qual === '/zapsign').every((x) => x.status === 200)).toBe(true);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'contrato.assinado_root' } })).toBe(1);
     const depois = await prisma.comercialDocumento.findUniqueOrThrow({ where: { id: doc.id } });
