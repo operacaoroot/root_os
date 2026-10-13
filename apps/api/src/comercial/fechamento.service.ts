@@ -379,7 +379,18 @@ export class FechamentoService implements OnModuleInit {
         { id: null, nome: 'Fechamento comercial' },
       );
       await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { trilhoId: t.id } });
-      return { estado: 'criado', detalhe: 'trilho aberto na fase 1 (qualificar). Lacunas: nível, receita e quem conduz [a decidir]', ref: t.id };
+      // O comercial já qualificou: o trilho tenta passar pelo portão da fase 0. O portão é do onboarding e
+      // recusa com a lista do que falta (próximo passo, dono, data...): isso vira lacuna à vista, não erro.
+      let falta = '';
+      try {
+        await this.trilhos.avancar(orgId, t.id, { id: null, nome: 'Fechamento comercial' });
+      } catch (e) {
+        const r = (e as { getResponse?: () => unknown }).getResponse?.() as { faltando?: unknown } | undefined;
+        falta = Array.isArray(r?.faltando) ? (r!.faltando as unknown[]).map(String).join('; ') : (e as Error).message;
+      }
+      const fase = (await this.prisma.onboardingTrilho.findUniqueOrThrow({ where: { id: t.id }, select: { fase: true } })).fase;
+      const detalhe = `trilho aberto na fase ${FASES_DO_TRILHO.indexOf(fase) + 1} de 5. Lacunas [a decidir]: nível, receita e quem conduz${falta ? `. Para avançar a fase falta: ${falta}` : ''}`;
+      return { estado: 'criado', detalhe: detalhe.slice(0, 400), ref: t.id };
     });
 
     // 5. grupo do cliente no WhatsApp (a M8 sai quando o kickoff for marcado).

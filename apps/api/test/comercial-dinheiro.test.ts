@@ -420,6 +420,9 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
       ['grupo', 'criado'],
     ]);
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'cliente.ativo' } })).toBe(1);
+    const trilho = tela.escritas.find((e) => e.escrita === 'kit_e_trilho')!;
+    expect(trilho.detalhe).toMatch(/^trilho aberto na fase \d de 5\. Lacunas \[a decidir\]/);
+    console.info(`[lane D] kit e trilho: ${trilho.detalhe}`);
     const ficha = await prisma.comercialFicha.findUniqueOrThrow({ where: { leadId } });
     expect(ficha.partnerId && ficha.contractId && ficha.trilhoId && ficha.grupoJid).toBeTruthy();
 

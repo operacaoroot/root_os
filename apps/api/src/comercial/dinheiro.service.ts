@@ -420,6 +420,12 @@ export class DinheiroService implements OnModuleInit {
         const b = await this.fio.registrar(r.orgId, c.leadId, 'pix.pago', c.externoId, { provedor: c.provedor, externoId: c.externoId, parcela: 1, valorCentavos: valor, pagoEm: pagoEm.toISOString() }, { em: pagoEm });
         if (b.novo) gravados++;
       }
+      // O contrato do Financeiro (se o fechamento já o criou) passa a apontar a próxima parcela em aberto.
+      const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId: c.leadId }, select: { contractId: true } });
+      if (ficha?.contractId) {
+        const proxima = await this.prisma.comercialCobranca.findFirst({ where: { leadId: c.leadId, pagaEm: null }, orderBy: { vence: 'asc' }, select: { vence: true } });
+        if (proxima) await this.prisma.contract.updateMany({ where: { id: ficha.contractId, orgId: r.orgId }, data: { proximoVencimento: proxima.vence } });
+      }
       return { ok: true as const, gravados };
     });
   }
