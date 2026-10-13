@@ -160,7 +160,7 @@ export class FechamentoService implements OnModuleInit {
         leadId,
         tipo: 'veto_de_fechamento',
         titulo: `${a.dados.razaoSocial || lead.name} assinou e pagou a 1ª parcela`,
-        contexto: `O fechamento vai à assinatura da titular às ${expiraEm.toISOString()}. Para segurar, responda VETO até lá.`,
+        contexto: `O fechamento vai à assinatura da titular às ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(expiraEm)}. Para segurar, responda VETO até lá.`,
         opcoes: [
           { chave: 'seguir', rotulo: 'Seguir com o fechamento', efeito: 'o fechamento vai à assinatura da titular' },
           { chave: 'vetar', rotulo: 'VETO: segurar', efeito: 'nada é proposto; volta só pelo "rodar de novo"' },

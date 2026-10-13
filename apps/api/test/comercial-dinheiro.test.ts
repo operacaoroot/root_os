@@ -103,6 +103,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
   let dinheiro: DinheiroService;
   let fechamento: FechamentoService;
   let contratoVivo: ContratoVivoService;
+  let decisoesSvc: DecisoesService;
   let fio: FioService;
   let titularId = '';
   let estado = '';
@@ -203,6 +204,7 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     const config = new ConfigComercialService(p);
     const registroDeDecisoes = new DecisoesRegistry();
     const decisoes = new DecisoesService(p, fio, config, registroDeDecisoes);
+    decisoesSvc = decisoes;
     const asaas = new AsaasService(new ConectoresConfiguradosRegistry());
     const zapsign = new ZapsignService();
     dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats);
@@ -472,5 +474,49 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     const m2 = await naEmpresa(() => contratoVivo.marcos(ORG, new Date(agora.getTime() + 16 * dia)));
     expect(m1.marcos).toBeGreaterThanOrEqual(1);
     expect(m2.marcos).toBe(0);
+  });
+  /** Um lead que já aceitou, com os três fatos do fechamento gravados direto no fio (os webhooks já foram medidos acima). */
+  async function leadQueFechou(nome: string, cnpj: string): Promise<string> {
+    const tel = `+55328${Date.now().toString().slice(-8)}`;
+    const r = await naEmpresa(() => whats.receberEntrada(ORG, { telefone: tel, texto: 'Oi', nome, mensagemId: `${MARCA}-${nome}` }));
+    const id = r.leadId;
+    const hash = hashDoConteudo({ lead: id, v: 1 });
+    await naEmpresa(async () => {
+      await fio.registrar(ORG, id, 'aceite.dados', 'dados', { cnpj, razaoSocial: `${nome} Ltda`, endereco: 'Rua B, 2', quemAssina: nome, email: `${cnpj}@cliente.test` });
+      await fio.registrar(ORG, id, 'proposta.aceita', 'v1', { versao: 1, produto: 'imersao', valorCentavos: 297_000, parcelas: 10, forma: 'cartao', hash });
+      await fio.registrar(ORG, id, 'pix.pago', `pay-${id}`, { provedor: 'asaas', externoId: `pay-${id}`, parcela: 1, valorCentavos: 29_700, pagoEm: new Date().toISOString() });
+      await fio.registrar(ORG, id, 'contrato.assinado_cliente', `doc-${id}`, { provedor: 'zapsign', externoId: `doc-${id}`, em: new Date().toISOString() });
+      await fio.registrar(ORG, id, 'contrato.assinado_root', `doc-${id}`, { provedor: 'zapsign', externoId: `doc-${id}`, em: new Date().toISOString(), por: null });
+    });
+    return id;
+  }
+
+  it('fechamento automático ligado: abre a janela de veto antes de propor; vencida no padrão "seguir", vai à porta (R4 continua)', async () => {
+    await prisma.comercialConfig.upsert({ where: { orgId: ORG }, create: { orgId: ORG, fechamentoAutomatico: true, janelaDeVetoMinutos: 30 }, update: { fechamentoAutomatico: true, janelaDeVetoMinutos: 30 } });
+    const id = await leadQueFechou('Studio Lume', `2${Date.now().toString().slice(-13)}`);
+    const chave = `fech-${id}-v1`;
+    const veto = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId: id, tipo: 'veto_de_fechamento' } });
+    expect(veto.padrao).toBe('seguir');
+    expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO, resourceId: chave } })).toBe(0);
+
+    // O relógio passa depois da janela: o padrão é aplicado e o fechamento vai à fila, ainda R4.
+    await naEmpresa(() => decisoesSvc.expirarVencidas(ORG, new Date(Date.now() + 31 * 60_000)));
+    const f = await prisma.approval.findFirstOrThrow({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO, resourceId: chave } });
+    expect(f.nivelExigido).toBe('R4');
+    expect(f.status).toBe('pendente');
+  });
+
+  it('VETO na janela: nada é proposto e o fechamento fica vetado até alguém rodar de novo', async () => {
+    const id = await leadQueFechou('Cafe Serra', `3${Date.now().toString().slice(-13)}`);
+    const veto = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId: id, tipo: 'veto_de_fechamento' } });
+    await naEmpresa(() => decisoesSvc.responder(ORG, veto.id, 'vetar', { id: titularId, nome: 'Titular da Root' }, 'tela'));
+    expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO, resourceId: `fech-${id}-v1` } })).toBe(0);
+    const tela = await naEmpresa(() => fechamento.doLead(ORG, id));
+    expect(tela.vetado).toBe(true);
+    expect(await prisma.leadEvent.count({ where: { leadId: id, type: 'veto.registrado' } })).toBe(1);
+    // Rodar de novo (uma pessoa): volta à fila, em nome de quem pediu.
+    const r = await naEmpresa(() => fechamento.propor(ORG, id, { id: titularId, tipo: 'user' as never }));
+    expect(r).toMatchObject({ estado: 'na_fila' });
+    await prisma.comercialConfig.update({ where: { orgId: ORG }, data: { fechamentoAutomatico: false } });
   });
 });
