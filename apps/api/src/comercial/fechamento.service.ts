@@ -11,6 +11,7 @@ import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './deci
 import { DinheiroService, type AceiteDoLead } from './dinheiro.service';
 import { uuidDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
+import { RelogioComercialRegistry } from './relogio.registry';
 import { WhatsappComercialService } from './whatsapp.service';
 
 /*
@@ -107,6 +108,7 @@ export class FechamentoService implements OnModuleInit {
     private readonly decisoesRegistry: DecisoesRegistry,
     @Optional() private readonly trilhos?: TrilhoService,
     @Optional() private readonly whats?: WhatsappComercialService,
+    @Optional() private readonly relogio?: RelogioComercialRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -116,6 +118,47 @@ export class FechamentoService implements OnModuleInit {
     }
     this.reacoes.inscrever('kickoff.marcado', 'fechamento.m8', (ev) => this.boasVindas(ev.orgId, ev.leadId, String((ev.payload as P).horario ?? '')));
     this.decisoesRegistry.aoDecidir('veto_de_fechamento', (d) => this.aoDecidirVeto(d), 'fechamento.veto');
+    this.relogio?.inscrever('dinheiro.repropor', (orgId, agora) => this.repropor(orgId, agora));
+  }
+
+  /**
+   * O relógio devolve à fila o que venceu sem assinatura (R4 vale 10 minutos):
+   * a cobrança e o contrato de quem aceitou e ainda não têm linha, e o
+   * fechamento de quem já tem os três fatos. No máximo uma vez por hora por
+   * recurso, e nunca o que a titular recusou (`travaDaRepeticao`).
+   */
+  async repropor(orgId: string, agora: Date): Promise<{ aceites: number; fechamentos: number }> {
+    const aceites = await this.prisma.leadEvent.findMany({
+      where: { type: 'proposta.aceita', lead: { orgId }, occurredAt: { gte: new Date(agora.getTime() - 30 * 86_400_000) } },
+      select: { leadId: true },
+      distinct: ['leadId'],
+      take: 200,
+    });
+    let a = 0;
+    let f = 0;
+    for (const { leadId } of aceites) {
+      try {
+        const tipos = await this.tiposNoFio(leadId);
+        if (tipos.has('cliente.ativo')) continue;
+        const r = await this.dinheiro.proporAceite(orgId, leadId, { id: ATOR, tipo: ActorType.system }, agora);
+        if ('approvalIds' in r && r.approvalIds.length) a++;
+        if (!prontoParaFechar(tipos).pronto) continue;
+        const ac = await this.dinheiro.aceiteDoLead(leadId);
+        if (!ac) continue;
+        const chave = chaveDoFechamento(leadId, ac.versao);
+        const linha = await this.prisma.comercialFechamento.findUnique({ where: { chave }, select: { estado: true, vetadoEm: true, agendadoPara: true } });
+        if (linha?.vetadoEm || linha?.estado === 'concluido') continue;
+        if (linha?.agendadoPara && linha.agendadoPara.getTime() > agora.getTime()) continue; // ainda na janela de veto
+        if (await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, chave, agora)) continue;
+        const trava = await this.dinheiro.travaDaRepeticao(orgId, CAP_FECHAMENTO, chave, agora);
+        if (trava) continue;
+        const p = await this.propor(orgId, leadId, { id: ATOR, tipo: ActorType.system }, agora);
+        if ('estado' in p && p.estado === 'na_fila') f++;
+      } catch (e) {
+        this.log.warn(`repropor ${leadId}: ${(e as Error).message}`);
+      }
+    }
+    return { aceites: a, fechamentos: f };
   }
 
   // -------------------------------------------------------------------------
@@ -192,12 +235,12 @@ export class FechamentoService implements OnModuleInit {
    * fechamento concluído ou já na fila não vai de novo. `ator` é o sistema na
    * reação; na rota "rodar de novo", a pessoa que clicou.
    */
-  async propor(orgId: string, leadId: string, ator: { id: string; tipo: ActorType }): Promise<{ estado: string; approvalId?: string; chave: string } | { pulado: string }> {
+  async propor(orgId: string, leadId: string, ator: { id: string; tipo: ActorType }, agora: Date = new Date()): Promise<{ estado: string; approvalId?: string; chave: string } | { pulado: string }> {
     const a = await this.dinheiro.aceiteDoLead(leadId);
     if (!a) return { pulado: 'sem aceite com dados' };
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido') return { estado: 'concluido', chave: linha.chave };
-    const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave);
+    const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave, agora);
     if (viva) return { estado: 'na_fila', approvalId: viva.id, chave: linha.chave };
     if (linha.vetadoEm && ator.tipo === ActorType.system) return { pulado: 'fechamento vetado: só volta pelo "rodar de novo"' };
     if (linha.vetadoEm) await this.prisma.comercialFechamento.update({ where: { id: linha.id }, data: { vetadoEm: null, estado: 'pendente' } });

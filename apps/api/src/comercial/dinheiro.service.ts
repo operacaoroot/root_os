@@ -64,7 +64,10 @@ export interface AceiteDoLead {
   dados: DadosDoAceite;
 }
 
-export type ResultadoDaProposta = 'proposta' | 'na_fila' | 'ja_existe' | 'executada' | 'pulada';
+export type ResultadoDaProposta = 'proposta' | 'na_fila' | 'ja_existe' | 'executada' | 'pulada' | 'aguardando' | 'recusada';
+
+/** De quanto em quanto tempo o sistema volta a pôr na fila uma proposta R4 que venceu sem assinatura. */
+export const REPROPOR_DEPOIS_DE_MIN = 60;
 
 function ehRetida(r: unknown): r is { status: 'aguardando_aprovacao'; approvalId: string } {
   return !!r && typeof r === 'object' && (r as P).status === 'aguardando_aprovacao';
@@ -166,6 +169,20 @@ export class DinheiroService implements OnModuleInit {
   }
 
   /**
+   * A trava da proposta AUTOMÁTICA (reação e relógio). A aprovação R4 vence em
+   * 10 minutos; o sistema volta a pô-la na fila no máximo uma vez por hora, e
+   * NUNCA depois de a titular recusar (decisão de gente não é refeita por
+   * máquina: quem quiser de novo usa "propor de novo", em nome próprio).
+   */
+  async travaDaRepeticao(orgId: string, capabilityId: string, resourceId: string, agora: Date = new Date()): Promise<'recusada' | 'aguardando' | null> {
+    const ultima = await this.prisma.approval.findFirst({ where: { orgId, capabilityId, resourceId }, orderBy: { criadoEm: 'desc' }, select: { status: true, criadoEm: true } });
+    if (!ultima) return null;
+    if (ultima.status === ApprovalState.rejeitada) return 'recusada';
+    if (ultima.criadoEm.getTime() > agora.getTime() - REPROPOR_DEPOIS_DE_MIN * 60_000) return 'aguardando';
+    return null;
+  }
+
+  /**
    * Propõe a cobrança e o contrato do aceite. Rodar de novo não duplica: o que
    * já existe no banco, ou já está na fila, não vai à porta outra vez.
    * `ator` é o sistema na reação; numa rota, a pessoa que pediu (e então ela
@@ -175,7 +192,9 @@ export class DinheiroService implements OnModuleInit {
     orgId: string,
     leadId: string,
     ator: { id: string; tipo: ActorType } = { id: ATOR_DO_DINHEIRO, tipo: ActorType.system },
+    agora: Date = new Date(),
   ): Promise<{ cobranca: ResultadoDaProposta; contrato: ResultadoDaProposta; approvalIds: string[] } | { pulado: string }> {
+    const automatico = ator.tipo === ActorType.system;
     const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId }, select: { etapa: true } });
     if (ficha && ehSaida(ficha.etapa as ComercialEtapa)) return { pulado: 'lead em saída' };
     const a = await this.aceiteDoLead(leadId);
@@ -185,7 +204,8 @@ export class DinheiroService implements OnModuleInit {
     let cobranca: ResultadoDaProposta;
     const resCob = `${leadId}:v${a.versao}`;
     if ((await this.prisma.comercialCobranca.count({ where: { leadId } })) > 0) cobranca = 'ja_existe';
-    else if (await this.aprovacaoViva(orgId, CAP_COBRANCA, resCob)) cobranca = 'na_fila';
+    else if (await this.aprovacaoViva(orgId, CAP_COBRANCA, resCob, agora)) cobranca = 'na_fila';
+    else if (automatico && (await this.travaDaRepeticao(orgId, CAP_COBRANCA, resCob, agora))) cobranca = (await this.travaDaRepeticao(orgId, CAP_COBRANCA, resCob, agora))!;
     else {
       const r = await this.operador.executar({
         orgId,
@@ -204,7 +224,8 @@ export class DinheiroService implements OnModuleInit {
     const doc = this.contratoDoAceite(a);
     const resDoc = `${leadId}:${doc.hash.slice(0, 16)}`;
     if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, hashConteudo: doc.hash }, select: { id: true } })) contrato = 'ja_existe';
-    else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc)) contrato = 'na_fila';
+    else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc, agora)) contrato = 'na_fila';
+    else if (automatico && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
     else {
       const r = await this.operador.executar({
         orgId,

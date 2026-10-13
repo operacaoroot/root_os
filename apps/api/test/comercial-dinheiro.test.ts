@@ -8,7 +8,7 @@ import path from 'node:path';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ApprovalsService } from '../src/approvals/approvals.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -210,13 +210,14 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, asaas, zapsign, whats);
     dinheiro.onModuleInit();
     const trilhos = new TrilhoService(p, undefined as never, eventos, undefined as never);
-    fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, registroDeDecisoes, trilhos, whats);
+    fechamento = new FechamentoService(p, fio, reacoes, efeitos, porta, dinheiro, config, decisoes, registroDeDecisoes, trilhos, whats, relogio);
     fechamento.onModuleInit();
     contratoVivo = new ContratoVivoService(p, fio, relogio, decisoes);
     contratoVivo.onModuleInit();
   }, 60_000);
 
   afterAll(async () => {
+    vi.useRealTimers();
     for (const f of filhos) f.kill();
     await new Promise<void>((ok) => receptor?.close(() => ok()));
     try {
@@ -518,5 +519,29 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     const r = await naEmpresa(() => fechamento.propor(ORG, id, { id: titularId, tipo: 'user' as never }));
     expect(r).toMatchObject({ estado: 'na_fila' });
     await prisma.comercialConfig.update({ where: { orgId: ORG }, data: { fechamentoAutomatico: false } });
+  });
+  it('o relógio devolve à fila o R4 que venceu sem assinatura (uma vez por hora) e nunca o que a titular recusou', async () => {
+    const id = await leadQueFechou('Otica Vista', `4${Date.now().toString().slice(-13)}`);
+    const doLead = (cap: string) => prisma.approval.findMany({ where: { orgId: ORG, capabilityId: cap, resourceId: { contains: id } }, orderBy: { criadoEm: 'asc' } });
+    const [cob] = await doLead(CAP_COBRANCA);
+    expect(cob.status).toBe('pendente');
+    expect(await doLead(CAP_CONTRATO)).toHaveLength(1);
+    expect(await doLead(CAP_FECHAMENTO)).toHaveLength(1);
+    // A titular recusa a cobrança; as outras duas vencem sem ninguém assinar.
+    await naEmpresa(() => approvals.reject(ORG, cob.id, { id: titularId, papeis: ['admin_master'] }));
+
+    // Uma hora depois (o relógio do processo também: a validade da aprovação nova conta dali).
+    const depois = new Date(Date.now() + 61 * 60_000);
+    vi.setSystemTime(depois);
+    const r1 = await naEmpresa(() => fechamento.repropor(ORG, depois));
+    expect(r1.fechamentos).toBeGreaterThanOrEqual(1); // os outros leads da suíte que esperam a titular também voltam
+    expect(await doLead(CAP_COBRANCA)).toHaveLength(1); // recusada: máquina não refaz
+    expect(await doLead(CAP_CONTRATO)).toHaveLength(2);
+    expect(await doLead(CAP_FECHAMENTO)).toHaveLength(2);
+    // A mesma passagem de novo: as novas estão vivas, nada se repete.
+    await naEmpresa(() => fechamento.repropor(ORG, depois));
+    vi.useRealTimers();
+    expect(await doLead(CAP_CONTRATO)).toHaveLength(2);
+    expect(await doLead(CAP_FECHAMENTO)).toHaveLength(2);
   });
 });
