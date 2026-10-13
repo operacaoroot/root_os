@@ -130,7 +130,7 @@ export function BarraDaSaude({ saude }: { saude: number | null }) {
 export function Numero({ valor, legenda, tom }: { valor: string; legenda: string; tom?: 'brand' | 'ruim' }) {
   return (
     <div className={`${CARTAO} min-w-0`}>
-      <p className={`font-os-mono text-[26px] leading-none ${tom === 'brand' ? 'text-brand' : tom === 'ruim' ? 'text-bad' : ''}`}>{valor}</p>
+      <p className={`font-os-mono text-[21px] leading-none md:text-[26px] ${tom === 'brand' ? 'text-brand' : tom === 'ruim' ? 'text-bad' : ''}`}>{valor}</p>
       <p className="mt-1.5 text-[12px] text-muted">{legenda}</p>
     </div>
   );

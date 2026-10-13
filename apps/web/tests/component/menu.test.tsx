@@ -283,7 +283,8 @@ describe('a barra lateral', () => {
     PERMISSOES = TODAS_DO_NAV;
     render(<Paleta aberto fechar={() => {}} />);
     const campo = screen.getByPlaceholderText('ir para…');
-    for (const termo of ['proposta', 'assinar contrato', 'whatsapp', 'editor de processos']) {
+    // 'whatsapp' saiu da lista: o cockpit (lane B) trouxe o "Simulador de WhatsApp" ao menu.
+    for (const termo of ['proposta', 'assinar contrato', 'nota fiscal', 'editor de processos']) {
       await user.clear(campo);
       await user.type(campo, termo);
       expect(screen.queryAllByRole('button'), termo).toHaveLength(0);
@@ -300,7 +301,8 @@ describe('a barra lateral', () => {
     expect(screen.getByRole('button', { name: /Agentes de IA/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Processos.*em preparação/ })).toBeInTheDocument();
     await user.clear(campo);
-    await user.type(campo, 'contratos'); // palavra só do texto de apoio da seção
+    // 'contratos' virou tela (Contratos vivos, lane C); 'medição' segue só no texto de apoio.
+    await user.type(campo, 'medição'); // palavra só do texto de apoio da seção
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 

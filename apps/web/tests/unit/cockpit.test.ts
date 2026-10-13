@@ -46,6 +46,7 @@ describe('cockpit — o que vem nulo aparece como ausente', () => {
     expect(percentual(92)).toBe('92%');
     expect(percentual(null)).toBe(AUSENTE);
     expect(segundos(400)).toBe('0,4 s');
+    expect(segundos(14)).toBe('14 ms');
     expect(segundos(null)).toBe(AUSENTE);
   });
 

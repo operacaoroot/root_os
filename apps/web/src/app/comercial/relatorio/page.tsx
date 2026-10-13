@@ -1,0 +1,127 @@
+'use client';
+
+import { useState } from 'react';
+import type { RelatorioDaSemana } from '@mktos/shared';
+
+import { apiPost } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { ROTULO_DO_MOTIVO, diaHoraSP, ehNaoImplementado, numeroOuAusente } from '@/lib/cockpit';
+
+import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+
+/*
+ * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por
+ * motivo, previsão e quanto rodou sozinho. Os números são do sistema; a
+ * narrativa, quando houver, é do relator. Enquanto a API responde 501, a tela
+ * diz isso e não mostra número nenhum.
+ */
+const PERIODOS = [7, 30, 90];
+
+export default function RelatorioPage() {
+  const { token } = useAuth();
+  const [dias, setDias] = useState(30);
+  const { dados: r, erro, carregando, recarregar } = useCarregar<RelatorioDaSemana>(`/comercial/relatorio/semana?dias=${dias}`);
+  const [erroDaAcao, setErroDaAcao] = useState<unknown>(null);
+  const [gerando, setGerando] = useState(false);
+
+  async function gerar() {
+    setGerando(true);
+    setErroDaAcao(null);
+    try {
+      await apiPost('/comercial/relatorio/semana/gerar', {}, token);
+      await recarregar();
+    } catch (e) {
+      setErroDaAcao(e);
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  const maxFunil = r ? Math.max(1, ...r.funil.map((f) => f.n)) : 1;
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      <header className="flex flex-wrap items-center gap-2">
+        <p className="text-[13.5px] text-muted">Pronto antes da reunião de quinta, 19h30.</p>
+        <div className="ml-auto flex gap-1.5" role="group" aria-label="período">
+          {PERIODOS.map((d) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={dias === d}
+              onClick={() => setDias(d)}
+              className={`rounded border px-2.5 py-1 text-[12px] ${dias === d ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
+            >
+              {d} dias
+            </button>
+          ))}
+          <button type="button" className={BOTAO} disabled={gerando} onClick={() => void gerar()}>
+            {gerando ? 'gerando…' : 'gerar agora'}
+          </button>
+        </div>
+      </header>
+
+      {ehNaoImplementado(erro) ? (
+        <Aviso>O relatório da semana ainda não foi entregue pela API (resposta 501). Nenhum número aparece aqui até o relator rodar de verdade.</Aviso>
+      ) : (
+        <Erro erro={erro} />
+      )}
+      {ehNaoImplementado(erroDaAcao) ? <Aviso>Gerar o relatório ainda não foi entregue pela API (resposta 501). Nada foi feito.</Aviso> : <Erro erro={erroDaAcao} />}
+      {carregando && !r && !erro && <Carregando />}
+
+      {r && (
+        <>
+          <section aria-label="resumo" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Numero valor={String(r.leads)} legenda={`leads em ${r.periodoDias} dias`} tom="brand" />
+            <Numero valor={String(r.fechados)} legenda="fechados" />
+            <Numero valor={numeroOuAusente(r.medianaDiasDoOiAoPix)} legenda="dias do 1º oi ao Pix (mediana)" />
+            <Numero valor={`${r.acoes.automaticas} · ${r.acoes.humanas}`} legenda="ações automáticas · humanas" />
+          </section>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <section className={CARTAO} aria-label="funil no período">
+              <Rotulo>funil em {r.periodoDias} dias</Rotulo>
+              <ul className="mt-2 space-y-1.5 text-[13px]">
+                {r.funil.map((f) => (
+                  <li key={f.etapa} className="grid grid-cols-[110px_minmax(0,1fr)_40px] items-center gap-2">
+                    <span className="text-muted">{f.etapa}</span>
+                    <span className="h-2 rounded bg-surface-3">
+                      <span className="block h-2 rounded bg-brand" style={{ width: `${(f.n / maxFunil) * 100}%` }} />
+                    </span>
+                    <span className="text-right font-os-mono">{f.n}</span>
+                  </li>
+                ))}
+                {r.funil.length === 0 && <li className="text-muted">Nenhum lead no período.</li>}
+              </ul>
+            </section>
+
+            <section className={CARTAO} aria-label="perdas e previsão">
+              <Rotulo>perdas por motivo</Rotulo>
+              <ul className="mt-2 space-y-1 text-[13px]">
+                {r.perdasPorMotivo.map((p) => (
+                  <li key={p.motivo} className="flex justify-between gap-2">
+                    <span>{ROTULO_DO_MOTIVO[p.motivo] ?? p.motivo}</span>
+                    <span className="font-os-mono">{p.n}</span>
+                  </li>
+                ))}
+                {r.perdasPorMotivo.length === 0 && <li className="text-muted">Nenhuma perda no período.</li>}
+              </ul>
+              <Rotulo className="mt-4">previsão do mês</Rotulo>
+              <p className="mt-2 text-[13px]">
+                {r.previsao
+                  ? `${r.previsao.fechamentosProvaveis} ${r.previsao.fechamentosProvaveis === 1 ? 'fechamento provável' : 'fechamentos prováveis'} entre ${r.previsao.leadsEmProposta} ${r.previsao.leadsEmProposta === 1 ? 'lead' : 'leads'} em proposta`
+                  : 'ausente'}
+              </p>
+            </section>
+          </div>
+
+          <section className={CARTAO} aria-label="leitura">
+            <Rotulo>leitura da semana</Rotulo>
+            <p className="mt-2 whitespace-pre-line text-[13px]">{r.narrativa ?? 'ausente: o relator ainda não escreveu a leitura deste período.'}</p>
+            <p className="mt-2 text-[11.5px] text-dim">gerado em {diaHoraSP(r.geradoEm)}</p>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}

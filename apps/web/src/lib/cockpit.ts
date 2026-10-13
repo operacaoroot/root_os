@@ -105,9 +105,10 @@ export function numeroOuAusente(n: number | null | undefined, sufixo = ''): stri
   return `${n}${sufixo}`;
 }
 
-/** Tempo de uma escrita do fechamento: "0,4 s". */
+/** Tempo de uma escrita do fechamento: "0,4 s"; abaixo de 100 ms, "14 ms" (para não escrever "0,0 s"). */
 export function segundos(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return AUSENTE;
+  if (ms < 100) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
 }
 
