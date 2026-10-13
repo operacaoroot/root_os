@@ -1,15 +1,15 @@
 {
   "ok": true,
-  "em": "2026-10-13T16:46:04.802Z",
+  "em": "2026-10-13T22:00:03.881Z",
   "api": "http://127.0.0.1:4010/api",
-  "tempoTotalMs": 13972,
+  "tempoTotalMs": 29450,
   "lead": {
-    "telefone": "+5532909950829",
-    "nome": "Marina Teste 0829",
-    "empresa": "Construtora Alicerce Homolog 0829",
-    "id": "225cdb45-0409-5f07-814c-89faf8dac305"
+    "telefone": "+5532928774430",
+    "nome": "Marina Teste 4430",
+    "empresa": "Construtora Alicerce Homolog 4430",
+    "id": "2b8a9afd-e319-5296-9588-fa89fe0845a2"
   },
-  "linkDaSala": "http://100.95.41.124:3010/s/edMYIt…",
+  "linkDaSala": "http://100.95.41.124:3010/s/hpaWMx…",
   "horario": "2026-10-14T10:00:00-03:00",
   "diagnostico": {
     "dores": [
@@ -28,18 +28,19 @@
     "parcelas": 3,
     "validaAte": "2026-10-21T23:59:59-03:00",
     "laudo": {
-      "ok": true,
+      "ok": false,
       "notas": [
         "parcelas fecham o total: 3× de R$ 3.999,00 = R$ 11.997,00",
         "preço bate a tabela de 2026-10-04",
-        "quadro de custos presente com VALORES DE EXEMPLO (exemplo do mapa (tela 07), a decidir): [a decidir] com o dado real do cliente",
         "validade escrita: até 2026-10-21"
       ],
-      "apontamentos": []
+      "apontamentos": [
+        "quadro de custos com VALORES DE EXEMPLO (exemplo do mapa (tela 07), a decidir): não é dado do cliente, [a decidir] com o dado real"
+      ]
     }
   },
   "cobranca": {
-    "linkPagamento": "http://100.95.41.124:4011/fatura/pay_45ab1d840240412e",
+    "linkPagamento": "http://100.95.41.124:4011/fatura/pay_0dcb06eda3bb4047",
     "pix": true,
     "primeiraParcelaCentavos": 399900
   },
@@ -65,12 +66,12 @@
     ]
   },
   "funil": {
-    "fechadosAntes": 4,
-    "fechadosDepois": 5,
+    "fechadosAntes": 5,
+    "fechadosDepois": 6,
     "fechadosNestaExecucao": 1,
     "esteLeadFechado": true,
     "paginaDaSalaNoWeb": 200,
-    "relatorioDaSemana": "501: fase 2 da lane E"
+    "relatorioDaSemana": 200
   },
   "etapas": [
     "novo_lead → qualificacao · form.respondido sustenta qualificacao",
@@ -126,14 +127,14 @@
   "toques": [
     {
       "n": 1,
-      "quem": "sócio titular",
-      "email": "socio@root.homolog",
-      "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
+      "quem": "mesa (responsável)",
+      "email": "mesa@root.homolog",
+      "acao": "libera comercial.whatsapp.enviar (R3)",
       "porque": "M1: a primeira resposta ao lead sai da casa (R3: irreversível e confidencial)",
-      "nivel": "R4",
+      "nivel": "R3",
       "capacidade": "comercial.whatsapp.enviar",
-      "alcada": "titular",
-      "approvalId": "fd310256-1589-49c8-a894-af01ddb94e23"
+      "alcada": "responsavel",
+      "approvalId": "e59bf658-852e-482a-8910-cd5f10c52ebf"
     },
     {
       "n": 2,
@@ -144,7 +145,7 @@
       "nivel": "R4",
       "capacidade": "comercial.whatsapp.enviar",
       "alcada": "titular",
-      "approvalId": "1ec97d49-8c6d-4838-8231-fa240e7f66b9"
+      "approvalId": "7e111f5c-c6f9-4f0a-99ce-12610df798de"
     },
     {
       "n": 3,
@@ -155,7 +156,7 @@
       "nivel": "R4",
       "capacidade": "comercial.whatsapp.enviar",
       "alcada": "titular",
-      "approvalId": "ff7323cb-9890-4ec4-a590-9079256f0a80"
+      "approvalId": "59636fe4-cef4-472f-b933-503e369afff4"
     },
     {
       "n": 4,
@@ -173,6 +174,13 @@
     },
     {
       "n": 6,
+      "quem": "sócio da conta (admin)",
+      "email": "admin@marketing-os.local",
+      "acao": "leva à liberação a proposta com o quadro de exemplo",
+      "porque": "o revisor aponta número de exemplo (E-3): uma pessoa decide, um toque"
+    },
+    {
+      "n": 7,
       "quem": "sócio titular",
       "email": "socio@root.homolog",
       "acao": "assina comercial.proposta.publicar (R4, senha e motivo)",
@@ -180,10 +188,10 @@
       "nivel": "R4",
       "capacidade": "comercial.proposta.publicar",
       "alcada": "titular",
-      "approvalId": "e3ea0067-bd8c-4d87-8889-d60f1d6745a2"
+      "approvalId": "2bc0741c-f9fa-438c-836b-9edcf6db6d4d"
     },
     {
-      "n": 7,
+      "n": 8,
       "quem": "sócio titular",
       "email": "socio@root.homolog",
       "acao": "assina comercial.whatsapp.enviar (R4, senha e motivo)",
@@ -191,17 +199,17 @@
       "nivel": "R4",
       "capacidade": "comercial.whatsapp.enviar",
       "alcada": "titular",
-      "approvalId": "de4a786d-ea42-4855-988f-934a0bbb8662"
+      "approvalId": "e4adcd64-41f8-454b-ab03-1be3652c49a5"
     },
     {
-      "n": 8,
+      "n": 9,
       "quem": "sócio da conta (admin)",
       "email": "admin@marketing-os.local",
       "acao": "decide o pedido de ajuste (manter o preço)",
       "porque": "desconto é decisão de gente: a fila de decisões, um toque"
     },
     {
-      "n": 9,
+      "n": 10,
       "quem": "sócio titular",
       "email": "socio@root.homolog",
       "acao": "assina comercial.cobranca.criar (R4, senha e motivo)",
@@ -209,10 +217,10 @@
       "nivel": "R4",
       "capacidade": "comercial.cobranca.criar",
       "alcada": "titular",
-      "approvalId": "096ad445-29e6-4a0f-8450-7a9c2ea8e178"
+      "approvalId": "261537d4-02b8-468f-a378-553aae5cb11f"
     },
     {
-      "n": 10,
+      "n": 11,
       "quem": "sócio titular",
       "email": "socio@root.homolog",
       "acao": "assina comercial.contrato.enviar (R4, senha e motivo)",
@@ -220,17 +228,17 @@
       "nivel": "R4",
       "capacidade": "comercial.contrato.enviar",
       "alcada": "titular",
-      "approvalId": "cd3395cf-0f56-46f9-a259-eb5f986621a2"
+      "approvalId": "b99c71cf-2ec2-4ec8-b583-5e37f04df95a"
     },
     {
-      "n": 11,
+      "n": 12,
       "quem": "sócio da conta (admin)",
       "email": "admin@marketing-os.local",
       "acao": "assina o contrato pela Root (ZapSign)",
       "porque": "o contrato tem dois signatários; a Root assina por um sócio"
     },
     {
-      "n": 12,
+      "n": 13,
       "quem": "sócio titular",
       "email": "socio@root.homolog",
       "acao": "assina comercial.fechamento.executar (R4, senha e motivo)",
@@ -238,7 +246,7 @@
       "nivel": "R4",
       "capacidade": "comercial.fechamento.executar",
       "alcada": "titular",
-      "approvalId": "95dc2a5d-5779-4dd3-9776-4e6c8d985891"
+      "approvalId": "dc21e633-e152-47a2-bc45-cfa408458f42"
     }
   ],
   "acoesDoCliente": [
@@ -254,22 +262,22 @@
     "assina o contrato (dublê da ZapSign)"
   ],
   "automaticas": {
-    "total": 28,
-    "sozinho": 14,
+    "total": 29,
+    "sozinho": 15,
     "efeitosLiberados": 14,
-    "fatosNoFio": 51,
+    "fatosNoFio": 53,
     "atosDoCliente": 19,
-    "atosDePessoa": 4,
+    "atosDePessoa": 5,
     "porTipo": {
-      "dono.atribuido": 1,
       "lead.pontuado": 2,
+      "dono.atribuido": 1,
       "sala.aberta": 1,
       "whats.enviada": 4,
       "etapa.mudou": 8,
       "agenda.confirmada": 1,
       "diagnostico.pronto": 1,
+      "decisao.aberta": 2,
       "proposta.publicada": 1,
-      "decisao.aberta": 1,
       "cobranca.criada": 1,
       "contrato.gerado": 1,
       "fechamento.escrita": 5,
@@ -289,91 +297,91 @@
     },
     {
       "nome": "1. o lead entra pelo simulador do WhatsApp",
-      "emMs": 290
+      "emMs": 335
     },
     {
       "nome": "2. M1 com o formulário: retida em R3, outra pessoa libera",
-      "emMs": 541
+      "emMs": 596
     },
     {
       "nome": "3. o formulário respondido na sala",
-      "emMs": 751
+      "emMs": 760
     },
     {
       "nome": "4. M2 com dois horários em botões: R3, outra pessoa libera",
-      "emMs": 973
+      "emMs": 936
     },
     {
       "nome": "5. o lead escolhe o horário (o primeiro, para a véspera cair dentro desta execução)",
-      "emMs": 1157
+      "emMs": 1115
     },
     {
       "nome": "6. a véspera: o relógio prepara a M3 (R3), outra pessoa libera, e a confirmação entra no fio",
-      "emMs": 1246
+      "emMs": 1198
     },
     {
       "nome": "7. a sessão: o sócio da conta conduz e sobe a ata (fixture da Alicerce)",
-      "emMs": 11510
+      "emMs": 26510
     },
     {
       "nome": "8. o diagnóstico com stub: 4 falas com minuto",
-      "emMs": 11638
+      "emMs": 26716
     },
     {
       "nome": "9. o sócio aprova o diagnóstico",
-      "emMs": 11658
+      "emMs": 26761
     },
     {
-      "nome": "10. a proposta pela tabela, revisor com laudo limpo, publicada pela porta (R3)",
-      "emMs": 11753
+      "nome": "10. a proposta pela tabela; o quadro de EXEMPLO é apontamento do revisor (E-3): decisão de um toque, depois a porta (R3)",
+      "emMs": 26839
     },
     {
       "nome": "11. M4 avisa que a proposta chegou: R3, outra pessoa libera",
-      "emMs": 12004
+      "emMs": 27209
     },
     {
       "nome": "12. o cliente lê a proposta por bloco na sala",
-      "emMs": 12180
+      "emMs": 27392
     },
     {
       "nome": "13. o pedido de ajuste cai na fila de decisões",
-      "emMs": 12427
+      "emMs": 27648
     },
     {
       "nome": "14. decisão de um toque: manter o preço",
-      "emMs": 12491
+      "emMs": 27708
     },
     {
       "nome": "15. o aceite na sala: dados, pagamento e contrato",
-      "emMs": 12528
+      "emMs": 27757
     },
     {
       "nome": "16. cobrança e contrato pela porta: R4, a titular assina",
-      "emMs": 12758
+      "emMs": 27974
     },
     {
       "nome": "17. o cliente paga o Pix no dublê do Asaas e o webhook grava o fato",
-      "emMs": 13129
+      "emMs": 28416
     },
     {
       "nome": "18. o cliente assina o contrato no dublê da ZapSign",
-      "emMs": 13245
+      "emMs": 28567
     },
     {
       "nome": "19. o sócio assina pela Root",
-      "emMs": 13328
+      "emMs": 28728
     },
     {
       "nome": "20. o fechamento vai à porta (R4) e a titular assina: cinco escritas",
-      "emMs": 13490
+      "emMs": 28959
     },
     {
       "nome": "21. o contrato vivo, com parcelas",
-      "emMs": 13820
+      "emMs": 29303
     },
     {
       "nome": "22. o funil conta o lead em \"fechado\"",
-      "emMs": 13844
+      "emMs": 29335
     }
   ]
 }
