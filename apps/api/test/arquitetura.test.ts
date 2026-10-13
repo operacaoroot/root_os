@@ -351,6 +351,8 @@ const CONECTORES: Record<string, string> = {
    * catraca do MD10 (abaixo) confere que o do YouTube não aparece em outro lugar.
    */
   'src/youtube/youtube.service.ts': 'YouTube',
+  // Cockpit comercial (lane D, 13/10/2026): assinatura do contrato, entregue ao comercial pela PORTA_DE_ASSINATURA.
+  'src/comercial/conectores/zapsign.service.ts': 'ZapSign',
 };
 
 /**
@@ -959,6 +961,7 @@ const HOSTS: Array<{ padrao: RegExp; conector: string }> = [
   // MD10: o link de exibição do vídeo também é endereço do YouTube; quem o monta é o conector (`urlDoVideo`).
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtube\.com/, conector: 'src/youtube/youtube.service.ts' },
   { padrao: /https?:\/\/(?:[\w-]+\.)*youtu\.be/, conector: 'src/youtube/youtube.service.ts' },
+  { padrao: /https?:\/\/(?:[\w-]+\.)*zapsign\.com(?:\.br)?/, conector: 'src/comercial/conectores/zapsign.service.ts' },
 ];
 
 /*
@@ -1141,6 +1144,11 @@ const CREDENCIAIS: Record<string, string> = {
   PLUGGY_BASE_URL: 'src/finance/pluggy.service.ts',
   ASAAS_API_KEY: 'src/finance/asaas.service.ts',
   ASAAS_BASE_URL: 'src/finance/asaas.service.ts',
+  // Cockpit comercial (lane D): o segredo do webhook de cobrança é credencial do conector.
+  ASAAS_WEBHOOK_TOKEN: 'src/finance/asaas.service.ts',
+  ZAPSIGN_BASE_URL: 'src/comercial/conectores/zapsign.service.ts',
+  ZAPSIGN_API_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
+  ZAPSIGN_WEBHOOK_TOKEN: 'src/comercial/conectores/zapsign.service.ts',
   GOOGLE_CLIENT_ID: 'src/google/google.service.ts',
   GOOGLE_CLIENT_SECRET: 'src/google/google.service.ts',
   GOOGLE_REDIRECT_URI: 'src/google/google.service.ts',

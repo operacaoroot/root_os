@@ -226,6 +226,10 @@ const servidor = createServer(async (req, res) => {
       salvar();
       return json(res, 200, publico(doc));
     }
+    // Lista (a sonda de saúde do conector pergunta por aqui). Acréscimo da lane D.
+    if (req.method === 'GET' && caminho === '/api/v1/docs') {
+      return json(res, 200, { count: estado.docs.length, next: null, previous: null, results: estado.docs.map(publico) });
+    }
     m = caminho.match(/^\/api\/v1\/docs\/([\w-]+)$/);
     if (req.method === 'GET' && m) {
       const d = estado.docs.find((x) => x.token === m[1]);

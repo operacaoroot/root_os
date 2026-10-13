@@ -1,5 +1,16 @@
 import { Injectable, OnModuleInit, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
+import {
+  billingTypeDoAsaas,
+  lerWebhookDoAsaas,
+  parcelaDoAsaas,
+  segredoConfere,
+  type ClienteDeCobranca,
+  type NovaCobranca,
+  type PagamentoNoWebhook,
+  type ParcelaNoProvedor,
+  type PortaDeCobranca,
+} from '../comercial/portas/cobranca.port';
 
 // Conector do Asaas (gateway de cobranças + conta digital — https://asaas.com).
 // Credencial PRÓPRIA do root em ~/.config/root/asaas.env (isolado do escritório).
@@ -57,10 +68,13 @@ interface AsaasList<T> {
 export const OPEN_PAYMENT_STATUS = ['PENDING', 'OVERDUE', 'CONFIRMED', 'AWAITING_RISK_ANALYSIS'] as const;
 
 @Injectable()
-export class AsaasService implements OnModuleInit {
+export class AsaasService implements OnModuleInit, PortaDeCobranca {
   private readonly log = new Logger('AsaasService');
   private readonly apiKey = (process.env.ASAAS_API_KEY ?? '').trim();
   private readonly base = this.resolveBase();
+  /** O segredo que o Asaas manda no cabeçalho `asaas-access-token` do webhook (cockpit comercial, lane D). */
+  private readonly webhookToken = (process.env.ASAAS_WEBHOOK_TOKEN ?? '').trim();
+  readonly provedor = 'asaas';
 
   constructor(private readonly conectoresConfigurados: ConectoresConfiguradosRegistry) {}
 
@@ -168,5 +182,97 @@ export class AsaasService implements OnModuleInit {
       this.log.warn(`Asaas /customers falhou: ${(e as Error).message}`);
     }
     return map;
+  }
+
+  // ==========================================================================
+  // ESCRITAS DO COCKPIT COMERCIAL (lane D, 13/10/2026) — a `PortaDeCobranca`.
+  //
+  // Quem chama é só o EFEITO de `comercial.cobranca.criar` e de
+  // `comercial.fechamento.executar`, que a porta dispara depois da assinatura
+  // da titular (R4). O comercial recebe este serviço pelo token
+  // `PORTA_DE_COBRANCA` (fiação em `finance.module.ts`), nunca por import.
+  // As leituras acima não mudaram.
+  // ==========================================================================
+
+  configurada(): boolean {
+    return this.configured;
+  }
+
+  private async escrever<T>(metodo: 'POST', path: string, corpo: Record<string, unknown>): Promise<T> {
+    this.ensureConfigured();
+    const res = await fetch(`${this.base}${path}`, {
+      method: metodo,
+      headers: { access_token: this.apiKey, 'Content-Type': 'application/json', 'User-Agent': 'marketing-os' },
+      body: JSON.stringify(corpo),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Asaas ${metodo} ${path} → HTTP ${res.status} ${body.slice(0, 200)}`);
+    }
+    return res.json() as Promise<T>;
+  }
+
+  /** Cria o cliente, ou reaproveita o que já existe com o mesmo documento. */
+  async criarCliente(c: ClienteDeCobranca): Promise<{ externoId: string; reaproveitado: boolean }> {
+    const doc = c.documento.replace(/\D/g, '');
+    const existentes = await this.req<AsaasList<AsaasCustomer>>(`/customers?cpfCnpj=${encodeURIComponent(doc)}`);
+    const ja = existentes.data?.[0];
+    if (ja?.id) return { externoId: ja.id, reaproveitado: true };
+    const novo = await this.escrever<AsaasCustomer>('POST', '/customers', {
+      name: c.nome,
+      cpfCnpj: doc,
+      ...(c.email ? { email: c.email } : {}),
+      ...(c.telefone ? { mobilePhone: c.telefone } : {}),
+      externalReference: c.referenciaExterna,
+      notificationDisabled: true,
+    });
+    return { externoId: novo.id, reaproveitado: false };
+  }
+
+  private async parcelasDaReferencia(ref: string): Promise<ParcelaNoProvedor[]> {
+    const lista = await this.req<AsaasList<Record<string, unknown>>>(`/payments?externalReference=${encodeURIComponent(ref)}`);
+    return (lista.data ?? []).map(parcelaDoAsaas).sort((a, b) => a.parcela - b.parcela);
+  }
+
+  /** Cria a cobrança parcelada. A mesma `referenciaExterna` devolve as parcelas que já existem. */
+  async criarCobranca(n: NovaCobranca): Promise<{ parcelas: ParcelaNoProvedor[]; reaproveitada: boolean }> {
+    const ja = await this.parcelasDaReferencia(n.referenciaExterna);
+    if (ja.length) return { parcelas: ja, reaproveitada: true };
+    const reais = n.parcelaCentavos / 100;
+    const corpo: Record<string, unknown> = {
+      customer: n.clienteExternoId,
+      billingType: billingTypeDoAsaas(n.forma),
+      dueDate: n.primeiroVencimento,
+      description: n.descricao,
+      externalReference: n.referenciaExterna,
+      ...(n.parcelas > 1 ? { installmentCount: n.parcelas, installmentValue: reais } : { value: reais }),
+    };
+    await this.escrever<Record<string, unknown>>('POST', '/payments', corpo);
+    const criadas = await this.parcelasDaReferencia(n.referenciaExterna);
+    if (!criadas.length) throw new Error('Asaas criou a cobrança e não a devolveu pela referência: confira no painel antes de tentar de novo.');
+    return { parcelas: criadas, reaproveitada: false };
+  }
+
+  async consultarCobranca(externoId: string): Promise<ParcelaNoProvedor | null> {
+    try {
+      return parcelaDoAsaas(await this.req<Record<string, unknown>>(`/payments/${encodeURIComponent(externoId)}`));
+    } catch (e) {
+      if (/HTTP 404/.test((e as Error).message)) return null;
+      throw e;
+    }
+  }
+
+  async pixDaCobranca(externoId: string): Promise<string | null> {
+    const r = await this.req<{ payload?: string }>(`/payments/${encodeURIComponent(externoId)}/pixQrCode`);
+    return typeof r.payload === 'string' && r.payload ? r.payload : null;
+  }
+
+  /** Sem `ASAAS_WEBHOOK_TOKEN` configurado, recusa tudo. Comparação em tempo constante. */
+  webhookAutentico(token: string | undefined | null): boolean {
+    return segredoConfere(this.webhookToken, token);
+  }
+
+  interpretarWebhook(corpo: unknown): PagamentoNoWebhook | null {
+    return lerWebhookDoAsaas(corpo);
   }
 }

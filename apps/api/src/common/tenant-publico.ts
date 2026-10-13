@@ -427,3 +427,40 @@ export async function resolverTenantDaSala(
     ? { salaId: s.id, leadId: s.leadId, orgId: s.orgId, validoAte: s.validoAte, revogadoEm: s.revogadoEm }
     : null;
 }
+
+/**
+ * A empresa dona de uma parcela, pelo id no provedor (cockpit do lead, lane D).
+ *
+ * O webhook de cobrança chega anônimo, só com o id da cobrança. Mesma forma da
+ * sala: uma consulta mínima sob a sentinela (a policy de leitura de
+ * `ComercialCobranca` a libera, migration
+ * `20261013100000_comercial_webhooks_leitura_publica`), devolve o endereço.
+ */
+export async function resolverTenantDaCobranca(
+  prisma: PrismaClient,
+  provedor: string,
+  externoId: string,
+): Promise<{ cobrancaId: string; leadId: string; orgId: string } | null> {
+  const c = await sobASentinela(() =>
+    prisma.comercialCobranca.findUnique({
+      where: { provedor_externoId: { provedor, externoId } },
+      select: { id: true, leadId: true, orgId: true },
+    }),
+  );
+  return c && c.orgId ? { cobrancaId: c.id, leadId: c.leadId, orgId: c.orgId } : null;
+}
+
+/** A empresa dona de um documento de assinatura, pelo id no provedor (lane D). Mesma forma. */
+export async function resolverTenantDoDocumento(
+  prisma: PrismaClient,
+  provedor: string,
+  externoId: string,
+): Promise<{ documentoId: string; leadId: string; orgId: string } | null> {
+  const d = await sobASentinela(() =>
+    prisma.comercialDocumento.findUnique({
+      where: { provedor_externoId: { provedor, externoId } },
+      select: { id: true, leadId: true, orgId: true },
+    }),
+  );
+  return d && d.orgId ? { documentoId: d.id, leadId: d.leadId, orgId: d.orgId } : null;
+}

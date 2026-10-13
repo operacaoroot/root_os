@@ -21,6 +21,11 @@ import { SimuladorController } from './simulador.controller';
 import { MensagensController } from './mensagens.controller';
 import { SalaService } from './sala.service';
 import { WhatsappComercialService } from './whatsapp.service';
+// lane D
+import { ZapsignModule } from './conectores/zapsign.module';
+import { ContratoVivoService } from './contrato-vivo.service';
+import { DinheiroService } from './dinheiro.service';
+import { FechamentoService } from './fechamento.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -40,7 +45,7 @@ import { WhatsappComercialService } from './whatsapp.service';
  * bloco marcado abaixo.
  */
 @Module({
-  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule],
+  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule],
   controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
@@ -58,8 +63,13 @@ import { WhatsappComercialService } from './whatsapp.service';
     SalaService,
     WhatsappComercialService,
     // --- lane D (cobrança, assinatura, fechamento, contrato vivo) ---
+    // As portas de cobrança e assinatura chegam por token: `FinanceModule`
+    // (PORTA_DE_COBRANCA → AsaasService) e `ZapsignModule` (PORTA_DE_ASSINATURA).
+    DinheiroService,
+    FechamentoService,
+    ContratoVivoService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
   ],
-  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService],
+  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })
 export class ComercialModule {}
