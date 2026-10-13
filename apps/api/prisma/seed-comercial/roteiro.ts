@@ -159,6 +159,11 @@ class Fio {
   }
 }
 
+/** A sessão começa na hora cheia de São Paulo (o fuso é de hora inteira, então a hora cheia de UTC é a mesma): "quinta 10h" e não 10h11. */
+function naHora(d: Date): Date {
+  return new Date(Math.floor(d.getTime() / H) * H);
+}
+
 function seg(base: Date, segundos: number): Date {
   return new Date(base.getTime() + segundos * 1000);
 }
@@ -489,7 +494,7 @@ function alicerce(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
   const formEm = new Date(entrada.getTime() + 19 * MIN);
   const form = f.add('form.respondido', 'formulario', { sistema: 'Omie', baseOrganizada: true, maiorDor: 'fechamento leva 9 dias', equipeFinanceiro: 3, nome: 'Marina Duarte', empresa: 'Construtora Alicerce' }, formEm);
   f.mudou('novo_lead', 'qualificacao', { tipo: 'form.respondido', id: form }, seg(formEm, 1));
-  const sessaoEm = new Date(entrada.getTime() + 3 * D + 48 * MIN);
+  const sessaoEm = naHora(new Date(entrada.getTime() + 3 * D + 48 * MIN));
   agendar(f, a, { escolhidaEm: seg(formEm, 20), sessaoEm }, false);
 
   // D4 · a ata (Granola, 42 min), o diagnóstico às 11:05, a aprovação do sócio.
@@ -561,7 +566,7 @@ function alicerce(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
 function oticaVista(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
   const slug = 'otica-vista';
   const b = base(ctx, slug, 4);
-  const sessaoEm = new Date(agora.getTime() - 195 * MIN); // sessão há 3h15; ata há 2h30, diagnóstico há 2h
+  const sessaoEm = naHora(new Date(agora.getTime() - 195 * MIN)); // sessão há 3h15 ou mais; ata há 2h30, diagnóstico há 2h
   const entrada = new Date(sessaoEm.getTime() - 6 * D);
   const f = new Fio(ctx.orgId, b.leadId);
   const a = abertura(slug, 'Ótica Vista', b, entrada);
@@ -600,7 +605,7 @@ function redePaoBom(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
   const slug = 'rede-pao-bom';
   const b = base(ctx, slug, 5);
   const publicadaEm = new Date(agora.getTime() - 6 * D);
-  const sessaoEm = new Date(publicadaEm.getTime() - 8 * H - 10 * H);
+  const sessaoEm = naHora(new Date(publicadaEm.getTime() - 8 * H - 10 * H));
   const entrada = new Date(sessaoEm.getTime() - 4 * D);
   const f = new Fio(ctx.orgId, b.leadId);
   const a = abertura(slug, 'Rede Pão Bom', b, entrada);
@@ -649,7 +654,7 @@ function mercadoBomPreco(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
   const b = base(ctx, slug, 6);
   const aceiteEm = new Date(agora.getTime() - 3 * H);
   const publicadaEm = new Date(aceiteEm.getTime() - 5 * D);
-  const sessaoEm = new Date(publicadaEm.getTime() - 8 * H - 10 * H);
+  const sessaoEm = naHora(new Date(publicadaEm.getTime() - 8 * H - 10 * H));
   const entrada = new Date(sessaoEm.getTime() - 3 * D);
   const f = new Fio(ctx.orgId, b.leadId);
   const a = abertura(slug, 'Mercado Bom Preço', b, entrada);
@@ -751,7 +756,7 @@ function autoPecasSul(ctx: ContextoDoRoteiro, agora: Date): RoteiroDoLead {
   const perdeuEm = new Date(agora.getTime() - 2 * D);
   const lidaEm = new Date(perdeuEm.getTime() - 5 * D);
   const publicadaEm = new Date(lidaEm.getTime() - 6 * H);
-  const sessaoEm = new Date(publicadaEm.getTime() - 8 * H - 10 * H);
+  const sessaoEm = naHora(new Date(publicadaEm.getTime() - 8 * H - 10 * H));
   const entrada = new Date(sessaoEm.getTime() - 3 * D);
   const f = new Fio(ctx.orgId, b.leadId);
   const a = abertura(slug, 'Auto Peças Sul', b, entrada);

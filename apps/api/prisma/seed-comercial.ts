@@ -10,8 +10,7 @@ import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear
  * escreve na empresa de slug `root` de um banco cujo nome indica homologação,
  * teste ou desenvolvimento. Idempotente: rodar de novo não duplica nada.
  *
- * O que ele semeia (parte do orquestrador; a lane F acrescenta as empresas de
- * demonstração das telas no bloco marcado abaixo):
+ * O que ele semeia (1 e 2 são do orquestrador; 3 é da lane F):
  *   1. as pessoas da mesa de homologação — o admin do `seed.ts` é titular; aqui
  *      entram uma pessoa com alçada `responsavel` (papel `gestor_marketing`) e
  *      um segundo titular (papel `diretor`), para nenhuma decisão cair na
@@ -19,7 +18,14 @@ import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear
  *      senta em cada cadeira é decisão da mesa;
  *   2. a `ComercialConfig` com os números da régua que o roteiro manda a
  *      homologação preencher, marcados `valoresDeHomologacao: true`. Os
- *      interruptores K08 ficam com o PADRÃO DA REGRA VIGENTE (falso).
+ *      interruptores K08 ficam com o PADRÃO DA REGRA VIGENTE (falso);
+ *   3. as oito empresas de demonstração das telas do mapa (K04), cada uma no fio
+ *      de eventos que a leva à etapa da tela 04, com sala, decisões abertas,
+ *      proposta da tabela de 04/10 e cobranças (código em ./seed-comercial/).
+ *      A ficha de cada uma é a projeção dos eventos. No fim, o script imprime os
+ *      links /s/<token> das salas. Variável opcional: COMERCIAL_SEED_DECISAO_HORAS
+ *      (padrão: a config, 4 h) estica o prazo das duas decisões abertas, que a
+ *      rotina do relógio vence aplicando o padrão escrito.
  */
 
 const prisma = new PrismaClient();
