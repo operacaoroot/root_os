@@ -108,7 +108,7 @@ describe('o provedor ponte', () => {
   it('503 (sessão do CLI expirada): cai no stub e avisa', async () => {
     responder = () => ({ status: 503, corpo: { erro: 'sessão do Claude Code inválida ou expirada' } });
     const { resultado, procedencia } = await comProcedencia(() => ponte(url).complete(pedido));
-    expect(resultado).toContain('relatório e vai embora');
+    expect(resultado).toContain('fica junto até ele rodar sozinho');
     expect(procedencia).toMatchObject({ provider: 'stub', caiuNoStub: true });
     expect(procedencia?.aviso).toMatch(/respondeu 503.*expirada.*stub/);
   });

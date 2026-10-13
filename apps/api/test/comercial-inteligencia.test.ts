@@ -200,7 +200,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     expect(v1.laudo.ok, v1.laudo.apontamentos.join('; ')).toBe(true);
     expect(v1.conteudo).toMatchObject({ produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, parcelaCentavos: 399_900, alternativa: 'imersao', validaAte: '2026-10-21T23:59:59-03:00' });
     expect(v1.conteudo.ouvimos).toHaveLength(4);
-    expect(v1.conteudo.comoEDiferente).toMatch(/relatório e vai embora/);
+    expect(v1.conteudo.comoEDiferente).toMatch(/fica junto até ele rodar sozinho/);
     expect(v1.conteudo.quadroDeCustos).toMatchObject({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: true });
     expect(v1.hash).toBe(hashDaVersao(v1.conteudo));
 

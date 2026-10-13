@@ -10,7 +10,7 @@
     {
       "depoisDe": "PERGUNTA DO CLIENTE:",
       "quando": ["consultoria"],
-      "texto": "{\"resposta\":\"A gente não entrega um relatório e vai embora: o fechamento passa a rodar com a sua equipe, e a gente fica até ele rodar.\",\"segura\":true}"
+      "texto": "{\"resposta\":\"O fechamento passa a rodar com a sua equipe, e a gente fica junto até ele rodar sozinho.\",\"segura\":true}"
     },
     {
       "depoisDe": "PERGUNTA DO CLIENTE:",

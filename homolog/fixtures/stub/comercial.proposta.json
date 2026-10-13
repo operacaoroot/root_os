@@ -4,7 +4,7 @@
   "respostas": [
     {
       "quando": ["consultoria"],
-      "texto": "{\"comoEDiferente\":\"A gente não entrega um relatório e vai embora: o fechamento passa a rodar com a sua equipe, e a gente fica até ele rodar.\"}"
+      "texto": "{\"comoEDiferente\":\"O fechamento passa a rodar com a sua equipe, e a gente fica junto até ele rodar sozinho.\"}"
     }
   ],
   "padrao": "{\"comoEDiferente\":null}"
