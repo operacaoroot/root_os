@@ -62,15 +62,22 @@ Todos em `ComercialConfig`, padrão = regra vigente (desligado). A virada é dec
 - `janelaDeVetoMinutos`, `fupLeuDias`, `fupSilencioDias`, `prazoDiagnosticoDiasUteis`, `validadePropostaDias`, `leadParadoDias`, `decisaoExpiraHoras`, `horaPublicacaoProposta`, `cobrancaSemWebhookDias`, `efeitoRetidoHoras`: nulo = `[a decidir]` = desligado; a homologação preenche no seed com `valoresDeHomologacao: true` (fup 3 e 7 dias, diagnóstico 1 dia útil, decisão 4 h, parado 3 dias, validade 8 dias, veto 10 min).
 - `autonomia` por automação (A0 a A3): padrão = degrau vigente pela régua; R3 e R4 param em A2.
 
-## 6. Pendências com estado exato (início da rodada 5)
+## 6. Pendências com estado exato (atualizado às 18:46 da rodada 5)
 
-- **D-1 / C-1 (P1)**: link de assinar pela Root entregue a qualquer `leads.editar`. Conserto escrito e sem commit: link cifrado (`comercial/link-da-root.ts`), entrega só ao signatário cadastrado, titular relido no banco, com senha; telas ajustadas; script `db:conserto:link-da-root` para o que já estava em claro.
-- **D-2 (P1)**: devedor fora dos argumentos da cobrança R4. Aberto.
-- **E-1 (P1)**: ponte de modelo com `shell: true`, ferramentas e MCP. Aberto.
-- **E-2 (P1)**: resposta da dúvida vai ao cliente sem gente. Aberto.
-- **E-3 (P1)**: quadro de custos de exemplo entra em proposta real. Aberto.
-- P2 dos laudos: A-1, A-2, B-3 a B-7, C-2 a C-9, D-4 a D-7, E-4 a E-15 (detalhe nos laudos).
+Consertados e commitados nesta rodada (cada um com prova em teste):
+
+- **D-1 / C-1 (P1)**: o link de assinar pela Root só existe cifrado (`comercial/link-da-root.ts`) e só sai ao signatário titular cadastrado, relido no banco, com a senha; script `db:conserto:link-da-root` para o que estava em claro.
+- **D-2 (P1)**: o devedor (documento, razão social, e-mail) entra nos argumentos assinados da cobrança R4 (política 1.8.1); o efeito recusa se o aceite de agora diverge; o Partner nasce do devedor aprovado; `aceite/dados` depois do aceite é 409.
+- **E-1 (P1)**: a ponte de modelo abre o CLI sem shell, sem ferramentas, sem MCP, sem configurações, com token e Host conferidos. Ensaio contra o CLI real: a injeção da revisão não roda.
+- **E-3 (P1)**: o quadro de custos de exemplo só vale com `QUADRO_DE_CUSTOS_EXEMPLO` (homologação) e é apontamento do revisor.
+- **D-5, A-1, A-2, B-4, B-7, C-2 a C-7 (P2)** consertados; E-14 resolvido pelo A-2.
+
+Em curso ou abertos:
+
+- **E-2 (P1)**: resposta da dúvida só literal da proposta ou com pessoa. Em conserto.
+- P2 abertos: B-5, B-6 (ajuste depois do aceite), D-4, D-6, D-7, C-8, C-9, E-4 a E-13, E-15 (detalhe nos laudos).
 - Testes do baseline vermelhos neste Windows desde a `main` (não consertados): console-da-plataforma, documentacao, finance-contrato-e-empresa, import-clickup, mapa-publico, pauta-episodio, root-midia, vault (permissão de arquivo, link simbólico, git).
+- A worktree temporária `C:/Users/User/dev/mos-d2wt` (lane D-2) ficou na máquina: `git worktree remove C:/Users/User/dev/mos-d2wt` a remove; não foi apagada pela regra de não apagar.
 
 ## 7. Falta do Rodrigo
 
