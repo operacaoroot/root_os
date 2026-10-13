@@ -26,6 +26,7 @@ import { LeadStatus, Prisma, type ComercialEtapa as EtapaDoBanco } from '@prisma
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { hashDoConteudo, leadIdDoTelefone, linhasDoFio, normalizarTelefone, type PayloadDe } from './eventos';
+import { guardarAtaEmTransito } from './ata-em-transito';
 import { FioService, type EventoGravado } from './fio.service';
 import { produtoAlvo } from './pontuacao';
 import { avancar, avancarDepoisDaSessao, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
@@ -431,6 +432,8 @@ export class FichaService {
     await this.garantir(orgId, leadId);
     const hash = hashDoConteudo(r.data.texto);
     const payload: PayloadDe<'ata.chegou'> = { hash, caracteres: r.data.texto.length, fonte: r.data.fonte, referencia: r.data.referencia ?? null, por: por?.nome ?? null };
+    // Lane E: o texto fica só na memória do processo para o leitor de ata (reação); nunca no banco.
+    guardarAtaEmTransito(orgId, leadId, hash, r.data.texto);
     const ev = await this.fio.registrar(orgId, leadId, 'ata.chegou', hash, payload, { em: agora });
     return { ...ev, hash };
   }

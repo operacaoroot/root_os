@@ -1,0 +1,22 @@
+{
+  "tarefa": "comercial.duvida",
+  "_sobre": "Respostas do stub para o assistente da proposta na sala (homologação). Só a pergunta do cliente decide a regra (depoisDe). Os números citados são os da v1 da Operação ROOT na tabela de 04/10; em outra versão o sistema recusa o número e vale a resposta de segurança.",
+  "respostas": [
+    {
+      "depoisDe": "PERGUNTA DO CLIENTE:",
+      "quando": ["parcel"],
+      "texto": "{\"resposta\":\"A Operação ROOT sai em 3 parcelas de R$ 3.999,00, por pix, boleto ou cartão.\",\"segura\":true}"
+    },
+    {
+      "depoisDe": "PERGUNTA DO CLIENTE:",
+      "quando": ["consultoria"],
+      "texto": "{\"resposta\":\"A gente não entrega um relatório e vai embora: o fechamento passa a rodar com a sua equipe, e a gente fica até ele rodar.\",\"segura\":true}"
+    },
+    {
+      "depoisDe": "PERGUNTA DO CLIENTE:",
+      "quando": ["garant"],
+      "texto": "{\"resposta\":\"Garantimos o resultado em 45 dias.\",\"segura\":true}"
+    }
+  ],
+  "padrao": "{\"resposta\":\"\",\"segura\":false}"
+}

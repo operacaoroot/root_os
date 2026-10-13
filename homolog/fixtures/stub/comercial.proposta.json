@@ -1,0 +1,11 @@
+{
+  "tarefa": "comercial.proposta",
+  "_sobre": "Respostas do stub para a frase de 'como é diferente' da proposta (homologação). Sem algarismo: número na proposta só vem da tabela.",
+  "respostas": [
+    {
+      "quando": ["consultoria"],
+      "texto": "{\"comoEDiferente\":\"A gente não entrega um relatório e vai embora: o fechamento passa a rodar com a sua equipe, e a gente fica até ele rodar.\"}"
+    }
+  ],
+  "padrao": "{\"comoEDiferente\":null}"
+}

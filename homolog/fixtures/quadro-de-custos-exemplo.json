@@ -1,0 +1,7 @@
+{
+  "_sobre": "EXEMPLO DO MAPA, A DECIDIR. Quadro de custos de terceiros no nome do cliente usado só na homologação do cockpit (tela 07 do mapa: mês normal R$ 180, pior mês R$ 340). Não é dado real de cliente nem regra de preço; a fonte de verdade fica na lista 'Falta do Rodrigo'.",
+  "exemplo": true,
+  "origem": "exemplo do mapa (tela 07), a decidir",
+  "mesNormalCentavos": 18000,
+  "piorMesCentavos": 34000
+}

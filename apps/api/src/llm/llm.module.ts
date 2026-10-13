@@ -9,8 +9,15 @@ import { OrcamentoDeAgenteService } from './orcamento-de-agente.service';
 import { ProviderComTeto } from './provider-com-teto';
 import { env } from './env';
 import { TranscricaoService } from './transcricao.provider';
+import { StubProvider } from './stub.provider';
+import { PonteProvider } from './ponte.provider';
 
-// Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai.
+// Escolhe o provider por env LLM_PROVIDER: anthropic | openrouter | openai | stub | ponte.
+//
+// `stub` e `ponte` são da homologação do cockpit comercial (lane E, 13/10/2026):
+// o stub responde por regra a partir de `homolog/fixtures/stub/` (sem rede,
+// custo 0) e a ponte fala com o sidecar do host, caindo no stub com aviso
+// quando ele não responde. Ver `stub.provider.ts` e `ponte.provider.ts`.
 //
 // O default segue `anthropic` (Claude pela API própria). O `openrouter` existe
 // porque a operação já tem chave e crédito lá, e ele é a mesma API de Chat
@@ -67,6 +74,9 @@ import { TranscricaoService } from './transcricao.provider';
     RelatorioDeCustoIaService,
     OrcamentoDeAgenteService,
     TranscricaoService,
+    // O stub vem sem pasta fixa: ele a procura no uso (`pastaDoStub`).
+    { provide: StubProvider, useFactory: () => new StubProvider() },
+    PonteProvider,
     {
       provide: LLM_PROVIDER,
       useFactory: (
@@ -75,10 +85,20 @@ import { TranscricaoService } from './transcricao.provider';
         openrouter: OpenRouterProvider,
         teto: TetoDeCustoIaService,
         orcamentoDoAgente: OrcamentoDeAgenteService,
+        stub: StubProvider,
+        ponte: PonteProvider,
       ) => {
         const escolhido = env('LLM_PROVIDER', 'anthropic');
         const provider =
-          escolhido === 'openai' ? openai : escolhido === 'openrouter' ? openrouter : anthropic;
+          escolhido === 'openai'
+            ? openai
+            : escolhido === 'openrouter'
+              ? openrouter
+              : escolhido === 'stub'
+                ? stub
+                : escolhido === 'ponte'
+                  ? ponte
+                  : anthropic;
         return new ProviderComTeto(provider, teto, orcamentoDoAgente);
       },
       inject: [
@@ -87,6 +107,8 @@ import { TranscricaoService } from './transcricao.provider';
         OpenRouterProvider,
         TetoDeCustoIaService,
         OrcamentoDeAgenteService,
+        StubProvider,
+        PonteProvider,
       ],
     },
   ],

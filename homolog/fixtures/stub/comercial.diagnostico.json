@@ -1,0 +1,11 @@
+{
+  "tarefa": "comercial.diagnostico",
+  "_sobre": "Respostas do stub para o leitor de ata do comercial (homologação, 13/10/2026). Os trechos são cópia literal de homolog/fixtures/ata-alicerce.md: o parser confere cada um contra a ata e tira o minuto da linha. Dado fictício.",
+  "respostas": [
+    {
+      "quando": ["a gente fecha o mes no dia 9", "conciliacao do omie com o banco"],
+      "texto": "{\"dores\":[{\"texto\":\"fechamento do mês só no dia 9\",\"trecho\":\"a gente fecha o mês no dia 9, sempre atrasado\",\"minuto\":\"04:12\"},{\"texto\":\"conciliação manual do Omie com o banco\",\"trecho\":\"conciliação do Omie com o banco é na mão\",\"minuto\":\"11:40\"},{\"texto\":\"dono sem número cedo\",\"trecho\":\"o dono só vê o resultado no dia 15\",\"minuto\":\"19:05\"},{\"texto\":\"consultoria anterior parou no segundo mês\",\"trecho\":\"já tentamos uma consultoria, parou no segundo mês\",\"minuto\":\"27:30\"}],\"objecoes\":[{\"texto\":\"experiência ruim com consultoria\",\"trecho\":\"já tentamos uma consultoria, parou no segundo mês\",\"minuto\":\"27:30\"}]}"
+    }
+  ],
+  "padrao": "{\"dores\":[],\"objecoes\":[]}"
+}

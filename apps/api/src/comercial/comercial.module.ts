@@ -16,6 +16,9 @@ import { ReacoesDaEspinha } from './reacoes-da-espinha';
 import { RelogioDaEspinha } from './relogio-da-espinha';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
 import { InteligenciaController } from './inteligencia.controller';
+import { AssistenteService } from './assistente.service';
+import { DiagnosticoService } from './diagnostico.service';
+import { PropostaService } from './proposta.service';
 import { SalaController } from './sala.controller';
 import { SimuladorController } from './simulador.controller';
 import { MensagensController } from './mensagens.controller';
@@ -69,6 +72,11 @@ import { FechamentoService } from './fechamento.service';
     FechamentoService,
     ContratoVivoService,
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
+    // O provider (stub/ponte) é escolhido em `llm/llm.module.ts`; aqui, o leitor de ata, o
+    // construtor e revisor de proposta e o assistente da dúvida (fase mínima).
+    DiagnosticoService,
+    PropostaService,
+    AssistenteService,
   ],
   exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })

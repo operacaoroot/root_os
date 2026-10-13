@@ -586,6 +586,10 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       'src/agents/context-builder.service.ts': 1,
       'src/agents/agent-runtime.service.ts': 2,
       'src/pauta/concorrentes-da-pauta.ts': 1,
+      // O QUINTO, 13/10/2026 (cockpit comercial, lane E): `cercar` cerca a ATA da sessão de venda
+      // (fala do lead, transcrita) e a PERGUNTA que o cliente escreveu na sala. Uma chamada só,
+      // usada nos dois pedidos; o pedido de quem opera o painel nunca passa por ela.
+      'src/comercial/inteligencia-prompts.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};
