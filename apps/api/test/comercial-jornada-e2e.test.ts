@@ -362,7 +362,9 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     expect(await etapa()).toBe('novo_lead');
     const m1 = await liberarMensagem('M1', 'a primeira resposta ao lead sai da casa (R3)');
     expect((m1.interativo as { formulario?: { campos: unknown[] } }).formulario?.campos).toHaveLength(4);
-    token = /\/s\/([A-Za-z0-9_-]{40,48})/.exec(m1.texto)![1];
+    // B-1: o texto guardado leva o marcador; o token sai do link que o OS reescreve da cifra.
+    expect(m1.texto).not.toMatch(/\/s\/[A-Za-z0-9_-]{20,}/);
+    token = /\/s\/([A-Za-z0-9_-]{40,48})/.exec((await sala.linkDoLead(ORG, leadId)) ?? '')![1];
     expect((await sala.estado(token)).estagio).toBe('conversa');
   });
 

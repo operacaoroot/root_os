@@ -20,6 +20,7 @@ import { FioService, ReacoesRegistry } from './fio.service';
 import { FORMULARIO_DE_QUALIFICACAO, MENSAGENS, textoDe, VariavelFaltandoError, type Variaveis } from './mensagens';
 import { RelogioComercialRegistry } from './relogio.registry';
 import { SalaService } from './sala.service';
+import { comLinkDaSala, MARCADOR_DO_LINK_DA_SALA, temLinkDeSalaEmClaro } from './sala-token';
 import { registrarTextos } from './textos-das-mensagens';
 
 /*
@@ -282,8 +283,9 @@ export class WhatsappComercialService implements OnModuleInit {
     if (!m) throw new Error('rascunho do M6 não encontrado');
     if (m.estado !== 'rascunho') return { mensagemId: m.id, estado: m.estado as ComercialEstadoDeMensagem, approvalId: m.approvalId, nova: false };
     const lead = await this.prisma.lead.findUniqueOrThrow({ where: { id: m.leadId }, select: { name: true } });
-    const link = await this.sala.linkDoLead(orgId, m.leadId);
-    const texto = textoComNome('M6', nomeDeTratamento(lead.name), { novidade: novidade.trim(), linkDaSala: link ?? '' });
+    const link = await this.marcadorDoLink(orgId, m.leadId);
+    if (!link) throw new VariavelFaltandoError('M6', ['linkDaSala']);
+    const texto = textoComNome('M6', nomeDeTratamento(lead.name), { novidade: novidade.trim(), linkDaSala: link });
     const atual = await this.prisma.comercialMensagem.update({ where: { id: m.id }, data: { texto, erro: null } });
     return this.submeter(atual);
   }
@@ -316,6 +318,10 @@ export class WhatsappComercialService implements OnModuleInit {
     leadId: string,
     m: { template: ComercialTemplate | null; texto: string; chave: string; interativo?: Interativo; destino: 'lead' | 'grupo'; para?: string },
   ): Promise<MensagemPreparada> {
+    // O link da sala nunca entra em claro no texto guardado e assinado (B-1): quem
+    // o colou (texto livre, um modelo novo) tem o link trocado pelo marcador, e o
+    // efeito o reescreve na hora de entregar. Link de OUTRA sala não é trocado: recusa.
+    m = { ...m, texto: await this.semOLinkDaSala(orgId, leadId, m.texto) };
     const id = uuidDe([orgId, 'comercial-mensagem', leadId, m.template ?? 'texto', m.chave]);
     const criado = await this.prisma.comercialMensagem.createMany({
       data: [
@@ -342,6 +348,35 @@ export class WhatsappComercialService implements OnModuleInit {
     }
     const r = await this.submeter(linha);
     return { ...r, nova: criado.count === 1 };
+  }
+
+  /**
+   * O marcador do link da sala, quando o link PODE ser reescrito na hora do envio
+   * (há sala e a cifra do token abre). Sem isso o texto que pede o link não é
+   * preparado: a mensagem sairia sem o caminho da sala.
+   */
+  private async marcadorDoLink(orgId: string, leadId: string): Promise<string | null> {
+    return (await this.sala.linkDoLead(orgId, leadId)) ? MARCADOR_DO_LINK_DA_SALA : null;
+  }
+
+  /** O texto sem o link da sala em claro: o do próprio lead vira marcador; outro qualquer recusa. */
+  private async semOLinkDaSala(orgId: string, leadId: string, texto: string): Promise<string> {
+    if (!temLinkDeSalaEmClaro(texto)) return texto;
+    const link = await this.sala.linkDoLead(orgId, leadId);
+    const proprio = link ? texto.split(link).join(MARCADOR_DO_LINK_DA_SALA) : texto;
+    if (temLinkDeSalaEmClaro(proprio)) {
+      throw new BadRequestException('o texto leva o link de uma sala com o token em claro: nada foi preparado');
+    }
+    return proprio;
+  }
+
+  /** O marcador vira o link decifrado. Sem link para reescrever, o envio não sai. */
+  private async textoDeEntrega(orgId: string, m: Linha): Promise<string> {
+    if (temLinkDeSalaEmClaro(m.texto)) throw new Error('o texto guardado leva o link da sala em claro: nada foi enviado');
+    if (!m.texto.includes(MARCADOR_DO_LINK_DA_SALA)) return m.texto;
+    const link = await this.sala.linkDoLead(orgId, m.leadId);
+    if (!link) throw new Error('o link da sala não pode ser reescrito (sala sem a cifra do token): nada foi enviado');
+    return comLinkDaSala(m.texto, link);
   }
 
   private async config(orgId: string): Promise<{ envioAutomatico: boolean; janelaDeVetoMinutos: number | null; fupLeuDias: number | null; fupSilencioDias: number | null }> {
@@ -416,14 +451,17 @@ export class WhatsappComercialService implements OnModuleInit {
       throw new Error('o destino mudou depois do pedido: nada foi enviado');
     }
     const para = await this.destinoDe(m);
+    // O texto ENTREGUE: o marcador vira o link decifrado agora, e esse texto não é
+    // gravado em lugar nenhum (nem na linha, nem no fato, nem no resultado).
+    const entregue = await this.textoDeEntrega(orgId, m);
 
     let feito: EnvioFeito;
     try {
       const inter = (m.interativo ?? null) as Interativo | null;
-      if (m.destino === 'grupo') feito = await this.porta.enviarNoGrupo(para, m.texto);
-      else if (inter?.formulario) feito = await this.porta.enviarFormulario(para, m.texto, inter.formulario);
-      else if (inter?.botoes?.length) feito = await this.porta.enviarBotoes(para, m.texto, inter.botoes);
-      else feito = await this.porta.enviarTexto(para, m.texto);
+      if (m.destino === 'grupo') feito = await this.porta.enviarNoGrupo(para, entregue);
+      else if (inter?.formulario) feito = await this.porta.enviarFormulario(para, entregue, inter.formulario);
+      else if (inter?.botoes?.length) feito = await this.porta.enviarBotoes(para, entregue, inter.botoes);
+      else feito = await this.porta.enviarTexto(para, entregue);
     } catch (erro) {
       const msg = erro instanceof Error ? erro.message : String(erro);
       await this.prisma.comercialMensagem.update({ where: { id: m.id }, data: { estado: 'falhou', erro: msg.slice(0, 1000) } });
@@ -463,7 +501,8 @@ export class WhatsappComercialService implements OnModuleInit {
   // -------------------------------------------------------------------------
 
   async prepararM1(orgId: string, leadId: string): Promise<MensagemPreparada> {
-    const { link } = await this.sala.garantir(orgId, leadId);
+    await this.sala.garantir(orgId, leadId);
+    const link = await this.marcadorDoLink(orgId, leadId);
     if (!link) throw new VariavelFaltandoError('M1', ['linkDaSala']);
     return this.prepararTemplate(orgId, leadId, 'M1', { linkDaSala: link }, {
       chave: 'primeiro',
@@ -484,7 +523,7 @@ export class WhatsappComercialService implements OnModuleInit {
   async prepararM4(orgId: string, leadId: string, payload: P | unknown): Promise<MensagemPreparada> {
     const p = (payload ?? {}) as P;
     const versao = Number(p.versao ?? 1);
-    const link = await this.sala.linkDoLead(orgId, leadId);
+    const link = await this.marcadorDoLink(orgId, leadId);
     if (!link) throw new VariavelFaltandoError('M4', ['linkDaSala']);
     const validade = typeof p.validaAte === 'string' && p.validaAte ? dataCurtaSP(p.validaAte) : '';
     return this.prepararTemplate(orgId, leadId, 'M4', { linkDaSala: link, validade }, { chave: `v${versao}` });
@@ -509,7 +548,7 @@ export class WhatsappComercialService implements OnModuleInit {
       const horario = String(((e.payload ?? {}) as P).horario ?? '');
       const t = new Date(horario).getTime();
       if (Number.isNaN(t) || agora.getTime() < t - DIA_MS || agora.getTime() >= t) continue;
-      const link = await this.sala.linkDoLead(orgId, e.leadId);
+      const link = await this.marcadorDoLink(orgId, e.leadId);
       if (!link) continue;
       try {
         const r = await this.prepararTemplate(orgId, e.leadId, 'M3', { horario: rotuloDoHorario(horario), linkDaSala: link }, { chave: new Date(t).toISOString() });
@@ -546,7 +585,7 @@ export class WhatsappComercialService implements OnModuleInit {
       const respondeu = depois.some((d) => d.type !== 'proposta.lida');
       if (respondeu) continue;
       const primeiraLeitura = depois.find((d) => d.type === 'proposta.lida' && Number(((d.payload ?? {}) as P).versao) === versao);
-      const link = await this.sala.linkDoLead(orgId, pub.leadId);
+      const link = await this.marcadorDoLink(orgId, pub.leadId);
       if (!link) continue;
       const validade = typeof p.validaAte === 'string' && p.validaAte ? dataCurtaSP(p.validaAte) : '';
       try {

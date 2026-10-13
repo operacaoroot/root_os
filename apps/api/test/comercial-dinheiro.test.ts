@@ -263,8 +263,10 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     leadId = r.leadId;
     // A ficha do lead (a espinha a cria pela reação; aqui, direto) é onde o fechamento guarda o vínculo.
     await prisma.comercialFicha.create({ data: { leadId, etapa: 'proposta', perfil: 'P2' } });
+    // B-1: o texto da M1 leva só o marcador; o token sai do link que o OS reescreve da cifra.
     const m1 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId, template: 'M1' } });
-    token = /\/s\/([A-Za-z0-9_-]{40,48})/.exec(m1.texto)![1];
+    expect(m1.texto).not.toMatch(/\/s\/[A-Za-z0-9_-]{20,}/);
+    token = /\/s\/([A-Za-z0-9_-]{40,48})/.exec((await naEmpresa(() => sala.linkDoLead(ORG, leadId))) ?? '')![1];
 
     await naEmpresa(() =>
       fio.registrar(ORG, leadId, 'proposta.publicada', 'v1', {

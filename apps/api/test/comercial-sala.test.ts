@@ -6,7 +6,8 @@ import { leadIdDoTelefone } from '../src/comercial/eventos';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { SALA_NAO_ENCONTRADA, SalaService } from '../src/comercial/sala.service';
-import { hashDoTokenDaSala } from '../src/comercial/sala-token';
+import { SimuladoProvider } from '../src/comercial/canais/simulado.provider';
+import { hashDoTokenDaSala, MARCADOR_DO_LINK_DA_SALA } from '../src/comercial/sala-token';
 import { CAPACIDADE_DO_WHATSAPP, WhatsappComercialService } from '../src/comercial/whatsapp.service';
 import { EfeitosRegistry } from '../src/gateway/efeitos.registry';
 import type { PortaDoOperador } from '../src/gateway/porta-do-operador.service';
@@ -63,6 +64,25 @@ function tokenDoTexto(texto: string): string {
   return m[1];
 }
 
+/** O que o provedor recebeu de fato (o único lugar onde o link aparece decifrado). */
+class ProvedorQueGuarda extends SimuladoProvider {
+  readonly entregues: string[] = [];
+  override async enviarTexto(d: string, t: string) {
+    this.entregues.push(t);
+    return super.enviarTexto(d, t);
+  }
+  override async enviarFormulario(d: string, t: string, f: never) {
+    this.entregues.push(t);
+    return super.enviarFormulario(d, t, f);
+  }
+}
+const provedor = new ProvedorQueGuarda();
+
+/** O token da sala, pelo link que o OS reescreve da cifra (o texto guardado só tem o marcador, B-1). */
+async function tokenDaSalaDo(leadId: string): Promise<string> {
+  return tokenDoTexto((await sala.linkDoLead(ORG, leadId)) ?? '');
+}
+
 async function eventos(leadId: string, type?: string) {
   return prisma.leadEvent.findMany({ where: { leadId, ...(type ? { type } : {}) }, orderBy: { occurredAt: 'asc' } });
 }
@@ -76,7 +96,7 @@ beforeAll(async () => {
   sala = new SalaService(p, fio, reacoes);
   sala.onModuleInit();
   efeitos = new EfeitosRegistry();
-  whats = new WhatsappComercialService(p, fio, reacoes, relogio, sala, efeitos, portaQueRetem as unknown as PortaDoOperador);
+  whats = new WhatsappComercialService(p, fio, reacoes, relogio, sala, efeitos, portaQueRetem as unknown as PortaDoOperador, provedor);
   whats.onModuleInit();
 });
 
@@ -117,7 +137,10 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     expect(pedidos).toHaveLength(1);
     expect(pedidos[0]).toMatchObject({ capabilityId: CAPACIDADE_DO_WHATSAPP, actorType: 'system', actorId: 'comercial' });
     expect(pedidos[0].args).toMatchObject({ mensagemId: m1.id, destino: 'lead', texto: m1.texto, template: 'M1' });
-    token = tokenDoTexto(m1.texto);
+    // B-1: o texto guardado e o assinado levam o marcador, nunca o token.
+    expect(m1.texto).toContain(MARCADOR_DO_LINK_DA_SALA);
+    expect(m1.texto).not.toMatch(/\/s\/[A-Za-z0-9_-]{20,}/);
+    token = await tokenDaSalaDo(leadId);
   });
 
   it('o banco não guarda o token em claro', async () => {
@@ -187,7 +210,8 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     await tarefa(ORG, new Date(horario.getTime() - 11 * 3_600_000));
     const m3 = await prisma.comercialMensagem.findMany({ where: { leadId, template: 'M3' } });
     expect(m3).toHaveLength(1);
-    expect(m3[0].texto).toContain(`/s/${token}`);
+    expect(m3[0].texto).toContain(MARCADOR_DO_LINK_DA_SALA);
+    expect(m3[0].texto).not.toContain(token);
   });
 
   it('a M3 ENVIADA grava a confirmação de véspera (o portão de E3 pede este fato); a retida não grava', async () => {
@@ -267,6 +291,10 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     const daM1 = async () => (await eventos(leadId, 'whats.enviada')).filter((e) => (e.payload as { template?: string }).template === 'M1');
     const [enviada] = await daM1();
     expect(enviada.payload).toMatchObject({ template: 'M1', aprovadaPor: 'pessoa-que-confirmou' });
+    // B-1: o provedor recebe o link reescrito; o fato e a linha continuam só com o marcador.
+    expect(provedor.entregues.some((t) => t.includes(`/s/${token}`) && t.startsWith('Oi, Marina.'))).toBe(true);
+    expect(JSON.stringify(enviada.payload)).not.toContain(token);
+    expect(depois.texto).not.toContain(token);
     const de_novo = (await efeitos.executar(CAPACIDADE_DO_WHATSAPP, args, ctx)) as { jaEnviada: boolean };
     expect(de_novo.jaEnviada).toBe(true);
     expect((await daM1()).length).toBe(1);
@@ -277,7 +305,7 @@ describe('o token errado, vencido ou revogado responde o MESMO 404', () => {
   it('três casos, uma resposta', async () => {
     const r = await whats.receberEntrada(ORG, { telefone: TEL2, texto: 'oi', mensagemId: `${MARCA}-b1` });
     const m1 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId: r.leadId, template: 'M1' } });
-    const token = tokenDoTexto(m1.texto);
+    const token = await tokenDaSalaDo(r.leadId);
     // sem nome: o vocativo sai inteiro, nenhum nome inventado
     expect(m1.texto.startsWith('Oi. Recebemos')).toBe(true);
     expect((await sala.estado(token)).estagio).toBe('conversa');

@@ -55,6 +55,36 @@ export function linkDaSala(token: string, base: string = baseDoLink()): string {
   return `${base.replace(/\/+$/, '')}/s/${token}`;
 }
 
+/*
+ * O MARCADOR DO LINK (conserto B-1 da revisão, 13/10/2026).
+ *
+ * O link da sala É a credencial do cliente. Ele não pode existir em claro em
+ * tabela nenhuma: nem nos argumentos que a porta grava (`ToolCall.args`), nem no
+ * fato `whats.enviada`, nem no texto da `ComercialMensagem`. O texto preparado,
+ * assinado (o hash da aprovação cobre o texto COM o marcador) e guardado leva
+ * este marcador; só o efeito do envio o troca pelo link decifrado, na hora de
+ * entregar ao provedor, e o texto trocado não é gravado em lugar nenhum.
+ */
+export const MARCADOR_DO_LINK_DA_SALA = '{{link-da-sala}}';
+
+/** Qualquer link de sala com o token em claro (com ou sem a origem na frente). */
+export const LINK_DE_SALA_EM_CLARO_RE = /(?:https?:\/\/\S*?)?\/s\/[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g;
+
+/** O texto leva um link de sala com o token em claro? */
+export function temLinkDeSalaEmClaro(texto: string): boolean {
+  return new RegExp(LINK_DE_SALA_EM_CLARO_RE.source).test(String(texto ?? ''));
+}
+
+/** Troca todo link de sala em claro pelo marcador (a migração de dados do B-1 e a guarda do preparo). */
+export function semLinkDeSalaEmClaro(texto: string): string {
+  return String(texto ?? '').replace(new RegExp(LINK_DE_SALA_EM_CLARO_RE.source, 'g'), MARCADOR_DO_LINK_DA_SALA);
+}
+
+/** O texto de entrega: o marcador vira o link. Sem link, quem chama decide (o envio não sai). */
+export function comLinkDaSala(texto: string, link: string): string {
+  return String(texto ?? '').split(MARCADOR_DO_LINK_DA_SALA).join(link);
+}
+
 /** O slug da sala (`/alicerce` da tela 02): legível, nunca credencial. */
 export function slugDaSala(nome: string): string {
   const s = String(nome ?? '')

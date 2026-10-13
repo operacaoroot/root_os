@@ -29,6 +29,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { rotuloDoHorario } from './agenda-de-homologacao';
 import { DecisoesService } from './decisoes.service';
 import { SalaService } from './sala.service';
+import { comLinkDaSala } from './sala-token';
 import { WhatsappComercialService } from './whatsapp.service';
 
 /*
@@ -143,13 +144,15 @@ export class SimuladorController {
     });
     if (!lead) throw new NotFoundException('lead não encontrado');
     const mensagens = await this.prisma.comercialMensagem.findMany({ where: { leadId, orgId: user.orgId }, orderBy: { criadoEm: 'asc' }, take: 500 });
+    const linkDaSala = await this.sala.linkDoLead(user.orgId, leadId);
     return {
       leadId: lead.id,
       nome: lead.name,
       telefone: lead.phone,
       etapa: (lead.ficha?.etapa ?? null) as ComercialEtapa | null,
-      linkDaSala: await this.sala.linkDoLead(user.orgId, leadId),
-      mensagens: mensagens.map(paraCelular),
+      linkDaSala,
+      // O celular do lead mostra o texto como chegaria: o marcador vira o link só nesta resposta (nunca no banco).
+      mensagens: mensagens.map((m) => paraCelular(linkDaSala ? { ...m, texto: comLinkDaSala(m.texto, linkDaSala) } : m)),
     };
   }
 
