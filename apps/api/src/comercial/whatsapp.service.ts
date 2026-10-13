@@ -67,15 +67,16 @@ const DIA_MS = 86_400_000;
 
 /**
  * Os argumentos do pedido à porta: exatamente o que sai, para a aprovação ficar
- * presa ao conteúdo. A lane A declara o `argsSchema` desta capacidade no delta
- * da política com estes nomes.
+ * presa ao conteúdo. São os nomes do `argsSchema` que a espinha declarou no
+ * delta da política (`additionalProperties: false`): lead, mensagem, texto,
+ * modelo e destino. O telefone (ou o grupo) é relido do banco no efeito.
  */
 export interface ArgsDoEnvio {
+  leadId: string;
   mensagemId: string;
-  destino: 'lead' | 'grupo' | 'mesa';
-  para: string;
   texto: string;
   template?: string;
+  destino: 'lead' | 'grupo';
 }
 
 export interface MensagemPreparada {
@@ -359,7 +360,8 @@ export class WhatsappComercialService implements OnModuleInit {
     }
     let args: ArgsDoEnvio;
     try {
-      args = { mensagemId: m.id, destino: m.destino as ArgsDoEnvio['destino'], para: await this.destinoDe(m), texto: m.texto, ...(m.template ? { template: m.template } : {}) };
+      await this.destinoDe(m); // sem telefone (ou sem grupo) nem vai à porta
+      args = { leadId: m.leadId, mensagemId: m.id, texto: m.texto, ...(m.template ? { template: m.template } : {}), destino: m.destino === 'grupo' ? 'grupo' : 'lead' };
       const r = await this.operador.executar({
         orgId,
         actorId: ATOR_DO_WHATSAPP,
@@ -393,8 +395,10 @@ export class WhatsappComercialService implements OnModuleInit {
     if (m.estado === 'enviada') return { mensagemId: m.id, mensagemExternaId: m.mensagemExternaId, jaEnviada: true };
     if (m.estado === 'vetada') throw new Error('a mensagem foi vetada: nada foi enviado');
     if (m.texto !== args.texto) throw new Error('o texto mudou depois do pedido: nada foi enviado');
+    if (m.leadId !== args.leadId || (m.destino === 'grupo' ? 'grupo' : 'lead') !== (args.destino ?? 'lead')) {
+      throw new Error('o destino mudou depois do pedido: nada foi enviado');
+    }
     const para = await this.destinoDe(m);
-    if (para !== args.para) throw new Error('o destino mudou depois do pedido: nada foi enviado');
 
     let feito: EnvioFeito;
     try {
