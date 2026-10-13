@@ -3,6 +3,7 @@ import { TABELA_DE_PRECO, formatarReais, type EscritaDoFechamento, type Fechamen
 import { ActorType, FinanceTxType, Prisma } from '@prisma/client';
 
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
+import { InterruptoresRegistry } from '../gateway/interruptores.registry';
 import { PortaDoOperador } from '../gateway/porta-do-operador.service';
 import { TrilhoService } from '../onboarding/trilho/trilho.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -42,7 +43,8 @@ import { WhatsappComercialService } from './whatsapp.service';
  *     interruptor dá à mesa o aviso e o veto da tela 09, não tira a régua.
  *
  * O GRUPO E A M8. O grupo é criado pela porta do WhatsApp (no simulado, um
- * jid local). A boas-vindas (M8) é outra capacidade (`comercial.whatsapp.enviar`,
+ * jid local), depois de perguntar ao interruptor do conector `whatsapp` (D-6):
+ * desligado em Conexões, a escrita do grupo fica em erro com o motivo. A boas-vindas (M8) é outra capacidade (`comercial.whatsapp.enviar`,
  * R3) e vai à fila como toda mensagem; ela precisa do horário do kickoff, que
  * o cliente escolhe na sala depois do fechamento, então nasce na reação a
  * `kickoff.marcado`. Quem entra no grupo é [a decidir] pela mesa.
@@ -147,6 +149,7 @@ export class FechamentoService implements OnModuleInit {
     @Optional() private readonly trilhos?: TrilhoService,
     @Optional() private readonly whats?: WhatsappComercialService,
     @Optional() private readonly relogio?: RelogioComercialRegistry,
+    @Optional() private readonly interruptores?: InterruptoresRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -482,6 +485,10 @@ export class FechamentoService implements OnModuleInit {
       if (jidAntes) return { estado: 'reaproveitado', detalhe: 'grupo já existia', ref: jidAntes };
       if (!this.whats) throw new Error('a porta do WhatsApp não está disponível nesta instância');
       if (!lead.phone) throw new Error('o lead não tem telefone para entrar no grupo');
+      // D-6: o grupo sai pelo provedor do WhatsApp, e o botão de emergência de Conexões vale aqui também.
+      // Desligado, a escrita fica em erro com o motivo e o "rodar de novo" a refaz; as outras seguem.
+      const recusa = await this.interruptores?.consultar({ orgId, capabilityId: CAP_FECHAMENTO, conector: 'whatsapp', actorType: ActorType.system, actorId: ATOR });
+      if (recusa) throw new Error(recusa.motivo);
       const { jid } = await this.whats.criarGrupo(`Root · ${a.dados.razaoSocial}`.slice(0, 60), [lead.phone]);
       await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { grupoJid: jid } });
       const kickoff = ficha?.kickoffEm ? ficha.kickoffEm.toISOString() : null;

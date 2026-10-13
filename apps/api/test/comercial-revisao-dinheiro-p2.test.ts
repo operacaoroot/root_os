@@ -130,7 +130,7 @@ describe('revisão P2 do dinheiro', () => {
     dinheiro = new DinheiroService(p, fio, reacoes, efeitos as never, porta as never, cobranca, {} as PortaDeAssinatura);
     const config = { ler: async () => ({ fechamentoAutomatico: false, janelaDeVetoMinutos: 0 }) };
     const registroDeDecisoes = { aoDecidir: () => undefined };
-    fechamento = new FechamentoService(p, fio, reacoes, efeitos as never, porta as never, dinheiro, config as never, {} as never, registroDeDecisoes as never, undefined, whats as never, undefined);
+    fechamento = new FechamentoService(p, fio, reacoes, efeitos as never, porta as never, dinheiro, config as never, {} as never, registroDeDecisoes as never, undefined, whats as never, undefined, interruptores as never);
   });
 
   afterAll(async () => {
@@ -178,6 +178,28 @@ describe('revisão P2 do dinheiro', () => {
       expect(pedidosAPorta.length).toBe(antes);
       expect(await fechamento.talvezFechar(ORG, leadId)).toHaveProperty('pulado');
       expect(pedidosAPorta.length).toBe(antes);
+    });
+  });
+
+  describe('D-6: o grupo do WhatsApp pergunta ao interruptor', () => {
+    it('desligado em Conexões, o grupo fica em erro com o motivo e as outras escritas seguem; ligado, o rodar de novo o cria', async () => {
+      const { leadId, a } = await leadFechavel(`2${Date.now().toString().slice(-13)}`);
+      whatsDesligado = true;
+      const gruposAntes = gruposCriados.length;
+      const r1 = await fechamento.executar(ORG, leadId, a);
+      const grupo = r1.escritas.find((e) => e.escrita === 'grupo')!;
+      expect(grupo.estado).toBe('erro');
+      expect(grupo.detalhe).toMatch(/WhatsApp está desligado/);
+      expect(gruposCriados.length).toBe(gruposAntes);
+      expect(consultas).toContainEqual(expect.objectContaining({ conector: 'whatsapp' }));
+      for (const k of ['cliente', 'cobranca', 'contrato'] as const) expect(r1.escritas.find((e) => e.escrita === k)?.estado).not.toBe('erro');
+      expect(r1.estado).toBe('erro');
+
+      whatsDesligado = false;
+      const r2 = await fechamento.executar(ORG, leadId, a);
+      expect(r2.escritas.find((e) => e.escrita === 'grupo')?.estado).toBe('criado');
+      expect(gruposCriados.length).toBe(gruposAntes + 1);
+      expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: a.dados.cnpj } })).toBe(1);
     });
   });
 });
