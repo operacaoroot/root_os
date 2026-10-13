@@ -96,7 +96,8 @@ function Contrato({ c }: { c: ContratoVivo }) {
           ))}
           {c.marcos.length === 0 && <li className="text-muted">Nenhum marco agendado.</li>}
         </ul>
-        <p className="mt-2 text-[12.5px] text-muted">Aditivos: {c.aditivos === 0 ? 'nenhum' : c.aditivos}.</p>
+        {/* C-17: aditivo só aparece quando a API contar; nulo não vira "nenhum". */}
+        {c.aditivos != null && <p className="mt-2 text-[12.5px] text-muted">Aditivos: {c.aditivos === 0 ? 'nenhum' : c.aditivos}.</p>}
       </section>
 
       <AssinaturaDaRoot leadId={c.leadId} />

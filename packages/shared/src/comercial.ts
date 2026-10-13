@@ -710,7 +710,8 @@ export interface ContratoVivo {
   saude: number | null;
   faseDaImplantacao: { atual: number; total: number } | null;
   marcos: { chave: string; rotulo: string; quando: string | null; feito: boolean }[];
-  aditivos: number;
+  /** C-17: nulo enquanto nenhum código conta aditivos; a tela não afirma número. */
+  aditivos: number | null;
 }
 
 /** A torre (tela 12). */

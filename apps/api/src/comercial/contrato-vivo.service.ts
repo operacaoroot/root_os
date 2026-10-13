@@ -214,7 +214,8 @@ export class ContratoVivoService implements OnModuleInit {
       saude: saudeDoLead(),
       faseDaImplantacao: trilho ? { atual: Math.max(1, fases.indexOf(trilho.fase) + 1), total: 5 } : null,
       marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? (await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, select: { occurredAt: true } }))?.occurredAt ?? null),
-      aditivos: 0,
+      // C-17: nada conta aditivo ainda; nulo em vez de um zero com cara de medido.
+      aditivos: null,
     };
   }
 

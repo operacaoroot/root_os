@@ -46,6 +46,7 @@ import RelatorioPage from '@/app/comercial/relatorio/page';
 import FilaPage from '@/app/comercial/page';
 import SessaoPage from '@/app/comercial/lead/[id]/sessao/page';
 import FunilPage from '@/app/comercial/funil/page';
+import ContratoVivoPage from '@/app/comercial/contratos/[leadId]/page';
 
 beforeEach(() => {
   RESPOSTAS = {};
@@ -284,5 +285,24 @@ describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', ()
     expect(screen.getByRole('link', { name: 'Construtora Alicerce' })).toHaveAttribute('href', '/comercial/lead/l9');
     expect(screen.getByText('vence 18/10')).toBeInTheDocument();
     expect(screen.getByText(/tirada uma frase com número/)).toBeInTheDocument();
+  });
+});
+
+describe('contrato vivo (tela 11)', () => {
+  const vivo = (aditivos: number | null) => ({
+    leadId: 'l1', cliente: 'Construtora Alicerce', produto: null, valorCentavos: 100, descontoPct: null, parcelas: [], reguaDeCobranca: [],
+    entregas: [], primeiroValorEm: null, saude: null, faseDaImplantacao: null, marcos: [], aditivos,
+  });
+
+  it('C-17: aditivo nulo não aparece como "nenhum"; com número da API, aparece', async () => {
+    PARAMS = { leadId: 'l1' };
+    RESPOSTAS['/comercial/contratos/l1'] = vivo(null);
+    const { unmount } = render(<ContratoVivoPage />);
+    expect(await screen.findByText('Construtora Alicerce')).toBeInTheDocument();
+    expect(screen.queryByText(/Aditivos/)).toBeNull();
+    unmount();
+    RESPOSTAS['/comercial/contratos/l1'] = vivo(2);
+    render(<ContratoVivoPage />);
+    expect(await screen.findByText('Aditivos: 2.')).toBeInTheDocument();
   });
 });
