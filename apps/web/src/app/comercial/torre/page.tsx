@@ -3,17 +3,17 @@
 import type { PremissaDoVigia, TorreDasAutomacoes } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_AUTOMACAO } from '@mktos/shared';
 
-import { custoDaTorre, diaHoraSP, ehNaoImplementado, horaSP, percentual, quandoSP } from '@/lib/cockpit';
+import { custoDaTorre, diaHoraSP, horaSP, percentual, quandoSP } from '@/lib/cockpit';
 
 import Link from 'next/link';
 
-import { Aviso, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+import { CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 
 /*
  * TELA 12 · A TORRE DAS AUTOMAÇÕES (lane C). Cada automação com o nível de
- * autonomia, a última vez que rodou, o acerto do mês e a premissa conferida
- * pelo vigia. Só lê. Enquanto a API responde 501, a tela diz que a torre
- * ainda não foi entregue, sem mostrar número nenhum.
+ * autonomia (e o degrau que a torre sugere), a última vez que rodou, quanto
+ * rodou sem erro em 30 dias e a premissa conferida pelo vigia, com a lista do
+ * que quebrou. Só lê. Erro da API aparece na caixa de erro, sem número.
  */
 export default function TorrePage() {
   const { dados: t, erro, carregando } = useCarregar<TorreDasAutomacoes>('/comercial/torre', 60_000);
@@ -23,13 +23,7 @@ export default function TorrePage() {
       <p className="text-[13.5px] text-muted">
         O vigia confere as premissas de cada automação todo dia às 08:00; o que quebrou aparece aqui, com os leads atingidos. A autonomia sobe de degrau com prova, e quem aprova a subida é gente.
       </p>
-      {ehNaoImplementado(erro) ? (
-        <Aviso>
-          A torre ainda não foi entregue pela API (resposta 501). Nenhum número aparece aqui até o vigia e o relator rodarem de verdade.
-        </Aviso>
-      ) : (
-        <Erro erro={erro} />
-      )}
+      <Erro erro={erro} />
       {carregando && !t && !erro && <Carregando />}
       {t && (
         <>

@@ -17,7 +17,6 @@ import type {
 } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
 
-import { ErroDaApi } from './api';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -332,11 +331,6 @@ export function ficouRetida(r: unknown): r is { approvalId: string } {
   if (!r || typeof r !== 'object') return false;
   const o = r as Record<string, unknown>;
   return (o.status === 'aguardando_aprovacao' || o.estado === 'aguardando_aprovacao' || o.estado === 'na_porta' || o.estado === 'na_fila') && typeof o.approvalId === 'string';
-}
-
-/** O endereço ainda não foi entregue pela API (501)? A tela diz isso com honestidade. */
-export function ehNaoImplementado(e: unknown): boolean {
-  return e instanceof ErroDaApi && e.status === 501;
 }
 
 /** Parcelas pagas sobre o total. */

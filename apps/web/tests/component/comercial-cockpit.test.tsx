@@ -1,7 +1,6 @@
 /*
- * As telas do cockpit que dependem de rota ainda em obra na API (torre e
- * relatório, lane E) e a fila de decisões (lane C): renderizam com os tipos do
- * shared quando a API entrega, dizem a verdade quando ela responde 501 e nunca
+ * As telas do cockpit (torre, relatório, fila, funil, sessão e contrato vivo):
+ * renderizam com os tipos do shared, mostram o erro da API como erro e nunca
  * escrevem número que não veio.
  */
 import { render, screen, waitFor } from '@testing-library/react';
@@ -57,10 +56,11 @@ beforeEach(() => {
 });
 
 describe('torre (tela 12)', () => {
-  it('com 501 diz que ainda não foi entregue e não mostra número', async () => {
-    RESPOSTAS['/comercial/torre'] = new ErroDaApi('fase 2', 501);
+  it('C-16: erro da API aparece na caixa de erro, sem número e sem falar em 501', async () => {
+    RESPOSTAS['/comercial/torre'] = new ErroDaApi('A torre caiu.', 500);
     render(<TorrePage />);
-    expect(await screen.findByText(/ainda não foi entregue pela API/)).toBeInTheDocument();
+    expect(await screen.findByText('A torre caiu.')).toBeInTheDocument();
+    expect(screen.queryByText(/501|ainda não foi entregue/)).toBeNull();
     expect(screen.queryByText('premissas conferidas')).toBeNull();
   });
 
@@ -87,10 +87,11 @@ describe('torre (tela 12)', () => {
 });
 
 describe('relatório (tela 13)', () => {
-  it('com 501 diz que ainda não foi entregue; gerar com 501 diz que nada foi feito', async () => {
-    RESPOSTAS['/comercial/relatorio/semana'] = new ErroDaApi('fase 2', 501);
+  it('C-16: erro da API aparece na caixa de erro, sem número e sem falar em 501', async () => {
+    RESPOSTAS['/comercial/relatorio/semana'] = new ErroDaApi('O relatório caiu.', 500);
     render(<RelatorioPage />);
-    expect(await screen.findByText(/relatório da semana ainda não foi entregue/)).toBeInTheDocument();
+    expect(await screen.findByText('O relatório caiu.')).toBeInTheDocument();
+    expect(screen.queryByText(/501|ainda não foi entregue/)).toBeNull();
     expect(screen.queryByText('fechados')).toBeNull();
   });
 

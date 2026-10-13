@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FunilVivo, CartaoDoFunil } from '@mktos/shared';
 
-import { ErroDaApi } from '@/lib/api';
 import {
   AUSENTE,
   agruparFunil,
@@ -12,7 +11,6 @@ import {
   descricaoJaDizQuando,
   diaHoraSP,
   duracao,
-  ehNaoImplementado,
   explicarRascunho,
   faixaDaSaude,
   ficouRetida,
@@ -144,7 +142,7 @@ describe('cockpit — funil e fio', () => {
   });
 });
 
-describe('cockpit — decisão, porta e 501', () => {
+describe('cockpit — decisão e porta', () => {
   it('o rótulo do padrão vem da opção, não da chave', () => {
     expect(rotuloDoPadrao({ padrao: 'manter', opcoes: [{ chave: 'manter', rotulo: 'Manter o preço' }] })).toBe('Manter o preço');
     expect(rotuloDoPadrao({ padrao: 'x', opcoes: [] })).toBe('x');
@@ -164,12 +162,6 @@ describe('cockpit — decisão, porta e 501', () => {
     expect(ficouRetida({ estado: 'na_porta', approvalId: 'x' })).toBe(true);
     expect(ficouRetida({ estado: 'publicada', approvalId: null })).toBe(false);
     expect(ficouRetida(null)).toBe(false);
-  });
-
-  it('501 é "ainda não entregue"; outro erro não é', () => {
-    expect(ehNaoImplementado(new ErroDaApi('fase 2', 501))).toBe(true);
-    expect(ehNaoImplementado(new ErroDaApi('caiu', 500))).toBe(false);
-    expect(ehNaoImplementado(new Error('x'))).toBe(false);
   });
 
   it('conta as parcelas pagas e atrasadas', () => {

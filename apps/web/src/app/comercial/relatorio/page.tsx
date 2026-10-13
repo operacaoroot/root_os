@@ -6,15 +6,15 @@ import type { RelatorioDaSemana } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, ehNaoImplementado, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 
 /*
  * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por
  * motivo, previsão e quanto rodou sozinho. Os números são do sistema; a
- * narrativa, quando houver, é do relator. Enquanto a API responde 501, a tela
- * diz isso e não mostra número nenhum.
+ * narrativa, quando houver, é do relator, sem número escrito pelo modelo.
+ * Erro da API aparece na caixa de erro, sem número.
  */
 const PERIODOS = [7, 30, 90];
 
@@ -62,12 +62,8 @@ export default function RelatorioPage() {
         </div>
       </header>
 
-      {ehNaoImplementado(erro) ? (
-        <Aviso>O relatório da semana ainda não foi entregue pela API (resposta 501). Nenhum número aparece aqui até o relator rodar de verdade.</Aviso>
-      ) : (
-        <Erro erro={erro} />
-      )}
-      {ehNaoImplementado(erroDaAcao) ? <Aviso>Gerar o relatório ainda não foi entregue pela API (resposta 501). Nada foi feito.</Aviso> : <Erro erro={erroDaAcao} />}
+      <Erro erro={erro} />
+      <Erro erro={erroDaAcao} />
       {carregando && !r && !erro && <Carregando />}
 
       {r && (
