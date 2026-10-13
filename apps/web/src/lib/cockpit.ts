@@ -15,6 +15,7 @@ import type {
   FunilVivo,
   LinhaDoFio,
 } from '@mktos/shared';
+import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
 
 import { ErroDaApi } from './api';
 
@@ -160,6 +161,11 @@ export function segundos(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return AUSENTE;
   if (ms < 100) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
+}
+
+/** O rótulo de uma linha do funil do relatório (C-14): a etapa pelo rótulo da casa; o que não é etapa fica como veio. */
+export function rotuloDaLinhaDoFunil(etapa: string): string {
+  return (COMERCIAL_ROTULO_DA_ETAPA as Record<string, string>)[etapa] ?? etapa;
 }
 
 /** O dia de hoje em São Paulo, "AAAA-MM-DD" (o formato do campo de data). */

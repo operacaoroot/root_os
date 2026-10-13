@@ -100,7 +100,7 @@ describe('relatório (tela 13)', () => {
       fechados: 5,
       medianaDiasDoOiAoPix: null,
       acoes: { automaticas: 312, humanas: 9 },
-      funil: [{ etapa: 'entraram', n: 42 }, { etapa: 'aceite', n: 6 }],
+      funil: [{ etapa: 'entraram', n: 42 }, { etapa: 'aceite', n: 6 }, { etapa: 'follow_up', n: 3 }],
       perdasPorMotivo: [{ motivo: 'preco', n: 3 }],
       previsao: { fechamentosProvaveis: 1, leadsEmProposta: 4 },
       geradoEm: '2026-10-15T22:30:00.000Z',
@@ -112,6 +112,8 @@ describe('relatório (tela 13)', () => {
     expect(screen.getByText('312 · 9')).toBeInTheDocument();
     expect(screen.getByText('ausente')).toBeInTheDocument();
     expect(screen.getByText('preço')).toBeInTheDocument();
+    expect(screen.getByText('E7 · Follow-up')).toBeInTheDocument(); // C-14: rótulo da casa, nunca a chave crua
+    expect(screen.queryByText('follow_up')).toBeNull();
     expect(screen.getByText('1 fechamento provável entre 4 leads em proposta')).toBeInTheDocument();
     expect(screen.getByText(/o relator ainda não escreveu/)).toBeInTheDocument();
   });

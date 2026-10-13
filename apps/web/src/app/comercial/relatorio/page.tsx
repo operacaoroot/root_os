@@ -5,7 +5,7 @@ import type { RelatorioDaSemana } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, diaHoraSP, ehNaoImplementado, numeroOuAusente } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, diaHoraSP, ehNaoImplementado, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 
@@ -83,12 +83,14 @@ export default function RelatorioPage() {
               <Rotulo>funil em {r.periodoDias} dias</Rotulo>
               <ul className="mt-2 space-y-1.5 text-[13px]">
                 {r.funil.map((f) => (
-                  <li key={f.etapa} className="grid grid-cols-[110px_minmax(0,1fr)_40px] items-center gap-2">
-                    <span className="text-muted">{f.etapa}</span>
-                    <span className="h-2 rounded bg-surface-3">
+                  <li key={f.etapa} className="space-y-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 text-muted">{rotuloDaLinhaDoFunil(f.etapa)}</span>
+                      <span className="shrink-0 font-os-mono">{f.n}</span>
+                    </div>
+                    <span className="block h-2 rounded bg-surface-3">
                       <span className="block h-2 rounded bg-brand" style={{ width: `${(f.n / maxFunil) * 100}%` }} />
                     </span>
-                    <span className="text-right font-os-mono">{f.n}</span>
                   </li>
                 ))}
                 {r.funil.length === 0 && <li className="text-muted">Nenhum lead no período.</li>}

@@ -205,3 +205,12 @@ describe('cockpit — revisão P3 das telas', () => {
     expect(erroDaResposta({ message: 'x' }, 400).detalhes).toEqual([]);
   });
 });
+
+describe('cockpit — funil do relatório (C-14)', () => {
+  it('a etapa sai pelo rótulo da casa, nunca a chave crua; o que não é etapa fica como veio', async () => {
+    const { rotuloDaLinhaDoFunil } = await import('@/lib/cockpit');
+    expect(rotuloDaLinhaDoFunil('reuniao_agendada')).toBe('E3 · Reunião agendada');
+    expect(rotuloDaLinhaDoFunil('follow_up')).toBe('E7 · Follow-up');
+    expect(rotuloDaLinhaDoFunil('entraram')).toBe('entraram');
+  });
+});
