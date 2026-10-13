@@ -113,7 +113,7 @@ export class ComercialController {
    */
   @Put('config')
   @RequirePermissions('aprovacoes.decidir')
-  salvarConfig(@CurrentUser() user: JwtUser, @Body() body: unknown, @Ip() ip: string) {
+  salvarConfig(@CurrentUser() user: JwtUser, @Body() body: unknown, @Ip() ip?: string) {
     return this.configSvc.gravar(user.orgId, body, { id: user.sub, papeis: user.roles ?? [], ip });
   }
 }
