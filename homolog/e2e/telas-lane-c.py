@@ -84,7 +84,10 @@ def main() -> None:
                 if FILTRO and FILTRO not in nome:
                     continue
                 pagina.goto(f'{WEB}{caminho}', wait_until='networkidle', timeout=120_000)
+                pagina.wait_for_selector('#root-os-main', timeout=60_000)
                 pagina.wait_for_timeout(1200)
+                if pagina.get_by_text('Runtime Error').count():
+                    raise SystemExit(f'{caminho}: o next dev mostrou erro de execução; nada foi fotografado')
                 arquivo = PROVAS / f'tela-{num}-{nome}-{sufixo}.png'
                 pagina.screenshot(path=str(arquivo), full_page=True)
                 print(arquivo.relative_to(RAIZ))
