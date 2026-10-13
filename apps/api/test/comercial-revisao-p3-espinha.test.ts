@@ -9,6 +9,8 @@
  *   · A-5: a etapa, o `Lead.status` e o `etapa.mudou` caem juntos.
  *   · E-24: o sócio da conta é achado pelo id da ata, nunca pelo nome.
  *   · C-20: acima do teto, o funil corta os mais antigos na etapa e avisa.
+ *   · C-19: "rodou sozinho hoje" não conta o que o cliente fez; "com erro" não
+ *     conta o erro antigo de que o relógio já desistiu.
  */
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -260,6 +262,25 @@ describe.skipIf(!URL)('revisão P3 da espinha, contra o banco', () => {
       const tudo = await fichas.funil(ORG, null, new Date());
       expect(tudo.aviso).toBeNull();
       expect(tudo.colunas.flatMap((c) => c.cartoes)).toHaveLength(total + 1);
+    });
+  });
+
+  describe('C-19: o resumo da fila', () => {
+    it('a mensagem do cliente não é automação; a enviada é; o erro antigo desistido não conta, o vivo conta', async () => {
+      const leadId = await leadNovo();
+      const recebida = await fio.registrar(ORG, leadId, 'whats.recebida', `r-${MARCA}`, { texto: 'oi', provedor: 'teste' }, { semReacoes: true });
+      const enviada = await fio.registrar(ORG, leadId, 'whats.enviada', `e-${MARCA}`, { template: 'M1', texto: 'olá', provedor: 'teste' }, { semReacoes: true });
+      const antes = await decisoes.fila(ORG);
+      const doLead = antes.rodouSozinhoHoje.filter((x) => x.leadId === leadId);
+      expect(doLead.map((x) => x.resumo).join(' | ')).not.toContain('oi');
+      expect(doLead).toHaveLength(1);
+      expect(doLead[0].fonte).toBe('whats');
+
+      const doisDias = new Date(Date.now() - 2 * DIA);
+      await prisma.comercialReacao.create({ data: { id: `${MARCA}-antiga`, leadId, eventoId: recebida.eventoId, reacao: `teste.${MARCA}.antiga`, estado: 'erro', erro: 'x', resultado: { tentativas: 4, desistiu: true }, criadoEm: doisDias } });
+      expect((await decisoes.fila(ORG)).resumo.automacoesComErro).toBe(antes.resumo.automacoesComErro);
+      await prisma.comercialReacao.create({ data: { id: `${MARCA}-viva`, leadId, eventoId: enviada.eventoId, reacao: `teste.${MARCA}.viva`, estado: 'erro', erro: 'x', resultado: { tentativas: 1, desistiu: false }, criadoEm: doisDias } });
+      expect((await decisoes.fila(ORG)).resumo.automacoesComErro).toBe(antes.resumo.automacoesComErro + 1);
     });
   });
 });

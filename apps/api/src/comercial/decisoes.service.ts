@@ -5,6 +5,7 @@ import {
   COMERCIAL_ETAPAS,
   COMERCIAL_TIPOS_DE_DECISAO,
   type ComercialCanalDeDecisao,
+  type ComercialEvento,
   type ComercialEstadoDeDecisao,
   type ComercialTipoDeDecisao,
   type DecisaoNaFila,
@@ -54,6 +55,37 @@ import { FioService, type EventoGravado } from './fio.service';
 
 /** "Sem prazo": a data que nenhum relógio alcança. */
 export const SEM_PRAZO = new Date('9999-12-31T23:59:59.000Z');
+
+/**
+ * C-19: fatos que NÃO são automação, fora do "rodou sozinho hoje": o que o
+ * cliente fez (mensagem, formulário, sala, aceite, pagamento, assinatura) e o
+ * que uma pessoa da casa fez (ata, assinatura da Root, decisão, saída, veto).
+ */
+export const FATOS_QUE_NAO_SAO_AUTOMACAO: readonly ComercialEvento[] = [
+  'lead.chegou',
+  'whats.recebida',
+  'form.respondido',
+  'agenda.escolhida',
+  'sala.visitada',
+  'arquivo.enviado',
+  'proposta.lida',
+  'proposta.duvida',
+  'proposta.ajuste_pedido',
+  'proposta.aceita',
+  'aceite.dados',
+  'kickoff.marcado',
+  'pix.pago',
+  'boleto.pago',
+  'cartao.pago',
+  'parcela.paga',
+  'parcela.estornada',
+  'contrato.assinado_cliente',
+  'contrato.assinado_root',
+  'ata.chegou',
+  'decisao.tomada',
+  'saida.registrada',
+  'veto.registrado',
+];
 
 export function decisaoSemPrazo(expiraEm: Date | string): boolean {
   return new Date(expiraEm).getTime() >= SEM_PRAZO.getTime();
@@ -320,9 +352,14 @@ export class DecisoesService {
       this.listar(orgId, 'aberta'),
       this.prisma.comercialReacao.count({ where: { orgId, estado: 'ok', criadoEm: { gte: inicioDoDia } } }),
       this.prisma.comercialFicha.count({ where: { orgId, etapa: { in: COMERCIAL_ETAPAS.filter((e) => e !== 'fechado') } } }),
-      this.prisma.comercialReacao.findMany({ where: { orgId, estado: 'erro' }, distinct: ['reacao'], select: { reacao: true } }),
+      // C-19: "com erro" é o erro de hoje ou o que o relógio ainda vai tentar; o que desistiu antes de hoje fica na torre.
+      this.prisma.comercialReacao.findMany({
+        where: { orgId, estado: 'erro', OR: [{ criadoEm: { gte: inicioDoDia } }, { resultado: { path: ['desistiu'], equals: false } }] },
+        distinct: ['reacao'],
+        select: { reacao: true },
+      }),
       this.prisma.leadEvent.findMany({
-        where: { orgId, occurredAt: { gte: inicioDoDia }, type: { notIn: ['decisao.tomada', 'saida.registrada', 'veto.registrado'] } },
+        where: { orgId, occurredAt: { gte: inicioDoDia }, type: { notIn: [...FATOS_QUE_NAO_SAO_AUTOMACAO] } },
         orderBy: { occurredAt: 'desc' },
         take: 30,
         select: { leadId: true, type: true, payload: true, occurredAt: true },
