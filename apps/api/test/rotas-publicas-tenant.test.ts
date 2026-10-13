@@ -213,11 +213,15 @@ describe('a sentinela da resolução pública', () => {
     expect(exportado.filter((k) => k.startsWith('resolver')).sort()).toEqual([
       'resolverOrgDaChave',
       'resolverOrgDoSlugInterno',
+      // O webhook de cobrança do cockpit comercial (lane D): acha a empresa pela parcela no provedor.
+      'resolverTenantDaCobranca',
       'resolverTenantDaPage',
       // A sala do cliente do cockpit comercial (13/10/2026): acha a empresa pelo hash do token.
       'resolverTenantDaSala',
       // O link público do onboarding (23/09/2026): acha a empresa pelo hash do token.
       'resolverTenantDoConvite',
+      // O webhook de assinatura do cockpit comercial (lane D): acha a empresa pelo documento no provedor.
+      'resolverTenantDoDocumento',
       'resolverTenantDoHandle',
       'resolverTenantDoLink',
     ]);
