@@ -397,3 +397,33 @@ export async function resolverTenantDoConvite(
       }
     : null;
 }
+
+/**
+ * A empresa dona da sala do cliente, pelo HASH do token (cockpit do lead, 13/10/2026).
+ *
+ * O link `/s/<token>` é o mesmo do primeiro contato ao kickoff e não tem
+ * empresa até achar a sala. Mesma forma da resolução do convite: uma consulta
+ * mínima sob a sentinela (a policy de leitura de `SalaDoCliente` a libera,
+ * migration `20261013000000_cockpit_comercial`), devolve o endereço e o que
+ * decide o 404. O token cru nunca chega aqui.
+ */
+export async function resolverTenantDaSala(
+  prisma: PrismaClient,
+  tokenHash: string,
+): Promise<{
+  salaId: string;
+  leadId: string;
+  orgId: string;
+  validoAte: Date;
+  revogadoEm: Date | null;
+} | null> {
+  const s = await sobASentinela(() =>
+    prisma.salaDoCliente.findUnique({
+      where: { tokenHash },
+      select: { id: true, leadId: true, orgId: true, validoAte: true, revogadoEm: true },
+    }),
+  );
+  return s && s.orgId
+    ? { salaId: s.id, leadId: s.leadId, orgId: s.orgId, validoAte: s.validoAte, revogadoEm: s.revogadoEm }
+    : null;
+}

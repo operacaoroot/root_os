@@ -1,83 +1,159 @@
-import { Body, Controller, Get, NotImplementedException, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Param,
+  Post,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+
+import { enderecoDeOrigem, type RequisicaoComEndereco } from '../auth/endereco-de-origem';
+import { SalaService } from './sala.service';
 
 /*
- * A SALA DO CLIENTE — rotas ANÔNIMAS do link (`/api/sala/:token`), Lane 0 → Lane B.
+ * A SALA DO CLIENTE — rotas ANÔNIMAS do link (`/api/sala/:token`), Lane B.
  *
  * O mesmo contrato de `tenants/onboarding/link`: não há sessão, a empresa é
  * achada pelo HASH do token (sentinela pública) e o resto do pedido roda em
  * `comTenantPublico`. Token inexistente, expirado e revogado respondem a MESMA
- * coisa (404 sem detalhe). Teto de taxa por origem como o do onboarding.
+ * coisa (404 sem detalhe). Teto de taxa por origem, em memória, como o do
+ * onboarding: a rota anônima não vira ferramenta de varredura. Resposta com
+ * dado do cliente nunca fica em cache compartilhado (`no-store`).
  *
  * O prefixo `sala` está declarado em `tenants/modulos.ts` como módulo `leads`.
  */
-const PENDENTE = (oQue: string) =>
-  new NotImplementedException(`${oQue}: ainda não implementado nesta versão (lane B da passagem).`);
+
+/** Por origem e por hora. Ler o estado é barato; o arquivo é o caro. */
+export const SALA_TETO_POR_HORA = 600;
+export const SALA_TETO_DE_ARQUIVO_POR_HORA = 30;
+const HORA_MS = 3_600_000;
+
+export class TetoPorOrigem {
+  private readonly baldes = new Map<string, { ate: number; n: number }>();
+
+  registrar(origem: string | null, teto: number, agora = Date.now()): boolean {
+    const chave = origem ?? 'desconhecida';
+    const b = this.baldes.get(chave);
+    if (!b || b.ate <= agora) {
+      if (this.baldes.size > 5000) this.baldes.clear();
+      this.baldes.set(chave, { ate: agora + HORA_MS, n: 1 });
+      return true;
+    }
+    b.n += 1;
+    return b.n <= teto;
+  }
+}
 
 @Controller('sala')
 export class SalaController {
+  private readonly log = new Logger('ComercialSalaLink');
+  private readonly teto = new TetoPorOrigem();
+  private readonly tetoDeArquivo = new TetoPorOrigem();
+
+  constructor(private readonly svc: SalaService) {}
+
+  private conferirTeto(req: RequisicaoComEndereco | undefined, arquivo = false): void {
+    const origem = enderecoDeOrigem(req) ?? null;
+    const ok = arquivo ? this.tetoDeArquivo.registrar(origem, SALA_TETO_DE_ARQUIVO_POR_HORA) : this.teto.registrar(origem, SALA_TETO_POR_HORA);
+    if (!ok) {
+      this.log.warn(`sala: teto de taxa (${arquivo ? 'arquivo' : 'geral'}) estourado para ${origem ?? '?'}`);
+      throw new HttpException({ statusCode: HttpStatus.TOO_MANY_REQUESTS, message: 'Muitas tentativas. Espere alguns minutos.' }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
+
   /** O estado da sala: estágio, plano de ação, proposta, aceite, começo. */
   @Get(':token')
-  estado(@Param('token') _token: string) {
-    throw PENDENTE('o estado da sala');
+  @Header('Cache-Control', 'no-store')
+  estado(@Param('token') token: string, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.estado(token);
   }
 
   /** O formulário de qualificação (tela 01). */
   @Post(':token/form')
-  form(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('o formulário');
+  @Header('Cache-Control', 'no-store')
+  form(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.form(token, body);
   }
 
   /** A escolha de horário entre os oferecidos (tela 01/02). */
   @Post(':token/agenda')
-  agenda(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('a escolha de horário');
+  @Header('Cache-Control', 'no-store')
+  agenda(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.agenda(token, body);
   }
 
   /** O arquivo opcional (tela 02: "deixe pronto um relatório de fechamento"). */
   @Post(':token/arquivo')
-  arquivo(@Param('token') _token: string) {
-    throw PENDENTE('o envio de arquivo');
+  @Header('Cache-Control', 'no-store')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  arquivo(@Param('token') token: string, @UploadedFile() file: Express.Multer.File | undefined, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req, true);
+    return this.svc.arquivo(token, file);
   }
 
   /** Leitura rastreada por bloco (tela 07): o termômetro do follow-up. */
   @Post(':token/proposta/lida')
-  propostaLida(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('a leitura da proposta');
+  @Header('Cache-Control', 'no-store')
+  propostaLida(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.propostaLida(token, body);
   }
 
-  /** "Tirar uma dúvida": o assistente responde só a partir da proposta e da ata (R0). */
+  /** "Tirar uma dúvida": grava o fato; a resposta é do assistente da proposta (lane E). */
   @Post(':token/proposta/duvida')
-  duvida(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('a dúvida sobre a proposta');
+  @Header('Cache-Control', 'no-store')
+  duvida(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.duvida(token, body);
   }
 
-  /** "Pedir ajuste": cai na fila de decisões. */
+  /** "Pedir ajuste": grava o fato; a decisão na fila é aberta pela espinha. */
   @Post(':token/proposta/ajuste')
-  ajuste(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('o pedido de ajuste');
+  @Header('Cache-Control', 'no-store')
+  ajuste(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.ajuste(token, body);
   }
 
-  /** Tela 08, passo 1: os dados do contratante (vêm do CNPJ; o lead confere). */
+  /** Tela 08, passo 1: os dados do contratante. */
   @Post(':token/aceite/dados')
-  aceiteDados(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('os dados do aceite');
+  @Header('Cache-Control', 'no-store')
+  aceiteDados(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.aceiteDados(token, body);
   }
 
-  /** Tela 08, passo 2: aceitar a oferta e escolher a forma — gera a cobrança (lane D). */
+  /** Tela 08, passo 2: aceitar a oferta e escolher a forma (a cobrança é da lane D). */
   @Post(':token/aceite/pagamento')
-  aceitePagamento(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('o aceite e o pagamento');
+  @Header('Cache-Control', 'no-store')
+  aceitePagamento(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.aceitePagamento(token, body);
   }
 
   /** Tela 08, passo 3: o contrato para assinar (lane D). */
   @Post(':token/aceite/contrato')
-  aceiteContrato(@Param('token') _token: string) {
-    throw PENDENTE('o contrato do aceite');
+  @Header('Cache-Control', 'no-store')
+  aceiteContrato(@Param('token') token: string, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.aceiteContrato(token);
   }
 
   /** O começo: o horário do kickoff. */
   @Post(':token/kickoff/horario')
-  kickoff(@Param('token') _token: string, @Body() _body: unknown) {
-    throw PENDENTE('o horário do kickoff');
+  @Header('Cache-Control', 'no-store')
+  kickoff(@Param('token') token: string, @Body() body: unknown, @Req() req?: RequisicaoComEndereco) {
+    this.conferirTeto(req);
+    return this.svc.kickoff(token, body);
   }
 }

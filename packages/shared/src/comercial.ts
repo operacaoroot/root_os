@@ -578,6 +578,8 @@ export interface PropostaNaSala {
   custosDeTerceiros: { mesNormalCentavos: number | null; piorMesCentavos: number | null } | null;
   blocosLidos: SalaBlocoDaProposta[];
   ajustePendente: boolean;
+  /** As dúvidas que o lead mandou desta versão, com a resposta quando houver (Lane B; a resposta é da Lane E). */
+  duvidas?: { pergunta: string; resposta: string | null; em: string }[];
 }
 
 export interface OfertaNaSala {
@@ -736,3 +738,66 @@ export const SALA_ROTULO_DO_ESTAGIO: Record<SalaEstagio, string> = {
   contrato: 'contrato',
   comeco: 'começo',
 };
+
+// ---------------------------------------------------------------------------
+// A sala e o simulador (Lane B, acréscimo de 13/10/2026)
+// ---------------------------------------------------------------------------
+
+/** O que o lead "digita" no celular do simulador: texto, formulário ou toque em botão. */
+export const SimuladorRespostaSchema = z
+  .object({
+    texto: texto(2000).optional(),
+    formulario: SalaFormSchema.optional(),
+    /** A chave do botão tocado (o horário em ISO, nos botões de agenda). */
+    botao: texto(120).optional(),
+  })
+  .strict()
+  .refine((v) => [v.texto, v.formulario, v.botao].filter((x) => x !== undefined).length === 1, {
+    message: 'mande exatamente um: texto, formulario ou botao',
+  });
+export type SimuladorRespostaInput = z.infer<typeof SimuladorRespostaSchema>;
+
+/** A mesa toca num botão de uma decisão (tela 09). */
+export const SimuladorMesaRespostaSchema = z
+  .object({ decisaoId: z.string().uuid(), escolha: texto(80), motivo: z.string().trim().max(400).optional() })
+  .strict();
+export type SimuladorMesaRespostaInput = z.infer<typeof SimuladorMesaRespostaSchema>;
+
+/** Uma mensagem como o celular simulado a mostra. */
+export interface MensagemNoCelular {
+  id: string;
+  direcao: 'entrada' | 'saida';
+  destino: 'lead' | 'mesa' | 'grupo';
+  template: string | null;
+  texto: string;
+  estado: ComercialEstadoDeMensagem;
+  interativo: {
+    formulario?: { id: string; titulo: string; campos: { chave: string; rotulo: string; tipo: string }[] };
+    botoes?: { chave: string; rotulo: string }[];
+  } | null;
+  approvalId: string | null;
+  vetoAte: string | null;
+  em: string;
+  enviadaEm: string | null;
+  erro: string | null;
+}
+
+export interface CelularDoLead {
+  leadId: string;
+  nome: string;
+  telefone: string | null;
+  etapa: ComercialEtapa | null;
+  linkDaSala: string | null;
+  mensagens: MensagemNoCelular[];
+}
+
+export interface ListaDeCelulares {
+  provedor: ComercialProvedorDeWhatsapp;
+  leads: { leadId: string; nome: string; telefone: string | null; etapa: ComercialEtapa | null; ultimaEm: string | null; naFila: number }[];
+}
+
+export interface CelularDaMesa {
+  decisoes: { id: string; leadId: string; leadNome: string; tipo: string; titulo: string; contexto: string; opcoes: OpcaoDeDecisao[]; padrao: string; expiraEm: string; criadaEm: string }[];
+  mensagensNaFila: { id: string; leadId: string; leadNome: string; template: string | null; texto: string; estado: ComercialEstadoDeMensagem; approvalId: string | null; vetoAte: string | null; em: string }[];
+  responderDisponivel: boolean;
+}
