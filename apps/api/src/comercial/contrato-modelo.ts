@@ -50,16 +50,29 @@ export function documentoFormatado(doc: string): string {
   return d;
 }
 
+/**
+ * Campo escrito pelo cliente na sala (D-5): numa linha só e com a marcação de
+ * markdown e HTML escapada. Sem isso, um endereço com quebra de linha e `##`
+ * viraria cláusula nova no documento que vai à assinatura.
+ */
+export function campoDoCliente(v: string): string {
+  return String(v ?? '')
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[\\`*_{}[\]<>#|!~]/g, (c) => `\\${c}`);
+}
+
 /** O contrato com os campos preenchidos. Campo que falta vira lacuna em vermelho, nunca valor inventado. */
 export function montarContrato(d: DadosDoContrato): string {
   const linha = TABELA_DE_PRECO[d.produto];
   const parcela = d.parcelas > 0 ? Math.round(d.valorCentavos / d.parcelas) : d.valorCentavos;
   const campos: Record<string, string> = {
-    razaoSocial: d.razaoSocial,
+    razaoSocial: campoDoCliente(d.razaoSocial),
     cnpj: documentoFormatado(d.cnpj),
-    endereco: d.endereco,
-    quemAssina: d.quemAssina,
-    email: d.email,
+    endereco: campoDoCliente(d.endereco),
+    quemAssina: campoDoCliente(d.quemAssina),
+    email: campoDoCliente(d.email),
     produtoRotulo: linha?.rotulo ?? '',
     produtoDescricao: linha?.descricao ?? '',
     valorTotal: formatarReais(d.valorCentavos),
