@@ -91,7 +91,7 @@ export class SimuladorController {
   /** Um lead novo escreve (o primeiro "oi" do Instagram ou do link da bio). */
   @Post('entrada')
   @RequirePermissions('leads.editar')
-  entrada(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+  async entrada(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const r = ComercialEntradaWhatsSchema.safeParse(body ?? {});
     if (!r.success) throw new BadRequestException(r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     return this.whats.receberEntrada(user.orgId, r.data);
@@ -245,7 +245,7 @@ export class SimuladorController {
   /** O M6 só sai com a novidade escrita (C08). */
   @Post('mensagens/:id/novidade')
   @RequirePermissions('leads.editar')
-  novidade(@CurrentUser() user: JwtUser, @Param('id', new ParseUUIDPipe()) id: string, @Body() body: unknown) {
+  async novidade(@CurrentUser() user: JwtUser, @Param('id', new ParseUUIDPipe()) id: string, @Body() body: unknown) {
     const r = NovidadeSchema.safeParse(body ?? {});
     if (!r.success) throw new BadRequestException('escreva a novidade (de 10 a 400 caracteres)');
     return this.whats.completarM6(user.orgId, id, r.data.novidade);

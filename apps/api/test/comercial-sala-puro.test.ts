@@ -211,3 +211,17 @@ describe('o formulário do contrato', () => {
     expect(SalaFormSchema.safeParse({ sistema: 'Omie', baseOrganizada: true, maiorDor: 'x', equipeFinanceiro: 3, extra: 1 }).success).toBe(false);
   });
 });
+
+describe('o teto na rota anônima da sala', () => {
+  it('a 601ª leitura da mesma origem na hora é 429; outra origem segue; o arquivo tem teto próprio', async () => {
+    const { SalaController, SALA_TETO_POR_HORA, SALA_TETO_DE_ARQUIVO_POR_HORA } = await import('../src/comercial/sala.controller');
+    const svc = { estado: async () => ({ ok: true }), arquivo: async () => ({ ok: true }) };
+    const c = new SalaController(svc as never);
+    const req = { ip: '10.0.0.1' };
+    for (let i = 0; i < SALA_TETO_POR_HORA; i++) await c.estado('t', req);
+    expect(() => c.estado('t', req)).toThrow(expect.objectContaining({ status: 429 }));
+    await expect(c.estado('t', { ip: '10.0.0.2' })).resolves.toEqual({ ok: true });
+    for (let i = 0; i < SALA_TETO_DE_ARQUIVO_POR_HORA; i++) await c.arquivo('t', undefined, { ip: '10.0.0.3' });
+    expect(() => c.arquivo('t', undefined, { ip: '10.0.0.3' })).toThrow(expect.objectContaining({ status: 429 }));
+  });
+});
