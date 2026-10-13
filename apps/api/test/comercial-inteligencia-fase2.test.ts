@@ -348,7 +348,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
   it('a torre lê o nível, a última vez, o acerto, a premissa do vigia e o custo do stub', async () => {
     // Depois da quinta 18:00 do relator (a torre olha os relatórios dos últimos 8 dias).
     const t = await torre.torre(ORG, new Date('2026-10-16T20:00:00-03:00'));
-    expect(t.automacoes.map((a) => a.chave)).toHaveLength(11);
+    expect(t.automacoes.map((a) => a.chave)).toHaveLength(12); // E-15: o assistente da proposta entrou na torre
     const q = t.automacoes.find((a) => a.chave === 'qualificador')!;
     expect(q).toMatchObject({ autonomia: 'A3', autonomiaGravada: true, autonomiaVigente: 'A3', premissa: 'formulário grava no lead' });
     // A M1 rodou uma vez (o lead B) e foi pulada uma vez (A0, fora do acerto).

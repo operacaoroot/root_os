@@ -55,7 +55,7 @@ describe('a escada de autonomia', () => {
   });
 
   it('as engrenagens da espinha nunca entram na tabela (pontuação, projeção, saída, decisão)', () => {
-    for (const n of ['espinha.projetar', 'espinha.entrada', 'espinha.qualificacao', 'espinha.saida', 'espinha.decisoes-vencidas', 'espinha.reacoes-pendentes', 'sala.abrir', 'inteligencia.duvida', 'whats.janela-de-veto']) {
+    for (const n of ['espinha.projetar', 'espinha.entrada', 'espinha.qualificacao', 'espinha.saida', 'espinha.decisoes-vencidas', 'espinha.reacoes-pendentes', 'sala.abrir', 'whats.janela-de-veto']) {
       expect(AUTOMACOES_DA_TAREFA[n], n).toBeUndefined();
     }
   });
