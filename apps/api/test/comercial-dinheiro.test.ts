@@ -301,6 +301,13 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     );
     await sala.aceiteDados(token, { cnpj: CNPJ, razaoSocial: 'Construtora Alicerce Ltda', endereco: 'Rua A, 1, Juiz de Fora', quemAssina: 'Marina Duarte', email: 'marina@alicerce.test' });
     await sala.aceitePagamento(token, { produto: 'operacao', forma: 'pix', versao: 1 });
+    // B-6/D-2: depois do aceite os dados do contratante congelam. Os mesmos dados de novo não mudam nada;
+    // outro CNPJ é 409 e não entra no fio.
+    await sala.aceiteDados(token, { cnpj: CNPJ, razaoSocial: 'Construtora Alicerce Ltda', endereco: 'Rua A, 1, Juiz de Fora', quemAssina: 'Marina Duarte', email: 'marina@alicerce.test' });
+    await expect(
+      sala.aceiteDados(token, { cnpj: '99888777000166', razaoSocial: 'Outra Empresa Ltda', endereco: 'Rua A, 1, Juiz de Fora', quemAssina: 'Marina Duarte', email: 'marina@alicerce.test' }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.leadEvent.count({ where: { leadId, type: 'aceite.dados' } })).toBe(1);
 
     const cob = await aprovacao(CAP_COBRANCA);
     const ctr = await aprovacao(CAP_CONTRATO);
@@ -311,6 +318,9 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
       expect(a.alcadaMinima).toBe('titular');
       expect(a.propostoPorId).toBe('comercial');
     }
+    // D-2: o pedido da cobrança leva o devedor (e o hash da aprovação o cobre).
+    const pedido = await prisma.toolCall.findFirst({ where: { orgId: ORG, capabilityId: CAP_COBRANCA }, orderBy: { criadoEm: 'desc' } });
+    expect(pedido?.args).toMatchObject({ devedorDocumento: CNPJ, devedorRazaoSocial: 'Construtora Alicerce Ltda', devedorEmail: 'marina@alicerce.test' });
     expect(await prisma.comercialCobranca.count({ where: { leadId } })).toBe(0);
     expect(await prisma.comercialDocumento.count({ where: { leadId } })).toBe(0);
     const noDuble = (await (await fetch(`http://127.0.0.1:${portaAsaas}/v3/payments`, { headers: { access_token: 'x' } })).json()) as { totalCount: number };
@@ -446,7 +456,13 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
   });
 
   it('a titular assina o fechamento: cinco escritas, cliente ativo; rodar de novo não duplica nada', async () => {
+    // D-2: um aceite.dados com outro CNPJ chega ao fio depois da cobrança aprovada (por fora da sala, que já
+    // recusa). O fechamento cria o cliente com o devedor da cobrança aprovada, nunca com o aceite mais novo.
+    await naEmpresa(() =>
+      fio.registrar(ORG, leadId, 'aceite.dados', 'dados-trocados', { cnpj: '99888777000166', razaoSocial: 'Outra Empresa Ltda', endereco: 'Rua Z, 9', quemAssina: 'Outra Pessoa', email: 'outra@exemplo.test' }, { semReacoes: true }),
+    );
     expect((await titularAssina((await aprovacao(CAP_FECHAMENTO)).id)).status).toBe('executado');
+    expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: '99888777000166' } })).toBe(0);
     const tela = await naEmpresa(() => fechamento.doLead(ORG, leadId));
     expect(tela.estado, JSON.stringify(tela.escritas)).toBe('concluido');
     expect(tela.chave).toBe(`fech-${leadId}-v1`);

@@ -277,8 +277,8 @@ export class FechamentoService implements OnModuleInit {
   }
 
   /** As cinco escritas. Rodar de novo reaproveita o que ficou pronto e refaz só o que ficou em erro ou pendente. */
-  async executar(orgId: string, leadId: string, a: AceiteDoLead): Promise<FechamentoDoLead> {
-    const linha = await this.garantirLinha(orgId, leadId, a);
+  async executar(orgId: string, leadId: string, aceiteDeAgora: AceiteDoLead): Promise<FechamentoDoLead> {
+    const linha = await this.garantirLinha(orgId, leadId, aceiteDeAgora);
     const anteriores = new Map(((linha.escritas ?? []) as unknown as EscritaDoFechamento[]).map((e) => [e.escrita, e]));
     if (linha.estado === 'concluido') return this.projetar(linha);
     const iniciadoEm = linha.iniciadoEm ?? new Date();
@@ -286,6 +286,12 @@ export class FechamentoService implements OnModuleInit {
 
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true, phone: true, email: true } });
     const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId } });
+    // D-2: o devedor é o da cobrança que a titular aprovou (gravado no `cobranca.criada`), nunca o aceite
+    // mais novo: o cliente da sala não troca o CNPJ do Partner depois da assinatura. Sem cobrança aprovada,
+    // nem o cliente nem a cobrança são escritos aqui.
+    const aprovado = await this.dinheiro.aceiteDaCobrancaAprovada(leadId, aceiteDeAgora);
+    const a = aprovado ?? aceiteDeAgora;
+    const SEM_COBRANCA_APROVADA = 'a cobrança aprovada pela titular ainda não existe: o fechamento não escreve cliente nem cobrança com dados que ela não viu';
     const escritas: EscritaDoFechamento[] = [];
     const refs: Partial<Record<EscritaDoFechamento['escrita'], string | null>> = {};
 
@@ -308,6 +314,7 @@ export class FechamentoService implements OnModuleInit {
 
     // 1. cliente: Partner, reaproveitado pelo CNPJ.
     await rodar('cliente', async () => {
+      if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
       const doc = a.dados.cnpj.replace(/\D/g, '');
       const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc }, select: { id: true } });
       if (ja) {
@@ -321,9 +328,10 @@ export class FechamentoService implements OnModuleInit {
       return { estado: 'criado', detalhe: a.dados.razaoSocial, ref: p.id };
     });
 
-    // 2. cobrança: a que o aceite criou (conferida); se não existe, cria pela porta (o efeito já é R4 aprovado).
+    // 2. cobrança: a que a aprovação de `comercial.cobranca.criar` criou, reaproveitada; nunca uma cobrança com outro devedor.
     await rodar('cobranca', async () => {
-      const r = await this.dinheiro.criarCobrancaDoAceite(orgId, leadId, a);
+      if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
+      const r = await this.dinheiro.criarCobrancaDoAceite(orgId, leadId, aprovado);
       const linhas = await this.prisma.comercialCobranca.findMany({ where: { leadId }, select: { estado: true } });
       const pagas = linhas.filter((l) => l.estado === 'paga').length;
       return { estado: r.reaproveitada ? 'reaproveitado' : 'criado', detalhe: `${pagas}/${linhas.length} paga · ${linhas.length - pagas} agendada(s)`, ref: r.referencia };

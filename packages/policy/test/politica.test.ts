@@ -877,7 +877,7 @@ describe('as escritas do comercial (cockpit do lead)', () => {
     const exige: Record<string, string[]> = {
       'comercial.whatsapp.enviar': ['leadId', 'mensagemId', 'texto'],
       'comercial.proposta.publicar': ['leadId', 'versao', 'hash'],
-      'comercial.cobranca.criar': ['leadId', 'versao', 'hash', 'valorCentavos', 'parcelas', 'forma'],
+      'comercial.cobranca.criar': ['leadId', 'versao', 'hash', 'valorCentavos', 'parcelas', 'forma', 'devedorDocumento', 'devedorRazaoSocial', 'devedorEmail'],
       'comercial.contrato.enviar': ['leadId', 'versao', 'hash', 'signatarioEmail'],
       'comercial.fechamento.executar': ['leadId', 'chave', 'propostaHash'],
     };

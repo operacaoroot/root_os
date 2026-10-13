@@ -70,6 +70,34 @@ export interface AceiteDoLead {
   dados: DadosDoAceite;
 }
 
+/**
+ * D-2: o devedor que a titular vê no pedido da cobrança e que a cobrança leva.
+ * Vai nos argumentos de `comercial.cobranca.criar` (e, portanto, no hash da
+ * aprovação) e fica gravado no `cobranca.criada`, de onde o fechamento o lê.
+ */
+export interface DevedorDaCobranca {
+  documento: string;
+  razaoSocial: string;
+  email: string;
+}
+
+/** O devedor como os argumentos o levam: documento só com dígitos, e-mail minúsculo e sem espaço. */
+export function devedorDosDados(d: Pick<DadosDoAceite, 'cnpj' | 'razaoSocial' | 'email'>): DevedorDaCobranca {
+  return { documento: d.cnpj.replace(/\D/g, ''), razaoSocial: d.razaoSocial.trim(), email: d.email.trim().toLowerCase() };
+}
+
+/** Os três campos do devedor nos argumentos da capacidade (`devedorDocumento`, `devedorRazaoSocial`, `devedorEmail`). */
+export function argsDoDevedor(d: DevedorDaCobranca): { devedorDocumento: string; devedorRazaoSocial: string; devedorEmail: string } {
+  return { devedorDocumento: d.documento, devedorRazaoSocial: d.razaoSocial, devedorEmail: d.email };
+}
+
+/** O mesmo devedor? (documento pelos dígitos, razão social sem espaço nas pontas, e-mail sem caixa.) */
+export function mesmoDevedor(a: DevedorDaCobranca, b: DevedorDaCobranca): boolean {
+  const x = devedorDosDados({ cnpj: a.documento, razaoSocial: a.razaoSocial, email: a.email });
+  const y = devedorDosDados({ cnpj: b.documento, razaoSocial: b.razaoSocial, email: b.email });
+  return x.documento === y.documento && x.razaoSocial === y.razaoSocial && x.email === y.email;
+}
+
 export type ResultadoDaProposta = 'proposta' | 'na_fila' | 'ja_existe' | 'executada' | 'pulada' | 'aguardando' | 'recusada';
 
 /** De quanto em quanto tempo o sistema volta a pôr na fila uma proposta R4 que venceu sem assinatura. */
@@ -152,6 +180,49 @@ export class DinheiroService implements OnModuleInit {
     };
   }
 
+  /**
+   * D-2: o aceite com o devedor da cobrança APROVADA, para quem escreve depois
+   * dela (o fechamento cria o cliente com este devedor, nunca com o aceite mais
+   * novo). A fonte é o `devedor` gravado no `cobranca.criada` do lead (uma cobrança por lead),
+   * que o efeito só grava depois de conferir contra os argumentos assinados.
+   * Os demais dados (endereço, quem assina) são os do último `aceite.dados`
+   * anterior à cobrança. Cobrança criada antes do conserto (fato sem `devedor`)
+   * usa esse mesmo `aceite.dados` anterior a ela. Sem cobrança: nulo.
+   */
+  async aceiteDaCobrancaAprovada(leadId: string, a: AceiteDoLead): Promise<AceiteDoLead | null> {
+    // O lead tem uma cobrança só (o efeito reaproveita pelo lead): o primeiro fato com devedor é o dela.
+    const criadas = await this.prisma.leadEvent.findMany({ where: { leadId, type: 'cobranca.criada' }, orderBy: { occurredAt: 'asc' }, select: { payload: true, occurredAt: true } });
+    let quando: Date | null = criadas[0]?.occurredAt ?? null;
+    let devedor: DevedorDaCobranca | null = null;
+    for (const c of criadas) {
+      const d = ((c.payload ?? {}) as P).devedor as Partial<DevedorDaCobranca> | undefined;
+      if (d && typeof d.documento === 'string' && typeof d.razaoSocial === 'string' && typeof d.email === 'string') {
+        devedor = { documento: d.documento, razaoSocial: d.razaoSocial, email: d.email };
+        quando = c.occurredAt;
+        break;
+      }
+    }
+    if (!quando) {
+      // Linhas da cobrança sem o fato (o processo caiu entre as duas escritas): a hora da primeira linha.
+      const linha = await this.prisma.comercialCobranca.findFirst({ where: { leadId }, orderBy: { criadoEm: 'asc' }, select: { criadoEm: true } });
+      quando = linha?.criadoEm ?? null;
+    }
+    if (!quando) return null;
+    const dados = await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'aceite.dados', occurredAt: { lte: quando } }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+    if (!dados && !devedor) return null;
+    const d = (dados?.payload ?? {}) as P;
+    const base: DadosDoAceite = {
+      cnpj: String(d.cnpj ?? ''),
+      razaoSocial: String(d.razaoSocial ?? ''),
+      endereco: String(d.endereco ?? ''),
+      quemAssina: String(d.quemAssina ?? ''),
+      email: String(d.email ?? ''),
+    };
+    const final = devedor ? { ...base, cnpj: devedor.documento, razaoSocial: devedor.razaoSocial, email: devedor.email } : base;
+    if (!final.cnpj.replace(/\D/g, '')) return null;
+    return { ...a, dados: final };
+  }
+
   /** O contrato montado deste aceite (determinístico: a data é a do aceite). */
   contratoDoAceite(a: AceiteDoLead): { markdown: string; hash: string; lacunas: string[] } {
     const markdown = montarContrato({ ...a.dados, produto: a.produto, valorCentavos: a.valorCentavos, parcelas: a.parcelas, forma: a.forma, propostaVersao: a.versao, propostaHash: a.hash, aceitoEm: a.em });
@@ -220,7 +291,8 @@ export class DinheiroService implements OnModuleInit {
         actorId: ator.id,
         actorType: ator.tipo,
         capabilityId: CAP_COBRANCA,
-        args: { leadId, versao: a.versao, hash: a.hash, valorCentavos: a.valorCentavos, parcelas: a.parcelas, forma: a.forma },
+        // D-2: o devedor vai nos argumentos (e no hash que a titular assina), não é relido do aceite mais novo.
+        args: { leadId, versao: a.versao, hash: a.hash, valorCentavos: a.valorCentavos, parcelas: a.parcelas, forma: a.forma, ...argsDoDevedor(devedorDosDados(a.dados)) },
         resource: { type: 'comercial.cobranca', id: resCob },
         valorCentavos: a.valorCentavos,
       });
@@ -267,6 +339,18 @@ export class DinheiroService implements OnModuleInit {
 
   private async efeitoDeCobranca(args: P, orgId: string, _ctx: ContextoDoEfeito): Promise<unknown> {
     const a = await this.aceiteConferido(args, ['hash', 'valorCentavos', 'parcelas', 'forma']);
+    // D-2: o devedor assinado é o dos argumentos. Pedido sem ele (anterior ao conserto) ou aceite de
+    // agora com outro devedor: nada sai para o Asaas.
+    const doc = args.devedorDocumento;
+    const razao = args.devedorRazaoSocial;
+    const email = args.devedorEmail;
+    if (typeof doc !== 'string' || typeof razao !== 'string' || typeof email !== 'string' || !doc || !razao || !email) {
+      throw new Error('o pedido não traz o devedor que a titular aprovou: nada foi cobrado. Proponha a cobrança de novo.');
+    }
+    const assinado: DevedorDaCobranca = { documento: doc, razaoSocial: razao, email };
+    if (!mesmoDevedor(assinado, devedorDosDados(a.dados))) {
+      throw new Error('o devedor do aceite mudou depois do pedido (documento, razão social ou e-mail): nada foi cobrado');
+    }
     return this.criarCobrancaDoAceite(orgId, String(args.leadId), a);
   }
 
@@ -287,7 +371,7 @@ export class DinheiroService implements OnModuleInit {
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { phone: true } });
     const cliente = await this.cobranca.criarCliente({
       nome: a.dados.razaoSocial,
-      documento: a.dados.cnpj,
+      documento: a.dados.cnpj.replace(/\D/g, ''),
       email: a.dados.email || null,
       telefone: lead.phone,
       referenciaExterna: `lead-${leadId}`,
@@ -334,14 +418,17 @@ export class DinheiroService implements OnModuleInit {
       });
     }
     const primeira = r.parcelas[0];
-    await this.fio.registrar(orgId, leadId, 'cobranca.criada', referencia, {
+    // D-2: o devedor em nome de quem a cobrança nasceu fica no fato; o fechamento cria o cliente com ELE.
+    const criada: PayloadDe<'cobranca.criada'> & { devedor: DevedorDaCobranca } = {
       provedor: this.cobranca.provedor,
       externoId: primeira?.externoId ?? referencia,
       parcelas: r.parcelas.length,
       forma: a.forma,
       valorCentavos: a.valorCentavos,
       primeiraVence: primeira?.vence ?? hojeEmSP(),
-    });
+      devedor: devedorDosDados(a.dados),
+    };
+    await this.fio.registrar(orgId, leadId, 'cobranca.criada', referencia, criada);
     return { referencia, parcelas: r.parcelas.length, reaproveitada: r.reaproveitada, externoIds: r.parcelas.map((p) => p.externoId) };
   }
 

@@ -24,11 +24,13 @@ import { CAP_COBRANCA, CAP_CONTRATO, DinheiroService } from '../src/comercial/di
 import { CAP_FECHAMENTO, FechamentoService } from '../src/comercial/fechamento.service';
 import { FichaService } from '../src/comercial/ficha.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
+import { decifrarLinkDaRoot } from '../src/comercial/link-da-root';
 import { CAPACIDADE_DA_PROPOSTA, PropostaService } from '../src/comercial/proposta.service';
 import { ReacoesDaEspinha } from '../src/comercial/reacoes-da-espinha';
 import { RelogioDaEspinha } from '../src/comercial/relogio-da-espinha';
 import { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
 import { SalaService } from '../src/comercial/sala.service';
+import { segredoDoAmbiente } from '../src/comercial/sala-token';
 import { CAPACIDADE_DO_WHATSAPP, WhatsappComercialService } from '../src/comercial/whatsapp.service';
 import { AsaasService } from '../src/finance/asaas.service';
 import { AcoesService } from '../src/gateway/acoes.service';
@@ -472,7 +474,8 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     await assinar(s.aceite!.contrato!.linkAssinatura!);
     doCliente.push('assina o contrato (dublê)');
     const doc = await prisma.comercialDocumento.findFirstOrThrow({ where: { leadId } });
-    await assinar(doc.linkRoot!);
+    // D-1: o link da Root só existe cifrado no banco; quem assina pela Root o recebe decifrado.
+    await assinar(decifrarLinkDaRoot(doc.linkRoot!, segredoDoAmbiente()!, doc.id)!);
     tocar('root', socio, 'assina o contrato pela Root (ZapSign)', 'o contrato tem dois signatários; a Root assina por um sócio');
     expect(await tipos()).toEqual(expect.arrayContaining(['pix.pago', 'contrato.assinado_cliente', 'contrato.assinado_root']));
 

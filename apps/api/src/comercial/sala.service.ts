@@ -337,10 +337,21 @@ export class SalaService implements OnModuleInit {
     });
   }
 
+  /**
+   * Os dados do contratante. Depois do aceite (B-6/D-2) eles estão congelados:
+   * a cobrança e o contrato foram propostos à titular com ESTES dados, e trocar
+   * o CNPJ pela sala depois disso é 409 (mudar dado do contratante passa a ser
+   * pedido à mesa). Reenviar exatamente os mesmos dados não muda nada.
+   */
   async aceiteDados(token: string, corpo: unknown): Promise<EstadoDaSala> {
     const input = this.validar(SalaAceiteDadosSchema, corpo);
     return this.naSala(token, async (r) => {
       await this.propostaVigente(r.leadId);
+      if (await this.ultimoEvento(r.leadId, 'proposta.aceita')) {
+        const atuais = await this.ultimoEvento(r.leadId, 'aceite.dados');
+        if (atuais && hashDoConteudo(atuais.payload ?? {}) === hashDoConteudo(input)) return;
+        throw new ConflictException('a proposta já foi aceita com os seus dados: para mudar algum dado do contratante, fale com a Root no WhatsApp');
+      }
       await this.fio.registrar(r.orgId, r.leadId, 'aceite.dados', hashDoConteudo(input), input);
     });
   }

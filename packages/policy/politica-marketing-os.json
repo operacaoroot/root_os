@@ -1,5 +1,5 @@
 {
-  "versao": "1.8.0",
+  "versao": "1.8.1",
   "atualizadoEm": "2026-10-13",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
@@ -1703,7 +1703,7 @@
     {
       "id": "comercial.cobranca.criar",
       "rota": "POST /sala/:token/aceite/pagamento",
-      "descricao": "Cria o cliente e a cobrança parcelada no Asaas da empresa para o aceite da proposta: valor, parcelas e forma presos à versão aceita pelo hash. A cobrança é um título a receber, obrigação financeira do cliente, e o Asaas a envia a ele. Cancelar é à mão no Asaas; o OS não cancela cobrança.",
+      "descricao": "Cria o cliente e a cobrança parcelada no Asaas da empresa para o aceite da proposta: valor, parcelas e forma presos à versão aceita pelo hash, e o devedor (documento, razão social e e-mail) preso nos argumentos: se o aceite mudar depois do pedido, nada é cobrado. A cobrança é um título a receber, obrigação financeira do cliente, e o Asaas a envia a ele. Cancelar é à mão no Asaas; o OS não cancela cobrança.",
       "nivel": "R4",
       "argsSchema": {
         "type": "object",
@@ -1714,7 +1714,10 @@
           "hash",
           "valorCentavos",
           "parcelas",
-          "forma"
+          "forma",
+          "devedorDocumento",
+          "devedorRazaoSocial",
+          "devedorEmail"
         ],
         "properties": {
           "leadId": {
@@ -1749,6 +1752,23 @@
               "boleto",
               "cartao"
             ]
+          },
+          "devedorDocumento": {
+            "type": "string",
+            "pattern": "^([0-9]{11}|[0-9]{14})$",
+            "description": "o CPF ou CNPJ do devedor, só dígitos: a cobrança sai em nome deste documento e de nenhum outro"
+          },
+          "devedorRazaoSocial": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "a razão social (ou o nome) do devedor que a titular viu"
+          },
+          "devedorEmail": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "description": "o e-mail do devedor que recebe a cobrança"
           }
         }
       },
