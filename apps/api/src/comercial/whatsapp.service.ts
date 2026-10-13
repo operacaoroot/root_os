@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import {
   ComercialEntradaWhatsSchema,
   type ComercialEntradaWhatsInput,
@@ -288,6 +288,23 @@ export class WhatsappComercialService implements OnModuleInit {
     return this.submeter(atual);
   }
 
+  /**
+   * Uma PESSOA pede o envio de uma mensagem já preparada (rota
+   * `POST /comercial/mensagens/:id/enviar`, a que o catálogo declara). Rascunho
+   * e falha vão à porta em nome dela; o que já está na fila, na janela, enviado
+   * ou vetado volta como está. A régua não muda: R3 fica retido e quem pediu não
+   * pode liberar o próprio pedido (outra pessoa confirma em /atendimento).
+   */
+  async pedirEnvio(orgId: string, mensagemId: string, quem: { id: string }): Promise<MensagemPreparada> {
+    const m = await this.prisma.comercialMensagem.findFirst({ where: { id: mensagemId, orgId, direcao: 'saida' } });
+    if (!m) throw new NotFoundException('mensagem não encontrada');
+    if (m.estado !== 'rascunho' && m.estado !== 'falhou') {
+      return { mensagemId: m.id, estado: m.estado as ComercialEstadoDeMensagem, approvalId: m.approvalId, nova: false };
+    }
+    if (m.template === 'M6' && m.erro && m.texto.includes('[novidade:')) throw new BadRequestException('o M6 só sai com a novidade escrita');
+    return this.submeter(m, new Date(), quem);
+  }
+
   /** VETO na janela: a mensagem não sai. Só vale enquanto ela está `em_veto`. */
   async vetar(orgId: string, mensagemId: string): Promise<boolean> {
     const r = await this.prisma.comercialMensagem.updateMany({ where: { id: mensagemId, orgId, estado: 'em_veto' }, data: { estado: 'vetada' } });
@@ -350,7 +367,7 @@ export class WhatsappComercialService implements OnModuleInit {
   }
 
   /** Entrega a mensagem à porta (ou à janela de veto, quando o interruptor está ligado). */
-  private async submeter(m: Linha, agora: Date = new Date()): Promise<MensagemPreparada> {
+  private async submeter(m: Linha, agora: Date = new Date(), quem: { id: string } | null = null): Promise<MensagemPreparada> {
     const orgId = m.orgId;
     const cfg = await this.config(orgId);
     if (cfg.envioAutomatico && cfg.janelaDeVetoMinutos && m.estado === 'rascunho' && !m.vetoAte) {
@@ -364,8 +381,8 @@ export class WhatsappComercialService implements OnModuleInit {
       args = { leadId: m.leadId, mensagemId: m.id, texto: m.texto, ...(m.template ? { template: m.template } : {}), destino: m.destino === 'grupo' ? 'grupo' : 'lead' };
       const r = await this.operador.executar({
         orgId,
-        actorId: ATOR_DO_WHATSAPP,
-        actorType: ActorType.system,
+        actorId: quem?.id ?? ATOR_DO_WHATSAPP,
+        actorType: quem ? ActorType.user : ActorType.system,
         capabilityId: CAPACIDADE_DO_WHATSAPP,
         args: args as unknown as Record<string, unknown>,
         resource: { type: 'comercial.mensagem', id: m.id },

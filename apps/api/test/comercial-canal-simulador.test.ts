@@ -117,3 +117,22 @@ describe('os celulares do simulador', () => {
     await expect(ctrl.conversa(outro, leadId)).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('POST /comercial/mensagens/:id/enviar (a rota do catálogo)', () => {
+  it('a pessoa pede o envio de um rascunho: vai à porta em nome DELA; o que já está na fila volta como está', async () => {
+    const { MensagensController } = await import('../src/comercial/mensagens.controller');
+    const c = new MensagensController(whats);
+    const lead = await prisma.lead.findFirstOrThrow({ where: { orgId: ORG } });
+    const rascunho = await prisma.comercialMensagem.create({ data: { leadId: lead.id, direcao: 'saida', provedor: 'simulado', destino: 'lead', texto: 'Um texto preparado à mão.', estado: 'rascunho' } });
+    const antes = porta.executar.mock.calls.length;
+    const r = await c.enviar(user, rascunho.id);
+    expect(r.estado).toBe('na_fila');
+    const pedido = (porta.executar.mock.calls[antes] as unknown[])[0] as { actorId: string; actorType: string; args: Record<string, unknown> };
+    expect(pedido).toMatchObject({ actorId: user.sub, actorType: 'user' });
+    expect(pedido.args).toEqual({ leadId: lead.id, mensagemId: rascunho.id, texto: 'Um texto preparado à mão.', destino: 'lead' });
+    const de_novo = await c.enviar(user, rascunho.id);
+    expect(de_novo.approvalId).toBe(r.approvalId);
+    expect(porta.executar.mock.calls.length).toBe(antes + 1);
+    await expect(c.enviar({ ...user, orgId: '00000000-0000-4000-8000-0000000000ff' }, rascunho.id)).rejects.toMatchObject({ status: 404 });
+  });
+});

@@ -18,6 +18,7 @@ import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.con
 import { InteligenciaController } from './inteligencia.controller';
 import { SalaController } from './sala.controller';
 import { SimuladorController } from './simulador.controller';
+import { MensagensController } from './mensagens.controller';
 import { SalaService } from './sala.service';
 import { WhatsappComercialService } from './whatsapp.service';
 
@@ -40,7 +41,7 @@ import { WhatsappComercialService } from './whatsapp.service';
  */
 @Module({
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule],
-  controllers: [ComercialController, SalaController, SimuladorController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
+  controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
     ReacoesRegistry,
