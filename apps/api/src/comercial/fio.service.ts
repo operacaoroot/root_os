@@ -163,6 +163,29 @@ export class FioService {
     return { eventoId: evento.id, novo };
   }
 
+  /**
+   * A-5: grava o fato DENTRO da transação de quem chama (a mesma identidade de
+   * `registrar`), sem rodar reação: reação dentro da transação seguraria a
+   * trava e veria escrita que pode ser desfeita. Depois do commit, quem chama
+   * roda `reagir(evento)` se `novo`.
+   */
+  async gravarNaTransacao<T extends ComercialEvento>(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    leadId: string,
+    type: T,
+    chave: string,
+    payload: PayloadDe<T>,
+    em: Date,
+  ): Promise<{ novo: boolean; evento: EventoGravado }> {
+    const montado = montarEvento(orgId, leadId, type, chave, payload, em);
+    const r = await tx.leadEvent.createMany({
+      data: [{ id: montado.id, leadId, type, payload: payload as unknown as Prisma.InputJsonValue, occurredAt: em }],
+      skipDuplicates: true,
+    });
+    return { novo: r.count === 1, evento: { eventoId: montado.id, orgId, leadId, type, payload, em } as EventoGravado };
+  }
+
   /** Roda as reações inscritas para o evento, cada uma no máximo uma vez. */
   async reagir(evento: EventoGravado): Promise<void> {
     for (const { nome, fn } of this.reacoes.doTipo(evento.type)) {

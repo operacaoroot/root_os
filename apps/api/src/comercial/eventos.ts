@@ -138,7 +138,7 @@ export interface PayloadsComerciais {
   'sala.visitada': { salaId: string; estagio: string };
   'arquivo.enviado': { nome: string; bytes: number; tipo: string };
   /** `por`: o nome de quem conduziu a sessão e subiu a ata (vira o sócio da conta). Acréscimo da lane A. */
-  'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null; por?: string | null };
+  'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null; por?: string | null; porId?: string | null };
   /** `aprovadoEm`/`aprovadoPor`: o diagnóstico aprovado por sócio (portão de E5) é o MESMO evento gravado de novo com outra chave. Acréscimo da lane A. */
   'diagnostico.pronto': { dores: { n: number; texto: string; minuto: string | null; trecho?: string | null }[]; objecoes: string[]; produtoSugerido: string | null; modelo: string; custoUsd: number; custoDesconhecido: boolean; aprovadoEm?: string | null; aprovadoPor?: string | null };
   /** `quadroDeCustos`: o quadro de custos de terceiros (portão de E6). Sem ele o portão recusa. Acréscimo da lane A. */

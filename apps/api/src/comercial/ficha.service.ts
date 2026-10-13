@@ -374,24 +374,31 @@ export class FichaService {
     if (!veredicto.ok) return { ...veredicto, mudou: false };
 
     const agora = opcoes.agora ?? new Date();
-    const escrita = await this.prisma.comercialFicha.updateMany({
-      where: { id: ficha.id, etapa: de as EtapaDoBanco },
-      data: {
-        etapa: para as EtapaDoBanco,
-        etapaDesde: agora,
-        ...(ehSaida(para) ? { etapaAntesDaSaida: (ehSaida(de) ? ficha.etapaAntesDaSaida : de) as EtapaDoBanco | null } : {}),
-      },
+    // A-5: a etapa, o `Lead.status` e o fato `etapa.mudou` numa transação só. Queda no meio desfaz as três:
+    // nunca a etapa nova sem o fato no fio (o fio é a fonte da ficha). As reações ao fato rodam depois do commit.
+    const gravado = await this.prisma.$transaction(async (tx) => {
+      const escrita = await tx.comercialFicha.updateMany({
+        where: { id: ficha.id, etapa: de as EtapaDoBanco },
+        data: {
+          etapa: para as EtapaDoBanco,
+          etapaDesde: agora,
+          ...(ehSaida(para) ? { etapaAntesDaSaida: (ehSaida(de) ? ficha.etapaAntesDaSaida : de) as EtapaDoBanco | null } : {}),
+        },
+      });
+      if (escrita.count === 0) return null;
+      await tx.lead.updateMany({ where: { id: leadId, orgId }, data: { status: LEAD_STATUS_DA_ETAPA[para] as LeadStatus } });
+      return this.fio.gravarNaTransacao(
+        tx,
+        orgId,
+        leadId,
+        'etapa.mudou',
+        `${de}>${para}:${opcoes.eventoGatilho ?? agora.toISOString()}`,
+        { de, para, motivo: opcoes.motivo, eventoGatilho: opcoes.eventoGatilho ?? null },
+        agora,
+      );
     });
-    if (escrita.count === 0) return { ok: false, mudou: false, de, para, faltando: ['a etapa mudou por outro caminho no mesmo instante: releia a ficha'] };
-    await this.prisma.lead.updateMany({ where: { id: leadId, orgId }, data: { status: LEAD_STATUS_DA_ETAPA[para] as LeadStatus } });
-    await this.fio.registrar(
-      orgId,
-      leadId,
-      'etapa.mudou',
-      `${de}>${para}:${opcoes.eventoGatilho ?? agora.toISOString()}`,
-      { de, para, motivo: opcoes.motivo, eventoGatilho: opcoes.eventoGatilho ?? null },
-      { em: agora },
-    );
+    if (!gravado) return { ok: false, mudou: false, de, para, faltando: ['a etapa mudou por outro caminho no mesmo instante: releia a ficha'] };
+    if (gravado.novo) await this.fio.reagir(gravado.evento);
     return { ok: true, mudou: true, de, para, faltando: [] };
   }
 
@@ -453,7 +460,8 @@ export class FichaService {
     if (!r.success) throw new BadRequestException({ message: 'Ata inválida.', erros: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
     await this.garantir(orgId, leadId);
     const hash = hashDoConteudo(r.data.texto);
-    const payload: PayloadDe<'ata.chegou'> = { hash, caracteres: r.data.texto.length, fonte: r.data.fonte, referencia: r.data.referencia ?? null, por: por?.nome ?? null };
+    // E-24: o id de quem subiu a ata vai junto do nome; o sócio da conta é achado por ele, nunca pelo nome.
+    const payload: PayloadDe<'ata.chegou'> = { hash, caracteres: r.data.texto.length, fonte: r.data.fonte, referencia: r.data.referencia ?? null, por: por?.nome ?? null, porId: por?.id ?? null };
     // Lane E: o texto fica só na memória do processo para o leitor de ata (reação); nunca no banco.
     guardarAtaEmTransito(orgId, leadId, hash, r.data.texto);
     const ev = await this.fio.registrar(orgId, leadId, 'ata.chegou', hash, payload, { em: agora });
@@ -481,9 +489,11 @@ export class FichaService {
     const proxima = etapa === 'sessao' ? avancarDepoisDaSessao(estado).para ?? 'diagnostico' : proximaEtapa(etapa);
     const itens = portoesDaEtapa(estado);
     const nomes = await this.nomesDeUsuarios(orgId, [ficha.donoId]);
-    const socio = ficha.socioDaConta
-      ? await this.prisma.user.findFirst({ where: { orgId, name: ficha.socioDaConta }, orderBy: { createdAt: 'asc' }, select: { id: true } })
-      : null;
+    // E-24: o sócio da conta é a pessoa da ata que gravou o nome (a primeira com `por`), achada pelo id
+    // que a ata trouxe e conferida na empresa. Dois usuários com o mesmo nome não se confundem.
+    const ataDoSocio = ficha.socioDaConta ? eventos.find((e) => e.type === 'ata.chegou' && (e.payload as { por?: unknown } | null)?.por === ficha.socioDaConta) : undefined;
+    const idDaAta = ataDoSocio ? (ataDoSocio.payload as { porId?: unknown }).porId : null;
+    const socio = typeof idDaAta === 'string' && idDaAta ? await this.prisma.user.findFirst({ where: { id: idDaAta, orgId }, select: { id: true } }) : null;
 
     return {
       leadId,
@@ -499,9 +509,8 @@ export class FichaService {
       sistemaErp: ficha.sistemaErp,
       baseDados: ficha.baseDados,
       dono: ficha.donoId ? { id: ficha.donoId, nome: nomes.get(ficha.donoId) ?? ficha.donoId } : null,
-      // A ficha guarda o NOME de quem conduziu a sessão (o `por` da ata). Com uma pessoa
-      // da empresa com esse nome, o id é o dela; sem ela, o id repete o nome (achado da lane F).
-      socioDaConta: ficha.socioDaConta ? { id: socio?.id ?? ficha.socioDaConta, nome: ficha.socioDaConta } : null,
+      // A ficha guarda o NOME de quem conduziu a sessão (o `por` da ata); o id vem da ata. Sem ele, nulo.
+      socioDaConta: ficha.socioDaConta ? { id: socio?.id ?? null, nome: ficha.socioDaConta } : null,
       produto: (ficha.produto as ComercialProduto | null) ?? null,
       valorCentavos: ficha.valorCentavos,
       parcelas: ficha.parcelas,

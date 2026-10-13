@@ -544,7 +544,8 @@ export interface FichaDoLead {
   sistemaErp: string | null;
   baseDados: boolean | null;
   dono: { id: string; nome: string } | null;
-  socioDaConta: { id: string; nome: string } | null;
+  /** E-24: `id` é o da pessoa que subiu a ata, conferido na empresa; nulo quando a ata não o trouxe (nunca o nome no lugar do id). */
+  socioDaConta: { id: string | null; nome: string } | null;
   produto: ComercialProduto | null;
   valorCentavos: number | null;
   parcelas: number | null;

@@ -6,8 +6,10 @@
  *     número, nasce sem data e com o [a decidir] escrito.
  *   · A-3: a reação à decisão tomada que lança deixa a linha de trava em
  *     `erro` e o retry do relógio a roda de novo.
+ *   · A-5: a etapa, o `Lead.status` e o `etapa.mudou` caem juntos.
+ *   · E-24: o sócio da conta é achado pelo id da ata, nunca pelo nome.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ConfigComercialService } from '../src/comercial/config.service';
@@ -160,6 +162,86 @@ describe.skipIf(!URL)('revisão P3 da espinha, contra o banco', () => {
       // Passar de novo não roda outra vez.
       await fio.reexecutarPendentes(ORG, new Date(Date.now() + 1000));
       expect(chamadas).toBe(2);
+    });
+  });
+
+  describe('A-5: a etapa, o status e o fato numa transação', () => {
+    /** O mesmo banco, com a gravação do fato caindo quando `cair()` diz (dentro ou fora de transação). */
+    function comQuedaNoFato(real: PrismaClient | Prisma.TransactionClient, cair: () => boolean): PrismaClient {
+      return new Proxy(real as object, {
+        get(alvo, k) {
+          const t = alvo as Record<string | symbol, unknown>;
+          if (k === 'leadEvent') {
+            const le = t.leadEvent as Record<string | symbol, unknown>;
+            return new Proxy(le, {
+              get(m, f) {
+                if (f === 'createMany' && cair()) return async () => { throw new Error('queda entre as escritas'); };
+                const v = (m as Record<string | symbol, unknown>)[f];
+                return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(m) : v;
+              },
+            });
+          }
+          if (k === '$transaction') {
+            return (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, o?: unknown) =>
+              (alvo as PrismaClient).$transaction((tx) => fn(comQuedaNoFato(tx, cair) as unknown as Prisma.TransactionClient), o as never);
+          }
+          const v = t[k];
+          return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(alvo) : v;
+        },
+      }) as PrismaClient;
+    }
+
+    it('a gravação do fato cai: a etapa e o status ficam como estavam; sem queda, as três escritas e o fato', async () => {
+      let cair = true;
+      const px = comQuedaNoFato(prisma, () => cair) as unknown as PrismaService;
+      const fichasComQueda = new FichaService(px, new FioService(px, new ReacoesRegistry()), config);
+      const leadId = await leadNovo();
+      const statusAntes = (await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status;
+      await expect(fichasComQueda.mudarEtapa(ORG, leadId, 'perdido', { motivo: 'teste da queda' })).rejects.toThrow(/queda/);
+      expect((await ficha(leadId)).etapa).toBe('novo_lead');
+      expect((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status).toBe(statusAntes);
+      expect(await prisma.leadEvent.count({ where: { leadId, type: 'etapa.mudou' } })).toBe(0);
+
+      cair = false;
+      const r = await fichasComQueda.mudarEtapa(ORG, leadId, 'perdido', { motivo: 'teste sem queda' });
+      expect(r).toMatchObject({ ok: true, mudou: true, de: 'novo_lead', para: 'perdido' });
+      expect((await ficha(leadId)).etapa).toBe('perdido');
+      expect((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).status).not.toBe(statusAntes);
+      expect(await prisma.leadEvent.count({ where: { leadId, type: 'etapa.mudou' } })).toBe(1);
+    });
+
+    it('a reação ao etapa.mudou roda depois do commit, uma vez', async () => {
+      let vistas = 0;
+      reacoes.inscrever('etapa.mudou', 'teste.p3.etapa', async (ev) => {
+        vistas++;
+        // A reação enxerga a etapa nova (o commit já aconteceu).
+        return { etapa: (await ficha(ev.leadId)).etapa };
+      });
+      const leadId = await leadNovo();
+      await fichas.mudarEtapa(ORG, leadId, 'desqualificado', { motivo: 'teste da reação' });
+      expect(vistas).toBe(1);
+      const linha = await prisma.comercialReacao.findFirstOrThrow({ where: { leadId, reacao: 'teste.p3.etapa' } });
+      expect(linha).toMatchObject({ estado: 'ok', resultado: { etapa: 'desqualificado' } });
+    });
+  });
+
+  describe('E-24: o sócio da conta pelo id', () => {
+    it('dois usuários com o mesmo nome: o sócio é quem subiu a ata, não o mais antigo', async () => {
+      const antigo = await prisma.user.create({ data: { orgId: ORG, name: 'Rodrigo', email: `rodrigo.a.${MARCA}@root.local`, passwordHash: 'x' }, select: { id: true } });
+      const novo = await prisma.user.create({ data: { orgId: ORG, name: 'Rodrigo', email: `rodrigo.b.${MARCA}@root.local`, passwordHash: 'x' }, select: { id: true } });
+      const leadId = await leadNovo();
+      await fichas.registrarAta(ORG, leadId, { texto: 'Ata da conversa com o cliente. '.repeat(20), fonte: 'texto' }, { id: novo.id, nome: 'Rodrigo' });
+      const f = await fichas.projecao(ORG, leadId);
+      expect(f.socioDaConta).toEqual({ id: novo.id, nome: 'Rodrigo' });
+      expect(f.socioDaConta?.id).not.toBe(antigo.id);
+    });
+
+    it('ata sem id (gravada antes do conserto): o id fica nulo, nunca o nome no lugar', async () => {
+      const leadId = await leadNovo();
+      await fio.registrar(ORG, leadId, 'ata.chegou', `h-${MARCA}`, { hash: `h-${MARCA}`, caracteres: 10, fonte: 'texto', por: 'Rodrigo' });
+      await fichas.aplicar({ eventoId: 'x', orgId: ORG, leadId, type: 'ata.chegou', payload: { hash: `h-${MARCA}`, caracteres: 10, fonte: 'texto', por: 'Rodrigo' }, em: new Date() } as never);
+      const f = await fichas.projecao(ORG, leadId);
+      expect(f.socioDaConta).toEqual({ id: null, nome: 'Rodrigo' });
     });
   });
 });
