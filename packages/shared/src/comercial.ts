@@ -632,6 +632,8 @@ export interface DecisaoNaFila {
   escolha: string | null;
   decididoPor: string | null;
   canal: ComercialCanalDeDecisao | null;
+  /** Id de quem propôs (quando há); essa pessoa não responde a decisão (C-12). */
+  propostoPor?: string | null;
 }
 
 /** O funil vivo (tela 04). */

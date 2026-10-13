@@ -265,6 +265,7 @@ export class DecisoesService {
       escolha: d.escolha,
       decididoPor: d.decididoPor,
       canal: (d.canal as ComercialCanalDeDecisao | null) ?? null,
+      propostoPor: typeof (d.dados as Record<string, unknown> | null)?.propostoPor === 'string' ? ((d.dados as Record<string, unknown>).propostoPor as string) : null,
     }));
   }
 

@@ -241,6 +241,8 @@ describe.skipIf(!URL)('a espinha do cockpit, contra o banco', () => {
       propostoPor: outro.id,
     });
     expect(d.nova).toBe(true);
+    // C-12: a fila leva quem propôs, para a tela não mostrar botões a essa pessoa.
+    expect((await decisoes.listar(ORG, 'aberta')).find((x) => x.id === d.id)?.propostoPor).toBe(outro.id);
     expect((await decisoes.abrir({ orgId: ORG, leadId: leadA, tipo: 'pedido_de_ajuste', chave: 'ajuste-v1', titulo: 'x', contexto: 'x', opcoes: [{ chave: 'manter', rotulo: 'manter' }], padrao: 'manter' })).nova).toBe(false);
     await expect(decisoes.abrir({ orgId: ORG, leadId: leadA, tipo: 'pedido_de_ajuste', titulo: 'x', contexto: 'x', opcoes: [{ chave: 'a', rotulo: 'a' }], padrao: 'b' })).rejects.toThrow(/padrão/);
 
