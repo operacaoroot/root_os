@@ -185,6 +185,17 @@ describe('não se perdeu funcionalidade', () => {
   });
 });
 
+/*
+ * O COCKPIT DO LEAD (módulo comercial, 13/10/2026): os destinos novos da seção
+ * comercial, governados pelo módulo `leads`. Cada lane da passagem acrescenta
+ * o seu aqui, e as contagens abaixo somam esta lista aos 39 da base.
+ */
+const COCKPIT: Record<string, { href: string; permission: string; label: string }> = {
+  'comercial-simulador': { href: '/comercial/simulador', permission: 'leads.ver', label: 'Simulador de WhatsApp' },
+};
+const N_COCKPIT = Object.keys(COCKPIT).length;
+const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);
+
 describe('NAV — estrutura', () => {
   it('preserva as 33 rotas e acrescenta somente os seis destinos da frente MK', () => {
     const hrefsEsperados = new Set([
@@ -201,8 +212,8 @@ describe('NAV — estrutura', () => {
     expect(hrefsEsperados.size).toBe(33);
     const rotasMK = ['/contexto/marca', '/marketing', '/marketing/ideias',
       '/marketing/estrategia', '/marketing/performance', '/marketing/relatorio'];
-    expect(NAV).toHaveLength(39);
-    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK]));
+    expect(NAV).toHaveLength(39 + N_COCKPIT);
+    expect(new Set(NAV.map((n) => n.href))).toEqual(new Set([...hrefsEsperados, ...rotasMK, ...HREFS_DO_COCKPIT]));
   });
 
   it('não repete chave nem rota', () => {
@@ -236,6 +247,7 @@ describe('NAV — estrutura', () => {
       ['relatorios', 'relatorios'], ['metas', 'metas'], ['financeiro', 'financeiro'],
       ['marca', 'pauta'], ['marketing', 'pauta'], ['marketing-ideias', 'pauta'],
       ['marketing-estrategia', 'pauta'], ['marketing-performance', 'pauta'], ['marketing-relatorio', 'pauta'],
+      ...Object.keys(COCKPIT).map((k) => [k, 'leads'] as [string, string]),
     ]);
     for (const n of NAV) expect(n.modulo).toBe(modulosEsperados.get(n.key));
   });
@@ -283,7 +295,7 @@ describe('navPorSecao', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
     expect(grupos).toHaveLength(1);
     expect(grupos[0].secao.key).toBe('comercial');
-    expect(grupos[0].itens.map((i) => i.key)).toEqual(['leads']);
+    expect(grupos[0].itens.map((i) => i.key)).toEqual(['leads', ...Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver')]);
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
@@ -545,9 +557,13 @@ describe('organização da navegação (ROOT-07)', () => {
   };
 
   it('os 39 destinos mantêm chave, rótulo e permissão da base', () => {
-    expect(NAV).toHaveLength(39);
+    expect(NAV).toHaveLength(39 + N_COCKPIT);
     expect(Object.keys(PERMISSAO_DA_BASE)).toHaveLength(39);
     for (const n of NAV) {
+      if (COCKPIT[n.key]) {
+        expect(n).toMatchObject({ href: COCKPIT[n.key].href, permission: COCKPIT[n.key].permission, label: COCKPIT[n.key].label, secao: 'comercial', modulo: 'leads' });
+        continue;
+      }
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
       expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
     }
@@ -582,8 +598,8 @@ describe('organização da navegação (ROOT-07)', () => {
   });
 
   it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
-    expect(new Set(Object.keys(SECAO_DA_MATRIZ))).toEqual(new Set(NAV.map((n) => n.href)));
-    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href]);
+    expect(new Set([...Object.keys(SECAO_DA_MATRIZ), ...HREFS_DO_COCKPIT])).toEqual(new Set(NAV.map((n) => n.href)));
+    for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href] ?? (HREFS_DO_COCKPIT.includes(n.href) ? 'comercial' : undefined));
   });
 
   it('SECOES: ordem, rótulos e tipos do contrato C-16', () => {
