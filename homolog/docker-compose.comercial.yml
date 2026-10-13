@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
     environment:
       WEBHOOK_URL: http://api:4001/api/comercial/webhooks/asaas
-      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-homolog}
+      WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina ASAAS_WEBHOOK_TOKEN em homolog/.env.homolog}
       PUBLIC_URL: http://${TAILSCALE_IP:-100.95.41.124}:${ASAAS_MOCK_PORT:-4011}
     volumes:
       - rootos_comercial_asaas:/data
@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
     environment:
       WEBHOOK_URL: http://api:4001/api/comercial/webhooks/zapsign
-      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-homolog}
+      WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:?defina ZAPSIGN_WEBHOOK_TOKEN em homolog/.env.homolog}
       PUBLIC_URL: http://${TAILSCALE_IP:-100.95.41.124}:${ZAPSIGN_MOCK_PORT:-4012}
     volumes:
       - rootos_comercial_zapsign:/data
@@ -124,10 +124,10 @@ services:
       # Dinheiro e assinatura apontam para os dublês por padrão
       ASAAS_API_KEY: ${ASAAS_API_KEY:-$$aact_hmlg_dublê}
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-http://asaas-mock:4011/v3}
-      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-homolog}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:?defina ASAAS_WEBHOOK_TOKEN em homolog/.env.homolog}
       ZAPSIGN_API_TOKEN: ${ZAPSIGN_API_TOKEN:-dublê}
       ZAPSIGN_BASE_URL: ${ZAPSIGN_BASE_URL:-http://zapsign-mock:4012/api/v1}
-      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:-homolog}
+      ZAPSIGN_WEBHOOK_TOKEN: ${ZAPSIGN_WEBHOOK_TOKEN:?defina ZAPSIGN_WEBHOOK_TOKEN em homolog/.env.homolog}
       # WhatsApp por porta: simulado | evolution | meta
       WHATSAPP_PROVEDOR: ${WHATSAPP_PROVEDOR:-simulado}
       EVOLUTION_URL: ${EVOLUTION_URL:-}
