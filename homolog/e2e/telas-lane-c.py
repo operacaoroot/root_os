@@ -9,47 +9,17 @@ localStorage como o login da tela faria e fotografa cada tela nos temas escuro
 e claro, e no celular (390 px). Grava em homolog/provas/tela-NN-<nome>-<tema>.png.
 """
 import json
-import os
-import pathlib
 import sys
-import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-RAIZ = pathlib.Path(__file__).resolve().parents[2]
-PROVAS = RAIZ / 'homolog' / 'provas'
-WEB = os.environ.get('WEB', 'http://127.0.0.1:3020')
-API = os.environ.get('API', 'http://127.0.0.1:4010')
+from telas_comum import PROVAS, RAIZ, WEB, get, login
+
 FILTRO = sys.argv[1] if len(sys.argv) > 1 else ''
 
 
-def senha() -> str:
-    for linha in (RAIZ / 'homolog' / '.env.homolog').read_text(encoding='utf-8').splitlines():
-        if linha.startswith('ADMIN_PASSWORD='):
-            return linha.split('=', 1)[1].strip().strip('"')
-    raise SystemExit('ADMIN_PASSWORD ausente em homolog/.env.homolog')
-
-
-def post(caminho: str, corpo: dict, token: str | None = None) -> dict:
-    req = urllib.request.Request(f'{API}/api{caminho}', data=json.dumps(corpo).encode(), method='POST')
-    req.add_header('Content-Type', 'application/json')
-    if token:
-        req.add_header('Authorization', f'Bearer {token}')
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
-
-
-def get(caminho: str, token: str):
-    req = urllib.request.Request(f'{API}/api{caminho}')
-    req.add_header('Authorization', f'Bearer {token}')
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
-
-
 def main() -> None:
-    login = post('/auth/login', {'email': 'admin@marketing-os.local', 'password': senha()})
-    token = login.get('token') or login.get('accessToken')
-    user = login['user']
+    token, user = login()
 
     funil = get('/comercial/funil', token)
     cartoes = [c for col in funil['colunas'] for c in col['cartoes']]
