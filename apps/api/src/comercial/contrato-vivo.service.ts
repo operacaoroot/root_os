@@ -104,6 +104,8 @@ export class ContratoVivoService implements OnModuleInit {
       const vence = diaSP(c.vence);
       const devido = avisoDevido(vence, hoje);
       if (!devido) continue;
+      // A 1ª parcela vence no dia do aceite e é paga ali, na sala: aviso antes ou no dia seria ruído. A régua dela começa no D+1.
+      if (c.parcela === 1 && devido.dias < 1) continue;
       try {
         const chave = `${c.externoId}:${devido.aviso}`;
         const r = await this.fio.registrar(orgId, c.leadId, 'parcela.vence', chave, { parcela: c.parcela, vence, aviso: devido.aviso }, { em: agora });
