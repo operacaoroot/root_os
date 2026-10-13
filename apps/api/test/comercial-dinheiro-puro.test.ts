@@ -31,7 +31,7 @@ describe('o segredo do webhook', () => {
 describe('o webhook do Asaas', () => {
   it('PAYMENT_RECEIVED vira pagamento com centavos e data', () => {
     const p = lerWebhookDoAsaas({ id: 'evt_1', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1', value: 3999, paymentDate: '2026-10-13' } });
-    expect(p).toEqual({ eventoId: 'evt_1', tipo: 'paga', externoId: 'pay_1', valorCentavos: 399_900, pagoEm: '2026-10-13' });
+    expect(p).toEqual({ eventoId: 'evt_1', tipo: 'paga', evento: 'PAYMENT_RECEIVED', externoId: 'pay_1', valorCentavos: 399_900, pagoEm: '2026-10-13' });
   });
   it('outro evento é "outro"; corpo sem cobrança é nulo', () => {
     expect(lerWebhookDoAsaas({ event: 'PAYMENT_CREATED', payment: { id: 'pay_1', value: 1 } })?.tipo).toBe('outro');

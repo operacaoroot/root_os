@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { partesNoFuso, somarDias, type RelatorioDaSemana } from '@mktos/shared';
+import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, partesNoFuso, somarDias, type RelatorioDaSemana } from '@mktos/shared';
 
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { MemoriaService } from '../memory/memoria.service';
@@ -99,12 +99,15 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     const ativos = await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: 'cliente.ativo', occurredAt: noPeriodo }, select: { leadId: true } });
     const fechados = new Set(ativos.map((a) => a.leadId)).size;
 
-    // Mediana do 1º oi ao Pix: o PRIMEIRO pix.pago de cada lead, se caiu no período.
-    const pixDoPeriodo = await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: 'pix.pago', occurredAt: noPeriodo }, select: { leadId: true } });
+    // Mediana do 1º oi ao Pix: o PRIMEIRO pagamento da 1ª parcela de cada lead, se caiu no período.
+    // D-10: o fato tem o nome da forma (pix.pago, boleto.pago, cartao.pago); os três contam, como contavam
+    // quando todos eram gravados como pix.pago.
+    const pagas = [...COMERCIAL_FATOS_DA_PRIMEIRA_PAGA];
+    const pixDoPeriodo = await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: { in: pagas }, occurredAt: noPeriodo }, select: { leadId: true } });
     const comPix = [...new Set(pixDoPeriodo.map((x) => x.leadId))];
     const dias: number[] = [];
     if (comPix.length) {
-      const primeiros = await this.prisma.leadEvent.groupBy({ by: ['leadId'], where: { leadId: { in: comPix }, type: 'pix.pago' }, _min: { occurredAt: true } });
+      const primeiros = await this.prisma.leadEvent.groupBy({ by: ['leadId'], where: { leadId: { in: comPix }, type: { in: pagas } }, _min: { occurredAt: true } });
       const entradas = new Map((await this.prisma.lead.findMany({ where: { id: { in: comPix }, orgId }, select: { id: true, enteredAt: true } })).map((l) => [l.id, l.enteredAt]));
       for (const p of primeiros) {
         const pix = p._min.occurredAt;

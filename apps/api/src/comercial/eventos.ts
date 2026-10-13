@@ -100,6 +100,8 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'aceite.dados': 'sala',
   'cobranca.criada': 'asaas',
   'pix.pago': 'asaas',
+  'boleto.pago': 'asaas',
+  'cartao.pago': 'asaas',
   'contrato.gerado': 'zapsign',
   'contrato.assinado_cliente': 'zapsign',
   'contrato.assinado_root': 'zapsign',
@@ -109,6 +111,7 @@ export const FONTE_DO_EVENTO: Record<ComercialEvento, ComercialFonte> = {
   'parcela.vence': 'relogio',
   'parcela.paga': 'asaas',
   'parcela.atrasada': 'relogio',
+  'parcela.estornada': 'asaas',
   'marco.contrato': 'relogio',
   'decisao.aberta': 'decisao',
   'decisao.tomada': 'pessoa',
@@ -148,6 +151,9 @@ export interface PayloadsComerciais {
   'aceite.dados': { cnpj: string; razaoSocial: string; endereco: string; quemAssina: string; email: string };
   'cobranca.criada': { provedor: string; externoId: string; parcelas: number; forma: string; valorCentavos: number; primeiraVence: string };
   'pix.pago': { provedor: string; externoId: string; parcela: number; valorCentavos: number; pagoEm: string };
+  /** D-10: a 1ª parcela paga por boleto ou cartão tem o nome da forma; o payload é o do Pix. */
+  'boleto.pago': { provedor: string; externoId: string; parcela: number; valorCentavos: number; pagoEm: string };
+  'cartao.pago': { provedor: string; externoId: string; parcela: number; valorCentavos: number; pagoEm: string };
   'contrato.gerado': { provedor: string; externoId: string; hash: string };
   'contrato.assinado_cliente': { provedor: string; externoId: string; em: string };
   'contrato.assinado_root': { provedor: string; externoId: string; em: string; por?: string | null };
@@ -157,6 +163,8 @@ export interface PayloadsComerciais {
   'parcela.vence': { parcela: number; vence: string; aviso: 'D-3' | 'D0' | 'D+1' | 'D+5' | 'D+10' };
   'parcela.paga': { parcela: number; pagoEm: string; valorCentavos: number };
   'parcela.atrasada': { parcela: number; vence: string; dias: number };
+  /** D-10: estorno ou chargeback no provedor. A parcela volta a não paga; `evento` é o nome cru do provedor. */
+  'parcela.estornada': { parcela: number; externoId: string; evento: string; em: string; valorCentavos: number };
   'marco.contrato': { marco: 'dia_15_indicacao' | 'd_30_continuidade' | 'primeiro_valor'; quando: string };
   'decisao.aberta': { decisaoId: string; tipo: string; padrao: string; expiraEm: string };
   'decisao.tomada': { decisaoId: string; tipo: string; escolha: string; por: string | null; canal: string };
@@ -282,6 +290,10 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `cobrança criada · ${String(p.parcelas)}× · ${String(p.forma)}` };
     case 'pix.pago':
       return { fonte, resumo: `parcela ${String(p.parcela)} paga · ${reais(Number(p.valorCentavos ?? 0))}` };
+    case 'boleto.pago':
+      return { fonte, resumo: `parcela ${String(p.parcela)} paga no boleto · ${reais(Number(p.valorCentavos ?? 0))}` };
+    case 'cartao.pago':
+      return { fonte, resumo: `parcela ${String(p.parcela)} paga no cartão · ${reais(Number(p.valorCentavos ?? 0))}` };
     case 'contrato.gerado':
       return { fonte, resumo: 'contrato gerado para assinatura' };
     case 'contrato.assinado_cliente':
@@ -300,6 +312,8 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `parcela ${String(p.parcela)} paga` };
     case 'parcela.atrasada':
       return { fonte, resumo: `parcela ${String(p.parcela)} atrasada há ${String(p.dias)} dia(s)` };
+    case 'parcela.estornada':
+      return { fonte, resumo: `parcela ${String(p.parcela)} estornada · volta a não paga` };
     case 'marco.contrato':
       return { fonte, resumo: `marco: ${String(p.marco)}` };
     case 'decisao.aberta':

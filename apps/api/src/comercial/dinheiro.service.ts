@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional, UnauthorizedException } from '@nestjs/common';
-import { ehSaida, TABELA_DE_PRECO, type ComercialEtapa, type ComercialProduto } from '@mktos/shared';
+import { ehSaida, fatoDaPrimeiraPaga, TABELA_DE_PRECO, type ComercialEtapa, type ComercialProduto } from '@mktos/shared';
 import { ActorType, ApprovalState } from '@prisma/client';
 
 import { alcadaDe, atendeAlcada, temPapelDeMaquina } from '../approvals/alcada';
@@ -15,7 +15,7 @@ import { uuidDe, type PayloadDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
 import { PORTA_DE_ASSINATURA, type PortaDeAssinatura } from './portas/assinatura.port';
-import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PortaDeCobranca } from './portas/cobranca.port';
+import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PagamentoNoWebhook, type PortaDeCobranca } from './portas/cobranca.port';
 import { segredoDoAmbiente } from './sala-token';
 import { WhatsappComercialService } from './whatsapp.service';
 
@@ -50,6 +50,18 @@ export const CAP_CONTRATO = 'comercial.contrato.enviar';
 export const ATOR_DO_DINHEIRO = 'comercial';
 
 type P = Record<string, unknown>;
+
+/** A linha da cobrança que o webhook do provedor move (só o que o pagamento e o estorno leem). */
+interface CobrancaDoWebhook {
+  id: string;
+  leadId: string;
+  provedor: string;
+  externoId: string;
+  parcela: number;
+  valorCentavos: number;
+  forma: string;
+  estado: string;
+}
 
 export interface DadosDoAceite {
   cnpj: string;
@@ -585,29 +597,55 @@ export class DinheiroService implements OnModuleInit {
     if (!this.cobranca.webhookAutentico(token)) throw new UnauthorizedException('webhook recusado');
     const p = this.cobranca.interpretarWebhook(corpo);
     if (!p) return { ok: true, gravados: 0, ignorado: 'corpo sem cobrança' };
-    if (p.tipo !== 'paga') return { ok: true, gravados: 0, ignorado: 'evento que não é pagamento' };
+    if (p.tipo === 'outro') return { ok: true, gravados: 0, ignorado: 'evento que não é pagamento nem estorno' };
     const r = await resolverTenantDaCobranca(this.prisma as never, this.cobranca.provedor, p.externoId);
     if (!r) return { ok: true, gravados: 0, ignorado: 'cobrança desconhecida' };
     return comTenantPublico(r.orgId, async () => {
-      const c = await this.prisma.comercialCobranca.findUniqueOrThrow({ where: { id: r.cobrancaId } });
-      const pagoEm = p.pagoEm ? venceComoData(p.pagoEm) : new Date();
-      await this.prisma.comercialCobranca.updateMany({ where: { id: c.id, pagaEm: null }, data: { estado: 'paga', pagaEm: pagoEm } });
-      let gravados = 0;
-      const valor = p.valorCentavos || c.valorCentavos;
-      const a = await this.fio.registrar(r.orgId, c.leadId, 'parcela.paga', c.externoId, { parcela: c.parcela, pagoEm: pagoEm.toISOString(), valorCentavos: valor }, { em: pagoEm });
-      if (a.novo) gravados++;
-      if (c.parcela === 1) {
-        const b = await this.fio.registrar(r.orgId, c.leadId, 'pix.pago', c.externoId, { provedor: c.provedor, externoId: c.externoId, parcela: 1, valorCentavos: valor, pagoEm: pagoEm.toISOString() }, { em: pagoEm });
-        if (b.novo) gravados++;
-      }
+      const c = await this.prisma.comercialCobranca.findFirstOrThrow({ where: { id: r.cobrancaId, orgId: r.orgId } });
+      const gravados = p.tipo === 'estornada' ? await this.estornoDaParcela(r.orgId, c, p) : await this.pagamentoDaParcela(r.orgId, c, p);
       // O contrato do Financeiro (se o fechamento já o criou) passa a apontar a próxima parcela em aberto.
-      const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId: c.leadId }, select: { contractId: true } });
+      const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId: c.leadId, orgId: r.orgId }, select: { contractId: true } });
       if (ficha?.contractId) {
-        const proxima = await this.prisma.comercialCobranca.findFirst({ where: { leadId: c.leadId, pagaEm: null }, orderBy: { vence: 'asc' }, select: { vence: true } });
+        const proxima = await this.prisma.comercialCobranca.findFirst({ where: { leadId: c.leadId, orgId: r.orgId, pagaEm: null }, orderBy: { vence: 'asc' }, select: { vence: true } });
         if (proxima) await this.prisma.contract.updateMany({ where: { id: ficha.contractId, orgId: r.orgId }, data: { proximoVencimento: proxima.vence } });
       }
       return { ok: true as const, gravados };
     });
+  }
+
+  /**
+   * A parcela paga. D-10: o fato da 1ª parcela tem o nome da forma (`pix.pago`
+   * só para Pix). Paga de novo depois de um estorno, os fatos ganham outra
+   * chave (o id do evento do provedor): a chave de antes já está no fio, e sem
+   * um fato novo o estorno ficaria por último para sempre.
+   */
+  private async pagamentoDaParcela(orgId: string, c: CobrancaDoWebhook, p: PagamentoNoWebhook): Promise<number> {
+    const pagoEm = p.pagoEm ? venceComoData(p.pagoEm) : new Date();
+    const depoisDoEstorno = c.estado === 'estornada';
+    await this.prisma.comercialCobranca.updateMany({ where: { id: c.id, pagaEm: null }, data: { estado: 'paga', pagaEm: pagoEm } });
+    const chave = depoisDoEstorno ? `${c.externoId}:${p.eventoId ?? pagoEm.toISOString()}` : c.externoId;
+    let gravados = 0;
+    const valor = p.valorCentavos || c.valorCentavos;
+    const a = await this.fio.registrar(orgId, c.leadId, 'parcela.paga', chave, { parcela: c.parcela, pagoEm: pagoEm.toISOString(), valorCentavos: valor }, { em: pagoEm });
+    if (a.novo) gravados++;
+    if (c.parcela === 1) {
+      const b = await this.fio.registrar(orgId, c.leadId, fatoDaPrimeiraPaga(c.forma), chave, { provedor: c.provedor, externoId: c.externoId, parcela: 1, valorCentavos: valor, pagoEm: pagoEm.toISOString() }, { em: pagoEm });
+      if (b.novo) gravados++;
+    }
+    return gravados;
+  }
+
+  /**
+   * D-10: estorno ou chargeback. A parcela volta a não paga (`estornada`, sem
+   * `pagaEm`) e o fato vai ao fio. O fechamento lê a 1ª parcela da linha da
+   * cobrança e do fio: com ela estornada, não segue.
+   */
+  private async estornoDaParcela(orgId: string, c: CobrancaDoWebhook, p: PagamentoNoWebhook): Promise<number> {
+    const em = new Date();
+    await this.prisma.comercialCobranca.updateMany({ where: { id: c.id }, data: { estado: 'estornada', pagaEm: null } });
+    const chave = `${c.externoId}:${p.eventoId ?? p.evento}`;
+    const e = await this.fio.registrar(orgId, c.leadId, 'parcela.estornada', chave, { parcela: c.parcela, externoId: c.externoId, evento: p.evento, em: em.toISOString(), valorCentavos: p.valorCentavos || c.valorCentavos }, { em });
+    return e.novo ? 1 : 0;
   }
 
   async webhookDaZapsign(token: string | undefined, corpo: unknown): Promise<{ ok: true; gravados: number; ignorado?: string }> {

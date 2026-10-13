@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
-import { TABELA_DE_PRECO, formatarReais, type EscritaDoFechamento, type FechamentoDoLead } from '@mktos/shared';
+import { COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, TABELA_DE_PRECO, formatarReais, type EscritaDoFechamento, type FechamentoDoLead } from '@mktos/shared';
 import { ActorType, FinanceTxType, Prisma } from '@prisma/client';
 
 import { EfeitosRegistry, type ContextoDoEfeito } from '../gateway/efeitos.registry';
@@ -93,7 +93,8 @@ function ehRetida(r: unknown): r is { status: 'aguardando_aprovacao'; approvalId
 /** Os três fatos que liberam o fechamento estão no fio? */
 export function prontoParaFechar(tipos: ReadonlySet<string>): { pronto: boolean; falta: string[] } {
   const falta: string[] = [];
-  if (!tipos.has('pix.pago')) falta.push('1ª parcela paga');
+  // D-10: a 1ª parcela paga tem o nome da forma (Pix, boleto ou cartão); qualquer uma das três vale.
+  if (!COMERCIAL_FATOS_DA_PRIMEIRA_PAGA.some((t) => tipos.has(t))) falta.push('1ª parcela paga');
   if (!tipos.has('contrato.assinado_cliente')) falta.push('contrato assinado pelo cliente');
   if (!tipos.has('contrato.assinado_root')) falta.push('contrato assinado pela Root');
   return { pronto: falta.length === 0, falta };
@@ -159,7 +160,7 @@ export class FechamentoService implements OnModuleInit {
 
   onModuleInit(): void {
     this.efeitos.registrar({ [CAP_FECHAMENTO]: (args, orgId, ctx) => this.efeitoDoFechamento(args, orgId, ctx) }, 'comercial/fechamento.service');
-    for (const tipo of ['pix.pago', 'contrato.assinado_cliente', 'contrato.assinado_root'] as const) {
+    for (const tipo of [...COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, 'contrato.assinado_cliente', 'contrato.assinado_root'] as const) {
       this.reacoes.inscrever(tipo, 'fechamento.talvez', (ev) => this.talvezFechar(ev.orgId, ev.leadId));
     }
     this.reacoes.inscrever('kickoff.marcado', 'fechamento.m8', (ev) => this.boasVindas(ev.orgId, ev.leadId, String((ev.payload as P).horario ?? '')));
@@ -214,7 +215,7 @@ export class FechamentoService implements OnModuleInit {
 
   private async tiposNoFio(leadId: string): Promise<Set<string>> {
     const evs = await this.prisma.leadEvent.findMany({
-      where: { leadId, type: { in: ['pix.pago', 'contrato.assinado_cliente', 'contrato.assinado_root', 'cliente.ativo'] } },
+      where: { leadId, type: { in: [...COMERCIAL_FATOS_DA_PRIMEIRA_PAGA, 'contrato.assinado_cliente', 'contrato.assinado_root', 'cliente.ativo'] } },
       select: { type: true },
     });
     return new Set(evs.map((e) => e.type));
@@ -403,10 +404,12 @@ export class FechamentoService implements OnModuleInit {
     };
 
     // 1. cliente: Partner, reaproveitado pelo CNPJ.
+    // D-12: só se reaproveita um Partner que já é CLIENTE. O CNPJ vem da sala, que o cliente preenche sem
+    // conferência: o fornecedor com o mesmo CNPJ não vira o cliente deste contrato nem é tocado; nasce outro.
     await rodar('cliente', async () => {
       if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
       const doc = a.dados.cnpj.replace(/\D/g, '');
-      const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc }, select: { id: true } });
+      const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
       if (ja) {
         if (!ficha?.partnerId) await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { partnerId: ja.id } });
         return { estado: 'reaproveitado', detalhe: 'cliente já existia com este CNPJ', ref: ja.id };

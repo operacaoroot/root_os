@@ -47,7 +47,7 @@ export interface ParcelaNoProvedor {
   valorCentavos: number;
   /** AAAA-MM-DD */
   vence: string;
-  estado: 'pendente' | 'paga' | 'atrasada' | 'outro';
+  estado: 'pendente' | 'paga' | 'atrasada' | 'estornada' | 'outro';
   pagaEm: string | null;
   linkPagamento: string | null;
 }
@@ -55,7 +55,10 @@ export interface ParcelaNoProvedor {
 export interface PagamentoNoWebhook {
   /** O id do evento no provedor (a reentrega traz o mesmo). */
   eventoId: string | null;
-  tipo: 'paga' | 'outro';
+  /** D-10: estorno e chargeback têm tipo próprio; a parcela volta a não paga. */
+  tipo: 'paga' | 'estornada' | 'outro';
+  /** O nome cru do evento no provedor (vai ao fato do estorno). */
+  evento: string;
   externoId: string;
   valorCentavos: number;
   /** AAAA-MM-DD ou ISO. */
@@ -94,12 +97,31 @@ export function centavosDe(reais: unknown): number {
   return Number.isFinite(n) ? Math.round(n * 100) : 0;
 }
 
+/** D-10: status do Asaas em que o dinheiro voltou (ou está em disputa) e a parcela deixa de contar como paga. */
+const STATUS_DE_ESTORNO = new Set(['REFUNDED', 'REFUND_REQUESTED', 'CHARGEBACK_REQUESTED', 'CHARGEBACK_DISPUTE', 'AWAITING_CHARGEBACK_REVERSAL']);
+
+/**
+ * D-10: eventos do webhook do Asaas que tiram a parcela de paga. Estorno
+ * (total ou parcial), chargeback aberto ou em disputa e o recebimento em
+ * dinheiro desfeito. Estorno parcial também tira: a parcela deixou de estar
+ * inteira paga, e quem decide o que fazer com a diferença é gente.
+ */
+export const EVENTOS_DE_ESTORNO_DO_ASAAS: ReadonlySet<string> = new Set([
+  'PAYMENT_REFUNDED',
+  'PAYMENT_PARTIALLY_REFUNDED',
+  'PAYMENT_CHARGEBACK_REQUESTED',
+  'PAYMENT_CHARGEBACK_DISPUTE',
+  'PAYMENT_AWAITING_CHARGEBACK_REVERSAL',
+  'PAYMENT_RECEIVED_IN_CASH_UNDONE',
+]);
+
 /** Estado da parcela a partir do status do Asaas. */
 export function estadoDoAsaas(status: unknown): ParcelaNoProvedor['estado'] {
   const s = String(status ?? '').toUpperCase();
   if (s === 'RECEIVED' || s === 'CONFIRMED' || s === 'RECEIVED_IN_CASH') return 'paga';
   if (s === 'PENDING' || s === 'AWAITING_RISK_ANALYSIS') return 'pendente';
   if (s === 'OVERDUE') return 'atrasada';
+  if (STATUS_DE_ESTORNO.has(s)) return 'estornada';
   return 'outro';
 }
 
@@ -125,8 +147,9 @@ export function parcelaDoAsaas(p: P): ParcelaNoProvedor {
 }
 
 /**
- * Lê o corpo do webhook do Asaas (`{ id, event, payment }`). Só
- * `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` viram pagamento; o resto é `outro`.
+ * Lê o corpo do webhook do Asaas (`{ id, event, payment }`).
+ * `PAYMENT_RECEIVED`/`PAYMENT_CONFIRMED` viram pagamento; estorno e
+ * chargeback (`EVENTOS_DE_ESTORNO_DO_ASAAS`) viram `estornada`; o resto é `outro`.
  * Corpo sem cobrança = `null` (nada a fazer).
  */
 export function lerWebhookDoAsaas(corpo: unknown): PagamentoNoWebhook | null {
@@ -138,7 +161,8 @@ export function lerWebhookDoAsaas(corpo: unknown): PagamentoNoWebhook | null {
   const paga = evento === 'PAYMENT_RECEIVED' || evento === 'PAYMENT_CONFIRMED';
   return {
     eventoId: typeof c.id === 'string' && c.id ? c.id : null,
-    tipo: paga ? 'paga' : 'outro',
+    tipo: paga ? 'paga' : EVENTOS_DE_ESTORNO_DO_ASAAS.has(evento) ? 'estornada' : 'outro',
+    evento,
     externoId: String(pay.id),
     valorCentavos: centavosDe(pay.value),
     pagoEm: typeof pay.paymentDate === 'string' && pay.paymentDate ? pay.paymentDate : typeof pay.confirmedDate === 'string' ? pay.confirmedDate : null,

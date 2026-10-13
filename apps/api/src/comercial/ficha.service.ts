@@ -163,7 +163,13 @@ export function camposDoEvento(type: string, payload: unknown, em: Date, ficha: 
       return c;
     }
     case 'pix.pago':
+    case 'boleto.pago':
+    case 'cartao.pago':
+      // D-10: o nome do fato é o da forma; o campo é o da 1ª parcela paga.
       return ficha.pixPagoEm ? null : { pixPagoEm: data(p.pagoEm) ?? em };
+    case 'parcela.estornada':
+      // D-10: a 1ª parcela estornada volta a não paga na ficha (a próxima ação volta a pedir o pagamento).
+      return Number(p.parcela) === 1 && ficha.pixPagoEm ? { pixPagoEm: null } : null;
     case 'contrato.assinado_cliente':
       return { contratoAssinadoClienteEm: ficha.contratoAssinadoClienteEm ?? data(p.em) ?? em };
     case 'contrato.assinado_root':

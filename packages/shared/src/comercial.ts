@@ -245,6 +245,8 @@ export const COMERCIAL_EVENTOS = [
   'aceite.dados',
   'cobranca.criada',
   'pix.pago',
+  'boleto.pago',
+  'cartao.pago',
   'contrato.gerado',
   'contrato.assinado_cliente',
   'contrato.assinado_root',
@@ -255,6 +257,7 @@ export const COMERCIAL_EVENTOS = [
   'parcela.vence',
   'parcela.paga',
   'parcela.atrasada',
+  'parcela.estornada',
   'marco.contrato',
   // decisões, etapa e saídas
   'decisao.aberta',
@@ -270,6 +273,21 @@ export const ComercialEventoSchema = z.enum(COMERCIAL_EVENTOS);
 
 export function ehEventoComercial(type: string): type is ComercialEvento {
   return (COMERCIAL_EVENTOS as readonly string[]).includes(type);
+}
+
+/**
+ * D-10 (revisão): o fato da 1ª parcela paga tem o nome da forma. `pix.pago`
+ * só para Pix; boleto e cartão têm o seu. Quem pergunta "a 1ª parcela foi
+ * paga?" lê os três por esta lista, nunca só `pix.pago`.
+ */
+export const COMERCIAL_FATOS_DA_PRIMEIRA_PAGA = ['pix.pago', 'boleto.pago', 'cartao.pago'] as const;
+export type ComercialFatoDaPrimeiraPaga = (typeof COMERCIAL_FATOS_DA_PRIMEIRA_PAGA)[number];
+
+/** O nome do fato da 1ª parcela paga pela forma da cobrança (a mesma leitura de `billingTypeDoAsaas`: o que não é Pix nem boleto é cartão). */
+export function fatoDaPrimeiraPaga(forma: string | null | undefined): ComercialFatoDaPrimeiraPaga {
+  if (forma === 'pix') return 'pix.pago';
+  if (forma === 'boleto') return 'boleto.pago';
+  return 'cartao.pago';
 }
 
 /** De onde veio o fato — a fonte marcada em cada linha do fio (tela 05). */
