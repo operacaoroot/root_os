@@ -110,6 +110,7 @@ function AssinaturaDaRoot({ leadId }: { leadId: string }) {
   const [r, setR] = useState<{ linkAssinatura: string | null; assinadoRootEm: string | null } | null>(null);
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<unknown>(null);
+  const [enviando, setEnviando] = useState(false);
   return (
     <section className={CARTAO} aria-label="assinatura da Root">
       <Rotulo>assinatura da Root</Rotulo>
@@ -121,8 +122,10 @@ function AssinaturaDaRoot({ leadId }: { leadId: string }) {
       <button
         type="button"
         className={`mt-2 ${BOTAO}`}
-        disabled={!senha}
+        disabled={!senha || enviando}
         onClick={async () => {
+          if (enviando) return;
+          setEnviando(true);
           setErro(null);
           try {
             setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token));
@@ -130,10 +133,11 @@ function AssinaturaDaRoot({ leadId }: { leadId: string }) {
             setErro(e);
           } finally {
             setSenha('');
+            setEnviando(false);
           }
         }}
       >
-        ver a assinatura da Root
+        {enviando ? 'conferindo…' : 'ver a assinatura da Root'}
       </button>
       {r && (
         <p className="mt-2 text-[12.5px]">

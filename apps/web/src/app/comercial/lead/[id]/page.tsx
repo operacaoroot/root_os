@@ -154,7 +154,10 @@ function AssinarPelaRoot({ leadId }: { leadId: string }) {
   const [r, setR] = useState<{ linkAssinatura: string | null; assinadoRootEm: string | null; estado: string } | null>(null);
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<unknown>(null);
+  const [enviando, setEnviando] = useState(false);
   async function pedir() {
+    if (enviando) return;
+    setEnviando(true);
     setErro(null);
     try {
       setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token));
@@ -162,6 +165,7 @@ function AssinarPelaRoot({ leadId }: { leadId: string }) {
       setErro(e);
     } finally {
       setSenha('');
+      setEnviando(false);
     }
   }
   return (
@@ -172,7 +176,7 @@ function AssinarPelaRoot({ leadId }: { leadId: string }) {
         sua senha
         <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} className={`mt-1 ${INPUT}`} />
       </label>
-      <button type="button" className={`mt-2 ${BOTAO}`} disabled={!senha} onClick={() => void pedir()}>assinar pela Root</button>
+      <button type="button" className={`mt-2 ${BOTAO}`} disabled={!senha || enviando} onClick={() => void pedir()}>{enviando ? 'conferindo…' : 'assinar pela Root'}</button>
       {r && (
         <p className="mt-2 text-[12.5px]">
           {r.assinadoRootEm ? `Assinado pela Root em ${diaSP(r.assinadoRootEm)} ${horaSP(r.assinadoRootEm)}.` : r.linkAssinatura ? (
@@ -195,12 +199,14 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
   const [parceiro, setParceiro] = useState('');
   const [erro, setErro] = useState<unknown>(null);
   const [ok, setOk] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
   const problema = problemaDaSaida({ saida, volta, parceiro });
 
   async function registrar() {
     setErro(null);
-    if (problema) return;
+    if (problema || enviando) return;
+    setEnviando(true);
     const corpo: Record<string, string> = { saida, motivo };
     if (detalhe.trim()) corpo.detalhe = detalhe.trim();
     if (saida === 'geladeira' && volta) {
@@ -214,6 +220,8 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
       await aoMudar();
     } catch (e) {
       setErro(e);
+    } finally {
+      setEnviando(false);
     }
   }
 
@@ -252,7 +260,7 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
           </label>
           {problema && <p className="text-[12px] text-warn">{problema}</p>}
           <div className="flex gap-2">
-            <button type="button" className={BOTAO} disabled={!!problema} onClick={() => void registrar()}>registrar</button>
+            <button type="button" className={BOTAO} disabled={!!problema || enviando} onClick={() => void registrar()}>{enviando ? 'registrando…' : 'registrar'}</button>
             <button type="button" className={BOTAO} onClick={() => setAberto(false)}>cancelar</button>
           </div>
           {ok && <Aviso tom="bom">Saída registrada no fio.</Aviso>}

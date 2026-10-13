@@ -8,7 +8,7 @@ import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
-import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+import { BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 
 /*
  * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por

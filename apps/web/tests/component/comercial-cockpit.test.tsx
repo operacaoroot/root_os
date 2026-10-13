@@ -16,6 +16,7 @@ const posts: { caminho: string; corpo: unknown }[] = [];
 let PERMISSOES: string[] | null = null;
 let PARAMS: Record<string, string> = {};
 let USUARIO: { id: string } | null = null;
+let POST_ADIADO: Promise<unknown> | null = null;
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: USUARIO, can: (p: string) => PERMISSOES === null || PERMISSOES.includes(p) }) }));
 vi.mock('next/navigation', () => ({ useParams: () => PARAMS, usePathname: () => '/comercial', useRouter: () => ({ push: vi.fn() }) }));
@@ -35,7 +36,7 @@ vi.mock('@/lib/api', async (original) => {
     }),
     apiPost: vi.fn(async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
-      return {};
+      return POST_ADIADO ?? {};
     }),
   };
 });
@@ -53,6 +54,7 @@ beforeEach(() => {
   PERMISSOES = null;
   PARAMS = {};
   USUARIO = null;
+  POST_ADIADO = null;
 });
 
 describe('torre (tela 12)', () => {
@@ -305,5 +307,27 @@ describe('contrato vivo (tela 11)', () => {
     RESPOSTAS['/comercial/contratos/l1'] = vivo(2);
     render(<ContratoVivoPage />);
     expect(await screen.findByText('Aditivos: 2.')).toBeInTheDocument();
+  });
+});
+
+describe('botões desligados durante o envio (C-18)', () => {
+  it('a assinatura da Root no contrato vivo não manda duas vezes com dois cliques', async () => {
+    PARAMS = { leadId: 'l1' };
+    RESPOSTAS['/comercial/contratos/l1'] = {
+      leadId: 'l1', cliente: 'Construtora Alicerce', produto: null, valorCentavos: 100, descontoPct: null, parcelas: [], reguaDeCobranca: [],
+      entregas: [], primeiroValorEm: null, saude: null, faseDaImplantacao: null, marcos: [], aditivos: null,
+    };
+    let soltar!: (v: unknown) => void;
+    POST_ADIADO = new Promise((r) => { soltar = r; });
+    render(<ContratoVivoPage />);
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText(/sua senha/), 'segredo');
+    await u.click(screen.getByRole('button', { name: 'ver a assinatura da Root' }));
+    const botao = screen.getByRole('button', { name: 'conferindo…' });
+    expect(botao).toBeDisabled();
+    await u.click(botao);
+    expect(posts).toHaveLength(1);
+    soltar({ linkAssinatura: null, assinadoRootEm: null });
+    expect(await screen.findByText(/ainda não chegou do provedor/)).toBeInTheDocument();
   });
 });
