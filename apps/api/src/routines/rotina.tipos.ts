@@ -157,6 +157,9 @@ export const MODULO_DO_TIPO: Readonly<Record<string, ModuloKey>> = {
   [TIPO_PAUTA_PUBLICAR]: 'pauta',
   [TIPO_PAUTA_COMENTARIOS]: 'pauta',
   [TIPO_PAUTA_RELATORIO]: 'pauta',
+  // O relógio do cockpit do lead (comercial, 13/10/2026): semeado por empresa no
+  // primeiro lead; o tipo vive em `comercial/relogio-da-espinha.ts`.
+  'comercial.relogio': 'leads',
 };
 
 /** Como a execução foi disparada. */

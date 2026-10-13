@@ -9,10 +9,17 @@ import { TenantsModule } from '../tenants/tenants.module';
 import { ComercialController } from './comercial.controller';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
+import { ConfigComercialService } from './config.service';
+import { DecisoesRegistry, DecisoesService } from './decisoes.service';
+import { FichaService } from './ficha.service';
+import { ReacoesDaEspinha } from './reacoes-da-espinha';
+import { RelogioDaEspinha } from './relogio-da-espinha';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
 import { InteligenciaController } from './inteligencia.controller';
 import { SalaController } from './sala.controller';
 import { SimuladorController } from './simulador.controller';
+import { SalaService } from './sala.service';
+import { WhatsappComercialService } from './whatsapp.service';
 
 /*
  * O COCKPIT DO LEAD — módulo comercial (13/10/2026).
@@ -40,10 +47,18 @@ import { SimuladorController } from './simulador.controller';
     FioService,
     RelogioComercialRegistry,
     // --- lane A (espinha: ficha, reações, decisões, relógio) ---
+    ConfigComercialService,
+    DecisoesRegistry,
+    DecisoesService,
+    FichaService,
+    RelogioDaEspinha,
+    ReacoesDaEspinha,
     // --- lane B (sala, WhatsApp por porta, simulador) ---
+    SalaService,
+    WhatsappComercialService,
     // --- lane D (cobrança, assinatura, fechamento, contrato vivo) ---
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
   ],
-  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry],
+  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService],
 })
 export class ComercialModule {}

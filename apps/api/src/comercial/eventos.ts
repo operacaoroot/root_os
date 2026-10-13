@@ -132,9 +132,12 @@ export interface PayloadsComerciais {
   'sala.aberta': { salaId: string; slug: string; validoAte: string };
   'sala.visitada': { salaId: string; estagio: string };
   'arquivo.enviado': { nome: string; bytes: number; tipo: string };
-  'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null };
-  'diagnostico.pronto': { dores: { n: number; texto: string; minuto: string | null; trecho?: string | null }[]; objecoes: string[]; produtoSugerido: string | null; modelo: string; custoUsd: number; custoDesconhecido: boolean };
-  'proposta.publicada': { versao: number; produto: string; valorCentavos: number; parcelas: number; parcelaCentavos: number; formas: string[]; validaAte: string | null; dentroDaTabela: boolean; laudo: { ok: boolean; apontamentos: string[] }; descontoPct?: number | null; hash: string };
+  /** `por`: o nome de quem conduziu a sessão e subiu a ata (vira o sócio da conta). Acréscimo da lane A. */
+  'ata.chegou': { hash: string; caracteres: number; fonte: string; referencia?: string | null; por?: string | null };
+  /** `aprovadoEm`/`aprovadoPor`: o diagnóstico aprovado por sócio (portão de E5) é o MESMO evento gravado de novo com outra chave. Acréscimo da lane A. */
+  'diagnostico.pronto': { dores: { n: number; texto: string; minuto: string | null; trecho?: string | null }[]; objecoes: string[]; produtoSugerido: string | null; modelo: string; custoUsd: number; custoDesconhecido: boolean; aprovadoEm?: string | null; aprovadoPor?: string | null };
+  /** `quadroDeCustos`: o quadro de custos de terceiros (portão de E6). Sem ele o portão recusa. Acréscimo da lane A. */
+  'proposta.publicada': { versao: number; produto: string; valorCentavos: number; parcelas: number; parcelaCentavos: number; formas: string[]; validaAte: string | null; dentroDaTabela: boolean; laudo: { ok: boolean; apontamentos: string[] }; descontoPct?: number | null; hash: string; quadroDeCustos?: { mesNormalCentavos: number | null; piorMesCentavos: number | null } | null };
   'proposta.lida': { versao: number; bloco: string; visita: number };
   'proposta.duvida': { versao: number; pergunta: string; resposta?: string | null };
   'proposta.ajuste_pedido': { versao: number; pedido: string; descontoPct?: number | null; decisaoId?: string | null };

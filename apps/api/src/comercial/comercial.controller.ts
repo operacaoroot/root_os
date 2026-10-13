@@ -1,97 +1,115 @@
-import { Body, Controller, Get, NotImplementedException, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { COMERCIAL_ESTADOS_DE_DECISAO, ComercialDecisaoRespostaSchema, type ComercialEstadoDeDecisao } from '@mktos/shared';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { ConfigComercialService } from './config.service';
+import { DecisoesService } from './decisoes.service';
+import { FichaService } from './ficha.service';
+import { RelogioDaEspinha } from './relogio-da-espinha';
 
 /*
- * A ESPINHA DO COCKPIT — rotas internas do módulo comercial (Lane 0 → Lane A).
+ * A ESPINHA DO COCKPIT — rotas internas do módulo comercial (lane A).
  *
- * Declaradas aqui com o contrato fechado; o corpo que ainda responde 501 diz
- * qual lane o preenche. Permissões: `leads.ver` lê, `leads.editar` escreve.
- * A etapa NUNCA se escreve por aqui (não há PATCH de etapa): quem move é a
- * reação a um evento, e o portão recusa com a lista do que falta.
+ * Permissões: `leads.ver` lê, `leads.editar` escreve; responder decisão pede
+ * também `aprovacoes.decidir` (é a fila de quem decide, como `/atendimento`).
+ * A etapa NUNCA se escreve por aqui: não há PATCH de etapa. Quem move é a
+ * reação a um evento, e o portão recusa com a lista do que falta (tela 04:
+ * arrastar o cartão é bloqueado). A saída é um FATO com motivo (`saida.registrada`),
+ * conferido por `podeSair` antes de entrar no fio.
  */
-const PENDENTE = (lane: string, oQue: string) =>
-  new NotImplementedException(`${oQue}: ainda não implementado nesta versão (lane ${lane} da passagem).`);
-
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('comercial')
 export class ComercialController {
+  constructor(
+    private readonly fichas: FichaService,
+    private readonly decisoesSvc: DecisoesService,
+    private readonly configSvc: ConfigComercialService,
+    private readonly relogio: RelogioDaEspinha,
+  ) {}
+
   /** Tela 03: a fila de decisões, o que rodou sozinho hoje e os contadores. */
   @Get('fila')
   @RequirePermissions('leads.ver')
-  fila(@CurrentUser() _user: JwtUser) {
-    throw PENDENTE('A', 'a fila de decisões');
+  fila(@CurrentUser() user: JwtUser) {
+    return this.decisoesSvc.fila(user.orgId);
   }
 
-  /** Tela 04: o funil vivo, com as saídas visíveis. */
+  /** Tela 04: o funil vivo, com as saídas visíveis. Filtro: todos, parados, decisao, P1/P2/P3 ou produto. */
   @Get('funil')
   @RequirePermissions('leads.ver')
-  funil(@CurrentUser() _user: JwtUser, @Query('filtro') _filtro?: string) {
-    throw PENDENTE('A', 'o funil vivo');
+  funil(@CurrentUser() user: JwtUser, @Query('filtro') filtro?: string) {
+    return this.fichas.funil(user.orgId, filtro ?? null);
   }
 
   /** Tela 05: a ficha do lead — projeção do fio, com o portão da próxima etapa. */
   @Get('lead/:id')
   @RequirePermissions('leads.ver')
-  ficha(@CurrentUser() _user: JwtUser, @Param('id') _id: string) {
-    throw PENDENTE('A', 'a ficha do lead');
+  ficha(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.fichas.projecao(user.orgId, id);
   }
 
-  /** O fio cru (os eventos) — para a tela 05 e para a suíte. */
+  /** O fio cru (as linhas) — para a tela 05 e para a suíte. */
   @Get('lead/:id/fio')
   @RequirePermissions('leads.ver')
-  fio(@CurrentUser() _user: JwtUser, @Param('id') _id: string) {
-    throw PENDENTE('A', 'o fio do lead');
+  async fio(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    const f = await this.fichas.projecao(user.orgId, id);
+    return { leadId: id, fio: f.fio };
   }
 
   /** E1: o lead entra pelo WhatsApp (simulador ou provedor). Idempotente pelo telefone e pela mensagem. */
   @Post('entrada/whats')
   @RequirePermissions('leads.editar')
-  entradaWhats(@CurrentUser() _user: JwtUser, @Body() _body: unknown) {
-    throw PENDENTE('A', 'a entrada pelo WhatsApp');
+  async entradaWhats(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    await this.relogio.garantirRotina(user.orgId);
+    return this.fichas.entrarPeloWhats(user.orgId, body);
   }
 
-  /** E4: a ata da sessão chega (texto do Granola ou colado). Grava só o hash; dispara o leitor (lane E). */
+  /** E4: a ata da sessão chega. Só o hash vai para o fio; quem sobe a ata é o sócio da conta. */
   @Post('lead/:id/ata')
   @RequirePermissions('leads.editar')
-  ata(@CurrentUser() _user: JwtUser, @Param('id') _id: string, @Body() _body: unknown) {
-    throw PENDENTE('A', 'a chegada da ata');
+  ata(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.fichas.registrarAta(user.orgId, id, body, { id: user.sub, nome: user.name });
   }
 
   /** Saída com motivo e dono (desqualificado, geladeira, perdido, parceiro). */
   @Post('lead/:id/saida')
   @RequirePermissions('leads.editar')
-  saida(@CurrentUser() _user: JwtUser, @Param('id') _id: string, @Body() _body: unknown) {
-    throw PENDENTE('A', 'a saída do lead');
+  saida(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.fichas.registrarSaida(user.orgId, id, body, { id: user.sub, nome: user.name });
   }
 
   /** A fila de decisões (abertas, tomadas, expiradas). */
   @Get('decisoes')
   @RequirePermissions('leads.ver')
-  decisoes(@CurrentUser() _user: JwtUser, @Query('estado') _estado?: string) {
-    throw PENDENTE('A', 'as decisões');
+  decisoes(@CurrentUser() user: JwtUser, @Query('estado') estado?: string) {
+    if (estado && !(COMERCIAL_ESTADOS_DE_DECISAO as readonly string[]).includes(estado)) {
+      throw new BadRequestException(`Estado desconhecido: ${estado}. Use ${COMERCIAL_ESTADOS_DE_DECISAO.join(', ')}.`);
+    }
+    return this.decisoesSvc.listar(user.orgId, estado as ComercialEstadoDeDecisao | undefined);
   }
 
   /** Um toque: responde a decisão pela tela. */
   @Post('decisoes/:id/responder')
-  @RequirePermissions('leads.editar')
-  responder(@CurrentUser() _user: JwtUser, @Param('id') _id: string, @Body() _body: unknown) {
-    throw PENDENTE('A', 'a resposta da decisão');
+  @RequirePermissions('leads.editar', 'aprovacoes.decidir')
+  responder(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const r = ComercialDecisaoRespostaSchema.safeParse(body);
+    if (!r.success) throw new BadRequestException({ message: 'Resposta inválida.', erros: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) });
+    return this.decisoesSvc.responder(user.orgId, id, r.data.escolha, { id: user.sub, nome: user.name }, 'tela', r.data.motivo ?? null);
   }
 
-  /** Os interruptores e a régua por empresa (K08). */
+  /** Os interruptores e a régua por empresa (K08). Sem linha gravada, os padrões da regra vigente. */
   @Get('config')
   @RequirePermissions('leads.ver')
-  config(@CurrentUser() _user: JwtUser) {
-    throw PENDENTE('A', 'a configuração');
+  config(@CurrentUser() user: JwtUser) {
+    return this.configSvc.ler(user.orgId);
   }
 
   @Put('config')
   @RequirePermissions('leads.editar')
-  salvarConfig(@CurrentUser() _user: JwtUser, @Body() _body: unknown) {
-    throw PENDENTE('A', 'a configuração');
+  salvarConfig(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.configSvc.gravar(user.orgId, body);
   }
 }
