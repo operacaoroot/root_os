@@ -93,6 +93,17 @@ function diaSP(agora: Date): string {
 
 type P = Record<string, unknown>;
 
+/**
+ * B-11 (revisão): quem busca o link para montar a pré-visualização (WhatsApp,
+ * Facebook, Telegram, Slack, Discord, LinkedIn, X) ou um robô de busca. A
+ * leitura dele não é visita do cliente.
+ */
+export function ehPreVisualizacao(userAgent: string | null | undefined): boolean {
+  const ua = String(userAgent ?? '');
+  if (!ua) return false;
+  return /whatsapp|facebookexternalhit|facebot|telegrambot|slackbot|slack-imgproxy|discordbot|linkedinbot|twitterbot|skypeuripreview|googlebot|bingbot|\bbot\b|crawler|spider|preview/i.test(ua);
+}
+
 @Injectable()
 export class SalaService implements OnModuleInit {
   private readonly log = new Logger('ComercialSala');
@@ -263,8 +274,16 @@ export class SalaService implements OnModuleInit {
     return { salaId: r.salaId, leadId: r.leadId, orgId: r.orgId };
   }
 
-  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSala> {
+  /**
+   * O estado da sala. Conta a visita (`acessos` e `sala.visitada`) só quando
+   * quem leu é gente: B-11, a pré-visualização de link (WhatsApp, redes,
+   * robôs de busca) lê sem virar visita (`ehPreVisualizacao`).
+   */
+  async estado(token: string, agora: Date = new Date(), opcoes: { userAgent?: string | null } = {}): Promise<EstadoDaSala> {
     const r = await this.resolver(token, agora);
+    if (ehPreVisualizacao(opcoes.userAgent)) {
+      return comTenantPublico(r.orgId, () => this.projetar(r.salaId, r.leadId, agora));
+    }
     return comTenantPublico(r.orgId, async () => {
       await this.prisma.salaDoCliente.update({ where: { id: r.salaId }, data: { acessos: { increment: 1 }, ultimoAcessoEm: agora } });
       const estado = await this.projetar(r.salaId, r.leadId, agora);

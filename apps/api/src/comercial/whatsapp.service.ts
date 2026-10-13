@@ -270,11 +270,24 @@ export class WhatsappComercialService implements OnModuleInit {
     return this.preparar(orgId, leadId, { template: opcoes.template ?? null, texto, chave: opcoes.chave, destino: 'grupo', para: jid });
   }
 
-  /** M8 pronto: o texto com nome, equipe e kickoff, no grupo. */
+  /**
+   * M8 pronto: o texto com nome, equipe e kickoff, no grupo.
+   *
+   * B-10 (revisão): a chave leva o horário do kickoff. Remarcado, sai um M8
+   * novo com o horário novo, e o M8 de antes que ainda não saiu (rascunho, na
+   * fila, na janela de veto ou em falha) fica `vetado`: o efeito recusa
+   * mensagem vetada, então a liberação dele na fila não manda o horário velho.
+   */
   async enviarM8(orgId: string, leadId: string, jid: string, variaveis: { equipe: string; kickoff: string }): Promise<MensagemPreparada> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     const texto = textoComNome('M8', nomeDeTratamento(lead?.name), variaveis);
-    return this.enviarNoGrupo(orgId, leadId, jid, texto, { template: 'M8', chave: `M8:${jid}` });
+    const chave = `M8:${jid}:${variaveis.kickoff}`;
+    const novoId = uuidDe([orgId, 'comercial-mensagem', leadId, 'M8', chave]);
+    await this.prisma.comercialMensagem.updateMany({
+      where: { orgId, leadId, template: 'M8', destino: 'grupo', mensagemExternaId: `para:${jid}`, estado: { in: ['rascunho', 'na_fila', 'em_veto', 'falhou'] }, id: { not: novoId } },
+      data: { estado: 'vetada', erro: 'substituído: o kickoff foi remarcado e o M8 novo leva o horário novo' },
+    });
+    return this.enviarNoGrupo(orgId, leadId, jid, texto, { template: 'M8', chave });
   }
 
   /**
