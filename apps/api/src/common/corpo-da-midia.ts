@@ -30,6 +30,14 @@ const { json } = doNest('body-parser') as typeof BodyParser;
 
 export const ROTAS_DE_MIDIA_DO_EPISODIO = ['/pauta/episodios/:id/midia', '/pauta/episodios/:id/transcricao'] as const;
 
+/**
+ * A ata da sessão do comercial (C-9 da revisão, 13/10/2026): a transcrição de
+ * uma conversa de 1h30 passa de 100 kb em JSON e morria em 413. O schema
+ * (`ComercialAtaSchema`, 400 mil caracteres) é o teto de verdade; o corpo grande
+ * só deixa a ata chegar até ele, com a mesma regra de sessão das rotas de mídia.
+ */
+export const ROTAS_DE_CORPO_GRANDE_DO_COMERCIAL = ['/comercial/lead/:id/ata'] as const;
+
 interface ComUse {
   use(caminho: string, ...handlers: Array<(req: Request, res: Response, next: NextFunction) => void>): unknown;
 }
@@ -53,5 +61,5 @@ export function instalarCorpoDaMidia(app: ComUse, prefixo: string, ehSessao: (to
     parser(req, res, next);
   };
   const base = prefixo ? `/${prefixo.replace(/^\/+|\/+$/g, '')}` : '';
-  for (const rota of ROTAS_DE_MIDIA_DO_EPISODIO) app.use(`${base}${rota}`, corpoGrandeDaMidia);
+  for (const rota of [...ROTAS_DE_MIDIA_DO_EPISODIO, ...ROTAS_DE_CORPO_GRANDE_DO_COMERCIAL]) app.use(`${base}${rota}`, corpoGrandeDaMidia);
 }

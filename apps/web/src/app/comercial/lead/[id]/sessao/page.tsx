@@ -199,6 +199,8 @@ function SubirAta({ leadId, temDiagnostico, aoMudar }: { leadId: string; temDiag
   }
 
   const curto = texto.trim().length < 200;
+  // C-9: o teto do schema da ata (400 mil caracteres). Acima dele a tela avisa antes de enviar.
+  const longo = texto.length > 400_000;
 
   return (
     <section className={`${CARTAO} space-y-2`} aria-label="ata">
@@ -219,11 +221,12 @@ function SubirAta({ leadId, temDiagnostico, aoMudar }: { leadId: string; temDiag
         </select>
         <span className="font-os-mono text-[11px] text-dim">{texto.trim().length} caracteres</span>
       </div>
+      {longo && <Aviso tom="ruim">A ata passa de 400 mil caracteres, o teto da API. Divida a transcrição em duas partes ou suba o resumo da sessão.</Aviso>}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           className={BOTAO_PRIMARIO}
-          disabled={curto || !!ocupado}
+          disabled={curto || longo || !!ocupado}
           onClick={async () => {
             const r = await agir(`/comercial/lead/${leadId}/ata`, { texto, fonte });
             if (r) setFeito('Ata recebida. O leitor de ata monta o diagnóstico em seguida.');
