@@ -8,6 +8,7 @@ import {
 } from '@mktos/shared';
 
 import { FONTE_DO_EVENTO } from './eventos';
+import { numeroPorExtenso } from './inteligencia-prompts';
 
 /*
  * O RELATÓRIO DA QUINTA (lane E, fase 2, 13/10/2026) — a parte pura. Tela 13.
@@ -167,10 +168,18 @@ export function promptDoRelatorio(r: RelatorioDaSemana): { system: string; user:
 
 const TETO_DA_NARRATIVA = 1_200;
 
+/** Quantidade escrita por palavra: o número é do sistema, e a narrativa não o reescreve por extenso. */
+const QUANTIDADE = /\b(nenhum|nenhuma|todos|todas|maioria|minoria|metade|dobro|triplo)\b|%|\bpor\s*cento\b/i;
+
+function fraseComQuantidade(f: string): boolean {
+  return QUANTIDADE.test(f) || numeroPorExtenso(f) !== null;
+}
+
 /**
- * Tira da narrativa toda frase com algarismo (o número do sistema prevalece) e
- * o que não é texto da casa (travessão vira vírgula). Devolve o texto e o que
- * saiu, para a tela mostrar o aviso.
+ * Tira da narrativa toda frase com número (o do sistema prevalece): algarismo,
+ * número por extenso, percentual e palavra de quantidade ("metade", "dobro",
+ * "nenhum", "todos"; revisão E-9). Travessão vira vírgula. Devolve o texto e o
+ * que saiu, para a tela mostrar o aviso.
  */
 export function limparNarrativa(bruta: string): { narrativa: string | null; avisos: string[] } {
   const texto = String(bruta ?? '').replace(/\s+/g, ' ').trim();
@@ -179,7 +188,7 @@ export function limparNarrativa(bruta: string): { narrativa: string | null; avis
   const avisos: string[] = [];
   const ficam: string[] = [];
   for (const f of frases) {
-    if (/\d/.test(f)) {
+    if (/\d/.test(f) || fraseComQuantidade(f)) {
       avisos.push(`frase com número tirada da narrativa: "${f.slice(0, 120)}"`);
       continue;
     }

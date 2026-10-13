@@ -152,7 +152,8 @@ export function proximaAcaoDoLead(
       return acao('fechamento', 'o fechamento roda as cinco escritas (R4: a titular assina)');
     }
     case 'fechado':
-      if (f.kickoffEm) return f.kickoffEm.getTime() > agora.getTime() ? acao('kickoff', 'o kickoff', f.kickoffEm) : null;
+      // Depois do kickoff o cliente segue no contrato vivo: tem próximo passo, não é lead parado (revisão E-10).
+      if (f.kickoffEm) return f.kickoffEm.getTime() > agora.getTime() ? acao('kickoff', 'o kickoff', f.kickoffEm) : acao('contrato_vivo', 'cliente ativo: o contrato vivo segue pelas parcelas e marcos');
       return acao('kickoff', 'o cliente marca o kickoff na sala');
     default:
       return null;

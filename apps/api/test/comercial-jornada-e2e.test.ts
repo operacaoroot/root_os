@@ -308,7 +308,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
     diagnosticos.inscrever();
     propostas = new PropostaService(p, fio, reacoes, decisoes, aoDecidir, config, efeitos, porta, relogioComercial, llm);
     propostas.inscrever();
-    new AssistenteService(p, reacoes, sala, llm).inscrever();
+    new AssistenteService(p, reacoes, sala, llm, decisoes, aoDecidir).inscrever();
     dinheiro = new DinheiroService(p, fio, reacoes, efeitos, porta, new AsaasService(new ConectoresConfiguradosRegistry()), new ZapsignService(), whats);
     dinheiro.onModuleInit();
     const trilhos = new TrilhoService(p, undefined as never, log, undefined as never);

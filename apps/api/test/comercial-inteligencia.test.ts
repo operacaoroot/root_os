@@ -140,7 +140,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     // O quadro "escrito por alguém": o de exemplo vira apontamento (revisão E-3), e tem caso próprio abaixo.
     propostas.fonteDoQuadro = () => ({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: false, origem: 'escrito pelo sócio da conta (suíte)' });
     propostas.inscrever();
-    new AssistenteService(p, reacoes, sala, llm).inscrever();
+    new AssistenteService(p, reacoes, sala, llm, decisoes, aoDecidir).inscrever();
 
     await config.gravar(ORG, { validadePropostaDias: 8, valoresDeHomologacao: true });
   });
@@ -266,6 +266,25 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     expect(duvidas.find((d) => d.pergunta === outra)?.resposta).toBe(RESPOSTA_DE_SEGURANCA);
     const reacao = await prisma.comercialReacao.findMany({ where: { leadId, reacao: 'inteligencia.duvida' } });
     expect(reacao.map((r) => (r.resultado as P).levadaAoSocio).sort()).toEqual([false, true]);
+
+    // A que não foi direto vira pendência para uma pessoa (revisão E-2): a sugestão do modelo só sai se alguém escolher.
+    const pendente = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId, tipo: 'aprovacao_de_envio', estado: 'aberta' } });
+    expect(pendente).toMatchObject({ padrao: 'responder_por_fora' });
+    expect((pendente.opcoes as P[]).map((o) => o.chave)).toEqual(['enviar_sugestao', 'responder_por_fora']);
+    expect(pendente.contexto).toMatch(/Vocês garantem o resultado/);
+    expect(pendente.contexto).toMatch(/fora da proposta \(45\)/);
+    await naEmpresa(() => decisoes.responder(ORG, pendente.id, 'enviar_sugestao', { id: socia.id, nome: socia.name }, 'tela'));
+    const depois = (await sala.estadoDoLead(ORG, leadId))?.proposta?.duvidas ?? [];
+    expect(depois.find((d) => d.pergunta === outra)?.resposta).toBe('Garantimos o resultado em 45 dias.');
+  });
+
+  it('dúvida que o modelo responde com texto livre (condição, endereço, por extenso) não vai ao cliente: vira pendência', async () => {
+    const pergunta = 'Tem consultoria junto?';
+    await naEmpresa(() => fio.registrar(ORG, leadId, 'proposta.duvida', chaveDaDuvida(1, pergunta), { versao: 1, pergunta, resposta: null }));
+    const duvidas = (await sala.estadoDoLead(ORG, leadId))?.proposta?.duvidas ?? [];
+    expect(duvidas.find((d) => d.pergunta === pergunta)?.resposta).toBe(RESPOSTA_DE_SEGURANCA);
+    const pendentes = await prisma.comercialDecisao.findMany({ where: { leadId, tipo: 'aprovacao_de_envio', estado: 'aberta' } });
+    expect(pendentes.map((x) => x.contexto).join(' ')).toMatch(/não é literal de um fato da proposta/);
   });
 
   it('o pedido de 8% vira decisão; aprovar gera a v2 com as parcelas fechando, de novo pela porta (R3)', async () => {
