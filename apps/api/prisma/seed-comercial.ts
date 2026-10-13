@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
+import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear';
+
 /*
  * SEED DA HOMOLOGAÇÃO DO COCKPIT COMERCIAL (13/10/2026) — `pnpm --filter @mktos/api db:seed:comercial`.
  *
@@ -89,8 +91,32 @@ async function main() {
   });
 
   // --- lane F: as empresas de demonstração das telas (K04), cada uma na etapa da tela 04 ---
+  // O dono é o da regra `regra-v1` da API: o primeiro usuário ativo com papel admin_master ou diretor.
+  const dono = await prisma.user.findFirst({
+    where: { orgId: org.id, isActive: true, roles: { some: { key: { in: ['admin_master', 'diretor'] } } } },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, name: true },
+  });
+  const agora = new Date();
+  const ids = idsDosLeads(org.id, agora);
+  const antes = await contar(prisma, ids);
+  const relatorio = await semearDemonstracao(prisma, {
+    orgId: org.id,
+    agora,
+    dono: dono ? { id: dono.id, nome: dono.name } : null,
+    decisaoExpiraHoras: Number(process.env.COMERCIAL_SEED_DECISAO_HORAS) || (CONFIG_DE_HOMOLOGACAO.decisaoExpiraHoras as number),
+    validadePropostaDias: CONFIG_DE_HOMOLOGACAO.validadePropostaDias as number,
+  });
 
   console.log(`seed-comercial: empresa ${org.slug}; pessoas: ${PESSOAS.map((p) => p.email).join(', ')}; config de homologação gravada.`);
+  console.log('seed-comercial: empresas de demonstração (empresa · etapa · eventos · o que tem):');
+  for (const l of relatorio.leads) console.log(`  ${l.empresa.padEnd(22)} ${l.etapa.padEnd(17)} ${String(l.eventos).padStart(2)} eventos · ${l.resumo}`);
+  console.log(`seed-comercial: linhas dos leads da demonstração, antes:  ${JSON.stringify(antes)}`);
+  console.log(`seed-comercial: linhas dos leads da demonstração, depois: ${JSON.stringify(relatorio.contagens)}`);
+  console.log('seed-comercial: salas do cliente (o token só existe aqui e, cifrado, no banco; guarde para o README):');
+  for (const s of relatorio.salas) {
+    console.log(`  ${s.empresa.padEnd(22)} ${s.link ?? '(link indisponível: sala sem cifra ou ENCRYPTION_KEY trocada)'}${s.nova ? '' : '  (sala já existia)'}`);
+  }
 }
 
 main()
