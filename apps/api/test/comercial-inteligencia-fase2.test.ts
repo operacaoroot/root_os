@@ -310,7 +310,17 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     expect(lido.origem).toBe('pessoa');
     // Outro recorte não tem relatório gerado: números ao vivo, sem narrativa.
     const aoVivo = await relatorios.ler(ORG, 30, agora);
-    expect(aoVivo).toMatchObject({ origem: 'ao_vivo', narrativa: null, periodoDias: 30 });
+    expect(aoVivo).toMatchObject({ origem: 'ao_vivo', narrativa: null, periodoDias: 30, propostasVencendo: [] });
+
+    // C10, "propostas vencendo": a validade dentro do mesmo recorte, à frente.
+    const antes = (await prisma.comercialFicha.findFirst({ where: { leadId: lead.id }, select: { etapa: true } }))!;
+    await prisma.comercialFicha.updateMany({ where: { leadId: lead.id }, data: { etapa: 'follow_up', validade: new Date(agora.getTime() + 2 * DIA) } });
+    const comVencendo = await relatorios.numeros(ORG, 7, agora);
+    expect(comVencendo.propostasVencendo).toHaveLength(1);
+    expect(comVencendo.propostasVencendo![0].leadId).toBe(lead.id);
+    expect(comVencendo.leadsEmPropostaAgora).toBe(1);
+    expect((await relatorios.numeros(ORG, 1, agora)).propostasVencendo).toEqual([]);
+    await prisma.comercialFicha.updateMany({ where: { leadId: lead.id }, data: { etapa: antes.etapa, validade: null } });
   });
 
   it('o relator do relógio gera na quinta a partir das 18:00 de São Paulo, uma vez', async () => {
@@ -337,5 +347,8 @@ describe.skipIf(!URL)('a inteligência do cockpit, fase 2, contra o banco', { ti
     expect(t.vigia.ultimaPassagemEm).not.toBeNull();
     expect(t.vigia.premissasConferidas).toBeGreaterThan(0);
     expect(t).toMatchObject({ custoDeIaHojeCentavos: 0, custoDesconhecido: true, provedorDeIa: 'stub' });
+    // Sem um mês de história, nenhuma sugestão de subir; o teto da régua vem junto.
+    expect(t.automacoes.every((a) => a.proximoDegrau === null)).toBe(true);
+    expect(f.tetoDaRegua).toBe('A2');
   });
 });

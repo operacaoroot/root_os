@@ -83,6 +83,46 @@ export const AUTOMACOES_DA_TAREFA: Readonly<Record<string, readonly ComercialAut
   'inteligencia.relator': ['relator'],
 });
 
+/**
+ * O teto de cada automação pela régua (mapa, M4: "A3 nas ações R0 a R2; de R3
+ * para cima sempre com gente"). Quem manda WhatsApp (R3) ou mexe em dinheiro e
+ * contrato (R4) para em A2; quem pontua dentro do OS (R1) ou só lê pode ir a A3.
+ * O teto não muda o que a porta exige: ele só limita a SUGESTÃO de subir.
+ */
+export const TETO_DA_REGUA: Readonly<Record<ComercialAutomacao, ComercialAutonomia>> = Object.freeze({
+  qualificador: 'A3',
+  agendador: 'A2',
+  leitor_de_ata: 'A2',
+  construtor_de_proposta: 'A2',
+  revisor_de_proposta: 'A3',
+  fupeiro: 'A2',
+  assinador: 'A2',
+  cobrador: 'A2',
+  fechador: 'A2',
+  relator: 'A3',
+  vigia: 'A3',
+});
+
+const ORDEM: readonly ComercialAutonomia[] = ['A0', 'A1', 'A2', 'A3'];
+
+/**
+ * A sugestão de subir um degrau (tela 12: "proposta de subir de degrau depois
+ * de um mês sem erro"). Só um degrau por vez, só abaixo do teto, e só com prova:
+ * a primeira passagem há pelo menos 30 dias e nenhuma passagem com erro nos
+ * últimos 30. Sem histórico, sem sugestão. Quem sobe é gente, pelo PUT da config.
+ */
+export function degrauSugerido(
+  nivel: ComercialAutonomia,
+  teto: ComercialAutonomia,
+  prova: { passagens30Dias: number; erros30Dias: number; primeiraPassagemEm: Date | null; agora: Date },
+): ComercialAutonomia | null {
+  const i = ORDEM.indexOf(nivel);
+  if (i >= ORDEM.indexOf(teto)) return null;
+  if (!prova.primeiraPassagemEm || prova.passagens30Dias === 0 || prova.erros30Dias > 0) return null;
+  if (prova.agora.getTime() - prova.primeiraPassagemEm.getTime() < 30 * 86_400_000) return null;
+  return ORDEM[i + 1];
+}
+
 /** O nível que vale: o gravado, senão o vigente. */
 export function nivelDe(gravado: Partial<Record<ComercialAutomacao, ComercialAutonomia>>, automacao: ComercialAutomacao): ComercialAutonomia {
   return gravado[automacao] ?? AUTONOMIA_VIGENTE[automacao];

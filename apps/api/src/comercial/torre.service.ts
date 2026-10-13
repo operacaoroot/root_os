@@ -4,7 +4,7 @@ import { COMERCIAL_AUTOMACOES, COMERCIAL_ROTULO_DA_AUTOMACAO, type ComercialAuto
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { TetoDeCustoIaService } from '../llm/teto-diario.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AUTONOMIA_VIGENTE, nivelDe, tarefasDaAutomacao } from './autonomia';
+import { AUTONOMIA_VIGENTE, TETO_DA_REGUA, degrauSugerido, nivelDe, tarefasDaAutomacao } from './autonomia';
 import { ConfigComercialService } from './config.service';
 import { RelatorioDaSemanaService } from './relatorio-da-semana.service';
 import { PREMISSA_DA_AUTOMACAO, VigiaService } from './vigia.service';
@@ -23,7 +23,9 @@ import { PREMISSA_DA_AUTOMACAO, VigiaService } from './vigia.service';
  *     há taxa. É uma medida de "rodou sem falhar", a única que o fio sustenta
  *     hoje; o acerto de conteúdo (diagnóstico aprovado sem refazer, proposta
  *     aceita sem ajuste) é [a decidir] pela mesa;
- *   · premissa: a da tela 12, com o resultado da última passagem do vigia.
+ *   · premissa: a da tela 12, com o resultado da última passagem do vigia;
+ *   · próximo degrau: a sugestão de subir um degrau depois de um mês sem erro,
+ *     até o teto da régua (`degrauSugerido`). Só sugere: quem sobe é gente.
  *
  * O custo de IA do dia vem do livro-caixa do teto (`TetoDeCustoIaService`), em
  * dólar; sem câmbio decidido, o valor em reais fica nulo quando há gasto. Com o
@@ -90,15 +92,26 @@ export class TorreService {
       if (chave === 'relator' && this.relatorios) ultima = max(ultima, await this.relatorios.ultimaGeracaoEm(orgId, agora));
 
       const daPassagem = passagem?.premissas.find((p) => p.automacao === chave) ?? null;
+      const primeira = tarefas.size
+        ? await this.prisma.comercialReacao.findFirst({ where: { orgId, reacao: { in: [...tarefas] }, estado: 'ok' }, orderBy: { criadoEm: 'asc' }, select: { criadoEm: true } })
+        : null;
+      const nivel = nivelDe(cfg.autonomia, chave);
       automacoes.push({
         chave,
         rotulo: COMERCIAL_ROTULO_DA_AUTOMACAO[chave],
-        autonomia: nivelDe(cfg.autonomia, chave),
+        autonomia: nivel,
         autonomiaVigente: AUTONOMIA_VIGENTE[chave],
         autonomiaGravada: cfg.autonomia[chave] !== undefined,
         ultimaVezEm: ultima?.toISOString() ?? null,
         acerto30Dias: acerto,
         passagens30Dias: terminadas.length,
+        tetoDaRegua: TETO_DA_REGUA[chave],
+        proximoDegrau: degrauSugerido(nivel, TETO_DA_REGUA[chave], {
+          passagens30Dias: terminadas.length,
+          erros30Dias: terminadas.length - boas.length,
+          primeiraPassagemEm: primeira?.criadoEm ?? null,
+          agora,
+        }),
         premissa: PREMISSA_DA_AUTOMACAO[chave],
         premissaOk: daPassagem ? daPassagem.ok : null,
       });

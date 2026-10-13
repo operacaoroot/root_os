@@ -36,6 +36,8 @@ import { FONTE_DO_EVENTO } from './eventos';
  *     relógio, sistema ou decisão aberta/vencida) e as mensagens que as
  *     automações prepararam e saíram. O que o CLIENTE fez (sala, formulário,
  *     resposta, Pix, assinatura) não entra em nenhum dos dois;
+ *   · propostas vencendo (C10): as publicadas em proposta ou follow-up cuja
+ *     validade cai dentro do mesmo recorte, à frente;
  *   · previsão: a tela 13 mostra "fechamentos prováveis entre os leads em
  *     proposta" e o mapa não dá a taxa. Fica `null`, com a contagem dos leads em
  *     proposta ao lado. [a decidir] pela mesa: a fórmula da previsão.
@@ -205,6 +207,9 @@ export function markdownDoRelatorio(r: RelatorioDaSemana): string {
     '',
     '## Perdas por motivo',
     ...(r.perdasPorMotivo.length ? r.perdasPorMotivo.map((p) => `- ${p.motivo}: ${p.n}`) : ['- nenhuma']),
+    '',
+    '## Propostas vencendo',
+    ...(r.propostasVencendo?.length ? r.propostasVencendo.map((v) => `- ${v.nome}: vale até ${v.validade.slice(0, 10)}`) : ['- nenhuma no recorte']),
     '',
     '## Previsão',
     r.previsao ? `${r.previsao.fechamentosProvaveis} entre ${r.previsao.leadsEmProposta}` : `${r.leadsEmPropostaAgora ?? 0} leads em proposta; ${r.previsaoPendente ?? PREVISAO_PENDENTE}`,

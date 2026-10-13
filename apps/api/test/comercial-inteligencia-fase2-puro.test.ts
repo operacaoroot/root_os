@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { COMERCIAL_AUTOMACOES, COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
 import { describe, expect, it } from 'vitest';
 
-import { AUTOMACOES_DA_TAREFA, AUTONOMIA_VIGENTE, nivelDe, podeRodar, tarefasDaAutomacao } from '../src/comercial/autonomia';
+import { AUTOMACOES_DA_TAREFA, AUTONOMIA_VIGENTE, TETO_DA_REGUA, degrauSugerido, nivelDe, podeRodar, tarefasDaAutomacao } from '../src/comercial/autonomia';
 import { resumoDoEvento } from '../src/comercial/eventos';
 import { proximaAcaoDoLead, proximaHoraEmSP, saudeDoLead } from '../src/comercial/proxima-acao';
 import {
@@ -58,6 +58,19 @@ describe('a escada de autonomia', () => {
     for (const n of ['espinha.projetar', 'espinha.entrada', 'espinha.qualificacao', 'espinha.saida', 'espinha.decisoes-vencidas', 'espinha.reacoes-pendentes', 'sala.abrir', 'inteligencia.duvida', 'whats.janela-de-veto']) {
       expect(AUTOMACOES_DA_TAREFA[n], n).toBeUndefined();
     }
+  });
+
+  it('subir de degrau: um por vez, só com um mês sem erro e nunca acima do teto da régua', () => {
+    const agora = new Date('2026-11-20T12:00:00Z');
+    const antiga = new Date('2026-10-01T12:00:00Z');
+    expect(degrauSugerido('A1', 'A3', { passagens30Dias: 12, erros30Dias: 0, primeiraPassagemEm: antiga, agora })).toBe('A2');
+    expect(degrauSugerido('A1', 'A3', { passagens30Dias: 12, erros30Dias: 1, primeiraPassagemEm: antiga, agora })).toBeNull();
+    expect(degrauSugerido('A1', 'A3', { passagens30Dias: 12, erros30Dias: 0, primeiraPassagemEm: new Date('2026-11-01T12:00:00Z'), agora })).toBeNull();
+    expect(degrauSugerido('A1', 'A3', { passagens30Dias: 0, erros30Dias: 0, primeiraPassagemEm: antiga, agora })).toBeNull();
+    // R3 e R4 param em A2: o teto não deixa sugerir A3 ao fechador, por melhor que ele rode.
+    expect(TETO_DA_REGUA.fechador).toBe('A2');
+    expect(degrauSugerido('A2', TETO_DA_REGUA.fechador, { passagens30Dias: 50, erros30Dias: 0, primeiraPassagemEm: antiga, agora })).toBeNull();
+    for (const a of COMERCIAL_AUTOMACOES) expect(['A0', 'A1', 'A2', 'A3'].indexOf(AUTONOMIA_VIGENTE[a]), a).toBeLessThanOrEqual(['A0', 'A1', 'A2', 'A3'].indexOf(TETO_DA_REGUA[a]));
   });
 
   it('todo nome da tabela está inscrito de verdade em algum serviço do comercial', () => {

@@ -121,6 +121,13 @@ export class RelatorioDaSemanaService implements OnModuleInit {
     const acoes = contarAcoes(fatos, aprovacoes);
 
     const emProposta = await this.prisma.comercialFicha.count({ where: { orgId, etapa: { in: ['proposta', 'follow_up'] } } });
+    // C10: "propostas vencendo". O horizonte é o próprio recorte, à frente (nenhum número novo).
+    const vencendo = await this.prisma.comercialFicha.findMany({
+      where: { orgId, etapa: { in: ['proposta', 'follow_up'] }, validade: { gte: agora, lte: new Date(agora.getTime() + periodoDias * DIA_MS) } },
+      orderBy: { validade: 'asc' },
+      select: { leadId: true, validade: true, empresa: true, lead: { select: { name: true } } },
+      take: 50,
+    });
 
     return {
       periodoDias,
@@ -133,6 +140,7 @@ export class RelatorioDaSemanaService implements OnModuleInit {
       previsao: null,
       previsaoPendente: PREVISAO_PENDENTE,
       leadsEmPropostaAgora: emProposta,
+      propostasVencendo: vencendo.map((v) => ({ leadId: v.leadId, nome: v.empresa ?? v.lead.name, validade: v.validade!.toISOString() })),
       geradoEm: agora.toISOString(),
       narrativa: null,
       desde: desde.toISOString(),

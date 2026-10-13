@@ -719,6 +719,10 @@ export interface TorreDasAutomacoes {
     autonomiaGravada?: boolean;
     /** Acréscimo da lane E: as passagens que entraram no acerto (sem passagem, o acerto é null). */
     passagens30Dias?: number;
+    /** Acréscimo da lane E: o degrau máximo pela régua (R3 e R4 param em A2). */
+    tetoDaRegua?: ComercialAutonomia;
+    /** Acréscimo da lane E: o degrau que a torre sugere subir (um mês sem erro); quem sobe é gente. */
+    proximoDegrau?: ComercialAutonomia | null;
   }[];
 }
 
@@ -754,6 +758,8 @@ export interface RelatorioDaSemana {
   ate?: string;
   /** Acréscimo da lane E: o que a narrativa do modelo trouxe e o sistema tirou (frase com número). */
   narrativaAvisos?: string[];
+  /** Acréscimo da lane E: propostas publicadas cuja validade vence dentro do mesmo recorte à frente (C10: "propostas vencendo"). */
+  propostasVencendo?: { leadId: string; nome: string; validade: string }[];
   /** Acréscimo da lane E: `relogio` (a quinta 18h), `pessoa` (o botão) ou `ao_vivo` (leitura sem gerar). */
   origem?: 'relogio' | 'pessoa' | 'ao_vivo';
 }
