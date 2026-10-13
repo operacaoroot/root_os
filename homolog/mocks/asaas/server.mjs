@@ -5,6 +5,7 @@
 //   GET  /v3/customers?cpfCnpj=             acha cliente pelo documento
 //   POST /v3/payments                       cria cobrança (à vista ou parcelada: installmentCount + installmentValue)
 //   GET  /v3/payments/:id                   lê cobrança
+//   POST /v3/payments/:id                   atualiza a cobrança aberta (valor, vencimento)
 //   GET  /v3/payments?installment=|externalReference=   lista cobranças
 //   GET  /v3/payments/:id/pixQrCode         Pix copia e cola (fictício)
 //   GET  /v3/finance/balance                saldo (para a sonda de saúde)
@@ -258,6 +259,22 @@ const servidor = createServer(async (req, res) => {
     if (req.method === 'GET' && m) {
       const c = estado.cobrancas.find((x) => x.id === m[1]);
       return c ? json(res, 200, c) : json(res, 404, { errors: [{ description: 'não encontrada' }] });
+    }
+    // Atualiza a cobrança ainda aberta (D-11: a última parcela que absorve a diferença do total).
+    if (req.method === 'POST' && m) {
+      const c = estado.cobrancas.find((x) => x.id === m[1]);
+      if (!c) return json(res, 404, { errors: [{ description: 'não encontrada' }] });
+      if (!['PENDING', 'OVERDUE'].includes(c.status)) return json(res, 400, { errors: [{ code: 'invalid_action', description: 'só cobrança aberta pode mudar' }] });
+      const b = await lerCorpo(req);
+      if (b.value !== undefined) {
+        const v = Number(b.value);
+        if (!(v > 0)) return json(res, 400, { errors: [{ code: 'invalid_value', description: 'valor inválido' }] });
+        c.value = v;
+        c.netValue = v;
+      }
+      if (b.dueDate) c.dueDate = b.dueDate;
+      salvar();
+      return json(res, 200, c);
     }
 
     return json(res, 404, { errors: [{ description: `rota não emulada: ${req.method} ${caminho}` }] });

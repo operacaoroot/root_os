@@ -32,6 +32,12 @@ export interface NovaCobranca {
   clienteExternoId: string;
   parcelas: number;
   parcelaCentavos: number;
+  /**
+   * D-11: a última parcela, quando o total não divide pelas parcelas (a última
+   * absorve a diferença, como a proposta e o contrato mostram). Ausente ou igual
+   * a `parcelaCentavos`: todas iguais.
+   */
+  ultimaParcelaCentavos?: number;
   forma: FormaDeCobranca;
   /** AAAA-MM-DD. As outras parcelas vencem mês a mês a partir dele. */
   primeiroVencimento: string;

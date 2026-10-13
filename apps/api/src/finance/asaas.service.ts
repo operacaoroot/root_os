@@ -237,7 +237,7 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
   /** Cria a cobrança parcelada. A mesma `referenciaExterna` devolve as parcelas que já existem. */
   async criarCobranca(n: NovaCobranca): Promise<{ parcelas: ParcelaNoProvedor[]; reaproveitada: boolean }> {
     const ja = await this.parcelasDaReferencia(n.referenciaExterna);
-    if (ja.length) return { parcelas: ja, reaproveitada: true };
+    if (ja.length) return { parcelas: await this.ajustarUltima(n, ja), reaproveitada: true };
     const reais = n.parcelaCentavos / 100;
     const corpo: Record<string, unknown> = {
       customer: n.clienteExternoId,
@@ -250,7 +250,30 @@ export class AsaasService implements OnModuleInit, PortaDeCobranca {
     await this.escrever<Record<string, unknown>>('POST', '/payments', corpo);
     const criadas = await this.parcelasDaReferencia(n.referenciaExterna);
     if (!criadas.length) throw new Error('Asaas criou a cobrança e não a devolveu pela referência: confira no painel antes de tentar de novo.');
-    return { parcelas: criadas, reaproveitada: false };
+    return { parcelas: await this.ajustarUltima(n, criadas), reaproveitada: false };
+  }
+
+  /**
+   * D-11: o parcelamento do Asaas nasce com parcelas iguais. Quando o total não
+   * divide, a última absorve a diferença (`ultimaParcelaCentavos`): ela é
+   * atualizada depois de criada. A reentrega da mesma referência confere de novo
+   * e corrige só a última ainda aberta; a que já não está aberta com outro valor
+   * para com o motivo, sem mexer em nada.
+   */
+  private async ajustarUltima(n: NovaCobranca, parcelas: ParcelaNoProvedor[]): Promise<ParcelaNoProvedor[]> {
+    const alvo = n.ultimaParcelaCentavos;
+    if (alvo == null || alvo === n.parcelaCentavos || n.parcelas < 2) return parcelas;
+    const ultima = parcelas.find((p) => p.parcela === n.parcelas);
+    if (!ultima || ultima.valorCentavos === alvo) return parcelas;
+    if (ultima.estado !== 'pendente' && ultima.estado !== 'atrasada') {
+      throw new Error(`a última parcela no Asaas (${ultima.externoId}) não está aberta e não vale o que a última deve valer: confira no painel`);
+    }
+    await this.escrever<Record<string, unknown>>('POST', `/payments/${encodeURIComponent(ultima.externoId)}`, {
+      billingType: billingTypeDoAsaas(n.forma),
+      value: alvo / 100,
+      dueDate: ultima.vence,
+    });
+    return this.parcelasDaReferencia(n.referenciaExterna);
   }
 
   async consultarCobranca(externoId: string): Promise<ParcelaNoProvedor | null> {

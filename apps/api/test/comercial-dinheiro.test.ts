@@ -618,4 +618,17 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', { timeout: 30
     expect(await doLead(CAP_CONTRATO, so)).toHaveLength(2);
     expect(await doLead(CAP_FECHAMENTO)).toHaveLength(2);
   });
+
+  it('D-11: no dublê do Asaas, o total que não divide nasce com a última parcela maior; a reentrega reaproveita sem mudar nada', async () => {
+    const asaas = dinheiro.cobranca;
+    const ref = `d11-${MARCA}`;
+    const cli = await asaas.criarCliente({ nome: 'Empresa D11', documento: '11222333000181', email: null, telefone: null, referenciaExterna: ref });
+    const pedido = { clienteExternoId: cli.externoId, parcelas: 3, parcelaCentavos: 333_333, ultimaParcelaCentavos: 333_334, forma: 'boleto' as const, primeiroVencimento: '2026-10-20', descricao: 'D-11', referenciaExterna: ref };
+    const r = await asaas.criarCobranca(pedido);
+    expect(r.reaproveitada).toBe(false);
+    expect(r.parcelas.map((p) => [p.parcela, p.valorCentavos])).toEqual([[1, 333_333], [2, 333_333], [3, 333_334]]);
+    const deNovo = await asaas.criarCobranca(pedido);
+    expect(deNovo.reaproveitada).toBe(true);
+    expect(deNovo.parcelas.map((p) => p.valorCentavos)).toEqual([333_333, 333_333, 333_334]);
+  });
 });

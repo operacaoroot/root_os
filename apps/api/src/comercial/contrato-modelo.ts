@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { TABELA_DE_PRECO, formatarReais, type ComercialProduto } from '@mktos/shared';
 
+import { parcelasDoValor } from './proposta-construtor';
+
 /*
  * O CONTRATO DE HOMOLOGAÇÃO (lane D, 13/10/2026) — a parte pura.
  *
@@ -66,7 +68,10 @@ export function campoDoCliente(v: string): string {
 /** O contrato com os campos preenchidos. Campo que falta vira lacuna em vermelho, nunca valor inventado. */
 export function montarContrato(d: DadosDoContrato): string {
   const linha = TABELA_DE_PRECO[d.produto];
-  const parcela = d.parcelas > 0 ? Math.round(d.valorCentavos / d.parcelas) : d.valorCentavos;
+  // D-11: a mesma conta da proposta e da cobrança. Total que divide: o texto de sempre (o hash não muda);
+  // que não divide: as parcelas iguais e a última com a diferença.
+  const { parcelaCentavos, ultimaParcelaCentavos } = d.parcelas > 0 ? parcelasDoValor(d.valorCentavos, d.parcelas) : { parcelaCentavos: d.valorCentavos, ultimaParcelaCentavos: d.valorCentavos };
+  const valorParcela = ultimaParcelaCentavos === parcelaCentavos ? formatarReais(parcelaCentavos) : `${formatarReais(parcelaCentavos)} (a última de ${formatarReais(ultimaParcelaCentavos)})`;
   const campos: Record<string, string> = {
     razaoSocial: campoDoCliente(d.razaoSocial),
     cnpj: documentoFormatado(d.cnpj),
@@ -77,7 +82,7 @@ export function montarContrato(d: DadosDoContrato): string {
     produtoDescricao: linha?.descricao ?? '',
     valorTotal: formatarReais(d.valorCentavos),
     parcelas: String(d.parcelas),
-    valorParcela: formatarReais(parcela),
+    valorParcela,
     forma: ROTULO_DA_FORMA[d.forma] ?? d.forma,
     propostaVersao: String(d.propostaVersao),
     propostaHash: d.propostaHash.slice(0, 12),

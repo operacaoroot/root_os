@@ -14,6 +14,7 @@ import { hashDoContrato, lacunasDoContrato, montarContrato } from './contrato-mo
 import { uuidDe, type PayloadDe } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
 import { cifrarLinkDaRoot, decifrarLinkDaRoot } from './link-da-root';
+import { parcelasDoValor } from './proposta-construtor';
 import { PORTA_DE_ASSINATURA, type PortaDeAssinatura } from './portas/assinatura.port';
 import { PORTA_DE_COBRANCA, type FormaDeCobranca, type PagamentoNoWebhook, type PortaDeCobranca } from './portas/cobranca.port';
 import { segredoDoAmbiente } from './sala-token';
@@ -386,7 +387,9 @@ export class DinheiroService implements OnModuleInit {
     const existentes = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
     if (existentes.length) return { referencia, parcelas: existentes.length, reaproveitada: true, externoIds: existentes.map((c) => c.externoId) };
 
-    if (!(a.parcelas > 0) || a.valorCentavos % a.parcelas !== 0) {
+    // D-11: o valor que não divide pelas parcelas não recusa mais depois da assinatura: a última absorve
+    // a diferença (parcelasDoValor), a mesma conta da proposta e do contrato.
+    if (!Number.isInteger(a.parcelas) || !(a.parcelas > 0) || !Number.isInteger(a.valorCentavos) || parcelasDoValor(a.valorCentavos, a.parcelas).parcelaCentavos <= 0) {
       throw new Error(`as parcelas não fecham o total (${a.valorCentavos} em ${a.parcelas}): nada foi cobrado`);
     }
     // D-7: "procura e cria" sem trava deixava duas execuções simultâneas criarem dois clientes e duas
@@ -406,7 +409,7 @@ export class DinheiroService implements OnModuleInit {
 
   /** A criação de fato (cliente, cobrança parcelada, linhas e fato), sob a trava de `criarCobrancaDoAceite`. */
   private async criarNoProvedor(orgId: string, leadId: string, a: AceiteDoLead, referencia: string): Promise<{ referencia: string; parcelas: number; reaproveitada: boolean; externoIds: string[] }> {
-    const parcelaCentavos = a.valorCentavos / a.parcelas;
+    const { parcelaCentavos, ultimaParcelaCentavos } = parcelasDoValor(a.valorCentavos, a.parcelas);
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { phone: true } });
     const cliente = await this.cobranca.criarCliente({
       nome: a.dados.razaoSocial,
@@ -420,6 +423,7 @@ export class DinheiroService implements OnModuleInit {
       clienteExternoId: cliente.externoId,
       parcelas: a.parcelas,
       parcelaCentavos,
+      ...(ultimaParcelaCentavos !== parcelaCentavos ? { ultimaParcelaCentavos } : {}),
       forma: a.forma,
       primeiroVencimento: hojeEmSP(),
       descricao: `${rotulo} · ${a.dados.razaoSocial}`,

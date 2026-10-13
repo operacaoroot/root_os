@@ -443,13 +443,15 @@ export class FechamentoService implements OnModuleInit {
       const ultima = parcelas[parcelas.length - 1];
       const proxima = parcelas.find((p) => !p.pagaEm) ?? ultima;
       const rotulo = TABELA_DE_PRECO[a.produto]?.rotulo ?? a.produto;
+      // D-11: a última parcela que absorve a diferença aparece no contrato do Financeiro.
+      const aUltima = ultima.valorCentavos !== primeira.valorCentavos ? ` (a última de ${formatarReais(ultima.valorCentavos)})` : '';
       await this.prisma.contract.create({
         data: {
           id,
           orgId,
           tipo: FinanceTxType.entrada,
           partnerId,
-          descricao: `${rotulo} · ${a.dados.razaoSocial} · ${a.parcelas}× ${formatarReais(primeira.valorCentavos)} · ${linha.chave}`,
+          descricao: `${rotulo} · ${a.dados.razaoSocial} · ${a.parcelas}× ${formatarReais(primeira.valorCentavos)}${aUltima} · ${linha.chave}`,
           valor: new Prisma.Decimal((primeira.valorCentavos / 100).toFixed(2)),
           diaVencimento: Number(primeira.vence.toISOString().slice(8, 10)),
           periodicidade: 'mensal',
@@ -459,7 +461,7 @@ export class FechamentoService implements OnModuleInit {
         },
       });
       await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { contractId: id } });
-      return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(primeira.valorCentavos)}, mensal`, ref: id };
+      return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(primeira.valorCentavos)}${aUltima}, mensal`, ref: id };
     });
 
     // 4. kit e trilho: o trilho de implantação com os dados copiados.

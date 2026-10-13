@@ -1,7 +1,8 @@
 import { ActorType, PrismaClient } from '@prisma/client';
-import { fatoDaPrimeiraPaga } from '@mktos/shared';
+import { fatoDaPrimeiraPaga, formatarReais } from '@mktos/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { montarContrato } from '../src/comercial/contrato-modelo';
 import { DinheiroService, type AceiteDoLead } from '../src/comercial/dinheiro.service';
 import { FechamentoService, prontoParaFechar } from '../src/comercial/fechamento.service';
 import { camposDoEvento } from '../src/comercial/ficha.service';
@@ -19,6 +20,8 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *       parcela paga tem o nome da forma (pix.pago só para Pix).
  * D-12: o fechamento não reaproveita um Partner fornecedor com o mesmo CNPJ.
  * A-7: as consultas do fechamento e do dinheiro levam a empresa no `where`.
+ * D-11: o total que não divide pelas parcelas não derruba a cobrança assinada:
+ *       a última absorve a diferença, e o contrato mostra a mesma conta.
  *
  * A porta de cobrança é dublê deste arquivo (com a leitura real do webhook);
  * o banco é o descartável.
@@ -39,6 +42,7 @@ describe('revisão P3 do dinheiro', () => {
   let dinheiro: DinheiroService;
   let fechamento: FechamentoService;
   let seq = 0;
+  let pedidos: NovaCobranca[] = [];
 
   const cobranca: PortaDeCobranca = {
     provedor: `asaas-${MARCA}`,
@@ -46,12 +50,13 @@ describe('revisão P3 do dinheiro', () => {
     criarCliente: async () => ({ externoId: `cus-${MARCA}`, reaproveitado: false }),
     criarCobranca: async (n: NovaCobranca) => {
       const lote = ++seq;
+      pedidos.push(n);
       return {
         parcelas: Array.from({ length: n.parcelas }, (_, i) => ({
           externoId: `pay-${MARCA}-${lote}-${i + 1}`,
           parcela: i + 1,
           parcelas: n.parcelas,
-          valorCentavos: n.parcelaCentavos,
+          valorCentavos: i === n.parcelas - 1 && n.ultimaParcelaCentavos != null ? n.ultimaParcelaCentavos : n.parcelaCentavos,
           vence: '2026-10-13',
           estado: 'pendente' as const,
           pagaEm: null,
@@ -237,6 +242,40 @@ describe('revisão P3 do dinheiro', () => {
       const manifesto = (o: string) => (fechamento as unknown as { manifesto: (o: string, l: string, a: AceiteDoLead) => Promise<string> }).manifesto(o, leadId, a);
       expect(await manifesto(ORG)).toContain('Sistema: ERP do teste.');
       expect(await manifesto(OUTRA)).not.toContain('Sistema:');
+    });
+  });
+
+  describe('D-11: a última parcela absorve a diferença', () => {
+    it('o contrato mostra a última quando o total não divide; o que divide sai com o texto de sempre', () => {
+      const base = { razaoSocial: 'Empresa D11', cnpj: '11222333000181', endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'f@x.com', produto: 'operacao' as const, forma: 'pix' as const, propostaVersao: 1, propostaHash: HASH_V1, aceitoEm: new Date('2026-10-13T12:00:00Z') };
+      const torto = montarContrato({ ...base, valorCentavos: 1_000_000, parcelas: 3 });
+      expect(torto).toContain(`em **3** parcela(s) de **${formatarReais(333_333)} (a última de ${formatarReais(333_334)})**`);
+      const certo = montarContrato({ ...base, valorCentavos: 1_199_700, parcelas: 3 });
+      expect(certo).toContain(`em **3** parcela(s) de **${formatarReais(399_900)}**, por`);
+      expect(certo).not.toContain('a última');
+    });
+
+    it('a cobrança de um total que não divide é criada com a última maior, e as linhas somam o total', async () => {
+      const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Lead D11', phone: `5532${Date.now().toString().slice(-9)}` } });
+      await prisma.comercialFicha.create({ data: { leadId: lead.id, etapa: 'contrato', perfil: 'P2' } });
+      const t0 = new Date(Date.now() - 3_600_000);
+      await fio.registrar(ORG, lead.id, 'aceite.dados', 'dados', { cnpj: `9${Date.now().toString().slice(-13)}`, razaoSocial: 'Empresa D11', endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'fulana@exemplo.com' } as never, { em: t0 });
+      await fio.registrar(ORG, lead.id, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_000_000, parcelas: 3, forma: 'boleto', hash: HASH_V1 } as never, { em: new Date(t0.getTime() + 1000) });
+      const a = (await dinheiro.aceiteDoLead(ORG, lead.id))!;
+      pedidos = [];
+      const r = await dinheiro.criarCobrancaDoAceite(ORG, lead.id, a);
+      expect(r).toMatchObject({ parcelas: 3, reaproveitada: false });
+      expect(pedidos).toHaveLength(1);
+      expect(pedidos[0]).toMatchObject({ parcelas: 3, parcelaCentavos: 333_333, ultimaParcelaCentavos: 333_334 });
+      const linhas = await prisma.comercialCobranca.findMany({ where: { leadId: lead.id }, orderBy: { parcela: 'asc' } });
+      expect(linhas.map((l) => l.valorCentavos)).toEqual([333_333, 333_333, 333_334]);
+      expect(linhas.reduce((t, l) => t + l.valorCentavos, 0)).toBe(1_000_000);
+    });
+
+    it('o total que divide não leva a última à porta de cobrança', async () => {
+      const { a } = await leadAssinado(`1${Date.now().toString().slice(-13)}`, 'pix');
+      expect(a.valorCentavos % a.parcelas).toBe(0);
+      expect(pedidos.at(-1)).not.toHaveProperty('ultimaParcelaCentavos');
     });
   });
 });
