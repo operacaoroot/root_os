@@ -15,6 +15,7 @@ import type { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { InteligenciaController } from '../src/comercial/inteligencia.controller';
 import { RelatorioDaSemanaService } from '../src/comercial/relatorio-da-semana.service';
 import type { RelogioComercialRegistry } from '../src/comercial/relogio.registry';
+import { VigiaService } from '../src/comercial/vigia.service';
 import type { LlmProvider } from '../src/llm/llm.provider';
 import type { MemoriaService } from '../src/memory/memoria.service';
 import type { PrismaService } from '../src/prisma/prisma.service';
@@ -140,5 +141,40 @@ describe('revisão E-11: o relatório guarda o recorte na chave', () => {
     await svc.gerar('org', { dias: 30, agora: new Date('2026-10-15T19:10:00-03:00'), origem: 'pessoa' });
     expect(notas.get('comercial.relatorio.semana.2026-10-15.7d')!.versao).toBe(1);
     expect(notas.get('comercial.relatorio.semana.2026-10-15.30d')!.versao).toBe(2);
+  });
+});
+
+describe('revisão E-12: premissa que nada confere sai não conferida', () => {
+  // Um banco vazio: toda lista vazia, toda contagem zero.
+  const prismaVazio = new Proxy({}, {
+    get: () => new Proxy({}, { get: (_t, op) => async () => (op === 'count' ? 0 : String(op).startsWith('findMany') || op === 'groupBy' ? [] : null) }),
+  }) as unknown as PrismaService;
+
+  function vigia(provedor: string, valoresDeHomologacao: boolean) {
+    const config = { ler: async () => ({ autonomia: {}, valoresDeHomologacao, cobrancaSemWebhookDias: null, efeitoRetidoHoras: null }) } as unknown as ConfigComercialService;
+    const llm = { name: provedor, model: provedor } as unknown as LlmProvider;
+    return new VigiaService(prismaVazio, {} as FioService, {} as DecisoesService, config, {} as RelogioComercialRegistry, {} as MemoriaService, llm);
+  }
+  const achar = async (v: VigiaService, chave: string) => (await v.conferir('org', new Date('2026-10-13T11:00:00Z'))).find((p) => p.chave === chave)!;
+
+  it('a agenda de homologação fora de homologação não é conferida', async () => {
+    expect((await achar(vigia('stub', false), 'agenda_responde')).ok).toBeNull();
+    expect((await achar(vigia('stub', true), 'agenda_responde')).ok).toBe(true);
+  });
+
+  it('com o stub a chave do modelo não é conferida', async () => {
+    expect((await achar(vigia('stub', true), 'chave_do_modelo')).ok).toBeNull();
+  });
+
+  it('com a ponte, o vigia lê o /saude: falhas seguidas ou ponte fora do ar quebram a premissa', async () => {
+    const v = vigia('ponte', true);
+    const pedidos: string[] = [];
+    v.lerSaudeDaPonte = async (url) => (pedidos.push(url), { status: 200, corpo: { ok: true, falhasSeguidas: 0 } });
+    expect((await achar(v, 'chave_do_modelo')).ok).toBe(true);
+    expect(pedidos[0]).toMatch(/\/saude$/);
+    v.lerSaudeDaPonte = async () => ({ status: 200, corpo: { ok: true, falhasSeguidas: 3 } });
+    expect(await achar(v, 'chave_do_modelo')).toMatchObject({ ok: false, detalhe: expect.stringMatching(/3 falha/) });
+    v.lerSaudeDaPonte = async () => { throw new Error('ECONNREFUSED'); };
+    expect((await achar(v, 'chave_do_modelo')).ok).toBe(false);
   });
 });

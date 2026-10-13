@@ -41,11 +41,14 @@ import { MENSAGENS } from './mensagens';
  * Das automações (tela 12, a coluna "premissa conferida hoje"):
  *   · qualificador · "formulário grava no lead": todo `form.respondido` dos
  *     últimos 30 dias deixou o sistema e a base na ficha;
- *   · agendador · "agenda da Root responde": a agenda real é [a decidir]; hoje
- *     confere que a agenda de homologação oferece horários;
+ *   · agendador · "agenda da Root responde": a agenda real é [a decidir]. A
+ *     de homologação é uma conta determinística: só vale como conferida com os
+ *     valores de homologação ligados; fora deles fica não conferida (revisão E-12);
  *   · leitor de ata · "chave do modelo válida": o vigia não chama o modelo (seria
- *     gasto para conferir). Com o stub ou a ponte de homologação, não há chave e a
- *     premissa vale; com provedor de produção, fica não conferida (`null`);
+ *     gasto para conferir). Com o stub não há o que conferir: não conferida. Com
+ *     a ponte, lê o `/saude` dela (sem token): fora do ar ou com falhas seguidas
+ *     é quebrada. Com provedor de produção, não conferida (`null`). Revisão E-12:
+ *     antes o stub e a ponte saíam "ok" sem conferir nada;
  *   · construtor de proposta · "tabela de preço de 04/10": a tabela em vigor é a
  *     de 04/10 e toda proposta publicada como "dentro da tabela" nos últimos 30
  *     dias tem o preço da linha;
@@ -249,6 +252,36 @@ export class VigiaService implements OnModuleInit {
     return premissa('zapsign_responde', 'assinador', texto, false, `a ZapSign não respondeu como devia: ${saude.mensagem ?? saude.estado}.`);
   }
 
+  /**
+   * Como o vigia lê o `/saude` da ponte. Separado para a suíte trocar; o padrão é
+   * o `fetch` com prazo de 4 s.
+   */
+  lerSaudeDaPonte: (url: string) => Promise<{ status: number; corpo: unknown }> = async (url) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(4_000) });
+    return { status: r.status, corpo: await r.json().catch(() => null) };
+  };
+
+  /** E-12: a premissa do modelo só sai "ok" quando algo foi conferido de fato. */
+  private async premissaDoModelo(): Promise<PremissaDoVigia> {
+    const texto = PREMISSA_DA_AUTOMACAO.leitor_de_ata;
+    const provedor = this.llm?.name ?? 'desconhecido';
+    if (provedor === 'stub') return premissa('chave_do_modelo', 'leitor_de_ata', texto, null, 'provedor stub de homologação: não há chave nem modelo a conferir.');
+    if (provedor !== 'ponte') return premissa('chave_do_modelo', 'leitor_de_ata', texto, null, `provedor ${provedor}: o vigia não chama o modelo para conferir a chave (seria gasto).`);
+    const base = (process.env.PONTE_MODELO_URL?.trim() || 'http://127.0.0.1:4099').replace(/\/$/, '');
+    try {
+      const { status, corpo } = await this.lerSaudeDaPonte(`${base}/saude`);
+      const c = (corpo ?? {}) as { ok?: unknown; falhasSeguidas?: unknown };
+      const falhas = typeof c.falhasSeguidas === 'number' ? c.falhasSeguidas : null;
+      if (status !== 200 || c.ok !== true || falhas === null) {
+        return premissa('chave_do_modelo', 'leitor_de_ata', texto, false, `a ponte de modelo respondeu ${status} sem a saúde esperada.`);
+      }
+      if (falhas > 0) return premissa('chave_do_modelo', 'leitor_de_ata', texto, false, `a ponte de modelo está de pé com ${falhas} falha(s) seguida(s) do modelo.`);
+      return premissa('chave_do_modelo', 'leitor_de_ata', texto, true, 'a ponte de modelo respondeu à saúde sem falha seguida.');
+    } catch (e) {
+      return premissa('chave_do_modelo', 'leitor_de_ata', texto, false, `a ponte de modelo não respondeu à saúde: ${(e as Error).message.slice(0, 120)}.`);
+    }
+  }
+
   /** Confere todas as premissas (só lê; a sonda da ZapSign é a de Conexões). */
   async conferir(orgId: string, agora: Date): Promise<PremissaDoVigia[]> {
     const cfg = await this.config.ler(orgId);
@@ -268,15 +301,18 @@ export class VigiaService implements OnModuleInit {
     );
 
     // --- agendador: a agenda responde (a de homologação; a real é [a decidir]) ---
-    const horarios = horariosOferecidos(agora);
-    out.push(premissa('agenda_responde', 'agendador', PREMISSA_DA_AUTOMACAO.agendador, horarios.length >= 2,
-      `${horarios.length} horários oferecidos pela agenda de homologação; a agenda real da Root é [a decidir].`));
+    // E-12: a agenda de homologação é uma conta; só vale como conferida em homologação.
+    if (cfg.valoresDeHomologacao) {
+      const horarios = horariosOferecidos(agora);
+      out.push(premissa('agenda_responde', 'agendador', PREMISSA_DA_AUTOMACAO.agendador, horarios.length >= 2,
+        `${horarios.length} horários oferecidos pela agenda de homologação; a agenda real da Root é [a decidir].`));
+    } else {
+      out.push(premissa('agenda_responde', 'agendador', PREMISSA_DA_AUTOMACAO.agendador, null,
+        'a agenda real da Root é [a decidir]; a de homologação é uma conta e não confere nada fora de homologação.'));
+    }
 
     // --- leitor de ata: chave do modelo ---
-    const provedor = this.llm?.name ?? 'desconhecido';
-    const deHomologacao = provedor === 'stub' || provedor === 'ponte';
-    out.push(premissa('chave_do_modelo', 'leitor_de_ata', PREMISSA_DA_AUTOMACAO.leitor_de_ata, deHomologacao ? true : null,
-      deHomologacao ? `provedor ${provedor} de homologação: não há chave a conferir.` : `provedor ${provedor}: o vigia não chama o modelo para conferir a chave (seria gasto).`));
+    out.push(await this.premissaDoModelo());
 
     // --- construtor de proposta: tabela de preço de 04/10 ---
     const publicadas = await this.prisma.leadEvent.findMany({ where: { lead: { orgId }, type: 'proposta.publicada', occurredAt: { gte: desde } }, select: { leadId: true, payload: true } });
