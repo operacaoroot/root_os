@@ -22,6 +22,7 @@ import {
   alcanceDoLead,
   contarAcoes,
   diasDoPedido,
+  diasEntre,
   funilCumulativo,
   limparNarrativa,
   mediana,
@@ -136,6 +137,9 @@ describe('as contas do relatório da quinta', () => {
     expect(mediana([])).toBeNull();
     expect(mediana([19, 3, 40])).toBe(19);
     expect(mediana([2, 4, 6, 8])).toBe(5);
+    // O Asaas manda só o dia do Pix: pago no dia da entrada não vira dia negativo.
+    expect(diasEntre(new Date('2026-10-13T14:00:00-03:00'), new Date('2026-10-13T00:00:00Z'))).toBe(0);
+    expect(diasEntre(new Date('2026-10-01T12:00:00Z'), new Date('2026-10-20T12:00:00Z'))).toBe(19);
     expect(diasDoPedido(undefined)).toBe(7);
     expect(diasDoPedido('30')).toBe(30);
     expect(diasDoPedido('900')).toBe(90);

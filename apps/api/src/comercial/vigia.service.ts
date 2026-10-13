@@ -24,7 +24,7 @@ import { FioService } from './fio.service';
 import { CHAVE_DO_VIGIA, corpoComDado, dadoDaNota, gravarNota } from './notas-do-comercial';
 import { proximaAcaoDoLead } from './proxima-acao';
 import { RelogioComercialRegistry } from './relogio.registry';
-import { textoDoTemplate } from './textos-das-mensagens';
+import { MENSAGENS } from './mensagens';
 
 /*
  * O VIGIA DAS 08:00 (lane E, fase 2, 13/10/2026) — mapa C05/C10/K03 e tela 12.
@@ -272,10 +272,13 @@ export class VigiaService implements OnModuleInit {
     out.push(premissa('revisor', 'revisor_de_proposta', PREMISSA_DA_AUTOMACAO.revisor_de_proposta, null, 'o mapa não escreve a premissa do revisor: [a decidir].'));
 
     // --- fupeiro: M5 e M6 no catálogo ---
-    const ctxDoTexto = { nome: null, empresa: null, variaveis: {} };
-    const provisorios = (['M5', 'M6'] as const).filter((t) => textoDoTemplate(t, ctxDoTexto).provisorio);
-    out.push(premissa('textos_m5_m6', 'fupeiro', PREMISSA_DA_AUTOMACAO.fupeiro, provisorios.length === 0,
-      provisorios.length ? `${provisorios.join(' e ')} ainda com o texto provisório (sem a versão aprovada).` : 'M5 e M6 com a versão aprovada do catálogo.'));
+    // O catálogo versionado da C08 (lane B): texto, versão e data de cada mensagem aprovada.
+    const faltam = (['M5', 'M6'] as const).filter((t) => {
+      const m = (MENSAGENS as Record<string, { texto?: string; versao?: number; data?: string } | undefined>)[t];
+      return !m?.texto?.trim() || !m.versao || !m.data;
+    });
+    out.push(premissa('textos_m5_m6', 'fupeiro', PREMISSA_DA_AUTOMACAO.fupeiro, faltam.length === 0,
+      faltam.length ? `${faltam.join(' e ')} sem texto aprovado com versão e data no catálogo.` : `M5 v${MENSAGENS.M5.versao} e M6 v${MENSAGENS.M6.versao} no catálogo de ${MENSAGENS.M5.data}.`));
 
     // --- assinador: a sonda mora em Conexões ---
     out.push(premissa('zapsign_responde', 'assinador', PREMISSA_DA_AUTOMACAO.assinador, null, 'a sonda da ZapSign mora em Conexões; o vigia não sai da casa nesta fase (pendência).'));

@@ -59,9 +59,14 @@ export function mediana(valores: readonly number[]): number | null {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 
-/** Dias entre dois instantes, com uma casa. */
+/**
+ * Dias entre dois instantes, com uma casa, nunca negativo. O Asaas manda só o
+ * DIA do pagamento (`pagoEm` sem hora), e o fato do Pix cai à meia-noite UTC:
+ * o lead que entra e paga no mesmo dia daria "menos um décimo". Antes da
+ * entrada vira zero (mesmo dia), que é o que a precisão do dado sustenta.
+ */
 export function diasEntre(de: Date, ate: Date): number {
-  return Math.round(((ate.getTime() - de.getTime()) / DIA_MS) * 10) / 10;
+  return Math.max(0, Math.round(((ate.getTime() - de.getTime()) / DIA_MS) * 10) / 10);
 }
 
 /** O funil cumulativo: quantos leads alcançaram cada etapa ativa. `alcance` = a maior ordem (1 a 9) de cada lead. */
