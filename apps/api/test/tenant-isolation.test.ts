@@ -3028,7 +3028,40 @@ async function emTransacaoDesfeita<T>(fn: (c: PoolClient) => Promise<T>): Promis
  * deixa repetir a linha semeada) — daí receberem o client: criam o pai dentro
  * da mesma transação, que é desfeita no fim.
  */
+/** Um lead novo da org A, para os filhos 1:1 do cockpit (a ficha e a sala têm leadId único). */
+async function leadNovoDaOrgA(c: PoolClient): Promise<string> {
+  return ins(c, 'Lead', { id: crypto.randomUUID(), orgId: sementes.A.orgId, name: `Lead do gatilho ${MARCA}`, status: 'novo', updatedAt: new Date() });
+}
+
 const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, unknown>>> = {
+  // O cockpit do lead (13/10/2026): oito filhos de Lead. A ficha e a sala são 1:1
+  // com o lead (leadId único), então a linha da prova nasce num lead NOVO da org A.
+  ComercialFicha: async (c) => ({ id: crypto.randomUUID(), leadId: await leadNovoDaOrgA(c), atualizadoEm: new Date() }),
+  SalaDoCliente: async (c) => ({
+    id: crypto.randomUUID(), leadId: await leadNovoDaOrgA(c), slug: `sala-gatilho-${MARCA}`,
+    tokenHash: `gatilho_${crypto.randomUUID()}`, validoAte: new Date(Date.now() + 86_400_000), atualizadoEm: new Date(),
+  }),
+  ComercialDecisao: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, tipo: 'lead_parado', titulo: 'Decisão do gatilho',
+    contexto: 'gatilho', opcoes: JSON.stringify([]), padrao: 'manter', expiraEm: new Date(Date.now() + 3_600_000),
+  }),
+  ComercialMensagem: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, direcao: 'entrada', provedor: 'simulado', texto: 'gatilho',
+  }),
+  ComercialReacao: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, eventoId: crypto.randomUUID(), reacao: 'gatilho',
+  }),
+  ComercialFechamento: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, chave: `fech-gatilho-${crypto.randomUUID()}`, atualizadoEm: new Date(),
+  }),
+  ComercialCobranca: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, provedor: 'asaas', externoId: `pay_gatilho_${crypto.randomUUID()}`,
+    parcela: 1, parcelas: 1, valorCentavos: 100, forma: 'pix', vence: new Date(), atualizadoEm: new Date(),
+  }),
+  ComercialDocumento: async () => ({
+    id: crypto.randomUUID(), leadId: sementes.A.ref.leadId, provedor: 'zapsign', externoId: `doc_gatilho_${crypto.randomUUID()}`,
+    hashConteudo: 'gatilho', atualizadoEm: new Date(),
+  }),
   IntegrationHealth: async (c) => {
     // accountId é @unique: precisa de uma conta nova, senão colide com a semente.
     const conta = await ins(c, 'IntegrationAccount', {
@@ -3168,9 +3201,10 @@ describe('orgId em todo filho de tenant (RF-T-01)', () => {
     // clientes, 17/09/2026) + os 4 filhos do trilho de onboarding (23/09/2026)
     // + `PautaEpisodio` (MC7, 23/09/2026) + `PautaPublicacao` (MD6, 24/09/2026)
     // + `ItemDoLote` (MD7, 24/09/2026) + `ComentarioComPalavra` (MD9, 25/09/2026)
-    // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026).
+    // + `EnvioAoYoutube` (MD10, 25/09/2026) + `EnvioDeResposta` (MD11, 25/09/2026)
+    // + os 8 filhos de Lead do cockpit comercial (13/10/2026).
     // Filho novo sobe este número no mesmo commit.
-    expect(declarados.length).toBe(21);
+    expect(declarados.length).toBe(29);
   });
 
   it.each(FILHOS_COM_ORGID_REDUNDANTE.map((f) => [f.modelo, f] as const))(
