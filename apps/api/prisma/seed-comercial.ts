@@ -43,7 +43,10 @@ const PESSOAS = [
  *  · fupLeuDias 3 e fupSilencioDias 7, prazoDiagnosticoDiasUteis 1: o roteiro (§2.5);
  *  · decisaoExpiraHoras 4, leadParadoDias 3, horaPublicacaoProposta 18 e
  *    validadePropostaDias 8: os dados de exemplo das telas 03, 04, 06 e 07 do mapa;
- *  · janelaDeVetoMinutos 10: só para a demonstração ter o que mostrar.
+ *  · janelaDeVetoMinutos 10: só para a demonstração ter o que mostrar;
+ *  · cobrancaSemWebhookDias 2 e efeitoRetidoHoras 24 (lane E, vigia das 08:00):
+ *    o mapa não dá os números; valores de homologação para as premissas do
+ *    cobrador e do efeito retido terem o que conferir.
  * Todos são [a decidir] pela mesa; nenhum vale fora da homologação.
  */
 const CONFIG_DE_HOMOLOGACAO = {
@@ -55,6 +58,8 @@ const CONFIG_DE_HOMOLOGACAO = {
   horaPublicacaoProposta: 18,
   validadePropostaDias: 8,
   janelaDeVetoMinutos: 10,
+  cobrancaSemWebhookDias: 2,
+  efeitoRetidoHoras: 24,
   valoresDeHomologacao: true,
 };
 
