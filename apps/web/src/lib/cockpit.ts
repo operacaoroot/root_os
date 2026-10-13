@@ -162,6 +162,31 @@ export function segundos(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1).replace('.', ',')} s`;
 }
 
+/** O dia de hoje em São Paulo, "AAAA-MM-DD" (o formato do campo de data). */
+export function diaDeHojeSP(agora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+}
+
+/** O dia seguinte a um "AAAA-MM-DD", no mesmo formato (sem passar pelo fuso). */
+export function diaSeguinte(dia: string): string {
+  const [a, m, d] = dia.split('-').map(Number);
+  const t = new Date(Date.UTC(a, m - 1, d + 1));
+  return `${t.getUTCFullYear()}-${dd(t.getUTCMonth() + 1)}-${dd(t.getUTCDate())}`;
+}
+
+/**
+ * O que impede registrar a saída antes de ir à API (C-13). A geladeira volta
+ * com data marcada, e a data é depois de hoje; enviar a parceiro diz para quem.
+ */
+export function problemaDaSaida(s: { saida: string; volta: string; parceiro: string }, agora: Date = new Date()): string | null {
+  if (s.saida === 'geladeira') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s.volta)) return 'Marque a data de volta: a geladeira volta com data marcada.';
+    if (s.volta <= diaDeHojeSP(agora)) return 'A data de volta precisa ser depois de hoje.';
+  }
+  if (s.saida === 'parceiro' && !s.parceiro.trim()) return 'Diga para qual parceiro o lead vai.';
+  return null;
+}
+
 /** Percentual de 0 a 1 ou de 0 a 100 escrito como "97%". */
 export function percentual(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return AUSENTE;

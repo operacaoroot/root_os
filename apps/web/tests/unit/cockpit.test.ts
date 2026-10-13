@@ -185,3 +185,23 @@ describe('cockpit — instantes legíveis no fio', () => {
     expect(instantesLegiveis('M3 enviada')).toBe('M3 enviada');
   });
 });
+
+describe('cockpit — revisão P3 das telas', () => {
+  it('C-13: a geladeira pede data de volta depois de hoje (São Paulo) e o 409 traz o que falta', async () => {
+    const { problemaDaSaida, diaDeHojeSP, diaSeguinte } = await import('@/lib/cockpit');
+    const { erroDaResposta } = await import('@/lib/api');
+    // 13/10 às 23:30 em São Paulo já é 14/10 em UTC: o "hoje" é o de São Paulo.
+    const agora = new Date('2026-10-14T02:30:00.000Z');
+    expect(diaDeHojeSP(agora)).toBe('2026-10-13');
+    expect(diaSeguinte('2026-10-31')).toBe('2026-11-01');
+    expect(problemaDaSaida({ saida: 'geladeira', volta: '', parceiro: '' }, agora)).toMatch(/data de volta/);
+    expect(problemaDaSaida({ saida: 'geladeira', volta: '2026-10-13', parceiro: '' }, agora)).toMatch(/depois de hoje/);
+    expect(problemaDaSaida({ saida: 'geladeira', volta: '2026-10-14', parceiro: '' }, agora)).toBeNull();
+    expect(problemaDaSaida({ saida: 'parceiro', volta: '', parceiro: ' ' }, agora)).toMatch(/parceiro/);
+    expect(problemaDaSaida({ saida: 'perdido', volta: '', parceiro: '' }, agora)).toBeNull();
+    const e = erroDaResposta({ message: 'Saída recusada.', faltando: ['lead em Fechado: não sai'] }, 409);
+    expect(e.message).toBe('Saída recusada.');
+    expect(e.detalhes).toEqual(['lead em Fechado: não sai']);
+    expect(erroDaResposta({ message: 'x' }, 400).detalhes).toEqual([]);
+  });
+});

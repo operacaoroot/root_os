@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-import { apiGet } from '@/lib/api';
+import { ErroDaApi, apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { faixaDaSaude } from '@/lib/cockpit';
 
@@ -68,9 +68,14 @@ export function Carregando() {
 export function Erro({ erro }: { erro: unknown }) {
   if (!erro) return null;
   return (
-    <p role="alert" className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">
-      {erro instanceof Error ? erro.message : String(erro)}
-    </p>
+    <div role="alert" className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">
+      <p>{erro instanceof Error ? erro.message : String(erro)}</p>
+      {erro instanceof ErroDaApi && erro.detalhes.length > 0 && (
+        <ul className="mt-1 list-disc pl-5">
+          {erro.detalhes.map((d, i) => <li key={i}>{d}</li>)}
+        </ul>
+      )}
+    </div>
   );
 }
 

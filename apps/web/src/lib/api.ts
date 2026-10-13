@@ -43,6 +43,8 @@ export class ErroDaApi extends Error {
     message: string,
     readonly status: number,
     readonly codigo: string | null = null,
+    /** O que a API listou além da frase (`faltando`, `erros`): o que falta para passar. */
+    readonly detalhes: string[] = [],
   ) {
     super(message);
     this.name = 'ErroDaApi';
@@ -93,7 +95,10 @@ export function erroDaResposta(body: Record<string, unknown>, status: number): E
       : '';
   const texto =
     issues || mensagem || (typeof body.error === 'string' ? body.error : '') || `Erro ${status}`;
-  return new ErroDaApi(texto, status, typeof body.error === 'string' ? body.error : null);
+  const detalhes = [body.faltando, body.erros]
+    .flatMap((l) => (Array.isArray(l) ? l : []))
+    .filter((x): x is string => typeof x === 'string' && x.length > 0);
+  return new ErroDaApi(texto, status, typeof body.error === 'string' ? body.error : null, detalhes);
 }
 
 async function handle<T>(res: Response): Promise<T> {

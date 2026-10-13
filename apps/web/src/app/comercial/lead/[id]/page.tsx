@@ -9,7 +9,7 @@ import { COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { localSPParaIso } from '@/lib/sala-do-cliente';
-import { AUSENTE, ROTULO_DA_FONTE, ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaSP, fioPorDia, horaSP, instantesLegiveis, numeroOuAusente, quandoRoda, reaisOuAusente } from '@/lib/cockpit';
+import { AUSENTE, ROTULO_DA_FONTE, ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, diaDeHojeSP, diaSP, diaSeguinte, fioPorDia, horaSP, instantesLegiveis, numeroOuAusente, problemaDaSaida, quandoRoda, reaisOuAusente } from '@/lib/cockpit';
 
 import { AbasDoLead, Aviso, BarraDaSaude, BOTAO, CARTAO, Carregando, Chip, Erro, FOCO, INPUT, Rotulo, useCarregar } from '../../_ui';
 
@@ -196,8 +196,11 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
   const [erro, setErro] = useState<unknown>(null);
   const [ok, setOk] = useState(false);
 
+  const problema = problemaDaSaida({ saida, volta, parceiro });
+
   async function registrar() {
     setErro(null);
+    if (problema) return;
     const corpo: Record<string, string> = { saida, motivo };
     if (detalhe.trim()) corpo.detalhe = detalhe.trim();
     if (saida === 'geladeira' && volta) {
@@ -236,7 +239,7 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
           </label>
           {saida === 'geladeira' && (
             <label className="block">volta em
-              <input type="date" className={INPUT} value={volta} onChange={(e) => setVolta(e.target.value)} />
+              <input type="date" required min={diaSeguinte(diaDeHojeSP())} className={INPUT} value={volta} onChange={(e) => setVolta(e.target.value)} />
             </label>
           )}
           {saida === 'parceiro' && (
@@ -247,8 +250,9 @@ function RegistrarSaida({ leadId, aoMudar }: { leadId: string; aoMudar: () => Pr
           <label className="block">detalhe (opcional)
             <input className={INPUT} value={detalhe} onChange={(e) => setDetalhe(e.target.value)} maxLength={400} />
           </label>
+          {problema && <p className="text-[12px] text-warn">{problema}</p>}
           <div className="flex gap-2">
-            <button type="button" className={BOTAO} onClick={() => void registrar()}>registrar</button>
+            <button type="button" className={BOTAO} disabled={!!problema} onClick={() => void registrar()}>registrar</button>
             <button type="button" className={BOTAO} onClick={() => setAberto(false)}>cancelar</button>
           </div>
           {ok && <Aviso tom="bom">Saída registrada no fio.</Aviso>}
