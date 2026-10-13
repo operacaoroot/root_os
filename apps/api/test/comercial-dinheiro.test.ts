@@ -368,7 +368,11 @@ describe('do aceite ao cliente ativo, pela porta e pelos dublês', () => {
     expect(await dinheiro.webhookDoAsaas(SEGREDO_ASAAS, corpo)).toMatchObject({ gravados: 0 });
     expect(await prisma.leadEvent.count({ where: { leadId, type: 'pix.pago' } })).toBe(1);
 
-    // Ainda sem as duas assinaturas: o fechamento não foi proposto.
+    // Ainda sem as duas assinaturas: o fechamento não foi proposto, nem a pedido de uma pessoa.
+    expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO } })).toBe(0);
+    expect(await naEmpresa(() => fechamento.propor(ORG, leadId, { id: titularId, tipo: 'user' as never }))).toEqual({
+      pulado: 'falta: contrato assinado pelo cliente, contrato assinado pela Root',
+    });
     expect(await prisma.approval.count({ where: { orgId: ORG, capabilityId: CAP_FECHAMENTO } })).toBe(0);
 
     const doc = await prisma.comercialDocumento.findFirstOrThrow({ where: { leadId } });

@@ -240,6 +240,9 @@ export class FechamentoService implements OnModuleInit {
     if (!a) return { pulado: 'sem aceite com dados' };
     const linha = await this.garantirLinha(orgId, leadId, a);
     if (linha.estado === 'concluido') return { estado: 'concluido', chave: linha.chave };
+    // Nem a pessoa pede fechamento antes da hora: sem a 1ª parcela paga e as duas assinaturas, nada vai à fila.
+    const pronto = prontoParaFechar(await this.tiposNoFio(leadId));
+    if (!pronto.pronto) return { pulado: `falta: ${pronto.falta.join(', ')}` };
     const viva = await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, linha.chave, agora);
     if (viva) return { estado: 'na_fila', approvalId: viva.id, chave: linha.chave };
     if (linha.vetadoEm && ator.tipo === ActorType.system) return { pulado: 'fechamento vetado: só volta pelo "rodar de novo"' };
@@ -268,6 +271,8 @@ export class FechamentoService implements OnModuleInit {
     if (!a) throw new Error('o lead não tem aceite com dados: nada foi feito');
     if (a.hash !== String(args.propostaHash)) throw new Error('a proposta aceita mudou depois do pedido: nada foi feito');
     if (chave !== chaveDoFechamento(leadId, a.versao)) throw new Error('a chave do fechamento não é a da versão aceita: nada foi feito');
+    const pronto = prontoParaFechar(await this.tiposNoFio(leadId));
+    if (!pronto.pronto) throw new Error(`o fechamento ainda não pode rodar (falta: ${pronto.falta.join(', ')}): nada foi feito`);
     return this.executar(orgId, leadId, a);
   }
 
