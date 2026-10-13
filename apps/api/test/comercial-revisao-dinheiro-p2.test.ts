@@ -1,7 +1,7 @@
 import { ActorType, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { DinheiroService, type AceiteDoLead } from '../src/comercial/dinheiro.service';
+import { COBRANCA_EM_CURSO, DinheiroService, type AceiteDoLead } from '../src/comercial/dinheiro.service';
 import { FechamentoService, faltaDaVersao } from '../src/comercial/fechamento.service';
 import { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import type { PortaDeAssinatura } from '../src/comercial/portas/assinatura.port';
@@ -200,6 +200,47 @@ describe('revisão P2 do dinheiro', () => {
       expect(r2.escritas.find((e) => e.escrita === 'grupo')?.estado).toBe('criado');
       expect(gruposCriados.length).toBe(gruposAntes + 1);
       expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: a.dados.cnpj } })).toBe(1);
+    });
+  });
+
+  describe('D-7: duas execuções simultâneas não escrevem em dobro', () => {
+    it('o mesmo fechamento rodado duas vezes ao mesmo tempo cria um cliente, um contrato e um grupo', async () => {
+      const { leadId, a } = await leadFechavel(`3${Date.now().toString().slice(-13)}`);
+      const gruposAntes = gruposCriados.length;
+      atrasoDoGrupo = 300;
+      try {
+        await Promise.all([fechamento.executar(ORG, leadId, a), fechamento.executar(ORG, leadId, a)]);
+      } finally {
+        atrasoDoGrupo = 0;
+      }
+      expect(gruposCriados.length).toBe(gruposAntes + 1);
+      expect(await prisma.partner.count({ where: { orgId: ORG, cnpjCpf: a.dados.cnpj } })).toBe(1);
+      const linha = await prisma.comercialFechamento.findUniqueOrThrow({ where: { chave: `fech-${leadId}-v1` } });
+      expect(await prisma.contract.count({ where: { orgId: ORG, descricao: { contains: linha.chave } } })).toBe(1);
+      expect(await prisma.leadEvent.count({ where: { leadId, type: 'fechamento.escrita', payload: { path: ['escrita'], equals: 'grupo' } } })).toBe(1);
+    });
+
+    it('duas criações simultâneas da cobrança do mesmo lead chamam o provedor uma vez; a seguinte reaproveita', async () => {
+      const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Lead da cobrança', phone: '5532988887777' } });
+      await fio.registrar(ORG, lead.id, 'aceite.dados', 'dados', { cnpj: '11222333000181', razaoSocial: 'Empresa Cobrança', endereco: 'Rua A, 1', quemAssina: 'Fulana', email: 'fulana@exemplo.com' } as never);
+      await fio.registrar(ORG, lead.id, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: HASH_V1 } as never);
+      const a = (await dinheiro.aceiteDoLead(lead.id))!;
+      const antes = cobrancasCriadas.length;
+      atrasoDaCobranca = 300;
+      let r: PromiseSettledResult<unknown>[];
+      try {
+        r = await Promise.allSettled([dinheiro.criarCobrancaDoAceite(ORG, lead.id, a), dinheiro.criarCobrancaDoAceite(ORG, lead.id, a)]);
+      } finally {
+        atrasoDaCobranca = 0;
+      }
+      expect(cobrancasCriadas.length).toBe(antes + 1);
+      expect(await prisma.comercialCobranca.count({ where: { leadId: lead.id } })).toBe(3);
+      const recusas = r.filter((x): x is PromiseRejectedResult => x.status === 'rejected');
+      expect(recusas.length).toBeLessThanOrEqual(1);
+      for (const x of recusas) expect((x.reason as Error).message).toBe(COBRANCA_EM_CURSO);
+      const de_novo = await dinheiro.criarCobrancaDoAceite(ORG, lead.id, a);
+      expect(de_novo).toMatchObject({ reaproveitada: true, parcelas: 3, referencia: `cob-${lead.id}-v1` });
+      expect(cobrancasCriadas.length).toBe(antes + 1);
     });
   });
 });

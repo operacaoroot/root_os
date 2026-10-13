@@ -68,6 +68,11 @@ const SE_RODAR_DE_NOVO: Record<EscritaDoFechamento['escrita'], string> = {
   grupo: 'não cria outro',
 };
 const FASES_DO_TRILHO = ['qualificar', 'diagnostico', 'contrato', 'imersao', 'operacao'];
+/**
+ * D-7: um fechamento em curso há mais que isto é dado por parado (o processo
+ * caiu no meio) e pode ser tomado de novo.
+ */
+export const FECHAMENTO_PARADO_MS = 15 * 60_000;
 /** Quem entra no grupo do cliente é decisão da mesa: até lá a M8 sai com a lacuna à vista de quem libera o envio. */
 export const EQUIPE_A_DECIDIR = '[a decidir: quem entra no grupo]';
 
@@ -351,11 +356,23 @@ export class FechamentoService implements OnModuleInit {
 
   /** As cinco escritas. Rodar de novo reaproveita o que ficou pronto e refaz só o que ficou em erro ou pendente. */
   async executar(orgId: string, leadId: string, aceiteDeAgora: AceiteDoLead): Promise<FechamentoDoLead> {
-    const linha = await this.garantirLinha(orgId, leadId, aceiteDeAgora);
+    const pega = await this.garantirLinha(orgId, leadId, aceiteDeAgora);
+    if (pega.estado === 'concluido') return this.projetar(pega);
+    // D-7: a linha é TOMADA com escrita condicionada ao estado (pendente ou erro; em curso só se parado).
+    // Quem não tomou sai sem escrever nada: outra execução do mesmo fechamento está rodando.
+    const tomada = await this.prisma.comercialFechamento.updateMany({
+      where: {
+        id: pega.id,
+        OR: [{ estado: { in: ['pendente', 'erro'] } }, { estado: 'em_curso', atualizadoEm: { lt: new Date(Date.now() - FECHAMENTO_PARADO_MS) } }],
+      },
+      data: { estado: 'em_curso', iniciadoEm: pega.iniciadoEm ?? new Date(), erro: null },
+    });
+    const linha = await this.prisma.comercialFechamento.findUniqueOrThrow({ where: { id: pega.id } });
+    if (tomada.count === 0) {
+      this.log.warn(`fechamento ${linha.chave} não tomado (estado ${linha.estado}): outra execução está em curso, nada foi feito`);
+      return this.projetar(linha);
+    }
     const anteriores = new Map(((linha.escritas ?? []) as unknown as EscritaDoFechamento[]).map((e) => [e.escrita, e]));
-    if (linha.estado === 'concluido') return this.projetar(linha);
-    const iniciadoEm = linha.iniciadoEm ?? new Date();
-    await this.prisma.comercialFechamento.update({ where: { id: linha.id }, data: { estado: 'em_curso', iniciadoEm, erro: null } });
 
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true, phone: true, email: true } });
     const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId } });

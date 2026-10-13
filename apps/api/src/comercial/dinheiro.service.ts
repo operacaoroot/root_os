@@ -103,6 +103,16 @@ export type ResultadoDaProposta = 'proposta' | 'na_fila' | 'ja_existe' | 'execut
 /** De quanto em quanto tempo o sistema volta a pôr na fila uma proposta R4 que venceu sem assinatura. */
 export const REPROPOR_DEPOIS_DE_MIN = 60;
 
+/**
+ * D-7: quanto a trava da criação da cobrança pode ficar presa (a transação que
+ * a segura fica aberta enquanto o provedor responde). Passou disso, o banco
+ * solta a trava e a transação falha.
+ */
+export const PRAZO_DA_TRAVA_DA_COBRANCA_MS = 180_000;
+
+/** D-7: a frase de quem chega enquanto outra execução cria a cobrança do mesmo lead. */
+export const COBRANCA_EM_CURSO = 'outra execução está criando a cobrança deste lead agora: nada foi cobrado em dobro. Rode de novo em instantes.';
+
 function ehRetida(r: unknown): r is { status: 'aguardando_aprovacao'; approvalId: string } {
   return !!r && typeof r === 'object' && (r as P).status === 'aguardando_aprovacao';
 }
@@ -367,6 +377,23 @@ export class DinheiroService implements OnModuleInit {
     if (!(a.parcelas > 0) || a.valorCentavos % a.parcelas !== 0) {
       throw new Error(`as parcelas não fecham o total (${a.valorCentavos} em ${a.parcelas}): nada foi cobrado`);
     }
+    // D-7: "procura e cria" sem trava deixava duas execuções simultâneas criarem dois clientes e duas
+    // cobranças no provedor. A trava é do lead (uma cobrança por lead), tomada sem esperar: quem chega
+    // com ela presa recusa sem escrever nada fora; quem a toma confere de novo o que já existe.
+    return this.prisma.$transaction(
+      async (tx) => {
+        const [trava] = await tx.$queryRaw<{ tomou: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${`comercial-cobranca:${leadId}`})) AS tomou`;
+        if (!trava?.tomou) throw new Error(COBRANCA_EM_CURSO);
+        const ja = await this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } });
+        if (ja.length) return { referencia, parcelas: ja.length, reaproveitada: true, externoIds: ja.map((c) => c.externoId) };
+        return this.criarNoProvedor(orgId, leadId, a, referencia);
+      },
+      { timeout: PRAZO_DA_TRAVA_DA_COBRANCA_MS, maxWait: 10_000 },
+    );
+  }
+
+  /** A criação de fato (cliente, cobrança parcelada, linhas e fato), sob a trava de `criarCobrancaDoAceite`. */
+  private async criarNoProvedor(orgId: string, leadId: string, a: AceiteDoLead, referencia: string): Promise<{ referencia: string; parcelas: number; reaproveitada: boolean; externoIds: string[] }> {
     const parcelaCentavos = a.valorCentavos / a.parcelas;
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { phone: true } });
     const cliente = await this.cobranca.criarCliente({
