@@ -192,11 +192,13 @@ export function problemaDaSaida(s: { saida: string; volta: string; parceiro: str
   return null;
 }
 
-/** Percentual de 0 a 1 ou de 0 a 100 escrito como "97%". */
-export function percentual(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return AUSENTE;
-  const pct = v <= 1 ? v * 100 : v;
-  return `${Math.round(pct)}%`;
+/**
+ * Uma FRAÇÃO de 0 a 1 escrita como "97%" (o acerto da torre vem assim da API).
+ * C-23: não adivinha a escala; 0,01 é "1%", nunca "100%".
+ */
+export function percentual(fracao: number | null | undefined): string {
+  if (fracao == null || !Number.isFinite(fracao)) return AUSENTE;
+  return `${Math.round(fracao * 100)}%`;
 }
 
 export const ROTULO_DA_FONTE: Record<ComercialFonte, string> = {

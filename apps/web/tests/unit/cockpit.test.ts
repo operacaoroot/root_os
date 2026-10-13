@@ -45,7 +45,10 @@ describe('cockpit — o que vem nulo aparece como ausente', () => {
     expect(numeroOuAusente(86)).toBe('86');
     expect(numeroOuAusente(null)).toBe(AUSENTE);
     expect(percentual(0.97)).toBe('97%');
-    expect(percentual(92)).toBe('92%');
+    // C-23: a escala é sempre fração, sem adivinhar pelo tamanho: 0,01 é 1% e 1 é 100%.
+    expect(percentual(0.01)).toBe('1%');
+    expect(percentual(1)).toBe('100%');
+    expect(percentual(0)).toBe('0%');
     expect(percentual(null)).toBe(AUSENTE);
     expect(segundos(400)).toBe('0,4 s');
     expect(segundos(14)).toBe('14 ms');
