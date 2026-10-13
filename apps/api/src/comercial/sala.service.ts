@@ -30,7 +30,7 @@ import { StorageService } from '../storage/storage.service';
 import { horarioOferecido, horariosOferecidos } from './agenda-de-homologacao';
 import { hashDoConteudo } from './eventos';
 import { FioService, ReacoesRegistry } from './fio.service';
-import { projetarSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
+import { chaveDaDuvida, projetarSala, type DadosDaSala, type EventoDaSala } from './sala-projecao';
 import {
   cifrarTokenDaSala,
   decifrarTokenDaSala,
@@ -186,6 +186,30 @@ export class SalaService implements OnModuleInit {
     await this.prisma.salaDoCliente.update({ where: { id: sala.id }, data: { dados: { ...dados, linkDoTrilho } as Prisma.InputJsonValue } });
   }
 
+  /**
+   * A resposta a uma dúvida da proposta (o assistente da lane E, ou gente). O
+   * evento `proposta.duvida` é imutável; a resposta mora na sala, pela chave da
+   * dúvida, e a projeção a mostra no lugar do "recebemos". Responder de novo
+   * troca a resposta.
+   */
+  async responderDuvida(orgId: string, leadId: string, duvida: { versao: number; pergunta: string }, resposta: string, por: string | null = null): Promise<void> {
+    const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId } });
+    if (!sala) throw new NotFoundException('o lead não tem sala');
+    const texto = String(resposta ?? '').trim();
+    if (!texto) throw new BadRequestException('resposta vazia');
+    const dados = (sala.dados ?? {}) as DadosDaSala & P;
+    const respostas = { ...(dados.respostas ?? {}), [chaveDaDuvida(duvida.versao, duvida.pergunta)]: { resposta: texto.slice(0, 2000), em: new Date().toISOString(), por } };
+    await this.prisma.salaDoCliente.update({ where: { id: sala.id }, data: { dados: { ...dados, respostas } as Prisma.InputJsonValue } });
+  }
+
+  /** As dúvidas da proposta vigente ainda sem resposta (para o assistente da lane E). */
+  async duvidasSemResposta(orgId: string, leadId: string): Promise<{ versao: number; pergunta: string; em: string }[]> {
+    const estado = await this.estadoDoLead(orgId, leadId);
+    const p = estado?.proposta;
+    if (!p) return [];
+    return (p.duvidas ?? []).filter((d) => !d.resposta).map((d) => ({ versao: p.versao, pergunta: d.pergunta, em: d.em }));
+  }
+
   /** O estado da sala pelo LEAD (rotas internas e simulador). */
   async estadoDoLead(orgId: string, leadId: string, agora: Date = new Date()): Promise<EstadoDaSala | null> {
     const sala = await this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId } });
@@ -296,7 +320,7 @@ export class SalaService implements OnModuleInit {
     const { pergunta } = this.validar(SalaDuvidaSchema, corpo);
     return this.naSala(token, async (r) => {
       const { versao } = await this.propostaVigente(r.leadId);
-      await this.fio.registrar(r.orgId, r.leadId, 'proposta.duvida', hashDoConteudo({ versao, pergunta }), { versao, pergunta, resposta: null });
+      await this.fio.registrar(r.orgId, r.leadId, 'proposta.duvida', chaveDaDuvida(versao, pergunta), { versao, pergunta, resposta: null });
     });
   }
 

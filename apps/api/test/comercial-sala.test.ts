@@ -216,6 +216,10 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
   it('dúvida e ajuste viram fatos; a dúvida aparece sem resposta até a lane E responder', async () => {
     const e = await sala.duvida(token, { pergunta: 'O painel funciona no celular?' });
     expect(e.proposta?.duvidas?.[0]).toMatchObject({ pergunta: 'O painel funciona no celular?', resposta: null });
+    expect(await sala.duvidasSemResposta(ORG, leadId)).toEqual([expect.objectContaining({ versao: 1, pergunta: 'O painel funciona no celular?' })]);
+    await sala.responderDuvida(ORG, leadId, { versao: 1, pergunta: 'O painel funciona no celular?' }, 'Funciona: o painel abre no navegador do celular.');
+    expect((await sala.estado(token)).proposta?.duvidas?.[0].resposta).toBe('Funciona: o painel abre no navegador do celular.');
+    expect(await sala.duvidasSemResposta(ORG, leadId)).toEqual([]);
     const a = await sala.ajuste(token, { pedido: 'Dá para 5% de desconto?', descontoPct: 5 });
     expect(a.proposta?.ajustePendente).toBe(true);
     expect((await eventos(leadId, 'proposta.ajuste_pedido')).length).toBe(1);

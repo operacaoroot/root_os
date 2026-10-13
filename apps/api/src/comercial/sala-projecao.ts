@@ -14,6 +14,7 @@ import {
 } from '@mktos/shared';
 
 import { DURACAO_DA_CONVERSA_MIN } from './agenda-de-homologacao';
+import { hashDoConteudo } from './eventos';
 
 /*
  * A SALA COMO PROJEÇÃO — o que o lead vê, montado do fio (Lane B, 13/10/2026).
@@ -63,6 +64,8 @@ export interface DocumentoParaSala {
 
 export interface DadosDaSala {
   horariosOferecidos?: string[];
+  /** As respostas às dúvidas da proposta, pela chave da dúvida (`chaveDaDuvida`). Quem responde é o assistente (lane E) ou gente. */
+  respostas?: Record<string, { resposta: string; em: string; por?: string | null }>;
   linkDoTrilho?: string | null;
 }
 
@@ -155,6 +158,11 @@ export function oQueContou(p: P | null): string[] {
   return out;
 }
 
+/** A identidade de uma dúvida: a mesma chave do evento `proposta.duvida`. */
+export function chaveDaDuvida(versao: number, pergunta: string): string {
+  return hashDoConteudo({ versao, pergunta });
+}
+
 export function estagioDaSala(e: EntradaDaProjecao): SalaEstagio {
   const tem = (t: string) => e.eventos.some((x) => x.type === t);
   if (e.ficha?.clienteAtivoEm || e.ficha?.etapa === 'fechado' || tem('cliente.ativo')) return 'comeco';
@@ -236,7 +244,9 @@ export function projetarSala(e: EntradaDaProjecao): EstadoDaSala {
         ajustePendente: Boolean(ultimoAjuste && !decididoDepois),
         duvidas: daVersao('proposta.duvida').map((d) => {
           const q = (d.payload ?? {}) as P;
-          return { pergunta: String(q.pergunta ?? ''), resposta: str(q.resposta), em: d.occurredAt.toISOString() };
+          const pergunta = String(q.pergunta ?? '');
+          const respondida = e.dados.respostas?.[chaveDaDuvida(versao, pergunta)];
+          return { pergunta, resposta: respondida?.resposta ?? str(q.resposta), em: d.occurredAt.toISOString() };
         }),
       };
     }
