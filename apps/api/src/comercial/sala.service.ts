@@ -316,6 +316,10 @@ export class SalaService implements OnModuleInit {
     });
   }
 
+  /**
+   * A dúvida continua aberta depois do aceite (B-6, escolha registrada): ela não
+   * muda preço, parcela nem contrato, só pede uma resposta da mesa.
+   */
   async duvida(token: string, corpo: unknown): Promise<EstadoDaSala> {
     const { pergunta } = this.validar(SalaDuvidaSchema, corpo);
     return this.naSala(token, async (r) => {
@@ -324,10 +328,19 @@ export class SalaService implements OnModuleInit {
     });
   }
 
+  /**
+   * O pedido de ajuste. Depois do aceite (B-6/D-4) é 409: a cobrança e o
+   * contrato já foram propostos à titular com a versão aceita, e um ajuste ali
+   * abriria uma versão nova por cima deles. Mudar algo depois do aceite passa a
+   * ser pedido à mesa.
+   */
   async ajuste(token: string, corpo: unknown): Promise<EstadoDaSala> {
     const input = this.validar(SalaAjusteSchema, corpo);
     return this.naSala(token, async (r) => {
       const { versao } = await this.propostaVigente(r.leadId);
+      if (await this.ultimoEvento(r.leadId, 'proposta.aceita')) {
+        throw new ConflictException('a proposta já foi aceita: para mudar alguma condição, fale com a Root no WhatsApp');
+      }
       await this.fio.registrar(r.orgId, r.leadId, 'proposta.ajuste_pedido', hashDoConteudo({ versao, ...input }), {
         versao,
         pedido: input.pedido,

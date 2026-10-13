@@ -278,6 +278,15 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     expect((await eventos(leadId, 'proposta.aceita')).length).toBe(1);
   });
 
+  it('depois do aceite o ajuste é 409 e não entra no fio; a dúvida continua (B-6)', async () => {
+    const antes = (await eventos(leadId, 'proposta.ajuste_pedido')).length;
+    await expect(sala.ajuste(token, { pedido: 'Agora quero 10% de desconto', descontoPct: 10 })).rejects.toMatchObject({ status: 409 });
+    await expect(sala.ajuste(token, { pedido: 'Agora quero 10% de desconto', descontoPct: 10 })).rejects.toThrow(/já foi aceita/);
+    expect((await eventos(leadId, 'proposta.ajuste_pedido')).length).toBe(antes);
+    const d = await sala.duvida(token, { pergunta: 'Quando começa a implantação?' });
+    expect(d.proposta?.duvidas?.some((x) => x.pergunta === 'Quando começa a implantação?')).toBe(true);
+  });
+
   it('o efeito, e só ele, entrega no simulado; o mesmo pedido não sai duas vezes; texto trocado não sai', async () => {
     const m1 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId, template: 'M1' } });
     const args = pedidos[0].args;
