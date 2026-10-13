@@ -65,12 +65,18 @@ export class InteligenciaController {
     return this.diagnosticos.refazer(user.orgId, id, body);
   }
 
-  /** Aprova o diagnóstico (portão de E5). É o toque do sócio que solta a proposta. */
+  /**
+   * Aprova o diagnóstico (portão de E5). É o toque do sócio que solta a proposta.
+   * Revisão E-4/C-8: decisão de mesa (`aprovacoes.decidir`, conta de máquina
+   * recusada) sobre o diagnóstico que a pessoa leu: corpo `{ eventoId }`, 409
+   * se o vigente for outro.
+   */
   @Post('lead/:id/diagnostico/aprovar')
   @HttpCode(200)
-  @RequirePermissions('leads.editar')
-  aprovarDiagnostico(@CurrentUser() user: JwtUser, @Param('id') id: string) {
-    return this.diagnosticos.aprovar(user.orgId, id, { id: user.sub, nome: user.name ?? null });
+  @RequirePermissions('aprovacoes.decidir')
+  aprovarDiagnostico(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const eventoId = body && typeof body === 'object' ? (body as { eventoId?: unknown }).eventoId : undefined;
+    return this.diagnosticos.aprovar(user.orgId, id, { id: user.sub, nome: user.name ?? null, papeis: user.roles ?? [] }, typeof eventoId === 'string' ? eventoId : '');
   }
 
   /** Monta (ou refaz) a proposta pela tabela, passa pelo revisor e encaminha: porta, ou fila de decisões. Corpo opcional: `{ produto }`. */

@@ -14,8 +14,11 @@ import { ErroDaApi } from '@/lib/api';
 let RESPOSTAS: Record<string, unknown> = {};
 const posts: { caminho: string; corpo: unknown }[] = [];
 
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: null, can: () => true }) }));
-vi.mock('next/navigation', () => ({ useParams: () => ({}), usePathname: () => '/comercial', useRouter: () => ({ push: vi.fn() }) }));
+let PERMISSOES: string[] | null = null;
+let PARAMS: Record<string, string> = {};
+
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: null, can: (p: string) => PERMISSOES === null || PERMISSOES.includes(p) }) }));
+vi.mock('next/navigation', () => ({ useParams: () => PARAMS, usePathname: () => '/comercial', useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children, ...resto }: { href: string; children: React.ReactNode }) => <a href={href} {...resto}>{children}</a>,
@@ -40,10 +43,13 @@ vi.mock('@/lib/api', async (original) => {
 import TorrePage from '@/app/comercial/torre/page';
 import RelatorioPage from '@/app/comercial/relatorio/page';
 import FilaPage from '@/app/comercial/page';
+import SessaoPage from '@/app/comercial/lead/[id]/sessao/page';
 
 beforeEach(() => {
   RESPOSTAS = {};
   posts.length = 0;
+  PERMISSOES = null;
+  PARAMS = {};
 });
 
 describe('torre (tela 12)', () => {
@@ -130,5 +136,33 @@ describe('fila de decisões (tela 03)', () => {
     expect(screen.getByText(/Se ninguém responder até/).textContent).toContain('Manter o preço');
     await userEvent.setup().click(screen.getByRole('button', { name: /Aprovar 8%/ }));
     await waitFor(() => expect(posts).toEqual([{ caminho: '/comercial/decisoes/d1/responder', corpo: { escolha: 'desconto:8' } }]));
+  });
+});
+
+describe('depois da sessão (tela 06): aprovar o diagnóstico é da mesa (E-4/C-8)', () => {
+  const sessao = {
+    diagnostico: { eventoId: 'diag-A', em: '2026-10-13T15:00:00.000Z', dores: [{ n: 1, texto: 'fechamento demora', minuto: '04:12' }], objecoes: [], aprovadoEm: null },
+    leitorDeAta: [],
+    proposta: null,
+    versoes: [],
+  };
+
+  it('com aprovacoes.decidir, o botão manda o eventoId do diagnóstico que a pessoa leu', async () => {
+    PARAMS = { id: 'l1' };
+    PERMISSOES = ['leads.ver', 'aprovacoes.decidir'];
+    RESPOSTAS['/comercial/lead/l1/sessao'] = sessao;
+    render(<SessaoPage />);
+    expect(await screen.findByText('esperando aprovação da mesa')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'aprovar este diagnóstico' }));
+    await waitFor(() => expect(posts).toEqual([{ caminho: '/comercial/lead/l1/diagnostico/aprovar', corpo: { eventoId: 'diag-A' } }]));
+  });
+
+  it('sem aprovacoes.decidir, não há botão de aprovar e a tela diz quem aprova', async () => {
+    PARAMS = { id: 'l1' };
+    PERMISSOES = ['leads.ver', 'leads.editar'];
+    RESPOSTAS['/comercial/lead/l1/sessao'] = sessao;
+    render(<SessaoPage />);
+    expect(await screen.findByText(/Quem aprova é a mesa/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /aprovar/ })).toBeNull();
   });
 });

@@ -14,7 +14,8 @@ import { AbasDoLead, AguardandoAprovacao, Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, 
 
 /*
  * TELA 06 · DEPOIS DA SESSÃO (lane C). A ata chega, o leitor de ata monta o
- * diagnóstico com o minuto de cada fala, o sócio aprova, o construtor gera a
+ * diagnóstico com o minuto de cada fala, a mesa aprova (quem tem
+ * `aprovacoes.decidir`, sobre a versão que leu: E-4/C-8), o construtor gera a
  * proposta e o revisor confere. Publicar vai à PORTA (R3): outra pessoa
  * confirma em /atendimento. A tela não escreve campo nenhum: cada botão é uma
  * rota que registra um fato ou pede à porta.
@@ -123,6 +124,9 @@ function useAcao(aoMudar: () => Promise<void>) {
 
 function DiagnosticoDaAta({ leadId, s, aoMudar }: { leadId: string; s: Sessao; aoMudar: () => Promise<void> }) {
   const { agir, ocupado, erro } = useAcao(aoMudar);
+  const { can } = useAuth();
+  // E-4/C-8: o portão de E5 é decisão de mesa; a API recusa quem não tem a permissão.
+  const podeAprovar = can('aprovacoes.decidir');
   const d = s.diagnostico;
   const ultimoLeitor = s.leitorDeAta[0];
 
@@ -130,7 +134,7 @@ function DiagnosticoDaAta({ leadId, s, aoMudar }: { leadId: string; s: Sessao; a
     <section className={`${CARTAO} space-y-3`} aria-label="diagnóstico">
       <div className="flex flex-wrap items-center gap-2">
         <Rotulo>da ata · com minuto</Rotulo>
-        {d?.aprovadoEm ? <Chip tom="bom">aprovado</Chip> : d ? <Chip tom="alerta">esperando aprovação do sócio</Chip> : null}
+        {d?.aprovadoEm ? <Chip tom="bom">aprovado</Chip> : d ? <Chip tom="alerta">esperando aprovação da mesa</Chip> : null}
       </div>
       {!d && (
         <p className="text-[12.5px] text-muted">
@@ -174,10 +178,18 @@ function DiagnosticoDaAta({ leadId, s, aoMudar }: { leadId: string; s: Sessao; a
             montado em {diaHoraSP(d.em)}{d.modelo ? ` · modelo ${d.modelo}` : ''}
             {d.aprovadoEm ? ` · aprovado por ${d.aprovadoPor ?? AUSENTE} em ${diaHoraSP(d.aprovadoEm)}` : ''}
           </p>
-          {!d.aprovadoEm && (
-            <button type="button" className={BOTAO_PRIMARIO} disabled={!!ocupado} onClick={() => void agir(`/comercial/lead/${leadId}/diagnostico/aprovar`)}>
-              {ocupado ? 'aprovando…' : 'aprovar diagnóstico'}
+          {!d.aprovadoEm && podeAprovar && (
+            <button
+              type="button"
+              className={BOTAO_PRIMARIO}
+              disabled={!!ocupado}
+              onClick={() => void agir(`/comercial/lead/${leadId}/diagnostico/aprovar`, { eventoId: d.eventoId })}
+            >
+              {ocupado ? 'aprovando…' : 'aprovar este diagnóstico'}
             </button>
+          )}
+          {!d.aprovadoEm && !podeAprovar && (
+            <p className="text-[12px] text-muted">Quem aprova é a mesa: um perfil que decide aprovações. Seu perfil acompanha.</p>
           )}
         </>
       )}
@@ -271,7 +283,7 @@ function Proposta({ leadId, s, aoMudar }: { leadId: string; s: Sessao; aoMudar: 
 
       {!p && (
         <p className="text-[12.5px] text-muted">
-          {podeGerar ? 'Diagnóstico aprovado. A proposta pode ser gerada pela tabela.' : 'A proposta nasce depois que o sócio aprova o diagnóstico.'}
+          {podeGerar ? 'Diagnóstico aprovado. A proposta pode ser gerada pela tabela.' : 'A proposta nasce depois que a mesa aprova o diagnóstico.'}
         </p>
       )}
 

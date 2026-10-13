@@ -333,7 +333,8 @@ async function main() {
   await anotarEtapa(leadId, 'diagnóstico');
 
   passo('9. o sócio aprova o diagnóstico');
-  await api('POST', `/comercial/lead/${leadId}/diagnostico/aprovar`, como('socioDaConta'));
+  // E-4/C-8: aprova o diagnóstico que leu (o eventoId da tela 06); outro vigente é 409.
+  await api('POST', `/comercial/lead/${leadId}/diagnostico/aprovar`, { ...como('socioDaConta'), corpo: { eventoId: sessao.diagnostico.eventoId } });
   toque('socioDaConta', 'aprova o diagnóstico', 'portão de E5: diagnóstico aprovado por sócio solta a proposta');
 
   passo('10. a proposta pela tabela; o quadro de EXEMPLO é apontamento do revisor (E-3): decisão de um toque, depois a porta (R3)');

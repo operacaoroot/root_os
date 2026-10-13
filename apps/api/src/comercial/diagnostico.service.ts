@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { temPapelDeMaquina } from '../approvals/alcada';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { comProcedencia, type ProcedenciaDaChamada } from '../llm/procedencia';
 import { AtaInvalidaError, conferirAta } from '../onboarding/trilho/leitor-de-ata';
@@ -145,11 +146,29 @@ export class DiagnosticoService implements OnModuleInit {
   /**
    * O sócio aprova o diagnóstico (portão de E5): o mesmo fato, de novo, com
    * `aprovadoEm`. Aprovar o já aprovado é 409.
+   *
+   * Revisão E-4/C-8: o portão é decisão de mesa. A rota pede
+   * `aprovacoes.decidir`, conta de máquina é recusada aqui (403) e a pessoa
+   * aprova o diagnóstico que LEU: `eventoLido` diferente do vigente é 409
+   * (alguém refez enquanto ela lia).
    */
-  async aprovar(orgId: string, leadId: string, quem: { id: string; nome: string | null }, agora = new Date()): Promise<{ eventoId: string; novo: boolean }> {
+  async aprovar(
+    orgId: string,
+    leadId: string,
+    quem: { id: string; nome: string | null; papeis?: readonly string[] },
+    eventoLido: string,
+    agora = new Date(),
+  ): Promise<{ eventoId: string; novo: boolean }> {
+    if (temPapelDeMaquina(quem.papeis ?? [])) throw new ForbiddenException('Conta de serviço não aprova o diagnóstico: o portão é de uma pessoa da mesa.');
+    if (typeof eventoLido !== 'string' || !eventoLido.trim()) {
+      throw new BadRequestException('Mande em "eventoId" o diagnóstico que você leu.');
+    }
     const d = await this.vigente(orgId, leadId);
     if (!d) throw new NotFoundException('O lead ainda não tem diagnóstico.');
     if (d.payload.aprovadoEm) throw new ConflictException(`O diagnóstico já foi aprovado em ${String(d.payload.aprovadoEm)}.`);
+    if (d.eventoId !== eventoLido) {
+      throw new ConflictException('O diagnóstico mudou depois que você abriu a tela. Leia a versão nova antes de aprovar.');
+    }
     const payload = { ...d.payload, aprovadoEm: agora.toISOString(), aprovadoPor: quem.nome ?? quem.id, aprovadoPorId: quem.id, aprovaOEvento: d.eventoId };
     return this.fio.registrar(orgId, leadId, 'diagnostico.pronto', `aprovado:${d.eventoId}`, payload as unknown as PayloadDe<'diagnostico.pronto'>, { em: agora });
   }

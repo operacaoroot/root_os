@@ -417,7 +417,7 @@ describe.skipIf(!URL)('a jornada do cockpit de ponta a ponta, contando os toques
 
   it('5 · o sócio aprova; a proposta com o quadro de EXEMPLO cai na decisão, o sócio a leva à porta (R3) e outra pessoa libera; a M4 avisa (R3)', async () => {
     aos('2026-10-14T11:00:00-03:00');
-    await naEmpresa(() => diagnosticos.aprovar(ORG, leadId, { id: socio.id, nome: socio.nome }));
+    await naEmpresa(async () => diagnosticos.aprovar(ORG, leadId, { id: socio.id, nome: socio.nome }, (await diagnosticos.vigente(ORG, leadId))!.eventoId));
     tocar('diagnostico', socio, 'aprova o diagnóstico', 'portão de E5: diagnóstico aprovado por sócio solta a proposta');
     const [rascunho] = await propostas.rascunhos(ORG, leadId);
     expect(rascunho).toMatchObject({ versao: 1, estado: 'na_fila', dentroDaTabela: true });

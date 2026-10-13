@@ -205,7 +205,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
   });
 
   it('o sócio aprova: a proposta da tabela, com laudo limpo, vai à porta e fica RETIDA em R3', async () => {
-    await naEmpresa(() => diagnosticos.aprovar(ORG, leadId, { id: socia.id, nome: socia.name }));
+    await naEmpresa(async () => diagnosticos.aprovar(ORG, leadId, { id: socia.id, nome: socia.name }, (await diagnosticos.vigente(ORG, leadId))!.eventoId));
     const ficha = await prisma.comercialFicha.findFirst({ where: { leadId } });
     expect(ficha?.diagnosticoAprovadoEm).toBeTruthy();
 
@@ -331,7 +331,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     try {
       const outro = await novoLeadComAta(`+55319${SUFIXO}`, 'Construtora Alicerce Filial');
       const chamadasAntes = await prisma.toolCall.count({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } });
-      await naEmpresa(() => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }));
+      await naEmpresa(async () => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }, (await diagnosticos.vigente(ORG, outro))!.eventoId));
       const [v1] = await propostas.rascunhos(ORG, outro);
       expect(v1).toMatchObject({ versao: 1, estado: 'na_fila', dentroDaTabela: true });
       expect(v1.laudo.apontamentos.join(' ')).toMatch(/validade não escrita/);
@@ -362,7 +362,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     try {
       const outro = await novoLeadComAta(`+55339${SUFIXO}`, 'Construtora Alicerce Exemplo');
       const chamadasAntes = await prisma.toolCall.count({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA } });
-      await naEmpresa(() => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }));
+      await naEmpresa(async () => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }, (await diagnosticos.vigente(ORG, outro))!.eventoId));
       const [v1] = await propostas.rascunhos(ORG, outro);
       expect(v1).toMatchObject({ versao: 1, estado: 'na_fila', dentroDaTabela: true });
       expect(v1.conteudo.quadroDeCustos).toMatchObject({ mesNormalCentavos: 18_000, exemplo: true });
@@ -390,7 +390,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     await config.gravar(ORG, { silencioAprova: true, horaPublicacaoProposta: 18 });
     try {
       const outro = await novoLeadComAta(`+55219${SUFIXO}`, 'Construtora Alicerce Matriz');
-      await naEmpresa(() => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }));
+      await naEmpresa(async () => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }, (await diagnosticos.vigente(ORG, outro))!.eventoId));
       const [v1] = await propostas.rascunhos(ORG, outro);
       expect(v1).toMatchObject({ versao: 1, estado: 'agendada', publicarEm: '2026-10-13T21:00:00.000Z', approvalId: null });
 
