@@ -1,6 +1,6 @@
 {
-  "versao": "1.7.0",
-  "atualizadoEm": "2026-09-25",
+  "versao": "1.8.0",
+  "atualizadoEm": "2026-10-13",
   "origem": "o código real deste repositório",
   "descricao": "Capacidades do marketing-os. É um DELTA sobre politica-root.json: herda níveis, gatilhos, escalonamento, invariantes e limites, e declara só o que existe em código aqui. Capacidade sem rota é declarada e não implementada — entra classificada, e a porta recusa antes de qualquer efeito.",
   "estende": "politica-root.json",
@@ -1581,6 +1581,277 @@
         "destruicao": false,
         "obrigacaoLegal": false,
         "alcance": 60
+      }
+    },
+    {
+      "id": "comercial.whatsapp.enviar",
+      "rota": "POST /comercial/mensagens/:id/enviar",
+      "descricao": "Envia UMA mensagem do comercial ao lead (ou ao grupo do cliente) pelo provedor de WhatsApp do comercial (simulado, Evolution ou API da Meta): o texto exato que está na ComercialMensagem, com o modelo M1 a M8 quando é um dos oito textos aprovados. Não existe desenviar. A regra vigente (K08, decisão da mesa) é agente prepara e pessoa envia: o interruptor envioAutomatico da ComercialConfig nasce desligado e não muda o nível.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "mensagemId",
+          "texto"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead que recebe"
+          },
+          "mensagemId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "a ComercialMensagem preparada (o rascunho que a aprovação assina)"
+          },
+          "texto": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "o texto exato que sai"
+          },
+          "template": {
+            "type": "string",
+            "pattern": "^M[1-8]$",
+            "description": "o modelo aprovado (M1 a M8), quando é um deles"
+          },
+          "destino": {
+            "type": "string",
+            "enum": [
+              "lead",
+              "grupo"
+            ],
+            "description": "o lead 1:1 ou o grupo do cliente"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "nenhuma",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.proposta.publicar",
+      "rota": "POST /comercial/lead/:id/proposta/publicar",
+      "descricao": "Publica a versão exata da proposta (produto, valor, parcelas, quadro de custos e validade, presos pelo hash) na sala do cliente, onde o lead a lê. Despublicar tira da sala, mas o que foi lido não volta: reversibilidade manual. Proposta dentro da tabela com laudo limpo continua pedindo liberação enquanto o interruptor silencioAprova (K08) estiver desligado, e ele não muda o nível.",
+      "nivel": "R3",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "versao",
+          "hash"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead dono da sala"
+          },
+          "versao": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "a versão da proposta"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "o sha256 do conteúdo exato da versão"
+          },
+          "produto": {
+            "type": "string",
+            "enum": [
+              "imersao",
+              "operacao",
+              "kit",
+              "turma"
+            ]
+          },
+          "valorCentavos": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "o valor integral, em centavos"
+          },
+          "parcelas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "nenhum",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.cobranca.criar",
+      "rota": "POST /sala/:token/aceite/pagamento",
+      "descricao": "Cria o cliente e a cobrança parcelada no Asaas da empresa para o aceite da proposta: valor, parcelas e forma presos à versão aceita pelo hash. A cobrança é um título a receber, obrigação financeira do cliente, e o Asaas a envia a ele. Cancelar é à mão no Asaas; o OS não cancela cobrança.",
+      "nivel": "R4",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "versao",
+          "hash",
+          "valorCentavos",
+          "parcelas",
+          "forma"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead que aceitou"
+          },
+          "versao": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "a versão da proposta aceita"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "o sha256 da versão aceita"
+          },
+          "valorCentavos": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "o valor integral, em centavos"
+          },
+          "parcelas": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "forma": {
+            "type": "string",
+            "enum": [
+              "pix",
+              "boleto",
+              "cartao"
+            ]
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "obrigacao",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.contrato.enviar",
+      "rota": "POST /sala/:token/aceite/contrato",
+      "descricao": "Cria o documento do contrato na ZapSign a partir do modelo da Root com os dados do aceite e o envia para o cliente assinar. O conteúdo exato é preso pelo hash. Assinado pelos dois, o contrato obriga o cliente a pagar: obrigação financeira. Cancelar o documento antes da assinatura é à mão.",
+      "nivel": "R4",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "versao",
+          "hash",
+          "signatarioEmail"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead que aceitou"
+          },
+          "versao": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "a versão da proposta aceita"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "o sha256 do conteúdo exato do documento"
+          },
+          "signatarioEmail": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "description": "o e-mail de quem assina pelo cliente"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "obrigacao",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
+      }
+    },
+    {
+      "id": "comercial.fechamento.executar",
+      "rota": "POST /comercial/fechamentos/:leadId/rodar",
+      "descricao": "As cinco escritas do fechamento, com chave e sem duplicar: cliente (Partner), contrato no Financeiro (Contract), cobrança (porta do Asaas), kit e trilho de onboarding, e o grupo do cliente no WhatsApp com o M8. O nível é o da escrita mais alta (a cobrança: obrigação financeira). Rodar de novo com a mesma chave reaproveita o que já foi criado. O interruptor fechamentoAutomatico (K08) nasce desligado e não muda o nível.",
+      "nivel": "R4",
+      "argsSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "leadId",
+          "chave",
+          "propostaHash"
+        ],
+        "properties": {
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o lead que fecha"
+          },
+          "chave": {
+            "type": "string",
+            "pattern": "^fech-[0-9a-f-]{36}-v[0-9]{1,4}$",
+            "description": "a chave do fechamento: fech-<leadId>-v<n>"
+          },
+          "propostaHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "o sha256 da versão aceita, que as escritas copiam"
+          }
+        }
+      },
+      "efeito": {
+        "escreveForaDoOS": true,
+        "produzArtefato": false,
+        "reversibilidade": "manual",
+        "exposicaoExterna": true,
+        "impactoFinanceiro": "obrigacao",
+        "sensibilidade": "confidencial",
+        "destruicao": false,
+        "obrigacaoLegal": false
       }
     }
   ]

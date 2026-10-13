@@ -244,6 +244,18 @@ export const CONECTOR_DA_CAPACIDADE: Readonly<Record<string, string | null>> = {
   // WhatsApp pela Evolution (instância e número dedicados do root).
   'whatsapp.mensagem.enviar': 'whatsapp',
 
+  // O cockpit do lead (comercial, 13/10/2026). A mensagem ao lead sai pelo
+  // WhatsApp; a cobrança, pelo Asaas; o contrato, pela ZapSign. O fechamento
+  // cria a cobrança no Asaas: desligar o Asaas segura o fechamento inteiro (o
+  // grupo e o M8 saem por `comercial.whatsapp.enviar`, que pergunta ao
+  // interruptor do WhatsApp). Publicar a proposta grava na sala do PRÓPRIO OS:
+  // nada sai por conector.
+  'comercial.whatsapp.enviar': 'whatsapp',
+  'comercial.cobranca.criar': 'asaas',
+  'comercial.contrato.enviar': 'zapsign',
+  'comercial.fechamento.executar': 'asaas',
+  'comercial.proposta.publicar': null,
+
   // Daqui para baixo: nada sai da casa.
   'numeros.painel.ler': null,
   'numeros.funil.ler': null,

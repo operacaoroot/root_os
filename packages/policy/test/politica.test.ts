@@ -822,3 +822,69 @@ describe('instagram.resposta_privada.enviar e instagram.regra_de_resposta.pausar
     expect(Object.keys(a.properties)).not.toContain('loteItemId');
   });
 });
+
+/*
+ * O COCKPIT DO LEAD (13/10/2026): as cinco escritas do comercial. O que não
+ * pode mudar sem alguém ver: o nível é o que a escada calcula do efeito (nunca
+ * menos), nenhuma tem ferramenta de agente nem desfazer, e o esquema é fechado
+ * e exige o conteúdo exato que a aprovação assina. Os interruptores da mesa
+ * (K08: envio automático, silêncio aprova, fechamento automático) moram na
+ * configuração da empresa e NÃO mexem nestes níveis.
+ */
+describe('as escritas do comercial (cockpit do lead)', () => {
+  const NIVEIS: Record<string, string> = {
+    'comercial.whatsapp.enviar': 'R3',
+    'comercial.proposta.publicar': 'R3',
+    'comercial.cobranca.criar': 'R4',
+    'comercial.contrato.enviar': 'R4',
+    'comercial.fechamento.executar': 'R4',
+  };
+
+  it('cada uma está no catálogo com o nível que a escada calcula, sem ferramenta e sem desfazer', () => {
+    for (const [id, nivel] of Object.entries(NIVEIS)) {
+      const c = MKTOS.capacidades.find((x) => x.id === id);
+      expect(c, `${id} sumiu do catálogo`).toBeTruthy();
+      expect(c!.nivel, id).toBe(nivel);
+      expect(classificar(c!.efeito), id).toBe(nivel);
+      expect(c!.ferramenta, id).toBeUndefined();
+      expect(c!.desfazer, id).toBeUndefined();
+      expect(c!.rota, id).toMatch(/^POST \//);
+    }
+  });
+
+  it('o que cria obrigação financeira é R4: titular, reautenticação e motivo', () => {
+    for (const id of ['comercial.cobranca.criar', 'comercial.contrato.enviar', 'comercial.fechamento.executar']) {
+      const c = MKTOS.capacidades.find((x) => x.id === id)!;
+      expect(c.efeito.impactoFinanceiro, id).toBe('obrigacao');
+      const d = avaliar({ id: c.id, descricao: c.descricao, nivel: c.nivel, efeito: c.efeito });
+      expect(d.exigeAprovacao).toBe(true);
+      expect(d.exigeReautenticacao).toBe(true);
+      expect(d.aprovacao.alcadaMinima).toBe('titular');
+    }
+  });
+
+  it('mensagem ao lead e proposta na sala são R3 e sobem a R4 com sinal, nunca descem', () => {
+    for (const id of ['comercial.whatsapp.enviar', 'comercial.proposta.publicar']) {
+      const c = MKTOS.capacidades.find((x) => x.id === id)!;
+      const cap: Capacidade = { id: c.id, descricao: c.descricao, nivel: c.nivel, efeito: c.efeito };
+      expect(avaliar(cap).nivel).toBe('R3');
+      expect(avaliar(cap).exigeAprovacao).toBe(true);
+      expect(avaliar(cap, { sinais: ['destinatario_novo'] }).nivel).toBe('R4');
+    }
+  });
+
+  it('o esquema é fechado e exige o lead e a identidade do conteúdo', () => {
+    const exige: Record<string, string[]> = {
+      'comercial.whatsapp.enviar': ['leadId', 'mensagemId', 'texto'],
+      'comercial.proposta.publicar': ['leadId', 'versao', 'hash'],
+      'comercial.cobranca.criar': ['leadId', 'versao', 'hash', 'valorCentavos', 'parcelas', 'forma'],
+      'comercial.contrato.enviar': ['leadId', 'versao', 'hash', 'signatarioEmail'],
+      'comercial.fechamento.executar': ['leadId', 'chave', 'propostaHash'],
+    };
+    for (const [id, campos] of Object.entries(exige)) {
+      const s = MKTOS.capacidades.find((x) => x.id === id)!.argsSchema as { additionalProperties: boolean; required: string[] };
+      expect(s.additionalProperties, id).toBe(false);
+      expect([...s.required].sort(), id).toEqual([...campos].sort());
+    }
+  });
+});

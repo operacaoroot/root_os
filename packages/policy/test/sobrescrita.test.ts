@@ -407,7 +407,13 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
     // e `instagram.regra_de_resposta.pausar`. Quem manda a DM é a rotina, com a
     // regra assinada no lote; quem pausa é gente na fila. Um agente que
     // mandasse DM a estranho em nome da marca é exatamente o que a regra evita.
-    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(21);
+    //
+    // Vinte e seis desde o cockpit do lead (13/10/2026): as cinco escritas do
+    // comercial (`comercial.whatsapp.enviar`, `.proposta.publicar`,
+    // `.cobranca.criar`, `.contrato.enviar`, `.fechamento.executar`). Quem as
+    // dispara é a reação do fio ou o clique na tela, pela porta; agente nenhum
+    // manda mensagem ao lead, cobra ou fecha por conta própria.
+    expect(BASE.capacidades.filter((c) => !c.ferramenta)).toHaveLength(26);
     for (const id of [
       'instagram.post.publicar',
       'pauta.semana.aprovar',
@@ -416,6 +422,11 @@ describe('ferramenta e esquema de argumentos têm direção própria', () => {
       'youtube.video.publicar',
       'instagram.resposta_privada.enviar',
       'instagram.regra_de_resposta.pausar',
+      'comercial.whatsapp.enviar',
+      'comercial.proposta.publicar',
+      'comercial.cobranca.criar',
+      'comercial.contrato.enviar',
+      'comercial.fechamento.executar',
     ]) {
       expect(BASE.capacidades.find((c) => c.id === id)?.ferramenta, id).toBeUndefined();
     }

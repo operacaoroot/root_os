@@ -334,6 +334,8 @@ export const CONNECTORS: ConnectorInfo[] = [
   { key: 'whatsapp', label: 'WhatsApp (Zapfy)', category: 'messaging', phase: 6, authType: 'api_key', requires: 'canal próprio (app consolidado)' },
   { key: 'pluggy', label: 'Bancos (Open Finance/Pluggy)', category: 'finance', phase: 2, authType: 'api_key', requires: 'PLUGGY_CLIENT_ID/SECRET (~/.config/root/pluggy.env)' },
   { key: 'asaas', label: 'Asaas (cobranças + conta digital)', category: 'finance', phase: 2, authType: 'api_key', requires: 'ASAAS_API_KEY (~/.config/root/asaas.env)' },
+  // Cockpit do lead (13/10/2026): o contrato do comercial sai para assinar pela ZapSign (API v1).
+  { key: 'zapsign', label: 'ZapSign (assinatura de contrato)', category: 'knowledge', phase: 6, authType: 'api_key', requires: 'token da API da ZapSign (plano de API)' },
   { key: 'ofx', label: 'Extrato OFX (upload)', category: 'finance', phase: 2, authType: 'builtin', requires: 'arquivo .ofx exportado do banco' },
 ];
 
