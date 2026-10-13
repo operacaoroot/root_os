@@ -251,6 +251,6 @@ export class SimuladorController {
   async novidade(@CurrentUser() user: JwtUser, @Param('id', new ParseUUIDPipe()) id: string, @Body() body: unknown) {
     const r = NovidadeSchema.safeParse(body ?? {});
     if (!r.success) throw new BadRequestException('escreva a novidade (de 10 a 400 caracteres)');
-    return this.whats.completarM6(user.orgId, id, r.data.novidade);
+    return this.whats.completarM6(user.orgId, id, r.data.novidade, { id: user.sub });
   }
 }

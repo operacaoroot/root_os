@@ -277,8 +277,13 @@ export class WhatsappComercialService implements OnModuleInit {
     return this.enviarNoGrupo(orgId, leadId, jid, texto, { template: 'M8', chave: `M8:${jid}` });
   }
 
-  /** O M6 com a novidade escrita: reescreve o rascunho do relógio e o entrega à porta. */
-  async completarM6(orgId: string, mensagemId: string, novidade: string): Promise<MensagemPreparada> {
+  /**
+   * O M6 com a novidade escrita: reescreve o rascunho do relógio e o entrega à
+   * porta. A novidade é texto livre: vai à porta EM NOME DE QUEM A ESCREVEU
+   * (`quem`), para a invariante 7 valer (quem escreveu não libera o próprio
+   * envio). `null` só para o fupeiro, que propõe como o sistema.
+   */
+  async completarM6(orgId: string, mensagemId: string, novidade: string, quem: { id: string } | null): Promise<MensagemPreparada> {
     const m = await this.prisma.comercialMensagem.findFirst({ where: { id: mensagemId, orgId, template: 'M6' } });
     if (!m) throw new Error('rascunho do M6 não encontrado');
     if (m.estado !== 'rascunho') return { mensagemId: m.id, estado: m.estado as ComercialEstadoDeMensagem, approvalId: m.approvalId, nova: false };
@@ -287,7 +292,7 @@ export class WhatsappComercialService implements OnModuleInit {
     if (!link) throw new VariavelFaltandoError('M6', ['linkDaSala']);
     const texto = textoComNome('M6', nomeDeTratamento(lead.name), { novidade: novidade.trim(), linkDaSala: link });
     const atual = await this.prisma.comercialMensagem.update({ where: { id: m.id }, data: { texto, erro: null } });
-    return this.submeter(atual);
+    return this.submeter(atual, new Date(), quem);
   }
 
   /**
