@@ -192,6 +192,11 @@ describe('não se perdeu funcionalidade', () => {
  */
 const COCKPIT: Record<string, { href: string; permission: string; label: string }> = {
   'comercial-simulador': { href: '/comercial/simulador', permission: 'leads.ver', label: 'Simulador de WhatsApp' },
+  'comercial-decisoes': { href: '/comercial', permission: 'leads.ver', label: 'Decisões do comercial' },
+  'comercial-funil': { href: '/comercial/funil', permission: 'leads.ver', label: 'Funil vivo' },
+  'comercial-contratos': { href: '/comercial/contratos', permission: 'leads.ver', label: 'Contratos vivos' },
+  'comercial-torre': { href: '/comercial/torre', permission: 'leads.ver', label: 'Torre das automações' },
+  'comercial-relatorio': { href: '/comercial/relatorio', permission: 'leads.ver', label: 'Relatório da semana' },
 };
 const N_COCKPIT = Object.keys(COCKPIT).length;
 const HREFS_DO_COCKPIT = Object.values(COCKPIT).map((c) => c.href);

@@ -155,6 +155,12 @@ export const NAV: NavItem[] = [
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  // Cockpit do lead (lane C, 13/10/2026): a fila de decisões é a tela principal (exceções); o resto pende dela.
+  { key: 'comercial-decisoes', label: 'Decisões do comercial', href: '/comercial', icon: 'Inbox', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-funil', label: 'Funil vivo', href: '/comercial/funil', icon: 'Columns3', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
+  { key: 'comercial-contratos', label: 'Contratos vivos', href: '/comercial/contratos', icon: 'FileSignature', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
+  { key: 'comercial-torre', label: 'Torre das automações', href: '/comercial/torre', icon: 'RadioTower', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
+  { key: 'comercial-relatorio', label: 'Relatório da semana', href: '/comercial/relatorio', icon: 'FileBarChart', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', pai: 'comercial-decisoes' },
 
   { key: 'financeiro', label: 'Financeiro', href: '/financeiro', icon: 'Wallet', permission: 'financeiro.ver', secao: 'financeiro', modulo: 'financeiro' },
 
