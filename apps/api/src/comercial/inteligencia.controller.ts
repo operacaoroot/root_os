@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, NotImplementedException, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 
 import { CurrentUser, type JwtUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -6,6 +6,9 @@ import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { DiagnosticoService } from './diagnostico.service';
 import { PropostaService } from './proposta.service';
+import { RelatorioDaSemanaService } from './relatorio-da-semana.service';
+import { TorreService } from './torre.service';
+import { VigiaService } from './vigia.service';
 
 /*
  * A INTELIGÊNCIA DO COCKPIT — lane E, fase mínima (13/10/2026).
@@ -21,11 +24,10 @@ import { PropostaService } from './proposta.service';
  * produção) com `orgId` para o teto. Publicar é `comercial.proposta.publicar`
  * (R3) pela porta: a rota nunca publica direto.
  *
- * Fase 2 (501 explicativo): a torre (tela 12), o relatório da quinta (tela 13)
- * e o vigia das 08:00.
+ * Fase 2 (13/10/2026): a torre (tela 12, só leitura), o relatório da quinta
+ * (tela 13: números do banco, leitura do modelo sem número) e o vigia das 08:00
+ * (rodar agora, o mesmo que o relógio faz às 08:00).
  */
-const FASE_2 = (oQue: string) =>
-  new NotImplementedException(`${oQue}: fica para a fase 2 da lane E (relator da quinta, vigia das 08:00 e torre). Nada foi feito.`);
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('comercial')
@@ -33,6 +35,9 @@ export class InteligenciaController {
   constructor(
     private readonly diagnosticos: DiagnosticoService,
     private readonly propostas: PropostaService,
+    private readonly torres: TorreService,
+    private readonly relatorios: RelatorioDaSemanaService,
+    private readonly vigias: VigiaService,
   ) {}
 
   /** Tela 06: o pós-sessão — diagnóstico com minuto, rascunhos da proposta com o laudo e o estado. */
@@ -92,25 +97,34 @@ export class InteligenciaController {
     return this.propostas.segurar(user.orgId, id);
   }
 
-  /** Tela 12: a torre das automações. Fase 2. */
+  /** Tela 12: a torre das automações (autonomia, última vez, acerto, premissa, vigia e custo do dia). */
   @Get('torre')
   @RequirePermissions('leads.ver')
-  torre(@CurrentUser() _user: JwtUser) {
-    throw FASE_2('a torre das automações');
+  torre(@CurrentUser() user: JwtUser) {
+    return this.torres.torre(user.orgId);
   }
 
-  /** Tela 13: o relatório da semana. Fase 2. */
+  /** Roda o vigia agora (o mesmo que o relógio faz às 08:00): confere, grava os fatos e abre as exceções. */
+  @Post('torre/vigia')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  rodarVigia(@CurrentUser() user: JwtUser) {
+    return this.vigias.passar(user.orgId);
+  }
+
+  /** Tela 13: o último relatório gerado com o mesmo recorte; sem ele, os números ao vivo (sem leitura). */
   @Get('relatorio/semana')
   @RequirePermissions('leads.ver')
-  relatorio(@CurrentUser() _user: JwtUser, @Query('dias') _dias?: string) {
-    throw FASE_2('o relatório da semana');
+  relatorio(@CurrentUser() user: JwtUser, @Query('dias') dias?: string) {
+    return this.relatorios.ler(user.orgId, dias);
   }
 
-  /** Gera o relatório agora (o que a rotina de quinta fará). Fase 2. */
+  /** Gera o relatório agora (o que o relógio faz na quinta 18:00). Corpo opcional: `{ dias }`. */
   @Post('relatorio/semana/gerar')
   @HttpCode(200)
   @RequirePermissions('leads.editar')
-  gerarRelatorio(@CurrentUser() _user: JwtUser) {
-    throw FASE_2('gerar o relatório da semana');
+  gerarRelatorio(@CurrentUser() user: JwtUser, @Body() body: unknown, @Query('dias') dias?: string) {
+    const doCorpo = body && typeof body === 'object' ? (body as { dias?: unknown }).dias : undefined;
+    return this.relatorios.gerar(user.orgId, { dias: doCorpo ?? dias, origem: 'pessoa' });
   }
 }

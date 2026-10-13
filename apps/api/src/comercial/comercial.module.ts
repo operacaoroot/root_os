@@ -20,6 +20,8 @@ import { InteligenciaController } from './inteligencia.controller';
 import { AssistenteService } from './assistente.service';
 import { AutonomiaService } from './autonomia.service';
 import { VigiaService } from './vigia.service';
+import { RelatorioDaSemanaService } from './relatorio-da-semana.service';
+import { TorreService } from './torre.service';
 import { DiagnosticoService } from './diagnostico.service';
 import { PropostaService } from './proposta.service';
 import { SalaController } from './sala.controller';
@@ -83,6 +85,8 @@ import { FechamentoService } from './fechamento.service';
     // fase 2: a guarda da autonomia (A0 segura), o vigia das 08:00, o relator da quinta e a torre.
     AutonomiaService,
     VigiaService,
+    RelatorioDaSemanaService,
+    TorreService,
   ],
   exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })
