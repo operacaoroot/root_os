@@ -35,7 +35,7 @@
  * Uso (Git Bash):
  *   node homolog/e2e/jornada-docker.mjs
  * Variáveis opcionais: JORNADA_API, JORNADA_ASAAS, JORNADA_ZAPSIGN,
- * JORNADA_ESPERA_M3_MIN (padrão 4).
+ * JORNADA_WEB, JORNADA_ESPERA_M3_MIN (padrão 4).
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -45,6 +45,7 @@ const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const API = process.env.JORNADA_API ?? 'http://127.0.0.1:4010/api';
 const ASAAS = process.env.JORNADA_ASAAS ?? 'http://127.0.0.1:4011';
 const ZAPSIGN = process.env.JORNADA_ZAPSIGN ?? 'http://127.0.0.1:4012';
+const WEB = process.env.JORNADA_WEB ?? 'http://127.0.0.1:3010';
 const ESPERA_M3_MS = Number(process.env.JORNADA_ESPERA_M3_MIN ?? 4) * 60_000;
 
 // ---------------------------------------------------------------------------
@@ -205,7 +206,7 @@ async function liberarMensagem(leadId, template, porque) {
   conferir(m.estado === 'na_fila' && m.approvalId, `${template} devia estar retida na fila com aprovação (estado ${m.estado})`, m);
   const naFila = await aprovacaoPendente(m.approvalId);
   conferir(naFila && ['R3', 'R4'].includes(naFila.nivel), `${template}: a porta devia reter em R3 (ou R4 por sinal), veio ${naFila?.nivel}`, naFila);
-  await confirmar(m.approvalId, porque);
+  await confirmar(m.approvalId, `${template}: ${porque}`);
   const depois = await mensagem(leadId, template);
   conferir(depois.m.estado === 'enviada', `${template} liberada mas não enviada (estado ${depois.m.estado})`, depois.m);
   return depois.m;
@@ -255,6 +256,7 @@ async function main() {
     conferir(h.status === 200, `o dublê do ${nome} não respondeu em ${url}/health`);
   }
   for (const q of Object.keys(PESSOAS)) await entrar(q);
+  const fechadosAntes = (await api('GET', '/comercial/funil', como('mesa'))).colunas.find((c) => c.etapa === 'fechado')?.cartoes.length ?? 0;
   log(`  sessões: ${Object.entries(sessoes).map(([k, v]) => `${k}=${v.nome}`).join(', ')}`);
 
   passo('1. o lead entra pelo simulador do WhatsApp');
@@ -451,19 +453,39 @@ async function main() {
   const fechados = funil.colunas.find((c) => c.etapa === 'fechado')?.cartoes ?? [];
   conferir(fechados.some((c) => c.leadId === leadId), 'o lead não aparece na coluna "fechado" do funil', funil.colunas.map((c) => [c.etapa, c.cartoes.length]));
   const rel = await http('GET', `${API}/comercial/relatorio/semana`, como('mesa'));
-  resumo.funil = { fechadosNoFunil: fechados.length, esteLeadFechado: true, relatorioDaSemana: rel.status === 501 ? '501: fase 2 da lane E' : rel.status };
+  conferir(fechados.length - fechadosAntes === 1, `o funil devia contar exatamente 1 fechado a mais (antes ${fechadosAntes}, depois ${fechados.length})`);
+  const pagina = await http('GET', `${WEB}/s/${TOKEN}`);
+  conferir(pagina.status === 200, `a página da sala no web respondeu ${pagina.status}`);
+  resumo.funil = { fechadosAntes, fechadosDepois: fechados.length, fechadosNestaExecucao: fechados.length - fechadosAntes, esteLeadFechado: true, paginaDaSalaNoWeb: pagina.status, relatorioDaSemana: rel.status === 501 ? '501: fase 2 da lane E' : rel.status };
 
   // -------------------------------------------------------------------------
   // A contagem
   // -------------------------------------------------------------------------
   const fio = (await api('GET', `/comercial/lead/${leadId}/fio`, como('mesa'))).fio;
   const fichaFinal = await anotarEtapa(leadId, 'fim');
-  // Fatos que são o registro direto de um ato do cliente ou de uma pessoa; o resto o sistema gravou sozinho.
+  // Três origens para cada fato do fio: o ato do cliente, o ato de uma pessoa da casa, e o
+  // sistema. Do sistema, separa o que ele fez SOZINHO (reações e relógio) do EFEITO que só
+  // saiu porque uma pessoa liberou na porta (R3/R4): os dois são escritas automáticas, mas
+  // só o primeiro dispensa gente.
   const DO_CLIENTE = new Set(['lead.chegou', 'whats.recebida', 'form.respondido', 'agenda.escolhida', 'sala.visitada', 'proposta.lida', 'proposta.ajuste_pedido', 'proposta.duvida', 'aceite.dados', 'proposta.aceita', 'pix.pago', 'parcela.paga', 'contrato.assinado_cliente', 'kickoff.marcado']);
   const DE_PESSOA = new Set(['ata.chegou', 'decisao.tomada', 'contrato.assinado_root']);
-  const automaticas = fio.filter((l) => !DO_CLIENTE.has(l.type) && !DE_PESSOA.has(l.type));
+  const EFEITO_LIBERADO = new Set(['agenda.confirmada', 'followup.enviado', 'whats.enviada', 'proposta.publicada', 'cobranca.criada', 'contrato.gerado', 'fechamento.escrita', 'cliente.ativo']);
+  // A aprovação do diagnóstico regrava `diagnostico.pronto` com `aprovadoEm`: o último é ato do sócio.
+  const diagAprovado = toques.some((t) => t.acao === 'aprova o diagnóstico') ? fio.filter((l) => l.type === 'diagnostico.pronto').at(-1)?.eventoId : null;
+  const origem = (l) => {
+    if (DO_CLIENTE.has(l.type)) return 'cliente';
+    if (DE_PESSOA.has(l.type) || l.eventoId === diagAprovado) return 'pessoa';
+    return EFEITO_LIBERADO.has(l.type) ? 'efeito' : 'sistema';
+  };
+  const contagem = { cliente: 0, pessoa: 0, efeito: 0, sistema: 0 };
   const porTipo = {};
-  for (const l of automaticas) porTipo[l.type] = (porTipo[l.type] ?? 0) + 1;
+  for (const l of fio) {
+    const o = origem(l);
+    contagem[o]++;
+    if (o === 'sistema' || o === 'efeito') porTipo[l.type] = (porTipo[l.type] ?? 0) + 1;
+  }
+  const automaticas = contagem.sistema + contagem.efeito;
+  const trilhaDeEtapas = fio.filter((l) => l.type === 'etapa.mudou').map((l) => l.resumo);
   const pendentes = (await api('GET', '/approvals?status=pendente', como('mesa'))).items.filter((a) => String(a.recurso?.id ?? '').includes(leadId) || a.resumo?.includes?.(leadId));
   const naFila = (await api('GET', `/comercial/simulador/lead/${leadId}`, como('mesa'))).mensagens.filter((m) => m.estado === 'na_fila');
 
@@ -471,15 +493,17 @@ async function main() {
   log('\n================ RESULTADO ================');
   log(`Lead ${NOME} (${TELEFONE}) · ${leadId}`);
   log(`Sala: ${resumo.linkDaSala}`);
-  log(`Etapas percorridas: ${etapasVistas.map((e) => e.etapa).join(' → ')}`);
+  log(`Etapas (etapa.mudou no fio): ${trilhaDeEtapas.join(' · ')}`);
   log(`Estágios da sala vistos: ${estagios.join(' → ')}`);
   log(`\nToques humanos: ${toques.length}`);
   for (const t of toques) log(`  ${t.n}. ${t.quem} · ${t.acao} · ${t.porque}`);
   log(`\nAções do cliente: ${doCliente.length}`);
   for (const [i, c] of doCliente.entries()) log(`  ${i + 1}. ${c}`);
-  log(`\nAções automáticas (fatos gravados pelo sistema no fio): ${automaticas.length} de ${fio.length} fatos`);
+  log(`\nAções automáticas (fatos que o sistema gravou no fio): ${automaticas} de ${fio.length}`);
+  log(`  sozinho (reações e relógio): ${contagem.sistema} · efeitos que uma pessoa liberou na porta: ${contagem.efeito} · atos do cliente: ${contagem.cliente} · atos de pessoa da casa: ${contagem.pessoa}`);
   log(`  ${Object.entries(porTipo).map(([k, v]) => `${k}×${v}`).join(', ')}`);
   if (naFila.length) log(`\nMensagens ainda na fila (não exigidas pela jornada): ${naFila.map((m) => m.template ?? 'texto').join(', ')}`);
+  log(`\nFunil: ${resumo.funil.fechadosNestaExecucao} fechado a mais nesta execução (${resumo.funil.fechadosAntes} → ${resumo.funil.fechadosDepois}), este lead entre eles · relatório da semana: ${resumo.funil.relatorioDaSemana}`);
   log(`\nTempo total: ${(totalMs / 1000).toFixed(1)} s`);
 
   gravarProva({
@@ -488,12 +512,13 @@ async function main() {
     api: API,
     tempoTotalMs: totalMs,
     ...resumo,
-    etapas: etapasVistas,
+    etapas: trilhaDeEtapas,
+    etapasAmostradas: etapasVistas,
     estagiosDaSala: estagios,
     etapaFinal: fichaFinal.etapa ?? null,
     toques,
     acoesDoCliente: doCliente,
-    automaticas: { total: automaticas.length, fatosNoFio: fio.length, porTipo },
+    automaticas: { total: automaticas, sozinho: contagem.sistema, efeitosLiberados: contagem.efeito, fatosNoFio: fio.length, atosDoCliente: contagem.cliente, atosDePessoa: contagem.pessoa, porTipo },
     pendentesAoFim: { aprovacoes: pendentes.map((a) => `${a.capacidade} (${a.nivel})`), mensagensNaFila: naFila.map((m) => m.template ?? 'texto') },
     passos,
   });
@@ -502,7 +527,9 @@ async function main() {
 function gravarProva(dados) {
   const arquivo = join(RAIZ, 'homolog/provas/jornada-docker.json');
   mkdirSync(dirname(arquivo), { recursive: true });
-  writeFileSync(arquivo, `${JSON.stringify(dados, null, 2)}\n`);
+  // O token da sala é a chave de acesso do cliente: a prova guarda só o começo dele (a tela mostra o link inteiro).
+  const texto = JSON.stringify(dados, null, 2).replace(/\/s\/([A-Za-z0-9_-]{6})[A-Za-z0-9_-]{34,42}/g, '/s/$1…');
+  writeFileSync(arquivo, `${texto}\n`);
 }
 
 main().catch((e) => falhar(e?.message ?? String(e), e?.stack));
