@@ -8,6 +8,8 @@ import { ExecutoresDeRotinaRegistry } from '../routines/executores.registry';
 import { LIVRE, type ContextoDaRotina, type ResultadoDaRotina } from '../routines/rotina.tipos';
 import { ConfigComercialService } from './config.service';
 import { DecisoesService } from './decisoes.service';
+import { FichaService } from './ficha.service';
+import { etapaDeVolta } from './portoes';
 import { FioService } from './fio.service';
 import { RelogioComercialRegistry } from './relogio.registry';
 
@@ -30,7 +32,10 @@ import { RelogioComercialRegistry } from './relogio.registry';
  *   · `espinha.lead-parado` — com `leadParadoDias` na config, abre a decisão
  *     `lead_parado` UMA VEZ POR PERÍODO: a chave é a etapa, o dia em que o lead
  *     entrou nela e quantos períodos de N dias já passaram. Sem o número
- *     ([a decidir]), a tarefa não faz nada.
+ *     ([a decidir]), a tarefa não faz nada;
+ *   · `espinha.geladeira-volta` — lead na geladeira com `voltaEm` vencido volta
+ *     para a etapa em que estava quando saiu (`etapaAntesDaSaida`), pelo mesmo
+ *     `mudarEtapa`. Geladeira sem data não volta sozinha.
  *
  * Passagem sem nenhuma ação devolve `pulada` (não vira linha de histórico).
  */
@@ -63,6 +68,7 @@ export class RelogioDaEspinha implements OnModuleInit {
     private readonly decisoes: DecisoesService,
     private readonly fio: FioService,
     private readonly config: ConfigComercialService,
+    private readonly fichas: FichaService,
   ) {}
 
   onModuleInit(): void {
@@ -75,6 +81,7 @@ export class RelogioDaEspinha implements OnModuleInit {
     this.tarefas.inscrever('espinha.decisoes-vencidas', (orgId, agora) => this.decisoes.expirarVencidas(orgId, agora));
     this.tarefas.inscrever('espinha.reacoes-pendentes', (orgId, agora) => this.fio.reexecutarPendentes(orgId, new Date(agora.getTime() - REACAO_PARADA_MS)));
     this.tarefas.inscrever('espinha.lead-parado', (orgId, agora) => this.leadsParados(orgId, agora));
+    this.tarefas.inscrever('espinha.geladeira-volta', (orgId, agora) => this.voltasDaGeladeira(orgId, agora));
   }
 
   /** Semeia a rotina da empresa (idempotente; uma vez por processo e empresa). */
@@ -130,6 +137,22 @@ export class RelogioDaEspinha implements OnModuleInit {
     if (falhas.length) return { status: 'erro', resumo: `falharam ${falhas.length}: ${falhas.join(' · ')}${feitos.length ? ` · feitas: ${feitos.join(', ')}` : ''}` };
     if (!feitos.length) return { status: 'pulada', resumo: 'nada a fazer no relógio comercial.' };
     return { status: 'ok', resumo: feitos.join(', ') };
+  }
+
+  /** Geladeira com data de volta vencida → a etapa de antes da saída. */
+  async voltasDaGeladeira(orgId: string, agora: Date): Promise<number> {
+    const prontas = await this.prisma.comercialFicha.findMany({
+      where: { orgId, etapa: 'geladeira', voltaEm: { lte: agora } },
+      select: { leadId: true, voltaEm: true, etapaAntesDaSaida: true },
+      take: 100,
+    });
+    let voltaram = 0;
+    for (const f of prontas) {
+      const para = etapaDeVolta(f.etapaAntesDaSaida);
+      const r = await this.fichas.mudarEtapa(orgId, f.leadId, para, { motivo: 'a data de volta da geladeira chegou', eventoGatilho: `volta:${f.voltaEm!.toISOString()}`, agora });
+      if (r.mudou) voltaram++;
+    }
+    return voltaram;
   }
 
   /** Lead parado além de `leadParadoDias` → decisão `lead_parado`, uma por período. */

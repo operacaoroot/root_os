@@ -72,7 +72,7 @@ describe.skipIf(!URL)('a espinha do cockpit, contra o banco', () => {
     decisoes = new DecisoesService(p, fio, config, aoDecidir);
     fichas = new FichaService(p, fio, config);
     rotinas = new ExecutoresDeRotinaRegistry();
-    relogio = new RelogioDaEspinha(p, rotinas, new RelogioComercialRegistry(), decisoes, fio, config);
+    relogio = new RelogioDaEspinha(p, rotinas, new RelogioComercialRegistry(), decisoes, fio, config, fichas);
     relogio.inscrever();
     new ReacoesDaEspinha(p, fio, reacoes, fichas, decisoes, aoDecidir, relogio).inscrever();
   });
@@ -287,5 +287,21 @@ describe.skipIf(!URL)('a espinha do cockpit, contra o banco', () => {
     // O fato tardio de um lead em saída fica na ficha e a etapa não anda.
     await fio.registrar(ORG, leadA, 'proposta.aceita', 'v1', { versao: 1, produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3, forma: 'pix', hash: 'a'.repeat(64) });
     expect(await etapa(leadA)).toBe('perdido');
+  });
+
+  it('a geladeira volta sozinha quando a data chega, para a etapa de antes da saída', async () => {
+    expect(await relogio.voltasDaGeladeira(ORG, new Date())).toBe(0); // geladeira por decisão nasce sem data
+    await prisma.comercialFicha.updateMany({ where: { leadId: leadB }, data: { voltaEm: new Date(Date.now() - 60_000) } });
+    expect(await relogio.voltasDaGeladeira(ORG, new Date())).toBe(1);
+    expect(await etapa(leadB)).toBe('novo_lead');
+    expect(await status(leadB)).toBe('novo');
+    expect(await relogio.voltasDaGeladeira(ORG, new Date())).toBe(0);
+  });
+
+  it('com decisaoExpiraHoras na config, a decisão nasce com o prazo dela', async () => {
+    await config.gravar(ORG, { decisaoExpiraHoras: 4 });
+    const agora = new Date();
+    const d = await decisoes.abrir({ orgId: ORG, leadId: leadB, tipo: 'excecao_do_vigia', titulo: 'premissa quebrada', contexto: 'teste', opcoes: [{ chave: 'ok', rotulo: 'ok' }], padrao: 'ok', agora });
+    expect(d.expiraEm.getTime()).toBe(agora.getTime() + 4 * 3_600_000);
   });
 });
