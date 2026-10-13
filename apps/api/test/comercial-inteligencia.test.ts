@@ -319,4 +319,26 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
       await config.gravar(ORG, { validadePropostaDias: 8 });
     }
   });
+  it('silêncio aprova (K08-3) só agenda: a versão espera a hora de SP, o relógio a leva à porta e o R3 continua retendo', async () => {
+    aos('16:00');
+    await config.gravar(ORG, { silencioAprova: true, horaPublicacaoProposta: 18 });
+    try {
+      const outro = await novoLeadComAta(`+55219${SUFIXO}`, 'Construtora Alicerce Matriz');
+      await naEmpresa(() => diagnosticos.aprovar(ORG, outro, { id: socia.id, nome: socia.name }));
+      const [v1] = await propostas.rascunhos(ORG, outro);
+      expect(v1).toMatchObject({ versao: 1, estado: 'agendada', publicarEm: '2026-10-13T21:00:00.000Z', approvalId: null });
+
+      aos('17:30');
+      expect(await naEmpresa(() => propostas.soltarAgendadas(ORG, new Date()))).toEqual({ levadas: 0 });
+      aos('18:01');
+      expect(await naEmpresa(() => propostas.soltarAgendadas(ORG, new Date()))).toEqual({ levadas: 1 });
+      const depois = await propostas.daVersao(ORG, outro, 1);
+      expect(depois?.estado).toBe('na_porta');
+      const chamada = await prisma.toolCall.findFirstOrThrow({ where: { orgId: ORG, capabilityId: CAPACIDADE_DA_PROPOSTA, approvalId: depois!.approvalId! } });
+      expect(chamada.status).toBe('aguardando_aprovacao');
+      expect(await eventos(outro, 'proposta.publicada')).toHaveLength(0);
+    } finally {
+      await config.gravar(ORG, { silencioAprova: false, horaPublicacaoProposta: null });
+    }
+  });
 });
