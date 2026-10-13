@@ -45,6 +45,7 @@ import TorrePage from '@/app/comercial/torre/page';
 import RelatorioPage from '@/app/comercial/relatorio/page';
 import FilaPage from '@/app/comercial/page';
 import SessaoPage from '@/app/comercial/lead/[id]/sessao/page';
+import FunilPage from '@/app/comercial/funil/page';
 
 beforeEach(() => {
   RESPOSTAS = {};
@@ -195,5 +196,47 @@ describe('depois da sessão (tela 06): aprovar o diagnóstico é da mesa (E-4/C-
     render(<SessaoPage />);
     expect(await screen.findByText(/Quem aprova é a mesa/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /aprovar/ })).toBeNull();
+  });
+});
+
+describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10, C-11)', () => {
+  const cartao = (leadId: string, nome: string) => ({
+    leadId, nome, empresa: null, etapa: 'novo_lead' as const, saude: null, proximaAcao: null, precisaDeDecisao: false,
+    parado: false, diasNaEtapa: 0, motivoSaida: null, voltaEm: null, perfil: null, produto: null,
+  });
+  const funil = (...cartoes: ReturnType<typeof cartao>[]) => ({ colunas: [{ etapa: 'novo_lead', rotulo: 'Novo lead', cartoes }] });
+  function adiado<T>() {
+    let soltar!: (v: T) => void;
+    const p = new Promise<T>((r) => { soltar = r; });
+    return { p, soltar };
+  }
+
+  it('C-10: trocar o filtro tira a lista anterior da tela e descarta a resposta antiga', async () => {
+    const todos = adiado<unknown>();
+    RESPOSTAS['/comercial/funil?filtro=todos'] = funil(cartao('a', 'Lead Antigo'));
+    RESPOSTAS['/comercial/funil?filtro=parados'] = todos.p;
+    render(<FunilPage />);
+    expect(await screen.findByText('Lead Antigo')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'parados' }));
+    await waitFor(() => expect(screen.queryByText('Lead Antigo')).toBeNull());
+    expect(screen.getByText('carregando…')).toBeInTheDocument();
+    todos.soltar(funil(cartao('b', 'Lead Parado')));
+    expect(await screen.findByText('Lead Parado')).toBeInTheDocument();
+  });
+
+  it('C-11: mover A e logo B mostra o portão de B, mesmo com a ficha de A chegando depois', async () => {
+    const fichaA = adiado<unknown>();
+    RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A'), cartao('b', 'Lead B'));
+    RESPOSTAS['/comercial/lead/a'] = fichaA.p;
+    RESPOSTAS['/comercial/lead/b'] = { portao: { proxima: 'qualificacao', faltando: ['portão de B'], itens: [] } };
+    render(<FunilPage />);
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole('button', { name: /mover Lead A/ }));
+    await u.click(screen.getByRole('button', { name: /mover Lead B/ }));
+    expect(await screen.findByText(/portão de B/)).toBeInTheDocument();
+    fichaA.soltar({ portao: { proxima: 'qualificacao', faltando: ['portão de A'], itens: [] } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/portão de A/)).toBeNull();
+    expect(screen.getByText(/Lead B não muda de etapa/)).toBeInTheDocument();
   });
 });

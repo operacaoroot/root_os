@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import type { CartaoDoFunil, FichaDoLead, FunilVivo } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
@@ -33,14 +33,20 @@ export default function FunilVivoPage() {
   const [filtro, setFiltro] = useState('todos');
   const { dados, erro, carregando } = useCarregar<FunilVivo>(`/comercial/funil?filtro=${encodeURIComponent(filtro)}`, 30_000);
   const [bloqueio, setBloqueio] = useState<{ leadId: string; texto: string } | null>(null);
+  // C-11: só a última leitura do portão escreve; a de um cartão anterior que chegar depois é descartada.
+  const ultimoPedido = useRef(0);
 
   async function explicarBloqueio(c: CartaoDoFunil) {
+    const pedido = ++ultimoPedido.current;
+    const vale = () => pedido === ultimoPedido.current;
     setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, null, null) });
     try {
       const f = await apiGet<FichaDoLead>(`/comercial/lead/${c.leadId}`, token);
+      if (!vale()) return;
       const proxima = f.portao.proxima ? COMERCIAL_ROTULO_DA_ETAPA[f.portao.proxima] : null;
       setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, proxima, f.portao.faltando) });
     } catch {
+      if (!vale()) return;
       setBloqueio({ leadId: c.leadId, texto: `${motivoDoBloqueio(c.empresa ?? c.nome, null, null)} O portão não pôde ser lido agora.` });
     }
   }
@@ -74,7 +80,7 @@ export default function FunilVivoPage() {
       {bloqueio && (
         <div className="flex items-start gap-2" aria-live="polite">
           <Aviso>{bloqueio.texto}</Aviso>
-          <button type="button" className={BOTAO} onClick={() => setBloqueio(null)}>ok</button>
+          <button type="button" className={BOTAO} onClick={() => { ultimoPedido.current++; setBloqueio(null); }}>ok</button>
         </div>
       )}
 

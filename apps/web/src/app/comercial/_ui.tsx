@@ -27,18 +27,30 @@ export function useCarregar<T>(caminho: string | null, intervaloMs?: number) {
   const [erro, setErro] = useState<unknown>(null);
   const [carregando, setCarregando] = useState(true);
   const vivo = useRef(true);
+  // C-10: o caminho de agora. Mudou (outro filtro, outro lead), o que estava na
+  // tela sai e a resposta do caminho anterior que chegar atrasada é descartada.
+  const atual = useRef(caminho);
+
+  useEffect(() => {
+    if (atual.current === caminho) return;
+    atual.current = caminho;
+    setDados(null);
+    setErro(null);
+    setCarregando(true);
+  }, [caminho]);
 
   const recarregar = useCallback(async () => {
     if (!token || !caminho) return;
+    const doCaminho = () => vivo.current && atual.current === caminho;
     try {
       const r = await apiGet<T>(caminho, token);
-      if (!vivo.current) return;
+      if (!doCaminho()) return;
       setDados(r);
       setErro(null);
     } catch (e) {
-      if (vivo.current) setErro(e);
+      if (doCaminho()) setErro(e);
     } finally {
-      if (vivo.current) setCarregando(false);
+      if (doCaminho()) setCarregando(false);
     }
   }, [token, caminho]);
 
