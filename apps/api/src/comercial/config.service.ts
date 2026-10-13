@@ -9,6 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { nivelDe } from './autonomia';
 
 /*
  * A CONFIGURAÇÃO DO COMERCIAL POR EMPRESA (lane A, 13/10/2026) — K08 e a régua.
@@ -22,8 +23,11 @@ import { PrismaService } from '../prisma/prisma.service';
  *   · os números da régua nascem `null` = [a decidir] = DESLIGADO. Quem lê um
  *     número nulo não age: o lead parado não abre decisão, a decisão sem prazo
  *     não vence sozinha, o follow-up não sai. Nenhum número é arbitrado aqui;
- *   · `autonomia` nasce vazia e a automação sem nível lido vale A0 (não roda
- *     sozinha), que é o degrau mais baixo da tela 12.
+ *   · `autonomia` nasce vazia e a automação sem nível lido vale o degrau que a
+ *     régua já lhe dá hoje (`AUTONOMIA_VIGENTE`, em `autonomia.ts`). A0 só vale
+ *     quando alguém grava A0: é o freio da tela 12, e ele só segura (lane E,
+ *     fase 2; antes o padrão lido era A0, que pararia o comercial inteiro no dia
+ *     em que a guarda passasse a valer).
  *
  * A homologação preenche os números pelo seed e marca `valoresDeHomologacao`:
  * a tela mostra a marca, para ninguém confundir número de teste com decisão.
@@ -45,6 +49,8 @@ export interface ConfigComercial {
   leadParadoDias: number | null;
   decisaoExpiraHoras: number | null;
   horaPublicacaoProposta: number | null;
+  cobrancaSemWebhookDias: number | null;
+  efeitoRetidoHoras: number | null;
   autonomia: Partial<Record<ComercialAutomacao, ComercialAutonomia>>;
   valoresDeHomologacao: boolean;
   /** `false` quando a empresa não tem linha e tudo veio do padrão. */
@@ -65,13 +71,15 @@ export const CONFIG_COMERCIAL_PADRAO: Readonly<Omit<ConfigComercial, 'gravada' |
   leadParadoDias: null,
   decisaoExpiraHoras: null,
   horaPublicacaoProposta: null,
+  cobrancaSemWebhookDias: null,
+  efeitoRetidoHoras: null,
   autonomia: {},
   valoresDeHomologacao: false,
 });
 
-/** O nível de autonomia de uma automação; sem leitura, A0 (não roda sozinha). */
+/** O nível de autonomia de uma automação; sem leitura, o vigente pela régua (`AUTONOMIA_VIGENTE`). */
 export function autonomiaDe(cfg: Pick<ConfigComercial, 'autonomia'>, automacao: ComercialAutomacao): ComercialAutonomia {
-  return cfg.autonomia[automacao] ?? 'A0';
+  return nivelDe(cfg.autonomia, automacao);
 }
 
 function autonomiaLida(valor: unknown): Partial<Record<ComercialAutomacao, ComercialAutonomia>> {
@@ -101,6 +109,8 @@ export function configDaLinha(linha: LinhaDeConfig | null): ConfigComercial {
     leadParadoDias: linha.leadParadoDias,
     decisaoExpiraHoras: linha.decisaoExpiraHoras,
     horaPublicacaoProposta: linha.horaPublicacaoProposta,
+    cobrancaSemWebhookDias: linha.cobrancaSemWebhookDias,
+    efeitoRetidoHoras: linha.efeitoRetidoHoras,
     autonomia: autonomiaLida(linha.autonomia),
     valoresDeHomologacao: linha.valoresDeHomologacao,
     gravada: true,

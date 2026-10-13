@@ -7,6 +7,8 @@ import {
   type LinhaDoFio,
 } from '@mktos/shared';
 
+import { rotuloDoHorario } from './agenda-de-homologacao';
+
 /*
  * O FIO DO LEAD — a parte pura dos eventos do comercial (Lane 0).
  *
@@ -192,6 +194,17 @@ function reais(c: number): string {
   return `R$ ${inteiro},${(Math.abs(c) % 100).toString().padStart(2, '0')}`;
 }
 
+/**
+ * O horário de agenda como a tela 05 mostra ("qui 16/10 · 10h", em São Paulo).
+ * Texto que não é data volta como veio: o fio nunca inventa um horário.
+ */
+export function horarioLegivel(iso: unknown): string {
+  const t = String(iso ?? '');
+  if (!t || Number.isNaN(new Date(t).getTime())) return t;
+  const r = rotuloDoHorario(t);
+  return r.charAt(0).toLowerCase() + r.slice(1);
+}
+
 function curto(s: unknown, max = 90): string {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
@@ -229,7 +242,7 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'form.respondido':
       return { fonte, resumo: `4 respostas · ${curto(p.sistema, 30)} · base ${p.baseOrganizada ? 'organizada' : 'solta'}` };
     case 'agenda.escolhida':
-      return { fonte, resumo: `escolheu ${String(p.horario)}` };
+      return { fonte, resumo: p.horario ? `escolheu ${horarioLegivel(p.horario)}` : 'escolheu um horário' };
     case 'agenda.confirmada':
       return { fonte, resumo: `confirmação de véspera (${String(p.via)})` };
     case 'reuniao.noshow':
@@ -240,8 +253,13 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
       return { fonte, resumo: `visitou a sala · ${String(p.estagio)}` };
     case 'arquivo.enviado':
       return { fonte, resumo: `enviou ${curto(p.nome, 40)}` };
-    case 'ata.chegou':
-      return { fonte, resumo: `ata recebida · ${String(p.caracteres)} caracteres · ${String(p.fonte)}` };
+    case 'ata.chegou': {
+      // O tamanho só aparece quando o fato o traz como número: "undefined caracteres" nunca vai à tela.
+      const partes = ['ata recebida'];
+      if (typeof p.caracteres === 'number' && Number.isFinite(p.caracteres)) partes.push(`${p.caracteres.toLocaleString('pt-BR')} caracteres`);
+      if (p.fonte) partes.push(String(p.fonte));
+      return { fonte, resumo: partes.join(' · ') };
+    }
     case 'diagnostico.pronto': {
       const dores = Array.isArray(p.dores) ? p.dores.length : 0;
       return { fonte, resumo: `diagnóstico: ${dores} ${dores === 1 ? 'dor' : 'dores'} com minuto` };
@@ -275,7 +293,7 @@ export function resumoDoEvento(type: string, payload: unknown): { fonte: Comerci
     case 'cliente.ativo':
       return { fonte, resumo: 'cliente ativo · fechamento concluído' };
     case 'kickoff.marcado':
-      return { fonte, resumo: `kickoff marcado · ${String(p.horario)}` };
+      return { fonte, resumo: `kickoff marcado · ${horarioLegivel(p.horario)}` };
     case 'parcela.vence':
       return { fonte, resumo: `aviso ${String(p.aviso)} da parcela ${String(p.parcela)}` };
     case 'parcela.paga':

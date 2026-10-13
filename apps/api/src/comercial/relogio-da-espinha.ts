@@ -123,8 +123,16 @@ export class RelogioDaEspinha implements OnModuleInit {
   async passagem(orgId: string, agora: Date): Promise<ResultadoDaRotina> {
     const feitos: string[] = [];
     const falhas: string[] = [];
+    const puladas: string[] = [];
     for (const [nome, fn] of this.tarefas.inscritas()) {
       try {
+        // A autonomia (lane E): tarefa de automação em A0 não roda, e o pulo vai ao resumo.
+        const guarda = this.tarefas.guarda;
+        const v = guarda ? await guarda(orgId, nome) : { roda: true as const };
+        if (!v.roda) {
+          puladas.push(`${nome} (${v.automacao} em ${v.nivel})`);
+          continue;
+        }
         const r = await fn(orgId, agora);
         const n = typeof r === 'number' ? r : r && typeof r === 'object' && 'feitas' in r ? Number((r as { feitas: unknown }).feitas) : r ? 1 : 0;
         if (n > 0) feitos.push(`${nome}×${n}`);
@@ -135,8 +143,9 @@ export class RelogioDaEspinha implements OnModuleInit {
       }
     }
     if (falhas.length) return { status: 'erro', resumo: `falharam ${falhas.length}: ${falhas.join(' · ')}${feitos.length ? ` · feitas: ${feitos.join(', ')}` : ''}` };
-    if (!feitos.length) return { status: 'pulada', resumo: 'nada a fazer no relógio comercial.' };
-    return { status: 'ok', resumo: feitos.join(', ') };
+    const seguradas = puladas.length ? ` · seguradas pela autonomia: ${puladas.join(', ')}` : '';
+    if (!feitos.length) return { status: 'pulada', resumo: `nada a fazer no relógio comercial.${seguradas}` };
+    return { status: 'ok', resumo: `${feitos.join(', ')}${seguradas}` };
   }
 
   /** Geladeira com data de volta vencida → a etapa de antes da saída. */

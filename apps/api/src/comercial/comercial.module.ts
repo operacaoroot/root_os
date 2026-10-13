@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { FinanceModule } from '../finance/finance.module';
 import { LeadsModule } from '../leads/leads.module';
+import { MemoryModule } from '../memory/memoria.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { RoutinesModule } from '../routines/routines.module';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -17,6 +18,8 @@ import { RelogioDaEspinha } from './relogio-da-espinha';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
 import { InteligenciaController } from './inteligencia.controller';
 import { AssistenteService } from './assistente.service';
+import { AutonomiaService } from './autonomia.service';
+import { VigiaService } from './vigia.service';
 import { DiagnosticoService } from './diagnostico.service';
 import { PropostaService } from './proposta.service';
 import { SalaController } from './sala.controller';
@@ -48,7 +51,7 @@ import { FechamentoService } from './fechamento.service';
  * bloco marcado abaixo.
  */
 @Module({
-  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule],
+  imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule, ZapsignModule, MemoryModule],
   controllers: [ComercialController, SalaController, SimuladorController, MensagensController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
   providers: [
     // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
@@ -77,6 +80,9 @@ import { FechamentoService } from './fechamento.service';
     DiagnosticoService,
     PropostaService,
     AssistenteService,
+    // fase 2: a guarda da autonomia (A0 segura), o vigia das 08:00, o relator da quinta e a torre.
+    AutonomiaService,
+    VigiaService,
   ],
   exports: [FioService, ReacoesRegistry, RelogioComercialRegistry, FichaService, DecisoesService, DecisoesRegistry, ConfigComercialService, SalaService, WhatsappComercialService, DinheiroService, FechamentoService, ContratoVivoService],
 })

@@ -29,6 +29,8 @@ import { hashDoConteudo, leadIdDoTelefone, linhasDoFio, normalizarTelefone, type
 import { guardarAtaEmTransito } from './ata-em-transito';
 import { FioService, type EventoGravado } from './fio.service';
 import { produtoAlvo } from './pontuacao';
+import { decisaoSemPrazo } from './decisoes.service';
+import { proximaAcaoDoLead, saudeDoLead, type DecisaoParaProximaAcao } from './proxima-acao';
 import { avancar, avancarDepoisDaSessao, podeSair, portoesDaEtapa, type EstadoParaPortao, type Veredicto } from './portoes';
 
 /*
@@ -239,6 +241,10 @@ export interface QuemFez {
 
 const DIA_MS = 86_400_000;
 
+function paraProximaAcao(d: { titulo: string; padrao: string; expiraEm: Date }): DecisaoParaProximaAcao {
+  return { titulo: d.titulo, padrao: d.padrao, expiraEm: d.expiraEm, semPrazo: decisaoSemPrazo(d.expiraEm) };
+}
+
 /** O nome provisório de quem entra sem nome: o mesmo da lane B ("Lead" e os 4 últimos dígitos). */
 export function nomeDeReserva(telefone: string): string {
   return `Lead ${normalizarTelefone(telefone).slice(-4)}`;
@@ -448,8 +454,10 @@ export class FichaService {
       this.prisma.salaDoCliente.findFirst({ where: { leadId, orgId }, select: { slug: true } }),
       this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
       this.prisma.comercialCobranca.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' }, select: { externoId: true } }),
-      this.prisma.comercialDecisao.findMany({ where: { leadId, orgId, estado: 'aberta' }, select: { titulo: true, expiraEm: true } }),
+      this.prisma.comercialDecisao.findMany({ where: { leadId, orgId, estado: 'aberta' }, select: { titulo: true, expiraEm: true, padrao: true } }),
     ]);
+    const cfg = await this.config.ler(orgId);
+    const agora = new Date();
     const ultimaProposta = [...eventos].reverse().find((e) => e.type === 'proposta.publicada');
     const laudo = ultimaProposta ? Boolean(((ultimaProposta.payload ?? {}) as { laudo?: { ok?: boolean } }).laudo?.ok) : null;
     const estado = estadoDaFicha(ficha, lead, laudo);
@@ -483,10 +491,9 @@ export class FichaService {
       etapaDesde: ficha.etapaDesde.toISOString(),
       motivoSaida: (ficha.motivoSaida as ComercialMotivoDeSaida | null) ?? null,
       voltaEm: ficha.voltaEm?.toISOString() ?? null,
-      saude: ficha.saude,
-      proximaAcao: ficha.proximaAcaoTipo
-        ? { tipo: ficha.proximaAcaoTipo, quando: ficha.proximaAcaoQuando?.toISOString() ?? null, descricao: ficha.proximaAcaoTexto ?? '' }
-        : null,
+      // Lane E, fase 2: projeção (`proxima-acao.ts`); as colunas da tabela não são lidas.
+      saude: saudeDoLead(),
+      proximaAcao: proximaAcaoDoLead(ficha, cfg, decisoes.map(paraProximaAcao), agora),
       proximasAcoesAutomaticas: decisoes.map((d) => `decisão aberta: ${d.titulo}`),
       portao: { proxima: (proxima as ComercialEtapaAtiva | null) ?? null, faltando: itens.filter((i) => !i.cumprido).map((i) => i.rotulo), itens },
       ligadoA: {
@@ -509,8 +516,9 @@ export class FichaService {
       orderBy: { etapaDesde: 'asc' },
       take: 1000,
     });
-    const abertas = await this.prisma.comercialDecisao.findMany({ where: { orgId, estado: 'aberta' }, select: { leadId: true } });
+    const abertas = await this.prisma.comercialDecisao.findMany({ where: { orgId, estado: 'aberta' }, select: { leadId: true, titulo: true, padrao: true, expiraEm: true } });
     const comDecisao = new Set(abertas.map((d) => d.leadId));
+    const decisoesDo = (leadId: string) => abertas.filter((d) => d.leadId === leadId).map(paraProximaAcao);
     const cartoes: CartaoDoFunil[] = fichas.map((f) => {
       const diasNaEtapa = Math.max(0, Math.floor((agora.getTime() - f.etapaDesde.getTime()) / DIA_MS));
       const etapa = f.etapa as ComercialEtapa;
@@ -519,8 +527,8 @@ export class FichaService {
         nome: f.lead.name,
         empresa: f.empresa,
         etapa,
-        saude: f.saude,
-        proximaAcao: f.proximaAcaoTipo ? { tipo: f.proximaAcaoTipo, quando: f.proximaAcaoQuando?.toISOString() ?? null, descricao: f.proximaAcaoTexto ?? '' } : null,
+        saude: saudeDoLead(),
+        proximaAcao: proximaAcaoDoLead(f, cfg, decisoesDo(f.leadId), agora),
         precisaDeDecisao: comDecisao.has(f.leadId),
         parado: cfg.leadParadoDias != null && !ehSaida(etapa) && etapa !== 'fechado' && diasNaEtapa > cfg.leadParadoDias,
         diasNaEtapa,

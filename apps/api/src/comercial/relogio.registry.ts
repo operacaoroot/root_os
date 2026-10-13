@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import type { GuardaDaAutonomia } from './fio.service';
+
 /*
  * O RELÓGIO COMERCIAL — o registro das tarefas de tempo (orquestrador, 13/10/2026).
  *
@@ -20,6 +22,16 @@ export type TarefaDoRelogio = (orgId: string, agora: Date) => Promise<unknown>;
 @Injectable()
 export class RelogioComercialRegistry {
   private readonly tarefas = new Map<string, TarefaDoRelogio>();
+  private guardaInstalada: GuardaDaAutonomia | null = null;
+
+  /** A guarda da autonomia (lane E): tarefa de automação em A0 é pulada. Sem guarda, tudo roda. */
+  definirGuarda(fn: GuardaDaAutonomia): void {
+    this.guardaInstalada = fn;
+  }
+
+  get guarda(): GuardaDaAutonomia | null {
+    return this.guardaInstalada;
+  }
 
   inscrever(nome: string, fn: TarefaDoRelogio): void {
     if (this.tarefas.has(nome)) throw new Error(`Tarefa do relógio "${nome}" já inscrita.`);

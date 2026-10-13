@@ -4489,6 +4489,12 @@ model ComercialConfig {
   leadParadoDias            Int?
   decisaoExpiraHoras        Int?
   horaPublicacaoProposta    Int?
+  /// Vigia das 08:00 (lane E, fase 2): parcela vencida há mais de N dias sem
+  /// webhook do Asaas acusa a premissa do cobrador. Nulo = [a decidir] = desligada.
+  cobrancaSemWebhookDias    Int?
+  /// Vigia das 08:00: efeito do comercial retido na porta há mais de N horas.
+  /// Nulo = [a decidir] = desligada.
+  efeitoRetidoHoras         Int?
   /// `{ qualificador: 'A3', ... }` — o nível de autonomia por automação (tela 12).
   autonomia                 Json     @default("{}")
   valoresDeHomologacao      Boolean  @default(false)

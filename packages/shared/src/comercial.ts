@@ -482,6 +482,10 @@ export const ComercialConfigSchema = z
     /** Hora de São Paulo (0 a 23) em que a proposta dentro da tabela sai. */
     horaPublicacaoProposta: z.number().int().min(0).max(23).nullable().optional(),
     autonomia: z.record(z.enum(COMERCIAL_AUTOMACOES), z.enum(COMERCIAL_AUTONOMIAS)).optional(),
+    /** Vigia (lane E, fase 2): parcela vencida há mais de N dias sem webhook do Asaas. Nulo = [a decidir] = premissa desligada. */
+    cobrancaSemWebhookDias: z.number().int().min(1).max(60).nullable().optional(),
+    /** Vigia: efeito do comercial retido na porta há mais de N horas. Nulo = [a decidir] = premissa desligada. */
+    efeitoRetidoHoras: z.number().int().min(1).max(24 * 30).nullable().optional(),
     valoresDeHomologacao: z.boolean().optional(),
   })
   .strict();
@@ -688,9 +692,19 @@ export interface ContratoVivo {
 
 /** A torre (tela 12). */
 export interface TorreDasAutomacoes {
-  vigia: { ultimaPassagemEm: string | null; premissasConferidas: number; premissasQuebradas: number };
+  vigia: {
+    ultimaPassagemEm: string | null;
+    premissasConferidas: number;
+    premissasQuebradas: number;
+    /** Acréscimo da lane E (fase 2): cada premissa da última passagem, com o que quebrou. */
+    premissas?: PremissaDoVigia[];
+  };
   custoDeIaHojeCentavos: number | null;
   custoDesconhecido: boolean;
+  /** Acréscimo da lane E: o custo do dia em dólar, como o livro-caixa do teto o mede (sem câmbio, [a decidir]). */
+  custoDeIaHojeUsd?: number | null;
+  /** Acréscimo da lane E: quem respondeu as chamadas de modelo (stub, ponte, anthropic...). */
+  provedorDeIa?: string;
   automacoes: {
     chave: ComercialAutomacao;
     rotulo: string;
@@ -699,7 +713,24 @@ export interface TorreDasAutomacoes {
     acerto30Dias: number | null;
     premissa: string;
     premissaOk: boolean | null;
+    /** Acréscimo da lane E: o degrau que a régua dá hoje (o padrão sem nível gravado). */
+    autonomiaVigente?: ComercialAutonomia;
+    /** Acréscimo da lane E: o nível veio da config (true) ou é o vigente (false). */
+    autonomiaGravada?: boolean;
+    /** Acréscimo da lane E: as passagens que entraram no acerto (sem passagem, o acerto é null). */
+    passagens30Dias?: number;
   }[];
+}
+
+/** Uma premissa conferida pelo vigia das 08:00 (lane E, fase 2). */
+export interface PremissaDoVigia {
+  chave: string;
+  automacao: ComercialAutomacao | null;
+  premissa: string;
+  /** `null` = não conferível hoje (número [a decidir] ou fonte que o vigia não alcança). */
+  ok: boolean | null;
+  detalhe: string;
+  leads: string[];
 }
 
 /** O relatório da quinta (tela 13). */
@@ -714,6 +745,17 @@ export interface RelatorioDaSemana {
   previsao: { fechamentosProvaveis: number; leadsEmProposta: number } | null;
   geradoEm: string;
   narrativa: string | null;
+  /** Acréscimo da lane E: os leads em proposta ou follow-up agora (a contagem existe; a taxa da previsão é [a decidir]). */
+  leadsEmPropostaAgora?: number;
+  /** Acréscimo da lane E: por que a previsão é nula. */
+  previsaoPendente?: string | null;
+  /** Acréscimo da lane E: o recorte, em ISO. */
+  desde?: string;
+  ate?: string;
+  /** Acréscimo da lane E: o que a narrativa do modelo trouxe e o sistema tirou (frase com número). */
+  narrativaAvisos?: string[];
+  /** Acréscimo da lane E: `relogio` (a quinta 18h), `pessoa` (o botão) ou `ao_vivo` (leitura sem gerar). */
+  origem?: 'relogio' | 'pessoa' | 'ao_vivo';
 }
 
 /** Rótulos das automações da torre. */

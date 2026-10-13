@@ -45,9 +45,27 @@ interface Inscricao {
   fn: Reacao;
 }
 
+/**
+ * A guarda da autonomia (lane E, fase 2): antes de rodar uma reação, pergunta se
+ * a automação dela está em A0. Instalada por `AutonomiaService`; sem ela (a suíte
+ * que monta à mão), tudo roda como antes. Ela só SEGURA: nunca faz rodar o que
+ * não rodaria.
+ */
+export type GuardaDaAutonomia = (orgId: string, nome: string) => Promise<{ roda: true } | { roda: false; automacao: string; nivel: string; motivo: string }>;
+
 @Injectable()
 export class ReacoesRegistry {
   private readonly porTipo = new Map<string, Inscricao[]>();
+  private guardaInstalada: GuardaDaAutonomia | null = null;
+
+  /** Instala a guarda da autonomia (uma só por processo). */
+  definirGuarda(fn: GuardaDaAutonomia): void {
+    this.guardaInstalada = fn;
+  }
+
+  get guarda(): GuardaDaAutonomia | null {
+    return this.guardaInstalada;
+  }
 
   /** Inscreve uma reação. Mesmo nome no mesmo tipo duas vezes é erro de fiação. */
   inscrever<T extends ComercialEvento>(type: T, nome: string, fn: Reacao<T>): void {
@@ -124,6 +142,15 @@ export class FioService {
         skipDuplicates: true,
       });
       if (trava.count === 0) continue;
+      const veredicto = this.reacoes.guarda ? await this.reacoes.guarda(evento.orgId, nome) : { roda: true as const };
+      if (!veredicto.roda) {
+        // A0: a automação não roda, e o pulo fica escrito na própria linha da reação.
+        await this.prisma.comercialReacao.update({
+          where: { id },
+          data: { estado: 'ok', resultado: { pulada: true, automacao: veredicto.automacao, nivel: veredicto.nivel, motivo: veredicto.motivo }, erro: null },
+        });
+        continue;
+      }
       await this.rodar(id, nome, fn, evento);
     }
   }

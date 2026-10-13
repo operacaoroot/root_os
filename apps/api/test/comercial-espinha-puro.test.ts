@@ -122,16 +122,17 @@ describe('o alvo vem dos fatos; o portão decide', () => {
 });
 
 describe('a configuração nasce com a regra vigente', () => {
-  it('sem linha: interruptores falsos, números nulos ([a decidir]), autonomia A0', () => {
+  it('sem linha: interruptores falsos, números nulos ([a decidir]), autonomia no degrau vigente da régua', () => {
     const c = configDaLinha(null);
     expect(c.gravada).toBe(false);
     expect(c.envioAutomatico).toBe(false);
     expect(c.fechamentoAutomatico).toBe(false);
     expect(c.silencioAprova).toBe(false);
-    for (const k of ['janelaDeVetoMinutos', 'fupLeuDias', 'fupSilencioDias', 'prazoDiagnosticoDiasUteis', 'validadePropostaDias', 'leadParadoDias', 'decisaoExpiraHoras', 'horaPublicacaoProposta'] as const) {
+    for (const k of ['janelaDeVetoMinutos', 'fupLeuDias', 'fupSilencioDias', 'prazoDiagnosticoDiasUteis', 'validadePropostaDias', 'leadParadoDias', 'decisaoExpiraHoras', 'horaPublicacaoProposta', 'cobrancaSemWebhookDias', 'efeitoRetidoHoras'] as const) {
       expect(c[k], k).toBeNull();
     }
-    expect(autonomiaDe(c, 'fechador')).toBe('A0');
+    // Lane E, fase 2: sem nível gravado vale o degrau que a régua já dá (R4 → A2), nunca A0.
+    expect(autonomiaDe(c, 'fechador')).toBe('A2');
     expect(c.valoresDeHomologacao).toBe(false);
     expect(Object.isFrozen(CONFIG_COMERCIAL_PADRAO)).toBe(true);
   });
@@ -139,7 +140,7 @@ describe('a configuração nasce com a regra vigente', () => {
   it('a autonomia gravada torta é ignorada, nunca promovida', () => {
     const c = configDaLinha({ envioAutomatico: false, fechamentoAutomatico: false, silencioAprova: false, autonomia: { vigia: 'A3', fechador: 'A9', inexistente: 'A2' }, valoresDeHomologacao: true, atualizadoEm: EM } as never);
     expect(c.autonomia).toEqual({ vigia: 'A3' });
-    expect(autonomiaDe(c, 'fechador')).toBe('A0');
+    expect(autonomiaDe(c, 'fechador')).toBe('A2');
   });
 
   it('o esquema recusa chave desconhecida e número fora da faixa', () => {
