@@ -139,7 +139,9 @@ export class ContratoVivoService implements OnModuleInit {
   }
 
   async marcos(orgId: string, agora: Date): Promise<{ marcos: number }> {
-    const fichas = await this.prisma.comercialFicha.findMany({ where: { orgId, clienteAtivoEm: { not: null } }, select: { leadId: true, clienteAtivoEm: true } });
+    // O fato `cliente.ativo` é a fonte (a ficha é projeção dele e pode atrasar).
+    const ativos = await this.prisma.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'asc' }, select: { leadId: true, occurredAt: true } });
+    const fichas = [...new Map(ativos.map((e) => [e.leadId, { leadId: e.leadId, clienteAtivoEm: e.occurredAt as Date | null }])).values()];
     let n = 0;
     for (const f of fichas) {
       const marcos = await this.marcosDoLead(f.leadId, f.clienteAtivoEm);
@@ -207,15 +209,15 @@ export class ContratoVivoService implements OnModuleInit {
       primeiroValorEm: marcoValor?.occurredAt.toISOString() ?? null,
       saude: ficha?.saude ?? null,
       faseDaImplantacao: trilho ? { atual: Math.max(1, fases.indexOf(trilho.fase) + 1), total: 5 } : null,
-      marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? null),
+      marcos: await this.marcosDoLead(leadId, ficha?.clienteAtivoEm ?? (await this.prisma.leadEvent.findFirst({ where: { leadId, type: 'cliente.ativo' }, select: { occurredAt: true } }))?.occurredAt ?? null),
       aditivos: 0,
     };
   }
 
   async lista(orgId: string, agora: Date = new Date()): Promise<ContratoVivo[]> {
-    const fichas = await this.prisma.comercialFicha.findMany({ where: { orgId, clienteAtivoEm: { not: null } }, orderBy: { clienteAtivoEm: 'desc' }, select: { leadId: true }, take: 200 });
+    const ativos = await this.prisma.leadEvent.findMany({ where: { type: 'cliente.ativo', lead: { orgId } }, orderBy: { occurredAt: 'desc' }, select: { leadId: true }, take: 200 });
     const out: ContratoVivo[] = [];
-    for (const f of fichas) out.push(await this.doLead(orgId, f.leadId, agora));
+    for (const leadId of new Set(ativos.map((e) => e.leadId))) out.push(await this.doLead(orgId, leadId, agora));
     return out;
   }
 }
