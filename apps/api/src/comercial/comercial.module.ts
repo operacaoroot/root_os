@@ -7,6 +7,8 @@ import { OnboardingModule } from '../onboarding/onboarding.module';
 import { RoutinesModule } from '../routines/routines.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { ComercialController } from './comercial.controller';
+import { FioService, ReacoesRegistry } from './fio.service';
+import { RelogioComercialRegistry } from './relogio.registry';
 import { DinheiroController, WebhooksDoDinheiroController } from './dinheiro.controller';
 import { InteligenciaController } from './inteligencia.controller';
 import { SalaController } from './sala.controller';
@@ -33,11 +35,15 @@ import { SimuladorController } from './simulador.controller';
   imports: [TenantsModule, AuthModule, LeadsModule, OnboardingModule, FinanceModule, RoutinesModule],
   controllers: [ComercialController, SalaController, SimuladorController, DinheiroController, WebhooksDoDinheiroController, InteligenciaController],
   providers: [
+    // --- orquestrador: o fio (único caminho de escrita de fato) e o registro de reações ---
+    ReacoesRegistry,
+    FioService,
+    RelogioComercialRegistry,
     // --- lane A (espinha: ficha, reações, decisões, relógio) ---
     // --- lane B (sala, WhatsApp por porta, simulador) ---
     // --- lane D (cobrança, assinatura, fechamento, contrato vivo) ---
     // --- lane E (inteligência: stub/ponte, diagnóstico, proposta, relator, vigia) ---
   ],
-  exports: [],
+  exports: [FioService, ReacoesRegistry, RelogioComercialRegistry],
 })
 export class ComercialModule {}
