@@ -238,6 +238,17 @@ export interface QuemFez {
 
 const DIA_MS = 86_400_000;
 
+/** O nome provisório de quem entra sem nome: o mesmo da lane B ("Lead" e os 4 últimos dígitos). */
+export function nomeDeReserva(telefone: string): string {
+  return `Lead ${normalizarTelefone(telefone).slice(-4)}`;
+}
+
+/** O nome do lead ainda é o provisório (vazio, o telefone ou "Lead 1234")? */
+export function nomeEhProvisorio(nome: string, telefone: string | null): boolean {
+  const n = nome.trim();
+  return !n || n === telefone || /^Lead \d{4}$/.test(n);
+}
+
 @Injectable()
 export class FichaService {
   constructor(
@@ -271,22 +282,24 @@ export class FichaService {
     const telefone = normalizarTelefone(e.telefone);
     const leadId = leadIdDoTelefone(orgId, telefone);
     const criado = await this.prisma.lead.createMany({
-      data: [{ id: leadId, orgId, name: e.nome ?? telefone, phone: telefone, status: LeadStatus.novo, enteredAt: agora }],
+      data: [{ id: leadId, orgId, name: e.nome ?? nomeDeReserva(telefone), phone: telefone, status: LeadStatus.novo, enteredAt: agora }],
       skipDuplicates: true,
     });
     const doLead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
     if (!doLead) throw new ConflictException('Este telefone já é lead de outra empresa.');
     const minuto = agora.toISOString().slice(0, 16);
     const chaveDaMensagem = e.mensagemId ?? hashDoConteudo({ telefone, texto: e.texto, minuto });
-    await this.fio.registrar(orgId, leadId, 'whats.recebida', chaveDaMensagem, { texto: e.texto, mensagemId: e.mensagemId ?? null, provedor: 'entrada' }, { em: agora });
+    // As MESMAS chaves da entrada da lane B (`WhatsappComercialService.receberEntrada`):
+    // o lead que chega pelos dois caminhos cai no mesmo `lead.chegou` e na mesma mensagem.
     const ev = await this.fio.registrar(
       orgId,
       leadId,
       'lead.chegou',
-      'entrada',
+      'whatsapp',
       { telefone, texto: e.texto, canal: e.canal ?? null, palavraChave: e.palavraChave ?? null, nome: e.nome ?? null },
       { em: agora },
     );
+    await this.fio.registrar(orgId, leadId, 'whats.recebida', chaveDaMensagem, { texto: e.texto, mensagemId: chaveDaMensagem, provedor: 'entrada' }, { em: new Date(agora.getTime() + 1) });
     return { leadId, leadNovo: criado.count === 1, eventoId: ev.eventoId };
   }
 

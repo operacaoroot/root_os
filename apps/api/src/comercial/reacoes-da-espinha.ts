@@ -3,7 +3,7 @@ import { COMERCIAL_ETAPAS, ehSaida, type ComercialEtapa, type ComercialEtapaAtiv
 
 import { PrismaService } from '../prisma/prisma.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
-import { FichaService } from './ficha.service';
+import { FichaService, nomeEhProvisorio } from './ficha.service';
 import { FioService, ReacoesRegistry, type EventoGravado } from './fio.service';
 import { pontuar } from './pontuacao';
 import { RelogioDaEspinha } from './relogio-da-espinha';
@@ -165,7 +165,7 @@ export class ReacoesDaEspinha implements OnModuleInit {
     // O nome do formulário substitui o telefone que serviu de nome na entrada.
     if (f.nome) {
       const lead = await this.prisma.lead.findFirst({ where: { id: e.leadId, orgId: e.orgId }, select: { name: true, phone: true } });
-      if (lead && (!lead.name.trim() || lead.name === lead.phone)) {
+      if (lead && nomeEhProvisorio(lead.name, lead.phone)) {
         await this.prisma.lead.updateMany({ where: { id: e.leadId, orgId: e.orgId }, data: { name: f.nome } });
       }
     }
