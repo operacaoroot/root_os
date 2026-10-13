@@ -98,7 +98,9 @@ export function proximaAcaoDoLead(
 
   // 1. Saída.
   if (ehSaida(etapa)) {
-    if (etapa !== 'geladeira' || !f.voltaEm) return null;
+    if (etapa !== 'geladeira') return null;
+    // A-4: geladeira sem data (a régua não deu os dias) não volta sozinha: a data é de uma pessoa.
+    if (!f.voltaEm) return acao('data_da_geladeira', 'marcar a data de volta da geladeira (a regra não dá a data: [a decidir])');
     const volta = f.etapaAntesDaSaida && f.etapaAntesDaSaida in COMERCIAL_ROTULO_DA_ETAPA ? COMERCIAL_ROTULO_DA_ETAPA[f.etapaAntesDaSaida as ComercialEtapa] : 'a etapa de antes';
     return acao('volta_da_geladeira', `volta da geladeira para ${volta}`, f.voltaEm);
   }

@@ -4495,6 +4495,10 @@ model ComercialConfig {
   /// Vigia das 08:00: efeito do comercial retido na porta há mais de N horas.
   /// Nulo = [a decidir] = desligada.
   efeitoRetidoHoras         Int?
+  /// A-4 (revisão): a geladeira decidida pela fila volta em N dias. Nulo =
+  /// [a decidir] (decisão aberta da mesa): a geladeira nasce sem data e a
+  /// próxima ação pede a data a uma pessoa.
+  geladeiraVoltaDias        Int?
   /// `{ qualificador: 'A3', ... }` — o nível de autonomia por automação (tela 12).
   autonomia                 Json     @default("{}")
   valoresDeHomologacao      Boolean  @default(false)

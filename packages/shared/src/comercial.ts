@@ -506,6 +506,8 @@ export const ComercialConfigSchema = z
     cobrancaSemWebhookDias: z.number().int().min(1).max(60).nullable().optional(),
     /** Vigia: efeito do comercial retido na porta há mais de N horas. Nulo = [a decidir] = premissa desligada. */
     efeitoRetidoHoras: z.number().int().min(1).max(24 * 30).nullable().optional(),
+    /** A-4: a geladeira decidida pela fila volta em N dias. Nulo = [a decidir]: nasce sem data e a próxima ação pede a data a uma pessoa. */
+    geladeiraVoltaDias: z.number().int().min(1).max(365).nullable().optional(),
     valoresDeHomologacao: z.boolean().optional(),
   })
   .strict();

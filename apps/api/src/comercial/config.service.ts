@@ -53,6 +53,7 @@ export interface ConfigComercial {
   horaPublicacaoProposta: number | null;
   cobrancaSemWebhookDias: number | null;
   efeitoRetidoHoras: number | null;
+  geladeiraVoltaDias: number | null;
   autonomia: Partial<Record<ComercialAutomacao, ComercialAutonomia>>;
   valoresDeHomologacao: boolean;
   /** `false` quando a empresa não tem linha e tudo veio do padrão. */
@@ -75,6 +76,7 @@ export const CONFIG_COMERCIAL_PADRAO: Readonly<Omit<ConfigComercial, 'gravada' |
   horaPublicacaoProposta: null,
   cobrancaSemWebhookDias: null,
   efeitoRetidoHoras: null,
+  geladeiraVoltaDias: null,
   autonomia: {},
   valoresDeHomologacao: false,
 });
@@ -113,6 +115,7 @@ export function configDaLinha(linha: LinhaDeConfig | null): ConfigComercial {
     horaPublicacaoProposta: linha.horaPublicacaoProposta,
     cobrancaSemWebhookDias: linha.cobrancaSemWebhookDias,
     efeitoRetidoHoras: linha.efeitoRetidoHoras,
+    geladeiraVoltaDias: linha.geladeiraVoltaDias,
     autonomia: autonomiaLida(linha.autonomia),
     valoresDeHomologacao: linha.valoresDeHomologacao,
     gravada: true,

@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { COMERCIAL_ETAPAS, ehSaida, type ComercialEtapa, type ComercialEtapaAtiva, type ComercialEvento } from '@mktos/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { configDaLinha } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { FichaService, nomeEhProvisorio } from './ficha.service';
 import { FioService, ReacoesRegistry, type EventoGravado } from './fio.service';
@@ -249,17 +250,26 @@ export class ReacoesDaEspinha implements OnModuleInit {
 
   /**
    * Saída decidida na fila. Não passa pela rota (não há corpo de pessoa): grava
-   * o mesmo fato `saida.registrada`, com a decisão como origem. A geladeira por
-   * decisão nasce sem data de volta ([a decidir]): quem marca a data é gente.
+   * o mesmo fato `saida.registrada`, com a decisão como origem.
+   *
+   * A-4: a geladeira por decisão volta na data que a régua dá
+   * (`geladeiraVoltaDias`). Sem o número, nasce sem data ([a decidir], decisão
+   * aberta da mesa) e a próxima ação pede a data a uma pessoa; data inventada
+   * aqui, nunca.
    */
   private async sairPorDecisao(d: DecisaoResolvida, saida: 'geladeira' | 'desqualificado' | 'perdido', motivo: 'sem_base' | 'sumiu'): Promise<unknown> {
     const ficha = await this.fichas.garantir(d.orgId, d.leadId);
     if (ehSaida(ficha.etapa as ComercialEtapa) || ficha.etapa === 'fechado') return { efeito: 'nada: o lead já não está no funil ativo', etapa: ficha.etapa };
+    let voltaEm: string | null = null;
+    if (saida === 'geladeira') {
+      const cfg = configDaLinha(await this.prisma.comercialConfig.findUnique({ where: { orgId: d.orgId } }));
+      if (cfg.geladeiraVoltaDias != null) voltaEm = new Date(Date.now() + cfg.geladeiraVoltaDias * 86_400_000).toISOString();
+    }
     await this.fio.registrar(d.orgId, d.leadId, 'saida.registrada', `decisao:${d.id}`, {
       saida,
       motivo,
-      detalhe: `decisão ${d.tipo}: ${d.escolha}${d.como === 'expirada' ? ' (padrão aplicado no vencimento)' : ''}`,
-      voltaEm: null,
+      detalhe: `decisão ${d.tipo}: ${d.escolha}${d.como === 'expirada' ? ' (padrão aplicado no vencimento)' : ''}${saida === 'geladeira' && !voltaEm ? ' · data de volta [a decidir]' : ''}`,
+      voltaEm,
       parceiro: null,
       por: d.por?.nome ?? d.por?.id ?? (d.como === 'expirada' ? 'relógio' : null),
     });

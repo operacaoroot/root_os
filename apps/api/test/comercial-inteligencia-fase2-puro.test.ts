@@ -118,7 +118,8 @@ describe('a próxima ação é projeção', () => {
     expect(proximaAcaoDoLead({ etapa: 'perdido' }, CFG, [], AGORA)).toBeNull();
     const volta = proximaAcaoDoLead({ etapa: 'geladeira', voltaEm: new Date('2026-12-10T12:00:00Z'), etapaAntesDaSaida: 'proposta' }, CFG, [], AGORA);
     expect(volta).toEqual({ tipo: 'volta_da_geladeira', quando: '2026-12-10T12:00:00.000Z', descricao: `volta da geladeira para ${COMERCIAL_ROTULO_DA_ETAPA.proposta}` });
-    expect(proximaAcaoDoLead({ etapa: 'geladeira' }, CFG, [], AGORA)).toBeNull();
+    // A-4: a geladeira sem data pede a data a uma pessoa (a regra não a dá).
+    expect(proximaAcaoDoLead({ etapa: 'geladeira' }, CFG, [], AGORA)).toMatchObject({ tipo: 'data_da_geladeira', quando: null });
     expect(proximaHoraEmSP(AGORA, 18).toISOString()).toBe(new Date('2026-10-13T18:00:00-03:00').toISOString());
     expect(proximaHoraEmSP(new Date('2026-10-13T19:00:00-03:00'), 18).toISOString()).toBe(new Date('2026-10-14T18:00:00-03:00').toISOString());
     const p = proximaAcaoDoLead({ etapa: 'proposta', propostaVersao: 1 }, { ...CFG, silencioAprova: true }, [], AGORA);
