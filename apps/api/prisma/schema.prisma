@@ -70,22 +70,32 @@ model Org {
   /// EXPLICITAMENTE. Confiar no default aqui é nascer com o painel vazio.
   modulos String[] @default([])
 
-  users        User[]
-  roles        Role[]
-  leads        Lead[]
-  campaigns    Campaign[]
-  tasks        Task[]
-  pixelEvents  PixelEvent[]
-  auditLogs    AuditLog[]
-  integrations IntegrationAccount[]
-  leadSources  LeadSource[]
-  reports      Report[]
-  contentItems ContentItem[]
-  knowledge    KnowledgeNote[]
-  google       GoogleAccount?
-  meta         MetaAccount?
-  goalWeeks    GoalWeek[]
-  goalConfig   GoalConfig?
+  users                User[]
+  roles                Role[]
+  leads                Lead[]
+  campaigns            Campaign[]
+  tasks                Task[]
+  pixelEvents          PixelEvent[]
+  auditLogs            AuditLog[]
+  integrations         IntegrationAccount[]
+  leadSources          LeadSource[]
+  reports              Report[]
+  contentItems         ContentItem[]
+  knowledge            KnowledgeNote[]
+  google               GoogleAccount?
+  meta                 MetaAccount?
+  goalWeeks            GoalWeek[]
+  goalConfig           GoalConfig?
+  // O cockpit do lead (módulo comercial, 13/10/2026).
+  comercialConfig      ComercialConfig?
+  comercialFichas      ComercialFicha[]
+  comercialDecisoes    ComercialDecisao[]
+  comercialMensagens   ComercialMensagem[]
+  comercialReacoes     ComercialReacao[]
+  comercialFechamentos ComercialFechamento[]
+  comercialCobrancas   ComercialCobranca[]
+  comercialDocumentos  ComercialDocumento[]
+  salasDoCliente       SalaDoCliente[]
 
   // A régua e a porta (ver "Régua, porta e rastro" no fim do arquivo)
   policyVersions  PolicyVersion[]
@@ -193,7 +203,7 @@ model Org {
   // reativar devolva exatamente o estado anterior. Um booleano não tem onde
   // guardar nada disso — e um booleano que alguém "limpa" na reativação apaga a
   // própria prova de que houve suspensão.
-  assinatura         Assinatura?
+  assinatura          Assinatura?
   cobrancasAssinatura CobrancaDeAssinatura[]
 
   // Fatia 6.3 — O CONSOLE DA PLATAFORMA, RF-B-02 (bloco no fim do arquivo).
@@ -379,6 +389,16 @@ model Lead {
   updatedAt   DateTime    @updatedAt
 
   events LeadEvent[]
+
+  // O cockpit do lead (módulo comercial): a ficha 1:1, a sala e os filhos do fio.
+  ficha       ComercialFicha?
+  sala        SalaDoCliente?
+  decisoes    ComercialDecisao[]
+  mensagens   ComercialMensagem[]
+  reacoes     ComercialReacao[]
+  fechamentos ComercialFechamento[]
+  cobrancas   ComercialCobranca[]
+  documentos  ComercialDocumento[]
 
   @@index([orgId, enteredAt])
   @@index([orgId, campaignId])
@@ -1482,9 +1502,9 @@ model PautaIdeia {
   peca   PautaPeca? @relation(fields: [pecaId], references: [id], onDelete: SetNull)
 
   /// `operador` ou `ia`: quem propôs. A IA propõe, gente aprova.
-  origem    String   @default("operador")
-  criadaEm  DateTime @default(now())
-  criadaPor String?
+  origem       String   @default("operador")
+  criadaEm     DateTime @default(now())
+  criadaPor    String?
   atualizadaEm DateTime @updatedAt
 
   @@index([orgId, status])
@@ -1573,30 +1593,30 @@ model PautaEpisodio {
 
   /// Uma rodada vira no máximo um episódio. `Restrict`: apagar a rodada não
   /// pode levar junto roteiro, mídia e transcrição.
-  rodadaId String              @unique
-  rodada   PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
+  rodadaId    String              @unique
+  rodada      PautaRodada         @relation(fields: [rodadaId], references: [id], onDelete: Restrict)
   /// Sequencial por empresa (ep-01, ep-02…), dado sob cadeado na criação.
-  numero   Int
-  titulo   String
-  status   PautaEpisodioStatus @default(roteiro)
+  numero      Int
+  titulo      String
+  status      PautaEpisodioStatus @default(roteiro)
   /// MD2: desde quando está no status atual. Quem carimba é o GATILHO
   /// `PautaEpisodio_statusDesde`, em toda troca de status por qualquer caminho
   /// (mídia, transcrição, roteiro, semana, o passo à mão). O vigia do Mac só
   /// aceita bruto do OBS gravado depois da entrada em Gravação.
-  statusDesde DateTime @default(now())
+  statusDesde DateTime            @default(now())
 
-  roteiro          String @default("")
+  roteiro          String  @default("")
   /// D-MC2: a palavra dita a cada erro na gravação, só deste episódio. Nula =
   /// a da empresa (nota `pauta.palavra-de-corte` da memória) ou "root, corta".
   palavraDeCorte   String?
   /// Arquivos locais do Mac, duração, cortes — o que a estação de mídia devolve (MC9).
-  midia            Json   @default("{}")
+  midia            Json    @default("{}")
   /// Segmentos `{inicio, fim, texto}` em segundos do vídeo final.
-  transcricao      Json   @default("[]")
-  transcricaoTexto String @default("")
-  titulos          Json   @default("[]")
-  thumbs           Json   @default("[]")
-  descricao        String @default("")
+  transcricao      Json    @default("[]")
+  transcricaoTexto String  @default("")
+  titulos          Json    @default("[]")
+  thumbs           Json    @default("[]")
+  descricao        String  @default("")
 
   /// A página de links do episódio (MC12). Conferida pelo mesmo gatilho: página
   /// de outra empresa é recusada.
@@ -1632,40 +1652,40 @@ enum EnvioAoYoutubeEstado {
 /// fica aqui cifrada e só sai para o Mac. Filha do episódio: sentinela +
 /// gatilho `mktos_orgid_do_pai`.
 model EnvioAoYoutube {
-  id               String               @id @default(uuid())
+  id              String               @id @default(uuid())
   /// Sentinela: o gatilho troca por `PautaEpisodio.orgId`.
-  orgId            String               @default("")
-  org              Org                  @relation(fields: [orgId], references: [id])
-  episodioId       String               @unique
-  episodio         PautaEpisodio        @relation(fields: [episodioId], references: [id], onDelete: Cascade)
-  sha256           String
+  orgId           String               @default("")
+  org             Org                  @relation(fields: [orgId], references: [id])
+  episodioId      String               @unique
+  episodio        PautaEpisodio        @relation(fields: [episodioId], references: [id], onDelete: Cascade)
+  sha256          String
   /// O vídeo pode passar de 2 GB.
-  bytes            BigInt
-  mime             String               @default("video/mp4")
-  estado           EnvioAoYoutubeEstado @default(declarado)
+  bytes           BigInt
+  mime            String               @default("video/mp4")
+  estado          EnvioAoYoutubeEstado @default(declarado)
   /// A URI da sessão resumable, cifrada (`common/crypto.ts`). Nula fora de `sessao_aberta`.
-  sessaoCifrada    String?
-  sessaoAbertaEm   DateTime?
+  sessaoCifrada   String?
+  sessaoAbertaEm  DateTime?
   /// A sessão do YouTube vale 7 dias.
-  expiraEm         DateTime?
-  sessoes          Int                  @default(0)
-  videoId          String?
-  conferidoEm      DateTime?
+  expiraEm        DateTime?
+  sessoes         Int                  @default(0)
+  videoId         String?
+  conferidoEm     DateTime?
   /// O `sha` curto da thumb que o YouTube recebeu (o mesmo do nome no storage).
-  thumbSha         String?
-  thumbDefinidaEm  DateTime?
-  playlistId       String?
-  playlistItemId   String?
+  thumbSha        String?
+  thumbDefinidaEm DateTime?
+  playlistId      String?
+  playlistItemId  String?
   /// O `publishAt` que o YouTube aceitou.
-  publicarEm       DateTime?
-  agendadoEm       DateTime?
-  erro             String?
+  publicarEm      DateTime?
+  agendadoEm      DateTime?
+  erro            String?
   /// O último item de lote que agiu sobre esta linha (envio ou publicação).
-  loteItemId       String?
+  loteItemId      String?
   /// A sessão foi aberta com `YOUTUBE_AUDITORIA=teste` (o canal de teste): o vídeo fica privado para sempre e não é publicado.
-  enviadoEmTeste   Boolean              @default(false)
-  criadoEm         DateTime             @default(now())
-  atualizadoEm     DateTime             @updatedAt
+  enviadoEmTeste  Boolean              @default(false)
+  criadoEm        DateTime             @default(now())
+  atualizadoEm    DateTime             @updatedAt
 
   @@index([orgId, estado])
 }
@@ -1785,12 +1805,12 @@ model PautaPublicacao {
 // TEXTO do comentário nunca é gravado. `pessoaHmac` é o HMAC-SHA256 do id da
 // pessoa no Instagram com META_WEBHOOK_PESSOA_HMAC_KEY: é o que o RASTRO leva.
 model ComentarioComPalavra {
-  id            String    @id @default(uuid())
+  id            String           @id @default(uuid())
   /// Sentinela: o gatilho troca por `PautaPeca.orgId`.
-  orgId         String    @default("")
-  org           Org       @relation(fields: [orgId], references: [id])
+  orgId         String           @default("")
+  org           Org              @relation(fields: [orgId], references: [id])
   pecaId        String
-  peca          PautaPeca @relation(fields: [pecaId], references: [id], onDelete: Cascade)
+  peca          PautaPeca        @relation(fields: [pecaId], references: [id], onDelete: Cascade)
   /// O id do comentário na Graph. Único por empresa: a coleta de 10 em 10 min relê o mesmo comentário.
   commentId     String
   /// O id da mídia do Instagram (o post da peça).
@@ -1805,7 +1825,7 @@ model ComentarioComPalavra {
   respondidoEm  DateTime?
   /// O id de quem marcou como respondido (ou `dm-automatica`, quando a DM saiu sozinha, MD11).
   respondidoPor String?
-  criadoEm      DateTime  @default(now())
+  criadoEm      DateTime         @default(now())
   /// MD11: a tentativa de DM automática deste comentário, quando houve (uma por comentário).
   envio         EnvioDeResposta?
 
@@ -2121,10 +2141,10 @@ model WorkTask {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  tags     WorkTag[]        @relation("WorkTaskTags")
-  values   WorkFieldValue[]
-  comments WorkComment[]
-  apontamentos WorkApontamento[]
+  tags              WorkTag[]          @relation("WorkTaskTags")
+  values            WorkFieldValue[]
+  comments          WorkComment[]
+  apontamentos      WorkApontamento[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
 
@@ -2268,14 +2288,14 @@ model Capability {
 
 /// Política em vigor. orgId NULO = a base ROOT que todas herdam.
 model PolicyVersion {
-  id        String    @id @default(uuid())
-  orgId     String?
-  org       Org?      @relation(fields: [orgId], references: [id])
-  versao    Int
+  id                   String    @id @default(uuid())
+  orgId                String?
+  org                  Org?      @relation(fields: [orgId], references: [id])
+  versao               Int
   /// Documento RESOLVIDO (base + delta aplicado) — é o que o serviço carrega.
-  documento Json
+  documento            Json
   /// Só o que esta empresa sobrescreveu. Nulo na base.
-  delta     Json?
+  delta                Json?
   /// DOIS diffs, com a REFERÊNCIA no nome — `DiffDePolitica` de @mktos/policy:
   /// capacidade por capacidade (`de`, `para`, `direcao`, `campos`, `travas`),
   /// limite por limite e seção por seção (RF-P-04, "com data e responsável").
@@ -2289,7 +2309,7 @@ model PolicyVersion {
   /// `diffDaBase` — o que ESTA EMPRESA tem de diferente da base herdada da
   /// ROOT. Nulo na versão da própria base (orgId nulo), onde a pergunta não
   /// existe.
-  diffDaBase Json?
+  diffDaBase           Json?
   /// `diffDaVersaoAnterior` — o que ESTA VERSÃO mudou em relação à anterior do
   /// MESMO escopo (a base anterior, ou a versão anterior desta empresa). É o
   /// diff honesto sobre a direção: uma queda de R4 para R3 aparece aqui como
@@ -2304,15 +2324,15 @@ model PolicyVersion {
   /// Obrigatório quando um nível DESCE ou a aprovação de R2 é desligada:
   /// "descer nível nunca é automático" é invariante da escada. Quem cobra é
   /// `recusasDaSobrescrita()` em @mktos/policy, chamada pelo PolicyService.
-  motivo    String
+  motivo               String
   /// O responsável do RF-P-06. `String?` e não relação com User porque a base
   /// ROOT (orgId nulo) é semeada por script, sem usuário nenhum logado — e uma
   /// FK obrigatória ali tornaria o seed impossível. Sobrescrita de empresa SEM
   /// este campo é recusada quando afrouxa alguma coisa; é a trava, não a coluna.
-  autorId   String?
-  ativaDe   DateTime  @default(now())
-  ativaAte  DateTime?
-  criadoEm  DateTime  @default(now())
+  autorId              String?
+  ativaDe              DateTime  @default(now())
+  ativaAte             DateTime?
+  criadoEm             DateTime  @default(now())
 
   decisoes PolicyDecision[]
 
@@ -2627,9 +2647,9 @@ model Agent {
   donoId   String?
   dono     User?   @relation("AgentDono", fields: [donoId], references: [id])
 
-  tipo AgentTipo @default(llm)
+  tipo         AgentTipo      @default(llm)
   /// O estado DECLARADO — a decisão do dono. Ver `EstadoDeAgente`.
-  estado EstadoDeAgente @default(planejado)
+  estado       EstadoDeAgente @default(planejado)
   /// Quem declarou o estado atual, quando, e POR QUÊ. Os três juntos, porque
   /// separados não respondem nada: "pausado" sem autor e sem motivo é um
   /// agente parado que ninguém sabe se pode religar. O histórico completo está
@@ -2648,10 +2668,10 @@ model Agent {
   rebaixadoPor String?
 
   modelo       String?
-  effort       String   @default("high")
-  maxPassos    Int      @default(8)
-  tetoCustoUsd Decimal  @default(0.50) @db.Decimal(10, 4)
-  tetoSegundos Int      @default(180)
+  effort       String  @default("high")
+  maxPassos    Int     @default(8)
+  tetoCustoUsd Decimal @default(0.50) @db.Decimal(10, 4)
+  tetoSegundos Int     @default(180)
 
   /// ORÇAMENTO MENSAL DE IA DESTE AGENTE, em dólar (fatia A3).
   ///
@@ -2681,7 +2701,7 @@ model Agent {
   orcamentoEm     DateTime?
   orcamentoMotivo String?
   /// As regras da casa DESTE agente — o ContextItem do PRD em versão mínima.
-  contextoFixo String[]
+  contextoFixo    String[]
 
   cron  String?
   tz    String  @default("America/Sao_Paulo")
@@ -2861,7 +2881,7 @@ model SessionStep {
   custoEstimado    Boolean  @default(true)
   stopReason       String?
 
-  fontes  Json    @default("[]")
+  fontes        Json    @default("[]")
   /// POR QUE não havia dado, no passo de contexto (RF-M-02).
   ///
   /// `nada_na_base`, `notas_sem_corpo` ou `busca_indisponivel` — os três motivos
@@ -2874,9 +2894,9 @@ model SessionStep {
   motivoSemDado String?
   /// Blocos crus do provider. Permite retomar sem perder o thinking — remover
   /// ou reordenar quebra a assinatura e a API recusa o turno seguinte.
-  payload Json?
-  texto   String?
-  erro    String?
+  payload       Json?
+  texto         String?
+  erro          String?
 
   duracaoMs Int      @default(0)
   criadoEm  DateTime @default(now())
@@ -3090,7 +3110,7 @@ model GastoDeIaNoDia {
   /// processo morto no meio — e é por isso que ele é um campo, não uma conta.
   reservadoUsd Decimal @default(0) @db.Decimal(12, 6)
 
-  chamadas Int @default(0)
+  chamadas         Int @default(0)
   /// Chamadas em modelo fora da tabela de preço: não dá para estimar nem
   /// medir. Elas passam, e ficam contadas aqui para a tela dizer "não medido".
   chamadasSemPreco Int @default(0)
@@ -3378,9 +3398,9 @@ model ContextItem {
   arquivadoEm  DateTime?
   arquivadoPor String?
 
-  criadoEm     DateTime @default(now())
-  criadoPor    String?
-  atualizadoEm DateTime @updatedAt
+  criadoEm      DateTime @default(now())
+  criadoPor     String?
+  atualizadoEm  DateTime @updatedAt
   atualizadoPor String?
 
   versoes ContextItemVersion[]
@@ -3409,8 +3429,8 @@ model ContextItemVersion {
 
   /// 1, 2, 3… dentro do item. Sem buraco: quem grava serializa no advisory lock
   /// da empresa, como o RASTRO.
-  versao   Int
-  mudanca  ContextChange
+  versao  Int
+  mudanca ContextChange
 
   /// O ESTADO NAQUELA VERSÃO. Cópia, e de propósito: reconstruir o corpo
   /// aplicando diferenças exigiria que toda linha anterior existisse para
@@ -3787,7 +3807,7 @@ model Assinatura {
   ///
   /// NUNCA É LIMPA, pelo mesmo motivo de `suspensaEm`: ela é a prova de que
   /// alguém decidiu, e apagar prova é o que esta fatia existe para não fazer.
-  perdoadasAte          DateTime?
+  perdoadasAte DateTime?
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
@@ -4014,14 +4034,14 @@ model EmpresaNaPlataforma {
   /// Contadores de USO. São números MEDIDOS e carimbados (`medidoEm`), nunca
   /// calculados na hora de mostrar: calcular na hora exigiria varrer tabela de
   /// cliente, que é o que este console não faz.
-  usuarios       Int     @default(0)
-  agentesAtivos  Int     @default(0)
-  gastoIaUsdMes  Decimal @default(0) @db.Decimal(12, 6)
+  usuarios      Int     @default(0)
+  agentesAtivos Int     @default(0)
+  gastoIaUsdMes Decimal @default(0) @db.Decimal(12, 6)
 
   /// COBRANÇA. Em real, que é a moeda do contrato — ao contrário do gasto de
   /// IA, que é medido em dólar pelo provedor.
-  mensalidadeBrl Decimal  @default(0) @db.Decimal(12, 2)
-  cobrancaEmDia  Boolean  @default(true)
+  mensalidadeBrl  Decimal   @default(0) @db.Decimal(12, 2)
+  cobrancaEmDia   Boolean   @default(true)
   proximaCobranca DateTime?
 
   /// Quando os contadores acima foram medidos. Sem isto a tela mostraria número
@@ -4091,7 +4111,7 @@ model AcessoDeSuporte {
   /// depende de um varredor rodando é prazo que não vale quando ele para.
   expiraEm DateTime
 
-  revogadoEm   DateTime?
+  revogadoEm    DateTime?
   revogadoPorId String?
 
   /// Quantas vezes o acesso foi efetivamente usado, e quando foi a última.
@@ -4160,8 +4180,8 @@ model OnboardingTrilho {
   receita String?
 
   /// O cartão na esteira de clientes do Trabalho, quando há um.
-  cardId String?
-  card   WorkTask? @relation("OnboardingDoCartao", fields: [cardId], references: [id], onDelete: SetNull)
+  cardId    String?
+  card      WorkTask? @relation("OnboardingDoCartao", fields: [cardId], references: [id], onDelete: SetNull)
   /// A empresa do cliente no OS, quando provisionada. É lá que a memória mora.
   /// Sem chave estrangeira, pelo mesmo motivo de `EmpresaNaPlataforma.empresaId`.
   empresaId String?
@@ -4190,8 +4210,8 @@ model OnboardingTrilho {
   proximoPassoDono String?
   proximoPassoEm   DateTime?
 
-  observacoes String?
-  criadoPor   String?
+  observacoes  String?
+  criadoPor    String?
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
@@ -4235,7 +4255,7 @@ model OnboardingItem {
 
   /// proposto → aprovado | descartado → confirmado | corrigido | respondido.
   /// `em-branco` é o estado inicial de tema sem proposta.
-  status     String @default("em-branco")
+  status     String  @default("em-branco")
   textoFinal String?
 
   aprovadoPor String?
@@ -4267,8 +4287,8 @@ model OnboardingConvite {
   trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
 
   /// `A` (a triagem, antes da 1ª reunião) ou `BCD` (o formulário completo).
-  blocos    String
-  tokenHash String @unique
+  blocos       String
+  tokenHash    String  @unique
   /// O token cifrado (AES-GCM, chave derivada de ENCRYPTION_KEY, AAD = id),
   /// para o lembrete mandar o MESMO link. Nulo quando não há chave no ambiente.
   tokenCifrado String?
@@ -4299,11 +4319,11 @@ model OnboardingAta {
   trilho   OnboardingTrilho @relation(fields: [trilhoId], references: [id], onDelete: Cascade)
 
   /// `texto` · `pdf` · `link` · `granola`.
-  fonte      String
-  referencia String?
-  caracteres Int
-  hash       String
-  segredosRemovidos Int @default(0)
+  fonte             String
+  referencia        String?
+  caracteres        Int
+  hash              String
+  segredosRemovidos Int     @default(0)
 
   modelo        String?
   custoUsd      Decimal @default(0) @db.Decimal(12, 6)
@@ -4329,12 +4349,339 @@ model OnboardingMarco {
 
   /// `fase.avancou` · `portao.cumprido` · `convite.enviado` · `convite.lembrete`
   /// · `ata.lida` · `retrato.fechado` · `memoria.carregada` · `alerta` …
-  tipo  String
-  texto String
-  dados Json   @default("{}")
-  quem  String?
+  tipo     String
+  texto    String
+  dados    Json     @default("{}")
+  quem     String?
   eventoId String?
-  em    DateTime @default(now())
+  em       DateTime @default(now())
 
   @@index([orgId, trilhoId, em])
+}
+
+// ============================================================================
+// O COCKPIT DO LEAD — módulo comercial (13/10/2026)
+//
+// Desenho em docs/comercial/mapa-da-operacao.html (C04, C07, K01, K02) e no
+// roteiro docs/comercial/PASSAGEM-PREDATOR-COMERCIAL.md. O fio do lead é o
+// `LeadEvent`; as tabelas abaixo são PROJEÇÃO e apoio: a ficha 1:1 (a soma
+// dos eventos), a sala do cliente (um link do primeiro contato ao kickoff), a
+// fila de decisões, as mensagens do WhatsApp por porta, as reações
+// idempotentes, o fechamento com chave e os espelhos de cobrança e documento.
+//
+// Todo filho de Lead carrega `orgId` com a sentinela `''` e o gatilho
+// `<Tabela>_orgId_do_pai` (`mktos_orgid_do_pai('Lead', 'leadId')`), como
+// `LeadEvent`. `ComercialConfig` é por empresa, sem pai. Enum e rótulos
+// espelhados em `packages/shared/src/comercial.ts`: mudou lá, muda aqui.
+// `Lead.status` continua existindo e é DERIVADO da etapa (mapa fixo no shared).
+// ============================================================================
+
+enum ComercialEtapa {
+  novo_lead
+  qualificacao
+  reuniao_agendada
+  sessao
+  diagnostico
+  proposta
+  follow_up
+  contrato
+  fechado
+  desqualificado
+  geladeira
+  perdido
+  parceiro
+}
+
+/// A ficha do lead (tela 05): 1:1 com Lead, projeção dos eventos. Nenhuma tela
+/// grava campo aqui à mão — quem escreve é a reação a um evento.
+model ComercialFicha {
+  id     String @id @default(uuid())
+  /// Sentinela + gatilho `ComercialFicha_orgId_do_pai` (ver topo do arquivo).
+  orgId  String @default("")
+  org    Org    @relation(fields: [orgId], references: [id])
+  leadId String @unique
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  etapa             ComercialEtapa  @default(novo_lead)
+  /// Carimbado pela aplicação em toda troca de etapa (a idade do cartão no funil).
+  etapaDesde        DateTime        @default(now())
+  /// A etapa em que o lead estava quando saiu (a geladeira volta para ela).
+  etapaAntesDaSaida ComercialEtapa?
+
+  // C07 — os campos, na ordem em que viram obrigatórios
+  empresa                       String?
+  cnpj                          String?
+  canal                         String?
+  origemIndicacao               String?
+  perfil                        String?
+  pontuacao                     Int?
+  sistemaErp                    String?
+  baseDados                     Boolean?
+  donoId                        String?
+  socioDaConta                  String?
+  rota                          String?
+  produto                       String?
+  valorCentavos                 Int?
+  parcelas                      Int?
+  parcelaCentavos               Int?
+  forma                         String?
+  descontoPct                   Decimal?  @db.Decimal(5, 2)
+  validade                      DateTime?
+  propostaVersao                Int       @default(0)
+  propostaHash                  String?
+  quadroDeCustos                Json?
+  reuniaoEm                     DateTime?
+  ataHash                       String?
+  diagnostico                   Json?
+  diagnosticoAprovadoEm         DateTime?
+  /// O cadastro que a minuta consome (E8): CNPJ/CPF, razão social, endereço, quem assina, e-mail.
+  cadastro                      Json?
+  motivoSaida                   String?
+  motivoDetalhe                 String?
+  voltaEm                       DateTime?
+  parceiro                      String?
+  saude                         Int?
+  proximaAcaoTipo               String?
+  proximaAcaoQuando             DateTime?
+  proximaAcaoTexto              String?
+  /// Marcos que a projeção lê sem varrer o fio inteiro.
+  confirmacaoEnviadaEm          DateTime?
+  propostaPublicadaEm           DateTime?
+  propostaLidaPelaPrimeiraVezEm DateTime?
+  propostaAceitaEm              DateTime?
+  cobrancaCriadaEm              DateTime?
+  contratoAssinadoClienteEm     DateTime?
+  contratoAssinadoRootEm        DateTime?
+  pixPagoEm                     DateTime?
+  clienteAtivoEm                DateTime?
+  kickoffEm                     DateTime?
+  /// O id do `Partner`, do `Contract` e do `OnboardingTrilho` que o fechamento criou.
+  partnerId                     String?
+  contractId                    String?
+  trilhoId                      String?
+  grupoJid                      String?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([orgId, etapa])
+  @@index([orgId, etapaDesde])
+  @@index([orgId, cnpj])
+}
+
+/// A configuração do cockpit por empresa. Os interruptores das decisões da mesa
+/// (K08) nascem com o padrão da REGRA VIGENTE (falso); os números da régua
+/// nascem nulos = [a decidir] = desligado. A homologação os preenche no seed e
+/// marca `valoresDeHomologacao`.
+model ComercialConfig {
+  id    String @id @default(uuid())
+  orgId String @unique
+  org   Org    @relation(fields: [orgId], references: [id])
+
+  envioAutomatico           Boolean  @default(false)
+  fechamentoAutomatico      Boolean  @default(false)
+  silencioAprova            Boolean  @default(false)
+  janelaDeVetoMinutos       Int?
+  fupLeuDias                Int?
+  fupSilencioDias           Int?
+  prazoDiagnosticoDiasUteis Int?
+  validadePropostaDias      Int?
+  leadParadoDias            Int?
+  decisaoExpiraHoras        Int?
+  horaPublicacaoProposta    Int?
+  /// `{ qualificador: 'A3', ... }` — o nível de autonomia por automação (tela 12).
+  autonomia                 Json     @default("{}")
+  valoresDeHomologacao      Boolean  @default(false)
+  atualizadoEm              DateTime @updatedAt
+}
+
+/// A fila de decisões (telas 03 e 09): o que saiu da regra e espera gente, com
+/// padrão escrito e prazo. Vence sem resposta = aplica o padrão e grava evento.
+model ComercialDecisao {
+  id     String @id @default(uuid())
+  /// Sentinela + gatilho `ComercialDecisao_orgId_do_pai`.
+  orgId  String @default("")
+  org    Org    @relation(fields: [orgId], references: [id])
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  tipo             String
+  titulo           String
+  contexto         String
+  /// `[{ chave, rotulo, efeito? }]`
+  opcoes           Json
+  padrao           String
+  expiraEm         DateTime
+  estado           String    @default("aberta")
+  escolha          String?
+  decididoPor      String?
+  decididoEm       DateTime?
+  canal            String?
+  /// O evento que abriu a decisão e o que a fechou.
+  eventoAberturaId String?
+  eventoDecisaoId  String?
+  /// Dados que a reação precisa para aplicar a escolha (versão da proposta, desconto pedido...).
+  dados            Json?
+  criadoEm         DateTime  @default(now())
+
+  @@index([orgId, estado, expiraEm])
+  @@index([orgId, leadId])
+}
+
+/// A sala do cliente (telas 02, 07, 08): o MESMO link do primeiro contato ao
+/// kickoff. Só o hash do token no banco; o cifrado existe para reescrever o
+/// mesmo link na mensagem. Achada pela sentinela pública, como `OnboardingConvite`.
+model SalaDoCliente {
+  id     String @id @default(uuid())
+  /// Sentinela + gatilho `SalaDoCliente_orgId_do_pai`.
+  orgId  String @default("")
+  org    Org    @relation(fields: [orgId], references: [id])
+  leadId String @unique
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  slug           String
+  tokenHash      String    @unique
+  tokenCifrado   String?
+  validoAte      DateTime
+  revogadoEm     DateTime?
+  acessos        Int       @default(0)
+  ultimoAcessoEm DateTime?
+  /// O que a sala guarda além da ficha: horários oferecidos, plano de ação, blocos lidos por versão, dúvidas.
+  dados          Json      @default("{}")
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+
+  @@index([orgId, slug])
+}
+
+/// O WhatsApp por porta: toda mensagem (recebida ou a enviar) fica aqui. No
+/// provedor `simulado` esta tabela É o celular do lead e da mesa (tela
+/// /comercial/simulador). O envio ao lead é a capacidade R3
+/// `whatsapp.mensagem.enviar`: a linha nasce `na_fila` com o `approvalId`.
+model ComercialMensagem {
+  id     String @id @default(uuid())
+  /// Sentinela + gatilho `ComercialMensagem_orgId_do_pai`.
+  orgId  String @default("")
+  org    Org    @relation(fields: [orgId], references: [id])
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  direcao           String
+  provedor          String
+  /// `lead` (1:1 com o lead), `mesa` (o WhatsApp interno da mesa, tela 09) ou `grupo` (o grupo do cliente).
+  destino           String    @default("lead")
+  template          String?
+  texto             String
+  /// Formulário e botões renderizados pelo simulador: `{ formulario?: {...}, botoes?: [...] }`.
+  interativo        Json?
+  estado            String    @default("rascunho")
+  approvalId        String?
+  vetoAte           DateTime?
+  mensagemExternaId String?
+  eventoId          String?
+  enviadaEm         DateTime?
+  erro              String?
+  criadoEm          DateTime  @default(now())
+
+  @@index([orgId, leadId, criadoEm])
+  @@index([orgId, estado])
+  @@index([orgId, mensagemExternaId])
+}
+
+/// Uma reação a um evento, idempotente por `(eventoId, reacao)` (K02). Rodar a
+/// mesma reação duas vezes para o mesmo evento cai na mesma linha.
+model ComercialReacao {
+  id        String   @id
+  /// Sentinela + gatilho `ComercialReacao_orgId_do_pai`.
+  orgId     String   @default("")
+  org       Org      @relation(fields: [orgId], references: [id])
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  eventoId  String
+  reacao    String
+  estado    String   @default("ok")
+  resultado Json?
+  erro      String?
+  criadoEm  DateTime @default(now())
+
+  @@unique([eventoId, reacao])
+  @@index([orgId, leadId])
+}
+
+/// O fechamento (tela 10): as cinco escritas numa transação com chave
+/// `fech-<leadId>-v<n>`. Rodar de novo reaproveita e não duplica.
+model ComercialFechamento {
+  id           String    @id @default(uuid())
+  /// Sentinela + gatilho `ComercialFechamento_orgId_do_pai`.
+  orgId        String    @default("")
+  org          Org       @relation(fields: [orgId], references: [id])
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  chave        String    @unique
+  versao       Int       @default(1)
+  estado       String    @default("pendente")
+  /// `EscritaDoFechamento[]` do shared.
+  escritas     Json      @default("[]")
+  agendadoPara DateTime?
+  vetadoEm     DateTime?
+  iniciadoEm   DateTime?
+  concluidoEm  DateTime?
+  erro         String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+
+  @@index([orgId, leadId])
+}
+
+/// Espelho da cobrança no provedor (Asaas ou dublê): uma linha por parcela.
+model ComercialCobranca {
+  id               String    @id @default(uuid())
+  /// Sentinela + gatilho `ComercialCobranca_orgId_do_pai`.
+  orgId            String    @default("")
+  org              Org       @relation(fields: [orgId], references: [id])
+  leadId           String
+  lead             Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  provedor         String
+  externoId        String
+  clienteExternoId String?
+  parcela          Int
+  parcelas         Int
+  valorCentavos    Int
+  forma            String
+  vence            DateTime
+  estado           String    @default("pendente")
+  pagaEm           DateTime?
+  linkPagamento    String?
+  pixCopiaECola    String?
+  ultimoAviso      String?
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  @@unique([provedor, externoId])
+  @@index([orgId, vence])
+  @@index([orgId, leadId])
+}
+
+/// Espelho do documento de assinatura no provedor (ZapSign ou dublê).
+model ComercialDocumento {
+  id                String    @id @default(uuid())
+  /// Sentinela + gatilho `ComercialDocumento_orgId_do_pai`.
+  orgId             String    @default("")
+  org               Org       @relation(fields: [orgId], references: [id])
+  leadId            String
+  lead              Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  provedor          String
+  externoId         String
+  estado            String    @default("criado")
+  hashConteudo      String
+  linkCliente       String?
+  linkRoot          String?
+  assinadoClienteEm DateTime?
+  assinadoRootEm    DateTime?
+  pdfUrl            String?
+  criadoEm          DateTime  @default(now())
+  atualizadoEm      DateTime  @updatedAt
+
+  @@unique([provedor, externoId])
+  @@index([orgId, leadId])
 }

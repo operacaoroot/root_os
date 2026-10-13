@@ -224,6 +224,18 @@ export const FILHOS_COM_ORGID_REDUNDANTE: readonly FilhoComOrgIdRedundante[] = [
   // A DM automática de um comentário da fila (MD11, 25/09/2026): a empresa é a
   // do comentário — migration `20260925053358_envio_de_resposta`.
   { modelo: 'EnvioDeResposta', pai: 'ComentarioComPalavra', fk: 'comentarioId' },
+  // O cockpit do lead (módulo comercial, 13/10/2026): oito filhos de Lead. A
+  // ficha é 1:1, os outros sete são o apoio do fio (decisões, sala, mensagens,
+  // reações, fechamento, cobrança, documento). `ComercialConfig` fica de fora:
+  // é por empresa, sem pai.
+  { modelo: 'ComercialFicha', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialDecisao', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'SalaDoCliente', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialMensagem', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialReacao', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialFechamento', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialCobranca', pai: 'Lead', fk: 'leadId' },
+  { modelo: 'ComercialDocumento', pai: 'Lead', fk: 'leadId' },
 ] as const;
 
 /**

@@ -402,6 +402,17 @@ const ALVOS: Alvo[] = [
   { tabela: 'EmpresaNaPlataforma', escopo: 'tenant', chaveSql: '"id"', nota: 'O registro COMERCIAL que a plataforma mantém sobre cada cliente (fatia 6.3): plano, estado, saúde, número de usuários, gasto de IA e mensalidade. A linha FALA de um cliente (`empresaId`) mas PERTENCE à empresa da plataforma (`orgId`) — e é por isso que ela entra aqui como qualquer outra: se a policy falhar, uma empresa cliente lê a carteira inteira da ROOT, com o que cada concorrente dela paga. ESCREVER é o outro lado: mudar `estado` para `encerrada` ou `cobrancaEmDia` para falso no registro alheio é mexer na relação comercial de outra pessoa.' },
   { tabela: 'AcessoDeSuporte', escopo: 'tenant', chaveSql: '"id"', nota: 'A autorização de suporte (fatia 6.3): a linha é da empresa CLIENTE, que é quem autoriza, vê e revoga. É a tabela que decide se um operador da plataforma entra na casa de alguém — ler a da outra empresa revela quem a ROOT está atendendo e por quê (o `motivo` é texto escrito pelo cliente); ESCREVER é conceder a si mesmo acesso à casa alheia, que é a fatia inteira ao contrário. Sem semente, o caso "A não lê linha de B" rodaria contra tabela vazia e passaria com qualquer policy — foi exatamente por não estar aqui que a primeira versão da fatia deixou a catraca VERMELHA.' },
 
+  // ---- o cockpit do lead (módulo comercial, 13/10/2026) ------------------
+  { tabela: 'ComercialFicha', escopo: 'filho', chaveSql: '"id"', nota: 'A ficha 1:1 do lead no funil comercial: etapa, perfil, pontuação, sistema, produto, valor, parcelas, CNPJ e o cadastro de quem assina. É a carteira comercial de uma empresa, campo a campo — LER a da outra é ler quem ela está fechando, por quanto e em que pé; ESCREVER etapa é mover o lead alheio de etapa por fora do portão.' },
+  { tabela: 'ComercialConfig', escopo: 'tenant', chaveSql: '"id"', nota: 'Os interruptores do cockpit por empresa (envio automático, fechamento automático, silêncio aprova) e os números da régua de follow-up. ESCREVER envioAutomatico na empresa alheia liga o WhatsApp automático de outra casa; é decisão da mesa dela, não de quem alcançou a linha.' },
+  { tabela: 'ComercialDecisao', escopo: 'filho', chaveSql: '"id"', nota: 'A fila de decisões: o que saiu da regra e espera gente, com padrão e prazo. LER a da outra expõe o desconto pedido e o contexto da negociação alheia; ESCREVER escolha é decidir pela mesa de outra empresa.' },
+  { tabela: 'SalaDoCliente', escopo: 'filho', chaveSql: '"id"', nota: 'O link do cliente, com só o HASH do token. É achada pela sentinela pública (a rota anônima /api/sala/:token não tem empresa até achá-la), e por isso a LEITURA aceita a resolução pública — a escrita não. Vazamento aqui entrega o tokenCifrado e o dados da sala alheia.' },
+  { tabela: 'ComercialMensagem', escopo: 'filho', chaveSql: '"id"', nota: 'Toda mensagem do WhatsApp do comercial, recebida ou a enviar: no provedor simulado esta tabela É o celular do lead e da mesa. LER a da outra é ler a conversa de venda alheia inteira; ESCREVER estado para enviada sem aprovação seria pular a fila R3.' },
+  { tabela: 'ComercialReacao', escopo: 'filho', chaveSql: '"id"', nota: 'A trava de idempotência das reações por (eventoId, reacao). Linha de outra empresa visível faria a reação alheia parecer já executada; apagar a daqui faria a reação rodar duas vezes.' },
+  { tabela: 'ComercialFechamento', escopo: 'filho', chaveSql: '"id"', nota: 'O fechamento com chave fech-<lead>-v<n> e as cinco escritas. ESCREVER estado para concluido na linha alheia faz a conta do mês da outra empresa contar um cliente que não existe.' },
+  { tabela: 'ComercialCobranca', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho das parcelas no provedor de cobrança: valor, vencimento, estado, link de pagamento e Pix copia-e-cola. LER a da outra é o extrato a receber dela; ESCREVER estado para paga quita uma parcela que ninguém pagou.' },
+  { tabela: 'ComercialDocumento', escopo: 'filho', chaveSql: '"id"', nota: 'Espelho do contrato no provedor de assinatura, com os links de assinar. LER a da outra entrega o link que assina o contrato alheio.' },
+
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
   { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Pasta de topo de um espaço ou pasta dentro de pasta; o pai é conferido pela chave composta com orgId.' },
@@ -1229,6 +1240,45 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, trilhoId, tipo: 'trilho.criado', texto: `Marco privado da org ${rotulo}`,
     dados: JSON.stringify({}),
   }, { dados: 'jsonb' }));
+
+  // O cockpit do lead (13/10/2026): a ficha 1:1, a configuração e os sete filhos do fio.
+  reg('ComercialFicha', await ins(c, 'ComercialFicha', {
+    id: crypto.randomUUID(), orgId, leadId, etapa: 'proposta', etapaDesde: agora, empresa: `Empresa ${rotulo} ${MARCA}`,
+    cnpj: rotulo === 'A' ? '11111111000191' : '22222222000191', perfil: 'P2', pontuacao: 82, produto: 'operacao',
+    valorCentavos: 1199700, parcelas: 3, parcelaCentavos: 399900, propostaVersao: 1, atualizadoEm: agora,
+  }, { etapa: '"ComercialEtapa"' }));
+  reg('ComercialConfig', await ins(c, 'ComercialConfig', {
+    id: crypto.randomUUID(), orgId, envioAutomatico: rotulo === 'A', janelaDeVetoMinutos: 30,
+    autonomia: JSON.stringify({ qualificador: 'A3' }), atualizadoEm: agora,
+  }, { autonomia: 'jsonb' }));
+  reg('ComercialDecisao', await ins(c, 'ComercialDecisao', {
+    id: crypto.randomUUID(), orgId, leadId, tipo: 'proposta_fora_da_tabela', titulo: `Decisão privada da org ${rotulo}`,
+    contexto: 'pediu 8% de desconto', opcoes: JSON.stringify([{ chave: 'manter', rotulo: 'manter o preço' }]), padrao: 'manter',
+    expiraEm: new Date(agora.getTime() + 3_600_000),
+  }, { opcoes: 'jsonb' }));
+  reg('SalaDoCliente', await ins(c, 'SalaDoCliente', {
+    id: crypto.randomUUID(), orgId, leadId, slug: `sala-${rotulo.toLowerCase()}-${suf}`, tokenHash: `sala_${rotulo}_${suf}`,
+    validoAte: new Date(agora.getTime() + 86_400_000), dados: JSON.stringify({ horariosOferecidos: [] }), atualizadoEm: agora,
+  }, { dados: 'jsonb' }));
+  reg('ComercialMensagem', await ins(c, 'ComercialMensagem', {
+    id: crypto.randomUUID(), orgId, leadId, direcao: 'saida', provedor: 'simulado', template: 'M1',
+    texto: `Mensagem privada da org ${rotulo}`, estado: 'rascunho',
+  }));
+  reg('ComercialReacao', await ins(c, 'ComercialReacao', {
+    id: crypto.randomUUID(), orgId, leadId, eventoId: crypto.randomUUID(), reacao: 'abrir-sala', estado: 'ok',
+  }));
+  reg('ComercialFechamento', await ins(c, 'ComercialFechamento', {
+    id: crypto.randomUUID(), orgId, leadId, chave: `fech-${leadId}-v1`, versao: 1, estado: 'pendente',
+    escritas: JSON.stringify([]), atualizadoEm: agora,
+  }, { escritas: 'jsonb' }));
+  reg('ComercialCobranca', await ins(c, 'ComercialCobranca', {
+    id: crypto.randomUUID(), orgId, leadId, provedor: 'asaas', externoId: `pay_${rotulo}_${suf}`, parcela: 1, parcelas: 3,
+    valorCentavos: 399900, forma: 'pix', vence: agora, estado: 'pendente', atualizadoEm: agora,
+  }));
+  reg('ComercialDocumento', await ins(c, 'ComercialDocumento', {
+    id: crypto.randomUUID(), orgId, leadId, provedor: 'zapsign', externoId: `doc_${rotulo}_${suf}`, estado: 'criado',
+    hashConteudo: `h_${rotulo}_${suf}`, atualizadoEm: agora,
+  }));
 
   await c.query('INSERT INTO "_WorkTaskTags" ("A", "B") VALUES ($1, $2)', [tagId, tarefaId]);
   reg('_WorkTaskTags', `${tagId}|${tarefaId}`);
@@ -3095,6 +3145,7 @@ const LINHA_DE_FILHO: Record<string, (c: PoolClient) => Promise<Record<string, u
  * A e troca UM pai pelo equivalente da org B.
  */
 const REF_DA_SEMENTE: Record<string, string> = {
+  Lead: 'leadId',
   WorkTask: 'workTaskId',
   WorkField: 'workFieldId',
   WorkFieldOption: 'workFieldOptionId',

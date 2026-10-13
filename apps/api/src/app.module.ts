@@ -39,6 +39,7 @@ import { PublicMapModule } from './public-map/public-map.module';
 import { PlataformaModule } from './platform/plataforma.module';
 import { LinhaDoTempoModule } from './linha-do-tempo/linha-do-tempo.module';
 import { CaixaModule } from './caixa/caixa.module';
+import { ComercialModule } from './comercial/comercial.module';
 
 @Module({
   imports: [
@@ -163,6 +164,13 @@ import { CaixaModule } from './caixa/caixa.module';
     // NADA ACUSA — mesmo silêncio da linha do tempo, e é por isso que a rota
     // está na lista padrão do smoke.
     CaixaModule,
+    // O COCKPIT DO LEAD (módulo comercial, 13/10/2026): o funil com portão, a
+    // fila de decisões, a sala do cliente e o fechamento com chave. Depois de
+    // `LeadsModule` (o fio é o `LeadEvent`), de `OnboardingModule` (o fechamento
+    // abre o trilho), de `FinanceModule` (o contrato e a cobrança) e de
+    // `RoutinesModule` (o relógio comercial é uma rotina). Sem esta linha toda
+    // rota de `/api/comercial` e `/api/sala` responde 404 sem nada acusar.
+    ComercialModule,
   ],
   controllers: [HealthController],
 })

@@ -27,3 +27,6 @@ _finops_import/
 
 # homologação do cockpit comercial: o exemplo de env viaja, o preenchido não
 !homolog/.env.homolog.example
+
+# área de trabalho temporária da homologação (logs, extrações)
+homolog/.tmp/

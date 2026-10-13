@@ -39,7 +39,7 @@ services:
     networks: [rootos-comercial-net]
 
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     container_name: rootos_comercial_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"

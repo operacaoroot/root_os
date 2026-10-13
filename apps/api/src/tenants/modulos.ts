@@ -94,6 +94,12 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   reports: 'relatorios',
   leads: 'leads',
   funnel: 'leads',
+  // O cockpit do lead (13/10/2026): o módulo comercial é a mesma carteira de
+  // leads vista como funil com portão, fila de decisões e sala do cliente.
+  // `sala` é a rota ANÔNIMA do link do cliente (como `tenants/onboarding/link`):
+  // o gate deixa anônimo passar e o serviço confere a empresa pelo token.
+  comercial: 'leads',
+  sala: 'leads',
   campaigns: 'campanhas',
   events: 'pixels',
   content: 'conteudo',
