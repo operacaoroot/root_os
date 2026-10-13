@@ -20,6 +20,7 @@
     "import:pauta": "tsx prisma/import-pauta.ts",
     "db:sync-permissions": "tsx prisma/sync-permissions.ts",
     "db:seed:trabalho": "tsx prisma/seed-trabalho.ts",
+    "db:seed:comercial": "tsx prisma/seed-comercial.ts",
     "test": "vitest run",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test:isolamento": "MKTOS_CONJUNTO_DE_TESTES=isolamento vitest run",
