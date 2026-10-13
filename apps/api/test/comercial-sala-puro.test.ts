@@ -154,7 +154,7 @@ describe('a sala como projeção do fio', () => {
     const lida = ev('proposta.lida', { versao: 1, bloco: 'recomendada', visita: 1 }, 3001);
     const ajuste = ev('proposta.ajuste_pedido', { versao: 1, pedido: 'desconto de 8%', descontoPct: 8 }, 3002);
     const duvida = ev('proposta.duvida', { versao: 1, pergunta: 'funciona com Omie?', resposta: null }, 3003);
-    const diag = ev('diagnostico.pronto', { dores: [{ n: 1, texto: 'fechamento no dia 9', minuto: '04:12' }], objecoes: ['consultoria anterior parou'], produtoSugerido: 'operacao', modelo: 'stub', custoUsd: 0, custoDesconhecido: false }, 2000);
+    const diag = ev('diagnostico.pronto', { dores: [{ n: 1, texto: 'fechamento no dia 9', minuto: '04:12' }], objecoes: ['consultoria anterior parou'], produtoSugerido: 'operacao', modelo: 'stub', custoUsd: 0, custoDesconhecido: false, aprovadoEm: '2026-10-13T12:00:00.000Z' }, 2000);
     const s = projetarSala(base([form, agenda, diag, pub, lida, ajuste, duvida]));
     expect(s.estagio).toBe('proposta');
     expect(s.proposta?.recomendada).toMatchObject({ produto: 'operacao', valorCentavos: 1_199_700, parcelas: 3 });

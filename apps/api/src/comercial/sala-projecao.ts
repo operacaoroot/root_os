@@ -190,7 +190,9 @@ export function projetarSala(e: EntradaDaProjecao): EstadoDaSala {
   const form = ultimo(e.eventos, 'form.respondido');
   const formP = form ? ((form.payload ?? {}) as P) : null;
   const horario = horarioEscolhido(e);
-  const diag = ultimo(e.eventos, 'diagnostico.pronto');
+  // B-5: o cliente só lê o diagnóstico que a mesa aprovou. A saída crua do leitor
+  // de ata (`aprovadoEm: null`) é rascunho interno, e não marca o passo como feito.
+  const diag = ultimo(e.eventos, 'diagnostico.pronto', (p) => Boolean(str(p.aprovadoEm)));
   const pub = ultimo(e.eventos, 'proposta.publicada');
   const ata = ultimo(e.eventos, 'ata.chegou');
 
