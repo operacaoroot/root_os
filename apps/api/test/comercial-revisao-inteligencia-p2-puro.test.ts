@@ -12,6 +12,7 @@ import { RESPOSTA_DE_SEGURANCA, promptDaDuvida, promptDaProposta, type FatosDaPr
 import type { SalaService } from '../src/comercial/sala.service';
 import { DiagnosticoService } from '../src/comercial/diagnostico.service';
 import type { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
+import { corpoComDado, dadoDaNota } from '../src/comercial/notas-do-comercial';
 import { InteligenciaController } from '../src/comercial/inteligencia.controller';
 import { hashDaVersao, type VersaoDaProposta } from '../src/comercial/proposta-construtor';
 import { PropostaService, type Rascunho } from '../src/comercial/proposta.service';
@@ -229,5 +230,28 @@ describe('revisão E-5: o que vem da ata entra cercado nos pedidos seguintes', (
     const antesDaCerca = user.slice(0, user.indexOf('origem="proposta:como-e-diferente"'));
     expect(antesDaCerca).not.toContain(injecao);
     expect(user).toContain('origem="ata:dores-do-diagnostico"');
+  });
+});
+
+describe('revisão E-13: número de nota editada à mão não vale como medido', () => {
+  it('o dado com selo é lido; editado no bloco json (ou sem selo), é ausente', () => {
+    const corpo = corpoComDado('# Vigia', { dia: '2026-10-12', conferidas: 9, quebradas: 2 });
+    expect(dadoDaNota(corpo)).toEqual({ dia: '2026-10-12', conferidas: 9, quebradas: 2 });
+    // Alguém em /memoria troca o dia para hoje e zera as quebradas.
+    expect(dadoDaNota(corpo.replace('"dia":"2026-10-12"', '"dia":"2026-10-13"').replace('"quebradas":2', '"quebradas":0'))).toBeNull();
+    // Ou tira o selo e escreve o json inteiro de novo.
+    expect(dadoDaNota('# Vigia\n\n```json\n{"dia":"2026-10-13","conferidas":9,"quebradas":0}\n```\n')).toBeNull();
+  });
+
+  it('o vigia não toma a nota editada como passagem de hoje: passa de novo', async () => {
+    const memoria = {
+      porChave: async () => ({ body: '# Vigia\n\n```json\n{"dia":"2026-10-13","em":"2026-10-13T11:00:00.000Z","premissas":[]}\n```\n' }),
+    } as unknown as MemoriaService;
+    const v = new VigiaService({} as PrismaService, {} as FioService, {} as DecisoesService, {} as ConfigComercialService, {} as RelogioComercialRegistry, memoria);
+    expect(await v.ultimaPassagem('org')).toBeNull();
+    let passou = 0;
+    v.passar = async () => { passou++; return {} as never; };
+    expect(await v.talvezPassar('org', new Date('2026-10-13T12:00:00Z'))).toBe(1);
+    expect(passou).toBe(1);
   });
 });

@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import { ContextKind, ContextSource } from '@prisma/client';
 
 import type { MemoriaService } from '../memory/memoria.service';
@@ -14,7 +16,8 @@ import type { MemoriaService } from '../memory/memoria.service';
  *   · `comercial.relatorio.semana.AAAA-MM-DD.<N>d` — uma nota por dia de geração
  *     E por recorte (revisão E-11): o de 30 dias gerado à tarde não ocupa o
  *     lugar do de 7 da quinta, e gerar um recorte não versiona o outro. A chave
- *     antiga, sem recorte, ainda é lida (`chavesDoRelatorio`).
+ *     antiga, sem recorte, ainda é procurada (`chavesDoRelatorio`), mas o dado
+ *     dela só vale com o selo (E-13): nota de antes do selo é lida como ausente.
  *
  * O corpo é markdown para gente ler, com o dado estruturado num bloco
  * ```json no fim, que a torre e a tela 13 relêem (`dadoDaNota`).
@@ -35,16 +38,47 @@ export function chavesDoRelatorio(dia: string, dias: number): string[] {
 
 const BLOCO_JSON = /```json\n([\s\S]*?)\n```\s*$/;
 
-export function corpoComDado(markdown: string, dado: unknown): string {
-  return `${markdown.trimEnd()}\n\n\`\`\`json\n${JSON.stringify(dado)}\n\`\`\`\n`;
+/*
+ * O SELO (revisão E-13). A nota é editável em /memoria por quem tem escrita na
+ * memória, e o procedimento de origem (`sourceType`) também: quem edita escolhe
+ * o que declara. Sem o selo, editar o bloco json mudaria as premissas e os
+ * números que a torre e a tela 13 mostram como medidos, e um `dia` de hoje na
+ * nota calaria a passagem das 08:00. O selo é um HMAC do dado com a chave do
+ * servidor (`ENCRYPTION_KEY`); o dado editado à mão não confere e é lido como
+ * ausente: a tela mostra os números ao vivo e o vigia passa de novo. Sem a
+ * chave no ambiente (suíte, máquina de desenvolvimento) o selo usa uma chave
+ * fixa: protege contra o engano, não contra quem lê este arquivo.
+ */
+const DOMINIO_DO_SELO = 'comercial.nota.v1:';
+
+function chaveDoSelo(): string {
+  const k = process.env.ENCRYPTION_KEY?.trim();
+  return k && k.length >= 16 ? k : 'comercial-nota-sem-chave-no-ambiente';
 }
 
-/** O dado estruturado do corpo de uma nota do comercial; `null` se não houver ou não ler. */
+function selo(dadoSemSelo: string): string {
+  return createHmac('sha256', chaveDoSelo()).update(DOMINIO_DO_SELO).update(dadoSemSelo).digest('hex');
+}
+
+export function corpoComDado(markdown: string, dado: Record<string, unknown> | object): string {
+  const json = JSON.stringify(dado);
+  const comSelo = `${json.slice(0, -1)}${json.length > 2 ? ',' : ''}"_selo":"${selo(json)}"}`;
+  return `${markdown.trimEnd()}\n\n\`\`\`json\n${comSelo}\n\`\`\`\n`;
+}
+
+/** O dado estruturado do corpo de uma nota do comercial; `null` se não houver, não ler ou o selo não conferir. */
 export function dadoDaNota<T>(body: string | null | undefined): T | null {
   const m = BLOCO_JSON.exec(String(body ?? ''));
   if (!m) return null;
   try {
-    return JSON.parse(m[1]) as T;
+    const bruto = JSON.parse(m[1]) as unknown;
+    if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) return null;
+    const { _selo, ...dado } = bruto as Record<string, unknown>;
+    if (typeof _selo !== 'string') return null;
+    const esperado = Buffer.from(selo(JSON.stringify(dado)), 'hex');
+    const recebido = Buffer.from(_selo, 'hex');
+    if (recebido.length !== esperado.length || !timingSafeEqual(recebido, esperado)) return null;
+    return dado as T;
   } catch {
     return null;
   }
