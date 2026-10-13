@@ -7,7 +7,7 @@ import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
 
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, agruparFunil, diaSP, motivoDoBloqueio, quandoRoda } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, agruparFunil, descricaoJaDizQuando, diaSP, motivoDoBloqueio, quandoRoda } from '@/lib/cockpit';
 
 import { Aviso, BarraDaSaude, BOTAO, Carregando, Chip, Erro, FOCO, useCarregar } from '../_ui';
 
@@ -35,13 +35,13 @@ export default function FunilVivoPage() {
   const [bloqueio, setBloqueio] = useState<{ leadId: string; texto: string } | null>(null);
 
   async function explicarBloqueio(c: CartaoDoFunil) {
-    setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.nome, null, null) });
+    setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, null, null) });
     try {
       const f = await apiGet<FichaDoLead>(`/comercial/lead/${c.leadId}`, token);
       const proxima = f.portao.proxima ? COMERCIAL_ROTULO_DA_ETAPA[f.portao.proxima] : null;
-      setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.nome, proxima, f.portao.faltando) });
+      setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, proxima, f.portao.faltando) });
     } catch {
-      setBloqueio({ leadId: c.leadId, texto: `${motivoDoBloqueio(c.nome, null, null)} O portão não pôde ser lido agora.` });
+      setBloqueio({ leadId: c.leadId, texto: `${motivoDoBloqueio(c.empresa ?? c.nome, null, null)} O portão não pôde ser lido agora.` });
     }
   }
 
@@ -108,7 +108,7 @@ export default function FunilVivoPage() {
 }
 
 function Cartao({ c, aoTentarMover }: { c: CartaoDoFunil; aoTentarMover: () => void }) {
-  const quando = quandoRoda(c.proximaAcao?.quando);
+  const quando = descricaoJaDizQuando(c.proximaAcao?.descricao) ? '' : quandoRoda(c.proximaAcao?.quando);
   const saida = c.motivoSaida ? `${COMERCIAL_ROTULO_DA_ETAPA[c.etapa].replace('Saída · ', '').toLowerCase()} · ${ROTULO_DO_MOTIVO[c.motivoSaida]}` : null;
   return (
     <div

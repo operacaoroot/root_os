@@ -88,6 +88,15 @@ def main() -> None:
                 arquivo = PROVAS / f'tela-{num}-{nome}-{sufixo}.png'
                 pagina.screenshot(path=str(arquivo), full_page=True)
                 print(arquivo.relative_to(RAIZ))
+                if nome == 'funil':
+                    # Tenta arrastar o cartão da Alicerce: a tela recusa e diz o motivo com o portão.
+                    cartao = pagina.locator('[draggable=true]', has_text='Construtora Alicerce').filter(has_text='Marina Duarte').first
+                    cartao.dispatch_event('dragstart')
+                    pagina.get_by_text('não muda de etapa por arraste').first.wait_for(timeout=15_000)
+                    pagina.wait_for_timeout(800)
+                    arquivo = PROVAS / f'tela-{num}b-funil-arraste-bloqueado-{sufixo}.png'
+                    pagina.screenshot(path=str(arquivo), full_page=False)
+                    print(arquivo.relative_to(RAIZ))
             ctx.close()
         nav.close()
 

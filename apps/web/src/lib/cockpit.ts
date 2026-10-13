@@ -89,6 +89,11 @@ export function quandoRoda(iso: string | null | undefined, agora: Date = new Dat
   return d > 0 ? `em ${duracao(d)}` : `há ${duracao(d)}`;
 }
 
+/** A descrição já diz quando roda ("lembrete em 2 h")? Então a tela não repete o prazo. */
+export function descricaoJaDizQuando(descricao: string | null | undefined): boolean {
+  return !!descricao && /(^|\s)(em|até|às|volta)\s+\d/.test(descricao);
+}
+
 /** Reais a partir de centavos; nulo vira ausente (nunca zero). */
 export function reaisOuAusente(centavos: number | null | undefined): string {
   if (centavos == null || !Number.isFinite(centavos)) return AUSENTE;

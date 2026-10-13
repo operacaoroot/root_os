@@ -7,6 +7,7 @@ import {
   agruparFunil,
   contarParcelas,
   dataDoDia,
+  descricaoJaDizQuando,
   diaHoraSP,
   duracao,
   ehNaoImplementado,
@@ -81,6 +82,8 @@ describe('cockpit — tempo em São Paulo', () => {
     expect(quandoRoda('2026-10-13T12:00:00.000Z', agora)).toBe('há 3 h');
     expect(quandoRoda(null, agora)).toBe('');
     expect(duracao(30 * 60_000)).toBe('30 min');
+    expect(descricaoJaDizQuando('formulário · lembrete em 2 h')).toBe(true);
+    expect(descricaoJaDizQuando('assinou · Pix aguardando')).toBe(false);
   });
 });
 
