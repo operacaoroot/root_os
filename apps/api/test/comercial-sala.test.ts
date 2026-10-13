@@ -165,8 +165,8 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
   });
 
   it('a sala abre em "conversa" e conta uma visita por dia por estágio', async () => {
-    const e1 = await sala.estado(token);
-    const e2 = await sala.estado(token);
+    const e1 = await sala.visita(token);
+    const e2 = await sala.visita(token);
     expect(e1.estagio).toBe('conversa');
     expect(e2.contato).toBe('Marina Duarte');
     expect((await prisma.salaDoCliente.findUniqueOrThrow({ where: { leadId } })).acessos).toBe(2);

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import type { EstadoDaSala, OfertaNaSala, SalaBlocoDaProposta } from '@mktos/shared';
 
-import { apiGet, apiPost, apiUpload } from '@/lib/api';
-import { dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
+import { apiPost, apiUpload } from '@/lib/api';
+import { abrirSala, dataCurta, localSPParaIso, reais, ROTULO_DA_FORMA, rotuloDoHorario, soDigitos } from '@/lib/sala-do-cliente';
 
 /*
  * A SALA DO CLIENTE — `/s/<token>`, telas 02, 07 e 08 do desenho (Lane B, 13/10/2026).
@@ -35,8 +35,9 @@ export default function SalaPage() {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erroDe, setErroDe] = useState<Record<string, string>>({});
 
+  // B-11: abrir a página é a visita (POST, uma vez); o GET da sala só lê.
   useEffect(() => {
-    apiGet<EstadoDaSala>(base)
+    abrirSala<EstadoDaSala>(base, (caminho, corpo) => apiPost<EstadoDaSala>(caminho, corpo))
       .then(setEstado)
       .catch((e: Error & { status?: number }) => setErro(e.status === 404 || /não encontrada/.test(e.message) ? 'Esta sala não existe ou já expirou. Fale com a Root pelo WhatsApp.' : e.message));
   }, [base]);

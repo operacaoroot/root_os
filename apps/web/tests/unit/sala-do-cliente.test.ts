@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dataCurta, explicarEstado, localSPParaIso, reais, rotuloDoHorario, soDigitos } from '../../src/lib/sala-do-cliente';
+import { abrirSala, dataCurta, explicarEstado, localSPParaIso, reais, rotuloDoHorario, soDigitos } from '../../src/lib/sala-do-cliente';
 
 describe('a sala do cliente na tela', () => {
   it('reais a partir de centavos, sem inventar quando falta', () => {
@@ -23,5 +23,33 @@ describe('a sala do cliente na tela', () => {
   it('só dígitos e o estado da mensagem em frase', () => {
     expect(soDigitos('12.345.678/0001-99')).toBe('12345678000199');
     expect(explicarEstado('na_fila')).toMatch(/outra pessoa confirma/);
+  });
+
+  it('B-11: abrir a sala é um POST de visita, uma vez por abertura, e a resposta é o estado', async () => {
+    const pedidos: string[] = [];
+    let soltar: (v: { estagio: string }) => void = () => undefined;
+    const post = (caminho: string) => {
+      pedidos.push(caminho);
+      return new Promise<{ estagio: string }>((r) => (soltar = r));
+    };
+    // O modo estrito monta a página duas vezes: o segundo pedido reusa o primeiro.
+    const a = abrirSala('/sala/tok', post);
+    const b = abrirSala('/sala/tok', post);
+    expect(pedidos).toEqual(['/sala/tok/visita']);
+    soltar({ estagio: 'conversa' });
+    expect(await a).toEqual({ estagio: 'conversa' });
+    expect(await b).toEqual({ estagio: 'conversa' });
+    // Terminado o pedido, abrir de novo conta outra visita.
+    const c = abrirSala('/sala/tok', post);
+    soltar({ estagio: 'proposta' });
+    await c;
+    expect(pedidos).toEqual(['/sala/tok/visita', '/sala/tok/visita']);
+  });
+
+  it('B-11: a visita que falha libera a próxima abertura', async () => {
+    const pedidos: string[] = [];
+    await expect(abrirSala('/sala/falha', async (c) => (pedidos.push(c), Promise.reject(new Error('429'))))).rejects.toThrow('429');
+    await abrirSala('/sala/falha', async (c) => (pedidos.push(c), { ok: true }));
+    expect(pedidos).toEqual(['/sala/falha/visita', '/sala/falha/visita']);
   });
 });

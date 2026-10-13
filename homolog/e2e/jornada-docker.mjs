@@ -213,9 +213,10 @@ async function liberarMensagem(leadId, template, porque) {
   return depois.m;
 }
 
+// B-11: o cliente abre a sala como a página abre: POST da visita (o GET da sala só lê).
 async function sala(token) {
-  const { status, json } = await http('GET', `${API}/sala/${token}`);
-  if (status >= 400) falhar(`GET /sala/:token respondeu ${status}`, json);
+  const { status, json } = await http('POST', `${API}/sala/${token}/visita`, { corpo: {} });
+  if (status >= 400) falhar(`POST /sala/:token/visita respondeu ${status}`, json);
   return json;
 }
 async function naSala(caminho, token, corpo) {

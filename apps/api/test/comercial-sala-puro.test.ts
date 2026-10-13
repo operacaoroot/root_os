@@ -224,4 +224,30 @@ describe('o teto na rota anônima da sala', () => {
     for (let i = 0; i < SALA_TETO_DE_ARQUIVO_POR_HORA; i++) await c.arquivo('t', undefined, { ip: '10.0.0.3' });
     expect(() => c.arquivo('t', undefined, { ip: '10.0.0.3' })).toThrow(expect.objectContaining({ status: 429 }));
   });
+
+  it('B-11: a visita é POST /sala/:token/visita, com o mesmo teto da leitura; o GET não leva o user-agent ao serviço', async () => {
+    const { SalaController, SALA_TETO_POR_HORA } = await import('../src/comercial/sala.controller');
+    const { RequestMethod } = await import('@nestjs/common');
+    const { PATH_METADATA, METHOD_METADATA } = await import('@nestjs/common/constants');
+    const visita = SalaController.prototype.visita;
+    expect(Reflect.getMetadata(PATH_METADATA, visita)).toBe(':token/visita');
+    expect(Reflect.getMetadata(METHOD_METADATA, visita)).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(METHOD_METADATA, SalaController.prototype.estado)).toBe(RequestMethod.GET);
+
+    const chamadas: { metodo: string; args: unknown[] }[] = [];
+    const svc = {
+      estado: async (...args: unknown[]) => (chamadas.push({ metodo: 'estado', args }), { ok: true }),
+      visita: async (...args: unknown[]) => (chamadas.push({ metodo: 'visita', args }), { ok: true }),
+    };
+    const c = new SalaController(svc as never);
+    const req = { ip: '10.0.0.9', headers: { 'user-agent': 'WhatsApp/2.23' } };
+    await c.estado('t', req);
+    await c.visita('t', req);
+    expect(chamadas.map((x) => x.metodo)).toEqual(['estado', 'visita']);
+    expect(chamadas[0].args).toHaveLength(2);
+    expect(chamadas[1].args[2]).toEqual({ userAgent: 'WhatsApp/2.23' });
+    // O teto é o mesmo balde da leitura: leitura e visita da mesma origem somam.
+    for (let i = 2; i < SALA_TETO_POR_HORA; i++) await c.visita('t', req);
+    expect(() => c.estado('t', req)).toThrow(expect.objectContaining({ status: 429 }));
+  });
 });

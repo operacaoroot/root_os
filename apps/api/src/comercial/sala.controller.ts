@@ -68,14 +68,21 @@ export class SalaController {
     }
   }
 
-  /** O estado da sala: estágio, plano de ação, proposta, aceite, começo. */
+  /** O estado da sala: estágio, plano de ação, proposta, aceite, começo. Só lê (B-11). */
   @Get(':token')
   @Header('Cache-Control', 'no-store')
-  estado(@Param('token') token: string, @Req() req?: RequisicaoComEndereco & { headers?: Record<string, string | string[] | undefined> }) {
+  estado(@Param('token') token: string, @Req() req?: RequisicaoComEndereco) {
     this.conferirTeto(req);
-    // B-11: a pré-visualização do link lê o estado sem contar visita.
+    return this.svc.estado(token, new Date());
+  }
+
+  /** A visita de gente (B-11): a página chama uma vez ao abrir; conta o acesso e o fato do dia. */
+  @Post(':token/visita')
+  @Header('Cache-Control', 'no-store')
+  visita(@Param('token') token: string, @Req() req?: RequisicaoComEndereco & { headers?: Record<string, string | string[] | undefined> }) {
+    this.conferirTeto(req);
     const ua = req?.headers?.['user-agent'];
-    return this.svc.estado(token, new Date(), { userAgent: Array.isArray(ua) ? ua[0] : ua ?? null });
+    return this.svc.visita(token, new Date(), { userAgent: Array.isArray(ua) ? ua[0] : ua ?? null });
   }
 
   /** O formulário de qualificação (tela 01). */

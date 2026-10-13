@@ -90,19 +90,30 @@ describe.skipIf(!URL)('revisão P3 da sala e do canal, contra o banco', () => {
     expect((await prisma.comercialMensagem.findUniqueOrThrow({ where: { id: b.mensagemId } })).estado).toBe('na_fila');
   });
 
-  it('B-11: a pré-visualização do WhatsApp lê a sala sem contar acesso nem gravar visita; o navegador conta', async () => {
+  it('B-11: a leitura da sala não escreve; a visita conta o navegador e não a pré-visualização do WhatsApp', async () => {
     const lead = await prisma.lead.create({ data: { orgId: ORG, name: 'Carla Lima', phone: `55319${Date.now().toString().slice(-8)}` } });
     const token = (/\/s\/([A-Za-z0-9_-]{40,48})/.exec((await sala.garantir(ORG, lead.id)).link ?? (await sala.linkDoLead(ORG, lead.id)) ?? '') ?? [])[1];
     expect(token).toBeTruthy();
     const visitas = () => prisma.leadEvent.count({ where: { leadId: lead.id, type: 'sala.visitada' } });
     const acessos = async () => (await prisma.salaDoCliente.findUniqueOrThrow({ where: { leadId: lead.id } })).acessos;
     const antes = await acessos();
-    const e = await sala.estado(token, new Date(), { userAgent: 'WhatsApp/2.23.20.0 A' });
+    // A leitura (GET /sala/:token) só lê, venha de quem vier.
+    expect((await sala.estado(token)).estagio).toBeTruthy();
+    await sala.estado(token);
+    expect(await acessos()).toBe(antes);
+    expect(await visitas()).toBe(0);
+    // A visita (POST /sala/:token/visita) de quem se apresenta como pré-visualização não conta.
+    const e = await sala.visita(token, new Date(), { userAgent: 'WhatsApp/2.23.20.0 A' });
     expect(e.estagio).toBeTruthy();
     expect(await acessos()).toBe(antes);
     expect(await visitas()).toBe(0);
-    await sala.estado(token, new Date(), { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1' });
+    const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1';
+    await sala.visita(token, new Date(), { userAgent: iphone });
     expect(await acessos()).toBe(antes + 1);
+    expect(await visitas()).toBe(1);
+    // A segunda visita no mesmo dia e estágio conta o acesso e não grava outro fato.
+    await sala.visita(token, new Date(), { userAgent: iphone });
+    expect(await acessos()).toBe(antes + 2);
     expect(await visitas()).toBe(1);
   });
 });

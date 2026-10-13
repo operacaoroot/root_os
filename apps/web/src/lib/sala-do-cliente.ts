@@ -87,3 +87,20 @@ export function explicarEstado(estado: string, vetoAte?: string | null): string 
       return estado;
   }
 }
+
+/*
+ * B-11: a visita. A leitura da sala (GET) só lê; quem abre a página manda
+ * POST <base>/visita uma vez, e a resposta é o estado. Duas montagens seguidas
+ * da mesma página (o modo estrito do React monta duas vezes) reusam o pedido
+ * em curso em vez de contar duas visitas. Terminado o pedido, a próxima
+ * abertura conta de novo.
+ */
+const aberturasEmCurso = new Map<string, Promise<unknown>>();
+
+export function abrirSala<T>(base: string, post: (caminho: string, corpo: unknown) => Promise<T>): Promise<T> {
+  const emCurso = aberturasEmCurso.get(base) as Promise<T> | undefined;
+  if (emCurso) return emCurso;
+  const pedido = post(`${base}/visita`, {}).finally(() => aberturasEmCurso.delete(base));
+  aberturasEmCurso.set(base, pedido);
+  return pedido;
+}

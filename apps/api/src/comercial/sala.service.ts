@@ -275,11 +275,21 @@ export class SalaService implements OnModuleInit {
   }
 
   /**
-   * O estado da sala. Conta a visita (`acessos` e `sala.visitada`) só quando
-   * quem leu é gente: B-11, a pré-visualização de link (WhatsApp, redes,
-   * robôs de busca) lê sem virar visita (`ehPreVisualizacao`).
+   * O estado da sala. Só lê (B-11): quem monta pré-visualização de link, robô
+   * ou a própria página pedindo o estado de novo não conta visita. A visita é
+   * `visita`, que a página chama uma vez ao abrir.
    */
-  async estado(token: string, agora: Date = new Date(), opcoes: { userAgent?: string | null } = {}): Promise<EstadoDaSala> {
+  async estado(token: string, agora: Date = new Date()): Promise<EstadoDaSala> {
+    const r = await this.resolver(token, agora);
+    return comTenantPublico(r.orgId, () => this.projetar(r.salaId, r.leadId, agora));
+  }
+
+  /**
+   * A visita de gente (B-11): conta o acesso e grava `sala.visitada`, uma por
+   * dia por estágio (a chave do fato). Quem se apresenta como pré-visualização
+   * ou robô (`ehPreVisualizacao`) recebe o estado sem contar nada.
+   */
+  async visita(token: string, agora: Date = new Date(), opcoes: { userAgent?: string | null } = {}): Promise<EstadoDaSala> {
     const r = await this.resolver(token, agora);
     if (ehPreVisualizacao(opcoes.userAgent)) {
       return comTenantPublico(r.orgId, () => this.projetar(r.salaId, r.leadId, agora));
