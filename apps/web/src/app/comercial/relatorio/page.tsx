@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { RelatorioDaSemana } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, diaHoraSP, ehNaoImplementado, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, ehNaoImplementado, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 
@@ -112,14 +113,32 @@ export default function RelatorioPage() {
               <p className="mt-2 text-[13px]">
                 {r.previsao
                   ? `${r.previsao.fechamentosProvaveis} ${r.previsao.fechamentosProvaveis === 1 ? 'fechamento provável' : 'fechamentos prováveis'} entre ${r.previsao.leadsEmProposta} ${r.previsao.leadsEmProposta === 1 ? 'lead' : 'leads'} em proposta`
-                  : 'ausente'}
+                  : `ausente${r.previsaoPendente ? `: ${r.previsaoPendente}` : ''}`}
               </p>
+              {r.propostasVencendo && r.propostasVencendo.length > 0 && (
+                <>
+                  <Rotulo className="mt-4">propostas vencendo</Rotulo>
+                  <ul className="mt-2 space-y-1 text-[13px]">
+                    {r.propostasVencendo.map((p) => (
+                      <li key={p.leadId} className="flex justify-between gap-2">
+                        <Link href={`/comercial/lead/${p.leadId}`} className={`min-w-0 truncate hover:text-brand ${FOCO}`}>{p.nome}</Link>
+                        <span className="shrink-0 font-os-mono text-muted">vence {diaSP(p.validade)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </section>
           </div>
 
           <section className={CARTAO} aria-label="leitura">
             <Rotulo>leitura da semana</Rotulo>
             <p className="mt-2 whitespace-pre-line text-[13px]">{r.narrativa ?? 'ausente: o relator ainda não escreveu a leitura deste período.'}</p>
+            {r.narrativaAvisos && r.narrativaAvisos.length > 0 && (
+              <p className="mt-2 text-[11.5px] text-dim">
+                Avisos da leitura (o que o sistema tirou ou não conseguiu): {r.narrativaAvisos.join(' · ')}
+              </p>
+            )}
             <p className="mt-2 text-[11.5px] text-dim">
               {r.origem === 'ao_vivo' ? `números ao vivo de ${diaHoraSP(r.geradoEm)}, sem leitura gerada para este recorte` : `gerado em ${diaHoraSP(r.geradoEm)}`}
             </p>

@@ -242,3 +242,47 @@ describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10
     expect(screen.getByText(/Lead B não muda de etapa/)).toBeInTheDocument();
   });
 });
+
+describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', () => {
+  it('a torre lista a premissa quebrada com os leads, o degrau sugerido e diz que acerto é rodou sem erro', async () => {
+    const t: TorreDasAutomacoes = {
+      vigia: {
+        ultimaPassagemEm: '2026-10-13T11:00:00.000Z', premissasConferidas: 10, premissasQuebradas: 1,
+        premissas: [
+          { chave: 'form', automacao: 'qualificador', premissa: 'formulário grava no lead', ok: false, detalhe: '2 formulário(s) respondido(s) sem sistema ou base na ficha.', leads: ['lead-aaaa-1111', 'lead-bbbb-2222'] },
+          { chave: 'agenda', automacao: 'agendador', premissa: 'agenda responde', ok: null, detalhe: '', leads: [] },
+        ],
+      },
+      custoDeIaHojeCentavos: null,
+      custoDesconhecido: true,
+      automacoes: [
+        { chave: 'qualificador', rotulo: 'qualificador', autonomia: 'A1', autonomiaGravada: false, proximoDegrau: 'A2', ultimaVezEm: null, acerto30Dias: 1, passagens30Dias: 30, premissa: 'formulário grava no lead', premissaOk: false },
+      ],
+    };
+    RESPOSTAS['/comercial/torre'] = t;
+    render(<TorrePage />);
+    expect(await screen.findByText(/2 formulário\(s\) respondido\(s\)/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'lead-aaa' })).toHaveAttribute('href', '/comercial/lead/lead-aaaa-1111');
+    expect(screen.getByText(/1 premissa não pôde ser conferida/)).toBeInTheDocument();
+    expect(screen.getByText('sugere A2')).toBeInTheDocument();
+    expect(screen.getByText('da régua')).toBeInTheDocument();
+    expect(screen.getByText('rodou sem erro 30 d')).toBeInTheDocument();
+    expect(screen.getByText(/Não mede se o conteúdo estava certo/)).toBeInTheDocument();
+    expect(screen.queryByText(/acerto 30 d/)).toBeNull();
+  });
+
+  it('o relatório mostra por que a previsão é nula, as propostas vencendo e os avisos da leitura', async () => {
+    const r: RelatorioDaSemana = {
+      periodoDias: 7, leads: 3, fechados: 0, medianaDiasDoOiAoPix: null, acoes: { automaticas: 1, humanas: 1 },
+      funil: [], perdasPorMotivo: [], previsao: null, previsaoPendente: 'a taxa da previsão é [a decidir]',
+      geradoEm: '2026-10-15T22:30:00.000Z', narrativa: 'Semana calma.', narrativaAvisos: ['tirada uma frase com número'],
+      propostasVencendo: [{ leadId: 'l9', nome: 'Construtora Alicerce', validade: '2026-10-18T03:00:00.000Z' }],
+    };
+    RESPOSTAS['/comercial/relatorio/semana'] = r;
+    render(<RelatorioPage />);
+    expect(await screen.findByText('ausente: a taxa da previsão é [a decidir]')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Construtora Alicerce' })).toHaveAttribute('href', '/comercial/lead/l9');
+    expect(screen.getByText('vence 18/10')).toBeInTheDocument();
+    expect(screen.getByText(/tirada uma frase com número/)).toBeInTheDocument();
+  });
+});
