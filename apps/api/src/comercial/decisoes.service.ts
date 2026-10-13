@@ -16,7 +16,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigComercialService } from './config.service';
 import { resumoDoEvento, uuidDe } from './eventos';
-import { FioService } from './fio.service';
+import { FioService, type EventoGravado } from './fio.service';
 
 /*
  * A FILA DE DECISÕES (lane A, 13/10/2026) — K01 "a tela principal é a das exceções".
@@ -127,7 +127,46 @@ export class DecisoesService {
     private readonly fio: FioService,
     private readonly config: ConfigComercialService,
     private readonly registro: DecisoesRegistry,
-  ) {}
+  ) {
+    // A-3: a reação à decisão que falhou fica na linha de trava (`erro`) e o relógio a tenta de novo.
+    const achar = (nome: string) => this.retentativaDa(nome);
+    this.fio.registro?.definirRetentativa('decisao.tomada', achar);
+    this.fio.registro?.definirRetentativa('decisao.expirada', achar);
+  }
+
+  /** O nome da linha de trava de uma reação à decisão. */
+  static nomeDaTrava(nome: string): string {
+    return `decisao:${nome}`;
+  }
+
+  /**
+   * A-3: a reação de nome `decisao:<nome>` reconstruída do evento, para o
+   * retry do relógio. A decisão é relida do banco (escolha, dados, quem); o id
+   * de quem decidiu não volta (a linha guarda o nome), e nenhuma reação o lê.
+   */
+  private retentativaDa(nomeDaTrava: string): ((ev: EventoGravado) => Promise<unknown>) | undefined {
+    if (!nomeDaTrava.startsWith('decisao:')) return undefined;
+    return async (ev: EventoGravado) => {
+      const decisaoId = String(((ev.payload ?? {}) as Record<string, unknown>).decisaoId ?? '');
+      const d = await this.prisma.comercialDecisao.findFirst({ where: { id: decisaoId, orgId: ev.orgId } });
+      if (!d || !d.escolha) throw new Error(`decisão ${decisaoId} não encontrada ou sem escolha: a reação não tem o que refazer`);
+      const insc = this.registro.doTipo(d.tipo).find((i) => DecisoesService.nomeDaTrava(i.nome) === nomeDaTrava);
+      if (!insc) throw new Error(`reação ${nomeDaTrava} não está inscrita para ${d.tipo}`);
+      const expirada = ev.type === 'decisao.expirada';
+      return insc.fn({
+        id: d.id,
+        orgId: ev.orgId,
+        leadId: d.leadId,
+        tipo: d.tipo as ComercialTipoDeDecisao,
+        escolha: d.escolha,
+        como: expirada ? 'expirada' : 'tomada',
+        por: !expirada && d.decididoPor ? { id: null, nome: d.decididoPor } : null,
+        canal: ((d.canal ?? (expirada ? 'relogio' : 'tela')) as ComercialCanalDeDecisao),
+        dados: (d.dados ?? {}) as Record<string, unknown>,
+        motivo: expirada ? 'prazo vencido: padrão aplicado' : null,
+      });
+    };
+  }
 
   async abrir(a: AbrirDecisao): Promise<{ id: string; nova: boolean; expiraEm: Date }> {
     if (!(COMERCIAL_TIPOS_DE_DECISAO as readonly string[]).includes(a.tipo)) throw new BadRequestException(`Tipo de decisão desconhecido: ${a.tipo}.`);
@@ -207,7 +246,7 @@ export class DecisoesService {
       dados,
       motivo: motivo ?? null,
     };
-    return { ...resolvida, resultados: await this.reagir(resolvida) };
+    return { ...resolvida, resultados: await this.reagir(resolvida, ev.eventoId, 'decisao.tomada', agora) };
   }
 
   /** O relógio: toda decisão aberta com prazo vencido vira `expirada` com o padrão aplicado. */
@@ -227,18 +266,23 @@ export class DecisoesService {
       n++;
       const ev = await this.fio.registrar(orgId, d.leadId, 'decisao.expirada', d.id, { decisaoId: d.id, tipo: d.tipo, padraoAplicado: d.padrao }, { em: agora });
       await this.prisma.comercialDecisao.updateMany({ where: { id: d.id }, data: { eventoDecisaoId: ev.eventoId } });
-      await this.reagir({
-        id: d.id,
-        orgId,
-        leadId: d.leadId,
-        tipo: d.tipo as ComercialTipoDeDecisao,
-        escolha: d.padrao,
-        como: 'expirada',
-        por: null,
-        canal: 'relogio',
-        dados: (d.dados ?? {}) as Record<string, unknown>,
-        motivo: 'prazo vencido: padrão aplicado',
-      });
+      await this.reagir(
+        {
+          id: d.id,
+          orgId,
+          leadId: d.leadId,
+          tipo: d.tipo as ComercialTipoDeDecisao,
+          escolha: d.padrao,
+          como: 'expirada',
+          por: null,
+          canal: 'relogio',
+          dados: (d.dados ?? {}) as Record<string, unknown>,
+          motivo: 'prazo vencido: padrão aplicado',
+        },
+        ev.eventoId,
+        'decisao.expirada',
+        agora,
+      );
     }
     return n;
   }
@@ -301,16 +345,21 @@ export class DecisoesService {
     return new Date(agora.getTime() + cfg.decisaoExpiraHoras * 3_600_000);
   }
 
-  private async reagir(d: DecisaoResolvida): Promise<unknown[]> {
+  /**
+   * As reações ao resultado. A-3: cada uma roda com a linha de trava do fio
+   * (`ComercialReacao`, chave `(evento da decisão, decisao:<nome>)`): a que
+   * lança fica `erro` e entra no retry do relógio, como as reações aos fatos.
+   */
+  private async reagir(d: DecisaoResolvida, eventoId: string, type: 'decisao.tomada' | 'decisao.expirada', em: Date): Promise<unknown[]> {
     const resultados: unknown[] = [];
+    const evento = { eventoId, orgId: d.orgId, leadId: d.leadId, type, payload: { decisaoId: d.id }, em } as unknown as EventoGravado;
     for (const { nome, fn } of this.registro.doTipo(d.tipo)) {
-      try {
-        resultados.push(await fn(d));
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        this.log.warn(`reação "${nome}" à decisão ${d.tipo} (${d.id}) falhou: ${msg}`);
-        resultados.push({ reacao: nome, erro: msg });
-      }
+      const r = await this.fio.rodarComTrava(evento, DecisoesService.nomeDaTrava(nome), () => fn(d));
+      if (!r.rodou) resultados.push({ reacao: nome, pulada: 'já rodou para esta decisão' });
+      else if (r.erro !== undefined) {
+        this.log.warn(`reação "${nome}" à decisão ${d.tipo} (${d.id}) falhou: ${r.erro}`);
+        resultados.push({ reacao: nome, erro: r.erro });
+      } else resultados.push(r.resultado);
     }
     return resultados;
   }

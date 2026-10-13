@@ -4,6 +4,8 @@
  * Os serviços de verdade, montados à mão, num banco descartável:
  *   · A-4: a geladeira decidida pela fila volta na data que a régua dá; sem o
  *     número, nasce sem data e com o [a decidir] escrito.
+ *   · A-3: a reação à decisão tomada que lança deixa a linha de trava em
+ *     `erro` e o retry do relógio a roda de novo.
  */
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -126,6 +128,38 @@ describe.skipIf(!URL)('revisão P3 da espinha, contra o banco', () => {
       expect(await relogio.voltasDaGeladeira(ORG, new Date(Date.now() + 31 * DIA))).toBe(1);
       expect((await ficha(leadId)).etapa).toBe('novo_lead');
       await config.gravar(ORG, { geladeiraVoltaDias: null });
+    });
+  });
+
+  describe('A-3: a reação à decisão que falha entra no retry', () => {
+    it('lança na primeira vez: a linha fica erro; o retry do relógio a roda de novo e ela fica ok', async () => {
+      let chamadas = 0;
+      aoDecidir.aoDecidir(
+        'lead_parado',
+        async (d) => {
+          chamadas++;
+          if (chamadas === 1) throw new Error('caiu no meio');
+          return { refeita: d.escolha, por: d.por?.nome ?? null };
+        },
+        'teste.instavel',
+      );
+      const leadId = await leadNovo();
+      const d = await decisoes.abrir({ orgId: ORG, leadId, tipo: 'lead_parado', chave: 'p3', titulo: 'parado', contexto: 'teste', opcoes: [{ chave: 'manter', rotulo: 'manter' }, { chave: 'perdido', rotulo: 'perdido' }], padrao: 'manter' });
+      const r = await decisoes.responder(ORG, d.id, 'manter', { id: socia.id, nome: socia.name }, 'tela');
+      expect(r.resultados).toContainEqual({ reacao: 'teste.instavel', erro: 'caiu no meio' });
+      const linha = await prisma.comercialReacao.findFirstOrThrow({ where: { leadId, reacao: 'decisao:teste.instavel' } });
+      expect(linha).toMatchObject({ estado: 'erro', erro: 'caiu no meio' });
+      // A reação da espinha à mesma decisão também tem a sua linha, e ok.
+      expect(await prisma.comercialReacao.findFirst({ where: { leadId, reacao: 'decisao:espinha.lead-parado' } })).toMatchObject({ estado: 'ok' });
+
+      await fio.reexecutarPendentes(ORG, new Date(Date.now() + 1000));
+      expect(chamadas).toBe(2);
+      const depois = await prisma.comercialReacao.findUniqueOrThrow({ where: { id: linha.id } });
+      expect(depois.estado).toBe('ok');
+      expect(depois.resultado).toEqual({ refeita: 'manter', por: socia.name });
+      // Passar de novo não roda outra vez.
+      await fio.reexecutarPendentes(ORG, new Date(Date.now() + 1000));
+      expect(chamadas).toBe(2);
     });
   });
 });

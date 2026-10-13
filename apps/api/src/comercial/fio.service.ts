@@ -72,7 +72,21 @@ export type GuardaDaAutonomia = (orgId: string, nome: string) => Promise<{ roda:
 @Injectable()
 export class ReacoesRegistry {
   private readonly porTipo = new Map<string, Inscricao[]>();
+  private readonly retentativas = new Map<string, (nome: string) => Reacao | undefined>();
   private guardaInstalada: GuardaDaAutonomia | null = null;
+
+  /**
+   * A-3: quem roda as próprias reações fora do `reagir` (a decisão tomada roda
+   * as reações do `DecisoesRegistry`) deixa aqui como achar cada uma pelo nome
+   * da linha de trava, para o relógio tentar de novo a que falhou.
+   */
+  definirRetentativa(type: string, achar: (nome: string) => Reacao | undefined): void {
+    this.retentativas.set(type, achar);
+  }
+
+  retentativa(type: string, nome: string): Reacao | undefined {
+    return this.retentativas.get(type)?.(nome);
+  }
 
   /** Instala a guarda da autonomia (uma só por processo). */
   definirGuarda(fn: GuardaDaAutonomia): void {
@@ -204,14 +218,14 @@ export class FioService {
     let feitas = 0;
     for (const p of pendentes) {
       const ev = await this.prisma.leadEvent.findFirst({ where: { id: p.eventoId } });
-      const insc = ev ? this.reacoes.doTipo(ev.type).find((i) => i.nome === p.reacao) : undefined;
-      if (!ev || !insc) continue;
+      const fn = ev ? (this.reacoes.doTipo(ev.type).find((i) => i.nome === p.reacao)?.fn ?? this.reacoes.retentativa(ev.type, p.reacao)) : undefined;
+      if (!ev || !fn) continue;
       const tomada = await this.prisma.comercialReacao.updateMany({
         where: { id: p.id, estado: p.estado, criadoEm: p.criadoEm },
         data: { estado: 'em_curso', criadoEm: new Date() },
       });
       if (tomada.count === 0) continue;
-      await this.rodar(p.id, p.reacao, insc.fn, {
+      await this.rodar(p.id, p.reacao, fn, {
         eventoId: ev.id,
         orgId,
         leadId: ev.leadId,
@@ -224,13 +238,30 @@ export class FioService {
     return feitas;
   }
 
-  private async rodar(id: string, nome: string, fn: Reacao, evento: EventoGravado, tentativasAntes: number): Promise<void> {
+  /**
+   * A-3: roda UMA reação com a mesma linha de trava do `reagir` (gravada antes,
+   * `erro` com a mensagem se lança) e devolve o que deu. Quem perde a corrida
+   * pela trava não roda. A linha `erro` entra no `reexecutarPendentes`, que acha
+   * a reação pela `retentativa` do tipo.
+   */
+  async rodarComTrava(evento: EventoGravado, nome: string, fn: Reacao): Promise<{ rodou: boolean; resultado?: unknown; erro?: string }> {
+    const id = reacaoId(evento.eventoId, nome);
+    const trava = await this.prisma.comercialReacao.createMany({
+      data: [{ id, leadId: evento.leadId, eventoId: evento.eventoId, reacao: nome, estado: 'em_curso' }],
+      skipDuplicates: true,
+    });
+    if (trava.count === 0) return { rodou: false };
+    return { rodou: true, ...(await this.rodar(id, nome, fn, evento, 0)) };
+  }
+
+  private async rodar(id: string, nome: string, fn: Reacao, evento: EventoGravado, tentativasAntes: number): Promise<{ resultado?: unknown; erro?: string }> {
     try {
       const resultado = await fn(evento);
       await this.prisma.comercialReacao.update({
         where: { id },
         data: { estado: 'ok', resultado: resultado == null ? Prisma.JsonNull : (resultado as Prisma.InputJsonValue), erro: null },
       });
+      return { resultado };
     } catch (erro) {
       const msg = erro instanceof Error ? erro.message : String(erro);
       this.log.warn(`reação ${nome} sobre ${evento.type} (${evento.eventoId}) falhou: ${msg}`);
@@ -238,6 +269,12 @@ export class FioService {
       const desistiu = tentativas >= MAX_TENTATIVAS;
       if (desistiu) this.log.error(`reação ${nome} sobre ${evento.type} (${evento.eventoId}) desistiu depois de ${tentativas} tentativas`);
       await this.prisma.comercialReacao.update({ where: { id }, data: { estado: 'erro', erro: msg.slice(0, 2000), resultado: { tentativas, desistiu } } });
+      return { erro: msg };
     }
+  }
+
+  /** A-3: o registro das reações (a decisão inscreve ali como achar as suas para o retry). */
+  get registro(): ReacoesRegistry {
+    return this.reacoes;
   }
 }
