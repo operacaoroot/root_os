@@ -29,6 +29,22 @@ import { montarEvento, reacaoId, type PayloadDe } from './eventos';
  * etapa.mudou).
  */
 
+/** A-2: `em_curso` só é retomado este tempo além do corte do relógio (2 min + 13 min). */
+export const EM_CURSO_PARADA_MS = 13 * 60_000;
+/** A-2: depois de tantas tentativas com erro, o relógio para de tentar. */
+export const MAX_TENTATIVAS = 4;
+
+/** Quantas vezes a reação já falhou (gravado em `resultado.tentativas` na linha `erro`). */
+export function tentativasDe(resultado: unknown): number {
+  const t = (resultado as { tentativas?: unknown } | null)?.tentativas;
+  return typeof t === 'number' && t > 0 ? t : 1;
+}
+
+/** A espera além do corte antes de tentar de novo: 0, 2, 6 min depois da 1ª, 2ª, 3ª falha (o corte já soma 2). */
+export function esperaDoErroMs(tentativas: number): number {
+  return (2 ** Math.max(0, tentativas - 1) - 1) * 2 * 60_000;
+}
+
 export interface EventoGravado<T extends ComercialEvento = ComercialEvento> {
   eventoId: string;
   orgId: string;
@@ -151,17 +167,40 @@ export class FioService {
         });
         continue;
       }
-      await this.rodar(id, nome, fn, evento);
+      await this.rodar(id, nome, fn, evento, 0);
     }
   }
 
-  /** Reações que ficaram `erro` ou `em_curso` (processo caiu no meio): o relógio chama. */
+  /**
+   * Reações que ficaram `erro` ou `em_curso` (processo caiu no meio): o relógio chama.
+   *
+   * A-2 da revisão: `em_curso` só volta depois de `EM_CURSO_PARADA_MS` além do
+   * corte (15 min no total, acima do prazo da ponte de modelo), para o retry
+   * não correr ao lado da reação viva; `erro` volta com espera crescente
+   * (2, 4, 8 min depois da última tentativa) e para em `MAX_TENTATIVAS`, com
+   * `resultado.desistiu` na linha: a linha continua `erro` (a fila e a torre a
+   * enxergam) e o relógio não a toca mais.
+   */
   async reexecutarPendentes(orgId: string, antesDe: Date, limite = 50): Promise<number> {
-    const pendentes = await this.prisma.comercialReacao.findMany({
-      where: { orgId, estado: { in: ['erro', 'em_curso'] }, criadoEm: { lt: antesDe } },
+    const linhas = await this.prisma.comercialReacao.findMany({
+      where: {
+        orgId,
+        OR: [
+          { estado: 'erro', criadoEm: { lt: antesDe } },
+          { estado: 'em_curso', criadoEm: { lt: new Date(antesDe.getTime() - EM_CURSO_PARADA_MS) } },
+        ],
+      },
       orderBy: { criadoEm: 'asc' },
-      take: limite,
+      take: limite * 4,
     });
+    const pendentes = linhas
+      .filter((p) => {
+        if (p.estado !== 'erro') return true;
+        const t = tentativasDe(p.resultado);
+        if (t >= MAX_TENTATIVAS) return false;
+        return p.criadoEm.getTime() < antesDe.getTime() - esperaDoErroMs(t);
+      })
+      .slice(0, limite);
     let feitas = 0;
     for (const p of pendentes) {
       const ev = await this.prisma.leadEvent.findFirst({ where: { id: p.eventoId } });
@@ -179,13 +218,13 @@ export class FioService {
         type: ev.type as ComercialEvento,
         payload: ev.payload as never,
         em: ev.occurredAt,
-      });
+      }, tentativasDe(p.resultado));
       feitas++;
     }
     return feitas;
   }
 
-  private async rodar(id: string, nome: string, fn: Reacao, evento: EventoGravado): Promise<void> {
+  private async rodar(id: string, nome: string, fn: Reacao, evento: EventoGravado, tentativasAntes: number): Promise<void> {
     try {
       const resultado = await fn(evento);
       await this.prisma.comercialReacao.update({
@@ -195,7 +234,10 @@ export class FioService {
     } catch (erro) {
       const msg = erro instanceof Error ? erro.message : String(erro);
       this.log.warn(`reação ${nome} sobre ${evento.type} (${evento.eventoId}) falhou: ${msg}`);
-      await this.prisma.comercialReacao.update({ where: { id }, data: { estado: 'erro', erro: msg.slice(0, 2000) } });
+      const tentativas = tentativasAntes + 1;
+      const desistiu = tentativas >= MAX_TENTATIVAS;
+      if (desistiu) this.log.error(`reação ${nome} sobre ${evento.type} (${evento.eventoId}) desistiu depois de ${tentativas} tentativas`);
+      await this.prisma.comercialReacao.update({ where: { id }, data: { estado: 'erro', erro: msg.slice(0, 2000), resultado: { tentativas, desistiu } } });
     }
   }
 }
