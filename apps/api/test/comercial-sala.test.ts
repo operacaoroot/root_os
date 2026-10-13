@@ -190,6 +190,21 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     expect(m3[0].texto).toContain(`/s/${token}`);
   });
 
+  it('a M3 ENVIADA grava a confirmação de véspera (o portão de E3 pede este fato); a retida não grava', async () => {
+    expect(await eventos(leadId, 'agenda.confirmada')).toHaveLength(0);
+    const m3 = await prisma.comercialMensagem.findFirstOrThrow({ where: { leadId, template: 'M3' } });
+    const pedido = pedidos.find((x) => x.args.mensagemId === m3.id);
+    expect(pedido, 'a M3 não foi à porta').toBeTruthy();
+    await efeitos.executar(CAPACIDADE_DO_WHATSAPP, pedido!.args, { orgId: ORG, actorId: 'quem-liberou', approvalId: 'ap-m3' });
+    const [ag] = await eventos(leadId, 'agenda.escolhida');
+    const conf = await eventos(leadId, 'agenda.confirmada');
+    expect(conf).toHaveLength(1);
+    expect(conf[0].payload).toMatchObject({ horario: (ag.payload as { horario: string }).horario, via: 'simulado' });
+    // Reexecutar o efeito não duplica o fato.
+    await efeitos.executar(CAPACIDADE_DO_WHATSAPP, pedido!.args, { orgId: ORG, actorId: 'quem-liberou', approvalId: 'ap-m3' });
+    expect(await eventos(leadId, 'agenda.confirmada')).toHaveLength(1);
+  });
+
   it('a proposta publicada prepara a M4; a sala vai a "proposta" e rastreia a leitura por bloco', async () => {
     await fio.registrar(ORG, leadId, 'proposta.publicada', 'v1', {
       versao: 1,
@@ -248,11 +263,13 @@ describe('o lead entra pelo simulador e a casa responde pela porta', () => {
     expect(r.mensagemExternaId).toMatch(/^sim-/);
     const depois = await prisma.comercialMensagem.findUniqueOrThrow({ where: { id: m1.id } });
     expect(depois.estado).toBe('enviada');
-    const [enviada] = await eventos(leadId, 'whats.enviada');
+    // A M3 já saiu no caso da véspera: aqui conta só a M1.
+    const daM1 = async () => (await eventos(leadId, 'whats.enviada')).filter((e) => (e.payload as { template?: string }).template === 'M1');
+    const [enviada] = await daM1();
     expect(enviada.payload).toMatchObject({ template: 'M1', aprovadaPor: 'pessoa-que-confirmou' });
     const de_novo = (await efeitos.executar(CAPACIDADE_DO_WHATSAPP, args, ctx)) as { jaEnviada: boolean };
     expect(de_novo.jaEnviada).toBe(true);
-    expect((await eventos(leadId, 'whats.enviada')).length).toBe(1);
+    expect((await daM1()).length).toBe(1);
   });
 });
 

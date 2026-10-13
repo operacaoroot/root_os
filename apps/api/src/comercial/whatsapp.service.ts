@@ -442,6 +442,18 @@ export class WhatsappComercialService implements OnModuleInit {
       const versao = Number(((pub?.payload ?? {}) as P).versao ?? 0);
       await this.fio.registrar(orgId, m.leadId, 'followup.enviado', m.id, { qual: m.template, versao, mensagemDbId: m.id }, { em: enviadaEm });
     }
+    if (m.template === 'M3') {
+      // A véspera ENVIADA é o fato que o portão de E3 pede ("confirmação de
+      // véspera enviada"). Sem ele, o lead ficava em E3 para sempre: ninguém
+      // gravava `agenda.confirmada` (achado da jornada de ponta a ponta, 13/10).
+      const escolha = await this.prisma.leadEvent.findFirst({ where: { leadId: m.leadId, type: 'agenda.escolhida' }, orderBy: { occurredAt: 'desc' }, select: { payload: true } });
+      const horario = String(((escolha?.payload ?? {}) as P).horario ?? '');
+      if (horario) {
+        await this.fio.registrar(orgId, m.leadId, 'agenda.confirmada', new Date(horario).toISOString(), { horario, via: feito.provedor }, { em: enviadaEm });
+      } else {
+        this.log.warn(`M3 de ${m.leadId} enviada sem horário escolhido no fio: a confirmação de véspera não foi gravada`);
+      }
+    }
     await this.prisma.comercialMensagem.update({ where: { id: m.id }, data: { eventoId: ev.eventoId } });
     return { mensagemId: m.id, mensagemExternaId: feito.mensagemExternaId, provedor: feito.provedor };
   }
