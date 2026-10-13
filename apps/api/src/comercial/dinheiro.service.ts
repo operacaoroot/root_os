@@ -296,7 +296,7 @@ export class DinheiroService implements OnModuleInit {
     agora: Date = new Date(),
   ): Promise<{ cobranca: ResultadoDaProposta; contrato: ResultadoDaProposta; approvalIds: string[] } | { pulado: string }> {
     const automatico = ator.tipo === ActorType.system;
-    const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId }, select: { etapa: true } });
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { etapa: true } });
     if (ficha && ehSaida(ficha.etapa as ComercialEtapa)) return { pulado: 'lead em saída' };
     const a = await this.aceiteDoLead(leadId);
     if (!a) return { pulado: 'o aceite ainda não tem os dados conferidos e a proposta aceita' };
@@ -304,7 +304,7 @@ export class DinheiroService implements OnModuleInit {
 
     let cobranca: ResultadoDaProposta;
     const resCob = `${leadId}:v${a.versao}`;
-    if ((await this.prisma.comercialCobranca.count({ where: { leadId } })) > 0) cobranca = 'ja_existe';
+    if ((await this.prisma.comercialCobranca.count({ where: { leadId, orgId } })) > 0) cobranca = 'ja_existe';
     else if (await this.aprovacaoViva(orgId, CAP_COBRANCA, resCob, agora)) cobranca = 'na_fila';
     else if (automatico && (await this.travaDaRepeticao(orgId, CAP_COBRANCA, resCob, agora))) cobranca = (await this.travaDaRepeticao(orgId, CAP_COBRANCA, resCob, agora))!;
     else {
@@ -325,7 +325,7 @@ export class DinheiroService implements OnModuleInit {
     let contrato: ResultadoDaProposta;
     const doc = this.contratoDoAceite(a);
     const resDoc = `${leadId}:${doc.hash.slice(0, 16)}`;
-    if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, hashConteudo: doc.hash }, select: { id: true } })) contrato = 'ja_existe';
+    if (await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash }, select: { id: true } })) contrato = 'ja_existe';
     else if (await this.aprovacaoViva(orgId, CAP_CONTRATO, resDoc, agora)) contrato = 'na_fila';
     else if (automatico && (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))) contrato = (await this.travaDaRepeticao(orgId, CAP_CONTRATO, resDoc, agora))!;
     else {
@@ -383,7 +383,7 @@ export class DinheiroService implements OnModuleInit {
    */
   async criarCobrancaDoAceite(orgId: string, leadId: string, a: AceiteDoLead): Promise<{ referencia: string; parcelas: number; reaproveitada: boolean; externoIds: string[] }> {
     const referencia = `cob-${leadId}-v${a.versao}`;
-    const existentes = await this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } });
+    const existentes = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
     if (existentes.length) return { referencia, parcelas: existentes.length, reaproveitada: true, externoIds: existentes.map((c) => c.externoId) };
 
     if (!(a.parcelas > 0) || a.valorCentavos % a.parcelas !== 0) {
@@ -396,7 +396,7 @@ export class DinheiroService implements OnModuleInit {
       async (tx) => {
         const [trava] = await tx.$queryRaw<{ tomou: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${`comercial-cobranca:${leadId}`})) AS tomou`;
         if (!trava?.tomou) throw new Error(COBRANCA_EM_CURSO);
-        const ja = await this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } });
+        const ja = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
         if (ja.length) return { referencia, parcelas: ja.length, reaproveitada: true, externoIds: ja.map((c) => c.externoId) };
         return this.criarNoProvedor(orgId, leadId, a, referencia);
       },
@@ -488,7 +488,7 @@ export class DinheiroService implements OnModuleInit {
     if (doc.hash !== String(args.hash)) throw new Error('o conteúdo do contrato mudou depois do pedido: nada foi enviado');
     if (a.dados.email.toLowerCase() !== String(args.signatarioEmail ?? '').toLowerCase()) throw new Error('o signatário mudou depois do pedido: nada foi enviado');
 
-    const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, hashConteudo: doc.hash } });
+    const ja = await this.prisma.comercialDocumento.findFirst({ where: { leadId, orgId, hashConteudo: doc.hash } });
     if (ja) return { documentoId: ja.id, externoId: ja.externoId, reaproveitado: true };
 
     const root = await this.signatarioDaRoot(orgId);

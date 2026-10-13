@@ -194,7 +194,7 @@ export class FechamentoService implements OnModuleInit {
         if (!ac) continue;
         if (!(await this.prontidao(orgId, leadId, ac)).pronto) continue;
         const chave = chaveDoFechamento(leadId, ac.versao);
-        const linha = await this.prisma.comercialFechamento.findUnique({ where: { chave }, select: { estado: true, vetadoEm: true, agendadoPara: true } });
+        const linha = await this.prisma.comercialFechamento.findFirst({ where: { chave, orgId }, select: { estado: true, vetadoEm: true, agendadoPara: true } });
         if (linha?.vetadoEm || linha?.estado === 'concluido') continue;
         if (linha?.agendadoPara && linha.agendadoPara.getTime() > agora.getTime()) continue; // ainda na janela de veto
         if (await this.dinheiro.aprovacaoViva(orgId, CAP_FECHAMENTO, chave, agora)) continue;
@@ -233,14 +233,14 @@ export class FechamentoService implements OnModuleInit {
     if (!a) return { pronto: false, falta: ['aceite com dados'] };
     const referencia = `cob-${leadId}-v${a.versao}`;
     const [documentos, criada, haCobranca] = await Promise.all([
-      this.prisma.comercialDocumento.findMany({ where: { leadId }, select: { hashConteudo: true, assinadoClienteEm: true, assinadoRootEm: true } }),
+      this.prisma.comercialDocumento.findMany({ where: { leadId, orgId }, select: { hashConteudo: true, assinadoClienteEm: true, assinadoRootEm: true } }),
       this.prisma.leadEvent.findUnique({ where: { id: eventoIdComercial(orgId, leadId, 'cobranca.criada', referencia) }, select: { payload: true, leadId: true } }),
-      this.prisma.comercialCobranca.count({ where: { leadId } }),
+      this.prisma.comercialCobranca.count({ where: { leadId, orgId } }),
     ]);
     let cobrancaDaVersao: ProvasDaVersao['cobrancaDaVersao'] = null;
     if (criada && criada.leadId === leadId) {
       const externoId = String(((criada.payload ?? {}) as P).externoId ?? '');
-      const primeira = externoId ? await this.prisma.comercialCobranca.findFirst({ where: { leadId, externoId }, select: { parcela: true, pagaEm: true, estado: true } }) : null;
+      const primeira = externoId ? await this.prisma.comercialCobranca.findFirst({ where: { leadId, orgId, externoId }, select: { parcela: true, pagaEm: true, estado: true } }) : null;
       cobrancaDaVersao = { primeiraPaga: !!primeira && primeira.parcela === 1 && (!!primeira.pagaEm || primeira.estado === 'paga') };
     }
     const hashes = [this.dinheiro.contratoDoAceite(a).hash];
@@ -257,7 +257,7 @@ export class FechamentoService implements OnModuleInit {
       data: [{ id: uuidDe([orgId, 'comercial-fechamento', chave]), leadId, chave, versao: a.versao, estado: 'pendente', escritas: escritasVazias() as unknown as Prisma.InputJsonValue }],
       skipDuplicates: true,
     });
-    return this.prisma.comercialFechamento.findUniqueOrThrow({ where: { chave } });
+    return this.prisma.comercialFechamento.findFirstOrThrow({ where: { chave, orgId } });
   }
 
   /** Reação aos três fatos: quando os três estão no fio, propõe (ou abre a janela de veto). */
@@ -302,7 +302,7 @@ export class FechamentoService implements OnModuleInit {
   private async aoDecidirVeto(d: DecisaoResolvida): Promise<unknown> {
     const chave = String(d.dados.chave ?? '');
     if (d.escolha === 'vetar') {
-      await this.prisma.comercialFechamento.updateMany({ where: { chave, vetadoEm: null }, data: { vetadoEm: new Date(), estado: 'vetado' } });
+      await this.prisma.comercialFechamento.updateMany({ where: { chave, orgId: d.orgId, vetadoEm: null }, data: { vetadoEm: new Date(), estado: 'vetado' } });
       await this.fio.registrar(d.orgId, d.leadId, 'veto.registrado', `fechamento:${chave}`, { sobre: `fechamento ${chave}`, por: d.por?.nome ?? d.por?.id ?? null, canal: d.canal });
       return { vetado: chave };
     }
@@ -376,7 +376,7 @@ export class FechamentoService implements OnModuleInit {
     const anteriores = new Map(((linha.escritas ?? []) as unknown as EscritaDoFechamento[]).map((e) => [e.escrita, e]));
 
     const lead = await this.prisma.lead.findFirstOrThrow({ where: { id: leadId, orgId }, select: { name: true, phone: true, email: true } });
-    const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId } });
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId } });
     // D-2: o devedor é o da cobrança que a titular aprovou (gravado no `cobranca.criada`), nunca o aceite
     // mais novo: o cliente da sala não troca o CNPJ do Partner depois da assinatura. Sem cobrança aprovada,
     // nem o cliente nem a cobrança são escritos aqui.
@@ -411,13 +411,13 @@ export class FechamentoService implements OnModuleInit {
       const doc = a.dados.cnpj.replace(/\D/g, '');
       const ja = await this.prisma.partner.findFirst({ where: { orgId, cnpjCpf: doc, isCliente: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
       if (ja) {
-        if (!ficha?.partnerId) await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { partnerId: ja.id } });
+        if (!ficha?.partnerId) await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: ja.id } });
         return { estado: 'reaproveitado', detalhe: 'cliente já existia com este CNPJ', ref: ja.id };
       }
       const p = await this.prisma.partner.create({
         data: { orgId, isCliente: true, razaoSocial: a.dados.razaoSocial, cnpjCpf: doc, email: a.dados.email || null, phone: lead.phone ?? null },
       });
-      await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { partnerId: p.id } });
+      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { partnerId: p.id } });
       return { estado: 'criado', detalhe: a.dados.razaoSocial, ref: p.id };
     });
 
@@ -425,7 +425,7 @@ export class FechamentoService implements OnModuleInit {
     await rodar('cobranca', async () => {
       if (!aprovado) throw new Error(SEM_COBRANCA_APROVADA);
       const r = await this.dinheiro.criarCobrancaDoAceite(orgId, leadId, aprovado);
-      const linhas = await this.prisma.comercialCobranca.findMany({ where: { leadId }, select: { estado: true } });
+      const linhas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, select: { estado: true } });
       const pagas = linhas.filter((l) => l.estado === 'paga').length;
       return { estado: r.reaproveitada ? 'reaproveitado' : 'criado', detalhe: `${pagas}/${linhas.length} paga · ${linhas.length - pagas} agendada(s)`, ref: r.referencia };
     });
@@ -437,7 +437,7 @@ export class FechamentoService implements OnModuleInit {
       if (ja) return { estado: 'reaproveitado', detalhe: 'contrato já registrado no Financeiro', ref: id };
       const partnerId = refs.cliente ?? null;
       if (!partnerId) throw new Error('sem cliente: o contrato do Financeiro espera a escrita do cliente');
-      const parcelas = await this.prisma.comercialCobranca.findMany({ where: { leadId }, orderBy: { parcela: 'asc' } });
+      const parcelas = await this.prisma.comercialCobranca.findMany({ where: { leadId, orgId }, orderBy: { parcela: 'asc' } });
       if (!parcelas.length) throw new Error('sem parcelas: o contrato do Financeiro espera a cobrança');
       const primeira = parcelas[0];
       const ultima = parcelas[parcelas.length - 1];
@@ -458,7 +458,7 @@ export class FechamentoService implements OnModuleInit {
           proximoVencimento: proxima.vence,
         },
       });
-      await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { contractId: id } });
+      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { contractId: id } });
       return { estado: 'criado', detalhe: `${a.parcelas}× ${formatarReais(primeira.valorCentavos)}, mensal`, ref: id };
     });
 
@@ -484,7 +484,7 @@ export class FechamentoService implements OnModuleInit {
         },
         { id: null, nome: 'Fechamento comercial' },
       );
-      await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { trilhoId: t.id } });
+      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { trilhoId: t.id } });
       // O comercial já qualificou: o trilho tenta passar pelo portão da fase 0. O portão é do onboarding e
       // recusa com a lista do que falta (próximo passo, dono, data...): isso vira lacuna à vista, não erro.
       let falta = '';
@@ -510,7 +510,7 @@ export class FechamentoService implements OnModuleInit {
       const recusa = await this.interruptores?.consultar({ orgId, capabilityId: CAP_FECHAMENTO, conector: 'whatsapp', actorType: ActorType.system, actorId: ATOR });
       if (recusa) throw new Error(recusa.motivo);
       const { jid } = await this.whats.criarGrupo(`Root · ${a.dados.razaoSocial}`.slice(0, 60), [lead.phone]);
-      await this.prisma.comercialFicha.updateMany({ where: { leadId }, data: { grupoJid: jid } });
+      await this.prisma.comercialFicha.updateMany({ where: { leadId, orgId }, data: { grupoJid: jid } });
       const kickoff = ficha?.kickoffEm ? ficha.kickoffEm.toISOString() : null;
       if (kickoff) await this.boasVindas(orgId, leadId, kickoff);
       return { estado: 'criado', detalhe: kickoff ? 'criado · boas-vindas na fila' : 'criado · boas-vindas sai quando o kickoff for marcado', ref: jid };
@@ -559,7 +559,7 @@ export class FechamentoService implements OnModuleInit {
 
   /** M8 no grupo, com o horário do kickoff. Equipe = [a decidir], à vista de quem libera o envio. */
   async boasVindas(orgId: string, leadId: string, horario: string): Promise<unknown> {
-    const ficha = await this.prisma.comercialFicha.findUnique({ where: { leadId }, select: { grupoJid: true } });
+    const ficha = await this.prisma.comercialFicha.findFirst({ where: { leadId, orgId }, select: { grupoJid: true } });
     if (!ficha?.grupoJid) return { pulado: 'grupo ainda não criado' };
     if (!this.whats || !horario) return { pulado: 'sem porta do WhatsApp ou sem horário' };
     const kickoff = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(horario));
@@ -589,7 +589,7 @@ export class FechamentoService implements OnModuleInit {
   async doLead(orgId: string, leadId: string): Promise<FechamentoDoLead & { aprovacao: { id: string; status: string } | null; vetado: boolean }> {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
     if (!lead) throw new NotFoundException('Lead não encontrado.');
-    const linha = await this.prisma.comercialFechamento.findFirst({ where: { leadId }, orderBy: { criadoEm: 'desc' } });
+    const linha = await this.prisma.comercialFechamento.findFirst({ where: { leadId, orgId }, orderBy: { criadoEm: 'desc' } });
     if (!linha) {
       const a = await this.dinheiro.aceiteDoLead(leadId);
       return {

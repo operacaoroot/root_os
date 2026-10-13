@@ -256,6 +256,8 @@ export interface QuemFez {
 }
 
 const DIA_MS = 86_400_000;
+/** C-20: quantas fichas o funil lê de uma vez. */
+export const TETO_DO_FUNIL = 1000;
 
 function paraProximaAcao(d: { titulo: string; padrao: string; expiraEm: Date }): DecisaoParaProximaAcao {
   return { titulo: d.titulo, padrao: d.padrao, expiraEm: d.expiraEm, semPrazo: decisaoSemPrazo(d.expiraEm) };
@@ -537,15 +539,26 @@ export class FichaService {
     };
   }
 
-  /** Tela 04: o funil vivo, com as saídas visíveis. Arrastar não existe: não há escrita aqui. */
-  async funil(orgId: string, filtro?: string | null, agora = new Date()): Promise<FunilVivo> {
+  /**
+   * Tela 04: o funil vivo, com as saídas visíveis. Arrastar não existe: não há escrita aqui.
+   *
+   * C-20: acima do teto, o corte é dos que mudaram de etapa HÁ MAIS TEMPO (os
+   * novos sempre aparecem) e a resposta diz quantos ficaram de fora. Na tela, a
+   * ordem segue a de antes (dentro da coluna, o mais antigo na etapa primeiro).
+   */
+  async funil(orgId: string, filtro?: string | null, agora = new Date(), teto = TETO_DO_FUNIL): Promise<FunilVivo> {
     const cfg = await this.config.ler(orgId);
-    const fichas = await this.prisma.comercialFicha.findMany({
-      where: { orgId },
-      include: { lead: { select: { name: true } } },
-      orderBy: { etapaDesde: 'asc' },
-      take: 1000,
-    });
+    const [total, maisNovas] = await Promise.all([
+      this.prisma.comercialFicha.count({ where: { orgId } }),
+      this.prisma.comercialFicha.findMany({
+        where: { orgId },
+        include: { lead: { select: { name: true } } },
+        orderBy: [{ etapaDesde: 'desc' }, { leadId: 'asc' }],
+        take: teto,
+      }),
+    ]);
+    const fichas = [...maisNovas].reverse();
+    const fora = Math.max(0, total - fichas.length);
     const abertas = await this.prisma.comercialDecisao.findMany({ where: { orgId, estado: 'aberta' }, select: { leadId: true, titulo: true, padrao: true, expiraEm: true } });
     const comDecisao = new Set(abertas.map((d) => d.leadId));
     const decisoesDo = (leadId: string) => abertas.filter((d) => d.leadId === leadId).map(paraProximaAcao);
@@ -578,6 +591,8 @@ export class FichaService {
     };
     const visiveis = cartoes.filter(passa);
     return {
+      total,
+      aviso: fora ? `O funil mostra os ${fichas.length} leads que mudaram de etapa por último; ${fora} ${fora === 1 ? 'ficou' : 'ficaram'} de fora. Use um filtro.` : null,
       colunas: [
         ...COMERCIAL_ETAPAS.map((e) => ({ etapa: e as ComercialEtapa, rotulo: COMERCIAL_ROTULO_DA_ETAPA[e], cartoes: visiveis.filter((c) => c.etapa === e) })),
         { etapa: 'saidas' as const, rotulo: 'Saídas', cartoes: visiveis.filter((c) => (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa)) },

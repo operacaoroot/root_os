@@ -18,6 +18,7 @@ import { exigirBancoDescartavel } from './banco-de-teste';
  *       e o fechamento não segue com a 1ª parcela estornada. O fato da 1ª
  *       parcela paga tem o nome da forma (pix.pago só para Pix).
  * D-12: o fechamento não reaproveita um Partner fornecedor com o mesmo CNPJ.
+ * A-7: as consultas do fechamento e do dinheiro levam a empresa no `where`.
  *
  * A porta de cobrança é dublê deste arquivo (com a leitura real do webhook);
  * o banco é o descartável.
@@ -207,6 +208,17 @@ describe('revisão P3 do dinheiro', () => {
       await dinheiro.webhookDoAsaas(SEGREDO, { id: `evt-d12b-${MARCA}`, event: 'PAYMENT_RECEIVED', payment: { id: primeira, value: 3999, paymentDate: '2026-10-13' } });
       const r = await fechamento.executar(ORG, leadId, a);
       expect(r.escritas.find((e) => e.escrita === 'cliente')).toMatchObject({ estado: 'reaproveitado', ref: ja.id });
+    });
+  });
+
+  describe('A-7: a empresa no where', () => {
+    it('a prontidão de um lead lida com o id de outra empresa não acha o documento nem a cobrança dele', async () => {
+      const { leadId, a, primeira } = await leadAssinado(`7${Date.now().toString().slice(-13)}`, 'pix');
+      await dinheiro.webhookDoAsaas(SEGREDO, { id: `evt-a7-${MARCA}`, event: 'PAYMENT_RECEIVED', payment: { id: primeira, value: 3999, paymentDate: '2026-10-13' } });
+      expect(await fechamento.prontidao(ORG, leadId, a)).toEqual({ pronto: true, falta: [] });
+      const outra = await fechamento.prontidao(`org-outra-${MARCA}`, leadId, a);
+      expect(outra.pronto).toBe(false);
+      expect(outra.falta).toEqual(expect.arrayContaining(['contrato da versão 1 gerado']));
     });
   });
 });

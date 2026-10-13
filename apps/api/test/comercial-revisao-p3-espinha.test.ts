@@ -8,6 +8,7 @@
  *     `erro` e o retry do relógio a roda de novo.
  *   · A-5: a etapa, o `Lead.status` e o `etapa.mudou` caem juntos.
  *   · E-24: o sócio da conta é achado pelo id da ata, nunca pelo nome.
+ *   · C-20: acima do teto, o funil corta os mais antigos na etapa e avisa.
  */
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -242,6 +243,23 @@ describe.skipIf(!URL)('revisão P3 da espinha, contra o banco', () => {
       await fichas.aplicar({ eventoId: 'x', orgId: ORG, leadId, type: 'ata.chegou', payload: { hash: `h-${MARCA}`, caracteres: 10, fonte: 'texto', por: 'Rodrigo' }, em: new Date() } as never);
       const f = await fichas.projecao(ORG, leadId);
       expect(f.socioDaConta).toEqual({ id: null, nome: 'Rodrigo' });
+    });
+  });
+
+  describe('C-20: o funil acima do teto', () => {
+    it('corta os que mudaram de etapa há mais tempo, mostra o lead novo e diz quantos ficaram de fora', async () => {
+      const total = await prisma.comercialFicha.count({ where: { orgId: ORG } });
+      expect(total).toBeGreaterThanOrEqual(3);
+      const novo = await leadNovo();
+      const f = await fichas.funil(ORG, null, new Date(), 2);
+      const ids = f.colunas.flatMap((c) => c.cartoes.map((x) => x.leadId));
+      expect(ids).toHaveLength(2);
+      expect(ids).toContain(novo);
+      expect(f.total).toBe(total + 1);
+      expect(f.aviso).toContain(`${total - 1} ficaram de fora`);
+      const tudo = await fichas.funil(ORG, null, new Date());
+      expect(tudo.aviso).toBeNull();
+      expect(tudo.colunas.flatMap((c) => c.cartoes)).toHaveLength(total + 1);
     });
   });
 });

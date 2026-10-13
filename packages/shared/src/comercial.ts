@@ -660,6 +660,13 @@ export interface DecisaoNaFila {
 /** O funil vivo (tela 04). */
 export interface FunilVivo {
   colunas: { etapa: ComercialEtapa | 'saidas'; rotulo: string; cartoes: CartaoDoFunil[] }[];
+  /**
+   * C-20: quantas fichas a empresa tem e a frase quando o funil não as mostra
+   * todas (acima do teto, ficam de fora as que mudaram de etapa há mais tempo).
+   * Sem corte, `aviso` é nulo.
+   */
+  total?: number;
+  aviso?: string | null;
 }
 
 export interface CartaoDoFunil {
