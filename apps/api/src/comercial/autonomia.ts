@@ -30,6 +30,8 @@ import { COMERCIAL_AUTOMACOES, type ComercialAutomacao, type ComercialAutonomia 
  *   · leitor de ata: o diagnóstico espera o sócio aprovar (portão de E5) → A2;
  *   · construtor de proposta: publicar é R3 → A2;
  *   · revisor de proposta: só lê e aponta (o laudo) → A1;
+ *   · assistente da proposta (revisão E-15): só a frase do sistema vai direto
+ *     ao cliente; o texto do modelo espera uma pessoa → A2;
  *   · assinador, cobrador, fechador: R4, o teto nunca é autônomo → A2;
  *   · relator e vigia: leem, resumem e avisam → A1.
  */
@@ -39,6 +41,7 @@ export const AUTONOMIA_VIGENTE: Readonly<Record<ComercialAutomacao, ComercialAut
   leitor_de_ata: 'A2',
   construtor_de_proposta: 'A2',
   revisor_de_proposta: 'A1',
+  assistente_da_proposta: 'A2',
   fupeiro: 'A2',
   assinador: 'A2',
   cobrador: 'A2',
@@ -53,7 +56,7 @@ export const AUTONOMIA_VIGENTE: Readonly<Record<ComercialAutomacao, ComercialAut
  *
  * Fora desta tabela ficam, de propósito, as engrenagens da espinha que não são
  * automação da torre: a projeção da ficha, a etapa, a decisão que vence, a sala,
- * a resposta à dúvida (R0) e a janela de veto (que só devolve à porta). Segurar
+ * e a janela de veto (que só devolve à porta). Segurar
  * uma delas não seria segurar automação, seria quebrar o fio. É o caso da
  * pontuação e do dono (`espinha.entrada`, `espinha.qualificacao`): elas também
  * semeiam o relógio e abrem o ponto zero, e não há rota de gente que as refaça.
@@ -70,6 +73,7 @@ export const AUTOMACOES_DA_TAREFA: Readonly<Record<string, readonly ComercialAut
   'inteligencia.rascunho': ['construtor_de_proposta', 'revisor_de_proposta'],
   'inteligencia.proposta': ['construtor_de_proposta', 'revisor_de_proposta'],
   'whats.m4': ['construtor_de_proposta'],
+  'inteligencia.duvida': ['assistente_da_proposta'],
   'dinheiro.propor': ['cobrador', 'assinador'],
   'fechamento.talvez': ['fechador'],
   'fechamento.m8': ['fechador'],
@@ -95,6 +99,8 @@ export const TETO_DA_REGUA: Readonly<Record<ComercialAutomacao, ComercialAutonom
   leitor_de_ata: 'A2',
   construtor_de_proposta: 'A2',
   revisor_de_proposta: 'A3',
+  // Escreve ao cliente: texto do modelo sempre passa por gente.
+  assistente_da_proposta: 'A2',
   fupeiro: 'A2',
   assinador: 'A2',
   cobrador: 'A2',
@@ -130,8 +136,16 @@ export function nivelDe(gravado: Partial<Record<ComercialAutomacao, ComercialAut
 
 export type VeredictoDaAutonomia = { roda: true } | { roda: false; automacao: ComercialAutomacao; nivel: 'A0'; motivo: string };
 
+/**
+ * As tarefas que tratam o A0 por dentro, em vez de serem puladas: a dúvida da
+ * sala precisa de resposta, e em A0 ela vai a uma pessoa (a decisão
+ * `aprovacao_de_envio`) sem chamar o modelo. Pular deixaria o cliente sem nada.
+ */
+export const A0_TRATADO_NA_TAREFA: ReadonlySet<string> = new Set(['inteligencia.duvida']);
+
 /** A tarefa `nome` roda com a autonomia gravada? Tarefa fora da tabela sempre roda. */
 export function podeRodar(gravado: Partial<Record<ComercialAutomacao, ComercialAutonomia>>, nome: string): VeredictoDaAutonomia {
+  if (A0_TRATADO_NA_TAREFA.has(nome)) return { roda: true };
   for (const automacao of AUTOMACOES_DA_TAREFA[nome] ?? []) {
     if (nivelDe(gravado, automacao) === 'A0') {
       return { roda: false, automacao, nivel: 'A0', motivo: `${automacao} em A0 (manual): a automação não roda, a pessoa faz pelo sistema` };

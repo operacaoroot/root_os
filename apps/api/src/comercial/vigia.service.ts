@@ -60,6 +60,8 @@ import { MENSAGENS } from './mensagens';
  *   · fechador · "chave de transação única": nenhum lead com dois `cliente.ativo`
  *     de chaves diferentes;
  *   · revisor, relator e vigia: o mapa não escreve premissa. [a decidir].
+ *   · assistente da proposta (E-15): a regra é do código, sem medida diária;
+ *     fica não conferida.
  *
  * Do funil (C07 e a prova de pronto da onda 5):
  *   · "lead vivo sem próximo passo é alerta do vigia" (C07): lead em etapa ativa
@@ -107,6 +109,7 @@ export const PREMISSA_DA_AUTOMACAO: Record<ComercialAutomacao, string> = {
   leitor_de_ata: 'chave do modelo válida',
   construtor_de_proposta: 'tabela de preço de 04/10',
   revisor_de_proposta: '[a decidir]',
+  assistente_da_proposta: 'texto do modelo ao cliente passa por gente',
   fupeiro: 'textos M5 e M6 aprovados',
   assinador: 'ZapSign API responde 200',
   cobrador: 'webhook do Asaas chegando',
@@ -288,6 +291,10 @@ export class VigiaService implements OnModuleInit {
 
     // --- revisor: o mapa não escreve premissa ---
     out.push(premissa('revisor', 'revisor_de_proposta', PREMISSA_DA_AUTOMACAO.revisor_de_proposta, null, 'o mapa não escreve a premissa do revisor: [a decidir].'));
+
+    // --- assistente da proposta (E-15): a regra é do código (só frase do sistema vai direto) ---
+    out.push(premissa('assistente_por_gente', 'assistente_da_proposta', PREMISSA_DA_AUTOMACAO.assistente_da_proposta, null,
+      'a resposta direta só sai de frase do sistema e o resto vai à fila; não há medida diária a conferir: [a decidir].'));
 
     // --- fupeiro: M5 e M6 no catálogo ---
     // O catálogo versionado da C08 (lane B): texto, versão e data de cada mensagem aprovada.

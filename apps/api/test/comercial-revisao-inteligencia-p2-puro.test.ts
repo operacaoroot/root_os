@@ -1,7 +1,15 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 
+import { COMERCIAL_AUTOMACOES } from '@mktos/shared';
+
 import { PERMISSIONS_KEY } from '../src/auth/permissions.decorator';
+import { AssistenteService } from '../src/comercial/assistente.service';
+import { AUTONOMIA_VIGENTE, TETO_DA_REGUA, podeRodar, tarefasDaAutomacao } from '../src/comercial/autonomia';
+import type { ConfigComercialService } from '../src/comercial/config.service';
+import type { DecisoesRegistry, DecisoesService } from '../src/comercial/decisoes.service';
+import { RESPOSTA_DE_SEGURANCA } from '../src/comercial/inteligencia-prompts';
+import type { SalaService } from '../src/comercial/sala.service';
 import { DiagnosticoService } from '../src/comercial/diagnostico.service';
 import type { FioService, ReacoesRegistry } from '../src/comercial/fio.service';
 import { InteligenciaController } from '../src/comercial/inteligencia.controller';
@@ -53,5 +61,37 @@ describe('revisão E-4/C-8: aprovar o diagnóstico é decisão de mesa sobre a v
     await expect(svc.aprovar('org', 'lead', { id: 'socia', nome: 'Lidiane', papeis: ['diretor'] }, '')).rejects.toMatchObject({ status: 400 });
     await svc.aprovar('org', 'lead', { id: 'socia', nome: 'Lidiane', papeis: ['diretor'] }, 'diag-B');
     expect(registrados).toEqual([expect.objectContaining({ chave: 'aprovado:diag-B', payload: expect.objectContaining({ aprovaOEvento: 'diag-B', aprovadoPorId: 'socia' }) })]);
+  });
+});
+
+describe('revisão E-15: o assistente da proposta tem freio na torre', () => {
+  it('é automação da torre, com a reação da dúvida, e o teto é A2 (escreve ao cliente)', () => {
+    expect(COMERCIAL_AUTOMACOES).toContain('assistente_da_proposta');
+    expect(tarefasDaAutomacao('assistente_da_proposta')).toEqual(['inteligencia.duvida']);
+    expect(AUTONOMIA_VIGENTE.assistente_da_proposta).toBe('A2');
+    expect(TETO_DA_REGUA.assistente_da_proposta).toBe('A2');
+    // A guarda do fio não pula a dúvida em A0: quem trata o A0 é o próprio assistente.
+    expect(podeRodar({ assistente_da_proposta: 'A0' }, 'inteligencia.duvida')).toEqual({ roda: true });
+  });
+
+  it('em A0 o modelo não é chamado: a sala recebe a resposta de segurança e a dúvida vai à decisão aprovacao_de_envio', async () => {
+    const respostas: string[] = [];
+    const abertas: Array<Record<string, unknown>> = [];
+    let chamouOModelo = false;
+    const svc = new AssistenteService(
+      {} as PrismaService,
+      {} as ReacoesRegistry,
+      { responderDuvida: async (_o: string, _l: string, _d: unknown, r: string) => void respostas.push(r) } as unknown as SalaService,
+      { name: 'stub', model: 'stub', complete: async () => { chamouOModelo = true; return '{}'; } } as unknown as LlmProvider,
+      { abrir: async (x: Record<string, unknown>) => { abertas.push(x); return { id: 'dec-1', nova: true }; } } as unknown as DecisoesService,
+      {} as DecisoesRegistry,
+      { ler: async () => ({ autonomia: { assistente_da_proposta: 'A0' } }) } as unknown as ConfigComercialService,
+    );
+    const r = await svc.responder('org', 'lead', { versao: 1, pergunta: 'Quantas parcelas?', resposta: null });
+    expect(chamouOModelo).toBe(false);
+    expect(respostas).toEqual([RESPOSTA_DE_SEGURANCA]);
+    expect(abertas).toHaveLength(1);
+    expect(abertas[0]).toMatchObject({ tipo: 'aprovacao_de_envio', padrao: 'responder_por_fora' });
+    expect(r).toMatchObject({ doModelo: false, levadaAoSocio: true, decisaoId: 'dec-1', nivel: 'A0' });
   });
 });

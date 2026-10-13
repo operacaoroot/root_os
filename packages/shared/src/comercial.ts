@@ -450,6 +450,8 @@ export const COMERCIAL_AUTOMACOES = [
   'leitor_de_ata',
   'construtor_de_proposta',
   'revisor_de_proposta',
+  /** Revisão E-15: o assistente da dúvida na sala, a única automação que escreve ao cliente. Em A0 a dúvida vai a uma pessoa. */
+  'assistente_da_proposta',
   'fupeiro',
   'assinador',
   'cobrador',
@@ -772,6 +774,7 @@ export const COMERCIAL_ROTULO_DA_AUTOMACAO: Record<ComercialAutomacao, string> =
   leitor_de_ata: 'leitor de ata',
   construtor_de_proposta: 'construtor de proposta',
   revisor_de_proposta: 'revisor de proposta',
+  assistente_da_proposta: 'assistente da proposta',
   fupeiro: 'fupeiro',
   assinador: 'assinador',
   cobrador: 'cobrador',

@@ -1,9 +1,11 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { TABELA_DE_PRECO, type ComercialProduto, type OpcaoDeDecisao } from '@mktos/shared';
 
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { comProcedencia } from '../llm/procedencia';
 import { PrismaService } from '../prisma/prisma.service';
+import { nivelDe } from './autonomia';
+import { ConfigComercialService } from './config.service';
 import { DecisoesRegistry, DecisoesService, type DecisaoResolvida } from './decisoes.service';
 import { hashDoConteudo, type PayloadDe } from './eventos';
 import { ReacoesRegistry } from './fio.service';
@@ -33,6 +35,12 @@ import { SalaService } from './sala.service';
  * nada do modelo sai sem gente.
  *
  * Quem grava a resposta é a sala (`SalaService.responderDuvida`, lane B).
+ *
+ * O FREIO DA TORRE (revisão E-15): o assistente é a automação
+ * `assistente_da_proposta`. Em A0 o modelo não é chamado: a sala recebe a
+ * resposta de segurança e a dúvida vai inteira a uma pessoa, pela mesma
+ * decisão `aprovacao_de_envio`, sem sugestão. A guarda do fio não pula esta
+ * reação (`A0_TRATADO_NA_TAREFA`): pular deixaria o cliente sem resposta.
  */
 
 export const REACAO_DA_DUVIDA = 'inteligencia.duvida';
@@ -51,6 +59,7 @@ export class AssistenteService implements OnModuleInit {
     @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
     private readonly decisoes: DecisoesService,
     private readonly aoDecidir: DecisoesRegistry,
+    @Optional() private readonly config?: ConfigComercialService,
   ) {}
 
   onModuleInit(): void {
@@ -95,6 +104,13 @@ export class AssistenteService implements OnModuleInit {
 
   async responder(orgId: string, leadId: string, d: PayloadDe<'proposta.duvida'>): Promise<unknown> {
     if (d.resposta) return { pulado: 'a dúvida já veio respondida' };
+    if (this.config && nivelDe((await this.config.ler(orgId)).autonomia, 'assistente_da_proposta') === 'A0') {
+      const motivo = 'o assistente da proposta está em A0 (manual) na torre: a dúvida vai a uma pessoa sem passar pelo modelo';
+      await this.sala.responderDuvida(orgId, leadId, { versao: d.versao, pergunta: d.pergunta }, RESPOSTA_DE_SEGURANCA, 'assistente (levado a uma pessoa)');
+      const decisaoId = await this.levarAUmaPessoa(orgId, leadId, d, null, motivo);
+      // `pulada` tira a passagem do acerto da torre: em A0 a automação não rodou.
+      return { respondida: true, doModelo: false, levadaAoSocio: true, decisaoId, pulada: true, automacao: 'assistente_da_proposta', nivel: 'A0', motivo };
+    }
     const fatos = await this.fatos(orgId, leadId, d.versao);
     let resposta = RESPOSTA_DE_SEGURANCA;
     let doModelo = false;

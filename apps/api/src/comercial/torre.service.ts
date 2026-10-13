@@ -42,6 +42,8 @@ export const FATOS_DA_AUTOMACAO: Record<ComercialAutomacao, string[]> = {
   leitor_de_ata: ['diagnostico.pronto'],
   construtor_de_proposta: ['proposta.publicada'],
   revisor_de_proposta: ['proposta.publicada'],
+  // Responder na sala não grava fato no fio: a última vez vem da reação.
+  assistente_da_proposta: [],
   fupeiro: ['followup.enviado'],
   assinador: ['contrato.gerado'],
   cobrador: ['cobranca.criada', 'parcela.vence'],

@@ -140,7 +140,7 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     // O quadro "escrito por alguém": o de exemplo vira apontamento (revisão E-3), e tem caso próprio abaixo.
     propostas.fonteDoQuadro = () => ({ mesNormalCentavos: 18_000, piorMesCentavos: 34_000, exemplo: false, origem: 'escrito pelo sócio da conta (suíte)' });
     propostas.inscrever();
-    new AssistenteService(p, reacoes, sala, llm, decisoes, aoDecidir).inscrever();
+    new AssistenteService(p, reacoes, sala, llm, decisoes, aoDecidir, config).inscrever();
 
     await config.gravar(ORG, { validadePropostaDias: 8, valoresDeHomologacao: true });
   });
@@ -285,6 +285,24 @@ describe.skipIf(!URL)('a inteligência do cockpit, contra o banco e a régua', (
     expect(duvidas.find((d) => d.pergunta === pergunta)?.resposta).toBe(RESPOSTA_DE_SEGURANCA);
     const pendentes = await prisma.comercialDecisao.findMany({ where: { leadId, tipo: 'aprovacao_de_envio', estado: 'aberta' } });
     expect(pendentes.map((x) => x.contexto).join(' ')).toMatch(/não é literal de um fato da proposta/);
+  });
+
+  it('assistente da proposta em A0 na torre (revisão E-15): o modelo não é chamado e a dúvida vai a uma pessoa', async () => {
+    await config.gravar(ORG, { autonomia: { assistente_da_proposta: 'A0' } });
+    try {
+      const pergunta = 'Quantas parcelas são, mesmo?';
+      await naEmpresa(() => fio.registrar(ORG, leadId, 'proposta.duvida', chaveDaDuvida(1, pergunta), { versao: 1, pergunta, resposta: null }));
+      const duvidas = (await sala.estadoDoLead(ORG, leadId))?.proposta?.duvidas ?? [];
+      expect(duvidas.find((d) => d.pergunta === pergunta)?.resposta).toBe(RESPOSTA_DE_SEGURANCA);
+      const reacao = await prisma.comercialReacao.findFirstOrThrow({ where: { leadId, reacao: 'inteligencia.duvida', resultado: { path: ['nivel'], equals: 'A0' } } });
+      expect(reacao.resultado).toMatchObject({ doModelo: false, levadaAoSocio: true, pulada: true, automacao: 'assistente_da_proposta' });
+      expect((reacao.resultado as P).procedencia).toBeUndefined();
+      const pendente = await prisma.comercialDecisao.findFirstOrThrow({ where: { leadId, tipo: 'aprovacao_de_envio', estado: 'aberta', contexto: { contains: 'Quantas parcelas' } } });
+      expect((pendente.opcoes as P[]).map((o) => o.chave)).toEqual(['responder_por_fora']);
+      expect(pendente.contexto).toMatch(/A0 \(manual\)/);
+    } finally {
+      await config.gravar(ORG, { autonomia: {} });
+    }
   });
 
   it('o pedido de 8% vira decisão; aprovar gera a v2 com as parcelas fechando, de novo pela porta (R3)', async () => {
