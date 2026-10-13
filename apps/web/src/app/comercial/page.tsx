@@ -18,6 +18,8 @@ import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, FOCO, Num
  */
 export default function FilaDeDecisoesPage() {
   const { dados, erro, carregando, recarregar } = useCarregar<FilaDeDecisoes>('/comercial/fila', 30_000);
+  const [tudo, setTudo] = useState(false);
+  const limite = tudo ? 200 : 12;
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -58,7 +60,7 @@ export default function FilaDeDecisoesPage() {
               <Rotulo>rodou sozinho hoje</Rotulo>
               {dados.rodouSozinhoHoje.length === 0 && <p className="mt-2 text-[12.5px] text-muted">Nada rodou sozinho hoje.</p>}
               <ul className="mt-2 divide-y divide-border">
-                {dados.rodouSozinhoHoje.slice(0, 40).map((r, i) => (
+                {dados.rodouSozinhoHoje.slice(0, limite).map((r, i) => (
                   <li key={`${r.em}-${i}`} className="grid grid-cols-[42px_56px_minmax(0,1fr)] gap-2 py-1.5 text-[12.5px]">
                     <span className="font-os-mono text-muted">{horaSP(r.em)}</span>
                     <span className="font-os-mono text-[11px] text-info">{ROTULO_DA_FONTE[r.fonte] ?? r.fonte}</span>
@@ -68,7 +70,11 @@ export default function FilaDeDecisoesPage() {
                   </li>
                 ))}
               </ul>
-              {dados.rodouSozinhoHoje.length > 40 && <p className="mt-2 text-[11.5px] text-muted">Mostrando 40 de {dados.rodouSozinhoHoje.length}.</p>}
+              {dados.rodouSozinhoHoje.length > 12 && (
+                <button type="button" className={`mt-2 text-[12px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`} onClick={() => setTudo((v) => !v)}>
+                  {tudo ? 'mostrar menos' : `mostrar as ${dados.rodouSozinhoHoje.length}`}
+                </button>
+              )}
             </section>
           </div>
         </>

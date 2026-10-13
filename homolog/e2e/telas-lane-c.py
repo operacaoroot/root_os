@@ -1,0 +1,96 @@
+"""
+Screenshots das telas internas do cockpit (lane C) contra um `next dev` nativo.
+
+Uso:  python -I homolog/e2e/telas-lane-c.py [WEB=http://127.0.0.1:3020] [API=http://127.0.0.1:4010] [filtro]
+
+Entra pela API com o admin da semente (a senha é lida de homolog/.env.homolog em
+tempo de execução e nunca escrita em lugar nenhum), põe a sessão no
+localStorage como o login da tela faria e fotografa cada tela nos temas escuro
+e claro, e no celular (390 px). Grava em homolog/provas/tela-NN-<nome>-<tema>.png.
+"""
+import json
+import os
+import pathlib
+import sys
+import urllib.request
+
+from playwright.sync_api import sync_playwright
+
+RAIZ = pathlib.Path(__file__).resolve().parents[2]
+PROVAS = RAIZ / 'homolog' / 'provas'
+WEB = os.environ.get('WEB', 'http://127.0.0.1:3020')
+API = os.environ.get('API', 'http://127.0.0.1:4010')
+FILTRO = sys.argv[1] if len(sys.argv) > 1 else ''
+
+
+def senha() -> str:
+    for linha in (RAIZ / 'homolog' / '.env.homolog').read_text(encoding='utf-8').splitlines():
+        if linha.startswith('ADMIN_PASSWORD='):
+            return linha.split('=', 1)[1].strip().strip('"')
+    raise SystemExit('ADMIN_PASSWORD ausente em homolog/.env.homolog')
+
+
+def post(caminho: str, corpo: dict, token: str | None = None) -> dict:
+    req = urllib.request.Request(f'{API}/api{caminho}', data=json.dumps(corpo).encode(), method='POST')
+    req.add_header('Content-Type', 'application/json')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def get(caminho: str, token: str):
+    req = urllib.request.Request(f'{API}/api{caminho}')
+    req.add_header('Authorization', f'Bearer {token}')
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def main() -> None:
+    login = post('/auth/login', {'email': 'admin@marketing-os.local', 'password': senha()})
+    token = login.get('token') or login.get('accessToken')
+    user = login['user']
+
+    funil = get('/comercial/funil', token)
+    cartoes = [c for col in funil['colunas'] for c in col['cartoes']]
+    alicerce = next((c['leadId'] for c in cartoes if c.get('empresa') == 'Construtora Alicerce'), cartoes[0]['leadId'])
+    contratos = get('/comercial/contratos', token)
+    fechado = contratos[0]['leadId'] if contratos else alicerce
+
+    telas = [
+        ('03', 'fila', '/comercial'),
+        ('04', 'funil', '/comercial/funil'),
+        ('05', 'fio', f'/comercial/lead/{alicerce}'),
+        ('06', 'sessao', f'/comercial/lead/{fechado}/sessao'),
+        ('06b', 'sessao-alicerce', f'/comercial/lead/{alicerce}/sessao'),
+        ('10', 'fechamento', f'/comercial/lead/{fechado}/fechamento'),
+        ('11a', 'contratos', '/comercial/contratos'),
+        ('11', 'contrato', f'/comercial/contratos/{fechado}'),
+        ('12', 'torre', '/comercial/torre'),
+        ('13', 'relatorio', '/comercial/relatorio'),
+    ]
+    PROVAS.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        nav = p.chromium.launch()
+        for tema, largura, sufixo in (('dark', 1440, 'escuro'), ('light', 1440, 'claro'), ('dark', 390, 'celular')):
+            ctx = nav.new_context(viewport={'width': largura, 'height': 900}, device_scale_factor=1)
+            ctx.add_init_script(
+                f"localStorage.setItem('mktos_token', {json.dumps(token)});"
+                f"localStorage.setItem('mktos_user', {json.dumps(json.dumps(user))});"
+                f"localStorage.setItem('root-os:tema', '{tema}');"
+            )
+            pagina = ctx.new_page()
+            for num, nome, caminho in telas:
+                if FILTRO and FILTRO not in nome:
+                    continue
+                pagina.goto(f'{WEB}{caminho}', wait_until='networkidle', timeout=120_000)
+                pagina.wait_for_timeout(1200)
+                arquivo = PROVAS / f'tela-{num}-{nome}-{sufixo}.png'
+                pagina.screenshot(path=str(arquivo), full_page=True)
+                print(arquivo.relative_to(RAIZ))
+            ctx.close()
+        nav.close()
+
+
+if __name__ == '__main__':
+    main()
