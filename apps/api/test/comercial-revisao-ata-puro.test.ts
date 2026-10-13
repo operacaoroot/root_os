@@ -18,10 +18,12 @@ describe('revisão C-9: a ata longa não morre em 413', () => {
   });
 
   it('sem sessão a ata segue para o parser padrão (o guarda responde o resto)', () => {
-    const handlers: Array<(req: unknown, res: unknown, next: () => void) => void> = [];
-    instalarCorpoDaMidia({ use: (_c: string, h: (req: unknown, res: unknown, next: () => void) => void) => void handlers.push(h) }, 'api', () => false);
+    type Manipulador = Parameters<Parameters<typeof instalarCorpoDaMidia>[0]['use']>[1];
+    const handlers: Manipulador[] = [];
+    instalarCorpoDaMidia({ use: (_c: string, h: Manipulador) => void handlers.push(h) }, 'api', () => false);
     let seguiu = false;
-    handlers[handlers.length - 1]({ method: 'POST', headers: { authorization: 'Bearer x' } }, {}, () => (seguiu = true));
+    const req = { method: 'POST', headers: { authorization: 'Bearer x' } } as unknown as Parameters<Manipulador>[0];
+    handlers[handlers.length - 1](req, {} as Parameters<Manipulador>[1], () => (seguiu = true));
     expect(seguiu).toBe(true);
   });
 });
