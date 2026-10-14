@@ -69,7 +69,7 @@ export default function FunilVivoPage() {
               type="button"
               aria-pressed={filtro === f.chave}
               onClick={() => setFiltro(f.chave)}
-              className={`rounded border px-2.5 py-1 text-[12px] ${filtro === f.chave ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
+              className={`rounded border px-2.5 py-1 text-[12px] max-md:min-h-[44px] ${filtro === f.chave ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
             >
               {f.rotulo}
             </button>

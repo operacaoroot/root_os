@@ -51,7 +51,7 @@ export default function RelatorioPage() {
               type="button"
               aria-pressed={dias === d}
               onClick={() => setDias(d)}
-              className={`rounded border px-2.5 py-1 text-[12px] ${dias === d ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
+              className={`rounded border px-2.5 py-1 text-[12px] max-md:min-h-[44px] ${dias === d ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
             >
               {d} dias
             </button>

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { destinoDaRotaAntiga, lerPainel, linkDoWhatsApp, urlComPainel, urlSemPainel } from '@/app/comercial/_painel/estado';
-import { comNivelExplicado, prazoEmPalavras, quandoCurtoSP } from '@/lib/cockpit';
+import { chavesLegiveis, comNivelExplicado, prazoEmPalavras, quandoCurtoSP } from '@/lib/cockpit';
 
 describe('estado do painel na query', () => {
   it('lê lead e aba; aba desconhecida vira Fio; sem lead ou com id torto, fechado', () => {
@@ -61,5 +61,16 @@ describe('o nível da régua com o que ele pede (§4.5)', () => {
     expect(comNivelExplicado('a cobrança vai à porta, R4')).toBe('a cobrança vai à porta, R4 (pede a titular, com senha)');
     expect(comNivelExplicado(comNivelExplicado('à liberação (R3)'))).toBe('à liberação (R3: pede uma segunda pessoa)');
     expect(comNivelExplicado('nada muda')).toBe('nada muda');
+  });
+});
+
+describe('chave de sistema vira o nome da casa no fio (§4.5)', () => {
+  it('etapa, tipo de decisão e o resto em snake_case', () => {
+    expect(chavesLegiveis('follow_up → contrato · proposta aceita')).toBe('Follow-up → Contrato · proposta aceita');
+    expect(chavesLegiveis('decisão aberta: pedido_de_ajuste')).toBe('decisão aberta: pedido de ajuste');
+    expect(chavesLegiveis('fechamento · kit_e_trilho: criado')).toBe('fechamento · kit e trilho: criado');
+    expect(chavesLegiveis('novo_lead → qualificacao')).toBe('Novo lead → Qualificação');
+    expect(chavesLegiveis('proposta → follow_up · proposta lida')).toBe('Proposta → Follow-up · proposta lida');
+    expect(chavesLegiveis('link https://x.com/a_b_c fica')).toBe('link https://x.com/a_b_c fica');
   });
 });

@@ -438,11 +438,34 @@ const DIAS_DA_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
  * com fuso; o resto do texto fica como a API escreveu.
  */
 export function instantesLegiveis(texto: string): string {
-  return texto.replace(ISO_NO_TEXTO, (iso) => {
+  const comData = texto.replace(ISO_NO_TEXTO, (iso) => {
     const t = new Date(iso);
     if (Number.isNaN(t.getTime())) return iso;
     const f = new Intl.DateTimeFormat('en-US', { timeZone: FUSO, weekday: 'short' }).format(t);
     const semana = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(f);
     return `${DIAS_DA_SEMANA[semana] ?? ''} ${diaHoraSP(iso)}`.trim();
+  });
+  return chavesLegiveis(comData);
+}
+
+/**
+ * Lane UX §4.5: a chave de sistema no resumo do fio ("follow_up → contrato",
+ * "decisão aberta: pedido_de_ajuste", "kit_e_trilho") vira o nome da casa. A
+ * etapa sai pelo rótulo (sem o "E7 · "), o tipo de decisão pelo rótulo dele, e
+ * o que sobrar em snake_case vira palavras. Endereço (com "/" ou ":") fica.
+ */
+export function chavesLegiveis(texto: string): string {
+  const etapas = COMERCIAL_ROTULO_DA_ETAPA as Record<string, string>;
+  const curto = (k: string) => etapas[k].replace(/^(E\d · |Saída · )/, '');
+  // A mudança de etapa ("proposta → follow_up"): os dois lados são etapa, mesmo os de uma palavra só.
+  const comSeta = texto.replace(/\b([a-z_]+) → ([a-z_]+)\b/g, (t, de: string, para: string) =>
+    etapas[de] && etapas[para] ? `${curto(de)} → ${curto(para)}` : t,
+  );
+  return comSeta.replace(/(^|[\s(·:,])([a-z]+(?:_[a-z0-9]+)+)(?=$|[\s).·:,;])/g, (_t, antes: string, chave: string) => {
+    const etapa = (COMERCIAL_ROTULO_DA_ETAPA as Record<string, string>)[chave];
+    if (etapa) return `${antes}${etapa.replace(/^(E\d · |Saída · )/, '')}`;
+    const decisao = (ROTULO_DO_TIPO_DE_DECISAO as Record<string, string>)[chave];
+    if (decisao) return `${antes}${decisao}`;
+    return `${antes}${chave.replace(/_/g, ' ')}`;
   });
 }
