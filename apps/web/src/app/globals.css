@@ -65,7 +65,8 @@
   --os-line-strong: 195 187 164;
   --os-tx: 34 38 28;
   --os-tx2: 95 102 83;
-  --os-tx3: 101 107 89;
+  /* Lane UX (13/10/2026): era 101 107 89, 4,47:1 sobre o --os-bg claro (abaixo de 4,5:1 em texto pequeno). Agora ~5,1:1. */
+  --os-tx3: 92 98 80;
   --os-ac: 66 98 6;
   --os-ac2: 50 74 5;
   --os-ac-dim: 143 173 96;
