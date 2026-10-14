@@ -2,7 +2,7 @@
 
 Ambiente de homologação do módulo comercial do ROOT OS: projeto Docker próprio (`rootos-comercial`), sem rede, volume ou porta compartilhados com outro projeto da máquina. Não é produção.
 
-O estado da entrega, as pendências e a lista do que depende do Rodrigo estão em `homolog/RESULTADO.md`. O registro linha a linha está em `homolog/progresso.md`. Os laudos da revisão adversarial estão em `homolog/revisao/`.
+O estado da entrega, as pendências e a lista do que depende do Rodrigo estão em `homolog/RESULTADO.md`. O painel do lead e a passada de UX (lane UX, 13/10) estão em `homolog/RESULTADO-UX.md`; a prova no navegador é `node homolog/e2e/ux-painel.mjs`. O registro linha a linha está em `homolog/progresso.md`. Os laudos da revisão adversarial estão em `homolog/revisao/`.
 
 ## 1. Subir do zero
 
