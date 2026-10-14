@@ -1,6 +1,6 @@
 # RESULTADO da lane UX · o cockpit do lead sem sair da tela
 
-> Rodada 6, de 21:30 às 23:30 de 13/10/2026. Imagem final construída do commit 7159330 (o fechamento só acrescenta este documento e o README). Branch `comercial/cockpit-homolog`, sobre a entrega `comercial-entrega-20261013`. Tag `comercial-ux-20261013`. Bundle em `C:\Users\User\dev\rootos-comercial.bundle` (`main..comercial/cockpit-homolog`).
+> Rodada 6, de 21:30 às 22:30 de 13/10/2026. Imagem final construída do commit 7159330 (o fechamento só acrescenta este documento e o README). Branch `comercial/cockpit-homolog`, sobre a entrega `comercial-entrega-20261013`. Tag `comercial-ux-20261013`. Bundle em `C:\Users\User\dev\rootos-comercial.bundle` (`main..comercial/cockpit-homolog`).
 > Roteiro: `docs/comercial/UX-COCKPIT.md`. Registro linha a linha: `homolog/progresso.md` (linhas "Lane UX"). Só o web mudou, mais um build arg no `Dockerfile` e no compose da homologação. A API, o shared e a política não mudaram: nenhuma rota nova, nenhum contrato alterado.
 
 ## 1. O painel do lead
