@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { destinoDaRotaAntiga, lerPainel, linkDoWhatsApp, urlComPainel, urlSemPainel } from '@/app/comercial/_painel/estado';
-import { prazoEmPalavras, quandoCurtoSP } from '@/lib/cockpit';
+import { comNivelExplicado, prazoEmPalavras, quandoCurtoSP } from '@/lib/cockpit';
 
 describe('estado do painel na query', () => {
   it('lê lead e aba; aba desconhecida vira Fio; sem lead ou com id torto, fechado', () => {
@@ -52,5 +52,14 @@ describe('datas e prazos do comercial (§4.2)', () => {
     expect(prazoEmPalavras('2026-10-16T13:00:00.000Z', agora)).toBe('vence sex 16/10 · 10h');
     expect(prazoEmPalavras('2026-10-13T10:00:00.000Z', agora)).toBe('venceu há 2 h');
     expect(prazoEmPalavras('9999-12-31T23:59:59.000Z', agora)).toBe('sem prazo');
+  });
+});
+
+describe('o nível da régua com o que ele pede (§4.5)', () => {
+  it('R3 e R4 vindos da API ganham a explicação, uma vez só', () => {
+    expect(comNivelExplicado('nova versão da proposta com este desconto, à liberação (R3)')).toBe('nova versão da proposta com este desconto, à liberação (R3: pede uma segunda pessoa)');
+    expect(comNivelExplicado('a cobrança vai à porta, R4')).toBe('a cobrança vai à porta, R4 (pede a titular, com senha)');
+    expect(comNivelExplicado(comNivelExplicado('à liberação (R3)'))).toBe('à liberação (R3: pede uma segunda pessoa)');
+    expect(comNivelExplicado('nada muda')).toBe('nada muda');
   });
 });

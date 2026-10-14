@@ -108,6 +108,18 @@ export function prazoEmPalavras(iso: string | null | undefined, agora: Date = ne
   return `vence ${quandoCurtoSP(iso)}`;
 }
 
+/**
+ * O nível da régua escrito pela API ("à liberação (R3)") ganha, na tela, o
+ * que ele pede de alguém (§4.5): sigla sozinha é jargão de sistema.
+ */
+export function comNivelExplicado(texto: string): string {
+  return texto
+    .replace(/\(R3\)/g, '(R3: pede uma segunda pessoa)')
+    .replace(/\(R4\)/g, '(R4: pede a titular, com senha)')
+    .replace(/\bR3\b(?![:)])/g, 'R3 (pede uma segunda pessoa)')
+    .replace(/\bR4\b(?![:)])/g, 'R4 (pede a titular, com senha)');
+}
+
 /** Data só (AAAA-MM-DD, sem hora) como "17/11", sem passar pelo fuso. */
 export function dataDoDia(data: string | null | undefined): string {
   if (!data) return '';

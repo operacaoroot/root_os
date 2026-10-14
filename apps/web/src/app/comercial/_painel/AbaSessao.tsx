@@ -276,7 +276,7 @@ function Proposta({ leadId, s, aoMudar, irParaDecisoes }: { leadId: string; s: S
             {p.conteudo.ultimaParcelaCentavos !== p.conteudo.parcelaCentavos && ` (última ${reaisOuAusente(p.conteudo.ultimaParcelaCentavos)})`}
           </h3>
           <p className="text-[13px]">Estado: <span className="font-semibold">{estado.rotulo}</span></p>
-          {estado.aguardaAprovacao && <AguardandoAprovacao approvalId={p.approvalId} oQue="A publicação da proposta foi à porta (R3)." />}
+          {estado.aguardaAprovacao && <AguardandoAprovacao approvalId={p.approvalId} oQue="A publicação da proposta foi à porta (R3: pede uma segunda pessoa)." />}
           {estado.naFilaDeDecisoes && (
             <Aviso>
               O revisor apontou algo ou a proposta saiu da tabela: ela espera uma decisão na{' '}

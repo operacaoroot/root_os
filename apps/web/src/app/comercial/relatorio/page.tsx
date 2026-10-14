@@ -5,7 +5,7 @@ import type { RelatorioDaSemana } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, diaSP, numeroOuAusente, quandoCurtoSP, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 import { LinkDoLead } from '../_painel/provedor';
@@ -43,7 +43,7 @@ export default function RelatorioPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-center gap-2">
-        <p className="text-[13.5px] text-muted">Pronto antes da reunião de quinta, 19h30.</p>
+        <p className="max-w-xl text-[13.5px] text-muted">Conversão, velocidade, perdas e previsão do período. Pronto sozinho antes da reunião de quinta, 19h30; gere de novo quando quiser.</p>
         <div className="ml-auto flex gap-1.5" role="group" aria-label="período">
           {PERIODOS.map((d) => (
             <button
@@ -57,14 +57,14 @@ export default function RelatorioPage() {
             </button>
           ))}
           <button type="button" className={BOTAO} disabled={gerando} onClick={() => void gerar()}>
-            {gerando ? 'gerando…' : 'gerar agora'}
+            {gerando ? 'Gerando…' : 'Gerar agora'}
           </button>
         </div>
       </header>
 
-      <Erro erro={erro} />
+      <Erro erro={erro} aoTentar={() => void recarregar()} />
       <Erro erro={erroDaAcao} />
-      {carregando && !r && !erro && <Carregando />}
+      {carregando && !r && !erro && <Carregando linhas={3} altura="h-24" />}
 
       {r && (
         <>
@@ -83,7 +83,7 @@ export default function RelatorioPage() {
                   <li key={f.etapa} className="space-y-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0 text-muted">{rotuloDaLinhaDoFunil(f.etapa)}</span>
-                      <span className="shrink-0 font-os-mono">{f.n}</span>
+                      <span className="shrink-0 font-os-mono tabular-nums">{f.n}</span>
                     </div>
                     <span className="block h-2 rounded bg-surface-3">
                       <span className="block h-2 rounded bg-brand" style={{ width: `${(f.n / maxFunil) * 100}%` }} />
@@ -100,7 +100,7 @@ export default function RelatorioPage() {
                 {r.perdasPorMotivo.map((p) => (
                   <li key={p.motivo} className="flex justify-between gap-2">
                     <span>{ROTULO_DO_MOTIVO[p.motivo] ?? p.motivo}</span>
-                    <span className="font-os-mono">{p.n}</span>
+                    <span className="font-os-mono tabular-nums">{p.n}</span>
                   </li>
                 ))}
                 {r.perdasPorMotivo.length === 0 && <li className="text-muted">Nenhuma perda no período.</li>}
@@ -136,7 +136,7 @@ export default function RelatorioPage() {
               </p>
             )}
             <p className="mt-2 text-[11.5px] text-dim">
-              {r.origem === 'ao_vivo' ? `números ao vivo de ${diaHoraSP(r.geradoEm)}, sem leitura gerada para este recorte` : `gerado em ${diaHoraSP(r.geradoEm)}`}
+              {r.origem === 'ao_vivo' ? `números ao vivo de ${quandoCurtoSP(r.geradoEm)}, sem leitura gerada para este recorte` : `gerado ${quandoCurtoSP(r.geradoEm)}`}
             </p>
           </section>
         </>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { CelularDaMesa, CelularDoLead, ListaDeCelulares, MensagemNoCelular } from '@mktos/shared';
+import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
 
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -95,7 +96,7 @@ export default function SimuladorPage() {
                 <li key={l.leadId}>
                   <button type="button" onClick={() => { setLeadId(l.leadId); setConversa(null); }} className={`w-full rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-surface-2 ${leadId === l.leadId ? 'bg-brand/10' : ''} ${FOCO}`}>
                     <span className="font-semibold">{l.nome}</span>
-                    <span className="block font-os-mono text-[10.5px] text-muted">{l.telefone ?? ''} {l.etapa ? `· ${l.etapa}` : ''} {l.naFila ? `· ${l.naFila} na fila` : ''}</span>
+                    <span className="block font-os-mono text-[10.5px] text-muted">{l.telefone ?? ''} {l.etapa ? `· ${COMERCIAL_ROTULO_DA_ETAPA[l.etapa as keyof typeof COMERCIAL_ROTULO_DA_ETAPA] ?? l.etapa}` : ''} {l.naFila ? `· ${l.naFila} na fila` : ''}</span>
                   </button>
                 </li>
               ))}
@@ -300,12 +301,12 @@ function CelularDaMesaView({ mesa, token, agir }: { mesa: CelularDaMesa; token: 
           <div className="mt-2 flex flex-wrap gap-1.5">
             {m.estado === 'na_fila' && m.approvalId && (
               <>
-                <button type="button" onClick={() => agir(() => apiPost(`/approvals/${m.approvalId}/confirm`, {}, token), 'Envio liberado.')} className={BOTAO_PRIMARIO}>liberar envio</button>
-                <Link href="/atendimento" className={BOTAO}>abrir na fila</Link>
+                <button type="button" onClick={() => agir(() => apiPost(`/approvals/${m.approvalId}/confirm`, {}, token), 'Envio liberado.')} className={BOTAO_PRIMARIO}>Liberar envio</button>
+                <Link href="/atendimento" className={BOTAO}>Abrir na fila</Link>
               </>
             )}
             {m.estado === 'em_veto' && (
-              <button type="button" onClick={() => agir(() => apiPost(`/comercial/simulador/mensagens/${m.id}/vetar`, {}, token), 'Vetada: não sai.')} className={BOTAO}>VETO</button>
+              <button type="button" onClick={() => agir(() => apiPost(`/comercial/simulador/mensagens/${m.id}/vetar`, {}, token), 'Vetada: não sai.')} className={BOTAO}>Vetar</button>
             )}
           </div>
         </div>

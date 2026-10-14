@@ -11,7 +11,7 @@ import type { DecisaoNaFila } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_TIPO_DE_DECISAO, decisaoSemPrazo, ehContrapropostaProvisoria, prazoDaDecisao, quandoSP, rotuloDoPadrao } from '@/lib/cockpit';
+import { ROTULO_DO_TIPO_DE_DECISAO, comNivelExplicado, decisaoSemPrazo, ehContrapropostaProvisoria, prazoDaDecisao, quandoCurtoSP, rotuloDoPadrao } from '@/lib/cockpit';
 
 import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Chip, ErroDaAcao, FOCO } from './_ui';
 import { LinkDoLead } from './_painel/provedor';
@@ -39,6 +39,8 @@ export function CartaoDeDecisao({
   const [enviando, setEnviando] = useState<string | null>(null);
   const [erro, setErro] = useState<unknown>(null);
   const prazo = prazoDaDecisao(d.expiraEm);
+  // O mesmo cartão pode estar na fila e no painel ao mesmo tempo: os ids não se repetem.
+  const base = noPainel ? `painel-dec-${d.id}` : `dec-${d.id}`;
 
   async function responder(escolha: string, rotulo: string, efeito: string | undefined) {
     if (enviando) return;
@@ -55,7 +57,7 @@ export function CartaoDeDecisao({
   }
 
   return (
-    <article id={`dec-${d.id}`} className={`${CARTAO} space-y-3`} aria-labelledby={`dec-titulo-${d.id}`}>
+    <article id={base} className={`${CARTAO} space-y-3`} aria-labelledby={`${base}-titulo`}>
       <div className="flex flex-wrap items-center gap-2">
         <Chip tom="brand">{ROTULO_DO_TIPO_DE_DECISAO[d.tipo] ?? d.tipo}</Chip>
         <Chip tom={prazo.vencido ? 'ruim' : 'alerta'}>{prazo.texto}</Chip>
@@ -66,7 +68,7 @@ export function CartaoDeDecisao({
         )}
       </div>
       <div>
-        <h3 id={`dec-titulo-${d.id}`} className="text-[15px] font-semibold">{d.titulo}</h3>
+        <h3 id={`${base}-titulo`} className="text-[15px] font-semibold">{d.titulo}</h3>
         <p className="mt-1 text-[13px] text-muted">{d.contexto}</p>
       </div>
       {propostaMinha && <Aviso>Você propôs esta decisão. Outra pessoa da mesa responde.</Aviso>}
@@ -83,7 +85,7 @@ export function CartaoDeDecisao({
                 aria-busy={enviando === o.chave || undefined}
                 onClick={() => void responder(o.chave, o.rotulo, o.efeito)}
                 className={ehPadrao ? BOTAO_PRIMARIO : BOTAO}
-                title={o.efeito}
+                title={o.efeito ? comNivelExplicado(o.efeito) : undefined}
               >
                 {enviando === o.chave ? `${o.rotulo}…` : o.rotulo}
                 {ehPadrao && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">padrão</span>}
@@ -97,7 +99,7 @@ export function CartaoDeDecisao({
       <ul className="space-y-0.5 text-[12px] text-muted">
         {d.opcoes.filter((o) => o.efeito).map((o) => (
           <li key={o.chave}>
-            <span className="text-text">{o.rotulo}:</span> {o.efeito}
+            <span className="text-text">{o.rotulo}:</span> {comNivelExplicado(o.efeito ?? '')}
             {ehContrapropostaProvisoria(d, o.chave) && (
               <span className="text-warn"> Contraproposta provisória [a decidir]: a metade do pedido é número do sistema, sem base no mapa de preço.</span>
             )}
@@ -111,7 +113,7 @@ export function CartaoDeDecisao({
           </>
         ) : (
           <>
-            Se ninguém responder até {quandoSP(d.expiraEm)}, vale o padrão: <span className="text-text">{rotuloDoPadrao(d)}</span>.
+            Se ninguém responder até {quandoCurtoSP(d.expiraEm)}, vale o padrão: <span className="text-text">{rotuloDoPadrao(d)}</span>.
           </>
         )}
       </p>

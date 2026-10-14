@@ -3,7 +3,7 @@
 import type { PremissaDoVigia, TorreDasAutomacoes } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_AUTOMACAO } from '@mktos/shared';
 
-import { custoDaTorre, diaHoraSP, horaSP, percentual, quandoSP } from '@/lib/cockpit';
+import { custoDaTorre, diaSemanaSP, horaSP, percentual, quandoCurtoSP } from '@/lib/cockpit';
 
 import { CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
 import { LinkDoLead } from '../_painel/provedor';
@@ -15,20 +15,20 @@ import { LinkDoLead } from '../_painel/provedor';
  * que quebrou. Só lê. Erro da API aparece na caixa de erro, sem número.
  */
 export default function TorrePage() {
-  const { dados: t, erro, carregando } = useCarregar<TorreDasAutomacoes>('/comercial/torre', 60_000);
+  const { dados: t, erro, carregando, recarregar } = useCarregar<TorreDasAutomacoes>('/comercial/torre', 60_000);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <p className="text-[13.5px] text-muted">
         O vigia confere as premissas de cada automação todo dia às 08:00; o que quebrou aparece aqui, com os leads atingidos. A autonomia sobe de degrau com prova, e quem aprova a subida é gente.
       </p>
-      <Erro erro={erro} />
-      {carregando && !t && !erro && <Carregando />}
+      <Erro erro={erro} aoTentar={() => void recarregar()} />
+      {carregando && !t && !erro && <Carregando linhas={3} altura="h-24" />}
       {t && (
         <>
           <PremissasQuebradas premissas={t.vigia.premissas} quebradas={t.vigia.premissasQuebradas} />
           <section aria-label="vigia" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Numero valor={t.vigia.ultimaPassagemEm ? horaSP(t.vigia.ultimaPassagemEm) : 'ausente'} legenda={t.vigia.ultimaPassagemEm ? `última passagem do vigia · ${diaHoraSP(t.vigia.ultimaPassagemEm).slice(0, 5)}` : 'o vigia ainda não passou'} />
+            <Numero valor={t.vigia.ultimaPassagemEm ? horaSP(t.vigia.ultimaPassagemEm) : 'ausente'} legenda={t.vigia.ultimaPassagemEm ? `última passagem do vigia · ${diaSemanaSP(t.vigia.ultimaPassagemEm)}` : 'o vigia ainda não passou'} />
             <Numero valor={String(t.vigia.premissasConferidas)} legenda="premissas conferidas" />
             <Numero valor={String(t.vigia.premissasQuebradas)} legenda="premissas quebradas" tom={t.vigia.premissasQuebradas ? 'ruim' : undefined} />
             <Numero valor={custoDaTorre(t).valor} legenda={custoDaTorre(t).legenda} />
@@ -50,8 +50,8 @@ export default function TorrePage() {
                       <Chip tom="info" title="Um mês sem erro. Quem sobe o degrau é gente, na configuração do comercial.">sugere {a.proximoDegrau}</Chip>
                     )}
                   </span>
-                  <span className="font-os-mono text-[12px] text-muted">{a.ultimaVezEm ? quandoSP(a.ultimaVezEm) : 'nunca'}</span>
-                  <span className="font-os-mono text-[12px]" title={a.passagens30Dias != null ? `${a.passagens30Dias} passagens em 30 dias` : undefined}>
+                  <span className="font-os-mono text-[12px] tabular-nums text-muted">{a.ultimaVezEm ? quandoCurtoSP(a.ultimaVezEm) : 'nunca'}</span>
+                  <span className="font-os-mono text-[12px] tabular-nums" title={a.passagens30Dias != null ? `${a.passagens30Dias} passagens em 30 dias` : undefined}>
                     <span className="md:hidden text-muted">rodou sem erro </span>
                     {percentual(a.acerto30Dias)}
                   </span>
