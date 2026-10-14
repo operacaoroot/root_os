@@ -41,6 +41,11 @@ ENV API_PROXY_TARGET=${API_PROXY_TARGET}
 ARG NEXT_PUBLIC_CENTRAL_PIXEL_KEY=
 ENV NEXT_PUBLIC_CENTRAL_PIXEL_KEY=${NEXT_PUBLIC_CENTRAL_PIXEL_KEY}
 
+# Para onde vai a raiz `/` do web. Vazio (produção) = o site público; `login`
+# (homologação) = a tela de login. Também é fixado no `next build`.
+ARG NEXT_PUBLIC_RAIZ=
+ENV NEXT_PUBLIC_RAIZ=${NEXT_PUBLIC_RAIZ}
+
 # Copia o monorepo (o .dockerignore já exclui node_modules/dist/.next/.env).
 COPY . .
 

@@ -94,6 +94,8 @@ services:
       context: ..
       args:
         NEXT_PUBLIC_CENTRAL_PIXEL_KEY: ""
+        # Lane UX §4.9: na homologação a raiz abre o /login, não o site.
+        NEXT_PUBLIC_RAIZ: login
     image: rootos-comercial-app
     container_name: rootos_comercial_api
     working_dir: /app/apps/api
