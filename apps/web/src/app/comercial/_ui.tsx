@@ -14,8 +14,9 @@ import { useAuth } from '@/lib/auth';
 import { faixaDaSaude } from '@/lib/cockpit';
 
 export const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand';
-export const BOTAO = `rounded border border-border px-3 py-1.5 text-[12.5px] transition hover:border-brand disabled:opacity-50 ${FOCO}`;
-export const BOTAO_PRIMARIO = `rounded bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-ink transition hover:bg-brand/90 disabled:opacity-50 ${FOCO}`;
+// No celular o botão tem 44 px de altura (o alvo do polegar); no desktop, a altura do texto.
+export const BOTAO = `inline-flex items-center justify-center rounded border border-border px-3 py-1.5 text-[12.5px] transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[44px] ${FOCO}`;
+export const BOTAO_PRIMARIO = `inline-flex items-center justify-center rounded bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-ink transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[44px] ${FOCO}`;
 export const ROTULO = 'font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted';
 export const CARTAO = 'rounded border border-border bg-surface p-4';
 export const INPUT = `w-full rounded border border-border bg-bg px-3 py-2 text-[13px] outline-none focus:border-brand ${FOCO}`;
@@ -73,17 +74,67 @@ export function Rotulo({ children, className = '' }: { children: React.ReactNode
   return <h2 className={`${ROTULO} ${className}`}>{children}</h2>;
 }
 
-export function Carregando() {
-  return <p className="text-[13px] text-muted" role="status">carregando…</p>;
+/**
+ * Carregando: um esqueleto do tamanho do que vai chegar (sem salto quando o
+ * dado chega), com o texto para leitor de tela.
+ */
+export function Carregando({ linhas = 3, altura = 'h-16' }: { linhas?: number; altura?: string }) {
+  return (
+    <div role="status" aria-live="polite" className="space-y-2">
+      <span className="sr-only">carregando…</span>
+      {Array.from({ length: linhas }, (_, i) => (
+        <div key={i} aria-hidden className={`${altura} animate-pulse rounded border border-border bg-surface-2 motion-reduce:animate-none`} />
+      ))}
+    </div>
+  );
 }
 
-export function Erro({ erro }: { erro: unknown }) {
+/** O código que acompanha a frase do erro: o da API quando ela deu, senão o status HTTP. */
+export function codigoDoErro(erro: unknown): string | null {
+  if (!(erro instanceof ErroDaApi)) return null;
+  if (erro.codigo) return `${erro.codigo} · ${erro.status}`;
+  return erro.status ? String(erro.status) : null;
+}
+
+/** Erro de carregar: a frase, o código e, quando dá, o botão de tentar de novo. */
+export function Erro({ erro, aoTentar }: { erro: unknown; aoTentar?: () => void }) {
   if (!erro) return null;
+  const codigo = codigoDoErro(erro);
   return (
     <div role="alert" className="rounded border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">
-      <p>{erro instanceof Error ? erro.message : String(erro)}</p>
+      <p>
+        {erro instanceof Error ? erro.message : String(erro)}
+        {codigo && <span className="ml-1.5 font-os-mono text-[11px] tabular-nums opacity-80">código {codigo}</span>}
+      </p>
       {erro instanceof ErroDaApi && erro.detalhes.length > 0 && (
         <ul className="mt-1 list-disc pl-5">
+          {erro.detalhes.map((d, i) => <li key={i}>{d}</li>)}
+        </ul>
+      )}
+      {aoTentar && (
+        <button type="button" onClick={aoTentar} className={`mt-2 ${BOTAO} text-text`}>
+          tentar de novo
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * O erro de uma AÇÃO, ao lado do botão que a disparou: a frase e o código da
+ * API, sem caixa vermelha genérica (lane UX, §2).
+ */
+export function ErroDaAcao({ erro }: { erro: unknown }) {
+  if (!erro) return null;
+  const codigo = codigoDoErro(erro);
+  return (
+    <div role="alert" className="text-[12.5px] text-bad">
+      <p>
+        {erro instanceof Error ? erro.message : String(erro)}
+        {codigo && <span className="ml-1.5 font-os-mono text-[11px] tabular-nums opacity-80">código {codigo}</span>}
+      </p>
+      {erro instanceof ErroDaApi && erro.detalhes.length > 0 && (
+        <ul className="mt-0.5 list-disc pl-5">
           {erro.detalhes.map((d, i) => <li key={i}>{d}</li>)}
         </ul>
       )}
@@ -150,29 +201,5 @@ export function Numero({ valor, legenda, tom }: { valor: string; legenda: string
       <p className={`font-os-mono text-[21px] leading-none md:text-[26px] ${tom === 'brand' ? 'text-brand' : tom === 'ruim' ? 'text-bad' : ''}`}>{valor}</p>
       <p className="mt-1.5 text-[12px] text-muted">{legenda}</p>
     </div>
-  );
-}
-
-/** Navegação curta entre as telas de um lead. */
-export function AbasDoLead({ leadId, atual }: { leadId: string; atual: 'fio' | 'sessao' | 'fechamento' | 'contrato' }) {
-  const abas = [
-    { chave: 'fio', rotulo: 'fio e ficha', href: `/comercial/lead/${leadId}` },
-    { chave: 'sessao', rotulo: 'depois da sessão', href: `/comercial/lead/${leadId}/sessao` },
-    { chave: 'fechamento', rotulo: 'fechamento', href: `/comercial/lead/${leadId}/fechamento` },
-    { chave: 'contrato', rotulo: 'contrato vivo', href: `/comercial/contratos/${leadId}` },
-  ] as const;
-  return (
-    <nav aria-label="telas do lead" className="flex flex-wrap gap-1.5">
-      {abas.map((a) => (
-        <Link
-          key={a.chave}
-          href={a.href}
-          aria-current={a.chave === atual ? 'page' : undefined}
-          className={`rounded border px-2.5 py-1 text-[12px] ${a.chave === atual ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
-        >
-          {a.rotulo}
-        </Link>
-      ))}
-    </nav>
   );
 }

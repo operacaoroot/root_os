@@ -51,6 +51,12 @@ export default function SimuladorPage() {
     }
   }, [token, leadId]);
 
+  // Vindo do painel do lead ("WhatsApp"), o celular já abre na conversa dele.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('conversa');
+    if (c && /^[A-Za-z0-9_-]{1,64}$/.test(c)) setLeadId(c);
+  }, []);
+
   useEffect(() => {
     if (!ready || !token) return;
     void carregar();
@@ -267,7 +273,12 @@ function CelularDaMesaView({ mesa, token, agir }: { mesa: CelularDaMesa; token: 
     <div className="flex-1 space-y-3 overflow-y-auto p-3">
       {mesa.decisoes.map((d) => (
         <div key={d.id} className="rounded-2xl border border-border bg-surface px-3 py-2 text-[13px]">
-          <div className="font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">decisão · {d.leadNome}</div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">decisão · {d.leadNome}</span>
+            <Link href={`/comercial?lead=${encodeURIComponent(d.leadId)}&aba=decisoes`} className={`ml-auto text-[11.5px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`}>
+              abrir no cockpit
+            </Link>
+          </div>
           <p className="font-semibold">{d.titulo}</p>
           <p className="text-muted">{d.contexto}</p>
           <p className="mt-1 text-[11.5px] text-muted">Padrão se ninguém responder até {dataHora(d.expiraEm)}: {d.opcoes.find((o) => o.chave === d.padrao)?.rotulo ?? d.padrao}.</p>

@@ -5,9 +5,8 @@ import { COMERCIAL_ROTULO_DA_AUTOMACAO } from '@mktos/shared';
 
 import { custoDaTorre, diaHoraSP, horaSP, percentual, quandoSP } from '@/lib/cockpit';
 
-import Link from 'next/link';
-
 import { CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+import { LinkDoLead } from '../_painel/provedor';
 
 /*
  * TELA 12 · A TORRE DAS AUTOMAÇÕES (lane C). Cada automação com o nível de
@@ -98,9 +97,9 @@ function PremissasQuebradas({ premissas, quebradas }: { premissas?: PremissaDoVi
               <p className="mt-0.5 flex flex-wrap gap-x-2 text-[12px]">
                 <span className="text-muted">{p.leads.length === 1 ? 'lead:' : `${p.leads.length} leads:`}</span>
                 {p.leads.slice(0, 10).map((id) => (
-                  <Link key={id} href={`/comercial/lead/${id}`} className={`font-os-mono underline-offset-2 hover:underline ${FOCO}`}>
+                  <LinkDoLead key={id} leadId={id} className={`font-os-mono underline-offset-2 hover:underline ${FOCO}`}>
                     {id.slice(0, 8)}
-                  </Link>
+                  </LinkDoLead>
                 ))}
                 {p.leads.length > 10 && <span className="text-muted">e mais {p.leads.length - 10}</span>}
               </p>

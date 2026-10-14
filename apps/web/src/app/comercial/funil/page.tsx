@@ -10,12 +10,17 @@ import { useAuth } from '@/lib/auth';
 import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, agruparFunil, descricaoJaDizQuando, diaSP, motivoDoBloqueio, quandoRoda } from '@/lib/cockpit';
 
 import { Aviso, BarraDaSaude, BOTAO, Carregando, Chip, Erro, FOCO, useCarregar } from '../_ui';
+import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
+import { moverFocoNoFunil } from '../_painel/teclado';
 
 /*
- * TELA 04 · O FUNIL VIVO (lane C). Para olhar, não para operar: o cartão anda
- * sozinho quando o fato chega. Arrastar é BLOQUEADO, e a tela diz por quê,
- * com a lista do portão que falta para a próxima etapa (lida da ficha).
+ * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX). Para olhar, não para
+ * operar: o cartão anda sozinho quando o fato chega. Arrastar é BLOQUEADO, e a
+ * tela diz por quê, com a lista do portão que falta para a próxima etapa (lida
+ * da ficha). Clicar no cartão abre o painel do lead por cima do funil, na aba
+ * Fio; pelo teclado, as setas andam entre os cartões e Enter abre.
  */
+
 
 const FILTROS: { chave: string; rotulo: string }[] = [
   { chave: 'todos', rotulo: 'todos' },
@@ -31,7 +36,8 @@ const FILTROS: { chave: string; rotulo: string }[] = [
 export default function FunilVivoPage() {
   const { token } = useAuth();
   const [filtro, setFiltro] = useState('todos');
-  const { dados, erro, carregando } = useCarregar<FunilVivo>(`/comercial/funil?filtro=${encodeURIComponent(filtro)}`, 30_000);
+  const { dados, erro, carregando, recarregar } = useCarregar<FunilVivo>(`/comercial/funil?filtro=${encodeURIComponent(filtro)}`, 30_000);
+  useMudouNoPainel(recarregar);
   const [bloqueio, setBloqueio] = useState<{ leadId: string; texto: string } | null>(null);
   // C-11: só a última leitura do portão escreve; a de um cartão anterior que chegar depois é descartada.
   const ultimoPedido = useRef(0);
@@ -71,14 +77,14 @@ export default function FunilVivoPage() {
           <Link href="/comercial" className={`ml-auto ${BOTAO}`}>fila de decisões</Link>
         </div>
         <p className="text-[12.5px] text-muted">
-          O funil se move sozinho com os fatos. A barra embaixo do nome é a saúde do lead. Arrastar cartão fica bloqueado: quem move é o evento.
+          O funil se move sozinho com os fatos. Abra um cartão para ver o lead sem sair daqui (setas do teclado andam entre os cartões, Enter abre). A barra embaixo do nome é a saúde. Arrastar fica bloqueado: quem move é o evento.
         </p>
       </header>
 
-      <Erro erro={erro} />
+      <Erro erro={erro} aoTentar={() => void recarregar()} />
       {/* C-20: acima do teto de leitura a API corta os mais antigos na etapa e diz quantos ficaram de fora. */}
       {dados?.aviso && <Aviso>{dados.aviso}</Aviso>}
-      {carregando && !dados && <Carregando />}
+      {carregando && !dados && !erro && <Carregando linhas={2} altura="h-32" />}
       {bloqueio && (
         <div className="flex items-start gap-2" aria-live="polite">
           <Aviso>{bloqueio.texto}</Aviso>
@@ -87,17 +93,18 @@ export default function FunilVivoPage() {
       )}
 
       {dados && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7" onKeyDown={moverFocoNoFunil}>
           {grupos.map((g) => (
             <section
               key={g.chave}
               aria-label={g.rotulo}
+              data-coluna-do-funil
               className="min-w-0 rounded border border-border bg-bg2 p-2"
               onDragOver={(e) => e.preventDefault()}
             >
               <h2 className="flex items-baseline justify-between px-1 pb-2 font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">
                 <span>{g.rotulo}</span>
-                <span>{g.cartoes.length}</span>
+                <span className="tabular-nums">{g.cartoes.length}</span>
               </h2>
               <ul className="space-y-2">
                 {g.cartoes.map((c) => (
@@ -125,19 +132,24 @@ function Cartao({ c, aoTentarMover }: { c: CartaoDoFunil; aoTentarMover: () => v
         e.preventDefault();
         aoTentarMover();
       }}
-      className={`rounded border bg-surface p-2.5 ${c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
+      onClick={(e) => {
+        // O cartão inteiro abre o painel; o botão "mover" e o próprio link cuidam de si.
+        if ((e.target as HTMLElement).closest('a, button')) return;
+        e.currentTarget.querySelector<HTMLAnchorElement>('[data-cartao-do-funil]')?.click();
+      }}
+      className={`cursor-pointer rounded border bg-surface p-2.5 transition hover:border-brand/70 ${c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
     >
       <div className="flex items-start gap-2">
-        <Link href={`/comercial/lead/${c.leadId}`} className={`min-w-0 flex-1 ${FOCO}`}>
+        <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
           <p className="truncate text-[13.5px] font-semibold">{c.empresa ?? c.nome}</p>
           {c.empresa && c.empresa !== c.nome && <p className="truncate text-[11.5px] text-muted">{c.nome}</p>}
-        </Link>
+        </LinkDoLead>
         <button
           type="button"
           onClick={aoTentarMover}
           aria-label={`mover ${c.nome}: por que está bloqueado`}
           title="mover está bloqueado: a etapa anda pelo fato"
-          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-dim hover:border-brand ${FOCO}`}
+          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-dim hover:border-brand max-md:min-h-[32px] ${FOCO}`}
         >
           mover
         </button>

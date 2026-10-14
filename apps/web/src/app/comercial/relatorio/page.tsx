@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import type { RelatorioDaSemana } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
@@ -9,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { ROTULO_DO_MOTIVO, diaHoraSP, diaSP, numeroOuAusente, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
+import { LinkDoLead } from '../_painel/provedor';
 
 /*
  * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por
@@ -117,7 +117,7 @@ export default function RelatorioPage() {
                   <ul className="mt-2 space-y-1 text-[13px]">
                     {r.propostasVencendo.map((p) => (
                       <li key={p.leadId} className="flex justify-between gap-2">
-                        <Link href={`/comercial/lead/${p.leadId}`} className={`min-w-0 truncate hover:text-brand ${FOCO}`}>{p.nome}</Link>
+                        <LinkDoLead leadId={p.leadId} aba="sessao" className={`min-w-0 truncate hover:text-brand ${FOCO}`}>{p.nome}</LinkDoLead>
                         <span className="shrink-0 font-os-mono text-muted">vence {diaSP(p.validade)}</span>
                       </li>
                     ))}

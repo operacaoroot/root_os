@@ -54,6 +54,60 @@ export function diaHoraSP(iso: string | null | undefined): string {
   return p ? `${dd(p.dia)}/${dd(p.mes)} ${dd(p.hora)}:${dd(p.minuto)}` : '';
 }
 
+const DIA_DA_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/** O dia da semana de um instante em São Paulo (0 = domingo). */
+function diaDaSemanaSP(iso: string): number | null {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  const nome = new Intl.DateTimeFormat('en-US', { timeZone: FUSO, weekday: 'short' }).format(t);
+  const i = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(nome);
+  return i < 0 ? null : i;
+}
+
+/** "qui 16/10" em São Paulo (lane UX, §4.2). */
+export function diaSemanaSP(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = diaDaSemanaSP(iso);
+  const dia = diaSP(iso);
+  return d == null || !dia ? dia : `${DIA_DA_SEMANA[d]} ${dia}`;
+}
+
+/** "10h" ou "10h30" em São Paulo. */
+export function horaCurtaSP(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const p = partesSP(iso);
+  if (!p) return '';
+  return p.minuto === 0 ? `${p.hora}h` : `${p.hora}h${dd(p.minuto)}`;
+}
+
+/** "qui 16/10 · 10h" em São Paulo: o jeito de escrever data e hora nas telas do comercial (nunca ISO cru). */
+export function quandoCurtoSP(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const dia = diaSemanaSP(iso);
+  const hora = horaCurtaSP(iso);
+  return dia && hora ? `${dia} · ${hora}` : dia;
+}
+
+/**
+ * Um prazo em palavras (§4.2): "em 4 h", "vence hoje 18h", "vence amanhã 9h",
+ * "venceu há 2 h". Instante inválido ou a sentinela de "sem prazo" (9999) dão
+ * "sem prazo", nunca "2,9 milhões de dias".
+ */
+export function prazoEmPalavras(iso: string | null | undefined, agora: Date = new Date()): string {
+  if (!iso || decisaoSemPrazo(iso)) return 'sem prazo';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return 'sem prazo';
+  const falta = t - agora.getTime();
+  if (falta <= 0) return `venceu há ${duracao(falta)}`;
+  if (falta < 6 * 3600_000) return `em ${duracao(falta)}`;
+  const hoje = diaSP(agora.toISOString());
+  const amanha = diaSP(new Date(agora.getTime() + 86_400_000).toISOString());
+  if (diaSP(iso) === hoje) return `vence hoje ${horaCurtaSP(iso)}`;
+  if (diaSP(iso) === amanha) return `vence amanhã ${horaCurtaSP(iso)}`;
+  return `vence ${quandoCurtoSP(iso)}`;
+}
+
 /** Data só (AAAA-MM-DD, sem hora) como "17/11", sem passar pelo fuso. */
 export function dataDoDia(data: string | null | undefined): string {
   if (!data) return '';

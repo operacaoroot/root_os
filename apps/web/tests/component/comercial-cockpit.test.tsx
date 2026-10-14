@@ -44,9 +44,9 @@ vi.mock('@/lib/api', async (original) => {
 import TorrePage from '@/app/comercial/torre/page';
 import RelatorioPage from '@/app/comercial/relatorio/page';
 import FilaPage from '@/app/comercial/page';
-import SessaoPage from '@/app/comercial/lead/[id]/sessao/page';
+import { AbaSessao } from '@/app/comercial/_painel/AbaSessao';
 import FunilPage from '@/app/comercial/funil/page';
-import ContratoVivoPage from '@/app/comercial/contratos/[leadId]/page';
+import { AbaDinheiro } from '@/app/comercial/_painel/AbaDinheiro';
 
 beforeEach(() => {
   RESPOSTAS = {};
@@ -178,7 +178,20 @@ describe('fila de decisões (tela 03)', () => {
   });
 });
 
-describe('depois da sessão (tela 06): aprovar o diagnóstico é da mesa (E-4/C-8)', () => {
+const nada = async () => {};
+const SessaoPage = () => <AbaSessao leadId="l1" aoMudar={nada} irParaDecisoes={() => {}} />;
+/** A ficha mínima que a aba Dinheiro lê: o fio diz o que já aconteceu. */
+const fichaComFio = (...tipos: string[]) =>
+  ({
+    leadId: 'l1', nome: 'Marina', empresa: 'Construtora Alicerce', etapa: 'fechado', produto: null, valorCentavos: 100, parcelas: null, forma: null, validade: null,
+    ligadoA: { sala: null, ata: true, proposta: 1, contrato: null, cobranca: null },
+    fio: tipos.map((type, i) => ({ eventoId: `e${i}`, type, fonte: 'sistema', resumo: type, em: '2026-10-13T15:00:00.000Z', dia: 1 })),
+  }) as never;
+const ContratoVivoPage = ({ tipos = ['proposta.aceita', 'contrato.gerado', 'cliente.ativo'] }: { tipos?: string[] }) => (
+  <AbaDinheiro leadId="l1" ficha={fichaComFio(...tipos)} aoMudar={nada} />
+);
+
+describe('depois da sessão (tela 06, aba Sessão do painel): aprovar o diagnóstico é da mesa (E-4/C-8)', () => {
   const sessao = {
     diagnostico: { eventoId: 'diag-A', em: '2026-10-13T15:00:00.000Z', dores: [{ n: 1, texto: 'fechamento demora', minuto: '04:12' }], objecoes: [], aprovadoEm: null },
     leitorDeAta: [],
@@ -192,7 +205,7 @@ describe('depois da sessão (tela 06): aprovar o diagnóstico é da mesa (E-4/C-
     RESPOSTAS['/comercial/lead/l1/sessao'] = sessao;
     render(<SessaoPage />);
     expect(await screen.findByText('esperando aprovação da mesa')).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'aprovar este diagnóstico' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Aprovar este diagnóstico' }));
     await waitFor(() => expect(posts).toEqual([{ caminho: '/comercial/lead/l1/diagnostico/aprovar', corpo: { eventoId: 'diag-A' } }]));
   });
 
@@ -275,7 +288,8 @@ describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', ()
     RESPOSTAS['/comercial/torre'] = t;
     render(<TorrePage />);
     expect(await screen.findByText(/2 formulário\(s\) respondido\(s\)/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'lead-aaa' })).toHaveAttribute('href', '/comercial/lead/lead-aaaa-1111');
+    // Lane UX: o lead abre no painel; fora do provedor o link leva ao funil com o painel aberto.
+    expect(screen.getByRole('link', { name: 'lead-aaa' })).toHaveAttribute('href', '/comercial/funil?lead=lead-aaaa-1111&aba=fio');
     expect(screen.getByText(/1 premissa não pôde ser conferida/)).toBeInTheDocument();
     expect(screen.getByText('sugere A2')).toBeInTheDocument();
     expect(screen.getByText('da régua')).toBeInTheDocument();
@@ -294,13 +308,13 @@ describe('torre e relatório dizem o que quebrou e o que falta (C-15, E-20)', ()
     RESPOSTAS['/comercial/relatorio/semana'] = r;
     render(<RelatorioPage />);
     expect(await screen.findByText('ausente: a taxa da previsão é [a decidir]')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Construtora Alicerce' })).toHaveAttribute('href', '/comercial/lead/l9');
+    expect(screen.getByRole('link', { name: 'Construtora Alicerce' })).toHaveAttribute('href', '/comercial/funil?lead=l9&aba=sessao');
     expect(screen.getByText('vence 18/10')).toBeInTheDocument();
     expect(screen.getByText(/tirada uma frase com número/)).toBeInTheDocument();
   });
 });
 
-describe('contrato vivo (tela 11)', () => {
+describe('contrato vivo (tela 11, aba Dinheiro do painel)', () => {
   const vivo = (aditivos: number | null) => ({
     leadId: 'l1', cliente: 'Construtora Alicerce', produto: null, valorCentavos: 100, descontoPct: null, parcelas: [], reguaDeCobranca: [],
     entregas: [], primeiroValorEm: null, saude: null, faseDaImplantacao: null, marcos: [], aditivos,
@@ -310,7 +324,7 @@ describe('contrato vivo (tela 11)', () => {
     PARAMS = { leadId: 'l1' };
     RESPOSTAS['/comercial/contratos/l1'] = vivo(null);
     const { unmount } = render(<ContratoVivoPage />);
-    expect(await screen.findByText('Construtora Alicerce')).toBeInTheDocument();
+    expect(await screen.findByText(/Primeiro valor percebido/)).toBeInTheDocument();
     expect(screen.queryByText(/Aditivos/)).toBeNull();
     unmount();
     RESPOSTAS['/comercial/contratos/l1'] = vivo(2);
@@ -328,11 +342,11 @@ describe('botões desligados durante o envio (C-18)', () => {
     };
     let soltar!: (v: unknown) => void;
     POST_ADIADO = new Promise((r) => { soltar = r; });
-    render(<ContratoVivoPage />);
+    render(<ContratoVivoPage tipos={['proposta.aceita', 'contrato.gerado', 'contrato.assinado_cliente']} />);
     const u = userEvent.setup();
     await u.type(await screen.findByLabelText(/sua senha/), 'segredo');
-    await u.click(screen.getByRole('button', { name: 'ver a assinatura da Root' }));
-    const botao = screen.getByRole('button', { name: 'conferindo…' });
+    await u.click(screen.getByRole('button', { name: 'Assinar pela Root' }));
+    const botao = screen.getByRole('button', { name: 'Conferindo…' });
     expect(botao).toBeDisabled();
     await u.click(botao);
     expect(posts).toHaveLength(1);

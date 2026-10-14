@@ -2,24 +2,43 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import type { DecisaoNaFila, FilaDeDecisoes } from '@mktos/shared';
+import type { FilaDeDecisoes } from '@mktos/shared';
 
-import { apiPost } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
-import { ROTULO_DA_FONTE, ROTULO_DO_TIPO_DE_DECISAO, decisaoSemPrazo, ehContrapropostaProvisoria, horaSP, instantesLegiveis, prazoDaDecisao, quandoSP, rotuloDoPadrao } from '@/lib/cockpit';
+import { ROTULO_DA_FONTE, horaSP, instantesLegiveis } from '@/lib/cockpit';
 
-import { Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
+import { Aviso, BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from './_ui';
+import { CartaoDeDecisao } from './_decisao';
+import { LinkDoLead, useMudouNoPainel, usePainel } from './_painel/provedor';
 
 /*
- * TELA 03 · A FILA DE DECISÕES (lane C). A tela principal do comercial é a
- * das exceções: só o que saiu da regra, com a decisão pronta em um toque, o
- * padrão escrito e o prazo. Se o prazo vencer, o relógio aplica o padrão.
- * O funil existe para olhar; aqui é onde se decide.
+ * TELA 03 · A FILA DE DECISÕES (lane C; painel na lane UX). A tela principal
+ * do comercial é a das exceções: só o que saiu da regra, com a decisão pronta
+ * em um toque, o padrão escrito e o prazo. Se o prazo vencer, o relógio
+ * aplica o padrão. O nome do lead abre o painel por cima da fila, na aba
+ * Decisões; decidir tira o cartão da fila com uma transição curta.
  */
 export default function FilaDeDecisoesPage() {
   const { dados, erro, carregando, recarregar } = useCarregar<FilaDeDecisoes>('/comercial/fila', 30_000);
+  const painel = usePainel();
+  useMudouNoPainel(recarregar);
   const [tudo, setTudo] = useState(false);
+  // Os cartões que acabaram de ser respondidos: saem com a transição antes da fila reler.
+  const [saindo, setSaindo] = useState<Set<string>>(new Set());
   const limite = tudo ? 200 : 12;
+
+  async function respondida(id: string, texto: string) {
+    setSaindo((s) => new Set(s).add(id));
+    painel.avisar(texto);
+    await new Promise((r) => setTimeout(r, 220));
+    await recarregar();
+    setSaindo((s) => {
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    });
+  }
+
+  const decisoes = dados?.decisoes ?? [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -27,16 +46,18 @@ export default function FilaDeDecisoesPage() {
         <p className="max-w-2xl text-[13.5px] text-muted">
           Só o que precisa de alguém. Cada decisão tem o padrão escrito e o prazo; se ninguém responder, vale o padrão.
         </p>
-        <nav className="flex flex-wrap gap-2 text-[12.5px]">
-          <Link href="/comercial/funil" className={`${BOTAO}`}>funil vivo</Link>
-          <Link href="/comercial/contratos" className={`${BOTAO}`}>contratos</Link>
-          <Link href="/comercial/torre" className={`${BOTAO}`}>torre</Link>
-          <Link href="/comercial/relatorio" className={`${BOTAO}`}>relatório</Link>
+        <nav aria-label="outras telas do comercial" className="flex flex-wrap gap-2 text-[12.5px]">
+          <Link href="/comercial/funil" className={BOTAO}>funil vivo</Link>
+          <Link href="/comercial/contratos" className={BOTAO}>contratos</Link>
+          <Link href="/comercial/torre" className={BOTAO}>torre</Link>
+          <Link href="/comercial/relatorio" className={BOTAO}>relatório</Link>
         </nav>
       </header>
 
-      <Erro erro={erro} />
-      {carregando && !dados && <Carregando />}
+      <Erro erro={erro} aoTentar={() => void recarregar()} />
+      {carregando && !dados && !erro && (
+        <Carregando linhas={3} altura="h-28" />
+      )}
 
       {dados && (
         <>
@@ -50,9 +71,21 @@ export default function FilaDeDecisoesPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <section aria-label="decisões" className="space-y-3">
               <Rotulo>decisões abertas</Rotulo>
-              {dados.decisoes.length === 0 && <Aviso>Nada saiu da regra. Não há decisão esperando por você.</Aviso>}
-              {dados.decisoes.map((d) => (
-                <Decisao key={d.id} d={d} aoResponder={recarregar} />
+              {decisoes.length === 0 && (
+                <Aviso>
+                  Nenhuma decisão esperando agora.{' '}
+                  {dados.resumo.acoesAutomaticasHoje > 0
+                    ? `${dados.resumo.acoesAutomaticasHoje} ${dados.resumo.acoesAutomaticasHoje === 1 ? 'ação rodou sozinha' : 'ações rodaram sozinhas'} hoje.`
+                    : 'Nada saiu da regra.'}
+                </Aviso>
+              )}
+              {decisoes.map((d) => (
+                <div
+                  key={d.id}
+                  className={`transition-all duration-200 ease-out motion-reduce:transition-none ${saindo.has(d.id) ? 'pointer-events-none -translate-x-2 opacity-0' : 'opacity-100'}`}
+                >
+                  <CartaoDeDecisao d={d} aoResponder={(texto) => respondida(d.id, texto)} />
+                </div>
               ))}
             </section>
 
@@ -62,16 +95,16 @@ export default function FilaDeDecisoesPage() {
               <ul className="mt-2 divide-y divide-border">
                 {dados.rodouSozinhoHoje.slice(0, limite).map((r, i) => (
                   <li key={`${r.em}-${i}`} className="grid grid-cols-[42px_56px_minmax(0,1fr)] gap-2 py-1.5 text-[12.5px]">
-                    <span className="font-os-mono text-muted">{horaSP(r.em)}</span>
+                    <span className="font-os-mono tabular-nums text-muted">{horaSP(r.em)}</span>
                     <span className="font-os-mono text-[11px] text-info">{ROTULO_DA_FONTE[r.fonte] ?? r.fonte}</span>
-                    <Link href={`/comercial/lead/${r.leadId}`} className={`min-w-0 truncate hover:text-brand ${FOCO}`} title={r.resumo}>
+                    <LinkDoLead leadId={r.leadId} className={`min-w-0 truncate hover:text-brand ${FOCO}`} title={r.resumo}>
                       {instantesLegiveis(r.resumo)}
-                    </Link>
+                    </LinkDoLead>
                   </li>
                 ))}
               </ul>
               {dados.rodouSozinhoHoje.length > 12 && (
-                <button type="button" className={`mt-2 text-[12px] text-muted underline underline-offset-2 hover:text-brand ${FOCO}`} onClick={() => setTudo((v) => !v)}>
+                <button type="button" className={`mt-2 text-[12px] text-muted underline underline-offset-2 hover:text-brand max-md:min-h-[44px] ${FOCO}`} onClick={() => setTudo((v) => !v)}>
                   {tudo ? 'mostrar menos' : `mostrar as ${dados.rodouSozinhoHoje.length}`}
                 </button>
               )}
@@ -80,92 +113,5 @@ export default function FilaDeDecisoesPage() {
         </>
       )}
     </div>
-  );
-}
-
-function Decisao({ d, aoResponder }: { d: DecisaoNaFila; aoResponder: () => Promise<void> }) {
-  const { token, user, can } = useAuth();
-  // C-12: quem propôs não responde (a API devolve 403), e responder pede aprovacoes.decidir.
-  const propostaMinha = !!user?.id && !!d.propostoPor && d.propostoPor === user.id;
-  const podeResponder = can('aprovacoes.decidir') && !propostaMinha;
-  const [enviando, setEnviando] = useState<string | null>(null);
-  const [erro, setErro] = useState<unknown>(null);
-  const [feito, setFeito] = useState<string | null>(null);
-  const prazo = prazoDaDecisao(d.expiraEm);
-
-  async function responder(escolha: string, rotulo: string) {
-    setEnviando(escolha);
-    setErro(null);
-    try {
-      await apiPost(`/comercial/decisoes/${d.id}/responder`, { escolha }, token);
-      setFeito(`Respondido: ${rotulo}. A resposta entrou no fio do lead.`);
-      await aoResponder();
-    } catch (e) {
-      setErro(e);
-    } finally {
-      setEnviando(null);
-    }
-  }
-
-  return (
-    <article className={`${CARTAO} space-y-3`} aria-labelledby={`dec-${d.id}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Chip tom="brand">{ROTULO_DO_TIPO_DE_DECISAO[d.tipo] ?? d.tipo}</Chip>
-        <Chip tom={prazo.vencido ? 'ruim' : 'alerta'}>{prazo.texto}</Chip>
-        <Link href={`/comercial/lead/${d.leadId}`} className={`ml-auto text-[12px] text-muted underline-offset-2 hover:underline ${FOCO}`}>
-          {d.leadNome} · ver o fio
-        </Link>
-      </div>
-      <div>
-        <h3 id={`dec-${d.id}`} className="text-[15px] font-semibold">{d.titulo}</h3>
-        <p className="mt-1 text-[13px] text-muted">{d.contexto}</p>
-      </div>
-      {propostaMinha && <Aviso>Você propôs esta decisão. Outra pessoa da mesa responde.</Aviso>}
-      {!propostaMinha && !can('aprovacoes.decidir') && <Aviso>Responder pede a permissão de decidir aprovações. Quem tem a permissão responde por aqui.</Aviso>}
-      {podeResponder && (
-        <div className="flex flex-wrap gap-2">
-          {d.opcoes.map((o) => {
-            const ehPadrao = o.chave === d.padrao;
-            return (
-              <button
-                key={o.chave}
-                type="button"
-                disabled={!!enviando || d.estado !== 'aberta'}
-                onClick={() => void responder(o.chave, o.rotulo)}
-                className={ehPadrao ? BOTAO_PRIMARIO : BOTAO}
-                title={o.efeito}
-              >
-                {enviando === o.chave ? 'enviando…' : o.rotulo}
-                {ehPadrao && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">padrão</span>}
-                {ehContrapropostaProvisoria(d, o.chave) && <span className="ml-1.5 font-os-mono text-[9.5px] uppercase opacity-80">provisória</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <ul className="space-y-0.5 text-[12px] text-muted">
-        {d.opcoes.filter((o) => o.efeito).map((o) => (
-          <li key={o.chave}>
-            <span className="text-text">{o.rotulo}:</span> {o.efeito}
-            {ehContrapropostaProvisoria(d, o.chave) && (
-              <span className="text-warn"> Contraproposta provisória [a decidir]: a metade do pedido é número do sistema, sem base no mapa de preço.</span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <p className="text-[12px] text-muted">
-        {decisaoSemPrazo(d.expiraEm) ? (
-          <>
-            Sem prazo configurado: a decisão só sai com uma resposta. O padrão escrito é <span className="text-text">{rotuloDoPadrao(d)}</span>.
-          </>
-        ) : (
-          <>
-            Se ninguém responder até {quandoSP(d.expiraEm)}, vale o padrão: <span className="text-text">{rotuloDoPadrao(d)}</span>.
-          </>
-        )}
-      </p>
-      {feito && <Aviso tom="bom">{feito}</Aviso>}
-      <Erro erro={erro} />
-    </article>
   );
 }

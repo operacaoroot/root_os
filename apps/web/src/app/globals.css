@@ -147,6 +147,26 @@ body {
   }
 }
 
+/* O painel do lead do comercial (lane UX): entra pela direita no desktop e
+   sobe de baixo no celular. Com movimento reduzido, as classes motion-safe
+   nem aplicam a animação. */
+@keyframes painel-entra {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes folha-sobe {
+  from { transform: translateY(32px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes fundo-entra {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes aviso-entra {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
 /* Textos legais da bio (públicos, identidade ROOT) */
 .bio-prose h2 {
   @apply mb-[10px] mt-8 text-[17px] font-bold;
