@@ -26,7 +26,7 @@ import {
  * Fica fora do NAV, que é filtrado por permissão, não por "ser a plataforma":
  * um item lá apareceria no menu de toda empresa cliente. O menu mostra esta tela
  * no grupo ROOT só quando a API confirma a sessão da plataforma (ver
- * `ITENS_DA_ROOT` em components/Sidebar.tsx e `useEhPlataforma`).
+ * `ITENS_DA_ROOT` em components/navegacao-modulos.ts e `useEhPlataforma`).
  */
 
 const BASE = '/tenants/plataforma/propostas';

@@ -402,6 +402,8 @@ const ALVOS: Alvo[] = [
   { tabela: 'EmpresaNaPlataforma', escopo: 'tenant', chaveSql: '"id"', nota: 'O registro COMERCIAL que a plataforma mantém sobre cada cliente (fatia 6.3): plano, estado, saúde, número de usuários, gasto de IA e mensalidade. A linha FALA de um cliente (`empresaId`) mas PERTENCE à empresa da plataforma (`orgId`) — e é por isso que ela entra aqui como qualquer outra: se a policy falhar, uma empresa cliente lê a carteira inteira da ROOT, com o que cada concorrente dela paga. ESCREVER é o outro lado: mudar `estado` para `encerrada` ou `cobrancaEmDia` para falso no registro alheio é mexer na relação comercial de outra pessoa.' },
   { tabela: 'AcessoDeSuporte', escopo: 'tenant', chaveSql: '"id"', nota: 'A autorização de suporte (fatia 6.3): a linha é da empresa CLIENTE, que é quem autoriza, vê e revoga. É a tabela que decide se um operador da plataforma entra na casa de alguém — ler a da outra empresa revela quem a ROOT está atendendo e por quê (o `motivo` é texto escrito pelo cliente); ESCREVER é conceder a si mesmo acesso à casa alheia, que é a fatia inteira ao contrário. Sem semente, o caso "A não lê linha de B" rodaria contra tabela vazia e passaria com qualquer policy — foi exatamente por não estar aqui que a primeira versão da fatia deixou a catraca VERMELHA.' },
 
+  { tabela: 'OperacaoRodada', escopo: 'tenant', chaveSql: '"id"', nota: 'O painel semanal da operação da ROOT: clientes, o que cada um deve, o que falta cobrar e as decisões em aberto. Em produção só a empresa da plataforma tem linha (o script que grava recusa org de cliente), mas a policy não sabe disso — se ela falhar, um cliente lê a carteira da ROOT com o valor que cada outro cliente paga. ESCREVER é reescrever o painel de outra empresa; apagar não é caminho da aplicação (sem GRANT de DELETE).' },
+
   // ---- trabalho ---------------------------------------------------------
   { tabela: 'WorkSpace', escopo: 'tenant', chaveSql: '"id"', nota: 'Topo da árvore espaço → pastas → listas (ROOT-16). O nome do espaço diz como a outra empresa organiza o trabalho dela; escrever nele é renomear ou esvaziar a árvore alheia. É raiz da empresa: o orgId vem do insert, e as pastas e listas penduradas nele conferem a empresa pela chave composta.' },
   { tabela: 'WorkFolder', escopo: 'tenant', chaveSql: '"id"', nota: 'Pasta de topo de um espaço ou pasta dentro de pasta; o pai é conferido pela chave composta com orgId.' },
@@ -1123,6 +1125,12 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     escopo: 'diagnostico', motivo: `motivo escrito pela org ${rotulo} ${MARCA}`,
     autorizadoPorId: userId, autorizadoPorNome: `Titular ${rotulo}`,
     autorizadoEm: agora, expiraEm: new Date(agora.getTime() + 3_600_000),
+  }));
+
+  reg('OperacaoRodada', await ins(c, 'OperacaoRodada', {
+    id: crypto.randomUUID(), orgId, rodadaEm: '2026-10-14',
+    conteudo: JSON.stringify({ versao: 1, rodadaEm: '2026-10-14', marca: MARCA, org: rotulo }),
+    origem: 'script', updatedAt: agora,
   }));
 
   // --- assinatura e cobrança (fatia 6.2) -----------------------------------

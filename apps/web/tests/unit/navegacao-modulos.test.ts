@@ -35,4 +35,14 @@ describe('projeção do NAV em módulos', () => {
     expect(destinoDaRota('/propostas')).toBeUndefined();
     expect(areaDoDestino(destinoDaRota('/propostas', true)!)?.key).toBe('comercial');
   });
+  it('Operação da Root depende da confirmação da plataforma e mora em Dia a dia sem tomar a entrada', () => {
+    expect(modulosDeNavegacao(permissoes).flatMap((area) => area.itens).some((i) => i.key === 'operacao')).toBe(false);
+    const semPlataforma = modulosDeNavegacao(permissoes).find((area) => area.key === 'dia');
+    expect(semPlataforma?.itens.some((item) => item.key === 'operacao')).toBe(false);
+    const dia = modulosDeNavegacao(permissoes, undefined, true).find((area) => area.key === 'dia');
+    expect(dia?.entrada?.key).toBe('caixa');
+    expect(dia?.itens.at(-1)?.key).toBe('operacao');
+    expect(destinoDaRota('/operacao')).toBeUndefined();
+    expect(areaDoDestino(destinoDaRota('/operacao?rodada=2026-10-14', true)!)?.key).toBe('dia');
+  });
 });

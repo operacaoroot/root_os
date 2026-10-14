@@ -9,7 +9,7 @@ import { useAuth } from './auth';
  *
  * Quem decide é a API: GET /tenants/plataforma/quem-sou responde 200 só para a
  * sessão da plataforma e 403 para qualquer empresa cliente. O menu usa isto para
- * mostrar as telas da ROOT (hoje, Propostas), que não cabem no NAV porque o NAV
+ * mostrar as telas da ROOT (Propostas e Operação), que não cabem no NAV porque o NAV
  * é filtrado por permissão, e permissão toda empresa cliente também tem.
  *
  * Esconder no menu é desenho; quem recusa o acesso continua sendo a API. Na

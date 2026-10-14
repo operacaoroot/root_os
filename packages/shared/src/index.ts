@@ -60,3 +60,7 @@ export * from './sessao-leitura-historica';
 export * from './onboarding-indice.js';
 
 export * from './procedimento-ferramenta-local';
+
+// O painel da operação da Root, que só a sessão da plataforma abre — ver o
+// cabeçalho de `operacao-painel.ts`.
+export * from './operacao-painel.js';

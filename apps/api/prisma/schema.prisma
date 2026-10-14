@@ -78,6 +78,7 @@ model Org {
   pixelEvents  PixelEvent[]
   auditLogs    AuditLog[]
   demoInstallations DemoInstallation[]
+  operacaoRodadas OperacaoRodada[]
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
   reports      Report[]
@@ -5100,4 +5101,20 @@ model AgentLocalToolReceipt {
   @@unique([orgId,requestId], map:"ToolReceipt_org_request_unique")
   @@unique([orgId,sessionId], map:"ToolReceipt_org_session_unique")
   @@unique([id,orgId], map:"ToolReceipt_id_org_unique")
+}
+
+/// Uma rodada do painel da operação da Root (`painel-root-semanal`). Só a org da
+/// plataforma escreve aqui, por script; a tela só lê. Ver `operacao-painel.ts` no shared.
+model OperacaoRodada {
+  id String @id @default(uuid())
+  orgId String
+  org Org @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  /// AAAA-MM-DD da rodada. Texto, e não data, para não andar um dia com o fuso.
+  rodadaEm String
+  conteudo Json
+  origem String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([id, orgId])
+  @@unique([orgId, rodadaEm])
 }

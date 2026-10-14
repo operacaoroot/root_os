@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 /*
- * O grupo ROOT do menu (hoje, Propostas) só aparece quando a API confirma a
+ * As telas da ROOT no menu (Propostas e Operação) só aparecem quando a API confirma a
  * sessão da plataforma. Empresa cliente tem as mesmas permissões e não pode ver.
  */
 
@@ -54,6 +54,7 @@ describe('grupo ROOT do menu', () => {
     render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
     expect(titulos()).not.toContain('ROOT');
     expect(document.querySelector('a[href="/propostas"]')).toBeNull();
+    expect(document.querySelector('a[href="/operacao"]')).toBeNull();
   });
 
   it('a sessão da plataforma encontra Propostas dentro de Comercial e na busca', () => {
@@ -69,5 +70,15 @@ describe('grupo ROOT do menu', () => {
     CAMINHO = '/propostas';
     render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
     expect(screen.getByRole('link', { name: 'Propostas' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('em /operacao a sessão da plataforma vê a Operação da Root em Dia a dia, marcada e na busca', () => {
+    EH_PLATAFORMA = true;
+    CAMINHO = '/operacao';
+    render(<><Sidebar /><NavegacaoDoModulo /><Paleta aberto fechar={() => {}} /></>);
+    const link = screen.getByRole('link', { name: 'Operação da Root' });
+    expect(link).toHaveAttribute('href', '/operacao');
+    expect(link.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: /Operação da Root.*Dia a dia/ })).toBeInTheDocument();
   });
 });
