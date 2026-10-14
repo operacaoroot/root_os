@@ -362,12 +362,19 @@ export function AbaSessao({ leadId, aoMudar, irParaDecisoes }: { leadId: string;
     <div className="space-y-4">
       <Erro erro={erro} aoTentar={() => void recarregar()} />
       {dados && (
-        <>
-          {!dados.diagnostico && <SubirAta leadId={leadId} temDiagnostico={false} aoMudar={mudou} />}
-          <DiagnosticoDaAta leadId={leadId} s={dados} aoMudar={mudou} />
-          <Proposta leadId={leadId} s={dados} aoMudar={mudou} irParaDecisoes={irParaDecisoes} />
-          {dados.diagnostico && <SubirAta leadId={leadId} temDiagnostico aoMudar={mudou} />}
-        </>
+        // Uma instância só da ata, sempre na mesma posição da árvore: o diagnóstico que chega no meio da
+        // digitação muda a ordem na tela (CSS), não desmonta o campo nem perde o texto.
+        <div className="flex flex-col gap-4">
+          <div className={dados.diagnostico ? 'order-3' : 'order-first'}>
+            <SubirAta leadId={leadId} temDiagnostico={!!dados.diagnostico} aoMudar={mudou} />
+          </div>
+          <div className="order-1">
+            <DiagnosticoDaAta leadId={leadId} s={dados} aoMudar={mudou} />
+          </div>
+          <div className="order-2">
+            <Proposta leadId={leadId} s={dados} aoMudar={mudou} irParaDecisoes={irParaDecisoes} />
+          </div>
+        </div>
       )}
     </div>
   );

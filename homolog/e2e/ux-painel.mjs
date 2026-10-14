@@ -193,8 +193,8 @@ async function main() {
         conferir(url.searchParams.get('lead') === leadId && url.searchParams.get('aba') === 'decisoes', `query errada: ${url.search}`);
         conferir(await aindaMarcado(p), 'a página recarregou ao abrir o painel');
         conferir((await dialogo(p).getAttribute('aria-modal')) === 'true', 'o painel não é modal');
-        const nome = await dialogo(p).getByRole('heading', { level: 2 }).innerText();
-        conferir(/Construtora Alicerce/.test(nome), `o painel não leva o nome do lead: ${nome}`);
+        await p.getByRole('dialog', { name: /Construtora Alicerce/ }).waitFor({ timeout: 15_000 });
+        conferir((await dialogo(p).getByRole('heading', { level: 2 }).count()) === 1, 'o painel tem mais de um h2: o nome do lead tem de ser o único');
         passo('da fila, "ver o lead" abriu o painel na aba Decisões; só a query mudou', { detalhe: url.search });
         await dialogo(p).locator(`#painel-dec-${decisao.id}`).waitFor();
         await foto(p, `fila-painel-decisoes-${sufixo}`);

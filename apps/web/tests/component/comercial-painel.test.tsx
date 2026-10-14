@@ -55,6 +55,7 @@ import SessaoAntiga from '@/app/comercial/lead/[id]/sessao/page';
 import FechamentoAntigo from '@/app/comercial/lead/[id]/fechamento/page';
 import ContratoAntigo from '@/app/comercial/contratos/[leadId]/page';
 import FunilPage from '@/app/comercial/funil/page';
+import { useCarregar } from '@/app/comercial/_ui';
 
 function ficha(fio: FichaDoLead['fio'] = []): FichaDoLead {
   return {
@@ -236,6 +237,68 @@ describe('painel do lead', () => {
       await new Promise((r) => setTimeout(r, 30));
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('o texto digitado não se perde calado (revisão da lane UX)', () => {
+  it('trocar de aba com a ata digitada pergunta; recusado, fica na aba', async () => {
+    irPara('/comercial/funil?lead=l1&aba=sessao');
+    render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
+    const u = userEvent.setup();
+    const dialogo = await screen.findByRole('dialog');
+    await u.type(await within(dialogo).findByPlaceholderText(/transcrição da conversa/), 'ata pela metade');
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await u.click(within(dialogo).getByRole('tab', { name: 'Fio' }));
+    expect(confirmar).toHaveBeenCalledTimes(1);
+    expect(within(dialogo).getByRole('tab', { name: 'Sessão' })).toHaveAttribute('aria-selected', 'true');
+    expect(window.location.search).toBe('?lead=l1&aba=sessao');
+  });
+
+  it('o voltar do navegador com texto digitado pergunta; recusado, o painel continua aberto', async () => {
+    irPara('/comercial/funil');
+    render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole('link', { name: 'abrir a Alicerce' }));
+    const dialogo = await screen.findByRole('dialog');
+    await u.click(within(dialogo).getByRole('tab', { name: 'Sessão' }));
+    await u.type(await within(dialogo).findByPlaceholderText(/transcrição da conversa/), 'ata pela metade');
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await act(async () => {
+      window.history.back();
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    expect(confirmar).toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(window.location.search).toBe('?lead=l1&aba=sessao');
+  });
+
+  it('dentro do painel as seções são h3: o nome do lead é o único h2', async () => {
+    irPara('/comercial/funil?lead=l1&aba=fio');
+    render(<ProvedorDoPainel><Fundo /></ProvedorDoPainel>);
+    const dialogo = await screen.findByRole('dialog', { name: 'Construtora Alicerce' });
+    await within(dialogo).findByText(/oi, quero saber/);
+    expect(within(dialogo).getAllByRole('heading', { level: 2 })).toHaveLength(1);
+    expect(within(dialogo).getByRole('tabpanel')).toHaveAttribute('tabindex', '0');
+  });
+});
+
+describe('useCarregar: só o pedido mais recente escreve (revisão da lane UX, achado 5)', () => {
+  it('o tique que saiu antes e voltou depois da releitura não põe o estado velho de volta', async () => {
+    let soltarVelho!: (v: unknown) => void;
+    const respostas = [new Promise((r) => { soltarVelho = r; }), Promise.resolve({ v: 'novo' })];
+    RESPOSTAS['/teste/ordem'] = () => respostas.shift();
+    let recarregar!: () => Promise<void>;
+    function Sonda() {
+      const c = useCarregar<{ v: string }>('/teste/ordem');
+      recarregar = c.recarregar;
+      return <p>valor: {c.dados?.v ?? 'nada'}</p>;
+    }
+    render(<Sonda />);
+    await waitFor(() => expect(gets.filter((g) => g === '/teste/ordem')).toHaveLength(1)); // o primeiro (velho) está no ar
+    await act(async () => { await recarregar(); }); // a releitura depois da ação volta primeiro
+    expect(screen.getByText('valor: novo')).toBeInTheDocument();
+    await act(async () => { soltarVelho({ v: 'velho' }); await new Promise((r) => setTimeout(r, 10)); });
+    expect(screen.getByText('valor: novo')).toBeInTheDocument();
   });
 });
 

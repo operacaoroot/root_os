@@ -149,7 +149,7 @@ function Cartao({ c, aoTentarMover }: { c: CartaoDoFunil; aoTentarMover: () => v
           onClick={aoTentarMover}
           aria-label={`mover ${c.nome}: por que está bloqueado`}
           title="mover está bloqueado: a etapa anda pelo fato"
-          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-dim hover:border-brand max-md:min-h-[32px] ${FOCO}`}
+          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-dim hover:border-brand max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`}
         >
           mover
         </button>

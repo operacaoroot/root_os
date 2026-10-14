@@ -6,7 +6,7 @@
  * Tudo no tema do OS (tokens `bg`, `surface`, `border`, `brand`...), que já
  * troca entre escuro e claro pelo `data-os-theme` do <html>. Nada repinta o app.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import { ErroDaApi, apiGet } from '@/lib/api';
@@ -31,6 +31,9 @@ export function useCarregar<T>(caminho: string | null, intervaloMs?: number) {
   // C-10: o caminho de agora. Mudou (outro filtro, outro lead), o que estava na
   // tela sai e a resposta do caminho anterior que chegar atrasada é descartada.
   const atual = useRef(caminho);
+  // Lane UX: só o pedido mais recente escreve. O tique periódico que saiu antes
+  // de uma ação e voltou depois da releitura não põe o estado velho de volta.
+  const ultimoPedido = useRef(0);
 
   useEffect(() => {
     if (atual.current === caminho) return;
@@ -42,7 +45,8 @@ export function useCarregar<T>(caminho: string | null, intervaloMs?: number) {
 
   const recarregar = useCallback(async () => {
     if (!token || !caminho) return;
-    const doCaminho = () => vivo.current && atual.current === caminho;
+    const pedido = ++ultimoPedido.current;
+    const doCaminho = () => vivo.current && atual.current === caminho && pedido === ultimoPedido.current;
     try {
       const r = await apiGet<T>(caminho, token);
       if (!doCaminho()) return;
@@ -70,8 +74,15 @@ export function useCarregar<T>(caminho: string | null, intervaloMs?: number) {
   return { dados, erro, carregando, recarregar, token };
 }
 
+/**
+ * O nível do rótulo de seção: h2 nas telas; dentro do painel do lead, onde o
+ * h2 é o nome do lead, as seções descem para h3 (lane UX).
+ */
+export const NivelDoRotulo = createContext<'h2' | 'h3'>('h2');
+
 export function Rotulo({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <h2 className={`${ROTULO} ${className}`}>{children}</h2>;
+  const Nivel = useContext(NivelDoRotulo);
+  return <Nivel className={`${ROTULO} ${className}`}>{children}</Nivel>;
 }
 
 /**

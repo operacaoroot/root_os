@@ -1,0 +1,25 @@
+{
+  "inicio": "2026-10-14T01:07:54.508Z",
+  "web": "http://127.0.0.1:3010",
+  "passos": [
+    {
+      "n": 1,
+      "nome": "mesa entrou pela API",
+      "ms": 102,
+      "detalhe": "mesa@root.homolog"
+    },
+    {
+      "n": 2,
+      "nome": "a Alicerce pediu 8% pela sala e a decisão abriu",
+      "ms": 247,
+      "detalhe": "Marina Duarte pediu 8% de desconto na Operação ROOT",
+      "leadId": "edea2274-6852-5adf-8b34-2286a2c10f5d",
+      "decisaoId": "07af2c95-150a-5a4b-b1ac-525febf92b61"
+    }
+  ],
+  "screenshots": [],
+  "ok": false,
+  "erro": "locator.innerText: Error: strict mode violation: getByRole('dialog').getByRole('heading', { level: 2 }) resolved to 2 elements:\n    1) <h2 id=\"_r_0_\" tabindex=\"-1\" class=\"truncate text-[18px] font-semibold leading-tight outline-none md:text-[19px]\">Construtora Alicerce</h2> aka getByRole('heading', { name: 'Construtora Alicerce' })\n    2) <h2 class=\"font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted \">já fechadas</h2> aka getByRole('heading', { name: 'já fechadas' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('dialog').getByRole('heading', { level: 2 })\u001b[22m\n",
+  "fim": "2026-10-14T01:08:04.517Z",
+  "duracaoMs": 10009
+}

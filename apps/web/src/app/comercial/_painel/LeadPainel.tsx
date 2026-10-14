@@ -14,14 +14,16 @@
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import type { DecisaoNaFila, FichaDoLead } from '@mktos/shared';
 import { COMERCIAL_ROTULO_DA_ETAPA, ehSaida } from '@mktos/shared';
 
 import { AUSENTE, numeroOuAusente } from '@/lib/cockpit';
 
-import { BarraDaSaude, BOTAO, Chip, Erro, FOCO, useCarregar } from '../_ui';
+import { BarraDaSaude, BOTAO, Chip, Erro, FOCO, NivelDoRotulo, useCarregar } from '../_ui';
 import { ABAS_DO_PAINEL, ROTULO_DA_ABA, linkDoWhatsApp, type AbaDoPainel, type EstadoDoPainel } from './estado';
-import { usePainel } from './provedor';
+import { ListaDeAvisos, usePainel } from './provedor';
+import { podeSairSemPerder } from './texto-nao-salvo';
 import { AbaFio } from './AbaFio';
 import { AbaSessao } from './AbaSessao';
 import { AbaDinheiro } from './AbaDinheiro';
@@ -29,28 +31,24 @@ import { AbaDecisoes } from './AbaDecisoes';
 
 const FOCAVEIS = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Há texto digitado no painel que nenhum envio levou? (campo de texto, de senha ou área de texto com valor). */
-export function temTextoNaoSalvo(raiz: HTMLElement | null): boolean {
-  if (!raiz) return false;
-  const campos = raiz.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('textarea, input:not([type]), input[type="text"], input[type="password"], input[type="search"], input[type="email"]');
-  return Array.from(campos).some((c) => !c.disabled && !c.hasAttribute('data-painel-ignorar') && c.value.trim().length > 0);
-}
-
-export const PERGUNTA_DO_TEXTO_NAO_SALVO = 'Há texto digitado e não salvo no painel. Fechar e perder o texto?';
-
 /** As respostas que o painel lê do lead: a ficha (uma chamada), as decisões e, com o provedor simulado, a sala. */
 function useLeadDoPainel(leadId: string) {
   const ficha = useCarregar<FichaDoLead>(`/comercial/lead/${encodeURIComponent(leadId)}`, 30_000);
+  // As abertas vêm por consulta própria: a lista geral da empresa para em 200 e as abertas não podem ficar de fora.
+  const abertas = useCarregar<DecisaoNaFila[]>('/comercial/decisoes?estado=aberta', 30_000);
   const decisoes = useCarregar<DecisaoNaFila[]>('/comercial/decisoes', 30_000);
   // O simulador só existe com o provedor simulado: fora dele a rota falha e o painel usa o telefone.
   const celular = useCarregar<{ linkDaSala: string | null }>(`/comercial/simulador/lead/${encodeURIComponent(leadId)}`);
-  return { ficha, decisoes, celular };
+  return { ficha, abertas, decisoes, celular };
 }
+
+/** O teto da lista de decisões da API (`decisoes.service.ts`, take 200): chegou nele, a lista do lead pode estar incompleta. */
+const TETO_DA_LISTA_DE_DECISOES = 200;
 
 export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
   const painel = usePainel();
   const { leadId, aba } = estado;
-  const { ficha, decisoes, celular } = useLeadDoPainel(leadId);
+  const { ficha, abertas, decisoes, celular } = useLeadDoPainel(leadId);
   const caixa = useRef<HTMLDivElement>(null);
   const titulo = useRef<HTMLHeadingElement>(null);
   const idTitulo = useId();
@@ -61,19 +59,39 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
   useEffect(() => setAlvo(document.body), []);
 
   const f = ficha.dados;
-  const abertasDoLead = (decisoes.dados ?? []).filter((d) => d.leadId === leadId && d.estado === 'aberta');
-  const doLead = (decisoes.dados ?? []).filter((d) => d.leadId === leadId);
+  const abertasDoLead = (abertas.dados ?? []).filter((d) => d.leadId === leadId && d.estado === 'aberta');
+  const fechadasDoLead = (decisoes.dados ?? []).filter((d) => d.leadId === leadId && d.estado !== 'aberta');
+  const listaParcial = (decisoes.dados?.length ?? 0) >= TETO_DA_LISTA_DE_DECISOES;
 
   const fecharComCuidado = useCallback(() => {
-    if (temTextoNaoSalvo(caixa.current) && !window.confirm(PERGUNTA_DO_TEXTO_NAO_SALVO)) return;
+    if (!podeSairSemPerder(caixa.current)) return;
     painel.fechar();
   }, [painel]);
 
-  /** Depois de uma ação no painel: relê o lead e as decisões, e a tela de trás relê a lista. */
+  /** Trocar de aba desmonta a de agora: com texto digitado, pergunta antes. */
+  const irParaAba = useCallback(
+    (nova: AbaDoPainel) => {
+      if (nova === aba) return true;
+      if (!podeSairSemPerder(caixa.current)) return false;
+      painel.trocarAba(nova);
+      return true;
+    },
+    [aba, painel],
+  );
+
+  /**
+   * Depois de uma ação no painel: relê o lead e as decisões, e a tela de trás
+   * relê a lista. Se o botão que tinha o foco sumiu (a decisão saiu, a saída
+   * foi registrada), o foco vai ao título do painel e não cai no <body>.
+   */
   const aoMudar = useCallback(async () => {
-    await Promise.all([ficha.recarregar(), decisoes.recarregar()]);
+    await Promise.all([ficha.recarregar(), abertas.recarregar(), decisoes.recarregar()]);
     painel.mudou();
-  }, [ficha, decisoes, painel]);
+    requestAnimationFrame(() => {
+      const ativo = document.activeElement;
+      if (!ativo || ativo === document.body || !caixa.current?.contains(ativo)) titulo.current?.focus();
+    });
+  }, [ficha, abertas, decisoes, painel]);
 
   // Foco no título ao abrir; a página de trás fica inerte e sem rolagem.
   useEffect(() => {
@@ -101,7 +119,8 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
   // Esc fecha, de onde estiver o foco.
   useEffect(() => {
     function tecla(e: KeyboardEvent) {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Esc durante a composição de um acento (método de entrada) não fecha nada.
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
       e.preventDefault();
       fecharComCuidado();
     }
@@ -140,13 +159,13 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
     if (j == null) return;
     e.preventDefault();
     const nova = ABAS_DO_PAINEL[j];
-    painel.trocarAba(nova);
+    if (!irParaAba(nova)) return;
     requestAnimationFrame(() => document.getElementById(`${idAbas}-${nova}`)?.focus());
   }
 
   if (!alvo) return null;
 
-  const nome = f ? f.empresa ?? f.nome : ficha.erro ? 'Lead' : 'Carregando o lead…';
+  const nome = f ? f.empresa ?? f.nome : 'Lead';
   const sala = celular.dados?.linkDaSala ?? null;
   const whats = celular.dados ? `/comercial/simulador?conversa=${encodeURIComponent(leadId)}` : linkDoWhatsApp(f?.telefone);
 
@@ -199,11 +218,15 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
             <span className="ml-auto flex gap-2">
               {sala ? (
                 <a href={sala} target="_blank" rel="noreferrer" className={BOTAO}>abrir sala</a>
+              ) : f?.ligadoA.sala ? (
+                <span className={`${BOTAO} cursor-default opacity-60`} title="o link da sala só é reescrito pelo simulador nesta versão">sala aberta, link indisponível</span>
               ) : (
-                <span className={`${BOTAO} cursor-default opacity-50`} title="a sala ainda não existe ou o link não pôde ser lido">sala ausente</span>
+                <span className={`${BOTAO} cursor-default opacity-50`} title="a sala ainda não existe">sala ausente</span>
               )}
-              {whats ? (
-                <a href={whats} target={whats.startsWith('http') ? '_blank' : undefined} rel="noreferrer" className={BOTAO}>WhatsApp</a>
+              {whats && whats.startsWith('/') ? (
+                <Link href={whats} className={BOTAO}>WhatsApp</Link>
+              ) : whats ? (
+                <a href={whats} target="_blank" rel="noreferrer" className={BOTAO}>WhatsApp</a>
               ) : (
                 <span className={`${BOTAO} cursor-default opacity-50`} title="telefone ausente">WhatsApp</span>
               )}
@@ -223,7 +246,7 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
                   aria-selected={ativa}
                   aria-controls={`${idAbas}-painel`}
                   tabIndex={ativa ? 0 : -1}
-                  onClick={() => painel.trocarAba(a)}
+                  onClick={() => irParaAba(a)}
                   className={`shrink-0 border-b-2 px-3 pb-2 pt-1.5 text-[13px] transition max-md:min-h-[44px] ${ativa ? 'border-brand font-semibold text-text' : 'border-transparent text-muted hover:text-text'} ${FOCO}`}
                 >
                   {ROTULO_DA_ABA[a]}
@@ -234,15 +257,33 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
           </div>
         </header>
 
-        <div id={`${idAbas}-painel`} role="tabpanel" aria-labelledby={`${idAbas}-${aba}`} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 outline-none md:px-5">
-          <Erro erro={ficha.erro} aoTentar={() => void ficha.recarregar()} />
-          {aba === 'fio' && <AbaFio leadId={leadId} ficha={f} carregando={ficha.carregando && !f} aoMudar={aoMudar} />}
-          {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => painel.trocarAba('decisoes')} />}
-          {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}
-          {aba === 'decisoes' && (
-            <AbaDecisoes decisoes={doLead} carregando={decisoes.carregando && !decisoes.dados} erro={decisoes.erro} aoTentar={() => void decisoes.recarregar()} aoMudar={aoMudar} />
-          )}
+        {/* tabIndex 0: o corpo rola pelo teclado mesmo quando a aba não tem nada focável (fio de um lead fechado). */}
+        <div
+          id={`${idAbas}-painel`}
+          role="tabpanel"
+          aria-labelledby={`${idAbas}-${aba}`}
+          tabIndex={0}
+          className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-5 ${FOCO}`}
+        >
+          <NivelDoRotulo.Provider value="h3">
+            <Erro erro={ficha.erro} aoTentar={() => void ficha.recarregar()} />
+            {aba === 'fio' && <AbaFio leadId={leadId} ficha={f} carregando={ficha.carregando && !f} aoMudar={aoMudar} />}
+            {aba === 'sessao' && <AbaSessao leadId={leadId} aoMudar={aoMudar} irParaDecisoes={() => irParaAba('decisoes')} />}
+            {aba === 'dinheiro' && <AbaDinheiro leadId={leadId} ficha={f} aoMudar={aoMudar} />}
+            {aba === 'decisoes' && (
+              <AbaDecisoes
+                abertas={abertasDoLead}
+                fechadas={fechadasDoLead}
+                listaParcial={listaParcial}
+                carregando={abertas.carregando && !abertas.dados}
+                erro={abertas.erro ?? decisoes.erro}
+                aoTentar={() => void Promise.all([abertas.recarregar(), decisoes.recarregar()])}
+                aoMudar={aoMudar}
+              />
+            )}
+          </NivelDoRotulo.Provider>
         </div>
+        <ListaDeAvisos avisos={painel.avisos} aoFechar={painel.dispensar} />
       </div>
     </div>,
     alvo,

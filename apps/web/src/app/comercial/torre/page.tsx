@@ -6,7 +6,7 @@ import { COMERCIAL_ROTULO_DA_AUTOMACAO } from '@mktos/shared';
 import { custoDaTorre, diaSemanaSP, horaSP, percentual, quandoCurtoSP } from '@/lib/cockpit';
 
 import { CARTAO, Carregando, Chip, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
-import { LinkDoLead } from '../_painel/provedor';
+import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 
 /*
  * TELA 12 · A TORRE DAS AUTOMAÇÕES (lane C). Cada automação com o nível de
@@ -16,6 +16,7 @@ import { LinkDoLead } from '../_painel/provedor';
  */
 export default function TorrePage() {
   const { dados: t, erro, carregando, recarregar } = useCarregar<TorreDasAutomacoes>('/comercial/torre', 60_000);
+  useMudouNoPainel(recarregar);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -97,7 +98,7 @@ function PremissasQuebradas({ premissas, quebradas }: { premissas?: PremissaDoVi
               <p className="mt-0.5 flex flex-wrap gap-x-2 text-[12px]">
                 <span className="text-muted">{p.leads.length === 1 ? 'lead:' : `${p.leads.length} leads:`}</span>
                 {p.leads.slice(0, 10).map((id) => (
-                  <LinkDoLead key={id} leadId={id} className={`font-os-mono underline-offset-2 hover:underline ${FOCO}`}>
+                  <LinkDoLead key={id} leadId={id} title={`abrir o lead ${id}`} className={`font-os-mono underline-offset-2 hover:underline max-md:py-2 ${FOCO}`}>
                     {id.slice(0, 8)}
                   </LinkDoLead>
                 ))}

@@ -62,6 +62,17 @@ export function AbaDinheiro({ leadId, ficha: f, aoMudar }: { leadId: string; fic
   const rootEm = quandoNoFio(f, 'contrato.assinado_root');
   const ativoEm = quandoNoFio(f, 'cliente.ativo');
   const emSaida = f ? ehSaida(f.etapa) : false;
+  // Sem a ficha, o fio não foi lido: os marcos ficam ausentes, nunca "ainda não".
+  if (!f) {
+    return (
+      <div className="space-y-4">
+        <p className="text-[12.5px] text-muted">O lead não pôde ser lido agora: aceite, cobrança e assinaturas ficam ausentes até a ficha voltar.</p>
+        <section className={`${CARTAO} space-y-2`} aria-label="fechamento">
+          <Fechamento leadId={leadId} f={fech.dados} erro={fech.erro} aoTentar={() => void fech.recarregar()} aoMudar={mudou} />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -104,7 +115,7 @@ export function AbaDinheiro({ leadId, ficha: f, aoMudar }: { leadId: string; fic
           <Marco feito={clienteEm} rotulo="assinado pelo cliente" />
           <Marco feito={rootEm} rotulo="assinado pela Root" />
         </ul>
-        {geradoEm && !rootEm && <AssinarPelaRoot leadId={leadId} />}
+        {geradoEm && !rootEm && <AssinarPelaRoot leadId={leadId} aoMudar={mudou} />}
         {!geradoEm && <p className="text-[12px] text-dim">O contrato é gerado depois do aceite, pela porta (R4: pede a titular).</p>}
       </section>
 
@@ -241,8 +252,9 @@ function ProporAceite({ leadId, aoMudar }: { leadId: string; aoMudar: () => Prom
   );
 }
 
-function AssinarPelaRoot({ leadId }: { leadId: string }) {
+function AssinarPelaRoot({ leadId, aoMudar }: { leadId: string; aoMudar: () => Promise<void> }) {
   const { token, can } = useAuth();
+  const painel = usePainel();
   const [r, setR] = useState<{ linkAssinatura: string | null; assinadoRootEm: string | null } | null>(null);
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<unknown>(null);
@@ -252,7 +264,10 @@ function AssinarPelaRoot({ leadId }: { leadId: string }) {
     setEnviando(true);
     setErro(null);
     try {
-      setR(await apiPost(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token));
+      const r = await apiPost<{ linkAssinatura: string | null; assinadoRootEm: string | null }>(`/comercial/contratos/${leadId}/assinar-pela-root`, { senha }, token);
+      setR(r);
+      painel.avisar(r?.assinadoRootEm ? 'A Root já assinou este contrato.' : r?.linkAssinatura ? 'Senha conferida: o link de assinatura da Root está logo abaixo.' : 'Senha conferida. O link da Root ainda não chegou do provedor.', 'neutro');
+      await aoMudar();
     } catch (e) {
       setErro(e);
     } finally {

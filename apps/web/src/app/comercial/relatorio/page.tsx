@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { ROTULO_DO_MOTIVO, diaSP, numeroOuAusente, quandoCurtoSP, rotuloDaLinhaDoFunil } from '@/lib/cockpit';
 
 import { BOTAO, CARTAO, Carregando, Erro, FOCO, Numero, Rotulo, useCarregar } from '../_ui';
-import { LinkDoLead } from '../_painel/provedor';
+import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 
 /*
  * TELA 13 · O RELATÓRIO DA QUINTA (lane C). Conversão, velocidade, perdas por
@@ -22,6 +22,7 @@ export default function RelatorioPage() {
   const { token } = useAuth();
   const [dias, setDias] = useState(7);
   const { dados: r, erro, carregando, recarregar } = useCarregar<RelatorioDaSemana>(`/comercial/relatorio/semana?dias=${dias}`);
+  useMudouNoPainel(recarregar);
   const [erroDaAcao, setErroDaAcao] = useState<unknown>(null);
   const [gerando, setGerando] = useState(false);
 

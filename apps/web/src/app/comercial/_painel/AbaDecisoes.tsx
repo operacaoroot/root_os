@@ -17,13 +17,18 @@ import { usePainel } from './provedor';
 const ROTULO_DO_ESTADO: Record<string, string> = { tomada: 'tomada', expirada: 'venceu: valeu o padrão', aberta: 'aberta' };
 
 export function AbaDecisoes({
-  decisoes,
+  abertas,
+  fechadas,
+  listaParcial,
   carregando,
   erro,
   aoTentar,
   aoMudar,
 }: {
-  decisoes: DecisaoNaFila[];
+  abertas: DecisaoNaFila[];
+  fechadas: DecisaoNaFila[];
+  /** A lista geral da empresa bateu no teto da API: as fechadas deste lead podem estar incompletas. */
+  listaParcial: boolean;
   carregando: boolean;
   erro: unknown;
   aoTentar: () => void;
@@ -31,8 +36,6 @@ export function AbaDecisoes({
 }) {
   const painel = usePainel();
   if (carregando) return <Carregando linhas={2} altura="h-32" />;
-  const abertas = decisoes.filter((d) => d.estado === 'aberta');
-  const fechadas = decisoes.filter((d) => d.estado !== 'aberta');
 
   return (
     <div className="space-y-4">
@@ -50,6 +53,9 @@ export function AbaDecisoes({
         />
       ))}
 
+      {listaParcial && (
+        <p className="text-[12px] text-dim">A empresa passou de 200 decisões: as já fechadas deste lead podem não aparecer todas aqui. O fio tem cada uma.</p>
+      )}
       {fechadas.length > 0 && (
         <section className={CARTAO} aria-label="decisões já fechadas">
           <Rotulo>já fechadas</Rotulo>

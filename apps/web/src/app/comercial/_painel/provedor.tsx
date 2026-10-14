@@ -11,7 +11,10 @@
  * O histórico: abrir por clique empilha UMA entrada (o "voltar" do navegador
  * fecha o painel); trocar de aba substitui; fechar volta (`history.back()`)
  * quando o painel veio de um clique, senão só limpa a query. O Next sincroniza
- * `useSearchParams` com `pushState`/`replaceState` nativos (desde a 14.1).
+ * `useSearchParams` com `pushState`/`replaceState` nativos (desde a 14.1),
+ * desde que o estado passado seja `null`: o Next copia o estado interno dele
+ * e acompanha a URL. Passar o `history.state` atual (que já tem o `__NA` do
+ * Next) faria o Next ignorar a mudança (revisão da lane UX, achado 9).
  */
 import { createPortal } from 'react-dom';
 import { createContext, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,6 +24,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { FOCO } from '../_ui';
 import { lerPainel, urlComPainel, urlSemPainel, type AbaDoPainel, type EstadoDoPainel } from './estado';
 import { LeadPainel } from './LeadPainel';
+import { podeSairSemPerder } from './texto-nao-salvo';
 
 export interface AvisoDoCanto {
   id: number;
@@ -41,6 +45,9 @@ export interface Painel {
   mudou: () => void;
   /** A URL desta tela com o painel do lead aberto (para o `href` dos links). */
   hrefDoLead: (leadId: string, aba?: AbaDoPainel) => string;
+  /** Os avisos de agora: com o painel aberto, quem os mostra é o próprio diálogo. */
+  avisos: AvisoDoCanto[];
+  dispensar: (id: number) => void;
 }
 
 function hrefPadrao(leadId: string, aba: AbaDoPainel = 'fio') {
@@ -60,6 +67,8 @@ const SEM_PROVEDOR: Painel = {
   versao: 0,
   mudou: () => {},
   hrefDoLead: hrefPadrao,
+  avisos: [],
+  dispensar: () => {},
 };
 
 const Contexto = createContext<Painel>(SEM_PROVEDOR);
@@ -99,6 +108,8 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
   const origem = useRef<Element | null>(null);
   const porClique = useRef(false);
   const proximoAviso = useRef(1);
+  // A URL de quando o painel estava aberto: o voltar que perderia texto a devolve.
+  const urlAberta = useRef<string | null>(null);
 
   const sincronizar = useCallback(() => {
     const lido = lerPainel(buscaAtual());
@@ -107,14 +118,24 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
       if (antes && antes.leadId === lido.leadId && antes.aba === lido.aba) return antes;
       return lido;
     });
-    if (!lido) porClique.current = false;
+    if (lido) urlAberta.current = `${caminhoAtual()}${buscaAtual()}`;
+    else porClique.current = false;
   }, []);
 
-  // O voltar e o avançar do navegador abrem e fecham o painel.
+  // O voltar e o avançar do navegador abrem e fecham o painel. Com texto
+  // digitado no painel, o voltar pergunta; recusado, a entrada volta.
   useEffect(() => {
     sincronizar();
-    window.addEventListener('popstate', sincronizar);
-    return () => window.removeEventListener('popstate', sincronizar);
+    function aoVoltar() {
+      const aberta = urlAberta.current;
+      if (aberta && !lerPainel(buscaAtual()) && !podeSairSemPerder()) {
+        window.history.pushState(null, '', aberta);
+        return;
+      }
+      sincronizar();
+    }
+    window.addEventListener('popstate', aoVoltar);
+    return () => window.removeEventListener('popstate', aoVoltar);
   }, [sincronizar]);
 
   const abrir = useCallback<Painel['abrir']>((leadId, aba = 'fio', de) => {
@@ -122,29 +143,33 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
     const jaAberto = !!lerPainel(buscaAtual());
     const url = urlComPainel(caminhoAtual(), buscaAtual(), leadId, aba);
     if (jaAberto) {
-      window.history.replaceState(window.history.state, '', url);
+      window.history.replaceState(null, '', url);
     } else {
-      window.history.pushState(window.history.state, '', url);
+      window.history.pushState(null, '', url);
       porClique.current = true;
     }
+    urlAberta.current = url;
     setEstado({ leadId, aba });
   }, []);
 
   const trocarAba = useCallback<Painel['trocarAba']>((aba) => {
     const atual = lerPainel(buscaAtual());
     if (!atual) return;
-    window.history.replaceState(window.history.state, '', urlComPainel(caminhoAtual(), buscaAtual(), atual.leadId, aba));
+    const url = urlComPainel(caminhoAtual(), buscaAtual(), atual.leadId, aba);
+    window.history.replaceState(null, '', url);
+    urlAberta.current = url;
     setEstado({ leadId: atual.leadId, aba });
   }, []);
 
   const fechar = useCallback(() => {
+    urlAberta.current = null;
     if (porClique.current) {
       porClique.current = false;
       setEstado(null);
       window.history.back();
       return;
     }
-    window.history.replaceState(window.history.state, '', urlSemPainel(caminhoAtual(), buscaAtual()));
+    window.history.replaceState(null, '', urlSemPainel(caminhoAtual(), buscaAtual()));
     setEstado(null);
   }, []);
 
@@ -155,6 +180,7 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
   }, []);
 
   const mudou = useCallback(() => setVersao((v) => v + 1), []);
+  const dispensar = useCallback((id: number) => setAvisos((l) => l.filter((a) => a.id !== id)), []);
 
   const hrefDoLead = useCallback((leadId: string, aba: AbaDoPainel = 'fio') => {
     if (typeof window === 'undefined') return hrefPadrao(leadId, aba);
@@ -162,8 +188,8 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
   }, []);
 
   const valor = useMemo<Painel>(
-    () => ({ estado, abrir, trocarAba, fechar, avisar, versao, mudou, hrefDoLead }),
-    [estado, abrir, trocarAba, fechar, avisar, versao, mudou, hrefDoLead],
+    () => ({ estado, abrir, trocarAba, fechar, avisar, versao, mudou, hrefDoLead, avisos, dispensar }),
+    [estado, abrir, trocarAba, fechar, avisar, versao, mudou, hrefDoLead, avisos, dispensar],
   );
 
   // Fechou: o foco volta a quem abriu (ou ao conteúdo da tela, se quem abriu sumiu).
@@ -188,7 +214,8 @@ export function ProvedorDoPainel({ children }: { children: React.ReactNode }) {
         <SincronizadorDaUrl aoMudar={sincronizar} />
       </Suspense>
       {estado && <LeadPainel key={estado.leadId} estado={estado} />}
-      <AvisosNoCanto avisos={avisos} aoFechar={(id) => setAvisos((l) => l.filter((a) => a.id !== id))} />
+      {/* Com o painel aberto, os avisos moram dentro do diálogo (aria-modal esconde o resto do leitor de tela). */}
+      {!estado && <AvisosNoCanto avisos={avisos} aoFechar={dispensar} />}
     </Contexto.Provider>
   );
 }
@@ -208,37 +235,49 @@ function SincronizadorDaUrl({ aoMudar }: { aoMudar: () => void }) {
   return null;
 }
 
-/** O aviso curto no canto: some sozinho, e a leitura de tela ouve. */
-function AvisosNoCanto({ avisos, aoFechar }: { avisos: AvisoDoCanto[]; aoFechar: (id: number) => void }) {
-  // No <body>, fora da árvore que o painel deixa inerte: o aviso continua audível com o painel aberto.
-  const [alvo, setAlvo] = useState<HTMLElement | null>(null);
-  useEffect(() => setAlvo(document.body), []);
-  if (!alvo) return null;
-  return createPortal(
+/**
+ * A lista de avisos no canto: some sozinha, e a leitura de tela ouve. O
+ * aviso não segura o toque (só o "dispensar" é clicável), para não tampar o
+ * botão que estiver embaixo dele no celular.
+ */
+export function ListaDeAvisos({ avisos, aoFechar }: { avisos: AvisoDoCanto[]; aoFechar: (id: number) => void }) {
+  return (
     <div
       role="status"
       aria-live="polite"
       data-avisos-do-canto
       data-os-app
-      className="pointer-events-none fixed inset-x-3 bottom-3 z-[70] flex flex-col items-end gap-2 md:inset-x-auto md:right-4 md:w-[360px]"
+      className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[70] flex flex-col items-end gap-2 md:inset-x-auto md:right-4 md:w-[360px]"
     >
       {avisos.map((a) => (
         <div
           key={a.id}
-          className={`pointer-events-auto flex w-full items-start gap-2 rounded border bg-surface px-3 py-2 text-[13px] shadow-lg motion-safe:animate-[aviso-entra_160ms_ease-out] ${
+          className={`flex w-full items-start gap-2 rounded border bg-surface px-3 py-2 text-[13px] shadow-lg motion-safe:animate-[aviso-entra_160ms_ease-out] ${
             a.tom === 'ruim' ? 'border-bad/50' : a.tom === 'bom' ? 'border-good/50' : 'border-border'
           }`}
         >
           <span aria-hidden className={a.tom === 'ruim' ? 'text-bad' : a.tom === 'bom' ? 'text-good' : 'text-muted'}>●</span>
           <p className="min-w-0 flex-1 break-words">{a.texto}</p>
-          <button type="button" aria-label="dispensar aviso" onClick={() => aoFechar(a.id)} className={`shrink-0 rounded px-1 text-muted hover:text-text ${FOCO}`}>
+          <button
+            type="button"
+            aria-label="dispensar aviso"
+            onClick={() => aoFechar(a.id)}
+            className={`pointer-events-auto -my-1 shrink-0 rounded px-2 text-muted hover:text-text max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`}
+          >
             ×
           </button>
         </div>
       ))}
-    </div>,
-    alvo,
+    </div>
   );
+}
+
+/** Sem painel aberto, os avisos vão ao <body> por portal. */
+function AvisosNoCanto({ avisos, aoFechar }: { avisos: AvisoDoCanto[]; aoFechar: (id: number) => void }) {
+  const [alvo, setAlvo] = useState<HTMLElement | null>(null);
+  useEffect(() => setAlvo(document.body), []);
+  if (!alvo) return null;
+  return createPortal(<ListaDeAvisos avisos={avisos} aoFechar={aoFechar} />, alvo);
 }
 
 /**
