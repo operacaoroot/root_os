@@ -98,6 +98,7 @@ services:
         NEXT_PUBLIC_RAIZ: login
     image: rootos-comercial-app
     container_name: rootos_comercial_api
+    restart: unless-stopped
     working_dir: /app/apps/api
     command: sh -c "pnpm exec prisma migrate deploy && node dist/main.js"
     environment:
@@ -164,6 +165,7 @@ services:
   web:
     image: rootos-comercial-app
     container_name: rootos_comercial_web
+    restart: unless-stopped
     working_dir: /app/apps/web
     command: sh -c "pnpm exec next start -p 4000"
     environment:

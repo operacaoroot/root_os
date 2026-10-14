@@ -101,6 +101,7 @@ Os 13 passos do `ux-painel.mjs`:
 - **Dependência:** o web já tinha `@radix-ui/react-dialog` no `package.json`. O painel não a usa: é componente próprio, como o roteiro pede.
 - **A decisão da 1ª execução do roteiro** (a que parou no `h2` repetido antes de decidir) não ficou aberta: o fio da Alicerce a mostra tomada às 22h09 por "Admin Root (simulado)", o canal do simulador da mesa. Esta lane não registrou quem a respondeu. A fila terminou vazia.
 - **O roteiro escreve na Alicerce:** cada execução do `ux-painel.mjs` registra na Alicerce da semente um pedido de ajuste e a decisão "manter". Isso entra no fio dela, como a jornada faz com os leads que cria.
+- **Depois de reiniciar o Predator:** o Docker Desktop desta máquina está com AutoStart desligado. Depois de um reinício, abra o Docker Desktop: todos os serviços da homologação têm `restart: unless-stopped` (api e web ganharam essa linha depois do reinício das 22:36) e voltam sozinhos. Ligar o AutoStart é decisão de quem cuida da máquina. [a decidir]
 - Os pontos de antes da lane (baseline vermelho no Windows, chaves e contas do Rodrigo, números da régua) seguem como estão em `homolog/RESULTADO.md` §7 e §8.
 
 ## 5. Como testar em 5 minutos
