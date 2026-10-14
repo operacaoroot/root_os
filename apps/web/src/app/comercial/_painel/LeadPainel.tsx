@@ -190,7 +190,8 @@ export function LeadPainel({ estado }: { estado: EstadoDoPainel }) {
         <header className="shrink-0 border-b border-border bg-bg2 px-4 pt-3 md:px-5">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <h2 id={idTitulo} ref={titulo} tabIndex={-1} className="truncate text-[18px] font-semibold leading-tight outline-none md:text-[19px]">
+              {/* O título recebe o foco ao abrir só para o leitor de tela anunciar o lead: sem contorno. */}
+              <h2 id={idTitulo} ref={titulo} tabIndex={-1} style={{ outline: 'none' }} className="truncate text-[18px] font-semibold leading-tight md:text-[19px]">
                 {nome}
               </h2>
               <p className="mt-0.5 truncate text-[12.5px] text-muted">

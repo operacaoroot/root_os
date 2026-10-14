@@ -14,7 +14,7 @@ import { COMERCIAL_PRODUTOS } from '@mktos/shared';
 
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { AUSENTE, ROTULO_DO_PRODUTO, explicarRascunho, horaSP, quandoCurtoSP, reaisOuAusente } from '@/lib/cockpit';
+import { AUSENTE, ROTULO_DO_PRODUTO, dataDoDia, explicarRascunho, horaSP, quandoCurtoSP, reaisOuAusente } from '@/lib/cockpit';
 
 import { AguardandoAprovacao, Aviso, BOTAO, BOTAO_PRIMARIO, CARTAO, Carregando, Chip, Erro, ErroDaAcao, FOCO, INPUT, Rotulo, useCarregar } from '../_ui';
 import { usePainel } from './provedor';
@@ -292,7 +292,7 @@ function Proposta({ leadId, s, aoMudar, irParaDecisoes }: { leadId: string; s: S
           <p className="text-[12.5px] text-muted">
             custos de terceiros: mês normal {reaisOuAusente(p.conteudo.quadroDeCustos?.mesNormalCentavos)} · pior mês {reaisOuAusente(p.conteudo.quadroDeCustos?.piorMesCentavos)}
             {p.conteudo.quadroDeCustos?.exemplo && ' (valores de exemplo, a decidir)'}
-            {' · '}vale até {p.conteudo.validaAte ? quandoCurtoSP(p.conteudo.validaAte) : AUSENTE} · tabela de {p.conteudo.tabelaData}
+            {' · '}vale até {p.conteudo.validaAte ? quandoCurtoSP(p.conteudo.validaAte) : AUSENTE} · tabela de {dataDoDia(p.conteudo.tabelaData) || p.conteudo.tabelaData}
           </p>
 
           <div>

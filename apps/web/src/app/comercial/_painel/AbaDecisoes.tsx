@@ -63,15 +63,17 @@ export function AbaDecisoes({
             {fechadas.map((d) => {
               const escolha = d.opcoes.find((o) => o.chave === d.escolha)?.rotulo ?? d.escolha;
               return (
-                <li key={d.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-1.5">
-                  <Chip>{ROTULO_DO_TIPO_DE_DECISAO[d.tipo] ?? d.tipo}</Chip>
-                  <span className="min-w-0 flex-1">{d.titulo}</span>
-                  <span className="text-muted">
+                <li key={d.id} className="space-y-0.5 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Chip>{ROTULO_DO_TIPO_DE_DECISAO[d.tipo] ?? d.tipo}</Chip>
+                    <span className="ml-auto font-os-mono text-[11px] tabular-nums text-dim">{quandoCurtoSP(d.criadaEm)}</span>
+                  </div>
+                  <p className="break-words">{d.titulo}</p>
+                  <p className="text-muted">
                     {ROTULO_DO_ESTADO[d.estado] ?? d.estado}
                     {escolha ? ` · ${escolha}` : ''}
                     {d.decididoPor ? ` · ${d.decididoPor}` : ''}
-                  </span>
-                  <span className="font-os-mono text-[11px] tabular-nums text-dim">{quandoCurtoSP(d.criadaEm)}</span>
+                  </p>
                 </li>
               );
             })}

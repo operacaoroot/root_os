@@ -1,25 +1,97 @@
 {
-  "inicio": "2026-10-14T01:07:54.508Z",
+  "inicio": "2026-10-14T01:15:12.840Z",
   "web": "http://127.0.0.1:3010",
   "passos": [
     {
       "n": 1,
       "nome": "mesa entrou pela API",
-      "ms": 102,
+      "ms": 89,
       "detalhe": "mesa@root.homolog"
     },
     {
       "n": 2,
       "nome": "a Alicerce pediu 8% pela sala e a decisão abriu",
-      "ms": 247,
+      "ms": 201,
       "detalhe": "Marina Duarte pediu 8% de desconto na Operação ROOT",
       "leadId": "edea2274-6852-5adf-8b34-2286a2c10f5d",
-      "decisaoId": "07af2c95-150a-5a4b-b1ac-525febf92b61"
+      "decisaoId": "c2d30401-4b68-5413-841e-8aad1d6f8464"
+    },
+    {
+      "n": 3,
+      "nome": "da fila, \"ver o lead\" abriu o painel na aba Decisões; só a query mudou",
+      "ms": 1280,
+      "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=decisoes"
+    },
+    {
+      "n": 4,
+      "nome": "decidiu \"manter o preço\" dentro do painel; o aviso no canto disse o que aconteceu",
+      "ms": 1815
+    },
+    {
+      "n": 5,
+      "nome": "o cartão da decisão saiu da fila de trás sem recarregar",
+      "ms": 1817
+    },
+    {
+      "n": 6,
+      "nome": "o fio ganhou a linha da decisão; a URL mudou só na query",
+      "ms": 1883,
+      "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
+    },
+    {
+      "n": 7,
+      "nome": "Esc fechou o painel, a URL voltou à da fila e o foco voltou à tela de trás",
+      "ms": 1895
+    },
+    {
+      "n": 8,
+      "nome": "no funil, as setas andaram até a Alicerce e Enter abriu o painel na aba Fio",
+      "ms": 2662,
+      "detalhe": "?lead=edea2274-6852-5adf-8b34-2286a2c10f5d&aba=fio"
+    },
+    {
+      "n": 9,
+      "nome": "a linha da lista de contratos abriu o painel na aba Dinheiro",
+      "ms": 7029
+    },
+    {
+      "n": 10,
+      "nome": "a rota antiga /comercial/lead/<id> redirecionou para o funil com o painel na aba Fio",
+      "ms": 7742
+    },
+    {
+      "n": 11,
+      "nome": "a rota antiga /sessao abriu a aba Sessão",
+      "ms": 8473
+    },
+    {
+      "n": 12,
+      "nome": "a raiz / abriu o login (NEXT_PUBLIC_RAIZ=login)",
+      "ms": 8631,
+      "detalhe": "/login"
+    },
+    {
+      "n": 13,
+      "nome": "no celular (390 px) a folha abriu na tela inteira e fechou; sem rolagem horizontal; fechar com 44 px",
+      "ms": 9982,
+      "detalhe": "390x844.0000095367432"
     }
   ],
-  "screenshots": [],
-  "ok": false,
-  "erro": "locator.innerText: Error: strict mode violation: getByRole('dialog').getByRole('heading', { level: 2 }) resolved to 2 elements:\n    1) <h2 id=\"_r_0_\" tabindex=\"-1\" class=\"truncate text-[18px] font-semibold leading-tight outline-none md:text-[19px]\">Construtora Alicerce</h2> aka getByRole('heading', { name: 'Construtora Alicerce' })\n    2) <h2 class=\"font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted \">já fechadas</h2> aka getByRole('heading', { name: 'já fechadas' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('dialog').getByRole('heading', { level: 2 })\u001b[22m\n",
-  "fim": "2026-10-14T01:08:04.517Z",
-  "duracaoMs": 10009
+  "screenshots": [
+    "ux-fila-painel-decisoes-escuro.png",
+    "ux-funil-painel-fio-escuro.png",
+    "ux-painel-sessao-escuro.png",
+    "ux-painel-dinheiro-alicerce-escuro.png",
+    "ux-contratos-painel-dinheiro-escuro.png",
+    "ux-celular-folha-escuro.png",
+    "ux-fila-painel-decisoes-claro.png",
+    "ux-funil-painel-fio-claro.png",
+    "ux-painel-sessao-claro.png",
+    "ux-painel-dinheiro-alicerce-claro.png",
+    "ux-contratos-painel-dinheiro-claro.png",
+    "ux-celular-folha-claro.png"
+  ],
+  "ok": true,
+  "fim": "2026-10-14T01:15:32.196Z",
+  "duracaoMs": 19355
 }

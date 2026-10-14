@@ -236,14 +236,15 @@ async function main() {
       await marcar(p);
       const cartoes = p.locator('[data-cartao-do-funil]');
       await cartoes.first().waitFor({ timeout: 30_000 });
-      const alvoNome = 'Construtora Alicerce';
-      const indice = await cartoes.evaluateAll((els, nome) => els.findIndex((e) => e.textContent?.includes(nome)), alvoNome);
+      // A Alicerce da semente, pelo id: as jornadas criam outras "Construtora Alicerce Homolog ...".
+      const doLead = `lead=${leadId}&`;
+      const indice = await cartoes.evaluateAll((els, marca) => els.findIndex((e) => (e.getAttribute('href') ?? '').includes(marca)), doLead);
       conferir(indice >= 0, 'a Alicerce não aparece no funil da tela');
       await cartoes.first().focus();
       // Anda pelas setas até a Alicerce (direita entre colunas, baixo dentro da coluna).
       for (let i = 0; i < 40; i++) {
-        const atual = await p.evaluate(() => document.activeElement?.textContent ?? '');
-        if (atual.includes(alvoNome)) break;
+        const atual = await p.evaluate(() => document.activeElement?.getAttribute('href') ?? '');
+        if (atual.includes(doLead)) break;
         const colunaAtual = await p.evaluate(() => {
           const c = document.activeElement?.closest('[data-coluna-do-funil]');
           return Array.from(document.querySelectorAll('[data-coluna-do-funil]')).indexOf(c);
@@ -251,7 +252,7 @@ async function main() {
         const colunaAlvo = await cartoes.nth(indice).evaluate((e) => Array.from(document.querySelectorAll('[data-coluna-do-funil]')).indexOf(e.closest('[data-coluna-do-funil]')));
         await p.keyboard.press(colunaAtual < colunaAlvo ? 'ArrowRight' : 'ArrowDown');
       }
-      conferir((await p.evaluate(() => document.activeElement?.textContent ?? '')).includes(alvoNome), 'as setas não chegaram à Alicerce');
+      conferir((await p.evaluate(() => document.activeElement?.getAttribute('href') ?? '')).includes(doLead), 'as setas não chegaram à Alicerce');
       await p.keyboard.press('Enter');
       await dialogo(p).waitFor();
       const urlFunil = new URL(p.url());
@@ -313,7 +314,7 @@ async function main() {
       const pc = await cel.newPage();
       await pc.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
       await marcar(pc);
-      const cartaoCel = pc.locator('[data-cartao-do-funil]', { hasText: 'Construtora Alicerce' });
+      const cartaoCel = pc.locator(`[data-cartao-do-funil][href*="lead=${leadId}&"]`);
       await cartaoCel.scrollIntoViewIfNeeded();
       await cartaoCel.click();
       await dialogo(pc).waitFor();
