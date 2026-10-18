@@ -76,6 +76,14 @@ export function AbaAtividade({ token }: { token: string }) {
   const [limpando, setLimpando] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
   const pedido = useRef(0);
+  const botaoLimparTudo = useRef<HTMLButtonElement>(null);
+  const topo = useRef<HTMLDivElement>(null);
+  /*
+   * Para onde o foco vai quando o item limpo sai da tela (revisão do painel, P3):
+   * o "Limpar" do item seguinte, ou do anterior, ou o "Limpar tudo"; sem nada
+   * disso, o topo da aba. Antes o botão sumia do DOM e o foco caía no body.
+   */
+  const focarDepois = useRef<string | null>(null);
 
   const buscar = useCallback(async () => {
     const n = ++pedido.current;
@@ -120,8 +128,12 @@ export function AbaAtividade({ token }: { token: string }) {
   async function limparUm(id: string) {
     setLimpando((s) => new Set(s).add(id));
     setAviso(null);
+    const visiveis = itens.filter((i) => !i.limpo);
+    const pos = visiveis.findIndex((i) => i.id === id);
+    const vizinho = visiveis[pos + 1] ?? visiveis[pos - 1] ?? null;
     try {
       await apiPost<CaixaLimparResposta>('/caixa/limpar', { ids: [id] }, token);
+      focarDepois.current = vizinho ? vizinho.id : '';
       setItens((atuais) =>
         incluirLimpos
           ? atuais.map((i) => (i.id === id ? { ...i, limpo: true } : i))
@@ -150,12 +162,25 @@ export function AbaAtividade({ token }: { token: string }) {
     }
   }
 
+  useEffect(() => {
+    const alvo = focarDepois.current;
+    if (alvo === null) return;
+    focarDepois.current = null;
+    const doVizinho = alvo
+      ? Array.from(topo.current?.querySelectorAll<HTMLButtonElement>('[data-testid^="caixa-limpar-"]') ?? []).find(
+          (b) => b.dataset.testid === `caixa-limpar-${alvo}`,
+        )
+      : null;
+    const tudo = botaoLimparTudo.current && !botaoLimparTudo.current.disabled ? botaoLimparTudo.current : null;
+    (doVizinho ?? tudo ?? topo.current)?.focus();
+  }, [itens]);
+
   const agora = resposta ? new Date(resposta.agora) : new Date();
   const fraseDeEstado = resposta ? fraseDoQuadro(resposta.estado) : null;
   const pendentes = itens.filter((i) => !i.limpo).length;
 
   return (
-    <div className="space-y-3">
+    <div ref={topo} tabIndex={-1} className="space-y-3 outline-none">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <label className="inline-flex items-center gap-2 text-[12.5px] text-muted max-md:min-h-[44px]">
           <input
@@ -178,6 +203,7 @@ export function AbaAtividade({ token }: { token: string }) {
           Ver também os já limpos
         </label>
         <button
+          ref={botaoLimparTudo}
           type="button"
           data-testid="caixa-limpar-tudo"
           onClick={() => void limparTudo()}

@@ -94,16 +94,24 @@ function caminho(f: Filtros): string {
 
 const ULTIMOS = 5;
 
+/*
+ * O balão é um diálogo leve (revisão do painel, P3 de 18/10/2026): Esc e o botão
+ * "fechar" DEVOLVEM O FOCO ao botão que o abriu; o clique fora fecha e deixa o
+ * foco onde a pessoa clicou. O clique no próprio botão de origem não conta como
+ * "fora": é o botão que alterna, e antes o mousedown fechava e o click reabria.
+ */
 function BalaoDeComentarios({
   tarefa,
   token,
   ancora,
+  origem,
   onFechar,
 }: {
   tarefa: CaixaMinhaTarefa;
   token: string;
   ancora: DOMRect | null;
-  onFechar: () => void;
+  origem: HTMLElement | null;
+  onFechar: (devolverFoco: boolean) => void;
 }) {
   const [comentarios, setComentarios] = useState<TrabComentarioDto[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -126,10 +134,12 @@ function BalaoDeComentarios({
   useEffect(() => {
     caixa.current?.focus();
     const tecla = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onFechar();
+      if (e.key === 'Escape') onFechar(true);
     };
     const clique = (e: MouseEvent) => {
-      if (caixa.current && !caixa.current.contains(e.target as Node)) onFechar();
+      const alvo = e.target as Node;
+      if (origem?.contains(alvo)) return;
+      if (caixa.current && !caixa.current.contains(alvo)) onFechar(false);
     };
     document.addEventListener('keydown', tecla);
     document.addEventListener('mousedown', clique);
@@ -137,7 +147,7 @@ function BalaoDeComentarios({
       document.removeEventListener('keydown', tecla);
       document.removeEventListener('mousedown', clique);
     };
-  }, [onFechar]);
+  }, [onFechar, origem]);
 
   // Fixo na tela, perto do botão e dentro da janela: dentro da tabela, que rola
   // de lado, um balão absoluto seria cortado. No celular, ocupa a base da tela.
@@ -166,7 +176,7 @@ function BalaoDeComentarios({
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="min-w-0 break-words text-[12.5px] font-medium">{tarefa.titulo}</p>
-        <button type="button" onClick={onFechar} className={BOTAO_PEQUENO} aria-label="Fechar comentários">
+        <button type="button" onClick={() => onFechar(true)} className={BOTAO_PEQUENO} aria-label="Fechar comentários">
           fechar
         </button>
       </div>
@@ -214,7 +224,8 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
   const [resposta, setResposta] = useState<CaixaTarefasResposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [balao, setBalao] = useState<{ tarefa: CaixaMinhaTarefa; ancora: DOMRect | null } | null>(null);
+  const [balao, setBalao] = useState<{ tarefa: CaixaMinhaTarefa; ancora: DOMRect | null; origem: HTMLElement | null } | null>(null);
+  const origemDoBalao = useRef<HTMLElement | null>(null);
   const pedido = useRef(0);
 
   useEffect(() => {
@@ -259,7 +270,20 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     return [...m.entries()];
   }, [resposta]);
 
-  const fecharBalao = useCallback(() => setBalao(null), []);
+  const fecharBalao = useCallback((devolverFoco: boolean) => {
+    const origem = origemDoBalao.current;
+    origemDoBalao.current = null;
+    setBalao(null);
+    if (devolverFoco) origem?.focus();
+  }, []);
+  const alternarBalao = (t: CaixaMinhaTarefa, botao: HTMLElement) => {
+    if (balao?.tarefa.id === t.id) {
+      fecharBalao(false);
+      return;
+    }
+    origemDoBalao.current = botao;
+    setBalao({ tarefa: t, ancora: botao.getBoundingClientRect(), origem: botao });
+  };
   const agora = resposta ? new Date(resposta.agora) : new Date();
   const fraseDeEstado = resposta ? fraseDoQuadro(resposta.estado) : null;
   const ver = (c: Coluna) => colunas.has(c);
@@ -271,7 +295,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
     <button
       type="button"
       data-testid={noCartao ? `caixa-comentarios-cartao-${t.id}` : `caixa-comentarios-${t.id}`}
-      onClick={(e) => setBalao({ tarefa: t, ancora: e.currentTarget.getBoundingClientRect() })}
+      onClick={(e) => alternarBalao(t, e.currentTarget)}
       aria-haspopup="dialog"
       aria-expanded={balao?.tarefa.id === t.id}
       aria-label={`${t.comentarios} comentário(s) em ${t.titulo}`}
@@ -514,7 +538,7 @@ export function AbaMinhasTarefas({ token }: { token: string }) {
       )}
 
       {balao && token && (
-        <BalaoDeComentarios tarefa={balao.tarefa} token={token} ancora={balao.ancora} onFechar={fecharBalao} />
+        <BalaoDeComentarios tarefa={balao.tarefa} token={token} ancora={balao.ancora} origem={balao.origem} onFechar={fecharBalao} />
       )}
     </div>
   );

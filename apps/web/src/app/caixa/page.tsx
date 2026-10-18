@@ -63,7 +63,7 @@ function fraseDasAprovacoes(caixa: CaixaResposta): string | null {
     return 'Sua sessão não corresponde a um usuário ativo desta empresa. Saia e entre de novo.';
   }
   if (e === 'sem_permissao') {
-    return 'Seu perfil não acompanha a fila de aprovação. Não é erro: é decisão de papel.';
+    return 'Seu perfil não acompanha a fila de aprovação. O papel de cada pessoa define o que ela vê.';
   }
   if (e === 'nao_decide') {
     return 'Você acompanha a fila de aprovação, mas não decide nela (falta "aprovacoes.decidir"). Nada lá espera a sua assinatura.';

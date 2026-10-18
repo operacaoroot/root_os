@@ -462,20 +462,14 @@ function TrabalhoConteudo({ visaoInicial }: { visaoInicial: Visao }) {
               ))}
             </div>
             {editable && lista && estrutura && (
-              <select
-                aria-label="Mover a lista para a pasta"
-                data-testid="trabalho-mover-lista"
-                title="Pasta desta lista"
-                value={pastaDaLista}
-                onChange={(e) =>
-                  apiPatch(`/trabalho/listas/${lista.id}`, { folderId: e.target.value || null }, token)
+              <SeletorDePastaDaLista
+                valor={pastaDaLista}
+                pastas={estrutura.folders}
+                onMover={(folderId) =>
+                  apiPatch(`/trabalho/listas/${lista.id}`, { folderId: folderId || null }, token)
                     .then(refresh).catch((er) => setErro(er.message))
                 }
-                className="max-w-44 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
-              >
-                {estrutura.folders.map((f) => <option key={f.id} value={f.id}>Pasta: {f.name}</option>)}
-                <option value="">Sem pasta</option>
-              </select>
+              />
             )}
             {editable && lista && (
               <button
@@ -1735,6 +1729,52 @@ function AtalhoDoTrilho({ trilho }: { trilho: TrilhoDoCartao }) {
 }
 
 /*
+ * "MOVER A LISTA PARA A PASTA" (rodada do painel P2; revisão P3 de 18/10/2026).
+ *
+ * Escolher com o mouse (ou pelo Playwright) grava na hora, como antes. Pelo
+ * teclado, não: no Chrome e no Edge do Windows a seta num <select> fechado
+ * dispara `change` a cada opção, e cada uma virava um PATCH e uma linha de
+ * auditoria. Com tecla, a escolha fica pendente e grava no Enter ou ao sair do
+ * campo; Esc desfaz.
+ */
+const TECLAS_QUE_NAVEGAM = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+
+function SeletorDePastaDaLista({ valor, pastas, onMover }: {
+  valor: string; pastas: TrabEstrutura['folders']; onMover: (folderId: string) => void;
+}) {
+  const [escolha, setEscolha] = useState(valor);
+  const pelaTecla = useRef(false);
+  useEffect(() => { setEscolha(valor); }, [valor]);
+  const gravar = (v: string) => {
+    pelaTecla.current = false;
+    if (v !== valor) onMover(v);
+  };
+  return (
+    <select
+      aria-label="Mover a lista para a pasta"
+      aria-description="Com o teclado, a pasta escolhida grava no Enter ou ao sair do campo."
+      data-testid="trabalho-mover-lista"
+      title="Pasta desta lista"
+      value={escolha}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); gravar(escolha); return; }
+        if (e.key === 'Escape') { pelaTecla.current = false; setEscolha(valor); return; }
+        if (TECLAS_QUE_NAVEGAM.has(e.key) || e.key.length === 1) pelaTecla.current = true;
+      }}
+      onChange={(e) => {
+        setEscolha(e.target.value);
+        if (!pelaTecla.current) gravar(e.target.value);
+      }}
+      onBlur={() => { if (pelaTecla.current) gravar(escolha); }}
+      className="max-w-44 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none max-md:min-h-[44px]"
+    >
+      {pastas.map((f) => <option key={f.id} value={f.id}>Pasta: {f.name}</option>)}
+      <option value="">Sem pasta</option>
+    </select>
+  );
+}
+
+/*
  * O SELETOR DE PASTA, no topo da tela (rodada do painel P2, 18/10/2026).
  *
  * As pastas são as de TOPO (`WorkFolder` sem mãe); escolher uma mostra na árvore
@@ -1762,7 +1802,7 @@ function BarraDePastas({ pastas, temSoltas, atual, semPastas, editable, token, o
       aria-pressed={ativa === chave}
       onClick={() => onEscolher(chave)}
       className={[
-        'max-w-48 truncate rounded-full border px-3 py-1 text-[12px] transition',
+        'max-w-48 truncate rounded-full border px-3 py-1 text-[12px] transition max-md:min-h-[44px]',
         ativa === chave ? 'border-brand-dim bg-brand/15 text-text' : 'border-border bg-surface text-muted hover:text-text',
       ].join(' ')}
       title={rotulo}

@@ -212,6 +212,12 @@ describe('P1: a aba Atividade', () => {
     await waitFor(() => expect(screen.queryByTestId('caixa-item-auditoria:a1')).toBeNull());
     expect(apiPost).toHaveBeenCalledWith('/caixa/limpar', { ids: ['auditoria:a1'] }, 'tok');
     expect(screen.getByTestId('caixa-item-comentario:c1')).toBeTruthy();
+    // O foco não cai no body: vai ao "Limpar" do item seguinte.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('caixa-limpar-comentario:c1')));
+    // Limpo o último, o foco vai ao "Limpar tudo" (ou, desligado, ao topo da aba).
+    fireEvent.click(screen.getByTestId('caixa-limpar-comentario:c1'));
+    await waitFor(() => expect(screen.queryByTestId('caixa-item-comentario:c1')).toBeNull());
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
   });
 
   it('Limpar tudo manda o instante da leitura e relê a caixa', async () => {
@@ -324,11 +330,30 @@ describe('P1: a aba Minhas tarefas', () => {
     await waitFor(() => expect(within(balao).getByText('último recado')).toBeTruthy());
     expect(within(balao).getByText('primeiro recado')).toBeTruthy();
     expect(apiGet).toHaveBeenCalledWith('/trabalho/tarefas/t-9', 'tok');
-    // Esc fecha.
+    // Esc fecha e devolve o foco ao botão que abriu.
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(screen.getByTestId('caixa-comentarios-t-9'));
     // A tabela continua ali: não saiu da tela.
     expect(screen.getByTestId('caixa-tarefa-t-9')).toBeTruthy();
+  });
+
+  it('o botão dos comentários alterna o balão: com ele aberto, o clique fecha (e não reabre)', async () => {
+    render(<CaixaPage />);
+    fireEvent.click(screen.getByTestId('caixa-aba-tarefas'));
+    const botao = await screen.findByTestId('caixa-comentarios-t-9');
+    fireEvent.click(botao);
+    await screen.findByRole('dialog', { name: /Comentários de Revisar contrato/ });
+    expect(botao).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.mouseDown(botao);
+    fireEvent.click(botao);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(botao).toHaveAttribute('aria-expanded', 'false');
+    // O botão "fechar" de dentro também devolve o foco.
+    fireEvent.click(botao);
+    fireEvent.click(await screen.findByRole('button', { name: 'Fechar comentários' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(botao);
   });
 
   it('sem tarefas, a frase diz isso', async () => {

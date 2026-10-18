@@ -183,6 +183,28 @@ describe('Trabalho: mover lista de pasta', () => {
     fireEvent.change(mover, { target: { value: '' } });
     await waitFor(() => expect(patch).toHaveBeenCalledWith('/trabalho/listas/l-adm', { folderId: null }, 'tok'));
   });
+
+  it('pelo teclado, cada seta NÃO grava: a pasta grava no Enter (ou ao sair do campo), e Esc desfaz', async () => {
+    window.history.replaceState({}, '', '/trabalho?lista=l-adm');
+    render(<TrabalhoPage />);
+    const mover = await screen.findByTestId('trabalho-mover-lista');
+    await waitFor(() => expect(mover).toHaveValue(ADM));
+    patch.mockClear();
+    fireEvent.keyDown(mover, { key: 'ArrowDown' });
+    fireEvent.change(mover, { target: { value: CLI } });
+    fireEvent.keyDown(mover, { key: 'ArrowDown' });
+    fireEvent.change(mover, { target: { value: '' } });
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.keyDown(mover, { key: 'Escape' });
+    expect(mover).toHaveValue(ADM);
+    fireEvent.blur(mover);
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.keyDown(mover, { key: 'ArrowDown' });
+    fireEvent.change(mover, { target: { value: CLI } });
+    fireEvent.keyDown(mover, { key: 'Enter' });
+    await waitFor(() => expect(patch).toHaveBeenCalledWith('/trabalho/listas/l-adm', { folderId: CLI }, 'tok'));
+    expect(patch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('Trabalho: a implantação aglutinada', () => {

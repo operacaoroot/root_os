@@ -14,7 +14,7 @@ import type { CaixaEstadoDoEixo } from '@mktos/shared';
 export const FOCO = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand';
 // No celular o botão tem 44 px de altura (o alvo do polegar); no desktop, a do texto.
 export const BOTAO = `inline-flex items-center justify-center rounded border border-border px-3 py-1.5 text-[12.5px] transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[44px] ${FOCO}`;
-export const BOTAO_PEQUENO = `inline-flex items-center justify-center rounded border border-border px-2 py-1 text-[11.5px] text-muted transition hover:border-brand hover:text-text disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[40px] ${FOCO}`;
+export const BOTAO_PEQUENO = `inline-flex items-center justify-center rounded border border-border px-2 py-1 text-[11.5px] text-muted transition hover:border-brand hover:text-text disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`;
 export const ROTULO = 'font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted';
 export const CARTAO = 'rounded border border-border bg-surface';
 export const SELECT = `rounded border border-border bg-bg px-2 py-1.5 text-[12.5px] outline-none focus:border-brand max-md:min-h-[44px] ${FOCO}`;
@@ -64,7 +64,7 @@ export function fraseDoQuadro(estado: CaixaEstadoDoEixo): string | null {
     return 'Sua sessão não corresponde a um usuário ativo desta empresa. Saia e entre de novo.';
   }
   if (estado === 'sem_permissao') {
-    return 'Seu perfil não vê o quadro de trabalho, então esta parte da caixa fica fora. Não é erro: é decisão de papel.';
+    return 'Seu perfil não vê o quadro de trabalho, então esta parte da caixa fica fora. O papel de cada pessoa define o que ela vê.';
   }
   if (estado === 'modulo_desligado') {
     return 'O módulo Trabalho não está contratado por esta empresa, então não há tarefas para mostrar aqui.';
