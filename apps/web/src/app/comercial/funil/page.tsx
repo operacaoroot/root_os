@@ -1,172 +1,498 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import type { CartaoDoFunil, FichaDoLead, FunilVivo } from '@mktos/shared';
-import { COMERCIAL_ROTULO_DA_ETAPA } from '@mktos/shared';
+import type { CartaoDoFunil, ComercialDestinoDoMover, ComercialPedidoDeMover, ComercialSaida, FunilVivo } from '@mktos/shared';
+import { COMERCIAL_FILTROS_DO_FUNIL, COMERCIAL_MOTIVOS_DE_SAIDA, COMERCIAL_ROTULO_DA_ETAPA, COMERCIAL_SAIDAS } from '@mktos/shared';
 
-import { apiGet } from '@/lib/api';
+import { apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, agruparFunil, descricaoJaDizQuando, diaSP, motivoDoBloqueio, quandoRoda } from '@/lib/cockpit';
+import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, descricaoJaDizQuando, diaSP, quandoRoda } from '@/lib/cockpit';
 
-import { Aviso, BarraDaSaude, BOTAO, Carregando, Chip, Erro, FOCO, useCarregar } from '../_ui';
+import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, Carregando, Chip, Erro, FOCO, INPUT, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 import { moverFocoNoFunil } from '../_painel/teclado';
+import { concluirMudanca, destinoDaColuna, esquecerPedido, fraseDoErro, guardarPedido, lerPedidos, opcoesDoMenu, pedirMudanca, rotuloCurto, voltaEmDoDia } from '../_funil/mover';
 
 /*
- * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX). Para olhar, não para
- * operar: o cartão anda sozinho quando o fato chega. Arrastar é BLOQUEADO, e a
- * tela diz por quê, com a lista do portão que falta para a próxima etapa (lida
- * da ficha). Clicar no cartão abre o painel do lead por cima do funil, na aba
- * Fio; pelo teclado, as setas andam entre os cartões e Enter abre.
+ * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5).
+ *
+ * O cartão anda sozinho quando o fato chega. Uma PESSOA também pode movê-lo:
+ * arrastando para outra coluna ou pelo menu "Mover para" (teclado e celular).
+ * Mudar a etapa pela tela é escrita sensível, como sempre foi: o arraste vira
+ * um PEDIDO, outra pessoa assina em /atendimento, e quem pediu conclui aqui.
+ * Com portão em aberto a mudança executa e o cartão ganha um balão com o que
+ * falta, até os fatos chegarem. E8 e E9 não aceitam arrasto (entram por efeito
+ * de sistema) e voltar não é avanço; saída vai pelo registro de saída, com
+ * motivo. Cada coluna rola sozinha; a barra de etapas leva até a coluna.
  */
 
-
-const FILTROS: { chave: string; rotulo: string }[] = [
-  { chave: 'todos', rotulo: 'todos' },
-  { chave: 'parados', rotulo: 'parados' },
-  { chave: 'decisao', rotulo: 'decisão sua' },
-  { chave: 'P1', rotulo: 'P1' },
-  { chave: 'P2', rotulo: 'P2' },
-  { chave: 'P3', rotulo: 'P3' },
-  { chave: 'operacao', rotulo: 'Operação' },
-  { chave: 'imersao', rotulo: 'Imersão' },
-];
+type Coluna = FunilVivo['colunas'][number];
 
 export default function FunilVivoPage() {
   const { token } = useAuth();
   const [filtro, setFiltro] = useState('todos');
   const { dados, erro, carregando, recarregar } = useCarregar<FunilVivo>(`/comercial/funil?filtro=${encodeURIComponent(filtro)}`, 30_000);
   useMudouNoPainel(recarregar);
-  const [bloqueio, setBloqueio] = useState<{ leadId: string; texto: string } | null>(null);
-  // C-11: só a última leitura do portão escreve; a de um cartão anterior que chegar depois é descartada.
-  const ultimoPedido = useRef(0);
+  const [pedidos, setPedidos] = useState<Record<string, ComercialPedidoDeMover>>({});
+  const [avisos, setAvisos] = useState<Record<string, { texto: string; tom: 'neutro' | 'bom' | 'ruim' }>>({});
+  const [saidaAberta, setSaidaAberta] = useState<{ leadId: string; saida: ComercialSaida | null } | null>(null);
+  const [ocupados, setOcupados] = useState<Record<string, boolean>>({});
+  const ocupar = (leadId: string, sim: boolean) => setOcupados(({ [leadId]: _, ...resto }) => (sim ? { ...resto, [leadId]: true } : resto));
+  const [arrastando, setArrastando] = useState<CartaoDoFunil | null>(null);
+  const [sobre, setSobre] = useState<string | null>(null);
 
-  async function explicarBloqueio(c: CartaoDoFunil) {
-    const pedido = ++ultimoPedido.current;
-    const vale = () => pedido === ultimoPedido.current;
-    setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, null, null) });
+  useEffect(() => setPedidos(lerPedidos()), []);
+
+  const avisar = (leadId: string, texto: string, tom: 'neutro' | 'bom' | 'ruim' = 'neutro') => setAvisos((a) => ({ ...a, [leadId]: { texto, tom } }));
+  const calar = (leadId: string) => setAvisos(({ [leadId]: _, ...resto }) => resto);
+
+  async function agir(c: CartaoDoFunil, d: ComercialDestinoDoMover) {
+    calar(c.leadId);
+    if (!d.permitido) return avisar(c.leadId, `${rotuloCurto(d.para)} não aceita este cartão: ${d.motivo}.`);
+    if (d.caminho === 'saida') return setSaidaAberta({ leadId: c.leadId, saida: (COMERCIAL_SAIDAS as readonly string[]).includes(d.para) ? (d.para as ComercialSaida) : null });
+    ocupar(c.leadId, true);
     try {
-      const f = await apiGet<FichaDoLead>(`/comercial/lead/${c.leadId}`, token);
-      if (!vale()) return;
-      const proxima = f.portao.proxima ? COMERCIAL_ROTULO_DA_ETAPA[f.portao.proxima] : null;
-      setBloqueio({ leadId: c.leadId, texto: motivoDoBloqueio(c.empresa ?? c.nome, proxima, f.portao.faltando) });
-    } catch {
-      if (!vale()) return;
-      setBloqueio({ leadId: c.leadId, texto: `${motivoDoBloqueio(c.empresa ?? c.nome, null, null)} O portão não pôde ser lido agora.` });
+      const p = await pedirMudanca(c.leadId, d.para, token);
+      guardarPedido(c.leadId, p);
+      setPedidos((x) => ({ ...x, [c.leadId]: p }));
+    } catch (e) {
+      avisar(c.leadId, fraseDoErro(e), 'ruim');
+    } finally {
+      ocupar(c.leadId, false);
     }
   }
 
-  const grupos = dados ? agruparFunil(dados) : [];
+  async function concluir(c: CartaoDoFunil, p: ComercialPedidoDeMover) {
+    ocupar(c.leadId, true);
+    try {
+      const r = await concluirMudanca(c.leadId, p, token);
+      setPedidos(({ [c.leadId]: _, ...resto }) => resto);
+      avisar(c.leadId, r.balao ? `Movido para ${rotuloCurto(r.para)}, com pendências.` : `Movido para ${rotuloCurto(r.para)}.`, 'bom');
+      await recarregar();
+    } catch (e) {
+      setPedidos(lerPedidos());
+      avisar(c.leadId, fraseDoErro(e), /ainda não veio/.test(fraseDoErro(e)) ? 'neutro' : 'ruim');
+    } finally {
+      ocupar(c.leadId, false);
+    }
+  }
+
+  function desistir(leadId: string) {
+    esquecerPedido(leadId);
+    setPedidos(({ [leadId]: _, ...resto }) => resto);
+    avisar(leadId, 'Pedido esquecido nesta tela. Ele vence sozinho na fila em até 10 minutos.');
+  }
+
+  function soltar(e: React.DragEvent, coluna: Coluna) {
+    e.preventDefault();
+    setSobre(null);
+    const id = e.dataTransfer?.getData('text/plain') || arrastando?.leadId;
+    const c = dados?.colunas.flatMap((x) => x.cartoes).find((x) => x.leadId === id);
+    setArrastando(null);
+    if (!c || c.etapa === coluna.etapa || (coluna.etapa === 'saidas' && (COMERCIAL_SAIDAS as readonly string[]).includes(c.etapa))) return;
+    void agir(c, destinoDaColuna(c, coluna.etapa));
+  }
+
+  function irParaColuna(etapa: Coluna['etapa']) {
+    const col = document.querySelector<HTMLElement>(`[data-testid="funil-coluna-${etapa}"]`);
+    col?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    col?.querySelector<HTMLElement>('[data-cabecalho-da-coluna]')?.focus({ preventScroll: true });
+  }
+
+  const colunas = dados?.colunas ?? [];
 
   return (
-    <div className="space-y-4">
-      <header className="space-y-2">
+    <div className="flex flex-col gap-3 md:h-[calc(100dvh-52px-2rem)] min-[820px]:h-[calc(100dvh-46px-3rem)]">
+      <header className="shrink-0 space-y-2">
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="filtro">
-          {FILTROS.map((f) => (
-            <button
-              key={f.chave}
-              type="button"
-              aria-pressed={filtro === f.chave}
-              onClick={() => setFiltro(f.chave)}
-              className={`rounded border px-2.5 py-1 text-[12px] max-md:min-h-[44px] ${filtro === f.chave ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
-            >
-              {f.rotulo}
-            </button>
+          {COMERCIAL_FILTROS_DO_FUNIL.map((f) => (
+            <span key={f.chave} className="group relative inline-flex">
+              <button
+                type="button"
+                data-testid={`funil-etiqueta-${f.chave}`}
+                aria-pressed={filtro === f.chave}
+                aria-describedby={`funil-etiqueta-dica-${f.chave}`}
+                onClick={() => setFiltro(f.chave)}
+                className={`rounded border px-2.5 py-1 text-[12px] max-md:min-h-[44px] ${filtro === f.chave ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:border-brand'} ${FOCO}`}
+              >
+                {f.rotulo}
+              </button>
+              <span
+                id={`funil-etiqueta-dica-${f.chave}`}
+                role="tooltip"
+                className="pointer-events-none absolute left-0 top-full z-30 mt-1 w-64 rounded border border-border bg-surface-2 px-2.5 py-1.5 text-[11.5px] leading-snug text-text opacity-0 shadow-sm transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+              >
+                {f.explicacao}
+              </span>
+            </span>
           ))}
           <Link href="/comercial" className={`ml-auto ${BOTAO}`}>fila de decisões</Link>
         </div>
         <p className="text-[12.5px] text-muted">
-          O funil se move sozinho com os fatos. Abra um cartão para ver o lead sem sair daqui (setas do teclado andam entre os cartões, Enter abre). A barra embaixo do nome é a saúde. Arrastar fica bloqueado: quem move é o evento.
+          O cartão anda sozinho com os fatos. Para mover à mão, arraste para outra coluna ou use &quot;mover&quot;: outra pessoa assina o pedido em /atendimento e você conclui aqui. Com etapa pendente, o cartão muda e fica marcado com o que falta. Setas do teclado andam entre os cartões, Enter abre o lead.
         </p>
+        <Erro erro={erro} aoTentar={() => void recarregar()} />
+        {/* C-20: acima do teto de leitura a API corta os mais antigos na etapa e diz quantos ficaram de fora. */}
+        {dados?.aviso && <Aviso>{dados.aviso}</Aviso>}
+        {carregando && !dados && !erro && <Carregando linhas={2} altura="h-32" />}
       </header>
 
-      <Erro erro={erro} aoTentar={() => void recarregar()} />
-      {/* C-20: acima do teto de leitura a API corta os mais antigos na etapa e diz quantos ficaram de fora. */}
-      {dados?.aviso && <Aviso>{dados.aviso}</Aviso>}
-      {carregando && !dados && !erro && <Carregando linhas={2} altura="h-32" />}
-      {bloqueio && (
-        <div className="flex items-start gap-2" aria-live="polite">
-          <Aviso>{bloqueio.texto}</Aviso>
-          <button type="button" className={BOTAO} onClick={() => { ultimoPedido.current++; setBloqueio(null); }}>ok</button>
-        </div>
-      )}
-
       {dados && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7" onKeyDown={moverFocoNoFunil}>
-          {grupos.map((g) => (
-            <section
-              key={g.chave}
-              aria-label={g.rotulo}
-              data-coluna-do-funil
-              className="min-w-0 rounded border border-border bg-bg2 p-2"
-              onDragOver={(e) => e.preventDefault()}
-            >
-              <h2 className="flex items-baseline justify-between px-1 pb-2 font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">
-                <span>{g.rotulo}</span>
-                <span className="tabular-nums">{g.cartoes.length}</span>
-              </h2>
-              <ul className="space-y-2">
-                {g.cartoes.map((c) => (
-                  <li key={c.leadId}>
-                    <Cartao c={c} aoTentarMover={() => void explicarBloqueio(c)} />
-                  </li>
-                ))}
-                {g.cartoes.length === 0 && <li className="px-1 py-2 text-[12px] text-dim">ninguém aqui</li>}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <>
+          <nav aria-label="etapas do funil" className="flex shrink-0 gap-1.5 overflow-x-auto pb-1">
+            {colunas.map((col) => (
+              <button
+                key={col.etapa}
+                type="button"
+                data-testid={`funil-chip-${col.etapa}`}
+                aria-label={`${col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}: ${col.cartoes.length} ${col.cartoes.length === 1 ? 'lead' : 'leads'}. Ir para a coluna`}
+                title={col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}
+                onClick={() => irParaColuna(col.etapa)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded border border-border px-2 py-1 font-os-mono text-[11px] text-muted hover:border-brand hover:text-text max-md:min-h-[44px] ${FOCO}`}
+              >
+                <span>{rotuloCurto(col.etapa)}</span>
+                <span className={`tabular-nums ${col.cartoes.length ? 'text-brand' : 'text-dim'}`}>{col.cartoes.length}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div
+            className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none"
+            onKeyDown={moverFocoNoFunil}
+          >
+            {colunas.map((col) => {
+              const destino = arrastando ? destinoDaColuna(arrastando, col.etapa) : null;
+              const recusa = destino && !destino.permitido && arrastando?.etapa !== col.etapa;
+              return (
+                <section
+                  key={col.etapa}
+                  aria-label={col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}
+                  data-coluna-do-funil
+                  data-testid={`funil-coluna-${col.etapa}`}
+                  className={`flex w-[17rem] min-w-0 shrink-0 snap-start flex-col rounded border bg-bg2 p-2 max-md:max-h-[72dvh] max-md:w-[86%] md:min-h-0 ${sobre === col.etapa ? (recusa ? 'border-warn/70' : 'border-brand') : 'border-border'}`}
+                  onDragOver={(e) => {
+                    if (!arrastando) return;
+                    e.preventDefault();
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = recusa ? 'none' : 'move';
+                    if (sobre !== col.etapa) setSobre(col.etapa);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setSobre(null);
+                  }}
+                  onDrop={(e) => soltar(e, col)}
+                >
+                  <h2
+                    tabIndex={-1}
+                    data-cabecalho-da-coluna
+                    className={`flex shrink-0 items-baseline justify-between rounded-sm px-1 pb-2 font-os-mono text-[10.5px] uppercase tracking-[0.14em] text-muted ${FOCO}`}
+                  >
+                    <span className="truncate" title={col.rotulo}>{col.etapa === 'saidas' ? 'Saídas' : COMERCIAL_ROTULO_DA_ETAPA[col.etapa]}</span>
+                    <span className="tabular-nums">{col.cartoes.length}</span>
+                  </h2>
+                  {sobre === col.etapa && recusa && destino?.motivo && (
+                    <p className="mb-2 shrink-0 rounded border border-warn/50 bg-warn/10 px-2 py-1 text-[11.5px] text-warn">não aceita: {destino.motivo}</p>
+                  )}
+                  <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                    {col.cartoes.map((c) => (
+                      <li key={c.leadId}>
+                        <Cartao
+                          c={c}
+                          pedido={pedidos[c.leadId] ?? null}
+                          aviso={avisos[c.leadId] ?? null}
+                          ocupado={!!ocupados[c.leadId]}
+                          saida={saidaAberta?.leadId === c.leadId ? saidaAberta : null}
+                          aoEscolher={(d) => void agir(c, d)}
+                          aoConcluir={(p) => void concluir(c, p)}
+                          aoDesistir={() => desistir(c.leadId)}
+                          aoFecharSaida={() => setSaidaAberta(null)}
+                          aoSairFeito={() => {
+                            setSaidaAberta(null);
+                            avisar(c.leadId, 'Saída registrada.', 'bom');
+                            void recarregar();
+                          }}
+                          aoArrastar={(sim) => setArrastando(sim ? c : null)}
+                          aoCalar={() => calar(c.leadId)}
+                        />
+                      </li>
+                    ))}
+                    {col.cartoes.length === 0 && <li className="px-1 py-2 text-[12px] text-dim">ninguém aqui</li>}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function Cartao({ c, aoTentarMover }: { c: CartaoDoFunil; aoTentarMover: () => void }) {
+function Cartao({
+  c,
+  pedido,
+  aviso,
+  ocupado,
+  saida,
+  aoEscolher,
+  aoConcluir,
+  aoDesistir,
+  aoFecharSaida,
+  aoSairFeito,
+  aoArrastar,
+  aoCalar,
+}: {
+  c: CartaoDoFunil;
+  pedido: ComercialPedidoDeMover | null;
+  aviso: { texto: string; tom: 'neutro' | 'bom' | 'ruim' } | null;
+  ocupado: boolean;
+  saida: { leadId: string; saida: ComercialSaida | null } | null;
+  aoEscolher: (d: ComercialDestinoDoMover) => void;
+  aoConcluir: (p: ComercialPedidoDeMover) => void;
+  aoDesistir: () => void;
+  aoFecharSaida: () => void;
+  aoSairFeito: () => void;
+  aoArrastar: (sim: boolean) => void;
+  aoCalar: () => void;
+}) {
+  const [menu, setMenu] = useState(false);
+  const botao = useRef<HTMLButtonElement>(null);
   const quando = descricaoJaDizQuando(c.proximaAcao?.descricao) ? '' : quandoRoda(c.proximaAcao?.quando);
-  const saida = c.motivoSaida ? `${COMERCIAL_ROTULO_DA_ETAPA[c.etapa].replace('Saída · ', '').toLowerCase()} · ${ROTULO_DO_MOTIVO[c.motivoSaida]}` : null;
+  const rotuloDaSaida = c.motivoSaida ? `${COMERCIAL_ROTULO_DA_ETAPA[c.etapa].replace('Saída · ', '').toLowerCase()} · ${ROTULO_DO_MOTIVO[c.motivoSaida]}` : null;
+  const fecharMenu = () => {
+    setMenu(false);
+    botao.current?.focus();
+  };
+
   return (
     <div
-      draggable
+      data-testid={`funil-card-${c.leadId}`}
+      draggable={!pedido}
       onDragStart={(e) => {
-        e.preventDefault();
-        aoTentarMover();
+        e.dataTransfer?.setData('text/plain', c.leadId);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        aoArrastar(true);
       }}
+      onDragEnd={() => aoArrastar(false)}
       onClick={(e) => {
-        // O cartão inteiro abre o painel; o botão "mover" e o próprio link cuidam de si.
-        if ((e.target as HTMLElement).closest('a, button')) return;
+        // O cartão inteiro abre o painel; o menu, os formulários e o próprio link cuidam de si.
+        if ((e.target as HTMLElement).closest('a, button, input, select, textarea, label, [role="menu"]')) return;
         e.currentTarget.querySelector<HTMLAnchorElement>('[data-cartao-do-funil]')?.click();
       }}
-      className={`cursor-pointer rounded border bg-surface p-2.5 transition hover:border-brand/70 ${c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
+      className={`cursor-pointer rounded border bg-surface p-2.5 transition hover:border-brand/70 ${c.balao ? 'border-warn/70' : c.precisaDeDecisao ? 'border-brand/60' : c.parado ? 'border-warn/60' : 'border-border'}`}
     >
       <div className="flex items-start gap-2">
         <LinkDoLead leadId={c.leadId} aba="fio" data-cartao-do-funil className={`min-w-0 flex-1 rounded-sm ${FOCO}`}>
-          <p className="truncate text-[13.5px] font-semibold">{c.empresa ?? c.nome}</p>
-          {c.empresa && c.empresa !== c.nome && <p className="truncate text-[11.5px] text-muted">{c.nome}</p>}
+          <p className="truncate text-[13.5px] font-semibold" title={c.empresa ?? c.nome}>{c.empresa ?? c.nome}</p>
+          {c.empresa && c.empresa !== c.nome && <p className="truncate text-[11.5px] text-muted" title={c.nome}>{c.nome}</p>}
         </LinkDoLead>
         <button
+          ref={botao}
           type="button"
-          onClick={aoTentarMover}
-          aria-label={`mover ${c.nome}: por que está bloqueado`}
-          title="mover está bloqueado: a etapa anda pelo fato"
-          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-dim hover:border-brand max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`}
+          data-testid={`funil-mover-${c.leadId}`}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          aria-label={`mover ${c.empresa ?? c.nome} para outra etapa`}
+          disabled={ocupado || !!pedido}
+          onClick={() => setMenu((m) => !m)}
+          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-muted hover:border-brand hover:text-text disabled:opacity-50 max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`}
         >
           mover
         </button>
       </div>
+      {menu && (
+        <MenuMover
+          c={c}
+          aoEscolher={(d) => {
+            setMenu(false);
+            aoEscolher(d);
+          }}
+          aoFechar={fecharMenu}
+        />
+      )}
       <BarraDaSaude saude={c.saude} />
       <p className="mt-1.5 text-[12px] text-muted">
-        {saida ?? c.proximaAcao?.descricao ?? 'próxima ação ausente'}
-        {quando && !saida && <span className="text-dim"> · {quando}</span>}
+        {rotuloDaSaida ?? c.proximaAcao?.descricao ?? 'próxima ação ausente'}
+        {quando && !rotuloDaSaida && <span className="text-dim"> · {quando}</span>}
         {c.voltaEm && <span className="text-dim"> · volta {diaSP(c.voltaEm)}</span>}
       </p>
       <div className="mt-1.5 flex flex-wrap gap-1">
-        <span className="font-os-mono text-[10px] text-dim">{COMERCIAL_ROTULO_DA_ETAPA[c.etapa].split(' · ')[0]}</span>
+        <span className="font-os-mono text-[10px] text-dim">{rotuloCurto(c.etapa)}</span>
         {c.perfil && <Chip>{c.perfil}</Chip>}
         {c.produto && <Chip>{ROTULO_DO_PRODUTO[c.produto]}</Chip>}
         {c.precisaDeDecisao && <Chip tom="brand">decisão sua</Chip>}
         {c.parado && <Chip tom="alerta">parado {c.diasNaEtapa} d</Chip>}
       </div>
+
+      {c.balao && (
+        <div role="note" data-testid={`funil-balao-${c.leadId}`} className="mt-2 rounded border border-warn/50 bg-warn/10 px-2 py-1.5 text-[11.5px] leading-snug">
+          <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-warn">movido com pendências</p>
+          <p className="mt-0.5 text-text">{c.balao.pendencias.join('; ')}</p>
+          <p className="mt-0.5 text-dim">{c.balao.movidoPor ? `por ${c.balao.movidoPor} · ` : ''}{diaSP(c.balao.em)} · some quando o que falta chegar</p>
+        </div>
+      )}
+
+      {pedido && (
+        <div role="status" data-testid={`funil-pedido-${c.leadId}`} className="mt-2 space-y-1.5 rounded border border-brand/40 bg-brand/5 px-2 py-1.5 text-[11.5px] leading-snug">
+          <p>
+            <span className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-brand">mudança pedida</span>{' '}
+            para {rotuloCurto(pedido.para)}. Outra pessoa assina em{' '}
+            <Link href="/atendimento" className={`underline decoration-brand underline-offset-2 ${FOCO}`}>/atendimento</Link> até{' '}
+            {new Date(pedido.expiraEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}.
+          </p>
+          {pedido.pendencias.length > 0 && <p className="text-warn">Vai mover, mas ainda não foi feito: {pedido.pendencias.join('; ')}.</p>}
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" disabled={ocupado} onClick={() => aoConcluir(pedido)} className={BOTAO_PRIMARIO}>concluir a mudança</button>
+            <button type="button" disabled={ocupado} onClick={aoDesistir} className={BOTAO}>desistir</button>
+          </div>
+        </div>
+      )}
+
+      {saida && <FormDaSaida c={c} inicial={saida.saida} aoFechar={aoFecharSaida} aoFeito={aoSairFeito} />}
+
+      {aviso && (
+        <div className="mt-2 flex items-start gap-1.5" aria-live="polite">
+          <Aviso tom={aviso.tom}>{aviso.texto}</Aviso>
+          <button type="button" className={BOTAO} onClick={aoCalar}>ok</button>
+        </div>
+      )}
     </div>
   );
 }
+
+/** O menu "Mover para": cada etapa e cada saída; as desligadas dizem por quê. Esc fecha e devolve o foco. */
+function MenuMover({ c, aoEscolher, aoFechar }: { c: CartaoDoFunil; aoEscolher: (d: ComercialDestinoDoMover) => void; aoFechar: () => void }) {
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    caixa.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
+  }, []);
+  const opcoes = opcoesDoMenu(c);
+  return (
+    <div
+      ref={caixa}
+      role="menu"
+      aria-label={`Mover ${c.empresa ?? c.nome} para`}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          aoFechar();
+          return;
+        }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const itens = Array.from(caixa.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        const i = itens.indexOf(document.activeElement as HTMLElement);
+        itens[(i + (e.key === 'ArrowDown' ? 1 : itens.length - 1)) % itens.length]?.focus();
+      }}
+      className="mt-2 rounded border border-border bg-surface-2 p-1"
+    >
+      <p className="px-2 pb-1 pt-0.5 font-os-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">mover para</p>
+      {opcoes.map((d) => (
+        <button
+          key={d.para}
+          type="button"
+          role="menuitem"
+          data-testid={`funil-mover-para-${d.para}`}
+          aria-disabled={!d.permitido}
+          aria-describedby={d.motivo ? `funil-mover-porque-${c.leadId}-${d.para}` : undefined}
+          onClick={() => {
+            if (d.permitido) aoEscolher(d);
+          }}
+          className={`block w-full rounded-sm px-2 py-1.5 text-left text-[12.5px] max-md:min-h-[44px] ${d.permitido ? 'hover:bg-brand/10' : 'cursor-not-allowed text-dim'} ${FOCO}`}
+        >
+          <span className="block">
+            {COMERCIAL_ROTULO_DA_ETAPA[d.para]}
+            {d.caminho === 'saida' && <span className="text-dim"> · pede motivo</span>}
+          </span>
+          {d.motivo && (
+            <span id={`funil-mover-porque-${c.leadId}-${d.para}`} className="mt-0.5 block text-[11px] leading-snug text-dim">
+              {d.motivo}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** A saída pelo caminho que já existe (`POST /comercial/lead/:id/saida`): motivo obrigatório, data de volta na geladeira, parceiro no parceiro. */
+function FormDaSaida({ c, inicial, aoFechar, aoFeito }: { c: CartaoDoFunil; inicial: ComercialSaida | null; aoFechar: () => void; aoFeito: () => void }) {
+  const { token } = useAuth();
+  const [saida, setSaida] = useState<ComercialSaida | ''>(inicial ?? '');
+  const [motivo, setMotivo] = useState('');
+  const [detalhe, setDetalhe] = useState('');
+  const [volta, setVolta] = useState('');
+  const [parceiro, setParceiro] = useState('');
+  const [erro, setErro] = useState<unknown>(null);
+  const [enviando, setEnviando] = useState(false);
+  const pronto = !!saida && !!motivo && (saida !== 'geladeira' || !!volta) && (saida !== 'parceiro' || !!parceiro.trim());
+  const id = `funil-saida-${c.leadId}`;
+
+  async function registrar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pronto) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      await apiPost(
+        `/comercial/lead/${c.leadId}/saida`,
+        {
+          saida,
+          motivo,
+          ...(detalhe.trim() ? { detalhe: detalhe.trim() } : {}),
+          ...(saida === 'geladeira' ? { voltaEm: voltaEmDoDia(volta) } : {}),
+          ...(saida === 'parceiro' ? { parceiro: parceiro.trim() } : {}),
+        },
+        token,
+      );
+      aoFeito();
+    } catch (er) {
+      setErro(er);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <form data-testid={id} onSubmit={registrar} className="mt-2 space-y-1.5 rounded border border-border bg-surface-2 p-2 text-[12px]" aria-label={`Registrar saída de ${c.empresa ?? c.nome}`}>
+      <p className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">saída com motivo</p>
+      <label className="block">
+        <span className="text-muted">qual saída</span>
+        <select value={saida} onChange={(e) => setSaida(e.target.value as ComercialSaida)} className={INPUT} required>
+          <option value="">escolha</option>
+          {COMERCIAL_SAIDAS.map((s) => <option key={s} value={s}>{COMERCIAL_ROTULO_DA_ETAPA[s].replace('Saída · ', '')}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-muted">motivo</span>
+        <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={INPUT} required>
+          <option value="">escolha</option>
+          {COMERCIAL_MOTIVOS_DE_SAIDA.map((m) => <option key={m} value={m}>{ROTULO_DO_MOTIVO[m]}</option>)}
+        </select>
+      </label>
+      {saida === 'geladeira' && (
+        <label className="block">
+          <span className="text-muted">volta em</span>
+          <input type="date" value={volta} onChange={(e) => setVolta(e.target.value)} className={INPUT} required />
+        </label>
+      )}
+      {saida === 'parceiro' && (
+        <label className="block">
+          <span className="text-muted">para quem</span>
+          <input value={parceiro} onChange={(e) => setParceiro(e.target.value)} className={INPUT} maxLength={120} required />
+        </label>
+      )}
+      <label className="block">
+        <span className="text-muted">detalhe (opcional)</span>
+        <input value={detalhe} onChange={(e) => setDetalhe(e.target.value)} className={INPUT} maxLength={400} />
+      </label>
+      <Erro erro={erro} />
+      <div className="flex flex-wrap gap-1.5">
+        <button type="submit" disabled={!pronto || enviando} className={BOTAO_PRIMARIO}>registrar saída</button>
+        <button type="button" onClick={aoFechar} className={BOTAO}>cancelar</button>
+      </div>
+    </form>
+  );
+}
+

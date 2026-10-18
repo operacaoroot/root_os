@@ -244,20 +244,32 @@ describe('funil vivo (tela 04): respostas atrasadas não escrevem por cima (C-10
     expect(await screen.findByText('Lead Parado')).toBeInTheDocument();
   });
 
-  it('C-11: mover A e logo B mostra o portão de B, mesmo com a ficha de A chegando depois', async () => {
-    const fichaA = adiado<unknown>();
+  // P5 (18/10): mover deixou de ser bloqueado; o C-11 vira "cada pedido fica no cartão dele".
+  it('C-11: pedir a mudança de A e logo a de B põe cada pedido no seu cartão, mesmo com o de A chegando depois', async () => {
+    const pedidoA = adiado<unknown>();
     RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A'), cartao('b', 'Lead B'));
-    RESPOSTAS['/comercial/lead/a'] = fichaA.p;
-    RESPOSTAS['/comercial/lead/b'] = { portao: { proxima: 'qualificacao', faltando: ['portão de B'], itens: [] } };
+    const real = (await import('@/lib/api')).apiPost as unknown as ReturnType<typeof vi.fn>;
+    real.mockImplementation(async (caminho: string, corpo: unknown) => {
+      posts.push({ caminho, corpo });
+      const leadId = caminho.split('/')[3];
+      const p = { approvalId: `ap-${leadId}`, token: `t-${leadId}`, expiraEm: new Date(Date.now() + 600_000).toISOString(), de: 'novo_lead', para: 'qualificacao', pendencias: [`portão de ${leadId.toUpperCase()}`], resumo: '' };
+      return leadId === 'a' ? pedidoA.p.then(() => p) : p;
+    });
     render(<FunilPage />);
     const u = userEvent.setup();
     await u.click(await screen.findByRole('button', { name: /mover Lead A/ }));
+    await u.click(screen.getByTestId('funil-mover-para-qualificacao'));
     await u.click(screen.getByRole('button', { name: /mover Lead B/ }));
-    expect(await screen.findByText(/portão de B/)).toBeInTheDocument();
-    fichaA.soltar({ portao: { proxima: 'qualificacao', faltando: ['portão de A'], itens: [] } });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(screen.queryByText(/portão de A/)).toBeNull();
-    expect(screen.getByText(/Lead B não muda de etapa/)).toBeInTheDocument();
+    await u.click(screen.getByTestId('funil-mover-para-qualificacao'));
+    expect(await screen.findByTestId('funil-pedido-b')).toHaveTextContent('portão de B');
+    pedidoA.soltar(null);
+    expect(await screen.findByTestId('funil-pedido-a')).toHaveTextContent('portão de A');
+    expect(screen.getByTestId('funil-pedido-b')).not.toHaveTextContent('portão de A');
+    real.mockImplementation(async (caminho: string, corpo: unknown) => {
+      posts.push({ caminho, corpo });
+      return POST_ADIADO ?? {};
+    });
+    window.sessionStorage.clear();
   });
 });
 
