@@ -30,14 +30,17 @@ interface Snapshot {
     prazo?: number;
     campos: Record<string, string | number>;
     reunioes?: { titulo: string; em: string; arquivo: string }[];
+    contratos?: { titulo: string; valor: number; fechadoEm: string }[];
   }[];
+  /** Cards que saíram da carga (viraram contrato de outro card): são arquivados. */
+  removidos?: string[];
 }
 
 const dia = (ms: number) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date(ms));
 
-// Sem argumento, carrega os três quadros do cliente: comercial, onboarding e sucesso.
-const PADRAO = ['crm-fechados-financeiro-2026-10-18.json', 'crm-clientes-2026-10-18.json'];
+// Sem argumento, carrega o CRM da casa: um card por lead/cliente, com a jornada nas etapas.
+const PADRAO = ['crm-root-2026-10-18.json'];
 
 async function main() {
   const arquivos = process.argv[2] ? [process.argv[2]] : PADRAO.map((a) => join(__dirname, 'data', a));
@@ -157,7 +160,50 @@ async function carregar(s: Snapshot, orgId: string) {
     }
   }
 
-  const total = await prisma.workTask.count({ where: { orgId, listId: lista.id } });
+  // Contratos: filhos do card na lista "Contratos dos clientes" (valor e data de fechamento).
+  const comContrato = s.leads.filter((l) => l.contratos?.length);
+  if (comContrato.length) {
+    const lc =
+      (await prisma.workList.findFirst({ where: { orgId, externalId: 'crm-root-contratos' }, include: { statuses: { orderBy: { order: 'asc' } } } })) ??
+      (await prisma.workList.create({
+        data: {
+          orgId, folderId: pasta.id, name: 'Contratos dos clientes', externalId: 'crm-root-contratos',
+          statuses: { create: [
+            { name: 'Ativo', type: 'open', color: '#30a46c', order: 0 },
+            { name: 'Concluído', type: 'closed', color: '#008844', order: 1 },
+            { name: 'Cancelado', type: 'closed', color: '#6b6b6b', order: 2 },
+          ] },
+        },
+        include: { statuses: { orderBy: { order: 'asc' } } },
+      }));
+    const campoDe = async (nome: string, type: WorkFieldType, order: number) =>
+      (await prisma.workField.findFirst({ where: { orgId, listId: lc.id, name: nome } })) ??
+      (await prisma.workField.create({ data: { orgId, listId: lc.id, name: nome, type, order } }));
+    const fValor = await campoDe('Valor', 'moeda' as WorkFieldType, 0);
+    const fFechado = await campoDe('Fechado em', 'data' as WorkFieldType, 1);
+    for (const l of comContrato) {
+      const card = await prisma.workTask.findFirst({ where: { orgId, externalId: l.id } });
+      for (const [i, k] of l.contratos!.entries()) {
+        const ext = `${l.id}::contrato::${i}`;
+        const ja = await prisma.workTask.findFirst({ where: { orgId, externalId: ext } });
+        const t = ja
+          ? await prisma.workTask.update({ where: { id: ja.id }, data: { title: k.titulo, parentId: card!.id, archived: false } })
+          : await prisma.workTask.create({ data: { orgId, listId: lc.id, statusId: lc.statuses[0].id, parentId: card!.id, title: k.titulo, externalId: ext } });
+        for (const [fid, value] of [[fValor.id, `BRL ${k.valor.toFixed(2)}`], [fFechado.id, k.fechadoEm]] as const) {
+          await prisma.workFieldValue.upsert({
+            where: { taskId_fieldId: { taskId: t.id, fieldId: fid } },
+            update: { value, optionId: null },
+            create: { taskId: t.id, fieldId: fid, value },
+          });
+        }
+      }
+    }
+  }
+  for (const ext of s.removidos ?? []) {
+    await prisma.workTask.updateMany({ where: { orgId, externalId: ext, archived: false }, data: { archived: true } });
+  }
+
+  const total = await prisma.workTask.count({ where: { orgId, listId: lista.id, archived: false } });
   console.log(`CRM: lista "${lista.name}" com ${total} cartão(ões); ${s.leads.length} vieram do arquivo.`);
 }
 

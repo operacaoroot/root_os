@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { QuadroDaLista } from '@mktos/shared';
+import { NOME_DA_FASE, type FaseDoCliente, type QuadroDaLista } from '@mktos/shared';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
@@ -27,6 +27,8 @@ const VISOES: { v: Visao; nome: string }[] = [
   { v: 'calendario', nome: 'Calendário' },
 ];
 const PRAZO = '__prazo__';
+/** O valor do card: cliente, a soma dos contratos; lead, o valor da proposta. */
+const valorDo = (c: Cartao) => (c.valorContratos || c.valor) ?? null;
 
 /** Altura da tela que sobra abaixo do elemento: o quadro termina no rodapé da página. */
 function useAlturaAteOFim(ref: React.RefObject<HTMLElement | null>, folga = 16) {
@@ -51,22 +53,32 @@ export function VisoesDaLista(props: {
   rotuloDoValor: string;
   /** Texto do botão de cima, ex.: "+ Novo lead". */
   novo: string;
+  /** Visão que abre sem `?visao=` na URL: o Funil abre no quadro, Leads na lista. */
+  visaoInicial?: Visao;
+  /**
+   * Um card por lead/cliente: a aba mostra só as etapas destas fases (o Funil,
+   * a comercial; Clientes, onboarding ou sucesso). Ausente = todas.
+   */
+  fases?: FaseDoCliente[];
+  /** Etapas de outra fase que a aba também mostra, como alvo (o Funil mostra "Negócio fechado"). */
+  etapasExtras?: string[];
 }) {
   const { chave } = props;
   const { token, ready, can } = useAuth();
   const pode = can('tarefas.editar');
   const [q, setQ] = useState<QuadroDaLista | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [visao, setVisao] = useState<Visao>('quadro');
+  const inicial = props.visaoInicial ?? 'quadro';
+  const [visao, setVisao] = useState<Visao>(inicial);
 
   useEffect(() => {
     const v = new URLSearchParams(window.location.search).get('visao');
-    if (v === 'lista' || v === 'calendario') setVisao(v);
+    if (v === 'quadro' || v === 'lista' || v === 'calendario') setVisao(v);
   }, []);
   const trocarVisao = (v: Visao) => {
     setVisao(v);
     const u = new URL(window.location.href);
-    if (v === 'quadro') u.searchParams.delete('visao');
+    if (v === inicial) u.searchParams.delete('visao');
     else u.searchParams.set('visao', v);
     window.history.replaceState(window.history.state, '', u);
   };
@@ -103,6 +115,12 @@ export function VisoesDaLista(props: {
     if (!token) return;
     try {
       await apiPatch(`/trabalho/tarefas/${c.id}`, { ...corpo, expectedUpdatedAt: c.atualizadoEm }, token);
+      // Saiu da fase comercial (fechou): sem contrato registrado, registra um com o valor da proposta.
+      const de = q?.etapas.find((e) => e.id === c.statusId);
+      const para = q?.etapas.find((e) => e.id === corpo.statusId);
+      if (de?.fase === 'comercial' && para && para.fase !== 'comercial') {
+        await apiPost(`/trabalho/fichas/${c.id}/contratos/garantir`, {}, token);
+      }
     } catch (e) {
       setErro((e as Error).message);
     }
@@ -113,9 +131,13 @@ export function VisoesDaLista(props: {
   if (!q) return <p className="text-muted">Carregando…</p>;
   if (!q.lista) return <p className="text-muted">Esta lista ainda não existe. Rode a carga do CRM (db:seed:crm).</p>;
 
+  // A aba mostra só as etapas das suas fases (e as extras); os cards seguem as etapas visíveis.
+  const etapas = q.etapas.filter((e) => !props.fases || props.fases.includes(e.fase) || props.etapasExtras?.includes(e.nome));
+  const daAba = new Set(etapas.map((e) => e.id));
+  const vista: QuadroDaLista = { ...q, etapas, cartoes: q.cartoes.filter((c) => daAba.has(c.statusId)) };
   const fechada = (c: Cartao) => !!q.etapas.find((e) => e.id === c.statusId)?.fechada;
-  const abertos = q.cartoes.filter((c) => !fechada(c));
-  const somaAbertos = abertos.reduce((s, c) => s + (c.valor ?? 0), 0);
+  const abertos = vista.cartoes.filter((c) => !fechada(c));
+  const somaAbertos = abertos.reduce((s, c) => s + (c.valorContratos || c.valor || 0), 0);
 
   return (
     <div className="space-y-3">
@@ -150,9 +172,9 @@ export function VisoesDaLista(props: {
       </div>
       {erro && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
 
-      {visao === 'quadro' && <Quadro q={q} pode={pode} item={props.item} criar={criar} mover={(c, statusId) => atualizar(c, { statusId })} />}
-      {visao === 'lista' && <Lista q={q} />}
-      {visao === 'calendario' && <Calendario q={q} pode={pode} criar={criar} item={props.item} mudarData={atualizar} />}
+      {visao === 'quadro' && <Quadro q={vista} pode={pode} item={props.item} criar={criar} mover={(c, statusId) => atualizar(c, { statusId })} />}
+      {visao === 'lista' && <Lista q={vista} comFase={!props.fases} />}
+      {visao === 'calendario' && <Calendario q={vista} pode={pode} criar={criar} item={props.item} mudarData={atualizar} />}
     </div>
   );
 }
@@ -178,8 +200,8 @@ function Quadro(props: {
     // Altura até o rodapé: a barra de rolar para os lados fica na borda de baixo da tela.
     <div ref={ref} className="flex gap-3 overflow-x-auto overflow-y-hidden pb-2" style={{ height: altura ?? undefined }}>
       {q.etapas.map((e) => {
-        const cartoes = q.cartoes.filter((c) => c.statusId === e.id).sort((a, b) => (b.valor ?? 0) - (a.valor ?? 0));
-        const soma = cartoes.reduce((s, c) => s + (c.valor ?? 0), 0);
+        const cartoes = q.cartoes.filter((c) => c.statusId === e.id).sort((a, b) => (valorDo(b) ?? 0) - (valorDo(a) ?? 0));
+        const soma = cartoes.reduce((s, c) => s + (valorDo(c) ?? 0), 0);
         const larga = cartoes.length > 0 || sobre === e.id || novoEm === e.id;
         return (
           <div
@@ -259,7 +281,7 @@ function Quadro(props: {
                       {c.responsavel ?? 'sem responsável'}
                       {!e.fechada && c.diasNaEtapa != null && ` · ${c.diasNaEtapa}d`}
                     </span>
-                    <span className="com-num text-sm text-text">{c.valor != null ? brl(c.valor) : '—'}</span>
+                    <span className="com-num text-sm text-text">{valorDo(c) != null ? brl(valorDo(c)!) : '—'}</span>
                   </div>
                 </div>
               ))}
@@ -275,7 +297,7 @@ function Quadro(props: {
 
 type Coluna = 'titulo' | 'etapa' | 'valor' | 'contato' | 'responsavel' | 'selo' | 'dias' | 'criadoEm';
 
-function Lista({ q }: { q: QuadroDaLista }) {
+function Lista({ q, comFase }: { q: QuadroDaLista; comFase?: boolean }) {
   const [ordem, setOrdem] = useState<{ col: Coluna; desc: boolean }>({ col: 'etapa', desc: false });
   const [busca, setBusca] = useState('');
   const posEtapa = useMemo(() => new Map(q.etapas.map((e, i) => [e.id, i])), [q.etapas]);
@@ -286,7 +308,7 @@ function Lista({ q }: { q: QuadroDaLista }) {
     const chave = (c: Cartao): string | number => {
       switch (ordem.col) {
         case 'etapa': return posEtapa.get(c.statusId) ?? 99;
-        case 'valor': return c.valor ?? -1;
+        case 'valor': return valorDo(c) ?? -1;
         case 'dias': return c.diasNaEtapa ?? -1;
         case 'criadoEm': return c.criadoEm;
         default: return (c[ordem.col] ?? '').toString().toLowerCase();
@@ -294,7 +316,7 @@ function Lista({ q }: { q: QuadroDaLista }) {
     };
     return [...filtradas].sort((a, b) => {
       const x = chave(a), y = chave(b);
-      const r = x < y ? -1 : x > y ? 1 : (b.valor ?? 0) - (a.valor ?? 0);
+      const r = x < y ? -1 : x > y ? 1 : (valorDo(b) ?? 0) - (valorDo(a) ?? 0);
       return ordem.desc ? -r : r;
     });
   }, [q.cartoes, ordem, busca, posEtapa]);
@@ -324,7 +346,7 @@ function Lista({ q }: { q: QuadroDaLista }) {
           <thead>
             <tr className="text-left">
               <Th col="titulo">Nome</Th>
-              <Th col="etapa">Etapa</Th>
+              <Th col="etapa">{comFase ? 'Fase · etapa' : 'Etapa'}</Th>
               <Th col="contato">Contato</Th>
               <Th col="responsavel">Responsável</Th>
               <Th col="selo">Tipo</Th>
@@ -341,14 +363,14 @@ function Lista({ q }: { q: QuadroDaLista }) {
                   <td className="py-2 pr-3">
                     <span className="inline-flex items-center gap-1.5 text-muted">
                       <span className="inline-block h-2 w-2 rounded-full" style={{ background: e?.cor }} />
-                      {e?.nome}
+                      {comFase && e ? `${NOME_DA_FASE[e.fase]} · ` : ''}{e?.nome}
                     </span>
                   </td>
                   <td className="py-2 pr-3 text-muted">{c.contato ?? '—'}</td>
                   <td className="py-2 pr-3 text-muted">{c.responsavel ?? '—'}</td>
                   <td className="py-2 pr-3 text-muted">{c.selo ?? '—'}</td>
                   <td className="com-num py-2 text-right text-muted">{!e?.fechada && c.diasNaEtapa != null ? `${c.diasNaEtapa}d` : '—'}</td>
-                  <td className="com-num py-2 text-right">{c.valor != null ? brl(c.valor) : '—'}</td>
+                  <td className="com-num py-2 text-right">{valorDo(c) != null ? brl(valorDo(c)!) : '—'}</td>
                 </tr>
               );
             })}

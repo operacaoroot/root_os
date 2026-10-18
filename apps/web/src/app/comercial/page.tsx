@@ -69,7 +69,8 @@ function passa(n: PainelComercialNegocio, f: Filtro) {
   if (f.canal && (n.canal ?? SEM_INFORMACAO) !== f.canal) return false;
   if (f.vendedor && (n.vendedor ?? SEM_INFORMACAO) !== f.vendedor) return false;
   if (f.situacao && n.resultado !== f.situacao) return false;
-  if (f.fechado && !(n.mesFechado ?? '').startsWith(f.fechado)) return false;
+  // Um cliente pode ter fechado mais de uma vez: basta um dos contratos cair no período.
+  if (f.fechado && !n.mesesFechados.some((m) => m.startsWith(f.fechado!)) && !(n.mesFechado ?? '').startsWith(f.fechado)) return false;
   if (f.entrada && !n.mesEntrada.startsWith(f.entrada)) return false;
   return true;
 }
@@ -210,7 +211,7 @@ function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) 
               mostra: String(e.qtd),
               tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, negocios(e.qtd), e.valor ? brl(e.valor) : 'sem valor'],
-              onClick: () => abrir({ etapa: e.nome }),
+              onClick: () => abrir(e.id === '__clientes' ? { situacao: 'ganho' } : { etapa: e.nome }),
             }))}
           />
         </Quadro>
@@ -223,7 +224,7 @@ function Painel({ p, abrir, ajustes }: { p: PainelComercial; abrir: (f: Filtro) 
               mostra: curto(e.valor),
               tom: TOM_DO_RESULTADO[e.resultado],
               dica: [e.nome, e.valor ? brl(e.valor) : 'sem valor', negocios(e.qtd)],
-              onClick: () => abrir({ etapa: e.nome }),
+              onClick: () => abrir(e.id === '__clientes' ? { situacao: 'ganho' } : { etapa: e.nome }),
             }))}
           />
         </Quadro>

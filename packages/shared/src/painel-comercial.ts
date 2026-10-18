@@ -47,6 +47,8 @@ export interface PainelComercialNegocio {
   statusId: string;
   etapa: string;
   etapaCor: string;
+  /** comercial, onboarding ou sucesso: um card por lead/cliente, a fase é da etapa. */
+  fase: 'comercial' | 'onboarding' | 'sucesso';
   resultado: ResultadoDaEtapa;
   valor: number | null;
   vendedor: string | null;
@@ -62,6 +64,8 @@ export interface PainelComercialNegocio {
   mesEntrada: string;
   /** `AAAA-MM` em que foi para a etapa fechada; nulo enquanto aberto. */
   mesFechado: string | null;
+  /** `AAAA-MM` de cada contrato do cliente (pode fechar mais de uma vez). */
+  mesesFechados: string[];
   /** Dias na etapa atual; nulo quando a data de entrada na etapa não existe. */
   diasNaEtapa: number | null;
 }

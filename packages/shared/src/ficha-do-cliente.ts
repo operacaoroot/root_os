@@ -45,39 +45,93 @@ export interface ReuniaoCompleta extends ReuniaoResumo {
 }
 
 /*
- * A JORNADA DO CLIENTE: três listas do Trabalho, uma por fase, com a mesma
- * ficha. O cliente passa de uma para a outra pela ficha ("passar para…"), que
- * cria o cartão na próxima lista copiando os dados. As listas se reconhecem
- * pela chave (`WorkList.externalId`), não pelo nome, que pode ser trocado.
+ * A JORNADA DO CLIENTE (18/10/2026): UM CARD POR LEAD/CLIENTE, da primeira
+ * conversa ao pós-venda. A lista é uma só ("Gestão de Leads", chave
+ * `crm-root-lista`), e a jornada mora nas ETAPAS, agrupadas em três fases.
+ * As abas (Painel geral, Leads, Funil de vendas, Clientes, Propostas) são
+ * visões do mesmo card: cada uma mostra as etapas da sua fase.
+ *
+ * Passar o cliente para o onboarding é mover o card para "Negócio fechado";
+ * para o sucesso, mover para "Pós-entrega". Nada é copiado.
  */
-export const JORNADA_DO_CLIENTE = [
-  { chave: 'crm-root-lista', fase: 'Comercial', rota: '/comercial/lead/', proxima: 'crm-root-onboarding' },
-  { chave: 'crm-root-onboarding', fase: 'Onboarding', rota: '/clientes/', proxima: 'crm-root-sucesso' },
-  { chave: 'crm-root-sucesso', fase: 'Sucesso do cliente', rota: '/clientes/', proxima: null },
-] as const;
-export type ChaveDaJornada = (typeof JORNADA_DO_CLIENTE)[number]['chave'];
-export const faseDaLista = (chave: string | null | undefined) => JORNADA_DO_CLIENTE.find((f) => f.chave === chave) ?? null;
+export const LISTA_DO_CRM = 'crm-root-lista';
+export type FaseDoCliente = 'comercial' | 'onboarding' | 'sucesso';
+export const NOME_DA_FASE: Record<FaseDoCliente, string> = { comercial: 'Comercial', onboarding: 'Onboarding', sucesso: 'Sucesso do cliente' };
 
-export const PassarNaJornadaSchema = z.object({
-  destino: z.enum(JORNADA_DO_CLIENTE.map((f) => f.chave) as [ChaveDaJornada, ...ChaveDaJornada[]]),
-});
-
-export interface PassoDaJornada {
-  id: string;
-  titulo: string;
-  chave: string;
-  fase: string;
-  etapa: string;
-  etapaCor: string;
-  createdAt: string;
+export interface EtapaDaJornada {
+  nome: string;
+  fase: FaseDoCliente;
+  tipo: 'open' | 'custom' | 'closed';
+  cor: string;
+  /** Saída da jornada: perdido, desqualificado, cancelado, encerrado. */
+  saida?: boolean;
 }
 
-export interface JornadaDoCliente {
-  /** O nome que liga os cartões: o campo Empresa, ou o começo do título até o "|". */
-  cliente: string;
-  passos: PassoDaJornada[];
-  /** As reuniões de todos os cartões do cliente, da mais recente para a mais antiga. */
-  reunioes: (ReuniaoResumo & { taskId: string; fase: string })[];
+export const ETAPAS_DA_JORNADA: EtapaDaJornada[] = [
+  { nome: 'Validar', fase: 'comercial', tipo: 'open', cor: '#8b8d98' },
+  { nome: 'Oportunidade', fase: 'comercial', tipo: 'custom', cor: '#a18072' },
+  { nome: 'Marcar reunião', fase: 'comercial', tipo: 'custom', cor: '#0091ff' },
+  { nome: 'Reunião agendada', fase: 'comercial', tipo: 'custom', cor: '#30a46c' },
+  { nome: 'Followup', fase: 'comercial', tipo: 'custom', cor: '#3e63dd' },
+  { nome: 'Negócio fechado', fase: 'onboarding', tipo: 'custom', cor: '#008844' },
+  { nome: 'Kickoff', fase: 'onboarding', tipo: 'custom', cor: '#4a7a00' },
+  { nome: 'Diagnóstico', fase: 'onboarding', tipo: 'custom', cor: '#4194f6' },
+  { nome: 'Implantação', fase: 'onboarding', tipo: 'custom', cor: '#ff7800' },
+  { nome: 'Treinamento', fase: 'onboarding', tipo: 'custom', cor: '#a875ff' },
+  { nome: 'Pós-entrega', fase: 'sucesso', tipo: 'custom', cor: '#8b8d98' },
+  { nome: 'Acompanhamento 30 dias', fase: 'sucesso', tipo: 'custom', cor: '#4194f6' },
+  { nome: 'Depoimento e indicação', fase: 'sucesso', tipo: 'custom', cor: '#f9d900' },
+  { nome: 'Proposta de continuidade', fase: 'sucesso', tipo: 'custom', cor: '#a875ff' },
+  { nome: 'Recorrente', fase: 'sucesso', tipo: 'custom', cor: '#30a46c' },
+  { nome: 'Perdido', fase: 'comercial', tipo: 'closed', cor: '#e5484d', saida: true },
+  { nome: 'Desqualificado', fase: 'comercial', tipo: 'closed', cor: '#6b6b6b', saida: true },
+  { nome: 'Cancelado', fase: 'onboarding', tipo: 'closed', cor: '#6b6b6b', saida: true },
+  { nome: 'Encerrado', fase: 'sucesso', tipo: 'closed', cor: '#6b6b6b', saida: true },
+];
+
+const semAcentoJ = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+/** Fase de uma etapa pelo nome; etapa criada à mão no quadro e desconhecida conta como comercial. */
+export function faseDaEtapa(nome: string): FaseDoCliente {
+  return ETAPAS_DA_JORNADA.find((e) => semAcentoJ(e.nome) === semAcentoJ(nome))?.fase ?? 'comercial';
+}
+export function ehSaida(nome: string): boolean {
+  return !!ETAPAS_DA_JORNADA.find((e) => semAcentoJ(e.nome) === semAcentoJ(nome))?.saida;
+}
+
+/** Campos que só fazem sentido depois da venda: a ficha os agrupa por fase. */
+export const CAMPOS_DA_FASE: Record<Exclude<FaseDoCliente, 'comercial'>, string[]> = {
+  onboarding: ['Responsável pela implantação', 'Início', 'Entrega prevista'],
+  sucesso: ['Saúde', 'Valor recorrente (mês)'],
+};
+export function faseDoCampo(nome: string): FaseDoCliente {
+  const n = semAcentoJ(nome);
+  if (CAMPOS_DA_FASE.onboarding.some((c) => semAcentoJ(c) === n)) return 'onboarding';
+  if (CAMPOS_DA_FASE.sucesso.some((c) => semAcentoJ(c) === n)) return 'sucesso';
+  return 'comercial';
+}
+
+/*
+ * CONTRATOS DO CLIENTE: um cliente pode fechar mais de uma vez (a Imersão e,
+ * depois, a implantação). Cada contrato é um filho do card na lista
+ * "Contratos dos clientes", com valor e data de fechamento; o Painel geral
+ * soma os contratos por mês. Card sem contrato que passou de "Negócio
+ * fechado" conta como um contrato, com o valor da proposta.
+ */
+export const LISTA_DE_CONTRATOS_DO_CLIENTE = 'crm-root-contratos';
+
+export const NovoContratoSchema = z.object({
+  titulo: z.string().trim().min(1).max(300),
+  valor: z.number().nonnegative().max(1e10),
+  /** AAAA-MM-DD */
+  fechadoEm: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+export type NovoContrato = z.infer<typeof NovoContratoSchema>;
+
+export interface ContratoDoCliente {
+  id: string;
+  titulo: string;
+  valor: number;
+  fechadoEm: string;
 }
 
 /*
@@ -120,7 +174,7 @@ export const ROTINA_DE_SUCESSO: { titulo: string; dias: number }[] = [
 /** Um quadro (kanban) de qualquer lista da jornada. */
 export interface QuadroDaLista {
   lista: { id: string; nome: string; chave: string } | null;
-  etapas: { id: string; nome: string; cor: string; fechada: boolean; qtd: number; valor: number }[];
+  etapas: { id: string; nome: string; cor: string; fechada: boolean; fase: FaseDoCliente; saida: boolean; qtd: number; valor: number }[];
   /** Campos de data da lista (Próximo contato, Entrega prevista…): o calendário escolhe por qual mostrar. */
   camposData: { id: string; nome: string }[];
   cartoes: {
@@ -140,6 +194,8 @@ export interface QuadroDaLista {
     seloCor: string | null;
     diasNaEtapa: number | null;
     atualizadoEm: string;
+    /** Soma dos contratos do cliente (zero enquanto lead). */
+    valorContratos: number;
     /** Tarefas do cliente ainda abertas, e a próxima a vencer. */
     tarefasAbertas: number;
     proximaTarefa: { titulo: string; prazo: string | null; atrasada: boolean } | null;

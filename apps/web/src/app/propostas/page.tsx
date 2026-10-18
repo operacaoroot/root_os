@@ -43,7 +43,7 @@ const COR_DA_ETAPA = ['bg-muted/40', 'bg-brand/35', 'bg-brand/65', 'bg-brand'];
  * longo (/cliente/chave). Qualquer um dos dois casa.
  */
 const semProtocolo = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
-function leadDaProposta(p: PropostaNaLista, negocios: PainelComercialNegocio[]): PainelComercialNegocio | undefined {
+function porLink(p: PropostaNaLista, negocios: PainelComercialNegocio[]): PainelComercialNegocio | undefined {
   const link = semProtocolo(p.link);
   return negocios.find((n) => {
     if (!n.linkProposta) return false;
@@ -51,6 +51,16 @@ function leadDaProposta(p: PropostaNaLista, negocios: PainelComercialNegocio[]):
     return l === link || l.endsWith(`/${p.chave.toLowerCase()}`);
   });
 }
+/**
+ * Um card por cliente: a proposta casa pelo link e, se não casar, por outra
+ * proposta do MESMO cliente que casou (o Sr. aGranel recebeu a Imersão e
+ * depois a Operação; as duas são do mesmo card).
+ */
+function leadDaProposta(p: PropostaNaLista, negocios: PainelComercialNegocio[], propostas: PropostaNaLista[]): PainelComercialNegocio | undefined {
+  return porLink(p, negocios) ?? propostas.filter((o) => o.cliente === p.cliente && o.chave !== p.chave).map((o) => porLink(o, negocios)).find(Boolean);
+}
+/** A apresentação institucional não é negócio de um cliente: não pede lead. */
+const ehInstitucional = (p: PropostaNaLista) => p.cliente === 'root-institucional';
 
 export default function Propostas() {
   const { token, ready } = useAuth();
@@ -144,7 +154,8 @@ export default function Propostas() {
 
   const propostas = dados?.propostas ?? [];
   const visiveis = chegou == null ? propostas : propostas.filter((p) => p.etapa >= chegou);
-  const leads = propostas.map((p) => leadDaProposta(p, negocios));
+  // Um card por cliente: duas propostas do mesmo cliente contam uma vez só.
+  const leads = [...new Map(propostas.map((p) => leadDaProposta(p, negocios, propostas)).filter((l): l is PainelComercialNegocio => !!l).map((l) => [l.id, l])).values()];
   const emJogo = leads.reduce((s, l) => s + (l && l.resultado === 'aberta' ? l.valor ?? 0 : 0), 0);
   const fechadas = leads.filter((l) => l?.resultado === 'ganho');
   const valorFechado = fechadas.reduce((s, l) => s + (l?.valor ?? 0), 0);
@@ -185,7 +196,7 @@ export default function Propostas() {
               <tbody className="divide-y divide-border">
                 {visiveis.map((p) => {
                   const ativa = p.chave === selecionada?.chave;
-                  const lead = leadDaProposta(p, negocios);
+                  const lead = leadDaProposta(p, negocios, propostas);
                   return (
                     <tr key={p.chave} onClick={() => setSelecionada(p)} className={`cursor-pointer ${ativa ? 'bg-brand/10' : 'hover:bg-surface-2'}`}>
                       <td className="py-2.5 pr-3">
@@ -207,6 +218,8 @@ export default function Propostas() {
                             </span>
                             <span className="com-num whitespace-nowrap text-xs text-muted">{lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →</span>
                           </button>
+                        ) : ehInstitucional(p) ? (
+                          <span className="text-sm text-muted">apresentação institucional</span>
                         ) : crm?.lista ? (
                           <button onClick={() => void criarLead(p)} className="rounded-md border border-brand px-2.5 py-1 text-xs text-brand hover:bg-brand/10">
                             {criando === p.chave ? 'criando…' : '+ criar lead'}
@@ -229,7 +242,7 @@ export default function Propostas() {
 
       {selecionada && (
         <Janela fechar={() => setSelecionada(null)}>
-          <Detalhe proposta={selecionada} detalhe={detalhe} lead={leadDaProposta(selecionada, negocios)} fechar={() => setSelecionada(null)} />
+          <Detalhe proposta={selecionada} detalhe={detalhe} lead={leadDaProposta(selecionada, negocios, dados?.propostas ?? [])} fechar={() => setSelecionada(null)} />
         </Janela>
       )}
 
