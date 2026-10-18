@@ -7,7 +7,7 @@
  * saídas do menu levam ao registro de saída, com motivo. O balão persistente,
  * os chips que levam até a coluna e as etiquetas com explicação acessível.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COMERCIAL_ETAPAS, COMERCIAL_FILTROS_DO_FUNIL, type CartaoDoFunil, type FunilVivo } from '@mktos/shared';
@@ -110,8 +110,13 @@ describe('mover pelo menu', () => {
     const pedido = await screen.findByTestId('funil-pedido-a');
     expect(pedido).toHaveTextContent('Vai mover, mas ainda não foi feito: dono do lead (E1); sistema ou ERP em uso (E2).');
     expect(within(pedido).getByRole('link', { name: '/atendimento' })).toHaveAttribute('href', '/atendimento');
-    // Enquanto o pedido espera, o mesmo cartão não pede outra mudança.
-    expect(screen.getByTestId('funil-mover-a')).toBeDisabled();
+    // Enquanto o pedido espera, o mesmo cartão não pede outra mudança; o foco volta ao botão (revisão P3).
+    expect(screen.getByTestId('funil-mover-a')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('funil-mover-a')).toHaveFocus();
+    await u.click(screen.getByTestId('funil-mover-a'));
+    expect(screen.queryByRole('menu')).toBeNull();
+    // O pedido diz que mora só nesta aba e a hora em que vence (revisão PA-7).
+    expect(within(pedido).getByTestId('funil-pedido-aviso-a')).toHaveTextContent(/só existe nesta aba: fechar a aba perde o pedido/);
 
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, mudou: true, de: 'novo_lead', para: 'reuniao_agendada', balao: { pendencias: ['dono do lead (E1)'], movidoPor: 'Sócia', em: new Date().toISOString() } }) });
     await u.click(within(pedido).getByRole('button', { name: 'concluir a mudança' }));
@@ -138,6 +143,71 @@ describe('mover pelo menu', () => {
     unmount();
     render(<FunilPage />);
     expect(await screen.findByTestId('funil-pedido-a')).toHaveTextContent('para E2');
+  });
+});
+
+describe('o estado do pedido, relido do servidor (revisão PA-7)', () => {
+  const estado = (over: Record<string, unknown>) => ({
+    pedido: { approvalId: 'ap-1', estado: 'esperando', para: 'qualificacao', expiraEm: new Date(Date.now() + 600_000).toISOString(), confirmadaPor: null, confirmadaEm: null, ...over },
+  });
+
+  it('assinado em /atendimento, o cartão diz por quem e "concluir a mudança" acende', async () => {
+    RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A', 'novo_lead'));
+    RESPOSTAS['/comercial/lead/a/mover/pedido'] = estado({});
+    RESPOSTA_DO_POST = () => PEDIDO('qualificacao');
+    render(<FunilPage />);
+    const u = userEvent.setup();
+    await u.click(await screen.findByTestId('funil-mover-a'));
+    await u.click(screen.getByTestId('funil-mover-para-qualificacao'));
+    const pedido = await screen.findByTestId('funil-pedido-a');
+    expect(within(pedido).queryByTestId('funil-pedido-assinado-a')).toBeNull();
+    // A leitura do estado leva o id da aprovação e nunca o token.
+    const { apiGet } = await import('@/lib/api');
+    await waitFor(() => expect(vi.mocked(apiGet).mock.calls.some(([c]) => c === '/comercial/lead/a/mover/pedido?aprovacao=ap-1')).toBe(true));
+    expect(JSON.stringify(vi.mocked(apiGet).mock.calls)).not.toContain('token-de-uso-unico');
+
+    RESPOSTAS['/comercial/lead/a/mover/pedido'] = estado({ estado: 'confirmada', confirmadaPor: 'Ana', confirmadaEm: new Date().toISOString() });
+    // Remonta para não esperar o relógio: o pedido está na aba e o estado é relido na abertura.
+    cleanup();
+    render(<FunilPage />);
+    const assinado = await screen.findByTestId('funil-pedido-assinado-a');
+    expect(assinado).toHaveTextContent(/Assinado por Ana às \d\d:\d\d: conclua até \d\d:\d\d/);
+    expect(screen.getByRole('button', { name: 'concluir a mudança' })).toHaveAccessibleDescription(/Assinado por Ana/);
+  });
+
+  it('vencido ou recusado, o pedido sai da aba com o porquê', async () => {
+    window.sessionStorage.setItem('comercial.mover.a', JSON.stringify({ ...PEDIDO('qualificacao'), leadId: 'a' }));
+    RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A', 'novo_lead'));
+    RESPOSTAS['/comercial/lead/a/mover/pedido'] = estado({ estado: 'venceu', confirmadaPor: 'Ana' });
+    render(<FunilPage />);
+    expect(await screen.findByText('O pedido foi assinado por Ana, mas venceu antes de concluir. Nada mudou: peça de novo.')).toBeInTheDocument();
+    expect(screen.queryByTestId('funil-pedido-a')).toBeNull();
+    expect(window.sessionStorage.getItem('comercial.mover.a')).toBeNull();
+  });
+});
+
+describe('o menu e as dicas fecham como devem (revisão P3)', () => {
+  it('Tab para fora do menu fecha sem roubar o foco', async () => {
+    RESPOSTAS['/comercial/funil'] = funil(cartao('a', 'Lead A', 'novo_lead'), cartao('b', 'Lead B', 'novo_lead'));
+    render(<FunilPage />);
+    const u = userEvent.setup();
+    await u.click(await screen.findByTestId('funil-mover-a'));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    const fora = screen.getByTestId('funil-mover-b');
+    fireEvent.blur(screen.getByRole('menu'), { relatedTarget: fora });
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('Esc cala a dica da etiqueta aberta, e ela volta ao passar de novo', async () => {
+    RESPOSTAS['/comercial/funil'] = funil();
+    render(<FunilPage />);
+    const dica = () => document.getElementById('funil-etiqueta-dica-parados') as HTMLElement;
+    await screen.findByTestId('funil-etiqueta-parados');
+    expect(dica().className).toContain('group-hover:block');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(dica().className).not.toContain('group-hover:block'));
+    fireEvent.mouseEnter(screen.getByTestId('funil-etiqueta-parados').parentElement as HTMLElement);
+    await waitFor(() => expect(dica().className).toContain('group-hover:block'));
   });
 });
 

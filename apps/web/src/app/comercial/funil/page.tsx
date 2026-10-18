@@ -12,7 +12,23 @@ import { ROTULO_DO_MOTIVO, ROTULO_DO_PRODUTO, descricaoJaDizQuando, diaSP, quand
 import { Aviso, BarraDaSaude, BOTAO, BOTAO_PRIMARIO, Carregando, Chip, Erro, FOCO, INPUT, useCarregar } from '../_ui';
 import { LinkDoLead, useMudouNoPainel } from '../_painel/provedor';
 import { moverFocoNoFunil } from '../_painel/teclado';
-import { concluirMudanca, destinoDaColuna, esquecerPedido, fraseDoErro, guardarPedido, lerPedidos, opcoesDoMenu, pedirMudanca, rotuloCurto, voltaEmDoDia } from '../_funil/mover';
+import {
+  RELEITURA_DO_PEDIDO_MS,
+  concluirMudanca,
+  destinoDaColuna,
+  esquecerPedido,
+  fraseDoErro,
+  fraseDoFim,
+  guardarPedido,
+  horaSP,
+  lerEstadoDoPedido,
+  lerPedidos,
+  opcoesDoMenu,
+  pedirMudanca,
+  rotuloCurto,
+  voltaEmDoDia,
+  type EstadoDoPedido,
+} from '../_funil/mover';
 
 /*
  * TELA 04 · O FUNIL VIVO (lane C; painel na lane UX; mover na rodada do painel, P5).
@@ -43,6 +59,60 @@ export default function FunilVivoPage() {
   const [sobre, setSobre] = useState<string | null>(null);
 
   useEffect(() => setPedidos(lerPedidos()), []);
+
+  /*
+   * O ESTADO DE CADA PEDIDO DESTA ABA (revisão PA-7): relido do servidor, só
+   * leitura e sem token, para "concluir a mudança" acender quando a assinatura
+   * chega. Pedido usado, recusado ou vencido sai da aba com a frase do porquê.
+   */
+  const [estados, setEstados] = useState<Record<string, EstadoDoPedido>>({});
+  const chavesDosPedidos = Object.entries(pedidos)
+    .map(([leadId, p]) => `${leadId}:${p.approvalId}`)
+    .sort()
+    .join('|');
+  useEffect(() => {
+    const vivos = Object.entries(pedidos);
+    if (!vivos.length) return;
+    let parou = false;
+    const reler = async () => {
+      for (const [leadId, p] of vivos) {
+        try {
+          const e = await lerEstadoDoPedido(leadId, p.approvalId, token);
+          if (parou) return;
+          if (!e) continue;
+          const fim = fraseDoFim(e);
+          if (fim) {
+            esquecerPedido(leadId);
+            setPedidos(({ [leadId]: _, ...resto }) => resto);
+            setEstados(({ [leadId]: _, ...resto }) => resto);
+            avisar(leadId, fim, e.estado === 'usada' ? 'neutro' : 'ruim');
+          } else {
+            setEstados((x) => ({ ...x, [leadId]: e }));
+          }
+        } catch {
+          /* rede caiu: a próxima volta tenta de novo; o pedido continua na aba */
+        }
+      }
+    };
+    void reler();
+    const t = window.setInterval(() => void reler(), RELEITURA_DO_PEDIDO_MS);
+    return () => {
+      parou = true;
+      window.clearInterval(t);
+    };
+    // A lista de pedidos muda de identidade a cada render; a chave é o que importa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chavesDosPedidos, token]);
+
+  /* As dicas das etiquetas fecham com Esc, mesmo abertas pelo mouse (WCAG 1.4.13). */
+  const [dicasCaladas, setDicasCaladas] = useState(false);
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDicasCaladas(true);
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, []);
 
   const avisar = (leadId: string, texto: string, tom: 'neutro' | 'bom' | 'ruim' = 'neutro') => setAvisos((a) => ({ ...a, [leadId]: { texto, tom } }));
   const calar = (leadId: string) => setAvisos(({ [leadId]: _, ...resto }) => resto);
@@ -81,7 +151,8 @@ export default function FunilVivoPage() {
   function desistir(leadId: string) {
     esquecerPedido(leadId);
     setPedidos(({ [leadId]: _, ...resto }) => resto);
-    avisar(leadId, 'Pedido esquecido nesta tela. Ele vence sozinho na fila em até 10 minutos.');
+    const p = pedidos[leadId];
+    avisar(leadId, p ? `Pedido esquecido nesta tela. Na fila ele vence às ${horaSP(p.expiraEm)}, sem mudar nada.` : 'Pedido esquecido nesta tela.');
   }
 
   function soltar(e: React.DragEvent, coluna: Coluna) {
@@ -107,7 +178,7 @@ export default function FunilVivoPage() {
       <header className="shrink-0 space-y-2">
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="filtro">
           {COMERCIAL_FILTROS_DO_FUNIL.map((f) => (
-            <span key={f.chave} className="group relative inline-flex">
+            <span key={f.chave} className="group relative inline-flex" onMouseEnter={() => setDicasCaladas(false)} onFocus={() => setDicasCaladas(false)}>
               <button
                 type="button"
                 data-testid={`funil-etiqueta-${f.chave}`}
@@ -121,7 +192,7 @@ export default function FunilVivoPage() {
               <span
                 id={`funil-etiqueta-dica-${f.chave}`}
                 role="tooltip"
-                className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-64 rounded border border-border bg-surface-2 px-2.5 py-1.5 text-[11.5px] leading-snug text-text shadow-sm group-focus-within:block group-hover:block max-md:fixed max-md:inset-x-4 max-md:w-auto"
+                className={`pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-64 rounded border border-border bg-surface-2 px-2.5 py-1.5 text-[11.5px] leading-snug text-text shadow-sm max-md:fixed max-md:inset-x-4 max-md:w-auto ${dicasCaladas ? '' : 'group-focus-within:block group-hover:block'}`}
               >
                 {f.explicacao}
               </span>
@@ -199,6 +270,7 @@ export default function FunilVivoPage() {
                         <Cartao
                           c={c}
                           pedido={pedidos[c.leadId] ?? null}
+                          estado={estados[c.leadId] ?? null}
                           aviso={avisos[c.leadId] ?? null}
                           ocupado={!!ocupados[c.leadId]}
                           saida={saidaAberta?.leadId === c.leadId ? saidaAberta : null}
@@ -231,6 +303,7 @@ export default function FunilVivoPage() {
 function Cartao({
   c,
   pedido,
+  estado,
   aviso,
   ocupado,
   saida,
@@ -244,6 +317,8 @@ function Cartao({
 }: {
   c: CartaoDoFunil;
   pedido: ComercialPedidoDeMover | null;
+  /** O estado relido do pedido (revisão PA-7); `null` antes da primeira leitura. */
+  estado: EstadoDoPedido | null;
   aviso: { texto: string; tom: 'neutro' | 'bom' | 'ruim' } | null;
   ocupado: boolean;
   saida: { leadId: string; saida: ComercialSaida | null } | null;
@@ -263,6 +338,9 @@ function Cartao({
     setMenu(false);
     botao.current?.focus();
   };
+  // O botão fica com `aria-disabled` (e não `disabled`) para poder receber o foco de volta quando o menu fecha.
+  const travado = ocupado || !!pedido;
+  const assinado = estado?.estado === 'confirmada';
 
   return (
     <div
@@ -293,9 +371,12 @@ function Cartao({
           aria-haspopup="menu"
           aria-expanded={menu}
           aria-label={`mover ${c.empresa ?? c.nome} para outra etapa`}
-          disabled={ocupado || !!pedido}
-          onClick={() => setMenu((m) => !m)}
-          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-muted hover:border-brand hover:text-text disabled:opacity-50 max-md:min-h-[44px] max-md:min-w-[44px] ${FOCO}`}
+          aria-disabled={travado}
+          title={pedido ? 'Já há um pedido de mudança para este cartão' : undefined}
+          onClick={() => {
+            if (!travado) setMenu((m) => !m);
+          }}
+          className={`shrink-0 rounded border border-border px-1.5 font-os-mono text-[10px] text-muted max-md:min-h-[44px] max-md:min-w-[44px] ${travado ? 'cursor-not-allowed opacity-50' : 'hover:border-brand hover:text-text'} ${FOCO}`}
         >
           mover
         </button>
@@ -303,11 +384,13 @@ function Cartao({
       {menu && (
         <MenuMover
           c={c}
+          botao={botao}
           aoEscolher={(d) => {
-            setMenu(false);
+            fecharMenu();
             aoEscolher(d);
           }}
           aoFechar={fecharMenu}
+          aoSair={() => setMenu(false)}
         />
       )}
       <BarraDaSaude saude={c.saude} />
@@ -336,13 +419,34 @@ function Cartao({
         <div role="status" data-testid={`funil-pedido-${c.leadId}`} className="mt-2 space-y-1.5 rounded border border-brand/40 bg-brand/5 px-2 py-1.5 text-[11.5px] leading-snug">
           <p>
             <span className="font-os-mono text-[9.5px] uppercase tracking-[0.12em] text-brand">mudança pedida</span>{' '}
-            para {rotuloCurto(pedido.para)}. Outra pessoa assina em{' '}
-            <Link href="/atendimento" className={`underline decoration-brand underline-offset-2 ${FOCO}`}>/atendimento</Link> até{' '}
-            {new Date(pedido.expiraEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}.
+            para {rotuloCurto(pedido.para)}.{' '}
+            {assinado ? (
+              <span id={`funil-pedido-assinado-${c.leadId}`} data-testid={`funil-pedido-assinado-${c.leadId}`}>
+                Assinado{estado?.confirmadaPor ? ` por ${estado.confirmadaPor}` : ''}
+                {estado?.confirmadaEm ? ` às ${horaSP(estado.confirmadaEm)}` : ''}: conclua até {horaSP(pedido.expiraEm)}.
+              </span>
+            ) : (
+              <>
+                Outra pessoa assina em{' '}
+                <Link href="/atendimento" className={`underline decoration-brand underline-offset-2 ${FOCO}`}>/atendimento</Link> até{' '}
+                {horaSP(pedido.expiraEm)}.
+              </>
+            )}
           </p>
           {pedido.pendencias.length > 0 && <p className="text-warn">Vai mover, mas ainda não foi feito: {pedido.pendencias.join('; ')}.</p>}
+          <p className="text-dim" data-testid={`funil-pedido-aviso-${c.leadId}`}>
+            O pedido vale até {horaSP(pedido.expiraEm)} e só existe nesta aba: fechar a aba perde o pedido, e aí é pedir de novo.
+          </p>
           <div className="flex flex-wrap gap-1.5">
-            <button type="button" disabled={ocupado} onClick={() => aoConcluir(pedido)} className={BOTAO_PRIMARIO}>concluir a mudança</button>
+            <button
+              type="button"
+              disabled={ocupado}
+              onClick={() => aoConcluir(pedido)}
+              className={assinado ? BOTAO_PRIMARIO : BOTAO}
+              aria-describedby={assinado ? `funil-pedido-assinado-${c.leadId}` : undefined}
+            >
+              concluir a mudança
+            </button>
             <button type="button" disabled={ocupado} onClick={aoDesistir} className={BOTAO}>desistir</button>
           </div>
         </div>
@@ -360,8 +464,24 @@ function Cartao({
   );
 }
 
-/** O menu "Mover para": cada etapa e cada saída; as desligadas dizem por quê. Esc fecha e devolve o foco. */
-function MenuMover({ c, aoEscolher, aoFechar }: { c: CartaoDoFunil; aoEscolher: (d: ComercialDestinoDoMover) => void; aoFechar: () => void }) {
+/**
+ * O menu "Mover para": cada etapa e cada saída; as desligadas dizem por quê.
+ * Esc e a escolha fecham e devolvem o foco ao botão; Tab para fora ou clique
+ * fora fecham sem roubar o foco de onde ele foi.
+ */
+function MenuMover({
+  c,
+  botao,
+  aoEscolher,
+  aoFechar,
+  aoSair,
+}: {
+  c: CartaoDoFunil;
+  botao: React.RefObject<HTMLButtonElement | null>;
+  aoEscolher: (d: ComercialDestinoDoMover) => void;
+  aoFechar: () => void;
+  aoSair: () => void;
+}) {
   const caixa = useRef<HTMLDivElement>(null);
   useEffect(() => {
     caixa.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
@@ -372,6 +492,12 @@ function MenuMover({ c, aoEscolher, aoFechar }: { c: CartaoDoFunil; aoEscolher: 
       ref={caixa}
       role="menu"
       aria-label={`Mover ${c.empresa ?? c.nome} para`}
+      onBlur={(e) => {
+        const para = e.relatedTarget as Node | null;
+        // O clique no próprio botão "mover" é dele (alterna); o resto fora do menu fecha.
+        if (para && (caixa.current?.contains(para) || botao.current?.contains(para))) return;
+        aoSair();
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === 'Escape') {

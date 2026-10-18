@@ -4,7 +4,12 @@
  * Mudar a etapa pela tela é escrita sensível, como sempre foi o `PATCH
  * /leads/:id`: quem move PEDE, outra pessoa assina em /atendimento, e quem
  * pediu conclui com o token de uso único. Este arquivo guarda o pedido na aba
- * (sessionStorage, vence com a aprovação, em 10 min) e fala com as duas rotas.
+ * (sessionStorage, vence com a aprovação, em 10 min) e fala com as três rotas.
+ *
+ * O TOKEN SÓ MORA NESTA ABA, de propósito (revisão PA-7): ele é de uso único e
+ * não deve ficar em claro no servidor. A tela diz isso no pedido, com a hora em
+ * que ele vence, e relê o ESTADO do pedido (`GET …/mover/pedido`, só leitura,
+ * sem token) para acender "concluir a mudança" quando a assinatura chega.
  * Fica fora do page.tsx porque página do App Router não exporta nada além do
  * componente.
  */
@@ -20,7 +25,43 @@ import {
   type ComercialResultadoDoMover,
 } from '@mktos/shared';
 
-import { API_BASE, ErroDaApi, apiPost, erroDaResposta } from '@/lib/api';
+import { API_BASE, ErroDaApi, apiGet, apiPost, erroDaResposta } from '@/lib/api';
+
+/** O que `GET /comercial/lead/:id/mover/pedido` responde (espelho de `EstadoDoPedidoDeMover` da API). */
+export interface EstadoDoPedido {
+  approvalId: string;
+  estado: 'esperando' | 'confirmada' | 'usada' | 'recusada' | 'venceu';
+  /** O destino que o hash prende, recalculado no servidor. */
+  para: ComercialEtapa | null;
+  expiraEm: string;
+  confirmadaPor: string | null;
+  confirmadaEm: string | null;
+}
+
+/** De quanto em quanto tempo o cartão relê o pedido que espera assinatura. */
+export const RELEITURA_DO_PEDIDO_MS = 8_000;
+
+export async function lerEstadoDoPedido(leadId: string, approvalId: string, token: string | null): Promise<EstadoDoPedido | null> {
+  const r = await apiGet<{ pedido: EstadoDoPedido | null }>(`/comercial/lead/${leadId}/mover/pedido?aprovacao=${encodeURIComponent(approvalId)}`, token);
+  return r.pedido;
+}
+
+/** "10:42" no relógio de São Paulo. */
+export function horaSP(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+}
+
+/** O pedido saiu do jogo (usado, recusado ou vencido): a frase do aviso, ou `null` se ainda vale. */
+export function fraseDoFim(e: Pick<EstadoDoPedido, 'estado' | 'confirmadaPor'>): string | null {
+  if (e.estado === 'recusada') return 'O pedido foi recusado em /atendimento. Nada mudou.';
+  if (e.estado === 'venceu') {
+    return e.confirmadaPor
+      ? `O pedido foi assinado por ${e.confirmadaPor}, mas venceu antes de concluir. Nada mudou: peça de novo.`
+      : 'O pedido venceu sem assinatura. Nada mudou: peça de novo.';
+  }
+  if (e.estado === 'usada') return 'Este pedido já foi usado. Releia o funil.';
+  return null;
+}
 
 const CHAVE = (leadId: string) => `comercial.mover.${leadId}`;
 
