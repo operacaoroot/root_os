@@ -615,12 +615,17 @@ export class WorkService {
 
     await this.audit.log({
       orgId, actorId, action: 'work.task.update', entityType: 'work_task', entityId: id,
+      // `dueDate` entrou na rodada do painel P1 (18/10/2026): a caixa de entrada
+      // mostra "vencimento mudou de → para" a partir DESTA linha, sem segundo
+      // caminho de escrita. Linha antiga, sem a chave, não mostra a mudança.
       before: {
         status: antes.status.name, title: antes.title, assignee: antes.assignee, priority: antes.priority,
+        dueDate: antes.dueDate?.toISOString() ?? null,
         ...(camposAntes ? { campos: camposAntes } : {}),
       },
       after: {
         status: depois.status.name, title: depois.title, assignee: depois.assignee, priority: depois.priority,
+        dueDate: depois.dueDate?.toISOString() ?? null,
         ...(camposDepois ? { campos: camposDepois } : {}),
       },
     });

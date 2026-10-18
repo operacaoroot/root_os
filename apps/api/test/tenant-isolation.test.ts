@@ -425,6 +425,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkFieldValue', escopo: 'filho', chaveSql: '"id"', nota: 'DOIS pais obrigatórios (WorkTask e WorkField) — os dois têm de ser da mesma org.' },
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
+  { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
 
   // ---- onboarding do cliente (23/09/2026) -------------------------------
   { tabela: 'OnboardingTrilho', escopo: 'tenant', chaveSql: '"id"', nota: 'O cliente na esteira de entrega da empresa que o entrega: fase, perfil, nível, receita, contato, portões (entrada compensada, linha de base, dupla). É a carteira comercial em andamento — ler a da outra é ler quem ela está fechando e em que pé; ESCREVER `fase` é mover o cliente alheio de fase sem portão.' },
@@ -1214,6 +1215,11 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
     id: crypto.randomUUID(), orgId, taskId: tarefaId, autorId: userId,
     autorNome: `Usuário ${rotulo}`, minutos: rotulo === 'A' ? 90 : 45, dia: '2026-09-15',
     etapa: 'Implantação', nota: `Horas privadas da org ${rotulo}`,
+  }));
+  // A caixa de entrada (rodada do painel P1): a marca pessoal de "limpei".
+  reg('CaixaVisto', await ins(c, 'CaixaVisto', {
+    id: crypto.randomUUID(), orgId, userId, origem: 'comentario',
+    eventoId: `comentario_${rotulo}_${MARCA}`,
   }));
 
   // Onboarding do cliente (23/09/2026): o trilho e os quatro filhos.

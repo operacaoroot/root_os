@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ActorType, ApprovalState, PrismaClient } from '@prisma/client';
@@ -311,6 +311,23 @@ describe('A7: a caixa agrega o que existe, e não escreve nada', () => {
     expect(FONTE_DO_SERVICO.includes('.registrar(')).toBe(false);
     expect(FONTE_DO_SERVICO.includes('confirmar(')).toBe(false);
     expect(FONTE_DO_SERVICO.includes('dispararAprovado')).toBe(false);
+  });
+
+  it('no módulo caixa, a ÚNICA escrita é a marca pessoal de "limpei" (rodada do painel P1)', () => {
+    // A caixa de entrada ganhou uma escrita: `CaixaVisto`, a marca de leitura
+    // do próprio usuário. Ela mora num serviço próprio, e nenhum outro arquivo
+    // do módulo pode escrever — este serviço aqui continua sem verbo nenhum.
+    const pasta = path.join(RAIZ, 'src/caixa');
+    const comEscrita = readdirSync(pasta)
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => {
+        const codigo = readFileSync(path.join(pasta, f), 'utf8')
+          .split('\n')
+          .filter((l) => !/^\s*(\/\/|\/?\*)/.test(l))
+          .join('\n');
+        return /this\.prisma\.\w+\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\(/.test(codigo);
+      });
+    expect(comEscrita).toEqual(['caixa-visto.service.ts']);
   });
 
   it('o controller não tem verbo de escrita', () => {

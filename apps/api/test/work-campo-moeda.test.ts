@@ -196,8 +196,10 @@ describe('campo moeda: a auditoria guarda o valor (A4)', () => {
     const { svc, audit } = servicoFalso();
     await svc.editarTarefa(ORG, 'eu', TAREFA, { title: 'Só o título' });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
-      before: { status: 'oportunidade', title: 'Lead', assignee: null, priority: 'normal' },
-      after: { status: 'oportunidade', title: 'Só o título', assignee: null, priority: 'normal' },
+      // `dueDate` entrou no antes/depois na rodada do painel P1 (a caixa de
+      // entrada lê a mudança de vencimento desta linha).
+      before: { status: 'oportunidade', title: 'Lead', assignee: null, priority: 'normal', dueDate: null },
+      after: { status: 'oportunidade', title: 'Só o título', assignee: null, priority: 'normal', dueDate: null },
     }));
   });
 });

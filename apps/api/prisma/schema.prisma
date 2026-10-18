@@ -165,6 +165,8 @@ model Org {
   workFieldValues       WorkFieldValue[]
   workComments          WorkComment[]
   workApontamentos      WorkApontamento[]
+  /// A marca pessoal de "limpei isto" da caixa de entrada (rodada do painel P1).
+  caixaVistos           CaixaVisto[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -2225,6 +2227,38 @@ model WorkApontamento {
 
   @@index([taskId, dia])
   @@index([orgId, dia])
+}
+
+/// O "LIMPEI ISTO" DA CAIXA DE ENTRADA — rodada do painel P1, 18/10/2026.
+///
+/// A caixa LÊ a atividade das tarefas (a auditoria de `WorkTask` e os
+/// comentários) e não guarda cópia dela. A única coisa que ela grava é esta
+/// marca de leitura PESSOAL: "esta pessoa já limpou este evento". Não é estado
+/// de negócio (a tarefa, o status e o comentário não mudam) e não vale para mais
+/// ninguém: o visto de um não some da caixa do outro.
+///
+/// `origem` é `auditoria` (id de `AuditLog`) ou `comentario` (id de
+/// `WorkComment`). A linha de `origem = 'tudo'` (com `eventoId = 'tudo'`) é o
+/// "limpar tudo": guarda em `ate` até quando a pessoa limpou, e todo evento até
+/// esse instante conta como limpo sem precisar de uma linha por evento.
+///
+/// Raiz da empresa, não filha: o `orgId` vem do insert, e o isolamento por linha
+/// é o padrão (RLS FORCE). Sem chave estrangeira para o evento de propósito: o
+/// evento vive em duas tabelas diferentes, e apagar um comentário não precisa
+/// apagar a marca de quem já o tinha lido.
+model CaixaVisto {
+  id       String    @id @default(uuid())
+  orgId    String
+  org      Org       @relation(fields: [orgId], references: [id])
+  userId   String
+  origem   String
+  eventoId String
+  /// Só na linha do "limpar tudo": todo evento até aqui está limpo.
+  ate      DateTime?
+  vistoEm  DateTime  @default(now())
+
+  @@unique([orgId, userId, origem, eventoId])
+  @@index([orgId, userId, vistoEm])
 }
 
 // ============================================================================

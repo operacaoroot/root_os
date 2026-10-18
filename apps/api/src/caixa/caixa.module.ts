@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 import { TenantsModule } from '../tenants/tenants.module';
 import { CaixaController } from './caixa.controller';
 import { CaixaService } from './caixa.service';
+import { CaixaAtividadeController } from './caixa-atividade.controller';
+import { CaixaAtividadeService } from './caixa-atividade.service';
+import { CaixaVistoService } from './caixa-visto.service';
 
 /**
  * A CAIXA PESSOAL — fatia A7.
@@ -34,7 +37,14 @@ import { CaixaService } from './caixa.service';
  */
 @Module({
   imports: [TenantsModule],
-  controllers: [CaixaController],
-  providers: [CaixaService],
+  /*
+   * A caixa de entrada (rodada do painel P1, 18/10/2026) entra no MESMO módulo:
+   * `CaixaAtividadeController` (atividade, minhas tarefas e o limpar), o
+   * serviço de leitura dele e `CaixaVistoService`, a única escrita do módulo —
+   * a marca pessoal de "limpei", na tabela `CaixaVisto`. Nada exportado, pelo
+   * mesmo motivo de cima.
+   */
+  controllers: [CaixaController, CaixaAtividadeController],
+  providers: [CaixaService, CaixaAtividadeService, CaixaVistoService],
 })
 export class CaixaModule {}

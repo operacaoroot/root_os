@@ -5705,6 +5705,145 @@ export interface CaixaContador {
   medidoEm: string;
 }
 
+/* ==========================================================================
+ * A CAIXA DE ENTRADA — atividade e minhas tarefas (rodada do painel P1, 18/10/2026)
+ * ==========================================================================
+ *
+ * `GET /api/caixa/atividade`, `POST /api/caixa/limpar` e `GET /api/caixa/tarefas`.
+ * A atividade é uma LEITURA do que as telas donas já gravam: a auditoria de
+ * `WorkTask` (`AuditLog`, `entityType = 'work_task'`, com o antes e o depois) e
+ * os comentários (`WorkComment`). A única escrita nova é a marca pessoal de
+ * "limpei isto" (`CaixaVisto`), que não muda estado de negócio nenhum. Regras
+ * em `apps/api/src/caixa/atividade-da-caixa.ts`.
+ */
+
+/** De onde veio o evento. É o prefixo do id do item (`auditoria:<id>`). */
+export const CAIXA_ORIGENS_DA_ATIVIDADE = ['auditoria', 'comentario'] as const;
+export type CaixaOrigemDaAtividade = (typeof CAIXA_ORIGENS_DA_ATIVIDADE)[number];
+
+/** O que aconteceu. `edicao` = título ou prioridade; o resto tem nome próprio. */
+export type CaixaTipoDaAtividade =
+  | 'status'
+  | 'atribuicao'
+  | 'vencimento'
+  | 'comentario'
+  | 'criacao'
+  | 'edicao';
+
+/** Um campo que mudou, de → para, já em texto de tela. */
+export interface CaixaMudanca {
+  campo: 'status' | 'responsavel' | 'vencimento' | 'titulo' | 'prioridade';
+  de: string | null;
+  para: string | null;
+}
+
+export interface CaixaAtividade {
+  /** `<origem>:<eventoId>` — é o id que `POST /caixa/limpar` recebe. */
+  id: string;
+  origem: CaixaOrigemDaAtividade;
+  /** O tipo principal (o primeiro da lista de mudanças, ou comentário/criação). */
+  tipo: CaixaTipoDaAtividade;
+  tarefaId: string;
+  tarefaTitulo: string;
+  lista: string | null;
+  /** Nome de quem fez; nulo quando o registro não guardou ninguém. */
+  quem: string | null;
+  quemTipo: 'user' | 'ai' | 'system';
+  /** Fui eu que fiz. Só aparece com `incluirMeus`. */
+  porMim: boolean;
+  quando: string;
+  mudancas: CaixaMudanca[];
+  /** O trecho do comentário. Nulo nos eventos que não são comentário. */
+  trecho: string | null;
+  trechoCortado: boolean;
+  /** Limpo por mim (um a um ou pelo "limpar tudo"). Só aparece com `incluirLimpos`. */
+  limpo: boolean;
+}
+
+export interface CaixaAtividadeResposta {
+  estado: CaixaEstadoDoEixo;
+  itens: CaixaAtividade[];
+  /** O cursor da próxima página (`antesDe`). Nulo = acabou. */
+  proximo: string | null;
+  /** Por quais nomes a caixa procurou você no responsável das tarefas. */
+  identidades: string[];
+  /** Até quando o "limpar tudo" já limpou. Nulo = nunca limpou tudo. */
+  limpoAte: string | null;
+  incluirLimpos: boolean;
+  incluirMeus: boolean;
+  /** Bateu no teto de tarefas lidas: tarefa sua mais antiga pode ter ficado de fora. */
+  tarefasTruncadas: boolean;
+  agora: string;
+}
+
+/** `{ ids }` limpa um a um; `{ tudo: true, ate? }` limpa tudo até `ate` (padrão: agora). */
+export const CaixaLimparSchema = z.union([
+  z.object({
+    ids: z
+      .array(z.string().regex(/^(auditoria|comentario):[A-Za-z0-9_-]{1,120}$/))
+      .min(1)
+      .max(200),
+  }).strict(),
+  z.object({ tudo: z.literal(true), ate: z.string().datetime({ offset: true }).optional() }).strict(),
+]);
+export type CaixaLimparInput = z.infer<typeof CaixaLimparSchema>;
+
+export interface CaixaLimparResposta {
+  /** Quantos itens foram marcados agora (um a um). No "tudo", zero. */
+  limpos: number;
+  limpoAte: string | null;
+}
+
+/** Os filtros de vencimento da aba Minhas tarefas. */
+export const CAIXA_FILTROS_DE_VENCIMENTO = ['vencidas', 'hoje', 'semana'] as const;
+export type CaixaFiltroDeVencimento = (typeof CAIXA_FILTROS_DE_VENCIMENTO)[number];
+
+export const CaixaTarefasQuerySchema = z.object({
+  listaId: z.string().min(1).max(120).optional(),
+  pastaId: z.string().min(1).max(120).optional(),
+  status: z.string().min(1).max(200).optional(),
+  vencimento: z.enum(CAIXA_FILTROS_DE_VENCIMENTO).optional(),
+  responsavel: z.enum(['eu', 'qualquer']).default('eu'),
+  encerradas: z
+    .enum(['sim', 'nao'])
+    .default('nao')
+    .transform((v) => v === 'sim'),
+});
+export type CaixaTarefasQuery = z.infer<typeof CaixaTarefasQuerySchema>;
+
+export interface CaixaMinhaTarefa {
+  id: string;
+  titulo: string;
+  listaId: string;
+  lista: string;
+  pastaId: string | null;
+  pasta: string | null;
+  status: string;
+  statusCor: string;
+  statusTipo: string;
+  prazo: string | null;
+  /** O texto gravado em `assignee` (texto livre herdado do ClickUp). */
+  responsavel: string | null;
+  comentarios: number;
+  atualizadaEm: string;
+  /** Os mesmos motivos de parada da caixa (prazo vencido, sem movimento, presa). */
+  motivos: CaixaMotivoDaParada[];
+}
+
+export interface CaixaTarefasResposta {
+  estado: CaixaEstadoDoEixo;
+  itens: CaixaMinhaTarefa[];
+  truncado: boolean;
+  teto: number;
+  identidades: string[];
+  /** As listas e pastas para o filtro, da empresa inteira. */
+  listas: { id: string; nome: string; pastaId: string | null; pasta: string | null }[];
+  /** Os nomes de status que aparecem nas tarefas lidas, para o filtro. */
+  status: string[];
+  filtros: CaixaTarefasQuery;
+  agora: string;
+}
+
 // ---------- Pauta: o banco de ideias (MK3) ----------
 // A máquina de conteúdo parte do que o mundo publicou. O banco parte do
 // contrário: do que a casa quer dizer. Ideia aprovada vira `PautaPeca` e cai na
