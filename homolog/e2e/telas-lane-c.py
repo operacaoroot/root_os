@@ -62,14 +62,21 @@ def main() -> None:
                 pagina.screenshot(path=str(arquivo), full_page=True)
                 print(arquivo.relative_to(RAIZ))
                 if nome == 'funil':
-                    # Tenta arrastar o cartão da Alicerce: a tela recusa e diz o motivo com o portão.
-                    cartao = pagina.locator('[draggable=true]', has_text='Construtora Alicerce').filter(has_text='Marina Duarte').first
-                    cartao.dispatch_event('dragstart')
-                    pagina.get_by_text('não muda de etapa por arraste').first.wait_for(timeout=15_000)
-                    pagina.wait_for_timeout(800)
-                    arquivo = PROVAS / f'tela-{num}b-funil-arraste-bloqueado-{sufixo}.png'
-                    pagina.screenshot(path=str(arquivo), full_page=False)
-                    print(arquivo.relative_to(RAIZ))
+                    # Desde a rodada do painel (P4/P5, 18/10/2026) o arraste não é mais
+                    # recusado: vira pedido de mover que outra pessoa assina em
+                    # /atendimento, e o cartão movido com etapa pendente ganha o balão
+                    # "movido com pendências". A prova é a orientação da tela e, quando
+                    # houver, o balão (este roteiro só fotografa; não pede mover).
+                    pagina.get_by_text('arraste para outra coluna').first.wait_for(timeout=15_000)
+                    balao = pagina.get_by_text('movido com pendências').first
+                    if balao.count():
+                        balao.scroll_into_view_if_needed()
+                        pagina.wait_for_timeout(400)
+                        arquivo = PROVAS / f'tela-{num}b-funil-balao-{sufixo}.png'
+                        pagina.screenshot(path=str(arquivo), full_page=False)
+                        print(arquivo.relative_to(RAIZ))
+                    else:
+                        print(f'{caminho}: nenhum cartão movido com pendências agora; foto do balão pulada')
             ctx.close()
         nav.close()
 
