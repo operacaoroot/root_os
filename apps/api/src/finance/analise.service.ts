@@ -199,7 +199,8 @@ export class AnaliseService {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
     }
-    const texto = (await this.llm.complete({ system: SISTEMA, user: `Números de hoje (${dia}):\n${json}`, orgId, maxTokens: 900 })).trim();
+    // 6000: o modelo pode raciocinar antes de escrever, e o raciocínio conta nesse teto.
+    const texto = (await this.llm.complete({ system: SISTEMA, user: `Números de hoje (${dia}):\n${json}`, orgId, maxTokens: 6000 })).trim();
     const salva = await this.prisma.analiseLeitura.create({ data: { orgId, dia, hash, texto } });
     return { texto, geradaEm: salva.createdAt.toISOString(), guardada: false };
   }
