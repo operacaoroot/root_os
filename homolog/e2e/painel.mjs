@@ -8,7 +8,7 @@
  * de `homolog/.env.homolog` em tempo de execução.
  *
  * O que ela prova (docs/comercial/RODADA-PAINEL-20261018.md, P7):
- *   1. CAIXA (P1): o sócio comenta numa tarefa da mesa; na caixa da mesa o item
+ *   1. CAIXA (P1): o admin comenta numa tarefa da mesa; na caixa da mesa o item
  *      aparece em Atividade, "Limpar" o tira da caixa e ele continua no
  *      histórico; em Minhas tarefas a tarefa aparece e os comentários abrem no
  *      lugar.
@@ -16,10 +16,11 @@
  *      pelo seletor; o chip da pasta mostra a lista. Quadro e Lista alternam.
  *   3. ATAS (P3): a ata colada na tela gera sugestões (provedor stub) e aceitar
  *      uma cria UMA tarefa no Trabalho.
- *   4. APROVAÇÃO + FUNIL (P4 e P5): o sócio pede para mover um lead novo de E1
- *      para E3 pelo menu do cartão; a mesa encontra o pedido em "Depende de
- *      você" e confirma pela tela nova; o sócio conclui e o cartão mostra o
- *      balão "movido com pendências".
+ *   4. APROVAÇÃO + FUNIL (P4 e P5): o admin pede para mover um lead novo de E1
+ *      para E3 pelo menu do cartão (pedir pede leads.editar, que o sócio da
+ *      homologação não tem); a mesa encontra o pedido em "Depende de você" e
+ *      confirma pela tela nova; o admin conclui e o cartão mostra o balão
+ *      "movido com pendências".
  * E fotografa cada tela mexida em escuro, claro e 390 px, conferindo que a
  * página não rola na horizontal no celular.
  *
@@ -131,7 +132,7 @@ function telas(ids) {
     { nome: 'atas', url: `/trabalho/atas?ata=${encodeURIComponent(ids.ataRef)}`, pronto: '[data-testid="atas-lista"]' },
     { nome: 'aprovacoes', url: '/atendimento', pronto: '[data-testid="aprov-grupo-voce"]' },
     { nome: 'funil', url: '/comercial/funil', pronto: `[data-testid="funil-card-${ids.leadId}"]` },
-    { nome: 'simulador', url: '/comercial/simulador', pronto: 'main' },
+    { nome: 'whatsapp', url: '/comercial/simulador', pronto: '[data-testid="whats-lista"]' },
   ];
 }
 
@@ -139,15 +140,16 @@ async function main() {
   conferir(SENHA, 'ADMIN_PASSWORD ausente em homolog/.env.homolog');
   const mesa = await entrar('mesa@root.homolog');
   const socio = await entrar('socio@root.homolog');
-  passo('mesa e sócio entraram pela API', { detalhe: `${mesa.user?.name} · ${socio.user?.name}` });
+  const admin = await entrar('admin@marketing-os.local');
+  passo('mesa, sócio e admin entraram pela API', { detalhe: `${mesa.user?.name} · ${socio.user?.name} · ${admin.user?.name}` });
 
   // ---- preparação pela API (o que outra pessoa faria antes) ----
   const estrutura = await api('GET', '/trabalho/estrutura', undefined, mesa.token);
   const todas = [...estrutura.folders.flatMap((f) => f.lists), ...estrutura.listasSoltas];
   const execucao = todas.find((l) => l.name === 'Execução') ?? todas[0];
   conferir(execucao, 'o Trabalho não tem lista nenhuma (rode a estrutura sugerida)');
-  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name }, socio.token);
-  await api('POST', `/trabalho/tarefas/${tarefa.id}/comentarios`, { text: `Comentário da prova ${SUFIXO}: confere o relatório antes de sexta.` }, socio.token);
+  const tarefa = await api('POST', '/trabalho/tarefas', { listId: execucao.id, title: `Prova do painel ${SUFIXO}`, assignee: mesa.user.name }, admin.token);
+  await api('POST', `/trabalho/tarefas/${tarefa.id}/comentarios`, { text: `Comentário da prova ${SUFIXO}: confere o relatório antes de sexta.` }, admin.token);
   const lista = await api('POST', '/trabalho/listas', { name: `Lista da prova ${SUFIXO}` }, mesa.token);
   const entrada = await api('POST', '/comercial/simulador/entrada', {
     telefone: `55329${SUFIXO.padStart(8, '0')}`.slice(0, 13),
@@ -159,7 +161,7 @@ async function main() {
   }, mesa.token);
   conferir(entrada.leadId && entrada.leadNovo, 'o simulador não criou um lead novo');
   const leadId = entrada.leadId;
-  passo('preparou: tarefa da mesa comentada pelo sócio, lista solta e um lead novo em E1', { tarefaId: tarefa.id, listaId: lista.id, leadId });
+  passo('preparou: tarefa da mesa comentada pelo admin, lista solta e um lead novo em E1', { tarefaId: tarefa.id, listaId: lista.id, leadId });
 
   const navegador = await chromium.launch();
   const ids = { listaId: lista.id, leadId, ataRef: '' };
@@ -173,7 +175,7 @@ async function main() {
     conferir(item, `a atividade da tarefa não chegou à caixa da mesa (identidades: ${atv.identidades.join(', ')})`);
     await p.goto(`${WEB}/caixa?aba=atividade`, { waitUntil: 'networkidle' });
     await tid(p, `caixa-item-${item.id}`).waitFor({ timeout: 30_000 });
-    passo('na caixa da mesa, Atividade mostra o comentário do sócio', { detalhe: item.id });
+    passo('na caixa da mesa, Atividade mostra o comentário do admin', { detalhe: item.id });
     await tid(p, `caixa-limpar-${item.id}`).click();
     await tid(p, `caixa-item-${item.id}`).waitFor({ state: 'detached', timeout: 15_000 });
     const comLimpos = await api('GET', '/caixa/atividade?incluirLimpos=true', undefined, mesa.token);
@@ -254,14 +256,14 @@ async function main() {
     passo('aceitar com um clique criou a tarefa no Trabalho', { detalhe: criada.title });
 
     // ---- 4. pedido de mover (sócio) → aprovação pela tela (mesa) → balão ----
-    const ctxSocio = await contexto(navegador, socio, 'dark');
+    const ctxSocio = await contexto(navegador, admin, 'dark'); // quem pede precisa de leads.editar
     const ps = await ctxSocio.newPage();
     await ps.goto(`${WEB}/comercial/funil`, { waitUntil: 'networkidle' });
     await tid(ps, `funil-mover-${leadId}`).waitFor({ timeout: 30_000 });
     await tid(ps, `funil-mover-${leadId}`).click();
     await tid(ps, 'funil-mover-para-reuniao_agendada').first().click();
     await tid(ps, `funil-pedido-${leadId}`).waitFor({ timeout: 20_000 });
-    passo('o sócio pediu para mover o lead novo de E1 para E3 pelo menu do cartão');
+    passo('o admin pediu para mover o lead novo de E1 para E3 pelo menu do cartão');
 
     await p.goto(`${WEB}/atendimento`, { waitUntil: 'networkidle' });
     const frase = p.locator('[data-testid="aprov-grupo-voce"] [data-testid^="aprov-frase-"]', { hasText: `Prova Painel ${SUFIXO}` }).first();
@@ -291,7 +293,7 @@ async function main() {
     conferir(/pend/i.test(balao), `o balão não fala de pendência: ${balao}`);
     const naColuna = await tid(ps, 'funil-coluna-reuniao_agendada').locator(`[data-testid="funil-card-${leadId}"]`).count();
     conferir(naColuna === 1, 'o cartão não está na coluna E3');
-    passo('o sócio concluiu: o cartão está em E3 com o balão de pendências', { detalhe: balao.replace(/\s+/g, ' ').slice(0, 160) });
+    passo('o admin concluiu: o cartão está em E3 com o balão de pendências', { detalhe: balao.replace(/\s+/g, ' ').slice(0, 160) });
     await ctxSocio.close();
     await ctxMesa.close();
 

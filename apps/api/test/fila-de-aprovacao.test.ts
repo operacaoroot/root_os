@@ -536,6 +536,48 @@ describe.skipIf(!URL)('a fila de aprovação, montada do banco', () => {
       await prisma.approval.delete({ where: { id } });
     });
 
+    it('pedido novo aparece mesmo com mais vencidas-pendentes do que o teto (as que valem vêm primeiro)', async () => {
+      /*
+       * Medido na homologação em 18/10/2026: 141 vivas, 102 mostradas, e o
+       * pedido de mover criado agora ficava fora porque a leitura pegava as 100
+       * mais antigas, todas pendentes com prazo vencido havia dias.
+       */
+      const base = {
+        orgId: ORG_C,
+        propostoPorId: 'caio-c',
+        propostoPorTipo: ActorType.ai,
+        resourceType: CAP,
+        resourceId: 'grupo-vencidas',
+        contentHash: 'hash-vencidas',
+        resumo: 'pendente esquecida',
+        status: ApprovalState.pendente,
+        nivelExigido: RiskLevel.R3,
+        alcadaMinima: 'operador' as const,
+        expiraEm: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        criadoEm: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      };
+      await prisma.approval.createMany({
+        data: Array.from({ length: 101 }, (_, i) => ({ ...base, tokenHash: `token-vencida-${i}-${Math.random()}` })),
+      });
+      const nova = await reter({
+        apelido: 'nova',
+        orgId: ORG_C,
+        propostoPorId: 'pedro-c',
+        corpo: 'pedido de agora',
+        expiraEm: new Date(Date.now() + 10 * 60 * 1000),
+      });
+
+      const fila = await controlador.fila(sessao('caio-c', ORG_C, VER_E_DECIDIR));
+      expect(fila.total).toBe(102);
+      expect(fila.truncado).toBe(true);
+      const item = fila.itens.find((i) => i.id === nova);
+      expect(item, 'o pedido novo ficou fora da fila por causa das vencidas').toBeDefined();
+      expect(item!.gaveta).toBe('esperando');
+      expect(fila.itens.filter((i) => i.gaveta === 'expirou').length).toBe(fila.tetos.vivas - 1);
+
+      await prisma.approval.deleteMany({ where: { orgId: ORG_C } });
+    });
+
     it('o total reportado é o TOTAL, não o que coube na página', async () => {
       /*
        * O teto de linhas encerradas é 60. Enquanto `total` era `itens.length`,

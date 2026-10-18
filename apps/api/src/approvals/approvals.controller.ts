@@ -250,11 +250,31 @@ export class ApprovalsController {
     const vivasEm = { orgId, status: { in: [ApprovalState.pendente, ApprovalState.confirmada] } };
     const fechadasEm = { orgId, status: { in: [ApprovalState.expirada, ApprovalState.rejeitada] } };
 
-    const [vivas, fechadas, pessoas, quantasVivas, quantasFechadas, quantasPessoas] =
+    /*
+     * AS QUE AINDA VALEM VÊM PRIMEIRO (rodada do painel, 18/10/2026). Como ninguém
+     * chama `expirarVencidas` (ver acima), `pendente` com prazo vencido fica
+     * `pendente` para sempre; lendo as 100 vivas mais ANTIGAS, uma empresa com
+     * mais de 100 dessas deixava todo pedido NOVO fora da tela, e o que não
+     * aparece ninguém assina. Agora o teto é preenchido primeiro com as que ainda
+     * valem (confirmadas, ou pendentes dentro do prazo), da mais antiga para a
+     * mais nova, e só a sobra com as vencidas, da mais nova para a mais antiga.
+     * Só leitura: o total, o corte e o estado de cada linha não mudam.
+     */
+    const valendoEm = {
+      ...vivasEm,
+      OR: [{ status: ApprovalState.confirmada }, { expiraEm: { gt: agora } }],
+    };
+    const vencidasVivasEm = { orgId, status: ApprovalState.pendente, expiraEm: { lte: agora } };
+    const [valendo, vencidasVivas, fechadas, pessoas, quantasVivas, quantasFechadas, quantasPessoas] =
       await Promise.all([
         this.prisma.approval.findMany({
-          where: vivasEm,
+          where: valendoEm,
           orderBy: { criadoEm: 'asc' },
+          take: TETO_VIVAS,
+        }),
+        this.prisma.approval.findMany({
+          where: vencidasVivasEm,
+          orderBy: { criadoEm: 'desc' },
           take: TETO_VIVAS,
         }),
         this.prisma.approval.findMany({
@@ -270,6 +290,7 @@ export class ApprovalsController {
         this.prisma.user.count({ where: { orgId, isActive: true } }),
       ]);
 
+    const vivas = [...valendo, ...vencidasVivas].slice(0, TETO_VIVAS);
     const linhas = [...vivas, ...fechadas];
     const toolCallIds = linhas.map((a) => a.toolCallId).filter((v): v is string => !!v);
     const decisionIds = linhas.map((a) => a.decisionId).filter((v): v is string => !!v);
