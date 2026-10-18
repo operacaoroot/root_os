@@ -45,8 +45,17 @@ export class IntegrationsController {
    */
   @Get('catalog')
   @RequirePermissions('dashboard.ver')
-  catalog(@CurrentUser() user: JwtUser, @Query('sondar') sondar?: string) {
-    return this.svc.catalog(user.orgId, { sondar: sondar !== '0' && sondar !== 'false' });
+  async catalog(@CurrentUser() user: JwtUser, @Query('sondar') sondar?: string) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['dashboard.ver']);
+    const result = await this.svc.catalog(user.orgId, { sondar: sondar === '1' || sondar === 'true' });
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['dashboard.ver']);
+    return result;
+  }
+
+  @Get('catalogo-declarativo')
+  @RequirePermissions('dashboard.ver')
+  catalogoDeclarativo(@CurrentUser() user: JwtUser) {
+    return this.svc.catalogoDeclarativo(user.orgId, user.sub);
   }
 
   /*
@@ -78,7 +87,8 @@ export class IntegrationsController {
    */
   @Post(':chave/autorizacao')
   @RequirePermissions('admin.usuarios')
-  autorizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+  async autorizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     return this.svc.autorizar(user.orgId, chave, user.sub);
   }
 
@@ -94,7 +104,8 @@ export class IntegrationsController {
    */
   @Post(':chave/sincronizacao')
   @RequirePermissions('admin.usuarios')
-  sincronizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+  async sincronizar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     return this.svc.sincronizar(user.orgId, chave, user.sub, user.permissions ?? []);
   }
 
@@ -107,8 +118,11 @@ export class IntegrationsController {
    */
   @Get(':chave/saude')
   @RequirePermissions('dashboard.ver')
-  saude(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
-    return this.svc.saude(user.orgId, chave);
+  async saude(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['dashboard.ver']);
+    const result = await this.svc.saude(user.orgId, chave);
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['dashboard.ver']);
+    return result;
   }
 
   /**
@@ -130,7 +144,8 @@ export class IntegrationsController {
    */
   @Post(':chave/revogacao')
   @RequirePermissions('admin.usuarios')
-  revogar(@CurrentUser() user: JwtUser, @Param('chave') chave: string, @Body() body: unknown) {
+  async revogar(@CurrentUser() user: JwtUser, @Param('chave') chave: string, @Body() body: unknown) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     const input = RevogacaoSchema.parse(body ?? {});
     return this.svc.revogar(user.orgId, chave, user.sub, input.motivo ?? null);
   }
@@ -139,7 +154,8 @@ export class IntegrationsController {
   // Gerência de integrações é ação de admin.
   @Put(':key')
   @RequirePermissions('admin.usuarios')
-  toggle(@CurrentUser() user: JwtUser, @Param('key') key: string, @Body() body: unknown) {
+  async toggle(@CurrentUser() user: JwtUser, @Param('key') key: string, @Body() body: unknown) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     const input = ToggleIntegrationSchema.parse(body);
     return this.svc.toggle(user.orgId, key, input.status, user.sub);
   }
@@ -170,6 +186,7 @@ export class IntegrationsController {
     @Param('chave') chave: string,
     @Body() body: unknown,
   ) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     const input = DesligamentoSchema.parse(body ?? {});
     const r = await this.conectores.desligar(user.orgId, chave, {
       motivo: input.motivo,
@@ -191,6 +208,7 @@ export class IntegrationsController {
   @Delete(':chave/desligamento')
   @RequirePermissions('admin.usuarios')
   async religar(@CurrentUser() user: JwtUser, @Param('chave') chave: string) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['admin.usuarios']);
     const r = await this.conectores.religar(user.orgId, chave, { actorId: user.sub });
     // Mesmo motivo do desligar: o estado mudou, a medição guardada envelheceu na
     // hora — e aqui ela é `nao_verificado`, que é o que a tela mostraria no
@@ -210,7 +228,8 @@ export class IntegrationsController {
    */
   @Post('clickup/sync')
   @RequirePermissions('tarefas.editar')
-  syncClickup(@CurrentUser() user: JwtUser) {
+  async syncClickup(@CurrentUser() user: JwtUser) {
+    await this.svc.verificarPessoaAtual(user.orgId, user.sub, ['tarefas.editar']);
     return this.clickup.sync(user.orgId, user.sub);
   }
 }

@@ -17,12 +17,10 @@ import {
   TETO_DO_TRECHO,
   TETO_TAREFAS,
   condicoesDeParada,
-  condicoesDeResponsavel,
   corteDaConversa,
   cortePresaComAgente,
   corteSemMovimento,
   ehDeOutraPessoa,
-  identidadesDe,
   motivosDaParada,
   trechoDoComentario,
 } from '../src/caixa/o-que-espera';
@@ -773,51 +771,37 @@ describe('A7: o que é uma tarefa PARADA', () => {
   });
 });
 
-/* ========================================================================== *
- * 11. "Minhas tarefas" é casamento por NOME, e a tela publica o critério
- * ========================================================================== */
-
-describe('A7: o casamento por nome, declarado', () => {
-  it('as identidades são nome, e-mail e a parte antes do @, sem repetição', () => {
-    expect(identidadesDe({ name: 'Pedro Magnago', email: 'pedro@root.com' })).toEqual([
-      'Pedro Magnago',
-      'pedro@root.com',
-      'pedro',
-    ]);
-  });
-
-  it('nome vazio não entra — `equals: ""` casaria com todo responsável em branco', () => {
-    expect(identidadesDe({ name: '   ', email: null })).toEqual([]);
-    expect(identidadesDe({ name: null, email: null })).toEqual([]);
-  });
-
-  it('repetição some sem diferenciar maiúscula', () => {
-    expect(identidadesDe({ name: 'pedro', email: 'Pedro@root.com' })).toEqual([
-      'pedro',
-      'Pedro@root.com',
-    ]);
-  });
-
-  it('a comparação no banco é sem maiúscula — `in` não aceitaria modo', () => {
-    expect(condicoesDeResponsavel(['Pedro'])).toEqual([
-      { assignee: { equals: 'Pedro', mode: 'insensitive' } },
-    ]);
-  });
-
-  it('sem identidade nenhuma o eixo diz isso, e não pergunta ao banco', async () => {
-    const b = bancada({
-      eu: { name: '', email: '', papeis: ['gestor_marketing'], decide: true },
-      tarefas: [tarefa()],
-    });
-    const r = await b.svc.montar(SESSAO);
-    expect(r.tarefas.estado).toBe(ESTADO_DO_EIXO.semIdentidade);
-    expect(b.consultas.some((c) => c.modelo === 'workTask.findMany')).toBe(false);
-  });
-
-  it('a resposta publica por quais nomes procurou', async () => {
+describe('Caixa pessoal por conta, sem inferência por nome', () => {
+  it('a consulta de tarefas usa exclusivamente o ID da sessão', async () => {
     const b = bancada({ tarefas: [tarefa()] });
     const r = await b.svc.montar(SESSAO);
-    expect(r.tarefas.identidades).toEqual(['Pedro Magnago', 'pedro@root.com', 'pedro']);
+    const w = b.consultas.find((c) => c.modelo === 'workTask.findMany')!.where;
+    expect((w.AND as unknown[])[0]).toEqual({ assigneeUserId: EU });
+    expect(JSON.stringify(w)).not.toContain('assignee"');
+    expect(r.tarefas.identidades).toEqual([]);
+  });
+  it('a conversa usa o mesmo vínculo por conta e empresa', async () => {
+    const b = bancada({ comentarios: [comentario()] });
+    await b.svc.montar(SESSAO);
+    const w = b.consultas.find((c) => c.modelo === 'workComment.findMany')!.where;
+    expect(w.task).toEqual({ orgId: ORG, archived: false, assigneeUserId: EU });
+  });
+  it('nome e email vazios não anulam um ID válido da conta', async () => {
+    const b = bancada({ eu: { name: '', email: '', papeis: [], decide: false }, tarefas: [tarefa()] });
+    const r = await b.svc.montar(SESSAO);
+    expect(r.tarefas.estado).toBe(ESTADO_DO_EIXO.ok);
+    expect((b.consultas.find((c) => c.modelo === 'workTask.findMany')!.where.AND as unknown[])[0]).toEqual({ assigneeUserId: EU });
+  });
+  it('renomear a pessoa conserva a mesma consulta pessoal', async () => {
+    const b = bancada({ eu: { name: 'Outro nome', email: 'outro@root.local', papeis: [], decide: false } });
+    await b.svc.montar(SESSAO);
+    expect((b.consultas.find((c) => c.modelo === 'workTask.findMany')!.where.AND as unknown[])[0]).toEqual({ assigneeUserId: EU });
+  });
+  it('um nome homônimo não é usado para reconhecer comentário próprio', () => {
+    expect(ehDeOutraPessoa({ authorId: 'homonimo', authorName: 'Pedro' }, { id: EU, name: 'Pedro' })).toBe(true);
+  });
+  it('a publicação compatível de identidades permanece vazia', async () => {
+    expect((await bancada({}).svc.montar(SESSAO)).tarefas.identidades).toEqual([]);
   });
 });
 
@@ -870,8 +854,8 @@ describe('A7: conversa no quadro não é menção, e o comentário próprio sai'
     expect(r.conversa.itens.map((c) => c.id)).toEqual(['dele']);
   });
 
-  it('sem ID, compara pelo nome — e na dúvida o comentário FICA', () => {
-    expect(ehDeOutraPessoa({ authorId: null, authorName: 'Pedro Magnago' }, { id: EU, name: 'pedro magnago' })).toBe(false);
+  it('sem ID, conserva o comentário sem inferir autoria pelo nome', () => {
+    expect(ehDeOutraPessoa({ authorId: null, authorName: 'Pedro Magnago' }, { id: EU, name: 'pedro magnago' })).toBe(true);
     expect(ehDeOutraPessoa({ authorId: null, authorName: 'Lucas' }, { id: EU, name: 'Pedro' })).toBe(true);
     // Sem nome meu não há como comparar: fica. Ruído é melhor que recado perdido.
     expect(ehDeOutraPessoa({ authorId: null, authorName: 'Pedro' }, { id: EU, name: null })).toBe(true);
@@ -1052,7 +1036,7 @@ describe.skipIf(!URL_DO_BANCO)('A7: a caixa contra o Postgres', () => {
         listId: listaId,
         statusId: aberto.id,
         title: 'Tarefa parada',
-        assignee: 'PEDRO MAGNAGO',
+        assignee: 'PEDRO MAGNAGO', assigneeUserId: EU_DB,
         dueDate: ontem,
       },
       select: { id: true },
@@ -1064,7 +1048,7 @@ describe.skipIf(!URL_DO_BANCO)('A7: a caixa contra o Postgres', () => {
         listId: listaId,
         statusId: aberto.id,
         title: 'Tarefa em andamento',
-        assignee: 'Pedro Magnago',
+        assignee: 'Pedro Magnago', assigneeUserId: EU_DB,
         dueDate: amanha,
       },
     });
@@ -1075,7 +1059,7 @@ describe.skipIf(!URL_DO_BANCO)('A7: a caixa contra o Postgres', () => {
         listId: listaId,
         statusId: fechado.id,
         title: 'Tarefa concluída e vencida',
-        assignee: 'Pedro Magnago',
+        assignee: 'Pedro Magnago', assigneeUserId: EU_DB,
         dueDate: ontem,
       },
     });
@@ -1086,7 +1070,7 @@ describe.skipIf(!URL_DO_BANCO)('A7: a caixa contra o Postgres', () => {
         listId: listaId,
         statusId: aberto.id,
         title: 'Tarefa do Lucas',
-        assignee: 'Lucas Fernandes',
+        assignee: 'Lucas Fernandes', assigneeUserId: OUTRO_DB,
         dueDate: ontem,
       },
     });
@@ -1232,11 +1216,10 @@ describe.skipIf(!URL_DO_BANCO)('A7: a caixa contra o Postgres', () => {
     expect(JSON.stringify(r)).not.toContain('texto que NÃO pode sair');
   });
 
-  it('o responsável casa sem diferenciar maiúscula, e o encerrado não entra', async () => {
+  it('o vínculo por conta encontra a tarefa e o encerrado não entra', async () => {
     const r = await svc.montar(pedido);
     expect(r.tarefas.estado).toBe(ESTADO_DO_EIXO.ok);
-    // "PEDRO MAGNAGO" casou com "Pedro Magnago" — é o `mode: 'insensitive'`
-    // dentro do OR, que um `in` não conseguiria expressar.
+    // A grafia do texto legado não participa da seleção pessoal.
     expect(r.tarefas.itens.map((t) => t.titulo)).toEqual(['Tarefa parada']);
     expect(r.tarefas.itens[0].motivos).toContain(MOTIVO_DA_PARADA.prazoVencido);
   });

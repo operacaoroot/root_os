@@ -24,7 +24,7 @@ function GoogleG() {
 }
 
 export default function LoginPage() {
-  const { login, loginWithToken, user, ready } = useAuth();
+  const { login, loginWithToken, user, ready, sessionError } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('admin@marketing-os.local');
   const [password, setPassword] = useState('');
@@ -44,7 +44,6 @@ export default function LoginPage() {
       window.history.replaceState(null, '', window.location.pathname);
       setLoading(true);
       loginWithToken(t)
-        .then(() => router.replace('/painel'))
         .catch((err) => setError((err as Error).message))
         .finally(() => setLoading(false));
       return;
@@ -63,7 +62,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (ready && user) router.replace('/painel');
+    if (ready && user) router.replace(user.permissions.includes('obsidian.ver') ? '/contexto' : user.permissions.includes('pauta.ver') ? '/contexto/marca' : '/painel');
   }, [ready, user, router]);
 
   async function submit(e: FormEvent) {
@@ -72,7 +71,6 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/painel');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -117,7 +115,7 @@ export default function LoginPage() {
             </a>
           )}
 
-          {error && <div className="text-sm text-bad">{error}</div>}
+          {(error || sessionError) && <div role="alert" className="text-sm text-bad">{error || sessionError}</div>}
 
           {googleOn && !mostrarSenha && (
             <button
@@ -139,8 +137,9 @@ export default function LoginPage() {
                 </div>
               )}
               <div>
-                <label className="mb-1 block text-xs text-muted">E-mail</label>
+                <label htmlFor="login-email" className="mb-1 block text-xs text-muted">E-mail</label>
                 <input
+                  id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -149,8 +148,9 @@ export default function LoginPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-muted">Senha</label>
+                <label htmlFor="login-password" className="mb-1 block text-xs text-muted">Senha</label>
                 <input
+                  id="login-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

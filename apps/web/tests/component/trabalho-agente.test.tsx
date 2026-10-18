@@ -105,6 +105,7 @@ function tarefa(over: Record<string, unknown> = {}) {
     statusColor: '#87909e',
     priority: 'normal',
     assignee: 'Lucas',
+    assigneeUserId: 'u-lucas', assigneeUserName: 'Lucas', assigneeUserEmail: 'lucas@qa.local', assigneeUserIsActive: true,
     agenteId: null,
     agenteSlug: null,
     agenteNome: null,
@@ -212,7 +213,7 @@ describe('A4: o quadro mostra qual agente está com a tarefa', () => {
     expect(screen.getByRole('columnheader', { name: 'Responsável' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Agente' })).toBeTruthy();
     const linha = screen.getByText('Fechar o mês').closest('tr') as HTMLElement;
-    expect(within(linha).getByText('Lucas')).toBeTruthy();
+    expect(within(linha).getByText('Lucas (lucas@qa.local)')).toBeTruthy();
     expect(within(linha).getByText('Analista de dados')).toBeTruthy();
   });
 

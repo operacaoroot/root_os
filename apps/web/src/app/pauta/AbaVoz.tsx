@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   PAUTA_PISO_DO_PERFIL_DE_VOZ,
   PAUTA_PISO_DO_TEXTO_DA_VOZ,
@@ -10,12 +10,13 @@ import {
   PAUTA_TETO_DO_TEXTO_DA_VOZ,
   PAUTA_TETO_DA_CHAVE_DA_VOZ,
   PAUTA_TETO_DOS_TEXTOS_DA_VOZ,
-  PautaChaveDaVozSchema,
+  PAUTA_CHAVE_DA_CHAVE_DA_VOZ, PautaChaveDaVozSchema, PautaVozHumanoPainelSchema, PautaVozSalvarHumanoSchema, PautaVozChaveHumanaSchema,
   palavrasProibidasEm,
   type PautaVozAprendida,
-  type PautaVozPainel,
 } from '@mktos/shared';
-import { apiGet, apiPost, apiPut } from '@/lib/api';
+import { apiPost } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { useEdicaoHumana, ConferenciaEdicaoHumana } from './InterruptorDaAutomacao';
 import { Botao, inputCls } from '../referencias/ui';
 import { RoteiroMarkdown } from './roteiro-markdown';
 
@@ -52,57 +53,28 @@ const ensinado = (t: string) => {
   return i >= 0 ? t.slice(0, i) : t;
 };
 
-export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
-  const [painel, setPainel] = useState<PautaVozPainel | null>(null);
-  const [ocupado, setOcupado] = useState<string | null>(null);
+export function AbaVoz(props: Props) {
+  const { user } = useAuth();
+  return <VozDaSessao key={`${props.token ?? ''}|${user?.id ?? ''}|${user?.permissions.join(',') ?? ''}`} {...props} />;
+}
+function VozDaSessao({ token, editavel, podeGastarIa, bump, onErro }: Props) {
+  const perfilEditor = useEdicaoHumana({ token, path: '/pauta/voz', schema: PautaVozHumanoPainelSchema,
+    destino: p => p.destinos.perfil, texto: p => p.destinos.perfil.estado === 'existente' ? p.destinos.perfil.conteudo.corpo : '',
+    conferir: p => p.destinos.perfil.chave === p.configuracao.chaveEfetiva && p.painel.chave === p.configuracao.chaveEfetiva && p.destinos.configuracao.chave === PAUTA_CHAVE_DA_CHAVE_DA_VOZ });
+  const chaveEditor = useEdicaoHumana({ token, path: '/pauta/voz', schema: PautaVozHumanoPainelSchema,
+    destino: p => p.destinos.configuracao, texto: p => p.configuracao.chaveEfetiva,
+    conferir: p => p.destinos.perfil.chave === p.configuracao.chaveEfetiva && p.painel.chave === p.configuracao.chaveEfetiva && p.destinos.configuracao.chave === PAUTA_CHAVE_DA_CHAVE_DA_VOZ });
   const [aviso, setAviso] = useState<string | null>(null);
   const [escolhidos, setEscolhidos] = useState<string[]>([]);
   const [textos, setTextos] = useState<string[]>(['']);
   const [editando, setEditando] = useState(false);
-  const [rascunho, setRascunho] = useState('');
-  // A versão e a chave de onde o rascunho partiu: são elas que vão no salvar,
-  // não as do painel, que aprender ou trocar a chave mudam no meio.
-  const [base, setBase] = useState<{ versao?: number; chave: string } | null>(null);
-  const [chave, setChave] = useState('');
-
-  const aplicar = useCallback((p: PautaVozPainel) => {
-    setPainel(p);
-    setChave(p.chave);
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    let vivo = true;
-    apiGet<PautaVozPainel>('/pauta/voz', token)
-      .then((p) => {
-        if (vivo) aplicar(p);
-      })
-      .catch((e: Error) => {
-        if (vivo) onErro(e.message);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [token, bump, onErro, aplicar]);
-
-  const acao = async <T extends PautaVozPainel>(nome: string, fn: () => Promise<T>, depois?: (r: T) => void) => {
-    onErro(null);
-    setAviso(null);
-    setOcupado(nome);
-    try {
-      const r = await fn();
-      aplicar(r);
-      depois?.(r);
-    } catch (e) {
-      onErro((e as Error).message);
-    } finally {
-      setOcupado(null);
-    }
-  };
-
-  if (!painel) return <p className="text-sm text-muted">Carregando a voz…</p>;
-
-  const escrevendo = ocupado !== null;
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const rascunho = perfilEditor.texto, chave = chaveEditor.texto;
+  const mesmaEmpresa = perfilEditor.atual?.escopo.orgId === chaveEditor.atual?.escopo.orgId && perfilEditor.atual?.escopo.actorId === chaveEditor.atual?.escopo.actorId;
+  const painel = perfilEditor.visivel && chaveEditor.visivel && mesmaEmpresa ? perfilEditor.atual?.painel ?? null : null;
+  useEffect(() => { if (bump) { void perfilEditor.conferir(); void chaveEditor.conferir(); } }, [bump]);
+  if (!painel) return <div className="space-y-3"><ConferenciaEdicaoHumana editor={{ ...perfilEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: perfilEditor.privado ? perfilEditor.mensagem : null }} /><ConferenciaEdicaoHumana editor={{ ...chaveEditor, destinoBase: null, destinoAtual: null, visivel: false, mensagem: chaveEditor.privado ? chaveEditor.mensagem : null }} /></div>;
+  const escrevendo = perfilEditor.ocupado || chaveEditor.ocupado;
   const perfil = painel.perfil;
   const vigente = perfil && !perfil.arquivado ? perfil : null;
   const colados = textos.map((t) => t.trim()).filter(Boolean);
@@ -120,44 +92,21 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
     rascunho.trim().length >= PAUTA_PISO_DO_PERFIL_DE_VOZ && rascunho.trim().length <= PAUTA_TETO_DO_PERFIL_DE_VOZ;
   const chaveValida = PautaChaveDaVozSchema.safeParse(chave).success;
 
-  const aprender = () =>
-    acao(
-      'aprender',
-      () =>
-        apiPost<PautaVozAprendida>(
-          '/pauta/voz/aprender',
-          { episodios: escolhidos, textos: colados.map((texto) => ({ texto })) },
-          token,
-        ),
-      (r) => {
-        setEscolhidos([]);
-        setTextos(['']);
-        setAviso(
-          `Perfil novo (versão ${r.perfil?.versao ?? '?'}) aprendido de ${r.material.fontes} fonte(s), ` +
-            `${mil(r.material.caracteres)} caracteres${r.material.cortado ? ' — o material passou do teto e foi cortado' : ''}.`,
-        );
-      },
-    );
-
-  const salvar = () =>
-    acao(
-      'salvar',
-      () =>
-        apiPut<PautaVozPainel>(
-          '/pauta/voz',
-          { perfil: rascunho, ...(base?.versao ? { versao: base.versao } : {}), ...(base ? { chave: base.chave } : {}) },
-          token,
-        ),
-      () => {
-        setEditando(false);
-        setBase(null);
-      },
-    );
-
-  const trocarChave = () => acao('chave', () => apiPut<PautaVozPainel>('/pauta/voz/chave', { chave: chave.trim() }, token));
+  const aprender = async () => {
+    setOcupado('aprender'); setAviso(null); onErro(null);
+    const r = await perfilEditor.executarExterno(() => apiPost<PautaVozAprendida>('/pauta/voz/aprender',
+      { episodios: escolhidos, textos: colados.map(texto => ({ texto })) }, token));
+    if (r) setAviso(`O aprendizado respondeu com perfil versão ${r.perfil?.versao ?? '?'}. O texto manual foi conservado; confira o estado atual antes de escolher outra base.`);
+    setOcupado(null);
+  };
+  const salvar = (reativar = false) => perfilEditor.enviar({ schema: PautaVozSalvarHumanoSchema,
+    campos: { perfil: rascunho, chaveVozEsperada: perfilEditor.base?.configuracao.chaveEfetiva }, acao: 'salvar_voz', reativar });
+  const trocarChave = (reativar = false) => chaveEditor.enviar({ path: '/pauta/voz/chave', schema: PautaVozChaveHumanaSchema,
+    campos: { chave: chave.trim(), chaveEfetivaEsperada: chaveEditor.base?.configuracao.chaveEfetiva }, acao: 'mudar_chave_voz', reativar });
 
   return (
     <div className="space-y-5" aria-label="Voz do autor">
+      <ConferenciaEdicaoHumana editor={perfilEditor} />
       <section className="space-y-2 rounded-lg border border-border bg-surface-2 p-3">
         <h3 className="font-os-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Perfil vigente</h3>
         {vigente ? (
@@ -186,7 +135,7 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
               className={`${inputCls} min-h-[14rem] font-mono text-[13px] leading-relaxed`}
               value={rascunho}
               maxLength={PAUTA_TETO_DO_PERFIL_DE_VOZ}
-              onChange={(e) => setRascunho(e.target.value)}
+              onChange={(e) => perfilEditor.alterar(e.target.value)}
               disabled={escrevendo}
               aria-label="Editar o perfil"
             />
@@ -200,14 +149,14 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
               </p>
             )}
             <div className="flex flex-wrap gap-2">
-              <Botao tone="brand" onClick={salvar} disabled={escrevendo || !rascunhoValido}>
-                {ocupado === 'salvar' ? 'Salvando…' : 'Salvar versão'}
+              <Botao tone="brand" onClick={() => void salvar()} disabled={!perfilEditor.editavel || escrevendo || !rascunhoValido}>
+                {perfilEditor.ocupado ? 'Salvando…' : perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar versão'}
               </Botao>
+              {perfilEditor.destinoBase?.estado === 'existente' && perfilEditor.destinoBase.arquivada && <Botao tone="brand" onClick={() => void salvar(true)} disabled={!perfilEditor.editavel || escrevendo || !rascunhoValido}>Salvar e reativar</Botao>}
               <Botao
                 tone="ghost"
                 onClick={() => {
                   setEditando(false);
-                  setBase(null);
                 }}
                 disabled={escrevendo}
               >
@@ -218,8 +167,6 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
         ) : (
           <Botao
             onClick={() => {
-              setRascunho(vigente?.corpo ?? '');
-              setBase({ versao: vigente?.versao, chave: painel.chave });
               setEditando(true);
             }}
             disabled={!editavel || escrevendo}
@@ -296,7 +243,7 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
         <Botao
           tone="brand"
           onClick={aprender}
-          disabled={!editavel || Boolean(semIa) || escrevendo || editando || !podeAprender}
+          disabled={!editavel || perfilEditor.bloqueado || Boolean(semIa) || escrevendo || editando || !podeAprender}
           title={
             semIa ??
             (editando
@@ -352,14 +299,16 @@ export function AbaVoz({ token, editavel, podeGastarIa, bump, onErro }: Props) {
             className={`${inputCls} min-w-0 flex-1`}
             value={chave}
             maxLength={PAUTA_TETO_DA_CHAVE_DA_VOZ}
-            onChange={(e) => setChave(e.target.value)}
+            onChange={(e) => chaveEditor.alterar(e.target.value)}
             disabled={!editavel || escrevendo || editando}
             aria-label="Chave da voz"
           />
-          <Botao onClick={trocarChave} disabled={!editavel || escrevendo || editando || !chaveValida || chave.trim() === painel.chave}>
-            {ocupado === 'chave' ? 'Salvando…' : 'Usar esta chave'}
+          <Botao onClick={() => void trocarChave()} disabled={!editavel || !chaveEditor.editavel || escrevendo || editando || !chaveValida || chave.trim() === chaveEditor.base?.configuracao.chaveEfetiva}>
+            {chaveEditor.ocupado ? 'Salvando…' : chaveEditor.destinoBase?.estado === 'existente' && chaveEditor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Usar esta chave'}
           </Botao>
         </div>
+        {chaveEditor.destinoBase?.estado === 'existente' && chaveEditor.destinoBase.arquivada && <Botao onClick={() => void trocarChave(true)} disabled={!editavel || !chaveEditor.editavel || escrevendo || editando || !chaveValida}>Salvar e reativar configuração</Botao>}
+        <ConferenciaEdicaoHumana editor={chaveEditor} />
         {!chaveValida && <p className="text-xs text-warn">A chave começa com “voz.” (ex.: voz.pedro).</p>}
       </section>
     </div>

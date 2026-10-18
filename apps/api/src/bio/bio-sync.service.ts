@@ -1,4 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { contextoAtual } from '../common/contexto-execucao';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida, ehContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { PrismaService } from '../prisma/prisma.service';
 import { cifrar, decifrar, temChaveDeCriptografia } from '../common/crypto';
 import { BioCredenciaisService } from './bio-credenciais.service';
@@ -228,42 +230,65 @@ export class BioSyncService implements OnModuleInit {
    * código 190 da Graph marca `token_expirado`; o resto (rede, 5xx, limite de
    * taxa, que também vêm como `OAuthException`) grava o erro e mantém o status.
    */
-  async renovarContasDePublicacao(): Promise<Array<{ conexaoId: string; ok: boolean; erro?: string }>> {
-    const limite = new Date(Date.now() + RENOVAR_ANTES_DE_DIAS * 86_400_000);
-    const conexoes = await this.prisma.bioConexao.findMany({
-      where: { plataforma: 'instagram', finalidade: 'publicacao', expiraEm: { lt: limite, gt: new Date() } },
-      select: { id: true, orgId: true, plataforma: true, tokenCifrado: true, refreshCifrado: true, expiraEm: true },
-    });
-    const saida: Array<{ conexaoId: string; ok: boolean; erro?: string }> = [];
-    for (const c of conexoes) {
-      try {
-        await this.tokenValido(c);
-        saida.push({ conexaoId: c.id, ok: true });
-      } catch (erro) {
-        const bruto = String(erro);
-        const msg = bruto.slice(0, 400);
-        await this.prisma.bioConexao.update({
-          where: { id: c.id },
-          data: tokenRecusadoPelaMeta(bruto) ? { status: 'token_expirado', ultimoErro: msg } : { ultimoErro: msg },
-        });
-        this.log.error(`renovação da conta de publicação ${c.id} falhou: ${msg}`);
-        saida.push({ conexaoId: c.id, ok: false, erro: msg });
+  async renovarContasDePublicacao(orgId?: string): Promise<Array<{ conexaoId: string; ok: boolean; erro?: string }>> {
+    return this.nasEmpresas(orgId, async (empresa) => {
+      const limite = new Date(Date.now() + RENOVAR_ANTES_DE_DIAS * 86_400_000);
+      const conexoes = await this.prisma.bioConexao.findMany({
+        where: { orgId: empresa, plataforma: 'instagram', finalidade: 'publicacao', expiraEm: { lt: limite, gt: new Date() } },
+        select: { id: true, orgId: true, plataforma: true, tokenCifrado: true, refreshCifrado: true, expiraEm: true },
+      });
+      const saida: Array<{ conexaoId: string; ok: boolean; erro?: string }> = [];
+      for (const c of conexoes) {
+        try {
+          await this.tokenValido(c);
+          saida.push({ conexaoId: c.id, ok: true });
+        } catch (erro) {
+          const bruto = String(erro);
+          const msg = bruto.slice(0, 400);
+          await this.prisma.bioConexao.update({
+            where: { id: c.id },
+            data: tokenRecusadoPelaMeta(bruto) ? { status: 'token_expirado', ultimoErro: msg } : { ultimoErro: msg },
+          });
+          this.log.error(`renovação da conta de publicação ${c.id} falhou: ${msg}`);
+          saida.push({ conexaoId: c.id, ok: false, erro: msg });
+        }
       }
-    }
-    return saida;
+      return saida;
+    });
   }
 
   /** Todas as contas conectadas de desafios vigentes (opcionalmente de uma org). */
   async sincronizarTudo(orgId?: string): Promise<ResultadoSync[]> {
-    const contas = await this.prisma.bioChallengeAccount.findMany({
-      where: {
-        conexaoId: { not: null },
-        challenge: { fim: { gte: new Date() }, ...(orgId ? { orgId } : {}) },
-      },
-      select: { id: true },
+    return this.nasEmpresas(orgId, async (empresa) => {
+      const contas = await this.prisma.bioChallengeAccount.findMany({
+        where: {
+          conexaoId: { not: null }, conexao: { orgId: empresa },
+          challenge: { fim: { gte: new Date() }, orgId: empresa },
+        },
+        select: { id: true },
+      });
+      const resultados: ResultadoSync[] = [];
+      for (const c of contas) resultados.push(await this.sincronizarConta(c.id));
+      return resultados;
     });
-    const resultados: ResultadoSync[] = [];
-    for (const c of contas) resultados.push(await this.sincronizarConta(c.id));
+  }
+
+  private async nasEmpresas<T>(orgId: string | undefined, fn: (empresa: string) => Promise<T[]>): Promise<T[]> {
+    const atual = contextoAtual()?.orgId;
+    const propria = typeof atual === 'string' && atual.trim() && !ehContextoDePlataforma(atual) ? atual : null;
+    if (propria && orgId && orgId !== propria) throw new Error('A operação não pode mudar a empresa já resolvida.');
+    const global = !orgId && !propria;
+    const empresas = orgId || propria ? [{ id: (orgId || propria)! }]
+      : await comContextoDePlataforma(() => this.prisma.org.findMany({ select: { id: true } }));
+    const resultados: T[] = [];
+    for (const empresa of empresas) {
+      try { resultados.push(...await comContextoDaEmpresaResolvida(empresa.id, () => fn(empresa.id))); }
+      catch (e) {
+        if (!global) throw e;
+        this.log.warn('Rodada de Bio falhou em uma empresa; as demais serão processadas.');
+      }
+    }
     return resultados;
   }
+
 }

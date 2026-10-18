@@ -20,6 +20,8 @@ import { AsaasService } from './asaas.service';
 import type { BankConnection as BankConnectionRow } from '@prisma/client';
 import { parseOfx } from './ofx';
 import { APPROVAL_LIMIT, conferirReferencias } from './apr.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
 // status que efetivamente movem o caixa (contam no saldo)
 const EFFECTIVE: FinanceTxStatus[] = ['realizado', 'conciliado'];
@@ -298,51 +300,71 @@ export class FinanceService implements OnModuleInit {
   }
 
   async updateTransaction(orgId: string, id: string, input: UpdateFinanceTransactionInput, actorId: string) {
-    const tx = await this.prisma.financeTransaction.findFirst({ where: { id, orgId } });
-    if (!tx) throw new NotFoundException('Lançamento não encontrado');
-    const data: Prisma.FinanceTransactionUpdateInput = {};
-    if (input.status !== undefined) {
-      // baixar (realizar/conciliar) exige aprovação quando pendente
-      if ((input.status === 'realizado' || input.status === 'conciliado') && tx.approvalStatus === 'aguardando') {
-        throw new BadRequestException('Lançamento aguardando aprovação — aprove antes de baixar.');
+    return this.prisma.$transaction(async db => {
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.editar']);
+      await travarFinanceiro(db, orgId);
+      await travarLancamentoFinanceiro(db, orgId, id);
+      await exigirNaoExercicio(db, orgId, id);
+      const tx = await db.financeTransaction.findFirst({ where: { id, orgId } });
+      if (!tx) throw new NotFoundException('Lançamento não encontrado');
+      const baixa = input.status === 'realizado' || input.status === 'conciliado' || !!input.paidAt;
+      if (baixa && (tx.approvalStatus === 'aguardando' || tx.approvalStatus === 'rejeitado')) {
+        throw new BadRequestException('Lançamento pendente ou rejeitado não pode ser baixado.');
       }
-      data.status = input.status as FinanceTxStatus;
-      if (input.status === 'realizado' && !tx.paidAt) data.paidAt = new Date();
-    }
-    if (input.categoryId !== undefined) {
-      if (input.categoryId) {
-        const cat = await this.prisma.financeCategory.findFirst({ where: { id: input.categoryId, orgId } });
-        if (!cat) throw new NotFoundException('Categoria não encontrada');
-        data.category = { connect: { id: input.categoryId } };
-      } else {
-        data.category = { disconnect: true };
+      const mudaCondicao =
+        input.categoryId !== undefined && input.categoryId !== tx.categoryId ||
+        input.description !== undefined && input.description !== tx.description ||
+        input.amount !== undefined && !tx.amount.eq(new Prisma.Decimal(input.amount)) ||
+        input.date !== undefined && parseDate(input.date).getTime() !== tx.date.getTime() ||
+        input.dueDate !== undefined && (input.dueDate ? parseDate(input.dueDate).toISOString() : null) !== iso(tx.dueDate) ||
+        input.counterparty !== undefined && input.counterparty !== tx.counterparty;
+      if (tx.approvalStatus === 'aprovado' && mudaCondicao)
+        throw new BadRequestException('Condições novas não podem conservar a aprovação anterior.');
+      const data: Prisma.FinanceTransactionUpdateInput = {};
+      if (input.status !== undefined) {
+        data.status = input.status as FinanceTxStatus;
+        if (input.status === 'realizado' && !tx.paidAt) data.paidAt = new Date();
       }
-    }
-    if (input.description !== undefined) data.description = input.description;
-    if (input.amount !== undefined) data.amount = new Prisma.Decimal(input.amount);
-    if (input.date !== undefined) data.date = parseDate(input.date);
-    if (input.dueDate !== undefined) data.dueDate = input.dueDate ? parseDate(input.dueDate) : null;
-    if (input.paidAt !== undefined) data.paidAt = input.paidAt ? parseDate(input.paidAt) : null;
-    if (input.counterparty !== undefined) data.counterparty = input.counterparty;
-
-    const updated = await this.prisma.financeTransaction.update({ where: { id }, data });
-    await this.audit.log({
-      orgId, actorId, action: 'finance.tx.update', entityType: 'finance_transaction', entityId: id,
-      before: { status: tx.status, amount: num(tx.amount) },
-      after: { status: updated.status, amount: num(updated.amount) },
-    });
-    return { ok: true, id, status: updated.status };
+      if (input.categoryId !== undefined) {
+        if (input.categoryId) {
+          if (!await db.financeCategory.findFirst({ where: { id: input.categoryId, orgId } }))
+            throw new NotFoundException('Categoria não encontrada');
+          data.category = { connect: { id: input.categoryId } };
+        } else data.category = { disconnect: true };
+      }
+      if (input.description !== undefined) data.description = input.description;
+      if (input.amount !== undefined) data.amount = new Prisma.Decimal(input.amount);
+      if (input.date !== undefined) data.date = parseDate(input.date);
+      if (input.dueDate !== undefined) data.dueDate = input.dueDate ? parseDate(input.dueDate) : null;
+      if (input.paidAt !== undefined) data.paidAt = input.paidAt ? parseDate(input.paidAt) : null;
+      if (input.counterparty !== undefined) data.counterparty = input.counterparty;
+      const updated = await db.financeTransaction.update({ where: { id }, data });
+      await this.audit.log({
+        orgId, actorId, action: 'finance.tx.update', entityType: 'finance_transaction', entityId: id,
+        before: { status: tx.status, amount: num(tx.amount) },
+        after: { status: updated.status, amount: num(updated.amount) },
+      }, db);
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.editar']);
+      return { ok: true, id, status: updated.status };
+    }, { timeout: 30000 });
   }
 
   async deleteTransaction(orgId: string, id: string, actorId: string) {
-    const tx = await this.prisma.financeTransaction.findFirst({ where: { id, orgId } });
-    if (!tx) throw new NotFoundException('Lançamento não encontrado');
-    await this.prisma.financeTransaction.delete({ where: { id } });
-    await this.audit.log({
-      orgId, actorId, action: 'finance.tx.delete', entityType: 'finance_transaction', entityId: id,
-      before: { type: tx.type, amount: num(tx.amount), description: tx.description },
-    });
-    return { ok: true };
+    return this.prisma.$transaction(async db => {
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.editar']);
+      await travarFinanceiro(db, orgId);
+      await travarLancamentoFinanceiro(db, orgId, id);
+      await exigirNaoExercicio(db, orgId, id);
+      const tx = await db.financeTransaction.findFirst({ where: { id, orgId } });
+      if (!tx) throw new NotFoundException('Lançamento não encontrado');
+      await db.financeTransaction.delete({ where: { id } });
+      await this.audit.log({
+        orgId, actorId, action: 'finance.tx.delete', entityType: 'finance_transaction', entityId: id,
+        before: { type: tx.type, amount: num(tx.amount), description: tx.description },
+      }, db);
+      await exigirAcessoAtual(db, orgId, actorId, ['financeiro.editar']);
+      return { ok: true };
+    }, { timeout: 30000 });
   }
 
   // ---------- Resumo (cards do dashboard financeiro) ----------

@@ -10,6 +10,7 @@ import type {
 import { apiGet } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useCaixa } from '@/components/caixa';
+import { trabalhoHref } from '@/lib/work-projection';
 
 /*
  * ==========================================================================
@@ -35,12 +36,10 @@ import { useCaixa } from '@/components/caixa';
  *  3. O CONTEÚDO EXATO NÃO PASSA POR AQUI. O corpo de uma ação retida tem UMA
  *     superfície neste repositório (`/atendimento`, e só para quem decide). A
  *     caixa mostra o resumo e leva para lá;
- *  4. "MINHAS TAREFAS" É CASAMENTO POR NOME, e a tela publica por quais nomes
- *     procurou. `WorkTask.assignee` é texto livre herdado do ClickUp, não
- *     ponteiro para `User`: se o seu nome lá é outro, a caixa não acha nada — e
- *     é melhor saber disso do que confiar numa caixa vazia;
+ *  4. Tarefas e conversas pessoais são vinculadas à conta autenticada por ID.
+ *     O texto antigo do responsável não define a identidade.
  *  5. CONVERSA NÃO É MENÇÃO, e está escrito. Menção não existe como dado neste
- *     produto. O que existe é comentário de outra pessoa numa tarefa sua, na
+ *     produto. O que existe é comentário recente numa tarefa vinculada à sua conta, na
  *     última semana — menos do que a fatia pediu, e honesto;
  *  6. TELA VAZIA É VITÓRIA E DIZ ISSO. Nunca uma caixa cinza sem explicação.
  */
@@ -82,7 +81,7 @@ function frasesDoEixo(estado: CaixaEstadoDoEixo, eixo: 'aprovacoes' | 'quadro'):
     return 'O módulo Trabalho não está contratado por esta empresa, então não há quadro nem tarefas para esperar por você.';
   }
   // sem_identidade
-  return 'Não há por qual nome procurar você no campo de responsável do quadro (seu cadastro está sem nome e sem e-mail). Sem isso, a caixa não consegue dizer quais tarefas são suas.';
+  return 'Não foi possível identificar sua conta nesta empresa. Saia e entre de novo para consultar suas tarefas.';
 }
 
 function quandoVence(ms: number): string {
@@ -333,7 +332,7 @@ export default function CaixaPage() {
                     {desdeQuando(t.agenteDesde, agora)}
                   </span>
                 )}
-                <Link href="/trabalho" className="ml-auto text-xs text-brand hover:underline">
+                <Link href={trabalhoHref(t.id)} className="ml-auto text-xs text-brand hover:underline">
                   abrir no quadro →
                 </Link>
               </li>
@@ -341,13 +340,10 @@ export default function CaixaPage() {
           </ol>
         )}
 
-        {caixa.tarefas.estado === 'ok' && caixa.tarefas.identidades.length > 0 && (
+        {caixa.tarefas.estado === 'ok' && (
           <p className="text-xs text-muted">
-            O responsável de uma tarefa é texto livre (veio da fotografia do ClickUp), então a caixa
-            te procura por nome:{' '}
-            <span className="text-text">{caixa.tarefas.identidades.join(', ')}</span>. Se o seu nome
-            no quadro é outro, as suas tarefas não aparecem aqui — e é melhor você saber disso do
-            que confiar numa caixa vazia.
+            Esta fila mostra tarefas paradas vinculadas à sua conta.{' '}
+            <Link href={`/trabalho?assigneeUserId=${encodeURIComponent(caixa.eu.id)}&escopo=pessoal&visao=tabela`} className="text-brand hover:underline">Ver minhas tarefas</Link>
           </p>
         )}
         {caixa.tarefas.truncado && (
@@ -371,8 +367,7 @@ export default function CaixaPage() {
          */}
         <p className="text-xs text-muted">
           Não é menção: este produto não registra menção em comentário. O que está aqui é
-          comentário de <span className="text-text">outra pessoa</span> em tarefa em que você é o
-          responsável, nos últimos {caixa.conversa.dias} dias. Por isso ele{' '}
+          comentário recente em tarefa vinculada à sua conta, nos últimos {caixa.conversa.dias} dias. Por isso ele{' '}
           <span className="text-text">não entra no contador</span> — sem estado de lido, um
           comentário nunca sairia da conta.
         </p>
@@ -396,7 +391,7 @@ export default function CaixaPage() {
                   <span className="text-sm font-medium">{c.autor}</span>
                   <span className="text-xs text-muted">em {c.tarefaTitulo}</span>
                   <span className="text-xs text-muted">{desdeQuando(c.criadaEm, agora)}</span>
-                  <Link href="/trabalho" className="ml-auto text-xs text-brand hover:underline">
+                  <Link href={trabalhoHref(c.tarefaId)} className="ml-auto text-xs text-brand hover:underline">
                     abrir no quadro →
                   </Link>
                 </div>

@@ -101,7 +101,7 @@ describe('ROOT-12: lista e quadro Work', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'QA Card 0' }));
     const input = await screen.findByLabelText('Título da tarefa');
     fireEvent.change(input, { target: { value: 'QA editado' } }); fireEvent.blur(input);
-    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { title: 'QA editado' }, token));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { title: 'QA editado', expectedUpdatedAt: '2026-10-05T12:00:00Z' }, token));
     expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(ID);
     table.unmount(); window.history.replaceState({}, '', `/trabalho?tarefa=${ID}`);
     render(<TrabalhoPage />); expect(await screen.findByLabelText('Título da tarefa')).toHaveValue('QA editado');
@@ -182,11 +182,11 @@ describe('ROOT-12: filtros ao trocar de lista', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'QA Card 0' }));
     await screen.findByLabelText('Título da tarefa');
     fireEvent.change(screen.getByText('Lista', { exact: true }).parentElement!.querySelector('select')!, { target: { value: destino.id } });
-    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { listId: destino.id }, token));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { listId: destino.id, expectedUpdatedAt: '2026-10-05T12:00:00Z' }, token));
     await conferirDestino(true);
     const titulo = screen.getByLabelText('Título da tarefa');
     fireEvent.change(titulo, { target: { value: 'QA editado no destino' } }); fireEvent.blur(titulo);
-    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { title: 'QA editado no destino' }, token));
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { title: 'QA editado no destino', expectedUpdatedAt: '2026-10-05T12:00:00Z' }, token));
     view.unmount(); render(<TrabalhoPage />);
     expect(await screen.findByLabelText('Título da tarefa')).toHaveValue('QA editado no destino');
     expect(new URLSearchParams(window.location.search).get('tarefa')).toBe(ID);

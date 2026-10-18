@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { PAUTA_TETO_DA_ESTRATEGIA, type PautaEstrategiaPainel } from '@mktos/shared';
+import { useState } from 'react';
+import { chaveDaEstrategia, PAUTA_TETO_DA_ESTRATEGIA, PautaEstrategiaHumanoPainelSchema, PautaEstrategiaSalvarHumanoSchema, type PautaEstrategiaPainel } from '@mktos/shared';
 import { useAuth } from '@/lib/auth';
-import { apiGet, apiPost, apiPut } from '@/lib/api';
+import { apiPost } from '@/lib/api';
+import { useEdicaoHumana, ConferenciaEdicaoHumana } from '../../pauta/InterruptorDaAutomacao';
 
 /*
  * MK4 na tela. Um documento por mês: a IA propõe, a pessoa edita, e a última
@@ -24,57 +25,30 @@ const botaoCls =
   'rounded-lg px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50';
 
 export default function EstrategiaPage() {
-  const { token, ready, can } = useAuth();
-  const editavel = can('pauta.editar');
+  const { token, user, ready } = useAuth();
   const [mes, setMes] = useState(mesDeHoje);
-  const [painel, setPainel] = useState<PautaEstrategiaPainel | null>(null);
-  const [documento, setDocumento] = useState('');
-  const [erro, setErro] = useState<string | null>(null);
-  const [ocupado, setOcupado] = useState<'salvar' | 'gerar' | null>(null);
-
-  const carregar = useCallback(
-    async (m: string) => {
-      if (!token) return;
-      setErro(null);
-      try {
-        const p = await apiGet<PautaEstrategiaPainel>(`/pauta/estrategia/${m}`, token);
-        setPainel(p);
-        setDocumento(p.documento);
-      } catch (e) {
-        setErro((e as Error).message);
-      }
-    },
-    [token],
-  );
-
-  useEffect(() => {
-    if (ready) void carregar(mes);
-  }, [ready, mes, carregar]);
-
-  async function agir(qual: 'salvar' | 'gerar') {
-    setOcupado(qual);
-    setErro(null);
-    try {
-      const p =
-        qual === 'salvar'
-          ? await apiPut<PautaEstrategiaPainel>(
-              `/pauta/estrategia/${mes}`,
-              { documento, versao: painel?.versao ?? undefined },
-              token,
-            )
-          : await apiPost<PautaEstrategiaPainel>(`/pauta/estrategia/${mes}/gerar`, {}, token);
-      setPainel(p);
-      setDocumento(p.documento);
-    } catch (e) {
-      setErro((e as Error).message);
-    } finally {
-      setOcupado(null);
-    }
-  }
-
+  const [visitados, setVisitados] = useState<string[]>([]);
+  const escolher = (m: string) => { setVisitados(v => [...new Set([...v, mes, m])]); setMes(m); };
   if (!ready) return <p className="text-muted">Carregando…</p>;
+  return <div key={`${token ?? ''}|${user?.id ?? ''}`}>{[...new Set([...visitados, mes])].map(m =>
+    <div key={m} hidden={m !== mes} style={{ display: m === mes ? undefined : 'none' }}>
+      <DocumentoDoMes mes={m} escolher={escolher} />
+    </div>)}</div>;
+}
 
-  const mudou = painel !== null && documento !== painel.documento;
+function DocumentoDoMes({ mes, escolher }: { mes: string; escolher: (mes: string) => void }) {
+  const { token, can } = useAuth();
+  const editor = useEdicaoHumana({ token, path: `/pauta/estrategia/${mes}`, schema: PautaEstrategiaHumanoPainelSchema,
+    destino: p => p.destinos.documento, texto: p => p.destinos.documento.estado === 'existente' ? p.destinos.documento.conteudo.corpo : p.painel.documento,
+    conferir: p => p.mes === mes && p.painel.mes === mes && p.destinos.documento.chave === chaveDaEstrategia(mes) });
+  const editavel = can('pauta.editar') && editor.visivel;
+  const painel = editor.atual?.painel ?? null;
+  const documento = editor.texto;
+  const ocupado = editor.ocupado;
+  const erro = null;
+  const mudou = !!editor.base && documento !== (editor.destinoBase?.estado === 'existente' ? editor.destinoBase.conteudo.corpo : editor.base.painel.documento);
+  const salvar = (reativar = false) => editor.enviar({ schema: PautaEstrategiaSalvarHumanoSchema, campos: { documento, mesEsperado: mes }, acao: 'salvar_estrategia', reativar });
+  const gerar = () => editor.executarExterno(() => apiPost<PautaEstrategiaPainel>(`/pauta/estrategia/${mes}/gerar`, {}, token));
 
   return (
     <div className="space-y-5">
@@ -93,7 +67,7 @@ export default function EstrategiaPage() {
           <input
             type="month"
             value={mes}
-            onChange={(e) => e.target.value && setMes(e.target.value)}
+            onChange={(e) => e.target.value && escolher(e.target.value)}
             className="rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-brand-dim"
           />
         </label>
@@ -102,7 +76,7 @@ export default function EstrategiaPage() {
             {painel.meses.map((m) => (
               <button
                 key={m}
-                onClick={() => setMes(m)}
+                onClick={() => escolher(m)}
                 className={`rounded px-2 py-0.5 font-os-mono text-xs ${
                   m === mes ? 'bg-brand/15 text-brand' : 'bg-surface-2 text-muted hover:text-text'
                 }`}
@@ -138,31 +112,35 @@ export default function EstrategiaPage() {
           </span>
         </div>
 
-        <textarea
+        <ConferenciaEdicaoHumana editor={editor} />
+        {editor.visivel && <textarea
           value={documento}
-          onChange={(e) => setDocumento(e.target.value)}
-          disabled={!editavel}
+          onChange={(e) => editor.alterar(e.target.value)}
+          disabled={!editavel || editor.ocupado}
           rows={22}
           placeholder="Ainda não há estratégia para este mês. Peça uma proposta à IA, ou escreva a sua."
           className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 font-os-mono text-sm outline-none focus:border-brand-dim disabled:opacity-50"
-        />
+        />}
 
         {editavel && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
-              onClick={() => agir('salvar')}
-              disabled={ocupado !== null || !documento.trim() || !mudou}
+              onClick={() => void salvar()}
+              disabled={!editor.editavel || !documento.trim() || !mudou}
               className={`${botaoCls} bg-brand text-bg hover:bg-brand/90`}
             >
-              {ocupado === 'salvar' ? 'Salvando…' : 'Salvar'}
+              {ocupado ? 'Salvando…' : editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar'}
             </button>
+            {editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada && <button
+              onClick={() => void salvar(true)} disabled={!editor.editavel || !documento.trim()}
+              className={`${botaoCls} border border-brand text-brand`}>Salvar e reativar</button>}
             <button
-              onClick={() => agir('gerar')}
-              disabled={ocupado !== null || !painel?.iaConfigurada}
+              onClick={() => void gerar()}
+              disabled={ocupado || editor.bloqueado || !painel?.iaConfigurada || !can('automacoes.executar')}
               title={painel?.iaConfigurada ? undefined : 'A IA não está configurada nesta instalação.'}
               className={`${botaoCls} border border-border bg-surface-2 hover:border-brand-dim`}
             >
-              {ocupado === 'gerar'
+              {ocupado
                 ? 'A IA está propondo…'
                 : painel?.documento
                   ? 'Propor de novo'
@@ -170,7 +148,7 @@ export default function EstrategiaPage() {
             </button>
             {painel?.documento && (
               <span className="text-xs text-muted">
-                Propor de novo substitui o texto; a versão de agora fica no histórico da nota.
+                A proposta grava outra versão na nota. Seu texto local permanece até você escolher usar o conteúdo atual.
               </span>
             )}
           </div>

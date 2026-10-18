@@ -26,7 +26,8 @@ import {
 import politicaRoot from '@mktos/policy/politica-root.json';
 import politicaMktos from '@mktos/policy/politica-marketing-os.json';
 import { PrismaService } from '../prisma/prisma.service';
-import { exigirTenant } from '../common/contexto-execucao';
+import { comContextoDePlataforma, comContextoDaEmpresaResolvida, ehContextoDePlataforma } from '../prisma/contexto-de-plataforma';
+import { contextoAtual, exigirTenant } from '../common/contexto-execucao';
 import { problemasDeJanela } from './limites';
 
 /*
@@ -71,12 +72,19 @@ export class PolicyService implements OnModuleInit {
   }
 
   async recarregar(orgId?: string): Promise<void> {
+    const atual = contextoAtual()?.orgId;
+    if (orgId && typeof atual === 'string' && atual.trim() && !ehContextoDePlataforma(atual) && atual !== orgId) {
+      throw new Error('A operação não pode mudar a empresa já resolvida.');
+    }
     const chave = orgId ?? '';
     try {
-      const versao = await this.prisma.policyVersion.findFirst({
+      const consultar = () => this.prisma.policyVersion.findFirst({
         where: { orgId: orgId ?? null, ativaAte: null },
         orderBy: { versao: 'desc' },
       });
+      const versao = orgId
+        ? await comContextoDaEmpresaResolvida(orgId, consultar)
+        : await comContextoDePlataforma(consultar);
       if (versao) {
         const doc = lerPolitica(versao.documento, `PolicyVersion ${versao.id}`);
         this.guardar(chave, doc);
@@ -129,12 +137,14 @@ export class PolicyService implements OnModuleInit {
   async recarregarEmpresas(): Promise<void> {
     let orgIds: string[];
     try {
-      const versoes = await this.prisma.policyVersion.findMany({
-        where: { orgId: { not: null }, ativaAte: null },
+      const atual = contextoAtual()?.orgId;
+      const propria = typeof atual === 'string' && atual.trim() && !ehContextoDePlataforma(atual) ? atual : null;
+      const versoes = await comContextoDePlataforma(() => this.prisma.policyVersion.findMany({
+        where: { orgId: propria ?? { not: null }, ativaAte: null },
         select: { orgId: true },
         distinct: ['orgId'],
-      });
-      orgIds = versoes.map((v) => v.orgId as string);
+      }));
+      orgIds = versoes.map((v) => v.orgId as string).filter((orgId) => !propria || orgId === propria);
     } catch (e) {
       this.log.error(
         `FALHA ao listar as políticas por empresa (${(e as Error).message}). ` +

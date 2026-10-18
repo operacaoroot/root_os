@@ -1,10 +1,12 @@
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
+import { ContextoTrabalhoService } from '../memory/contexto-trabalho.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   TrabEspacoCreateSchema, TrabEspacoUpdateSchema,
   TrabPastaCreateSchema, TrabPastaUpdateSchema, TrabListaCreateSchema, TrabListaUpdateSchema,
   TrabStatusCreateSchema, TrabStatusUpdateSchema, TrabCampoCreateSchema, TrabCampoUpdateSchema,
   TrabOpcaoCreateSchema, TrabOpcaoUpdateSchema, TrabTagCreateSchema, TrabTagUpdateSchema,
-  TrabTarefaCreateSchema, TrabTarefaUpdateSchema, TrabComentarioSchema,
+  TrabTarefaCreateSchema, TrabTarefaUpdateHttpSchema, TrabTarefaArchiveHttpSchema, TrabComentarioSchema,
   TrabAssumirSchema, TrabSoltarSchema, TrabApontamentoCreateSchema, TrabListaDoModeloSchema,
 } from '@mktos/shared';
 import { WorkService } from './work.service';
@@ -23,6 +25,7 @@ import { parseWorkTaskQuery } from './work-task-query';
 export class WorkController {
   constructor(
     private readonly svc: WorkService,
+    private readonly fontesContexto: ContextoTrabalhoService,
     private readonly checkout: CheckoutDeTarefaService,
   ) {}
 
@@ -182,10 +185,25 @@ export class WorkController {
     return this.svc.tarefas(u.orgId, parseWorkTaskQuery(query ?? {}));
   }
 
+  @Get('tarefas/:id/fontes')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('tarefas.ver', 'obsidian.ver')
+  fontesDaTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
+    return this.fontesContexto.fontes(u.orgId, u.sub, id);
+  }
+
+  @Get('tarefas/:id/atividade')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('tarefas.ver')
+  atividade(@CurrentUser() u: JwtUser, @Param('id') id: string, @Query() query: Record<string, unknown>) {
+    return this.svc.atividade(u.orgId, u.sub, id, query ?? {});
+  }
+
   @Get('tarefas/:id')
+  @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.ver')
   tarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
-    return this.svc.tarefa(u.orgId, id);
+    return this.svc.tarefa(u.orgId, id, u.sub);
   }
 
   @Post('tarefas')
@@ -195,16 +213,19 @@ export class WorkController {
   }
 
   @Patch('tarefas/:id')
+  @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
   editarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
-    return this.svc.editarTarefa(u.orgId, u.sub, id, TrabTarefaUpdateSchema.parse(body));
+    return this.svc.editarTarefaHttp(u.orgId, u.sub, id, TrabTarefaUpdateHttpSchema.parse(body));
   }
 
   // "apagar" = arquivar (nada some de verdade; auditoria fica)
   @Delete('tarefas/:id')
+  @UseGuards(AcessoAtualGuard)
   @RequirePermissions('tarefas.editar')
-  arquivarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string) {
-    return this.svc.editarTarefa(u.orgId, u.sub, id, { archived: true });
+  arquivarTarefa(@CurrentUser() u: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    const input = TrabTarefaArchiveHttpSchema.parse(body);
+    return this.svc.editarTarefaHttp(u.orgId, u.sub, id, { archived: true, expectedUpdatedAt: input.expectedUpdatedAt });
   }
 
   /* ---- o dono único: assumir e soltar (fatia A4) ----

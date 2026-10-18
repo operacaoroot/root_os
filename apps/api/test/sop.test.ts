@@ -476,7 +476,11 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
     await limpar();
 
     const papel = await prisma.role.create({
-      data: { orgId: ORG, key: 'admin_master', name: 'Admin Master' },
+      data: { orgId: ORG, key: 'admin_master', name: 'Admin Master',
+        permissions: { connectOrCreate: ['automacoes.executar', 'admin.usuarios'].map(key => ({
+          where: { key }, create: { key },
+        })) },
+      },
       select: { id: true },
     });
     await prisma.user.create({
@@ -579,13 +583,13 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
   });
 
   it('grava o procedimento, versiona e registra quem escreveu', async () => {
-    const r1 = await servico.salvarSop(ORG, 'briefing-da-sop', COMPLETO, 'pedro-da-sop');
+    const r1 = await servico.salvarSop(ORG, 'briefing-da-sop', { expectedSopVersion: null, procedimento: COMPLETO }, 'pedro-da-sop');
     expect(r1.versao).toBe(1);
 
     const r2 = await servico.salvarSop(
       ORG,
       'briefing-da-sop',
-      { ...COMPLETO, definicaoDePronto: 'cabe numa tela e cita a fonte de cada número' },
+      { expectedSopVersion: r1.versao, procedimento: { ...COMPLETO, definicaoDePronto: 'cabe numa tela e cita a fonte de cada número' } },
       'pedro-da-sop',
     );
     expect(r2.versao).toBe(2);
@@ -601,7 +605,7 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
   });
 
   it('agente sem dono e sem pilar recusa o procedimento, e NADA é gravado', async () => {
-    await expect(servico.salvarSop(ORG, 'orfao-da-sop', COMPLETO, 'pedro-da-sop')).rejects.toThrow(
+    await expect(servico.salvarSop(ORG, 'orfao-da-sop', { expectedSopVersion: null, procedimento: COMPLETO }, 'pedro-da-sop')).rejects.toThrow(
       /dono|pilar/,
     );
     const agente = await prisma.agent.findFirst({
@@ -620,7 +624,7 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
       servico.salvarSop(
         ORG,
         'briefing-da-sop',
-        { ...COMPLETO, escalacao: 'siga sozinho' },
+        { expectedSopVersion: antes?.versao ?? null, procedimento: { ...COMPLETO, escalacao: 'siga sozinho' } },
         'pedro-da-sop',
       ),
     ).rejects.toThrow();
@@ -633,7 +637,7 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
 
   it('procedimento de agente de OUTRA empresa não é alcançável pelo slug', async () => {
     await expect(
-      servico.salvarSop(ORG, 'agente-da-vizinha', COMPLETO, 'pedro-da-sop'),
+      servico.salvarSop(ORG, 'agente-da-vizinha', { expectedSopVersion: null, procedimento: COMPLETO }, 'pedro-da-sop'),
     ).rejects.toThrow(/não existe/);
   });
 
@@ -685,7 +689,7 @@ describe.skipIf(!URL_BANCO)('procedimento e organograma contra banco', () => {
     // não citaria o dono — e a gravação passaria com seis campos.
     expect(noRoster!.faltando).toContain('dono');
     await expect(
-      servico.salvarSop(ORG, 'dono-atravessado', COMPLETO, 'pedro-da-sop'),
+      servico.salvarSop(ORG, 'dono-atravessado', { expectedSopVersion: null, procedimento: COMPLETO }, 'pedro-da-sop'),
     ).rejects.toThrow(/dono/);
 
     // 2. detalhe — e o nome do dono vai DENTRO do texto de escalação.

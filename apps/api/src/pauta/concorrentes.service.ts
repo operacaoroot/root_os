@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Prisma, ContextKind, ContextSource, type PautaFonte, type PautaCaptura } from '@prisma/client';
 import {
   PAUTA_TETO_DE_POSTS_DO_DOSSIE,
   type PautaAnaliseDoConcorrente,
@@ -8,12 +8,22 @@ import {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { MemoriaService } from '../memory/memoria.service';
+import { MemoriaService, type IdentidadeDaDerivacao, type PlanoInternoDeFontesDaDerivacao } from '../memory/memoria.service';
+import { contextoAtual } from '../common/contexto-execucao';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { SAIDA_DA_GERACAO_LONGA } from './saida-da-geracao';
 import { DossieInvalidoError, analiseDoPerfil, entradaDoDossie, lerDossieDaIa, SYSTEM_DOSSIE } from './concorrentes-da-pauta';
 import { plataformaDoPerfil, procedenciaDoPerfil } from './perfil-da-pauta';
 import { umaPorVez } from './uma-por-vez';
+
+interface MaterialDoDossie {
+  analise: PautaAnaliseDoConcorrente;
+  texto: string;
+  achados: string[];
+  provider: string;
+  model: string;
+}
+interface SelecaoDoDossie { capturaIds: string[] }
 
 /** A nota que guarda o dossiê de um perfil. Chave presa ao prefixo, como a voz. */
 export function chaveDoDossie(fonteId: string): string {
@@ -119,23 +129,27 @@ export class ConcorrentesService {
     if (!this.llm.configured) {
       throw new ServiceUnavailableException(`IA não configurada: falta a credencial do provider "${this.llm.name}".`);
     }
-    const analise = await this.analise(orgId, fonteId);
+    const identidade = this.identidadeHumana(orgId, actorId);
+    const observada = await this.prisma.$transaction(async (tx) => {
+      const observacao = await this.memoria.observarDestinoDaDerivacaoNoTx(tx, orgId, identidade,
+        { tipo: 'A4-DOSSIE', fonteId }, this.planoDoDossie(orgId, fonteId));
+      const destino = await tx.contextItem.findFirst({ where: { orgId, chave: chaveDoDossie(fonteId) }, select: { id: true } });
+      return { ...observacao, criarComTags: !destino };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    const { analise, texto, achados, provider, model } = observada.material;
     if (!analise.postsContados) {
       throw new ServiceUnavailableException('Este perfil ainda não tem post capturado: rode a coleta da fonte antes.');
     }
-
-    const { texto, achados } = entradaDoDossie(analise);
     const saida = await this.llm.complete({
       system: SYSTEM_DOSSIE,
       user: texto,
-      // De quem é o gasto (RF-G-05), como nas outras chamadas da pauta.
       orgId,
       maxTokens: SAIDA_DA_GERACAO_LONGA,
     });
 
     let dossie: PautaDossieDoConcorrente;
     try {
-      dossie = lerDossieDaIa(saida, `${this.llm.name}/${this.llm.model}`);
+      dossie = lerDossieDaIa(saida, `${provider}/${model}`);
     } catch (err) {
       if (err instanceof DossieInvalidoError) {
         this.log.warn(`dossiê de ${fonteId}: ${err.message}`);
@@ -144,39 +158,104 @@ export class ConcorrentesService {
       throw err;
     }
 
-    const chave = chaveDoDossie(fonteId);
     const corpo = JSON.stringify(dossie, null, 2);
-    const existente = await this.memoria.porChave(orgId, chave);
-    const dados = {
-      kind: ContextKind.definicao,
-      title: `Concorrente @${analise.handle} (${analise.plataforma})`,
-      body: corpo,
-      sourceType: ContextSource.promocao,
-      sourceRef: `pauta.concorrente · ${analise.postsContados} posts · modelo ${this.llm.name}/${this.llm.model}`,
-      motivo: 'dossiê de concorrente gerado pela IA (MK2)',
-    };
-    const nota = existente
-      ? await this.memoria.alterar(orgId, existente.id, dados)
-      : await this.memoria.criar(orgId, { chave, tags: ['pauta', 'concorrente'], ...dados });
+    const compromisso = await this.prisma.$transaction((tx) =>
+      this.memoria.aplicarDerivacaoCondicionadaNoTx(tx, observada.capsula, {
+        kind: ContextKind.definicao,
+        title: `Concorrente @${analise.handle} (${analise.plataforma})`,
+        body: corpo,
+        ...(observada.criarComTags ? { tags: ['pauta', 'concorrente'] } : {}),
+        sourceType: ContextSource.promocao,
+        sourceRef: `pauta.concorrente · ${analise.postsContados} posts · modelo ${provider}/${model}`,
+        motivo: 'dossiê de concorrente gerado pela IA (MK2)',
+      }), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
     await this.audit.log({
       orgId,
       actorId,
       action: 'pauta.dossie_gerado',
       entityType: 'context_item',
-      entityId: nota.id,
+      entityId: compromisso.aplicada.itemId,
       after: {
         fonteId,
+        versionId: compromisso.aplicada.versionId,
+        versao: compromisso.aplicada.versao,
+        contentHash: compromisso.aplicada.contentHash,
         handle: analise.handle,
         posts: Math.min(analise.postsContados, PAUTA_TETO_DE_POSTS_DO_DOSSIE),
         metricaDeReferencia: analise.metricaDeReferencia,
         // O que a neutralização tirou das legendas: fica no RASTRO porque é
         // sinal de perfil que tenta escrever no nosso prompt.
         achados: achados.length,
-        provider: this.llm.name,
-        model: this.llm.model,
+        provider,
+        model,
       },
     });
-    return dossie;
+    const entregue = await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    if (entregue.aplicada.body !== corpo) throw new ConflictException('O dossiê aplicado não corresponde à geração.');
+    // O corpo já foi validado por lerDossieDaIa e conferido como a versão aplicada.
+    return JSON.parse(entregue.aplicada.body) as PautaDossieDoConcorrente;
+  }
+
+  private identidadeHumana(orgId: string, actorId: string): Extract<IdentidadeDaDerivacao, { tipo: 'humano' }> {
+    const c = contextoAtual();
+    if (!actorId || c?.orgId !== orgId || c.actorType !== 'user' || c.actorId !== actorId || !c.correlationId) {
+      throw new ForbiddenException('Acesso insuficiente.');
+    }
+    return { tipo: 'humano', actorId, correlationId: c.correlationId };
+  }
+
+  private planoDoDossie(orgId: string, fonteId: string): PlanoInternoDeFontesDaDerivacao<MaterialDoDossie, SelecaoDoDossie> {
+    return {
+      observar: async (tx) => {
+        await this.fonteDoDossieNoTx(tx, orgId, fonteId);
+        const escolhidas = await tx.pautaCaptura.findMany({ where: { orgId, fonteId },
+          select: { id: true }, orderBy: { capturadoEm: 'desc' }, take: 200 });
+        const selecao = { capturaIds: escolhidas.map((c) => c.id) };
+        return { ...await this.relerDossieNoTx(tx, orgId, fonteId, selecao), selecao };
+      },
+      reconferir: (tx, _lerFonte, selecao) => this.relerDossieNoTx(tx, orgId, fonteId, selecao),
+    };
+  }
+
+  private async fonteDoDossieNoTx(tx: Prisma.TransactionClient, orgId: string, fonteId: string): Promise<PautaFonte> {
+    await tx.$queryRaw`SELECT id FROM "PautaFonte" WHERE id=${fonteId} AND "orgId"=${orgId} AND tipo='perfil' FOR SHARE`;
+    const fonte = await tx.pautaFonte.findFirst({ where: { id: fonteId, orgId, tipo: 'perfil' } });
+    if (!fonte) throw new NotFoundException('Perfil não encontrado');
+    return fonte;
+  }
+
+  private async relerDossieNoTx(tx: Prisma.TransactionClient, orgId: string, fonteId: string, selecao: Readonly<SelecaoDoDossie>) {
+    const fonte = await this.fonteDoDossieNoTx(tx, orgId, fonteId);
+    const ids = [...selecao.capturaIds];
+    if (ids.length) await tx.$queryRaw`SELECT id FROM "PautaCaptura" WHERE "orgId"=${orgId} AND "fonteId"=${fonteId}
+      AND id IN (${Prisma.join([...ids].sort())}) ORDER BY id FOR SHARE`;
+    const rows = ids.length ? await tx.pautaCaptura.findMany({ where: { orgId, fonteId, id: { in: ids } } }) : [];
+    if (rows.length !== ids.length) throw new ConflictException('As capturas escolhidas mudaram durante a geração.');
+    const porId = new Map(rows.map((c) => [c.id, c]));
+    const capturas: PautaCaptura[] = ids.map((id) => {
+      const c = porId.get(id);
+      if (!c) throw new ConflictException('As capturas escolhidas mudaram durante a geração.');
+      return c;
+    });
+    const plataforma: PautaPerfilPlataforma = plataformaDoPerfil(fonte.plataforma ?? 'instagram') ?? 'instagram';
+    const brutos = capturas.flatMap((c) => {
+      if (!c.url) return [];
+      const bruto = (c.bruto ?? {}) as Record<string, unknown>;
+      const proc = procedenciaDoPerfil(bruto);
+      return [{ capturaId: c.id, url: c.url, titulo: c.titulo ?? '',
+        legenda: proc?.texto ?? String(bruto.resumo ?? ''),
+        publicadoEm: typeof bruto.publicadoEm === 'string' ? bruto.publicadoEm : c.capturadoEm,
+        item: bruto }];
+    });
+    const analise = analiseDoPerfil(fonte.id, plataforma, (fonte.handle ?? '').replace(/^@/, ''), brutos);
+    const { texto, achados } = entradaDoDossie(analise);
+    return {
+      material: { analise, texto, achados, provider: this.llm.name, model: this.llm.model },
+      descritores: {
+        fonte: { ...fonte, ultimaLeitura: fonte.ultimaLeitura?.toISOString() ?? null, criadaEm: fonte.criadaEm.toISOString() },
+        capturas: capturas.map((c) => ({ ...c, capturadoEm: c.capturadoEm.toISOString(), custoUsd: c.custoUsd?.toString() ?? null })),
+      },
+    };
   }
 }

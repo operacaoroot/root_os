@@ -16,14 +16,14 @@ import {
   type PautaAgendaDaSemana,
   type PautaDistribuicao,
   type PautaFormatoDaSemana,
-  type PautaGradePainel,
+  PAUTA_CHAVE_DA_GRADE, PautaGradeHumanoPainelSchema, PautaGradeSalvarHumanoSchema,
   type PautaPecaNaAgenda,
 } from '@mktos/shared';
 import { apiBlob, apiGet, apiPost, apiPut } from '@/lib/api';
 import { baixarArquivo, compartilhaArquivos, compartilharArquivos } from '@/lib/baixar';
 import { Botao, Chip, inputCls } from '../referencias/ui';
 import { PublicacaoNoInstagram } from './PublicacaoNoInstagram';
-import { InterruptorDaAutomacao } from './InterruptorDaAutomacao';
+import { InterruptorDaAutomacao, useEdicaoHumana, ConferenciaEdicaoHumana } from './InterruptorDaAutomacao';
 import { LinhaDoTempoDaPeca } from './LinhaDoTempoDaPeca';
 import { AprovarASemana } from './AprovarASemana';
 import { CandidatosDoCorte } from './CandidatosDoCorte';
@@ -422,76 +422,34 @@ function PecaNoSlot({
   );
 }
 
-function Grade({ token, editavel, onErro, onSalvou }: { token: string | null; editavel: boolean; onErro: (m: string | null) => void; onSalvou: () => void }) {
-  const [painel, setPainel] = useState<PautaGradePainel | null>(null);
-  const [texto, setTexto] = useState('');
-  const [salvando, setSalvando] = useState(false);
-
+function Grade({ token, editavel, onSalvou }: { token: string | null; editavel: boolean; onErro: (m: string | null) => void; onSalvou: () => void }) {
   const [aberta, setAberta] = useState(false);
-
-  const alternar = async () => {
-    const abrir = !aberta;
-    setAberta(abrir);
-    if (!abrir || painel || !token) return;
-    try {
-      const p = await apiGet<PautaGradePainel>('/pauta/agenda/grade', token);
-      setPainel(p);
-      setTexto(p.texto);
-    } catch (e) {
-      onErro(`A grade não carregou: ${(e as Error).message}`);
-    }
+  const [iniciada, setIniciada] = useState(false);
+  return <section className="rounded-lg border border-border p-3" aria-label="Grade da semana">
+    <Botao tone="ghost" onClick={() => { setIniciada(true); setAberta(v => !v); }}>{aberta ? 'Fechar a grade' : 'Grade da semana'}</Botao>
+    {iniciada && <div hidden={!aberta} style={{ display: aberta ? undefined : 'none' }}><GradeAberta token={token} editavel={editavel} onSalvou={onSalvou} /></div>}
+  </section>;
+}
+function GradeAberta({ token, editavel, onSalvou }: { token: string | null; editavel: boolean; onSalvou: () => void }) {
+  const editor = useEdicaoHumana({ token, path: '/pauta/agenda/grade', schema: PautaGradeHumanoPainelSchema,
+    destino: p => p.destinos.grade, texto: p => p.destinos.grade.estado === 'existente' ? p.destinos.grade.conteudo.corpo : p.painel.texto, conferir: p => p.destinos.grade.chave === PAUTA_CHAVE_DA_GRADE });
+  const painel = editor.atual?.painel;
+  const salvar = async (reativar = false) => {
+    const r = await editor.enviar({ schema: PautaGradeSalvarHumanoSchema, campos: { texto: editor.texto }, acao: 'salvar_grade', reativar });
+    if (r) onSalvou();
   };
-
-  const salvar = async () => {
-    onErro(null);
-    setSalvando(true);
-    try {
-      const p = await apiPut<PautaGradePainel>('/pauta/agenda/grade', { texto, ...(painel?.versao ? { versao: painel.versao } : {}) }, token);
-      setPainel(p);
-      setTexto(p.texto);
-      onSalvou();
-    } catch (e) {
-      onErro((e as Error).message);
-    } finally {
-      setSalvando(false);
-    }
-  };
-
-  return (
-    <section className="rounded-lg border border-border p-3" aria-label="Grade da semana">
-      <Botao tone="ghost" onClick={alternar}>
-        {aberta ? 'Fechar a grade' : 'Grade da semana'}
-      </Botao>
-      {aberta && (
-      <div className="mt-2 space-y-2 text-xs">
-        <p className="text-muted">
-          Um formato por linha, no horário de São Paulo — por exemplo <span className="font-mono">carrossel: seg, qua, sex 12:00</span>,{' '}
-          <span className="font-mono">story: dias úteis 9h</span>. Feriado nacional não tem slot; os da empresa entram em{' '}
-          <span className="font-mono">feriados: 20/01/2027</span>. A grade é uma nota da memória, com histórico.
-        </p>
-        {painel && <p className="text-muted">{painel.origem === 'padrao' ? 'Valendo a grade padrão.' : `Nota da empresa, versão ${painel.versao}.`}</p>}
-        {painel?.avisos.map((a) => (
-          <p key={a} className="text-warn">
-            {a}
-          </p>
-        ))}
-        <textarea
-          className={`${inputCls} font-mono`}
-          rows={6}
-          aria-label="Texto da grade"
-          value={texto}
-          readOnly={!editavel}
-          onChange={(e) => setTexto(e.target.value)}
-        />
-        {editavel && (
-          <Botao tone="brand" onClick={salvar} disabled={salvando || !painel}>
-            {salvando ? 'Salvando…' : 'Salvar grade'}
-          </Botao>
-        )}
-      </div>
-      )}
-    </section>
-  );
+  return <div className="mt-2 space-y-2 text-xs">
+    <p className="text-muted">Um formato por linha no horário de São Paulo, por exemplo: carrossel: seg, qua, sex 12:00. A grade é uma nota da memória com histórico.</p>
+    {painel && <p className="text-muted">{painel.origem === 'padrao' ? 'Operação usa a grade padrão; isso não informa ausência física.' : `Grade em uso: versão ${painel.versao}.`}</p>}
+    {painel?.avisos.map(a => <p key={a} className="text-warn">{a}</p>)}
+    <ConferenciaEdicaoHumana editor={editor} />
+    {editor.visivel && <textarea className={`${inputCls} font-mono`} rows={6} aria-label="Texto da grade" value={editor.texto}
+      disabled={!editavel || editor.ocupado} onChange={e => editor.alterar(e.target.value)} />}
+    {editavel && <div className="flex flex-wrap gap-2"><Botao tone="brand" onClick={() => void salvar()} disabled={!editor.editavel}>
+      {editor.ocupado ? 'Salvando…' : editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar grade'}</Botao>
+      {editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada && <Botao tone="brand" onClick={() => void salvar(true)} disabled={!editor.editavel}>Salvar e reativar</Botao>}
+    </div>}
+  </div>;
 }
 
 export function AbaSemana({ token, editavel, podePostar, onErro, bump }: Props) {

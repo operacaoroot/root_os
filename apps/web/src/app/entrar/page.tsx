@@ -1,8 +1,10 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, ErroDaApi } from '@/lib/api';
+import { OnboardingTemaHumanoPainelSchema, OnboardingRespostaHumanaSchema, OnboardingRespostaHumanaResultadoSchema, normalizarRespostaHumanaDaCarga, PautaTetoDaRespostaHumanaDaCarga } from '@mktos/shared';
+import { useEdicaoHumana, ConferenciaEdicaoHumana } from '../pauta/InterruptorDaAutomacao';
 
 /* ==========================================================================
  * O DEGRAU DE ENTRADA — uma tela só, dois lados (RF-O-01, RF-O-02, RF-M-05)
@@ -103,7 +105,7 @@ interface RespostaLivre {
 export default function EntrarPage() {
   const { user, token, ready } = useAuth();
   if (!ready) return <Casca>carregando…</Casca>;
-  return user && token ? <Carga token={token} /> : <Cadastro />;
+  return user && token ? <Carga key={`${token}|${user.id}|${user.permissions.join(',')}`} token={token} /> : <Cadastro />;
 }
 
 /* -------------------------------------------------------------- o cadastro */
@@ -194,7 +196,11 @@ function Cadastro() {
 function Carga({ token }: { token: string }) {
   const [estado, setEstado] = useState<Estado | null>(null);
   const [roteiro, setRoteiro] = useState<Tema[]>([]);
-  const [resposta, setResposta] = useState('');
+  const [temasVisitados, setTemasVisitados] = useState<string[]>([]);
+  const [temaEscolhido, setTemaEscolhido] = useState<string | null>(null);
+  const viva = useRef(true);
+  const leituraEstado = useRef(0);
+  useEffect(() => { viva.current = true; return () => { viva.current = false; leituraEstado.current++; }; }, []);
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [retrato, setRetrato] = useState<Retrato | null>(null);
@@ -202,43 +208,29 @@ function Carga({ token }: { token: string }) {
   const [livre, setLivre] = useState<RespostaLivre | null>(null);
 
   const recarregar = useCallback(async () => {
-    const e = await apiGet<Estado>('/tenants/onboarding/estado', token);
+    const seq = ++leituraEstado.current;
+    let e: Estado;
+    try { e = await apiGet<Estado>('/tenants/onboarding/estado', token); }
+    catch (err) { if (viva.current && leituraEstado.current === seq) { if (err instanceof ErroDaApi && [401, 403].includes(err.status)) { setEstado(null); setRetrato(null); setLivre(null); } setErro('O progresso não pôde ser conferido.'); } throw err; }
+    if (!viva.current || leituraEstado.current !== seq) return;
     setEstado(e);
+    const temaId = e.carga.proxima?.temaId;
+    if (temaId) { setTemaEscolhido(temaId); setTemasVisitados(v => [...new Set([...v, temaId])]); }
   }, [token]);
 
   useEffect(() => {
-    recarregar().catch((e) => setErro((e as Error).message));
+    recarregar().catch((e) => { if (viva.current) { if (e instanceof ErroDaApi && [401, 403].includes(e.status)) { setEstado(null); setRetrato(null); setLivre(null); } setErro('O progresso não pôde ser conferido.'); } });
     apiGet<{ temas: Tema[] }>('/tenants/onboarding/roteiro', token)
-      .then((r) => setRoteiro(r.temas))
-      .catch(() => setRoteiro([]));
+      .then((r) => { if (viva.current) setRoteiro(r.temas); })
+      .catch(() => { if (viva.current) setRoteiro([]); });
   }, [recarregar, token]);
-
-  async function responder(e: FormEvent) {
-    e.preventDefault();
-    const tema = estado?.carga.proxima?.temaId;
-    if (!tema) return;
-    setErro(null);
-    setOcupado(true);
-    try {
-      const r = await apiPost<{ estado: Estado }>(
-        '/tenants/onboarding/carga/resposta',
-        { tema, resposta },
-        token,
-      );
-      setEstado(r.estado);
-      setResposta('');
-    } catch (err) {
-      setErro((err as Error).message);
-    } finally {
-      setOcupado(false);
-    }
-  }
 
   async function fechar() {
     setErro(null);
     setOcupado(true);
     try {
-      setRetrato(await apiPost<Retrato>('/tenants/onboarding/carga/fechar', {}, token));
+      const r = await apiPost<Retrato>('/tenants/onboarding/carga/fechar', {}, token);
+      if (!viva.current) return; setRetrato(r);
       await recarregar();
     } catch (err) {
       setErro((err as Error).message);
@@ -252,13 +244,12 @@ function Carga({ token }: { token: string }) {
     setErro(null);
     setOcupado(true);
     try {
-      setLivre(
-        await apiPost<RespostaLivre>(
+      const r = await apiPost<RespostaLivre>(
           '/tenants/onboarding/primeira-pergunta',
           { pergunta },
           token,
-        ),
-      );
+        );
+      if (viva.current) setLivre(r);
     } catch (err) {
       setErro((err as Error).message);
     } finally {
@@ -266,14 +257,12 @@ function Carga({ token }: { token: string }) {
     }
   }
 
-  if (!estado) return <Casca>{erro ?? 'carregando…'}</Casca>;
-
-  const proxima = estado.carga.proxima;
 
   return (
     <Casca largura="max-w-[720px]">
       <Marca />
-
+      {!estado && <p>{erro ?? 'Carregando progresso…'}</p>}
+      {estado && <>
       <div className="mb-5 rounded-xl border border-border bg-surface p-5">
         <div className="text-[10px] uppercase tracking-[0.16em] text-muted">
           {estado.empresa.nome}
@@ -324,36 +313,16 @@ function Carga({ token }: { token: string }) {
         </div>
       )}
 
-      {proxima && (
-        <form onSubmit={responder} className="mb-5 rounded-xl border border-border bg-surface p-5">
-          <div className="flex items-baseline justify-between">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-muted">
-              {proxima.modo === 'aprofundar' ? 'vamos um pouco mais fundo' : proxima.titulo}
-            </div>
-            <div className="text-[10px] text-muted">
-              {proxima.ordem} de {proxima.total}
-            </div>
-          </div>
-          <p className="mt-2 text-[13.5px] leading-[1.7]">{proxima.pergunta}</p>
-          <textarea
-            value={resposta}
-            onChange={(e) => setResposta(e.target.value)}
-            rows={5}
-            required
-            className="mt-3 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-brand"
-            placeholder="Responda como você falaria. O OS organiza o resto."
-          />
-          <button
-            type="submit"
-            disabled={ocupado}
-            className="mt-3 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-ink transition hover:bg-brand/90 disabled:opacity-60"
-          >
-            {ocupado ? 'Guardando…' : 'Responder'}
-          </button>
-        </form>
-      )}
+      </>}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button type="button" disabled={ocupado} onClick={() => void recarregar().catch(() => {})} className="rounded border border-border px-3 py-2 text-xs">Conferir progresso</button>
+        {temasVisitados.map(t => <button key={t} type="button" onClick={() => setTemaEscolhido(t)} aria-pressed={temaEscolhido === t} className="rounded border border-border px-3 py-2 text-xs">{roteiro.find(r => r.id === t)?.titulo ?? t}</button>)}
+      </div>
+      {temasVisitados.map(tema => <div key={tema} hidden={!estado || temaEscolhido !== tema} style={{ display: estado && temaEscolhido === tema ? undefined : 'none' }}>
+        <TemaDaCarga token={token} tema={tema} />
+      </div>)}
 
-      {estado.carga.pronta && !retrato && (
+      {estado && estado.carga.pronta && !retrato && (
         <div className="mb-5 rounded-xl border border-border bg-surface p-5">
           <div className="text-[12px] font-bold">O contexto obrigatório está carregado.</div>
           <p className="mt-1 text-[11.5px] leading-[1.6] text-muted">
@@ -392,7 +361,7 @@ function Carga({ token }: { token: string }) {
         </div>
       )}
 
-      {estado.concluida && (
+      {estado?.concluida && (
         <form onSubmit={perguntar} className="mb-5 rounded-xl border border-border bg-surface p-5">
           <div className="text-[12px] font-bold">Agora pergunte alguma coisa</div>
           <p className="mt-1 text-[11.5px] leading-[1.6] text-muted">
@@ -440,7 +409,7 @@ function Carga({ token }: { token: string }) {
 
       {erro && <div className="text-sm text-bad">{erro}</div>}
 
-      {estado.concluida && (
+      {estado?.concluida && (
         <a
           href="/painel"
           className="inline-block border border-border px-3 py-[6px] text-[10px] uppercase tracking-[0.12em] text-muted hover:border-border-strong hover:text-text"
@@ -453,6 +422,34 @@ function Carga({ token }: { token: string }) {
 }
 
 /* ------------------------------------------------------------------ pedaços */
+
+function TemaDaCarga({ token, tema }: { token: string; tema: string }) {
+  const editor = useEdicaoHumana({ token, path: `/tenants/onboarding/carga/temas/${encodeURIComponent(tema)}`,
+    schema: OnboardingTemaHumanoPainelSchema, destino: p => p.destino,
+    texto: p => p.destino.estado === 'existente' ? p.destino.conteudo.corpo : '', conferir: p => p.tema === tema && p.destino.chave === `onboarding:${tema}` });
+  const [espelho, setEspelho] = useState<string | null>(null);
+  const tamanho = Array.from(normalizarRespostaHumanaDaCarga(editor.texto)).length;
+  const responder = async (reativar = false) => {
+    setEspelho(null);
+    const r = await editor.enviar({ path: '/tenants/onboarding/carga/resposta', method: 'POST', schema: OnboardingRespostaHumanaSchema,
+      campos: { tema, resposta: editor.texto }, acao: 'responder_tema', reativar,
+      resultado: raw => { const p = OnboardingRespostaHumanaResultadoSchema.parse(raw); if (p.tema !== tema) throw new Error('A resposta pertence a outro tema.'); return p.resultado; } });
+    if (r) { const p = OnboardingRespostaHumanaResultadoSchema.parse(r.raw); setEspelho(p.espelho); }
+  };
+  return <section className="mb-5 space-y-3 rounded-xl border border-border bg-surface p-5">
+    {editor.atual && <><h2 className="text-sm font-semibold">{editor.atual.rotulo.titulo}</h2><p className="text-sm">{editor.atual.rotulo.pergunta}</p></>}
+    <ConferenciaEdicaoHumana editor={editor} />
+    {editor.visivel && <textarea value={editor.texto} onChange={e => { editor.alterar(e.target.value); setEspelho(null); }} rows={5}
+      disabled={editor.ocupado || !editor.atual?.autoridade.editar} className="w-full rounded border border-border bg-bg px-3 py-2 text-sm" aria-label="Resposta do tema" />}
+    {editor.visivel && <p className={tamanho > PautaTetoDaRespostaHumanaDaCarga ? 'text-xs text-bad' : 'text-xs text-muted'}>{tamanho.toLocaleString('pt-BR')} / {PautaTetoDaRespostaHumanaDaCarga.toLocaleString('pt-BR')} caracteres, contando pontos de código após retirar espaços das pontas e normalizar as quebras de linha. Texto acima do teto precisa ser reduzido; nada será cortado.</p>}
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => void responder()} disabled={!editor.editavel || tamanho === 0 || tamanho > PautaTetoDaRespostaHumanaDaCarga}
+        className="rounded bg-brand px-4 py-2 text-sm text-ink disabled:opacity-50">{editor.ocupado ? 'Guardando…' : editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada ? 'Salvar mantendo arquivada' : 'Salvar resposta'}</button>
+      {editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada && <button type="button" onClick={() => void responder(true)} disabled={!editor.editavel || tamanho === 0 || tamanho > PautaTetoDaRespostaHumanaDaCarga} className="rounded border border-brand px-4 py-2 text-sm text-brand disabled:opacity-50">Salvar e reativar</button>}
+    </div>
+    {editor.recibo && espelho && <div role="status" className="space-y-1 text-xs"><p>Nota salva{editor.recibo.reativacao.solicitada ? ' e reativada' : editor.destinoBase?.estado === 'existente' && editor.destinoBase.arquivada ? ', mantendo arquivada' : ''}.</p><p>Índice de busca {espelho === 'concluido' ? 'atualizado' : espelho === 'falhou' ? 'não foi atualizado' : 'não conferido'}. O progresso é uma consulta separada.</p></div>}
+  </section>;
+}
 
 function Casca({
   children,

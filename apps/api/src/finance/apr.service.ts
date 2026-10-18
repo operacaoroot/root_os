@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
-import { Prisma, FinanceTxType } from '@prisma/client';
+import { Prisma, FinanceTxType, type Contract, type ApprovalStatus } from '@prisma/client';
 import type {
   PartnerList, DimensionList, ContractList, Payables, PayableRow,
   CreatePartnerInput, CreateDimensionInput, CreateContractInput,
@@ -8,6 +8,8 @@ import type {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
+import { exigirPessoaFinanceiraAtual, travarFinanceiro, travarLancamentoFinanceiro, exigirNaoExercicio } from './financeiro-exercicio.service';
 
 const num = (d: Prisma.Decimal | number | null | undefined): number => (d == null ? 0 : Number(d));
 export const APPROVAL_LIMIT = (): number => Number(process.env.FINANCE_APPROVAL_LIMIT ?? 5000);
@@ -87,6 +89,33 @@ export function idDoLancamentoDeContrato(orgId: string, contractId: string, venc
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const h = bytes.toString('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+export function proximoVencimentoDoContrato(vencimento: Date, periodicidade: string): Date {
+  return addMonths(vencimento, PERIOD_MONTHS[periodicidade] ?? 1);
+}
+
+/** Composição interna: a transação do chamador também pode inscrever o exercício. */
+export async function gerarPrevistoDeContratoNoTx(db: Prisma.TransactionClient, orgId: string, c: Contract,
+  vencimento: Date, actorId: string, approvalStatus: ApprovalStatus): Promise<boolean> {
+  if (c.orgId !== orgId) throw new NotFoundException('Contrato não encontrado');
+  const transactionId = idDoLancamentoDeContrato(orgId, c.id, vencimento);
+  const avancou = await db.contract.updateMany({
+    where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
+    data: { proximoVencimento: proximoVencimentoDoContrato(vencimento, c.periodicidade) },
+  });
+  if (avancou.count !== 1) return false;
+  if (!c.accountId) throw new BadRequestException('Contrato sem conta bancária definida');
+  await db.financeTransaction.create({ data: {
+    id: transactionId, orgId, accountId: c.accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
+    type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
+    amount: c.valor, date: vencimento, dueDate: vencimento, source: 'manual', approvalStatus,
+  } });
+  await db.auditLog.create({ data: {
+    orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
+    after: { transactionId, vencimento: vencimento.toISOString() },
+  } });
+  return true;
 }
 
 const VENCIMENTO_NAO_E_O_PROXIMO = 'O vencimento pedido não é o próximo deste contrato. Atualize a lista antes de gerar.';
@@ -214,7 +243,7 @@ export class AprService {
     if (!c) throw new NotFoundException('Contrato não encontrado');
 
     const transactionId = idDoLancamentoDeContrato(orgId, c.id, venc);
-    const next = addMonths(venc, PERIOD_MONTHS[c.periodicidade] ?? 1);
+    const next = proximoVencimentoDoContrato(venc, c.periodicidade);
     const resposta = { ok: true as const, transactionId, proximoVencimento: next.toISOString() };
     // Antes das conferências de status e conta: o lançamento gravado continua
     // valendo mesmo que o contrato tenha sido pausado depois.
@@ -225,33 +254,11 @@ export class AprService {
     // Contrato gravado antes desta conferência pode apontar para cadastro de outra empresa.
     await conferirReferencias(this.prisma, orgId, { conta: c.accountId, plano: c.chartAccountId, parceiro: c.partnerId });
 
-    const accountId = c.accountId;
     const requiresApproval = c.tipo === 'saida' && num(c.valor) > APPROVAL_LIMIT();
     try {
-      const gerou = await this.prisma.$transaction(async (db) => {
-        const avancou = await db.contract.updateMany({
-          where: { id: c.id, orgId, status: 'ativo', proximoVencimento: c.proximoVencimento, updatedAt: c.updatedAt },
-          data: { proximoVencimento: next },
-        });
-        if (avancou.count !== 1) return false;
-        await db.financeTransaction.create({
-          data: {
-            id: transactionId, orgId, accountId, chartAccountId: c.chartAccountId, partnerId: c.partnerId, contractId: c.id,
-            type: c.tipo, status: 'previsto', description: `${c.descricao} (contrato)`,
-            amount: c.valor, date: venc, dueDate: venc, source: 'manual',
-            approvalStatus: requiresApproval ? 'aguardando' : 'nao_requer',
-          },
-        });
-        // A mesma linha que `AuditService.log` grava, mas pelo cliente da
-        // transação: fora dela, uma falha aqui deixaria lançamento sem auditoria.
-        await db.auditLog.create({
-          data: {
-            orgId, actorId, action: 'finance.contract.generate', entityType: 'contract', entityId: c.id,
-            after: { transactionId, vencimento: venc.toISOString() },
-          },
-        });
-        return true;
-      });
+      const gerou = await this.prisma.$transaction(db => gerarPrevistoDeContratoNoTx(
+        db, orgId, c, venc, actorId, requiresApproval ? 'aguardando' : 'nao_requer',
+      ));
       if (gerou) return { ...resposta, replayed: false };
     } catch (e) {
       // Chave primária repetida: outra chamada gravou este vencimento entre a conferência e o INSERT.
@@ -267,15 +274,21 @@ export class AprService {
   }
 
   // ---------- Contas a pagar / receber (previstos) ----------
-  async payables(orgId: string, tipo?: string): Promise<Payables> {
+  async payables(orgId: string, tipo?: string, actorId?: string): Promise<Payables> {
+    if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
+    const ocultos = actorId ? [] : [...await this.prisma.financeExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } }),
+      ...await this.prisma.commercialExerciseObligation.findMany({ where: { orgId }, select: { transactionId: true } })];
     const now = new Date();
-    const where: Prisma.FinanceTransactionWhereInput = { orgId, status: 'previsto' };
+    const where: Prisma.FinanceTransactionWhereInput = { orgId, status: 'previsto', ...(actorId ? {} : { id: { notIn: ocultos.map(o => o.transactionId) } }) };
     if (tipo === 'pagar') where.type = 'saida';
     if (tipo === 'receber') where.type = 'entrada';
     const rows = await this.prisma.financeTransaction.findMany({
       where, orderBy: [{ dueDate: 'asc' }, { date: 'asc' }], take: 500,
       include: { partner: { select: { razaoSocial: true } }, chartAccount: { select: { codigo: true } } },
     });
+    const inscritos = await this.prisma.financeExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } });
+    const exercicios = new Set(inscritos.map(o => o.transactionId));
+    const comerciais = new Set((await this.prisma.commercialExerciseObligation.findMany({ where: { orgId, transactionId: { in: rows.map(r => r.id) } }, select: { transactionId: true } })).map(o => o.transactionId));
     let aPagar = 0, aReceber = 0, vencidoPagar = 0, vencidoReceber = 0, aguardando = 0;
     const items: PayableRow[] = rows.map((r) => {
       const v = num(r.amount);
@@ -288,9 +301,11 @@ export class AprService {
       return {
         id: r.id, tipo: r.type, description: r.description, partnerName: r.partner?.razaoSocial ?? null,
         chartCodigo: r.chartAccount?.codigo ?? null, amount: v, dueDate: due.toISOString(),
-        status: r.status, approvalStatus: r.approvalStatus, vencido, diasAtraso: dias,
+        status: r.status, approvalStatus: r.approvalStatus, exercicioFinanceiro: exercicios.has(r.id),
+        ...{ exercicioComercial: comerciais.has(r.id), exercicioComercialHref: comerciais.has(r.id) ? `/finance/exercicio/comercial/obrigacoes/${r.id}` : null }, vencido, diasAtraso: dias,
       };
     });
+    if (actorId) await exigirAcessoAtual(this.prisma, orgId, actorId, ['financeiro.ver']);
     return {
       items, total: rows.length,
       totals: { aPagar, aReceber, vencidoPagar, vencidoReceber, aguardandoAprovacao: aguardando },
@@ -301,17 +316,28 @@ export class AprService {
 
   // ---------- Aprovação ----------
   async approve(orgId: string, id: string, aprovar: boolean, actorId: string) {
-    const tx = await this.prisma.financeTransaction.findFirst({ where: { id, orgId } });
-    if (!tx) throw new NotFoundException('Lançamento não encontrado');
-    if (tx.approvalStatus !== 'aguardando') throw new BadRequestException('Lançamento não está aguardando aprovação');
-    const updated = await this.prisma.financeTransaction.update({
-      where: { id },
-      data: { approvalStatus: aprovar ? 'aprovado' : 'rejeitado', approvedById: actorId, approvedAt: new Date() },
-    });
-    await this.audit.log({
-      orgId, actorId, action: aprovar ? 'finance.approve' : 'finance.reject',
-      entityType: 'finance_transaction', entityId: id, after: { approvalStatus: updated.approvalStatus },
-    });
-    return { ok: true, approvalStatus: updated.approvalStatus };
+    return this.prisma.$transaction(async db => {
+      await exigirPessoaFinanceiraAtual(db, orgId, actorId, true);
+      await travarFinanceiro(db, orgId);
+      await travarLancamentoFinanceiro(db, orgId, id);
+      await exigirNaoExercicio(db, orgId, id);
+      const tx = await db.financeTransaction.findFirst({ where: { id, orgId } });
+      if (!tx) throw new NotFoundException('Lançamento não encontrado');
+      if (tx.status !== 'previsto' || tx.paidAt || tx.reconciledAt || tx.approvalStatus !== 'aguardando')
+        throw new BadRequestException('Lançamento não está aguardando aprovação prevista');
+      const now = new Date();
+      const approvalStatus = aprovar ? 'aprovado' : 'rejeitado';
+      const changed = await db.financeTransaction.updateMany({
+        where: { id, orgId, updatedAt: tx.updatedAt, approvalStatus: 'aguardando', status: 'previsto' },
+        data: { approvalStatus, approvedById: actorId, approvedAt: now },
+      });
+      if (changed.count !== 1) throw new ConflictException('O lançamento mudou durante a decisão.');
+      await this.audit.log({
+        orgId, actorId, action: aprovar ? 'finance.approve' : 'finance.reject',
+        entityType: 'finance_transaction', entityId: id, after: { approvalStatus },
+      }, db);
+      await exigirPessoaFinanceiraAtual(db, orgId, actorId, true);
+      return { ok: true, approvalStatus };
+    }, { timeout: 30000 });
   }
 }

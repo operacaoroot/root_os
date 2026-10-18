@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import type { ActorType, Prisma, PrismaClient } from '@prisma/client';
 import { MODULOS, PERMISSIONS, ROLES, type ModuloKey, type RoleKey } from '@mktos/shared';
 
+import { comContextoDePlataforma } from '../prisma/contexto-de-plataforma';
 import { SemTenantError } from '../common/contexto-execucao';
 import { ehModulo, modulosConhecidos } from './modulos';
 
@@ -20,7 +21,7 @@ import { ehModulo, modulosConhecidos } from './modulos';
  *   2. o catálogo de permissões (global) e os papéis do produto, com
  *      `admin_master` como PAPEL INICIAL (RF-T-07);
  *   3. a política padrão da ROOT — herdada, não copiada (ver `politicaDoTenant`);
- *   4. o contexto vazio — conferido, não fabricado (ver `contextoDoTenant`);
+ *   4. o diagnóstico de contexto não conferido (ver `contextoDoTenant`);
  *   5. opcionalmente, o primeiro administrador, sem senha utilizável.
  *
  * DOIS MODOS, E A DIFERENÇA É DE SEGURANÇA (ver `ModoDeProvisionamento`)
@@ -313,7 +314,7 @@ export interface Provisionamento {
     /** Versão própria da empresa, quando ela já sobrescreveu algo (fatia 2.1). */
     sobrescritaPropria: number | null;
   };
-  contexto: { notas: number; vazio: boolean };
+  contexto: { estado: 'nao_conferido'; notas: null; vazio: null; motivo: 'leitor_do_tenant_nao_identificado' };
   /** Alguma linha mudou. `false` é o desfecho esperado da segunda rodada. */
   mudou: boolean;
   /** O que o retrato denuncia. Vazio é o desfecho saudável. */
@@ -380,10 +381,10 @@ function exigirEmail(bruto: string): string {
  */
 async function acharOrg(prisma: PrismaClient, slug: string) {
   try {
-    return await prisma.org.findUnique({
+    return await comContextoDePlataforma(() => prisma.org.findUnique({
       where: { slug },
       select: { id: true, name: true, modulos: true, isActive: true },
-    });
+    }));
   } catch (e) {
     if (e instanceof SemTenantError) throw new ProvisionamentoSemPlataformaError(e.message);
     throw e;
@@ -665,25 +666,12 @@ async function politicaDoTenant(
   };
 }
 
-/**
- * O contexto vazio (RF-T-07) — CONFERIDO, não fabricado.
- *
- * A MEMÓRIA de hoje é `KnowledgeNote`, e ela é um espelho: `ObsidianService`
- * reindexa com `deleteMany({ where: { orgId } })` e recria a partir do vault.
- * Qualquer nota "de partida" que o provisionamento escrevesse sumiria na
- * primeira sincronização, e o estado provisionado passaria a mentir. Por isso o
- * contexto vazio aqui é um FATO CONFERIDO — a empresa nova não herda memória de
- * ninguém — e o marco fica no RASTRO, que é onde histórico de empresa mora.
- *
- * Quando a MEMÓRIA ganhar tabela própria (`ContextItem`, 07-MODELO-DE-DADOS §2)
- * é aqui que o esqueleto — regra, dicionário, decisão — passa a ser semeado.
- */
+/** Configurar a empresa não identifica uma pessoa autorizada a ler sua memória. */
 async function contextoDoTenant(
-  tx: Prisma.TransactionClient,
-  orgId: string,
+  _tx: Prisma.TransactionClient,
+  _orgId: string,
 ): Promise<Provisionamento['contexto']> {
-  const notas = await tx.knowledgeNote.count({ where: { orgId } });
-  return { notas, vazio: notas === 0 };
+  return { estado: 'nao_conferido', notas: null, vazio: null, motivo: 'leitor_do_tenant_nao_identificado' };
 }
 
 /**

@@ -1,3 +1,4 @@
+import { MemoryModule } from '../memory/memoria.module';
 import { Module } from '@nestjs/common';
 import { WorkController } from './work.controller';
 import { WorkService } from './work.service';
@@ -25,7 +26,7 @@ import { WorkFilesService } from './work-files.service';
  * porque aí checkout não deixaria marca nenhuma.
  */
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, MemoryModule],
   controllers: [WorkController, WorkFilesController],
   providers: [WorkService, CheckoutDeTarefaService, WorkFilesService],
   exports: [CheckoutDeTarefaService, WorkService],

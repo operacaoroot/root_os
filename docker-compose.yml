@@ -258,10 +258,6 @@ services:
       ASAAS_API_KEY: ${ASAAS_API_KEY:-}
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-}
       ASAAS_SYNC_INTERVAL_MIN: ${ASAAS_SYNC_INTERVAL_MIN:-360}
-      # Painel de propostas comerciais (tela /propostas, só a sessão da plataforma): lê o
-      # serviço das propostas na VPS. Vazio = a tela avisa que o painel não está ligado.
-      PROPOSTAS_URL: ${PROPOSTAS_URL:-}
-      PROPOSTAS_API_TOKEN: ${PROPOSTAS_API_TOKEN:-}
       FINANCE_APPROVAL_LIMIT: ${FINANCE_APPROVAL_LIMIT:-5000}
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}

@@ -1,8 +1,9 @@
 import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
-import { PautaVozAprenderSchema, PautaVozChaveSchema, PautaVozSalvarSchema } from '@mktos/shared';
+import { PautaVozAprenderSchema, PautaVozChaveHumanaSchema, PautaVozSalvarHumanoSchema } from '@mktos/shared';
 import { VozService } from './voz.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
@@ -14,9 +15,10 @@ export class VozController {
   constructor(private readonly vozes: VozService) {}
 
   @Get()
-  @RequirePermissions('pauta.ver')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.ver', 'obsidian.ver')
   painel(@CurrentUser() user: JwtUser) {
-    return this.vozes.painel(user.orgId);
+    return this.vozes.painelHumano(user.orgId, user.sub);
   }
 
   // Gasta IA, como gerar o roteiro e a rodada.
@@ -27,15 +29,16 @@ export class VozController {
   }
 
   @Put()
-  @RequirePermissions('pauta.editar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   salvar(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    return this.vozes.salvar(user.orgId, user.sub, PautaVozSalvarSchema.parse(body ?? {}));
+    return this.vozes.salvarHumano(user.orgId, user.sub, PautaVozSalvarHumanoSchema.parse(body ?? {}));
   }
 
   @Put('chave')
-  @RequirePermissions('pauta.editar')
+  @UseGuards(AcessoAtualGuard)
+  @RequirePermissions('pauta.editar', 'obsidian.ver')
   chave(@CurrentUser() user: JwtUser, @Body() body: unknown) {
-    const { chave } = PautaVozChaveSchema.parse(body ?? {});
-    return this.vozes.definirChave(user.orgId, user.sub, chave);
+    return this.vozes.definirChaveHumana(user.orgId, user.sub, PautaVozChaveHumanaSchema.parse(body ?? {}));
   }
 }

@@ -26,3 +26,41 @@ export const DEFAULT_APP_NAME = 'Marketing OS';
 export * from './lead-entrada.js';
 // A proposta e o aceite comercial (ROOT-49, C-03): ver o cabeçalho de `lead-proposta.ts`.
 export * from './lead-proposta.js';
+export * from './comercial-exercicio';
+export * from './fonte-autorizada.js';
+
+export * from './comercial-ponte-exercicio.js';
+export * from './catalogo-de-colecao.js';
+export * from './brandbook.js';
+export * from './financeiro-exercicio-inscricao.js';
+export * from './marketing-recuperacao.js';
+export * from './prontidao-local';
+export * from './agent-sop-edicao';
+export * from './conexoes-declarativas';
+
+export {
+  DemonstracaoSinteticaManifestoSchema,
+  DemonstracaoSinteticaFontesSchema,
+  DemonstracaoSinteticaReciboSchema,
+  DemonstracaoSinteticaResultadoSchema,
+  type DemonstracaoSinteticaManifesto,
+  type DemonstracaoSinteticaFontes,
+  type DemonstracaoSinteticaRecibo,
+  type DemonstracaoSinteticaResultado,
+} from './demonstracao-sintetica';
+
+export * from './procedimento-local';
+
+export * from './pauta-edicao-humana.js';
+
+export * from './contexto-movimento-explicito.js';
+export * from './agent-estado-humano';
+export * from './agenda-local';
+export * from './sessao-leitura-historica';
+export * from './onboarding-indice.js';
+
+export * from './procedimento-ferramenta-local';
+
+// O painel da operação da Root, que só a sessão da plataforma abre — ver o
+// cabeçalho de `operacao-painel.ts`.
+export * from './operacao-painel.js';

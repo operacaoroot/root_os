@@ -8,16 +8,64 @@ import {
 } from '@mktos/shared';
 import { LeadsService } from './leads.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
+import { ComercialExercicioService } from './comercial-exercicio.service';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 import { ApprovalGuard } from '../approvals/approval.guard';
 import { SensitiveWrite } from '../approvals/sensitive-write.decorator';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, AcessoAtualGuard)
 @Controller('leads')
 export class LeadsController {
-  constructor(private readonly svc: LeadsService) {}
+  constructor(private readonly svc: LeadsService, private readonly exercicio: ComercialExercicioService) {}
+
+  @Post('exercicio/entrada')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  entradaExercicio(@CurrentUser() user: JwtUser, @Body() body: unknown) {
+    return this.exercicio.entrada(user, body);
+  }
+
+  @Get('exercicio/entregas/:taskId')
+  @RequirePermissions('leads.ver', 'tarefas.ver')
+  origemDaEntrega(@CurrentUser() user: JwtUser, @Param('taskId') taskId: string) {
+    return this.exercicio.origemDaEntrega(user, taskId);
+  }
+
+  @Get(':id/exercicio')
+  @RequirePermissions('leads.ver')
+  lerExercicio(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.exercicio.ler(user, id);
+  }
+
+  @Post(':id/exercicio/acompanhamento')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  acompanharExercicio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.exercicio.acompanhar(user, id, body);
+  }
+
+  @Post(':id/exercicio/propostas')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar')
+  propostaExercicio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.exercicio.proposta(user, id, body);
+  }
+
+  @Post(':id/exercicio/aceites')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar', 'tarefas.ver')
+  aceitarExercicio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.exercicio.aceitar(user, id, body);
+  }
+
+  @Post(':id/exercicio/entrega')
+  @HttpCode(200)
+  @RequirePermissions('leads.editar', 'tarefas.ver', 'tarefas.editar')
+  entregaExercicio(@CurrentUser() user: JwtUser, @Param('id') id: string, @Body() body: unknown) {
+    return this.exercicio.entregar(user, id, body);
+  }
 
   @Get()
   @RequirePermissions('leads.ver')

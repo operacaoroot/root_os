@@ -28,10 +28,8 @@ import {
   TETO_CONVERSA,
   TETO_TAREFAS,
   condicoesDeParada,
-  condicoesDeResponsavel,
   corteDaConversa,
   ehDeOutraPessoa,
-  identidadesDe,
   motivosDaParada,
   trechoDoComentario,
   type EstadoDoEixo,
@@ -119,7 +117,6 @@ interface EuNoBanco {
   email: string;
   alcada: Alcada | null;
   decide: boolean;
-  identidades: string[];
 }
 
 export interface PedidoDaCaixa {
@@ -218,7 +215,7 @@ export class CaixaService {
         itens: tarefas.itens,
         truncado: tarefas.truncado,
         teto: TETO_TAREFAS,
-        identidades: eu?.identidades ?? [],
+        identidades: [],
         diasSemMovimento: DIAS_SEM_MOVIMENTO,
         horasPresa: HORAS_PRESA_COM_AGENTE,
       },
@@ -306,7 +303,6 @@ export class CaixaService {
       // desconhecido — as duas caem fora de "quem assina" sozinhas.
       alcada: alcadaDe(u.roles.map((r) => r.key)),
       decide: u.roles.some((r) => r.permissions.some((p) => p.key === DECIDIR_APROVACOES)),
-      identidades: identidadesDe({ name: u.name, email: u.email }),
     };
   }
 
@@ -492,7 +488,6 @@ export class CaixaService {
     if (!eu) return { estado: ESTADO_DO_EIXO.foraDaCasa, ...vazio };
     if (!entrada.podeVer) return { estado: ESTADO_DO_EIXO.semPermissao, ...vazio };
     if (!entrada.quadroLigado) return { estado: ESTADO_DO_EIXO.moduloDesligado, ...vazio };
-    if (eu.identidades.length === 0) return { estado: ESTADO_DO_EIXO.semIdentidade, ...vazio };
 
     const linhas = await this.prisma.workTask.findMany({
       where: {
@@ -503,7 +498,7 @@ export class CaixaService {
         // casar por nome é casar por português.
         status: { type: { not: 'closed' } },
         AND: [
-          { OR: condicoesDeResponsavel(eu.identidades) },
+          { assigneeUserId: eu.id },
           // Os MESMOS três cortes de `motivosDaParada`, no `WHERE` — filtrar em
           // memória depois do `take` esconderia a caixa de quem tem muito
           // trabalho em andamento, que é quem mais precisa dela.
@@ -596,16 +591,13 @@ export class CaixaService {
     if (!eu) return { estado: ESTADO_DO_EIXO.foraDaCasa, ...vazio };
     if (!entrada.podeVer) return { estado: ESTADO_DO_EIXO.semPermissao, ...vazio };
     if (!entrada.quadroLigado) return { estado: ESTADO_DO_EIXO.moduloDesligado, ...vazio };
-    if (eu.identidades.length === 0) return { estado: ESTADO_DO_EIXO.semIdentidade, ...vazio };
 
     const linhas = await this.prisma.workComment.findMany({
       where: {
         orgId,
         createdAt: { gte: corteDaConversa(agora) },
-        // A tarefa é minha, pelo mesmo casamento por nome do eixo de cima — e
-        // com `orgId` também aqui, porque `WorkComment.orgId` é derivado por
-        // gatilho e um dia pode divergir de um dado antigo.
-        task: { orgId, archived: false, OR: condicoesDeResponsavel(eu.identidades) },
+        // A conta e a empresa da tarefa são conferidas pelo mesmo vínculo da Caixa.
+        task: { orgId, archived: false, assigneeUserId: eu.id },
       },
       orderBy: { createdAt: 'desc' },
       take: TETO_CONVERSA + 1,
@@ -620,10 +612,8 @@ export class CaixaService {
     });
 
     /*
-     * O MEU PRÓPRIO COMENTÁRIO SAI EM MEMÓRIA, e não no `WHERE`, de propósito:
-     * o critério compara por id QUANDO HÁ ID e cai para o nome quando não há
-     * (comentário importado do ClickUp), e essa regra tem uma casa só
-     * (`ehDeOutraPessoa`). Escrevê-la no `WHERE` a duplicaria em SQL.
+     * O comentário próprio é reconhecido apenas por authorId.
+     * Texto importado sem ID não permite deduzir quem escreveu.
      *
      * O preço é o teto poder cortar depois da filtragem — daí `truncado` ser
      * medido pelo que o banco devolveu, que é a resposta conservadora: dizer

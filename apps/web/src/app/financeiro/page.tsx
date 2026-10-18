@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   FinanceSummary,
   FinanceAccountList,
@@ -16,15 +16,17 @@ import type {
   ContractList,
   GerarContratoResposta,
   Payables,
+  PontePayableRef,
   Conciliacao,
   Kpis,
   Cashflow,
 } from '@mktos/shared';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
+import { NovaInscricaoFinanceira } from './inscricoes/NovaInscricaoFinanceira';
 
 const brl = (n: number) =>
   n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -60,13 +62,24 @@ const inputCls =
   'rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
 
 export default function FinanceiroPage() {
+  const { token, user, ready, can } = useAuth();
+  if (!ready) return <p>Carregando sessão…</p>;
+  if (!token || !user) return <p>Entre na sua conta para abrir o Financeiro.</p>;
+  if (!can('financeiro.ver')) return <p>Seu acesso atual não permite abrir o Financeiro.</p>;
+  return <FinanceiroSessao key={user.id + ':' + token} />;
+}
+
+function FinanceiroSessao() {
   const { token, ready, can } = useAuth();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const canEdit = can('financeiro.editar');
   const canBank = can('financeiro.conciliar');
 
   const [tab, setTab] = useState<TabKey>('visao');
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [acessoPerdido, setAcessoPerdido] = useState(false);
 
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [accounts, setAccounts] = useState<FinanceAccountList | null>(null);
@@ -86,46 +99,53 @@ export default function FinanceiroPage() {
 
   const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
 
+  const readError = useCallback((e: unknown) => {
+    if (!active.current) return;
+    setError(typeof e === 'string' ? e : e instanceof Error ? e.message : 'Não foi possível concluir a operação no Financeiro.');
+    if (e instanceof ErroDaApi && [401, 403].includes(e.status)) setAcessoPerdido(true);
+  }, []);
+  const onMutationError = readError;
+
   const loadAll = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     setError(null);
-    apiGet<FinanceSummary>('/finance/summary', token).then(setSummary).catch((e) => setError(e.message));
-    apiGet<FinanceAccountList>('/finance/accounts', token).then(setAccounts).catch(() => {});
-    apiGet<FinanceCategoryList>('/finance/categories', token).then(setCategories).catch(() => {});
-    apiGet<BankConnectionList>('/finance/bank/connections', token).then(setBanks).catch(() => {});
-    apiGet<ChartAccountList>('/finance/chart-accounts', token).then(setChart).catch(() => {});
-    apiGet<PartnerList>('/finance/partners', token).then(setPartners).catch(() => {});
-    apiGet<Kpis>('/finance/kpis', token).then(setKpis).catch(() => {});
-    apiGet<Cashflow>('/finance/cashflow', token).then(setCashflow).catch(() => {});
-  }, [token]);
+    apiGet<FinanceSummary>('/finance/summary', token).then((r) => { if (active.current) setSummary(r); }).catch(readError);
+    apiGet<FinanceAccountList>('/finance/accounts', token).then((r) => { if (active.current) setAccounts(r); }).catch(() => {});
+    apiGet<FinanceCategoryList>('/finance/categories', token).then((r) => { if (active.current) setCategories(r); }).catch(() => {});
+    apiGet<BankConnectionList>('/finance/bank/connections', token).then((r) => { if (active.current) setBanks(r); }).catch(() => {});
+    apiGet<ChartAccountList>('/finance/chart-accounts', token).then((r) => { if (active.current) setChart(r); }).catch(() => {});
+    apiGet<PartnerList>('/finance/partners', token).then((r) => { if (active.current) setPartners(r); }).catch(() => {});
+    apiGet<Kpis>('/finance/kpis', token).then((r) => { if (active.current) setKpis(r); }).catch(() => {});
+    apiGet<Cashflow>('/finance/cashflow', token).then((r) => { if (active.current) setCashflow(r); }).catch(() => {});
+  }, [token, readError]);
 
   const loadApar = useCallback(() => {
-    if (!token) return;
-    apiGet<Payables>('/finance/payables', token).then(setPayables).catch((e) => setError(e.message));
-    apiGet<ContractList>('/finance/contracts', token).then(setContracts).catch(() => {});
-  }, [token]);
+    if (!token || !active.current) return;
+    apiGet<Payables>('/finance/payables', token).then((r) => { if (active.current) setPayables(r); }).catch(readError);
+    apiGet<ContractList>('/finance/contracts', token).then((r) => { if (active.current) setContracts(r); }).catch(() => {});
+  }, [token, readError]);
 
   const loadConcil = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     const q = concilAcc ? `?accountId=${concilAcc}` : '';
-    apiGet<Conciliacao>(`/finance/conciliacao${q}`, token).then(setConcil).catch((e) => setError(e.message));
-  }, [token, concilAcc]);
+    apiGet<Conciliacao>(`/finance/conciliacao${q}`, token).then((r) => { if (active.current) setConcil(r); }).catch(readError);
+  }, [token, concilAcc, readError]);
 
   const loadDre = useCallback(() => {
-    if (!token) return;
-    apiGet<Dre>(`/finance/dre?month=${dreMonth}`, token).then(setDre).catch((e) => setError(e.message));
-  }, [token, dreMonth]);
+    if (!token || !active.current) return;
+    apiGet<Dre>(`/finance/dre?month=${dreMonth}`, token).then((r) => { if (active.current) setDre(r); }).catch(readError);
+  }, [token, dreMonth, readError]);
 
   const loadTxs = useCallback(() => {
-    if (!token) return;
+    if (!token || !active.current) return;
     const p = new URLSearchParams();
     if (txFilter.status) p.set('status', txFilter.status);
     if (txFilter.type) p.set('type', txFilter.type);
     if (txFilter.accountId) p.set('accountId', txFilter.accountId);
     apiGet<FinanceTransactionList>(`/finance/transactions?${p.toString()}`, token)
-      .then(setTxs)
-      .catch((e) => setError(e.message));
-  }, [token, txFilter]);
+      .then((r) => { if (active.current) setTxs(r); })
+      .catch(readError);
+  }, [token, txFilter, readError]);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -153,10 +173,13 @@ export default function FinanceiroPage() {
   }, [ready, token, loadConcil]);
 
   const flash = (m: string) => {
+    if (!active.current) return;
     setMsg(m);
     setError(null);
-    setTimeout(() => setMsg(null), 4000);
+    setTimeout(() => { if (active.current) setMsg(null); }, 4000);
   };
+
+  if (acessoPerdido) return <p role="alert">{error ?? 'Seu acesso ao Financeiro precisa ser conferido novamente.'}</p>;
 
   return (
     <div className="space-y-6">
@@ -205,7 +228,7 @@ export default function FinanceiroPage() {
           canEdit={canEdit}
           token={token}
           onChange={() => { loadApar(); loadAll(); loadTxs(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
@@ -218,7 +241,7 @@ export default function FinanceiroPage() {
           canBank={canBank}
           token={token}
           onChange={() => { loadConcil(); loadAll(); loadApar(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
@@ -235,15 +258,15 @@ export default function FinanceiroPage() {
           filter={txFilter}
           setFilter={setTxFilter}
           onChange={() => { loadTxs(); loadAll(); loadDre(); loadApar(); }}
-          onError={setError}
+          onError={onMutationError}
           onFlash={flash}
         />
       )}
       {tab === 'contas' && (
-        <Contas accounts={accounts} canEdit={canEdit} token={token} onChange={loadAll} onError={setError} onFlash={flash} />
+        <Contas accounts={accounts} canEdit={canEdit} token={token} onChange={loadAll} onError={onMutationError} onFlash={flash} />
       )}
       {tab === 'bancos' && (
-        <Bancos banks={banks} accounts={accounts} canBank={canBank} token={token} onChange={loadAll} onError={setError} onFlash={flash} />
+        <Bancos banks={banks} accounts={accounts} canBank={canBank} token={token} onChange={loadAll} onError={onMutationError} onFlash={flash} />
       )}
     </div>
   );
@@ -463,7 +486,7 @@ function ConciliacaoView(props: {
   canBank: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { concil, accounts, accountId, setAccountId, canBank, token, onChange, onError, onFlash } = props;
@@ -474,12 +497,12 @@ function ConciliacaoView(props: {
     setBusy(true);
     apiPost<{ conciliados: number; sugestoes: number }>(`/finance/conciliacao/auto${accountId ? `?accountId=${accountId}` : ''}`, {}, token)
       .then((r) => { onFlash(`✅ ${r.conciliados} conciliado(s) automaticamente · ${r.sugestoes} sugestão(ões) restante(s).`); onChange(); })
-      .catch((e) => onError(e.message)).finally(() => setBusy(false));
+      .catch((e) => onError(e)).finally(() => setBusy(false));
   };
   const conciliar = (movimentoId: string, tituloId: string) => {
     if (!tituloId) { onError('Escolha um título para conciliar.'); return; }
     apiPost<{ score: number }>('/finance/conciliacao/match', { movimentoId, tituloId }, token)
-      .then((r) => { onFlash(`Conciliado (score ${r.score}).`); onChange(); }).catch((e) => onError(e.message));
+      .then((r) => { onFlash(`Conciliado (score ${r.score}).`); onChange(); }).catch((e) => onError(e));
   };
 
   const titulos = concil?.titulos ?? [];
@@ -568,7 +591,7 @@ function ApAr(props: {
   canEdit: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { payables, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
@@ -582,10 +605,10 @@ function ApAr(props: {
 
   const doApprove = (id: string, aprovar: boolean) =>
     apiPost(`/finance/transactions/${id}/approve`, { aprovar }, token)
-      .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e.message));
+      .then(() => { onFlash(aprovar ? 'Aprovado.' : 'Rejeitado.'); onChange(); }).catch((e) => onError(e));
   const baixar = (id: string) =>
     apiPatch(`/finance/transactions/${id}`, { status: 'realizado' }, token)
-      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e.message));
+      .then(() => { onFlash('Baixado (realizado).'); onChange(); }).catch((e) => onError(e));
   // O vencimento vai no pedido: repetir o mesmo devolve o lançamento já gravado
   // (`replayed`) em vez de gerar a parcela seguinte.
   const gerar = (c: Contract) => {
@@ -597,14 +620,14 @@ function ApAr(props: {
           : 'Lançamento gerado a partir do contrato.');
         onChange();
       })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setGerando(null));
   };
   const addPartner = () => {
     if (!pForm.razaoSocial) { onError('Informe a razão social.'); return; }
     apiPost('/finance/partners', pForm, token)
       .then(() => { onFlash('Parceiro criado.'); setPForm({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
   const addContract = () => {
     if (!cForm.descricao || !cForm.valor || !cForm.accountId) { onError('Contrato: descrição, valor e conta bancária.'); return; }
@@ -615,7 +638,7 @@ function ApAr(props: {
       chartAccountId: cForm.chartAccountId || undefined, dataInicio: cForm.dataInicio,
     }, token)
       .then(() => { onFlash('Contrato criado.'); setCForm({ ...cForm, descricao: '', valor: '' }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   const t = payables?.totals;
@@ -640,12 +663,14 @@ function ApAr(props: {
               <th className="px-3 py-2">Vencimento</th>
               <th className="px-3 py-2 text-right">Valor</th>
               <th className="px-3 py-2">Aprovação</th>
-              {canEdit && <th className="px-3 py-2" />}
+              <th className="px-3 py-2">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {payables?.items.length === 0 && <tr><td colSpan={canEdit ? 7 : 6} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
-            {payables?.items.map((r) => (
+            {payables?.items.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
+            {payables?.items.map((row) => {
+              const r = row as typeof row & Partial<PontePayableRef>;
+              return (
               <tr key={r.id} className="border-t border-border">
                 <td className="px-3 py-2"><span className={r.tipo === 'saida' ? 'text-bad' : 'text-good'}>{r.tipo === 'saida' ? 'pagar' : 'receber'}</span></td>
                 <td className="px-3 py-2">{r.description}{r.chartCodigo && <span className="ml-1 text-[10px] text-muted">[{r.chartCodigo}]</span>}</td>
@@ -653,11 +678,15 @@ function ApAr(props: {
                 <td className="px-3 py-2 whitespace-nowrap">
                   {dateBR(r.dueDate)}{r.vencido && <span className="ml-1 text-[10px] text-warn">({r.diasAtraso}d atraso)</span>}
                 </td>
-                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{brl(r.amount)}</td>
+                <td className={`px-3 py-2 text-right font-medium ${r.tipo === 'saida' ? 'text-bad' : 'text-good'}`}>{r.exercicioFinanceiro === true || r.exercicioComercial === true ? <span className="text-xs text-muted">Conferir valor e moeda no detalhe</span> : brl(r.amount)}</td>
                 <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${APPROVAL_CLS[r.approvalStatus] ?? ''}`}>{r.approvalStatus.replace('_', ' ')}</span></td>
-                {canEdit && (
+                {(canEdit || r.exercicioFinanceiro === true || r.exercicioComercial === true) && (
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {r.approvalStatus === 'aguardando' ? (
+                    {r.exercicioComercial === true ? (
+                      r.exercicioComercialHref === '/finance/exercicio/comercial/obrigacoes/' + r.id ? <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id) + '?origem=comercial'} className="text-brand underline">Conferir obrigação comercial</a> : <span className="text-xs text-muted">Vínculo comercial indisponível</span>
+                    ) : r.exercicioFinanceiro === true ? (
+                      <a href={'/financeiro/obrigacoes/' + encodeURIComponent(r.id)} className="text-brand underline">Conferir obrigação</a>
+                    ) : r.approvalStatus === 'aguardando' ? (
                       <>
                         <button onClick={() => doApprove(r.id, true)} className="rounded border border-border px-2 py-0.5 text-[11px] text-good hover:bg-surface-2">Aprovar</button>
                         <button onClick={() => doApprove(r.id, false)} className="ml-1 rounded border border-border px-2 py-0.5 text-[11px] text-bad hover:bg-surface-2">Rejeitar</button>
@@ -667,11 +696,14 @@ function ApAr(props: {
                     ) : null}
                   </td>
                 )}
+                {!canEdit && r.exercicioFinanceiro !== true && r.exercicioComercial !== true && <td />}
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
+
+      {canEdit && <NovaInscricaoFinanceira contracts={contracts} onAtualizar={onChange} onError={onError} />}
 
       {/* Contratos recorrentes */}
       <div className="rounded-xl border border-border bg-surface p-4">
@@ -754,7 +786,7 @@ function Lancamentos(props: {
   filter: { status?: string; type?: string; accountId?: string };
   setFilter: (f: { status?: string; type?: string; accountId?: string }) => void;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { txs, accounts, categories, chart, partners, canEdit, token, filter, setFilter, onChange, onError, onFlash } = props;
@@ -788,11 +820,11 @@ function Lancamentos(props: {
         setOpen(false);
         onChange();
       })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   const setStatus = (id: string, status: FinanceTxStatusValue) =>
-    apiPatch(`/finance/transactions/${id}`, { status }, token).then(() => { onFlash('Atualizado.'); onChange(); }).catch((e) => onError(e.message));
+    apiPatch(`/finance/transactions/${id}`, { status }, token).then(() => { onFlash('Atualizado.'); onChange(); }).catch((e) => onError(e));
 
   return (
     <div className="space-y-4">
@@ -915,7 +947,7 @@ function Contas(props: {
   canEdit: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { accounts, canEdit, token, onChange, onError, onFlash } = props;
@@ -929,7 +961,7 @@ function Contas(props: {
       openingBalance: form.openingBalance ? Number(form.openingBalance) : undefined,
     }, token)
       .then(() => { onFlash('✅ Conta criada.'); setForm({ name: '', type: 'corrente', institution: '', openingBalance: '' }); onChange(); })
-      .catch((e) => onError(e.message));
+      .catch((e) => onError(e));
   };
 
   return (
@@ -984,7 +1016,7 @@ function Bancos(props: {
   canBank: boolean;
   token: string | null;
   onChange: () => void;
-  onError: (e: string) => void;
+  onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
   const { banks, accounts, canBank, token, onChange, onError, onFlash } = props;
@@ -998,7 +1030,7 @@ function Bancos(props: {
     file.text()
       .then((content) => apiPost<{ imported: number; skipped: number }>('/finance/import/ofx', { accountId: ofxAccount, content }, token))
       .then((r) => { onFlash(`✅ OFX: ${r.imported} importado(s), ${r.skipped} já existente(s).`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1017,13 +1049,13 @@ function Bancos(props: {
             await apiPost('/finance/bank/pluggy/item', { itemId: id }, token);
             onFlash('✅ Banco conectado e sincronizado.');
             onChange();
-          } catch (e) { onError((e as Error).message); }
+          } catch (e) { onError(e); }
         },
         onError: (err: any) => onError(`Pluggy: ${err?.message ?? 'erro na conexão'}`),
       });
       widget.init();
     } catch (e) {
-      onError((e as Error).message);
+      onError(e);
     } finally {
       setBusy(false);
     }
@@ -1034,7 +1066,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost('/finance/bank/pluggy/item', { itemId }, token)
       .then(() => { onFlash('✅ Item registrado e sincronizado.'); setItemId(''); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1042,7 +1074,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost<{ accounts: number; transactions: number }>(`/finance/bank/connections/${id}/sync`, {}, token)
       .then((r) => { onFlash(`✅ Sync: ${r.accounts} conta(s), ${r.transactions} lançamento(s).`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 
@@ -1050,7 +1082,7 @@ function Bancos(props: {
     setBusy(true);
     apiPost<{ transactions: number; receivables: number }>('/finance/bank/asaas/connect', {}, token)
       .then((r) => { onFlash(`✅ Asaas conectado: ${r.transactions} lançamento(s), ${r.receivables} a receber.`); onChange(); })
-      .catch((e) => onError(e.message))
+      .catch((e) => onError(e))
       .finally(() => setBusy(false));
   };
 

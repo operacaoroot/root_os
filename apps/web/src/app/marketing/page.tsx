@@ -28,6 +28,7 @@ interface Destino {
 }
 
 const DESTINOS: Destino[] = [
+  { titulo: "Contas e preparação", o_que: "Dono, operadores, versão aprovada e horário para cada destino.", href: "/marketing/preparacao", onde: "Marketing" },
   {
     titulo: 'Marca e pilares',
     o_que: 'Quem a casa é e sobre o que fala. Entra nos pedidos que a pauta faz à IA, ao lado da voz.',
@@ -73,19 +74,25 @@ const DESTINOS: Destino[] = [
 ];
 
 export default function MarketingPage() {
-  const { ready } = useAuth();
+  const { ready, can } = useAuth();
   if (!ready) return <p className="text-muted">Carregando…</p>;
+  if (!can('pauta.ver')) return <p className="text-muted">Acesso insuficiente para Marketing.</p>;
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold">Marketing</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          O que decide o que a casa publica. A Pauta é a máquina que publica; este bloco é o que
-          alimenta ela — a marca, os pilares, as ideias, a estratégia do mês e a leitura do que
-          rendeu.
+          Marca, ideias, planejamento e preparação das contas. O preparo de uma versão fica salvo;
+          a publicação depende da integração e da autorização da ação.
         </p>
       </div>
+
+      {can('tarefas.ver') && <section aria-label="Percurso da tarefa ao preparo" className="space-y-3 rounded-xl border border-border bg-surface p-4">
+        <h2 className="font-medium">Da tarefa ao preparo</h2>
+        <p className="text-sm text-muted">Em Trabalho, abra a tarefa e escolha “Abrir material e Produção”. Confira a versão e a aprovação; depois use “Preparar conta e horário” para levar a origem exata ao destino.</p>
+        <div className="flex flex-wrap gap-3 text-sm"><Link href="/trabalho" className="text-brand underline">Escolher tarefa em Trabalho</Link><Link href="/marketing/preparacao" className="text-brand underline">Conferir contas e preparos</Link></div>
+      </section>}
 
       <div className="grid gap-3 md:grid-cols-2">
         {DESTINOS.map((d) => {

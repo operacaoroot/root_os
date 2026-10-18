@@ -37,10 +37,10 @@ import {
  *   · a SONDA DE SAÚDE, que faz `SELECT 1` e não toca tabela nenhuma
  *     (`src/health/health.controller.ts`).
  *
- * DESSES OITO, UM SÓ DECLARA HOJE (a reindexação do Obsidian). Os outros sete
- * são arquivos de outros módulos e ainda não foram ligados. Isso NÃO é uma nota
- * de rodapé: com o papel restrito e sem eles, o login devolve zero linha e vira
- * "credenciais inválidas" para todo mundo, calado. Por isso as duas listas
+ * Os chamadores ligados estão registrados abaixo. Financeiro e callback Bio
+ * continuam pendentes, e a lista de caminhos exigidos permanece completa.
+ * A falta de contexto sob papel restrito pode devolver zero linha em vez de
+ * lançar erro. Por isso as duas listas
  * abaixo (`CHAMADORES_DE_PLATAFORMA`, o que já declara;
  * `CAMINHOS_DE_PLATAFORMA_EXIGIDOS`, o que precisa declarar) são COMPARADAS NO
  * ARRANQUE: conexão restrita com a lista incompleta **não sobe**
@@ -139,6 +139,13 @@ export const CHAMADORES_DE_PLATAFORMA: readonly ChamadorDePlataforma[] = [
       'casa pelo slug para saber em que empresa indexar. Da empresa encontrada em diante o ' +
       'trabalho inteiro roda dentro dela.',
   },
+  { arquivo: 'src/auth/auth.service.ts', porQue: 'descobre o usuário por email; emissão e escrituras seguem na empresa encontrada.' },
+  { arquivo: 'src/auth/google-login.service.ts', porQue: 'descobre usuário e org; criação de usuário e papel seguem na org resolvida.' },
+  { arquivo: 'src/tenants/provisionar.ts', porQue: 'acharOrg descobre a empresa por slug antes de criar ou reconfigurar.' },
+  { arquivo: 'src/integrations/clickup.service.ts', porQue: 'o cron descobre root por slug antes do sync com contexto próprio.' },
+  { arquivo: 'src/policy/policy.service.ts', porQue: 'lê a base e enumera orgId de versões ativas; cada versão própria é carregada na org.' },
+  { arquivo: 'src/health/health.controller.ts', porQue: 'SELECT 1 declara contexto sem acessar tabela de cliente.' },
+  { arquivo: 'src/bio/bio-sync.service.ts', porQue: 'o cron enumera somente Org.id; conexões e desafios são processados por empresa.' },
 ] as const;
 
 /**
@@ -285,4 +292,21 @@ export async function comContextoDePlataforma<T>(fn: () => PromiseLike<T>): Prom
   const jaResolvida = typeof atual === 'string' && atual.trim() !== '';
   if (jaResolvida) return await fn();
   return comContexto(comEmpresa(ORG_PLATAFORMA), async () => await fn());
+}
+
+/** Entra na empresa descoberta sem reabrir uma empresa já resolvida. */
+export async function comContextoDaEmpresaResolvida<T>(
+  orgId: string, fn: () => PromiseLike<T>,
+  dados: Partial<Pick<ContextoExecucao, 'actorId' | 'actorType' | 'origem' | 'correlationId'>> = {},
+): Promise<T> {
+  const atual = contextoAtual();
+  if (!orgId.trim() || ehContextoDePlataforma(orgId)) throw new Error('Empresa da operação não foi resolvida.');
+  const anterior = atual?.orgId;
+  if (typeof anterior === 'string' && anterior.trim() && !ehContextoDePlataforma(anterior) && anterior !== orgId) {
+    throw new Error('A operação não pode mudar a empresa já resolvida.');
+  }
+  return comContexto({ ...atual, ...dados, orgId,
+    correlationId: dados.correlationId ?? atual?.correlationId ?? novaCorrelacao('empresa'),
+    origem: dados.origem ?? atual?.origem ?? 'cron',
+  }, async () => await fn());
 }

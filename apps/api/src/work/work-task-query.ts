@@ -6,6 +6,8 @@ export interface WorkTaskQuery {
   listExternalIds?: string[];
   statusId?: string;
   assignee?: string;
+  assigneeUserId?: string;
+  semResponsavel?: boolean;
   tagId?: string;
   q?: string;
   opcao?: string;
@@ -65,6 +67,19 @@ export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery 
   if ([listId, listIds, listExternalIds].filter((value) => value !== undefined).length > 1) {
     throw new BadRequestException('Use somente um filtro de lista por consulta');
   }
+  const assignee = texto(raw, 'assignee');
+  const assigneeUserId = texto(raw, 'assigneeUserId');
+  if (assigneeUserId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assigneeUserId)) {
+    throw new BadRequestException('assigneeUserId deve ser UUID');
+  }
+  const semResponsavelRaw = texto(raw, 'semResponsavel');
+  if (semResponsavelRaw !== undefined && semResponsavelRaw !== '1') {
+    throw new BadRequestException('semResponsavel deve ser 1');
+  }
+  const semResponsavel = semResponsavelRaw === '1';
+  if ([assignee, assigneeUserId, semResponsavel ? true : undefined].filter((v) => v !== undefined).length > 1) {
+    throw new BadRequestException('Use somente um filtro de responsável por consulta');
+  }
   const dueFrom = instante(raw, 'dueFrom');
   const dueTo = instante(raw, 'dueTo');
   if (dueFrom && dueTo && dueFrom >= dueTo) {
@@ -75,7 +90,7 @@ export function parseWorkTaskQuery(raw: Record<string, unknown>): WorkTaskQuery 
   if ((page - 1) * limit > 10_000_000) throw new BadRequestException('Página fora do limite');
   return {
     listId, listIds, listExternalIds,
-    statusId: texto(raw, 'statusId'), assignee: texto(raw, 'assignee'),
+    statusId: texto(raw, 'statusId'), assignee, assigneeUserId, semResponsavel,
     tagId: texto(raw, 'tagId'), q: texto(raw, 'q'), opcao: texto(raw, 'opcao'),
     arquivadas: raw.arquivadas === '1' || raw.arquivadas === 'true',
     dueFrom, dueTo, page, limit,

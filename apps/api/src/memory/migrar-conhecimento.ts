@@ -1,3 +1,12 @@
+// O acervo nativo exclui todo pacote protegido e onboarding legado antes de contar ou copiar.
+function indiceNativo(alias = ''): string {
+  const p = alias ? `${alias}.` : '';
+  return `${p}"mirrorOrigin" IS NULL AND ${p}"canonicalItemId" IS NULL AND ${p}"canonicalVersionId" IS NULL
+    AND ${p}"canonicalVersion" IS NULL AND ${p}"canonicalKey" IS NULL AND ${p}"canonicalSourceType" IS NULL
+    AND ${p}"canonicalSourceRef" IS NULL AND ${p}"canonicalContentHash" IS NULL
+    AND (${p}folder IS NULL OR ${p}folder <> 'onboarding') AND ${p}path NOT LIKE 'onboarding/%'`;
+}
+
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 import { chaveDaVault, hashDoCorpo, PREFIXO_DA_VAULT, SEM_EVENTO } from './procedencia';
@@ -129,12 +138,13 @@ export async function contarVetores(
   const filtro = orgId ? ' AND "orgId" = $1' : '';
   const args = orgId ? [orgId] : [];
   const origem = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
-    `SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE embedding IS NOT NULL${filtro}`,
+    `SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE embedding IS NOT NULL AND ${indiceNativo()}${filtro}`,
     ...args,
   );
   const destino = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
     `SELECT count(*)::bigint AS n FROM "ContextItem"
-      WHERE embedding IS NOT NULL AND "sourceType" = 'vault'${filtro}`,
+      WHERE embedding IS NOT NULL AND "sourceType" = 'vault'
+        AND EXISTS (SELECT 1 FROM "KnowledgeNote" kn WHERE kn."orgId"="ContextItem"."orgId" AND kn.path="ContextItem"."sourceRef" AND ${indiceNativo('kn')})${filtro}`,
     ...args,
   );
   return { origem: Number(origem[0]?.n ?? 0), destino: Number(destino[0]?.n ?? 0) };
@@ -171,7 +181,7 @@ export async function migrarConhecimentoParaAMemoria(
   const notas = await prisma.$queryRawUnsafe<NotaDaOrigem[]>(
     `SELECT id, "orgId", path, title, content, tags, "fileTime"
        FROM "KnowledgeNote"
-      ${opcoes.orgId ? 'WHERE "orgId" = $1' : ''}
+      WHERE ${indiceNativo()}${opcoes.orgId ? ' AND "orgId" = $1' : ''}
       ORDER BY "orgId", path`,
     ...(opcoes.orgId ? [opcoes.orgId] : []),
   );
@@ -219,7 +229,7 @@ export async function migrarConhecimentoParaAMemoria(
            SELECT $1, $2, $3, 'nota', $4, $5, $6, 'vault', $7,
                   1, kn.embedding, $8, 1, $9, $10, now(), $10
              FROM "KnowledgeNote" kn
-            WHERE kn.id = $11
+            WHERE ${indiceNativo("kn")} AND kn.id = $11 AND kn."orgId"=$2
            ON CONFLICT ("orgId", chave) DO NOTHING`,
           itemId,
           nota.orgId,
@@ -365,6 +375,7 @@ export async function desfazerMigracao(
    */
   const nasceuNaMigracao = `
       ci."sourceType" = 'vault'
+      AND EXISTS (SELECT 1 FROM "KnowledgeNote" kn WHERE kn."orgId"=ci."orgId" AND kn.path=ci."sourceRef" AND ${indiceNativo('kn')})
       AND ci.chave LIKE '${PREFIXO_DA_VAULT}%'
       AND ci.versao = 1
       AND (SELECT count(*) FROM "ContextItemVersion" v WHERE v."itemId" = ci.id) = 1
@@ -376,7 +387,8 @@ export async function desfazerMigracao(
            AND v."eventoSeq" IS NULL
       )${filtro}`;
 
-  const daVault = `ci."sourceType" = 'vault' AND ci.chave LIKE '${PREFIXO_DA_VAULT}%'${filtro}`;
+  const daVault = `ci."sourceType" = 'vault' AND ci.chave LIKE '${PREFIXO_DA_VAULT}%'
+    AND EXISTS (SELECT 1 FROM "KnowledgeNote" kn WHERE kn."orgId"=ci."orgId" AND kn.path=ci."sourceRef" AND ${indiceNativo('kn')})${filtro}`;
 
   const [alvo, total] = await Promise.all([
     prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
@@ -421,12 +433,13 @@ async function contarVetoresNaTransacao(
   const filtro = orgId ? ' AND "orgId" = $1' : '';
   const args = orgId ? [orgId] : [];
   const origem = await tx.$queryRawUnsafe<Array<{ n: bigint }>>(
-    `SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE embedding IS NOT NULL${filtro}`,
+    `SELECT count(*)::bigint AS n FROM "KnowledgeNote" WHERE embedding IS NOT NULL AND ${indiceNativo()}${filtro}`,
     ...args,
   );
   const destino = await tx.$queryRawUnsafe<Array<{ n: bigint }>>(
     `SELECT count(*)::bigint AS n FROM "ContextItem"
-      WHERE embedding IS NOT NULL AND "sourceType" = 'vault'${filtro}`,
+      WHERE embedding IS NOT NULL AND "sourceType" = 'vault'
+        AND EXISTS (SELECT 1 FROM "KnowledgeNote" kn WHERE kn."orgId"="ContextItem"."orgId" AND kn.path="ContextItem"."sourceRef" AND ${indiceNativo('kn')})${filtro}`,
     ...args,
   );
   return { origem: Number(origem[0]?.n ?? 0), destino: Number(destino[0]?.n ?? 0) };

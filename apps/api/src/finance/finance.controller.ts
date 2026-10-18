@@ -21,10 +21,11 @@ import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
+import { AcessoAtualGuard } from '../memory/acesso-atual.guard';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser, JwtUser } from '../auth/current-user.decorator';
 
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard, AcessoAtualGuard)
 @Controller('finance')
 export class FinanceController {
   constructor(
@@ -132,7 +133,7 @@ export class FinanceController {
   @Get('payables')
   @RequirePermissions('financeiro.ver')
   payables(@CurrentUser() user: JwtUser, @Query('tipo') tipo?: string) {
-    return this.apr.payables(user.orgId, tipo);
+    return this.apr.payables(user.orgId, tipo, user.sub);
   }
 
   @Post('transactions/:id/approve')

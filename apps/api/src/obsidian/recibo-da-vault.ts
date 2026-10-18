@@ -74,6 +74,8 @@ export interface ReciboDaVault {
   indexacao: { gravadas: number; preservadas: number; espelhoDoOnboardingPreservado: number | null } | null;
   vetorizacao: { pedidos: number; comVetor: number; semVetor: number; descricao: string } | null;
   projecao: (ResumoDaProjecao & { falhou: string | null }) | null;
+  /** Captura comum bloqueada, sem indicar identidade de outra fonte. */
+  movimentoPendente?: boolean;
   /** O erro que interrompeu a volta, se houve. */
   falha: string | null;
 }
@@ -84,6 +86,7 @@ export function resultadoDaVolta(r: ReciboDaVault): { resultado: ResultadoDaVolt
   const parcial: string[] = [];
 
   const rastreamentoOk = !('rastreamento' in r.descoberta) || r.descoberta.rastreamento === 'ok';
+  if (r.movimentoPendente) falhou.push('Existe um movimento de fonte pendente nesta coleção; índice e projeção preservados.');
   if (r.falha) falhou.push(r.falha);
   if (!rastreamentoOk && 'rastreamento' in r.descoberta) {
     falhou.push(`rastreamento não verificável: ${r.descoberta.rastreamento}`);
@@ -139,6 +142,7 @@ export function assinaturaDoRecibo(r: ReciboDaVault, resultado: { resultado: Res
   const m = 'commit' in r.montante ? r.montante : null;
   const estado = {
     colecao: r.colecao,
+    movimentoPendente: r.movimentoPendente === true,
     fonte: r.fonte,
     commit: m?.commit ?? null,
     remotoNaBusca: m?.remotoNaBusca ?? null,

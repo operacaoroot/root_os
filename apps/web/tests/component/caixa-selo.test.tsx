@@ -30,6 +30,8 @@ let CAIXA: CaixaContextValue = {
   recarregar: () => {},
 };
 
+vi.mock('@/lib/plataforma', () => ({ useEhPlataforma: () => false }));
+
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({
     token: 'tok',

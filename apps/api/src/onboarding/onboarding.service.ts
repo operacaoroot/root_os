@@ -1,4 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EspelhoOnboardingFonteSchema, EspelhoOnboardingObservacaoSchema, type EspelhoOnboardingFonte, type EspelhoOnboardingObservacao } from '@mktos/shared';
+import { espelharVersoesEscolhidasNoIndice, type FonteFisicaEscolhidaDoOnboarding } from './indice-protegido';
+import { OnboardingTemaHumanoPainelSchema, OnboardingRespostaHumanaResultadoSchema, normalizarRespostaHumanaDaCarga, type OnboardingTemaHumanoPainel, type OnboardingRespostaHumanaInput, type OnboardingRespostaHumanaResultado } from '@mktos/shared';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, SessionCanal } from '@prisma/client';
 
 import { AgentRuntime } from '../agents/agent-runtime.service';
@@ -7,6 +10,7 @@ import {
   SLUG_DO_ASSISTENTE,
   TEMAS_DA_CARGA,
   chaveDoTema,
+  temaPorId,
   precisaSemear,
   semearRoster,
   type ResumoDoRoster,
@@ -14,7 +18,7 @@ import {
 import { AuditService } from '../audit/audit.service';
 import { comContexto, contextoAtual, novaCorrelacao } from '../common/contexto-execucao';
 import { EventLogService } from '../gateway/event-log.service';
-import { MemoriaService } from '../memory/memoria.service';
+import { MemoriaService, type LeitorFisicoDaDerivacao, type DescritorFisicoDaFonte, type PlanoInternoDeFontesDaDerivacao, type VersaoAplicadaDaDerivacao } from '../memory/memoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvisionamentoService } from '../tenants/provisionar.service';
 import {
@@ -25,6 +29,7 @@ import {
 import {
   estadoDaCarga,
   notaDoTema,
+  normalizar,
   type EstadoDaCarga,
   type NotaDaCarga,
   type RespostaGravada,
@@ -272,7 +277,7 @@ export class OnboardingService {
        * mesma pergunta para sempre, e o tema pendente para sempre. O conserto
        * está em `responder`: quem responde um tema arquivado o RESTAURA.
        */
-      where: { orgId, chave: { in: chaves }, arquivadoEm: null },
+      where: { orgId, chave: { in: chaves }, arquivadoEm: null, acessoRestrito: false },
       select: { chave: true, body: true, versao: true },
     });
     const gravadas: RespostaGravada[] = notas.map((n) => ({
@@ -298,6 +303,29 @@ export class OnboardingService {
    * o caminho é `alterar`, que produz uma versão nova com motivo próprio
    * (RF-M-01). É o que faz a carga poder ser reaberta sem sujar a memória.
    */
+
+  async temaHumano(orgId: string, actorId: string, temaId: string): Promise<OnboardingTemaHumanoPainel> {
+    const tema = temaPorId(temaId); if (!tema) throw new BadRequestException('Tema desconhecido.');
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'tema_carga', tema: temaId });
+    const n = r.notas.tema;
+    const carga = estadoDaCarga(n && !n.arquivadoEm ? [{ temaId, corpo: n.body, versao: n.versao }] : []);
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'tema_carga', tema: temaId }, r);
+    return OnboardingTemaHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, tema: temaId, rotulo: { titulo: tema.titulo, pergunta: tema.pergunta }, destino: r.destinos.tema,
+      usoNaCarga: { contaComoRespondido: carga.respondidos.includes(temaId), precisaAprofundar: carga.proxima?.temaId === temaId && carga.proxima.modo === 'aprofundar' } });
+  }
+  async responderHumano(orgId: string, actorId: string, entrada: OnboardingRespostaHumanaInput): Promise<OnboardingRespostaHumanaResultado> {
+    const nota = notaDoTema(entrada.tema, entrada.resposta);
+    const normalizada = normalizar(entrada.resposta);
+    if (nota.corpo !== normalizada || normalizada !== normalizarRespostaHumanaDaCarga(entrada.resposta)) {
+      throw new BadRequestException('A resposta tem no máximo 4.000 pontos de código. Encurte o texto antes de salvar.');
+    }
+    const resultado = await this.memoria.gravarTemaHumano(orgId, actorId, entrada.tema, entrada,
+      { title: nota.titulo, body: nota.corpo, kind: nota.kind, tags: nota.tags, sourceType: nota.sourceType,
+        sourceRef: nota.sourceRef, motivo: `${nota.motivo} (resposta revista)` });
+    return OnboardingRespostaHumanaResultadoSchema.parse({ resultado, tema: entrada.tema, estado: null, espelho: 'nao_conferido' });
+  }
+
   async responder(
     orgId: string,
     temaId: string,
@@ -413,6 +441,79 @@ export class OnboardingService {
    * Idempotente: rodar de novo reescreve o retrato (versão nova da mesma nota),
    * nunca um segundo retrato. É o mesmo princípio da chave estável dos temas.
    */
+  async fecharHumano(orgId: string, actorId: string): Promise<Retrato & {
+    notaId: string; versao: number; versaoAplicada: VersaoAplicadaDaDerivacao;
+    fontesEscolhidas: EspelhoOnboardingFonte[]; espelho: EspelhoOnboardingObservacao[];
+  }> {
+    const ctx = contextoAtual();
+    if (!ctx || ctx.actorType !== 'user' || ctx.orgId !== orgId || ctx.actorId !== actorId || !ctx.correlationId)
+      throw new ForbiddenException('Acesso insuficiente.');
+    const identidade = { tipo: 'humano' as const, actorId, correlationId: ctx.correlationId };
+    const chaves = TEMAS_DA_CARGA.map((t) => chaveDoTema(t.id));
+    const lerPopulacao = async (tx: Prisma.TransactionClient, ler: LeitorFisicoDaDerivacao, keys: readonly string[]) => {
+      if (JSON.stringify(keys) !== JSON.stringify(chaves)) throw new ConflictException('A seleção da carga mudou.');
+      await tx.$queryRaw`SELECT id FROM "Org" WHERE id=${orgId} FOR SHARE`;
+      const empresa = await tx.org.findFirst({ where: { id: orgId, isActive: true }, select: { id: true, name: true, slug: true } });
+      if (!empresa) throw new ForbiddenException('Acesso insuficiente.');
+      const temas: DescritorFisicoDaFonte[] = [];
+      for (const chave of keys) {
+        const f = await ler({ chave });
+        if (f.estado === 'existente' && (f.nota.arquivadoEm || f.nota.acessoRestrito || !['operador', 'promocao'].includes(f.nota.sourceType)))
+          throw new ConflictException('Há uma fonte arquivada, restrita ou de outra origem na carga. Confira antes de fechar.');
+        temas.push(f);
+      }
+      return { empresa, temas };
+    };
+    type Material = Awaited<ReturnType<typeof lerPopulacao>>;
+    const plano: PlanoInternoDeFontesDaDerivacao<Material, { chaves: string[] }> = {
+      observar: async (tx, ler) => {
+        const material = await lerPopulacao(tx, ler, chaves);
+        return { material, selecao: { chaves: [...chaves] }, descritores: material };
+      },
+      reconferir: async (tx, ler, selecao) => {
+        const material = await lerPopulacao(tx, ler, selecao.chaves);
+        return { material, descritores: material };
+      },
+    };
+    const observacao = await this.prisma.$transaction((tx) => this.memoria.observarDestinoDaDerivacaoNoTx(tx, orgId,
+      identidade, { tipo: 'A4-ONBOARDING-FECHAR' }, plano), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    const presentes = observacao.material.temas.flatMap((f) => f.estado === 'existente' ? [f] : []);
+    const retrato = montarRetrato(presentes.map((f) => ({ id: f.nota.id, chave: f.chave, titulo: f.versao.title,
+      corpo: f.versao.body, procedencia: f.versao.sourceRef ? `${f.versao.sourceType}:${f.versao.sourceRef}` : f.versao.sourceType,
+      versao: f.versao.versao })), { nome: observacao.material.empresa.name, slug: observacao.material.empresa.slug });
+    const dados = retrato.nota;
+    if (!dados) throw new RetratoSemFonteError();
+    const escolhidas: FonteFisicaEscolhidaDoOnboarding[] = presentes.map((f) => ({ orgId, itemId: f.nota.id,
+      versionId: f.versao.id, versao: f.versao.versao, chave: f.chave, kind: f.versao.kind, title: f.versao.title,
+      body: f.versao.body, tags: [...f.nota.tags], sourceType: f.versao.sourceType, sourceRef: f.versao.sourceRef, contentHash: f.versao.contentHash }));
+    const compromisso = await this.prisma.$transaction(async (tx) => {
+      const c = await this.memoria.aplicarDerivacaoCondicionadaNoTx(tx, observacao.capsula, { title: dados.titulo,
+        body: dados.corpo, kind: dados.kind, tags: dados.tags, sourceType: dados.sourceType, sourceRef: dados.sourceRef, motivo: `${dados.motivo} (relido)` });
+      const n = await tx.contextItem.findFirst({ where: { orgId, id: c.aplicada.itemId } });
+      if (!n || n.versao !== c.aplicada.versao || n.body !== c.aplicada.body || n.title !== c.aplicada.title
+        || n.contentHash !== c.aplicada.contentHash || n.chave !== c.aplicada.chave || n.kind !== c.aplicada.kind
+        || n.sourceType !== c.aplicada.sourceType || n.sourceRef !== c.aplicada.sourceRef || n.arquivadoEm || n.acessoRestrito) throw new ConflictException('O retrato aplicado não pôde ser conferido.');
+      escolhidas.push({ ...c.aplicada, tags: [...n.tags] });
+      return c;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    // O core já terminou. O índice é uma etapa distinta, sem restaurar ou adotar uma versão nova.
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    let espelho: EspelhoOnboardingObservacao[];
+    try { espelho = await espelharVersoesEscolhidasNoIndice(this.prisma, orgId, actorId, escolhidas); }
+    catch (e) {
+      if (e instanceof ForbiddenException) throw e;
+      espelho = [EspelhoOnboardingObservacaoSchema.parse({ estado: 'falhou', fonte: null, indice: null, observadoEm: new Date().toISOString() })];
+    }
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    await this.marco(orgId, 'onboarding.contexto.carregado', { temas: retrato.fontes.map((f) => f.ref), pendentes: retrato.pendentes,
+      fontes: retrato.fontes.length, notaId: compromisso.aplicada.itemId, versao: compromisso.aplicada.versao });
+    await this.memoria.concluirEntregaDaDerivacao(compromisso);
+    const fontesEscolhidas = escolhidas.map((f) => EspelhoOnboardingFonteSchema.parse({ tipo: 'onboarding', orgId, itemId: f.itemId,
+      versionId: f.versionId, versao: f.versao, chave: f.chave, sourceType: f.sourceType, sourceRef: f.sourceRef, contentHash: f.contentHash }));
+    return { ...retrato, notaId: compromisso.aplicada.itemId, versao: compromisso.aplicada.versao,
+      versaoAplicada: compromisso.aplicada, fontesEscolhidas, espelho };
+  }
+
   async fechar(orgId: string): Promise<Retrato & { notaId: string; versao: number }> {
     const empresa = await this.prisma.org.findUnique({
       where: { id: orgId },
@@ -422,7 +523,7 @@ export class OnboardingService {
 
     const chaves = TEMAS_DA_CARGA.map((t) => chaveDoTema(t.id));
     const notas = await this.prisma.contextItem.findMany({
-      where: { orgId, chave: { in: chaves }, arquivadoEm: null },
+      where: { orgId, chave: { in: chaves }, arquivadoEm: null, acessoRestrito: false },
       select: {
         id: true,
         chave: true,

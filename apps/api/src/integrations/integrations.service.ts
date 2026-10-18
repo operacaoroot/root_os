@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { CONNECTORS, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
+import { CONNECTORS, ConexoesDeclarativasSchema, type ConexoesDeclarativas, type ConexaoDeclarativaLinha, type IntegrationCatalog, type IntegrationCatalogRow } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { exigirAcessoAtual } from '../memory/acesso-memoria';
 import { AuditService } from '../audit/audit.service';
 import { ConectoresService } from './conectores.service';
 import { ConectoresConfiguradosRegistry } from '../gateway/conectores-configurados.registry';
@@ -134,6 +135,70 @@ export class IntegrationsService {
     /** O contrato único de conector — fatia 5.4. Ver `contrato-de-conector.ts`. */
     private readonly contrato: RegistroDeConectores,
   ) {}
+
+  async verificarPessoaAtual(orgId: string, pessoaId: string, permissoes: string[]) {
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, permissoes);
+  }
+
+  /** Configuração declarada e registros da empresa; não faz sondas. */
+  async catalogoDeclarativo(orgId: string, pessoaId: string): Promise<ConexoesDeclarativas> {
+    await exigirAcessoAtual(this.prisma, orgId, pessoaId, ['dashboard.ver']);
+    return this.prisma.$transaction(async tx => {
+      await exigirAcessoAtual(tx, orgId, pessoaId, ['dashboard.ver']);
+      await tx.$queryRaw`SELECT id FROM "Org" WHERE id=${orgId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM "IntegrationAccount" WHERE "orgId"=${orgId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM "ConectorDesligado" WHERE "orgId"=${orgId} FOR SHARE`;
+      const casa = await tx.org.findFirst({ where: { id: orgId, slug: 'root' }, select: { id: true } });
+      const accounts = await tx.integrationAccount.findMany({ where: { orgId }, select: { key: true, status: true } });
+      const offRows = await tx.conectorDesligado.findMany({ where: { orgId }, select: { conector: true, desligadoEm: true } });
+      const desligados = new Map(offRows.map(a => [a.conector, a]));
+      const doContrato = this.contrato.listar();
+      const templates: Array<Pick<IntegrationCatalogRow, 'key' | 'label' | 'category' | 'phase' | 'authType' | 'requires'>> = CONNECTORS.map(c => ({ ...c }));
+      const listed = new Set(templates.map(c => c.key));
+      for (const c of doContrato) for (const key of this.linhasDe(c)) {
+        if (listed.has(key)) continue;
+        listed.add(key); templates.push({ key, label: key === c.chave ? c.rotulo : `${c.rotulo} · ${key}`,
+          category: c.categoria ?? 'outros', phase: 0, authType: c.escopoDaCredencial === 'empresa' ? 'oauth2' : 'api_key',
+          requires: c.exige ?? 'Configuração declarada pelo conector.' });
+      }
+      const pureProcess = new Set(['clickup', 'pluggy', 'asaas', 'whatsapp']);
+      const items: ConexaoDeclarativaLinha[] = templates.map(c => {
+        const registros = accounts.filter(a => a.key === c.key);
+        const registro = { estado: registros.length > 1 ? 'ambiguo' as const : registros.length === 1 ? 'unico' as const : 'ausente' as const,
+          status: registros.length === 1 ? registros[0].status : null };
+        let configuracao: ConexaoDeclarativaLinha['configuracao'] = { estado: 'desconhecida', origem: 'indisponivel' };
+        if (registros.length === 1) configuracao = { estado: registros[0].status === 'disconnected' ? 'nao_configurada' : 'declarada_sem_verificacao', origem: 'registro_empresa' };
+        else if (registros.length > 1) configuracao = { estado: 'desconhecida', origem: 'registro_empresa' };
+        else if (c.authType === 'oauth2') configuracao = { estado: 'nao_configurada', origem: 'registro_empresa' };
+        else if (c.key === 'ofx') configuracao = { estado: 'declarada_sem_verificacao', origem: 'embutido' };
+        else if (pureProcess.has(c.key)) {
+          if (!casa) configuracao = { estado: 'nao_se_aplica', origem: 'nao_se_aplica' };
+          else {
+            // Whitelist conferida: esses quatro getters só leem strings já carregadas.
+            // Obsidian fica fora: seu configured legado acessa o sistema de arquivos.
+            const declarada = this.conectoresConfigurados.configurado(c.key);
+            configuracao = { estado: declarada === null ? 'desconhecida' : declarada ? 'declarada_sem_verificacao' : 'nao_configurada', origem: 'declaracao_processo' };
+          }
+        }
+        const dono = this.contrato.donoDaLinha(c.key), off = desligados.get(c.key);
+        return { ...c, status: registro.status ?? (registros.length > 1 ? 'error' : 'disconnected'),
+          health: null, connectedAt: null, lastSyncAt: null, lastError: null, managed: isManaged(c.authType),
+          registro, configuracao, desligado: !!off, desligadoEm: off?.desligadoEm.toISOString() ?? null,
+          desligadoPor: null, motivoDesligado: null, grupo: grupoDoConector(c.key),
+          aplicacaoDoDesligamento: aplicacaoDoDesligamento(c.key), textoDoDesligamento: TEXTO_DA_APLICACAO[aplicacaoDoDesligamento(c.key)],
+          contrato: dono ? { chave: dono.chave, rotulo: dono.rotulo, escopoDaCredencial: dono.escopoDaCredencial,
+            verbos: [...VERBOS_DO_CONTRATO], linhasIrmas: this.linhasDe(dono).filter(k => k !== c.key) } : null,
+          saude: null, recibo: null };
+      });
+      const pessoa = await tx.user.findFirst({ where: { id: pessoaId, orgId, isActive: true },
+        select: { roles: { where: { orgId }, select: { permissions: { select: { key: true } } } } } });
+      const permissoes = new Set(pessoa?.roles.flatMap(r => r.permissions.map(p => p.key)) ?? []);
+      await exigirAcessoAtual(tx, orgId, pessoaId, ['dashboard.ver']);
+      return ConexoesDeclarativasSchema.parse({ escopo: { orgId, userId: pessoaId }, sondado: false,
+        autoridadeGerenciar: permissoes.has('admin.usuarios'), items: items.sort((a,b) => a.key.localeCompare(b.key)),
+        source: { tool: 'banco-interno', generatedAt: new Date().toISOString() } });
+    }, { timeout: 20000 });
+  }
 
   /**
    * A tela de Conexões.
@@ -435,6 +500,7 @@ export class IntegrationsService {
   ): Promise<ResultadoDeSincronizacao> {
     const conector = this.contrato.exigir(chave);
     const exigida = conector.permissaoParaSincronizar;
+    await exigirAcessoAtual(this.prisma, orgId, actorId, ['admin.usuarios', ...(exigida ? [exigida] : [])]);
     if (exigida && !permissoesDeQuemPediu.includes(exigida)) {
       throw new ForbiddenException(
         `Sincronizar "${conector.rotulo}" exige a permissão "${exigida}", que é a mesma que a ` +

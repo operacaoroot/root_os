@@ -1,5 +1,7 @@
+import { ProcedimentoFerramentaLocalService } from './procedimento-ferramenta-local.service';
 import { Module } from '@nestjs/common';
 import { AgentsController } from './agents.controller';
+import { AgendaLocalService } from './agenda-local.service';
 import { AgentsService } from './agents.service';
 import { AgentRuntime } from './agent-runtime.service';
 import { SessionService } from './session.service';
@@ -14,6 +16,8 @@ import { TasksModule } from '../tasks/tasks.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 import { PautaModule } from '../pauta/pauta.module';
 import { WorkModule } from '../work/work.module';
+import { ModeloLocalService } from './modelo-local.service';
+import { ProcedimentoDoAgenteService } from './procedimento-do-agente.service';
 
 @Module({
   imports: [
@@ -33,7 +37,7 @@ import { WorkModule } from '../work/work.module';
     WorkModule,
   ],
   controllers: [AgentsController],
-  providers: [AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
+  providers: [ProcedimentoFerramentaLocalService, AgendaLocalService, ModeloLocalService, ProcedimentoDoAgenteService, AgentsService, AgentRuntime, SessionService, ContextBuilder, VaultVersionadaService, EfeitosService],
   exports: [AgentsService, AgentRuntime, SessionService],
 })
 export class AgentsModule {}

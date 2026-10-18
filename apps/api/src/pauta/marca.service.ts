@@ -1,7 +1,9 @@
+import { PautaMarcaHumanoPainelSchema, type PautaMarcaHumanoPainel, type PautaMarcaSalvarHumanoInput, type PautaPilaresSalvarHumanoInput, type PautaEscritaHumanaResultado } from '@mktos/shared';
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
-import { ContextKind, ContextSource } from '@prisma/client';
+import { ContextKind, ContextSource, type Prisma } from '@prisma/client';
 import {
   PAUTA_CHAVE_DA_MARCA,
+  lerPilaresDoTexto,
   PAUTA_CHAVE_DOS_PILARES,
   PAUTA_SECOES_DA_MARCA,
   type PautaMarcaPainel,
@@ -14,22 +16,28 @@ import {
   type PautaPilaresSalvarInput,
 } from '@mktos/shared';
 import { AuditService } from '../audit/audit.service';
-import { MemoriaService, type NotaDeContexto } from '../memory/memoria.service';
+import { MemoriaService, type NotaDeContexto, type IdentidadeDaDerivacao, type LeitorFisicoDaDerivacao, type DescritorFisicoDaFonte } from '../memory/memoria.service';
 import { blocoDeMarca, marcaDaNota, pilaresDaNota, perfilParaPrompt, procedenciaDaMarca } from './marca-da-pauta';
 import { lerReferenciaDaProjecao, proporMarcaDaFonte, referenciaDaProjecao } from './marca-projecao';
+import { BrandbookService } from './brandbook.service';
+import type { BrandbookDaGeracao } from './brandbook.service';
+import { textoDosPilares } from './brandbook-documento';
 
 const TITULO_DA_MARCA = 'Marca (pauta)';
 const TITULO_DOS_PILARES = 'Pilares de conteúdo (pauta)';
 const CHAVE_DA_FONTE = 'editorial:marca:Root/40-marca-e-conteudo/root-fundamentos-da-marca-e-guia-de-expressao.md';
 
+export interface MarcaParaGeracao {
+  origem: 'brandbook' | 'legado'; perfil: string | null; pilares: PautaPilar[]; bloco: string;
+  descritores: { livro: BrandbookDaGeracao; perfil?: DescritorFisicoDaFonte; pilares?: DescritorFisicoDaFonte;
+    projecaoPerfil?: { motivo: string | null; sourceRef: string | null } | null;
+    projecaoPilares?: { motivo: string | null; sourceRef: string | null } | null };
+}
+
 /*
- * A MARCA E OS PILARES (MK1). Duas notas da memória, lidas por `porChave` e
- * escritas SÓ por `MemoriaService` (criar/alterar/restaurar), que é o caminho da
- * ADR-011: evento no RASTRO, versão nova, a anterior no histórico. Nada aqui
- * toca `ContextItem` direto — mesma regra que a voz (MC10) segue.
- *
- * `bloco` é o que os prompts da pauta consomem, e é o ÚNICO lugar onde texto de
- * marca é montado para o modelo.
+ * O brandbook aprovado tem precedência. Sem ativo, preserva as duas notas
+ * legadas; falha, acesso restrito ou arquivo inválido do livro interrompem a
+ * leitura. O bloco mantém a neutralização e os consumidores existentes da Pauta.
  */
 @Injectable()
 export class MarcaService {
@@ -38,6 +46,7 @@ export class MarcaService {
   constructor(
     private readonly audit: AuditService,
     private readonly memoria: MemoriaService,
+    private readonly brandbooks: BrandbookService,
   ) {}
 
   /**
@@ -56,11 +65,15 @@ export class MarcaService {
 
   /** O perfil da marca vigente, ou nulo. */
   async perfil(orgId: string): Promise<string | null> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) return ativo.documento.perfilParaPauta;
     return marcaDaNota(await this.nota(orgId, PAUTA_CHAVE_DA_MARCA)).perfil;
   }
 
   /** Os pilares vigentes. Lista vazia quando não há nota ou nenhuma linha vale. */
   async pilares(orgId: string): Promise<PautaPilar[]> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) return lerPilaresDoTexto(textoDosPilares(ativo.documento)).pilares;
     return pilaresDaNota(await this.nota(orgId, PAUTA_CHAVE_DOS_PILARES)).pilares;
   }
 
@@ -69,6 +82,11 @@ export class MarcaService {
    * nem pilar: nesse caso o prompt fica exatamente como era antes da MK1.
    */
   async bloco(orgId: string): Promise<string> {
+    const ativo = await this.brandbooks.ativoParaPauta(orgId);
+    if (ativo) {
+      const procedencia = `brandbook aprovado · sha256:${ativo.draftHash.slice(0, 12)}`;
+      return blocoDeMarca(ativo.documento.perfilParaPauta, lerPilaresDoTexto(textoDosPilares(ativo.documento)).pilares, { procedencia, procedenciaPilares: procedencia });
+    }
     const [notaMarca, notaPilares] = await Promise.all([
       this.nota(orgId, PAUTA_CHAVE_DA_MARCA),
       this.nota(orgId, PAUTA_CHAVE_DOS_PILARES),
@@ -87,7 +105,104 @@ export class MarcaService {
     });
   }
 
+
+  /** Marca e pilares da mesma observação física, sem os fallbacks dos readers legados. */
+  async paraGeracaoNoTx(tx: Prisma.TransactionClient, orgId: string, identidade: IdentidadeDaDerivacao,
+    lerFonte: LeitorFisicoDaDerivacao): Promise<MarcaParaGeracao> {
+    const livro = await this.brandbooks.lerParaGeracaoNoTx(tx, orgId, identidade, lerFonte);
+    if (livro.ativo) {
+      const d = livro.ativo.documento; const pilares = lerPilaresDoTexto(textoDosPilares(d)).pilares;
+      const procedencia = `brandbook aprovado · sha256:${livro.ativo.draftHash.slice(0, 12)}`;
+      return { origem: 'brandbook', perfil: d.perfilParaPauta, pilares,
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }), descritores: { livro } };
+    }
+    const perfilFisico = await lerFonte({ chave: PAUTA_CHAVE_DA_MARCA });
+    const pilaresFisicos = await lerFonte({ chave: PAUTA_CHAVE_DOS_PILARES });
+    const n = perfilFisico.estado === 'existente' ? perfilFisico.nota : null;
+    const p = pilaresFisicos.estado === 'existente' ? pilaresFisicos.nota : null;
+    const perfil = marcaDaNota(n).perfil; const pilares = pilaresDaNota(p).pilares;
+    const projecaoPerfil = await this.projecaoCorrenteNoTx(tx, orgId, perfilFisico);
+    const projecaoPilares = await this.projecaoCorrenteNoTx(tx, orgId, pilaresFisicos);
+    const atual = (x: { motivo: string | null; sourceRef: string | null } | null) =>
+      !!x?.motivo?.startsWith('projeção revisada do guia') && !!lerReferenciaDaProjecao(x.sourceRef);
+    return { origem: 'legado', perfil, pilares,
+      bloco: blocoDeMarca(perfil, pilares, {
+        procedencia: n && perfil ? procedenciaDaMarca({ ...n, sourceRef: atual(projecaoPerfil) ? n.sourceRef : null }) : undefined,
+        procedenciaPilares: p && pilares.length && atual(projecaoPilares) ? procedenciaDaMarca(p) : undefined,
+      }), descritores: { livro, perfil: perfilFisico, pilares: pilaresFisicos, projecaoPerfil, projecaoPilares } };
+  }
+
+  private async projecaoCorrenteNoTx(tx: Prisma.TransactionClient, orgId: string, fonte: DescritorFisicoDaFonte) {
+    if (fonte.estado === 'ausente_fisico') return null;
+    const v = await tx.contextItemVersion.findFirst({ where: { id: fonte.versao.id, orgId,
+      itemId: fonte.nota.id, versao: fonte.nota.versao }, select: { body: true, kind: true, title: true,
+        sourceType: true, sourceRef: true, contentHash: true, motivo: true } });
+    if (!v || v.body !== fonte.versao.body || v.kind !== fonte.versao.kind || v.title !== fonte.versao.title
+      || v.sourceType !== fonte.versao.sourceType || v.sourceRef !== fonte.versao.sourceRef
+      || v.contentHash !== fonte.versao.contentHash) throw new ConflictException('A versão da marca não pôde ser conferida.');
+    return { motivo: v.motivo, sourceRef: v.sourceRef };
+  }
+
+  async painelHumano(orgId: string, actorId: string): Promise<PautaMarcaHumanoPainel> {
+    const r = await this.memoria.lerDestinosHumanos(orgId, actorId, { tipo: 'marca' });
+    const notaMarca = r.notas.perfil; const notaPilares = r.notas.pilares;
+    let painel: PautaMarcaPainel;
+    if (r.livro?.ativo) {
+      const d = r.livro.ativo.documento; const texto = textoDosPilares(d);
+      const pilares = lerPilaresDoTexto(texto).pilares;
+      const procedencia = `brandbook aprovado · sha256:${r.livro.ativo.draftHash.slice(0, 12)}`;
+      painel = { perfil: d.perfilParaPauta, perfilVersao: r.livro.versao, perfilAtualizadoEm: r.livro.ativo.aprovadoEm,
+        pilaresTexto: texto, pilaresVersao: r.livro.versao, pilares, avisos: [],
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }), projecoes: { perfil: null, pilares: null } };
+    } else {
+      const m = marcaDaNota(notaMarca); const p = pilaresDaNota(notaPilares);
+      const [perfil, pilares] = await Promise.all([this.vinculoDaNota(orgId, notaMarca), this.vinculoDaNota(orgId, notaPilares)]);
+      painel = { perfil: m.perfil, perfilVersao: m.versao, perfilAtualizadoEm: notaMarca?.atualizadoEm ?? null,
+        pilaresTexto: p.texto, pilaresVersao: p.versao, pilares: p.pilares, avisos: [...m.avisos, ...p.avisos],
+        bloco: blocoDeMarca(m.perfil, p.pilares, { procedencia: notaMarca && m.perfil
+          ? procedenciaDaMarca({ ...notaMarca, sourceRef: perfil?.atual ? notaMarca.sourceRef : null }) : undefined,
+          procedenciaPilares: notaPilares && p.pilares.length && pilares?.atual ? procedenciaDaMarca(notaPilares) : undefined }),
+        projecoes: { perfil, pilares } };
+    }
+    const final = await this.memoria.reconferirDestinosHumanos(orgId, actorId, { tipo: 'marca' }, r);
+    return PautaMarcaHumanoPainelSchema.parse({ contrato: 1, escopo: final.escopo, autoridade: final.autoridade,
+      observadoEm: final.observadoEm, painel, destinos: r.destinos, origemEfetiva: r.livro?.ativo
+        ? { tipo: 'brandbook', brandbook: { id: r.livro.id, versao: r.livro.versao, draftHash: r.livro.ativo.draftHash } }
+        : { tipo: 'legado', brandbook: null } });
+  }
+
+  async salvarPerfilHumano(orgId: string, actorId: string, entrada: PautaMarcaSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const corpo = entrada.perfil.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_perfil_marca' }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DA_MARCA, body: corpo, tags: ['pauta', 'marca'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.marca · edição manual', motivo: 'perfil da marca editado à mão (MK1)' });
+    await this.audit.log({ orgId, actorId, action: 'pauta.marca_salva', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, caracteres: corpo.length } });
+    return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
+  async salvarPilaresHumano(orgId: string, actorId: string, entrada: PautaPilaresSalvarHumanoInput): Promise<PautaEscritaHumanaResultado> {
+    const corpo = entrada.pilares.replace(/\r\n?/g, '\n').trim();
+    const r = await this.memoria.gravarPautaHumana(orgId, actorId, { acao: 'salvar_pilares' }, entrada,
+      { kind: ContextKind.definicao, title: TITULO_DOS_PILARES, body: corpo, tags: ['pauta', 'marca', 'pilares'], sourceType: ContextSource.operador,
+        sourceRef: 'pauta.marca.pilares · edição manual', motivo: 'pilares de conteúdo editados à mão (MK1)' });
+    const p = lerPilaresDoTexto(corpo);
+    await this.audit.log({ orgId, actorId, action: 'pauta.pilares_salvos', entityType: 'context_item', entityId: r.edicao.itemId,
+      after: { versao: r.edicao.versao, pilares: p.pilares.map((v) => v.chave), avisos: p.avisos.length } });
+    return this.memoria.reconferirResultadoHumanoDoProdutor(orgId, actorId, r);
+  }
+
   async painel(orgId: string): Promise<PautaMarcaPainel> {
+    const livro = await this.brandbooks.painelParaPauta(orgId);
+    if (livro.ativo) {
+      const d = livro.ativo.documento;
+      const pilaresTexto = textoDosPilares(d);
+      const pilares = lerPilaresDoTexto(pilaresTexto).pilares;
+      const procedencia = `brandbook aprovado · sha256:${livro.ativo.draftHash.slice(0, 12)}`;
+      return { perfil: d.perfilParaPauta, perfilVersao: livro.versao, perfilAtualizadoEm: livro.ativo.aprovadoEm,
+        pilaresTexto, pilaresVersao: livro.versao, pilares, avisos: [],
+        bloco: blocoDeMarca(d.perfilParaPauta, pilares, { procedencia, procedenciaPilares: procedencia }),
+        projecoes: { perfil: null, pilares: null } };
+    }
     const [notaMarca, notaPilares] = await Promise.all([
       this.nota(orgId, PAUTA_CHAVE_DA_MARCA),
       this.nota(orgId, PAUTA_CHAVE_DOS_PILARES),
@@ -138,6 +253,7 @@ export class MarcaService {
 
   /** Prévia sem escrita: a pessoa confere trechos, destino e texto antes de aplicar. */
   async previa(orgId: string, destino: PautaMarcaDestino): Promise<PautaMarcaPrevia> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const chaveDestino = destino === 'perfil' ? PAUTA_CHAVE_DA_MARCA : PAUTA_CHAVE_DOS_PILARES;
     const [fonte, nota] = await Promise.all([
       this.memoria.porChave(orgId, CHAVE_DA_FONTE),
@@ -178,6 +294,7 @@ export class MarcaService {
 
   /** Cada destino é aplicado sozinho. Fonte e destino são conferidos de novo na transação da Memória. */
   async aplicar(orgId: string, destino: PautaMarcaDestino, pedido: PautaMarcaAplicarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const fonte = await this.memoria.porChave(orgId, CHAVE_DA_FONTE);
     if (!fonte || fonte.arquivadoEm) throw new ConflictException('O guia não está ativo. Refaça a prévia.');
     const proposta = proporMarcaDaFonte(fonte.body, destino);
@@ -222,6 +339,7 @@ export class MarcaService {
 
   /** A edição à mão do perfil. `versao` velha é outra aba mexendo junto (409). */
   async salvarPerfil(orgId: string, actorId: string, entrada: PautaMarcaSalvarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const corpo = entrada.perfil.replace(/\r\n?/g, '\n').trim();
     const nota = await this.gravar(orgId, PAUTA_CHAVE_DA_MARCA, {
       titulo: TITULO_DA_MARCA,
@@ -250,6 +368,7 @@ export class MarcaService {
    * ela quis dizer.
    */
   async salvarPilares(orgId: string, actorId: string, entrada: PautaPilaresSalvarInput): Promise<PautaMarcaPainel> {
+    await this.brandbooks.exigirLegadoPermitido(orgId);
     const corpo = entrada.pilares.replace(/\r\n?/g, '\n').trim();
     const nota = await this.gravar(orgId, PAUTA_CHAVE_DOS_PILARES, {
       titulo: TITULO_DOS_PILARES,

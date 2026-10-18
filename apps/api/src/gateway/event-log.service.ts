@@ -369,6 +369,8 @@ const PRIORIDADE_DO_HASH: readonly string[] = [
 ];
 
 /** A forma mínima que este serviço lê do documento de política. */
+export interface PreparoEventoNoTx { readonly orgId: string; readonly tipo: string; readonly nivel: RiskLevel | null }
+
 interface PoliticaLida {
   niveis?: Record<string, { rastro?: string[] } | undefined>;
   retencao?: Record<string, unknown>;
@@ -460,19 +462,35 @@ export class EventLogService {
   // GRAVAR
   // ==========================================================================
 
+  private readonly preparosNoTx = new WeakMap<PreparoEventoNoTx, { politica: PoliticaLida; retencaoAte: Date }>();
+
+  async prepararContextoParaTx(input: Pick<EventoInput, 'orgId' | 'tipo' | 'nivel'>): Promise<PreparoEventoNoTx> {
+    const preparo = Object.freeze({ orgId: input.orgId, tipo: input.tipo, nivel: input.nivel ?? null });
+    const politica = structuredClone(this.politica());
+    const retencaoAte = await this.retencaoAte(input);
+    this.preparosNoTx.set(preparo, { politica, retencaoAte });
+    return preparo;
+  }
+
+  async registrarNoTx(tx: Prisma.TransactionClient, input: EventoInput, preparo: PreparoEventoNoTx) {
+    const guardado = this.preparosNoTx.get(preparo);
+    if (!guardado || preparo.orgId !== input.orgId || preparo.tipo !== input.tipo || preparo.nivel !== (input.nivel ?? null))
+      throw new Error('O preparo do evento não corresponde à operação.');
+    const { payload, contentHash } = this.montar(input, guardado.politica);
+    return this.encadearNoTx(tx, input, payload, contentHash, guardado.retencaoAte);
+  }
+
   async registrar(input: EventoInput): Promise<{ id: string; seq: bigint; hash: string }> {
     const { payload, contentHash } = this.montar(input);
-
-    /*
-     * A retenção é lida ANTES da transação do evento, de propósito. Dentro
-     * dela, uma consulta que falhasse abortaria a transação inteira no
-     * PostgreSQL — e o `catch` em volta pareceria funcionar até o `create`
-     * seguinte estourar com "current transaction is aborted". Fora, a falha é
-     * isolada e o evento ainda é gravado com o prazo herdado.
-     */
     const retencaoAte = await this.retencaoAte(input);
-
     return this.prisma.$transaction(async (tx) => {
+      const linha = await this.encadearNoTx(tx, input, payload, contentHash, retencaoAte);
+      return { id: linha.id, seq: linha.seq, hash: linha.hash };
+    });
+  }
+
+  private async encadearNoTx(tx: Prisma.TransactionClient, input: EventoInput, payload: Prisma.InputJsonValue,
+    contentHash: string | null, retencaoAte: Date) {
       // Serializa só os escritores DESTA empresa. hashtext devolve int4; o
       // advisory lock de transação solta sozinho no commit.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.orgId}))`;
@@ -517,10 +535,9 @@ export class EventLogService {
           ocorreuEm,
           retencaoAte,
         },
-        select: { id: true, seq: true, hash: true },
+        select: { id: true, seq: true, hash: true, ocorreuEm: true },
       });
       return linha;
-    });
   }
 
   // ==========================================================================
@@ -535,9 +552,9 @@ export class EventLogService {
    * pior do que não conferir, porque passaria a cobrar o que o documento
    * normativo nunca pediu.
    */
-  camposExigidos(nivel: RiskLevel | null | undefined): string[] {
+  camposExigidos(nivel: RiskLevel | null | undefined, politica = this.politica()): string[] {
     if (!nivel) return [];
-    const bloco = this.politica().niveis?.[nivel];
+    const bloco = politica.niveis?.[nivel];
     return bloco?.rastro ? [...bloco.rastro] : [];
   }
 
@@ -557,7 +574,7 @@ export class EventLogService {
    * a conferência rodasse sobre o cru e a redação viesse depois, o hash da
    * cadeia protegeria um payload que não é o que ficou gravado.
    */
-  private montar(input: EventoInput): {
+  private montar(input: EventoInput, politica = this.politica()): {
     payload: Prisma.InputJsonValue;
     contentHash: string | null;
   } {
@@ -609,9 +626,9 @@ export class EventLogService {
     if (input.capabilityId) presentes.add('ferramenta');
     if (hashDoConteudo) presentes.add('hashConteudo');
 
-    const exigidos = this.camposExigidos(input.nivel);
+    const exigidos = this.camposExigidos(input.nivel, politica);
     const faltando = exigidos.filter((c) => !presentes.has(c));
-    this.avisarLacuna(input, faltando);
+    this.avisarLacuna(input, faltando, exigidos);
 
     const rastro = input.nivel
       ? {
@@ -690,14 +707,14 @@ export class EventLogService {
    * nível e lacuna, com teto. Mesma disciplina de `sessao-de-banco.ts` — o log
    * serve para alguém descobrir o que falta preencher, não para rolar a tela.
    */
-  private avisarLacuna(input: EventoInput, faltando: string[]): void {
+  private avisarLacuna(input: EventoInput, faltando: string[], exigidos = this.camposExigidos(input.nivel)): void {
     if (faltando.length === 0) return;
     const chave = `${input.tipo}|${input.nivel}|${faltando.join(',')}`;
     if (this.lacunasAvisadas.has(chave) || this.lacunasAvisadas.size >= this.TETO_DE_AVISOS) return;
     this.lacunasAvisadas.add(chave);
     this.log.warn(
       `[rastro] evento "${input.tipo}" (${input.nivel}) gravado SEM ${faltando.join(', ')} — ` +
-        `a política exige ${this.camposExigidos(input.nivel).join(', ')} neste nível (RF-R-03). ` +
+        `a política exige ${exigidos.join(', ')} neste nível (RF-R-03). ` +
         'A linha foi gravada assim mesmo e DECLARA a lacuna em payload.rastro.faltando: ' +
         'registro incompleto é melhor do que ação sem registro.',
     );

@@ -1,3 +1,5 @@
+import { AcessoAtualGuard } from './acesso-atual.guard';
+import { ContextoTrabalhoService } from './contexto-trabalho.service';
 import { Module } from '@nestjs/common';
 import { MemoriaController } from './memoria.controller';
 import { MemoriaService } from './memoria.service';
@@ -31,7 +33,7 @@ import { MemoriaService } from './memoria.service';
  */
 @Module({
   controllers: [MemoriaController],
-  providers: [MemoriaService],
-  exports: [MemoriaService],
+  providers: [MemoriaService, AcessoAtualGuard, ContextoTrabalhoService],
+  exports: [MemoriaService, AcessoAtualGuard, ContextoTrabalhoService],
 })
 export class MemoryModule {}

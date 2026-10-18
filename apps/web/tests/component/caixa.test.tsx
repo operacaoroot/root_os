@@ -17,8 +17,8 @@ import type { CaixaResposta } from '@mktos/shared';
  *  3. O QUE O CLIQUE VAI PEDIR É DITO ANTES DO CLIQUE — motivo escrito em R4/R5
  *     e a senha. É a lição da tela do Google, que anunciava "✅ enviado" em cima
  *     de um 200 de retenção;
- *  4. A TELA DIZ POR QUAL NOME PROCUROU VOCÊ NO QUADRO. `assignee` é texto livre
- *     herdado do ClickUp: casamento por nome erra nas duas direções, e é melhor
+ *  4. Tarefas pessoais usam o ID da conta, sem associação por texto antigo.
+ *     O link leva ao mesmo UUID do quadro, e é melhor
  *     saber disso do que confiar numa caixa vazia;
  *  5. CONVERSA NÃO É MENÇÃO, e está escrito na tela, junto com o motivo de ela
  *     ficar fora do contador (não existe estado de lido);
@@ -264,26 +264,14 @@ describe('A7: as tarefas paradas, com o critério à mostra', () => {
     expect(screen.getByText('o prazo venceu')).toBeTruthy();
   });
 
-  it('a tela publica por quais nomes procurou você — casamento por nome erra', async () => {
-    apiGet.mockResolvedValue(
-      resposta({
-        tarefas: {
-          estado: 'ok',
-          itens: [tarefaParada],
-          truncado: false,
-          teto: 50,
-          identidades: ['Pedro Magnago', 'pedro@root.com'],
-          diasSemMovimento: 7,
-          horasPresa: 24,
-        },
-        total: 1,
-      }),
-    );
+  it('identifica a conta por ID e abre o UUID da tarefa, sem inferir vínculo pelo nome legado', async () => {
+    apiGet.mockResolvedValue(resposta({ tarefas: { estado: 'ok', itens: [tarefaParada], truncado: false, teto: 50, identidades: ['Pedro Magnago', 'pedro@root.com'], diasSemMovimento: 7, horasPresa: 24 }, total: 1 }));
     render(<CaixaPage />);
-    await waitFor(() =>
-      expect(screen.getByText(/Pedro Magnago, pedro@root\.com/)).toBeTruthy(),
-    );
-    expect(screen.getByText(/Se o seu nome no quadro é outro/)).toBeTruthy();
+    const link = await screen.findByRole('link', { name: 'Ver minhas tarefas' });
+    expect(link).toHaveAttribute('href', '/trabalho?assigneeUserId=u-eu&escopo=pessoal&visao=tabela');
+    expect(screen.getByRole('link', { name: 'abrir no quadro →' })).toHaveAttribute('href', `/trabalho?tarefa=${tarefaParada.id}`);
+    expect(screen.queryByText(/Pedro Magnago, pedro@root\.com/)).toBeNull();
+    expect(screen.queryByText(/te procura por nome/)).toBeNull();
   });
 
   it('agente de fora da casa aparece como "outro agente", não com o nome do vizinho', async () => {

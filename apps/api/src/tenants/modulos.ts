@@ -98,6 +98,7 @@ export const MODULO_POR_PREFIXO: Readonly<Record<string, ModuloKey>> = {
   events: 'pixels',
   content: 'conteudo',
   pauta: 'pauta',
+  marketing: 'pauta',
   'midia-publica': 'pauta',
   // MD10: o retorno do OAuth do canal do YouTube — o canal é da máquina de conteúdo.
   youtube: 'pauta',
