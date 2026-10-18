@@ -425,6 +425,7 @@ const ALVOS: Alvo[] = [
   { tabela: 'WorkFieldValue', escopo: 'filho', chaveSql: '"id"', nota: 'DOIS pais obrigatórios (WorkTask e WorkField) — os dois têm de ser da mesma org.' },
   { tabela: 'WorkComment', escopo: 'filho', chaveSql: '"id"', nota: 'Texto livre e authorName. Conteúdo de tenant que só a política de linha separa.' },
   { tabela: 'WorkApontamento', escopo: 'filho', chaveSql: '"id"', nota: 'Horas de gente por cliente e por etapa: diz quanto a empresa cobra e quanto gasta. Número comercial que a vizinha não pode ver.' },
+  { tabela: 'AtaSugestao', escopo: 'tenant', chaveSql: '"id"', nota: 'A sugestão de tarefa lida de uma ata do Trabalho (rodada do painel P3): o título, o dono sugerido, o prazo e o TRECHO da reunião de onde saiu. Ler a da outra empresa é ler o que ela combinou em reunião e com quem; ESCREVER é pôr tarefa na fila de aceite dela, ou aceitar por ela. Raiz da empresa, não filha: a ata vive em duas tabelas e o orgId vem do insert.' },
   { tabela: 'CaixaVisto', escopo: 'tenant', chaveSql: '"id"', nota: 'O "limpei isto" da caixa de entrada (rodada do painel P1): quem leu qual evento de qual tarefa, e até quando limpou tudo. Ler a da outra empresa é saber o que cada pessoa dela já viu; ESCREVER é sumir com recado da caixa de alguém de outra casa. Raiz da empresa, não filha: o evento vive em duas tabelas e o orgId vem do insert.' },
 
   // ---- onboarding do cliente (23/09/2026) -------------------------------
@@ -1220,6 +1221,13 @@ async function semear(c: PoolClient, rotulo: 'A' | 'B', vec: string): Promise<vo
   reg('CaixaVisto', await ins(c, 'CaixaVisto', {
     id: crypto.randomUUID(), orgId, userId, origem: 'comentario',
     eventoId: `comentario_${rotulo}_${MARCA}`,
+  }));
+
+  // O banco de atas do Trabalho (rodada do painel P3): a sugestão de tarefa.
+  reg('AtaSugestao', await ins(c, 'AtaSugestao', {
+    id: crypto.randomUUID(), orgId, ataRef: `memoria:ata_${rotulo}_${MARCA}`,
+    titulo: `Tarefa combinada na reunião da org ${rotulo}`, trecho: `Trecho privado da ata da org ${rotulo}`,
+    estado: 'rascunho', atualizadaEm: new Date(),
   }));
 
   // Onboarding do cliente (23/09/2026): o trilho e os quatro filhos.

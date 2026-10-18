@@ -287,6 +287,7 @@ function dataDeTexto(v: string): string | null {
 
 function separarNomes(v: string): string[] {
   return v
+    .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1')
     .replace(/^\[|\]$/g, '')
     .split(/[,;]|\s+e\s+/)
     .map((p) => p.replace(/^["'\s*-]+|["'\s*]+$/g, '').replace(/\[\[|\]\]/g, '').trim())

@@ -592,6 +592,12 @@ describe('a instrumentação — antes de medir defesa, medir o medidor', () => 
       // objeções e a frase de "como é diferente", escritas pelo modelo a partir da ata, também
       // vão cercadas); o pedido de quem opera o painel nunca passa por ela.
       'src/comercial/inteligencia-prompts.ts': 1,
+      // O SEXTO, 18/10/2026 (rodada do painel P3, banco de atas do Trabalho): `promptDasSugestoes`
+      // cerca a ATA de uma reunião (nota do vault ou ata colada na tela), texto de quem estava na
+      // sala ou de transcrição automática: dado, nunca ordem. As listas e as pessoas da casa, que
+      // o modelo escolhe, ficam FORA da cerca; o pedido de quem clica em "Sugerir tarefas" não é
+      // texto livre e nunca passa por ela.
+      'src/work/atas/leitor-de-atas.ts': 1,
     };
 
     const porArquivo: Record<string, number> = {};

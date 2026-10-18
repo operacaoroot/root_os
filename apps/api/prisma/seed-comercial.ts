@@ -3,6 +3,14 @@ import bcrypt from 'bcryptjs';
 
 import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear';
 import { criarEstruturaSugerida } from '../src/work/estrutura-sugerida';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ActorType } from '@prisma/client';
+import { comContexto } from '../src/common/contexto-execucao';
+import { EventLogService } from '../src/gateway/event-log.service';
+import { MemoriaService } from '../src/memory/memoria.service';
+import type { PrismaService } from '../src/prisma/prisma.service';
+import { AtasService } from '../src/work/atas/atas.service';
 
 /*
  * SEED DA HOMOLOGAÇÃO DO COCKPIT COMERCIAL (13/10/2026) — `pnpm --filter @mktos/api db:seed:comercial`.
@@ -136,6 +144,42 @@ async function main() {
   // nome, nunca duplica nem renomeia. As travas de "nunca em produção" acima valem.
   const estrutura = await prisma.$transaction((tx) => criarEstruturaSugerida(tx, org.id));
   console.log(`seed-comercial: Trabalho · pastas criadas: ${estrutura.criadas.pastas.join(', ') || 'nenhuma'}; listas criadas: ${estrutura.criadas.listas.join(', ') || 'nenhuma'}; já existiam: ${estrutura.jaExistiam.pastas.length} pasta(s), ${estrutura.jaExistiam.listas.length} lista(s).`);
+
+  // 5) Rodada do painel P3 (18/10/2026): UMA ata de exemplo no banco de atas do
+  // Trabalho, com texto fictício marcado como exemplo. Na homologação não há vault
+  // indexado; a ata entra pelo MESMO caminho da colagem na tela (`AtasService.colar`
+  // → `MemoriaService.criar`, ADR-011: versão e evento no rastro). Rodar de novo
+  // não duplica: se a nota de exemplo já existe, nada é gravado.
+  await semearAtaDeExemplo(org.id, dono?.id ?? null);
+}
+
+const TITULO_DA_ATA_DE_EXEMPLO = 'Reunião de operação semanal (ata de exemplo)';
+const CHAVE_DA_ATA_DE_EXEMPLO = 'ata:2026-10-16-reuniao-de-operacao-semanal-ata-de-exemplo';
+
+async function semearAtaDeExemplo(orgId: string, atorId: string | null): Promise<void> {
+  const arquivo = [
+    resolve(__dirname, '../../../homolog/fixtures/ata-trabalho-exemplo.md'),
+    resolve(process.cwd(), 'homolog/fixtures/ata-trabalho-exemplo.md'),
+    '/app/homolog/fixtures/ata-trabalho-exemplo.md',
+  ].find((c) => existsSync(c));
+  if (!arquivo) {
+    console.log('seed-comercial: Atas · homolog/fixtures/ata-trabalho-exemplo.md não encontrado; a ata de exemplo não foi semeada.');
+    return;
+  }
+  const ja = await prisma.contextItem.findFirst({ where: { orgId, chave: CHAVE_DA_ATA_DE_EXEMPLO }, select: { id: true } });
+  if (ja) {
+    console.log(`seed-comercial: Atas · a ata de exemplo já existia (memoria:${ja.id}).`);
+    return;
+  }
+  const p = prisma as unknown as PrismaService;
+  const memoria = new MemoriaService(p, new EventLogService(p));
+  // Só `colar` é usado: o Trabalho, a auditoria e o modelo não entram nesta semente.
+  const atas = new AtasService(p, memoria, null as never, { log: async () => undefined } as never, null as never);
+  const ata = await comContexto(
+    { orgId, actorType: ActorType.user, actorId: atorId, correlationId: 'seed-comercial:ata-de-exemplo', origem: 'script' },
+    () => atas.colar(orgId, atorId ?? 'seed-comercial', { titulo: TITULO_DA_ATA_DE_EXEMPLO, texto: readFileSync(arquivo, 'utf8') }),
+  );
+  console.log(`seed-comercial: Atas · ata de exemplo semeada pela memória (${ata.id}); "Sugerir tarefas" nela responde pelo stub (homolog/fixtures/stub/trabalho.ata.sugestoes.json).`);
 }
 
 main()
