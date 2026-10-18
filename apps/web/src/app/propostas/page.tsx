@@ -5,7 +5,7 @@ import type { PainelComercial, PainelComercialNegocio, TrabEstrutura } from '@mk
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
-import { Numero, Quadro, brl } from '@/components/painel';
+import { Colunas, Numero, Quadro, brl } from '@/components/painel';
 import {
   ETAPAS,
   quando,
@@ -324,7 +324,7 @@ function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detal
       })
       .catch(() => setCopiado(false));
   };
-  const maxMs = Math.max(1, ...(detalhe?.tempoPorParte.map((t) => t.ms) ?? [1]));
+  const [todas, setTodas] = useState(false);
   const botao = 'rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:border-brand hover:text-text';
 
   return (
@@ -374,62 +374,69 @@ function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detal
             <Numero rotulo="Parte mais vista" valor={detalhe.maisVista ?? '–'} tamanho="texto" />
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            {detalhe.tempoPorParte.length > 0 && (
-              <div>
-                <h3 className="text-[0.95rem] font-semibold">Tempo por parte</h3>
-                <div className="mt-3 space-y-2">
-                  {detalhe.tempoPorParte.map((t) => (
-                    <div key={t.id} className="grid grid-cols-[8rem_minmax(0,1fr)_5rem] items-center gap-3 text-sm">
-                      <span className={t.nome === detalhe.maisVista ? 'font-medium' : 'text-muted'}>{t.nome}</span>
-                      <span className="h-2 overflow-hidden rounded-sm bg-surface-2">
-                        <span
-                          className={`block h-full ${t.nome === detalhe.maisVista ? 'bg-brand' : 'bg-brand/45'}`}
-                          style={{ width: `${Math.round((t.ms / maxMs) * 100)}%` }}
-                        />
-                      </span>
-                      <span className="com-num text-right text-muted">{tempo(t.ms)}</span>
-                    </div>
-                  ))}
-                </div>
+          {/* Empilhado, não lado a lado: o tempo por parte vira colunas na largura toda, e as visitas vêm embaixo. */}
+          {detalhe.tempoPorParte.length > 0 && (
+            <div className="mt-7">
+              <h3 className="text-[0.95rem] font-semibold">Tempo por parte</h3>
+              <p className="text-sm text-muted">onde a leitura parou mais; a parte mais vista em destaque</p>
+              <div className="mt-3">
+                <Colunas
+                  itens={detalhe.tempoPorParte.map((t) => ({
+                    chave: t.id,
+                    rotulo: t.nome,
+                    v: t.ms,
+                    mostra: tempo(t.ms),
+                    tom: t.nome === detalhe.maisVista ? 'forte' : 'medio',
+                    dica: [t.nome, tempo(t.ms), `${t.aberturasQueViram} abertura(s) chegaram aqui`],
+                  }))}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="mt-7">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-[0.95rem] font-semibold">Visitas</h3>
+              {detalhe.visitas.length > 5 && (
+                <button onClick={() => setTodas((x) => !x)} className="text-sm text-muted underline hover:text-text">
+                  {todas ? 'ver só as últimas' : `ver todas (${detalhe.visitas.length})`}
+                </button>
+              )}
+            </div>
+            {detalhe.visitas.length === 0 ? (
+              <p className="mt-2 text-sm text-muted">Ainda não abriu.</p>
+            ) : (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="text-left">
+                      <th className="com-rotulo pb-2 font-normal">Quando</th>
+                      <th className="com-rotulo pb-2 font-normal">Quem</th>
+                      <th className="com-rotulo pb-2 font-normal">Aparelho</th>
+                      <th className="com-rotulo pb-2 text-right font-normal">Tempo</th>
+                      <th className="com-rotulo pb-2 pl-6 font-normal">Leu até</th>
+                      <th className="com-rotulo pb-2 font-normal">Pagar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border text-muted">
+                    {(todas ? detalhe.visitas : detalhe.visitas.slice(0, 5)).map((v, i) => (
+                      <tr key={`${v.quando}-${i}`}>
+                        <td className="whitespace-nowrap py-2">{quando(v.quando)}</td>
+                        <td className="whitespace-nowrap text-text">pessoa {v.pessoa}</td>
+                        <td>{v.aparelho}</td>
+                        <td className="com-num whitespace-nowrap text-right">{tempo(v.tempoMs)}</td>
+                        <td className="pl-6">{v.leuAte}</td>
+                        <td className={v.clicouEmPagar ? 'font-medium text-brand' : ''}>{v.clicouEmPagar ? 'clicou' : '–'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-
-            <div>
-              <h3 className="text-[0.95rem] font-semibold">Visitas</h3>
-              {detalhe.visitas.length === 0 ? (
-                <p className="mt-2 text-sm text-muted">Ainda não abriu.</p>
-              ) : (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full min-w-[480px] text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className="com-rotulo pb-2 font-normal">Quando</th>
-                        <th className="com-rotulo pb-2 font-normal">Quem</th>
-                        <th className="com-rotulo pb-2 font-normal">Tempo</th>
-                        <th className="com-rotulo pb-2 font-normal">Leu até</th>
-                        <th className="com-rotulo pb-2 font-normal">Pagar</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border text-muted">
-                      {detalhe.visitas.map((v, i) => (
-                        <tr key={`${v.quando}-${i}`} title={`${v.aparelho}${v.descricao ? ` · ${v.descricao}` : ''}`}>
-                          <td className="py-1.5">{quando(v.quando)}</td>
-                          <td className="text-text">pessoa {v.pessoa}</td>
-                          <td className="com-num">{tempo(v.tempoMs)}</td>
-                          <td>{v.leuAte}</td>
-                          <td className={v.clicouEmPagar ? 'font-medium text-brand' : ''}>{v.clicouEmPagar ? 'clicou' : '–'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="mt-3 text-xs text-muted">
-                &quot;Pessoa&quot; é cada navegador diferente. Uma parte conta como vista com 2 s ou mais na tela.
-                {detalhe.visitasDaEquipeIgnoradas > 0 && ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas.`}
-              </p>
-            </div>
+            <p className="mt-3 text-xs text-muted">
+              &quot;Pessoa&quot; é cada navegador diferente. Uma parte conta como vista com 2 s ou mais na tela.
+              {detalhe.visitasDaEquipeIgnoradas > 0 && ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas.`}
+            </p>
           </div>
         </>
       )}
