@@ -5309,7 +5309,65 @@ export const MODELOS_DE_LISTA = {
       { name: 'Próximo passo', type: 'texto' },
     ],
   },
+  /*
+   * ONBOARDING DE CLIENTE (rodada do painel P2, 18/10/2026). As etapas são as
+   * cinco fases do trilho de onboarding (`onboarding/trilho/fases.ts`,
+   * `ROTULO_DA_FASE`) e a saída, na mesma ordem e com os mesmos nomes. Nenhuma
+   * regra nova: sem limite (o trilho não tem limite de fase) e sem campo. O
+   * PORTÃO continua sendo do trilho, não da lista: mover o cartão de coluna não
+   * cumpre portão nenhum, e o cartão ligado a um trilho linka o trilho.
+   */
+  'onboarding-de-cliente': {
+    chave: 'onboarding-de-cliente',
+    nome: 'Onboarding de cliente',
+    descricao: 'As cinco fases do trilho de onboarding, uma por coluna, para acompanhar cada cliente até a operação assistida.',
+    etapas: [
+      { name: 'Qualificar', type: 'open', color: '#87909e', limite: null },
+      { name: 'Diagnóstico', type: 'custom', color: '#4194f6', limite: null },
+      { name: 'Contrato e onboarding', type: 'custom', color: '#a875ff', limite: null },
+      { name: 'Imersão', type: 'custom', color: '#f9d900', limite: null },
+      { name: 'Operação assistida', type: 'custom', color: '#1bbc9c', limite: null },
+      { name: 'Encerrado', type: 'closed', color: '#6b7280', limite: null },
+    ],
+    campos: [],
+  },
 } as const satisfies Record<string, ModeloDeLista>;
+
+/* ----------------------------------------------------------------------------
+ * A ESTRUTURA SUGERIDA DO TRABALHO (rodada do painel P2, 18/10/2026)
+ *
+ * Pastas são `WorkFolder` (já existiam, com `parentId` e `spaceId`); NÃO há
+ * tabela de pasta paralela. Isto é só a SEMENTE que um clique cria quando a
+ * empresa ainda não tem pasta: três pastas de topo e, dentro de Clientes, a
+ * esteira, o onboarding e a execução. Depois de criada é da empresa e se edita
+ * na tela como qualquer pasta ou lista.
+ *
+ * A rota (`POST /trabalho/estrutura/sugerida`) e o seed da homologação criam SÓ
+ * o que falta, conferindo pelo nome (sem diferença de maiúscula e espaço): nunca
+ * duplica, nunca renomeia, nunca move o que já existe. `modelo: null` = lista
+ * com as etapas padrão (A fazer, Em andamento, Concluída).
+ * -------------------------------------------------------------------------- */
+export interface ListaSugerida { nome: string; modelo: ChaveDeModeloDeLista | null }
+export interface PastaSugerida { nome: string; listas: readonly ListaSugerida[] }
+
+export const ESTRUTURA_SUGERIDA: readonly PastaSugerida[] = [
+  { nome: 'Administrativa', listas: [] },
+  { nome: 'Gestão', listas: [] },
+  {
+    nome: 'Clientes',
+    listas: [
+      { nome: 'Esteira de clientes', modelo: 'esteira-de-clientes' },
+      { nome: 'Onboarding de cliente', modelo: 'onboarding-de-cliente' },
+      { nome: 'Execução', modelo: null },
+    ],
+  },
+];
+
+/** O que a criação da estrutura sugerida fez. Os nomes vêm como `Pasta` ou `Pasta / Lista`. */
+export interface TrabEstruturaSugeridaResultado {
+  criadas: { pastas: string[]; listas: string[] };
+  jaExistiam: { pastas: string[]; listas: string[] };
+}
 
 export type ChaveDeModeloDeLista = keyof typeof MODELOS_DE_LISTA;
 

@@ -7,13 +7,14 @@ import type {
   TrabTarefaDetalhe, TrabTarefaCreateInput, TrabTarefaUpdateInput,
   TrabApontamentoCreateInput, TrabApontamentoDto, TrabListaDoModeloInput, ModeloDeLista,
   TrabEspacoCreateInput, TrabEspacoUpdateInput, TrabPastaCreateInput, TrabPastaUpdateInput,
-  TrabListaCreateInput, TrabListaUpdateInput,
+  TrabListaCreateInput, TrabListaUpdateInput, TrabEstruturaSugeridaResultado,
 } from '@mktos/shared';
 import { Prisma, WorkFieldType, WorkPriority, WorkStatusType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { agentesDaCasa, type AgenteDaCasa } from './agentes-da-casa';
+import { criarEstruturaSugerida, criarListaDoModeloNoBanco } from './estrutura-sugerida';
 import type { WorkTaskQuery } from './work-task-query';
 
 // Módulo TRABALHO: gestão de tarefas estilo ClickUp, nativa do mkt-os.
@@ -812,28 +813,25 @@ export class WorkService {
   async criarListaDoModelo(orgId: string, actorId: string, input: TrabListaDoModeloInput) {
     const modelo: ModeloDeLista = MODELOS_DE_LISTA[input.modelo];
     const pai = await this.paiDaLista(orgId, input);
-    return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, async () => {
-      const list = await this.prisma.workList.create({
-        data: { orgId, ...pai, name: input.name ?? modelo.nome },
-      });
-      await this.prisma.workStatus.createMany({
-        data: modelo.etapas.map((e, i) => ({
-          orgId, listId: list.id, name: e.name, type: e.type as WorkStatusType,
-          color: e.color, order: i, limite: e.limite,
-        })),
-      });
-      for (const [i, c] of modelo.campos.entries()) {
-        const campo = await this.prisma.workField.create({
-          data: { orgId, listId: list.id, name: c.name, type: c.type as WorkFieldType, order: i },
-        });
-        if (c.opcoes && c.opcoes.length > 0) {
-          await this.prisma.workFieldOption.createMany({
-            data: c.opcoes.map((o, j) => ({ orgId, fieldId: campo.id, name: o.name, color: o.color, order: j })),
-          });
-        }
-      }
-      return list;
+    return this.logado(orgId, actorId, 'work.list.create_from_model', 'work_list', null, () =>
+      criarListaDoModeloNoBanco(this.prisma, orgId, pai, modelo, input.name ?? modelo.nome),
+    );
+  }
+
+  /**
+   * A ESTRUTURA SUGERIDA (rodada do painel P2): Administrativa, Gestão e
+   * Clientes, com a esteira, o onboarding e a execução dentro de Clientes. Cria
+   * só o que falta pelo nome, numa transação sob o cadeado da árvore; a regra
+   * inteira está em `estrutura-sugerida.ts`, que o seed da homologação também usa.
+   * Uma linha de auditoria por chamada, com o que foi criado e o que já existia.
+   */
+  async criarEstruturaSugerida(orgId: string, actorId: string): Promise<TrabEstruturaSugeridaResultado> {
+    const r = await this.prisma.$transaction((tx) => criarEstruturaSugerida(tx, orgId));
+    await this.audit.log({
+      orgId, actorId, action: 'work.structure.suggested', entityType: 'work_folder',
+      after: r as unknown as Prisma.InputJsonValue,
     });
+    return r;
   }
 
   // ---------- utilitários ----------

@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 import { contar, idsDosLeads, semearDemonstracao } from './seed-comercial/semear';
+import { criarEstruturaSugerida } from '../src/work/estrutura-sugerida';
 
 /*
  * SEED DA HOMOLOGAÇÃO DO COCKPIT COMERCIAL (13/10/2026) — `pnpm --filter @mktos/api db:seed:comercial`.
@@ -128,6 +129,13 @@ async function main() {
   for (const s of relatorio.salas) {
     console.log(`  ${s.empresa.padEnd(22)} ${s.link ?? '(link indisponível: sala sem cifra ou ENCRYPTION_KEY trocada)'}${s.nova ? '' : '  (sala já existia)'}`);
   }
+
+  // 4) Rodada do painel P2 (18/10/2026): a estrutura sugerida do Trabalho
+  // (Administrativa, Gestão, Clientes com esteira, onboarding e execução). A MESMA
+  // função da rota `POST /trabalho/estrutura/sugerida`: cria só o que falta pelo
+  // nome, nunca duplica nem renomeia. As travas de "nunca em produção" acima valem.
+  const estrutura = await prisma.$transaction((tx) => criarEstruturaSugerida(tx, org.id));
+  console.log(`seed-comercial: Trabalho · pastas criadas: ${estrutura.criadas.pastas.join(', ') || 'nenhuma'}; listas criadas: ${estrutura.criadas.listas.join(', ') || 'nenhuma'}; já existiam: ${estrutura.jaExistiam.pastas.length} pasta(s), ${estrutura.jaExistiam.listas.length} lista(s).`);
 }
 
 main()

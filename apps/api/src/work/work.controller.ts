@@ -33,6 +33,18 @@ export class WorkController {
     return this.svc.estrutura(u.orgId);
   }
 
+  /*
+   * A estrutura sugerida (rodada do painel P2, 18/10/2026): cria SÓ o que falta
+   * de Administrativa, Gestão e Clientes (com a esteira, o onboarding e a
+   * execução). `tarefas.editar`, como criar pasta e lista à mão: é a mesma
+   * escrita, em lote. Repetir a chamada não duplica nada.
+   */
+  @Post('estrutura/sugerida')
+  @RequirePermissions('tarefas.editar')
+  criarEstruturaSugerida(@CurrentUser() u: JwtUser) {
+    return this.svc.criarEstruturaSugerida(u.orgId, u.sub);
+  }
+
   // ---- espaços ----
   @Post('espacos')
   @RequirePermissions('tarefas.editar')
