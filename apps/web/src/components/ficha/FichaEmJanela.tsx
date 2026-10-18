@@ -36,12 +36,13 @@ export function FichaEmJanela() {
 
   if (!id) return null;
   return (
-    <div className="fixed inset-0 z-[70] flex justify-end bg-black/45" onClick={fecharFicha}>
+    // Centralizada, com margem dos quatro lados: a tela de baixo continua à vista.
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 min-[820px]:p-8" onClick={fecharFicha}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Ficha do cliente"
-        className="h-full w-full max-w-[1100px] overflow-y-auto border-l border-border bg-bg p-5 shadow-2xl min-[820px]:p-7"
+        className="max-h-full w-full max-w-[1120px] overflow-y-auto rounded-lg border border-border bg-bg p-5 shadow-2xl min-[820px]:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <FichaDoCliente key={id} taskId={id} rotulo="Ficha do cliente" emJanela />

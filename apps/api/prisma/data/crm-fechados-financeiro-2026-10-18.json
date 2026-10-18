@@ -121,6 +121,11 @@
       "opcoes": []
     },
     {
+      "nome": "Próximo contato",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
       "nome": "Produto",
       "tipo": "drop_down",
       "opcoes": [

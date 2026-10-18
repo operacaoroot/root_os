@@ -80,14 +80,58 @@ export interface JornadaDoCliente {
   reunioes: (ReuniaoResumo & { taskId: string; fase: string })[];
 }
 
+/*
+ * TAREFAS DO CLIENTE: o que a equipe vai fazer por aquele cliente (ligar,
+ * revisar, pedir depoimento). Moram na lista "Tarefas dos clientes" do
+ * Trabalho (então aparecem no Quadro interno) e se penduram no cartão do
+ * cliente por `parentId`.
+ */
+export const LISTA_DE_TAREFAS_DO_CLIENTE = 'crm-root-tarefas';
+
+export const NovaTarefaDoClienteSchema = z.object({
+  titulo: z.string().trim().min(1).max(300),
+  /** AAAA-MM-DD */
+  prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  responsavel: z.string().trim().max(120).nullish(),
+});
+export type NovaTarefaDoCliente = z.infer<typeof NovaTarefaDoClienteSchema>;
+
+export interface TarefaDoCliente {
+  id: string;
+  titulo: string;
+  feita: boolean;
+  prazo: string | null;
+  responsavel: string | null;
+  atrasada: boolean;
+}
+
+/**
+ * A rotina de sucesso do cliente depois da entrega (contrato com começo, meio e
+ * fim): o mínimo para ele seguir satisfeito, indicar e voltar. Dias a partir de hoje.
+ */
+export const ROTINA_DE_SUCESSO: { titulo: string; dias: number }[] = [
+  { titulo: 'Ligar uma semana depois da entrega: está usando? travou em algo?', dias: 7 },
+  { titulo: 'Acompanhamento de 30 dias: resultado, uso e ajustes', dias: 30 },
+  { titulo: 'Pesquisa de satisfação (nota de 0 a 10 e o porquê)', dias: 45 },
+  { titulo: 'Pedir depoimento ou indicação', dias: 60 },
+  { titulo: 'Propor a continuidade (próximo projeto ou manutenção)', dias: 75 },
+];
+
 /** Um quadro (kanban) de qualquer lista da jornada. */
 export interface QuadroDaLista {
   lista: { id: string; nome: string; chave: string } | null;
   etapas: { id: string; nome: string; cor: string; fechada: boolean; qtd: number; valor: number }[];
+  /** Campos de data da lista (Próximo contato, Entrega prevista…): o calendário escolhe por qual mostrar. */
+  camposData: { id: string; nome: string }[];
   cartoes: {
     id: string;
     titulo: string;
     statusId: string;
+    /** Valor de cada campo de data, `AAAA-MM-DD`, por id do campo. */
+    datas: Record<string, string>;
+    /** O prazo do cartão (dueDate), `AAAA-MM-DD`. */
+    prazo: string | null;
+    criadoEm: string;
     valor: number | null;
     contato: string | null;
     responsavel: string | null;
@@ -96,5 +140,8 @@ export interface QuadroDaLista {
     seloCor: string | null;
     diasNaEtapa: number | null;
     atualizadoEm: string;
+    /** Tarefas do cliente ainda abertas, e a próxima a vencer. */
+    tarefasAbertas: number;
+    proximaTarefa: { titulo: string; prazo: string | null; atrasada: boolean } | null;
   }[];
 }

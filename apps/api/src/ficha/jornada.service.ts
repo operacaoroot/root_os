@@ -8,6 +8,7 @@ import {
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { FichaService } from './ficha.service';
+import { TarefasDoClienteService } from './tarefas-do-cliente.service';
 
 const DIA = 86_400_000;
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -17,8 +18,8 @@ const lerMoeda = (v: string | null | undefined) => {
 };
 
 type CartaoComValores = {
-  id: string; title: string; listId: string; statusId: string; createdAt: Date; updatedAt: Date; statusDesde: Date | null;
-  values: { value: string | null; option: { name: string; color: string } | null; field: { name: string; type: string } }[];
+  id: string; title: string; listId: string; statusId: string; createdAt: Date; updatedAt: Date; statusDesde: Date | null; dueDate: Date | null;
+  values: { value: string | null; fieldId: string; option: { name: string; color: string } | null; field: { name: string; type: string } }[];
 };
 
 /** O nome que liga os cartões do mesmo cliente: o campo Empresa, ou o título até o "|". */
@@ -32,6 +33,7 @@ export class JornadaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fichas: FichaService,
+    private readonly tarefas: TarefasDoClienteService,
   ) {}
 
   private async listasDaJornada(orgId: string) {
@@ -46,8 +48,8 @@ export class JornadaService {
     return this.prisma.workTask.findMany({
       where: { orgId, listId: { in: listIds }, archived: false, parentId: null },
       select: {
-        id: true, title: true, listId: true, statusId: true, createdAt: true, updatedAt: true, statusDesde: true,
-        values: { select: { value: true, option: { select: { name: true, color: true } }, field: { select: { name: true, type: true } } } },
+        id: true, title: true, listId: true, statusId: true, createdAt: true, updatedAt: true, statusDesde: true, dueDate: true,
+        values: { select: { value: true, fieldId: true, option: { select: { name: true, color: true } }, field: { select: { name: true, type: true } } } },
       },
     });
   }
@@ -55,8 +57,12 @@ export class JornadaService {
   /** O quadro de uma lista da jornada, para o kanban de onboarding e de sucesso do cliente. */
   async quadro(orgId: string, chave: string, agora = new Date()): Promise<QuadroDaLista> {
     const lista = (await this.listasDaJornada(orgId)).get(chave);
-    if (!lista) return { lista: null, etapas: [], cartoes: [] };
-    const cs = await this.cartoes(orgId, [lista.id]);
+    if (!lista) return { lista: null, etapas: [], camposData: [], cartoes: [] };
+    const [cs, camposData] = await Promise.all([
+      this.cartoes(orgId, [lista.id]),
+      this.prisma.workField.findMany({ where: { orgId, listId: lista.id, type: 'data' }, orderBy: { order: 'asc' }, select: { id: true, name: true } }),
+    ]);
+    const resumo = await this.tarefas.resumoPorCliente(orgId, cs.map((c) => c.id));
     const cartoes = cs.map((c) => {
       const moeda = c.values.find((v) => v.field.type === 'moeda' && v.value);
       const contato = c.values.find((v) => /^contato/i.test(v.field.name))?.value ?? null;
@@ -66,6 +72,11 @@ export class JornadaService {
         id: c.id,
         titulo: c.title,
         statusId: c.statusId,
+        datas: Object.fromEntries(
+          c.values.filter((v) => v.field.type === 'data' && v.value && /^\d{4}-\d{2}-\d{2}/.test(v.value)).map((v) => [v.fieldId, v.value!.slice(0, 10)]),
+        ),
+        prazo: c.dueDate ? c.dueDate.toISOString().slice(0, 10) : null,
+        criadoEm: c.createdAt.toISOString(),
         valor: lerMoeda(moeda?.value),
         contato,
         responsavel: resp?.option?.name ?? null,
@@ -73,10 +84,13 @@ export class JornadaService {
         seloCor: selo?.option?.color ?? null,
         diasNaEtapa: c.statusDesde ? Math.floor((agora.getTime() - c.statusDesde.getTime()) / DIA) : null,
         atualizadoEm: c.updatedAt.toISOString(),
+        tarefasAbertas: resumo.get(c.id)?.abertas ?? 0,
+        proximaTarefa: resumo.get(c.id)?.proxima ?? null,
       };
     });
     return {
       lista: { id: lista.id, nome: lista.name, chave },
+      camposData: camposData.map((f) => ({ id: f.id, nome: f.name })),
       etapas: lista.statuses.map((s) => {
         const da = cartoes.filter((c) => c.statusId === s.id);
         return { id: s.id, nome: s.name, cor: s.color, fechada: s.type === 'closed', qtd: da.length, valor: da.reduce((t, c) => t + (c.valor ?? 0), 0) };

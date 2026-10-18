@@ -1,5 +1,5 @@
 {
-  "fonte": "Clientes fechados no comercial (crm-fechados-financeiro-2026-10-18.json) distribuídos entre onboarding e sucesso do cliente em 18/10/2026. A etapa de cada um é o melhor palpite a partir do financeiro e das pastas do Drive; conferir.",
+  "fonte": "Clientes fechados no comercial (crm-fechados-financeiro-2026-10-18.json) distribuídos entre onboarding e sucesso do cliente em 18/10/2026. A etapa de cada um é o melhor palpite a partir do financeiro e das pastas do Drive; conferir. Sucesso do cliente remodelado em 18/10 para contratos de começo, meio e fim: o funil vai da entrega à continuidade.",
   "listas": [
     {
       "espaco": {
@@ -215,29 +215,29 @@
       },
       "etapas": [
         {
-          "nome": "Ativo",
+          "nome": "Pós-entrega",
           "tipo": "open",
-          "cor": "#30a46c"
+          "cor": "#8b8d98"
         },
         {
-          "nome": "Acompanhamento",
+          "nome": "Acompanhamento 30 dias",
           "tipo": "custom",
           "cor": "#4194f6"
         },
         {
-          "nome": "Em risco",
-          "tipo": "custom",
-          "cor": "#e5484d"
-        },
-        {
-          "nome": "Renovação",
+          "nome": "Depoimento e indicação",
           "tipo": "custom",
           "cor": "#f9d900"
         },
         {
-          "nome": "Expansão",
+          "nome": "Proposta de continuidade",
           "tipo": "custom",
           "cor": "#a875ff"
+        },
+        {
+          "nome": "Recorrente",
+          "tipo": "custom",
+          "cor": "#30a46c"
         },
         {
           "nome": "Encerrado",
@@ -339,17 +339,17 @@
           ]
         },
         {
-          "nome": "Mensalidade",
+          "nome": "Potencial de continuidade",
           "tipo": "moeda",
           "opcoes": []
         },
         {
-          "nome": "Cliente desde",
+          "nome": "Entregue em",
           "tipo": "data",
           "opcoes": []
         },
         {
-          "nome": "Próxima revisão",
+          "nome": "Próximo contato",
           "tipo": "data",
           "opcoes": []
         }
@@ -358,16 +358,16 @@
         {
           "id": "cs-curral",
           "titulo": "Curral | Manutenção e suporte",
-          "etapa": "Ativo",
+          "etapa": "Recorrente",
           "criadoEm": "2026-10-06T12:00:00-03:00",
           "etapaDesde": "2026-10-06T12:00:00-03:00",
-          "nota": "Implantação paga em julho e setembro. Mensalidade de manutenção e suporte de R$ 190 desde outubro (12 previstas até 06/10/2027; conferir o prazo no contrato e a migração do CNPJ da FullBPO para o da ROOT).",
+          "nota": "Projeto de implantação pago em julho e setembro (entregue). Virou recorrente: manutenção e suporte de R$ 190/mês desde outubro (12 previstas até 06/10/2027; conferir o prazo no contrato e a migração do CNPJ da FullBPO para o da ROOT).",
           "campos": {
             "Empresa": "Curral",
             "Contato": "Marcelo Alves Meroto",
             "Produto": "Manutenção e suporte",
-            "Mensalidade": "190",
-            "Cliente desde": "2026-07-07"
+            "Potencial de continuidade": "190",
+            "Entregue em": "2026-09-09"
           }
         }
       ]

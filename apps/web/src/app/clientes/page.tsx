@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { QuadroDeClientes } from '@/components/ficha/QuadroDeClientes';
+import { VisoesDaLista } from '@/components/ficha/VisoesDaLista';
 
 /*
  * CLIENTES: depois do "Negócio fechado", o cliente passa ao onboarding e,
@@ -10,7 +10,7 @@ import { QuadroDeClientes } from '@/components/ficha/QuadroDeClientes';
  */
 const ABAS = [
   { chave: 'crm-root-onboarding', nome: 'Onboarding', valor: 'Contratos em implantação' },
-  { chave: 'crm-root-sucesso', nome: 'Sucesso do cliente', valor: 'Receita recorrente (mês)' },
+  { chave: 'crm-root-sucesso', nome: 'Sucesso do cliente', valor: 'Potencial de continuidade' },
 ] as const;
 
 export default function ClientesPage() {
@@ -43,7 +43,7 @@ export default function ClientesPage() {
           </button>
         ))}
       </div>
-      <QuadroDeClientes key={aba} chave={aba} rotuloDoValor={atual.valor} />
+      <VisoesDaLista key={aba} chave={aba} item="cliente" rotuloAbertos="Clientes ativos" rotuloDoValor={atual.valor} novo="+ Novo cliente" />
     </div>
   );
 }

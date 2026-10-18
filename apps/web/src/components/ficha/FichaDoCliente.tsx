@@ -11,7 +11,9 @@ import {
   paraDigitarPtBr,
   JORNADA_DO_CLIENTE,
   faseDaLista,
+  ROTINA_DE_SUCESSO,
   type JornadaDoCliente,
+  type TarefaDoCliente,
   type ReuniaoCompleta,
   type ReuniaoResumo,
   type TrabCampoDto,
@@ -108,7 +110,8 @@ export function FichaDoCliente(props: {
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
-  const [aba, setAba] = useState<'historico' | 'reunioes'>('historico');
+  const [aba, setAba] = useState<'historico' | 'tarefas' | 'reunioes'>('historico');
+  const [tarefas, setTarefas] = useState<TarefaDoCliente[]>([]);
   const [aberta, setAberta] = useState<ReuniaoCompleta | null>(null);
 
   const [titulo, setTitulo] = useState('');
@@ -120,13 +123,15 @@ export function FichaDoCliente(props: {
   const carregar = useCallback(async () => {
     if (!token) return;
     try {
-      const [tarefa, estrutura, rs, jr] = await Promise.all([
+      const [tarefa, estrutura, rs, jr, tf] = await Promise.all([
         apiGet<TrabTarefaDetalhe>(`/trabalho/tarefas/${taskId}`, token),
         apiGet<TrabEstrutura>('/trabalho/estrutura', token),
         apiGet<ReuniaoResumo[]>(`/trabalho/fichas/${taskId}/reunioes`, token),
         apiGet<JornadaDoCliente>(`/trabalho/fichas/${taskId}/jornada`, token).catch(() => null),
+        apiGet<TarefaDoCliente[]>(`/trabalho/fichas/${taskId}/tarefas`, token).catch(() => []),
       ]);
       setJornada(jr);
+      setTarefas(tf);
       const l = acharLista(estrutura, tarefa.listId) ?? null;
       const cs = [...(l?.fields ?? []), ...estrutura.camposGlobais].sort((a, b) => a.order - b.order);
       setT(tarefa);
@@ -283,11 +288,17 @@ export function FichaDoCliente(props: {
     <div className="com-tema mx-auto max-w-[1180px] space-y-5 text-text">
       <div>
         {props.emJanela ? (
-          <div className="flex items-center justify-between gap-3">
-            <button onClick={fecharFicha} className="rounded-md border border-border px-3 py-1 text-sm text-muted hover:border-brand hover:text-text">
-              × Fechar
-            </button>
+          // Fechar no canto superior direito, como toda janela.
+          <div className="flex items-center justify-end gap-4">
             <Link href={`${faseDaLista(lista?.externalId)?.rota ?? '/comercial/lead/'}${t.id}`} className="text-sm text-muted underline hover:text-text">abrir em página inteira</Link>
+            <button
+              onClick={fecharFicha}
+              aria-label="Fechar a ficha"
+              title="Fechar (Esc)"
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-xl leading-none text-muted hover:border-brand hover:text-text"
+            >
+              ×
+            </button>
           </div>
         ) : (
           props.voltar && <Link href={props.voltar.href} className="text-sm text-muted hover:text-text">← {props.voltar.texto}</Link>
@@ -433,16 +444,27 @@ export function FichaDoCliente(props: {
 
         <section className="rounded-md border border-border bg-surface px-5 py-4">
           <div className="flex gap-1 border-b border-border">
-            {(['historico', 'reunioes'] as const).map((a) => (
+            {(['historico', 'tarefas', 'reunioes'] as const).map((a) => (
               <button
                 key={a}
                 onClick={() => setAba(a)}
                 className={`-mb-px border-b-2 px-3 py-2 text-sm ${aba === a ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'}`}
               >
-                {a === 'historico' ? 'Histórico' : `Reuniões (${reunioes.length})`}
+                {a === 'historico' ? 'Histórico' : a === 'tarefas' ? `Tarefas (${tarefas.filter((x) => !x.feita).length})` : `Reuniões (${reunioes.length})`}
               </button>
             ))}
           </div>
+
+          {aba === 'tarefas' && (
+            <Tarefas
+              taskId={taskId}
+              tarefas={tarefas}
+              podeEditar={podeEditar}
+              responsaveis={campos.find((f) => /^(responsavel|responsável|vendedor)/i.test(f.name))?.options.map((o) => o.name) ?? []}
+              mudou={async () => { await carregar(); avisarQueAFichaMudou(); }}
+              erro={setErro}
+            />
+          )}
 
           {aba === 'historico' && (
             <div className="mt-4 space-y-4">
@@ -639,6 +661,113 @@ function Transcricao({ r, fechar }: { r: ReuniaoCompleta; fechar: () => void }) 
             : r.transcricao}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** As tarefas da equipe para este cliente: o que fazer para ele seguir satisfeito. */
+function Tarefas(props: {
+  taskId: string;
+  tarefas: TarefaDoCliente[];
+  podeEditar: boolean;
+  responsaveis: string[];
+  mudou: () => Promise<void>;
+  erro: (m: string | null) => void;
+}) {
+  const { token } = useAuth();
+  const [titulo, setTitulo] = useState('');
+  const [prazo, setPrazo] = useState('');
+  const [resp, setResp] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  const input = 'rounded-md border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand';
+  const abertas = props.tarefas.filter((t) => !t.feita);
+  const feitas = props.tarefas.filter((t) => t.feita);
+
+  const agir = async (fn: () => Promise<unknown>) => {
+    if (!token) return;
+    setOcupado(true);
+    props.erro(null);
+    try {
+      await fn();
+      await props.mudou();
+    } catch (e) {
+      props.erro((e as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const criar = () =>
+    agir(async () => {
+      await apiPost(`/trabalho/fichas/${props.taskId}/tarefas`, { titulo: titulo.trim(), prazo: prazo || null, responsavel: resp || null }, token);
+      setTitulo('');
+      setPrazo('');
+    });
+
+  const linha = (t: TarefaDoCliente) => (
+    <li key={t.id} className="flex items-start gap-3 py-2">
+      <input
+        type="checkbox"
+        checked={t.feita}
+        disabled={!props.podeEditar || ocupado}
+        onChange={() => agir(() => apiPost(`/trabalho/fichas/tarefas/${t.id}/alternar`, {}, token))}
+        className="mt-1 h-4 w-4 accent-[rgb(var(--os-ac))]"
+        aria-label={t.feita ? 'Reabrir' : 'Marcar como feita'}
+      />
+      <div className="min-w-0 flex-1">
+        <div className={t.feita ? 'text-muted line-through' : ''}>{t.titulo}</div>
+        <div className="text-xs text-muted">
+          {t.prazo ? (
+            <span className={t.atrasada ? 'font-medium text-bad' : ''}>
+              {t.atrasada ? 'atrasada · ' : ''}
+              {t.prazo.split('-').reverse().join('/')}
+            </span>
+          ) : (
+            'sem prazo'
+          )}
+          {t.responsavel && ` · ${t.responsavel}`}
+        </div>
+      </div>
+    </li>
+  );
+
+  return (
+    <div className="mt-4 space-y-4">
+      {props.podeEditar && (
+        <form
+          className="space-y-2 rounded-md border border-dashed border-border p-3"
+          onSubmit={(e) => { e.preventDefault(); if (titulo.trim()) void criar(); }}
+        >
+          <input className={`${input} w-full`} value={titulo} placeholder="Nova tarefa (ex.: ligar para saber da primeira semana)" onChange={(e) => setTitulo(e.target.value)} />
+          <div className="flex flex-wrap gap-2">
+            <input className={input} type="date" value={prazo} onChange={(e) => setPrazo(e.target.value)} aria-label="Prazo" />
+            <select className={input} value={resp} onChange={(e) => setResp(e.target.value)} aria-label="Responsável">
+              <option value="">responsável</option>
+              {props.responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <button disabled={!titulo.trim() || ocupado} className="rounded-md bg-brand px-4 py-1.5 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-40">
+              Adicionar
+            </button>
+            <button
+              type="button"
+              disabled={ocupado}
+              onClick={() => agir(() => apiPost(`/trabalho/fichas/${props.taskId}/tarefas/rotina`, { responsavel: resp || null }, token))}
+              className="ml-auto rounded-md border border-brand px-3 py-1.5 text-sm text-brand hover:bg-brand/10 disabled:opacity-40"
+              title={ROTINA_DE_SUCESSO.map((r) => `${r.dias} dias: ${r.titulo}`).join('\n')}
+            >
+              + rotina de sucesso
+            </button>
+          </div>
+        </form>
+      )}
+      {abertas.length === 0 && <p className="text-muted">Nenhuma tarefa aberta.</p>}
+      <ul className="divide-y divide-border">{abertas.map(linha)}</ul>
+      {feitas.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-sm text-muted">{feitas.length} feita(s)</summary>
+          <ul className="divide-y divide-border">{feitas.map(linha)}</ul>
+        </details>
+      )}
     </div>
   );
 }
