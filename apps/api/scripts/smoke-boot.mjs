@@ -66,7 +66,9 @@ const ROTAS = (
   // 404 na tela — sem nada acusar, porque nenhum outro componente o espera. Na
   // caixa o silêncio é ainda mais fácil de não notar: o selo da barra lateral
   // simplesmente não aparece, e barra sem selo é indistinguível de caixa vazia.
-  '/api/memoria,/api/rotinas,/api/organograma,/api/linha-do-tempo,/api/caixa'
+  // `caixa/atividade` (rodada do painel P1) mora num controller próprio do
+  // mesmo módulo: tirá-lo da lista `controllers` derrubaria só as abas.
+  '/api/memoria,/api/rotinas,/api/organograma,/api/linha-do-tempo,/api/caixa,/api/caixa/atividade'
 )
   .split(',')
   .map((r) => r.trim())

@@ -5730,7 +5730,7 @@ export type CaixaTipoDaAtividade =
   | 'criacao'
   | 'edicao';
 
-/** Um campo que mudou, de → para, já em texto de tela. */
+/** Um campo que mudou, de → para. Vencimento vem em ISO (a tela formata o dia); nulo = vazio. */
 export interface CaixaMudanca {
   campo: 'status' | 'responsavel' | 'vencimento' | 'titulo' | 'prioridade';
   de: string | null;

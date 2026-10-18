@@ -24,6 +24,12 @@ import type { Prisma } from '@prisma/client';
  * horas devolvidas, onde duas telas publicavam números contraditórios do mesmo
  * número.
  *
+ * A caixa de entrada (rodada do painel P1, 18/10/2026) manteve isto: a aba
+ * Atividade LÊ a auditoria que o quadro grava e os comentários, e a única
+ * escrita nova é `CaixaVisto`, a marca pessoal de "limpei" (ver o cabeçalho de
+ * `caixa-visto.service.ts`). Ela não guarda "o que espera por você": guarda o
+ * que cada pessoa já leu, e não muda estado de negócio nenhum.
+ *
  * ----------------------------------------------------------------------------
  * O QUE CONTA PARA O CONTADOR, E POR QUÊ SÓ ISSO
  * ----------------------------------------------------------------------------
