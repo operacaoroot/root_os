@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { PainelComercial, PainelComercialGrupo, PainelComercialMes } from '@mktos/shared';
-import { apiGet } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import {
+  SEM_INFORMACAO,
+  type PainelComercial,
+  type PainelComercialGrupo,
+  type PainelComercialMes,
+  type PainelComercialNegocio,
+} from '@mktos/shared';
+import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
@@ -11,40 +18,172 @@ const curto = (n: number) =>
   n >= 1000 ? `${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : n.toLocaleString('pt-BR');
 const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const nomeDoMes = (aaaaMm: string) => MES[Number(aaaaMm.slice(5, 7)) - 1];
+const mesPorExtenso = (p: string) => (p.length === 4 ? p : `${nomeDoMes(p)}/${p.slice(0, 4)}`);
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+const negocios = (n: number) => `${n} ${n === 1 ? 'negócio' : 'negócios'}`;
+
+/*
+ * O FILTRO é o elo entre o painel e a lista: todo número do painel é clicável e
+ * vira um filtro da aba Negócios. Mora na URL (?ver=negocios&canal=BNI…) para o
+ * voltar do navegador desfazer o clique e o link poder ser mandado a alguém.
+ */
+type Situacao = 'aberta' | 'ganho' | 'perdido';
+interface Filtro {
+  etapa?: string;
+  canal?: string;
+  vendedor?: string;
+  situacao?: Situacao;
+  /** Prefixo de `mesFechado`: `2026` (o ano) ou `2026-08` (o mês). */
+  fechado?: string;
+  /** Prefixo de `mesEntrada`. */
+  entrada?: string;
+}
+const CHAVES: (keyof Filtro)[] = ['etapa', 'canal', 'vendedor', 'situacao', 'fechado', 'entrada'];
+const SITUACAO: Record<Situacao, string> = { aberta: 'Em negociação', ganho: 'Fechados', perdido: 'Perdidos' };
+
+function lerUrl(): { ver: 'painel' | 'negocios'; filtro: Filtro } {
+  if (typeof window === 'undefined') return { ver: 'painel', filtro: {} };
+  const q = new URLSearchParams(window.location.search);
+  const filtro: Filtro = {};
+  for (const k of CHAVES) {
+    const v = q.get(k);
+    if (v) (filtro as Record<string, string>)[k] = v;
+  }
+  return { ver: q.get('ver') === 'negocios' ? 'negocios' : 'painel', filtro };
+}
+
+function escreverUrl(ver: 'painel' | 'negocios', filtro: Filtro, empilhar: boolean) {
+  const q = new URLSearchParams();
+  if (ver === 'negocios') q.set('ver', 'negocios');
+  for (const k of CHAVES) if (filtro[k]) q.set(k, filtro[k]!);
+  const url = `${window.location.pathname}${q.toString() ? `?${q}` : ''}`;
+  if (empilhar) window.history.pushState(null, '', url);
+  else window.history.replaceState(null, '', url);
+}
+
+function passa(n: PainelComercialNegocio, f: Filtro) {
+  if (f.etapa && n.etapa !== f.etapa) return false;
+  if (f.canal && (n.canal ?? SEM_INFORMACAO) !== f.canal) return false;
+  if (f.vendedor && (n.vendedor ?? SEM_INFORMACAO) !== f.vendedor) return false;
+  if (f.situacao && n.resultado !== f.situacao) return false;
+  if (f.fechado && !(n.mesFechado ?? '').startsWith(f.fechado)) return false;
+  if (f.entrada && !n.mesEntrada.startsWith(f.entrada)) return false;
+  return true;
+}
+
+function rotuloDoFiltro(k: keyof Filtro, v: string) {
+  if (k === 'situacao') return SITUACAO[v as Situacao] ?? v;
+  if (k === 'fechado') return `Fechado em ${mesPorExtenso(v)}`;
+  if (k === 'entrada') return `Entrou em ${mesPorExtenso(v)}`;
+  if (k === 'etapa') return `Etapa: ${v}`;
+  if (k === 'canal') return `Canal: ${v}`;
+  return `Vendedor: ${v}`;
+}
 
 export default function ComercialPage() {
-  const { token, ready } = useAuth();
+  const { token, ready, can } = useAuth();
+  const router = useRouter();
   const [p, setP] = useState<PainelComercial | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ver, setVer] = useState<'painel' | 'negocios'>('painel');
+  const [filtro, setFiltro] = useState<Filtro>({});
+  const [criando, setCriando] = useState(false);
+
+  useEffect(() => {
+    const ler = () => {
+      const u = lerUrl();
+      setVer(u.ver);
+      setFiltro(u.filtro);
+    };
+    ler();
+    window.addEventListener('popstate', ler);
+    return () => window.removeEventListener('popstate', ler);
+  }, []);
 
   useEffect(() => {
     if (!ready || !token) return;
     apiGet<PainelComercial>('/comercial/painel', token).then(setP).catch((e) => setError(e.message));
   }, [ready, token]);
 
-  const quadro = p?.lista ? `/trabalho?lista=${p.lista.id}` : '/trabalho';
+  const abrir = useCallback((f: Filtro) => {
+    setFiltro(f);
+    setVer('negocios');
+    escreverUrl('negocios', f, true);
+    window.scrollTo({ top: 0 });
+  }, []);
+  const trocarAba = (v: 'painel' | 'negocios') => {
+    setVer(v);
+    escreverUrl(v, filtro, true);
+  };
+  const tirar = (k: keyof Filtro) => {
+    const f = { ...filtro };
+    delete f[k];
+    setFiltro(f);
+    escreverUrl(ver, f, false);
+  };
+
+  const novoLead = async () => {
+    if (!token || !p?.lista) return;
+    const titulo = window.prompt('Nome do lead (empresa | contato):');
+    if (!titulo?.trim()) return;
+    setCriando(true);
+    try {
+      const t = await apiPost<{ id: string }>('/trabalho/tarefas', { listId: p.lista.id, title: titulo.trim() }, token);
+      router.push(`/comercial/lead/${t.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+      setCriando(false);
+    }
+  };
 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
-      <div>
-        <div className="com-rotulo">Comercial da ROOT</div>
-        <h1 className="mt-1 text-[2rem] font-bold leading-tight tracking-tight">
-          {p?.lista ? (
-            <>
-              <span className="com-num text-brand">{brl(p.totais.emNegociacao)}</span> em negociação
-            </>
-          ) : (
-            'Comercial'
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="com-rotulo">Comercial da ROOT</div>
+          <h1 className="mt-1 text-[2rem] font-bold leading-tight tracking-tight">
+            {p?.lista ? (
+              <>
+                <span className="com-num text-brand">{brl(p.totais.valorGanhoNoAno)}</span> fechados em {p.ano}
+              </>
+            ) : (
+              'Comercial'
+            )}
+          </h1>
+          {p?.lista && (
+            <p className="mt-1 text-muted">
+              {p.totais.abertos > 0
+                ? `${negocios(p.totais.abertos)} em negociação, somando ${brl(p.totais.emNegociacao)}.`
+                : 'Nenhum negócio em negociação agora.'}
+            </p>
           )}
-        </h1>
-        {p?.lista && (
-          <p className="mt-1 text-muted">
-            {p.totais.abertos} {p.totais.abertos === 1 ? 'negócio aberto' : 'negócios abertos'} no CRM.{' '}
-            <Link href={quadro} className="text-text underline">Abrir o quadro</Link>
-          </p>
+        </div>
+        {p?.lista && can('tarefas.editar') && (
+          <button
+            onClick={novoLead}
+            disabled={criando}
+            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
+          >
+            + Novo lead
+          </button>
         )}
       </div>
+
+      {p?.lista && (
+        <div className="flex gap-1 border-b border-border">
+          {(['painel', 'negocios'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => trocarAba(v)}
+              className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${
+                ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'
+              }`}
+            >
+              {v === 'painel' ? 'Painel' : `Negócios (${p.negocios.length})`}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {!p && !error && <p className="text-muted">Carregando…</p>}
@@ -53,96 +192,123 @@ export default function ComercialPage() {
         <div className="rounded-md border border-border bg-surface px-5 py-4">
           <p>
             Ainda não existe a lista <b>Gestão de Leads</b> no Trabalho. O painel lê dela: etapas, canal de aquisição,
-            vendedor e valor em negociação.
+            vendedor e valor da proposta.
           </p>
         </div>
       )}
 
-      {p?.lista && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Bloco rotulo={`Fechado em ${p.ano}`} valor={brl(p.totais.valorGanhoNoAno)} nota={`${p.totais.ganhosNoAno} contrato(s)`} destaque />
-            <Bloco rotulo="Em negociação" valor={brl(p.totais.emNegociacao)} nota={`${p.totais.abertos} aberto(s)`} />
-            <Bloco
-              rotulo="Conversão no ano"
-              valor={p.totais.conversao == null ? '—' : `${p.totais.conversao}%`}
-              nota={`${p.totais.ganhosNoAno} ganho(s), ${p.totais.perdidosNoAno} perdido(s)`}
-            />
-            <Bloco rotulo="Ticket médio" valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)} nota="dos contratos do ano" />
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Painel titulo="Funil geral" nota="negócios em cada etapa">
-              <Funil etapas={p.etapas} medida="qtd" />
-            </Painel>
-            <Painel titulo="Valor por fase do funil" nota="soma do valor da proposta em cada etapa">
-              <Funil etapas={p.etapas} medida="valor" />
-            </Painel>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Painel titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor da proposta dos negócios fechados">
-              <Barras meses={p.fechadosPorMes} medida="valor" />
-            </Painel>
-            <Painel titulo="Oportunidades geradas por mês" nota="leads que entraram no CRM, últimos 12 meses">
-              <Barras meses={p.entradasPorMes} medida="qtd" />
-            </Painel>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Painel titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato">
-              <Grupos grupos={p.canais} primeira="Canal" />
-            </Painel>
-            <Painel titulo="Por vendedor" nota="quem carrega o quê">
-              <Grupos grupos={p.vendedores} primeira="Vendedor" />
-            </Painel>
-          </div>
-
-          <Painel titulo="Em negociação agora" nota="do maior valor para o menor">
-            {p.abertos.length === 0 ? (
-              <p className="text-muted">Nenhum negócio aberto.</p>
-            ) : (
-              <div className="divide-y divide-border">
-                {p.abertos.map((l) => (
-                  <Link
-                    key={l.id}
-                    href={`${quadro}&tarefa=${l.id}`}
-                    className="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2"
-                  >
-                    <span className="min-w-0 flex-1 font-medium">{l.titulo}</span>
-                    <span className="text-sm text-muted">
-                      {l.etapa}
-                      {l.diasNaEtapa != null && ` · há ${l.diasNaEtapa} ${l.diasNaEtapa === 1 ? 'dia' : 'dias'}`}
-                      {l.vendedor && ` · ${l.vendedor}`}
-                    </span>
-                    <span className="com-num w-28 text-right">{l.valor == null ? '—' : brl(l.valor)}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Painel>
-
-          <p className="text-sm text-muted">
-            Lido da lista {p.lista.nome} do Quadro interno. &quot;Negócio fechado&quot; conta como contrato; Perdido e
-            Desqualificado contam como perda. O mês do fechamento é quando o cartão foi para a etapa fechada.
-          </p>
-        </>
-      )}
+      {p?.lista && ver === 'painel' && <Painel p={p} abrir={abrir} />}
+      {p?.lista && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
     </div>
   );
 }
 
-function Bloco({ rotulo, valor, nota, destaque }: { rotulo: string; valor: string; nota?: string; destaque?: boolean }) {
+// ---------------- Painel ----------------
+
+function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
+  const ano = String(p.ano);
   return (
-    <div className="rounded-md border border-border bg-surface px-5 py-4">
-      <div className="com-rotulo">{rotulo}</div>
-      <div className={`com-num mt-2 text-[1.75rem] font-bold leading-none ${destaque ? 'text-brand' : 'text-text'}`}>{valor}</div>
-      {nota && <div className="mt-2 text-sm text-muted">{nota}</div>}
-    </div>
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Bloco
+          rotulo={`Fechado em ${p.ano}`}
+          valor={brl(p.totais.valorGanhoNoAno)}
+          nota={`${p.totais.ganhosNoAno} contrato(s)`}
+          destaque
+          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+        />
+        <Bloco
+          rotulo="Em negociação"
+          valor={brl(p.totais.emNegociacao)}
+          nota={`${p.totais.abertos} aberto(s)`}
+          onClick={() => abrir({ situacao: 'aberta' })}
+        />
+        <Bloco
+          rotulo="Conversão no ano"
+          valor={p.totais.conversao == null ? '—' : `${p.totais.conversao}%`}
+          nota={`${p.totais.ganhosNoAno} ganho(s), ${p.totais.perdidosNoAno} perdido(s)`}
+          onClick={() => abrir({ fechado: ano })}
+        />
+        <Bloco
+          rotulo="Ticket médio"
+          valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)}
+          nota="dos contratos do ano"
+          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa">
+          <Colunas
+            itens={p.etapas.map((e) => ({
+              chave: e.nome,
+              rotulo: e.nome,
+              v: e.qtd,
+              mostra: String(e.qtd),
+              tom: e.resultado,
+              dica: [e.nome, negocios(e.qtd), e.valor ? brl(e.valor) : 'sem valor'],
+              onClick: () => abrir({ etapa: e.nome }),
+            }))}
+          />
+        </Quadro>
+        <Quadro titulo="Valor por fase do funil" nota="soma do valor da proposta em cada etapa">
+          <Colunas
+            itens={p.etapas.map((e) => ({
+              chave: e.nome,
+              rotulo: e.nome,
+              v: e.valor,
+              mostra: curto(e.valor),
+              tom: e.resultado,
+              dica: [e.nome, e.valor ? brl(e.valor) : 'sem valor', negocios(e.qtd)],
+              onClick: () => abrir({ etapa: e.nome }),
+            }))}
+          />
+        </Quadro>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Quadro titulo={`Contratos fechados por mês · ${p.ano}`} nota="valor da proposta dos negócios fechados · clique num mês">
+          <Meses meses={p.fechadosPorMes} medida="valor" onClick={(m) => abrir({ situacao: 'ganho', fechado: m })} verbo="fechados" />
+        </Quadro>
+        <Quadro titulo="Oportunidades geradas por mês" nota="leads que entraram no CRM, últimos 12 meses">
+          <Meses meses={p.entradasPorMes} medida="qtd" onClick={(m) => abrir({ entrada: m })} verbo="entraram" />
+        </Quadro>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Quadro titulo="Por canal de aquisição" nota="de onde vem o lead e de onde vem o contrato">
+          <Grupos grupos={p.canais} primeira="Canal" abrir={(nome, extra) => abrir({ canal: nome, ...extra })} />
+        </Quadro>
+        <Quadro titulo="Por vendedor" nota="quem carrega o quê">
+          <Grupos grupos={p.vendedores} primeira="Vendedor" abrir={(nome, extra) => abrir({ vendedor: nome, ...extra })} />
+        </Quadro>
+      </div>
+
+      <Quadro titulo="Em negociação agora" nota="do maior valor para o menor">
+        <ListaDeNegocios itens={p.negocios.filter((n) => n.resultado === 'aberta')} vazio="Nenhum negócio aberto." />
+      </Quadro>
+    </>
   );
 }
 
-function Painel({ titulo, nota, children }: { titulo: string; nota?: string; children: React.ReactNode }) {
+function Bloco(props: { rotulo: string; valor: string; nota?: string; destaque?: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={props.onClick}
+      className="group rounded-md border border-border bg-surface px-5 py-4 text-left transition hover:border-brand/60 hover:bg-surface-2"
+    >
+      <div className="com-rotulo">{props.rotulo}</div>
+      <div className={`com-num mt-2 text-[1.75rem] font-bold leading-none ${props.destaque ? 'text-brand' : 'text-text'}`}>{props.valor}</div>
+      {props.nota && (
+        <div className="mt-2 text-sm text-muted">
+          {props.nota} <span className="opacity-0 transition group-hover:opacity-100">· ver →</span>
+        </div>
+      )}
+    </button>
+  );
+}
+
+function Quadro({ titulo, nota, children }: { titulo: string; nota?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-md border border-border bg-surface px-5 py-4">
       <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
@@ -152,28 +318,57 @@ function Painel({ titulo, nota, children }: { titulo: string; nota?: string; chi
   );
 }
 
-// Colunas por etapa, na ordem do funil (como o painel do ClickUp). Aberta em
-// lima claro, fechada em lima cheio, perda em cinza: um acento só.
-function Funil({ etapas, medida }: { etapas: PainelComercial['etapas']; medida: 'qtd' | 'valor' }) {
-  const max = Math.max(1, ...etapas.map((e) => e[medida]));
-  const cor = (r: string) => (r === 'ganho' ? 'bg-brand' : r === 'perdido' ? 'bg-muted/40' : 'bg-brand/45');
+/** A dica que aparece sobre a coluna ao passar o mouse (ou focar pelo teclado). */
+function Dica({ linhas }: { linhas: string[] }) {
+  return (
+    <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-surface-3 px-3 py-2 text-left text-xs shadow-lg group-hover:block group-focus-visible:block">
+      <span className="block font-semibold text-text">{linhas[0]}</span>
+      {linhas.slice(1).map((l) => (
+        <span key={l} className="com-num block text-muted">{l}</span>
+      ))}
+      <span className="mt-1 block text-brand">clique para ver os negócios</span>
+    </span>
+  );
+}
+
+interface Coluna {
+  chave: string;
+  rotulo: string;
+  v: number;
+  mostra: string;
+  tom: 'aberta' | 'ganho' | 'perdido';
+  dica: string[];
+  onClick: () => void;
+}
+
+// Colunas na ordem do funil. Aberta em lima claro, fechada em lima cheio,
+// perda em cinza: um acento só.
+function Colunas({ itens }: { itens: Coluna[] }) {
+  const max = Math.max(1, ...itens.map((i) => i.v));
+  const cor = (t: string) => (t === 'ganho' ? 'bg-brand' : t === 'perdido' ? 'bg-muted/40' : 'bg-brand/45');
   return (
     <div>
       <div className="flex h-44 items-end gap-2">
-        {etapas.map((e) => {
-          const v = e[medida];
-          return (
-            <div key={e.nome} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${e.nome}: ${e.qtd} · ${brl(e.valor)}`}>
-              {v > 0 && <span className="com-num text-[0.72rem]">{medida === 'valor' ? curto(v) : v}</span>}
-              <div className={`w-full rounded-t-sm ${cor(e.resultado)}`} style={{ height: v ? `${Math.max(3, (v / max) * 100)}%` : '1px' }} />
-            </div>
-          );
-        })}
+        {itens.map((i) => (
+          <button
+            key={i.chave}
+            onClick={i.onClick}
+            aria-label={i.dica.join(', ')}
+            className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1 rounded-sm hover:bg-surface-2"
+          >
+            <Dica linhas={i.dica} />
+            {i.v > 0 && <span className="com-num text-[0.72rem]">{i.mostra}</span>}
+            <span
+              className={`block w-full rounded-t-sm ${cor(i.tom)} transition group-hover:brightness-110 group-hover:ring-2 group-hover:ring-brand/50`}
+              style={{ height: i.v ? `${Math.max(3, (i.v / max) * 100)}%` : '1px' }}
+            />
+          </button>
+        ))}
       </div>
       <div className="mt-1.5 flex gap-2 border-t border-border pt-1.5">
-        {etapas.map((e) => (
-          <span key={e.nome} className="min-w-0 flex-1 text-center text-[0.72rem] leading-tight text-muted [overflow-wrap:anywhere]">
-            {e.nome}
+        {itens.map((i) => (
+          <span key={i.chave} className="min-w-0 flex-1 text-center text-[0.72rem] leading-tight text-muted [overflow-wrap:anywhere]">
+            {i.rotulo}
           </span>
         ))}
       </div>
@@ -181,41 +376,39 @@ function Funil({ etapas, medida }: { etapas: PainelComercial['etapas']; medida: 
   );
 }
 
-function Barras({ meses, medida }: { meses: PainelComercialMes[]; medida: 'valor' | 'qtd' }) {
-  const max = Math.max(1, ...meses.map((m) => m[medida]));
+function Meses(props: { meses: PainelComercialMes[]; medida: 'valor' | 'qtd'; verbo: string; onClick: (mes: string) => void }) {
+  const { meses, medida } = props;
   const vazio = meses.every((m) => m[medida] === 0);
   return (
     <div>
-      <div className="flex h-44 items-end gap-1.5">
-        {meses.map((m) => {
-          const v = m[medida];
-          return (
-            <div key={m.mes} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${nomeDoMes(m.mes)}: ${medida === 'valor' ? brl(v) : v}`}>
-              {v > 0 && <span className="com-num text-[0.7rem] text-muted">{medida === 'valor' ? curto(v) : v}</span>}
-              <div className="w-full rounded-t-sm bg-brand" style={{ height: v ? `${Math.max(3, (v / max) * 100)}%` : '1px', opacity: v ? 1 : 0.25 }} />
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 flex gap-1.5">
-        {meses.map((m) => (
-          <span key={m.mes} className="com-rotulo min-w-0 flex-1 text-center !tracking-normal">{nomeDoMes(m.mes)}</span>
-        ))}
-      </div>
+      <Colunas
+        itens={meses.map((m) => ({
+          chave: m.mes,
+          rotulo: nomeDoMes(m.mes),
+          v: m[medida],
+          mostra: medida === 'valor' ? curto(m.valor) : String(m.qtd),
+          tom: 'ganho',
+          dica: [mesPorExtenso(m.mes), `${negocios(m.qtd)} ${props.verbo}`, ...(m.valor ? [brl(m.valor)] : [])],
+          onClick: () => props.onClick(m.mes),
+        }))}
+      />
       {vazio && <p className="mt-2 text-sm text-muted">Nada no período.</p>}
     </div>
   );
 }
 
-function Grupos({ grupos, primeira }: { grupos: PainelComercialGrupo[]; primeira: string }) {
+function Grupos(props: { grupos: PainelComercialGrupo[]; primeira: string; abrir: (nome: string, extra?: Filtro) => void }) {
+  const { grupos, abrir } = props;
   if (grupos.length === 0) return <p className="text-muted">Sem leads.</p>;
   const max = Math.max(1, ...grupos.map((g) => g.leads));
+  const celula = 'com-num py-2 text-right';
+  const link = 'rounded px-1 hover:bg-brand/15 hover:text-brand';
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left">
-            <th className="com-rotulo pb-2 font-normal">{primeira}</th>
+            <th className="com-rotulo pb-2 font-normal">{props.primeira}</th>
             <th className="com-rotulo pb-2 text-right font-normal">Leads</th>
             <th className="com-rotulo pb-2 text-right font-normal">Fechados</th>
             <th className="com-rotulo pb-2 text-right font-normal">Conv.</th>
@@ -225,20 +418,90 @@ function Grupos({ grupos, primeira }: { grupos: PainelComercialGrupo[]; primeira
         </thead>
         <tbody className="divide-y divide-border">
           {grupos.map((g) => (
-            <tr key={g.nome}>
+            <tr key={g.nome} className="cursor-pointer hover:bg-surface-2" onClick={() => abrir(g.nome)} title={`Ver os ${negocios(g.leads)} de ${g.nome}`}>
               <td className="py-2 pr-3">
-                <div className={g.nome === 'Sem informação' ? 'text-muted' : ''}>{g.nome}</div>
+                <div className={g.nome === SEM_INFORMACAO ? 'text-muted' : ''}>{g.nome}</div>
                 <div className="mt-1 h-1 rounded-full bg-brand/45" style={{ width: `${(g.leads / max) * 100}%` }} />
               </td>
-              <td className="com-num py-2 text-right">{g.leads}</td>
-              <td className="com-num py-2 text-right">{g.ganhos}</td>
-              <td className="com-num py-2 text-right text-muted">{pct(g.ganhos, g.leads)}</td>
-              <td className="com-num py-2 text-right">{g.emNegociacao ? brl(g.emNegociacao) : '—'}</td>
-              <td className="com-num py-2 text-right">{g.valorGanho ? brl(g.valorGanho) : '—'}</td>
+              <td className={celula}>{g.leads}</td>
+              <td className={celula}>
+                <button className={link} onClick={(e) => { e.stopPropagation(); abrir(g.nome, { situacao: 'ganho' }); }} title={`Fechados de ${g.nome}`}>
+                  {g.ganhos}
+                </button>
+              </td>
+              <td className={`${celula} text-muted`}>{pct(g.ganhos, g.leads)}</td>
+              <td className={celula}>
+                {g.emNegociacao ? (
+                  <button className={link} onClick={(e) => { e.stopPropagation(); abrir(g.nome, { situacao: 'aberta' }); }} title={`Em negociação de ${g.nome}`}>
+                    {brl(g.emNegociacao)}
+                  </button>
+                ) : '—'}
+              </td>
+              <td className={celula}>{g.valorGanho ? brl(g.valorGanho) : '—'}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---------------- Negócios ----------------
+
+function Negocios(props: { p: PainelComercial; filtro: Filtro; tirar: (k: keyof Filtro) => void; limpar: () => void }) {
+  const { p, filtro } = props;
+  const itens = useMemo(() => p.negocios.filter((n) => passa(n, filtro)), [p, filtro]);
+  const ativos = CHAVES.filter((k) => filtro[k]);
+  const total = itens.reduce((s, n) => s + (n.valor ?? 0), 0);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {ativos.length === 0 && <span className="text-sm text-muted">Todos os negócios. Clique num número do painel para filtrar.</span>}
+        {ativos.map((k) => (
+          <button
+            key={k}
+            onClick={() => props.tirar(k)}
+            className="rounded-full border border-brand/50 bg-brand/10 px-3 py-1 text-sm hover:bg-brand/20"
+            title="Tirar este filtro"
+          >
+            {rotuloDoFiltro(k, filtro[k]!)} <span className="ml-1 text-muted">×</span>
+          </button>
+        ))}
+        {ativos.length > 0 && (
+          <button onClick={props.limpar} className="text-sm text-muted underline hover:text-text">limpar</button>
+        )}
+        <span className="ml-auto text-sm text-muted">
+          {negocios(itens.length)} · <span className="com-num text-text">{brl(total)}</span>
+        </span>
+      </div>
+      <div className="rounded-md border border-border bg-surface px-5 py-2">
+        <ListaDeNegocios itens={itens} vazio="Nenhum negócio com esse filtro." completa />
+      </div>
+    </div>
+  );
+}
+
+function ListaDeNegocios({ itens, vazio, completa }: { itens: PainelComercialNegocio[]; vazio: string; completa?: boolean }) {
+  if (itens.length === 0) return <p className="py-2 text-muted">{vazio}</p>;
+  return (
+    <div className="divide-y divide-border">
+      {itens.map((n) => (
+        <Link key={n.id} href={`/comercial/lead/${n.id}`} className="group flex flex-wrap items-baseline gap-x-4 gap-y-1 py-2.5 hover:bg-surface-2">
+          <span className="min-w-0 flex-1 font-medium group-hover:text-brand">{n.titulo}</span>
+          <span className="flex items-center gap-1.5 text-sm text-muted">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: n.etapaCor }} />
+            {n.etapa}
+            {n.resultado === 'aberta' && n.diasNaEtapa != null && ` · há ${n.diasNaEtapa} ${n.diasNaEtapa === 1 ? 'dia' : 'dias'}`}
+            {n.mesFechado && ` · ${mesPorExtenso(n.mesFechado)}`}
+          </span>
+          {completa && (
+            <span className="text-sm text-muted">
+              {n.canal ?? 'sem canal'} · {n.vendedor ?? 'sem vendedor'}
+            </span>
+          )}
+          <span className="com-num w-28 text-right">{n.valor == null ? '—' : brl(n.valor)}</span>
+        </Link>
+      ))}
     </div>
   );
 }

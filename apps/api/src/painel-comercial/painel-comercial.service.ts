@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  PainelComercial,
-  PainelComercialGrupo,
-  PainelComercialLead,
-  PainelComercialMes,
-  ResultadoDaEtapa,
+import {
+  SEM_INFORMACAO,
+  type PainelComercial,
+  type PainelComercialGrupo,
+  type PainelComercialMes,
+  type PainelComercialNegocio,
+  type ResultadoDaEtapa,
 } from '@mktos/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -57,7 +58,7 @@ export class PainelComercialService {
       entradasPorMes: [],
       canais: [],
       vendedores: [],
-      abertos: [],
+      negocios: [],
     };
 
     const lista =
@@ -78,6 +79,7 @@ export class PainelComercialService {
     const fVendedor = campo(campos, 'vendedor');
     const fValor = campos.find((c) => c.type === 'moeda') ?? campo(campos, 'valor');
     const fCadastro = campo(campos, 'data de cadastro', 'cadastro');
+    const fProduto = campo(campos, 'produto');
     const corDaOpcao = new Map<string, string>();
     for (const f of [fCanal, fVendedor]) for (const o of f?.options ?? []) corDaOpcao.set(`${f!.id}:${o.name}`, o.color);
 
@@ -93,6 +95,7 @@ export class PainelComercialService {
         etapa,
         valor: lerMoeda(v(fValor)?.value),
         canal: v(fCanal)?.option?.name ?? null,
+        produto: v(fProduto)?.option?.name ?? v(fProduto)?.value ?? null,
         vendedor: v(fVendedor)?.option?.name ?? t.assignee ?? null,
         entrada,
         // Quando foi para a etapa fechada: o banco carimba `statusDesde` em toda troca de etapa.
@@ -124,7 +127,7 @@ export class PainelComercialService {
     const agrupar = (chave: (l: (typeof leads)[number]) => string | null, fCor?: { id: string }): PainelComercialGrupo[] => {
       const grupos = new Map<string, typeof leads>();
       for (const l of leads) {
-        const k = chave(l) ?? 'Sem informação';
+        const k = chave(l) ?? SEM_INFORMACAO;
         grupos.set(k, [...(grupos.get(k) ?? []), l]);
       }
       return [...grupos.entries()]
@@ -144,14 +147,19 @@ export class PainelComercialService {
         .sort((a, b) => b.leads - a.leads || b.valorGanho - a.valorGanho);
     };
 
-    const listaDeAbertos: PainelComercialLead[] = abertos
+    const negocios: PainelComercialNegocio[] = leads
       .map((l) => ({
         id: l.t.id,
         titulo: l.t.title,
         etapa: l.etapa.name,
+        etapaCor: l.etapa.color,
+        resultado: l.etapa.resultado,
         valor: l.valor,
         vendedor: l.vendedor,
         canal: l.canal,
+        produto: l.produto,
+        mesEntrada: l.entrada,
+        mesFechado: l.fechadoEm,
         diasNaEtapa: l.t.statusDesde ? Math.floor((agora.getTime() - l.t.statusDesde.getTime()) / DIA) : null,
       }))
       .sort((a, b) => (b.valor ?? 0) - (a.valor ?? 0));
@@ -180,7 +188,7 @@ export class PainelComercialService {
       entradasPorMes: porMes(meses(12, mesDe(agora)), leads.map((l) => ({ mes: l.entrada, valor: l.valor }))),
       canais: agrupar((l) => l.canal, fCanal),
       vendedores: agrupar((l) => l.vendedor, fVendedor),
-      abertos: listaDeAbertos,
+      negocios,
     };
   }
 }

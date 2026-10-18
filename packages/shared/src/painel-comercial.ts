@@ -37,13 +37,22 @@ export interface PainelComercialGrupo {
   valorGanho: number;
 }
 
-export interface PainelComercialLead {
+/** Um negócio do CRM, com tudo o que o painel filtra: etapa, mês, canal e vendedor. */
+export interface PainelComercialNegocio {
+  /** Id do cartão no Trabalho: a ficha do lead abre por ele. */
   id: string;
   titulo: string;
   etapa: string;
+  etapaCor: string;
+  resultado: ResultadoDaEtapa;
   valor: number | null;
   vendedor: string | null;
   canal: string | null;
+  produto: string | null;
+  /** `AAAA-MM` em que o lead entrou (Data de Cadastro do Lead, ou a criação do cartão). */
+  mesEntrada: string;
+  /** `AAAA-MM` em que foi para a etapa fechada; nulo enquanto aberto. */
+  mesFechado: string | null;
   /** Dias na etapa atual; nulo quando a data de entrada na etapa não existe. */
   diasNaEtapa: number | null;
 }
@@ -68,5 +77,9 @@ export interface PainelComercial {
   entradasPorMes: PainelComercialMes[];
   canais: PainelComercialGrupo[];
   vendedores: PainelComercialGrupo[];
-  abertos: PainelComercialLead[];
+  /** Todos os negócios da lista, do maior valor para o menor. */
+  negocios: PainelComercialNegocio[];
 }
+
+/** O rótulo usado quando o lead não tem canal ou vendedor preenchido. */
+export const SEM_INFORMACAO = 'Sem informação';

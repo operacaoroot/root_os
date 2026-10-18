@@ -119,7 +119,7 @@ async function main() {
       } else if (c.tipo === 'moeda') {
         valor = { optionId: null, value: `BRL ${Number(bruto).toFixed(2)}` };
       } else {
-        valor = { optionId: null, value: dia(Number(bruto)) };
+        valor = { optionId: null, value: typeof bruto === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bruto) ? bruto : dia(Number(bruto)) };
       }
       await prisma.workFieldValue.upsert({
         where: { taskId_fieldId: { taskId: t.id, fieldId: c.id } },
