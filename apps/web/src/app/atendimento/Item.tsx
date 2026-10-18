@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import Link from 'next/link';
 import { CAPACIDADE_DE_APROVAR_A_SEMANA } from '@mktos/shared';
 import { diaHoraSP, prazoEmPalavras } from '@/lib/cockpit';
 import { Conteudo } from './Conteudo';
@@ -8,8 +9,10 @@ import { CartaoDoLote } from './CartaoDoLote';
 import { CAPACIDADE_DA_PROPOSTA, CartaoDaProposta } from './CartaoDaProposta';
 import { fraseDoPedido } from './frase-do-pedido';
 import {
+  concluiNoFunil,
   condicoesDeAssinatura,
   grupoDoItem,
+  linkDoCartao,
   motivoDaEspera,
   nivelEmPalavras,
   passoDoItem,
@@ -127,7 +130,8 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
     }
   }, [aberto, focar]);
 
-  const quando = linhaDoTempo(item, agora);
+  const concluir = concluiNoFunil(item, quem);
+  const quando = linhaDoTempo(item, agora, concluir);
   const espera = grupo === 'outra' ? `${motivoDaEspera(item, quem)} · ${quemPodeAssinar(item)}` : null;
 
   const botaoRecusar = (rotulo: string) => (
@@ -135,7 +139,7 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
       type="button"
       disabled={ocupado}
       onClick={() => aoRecusar(item.id)}
-      className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text disabled:opacity-50"
+      className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-text disabled:opacity-50 max-md:min-h-[44px]"
       data-testid={`aprov-recusar-${item.id}`}
     >
       {rotulo}
@@ -182,17 +186,31 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                   {espera}
                 </span>
               )}
+              {concluir && (
+                <span className="text-brand" data-testid={`aprov-espera-${item.id}`}>
+                  {motivoDaEspera(item, quem)}
+                </span>
+              )}
             </span>
           </span>
         </button>
-        {!aberto && (passo.assinar || passo.recusar) && (
+        {!aberto && (passo.assinar || passo.recusar || concluir) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 pl-5 sm:pl-0">
+            {concluir && (
+              <Link
+                href={linkDoCartao(item)}
+                className="inline-flex items-center rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
+                data-testid={`aprov-concluir-${item.id}`}
+              >
+                Concluir no funil
+              </Link>
+            )}
             {passo.assinar && (
               <button
                 type="button"
                 onClick={abrirParaLer}
                 title="Abre o conteúdo exato: você assina depois de ler"
-                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90"
+                className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
                 data-testid={`aprov-acao-${item.id}`}
               >
                 {passo.assinar.fechado}
@@ -235,6 +253,15 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
           {/* -------------------------------------------- o que vai ser executado */}
           <section className="mt-4">
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted">O que vai ser executado</h4>
+            {item.destinoConferido && (
+              <p className="mt-2 rounded-md bg-surface-2 px-3 py-2 text-sm" data-testid={`aprov-destino-${item.id}`}>
+                <span className="text-muted">Destino conferido:</span>{' '}
+                <span className="font-medium text-text">{item.destinoConferido.rotulo}</span>
+                <span className="mt-0.5 block text-[11px] text-muted">
+                  Calculado do hash que a assinatura prende, e não do texto do pedido: é para lá que o cartão vai.
+                </span>
+              </p>
+            )}
             <div className="mt-2">
               <Conteudo valor={item.conteudo} oculto={item.conteudoOculto} />
             </div>
@@ -392,7 +419,7 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                   type="button"
                   disabled={ocupado}
                   onClick={() => aoAprovar(item.id, motivo, senha)}
-                  className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
+                  className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50 max-md:min-h-[44px]"
                   data-testid={`aprov-acao-${item.id}`}
                 >
                   {passo.assinar.aberto}
@@ -409,6 +436,14 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
               <p className="text-xs text-muted" data-testid={`porque-nao-${item.id}`}>
                 {item.porQueNao}
               </p>
+              {concluir && (
+                <Link
+                  href={linkDoCartao(item)}
+                  className="inline-flex items-center rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90 max-md:min-h-[44px]"
+                >
+                  Concluir no funil
+                </Link>
+              )}
               {passo.recusar && botaoRecusar(passo.recusar)}
             </div>
           )}
@@ -419,7 +454,7 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
 }
 
 /** "há 5 min · vence em 10 min", "venceu 11/09 12:15", "recusada 11/09 12:03". */
-function linhaDoTempo(item: ItemDaFila, agora?: string): string {
+function linhaDoTempo(item: ItemDaFila, agora?: string, concluir = false): string {
   const relogio = agora ? new Date(agora) : new Date();
   if (item.gaveta === 'esperando') {
     const prazo = prazoEmPalavras(item.expiraEm, relogio);
@@ -429,5 +464,10 @@ function linhaDoTempo(item: ItemDaFila, agora?: string): string {
   if (item.gaveta === 'recusada') {
     return `recusada${item.decididoPor ? ` por ${item.decididoPor}` : ''}${item.decididoEm ? ` ${diaHoraSP(item.decididoEm)}` : ''}`;
   }
-  return `confirmada${item.decididoPor ? ` por ${item.decididoPor}` : ''}, sem executar`;
+  const por = item.decididoPor ? ` por ${item.decididoPor}` : '';
+  if (!item.capacidade) {
+    // Superfície do token (o mover do funil): quem pediu conclui até o prazo.
+    return `confirmada${por} · ${concluir ? 'conclua' : 'quem pediu conclui'} até ${diaHoraSP(item.expiraEm)}`;
+  }
+  return `confirmada${por}, sem executar`;
 }

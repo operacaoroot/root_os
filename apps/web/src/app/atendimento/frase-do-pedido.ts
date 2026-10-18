@@ -16,7 +16,10 @@ import type { ItemDaFila } from './tipos';
  * frase que mente na hora de assinar.
  */
 
-type Item = Pick<ItemDaFila, 'capacidade' | 'conteudo' | 'resumo' | 'recurso'> & { alvo?: string | null };
+type Item = Pick<ItemDaFila, 'capacidade' | 'conteudo' | 'resumo' | 'recurso'> & {
+  alvo?: string | null;
+  destinoConferido?: ItemDaFila['destinoConferido'];
+};
 
 const TETO_DO_TRECHO = 60;
 
@@ -48,23 +51,30 @@ function etapaCurta(rotulo: string): string {
   return i >= 0 ? rotulo.slice(i + 3) : rotulo;
 }
 
-/**
- * O pedido de mover do funil (P5) é da superfície antiga: não tem argumento
- * gravado, e o resumo do servidor é "Mover <quem> de <etapa> para <etapa>…".
- * As etapas são as do shared, então a leitura casa pelos rótulos conhecidos em
- * vez de quebrar no primeiro " de " do nome da empresa.
- */
-function fraseDoMover(resumo: string): string | null {
+/** O nome no resumo do servidor ("Mover <quem> de <etapa> para …"), casado pelos rótulos do shared. */
+function quemNoResumo(resumo: string): string | null {
   if (!resumo.startsWith('Mover ')) return null;
   const rotulos = Object.values(COMERCIAL_ROTULO_DA_ETAPA);
   for (const de of rotulos) {
-    for (const para of rotulos) {
-      const meio = ` de ${de} para ${para}`;
-      const i = resumo.indexOf(meio);
-      if (i > 'Mover '.length) return `Mover ${resumo.slice('Mover '.length, i)} para ${etapaCurta(para)}`;
-    }
+    const i = resumo.indexOf(` de ${de} para `);
+    if (i > 'Mover '.length) return resumo.slice('Mover '.length, i);
   }
   return null;
+}
+
+/**
+ * O pedido de mover do funil (P5) é da superfície antiga: não tem argumento
+ * gravado. O DESTINO vem de `destinoConferido`, que o servidor tira do hash que
+ * a assinatura prende (revisão PA-1), nunca do texto do resumo: o texto é de
+ * quem pediu, e era por ele que "para E3" podia assinar uma ida a E7. Do resumo
+ * só sai o nome, e só quando o `alvo` (lido do banco) não veio.
+ */
+function fraseDoMover(item: Item): string | null {
+  const conferido = item.destinoConferido;
+  const ehMover = !!conferido || item.resumo.startsWith('Mover ');
+  if (!ehMover) return null;
+  const quem = texto(item.alvo) ?? quemNoResumo(item.resumo) ?? 'o lead';
+  return conferido ? `Mover ${quem} para ${etapaCurta(conferido.rotulo)}` : `Mover ${quem}: destino não conferido`;
 }
 
 function doLead(item: Item, semNome = 'o lead'): string {
@@ -78,7 +88,7 @@ export function fraseDoPedido(item: Item): string {
   if (!cap) {
     // Superfície antiga: quem escreveu a frase foi o servidor, no resumo.
     if (item.recurso.tipo === 'lead') {
-      const mover = fraseDoMover(item.resumo);
+      const mover = fraseDoMover(item);
       if (mover) return mover;
     }
     return texto(item.resumo) ?? `Autorizar ${item.recurso.tipo}`;

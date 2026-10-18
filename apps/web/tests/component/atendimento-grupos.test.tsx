@@ -72,6 +72,7 @@ const PROPUS = {
   capacidade: null,
   recurso: { tipo: 'lead', id: 'l-2' },
   alvo: 'Construtora Alicerce',
+  destinoConferido: { etapa: 'proposta', rotulo: 'E6 · Proposta' },
   conteudo: null,
   proponente: { id: 'u-eu', tipo: 'user', nome: 'Rodrigo' },
   aprovadores: [{ id: 'u-ana', nome: 'Ana', email: 'a@x', alcada: 'responsavel' }],
@@ -192,6 +193,44 @@ describe('P4: os três grupos', () => {
     // quem propôs tem só o "cancelar"
     expect(screen.queryByTestId('aprov-acao-ap-mover')).toBeNull();
     expect(screen.getByTestId('aprov-recusar-ap-mover')).toHaveTextContent('Cancelar o que eu propus');
+  });
+
+  it('revisão PA-1: o destino da frase é o conferido no hash; o pedido que não confere fica sem assinar', async () => {
+    const FORJADO = {
+      ...BASE,
+      id: 'ap-forjado',
+      gaveta: 'esperando',
+      proponente: { id: 'u-lucas', tipo: 'user', nome: 'Lucas' },
+      aprovadores: [{ id: 'u-eu', nome: 'Rodrigo', email: 'r@x', alcada: 'responsavel' }],
+      resumo: 'Mover ACME de E2 · Qualificação para E3 · Reunião agendada (portões cumpridos). Pedido por Lucas pela tela do funil.',
+      capacidade: null,
+      recurso: { tipo: 'lead', id: 'l-9' },
+      alvo: 'ACME',
+      destinoConferido: { etapa: 'follow_up', rotulo: 'E7 · Follow-up' },
+      conteudo: null,
+      impedimento: 'O destino assinado não confere com o texto do pedido. Recuse e peça de novo pelo funil.',
+      euPossoAprovar: false,
+      porQueNao: 'O destino assinado não confere com o texto do pedido. Recuse e peça de novo pelo funil.',
+    };
+    apiGet.mockResolvedValue(fila([FORJADO]));
+    render(<AtendimentoPage />);
+    expect(await screen.findByTestId('aprov-frase-ap-forjado')).toHaveTextContent('Mover ACME para Follow-up');
+    expect(screen.queryByTestId('aprov-acao-ap-forjado')).toBeNull();
+    await userEvent.click(screen.getByTestId('aprov-expandir-ap-forjado'));
+    expect(screen.getByTestId('aprov-destino-ap-forjado')).toHaveTextContent('Destino conferido: E7 · Follow-up');
+    expect(screen.getByTestId('impedimento-ap-forjado')).toHaveTextContent('não confere com o texto do pedido');
+    expect(screen.queryByTestId('aprov-acao-ap-forjado')).toBeNull();
+  });
+
+  it('revisão PA-7: o mover que EU pedi, confirmado, é o meu passo, com o link para concluir no funil', async () => {
+    const CONFIRMADO = { ...PROPUS, id: 'ap-meu', gaveta: 'confirmada', status: 'confirmada', decididoPor: 'Ana', decididoEm: '2026-10-18T11:59:00.000Z', porQueNao: 'Já foi confirmada.' };
+    apiGet.mockResolvedValue(fila([CONFIRMADO]));
+    render(<AtendimentoPage />);
+    const voce = await screen.findByTestId('aprov-grupo-voce');
+    const linha = within(voce).getByTestId('aprov-item-ap-meu');
+    expect(within(linha).getByTestId('aprov-espera-ap-meu')).toHaveTextContent('Confirmada: conclua no funil');
+    expect(within(linha).getByTestId('aprov-concluir-ap-meu')).toHaveAttribute('href', '/comercial/funil?lead=l-2');
+    expect(linha).toHaveTextContent(/confirmada por Ana · conclua até/);
   });
 
   it('expandir mostra o conteúdo exato, e o passo de dentro é o que confirma, pelo mesmo endpoint', async () => {

@@ -32,15 +32,31 @@ export function grupoDoItem(item: ItemDaFila, eu: Eu): Grupo {
   if (item.gaveta === 'expirou' || item.gaveta === 'recusada') return 'historico';
   if (item.gaveta === 'esperando' && item.euPossoAprovar) return 'voce';
   // Confirmada sem capacidade = superfície do token (o mover do funil): quem
-  // conclui é quem pediu. Para quem confirmou, ela espera outra pessoa.
+  // conclui é quem pediu. Para quem pediu, é o passo dele (revisão PA-7:
+  // "conclua no funil"); para quem confirmou, ela espera outra pessoa.
+  if (concluiNoFunil(item, eu)) return 'voce';
   if (item.gaveta === 'confirmada' && !item.capacidade) return 'outra';
   // Só a sua recusa tira da fila: a execução recusaria hoje, ou já confirmou e não executou.
   if (podeRecusar(item, eu) && (item.gaveta === 'confirmada' || item.impedimento)) return 'voce';
   return 'outra';
 }
 
+/**
+ * O pedido de mover que EU fiz já foi confirmado: falta eu concluir no funil,
+ * com o token que só a minha aba tem, até `expiraEm` (revisão PA-7).
+ */
+export function concluiNoFunil(item: Pick<ItemDaFila, 'gaveta' | 'capacidade' | 'recurso' | 'proponente'>, eu: Pick<Eu, 'id'>): boolean {
+  return item.gaveta === 'confirmada' && !item.capacidade && item.recurso.tipo === 'lead' && item.proponente.id === eu.id;
+}
+
+/** O cartão do lead no funil, onde quem pediu conclui a mudança. */
+export function linkDoCartao(item: Pick<ItemDaFila, 'recurso'>): string {
+  return `/comercial/funil?lead=${encodeURIComponent(item.recurso.id)}`;
+}
+
 /** Por que o item está esperando outra pessoa, em poucas palavras. A frase inteira do servidor vai no `title`. */
 export function motivoDaEspera(item: ItemDaFila, eu: Eu): string {
+  if (concluiNoFunil(item, eu)) return 'Confirmada: conclua no funil';
   if (item.gaveta === 'confirmada' && !item.capacidade) return 'Confirmada: quem pediu conclui';
   if (item.gaveta === 'confirmada') return 'Confirmada, a execução não concluiu';
   if (item.impedimento) return 'A execução recusaria hoje';

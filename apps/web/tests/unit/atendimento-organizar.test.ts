@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { fraseDoPedido, trecho } from '@/app/atendimento/frase-do-pedido';
 import {
+  concluiNoFunil,
   condicoesDeAssinatura,
   filtroDaQuery,
   grupoDoItem,
+  linkDoCartao,
   motivoDaEspera,
   nivelEmPalavras,
   organizarFila,
@@ -77,8 +79,32 @@ describe('a frase do pedido: verbo + objeto em português', () => {
     ['lote sem episódio no resumo', { capacidade: 'pauta.semana.aprovar', resumo: 'pauta.semana.aprovar' }, 'Aprovar a semana de posts'],
     [
       'mover no funil (superfície antiga, resumo do servidor)',
-      { capacidade: null, conteudo: null, recurso: { tipo: 'lead', id: 'l1' }, resumo: 'Mover Construtora de Alicerce de E5 · Diagnóstico para E6 · Proposta com pendências: x. Pedido por Ana pela tela do funil.' },
+      {
+        capacidade: null,
+        conteudo: null,
+        recurso: { tipo: 'lead', id: 'l1' },
+        destinoConferido: { etapa: 'proposta', rotulo: 'E6 · Proposta' },
+        resumo: 'Mover Construtora de Alicerce de E5 · Diagnóstico para E6 · Proposta com pendências: x. Pedido por Ana pela tela do funil.',
+      },
       'Mover Construtora de Alicerce para Proposta',
+    ],
+    [
+      // Revisão PA-1: o destino é o do hash, mesmo que o texto diga outro.
+      'mover no funil: o texto diz E3, o hash prende E7',
+      {
+        capacidade: null,
+        conteudo: null,
+        recurso: { tipo: 'lead', id: 'l1' },
+        alvo: 'ACME',
+        destinoConferido: { etapa: 'follow_up', rotulo: 'E7 · Follow-up' },
+        resumo: 'Mover ACME de E2 · Qualificação para E3 · Reunião agendada (portões cumpridos).',
+      },
+      'Mover ACME para Follow-up',
+    ],
+    [
+      'mover no funil sem destino conferido: não tira destino do texto',
+      { capacidade: null, conteudo: null, recurso: { tipo: 'lead', id: 'l1' }, destinoConferido: null, resumo: 'Mover ACME de E2 · Qualificação para E3 · Reunião agendada.' },
+      'Mover ACME: destino não conferido',
     ],
     ['e-mail', { capacidade: 'email.enviar', conteudo: { para: 'ana@x.com', assunto: 'Contrato' } }, 'Enviar e-mail para ana@x.com: “Contrato”'],
     ['e-mail com vários destinatários', { capacidade: 'email.enviar', conteudo: { para: ['a@x', 'b@x'] } }, 'Enviar e-mail para a@x, b@x'],
@@ -141,6 +167,13 @@ describe('os três grupos, lidos do que o servidor decidiu', () => {
     expect(grupoDoItem(peloToken, EU)).toBe('outra');
     expect(motivoDaEspera(peloToken, EU)).toBe('Confirmada: quem pediu conclui');
     expect(passoDoItem(peloToken, EU).assinar).toBeNull();
+    // Revisão PA-7: para quem PEDIU, é o passo dele, concluir no funil.
+    const meu = { ...peloToken, recurso: { tipo: 'lead', id: 'l-7' }, proponente: { id: EU.id, tipo: 'user' as const, nome: 'Rodrigo' } };
+    expect(grupoDoItem(meu, EU)).toBe('voce');
+    expect(concluiNoFunil(meu, EU)).toBe(true);
+    expect(motivoDaEspera(meu, EU)).toBe('Confirmada: conclua no funil');
+    expect(linkDoCartao(meu)).toBe('/comercial/funil?lead=l-7');
+    expect(concluiNoFunil({ ...meu, gaveta: 'esperando' }, EU)).toBe(false);
   });
 
   it('o que só sai com a sua recusa também depende de você, sem botão de assinar', () => {

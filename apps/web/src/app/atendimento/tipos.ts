@@ -37,6 +37,14 @@ export interface ItemDaFila {
    * decide. Opcional porque resposta antiga não o traz.
    */
   alvo?: string | null;
+  /**
+   * O destino do pedido de mover do funil CONFERIDO contra o hash que a
+   * assinatura prende (revisão PA-1): o servidor recalcula o hash de cada
+   * etapa e devolve a que bate. É ele, e não o texto do resumo, que a frase da
+   * linha usa. `null` quando a linha não é um mover, ou quando nenhuma etapa
+   * produz o hash (aí o item vem com `impedimento`).
+   */
+  destinoConferido?: { etapa: string; rotulo: string } | null;
   agente: string | null;
   correlationId: string | null;
   /**
