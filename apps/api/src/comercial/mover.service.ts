@@ -11,6 +11,8 @@ import {
   type ComercialResultadoDoMover,
 } from '@mktos/shared';
 
+import { ActorType } from '@prisma/client';
+
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { lerAprovador } from '../auth/aprovador';
@@ -97,7 +99,7 @@ export class MoverService {
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { name: true } });
     const quemNome = ficha.empresa ?? lead?.name ?? leadId;
     const resumo = `Mover ${quemNome} de ${COMERCIAL_ROTULO_DA_ETAPA[de]} para ${COMERCIAL_ROTULO_DA_ETAPA[para]}${pendencias.length ? ` com pendências: ${pendencias.join('; ')}` : ' (portões cumpridos)'}. Pedido por ${quem.nome ?? 'pessoa da mesa'} pela tela do funil.`;
-    const t = await this.approvals.create({ orgId, actorId: quem.id, resourceType: 'lead', resourceId: leadId, changes: { para }, summary: resumo.slice(0, 900) });
+    const t = await this.approvals.create({ orgId, actorId: quem.id, resourceType: 'lead', resourceId: leadId, changes: { para }, summary: resumo.slice(0, 900), propostoPorTipo: ActorType.user });
     return { approvalId: t.approvalId, token: t.token, expiraEm: t.expiresAt, de, para, pendencias, resumo: t.summary };
   }
 

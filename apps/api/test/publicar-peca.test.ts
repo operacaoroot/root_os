@@ -126,8 +126,11 @@ describe('publicar peça pela tela: a regressão de 29/08, medida', () => {
     // `create` (a superfície antiga, que é a que a tela usa) carimba o ator.
     expect(servico).toContain('propostoPorId: input.actorId,');
     // ...e declara que a proposta é da IA, com o id de um humano dentro. A
-    // incoerência é o próprio conserto esperando para ser feito.
-    expect(servico).toContain('propostoPorTipo: ActorType.ai,');
+    // incoerência é o próprio conserto esperando para ser feito. Desde
+    // 18/10/2026 (rodada do painel) quem chama pode dizer que é gente (o mover
+    // do funil diz), mas o PADRÃO desta superfície continua `ai`, e a rota de
+    // publicar não o muda: a dívida medida aqui é a mesma.
+    expect(servico).toContain('propostoPorTipo: input.propostoPorTipo ?? ActorType.ai,');
 
     // `confirm` recusa exatamente essa combinação.
     expect(servico).toContain('if (rec.propostoPorId === actorId) {');

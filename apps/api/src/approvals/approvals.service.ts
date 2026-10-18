@@ -324,6 +324,13 @@ export class ApprovalsService {
     resourceId: string;
     changes: Record<string, unknown>;
     summary?: string;
+    /**
+     * Quem propõe: agente (o padrão de sempre desta superfície, que nasceu para o
+     * MCP) ou pessoa. O mover do funil (rodada do painel, 18/10/2026) é pedido
+     * por gente, e gravá-lo como `ai` punha "agente" no lugar do nome na fila e
+     * no RASTRO. Não muda trava nenhuma: `confirm` compara o ID do proponente.
+     */
+    propostoPorTipo?: ActorType;
   }): Promise<{ approvalId: string; token: string; summary: string; expiresAt: string }> {
     if (!isResourceType(input.resourceType)) {
       throw new BadRequestException(`resourceType inválido: ${input.resourceType}`);
@@ -339,7 +346,7 @@ export class ApprovalsService {
         orgId: input.orgId,
         capabilityId: null,
         propostoPorId: input.actorId,
-        propostoPorTipo: ActorType.ai,
+        propostoPorTipo: input.propostoPorTipo ?? ActorType.ai,
         resourceType: input.resourceType,
         resourceId: input.resourceId,
         contentHash: canonicalHash(
@@ -356,7 +363,7 @@ export class ApprovalsService {
 
     await this.audit.log({
       orgId: input.orgId,
-      actorType: ActorType.ai,
+      actorType: input.propostoPorTipo ?? ActorType.ai,
       actorId: input.actorId,
       action: 'approval.propose',
       entityType: input.resourceType,

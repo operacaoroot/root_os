@@ -517,6 +517,7 @@ export class ApprovalsController {
               minima: ap.alcadaMinima,
               impedimento,
               tokenDecide,
+              peloToken: !ap.capabilityId,
             }),
       };
     });
@@ -707,10 +708,23 @@ export class ApprovalsController {
     impedimento: string | null;
     /** O token desta sessão carrega `aprovacoes.decidir`? */
     tokenDecide: boolean;
+    /**
+     * Aprovação da superfície antiga (`@SensitiveWrite`, sem capacidade): quem
+     * executa é QUEM PEDIU, com o token de uso único, depois da confirmação. Até
+     * 18/10/2026 a confirmada dela lia "a execução não concluiu", e ela só
+     * esperava quem pediu (o mover do funil, P5).
+     */
+    peloToken?: boolean;
   }): string {
-    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide } = entrada;
+    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide, peloToken } = entrada;
     if (gaveta === 'expirou') return 'O prazo desta aprovação venceu. Peça ao agente para propor de novo.';
     if (gaveta === 'recusada') return 'Esta ação já foi recusada.';
+    if (gaveta === 'confirmada' && peloToken) {
+      return (
+        'Já foi confirmada. Quem pediu conclui a mudança com o token de uso único, dentro do prazo; ' +
+        'confirmar de novo não é possível, e daqui só se recusa.'
+      );
+    }
     if (gaveta === 'confirmada') {
       return (
         'Já foi confirmada e a execução não concluiu. A aprovação NÃO foi consumida e nada saiu, ' +

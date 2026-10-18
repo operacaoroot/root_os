@@ -136,6 +136,13 @@ describe('os três grupos, lidos do que o servidor decidiu', () => {
     expect(grupoDoItem(RECUSADA, EU)).toBe('historico');
   });
 
+  it('confirmada pelo token (mover do funil, sem capacidade) espera quem pediu concluir, e não é "depende de você"', () => {
+    const peloToken = item({ id: 'mover', gaveta: 'confirmada', status: 'confirmada', capacidade: null, euPossoAprovar: false });
+    expect(grupoDoItem(peloToken, EU)).toBe('outra');
+    expect(motivoDaEspera(peloToken, EU)).toBe('Confirmada: quem pediu conclui');
+    expect(passoDoItem(peloToken, EU).assinar).toBeNull();
+  });
+
   it('o que só sai com a sua recusa também depende de você, sem botão de assinar', () => {
     for (const i of [IMPEDIDA, LIMBO]) {
       expect(grupoDoItem(i, EU)).toBe('voce');

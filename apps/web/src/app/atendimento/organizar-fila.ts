@@ -31,6 +31,9 @@ export function podeRecusar(item: Pick<ItemDaFila, 'gaveta'>, eu: Pick<Eu, 'deci
 export function grupoDoItem(item: ItemDaFila, eu: Eu): Grupo {
   if (item.gaveta === 'expirou' || item.gaveta === 'recusada') return 'historico';
   if (item.gaveta === 'esperando' && item.euPossoAprovar) return 'voce';
+  // Confirmada sem capacidade = superfície do token (o mover do funil): quem
+  // conclui é quem pediu. Para quem confirmou, ela espera outra pessoa.
+  if (item.gaveta === 'confirmada' && !item.capacidade) return 'outra';
   // Só a sua recusa tira da fila: a execução recusaria hoje, ou já confirmou e não executou.
   if (podeRecusar(item, eu) && (item.gaveta === 'confirmada' || item.impedimento)) return 'voce';
   return 'outra';
@@ -38,6 +41,7 @@ export function grupoDoItem(item: ItemDaFila, eu: Eu): Grupo {
 
 /** Por que o item está esperando outra pessoa, em poucas palavras. A frase inteira do servidor vai no `title`. */
 export function motivoDaEspera(item: ItemDaFila, eu: Eu): string {
+  if (item.gaveta === 'confirmada' && !item.capacidade) return 'Confirmada: quem pediu conclui';
   if (item.gaveta === 'confirmada') return 'Confirmada, a execução não concluiu';
   if (item.impedimento) return 'A execução recusaria hoje';
   if (item.proponente.id === eu.id) return 'Você pediu: assina outra pessoa';

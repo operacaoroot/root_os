@@ -166,6 +166,8 @@ describe.skipIf(!URL)('mover o cartão do funil, contra o banco', () => {
     expect(await fatos(lead, 'etapa.movida_com_pendencia')).toHaveLength(0);
     const ap = await prisma.approval.findFirst({ where: { id: pedido.approvalId } });
     expect(ap?.status).toBe('consumida');
+    // Quem pede é gente: a fila mostra o nome, não "agente" (18/10/2026).
+    expect(ap?.propostoPorTipo).toBe('user');
   });
 
   it('sem assinatura não move; quem pediu não assina; token de outro destino é recusado', async () => {
