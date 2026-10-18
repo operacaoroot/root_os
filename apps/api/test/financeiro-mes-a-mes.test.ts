@@ -60,4 +60,19 @@ describe('mês a mês do financeiro', () => {
     expect(out.fixo).toBe(49.9);
     expect(out.sobra).toBe(-49.9);
   });
+
+  it('estorno numa conta de despesa abate o gasto e não vira receita', () => {
+    const comReceita = [...plano, { id: 'receita', codigo: '1.1.02', parentId: null, custoFixo: false }];
+    const movs: Movimento[] = [
+      saida('2026-09-03', 178.2, 'marketing'),
+      { type: 'entrada', amount: 178.2, date: dia('2026-09-03'), chartAccountId: 'marketing', contractId: null, splits: [] },
+      { type: 'entrada', amount: 1000, date: dia('2026-09-10'), chartAccountId: 'receita', contractId: null, splits: [] },
+      saida('2026-09-11', 200, 'marketing'),
+    ];
+    const [set] = mesAMes(movs, comReceita, ['2026-09']);
+    expect(set.receita).toBe(1000);
+    expect(set.variavel).toBe(200);
+    expect(set.saiu).toBe(200);
+    expect(set.sobra).toBe(800);
+  });
 });

@@ -16,6 +16,10 @@
  * imposto, e assim fica em impostos todo mês, tenha o pagamento sido
  * conciliado com o contrato ou não.
  *
+ * Entrada é receita quando está numa conta de receita (1.x) ou sem conta.
+ * Entrada numa conta de despesa é estorno ou devolução: abate o gasto daquela
+ * conta no mês, em vez de inflar a receita e o custo ao mesmo tempo.
+ *
  * Funções puras: o serviço busca no banco, aqui só se soma.
  */
 
@@ -86,9 +90,15 @@ export function grupoDaSaida(contas: Map<string, ContaDoPlano>, chartAccountId: 
   return 'variavel';
 }
 
-/** As partes de uma saída: as linhas do rateio, quando houver, ou o lançamento inteiro. */
+/** As partes de um lançamento: as linhas do rateio, quando houver, ou o lançamento inteiro. */
 export function partesDaSaida(m: Movimento): { chartAccountId: string | null; valor: number }[] {
   return m.splits.length ? m.splits : [{ chartAccountId: m.chartAccountId, valor: m.amount }];
+}
+
+/** Entrada que conta como receita: em conta de receita (1.x) ou sem conta. O resto é estorno de gasto. */
+export function ehReceita(contas: Map<string, ContaDoPlano>, chartAccountId: string | null): boolean {
+  const codigo = chartAccountId ? contas.get(chartAccountId)?.codigo : undefined;
+  return !codigo || codigo.startsWith('1');
 }
 
 export function mesAMes(movs: Movimento[], contas: ContaDoPlano[], meses: string[]): LinhaDoMes[] {
@@ -99,10 +109,12 @@ export function mesAMes(movs: Movimento[], contas: ContaDoPlano[], meses: string
   for (const m of movs) {
     const l = linhas.get(mesDe(m.date));
     if (!l) continue;
-    if (m.type === 'entrada') { l.receita += m.amount; continue; }
+    // estorno (entrada em conta de despesa) entra com sinal trocado no grupo da conta
+    const sinal = m.type === 'saida' ? 1 : -1;
     for (const p of partesDaSaida(m)) {
-      l[grupoDaSaida(porId, p.chartAccountId, !!m.contractId)] += p.valor;
-      l.saiu += p.valor;
+      if (m.type === 'entrada' && ehReceita(porId, p.chartAccountId)) { l.receita += p.valor; continue; }
+      l[grupoDaSaida(porId, p.chartAccountId, !!m.contractId)] += sinal * p.valor;
+      l.saiu += sinal * p.valor;
     }
   }
   return meses.map((mes) => {

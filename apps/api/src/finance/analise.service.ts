@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { LLM_PROVIDER, type LlmProvider } from '../llm/llm.provider';
 import { FinanceService } from './finance.service';
-import { contaFixa, grupoDaSaida, mesAMes, mesDe, mesesAte, partesDaSaida, type ContaDoPlano, type Movimento } from './mes-a-mes';
+import { contaFixa, ehReceita, grupoDaSaida, mesAMes, mesDe, mesesAte, partesDaSaida, type ContaDoPlano, type Movimento } from './mes-a-mes';
 
 /*
  * ANÁLISE DO FINANCEIRO
@@ -101,7 +101,7 @@ export class AnaliseService {
       this.listAcordos(orgId),
       this.prisma.financeTransaction.findMany({
         where: { orgId, type: 'entrada' },
-        select: { amount: true, status: true, counterparty: true, description: true, date: true, dueDate: true },
+        select: { amount: true, status: true, counterparty: true, description: true, date: true, dueDate: true, chartAccountId: true },
       }),
       this.prisma.contract.findMany({ where: { orgId, status: 'ativo' }, select: { id: true, tipo: true, descricao: true, valor: true, periodicidade: true, diaVencimento: true, partner: { select: { razaoSocial: true } } } }),
       this.prisma.financeTransaction.count({ where: { orgId, status: { not: 'previsto' }, chartAccountId: null, temRateio: false } }),
@@ -117,6 +117,8 @@ export class AnaliseService {
           select: { contractId: true, status: true, amount: true, date: true, dueDate: true },
         })
       : [];
+    const plano: ContaDoPlano[] = contas;
+    const porId = new Map(plano.map((c) => [c.id, c]));
     const previstos = await this.prisma.financeTransaction.findMany({
       where: { orgId, status: 'previsto' },
       select: { type: true, amount: true, dueDate: true, date: true },
@@ -172,7 +174,8 @@ export class AnaliseService {
     const desde = agora - 90 * DIA;
     const porPagador = new Map<string, number>();
     for (const t of entradas) {
-      if (!efetivo(t.status) || t.date.getTime() < desde) continue;
+      // estorno de gasto (entrada em conta de despesa) não é cliente pagando
+      if (!efetivo(t.status) || t.date.getTime() < desde || !ehReceita(porId, t.chartAccountId)) continue;
       const k = (t.counterparty ?? t.description).trim();
       porPagador.set(k, (porPagador.get(k) ?? 0) + num(t.amount));
     }
@@ -184,16 +187,14 @@ export class AnaliseService {
       type: t.type, amount: num(t.amount), date: t.date, chartAccountId: t.chartAccountId, contractId: t.contractId,
       splits: t.splits.map((s) => ({ chartAccountId: s.chartAccountId, valor: num(s.valor) })),
     }));
-    const plano: ContaDoPlano[] = contas;
-    const porId = new Map(plano.map((c) => [c.id, c]));
     // As contas que pesaram como fixo ou variável na janela: é nelas que marcar "fixa" muda a tabela.
     const usadas = new Map<string, number>();
     for (const m of movs) {
-      if (m.type !== 'saida') continue;
       for (const p of partesDaSaida(m)) {
-        if (!p.chartAccountId) continue;
+        if (!p.chartAccountId || (m.type === 'entrada' && ehReceita(porId, p.chartAccountId))) continue;
         const g = grupoDaSaida(porId, p.chartAccountId, false);
-        if (g === 'fixo' || g === 'variavel') usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + p.valor);
+        const v = m.type === 'saida' ? p.valor : -p.valor;
+        if (g === 'fixo' || g === 'variavel') usadas.set(p.chartAccountId, (usadas.get(p.chartAccountId) ?? 0) + v);
       }
     }
     const contasDaJanela = [...usadas.entries()]
