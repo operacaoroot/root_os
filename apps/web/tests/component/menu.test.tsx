@@ -77,7 +77,7 @@ describe('a barra lateral', () => {
     expect(abrir).toHaveAttribute('aria-expanded', 'true');
     const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
     expect(gaveta).toHaveTextContent('Pendências');
-    expect(gaveta).toHaveTextContent('Quadro interno');
+    expect(gaveta).toHaveTextContent('Tarefas');
 
     await user.keyboard('{Escape}');
     expect(abrir).toHaveAttribute('aria-expanded', 'false');
@@ -142,7 +142,7 @@ describe('a barra lateral', () => {
 
   it('a seção da tela aberta ignora o fechamento guardado', () => {
     localStorage.setItem(CHAVE_MENU, JSON.stringify(['trabalho']));
-    CAMINHO = '/tarefas';
+    CAMINHO = '/trabalho'; // até 18/10/2026 era /tarefas, que agora redireciona (rodada do painel P2)
     render(<Sidebar />);
     expect(screen.getByRole('button', { name: /trabalho/i })).toHaveAttribute(
       'aria-expanded',
@@ -272,7 +272,7 @@ describe('a barra lateral', () => {
     MODULOS_LIGADOS = ['trabalho'];
     render(<Paleta aberto fechar={() => {}} />);
     const dialogo = screen.getByRole('dialog', { name: 'Ir para' });
-    expect(dialogo).toHaveTextContent('Quadro interno');
+    expect(dialogo).toHaveTextContent('Tarefas');
     const oferecidas = screen.getAllByRole('button').map((b) => b.querySelector('span')?.textContent);
     for (const n of NAV.filter((i) => i.modulo && i.modulo !== 'trabalho')) {
       expect(oferecidas, n.key).not.toContain(n.label);

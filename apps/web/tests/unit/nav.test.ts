@@ -8,6 +8,7 @@ import {
   MODULOS,
   navPorSecao,
   navEmArvore,
+  moduloDaRotaDoWeb,
   type RoleKey,
 } from '@mktos/shared';
 import { ROTAS_ANTIGAS } from '../../rotas-antigas.mjs';
@@ -576,7 +577,9 @@ describe('organização da navegação (ROOT-07)', () => {
         continue;
       }
       expect(n.permission, `${n.key}: permissão mudou`).toBe(PERMISSAO_DA_BASE[n.key]);
-      expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key]);
+      expect(n.label, `${n.key}: rótulo fora da tabela da ROOT-08`).toBe(
+        ROTULOS_DA_RODADA_PAINEL[n.key] ?? ROTULOS_DA_ROOT_08[n.key] ?? ROTULO_DA_BASE[n.key],
+      );
     }
   });
 
@@ -588,6 +591,14 @@ describe('organização da navegação (ROOT-07)', () => {
    * (o doc 38 proíbe anunciá-la como ClickUp ou como outra visão do quadro).
    */
   const ROTULOS_DA_ROOT_08: Record<string, string> = { console: 'Visão geral da empresa' };
+
+  /*
+   * Rodada do painel P2 (18/10/2026): quadro e lista viraram uma tela só, com a
+   * troca Quadro · Lista sobre a mesma fonte (WorkTask). "Quadro interno" passou a
+   * dizer só metade do que a tela faz; o rótulo virou "Tarefas". A chave e a rota
+   * não mudam. "Lista de tarefas" (/tarefas) segue com o rótulo, oculta.
+   */
+  const ROTULOS_DA_RODADA_PAINEL: Record<string, string> = { trabalho: 'Tarefas' };
 
   it('rótulos conforme a matriz da ROOT-08: um item muda, o resto fica, nada promete função ausente', () => {
     expect(Object.keys(ROTULOS_DA_ROOT_08)).toEqual(['console']);
@@ -663,11 +674,34 @@ describe('organização da navegação (ROOT-07)', () => {
     }
   });
 
+  /*
+   * Rodada do painel P2 (18/10/2026): a Lista de tarefas virou a visão Lista do
+   * Trabalho. `/tarefas` sai do menu oculta, absorvida por /trabalho, e a página
+   * redireciona (na página, não em rotas-antigas.mjs: item do NAV com redirect de
+   * configuração reprova o teste de disputa de rota). A Implantação de clientes
+   * fica pendurada no Trabalho, mesma seção.
+   */
+  it('quadro e lista são uma tela só: /tarefas oculta e absorvida, Implantação sob o Trabalho', () => {
+    const tarefas = NAV.find((n) => n.key === 'tarefas')!;
+    expect(tarefas).toMatchObject({ href: '/tarefas', oculto: true, modulo: 'trabalho', permission: 'tarefas.ver' });
+    const absorvida = ROTAS_ABSORVIDAS.find((r) => r.href === '/tarefas');
+    expect(absorvida?.destino).toBe('/trabalho');
+    expect(absorvida?.porque).toMatch(/uma tela só/);
+    expect(NAV.find((n) => n.key === 'trabalho')).toMatchObject({ label: 'Tarefas', href: '/trabalho' });
+    expect(NAV.find((n) => n.key === 'onboarding')).toMatchObject({ pai: 'trabalho', secao: 'trabalho', href: '/onboarding' });
+    const todas = new Set(NAV.map((n) => n.permission));
+    const trabalho = navEmArvore(todas).find((g) => g.secao.key === 'trabalho')!;
+    const raiz = trabalho.itens.find((no) => no.item.key === 'trabalho')!;
+    expect(raiz.filhos.map((f) => f.key)).toEqual(['onboarding']);
+    expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('tarefas');
+    expect(moduloDaRotaDoWeb('/tarefas')).toBe('trabalho');
+  });
+
   it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
     const a = NAV.find((n) => n.key === 'assinatura')!;
     expect(a.oculto).toBe(true);
     expect(NAV.filter((n) => n.oculto).map((n) => n.key).sort()).toEqual(
-      ['assinatura', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias'],
+      ['assinatura', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias', 'tarefas'],
     );
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');

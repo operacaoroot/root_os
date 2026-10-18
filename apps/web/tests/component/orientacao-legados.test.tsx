@@ -20,16 +20,20 @@ vi.mock('@/lib/auth', () => ({
   }),
 }));
 
+const redirect = vi.fn();
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/',
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  redirect: (...a: unknown[]) => redirect(...a),
 }));
 
 // eslint-disable-next-line import/first
 import ConteudoPage from '@/app/conteudo/page';
 // eslint-disable-next-line import/first
 import TarefasPage from '@/app/tarefas/page';
+// eslint-disable-next-line import/first
+import TrabalhoPage from '@/app/trabalho/page';
 
 const hrefs = (el: HTMLElement) => Array.from(el.querySelectorAll('a')).map((a) => a.getAttribute('href'));
 
@@ -67,7 +71,7 @@ describe('texto de orientação das telas legadas', () => {
     });
   });
 
-  it('/conteudo diz que é espelho do ClickUp, sem dizer leitura, e aponta Quadro interno, Pauta e Banco de ideias', async () => {
+  it('/conteudo diz que é espelho do ClickUp, sem dizer leitura, e aponta Tarefas, Pauta e Banco de ideias', async () => {
     render(<ConteudoPage />);
     const nota = await screen.findByTestId('conteudo-orientacao');
     expect(hrefs(nota)).toEqual(['/trabalho', '/pauta', '/marketing/ideias']);
@@ -75,8 +79,26 @@ describe('texto de orientação das telas legadas', () => {
     expect(document.body.textContent).not.toContain('para consulta');
   });
 
-  it('/tarefas abre a tabela nativa e permite navegar para o quadro da mesma lista', async () => {
-    render(<TarefasPage />);
+  /*
+   * Desde 18/10/2026 (rodada do painel P2) quadro e lista são uma tela só: /tarefas
+   * redireciona para /trabalho na visão de lista, preservando a query do link.
+   */
+  it('/tarefas redireciona para /trabalho?visao=lista e preserva a query', async () => {
+    redirect.mockReset();
+    await TarefasPage({ searchParams: Promise.resolve({ lista: 'lista-1', tarefa: tarefa.id, q: ['a', 'b'] }) });
+    expect(redirect).toHaveBeenCalledWith(`/trabalho?lista=lista-1&tarefa=${tarefa.id}&q=a&q=b&visao=lista`);
+    redirect.mockReset();
+    await TarefasPage({ searchParams: Promise.resolve({}) });
+    expect(redirect).toHaveBeenCalledWith('/trabalho?visao=lista');
+    // link antigo que já dizia a visão continua abrindo nela
+    redirect.mockReset();
+    await TarefasPage({ searchParams: Promise.resolve({ visao: 'board' }) });
+    expect(redirect).toHaveBeenCalledWith('/trabalho?visao=board');
+  });
+
+  it('/trabalho?visao=lista abre a lista nativa e permite navegar para o quadro da mesma lista', async () => {
+    window.history.replaceState({}, '', '/trabalho?visao=lista');
+    render(<TrabalhoPage />);
     expect(await screen.findByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
     expect(document.querySelector('[data-work-task-id]')).toHaveAttribute('data-work-task-id', tarefa.id);
     expect(apiGet).toHaveBeenCalledWith('/trabalho/estrutura', 'tok');
@@ -96,7 +118,8 @@ describe('texto de orientação das telas legadas', () => {
     expect(conteudo.container.textContent).not.toContain('para consulta');
     expect(conteudo.container.textContent?.toLowerCase()).not.toContain('somente leitura');
     conteudo.unmount();
-    render(<TarefasPage />);
+    window.history.replaceState({}, '', '/trabalho?visao=lista');
+    render(<TrabalhoPage />);
     await screen.findByRole('columnheader', { name: 'Status' });
     fireEvent.click(screen.getByRole('button', { name: 'Quadro' }));
     const etapa = await screen.findByTitle('Mover etapa');

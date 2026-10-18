@@ -140,9 +140,14 @@ export const NAV: NavItem[] = [
   // 18/10/2026 (Rodrigo, rodada do painel P0): Temas do ClickUp, Banco de ideias e
   // Estratégia do mês saem do menu por enquanto. Os itens continuam no NAV, ocultos:
   // as telas seguem vivas e a rota segue com dono (ROTAS_ABSORVIDAS diz por quê).
-  { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  // 18/10/2026 (rodada do painel P2): quadro e lista viraram uma tela só. `/trabalho`
+  // tem a troca Quadro · Lista sobre a mesma fonte (WorkTask) e as pastas no topo;
+  // o rótulo virou "Tarefas" (a chave não muda). `/tarefas` sai do menu, oculto, e a
+  // página redireciona para `/trabalho?visao=lista`. A Implantação de clientes fica
+  // pendurada no Trabalho (só forma: mesma seção, mesma rota, mesmo módulo).
+  { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', oculto: true },
+  { key: 'trabalho', label: 'Tarefas', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
+  { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho', pai: 'trabalho' },
   { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
   { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
   { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
@@ -197,9 +202,10 @@ export const NAV: NavItem[] = [
 // pixel usa /vendas, e /google é o destino do callback OAuth. O destino aqui é
 // onde a funcionalidade delas passa a ser alcançada pelo menu.
 // Nenhum destino abaixo pode ser /conteudo (espelho ContentItem do ClickUp) nem
-// /tarefas (lista paralela ao quadro): a fonte migrada do ClickUp é o Quadro
-// interno (/trabalho). Desde 18/10/2026 /conteudo entra aqui como ORIGEM (item
-// oculto, tela viva). Apagar essas telas é decisão do Pedro (MK7 §3.1).
+// /tarefas: a fonte migrada do ClickUp é o Trabalho (/trabalho, WorkTask). Desde
+// 18/10/2026 /conteudo (P0) e /tarefas (P2, que redireciona para a visão Lista do
+// Trabalho) entram aqui como ORIGEM, itens ocultos. A tabela `Task` antiga não é
+// apagada; apagar telas e tabela é decisão do Pedro (ROOT-10, MK7 §3.1).
 export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }[] = [
   { href: '/vendas', destino: '/pixels', porque: 'é o manual de instalação do pixel.js mais uma página demo, não um módulo' },
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },
@@ -210,6 +216,8 @@ export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }
   { href: '/conteudo', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; a tela (espelho dos Temas do ClickUp) segue viva' },
   { href: '/marketing/ideias', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor do banco de ideias segue vivo' },
   { href: '/marketing/estrategia', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor da estratégia do mês segue vivo' },
+  // 18/10/2026, rodada do painel P2: a lista de tarefas virou a visão Lista do Trabalho.
+  { href: '/tarefas', destino: '/trabalho', porque: 'quadro e lista viraram uma tela só em 18/10/2026; /tarefas abre a visão de lista' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas

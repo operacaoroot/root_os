@@ -49,8 +49,8 @@ export default function ConteudoPage() {
             <a href="/conexoes" className="text-brand hover:underline">Integrações</a>.
           </p>
           <p className="mt-1 text-xs text-muted" data-testid="conteudo-orientacao">
-            O destino das tarefas do ClickUp é o{' '}
-            <a href="/trabalho" className="text-brand hover:underline">Quadro interno</a>. Produção e
+            O destino das tarefas do ClickUp é a tela de{' '}
+            <a href="/trabalho" className="text-brand hover:underline">Tarefas</a> (quadro e lista). Produção e
             curadoria ficam em{' '}
             <a href="/pauta" className="text-brand hover:underline">Produção de conteúdo</a>, e as
             ideias da casa, no{' '}

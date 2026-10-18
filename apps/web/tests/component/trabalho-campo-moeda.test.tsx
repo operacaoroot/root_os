@@ -138,7 +138,7 @@ describe('campo moeda: o que aparece', () => {
     servir('BRL 1500.00');
     window.history.replaceState({}, '', `/trabalho?lista=${LISTA}`);
     render(<TrabalhoPage />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Tabela' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Lista' }));
     expect(await screen.findByRole('cell', { name: 'R$ 1.500,00' })).toBeTruthy();
   });
 

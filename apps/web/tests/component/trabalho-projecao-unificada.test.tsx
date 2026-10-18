@@ -7,7 +7,10 @@ let permissions = ['tarefas.ver', 'tarefas.editar'];
 let token = 'qa-org-a';
 vi.mock('@/lib/api', () => ({ apiGet: (...a: unknown[]) => get(...a), apiPatch: (...a: unknown[]) => patch(...a), apiPost: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token, ready: true, user: { id: 'qa-user' }, can: (p: string) => permissions.includes(p) }) }));
-import TasksPage from '@/app/tarefas/page';
+import { TrabalhoView } from '@/components/trabalho/TrabalhoView';
+// /tarefas redireciona para /trabalho?visao=lista desde 18/10/2026 (rodada do painel P2):
+// a visão de lista é o mesmo TrabalhoView, que é o que esta suíte sempre mediu.
+const TasksPage = () => <TrabalhoView visaoInicial="lista" />;
 import TrabalhoPage from '@/app/trabalho/page';
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -181,7 +184,7 @@ describe('ROOT-12: filtros ao trocar de lista', () => {
     const view = render(<TasksPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'QA Card 0' }));
     await screen.findByLabelText('Título da tarefa');
-    fireEvent.change(screen.getByText('Lista', { exact: true }).parentElement!.querySelector('select')!, { target: { value: destino.id } });
+    fireEvent.change(screen.getByText('Lista', { exact: true, selector: 'span' }).parentElement!.querySelector('select')!, { target: { value: destino.id } });
     await waitFor(() => expect(patch).toHaveBeenCalledWith(`/trabalho/tarefas/${ID}`, { listId: destino.id }, token));
     await conferirDestino(true);
     const titulo = screen.getByLabelText('Título da tarefa');
@@ -213,7 +216,7 @@ describe('ROOT-12: filtros ao trocar de lista', () => {
     reterOrigem = true;
     render(<TasksPage />); await screen.findByLabelText('Título da tarefa');
     await waitFor(() => expect(atrasada).toBeTypeOf('function'));
-    fireEvent.change(screen.getByText('Lista', { exact: true }).parentElement!.querySelector('select')!, { target: { value: destino.id } });
+    fireEvent.change(screen.getByText('Lista', { exact: true, selector: 'span' }).parentElement!.querySelector('select')!, { target: { value: destino.id } });
     await conferirDestino(true);
     await act(async () => atrasada!({ items: [{ ...registro, title: 'QA resposta antiga' }], total: 1 }));
     expect(screen.queryByText('QA resposta antiga')).toBeNull(); expect(renderedIds()).toEqual([ID]);
