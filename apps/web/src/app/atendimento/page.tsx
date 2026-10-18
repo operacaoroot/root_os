@@ -385,8 +385,8 @@ function Corte({ fila }: { fila: Fila }) {
       {fila.truncado && (
         <div>
           Esta empresa tem {fila.total} aprovações e a tela está mostrando {fila.mostrando} (teto de{' '}
-          {fila.tetos.vivas} vivas e {fila.tetos.fechadas} encerradas por consulta). O que não
-          aparece aqui continua correndo o prazo: decida as mais antigas primeiro.
+          {fila.tetos.vivas} vivas e {fila.tetos.fechadas} encerradas por consulta). Entram
+          primeiro as que ainda valem; o que ficou de fora são as já vencidas mais antigas.
         </div>
       )}
       {fila.censo.truncado && (
