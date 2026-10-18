@@ -121,7 +121,7 @@ export default function FunilVivoPage() {
               <span
                 id={`funil-etiqueta-dica-${f.chave}`}
                 role="tooltip"
-                className="pointer-events-none absolute left-0 top-full z-30 mt-1 w-64 rounded border border-border bg-surface-2 px-2.5 py-1.5 text-[11.5px] leading-snug text-text opacity-0 shadow-sm transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+                className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden w-64 rounded border border-border bg-surface-2 px-2.5 py-1.5 text-[11.5px] leading-snug text-text shadow-sm group-focus-within:block group-hover:block max-md:fixed max-md:inset-x-4 max-md:w-auto"
               >
                 {f.explicacao}
               </span>
@@ -158,7 +158,7 @@ export default function FunilVivoPage() {
           </nav>
 
           <div
-            className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none"
+            className="relative flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:snap-none"
             onKeyDown={moverFocoNoFunil}
           >
             {colunas.map((col) => {
@@ -193,7 +193,7 @@ export default function FunilVivoPage() {
                   {sobre === col.etapa && recusa && destino?.motivo && (
                     <p className="mb-2 shrink-0 rounded border border-warn/50 bg-warn/10 px-2 py-1 text-[11.5px] text-warn">não aceita: {destino.motivo}</p>
                   )}
-                  <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                  <ul className="relative min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                     {col.cartoes.map((c) => (
                       <li key={c.leadId}>
                         <Cartao
