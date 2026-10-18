@@ -158,28 +158,29 @@ describe('a barra lateral', () => {
   });
 
   /*
-   * O caso real: `funil` pede `dashboard.ver` e o pai dele, `leads`, pede
-   * `leads.ver`. Quem opera sem `leads.ver` TEM o Funil — e ele precisa
-   * aparecer, no primeiro nível, e não sumir com o pai.
+   * O caso real: `marca` pede `pauta.ver` e o pai dele, `contexto`, pede
+   * `obsidian.ver`. Quem opera sem `obsidian.ver` TEM a Marca — e ela precisa
+   * aparecer, no primeiro nível, e não sumir com o pai. (Até 18/10/2026 o
+   * exemplo era o Funil sob Leads; os dois saíram do menu.)
    */
   it('filho sem o pai aparece no primeiro nível', () => {
-    PERMISSOES = ['dashboard.ver'];
+    PERMISSOES = ['pauta.ver'];
     render(<Sidebar />);
-    expect(link('/leads')).toBeNull();
-    expect(link('/funil')).toBeInTheDocument();
+    expect(link('/contexto')).toBeNull();
+    expect(link('/contexto/marca')).toBeInTheDocument();
   });
 
   it('a gaveta móvel mostra os nomes das seções novas e o filho órfão promovido', async () => {
-    PERMISSOES = ['dashboard.ver'];
+    PERMISSOES = ['pauta.ver'];
     const user = userEvent.setup();
     render(<Sidebar />);
     await user.click(screen.getByRole('button', { name: 'Abrir navegação' }));
     const gaveta = screen.getByRole('dialog', { name: 'Navegação do ROOT OS' });
-    expect(gaveta).toHaveTextContent('Motor Comercial');
-    // sem leads.ver o Funil não some: sobe ao primeiro nível da seção
-    const funil = gaveta.querySelector('a[href="/funil"]')!;
-    expect(funil).toBeInTheDocument();
-    expect(funil.className).not.toContain('pl-[28px]');
+    expect(gaveta).toHaveTextContent('Motor de Marketing');
+    // sem obsidian.ver a Marca não some: sobe ao primeiro nível da seção
+    const marca = gaveta.querySelector('a[href="/contexto/marca"]')!;
+    expect(marca).toBeInTheDocument();
+    expect(marca.className).not.toContain('pl-[28px]');
   });
 
   it('desenha as seções na ordem do contrato e Registros dentro de Configurações', () => {
@@ -189,8 +190,8 @@ describe('a barra lateral', () => {
       h.textContent?.trim(),
     );
     expect(titulos).toEqual([
-      'Dia a dia', 'Contexto', 'Trabalho', 'Motor de Marketing', 'Motor Comercial',
-      'Motor Financeiro', 'Motor de IA', 'Resultados', 'Configurações da empresa', 'Registros',
+      'Dia a dia', 'Trabalho', 'Motor de Marketing', 'Motor Comercial',
+      'Motor Financeiro', 'Motor de IA', 'Contexto', 'Resultados', 'Configurações da empresa', 'Registros',
       'Configurações da conta',
     ]);
     const registros = screen.getByRole('button', { name: /^registros$/i });

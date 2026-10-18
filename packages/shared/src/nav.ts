@@ -11,16 +11,19 @@ import type { Permission } from './permissions.js';
 // (financeiro, registros, conta) soma chaves. Trocar ou tirar uma chave deixa a
 // nota com a tag antiga sem área, calada: o teste de nav.test.ts cobra a lista.
 //
+// A ORDEM é desenho e pode mudar (18/10/2026: Contexto desceu para depois do
+// Motor de IA, docs/comercial/RODADA-PAINEL-20261018.md P0); a CHAVE não.
+//
 // `dentroDe` é só desenho: a seção aparece recuada sob a outra. Não muda
 // permissão, módulo nem o filtro por área.
 export const SECOES = [
   { key: 'dia', label: 'Dia a dia', hint: 'pendências, decisões e agenda', tipo: 'principal' },
-  { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
-  { key: 'trabalho', label: 'Trabalho', hint: 'tarefas, quadro, ideias e implantação', tipo: 'principal' },
+  { key: 'trabalho', label: 'Trabalho', hint: 'tarefas, quadro e implantação', tipo: 'principal' },
   { key: 'conteudo', label: 'Motor de Marketing', hint: 'conteúdo, campanhas e medição', tipo: 'principal' },
   { key: 'comercial', label: 'Motor Comercial', hint: 'leads e funil de vendas', tipo: 'principal' },
   { key: 'financeiro', label: 'Motor Financeiro', hint: 'ferramentas e contratos financeiros', tipo: 'principal' },
   { key: 'automacoes', label: 'Motor de IA', hint: 'agentes, rotinas, sessões e custos', tipo: 'principal' },
+  { key: 'empresa', label: 'Contexto', hint: 'mapa, conhecimento e marca', tipo: 'principal' },
   { key: 'resultados', label: 'Resultados', hint: 'relatórios e metas', tipo: 'principal' },
   { key: 'controle', label: 'Configurações da empresa', hint: 'equipe, ferramentas, integrações e regras', tipo: 'apoio' },
   { key: 'registros', label: 'Registros', hint: 'registro de ações e atividade', tipo: 'apoio', dentroDe: 'controle' },
@@ -134,12 +137,15 @@ export const NAV: NavItem[] = [
 
   // As duas listas têm fontes e ações próprias; nenhuma é submenu da outra.
   // Ideias e Estratégia do mês entram aqui e abrem os editores atuais (documento 38).
+  // 18/10/2026 (Rodrigo, rodada do painel P0): Temas do ClickUp, Banco de ideias e
+  // Estratégia do mês saem do menu por enquanto. Os itens continuam no NAV, ocultos:
+  // as telas seguem vivas e a rota segue com dono (ROTAS_ABSORVIDAS diz por quê).
   { key: 'tarefas', label: 'Lista de tarefas', href: '/tarefas', icon: 'CheckSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   { key: 'trabalho', label: 'Quadro interno', href: '/trabalho', icon: 'KanbanSquare', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
   { key: 'onboarding', label: 'Implantação de clientes', href: '/onboarding', icon: 'DoorOpen', permission: 'tarefas.ver', secao: 'trabalho', modulo: 'trabalho' },
-  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo' },
-  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
-  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta' },
+  { key: 'conteudo', label: 'Temas do ClickUp', href: '/conteudo', icon: 'FileText', permission: 'dashboard.ver', secao: 'trabalho', modulo: 'conteudo', oculto: true },
+  { key: 'marketing-ideias', label: 'Banco de ideias', href: '/marketing/ideias', icon: 'Lightbulb', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
+  { key: 'marketing-estrategia', label: 'Estratégia do mês', href: '/marketing/estrategia', icon: 'Compass', permission: 'pauta.ver', secao: 'trabalho', modulo: 'pauta', oculto: true },
 
   { key: 'pauta', label: 'Produção de conteúdo', href: '/pauta', icon: 'CalendarClock', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta' },
   { key: 'referencias', label: 'Referências', href: '/referencias', icon: 'Library', permission: 'pauta.ver', secao: 'conteudo', modulo: 'pauta', pai: 'pauta' },
@@ -151,8 +157,10 @@ export const NAV: NavItem[] = [
   { key: 'campanhas', label: 'Campanhas', href: '/campanhas', icon: 'Megaphone', permission: 'campanhas.ver', secao: 'conteudo', modulo: 'campanhas' },
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
 
-  { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
-  { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
+  // 18/10/2026 (rodada do painel P0): Leads e Funil de vendas, o MVP de antes, saem do
+  // menu. Tudo passa pelo cockpit (Decisões do comercial e Funil vivo). Ocultos, vivos.
+  { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads', oculto: true },
+  { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads', oculto: true },
   // Cockpit do lead (lane B, 13/10/2026): os celulares simulados do lead e da mesa, provedor `simulado`.
   { key: 'comercial-simulador', label: 'Simulador de WhatsApp', href: '/comercial/simulador', icon: 'Smartphone', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   // Cockpit do lead (lane C, 13/10/2026): a fila de decisões é a tela principal (exceções); o resto pende dela.
@@ -188,13 +196,20 @@ export const NAV: NavItem[] = [
 // Páginas que saíram do menu e CONTINUAM VIVAS. Não são rotas mortas: a demo do
 // pixel usa /vendas, e /google é o destino do callback OAuth. O destino aqui é
 // onde a funcionalidade delas passa a ser alcançada pelo menu.
-// /conteudo (espelho ContentItem do ClickUp) e /tarefas (lista paralela ao quadro)
-// são itens vivos do NAV: não entram aqui, e nenhum destino abaixo pode ser um
-// deles — a fonte migrada do ClickUp é o Quadro interno (/trabalho). Apagar ou
-// absorver essas telas é decisão de produto do Pedro (MK7-telas-repetidas §3.1).
+// Nenhum destino abaixo pode ser /conteudo (espelho ContentItem do ClickUp) nem
+// /tarefas (lista paralela ao quadro): a fonte migrada do ClickUp é o Quadro
+// interno (/trabalho). Desde 18/10/2026 /conteudo entra aqui como ORIGEM (item
+// oculto, tela viva). Apagar essas telas é decisão do Pedro (MK7 §3.1).
 export const ROTAS_ABSORVIDAS: { href: string; destino: string; porque: string }[] = [
   { href: '/vendas', destino: '/pixels', porque: 'é o manual de instalação do pixel.js mais uma página demo, não um módulo' },
   { href: '/google', destino: '/conexoes', porque: 'gerencia o OAuth do Google — é uma conexão; segue viva como destino do callback' },
+  // 18/10/2026, rodada do painel P0: itens OCULTOS do NAV (continuam donos da rota e
+  // do módulo). Apagar de vez é decisão do Pedro (ROOT-10, MK7-telas-repetidas §3.1).
+  { href: '/leads', destino: '/comercial', porque: 'o cockpit absorve o MVP: a fila de decisões do comercial é a entrada dos leads; a tela segue viva' },
+  { href: '/funil', destino: '/comercial/funil', porque: 'o cockpit absorve o MVP: o Funil vivo substitui o funil de antes; a tela segue viva' },
+  { href: '/conteudo', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; a tela (espelho dos Temas do ClickUp) segue viva' },
+  { href: '/marketing/ideias', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor do banco de ideias segue vivo' },
+  { href: '/marketing/estrategia', destino: '/trabalho', porque: 'cortada do menu por decisão de 18/10/2026; o editor da estratégia do mês segue vivo' },
 ];
 
 // Rotas de detalhe que NÃO entram no menu: herdam o módulo pai e são protegidas

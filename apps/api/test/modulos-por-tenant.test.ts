@@ -327,7 +327,9 @@ describe('desligar um módulo de cada vez', () => {
         const antes = new Set(chaves(navPorSecao(perms, MODULOS)));
         const depois = new Set(chaves(navPorSecao(perms, [...ligados])));
         const sumiram = [...antes].filter((k) => !depois.has(k)).sort();
-        const esperados = NAV.filter((n) => n.modulo === modulo)
+        // item oculto (18/10/2026: leads, funil, conteudo, ideias, estratégia) já
+        // não está no menu; desligar o módulo não tem o que esconder dele.
+        const esperados = NAV.filter((n) => n.modulo === modulo && !n.oculto)
           .map((n) => n.key)
           .sort();
         expect(sumiram).toEqual(esperados);
@@ -337,8 +339,11 @@ describe('desligar um módulo de cada vez', () => {
         const perms = NAV.map((n) => n.permission);
         const daEspinha = (itens: NavItem[]) =>
           itens.filter((n) => !n.modulo && !n.oculto).map((n) => n.key);
+        // O menu sai na ordem das SECOES, e a ordem delas já não é a do NAV
+        // (18/10/2026: Contexto desceu para depois do Motor de IA).
+        const naOrdemDoMenu = SECOES.flatMap((s) => NAV.filter((n) => n.secao === s.key));
         expect(daEspinha(navPorSecao(perms, [...ligados]).flatMap((g) => g.itens))).toEqual(
-          daEspinha(NAV),
+          daEspinha(naOrdemDoMenu),
         );
       });
     });
@@ -376,8 +381,17 @@ describe('menu e API concordam', () => {
      * parentesco ("`/vendas` cheira a pixels") seria adivinhar, e adivinhar
      * errado aqui derruba o callback do Google — que é espinha.
      */
+    // Desde 18/10/2026 (rodada do painel P0) ROTAS_ABSORVIDAS também lista itens
+    // OCULTOS do NAV (/leads, /funil, /conteudo, ideias, estratégia): são telas
+    // vivas com dono, e seguem governadas pelo módulo do próprio item.
     for (const { href } of ROTAS_ABSORVIDAS) {
-      expect(moduloDaRotaDoWeb(href), `${href} não pode nascer bloqueada`).toBeNull();
+      const item = NAV.find((n) => n.href === href);
+      if (item) {
+        expect(item.oculto, `${href} absorvida e no NAV precisa ser item oculto`).toBe(true);
+        expect(moduloDaRotaDoWeb(href), href).toBe(item.modulo ?? null);
+      } else {
+        expect(moduloDaRotaDoWeb(href), `${href} não pode nascer bloqueada`).toBeNull();
+      }
     }
   });
 

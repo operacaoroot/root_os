@@ -170,8 +170,12 @@ describe('não se perdeu funcionalidade', () => {
     for (const r of ROTAS_ABSORVIDAS) {
       expect(filasDuplicadas.has(r.destino), `${r.href} → ${r.destino} é fila duplicada`).toBe(false);
     }
+    // 18/10/2026 (rodada do painel P0): /conteudo saiu do menu e entrou como ORIGEM.
+    // Ele continua item do NAV, oculto: a tela segue viva e a rota segue com dono.
     for (const h of filasDuplicadas) {
-      expect(ROTAS_ABSORVIDAS.some((r) => r.href === h), `${h} é item vivo do NAV, não rota absorvida`).toBe(false);
+      const absorvida = ROTAS_ABSORVIDAS.some((r) => r.href === h);
+      const item = NAV.find((n) => n.href === h);
+      if (absorvida) expect(item?.oculto, `${h} absorvida precisa ser item oculto, tela viva`).toBe(true);
     }
   });
 
@@ -300,7 +304,8 @@ describe('navPorSecao', () => {
     const grupos = navPorSecao(new Set(['leads.ver']));
     expect(grupos).toHaveLength(1);
     expect(grupos[0].secao.key).toBe('comercial');
-    expect(grupos[0].itens.map((i) => i.key)).toEqual(['leads', ...Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver')]);
+    // `leads` está oculto desde 18/10/2026: o cockpit absorve o MVP.
+    expect(grupos[0].itens.map((i) => i.key)).toEqual(Object.keys(COCKPIT).filter((k) => COCKPIT[k].permission === 'leads.ver'));
   });
 
   it('módulo desligado sai do menu; a espinha nunca sai', () => {
@@ -376,16 +381,17 @@ describe('navEmArvore', () => {
   });
 
   /*
-   * O CASO QUE CUSTA ACESSO SE FOR ESQUECIDO, e que é real: `funil` pede
-   * `dashboard.ver` e o pai dele, `leads`, pede `leads.ver`. Quem opera sem
-   * `leads.ver` TEM o Funil — se o filho caísse com o pai, a tela sumiria do
-   * menu sem nada acusar.
+   * O CASO QUE CUSTA ACESSO SE FOR ESQUECIDO, e que é real: `marca` pede
+   * `pauta.ver` e o pai dele, `contexto`, pede `obsidian.ver`. Quem opera sem
+   * `obsidian.ver` TEM a Marca — se o filho caísse com o pai, a tela sumiria do
+   * menu sem nada acusar. (Até 18/10/2026 o exemplo era `funil` sob `leads`;
+   * os dois saíram do menu, ocultos, na rodada do painel.)
    */
   it('filho cujo pai foi filtrado sobe para o primeiro nível, e não desaparece', () => {
-    const grupos = navEmArvore(new Set(['dashboard.ver']));
-    const comercial = grupos.find((g) => g.secao.key === 'comercial')!;
-    expect(comercial.itens.map((no) => no.item.key)).toContain('funil');
-    expect(comercial.itens.every((no) => no.filhos.length === 0)).toBe(true);
+    const grupos = navEmArvore(new Set(['pauta.ver']));
+    const contexto = grupos.find((g) => g.secao.key === 'empresa')!;
+    expect(contexto.itens.map((no) => no.item.key)).toContain('marca');
+    expect(contexto.itens.every((no) => no.filhos.length === 0)).toBe(true);
   });
 
   it('módulo desligado tira pai e filho juntos', () => {
@@ -485,10 +491,10 @@ describe('o bloco Marketing (MK7)', () => {
       'marketing-performance',
       'marketing-relatorio',
     ]);
+    // Ideias e Estratégia saíram do menu em 18/10/2026 (ocultas, telas vivas).
     const trabalho = comModulo.find((g) => g.secao.key === 'trabalho');
-    expect(trabalho?.itens.map((i) => i.item.key)).toEqual(
-      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
-    );
+    expect(trabalho?.itens.map((i) => i.item.key) ?? []).not.toContain('marketing-ideias');
+    expect(trabalho?.itens.map((i) => i.item.key) ?? []).not.toContain('marketing-estrategia');
 
     // Sem o módulo, a seção inteira some (nenhum item dela sobra) — o que
     // importa é que o bloco não aparece por nenhum caminho.
@@ -598,8 +604,8 @@ describe('organização da navegação (ROOT-07)', () => {
     expect(repetidos).toEqual(['config']); // "Configurações da conta": a seção tem um item só, o mesmo destino
   });
 
-  it('o texto de apoio de Trabalho cita as ideias e a estratégia que agora moram lá', () => {
-    expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro, ideias e implantação');
+  it('o texto de apoio de Trabalho não cita as ideias, que saíram do menu em 18/10/2026', () => {
+    expect(SECOES.find((s) => s.key === 'trabalho')?.hint).toBe('tarefas, quadro e implantação');
   });
 
   it('cada destino cai na seção da matriz, e a matriz cobre exatamente os 39 href', () => {
@@ -607,15 +613,16 @@ describe('organização da navegação (ROOT-07)', () => {
     for (const n of NAV) expect(n.secao, `${n.key} (${n.href})`).toBe(SECAO_DA_MATRIZ[n.href] ?? (HREFS_DO_COCKPIT.includes(n.href) ? 'comercial' : undefined));
   });
 
-  it('SECOES: ordem, rótulos e tipos do contrato C-16', () => {
+  // Ordem de 18/10/2026 (rodada do painel P0): Contexto desce para depois do Motor de IA.
+  it('SECOES: ordem, rótulos e tipos do contrato C-16, com a ordem de 18/10/2026', () => {
     expect(SECOES.map((s) => [s.key, s.label, s.tipo])).toEqual([
       ['dia', 'Dia a dia', 'principal'],
-      ['empresa', 'Contexto', 'principal'],
       ['trabalho', 'Trabalho', 'principal'],
       ['conteudo', 'Motor de Marketing', 'principal'],
       ['comercial', 'Motor Comercial', 'principal'],
       ['financeiro', 'Motor Financeiro', 'principal'],
       ['automacoes', 'Motor de IA', 'principal'],
+      ['empresa', 'Contexto', 'principal'],
       ['resultados', 'Resultados', 'principal'],
       ['controle', 'Configurações da empresa', 'apoio'],
       ['registros', 'Registros', 'apoio'],
@@ -630,16 +637,38 @@ describe('organização da navegação (ROOT-07)', () => {
     for (const n of NAV.filter((i) => i.pai)) {
       expect(NAV.find((i) => i.key === n.pai)?.secao, n.key).toBe(n.secao);
     }
+    // Ideias e Estratégia continuam na seção Trabalho, ocultas (18/10/2026).
     const trabalho = navEmArvore(new Set(NAV.map((n) => n.permission))).find((g) => g.secao.key === 'trabalho')!;
-    expect(trabalho.itens.map((no) => no.item.key)).toEqual(
-      expect.arrayContaining(['marketing-ideias', 'marketing-estrategia']),
-    );
+    expect(trabalho.itens.map((no) => no.item.key)).not.toContain('marketing-ideias');
+    expect(NAV.find((n) => n.key === 'marketing-ideias')?.secao).toBe('trabalho');
+  });
+
+  /*
+   * Os cortes de 18/10/2026 (rodada do painel P0): cada item sai do menu marcado
+   * como oculto, com a rota em ROTAS_ABSORVIDAS e o mesmo módulo de antes.
+   */
+  it('os cortes de 18/10/2026 saem do menu, ficam no NAV e dizem para onde a função foi', () => {
+    const cortes: Record<string, string> = {
+      conteudo: '/trabalho', 'marketing-ideias': '/trabalho', 'marketing-estrategia': '/trabalho',
+      leads: '/comercial', funil: '/comercial/funil',
+    };
+    const todas = new Set(NAV.map((n) => n.permission));
+    const noMenu = navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key));
+    for (const [k, destino] of Object.entries(cortes)) {
+      const n = NAV.find((i) => i.key === k)!;
+      expect(n.oculto, k).toBe(true);
+      expect(noMenu, k).not.toContain(k);
+      expect(ROTAS_ABSORVIDAS.find((r) => r.href === n.href)?.destino, k).toBe(destino);
+      expect(ROTAS_ABSORVIDAS.find((r) => r.href === n.href)?.porque.trim(), k).toBeTruthy();
+    }
   });
 
   it('/assinatura sai da barra e da busca por marca, e continua no NAV', () => {
     const a = NAV.find((n) => n.key === 'assinatura')!;
     expect(a.oculto).toBe(true);
-    expect(NAV.filter((n) => n.oculto).map((n) => n.key)).toEqual(['assinatura']);
+    expect(NAV.filter((n) => n.oculto).map((n) => n.key).sort()).toEqual(
+      ['assinatura', 'conteudo', 'funil', 'leads', 'marketing-estrategia', 'marketing-ideias'],
+    );
     const todas = new Set(NAV.map((n) => n.permission));
     expect(navPorSecao(todas).flatMap((g) => g.itens.map((i) => i.key))).not.toContain('assinatura');
     expect(
@@ -662,7 +691,7 @@ describe('organização da navegação (ROOT-07)', () => {
       expect(areasDaNota([`area:${chave}`]), `area:${chave} ficou sem área`).toEqual([chave]);
     }
     expect(areasDaNota(['area:empresa', 'area:conteudo', 'area:comercial', 'area:automacoes']))
-      .toEqual(['empresa', 'conteudo', 'comercial', 'automacoes']);
+      .toEqual(['conteudo', 'comercial', 'automacoes', 'empresa']); // na ordem das SECOES (Contexto desceu em 18/10/2026)
     expect(areasDaNota(['area:nao-existe'])).toEqual([]);
   });
 });
