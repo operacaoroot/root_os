@@ -5,7 +5,6 @@ import type { PainelComercial, PainelComercialNegocio, TrabEstrutura } from '@mk
 import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { EVENTO_FICHA_MUDOU, abrirFicha } from '@/lib/ficha';
-import { Botao, Card, Chip, Kpi } from '../referencias/ui';
 import {
   ETAPAS,
   quando,
@@ -21,19 +20,22 @@ import {
  * ============================================================================
  *
  * Tela da ROOT (sessão da plataforma), não de cliente: a API recusa qualquer
- * outra sessão com 403 e esta tela explica em vez de quebrar — o mesmo desenho
- * do console da plataforma. Só leitura: as páginas e o rastreio moram no serviço
- * de propostas (proposta.operacaoroot.com); o pagamento confirmado mora no Asaas.
+ * outra sessão com 403 e esta tela explica em vez de quebrar. Só leitura do
+ * serviço de propostas (proposta.operacaoroot.com); o pagamento confirmado
+ * mora no Asaas.
  *
- * Fica fora do NAV, que é filtrado por permissão, não por "ser a plataforma":
- * um item lá apareceria no menu de toda empresa cliente. O menu mostra esta tela
- * no grupo ROOT só quando a API confirma a sessão da plataforma (ver
- * `ITENS_DA_ROOT` em components/navegacao-modulos.ts e `useEhPlataforma`).
+ * Mesmo desenho do Painel geral (18/10/2026): o funil das propostas em cima,
+ * como dash, e todo número clicável filtra a lista. Cada proposta mostra o lead
+ * dela no CRM e abre a ficha em janela.
+ *
+ * Fica fora do NAV, que é filtrado por permissão, não por "ser a plataforma"
+ * (ver `ITENS_DA_ROOT` em components/navegacao-modulos.ts).
  */
 
 const BASE = '/tenants/plataforma/propostas';
-const TOM_DA_ETAPA = ['muted', 'muted', 'warn', 'good'] as const;
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+/** Etapa do leitor: 0 enviada · 1 abriu · 2 leu o investimento · 3 clicou em pagar. */
+const COR_DA_ETAPA = ['bg-muted/40', 'bg-brand/35', 'bg-brand/65', 'bg-brand'];
 
 /*
  * A proposta e o lead se encontram pelo link: o campo "Link da proposta" da
@@ -60,6 +62,8 @@ export default function Propostas() {
   const [carregando, setCarregando] = useState(true);
   const [crm, setCrm] = useState<PainelComercial | null>(null);
   const [criando, setCriando] = useState<string | null>(null);
+  /** Filtro do funil: só as propostas que chegaram até esta etapa. */
+  const [chegou, setChegou] = useState<number | null>(null);
 
   useEffect(() => {
     if (!ready || !token) return;
@@ -126,114 +130,93 @@ export default function Propostas() {
     };
   }, [token, selecionada]);
 
-  if (!ready || (carregando && !dados)) return <Aviso>carregando…</Aviso>;
+  if (!ready || (carregando && !dados)) return <p className="text-muted">Carregando…</p>;
 
   if (autorizado === false) {
     return (
-      <Aviso>
-        <p className="text-[12px] text-text">Esta área é da ROOT.</p>
-        <p className="mt-2 text-[11.5px] leading-[1.6] text-muted">
-          As propostas comerciais são vistas pela sessão de quem opera a plataforma.
-        </p>
-      </Aviso>
+      <div className="com-tema mx-auto max-w-[520px] rounded-md border border-border bg-surface p-6 text-text">
+        <p className="font-medium">Esta área é da ROOT.</p>
+        <p className="mt-2 text-sm text-muted">As propostas comerciais são vistas pela sessão de quem opera a plataforma.</p>
+      </div>
     );
   }
 
   const propostas = dados?.propostas ?? [];
-  const conta = (n: number) => propostas.filter((p) => p.etapa >= n).length;
+  const visiveis = chegou == null ? propostas : propostas.filter((p) => p.etapa >= chegou);
+  const leads = propostas.map((p) => leadDaProposta(p, negocios));
+  const emJogo = leads.reduce((s, l) => s + (l && l.resultado === 'aberta' ? l.valor ?? 0 : 0), 0);
+  const fechadas = leads.filter((l) => l?.resultado === 'ganho');
+  const valorFechado = fechadas.reduce((s, l) => s + (l?.valor ?? 0), 0);
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="font-os-mono text-[13px] font-bold tracking-[-0.01em] text-text">Propostas</h1>
-        <p className="mt-1 max-w-[720px] text-[11.5px] leading-[1.6] text-muted">
-          Quem recebeu, quem leu e quem quer pagar. Visitas de aparelhos da equipe não contam; o
-          pagamento confirmado aparece no Asaas, no link de cada proposta.
-        </p>
-      </header>
+    <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
+      {erro && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{erro}</div>}
 
-      {erro && (
-        <div className="rounded-xl border border-bad/40 bg-bad/10 p-4 text-[11.5px] text-bad">{erro}</div>
-      )}
+      <Funil propostas={propostas} chegou={chegou} filtrar={setChegou} emJogo={emJogo} fechadas={fechadas.length} valorFechado={valorFechado} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="propostas" valor={propostas.length} />
-        <Kpi label="abertas" valor={conta(1)} />
-        <Kpi label="leram o investimento" valor={conta(2)} />
-        <Kpi label="clicaram em pagar" valor={conta(3)} />
-      </div>
-
-      <Card
-        titulo="clientes"
+      <Quadro
+        titulo={chegou == null ? 'Propostas' : `Propostas que chegaram em "${ETAPAS[chegou]}"`}
+        nota={`${visiveis.length} de ${propostas.length} · clique na proposta para ver o detalhe, no lead para abrir a ficha`}
         acao={
-          <Botao tone="ghost" onClick={() => void carregar()}>
-            recarregar
-          </Botao>
+          <div className="flex items-center gap-4">
+            {chegou != null && (
+              <button onClick={() => setChegou(null)} className="text-sm text-muted underline hover:text-text">ver todas</button>
+            )}
+            <button onClick={() => void carregar()} className="text-sm text-muted underline hover:text-text">recarregar</button>
+          </div>
         }
       >
-        {propostas.length === 0 ? (
-          <p className="text-[11.5px] leading-[1.6] text-muted">
-            Nenhuma proposta publicada ainda. Cada proposta nova sai do modelo padrão e aparece aqui
-            sozinha quando é publicada.
-          </p>
+        {visiveis.length === 0 ? (
+          <p className="text-muted">Nenhuma proposta aqui.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-[11.5px]">
-              <thead className="font-os-mono text-[10px] uppercase tracking-[0.12em] text-muted">
-                <tr>
-                  <th className="py-2">cliente</th>
-                  <th>situação</th>
-                  <th>no CRM</th>
-                  <th className="text-right">aberturas</th>
-                  <th className="text-right">pessoas</th>
-                  <th className="text-right">última atividade</th>
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="text-left">
+                  <th className="com-rotulo pb-2 font-normal">Proposta</th>
+                  <th className="com-rotulo pb-2 font-normal">Situação</th>
+                  <th className="com-rotulo pb-2 font-normal">No CRM</th>
+                  <th className="com-rotulo pb-2 text-right font-normal">Aberturas</th>
+                  <th className="com-rotulo pb-2 text-right font-normal">Pessoas</th>
+                  <th className="com-rotulo pb-2 text-right font-normal">Última atividade</th>
                 </tr>
               </thead>
-              <tbody>
-                {propostas.map((p) => {
+              <tbody className="divide-y divide-border">
+                {visiveis.map((p) => {
                   const ativa = p.chave === selecionada?.chave;
+                  const lead = leadDaProposta(p, negocios);
                   return (
-                    <tr
-                      key={p.chave}
-                      onClick={() => setSelecionada(p)}
-                      className={`cursor-pointer border-t border-border ${ativa ? 'bg-surface-2' : 'hover:bg-surface-2/60'}`}
-                    >
-                      <td className="py-3 pr-3">
-                        <p className="font-semibold text-text">{p.titulo}</p>
-                        <p className="mt-0.5 font-os-mono text-[10px] text-muted">
-                          {p.link.replace(/^https?:\/\//, '')}
-                        </p>
+                    <tr key={p.chave} onClick={() => setSelecionada(p)} className={`cursor-pointer ${ativa ? 'bg-brand/10' : 'hover:bg-surface-2'}`}>
+                      <td className="py-2.5 pr-3">
+                        <div className="font-medium">{p.titulo}</div>
+                        <div className="text-xs text-muted">{p.link.replace(/^https?:\/\//, '')}</div>
                       </td>
-                      <td>
-                        <Chip tone={TOM_DA_ETAPA[p.etapa] ?? 'muted'}>{p.estado}</Chip>
+                      <td className="py-2.5 pr-3">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <span className={`inline-block h-2.5 w-2.5 rounded-sm ${COR_DA_ETAPA[p.etapa] ?? 'bg-muted/40'}`} />
+                          {p.estado}
+                        </span>
                       </td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        {(() => {
-                          const lead = leadDaProposta(p, negocios);
-                          if (lead) {
-                            return (
-                              <button onClick={() => abrirFicha(lead.id)} className="group block text-left">
-                                <span className="flex items-center gap-1.5 text-text group-hover:text-brand">
-                                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: lead.etapaCor }} />
-                                  {lead.etapa}
-                                </span>
-                                <span className="font-os-mono text-[10.5px] text-muted">
-                                  {lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →
-                                </span>
-                              </button>
-                            );
-                          }
-                          if (!crm?.lista) return <span className="text-muted">–</span>;
-                          return (
-                            <Botao tone="ghost" onClick={() => void criarLead(p)}>
-                              {criando === p.chave ? 'criando…' : '+ criar lead'}
-                            </Botao>
-                          );
-                        })()}
+                      <td className="py-2.5 pr-3" onClick={(e) => e.stopPropagation()}>
+                        {lead ? (
+                          <button onClick={() => abrirFicha(lead.id)} className="group text-left" title="Abrir a ficha do lead">
+                            <span className="flex items-center gap-1.5 group-hover:text-brand">
+                              <span className="inline-block h-2 w-2 rounded-full" style={{ background: lead.etapaCor }} />
+                              {lead.etapa}
+                            </span>
+                            <span className="com-num text-xs text-muted">{lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →</span>
+                          </button>
+                        ) : crm?.lista ? (
+                          <button onClick={() => void criarLead(p)} className="rounded-md border border-brand px-2.5 py-1 text-xs text-brand hover:bg-brand/10">
+                            {criando === p.chave ? 'criando…' : '+ criar lead'}
+                          </button>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
-                      <td className="text-right font-os-mono">{p.aberturas}</td>
-                      <td className="text-right font-os-mono">{p.pessoas}</td>
-                      <td className="text-right text-muted">{quando(p.ultimaAtividade)}</td>
+                      <td className="com-num py-2.5 text-right">{p.aberturas}</td>
+                      <td className="com-num py-2.5 text-right">{p.pessoas}</td>
+                      <td className="py-2.5 text-right text-muted">{quando(p.ultimaAtividade)}</td>
                     </tr>
                   );
                 })}
@@ -241,35 +224,108 @@ export default function Propostas() {
             </table>
           </div>
         )}
-      </Card>
+      </Quadro>
 
-      {selecionada && <Detalhe proposta={selecionada} detalhe={detalhe} />}
+      {selecionada && <Detalhe proposta={selecionada} detalhe={detalhe} lead={leadDaProposta(selecionada, negocios)} />}
 
       {dados && (
-        <Card titulo={`aparelhos da equipe · ${dados.aparelhosDaEquipe.length}`}>
+        <details className="rounded-md border border-border bg-surface px-5 py-3">
+          <summary className="cursor-pointer text-sm text-muted">
+            Aparelhos da equipe ({dados.aparelhosDaEquipe.length}) · as visitas deles não contam
+          </summary>
           {dados.aparelhosDaEquipe.length === 0 ? (
-            <p className="text-[11.5px] text-muted">Nenhum aparelho cadastrado ainda.</p>
+            <p className="mt-2 text-sm text-muted">Nenhum aparelho cadastrado ainda.</p>
           ) : (
-            <ul className="space-y-1.5 text-[11.5px]">
+            <ul className="mt-2 space-y-1 text-sm">
               {dados.aparelhosDaEquipe.map((a) => (
                 <li key={`${a.nome}-${a.desde}`} className="flex flex-wrap gap-x-3 text-muted">
-                  <span className="font-semibold text-text">{a.nome}</span>
-                  <span>
-                    {a.aparelho}
-                    {a.descricao ? ` · ${a.descricao}` : ''}
-                  </span>
+                  <span className="font-medium text-text">{a.nome}</span>
+                  <span>{a.aparelho}{a.descricao ? ` · ${a.descricao}` : ''}</span>
                   <span>desde {quando(a.desde)}</span>
                 </li>
               ))}
             </ul>
           )}
-        </Card>
+        </details>
       )}
     </div>
   );
 }
 
-function Detalhe({ proposta, detalhe }: { proposta: PropostaNaLista; detalhe: DetalheDaProposta | null }) {
+/*
+ * O funil das propostas, no lugar dos quatro cartões: cada etapa do leitor com
+ * o número grande e uma barra proporcional ao total enviado. Clicar filtra a
+ * lista. À direita, o que as propostas valem no CRM.
+ */
+function Funil(props: {
+  propostas: PropostaNaLista[];
+  chegou: number | null;
+  filtrar: (n: number | null) => void;
+  emJogo: number;
+  fechadas: number;
+  valorFechado: number;
+}) {
+  const total = props.propostas.length || 1;
+  const nomes = ['Enviadas', 'Abriram', 'Leram o investimento', 'Clicaram em pagar'];
+  return (
+    <section className="grid gap-5 rounded-md border border-border bg-surface p-5 lg:grid-cols-[1fr_15rem]">
+      <div className="grid gap-4 sm:grid-cols-4">
+        {nomes.map((nome, i) => {
+          const n = props.propostas.filter((p) => p.etapa >= i).length;
+          const on = props.chegou === i;
+          return (
+            <button
+              key={nome}
+              onClick={() => props.filtrar(on ? null : i)}
+              className={`group rounded-md p-1 text-left hover:bg-surface-2 ${on ? 'bg-brand/10' : ''}`}
+              title={on ? 'Tirar o filtro' : `Ver as que chegaram em "${nome}"`}
+            >
+              <div className="com-rotulo flex items-center gap-2">
+                <span className={`inline-block h-2.5 w-2.5 rounded-sm ${COR_DA_ETAPA[i]}`} />
+                {nome}
+              </div>
+              <div className="com-num mt-1.5 text-[2.2rem] font-bold leading-none">{n}</div>
+              <div className="mt-2 h-2 w-full rounded-sm bg-surface-2">
+                <div className={`h-full rounded-sm ${COR_DA_ETAPA[i]}`} style={{ width: `${(n / total) * 100}%` }} />
+              </div>
+              <div className="mt-1.5 text-sm text-muted">
+                {i === 0 ? 'todas' : `${Math.round((n / total) * 100)}% das enviadas`}
+                <span className="opacity-0 transition group-hover:opacity-100"> · ver →</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-4 border-border lg:grid-cols-1 lg:border-l lg:pl-5">
+        <div className="p-1">
+          <div className="com-rotulo">Em negociação no CRM</div>
+          <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{brl(props.emJogo)}</div>
+          <div className="mt-1.5 text-sm text-muted">soma das propostas abertas</div>
+        </div>
+        <div className="p-1">
+          <div className="com-rotulo">Viraram contrato</div>
+          <div className="com-num mt-1.5 text-[1.5rem] font-bold leading-none">{brl(props.valorFechado)}</div>
+          <div className="mt-1.5 text-sm text-muted">{props.fechadas} proposta(s) fechada(s)</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Quadro({ titulo, nota, acao, children }: { titulo: string; nota?: string; acao?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-md border border-border bg-surface px-5 py-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[1.05rem] font-semibold">{titulo}</h2>
+        {acao}
+      </div>
+      {nota && <p className="text-sm text-muted">{nota}</p>}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function Detalhe({ proposta, detalhe, lead }: { proposta: PropostaNaLista; detalhe: DetalheDaProposta | null; lead?: PainelComercialNegocio }) {
   const [copiado, setCopiado] = useState(false);
   const copiar = () => {
     void navigator.clipboard
@@ -281,119 +337,111 @@ function Detalhe({ proposta, detalhe }: { proposta: PropostaNaLista; detalhe: De
       .catch(() => setCopiado(false));
   };
   const maxMs = Math.max(1, ...(detalhe?.tempoPorParte.map((t) => t.ms) ?? [1]));
+  const botao = 'rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:border-brand hover:text-text';
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-5">
+    <section className="rounded-md border border-border bg-surface px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[15px] font-semibold text-text">{proposta.titulo}</h2>
-          <p className="mt-1 font-os-mono text-[10.5px] text-muted">{proposta.link.replace(/^https?:\/\//, '')}</p>
+          <div className="com-rotulo">Proposta</div>
+          <h2 className="mt-1 text-[1.4rem] font-bold leading-tight">{proposta.titulo}</h2>
+          <p className="text-sm text-muted">{proposta.link.replace(/^https?:\/\//, '')}</p>
         </div>
-        <div className="flex gap-2">
-          <Botao tone="ghost" onClick={copiar}>
-            {copiado ? 'link copiado' : 'copiar link'}
-          </Botao>
-          <a
-            href={`${proposta.link}?equipe=1`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-md border border-border px-3 py-1.5 text-[11.5px] text-text hover:border-brand"
-          >
-            abrir proposta
-          </a>
+        <div className="flex flex-wrap gap-2">
+          {lead && (
+            <button onClick={() => abrirFicha(lead.id)} className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-ink hover:opacity-90">
+              ficha do lead
+            </button>
+          )}
+          <button onClick={copiar} className={botao}>{copiado ? 'link copiado' : 'copiar link'}</button>
+          <a href={`${proposta.link}?equipe=1`} target="_blank" rel="noopener noreferrer" className={botao}>abrir proposta</a>
         </div>
       </div>
 
-      <ol className="mt-5 grid grid-cols-2 gap-1.5 md:grid-cols-5">
+      {/* Progresso do leitor: as etapas cumpridas em lima, o pago fica no Asaas. */}
+      <ol className="mt-5 grid grid-cols-5 gap-1.5">
         {[...ETAPAS, 'Pago'].map((nome, i) => {
           const cumprida = i === 0 || (i <= 3 && proposta.etapa >= i);
           const pago = i === 4;
           return (
-            <li
-              key={nome}
-              className={`rounded-md px-2 py-2 text-center text-[11px] ${
-                cumprida ? 'bg-good/15 text-good' : 'bg-surface-2 text-muted'
-              }`}
-              title={pago ? 'O pagamento confirmado é conferido no Asaas, no link da proposta.' : undefined}
-            >
-              {nome}
-              {pago && <span className="block text-[10px]">confira no Asaas</span>}
+            <li key={nome} title={pago ? 'O pagamento confirmado é conferido no Asaas, no link da proposta.' : undefined}>
+              <div className={`h-1.5 rounded-sm ${cumprida ? 'bg-brand' : 'bg-surface-2'}`} />
+              <div className={`mt-1.5 text-xs ${cumprida ? 'text-text' : 'text-muted'}`}>
+                {nome}
+                {pago && <span className="block text-muted">confira no Asaas</span>}
+              </div>
             </li>
           );
         })}
       </ol>
 
       {!detalhe ? (
-        <p className="mt-5 text-[11.5px] text-muted">carregando o detalhe…</p>
+        <p className="mt-5 text-sm text-muted">carregando o detalhe…</p>
       ) : (
         <>
-          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Kpi label="aberturas" valor={detalhe.aberturas} />
-            <Kpi label="pessoas" valor={detalhe.pessoas} />
-            <Kpi label="tempo de leitura" valor={detalhe.aberturas ? tempo(detalhe.tempoTotalMs) : '–'} />
-            <Kpi label="mais vista" valor={detalhe.maisVista ?? '–'} />
+          <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Numero rotulo="Aberturas" valor={String(detalhe.aberturas)} />
+            <Numero rotulo="Pessoas" valor={String(detalhe.pessoas)} />
+            <Numero rotulo="Tempo de leitura" valor={detalhe.aberturas ? tempo(detalhe.tempoTotalMs) : '–'} />
+            <Numero rotulo="Parte mais vista" valor={detalhe.maisVista ?? '–'} texto />
           </div>
 
-          {detalhe.tempoPorParte.length > 0 && (
-            <div className="mt-6">
-              <h3 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">tempo por parte</h3>
-              <div className="space-y-1.5">
-                {detalhe.tempoPorParte.map((t) => (
-                  <div key={t.id} className="grid grid-cols-[9rem_minmax(0,1fr)_6rem] items-center gap-3 text-[11.5px]">
-                    <span className={t.nome === detalhe.maisVista ? 'font-semibold text-text' : 'text-muted'}>{t.nome}</span>
-                    <span className="h-1.5 overflow-hidden rounded bg-surface-2">
-                      <span
-                        className={`block h-full ${t.nome === detalhe.maisVista ? 'bg-text' : 'bg-muted'}`}
-                        style={{ width: `${Math.round((t.ms / maxMs) * 100)}%` }}
-                      />
-                    </span>
-                    <span className="text-right font-os-mono text-muted">{tempo(t.ms)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-6">
-            <h3 className="mb-2 font-os-mono text-[10px] uppercase tracking-[0.16em] text-muted">visitas</h3>
-            {detalhe.visitas.length === 0 ? (
-              <p className="text-[11.5px] text-muted">Ainda não abriu.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[620px] text-left text-[11.5px]">
-                  <thead className="font-os-mono text-[10px] uppercase tracking-[0.12em] text-muted">
-                    <tr>
-                      <th className="py-2">quando</th>
-                      <th>quem</th>
-                      <th>aparelho</th>
-                      <th>tempo</th>
-                      <th>leu até</th>
-                      <th>pagar</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detalhe.visitas.map((v, i) => (
-                      <tr key={`${v.quando}-${i}`} className="border-t border-border text-muted">
-                        <td className="py-2">{quando(v.quando)}</td>
-                        <td className="text-text">pessoa {v.pessoa}</td>
-                        <td>
-                          {v.aparelho}
-                          {v.descricao ? ` · ${v.descricao}` : ''}
-                        </td>
-                        <td className="font-os-mono">{tempo(v.tempoMs)}</td>
-                        <td>{v.leuAte}</td>
-                        <td className={v.clicouEmPagar ? 'text-good' : ''}>{v.clicouEmPagar ? 'clicou' : '–'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {detalhe.tempoPorParte.length > 0 && (
+              <div>
+                <h3 className="text-[0.95rem] font-semibold">Tempo por parte</h3>
+                <div className="mt-3 space-y-2">
+                  {detalhe.tempoPorParte.map((t) => (
+                    <div key={t.id} className="grid grid-cols-[8rem_minmax(0,1fr)_5rem] items-center gap-3 text-sm">
+                      <span className={t.nome === detalhe.maisVista ? 'font-medium' : 'text-muted'}>{t.nome}</span>
+                      <span className="h-2 overflow-hidden rounded-sm bg-surface-2">
+                        <span
+                          className={`block h-full ${t.nome === detalhe.maisVista ? 'bg-brand' : 'bg-brand/45'}`}
+                          style={{ width: `${Math.round((t.ms / maxMs) * 100)}%` }}
+                        />
+                      </span>
+                      <span className="com-num text-right text-muted">{tempo(t.ms)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-            <p className="mt-3 text-[10.5px] leading-[1.6] text-muted">
-              &quot;Pessoa&quot; é cada navegador diferente. Uma parte conta como vista com 2 s ou mais na tela.
-              {detalhe.visitasDaEquipeIgnoradas > 0 &&
-                ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas.`}
-            </p>
+
+            <div>
+              <h3 className="text-[0.95rem] font-semibold">Visitas</h3>
+              {detalhe.visitas.length === 0 ? (
+                <p className="mt-2 text-sm text-muted">Ainda não abriu.</p>
+              ) : (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm">
+                    <thead>
+                      <tr className="text-left">
+                        <th className="com-rotulo pb-2 font-normal">Quando</th>
+                        <th className="com-rotulo pb-2 font-normal">Quem</th>
+                        <th className="com-rotulo pb-2 font-normal">Tempo</th>
+                        <th className="com-rotulo pb-2 font-normal">Leu até</th>
+                        <th className="com-rotulo pb-2 font-normal">Pagar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-muted">
+                      {detalhe.visitas.map((v, i) => (
+                        <tr key={`${v.quando}-${i}`} title={`${v.aparelho}${v.descricao ? ` · ${v.descricao}` : ''}`}>
+                          <td className="py-1.5">{quando(v.quando)}</td>
+                          <td className="text-text">pessoa {v.pessoa}</td>
+                          <td className="com-num">{tempo(v.tempoMs)}</td>
+                          <td>{v.leuAte}</td>
+                          <td className={v.clicouEmPagar ? 'font-medium text-brand' : ''}>{v.clicouEmPagar ? 'clicou' : '–'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="mt-3 text-xs text-muted">
+                &quot;Pessoa&quot; é cada navegador diferente. Uma parte conta como vista com 2 s ou mais na tela.
+                {detalhe.visitasDaEquipeIgnoradas > 0 && ` ${detalhe.visitasDaEquipeIgnoradas} abertura(s) da equipe foram ignoradas.`}
+              </p>
+            </div>
           </div>
         </>
       )}
@@ -401,10 +449,11 @@ function Detalhe({ proposta, detalhe }: { proposta: PropostaNaLista; detalhe: De
   );
 }
 
-function Aviso({ children }: { children: React.ReactNode }) {
+function Numero({ rotulo, valor, texto }: { rotulo: string; valor: string; texto?: boolean }) {
   return (
-    <div className="mx-auto max-w-[520px] border border-border bg-bg2 p-6 font-os-mono text-[11px] text-muted">
-      {children}
+    <div>
+      <div className="com-rotulo">{rotulo}</div>
+      <div className={`mt-1.5 font-bold leading-tight ${texto ? 'text-[1.1rem]' : 'com-num text-[1.5rem]'}`}>{valor}</div>
     </div>
   );
 }
