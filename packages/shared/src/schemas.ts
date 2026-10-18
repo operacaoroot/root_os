@@ -666,6 +666,11 @@ export const UpdateFinanceTransactionSchema = z
     dueDate: z.string().nullable().optional(),
     paidAt: z.string().nullable().optional(),
     counterparty: z.string().max(160).nullable().optional(),
+    // classificação: vale também p/ lançamentos importados (Asaas/OFX/Pluggy); o sync não sobrescreve
+    chartAccountId: z.string().nullable().optional(),
+    partnerId: z.string().nullable().optional(),
+    notes: z.string().max(500).nullable().optional(),
+    splits: z.array(RateioSplitInputSchema).optional(), // [] remove o rateio; soma = amount
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Nada para atualizar' });
 export type UpdateFinanceTransactionInput = z.infer<typeof UpdateFinanceTransactionSchema>;

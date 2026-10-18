@@ -825,6 +825,10 @@ function Lancamentos(props: {
 
   const setStatus = (id: string, status: FinanceTxStatusValue) =>
     apiPatch(`/finance/transactions/${id}`, { status }, token).then(() => { onFlash('Atualizado.'); onChange(); }).catch((e) => onError(e));
+  const classificar = (id: string, chartAccountId: string) =>
+    apiPatch(`/finance/transactions/${id}`, { chartAccountId: chartAccountId || null }, token)
+      .then(() => { onFlash('Classificado.'); onChange(); })
+      .catch((e) => onError(e));
 
   return (
     <div className="space-y-4">
@@ -902,7 +906,7 @@ function Lancamentos(props: {
               <th className="px-3 py-2">Data</th>
               <th className="px-3 py-2">Descrição</th>
               <th className="px-3 py-2">Conta</th>
-              <th className="px-3 py-2">Categoria</th>
+              <th className="px-3 py-2">Plano de contas</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Valor</th>
               {canEdit && <th className="px-3 py-2" />}
@@ -917,7 +921,19 @@ function Lancamentos(props: {
                 <td className="px-3 py-2 whitespace-nowrap">{dateBR(t.date)}</td>
                 <td className="px-3 py-2">{t.description}{t.source !== 'manual' && <span className="ml-1 text-[10px] text-muted">({t.source})</span>}</td>
                 <td className="px-3 py-2 text-muted">{t.accountName ?? '—'}</td>
-                <td className="px-3 py-2 text-muted">{t.categoryName ?? '—'}</td>
+                <td className="px-3 py-2 text-muted">
+                  {t.temRateio ? 'rateio' : canEdit ? (
+                    <select
+                      aria-label="Conta do plano"
+                      className="max-w-[220px] rounded border border-border bg-surface px-1.5 py-0.5 text-[12px]"
+                      value={t.chartAccountId ?? ''}
+                      onChange={(e) => classificar(t.id, e.target.value)}
+                    >
+                      <option value="">— sem conta —</option>
+                      {lancaveis.map((c) => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}
+                    </select>
+                  ) : (t.chartCodigo ?? t.categoryName ?? '—')}
+                </td>
                 <td className="px-3 py-2"><span className={`rounded px-1.5 py-0.5 text-[11px] ${STATUS_CLS[t.status] ?? ''}`}>{t.status}</span></td>
                 <td className={`px-3 py-2 text-right font-medium ${t.type === 'entrada' ? 'text-good' : 'text-bad'}`}>
                   {t.type === 'entrada' ? '+' : '−'}{brl(t.amount)}

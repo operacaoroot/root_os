@@ -338,6 +338,39 @@ export class FinanceService implements OnModuleInit {
       if (input.dueDate !== undefined) data.dueDate = input.dueDate ? parseDate(input.dueDate) : null;
       if (input.paidAt !== undefined) data.paidAt = input.paidAt ? parseDate(input.paidAt) : null;
       if (input.counterparty !== undefined) data.counterparty = input.counterparty;
+      if (input.notes !== undefined) data.notes = input.notes;
+      // classificação (plano de contas, parceiro, rateio) — também em lançamento importado
+      const splits = input.splits;
+      await conferirReferencias(this.prisma, orgId, {
+        plano: [input.chartAccountId, ...(splits ?? []).map((s) => s.chartAccountId)],
+        parceiro: input.partnerId,
+        departamento: (splits ?? []).map((s) => s.departamentoId),
+        projeto: (splits ?? []).map((s) => s.projetoId),
+      });
+      if (input.chartAccountId !== undefined) {
+        data.chartAccount = input.chartAccountId ? { connect: { id: input.chartAccountId } } : { disconnect: true };
+      }
+      if (input.partnerId !== undefined) {
+        data.partner = input.partnerId ? { connect: { id: input.partnerId } } : { disconnect: true };
+      }
+      if (splits !== undefined) {
+        const valor = input.amount ?? num(tx.amount);
+        const sum = splits.reduce((s, x) => s + x.valor, 0);
+        if (splits.length && Math.abs(sum - valor) > 0.01) {
+          throw new BadRequestException(`Soma do rateio (${sum.toFixed(2)}) diferente do valor (${valor.toFixed(2)})`);
+        }
+        data.temRateio = splits.length > 0;
+        data.splits = {
+          deleteMany: {},
+          create: splits.map((s) => ({
+            orgId,
+            chartAccountId: s.chartAccountId ?? null,
+            departamentoId: s.departamentoId ?? null,
+            projetoId: s.projetoId ?? null,
+            valor: new Prisma.Decimal(s.valor),
+          })),
+        };
+      }
       const updated = await db.financeTransaction.update({ where: { id }, data });
       await this.audit.log({
         orgId, actorId, action: 'finance.tx.update', entityType: 'finance_transaction', entityId: id,
