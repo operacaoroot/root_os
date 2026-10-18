@@ -171,7 +171,9 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
             </span>
             <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
               <span className="font-mono">{nivelEmPalavras(item.nivel)}</span>
-              <span aria-hidden>·</span>
+              <span aria-hidden className="hidden sm:inline">
+                ·
+              </span>
               <span>{quando}</span>
               {esperando && item.exigeReauth && <Etiqueta tom="quente">pede senha</Etiqueta>}
               {esperando && item.exigeMotivo && <Etiqueta tom="quente">pede motivo escrito</Etiqueta>}

@@ -386,7 +386,7 @@ function Corte({ fila }: { fila: Fila }) {
         <div>
           Esta empresa tem {fila.total} aprovações e a tela está mostrando {fila.mostrando} (teto de{' '}
           {fila.tetos.vivas} vivas e {fila.tetos.fechadas} encerradas por consulta). O que não
-          aparece aqui continua correndo o prazo — decida as mais antigas primeiro.
+          aparece aqui continua correndo o prazo: decida as mais antigas primeiro.
         </div>
       )}
       {fila.censo.truncado && (
@@ -405,5 +405,5 @@ function descreverExecucao(r: Confirmacao): string {
   if (r.execucao.status === 'sem_efeito') {
     return `Aprovada, mas NÃO executada: ${r.execucao.motivo}`;
   }
-  return `Aprovada: ${r.summary}. Esta é da superfície antiga — quem executa é a rota que carrega o token.`;
+  return `Aprovada: ${r.summary}. Esta é da superfície antiga: quem executa é a rota que carrega o token.`;
 }

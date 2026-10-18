@@ -43,7 +43,7 @@ export function Conteudo({
   if (oculto) {
     return (
       <p className="text-sm text-muted" data-testid="conteudo-oculto">
-        O conteúdo exato desta ação só aparece para quem pode <strong>decidir</strong> na fila —
+        O conteúdo exato desta ação só aparece para quem pode <strong>decidir</strong> na fila:
         quem assina precisa ler o que assina, e essa é a única razão que justifica mostrar o texto.
         Seu perfil acompanha a fila sem ele.
       </p>
@@ -63,7 +63,7 @@ export function Conteudo({
   if (ehRedigido(valor)) {
     return (
       <div className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">
-        O conteúdo desta ação é <strong>restrito</strong> e a porta o gravou redigido — nem o rastro
+        O conteúdo desta ação é <strong>restrito</strong> e a porta o gravou redigido: nem o rastro
         nem esta tela guardam o valor.
         {valor.chaves?.length ? (
           <span> Os campos enviados são: {valor.chaves.join(', ')}.</span>
