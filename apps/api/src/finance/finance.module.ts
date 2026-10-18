@@ -12,11 +12,13 @@ import { AsaasService } from './asaas.service';
 import { FinopsService } from './finops.service';
 import { AprService } from './apr.service';
 import { ConciliacaoService } from './conciliacao.service';
+import { AnaliseController } from './analise.controller';
+import { AnaliseService } from './analise.service';
 
 @Module({
   imports: [ComercialPonteExercicioModule],
-  controllers: [FinanceController, FinanceiroExercicioController, FinanceiroExercicioInscricaoController],
-  providers: [FinanceiroExercicioInscricaoService, AcessoAtualGuard, FinanceiroExercicioService, FinanceService, PluggyService, AsaasService, FinopsService, AprService, ConciliacaoService],
+  controllers: [FinanceController, AnaliseController, FinanceiroExercicioController, FinanceiroExercicioInscricaoController],
+  providers: [FinanceiroExercicioInscricaoService, AcessoAtualGuard, FinanceiroExercicioService, FinanceService, PluggyService, AsaasService, FinopsService, AprService, ConciliacaoService, AnaliseService],
   exports: [FinanceService, FinopsService, AprService, ConciliacaoService],
 })
 export class FinanceModule {}

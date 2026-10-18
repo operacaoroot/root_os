@@ -79,6 +79,8 @@ model Org {
   auditLogs    AuditLog[]
   demoInstallations DemoInstallation[]
   operacaoRodadas OperacaoRodada[]
+  acordosComerciais AcordoComercial[]
+  analiseLeituras AnaliseLeitura[]
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
   reports      Report[]
@@ -5117,4 +5119,41 @@ model OperacaoRodada {
   updatedAt DateTime @updatedAt
   @@unique([id, orgId])
   @@unique([orgId, rodadaEm])
+}
+
+// ---------- Análise: acordos comerciais e a leitura da IA ----------
+// Um acordo é o que foi vendido ou entregue a um cliente, com o TIPO de acordo
+// (pagante, permuta, repasse, parceria). O financeiro só vê dinheiro; o acordo
+// é o que diz quanto deveria ter entrado e por quê não entrou.
+model AcordoComercial {
+  id              String   @id @default(uuid())
+  orgId           String
+  org             Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente         String
+  produto         String
+  valor           Decimal  @db.Decimal(14, 2)
+  /// pagante | permuta | repasse | parceria
+  tipo            String
+  /// Para repasse: quem recebeu o dinheiro. Para permuta: o que veio em troca.
+  observacao      String?
+  /// Textos que identificam o pagador no extrato (separados por vírgula).
+  apelidos        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orgId])
+}
+
+// Leitura da IA guardada por dia: abrir a aba de novo no mesmo dia, com os
+// mesmos números, não chama o modelo outra vez.
+model AnaliseLeitura {
+  id        String   @id @default(uuid())
+  orgId     String
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  dia       String
+  hash      String
+  texto     String
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, dia, hash])
 }

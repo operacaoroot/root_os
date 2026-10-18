@@ -23,6 +23,7 @@ import type {
 } from '@mktos/shared';
 import { apiGet, apiPost, apiPatch, ErroDaApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { AnaliseView } from './Analise';
 // O cartão local que existia aqui sombreava o compartilhado e deixava a tela
 // financeira com o visual antigo ao lado do novo. Mesmas props, um só cartão.
 import { KpiCard } from '@/components/KpiCard';
@@ -49,6 +50,7 @@ const ACCOUNT_TYPES = [
 
 const TABS = [
   { key: 'visao', label: 'Visão geral' },
+  { key: 'analise', label: 'Análise' },
   { key: 'dre', label: 'DRE' },
   { key: 'apar', label: 'A Pagar/Receber' },
   { key: 'conciliacao', label: 'Conciliação' },
@@ -236,6 +238,7 @@ function FinanceiroSessao() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
+      {tab === 'analise' && <AnaliseView token={token} canEdit={canEdit} onError={onMutationError} />}
       {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} ir={ir} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
       {tab === 'apar' && (
