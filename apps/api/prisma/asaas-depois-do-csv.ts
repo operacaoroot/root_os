@@ -46,7 +46,11 @@ async function main() {
   }
 
   // previstos manuais × cobranças em aberto do Asaas
-  const abertosAsaas = todos.filter((t) => t.status === 'previsto' && t.externalId?.startsWith('pay_'));
+  // Por vencimento: parcelas de cartão do mesmo valor casam na ordem (2 com 2, 3 com 3).
+  const venc = (t: { dueDate: Date | null; date: Date }) => (t.dueDate ?? t.date).getTime();
+  const abertosAsaas = todos
+    .filter((t) => t.status === 'previsto' && t.externalId?.startsWith('pay_'))
+    .sort((x, y) => venc(x) - venc(y));
   const manuais = await prisma.financeTransaction.findMany({
     where: { orgId, status: 'previsto', source: 'manual', type: 'entrada' },
     include: { splits: true },
@@ -54,10 +58,11 @@ async function main() {
   const paresPrev: Array<[typeof manuais[number], typeof abertosAsaas[number]]> = [];
   const usadosPrev = new Set<string>();
   for (const a of abertosAsaas) {
-    const venc = (a.dueDate ?? a.date).getTime();
+    const va = venc(a);
+    // o primeiro previsto manual ainda livre, do mesmo valor, até 40 dias do vencimento
     const cand = manuais
-      .filter((m) => !usadosPrev.has(m.id) && m.amount.eq(a.amount) && Math.abs((m.dueDate ?? m.date).getTime() - venc) <= 40 * DIA)
-      .sort((x, y) => Math.abs((x.dueDate ?? x.date).getTime() - venc) - Math.abs((y.dueDate ?? y.date).getTime() - venc))[0];
+      .filter((m) => !usadosPrev.has(m.id) && m.amount.eq(a.amount) && Math.abs(venc(m) - va) <= 40 * DIA)
+      .sort((x, y) => venc(x) - venc(y))[0];
     if (cand) { usadosPrev.add(cand.id); paresPrev.push([cand, a]); }
   }
 
