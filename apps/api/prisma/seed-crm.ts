@@ -4,7 +4,10 @@
 // cartão é o `id` do arquivo (`externalId`), então rodar de novo atualiza em
 // vez de duplicar. Não apaga nada que já esteja na lista.
 //   pnpm --filter @mktos/api db:seed:crm [arquivo.json]
-import { readFileSync } from 'node:fs';
+// Reuniões: `reunioes[].arquivo` é relativo a CRM_ARQUIVOS_DIR (a pasta
+// 10-clientes do Drive). Sem a variável ou sem o arquivo, a reunião é pulada:
+// transcrição de cliente não mora no repositório.
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaClient, WorkFieldType, WorkStatusType } from '@prisma/client';
 
@@ -15,7 +18,7 @@ interface Snapshot {
   pastas: { id: string; nome: string; pai?: string }[];
   lista: { id: string; nome: string; pasta: string };
   etapas: { nome: string; tipo: 'open' | 'custom' | 'closed'; cor: string }[];
-  campos: { nome: string; tipo: 'drop_down' | 'moeda' | 'data'; opcoes: [string, string][] }[];
+  campos: { nome: string; tipo: 'drop_down' | 'moeda' | 'data' | 'texto' | 'url'; opcoes: [string, string][] }[];
   leads: {
     id: string;
     titulo: string;
@@ -26,6 +29,7 @@ interface Snapshot {
     etapaDesde?: number | string;
     prazo?: number;
     campos: Record<string, string | number>;
+    reunioes?: { titulo: string; em: string; arquivo: string }[];
   }[];
 }
 
@@ -93,8 +97,7 @@ async function main() {
       description: l.nota ?? null,
       assignee: l.responsavel ?? null,
       dueDate: l.prazo ? new Date(l.prazo) : null,
-      // Só o que veio do ClickUp (id numérico/alfanumérico curto) ganha link de volta.
-      externalUrl: /^[0-9a-z]{9,11}$/.test(l.id) ? `https://app.clickup.com/t/${l.id}` : null,
+      externalUrl: null,
       order: i,
     };
     const existente = await prisma.workTask.findFirst({ where: { orgId, externalId: l.id } });
@@ -118,6 +121,8 @@ async function main() {
         valor = { optionId, value: null };
       } else if (c.tipo === 'moeda') {
         valor = { optionId: null, value: `BRL ${Number(bruto).toFixed(2)}` };
+      } else if (c.tipo !== 'data') {
+        valor = { optionId: null, value: String(bruto) };
       } else {
         valor = { optionId: null, value: typeof bruto === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(bruto) ? bruto : dia(Number(bruto)) };
       }
@@ -126,6 +131,20 @@ async function main() {
         update: valor,
         create: { taskId: t.id, fieldId: c.id, ...valor },
       });
+    }
+
+    const base = process.env.CRM_ARQUIVOS_DIR;
+    for (const r of l.reunioes ?? []) {
+      const caminho = base ? join(base, r.arquivo) : null;
+      if (!caminho || !existsSync(caminho)) {
+        console.log(`  reunião pulada (${l.titulo} · ${r.titulo}): arquivo fora do alcance`);
+        continue;
+      }
+      const transcricao = readFileSync(caminho, 'utf8');
+      const em = new Date(`${r.em}T12:00:00-03:00`);
+      const ja = await prisma.reuniaoDoCartao.findFirst({ where: { orgId, taskId: t.id, titulo: r.titulo, em } });
+      if (ja) await prisma.reuniaoDoCartao.update({ where: { id: ja.id }, data: { transcricao } });
+      else await prisma.reuniaoDoCartao.create({ data: { orgId, taskId: t.id, titulo: r.titulo, em, fonte: 'arquivo', link: null, transcricao } });
     }
   }
 

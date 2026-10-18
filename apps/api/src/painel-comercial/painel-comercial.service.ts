@@ -80,6 +80,8 @@ export class PainelComercialService {
     const fValor = campos.find((c) => c.type === 'moeda') ?? campo(campos, 'valor');
     const fCadastro = campo(campos, 'data de cadastro', 'cadastro');
     const fProduto = campo(campos, 'produto');
+    const fContato = campo(campos, 'contato');
+    const fLink = campo(campos, 'link da proposta', 'proposta');
     const corDaOpcao = new Map<string, string>();
     for (const f of [fCanal, fVendedor]) for (const o of f?.options ?? []) corDaOpcao.set(`${f!.id}:${o.name}`, o.color);
 
@@ -96,6 +98,8 @@ export class PainelComercialService {
         valor: lerMoeda(v(fValor)?.value),
         canal: v(fCanal)?.option?.name ?? null,
         produto: v(fProduto)?.option?.name ?? v(fProduto)?.value ?? null,
+        contato: v(fContato)?.value ?? null,
+        linkProposta: v(fLink)?.value ?? null,
         vendedor: v(fVendedor)?.option?.name ?? t.assignee ?? null,
         entrada,
         // Quando foi para a etapa fechada: o banco carimba `statusDesde` em toda troca de etapa.
@@ -151,6 +155,7 @@ export class PainelComercialService {
       .map((l) => ({
         id: l.t.id,
         titulo: l.t.title,
+        statusId: l.t.statusId,
         etapa: l.etapa.name,
         etapaCor: l.etapa.color,
         resultado: l.etapa.resultado,
@@ -158,6 +163,9 @@ export class PainelComercialService {
         vendedor: l.vendedor,
         canal: l.canal,
         produto: l.produto,
+        contato: l.contato,
+        linkProposta: l.linkProposta,
+        atualizadoEm: l.t.updatedAt.toISOString(),
         mesEntrada: l.entrada,
         mesFechado: l.fechadoEm,
         diasNaEtapa: l.t.statusDesde ? Math.floor((agora.getTime() - l.t.statusDesde.getTime()) / DIA) : null,
@@ -179,7 +187,7 @@ export class PainelComercialService {
       },
       etapas: statuses.map((s) => {
         const ls = leads.filter((l) => l.t.statusId === s.id);
-        return { nome: s.name, cor: s.color, resultado: etapaPorId.get(s.id)!.resultado, qtd: ls.length, valor: soma(ls) };
+        return { id: s.id, nome: s.name, cor: s.color, resultado: etapaPorId.get(s.id)!.resultado, qtd: ls.length, valor: soma(ls) };
       }),
       fechadosPorMes: porMes(
         meses(12, `${ano}-12`),

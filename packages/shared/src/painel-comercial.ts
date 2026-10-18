@@ -13,6 +13,8 @@
 export type ResultadoDaEtapa = 'aberta' | 'ganho' | 'perdido';
 
 export interface PainelComercialEtapa {
+  /** Id da etapa (WorkStatus): o funil move o cartão por ele. */
+  id: string;
   nome: string;
   cor: string;
   resultado: ResultadoDaEtapa;
@@ -42,6 +44,7 @@ export interface PainelComercialNegocio {
   /** Id do cartão no Trabalho: a ficha do lead abre por ele. */
   id: string;
   titulo: string;
+  statusId: string;
   etapa: string;
   etapaCor: string;
   resultado: ResultadoDaEtapa;
@@ -49,6 +52,12 @@ export interface PainelComercialNegocio {
   vendedor: string | null;
   canal: string | null;
   produto: string | null;
+  /** Quem é o contato do lead (campo Contato), para o cartão do funil. */
+  contato: string | null;
+  /** Link público da proposta (campo Link da proposta): liga a aba Propostas ao lead. */
+  linkProposta: string | null;
+  /** Versão do cartão: o PATCH de mover etapa exige. */
+  atualizadoEm: string;
   /** `AAAA-MM` em que o lead entrou (Data de Cadastro do Lead, ou a criação do cartão). */
   mesEntrada: string;
   /** `AAAA-MM` em que foi para a etapa fechada; nulo enquanto aberto. */

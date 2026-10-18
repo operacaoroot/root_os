@@ -81,6 +81,7 @@ model Org {
   operacaoRodadas OperacaoRodada[]
   acordosComerciais AcordoComercial[]
   analiseLeituras AnaliseLeitura[]
+  reunioesDeCartao ReuniaoDoCartao[]
   integrations IntegrationAccount[]
   leadSources  LeadSource[]
   reports      Report[]
@@ -2174,6 +2175,8 @@ model WorkTask {
   apontamentos WorkApontamento[]
   /// O trilho de onboarding pendurado neste cartão da esteira (23/09/2026).
   onboardingTrilhos OnboardingTrilho[] @relation("OnboardingDoCartao")
+  /// As reuniões da ficha do cliente (transcrição do Granola, link ou texto).
+  reunioes ReuniaoDoCartao[]
 
   @@unique([id, orgId])
   @@unique([orgId, externalId])
@@ -5156,4 +5159,26 @@ model AnaliseLeitura {
   createdAt DateTime @default(now())
 
   @@unique([orgId, dia, hash])
+}
+/// REUNIÃO DA FICHA DO CLIENTE (18/10/2026). Presa ao cartão do Trabalho, então
+/// serve igual para o lead do comercial, o trilho de onboarding e o sucesso do
+/// cliente. A transcrição vem do Granola (link público da nota), de outro link
+/// público ou de texto colado; guardamos o texto, não só o link, porque o link
+/// pode deixar de ser público.
+model ReuniaoDoCartao {
+  id          String   @id @default(uuid())
+  orgId       String
+  org         Org      @relation(fields: [orgId], references: [id])
+  taskId      String
+  task        WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  titulo      String
+  em          DateTime
+  /// granola · link · texto · arquivo
+  fonte       String
+  link        String?
+  transcricao String
+  autorId     String?
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, taskId, em])
 }

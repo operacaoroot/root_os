@@ -1,66 +1,393 @@
 {
   "fonte": "Root/20-empresa/financeiro/financeiro-root-2026-10-18.xlsx (abas Lançamentos Asaas e A receber), a mesma planilha que alimentou o financeiro da homologação v2. Só os negócios fechados; o resto do funil o Lucas lança no quadro.",
-  "espaco": { "id": "crm-root", "nome": "Comercial" },
-  "pastas": [{ "id": "crm-root-pasta", "nome": "CRM" }],
-  "lista": { "id": "crm-root-lista", "nome": "Gestão de Leads", "pasta": "crm-root-pasta" },
+  "espaco": {
+    "id": "crm-root",
+    "nome": "Comercial"
+  },
+  "pastas": [
+    {
+      "id": "crm-root-pasta",
+      "nome": "CRM"
+    }
+  ],
+  "lista": {
+    "id": "crm-root-lista",
+    "nome": "Gestão de Leads",
+    "pasta": "crm-root-pasta"
+  },
   "etapas": [
-    { "nome": "Validar", "tipo": "open", "cor": "#8b8d98" },
-    { "nome": "Oportunidade", "tipo": "custom", "cor": "#a18072" },
-    { "nome": "Marcar reunião", "tipo": "custom", "cor": "#0091ff" },
-    { "nome": "Reunião agendada", "tipo": "custom", "cor": "#30a46c" },
-    { "nome": "Followup", "tipo": "custom", "cor": "#3e63dd" },
-    { "nome": "Negócio fechado", "tipo": "closed", "cor": "#008844" },
-    { "nome": "Perdido", "tipo": "closed", "cor": "#e5484d" },
-    { "nome": "Desqualificado", "tipo": "closed", "cor": "#6b6b6b" }
+    {
+      "nome": "Validar",
+      "tipo": "open",
+      "cor": "#8b8d98"
+    },
+    {
+      "nome": "Oportunidade",
+      "tipo": "custom",
+      "cor": "#a18072"
+    },
+    {
+      "nome": "Marcar reunião",
+      "tipo": "custom",
+      "cor": "#0091ff"
+    },
+    {
+      "nome": "Reunião agendada",
+      "tipo": "custom",
+      "cor": "#30a46c"
+    },
+    {
+      "nome": "Followup",
+      "tipo": "custom",
+      "cor": "#3e63dd"
+    },
+    {
+      "nome": "Negócio fechado",
+      "tipo": "closed",
+      "cor": "#008844"
+    },
+    {
+      "nome": "Perdido",
+      "tipo": "closed",
+      "cor": "#e5484d"
+    },
+    {
+      "nome": "Desqualificado",
+      "tipo": "closed",
+      "cor": "#6b6b6b"
+    }
   ],
   "campos": [
-    { "nome": "Canal de aquisição", "tipo": "drop_down", "opcoes": [["BNI", "#e5484d"], ["Cold Call", "#3e63dd"], ["Mensagem direta", "#ffc53d"], ["Indicação", "#30a46c"], ["Site", "#b6b6ff"], ["Instagram", "#f76808"], ["Parcerias", "#ab4aba"]] },
-    { "nome": "Vendedor", "tipo": "drop_down", "opcoes": [["Lucas", "#8d8d8d"], ["Pedro", "#8d8d8d"], ["Rodrigo", "#8d8d8d"]] },
-    { "nome": "Valor da proposta", "tipo": "moeda", "opcoes": [] },
-    { "nome": "Data de Cadastro do Lead", "tipo": "data", "opcoes": [] },
-    { "nome": "Produto", "tipo": "drop_down", "opcoes": [["Imersão", "#8d8d8d"], ["Implantação ROOT OS", "#8d8d8d"], ["Operação ROOT", "#8d8d8d"], ["Outros", "#cecece"]] },
-    { "nome": "Motivo da perda", "tipo": "drop_down", "opcoes": [["Sem interesse", "#8d8d8d"], ["Orçamento insuficiente", "#8d8d8d"], ["Desqualificado", "#8d8d8d"], ["Falta de retorno", "#8d8d8d"], ["Outro", "#8d8d8d"]] }
+    {
+      "nome": "Canal de aquisição",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "BNI",
+          "#e5484d"
+        ],
+        [
+          "Cold Call",
+          "#3e63dd"
+        ],
+        [
+          "Mensagem direta",
+          "#ffc53d"
+        ],
+        [
+          "Indicação",
+          "#30a46c"
+        ],
+        [
+          "Site",
+          "#b6b6ff"
+        ],
+        [
+          "Instagram",
+          "#f76808"
+        ],
+        [
+          "Parcerias",
+          "#ab4aba"
+        ]
+      ]
+    },
+    {
+      "nome": "Vendedor",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Lucas",
+          "#8d8d8d"
+        ],
+        [
+          "Pedro",
+          "#8d8d8d"
+        ],
+        [
+          "Rodrigo",
+          "#8d8d8d"
+        ]
+      ]
+    },
+    {
+      "nome": "Valor da proposta",
+      "tipo": "moeda",
+      "opcoes": []
+    },
+    {
+      "nome": "Data de Cadastro do Lead",
+      "tipo": "data",
+      "opcoes": []
+    },
+    {
+      "nome": "Produto",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Imersão",
+          "#8d8d8d"
+        ],
+        [
+          "Implantação ROOT OS",
+          "#8d8d8d"
+        ],
+        [
+          "Operação ROOT",
+          "#8d8d8d"
+        ],
+        [
+          "Outros",
+          "#cecece"
+        ]
+      ]
+    },
+    {
+      "nome": "Motivo da perda",
+      "tipo": "drop_down",
+      "opcoes": [
+        [
+          "Sem interesse",
+          "#8d8d8d"
+        ],
+        [
+          "Orçamento insuficiente",
+          "#8d8d8d"
+        ],
+        [
+          "Desqualificado",
+          "#8d8d8d"
+        ],
+        [
+          "Falta de retorno",
+          "#8d8d8d"
+        ],
+        [
+          "Outro",
+          "#8d8d8d"
+        ]
+      ]
+    },
+    {
+      "nome": "Empresa",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Contato",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Telefone",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "E-mail",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Cidade",
+      "tipo": "texto",
+      "opcoes": []
+    },
+    {
+      "nome": "Site",
+      "tipo": "url",
+      "opcoes": []
+    },
+    {
+      "nome": "Link da proposta",
+      "tipo": "url",
+      "opcoes": []
+    }
   ],
   "leads": [
-    { "id": "fin-curral-implantacao", "titulo": "Curral (Marcelo Alves Meroto) | Implantação", "etapa": "Negócio fechado",
-      "criadoEm": "2026-07-07T12:00:00-03:00", "etapaDesde": "2026-07-07T12:00:00-03:00",
+    {
+      "id": "fin-curral-implantacao",
+      "titulo": "Curral (Marcelo Alves Meroto) | Implantação",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-07-07T12:00:00-03:00",
+      "etapaDesde": "2026-07-07T12:00:00-03:00",
       "nota": "2 parcelas de R$ 3.850 (entraram R$ 3.501 em 07/07 e R$ 4.200 em 09/09). A mensalidade de manutenção (R$ 190) não entra aqui: é recorrência, não venda nova.",
-      "campos": { "Valor da proposta": "7700", "Produto": "Implantação ROOT OS" } },
-    { "id": "fin-promedical-implantacao", "titulo": "ProMedical | Implantação ROOT OS", "etapa": "Negócio fechado",
-      "criadoEm": "2026-08-28T12:00:00-03:00", "etapaDesde": "2026-08-28T12:00:00-03:00",
+      "campos": {
+        "Valor da proposta": "7700",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Curral",
+        "Contato": "Marcelo Alves Meroto"
+      }
+    },
+    {
+      "id": "fin-promedical-implantacao",
+      "titulo": "ProMedical | Implantação ROOT OS",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-08-28T12:00:00-03:00",
+      "etapaDesde": "2026-08-28T12:00:00-03:00",
       "nota": "Contrato ProMedical x Root 08/2026: 2 parcelas de R$ 6.000 (pagas 11/09 e 16/10).",
-      "campos": { "Valor da proposta": "12000", "Produto": "Implantação ROOT OS" } },
-    { "id": "fin-custeio-imersao", "titulo": "Custeio | Imersão", "etapa": "Negócio fechado",
-      "criadoEm": "2026-08-31T12:00:00-03:00", "etapaDesde": "2026-08-31T12:00:00-03:00",
+      "campos": {
+        "Valor da proposta": "12000",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Promedical Equipamentos Médicos",
+        "Contato": "Alexandre Tostes",
+        "Cidade": "Juiz de Fora/MG"
+      },
+      "reunioes": [
+        {
+          "titulo": "Retomada: entregas",
+          "em": "2026-10-02",
+          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-02-entregas.md"
+        },
+        {
+          "titulo": "Reunião de 13/10 (transcrição)",
+          "em": "2026-10-13",
+          "arquivo": "promedical/06 - Retomada 30-09/reuniao-2026-10-13-transcricao.txt"
+        }
+      ]
+    },
+    {
+      "id": "fin-custeio-imersao",
+      "titulo": "Custeio | Imersão",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-08-31T12:00:00-03:00",
+      "etapaDesde": "2026-08-31T12:00:00-03:00",
       "nota": "Imersão de R$ 2.997, fechada em 31/08/2026. Paga no cartão em 3x por Lucas Martins da Costa Moreira (a mesma venda): 1ª parcela no Asaas em 28/09, as outras ~28/10 e ~27/11.",
-      "campos": { "Valor da proposta": "2997", "Produto": "Imersão" } },
-    { "id": "fin-custeio-operacao", "titulo": "Custeio | Implantação (upsell)", "etapa": "Negócio fechado",
-      "criadoEm": "2026-10-18T12:00:00-03:00", "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "campos": {
+        "Valor da proposta": "2997",
+        "Produto": "Imersão",
+        "Empresa": "Custeio",
+        "Contato": "Lucas Martins da Costa Moreira"
+      }
+    },
+    {
+      "id": "fin-custeio-operacao",
+      "titulo": "Custeio | Implantação (upsell)",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-10-18T12:00:00-03:00",
+      "etapaDesde": "2026-10-18T12:00:00-03:00",
       "nota": "Upsell da Imersão para a implantação: entrada de R$ 6.000 em 20/10 e 6 parcelas de R$ 1.000 (20/11 a 20/04). Lançado pelo Lucas em 18/10.",
-      "campos": { "Valor da proposta": "12000", "Produto": "Implantação ROOT OS" } },
-    { "id": "prop-sr-agranel-operacao", "titulo": "Senhor aGranel (Felipe Fortes) | Operação ROOT", "etapa": "Followup",
-      "criadoEm": "2026-10-14T01:55:38Z", "etapaDesde": "2026-10-14T01:55:38Z",
+      "campos": {
+        "Valor da proposta": "12000",
+        "Produto": "Implantação ROOT OS",
+        "Empresa": "Custeio",
+        "Contato": "Lucas Martins da Costa Moreira",
+        "Link da proposta": "https://proposta.operacaoroot.com/lucas-custeio"
+      }
+    },
+    {
+      "id": "prop-sr-agranel-operacao",
+      "titulo": "Senhor aGranel (Felipe Fortes) | Operação ROOT",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-14T01:55:38Z",
+      "etapaDesde": "2026-10-14T01:55:38Z",
       "nota": "Proposta v5 publicada em 13/10: R$ 26.000, entrada de R$ 8.000 e 6 parcelas de R$ 3.000. No serviço de propostas (18/10): leu o investimento, 2 aberturas. https://proposta.operacaoroot.com/felipe-fortes . Existe também a proposta de Imersão de 09/10 (abriu), que a v5 substitui.",
-      "campos": { "Valor da proposta": "26000", "Produto": "Operação ROOT", "Data de Cadastro do Lead": "2026-10-13" } },
-    { "id": "prop-dispropan-ia-televendas", "titulo": "Dispropan (Diogo Medina) | Estrutura de IA e televendas", "etapa": "Followup",
-      "criadoEm": "2026-10-14T23:23:58Z", "etapaDesde": "2026-10-14T23:23:58Z",
+      "campos": {
+        "Valor da proposta": "26000",
+        "Produto": "Operação ROOT",
+        "Data de Cadastro do Lead": "2026-10-13",
+        "Empresa": "Senhor aGranel",
+        "Contato": "Felipe Fortes",
+        "Link da proposta": "https://proposta.operacaoroot.com/felipe-fortes"
+      },
+      "reunioes": [
+        {
+          "titulo": "Reunião de 09/10 (transcrição)",
+          "em": "2026-10-09",
+          "arquivo": "sr-agranel/reuniao-2026-10-09-transcricao.md"
+        }
+      ]
+    },
+    {
+      "id": "prop-dispropan-ia-televendas",
+      "titulo": "Dispropan (Diogo Medina) | Estrutura de IA e televendas",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-14T23:23:58Z",
+      "etapaDesde": "2026-10-14T23:23:58Z",
       "nota": "Setup da estrutura de IA R$ 4.500 + IA no televendas R$ 10.500 = R$ 15.000, até 4x de R$ 2.250. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/diogo-medina",
-      "campos": { "Valor da proposta": "15000", "Data de Cadastro do Lead": "2026-10-14" } },
-    { "id": "prop-easydr-imersao", "titulo": "EasyDr. | Imersão", "etapa": "Followup",
-      "criadoEm": "2026-10-13T11:12:27Z", "etapaDesde": "2026-10-13T11:12:27Z",
+      "campos": {
+        "Valor da proposta": "15000",
+        "Data de Cadastro do Lead": "2026-10-14",
+        "Empresa": "Dispropan",
+        "Contato": "Diogo Medina",
+        "Link da proposta": "https://proposta.operacaoroot.com/diogo-medina"
+      }
+    },
+    {
+      "id": "prop-easydr-imersao",
+      "titulo": "EasyDr. | Imersão",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-13T11:12:27Z",
+      "etapaDesde": "2026-10-13T11:12:27Z",
       "nota": "Mesma oferta do Sr. aGranel: entrada de R$ 4.987 + até 6x R$ 1.497 = R$ 13.969. O valor não foi confirmado especificamente para a EasyDr. No serviço de propostas (18/10): não abriu. https://proposta.operacaoroot.com/easydr",
-      "campos": { "Valor da proposta": "13969", "Produto": "Imersão", "Data de Cadastro do Lead": "2026-10-13" } },
-    { "id": "prop-mais-q-operacao", "titulo": "Mais Q Contabilidade (Danilo Lourenço) | Operação ROOT", "etapa": "Followup",
-      "criadoEm": "2026-10-04T20:49:56Z", "etapaDesde": "2026-10-04T20:49:56Z",
+      "campos": {
+        "Valor da proposta": "13969",
+        "Produto": "Imersão",
+        "Data de Cadastro do Lead": "2026-10-13",
+        "Empresa": "EasyDr.",
+        "Link da proposta": "https://proposta.operacaoroot.com/easydr"
+      }
+    },
+    {
+      "id": "prop-mais-q-operacao",
+      "titulo": "Mais Q Contabilidade (Danilo Lourenço) | Operação ROOT",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-04T20:49:56Z",
+      "etapaDesde": "2026-10-04T20:49:56Z",
       "nota": "3x R$ 3.999 = R$ 11.997 (pix, boleto ou cartão em até 3x), validade 09/10. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/danilo-lourenco",
-      "campos": { "Valor da proposta": "11997", "Produto": "Operação ROOT", "Data de Cadastro do Lead": "2026-10-04" } },
-    { "id": "prop-douglas-costa-imersao", "titulo": "Douglas Costa (Supra IBR) | Imersão", "etapa": "Followup",
-      "criadoEm": "2026-10-01T13:36:03Z", "etapaDesde": "2026-10-01T13:36:03Z",
+      "campos": {
+        "Valor da proposta": "11997",
+        "Produto": "Operação ROOT",
+        "Data de Cadastro do Lead": "2026-10-04",
+        "Empresa": "Mais Q Contabilidade",
+        "Contato": "Danilo Lourenço",
+        "Link da proposta": "https://proposta.operacaoroot.com/danilo-lourenco"
+      },
+      "reunioes": [
+        {
+          "titulo": "Reunião de 23/09 (transcrição)",
+          "em": "2026-09-23",
+          "arquivo": "Mais Q/2026-09-23 - Transcricao reuniao MaisQ.md"
+        }
+      ]
+    },
+    {
+      "id": "prop-douglas-costa-imersao",
+      "titulo": "Douglas Costa (Supra IBR) | Imersão",
+      "etapa": "Followup",
+      "criadoEm": "2026-10-01T13:36:03Z",
+      "etapaDesde": "2026-10-01T13:36:03Z",
       "nota": "10x R$ 297 = R$ 2.970 no cartão, validade 02/10. No serviço de propostas (18/10): leu o investimento. https://proposta.operacaoroot.com/douglas-costa",
-      "campos": { "Valor da proposta": "2970", "Produto": "Imersão", "Data de Cadastro do Lead": "2026-10-01" } },
-    { "id": "fin-affari-imersao", "titulo": "Affari | Imersão", "etapa": "Negócio fechado",
-      "criadoEm": "2026-10-18T12:00:00-03:00", "etapaDesde": "2026-10-18T12:00:00-03:00",
+      "campos": {
+        "Valor da proposta": "2970",
+        "Produto": "Imersão",
+        "Data de Cadastro do Lead": "2026-10-01",
+        "Empresa": "Supra IBR",
+        "Contato": "Douglas Costa",
+        "Link da proposta": "https://proposta.operacaoroot.com/douglas-costa"
+      },
+      "reunioes": [
+        {
+          "titulo": "Kickoff de 30/09 (transcrição)",
+          "em": "2026-09-30",
+          "arquivo": "douglas-costa/_fonte/2026-09-30-reuniao-transcricao.md"
+        }
+      ]
+    },
+    {
+      "id": "fin-affari-imersao",
+      "titulo": "Affari | Imersão",
+      "etapa": "Negócio fechado",
+      "criadoEm": "2026-10-18T12:00:00-03:00",
+      "etapaDesde": "2026-10-18T12:00:00-03:00",
       "nota": "Imersão de R$ 3.970, cobrança ainda a gerar no Asaas (18/10).",
-      "campos": { "Valor da proposta": "3970", "Produto": "Imersão" } }
+      "campos": {
+        "Valor da proposta": "3970",
+        "Produto": "Imersão",
+        "Empresa": "Affari",
+        "Contato": "Antonio Fernandes",
+        "Link da proposta": "https://proposta.operacaoroot.com/antonio-fernandes"
+      }
+    }
   ]
 }

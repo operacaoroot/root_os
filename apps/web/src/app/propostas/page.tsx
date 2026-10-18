@@ -1,7 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ErroDaApi, apiGet } from '@/lib/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import type { PainelComercial, PainelComercialNegocio, TrabEstrutura } from '@mktos/shared';
+import { ErroDaApi, apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Botao, Card, Chip, Kpi } from '../referencias/ui';
 import {
@@ -31,6 +34,22 @@ import {
 
 const BASE = '/tenants/plataforma/propostas';
 const TOM_DA_ETAPA = ['muted', 'muted', 'warn', 'good'] as const;
+const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+
+/*
+ * A proposta e o lead se encontram pelo link: o campo "Link da proposta" da
+ * ficha guarda o endereço curto (proposta.operacaoroot.com/felipe-fortes) ou o
+ * longo (/cliente/chave). Qualquer um dos dois casa.
+ */
+const semProtocolo = (u: string) => u.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+function leadDaProposta(p: PropostaNaLista, negocios: PainelComercialNegocio[]): PainelComercialNegocio | undefined {
+  const link = semProtocolo(p.link);
+  return negocios.find((n) => {
+    if (!n.linkProposta) return false;
+    const l = semProtocolo(n.linkProposta);
+    return l === link || l.endsWith(`/${p.chave.toLowerCase()}`);
+  });
+}
 
 export default function Propostas() {
   const { token, ready } = useAuth();
@@ -40,6 +59,35 @@ export default function Propostas() {
   const [detalhe, setDetalhe] = useState<DetalheDaProposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [crm, setCrm] = useState<PainelComercial | null>(null);
+  const [criando, setCriando] = useState<string | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!ready || !token) return;
+    apiGet<PainelComercial>('/comercial/painel', token).then(setCrm).catch(() => setCrm(null));
+  }, [ready, token]);
+  const negocios = useMemo(() => crm?.negocios ?? [], [crm]);
+
+  /** Cria o lead da proposta já com o título e o link, e abre a ficha. */
+  const criarLead = async (p: PropostaNaLista) => {
+    if (!token || !crm?.lista) return;
+    setCriando(p.chave);
+    try {
+      const e = await apiGet<TrabEstrutura>('/trabalho/estrutura', token);
+      const l = [...e.folders.flatMap((f) => f.lists), ...e.listasSoltas].find((x) => x.id === crm.lista!.id);
+      const campo = l?.fields.find((f) => f.type === 'url' && /proposta/i.test(f.name));
+      const t = await apiPost<{ id: string }>(
+        '/trabalho/tarefas',
+        { listId: crm.lista.id, title: p.titulo, campos: campo ? { [campo.id]: { value: p.link } } : undefined },
+        token,
+      );
+      router.push(`/comercial/lead/${t.id}`);
+    } catch (e) {
+      setErro((e as Error).message);
+      setCriando(null);
+    }
+  };
 
   const carregar = useCallback(async () => {
     if (!token) return;
@@ -132,6 +180,7 @@ export default function Propostas() {
                 <tr>
                   <th className="py-2">cliente</th>
                   <th>situação</th>
+                  <th>no CRM</th>
                   <th className="text-right">aberturas</th>
                   <th className="text-right">pessoas</th>
                   <th className="text-right">última atividade</th>
@@ -154,6 +203,30 @@ export default function Propostas() {
                       </td>
                       <td>
                         <Chip tone={TOM_DA_ETAPA[p.etapa] ?? 'muted'}>{p.estado}</Chip>
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const lead = leadDaProposta(p, negocios);
+                          if (lead) {
+                            return (
+                              <Link href={`/comercial/lead/${lead.id}`} className="group block">
+                                <span className="flex items-center gap-1.5 text-text group-hover:text-brand">
+                                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: lead.etapaCor }} />
+                                  {lead.etapa}
+                                </span>
+                                <span className="font-os-mono text-[10.5px] text-muted">
+                                  {lead.valor != null ? brl(lead.valor) : 'sem valor'} · ficha →
+                                </span>
+                              </Link>
+                            );
+                          }
+                          if (!crm?.lista) return <span className="text-muted">–</span>;
+                          return (
+                            <Botao tone="ghost" onClick={() => void criarLead(p)}>
+                              {criando === p.chave ? 'criando…' : '+ criar lead'}
+                            </Botao>
+                          );
+                        })()}
                       </td>
                       <td className="text-right font-os-mono">{p.aberturas}</td>
                       <td className="text-right font-os-mono">{p.pessoas}</td>

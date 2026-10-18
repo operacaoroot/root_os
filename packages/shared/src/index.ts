@@ -66,3 +66,5 @@ export * from './procedimento-ferramenta-local';
 export * from './operacao-painel.js';
 // O painel do comercial lido da lista "Gestão de Leads": ver `painel-comercial.ts`.
 export * from './painel-comercial.js';
+// A ficha do cliente (reuniões presas ao cartão): ver `ficha-do-cliente.ts`.
+export * from './ficha-do-cliente.js';

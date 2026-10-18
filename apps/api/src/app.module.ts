@@ -18,6 +18,7 @@ import { LeadsModule } from './leads/leads.module';
 import { EventsModule } from './events/events.module';
 import { FunnelModule } from './funnel/funnel.module';
 import { PainelComercialModule } from './painel-comercial/painel-comercial.module';
+import { FichaModule } from './ficha/ficha.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { TasksModule } from './tasks/tasks.module';
 import { WorkModule } from './work/work.module';
@@ -112,6 +113,7 @@ import { CaixaModule } from './caixa/caixa.module';
     EventsModule,
     FunnelModule,
     PainelComercialModule,
+    FichaModule,
     CampaignsModule,
     TasksModule,
     WorkModule,

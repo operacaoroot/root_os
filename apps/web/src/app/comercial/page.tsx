@@ -12,6 +12,7 @@ import {
 } from '@mktos/shared';
 import { apiGet, apiPost } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { Ajustes } from './Ajustes';
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const curto = (n: number) =>
@@ -39,9 +40,11 @@ interface Filtro {
   entrada?: string;
 }
 const CHAVES: (keyof Filtro)[] = ['etapa', 'canal', 'vendedor', 'situacao', 'fechado', 'entrada'];
+type Aba = 'painel' | 'negocios' | 'ajustes';
+const ABAS: Aba[] = ['painel', 'negocios', 'ajustes'];
 const SITUACAO: Record<Situacao, string> = { aberta: 'Em negociação', ganho: 'Fechados', perdido: 'Perdidos' };
 
-function lerUrl(): { ver: 'painel' | 'negocios'; filtro: Filtro } {
+function lerUrl(): { ver: Aba; filtro: Filtro } {
   if (typeof window === 'undefined') return { ver: 'painel', filtro: {} };
   const q = new URLSearchParams(window.location.search);
   const filtro: Filtro = {};
@@ -49,12 +52,13 @@ function lerUrl(): { ver: 'painel' | 'negocios'; filtro: Filtro } {
     const v = q.get(k);
     if (v) (filtro as Record<string, string>)[k] = v;
   }
-  return { ver: q.get('ver') === 'negocios' ? 'negocios' : 'painel', filtro };
+  const v = q.get('ver');
+  return { ver: v === 'negocios' || v === 'ajustes' ? v : 'painel', filtro };
 }
 
-function escreverUrl(ver: 'painel' | 'negocios', filtro: Filtro, empilhar: boolean) {
+function escreverUrl(ver: Aba, filtro: Filtro, empilhar: boolean) {
   const q = new URLSearchParams();
-  if (ver === 'negocios') q.set('ver', 'negocios');
+  if (ver !== 'painel') q.set('ver', ver);
   for (const k of CHAVES) if (filtro[k]) q.set(k, filtro[k]!);
   const url = `${window.location.pathname}${q.toString() ? `?${q}` : ''}`;
   if (empilhar) window.history.pushState(null, '', url);
@@ -85,7 +89,7 @@ export default function ComercialPage() {
   const router = useRouter();
   const [p, setP] = useState<PainelComercial | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ver, setVer] = useState<'painel' | 'negocios'>('painel');
+  const [ver, setVer] = useState<Aba>('painel');
   const [filtro, setFiltro] = useState<Filtro>({});
   const [criando, setCriando] = useState(false);
 
@@ -111,7 +115,7 @@ export default function ComercialPage() {
     escreverUrl('negocios', f, true);
     window.scrollTo({ top: 0 });
   }, []);
-  const trocarAba = (v: 'painel' | 'negocios') => {
+  const trocarAba = (v: Aba) => {
     setVer(v);
     escreverUrl(v, filtro, true);
   };
@@ -138,50 +142,30 @@ export default function ComercialPage() {
 
   return (
     <div className="com-tema mx-auto max-w-[1180px] space-y-6 text-text">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="com-rotulo">Comercial da ROOT</div>
-          <h1 className="mt-1 text-[2rem] font-bold leading-tight tracking-tight">
-            {p?.lista ? (
-              <>
-                <span className="com-num text-brand">{brl(p.totais.valorGanhoNoAno)}</span> fechados em {p.ano}
-              </>
-            ) : (
-              'Comercial'
-            )}
-          </h1>
-          {p?.lista && (
-            <p className="mt-1 text-muted">
-              {p.totais.abertos > 0
-                ? `${negocios(p.totais.abertos)} em negociação, somando ${brl(p.totais.emNegociacao)}.`
-                : 'Nenhum negócio em negociação agora.'}
-            </p>
-          )}
-        </div>
-        {p?.lista && can('tarefas.editar') && (
-          <button
-            onClick={novoLead}
-            disabled={criando}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
-          >
-            + Novo lead
-          </button>
-        )}
-      </div>
-
       {p?.lista && (
-        <div className="flex gap-1 border-b border-border">
-          {(['painel', 'negocios'] as const).map((v) => (
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
+          <div className="flex gap-1">
+            {ABAS.map((v) => (
+              <button
+                key={v}
+                onClick={() => trocarAba(v)}
+                className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${
+                  ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'
+                }`}
+              >
+                {v === 'painel' ? 'Painel' : v === 'negocios' ? `Negócios (${p.negocios.length})` : 'Ajustes'}
+              </button>
+            ))}
+          </div>
+          {can('tarefas.editar') && (
             <button
-              key={v}
-              onClick={() => trocarAba(v)}
-              className={`-mb-px border-b-2 px-3 py-2.5 text-[0.95rem] ${
-                ver === v ? 'border-brand font-medium text-text' : 'border-transparent text-muted hover:text-text'
-              }`}
+              onClick={novoLead}
+              disabled={criando}
+              className="mb-2 rounded-md bg-brand px-4 py-2 text-sm font-medium text-ink hover:opacity-90 disabled:opacity-50"
             >
-              {v === 'painel' ? 'Painel' : `Negócios (${p.negocios.length})`}
+              + Novo lead
             </button>
-          ))}
+          )}
         </div>
       )}
 
@@ -199,6 +183,7 @@ export default function ComercialPage() {
 
       {p?.lista && ver === 'painel' && <Painel p={p} abrir={abrir} />}
       {p?.lista && ver === 'negocios' && <Negocios p={p} filtro={filtro} tirar={tirar} limpar={() => abrir({})} />}
+      {p?.lista && ver === 'ajustes' && <Ajustes listaId={p.lista.id} />}
     </div>
   );
 }
@@ -209,33 +194,7 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
   const ano = String(p.ano);
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Bloco
-          rotulo={`Fechado em ${p.ano}`}
-          valor={brl(p.totais.valorGanhoNoAno)}
-          nota={`${p.totais.ganhosNoAno} contrato(s)`}
-          destaque
-          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
-        />
-        <Bloco
-          rotulo="Em negociação"
-          valor={brl(p.totais.emNegociacao)}
-          nota={`${p.totais.abertos} aberto(s)`}
-          onClick={() => abrir({ situacao: 'aberta' })}
-        />
-        <Bloco
-          rotulo="Conversão no ano"
-          valor={p.totais.conversao == null ? '—' : `${p.totais.conversao}%`}
-          nota={`${p.totais.ganhosNoAno} ganho(s), ${p.totais.perdidosNoAno} perdido(s)`}
-          onClick={() => abrir({ fechado: ano })}
-        />
-        <Bloco
-          rotulo="Ticket médio"
-          valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)}
-          nota="dos contratos do ano"
-          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
-        />
-      </div>
+      <Destaque p={p} abrir={abrir} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Quadro titulo="Funil geral" nota="negócios em cada etapa · clique numa etapa">
@@ -291,19 +250,94 @@ function Painel({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }
   );
 }
 
-function Bloco(props: { rotulo: string; valor: string; nota?: string; destaque?: boolean; onClick: () => void }) {
+/*
+ * O DESTAQUE do painel: o ano numa barra só. Fechado (lima cheio) e em
+ * negociação (lima claro) lado a lado, na proporção do valor; somados são o
+ * potencial do ano. Cada parte abre os negócios dela.
+ */
+function Destaque({ p, abrir }: { p: PainelComercial; abrir: (f: Filtro) => void }) {
+  const ano = String(p.ano);
+  const fechado = p.totais.valorGanhoNoAno;
+  const aberto = p.totais.emNegociacao;
+  const potencial = fechado + aberto;
+  const parte = (v: number) => (potencial ? `${Math.max(v ? 4 : 0, (v / potencial) * 100)}%` : '0%');
   return (
-    <button
-      onClick={props.onClick}
-      className="group rounded-md border border-border bg-surface px-5 py-4 text-left transition hover:border-brand/60 hover:bg-surface-2"
-    >
-      <div className="com-rotulo">{props.rotulo}</div>
-      <div className={`com-num mt-2 text-[1.75rem] font-bold leading-none ${props.destaque ? 'text-brand' : 'text-text'}`}>{props.valor}</div>
-      {props.nota && (
-        <div className="mt-2 text-sm text-muted">
-          {props.nota} <span className="opacity-0 transition group-hover:opacity-100">· ver →</span>
+    <section className="grid gap-5 rounded-md border border-border bg-surface p-5 lg:grid-cols-[1fr_15rem]">
+      <div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Numero
+            rotulo={`Fechado em ${p.ano}`}
+            valor={brl(fechado)}
+            nota={`${p.totais.ganhosNoAno} contrato(s)`}
+            cor="bg-brand"
+            onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+          />
+          <Numero
+            rotulo="Em negociação"
+            valor={brl(aberto)}
+            nota={`${p.totais.abertos} aberto(s)`}
+            cor="bg-brand/40"
+            onClick={() => abrir({ situacao: 'aberta' })}
+          />
         </div>
-      )}
+        <div className="mt-5 flex h-5 w-full gap-0.5 overflow-visible rounded-sm bg-surface-2">
+          {fechado > 0 && (
+            <button
+              onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+              className="group relative h-full rounded-l-sm bg-brand hover:brightness-110"
+              style={{ width: parte(fechado) }}
+              aria-label={`Fechado: ${brl(fechado)}`}
+            >
+              <Dica linhas={[`Fechado em ${p.ano}`, brl(fechado), negocios(p.totais.ganhosNoAno)]} />
+            </button>
+          )}
+          {aberto > 0 && (
+            <button
+              onClick={() => abrir({ situacao: 'aberta' })}
+              className="group relative h-full rounded-r-sm bg-brand/40 hover:bg-brand/55"
+              style={{ width: parte(aberto) }}
+              aria-label={`Em negociação: ${brl(aberto)}`}
+            >
+              <Dica linhas={['Em negociação', brl(aberto), negocios(p.totais.abertos)]} />
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex justify-between">
+          <span className="com-rotulo">Potencial de {p.ano}</span>
+          <span className="com-num text-sm">{brl(potencial)}</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4 border-border lg:grid-cols-1 lg:border-l lg:pl-5">
+        <Numero
+          rotulo="Conversão no ano"
+          valor={p.totais.conversao == null ? '—' : `${p.totais.conversao}%`}
+          nota={`${p.totais.ganhosNoAno} ganho(s), ${p.totais.perdidosNoAno} perdido(s)`}
+          pequeno
+          onClick={() => abrir({ fechado: ano })}
+        />
+        <Numero
+          rotulo="Ticket médio"
+          valor={p.totais.ticketMedio == null ? '—' : brl(p.totais.ticketMedio)}
+          nota="dos contratos do ano"
+          pequeno
+          onClick={() => abrir({ situacao: 'ganho', fechado: ano })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function Numero(props: { rotulo: string; valor: string; nota: string; cor?: string; pequeno?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={props.onClick} className="group rounded-md p-1 text-left hover:bg-surface-2">
+      <div className="com-rotulo flex items-center gap-2">
+        {props.cor && <span className={`inline-block h-2.5 w-2.5 rounded-sm ${props.cor}`} />}
+        {props.rotulo}
+      </div>
+      <div className={`com-num mt-1.5 font-bold leading-none ${props.pequeno ? 'text-[1.5rem]' : 'text-[2.4rem]'}`}>{props.valor}</div>
+      <div className="mt-1.5 text-sm text-muted">
+        {props.nota} <span className="opacity-0 transition group-hover:opacity-100">· ver →</span>
+      </div>
     </button>
   );
 }
