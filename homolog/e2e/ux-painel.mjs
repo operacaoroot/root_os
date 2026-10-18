@@ -324,7 +324,8 @@ async function main() {
       conferir(larguraPagina <= 390, `rolagem horizontal na página: ${larguraPagina}px`);
       const fechar = dialogo(pc).getByRole('button', { name: 'fechar o painel do lead' });
       const alturaFechar = (await fechar.boundingBox())?.height ?? 0;
-      conferir(alturaFechar >= 44, `o botão fechar tem ${alturaFechar}px no celular`);
+      // Arredonda ao décimo: a altura sai 43,999996 px por subpixel (rodada do painel, 18/10/2026).
+      conferir(Math.round(alturaFechar * 10) / 10 >= 44, `o botão fechar tem ${alturaFechar}px no celular`);
       await dialogo(pc).locator('[data-linha-do-fio]').first().waitFor();
       await foto(pc, `celular-folha-${sufixo}`);
       await fechar.click();
