@@ -244,7 +244,7 @@ export default function AtendimentoPage() {
         <button
           type="button"
           onClick={atualizar}
-          className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text"
+          className="rounded-lg border border-border px-3 py-2 text-sm text-muted hover:text-text max-md:min-h-[44px]"
         >
           Atualizar
         </button>
@@ -285,7 +285,7 @@ export default function AtendimentoPage() {
                 type="button"
                 aria-pressed={filtro === t}
                 onClick={() => trocarFiltro(t)}
-                className={`rounded-md border px-2.5 py-1 text-xs ${
+                className={`rounded-md border px-2.5 py-1 text-xs max-md:min-h-[44px] ${
                   filtro === t
                     ? 'border-brand bg-brand/15 text-text'
                     : `border-border text-muted hover:text-text ${org.contadores.porTipo[t] ? '' : 'opacity-60'}`
@@ -315,7 +315,7 @@ export default function AtendimentoPage() {
                       type="button"
                       aria-expanded={historicoAberto}
                       onClick={() => setHistoricoAberto((v) => !v)}
-                      className="rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:text-text"
+                      className="rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:text-text max-md:min-h-[44px]"
                       data-testid="aprov-historico-alternar"
                     >
                       {historicoAberto ? 'Recolher' : 'Mostrar'}
@@ -361,7 +361,7 @@ function Censo({ fila }: { fila: Fila }) {
       Esta empresa tem {pessoasQueDecidem === 0 ? 'nenhuma pessoa' : 'uma pessoa só'} com alçada para
       aprovar ({porAlcada.titular} titular, {porAlcada.responsavel} responsável, {porAlcada.operador}{' '}
       operador). Como quem propõe uma ação não pode assiná-la, tudo o que essa pessoa disparar fica
-      retido até expirar. Não é defeito da fila: é a regra de duas pessoas. Para destravar, crie um
+      retido até expirar. A fila está certa: a regra de duas pessoas segura o pedido. Para destravar, crie um
       segundo usuário com alçada em Régua → Quem autoriza.
     </div>
   );

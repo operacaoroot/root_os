@@ -258,7 +258,7 @@ export function Item({ item, euDecido, souOProponente, ocupado, aoAprovar, aoRec
                 <span className="text-muted">Destino conferido:</span>{' '}
                 <span className="font-medium text-text">{item.destinoConferido.rotulo}</span>
                 <span className="mt-0.5 block text-[11px] text-muted">
-                  Calculado do hash que a assinatura prende, e não do texto do pedido: é para lá que o cartão vai.
+                  Calculado do hash que a assinatura prende: é para lá que o cartão vai, diga o texto o que disser.
                 </span>
               </p>
             )}

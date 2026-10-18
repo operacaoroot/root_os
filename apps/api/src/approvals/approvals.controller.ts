@@ -780,7 +780,7 @@ export class ApprovalsController {
     if (gaveta === 'confirmada') {
       return (
         'Já foi confirmada e a execução não concluiu. A aprovação NÃO foi consumida e nada saiu, ' +
-        'mas confirmar de novo não é possível — daqui só se recusa. ' +
+        'mas confirmar de novo não é possível: daqui só se recusa. ' +
         (impedimento ?? 'Se o motivo foi o conector do canal, ele se conserta em Conexões.')
       );
     }
@@ -793,7 +793,7 @@ export class ApprovalsController {
     if (!tokenDecide) {
       return (
         'Seu perfil passou a decidir na fila DEPOIS que esta sessão começou. A permissão viaja no ' +
-        'token, que dura horas: saia e entre de novo para ela valer — até lá o botão levaria uma ' +
+        'token, que dura horas: saia e entre de novo para ela valer. Até lá o botão levaria uma ' +
         'recusa genérica.'
       );
     }
