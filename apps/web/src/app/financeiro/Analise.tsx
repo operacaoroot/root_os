@@ -78,36 +78,6 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
 
   return (
     <div className="space-y-6">
-      {/* leitura da IA */}
-      <div className="rounded-xl border border-brand/30 bg-surface p-5">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <Rotulo>Leitura da IA</Rotulo>
-          <button onClick={() => ler(true)} disabled={lendo} className="rounded border border-border px-2.5 py-1 text-[12px] text-muted hover:text-text disabled:opacity-50">
-            {lendo ? 'Lendo os números…' : 'Refazer a leitura'}
-          </button>
-        </div>
-        {erroIa && <p className="text-sm text-bad">{erroIa}</p>}
-        {!leitura && !erroIa && <p className="text-sm text-muted">Lendo os números…</p>}
-        {leitura && (
-          <>
-            <ul className="space-y-2 text-[15px] leading-relaxed">
-              {leitura.texto.split('\n').map((l) => l.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean).map((l, i) => {
-                const [fato, acao] = l.split(' → ');
-                return (
-                  <li key={i} className="flex gap-2">
-                    <span aria-hidden className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
-                    <span>{fato}{acao && <span className="text-brand"> → {acao}</span>}</span>
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="mt-3 text-[11px] text-muted">
-              {leitura.guardada ? 'Leitura de hoje, guardada' : 'Leitura nova'} · {new Date(leitura.geradaEm).toLocaleString('pt-BR')}
-            </p>
-          </>
-        )}
-      </div>
-
       {/* caixa */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Bloco rotulo="Na conta" valor={brl(r.caixa.saldo)} />
@@ -240,6 +210,36 @@ export function AnaliseView({ token, canEdit, onError }: { token: string | null;
           </div>
         </div>
       </div>
+      {/* leitura da IA */}
+      <div className="rounded-xl border border-brand/30 bg-surface p-5">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <Rotulo>Leitura da IA</Rotulo>
+          <button onClick={() => ler(true)} disabled={lendo} className="rounded border border-border px-2.5 py-1 text-[12px] text-muted hover:text-text disabled:opacity-50">
+            {lendo ? 'Lendo os números…' : 'Refazer a leitura'}
+          </button>
+        </div>
+        {erroIa && <p className="text-sm text-bad">{erroIa}</p>}
+        {!leitura && !erroIa && <p className="text-sm text-muted">Lendo os números…</p>}
+        {leitura && (
+          <>
+            <ul className="space-y-2 text-[15px] leading-relaxed">
+              {leitura.texto.split('\n').map((l) => l.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean).map((l, i) => {
+                const [fato, acao] = l.split(' → ');
+                return (
+                  <li key={i} className="flex gap-2">
+                    <span aria-hidden className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                    <span>{fato}{acao && <span className="text-brand"> → {acao}</span>}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-3 text-[11px] text-muted">
+              {leitura.guardada ? 'Leitura de hoje, guardada' : 'Leitura nova'} · {new Date(leitura.geradaEm).toLocaleString('pt-BR')}
+            </p>
+          </>
+        )}
+      </div>
+
     </div>
   );
 }
