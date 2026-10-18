@@ -59,6 +59,15 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
+type TxFiltro = { status?: string; type?: string; accountId?: string; from?: string; to?: string };
+type AparFiltro = { tipo?: 'entrada' | 'saida'; vencido?: boolean };
+const mesAtual = () => {
+  const d = new Date();
+  const ini = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
+  const fim = new Date(Date.UTC(d.getFullYear(), d.getMonth() + 1, 0));
+  return { from: ini.toISOString().slice(0, 10), to: fim.toISOString().slice(0, 10) };
+};
+
 const inputCls =
   'rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-brand-dim';
 
@@ -98,7 +107,15 @@ function FinanceiroSessao() {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [cashflow, setCashflow] = useState<Cashflow | null>(null);
 
-  const [txFilter, setTxFilter] = useState<{ status?: string; type?: string; accountId?: string }>({});
+  const [txFilter, setTxFilter] = useState<TxFiltro>({});
+  const [aparFiltro, setAparFiltro] = useState<AparFiltro>({});
+  // Clique num número da visão geral: abre a aba certa já filtrada.
+  const ir = (destino: TabKey, filtro?: { apar?: AparFiltro; tx?: TxFiltro }) => {
+    if (filtro?.apar) setAparFiltro(filtro.apar);
+    if (filtro?.tx) setTxFilter(filtro.tx);
+    setTab(destino);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const readError = useCallback((e: unknown) => {
     if (!active.current) return;
@@ -143,6 +160,8 @@ function FinanceiroSessao() {
     if (txFilter.status) p.set('status', txFilter.status);
     if (txFilter.type) p.set('type', txFilter.type);
     if (txFilter.accountId) p.set('accountId', txFilter.accountId);
+    if (txFilter.from) p.set('from', txFilter.from);
+    if (txFilter.to) p.set('to', txFilter.to);
     apiGet<FinanceTransactionList>(`/finance/transactions?${p.toString()}`, token)
       .then((r) => { if (active.current) setTxs(r); })
       .catch(readError);
@@ -217,11 +236,13 @@ function FinanceiroSessao() {
       {error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2 text-sm text-bad">{error}</div>}
       {msg && <div className="rounded-lg border border-good/30 bg-good/10 px-4 py-2 text-sm text-good">{msg}</div>}
 
-      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} />}
+      {tab === 'visao' && <Visao summary={summary} kpis={kpis} cashflow={cashflow} txs={txs} payables={payables} ir={ir} />}
       {tab === 'dre' && <DreView dre={dre} month={dreMonth} setMonth={setDreMonth} />}
       {tab === 'apar' && (
         <ApAr
           payables={payables}
+          filtro={aparFiltro}
+          setFiltro={setAparFiltro}
           contracts={contracts}
           partners={partners}
           accounts={accounts}
@@ -274,13 +295,38 @@ function FinanceiroSessao() {
 }
 
 // ---------------- Visão geral ----------------
-function Card({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn' }) {
+function Card({ label, value, tone, onClick, ativo }: {
+  label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onClick?: () => void; ativo?: boolean;
+}) {
   const cls = tone === 'good' ? 'text-good' : tone === 'bad' ? 'text-bad' : tone === 'warn' ? 'text-warn' : 'text-text';
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
+  const corpo = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wide text-muted">{label}</span>
+        {onClick && <span aria-hidden className="text-[11px] text-muted transition-colors group-hover:text-brand">ver →</span>}
+      </div>
       <div className={`mt-1 text-xl font-semibold ${cls}`}>{value}</div>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="rounded-xl border border-border bg-surface p-4">{corpo}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={`group rounded-xl border bg-surface p-4 text-left transition-colors hover:border-brand/40 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand ${ativo ? 'border-brand' : 'border-border'}`}
+    >
+      {corpo}
+    </button>
+  );
+}
+
+/** KPI clicável: o cartão compartilhado dentro de um botão, sem mudar o visual. */
+function KpiBotao({ onClick, ...p }: React.ComponentProps<typeof KpiCard> & { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="h-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+      <KpiCard {...p} />
+    </button>
   );
 }
 
@@ -397,9 +443,10 @@ function CashflowChart({ cashflow, txs, payables }: {
   );
 }
 
-function Visao({ summary, kpis, cashflow, txs, payables }: {
+function Visao({ summary, kpis, cashflow, txs, payables, ir }: {
   summary: FinanceSummary | null; kpis: Kpis | null; cashflow: Cashflow | null;
   txs: FinanceTransactionList | null; payables: Payables | null;
+  ir: (destino: TabKey, filtro?: { apar?: AparFiltro; tx?: TxFiltro }) => void;
 }) {
   if (!summary) return <p className="text-sm text-muted">Carregando…</p>;
   return (
@@ -407,24 +454,24 @@ function Visao({ summary, kpis, cashflow, txs, payables }: {
       {kpis && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <KpiCard label="Margem bruta" value={`${kpis.margens.bruta.toFixed(1)}%`} hint="MC / Faturamento líq." tone={kpis.margens.bruta >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Margem EBITDA" value={`${kpis.margens.ebitda.toFixed(1)}%`} tone={kpis.margens.ebitda >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Margem líquida" value={`${kpis.margens.liquida.toFixed(1)}%`} hint={`LL ${brl(kpis.dre.ll)}`} tone={kpis.margens.liquida >= 0 ? 'good' : 'bad'} />
-            <KpiCard label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
-            <KpiCard label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem bruta" value={`${kpis.margens.bruta.toFixed(1)}%`} hint="MC / Faturamento líq." tone={kpis.margens.bruta >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem EBITDA" value={`${kpis.margens.ebitda.toFixed(1)}%`} tone={kpis.margens.ebitda >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('dre')} label="Margem líquida" value={`${kpis.margens.liquida.toFixed(1)}%`} hint={`LL ${brl(kpis.dre.ll)}`} tone={kpis.margens.liquida >= 0 ? 'good' : 'bad'} />
+            <KpiBotao onClick={() => ir('apar', { apar: { tipo: 'entrada', vencido: true } })} label="Inadimplência" value={`${kpis.inadimplencia.toFixed(1)}%`} hint={`${brl(kpis.aReceberVencido)} vencido`} tone={kpis.inadimplencia > 0 ? 'warn' : 'good'} />
+            <KpiBotao onClick={() => ir('conciliacao')} label="Índice de acurácia" value={`${kpis.acuracidade.toFixed(0)}%`} hint={`${kpis.bankConciliado}/${kpis.bankTotal} conciliados`} tone={kpis.acuracidade >= 90 ? 'good' : 'warn'} />
           </div>
           <CashflowChart cashflow={cashflow} txs={txs} payables={payables} />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="Resultado do mês" value={brl(summary.mes.resultado)} tone={summary.mes.resultado >= 0 ? 'good' : 'bad'} />
-        <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" />
-        <Card label="Saídas do mês" value={brl(summary.mes.saidas)} tone="bad" />
-        <Card label="Contas" value={String(summary.contas)} />
-        <Card label="A receber" value={brl(summary.aReceber)} tone="good" />
-        <Card label="A pagar" value={brl(summary.aPagar)} tone="bad" />
-        <Card label="Receber vencido" value={brl(summary.aReceberVencido)} tone={summary.aReceberVencido > 0 ? 'warn' : undefined} />
-        <Card label="Pagar vencido" value={brl(summary.aPagarVencido)} tone={summary.aPagarVencido > 0 ? 'warn' : undefined} />
+        <Card label="Resultado do mês" value={brl(summary.mes.resultado)} tone={summary.mes.resultado >= 0 ? 'good' : 'bad'} onClick={() => ir('dre')} />
+        <Card label="Entradas do mês" value={brl(summary.mes.entradas)} tone="good" onClick={() => ir('lancamentos', { tx: { type: 'entrada', ...mesAtual() } })} />
+        <Card label="Saídas do mês" value={brl(summary.mes.saidas)} tone="bad" onClick={() => ir('lancamentos', { tx: { type: 'saida', ...mesAtual() } })} />
+        <Card label="Contas" value={String(summary.contas)} onClick={() => ir('contas')} />
+        <Card label="A receber" value={brl(summary.aReceber)} tone="good" onClick={() => ir('apar', { apar: { tipo: 'entrada' } })} />
+        <Card label="A pagar" value={brl(summary.aPagar)} tone="bad" onClick={() => ir('apar', { apar: { tipo: 'saida' } })} />
+        <Card label="Receber vencido" value={brl(summary.aReceberVencido)} tone={summary.aReceberVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'entrada', vencido: true } })} />
+        <Card label="Pagar vencido" value={brl(summary.aPagarVencido)} tone={summary.aPagarVencido > 0 ? 'warn' : undefined} onClick={() => ir('apar', { apar: { tipo: 'saida', vencido: true } })} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -435,9 +482,15 @@ function Visao({ summary, kpis, cashflow, txs, payables }: {
           ) : (
             <ul className="space-y-2">
               {summary.byAccount.map((a) => (
-                <li key={a.id} className="flex items-center justify-between text-sm">
-                  <span>{a.name}</span>
-                  <span className={a.balance >= 0 ? 'text-good' : 'text-bad'}>{brl(a.balance)}</span>
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => ir('lancamentos', { tx: { accountId: a.id } })}
+                    className="group -mx-2 flex w-[calc(100%+1rem)] items-center justify-between rounded px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  >
+                    <span>{a.name} <span aria-hidden className="text-[11px] text-muted group-hover:text-brand">ver extrato →</span></span>
+                    <span className={a.balance >= 0 ? 'text-good' : 'text-bad'}>{brl(a.balance)}</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -670,6 +723,8 @@ const APPROVAL_CLS: Record<string, string> = {
 
 function ApAr(props: {
   payables: Payables | null;
+  filtro: AparFiltro;
+  setFiltro: (f: AparFiltro) => void;
   contracts: ContractList | null;
   partners: PartnerList | null;
   accounts: FinanceAccountList | null;
@@ -680,7 +735,7 @@ function ApAr(props: {
   onError: (e: unknown) => void;
   onFlash: (m: string) => void;
 }) {
-  const { payables, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
+  const { payables, filtro, setFiltro, contracts, partners, accounts, chart, canEdit, token, onChange, onError, onFlash } = props;
   const [pForm, setPForm] = useState({ razaoSocial: '', cnpjCpf: '', isCliente: false, isFornecedor: true });
   const [cForm, setCForm] = useState({
     tipo: 'saida', descricao: '', valor: '', diaVencimento: '5', periodicidade: 'mensal',
@@ -728,16 +783,37 @@ function ApAr(props: {
   };
 
   const t = payables?.totals;
+  const linhas = (payables?.items ?? []).filter((r) =>
+    (!filtro.tipo || r.tipo === filtro.tipo) && (!filtro.vencido || r.vencido));
   return (
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" />
-        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" />
-        <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} />
-        <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} />
+        <Card label="A pagar" value={brl(t?.aPagar ?? 0)} tone="bad" ativo={filtro.tipo === 'saida' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'saida' })} />
+        <Card label="A receber" value={brl(t?.aReceber ?? 0)} tone="good" ativo={filtro.tipo === 'entrada' && !filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada' })} />
+        <Card label="Vencido a pagar" value={brl(t?.vencidoPagar ?? 0)} tone={t && t.vencidoPagar > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'saida' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'saida', vencido: true })} />
+        <Card label="Vencido a receber" value={brl(t?.vencidoReceber ?? 0)} tone={t && t.vencidoReceber > 0 ? 'warn' : undefined} ativo={filtro.tipo === 'entrada' && !!filtro.vencido} onClick={() => setFiltro({ tipo: 'entrada', vencido: true })} />
         <Card label="Aguardando aprovação" value={String(t?.aguardandoAprovacao ?? 0)} tone={t && t.aguardandoAprovacao > 0 ? 'warn' : undefined} />
       </div>
       {payables && <p className="text-[11px] text-muted">Limite de aprovação: saídas acima de {brl(payables.approvalLimit)} exigem aprovação humana antes da baixa.</p>}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {([
+          ['Tudo', {}],
+          ['A receber', { tipo: 'entrada' }],
+          ['A pagar', { tipo: 'saida' }],
+          ['Vencidos', { vencido: true }],
+        ] as [string, AparFiltro][]).map(([rotulo, f]) => {
+          const on = filtro.tipo === f.tipo && !!filtro.vencido === !!f.vencido;
+          return (
+            <button key={rotulo} type="button" onClick={() => setFiltro(f)} aria-pressed={on}
+              className={`rounded-full border px-3 py-1 ${on ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted hover:text-text'}`}>
+              {rotulo}
+            </button>
+          );
+        })}
+        <span className="ml-auto text-muted">
+          {linhas.length} {linhas.length === 1 ? 'item' : 'itens'} · {brl(linhas.reduce((s, r) => s + r.amount, 0))}
+        </span>
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full min-w-[820px] text-sm">
@@ -753,8 +829,8 @@ function ApAr(props: {
             </tr>
           </thead>
           <tbody>
-            {payables?.items.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
-            {payables?.items.map((row) => {
+            {payables && linhas.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Nada previsto. Crie lançamentos “previstos” ou gere de um contrato.</td></tr>}
+            {linhas.map((row) => {
               const r = row as typeof row & Partial<PontePayableRef>;
               return (
               <tr key={r.id} className="border-t border-border">
@@ -869,8 +945,8 @@ function Lancamentos(props: {
   partners: PartnerList | null;
   canEdit: boolean;
   token: string | null;
-  filter: { status?: string; type?: string; accountId?: string };
-  setFilter: (f: { status?: string; type?: string; accountId?: string }) => void;
+  filter: TxFiltro;
+  setFilter: (f: TxFiltro) => void;
   onChange: () => void;
   onError: (e: unknown) => void;
   onFlash: (m: string) => void;
@@ -934,6 +1010,12 @@ function Lancamentos(props: {
           <option value="">Todas as contas</option>
           {accounts?.items.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        {(filter.from || filter.to) && (
+          <button type="button" onClick={() => setFilter({ ...filter, from: undefined, to: undefined })}
+            className="rounded-full border border-brand bg-brand/10 px-3 py-1 text-sm text-brand">
+            {dateBR(filter.from ?? null)} a {dateBR(filter.to ?? null)} ✕
+          </button>
+        )}
         {canEdit && (
           <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-lg bg-brand px-3 py-2 text-sm font-medium text-ink hover:opacity-90">
             {open ? 'Fechar' : '+ Novo lançamento'}
