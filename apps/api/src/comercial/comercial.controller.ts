@@ -101,6 +101,18 @@ export class ComercialController {
   }
 
   /**
+   * Revisão PA-7 · em que pé está o MEU pedido de mover este lead (esperando,
+   * confirmada, usada, recusada, venceu), para o cartão acender "concluir a
+   * mudança" quando a assinatura chega. Só leitura e só o pedido de quem
+   * pergunta; o token nunca sai do servidor por aqui.
+   */
+  @Get('lead/:id/mover/pedido')
+  @RequirePermissions('leads.ver')
+  async estadoDoPedido(@CurrentUser() user: JwtUser, @Param('id') id: string, @Query('aprovacao') aprovacao?: string) {
+    return { pedido: await this.moverSvc.estadoDoPedido(user.orgId, id, user.sub, aprovacao || undefined) };
+  }
+
+  /**
    * P5 · MOVER, com a mesma proteção da mudança manual de etapa que já existia
    * (`PATCH /leads/:id`): `leads.editar` + escrita sensível do recurso `lead` +
    * `x-approval-token` confirmado por outra pessoa, preso ao `para`. O

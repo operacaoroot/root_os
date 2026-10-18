@@ -115,6 +115,16 @@ export function canonicalHash(
   return createHash('sha256').update(`${escopo}:${stable}`).digest('hex');
 }
 
+/**
+ * O hash que a superfície antiga grava para `changes` neste recurso: o mesmo
+ * cálculo de `create` e do consumo. Exportado para a FILA conferir, só lendo, o
+ * que uma aprovação prende (rodada do painel, revisão PA-1: o destino do mover
+ * sai do hash, nunca do resumo).
+ */
+export function hashDaSuperficieAntiga(resourceType: ResourceType, changes: Record<string, unknown>): string {
+  return canonicalHash(resourceType, changes, ALLOWED_KEYS[resourceType]);
+}
+
 const hashDoToken = (t: string) => createHash('sha256').update(t).digest('hex');
 
 /**

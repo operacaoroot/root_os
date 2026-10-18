@@ -11,10 +11,11 @@ import {
   type ComercialResultadoDoMover,
 } from '@mktos/shared';
 
-import { ActorType } from '@prisma/client';
+import { ActorType, ApprovalState } from '@prisma/client';
 
 import { temPapelDeMaquina } from '../approvals/alcada';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { destinoDoHash } from '../approvals/destino-do-mover';
 import { lerAprovador } from '../auth/aprovador';
 import type { JwtUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -60,6 +61,21 @@ export function chaveDoMover(token: string): string {
   return `mover:${createHash('sha256').update(token).digest('hex').slice(0, 24)}`;
 }
 
+/**
+ * Em que pé está o pedido de mover de quem pediu (revisão PA-7). Só leitura:
+ * o token nunca sai daqui (ele mora só na aba de quem pediu, de propósito).
+ */
+export interface EstadoDoPedidoDeMover {
+  approvalId: string;
+  /** `esperando` assinatura · `confirmada` (conclua no funil) · `usada` · `recusada` · `venceu`. */
+  estado: 'esperando' | 'confirmada' | 'usada' | 'recusada' | 'venceu';
+  /** O destino que o hash prende, recalculado (PA-1); `null` se nenhuma etapa produz o hash. */
+  para: ComercialEtapa | null;
+  expiraEm: string;
+  confirmadaPor: string | null;
+  confirmadaEm: string | null;
+}
+
 @Injectable()
 export class MoverService {
   constructor(
@@ -101,6 +117,50 @@ export class MoverService {
     const resumo = `Mover ${quemNome} de ${COMERCIAL_ROTULO_DA_ETAPA[de]} para ${COMERCIAL_ROTULO_DA_ETAPA[para]}${pendencias.length ? ` com pendências: ${pendencias.join('; ')}` : ' (portões cumpridos)'}. Pedido por ${quem.nome ?? 'pessoa da mesa'} pela tela do funil.`;
     const t = await this.approvals.create({ orgId, actorId: quem.id, resourceType: 'lead', resourceId: leadId, changes: { para }, summary: resumo.slice(0, 900), propostoPorTipo: ActorType.user });
     return { approvalId: t.approvalId, token: t.token, expiraEm: t.expiresAt, de, para, pendencias, resumo: t.summary };
+  }
+
+  /**
+   * O ESTADO DO PEDIDO, para a tela de quem pediu acender "concluir" quando a
+   * assinatura chega (revisão PA-7). Só o pedido DESTA pessoa, deste lead e da
+   * superfície do token; sem `approvalId`, o mais novo dela. Nada é escrito:
+   * "venceu" é cálculo sobre `expiraEm`, como na fila.
+   */
+  async estadoDoPedido(orgId: string, leadId: string, quemId: string, approvalId?: string): Promise<EstadoDoPedidoDeMover | null> {
+    const ap = await this.prisma.approval.findFirst({
+      where: {
+        orgId,
+        resourceType: 'lead',
+        resourceId: leadId,
+        capabilityId: null,
+        propostoPorId: quemId,
+        ...(approvalId ? { id: approvalId } : {}),
+      },
+      orderBy: { criadoEm: 'desc' },
+      select: { id: true, status: true, contentHash: true, expiraEm: true, aprovadoPorId: true, aprovadoEm: true },
+    });
+    if (!ap) return null;
+    const vencida = ap.expiraEm.getTime() <= Date.now();
+    const estado: EstadoDoPedidoDeMover['estado'] =
+      ap.status === ApprovalState.consumida
+        ? 'usada'
+        : ap.status === ApprovalState.rejeitada
+          ? 'recusada'
+          : ap.status === ApprovalState.expirada || vencida
+            ? 'venceu'
+            : ap.status === ApprovalState.confirmada
+              ? 'confirmada'
+              : 'esperando';
+    const quem = ap.aprovadoPorId
+      ? await this.prisma.user.findFirst({ where: { id: ap.aprovadoPorId, orgId }, select: { name: true } })
+      : null;
+    return {
+      approvalId: ap.id,
+      estado,
+      para: destinoDoHash(ap.contentHash),
+      expiraEm: ap.expiraEm.toISOString(),
+      confirmadaPor: ap.aprovadoPorId ? (quem?.name ?? null) : null,
+      confirmadaEm: ap.aprovadoEm?.toISOString() ?? null,
+    };
   }
 
   /**

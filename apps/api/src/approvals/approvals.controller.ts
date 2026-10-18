@@ -23,6 +23,7 @@ import { exigirTenant } from '../common/contexto-execucao';
 import { PrismaService } from '../prisma/prisma.service';
 import { ToolGateway } from '../gateway/tool-gateway.service';
 import { alcadaDe, atendeAlcada, descreverAlcada, exigeMotivo } from './alcada';
+import { conferirPedidoDeMover } from './destino-do-mover';
 
 const CreateApprovalSchema = z.object({
   resourceType: z.enum(['lead', 'task', 'campaign', 'content']),
@@ -260,11 +261,29 @@ export class ApprovalsController {
      * mais nova, e só a sobra com as vencidas, da mais nova para a mais antiga.
      * Só leitura: o total, o corte e o estado de cada linha não mudam.
      */
+    /*
+     * A CONFIRMADA DA SUPERFÍCIE DO TOKEN TAMBÉM VENCE (revisão PA-8). Sem
+     * capacidade, quem executa é quem pediu, com o token de uso único, dentro de
+     * `expiraEm`; passado o prazo o consumo recusa, e a linha ficava "Confirmada:
+     * quem pediu conclui" para sempre, na frente do teto. Agora ela conta como
+     * vencida (cálculo, sem escrever estado) e vai ao fim da ordem. A confirmada
+     * da PORTA (com capacidade) fica como estava: o limbo dela só sai pela recusa.
+     */
     const valendoEm = {
       ...vivasEm,
-      OR: [{ status: ApprovalState.confirmada }, { expiraEm: { gt: agora } }],
+      OR: [
+        { status: ApprovalState.confirmada, capabilityId: { not: null } },
+        { expiraEm: { gt: agora } },
+      ],
     };
-    const vencidasVivasEm = { orgId, status: ApprovalState.pendente, expiraEm: { lte: agora } };
+    const vencidasVivasEm = {
+      orgId,
+      expiraEm: { lte: agora },
+      OR: [
+        { status: ApprovalState.pendente },
+        { status: ApprovalState.confirmada, capabilityId: null },
+      ],
+    };
     const [valendo, vencidasVivas, fechadas, pessoas, quantasVivas, quantasFechadas, quantasPessoas] =
       await Promise.all([
         this.prisma.approval.findMany({
@@ -399,10 +418,13 @@ export class ApprovalsController {
       const chamada = ap.toolCallId ? porChamada.get(ap.toolCallId) : undefined;
       const decisao = ap.decisionId ? porDecisao.get(ap.decisionId) : undefined;
       const vencida = ap.expiraEm <= agora;
+      const peloToken = !ap.capabilityId;
       const gaveta: Gaveta =
         ap.status === ApprovalState.rejeitada
           ? 'recusada'
-          : ap.status === ApprovalState.expirada || (ap.status === ApprovalState.pendente && vencida)
+          : ap.status === ApprovalState.expirada ||
+              (ap.status === ApprovalState.pendente && vencida) ||
+              (ap.status === ApprovalState.confirmada && peloToken && vencida)
             ? 'expirou'
             : ap.status === ApprovalState.confirmada
               ? 'confirmada'
@@ -420,13 +442,21 @@ export class ApprovalsController {
        * recusada ou expirada não vai executar de jeito nenhum, e a conferência
        * ali só produziria texto assustador sobre uma linha encerrada.
        */
+      /*
+       * O PEDIDO DE MOVER DO FUNIL (revisão PA-1): o destino sai do HASH que a
+       * assinatura prende, recalculado para cada etapa, e não do resumo. Resumo
+       * que cita outro destino, ou que diz mover sem hash de etapa, impede.
+       */
+      const doMover = peloToken && ap.resourceType === 'lead' ? conferirPedidoDeMover(ap) : null;
       const impedimento =
-        chamada && ap.capabilityId && (gaveta === 'esperando' || gaveta === 'confirmada')
-          ? this.impedimentoDaPorta(
-              orgId,
-              ap.capabilityId,
-              (chamada.args ?? {}) as Record<string, unknown>,
-            )
+        gaveta === 'esperando' || gaveta === 'confirmada'
+          ? chamada && ap.capabilityId
+            ? this.impedimentoDaPorta(
+                orgId,
+                ap.capabilityId,
+                (chamada.args ?? {}) as Record<string, unknown>,
+              )
+            : (doMover?.impedimento ?? null)
           : null;
 
       const posso =
@@ -446,6 +476,12 @@ export class ApprovalsController {
         capacidade: ap.capabilityId,
         canal: ap.canal,
         recurso: { tipo: ap.resourceType, id: ap.resourceId },
+        /**
+         * O destino do mover CONFERIDO contra o hash gravado (PA-1). `null` quando
+         * a linha não é um pedido de mover ou quando nenhuma etapa produz o hash.
+         * Vai a todo mundo que vê a fila, como o resumo: é etapa, não conteúdo.
+         */
+        destinoConferido: doMover?.destino ? { etapa: doMover.destino, rotulo: doMover.rotulo } : null,
         /** O nome do lead a que a ação se refere, só para quem decide; `null` sem lead ou sem permissão. */
         alvo: decideAgora ? (nomeDoLead.get(leadDaLinha(ap) ?? '') ?? null) : null,
         agente: chamada?.agentSlug ?? null,
@@ -517,7 +553,8 @@ export class ApprovalsController {
               minima: ap.alcadaMinima,
               impedimento,
               tokenDecide,
-              peloToken: !ap.capabilityId,
+              peloToken,
+              confirmadaAntes: ap.status === ApprovalState.confirmada,
             }),
       };
     });
@@ -639,8 +676,17 @@ export class ApprovalsController {
     exigirTenant(orgId, 'ApprovalsController.impedimentoDeExecucao');
     const ap = await this.prisma.approval.findFirst({
       where: { id: approvalId, orgId },
-      select: { capabilityId: true, toolCallId: true, resourceType: true, contentHash: true },
+      select: { capabilityId: true, toolCallId: true, resourceType: true, contentHash: true, resumo: true },
     });
+    /*
+     * O pedido de mover cujo texto não confere com o destino assinado (PA-1) é
+     * recusado AQUI, antes de `confirm`: a aprovação continua pendente e só sai
+     * da fila pela recusa. A tela já esconde o botão; quem decide é o servidor.
+     */
+    if (ap && !ap.capabilityId && ap.resourceType === 'lead') {
+      const doMover = conferirPedidoDeMover(ap);
+      if (doMover?.impedimento) return new ForbiddenException(doMover.impedimento);
+    }
     if (!ap?.capabilityId || !ap.toolCallId) return null;
 
     const chamada = await this.prisma.toolCall.findFirst({
@@ -715,8 +761,14 @@ export class ApprovalsController {
      * esperava quem pediu (o mover do funil, P5).
      */
     peloToken?: boolean;
+    /** A linha chegou a ser confirmada (a gaveta "expirou" da superfície do token, PA-8). */
+    confirmadaAntes?: boolean;
   }): string {
-    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide, peloToken } = entrada;
+    const { gaveta, souOProponente, eu, minima, impedimento, tokenDecide, peloToken, confirmadaAntes } = entrada;
+    if (gaveta === 'expirou' && peloToken && confirmadaAntes) {
+      return 'Foi confirmada, mas o prazo venceu antes de quem pediu concluir: nada mudou. Para mudar, peça de novo.';
+    }
+    if (gaveta === 'expirou' && peloToken) return 'O prazo deste pedido venceu sem assinatura: nada mudou. Para mudar, peça de novo.';
     if (gaveta === 'expirou') return 'O prazo desta aprovação venceu. Peça ao agente para propor de novo.';
     if (gaveta === 'recusada') return 'Esta ação já foi recusada.';
     if (gaveta === 'confirmada' && peloToken) {
@@ -763,6 +815,19 @@ export class ApprovalsController {
   @RequirePermissions('mcp.executar')
   create(@CurrentUser() user: JwtUser, @Body() body: unknown) {
     const input = CreateApprovalSchema.parse(body);
+    /*
+     * O PEDIDO DE MOVER SÓ NASCE PELO FUNIL (revisão PA-1). Aqui o resumo é texto
+     * livre de quem pede, e o hash prende só `changes`: com `para` no recurso
+     * `lead`, dava para assinar "para E3" e mover para E7. O pedido de mover
+     * tem rota própria (`POST /comercial/lead/:id/mover/pedido`), onde o servidor
+     * escreve o resumo a partir do destino. A chave presente já basta para
+     * recusar, com qualquer valor.
+     */
+    if (input.resourceType === 'lead' && Object.prototype.hasOwnProperty.call(input.changes, 'para')) {
+      throw new ForbiddenException(
+        'O pedido de mover o cartão nasce só pelo funil (POST /comercial/lead/:id/mover/pedido), onde o servidor escreve o resumo.',
+      );
+    }
     return this.approvals.create({ orgId: user.orgId, actorId: user.sub, ...input });
   }
 
