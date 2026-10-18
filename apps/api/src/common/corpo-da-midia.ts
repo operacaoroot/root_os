@@ -38,6 +38,16 @@ export const ROTAS_DE_MIDIA_DO_EPISODIO = ['/pauta/episodios/:id/midia', '/pauta
  */
 export const ROTAS_DE_CORPO_GRANDE_DO_COMERCIAL = ['/comercial/lead/:id/ata'] as const;
 
+/**
+ * A ata colada no banco de atas do Trabalho (revisão PA-6, 18/10/2026): o
+ * schema (`TrabAtaColarSchema`) promete 200 mil caracteres, e uma transcrição
+ * de 1h30 já passava dos 100 kb do padrão. Mesma regra de sessão, e SÓ o POST
+ * da própria rota: o `app.use` do Express casa também os caminhos de baixo
+ * (`/trabalho/atas/:ref/sugestoes`, `/trabalho/atas/sugestoes/:id/aceitar`), e
+ * esses continuam nos 100 kb.
+ */
+export const ROTAS_EXATAS_DE_CORPO_GRANDE = ['/trabalho/atas'] as const;
+
 interface ComUse {
   use(caminho: string, ...handlers: Array<(req: Request, res: Response, next: NextFunction) => void>): unknown;
 }
@@ -60,6 +70,12 @@ export function instalarCorpoDaMidia(app: ComUse, prefixo: string, ehSessao: (to
     if (typeof auth !== 'string' || !auth.startsWith('Bearer ') || !ehSessao(auth.slice(7))) return next();
     parser(req, res, next);
   };
+  // Montado com `app.use`, o `req.path` é o resto do caminho depois da rota: '/' é ela mesma.
+  const soARotaExata = (req: Request, res: Response, next: NextFunction) => {
+    if (req.path !== '/' && req.path !== '') return next();
+    corpoGrandeDaMidia(req, res, next);
+  };
   const base = prefixo ? `/${prefixo.replace(/^\/+|\/+$/g, '')}` : '';
   for (const rota of [...ROTAS_DE_MIDIA_DO_EPISODIO, ...ROTAS_DE_CORPO_GRANDE_DO_COMERCIAL]) app.use(`${base}${rota}`, corpoGrandeDaMidia);
+  for (const rota of ROTAS_EXATAS_DE_CORPO_GRANDE) app.use(`${base}${rota}`, soARotaExata);
 }
