@@ -11,15 +11,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  *     a leitura disse (inclusive o que o parser descartou);
  *  4. aceitar é UM clique, na lista sugerida ou na escolhida; descartar idem;
  *  5. sem `tarefas.editar`, nenhum botão de escrita aparece.
+ *
+ * Revisão de 18/10/2026: colar pede também `obsidian.editar` e a tela diz por
+ * quê (PA-2); sem `obsidian.ver` a lista explica que o vault ficou de fora;
+ * dono e vencimento se corrigem antes de aceitar e vão no aceite (PA-4); a
+ * ata acima do teto avisa e trava antes de enviar (PA-6); o formulário fecha
+ * com Esc e o foco volta ao botão que o abriu.
  */
 
 const get = vi.fn(), post = vi.fn();
-let permissions = ['tarefas.ver', 'tarefas.editar'];
+const TODAS = ['tarefas.ver', 'tarefas.editar', 'obsidian.ver', 'obsidian.editar'];
+let permissions = [...TODAS];
+let vaultVisivel = true;
 vi.mock('@/lib/api', () => ({
   apiGet: (...a: unknown[]) => get(...a), apiPost: (...a: unknown[]) => post(...a),
   apiPatch: vi.fn(), apiDelete: vi.fn(), apiBlob: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ token: 'tok', ready: true, user: { id: 'u' }, can: (p: string) => permissions.includes(p) }) }));
+import { ATA_MAX_CARACTERES } from '@mktos/shared';
 import AtasPage from '@/app/trabalho/atas/page';
 
 const REF = 'memoria:ata-1';
@@ -56,12 +65,13 @@ const estrutura = {
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/trabalho/atas');
-  permissions = ['tarefas.ver', 'tarefas.editar'];
+  permissions = [...TODAS];
+  vaultVisivel = true;
   sugestoes = [];
   get.mockReset(); post.mockReset();
   get.mockImplementation((rota: string) => {
     if (rota === '/trabalho/atas') {
-      return Promise.resolve({ pasta: '80-Reunioes', notasDoVault: 0, iaConfigurada: true, atas: [resumo(REF, 'Reunião de operação semanal'), resumo(REF_VAULT, 'Diretoria', { caminho: '80-Reunioes/Diretoria.md', participantes: [] })] });
+      return Promise.resolve({ pasta: '80-Reunioes', notasDoVault: 0, vaultVisivel, iaConfigurada: true, atas: [resumo(REF, 'Reunião de operação semanal'), resumo(REF_VAULT, 'Diretoria', { caminho: '80-Reunioes/Diretoria.md', participantes: [] })] });
     }
     if (rota === `/trabalho/atas/${encodeURIComponent(REF)}`) return Promise.resolve(detalhe());
     if (rota === `/trabalho/atas/${encodeURIComponent(REF_VAULT)}`) return Promise.resolve({ ...resumo(REF_VAULT, 'Diretoria'), texto: 'Ata da diretoria.', procedencia: 'vault: 80-Reunioes/Diretoria.md', sugestoesDaAta: [] });
@@ -121,6 +131,47 @@ describe('Atas: colar', () => {
       titulo: 'Reunião de operação semanal', data: '2026-10-16', participantes: [], texto,
     }, 'tok'));
     await waitFor(() => expect(screen.queryByTestId('ata-colar-texto')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('ata-colar')).toHaveFocus());
+  });
+
+  it('PA-6: acima do teto a tela avisa e não envia', async () => {
+    render(<AtasPage />);
+    fireEvent.click(await screen.findByTestId('ata-colar'));
+    fireEvent.change(screen.getByTestId('ata-colar-titulo'), { target: { value: 'Reunião longa' } });
+    fireEvent.change(screen.getByTestId('ata-colar-texto'), { target: { value: 'a'.repeat(ATA_MAX_CARACTERES + 1) } });
+    expect(screen.getByTestId('ata-colar-longa')).toHaveTextContent('Corte o que não é a reunião');
+    expect(screen.getByTestId('ata-colar-salvar')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('ata-colar-texto'), { target: { value: 'a'.repeat(ATA_MAX_CARACTERES) } });
+    expect(screen.queryByTestId('ata-colar-longa')).toBeNull();
+    expect(screen.getByTestId('ata-colar-salvar')).toBeEnabled();
+  });
+
+  it('o formulário abre com o foco no título, fecha com Esc e devolve o foco ao botão', async () => {
+    render(<AtasPage />);
+    const botao = await screen.findByTestId('ata-colar');
+    fireEvent.click(botao);
+    expect(botao).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('ata-colar-titulo')).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId('ata-colar-titulo'), { key: 'Escape' });
+    expect(screen.queryByTestId('ata-colar-texto')).toBeNull();
+    expect(botao).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => expect(botao).toHaveFocus());
+  });
+
+  it('PA-2: sem obsidian.editar não há colar, e a tela diz por quê', async () => {
+    permissions = ['tarefas.ver', 'tarefas.editar', 'obsidian.ver'];
+    render(<AtasPage />);
+    await screen.findByTestId('atas-lista');
+    expect(screen.queryByTestId('ata-colar')).toBeNull();
+    expect(screen.getByText(/pede também a permissão de editar a memória \(obsidian\.editar\)/)).toBeInTheDocument();
+    // Sugerir e decidir continuam: é o Trabalho.
+    expect(await screen.findByTestId(`ata-gerar-${REF}`)).toBeInTheDocument();
+  });
+
+  it('PA-2: sem obsidian.ver a lista diz que as atas do vault ficaram de fora', async () => {
+    vaultVisivel = false;
+    render(<AtasPage />);
+    expect(await screen.findByText(/pedem a permissão de ler o vault \(obsidian\.ver\)/)).toBeInTheDocument();
   });
 });
 
@@ -137,8 +188,29 @@ describe('Atas: sugestões', () => {
     expect(screen.getByText(/NÃO está na ata/)).toBeInTheDocument();
     const s = await screen.findByTestId('ata-sugestao-s1');
     expect(s).toHaveTextContent('Marina vai enviar o relatório mensal até 23/10.');
-    expect(s).toHaveTextContent('dono sugerido: Marina');
-    expect(s).toHaveTextContent('vence 23/10/2026');
+    // Dono e vencimento chegam como campos, com o que o leitor propôs (PA-4).
+    expect(screen.getByTestId('ata-dono-s1')).toHaveValue('Marina');
+    expect(screen.getByTestId('ata-vencimento-s1')).toHaveValue('2026-10-23');
+  });
+
+  it('PA-4: corrigir dono e vencimento antes de aceitar; o aceite leva o que a pessoa escolheu', async () => {
+    sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
+    post.mockResolvedValueOnce({});
+    render(<AtasPage />);
+    fireEvent.change(await screen.findByTestId('ata-dono-s1'), { target: { value: 'Paulo Rocha' } });
+    fireEvent.change(screen.getByTestId('ata-vencimento-s1'), { target: { value: '2026-10-30' } });
+    fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: 'Paulo Rocha', vencimento: '2026-10-30' }, 'tok'));
+  });
+
+  it('PA-4: limpar os dois campos aceita sem dono e sem vencimento', async () => {
+    sugestoes = [sugestao('s1', 'Enviar o relatório mensal')];
+    post.mockResolvedValueOnce({});
+    render(<AtasPage />);
+    fireEvent.change(await screen.findByTestId('ata-dono-s1'), { target: { value: '  ' } });
+    fireEvent.change(screen.getByTestId('ata-vencimento-s1'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('ata-aceitar-s1'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: null, vencimento: null }, 'tok'));
   });
 
   it('aceitar é um clique, na lista sugerida', async () => {
@@ -149,7 +221,7 @@ describe('Atas: sugestões', () => {
     });
     render(<AtasPage />);
     fireEvent.click(await screen.findByTestId('ata-aceitar-s1'));
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC }, 'tok'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s1/aceitar', { listaId: L_EXEC, dono: 'Marina', vencimento: '2026-10-23' }, 'tok'));
     expect(post).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/aceita em Execução por Rodrigo/)).toBeInTheDocument();
     expect(screen.queryByTestId('ata-aceitar-s1')).toBeNull();
@@ -166,7 +238,7 @@ describe('Atas: sugestões', () => {
     fireEvent.change(screen.getByLabelText('Lista da tarefa "Revisar o roteiro"'), { target: { value: L_ONB } });
     expect(aceitar).toBeEnabled();
     fireEvent.click(aceitar);
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s2/aceitar', { listaId: L_ONB }, 'tok'));
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/trabalho/atas/sugestoes/s2/aceitar', { listaId: L_ONB, dono: 'Marina', vencimento: '2026-10-23' }, 'tok'));
   });
 
   it('descartar é um clique e não cria tarefa', async () => {
@@ -201,6 +273,9 @@ describe('Atas: só leitura', () => {
     expect(screen.queryByTestId(`ata-gerar-${REF}`)).toBeNull();
     expect(screen.queryByTestId('ata-aceitar-s1')).toBeNull();
     expect(screen.queryByTestId('ata-descartar-s1')).toBeNull();
+    expect(screen.queryByTestId('ata-dono-s1')).toBeNull();
+    // Quem só lê vê o que o leitor propôs, em texto.
+    expect(screen.getByTestId('ata-sugestao-s1')).toHaveTextContent('dono sugerido: Marina · vence 23/10/2026');
     expect(get).not.toHaveBeenCalledWith('/trabalho/estrutura', 'tok');
   });
 

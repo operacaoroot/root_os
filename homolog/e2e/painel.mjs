@@ -15,7 +15,9 @@
  *   2. PASTAS (P2): uma pasta nova criada pela tela e uma lista movida para ela
  *      pelo seletor; o chip da pasta mostra a lista. Quadro e Lista alternam.
  *   3. ATAS (P3): a ata colada na tela gera sugestões (provedor stub) e aceitar
- *      uma cria UMA tarefa no Trabalho.
+ *      uma cria UMA tarefa no Trabalho. Quem cola é o admin: colar grava nota
+ *      da memória e pede `obsidian.editar`, que a mesa (gestor_marketing) não
+ *      tem (revisão PA-2, 18/10/2026); a mesa confere pela API que vê a colada.
  *   4. APROVAÇÃO + FUNIL (P4 e P5): o admin pede para mover um lead novo de E1
  *      para E3 pelo menu do cartão (pedir pede leads.editar, que o sócio da
  *      homologação não tem); a mesa encontra o pedido em "Depende de você" e
@@ -221,12 +223,15 @@ async function main() {
     passo('Quadro e Lista alternam sobre a mesma lista');
 
     // ---- 3. atas ----
-    await p.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });
-    await tid(p, 'ata-colar').click();
+    // Colar pede obsidian.editar (a permissão do POST /memoria): é o admin quem cola e decide.
+    const ctxAdmin = await contexto(navegador, admin, 'dark');
+    const pa = await ctxAdmin.newPage();
+    await pa.goto(`${WEB}/trabalho/atas`, { waitUntil: 'networkidle' });
+    await tid(pa, 'ata-colar').click();
     const tituloDaAta = `Reunião de operação da prova ${SUFIXO}`;
-    await tid(p, 'ata-colar-titulo').fill(tituloDaAta);
-    await tid(p, 'ata-colar-texto').fill(readFileSync(join(RAIZ, 'homolog/fixtures/ata-trabalho-exemplo.md'), 'utf8'));
-    await tid(p, 'ata-colar-salvar').click();
+    await tid(pa, 'ata-colar-titulo').fill(tituloDaAta);
+    await tid(pa, 'ata-colar-texto').fill(readFileSync(join(RAIZ, 'homolog/fixtures/ata-trabalho-exemplo.md'), 'utf8'));
+    await tid(pa, 'ata-colar-salvar').click();
     let ata = null;
     for (let i = 0; i < 30 && !ata; i++) {
       ata = (await api('GET', '/trabalho/atas', undefined, mesa.token)).atas.find((a) => a.titulo === tituloDaAta) ?? null;
@@ -235,15 +240,15 @@ async function main() {
     conferir(ata, 'a ata colada não entrou no banco de atas');
     ids.ataRef = ata.id;
     passo('ata colada pela tela entrou no banco de atas (pela memória)', { detalhe: ata.id });
-    await tid(p, `ata-${ata.id}`).click();
-    await tid(p, `ata-gerar-${ata.id}`).click();
-    await p.locator('[data-testid^="ata-aceitar-"]').first().waitFor({ timeout: 60_000 });
+    await tid(pa, `ata-${ata.id}`).click();
+    await tid(pa, `ata-gerar-${ata.id}`).click();
+    await pa.locator('[data-testid^="ata-aceitar-"]').first().waitFor({ timeout: 60_000 });
     const sugestoes = await api('GET', `/trabalho/atas/sugestoes?ata=${encodeURIComponent(ata.id)}&estado=rascunho`, undefined, mesa.token);
     const lidas = Array.isArray(sugestoes) ? sugestoes : sugestoes.sugestoes ?? sugestoes.itens ?? [];
     conferir(lidas.length > 0, 'a ata não gerou sugestão');
     const sug = lidas[0];
     passo('"Sugerir tarefas" trouxe rascunhos conferidos contra a ata', { detalhe: `${lidas.length} rascunho(s)` });
-    await tid(p, `ata-aceitar-${sug.id}`).click();
+    await tid(pa, `ata-aceitar-${sug.id}`).click();
     let aceita = null;
     for (let i = 0; i < 30 && !aceita?.workTaskId; i++) {
       const s = await api('GET', `/trabalho/atas/sugestoes?ata=${encodeURIComponent(ata.id)}`, undefined, mesa.token);
@@ -254,6 +259,7 @@ async function main() {
     const criada = await api('GET', `/trabalho/tarefas/${aceita.workTaskId}`, undefined, mesa.token);
     conferir(criada.title === sug.titulo, 'a tarefa criada não tem o título da sugestão');
     passo('aceitar com um clique criou a tarefa no Trabalho', { detalhe: criada.title });
+    await ctxAdmin.close();
 
     // ---- 4. pedido de mover (sócio) → aprovação pela tela (mesa) → balão ----
     const ctxSocio = await contexto(navegador, admin, 'dark'); // quem pede precisa de leads.editar

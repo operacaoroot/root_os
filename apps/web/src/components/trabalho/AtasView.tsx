@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ATA_MIN_CARACTERES } from '@mktos/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ATA_MAX_CARACTERES, ATA_MIN_CARACTERES } from '@mktos/shared';
 import type {
   TrabAtaDetalhe, TrabAtaGeracao, TrabAtaLista, TrabAtaResumo, TrabAtaSugestaoDto, TrabEstrutura,
 } from '@mktos/shared';
@@ -21,11 +21,20 @@ import { RoteiroMarkdown } from '@/app/pauta/roteiro-markdown';
  * um mostra o trecho da ata de onde saiu, e só vira tarefa com o clique em
  * Aceitar (na lista escolhida, pelo mesmo caminho do botão "Nova tarefa"). Nada
  * vira tarefa sozinho. Descartar fica registrado.
+ *
+ * Revisão de 18/10/2026 (laudo `homolog/revisao/painel-20261018.md`):
+ *   · PA-2: as atas do vault só aparecem para quem lê o vault (`obsidian.ver`),
+ *     e a tela diz por quê; colar grava na memória e pede `obsidian.editar`;
+ *   · PA-4: dono e vencimento são campos da sugestão. O que o leitor propôs é
+ *     o ponto de partida, e o aceite leva o que a pessoa confirmou ou corrigiu;
+ *   · PA-6: a ata colada vai até 200 mil caracteres, e a tela avisa antes.
+ * No celular os botões e campos têm 44 px (o alvo do polegar).
  */
 
-const INP = 'w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim disabled:opacity-60';
-const BTN = 'rounded-lg border border-border bg-surface px-3 py-1.5 text-sm hover:border-brand-dim disabled:opacity-50';
-const BTN_PRIMARIO = 'rounded-lg bg-brand/15 px-3 py-1.5 text-sm text-text outline outline-1 outline-brand-dim hover:bg-brand/25 disabled:opacity-50';
+const ALVO = 'max-md:min-h-[44px]';
+const INP = `w-full rounded-lg border border-border bg-surface-2 px-2 py-1.5 text-sm outline-none focus:border-brand-dim disabled:opacity-60 ${ALVO}`;
+const BTN = `rounded-lg border border-border bg-surface px-3 py-1.5 text-sm hover:border-brand-dim disabled:opacity-50 ${ALVO}`;
+const BTN_PRIMARIO = `rounded-lg bg-brand/15 px-3 py-1.5 text-sm text-text outline outline-1 outline-brand-dim hover:bg-brand/25 disabled:opacity-50 ${ALVO}`;
 
 const dataBR = (iso: string | null) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : null);
 
@@ -59,6 +68,9 @@ export function AtasView() {
   const { token, ready, can } = useAuth();
   const podeVer = can('tarefas.ver');
   const podeEditar = can('tarefas.editar');
+  // Colar escreve nota da memória: pede o mesmo que o POST /memoria (PA-2).
+  const podeColar = podeEditar && can('obsidian.editar');
+  const botaoColar = useRef<HTMLButtonElement>(null);
 
   const [lista, setLista] = useState<TrabAtaLista | null>(null);
   const [aberta, setAberta] = useState<TrabAtaDetalhe | null>(null);
@@ -69,7 +81,14 @@ export function AtasView() {
   const [lendo, setLendo] = useState(false);
   const [decidindo, setDecidindo] = useState<string | null>(null);
   const [listaEscolhida, setListaEscolhida] = useState<Record<string, string>>({});
+  const [ajustes, setAjustes] = useState<Record<string, { dono?: string; vencimento?: string }>>({});
   const [colando, setColando] = useState(false);
+
+  const fecharColar = useCallback(() => {
+    setColando(false);
+    // O foco volta ao botão que abriu o formulário (o formulário some do DOM).
+    window.setTimeout(() => botaoColar.current?.focus(), 0);
+  }, []);
 
   const carregarLista = useCallback(() => {
     if (!token || !podeVer) return;
@@ -129,7 +148,13 @@ export function AtasView() {
     if (!token || !aberta) return;
     setDecidindo(s.id);
     setErro(null);
-    const corpo = como === 'aceitar' ? { listaId: listaEscolhida[s.id] || s.listaId || undefined } : {};
+    const ajuste = ajustes[s.id] ?? {};
+    const dono = (ajuste.dono ?? s.donoSugerido ?? '').trim();
+    const vencimento = ajuste.vencimento ?? s.vencimento ?? '';
+    // O aceite leva o dono e o vencimento que a pessoa confirmou ou corrigiu (vazio = sem).
+    const corpo = como === 'aceitar'
+      ? { listaId: listaEscolhida[s.id] || s.listaId || undefined, dono: dono || null, vencimento: vencimento || null }
+      : {};
     apiPost<TrabAtaSugestaoDto>(`/trabalho/atas/sugestoes/${s.id}/${como}`, corpo, token)
       .then(() => { abrir(aberta.id); carregarLista(); })
       .catch((e) => setErro(e.message))
@@ -151,20 +176,34 @@ export function AtasView() {
             As reuniões da operação e as tarefas que elas combinaram. Toda sugestão é rascunho até alguém aceitar.
           </p>
         </div>
-        {podeEditar && (
-          <button type="button" data-testid="ata-colar" className={BTN} onClick={() => setColando((v) => !v)} aria-expanded={colando}>
+        {podeColar && (
+          <button
+            ref={botaoColar}
+            type="button"
+            data-testid="ata-colar"
+            className={BTN}
+            onClick={() => (colando ? fecharColar() : setColando(true))}
+            aria-expanded={colando}
+            aria-controls="ata-colar-form"
+          >
             {colando ? 'Fechar' : 'Colar ata'}
           </button>
         )}
       </div>
+      {podeEditar && !podeColar && (
+        <p className="text-[12px] text-muted">
+          Colar ata grava uma nota na memória da empresa, e isso pede também a permissão de editar a memória (obsidian.editar), que o seu perfil não tem.
+        </p>
+      )}
 
       {erro && <p role="alert" className="rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-sm break-words">{erro}</p>}
 
-      {colando && podeEditar && (
+      {colando && podeColar && (
         <ColarAta
           token={token}
+          onFechar={fecharColar}
           onSalva={(a) => {
-            setColando(false);
+            fecharColar();
             setAberta(a);
             setRefAberta(a.id);
             escreverAtaNoEndereco(a.id);
@@ -178,9 +217,11 @@ export function AtasView() {
         <section aria-label="Atas da operação" className="min-w-0 space-y-2">
           {lista && (
             <p className="px-1 text-[12px] text-muted break-words">
-              {lista.notasDoVault > 0
-                ? `Do vault, a pasta ${lista.pasta}; e as coladas aqui.`
-                : `Nenhuma nota do vault indexada nesta empresa: aparecem só as atas coladas aqui (a pasta ${lista.pasta} entra quando o vault for indexado).`}
+              {lista.vaultVisivel === false
+                ? `As atas do vault (a pasta ${lista.pasta}) pedem a permissão de ler o vault (obsidian.ver), que o seu perfil não tem: aparecem só as atas coladas aqui.`
+                : lista.notasDoVault > 0
+                  ? `Do vault, a pasta ${lista.pasta}; e as coladas aqui.`
+                  : `Nenhuma nota do vault indexada nesta empresa: aparecem só as atas coladas aqui (a pasta ${lista.pasta} entra quando o vault for indexado).`}
             </p>
           )}
           <ul data-testid="atas-lista" className="space-y-1.5">
@@ -192,7 +233,7 @@ export function AtasView() {
           </ul>
           {lista && lista.atas.length === 0 && (
             <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted">
-              Nenhuma ata ainda. {podeEditar ? 'Cole a primeira em "Colar ata".' : 'Quem edita o Trabalho pode colar a primeira.'}
+              Nenhuma ata ainda. {podeColar ? 'Cole a primeira em "Colar ata".' : 'Quem edita o Trabalho e a memória pode colar a primeira.'}
             </p>
           )}
           {!lista && !erro && <p className="text-sm text-muted">Carregando…</p>}
@@ -238,16 +279,48 @@ export function AtasView() {
                     <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="space-y-2 rounded-lg border border-border bg-surface-2 p-3">
                       <p className="font-medium break-words">{s.titulo}</p>
                       <blockquote className="border-l-2 border-brand-dim pl-2 text-[13px] text-muted break-words">{s.trecho}</blockquote>
-                      <p className="text-[12px] text-muted break-words">
-                        {[s.donoSugerido ? `dono sugerido: ${s.donoSugerido}` : 'sem dono sugerido', s.vencimento ? `vence ${dataBR(s.vencimento)}` : 'sem vencimento na ata'].join(' · ')}
-                      </p>
+                      {!podeEditar && (
+                        <p className="text-[12px] text-muted break-words">
+                          {[s.donoSugerido ? `dono sugerido: ${s.donoSugerido}` : 'sem dono sugerido', s.vencimento ? `vence ${dataBR(s.vencimento)}` : 'sem vencimento'].join(' · ')}
+                        </p>
+                      )}
+                      {podeEditar && (
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                          <label className="space-y-1 text-[12px] text-muted">
+                            <span>Dono</span>
+                            <input
+                              data-testid={`ata-dono-${s.id}`}
+                              className={INP}
+                              value={ajustes[s.id]?.dono ?? s.donoSugerido ?? ''}
+                              placeholder="sem dono"
+                              maxLength={120}
+                              onChange={(e) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], dono: e.target.value } }))}
+                            />
+                          </label>
+                          <label className="space-y-1 text-[12px] text-muted">
+                            <span>Vence em</span>
+                            <input
+                              type="date"
+                              data-testid={`ata-vencimento-${s.id}`}
+                              className={INP}
+                              value={ajustes[s.id]?.vencimento ?? s.vencimento ?? ''}
+                              onChange={(e) => setAjustes((m) => ({ ...m, [s.id]: { ...m[s.id], vencimento: e.target.value } }))}
+                            />
+                          </label>
+                          <p className="text-[11px] text-muted sm:col-span-2">
+                            {s.donoSugerido || s.vencimento
+                              ? 'O leitor só propõe dono e vencimento que a ata escreve. Confira antes de aceitar.'
+                              : 'A ata não diz dono nem vencimento. Preencha se a reunião combinou.'}
+                          </p>
+                        </div>
+                      )}
                       {podeEditar && (
                         <div className="flex flex-wrap items-center gap-2">
                           <select
                             aria-label={`Lista da tarefa "${s.titulo}"`}
                             value={listaEscolhida[s.id] ?? s.listaId ?? ''}
                             onChange={(e) => setListaEscolhida((m) => ({ ...m, [s.id]: e.target.value }))}
-                            className="min-w-0 max-w-full flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none"
+                            className={`min-w-0 max-w-full flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm outline-none ${ALVO}`}
                           >
                             <option value="">Escolha a lista…</option>
                             {s.listaId && !opcoes.some((o) => o.id === s.listaId) && <option value={s.listaId}>{s.listaNome ?? 'lista sugerida'}</option>}
@@ -278,7 +351,7 @@ export function AtasView() {
                 </ul>
                 {decididas.length > 0 && (
                   <details className="text-sm">
-                    <summary className="cursor-pointer text-muted">Decididas ({decididas.length})</summary>
+                    <summary className={`cursor-pointer text-muted ${ALVO} max-md:flex max-md:items-center`}>Decididas ({decididas.length})</summary>
                     <ul className="mt-2 space-y-1">
                       {decididas.map((s) => (
                         <li key={s.id} data-testid={`ata-sugestao-${s.id}`} className="flex flex-wrap items-baseline gap-x-2 break-words">
@@ -288,7 +361,7 @@ export function AtasView() {
                             {s.decididaPor ? ` por ${s.decididaPor}` : ''}
                           </span>
                           {s.estado === 'aceita' && s.workTaskId && s.listaId && (
-                            <a className="text-[12px] text-brand underline underline-offset-2" href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`}>abrir a tarefa</a>
+                            <a className={`text-[12px] text-brand underline underline-offset-2 ${ALVO} max-md:inline-flex max-md:items-center`} href={`/trabalho?lista=${s.listaId}&tarefa=${s.workTaskId}`}>abrir a tarefa</a>
                           )}
                         </li>
                       ))}
@@ -335,7 +408,11 @@ function ItemDaAta({ ata, ativa, onAbrir }: { ata: TrabAtaResumo; ativa: boolean
   );
 }
 
-function ColarAta({ token, onSalva, onErro }: { token: string; onSalva: (a: TrabAtaDetalhe) => void; onErro: (m: string) => void }) {
+function ColarAta({ token, onSalva, onErro, onFechar }: {
+  token: string; onSalva: (a: TrabAtaDetalhe) => void; onErro: (m: string) => void; onFechar: () => void;
+}) {
+  const primeiro = useRef<HTMLInputElement>(null);
+  useEffect(() => { primeiro.current?.focus(); }, []);
   const [titulo, setTitulo] = useState('');
   const [data, setData] = useState('');
   const [participantes, setParticipantes] = useState('');
@@ -352,6 +429,8 @@ function ColarAta({ token, onSalva, onErro }: { token: string; onSalva: (a: Trab
   };
 
   const curta = Array.from(texto.trim()).length < ATA_MIN_CARACTERES;
+  // O schema conta unidades de texto (como `length`); a tela trava antes de a API recusar (PA-6).
+  const longa = texto.length > ATA_MAX_CARACTERES;
   const salvar = () => {
     setSalvando(true);
     apiPost<TrabAtaDetalhe>('/trabalho/atas', {
@@ -367,15 +446,17 @@ function ColarAta({ token, onSalva, onErro }: { token: string; onSalva: (a: Trab
 
   return (
     <form
+      id="ata-colar-form"
       aria-label="Colar ata"
       className="space-y-2 rounded-lg border border-border bg-surface p-3"
-      onSubmit={(e) => { e.preventDefault(); if (!curta && titulo.trim().length >= 3) salvar(); }}
+      onSubmit={(e) => { e.preventDefault(); if (!curta && !longa && titulo.trim().length >= 3) salvar(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onFechar(); } }}
     >
       <p className="text-[12px] text-muted">A ata vira nota da memória da empresa, com versão e registro no rastro. Senha, token ou chave que estiverem no texto são mascarados antes de gravar.</p>
       <div className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <label className="space-y-1 text-[12px] text-muted">
           <span>Título</span>
-          <input data-testid="ata-colar-titulo" className={INP} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Reunião de operação" />
+          <input ref={primeiro} data-testid="ata-colar-titulo" className={INP} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Reunião de operação" />
         </label>
         <label className="space-y-1 text-[12px] text-muted">
           <span>Data da reunião</span>
@@ -393,13 +474,18 @@ function ColarAta({ token, onSalva, onErro }: { token: string; onSalva: (a: Trab
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="text-[12px] text-muted">
           <span className="mr-2">Ou envie um arquivo .md ou .txt</span>
-          <input type="file" accept=".md,.txt,text/markdown,text/plain" aria-label="Arquivo da ata" onChange={(e) => lerArquivo(e.target.files?.[0])} className="text-[12px]" />
+          <input type="file" accept=".md,.txt,text/markdown,text/plain" aria-label="Arquivo da ata" onChange={(e) => lerArquivo(e.target.files?.[0])} className={`text-[12px] ${ALVO}`} />
         </label>
-        <button type="submit" data-testid="ata-colar-salvar" className={BTN_PRIMARIO} disabled={salvando || curta || titulo.trim().length < 3}>
+        <button type="submit" data-testid="ata-colar-salvar" className={BTN_PRIMARIO} disabled={salvando || curta || longa || titulo.trim().length < 3}>
           {salvando ? 'Salvando…' : 'Salvar ata'}
         </button>
       </div>
       {texto && curta && <p className="text-[12px] text-muted">A ata precisa de ao menos {ATA_MIN_CARACTERES} caracteres.</p>}
+      {longa && (
+        <p role="status" data-testid="ata-colar-longa" className="text-[12px] text-warn">
+          A ata tem {texto.length.toLocaleString('pt-BR')} caracteres, e o teto é {ATA_MAX_CARACTERES.toLocaleString('pt-BR')}. Corte o que não é a reunião (anexos, cabeçalhos repetidos) ou divida em duas atas.
+        </p>
+      )}
     </form>
   );
 }
