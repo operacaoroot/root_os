@@ -515,7 +515,7 @@ describe('organização da navegação (ROOT-07)', () => {
     conteudo: 'Temas do ClickUp', pauta: 'Produção de conteúdo', referencias: 'Referências', marketing: 'Marketing',
     'marketing-ideias': 'Banco de ideias', 'marketing-estrategia': 'Estratégia do mês',
     'marketing-performance': 'Performance', 'marketing-relatorio': 'Relatório do mês',
-    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Comercial', clientes: 'Clientes', leads: 'Leads', funil: 'Funil de vendas',
+    instagram: 'Instagram', bio: 'Página de links', 'comercial-painel': 'Painel geral', clientes: 'Clientes', leads: 'Leads', funil: 'Funil de vendas',
     campanhas: 'Campanhas', pixels: 'Eventos do site', relatorios: 'Relatórios', metas: 'Metas',
     financeiro: 'Financeiro', 'custo-ia': 'Custos de IA', agentes: 'Agentes de IA',
     rotinas: 'Rotinas automáticas', sessoes: 'Sessões de IA', fluxos: 'Processos',

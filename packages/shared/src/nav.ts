@@ -152,7 +152,7 @@ export const NAV: NavItem[] = [
   { key: 'pixels', label: 'Eventos do site', href: '/pixels', icon: 'Activity', permission: 'dashboard.ver', secao: 'conteudo', modulo: 'pixels' },
 
   // O painel lê a lista "Gestão de Leads" do Trabalho (o CRM da casa); ver painel-comercial.ts.
-  { key: 'comercial-painel', label: 'Comercial', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
+  { key: 'comercial-painel', label: 'Painel geral', href: '/comercial', icon: 'TrendingUp', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'leads', label: 'Leads', href: '/leads', icon: 'UserPlus', permission: 'leads.ver', secao: 'comercial', modulo: 'leads' },
   { key: 'funil', label: 'Funil de vendas', href: '/funil', icon: 'Filter', permission: 'dashboard.ver', secao: 'comercial', modulo: 'leads', pai: 'leads' },
   // Depois do fechamento: onboarding e sucesso do cliente, com a mesma ficha do lead.
