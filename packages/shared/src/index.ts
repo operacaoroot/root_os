@@ -30,3 +30,7 @@ export * from './lead-proposta.js';
 // O cockpit do lead (módulo comercial, 13/10/2026): etapas, eventos, decisões,
 // a sala do cliente e a tabela de preço de 04/10 — ver o cabeçalho de `comercial.ts`.
 export * from './comercial.js';
+
+// O banco de atas do Trabalho e as sugestões de tarefa (rodada do painel P3,
+// 18/10/2026) — ver o cabeçalho de `atas.ts`.
+export * from './atas.js';

@@ -1,0 +1,14 @@
+{
+  "tarefa": "trabalho.ata.sugestoes",
+  "_sobre": "Respostas do stub para o leitor de atas do Trabalho (rodada do painel P3). A regra casa com a ata de exemplo da homologação (homolog/fixtures/ata-trabalho-exemplo.md, semeada pelo db:seed:comercial). De propósito, a terceira sugestão traz um vencimento que a ata NÃO diz (o parser anula) e a quarta cita um trecho que NÃO está na ata (o parser descarta): é a demonstração das duas conferências. Qualquer outra ata recebe zero sugestões.",
+  "respostas": [
+    {
+      "depoisDe": "A ATA:",
+      "quando": [
+        "ata de exemplo da homologacao"
+      ],
+      "texto": "{\"sugestoes\":[{\"titulo\":\"Enviar o relatório mensal da Padaria Exemplo\",\"lista\":\"Clientes › Execução\",\"dono\":\"Marina\",\"vencimento\":\"2026-10-23\",\"trecho\":\"Marina vai enviar o relatório mensal da Padaria Exemplo até 23/10.\"},{\"titulo\":\"Revisar o roteiro de onboarding de cliente\",\"lista\":\"Clientes › Onboarding de cliente\",\"dono\":\"Paulo\",\"vencimento\":null,\"trecho\":\"Paulo fica de revisar o roteiro de onboarding de cliente com a nova fase de imersão.\"},{\"titulo\":\"Agendar a reunião de kickoff do próximo cliente\",\"lista\":\"Clientes › Esteira de clientes\",\"dono\":null,\"vencimento\":\"2026-10-30\",\"trecho\":\"Ficou combinado agendar a reunião de kickoff do próximo cliente, sem data definida ainda.\"},{\"titulo\":\"Contratar um novo analista\",\"lista\":\"Gestão\",\"dono\":\"Marina\",\"vencimento\":null,\"trecho\":\"Decidimos contratar um novo analista na semana que vem.\"}]}"
+    }
+  ],
+  "padrao": "{\"sugestoes\":[]}"
+}

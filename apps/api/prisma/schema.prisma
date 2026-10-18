@@ -167,6 +167,8 @@ model Org {
   workApontamentos      WorkApontamento[]
   /// A marca pessoal de "limpei isto" da caixa de entrada (rodada do painel P1).
   caixaVistos           CaixaVisto[]
+  /// As sugestões de tarefa lidas das atas do Trabalho (rodada do painel P3).
+  ataSugestoes          AtaSugestao[]
 
   // Fatia 3.6 — RF-G-05 (bloco no fim do arquivo). Só o outro lado da relação
   // mora aqui: é o que o Prisma exige, e nada além disso.
@@ -2259,6 +2261,46 @@ model CaixaVisto {
 
   @@unique([orgId, userId, origem, eventoId])
   @@index([orgId, userId, vistoEm])
+}
+
+/// A SUGESTÃO DE TAREFA LIDA DE UMA ATA — rodada do painel P3, 18/10/2026.
+///
+/// O leitor de atas do Trabalho PROPÕE; gente aceita ou descarta na tela Atas.
+/// Nasce `rascunho`; aceitar cria a `WorkTask` pelo `WorkService` (o mesmo
+/// caminho do botão "Nova tarefa") e guarda o id em `workTaskId`; descartar fica
+/// registrado com quem e quando. Nada vira tarefa sozinho.
+///
+/// `ataRef` é a referência da ata: `vault:<id de KnowledgeNote>` ou
+/// `memoria:<id de ContextItem>`. Sem chave estrangeira de propósito: a ata vive
+/// em duas tabelas, e a nota do vault é reescrita a cada reindexação.
+///
+/// `trecho` é o pedaço da ata de onde a sugestão saiu, conferido pelo parser
+/// contra a ata (o que não está nela é descartado antes de chegar aqui).
+/// `vencimento` só existe quando a data está escrita na ata.
+///
+/// Raiz da empresa, não filha: o `orgId` vem do insert, RLS FORCE no grupo
+/// padrão. `listaId` sem FK: a lista pode ser apagada depois, e a sugestão
+/// decidida continua sendo histórico.
+model AtaSugestao {
+  id           String    @id @default(uuid())
+  orgId        String
+  org          Org       @relation(fields: [orgId], references: [id])
+  ataRef       String
+  titulo       String
+  listaId      String?
+  donoSugerido String?
+  vencimento   DateTime?
+  trecho       String
+  estado       String    @default("rascunho")
+  workTaskId   String?
+  criadaPor    String?
+  decididaPor  String?
+  criadaEm     DateTime  @default(now())
+  decididaEm   DateTime?
+  atualizadaEm DateTime  @updatedAt
+
+  @@index([orgId, ataRef])
+  @@index([orgId, estado])
 }
 
 // ============================================================================

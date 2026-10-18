@@ -5,6 +5,9 @@ import { CheckoutDeTarefaService } from './checkout-de-tarefa.service';
 import { AuditModule } from '../audit/audit.module';
 import { WorkFilesController } from './work-files.controller';
 import { WorkFilesService } from './work-files.service';
+import { MemoryModule } from '../memory/memoria.module';
+import { AtasController } from './atas/atas.controller';
+import { AtasService } from './atas/atas.service';
 
 /**
  * O CHECKOUT É EXPORTADO, e a exportação é a fatia A4 pela metade.
@@ -24,10 +27,16 @@ import { WorkFilesService } from './work-files.service';
  * permite a uma suíte montá-lo sem rastro; o que não pode é a API subir sem,
  * porque aí checkout não deixaria marca nenhuma.
  */
+/*
+ * O BANCO DE ATAS (rodada do painel P3, 18/10/2026) mora aqui porque aceitar uma
+ * sugestão é criar tarefa pelo `WorkService`. `MemoryModule` entra nos imports
+ * porque a ata colada vira nota da memória pelo `MemoriaService` (ADR-011); o
+ * provider de modelo chega pelo `LlmModule`, que é global.
+ */
 @Module({
-  imports: [AuditModule],
-  controllers: [WorkController, WorkFilesController],
-  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService],
+  imports: [AuditModule, MemoryModule],
+  controllers: [WorkController, WorkFilesController, AtasController],
+  providers: [WorkService, CheckoutDeTarefaService, WorkFilesService, AtasService],
   exports: [CheckoutDeTarefaService, WorkService],
 })
 export class WorkModule {}
